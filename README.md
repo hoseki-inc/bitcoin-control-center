@@ -518,4 +518,5 @@ Useful project documentation:
 
 ## License
 
-Bitcoin Control Center is available under the [MIT License](LICENSE).
+Bitcoin Control Center is available under the [Apache License 2.0](LICENSE).
+Third-party dependencies and assets remain subject to their respective licenses.

@@ -1,0 +1,30 @@
+{
+  "name": "desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local-first Bitcoin portfolio tracking and proof-of-reserves statements",
+  "repository": "https://github.com/hoseki-inc/bitcoin-control-center",
+  "license": "Apache-2.0",
+  "author": "Hoseki, Inc.",
+  "main": "app/main/index.js",
+  "scripts": {
+    "check": "tsc --noEmit",
+    "dev": "electron app/main/index.js",
+    "dist:mac": "electron-builder --mac --universal",
+    "dist:win": "electron-builder --win",
+    "rebuild": "node -e \"const Database = require('better-sqlite3'); const database = new Database(':memory:'); database.close()\""
+  },
+  "dependencies": {
+    "@react-pdf/renderer": "4.3.2",
+    "better-sqlite3": "13.0.3",
+    "electron-updater": "6.8.9",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "yoga-layout": "3.2.1"
+  },
+  "devDependencies": {
+    "electron": "41.10.4",
+    "electron-builder": "26.15.3",
+    "typescript": "5.9.3"
+  }
+}
