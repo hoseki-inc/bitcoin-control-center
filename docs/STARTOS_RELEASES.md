@@ -22,8 +22,8 @@ Use the components consistently:
 
 | Change     | Example                | Meaning                                                |
 | ---------- | ---------------------- | ------------------------------------------------------ |
-| `patch`    | `0.2.1:0` -> `0.2.2:0` | Compatible application fix or maintenance release      |
-| `minor`    | `0.2.1:0` -> `0.3.0:0` | Compatible feature release                             |
+| `patch`    | `0.2.1:0` -> `0.2.2:0` | Incremental feature, fix, or maintenance release       |
+| `minor`    | `0.2.1:0` -> `0.3.0:0` | Substantial feature release                            |
 | `major`    | `0.2.1:0` -> `1.0.0:0` | Breaking or major product release                      |
 | `revision` | `0.2.1:0` -> `0.2.1:1` | Packaging-only rebuild of the same application version |
 
@@ -49,6 +49,18 @@ node start9/scripts/version.mjs assert-tag v0.2.1_0
 
 ## Build types
 
+### Which workflow should I run?
+
+The workflows are numbered in the GitHub Actions sidebar because they have different jobs:
+
+| Goal                                         | Workflow                             | Version choice?                               | Result                                 |
+| -------------------------------------------- | ------------------------------------ | --------------------------------------------- | -------------------------------------- |
+| Choose the next version                      | **StartOS 1 - Prepare version**      | Yes: `patch`, `minor`, `major`, or `revision` | Opens a version pull request           |
+| Test what is already committed               | **StartOS 2 - Build candidate**      | No                                            | Produces a private sideload artifact   |
+| Prepare the approved version for publication | **StartOS 3 - Create draft release** | No                                            | Produces a signed draft GitHub Release |
+
+Running a candidate never changes the version. If the candidate reveals a fix that warrants a new version, merge the fix and then use **StartOS 1 - Prepare version** to choose the appropriate bump. After that version pull request is merged, run a new candidate from `main`.
+
 ### Local development build
 
 ```bash
@@ -59,7 +71,7 @@ This builds the checked-in version without changing it. Use the resulting `start
 
 ### Private remote candidate
 
-Run the **StartOS candidate** workflow manually from the repository's Actions page and choose the branch or commit to test. The workflow:
+Run **StartOS 2 - Build candidate** manually from the repository's Actions page and choose the branch or commit to test. The workflow:
 
 1. runs the complete repository verification suite;
 2. verifies that the source tree is clean and the version graph is valid;
@@ -77,7 +89,7 @@ If the repository secret `STARTOS_DEV_KEY` is absent, the workflow creates an ep
 
 ### Version preparation
 
-Version changes belong in their own pull request. In GitHub, open **Actions**, choose **Prepare StartOS release**, and select **Run workflow** from the default branch. The form asks for:
+Version changes belong in their own pull request. In GitHub, open **Actions**, choose **StartOS 1 - Prepare version**, and select **Run workflow** from the default branch. This is the workflow that displays the version dropdown. The form asks for:
 
 - a release type: `patch`, `minor`, `major`, or `revision`;
 - release notes describing the user-visible changes.
@@ -98,8 +110,8 @@ Review and polish the release notes in the generated version file before merging
 The equivalent local commands remain available for maintenance and recovery:
 
 ```bash
-node start9/scripts/version.mjs bump patch --notes "Fix account history refresh."
-node start9/scripts/version.mjs bump minor --notes "Add a new account source."
+node start9/scripts/version.mjs bump patch --notes "Add custom portfolio date ranges."
+node start9/scripts/version.mjs bump minor --notes "Add a substantial new account capability."
 node start9/scripts/version.mjs bump major --notes "Describe the compatibility break."
 node start9/scripts/version.mjs bump revision --notes "Rebuild StartOS packaging."
 ```
@@ -108,7 +120,7 @@ Commit the version graph before producing any release candidate intended to have
 
 ### Signed draft GitHub Release
 
-After the version pull request is merged and its candidate is tested, open **Actions**, choose **StartOS draft release**, and run it from the default branch. There is no version or tag field. The workflow:
+After the version pull request is merged and its candidate is tested, open **Actions**, choose **StartOS 3 - Create draft release**, and run it from the default branch. There is no version or tag field. The workflow:
 
 1. derives the only valid tag from the committed version graph;
 2. rejects an existing tag or GitHub Release;
@@ -124,6 +136,24 @@ The draft workflow will not run until the existing permanent StartOS developer s
 ### StartOS registry publication (future)
 
 Registry publication remains intentionally separate from version preparation and GitHub Releases. Add it only after the registry destination, credentials, signing continuity, and upgrade testing are confirmed. It should consume the already-tagged release rather than calculate a new version or rebuild from an unrelated commit.
+
+StartOS does not need to issue a signing key for private candidate builds. The permanent developer key is controlled by this project and must be kept secret. Before testing upgrades or creating a draft release, securely configure the existing key as the `STARTOS_DEV_KEY` GitHub repository secret; do not generate a replacement if an installed package already relies on the existing signer.
+
+The official Community Registry submission process is a separate, later step. StartOS currently asks maintainers to email `submissions@start9.com` with a link to a public GitHub repository. StartOS then reviews and forks the repository into the `Start9-Community` organization. Merges there publish automatically to `community-beta`; production promotion happens only after the maintainer gives approval. See the [StartOS publishing guide](https://docs.start9.com/packaging/0.4.0.x/publishing.html) and [Start9 Community instructions](https://github.com/Start9-Community#for-developers-submitting-a-package).
+
+### Publication docket
+
+- [ ] Complete a clean-install candidate test on a real StartOS device.
+- [ ] Finish the StartOS pre-publish checklist, including install, startup, UI, health, uninstall, and reinstall testing.
+- [ ] Securely configure the existing permanent developer key as `STARTOS_DEV_KEY`.
+- [ ] Build two consecutive signed candidates and verify upgrade/signing continuity.
+- [ ] Back up an existing installation and verify that an upgrade preserves the `main` volume and application data.
+- [ ] Review the repository for public release readiness, including documentation, licenses, security guidance, and secret history.
+- [ ] Make the GitHub repository public only when the project is ready for StartOS review.
+- [ ] Email `submissions@start9.com` with the public repository link and request Community Registry review.
+- [ ] Address StartOS review feedback in the future `Start9-Community` fork.
+- [ ] Test the automatically published `community-beta` package on real hardware.
+- [ ] Give StartOS approval to promote the tested beta build to the production Community Registry.
 
 ## Compatibility invariants
 

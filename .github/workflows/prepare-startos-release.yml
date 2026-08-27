@@ -1,4 +1,4 @@
-name: Prepare StartOS release
+name: StartOS 1 - Prepare version
 run-name: Prepare StartOS ${{ inputs.bump_type }} release
 
 on:

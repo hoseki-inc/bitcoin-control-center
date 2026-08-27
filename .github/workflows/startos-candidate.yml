@@ -1,4 +1,4 @@
-name: StartOS candidate
+name: StartOS 2 - Build candidate
 
 on:
   workflow_dispatch:

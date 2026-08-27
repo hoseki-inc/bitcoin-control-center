@@ -64,8 +64,8 @@ The build performs these steps:
 Version examples:
 
 ```bash
-./start9/build.sh --bump patch --notes "Fix account history refresh."
-./start9/build.sh --bump minor --notes "Add a new account source."
+./start9/build.sh --bump patch --notes "Add custom portfolio date ranges."
+./start9/build.sh --bump minor --notes "Add a substantial new account capability."
 ./start9/build.sh --bump revision --notes "Rebuild packaging without an app change."
 ./start9/build.sh --version 0.2.0:0 --notes "Set an explicit version."
 ```
@@ -79,9 +79,9 @@ node start9/scripts/version.mjs check
 node start9/scripts/version.mjs tag
 ```
 
-Use the manually triggered **StartOS candidate** GitHub Actions workflow for private remote builds. It builds the exact committed version and never creates a version, tag, GitHub Release, or registry publication.
+Use the manually triggered **StartOS 2 - Build candidate** GitHub Actions workflow for private remote builds. It builds the exact committed version and never creates a version, tag, GitHub Release, or registry publication.
 
-Use **Prepare StartOS release** to select a version bump and enter release notes. It opens a version pull request and calculates the exact tag. Once that pull request is merged and its candidate is tested, **StartOS draft release** rebuilds from the protected default branch, requires the permanent signing key, and creates the matching draft GitHub Release without asking anyone to type a tag. See [STARTOS_RELEASES.md](STARTOS_RELEASES.md) for the complete candidate and release model.
+Use **StartOS 1 - Prepare version** to select a version bump and enter release notes. It opens a version pull request and calculates the exact tag. Once that pull request is merged and its candidate is tested, **StartOS 3 - Create draft release** rebuilds from the protected default branch, requires the permanent signing key, and creates the matching draft GitHub Release without asking anyone to type a tag. See [STARTOS_RELEASES.md](STARTOS_RELEASES.md) for the complete candidate and release model.
 
 ## Build desktop installers
 
