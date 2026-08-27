@@ -1,0 +1,137 @@
+name: StartOS candidate
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: startos-candidate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build private candidate
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Check out selected revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node workspace
+        uses: ./.github/actions/setup
+
+      - name: Install packaging dependencies
+        run: |
+          npm ci --prefix desktop --ignore-scripts
+          npm ci --prefix start9 --ignore-scripts
+          npm ci --prefix start9/runtime --ignore-scripts
+
+      - name: Run repository verification
+        run: pnpm run ci
+
+      - name: Confirm clean source revision
+        run: git diff --exit-code
+
+      - name: Read protected StartOS version
+        id: version
+        shell: bash
+        run: |
+          VERSION="$(node start9/scripts/version.mjs get)"
+          TAG="$(node start9/scripts/version.mjs tag)"
+          SHORT_SHA="$(git rev-parse --short=12 HEAD)"
+          ARTIFACT_NAME="hoseki-sentinel-${TAG}-${SHORT_SHA}"
+          {
+            echo "version=${VERSION}"
+            echo "tag=${TAG}"
+            echo "short_sha=${SHORT_SHA}"
+            echo "artifact_name=${ARTIFACT_NAME}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Set up StartOS build environment
+        uses: ./.github/actions/setup-startos
+
+      - name: Set up candidate signing key
+        id: signing
+        shell: bash
+        env:
+          STARTOS_DEV_KEY: ${{ secrets.STARTOS_DEV_KEY }}
+        run: |
+          mkdir -p ~/.startos .startos
+          if [[ -n "$STARTOS_DEV_KEY" ]]; then
+            printf '%s' "$STARTOS_DEV_KEY" > ~/.startos/id.key.pem
+            echo "mode=repository secret" >> "$GITHUB_OUTPUT"
+          else
+            start-cli init-key
+            echo "mode=ephemeral clean-install key" >> "$GITHUB_OUTPUT"
+            echo "::warning::STARTOS_DEV_KEY is not configured. This candidate uses an ephemeral signing key and should only be used for clean-install testing."
+          fi
+          chmod 600 ~/.startos/id.key.pem
+          cp ~/.startos/id.key.pem .startos/build.key.pem
+          chmod 600 .startos/build.key.pem
+
+      - name: Build universal StartOS candidate
+        run: ./start9/build.sh
+
+      - name: Verify and stage candidate
+        id: package
+        shell: bash
+        env:
+          EXPECTED_VERSION: ${{ steps.version.outputs.version }}
+          EXPECTED_GIT_HASH: ${{ github.sha }}
+          ARTIFACT_NAME: ${{ steps.version.outputs.artifact_name }}
+        run: |
+          SOURCE_PACKAGE="start9/hoseki-sentinel.s9pk"
+          test -f "$SOURCE_PACKAGE"
+
+          MANIFEST="$(start-cli s9pk inspect "$SOURCE_PACKAGE" manifest)"
+          PACKAGE_ID="$(jq -r '.id' <<< "$MANIFEST")"
+          PACKAGE_VERSION="$(jq -r '.version' <<< "$MANIFEST")"
+          PACKAGE_ARCHES="$(jq -r '[.images[].arch // []] | flatten | unique | join(",")' <<< "$MANIFEST")"
+          PACKAGE_GIT_HASH="$(jq -r '.gitHash' <<< "$MANIFEST")"
+
+          [[ "$PACKAGE_ID" == "hoseki-sentinel" ]]
+          [[ "$PACKAGE_VERSION" == "$EXPECTED_VERSION" ]]
+          [[ "$PACKAGE_ARCHES" == "aarch64,x86_64" ]]
+          [[ "$PACKAGE_GIT_HASH" == "$EXPECTED_GIT_HASH" ]]
+
+          mkdir -p artifacts
+          OUTPUT_PACKAGE="artifacts/${ARTIFACT_NAME}.s9pk"
+          cp "$SOURCE_PACKAGE" "$OUTPUT_PACKAGE"
+          (
+            cd artifacts
+            sha256sum "${ARTIFACT_NAME}.s9pk" > SHA256SUMS
+          )
+          echo "package_git_hash=${PACKAGE_GIT_HASH}" >> "$GITHUB_OUTPUT"
+
+      - name: Add build summary
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          TAG: ${{ steps.version.outputs.tag }}
+          SHORT_SHA: ${{ steps.version.outputs.short_sha }}
+          SIGNING_MODE: ${{ steps.signing.outputs.mode }}
+          PACKAGE_GIT_HASH: ${{ steps.package.outputs.package_git_hash }}
+        run: |
+          {
+            echo "## StartOS candidate"
+            echo ""
+            echo "- Version: \`${VERSION}\`"
+            echo "- Release tag form: \`${TAG}\`"
+            echo "- Source commit: \`${SHORT_SHA}\`"
+            echo "- Package git hash: \`${PACKAGE_GIT_HASH}\`"
+            echo "- Architectures: \`x86_64\`, \`aarch64\`"
+            echo "- Signing: ${SIGNING_MODE}"
+            echo "- Published: no"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload private candidate artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ steps.version.outputs.artifact_name }}
+          path: artifacts/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14

@@ -72,6 +72,17 @@ Version examples:
 
 StartOS versions use `major.minor.patch:revision`. Preserve the package ID `hoseki-sentinel`, the `main` volume, and existing configuration keys so updates remain compatible with deployed instances.
 
+Validate the version graph and print its matching StartOS release tag with:
+
+```bash
+node start9/scripts/version.mjs check
+node start9/scripts/version.mjs tag
+```
+
+Use the manually triggered **StartOS candidate** GitHub Actions workflow for private remote builds. It builds the exact committed version and never creates a version, tag, GitHub Release, or registry publication.
+
+Use **Prepare StartOS release** to select a version bump and enter release notes. It opens a version pull request and calculates the exact tag. Once that pull request is merged and its candidate is tested, **StartOS draft release** rebuilds from the protected default branch, requires the permanent signing key, and creates the matching draft GitHub Release without asking anyone to type a tag. See [STARTOS_RELEASES.md](STARTOS_RELEASES.md) for the complete candidate and release model.
+
 ## Build desktop installers
 
 ```bash
