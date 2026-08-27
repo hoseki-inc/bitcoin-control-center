@@ -43,6 +43,7 @@ Removing it requires upstream changes or replacing security-sensitive wallet int
 - Electron packaging uses `better-sqlite3` 13's committed Node-API prebuilds instead of running lifecycle scripts or cross-compiling native code.
 - Desktop Tor archives come from the permanent official archive and are verified against hard-coded SHA-256 values taken from the Tor Project's signed checksum manifest.
 - The StartOS Node base image is pinned by version and multi-architecture digest; its yq binary is pinned by version and verified separately for amd64 and arm64.
+- Third-party GitHub Actions are pinned to immutable commit SHAs, with Dependabot tracking their release updates.
 - CI and dependency review use read-only repository permissions.
 
 ## Compatibility notes
