@@ -1,0 +1,16 @@
+{
+  "name": "api-sentinel",
+  "type": "module",
+  "scripts": {
+    "build": "tsx src/scripts/build.ts",
+    "dev": "tsx watch --env-file=.env src/cli.ts",
+    "dev:standalone": "tsx watch --env-file=.env src/cli.ts",
+    "docker:build": "cd ../.. && docker build -f apps/api-sentinel/Dockerfile -t api-sentinel .",
+    "lint": "ESLINT_USE_FLAT_CONFIG=false eslint . --ignore-path ../../.eslintignore",
+    "start": "node --enable-source-maps dist/cli.js",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@bitcoin-control-center/shared": "workspace:*"
+  }
+}

@@ -1,0 +1,84 @@
+import { Decimal } from 'decimal.js'
+import { z } from 'zod'
+import { Result } from '../result/index.ts'
+
+const decimalInstance = z.custom<Decimal>((value) => value instanceof Decimal, {
+  message: 'Expected Decimal',
+})
+
+// Prisma returns custom Decimal objects, that we can't import directly,
+// because frontend doesn't have access to the Prisma client
+const decimalObject = z.object({
+  d: z.number().array(),
+  e: z.number(),
+  s: z.number(),
+})
+
+function decimalObjectToDecimalInstance(pd: z.infer<typeof decimalObject>) {
+  const d = new Decimal(0)
+  // @ts-expect-error Giga hack to get around the fact that Decimal doesn't have a public constructor that takes d, e, s
+  d.d = pd.d
+  // @ts-expect-error see above
+  d.e = pd.e
+  // @ts-expect-error see above
+  d.s = pd.s
+  return d
+}
+
+type DecimalSchemaUnion = z.ZodUnion<
+  [
+    z.ZodString,
+    z.ZodNumber,
+    z.ZodBigInt,
+    z.ZodType<Decimal>,
+    z.ZodObject<{ d: z.ZodArray<z.ZodNumber>; e: z.ZodNumber; s: z.ZodNumber }>,
+  ]
+>
+
+type DecimalLike = string | number | bigint | Decimal | { d: number[]; e: number; s: number }
+
+export function decimal(config?: Decimal.Config): z.ZodEffects<DecimalSchemaUnion, Decimal, DecimalLike> {
+  return z.union([z.string(), z.number(), z.bigint(), decimalInstance, decimalObject]).transform((value, ctx) => {
+    const constructor = config ? Decimal.clone(config) : Decimal
+
+    let from: string | number | Decimal
+    if (typeof value === 'string' || typeof value === 'number') {
+      from = value
+    } else if (typeof value === 'bigint') {
+      from = value.toString()
+    } else if (Decimal.isDecimal(value)) {
+      from = value
+    } else if (typeof value === 'object') {
+      from = decimalObjectToDecimalInstance(value)
+    }
+    const result = Result.from(() => new constructor(from))
+
+    if (result.isErr()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `cannot parse ${value} as decimal number`,
+      })
+      return z.NEVER
+    }
+
+    if (result.value().isNaN()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `${value} is not a valid decimal number`,
+      })
+      return z.NEVER
+    }
+
+    return result.value()
+  })
+}
+
+decimal.positive = () =>
+  decimal().refine((v) => v.gt(0), {
+    message: 'Must be greater than 0',
+  })
+
+decimal.nonnegative = () =>
+  decimal().refine((v) => v.gte(0), {
+    message: 'Must be greater than or equal to 0',
+  })

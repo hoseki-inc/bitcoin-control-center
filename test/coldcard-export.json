@@ -1,0 +1,36 @@
+{
+  "chain": "BTC",
+  "xfp": "EDB96AC7",
+  "account": 0,
+  "xpub": "xpub661MyMwAqRbcEvRJTTnwAQh2ZUbCiW34CXh54ymLpais2t7BywXwPTJMRziLkq4ojy6LLzP5LhSVuyUQWNGG5qDngbKN4PqweGCiVmvnWDZ",
+  "bip44": {
+    "name": "p2pkh",
+    "deriv": "m/44'/0'/0'",
+    "xpub": "xpub6CRWpUWi2XwNArzzK1vQSJLsA9u5AY38PHxQW5hqxgXobYPpnFw8J1n4kPDK12k1YCA9kritvLF6s9cQorFfKeS7t2G3tHqe62QKwxRmHd8"
+  },
+  "bip49": {
+    "name": "p2sh-p2wpkh",
+    "deriv": "m/49'/0'/0'",
+    "xpub": "xpub6CCmAbq5HNJKAFgN54sTdd9sBoTaRvbjxk5ceajuGfX3zHhvUHi52MEmGfAi1koH2XLzojc6DFTQdG7nSGFyprzzPF5CEKe3KZfTBvUoRM2"
+  },
+  "bip84": {
+    "name": "p2wpkh",
+    "deriv": "m/84'/0'/0'",
+    "xpub": "xpub6CkevFFTpYk65GvGvQ6XoSDLMjKozZmnKEfth8CsPaMFczCMA2KLVuVQXn4osb8rp7wmohCuDm9AnrSiL1y4KYyXScmmivLYpsqpDH5Ahib"
+  },
+  "bip48_1": {
+    "name": "p2sh-p2wsh",
+    "deriv": "m/48'/0'/0'/1'",
+    "xpub": "xpub6DnAvkgCABsaVeRMqQ9ExiQNkYpWqgiPna9BWiLZUofgqGkupiukfzGT12ZnetYpKWXi5vsrB4wc2Q77tRVpRELDSWzjj4r8Pwev99vSnMt"
+  },
+  "bip48_2": {
+    "name": "p2wsh",
+    "deriv": "m/48'/0'/0'/2'",
+    "xpub": "xpub6DnAvkgCABsaXgxw2qfFAHoN1eFtjpm6oPxUxMad97C6YLwykZUUkgsN3E5dWn1fAwfB1wQhL5NLFyYiTwUVsrh1w9pvTZgL9uzFwVNKxFL"
+  },
+  "bip45": {
+    "name": "p2sh",
+    "deriv": "m/45'",
+    "xpub": "xpub69dqoaCo8eZQW9j5xvfvWw7BqBSH7Mbm86dUxfDS4PDMg44rrzZAacgpumGBHEtxe9DURBsThZ7Gmb3bjXH37Ns6e9qibRGttC9QFHAbhmj"
+  }
+}

@@ -1,0 +1,6 @@
+generated
+packages/deno-shared
+node_modules
+dist
+.next
+**/statement_pdf_processor.js

@@ -1,0 +1,97 @@
+# See http://help.github.com/ignore-files/ for more about ignoring files.
+
+# compiled output
+dist
+tmp
+/out-tsc
+ladle-build
+
+# dependencies
+node_modules
+
+# IDEs and editors
+/.idea
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.sublime-workspace
+
+# IDE - VSCode
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# Cursor
+.cursor/debug.log
+
+# misc
+/.sass-cache
+/connect.lock
+coverage
+/libpeerconnection.log
+npm-debug.log
+yarn-error.log
+package-lock.json
+!desktop/
+!desktop/package-lock.json
+!start9/package-lock.json
+!start9/runtime/package-lock.json
+testem.log
+/typings
+*.tsbuildinfo
+.pnpm-store
+
+.env
+.env.local
+.env.test.json
+
+# System Files
+.DS_Store
+Thumbs.db
+
+# Ulysses writing app
+.Ulysses-Group.plist
+
+.turbo
+
+# Ignored files
+*.ignore.*
+
+# Next.js
+.next
+
+# e2e tests files
+*test-results/
+
+styled-system
+
+*.db
+
+.obsidian
+
+# Generated code
+generated/
+*.timestamp-*.mjs
+
+# The current StartOS package source is part of this repository.
+!start9/
+
+# The Sentinel backend source is part of this repository. This explicit
+# inclusion also overrides legacy global ignore rules from its former repo.
+!apps/api-sentinel/
+
+# StartOS build artifacts
+start9/node_modules/
+start9/runtime/node_modules/
+start9/javascript/
+start9/*.s9pk
+
+# Desktop (Electron) build artifacts
+desktop/app/
+desktop/release/
+desktop/node_modules/
+desktop/tor/

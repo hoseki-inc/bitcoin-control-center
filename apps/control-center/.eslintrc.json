@@ -1,0 +1,29 @@
+{
+  "extends": ["plugin:react/recommended", "plugin:react-hooks/recommended", "../../.eslintrc.json"],
+  "settings": {
+    "react": {
+      "version": "detect"
+    }
+  },
+  "overrides": [
+    {
+      "files": ["*.ts", "*.tsx", "*.js", "*.jsx"],
+      "rules": {
+        "react/react-in-jsx-scope": "off",
+        "react/no-unescaped-entities": "off",
+        "react/prop-types": "off",
+        "react/jsx-key": "off",
+        "react/no-children-prop": "off",
+        "react/no-unknown-property": "off"
+      }
+    },
+    {
+      "files": ["*.ts", "*.tsx"],
+      "rules": {}
+    },
+    {
+      "files": ["*.js", "*.jsx"],
+      "rules": {}
+    }
+  ]
+}

@@ -1,0 +1,35 @@
+appId: com.hoseki.controlcenter
+productName: Bitcoin Control Center
+directories:
+  output: release
+  buildResources: resources
+asar: true
+asarUnpack:
+  - app/node_modules/better-sqlite3/prebuilds/*.node
+# better-sqlite3 13 ships Node-API prebuilds for every packaged platform.
+# Rebuilding would try to cross-compile Windows native code on the macOS host.
+npmRebuild: false
+files:
+  - app/**/*
+extraResources:
+  - from: tor/${os}
+    to: tor
+mac:
+  category: public.app-category.finance
+  target:
+    - target: dmg
+  hardenedRuntime: true
+  entitlements: entitlements.mac.plist
+  entitlementsInherit: entitlements.mac.plist
+  # notarize: true  # TODO: Enable when Apple Developer ID is configured
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+# publish:
+#   provider: github
+#   TODO: Enable when GitHub release repo is configured and add repository field to package.json

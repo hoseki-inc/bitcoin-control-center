@@ -1,0 +1,11 @@
+{
+  "plugins": ["@trivago/prettier-plugin-sort-imports", "prettier-plugin-packagejson"],
+  "bracketSpacing": true,
+  "singleQuote": true,
+  "semi": false,
+  "printWidth": 120,
+  "trailingComma": "all",
+  "importOrder": ["^node:(.*)$", "<THIRD_PARTY_MODULES>", "^packages/(.*)$", "^apps/(.*)$", "^[./]"],
+  "importOrderSeparation": false,
+  "importOrderSortSpecifiers": true
+}

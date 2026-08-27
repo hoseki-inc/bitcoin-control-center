@@ -1,0 +1,31 @@
+import {
+  isPoint,
+  isPrivate,
+  isXOnlyPoint,
+  pointAddScalar,
+  pointCompress,
+  pointFromScalar,
+  privateAdd,
+  privateNegate,
+  sign,
+  signSchnorr,
+  verify,
+  verifySchnorr,
+  xOnlyPointAddTweak,
+} from '@bitcoinerlab/secp256k1'
+
+export const ecc = {
+  isPoint,
+  isPrivate,
+  pointAddScalar,
+  pointFromScalar,
+  privateAdd,
+  privateNegate,
+  sign,
+  signSchnorr,
+  verify,
+  verifySchnorr,
+  xOnlyPointAddTweak,
+  isXOnlyPoint,
+  pointCompress,
+}

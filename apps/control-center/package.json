@@ -1,0 +1,20 @@
+{
+  "name": "control-center",
+  "type": "module",
+  "scripts": {
+    "build": "vite build --outDir dist --mode production.sentinel",
+    "dev": "vite --mode sentinel",
+    "dev:desktop": "vite --mode desktop",
+    "dev:standalone": "vite --mode sentinel",
+    "lint": "ESLINT_USE_FLAT_CONFIG=false eslint . --ignore-path ../../.eslintignore",
+    "start": "vite preview",
+    "test": "vitest run",
+    "test:unit": "vitest --config vite.config.ts",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "bbqr": "1.2.0",
+    "html5-qrcode": "2.3.8",
+    "recharts": "3.10.1"
+  }
+}

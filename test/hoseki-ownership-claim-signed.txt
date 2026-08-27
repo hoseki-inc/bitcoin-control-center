@@ -1,0 +1,6 @@
+-----BEGIN BITCOIN SIGNED MESSAGE-----
+Whatever
+-----BEGIN BITCOIN SIGNATURE-----
+bc1qpe3cnfcrarvw8gwfksl66vg9p0hpu45ltrq3hn
+test
+-----END BITCOIN SIGNATURE-----

@@ -1,0 +1,22 @@
+{
+  "name": "@bitcoin-control-center/shared",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./*": "./*"
+  },
+  "scripts": {
+    "lint": "ESLINT_USE_FLAT_CONFIG=false eslint . --ignore-path ../.eslintignore --ignore-pattern deno-shared",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@keystonehq/bc-ur-registry": "0.7.1",
+    "@patina/core": "3.0.0",
+    "date-fns": "4.1.0",
+    "decimal.js": "10.4.3",
+    "nanoid": "5.1.6",
+    "socks": "2.8.7",
+    "type-fest": "4.15.0",
+    "zod": "3.25.76"
+  }
+}

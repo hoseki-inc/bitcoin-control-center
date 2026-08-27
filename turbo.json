@@ -1,0 +1,48 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "tasks": {
+    "//#format:check": {
+      "outputs": []
+    },
+    "build": {
+      "outputs": ["dist/**", ".next/**"],
+      "inputs": ["$TURBO_DEFAULT$"]
+    },
+    "lint": {
+      "inputs": ["$TURBO_DEFAULT$", "../../.eslintignore", "../../.eslintrc.json"],
+      "outputs": []
+    },
+    "test": {
+      "outputs": ["coverage/**"]
+    },
+    "secrets:pull": {
+      "cache": false
+    },
+    "deno:install": {
+      "cache": false
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true
+    },
+    "start": {
+      "cache": false,
+      "persistent": true,
+      "dependsOn": ["build"]
+    },
+    "check": {
+      "outputs": []
+    },
+    "docker:build": {
+      "dependsOn": ["build"],
+      "cache": false
+    },
+    "dev:databases": {
+      "cache": false
+    },
+    "dev:standalone": {
+      "cache": false,
+      "persistent": true
+    }
+  }
+}

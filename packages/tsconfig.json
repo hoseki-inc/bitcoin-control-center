@@ -1,0 +1,17 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "esModuleInterop": true,
+    "module": "esnext",
+    "forceConsistentCasingInFileNames": true,
+    "strict": true,
+    "noImplicitOverride": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "jsx": "preserve"
+  },
+  "include": ["./**/*.ts", "./**/*.tsx", "./types/**/*.d.ts"],
+  "exclude": ["deno-shared/**", "**/*.test.ts", "**/*.test.tsx"]
+}

@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - name: Install packaging dependencies
+        run: |
+          npm ci --prefix desktop --ignore-scripts
+          npm ci --prefix start9 --ignore-scripts
+          npm ci --prefix start9/runtime --ignore-scripts
+      - run: pnpm security:audit
+      - run: pnpm format:check
+      - run: pnpm lint
+      - run: pnpm check
+      - run: npm --prefix desktop run check
+      - run: npm --prefix start9 run check
+      - run: pnpm test
+      - run: pnpm build

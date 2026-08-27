@@ -1,0 +1,7 @@
+---
+description:
+globs:
+alwaysApply: true
+---
+- Avoid using TypeScript non-null assertion (!) operator
+- Prefer using nullish coalescing operator (??) over OR operator (||)

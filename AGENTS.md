@@ -1,0 +1,35 @@
+# Agent guidance
+
+Bitcoin Control Center is a standalone, local-first product. Sentinel is its only backend; do not reintroduce imports or compatibility endpoints for Hoseki Services or `api-armadillo`.
+
+## Safety
+
+- Do not commit or push unless the user explicitly asks.
+- Do not change the StartOS manifest ID `hoseki-sentinel` or persistent volume `main` without an explicit migration plan.
+- Do not log descriptors, exchange credentials, encryption keys, or full external API responses containing secrets.
+
+## Commands
+
+```bash
+pnpm dev
+pnpm check
+pnpm test
+pnpm build
+./start9/build.sh
+./desktop/build.sh
+```
+
+## Code conventions
+
+- Give exported functions explicit return types.
+- Prefer `Result` values to exceptions for expected failures.
+- Use `parse` or `parseUnknown` from `@hoseki/packages/result/lib/parse` instead of Zod's `.parse()` or `.safeParse()`.
+- Use Chakra's `textStyle` typography tokens instead of separate `fontSize` and `lineHeight` props.
+- Install exact dependency versions with `pnpm add -E` or `pnpm add -wDE`.
+
+## Product boundary
+
+- Product and API behavior belongs in `apps/api-sentinel`.
+- Shared UI and wallet logic belongs in `packages` only when used by Control Center.
+- Distribution-specific configuration belongs in `start9`, `desktop`, or a future platform package such as `umbrel`.
+- New functionality must preserve local storage, auditability, and the absence of an implicit cloud service.
