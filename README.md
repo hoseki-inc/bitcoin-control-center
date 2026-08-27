@@ -365,8 +365,8 @@ StartOS versions use `major.minor.patch:revision`:
 
 | Command                                             | Use                                                             |
 | --------------------------------------------------- | --------------------------------------------------------------- |
-| `./start9/build.sh --bump patch --notes "..."`      | Bug fix or maintenance release; resets revision to `0`          |
-| `./start9/build.sh --bump minor --notes "..."`      | Feature release; resets patch and revision to `0`               |
+| `./start9/build.sh --bump patch --notes "..."`      | Incremental feature, fix, or maintenance release                |
+| `./start9/build.sh --bump minor --notes "..."`      | Substantial feature release; resets patch and revision to `0`   |
 | `./start9/build.sh --bump major --notes "..."`      | Breaking or major release; resets other components to `0`       |
 | `./start9/build.sh --bump revision --notes "..."`   | Packaging-only rebuild without changing the application version |
 | `./start9/build.sh --version 0.2.0:0 --notes "..."` | Set an explicit version greater than the current version        |
@@ -388,11 +388,11 @@ See [docs/CONTROL_CENTER.md](docs/CONTROL_CENTER.md) for more packaging and dist
 
 ## StartOS release candidates
 
-The manually triggered **StartOS candidate** GitHub Actions workflow builds a private universal `.s9pk` artifact from a selected branch or commit. It runs the full verification suite and validates the checked-in version, package ID, architectures, and clean Git hash. It does not bump a version, create a tag, publish a GitHub Release, or submit anything to a StartOS registry.
+The manually triggered **StartOS 2 - Build candidate** GitHub Actions workflow builds a private universal `.s9pk` artifact from a selected branch or commit. It runs the full verification suite and validates the checked-in version, package ID, architectures, and clean Git hash. It does not bump a version, create a tag, publish a GitHub Release, or submit anything to a StartOS registry.
 
 The artifact uses the StartOS tag form plus the source commit so similarly versioned test builds remain distinguishable. GitHub retains it for 14 days.
 
-Use the separate **Prepare StartOS release** workflow to choose `patch`, `minor`, `major`, or `revision` from a dropdown and enter release notes. It calculates the next version and exact tag and opens a protected pull request. After that pull request is merged and tested, **StartOS draft release** derives the tag without manual entry, requires the permanent signing key, rebuilds the package, and creates a draft GitHub Release. Registry publication is intentionally not part of either workflow.
+Use the separate **StartOS 1 - Prepare version** workflow to choose `patch`, `minor`, `major`, or `revision` from a dropdown and enter release notes. It calculates the next version and exact tag and opens a protected pull request. After that pull request is merged and tested, **StartOS 3 - Create draft release** derives the tag without manual entry, requires the permanent signing key, rebuilds the package, and creates a draft GitHub Release. Registry publication is intentionally not part of either workflow.
 
 See [docs/STARTOS_RELEASES.md](docs/STARTOS_RELEASES.md) for the version rules, candidate signing behavior, workflow instructions, and the intentionally separate registry-publication design.
 

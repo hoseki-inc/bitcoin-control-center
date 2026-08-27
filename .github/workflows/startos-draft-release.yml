@@ -1,4 +1,4 @@
-name: StartOS draft release
+name: StartOS 3 - Create draft release
 
 on:
   workflow_dispatch:
