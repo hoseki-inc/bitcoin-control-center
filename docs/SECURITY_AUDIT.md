@@ -4,7 +4,8 @@ This document records the baseline dependency review performed while extracting 
 
 ## Audit baseline
 
-Audit date: 2026-08-05
+- Baseline audit date: 2026-08-05
+- Latest remediation review: 2026-08-27
 
 | Dependency graph          | Before                                                | After |
 | ------------------------- | ----------------------------------------------------- | ----- |
@@ -23,6 +24,8 @@ pnpm security:audit
 
 CI fails on new findings of moderate severity or higher. Dependabot covers the root pnpm workspace, the desktop package, the StartOS SDK and runtime packages, GitHub Actions, and the StartOS Dockerfile. Pull requests also run GitHub's dependency review action.
 
+The 2026-08-27 review upgraded the affected `js-yaml` and `nanoid` release lines to patched versions. It also disabled automatic peer installation and removed an unused React Native/Metro dependency tree that had introduced unpatched `image-size` advisories. Runtime peers used by the application are declared explicitly instead of being supplied incidentally by optional packages.
+
 ## Accepted residual finding
 
 `pnpm audit` reports one low-severity `elliptic` finding for an ECDSA implementation issue. The advisory has no patched release. The package is transitive through hardware-wallet and Bitcoin compatibility libraries, including Ledger, Trezor, `bip322-js`, and browser polyfills; it is forced to the newest available 6.x release.
@@ -32,6 +35,7 @@ Removing it requires upstream changes or replacing security-sensitive wallet int
 ## Supply-chain controls
 
 - Exact versions are used for direct npm dependencies.
+- Optional peers are not installed automatically; required runtime peers are declared explicitly.
 - pnpm rejects newly published versions for seven days through `minimumReleaseAge`.
 - Patched transitive versions are enforced with root pnpm overrides.
 - Desktop, StartOS SDK, and StartOS container runtime lockfiles are committed and installed with `npm ci`.
@@ -51,7 +55,7 @@ The production bundle includes Lottie's expression engine because two checked-in
 
 ## Release security checklist
 
-- Run `pnpm ci` from a clean clone.
+- Run `pnpm install --frozen-lockfile` and `pnpm run ci` from a clean clone.
 - Build and inspect both desktop installers and the StartOS package.
 - Run a secret scanner against the clean public snapshot and its Git history.
 - Review licenses for source dependencies, fonts, images, animations, wallet logos, and bundled Tor artifacts.

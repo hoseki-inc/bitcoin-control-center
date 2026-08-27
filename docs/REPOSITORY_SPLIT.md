@@ -10,7 +10,7 @@ This working tree is the source boundary for Bitcoin Control Center, but its Git
 - Replace or approve Hoseki-owned branding and support links that remain intentionally visible in the product.
 - Set `packageRepo` and `upstreamRepo` in the StartOS manifest to the final public URL.
 - Enable the checked-in Dependabot and dependency-review configuration, then configure branch protection, private vulnerability reporting, and release signing in the public repository.
-- Run `pnpm ci`, the StartOS multi-architecture build, and both desktop packaging targets from a clean clone.
+- Run `pnpm install --frozen-lockfile`, `pnpm run ci`, the StartOS multi-architecture build, and both desktop packaging targets from a clean clone.
 
 ## Compatibility invariants
 

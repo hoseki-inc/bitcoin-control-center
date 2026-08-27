@@ -67,7 +67,7 @@ Sentinel is the only application backend and owns the frontend API contract. Dis
 Local browser development requires:
 
 - Git
-- Node.js 22.22 or newer; `.nvmrc` currently selects Node 22.22
+- Node.js 22.23.2 or newer; `.nvmrc` selects Node 22.23.2
 - Corepack and pnpm 10.17.0
 - Access to an Electrum server whose network matches `BITCOIN_NETWORK`
 - A Chromium-based browser for WebHID hardware-wallet workflows
@@ -258,19 +258,19 @@ Database migrations run automatically during startup. There is no separate local
 
 Run these commands from the repository root unless noted otherwise.
 
-| Command               | Purpose                                                           |
-| --------------------- | ----------------------------------------------------------------- |
-| `pnpm dev`            | Run Sentinel and Control Center in watch mode                     |
-| `pnpm check`          | Run TypeScript project-reference checks                           |
-| `pnpm test`           | Run the full Vitest suite through Turbo                           |
-| `pnpm lint`           | Run ESLint with zero warnings allowed                             |
-| `pnpm format:check`   | Verify Prettier formatting                                        |
-| `pnpm format`         | Apply Prettier formatting                                         |
-| `pnpm build`          | Build Sentinel and the production web application                 |
-| `pnpm security:audit` | Audit root, desktop, and StartOS dependency graphs                |
-| `pnpm ci`             | Run the root audit, formatting, lint, type, test, and build gates |
-| `pnpm ladle:serve`    | Run the shared component-workbench development server             |
-| `pnpm ladle:build`    | Build the component workbench                                     |
+| Command               | Purpose                                                      |
+| --------------------- | ------------------------------------------------------------ |
+| `pnpm dev`            | Run Sentinel and Control Center in watch mode                |
+| `pnpm check`          | Run TypeScript project-reference checks                      |
+| `pnpm test`           | Run the full Vitest suite through Turbo                      |
+| `pnpm lint`           | Run ESLint with zero warnings allowed                        |
+| `pnpm format:check`   | Verify Prettier formatting                                   |
+| `pnpm format`         | Apply Prettier formatting                                    |
+| `pnpm build`          | Build Sentinel and the production web application            |
+| `pnpm security:audit` | Audit root, desktop, and StartOS dependency graphs           |
+| `pnpm run ci`         | Run every audit, type check, test, and production build gate |
+| `pnpm ladle:serve`    | Run the shared component-workbench development server        |
+| `pnpm ladle:build`    | Build the component workbench                                |
 
 Focused workflows:
 
@@ -413,7 +413,7 @@ Cross-built installers should still be smoke-tested on each target operating sys
 
 ### Node or pnpm version errors
 
-The repository requires Node.js 22.22 or newer and pnpm 10.17.0.
+The repository requires Node.js 22.23.2 or newer and pnpm 10.17.0.
 
 ```bash
 nvm install
