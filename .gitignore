@@ -85,6 +85,7 @@ generated/
 !apps/api-sentinel/
 
 # StartOS build artifacts
+.startos/
 start9/node_modules/
 start9/runtime/node_modules/
 start9/javascript/

@@ -33,6 +33,7 @@ This repository intentionally excludes Hoseki Services, Armadillo, hosted authen
 - [Testing and CI](#testing-and-ci)
 - [Production builds](#production-builds)
 - [StartOS packaging](#startos-packaging)
+- [StartOS release candidates](#startos-release-candidates)
 - [Desktop packaging](#desktop-packaging)
 - [Troubleshooting](#troubleshooting)
 - [Security and privacy](#security-and-privacy)
@@ -373,15 +374,27 @@ StartOS versions use `major.minor.patch:revision`:
 Inspect the current version without building:
 
 ```bash
+node start9/scripts/version.mjs check
 node start9/scripts/version.mjs get
+node start9/scripts/version.mjs tag
 ```
 
-Version-bump commands update the checked-in StartOS version graph before building. Review and commit those generated source changes with the release.
+The manifest version `0.2.1:0` maps to the official StartOS Git tag `v0.2.1_0`. Version-bump commands update the checked-in StartOS version graph before building. Review and commit those generated source changes with the release.
 
 > [!WARNING]
 > The internal StartOS package ID is `hoseki-sentinel`, and its persistent volume is `main`. Existing installations rely on both identifiers. Do not rename them without an explicit data-migration and upgrade-compatibility plan.
 
 See [docs/CONTROL_CENTER.md](docs/CONTROL_CENTER.md) for more packaging and distribution guidance.
+
+## StartOS release candidates
+
+The manually triggered **StartOS candidate** GitHub Actions workflow builds a private universal `.s9pk` artifact from a selected branch or commit. It runs the full verification suite and validates the checked-in version, package ID, architectures, and clean Git hash. It does not bump a version, create a tag, publish a GitHub Release, or submit anything to a StartOS registry.
+
+The artifact uses the StartOS tag form plus the source commit so similarly versioned test builds remain distinguishable. GitHub retains it for 14 days.
+
+Use the separate **Prepare StartOS release** workflow to choose `patch`, `minor`, `major`, or `revision` from a dropdown and enter release notes. It calculates the next version and exact tag and opens a protected pull request. After that pull request is merged and tested, **StartOS draft release** derives the tag without manual entry, requires the permanent signing key, rebuilds the package, and creates a draft GitHub Release. Registry publication is intentionally not part of either workflow.
+
+See [docs/STARTOS_RELEASES.md](docs/STARTOS_RELEASES.md) for the version rules, candidate signing behavior, workflow instructions, and the intentionally separate registry-publication design.
 
 ## Desktop packaging
 

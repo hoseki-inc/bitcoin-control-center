@@ -1,0 +1,185 @@
+name: Prepare StartOS release
+run-name: Prepare StartOS ${{ inputs.bump_type }} release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump_type:
+        description: What kind of release is this?
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+          - revision
+      release_notes:
+        description: What changed in this release?
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: prepare-startos-release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Open version pull request
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Require the default branch
+        shell: bash
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          if [[ "$GITHUB_REF_NAME" != "$DEFAULT_BRANCH" ]]; then
+            echo "::error::Run this workflow from ${DEFAULT_BRANCH}, not ${GITHUB_REF_NAME}."
+            exit 1
+          fi
+
+      - name: Check out the protected source version
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+
+      - name: Set up Node workspace
+        uses: ./.github/actions/setup
+
+      - name: Install StartOS dependencies
+        run: npm ci --prefix start9 --ignore-scripts
+
+      - name: Validate release notes
+        shell: bash
+        env:
+          RELEASE_NOTES: ${{ inputs.release_notes }}
+        run: |
+          if [[ -z "${RELEASE_NOTES//[[:space:]]/}" ]]; then
+            echo "::error::Release notes cannot be empty."
+            exit 1
+          fi
+
+      - name: Prepare version graph
+        id: version
+        shell: bash
+        env:
+          BUMP_TYPE: ${{ inputs.bump_type }}
+          RELEASE_NOTES: ${{ inputs.release_notes }}
+        run: |
+          OLD_VERSION="$(node start9/scripts/version.mjs get)"
+          node start9/scripts/version.mjs bump "$BUMP_TYPE" --notes "$RELEASE_NOTES"
+          NEW_VERSION="$(node start9/scripts/version.mjs get)"
+          TAG="$(node start9/scripts/version.mjs tag)"
+          BRANCH="release/startos-${TAG}"
+          {
+            echo "old_version=${OLD_VERSION}"
+            echo "new_version=${NEW_VERSION}"
+            echo "tag=${TAG}"
+            echo "branch=${BRANCH}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Format and validate version change
+        run: |
+          pnpm exec prettier --write start9/startos/versions
+          npm --prefix start9 run check
+          pnpm exec prettier --check start9/startos/versions
+          git diff --check
+
+      - name: Reject version and branch collisions
+        shell: bash
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+          BRANCH: ${{ steps.version.outputs.branch }}
+        run: |
+          REMOTE_TAG="$(git ls-remote --tags origin "refs/tags/${TAG}")"
+          if [[ -n "$REMOTE_TAG" ]]; then
+            echo "::error::Release tag ${TAG} already exists. Prepare a newer StartOS version."
+            exit 1
+          fi
+
+          REMOTE_BRANCH="$(git ls-remote --heads origin "refs/heads/${BRANCH}")"
+          if [[ -n "$REMOTE_BRANCH" ]]; then
+            echo "::error::Release branch ${BRANCH} already exists. Update or remove its existing pull request before retrying."
+            exit 1
+          fi
+
+      - name: Commit version branch
+        shell: bash
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+          BRANCH: ${{ steps.version.outputs.branch }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$BRANCH"
+          git add start9/startos/versions
+          if git diff --cached --quiet; then
+            echo "::error::The requested release did not create a version change."
+            exit 1
+          fi
+          git commit -m "release(startos): prepare ${TAG}"
+          git push origin "HEAD:refs/heads/${BRANCH}"
+
+      - name: Open release pull request
+        id: pull_request
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          BUMP_TYPE: ${{ inputs.bump_type }}
+          RELEASE_NOTES: ${{ inputs.release_notes }}
+          OLD_VERSION: ${{ steps.version.outputs.old_version }}
+          NEW_VERSION: ${{ steps.version.outputs.new_version }}
+          TAG: ${{ steps.version.outputs.tag }}
+          BRANCH: ${{ steps.version.outputs.branch }}
+        run: |
+          {
+            echo "## StartOS release preparation"
+            echo ""
+            echo "- Bump type: \`${BUMP_TYPE}\`"
+            echo "- Version: \`${OLD_VERSION}\` → \`${NEW_VERSION}\`"
+            echo "- Exact release tag: \`${TAG}\`"
+            echo ""
+            echo "## Release notes"
+            echo ""
+            printf '%s\n' "$RELEASE_NOTES"
+            echo ""
+            echo "## Before merging"
+            echo ""
+            echo "- Review and polish the release notes in the generated StartOS version file."
+            echo "- Let all protected checks pass."
+            echo "- Run the private StartOS candidate workflow from this branch when a release-like package is needed."
+            echo ""
+            echo "The tag is intentionally not created by this pull request."
+          } > "$RUNNER_TEMP/startos-release-pr.md"
+
+          PR_URL="$(gh pr create \
+            --base "$DEFAULT_BRANCH" \
+            --head "$BRANCH" \
+            --title "release(startos): prepare ${TAG}" \
+            --body-file "$RUNNER_TEMP/startos-release-pr.md")"
+          echo "url=${PR_URL}" >> "$GITHUB_OUTPUT"
+
+      - name: Add preparation summary
+        shell: bash
+        env:
+          OLD_VERSION: ${{ steps.version.outputs.old_version }}
+          NEW_VERSION: ${{ steps.version.outputs.new_version }}
+          TAG: ${{ steps.version.outputs.tag }}
+          PR_URL: ${{ steps.pull_request.outputs.url }}
+        run: |
+          {
+            echo "## StartOS release prepared"
+            echo ""
+            echo "- Version: \`${OLD_VERSION}\` → \`${NEW_VERSION}\`"
+            echo "- Exact tag: \`${TAG}\`"
+            echo "- Pull request: ${PR_URL}"
+            echo ""
+            echo "GitHub may show an **Approve workflows to run** button on the automated pull request. Approve it so the protected checks can start."
+          } >> "$GITHUB_STEP_SUMMARY"

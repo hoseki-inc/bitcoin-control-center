@@ -1,0 +1,35 @@
+name: Set up StartOS build environment
+description: Install the pinned StartOS CLI and multi-architecture container build tools
+
+runs:
+  using: composite
+  steps:
+    - name: Install StartOS build prerequisites
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends \
+          build-essential \
+          clang \
+          libclang-dev \
+          qemu-user-static \
+          squashfs-tools-ng
+
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
+
+    - name: Set up Docker
+      uses: docker/setup-docker-action@77e84dbf09b47d1e29270283c22f16145aa85ca1 # v5.4.0
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+    - name: Install pinned StartOS CLI
+      shell: bash
+      run: |
+        curl -fsSL \
+          https://github.com/Start9Labs/start-technologies/releases/download/start-cli/v1.1.0/start-cli_x86_64-linux \
+          -o "$RUNNER_TEMP/start-cli"
+        echo "70eff67b6e9a936acd8aaaf787b783819252ecedaa5c74d462e3b15ed4dd843a  $RUNNER_TEMP/start-cli" | sha256sum --check --strict
+        sudo install -m 755 "$RUNNER_TEMP/start-cli" /usr/local/bin/start-cli
+        start-cli --version

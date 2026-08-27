@@ -1,0 +1,182 @@
+name: StartOS draft release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: startos-draft-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build signed draft release
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Require the default branch
+        shell: bash
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          if [[ "$GITHUB_REF_NAME" != "$DEFAULT_BRANCH" ]]; then
+            echo "::error::Run this workflow from ${DEFAULT_BRANCH}, not ${GITHUB_REF_NAME}."
+            exit 1
+          fi
+
+      - name: Check out the protected release commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+
+      - name: Set up Node workspace
+        uses: ./.github/actions/setup
+
+      - name: Install packaging dependencies
+        run: |
+          npm ci --prefix desktop --ignore-scripts
+          npm ci --prefix start9 --ignore-scripts
+          npm ci --prefix start9/runtime --ignore-scripts
+
+      - name: Run repository verification
+        run: pnpm run ci
+
+      - name: Read protected release identity
+        id: version
+        shell: bash
+        run: |
+          node start9/scripts/version.mjs check
+          VERSION="$(node start9/scripts/version.mjs get)"
+          TAG="$(node start9/scripts/version.mjs tag)"
+          node start9/scripts/version.mjs assert-tag "$TAG"
+          SOURCE_SHA="$(git rev-parse HEAD)"
+          SHORT_SHA="$(git rev-parse --short=12 HEAD)"
+          {
+            echo "version=${VERSION}"
+            echo "tag=${TAG}"
+            echo "source_sha=${SOURCE_SHA}"
+            echo "short_sha=${SHORT_SHA}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Reject release collisions
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          REMOTE_TAG="$(git ls-remote --tags origin "refs/tags/${TAG}")"
+          if [[ -n "$REMOTE_TAG" ]]; then
+            echo "::error::Release tag ${TAG} already exists. Versions and release tags are immutable."
+            exit 1
+          fi
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "::error::A GitHub Release for ${TAG} already exists."
+            exit 1
+          fi
+
+      - name: Confirm permanent signing key
+        shell: bash
+        env:
+          STARTOS_DEV_KEY: ${{ secrets.STARTOS_DEV_KEY }}
+        run: |
+          if [[ -z "$STARTOS_DEV_KEY" ]]; then
+            echo "::error::STARTOS_DEV_KEY is required for draft releases. Candidate-only ephemeral signing is not allowed."
+            exit 1
+          fi
+
+      - name: Set up StartOS build environment
+        uses: ./.github/actions/setup-startos
+
+      - name: Set up permanent signing key
+        shell: bash
+        env:
+          STARTOS_DEV_KEY: ${{ secrets.STARTOS_DEV_KEY }}
+        run: |
+          mkdir -p ~/.startos .startos
+          printf '%s' "$STARTOS_DEV_KEY" > ~/.startos/id.key.pem
+          chmod 600 ~/.startos/id.key.pem
+          cp ~/.startos/id.key.pem .startos/build.key.pem
+          chmod 600 .startos/build.key.pem
+
+      - name: Build universal StartOS release
+        run: ./start9/build.sh
+
+      - name: Verify and stage release
+        id: package
+        shell: bash
+        env:
+          EXPECTED_VERSION: ${{ steps.version.outputs.version }}
+          EXPECTED_GIT_HASH: ${{ steps.version.outputs.source_sha }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          SOURCE_PACKAGE="start9/hoseki-sentinel.s9pk"
+          test -f "$SOURCE_PACKAGE"
+
+          MANIFEST="$(start-cli s9pk inspect "$SOURCE_PACKAGE" manifest)"
+          PACKAGE_ID="$(jq -r '.id' <<< "$MANIFEST")"
+          PACKAGE_VERSION="$(jq -r '.version' <<< "$MANIFEST")"
+          PACKAGE_ARCHES="$(jq -r '[.images[].arch // []] | flatten | unique | join(",")' <<< "$MANIFEST")"
+          PACKAGE_GIT_HASH="$(jq -r '.gitHash' <<< "$MANIFEST")"
+          RELEASE_NOTES="$(jq -r '.releaseNotes | if type == "object" then (.en_US // first(.[]) // "") else (. // "") end' <<< "$MANIFEST")"
+
+          [[ "$PACKAGE_ID" == "hoseki-sentinel" ]]
+          [[ "$PACKAGE_VERSION" == "$EXPECTED_VERSION" ]]
+          [[ "$PACKAGE_ARCHES" == "aarch64,x86_64" ]]
+          [[ "$PACKAGE_GIT_HASH" == "$EXPECTED_GIT_HASH" ]]
+          [[ -n "$RELEASE_NOTES" ]]
+
+          mkdir -p artifacts
+          OUTPUT_PACKAGE="artifacts/hoseki-sentinel-${TAG}.s9pk"
+          cp "$SOURCE_PACKAGE" "$OUTPUT_PACKAGE"
+          printf '%s\n' "$RELEASE_NOTES" > artifacts/RELEASE_NOTES.md
+          (
+            cd artifacts
+            sha256sum "hoseki-sentinel-${TAG}.s9pk" > SHA256SUMS
+          )
+          echo "package_git_hash=${PACKAGE_GIT_HASH}" >> "$GITHUB_OUTPUT"
+
+      - name: Create draft GitHub Release and exact tag
+        id: release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+          TAG: ${{ steps.version.outputs.tag }}
+          SOURCE_SHA: ${{ steps.version.outputs.source_sha }}
+        run: |
+          RELEASE_URL="$(gh release create "$TAG" \
+            "artifacts/hoseki-sentinel-${TAG}.s9pk" \
+            artifacts/SHA256SUMS \
+            --draft \
+            --latest=false \
+            --target "$SOURCE_SHA" \
+            --title "Bitcoin Control Center ${VERSION}" \
+            --notes-file artifacts/RELEASE_NOTES.md)"
+          echo "url=${RELEASE_URL}" >> "$GITHUB_OUTPUT"
+
+      - name: Add release summary
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          TAG: ${{ steps.version.outputs.tag }}
+          SHORT_SHA: ${{ steps.version.outputs.short_sha }}
+          RELEASE_URL: ${{ steps.release.outputs.url }}
+        run: |
+          {
+            echo "## StartOS draft release created"
+            echo ""
+            echo "- Version: \`${VERSION}\`"
+            echo "- Exact tag: \`${TAG}\`"
+            echo "- Source commit: \`${SHORT_SHA}\`"
+            echo "- Architectures: \`x86_64\`, \`aarch64\`"
+            echo "- Signing: permanent repository secret"
+            echo "- Registry publication: no"
+            echo "- Draft release: ${RELEASE_URL}"
+            echo ""
+            echo "Review the draft and its checksum before publishing it."
+          } >> "$GITHUB_STEP_SUMMARY"

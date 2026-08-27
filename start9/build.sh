@@ -55,6 +55,9 @@ if [[ ${#VERSION_ARGS[@]} -gt 0 ]]; then
   node "$SCRIPT_DIR/scripts/version.mjs" "${VERSION_ARGS[@]}" "${BUILD_ARGS[@]}"
 fi
 
+echo "==> Validating StartOS version graph..."
+node "$SCRIPT_DIR/scripts/version.mjs" check
+
 CURRENT_VERSION="$(node "$SCRIPT_DIR/scripts/version.mjs" get)"
 echo "==> StartOS package version: $CURRENT_VERSION"
 
