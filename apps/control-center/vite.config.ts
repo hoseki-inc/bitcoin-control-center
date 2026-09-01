@@ -36,10 +36,10 @@ export default defineConfig(({ mode }) => {
     plugins: [
       react(),
       nodePolyfills({
-        // The browser application only needs Buffer. Limiting the plugin keeps
+        // The browser application only needs Buffer and stream. Limiting the plugin keeps
         // unrelated Node shims such as vm-browserify out of the production
         // bundle.
-        include: ['buffer'],
+        include: ['buffer', 'stream'],
         globals: {
           Buffer: true,
         },
