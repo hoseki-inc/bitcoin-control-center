@@ -12,6 +12,7 @@ export default defineConfig(({ mode }) => {
     resolve: {
       alias: {
         '@hoseki/packages': resolve(import.meta.dirname, '../../packages'),
+        'lottie-react': resolve(import.meta.dirname, '../../node_modules/lottie-react/build/index.es.js'),
       },
     },
 
