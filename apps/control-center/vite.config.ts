@@ -13,6 +13,10 @@ export default defineConfig(({ mode }) => {
       alias: {
         '@hoseki/packages': resolve(import.meta.dirname, '../../packages'),
         'lottie-react': resolve(import.meta.dirname, '../../node_modules/lottie-react/build/index.es.js'),
+        'react-canvas-confetti/dist/presets/fireworks': resolve(
+          import.meta.dirname,
+          '../../node_modules/react-canvas-confetti/src/presets/fireworks/index.tsx',
+        ),
       },
     },
 
