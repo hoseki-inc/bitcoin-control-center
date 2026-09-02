@@ -1,14 +1,13 @@
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import cors from '@fastify/cors'
-import fastifyStatic from '@fastify/static'
 import { type FastifyTRPCPluginOptions, fastifyTRPCPlugin } from '@trpc/server/adapters/fastify'
 import Fastify, { type FastifyBaseLogger } from 'fastify'
 import pino from 'pino'
 import { createAppContext } from './context'
-import { registerStatementRoutes } from './modules/statements/routes'
 import type { TRPCContext } from './modules/trpc/init'
 import { type AppRouter, appRouter } from './modules/trpc/router'
+import { registerStaticAssets } from './static_assets'
 
 export interface SentinelServer {
   shutdown: () => Promise<void>
@@ -121,7 +120,7 @@ function isUnsafeMethod(method: string): boolean {
 }
 
 function isProtectedRoute(url: string): boolean {
-  return url.startsWith('/trpc') || url.startsWith('/statements/')
+  return url.startsWith('/trpc')
 }
 
 export async function main(): Promise<SentinelServer> {
@@ -194,25 +193,10 @@ export async function main(): Promise<SentinelServer> {
     } satisfies FastifyTRPCPluginOptions<AppRouter>['trpcOptions'],
   })
 
-  // Statement PDF download endpoint (non-tRPC, streams PDF file)
-  await registerStatementRoutes(server, appCtx)
-
   // Serve Control Center static assets (when bundled in production / Docker)
   const publicDir = join(appCtx.env.APP_DIR, 'public')
   if (existsSync(publicDir)) {
-    await server.register(fastifyStatic, {
-      root: publicDir,
-      prefix: '/',
-      decorateReply: false,
-    })
-
-    // SPA fallback: non-API routes serve index.html
-    server.setNotFoundHandler(async (request, reply) => {
-      if (request.url.startsWith('/trpc') || request.url.startsWith('/statements/')) {
-        return reply.status(404).send({ error: 'Not found' })
-      }
-      return reply.sendFile('index.html')
-    })
+    await registerStaticAssets(server, publicDir)
     logger.info({ publicDir }, 'Serving static web UI')
   }
 

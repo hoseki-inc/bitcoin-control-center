@@ -183,7 +183,8 @@ export function ConnectCoinbase(): JSX.Element {
                 Center&rdquo;.
               </Text>
               <Text as="li" textStyle="text/sm" color="neutral.700">
-                Under Permissions, check only &ldquo;View (Read-Only)&rdquo;. Leave Trade and Transfer unchecked.
+                Under Advanced, select &ldquo;ECDSA (Legacy SDKs)&rdquo;. Under Permissions, check only &ldquo;View
+                (Read-Only)&rdquo;; leave Trade and Transfer unchecked.
               </Text>
               <Text as="li" textStyle="text/sm" color="neutral.700">
                 Click &ldquo;Create &amp; Download&rdquo;. Open the downloaded file and copy both the API Key Name and

@@ -13,10 +13,6 @@ on:
           - minor
           - major
           - revision
-      release_notes:
-        description: What changed in this release?
-        required: true
-        type: string
 
 permissions:
   contents: write
@@ -55,36 +51,31 @@ jobs:
       - name: Install StartOS dependencies
         run: npm ci --prefix start9 --ignore-scripts
 
-      - name: Validate release notes
-        shell: bash
-        env:
-          RELEASE_NOTES: ${{ inputs.release_notes }}
-        run: |
-          if [[ -z "${RELEASE_NOTES//[[:space:]]/}" ]]; then
-            echo "::error::Release notes cannot be empty."
-            exit 1
-          fi
-
       - name: Prepare version graph
         id: version
         shell: bash
         env:
           BUMP_TYPE: ${{ inputs.bump_type }}
-          RELEASE_NOTES: ${{ inputs.release_notes }}
+          RELEASE_NOTES: 'STARTOS_RELEASE_NOTES_REQUIRED: Replace this placeholder with reviewed multiline release notes.'
+          STARTOS_ALLOW_RELEASE_NOTES_PLACEHOLDER: '1'
         run: |
           OLD_VERSION="$(node start9/scripts/version.mjs get)"
           node start9/scripts/version.mjs bump "$BUMP_TYPE" --notes "$RELEASE_NOTES"
           NEW_VERSION="$(node start9/scripts/version.mjs get)"
           TAG="$(node start9/scripts/version.mjs tag)"
           BRANCH="release/startos-${TAG}"
+          VERSION_FILE="start9/startos/versions/${TAG//./_}.ts"
           {
             echo "old_version=${OLD_VERSION}"
             echo "new_version=${NEW_VERSION}"
             echo "tag=${TAG}"
             echo "branch=${BRANCH}"
+            echo "version_file=${VERSION_FILE}"
           } >> "$GITHUB_OUTPUT"
 
       - name: Format and validate version change
+        env:
+          STARTOS_ALLOW_RELEASE_NOTES_PLACEHOLDER: '1'
         run: |
           pnpm exec prettier --write start9/startos/versions
           npm --prefix start9 run check
@@ -133,11 +124,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           BUMP_TYPE: ${{ inputs.bump_type }}
-          RELEASE_NOTES: ${{ inputs.release_notes }}
           OLD_VERSION: ${{ steps.version.outputs.old_version }}
           NEW_VERSION: ${{ steps.version.outputs.new_version }}
           TAG: ${{ steps.version.outputs.tag }}
           BRANCH: ${{ steps.version.outputs.branch }}
+          VERSION_FILE: ${{ steps.version.outputs.version_file }}
         run: |
           {
             echo "## StartOS release preparation"
@@ -146,13 +137,20 @@ jobs:
             echo "- Version: \`${OLD_VERSION}\` → \`${NEW_VERSION}\`"
             echo "- Exact release tag: \`${TAG}\`"
             echo ""
-            echo "## Release notes"
+            echo "## Release notes required"
             echo ""
-            printf '%s\n' "$RELEASE_NOTES"
+            echo "This pull request intentionally starts with placeholder release notes, so its CI check will fail until they are replaced."
+            echo ""
+            echo "1. Open \`${VERSION_FILE}\` in **Files changed** and select **Edit file**."
+            echo "2. Replace the \`STARTOS_RELEASE_NOTES_REQUIRED\` placeholder with the final multiline release notes."
+            echo "3. Use a blank line before the list and put each bullet on its own line beginning with \`-\`."
+            echo "4. Commit the edit to this release branch and wait for all checks to pass."
+            echo ""
+            echo "Only the \`releaseNotes\` value in the version file is packaged and shown by StartOS. Editing this pull-request description does not change the packaged release notes."
             echo ""
             echo "## Before merging"
             echo ""
-            echo "- Review and polish the release notes in the generated StartOS version file."
+            echo "- Confirm the release notes preview correctly in the version-file diff."
             echo "- Let all protected checks pass."
             echo "- Run the private StartOS candidate workflow from this branch when a release-like package is needed."
             echo ""

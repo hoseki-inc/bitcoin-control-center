@@ -21,6 +21,7 @@ export class TrezorService {
     TrezorConnect.init({
       lazyLoad: true,
       debug: true,
+      coreMode: 'popup',
       manifest: {
         email: 'support@hoseki.app',
         appName: 'Bitcoin Control Center',

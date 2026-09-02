@@ -9,6 +9,7 @@ const versionsDir = join(start9Dir, 'startos', 'versions')
 const indexPath = join(versionsDir, 'index.ts')
 
 const VERSION_RE = /^(\d+)\.(\d+)\.(\d+):(\d+)$/
+const RELEASE_NOTES_PLACEHOLDER_MARKER = 'STARTOS_RELEASE_NOTES_REQUIRED'
 
 function usage() {
   console.log(`Usage:
@@ -172,6 +173,15 @@ function validateVersionGraph() {
   const unreferencedFiles = versionFiles.filter((name) => !referenced.has(name))
   if (unreferencedFiles.length > 0) {
     throw new Error(`StartOS version files are not referenced by the graph: ${unreferencedFiles.join(', ')}.`)
+  }
+
+  const versionsWithPlaceholderNotes = referencedExportNames.filter((exportName) =>
+    readFileSync(join(versionsDir, `${exportName}.ts`), 'utf8').includes(RELEASE_NOTES_PLACEHOLDER_MARKER),
+  )
+  if (versionsWithPlaceholderNotes.length > 0 && process.env.STARTOS_ALLOW_RELEASE_NOTES_PLACEHOLDER !== '1') {
+    throw new Error(
+      `Replace the release-notes placeholder in ${versionsWithPlaceholderNotes.join(', ')}.ts before merging or building.`,
+    )
   }
 
   const versions = referencedExportNames.map((exportName) => {
