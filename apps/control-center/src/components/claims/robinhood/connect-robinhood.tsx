@@ -197,7 +197,7 @@ export function ConnectRobinhood(): JSX.Element {
                 Open{' '}
                 <Text
                   as="a"
-                  href="https://robinhood.com/account/crypto-api"
+                  href="https://robinhood.com/account/crypto"
                   target="_blank"
                   rel="noopener noreferrer"
                   color="neutral.900"
