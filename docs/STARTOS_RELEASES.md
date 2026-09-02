@@ -89,12 +89,9 @@ If the repository secret `STARTOS_DEV_KEY` is absent, the workflow creates an ep
 
 ### Version preparation
 
-Version changes belong in their own pull request. In GitHub, open **Actions**, choose **StartOS 1 - Prepare version**, and select **Run workflow** from the default branch. This is the workflow that displays the version dropdown. The form asks for:
+Version changes belong in their own pull request. In GitHub, open **Actions**, choose **StartOS 1 - Prepare version**, and select **Run workflow** from the default branch. The form asks only for a release type: `patch`, `minor`, `major`, or `revision`.
 
-- a release type: `patch`, `minor`, `major`, or `revision`;
-- release notes describing the user-visible changes.
-
-The workflow calculates the next version and exact StartOS tag, formats and validates the version graph, rejects existing tag or branch names, commits the generated version files to a release branch, and opens a pull request. It does not create a tag or package.
+The workflow calculates the next version and exact StartOS tag, rejects existing tag or branch names, and opens a pull request containing a generated version file. That file intentionally starts with a release-notes placeholder. The pull request's CI check remains failing until the placeholder is replaced, preventing unreviewed or flattened notes from reaching a package. The workflow does not create a tag or package.
 
 For example, starting from `0.2.1:0`:
 
@@ -105,7 +102,20 @@ For example, starting from `0.2.1:0`:
 | `major`    | `1.0.0:0`   | `v1.0.0_0`       |
 | `revision` | `0.2.1:1`   | `v0.2.1_1`       |
 
-Review and polish the release notes in the generated version file before merging. GitHub may require a maintainer to select **Approve workflows to run** before protected pull-request checks start on an automation-created pull request.
+In the generated pull request, open the new file under `start9/startos/versions/` from **Files changed**, select **Edit file**, and replace the placeholder with multiline release notes using this format:
+
+```ts
+releaseNotes: `Brief user-facing summary.
+
+- First change.
+- Second change.
+
+Any important compatibility note.`,
+```
+
+Commit that edit directly to the release branch. Keep a blank line before the list and put every bullet on its own line. The CI check will rerun and pass once the placeholder is gone and the version graph remains valid.
+
+The version file is the source of the notes displayed by StartOS and copied into the eventual GitHub Release. Editing only the pull-request description does not change the packaged notes. GitHub may require a maintainer to select **Approve workflows to run** before protected checks start on an automation-created pull request.
 
 The equivalent local commands remain available for maintenance and recovery:
 
