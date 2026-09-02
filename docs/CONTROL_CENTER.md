@@ -81,7 +81,7 @@ node start9/scripts/version.mjs tag
 
 Use the manually triggered **StartOS 2 - Build candidate** GitHub Actions workflow for private remote builds. It builds the exact committed version and never creates a version, tag, GitHub Release, or registry publication.
 
-Use **StartOS 1 - Prepare version** to select a version bump. It opens a version pull request and calculates the exact tag. Edit the generated version file in that pull request to replace its required release-notes placeholder with reviewed multiline notes; CI blocks the pull request until this is done. Once the pull request is merged and its candidate is tested, **StartOS 3 - Create draft release** rebuilds from the protected default branch, requires the permanent signing key, and creates the matching draft GitHub Release without asking anyone to type a tag. See [STARTOS_RELEASES.md](STARTOS_RELEASES.md) for the complete candidate and release model.
+Use **StartOS 1 - Prepare version** to select a version bump. It opens a version pull request and calculates the exact tag. Edit the generated version file in that pull request to replace its required release-notes placeholder with reviewed multiline notes; CI blocks the pull request until this is done. Once the pull request is merged and its candidate is tested, **StartOS 3 - Create draft release** rebuilds from the protected default branch and creates the matching draft GitHub Release without asking anyone to type a tag. It uses the permanent signing key when configured or a temporary clean-install key otherwise. See [STARTOS_RELEASES.md](STARTOS_RELEASES.md) for the complete candidate and release model.
 
 ## Build desktop installers
 
