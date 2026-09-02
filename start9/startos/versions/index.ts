@@ -8,8 +8,9 @@ import { v0_1_0_5 } from './v0_1_0_5'
 import { v0_2_0_0 } from './v0_2_0_0'
 import { v0_2_1_0 } from './v0_2_1_0'
 import { v0_2_2_0 } from './v0_2_2_0'
+import { v0_2_2_1 } from './v0_2_2_1'
 
 export const versionGraph = VersionGraph.of({
-  current: v0_2_2_0,
-  other: [v0_2_1_0, v0_2_0_0, v0_1_0_5, v0_1_0_4, v0_1_0_3, v0_1_0_2, v0_1_0_1, v0_1_0_0],
+  current: v0_2_2_1,
+  other: [v0_2_2_0, v0_2_1_0, v0_2_0_0, v0_1_0_5, v0_1_0_4, v0_1_0_3, v0_1_0_2, v0_1_0_1, v0_1_0_0],
 })
