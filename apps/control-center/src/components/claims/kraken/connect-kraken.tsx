@@ -169,7 +169,7 @@ export function ConnectKraken(): JSX.Element {
                 Go to{' '}
                 <Text
                   as="a"
-                  href="https://www.kraken.com/u/security/api"
+                  href="https://www.kraken.com/c/account-settings/api"
                   target="_blank"
                   rel="noopener noreferrer"
                   color="neutral.900"
