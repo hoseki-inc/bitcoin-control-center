@@ -6,7 +6,6 @@ import { type FastifyTRPCPluginOptions, fastifyTRPCPlugin } from '@trpc/server/a
 import Fastify, { type FastifyBaseLogger } from 'fastify'
 import pino from 'pino'
 import { createAppContext } from './context'
-import { registerStatementRoutes } from './modules/statements/routes'
 import type { TRPCContext } from './modules/trpc/init'
 import { type AppRouter, appRouter } from './modules/trpc/router'
 
@@ -121,7 +120,7 @@ function isUnsafeMethod(method: string): boolean {
 }
 
 function isProtectedRoute(url: string): boolean {
-  return url.startsWith('/trpc') || url.startsWith('/statements/')
+  return url.startsWith('/trpc')
 }
 
 export async function main(): Promise<SentinelServer> {
@@ -194,9 +193,6 @@ export async function main(): Promise<SentinelServer> {
     } satisfies FastifyTRPCPluginOptions<AppRouter>['trpcOptions'],
   })
 
-  // Statement PDF download endpoint (non-tRPC, streams PDF file)
-  await registerStatementRoutes(server, appCtx)
-
   // Serve Control Center static assets (when bundled in production / Docker)
   const publicDir = join(appCtx.env.APP_DIR, 'public')
   if (existsSync(publicDir)) {
@@ -208,7 +204,7 @@ export async function main(): Promise<SentinelServer> {
 
     // SPA fallback: non-API routes serve index.html
     server.setNotFoundHandler(async (request, reply) => {
-      if (request.url.startsWith('/trpc') || request.url.startsWith('/statements/')) {
+      if (request.url.startsWith('/trpc')) {
         return reply.status(404).send({ error: 'Not found' })
       }
       return reply.sendFile('index.html')
