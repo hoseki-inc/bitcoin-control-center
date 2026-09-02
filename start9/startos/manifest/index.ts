@@ -10,8 +10,8 @@ export const manifest = setupManifest({
   donationUrl: null,
   docsUrls: ['https://help.hoseki.app'],
   description: {
-    short: 'Self-hosted Bitcoin portfolio tracking with proof-of-reserves statements',
-    long: 'Bitcoin Control Center is a self-hosted Bitcoin portfolio tracker. Connect your hardware wallets and watch-only accounts, track balances over time, and generate cryptographically verified proof-of-reserves statements — all running locally on your Start9 server with no cloud dependency. Connects to your local electrs instance for on-chain data.',
+    short: 'Privacy-first Bitcoin accounting for your stack',
+    long: 'Bitcoin Control Center is privacy-first accounting for your stack. Connect hardware wallets, watch-only accounts, exchanges, and ETFs to track Bitcoin balances over time. Be your own bank with cryptographically verified proof-of-ownership statements. Self-custody data comes through an Electrum server you choose, preferably your own.',
   },
   volumes: ['main'],
   images: {
