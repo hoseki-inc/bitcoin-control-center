@@ -2,7 +2,7 @@ import { VersionInfo } from '@start9labs/start-sdk'
 
 export const v0_2_2_1 = VersionInfo.of({
   version: '0.2.2:1',
-  releaseNotes: 'This release improves wallet compatibility, StartOS reliability, security, and exchange setup guidance.
+  releaseNotes: `This release improves wallet compatibility, StartOS reliability, security, and exchange setup guidance.
 
 - Fixed blank screens during hardware-wallet verification and after completing claim verification.
 - Restored reliable Trezor connections using the popup flow.
@@ -15,6 +15,6 @@ export const v0_2_2_1 = VersionInfo.of({
 - Updated the StartOS description to reflect privacy-first Bitcoin accounting, supported account types, proof-of-ownership statements, and user-selected Electrum servers.
 - Added regression tests for restored StartOS routes and API error handling.
 
-No database migrations or data-model changes are required.',
+No database migrations or data-model changes are required.`,
   migrations: {},
 })
