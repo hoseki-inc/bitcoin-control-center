@@ -53,11 +53,11 @@ node start9/scripts/version.mjs assert-tag v0.2.1_0
 
 The workflows are numbered in the GitHub Actions sidebar because they have different jobs:
 
-| Goal                                         | Workflow                             | Version choice?                               | Result                                 |
-| -------------------------------------------- | ------------------------------------ | --------------------------------------------- | -------------------------------------- |
-| Choose the next version                      | **StartOS 1 - Prepare version**      | Yes: `patch`, `minor`, `major`, or `revision` | Opens a version pull request           |
-| Test what is already committed               | **StartOS 2 - Build candidate**      | No                                            | Produces a private sideload artifact   |
-| Prepare the approved version for publication | **StartOS 3 - Create draft release** | No                                            | Produces a signed draft GitHub Release |
+| Goal                           | Workflow                             | Version choice?                               | Result                                 |
+| ------------------------------ | ------------------------------------ | --------------------------------------------- | -------------------------------------- |
+| Choose the next version        | **StartOS 1 - Prepare version**      | Yes: `patch`, `minor`, `major`, or `revision` | Opens a version pull request           |
+| Test what is already committed | **StartOS 2 - Build candidate**      | No                                            | Produces a private sideload artifact   |
+| Create a downloadable release  | **StartOS 3 - Create draft release** | No                                            | Produces a signed draft GitHub Release |
 
 Running a candidate never changes the version. If the candidate reveals a fix that warrants a new version, merge the fix and then use **StartOS 1 - Prepare version** to choose the appropriate bump. After that version pull request is merged, run a new candidate from `main`.
 
@@ -85,7 +85,7 @@ Candidate runs do not change the version, create a tag, create a GitHub Release,
 hoseki-sentinel-v0.2.1_0-0123456789ab.s9pk
 ```
 
-If the repository secret `STARTOS_DEV_KEY` is absent, the workflow creates an ephemeral signing key. That is convenient for clean-install testing, but it must not be treated as a release artifact or used to test signer continuity. Configure the existing StartOS developer key as that secret before testing upgrades between remote builds. Never print, commit, or attach the key.
+If the repository secret `STARTOS_DEV_KEY` is absent, the workflow creates a temporary signing key. That is suitable for clean-install testing, but it must not be used to test signer continuity or upgrades. Configure a permanent StartOS developer key as that secret before testing upgrades between remote builds. Never print, commit, or attach the key.
 
 ### Version preparation
 
@@ -128,20 +128,20 @@ node start9/scripts/version.mjs bump revision --notes "Rebuild StartOS packaging
 
 Commit the version graph before producing any release candidate intended to have a clean package Git hash. `./start9/build.sh` still accepts the bump options for backwards compatibility, but routine local builds should omit them.
 
-### Signed draft GitHub Release
+### Downloadable draft GitHub Release
 
 After the version pull request is merged and its candidate is tested, open **Actions**, choose **StartOS 3 - Create draft release**, and run it from the default branch. There is no version or tag field. The workflow:
 
 1. derives the only valid tag from the committed version graph;
 2. rejects an existing tag or GitHub Release;
-3. requires the permanent `STARTOS_DEV_KEY` with no ephemeral fallback;
+3. uses the permanent `STARTOS_DEV_KEY` when configured, otherwise creates a temporary signing key;
 4. runs the complete verification suite and rebuilds from the protected default-branch commit;
 5. verifies the package ID, version, architectures, source commit, release notes, and checksum;
 6. creates an exact-tagged **draft** GitHub Release containing the signed `.s9pk` and `SHA256SUMS`.
 
-The release notes are read back from the built package, so the StartOS manifest and GitHub Release cannot silently diverge. Review the draft and checksum before publishing it. The workflow does not publish to a StartOS registry.
+The release notes are read back from the built package, so the StartOS manifest and GitHub Release cannot silently diverge. When a temporary key is used, the GitHub Release also displays a warning that the package is intended for clean installs and testing, not signer-continuous upgrades. Review the draft and checksum before publishing it. The workflow does not publish to a StartOS registry.
 
-The draft workflow will not run until the existing permanent StartOS developer signing key is stored as the `STARTOS_DEV_KEY` repository secret. Never generate a new release key if deployed packages must retain signer continuity.
+A permanent StartOS developer signing key is not required to create a downloadable draft release. Configure `STARTOS_DEV_KEY` before using these builds to test upgrades or before publishing to a StartOS registry. Once deployed packages rely on a permanent signer, preserve that key to retain signer continuity.
 
 ### StartOS registry publication (future)
 

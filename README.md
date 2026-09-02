@@ -392,7 +392,7 @@ The manually triggered **StartOS 2 - Build candidate** GitHub Actions workflow b
 
 The artifact uses the StartOS tag form plus the source commit so similarly versioned test builds remain distinguishable. GitHub retains it for 14 days.
 
-Use the separate **StartOS 1 - Prepare version** workflow to choose `patch`, `minor`, `major`, or `revision` from a dropdown and enter release notes. It calculates the next version and exact tag and opens a protected pull request. After that pull request is merged and tested, **StartOS 3 - Create draft release** derives the tag without manual entry, requires the permanent signing key, rebuilds the package, and creates a draft GitHub Release. Registry publication is intentionally not part of either workflow.
+Use the separate **StartOS 1 - Prepare version** workflow to choose `patch`, `minor`, `major`, or `revision` from a dropdown and enter release notes. It calculates the next version and exact tag and opens a protected pull request. After that pull request is merged and tested, **StartOS 3 - Create draft release** derives the tag without manual entry, rebuilds the package, and creates a draft GitHub Release. It uses the permanent signing key when configured or a temporary clean-install key otherwise. Registry publication is intentionally not part of either workflow.
 
 See [docs/STARTOS_RELEASES.md](docs/STARTOS_RELEASES.md) for the version rules, candidate signing behavior, workflow instructions, and the intentionally separate registry-publication design.
 

@@ -79,26 +79,24 @@ jobs:
             exit 1
           fi
 
-      - name: Confirm permanent signing key
-        shell: bash
-        env:
-          STARTOS_DEV_KEY: ${{ secrets.STARTOS_DEV_KEY }}
-        run: |
-          if [[ -z "$STARTOS_DEV_KEY" ]]; then
-            echo "::error::STARTOS_DEV_KEY is required for draft releases. Candidate-only ephemeral signing is not allowed."
-            exit 1
-          fi
-
       - name: Set up StartOS build environment
         uses: ./.github/actions/setup-startos
 
-      - name: Set up permanent signing key
+      - name: Set up release signing key
+        id: signing
         shell: bash
         env:
           STARTOS_DEV_KEY: ${{ secrets.STARTOS_DEV_KEY }}
         run: |
           mkdir -p ~/.startos .startos
-          printf '%s' "$STARTOS_DEV_KEY" > ~/.startos/id.key.pem
+          if [[ -n "$STARTOS_DEV_KEY" ]]; then
+            printf '%s' "$STARTOS_DEV_KEY" > ~/.startos/id.key.pem
+            echo "mode=permanent repository secret" >> "$GITHUB_OUTPUT"
+          else
+            start-cli init-key
+            echo "mode=temporary clean-install key" >> "$GITHUB_OUTPUT"
+            echo "::warning::STARTOS_DEV_KEY is not configured. This draft release uses a temporary signing key and is intended for clean-install testing, not signer-continuous upgrades or StartOS registry publication."
+          fi
           chmod 600 ~/.startos/id.key.pem
           cp ~/.startos/id.key.pem .startos/build.key.pem
           chmod 600 .startos/build.key.pem
@@ -113,6 +111,7 @@ jobs:
           EXPECTED_VERSION: ${{ steps.version.outputs.version }}
           EXPECTED_GIT_HASH: ${{ steps.version.outputs.source_sha }}
           TAG: ${{ steps.version.outputs.tag }}
+          SIGNING_MODE: ${{ steps.signing.outputs.mode }}
         run: |
           SOURCE_PACKAGE="start9/hoseki-sentinel.s9pk"
           test -f "$SOURCE_PACKAGE"
@@ -134,6 +133,16 @@ jobs:
           OUTPUT_PACKAGE="artifacts/hoseki-sentinel-${TAG}.s9pk"
           cp "$SOURCE_PACKAGE" "$OUTPUT_PACKAGE"
           printf '%s\n' "$RELEASE_NOTES" > artifacts/RELEASE_NOTES.md
+          if [[ "$SIGNING_MODE" == "temporary clean-install key" ]]; then
+            {
+              echo "> [!WARNING]"
+              echo "> This package uses a temporary signing key. It is intended for clean installs and testing, not signer-continuous upgrades or StartOS registry publication."
+              echo ""
+              cat artifacts/RELEASE_NOTES.md
+            } > artifacts/GITHUB_RELEASE_NOTES.md
+          else
+            cp artifacts/RELEASE_NOTES.md artifacts/GITHUB_RELEASE_NOTES.md
+          fi
           (
             cd artifacts
             sha256sum "hoseki-sentinel-${TAG}.s9pk" > SHA256SUMS
@@ -156,7 +165,7 @@ jobs:
             --latest=false \
             --target "$SOURCE_SHA" \
             --title "Bitcoin Control Center ${VERSION}" \
-            --notes-file artifacts/RELEASE_NOTES.md)"
+            --notes-file artifacts/GITHUB_RELEASE_NOTES.md)"
           echo "url=${RELEASE_URL}" >> "$GITHUB_OUTPUT"
 
       - name: Add release summary
@@ -166,6 +175,7 @@ jobs:
           TAG: ${{ steps.version.outputs.tag }}
           SHORT_SHA: ${{ steps.version.outputs.short_sha }}
           RELEASE_URL: ${{ steps.release.outputs.url }}
+          SIGNING_MODE: ${{ steps.signing.outputs.mode }}
         run: |
           {
             echo "## StartOS draft release created"
@@ -174,9 +184,13 @@ jobs:
             echo "- Exact tag: \`${TAG}\`"
             echo "- Source commit: \`${SHORT_SHA}\`"
             echo "- Architectures: \`x86_64\`, \`aarch64\`"
-            echo "- Signing: permanent repository secret"
+            echo "- Signing: ${SIGNING_MODE}"
             echo "- Registry publication: no"
             echo "- Draft release: ${RELEASE_URL}"
             echo ""
+            if [[ "$SIGNING_MODE" == "temporary clean-install key" ]]; then
+              echo "> This package is for clean installs and testing only. It does not provide signer continuity for upgrades."
+              echo ""
+            fi
             echo "Review the draft and its checksum before publishing it."
           } >> "$GITHUB_STEP_SUMMARY"
