@@ -49,14 +49,6 @@ interface CustomDateRangeInput {
   endDate: string
 }
 
-const PERIOD_LABELS: Record<PresetTimeRange, string> = {
-  '7d': '7d',
-  '30d': '30d',
-  '90d': '90d',
-  '1y': '1y',
-  all: 'all time',
-}
-
 function parseLocalDate(value: string): Date | null {
   const date = new Date(`${value}T00:00:00`)
   return isValid(date) && format(date, 'yyyy-MM-dd') === value ? date : null
@@ -457,7 +449,6 @@ export function DashboardPage(): JSX.Element {
 
   const isUp = periodChange === null || periodChange.gte(0)
   const changeColor = periodChange === null || periodChange.eq(0) ? 'neutral.400' : isUp ? 'success.600' : 'error.500'
-  const periodLabel = timeRange === 'custom' ? 'custom' : PERIOD_LABELS[timeRange]
   const availableHistoryStartDate =
     knownHistoryAvailableFrom === null ? null : parseLocalDate(knownHistoryAvailableFrom)
 
@@ -558,7 +549,6 @@ export function DashboardPage(): JSX.Element {
             <Box
               display="inline-flex"
               alignItems="center"
-              gap={1}
               mt={2}
               mb={8}
               px={2.5}
@@ -578,9 +568,6 @@ export function DashboardPage(): JSX.Element {
                       .mul(100)
                       .toFixed(1)}
                 %)
-              </Text>
-              <Text textStyle="text/sm" fontWeight="medium" color={changeColor} opacity={0.6} ml={0.5}>
-                {periodLabel}
               </Text>
             </Box>
           )}
