@@ -111,6 +111,22 @@ describe('addressToScripthash', () => {
 
 describe('ElectrumProvider', () => {
   describe('getBlocksTip', () => {
+    it('reads a historical block anchor for history-scan verification', async () => {
+      const client = mockElectrumClient({ getBlockHeader: vi.fn().mockReturnValue(Ok(GENESIS_HEADER_HEX)) })
+      const provider = new ElectrumProvider(Network.Mainnet, { logger: mockLogger, electrum: client })
+      const block = (await provider.getBlock(0)).unwrap()
+      expect(client.getBlockHeader).toHaveBeenCalledWith(0)
+      expect(block.height).toBe(0)
+      expect(block.hash).toBe('000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f')
+    })
+
+    it('propagates failures when reading a historical anchor', async () => {
+      const failure = new Error('Header unavailable')
+      const client = mockElectrumClient({ getBlockHeader: vi.fn().mockReturnValue(Err(failure)) })
+      const provider = new ElectrumProvider(Network.Mainnet, { logger: mockLogger, electrum: client })
+      expect((await provider.getBlock(0)).unwrapErr()).toBe(failure)
+    })
+
     it('should parse block header and return tip info', async () => {
       const headerNotification: HeaderNotification = {
         height: 0,
@@ -209,6 +225,30 @@ describe('ElectrumProvider', () => {
   })
 
   describe('getTransactionEntries', () => {
+    it('returns an error instead of certifying partial history when one address fails', async () => {
+      const failure = new Error('Electrum history unavailable')
+      const client = mockElectrumClient({
+        headersSubscribe: vi.fn().mockReturnValue(Ok({ height: 800_000, hex: GENESIS_HEADER_HEX })),
+        getHistory: vi
+          .fn()
+          .mockReturnValueOnce(Ok([{ tx_hash: '1'.repeat(64), height: 700_000 }]))
+          .mockReturnValueOnce(Err(failure)),
+      })
+      const provider = new ElectrumProvider(Network.Mainnet, { logger: mockLogger, electrum: client })
+      const results = []
+      for await (const result of provider.getTransactionEntries(
+        new IndexMap<Address, number | null>([
+          [Wallets.legacyAddress, null],
+          [Wallets.segwitAddress, null],
+        ]),
+      )) {
+        results.push(result)
+      }
+      expect(results).toHaveLength(1)
+      expect(results[0]?.unwrapErr()).toBe(failure)
+      expect(client.getTransaction).not.toHaveBeenCalled()
+    })
+
     it('should return transaction entries for addresses', async () => {
       const address = Wallets.segwitAddress
       const externalFundingTx = createRawTx({ outputs: [{ address: Wallets.legacyAddress, value: 100_000 }] })

@@ -318,6 +318,12 @@ const controlCenterRouter = t.router({
           manualAccountIds: z.array(z.string()).optional(),
           etfAccountIds: z.array(z.string()).optional(),
           timezone: z.string().default('UTC'),
+          customDateRange: z
+            .object({
+              startDate: z.string(),
+              endDate: z.string(),
+            })
+            .optional(),
         })
         .optional(),
     )
@@ -334,9 +340,13 @@ const controlCenterRouter = t.router({
         manualAccountIds: input?.manualAccountIds,
         etfAccountIds: input?.etfAccountIds,
         timezone: timezone.unwrap(),
+        customDateRange: input?.customDateRange,
       })
       if (result.isErr()) {
-        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: result.unwrapErr().message })
+        throw new TRPCError({
+          code: input?.customDateRange ? 'BAD_REQUEST' : 'INTERNAL_SERVER_ERROR',
+          message: result.unwrapErr().message,
+        })
       }
       return result.unwrap()
     }),

@@ -63,10 +63,10 @@ echo "==> StartOS package version: $CURRENT_VERSION"
 
 echo "==> Building api-sentinel..."
 cd "$REPO_ROOT"
-pnpm --filter api-sentinel build
+corepack pnpm --filter api-sentinel build
 
 echo "==> Building Control Center web app..."
-pnpm --filter control-center build
+corepack pnpm --filter control-center build
 
 echo "==> Packing s9pk (multi-arch)..."
 cd "$SCRIPT_DIR"

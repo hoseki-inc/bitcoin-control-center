@@ -1,5 +1,24 @@
-import { Box, Button, Flex, Grid, Heading, Stack, Text, useBreakpointValue } from '@chakra-ui/react'
-import { Panel, Spinner } from '@hoseki/packages/ui/design-system'
+import {
+  Box,
+  Button,
+  Flex,
+  FormControl,
+  FormLabel,
+  Grid,
+  Heading,
+  Popover,
+  PopoverArrow,
+  PopoverBody,
+  PopoverContent,
+  PopoverTrigger,
+  Portal,
+  Stack,
+  Text,
+  useBreakpointValue,
+  useDisclosure,
+} from '@chakra-ui/react'
+import { DateInput, Panel, Spinner } from '@hoseki/packages/ui/design-system'
+import { format, isAfter, isBefore, startOfDay, subDays } from 'date-fns'
 import Decimal from 'decimal.js'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
@@ -17,14 +36,46 @@ import { useGetBalancesPerClaimIds } from '../../lib/balances'
 import { trpc } from '../../trpc'
 import { getBrowserTimezone } from '../../utils/timezone'
 
-type TimeRange = '7d' | '30d' | '90d' | '1y' | 'all'
+type PresetTimeRange = '7d' | '30d' | '90d' | '1y' | 'all'
+type TimeRange = PresetTimeRange | 'custom'
 
-const PERIOD_LABELS: Record<TimeRange, string> = {
-  '7d': '7d',
-  '30d': '30d',
-  '90d': '90d',
-  '1y': '1y',
-  all: 'all time',
+interface CustomDateRangeDraft {
+  startDate: Date | null
+  endDate: Date | null
+}
+
+interface CustomDateRangeInput {
+  startDate: string
+  endDate: string
+}
+
+const BITCOIN_GENESIS_DATE = new Date(2009, 0, 3)
+
+function createDefaultCustomDateRange(now: Date): CustomDateRangeDraft {
+  const today = startOfDay(now)
+  return { startDate: subDays(today, 30), endDate: today }
+}
+
+function validateCustomDateRange(range: CustomDateRangeDraft, now: Date): string | null {
+  if (range.startDate === null || range.endDate === null) return 'Choose both a start date and an end date.'
+
+  if (isBefore(range.startDate, BITCOIN_GENESIS_DATE)) return 'Start date cannot be before Bitcoin genesis.'
+  if (isAfter(range.startDate, range.endDate)) return 'Start date must be on or before end date.'
+  if (isAfter(range.endDate, startOfDay(now))) return 'End date cannot be in the future.'
+  return null
+}
+
+function toCustomDateRangeInput(range: CustomDateRangeDraft): CustomDateRangeInput | null {
+  if (range.startDate === null || range.endDate === null) return null
+  return { startDate: format(range.startDate, 'yyyy-MM-dd'), endDate: format(range.endDate, 'yyyy-MM-dd') }
+}
+
+function formatCustomDateRangeLabel(range: CustomDateRangeDraft): string {
+  if (range.startDate === null || range.endDate === null) return 'custom'
+  if (format(range.startDate, 'yyyy') === format(range.endDate, 'yyyy')) {
+    return `${format(range.startDate, 'MMM d')} – ${format(range.endDate, 'MMM d, yyyy')}`
+  }
+  return `${format(range.startDate, 'PP')} – ${format(range.endDate, 'PP')}`
 }
 
 function formatBtc(satoshis: string | Decimal | unknown): string {
@@ -48,6 +99,10 @@ function formatUsd(btcAmount: number, btcPrice: number): string {
 export function DashboardPage(): JSX.Element {
   useAutoRefreshExchanges()
   const [timeRange, setTimeRange] = useState<TimeRange>('1y')
+  const [customDateRange, setCustomDateRange] = useState<CustomDateRangeDraft>({
+    startDate: null,
+    endDate: null,
+  })
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [recentlySyncedAccountIds, setRecentlySyncedAccountIds] = useState<Set<string>>(new Set())
   const hasRecordedSnapshot = useRef(false)
@@ -57,6 +112,7 @@ export function DashboardPage(): JSX.Element {
 
   const navigate = useNavigate()
   const userTimezone = useMemo(() => getBrowserTimezone(), [])
+  const today = new Date()
   const isShowingAll = selected.size === 0
   const isSmallScreen = useBreakpointValue({ base: true, xl: false }) ?? true
   const [userCompact, setUserCompact] = useState<boolean>(() => {
@@ -106,22 +162,33 @@ export function DashboardPage(): JSX.Element {
     [etfAccounts, selected],
   )
 
+  const customDateRangeInput = toCustomDateRangeInput(customDateRange)
+  const rangeQueryInput =
+    timeRange === 'custom'
+      ? { timeRange: '1y' as const, customDateRange: customDateRangeInput ?? undefined }
+      : { timeRange }
+  const allRangeQueryInput = timeRange === 'custom' && !isShowingAll ? { timeRange: '1y' as const } : rangeQueryInput
+
   const {
     data: allData,
     isLoading: allLoading,
+    isFetching: allFetching,
+    isPreviousData: allIsPreviousData,
     error: allError,
     refetch: refetchAllData,
   } = trpc.portalProve.controlCenter.getData.useQuery(
-    { timeRange, timezone: userTimezone },
-    { staleTime: 5 * 60 * 1000 },
+    { ...allRangeQueryInput, timezone: userTimezone },
+    { staleTime: 5 * 60 * 1000, keepPreviousData: true },
   )
   const {
     data: filteredData,
     isFetching: filteredFetching,
+    isPreviousData: filteredIsPreviousData,
+    error: filteredError,
     refetch: refetchFilteredData,
   } = trpc.portalProve.controlCenter.getData.useQuery(
     {
-      timeRange,
+      ...rangeQueryInput,
       timezone: userTimezone,
       claimIds: selectedClaimIds,
       exchangeAccountIds: selectedExchangeIds,
@@ -133,24 +200,42 @@ export function DashboardPage(): JSX.Element {
 
   // Keep showing previous data while filtered query loads to avoid chart flash
   const data = isShowingAll ? allData : filteredData ?? allData
-  const isChartFetching = !isShowingAll && filteredFetching
-  const historySyncingAccountIds = allData?.historySyncingAccountIds ?? filteredData?.historySyncingAccountIds ?? []
-  const historySyncedAccountIds = allData?.historySyncedAccountIds ?? filteredData?.historySyncedAccountIds ?? []
+  const activeData = isShowingAll ? allData : filteredData
+  const activeFetching = isShowingAll ? allFetching : filteredFetching
+  const activeIsPreviousData = isShowingAll ? allIsPreviousData : filteredIsPreviousData
+  const activeError = isShowingAll ? allError : filteredError
+  const isChartFetching = activeFetching && (activeIsPreviousData || activeData === undefined)
+  const allHistorySyncingAccountIds = allData?.historySyncingAccountIds ?? []
+  const filteredHistorySyncingAccountIds = filteredData?.historySyncingAccountIds ?? []
+  const historySyncingAccountIds = isShowingAll ? allHistorySyncingAccountIds : filteredHistorySyncingAccountIds
+  const historySyncedAccountIds = isShowingAll
+    ? allData?.historySyncedAccountIds ?? []
+    : filteredData?.historySyncedAccountIds ?? []
   const historySyncingAccountIdsKey = historySyncingAccountIds.join('|')
   const historySyncedAccountIdsKey = historySyncedAccountIds.join('|')
   const recentlySyncedAccountIdList = useMemo(() => Array.from(recentlySyncedAccountIds), [recentlySyncedAccountIds])
   const balancesQuery = useGetBalancesPerClaimIds({ claimIds, enabled: claimIds.length > 0 })
 
   useEffect(() => {
-    if (historySyncingAccountIds.length === 0) return
+    if (allHistorySyncingAccountIds.length === 0 && filteredHistorySyncingAccountIds.length === 0) return
 
     const intervalId = window.setInterval(() => {
-      void refetchAllData()
-      if (!isShowingAll) void refetchFilteredData()
+      // Slow Electrum/exchange requests may outlast the polling interval.
+      // Reuse an in-flight request rather than repeatedly cancelling it.
+      if (allHistorySyncingAccountIds.length > 0) void refetchAllData({ cancelRefetch: false })
+      if (!isShowingAll && filteredHistorySyncingAccountIds.length > 0) {
+        void refetchFilteredData({ cancelRefetch: false })
+      }
     }, 10_000)
 
     return () => window.clearInterval(intervalId)
-  }, [historySyncingAccountIds.length, isShowingAll, refetchAllData, refetchFilteredData])
+  }, [
+    allHistorySyncingAccountIds.length,
+    filteredHistorySyncingAccountIds.length,
+    isShowingAll,
+    refetchAllData,
+    refetchFilteredData,
+  ])
 
   useEffect(() => {
     const currentSyncingIds = new Set(historySyncingAccountIdsKey === '' ? [] : historySyncingAccountIdsKey.split('|'))
@@ -203,7 +288,7 @@ export function DashboardPage(): JSX.Element {
 
   useEffect(() => {
     shownRecentlySyncedAccountIds.current.clear()
-  }, [timeRange])
+  }, [customDateRangeInput?.endDate, customDateRangeInput?.startDate, timeRange])
 
   useEffect(() => {
     const timeouts = recentlySyncedTimeouts.current
@@ -313,10 +398,35 @@ export function DashboardPage(): JSX.Element {
         return sum + (acc?.balance ? Number(acc.balance) : 0)
       }, 0)
 
-  const historicalData = useMemo(
-    () => withCurrentBalancePoint(data?.historicalData ?? [], displayBalanceSats, new Date(), userTimezone),
-    [data?.historicalData, displayBalanceSats, userTimezone],
-  )
+  const isFullHistoryRange = timeRange === 'custom' || timeRange === 'all'
+  const historyRangeError =
+    isFullHistoryRange && activeError !== null && (activeData === undefined || activeIsPreviousData)
+      ? activeError
+      : null
+  // Offline queries can be paused rather than fetching. Wait for this range's
+  // own data instead of exposing previous-range or all-account fallback data.
+  const isFullHistoryPending =
+    isFullHistoryRange &&
+    historyRangeError === null &&
+    (activeIsPreviousData || activeData === undefined || historySyncingAccountIds.length > 0)
+  const customEndsToday = timeRange === 'custom' && customDateRangeInput?.endDate === format(new Date(), 'yyyy-MM-dd')
+  const historicalData = useMemo(() => {
+    const history = data?.historicalData ?? []
+    if (historyRangeError !== null || isFullHistoryPending) return []
+    if (timeRange === 'custom') {
+      if (history.length === 0) return []
+      return customEndsToday ? withCurrentBalancePoint(history, displayBalanceSats, new Date(), userTimezone) : history
+    }
+    return withCurrentBalancePoint(history, displayBalanceSats, new Date(), userTimezone)
+  }, [
+    customEndsToday,
+    data?.historicalData,
+    displayBalanceSats,
+    historyRangeError,
+    isFullHistoryPending,
+    timeRange,
+    userTimezone,
+  ])
 
   const periodChange = useMemo(() => {
     if (!historicalData.length) return null
@@ -341,7 +451,7 @@ export function DashboardPage(): JSX.Element {
     return <Spinner fullPage size="xl" />
   }
 
-  if (allError) {
+  if (allError && allData === undefined && isShowingAll && !isFullHistoryRange) {
     return (
       <Stack py={8} gap={8}>
         <Panel title="Error" p={6}>
@@ -368,8 +478,8 @@ export function DashboardPage(): JSX.Element {
 
   const isUp = periodChange === null || periodChange.gte(0)
   const changeColor = periodChange === null || periodChange.eq(0) ? 'neutral.400' : isUp ? 'success.600' : 'error.500'
-
-  if (!hasVerifiedClaims && !hasHistoricalData) {
+  // A failed range request cannot establish that the portfolio is empty.
+  if (!hasVerifiedClaims && !hasHistoricalData && historyRangeError === null) {
     return <EmptyState />
   }
 
@@ -404,7 +514,7 @@ export function DashboardPage(): JSX.Element {
             totalUsd={totalUsd}
             compact={compactSidebar}
             onToggleCompact={isSmallScreen ? undefined : toggleCompact}
-            historySyncingAccountIds={historySyncingAccountIds}
+            historySyncingAccountIds={allHistorySyncingAccountIds}
             recentlySyncedAccountIds={recentlySyncedAccountIdList}
           />
         </Box>
@@ -466,7 +576,6 @@ export function DashboardPage(): JSX.Element {
             <Box
               display="inline-flex"
               alignItems="center"
-              gap={1}
               mt={2}
               mb={8}
               px={2.5}
@@ -487,22 +596,28 @@ export function DashboardPage(): JSX.Element {
                       .toFixed(1)}
                 %)
               </Text>
-              <Text textStyle="text/sm" fontWeight="medium" color={changeColor} opacity={0.6} ml={0.5}>
-                {PERIOD_LABELS[timeRange]}
-              </Text>
             </Box>
           )}
 
           {/* Accumulation chart */}
           <Box mb={8}>
-            <Flex align="center" justify="space-between" mb={4}>
+            <Flex align="center" justify="space-between" mb={4} gap={3} flexWrap="wrap">
               <Flex align="center" gap={2}>
                 <Text textStyle="overline/sm" fontWeight="bold" color="neutral.400">
                   Accumulation
                 </Text>
-                {isChartFetching && <Spinner size="xs" color="neutral.300" />}
+                {activeFetching && <Spinner size="xs" color="neutral.300" />}
               </Flex>
-              <TimeRangeSelector value={timeRange} onChange={setTimeRange} />
+              <TimeRangeSelector
+                value={timeRange}
+                customDateRange={customDateRange}
+                today={today}
+                onPresetChange={setTimeRange}
+                onCustomApply={(range) => {
+                  setCustomDateRange(range)
+                  setTimeRange('custom')
+                }}
+              />
             </Flex>
 
             <Box
@@ -515,8 +630,18 @@ export function DashboardPage(): JSX.Element {
               position="relative"
               overflow="hidden"
             >
-              <AccumulationChart data={historicalData} hasActivity={hasBalance} isUp={isUp} timezone={userTimezone} />
-              {isChartFetching && (
+              {historyRangeError !== null ? (
+                <HistoryRangeError
+                  height="220px"
+                  message={historyRangeError.message}
+                  onRetry={() => void (isShowingAll ? refetchAllData() : refetchFilteredData())}
+                />
+              ) : isFullHistoryPending ? (
+                <HistoryRangeLoading height="220px" />
+              ) : (
+                <AccumulationChart data={historicalData} hasActivity={hasBalance} isUp={isUp} timezone={userTimezone} />
+              )}
+              {isChartFetching && !isFullHistoryPending && (
                 <Box
                   position="absolute"
                   inset={0}
@@ -543,7 +668,7 @@ export function DashboardPage(): JSX.Element {
               <Text textStyle="overline/sm" fontWeight="bold" color="neutral.400">
                 Monthly Net Change
               </Text>
-              {isChartFetching && <Spinner size="xs" color="neutral.300" />}
+              {activeFetching && <Spinner size="xs" color="neutral.300" />}
             </Flex>
             <Box
               bg="shades.0"
@@ -556,8 +681,18 @@ export function DashboardPage(): JSX.Element {
               position="relative"
               overflow="hidden"
             >
-              <MonthlyNetChangeChart data={historicalData} timezone={userTimezone} />
-              {isChartFetching && (
+              {historyRangeError !== null ? (
+                <HistoryRangeError
+                  height="120px"
+                  message={historyRangeError.message}
+                  onRetry={() => void (isShowingAll ? refetchAllData() : refetchFilteredData())}
+                />
+              ) : isFullHistoryPending ? (
+                <HistoryRangeLoading height="120px" />
+              ) : (
+                <MonthlyNetChangeChart data={historicalData} timezone={userTimezone} />
+              )}
+              {isChartFetching && !isFullHistoryPending && (
                 <Box
                   position="absolute"
                   inset={0}
@@ -581,6 +716,41 @@ export function DashboardPage(): JSX.Element {
           </Grid>
         </Box>
       </Box>
+    </Flex>
+  )
+}
+
+function HistoryRangeLoading({ height }: { height: string }): JSX.Element {
+  return (
+    <Flex h={height} align="center" justify="center" direction="column" gap={2}>
+      <Spinner size="sm" color="neutral.400" />
+      <Text textStyle="text/sm" color="neutral.500">
+        Preparing history for this date range
+      </Text>
+    </Flex>
+  )
+}
+
+function HistoryRangeError({
+  height,
+  message,
+  onRetry,
+}: {
+  height: string
+  message: string
+  onRetry: () => void
+}): JSX.Element {
+  return (
+    <Flex h={height} align="center" justify="center" direction="column" gap={3} px={4} textAlign="center">
+      <Text textStyle="text/sm" color="error.500">
+        Couldn&apos;t load this date range: {message}
+      </Text>
+      <Text textStyle="label/xs" color="neutral.500">
+        Try again, or choose another range.
+      </Text>
+      <Button size="sm" variant="outline" onClick={onRetry}>
+        Try again
+      </Button>
     </Flex>
   )
 }
@@ -609,11 +779,23 @@ function SyncIndicator({ historySyncingCount }: { historySyncingCount: number })
 
 interface TimeRangeSelectorProps {
   value: TimeRange
-  onChange: (value: TimeRange) => void
+  customDateRange: CustomDateRangeDraft
+  today: Date
+  onPresetChange: (value: PresetTimeRange) => void
+  onCustomApply: (range: CustomDateRangeDraft) => void
 }
 
-function TimeRangeSelector({ value, onChange }: TimeRangeSelectorProps): JSX.Element {
-  const options: { value: TimeRange; label: string }[] = [
+function TimeRangeSelector({
+  value,
+  customDateRange,
+  today,
+  onPresetChange,
+  onCustomApply,
+}: TimeRangeSelectorProps): JSX.Element {
+  const { isOpen, onOpen, onClose } = useDisclosure()
+  const [draft, setDraft] = useState<CustomDateRangeDraft>(customDateRange)
+  const draftError = validateCustomDateRange(draft, today)
+  const options: { value: PresetTimeRange; label: string }[] = [
     { value: '7d', label: '7D' },
     { value: '30d', label: '30D' },
     { value: '90d', label: '90D' },
@@ -621,29 +803,127 @@ function TimeRangeSelector({ value, onChange }: TimeRangeSelectorProps): JSX.Ele
     { value: 'all', label: 'All' },
   ]
 
+  const handleCustomClick = (): void => {
+    const hasAppliedRange = customDateRange.startDate !== null && customDateRange.endDate !== null
+    setDraft(hasAppliedRange ? customDateRange : createDefaultCustomDateRange(new Date()))
+  }
+
+  const handleApply = (): void => {
+    if (draftError !== null) return
+    onCustomApply(draft)
+    onClose()
+  }
+
   return (
-    <Flex bg="neutral.50" borderRadius="8px" p="3px" gap="2px">
-      {options.map((option) => (
-        <Button
-          key={option.value}
-          onClick={() => onChange(option.value)}
-          size="xs"
-          px={3}
-          py={1}
-          borderRadius="6px"
-          border="none"
-          bg={value === option.value ? 'neutral.900' : 'transparent'}
-          color={value === option.value ? 'shades.0' : 'neutral.400'}
-          textStyle="label/xs"
-          fontWeight="semibold"
-          _hover={{
-            bg: value === option.value ? 'neutral.900' : 'neutral.100',
-          }}
-        >
-          {option.label}
-        </Button>
-      ))}
-    </Flex>
+    <Stack align="flex-end" gap={1}>
+      <Flex bg="neutral.50" borderRadius="8px" p="3px" gap="2px" flexWrap="wrap">
+        {options.map((option) => (
+          <Button
+            key={option.value}
+            onClick={() => {
+              onClose()
+              onPresetChange(option.value)
+            }}
+            size="xs"
+            px={3}
+            py={1}
+            borderRadius="6px"
+            border="none"
+            bg={value === option.value ? 'neutral.900' : 'transparent'}
+            color={value === option.value ? 'shades.0' : 'neutral.400'}
+            textStyle="label/xs"
+            fontWeight="semibold"
+            _hover={{
+              bg: value === option.value ? 'neutral.900' : 'neutral.100',
+            }}
+          >
+            {option.label}
+          </Button>
+        ))}
+
+        <Popover isOpen={isOpen} onOpen={onOpen} onClose={onClose} placement="bottom-end" isLazy>
+          <PopoverTrigger>
+            <Button
+              onClick={handleCustomClick}
+              size="xs"
+              px={3}
+              py={1}
+              borderRadius="6px"
+              border="none"
+              bg={value === 'custom' ? 'neutral.900' : 'transparent'}
+              color={value === 'custom' ? 'shades.0' : 'neutral.400'}
+              textStyle="label/xs"
+              fontWeight="semibold"
+              _hover={{ bg: value === 'custom' ? 'neutral.900' : 'neutral.100' }}
+            >
+              Custom
+            </Button>
+          </PopoverTrigger>
+          <Portal>
+            <PopoverContent
+              w="min(360px, calc(100vw - 32px))"
+              bg="shades.0"
+              borderColor="neutral.200"
+              borderRadius="12px"
+              boxShadow="xl"
+            >
+              <PopoverArrow bg="shades.0" />
+              <PopoverBody p={4}>
+                <Stack gap={4}>
+                  <Text textStyle="text/sm" fontWeight="semibold" color="neutral.900">
+                    Choose a date range
+                  </Text>
+                  <Stack direction={{ base: 'column', sm: 'row' }} gap={3}>
+                    <FormControl isInvalid={draftError !== null}>
+                      <FormLabel htmlFor="portfolio-range-start" textStyle="label/xs" color="neutral.600" mb={1.5}>
+                        Start date
+                      </FormLabel>
+                      <DateInput
+                        id="portfolio-range-start"
+                        value={draft.startDate}
+                        min={BITCOIN_GENESIS_DATE}
+                        max={today}
+                        onChange={(startDate) => setDraft((current) => ({ ...current, startDate }))}
+                        size="sm"
+                      />
+                    </FormControl>
+                    <FormControl isInvalid={draftError !== null}>
+                      <FormLabel htmlFor="portfolio-range-end" textStyle="label/xs" color="neutral.600" mb={1.5}>
+                        End date
+                      </FormLabel>
+                      <DateInput
+                        id="portfolio-range-end"
+                        value={draft.endDate}
+                        min={draft.startDate ?? BITCOIN_GENESIS_DATE}
+                        max={today}
+                        onChange={(endDate) => setDraft((current) => ({ ...current, endDate }))}
+                        size="sm"
+                      />
+                    </FormControl>
+                  </Stack>
+                  <Text textStyle="label/xs" color={draftError === null ? 'neutral.500' : 'error.500'}>
+                    {draftError ?? 'Older self-custody history may take longer to prepare.'}
+                  </Text>
+                  <Flex justify="flex-end" gap={2}>
+                    <Button size="sm" variant="ghost" onClick={onClose}>
+                      Cancel
+                    </Button>
+                    <Button size="sm" onClick={handleApply} isDisabled={draftError !== null}>
+                      Apply
+                    </Button>
+                  </Flex>
+                </Stack>
+              </PopoverBody>
+            </PopoverContent>
+          </Portal>
+        </Popover>
+      </Flex>
+      {value === 'custom' && customDateRange.startDate !== null && customDateRange.endDate !== null && (
+        <Text textStyle="label/xs" color="neutral.400" pr={1}>
+          {formatCustomDateRangeLabel(customDateRange)}
+        </Text>
+      )}
+    </Stack>
   )
 }
 

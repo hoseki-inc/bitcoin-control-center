@@ -12,16 +12,21 @@ import type { EtfService } from '../etf/service'
 import type { ExchangeService } from '../exchange/service'
 import type { ManualService } from '../manual/service'
 import type { PriceService } from '../price/service'
+import {
+  type BalanceDataPoint,
+  type BalanceEntry,
+  type CustomDateRange,
+  type TimeRange,
+  buildHistoricalData,
+  daysBetween,
+  resolveHistoryRange,
+} from './history-range'
+
+export type { BalanceDataPoint, CustomDateRange, TimeRange } from './history-range'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-export type TimeRange = '7d' | '30d' | '90d' | '1y' | 'all'
 const DEFAULT_TIMEZONE: Timezone = 'UTC'
-
-export interface BalanceDataPoint {
-  timestamp: string
-  totalBalance: string
-}
 
 export interface ControlCenterData {
   currentTotalBalance: string
@@ -33,11 +38,6 @@ export interface ControlCenterData {
   etfAccountCount: number
   historySyncingAccountIds: string[]
   historySyncedAccountIds: string[]
-}
-
-interface BalanceEntry {
-  timestamp: Date
-  value: bigint
 }
 
 interface BalanceSnapshotRow {
@@ -104,10 +104,17 @@ export class ControlCenterService {
       manualAccountIds?: string[]
       etfAccountIds?: string[]
       timezone?: Timezone
+      customDateRange?: CustomDateRange
     }): Promise<Result<ControlCenterData, Error>> => {
       const timeRange = args.timeRange ?? '30d'
       const timezone = args.timezone ?? DEFAULT_TIMEZONE
-      this.logger.info({ timeRange, timezone }, 'Getting control center data')
+      const now = new Date()
+      const historyRangeResult = resolveHistoryRange(timeRange, args.customDateRange, timezone, now)
+      if (historyRangeResult.isErr()) return Err(historyRangeResult.unwrapErr())
+
+      const historyRange = historyRangeResult.unwrap()
+      const shouldSyncFullHistory = args.customDateRange !== undefined || timeRange === 'all'
+      this.logger.info({ timeRange, customDateRange: args.customDateRange, timezone }, 'Getting control center data')
 
       // ─── Fetch on-chain accounts ────────────────────────────────
       let accountRows = this.getAccountRows(args.accountIds)
@@ -117,18 +124,14 @@ export class ControlCenterService {
       for (const row of accountRows) {
         const accountResult = Account.fromDescriptor(row.descriptor)
         if (accountResult.isErr()) {
-          this.logger.warn(
-            { descriptor: row.descriptor, err: accountResult.unwrapErr() },
-            'Skipping invalid descriptor',
-          )
+          this.logger.warn({ accountId: row.id }, 'Skipping invalid descriptor')
           continue
         }
         accounts.add(accountResult.unwrap())
       }
 
       // ─── Fetch on-chain balances ────────────────────────────────
-      let onchainBalance = 0n
-      const onchainEntries: BalanceEntry[] = []
+      const balancesByAccountId = new Map<string, bigint>()
 
       if (accounts.size > 0) {
         const balancesResult = await this.onchainProvider.getConfirmedAccountBalances(accounts)
@@ -137,8 +140,20 @@ export class ControlCenterService {
           this.logger.warn({ err: balancesResult.unwrapErr() }, 'Failed to fetch on-chain balances')
           for (const row of accountRows) {
             const latestSnapshotBalance = this.getLatestAccountSnapshotBalance(row.id) ?? 0n
-            onchainBalance += latestSnapshotBalance
-            onchainEntries.push(...this.getAccountSnapshotEntries(row.id))
+            balancesByAccountId.set(row.id, latestSnapshotBalance)
+
+            if (shouldSyncFullHistory) {
+              const accountResult = Account.fromDescriptor(row.descriptor)
+              if (accountResult.isOk()) {
+                this.queueAccountHistoryBackfill(
+                  row.id,
+                  accountResult.unwrap(),
+                  latestSnapshotBalance,
+                  historyRange.start,
+                  true,
+                )
+              }
+            }
           }
         } else {
           const accountBalances = new Map<string, bigint>()
@@ -154,18 +169,10 @@ export class ControlCenterService {
 
             const account = accountResult.unwrap()
             const accountBalance = accountBalances.get(account.toString()) ?? 0n
-            onchainBalance += accountBalance
-            this.queueAccountHistoryBackfill(row.id, account, accountBalance, timeRange)
-
-            onchainEntries.push(...this.getAccountSnapshotEntries(row.id))
+            balancesByAccountId.set(row.id, accountBalance)
+            this.queueAccountHistoryBackfill(row.id, account, accountBalance, historyRange.start, shouldSyncFullHistory)
           }
         }
-      }
-
-      // ─── Include archived account snapshots ─────────────────────
-      if (!args.accountIds) {
-        const archivedEntries = this.getArchivedAccountSnapshotEntries()
-        onchainEntries.push(...archivedEntries)
       }
 
       // ─── Fetch exchange data ────────────────────────────────────
@@ -312,6 +319,15 @@ export class ControlCenterService {
         this.logger.warn({ err: priceResult.unwrapErr() }, 'Failed to fetch BTC price')
       }
 
+      // Inspect completion before reading snapshots. There must be no await
+      // between the final snapshot reads and response construction: a backfill
+      // must never be reported complete alongside history read before it finished.
+      const historyStatus = await this.getAccountHistoryStatus(accountRows, historyRange.start, shouldSyncFullHistory)
+      accountRows = accountRows.filter(({ id }) => this.isAccountActive(id))
+      const onchainEntries = accountRows.flatMap(({ id }) => this.getAccountSnapshotEntries(id))
+      if (!args.accountIds) onchainEntries.push(...this.getArchivedAccountSnapshotEntries())
+      const onchainBalance = accountRows.reduce((sum, { id }) => sum + (balancesByAccountId.get(id) ?? 0n), 0n)
+
       // ─── Compute totals ─────────────────────────────────────────
       const currentTotalBalance = onchainBalance + exchangeBalance + manualBalance + etfBalance
       this.logger.info(
@@ -341,11 +357,9 @@ export class ControlCenterService {
         'Building historical data',
       )
 
-      const historicalData = this.buildHistoricalData(allEntries, currentTotalBalance, timeRange, timezone)
+      const historicalData = buildHistoricalData(allEntries, currentTotalBalance, historyRange, timezone)
 
       this.logger.info({ historicalDataPoints: historicalData.length }, 'Historical data built')
-
-      const historyStatus = await this.getAccountHistoryStatus(accountRows, timeRange)
 
       return Ok({
         currentTotalBalance: currentTotalBalance.toString(),
@@ -382,7 +396,7 @@ export class ControlCenterService {
     if (accountResult.isErr()) return Err(new Error('Failed to preserve account history: invalid descriptor'))
 
     const account = accountResult.unwrap()
-    const preservedBalance = await this.ensureAccountHistorySnapshots(accountId, account, undefined, 'all', true)
+    const preservedBalance = await this.ensureAccountHistorySnapshots(accountId, account, undefined, new Date(0), true)
     if (preservedBalance === null) return Err(new Error('Failed to preserve full account history'))
 
     const archivedAt = new Date().toISOString()
@@ -572,7 +586,8 @@ export class ControlCenterService {
     accountId: string,
     account: Account,
     currentBalance: bigint,
-    timeRange: TimeRange,
+    rangeStart: Date,
+    fullHistory: boolean,
   ): void {
     if (!this.isAccountActive(accountId)) return
     const generation = this.getAccountHistoryBackfillGeneration(accountId)
@@ -593,11 +608,12 @@ export class ControlCenterService {
     }
     this.accountHistoryBackfillsInFlight.add(accountId)
 
-    void this.ensureAccountHistorySnapshots(accountId, account, currentBalance, timeRange, false, generation)
+    void this.ensureAccountHistorySnapshots(accountId, account, currentBalance, rangeStart, fullHistory, generation)
       .then((preservedBalance) => {
         if (!this.canContinueAccountHistoryBackfill(accountId, generation)) return
         if (preservedBalance !== null) {
-          this.clearAccountHistoryBackfillState(accountId)
+          this.accountHistoryBackfillsPending.delete(accountId)
+          this.clearAccountHistoryBackfillRetry(accountId)
           return
         }
 
@@ -653,7 +669,8 @@ export class ControlCenterService {
 
   private async getAccountHistoryStatus(
     accountRows: Array<{ id: string; descriptor: string; network: string }>,
-    timeRange: TimeRange,
+    rangeStart: Date,
+    fullHistory: boolean,
   ): Promise<AccountHistoryStatus> {
     if (accountRows.length === 0) {
       return { historySyncingAccountIds: [], historySyncedAccountIds: [] }
@@ -664,21 +681,25 @@ export class ControlCenterService {
       this.logger.warn({ err: tipResult.unwrapErr() }, 'Failed to inspect chain tip for history completion status')
       return {
         historySyncingAccountIds: accountRows
-          .filter((row) => this.isAccountHistoryBackfillPending(row.id))
+          .filter((row) => this.isAccountActive(row.id) && this.isAccountHistoryBackfillPending(row.id))
           .map((row) => row.id),
         historySyncedAccountIds: [],
       }
     }
 
     const tip = tipResult.unwrap()
-    const requestedRange = historySyncRangeForTimeRange(timeRange, tip)
+    const requestedRange = fullHistory
+      ? { fromBlockHeight: 0, toBlockHeight: tip.height }
+      : historySyncRangeForStartDate(rangeStart, tip)
     const historySyncingAccountIds: string[] = []
     const historySyncedAccountIds: string[] = []
 
     for (const row of accountRows) {
+      if (!this.isAccountActive(row.id)) continue
       const missingRanges = this.getMissingAccountHistorySyncRanges(row.id, requestedRange)
       if (missingRanges.length === 0) {
-        this.clearAccountHistoryBackfillState(row.id)
+        // Completion of a narrower request says nothing about a wider job's
+        // retry state. Only the job itself may clear its cooldown and failures.
         historySyncedAccountIds.push(row.id)
         continue
       }
@@ -694,7 +715,7 @@ export class ControlCenterService {
     accountId: string,
     account: Account,
     currentBalance: bigint | undefined,
-    timeRange: TimeRange,
+    rangeStart: Date,
     fullHistory = false,
     generation = this.getAccountHistoryBackfillGeneration(accountId),
   ): Promise<bigint | null> {
@@ -706,15 +727,16 @@ export class ControlCenterService {
     }
     if (!this.canContinueAccountHistoryBackfill(accountId, generation)) return null
 
-    const tip = tipResult.unwrap()
-    const requestedRange = fullHistory
+    let tip = tipResult.unwrap()
+    let requestedRange = fullHistory
       ? { fromBlockHeight: 0, toBlockHeight: tip.height }
-      : historySyncRangeForTimeRange(timeRange, tip)
-    const missingRanges = this.getMissingAccountHistorySyncRanges(accountId, requestedRange)
+      : historySyncRangeForStartDate(rangeStart, tip)
+    let missingRanges = this.getMissingAccountHistorySyncRanges(accountId, requestedRange)
+    // The dashboard already fetched this balance. Only archival (which passes
+    // no balance) needs to validate it when the requested history is cached.
+    if (missingRanges.length === 0 && currentBalance !== undefined) return currentBalance
     const backfillFromBlockHeight =
-      missingRanges.length > 0
-        ? Math.min(...missingRanges.map((range) => range.fromBlockHeight))
-        : requestedRange.fromBlockHeight
+      missingRanges.length > 0 ? Math.min(...missingRanges.map((range) => range.fromBlockHeight)) : tip.height + 1
     const stopBeforeBlockHeight = Math.max(0, backfillFromBlockHeight - 1)
     let transactionEntries: TransactionEntry[] = []
 
@@ -734,44 +756,57 @@ export class ControlCenterService {
       transactionEntries = entriesResult.unwrap()
     }
 
-    let reconstructionBalance = currentBalance
-    if (fullHistory) {
-      const accounts = new IndexSet<Account>()
-      accounts.add(account)
+    let reconstructionBalance: bigint
+    const accounts = new IndexSet([account])
+    for (;;) {
       const balanceResult = await this.onchainProvider.getConfirmedAccountBalances(accounts)
       if (balanceResult.isErr()) {
-        this.logger.warn({ accountId, err: balanceResult.unwrapErr() }, 'Failed to fetch archive boundary balance')
+        this.logger.warn({ accountId, err: balanceResult.unwrapErr() }, 'Failed to fetch history boundary balance')
         return null
       }
       if (!this.canContinueAccountHistoryBackfill(accountId, generation)) return null
 
       const verifiedTipResult = await this.onchainProvider.getBlocksTip()
       if (verifiedTipResult.isErr()) {
-        this.logger.warn({ accountId, err: verifiedTipResult.unwrapErr() }, 'Failed to verify archive chain tip')
+        this.logger.warn({ accountId, err: verifiedTipResult.unwrapErr() }, 'Failed to verify history chain tip')
         return null
       }
       if (!this.canContinueAccountHistoryBackfill(accountId, generation)) return null
 
       const verifiedTip = verifiedTipResult.unwrap()
-      if (verifiedTip.height !== tip.height || verifiedTip.hash !== tip.hash) {
-        this.logger.warn(
-          { accountId, capturedTip: tip, verifiedTip },
-          'Chain tip changed while preserving account history',
-        )
-        return null
+      if (verifiedTip.height === tip.height && verifiedTip.hash === tip.hash) {
+        reconstructionBalance = balanceResult.unwrap().get(account) ?? 0n
+        break
       }
-      reconstructionBalance = balanceResult.unwrap().get(account) ?? 0n
+
+      // A normal new block must not throw away a long history scan. Verify its
+      // anchor is still on the chain, retain entries through that block, and
+      // fetch only the new tail. Reorganizations still require a fresh scan.
+      if (verifiedTip.height <= tip.height) return null
+      const anchorResult = await this.onchainProvider.getBlock(tip.height)
+      if (anchorResult.isErr() || anchorResult.unwrap().hash !== tip.hash) return null
+      if (!this.canContinueAccountHistoryBackfill(accountId, generation)) return null
+
+      const tailResult = await this.getTransactionEntriesByAccountSinceBlock(account, tip.height)
+      if (tailResult.isErr()) return null
+      if (!this.canContinueAccountHistoryBackfill(accountId, generation)) return null
+      transactionEntries = [
+        ...transactionEntries.filter((entry) => entry.blockHeight !== null && entry.blockHeight <= tip.height),
+        ...tailResult.unwrap().filter((entry) => entry.blockHeight !== null && entry.blockHeight > tip.height),
+      ]
+      tip = verifiedTip
+      requestedRange = { ...requestedRange, toBlockHeight: tip.height }
+      missingRanges = this.getMissingAccountHistorySyncRanges(accountId, requestedRange)
     }
 
-    if (reconstructionBalance === undefined) return null
-    if (missingRanges.length === 0) {
-      this.clearAccountHistoryBackfillState(accountId)
-      return reconstructionBalance
-    }
+    if (missingRanges.length === 0) return reconstructionBalance
 
     const deltas = transactionDeltasFromEntries(transactionEntries, stopBeforeBlockHeight, requestedRange.toBlockHeight)
     const startBalance = reconstructionBalance - deltas.reduce((sum, entry) => sum + entry.value, 0n)
-    const rangeStartTime = estimateTimestampForBlockHeight(backfillFromBlockHeight, tip)
+    // A full reconstruction must also correct old snapshots before the
+    // estimated block-zero date (average block times can drift by months).
+    const rangeStartTime =
+      backfillFromBlockHeight === 0 ? new Date(0) : estimateTimestampForBlockHeight(backfillFromBlockHeight, tip)
     const currentSnapshotTime = new Date()
     let runningBalance = startBalance
 
@@ -809,7 +844,6 @@ export class ControlCenterService {
       'Backfilled self-custody balance snapshots',
     )
 
-    this.clearAccountHistoryBackfillState(accountId)
     return reconstructionBalance
   }
 
@@ -965,61 +999,6 @@ export class ControlCenterService {
       )
   }
 
-  private buildHistoricalData(
-    allEntries: BalanceEntry[],
-    currentTotalBalance: bigint,
-    timeRange: TimeRange,
-    timezone: Timezone,
-  ): BalanceDataPoint[] {
-    const daysBack = timeRangeToDays(timeRange)
-    const now = new Date()
-    const dayBoundaries = getZonedDayBoundaries(now, daysBack, timezone)
-    const startDate = dayBoundaries[0] ?? getZonedStartOfDay(now, timezone)
-
-    // Keep storage granular, but return one end-of-day value per day for charts.
-    if (allEntries.length > 0) {
-      const historicalData: BalanceDataPoint[] = []
-      let entryIndex = 0
-      let runningBalance = 0n
-
-      while (entryIndex < allEntries.length) {
-        const entry = allEntries[entryIndex]
-        if (!entry || entry.timestamp > startDate) break
-        runningBalance += entry.value
-        entryIndex++
-      }
-
-      const todayStart = getZonedStartOfDay(now, timezone)
-      for (const date of dayBoundaries) {
-        const pointTime = date.getTime() === todayStart.getTime() ? now : getZonedEndOfDay(date, timezone)
-
-        while (entryIndex < allEntries.length) {
-          const entry = allEntries[entryIndex]
-          if (!entry || entry.timestamp > pointTime) break
-          runningBalance += entry.value
-          entryIndex++
-        }
-
-        appendHistoricalPoint(historicalData, pointTime, runningBalance)
-      }
-
-      const latestPoint = historicalData.at(-1)
-      if (latestPoint) latestPoint.totalBalance = currentTotalBalance.toString()
-
-      return historicalData
-    }
-
-    // Fallback: show a flat line at the current balance while history is unavailable.
-    if (currentTotalBalance > 0n) {
-      return dayBoundaries.map((date) => ({
-        timestamp: date.toISOString(),
-        totalBalance: currentTotalBalance.toString(),
-      }))
-    }
-
-    return []
-  }
-
   /**
    * Record balance snapshots for ALL accounts (on-chain + exchange).
    * Called on startup and periodically to build chart data.
@@ -1100,151 +1079,20 @@ export class ControlCenterService {
   })
 }
 
-function appendHistoricalPoint(points: BalanceDataPoint[], timestamp: Date, balance: bigint): void {
-  const isoTimestamp = timestamp.toISOString()
-  const lastPoint = points[points.length - 1]
-
-  if (lastPoint?.timestamp === isoTimestamp) {
-    lastPoint.totalBalance = balance.toString()
-    return
-  }
-
-  points.push({
-    timestamp: isoTimestamp,
-    totalBalance: balance.toString(),
-  })
-}
-
 function accountDescriptorNetworkKey(descriptor: string, network: string): string {
   return JSON.stringify([descriptor, network])
 }
 
-function timeRangeToDays(timeRange: TimeRange): number {
-  switch (timeRange) {
-    case '7d':
-      return 7
-    case '30d':
-      return 30
-    case '90d':
-      return 90
-    case '1y':
-      return 365
-    case 'all':
-      return 1825
-  }
-}
-
-interface ZonedDateParts {
-  year: number
-  month: number
-  day: number
-}
-
-interface ZonedDateTimeParts extends ZonedDateParts {
-  hour: number
-  minute: number
-  second: number
-}
-
-function getZonedDayBoundaries(now: Date, daysBack: number, timezone: Timezone): Date[] {
-  const today = getZonedDateParts(now, timezone)
-  const start = addDaysToZonedDateParts(today, -daysBack)
-  const dayBoundaries: Date[] = []
-
-  for (let dayOffset = 0; dayOffset <= daysBack; dayOffset += 1) {
-    const day = addDaysToZonedDateParts(start, dayOffset)
-    dayBoundaries.push(zonedTimeToUtcDate({ ...day, hour: 0, minute: 0, second: 0 }, 0, timezone))
-  }
-
-  return dayBoundaries
-}
-
-function getZonedStartOfDay(date: Date, timezone: Timezone): Date {
-  const parts = getZonedDateParts(date, timezone)
-  return zonedTimeToUtcDate({ ...parts, hour: 0, minute: 0, second: 0 }, 0, timezone)
-}
-
-function getZonedEndOfDay(dayStart: Date, timezone: Timezone): Date {
-  const day = getZonedDateParts(dayStart, timezone)
-  const nextDay = addDaysToZonedDateParts(day, 1)
-  return new Date(zonedTimeToUtcDate({ ...nextDay, hour: 0, minute: 0, second: 0 }, 0, timezone).getTime() - 1)
-}
-
-function getZonedDateParts(date: Date, timezone: Timezone): ZonedDateParts {
-  const parts = getZonedDateTimeParts(date, timezone)
-  return { year: parts.year, month: parts.month, day: parts.day }
-}
-
-function getZonedDateTimeParts(date: Date, timezone: Timezone): ZonedDateTimeParts {
-  const formattedParts = new Intl.DateTimeFormat('en-US', {
-    timeZone: timezone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hourCycle: 'h23',
-  }).formatToParts(date)
-
-  const value = (type: Intl.DateTimeFormatPartTypes): number => {
-    const part = formattedParts.find((p) => p.type === type)
-    return Number(part?.value)
-  }
-
-  return {
-    year: value('year'),
-    month: value('month'),
-    day: value('day'),
-    hour: value('hour'),
-    minute: value('minute'),
-    second: value('second'),
-  }
-}
-
-function addDaysToZonedDateParts(parts: ZonedDateParts, days: number): ZonedDateParts {
-  const date = new Date(Date.UTC(parts.year, parts.month - 1, parts.day + days))
-  return {
-    year: date.getUTCFullYear(),
-    month: date.getUTCMonth() + 1,
-    day: date.getUTCDate(),
-  }
-}
-
-function zonedTimeToUtcDate(parts: ZonedDateTimeParts, millisecond: number, timezone: Timezone): Date {
-  const utcGuessMs = Date.UTC(
-    parts.year,
-    parts.month - 1,
-    parts.day,
-    parts.hour,
-    parts.minute,
-    parts.second,
-    millisecond,
-  )
-  const firstOffsetMs = getTimezoneOffsetMs(new Date(utcGuessMs), timezone)
-  const firstUtcMs = utcGuessMs - firstOffsetMs
-  const secondOffsetMs = getTimezoneOffsetMs(new Date(firstUtcMs), timezone)
-
-  return new Date(utcGuessMs - secondOffsetMs)
-}
-
-function getTimezoneOffsetMs(date: Date, timezone: Timezone): number {
-  const parts = getZonedDateTimeParts(date, timezone)
-  const zonedAsUtcMs = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second)
-  const dateWithoutMillisecondsMs = Math.floor(date.getTime() / 1000) * 1000
-
-  return zonedAsUtcMs - dateWithoutMillisecondsMs
-}
-
 const ESTIMATED_BLOCK_INTERVAL_MS = 10 * 60 * 1000
 const HISTORY_SYNC_BLOCK_CUSHION = 288
-const CURRENT_ACCOUNT_HISTORY_SYNC_VERSION = 4
+// Earlier versions could certify a partial Electrum response as complete.
+const CURRENT_ACCOUNT_HISTORY_SYNC_VERSION = 5
 const HISTORY_BACKFILL_RETRY_INITIAL_DELAY_MS = 5 * 1000
 const HISTORY_BACKFILL_RETRY_MAX_DELAY_MS = 60 * 1000
 const HISTORY_BACKFILL_RETRY_JITTER_FRACTION = 0.2
 
-function historySyncRangeForTimeRange(timeRange: TimeRange, tip: Block): BlockRange {
-  const daysBack = timeRangeToDays(timeRange)
+function historySyncRangeForStartDate(rangeStart: Date, tip: Block): BlockRange {
+  const daysBack = daysBetween(rangeStart, tip.timestamp)
   const estimatedBlocksBack = daysBack * 144 + HISTORY_SYNC_BLOCK_CUSHION
 
   return {

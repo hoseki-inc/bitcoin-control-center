@@ -51,6 +51,14 @@ export class ElectrumProvider extends OnchainBitcoinProvider {
     })
   }
 
+  public getBlock(height: number): AsyncResult<Block, Error> {
+    const self = this
+    return tryBlockAsync(async function* () {
+      const header = yield* self.deps.electrum.getBlockHeader(height).try()
+      return parseBlockHeader(height, header)
+    })
+  }
+
   public areAddressesUsed = asyncFn(async (addresses: IndexSet<Address>): Promise<Result<IndexSet<Address>, Error>> => {
     this.deps.logger.debug({ total: addresses.size }, 'Checking if addresses are used via Electrum')
 
@@ -210,19 +218,16 @@ export class ElectrumProvider extends OnchainBitcoinProvider {
 
       const scripthashRes = addressToScripthash(address)
       if (scripthashRes.isErr()) {
-        this.deps.logger.warn(
-          { address, err: scripthashRes.unwrapErr() },
-          'Failed to compute scripthash, skipping address',
-        )
-        continue
+        yield Err(scripthashRes.unwrapErr())
+        return
       }
       const scripthash = scripthashRes.unwrap()
 
       // Get transaction history for this address
       const historyRes = await this.deps.electrum.getHistory(scripthash)
       if (historyRes.isErr()) {
-        this.deps.logger.warn({ address, err: historyRes.unwrapErr() }, 'Failed to fetch history, skipping address')
-        continue
+        yield Err(historyRes.unwrapErr())
+        return
       }
       const history = historyRes.unwrap()
 
