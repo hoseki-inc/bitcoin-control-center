@@ -197,6 +197,56 @@ describe('custom portfolio range UI', () => {
     expect(options.enabled).toBe(true)
   })
 
+  it.each(['Select holding', 'Clear selection'])('keeps the dashboard visible while %s loads', async (action) => {
+    if (action === 'Clear selection') await click('Select holding')
+    const loadedChart = chartData()
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, cacheTime: 0 } } })
+    let complete!: (value: typeof mocks.base) => void
+    const pending = new Promise<typeof mocks.base>((resolve) => {
+      complete = resolve
+    })
+    const options = { queryKey: ['portfolio', '90d', action], queryFn: () => pending, keepPreviousData: true }
+    const observer = new QueryObserver(client, { ...options, enabled: false })
+    const unsubscribe = observer.subscribe(() => undefined)
+    try {
+      observer.setOptions({ ...options, enabled: true })
+      expect(observer.getCurrentResult()).toMatchObject({ data: undefined, isLoading: true, isFetching: true })
+      const defaultQuery = mocks.useQuery.getMockImplementation()!
+      mocks.useQuery.mockImplementation((input, queryOptions) =>
+        (input.claimIds !== undefined) === (action === 'Select holding')
+          ? observer.getCurrentResult()
+          : defaultQuery(input, queryOptions),
+      )
+      await click(action)
+      expect(container.textContent).toContain('Portfolio')
+      expect(container.querySelectorAll('[data-chart]')).toHaveLength(2)
+      expect(chartData()).toEqual(loadedChart)
+      const completedData = {
+        ...mocks.base,
+        historicalData: [
+          { timestamp: '2026-08-05T00:00:00.000Z', totalBalance: '50' },
+          { timestamp: '2026-09-05T12:00:00.000Z', totalBalance: '100' },
+        ],
+      }
+      complete(completedData)
+      await vi.waitFor(() => expect(observer.getCurrentResult().data).toEqual(completedData))
+      await render()
+      expect(chartData()).toEqual(completedData.historicalData)
+    } finally {
+      unsubscribe()
+      client.clear()
+    }
+  })
+
+  it('still shows the first-load spinner when neither query has data', async () => {
+    const defaultQuery = mocks.useQuery.getMockImplementation()!
+    mocks.useQuery.mockImplementation((input) => ({ ...defaultQuery(input), data: undefined, isLoading: true }))
+    await render()
+    expect(container.textContent).not.toContain('Portfolio')
+    expect(container.querySelectorAll('[data-chart]')).toHaveLength(0)
+    expect(container.querySelector('[data-spinner]')).not.toBeNull()
+  })
+
   it('only applies the draft dates on Apply, not while opening or editing the selector', async () => {
     await click('Custom')
     await changeDate('portfolio-range-start', '2020-01-01')

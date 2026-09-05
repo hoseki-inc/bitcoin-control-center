@@ -75,9 +75,7 @@ export class ControlCenterService {
   private readonly manualService: ManualService
   private readonly etfService: EtfService
   private readonly priceService: PriceService
-  private readonly accountHistoryBackfillsPending = new Set<string>()
   private readonly accountHistoryBackfillsInFlight = new Set<string>()
-  private readonly accountHistoryBackfillsActive = new Set<string>()
   private readonly accountHistoryBackfillCooldownUntil = new Map<string, number>()
   private readonly accountHistoryBackfillFailureCounts = new Map<string, number>()
   private readonly accountHistoryBackfillGenerations = new Map<string, number>()
@@ -595,11 +593,6 @@ export class ControlCenterService {
   ): void {
     if (!this.isAccountActive(accountId)) return
     const generation = this.getAccountHistoryBackfillGeneration(accountId)
-    const shouldShowPending = !this.hasCurrentVersionAccountHistorySync(accountId)
-    if (shouldShowPending) {
-      this.accountHistoryBackfillsPending.add(accountId)
-    }
-
     const cooldownUntil = this.accountHistoryBackfillCooldownUntil.get(accountId)
     if (cooldownUntil !== undefined) {
       if (cooldownUntil > Date.now()) return
@@ -607,9 +600,6 @@ export class ControlCenterService {
     }
     if (this.accountHistoryBackfillsInFlight.has(accountId)) return
 
-    if (shouldShowPending) {
-      this.accountHistoryBackfillsActive.add(accountId)
-    }
     this.accountHistoryBackfillsInFlight.add(accountId)
 
     void this.ensureAccountHistorySnapshots(
@@ -624,7 +614,6 @@ export class ControlCenterService {
       .then((preservedBalance) => {
         if (!this.canContinueAccountHistoryBackfill(accountId, generation)) return
         if (preservedBalance !== null) {
-          this.accountHistoryBackfillsPending.delete(accountId)
           this.clearAccountHistoryBackfillRetry(accountId)
           return
         }
@@ -640,14 +629,11 @@ export class ControlCenterService {
       .finally(() => {
         if (this.getAccountHistoryBackfillGeneration(accountId) !== generation) return
         this.accountHistoryBackfillsInFlight.delete(accountId)
-        this.accountHistoryBackfillsActive.delete(accountId)
       })
   }
 
   private clearAccountHistoryBackfillState(accountId: string): void {
-    this.accountHistoryBackfillsPending.delete(accountId)
     this.accountHistoryBackfillsInFlight.delete(accountId)
-    this.accountHistoryBackfillsActive.delete(accountId)
     this.clearAccountHistoryBackfillRetry(accountId)
   }
 
@@ -727,7 +713,6 @@ export class ControlCenterService {
         continue
       }
 
-      this.accountHistoryBackfillsPending.add(row.id)
       historySyncingAccountIds.push(row.id)
       // A certified prefix with only a missing tail can remain visible while
       // catching up. This does not mark the newer blocks as complete.
@@ -779,9 +764,6 @@ export class ControlCenterService {
     let transactionEntries: TransactionEntry[] = []
 
     if (missingRanges.length > 0) {
-      this.accountHistoryBackfillsPending.add(accountId)
-      this.accountHistoryBackfillsActive.add(accountId)
-
       const entriesResult = await this.getTransactionEntriesByAccountSinceBlock(account, stopBeforeBlockHeight)
       if (entriesResult.isErr()) {
         this.logger.warn(

@@ -201,7 +201,7 @@ export function DashboardPage(): JSX.Element {
   )
 
   // Keep showing previous data while filtered query loads to avoid chart flash
-  const data = isShowingAll ? allData : filteredData ?? allData
+  const data = isShowingAll ? allData ?? filteredData : filteredData ?? allData
   const activeData = isShowingAll ? allData : filteredData
   const activeLoading = isShowingAll ? allLoading : filteredLoading
   const activeFetching = isShowingAll ? allFetching : filteredFetching
@@ -478,7 +478,7 @@ export function DashboardPage(): JSX.Element {
   }, [isShowingAll, claimIds, selectedClaimIds, navigate])
 
   const isInitialLoading =
-    (activeLoading && !isFullHistoryRange) ||
+    (activeLoading && !isFullHistoryRange && allData === undefined && filteredData === undefined) ||
     claimsQuery.isLoading ||
     exchangeAccountsQuery.isLoading ||
     manualAccountsQuery.isLoading ||
