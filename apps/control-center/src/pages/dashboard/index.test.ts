@@ -17,6 +17,8 @@ const mocks = vi.hoisted(() => {
     historicalData: [{ timestamp: '2026-08-05T00:00:00.000Z', totalBalance: '100' }],
     historySyncingAccountIds: [] as string[],
     historySyncedAccountIds: [] as string[],
+    historyRefreshingAccountIds: [] as string[],
+    historyFailedAccountIds: [] as string[],
   }
   return {
     base,
@@ -26,6 +28,7 @@ const mocks = vi.hoisted(() => {
     error: null as Error | null,
     refetch: vi.fn(),
     useQuery: vi.fn(),
+    sidebar: vi.fn(),
     recordSnapshot: { mutate: vi.fn() },
     claims: [] as Array<{ id: string; displayName: string }>,
     holdings: [{ id: 'holding', displayName: 'Test holding', balance: '100' }],
@@ -72,8 +75,16 @@ vi.mock('@hoseki/packages/ui/design-system', async () => {
 vi.mock('../../components/dashboard-charts/accounts-sidebar', async () => {
   const { createElement } = await import('react')
   return {
-    AccountsSidebar: ({ onToggle }: { onToggle: (id: string) => void }) =>
-      createElement('button', { onClick: () => onToggle('holding') }, 'Select holding'),
+    AccountsSidebar: (props: { onToggle: (id: string) => void; onClearAll: () => void }) => {
+      mocks.sidebar(props)
+      return createElement(
+        'div',
+        null,
+        createElement('button', { onClick: () => props.onToggle('holding') }, 'Select holding'),
+        createElement('button', { onClick: () => props.onToggle('wallet') }, 'Select wallet'),
+        createElement('button', { onClick: props.onClearAll }, 'Clear selection'),
+      )
+    },
   }
 })
 vi.mock('../../components/dashboard-charts/accumulation-chart', async () => {
@@ -135,6 +146,7 @@ beforeEach(async () => {
   mocks.holdings = [{ id: 'holding', displayName: 'Test holding', balance: '100' }]
   mocks.rangeData = { ...mocks.base, historicalData: [], historySyncingAccountIds: [] }
   mocks.refetch.mockReset()
+  mocks.sidebar.mockClear()
   mocks.useQuery
     .mockReset()
     .mockImplementation((input: { customDateRange?: unknown; claimIds?: unknown; timeRange: string }) => {
@@ -163,6 +175,78 @@ afterEach(async () => {
 })
 
 describe('custom portfolio range UI', () => {
+  it('defaults to 90 days and still allows every other preset', async () => {
+    expect(mocks.useQuery.mock.calls.at(-2)![0].timeRange).toBe('90d')
+    for (const [label, timeRange] of [
+      ['7D', '7d'],
+      ['30D', '30d'],
+      ['1Y', '1y'],
+      ['All', 'all'],
+      ['90D', '90d'],
+    ] as const) {
+      await click(label)
+      const [input, options] = mocks.useQuery.mock.calls.at(-2)!
+      expect(input.timeRange).toBe(timeRange)
+      expect(input.customDateRange).toBeUndefined()
+      expect(options.enabled).toBe(true)
+    }
+    await click('Select holding')
+    const [input, options] = mocks.useQuery.mock.calls.at(-1)!
+    expect(input.timeRange).toBe('90d')
+    expect(input.manualAccountIds).toEqual(['holding'])
+    expect(options.enabled).toBe(true)
+  })
+
+  it.each(['Select holding', 'Clear selection'])('keeps the dashboard visible while %s loads', async (action) => {
+    if (action === 'Clear selection') await click('Select holding')
+    const loadedChart = chartData()
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, cacheTime: 0 } } })
+    let complete!: (value: typeof mocks.base) => void
+    const pending = new Promise<typeof mocks.base>((resolve) => {
+      complete = resolve
+    })
+    const options = { queryKey: ['portfolio', '90d', action], queryFn: () => pending, keepPreviousData: true }
+    const observer = new QueryObserver(client, { ...options, enabled: false })
+    const unsubscribe = observer.subscribe(() => undefined)
+    try {
+      observer.setOptions({ ...options, enabled: true })
+      expect(observer.getCurrentResult()).toMatchObject({ data: undefined, isLoading: true, isFetching: true })
+      const defaultQuery = mocks.useQuery.getMockImplementation()!
+      mocks.useQuery.mockImplementation((input, queryOptions) =>
+        (input.claimIds !== undefined) === (action === 'Select holding')
+          ? observer.getCurrentResult()
+          : defaultQuery(input, queryOptions),
+      )
+      await click(action)
+      expect(container.textContent).toContain('Portfolio')
+      expect(container.querySelectorAll('[data-chart]')).toHaveLength(2)
+      expect(chartData()).toEqual(loadedChart)
+      const completedData = {
+        ...mocks.base,
+        historicalData: [
+          { timestamp: '2026-08-05T00:00:00.000Z', totalBalance: '50' },
+          { timestamp: '2026-09-05T12:00:00.000Z', totalBalance: '100' },
+        ],
+      }
+      complete(completedData)
+      await vi.waitFor(() => expect(observer.getCurrentResult().data).toEqual(completedData))
+      await render()
+      expect(chartData()).toEqual(completedData.historicalData)
+    } finally {
+      unsubscribe()
+      client.clear()
+    }
+  })
+
+  it('still shows the first-load spinner when neither query has data', async () => {
+    const defaultQuery = mocks.useQuery.getMockImplementation()!
+    mocks.useQuery.mockImplementation((input) => ({ ...defaultQuery(input), data: undefined, isLoading: true }))
+    await render()
+    expect(container.textContent).not.toContain('Portfolio')
+    expect(container.querySelectorAll('[data-chart]')).toHaveLength(0)
+    expect(container.querySelector('[data-spinner]')).not.toBeNull()
+  })
+
   it('only applies the draft dates on Apply, not while opening or editing the selector', async () => {
     await click('Custom')
     await changeDate('portfolio-range-start', '2020-01-01')
@@ -177,12 +261,15 @@ describe('custom portfolio range UI', () => {
     ).toBe(true)
   })
 
-  it('does not manufacture a current-balance point or change pill for empty custom history ending today', async () => {
-    await click('Custom')
-    await click('Apply')
-    expect(chartData()).toEqual([])
-    expect(container.textContent).not.toContain('BTC (+0.0%)')
-  })
+  it.each(['Custom', 'All'])(
+    'does not manufacture a current-balance point or change pill for empty %s history',
+    async (range) => {
+      await click(range)
+      if (range === 'Custom') await click('Apply')
+      expect(chartData()).toEqual([])
+      expect(container.textContent).not.toContain('BTC (+0.0%)')
+    },
+  )
 
   it('does not append today to a historical range', async () => {
     mocks.rangeData.historicalData = [
@@ -210,9 +297,10 @@ describe('custom portfolio range UI', () => {
     await click('Select holding')
     await click('Custom')
     await click('Apply')
-    const [allInput] = mocks.useQuery.mock.calls.at(-2)!
+    const [allInput, allOptions] = mocks.useQuery.mock.calls.at(-2)!
     const [selectedInput, options] = mocks.useQuery.mock.calls.at(-1)!
-    expect(allInput.customDateRange).toBeUndefined()
+    expect(allInput.customDateRange).toEqual(selectedInput.customDateRange)
+    expect(allOptions.enabled).toBe(false)
     expect(selectedInput.manualAccountIds).toEqual(['holding'])
     expect(selectedInput.customDateRange).toBeDefined()
     expect(options.enabled).toBe(true)
@@ -237,12 +325,12 @@ describe('custom portfolio range UI', () => {
     async ({ selection, hasPreviousData }) => {
       const client = new QueryClient({ defaultOptions: { queries: { retry: false, cacheTime: 0 } } })
       client.mount()
-      if (hasPreviousData) client.setQueryData(['portfolio', '1y'], mocks.base)
+      if (hasPreviousData) client.setQueryData(['portfolio', '90d'], mocks.base)
       onlineManager.setOnline(false)
       const options = { staleTime: 300_000, keepPreviousData: true }
       const observer = new QueryObserver(client, {
         ...options,
-        queryKey: ['portfolio', '1y'],
+        queryKey: ['portfolio', '90d'],
         queryFn: async () => mocks.base,
       })
       const unsubscribe = observer.subscribe(() => undefined)
@@ -301,6 +389,174 @@ describe('custom portfolio range UI', () => {
     expect(container.querySelectorAll('[data-chart]')).toHaveLength(2)
   })
 
+  it.each(['All', 'Custom'])('keeps an already certified %s chart visible during tail updates', async (range) => {
+    mocks.rangeData = { ...mocks.base, historySyncedAccountIds: ['wallet'] }
+    await click(range)
+    if (range === 'Custom') await click('Apply')
+    const loadedChart = chartData()
+    mocks.rangeData = {
+      ...mocks.rangeData,
+      // A partial refresh must not replace the certified chart with new values.
+      historicalData: [{ timestamp: '2026-09-05T12:00:00.000Z', totalBalance: '999' }],
+      historySyncedAccountIds: [],
+      historySyncingAccountIds: ['wallet'],
+      historyRefreshingAccountIds: ['wallet'],
+    }
+    await render()
+    expect(container.querySelectorAll('[data-chart]')).toHaveLength(2)
+    expect(chartData()).toEqual(loadedChart)
+    expect(container.textContent).toContain('Updating history')
+    expect(container.textContent).not.toContain('Preparing history for this date range')
+  })
+
+  it('keeps loading if any selected wallet still needs its initial history', async () => {
+    mocks.rangeData = {
+      ...mocks.base,
+      historySyncingAccountIds: ['wallet', 'new-wallet'],
+      historyRefreshingAccountIds: ['wallet'],
+    }
+    await click('All')
+    expect(container.querySelectorAll('[data-chart]')).toHaveLength(0)
+    expect(container.textContent).toContain('Preparing history for this date range')
+  })
+
+  it('does not reuse an All chart or a partial prefix for a newly requested custom range', async () => {
+    mocks.rangeData = { ...mocks.base, historySyncedAccountIds: ['wallet'] }
+    await click('All')
+    mocks.rangeData = {
+      ...mocks.base,
+      historySyncingAccountIds: ['wallet'],
+      historyRefreshingAccountIds: ['wallet'],
+    }
+    await click('Custom')
+    await changeDate('portfolio-range-start', '2020-01-01')
+    await click('Apply')
+    expect(container.querySelectorAll('[data-chart]')).toHaveLength(0)
+    expect(container.textContent).toContain('Preparing history for this date range')
+  })
+
+  it.each([false, true])('explains failed history and continues polling (refresh: %s)', async (refresh) => {
+    const interval = vi.spyOn(window, 'setInterval')
+    if (refresh) {
+      mocks.rangeData = { ...mocks.base, historySyncedAccountIds: ['wallet'] }
+      await click('All')
+    }
+    mocks.rangeData = {
+      ...mocks.base,
+      historySyncingAccountIds: ['wallet'],
+      historyFailedAccountIds: ['wallet'],
+      historyRefreshingAccountIds: refresh ? ['wallet'] : [],
+    }
+    if (refresh) await render()
+    else await click('All')
+    expect(container.textContent).toContain("Wallet history couldn't be loaded. Retrying automatically.")
+    expect(container.textContent).not.toContain('Preparing history for this date range')
+    expect(container.textContent).not.toContain('All synced')
+    expect(container.querySelectorAll('[data-chart]')).toHaveLength(refresh ? 2 : 0)
+    const poll = interval.mock.calls.find(([, delay]) => delay === 10_000)![0] as () => void
+    await act(async () => poll())
+    expect(mocks.refetch).toHaveBeenCalledWith({ cancelRefetch: false })
+    mocks.rangeData = { ...mocks.base, historySyncedAccountIds: ['wallet'] }
+    await render()
+    expect(container.querySelectorAll('[data-chart]')).toHaveLength(2)
+    expect(container.textContent).not.toContain('Retrying automatically')
+  })
+
+  it.each(['90D', '1Y', 'All', 'Custom'])(
+    'warns about failed background refreshes without hiding a loaded %s chart',
+    async (range) => {
+      const client = new QueryClient({
+        logger: { log: vi.fn(), warn: vi.fn(), error: vi.fn() },
+        defaultOptions: { queries: { retry: false, cacheTime: 0 } },
+      })
+      client.setQueryData(['portfolio', range], mocks.base)
+      const observer = new QueryObserver(client, {
+        queryKey: ['portfolio', range],
+        queryFn: async () => {
+          throw new Error('Connection lost')
+        },
+        staleTime: 300_000,
+        keepPreviousData: true,
+      })
+      const unsubscribe = observer.subscribe(() => undefined)
+      try {
+        const failed = await observer.refetch()
+        expect(failed).toMatchObject({ status: 'error', data: mocks.base, isPreviousData: false })
+        mocks.useQuery.mockImplementation(() => failed)
+        if (range === '90D') await render()
+        else {
+          await click(range)
+          if (range === 'Custom') await click('Apply')
+        }
+        expect(container.querySelectorAll('[data-chart]')).toHaveLength(2)
+        expect(container.textContent).toContain("Couldn't refresh this date range. Showing previously loaded data.")
+        expect(container.textContent).not.toContain('All synced')
+        expect(container.textContent).not.toContain('No verified claims yet')
+      } finally {
+        unsubscribe()
+        client.clear()
+      }
+    },
+  )
+
+  it.each(['failed', 'disabled/loading'])(
+    'does not let a %s all-account query hide selected wallet data',
+    async (state) => {
+      mocks.holdings = []
+      mocks.claims = [{ id: 'wallet', displayName: 'Test wallet' }]
+      await render()
+      await click('Select wallet')
+      const defaultQuery = mocks.useQuery.getMockImplementation()!
+      mocks.useQuery.mockImplementation((input) => ({
+        ...defaultQuery(input),
+        data: input.claimIds ? { ...mocks.base, verifiedClaimsCount: 1, manualAccountCount: 0 } : undefined,
+        isLoading: !input.claimIds && state === 'disabled/loading',
+        error: !input.claimIds && state === 'failed' ? new Error('All-account request failed') : null,
+      }))
+      await render()
+      await click('Custom')
+      await click('Apply')
+      expect(container.querySelectorAll('[data-chart]')).toHaveLength(2)
+      expect(container.textContent).not.toContain('No verified claims yet')
+      const [allInput, allOptions] = mocks.useQuery.mock.calls.at(-2)!
+      const [filteredInput, filteredOptions] = mocks.useQuery.mock.calls.at(-1)!
+      expect(allOptions.enabled).toBe(false)
+      expect(filteredOptions.enabled).toBe(true)
+      expect(allInput.customDateRange).toEqual(filteredInput.customDateRange)
+    },
+  )
+
+  it('uses selected-range sync status in the sidebar and ignores completion from a previous view', async () => {
+    mocks.claims = [{ id: 'wallet', displayName: 'Test wallet' }]
+    await render()
+    await click('Select wallet')
+    mocks.rangeData = { ...mocks.base, historySyncingAccountIds: ['wallet'] }
+    const defaultQuery = mocks.useQuery.getMockImplementation()!
+    mocks.useQuery.mockImplementation((input, options) =>
+      input.claimIds === undefined && options.enabled === false
+        ? { ...defaultQuery(input), data: { ...mocks.base, historySyncedAccountIds: ['wallet'] } }
+        : defaultQuery(input),
+    )
+    await click('Custom')
+    await click('Apply')
+    expect(mocks.sidebar.mock.lastCall![0].historySyncingAccountIds).toEqual(['wallet'])
+    expect(mocks.sidebar.mock.lastCall![0].recentlySyncedAccountIds).toEqual([])
+
+    // Clearing the selection briefly exposes cached data from another query.
+    mocks.previous = true
+    mocks.rangeData = { ...mocks.base, historySyncedAccountIds: ['wallet'] }
+    await click('Clear selection')
+    expect(mocks.sidebar.mock.lastCall![0].recentlySyncedAccountIds).toEqual([])
+    expect(container.textContent).not.toContain('All synced')
+
+    mocks.previous = false
+    mocks.rangeData = { ...mocks.base, historySyncingAccountIds: ['wallet'] }
+    await render()
+    mocks.rangeData = { ...mocks.base, historySyncedAccountIds: ['wallet'] }
+    await render()
+    expect(mocks.sidebar.mock.lastCall![0].recentlySyncedAccountIds).toEqual(['wallet'])
+  })
+
   it('shows a recoverable error instead of stale history when the selected range fails', async () => {
     mocks.rangeData = { ...mocks.base }
     mocks.previous = true
@@ -327,9 +583,9 @@ describe('custom portfolio range UI', () => {
         logger: { log: vi.fn(), warn: vi.fn(), error: vi.fn() },
         defaultOptions: { queries: { retry: false, cacheTime: 0 } },
       })
-      client.setQueryData(['portfolio', '1y'], portfolioData)
+      client.setQueryData(['portfolio', '90d'], portfolioData)
       const options = { staleTime: 300_000, keepPreviousData: true }
-      const observer = new QueryObserver(client, { ...options, queryKey: ['portfolio', '1y'] })
+      const observer = new QueryObserver(client, { ...options, queryKey: ['portfolio', '90d'] })
       const unsubscribe = observer.subscribe(() => undefined)
       const fetchRange = vi.fn().mockRejectedValueOnce(new Error('Connection lost')).mockResolvedValue(portfolioData)
 

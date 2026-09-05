@@ -1,6 +1,129 @@
 import { describe, expect, it } from 'vitest'
 import { buildHistoricalData, resolveHistoryRange } from './history-range'
 
+describe('preset portfolio history ranges', () => {
+  const presets = [
+    { preset: '7d', days: 7, start: '2026-08-29' },
+    { preset: '30d', days: 30, start: '2026-08-06' },
+    { preset: '90d', days: 90, start: '2026-06-07' },
+    { preset: '1y', days: 365, start: '2025-09-05' },
+  ] as const
+  const now = new Date('2026-09-05T12:00:00.000Z')
+
+  it.each(presets)('keeps $preset calendar boundaries and current-balance endpoint', ({ preset, days, start }) => {
+    const range = resolveHistoryRange(preset, undefined, 'UTC', now).unwrap()
+    expect(range.start.toISOString()).toBe(`${start}T00:00:00.000Z`)
+    expect(range.end).toEqual(now)
+    expect(range.dayStarts).toHaveLength(days + 1)
+    expect(range.isCustom).toBe(false)
+    expect(range.isAll).toBe(false)
+    const data = buildHistoricalData(
+      [
+        { timestamp: new Date(range.start.getTime() - 1), value: 100n },
+        { timestamp: new Date(`${start}T12:00:00.000Z`), value: 50n },
+        { timestamp: new Date(now.getTime() + 1), value: 500n },
+      ],
+      175n,
+      range,
+      'UTC',
+    )
+    expect(data).toHaveLength(days + 1)
+    expect(data[0]).toEqual({ timestamp: `${start}T23:59:59.999Z`, totalBalance: '150' })
+    expect(data.slice(0, -1).every((point) => point.totalBalance === '150')).toBe(true)
+    expect(data.at(-1)).toEqual({ timestamp: now.toISOString(), totalBalance: '175' })
+  })
+
+  it.each(presets)('preserves the $preset fallback when only a current balance is known', ({ preset, days }) => {
+    const range = resolveHistoryRange(preset, undefined, 'UTC', now).unwrap()
+    const data = buildHistoricalData([], 100n, range, 'UTC')
+    expect(data).toHaveLength(days + 1)
+    expect(data.map((point) => point.timestamp)).toEqual(range.dayStarts.map((date) => date.toISOString()))
+    expect(data.every((point) => point.totalBalance === '100')).toBe(true)
+    expect(buildHistoricalData([], 0n, range, 'UTC')).toEqual([])
+  })
+
+  it('uses local calendar dates, not UTC dates, for a preset crossing daylight saving', () => {
+    const now = new Date('2026-03-09T02:30:00.000Z')
+    const range = resolveHistoryRange('7d', undefined, 'America/New_York', now).unwrap()
+    expect(range.start.toISOString()).toBe('2026-03-01T05:00:00.000Z')
+    expect(range.dayStarts.at(-1)?.toISOString()).toBe('2026-03-08T05:00:00.000Z')
+    const data = buildHistoricalData(
+      [{ timestamp: new Date('2026-03-01T12:00:00.000Z'), value: 100n }],
+      100n,
+      range,
+      'America/New_York',
+    )
+    expect(data).toHaveLength(8)
+    expect(data.at(-2)?.timestamp).toBe('2026-03-08T04:59:59.999Z')
+    expect(data.at(-1)?.timestamp).toBe(now.toISOString())
+  })
+})
+
+describe('reused local-day boundaries', () => {
+  it.each([
+    {
+      zone: 'America/New_York',
+      day: '2026-03-08',
+      next: '2026-03-09',
+      start: '2026-03-08T05:00:00.000Z',
+      end: '2026-03-09T03:59:59.999Z',
+    },
+    {
+      zone: 'America/New_York',
+      day: '2026-11-01',
+      next: '2026-11-02',
+      start: '2026-11-01T04:00:00.000Z',
+      end: '2026-11-02T04:59:59.999Z',
+    },
+    {
+      zone: 'America/Santiago',
+      day: '2026-09-06',
+      next: '2026-09-07',
+      start: '2026-09-06T04:00:00.000Z',
+      end: '2026-09-07T02:59:59.999Z',
+    },
+  ] as const)('keeps exact daily balances at $zone transitions on $day', ({ zone, day, next, start, end }) => {
+    const range = resolveHistoryRange('30d', { startDate: day, endDate: next }, zone, new Date('2027-01-01')).unwrap()
+    const data = buildHistoricalData(
+      [
+        { timestamp: new Date(start), value: 100n },
+        { timestamp: new Date(end), value: 50n },
+        { timestamp: new Date(new Date(end).getTime() + 1), value: 25n },
+      ],
+      999n,
+      range,
+      zone,
+    )
+    expect(data[0]).toEqual({ timestamp: start, totalBalance: '0' })
+    expect(data[1]).toEqual({ timestamp: end, totalBalance: '150' })
+    expect(data.at(-1)).toEqual({ timestamp: range.end.toISOString(), totalBalance: '175' })
+  })
+
+  it('handles duplicate midnights when a timezone skips an entire calendar date', () => {
+    const range = resolveHistoryRange(
+      '30d',
+      { startDate: '2011-12-29', endDate: '2011-12-31' },
+      'Pacific/Apia',
+      new Date('2012-01-05'),
+    ).unwrap()
+    expect(range.dayStarts[1]).toEqual(range.dayStarts[2])
+    const data = buildHistoricalData(
+      [
+        { timestamp: new Date('2011-12-29T12:00:00.000Z'), value: 100n },
+        { timestamp: new Date('2011-12-30T12:00:00.000Z'), value: 25n },
+      ],
+      999n,
+      range,
+      'Pacific/Apia',
+    )
+    expect(data).toEqual([
+      { timestamp: '2011-12-29T10:00:00.000Z', totalBalance: '0' },
+      { timestamp: '2011-12-30T09:59:59.999Z', totalBalance: '100' },
+      { timestamp: '2011-12-31T09:59:59.999Z', totalBalance: '125' },
+    ])
+  })
+})
+
 describe('custom portfolio history ranges', () => {
   it('validates calendar dates and ordering', () => {
     const now = new Date('2026-08-27T16:00:00.000Z')

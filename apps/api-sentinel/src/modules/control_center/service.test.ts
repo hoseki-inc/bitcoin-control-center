@@ -83,8 +83,8 @@ function createHarness() {
     .mockResolvedValue(Ok([entry(100n, '2020-01-02T12:00:00.000Z')]))
   const sync = (from = 0, to = tip.height): void =>
     service['recordAccountHistorySync'](accountId, { fromBlockHeight: from, toBlockHeight: to }, tip)
-  const run = (balance: bigint | undefined = 100n): Promise<bigint | null> =>
-    service['ensureAccountHistorySnapshots'](accountId, account, balance, new Date(0), true)
+  const run = (balance: bigint = 100n, balanceTip?: Block): Promise<bigint | null> =>
+    service['ensureAccountHistorySnapshots'](accountId, account, balance, new Date(0), true, undefined, balanceTip)
   const rows = (): Array<{ timestamp: string; balance_sats: string }> =>
     db.prepare('SELECT timestamp, balance_sats FROM balance_snapshots ORDER BY timestamp').all() as Array<{
       timestamp: string
@@ -174,9 +174,64 @@ describe('portfolio history completion', () => {
     const data = (await harness.service.getData({ customDateRange: customRange })).unwrap()
     expect(data.historySyncingAccountIds).toEqual([accountId])
     expect(data.historySyncedAccountIds).toEqual([])
+    expect(data.historyRefreshingAccountIds).toEqual([])
+    expect(data.historyFailedAccountIds).toEqual([])
     pending.resolve(Ok([entry(100n, '2020-01-02T12:00:00.000Z')]))
     await vi.waitFor(() => expect(harness.coverage()).toHaveLength(1))
   })
+
+  it('keeps a certified history prefix available while a new block is fetched', async () => {
+    harness.sync()
+    harness.service.recordAccountSnapshot(accountId, '100', '2020-01-02T12:00:00.000Z')
+    harness.provider.getBlocksTip.mockResolvedValue(Ok(nextTip))
+    const pending = deferred<Result<TransactionEntry[], Error>>()
+    harness.history.mockReturnValueOnce(pending.promise)
+    const data = (await harness.service.getData({ timeRange: 'all' })).unwrap()
+    expect(data.historySyncingAccountIds).toEqual([accountId])
+    expect(data.historyRefreshingAccountIds).toEqual([accountId])
+    expect(data.historySyncedAccountIds).toEqual([])
+    expect(data.historyFailedAccountIds).toEqual([])
+    expect(data.historicalData.length).toBeGreaterThan(1)
+    pending.resolve(Ok([]))
+    await vi.waitFor(() =>
+      expect(harness.coverage()).toEqual([{ from_block_height: 0, to_block_height: nextTip.height }]),
+    )
+  })
+
+  it.each(['missing start', 'gap before the tip', 'outdated certification'])(
+    'does not call incomplete full history a background refresh: %s',
+    async (scenario) => {
+      if (scenario === 'missing start') harness.sync(100)
+      else if (scenario === 'gap before the tip') {
+        harness.sync(0, 100)
+        harness.sync(200)
+      } else {
+        harness.sync()
+        harness.db.prepare('UPDATE account_history_syncs SET sync_version = 4').run()
+      }
+      const status = await harness.service['getAccountHistoryStatus'](
+        [{ id: accountId, descriptor: account.toString(), network: 'mainnet' }],
+        new Date(0),
+        true,
+      )
+      expect(status.historySyncingAccountIds).toEqual([accountId])
+      expect(status.historyRefreshingAccountIds).toEqual([])
+    },
+  )
+
+  it.each([true, false])(
+    'reports an unavailable tip and preserves only certified history (cached: %s)',
+    async (cached) => {
+      if (cached) harness.sync()
+      harness.provider.getBlocksTip.mockResolvedValue(Err(new Error('Connection unavailable')))
+      const data = (await harness.service.getData({ customDateRange: customRange })).unwrap()
+      expect(data.historySyncingAccountIds).toEqual([accountId])
+      expect(data.historySyncedAccountIds).toEqual([])
+      expect(data.historyFailedAccountIds).toEqual([accountId])
+      expect(data.historyRefreshingAccountIds).toEqual(cached ? [accountId] : [])
+      await vi.waitFor(() => expect(harness.service['accountHistoryBackfillsInFlight'].size).toBe(0))
+    },
+  )
 
   it('does not fetch history or balances again when coverage is complete', async () => {
     harness.sync()
@@ -271,10 +326,7 @@ describe('history scan boundaries', () => {
     expect(harness.history.mock.calls.map(([, height]) => height)).toEqual([tip.height])
     expect(harness.rows()[0]?.balance_sats).toBe('100')
     expect(harness.rows().at(-1)?.balance_sats).toBe('120')
-    expect(harness.coverage()).toEqual([
-      { from_block_height: 0, to_block_height: tip.height },
-      { from_block_height: nextTip.height, to_block_height: nextTip.height },
-    ])
+    expect(harness.coverage()).toEqual([{ from_block_height: 0, to_block_height: nextTip.height }])
   })
 
   it.each(['same-height reorganization', 'deeper reorganization', 'height rollback'])(
@@ -314,7 +366,153 @@ describe('history scan boundaries', () => {
   })
 })
 
+describe('history balance reuse', () => {
+  it('avoids a second balance/discovery sweep during a stable-tip page request', async () => {
+    await harness.service.getData({ timeRange: 'all' })
+    await vi.waitFor(() => expect(harness.service['accountHistoryBackfillsInFlight'].size).toBe(0))
+    expect(harness.provider.getConfirmedAccountBalances).toHaveBeenCalledTimes(1)
+    expect(harness.history).toHaveBeenCalledTimes(1)
+    expect(harness.coverage()).toEqual([{ from_block_height: 0, to_block_height: tip.height }])
+  })
+
+  it.each([0n, 100n])('reuses an anchored balance of %s only after verifying the tip', async (balance) => {
+    expect(await harness.run(balance, tip)).toBe(balance)
+    expect(harness.provider.getConfirmedAccountBalances).not.toHaveBeenCalled()
+    expect(harness.provider.getBlocksTip).toHaveBeenCalledTimes(2)
+    expect(harness.rows().at(-1)?.balance_sats).toBe(balance.toString())
+  })
+
+  it.each([undefined, nextTip, { ...tip, hash: 'different-chain' }])(
+    'fetches a fresh balance without a matching anchor (%j)',
+    async (balanceTip) => {
+      expect(await harness.run(999n, balanceTip)).toBe(100n)
+      expect(harness.provider.getConfirmedAccountBalances).toHaveBeenCalledTimes(1)
+    },
+  )
+
+  it('does not treat an unavailable anchor or a cached balance as reusable', async () => {
+    harness.provider.getBlocksTip.mockResolvedValueOnce(Err(new Error('Tip unavailable')))
+    harness.provider.getConfirmedAccountBalances.mockResolvedValueOnce(Err(new Error('Balance unavailable')))
+    harness.service.recordAccountSnapshot(accountId, '999', '2020-01-01T00:00:00.000Z')
+    await harness.service.getData({ timeRange: 'all' })
+    await vi.waitFor(() => expect(harness.service['accountHistoryBackfillsInFlight'].size).toBe(0))
+    expect(harness.provider.getConfirmedAccountBalances).toHaveBeenCalledTimes(2)
+    expect(harness.rows().at(-1)?.balance_sats).toBe('100')
+  })
+
+  it('discards the reused balance and fetches a new balance and tail when the tip advances', async () => {
+    harness.provider.getBlocksTip.mockResolvedValueOnce(Ok(tip)).mockResolvedValue(Ok(nextTip))
+    harness.provider.getConfirmedAccountBalances.mockResolvedValue(Ok(new IndexMap([[account, 120n]])))
+    harness.history
+      .mockResolvedValueOnce(Ok([entry(100n, '2020-01-02T12:00:00.000Z')]))
+      .mockResolvedValueOnce(Ok([entry(20n, nextTip.timestamp.toISOString(), nextTip.height)]))
+    expect(await harness.run(100n, tip)).toBe(120n)
+    expect(harness.provider.getConfirmedAccountBalances).toHaveBeenCalledTimes(1)
+    expect(harness.provider.getBlock).toHaveBeenCalledWith(tip.height)
+    expect(harness.history.mock.calls.map(([, height]) => height)).toEqual([0, tip.height])
+    expect(harness.rows().find(({ timestamp }) => timestamp === '2020-01-02T12:00:00.000Z')?.balance_sats).toBe('100')
+  })
+
+  it.each(['reorganization', 'tip failure'])('does not save an anchored balance after a %s', async (failure) => {
+    harness.provider.getBlocksTip
+      .mockResolvedValueOnce(Ok(tip))
+      .mockResolvedValue(
+        failure === 'reorganization' ? Ok({ ...tip, hash: 'reorganized' }) : Err(new Error('Tip unavailable')),
+      )
+    expect(await harness.run(100n, tip)).toBeNull()
+    expect(harness.rows()).toEqual([])
+    expect(harness.coverage()).toEqual([])
+  })
+})
+
+describe('compacted history coverage', () => {
+  it('combines overlaps and adjacent ranges on both sides without closing real gaps', () => {
+    harness.sync(0, 99)
+    harness.sync(200, 299)
+    harness.sync(400, 499)
+    harness.sync(100, 199)
+    harness.sync(50, 250)
+    expect(harness.coverage()).toEqual([
+      { from_block_height: 0, to_block_height: 299 },
+      { from_block_height: 400, to_block_height: 499 },
+    ])
+    expect(
+      harness.service['getMissingAccountHistorySyncRanges'](accountId, { fromBlockHeight: 0, toBlockHeight: 499 }),
+    ).toEqual([{ fromBlockHeight: 300, toBlockHeight: 399 }])
+    harness.sync(300, 399)
+    expect(harness.coverage()).toEqual([{ from_block_height: 0, to_block_height: 499 }])
+  })
+
+  it('compacts previously accumulated adjacent records when the next tail is recorded', () => {
+    const insert = harness.db.prepare(`INSERT INTO account_history_syncs
+      (account_id, from_block_height, to_block_height, range_start, range_end, sync_version)
+      VALUES (?, ?, ?, ?, ?, 5)`)
+    for (let height = 0; height < 100; height++)
+      insert.run(accountId, height, height, now.toISOString(), now.toISOString())
+    harness.sync(100, 100)
+    expect(harness.coverage()).toEqual([{ from_block_height: 0, to_block_height: 100 }])
+    for (let height = 101; height < 200; height++) harness.sync(height, height)
+    expect(harness.coverage()).toEqual([{ from_block_height: 0, to_block_height: 199 }])
+  })
+
+  it('keeps old certification versions and other accounts separate', () => {
+    harness.sync(0, 99)
+    harness.db.prepare('UPDATE account_history_syncs SET sync_version = 4').run()
+    harness.db
+      .prepare('INSERT INTO accounts (id, descriptor, display_name) VALUES (?, ?, ?)')
+      .run('other', Wallets.singlesigLegacyAccount.toString(), 'Other wallet')
+    harness.service['recordAccountHistorySync']('other', { fromBlockHeight: 0, toBlockHeight: 99 }, tip)
+    harness.sync(100, 199)
+    expect(
+      harness.db
+        .prepare(
+          'SELECT account_id, from_block_height, to_block_height, sync_version FROM account_history_syncs ORDER BY account_id, from_block_height',
+        )
+        .all(),
+    ).toEqual([
+      { account_id: 'other', from_block_height: 0, to_block_height: 99, sync_version: 5 },
+      { account_id: accountId, from_block_height: 0, to_block_height: 99, sync_version: 4 },
+      { account_id: accountId, from_block_height: 100, to_block_height: 199, sync_version: 5 },
+    ])
+    expect(
+      harness.service['getMissingAccountHistorySyncRanges'](accountId, { fromBlockHeight: 0, toBlockHeight: 199 }),
+    ).toEqual([{ fromBlockHeight: 0, toBlockHeight: 99 }])
+  })
+
+  it('rolls back the deletion if the replacement record cannot be written', () => {
+    harness.sync(0, 99)
+    harness.db.exec(`CREATE TEMP TRIGGER fail_sync BEFORE INSERT ON account_history_syncs
+      BEGIN SELECT RAISE(ABORT, 'Synthetic write failure'); END`)
+    expect(() => harness.sync(100, 199)).toThrow('Synthetic write failure')
+    expect(harness.coverage()).toEqual([{ from_block_height: 0, to_block_height: 99 }])
+  })
+})
+
 describe('history retry coordination', () => {
+  it('reports persistent failures without stopping automatic retries, then clears the error on success', async () => {
+    const { service, history } = harness
+    history.mockResolvedValue(Err(new Error('Synthetic address failure')))
+    for (let attempt = 1; attempt <= 12; attempt++) {
+      service['queueAccountHistoryBackfill'](accountId, account, 100n, new Date(0), true)
+      await vi.waitFor(() => expect(service['accountHistoryBackfillsInFlight'].has(accountId)).toBe(false))
+      const data = (await service.getData({ customDateRange: customRange })).unwrap()
+      expect(data.historyFailedAccountIds).toEqual([accountId])
+      expect(data.historySyncingAccountIds).toEqual([accountId])
+      expect(data.historyRefreshingAccountIds).toEqual([])
+      expect(history).toHaveBeenCalledTimes(attempt)
+      expect(harness.coverage()).toEqual([])
+      vi.setSystemTime(service['accountHistoryBackfillCooldownUntil'].get(accountId)! + 1)
+    }
+    history.mockResolvedValue(Ok([entry(100n, '2020-01-02T12:00:00.000Z')]))
+    service['queueAccountHistoryBackfill'](accountId, account, 100n, new Date(0), true)
+    await vi.waitFor(() => expect(service['accountHistoryBackfillsInFlight'].has(accountId)).toBe(false))
+    const recovered = (await service.getData({ customDateRange: customRange })).unwrap()
+    expect(recovered.historyFailedAccountIds).toEqual([])
+    expect(recovered.historySyncingAccountIds).toEqual([])
+    expect(recovered.historySyncedAccountIds).toEqual([accountId])
+    expect(history).toHaveBeenCalledTimes(13)
+  })
+
   it('does not clear a failed wider scan cooldown when a narrower range is complete', async () => {
     const { service, history } = harness
     harness.sync(tip.height - 60_000)
@@ -329,6 +527,7 @@ describe('history retry coordination', () => {
       false,
     )
     expect(status.historySyncedAccountIds).toEqual([accountId])
+    expect(status.historyFailedAccountIds).toEqual([])
     expect(service['accountHistoryBackfillCooldownUntil'].get(accountId)).toBe(cooldown)
     expect(service['accountHistoryBackfillFailureCounts'].get(accountId)).toBe(1)
     request()

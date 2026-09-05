@@ -132,8 +132,14 @@ export function buildHistoricalData(
 
   if (range.isCustom || range.isAll) appendHistoricalPoint(historicalData, start, runningBalance)
 
-  for (const dayStart of dayStarts) {
-    const dayEnd = getZonedEndOfDay(dayStart, timezone)
+  for (const [index, dayStart] of dayStarts.entries()) {
+    const nextDayStart = dayStarts[index + 1]
+    // Reuse the resolved midnight, including DST's shorter/longer days.
+    // Skipped calendar dates can share a start instant; keep the zoned fallback.
+    const dayEnd =
+      nextDayStart && nextDayStart > dayStart
+        ? new Date(nextDayStart.getTime() - 1)
+        : getZonedEndOfDay(dayStart, timezone)
     const pointTime = dayEnd > range.end ? range.end : dayEnd
 
     while (entryIndex < sortedEntries.length) {
