@@ -175,6 +175,28 @@ afterEach(async () => {
 })
 
 describe('custom portfolio range UI', () => {
+  it('defaults to 90 days and still allows every other preset', async () => {
+    expect(mocks.useQuery.mock.calls.at(-2)![0].timeRange).toBe('90d')
+    for (const [label, timeRange] of [
+      ['7D', '7d'],
+      ['30D', '30d'],
+      ['1Y', '1y'],
+      ['All', 'all'],
+      ['90D', '90d'],
+    ] as const) {
+      await click(label)
+      const [input, options] = mocks.useQuery.mock.calls.at(-2)!
+      expect(input.timeRange).toBe(timeRange)
+      expect(input.customDateRange).toBeUndefined()
+      expect(options.enabled).toBe(true)
+    }
+    await click('Select holding')
+    const [input, options] = mocks.useQuery.mock.calls.at(-1)!
+    expect(input.timeRange).toBe('90d')
+    expect(input.manualAccountIds).toEqual(['holding'])
+    expect(options.enabled).toBe(true)
+  })
+
   it('only applies the draft dates on Apply, not while opening or editing the selector', async () => {
     await click('Custom')
     await changeDate('portfolio-range-start', '2020-01-01')
@@ -253,12 +275,12 @@ describe('custom portfolio range UI', () => {
     async ({ selection, hasPreviousData }) => {
       const client = new QueryClient({ defaultOptions: { queries: { retry: false, cacheTime: 0 } } })
       client.mount()
-      if (hasPreviousData) client.setQueryData(['portfolio', '1y'], mocks.base)
+      if (hasPreviousData) client.setQueryData(['portfolio', '90d'], mocks.base)
       onlineManager.setOnline(false)
       const options = { staleTime: 300_000, keepPreviousData: true }
       const observer = new QueryObserver(client, {
         ...options,
-        queryKey: ['portfolio', '1y'],
+        queryKey: ['portfolio', '90d'],
         queryFn: async () => mocks.base,
       })
       const unsubscribe = observer.subscribe(() => undefined)
@@ -390,7 +412,7 @@ describe('custom portfolio range UI', () => {
     expect(container.textContent).not.toContain('Retrying automatically')
   })
 
-  it.each(['1y', 'All', 'Custom'])(
+  it.each(['90D', '1Y', 'All', 'Custom'])(
     'warns about failed background refreshes without hiding a loaded %s chart',
     async (range) => {
       const client = new QueryClient({
@@ -411,7 +433,7 @@ describe('custom portfolio range UI', () => {
         const failed = await observer.refetch()
         expect(failed).toMatchObject({ status: 'error', data: mocks.base, isPreviousData: false })
         mocks.useQuery.mockImplementation(() => failed)
-        if (range === '1y') await render()
+        if (range === '90D') await render()
         else {
           await click(range)
           if (range === 'Custom') await click('Apply')
@@ -511,9 +533,9 @@ describe('custom portfolio range UI', () => {
         logger: { log: vi.fn(), warn: vi.fn(), error: vi.fn() },
         defaultOptions: { queries: { retry: false, cacheTime: 0 } },
       })
-      client.setQueryData(['portfolio', '1y'], portfolioData)
+      client.setQueryData(['portfolio', '90d'], portfolioData)
       const options = { staleTime: 300_000, keepPreviousData: true }
-      const observer = new QueryObserver(client, { ...options, queryKey: ['portfolio', '1y'] })
+      const observer = new QueryObserver(client, { ...options, queryKey: ['portfolio', '90d'] })
       const unsubscribe = observer.subscribe(() => undefined)
       const fetchRange = vi.fn().mockRejectedValueOnce(new Error('Connection lost')).mockResolvedValue(portfolioData)
 

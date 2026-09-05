@@ -138,6 +138,9 @@ export class ControlCenterService {
       const balancesByAccountId = new Map<string, bigint>()
 
       if (accounts.size > 0) {
+        // Anchor before balance discovery so a backfill can reuse this result
+        // only if the same chain tip still holds after scanning history.
+        const balanceTipResult = await this.onchainProvider.getBlocksTip()
         const balancesResult = await this.onchainProvider.getConfirmedAccountBalances(accounts)
         accountRows = this.getAccountRows(args.accountIds).filter(({ id }) => initiallySelectedAccountIds.has(id))
         if (balancesResult.isErr()) {
@@ -174,7 +177,14 @@ export class ControlCenterService {
             const account = accountResult.unwrap()
             const accountBalance = accountBalances.get(account.toString()) ?? 0n
             balancesByAccountId.set(row.id, accountBalance)
-            this.queueAccountHistoryBackfill(row.id, account, accountBalance, historyRange.start, shouldSyncFullHistory)
+            this.queueAccountHistoryBackfill(
+              row.id,
+              account,
+              accountBalance,
+              historyRange.start,
+              shouldSyncFullHistory,
+              balanceTipResult.isOk() ? balanceTipResult.unwrap() : undefined,
+            )
           }
         }
       }
@@ -581,6 +591,7 @@ export class ControlCenterService {
     currentBalance: bigint,
     rangeStart: Date,
     fullHistory: boolean,
+    balanceTip?: Block,
   ): void {
     if (!this.isAccountActive(accountId)) return
     const generation = this.getAccountHistoryBackfillGeneration(accountId)
@@ -601,7 +612,15 @@ export class ControlCenterService {
     }
     this.accountHistoryBackfillsInFlight.add(accountId)
 
-    void this.ensureAccountHistorySnapshots(accountId, account, currentBalance, rangeStart, fullHistory, generation)
+    void this.ensureAccountHistorySnapshots(
+      accountId,
+      account,
+      currentBalance,
+      rangeStart,
+      fullHistory,
+      generation,
+      balanceTip,
+    )
       .then((preservedBalance) => {
         if (!this.canContinueAccountHistoryBackfill(accountId, generation)) return
         if (preservedBalance !== null) {
@@ -736,6 +755,7 @@ export class ControlCenterService {
     rangeStart: Date,
     fullHistory = false,
     generation = this.getAccountHistoryBackfillGeneration(accountId),
+    balanceTip?: Block,
   ): Promise<bigint | null> {
     if (!this.canContinueAccountHistoryBackfill(accountId, generation)) return null
     const tipResult = await this.onchainProvider.getBlocksTip()
@@ -776,11 +796,18 @@ export class ControlCenterService {
 
     let reconstructionBalance: bigint
     const accounts = new IndexSet([account])
+    let reusableBalance = balanceTip?.height === tip.height && balanceTip.hash === tip.hash ? currentBalance : undefined
     for (;;) {
-      const balanceResult = await this.onchainProvider.getConfirmedAccountBalances(accounts)
-      if (balanceResult.isErr()) {
-        this.logger.warn({ accountId, err: balanceResult.unwrapErr() }, 'Failed to fetch history boundary balance')
-        return null
+      let boundaryBalance = reusableBalance
+      // Never carry the original balance into a newer tip's tail scan.
+      reusableBalance = undefined
+      if (boundaryBalance === undefined) {
+        const balanceResult = await this.onchainProvider.getConfirmedAccountBalances(accounts)
+        if (balanceResult.isErr()) {
+          this.logger.warn({ accountId, err: balanceResult.unwrapErr() }, 'Failed to fetch history boundary balance')
+          return null
+        }
+        boundaryBalance = balanceResult.unwrap().get(account) ?? 0n
       }
       if (!this.canContinueAccountHistoryBackfill(accountId, generation)) return null
 
@@ -793,7 +820,7 @@ export class ControlCenterService {
 
       const verifiedTip = verifiedTipResult.unwrap()
       if (verifiedTip.height === tip.height && verifiedTip.hash === tip.hash) {
-        reconstructionBalance = balanceResult.unwrap().get(account) ?? 0n
+        reconstructionBalance = boundaryBalance
         break
       }
 
@@ -988,9 +1015,45 @@ export class ControlCenterService {
 
   private recordAccountHistorySync(accountId: string, range: BlockRange, tip: Block): void {
     if (!this.isAccountActive(accountId)) return
-    this.db
-      .prepare(
-        `INSERT INTO account_history_syncs (
+    this.db.transaction(() => {
+      // Coalesce only equally certified coverage. Never bridge an unscanned
+      // block or promote an older version's range without actually scanning it.
+      const rows = this.db
+        .prepare(
+          `SELECT from_block_height, to_block_height, sync_version FROM account_history_syncs
+           WHERE account_id = ? AND sync_version = ?`,
+        )
+        .all(accountId, CURRENT_ACCOUNT_HISTORY_SYNC_VERSION) as AccountHistorySyncRow[]
+      const ranges = [
+        range,
+        ...rows.map((row) => ({ fromBlockHeight: row.from_block_height, toBlockHeight: row.to_block_height })),
+      ].sort((left, right) => left.fromBlockHeight - right.fromBlockHeight)
+      const combined: BlockRange[] = []
+      for (const next of ranges) {
+        const previous = combined.at(-1)
+        if (previous && next.fromBlockHeight <= previous.toBlockHeight + 1) {
+          previous.toBlockHeight = Math.max(previous.toBlockHeight, next.toBlockHeight)
+        } else {
+          combined.push({ ...next })
+        }
+      }
+      const mergedRange = combined.find(
+        (candidate) =>
+          candidate.fromBlockHeight <= range.fromBlockHeight && candidate.toBlockHeight >= range.toBlockHeight,
+      )
+      if (!mergedRange) return
+
+      // Replace just the connected range containing this successful scan.
+      // Deletion and insertion must roll back together if either write fails.
+      this.db
+        .prepare(
+          `DELETE FROM account_history_syncs WHERE account_id = ? AND sync_version = ?
+           AND from_block_height >= ? AND to_block_height <= ?`,
+        )
+        .run(accountId, CURRENT_ACCOUNT_HISTORY_SYNC_VERSION, mergedRange.fromBlockHeight, mergedRange.toBlockHeight)
+      this.db
+        .prepare(
+          `INSERT INTO account_history_syncs (
            account_id,
            from_block_height,
            to_block_height,
@@ -1006,16 +1069,17 @@ export class ControlCenterService {
            range_end = excluded.range_end,
            sync_version = excluded.sync_version,
            synced_at = excluded.synced_at`,
-      )
-      .run(
-        accountId,
-        range.fromBlockHeight,
-        range.toBlockHeight,
-        estimateTimestampForBlockHeight(range.fromBlockHeight, tip).toISOString(),
-        estimateTimestampForBlockHeight(range.toBlockHeight, tip).toISOString(),
-        CURRENT_ACCOUNT_HISTORY_SYNC_VERSION,
-        new Date().toISOString(),
-      )
+        )
+        .run(
+          accountId,
+          mergedRange.fromBlockHeight,
+          mergedRange.toBlockHeight,
+          estimateTimestampForBlockHeight(mergedRange.fromBlockHeight, tip).toISOString(),
+          estimateTimestampForBlockHeight(mergedRange.toBlockHeight, tip).toISOString(),
+          CURRENT_ACCOUNT_HISTORY_SYNC_VERSION,
+          new Date().toISOString(),
+        )
+    })()
   }
 
   /**

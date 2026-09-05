@@ -98,7 +98,7 @@ function formatUsd(btcAmount: number, btcPrice: number): string {
 
 export function DashboardPage(): JSX.Element {
   useAutoRefreshExchanges()
-  const [timeRange, setTimeRange] = useState<TimeRange>('1y')
+  const [timeRange, setTimeRange] = useState<TimeRange>('90d')
   const [customDateRange, setCustomDateRange] = useState<CustomDateRangeDraft>({
     startDate: null,
     endDate: null,
