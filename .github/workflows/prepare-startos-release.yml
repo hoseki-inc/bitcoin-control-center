@@ -5,14 +5,14 @@ on:
   workflow_dispatch:
     inputs:
       bump_type:
-        description: What kind of release is this?
+        description: What kind of release is this? (x marks the changing number)
         required: true
         type: choice
         options:
-          - patch
-          - minor
-          - major
-          - revision
+          - patch (0.0.x:0)
+          - minor (0.x.0:0)
+          - major (x.0.0:0)
+          - revision (0.0.0:x)
 
 permissions:
   contents: write
@@ -60,7 +60,8 @@ jobs:
           STARTOS_ALLOW_RELEASE_NOTES_PLACEHOLDER: '1'
         run: |
           OLD_VERSION="$(node start9/scripts/version.mjs get)"
-          node start9/scripts/version.mjs bump "$BUMP_TYPE" --notes "$RELEASE_NOTES"
+          # Strip the dropdown's display hint before passing the bump name.
+          node start9/scripts/version.mjs bump "${BUMP_TYPE%% *}" --notes "$RELEASE_NOTES"
           NEW_VERSION="$(node start9/scripts/version.mjs get)"
           TAG="$(node start9/scripts/version.mjs tag)"
           BRANCH="release/startos-${TAG}"
