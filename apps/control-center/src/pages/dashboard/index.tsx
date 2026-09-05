@@ -106,7 +106,8 @@ export function DashboardPage(): JSX.Element {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [recentlySyncedAccountIds, setRecentlySyncedAccountIds] = useState<Set<string>>(new Set())
   const hasRecordedSnapshot = useRef(false)
-  const previousHistorySyncingAccountIds = useRef<Set<string>>(new Set())
+  const previousHistorySync = useRef({ viewKey: '', syncingIds: new Set<string>() })
+  const completedHistory = useRef<{ viewKey: string; points: ReturnType<typeof withCurrentBalancePoint> } | null>(null)
   const recentlySyncedTimeouts = useRef<Map<string, number>>(new Map())
   const shownRecentlySyncedAccountIds = useRef<Set<string>>(new Set())
 
@@ -167,7 +168,7 @@ export function DashboardPage(): JSX.Element {
     timeRange === 'custom'
       ? { timeRange: '1y' as const, customDateRange: customDateRangeInput ?? undefined }
       : { timeRange }
-  const allRangeQueryInput = timeRange === 'custom' && !isShowingAll ? { timeRange: '1y' as const } : rangeQueryInput
+  const historyViewKey = JSON.stringify([timeRange, customDateRangeInput, [...selected].sort()])
 
   const {
     data: allData,
@@ -177,11 +178,12 @@ export function DashboardPage(): JSX.Element {
     error: allError,
     refetch: refetchAllData,
   } = trpc.portalProve.controlCenter.getData.useQuery(
-    { ...allRangeQueryInput, timezone: userTimezone },
-    { staleTime: 5 * 60 * 1000, keepPreviousData: true },
+    { ...rangeQueryInput, timezone: userTimezone },
+    { enabled: isShowingAll, staleTime: 5 * 60 * 1000, keepPreviousData: true },
   )
   const {
     data: filteredData,
+    isLoading: filteredLoading,
     isFetching: filteredFetching,
     isPreviousData: filteredIsPreviousData,
     error: filteredError,
@@ -201,9 +203,11 @@ export function DashboardPage(): JSX.Element {
   // Keep showing previous data while filtered query loads to avoid chart flash
   const data = isShowingAll ? allData : filteredData ?? allData
   const activeData = isShowingAll ? allData : filteredData
+  const activeLoading = isShowingAll ? allLoading : filteredLoading
   const activeFetching = isShowingAll ? allFetching : filteredFetching
   const activeIsPreviousData = isShowingAll ? allIsPreviousData : filteredIsPreviousData
   const activeError = isShowingAll ? allError : filteredError
+  const hasCurrentRangeData = activeData !== undefined && !activeIsPreviousData
   const isChartFetching = activeFetching && (activeIsPreviousData || activeData === undefined)
   const allHistorySyncingAccountIds = allData?.historySyncingAccountIds ?? []
   const filteredHistorySyncingAccountIds = filteredData?.historySyncingAccountIds ?? []
@@ -213,37 +217,48 @@ export function DashboardPage(): JSX.Element {
     : filteredData?.historySyncedAccountIds ?? []
   const historySyncingAccountIdsKey = historySyncingAccountIds.join('|')
   const historySyncedAccountIdsKey = historySyncedAccountIds.join('|')
+  const historyRefreshingAccountIds = activeData?.historyRefreshingAccountIds ?? []
+  const historyFailedAccountIds = activeIsPreviousData ? [] : activeData?.historyFailedAccountIds ?? []
+  const cachedHistory = completedHistory.current?.viewKey === historyViewKey ? completedHistory.current.points : null
+  // Retain only a chart actually completed for this exact range and selection.
+  // A cached prefix alone cannot establish a newly requested range's history.
+  const isHistoryRefreshing =
+    hasCurrentRangeData &&
+    cachedHistory !== null &&
+    historySyncingAccountIds.length > 0 &&
+    historySyncingAccountIds.every((id) => historyRefreshingAccountIds.includes(id))
+  const historyNeedsInitialLoad = historySyncingAccountIds.length > 0 && !isHistoryRefreshing
   const recentlySyncedAccountIdList = useMemo(() => Array.from(recentlySyncedAccountIds), [recentlySyncedAccountIds])
   const balancesQuery = useGetBalancesPerClaimIds({ claimIds, enabled: claimIds.length > 0 })
 
   useEffect(() => {
-    if (allHistorySyncingAccountIds.length === 0 && filteredHistorySyncingAccountIds.length === 0) return
+    if (historySyncingAccountIds.length === 0) return
 
     const intervalId = window.setInterval(() => {
       // Slow Electrum/exchange requests may outlast the polling interval.
       // Reuse an in-flight request rather than repeatedly cancelling it.
-      if (allHistorySyncingAccountIds.length > 0) void refetchAllData({ cancelRefetch: false })
-      if (!isShowingAll && filteredHistorySyncingAccountIds.length > 0) {
-        void refetchFilteredData({ cancelRefetch: false })
-      }
+      void (isShowingAll ? refetchAllData : refetchFilteredData)({ cancelRefetch: false })
     }, 10_000)
 
     return () => window.clearInterval(intervalId)
-  }, [
-    allHistorySyncingAccountIds.length,
-    filteredHistorySyncingAccountIds.length,
-    isShowingAll,
-    refetchAllData,
-    refetchFilteredData,
-  ])
+  }, [historySyncingAccountIds.length, isShowingAll, refetchAllData, refetchFilteredData])
 
   useEffect(() => {
+    if (previousHistorySync.current.viewKey !== historyViewKey) {
+      previousHistorySync.current = { viewKey: historyViewKey, syncingIds: new Set() }
+      shownRecentlySyncedAccountIds.current.clear()
+      for (const timeout of recentlySyncedTimeouts.current.values()) window.clearTimeout(timeout)
+      recentlySyncedTimeouts.current.clear()
+      setRecentlySyncedAccountIds(new Set())
+    }
+    // Cached results for another range/selection cannot establish completion.
+    if (activeIsPreviousData || activeError || activeData === undefined) return
     const currentSyncingIds = new Set(historySyncingAccountIdsKey === '' ? [] : historySyncingAccountIdsKey.split('|'))
     const currentSyncedIds = new Set(historySyncedAccountIdsKey === '' ? [] : historySyncedAccountIdsKey.split('|'))
-    const completedIds = Array.from(previousHistorySyncingAccountIds.current).filter(
+    const completedIds = Array.from(previousHistorySync.current.syncingIds).filter(
       (id) => !currentSyncingIds.has(id) && currentSyncedIds.has(id),
     )
-    previousHistorySyncingAccountIds.current = currentSyncingIds
+    previousHistorySync.current.syncingIds = currentSyncingIds
 
     for (const id of currentSyncingIds) {
       const visibleTimeout = recentlySyncedTimeouts.current.get(id)
@@ -284,11 +299,14 @@ export function DashboardPage(): JSX.Element {
 
       recentlySyncedTimeouts.current.set(id, timeoutId)
     }
-  }, [historySyncingAccountIdsKey, historySyncedAccountIdsKey])
-
-  useEffect(() => {
-    shownRecentlySyncedAccountIds.current.clear()
-  }, [customDateRangeInput?.endDate, customDateRangeInput?.startDate, timeRange])
+  }, [
+    historySyncingAccountIdsKey,
+    historySyncedAccountIdsKey,
+    historyViewKey,
+    activeIsPreviousData,
+    activeError,
+    activeData,
+  ])
 
   useEffect(() => {
     const timeouts = recentlySyncedTimeouts.current
@@ -400,21 +418,23 @@ export function DashboardPage(): JSX.Element {
 
   const isFullHistoryRange = timeRange === 'custom' || timeRange === 'all'
   const historyRangeError =
-    isFullHistoryRange && activeError !== null && (activeData === undefined || activeIsPreviousData)
-      ? activeError
-      : null
+    activeError && (!hasCurrentRangeData || (isFullHistoryRange && historyNeedsInitialLoad)) ? activeError : null
+  const historyBackfillFailed = hasCurrentRangeData && historyFailedAccountIds.length > 0
+  const historyBackfillBlocked = isFullHistoryRange && historyNeedsInitialLoad && historyBackfillFailed
   // Offline queries can be paused rather than fetching. Wait for this range's
   // own data instead of exposing previous-range or all-account fallback data.
   const isFullHistoryPending =
     isFullHistoryRange &&
     historyRangeError === null &&
-    (activeIsPreviousData || activeData === undefined || historySyncingAccountIds.length > 0)
+    !historyBackfillBlocked &&
+    (!hasCurrentRangeData || historyNeedsInitialLoad)
   const customEndsToday = timeRange === 'custom' && customDateRangeInput?.endDate === format(new Date(), 'yyyy-MM-dd')
   const historicalData = useMemo(() => {
     const history = data?.historicalData ?? []
-    if (historyRangeError !== null || isFullHistoryPending) return []
+    if (historyRangeError !== null || isFullHistoryPending || historyBackfillBlocked) return []
+    if (isFullHistoryRange && isHistoryRefreshing && cachedHistory !== null) return cachedHistory
+    if (isFullHistoryRange && history.length === 0) return []
     if (timeRange === 'custom') {
-      if (history.length === 0) return []
       return customEndsToday ? withCurrentBalancePoint(history, displayBalanceSats, new Date(), userTimezone) : history
     }
     return withCurrentBalancePoint(history, displayBalanceSats, new Date(), userTimezone)
@@ -424,8 +444,25 @@ export function DashboardPage(): JSX.Element {
     displayBalanceSats,
     historyRangeError,
     isFullHistoryPending,
+    historyBackfillBlocked,
+    isFullHistoryRange,
+    isHistoryRefreshing,
+    cachedHistory,
     timeRange,
     userTimezone,
+  ])
+
+  useEffect(() => {
+    if (isFullHistoryRange && hasCurrentRangeData && !activeError && historySyncingAccountIds.length === 0) {
+      completedHistory.current = { viewKey: historyViewKey, points: historicalData }
+    }
+  }, [
+    isFullHistoryRange,
+    hasCurrentRangeData,
+    activeError,
+    historySyncingAccountIds.length,
+    historyViewKey,
+    historicalData,
   ])
 
   const periodChange = useMemo(() => {
@@ -441,7 +478,7 @@ export function DashboardPage(): JSX.Element {
   }, [isShowingAll, claimIds, selectedClaimIds, navigate])
 
   const isInitialLoading =
-    allLoading ||
+    (activeLoading && !isFullHistoryRange) ||
     claimsQuery.isLoading ||
     exchangeAccountsQuery.isLoading ||
     manualAccountsQuery.isLoading ||
@@ -451,22 +488,14 @@ export function DashboardPage(): JSX.Element {
     return <Spinner fullPage size="xl" />
   }
 
-  if (allError && allData === undefined && isShowingAll && !isFullHistoryRange) {
-    return (
-      <Stack py={8} gap={8}>
-        <Panel title="Error" p={6}>
-          <Text color="error.400">Failed to load dashboard data: {allError.message}</Text>
-        </Panel>
-      </Stack>
-    )
-  }
-
   const hasVerifiedClaims =
     (allData?.verifiedClaimsCount ?? 0) > 0 ||
+    (activeData?.verifiedClaimsCount ?? 0) > 0 ||
+    claims.length > 0 ||
     exchangeAccounts.length > 0 ||
     manualAccounts.length > 0 ||
     etfAccounts.length > 0
-  const hasHistoricalData = (allData?.historicalData?.length ?? 0) > 0
+  const hasHistoricalData = (allData?.historicalData?.length ?? 0) > 0 || (activeData?.historicalData?.length ?? 0) > 0
   const totalBtcDisplay = formatBtc(displayBalanceSats.toString())
   const btcPrice = data?.currentBtcPrice
     ? Number(data.currentBtcPrice)
@@ -479,7 +508,7 @@ export function DashboardPage(): JSX.Element {
   const isUp = periodChange === null || periodChange.gte(0)
   const changeColor = periodChange === null || periodChange.eq(0) ? 'neutral.400' : isUp ? 'success.600' : 'error.500'
   // A failed range request cannot establish that the portfolio is empty.
-  if (!hasVerifiedClaims && !hasHistoricalData && historyRangeError === null) {
+  if (!hasVerifiedClaims && !hasHistoricalData && hasCurrentRangeData && !activeError && !historyBackfillFailed) {
     return <EmptyState />
   }
 
@@ -514,7 +543,7 @@ export function DashboardPage(): JSX.Element {
             totalUsd={totalUsd}
             compact={compactSidebar}
             onToggleCompact={isSmallScreen ? undefined : toggleCompact}
-            historySyncingAccountIds={allHistorySyncingAccountIds}
+            historySyncingAccountIds={activeIsPreviousData ? [] : historySyncingAccountIds}
             recentlySyncedAccountIds={recentlySyncedAccountIdList}
           />
         </Box>
@@ -544,13 +573,38 @@ export function DashboardPage(): JSX.Element {
                     ✕
                   </Text>
                 )}
-                <SyncIndicator historySyncingCount={historySyncingAccountIds.length} />
+                <SyncIndicator
+                  historySyncingCount={historySyncingAccountIds.length}
+                  isPending={!hasCurrentRangeData}
+                  hasError={!!activeError || historyBackfillFailed}
+                />
               </Flex>
             </Box>
             <Button size="md" px={6} py={3} borderRadius="8px" onClick={handleGenerateStatement}>
               Generate Statement
             </Button>
           </Flex>
+
+          {hasCurrentRangeData && activeError && historyRangeError === null && (
+            <Box role="alert" mb={4}>
+              <Text textStyle="text/sm" color="error.500">
+                Couldn&apos;t refresh this date range. Showing previously loaded data.
+              </Text>
+              <Button
+                mt={2}
+                size="sm"
+                variant="outline"
+                onClick={() => void (isShowingAll ? refetchAllData : refetchFilteredData)({ cancelRefetch: false })}
+              >
+                Try again
+              </Button>
+            </Box>
+          )}
+          {historyBackfillFailed && !historyBackfillBlocked && !activeError && (
+            <Box mb={4}>
+              <HistoryBackfillError />
+            </Box>
+          )}
 
           {/* Balance hero */}
           <Box mb={2} opacity={isChartFetching ? 0.35 : 1} transition="opacity 0.2s ease">
@@ -634,8 +688,12 @@ export function DashboardPage(): JSX.Element {
                 <HistoryRangeError
                   height="220px"
                   message={historyRangeError.message}
-                  onRetry={() => void (isShowingAll ? refetchAllData() : refetchFilteredData())}
+                  onRetry={() => void (isShowingAll ? refetchAllData : refetchFilteredData)({ cancelRefetch: false })}
                 />
+              ) : historyBackfillBlocked ? (
+                <Flex h="220px" align="center" justify="center" px={4} textAlign="center">
+                  <HistoryBackfillError />
+                </Flex>
               ) : isFullHistoryPending ? (
                 <HistoryRangeLoading height="220px" />
               ) : (
@@ -685,8 +743,12 @@ export function DashboardPage(): JSX.Element {
                 <HistoryRangeError
                   height="120px"
                   message={historyRangeError.message}
-                  onRetry={() => void (isShowingAll ? refetchAllData() : refetchFilteredData())}
+                  onRetry={() => void (isShowingAll ? refetchAllData : refetchFilteredData)({ cancelRefetch: false })}
                 />
+              ) : historyBackfillBlocked ? (
+                <Flex h="120px" align="center" justify="center" px={4} textAlign="center">
+                  <HistoryBackfillError />
+                </Flex>
               ) : isFullHistoryPending ? (
                 <HistoryRangeLoading height="120px" />
               ) : (
@@ -755,8 +817,31 @@ function HistoryRangeError({
   )
 }
 
-function SyncIndicator({ historySyncingCount }: { historySyncingCount: number }): JSX.Element {
-  if (historySyncingCount > 0) {
+function HistoryBackfillError(): JSX.Element {
+  return (
+    <Text role="alert" textStyle="text/sm" color="error.500">
+      Wallet history couldn&apos;t be loaded. Retrying automatically. Check your Electrum connection if this continues.
+    </Text>
+  )
+}
+
+function SyncIndicator({
+  historySyncingCount,
+  isPending,
+  hasError,
+}: {
+  historySyncingCount: number
+  isPending: boolean
+  hasError: boolean
+}): JSX.Element {
+  if (hasError) {
+    return (
+      <Text textStyle="label/xs" color="error.500">
+        History unavailable
+      </Text>
+    )
+  }
+  if (isPending || historySyncingCount > 0) {
     return (
       <Flex align="center" gap={1.5}>
         <Spinner size="xs" color="neutral.400" />

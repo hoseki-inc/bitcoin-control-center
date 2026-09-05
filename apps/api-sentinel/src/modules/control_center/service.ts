@@ -38,6 +38,8 @@ export interface ControlCenterData {
   etfAccountCount: number
   historySyncingAccountIds: string[]
   historySyncedAccountIds: string[]
+  historyRefreshingAccountIds: string[]
+  historyFailedAccountIds: string[]
 }
 
 interface BalanceSnapshotRow {
@@ -59,6 +61,8 @@ interface BlockRange {
 interface AccountHistoryStatus {
   historySyncingAccountIds: string[]
   historySyncedAccountIds: string[]
+  historyRefreshingAccountIds: string[]
+  historyFailedAccountIds: string[]
 }
 
 // ─── Service ────────────────────────────────────────────────────────────────
@@ -371,6 +375,8 @@ export class ControlCenterService {
         etfAccountCount: filteredEtfAccounts.length,
         historySyncingAccountIds: historyStatus.historySyncingAccountIds,
         historySyncedAccountIds: historyStatus.historySyncedAccountIds,
+        historyRefreshingAccountIds: historyStatus.historyRefreshingAccountIds,
+        historyFailedAccountIds: historyStatus.historyFailedAccountIds,
       })
     },
   )
@@ -569,19 +575,6 @@ export class ControlCenterService {
     return row ? BigInt(row.balance_sats) : null
   }
 
-  private isAccountHistoryBackfillPending(accountId: string): boolean {
-    if (this.accountHistoryBackfillsPending.has(accountId)) return true
-    if (this.accountHistoryBackfillsInFlight.has(accountId)) return true
-    if (this.accountHistoryBackfillsActive.has(accountId)) return true
-
-    const cooldownUntil = this.accountHistoryBackfillCooldownUntil.get(accountId)
-    if (cooldownUntil === undefined) return false
-    if (cooldownUntil > Date.now()) return true
-
-    this.accountHistoryBackfillCooldownUntil.delete(accountId)
-    return false
-  }
-
   private queueAccountHistoryBackfill(
     accountId: string,
     account: Account,
@@ -673,17 +666,26 @@ export class ControlCenterService {
     fullHistory: boolean,
   ): Promise<AccountHistoryStatus> {
     if (accountRows.length === 0) {
-      return { historySyncingAccountIds: [], historySyncedAccountIds: [] }
+      return {
+        historySyncingAccountIds: [],
+        historySyncedAccountIds: [],
+        historyRefreshingAccountIds: [],
+        historyFailedAccountIds: [],
+      }
     }
 
     const tipResult = await this.onchainProvider.getBlocksTip()
     if (tipResult.isErr()) {
       this.logger.warn({ err: tipResult.unwrapErr() }, 'Failed to inspect chain tip for history completion status')
+      const activeIds = accountRows.filter((row) => this.isAccountActive(row.id)).map((row) => row.id)
       return {
-        historySyncingAccountIds: accountRows
-          .filter((row) => this.isAccountActive(row.id) && this.isAccountHistoryBackfillPending(row.id))
-          .map((row) => row.id),
+        // Keep polling after a connection failure, but never certify an unknown tip.
+        historySyncingAccountIds: activeIds,
         historySyncedAccountIds: [],
+        historyRefreshingAccountIds: activeIds.filter((id) =>
+          this.hasCurrentVersionAccountHistorySync(id, fullHistory),
+        ),
+        historyFailedAccountIds: activeIds,
       }
     }
 
@@ -693,6 +695,8 @@ export class ControlCenterService {
       : historySyncRangeForStartDate(rangeStart, tip)
     const historySyncingAccountIds: string[] = []
     const historySyncedAccountIds: string[] = []
+    const historyRefreshingAccountIds: string[] = []
+    const historyFailedAccountIds: string[] = []
 
     for (const row of accountRows) {
       if (!this.isAccountActive(row.id)) continue
@@ -706,9 +710,23 @@ export class ControlCenterService {
 
       this.accountHistoryBackfillsPending.add(row.id)
       historySyncingAccountIds.push(row.id)
+      // A certified prefix with only a missing tail can remain visible while
+      // catching up. This does not mark the newer blocks as complete.
+      const [missingRange] = missingRanges
+      if (
+        missingRanges.length === 1 &&
+        missingRange !== undefined &&
+        missingRange.fromBlockHeight > requestedRange.fromBlockHeight &&
+        missingRange.toBlockHeight === requestedRange.toBlockHeight
+      ) {
+        historyRefreshingAccountIds.push(row.id)
+      }
+      if ((this.accountHistoryBackfillFailureCounts.get(row.id) ?? 0) > 0) {
+        historyFailedAccountIds.push(row.id)
+      }
     }
 
-    return { historySyncingAccountIds, historySyncedAccountIds }
+    return { historySyncingAccountIds, historySyncedAccountIds, historyRefreshingAccountIds, historyFailedAccountIds }
   }
 
   private async ensureAccountHistorySnapshots(
@@ -913,15 +931,16 @@ export class ControlCenterService {
     return updatedCount
   }
 
-  private hasCurrentVersionAccountHistorySync(accountId: string): boolean {
+  private hasCurrentVersionAccountHistorySync(accountId: string, fromGenesis = false): boolean {
     const row = this.db
       .prepare(
         `SELECT 1 AS one
          FROM account_history_syncs
          WHERE account_id = ? AND sync_version >= ?
+           AND (? = 0 OR from_block_height = 0)
          LIMIT 1`,
       )
-      .get(accountId, CURRENT_ACCOUNT_HISTORY_SYNC_VERSION) as { one: number } | undefined
+      .get(accountId, CURRENT_ACCOUNT_HISTORY_SYNC_VERSION, Number(fromGenesis)) as { one: number } | undefined
 
     return row !== undefined
   }
