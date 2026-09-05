@@ -18,7 +18,7 @@ import {
   useDisclosure,
 } from '@chakra-ui/react'
 import { DateInput, Panel, Spinner } from '@hoseki/packages/ui/design-system'
-import { format, isAfter, isBefore, isValid, max, startOfDay, subDays } from 'date-fns'
+import { format, isAfter, isBefore, startOfDay, subDays } from 'date-fns'
 import Decimal from 'decimal.js'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
@@ -49,26 +49,17 @@ interface CustomDateRangeInput {
   endDate: string
 }
 
-function parseLocalDate(value: string): Date | null {
-  const date = new Date(`${value}T00:00:00`)
-  return isValid(date) && format(date, 'yyyy-MM-dd') === value ? date : null
-}
+const BITCOIN_GENESIS_DATE = new Date(2009, 0, 3)
 
-function createDefaultCustomDateRange(availableFrom: string | null, now: Date): CustomDateRangeDraft {
-  const availableStart = availableFrom === null ? null : parseLocalDate(availableFrom)
-  if (availableStart === null) return { startDate: null, endDate: null }
-
+function createDefaultCustomDateRange(now: Date): CustomDateRangeDraft {
   const today = startOfDay(now)
-  return { startDate: max([availableStart, subDays(today, 30)]), endDate: today }
+  return { startDate: subDays(today, 30), endDate: today }
 }
 
-function validateCustomDateRange(range: CustomDateRangeDraft, availableFrom: string | null, now: Date): string | null {
-  if (availableFrom === null) return 'Portfolio history is not available yet.'
+function validateCustomDateRange(range: CustomDateRangeDraft, now: Date): string | null {
   if (range.startDate === null || range.endDate === null) return 'Choose both a start date and an end date.'
 
-  const availableStart = parseLocalDate(availableFrom)
-  if (availableStart === null) return 'The available history date could not be read.'
-  if (isBefore(range.startDate, availableStart)) return `History is available from ${format(availableStart, 'PP')}.`
+  if (isBefore(range.startDate, BITCOIN_GENESIS_DATE)) return 'Start date cannot be before Bitcoin genesis.'
   if (isAfter(range.startDate, range.endDate)) return 'Start date must be on or before end date.'
   if (isAfter(range.endDate, startOfDay(now))) return 'End date cannot be in the future.'
   return null
@@ -112,7 +103,6 @@ export function DashboardPage(): JSX.Element {
     startDate: null,
     endDate: null,
   })
-  const [knownHistoryAvailableFrom, setKnownHistoryAvailableFrom] = useState<string | null>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [recentlySyncedAccountIds, setRecentlySyncedAccountIds] = useState<Set<string>>(new Set())
   const hasRecordedSnapshot = useRef(false)
@@ -122,7 +112,7 @@ export function DashboardPage(): JSX.Element {
 
   const navigate = useNavigate()
   const userTimezone = useMemo(() => getBrowserTimezone(), [])
-  const today = useMemo(() => new Date(), [])
+  const today = new Date()
   const isShowingAll = selected.size === 0
   const isSmallScreen = useBreakpointValue({ base: true, xl: false }) ?? true
   const [userCompact, setUserCompact] = useState<boolean>(() => {
@@ -177,20 +167,24 @@ export function DashboardPage(): JSX.Element {
     timeRange === 'custom'
       ? { timeRange: '1y' as const, customDateRange: customDateRangeInput ?? undefined }
       : { timeRange }
+  const allRangeQueryInput = timeRange === 'custom' && !isShowingAll ? { timeRange: '1y' as const } : rangeQueryInput
 
   const {
     data: allData,
     isLoading: allLoading,
     isFetching: allFetching,
+    isPreviousData: allIsPreviousData,
     error: allError,
     refetch: refetchAllData,
   } = trpc.portalProve.controlCenter.getData.useQuery(
-    { ...rangeQueryInput, timezone: userTimezone },
+    { ...allRangeQueryInput, timezone: userTimezone },
     { staleTime: 5 * 60 * 1000, keepPreviousData: true },
   )
   const {
     data: filteredData,
     isFetching: filteredFetching,
+    isPreviousData: filteredIsPreviousData,
+    error: filteredError,
     refetch: refetchFilteredData,
   } = trpc.portalProve.controlCenter.getData.useQuery(
     {
@@ -204,32 +198,44 @@ export function DashboardPage(): JSX.Element {
     { enabled: !isShowingAll, staleTime: 5 * 60 * 1000, keepPreviousData: true },
   )
 
-  useEffect(() => {
-    if (allData?.historyAvailableFrom !== undefined) {
-      setKnownHistoryAvailableFrom(allData.historyAvailableFrom)
-    }
-  }, [allData?.historyAvailableFrom])
-
   // Keep showing previous data while filtered query loads to avoid chart flash
   const data = isShowingAll ? allData : filteredData ?? allData
-  const isChartFetching = allFetching || (!isShowingAll && filteredFetching)
-  const historySyncingAccountIds = allData?.historySyncingAccountIds ?? filteredData?.historySyncingAccountIds ?? []
-  const historySyncedAccountIds = allData?.historySyncedAccountIds ?? filteredData?.historySyncedAccountIds ?? []
+  const activeData = isShowingAll ? allData : filteredData
+  const activeFetching = isShowingAll ? allFetching : filteredFetching
+  const activeIsPreviousData = isShowingAll ? allIsPreviousData : filteredIsPreviousData
+  const activeError = isShowingAll ? allError : filteredError
+  const isChartFetching = activeFetching && (activeIsPreviousData || activeData === undefined)
+  const allHistorySyncingAccountIds = allData?.historySyncingAccountIds ?? []
+  const filteredHistorySyncingAccountIds = filteredData?.historySyncingAccountIds ?? []
+  const historySyncingAccountIds = isShowingAll ? allHistorySyncingAccountIds : filteredHistorySyncingAccountIds
+  const historySyncedAccountIds = isShowingAll
+    ? allData?.historySyncedAccountIds ?? []
+    : filteredData?.historySyncedAccountIds ?? []
   const historySyncingAccountIdsKey = historySyncingAccountIds.join('|')
   const historySyncedAccountIdsKey = historySyncedAccountIds.join('|')
   const recentlySyncedAccountIdList = useMemo(() => Array.from(recentlySyncedAccountIds), [recentlySyncedAccountIds])
   const balancesQuery = useGetBalancesPerClaimIds({ claimIds, enabled: claimIds.length > 0 })
 
   useEffect(() => {
-    if (historySyncingAccountIds.length === 0) return
+    if (allHistorySyncingAccountIds.length === 0 && filteredHistorySyncingAccountIds.length === 0) return
 
     const intervalId = window.setInterval(() => {
-      void refetchAllData()
-      if (!isShowingAll) void refetchFilteredData()
+      // Slow Electrum/exchange requests may outlast the polling interval.
+      // Reuse an in-flight request rather than repeatedly cancelling it.
+      if (allHistorySyncingAccountIds.length > 0) void refetchAllData({ cancelRefetch: false })
+      if (!isShowingAll && filteredHistorySyncingAccountIds.length > 0) {
+        void refetchFilteredData({ cancelRefetch: false })
+      }
     }, 10_000)
 
     return () => window.clearInterval(intervalId)
-  }, [historySyncingAccountIds.length, isShowingAll, refetchAllData, refetchFilteredData])
+  }, [
+    allHistorySyncingAccountIds.length,
+    filteredHistorySyncingAccountIds.length,
+    isShowingAll,
+    refetchAllData,
+    refetchFilteredData,
+  ])
 
   useEffect(() => {
     const currentSyncingIds = new Set(historySyncingAccountIdsKey === '' ? [] : historySyncingAccountIdsKey.split('|'))
@@ -392,12 +398,35 @@ export function DashboardPage(): JSX.Element {
         return sum + (acc?.balance ? Number(acc.balance) : 0)
       }, 0)
 
-  const isCustomHistoryPending = timeRange === 'custom' && (isChartFetching || historySyncingAccountIds.length > 0)
+  const isFullHistoryRange = timeRange === 'custom' || timeRange === 'all'
+  const historyRangeError =
+    isFullHistoryRange && activeError !== null && (activeData === undefined || activeIsPreviousData)
+      ? activeError
+      : null
+  // Offline queries can be paused rather than fetching. Wait for this range's
+  // own data instead of exposing previous-range or all-account fallback data.
+  const isFullHistoryPending =
+    isFullHistoryRange &&
+    historyRangeError === null &&
+    (activeIsPreviousData || activeData === undefined || historySyncingAccountIds.length > 0)
+  const customEndsToday = timeRange === 'custom' && customDateRangeInput?.endDate === format(new Date(), 'yyyy-MM-dd')
   const historicalData = useMemo(() => {
     const history = data?.historicalData ?? []
-    if (timeRange === 'custom') return isCustomHistoryPending ? [] : history
+    if (historyRangeError !== null || isFullHistoryPending) return []
+    if (timeRange === 'custom') {
+      if (history.length === 0) return []
+      return customEndsToday ? withCurrentBalancePoint(history, displayBalanceSats, new Date(), userTimezone) : history
+    }
     return withCurrentBalancePoint(history, displayBalanceSats, new Date(), userTimezone)
-  }, [data?.historicalData, displayBalanceSats, isCustomHistoryPending, timeRange, userTimezone])
+  }, [
+    customEndsToday,
+    data?.historicalData,
+    displayBalanceSats,
+    historyRangeError,
+    isFullHistoryPending,
+    timeRange,
+    userTimezone,
+  ])
 
   const periodChange = useMemo(() => {
     if (!historicalData.length) return null
@@ -422,7 +451,7 @@ export function DashboardPage(): JSX.Element {
     return <Spinner fullPage size="xl" />
   }
 
-  if (allError) {
+  if (allError && allData === undefined && isShowingAll && !isFullHistoryRange) {
     return (
       <Stack py={8} gap={8}>
         <Panel title="Error" p={6}>
@@ -449,10 +478,8 @@ export function DashboardPage(): JSX.Element {
 
   const isUp = periodChange === null || periodChange.gte(0)
   const changeColor = periodChange === null || periodChange.eq(0) ? 'neutral.400' : isUp ? 'success.600' : 'error.500'
-  const availableHistoryStartDate =
-    knownHistoryAvailableFrom === null ? null : parseLocalDate(knownHistoryAvailableFrom)
-
-  if (!hasVerifiedClaims && !hasHistoricalData) {
+  // A failed range request cannot establish that the portfolio is empty.
+  if (!hasVerifiedClaims && !hasHistoricalData && historyRangeError === null) {
     return <EmptyState />
   }
 
@@ -487,7 +514,7 @@ export function DashboardPage(): JSX.Element {
             totalUsd={totalUsd}
             compact={compactSidebar}
             onToggleCompact={isSmallScreen ? undefined : toggleCompact}
-            historySyncingAccountIds={historySyncingAccountIds}
+            historySyncingAccountIds={allHistorySyncingAccountIds}
             recentlySyncedAccountIds={recentlySyncedAccountIdList}
           />
         </Box>
@@ -579,12 +606,11 @@ export function DashboardPage(): JSX.Element {
                 <Text textStyle="overline/sm" fontWeight="bold" color="neutral.400">
                   Accumulation
                 </Text>
-                {isChartFetching && <Spinner size="xs" color="neutral.300" />}
+                {activeFetching && <Spinner size="xs" color="neutral.300" />}
               </Flex>
               <TimeRangeSelector
                 value={timeRange}
                 customDateRange={customDateRange}
-                availableHistoryStartDate={availableHistoryStartDate}
                 today={today}
                 onPresetChange={setTimeRange}
                 onCustomApply={(range) => {
@@ -604,12 +630,18 @@ export function DashboardPage(): JSX.Element {
               position="relative"
               overflow="hidden"
             >
-              {isCustomHistoryPending ? (
+              {historyRangeError !== null ? (
+                <HistoryRangeError
+                  height="220px"
+                  message={historyRangeError.message}
+                  onRetry={() => void (isShowingAll ? refetchAllData() : refetchFilteredData())}
+                />
+              ) : isFullHistoryPending ? (
                 <HistoryRangeLoading height="220px" />
               ) : (
                 <AccumulationChart data={historicalData} hasActivity={hasBalance} isUp={isUp} timezone={userTimezone} />
               )}
-              {isChartFetching && !isCustomHistoryPending && (
+              {isChartFetching && !isFullHistoryPending && (
                 <Box
                   position="absolute"
                   inset={0}
@@ -636,7 +668,7 @@ export function DashboardPage(): JSX.Element {
               <Text textStyle="overline/sm" fontWeight="bold" color="neutral.400">
                 Monthly Net Change
               </Text>
-              {isChartFetching && <Spinner size="xs" color="neutral.300" />}
+              {activeFetching && <Spinner size="xs" color="neutral.300" />}
             </Flex>
             <Box
               bg="shades.0"
@@ -649,12 +681,18 @@ export function DashboardPage(): JSX.Element {
               position="relative"
               overflow="hidden"
             >
-              {isCustomHistoryPending ? (
+              {historyRangeError !== null ? (
+                <HistoryRangeError
+                  height="120px"
+                  message={historyRangeError.message}
+                  onRetry={() => void (isShowingAll ? refetchAllData() : refetchFilteredData())}
+                />
+              ) : isFullHistoryPending ? (
                 <HistoryRangeLoading height="120px" />
               ) : (
                 <MonthlyNetChangeChart data={historicalData} timezone={userTimezone} />
               )}
-              {isChartFetching && !isCustomHistoryPending && (
+              {isChartFetching && !isFullHistoryPending && (
                 <Box
                   position="absolute"
                   inset={0}
@@ -693,6 +731,30 @@ function HistoryRangeLoading({ height }: { height: string }): JSX.Element {
   )
 }
 
+function HistoryRangeError({
+  height,
+  message,
+  onRetry,
+}: {
+  height: string
+  message: string
+  onRetry: () => void
+}): JSX.Element {
+  return (
+    <Flex h={height} align="center" justify="center" direction="column" gap={3} px={4} textAlign="center">
+      <Text textStyle="text/sm" color="error.500">
+        Couldn&apos;t load this date range: {message}
+      </Text>
+      <Text textStyle="label/xs" color="neutral.500">
+        Try again, or choose another range.
+      </Text>
+      <Button size="sm" variant="outline" onClick={onRetry}>
+        Try again
+      </Button>
+    </Flex>
+  )
+}
+
 function SyncIndicator({ historySyncingCount }: { historySyncingCount: number }): JSX.Element {
   if (historySyncingCount > 0) {
     return (
@@ -718,7 +780,6 @@ function SyncIndicator({ historySyncingCount }: { historySyncingCount: number })
 interface TimeRangeSelectorProps {
   value: TimeRange
   customDateRange: CustomDateRangeDraft
-  availableHistoryStartDate: Date | null
   today: Date
   onPresetChange: (value: PresetTimeRange) => void
   onCustomApply: (range: CustomDateRangeDraft) => void
@@ -727,18 +788,13 @@ interface TimeRangeSelectorProps {
 function TimeRangeSelector({
   value,
   customDateRange,
-  availableHistoryStartDate,
   today,
   onPresetChange,
   onCustomApply,
 }: TimeRangeSelectorProps): JSX.Element {
   const { isOpen, onOpen, onClose } = useDisclosure()
   const [draft, setDraft] = useState<CustomDateRangeDraft>(customDateRange)
-  const draftError = validateCustomDateRange(
-    draft,
-    availableHistoryStartDate === null ? null : format(availableHistoryStartDate, 'yyyy-MM-dd'),
-    today,
-  )
+  const draftError = validateCustomDateRange(draft, today)
   const options: { value: PresetTimeRange; label: string }[] = [
     { value: '7d', label: '7D' },
     { value: '30d', label: '30D' },
@@ -749,14 +805,7 @@ function TimeRangeSelector({
 
   const handleCustomClick = (): void => {
     const hasAppliedRange = customDateRange.startDate !== null && customDateRange.endDate !== null
-    setDraft(
-      hasAppliedRange
-        ? customDateRange
-        : createDefaultCustomDateRange(
-            availableHistoryStartDate === null ? null : format(availableHistoryStartDate, 'yyyy-MM-dd'),
-            today,
-          ),
-    )
+    setDraft(hasAppliedRange ? customDateRange : createDefaultCustomDateRange(new Date()))
   }
 
   const handleApply = (): void => {
@@ -832,10 +881,9 @@ function TimeRangeSelector({
                       <DateInput
                         id="portfolio-range-start"
                         value={draft.startDate}
-                        min={availableHistoryStartDate ?? undefined}
+                        min={BITCOIN_GENESIS_DATE}
                         max={today}
                         onChange={(startDate) => setDraft((current) => ({ ...current, startDate }))}
-                        isDisabled={availableHistoryStartDate === null}
                         size="sm"
                       />
                     </FormControl>
@@ -846,16 +894,15 @@ function TimeRangeSelector({
                       <DateInput
                         id="portfolio-range-end"
                         value={draft.endDate}
-                        min={draft.startDate ?? availableHistoryStartDate ?? undefined}
+                        min={draft.startDate ?? BITCOIN_GENESIS_DATE}
                         max={today}
                         onChange={(endDate) => setDraft((current) => ({ ...current, endDate }))}
-                        isDisabled={availableHistoryStartDate === null}
                         size="sm"
                       />
                     </FormControl>
                   </Stack>
                   <Text textStyle="label/xs" color={draftError === null ? 'neutral.500' : 'error.500'}>
-                    {draftError ?? `Available history begins ${format(availableHistoryStartDate ?? today, 'PP')}.`}
+                    {draftError ?? 'Older self-custody history may take longer to prepare.'}
                   </Text>
                   <Flex justify="flex-end" gap={2}>
                     <Button size="sm" variant="ghost" onClick={onClose}>

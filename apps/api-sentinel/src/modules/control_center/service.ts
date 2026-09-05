@@ -19,7 +19,6 @@ import {
   type TimeRange,
   buildHistoricalData,
   daysBetween,
-  getHistoryAvailableFrom,
   resolveHistoryRange,
 } from './history-range'
 
@@ -39,7 +38,6 @@ export interface ControlCenterData {
   etfAccountCount: number
   historySyncingAccountIds: string[]
   historySyncedAccountIds: string[]
-  historyAvailableFrom: string | null
 }
 
 interface BalanceSnapshotRow {
@@ -115,6 +113,7 @@ export class ControlCenterService {
       if (historyRangeResult.isErr()) return Err(historyRangeResult.unwrapErr())
 
       const historyRange = historyRangeResult.unwrap()
+      const shouldSyncFullHistory = args.customDateRange !== undefined || timeRange === 'all'
       this.logger.info({ timeRange, customDateRange: args.customDateRange, timezone }, 'Getting control center data')
 
       // ─── Fetch on-chain accounts ────────────────────────────────
@@ -125,18 +124,14 @@ export class ControlCenterService {
       for (const row of accountRows) {
         const accountResult = Account.fromDescriptor(row.descriptor)
         if (accountResult.isErr()) {
-          this.logger.warn(
-            { descriptor: row.descriptor, err: accountResult.unwrapErr() },
-            'Skipping invalid descriptor',
-          )
+          this.logger.warn({ accountId: row.id }, 'Skipping invalid descriptor')
           continue
         }
         accounts.add(accountResult.unwrap())
       }
 
       // ─── Fetch on-chain balances ────────────────────────────────
-      let onchainBalance = 0n
-      const onchainEntries: BalanceEntry[] = []
+      const balancesByAccountId = new Map<string, bigint>()
 
       if (accounts.size > 0) {
         const balancesResult = await this.onchainProvider.getConfirmedAccountBalances(accounts)
@@ -145,8 +140,20 @@ export class ControlCenterService {
           this.logger.warn({ err: balancesResult.unwrapErr() }, 'Failed to fetch on-chain balances')
           for (const row of accountRows) {
             const latestSnapshotBalance = this.getLatestAccountSnapshotBalance(row.id) ?? 0n
-            onchainBalance += latestSnapshotBalance
-            onchainEntries.push(...this.getAccountSnapshotEntries(row.id))
+            balancesByAccountId.set(row.id, latestSnapshotBalance)
+
+            if (shouldSyncFullHistory) {
+              const accountResult = Account.fromDescriptor(row.descriptor)
+              if (accountResult.isOk()) {
+                this.queueAccountHistoryBackfill(
+                  row.id,
+                  accountResult.unwrap(),
+                  latestSnapshotBalance,
+                  historyRange.start,
+                  true,
+                )
+              }
+            }
           }
         } else {
           const accountBalances = new Map<string, bigint>()
@@ -162,18 +169,10 @@ export class ControlCenterService {
 
             const account = accountResult.unwrap()
             const accountBalance = accountBalances.get(account.toString()) ?? 0n
-            onchainBalance += accountBalance
-            this.queueAccountHistoryBackfill(row.id, account, accountBalance, historyRange.start)
-
-            onchainEntries.push(...this.getAccountSnapshotEntries(row.id))
+            balancesByAccountId.set(row.id, accountBalance)
+            this.queueAccountHistoryBackfill(row.id, account, accountBalance, historyRange.start, shouldSyncFullHistory)
           }
         }
-      }
-
-      // ─── Include archived account snapshots ─────────────────────
-      if (!args.accountIds) {
-        const archivedEntries = this.getArchivedAccountSnapshotEntries()
-        onchainEntries.push(...archivedEntries)
       }
 
       // ─── Fetch exchange data ────────────────────────────────────
@@ -320,6 +319,15 @@ export class ControlCenterService {
         this.logger.warn({ err: priceResult.unwrapErr() }, 'Failed to fetch BTC price')
       }
 
+      // Inspect completion before reading snapshots. There must be no await
+      // between the final snapshot reads and response construction: a backfill
+      // must never be reported complete alongside history read before it finished.
+      const historyStatus = await this.getAccountHistoryStatus(accountRows, historyRange.start, shouldSyncFullHistory)
+      accountRows = accountRows.filter(({ id }) => this.isAccountActive(id))
+      const onchainEntries = accountRows.flatMap(({ id }) => this.getAccountSnapshotEntries(id))
+      if (!args.accountIds) onchainEntries.push(...this.getArchivedAccountSnapshotEntries())
+      const onchainBalance = accountRows.reduce((sum, { id }) => sum + (balancesByAccountId.get(id) ?? 0n), 0n)
+
       // ─── Compute totals ─────────────────────────────────────────
       const currentTotalBalance = onchainBalance + exchangeBalance + manualBalance + etfBalance
       this.logger.info(
@@ -350,11 +358,8 @@ export class ControlCenterService {
       )
 
       const historicalData = buildHistoricalData(allEntries, currentTotalBalance, historyRange, timezone)
-      const historyAvailableFrom = getHistoryAvailableFrom(allEntries, timezone)
 
       this.logger.info({ historicalDataPoints: historicalData.length }, 'Historical data built')
-
-      const historyStatus = await this.getAccountHistoryStatus(accountRows, historyRange.start)
 
       return Ok({
         currentTotalBalance: currentTotalBalance.toString(),
@@ -366,7 +371,6 @@ export class ControlCenterService {
         etfAccountCount: filteredEtfAccounts.length,
         historySyncingAccountIds: historyStatus.historySyncingAccountIds,
         historySyncedAccountIds: historyStatus.historySyncedAccountIds,
-        historyAvailableFrom,
       })
     },
   )
@@ -583,6 +587,7 @@ export class ControlCenterService {
     account: Account,
     currentBalance: bigint,
     rangeStart: Date,
+    fullHistory: boolean,
   ): void {
     if (!this.isAccountActive(accountId)) return
     const generation = this.getAccountHistoryBackfillGeneration(accountId)
@@ -603,11 +608,12 @@ export class ControlCenterService {
     }
     this.accountHistoryBackfillsInFlight.add(accountId)
 
-    void this.ensureAccountHistorySnapshots(accountId, account, currentBalance, rangeStart, false, generation)
+    void this.ensureAccountHistorySnapshots(accountId, account, currentBalance, rangeStart, fullHistory, generation)
       .then((preservedBalance) => {
         if (!this.canContinueAccountHistoryBackfill(accountId, generation)) return
         if (preservedBalance !== null) {
-          this.clearAccountHistoryBackfillState(accountId)
+          this.accountHistoryBackfillsPending.delete(accountId)
+          this.clearAccountHistoryBackfillRetry(accountId)
           return
         }
 
@@ -664,6 +670,7 @@ export class ControlCenterService {
   private async getAccountHistoryStatus(
     accountRows: Array<{ id: string; descriptor: string; network: string }>,
     rangeStart: Date,
+    fullHistory: boolean,
   ): Promise<AccountHistoryStatus> {
     if (accountRows.length === 0) {
       return { historySyncingAccountIds: [], historySyncedAccountIds: [] }
@@ -674,21 +681,25 @@ export class ControlCenterService {
       this.logger.warn({ err: tipResult.unwrapErr() }, 'Failed to inspect chain tip for history completion status')
       return {
         historySyncingAccountIds: accountRows
-          .filter((row) => this.isAccountHistoryBackfillPending(row.id))
+          .filter((row) => this.isAccountActive(row.id) && this.isAccountHistoryBackfillPending(row.id))
           .map((row) => row.id),
         historySyncedAccountIds: [],
       }
     }
 
     const tip = tipResult.unwrap()
-    const requestedRange = historySyncRangeForStartDate(rangeStart, tip)
+    const requestedRange = fullHistory
+      ? { fromBlockHeight: 0, toBlockHeight: tip.height }
+      : historySyncRangeForStartDate(rangeStart, tip)
     const historySyncingAccountIds: string[] = []
     const historySyncedAccountIds: string[] = []
 
     for (const row of accountRows) {
+      if (!this.isAccountActive(row.id)) continue
       const missingRanges = this.getMissingAccountHistorySyncRanges(row.id, requestedRange)
       if (missingRanges.length === 0) {
-        this.clearAccountHistoryBackfillState(row.id)
+        // Completion of a narrower request says nothing about a wider job's
+        // retry state. Only the job itself may clear its cooldown and failures.
         historySyncedAccountIds.push(row.id)
         continue
       }
@@ -716,15 +727,16 @@ export class ControlCenterService {
     }
     if (!this.canContinueAccountHistoryBackfill(accountId, generation)) return null
 
-    const tip = tipResult.unwrap()
-    const requestedRange = fullHistory
+    let tip = tipResult.unwrap()
+    let requestedRange = fullHistory
       ? { fromBlockHeight: 0, toBlockHeight: tip.height }
       : historySyncRangeForStartDate(rangeStart, tip)
-    const missingRanges = this.getMissingAccountHistorySyncRanges(accountId, requestedRange)
+    let missingRanges = this.getMissingAccountHistorySyncRanges(accountId, requestedRange)
+    // The dashboard already fetched this balance. Only archival (which passes
+    // no balance) needs to validate it when the requested history is cached.
+    if (missingRanges.length === 0 && currentBalance !== undefined) return currentBalance
     const backfillFromBlockHeight =
-      missingRanges.length > 0
-        ? Math.min(...missingRanges.map((range) => range.fromBlockHeight))
-        : requestedRange.fromBlockHeight
+      missingRanges.length > 0 ? Math.min(...missingRanges.map((range) => range.fromBlockHeight)) : tip.height + 1
     const stopBeforeBlockHeight = Math.max(0, backfillFromBlockHeight - 1)
     let transactionEntries: TransactionEntry[] = []
 
@@ -744,44 +756,57 @@ export class ControlCenterService {
       transactionEntries = entriesResult.unwrap()
     }
 
-    let reconstructionBalance = currentBalance
-    if (fullHistory) {
-      const accounts = new IndexSet<Account>()
-      accounts.add(account)
+    let reconstructionBalance: bigint
+    const accounts = new IndexSet([account])
+    for (;;) {
       const balanceResult = await this.onchainProvider.getConfirmedAccountBalances(accounts)
       if (balanceResult.isErr()) {
-        this.logger.warn({ accountId, err: balanceResult.unwrapErr() }, 'Failed to fetch archive boundary balance')
+        this.logger.warn({ accountId, err: balanceResult.unwrapErr() }, 'Failed to fetch history boundary balance')
         return null
       }
       if (!this.canContinueAccountHistoryBackfill(accountId, generation)) return null
 
       const verifiedTipResult = await this.onchainProvider.getBlocksTip()
       if (verifiedTipResult.isErr()) {
-        this.logger.warn({ accountId, err: verifiedTipResult.unwrapErr() }, 'Failed to verify archive chain tip')
+        this.logger.warn({ accountId, err: verifiedTipResult.unwrapErr() }, 'Failed to verify history chain tip')
         return null
       }
       if (!this.canContinueAccountHistoryBackfill(accountId, generation)) return null
 
       const verifiedTip = verifiedTipResult.unwrap()
-      if (verifiedTip.height !== tip.height || verifiedTip.hash !== tip.hash) {
-        this.logger.warn(
-          { accountId, capturedTip: tip, verifiedTip },
-          'Chain tip changed while preserving account history',
-        )
-        return null
+      if (verifiedTip.height === tip.height && verifiedTip.hash === tip.hash) {
+        reconstructionBalance = balanceResult.unwrap().get(account) ?? 0n
+        break
       }
-      reconstructionBalance = balanceResult.unwrap().get(account) ?? 0n
+
+      // A normal new block must not throw away a long history scan. Verify its
+      // anchor is still on the chain, retain entries through that block, and
+      // fetch only the new tail. Reorganizations still require a fresh scan.
+      if (verifiedTip.height <= tip.height) return null
+      const anchorResult = await this.onchainProvider.getBlock(tip.height)
+      if (anchorResult.isErr() || anchorResult.unwrap().hash !== tip.hash) return null
+      if (!this.canContinueAccountHistoryBackfill(accountId, generation)) return null
+
+      const tailResult = await this.getTransactionEntriesByAccountSinceBlock(account, tip.height)
+      if (tailResult.isErr()) return null
+      if (!this.canContinueAccountHistoryBackfill(accountId, generation)) return null
+      transactionEntries = [
+        ...transactionEntries.filter((entry) => entry.blockHeight !== null && entry.blockHeight <= tip.height),
+        ...tailResult.unwrap().filter((entry) => entry.blockHeight !== null && entry.blockHeight > tip.height),
+      ]
+      tip = verifiedTip
+      requestedRange = { ...requestedRange, toBlockHeight: tip.height }
+      missingRanges = this.getMissingAccountHistorySyncRanges(accountId, requestedRange)
     }
 
-    if (reconstructionBalance === undefined) return null
-    if (missingRanges.length === 0) {
-      this.clearAccountHistoryBackfillState(accountId)
-      return reconstructionBalance
-    }
+    if (missingRanges.length === 0) return reconstructionBalance
 
     const deltas = transactionDeltasFromEntries(transactionEntries, stopBeforeBlockHeight, requestedRange.toBlockHeight)
     const startBalance = reconstructionBalance - deltas.reduce((sum, entry) => sum + entry.value, 0n)
-    const rangeStartTime = estimateTimestampForBlockHeight(backfillFromBlockHeight, tip)
+    // A full reconstruction must also correct old snapshots before the
+    // estimated block-zero date (average block times can drift by months).
+    const rangeStartTime =
+      backfillFromBlockHeight === 0 ? new Date(0) : estimateTimestampForBlockHeight(backfillFromBlockHeight, tip)
     const currentSnapshotTime = new Date()
     let runningBalance = startBalance
 
@@ -819,7 +844,6 @@ export class ControlCenterService {
       'Backfilled self-custody balance snapshots',
     )
 
-    this.clearAccountHistoryBackfillState(accountId)
     return reconstructionBalance
   }
 
@@ -1061,7 +1085,8 @@ function accountDescriptorNetworkKey(descriptor: string, network: string): strin
 
 const ESTIMATED_BLOCK_INTERVAL_MS = 10 * 60 * 1000
 const HISTORY_SYNC_BLOCK_CUSHION = 288
-const CURRENT_ACCOUNT_HISTORY_SYNC_VERSION = 4
+// Earlier versions could certify a partial Electrum response as complete.
+const CURRENT_ACCOUNT_HISTORY_SYNC_VERSION = 5
 const HISTORY_BACKFILL_RETRY_INITIAL_DELAY_MS = 5 * 1000
 const HISTORY_BACKFILL_RETRY_MAX_DELAY_MS = 60 * 1000
 const HISTORY_BACKFILL_RETRY_JITTER_FRACTION = 0.2

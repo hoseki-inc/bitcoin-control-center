@@ -1,4 +1,4 @@
-import { TZDate } from '@date-fns/tz'
+import { TZDate, tzOffset } from '@date-fns/tz'
 import { type Timezone } from '@hoseki/packages/schemas'
 import { Err, Ok, type Result } from '@patina/core'
 
@@ -24,6 +24,7 @@ export interface ResolvedHistoryRange {
   end: Date
   dayStarts: Date[]
   isCustom: boolean
+  isAll: boolean
   endsAtCurrentTime: boolean
 }
 
@@ -35,7 +36,7 @@ interface ZonedDateParts {
 
 const DATE_ONLY_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/
 const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000
-const MAX_CUSTOM_RANGE_DAYS = 20 * 366
+const BITCOIN_GENESIS_DAY: ZonedDateParts = { year: 2009, month: 1, day: 3 }
 
 export function resolveHistoryRange(
   timeRange: TimeRange,
@@ -46,14 +47,17 @@ export function resolveHistoryRange(
   const today = getZonedDateParts(now, timezone)
 
   if (customDateRange === undefined) {
-    const daysBack = timeRangeToDays(timeRange)
-    const startDay = addDaysToZonedDateParts(today, -daysBack)
+    const startDay =
+      timeRange === 'all' ? BITCOIN_GENESIS_DAY : addDaysToZonedDateParts(today, -timeRangeToDays(timeRange))
 
     return Ok({
       start: zonedDateStart(startDay, timezone),
       end: now,
-      dayStarts: getZonedDayStarts(startDay, today, timezone),
+      // For All, genesis is only an unbounded history lookup marker. The
+      // displayed days are determined from the portfolio's actual entries.
+      dayStarts: timeRange === 'all' ? [] : getZonedDayStarts(startDay, today, timezone),
       isCustom: false,
+      isAll: timeRange === 'all',
       endsAtCurrentTime: true,
     })
   }
@@ -68,13 +72,12 @@ export function resolveHistoryRange(
     return Err(new Error('Start date must be on or before end date'))
   }
 
-  if (compareZonedDates(endDay, today) > 0) {
-    return Err(new Error('End date cannot be in the future'))
+  if (compareZonedDates(startDay, BITCOIN_GENESIS_DAY) < 0) {
+    return Err(new Error('Start date cannot be before Bitcoin genesis'))
   }
 
-  const spanDays = calendarDayDistance(startDay, endDay)
-  if (spanDays > MAX_CUSTOM_RANGE_DAYS) {
-    return Err(new Error('Custom date range cannot exceed 20 years'))
+  if (compareZonedDates(endDay, today) > 0) {
+    return Err(new Error('End date cannot be in the future'))
   }
 
   const endsToday = compareZonedDates(endDay, today) === 0
@@ -83,6 +86,7 @@ export function resolveHistoryRange(
     end: endsToday ? now : zonedDateEnd(endDay, timezone),
     dayStarts: getZonedDayStarts(startDay, endDay, timezone),
     isCustom: true,
+    isAll: false,
     endsAtCurrentTime: endsToday,
   })
 }
@@ -94,7 +98,7 @@ export function buildHistoricalData(
   timezone: Timezone,
 ): BalanceDataPoint[] {
   if (allEntries.length === 0) {
-    if (range.isCustom || currentTotalBalance <= 0n) return []
+    if (range.isCustom || range.isAll || currentTotalBalance <= 0n) return []
 
     return range.dayStarts.map((date) => ({
       timestamp: date.toISOString(),
@@ -103,18 +107,32 @@ export function buildHistoricalData(
   }
 
   const sortedEntries = [...allEntries].sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
+  const firstActivity = sortedEntries.find((entry) => entry.value !== 0n && entry.timestamp <= range.end)
+  if (range.isAll && firstActivity === undefined) return []
+
+  // Include archived and selected accounts via the same entries used for the
+  // balances. Zero-balance setup snapshots must not extend All into empty years.
+  const start =
+    range.isAll && firstActivity
+      ? zonedDateStart(getZonedDateParts(firstActivity.timestamp, timezone), timezone)
+      : range.start
+  const dayStarts = range.isAll
+    ? getZonedDayStarts(getZonedDateParts(start, timezone), getZonedDateParts(range.end, timezone), timezone)
+    : range.dayStarts
   const historicalData: BalanceDataPoint[] = []
   let entryIndex = 0
   let runningBalance = 0n
 
   while (entryIndex < sortedEntries.length) {
     const entry = sortedEntries[entryIndex]
-    if (!entry || entry.timestamp > range.start) break
+    if (!entry || entry.timestamp >= start) break
     runningBalance += entry.value
     entryIndex += 1
   }
 
-  for (const dayStart of range.dayStarts) {
+  if (range.isCustom || range.isAll) appendHistoricalPoint(historicalData, start, runningBalance)
+
+  for (const dayStart of dayStarts) {
     const dayEnd = getZonedEndOfDay(dayStart, timezone)
     const pointTime = dayEnd > range.end ? range.end : dayEnd
 
@@ -134,16 +152,6 @@ export function buildHistoricalData(
   }
 
   return historicalData
-}
-
-export function getHistoryAvailableFrom(allEntries: BalanceEntry[], timezone: Timezone): string | null {
-  const earliestEntry = allEntries.reduce<BalanceEntry | null>((earliest, entry) => {
-    if (!Number.isFinite(entry.timestamp.getTime())) return earliest
-    if (earliest === null || entry.timestamp < earliest.timestamp) return entry
-    return earliest
-  }, null)
-
-  return earliestEntry === null ? null : formatZonedDate(earliestEntry.timestamp, timezone)
 }
 
 export function formatZonedDate(date: Date, timezone: Timezone): string {
@@ -166,7 +174,7 @@ function timeRangeToDays(timeRange: TimeRange): number {
     case '1y':
       return 365
     case 'all':
-      return 1825
+      return 0
   }
 }
 
@@ -208,7 +216,39 @@ function getZonedDayStarts(start: ZonedDateParts, end: ZonedDateParts, timezone:
 }
 
 function zonedDateStart(parts: ZonedDateParts, timezone: Timezone): Date {
-  return new Date(new TZDate(parts.year, parts.month - 1, parts.day, timezone).getTime())
+  const wallClockTimestamp = Date.UTC(parts.year, parts.month - 1, parts.day)
+  const sampleTimestamps = [
+    wallClockTimestamp - 2 * MILLISECONDS_PER_DAY,
+    wallClockTimestamp,
+    wallClockTimestamp + 2 * MILLISECONDS_PER_DAY,
+  ]
+  const offsets = new Set(sampleTimestamps.map((timestamp) => tzOffset(timezone, new Date(timestamp))))
+  const candidates = [...offsets]
+    .filter(Number.isFinite)
+    .map((offset) => new Date(wallClockTimestamp - offset * 60 * 1000))
+
+  const exactMidnights = candidates.filter((candidate) => {
+    const zonedDate = new TZDate(candidate, timezone)
+    return (
+      compareZonedDates(getZonedDateParts(candidate, timezone), parts) === 0 &&
+      zonedDate.getHours() === 0 &&
+      zonedDate.getMinutes() === 0 &&
+      zonedDate.getSeconds() === 0 &&
+      zonedDate.getMilliseconds() === 0
+    )
+  })
+
+  if (exactMidnights.length > 0) {
+    return new Date(Math.min(...exactMidnights.map((candidate) => candidate.getTime())))
+  }
+
+  // Some zones skip midnight (or, historically, an entire calendar date).
+  // Use the first real instant that is not before the requested local date.
+  const firstValidInstant = candidates
+    .filter((candidate) => compareZonedDates(getZonedDateParts(candidate, timezone), parts) >= 0)
+    .sort((left, right) => left.getTime() - right.getTime())[0]
+
+  return firstValidInstant ?? new Date(wallClockTimestamp)
 }
 
 function zonedDateEnd(parts: ZonedDateParts, timezone: Timezone): Date {
