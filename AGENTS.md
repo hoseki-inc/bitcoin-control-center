@@ -2,6 +2,12 @@
 
 Bitcoin Control Center is a standalone, local-first product. Sentinel is its only backend; do not reintroduce imports or compatibility endpoints for Hoseki Services or `api-armadillo`.
 
+## Product direction
+
+Help people **understand, grow, protect, and eventually use their Bitcoin savings**. This is the preferred framing for product descriptions and future feature planning.
+
+Design around Bitcoin as a long-term savings asset, with accounting and planning that support that use. Keep current capabilities distinct from the broader product mission when describing the app.
+
 ## Safety
 
 - Do not commit or push unless the user explicitly asks.

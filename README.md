@@ -1,6 +1,8 @@
 # Bitcoin Control Center
 
-Bitcoin Control Center is a local-first Bitcoin portfolio tracker and proof-of-reserves statement generator. It connects directly to an Electrum server, stores portfolio data in a local SQLite database, and runs without a Hoseki cloud account or hosted application backend.
+Bitcoin Control Center is a local-first Bitcoin savings app. Our mission is to help you **understand, grow, protect, and eventually use your Bitcoin savings**.
+
+Today, it brings together portfolio tracking and proof-of-reserves statements. It connects directly to an Electrum server, stores portfolio data in a local SQLite database, and runs without a Hoseki cloud account or hosted application backend.
 
 The same React application and Sentinel backend can run in a browser during development, as a StartOS service, or as an Electron desktop application for macOS and Windows.
 
