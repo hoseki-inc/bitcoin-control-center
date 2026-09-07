@@ -10,13 +10,13 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@keystonehq/bc-ur-registry": "0.7.1",
+    "@keystonehq/bc-ur-registry": "0.8.0",
     "@patina/core": "3.0.0",
-    "date-fns": "4.1.0",
-    "decimal.js": "10.4.3",
-    "nanoid": "5.1.16",
-    "socks": "2.8.7",
-    "type-fest": "4.15.0",
-    "zod": "3.25.76"
+    "date-fns": "4.4.0",
+    "decimal.js": "10.6.0",
+    "nanoid": "6.0.1",
+    "socks": "2.8.10",
+    "type-fest": "5.9.0",
+    "zod": "4.5.4"
   }
 }
