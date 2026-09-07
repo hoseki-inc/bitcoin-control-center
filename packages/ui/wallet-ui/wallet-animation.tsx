@@ -160,26 +160,7 @@ export function WalletAnimation({ animation }: { animation: WalletAnimationType 
 
 export function WalletFloatingImage({ href, alt, ...rest }: { href: string; alt: string } & BoxProps): JSX.Element {
   return (
-    <Box
-      mx="auto"
-      pt={10}
-      pb={6}
-      sx={{
-        animation: 'float 4s ease-in-out infinite',
-        '@keyframes float': {
-          '0%': {
-            transform: 'translateY(0)',
-          },
-          '50%': {
-            transform: 'translateY(-6px)',
-          },
-          '100%': {
-            transform: 'translateY(0)',
-          },
-        },
-      }}
-      {...rest}
-    >
+    <Box mx="auto" pt={10} pb={6} {...rest}>
       <chakra.img
         src={href}
         alt={alt}

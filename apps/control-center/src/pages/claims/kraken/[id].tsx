@@ -104,19 +104,7 @@ export function KrakenAccountDetailsPage(): JSX.Element {
         <hr />
 
         <Stack align="center" justify="center" w="full" maxW="640px" minW={0} mx="auto" mt={-4}>
-          <Box
-            mx="auto"
-            pt={10}
-            pb={6}
-            sx={{
-              animation: 'float 4s ease-in-out infinite',
-              '@keyframes float': {
-                '0%': { transform: 'translateY(0)' },
-                '50%': { transform: 'translateY(-6px)' },
-                '100%': { transform: 'translateY(0)' },
-              },
-            }}
-          >
+          <Box mx="auto" pt={10} pb={6}>
             <chakra.img
               src="/images/exchanges/kraken.svg"
               alt="Kraken"

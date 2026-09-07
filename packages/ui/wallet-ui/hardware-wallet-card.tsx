@@ -1,20 +1,11 @@
 import { Badge, Box, Button, HStack, Icon, Input, Stack, Text, chakra } from '@chakra-ui/react'
-import { AnimatePresence, motion } from 'framer-motion'
+import { motion } from 'framer-motion'
 import { CheckIcon, ChevronLeftIcon, ChevronRightIcon, EyeIcon, EyeOffIcon, XIcon } from 'lucide-react'
 import { type ReactNode, useState } from 'react'
 import { HOSEKI_ASSETS_CDN_URL } from '../../constants'
+import { opacityReveal } from '../design-system/animations/motion'
 import { formatUsd, toBitcoinAmountDisplayValue, toXpubDisplayValue } from '../utils'
 import type { HardwareWallet } from './types'
-
-const EXPAND_COLLAPSE_VARIANTS = {
-  open: { opacity: 1, width: 'auto' },
-  collapsed: { opacity: 0, width: 0 },
-}
-
-const EXPAND_COLLAPSE_TRANSITION = {
-  duration: 0.3,
-  ease: [0.42, 0, 0.58, 1] as [number, number, number, number],
-}
 
 const CHECKMARK_DISPLAY_DURATION = 2000
 
@@ -50,6 +41,7 @@ export function HardwareWalletCard({
   isDefaultExpanded?: boolean
 }): JSX.Element {
   const [isExpanded, setIsExpanded] = useState(isDefaultExpanded)
+  const [revealDetails, setRevealDetails] = useState(false)
   const [isMasked, setIsMasked] = useState(true)
   const [isDisplayNameValid, setIsDisplayNameValid] = useState(true)
   const [showCheckmark, setShowCheckmark] = useState(false)
@@ -120,68 +112,64 @@ export function HardwareWalletCard({
 
       {isSelected && (
         <HStack justifyContent="flex-end" minW={0}>
-          <AnimatePresence mode="sync">
-            {isExpanded && (
-              <motion.div
-                initial="collapsed"
-                animate="open"
-                exit="collapsed"
-                variants={EXPAND_COLLAPSE_VARIANTS}
-                transition={EXPAND_COLLAPSE_TRANSITION}
-                style={{ overflow: 'hidden' }}
-              >
-                <HStack spacing={4} pl={8} alignItems="center" minW={0}>
-                  <Stack textAlign="left" gap={1} minW={0}>
-                    <HStack spacing={2} overflowX="auto">
-                      <Input
-                        defaultValue={wallet.displayName}
-                        bgColor={isDisplayNameValid ? 'neutral.100' : 'red.50'}
-                        borderColor={isDisplayNameValid ? 'neutral.200' : 'red.500'}
-                        fontSize="14px"
-                        fontWeight={500}
-                        color="neutral.900"
-                        p={2}
-                        minW="100px"
-                        onChange={handleDisplayNameChange}
-                        onBlur={handleDisplayNameBlur}
-                      />
-                      <Badge
-                        color="neutral.600"
-                        bgColor="neutral.100"
-                        py={0.5}
-                        px={1.5}
-                        fontWeight={500}
-                        fontSize="12px"
-                        borderRadius="24px"
-                        flexShrink={0}
-                      >
-                        {wallet.account.scriptType.toString()}
-                      </Badge>
-                      <Box width="28px" display="flex" alignItems="center" justifyContent="center" flexShrink={0}>
-                        <ValidationIcon isValid={isDisplayNameValid} showSuccess={showCheckmark} />
-                      </Box>
-                    </HStack>
-                    <chakra.code
+          {isExpanded && (
+            <Box minW={0} overflow="hidden" sx={revealDetails ? opacityReveal : undefined}>
+              <HStack spacing={4} pl={8} alignItems="center" minW={0}>
+                <Stack textAlign="left" gap={1} minW={0}>
+                  <HStack spacing={2} overflowX="auto">
+                    <Input
+                      defaultValue={wallet.displayName}
+                      bgColor={isDisplayNameValid ? 'neutral.100' : 'red.50'}
+                      borderColor={isDisplayNameValid ? 'neutral.200' : 'red.500'}
+                      fontSize="14px"
+                      fontWeight={500}
+                      color="neutral.900"
+                      p={2}
+                      minW="100px"
+                      onChange={handleDisplayNameChange}
+                      onBlur={handleDisplayNameBlur}
+                    />
+                    <Badge
                       color="neutral.600"
-                      fontSize="xs"
-                      display="block"
-                      whiteSpace="pre"
-                      overflowX="auto"
-                      w="full"
-                      pb={1}
+                      bgColor="neutral.100"
+                      py={0.5}
+                      px={1.5}
+                      fontWeight={500}
+                      fontSize="12px"
+                      borderRadius="24px"
+                      flexShrink={0}
                     >
-                      {splitXpubIntoTwoLines(toXpubDisplayValue(wallet.account.xpub.toString(), isMasked))}
-                    </chakra.code>
-                  </Stack>
-                  <Button variant="plain" onClick={() => setIsMasked((prev) => !prev)} p={2} flexShrink={0}>
-                    <Icon as={isMasked ? EyeOffIcon : EyeIcon} color="neutral.600" boxSize="20px" />
-                  </Button>
-                </HStack>
-              </motion.div>
-            )}
-          </AnimatePresence>
+                      {wallet.account.scriptType.toString()}
+                    </Badge>
+                    <Box width="28px" display="flex" alignItems="center" justifyContent="center" flexShrink={0}>
+                      <ValidationIcon isValid={isDisplayNameValid} showSuccess={showCheckmark} />
+                    </Box>
+                  </HStack>
+                  <chakra.code
+                    color="neutral.600"
+                    fontSize="xs"
+                    display="block"
+                    whiteSpace="pre"
+                    overflowX="auto"
+                    w="full"
+                    pb={1}
+                  >
+                    {splitXpubIntoTwoLines(toXpubDisplayValue(wallet.account.xpub.toString(), isMasked))}
+                  </chakra.code>
+                </Stack>
+                <Button variant="plain" onClick={() => setIsMasked((prev) => !prev)} p={2} flexShrink={0}>
+                  <Icon as={isMasked ? EyeOffIcon : EyeIcon} color="neutral.600" boxSize="20px" />
+                </Button>
+              </HStack>
+            </Box>
+          )}
           <Button
-            onClick={() => setIsExpanded((prev) => !prev)}
+            onClick={(event) => {
+              setRevealDetails(event.detail > 0)
+              setIsExpanded((prev) => !prev)
+            }}
+            aria-expanded={isExpanded}
+            aria-label={isExpanded ? 'Hide wallet details' : 'Show wallet details'}
             variant="outline"
             size="sm"
             p={0}

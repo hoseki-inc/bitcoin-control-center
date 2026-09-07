@@ -1,4 +1,4 @@
-import { Box, Button, Divider, Flex, Icon, Spinner, Stack, Text, Tooltip } from '@chakra-ui/react'
+import { Box, Button, Divider, Flex, Icon, Stack, Text, Tooltip } from '@chakra-ui/react'
 import type { BalanceValue } from '@hoseki/packages/lib/balance'
 import type { ClaimId } from '@hoseki/packages/schemas'
 import { CheckCircleFilledIcon, KeystoreAvatar } from '@hoseki/packages/ui/prove-verify-ui'
@@ -11,6 +11,7 @@ import { ensureClaimStatusNotExpired, mapClaimToClaimCardProps } from '../../uti
 import { needsExchangeReconnect } from '../../utils/exchange-connection-status'
 import { BitcoinAmount } from '../bitcoin-amount'
 import { SensitiveValue } from '../sensitive-value'
+import { HistorySyncStatus } from './history-sync-status'
 
 type ExchangeAccountDto = RouterOutput['portalProve']['exchange']['list'][number]
 type ManualAccountDto = RouterOutput['portalProve']['manual']['list'][number]
@@ -652,8 +653,7 @@ function AccountPill({
             {name}
           </Text>
         </Tooltip>
-        {isHistorySyncing && <HistorySyncSpinner compact={compact} />}
-        {!isHistorySyncing && isHistorySynced && <HistorySyncedCheckmark compact={compact} />}
+        <HistorySyncStatus syncing={Boolean(isHistorySyncing)} synced={Boolean(isHistorySynced)} compact={compact} />
       </Flex>
 
       {compact ? (
@@ -706,42 +706,6 @@ function AccountPill({
         </>
       )}
     </Box>
-  )
-}
-
-function HistorySyncSpinner({ compact }: { compact: boolean }): JSX.Element {
-  return (
-    <Tooltip label="Updating history" openDelay={250} hasArrow>
-      <Spinner
-        size="xs"
-        color="neutral.600"
-        flexShrink={0}
-        ml={compact ? 0 : 0.5}
-        w={compact ? '10px' : '12px'}
-        h={compact ? '10px' : '12px'}
-      />
-    </Tooltip>
-  )
-}
-
-function HistorySyncedCheckmark({ compact }: { compact: boolean }): JSX.Element {
-  return (
-    <Tooltip label="History updated" openDelay={250} hasArrow>
-      <Box
-        flexShrink={0}
-        ml={compact ? 0 : 0.5}
-        sx={{
-          animation: 'historySyncedFade 5s ease forwards',
-          '@media (prefers-reduced-motion: reduce)': { animation: 'none' },
-          '@keyframes historySyncedFade': {
-            '0%, 72%': { opacity: 1 },
-            '100%': { opacity: 0 },
-          },
-        }}
-      >
-        <CheckCircleFilledIcon color="neutral.600" color2="white" boxSize={compact ? '12px' : '14px'} />
-      </Box>
-    </Tooltip>
   )
 }
 

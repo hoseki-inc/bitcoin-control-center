@@ -14,40 +14,46 @@ vi.mock('liveline', () => ({
   },
 }))
 
-it('updates the request, selected control, chart window and percentage label for each range', async () => {
-  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
-  window.matchMedia = vi.fn().mockReturnValue({ matches: false, addListener: vi.fn(), removeListener: vi.fn() })
-  mocks.query.mockReturnValue({
-    data: [
-      { time: 1000, value: 100 },
-      { time: 2000, value: 110 },
-    ],
-    isLoading: false,
-    isError: false,
-  })
-  const container = document.createElement('div')
-  document.body.append(container)
-  const root = createRoot(container)
-  try {
-    await act(async () => root.render(createElement(ChakraProvider, null, createElement(BitcoinPriceChart))))
-    expect(mocks.query.mock.lastCall?.[0]).toEqual({ days: 7 })
-    for (const [label, days] of [
-      ['24H', 1],
-      ['7D', 7],
-      ['30D', 30],
-      ['6M', 180],
-      ['1Y', 365],
-    ] as const) {
-      const button = Array.from(container.querySelectorAll('button')).find((item) => item.textContent === label)!
-      await act(async () => button.click())
-      expect(button.getAttribute('aria-pressed')).toBe('true')
-      expect(container.querySelectorAll('[aria-pressed="true"]')).toHaveLength(1)
-      expect(mocks.query.mock.lastCall?.[0]).toEqual({ days })
-      expect(mocks.chart.mock.lastCall?.[0].window).toBe(days * 86400)
-      expect(container.textContent).toContain(`10.00% · ${label.toLowerCase()}`)
+it.each([false, true])(
+  'keeps chart inspection and range selection available with reduced motion = %s',
+  async (reducedMotion) => {
+    Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
+    window.matchMedia = vi
+      .fn()
+      .mockReturnValue({ matches: reducedMotion, addListener: vi.fn(), removeListener: vi.fn() })
+    mocks.query.mockReturnValue({
+      data: [
+        { time: 1000, value: 100 },
+        { time: 2000, value: 110 },
+      ],
+      isLoading: false,
+      isError: false,
+    })
+    const container = document.createElement('div')
+    document.body.append(container)
+    const root = createRoot(container)
+    try {
+      await act(async () => root.render(createElement(ChakraProvider, null, createElement(BitcoinPriceChart))))
+      expect(mocks.query.mock.lastCall?.[0]).toEqual({ days: 7 })
+      for (const [label, days] of [
+        ['24H', 1],
+        ['7D', 7],
+        ['30D', 30],
+        ['6M', 180],
+        ['1Y', 365],
+      ] as const) {
+        const button = Array.from(container.querySelectorAll('button')).find((item) => item.textContent === label)!
+        await act(async () => button.click())
+        expect(button.getAttribute('aria-pressed')).toBe('true')
+        expect(container.querySelectorAll('[aria-pressed="true"]')).toHaveLength(1)
+        expect(mocks.query.mock.lastCall?.[0]).toEqual({ days })
+        expect(mocks.chart.mock.lastCall?.[0].scrub).toBe(true)
+        expect(mocks.chart.mock.lastCall?.[0].window).toBe(days * 86400)
+        expect(container.textContent).toContain(`10.00% · ${label.toLowerCase()}`)
+      }
+    } finally {
+      await act(async () => root.unmount())
+      container.remove()
     }
-  } finally {
-    await act(async () => root.unmount())
-    container.remove()
-  }
-})
+  },
+)

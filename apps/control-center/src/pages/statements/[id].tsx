@@ -1,11 +1,11 @@
-import { Box, Button, Flex, HStack, Icon, Link, Stack, Text } from '@chakra-ui/react'
+import { Box, Button, Flex, HStack, Link, Stack, Text } from '@chakra-ui/react'
 import { renderStatementDocument } from '@hoseki/packages/pdf'
 import { type StatementDocumentFormat, type StatementId } from '@hoseki/packages/schemas'
 import { Animations, ErrorBanner, Spinner } from '@hoseki/packages/ui/design-system'
 import { StatusBadge, getBadgeConfigForStatement, usePdfDownloadMutation } from '@hoseki/packages/ui/prove-verify-ui'
 import { PDFViewer, pdf } from '@react-pdf/renderer'
 import { format } from 'date-fns'
-import { DownloadIcon, ShieldCheckIcon } from 'lucide-react'
+import { ShieldCheckIcon } from 'lucide-react'
 import { type ReactElement, useEffect, useState } from 'react'
 import { Link as RouterLink } from 'react-router'
 import { UrlParameter, useUrlParameter } from '../../hooks/use-url-parameters'
@@ -182,7 +182,6 @@ function ActionButtons({
           isLoading={isDownloadingPdf}
           isDisabled={statement.status !== 'completed'}
         >
-          <Icon as={DownloadIcon} mr={2} />
           Download
         </Button>
       </HStack>

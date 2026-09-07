@@ -1,4 +1,4 @@
-import { Box, Flex, Text, usePrefersReducedMotion, useToken } from '@chakra-ui/react'
+import { Box, Flex, Text, useToken } from '@chakra-ui/react'
 import { TZDate } from '@date-fns/tz'
 import { format } from 'date-fns'
 import Decimal from 'decimal.js'
@@ -80,7 +80,6 @@ export function AccumulationChart({
   timezone = getBrowserTimezone(),
 }: AccumulationChartProps): JSX.Element {
   const { unit } = useBitcoinDisplay()
-  const reducedMotion = usePrefersReducedMotion()
   const [axisColor] = useToken('colors', ['neutral.600'])
   const [success500, error500, neutral400] = useToken('colors', ['success.500', 'error.500', 'neutral.400'])
 
@@ -169,7 +168,7 @@ export function AccumulationChart({
             cursor={{ stroke: 'rgba(0,0,0,0.08)', strokeWidth: 1, strokeDasharray: '4 4' }}
           />
           <Area
-            isAnimationActive={!reducedMotion}
+            isAnimationActive={false}
             type="monotone"
             dataKey="btcBalance"
             stroke={strokeColor}

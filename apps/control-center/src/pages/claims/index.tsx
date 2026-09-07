@@ -18,7 +18,7 @@ import {
 import { EmptyView, ErrorBanner, Spinner } from '@hoseki/packages/ui/design-system'
 import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
 import { ClaimCardKeystores, StatusBadge, getBadgeConfigForClaim } from '@hoseki/packages/ui/prove-verify-ui'
-import { ChartNoAxesCombined, LayoutGridIcon, ListIcon, PlusIcon } from 'lucide-react'
+import { ChartNoAxesCombined, LayoutGridIcon, ListIcon } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router'
 import { toast } from 'sonner'
@@ -221,11 +221,7 @@ export function ClaimsPage(): JSX.Element {
           <Box>
             <PageHeading title="Accounts" description="Manage your wallets, exchanges, and Bitcoin holdings." />
           </Box>
-          {hasClaims && (
-            <Button leftIcon={<PlusIcon size={16} />} onClick={() => navigate('/accounts/add')}>
-              Add Account
-            </Button>
-          )}
+          {hasClaims && <Button onClick={() => navigate('/accounts/add')}>Add Account</Button>}
         </Flex>
 
         {hasClaims && (
@@ -569,7 +565,6 @@ function AddAccountCard({ onClick }: AddAccountCardProps): JSX.Element {
       transition="background-color 150ms ease"
       _hover={{ bg: 'neutral.50' }}
     >
-      <PlusIcon size={20} aria-hidden="true" />
       <Text textStyle="text/sm" color="neutral.600">
         Add account
       </Text>
@@ -586,11 +581,7 @@ function EmptyHoldings({ onAdd }: { onAdd: () => void }): JSX.Element {
       bgGradient="linear(to-b, neutral.50, white)"
       title="Your Bitcoin, in one place"
       description="Connect a wallet or exchange to see your Bitcoin balance and start verifying your ownership."
-      action={
-        <Button onClick={onAdd} leftIcon={<PlusIcon size={16} />}>
-          Add Your First Account
-        </Button>
-      }
+      action={<Button onClick={onAdd}>Add Your First Account</Button>}
     />
   )
 }

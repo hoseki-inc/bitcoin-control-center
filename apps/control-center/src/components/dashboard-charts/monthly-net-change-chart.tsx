@@ -1,4 +1,4 @@
-import { Box, Flex, Text, usePrefersReducedMotion, useToken } from '@chakra-ui/react'
+import { Box, Flex, Text, useToken } from '@chakra-ui/react'
 import { useMemo } from 'react'
 import { Bar, BarChart, Cell, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { BitcoinAmount } from '../bitcoin-amount'
@@ -50,7 +50,6 @@ function BarTooltip({
 }
 
 export function MonthlyNetChangeChart({ data, timezone, formatAmount }: MonthlyNetChangeChartProps): JSX.Element {
-  const reducedMotion = usePrefersReducedMotion()
   const [success500, error500, axisColor, baselineColor] = useToken('colors', [
     'success.500',
     'error.500',
@@ -93,7 +92,7 @@ export function MonthlyNetChangeChart({ data, timezone, formatAmount }: MonthlyN
             />
             <ReferenceLine y={0} stroke={baselineColor} />
             <Tooltip content={<BarTooltip formatAmount={formatAmount} />} cursor={false} />
-            <Bar isAnimationActive={!reducedMotion} dataKey="change" radius={[4, 4, 0, 0]} maxBarSize={36}>
+            <Bar isAnimationActive={false} dataKey="change" radius={[4, 4, 0, 0]} maxBarSize={36}>
               {monthlyChanges.map((entry) => (
                 <Cell
                   key={entry.key}

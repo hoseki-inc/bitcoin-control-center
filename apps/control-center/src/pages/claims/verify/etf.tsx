@@ -15,7 +15,6 @@ import { ETF_CONFIGS, ETF_TICKERS, type EtfTicker, computeHoldingBtcSats } from 
 import { DateStringInput } from '@hoseki/packages/ui/design-system/forms/date-string-input'
 import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
 import { TopBar } from '@hoseki/packages/ui/prove-verify-ui/top-bar'
-import { Plus } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router'
 import { toast } from 'sonner'
@@ -217,7 +216,7 @@ export function ClaimsVerifyEtfPage(): JSX.Element {
               </Grid>
             ))}
           </Stack>
-          <Button size="sm" variant="ghost" leftIcon={<Plus size={16} />} mt={3} onClick={addRow}>
+          <Button size="sm" variant="ghost" mt={3} onClick={addRow}>
             Add another ETF
           </Button>
         </Box>

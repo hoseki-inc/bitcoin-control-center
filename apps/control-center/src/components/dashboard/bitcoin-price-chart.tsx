@@ -1,4 +1,4 @@
-import { Box, Button, Flex, Text, usePrefersReducedMotion } from '@chakra-ui/react'
+import { Box, Button, Flex, Text } from '@chakra-ui/react'
 import { Liveline } from 'liveline'
 import { useState } from 'react'
 import { trpc } from '../../trpc'
@@ -21,7 +21,6 @@ type PriceRange = (typeof PRICE_RANGES)[number]
 
 export function BitcoinPriceChart(): JSX.Element {
   const [range, setRange] = useState<PriceRange>(PRICE_RANGES[1])
-  const reducedMotion = usePrefersReducedMotion()
   const query = trpc.portalProve.retrieveBitcoinPriceHistory.useQuery(
     { days: range.days },
     {
@@ -101,7 +100,7 @@ export function BitcoinPriceChart(): JSX.Element {
           momentum={false}
           fill={false}
           badge={false}
-          scrub={!reducedMotion}
+          scrub
           formatValue={usd}
           formatTime={(time) =>
             range.days === 1
