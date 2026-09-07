@@ -1,8 +1,9 @@
 import { Box, Button, Flex, Grid, Stack, Text } from '@chakra-ui/react'
-import { ArrowRight, Plus } from 'lucide-react'
+import { Plus } from 'lucide-react'
 import { Link } from 'react-router'
 import { StatementsEmptyState } from '../statements/statements-empty-state'
 import { BitcoinPriceChart } from './bitcoin-price-chart'
+import { DashboardAmount, DashboardCardTitle } from './dashboard-typography'
 
 export function DashboardPreview({
   loading = false,
@@ -16,13 +17,9 @@ export function DashboardPreview({
       <Box border="1px solid" borderColor="neutral.200" borderRadius="panel" overflow="hidden">
         <Flex p={{ base: 5, md: 7 }} justify="space-between" align="start" gap={5} flexWrap="wrap">
           <Box>
-            <Text textStyle="text/sm" color="neutral.600" mb={2}>
-              Total Bitcoin
-            </Text>
-            <Flex align="baseline" gap={2} flexWrap="wrap">
-              <Text textStyle="text/3xl" fontFamily="mono" fontWeight="semibold" letterSpacing="-0.03em">
-                {loading ? '—' : '0.00000000'}
-              </Text>
+            <DashboardCardTitle>Total Bitcoin</DashboardCardTitle>
+            <Flex align="baseline" gap={2} mt={1} flexWrap="wrap">
+              <DashboardAmount>{loading ? '—' : '0.00000000'}</DashboardAmount>
               <Text textStyle="text/sm" color="neutral.600">
                 BTC
               </Text>
@@ -75,14 +72,9 @@ export function DashboardPreview({
         </Flex>
       )}
       <Box>
-        <Flex justify="space-between" align="center" gap={3} mb={4}>
-          <Text as="h2" textStyle="text/xl" fontWeight="medium">
-            Recent Statements
-          </Text>
-          <Button as={Link} to="/statements" variant="ghost" size="sm" rightIcon={<ArrowRight size={16} />}>
-            View Statements
-          </Button>
-        </Flex>
+        <Text as="h2" textStyle="text/xl" fontWeight="medium" mb={4}>
+          Recent Statements
+        </Text>
         <StatementsEmptyState />
       </Box>
     </Stack>

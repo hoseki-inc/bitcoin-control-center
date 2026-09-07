@@ -1,6 +1,7 @@
 import { Box, Button, Flex, Text, usePrefersReducedMotion } from '@chakra-ui/react'
 import { Liveline } from 'liveline'
 import { trpc } from '../../trpc'
+import { DashboardAmount, DashboardCardTitle } from './dashboard-typography'
 
 const usd = (value: number): string =>
   value.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
@@ -23,13 +24,9 @@ export function BitcoinPriceChart(): JSX.Element {
     <Box border="1px solid" borderColor="neutral.200" borderRadius="panel" pt={{ base: 5, md: 6 }} overflow="hidden">
       <Flex px={{ base: 5, md: 6 }} justify="space-between" align="start" gap={4} flexWrap="wrap">
         <Box>
-          <Text as="h2" textStyle="text/md" fontWeight="medium">
-            Bitcoin Price
-          </Text>
+          <DashboardCardTitle>Bitcoin Price</DashboardCardTitle>
           <Flex align="baseline" gap={3} mt={1} flexWrap="wrap">
-            <Text textStyle="text/2xl" fontFamily="mono" fontWeight="medium">
-              {latest ? usd(latest.value) : '—'}
-            </Text>
+            <DashboardAmount>{latest ? usd(latest.value) : '—'}</DashboardAmount>
             {change !== null && (
               <Text textStyle="text/sm" color={change >= 0 ? 'success.700' : 'error.700'}>
                 {change >= 0 ? '+' : ''}

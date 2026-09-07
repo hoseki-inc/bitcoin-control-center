@@ -30,15 +30,7 @@ export function AddAccountFlow({ onClose, linkState }: AddAccountFlowProps): JSX
   return (
     <Box py={8}>
       <Flex mb={4}>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onClose}
-          color="neutral.900"
-          fontWeight="medium"
-          ml={-3}
-          leftIcon={<BackArrowIcon />}
-        >
+        <Button variant="ghost" size="sm" onClick={onClose} color="neutral.900" fontWeight="medium" ml={-3}>
           Back to My Holdings
         </Button>
       </Flex>
@@ -131,21 +123,6 @@ function ManualEntryIcon(): JSX.Element {
       <line x1="16" y1="17" x2="8" y2="17" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
       <polyline
         points="10 9 9 9 8 9"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        fill="none"
-      />
-    </Icon>
-  )
-}
-
-function BackArrowIcon(): JSX.Element {
-  return (
-    <Icon viewBox="0 0 16 16" w={4} h={4}>
-      <path
-        d="M10 4L6 8L10 12"
         stroke="currentColor"
         strokeWidth="1.5"
         strokeLinecap="round"

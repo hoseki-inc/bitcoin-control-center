@@ -97,6 +97,7 @@ describe('Home overview states', () => {
       expect(html).toContain(text)
     }
     expect(html).toContain('Generate Statement')
+    expect(html).not.toContain('View Statements')
     expect(html).not.toContain('Sample chart')
     expect(html).not.toContain('$98,820')
     expect(html).not.toContain('Statement introduction')
@@ -122,7 +123,7 @@ describe('Home overview states', () => {
   it('does not present failed account queries as an empty portfolio', () => {
     mocks.isError = true
     const html = renderHome()
-    expect(html).toContain('role="alert"')
+    expect(html).not.toContain('role="alert"')
     expect(html).toContain('Try Again')
     expect(html).not.toContain('Dashboard preview')
     expect(html).toContain('Bitcoin Price')

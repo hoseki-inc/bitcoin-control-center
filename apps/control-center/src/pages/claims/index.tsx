@@ -23,11 +23,13 @@ import { Link, useLocation, useNavigate } from 'react-router'
 import { toast } from 'sonner'
 import { DeleteClaimModal } from '../../components/claims/claim-details/delete-claim-modal'
 import { useAutoRefreshExchanges } from '../../hooks/use-auto-refresh-exchanges'
+import { useQueryErrorToast } from '../../hooks/use-query-error-toast'
 import { useGetBalancesPerClaimIds } from '../../lib/balances'
 import { type RouterOutput, trpc } from '../../trpc'
 import { type ClaimDto } from '../../trpc/server-types'
 import { ensureClaimStatusNotExpired, mapClaimToClaimCardProps } from '../../utils/claim-utils'
 import { isExchangeConnected, needsExchangeReconnect } from '../../utils/exchange-connection-status'
+import { queryErrorMessage } from '../../utils/query-error-message'
 
 type ExchangeAccountDto = RouterOutput['portalProve']['exchange']['list'][number]
 type ManualAccountDto = RouterOutput['portalProve']['manual']['list'][number]
@@ -78,20 +80,39 @@ export function ClaimsPage(): JSX.Element {
     target?.focus()
   }, [archivedClaimsQuery.data?.length, claimsQuery.isLoading, location.hash])
 
-  if (claimsQuery.isLoading) {
+  const accountQueries = [claimsQuery, exchangeAccountsQuery, manualAccountsQuery, etfAccountsQuery]
+  const failedAccountQuery = accountQueries.find((query) => query.isError)
+
+  const retryAccounts = (): void => {
+    for (const query of [...accountQueries, archivedClaimsQuery]) void query.refetch()
+  }
+  useQueryErrorToast(
+    failedAccountQuery
+      ? queryErrorMessage(failedAccountQuery.error, "Your accounts couldn't be loaded. Please try again.")
+      : null,
+    retryAccounts,
+  )
+
+  useQueryErrorToast(
+    !failedAccountQuery && archivedClaimsQuery.isError
+      ? queryErrorMessage(archivedClaimsQuery.error, "Archived accounts couldn't be loaded. Please try again.")
+      : null,
+    () => {
+      void archivedClaimsQuery.refetch()
+    },
+  )
+
+  if (accountQueries.some((query) => query.isLoading)) {
     return <Spinner fullPage size="xl" />
   }
 
-  if (claimsQuery.isError) {
+  if (failedAccountQuery) {
     return (
-      <Stack py={8} gap={8}>
-        <ErrorBanner
-          message={
-            claimsQuery.error.message
-              ? `Error fetching your holdings: ${claimsQuery.error.message}`
-              : 'An error occurred when fetching your holdings'
-          }
-        />
+      <Stack py={8} gap={4} align="start">
+        <PageHeading title="Accounts" description="Your wallets and exchange accounts." />
+        <Button variant="outline" onClick={retryAccounts}>
+          Try Again
+        </Button>
       </Stack>
     )
   }
@@ -270,7 +291,6 @@ export function ClaimsPage(): JSX.Element {
           )}
           {archivedClaimsQuery.isError && (
             <Stack gap={3} align="flex-start">
-              <ErrorBanner message={`Failed to load archived accounts: ${archivedClaimsQuery.error.message}`} />
               <Button size="sm" variant="outline" onClick={() => archivedClaimsQuery.refetch()}>
                 Retry
               </Button>

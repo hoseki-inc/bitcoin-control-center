@@ -1,5 +1,5 @@
 import { Box, Button, Flex, Grid, Stack, Text } from '@chakra-ui/react'
-import { EmptyView, ErrorBanner } from '@hoseki/packages/ui/design-system'
+import { EmptyView } from '@hoseki/packages/ui/design-system'
 import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
 import Decimal from 'decimal.js'
 import { Link } from 'react-router'
@@ -7,34 +7,37 @@ import { AccumulationChart } from '../components/dashboard-charts/accumulation-c
 import { Banner } from '../components/dashboard/banner'
 import { BitcoinPriceChart } from '../components/dashboard/bitcoin-price-chart'
 import { DashboardPreview } from '../components/dashboard/dashboard-preview'
+import { DashboardAmount, DashboardCardTitle } from '../components/dashboard/dashboard-typography'
 import { RecentStatements } from '../components/dashboard/recent-statements'
+import { useQueryErrorToast } from '../hooks/use-query-error-toast'
 import { useUiSettings } from '../hooks/use-ui-settings'
 import { type RouterOutput, trpc } from '../trpc'
 import type { StatementDto } from '../trpc/server-types'
+import { queryErrorMessage } from '../utils/query-error-message'
 import { getBrowserTimezone } from '../utils/timezone'
 
 type PortfolioData = RouterOutput['portalProve']['controlCenter']['getData']
 
 export function HomePage(): JSX.Element {
-  const { statements, portfolio, hasAccounts, isLoading, hasError, retry } = useDashboardData()
+  const { statements, portfolio, hasAccounts, isLoading, hasError, errorMessage, retry } = useDashboardData()
   const { isStatementsMadeEasyDismissed, updateUiSettings } = useUiSettings()
+  useQueryErrorToast(hasError ? errorMessage : null, retry)
   const hasHistory = (portfolio?.historicalData.length ?? 0) > 0
 
   return (
     <Stack py={8} gap={6}>
-      <PageHeading title="Home" description="Your Bitcoin holdings and recent statements at a glance." />
+      <Flex justify="space-between" align="start" gap={4} flexWrap="wrap">
+        <PageHeading title="Home" description="Your Bitcoin holdings and recent statements at a glance." />
+        {hasError && (
+          <Button variant="outline" onClick={retry}>
+            Try Again
+          </Button>
+        )}
+      </Flex>
       {isLoading ? (
         <DashboardPreview loading />
       ) : hasError ? (
-        <Stack gap={6}>
-          <Stack align="start" gap={3}>
-            <ErrorBanner message="Your overview couldn't be loaded. Try again to see your holdings and statements." />
-            <Button variant="outline" onClick={retry}>
-              Try Again
-            </Button>
-          </Stack>
-          <DashboardPreview unavailable />
-        </Stack>
+        <DashboardPreview unavailable />
       ) : (
         <>
           {!hasAccounts && !hasHistory ? (
@@ -89,15 +92,10 @@ function PortfolioSummary({ data }: { data: PortfolioData }): JSX.Element {
       {/* Top row: balance + generate button */}
       <Flex align="flex-start" justify="space-between" mb={6} gap={4} flexWrap="wrap">
         <Box>
-          <Text
-            fontFamily="mono"
-            textStyle="text/3xl"
-            fontWeight="semibold"
-            color="neutral.900"
-            letterSpacing="-0.03em"
-          >
-            {totalBtc.toFixed(8)}
-          </Text>
+          <DashboardCardTitle>Total Bitcoin</DashboardCardTitle>
+          <Box mt={1}>
+            <DashboardAmount>{totalBtc.toFixed(8)}</DashboardAmount>
+          </Box>
           <Text textStyle="text/sm" color="neutral.500" mt={0.5}>
             <Text as="span" color="neutral.500">
               BTC
@@ -189,6 +187,7 @@ function useDashboardData(): {
   hasAccounts: boolean
   isLoading: boolean
   hasError: boolean
+  errorMessage: string
   retry: () => void
 } {
   const statements = trpc.portalProve.statement.list.useQuery()
@@ -208,6 +207,10 @@ function useDashboardData(): {
     hasAccounts: [claims.data, exchanges.data, manual.data, etfs.data].some((accounts) => (accounts?.length ?? 0) > 0),
     isLoading: queries.some((query) => query.isLoading),
     hasError: queries.some((query) => query.isError),
+    errorMessage: queryErrorMessage(
+      queries.find((query) => query.isError)?.error,
+      "Your overview couldn't be loaded. Try again to see your holdings and statements.",
+    ),
     retry: () => {
       for (const query of queries) void query.refetch()
     },
