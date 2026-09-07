@@ -46,10 +46,10 @@ export function AppLayout({ fullWidth }: { fullWidth?: boolean }): JSX.Element {
         '& [data-app-navbar]': {
           opacity: 1,
           visibility: 'visible',
-          transition: `opacity ${motion.revealMs}ms ${motion.easeOut}`,
+          transition: `opacity 260ms ${motion.easeOut}`,
         },
-        // Resolve from the rendered welcome state before paint, without a second timer.
-        '&:has([data-welcome-phase="welcome"], [data-welcome-phase="reveal"]) [data-app-navbar]': {
+        // Fade in alongside the content as soon as the welcome enters its reveal phase.
+        '&:has([data-welcome-phase="welcome"]) [data-app-navbar]': {
           opacity: 0,
           visibility: 'hidden',
           transition: 'none',

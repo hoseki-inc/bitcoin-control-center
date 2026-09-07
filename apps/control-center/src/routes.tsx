@@ -47,11 +47,9 @@ import { StatementCreatePage } from './pages/statements/create'
 export default function AppRoutes(): JSX.Element {
   return (
     <Routes>
-      <Route element={<AppLayout fullWidth />}>
+      <Route element={<AppLayout />}>
         <Route index element={<Navigate to="/home" replace />} />
         <Route path="portfolio" Component={DashboardPage} />
-      </Route>
-      <Route element={<AppLayout />}>
         <Route path="home" Component={HomePage} />
         <Route path="getting-started" Component={GettingStarted} />
 

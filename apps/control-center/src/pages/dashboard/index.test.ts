@@ -79,17 +79,17 @@ vi.mock('@hoseki/packages/ui/design-system', async () => {
       }),
   }
 })
-vi.mock('../../components/dashboard-charts/accounts-sidebar', async () => {
+vi.mock('../../components/dashboard-charts/account-filter', async () => {
   const { createElement } = await import('react')
   return {
-    AccountsSidebar: (props: { onToggle: (id: string) => void; onClearAll: () => void }) => {
+    AccountFilter: (props: { selected: Set<string>; onSelectionChange: (ids: Set<string>) => void }) => {
       mocks.sidebar(props)
       return createElement(
         'div',
         null,
-        createElement('button', { onClick: () => props.onToggle('holding') }, 'Select holding'),
-        createElement('button', { onClick: () => props.onToggle('wallet') }, 'Select wallet'),
-        createElement('button', { onClick: props.onClearAll }, 'Clear selection'),
+        createElement('button', { onClick: () => props.onSelectionChange(new Set(['holding'])) }, 'Select holding'),
+        createElement('button', { onClick: () => props.onSelectionChange(new Set(['wallet'])) }, 'Select wallet'),
+        createElement('button', { onClick: () => props.onSelectionChange(new Set()) }, 'Clear selection'),
       )
     },
   }

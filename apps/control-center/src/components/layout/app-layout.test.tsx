@@ -65,7 +65,9 @@ it.each(['complete', 'skip', 'leave'])('restores navigation when the welcome end
     expect(getComputedStyle(navbar).visibility).toBe('hidden')
     if (action === 'complete') {
       await act(async () => vi.advanceTimersByTime(1280))
-      expect(getComputedStyle(navbar).visibility).toBe('hidden')
+      expect(container.querySelector('[data-welcome-phase="reveal"]')).not.toBeNull()
+      expect(getComputedStyle(navbar).visibility).toBe('visible')
+      expect(getComputedStyle(navbar).opacity).toBe('1')
       await act(async () => vi.advanceTimersByTime(420))
     } else if (action === 'skip') {
       await act(async () => container.querySelector<HTMLButtonElement>('[aria-label^="Skip welcome"]')!.click())
