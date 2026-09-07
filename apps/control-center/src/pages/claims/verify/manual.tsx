@@ -1,4 +1,5 @@
 import { Box, Button, Flex, FormControl, FormLabel, Input, Stack } from '@chakra-ui/react'
+import { DateStringInput } from '@hoseki/packages/ui/design-system/forms/date-string-input'
 import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
 import { TopBar } from '@hoseki/packages/ui/prove-verify-ui/top-bar'
 import { useState } from 'react'
@@ -88,7 +89,7 @@ export function ClaimsVerifyManualPage(): JSX.Element {
           <FormLabel textStyle="text/sm" color="neutral.600" fontWeight="medium">
             As of date
           </FormLabel>
-          <Input fontFamily="body" type="date" value={balanceDate} onChange={(e) => setBalanceDate(e.target.value)} />
+          <DateStringInput isRequired fontFamily="body" value={balanceDate} onChange={(date) => setBalanceDate(date)} />
         </FormControl>
 
         <Flex justify="flex-end" pt={2}>

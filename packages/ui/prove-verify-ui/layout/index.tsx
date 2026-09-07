@@ -22,6 +22,7 @@ export function AppLayout({ header, children, fullWidth }: AppLayoutProps): JSX.
         as="main"
         id="main-content"
         tabIndex={-1}
+        pb={{ base: 8, md: 12 }}
         maxW={fullWidth ? '100%' : '928px'}
         px={fullWidth ? 0 : { base: 4, md: 6 }}
       >

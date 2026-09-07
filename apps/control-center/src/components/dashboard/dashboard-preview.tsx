@@ -31,7 +31,9 @@ export function DashboardPreview({
               Your Bitcoin, in one place
             </Text>
             <Text textStyle="text/md" color="neutral.600" mt={2}>
-              Add your first wallet, exchange, or manually tracked holding. Your wallets remain watch-only.
+              Add your first wallet, exchange, or manually tracked holding.
+              <br />
+              Your wallets remain watch-only.
             </Text>
           </Box>
           <Button as={Link} to="/accounts/add" leftIcon={<Plus size={18} />} flexShrink={0}>

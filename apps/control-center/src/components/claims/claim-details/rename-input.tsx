@@ -1,4 +1,4 @@
-import { Box, Button, FormControl, FormLabel, HStack, Input, chakra } from '@chakra-ui/react'
+import { Box, Button, FormControl, FormErrorMessage, FormLabel, HStack, Input, Stack, chakra } from '@chakra-ui/react'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
@@ -43,11 +43,12 @@ export function RenameInput({
 
   return (
     <chakra.form onSubmit={handleSubmit(onSubmit)}>
-      <HStack spacing={8}>
-        <Box flexGrow={1}>
+      <Stack direction={{ base: 'column', sm: 'row' }} spacing={3} align="end">
+        <Box flexGrow={1} minW={0} w="full">
           <FormControl isInvalid={Boolean(errors.name)}>
             <FormLabel htmlFor={inputId}>Name</FormLabel>
-            <Input {...register('name')} width="100%" placeholder={placeholderName} />
+            <Input id={inputId} {...register('name')} width="100%" placeholder={placeholderName} autoFocus />
+            <FormErrorMessage>{errors.name?.message}</FormErrorMessage>
           </FormControl>
         </Box>
         <HStack alignSelf="flex-end">
@@ -58,7 +59,7 @@ export function RenameInput({
             Cancel
           </Button>
         </HStack>
-      </HStack>
+      </Stack>
     </chakra.form>
   )
 }

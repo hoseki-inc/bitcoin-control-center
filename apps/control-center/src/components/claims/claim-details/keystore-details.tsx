@@ -1,4 +1,4 @@
-import { Box, Button, Flex, HStack, Spinner, Stack, Text, chakra } from '@chakra-ui/react'
+import { Box, Button, Flex, HStack, SimpleGrid, Spinner, Stack, Text, chakra } from '@chakra-ui/react'
 import { Account, type Xpub } from '@hoseki/packages/bitcoin'
 import { ErrorBanner } from '@hoseki/packages/ui/design-system'
 import {
@@ -39,11 +39,11 @@ export function KeystoreDetailsSingleSig({
   const claimStatus = ensureClaimStatusNotExpired(claim)
 
   return (
-    <Stack align="center" justify="center" w="640px" mx="auto" mt={-4}>
+    <Stack align="center" justify="center" w="full" maxW="640px" minW={0} mx="auto" mt={-4}>
       <WalletImageFromKnownModel wallet={keystore.wallet} model={keystore.model ?? ''} />
 
-      <HStack spacing={4} mb={8} w="100%" mt={keystore.wallet ? 0 : 8} alignItems="flex-start">
-        <Box w={['100%', '50%', '25%']}>
+      <SimpleGrid columns={{ base: 2, md: 4 }} spacing={4} mb={8} w="full" mt={keystore.wallet ? 0 : 8}>
+        <Box minW={0}>
           <Text textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={1}>
             Amount
           </Text>
@@ -64,7 +64,7 @@ export function KeystoreDetailsSingleSig({
             </>
           )}
         </Box>
-        <Box w={['100%', '50%', '25%']}>
+        <Box minW={0}>
           <Text textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={1}>
             Status
           </Text>
@@ -76,7 +76,7 @@ export function KeystoreDetailsSingleSig({
             <StatusBadge status="error" label={claimStatus} icon={XCircleFilledIcon} w="fit-content" />
           )}
         </Box>
-        <Box w={['100%', '50%', '25%']}>
+        <Box minW={0}>
           <Text textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={1}>
             Script Type
           </Text>
@@ -84,7 +84,7 @@ export function KeystoreDetailsSingleSig({
             {encodingsToLabels[account.scriptType]}
           </Text>
         </Box>
-        <Box w={['100%', '50%', '25%']} textAlign="right">
+        <Box minW={0} textAlign={{ base: 'left', md: 'right' }}>
           <Text textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={1}>
             Date Added
           </Text>
@@ -92,7 +92,7 @@ export function KeystoreDetailsSingleSig({
             {format(keystore.createdAt, 'MMMM do, yyyy')}
           </Text>
         </Box>
-      </HStack>
+      </SimpleGrid>
 
       <KeystoreXpub xpub={keystore.xpub} />
     </Stack>
@@ -117,7 +117,7 @@ export function KeystoreDetailsMultiSig({
   const keystoreStatus = getKeystoreStatus(keystore, claim)
 
   return (
-    <Stack w="640px" mx="auto" mt={-4}>
+    <Stack w="full" maxW="640px" minW={0} mx="auto" mt={-4}>
       <WalletImageFromKnownModel wallet={keystore.wallet} model={keystore.model ?? ''} />
 
       <Text as="h2" textStyle="text/md" fontWeight="medium" alignSelf="flex-start">
@@ -145,13 +145,13 @@ export function KeystoreDetailsMultiSig({
       )}
 
       <Flex direction={['column', 'row', 'row']} gap={4} mb={8} w="100%">
-        <Box w="37.5%">
+        <Box w={{ base: 'full', sm: '37.5%' }}>
           <Text textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={1}>
             Status
           </Text>
           <StatusBadge {...getBadgeConfigForKeystore(keystoreStatus)} w="fit-content" />
         </Box>
-        <Box w="37.5%">
+        <Box w={{ base: 'full', sm: '37.5%' }}>
           <Text textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={1}>
             Script Type
           </Text>
@@ -159,7 +159,7 @@ export function KeystoreDetailsMultiSig({
             {encodingsToLabels[account.scriptType]}
           </Text>
         </Box>
-        <Box w="25%" textAlign={['left', 'right', 'right']}>
+        <Box w={{ base: 'full', sm: '25%' }} textAlign={['left', 'right', 'right']}>
           <Text textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={1}>
             Date Added
           </Text>
@@ -178,9 +178,18 @@ function KeystoreXpub({ xpub }: { xpub: Xpub }) {
   const [isMasked, setIsMasked] = useState(true)
 
   return (
-    <HStack border="1px solid" borderColor="neutral.200" borderRadius="md" p={4} mb={8}>
-      <chakra.code color="neutral.600">{toXpubDisplayValue(xpub.toString(), isMasked)}</chakra.code>
-      <Button variant="plain" onClick={() => setIsMasked((prev) => !prev)} p={2} pr={0}>
+    <HStack w="full" minW={0} border="1px solid" borderColor="neutral.200" borderRadius="control" p={3} mb={8}>
+      <chakra.code color="neutral.600" textStyle="text/sm" fontFamily="mono" minW={0} flex={1} overflowWrap="anywhere">
+        {toXpubDisplayValue(xpub.toString(), isMasked)}
+      </chakra.code>
+      <Button
+        variant="ghost"
+        aria-label={isMasked ? 'Show extended public key' : 'Hide extended public key'}
+        aria-pressed={!isMasked}
+        onClick={() => setIsMasked((prev) => !prev)}
+        p={2}
+        flexShrink={0}
+      >
         {isMasked ? <EyeOffIcon color="#475569" /> : <EyeIcon color="#475569" />}
       </Button>
     </HStack>

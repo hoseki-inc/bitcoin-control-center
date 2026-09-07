@@ -18,7 +18,7 @@ export interface ConfirmActionModalProps {
 }
 export function ConfirmActionModal({ isOpen, onClose, title, body, footer }: ConfirmActionModalProps): JSX.Element {
   return (
-    <Modal isOpen={isOpen} onClose={onClose} isCentered>
+    <Modal isOpen={isOpen} onClose={onClose} isCentered scrollBehavior="inside">
       <ModalOverlay />
       <ModalContent>
         <ModalHeader>

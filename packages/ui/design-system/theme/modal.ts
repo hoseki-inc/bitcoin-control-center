@@ -15,7 +15,7 @@ const extendedBaseStyle = definePartsStyle((props) => {
     },
     dialog: {
       ...baseStyle?.dialog,
-      p: 6,
+      p: { base: 5, md: 6 },
       borderRadius: 'dialog',
       boxShadow: 'floating',
       mx: 4,
@@ -24,6 +24,8 @@ const extendedBaseStyle = definePartsStyle((props) => {
     header: {
       ...baseStyle?.header,
       p: 0,
+      pe: 8,
+      overflowWrap: 'anywhere',
       textStyle: 'text/xl',
       fontWeight: 'medium',
     },
@@ -34,6 +36,15 @@ const extendedBaseStyle = definePartsStyle((props) => {
     footer: {
       ...baseStyle?.footer,
       p: 0,
+      flexWrap: 'wrap',
+      gap: 3,
+    },
+    closeButton: {
+      ...baseStyle?.closeButton,
+      top: 2,
+      insetEnd: 2,
+      minW: 11,
+      minH: 11,
     },
   }
 })
@@ -58,6 +69,8 @@ const noPaddingVariant = definePartsStyle((props) => {
     footer: {
       ...baseStyle?.footer,
       p: 0,
+      flexWrap: 'wrap',
+      gap: 3,
     },
   }
 })

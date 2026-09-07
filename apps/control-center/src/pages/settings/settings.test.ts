@@ -87,21 +87,24 @@ afterEach(async () => {
 })
 
 describe('Bitcoin display settings', () => {
-  it('renders previews and persists a selection across a fresh query cache', async () => {
+  it.each([
+    ['sats', '210,000,000 sats'],
+    ['symbol', '₿ 210,000,000'],
+  ])('persists %s across a fresh query cache and updates live balances', async (unit, expected) => {
     await mount()
-    expect(container.textContent).toContain('₿ 2.1')
+    expect(container.textContent).toContain('₿ 210,000,000')
     expect(container.textContent).toContain('210,000,000 sats')
     expect(container.querySelector('#live-balance')?.textContent).toBe('2.1 BTC')
-    await act(async () => (container.querySelector('input[value="sats"]') as HTMLInputElement).click())
+    await act(async () => (container.querySelector(`input[value="${unit}"]`) as HTMLInputElement).click())
     await settle()
-    expect(savedUnit).toBe('sats')
-    expect(container.querySelector('#live-balance')?.textContent).toBe('210,000,000 sats')
+    expect(savedUnit).toBe(unit)
+    expect(container.querySelector('#live-balance')?.textContent).toBe(expected)
     await act(async () => root.unmount())
     client.clear()
     root = createRoot(container)
     await mount()
-    expect((container.querySelector('input[value="sats"]') as HTMLInputElement).checked).toBe(true)
-    expect(container.querySelector('#live-balance')?.textContent).toBe('210,000,000 sats')
+    expect((container.querySelector(`input[value="${unit}"]`) as HTMLInputElement).checked).toBe(true)
+    expect(container.querySelector('#live-balance')?.textContent).toBe(expected)
   })
 
   it('keeps the saved selection and reports a failed save', async () => {

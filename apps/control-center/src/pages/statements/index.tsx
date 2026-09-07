@@ -1,4 +1,4 @@
-import { Box, Button, IconButton, Stack } from '@chakra-ui/react'
+import { Box, Button, Flex, IconButton, Stack } from '@chakra-ui/react'
 import { ErrorBanner, Spinner } from '@hoseki/packages/ui/design-system'
 import { SectionTitle } from '@hoseki/packages/ui/prove-verify-ui'
 import { Grid2X2Icon, ListIcon } from 'lucide-react'
@@ -11,7 +11,7 @@ import { trpc } from '../../trpc'
 
 export function StatementListPage(): JSX.Element {
   const [viewType, setViewType] = useState<'grid' | 'table'>('grid')
-  const { data: statements, isLoading, error } = trpc.portalProve.statement.list.useQuery()
+  const { data: statements, isLoading, error, refetch, isFetching } = trpc.portalProve.statement.list.useQuery()
 
   if (isLoading) {
     return (
@@ -26,7 +26,16 @@ export function StatementListPage(): JSX.Element {
     return (
       <Box mt={8}>
         <Header showGenerateButton={true} />
-        <ErrorBanner mt={8} mb={4} message={`Error fetching your statements: ${error?.message}`} />
+        <ErrorBanner
+          mt={8}
+          mb={4}
+          message={`Error fetching your statements: ${error?.message}`}
+          rightContent={
+            <Button variant="outline" flexShrink={0} onClick={() => void refetch()} isLoading={isFetching}>
+              Try Again
+            </Button>
+          }
+        />
       </Box>
     )
   }
@@ -44,15 +53,22 @@ export function StatementListPage(): JSX.Element {
     <Box mt={8}>
       <Header showGenerateButton={true} />
       <Stack gap={2}>
-        <Box textAlign="right">
+        <Flex justify="flex-end" gap={1} role="group" aria-label="Statement view">
           <IconButton
-            variant="ghost"
-            size="md"
-            aria-label={viewType === 'grid' ? 'Show statements as a table' : 'Show statements as a grid'}
-            icon={viewType === 'grid' ? <ListIcon size={18} /> : <Grid2X2Icon size={18} />}
-            onClick={() => setViewType(viewType === 'grid' ? 'table' : 'grid')}
+            variant={viewType === 'table' ? 'outline' : 'ghost'}
+            aria-label="List view"
+            aria-pressed={viewType === 'table'}
+            icon={<ListIcon size={18} />}
+            onClick={() => setViewType('table')}
           />
-        </Box>
+          <IconButton
+            variant={viewType === 'grid' ? 'outline' : 'ghost'}
+            aria-label="Card view"
+            aria-pressed={viewType === 'grid'}
+            icon={<Grid2X2Icon size={18} />}
+            onClick={() => setViewType('grid')}
+          />
+        </Flex>
         {viewType === 'grid' ? <StatementsGrid statements={statements} /> : <StatementsTable statements={statements} />}
       </Stack>
     </Box>

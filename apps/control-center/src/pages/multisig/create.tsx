@@ -95,7 +95,7 @@ export function MultisigCreatePage(): JSX.Element {
         )}
         {step === 'fake-loading' && (
           <Stack alignItems="center" textAlign="center">
-            <Text textStyle="text/2xl" fontWeight="medium">
+            <Text as="h1" textStyle="text/2xl" fontWeight="medium">
               Reading Descriptor...
             </Text>
             <Spinner centered />
@@ -132,7 +132,7 @@ export function MultisigCreatePage(): JSX.Element {
 function GetReady({ onNext }: { onNext: () => void }) {
   return (
     <Stack gap={4}>
-      <Text textStyle="text/2xl" fontWeight="medium">
+      <Text as="h1" textStyle="text/2xl" fontWeight="medium">
         Connect Your Multisig Wallet
       </Text>
       <Text textStyle="text/md" color="neutral.900">
@@ -180,7 +180,7 @@ function ImportWallet({ onBack, onNext }: { onBack: () => void; onNext: (data: C
 
   return (
     <Stack gap={4}>
-      <Text textStyle="text/2xl" fontWeight="medium">
+      <Text as="h1" textStyle="text/2xl" fontWeight="medium">
         Upload Your Multisig Descriptor
       </Text>
       <Text textStyle="text/md" color="neutral.900">
@@ -301,7 +301,7 @@ function DetectionStep({
 
   return (
     <Stack gap={4}>
-      <Text textStyle="text/2xl" fontWeight="medium">
+      <Text as="h1" textStyle="text/2xl" fontWeight="medium">
         We've detected a {account.threshold} of {wallet.keystores.length} Multisig Wallet
       </Text>
 

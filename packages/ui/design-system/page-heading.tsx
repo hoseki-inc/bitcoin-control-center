@@ -8,7 +8,7 @@ export function PageHeading({
 }: { title: string; description?: ReactNode } & BoxProps): JSX.Element {
   return (
     <Box minW={0} {...props}>
-      <Text as="h1" textStyle="text/2xl" fontWeight="medium" color="neutral.900">
+      <Text as="h1" textStyle="text/2xl" fontWeight="medium" color="neutral.900" overflowWrap="anywhere">
         {title}
       </Text>
       {description && (

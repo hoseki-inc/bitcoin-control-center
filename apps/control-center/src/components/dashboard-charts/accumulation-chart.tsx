@@ -132,7 +132,7 @@ export function AccumulationChart({
   return (
     <Box h="220px" w="100%" aria-label="Bitcoin balance history">
       <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={chartData} margin={{ top: 4, right: 12, left: 12, bottom: 0 }}>
+        <AreaChart data={chartData} margin={{ top: 16, right: 12, left: 12, bottom: 4 }}>
           <defs>
             <linearGradient id="accGradientUp" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor={success500} stopOpacity={0.15} />
@@ -161,8 +161,8 @@ export function AccumulationChart({
             axisLine={false}
             tickLine={false}
             tick={{ fontSize: 12, fill: axisColor, fontWeight: 500 }}
-            tickFormatter={(v: number) => formatBitcoin(v, unit)}
-            width={unit === 'sats' ? 104 : 100}
+            tickFormatter={(v: number) => formatBitcoin(v, unit).replace(/ /g, '\u00a0')}
+            width="auto"
           />
           <Tooltip
             content={(tooltipProps) => <ChartTooltip {...tooltipProps} timezone={timezone} />}

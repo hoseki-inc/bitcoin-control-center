@@ -121,7 +121,8 @@ function BitcoinDisplaySettings(): JSX.Element {
         Bitcoin display
       </Text>
       <Text mt={2} textStyle="text/sm" color="neutral.600" id="bitcoin-display-description">
-        Choose how Bitcoin amounts appear in the app. Each preview shows the same 2.1 BTC.
+        Choose how Bitcoin amounts appear in the app. The Bitcoin symbol and sats both show whole satoshi amounts. Each
+        preview shows the same 2.1 BTC.
       </Text>
       <RadioGroup
         value={unit}
@@ -144,7 +145,7 @@ function BitcoinDisplaySettings(): JSX.Element {
               cursor={isLoading || isSaving || isError ? 'default' : 'pointer'}
               transition="border-color 150ms ease, background-color 150ms ease"
               _hover={{ borderColor: 'neutral.500' }}
-              _focusWithin={{ outline: '2px solid', outlineColor: 'primary.500', outlineOffset: '3px' }}
+              _focusWithin={{ outline: '2px solid', outlineColor: 'activeState.80', outlineOffset: '3px' }}
             >
               <HStack justify="space-between" mb={5}>
                 <Text textStyle="text/sm" fontWeight="medium">
@@ -326,7 +327,7 @@ function ElectrumSettings(): JSX.Element {
   return (
     <VStack align="start" gap={5} w="full" maxW="480px">
       <VStack align="start" gap={1}>
-        <Text textStyle="label/md" fontWeight="semibold">
+        <Text as="h2" textStyle="text/md" fontWeight="semibold">
           Electrum Server
         </Text>
         <Text textStyle="text/sm" color="neutral.600">
@@ -377,7 +378,7 @@ function ElectrumSettings(): JSX.Element {
           align="start"
         >
           <Circle size="8px" bg={electrumStatus.connected ? 'green.500' : 'red.500'} flexShrink={0} mt="6px" />
-          <VStack align="start" gap={0}>
+          <VStack align="start" gap={0} minW={0}>
             <Text textStyle="text/sm" fontWeight="medium" color={electrumStatus.connected ? 'green.700' : 'red.700'}>
               {electrumStatus.connected ? 'Connected' : 'Disconnected'}
             </Text>
@@ -416,6 +417,7 @@ function ElectrumSettings(): JSX.Element {
           <Input
             size="sm"
             id="electrum-port"
+            inputMode="numeric"
             placeholder="50002"
             value={port}
             onChange={(e) => {
@@ -471,16 +473,24 @@ function ElectrumSettings(): JSX.Element {
 
       {/* Test result banner */}
       {testResult && (
-        <HStack gap={2} px={3} py={2} w="full" borderRadius="md" bg={testResult.ok ? 'green.50' : 'red.50'}>
+        <HStack
+          role="status"
+          gap={2}
+          px={3}
+          py={2}
+          w="full"
+          borderRadius="md"
+          bg={testResult.ok ? 'green.50' : 'red.50'}
+        >
           <Circle size="8px" bg={testResult.ok ? 'green.500' : 'red.500'} flexShrink={0} />
-          <Text textStyle="text/sm" color={testResult.ok ? 'green.700' : 'red.700'}>
+          <Text textStyle="text/sm" overflowWrap="anywhere" minW={0} color={testResult.ok ? 'green.700' : 'red.700'}>
             {testResult.message}
           </Text>
         </HStack>
       )}
 
       {/* Action buttons */}
-      <ButtonGroup size="sm" gap={2}>
+      <ButtonGroup size="sm" gap={2} flexWrap="wrap">
         <Button
           variant="outline"
           onClick={() => void handleTest()}

@@ -10,6 +10,7 @@ import { DashboardPreview } from '../components/dashboard/dashboard-preview'
 import { DashboardAmount, DashboardCardTitle } from '../components/dashboard/dashboard-typography'
 import { RecentStatements } from '../components/dashboard/recent-statements'
 import { SensitiveValue } from '../components/sensitive-value'
+import { StatementsEmptyState } from '../components/statements/statements-empty-state'
 import { useQueryErrorToast } from '../hooks/use-query-error-toast'
 import { type RouterOutput, trpc } from '../trpc'
 import type { StatementDto } from '../trpc/server-types'
@@ -102,27 +103,7 @@ export function HomePage(): JSX.Element {
       ) : statements.length > 0 ? (
         <RecentStatements statements={statements} />
       ) : (
-        <Flex
-          borderTop="1px solid"
-          borderColor="neutral.200"
-          pt={6}
-          justify="space-between"
-          align="center"
-          gap={4}
-          flexWrap="wrap"
-        >
-          <Box>
-            <Text as="h2" textStyle="text/md" fontWeight="medium">
-              Statements
-            </Text>
-            <Text textStyle="text/sm" color="neutral.600" mt={1}>
-              Create a record of your holdings when you need one.
-            </Text>
-          </Box>
-          <Button as={Link} to="/statements" variant="ghost">
-            View Statements
-          </Button>
-        </Flex>
+        <StatementsEmptyState />
       )}
     </Stack>
   )

@@ -15,20 +15,17 @@ export function RadioCardGroup(
     options: string[]
   } & UseRadioGroupProps,
 ): JSX.Element {
-  const { getRootProps, getRadioProps } = useRadioGroup({
-    name: props.name,
-    defaultValue: props.defaultValue,
-    onChange: props.onChange,
-  })
+  const { options, ...groupProps } = props
+  const { getRootProps, getRadioProps } = useRadioGroup(groupProps)
 
   const group = getRootProps()
 
   return (
-    <HStack {...group}>
-      {props.options.map((value) => {
+    <HStack {...group} align="stretch" flexWrap="wrap">
+      {options.map((value) => {
         const radio = getRadioProps({ value })
         return (
-          <RadioCard flex={1} key={value} radioProps={radio}>
+          <RadioCard flex={1} minW="fit-content" key={value} radioProps={radio}>
             {value}
           </RadioCard>
         )
@@ -59,11 +56,17 @@ export function RadioCard({
         fontWeight="medium"
         bg="neutral.50"
         color="neutral.700"
+        minH="44px"
+        display="flex"
+        alignItems="center"
+        justifyContent="center"
+        _focusVisible={{ outline: '2px solid', outlineColor: 'activeState.80', outlineOffset: '3px' }}
+        _disabled={{ opacity: 0.5, cursor: 'not-allowed' }}
         _checked={primaryVariant}
         _hover={{ bg: 'neutral.100' }}
         px={3}
         py={2}
-        fontSize="12px"
+        textStyle="text/sm"
       >
         {children}
       </Box>

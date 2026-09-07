@@ -26,6 +26,7 @@ import {
   Tr,
 } from '@chakra-ui/react'
 import { ErrorBanner } from '@hoseki/packages/ui/design-system'
+import { DateStringInput } from '@hoseki/packages/ui/design-system/forms/date-string-input'
 import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
 import { TopBar } from '@hoseki/packages/ui/prove-verify-ui/top-bar'
 import { format } from 'date-fns'
@@ -175,7 +176,7 @@ export function ManualAccountDetailsPage(): JSX.Element {
             <ManualIcon />
             <PageHeading title={account.displayName} />
           </HStack>
-          <HStack spacing={1}>
+          <HStack spacing={1} flexWrap="wrap">
             <Box w={2} h={2} bg="neutral.400" borderRadius="full" />
             <Text textStyle="text/sm" color="neutral.600" fontWeight="medium">
               Manually tracked
@@ -225,7 +226,7 @@ export function ManualAccountDetailsPage(): JSX.Element {
             Update balance
           </Text>
           <Stack direction={{ base: 'column', md: 'row' }} spacing={3} align={{ base: 'stretch', md: 'flex-end' }}>
-            <FormControl flex={1}>
+            <FormControl flex={1} minW={0}>
               <FormLabel fontWeight="medium" textStyle="text/sm" color="neutral.600">
                 New Balance (BTC)
               </FormLabel>
@@ -241,17 +242,17 @@ export function ManualAccountDetailsPage(): JSX.Element {
                 onChange={(e) => setNewBtcAmount(e.target.value)}
               />
             </FormControl>
-            <FormControl flex={1}>
+            <FormControl flex={1} minW={0}>
               <FormLabel fontWeight="medium" textStyle="text/sm" color="neutral.600">
                 As of Date
               </FormLabel>
-              <Input
+              <DateStringInput
+                isRequired
                 fontFamily="body"
                 size="md"
                 textStyle="text/sm"
-                type="date"
                 value={newBalanceDate}
-                onChange={(e) => setNewBalanceDate(e.target.value)}
+                onChange={(date) => setNewBalanceDate(date)}
               />
             </FormControl>
             <Button
@@ -274,8 +275,8 @@ export function ManualAccountDetailsPage(): JSX.Element {
             Add transaction
           </Text>
           <Stack spacing={3}>
-            <HStack spacing={3}>
-              <FormControl flex={1}>
+            <Stack direction={{ base: 'column', md: 'row' }} spacing={3}>
+              <FormControl flex={1} minW={0}>
                 <FormLabel fontWeight="medium" textStyle="text/sm" color="neutral.600">
                   Type
                 </FormLabel>
@@ -293,7 +294,7 @@ export function ManualAccountDetailsPage(): JSX.Element {
                   <option value="transfer_out">Transfer Out</option>
                 </Select>
               </FormControl>
-              <FormControl flex={1}>
+              <FormControl flex={1} minW={0}>
                 <FormLabel fontWeight="medium" textStyle="text/sm" color="neutral.600">
                   Amount (BTC)
                 </FormLabel>
@@ -309,22 +310,22 @@ export function ManualAccountDetailsPage(): JSX.Element {
                   onChange={(e) => setTxAmount(e.target.value)}
                 />
               </FormControl>
-              <FormControl flex={1}>
+              <FormControl flex={1} minW={0}>
                 <FormLabel fontWeight="medium" textStyle="text/sm" color="neutral.600">
                   Date
                 </FormLabel>
-                <Input
+                <DateStringInput
+                  isRequired
                   fontFamily="body"
                   size="md"
                   textStyle="text/sm"
-                  type="date"
                   value={txDate}
-                  onChange={(e) => setTxDate(e.target.value)}
+                  onChange={(date) => setTxDate(date)}
                 />
               </FormControl>
-            </HStack>
+            </Stack>
             <Stack direction={{ base: 'column', md: 'row' }} spacing={3} align={{ base: 'stretch', md: 'flex-end' }}>
-              <FormControl flex={1}>
+              <FormControl flex={1} minW={0}>
                 <FormLabel fontWeight="medium" textStyle="text/sm" color="neutral.600">
                   Note (optional)
                 </FormLabel>

@@ -12,6 +12,7 @@ import {
   Text,
 } from '@chakra-ui/react'
 import { ETF_CONFIGS, ETF_TICKERS, type EtfTicker, computeHoldingBtcSats } from '@hoseki/packages/etfs/holdings'
+import { DateStringInput } from '@hoseki/packages/ui/design-system/forms/date-string-input'
 import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
 import { TopBar } from '@hoseki/packages/ui/prove-verify-ui/top-bar'
 import { Plus } from 'lucide-react'
@@ -195,14 +196,13 @@ export function ClaimsVerifyEtfPage(): JSX.Element {
                   <FormLabel textStyle="text/sm" color="neutral.600">
                     Date purchased (optional)
                   </FormLabel>
-                  <Input
+                  <DateStringInput
                     fontFamily="body"
                     size="md"
                     bg="shades.0"
                     textStyle="text/sm"
-                    type="date"
                     value={row.datePurchased}
-                    onChange={(e) => updateRow(row.key, 'datePurchased', e.target.value)}
+                    onChange={(date) => updateRow(row.key, 'datePurchased', date)}
                   />
                 </FormControl>
                 {holdings.length > 1 && (

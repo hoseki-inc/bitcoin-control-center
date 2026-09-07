@@ -70,6 +70,9 @@ export function Header({ logo, menu, userInfo }: HeaderProps): JSX.Element {
           order={{ base: 3, md: 0 }}
           w={{ base: '100%', md: 'auto' }}
           overflowX="auto"
+          py={1}
+          px={1}
+          mx={-1}
         >
           {menu}
         </Box>

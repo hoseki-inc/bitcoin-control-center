@@ -20,6 +20,7 @@ import {
 } from '@chakra-ui/react'
 import { ETF_CONFIGS, ETF_TICKERS, type EtfTicker } from '@hoseki/packages/etfs/holdings'
 import { ErrorBanner } from '@hoseki/packages/ui/design-system'
+import { DateStringInput } from '@hoseki/packages/ui/design-system/forms/date-string-input'
 import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
 import { TopBar } from '@hoseki/packages/ui/prove-verify-ui/top-bar'
 import { format } from 'date-fns'
@@ -300,13 +301,12 @@ export function EtfAccountDetailsPage(): JSX.Element {
               <FormLabel fontWeight="medium" textStyle="text/sm" color="neutral.600">
                 Date purchased (optional)
               </FormLabel>
-              <Input
+              <DateStringInput
                 fontFamily="body"
                 size="md"
                 textStyle="text/sm"
-                type="date"
                 value={newDatePurchased}
-                onChange={(e) => setNewDatePurchased(e.target.value)}
+                onChange={(date) => setNewDatePurchased(date)}
               />
             </FormControl>
             <Button

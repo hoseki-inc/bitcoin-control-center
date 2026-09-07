@@ -99,13 +99,14 @@ describe('Home overview states', () => {
       '30d Change',
       'Bitcoin Price',
       'Last 7 days',
-      'Statements',
+      'The Standard for Bitcoin Verification',
       'data-chart="liveline"',
     ]) {
       expect(html).toContain(text)
     }
-    expect(html).not.toContain('Generate Statement')
-    expect(html).toContain('View Statements')
+    expect(html).toContain('Generate Statement')
+    expect(html).toContain('href="/statements/create"')
+    expect(html).toContain('/statements/satoshi-statement.jpg')
     expect(html).not.toContain('Sample chart')
     expect(html).not.toContain('$98,820')
     expect(html).not.toContain('Statement introduction')

@@ -64,7 +64,7 @@ export function BitcoinPriceChart(): JSX.Element {
               key={option.label}
               size="sm"
               variant="ghost"
-              minH="40px"
+              minH="44px"
               px={3}
               aria-label={option.description}
               aria-pressed={range.days === option.days}
@@ -84,7 +84,9 @@ export function BitcoinPriceChart(): JSX.Element {
         aria-label={
           latest && first
             ? `Bitcoin market price, ${range.description.toLowerCase()}, from ${usd(first.value)} to ${usd(latest.value)}.`
-            : 'Bitcoin price history unavailable'
+            : query.isLoading
+              ? 'Loading Bitcoin price history'
+              : 'Bitcoin price history unavailable'
         }
       >
         <Liveline
@@ -117,8 +119,9 @@ export function BitcoinPriceChart(): JSX.Element {
         justify="space-between"
         align="center"
         gap={3}
+        flexWrap="wrap"
       >
-        <Text textStyle="text/xs" color="neutral.600">
+        <Text textStyle="text/xs" color="neutral.600" role="status">
           {latest
             ? `${range.days === 1 ? 'Intraday' : range.days <= 30 ? 'Hourly' : 'Daily'} prices from CoinGecko · Updated ${new Date(latest.time * 1000).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`
             : query.isLoading
