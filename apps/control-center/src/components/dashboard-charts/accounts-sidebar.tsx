@@ -1,4 +1,4 @@
-import { Box, Divider, Flex, Icon, Spinner, Stack, Text, Tooltip } from '@chakra-ui/react'
+import { Box, Button, Divider, Flex, Icon, Spinner, Stack, Text, Tooltip } from '@chakra-ui/react'
 import type { BalanceValue } from '@hoseki/packages/lib/balance'
 import type { ClaimId } from '@hoseki/packages/schemas'
 import { CheckCircleFilledIcon, KeystoreAvatar } from '@hoseki/packages/ui/prove-verify-ui'
@@ -44,6 +44,7 @@ interface AccountsSidebarProps {
   onToggle: (id: string) => void
   onClearAll: () => void
   totalBtcSats: number
+  btcPrice?: number | null
   totalUsd: number
   compact?: boolean
   historySyncingAccountIds?: string[]
@@ -63,6 +64,7 @@ export function AccountsSidebar({
   onClearAll,
   totalBtcSats,
   totalUsd,
+  btcPrice,
   compact = false,
   historySyncingAccountIds = [],
   recentlySyncedAccountIds = [],
@@ -71,24 +73,6 @@ export function AccountsSidebar({
   const navigate = useNavigate()
   const isShowingAll = selected.size === 0
   const totalBtc = totalBtcSats / 100_000_000
-
-  const selectedBtcSats = isShowingAll
-    ? totalBtcSats
-    : claims
-        .filter((c) => selected.has(c.id))
-        .reduce((sum, c) => {
-          const b = balances.get(c.id)
-          return sum + (b ? Number(b.current) : 0)
-        }, 0) +
-      (exchangeAccounts ?? [])
-        .filter((a) => selected.has(a.id))
-        .reduce((sum, a) => sum + (a.balance ? Number(a.balance) : 0), 0) +
-      (manualAccounts ?? [])
-        .filter((a) => selected.has(a.id))
-        .reduce((sum, a) => sum + (a.balance ? Number(a.balance) : 0), 0) +
-      (etfAccounts ?? [])
-        .filter((a) => selected.has(a.id))
-        .reduce((sum, a) => sum + (a.balance ? Number(a.balance) : 0), 0)
 
   // Build unified sorted list — highest BTC balance first
   type ClaimItem = { type: 'claim'; claim: ClaimDto; btcSats: number }
@@ -129,13 +113,14 @@ export function AccountsSidebar({
 
   return (
     <Box
-      w={compact ? '200px' : '320px'}
+      w={{ base: '100%', md: compact ? '240px' : '304px' }}
+      maxH={{ base: '240px', md: 'none' }}
       flexShrink={0}
-      borderRight="1px solid"
-      borderColor="neutral.200"
+      borderBottomWidth={{ base: '1px', md: '0' }}
+      borderBottomColor="neutral.200"
       bg="shades.0"
       px={compact ? 3 : 5}
-      py={compact ? 6 : 8}
+      py={{ base: 4, md: 8 }}
       display="flex"
       flexDirection="column"
       h="100%"
@@ -143,138 +128,98 @@ export function AccountsSidebar({
     >
       {/* Header */}
       <Flex align="center" justify="space-between" mb={compact ? 2 : 3} px={compact ? 0.5 : 1}>
-        <Text textStyle={compact ? 'label/xs' : 'label/md'} fontWeight="semibold" color="neutral.400">
+        <Text textStyle="text/sm" fontWeight="medium" color="neutral.600">
           Accounts
         </Text>
-        <Flex align="center" gap={2}>
-          {!isShowingAll && (
-            <Text
-              textStyle={compact ? 'label/xs' : 'label/sm'}
-              color="neutral.500"
-              cursor="pointer"
-              fontWeight="medium"
-              onClick={onClearAll}
-              _hover={{ color: 'neutral.700' }}
-            >
-              {compact ? 'Clear' : 'Clear all'}
-            </Text>
-          )}
-          {onToggleCompact && (
-            <Tooltip label={compact ? 'Detailed view' : 'Compact view'} openDelay={300} hasArrow>
-              <Flex
-                as="button"
-                onClick={onToggleCompact}
-                align="center"
-                justify="center"
-                w="24px"
-                h="24px"
-                borderRadius="5px"
-                border="1px solid"
-                borderColor="neutral.200"
-                color="neutral.400"
-                bg="shades.0"
-                _hover={{ bg: 'neutral.50', borderColor: 'neutral.300', color: 'neutral.600' }}
-                transition="all 0.15s ease"
-              >
-                <Icon viewBox="0 0 16 16" boxSize="14px">
-                  {compact ? (
-                    <>
-                      <rect
-                        x="1"
-                        y="1"
-                        width="14"
-                        height="5"
-                        rx="1"
-                        stroke="currentColor"
-                        strokeWidth="1.2"
-                        fill="none"
-                      />
-                      <rect
-                        x="1"
-                        y="10"
-                        width="14"
-                        height="5"
-                        rx="1"
-                        stroke="currentColor"
-                        strokeWidth="1.2"
-                        fill="none"
-                      />
-                    </>
-                  ) : (
-                    <>
-                      <rect
-                        x="1"
-                        y="2"
-                        width="14"
-                        height="2.5"
-                        rx="0.75"
-                        stroke="currentColor"
-                        strokeWidth="1.2"
-                        fill="none"
-                      />
-                      <rect
-                        x="1"
-                        y="6.75"
-                        width="14"
-                        height="2.5"
-                        rx="0.75"
-                        stroke="currentColor"
-                        strokeWidth="1.2"
-                        fill="none"
-                      />
-                      <rect
-                        x="1"
-                        y="11.5"
-                        width="14"
-                        height="2.5"
-                        rx="0.75"
-                        stroke="currentColor"
-                        strokeWidth="1.2"
-                        fill="none"
-                      />
-                    </>
-                  )}
-                </Icon>
-              </Flex>
-            </Tooltip>
-          )}
-        </Flex>
+        <Text textStyle="text/xs" color="neutral.500" aria-live="polite">
+          {isShowingAll ? `${allItems.length} total` : `${selected.size} selected`}
+        </Text>
       </Flex>
+
+      {onToggleCompact && (
+        <Flex role="group" aria-label="Account view" bg="neutral.50" p={1} borderRadius="control" gap={1} mb={4}>
+          {(
+            [
+              { label: 'Compact', compact: true },
+              { label: 'Detailed', compact: false },
+            ] as const
+          ).map((view) => (
+            <Button
+              key={view.label}
+              size="sm"
+              variant="ghost"
+              flex={1}
+              minH="36px"
+              aria-pressed={compact === view.compact}
+              bg={compact === view.compact ? 'neutral.200' : 'transparent'}
+              color={compact === view.compact ? 'neutral.900' : 'neutral.600'}
+              onClick={() => {
+                if (compact !== view.compact) onToggleCompact()
+              }}
+            >
+              {view.label}
+            </Button>
+          ))}
+        </Flex>
+      )}
 
       {/* All Accounts pill */}
       <Box
+        as="button"
+        type="button"
+        textAlign="left"
+        aria-pressed={isShowingAll}
+        _focusVisible={{ outline: '2px solid', outlineColor: 'neutral.900', outlineOffset: '2px' }}
         onClick={onClearAll}
         px={compact ? 2.5 : 4}
         py={compact ? 2.5 : 3.5}
-        borderRadius={compact ? '8px' : '12px'}
+        borderRadius="control"
         border="1px solid"
-        borderColor={isShowingAll ? 'neutral.900' : 'neutral.200'}
+        borderColor={isShowingAll ? 'neutral.400' : 'transparent'}
         bg={isShowingAll ? 'neutral.50' : 'shades.0'}
         cursor="pointer"
         mb={compact ? 1.5 : 2}
-        transition="all 0.15s ease"
-        _hover={!isShowingAll ? { shadow: 'sm', transform: 'translateY(-1px)' } : undefined}
+        transition="background-color 0.15s ease"
+        _hover={{ bg: 'neutral.100' }}
       >
         {compact ? (
           <>
-            <Text textStyle="label/xs" fontWeight="semibold" color="neutral.900" mb={0.5}>
+            <Text textStyle="text/xs" fontWeight="medium" color="neutral.900" mb={0.5}>
               All Accounts
             </Text>
-            <Text fontFamily="mono" textStyle="text/xs" fontWeight="semibold" color="neutral.600">
+            <Text
+              fontFamily="body"
+              sx={{ fontVariantNumeric: 'tabular-nums' }}
+              textStyle="text/xs"
+              fontWeight="medium"
+              color="neutral.600"
+            >
               <BitcoinAmount btc={totalBtc} />
             </Text>
           </>
         ) : (
           <>
-            <Flex align="center" justify="space-between">
-              <Text textStyle="text/md" fontWeight="semibold" color="neutral.900">
+            <Flex align="center" justify="space-between" gap={2} flexWrap="wrap">
+              <Text textStyle="text/md" fontWeight="medium" color="neutral.900">
                 All Accounts
               </Text>
-              <Text fontFamily="mono" textStyle="text/sm" fontWeight="semibold" color="neutral.600">
+              <Text
+                fontFamily="body"
+                sx={{ fontVariantNumeric: 'tabular-nums' }}
+                textStyle="text/sm"
+                fontWeight="medium"
+                color="neutral.600"
+              >
                 <BitcoinAmount btc={totalBtc} />
               </Text>
             </Flex>
-            <Text textStyle="label/sm" color="success.600" mt={1} fontFamily="mono">
+            <Text
+              textStyle="text/xs"
+              color="success.600"
+              mt={1}
+              fontFamily="body"
+              sx={{ fontVariantNumeric: 'tabular-nums' }}
+            >
               ${totalUsd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </Text>
           </>
@@ -284,7 +229,7 @@ export function AccountsSidebar({
       <Divider borderColor="neutral.200" my={compact ? 2 : 3} />
 
       {/* Account list — sorted by BTC balance descending */}
-      <Stack gap={compact ? 1.5 : 2}>
+      <Stack gap={2}>
         {allItems.map((item) => {
           const btcAmount = item.btcSats / 100_000_000
           const pct = totalBtcSats > 0 ? ((item.btcSats / totalBtcSats) * 100).toFixed(1) : '0.0'
@@ -299,6 +244,7 @@ export function AccountsSidebar({
                 name={item.account.displayName}
                 exchange={item.account.exchange}
                 btcAmount={btcAmount}
+                btcPrice={btcPrice}
                 pct={pct}
                 isSelected={isSelected}
                 needsReconnect={needsReconnect}
@@ -321,6 +267,7 @@ export function AccountsSidebar({
                 key={item.account.id}
                 name={item.account.displayName}
                 btcAmount={btcAmount}
+                btcPrice={btcPrice}
                 pct={pct}
                 isSelected={isSelected}
                 compact={compact}
@@ -346,6 +293,7 @@ export function AccountsSidebar({
               keystores={cardProps?.keystores}
               isPending={claimStatus === 'pending'}
               btcAmount={btcAmount}
+              btcPrice={btcPrice}
               pct={pct}
               isSelected={isSelected}
               isHistorySyncing={historySyncingAccountIds.includes(item.claim.id)}
@@ -356,36 +304,6 @@ export function AccountsSidebar({
           )
         })}
       </Stack>
-
-      {/* Selection summary */}
-      {!isShowingAll &&
-        (compact ? (
-          <Box mt={3} px={2.5} py={2} bg="neutral.50" borderRadius="8px">
-            <Text textStyle="text/xs" fontWeight="semibold" color="neutral.900">
-              {selected.size} selected
-            </Text>
-            <Text textStyle="text/xs" fontWeight="bold" color="neutral.900" fontFamily="mono">
-              <BitcoinAmount btc={selectedBtcSats / 100_000_000} />
-            </Text>
-          </Box>
-        ) : (
-          <Box mt={5} px={4} py={3} bg="neutral.50" borderRadius="10px">
-            <Flex align="center" gap={1.5} flexWrap="wrap">
-              <Text textStyle="text/sm" fontWeight="semibold" color="neutral.900">
-                {selected.size}
-              </Text>
-              <Text textStyle="text/sm" color="neutral.500">
-                selected
-              </Text>
-              <Text textStyle="text/sm" color="neutral.300">
-                ·
-              </Text>
-              <Text textStyle="text/sm" fontWeight="bold" color="neutral.900" fontFamily="mono">
-                <BitcoinAmount btc={selectedBtcSats / 100_000_000} />
-              </Text>
-            </Flex>
-          </Box>
-        ))}
     </Box>
   )
 }
@@ -394,6 +312,7 @@ interface ExchangeAccountPillProps {
   name: string
   exchange: string
   btcAmount: number
+  btcPrice?: number | null
   pct: string
   isSelected: boolean
   needsReconnect: boolean
@@ -405,6 +324,7 @@ function ExchangeAccountPill({
   name,
   exchange,
   btcAmount,
+  btcPrice,
   pct,
   isSelected,
   needsReconnect,
@@ -414,24 +334,30 @@ function ExchangeAccountPill({
   const config = exchangeConfig[exchange] ?? defaultExchangeConfig
   return (
     <Box
+      as="button"
+      type="button"
+      textAlign="left"
+      w="100%"
+      aria-pressed={isSelected}
+      _focusVisible={{ outline: '2px solid', outlineColor: 'neutral.900', outlineOffset: '2px' }}
       onClick={onClick}
       px={compact ? 2.5 : 4}
       py={compact ? 2 : 3.5}
       mt={compact && needsReconnect ? 1 : 0}
-      borderRadius={compact ? '8px' : '12px'}
+      borderRadius="control"
       border="1px solid"
-      borderColor={isSelected && !needsReconnect ? 'neutral.900' : 'neutral.200'}
+      borderColor={isSelected && !needsReconnect ? 'neutral.400' : compact ? 'transparent' : 'neutral.200'}
       bg={needsReconnect || isSelected ? 'neutral.50' : 'shades.0'}
       cursor="pointer"
-      transition="all 0.15s ease"
+      transition="background-color 0.15s ease"
       position="relative"
-      _hover={!isSelected ? { shadow: 'sm', ...(compact ? {} : { transform: 'translateY(-1px)' }) } : undefined}
+      _hover={{ bg: 'neutral.100' }}
     >
       {/* Check indicator — full mode only */}
       {isSelected && !needsReconnect && <SelectedCheckmark compact={compact} />}
       {compact && needsReconnect && <StatusBadge label="Reconnect" tone="error" />}
 
-      <Flex align="center" gap={compact ? 2 : 2.5} mb={compact ? 1 : 2}>
+      <Flex align="center" gap={compact ? 2 : 2.5} mb={compact ? 1 : 2} pr={isSelected ? 3 : 0}>
         <Box
           w={compact ? '20px' : '32px'}
           h={compact ? '20px' : '32px'}
@@ -452,28 +378,24 @@ function ExchangeAccountPill({
         </Box>
         <Tooltip label={compact ? name : undefined} openDelay={300} hasArrow isDisabled={!compact}>
           <Text
-            textStyle={compact ? 'text/xs' : 'text/md'}
-            fontWeight="semibold"
+            textStyle="text/sm"
+            fontWeight="medium"
             color={needsReconnect ? 'neutral.500' : 'neutral.900'}
             isTruncated
             flex={1}
           >
-            {compact ? config.label : name}
+            {name}
           </Text>
         </Tooltip>
-        {!compact && !needsReconnect && !isSelected && (
-          <Text textStyle="label/sm" color="neutral.500" fontWeight="semibold" flexShrink={0}>
-            {pct}%
-          </Text>
-        )}
       </Flex>
 
       {compact ? (
         <Flex align="center" justify="space-between" pl="28px">
           <Text
-            fontFamily="mono"
+            fontFamily="body"
+            sx={{ fontVariantNumeric: 'tabular-nums' }}
             textStyle="text/xs"
-            fontWeight="semibold"
+            fontWeight="medium"
             color={needsReconnect ? 'neutral.400' : 'neutral.600'}
           >
             {needsReconnect ? '—' : <BitcoinAmount btc={btcAmount} />}
@@ -482,27 +404,33 @@ function ExchangeAccountPill({
         </Flex>
       ) : (
         <>
-          <Flex align="center" justify="space-between">
-            <Flex align="center" gap={1.5}>
-              <Text textStyle="label/sm" color="neutral.500">
+          <Flex direction="column" align="flex-start" gap={2}>
+            <Flex align="center" gap={1.5} flexWrap="wrap">
+              <Text textStyle="text/xs" color="neutral.500">
                 {config.label}
               </Text>
               {needsReconnect && (
-                <Text textStyle="label/xs" color="error.500" fontWeight="medium">
+                <Text textStyle="text/xs" color="error.500" fontWeight="medium">
                   · Reconnect
                 </Text>
               )}
             </Flex>
             <Text
-              fontFamily="mono"
+              fontFamily="body"
+              sx={{ fontVariantNumeric: 'tabular-nums' }}
               textStyle="text/sm"
-              fontWeight="semibold"
+              fontWeight="medium"
               color={needsReconnect ? 'neutral.400' : 'neutral.600'}
             >
               {needsReconnect ? '—' : <BitcoinAmount btc={btcAmount} />}
             </Text>
           </Flex>
-          {!needsReconnect && <ProportionBar pct={pct} isSelected={isSelected} />}
+          {!needsReconnect && (
+            <>
+              <AccountFiat btcAmount={btcAmount} btcPrice={btcPrice} />
+              <ProportionBar pct={pct} />
+            </>
+          )}
         </>
       )}
     </Box>
@@ -512,6 +440,7 @@ function ExchangeAccountPill({
 interface ManualAccountPillProps {
   name: string
   btcAmount: number
+  btcPrice?: number | null
   pct: string
   isSelected: boolean
   compact: boolean
@@ -521,6 +450,7 @@ interface ManualAccountPillProps {
 function ManualAccountPill({
   name,
   btcAmount,
+  btcPrice,
   pct,
   isSelected,
   compact,
@@ -528,23 +458,28 @@ function ManualAccountPill({
 }: ManualAccountPillProps): JSX.Element {
   return (
     <Box
+      as="button"
+      type="button"
+      textAlign="left"
+      w="100%"
+      aria-pressed={isSelected}
+      aria-label={`${name}, manually added`}
+      _focusVisible={{ outline: '2px solid', outlineColor: 'neutral.900', outlineOffset: '2px' }}
       onClick={onClick}
       px={compact ? 2.5 : 4}
       py={compact ? 2 : 3.5}
-      mt={compact ? 1 : 0}
-      borderRadius={compact ? '8px' : '12px'}
+      borderRadius="control"
       border="1px solid"
-      borderColor={compact ? 'warning.300' : isSelected ? 'neutral.900' : 'neutral.200'}
+      borderColor={isSelected ? 'neutral.400' : compact ? 'transparent' : 'neutral.200'}
       bg={isSelected ? 'neutral.50' : 'shades.0'}
       cursor="pointer"
-      transition="all 0.15s ease"
+      transition="background-color 0.15s ease"
       position="relative"
-      _hover={!isSelected ? { shadow: 'sm', ...(compact ? {} : { transform: 'translateY(-1px)' }) } : undefined}
+      _hover={{ bg: 'neutral.100' }}
     >
       {isSelected && <SelectedCheckmark compact={compact} />}
-      {compact && <StatusBadge label="Manually Added" />}
 
-      <Flex align="center" gap={compact ? 2 : 2.5} mb={compact ? 1 : 2}>
+      <Flex align="center" gap={compact ? 2 : 2.5} mb={compact ? 1 : 2} pr={isSelected ? 3 : 0}>
         <Flex
           w={compact ? '20px' : '32px'}
           h={compact ? '20px' : '32px'}
@@ -556,42 +491,44 @@ function ManualAccountPill({
         >
           <ManualNoteIcon boxSize={compact ? '12px' : '18px'} />
         </Flex>
-        <Tooltip label={name} openDelay={300} hasArrow>
-          <Text
-            textStyle={compact ? 'text/xs' : 'text/md'}
-            fontWeight="semibold"
-            color="neutral.900"
-            isTruncated
-            flex={1}
-          >
+        <Tooltip label={compact ? `${name} · Manually added` : name} openDelay={300} hasArrow>
+          <Text textStyle="text/sm" fontWeight="medium" color="neutral.900" isTruncated flex={1}>
             {name}
           </Text>
         </Tooltip>
-        {!compact && !isSelected && (
-          <Text textStyle="label/sm" color="neutral.500" fontWeight="semibold" flexShrink={0}>
-            {pct}%
-          </Text>
-        )}
       </Flex>
 
       {compact ? (
         <Flex align="center" justify="space-between" pl="28px">
-          <Text fontFamily="mono" textStyle="text/xs" fontWeight="semibold" color="neutral.600">
+          <Text
+            fontFamily="body"
+            sx={{ fontVariantNumeric: 'tabular-nums' }}
+            textStyle="text/xs"
+            fontWeight="medium"
+            color="neutral.600"
+          >
             <BitcoinAmount btc={btcAmount} />
           </Text>
           <MiniPieChart pct={parseFloat(pct)} />
         </Flex>
       ) : (
         <>
-          <Flex align="center" justify="space-between">
-            <Text textStyle="label/xs" color="warning.500" fontWeight="medium">
+          <Flex direction="column" align="flex-start" gap={2}>
+            <Text textStyle="text/xs" color="warning.700" fontWeight="medium">
               Manually Added
             </Text>
-            <Text fontFamily="mono" textStyle="text/sm" fontWeight="semibold" color="neutral.600">
+            <Text
+              fontFamily="body"
+              sx={{ fontVariantNumeric: 'tabular-nums' }}
+              textStyle="text/sm"
+              fontWeight="medium"
+              color="neutral.600"
+            >
               <BitcoinAmount btc={btcAmount} />
             </Text>
           </Flex>
-          <ProportionBar pct={pct} isSelected={isSelected} />
+          <AccountFiat btcAmount={btcAmount} btcPrice={btcPrice} />
+          <ProportionBar pct={pct} />
         </>
       )}
     </Box>
@@ -600,7 +537,7 @@ function ManualAccountPill({
 
 function ManualNoteIcon(props: { boxSize?: string }): JSX.Element {
   return (
-    <Icon viewBox="0 0 24 24" color="warning.500" {...props}>
+    <Icon viewBox="0 0 24 24" color="warning.700" {...props}>
       <path
         d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
         stroke="currentColor"
@@ -630,6 +567,7 @@ interface AccountPillProps {
   keystores?: ClaimCardKeystore[]
   isPending?: boolean
   btcAmount: number
+  btcPrice?: number | null
   pct: string
   isSelected: boolean
   isHistorySyncing: boolean
@@ -645,6 +583,7 @@ function AccountPill({
   keystores,
   isPending,
   btcAmount,
+  btcPrice,
   pct,
   isSelected,
   isHistorySyncing,
@@ -657,25 +596,31 @@ function AccountPill({
 
   return (
     <Box
+      as="button"
+      type="button"
+      textAlign="left"
+      w="100%"
+      aria-pressed={isSelected}
+      _focusVisible={{ outline: '2px solid', outlineColor: 'neutral.900', outlineOffset: '2px' }}
       onClick={onClick}
       px={compact ? 2.5 : 4}
       py={compact ? 2 : 3.5}
       mt={compact && isPending ? 1 : 0}
-      borderRadius={compact ? '8px' : '12px'}
+      borderRadius="control"
       border="1px solid"
-      borderColor={compact && isPending ? 'warning.300' : isSelected ? 'neutral.900' : 'neutral.200'}
+      borderColor={isSelected ? 'neutral.400' : compact ? 'transparent' : 'neutral.200'}
       bg={isSelected ? 'neutral.50' : 'shades.0'}
       cursor="pointer"
-      transition="all 0.15s ease"
+      transition="background-color 0.15s ease"
       position="relative"
-      _hover={!isSelected ? { shadow: 'sm', ...(compact ? {} : { transform: 'translateY(-1px)' }) } : undefined}
+      _hover={{ bg: 'neutral.100' }}
     >
       {/* Check indicator — full mode only */}
       {isSelected && <SelectedCheckmark compact={compact} />}
       {compact && isPending && <StatusBadge label="Pending" />}
 
       {/* Logo + Name */}
-      <Flex align="center" gap={compact ? 2 : 2.5} mb={compact ? 1 : 2}>
+      <Flex align="center" gap={compact ? 2 : 2.5} mb={compact ? 1 : 2} pr={isSelected ? 3 : 0}>
         {isMultisig && keystores ? (
           <Box flexShrink={0} w={avatarSize} h={avatarSize} position="relative">
             {keystores[0] && <MultisigMiniAvatar ks={keystores[0]} top="0" left="50%" transform="translateX(-50%)" />}
@@ -692,55 +637,57 @@ function AccountPill({
           />
         )}
         <Tooltip label={name} openDelay={300} hasArrow>
-          <Text
-            textStyle={compact ? 'text/xs' : 'text/md'}
-            fontWeight="semibold"
-            color="neutral.900"
-            isTruncated
-            flex={1}
-          >
+          <Text textStyle="text/sm" fontWeight="medium" color="neutral.900" isTruncated flex={1}>
             {name}
           </Text>
         </Tooltip>
-        {!compact && !isSelected && (
-          <Text textStyle="label/sm" color="neutral.500" fontWeight="semibold" flexShrink={0}>
-            {pct}%
-          </Text>
-        )}
         {isHistorySyncing && <HistorySyncSpinner compact={compact} />}
         {!isHistorySyncing && isHistorySynced && <HistorySyncedCheckmark compact={compact} />}
       </Flex>
 
       {compact ? (
         <Flex align="center" justify="space-between" pl="28px">
-          <Text fontFamily="mono" textStyle="text/xs" fontWeight="semibold" color="neutral.600">
+          <Text
+            fontFamily="body"
+            sx={{ fontVariantNumeric: 'tabular-nums' }}
+            textStyle="text/xs"
+            fontWeight="medium"
+            color="neutral.600"
+          >
             <BitcoinAmount btc={btcAmount} />
           </Text>
           <MiniPieChart pct={parseFloat(pct)} />
         </Flex>
       ) : (
         <>
-          <Flex align="center" justify="space-between">
-            <Flex align="center" gap={1.5}>
-              <Text textStyle="label/sm" color="neutral.500" textTransform="capitalize">
+          <Flex direction="column" align="flex-start" gap={2}>
+            <Flex align="center" gap={1.5} flexWrap="wrap">
+              <Text textStyle="text/xs" color="neutral.500" textTransform="capitalize">
                 {provider}
               </Text>
               {isPending && (
-                <Text textStyle="label/xs" color="warning.500" fontWeight="medium">
+                <Text textStyle="text/xs" color="warning.700" fontWeight="medium">
                   · Pending
                 </Text>
               )}
               {isHistorySyncing && (
-                <Text textStyle="label/xs" color="neutral.400" fontWeight="medium">
+                <Text textStyle="text/xs" color="neutral.600" fontWeight="medium">
                   · Updating history
                 </Text>
               )}
             </Flex>
-            <Text fontFamily="mono" textStyle="text/sm" fontWeight="semibold" color="neutral.600">
+            <Text
+              fontFamily="body"
+              sx={{ fontVariantNumeric: 'tabular-nums' }}
+              textStyle="text/sm"
+              fontWeight="medium"
+              color="neutral.600"
+            >
               <BitcoinAmount btc={btcAmount} />
             </Text>
           </Flex>
-          <ProportionBar pct={pct} isSelected={isSelected} />
+          <AccountFiat btcAmount={btcAmount} btcPrice={btcPrice} />
+          <ProportionBar pct={pct} />
         </>
       )}
     </Box>
@@ -752,7 +699,7 @@ function HistorySyncSpinner({ compact }: { compact: boolean }): JSX.Element {
     <Tooltip label="Updating history" openDelay={250} hasArrow>
       <Spinner
         size="xs"
-        color="neutral.400"
+        color="neutral.600"
         flexShrink={0}
         ml={compact ? 0 : 0.5}
         w={compact ? '10px' : '12px'}
@@ -770,6 +717,7 @@ function HistorySyncedCheckmark({ compact }: { compact: boolean }): JSX.Element 
         ml={compact ? 0 : 0.5}
         sx={{
           animation: 'historySyncedFade 5s ease forwards',
+          '@media (prefers-reduced-motion: reduce)': { animation: 'none' },
           '@keyframes historySyncedFade': {
             '0%, 72%': { opacity: 1 },
             '100%': { opacity: 0 },
@@ -788,8 +736,8 @@ function SelectedCheckmark({ compact }: { compact: boolean }): JSX.Element {
   return (
     <Flex
       position="absolute"
-      top="-7px"
-      right="-7px"
+      top="6px"
+      right="6px"
       w={size}
       h={size}
       borderRadius="full"
@@ -819,10 +767,8 @@ function StatusBadge({ label, tone = 'warning' }: { label: string; tone?: 'warni
 
   return (
     <Flex
-      position="absolute"
-      top="-9px"
-      left="50%"
-      transform="translateX(-50%)"
+      w="fit-content"
+      mb={2}
       px={2}
       py={0.5}
       bg={colors.bg}
@@ -831,7 +777,7 @@ function StatusBadge({ label, tone = 'warning' }: { label: string; tone?: 'warni
       borderRadius="full"
       whiteSpace="nowrap"
     >
-      <Text textStyle="label/xs" color={colors.text} fontWeight="semibold" lineHeight="1">
+      <Text textStyle="text/xs" color={colors.text} fontWeight="medium">
         {label}
       </Text>
     </Flex>
@@ -848,7 +794,15 @@ function MiniPieChart({ pct }: { pct: number }): JSX.Element {
 
   return (
     <Tooltip label={`${displayPct} of total stack`} openDelay={200} hasArrow>
-      <Box as="svg" w={`${size}px`} h={`${size}px`} flexShrink={0} transform="rotate(-90deg)" cursor="default">
+      <Box
+        as="svg"
+        color="success.600"
+        w={`${size}px`}
+        h={`${size}px`}
+        flexShrink={0}
+        transform="rotate(-90deg)"
+        cursor="default"
+      >
         <circle
           cx={size / 2}
           cy={size / 2}
@@ -867,24 +821,36 @@ function MiniPieChart({ pct }: { pct: number }): JSX.Element {
           strokeWidth={strokeWidth}
           strokeDasharray={`${filled} ${circumference - filled}`}
           strokeLinecap="round"
-          opacity={0.4}
         />
       </Box>
     </Tooltip>
   )
 }
 
-function ProportionBar({ pct, isSelected }: { pct: string; isSelected: boolean }): JSX.Element {
+function AccountFiat({ btcAmount, btcPrice }: { btcAmount: number; btcPrice?: number | null }): JSX.Element {
   return (
-    <Box h="2px" bg="neutral.100" borderRadius="1px" mt={2.5} overflow="hidden">
-      <Box
-        h="100%"
-        w={`${Math.max(parseFloat(pct), 2)}%`}
-        bg="neutral.900"
-        borderRadius="1px"
-        opacity={isSelected ? 0.35 : 0.15}
-        transition="opacity 0.15s"
-      />
+    <Text textStyle="text/xs" color="neutral.500" mt={1} sx={{ fontVariantNumeric: 'tabular-nums' }}>
+      {btcPrice == null
+        ? 'USD unavailable'
+        : (btcAmount * btcPrice).toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
+    </Text>
+  )
+}
+
+function ProportionBar({ pct }: { pct: string }): JSX.Element {
+  return (
+    <Box mt={3}>
+      <Flex justify="space-between" gap={2} mb={1.5}>
+        <Text textStyle="text/xs" color="neutral.500">
+          Share of portfolio
+        </Text>
+        <Text textStyle="text/xs" fontWeight="medium" color="success.700" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+          {pct}%
+        </Text>
+      </Flex>
+      <Box h="3px" bg="neutral.100" borderRadius="full" overflow="hidden">
+        <Box h="100%" w={`${Math.min(100, Math.max(0, parseFloat(pct)))}%`} bg="success.600" borderRadius="full" />
+      </Box>
     </Box>
   )
 }

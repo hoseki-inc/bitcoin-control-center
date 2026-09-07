@@ -32,6 +32,7 @@ import {
   withCurrentBalancePoint,
 } from '../../components/dashboard-charts/balance-history'
 import { MonthlyNetChangeChart } from '../../components/dashboard-charts/monthly-net-change-chart'
+import { DashboardCardTitle } from '../../components/dashboard/dashboard-typography'
 import { useAutoRefreshExchanges } from '../../hooks/use-auto-refresh-exchanges'
 import { useGetBalancesPerClaimIds } from '../../lib/balances'
 import { trpc } from '../../trpc'
@@ -486,23 +487,26 @@ export function DashboardPage(): JSX.Element {
     manualAccounts.length > 0 ||
     etfAccounts.length > 0
   const hasHistoricalData = (allData?.historicalData?.length ?? 0) > 0 || (activeData?.historicalData?.length ?? 0) > 0
-  const btcPrice = data?.currentBtcPrice
-    ? Number(data.currentBtcPrice)
-    : allData?.currentBtcPrice
-      ? Number(allData.currentBtcPrice)
-      : 0
+  const historyBtcPrice = Number(data?.currentBtcPrice ?? allData?.currentBtcPrice ?? 0)
+  const btcPrice = btcUsdPrice ?? (historyBtcPrice > 0 ? historyBtcPrice : null)
+  const periodLabel =
+    timeRange === 'custom'
+      ? formatCustomDateRangeLabel(customDateRange)
+      : timeRange === 'all'
+        ? 'all time'
+        : { '7d': 'past 7 days', '30d': 'past 30 days', '90d': 'past 90 days', '1y': 'past year' }[timeRange]
   const currentBtcFloat = displayBalanceSats / 100_000_000
   const hasBalance = displayBalanceSats > 0
 
   const isUp = periodChange === null || periodChange.gte(0)
-  const changeColor = periodChange === null || periodChange.eq(0) ? 'neutral.400' : isUp ? 'success.600' : 'error.500'
+  const changeColor = periodChange === null || periodChange.eq(0) ? 'neutral.600' : isUp ? 'success.700' : 'error.700'
   // A failed range request cannot establish that the portfolio is empty.
   if (!hasVerifiedClaims && !hasHistoricalData && hasCurrentRangeData && !activeError && !historyBackfillFailed) {
     return <EmptyState />
   }
 
   const activeLabel = isShowingAll
-    ? 'Total Stack'
+    ? 'Total balance'
     : selected.size === 1
       ? claims.find((c) => selected.has(c.id))?.displayName ??
         exchangeAccounts.find((a) => selected.has(a.id))?.displayName ??
@@ -515,10 +519,18 @@ export function DashboardPage(): JSX.Element {
     claims.length > 0 || exchangeAccounts.length > 0 || manualAccounts.length > 0 || etfAccounts.length > 0
 
   return (
-    <Flex minH="calc(100vh - 64px)">
+    <Flex minH="calc(100vh - 64px)" direction={{ base: 'column', md: 'row' }}>
       {/* Sidebar -- always visible when accounts exist */}
       {hasSidebar && (
-        <Box alignSelf="flex-start" position="sticky" top={0} h="calc(100vh - 57px)" flexShrink={0}>
+        <Box
+          as="aside"
+          aria-label="Portfolio accounts"
+          alignSelf="stretch"
+          position={{ base: 'static', md: 'sticky' }}
+          top={0}
+          h={{ base: 'auto', md: 'calc(100vh - 64px)' }}
+          flexShrink={0}
+        >
           <AccountsSidebar
             claims={claims}
             exchangeAccounts={exchangeAccounts}
@@ -530,6 +542,7 @@ export function DashboardPage(): JSX.Element {
             onClearAll={clearAll}
             totalBtcSats={totalBtcSats}
             totalUsd={totalUsd}
+            btcPrice={btcPrice}
             compact={compactSidebar}
             onToggleCompact={isSmallScreen ? undefined : toggleCompact}
             historySyncingAccountIds={activeIsPreviousData ? [] : historySyncingAccountIds}
@@ -540,34 +553,13 @@ export function DashboardPage(): JSX.Element {
 
       {/* Main content */}
       <Box flex={1} minW={0} display="flex" justifyContent="center">
-        <Box w="100%" maxW="863px" py={8} px={{ base: 4, md: 6 }}>
+        <Box w="100%" maxW="1040px" py={{ base: 6, md: 8 }} px={{ base: 4, md: 6 }}>
           {/* Header row */}
           <Flex align="flex-start" justify="space-between" mb={6} gap={4} flexWrap="wrap">
             <Box>
               <PageHeading title="Portfolio" description="Track your Bitcoin balance and holdings over time." />
-              <Flex align="center" gap={2} mt={1.5}>
-                <Text textStyle="text/sm" color="neutral.500">
-                  {activeLabel}
-                </Text>
-                {!isShowingAll && (
-                  <Text
-                    textStyle="label/xs"
-                    color="neutral.500"
-                    cursor="pointer"
-                    onClick={clearAll}
-                    _hover={{ color: 'neutral.500' }}
-                  >
-                    ✕
-                  </Text>
-                )}
-                <SyncIndicator
-                  historySyncingCount={historySyncingAccountIds.length}
-                  isPending={!hasCurrentRangeData}
-                  hasError={!!activeError || historyBackfillFailed}
-                />
-              </Flex>
             </Box>
-            <Button size="md" px={6} py={3} borderRadius="control" onClick={handleGenerateStatement}>
+            <Button size="md" flexShrink={0} onClick={handleGenerateStatement}>
               Generate Statement
             </Button>
           </Flex>
@@ -593,57 +585,64 @@ export function DashboardPage(): JSX.Element {
             </Box>
           )}
 
-          {/* Balance hero */}
-          <Box mb={2} opacity={isChartFetching ? 0.35 : 1} transition="opacity 0.2s ease">
-            <Text
-              fontFamily="mono"
-              textStyle={{ base: 'text/3xl', md: 'text/5xl' }}
-              fontWeight="semibold"
-              color="neutral.900"
-              letterSpacing="-0.04em"
-            >
-              <BitcoinAmount btc={new Decimal(displayBalanceSats).div(100_000_000)} />
-            </Text>
-            <Text textStyle="text/sm" color="neutral.500" fontWeight="medium" mt={1}>
-              ${formatUsd(currentBtcFloat, btcPrice)}
-            </Text>
+          {/* Portfolio balance and period context */}
+          <Box mb={8} pt={2}>
+            <Flex align="center" justify="space-between" gap={4} mb={2} flexWrap="wrap">
+              <Flex align="center" gap={2} minW={0}>
+                <Text textStyle="text/sm" color="neutral.600" overflowWrap="anywhere">
+                  {activeLabel}
+                </Text>
+              </Flex>
+              <SyncIndicator
+                historySyncingCount={historySyncingAccountIds.length}
+                isPending={!hasCurrentRangeData}
+                hasError={!!activeError || historyBackfillFailed}
+              />
+            </Flex>
+            <Flex align="baseline" gap={{ base: 2, sm: 4 }} flexWrap="wrap">
+              <Text
+                fontFamily="body"
+                sx={{ fontVariantNumeric: 'tabular-nums' }}
+                textStyle={{ base: 'text/2xl', md: 'text/4xl' }}
+                fontWeight="medium"
+                color="neutral.900"
+                overflowWrap="anywhere"
+              >
+                <BitcoinAmount btc={new Decimal(displayBalanceSats).div(100_000_000)} />
+              </Text>
+              <Text textStyle="text/md" color="neutral.500" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                {btcPrice === null ? 'USD unavailable' : `$${formatUsd(currentBtcFloat, btcPrice)}`}
+              </Text>
+            </Flex>
+            {periodChange !== null && (
+              <Flex align="baseline" gap={1.5} flexWrap="wrap" mt={2}>
+                <Text textStyle="text/sm" color={changeColor} sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                  {periodChange.eq(0) ? (
+                    'No change'
+                  ) : (
+                    <>
+                      {isUp ? '+' : '−'}
+                      <BitcoinAmount btc={periodChange.abs().div(100_000_000)} /> ({isUp ? '+' : ''}
+                      {periodChange
+                        .div(new Decimal(toSatoshisString(historicalData[0]?.totalBalance)).abs().plus(1))
+                        .mul(100)
+                        .toFixed(1)}
+                      %)
+                    </>
+                  )}
+                </Text>
+                <Text textStyle="text/sm" color="neutral.500">
+                  · {periodLabel}
+                </Text>
+              </Flex>
+            )}
           </Box>
 
-          {/* Change pill */}
-          {periodChange !== null && (
-            <Box
-              display="inline-flex"
-              alignItems="center"
-              mt={2}
-              mb={8}
-              px={2.5}
-              py={1}
-              borderRadius="lg"
-              bg={isUp ? 'success.50' : 'error.50'}
-              w="fit-content"
-              opacity={isChartFetching ? 0.35 : 1}
-              transition="opacity 0.2s ease"
-            >
-              <Text textStyle="text/sm" fontWeight="semibold" color={changeColor} fontFamily="mono">
-                {isUp ? '↑' : '↓'} <BitcoinAmount btc={periodChange.abs().div(100_000_000)} /> ({isUp ? '+' : ''}
-                {periodChange.eq(0)
-                  ? '0.0'
-                  : periodChange
-                      .div(new Decimal(toSatoshisString(historicalData[0]?.totalBalance)).abs().plus(1))
-                      .mul(100)
-                      .toFixed(1)}
-                %)
-              </Text>
-            </Box>
-          )}
-
           {/* Accumulation chart */}
-          <Box mb={8}>
-            <Flex align="center" justify="space-between" mb={4} gap={3} flexWrap="wrap">
+          <Box mb={6} border="1px solid" borderColor="neutral.200" borderRadius="panel" p={{ base: 4, md: 6 }}>
+            <Flex align="center" justify="space-between" mb={5} gap={3} flexWrap="wrap">
               <Flex align="center" gap={2}>
-                <Text textStyle="overline/sm" fontWeight="semibold" color="neutral.500">
-                  Accumulation
-                </Text>
+                <DashboardCardTitle>Accumulation</DashboardCardTitle>
                 {activeFetching && <Spinner size="xs" color="neutral.300" />}
               </Flex>
               <TimeRangeSelector
@@ -658,16 +657,7 @@ export function DashboardPage(): JSX.Element {
               />
             </Flex>
 
-            <Box
-              bg="shades.0"
-              border="1px solid"
-              borderColor="neutral.200"
-              borderRadius="panel"
-              p={5}
-              pr={2}
-              position="relative"
-              overflow="hidden"
-            >
+            <Box bg="shades.0" pt={2} position="relative" overflow="hidden">
               {historyRangeError !== null ? (
                 <HistoryRangeError
                   height="220px"
@@ -694,6 +684,7 @@ export function DashboardPage(): JSX.Element {
                       'linear-gradient(90deg, rgba(240,242,245,0) 0%, rgba(240,242,245,0.85) 50%, rgba(240,242,245,0) 100%)',
                     backgroundSize: '200% 100%',
                     animation: 'shimmer 1.4s ease-in-out infinite',
+                    '@media (prefers-reduced-motion: reduce)': { animation: 'none' },
                     '@keyframes shimmer': {
                       '0%': { backgroundPosition: '-200% 0' },
                       '100%': { backgroundPosition: '200% 0' },
@@ -705,24 +696,12 @@ export function DashboardPage(): JSX.Element {
           </Box>
 
           {/* Monthly net change */}
-          <Box mb={8}>
-            <Flex align="center" gap={2} mb={3}>
-              <Text textStyle="overline/sm" fontWeight="semibold" color="neutral.500">
-                Monthly Net Change
-              </Text>
+          <Box mb={6} border="1px solid" borderColor="neutral.200" borderRadius="panel" p={{ base: 4, md: 6 }}>
+            <Flex align="center" gap={2} mb={5}>
+              <DashboardCardTitle>Monthly Net Change</DashboardCardTitle>
               {activeFetching && <Spinner size="xs" color="neutral.300" />}
             </Flex>
-            <Box
-              bg="shades.0"
-              border="1px solid"
-              borderColor="neutral.200"
-              borderRadius="panel"
-              px={3}
-              pt={4}
-              pb={2}
-              position="relative"
-              overflow="hidden"
-            >
+            <Box bg="shades.0" pt={2} position="relative" overflow="hidden">
               {historyRangeError !== null ? (
                 <HistoryRangeError
                   height="120px"
@@ -749,17 +728,36 @@ export function DashboardPage(): JSX.Element {
                       'linear-gradient(90deg, rgba(240,242,245,0) 0%, rgba(240,242,245,0.85) 50%, rgba(240,242,245,0) 100%)',
                     backgroundSize: '200% 100%',
                     animation: 'shimmer 1.4s ease-in-out infinite',
+                    '@media (prefers-reduced-motion: reduce)': { animation: 'none' },
                   }}
                 />
               )}
             </Box>
+            {/* Stats row */}
+            <Grid
+              templateColumns={{ base: '1fr', sm: '1fr 1fr' }}
+              gap={6}
+              mt={5}
+              pt={5}
+              borderTop="1px solid"
+              borderColor="neutral.200"
+            >
+              <StatCard
+                label="This Month"
+                available={periodChange !== null}
+                data={historicalData}
+                mode="current"
+                timezone={userTimezone}
+              />
+              <StatCard
+                label="Monthly Avg (6mo)"
+                available={periodChange !== null}
+                data={historicalData}
+                mode="average"
+                timezone={userTimezone}
+              />
+            </Grid>
           </Box>
-
-          {/* Stats row */}
-          <Grid templateColumns={{ base: '1fr', sm: '1fr 1fr' }} gap={3} mb={8}>
-            <StatCard label="This Month" data={historicalData} mode="current" timezone={userTimezone} />
-            <StatCard label="Monthly Avg (6mo)" data={historicalData} mode="average" timezone={userTimezone} />
-          </Grid>
         </Box>
       </Box>
     </Flex>
@@ -791,7 +789,7 @@ function HistoryRangeError({
       <Text textStyle="text/sm" color="error.500">
         Couldn&apos;t load this date range: {message}
       </Text>
-      <Text textStyle="label/xs" color="neutral.500">
+      <Text textStyle="text/xs" color="neutral.500">
         Try again, or choose another range.
       </Text>
       <Button size="sm" variant="outline" onClick={onRetry}>
@@ -820,7 +818,7 @@ function SyncIndicator({
 }): JSX.Element {
   if (hasError) {
     return (
-      <Text textStyle="label/xs" color="error.500">
+      <Text textStyle="text/xs" color="error.500">
         History unavailable
       </Text>
     )
@@ -829,7 +827,7 @@ function SyncIndicator({
     return (
       <Flex align="center" gap={1.5}>
         <Spinner size="xs" color="neutral.400" />
-        <Text textStyle="label/xs" fontWeight="semibold" color="neutral.500">
+        <Text textStyle="text/xs" fontWeight="medium" color="neutral.500">
           Updating history
         </Text>
       </Flex>
@@ -839,7 +837,7 @@ function SyncIndicator({
   return (
     <Flex align="center" gap={1.5}>
       <Box w="6px" h="6px" borderRadius="full" bg="success.500" />
-      <Text textStyle="label/xs" fontWeight="semibold" color="success.600">
+      <Text textStyle="text/xs" fontWeight="medium" color="neutral.500">
         All synced
       </Text>
     </Flex>
@@ -885,7 +883,15 @@ function TimeRangeSelector({
 
   return (
     <Stack align="flex-end" gap={1}>
-      <Flex bg="neutral.50" borderRadius="control" p="3px" gap="2px" flexWrap="wrap">
+      <Flex
+        role="group"
+        aria-label="Portfolio time range"
+        bg="neutral.50"
+        borderRadius="control"
+        p={1}
+        gap={1}
+        flexWrap="wrap"
+      >
         {options.map((option) => (
           <Button
             key={option.value}
@@ -896,15 +902,16 @@ function TimeRangeSelector({
             }}
             size="sm"
             px={3}
-            py={1}
-            borderRadius="6px"
+            minH="40px"
+            variant="ghost"
+            borderRadius="control"
             border="none"
-            bg={value === option.value ? 'neutral.900' : 'transparent'}
-            color={value === option.value ? 'shades.0' : 'neutral.600'}
+            bg={value === option.value ? 'neutral.200' : 'transparent'}
+            color={value === option.value ? 'neutral.900' : 'neutral.600'}
             textStyle="text/xs"
             fontWeight="medium"
             _hover={{
-              bg: value === option.value ? 'neutral.900' : 'neutral.100',
+              bg: value === option.value ? 'neutral.200' : 'neutral.100',
             }}
           >
             {option.label}
@@ -917,14 +924,16 @@ function TimeRangeSelector({
               onClick={handleCustomClick}
               size="sm"
               px={3}
-              py={1}
-              borderRadius="6px"
+              minH="40px"
+              variant="ghost"
+              aria-pressed={value === 'custom'}
+              borderRadius="control"
               border="none"
-              bg={value === 'custom' ? 'neutral.900' : 'transparent'}
-              color={value === 'custom' ? 'shades.0' : 'neutral.600'}
-              textStyle="label/xs"
-              fontWeight="semibold"
-              _hover={{ bg: value === 'custom' ? 'neutral.900' : 'neutral.100' }}
+              bg={value === 'custom' ? 'neutral.200' : 'transparent'}
+              color={value === 'custom' ? 'neutral.900' : 'neutral.600'}
+              textStyle="text/xs"
+              fontWeight="medium"
+              _hover={{ bg: value === 'custom' ? 'neutral.200' : 'neutral.100' }}
             >
               Custom
             </Button>
@@ -940,12 +949,12 @@ function TimeRangeSelector({
               <PopoverArrow bg="shades.0" />
               <PopoverBody p={4}>
                 <Stack gap={4}>
-                  <Text textStyle="text/sm" fontWeight="semibold" color="neutral.900">
+                  <Text textStyle="text/sm" fontWeight="medium" color="neutral.900">
                     Choose a date range
                   </Text>
                   <Stack direction={{ base: 'column', sm: 'row' }} gap={3}>
                     <FormControl isInvalid={draftError !== null}>
-                      <FormLabel htmlFor="portfolio-range-start" textStyle="label/xs" color="neutral.600" mb={1.5}>
+                      <FormLabel htmlFor="portfolio-range-start" textStyle="text/xs" color="neutral.600" mb={1.5}>
                         Start date
                       </FormLabel>
                       <DateInput
@@ -958,7 +967,7 @@ function TimeRangeSelector({
                       />
                     </FormControl>
                     <FormControl isInvalid={draftError !== null}>
-                      <FormLabel htmlFor="portfolio-range-end" textStyle="label/xs" color="neutral.600" mb={1.5}>
+                      <FormLabel htmlFor="portfolio-range-end" textStyle="text/xs" color="neutral.600" mb={1.5}>
                         End date
                       </FormLabel>
                       <DateInput
@@ -971,7 +980,7 @@ function TimeRangeSelector({
                       />
                     </FormControl>
                   </Stack>
-                  <Text textStyle="label/xs" color={draftError === null ? 'neutral.500' : 'error.500'}>
+                  <Text textStyle="text/xs" color={draftError === null ? 'neutral.500' : 'error.500'}>
                     {draftError ?? 'Older self-custody history may take longer to prepare.'}
                   </Text>
                   <Flex justify="flex-end" gap={2}>
@@ -989,7 +998,7 @@ function TimeRangeSelector({
         </Popover>
       </Flex>
       {value === 'custom' && customDateRange.startDate !== null && customDateRange.endDate !== null && (
-        <Text textStyle="label/xs" color="neutral.500" pr={1}>
+        <Text textStyle="text/xs" color="neutral.500" pr={1}>
           {formatCustomDateRangeLabel(customDateRange)}
         </Text>
       )}
@@ -998,13 +1007,14 @@ function TimeRangeSelector({
 }
 
 interface StatCardProps {
+  available: boolean
   label: string
   data: Array<{ timestamp: string; totalBalance: string }>
   mode: 'current' | 'average'
   timezone: string
 }
 
-function StatCard({ label, data, mode, timezone }: StatCardProps): JSX.Element {
+function StatCard({ label, data, mode, timezone, available }: StatCardProps): JSX.Element {
   const value = useMemo(() => {
     const monthlyChanges = getMonthlyChanges(data, 6, timezone)
     if (monthlyChanges.length === 0) return new Decimal(0)
@@ -1022,19 +1032,26 @@ function StatCard({ label, data, mode, timezone }: StatCardProps): JSX.Element {
   const isPositive = value.gte(0)
 
   return (
-    <Box bg="shades.0" border="1px solid" borderColor="neutral.200" borderRadius="panel" px={4} py={4}>
-      <Text textStyle="label/xs" color="neutral.500" fontWeight="semibold" mb={2}>
+    <Box minW={0}>
+      <Text textStyle="text/xs" color="neutral.500" fontWeight="medium" mb={2}>
         {label}
       </Text>
       <Text
-        fontFamily="mono"
+        fontFamily="body"
+        sx={{ fontVariantNumeric: 'tabular-nums' }}
         textStyle="text/lg"
-        fontWeight="semibold"
-        color={isPositive ? 'success.600' : 'error.500'}
+        fontWeight="medium"
+        color={value.eq(0) ? 'neutral.900' : isPositive ? 'success.700' : 'error.700'}
         letterSpacing="-0.02em"
       >
-        {isPositive ? '+' : ''}
-        <BitcoinAmount btc={value} />
+        {available ? (
+          <>
+            {value.gt(0) ? '+' : ''}
+            <BitcoinAmount btc={value} />
+          </>
+        ) : (
+          '—'
+        )}
       </Text>
     </Box>
   )

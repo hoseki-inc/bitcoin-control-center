@@ -208,29 +208,6 @@ export function ClaimsPage(): JSX.Element {
         <Flex align="flex-start" justify="space-between" pb={6} gap={4} flexWrap="wrap">
           <Box>
             <PageHeading title="My Holdings" description="Manage your wallets, exchanges, and Bitcoin holdings." />
-            {hasClaims && (
-              <Flex align="center" gap={3} mt={2} flexWrap="wrap">
-                <Text textStyle="text/sm" fontWeight="semibold" color="neutral.900">
-                  <BitcoinAmount btc={totalBtc.toFixed(8)} />
-                </Text>
-                <Text color="neutral.200">·</Text>
-                <Text textStyle="text/sm" color="success.600">
-                  ${totalUsd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </Text>
-                <Text color="neutral.200">·</Text>
-                <Flex align="center" gap={1}>
-                  <VerifiedBadge />
-                  <Text textStyle="text/sm" color="success.600">
-                    {verifiedCount} Verified
-                  </Text>
-                </Flex>
-                {pendingCount > 0 && (
-                  <Text textStyle="text/sm" color="warning.600">
-                    {pendingCount} Pending
-                  </Text>
-                )}
-              </Flex>
-            )}
           </Box>
           {hasClaims && (
             <Button leftIcon={<PlusIcon size={16} />} onClick={() => navigate('/accounts/add')}>
@@ -238,6 +215,39 @@ export function ClaimsPage(): JSX.Element {
             </Button>
           )}
         </Flex>
+
+        {hasClaims && (
+          <Flex align="center" justify="space-between" gap={4} flexWrap="wrap" mb={6}>
+            <Flex align="baseline" gap={3} flexWrap="wrap" minW={0}>
+              <Text
+                textStyle="text/xl"
+                fontWeight="medium"
+                color="neutral.900"
+                fontFamily="body"
+                sx={{ fontVariantNumeric: 'tabular-nums' }}
+                overflowWrap="anywhere"
+              >
+                <BitcoinAmount btc={totalBtc.toFixed(8)} />
+              </Text>
+              <Text textStyle="text/sm" color="neutral.500" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                ${totalUsd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </Text>
+            </Flex>
+            <Flex align="center" gap={3} flexWrap="wrap" aria-label="Account verification status">
+              <Flex align="center" gap={1.5}>
+                {verifiedCount > 0 && <VerifiedBadge />}
+                <Text textStyle="text/sm" color={verifiedCount > 0 ? 'success.700' : 'neutral.500'}>
+                  {verifiedCount === 0 ? 'No verified accounts' : `${verifiedCount} verified`}
+                </Text>
+              </Flex>
+              {pendingCount > 0 && (
+                <Text textStyle="text/sm" color="warning.700">
+                  {pendingCount} pending
+                </Text>
+              )}
+            </Flex>
+          </Flex>
+        )}
 
         {/* Account cards */}
         {hasClaims ? (
@@ -421,15 +431,15 @@ function AccountCard({ claim, balance, totalBtcSats, isLoadingBalance }: Account
           <Box
             h="100%"
             w={`${Math.max(parseFloat(pct), 1.5)}%`}
-            bg="neutral.900"
+            bg="success.600"
             borderRadius="2px"
-            opacity={0.2}
             transition="width 0.4s ease"
           />
         </Box>
         <Text
-          textStyle="label/xs"
-          color="neutral.500"
+          textStyle="text/xs"
+          fontWeight="medium"
+          color="success.700"
           fontFamily="body"
           sx={{ fontVariantNumeric: 'tabular-nums' }}
           whiteSpace="nowrap"
@@ -639,15 +649,15 @@ function ExchangeAccountCard({ account, totalBtcSats, btcUsdPrice }: ExchangeAcc
           <Box
             h="100%"
             w={`${Math.max(parseFloat(pct), 1.5)}%`}
-            bg="neutral.900"
+            bg="success.600"
             borderRadius="2px"
-            opacity={0.2}
             transition="width 0.4s ease"
           />
         </Box>
         <Text
-          textStyle="label/xs"
-          color="neutral.500"
+          textStyle="text/xs"
+          fontWeight="medium"
+          color="success.700"
           fontFamily="body"
           sx={{ fontVariantNumeric: 'tabular-nums' }}
           whiteSpace="nowrap"
@@ -741,15 +751,15 @@ function ManualAccountCard({
           <Box
             h="100%"
             w={`${Math.max(parseFloat(pct), 1.5)}%`}
-            bg="neutral.900"
+            bg="success.600"
             borderRadius="2px"
-            opacity={0.2}
             transition="width 0.4s ease"
           />
         </Box>
         <Text
-          textStyle="label/xs"
-          color="neutral.500"
+          textStyle="text/xs"
+          fontWeight="medium"
+          color="success.700"
           fontFamily="body"
           sx={{ fontVariantNumeric: 'tabular-nums' }}
           whiteSpace="nowrap"
