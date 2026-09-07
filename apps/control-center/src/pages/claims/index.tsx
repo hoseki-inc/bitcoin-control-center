@@ -17,9 +17,9 @@ import {
 } from '@chakra-ui/react'
 import { EmptyView, ErrorBanner, Spinner } from '@hoseki/packages/ui/design-system'
 import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
-import { ClaimCardKeystores, StatusBadge, getBadgeConfigForClaim } from '@hoseki/packages/ui/prove-verify-ui'
-import { ChartNoAxesCombined, LayoutGridIcon, ListIcon } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { ClaimCardKeystores, getBadgeConfigForClaim } from '@hoseki/packages/ui/prove-verify-ui'
+import { ChartNoAxesCombined, FileText, LayoutGridIcon, ListIcon } from 'lucide-react'
+import { type ReactNode, useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router'
 import { toast } from 'sonner'
 import { BitcoinAmount } from '../../components/bitcoin-amount'
@@ -267,27 +267,25 @@ export function ClaimsPage(): JSX.Element {
                 </Text>
               )}
             </Flex>
+            <Flex justify="flex-end" gap={1} flexShrink={0} role="group" aria-label="Account view">
+              <IconButton
+                aria-label="List view"
+                aria-pressed={view === 'list'}
+                icon={<ListIcon size={18} />}
+                variant={view === 'list' ? 'outline' : 'ghost'}
+                onClick={() => setView('list')}
+              />
+              <IconButton
+                aria-label="Card view"
+                aria-pressed={view === 'cards'}
+                icon={<LayoutGridIcon size={18} />}
+                variant={view === 'cards' ? 'outline' : 'ghost'}
+                onClick={() => setView('cards')}
+              />
+            </Flex>
           </Flex>
         )}
 
-        {hasClaims && (
-          <Flex justify="flex-end" gap={1} mb={3} role="group" aria-label="Account view">
-            <IconButton
-              aria-label="List view"
-              aria-pressed={view === 'list'}
-              icon={<ListIcon size={18} />}
-              variant={view === 'list' ? 'outline' : 'ghost'}
-              onClick={() => setView('list')}
-            />
-            <IconButton
-              aria-label="Card view"
-              aria-pressed={view === 'cards'}
-              icon={<LayoutGridIcon size={18} />}
-              variant={view === 'cards' ? 'outline' : 'ghost'}
-              onClick={() => setView('cards')}
-            />
-          </Flex>
-        )}
         {/* Account cards */}
         {hasClaims ? (
           view === 'list' ? (
@@ -338,42 +336,32 @@ export function ClaimsPage(): JSX.Element {
               ))}
             </Stack>
           ) : (
-            <Grid templateColumns={{ base: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(3, 1fr)' }} gap={4}>
+            <Grid
+              templateColumns={{ base: '1fr', sm: 'repeat(2, minmax(0, 1fr))', lg: 'repeat(3, minmax(0, 1fr))' }}
+              gap={4}
+            >
               {claims.map((claim) => (
                 <AccountCard
                   key={claim.id}
                   claim={claim}
                   balance={balancesQuery.data?.get(claim.id) ?? null}
-                  totalBtcSats={totalBtcSats}
                   isLoadingBalance={balancesQuery.isLoading}
                 />
               ))}
               {exchangeAccounts.map((account) => (
-                <ExchangeAccountCard
-                  key={account.id}
-                  account={account}
-                  totalBtcSats={totalBtcSats}
-                  btcUsdPrice={btcUsdPrice}
-                />
+                <ExchangeAccountCard key={account.id} account={account} btcUsdPrice={btcUsdPrice} />
               ))}
               {manualAccounts.map((account) => (
-                <ManualAccountCard
-                  key={account.id}
-                  account={account}
-                  totalBtcSats={totalBtcSats}
-                  btcUsdPrice={btcUsdPrice}
-                />
+                <ManualAccountCard key={account.id} account={account} btcUsdPrice={btcUsdPrice} />
               ))}
               {etfAccounts.map((account) => (
                 <ManualAccountCard
                   key={account.id}
                   account={{ ...account, balance: account.balance }}
-                  totalBtcSats={totalBtcSats}
                   btcUsdPrice={btcUsdPrice}
                   linkPrefix="/accounts/etf"
                 />
               ))}
-              <AddAccountCard onClick={() => navigate('/accounts/add')} />
             </Grid>
           )
         ) : (
@@ -428,147 +416,116 @@ export function ClaimsPage(): JSX.Element {
   )
 }
 
-interface AccountCardProps {
-  claim: ClaimDto
-  balance: { current: unknown; usd: unknown } | null
-  totalBtcSats: number
-  isLoadingBalance: boolean
-}
-
-function AccountCard({ claim, balance, totalBtcSats, isLoadingBalance }: AccountCardProps): JSX.Element {
-  const isPendingMultisig = claim.keystores.length > 1 && claim.status === 'pending'
-  const to = isPendingMultisig ? `/multisig/${claim.id}` : `/accounts/${claim.id}`
-  const status = ensureClaimStatusNotExpired(claim)
-  const cardProps = mapClaimToClaimCardProps(claim)
-  const { status: badgeStatus, label: badgeLabel } = getBadgeConfigForClaim(status)
-
-  const btcSats = balance ? Number(balance.current) : 0
-  const btcAmount = btcSats / 100_000_000
-  const usdAmount = balance?.usd ? Number(balance.usd) : 0
-  const pct = totalBtcSats > 0 ? ((btcSats / totalBtcSats) * 100).toFixed(1) : '0.0'
-
+function AccountCardFrame({
+  to,
+  name,
+  detail,
+  icon,
+  children,
+}: {
+  to: string
+  name: string
+  detail: ReactNode
+  icon: ReactNode
+  children: ReactNode
+}): JSX.Element {
   return (
     <Stack
       as={Link}
       to={to}
       bg="shades.0"
-      borderRadius="panel"
       border="1px solid"
       borderColor="neutral.200"
-      p={4}
-      pb={6}
-      cursor="pointer"
+      borderRadius="panel"
+      p={5}
+      gap={6}
+      minW={0}
+      textAlign="left"
       transition="border-color 150ms ease, background-color 150ms ease"
-      gap={1}
-      textAlign="center"
+      _hover={{ borderColor: 'neutral.400', bg: 'neutral.50' }}
       _focusVisible={{ outline: '2px solid', outlineColor: 'activeState.80', outlineOffset: '3px' }}
-      _hover={{
-        borderColor: 'neutral.400',
-        bg: 'neutral.50',
-      }}
     >
-      {/* Top row: threshold badge + status badge */}
-      <HStack>
-        {claim.keystores.length > 1 && (
-          <StatusBadge
-            status="neutral"
-            label={`${cardProps.threshold} of ${claim.keystores.length}`}
-            size="sm"
-            textTransform="none"
-          />
-        )}
-        <StatusBadge status={badgeStatus} label={badgeLabel} size="sm" ml="auto" />
-      </HStack>
-
-      {/* Keystore logos */}
-      <ClaimCardKeystores keystores={cardProps.keystores} alt={claim.displayName} status={status} mx="auto" />
-
-      {/* Name */}
-      <Stack gap={0} mx={4}>
-        <Text textStyle="label/md" fontWeight="medium" color="neutral.600" isTruncated>
-          {claim.displayName ?? claim.officialName}
-        </Text>
-      </Stack>
-
-      {/* Balance */}
-      <Stack gap={0} mx={4} mt={1}>
-        {isLoadingBalance ? (
-          <Box h="24px" w="120px" bg="neutral.50" borderRadius="4px" mx="auto" />
-        ) : !balance ? (
-          <Text textStyle="text/sm" color="neutral.600">
-            Balance unavailable
+      <Flex align="flex-start" gap={3}>
+        <Box flex={1} minW={0}>
+          <Text textStyle="text/md" fontWeight="medium" color="neutral.900" overflowWrap="anywhere">
+            {name}
           </Text>
-        ) : (
-          <>
-            <Text
-              fontFamily="body"
-              sx={{ fontVariantNumeric: 'tabular-nums' }}
-              textStyle="text/lg"
-              fontWeight="semibold"
-              color="neutral.900"
-              letterSpacing="-0.02em"
-            >
-              <SensitiveValue>
-                <BitcoinAmount btc={btcAmount.toFixed(8)} />
-              </SensitiveValue>
-            </Text>
-            <Text textStyle="text/sm" fontWeight="medium" color="neutral.600">
-              <SensitiveValue>
-                ${usdAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </SensitiveValue>
-            </Text>
-          </>
-        )}
-      </Stack>
-
-      {/* Proportion bar */}
-      <Flex align="center" gap={2.5} mx={4} mt={1}>
-        <Box flex={1} h="3px" bg="neutral.50" borderRadius="2px" overflow="hidden">
-          <Box h="100%" w={`${Math.max(parseFloat(pct), 1.5)}%`} bg="neutral.400" borderRadius="2px" />
+          <Text textStyle="text/xs" color="neutral.600" mt={1}>
+            {detail}
+          </Text>
         </Box>
-        <Text
-          textStyle="text/xs"
-          fontWeight="medium"
-          color="success.700"
-          fontFamily="body"
-          sx={{ fontVariantNumeric: 'tabular-nums' }}
-          whiteSpace="nowrap"
-        >
-          {pct}%
-        </Text>
+        <Flex align="center" justify="center" flexShrink={0} color="neutral.600" aria-hidden="true">
+          {icon}
+        </Flex>
       </Flex>
+      <Box mt="auto" minW={0} sx={{ fontVariantNumeric: 'tabular-nums' }}>
+        {children}
+      </Box>
     </Stack>
   )
 }
 
-interface AddAccountCardProps {
-  onClick: () => void
+function AccountCardBalance({
+  btc,
+  usd,
+  loading = false,
+}: {
+  btc: number | null
+  usd: number | null
+  loading?: boolean
+}): JSX.Element {
+  if (loading)
+    return (
+      <Text textStyle="text/sm" color="neutral.600" role="status">
+        Loading balance…
+      </Text>
+    )
+  return (
+    <>
+      <Text textStyle="text/xl" fontWeight="medium" color="neutral.900" letterSpacing="-0.02em" overflowWrap="anywhere">
+        <SensitiveValue>{btc === null ? '—' : <BitcoinAmount btc={btc.toFixed(8)} />}</SensitiveValue>
+      </Text>
+      <Text textStyle="text/sm" color="neutral.600" mt={1} overflowWrap="anywhere">
+        <SensitiveValue>
+          {btc === null
+            ? 'Balance unavailable'
+            : usd === null
+              ? 'USD unavailable'
+              : usd.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
+        </SensitiveValue>
+      </Text>
+    </>
+  )
 }
 
-function AddAccountCard({ onClick }: AddAccountCardProps): JSX.Element {
+interface AccountCardProps {
+  claim: ClaimDto
+  balance: { current: unknown; usd: unknown } | null
+  isLoadingBalance: boolean
+}
+
+function AccountCard({ claim, balance, isLoadingBalance }: AccountCardProps): JSX.Element {
+  const isPendingMultisig = claim.keystores.length > 1 && claim.status === 'pending'
+  const status = ensureClaimStatusNotExpired(claim)
+  const cardProps = mapClaimToClaimCardProps(claim)
   return (
-    <Flex
-      as="button"
-      type="button"
-      onClick={onClick}
-      borderRadius="panel"
-      border="1.5px dashed"
-      borderColor="neutral.200"
-      px={5}
-      py={7}
-      cursor="pointer"
-      direction="column"
-      align="center"
-      justify="center"
-      gap={2}
-      minH="160px"
-      transition="background-color 150ms ease"
-      _hover={{ bg: 'neutral.50' }}
+    <AccountCardFrame
+      to={isPendingMultisig ? `/multisig/${claim.id}` : `/accounts/${claim.id}`}
+      name={claim.displayName ?? claim.officialName ?? 'Wallet'}
+      detail={
+        <>
+          {claim.keystores.length > 1 ? `${cardProps.threshold} of ${claim.keystores.length} · ` : ''}
+          {getBadgeConfigForClaim(status).label}
+        </>
+      }
+      icon={<ClaimCardKeystores keystores={cardProps.keystores} alt="" status={status} />}
     >
-      <Text textStyle="text/sm" color="neutral.600">
-        Add account
-      </Text>
-    </Flex>
+      <AccountCardBalance
+        btc={balance ? Number(balance.current) / 100_000_000 : null}
+        usd={balance?.usd != null ? Number(balance.usd) : null}
+        loading={isLoadingBalance}
+      />
+    </AccountCardFrame>
   )
 }
 
@@ -588,7 +545,6 @@ function EmptyHoldings({ onAdd }: { onAdd: () => void }): JSX.Element {
 
 interface ExchangeAccountCardProps {
   account: ExchangeAccountDto
-  totalBtcSats: number
   btcUsdPrice: number | null
 }
 
@@ -628,260 +584,55 @@ const exchangeConfig: Record<string, ExchangeConfig> = {
   },
 }
 
-function ExchangeAccountCard({ account, totalBtcSats, btcUsdPrice }: ExchangeAccountCardProps): JSX.Element {
+function ExchangeAccountCard({ account, btcUsdPrice }: ExchangeAccountCardProps): JSX.Element {
   const needsReconnect = needsExchangeReconnect(account)
-  const btcSats = account.balance ? Number(account.balance) : 0
-  const btcAmount = btcSats / 100_000_000
-  const usdAmount = btcUsdPrice !== null ? btcAmount * btcUsdPrice : null
-  const pct = totalBtcSats > 0 ? ((btcSats / totalBtcSats) * 100).toFixed(1) : '0.0'
-
+  const btc = account.balance === null || needsReconnect ? null : Number(account.balance) / 100_000_000
   const config = exchangeConfig[account.exchange] ?? defaultExchangeConfig
-
   return (
-    <Stack
-      as={Link}
+    <AccountCardFrame
       to={`${config.detailsPath}/${account.id}`}
-      bg={needsReconnect ? 'neutral.50' : 'shades.0'}
-      borderRadius="panel"
-      border="1px solid"
-      borderColor="neutral.200"
-      p={4}
-      pb={6}
-      cursor="pointer"
-      transition="border-color 150ms ease, background-color 150ms ease"
-      gap={1}
-      textAlign="center"
-      _focusVisible={{ outline: '2px solid', outlineColor: 'activeState.80', outlineOffset: '3px' }}
-      _hover={{
-        borderColor: 'neutral.400',
-        bg: 'neutral.50',
-      }}
+      name={account.displayName}
+      detail={
+        <>
+          {config.label} ·{' '}
+          <Box as="span" color={needsReconnect ? 'error.700' : undefined}>
+            {needsReconnect ? 'Reconnect needed' : 'Connected'}
+          </Box>
+        </>
+      }
+      icon={<Box as="img" src={config.logo} alt="" maxW="64px" h={6} objectFit="contain" />}
     >
-      {/* Top row: status badge */}
-      <HStack>
-        <StatusBadge
-          status={needsReconnect ? 'error' : 'success'}
-          label={needsReconnect ? 'Reconnect' : 'Connected'}
-          size="sm"
-          ml="auto"
-        />
-      </HStack>
-
-      {/* Exchange logo */}
-      <Flex justify="center" align="center" h="30px" my={2}>
-        <img
-          src={config.logo}
-          alt={config.logoAlt}
-          style={{
-            height: '30px',
-            opacity: needsReconnect ? 0.55 : 1,
-            filter: needsReconnect ? 'grayscale(1)' : 'none',
-          }}
-        />
-      </Flex>
-
-      {/* Name */}
-      <Stack gap={0} mx={4}>
-        <Text
-          textStyle="label/md"
-          fontWeight="medium"
-          color={needsReconnect ? 'neutral.400' : 'neutral.600'}
-          isTruncated
-        >
-          {account.displayName}
-        </Text>
-      </Stack>
-
-      {/* Balance */}
-      <Stack gap={0} mx={4} mt={1}>
-        {needsReconnect ? (
-          <Text
-            fontFamily="body"
-            sx={{ fontVariantNumeric: 'tabular-nums' }}
-            textStyle="text/lg"
-            fontWeight="semibold"
-            color="neutral.500"
-            letterSpacing="-0.02em"
-          >
-            —
-          </Text>
-        ) : account.balance === null ? (
-          <Box h="24px" w="120px" bg="neutral.50" borderRadius="4px" mx="auto" />
-        ) : (
-          <>
-            <Text
-              fontFamily="body"
-              sx={{ fontVariantNumeric: 'tabular-nums' }}
-              textStyle="text/lg"
-              fontWeight="semibold"
-              color="neutral.900"
-              letterSpacing="-0.02em"
-            >
-              <SensitiveValue>
-                <BitcoinAmount btc={btcAmount.toFixed(8)} />
-              </SensitiveValue>
-            </Text>
-            {usdAmount !== null && (
-              <Text textStyle="text/sm" fontWeight="medium" color="neutral.600">
-                <SensitiveValue>
-                  ${usdAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </SensitiveValue>
-              </Text>
-            )}
-          </>
-        )}
-      </Stack>
-
-      {/* Proportion bar */}
-      <Flex align="center" gap={2.5} mx={4} mt={1}>
-        <Box flex={1} h="3px" bg="neutral.50" borderRadius="2px" overflow="hidden">
-          <Box h="100%" w={`${Math.max(parseFloat(pct), 1.5)}%`} bg="neutral.400" borderRadius="2px" />
-        </Box>
-        <Text
-          textStyle="text/xs"
-          fontWeight="medium"
-          color="success.700"
-          fontFamily="body"
-          sx={{ fontVariantNumeric: 'tabular-nums' }}
-          whiteSpace="nowrap"
-        >
-          {pct}%
-        </Text>
-      </Flex>
-    </Stack>
+      <AccountCardBalance
+        btc={btc}
+        usd={btc !== null && btcUsdPrice !== null ? btc * btcUsdPrice : null}
+        loading={!needsReconnect && account.balance === null}
+      />
+    </AccountCardFrame>
   )
 }
 
 interface ManualAccountCardProps {
   account: ManualAccountDto | EtfAccountDto
-  totalBtcSats: number
   btcUsdPrice: number | null
   linkPrefix?: string
 }
 
 function ManualAccountCard({
   account,
-  totalBtcSats,
   btcUsdPrice,
   linkPrefix = '/accounts/manual',
 }: ManualAccountCardProps): JSX.Element {
-  const btcSats = account.balance ? Number(account.balance) : 0
-  const btcAmount = btcSats / 100_000_000
-  const usdAmount = btcUsdPrice !== null ? btcAmount * btcUsdPrice : null
-  const pct = totalBtcSats > 0 ? ((btcSats / totalBtcSats) * 100).toFixed(1) : '0.0'
-
+  const btc = account.balance === null ? null : Number(account.balance) / 100_000_000
+  const isEtf = linkPrefix === '/accounts/etf'
   return (
-    <Stack
-      as={Link}
+    <AccountCardFrame
       to={`${linkPrefix}/${account.id}`}
-      bg="shades.0"
-      borderRadius="panel"
-      border="1px solid"
-      borderColor="neutral.200"
-      p={4}
-      pb={6}
-      cursor="pointer"
-      transition="border-color 150ms ease, background-color 150ms ease"
-      gap={1}
-      textAlign="center"
-      _focusVisible={{ outline: '2px solid', outlineColor: 'activeState.80', outlineOffset: '3px' }}
-      _hover={{
-        borderColor: 'neutral.400',
-        bg: 'neutral.50',
-      }}
+      name={account.displayName}
+      detail={isEtf ? 'Manual ETF account' : 'Manual account'}
+      icon={isEtf ? <ChartNoAxesCombined size={20} /> : <FileText size={20} />}
     >
-      {/* Top row: status badge */}
-      <HStack>
-        <StatusBadge status="neutral" label="Manually tracked" size="sm" ml="auto" />
-      </HStack>
-
-      {/* Manual icon */}
-      <Flex justify="center" align="center" h="30px" my={2}>
-        <Box color="neutral.700">
-          {linkPrefix === '/accounts/etf' ? <ChartNoAxesCombined size={26} aria-hidden="true" /> : <ManualNoteIcon />}
-        </Box>
-      </Flex>
-
-      {/* Name */}
-      <Stack gap={0} mx={4}>
-        <Text textStyle="label/md" fontWeight="medium" color="neutral.600" isTruncated>
-          {account.displayName}
-        </Text>
-      </Stack>
-
-      {/* Balance */}
-      <Stack gap={0} mx={4} mt={1}>
-        <Text
-          fontFamily="body"
-          sx={{ fontVariantNumeric: 'tabular-nums' }}
-          textStyle="text/lg"
-          fontWeight="semibold"
-          color="neutral.900"
-          letterSpacing="-0.02em"
-        >
-          <SensitiveValue>
-            <BitcoinAmount btc={btcAmount.toFixed(8)} />
-          </SensitiveValue>
-        </Text>
-        {usdAmount !== null && (
-          <Text textStyle="text/sm" fontWeight="medium" color="neutral.600">
-            <SensitiveValue>
-              ${usdAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </SensitiveValue>
-          </Text>
-        )}
-      </Stack>
-
-      {/* Proportion bar */}
-      <Flex align="center" gap={2.5} mx={4} mt={1}>
-        <Box flex={1} h="3px" bg="neutral.50" borderRadius="2px" overflow="hidden">
-          <Box h="100%" w={`${Math.max(parseFloat(pct), 1.5)}%`} bg="neutral.400" borderRadius="2px" />
-        </Box>
-        <Text
-          textStyle="text/xs"
-          fontWeight="medium"
-          color="success.700"
-          fontFamily="body"
-          sx={{ fontVariantNumeric: 'tabular-nums' }}
-          whiteSpace="nowrap"
-        >
-          {pct}%
-        </Text>
-      </Flex>
-    </Stack>
-  )
-}
-
-function ManualNoteIcon(): JSX.Element {
-  return (
-    <Icon viewBox="0 0 24 24" w={7} h={7} color="neutral.700">
-      <path
-        d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        fill="none"
-      />
-      <polyline
-        points="14 2 14 8 20 8"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        fill="none"
-      />
-      <line x1="16" y1="13" x2="8" y2="13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-      <line x1="16" y1="17" x2="8" y2="17" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-      <polyline
-        points="10 9 9 9 8 9"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        fill="none"
-      />
-    </Icon>
+      <AccountCardBalance btc={btc} usd={btc !== null && btcUsdPrice !== null ? btc * btcUsdPrice : null} />
+    </AccountCardFrame>
   )
 }
 
