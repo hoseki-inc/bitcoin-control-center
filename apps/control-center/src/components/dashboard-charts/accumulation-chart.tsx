@@ -90,8 +90,13 @@ export function AccumulationChart({
 
   if (chartData.length === 0) {
     return (
-      <Flex h="220px" align="center" justify="center">
-        <Text color="neutral.400">No historical data available yet</Text>
+      <Flex h="220px" align="center" justify="center" direction="column" gap={2} px={6} textAlign="center">
+        <Text textStyle="text/md" fontWeight="medium" color="neutral.900">
+          No history for this range
+        </Text>
+        <Text textStyle="text/sm" color="neutral.600">
+          Try a different date range or allow your accounts to finish syncing.
+        </Text>
       </Flex>
     )
   }

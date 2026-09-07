@@ -33,10 +33,10 @@ export function ConnectionType({
       state={state}
       border="1px solid"
       borderColor="neutral.200"
-      borderRadius="4px"
+      borderRadius="panel"
       alignItems="center"
-      p={8}
-      gap={8}
+      p={6}
+      gap={6}
       _hover={{ cursor: 'pointer', bgColor: 'neutral.50' }}
     >
       <Flex justifyContent="center" h="30px">

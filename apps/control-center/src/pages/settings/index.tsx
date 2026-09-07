@@ -4,8 +4,9 @@ import {
   ButtonGroup,
   Circle,
   Divider,
+  FormControl,
+  FormLabel,
   HStack,
-  Heading,
   Input,
   Select,
   Stack,
@@ -13,6 +14,7 @@ import {
   Text,
   VStack,
 } from '@chakra-ui/react'
+import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { useLocalSetting } from '../../hooks/use-local-settings'
@@ -37,23 +39,20 @@ export function SettingsPage(): JSX.Element {
   }
 
   return (
-    <Box p={6}>
-      <VStack align="start" gap={8}>
-        <VStack align="start" gap={1}>
-          <Heading size="lg">Settings</Heading>
-          <Text textStyle="text/md" color="neutral.600">
-            App preferences and personal information.
-          </Text>
-        </VStack>
+    <Box py={8}>
+      <VStack align="start" gap={6}>
+        <PageHeading title="Settings" description="App preferences and personal information." />
 
-        <Stack gap={2} w="full" maxW="400px">
-          <Text textStyle="label/sm" fontWeight="medium">
+        <Stack as={FormControl} gap={3} w="full" maxW="400px">
+          <FormLabel htmlFor="user-name" textStyle="text/sm" fontWeight="medium" mb={0}>
             Your Name
-          </Text>
-          <Text textStyle="text/sm" color="neutral.600">
+          </FormLabel>
+          <Text id="user-name-description" textStyle="text/sm" color="neutral.600">
             This name will appear on your generated statements.
           </Text>
           <Input
+            id="user-name"
+            aria-describedby="user-name-description"
             placeholder="Enter your name"
             value={name}
             onChange={(e) => {
@@ -64,7 +63,6 @@ export function SettingsPage(): JSX.Element {
           />
           <Button
             size="sm"
-            colorScheme="green"
             alignSelf="flex-start"
             onClick={handleSave}
             isLoading={isSaving}

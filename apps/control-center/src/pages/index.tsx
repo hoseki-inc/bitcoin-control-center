@@ -1,27 +1,67 @@
 import { Box, Button, Flex, Grid, Stack, Text } from '@chakra-ui/react'
-import { Spinner } from '@hoseki/packages/ui/design-system'
+import { EmptyView, ErrorBanner, Spinner } from '@hoseki/packages/ui/design-system'
+import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
 import Decimal from 'decimal.js'
 import { Link } from 'react-router'
 import { AccumulationChart } from '../components/dashboard-charts/accumulation-chart'
 import { Banner } from '../components/dashboard/banner'
 import { RecentStatements } from '../components/dashboard/recent-statements'
 import { useUiSettings } from '../hooks/use-ui-settings'
-import { trpc } from '../trpc'
+import { type RouterOutput, trpc } from '../trpc'
 import type { StatementDto } from '../trpc/server-types'
 import { getBrowserTimezone } from '../utils/timezone'
 
+type PortfolioData = RouterOutput['portalProve']['controlCenter']['getData']
+
 export function HomePage(): JSX.Element {
-  const { statements, isLoading } = useDashboardData()
+  const { statements, portfolio, hasAccounts, isLoading, hasError, retry } = useDashboardData()
   const { isStatementsMadeEasyDismissed, updateUiSettings } = useUiSettings()
+  const hasHistory = (portfolio?.historicalData.length ?? 0) > 0
 
   return (
-    <Stack py={8} gap={8}>
+    <Stack py={8} gap={6}>
+      <PageHeading title="Home" description="Your Bitcoin holdings and recent statements at a glance." />
       {isLoading ? (
         <Spinner fullPage size="xl" />
+      ) : hasError ? (
+        <Stack align="start" gap={4}>
+          <ErrorBanner message="Your overview couldn't be loaded. Try again to see your holdings and statements." />
+          <Button variant="outline" onClick={retry}>
+            Try Again
+          </Button>
+        </Stack>
       ) : (
         <>
-          <PortfolioSummary />
-          {!isStatementsMadeEasyDismissed && (
+          {!hasAccounts && !hasHistory ? (
+            <EmptyView
+              border="1px solid"
+              borderColor="neutral.200"
+              borderRadius="panel"
+              title="Your Bitcoin, in one place"
+              description="Add an account to start tracking your holdings."
+              action={
+                <Button as={Link} to="/accounts/add">
+                  Add Account
+                </Button>
+              }
+            />
+          ) : !hasHistory ? (
+            <EmptyView
+              border="1px solid"
+              borderColor="neutral.200"
+              borderRadius="panel"
+              title="Your history will appear here"
+              description="View your accounts to check their connection and verification status."
+              action={
+                <Button as={Link} to="/accounts">
+                  View Accounts
+                </Button>
+              }
+            />
+          ) : portfolio ? (
+            <PortfolioSummary data={portfolio} />
+          ) : null}
+          {hasHistory && !isStatementsMadeEasyDismissed && (
             <Banner
               mode={statements.length > 0 ? 'compact' : 'large-with-cta'}
               onDismissClick={() => updateUiSettings({ isStatementsMadeEasyDismissed: true })}
@@ -34,16 +74,8 @@ export function HomePage(): JSX.Element {
   )
 }
 
-function PortfolioSummary(): JSX.Element | null {
+function PortfolioSummary({ data }: { data: PortfolioData }): JSX.Element {
   const userTimezone = getBrowserTimezone()
-  const { data, isLoading, isFetching } = trpc.portalProve.controlCenter.getData.useQuery({
-    timeRange: '30d',
-    timezone: userTimezone,
-  })
-
-  if (isLoading || !data) return null
-
-  const isChartFetching = isFetching && !isLoading
 
   const currentSats = data.currentTotalBalance?.toString() ?? '0'
   const btcPrice = data.currentBtcPrice ? Number(data.currentBtcPrice) : 0
@@ -58,15 +90,21 @@ function PortfolioSummary(): JSX.Element | null {
   const hasBalance = totalBtc.gt(0)
 
   return (
-    <Box bg="shades.0" border="1px solid" borderColor="neutral.200" borderRadius="12px" p={5}>
+    <Box bg="shades.0" border="1px solid" borderColor="neutral.200" borderRadius="panel" p={{ base: 4, md: 6 }}>
       {/* Top row: balance + generate button */}
-      <Flex align="flex-start" justify="space-between" mb={4}>
+      <Flex align="flex-start" justify="space-between" mb={6} gap={4} flexWrap="wrap">
         <Box>
-          <Text fontFamily="mono" textStyle="text/3xl" fontWeight="bold" color="neutral.900" letterSpacing="-0.03em">
+          <Text
+            fontFamily="mono"
+            textStyle="text/3xl"
+            fontWeight="semibold"
+            color="neutral.900"
+            letterSpacing="-0.03em"
+          >
             {totalBtc.toFixed(8)}
           </Text>
-          <Text textStyle="text/sm" color="neutral.400" mt={0.5}>
-            <Text as="span" color="neutral.300">
+          <Text textStyle="text/sm" color="neutral.500" mt={0.5}>
+            <Text as="span" color="neutral.500">
               BTC
             </Text>
             {'  ·  '}${totalUsd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -79,7 +117,7 @@ function PortfolioSummary(): JSX.Element | null {
           size="md"
           px={6}
           py={3}
-          borderRadius="8px"
+          borderRadius="control"
         >
           Generate Statement
         </Button>
@@ -87,33 +125,16 @@ function PortfolioSummary(): JSX.Element | null {
 
       {/* Chart */}
       <Box mb={3}>
-        <Text textStyle="label/xs" fontWeight="semibold" color="neutral.400" mb={2}>
+        <Text textStyle="label/xs" fontWeight="semibold" color="neutral.500" mb={2}>
           Last 30 Days
         </Text>
         <Box position="relative" overflow="hidden">
           <AccumulationChart data={historicalData} hasActivity={hasBalance} isUp={isUp} timezone={userTimezone} />
-          {isChartFetching && (
-            <Box
-              position="absolute"
-              inset={0}
-              pointerEvents="none"
-              sx={{
-                background:
-                  'linear-gradient(90deg, rgba(240,242,245,0) 0%, rgba(240,242,245,0.85) 50%, rgba(240,242,245,0) 100%)',
-                backgroundSize: '200% 100%',
-                animation: 'shimmer 1.4s ease-in-out infinite',
-                '@keyframes shimmer': {
-                  '0%': { backgroundPosition: '-200% 0' },
-                  '100%': { backgroundPosition: '200% 0' },
-                },
-              }}
-            />
-          )}
         </Box>
       </Box>
 
       {/* Stats */}
-      <Grid templateColumns="1fr 1fr" gap={3} mt={4}>
+      <Grid templateColumns={{ base: '1fr', sm: '1fr 1fr' }} gap={3} mt={4}>
         <StatMini label="30d Change" value={change30dBtc} btcPrice={btcPrice} />
         <StatMini label="Accounts" count={(data.verifiedClaimsCount ?? 0) + (data.exchangeAccountCount ?? 0)} />
       </Grid>
@@ -136,30 +157,30 @@ function StatMini({
   const usdValue = value && btcPrice ? value.toNumber() * btcPrice : null
 
   return (
-    <Box bg="neutral.50" borderRadius="8px" px={3.5} py={3}>
-      <Text textStyle="label/xs" color="neutral.400" fontWeight="semibold" mb={1}>
+    <Box bg="neutral.50" borderRadius="control" px={4} py={3}>
+      <Text textStyle="label/xs" color="neutral.500" fontWeight="semibold" mb={1}>
         {label}
       </Text>
       {value !== undefined ? (
-        <Flex align="baseline" gap={2}>
+        <Flex align="baseline" gap={2} flexWrap="wrap">
           <Text
             fontFamily="mono"
             textStyle="text/sm"
-            fontWeight="bold"
+            fontWeight="semibold"
             color={isPositive ? 'success.600' : 'error.500'}
           >
             {isPositive ? '+' : ''}
             {value.toFixed(8)} BTC
           </Text>
           {usdValue !== null && (
-            <Text textStyle="text/xs" color="neutral.400">
+            <Text textStyle="text/xs" color="neutral.500">
               {usdValue >= 0 ? '+' : '−'}$
               {Math.abs(usdValue).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </Text>
           )}
         </Flex>
       ) : (
-        <Text textStyle="text/sm" fontWeight="bold" color="neutral.900">
+        <Text textStyle="text/sm" fontWeight="semibold" color="neutral.900">
           {count} verified
         </Text>
       )}
@@ -169,16 +190,31 @@ function StatMini({
 
 function useDashboardData(): {
   statements: StatementDto[]
+  portfolio: PortfolioData | undefined
+  hasAccounts: boolean
   isLoading: boolean
+  hasError: boolean
+  retry: () => void
 } {
-  const { data: statements, isLoading: isLoadingStatements } = trpc.portalProve.statement.list.useQuery()
-  const { isLoading: isLoadingControlCenter } = trpc.portalProve.controlCenter.getData.useQuery({
+  const statements = trpc.portalProve.statement.list.useQuery()
+  const portfolio = trpc.portalProve.controlCenter.getData.useQuery({
     timeRange: '30d',
     timezone: getBrowserTimezone(),
   })
+  const claims = trpc.portalProve.registry.claims.list.useQuery({ excludePending: false })
+  const exchanges = trpc.portalProve.exchange.list.useQuery()
+  const manual = trpc.portalProve.manual.list.useQuery()
+  const etfs = trpc.portalProve.etf.list.useQuery()
+  const queries = [statements, portfolio, claims, exchanges, manual, etfs]
 
   return {
-    statements: statements ?? [],
-    isLoading: isLoadingStatements || isLoadingControlCenter,
+    statements: statements.data ?? [],
+    portfolio: portfolio.data,
+    hasAccounts: [claims.data, exchanges.data, manual.data, etfs.data].some((accounts) => (accounts?.length ?? 0) > 0),
+    isLoading: queries.some((query) => query.isLoading),
+    hasError: queries.some((query) => query.isError),
+    retry: () => {
+      for (const query of queries) void query.refetch()
+    },
   }
 }

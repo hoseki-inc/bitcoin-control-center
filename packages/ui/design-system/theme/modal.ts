@@ -8,15 +8,24 @@ const extendedBaseStyle = definePartsStyle((props) => {
 
   return {
     ...baseStyle,
+    overlay: {
+      ...baseStyle?.overlay,
+      bg: 'blackAlpha.400',
+      backdropFilter: 'blur(8px)',
+    },
     dialog: {
       ...baseStyle?.dialog,
       p: 6,
-      pt: 8,
+      borderRadius: 'dialog',
+      boxShadow: 'floating',
+      mx: 4,
       gap: 4,
     },
     header: {
       ...baseStyle?.header,
       p: 0,
+      textStyle: 'text/xl',
+      fontWeight: 'medium',
     },
     body: {
       ...baseStyle?.body,
@@ -30,7 +39,7 @@ const extendedBaseStyle = definePartsStyle((props) => {
 })
 
 const noPaddingVariant = definePartsStyle((props) => {
-  const baseStyle = chakraTheme.components.Modal.baseStyle?.(props)
+  const baseStyle = extendedBaseStyle(props)
 
   return {
     ...baseStyle,

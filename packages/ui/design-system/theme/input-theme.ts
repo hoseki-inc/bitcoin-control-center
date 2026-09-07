@@ -47,7 +47,7 @@ const sizes = {
   md: definePartsStyle({
     field: {
       textStyle: 'text/md',
-      h: '2.5rem',
+      h: '2.75rem',
     },
   }),
   lg: definePartsStyle({

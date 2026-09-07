@@ -1,4 +1,4 @@
-import { Box, Button, Stack } from '@chakra-ui/react'
+import { Box, Button, IconButton, Stack } from '@chakra-ui/react'
 import { ErrorBanner, Spinner } from '@hoseki/packages/ui/design-system'
 import { SectionTitle } from '@hoseki/packages/ui/prove-verify-ui'
 import { Grid2X2Icon, ListIcon } from 'lucide-react'
@@ -45,17 +45,13 @@ export function StatementListPage(): JSX.Element {
       <Header showGenerateButton={true} />
       <Stack gap={2}>
         <Box textAlign="right">
-          <Button
+          <IconButton
             variant="ghost"
-            size="xs"
-            px={2}
-            py={2}
-            fontSize="xs"
+            size="md"
+            aria-label={viewType === 'grid' ? 'Show statements as a table' : 'Show statements as a grid'}
+            icon={viewType === 'grid' ? <ListIcon size={18} /> : <Grid2X2Icon size={18} />}
             onClick={() => setViewType(viewType === 'grid' ? 'table' : 'grid')}
-            _focus={{ boxShadow: 'none' }}
-          >
-            {viewType === 'grid' ? <ListIcon size={16} /> : <Grid2X2Icon size={16} />}
-          </Button>
+          />
         </Box>
         {viewType === 'grid' ? <StatementsGrid statements={statements} /> : <StatementsTable statements={statements} />}
       </Stack>
@@ -71,11 +67,11 @@ function Header({
   showGenerateButton: boolean
   hideDivider?: boolean
   descriptionVersion?: 'default' | 'empty-state'
-}) {
+}): JSX.Element {
   const description =
     descriptionVersion === 'empty-state'
-      ? 'Once you generate a statement, your statement will appear here. Generate your first statement below to get started.'
-      : 'Includes your statement activity plus partner-generated requests through secure API connections.'
+      ? 'A clear record of your Bitcoin holdings.'
+      : 'View and download your saved Bitcoin statements.'
 
   return (
     <SectionTitle

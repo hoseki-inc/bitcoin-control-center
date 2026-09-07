@@ -1,14 +1,10 @@
-import { Box, Button, Flex, Grid, Heading, Icon, Text, keyframes } from '@chakra-ui/react'
+import { Box, Button, Flex, Grid, Icon } from '@chakra-ui/react'
 import { HOSEKI_ASSETS_CDN_URL } from '@hoseki/packages/constants'
 import { ConnectManualBitcoinAccordion } from '@hoseki/packages/ui/design-system'
+import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
 import { KeystoreAvatar } from '@hoseki/packages/ui/prove-verify-ui'
 import { keyIcon } from '@hoseki/packages/ui/prove-verify-ui/claims/keystores-status-indicator'
 import { ConnectionType } from './claims-landing/connection-type'
-
-const fadeIn = keyframes`
-  from { opacity: 0; }
-  to { opacity: 1; }
-`
 
 const commonProps = { icon: keyIcon, alt: 'Multisig keystore' }
 const MultisigImage = (
@@ -32,31 +28,15 @@ interface AddAccountFlowProps {
 
 export function AddAccountFlow({ onClose, linkState }: AddAccountFlowProps): JSX.Element {
   return (
-    <Box
-      position="fixed"
-      inset={0}
-      bg="shades.0"
-      zIndex={200}
-      display="flex"
-      flexDirection="column"
-      animation={`${fadeIn} 0.2s ease`}
-    >
-      {/* Top bar */}
-      <Flex
-        align="center"
-        justify="space-between"
-        px={{ base: 6, md: 12 }}
-        py={5}
-        borderBottom="1px solid"
-        borderColor="neutral.200"
-        flexShrink={0}
-      >
+    <Box py={8}>
+      <Flex mb={4}>
         <Button
           variant="ghost"
           size="sm"
           onClick={onClose}
           color="neutral.900"
           fontWeight="medium"
+          ml={-3}
           leftIcon={<BackArrowIcon />}
         >
           Back to My Holdings
@@ -64,18 +44,16 @@ export function AddAccountFlow({ onClose, linkState }: AddAccountFlowProps): JSX
       </Flex>
 
       {/* Content */}
-      <Box flex={1} overflow="auto" display="flex" justifyContent="center" px={{ base: 6, md: 12 }} pt={12} pb={20}>
-        <Box w="100%" maxW="680px">
-          <Heading textStyle="text/3xl" fontWeight="bold" color="neutral.900" mb={2}>
-            Connect New Account
-          </Heading>
-          <Text textStyle="text/md" color="neutral.400" mb={10} maxW="480px">
-            Connect your hardware wallet to securely link your Bitcoin holdings. Your private keys never leave your
-            device.
-          </Text>
+      <Box>
+        <Box w="100%">
+          <PageHeading
+            title="Connect New Account"
+            description="Connect a wallet or exchange, or add your Bitcoin holdings manually."
+            mb={6}
+          />
 
           {/* Hardware wallets -- same tiles as the original claims page */}
-          <Grid templateColumns="repeat(3, 1fr)" gap={4} mb={8}>
+          <Grid templateColumns={{ base: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(3, 1fr)' }} gap={4} mb={8}>
             <ConnectionType
               title="Trezor"
               imagePath={`${HOSEKI_ASSETS_CDN_URL}/hardware-wallets/trezor.svg`}

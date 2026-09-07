@@ -9,14 +9,15 @@ import {
   Flex,
   Grid,
   HStack,
-  Heading,
   Icon,
   Stack,
   Text,
   useDisclosure,
 } from '@chakra-ui/react'
-import { ErrorBanner, Spinner } from '@hoseki/packages/ui/design-system'
+import { EmptyView, ErrorBanner, Spinner } from '@hoseki/packages/ui/design-system'
+import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
 import { ClaimCardKeystores, StatusBadge, getBadgeConfigForClaim } from '@hoseki/packages/ui/prove-verify-ui'
+import { PlusIcon } from 'lucide-react'
 import { useEffect } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router'
 import { toast } from 'sonner'
@@ -172,7 +173,7 @@ export function ClaimsPage(): JSX.Element {
             message={
               <>
                 You have reached the maximum number of accounts you can add. Contact{' '}
-                <Text as="a" href="mailto:support@hoseki.app" fontWeight="bold">
+                <Text as="a" href="mailto:support@hoseki.app" fontWeight="semibold">
                   support@hoseki.app
                 </Text>{' '}
                 to increase your limit.
@@ -182,11 +183,9 @@ export function ClaimsPage(): JSX.Element {
         )}
 
         {/* Header */}
-        <Flex align="flex-start" justify="space-between" pb={9}>
+        <Flex align="flex-start" justify="space-between" pb={6} gap={4} flexWrap="wrap">
           <Box>
-            <Heading textStyle="text/3xl" fontWeight="bold" color="neutral.900">
-              My Holdings
-            </Heading>
+            <PageHeading title="My Holdings" description="Manage your wallets, exchanges, and Bitcoin holdings." />
             {hasClaims && (
               <Flex align="center" gap={3} mt={2} flexWrap="wrap">
                 <Text textStyle="text/sm" fontWeight="semibold" color="neutral.900">
@@ -211,16 +210,11 @@ export function ClaimsPage(): JSX.Element {
               </Flex>
             )}
           </Box>
-          <Button
-            bg="neutral.900"
-            color="shades.0"
-            fontWeight="semibold"
-            borderRadius="8px"
-            onClick={() => navigate('/accounts/add')}
-            _hover={{ bg: 'neutral.700' }}
-          >
-            + Add Account
-          </Button>
+          {hasClaims && (
+            <Button leftIcon={<PlusIcon size={16} />} onClick={() => navigate('/accounts/add')}>
+              Add Account
+            </Button>
+          )}
         </Flex>
 
         {/* Account cards */}
@@ -339,18 +333,18 @@ function AccountCard({ claim, balance, totalBtcSats, isLoadingBalance }: Account
       as={Link}
       to={to}
       bg="shades.0"
-      borderRadius="md"
+      borderRadius="panel"
       border="1px solid"
       borderColor="neutral.200"
-      p={2}
-      pb={5}
+      p={4}
+      pb={6}
       cursor="pointer"
-      transition="all 0.2s ease"
+      transition="border-color 150ms ease, background-color 150ms ease"
       gap={1}
       textAlign="center"
       _hover={{
-        transform: 'translateY(-2px)',
-        shadow: 'md',
+        borderColor: 'neutral.400',
+        bg: 'neutral.50',
       }}
     >
       {/* Top row: threshold badge + status badge */}
@@ -382,7 +376,13 @@ function AccountCard({ claim, balance, totalBtcSats, isLoadingBalance }: Account
           <Box h="24px" w="120px" bg="neutral.50" borderRadius="4px" mx="auto" />
         ) : (
           <>
-            <Text fontFamily="mono" textStyle="text/lg" fontWeight="bold" color="neutral.900" letterSpacing="-0.02em">
+            <Text
+              fontFamily="mono"
+              textStyle="text/lg"
+              fontWeight="semibold"
+              color="neutral.900"
+              letterSpacing="-0.02em"
+            >
               {btcAmount.toFixed(8)} BTC
             </Text>
             <Text textStyle="text/sm" fontWeight="medium" color="success.600">
@@ -404,7 +404,7 @@ function AccountCard({ claim, balance, totalBtcSats, isLoadingBalance }: Account
             transition="width 0.4s ease"
           />
         </Box>
-        <Text textStyle="label/xs" color="neutral.300" fontFamily="mono" whiteSpace="nowrap">
+        <Text textStyle="label/xs" color="neutral.500" fontFamily="mono" whiteSpace="nowrap">
           {pct}%
         </Text>
       </Flex>
@@ -419,8 +419,10 @@ interface AddAccountCardProps {
 function AddAccountCard({ onClick }: AddAccountCardProps): JSX.Element {
   return (
     <Flex
+      as="button"
+      type="button"
       onClick={onClick}
-      borderRadius="10px"
+      borderRadius="panel"
       border="1.5px dashed"
       borderColor="neutral.200"
       px={5}
@@ -429,15 +431,13 @@ function AddAccountCard({ onClick }: AddAccountCardProps): JSX.Element {
       direction="column"
       align="center"
       justify="center"
-      gap={1.5}
+      gap={2}
       minH="160px"
-      transition="all 0.15s ease"
+      transition="background-color 150ms ease"
       _hover={{ bg: 'neutral.50' }}
     >
-      <Text textStyle="text/xl" color="neutral.300" fontWeight="light">
-        +
-      </Text>
-      <Text textStyle="text/sm" color="neutral.300">
+      <PlusIcon size={20} aria-hidden="true" />
+      <Text textStyle="text/sm" color="neutral.600">
         Add account
       </Text>
     </Flex>
@@ -446,26 +446,19 @@ function AddAccountCard({ onClick }: AddAccountCardProps): JSX.Element {
 
 function EmptyHoldings({ onAdd }: { onAdd: () => void }): JSX.Element {
   return (
-    <Stack align="center" textAlign="center" py={16} gap={4}>
-      <Box w={16} h={16} borderRadius="full" bg="neutral.50" />
-      <Heading size="md" color="neutral.900">
-        No accounts connected yet
-      </Heading>
-      <Text color="neutral.400" maxW="md">
-        Connect a wallet or exchange to see your bitcoin balance and start verifying your ownership.
-      </Text>
-      <Button
-        mt={4}
-        bg="neutral.900"
-        color="shades.0"
-        fontWeight="semibold"
-        borderRadius="8px"
-        onClick={onAdd}
-        _hover={{ bg: 'neutral.700' }}
-      >
-        Add Your First Account
-      </Button>
-    </Stack>
+    <EmptyView
+      border="1px solid"
+      borderColor="neutral.200"
+      borderRadius="panel"
+      bgGradient="linear(to-b, neutral.50, white)"
+      title="Your Bitcoin, in one place"
+      description="Connect a wallet or exchange to see your Bitcoin balance and start verifying your ownership."
+      action={
+        <Button onClick={onAdd} leftIcon={<PlusIcon size={16} />}>
+          Add Your First Account
+        </Button>
+      }
+    />
   )
 }
 
@@ -525,18 +518,18 @@ function ExchangeAccountCard({ account, totalBtcSats, btcUsdPrice }: ExchangeAcc
       as={Link}
       to={`${config.detailsPath}/${account.id}`}
       bg={needsReconnect ? 'neutral.50' : 'shades.0'}
-      borderRadius="md"
+      borderRadius="panel"
       border="1px solid"
       borderColor="neutral.200"
-      p={2}
-      pb={5}
+      p={4}
+      pb={6}
       cursor="pointer"
-      transition="all 0.2s ease"
+      transition="border-color 150ms ease, background-color 150ms ease"
       gap={1}
       textAlign="center"
       _hover={{
-        transform: 'translateY(-2px)',
-        shadow: 'md',
+        borderColor: 'neutral.400',
+        bg: 'neutral.50',
       }}
     >
       {/* Top row: status badge */}
@@ -577,14 +570,20 @@ function ExchangeAccountCard({ account, totalBtcSats, btcUsdPrice }: ExchangeAcc
       {/* Balance */}
       <Stack gap={0} mx={4} mt={1}>
         {needsReconnect ? (
-          <Text fontFamily="mono" textStyle="text/lg" fontWeight="bold" color="neutral.400" letterSpacing="-0.02em">
+          <Text fontFamily="mono" textStyle="text/lg" fontWeight="semibold" color="neutral.500" letterSpacing="-0.02em">
             —
           </Text>
         ) : account.balance === null ? (
           <Box h="24px" w="120px" bg="neutral.50" borderRadius="4px" mx="auto" />
         ) : (
           <>
-            <Text fontFamily="mono" textStyle="text/lg" fontWeight="bold" color="neutral.900" letterSpacing="-0.02em">
+            <Text
+              fontFamily="mono"
+              textStyle="text/lg"
+              fontWeight="semibold"
+              color="neutral.900"
+              letterSpacing="-0.02em"
+            >
               {btcAmount.toFixed(8)} BTC
             </Text>
             {usdAmount !== null && (
@@ -608,7 +607,7 @@ function ExchangeAccountCard({ account, totalBtcSats, btcUsdPrice }: ExchangeAcc
             transition="width 0.4s ease"
           />
         </Box>
-        <Text textStyle="label/xs" color="neutral.300" fontFamily="mono" whiteSpace="nowrap">
+        <Text textStyle="label/xs" color="neutral.500" fontFamily="mono" whiteSpace="nowrap">
           {pct}%
         </Text>
       </Flex>
@@ -639,18 +638,18 @@ function ManualAccountCard({
       as={Link}
       to={`${linkPrefix}/${account.id}`}
       bg="shades.0"
-      borderRadius="md"
+      borderRadius="panel"
       border="1px solid"
       borderColor="neutral.200"
-      p={2}
-      pb={5}
+      p={4}
+      pb={6}
       cursor="pointer"
-      transition="all 0.2s ease"
+      transition="border-color 150ms ease, background-color 150ms ease"
       gap={1}
       textAlign="center"
       _hover={{
-        transform: 'translateY(-2px)',
-        shadow: 'md',
+        borderColor: 'neutral.400',
+        bg: 'neutral.50',
       }}
     >
       {/* Top row: status badge */}
@@ -672,7 +671,7 @@ function ManualAccountCard({
 
       {/* Balance */}
       <Stack gap={0} mx={4} mt={1}>
-        <Text fontFamily="mono" textStyle="text/lg" fontWeight="bold" color="neutral.900" letterSpacing="-0.02em">
+        <Text fontFamily="mono" textStyle="text/lg" fontWeight="semibold" color="neutral.900" letterSpacing="-0.02em">
           {btcAmount.toFixed(8)} BTC
         </Text>
         {usdAmount !== null && (
@@ -694,7 +693,7 @@ function ManualAccountCard({
             transition="width 0.4s ease"
           />
         </Box>
-        <Text textStyle="label/xs" color="neutral.300" fontFamily="mono" whiteSpace="nowrap">
+        <Text textStyle="label/xs" color="neutral.500" fontFamily="mono" whiteSpace="nowrap">
           {pct}%
         </Text>
       </Flex>

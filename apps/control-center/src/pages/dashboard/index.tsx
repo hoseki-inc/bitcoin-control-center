@@ -5,7 +5,6 @@ import {
   FormControl,
   FormLabel,
   Grid,
-  Heading,
   Popover,
   PopoverArrow,
   PopoverBody,
@@ -17,7 +16,8 @@ import {
   useBreakpointValue,
   useDisclosure,
 } from '@chakra-ui/react'
-import { DateInput, Panel, Spinner } from '@hoseki/packages/ui/design-system'
+import { DateInput, EmptyView, Spinner } from '@hoseki/packages/ui/design-system'
+import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
 import { format, isAfter, isBefore, startOfDay, subDays } from 'date-fns'
 import Decimal from 'decimal.js'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -551,21 +551,19 @@ export function DashboardPage(): JSX.Element {
 
       {/* Main content */}
       <Box flex={1} minW={0} display="flex" justifyContent="center">
-        <Box w="100%" maxW="863px" py={8} px={[4, 4, 6, 0]}>
+        <Box w="100%" maxW="863px" py={8} px={{ base: 4, md: 6 }}>
           {/* Header row */}
-          <Flex align="flex-start" justify="space-between" mb={8} gap={4} flexWrap="wrap">
+          <Flex align="flex-start" justify="space-between" mb={6} gap={4} flexWrap="wrap">
             <Box>
-              <Heading textStyle="text/3xl" fontWeight="bold" color="neutral.900">
-                Portfolio
-              </Heading>
+              <PageHeading title="Portfolio" description="Track your Bitcoin balance and holdings over time." />
               <Flex align="center" gap={2} mt={1.5}>
-                <Text textStyle="text/sm" color="neutral.400">
+                <Text textStyle="text/sm" color="neutral.500">
                   {activeLabel}
                 </Text>
                 {!isShowingAll && (
                   <Text
                     textStyle="label/xs"
-                    color="neutral.300"
+                    color="neutral.500"
                     cursor="pointer"
                     onClick={clearAll}
                     _hover={{ color: 'neutral.500' }}
@@ -580,7 +578,7 @@ export function DashboardPage(): JSX.Element {
                 />
               </Flex>
             </Box>
-            <Button size="md" px={6} py={3} borderRadius="8px" onClick={handleGenerateStatement}>
+            <Button size="md" px={6} py={3} borderRadius="control" onClick={handleGenerateStatement}>
               Generate Statement
             </Button>
           </Flex>
@@ -611,14 +609,14 @@ export function DashboardPage(): JSX.Element {
             <Text
               fontFamily="mono"
               textStyle={{ base: 'text/3xl', md: 'text/5xl' }}
-              fontWeight="bold"
+              fontWeight="semibold"
               color="neutral.900"
               letterSpacing="-0.04em"
             >
               {totalBtcDisplay}
             </Text>
-            <Text textStyle="text/sm" color="neutral.400" fontWeight="medium" mt={1}>
-              <Text as="span" color="neutral.300">
+            <Text textStyle="text/sm" color="neutral.500" fontWeight="medium" mt={1}>
+              <Text as="span" color="neutral.500">
                 BTC
               </Text>
               {'  ·  '}${formatUsd(currentBtcFloat, btcPrice)}
@@ -657,7 +655,7 @@ export function DashboardPage(): JSX.Element {
           <Box mb={8}>
             <Flex align="center" justify="space-between" mb={4} gap={3} flexWrap="wrap">
               <Flex align="center" gap={2}>
-                <Text textStyle="overline/sm" fontWeight="bold" color="neutral.400">
+                <Text textStyle="overline/sm" fontWeight="semibold" color="neutral.500">
                   Accumulation
                 </Text>
                 {activeFetching && <Spinner size="xs" color="neutral.300" />}
@@ -678,7 +676,7 @@ export function DashboardPage(): JSX.Element {
               bg="shades.0"
               border="1px solid"
               borderColor="neutral.200"
-              borderRadius="12px"
+              borderRadius="panel"
               p={5}
               pr={2}
               position="relative"
@@ -703,7 +701,7 @@ export function DashboardPage(): JSX.Element {
                 <Box
                   position="absolute"
                   inset={0}
-                  borderRadius="12px"
+                  borderRadius="panel"
                   pointerEvents="none"
                   sx={{
                     background:
@@ -723,7 +721,7 @@ export function DashboardPage(): JSX.Element {
           {/* Monthly net change */}
           <Box mb={8}>
             <Flex align="center" gap={2} mb={3}>
-              <Text textStyle="overline/sm" fontWeight="bold" color="neutral.400">
+              <Text textStyle="overline/sm" fontWeight="semibold" color="neutral.500">
                 Monthly Net Change
               </Text>
               {activeFetching && <Spinner size="xs" color="neutral.300" />}
@@ -732,7 +730,7 @@ export function DashboardPage(): JSX.Element {
               bg="shades.0"
               border="1px solid"
               borderColor="neutral.200"
-              borderRadius="12px"
+              borderRadius="panel"
               px={3}
               pt={4}
               pb={2}
@@ -758,7 +756,7 @@ export function DashboardPage(): JSX.Element {
                 <Box
                   position="absolute"
                   inset={0}
-                  borderRadius="12px"
+                  borderRadius="panel"
                   pointerEvents="none"
                   sx={{
                     background:
@@ -854,7 +852,7 @@ function SyncIndicator({
 
   return (
     <Flex align="center" gap={1.5}>
-      <Box w="6px" h="6px" borderRadius="full" bg="success.500" sx={{ animation: 'pulse 2s ease infinite' }} />
+      <Box w="6px" h="6px" borderRadius="full" bg="success.500" />
       <Text textStyle="label/xs" fontWeight="semibold" color="success.600">
         All synced
       </Text>
@@ -901,23 +899,24 @@ function TimeRangeSelector({
 
   return (
     <Stack align="flex-end" gap={1}>
-      <Flex bg="neutral.50" borderRadius="8px" p="3px" gap="2px" flexWrap="wrap">
+      <Flex bg="neutral.50" borderRadius="control" p="3px" gap="2px" flexWrap="wrap">
         {options.map((option) => (
           <Button
             key={option.value}
+            aria-pressed={value === option.value}
             onClick={() => {
               onClose()
               onPresetChange(option.value)
             }}
-            size="xs"
+            size="sm"
             px={3}
             py={1}
             borderRadius="6px"
             border="none"
             bg={value === option.value ? 'neutral.900' : 'transparent'}
-            color={value === option.value ? 'shades.0' : 'neutral.400'}
-            textStyle="label/xs"
-            fontWeight="semibold"
+            color={value === option.value ? 'shades.0' : 'neutral.600'}
+            textStyle="text/xs"
+            fontWeight="medium"
             _hover={{
               bg: value === option.value ? 'neutral.900' : 'neutral.100',
             }}
@@ -930,13 +929,13 @@ function TimeRangeSelector({
           <PopoverTrigger>
             <Button
               onClick={handleCustomClick}
-              size="xs"
+              size="sm"
               px={3}
               py={1}
               borderRadius="6px"
               border="none"
               bg={value === 'custom' ? 'neutral.900' : 'transparent'}
-              color={value === 'custom' ? 'shades.0' : 'neutral.400'}
+              color={value === 'custom' ? 'shades.0' : 'neutral.600'}
               textStyle="label/xs"
               fontWeight="semibold"
               _hover={{ bg: value === 'custom' ? 'neutral.900' : 'neutral.100' }}
@@ -949,7 +948,7 @@ function TimeRangeSelector({
               w="min(360px, calc(100vw - 32px))"
               bg="shades.0"
               borderColor="neutral.200"
-              borderRadius="12px"
+              borderRadius="panel"
               boxShadow="xl"
             >
               <PopoverArrow bg="shades.0" />
@@ -1004,7 +1003,7 @@ function TimeRangeSelector({
         </Popover>
       </Flex>
       {value === 'custom' && customDateRange.startDate !== null && customDateRange.endDate !== null && (
-        <Text textStyle="label/xs" color="neutral.400" pr={1}>
+        <Text textStyle="label/xs" color="neutral.500" pr={1}>
           {formatCustomDateRangeLabel(customDateRange)}
         </Text>
       )}
@@ -1037,21 +1036,21 @@ function StatCard({ label, data, mode, timezone }: StatCardProps): JSX.Element {
   const isPositive = value.gte(0)
 
   return (
-    <Box bg="shades.0" border="1px solid" borderColor="neutral.200" borderRadius="12px" px={4} py={4}>
-      <Text textStyle="label/xs" color="neutral.400" fontWeight="semibold" mb={2}>
+    <Box bg="shades.0" border="1px solid" borderColor="neutral.200" borderRadius="panel" px={4} py={4}>
+      <Text textStyle="label/xs" color="neutral.500" fontWeight="semibold" mb={2}>
         {label}
       </Text>
       <Text
         fontFamily="mono"
         textStyle="text/lg"
-        fontWeight="bold"
+        fontWeight="semibold"
         color={isPositive ? 'success.600' : 'error.500'}
         letterSpacing="-0.02em"
       >
         {isPositive ? '+' : ''}
         {value.toFixed(8)}
       </Text>
-      <Text textStyle="label/xs" color="neutral.300" mt={0.5}>
+      <Text textStyle="label/xs" color="neutral.500" mt={0.5}>
         BTC
       </Text>
     </Box>
@@ -1060,26 +1059,21 @@ function StatCard({ label, data, mode, timezone }: StatCardProps): JSX.Element {
 
 function EmptyState(): JSX.Element {
   return (
-    <Stack py={8} gap={8}>
-      <Flex align="center" justify="space-between">
-        <Heading textStyle="text/xl" fontWeight="bold" color="neutral.900">
-          Portfolio
-        </Heading>
-      </Flex>
-      <Panel title="No verified claims" p={8}>
-        <Stack align="center" textAlign="center" gap={4}>
-          <Box w={16} h={16} borderRadius="full" bg="dataVizPrimary.100" />
-          <Heading size="md" color="neutral.900">
-            No verified claims yet
-          </Heading>
-          <Text color="neutral.400" maxW="md">
-            To see your total Bitcoin and accumulation over time, verify at least one Bitcoin claim first.
-          </Text>
-          <Button as={Link} to="/accounts" colorScheme="primary" mt={2}>
-            Add Your First Claim
+    <Stack py={8} px={{ base: 4, md: 6 }} maxW="928px" mx="auto" gap={6}>
+      <PageHeading title="Portfolio" description="Track your Bitcoin balance and holdings over time." />
+      <EmptyView
+        border="1px solid"
+        borderColor="neutral.200"
+        borderRadius="panel"
+        bgGradient="linear(to-b, neutral.50, white)"
+        title="Watch your Bitcoin grow"
+        description="Add your first account to see your total Bitcoin and track your holdings over time."
+        action={
+          <Button as={Link} to="/accounts/add">
+            Add Your First Account
           </Button>
-        </Stack>
-      </Panel>
+        }
+      />
     </Stack>
   )
 }

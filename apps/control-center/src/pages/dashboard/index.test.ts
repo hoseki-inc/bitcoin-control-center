@@ -56,13 +56,18 @@ vi.mock('../../trpc', () => {
 vi.mock('../../hooks/use-auto-refresh-exchanges', () => ({ useAutoRefreshExchanges: () => undefined }))
 vi.mock('../../lib/balances', () => ({ useGetBalancesPerClaimIds: () => ({ data: new Map() }) }))
 vi.mock('../../utils/timezone', () => ({ getBrowserTimezone: () => 'UTC' }))
-vi.mock('react-router', () => ({ useNavigate: () => vi.fn(), Link: 'a' }))
+vi.mock('react-router', () => ({
+  useNavigate: () => vi.fn(),
+  Link: ({ to, ...props }: { to: string } & React.AnchorHTMLAttributes<HTMLAnchorElement>) =>
+    createElement('a', { ...props, href: to }),
+}))
 vi.mock('@hoseki/packages/ui/design-system', async () => {
   const { createElement } = await import('react')
   const { format } = await import('date-fns')
+  const { EmptyView } = await import('@hoseki/packages/ui/design-system/empty-view')
   return {
     Spinner: () => createElement('span', { 'data-spinner': true }),
-    Panel: ({ children }: { children: React.ReactNode }) => createElement('div', null, children),
+    EmptyView,
     DateInput: ({ id, value, onChange }: { id: string; value: Date | null; onChange: (value: Date) => void }) =>
       createElement('input', {
         id,
@@ -491,7 +496,7 @@ describe('custom portfolio range UI', () => {
         expect(container.querySelectorAll('[data-chart]')).toHaveLength(2)
         expect(container.textContent).toContain("Couldn't refresh this date range. Showing previously loaded data.")
         expect(container.textContent).not.toContain('All synced')
-        expect(container.textContent).not.toContain('No verified claims yet')
+        expect(container.textContent).not.toContain('Watch your Bitcoin grow')
       } finally {
         unsubscribe()
         client.clear()
@@ -517,7 +522,7 @@ describe('custom portfolio range UI', () => {
       await click('Custom')
       await click('Apply')
       expect(container.querySelectorAll('[data-chart]')).toHaveLength(2)
-      expect(container.textContent).not.toContain('No verified claims yet')
+      expect(container.textContent).not.toContain('Watch your Bitcoin grow')
       const [allInput, allOptions] = mocks.useQuery.mock.calls.at(-2)!
       const [filteredInput, filteredOptions] = mocks.useQuery.mock.calls.at(-1)!
       expect(allOptions.enabled).toBe(false)
@@ -605,7 +610,7 @@ describe('custom portfolio range UI', () => {
         if (range === 'Custom') await click('Apply')
 
         expect(container.textContent).toContain("Couldn't load this date range: Connection lost")
-        expect(container.textContent).not.toContain('No verified claims yet')
+        expect(container.textContent).not.toContain('Watch your Bitcoin grow')
         expect(container.textContent).not.toContain('Add Your First Claim')
         expect(container.querySelectorAll('[data-chart]')).toHaveLength(0)
         await click('Try again')
@@ -629,7 +634,8 @@ describe('custom portfolio range UI', () => {
       data: { ...mocks.base, currentTotalBalance: '0', manualAccountCount: 0, historicalData: [] },
     }))
     await render()
-    expect(container.textContent).toContain('No verified claims yet')
+    expect(container.textContent).toContain('Watch your Bitcoin grow')
+    expect(container.querySelector('a[href="/accounts/add"]')?.textContent).toBe('Add Your First Account')
     expect(container.textContent).not.toContain("Couldn't load this date range")
   })
 

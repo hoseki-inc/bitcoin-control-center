@@ -6,16 +6,15 @@ const disabledColors = {
 const baseStyle = {
   fontFamily: 'body',
   fontWeight: 'medium',
-  lineHeight: 'base',
-  borderRadius: '5px',
+  borderRadius: 'control',
   transitionProperty: 'common',
   transitionDuration: 'normal',
 
-  outlineWidth: '1px',
-  outlineOffset: '0px',
+  outlineWidth: '2px',
+  outlineOffset: '3px',
+  _focusVisible: { outline: '2px solid', outlineColor: 'activeState.80', outlineOffset: '3px' },
 
   _hover: {
-    transitionDuration: '0ms',
     cursor: 'pointer',
     _disabled: {
       ...disabledColors,
@@ -32,6 +31,12 @@ const baseStyle = {
 } as const
 
 const sizes = {
+  xs: {
+    h: '2rem',
+    minW: '2rem',
+    px: 3,
+    textStyle: 'text/xs',
+  },
   lg: {
     h: '3.5rem',
     px: '20px',
@@ -41,7 +46,7 @@ const sizes = {
   },
   md: {
     h: '2.75rem',
-    px: '18px',
+    px: '16px',
     py: '12px',
     textStyle: 'text/sm',
     fontWeight: 'medium',
@@ -101,7 +106,7 @@ const variants = {
   },
 
   ghost: {
-    bgColor: 'shades.0',
+    bgColor: 'transparent',
     color: 'neutral.900',
 
     _hover: {

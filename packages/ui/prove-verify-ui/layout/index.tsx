@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 
 export function Wrapper({ children, maxW = '863px', ...props }: { children: ReactNode } & BoxProps): JSX.Element {
   return (
-    <Box maxW={maxW} mx="auto" px={[4, 4, 0]} {...props}>
+    <Box maxW={maxW} mx="auto" px={{ base: 4, md: 6 }} {...props}>
       {children}
     </Box>
   )
@@ -18,7 +18,15 @@ export function AppLayout({ header, children, fullWidth }: AppLayoutProps): JSX.
   return (
     <Box>
       {header}
-      <Wrapper maxW={fullWidth ? '100%' : '863px'}>{children}</Wrapper>
+      <Wrapper
+        as="main"
+        id="main-content"
+        tabIndex={-1}
+        maxW={fullWidth ? '100%' : '928px'}
+        px={fullWidth ? 0 : { base: 4, md: 6 }}
+      >
+        {children}
+      </Wrapper>
     </Box>
   )
 }

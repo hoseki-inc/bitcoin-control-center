@@ -19,14 +19,23 @@ export function MenuItemComponent({
 }: MenuItem & { renderLink: MenuProps['renderLink'] }): JSX.Element {
   return (
     <chakra.li
-      px={4}
-      py={2.5}
       listStyleType="none"
       display="inline-block"
       textStyle="text/sm"
-      fontWeight="600"
-      color="neutral.900"
-      _hover={{ color: 'neutral.500' }}
+      fontWeight="medium"
+      color="neutral.600"
+      sx={{
+        '& > a': {
+          display: 'flex',
+          alignItems: 'center',
+          minHeight: '44px',
+          px: 4,
+          borderRadius: 'control',
+          transition: 'background-color 150ms ease, color 150ms ease',
+        },
+        '& > a:hover': { bg: 'neutral.100', color: 'neutral.900' },
+        '& > a[aria-current="page"]': { bg: 'neutral.100', color: 'neutral.900' },
+      }}
     >
       {renderLink(to, title)}
     </chakra.li>
@@ -35,7 +44,7 @@ export function MenuItemComponent({
 
 export function Menu({ items, renderLink }: MenuProps): JSX.Element {
   return (
-    <chakra.ul fontSize={16}>
+    <chakra.ul display="flex" gap={1} m={0} p={0}>
       {items.map((item) => (
         <MenuItemComponent key={item.to} {...item} renderLink={renderLink} />
       ))}
@@ -51,11 +60,20 @@ export interface HeaderProps {
 
 export function Header({ logo, menu, userInfo }: HeaderProps): JSX.Element {
   return (
-    <Box borderBottom="1px solid" borderColor="neutral.200">
-      <Wrapper display="flex" alignItems="center" maxW="928px" gap={10} py={3}>
+    <Box as="header" borderBottom="1px solid" borderColor="neutral.200" bg="white">
+      <Wrapper display="flex" alignItems="center" flexWrap="wrap" maxW="928px" gap={{ base: 2, md: 6 }} py={3}>
         {logo}
-        <Box flexGrow="1">{menu}</Box>
-        {userInfo}
+        <Box
+          as="nav"
+          aria-label="Main navigation"
+          flexGrow="1"
+          order={{ base: 3, md: 0 }}
+          w={{ base: '100%', md: 'auto' }}
+          overflowX="auto"
+        >
+          {menu}
+        </Box>
+        <Box ml="auto">{userInfo}</Box>
       </Wrapper>
     </Box>
   )

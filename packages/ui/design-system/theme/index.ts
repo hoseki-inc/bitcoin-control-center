@@ -19,9 +19,23 @@ const { Drawer, FormError, Select } = chakraTheme.components
 export const theme = extendBaseTheme({
   styles: {
     global: {
+      html: { scrollbarGutter: 'stable' },
       body: {
-        fontSize: 'sm',
-        color: 'gray.900',
+        textStyle: 'text/sm',
+        color: 'neutral.900',
+        bg: 'white',
+        WebkitFontSmoothing: 'antialiased',
+        MozOsxFontSmoothing: 'grayscale',
+      },
+      '::selection': { bg: 'secondary.400', color: 'neutral.900' },
+      ':focus-visible': { outline: '2px solid', outlineColor: 'activeState.80', outlineOffset: '3px' },
+      '@media (prefers-reduced-motion: reduce)': {
+        '*, *::before, *::after': {
+          animationDuration: '0.01ms !important',
+          animationIterationCount: '1 !important',
+          transitionDuration: '0.01ms !important',
+          scrollBehavior: 'auto !important',
+        },
       },
     },
   },
@@ -34,12 +48,20 @@ export const theme = extendBaseTheme({
   fonts: {
     heading: `'Geist', sans-serif`,
     body: `'Geist', sans-serif`,
+    mono: `'Geist Mono', monospace`,
   },
+  fontWeights: { normal: 400, regular: 400, light: 400, medium: 500, semibold: 600, bold: 600 },
+  radii: tokens.radii,
+  shadows: tokens.shadows,
   components: {
     ...chakraTheme.components,
     Accordion: accordionTheme,
     Alert: alertTheme,
     Button: buttonTheme,
+    Heading: {
+      ...chakraTheme.components.Heading,
+      baseStyle: { ...chakraTheme.components.Heading.baseStyle, fontWeight: 'medium', color: 'neutral.900' },
+    },
     Drawer,
     FormError,
     FormLabel: formLabelTheme,
