@@ -7,6 +7,7 @@ import { HomePage } from './index'
 
 const mocks = vi.hoisted(() => ({
   accounts: { claims: [] as unknown[], exchange: [] as unknown[], manual: [] as unknown[], etf: [] as unknown[] },
+  prices: [] as Array<{ time: number; value: number }>,
   history: [] as Array<{ timestamp: string; totalBalance: string }>,
   isLoading: false,
   isError: false,
@@ -20,6 +21,7 @@ vi.mock('../trpc', () => {
   return {
     trpc: {
       portalProve: {
+        retrieveBitcoinPriceHistory: { useQuery: () => result(mocks.prices) },
         statement: { list: { useQuery: () => result([]) } },
         registry: { claims: accounts('claims') },
         exchange: accounts('exchange'),
@@ -45,7 +47,9 @@ vi.mock('../trpc', () => {
 vi.mock('../hooks/use-ui-settings', () => ({
   useUiSettings: () => ({ isStatementsMadeEasyDismissed: false, updateUiSettings: vi.fn() }),
 }))
-vi.mock('../components/dashboard/banner', () => ({
+vi.mock('liveline', () => ({ Liveline: () => createElement('canvas', { 'data-chart': 'liveline' }) }))
+vi.mock('../components/dashboard/banner', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../components/dashboard/banner')>()),
   Banner: () => createElement('div', null, 'Statement introduction'),
 }))
 vi.mock('../components/dashboard/recent-statements', () => ({ RecentStatements: () => null }))
@@ -69,26 +73,33 @@ function renderHome(): string {
 
 beforeEach(() => {
   mocks.accounts = { claims: [], exchange: [], manual: [], etf: [] }
+  mocks.prices = []
   mocks.history = []
   mocks.isLoading = false
   mocks.isError = false
 })
 
 describe('Home overview states', () => {
-  it('shows one account action without zero metrics, a chart, or a competing statement introduction', () => {
+  it('previews zero balances and a labeled market chart with one account action', () => {
     const html = renderHome()
     expect(html).toContain('Your Bitcoin, in one place')
     expect(html.match(/href="\/accounts\/add"/g)).toHaveLength(1)
     for (const text of [
       '0.00000000',
-      '0 verified',
+      '$0.00 USD',
       '30d Change',
-      'Balance chart',
-      'Generate Statement',
-      'Statement introduction',
+      'Bitcoin Price',
+      'Last 7 days',
+      'satoshi-statement.jpg',
+      'Recent Statements',
+      'data-chart="liveline"',
     ]) {
-      expect(html).not.toContain(text)
+      expect(html).toContain(text)
     }
+    expect(html).toContain('Generate Statement')
+    expect(html).not.toContain('Sample chart')
+    expect(html).not.toContain('$98,820')
+    expect(html).not.toContain('Statement introduction')
   })
 
   it.each(['claims', 'exchange', 'manual', 'etf'] as const)(
@@ -113,13 +124,17 @@ describe('Home overview states', () => {
     const html = renderHome()
     expect(html).toContain('role="alert"')
     expect(html).toContain('Try Again')
+    expect(html).not.toContain('Dashboard preview')
+    expect(html).toContain('Bitcoin Price')
     expect(html).not.toContain('href="/accounts/add"')
-  })
+  }, 20_000)
 
   it('waits for account queries before offering onboarding', () => {
     mocks.isLoading = true
     const html = renderHome()
-    expect(html).toContain('Loading overview')
+    expect(html).toContain('Loading your holdings')
+    expect(html).toContain('Bitcoin Price')
+    expect(html).not.toContain('0.00000000')
     expect(html).not.toContain('href="/accounts/add"')
   })
 })

@@ -75,8 +75,14 @@ export const createAppContext = asyncFn(async (logger: Logger): Promise<Result<A
     'Connecting to Electrum server',
   )
   const connectResult = await electrumClient.connect()
-  if (connectResult.isErr()) return Err(connectResult.unwrapErr())
-  logger.info({ version: connectResult.unwrap() }, 'Connected to Electrum server')
+  if (connectResult.isErr()) {
+    // Local records, settings and public market data remain available offline.
+    // Close any half-negotiated socket so wallet requests can retry connecting.
+    electrumClient.disconnect()
+    logger.warn({ error: connectResult.unwrapErr().message }, 'Electrum unavailable; starting with local data')
+  } else {
+    logger.info({ version: connectResult.unwrap() }, 'Connected to Electrum server')
+  }
 
   const onchainProvider = new ElectrumProvider(network, {
     logger: logger.child({ module: 'electrum-provider' }),

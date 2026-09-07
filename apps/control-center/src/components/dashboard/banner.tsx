@@ -7,7 +7,7 @@ export function Banner({
   onDismissClick,
 }: {
   mode: 'large-with-cta' | 'large-without-cta' | 'compact'
-  onDismissClick: () => void
+  onDismissClick?: () => void
 }): JSX.Element {
   return <BannerContent mode={mode} onDismissClick={onDismissClick} />
 }
@@ -17,7 +17,7 @@ export function BannerContent({
   onDismissClick,
 }: {
   mode: 'large-with-cta' | 'large-without-cta' | 'compact'
-  onDismissClick: () => void
+  onDismissClick?: () => void
 }): JSX.Element {
   const compact = mode === 'compact'
 
@@ -33,16 +33,18 @@ export function BannerContent({
       p={{ base: 6, md: 8 }}
       pb={{ base: 0, md: 8 }}
     >
-      <IconButton
-        aria-label="Dismiss statement introduction"
-        icon={<XIcon size={18} />}
-        onClick={onDismissClick}
-        variant="ghost"
-        position="absolute"
-        top={2}
-        right={2}
-        zIndex={1}
-      />
+      {onDismissClick && (
+        <IconButton
+          aria-label="Dismiss statement introduction"
+          icon={<XIcon size={18} />}
+          onClick={onDismissClick}
+          variant="ghost"
+          position="absolute"
+          top={2}
+          right={2}
+          zIndex={1}
+        />
+      )}
       <Stack flex={1} align="flex-start" gap={4} minW={0} pr={4}>
         <Text as="h2" textStyle={compact ? 'text/xl' : 'text/2xl'} fontWeight="medium">
           The Standard for Bitcoin Verification

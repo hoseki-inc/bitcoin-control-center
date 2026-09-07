@@ -1794,6 +1794,12 @@ const portalProveRouter = t.router({
   etf: etfRouter,
   onchain: onchainRouter,
   statement: statementRouter,
+  retrieveBitcoinPriceHistory: publicProcedure.query(async ({ ctx }) => {
+    const result = await ctx.app.priceService.getBitcoinPriceHistory()
+    if (result.isErr())
+      throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Bitcoin price history is unavailable' })
+    return result.unwrap()
+  }),
   retrieveBitcoinPrice: publicProcedure.query(async ({ ctx }) => {
     const result = await ctx.app.priceService.getCurrentBtcPrice()
     if (result.isErr()) {

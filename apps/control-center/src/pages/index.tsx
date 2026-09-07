@@ -1,10 +1,12 @@
 import { Box, Button, Flex, Grid, Stack, Text } from '@chakra-ui/react'
-import { EmptyView, ErrorBanner, Spinner } from '@hoseki/packages/ui/design-system'
+import { EmptyView, ErrorBanner } from '@hoseki/packages/ui/design-system'
 import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
 import Decimal from 'decimal.js'
 import { Link } from 'react-router'
 import { AccumulationChart } from '../components/dashboard-charts/accumulation-chart'
 import { Banner } from '../components/dashboard/banner'
+import { BitcoinPriceChart } from '../components/dashboard/bitcoin-price-chart'
+import { DashboardPreview } from '../components/dashboard/dashboard-preview'
 import { RecentStatements } from '../components/dashboard/recent-statements'
 import { useUiSettings } from '../hooks/use-ui-settings'
 import { type RouterOutput, trpc } from '../trpc'
@@ -22,29 +24,21 @@ export function HomePage(): JSX.Element {
     <Stack py={8} gap={6}>
       <PageHeading title="Home" description="Your Bitcoin holdings and recent statements at a glance." />
       {isLoading ? (
-        <Spinner fullPage size="xl" />
+        <DashboardPreview loading />
       ) : hasError ? (
-        <Stack align="start" gap={4}>
-          <ErrorBanner message="Your overview couldn't be loaded. Try again to see your holdings and statements." />
-          <Button variant="outline" onClick={retry}>
-            Try Again
-          </Button>
+        <Stack gap={6}>
+          <Stack align="start" gap={3}>
+            <ErrorBanner message="Your overview couldn't be loaded. Try again to see your holdings and statements." />
+            <Button variant="outline" onClick={retry}>
+              Try Again
+            </Button>
+          </Stack>
+          <DashboardPreview unavailable />
         </Stack>
       ) : (
         <>
           {!hasAccounts && !hasHistory ? (
-            <EmptyView
-              border="1px solid"
-              borderColor="neutral.200"
-              borderRadius="panel"
-              title="Your Bitcoin, in one place"
-              description="Add an account to start tracking your holdings."
-              action={
-                <Button as={Link} to="/accounts/add">
-                  Add Account
-                </Button>
-              }
-            />
+            <DashboardPreview />
           ) : !hasHistory ? (
             <EmptyView
               border="1px solid"
@@ -61,6 +55,7 @@ export function HomePage(): JSX.Element {
           ) : portfolio ? (
             <PortfolioSummary data={portfolio} />
           ) : null}
+          {hasAccounts && <BitcoinPriceChart />}
           {hasHistory && !isStatementsMadeEasyDismissed && (
             <Banner
               mode={statements.length > 0 ? 'compact' : 'large-with-cta'}
