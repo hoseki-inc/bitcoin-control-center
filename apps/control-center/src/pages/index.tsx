@@ -9,8 +9,10 @@ import { BitcoinPriceChart } from '../components/dashboard/bitcoin-price-chart'
 import { DashboardPreview } from '../components/dashboard/dashboard-preview'
 import { DashboardAmount, DashboardCardTitle } from '../components/dashboard/dashboard-typography'
 import { RecentStatements } from '../components/dashboard/recent-statements'
+import { GettingStarted, ONBOARDING_KEY } from '../components/onboarding/getting-started'
 import { SensitiveValue } from '../components/sensitive-value'
 import { StatementsEmptyState } from '../components/statements/statements-empty-state'
+import { useLocalSetting } from '../hooks/use-local-settings'
 import { useQueryErrorToast } from '../hooks/use-query-error-toast'
 import { type RouterOutput, trpc } from '../trpc'
 import type { StatementDto } from '../trpc/server-types'
@@ -33,7 +35,19 @@ export function HomePage(): JSX.Element {
     statementsError,
   } = useDashboardData()
   useQueryErrorToast(hasError ? errorMessage : null, retry)
+  const onboarding = useLocalSetting(ONBOARDING_KEY)
   const hasHistory = (portfolio?.historicalData.length ?? 0) > 0
+
+  if (
+    !isLoading &&
+    !hasError &&
+    !hasAccounts &&
+    !onboarding.isLoading &&
+    !onboarding.isError &&
+    onboarding.data === null
+  ) {
+    return <GettingStarted />
+  }
 
   return (
     <Stack py={{ base: 6, md: 8 }} gap={8}>

@@ -33,7 +33,10 @@ export function AddAccountFlow({ onClose, linkState }: AddAccountFlowProps): JSX
 
       <PageHeading title="Add Account" description="Choose where you hold your Bitcoin." mb={8} />
       <Stack spacing={8}>
-        <AccountGroup title="Wallets" description="Connect a watch-only wallet. Your private keys stay on your device.">
+        <AccountGroup
+          title="Wallet"
+          description="Track Bitcoin using public wallet information. Your private keys stay with you."
+        >
           <ConnectionType
             title="Trezor"
             imagePath="/images/hardware-wallets/trezor.svg"
@@ -65,16 +68,13 @@ export function AddAccountFlow({ onClose, linkState }: AddAccountFlowProps): JSX
           <ConnectionType title="Multisig" media={<KeyRound size={22} />} to="/multisig/create" state={linkState} />
         </AccountGroup>
         <ConnectManualBitcoinAccordion to="/accounts/verify/advanced" state={linkState} />
-        <AccountGroup title="Exchanges" description="Connect an exchange account to follow its Bitcoin balance.">
+        <AccountGroup title="Exchange" description="Connect an exchange to track your balance.">
           <ConnectionType title="Coinbase" media={CoinbaseMedia} to="/accounts/verify/coinbase" state={linkState} />
           <ConnectionType title="Kraken" media={KrakenMedia} to="/accounts/verify/kraken" state={linkState} />
           <ConnectionType title="Robinhood" media={RobinhoodMedia} to="/accounts/verify/robinhood" state={linkState} />
           <ConnectionType title="Strike" media={StrikeMedia} to="/accounts/verify/strike" state={linkState} />
         </AccountGroup>
-        <AccountGroup
-          title="Manually tracked holdings"
-          description="Record Bitcoin or ETF holdings and update their balances yourself."
-        >
+        <AccountGroup title="Manual entry" description="Enter Bitcoin or ETF holdings. Update them yourself.">
           <ConnectionType
             title="Manual Entry"
             media={<ManualEntryIcon />}

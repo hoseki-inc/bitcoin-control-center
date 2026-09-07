@@ -3,6 +3,7 @@ import { AppLayout } from './components/layout/app-layout'
 import { KeystoreReceiptPage } from './components/multisig/keystore-receipt'
 import { MultisigPageWrapper } from './components/multisig/multisig-page-wrapper'
 import { NotFound } from './components/not-found'
+import { GettingStarted } from './components/onboarding/getting-started'
 // Prove pages
 import { HomePage } from './pages'
 import { ClaimsPage } from './pages/claims'
@@ -52,6 +53,7 @@ export default function AppRoutes(): JSX.Element {
       </Route>
       <Route element={<AppLayout />}>
         <Route path="home" Component={HomePage} />
+        <Route path="getting-started" Component={GettingStarted} />
 
         <Route path="accounts">
           <Route path="" Component={ClaimsPage} />

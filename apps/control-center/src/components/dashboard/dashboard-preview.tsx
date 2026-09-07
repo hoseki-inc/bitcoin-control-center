@@ -1,5 +1,4 @@
 import { Box, Button, Flex, Grid, Stack, Text } from '@chakra-ui/react'
-import { Plus } from 'lucide-react'
 import { Link } from 'react-router'
 import { useBitcoinDisplay } from '../../hooks/use-bitcoin-display'
 import { formatBitcoin } from '../../lib/bitcoin-display'
@@ -36,7 +35,7 @@ export function DashboardPreview({
               Your wallets remain watch-only.
             </Text>
           </Box>
-          <Button as={Link} to="/accounts/add" leftIcon={<Plus size={18} />} flexShrink={0}>
+          <Button as={Link} to="/accounts/add" flexShrink={0}>
             Add Account
           </Button>
         </Flex>

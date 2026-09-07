@@ -558,7 +558,10 @@ export function DashboardPage(): JSX.Element {
           {/* Header row */}
           <Flex align="flex-start" justify="space-between" mb={6} gap={4} flexWrap="wrap">
             <Box>
-              <PageHeading title="Portfolio" description="Track your Bitcoin balance and holdings over time." />
+              <PageHeading
+                title="Portfolio"
+                description="Choose accounts and a date range to see changes in your holdings."
+              />
             </Box>
             <Button size="md" variant="outline" flexShrink={0} onClick={handleGenerateStatement}>
               Generate Statement
@@ -1078,7 +1081,7 @@ function StatCard({ label, data, mode, timezone, available }: StatCardProps): JS
 function EmptyState(): JSX.Element {
   return (
     <Stack py={8} px={{ base: 4, md: 6 }} maxW="928px" mx="auto" gap={6}>
-      <PageHeading title="Portfolio" description="Track your Bitcoin balance and holdings over time." />
+      <PageHeading title="Portfolio" description="Choose accounts and a date range to see changes in your holdings." />
       <EmptyView
         border="1px solid"
         borderColor="neutral.200"

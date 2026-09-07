@@ -8,13 +8,16 @@ import { type BalanceDataPoint, type MonthlyChange, getMonthlyChanges } from './
 interface MonthlyNetChangeChartProps {
   data: BalanceDataPoint[]
   timezone?: string
+  formatAmount?: (value: number) => string
 }
 
 function BarTooltip({
   active,
   payload,
+  formatAmount,
 }: {
   active?: boolean
+  formatAmount?: (value: number) => string
   payload?: Array<{ payload: MonthlyChange }>
 }): JSX.Element | null {
   if (!active || !payload?.[0]) return null
@@ -33,16 +36,20 @@ function BarTooltip({
         sx={{ fontVariantNumeric: 'tabular-nums' }}
         color={change === 0 ? 'shades.0' : isPositive ? 'success.400' : 'error.400'}
       >
-        <SensitiveValue>
-          {change > 0 ? '+' : ''}
-          <BitcoinAmount btc={change.toFixed(8)} />
-        </SensitiveValue>
+        {formatAmount ? (
+          formatAmount(change)
+        ) : (
+          <SensitiveValue>
+            {change > 0 ? '+' : ''}
+            <BitcoinAmount btc={change.toFixed(8)} />
+          </SensitiveValue>
+        )}
       </Text>
     </Box>
   )
 }
 
-export function MonthlyNetChangeChart({ data, timezone }: MonthlyNetChangeChartProps): JSX.Element {
+export function MonthlyNetChangeChart({ data, timezone, formatAmount }: MonthlyNetChangeChartProps): JSX.Element {
   const reducedMotion = usePrefersReducedMotion()
   const [success500, error500, axisColor, baselineColor] = useToken('colors', [
     'success.500',
@@ -85,7 +92,7 @@ export function MonthlyNetChangeChart({ data, timezone }: MonthlyNetChangeChartP
               domain={[(minimum: number) => Math.min(0, minimum), (maximum: number) => Math.max(0, maximum)]}
             />
             <ReferenceLine y={0} stroke={baselineColor} />
-            <Tooltip content={<BarTooltip />} cursor={false} />
+            <Tooltip content={<BarTooltip formatAmount={formatAmount} />} cursor={false} />
             <Bar isAnimationActive={!reducedMotion} dataKey="change" radius={[4, 4, 0, 0]} maxBarSize={36}>
               {monthlyChanges.map((entry) => (
                 <Cell

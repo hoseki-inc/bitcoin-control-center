@@ -58,7 +58,7 @@ export default defineConfig(({ mode }) => {
       globals: true,
       environment: 'node',
       env: loadEnv(mode, process.cwd(), ''),
-      include: ['src/**/*.test.ts'],
+      include: ['src/**/*.test.{ts,tsx}'],
       reporters: ['default'],
       passWithNoTests: true,
     },

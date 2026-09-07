@@ -24,6 +24,7 @@ import { Link, useLocation, useNavigate } from 'react-router'
 import { toast } from 'sonner'
 import { BitcoinAmount } from '../../components/bitcoin-amount'
 import { DeleteClaimModal } from '../../components/claims/claim-details/delete-claim-modal'
+import { FirstAccountReady } from '../../components/onboarding/getting-started'
 import { SensitiveValue } from '../../components/sensitive-value'
 import { useAutoRefreshExchanges } from '../../hooks/use-auto-refresh-exchanges'
 import { useQueryErrorToast } from '../../hooks/use-query-error-toast'
@@ -193,6 +194,12 @@ export function ClaimsPage(): JSX.Element {
   return (
     <>
       <Stack py={8} gap={0}>
+        <FirstAccountReady
+          ready={
+            claims.some((claim) => balancesQuery.data?.get(claim.id)?.current != null) ||
+            [...exchangeAccounts, ...manualAccounts, ...etfAccounts].some((account) => account.balance !== null)
+          }
+        />
         {limit !== null && claims.length >= limit && (
           <ErrorBanner
             mb={6}

@@ -47,10 +47,10 @@ export function BannerContent({
       )}
       <Stack flex={1} align="flex-start" gap={4} minW={0} pr={4}>
         <Text as="h2" textStyle={compact ? 'text/xl' : 'text/2xl'} fontWeight="medium">
-          The Standard for Bitcoin Verification
+          Your holdings, on record
         </Text>
         <Text textStyle="text/sm" color="neutral.600" maxW="46ch">
-          Verify ownership of your wallet and download a PDF statement of your Bitcoin holdings.
+          Download a statement of your holdings for a selected period.
         </Text>
         <Button as={Link} to="/statements/create" mt={2}>
           {mode === 'large-without-cta' ? 'Generate Your Own Statement' : 'Generate Statement'}

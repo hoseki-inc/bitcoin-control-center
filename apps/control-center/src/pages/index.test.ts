@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   isError: false,
   statementsError: false,
   btcPrice: '50000',
+  onboarding: 'dismissed' as string | null,
   unit: 'btc' as BitcoinDisplayUnit,
 }))
 
@@ -49,6 +50,10 @@ vi.mock('../trpc', () => {
   }
 })
 
+vi.mock('../hooks/use-local-settings', () => ({
+  useLocalSetting: () => ({ data: mocks.onboarding, isLoading: false, isError: false }),
+}))
+
 vi.mock('../hooks/use-ui-settings', () => ({
   useUiSettings: () => ({ isStatementsMadeEasyDismissed: false, updateUiSettings: vi.fn() }),
 }))
@@ -79,6 +84,7 @@ function renderHome(): string {
 
 beforeEach(() => {
   mocks.accounts = { claims: [], exchange: [], manual: [], etf: [] }
+  mocks.onboarding = 'dismissed'
   mocks.prices = []
   mocks.history = []
   mocks.isLoading = false
@@ -99,7 +105,7 @@ describe('Home overview states', () => {
       '30d Change',
       'Bitcoin Price',
       'Last 7 days',
-      'The Standard for Bitcoin Verification',
+      'Your holdings, on record',
       'data-chart="liveline"',
     ]) {
       expect(html).toContain(text)
@@ -185,4 +191,17 @@ describe('Home overview states', () => {
     mocks.history = [{ timestamp: '2026-09-01T00:00:00.000Z', totalBalance: '100000000' }]
     expect(renderHome()).toContain('USD value unavailable')
   })
+})
+
+it('introduces the product only for a new empty installation', () => {
+  mocks.onboarding = null
+  expect(renderHome()).toContain('Explore First')
+  mocks.accounts.manual = [{}]
+  expect(renderHome()).not.toContain('Explore First')
+})
+
+it('does not treat a failed account request as a fresh installation', () => {
+  mocks.onboarding = null
+  mocks.isError = true
+  expect(renderHome()).not.toContain('Explore First')
 })
