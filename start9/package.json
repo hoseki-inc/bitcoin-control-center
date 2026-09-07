@@ -7,11 +7,11 @@
     "check": "node scripts/check-package-files.mjs && node scripts/version.mjs check && tsc --noEmit"
   },
   "dependencies": {
-    "@start9labs/start-sdk": "1.5.3"
+    "@start9labs/start-sdk": "2.0.9"
   },
   "devDependencies": {
-    "@types/node": "22.20.1",
-    "@vercel/ncc": "0.38.4",
-    "typescript": "5.9.3"
+    "@types/node": "26.4.1",
+    "@vercel/ncc": "0.45.0",
+    "typescript": "7.0.2"
   }
 }
