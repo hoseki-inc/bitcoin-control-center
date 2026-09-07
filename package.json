@@ -18,7 +18,7 @@
     "lint": "turbo run lint -- --max-warnings=0",
     "prepare": "husky install",
     "security:audit": "pnpm audit --audit-level=moderate && npm --prefix desktop audit --audit-level=moderate && npm --prefix start9 audit --audit-level=moderate && npm --prefix start9/runtime audit --audit-level=moderate",
-    "test": "turbo run test"
+    "test": "turbo run test && vitest run --config desktop/vitest.config.ts"
   },
   "lint-staged": {
     "*.{js,jsx,ts,tsx,json,md}": [

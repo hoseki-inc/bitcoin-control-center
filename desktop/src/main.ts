@@ -1,108 +1,169 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
-import { BrowserWindow, app, shell } from 'electron'
+import { BrowserWindow, type Tray, type WebContents, app, dialog, shell } from 'electron'
+import { findAvailablePort } from './ports'
 import { TorManager } from './tor'
 import { setupTray } from './tray'
+import { setupWalletAccess } from './wallet-access'
+import { isAppUrl, isExternalUrl, isTrezorPopup } from './window-policy'
 
-const DATA_DIR = path.join(app.getPath('userData'), 'data')
 const PORT = 3400
-
-// Prevent multiple instances (SQLite + port conflicts)
-const gotLock = app.requestSingleInstanceLock()
-if (!gotLock) {
-  app.quit()
-}
-
+const origin = `http://localhost:${PORT}`
 let mainWindow: BrowserWindow | null = null
 let torManager: TorManager | null = null
+let server: { shutdown: () => Promise<void> } | null = null
+let tray: Tray | null = null
+let quitting = false
+let cleanedUp = false
+let startup: Promise<void> | null = null
 
-app.whenReady().then(async () => {
-  // Ensure data directory exists
-  fs.mkdirSync(DATA_DIR, { recursive: true })
+function showMainWindow(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  if (mainWindow.isMinimized()) mainWindow.restore()
+  mainWindow.show()
+  mainWindow.focus()
+}
 
-  // Start bundled Tor daemon in the background (don't block app startup)
-  torManager = new TorManager(app.getPath('userData'))
-  torManager.start().catch(() => {
-    // Tor failed to start — not critical, .onion connections will fail but clearnet works fine
-  })
+function openExternal(url: string): void {
+  if (isExternalUrl(url))
+    void shell.openExternal(url).catch(() => {
+      dialog.showErrorBox('Could not open link', 'Open your browser and try the link again.')
+    })
+}
 
-  // Set env vars that api-sentinel reads (mirrors start9/docker_entrypoint.sh)
+async function start(): Promise<void> {
+  const dataDir = path.join(app.getPath('userData'), 'data')
+  fs.mkdirSync(dataDir, { recursive: true })
+  const torPath = app.isPackaged
+    ? path.join(process.resourcesPath, 'tor')
+    : path.join(__dirname, '..', '..', 'tor', process.platform === 'win32' ? 'win' : 'mac')
+  torManager = new TorManager(
+    app.getPath('userData'),
+    path.join(torPath, process.platform === 'win32' ? 'tor.exe' : 'tor'),
+    await findAvailablePort(),
+  )
+
   const serverDir = path.join(__dirname, '..', 'server')
-  process.env['DATA_DIR'] = DATA_DIR
-  process.env['APP_DIR'] = serverDir
-  process.env['HOST'] = 'localhost'
-  process.env['PORT'] = String(PORT)
-  process.env['ELECTRUM_HOST'] = 'electrum.blockstream.info'
-  process.env['ELECTRUM_PORT'] = '50002'
-  process.env['ELECTRUM_PROTOCOL'] = 'ssl'
-  process.env['BITCOIN_NETWORK'] = 'mainnet'
-  process.env['MEMPOOL_API_URL'] = 'https://mempool.space'
-  process.env['NODE_ENV'] = 'production'
+  Object.assign(process.env, {
+    DATA_DIR: dataDir,
+    APP_DIR: serverDir,
+    HOST: 'localhost',
+    PORT: String(PORT),
+    ELECTRUM_HOST: 'electrum.blockstream.info',
+    ELECTRUM_PORT: '50002',
+    ELECTRUM_PROTOCOL: 'ssl',
+    BITCOIN_NETWORK: 'mainnet',
+    MEMPOOL_API_URL: 'https://mempool.space',
+    NODE_ENV: 'production',
+    SOCKS_PROXY_HOST: '127.0.0.1',
+    SOCKS_PROXY_PORT: String(torManager.socksPort),
+  })
+  const { main } = await import(path.join(serverDir, 'main.js'))
+  server = await main({ waitForElectrum: false, tor: torManager })
+  if (quitting) return
 
-  // Tor SOCKS proxy will be available on port 9050 once bootstrapped
-  process.env['SOCKS_PROXY_HOST'] = '127.0.0.1'
-  process.env['SOCKS_PROXY_PORT'] = String(torManager.socksPort)
-
-  // Start api-sentinel — imports the self-starting bundle
-  const serverMain = path.join(serverDir, 'main.js')
-  const { main } = await import(serverMain)
-  const server = await main()
-
-  // Create the browser window
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
     minWidth: 900,
     minHeight: 600,
-    titleBarStyle: 'hiddenInset',
-    trafficLightPosition: { x: 16, y: 16 },
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      sandbox: true,
+      contextIsolation: true,
+      nodeIntegration: false,
     },
   })
-
-  mainWindow.loadURL(`http://localhost:${PORT}`)
-
-  // Open external links in the system browser
+  const trezorWindows = new Set<WebContents>()
+  setupWalletAccess(mainWindow, origin, trezorWindows)
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url)
+    if (isTrezorPopup(url) && isAppUrl(mainWindow!.webContents.getURL(), origin)) {
+      return {
+        action: 'allow',
+        overrideBrowserWindowOptions: {
+          parent: mainWindow!,
+          width: 480,
+          height: 720,
+          autoHideMenuBar: true,
+          webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false },
+        },
+      }
+    }
+    openExternal(url)
     return { action: 'deny' }
   })
-
-  // Setup system tray
-  const tray = setupTray(mainWindow)
-
-  // Close to tray instead of quitting
-  let isQuitting = false
-  app.on('before-quit', () => {
-    isQuitting = true
+  mainWindow.webContents.on('did-create-window', (popup) => {
+    const contents = popup.webContents
+    trezorWindows.add(contents)
+    popup.on('closed', () => trezorWindows.delete(contents))
+    popup.webContents.setWindowOpenHandler(({ url }) => {
+      openExternal(url)
+      return { action: 'deny' }
+    })
+    popup.webContents.on('will-navigate', (event, url) => {
+      if (!isTrezorPopup(url)) {
+        event.preventDefault()
+        openExternal(url)
+      }
+    })
+    popup.webContents.on('will-redirect', (event, url) => {
+      if (!isTrezorPopup(url)) event.preventDefault()
+    })
   })
-
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    if (!isAppUrl(url, origin)) {
+      event.preventDefault()
+      openExternal(url)
+    }
+  })
+  mainWindow.webContents.on('will-redirect', (event, url) => {
+    if (!isAppUrl(url, origin)) event.preventDefault()
+  })
   mainWindow.on('close', (event) => {
-    if (!isQuitting) {
+    if (!quitting) {
       event.preventDefault()
       mainWindow?.hide()
     }
   })
+  tray = setupTray(mainWindow)
+  await mainWindow.loadURL(origin)
+}
 
-  // Second instance: show the existing window
-  app.on('second-instance', () => {
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore()
-      mainWindow.show()
-      mainWindow.focus()
-    }
+if (!app.requestSingleInstanceLock()) {
+  app.quit()
+} else {
+  app.on('second-instance', showMainWindow)
+  app.on('activate', showMainWindow)
+  app.on('before-quit', (event) => {
+    if (cleanedUp) return
+    event.preventDefault()
+    if (quitting) return
+    quitting = true
+    void (async (): Promise<void> => {
+      await startup
+      // Stop Tor first to release any requests waiting for bootstrap before
+      // draining the HTTP server and closing SQLite.
+      await torManager?.stop()
+      await server?.shutdown()
+      tray?.destroy()
+      cleanedUp = true
+      app.quit()
+    })().catch(() => {
+      dialog.showErrorBox(
+        'Could not finish quitting',
+        'Control Center could not close its local services. Try quitting again.',
+      )
+      quitting = false
+    })
   })
-
-  // macOS: re-show window when dock icon is clicked
-  app.on('activate', () => {
-    mainWindow?.show()
+  void app.whenReady().then(() => {
+    startup = start().catch(() => {
+      if (!quitting) {
+        dialog.showErrorBox(
+          'Control Center could not start',
+          'The local service could not open. Check that another app is not using port 3400 and that your data folder is writable, then reopen Control Center.',
+        )
+        app.quit()
+      }
+    })
   })
-
-  // Graceful shutdown
-  app.on('before-quit', async () => {
-    await server.shutdown()
-    torManager?.stop()
-    tray.destroy()
-  })
-})
+}

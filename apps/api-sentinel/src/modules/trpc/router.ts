@@ -1862,14 +1862,9 @@ const READABLE_SETTINGS = new Set([
   'tor_enabled',
 ])
 
-const WRITABLE_SETTINGS = new Set([
-  'user_name',
-  'owner_identifier',
-  'electrum_host',
-  'electrum_port',
-  'electrum_protocol',
-  'tor_enabled',
-])
+// Connection settings must be validated, connected and saved together through
+// reconnectElectrum; individual writes could make the next launch unusable.
+const WRITABLE_SETTINGS = new Set(['user_name', 'owner_identifier'])
 
 function isReadableSetting(key: string): boolean {
   return READABLE_SETTINGS.has(key)
@@ -1943,40 +1938,15 @@ function validateElectrumProtocol(value: string): ElectrumProtocol {
   return value
 }
 
-function isLoopbackElectrumHost(host: string): boolean {
-  return host === 'localhost' || host.endsWith('.localhost') || host === '127.0.0.1' || host === '::1'
-}
-
-function validateElectrumProxy(input: {
-  proxyHost?: string
-  proxyPort?: number
-}): ValidatedElectrumConnection['proxy'] {
-  if (!input.proxyHost && input.proxyPort === undefined) return undefined
-  if (!input.proxyHost || input.proxyPort === undefined) {
-    throw new TRPCError({ code: 'BAD_REQUEST', message: 'Proxy host and port must be provided together' })
-  }
-
-  const host = validateElectrumHost(input.proxyHost)
-  if (!isLoopbackElectrumHost(host)) {
-    throw new TRPCError({ code: 'BAD_REQUEST', message: 'Proxy host must be a loopback host' })
-  }
-
-  return { host, port: validateElectrumPort(input.proxyPort) }
-}
-
 function validateElectrumConnection(input: {
   host: string
   port: number
   protocol: ElectrumProtocol
-  proxyHost?: string
-  proxyPort?: number
 }): ValidatedElectrumConnection {
-  const proxy = validateElectrumProxy(input)
   return {
     host: validateElectrumHost(input.host),
     port: validateElectrumPort(input.port),
     protocol: validateElectrumProtocol(input.protocol),
-    ...(proxy ? { proxy } : {}),
   }
 }
 
@@ -1990,21 +1960,6 @@ function validateWritableSetting(key: string, value: string): string {
     case 'owner_identifier': {
       if (value.length > 200) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Setting value is too long' })
-      }
-      return value
-    }
-    case 'electrum_host': {
-      return validateElectrumHost(value)
-    }
-    case 'electrum_port': {
-      return String(validateElectrumPort(Number(value)))
-    }
-    case 'electrum_protocol': {
-      return validateElectrumProtocol(value)
-    }
-    case 'tor_enabled': {
-      if (value !== 'true' && value !== 'false') {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid Tor setting' })
       }
       return value
     }
@@ -2039,6 +1994,7 @@ const settingsRouter = t.router({
       host,
       port,
       protocol,
+      tor: ctx.app.getTorStatus(),
     }
   }),
 
@@ -2048,19 +2004,17 @@ const settingsRouter = t.router({
         host: z.string(),
         port: z.number().int().min(1).max(65_535),
         protocol: z.enum(['tcp', 'ssl']),
-        proxyHost: z.string().optional(),
-        proxyPort: z.number().int().min(1).max(65_535).optional(),
+        torEnabled: z.boolean().default(false),
       }),
     )
-    .mutation(async ({ input }) => {
-      const config = validateElectrumConnection(input)
+    .mutation(async ({ ctx, input }) => {
+      const prepared = ctx.app.prepareElectrumConfig(validateElectrumConnection(input), input.torEnabled)
+      if (prepared.isErr()) throw new Error(prepared.unwrapErr().message)
+      const config = prepared.unwrap()
       const { ElectrumClient } = await import('@hoseki/packages/clients/electrum')
       const testClient = new ElectrumClient({
-        host: config.host,
-        port: config.port,
-        protocol: config.protocol,
+        ...config,
         requestTimeout: 15_000,
-        ...(config.proxy ? { proxy: config.proxy } : {}),
       })
       const result = await testClient.connect()
       testClient.disconnect()
@@ -2076,12 +2030,13 @@ const settingsRouter = t.router({
         host: z.string(),
         port: z.number().int().min(1).max(65_535),
         protocol: z.enum(['tcp', 'ssl']),
-        proxyHost: z.string().optional(),
-        proxyPort: z.number().int().min(1).max(65_535).optional(),
+        torEnabled: z.boolean().default(false),
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const result = await ctx.app.reconnectElectrum(validateElectrumConnection(input))
+      const prepared = ctx.app.prepareElectrumConfig(validateElectrumConnection(input), input.torEnabled)
+      if (prepared.isErr()) throw new Error(prepared.unwrapErr().message)
+      const result = await ctx.app.reconnectElectrum(prepared.unwrap())
       if (result.isErr()) {
         throw new Error(result.unwrapErr().message)
       }

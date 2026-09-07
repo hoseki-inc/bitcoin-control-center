@@ -4,7 +4,7 @@ import cors from '@fastify/cors'
 import { type FastifyTRPCPluginOptions, fastifyTRPCPlugin } from '@trpc/server/adapters/fastify'
 import Fastify, { type FastifyBaseLogger } from 'fastify'
 import pino from 'pino'
-import { createAppContext } from './context'
+import { type AppContextOptions, createAppContext } from './context'
 import type { TRPCContext } from './modules/trpc/init'
 import { type AppRouter, appRouter } from './modules/trpc/router'
 import { registerStaticAssets } from './static_assets'
@@ -123,7 +123,7 @@ function isProtectedRoute(url: string): boolean {
   return url.startsWith('/trpc')
 }
 
-export async function main(): Promise<SentinelServer> {
+export async function main(options: AppContextOptions = {}): Promise<SentinelServer> {
   const isProduction = process.env['NODE_ENV'] === 'production'
   const logger = pino({
     level: process.env['LOG_LEVEL'] ?? 'info',
@@ -131,7 +131,7 @@ export async function main(): Promise<SentinelServer> {
   })
 
   // Initialize application context (database, Electrum connection, etc.)
-  const ctxResult = await createAppContext(logger)
+  const ctxResult = await createAppContext(logger, options)
   if (ctxResult.isErr()) {
     logger.error({ error: ctxResult.unwrapErr().message }, 'Failed to initialize application context')
     throw new Error(ctxResult.unwrapErr().message)
@@ -202,7 +202,14 @@ export async function main(): Promise<SentinelServer> {
 
   // Start listening
   let snapshotTimer: ReturnType<typeof setInterval> | undefined
-  await server.listen({ host, port })
+  try {
+    await server.listen({ host, port })
+  } catch (error) {
+    appCtx.disconnectElectrum()
+    appCtx.database.close()
+    await server.close()
+    throw error
+  }
   logger.info({ host, port }, 'api-sentinel is running')
 
   // Record initial balance snapshots, then every 15 minutes
@@ -224,7 +231,7 @@ export async function main(): Promise<SentinelServer> {
       logger.error({ err }, 'Error closing Fastify')
     }
 
-    appCtx.electrumClient.disconnect()
+    appCtx.disconnectElectrum()
     appCtx.database.close()
 
     logger.info('Shutdown complete')

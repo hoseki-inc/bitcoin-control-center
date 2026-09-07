@@ -1,5 +1,5 @@
 import { parseUnknown } from '@hoseki/packages/result'
-import { AsyncResult, Ok, tryBlockAsync } from '@patina/core'
+import { AsyncResult, Err, Ok, type Result, tryBlockAsync } from '@patina/core'
 // Re-import z for the raw string overload
 import { z } from 'zod'
 import { type ElectrumConnectionConfig, ElectrumTransport } from './protocol'
@@ -20,6 +20,8 @@ import {
 } from './schemas'
 
 export interface ElectrumClientConfig extends ElectrumConnectionConfig {
+  /** Wait for a managed proxy before opening any socket, including reconnects. */
+  beforeConnect?: () => Promise<Result<void, Error>>
   /** Client name sent during version negotiation. Defaults to 'hoseki'. */
   clientName?: string
   /** Protocol version to negotiate. Defaults to '1.4'. */
@@ -38,9 +40,12 @@ export class ElectrumClient {
   private readonly protocolVersion: string
   private negotiated = false
   private connectInFlight: AsyncResult<ServerVersion, Error> | null = null
+  private generation = 0
+  private readonly beforeConnect: ElectrumClientConfig['beforeConnect']
 
   public constructor(config: ElectrumClientConfig) {
     this.transport = new ElectrumTransport(config)
+    this.beforeConnect = config.beforeConnect
     this.clientName = config.clientName ?? 'hoseki'
     this.protocolVersion = config.protocolVersion ?? '1.4'
   }
@@ -57,7 +62,10 @@ export class ElectrumClient {
   public connect(): AsyncResult<ServerVersion, Error> {
     if (this.connectInFlight) return this.connectInFlight
     const self = this
+    const generation = this.generation
     const inner = tryBlockAsync(async function* () {
+      if (self.beforeConnect) yield* (await self.beforeConnect()).try()
+      if (generation !== self.generation) return Err(new Error('Connection closed'))
       yield* self.transport.connect().try()
       const version = yield* self.serverVersion().try()
       self.negotiated = true
@@ -76,6 +84,7 @@ export class ElectrumClient {
    * Disconnect from the Electrum server.
    */
   public disconnect(): void {
+    this.generation += 1
     this.transport.disconnect()
     this.negotiated = false
   }

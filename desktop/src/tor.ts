@@ -2,73 +2,133 @@ import { type ChildProcess, spawn } from 'node:child_process'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 
-/**
- * Manages a bundled Tor process for SOCKS proxy support.
- * The Tor binary is shipped as an Electron extraResource.
- */
+export interface TorStatus {
+  state: 'stopped' | 'starting' | 'ready' | 'failed'
+  message?: string
+}
+
 export class TorManager {
-  private process: ChildProcess | null = null
-  private readonly _socksPort = 9050
-  private readonly dataDir: string
+  private child: ChildProcess | null = null
+  private status: TorStatus = { state: 'stopped' }
+  private starting: Promise<TorStatus> | null = null
+  private finishStart: (() => void) | null = null
+  private stopping: Promise<void> | null = null
+  private stopped = false
 
-  public constructor(appDataDir: string) {
-    this.dataDir = path.join(appDataDir, 'tor-data')
+  public constructor(
+    private readonly appDataDir: string,
+    private readonly binaryPath: string,
+    public readonly socksPort: number,
+    private readonly bootstrapTimeout = 120_000,
+  ) {}
+
+  public getStatus(): TorStatus {
+    return { ...this.status }
   }
 
-  public get socksPort(): number {
-    return this._socksPort
+  public start(): Promise<TorStatus> {
+    if (this.stopped || this.status.state === 'ready') return Promise.resolve(this.getStatus())
+    if (this.starting) return this.starting
+    this.starting = this.launch().finally(() => {
+      this.starting = null
+    })
+    return this.starting
   }
 
-  public async start(): Promise<void> {
-    if (this.process) return
-
-    fs.mkdirSync(this.dataDir, { recursive: true })
-
-    const torBinary = this.getTorBinaryPath()
-    if (!fs.existsSync(torBinary)) {
-      console.error(`Tor binary not found at ${torBinary}`)
-      return
+  private async launch(): Promise<TorStatus> {
+    await this.terminateChild()
+    if (this.stopped) return this.getStatus()
+    this.status = { state: 'starting' }
+    const dataDir = path.join(this.appDataDir, 'tor-data')
+    try {
+      fs.mkdirSync(dataDir, { recursive: true })
+      if (!fs.existsSync(this.binaryPath)) {
+        this.status = { state: 'failed', message: 'Bundled Tor is missing. Reinstall the desktop app to use Tor.' }
+        return this.getStatus()
+      }
+      this.child = spawn(
+        this.binaryPath,
+        [
+          '--SocksPort',
+          `127.0.0.1:${this.socksPort}`,
+          '--DataDirectory',
+          dataDir,
+          '--GeoIPFile',
+          '',
+          '--GeoIPv6File',
+          '',
+          '--Log',
+          'notice stdout',
+        ],
+        { stdio: ['ignore', 'pipe', 'pipe'] },
+      )
+    } catch {
+      this.status = { state: 'failed', message: 'Tor could not start. Use Test Connection to try again.' }
+      return this.getStatus()
     }
-
-    this.process = spawn(
-      torBinary,
-      ['--SocksPort', String(this._socksPort), '--DataDirectory', this.dataDir, '--GeoIPFile', '', '--GeoIPv6File', ''],
-      {
-        stdio: ['ignore', 'pipe', 'pipe'],
-      },
-    )
-
-    // Wait for Tor to bootstrap
+    const child = this.child
     await new Promise<void>((resolve) => {
-      const onData = (data: Buffer): void => {
-        const line = data.toString()
-        if (line.includes('Bootstrapped 100%')) {
-          this.process?.stdout?.off('data', onData)
-          resolve()
+      let buffer = ''
+      let finished = false
+      const finish = (): void => {
+        if (finished) return
+        finished = true
+        clearTimeout(timer)
+        child.stdout?.off('data', onData)
+        this.finishStart = null
+        resolve()
+      }
+      const fail = (message: string): void => {
+        if (!this.stopped && this.child === child && this.status.state !== 'failed')
+          this.status = { state: 'failed', message }
+        finish()
+      }
+      const onData = (chunk: Buffer): void => {
+        buffer = (buffer + chunk.toString()).slice(-8192)
+        if (/Bootstrapped 100%[^\n]*Done/.test(buffer)) {
+          this.status = { state: 'ready' }
+          finish()
         }
       }
-      this.process?.stdout?.on('data', onData)
-
-      // Timeout after 30 seconds
-      setTimeout(() => {
-        this.process?.stdout?.off('data', onData)
-        resolve()
-      }, 30_000)
+      const timer = setTimeout(
+        () => fail('Tor could not connect within two minutes. Check your network and use Test Connection to retry.'),
+        this.bootstrapTimeout,
+      )
+      this.finishStart = finish
+      child.stdout?.on('data', onData)
+      // Consume both pipes without logging network details or unbounded daemon output.
+      child.stdout?.resume()
+      child.stderr?.resume()
+      child.once('error', () => fail('Tor could not start. Use Test Connection to try again.'))
+      child.once('exit', () => fail('Tor stopped unexpectedly. Use Test Connection to try again.'))
+      child.once('close', () => {
+        if (this.child === child) this.child = null
+      })
     })
+    if (this.status.state === 'failed') await this.terminateChild()
+    return this.getStatus()
   }
 
-  public stop(): void {
-    if (this.process) {
-      this.process.kill('SIGTERM')
-      this.process = null
-    }
+  public stop(): Promise<void> {
+    if (this.stopping) return this.stopping
+    this.stopped = true
+    this.status = { state: 'stopped' }
+    this.finishStart?.()
+    this.stopping = this.terminateChild()
+    return this.stopping
   }
 
-  private getTorBinaryPath(): string {
-    // In packaged app, extraResources are at process.resourcesPath
-    // In dev, they're relative to the desktop directory
-    const resourcesPath = process.resourcesPath ?? path.join(__dirname, '..', '..')
-    const binary = process.platform === 'win32' ? 'tor.exe' : 'tor'
-    return path.join(resourcesPath, 'tor', binary)
+  private async terminateChild(): Promise<void> {
+    const child = this.child
+    if (!child) return
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(() => child.kill('SIGKILL'), 5000)
+      child.once('close', () => {
+        clearTimeout(timer)
+        resolve()
+      })
+      child.kill('SIGTERM')
+    })
+    if (this.child === child) this.child = null
   }
 }

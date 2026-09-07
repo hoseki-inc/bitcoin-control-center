@@ -1,0 +1,203 @@
+# Desktop app review — September 6, 2026
+
+Reviewed `c2c3a89` on `desktop-app-review`. This is a review of the current repository and newly built desktop artifacts, compared with the checked-in StartOS package (`0.2.3:1`). It does not establish which version is currently installed on a particular user's computer or Start9 server.
+
+**The desktop app builds and opens on Apple Silicon, and its core product code remains aligned with StartOS. The follow-up repairs below address the confirmed connection, wallet-shell, and Tor defects; physical-device validation and desktop release work remain.** The recent portfolio/history changes are already shared with desktop; there is no separate old desktop implementation to catch up feature by feature.
+
+No product code was changed during the initial review. Test profiles and diagnostic fixtures were isolated under `/tmp/bcc-desktop-review`; no existing portfolio data was used. The generated installers are local review builds, not published releases.
+
+## Follow-up implementation on this branch
+
+The original findings below describe the reviewed commit. A first repair addresses findings **1, 2, and 5**:
+
+- Desktop can initialize its local API and UI while Electrum connects in the background. StartOS retains its existing requirement to connect before startup completes.
+- Desktop queries continue reaching its local Sentinel instance when the computer reports no internet connection. Settings explain the disconnected state and allow retry without changing the server fields.
+- Every existing portfolio and statement provider switches to the successfully tested replacement client.
+- The replacement connection and all four settings are handled as one operation. Failed connections or SQLite transactions retain the previous client and settings; individual connection-setting writes are rejected.
+- Competing saves are rejected while a change is pending, abandoned clients are disconnected, and interrupted requests settle instead of hanging.
+
+The next repair (September 7) also addresses findings **3, 4, 6, 7, and 9**:
+
+- Ledger has a local, sandboxed chooser with explicit selection, cancellation, device arrival/removal, and cleanup when the requesting page closes or navigates. Only Ledger HID devices requested by the application frame are offered.
+- The existing Trezor Connect SDK keeps its approved `/9/popup.html` window inside Electron, with its opener intact and without Node access or an application preload. Its USB chooser is restricted to that registered popup and the SDK's Trezor device filters. Ordinary web/email links still open externally; other protocols and off-origin main-window navigation are blocked.
+- Electron 41 issues some device permission checks with a null window and `isMainFrame=false`. Native testing caught this difference from the initial mocks. Permission checks now recognize the approved origin, and the actual selection event separately verifies the requesting frame. Regression coverage includes these real event shapes.
+- Canceling Trezor's initial device request no longer starts a second account-information request. Trezor SDK debug logging is disabled.
+- Tor starts on demand using an available loopback port owned by this app, instead of assuming port 9050. Connections wait for bootstrap, including reconnects; startup timeout, missing binaries, spawn errors, and unexpected exit produce explicit failure states. A saved Tor configuration cannot fall back to a direct connection if the proxy is missing.
+- Settings display Tor readiness/errors, and the Tor toggle explains that only Electrum traffic uses it. The backend selects the configured proxy port; the frontend no longer hard-codes 9050.
+- The Mac expert-bundle Tor executable and library were unsigned and were being killed before startup. Development builds and the packaging hook now apply and verify local ad-hoc signatures. The final signing configuration also lists these binaries for future Developer ID builds. This is not notarization or release signing.
+- Quit prevents Electron from exiting until Tor stops and the local server shuts down. Startup errors show a dialog, failed HTTP binding releases database resources, and a second instance no longer enters the startup path.
+- The tray asset is copied into the application and restored/minimized windows can be shown again. The app uses a standard draggable native title bar. The unused, broken main-window preload bridge was removed entirely.
+
+**Validation:** 484 tests pass (321 shared, 83 API, 66 UI, 14 desktop), with the desktop tests now included in the normal test command and CI. Root and desktop type checks, lint, and the frontend/backend/shell builds pass. The packaged Mac app has also been exercised using Electron 41.10.4 and an isolated profile:
+
+- Ledger chooser opened through the actual browser HID API and canceled with an empty selection; its temporary listeners were removed.
+- The real Trezor SDK reached its “Connect Trezor to continue” screen in an in-app popup with an intact opener, sandbox enabled, no Node access, and no application bridge. Trezor USB selection opened and canceled; canceling the SDK popup did not open another one.
+- Main-window navigation away from the local app was blocked, and the packaged tray asset was present.
+- Bundled Tor bootstrapped and successfully negotiated a public Electrum connection through the app's chosen SOCKS port. The unrelated process already listening on 9050 was left untouched.
+- The app's Tor child had exited before Electron's `will-quit` event, both after a successful connection and when quitting during bootstrap. A failed Tor launch also returned an actionable Settings error without closing the app.
+
+The earlier packaged recovery check also passed: a previously failing profile opened Settings, successfully changed to a local test server, and retained that setting after reload. Physical wallet account import/signing, a real onion Electrum server, Windows execution, release signing/notarization, updates, and backup/restore remain acceptance work. The Mac ARM64 DMG and Windows x64 installer were both rebuilt with all repairs. Windows was cross-built only; native execution remains unverified. These repairs form the desktop review checkpoint; no release has been published.
+
+### User testing feedback
+
+The user reports that the Trezor connection now works. Full ownership signing has not yet been confirmed. Connecting to a private Electrum server through Tor was reported to be very slow; this has not yet been timed or isolated to bootstrap, network requests, or history processing. The next priority is a clear setup path for a user-owned node over LAN or direct remote access, with Tor retained as an explicit choice.
+
+## What was verified
+
+| Check                                                                          | Result                                                   | Limits                                                                                                                                                                                             |
+| ------------------------------------------------------------------------------ | -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Root TypeScript check and desktop TypeScript check                             | Passed                                                   | Desktop shell is checked separately from the workspace.                                                                                                                                            |
+| Fresh automated tests, bypassing task cache                                    | 445 passed across 40 files                               | 318 shared, 65 Sentinel, 62 frontend. No desktop-specific automated suite exists.                                                                                                                  |
+| Sentinel production build                                                      | Passed                                                   | Used the repository-compatible Node runtime.                                                                                                                                                       |
+| Desktop-mode frontend build                                                    | Passed                                                   | Confirmed Vite used `production.desktop`; desktop settings appeared at runtime. Existing bundle-size, Lottie eval, and import warnings remain.                                                     |
+| Electron shell build                                                           | Passed                                                   | Fresh packaging input was generated.                                                                                                                                                               |
+| Pinned Tor downloads                                                           | Passed                                                   | Both official archives downloaded and matched the checked-in SHA-256 values.                                                                                                                       |
+| macOS ARM64 DMG                                                                | Built, approximately 146 MB                              | Review build has an ad-hoc signature, no Developer ID identity, and no notarization verification.                                                                                                  |
+| Windows x64 NSIS installer                                                     | Built, approximately 121 MB                              | Cross-built on macOS; no Authenticode certificate in the generated installer. Not installed or executed on Windows.                                                                                |
+| macOS packaged application code                                                | Opened and rendered successfully                         | Loaded the actual packaged ASAR with Electron 41.10.4 through a test launcher that isolated userData and selected the package resources. This is not a clean-machine installation/Gatekeeper test. |
+| Home, Accounts, Add Account, Portfolio, Settings, Statements, Create Statement | Rendered                                                 | Used an empty profile and a synthetic manually entered holding.                                                                                                                                    |
+| Manual holding                                                                 | Created through the packaged API and displayed correctly | A synthetic 1,000,000-satoshi balance appeared as 0.01000000 BTC in Accounts and Portfolio.                                                                                                        |
+| Desktop Electrum settings                                                      | Rendered and reported a live SSL connection              | Full settings save behavior has defects described below.                                                                                                                                           |
+| Blob/file download                                                             | Completed successfully                                   | Exercised the download mechanism with a test file, not a complete generated statement PDF.                                                                                                         |
+| Close-to-tray behavior                                                         | Window hid without being destroyed                       | Tray image itself is absent.                                                                                                                                                                       |
+| Desktop npm dependency audit                                                   | Zero reported vulnerabilities                            | Snapshot of the npm advisory database at review time; not a full application security assessment.                                                                                                  |
+
+The documented `./desktop/build.sh` stopped on this machine because its bare `pnpm` command selected 9.12.2 instead of the pinned 10.17.0. The StartOS build already uses `corepack pnpm`. A separate host execution environment also selected Node 22.9.0, which caused the packager's CommonJS/ESM dependency load to fail. Selecting Node 22.23.2 explicitly and using Corepack resolved those environment problems; the individual application and packaging stages then passed. The full script was not represented as having passed unchanged.
+
+## Findings that should lead the work
+
+### 1. P1 — A failed Electrum connection prevents the entire desktop UI from opening
+
+**Confirmed in a runtime test.** A temporary profile configured with an unreachable Electrum endpoint produced an unhandled connection error and still had zero windows after the 20-second observation period.
+
+[Desktop startup](../desktop/src/main.ts#L46) awaits `main()` before creating the browser window. [Context initialization](../apps/api-sentinel/src/context.ts#L77) returns an error if its initial Electrum connection fails. There is no loading window, connection-recovery screen, or catch handler that gives the user a way to repair the configuration. A service port conflict on the fixed HTTP port 3400 reaches the same unhandled startup path; that condition was identified in code rather than separately reproduced.
+
+A public server outage, unavailable private server, offline laptop, or bad saved setting therefore makes the app appear broken and hides the settings needed to recover. StartOS also requires a working Electrum connection, but its service manager provides a separate health/restart surface; desktop does not.
+
+**Recommended correction:** Start the UI and local data services independently of Electrum availability. Show connection state, preserve access to cached holdings and settings, and offer retry/change-server actions. Handle database, bind-port, and other startup failures visibly as well.
+
+### 2. P1 — Switching servers does not switch portfolio and statement queries
+
+**Confirmed with two local Electrum fixtures and the current application context.** After a successful A-to-B reconnect:
+
+- `electrumStatus`/the context's active client pointed to server B.
+- The portfolio service still held the original provider and queried server A.
+- The statement service also still held the original provider and queried server A.
+
+[The reconnect function](../apps/api-sentinel/src/context.ts#L137) replaces `ctx.electrumClient` and `ctx.onchainProvider`. The already-created [portfolio service](../apps/api-sentinel/src/modules/control_center/service.ts#L70) and [statement service](../apps/api-sentinel/src/modules/statements/service.ts#L101) retain their constructor-injected provider. The old client can reconnect automatically, so this is more than a stale status indicator: subsequent requests can continue reaching the previously selected server.
+
+This also undermines changing from a public connection to a private or Tor connection. No real account identifiers were sent in the reproduction.
+
+**Recommended correction:** Make every consumer use one replaceable connection/provider owner, or explicitly replace all dependent services. Verify successful switching, failed switching, in-flight work, shutdown, and switching to/from Tor. A failed replacement should preserve the last working connection.
+
+### 3. P1 — Ledger's browser connection flow lacks its Electron device-selection integration
+
+**Confirmed missing integration; physical-device operation remains untested.** The shared [Ledger flow](../packages/ui/wallet-ui/ledger/device-store.tsx#L130) calls `TransportWebHID.create()`. The desktop shell installs neither a `select-hid-device` handler nor an alternative device-permission grant mechanism. The running window's session had zero HID-selection handlers.
+
+Electron requires the application to implement device selection/permission behavior that a normal browser supplies through its chooser. See [Electron's device-access documentation](https://www.electronjs.org/docs/latest/tutorial/devices#webhid-api).
+
+The Ledger account and signing screens are present, but the desktop integration needed to select a device is missing. StartOS running in a supported browser has the browser's chooser available.
+
+**Recommended correction:** Add a user-visible device chooser with a narrowly scoped origin/device permission policy, handle cancellation and unplugging, and verify public-key retrieval and message signing with a real Ledger.
+
+### 4. P1 — The desktop popup policy conflicts with Trezor Connect
+
+**Confirmed popup behavior, with the end-to-end wallet impact inferred from the integration.** The [Trezor service](../packages/ui/wallet-ui/trezor/trezor-service.ts#L21) uses `coreMode: 'popup'`. The [desktop new-window handler](../desktop/src/main.ts#L66) forwards every popup URL to the system browser and denies its Electron window.
+
+A runtime probe of a Trezor popup URL returned a null popup window and invoked the external-browser handler. The test intercepted the external launch rather than opening another browser. This breaks the normal in-app opener/popup relationship the shared flow expects; a physical Trezor handshake was not performed.
+
+**Recommended correction:** Implement the supported Trezor desktop integration or a carefully restricted popup arrangement, while keeping ordinary external links in the system browser. Test connect, cancellation, public-key retrieval, and signing on both operating systems.
+
+### 5. P2 — Connection settings are saved before validation succeeds, with no atomic outcome
+
+**Confirmed in code.** [Save & Reconnect](../apps/control-center/src/pages/settings/index.tsx#L202) fires four independent setting mutations without awaiting them, then attempts to reconnect. [The setting hook](../apps/control-center/src/hooks/use-local-settings.ts#L13) exposes a fire-and-forget `save`, so persistence failures do not reach the surrounding try/catch.
+
+A failed reconnect can leave the failed server configuration saved for the next launch. Separate writes can also leave a partial configuration or report success before persistence has completed. Combined with finding 1, saving a bad endpoint can prevent the next launch from offering any way to repair it.
+
+**Recommended correction:** Use one backend operation to validate/test the complete configuration, switch the runtime connection, and persist it transactionally. Surface errors and preserve a known-good configuration. Add coverage for failed persistence as well as failed connection attempts.
+
+### 6. P2 — Tor readiness, failure reporting, and process cleanup are incomplete
+
+**Confirmed in code, with partial runtime evidence.** [TorManager](../desktop/src/tor.ts#L22) resolves startup after 30 seconds even if bootstrap never completes, does not handle spawn errors or process exit, and does not consume/report stderr. [Desktop startup](../desktop/src/main.ts#L23) starts it in the background but immediately advertises its fixed SOCKS port, so a saved Tor connection can attempt to connect before Tor is usable and hit finding 1.
+
+The fixed port 9050 was already occupied by a separate Tor process on this review machine. That pre-existing process was left untouched. The manager does not distinguish its own successful startup from a port collision or another proxy listening there. Successful isolated bundled-Tor bootstrap and onion connectivity were therefore not established by this review.
+
+[Quit cleanup](../desktop/src/main.ts#L103) awaits server shutdown inside an async event listener without preventing application exit. Electron does not treat the returned promise as an exit barrier. In the quit probe, `will-quit` fired before the application's Tor stop request had been issued. The test launcher separately cleaned up its own child processes. See [Electron's application events](https://www.electronjs.org/docs/latest/api/app#event-before-quit).
+
+**Recommended correction:** Track bootstrap and child-process state explicitly, report failures in Settings, handle port ownership/collisions, and await a controlled shutdown before quitting. Route only the intended traffic through the selected proxy and explain that scope: the current Tor setting applies to Electrum, not all exchange or market-data HTTP traffic.
+
+### 7. P2 — The tray icon is absent from the source assets and installer
+
+**Confirmed by source and packaged-ASAR inspection.** [Tray creation](../desktop/src/tray.ts#L5) references `resources/tray-icon.png`. Only `desktop/resources/icon.png` exists, and the installer contains no `tray-icon` asset. The build resources configuration also does not copy that expected path into the application's runtime files.
+
+On this Mac, creating the tray with an empty image did not prevent launch, and closing the window hid it as intended. The absent visible icon still compromises discovery and restoration, especially on Windows where there is no macOS Dock fallback. Windows tray behavior needs a native test.
+
+**Recommended correction:** Ship an actual tray asset at a verified runtime path, including a macOS template icon where appropriate, and test show/hide, minimize/restore, second launch, and Quit.
+
+### 8. P2 — The universal Mac command is incompatible with the bundled Tor architecture
+
+**Confirmed by file inspection.** [The package script](../desktop/package.json#L13) advertises `--universal`, but [the downloader](../desktop/download-tor.sh#L4) only fetches macOS ARM64 Tor. The downloaded executable is ARM64-only. The main build script's default Mac build produced an ARM64 app on this host.
+
+A universal Electron wrapper cannot make the ARM64 Tor executable run on an Intel Mac. Intel Mac support is therefore not established, even if a universal packaging command completes.
+
+**Recommended correction:** Explicitly support Apple Silicon only for the next candidate, or add an Intel/universal Tor distribution strategy and native Intel verification. Keep the build commands and documented platform support consistent.
+
+### 9. P3 — The preload external-link helper cannot work in the default sandbox
+
+**Confirmed in Electron.** Calling the exposed `window.desktop.openExternal` helper threw an error because `shell` was undefined. [The preload](../desktop/src/preload.ts#L1) imports `shell` directly, while the window uses Electron's default sandboxed preload environment. Electron documents that [shell is unavailable in a sandboxed renderer](https://www.electronjs.org/docs/latest/api/shell).
+
+No current frontend caller of this helper was found, so this is a latent bridge defect rather than the cause of the normal external-link behavior, which is handled in the main process.
+
+**Recommended correction:** Remove the unused helper or replace it with a narrow validated IPC request to the main process. Do not disable the sandbox to make it work.
+
+## Parity with StartOS
+
+| Area                                                                   | Current relationship                                                                     | Desktop assessment                                                                                                                                                              |
+| ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Core architecture                                                      | Same React frontend, Sentinel API, SQLite schema and migrations                          | Aligned in source. No Hoseki Services compatibility layer was introduced.                                                                                                       |
+| Portfolio/history/custom date ranges                                   | Same implementation, including current reliability fixes                                 | Recent functionality is present in desktop; the portfolio screen rendered with a synthetic balance. Real on-chain history was not exercised.                                    |
+| Self-custody descriptors, multisig, exchanges, manual and ETF holdings | Same API and UI implementations                                                          | Feature code is shared. Manual holding was exercised; other end-to-end integrations require the checks below.                                                                   |
+| Statements and proofs                                                  | Same generation/signing code                                                             | Screens and download transport work; actual proof signing and a complete statement PDF remain unverified in Electron.                                                           |
+| Hardware wallets                                                       | Shared browser-oriented workflows                                                        | Desktop needs the Ledger and Trezor integration fixes above. File/QR alternatives still need physical-device testing.                                                           |
+| Electrum configuration                                                 | StartOS uses its required Electrs service; desktop exposes public/custom servers and Tor | Intentional difference, but desktop switching/recovery is currently defective.                                                                                                  |
+| Network                                                                | Both launchers configure mainnet                                                         | No desktop testnet selection is currently provided.                                                                                                                             |
+| Local data                                                             | Both persist Sentinel state locally                                                      | StartOS stores the `main` volume; desktop derives a data folder from Electron userData.                                                                                         |
+| Backup and restore                                                     | StartOS has SDK-managed whole-volume backups                                             | No equivalent desktop backup/restore UI or recovery workflow exists. The generic README backup instructions describe the development data path, not the installed desktop path. |
+| Service visibility                                                     | StartOS supplies health/restart controls and service configuration                       | Desktop lacks a startup recovery view, Tor status, and a straightforward diagnostic/log access surface.                                                                         |
+| Updates and releases                                                   | StartOS has version preparation, candidates, and draft-release workflows                 | Desktop has local packaging commands, version 0.1.0, and an unused updater dependency. No desktop release/candidate workflow or implemented update checks were found.           |
+| CI                                                                     | Shared code is checked, tested, and built                                                | Desktop TypeScript is checked, but the Electron shell, installers, and native launch are not built or smoke-tested in CI.                                                       |
+
+Version 0.1.0 on desktop does not itself mean the application features are old: the build copies the current shared application. It does mean there is no comparable desktop release/version discipline or easy mapping from the displayed desktop version to the latest StartOS-tested product changes.
+
+## Release and product work beyond the defects
+
+1. **Create a desktop candidate pipeline.** Build on macOS and Windows, retain test installers and checksums, record the source commit, and smoke-test the packaged application. [Current CI](../.github/workflows/ci.yml#L17) stops at a desktop type check plus the shared workspace tests/build. It can remain green while Electron-specific behavior fails.
+2. **Make signing and upgrade behavior concrete.** macOS notarization and publishing are placeholders in [the builder configuration](../desktop/electron-builder.yml#L24); no updater invocation exists despite the dependency. Decide the update policy, configure Developer ID/notarization and Windows signing, and test replacement of an older installed version. Separate desktop and StartOS package versions are reasonable if source/build identity is visible.
+3. **Add desktop data recovery.** Provide a way to locate the data folder and back up/restore the database together with its encryption key. Test migrations and restore on disposable profiles with synthetic encrypted credentials. Keep the application ID and data-location behavior stable across upgrades.
+4. **Finish the native shell.** Repair the tray, establish a draggable title area for the hidden macOS title bar, review Windows title-bar behavior, handle port conflicts, and validate normal quit, sleep/wake, second instance, minimize/restore, and disconnected startup. No custom draggable region was found in the current frontend.
+5. **Review navigation and permissions.** Add explicit allowed destinations for OS external opens and prevent unintended main-window navigation away from the local app. Review device/camera permissions with actual hardware. These are hardening items, not claims that a specific exploit was demonstrated.
+6. **Align the product presentation.** The running app still prominently shows the Hoseki logo and a “Standard for Bitcoin Verification” home banner. That is shared with StartOS and is not desktop drift, but it does not yet express the newly documented Bitcoin savings mission. Revise shared onboarding and copy while keeping currently available capabilities clear. Desktop onboarding should also help the user choose a server and understand the default public connection.
+
+## Suggested order for the next work
+
+1. **Connection reliability:** Open the UI independently of Electrum; repair provider replacement; make settings changes atomic; add retry/error states and focused regression tests.
+2. **Native wallet and process integration:** Implement Ledger device selection and supported Trezor behavior; make Tor lifecycle reliable; repair tray and controlled shutdown.
+3. **Desktop release readiness:** Decide supported architectures, standardize the build entry point, add native CI/candidates, implement signing/version identity and the chosen update behavior.
+4. **Recovery and finishing work:** Backups/restores and upgrade tests, diagnostics, sleep/wake and window behavior, and shared savings-oriented copy.
+
+This keeps the next effort centered on the desktop integration and delivery gaps. Most recent StartOS product work is already inherited through the shared code.
+
+## Remaining acceptance tests
+
+The review is sufficient to identify the current architecture, build status, reproduced failures, and priority work. It is not a release certification. Before a desktop release, complete:
+
+- Native Windows clean install, startup, native SQLite loading, tray/quit, download/save dialogs, upgrade, and uninstall behavior.
+- Apple Silicon installation through the DMG and Gatekeeper/notarization checks; Intel testing only if Intel is a supported target.
+- Ledger and Trezor public-key retrieval and signing after the integration fixes; Coldcard and Keystone file/QR workflows, including camera permission and cancellation.
+- A real public test wallet or controlled watch-only fixture through sync, transaction history, custom date ranges, proof creation, statement generation, PDF download, and font rendering.
+- Each exchange connector with authorized test credentials, plus statement import; ETF and manual-account editing and persistence across restarts.
+- A real onion Electrum endpoint, forced SOCKS port collision, Tor enable/disable with real portfolio sync, and confirmation that old server connections stop receiving requests. Cold bootstrap and a public Electrum connection through bundled Tor passed the Mac smoke test.
+- Offline launch, failed configuration save, unavailable/corrupt database, HTTP port conflict, sleep/wake, and interrupted shutdown.
+- Upgrade and whole-profile backup/restore with synthetic account history and encrypted exchange credentials.
+
+Local review artifacts are under `desktop/release/`: `Bitcoin Control Center-0.1.0-arm64.dmg` and `Bitcoin Control Center Setup 0.1.0.exe`. They are unsigned/ad-hoc review builds. No release was published.
