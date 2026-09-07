@@ -1,0 +1,6 @@
+{
+  "files": ["apps/control-center/index.html"],
+  "insertBefore": "</body>",
+  "commentSyntax": "html",
+  "cspChecked": true
+}
