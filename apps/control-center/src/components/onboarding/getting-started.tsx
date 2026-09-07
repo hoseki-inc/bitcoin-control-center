@@ -14,7 +14,6 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import { useLocalSetting } from '../../hooks/use-local-settings'
 import { PortfolioDemo } from './portfolio-demo'
-import { WelcomeReveal } from './welcome-reveal'
 
 export const ONBOARDING_KEY = 'onboarding_v1'
 
@@ -34,72 +33,66 @@ export function GettingStarted(): JSX.Element {
   }
 
   return (
-    <WelcomeReveal>
-      <Stack as="section" py={{ base: 6, md: 12 }} gap={{ base: 6, md: 10 }}>
+    <Stack as="section" py={{ base: 6, md: 12 }} gap={{ base: 6, md: 10 }}>
+      <Box>
+        <Text as="h1" textStyle="text/2xl" fontWeight="medium">
+          See your Bitcoin over time.
+        </Text>
+        <Text textStyle="text/md" color="neutral.600" mt={2}>
+          Track your balance, what you’ve added, and what you’ve withdrawn. Try a sample portfolio below.
+        </Text>
+      </Box>
+      <PortfolioDemo />
+      <Flex
+        direction={{ base: 'column', md: 'row' }}
+        justify="space-between"
+        align={{ base: 'stretch', md: 'center' }}
+        gap={5}
+        pt={6}
+      >
         <Box>
-          <Text as="h1" textStyle="text/2xl" fontWeight="medium">
-            See your Bitcoin over time.
+          <Text textStyle="text/lg" fontWeight="medium">
+            Start with one account.
           </Text>
-          <Text textStyle="text/md" color="neutral.600" mt={2}>
-            Track your balance, what you’ve added, and what you’ve withdrawn. Try a sample portfolio below.
+          <Text textStyle="text/sm" color="neutral.600" mt={1}>
+            Connect a wallet or exchange, or enter holdings yourself.
           </Text>
         </Box>
-        <PortfolioDemo />
-        <Flex
-          direction={{ base: 'column', md: 'row' }}
-          justify="space-between"
-          align={{ base: 'stretch', md: 'center' }}
-          gap={5}
-          pt={6}
-        >
-          <Box>
-            <Text textStyle="text/lg" fontWeight="medium">
-              Start with one account.
+        <Stack gap={3}>
+          <Flex gap={3} direction={{ base: 'column', sm: 'row' }}>
+            <Button isDisabled={setting.isSaving} onClick={() => void continueTo('started', '/accounts/add')}>
+              Add First Account
+            </Button>
+            <Button variant="ghost" isDisabled={setting.isSaving} onClick={() => void continueTo('dismissed', '/home')}>
+              Explore First
+            </Button>
+          </Flex>
+          {error && (
+            <Text role="alert" textStyle="text/sm" color="error.700">
+              Could not save your progress. Try again.
             </Text>
-            <Text textStyle="text/sm" color="neutral.600" mt={1}>
-              Connect a wallet or exchange, or enter holdings yourself.
-            </Text>
+          )}
+        </Stack>
+      </Flex>
+      <Accordion allowToggle>
+        <AccordionItem borderRadius="panel" px={{ base: 4, md: 6 }}>
+          <Box as="h2">
+            <AccordionButton gap={4} minH="56px" _hover={{ bg: 'transparent', color: 'neutral.600' }}>
+              <Text flex="1" textStyle="text/sm" fontWeight="medium">
+                How your data is handled
+              </Text>
+              <AccordionIcon boxSize={5} color="neutral.500" />
+            </AccordionButton>
           </Box>
-          <Stack gap={3}>
-            <Flex gap={3} direction={{ base: 'column', sm: 'row' }}>
-              <Button isDisabled={setting.isSaving} onClick={() => void continueTo('started', '/accounts/add')}>
-                Add First Account
-              </Button>
-              <Button
-                variant="ghost"
-                isDisabled={setting.isSaving}
-                onClick={() => void continueTo('dismissed', '/home')}
-              >
-                Explore First
-              </Button>
-            </Flex>
-            {error && (
-              <Text role="alert" textStyle="text/sm" color="error.700">
-                Could not save your progress. Try again.
-              </Text>
-            )}
-          </Stack>
-        </Flex>
-        <Accordion allowToggle>
-          <AccordionItem borderRadius="panel" px={{ base: 4, md: 6 }}>
-            <Box as="h2">
-              <AccordionButton gap={4} minH="56px" _hover={{ bg: 'transparent', color: 'neutral.600' }}>
-                <Text flex="1" textStyle="text/sm" fontWeight="medium">
-                  How your data is handled
-                </Text>
-                <AccordionIcon boxSize={5} color="neutral.500" />
-              </AccordionButton>
-            </Box>
-            <AccordionPanel>
-              <Text textStyle="text/sm" color="neutral.600" maxW="65ch">
-                Connections use the internet to retrieve balances. Your history is stored on your own computer or
-                server. Your private keys stay with you. Control Center can’t spend your Bitcoin.
-              </Text>
-            </AccordionPanel>
-          </AccordionItem>
-        </Accordion>
-      </Stack>
-    </WelcomeReveal>
+          <AccordionPanel>
+            <Text textStyle="text/sm" color="neutral.600" maxW="65ch">
+              Connections use the internet to retrieve balances. Your history is stored on your own computer or server.
+              Your private keys stay with you. Control Center can’t spend your Bitcoin.
+            </Text>
+          </AccordionPanel>
+        </AccordionItem>
+      </Accordion>
+    </Stack>
   )
 }
 

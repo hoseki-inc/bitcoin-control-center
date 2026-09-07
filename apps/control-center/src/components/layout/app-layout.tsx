@@ -1,5 +1,4 @@
 import { Box } from '@chakra-ui/react'
-import { motion } from '@hoseki/packages/ui/design-system/animations/motion'
 import {
   AppLayout as BaseAppLayout,
   Logo as BaseLogo,
@@ -40,28 +39,8 @@ export function AppLayout({ fullWidth }: { fullWidth?: boolean }): JSX.Element {
   )
 
   return (
-    <Box
-      display="contents"
-      sx={{
-        '& [data-app-navbar]': {
-          opacity: 1,
-          visibility: 'visible',
-          transition: `opacity 260ms ${motion.easeOut}`,
-        },
-        // Fade in alongside the content as soon as the welcome enters its reveal phase.
-        '&:has([data-welcome-phase="welcome"]) [data-app-navbar]': {
-          opacity: 0,
-          visibility: 'hidden',
-          transition: 'none',
-        },
-        '@media (prefers-reduced-motion: reduce)': {
-          '& [data-app-navbar]': { transition: 'none' },
-        },
-      }}
-    >
-      <BaseAppLayout header={header} fullWidth={fullWidth}>
-        <Outlet />
-      </BaseAppLayout>
-    </Box>
+    <BaseAppLayout header={header} fullWidth={fullWidth}>
+      <Outlet />
+    </BaseAppLayout>
   )
 }

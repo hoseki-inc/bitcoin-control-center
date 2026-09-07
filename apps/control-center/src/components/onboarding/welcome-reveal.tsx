@@ -52,13 +52,11 @@ export function WelcomeReveal({ children }: { children: ReactNode }): JSX.Elemen
             moveFocus.current = document.activeElement === welcomeRef.current
             setPhase('done')
           }}
-          position="absolute"
+          position="fixed"
           insetInline={0}
           top={0}
           w="full"
-          h="calc(100svh - 180px)"
-          minH="320px"
-          maxH="640px"
+          h="100svh"
           display="flex"
           justifyContent="center"
           alignItems="center"
@@ -109,10 +107,10 @@ export function WelcomeReveal({ children }: { children: ReactNode }): JSX.Elemen
         sx={
           phase === 'reveal'
             ? {
-                animation: `welcomeDemo 420ms ${motion.easeOut} both`,
-                '@keyframes welcomeDemo': {
-                  from: { opacity: 0, transform: 'translateY(6px)' },
-                  to: { opacity: 1, transform: 'translateY(0)' },
+                animation: `welcomeApp 420ms ${motion.easeOut} both`,
+                '@keyframes welcomeApp': {
+                  from: { opacity: 0 },
+                  to: { opacity: 1 },
                 },
                 '@media (prefers-reduced-motion: reduce)': { animation: 'none' },
               }

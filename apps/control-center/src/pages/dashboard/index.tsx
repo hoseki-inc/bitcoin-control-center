@@ -669,8 +669,9 @@ export function DashboardPage(): JSX.Element {
           </Box>
           {/* Stats row */}
           <Grid
-            templateColumns={{ base: '1fr', sm: '1fr 1fr' }}
-            gap={6}
+            templateColumns={{ base: 'minmax(0, 1fr)', sm: 'repeat(2, minmax(0, max-content))' }}
+            columnGap={{ base: 6, sm: 12, md: 16 }}
+            rowGap={6}
             mt={5}
             pt={5}
             borderTop="1px solid"
