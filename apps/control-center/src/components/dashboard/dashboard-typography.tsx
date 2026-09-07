@@ -9,10 +9,16 @@ export function DashboardCardTitle({ children }: { children: ReactNode }): JSX.E
   )
 }
 
-export function DashboardAmount({ children }: { children: ReactNode }): JSX.Element {
+export function DashboardAmount({
+  children,
+  primary = false,
+}: {
+  children: ReactNode
+  primary?: boolean
+}): JSX.Element {
   return (
     <Text
-      textStyle="text/2xl"
+      textStyle={primary ? { base: 'amount/compact', md: 'amount/primary' } : 'text/2xl'}
       fontFamily="body"
       fontWeight="medium"
       color="neutral.900"

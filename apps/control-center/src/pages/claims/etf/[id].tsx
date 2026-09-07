@@ -28,6 +28,7 @@ import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { toast } from 'sonner'
 import { BitcoinAmount } from '../../../components/bitcoin-amount'
+import { SensitiveValue } from '../../../components/sensitive-value'
 import { trpc } from '../../../trpc'
 
 export function EtfAccountDetailsPage(): JSX.Element {
@@ -161,7 +162,9 @@ export function EtfAccountDetailsPage(): JSX.Element {
             Computed balance
           </Text>
           <Text textStyle="text/xl" fontWeight="medium" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-            <BitcoinAmount btc={btcAmount} />
+            <SensitiveValue>
+              <BitcoinAmount btc={btcAmount} />
+            </SensitiveValue>
           </Text>
         </Box>
         <Divider borderColor="neutral.200" />
@@ -208,12 +211,18 @@ export function EtfAccountDetailsPage(): JSX.Element {
                             {config?.issuer ?? '—'}
                           </Text>
                         </Td>
-                        <Td isNumeric>{holding.shares}</Td>
                         <Td isNumeric>
-                          <BitcoinAmount btc={holding.btcPerShare} />
+                          <SensitiveValue>{holding.shares}</SensitiveValue>
                         </Td>
                         <Td isNumeric>
-                          <BitcoinAmount btc={Number(holding.btcSats) / 1e8} />
+                          <SensitiveValue>
+                            <BitcoinAmount btc={holding.btcPerShare} />
+                          </SensitiveValue>
+                        </Td>
+                        <Td isNumeric>
+                          <SensitiveValue>
+                            <BitcoinAmount btc={Number(holding.btcSats) / 1e8} />
+                          </SensitiveValue>
                         </Td>
                         <Td>
                           <Text textStyle="text/sm" color="neutral.600">

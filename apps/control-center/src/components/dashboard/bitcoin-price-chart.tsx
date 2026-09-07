@@ -120,7 +120,7 @@ export function BitcoinPriceChart(): JSX.Element {
       >
         <Text textStyle="text/xs" color="neutral.600">
           {latest
-            ? `${range.days === 1 ? 'Intraday' : range.days <= 30 ? 'Hourly' : 'Daily'} prices from CoinGecko · Updated ${timeLabel(latest.time)}`
+            ? `${range.days === 1 ? 'Intraday' : range.days <= 30 ? 'Hourly' : 'Daily'} prices from CoinGecko · Updated ${new Date(latest.time * 1000).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`
             : query.isLoading
               ? 'Loading Bitcoin prices…'
               : 'Could not load market data.'}

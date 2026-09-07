@@ -8,6 +8,7 @@ import { useBitcoinDisplay } from '../../hooks/use-bitcoin-display'
 import { formatBitcoin } from '../../lib/bitcoin-display'
 import { getBrowserTimezone } from '../../utils/timezone'
 import { BitcoinAmount } from '../bitcoin-amount'
+import { SensitiveValue } from '../sensitive-value'
 
 interface BalanceDataPoint {
   timestamp: string
@@ -53,7 +54,9 @@ function ChartTooltip({
         fontFamily="body"
         sx={{ fontVariantNumeric: 'tabular-nums' }}
       >
-        <BitcoinAmount btc={new Decimal(data.totalBalance).div(100_000_000)} />
+        <SensitiveValue>
+          <BitcoinAmount btc={new Decimal(data.totalBalance).div(100_000_000)} />
+        </SensitiveValue>
       </Text>
       {btcPrice > 0 && (
         <Text
@@ -63,7 +66,7 @@ function ChartTooltip({
           fontFamily="body"
           sx={{ fontVariantNumeric: 'tabular-nums' }}
         >
-          ${formatUsd(data.btcBalance, btcPrice)}
+          <SensitiveValue>${formatUsd(data.btcBalance, btcPrice)}</SensitiveValue>
         </Text>
       )}
     </Box>
@@ -115,6 +118,14 @@ export function AccumulationChart({
   const yMax = Math.max(...values)
   const yPad = yMax === yMin ? Math.max(Math.abs(yMax) * 0.1, 0.00000001) : (yMax - yMin) * 0.15
 
+  const ticks = Array.from(
+    new Set([
+      Math.max(0, Math.floor((yMin - yPad) * 1e8)),
+      Math.round((yMin + yMax) * 0.5 * 1e8),
+      Math.ceil((yMax + yPad) * 1e8),
+    ]),
+  ).map((sats) => sats / 1e8)
+
   const strokeColor = !hasActivity ? neutral400 : isUp ? success500 : error500
   const gradientId = isUp ? 'accGradientUp' : 'accGradientDown'
 
@@ -146,7 +157,7 @@ export function AccumulationChart({
           />
           <YAxis
             domain={[Math.max(0, yMin - yPad), yMax + yPad]}
-            tickCount={3}
+            ticks={ticks}
             axisLine={false}
             tickLine={false}
             tick={{ fontSize: 12, fill: axisColor, fontWeight: 500 }}

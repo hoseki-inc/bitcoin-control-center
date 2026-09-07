@@ -108,7 +108,7 @@ export function StatementCreatePage(): JSX.Element {
   const initiateMutationWithArgs = useMutation({
     mutationFn: async () => {
       if (isAfter(openingDate, closingDate)) {
-        toast.error('Start date must be after end date')
+        toast.error('Start date must be on or before end date')
         return
       }
 
@@ -133,7 +133,8 @@ export function StatementCreatePage(): JSX.Element {
     },
   })
 
-  const LEFT_COLUMN_WIDTH = '35%'
+  const LEFT_COLUMN_WIDTH = { base: 'auto', md: '35%' }
+  const invalidDateRange = isAfter(openingDate, closingDate)
 
   const hasAccounts =
     (claimsQuery.data && claimsQuery.data.length > 0) ||
@@ -144,7 +145,7 @@ export function StatementCreatePage(): JSX.Element {
     <Stack py={8} spacing={8}>
       <Panel icon={<FileCheckIcon />} title="Generate Statement">
         <Box pt={8} pb={hasAccounts ? 0 : 8} px={4}>
-          <HStack alignItems="flex-start" gap={8}>
+          <Stack alignItems="stretch" direction={{ base: 'column', md: 'row' }} gap={{ base: 4, md: 8 }}>
             <Stack gap={1} flexBasis={LEFT_COLUMN_WIDTH} flexShrink={0}>
               <Text as="h2" textStyle="text/md" fontWeight="medium">
                 What is a Bitcoin Control Center statement?
@@ -156,7 +157,7 @@ export function StatementCreatePage(): JSX.Element {
             </Stack>
 
             {hasAccounts ? (
-              <Stack gap={4} flexGrow="1">
+              <Stack gap={4} flexGrow="1" minW={0}>
                 <Stack gap={1}>
                   <Text as="h2" textStyle="text/md" fontWeight="medium">
                     Customize Your Date Range
@@ -165,13 +166,15 @@ export function StatementCreatePage(): JSX.Element {
                     Select a date range for the transaction history shown in your statement.
                   </Text>
                 </Stack>
-                <HStack spacing={5}>
+                <Stack direction={{ base: 'column', sm: 'row' }} spacing={5}>
                   <FormControl>
                     <FormLabel textStyle="label/md" fontWeight="medium" color="neutral.900" htmlFor="opening-date">
                       Start Date
                     </FormLabel>
                     <DateInput
                       id="opening-date"
+                      aria-invalid={invalidDateRange}
+                      aria-describedby={invalidDateRange ? 'date-range-error' : undefined}
                       max={new Date()}
                       min={addDays(MIN_STATEMENT_DATE, 1)}
                       value={openingDate}
@@ -186,6 +189,8 @@ export function StatementCreatePage(): JSX.Element {
                     </FormLabel>
                     <DateInput
                       id="closing-date"
+                      aria-invalid={invalidDateRange}
+                      aria-describedby={invalidDateRange ? 'date-range-error' : undefined}
                       max={new Date()}
                       value={closingDate}
                       onChange={(date) => {
@@ -199,12 +204,17 @@ export function StatementCreatePage(): JSX.Element {
                       size="md"
                     />
                   </FormControl>
-                </HStack>
+                </Stack>
+                {invalidDateRange && (
+                  <Text id="date-range-error" role="alert" textStyle="text/sm" color="error.700">
+                    Start date must be on or before end date.
+                  </Text>
+                )}
               </Stack>
             ) : (
               <StatementExampleAsEmptyState />
             )}
-          </HStack>
+          </Stack>
 
           {hasAccounts && (
             <>
@@ -231,13 +241,13 @@ export function StatementCreatePage(): JSX.Element {
                     <AccordionIcon />
                   </AccordionButton>
                   <AccordionPanel px={0} py={1}>
-                    <HStack alignItems="flex-start" gap={8}>
+                    <Stack alignItems="stretch" direction={{ base: 'column', md: 'row' }} gap={{ base: 4, md: 8 }}>
                       <Stack gap={1} flexBasis={LEFT_COLUMN_WIDTH} flexShrink={0}>
                         <Text textStyle="text/sm" color="neutral.600">
                           Add your name and address to be included on the statement.
                         </Text>
                       </Stack>
-                      <Stack gap={4} flexGrow="1">
+                      <Stack gap={4} flexGrow="1" minW={0}>
                         <FormControl>
                           <FormLabel textStyle="label/md" fontWeight="medium" color="neutral.900" htmlFor="name">
                             Name
@@ -274,7 +284,7 @@ export function StatementCreatePage(): JSX.Element {
                           />
                         </FormControl>
                       </Stack>
-                    </HStack>
+                    </Stack>
                   </AccordionPanel>
                 </AccordionItem>
               </Accordion>
@@ -283,18 +293,18 @@ export function StatementCreatePage(): JSX.Element {
 
           <chakra.hr my={8} />
 
-          <HStack alignItems="flex-start" gap={8}>
+          <Stack alignItems="stretch" direction={{ base: 'column', md: 'row' }} gap={{ base: 4, md: 8 }}>
             <Stack gap={1} flexBasis={LEFT_COLUMN_WIDTH} flexShrink={0}>
               <Text as="h2" textStyle="text/md" fontWeight="medium">
                 {hasAccounts ? 'Select Accounts' : 'First, Connect an Account.'}
               </Text>
               <Text textStyle="text/sm" color="neutral.600">
                 {hasAccounts
-                  ? 'Accounts where you’ve proven ownership.'
+                  ? 'Verified wallets and connected exchange accounts.'
                   : 'Before you can generate a bitcoin ownership statement, you’ll need to connect a wallet and verify control.'}
               </Text>
               {!hasAccounts && (
-                <Button as={Link} to="/accounts" mt={4} alignSelf="flex-start" size="sm">
+                <Button as={Link} to="/accounts/add" mt={4} alignSelf="flex-start" size="sm">
                   Connect Wallet
                 </Button>
               )}
@@ -307,27 +317,31 @@ export function StatementCreatePage(): JSX.Element {
               selectedExchangeAccountIds={selectedExchangeAccountIds}
               setSelectedExchangeAccountIds={setSelectedExchangeAccountIds}
             />
-          </HStack>
+          </Stack>
 
           {hasAccounts && (
             <Box py={4} px={0}>
-              <HStack justifyContent="space-between">
+              <Stack direction={{ base: 'column-reverse', md: 'row' }} justifyContent="space-between">
                 <Button as={Link} to={cancelPath} variant="outline">
                   Cancel
                 </Button>
-                <HStack>
-                  <Button isDisabled={!hasAnySelected} variant="outline" onClick={() => setIsPreviewModalOpen(true)}>
+                <Stack direction={{ base: 'column', sm: 'row' }}>
+                  <Button
+                    isDisabled={!hasAnySelected || invalidDateRange}
+                    variant="outline"
+                    onClick={() => setIsPreviewModalOpen(true)}
+                  >
                     Preview Statement
                   </Button>
                   <Button
-                    isDisabled={!hasAnySelected || initiateMutationWithArgs.isLoading}
+                    isDisabled={!hasAnySelected || invalidDateRange || initiateMutationWithArgs.isLoading}
                     isLoading={initiateMutationWithArgs.isLoading}
                     onClick={() => initiateMutationWithArgs.mutate()}
                   >
                     Generate Statement
                   </Button>
-                </HStack>
-              </HStack>
+                </Stack>
+              </Stack>
             </Box>
           )}
         </Box>
@@ -360,8 +374,8 @@ function StatementGenerationModal({
   ...props
 }: { statement: StatementDto | null } & Omit<ModalProps, 'children'>) {
   const completedContent = (
-    <HStack>
-      <Button as={Link} to="/portfolio" variant="outline">
+    <Stack direction={{ base: 'column', sm: 'row' }}>
+      <Button as={Link} to="/home" variant="outline">
         Back to Home
       </Button>
       {statement && (
@@ -369,7 +383,7 @@ function StatementGenerationModal({
           View Statement
         </Button>
       )}
-    </HStack>
+    </Stack>
   )
 
   return (
@@ -384,7 +398,7 @@ function StatementGenerationModal({
 
 function StatementExampleAsEmptyState() {
   return (
-    <Box position="relative">
+    <Box position="relative" maxW="360px" mx="auto">
       <Image src="/empty-view/claims-empty-state-download-example.png" alt="Example Bitcoin statement." />
     </Box>
   )

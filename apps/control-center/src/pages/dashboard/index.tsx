@@ -33,6 +33,7 @@ import {
 } from '../../components/dashboard-charts/balance-history'
 import { MonthlyNetChangeChart } from '../../components/dashboard-charts/monthly-net-change-chart'
 import { DashboardCardTitle } from '../../components/dashboard/dashboard-typography'
+import { SensitiveValue } from '../../components/sensitive-value'
 import { useAutoRefreshExchanges } from '../../hooks/use-auto-refresh-exchanges'
 import { useGetBalancesPerClaimIds } from '../../lib/balances'
 import { trpc } from '../../trpc'
@@ -559,7 +560,7 @@ export function DashboardPage(): JSX.Element {
             <Box>
               <PageHeading title="Portfolio" description="Track your Bitcoin balance and holdings over time." />
             </Box>
-            <Button size="md" flexShrink={0} onClick={handleGenerateStatement}>
+            <Button size="md" variant="outline" flexShrink={0} onClick={handleGenerateStatement}>
               Generate Statement
             </Button>
           </Flex>
@@ -603,33 +604,39 @@ export function DashboardPage(): JSX.Element {
               <Text
                 fontFamily="body"
                 sx={{ fontVariantNumeric: 'tabular-nums' }}
-                textStyle={{ base: 'text/2xl', md: 'text/4xl' }}
+                textStyle={{ base: 'amount/compact', md: 'amount/primary' }}
                 fontWeight="medium"
                 color="neutral.900"
                 overflowWrap="anywhere"
               >
-                <BitcoinAmount btc={new Decimal(displayBalanceSats).div(100_000_000)} />
+                <SensitiveValue>
+                  <BitcoinAmount btc={new Decimal(displayBalanceSats).div(100_000_000)} />
+                </SensitiveValue>
               </Text>
               <Text textStyle="text/md" color="neutral.500" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                {btcPrice === null ? 'USD unavailable' : `$${formatUsd(currentBtcFloat, btcPrice)}`}
+                <SensitiveValue>
+                  {btcPrice === null ? 'USD unavailable' : `$${formatUsd(currentBtcFloat, btcPrice)}`}
+                </SensitiveValue>
               </Text>
             </Flex>
             {periodChange !== null && (
               <Flex align="baseline" gap={1.5} flexWrap="wrap" mt={2}>
                 <Text textStyle="text/sm" color={changeColor} sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                  {periodChange.eq(0) ? (
-                    'No change'
-                  ) : (
-                    <>
-                      {isUp ? '+' : '−'}
-                      <BitcoinAmount btc={periodChange.abs().div(100_000_000)} /> ({isUp ? '+' : ''}
-                      {periodChange
-                        .div(new Decimal(toSatoshisString(historicalData[0]?.totalBalance)).abs().plus(1))
-                        .mul(100)
-                        .toFixed(1)}
-                      %)
-                    </>
-                  )}
+                  <SensitiveValue>
+                    {periodChange.eq(0) ? (
+                      'No change'
+                    ) : (
+                      <>
+                        {isUp ? '+' : '−'}
+                        <BitcoinAmount btc={periodChange.abs().div(100_000_000)} /> ({isUp ? '+' : ''}
+                        {periodChange
+                          .div(new Decimal(toSatoshisString(historicalData[0]?.totalBalance)).abs().plus(1))
+                          .mul(100)
+                          .toFixed(1)}
+                        %)
+                      </>
+                    )}
+                  </SensitiveValue>
                 </Text>
                 <Text textStyle="text/sm" color="neutral.500">
                   · {periodLabel}
@@ -671,7 +678,14 @@ export function DashboardPage(): JSX.Element {
               ) : isFullHistoryPending ? (
                 <HistoryRangeLoading height="220px" />
               ) : (
-                <AccumulationChart data={historicalData} hasActivity={hasBalance} isUp={isUp} timezone={userTimezone} />
+                <SensitiveValue>
+                  <AccumulationChart
+                    data={historicalData}
+                    hasActivity={hasBalance}
+                    isUp={isUp}
+                    timezone={userTimezone}
+                  />
+                </SensitiveValue>
               )}
               {isChartFetching && !isFullHistoryPending && (
                 <Box
@@ -715,7 +729,9 @@ export function DashboardPage(): JSX.Element {
               ) : isFullHistoryPending ? (
                 <HistoryRangeLoading height="120px" />
               ) : (
-                <MonthlyNetChangeChart data={historicalData} timezone={userTimezone} />
+                <SensitiveValue>
+                  <MonthlyNetChangeChart data={historicalData} timezone={userTimezone} />
+                </SensitiveValue>
               )}
               {isChartFetching && !isFullHistoryPending && (
                 <Box
@@ -1044,14 +1060,16 @@ function StatCard({ label, data, mode, timezone, available }: StatCardProps): JS
         color={value.eq(0) ? 'neutral.900' : isPositive ? 'success.700' : 'error.700'}
         letterSpacing="-0.02em"
       >
-        {available ? (
-          <>
-            {value.gt(0) ? '+' : ''}
-            <BitcoinAmount btc={value} />
-          </>
-        ) : (
-          '—'
-        )}
+        <SensitiveValue>
+          {available ? (
+            <>
+              {value.gt(0) ? '+' : ''}
+              <BitcoinAmount btc={value} />
+            </>
+          ) : (
+            '—'
+          )}
+        </SensitiveValue>
       </Text>
     </Box>
   )

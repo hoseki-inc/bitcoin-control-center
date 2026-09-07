@@ -24,6 +24,7 @@ import { useCallback, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { toast } from 'sonner'
 import { BitcoinAmount } from '../../../components/bitcoin-amount'
+import { SensitiveValue } from '../../../components/sensitive-value'
 import { trpc } from '../../../trpc'
 import { needsExchangeReconnect } from '../../../utils/exchange-connection-status'
 
@@ -320,7 +321,9 @@ export function StrikeAccountDetailsPage(): JSX.Element {
                 </Text>
               ) : (
                 <Text textStyle="label/sm" color="neutral.900" fontWeight="medium">
-                  <BitcoinAmount btc={btcAmount} />
+                  <SensitiveValue>
+                    <BitcoinAmount btc={btcAmount} />
+                  </SensitiveValue>
                 </Text>
               )}
             </Box>
@@ -479,10 +482,12 @@ export function StrikeAccountDetailsPage(): JSX.Element {
                             </Text>
                           </Td>
                           <Td isNumeric>
-                            <Text textStyle="text/xs" fontFamily="mono">
-                              {Number(tx.amountBtc) >= 0 ? '+' : ''}
-                              <BitcoinAmount btc={tx.amountBtc} />
-                            </Text>
+                            <SensitiveValue>
+                              <Text textStyle="text/xs" fontFamily="mono">
+                                {Number(tx.amountBtc) >= 0 ? '+' : ''}
+                                <BitcoinAmount btc={tx.amountBtc} />
+                              </Text>
+                            </SensitiveValue>
                           </Td>
                           <Td isNumeric>
                             <Text textStyle="text/xs" fontFamily="mono" color="neutral.500">

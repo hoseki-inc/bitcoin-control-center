@@ -1,4 +1,10 @@
 import {
+  AlertDialog,
+  AlertDialogBody,
+  AlertDialogContent,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogOverlay,
   Box,
   Button,
   Checkbox,
@@ -23,10 +29,11 @@ import { ErrorBanner } from '@hoseki/packages/ui/design-system'
 import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
 import { TopBar } from '@hoseki/packages/ui/prove-verify-ui/top-bar'
 import { format } from 'date-fns'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { toast } from 'sonner'
 import { BitcoinAmount } from '../../../components/bitcoin-amount'
+import { SensitiveValue } from '../../../components/sensitive-value'
 import { trpc } from '../../../trpc'
 
 const TX_TYPE_LABELS: Record<string, string> = {
@@ -42,6 +49,8 @@ export function ManualAccountDetailsPage(): JSX.Element {
   const utils = trpc.useUtils()
 
   const [isDeleting, setIsDeleting] = useState(false)
+  const [removal, setRemoval] = useState<{ kind: 'account' } | { kind: 'transaction'; id: string } | null>(null)
+  const cancelRemovalRef = useRef<HTMLButtonElement>(null)
 
   // ─── Balance update form ────────────────────────────────────────
   const [newBtcAmount, setNewBtcAmount] = useState('')
@@ -131,6 +140,7 @@ export function ManualAccountDetailsPage(): JSX.Element {
       await deleteTxMutation.mutateAsync({ transactionId })
       await invalidateAll()
       toast.success('Transaction deleted')
+      setRemoval(null)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to delete transaction')
     }
@@ -156,9 +166,6 @@ export function ManualAccountDetailsPage(): JSX.Element {
         <TopBar.Item as={Link} to="/accounts">
           Back to Accounts
         </TopBar.Item>
-        <TopBar.Item as="button" color="error.600" onClick={handleDelete}>
-          {isDeleting ? 'Removing...' : 'Remove Account'}
-        </TopBar.Item>
       </TopBar>
 
       <Stack spacing={6}>
@@ -169,9 +176,9 @@ export function ManualAccountDetailsPage(): JSX.Element {
             <PageHeading title={account.displayName} />
           </HStack>
           <HStack spacing={1}>
-            <Box w={2} h={2} bg="warning.500" borderRadius="full" />
-            <Text textStyle="text/sm" color="warning.600" fontWeight="medium">
-              Manually Added
+            <Box w={2} h={2} bg="neutral.400" borderRadius="full" />
+            <Text textStyle="text/sm" color="neutral.600" fontWeight="medium">
+              Manually tracked
             </Text>
             {account.createdAt && (
               <>
@@ -194,7 +201,9 @@ export function ManualAccountDetailsPage(): JSX.Element {
               Balance
             </Text>
             <Text textStyle="text/xl" fontWeight="medium" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-              <BitcoinAmount btc={btcAmount} />
+              <SensitiveValue>
+                <BitcoinAmount btc={btcAmount} />
+              </SensitiveValue>
             </Text>
           </Box>
           {account.balanceAsOf && (
@@ -392,9 +401,11 @@ export function ManualAccountDetailsPage(): JSX.Element {
                         </Text>
                       </Td>
                       <Td>
-                        <Text textStyle="text/sm">
-                          <BitcoinAmount btc={Number(tx.amountSats) / 1e8} />
-                        </Text>
+                        <SensitiveValue>
+                          <Text textStyle="text/sm">
+                            <BitcoinAmount btc={Number(tx.amountSats) / 1e8} />
+                          </Text>
+                        </SensitiveValue>
                       </Td>
                       <Td>
                         <Text textStyle="text/sm">{format(new Date(tx.transactedAt), 'MMM d, yyyy')}</Text>
@@ -409,7 +420,7 @@ export function ManualAccountDetailsPage(): JSX.Element {
                           size="xs"
                           variant="ghost"
                           color="error.500"
-                          onClick={() => handleDeleteTransaction(tx.id)}
+                          onClick={() => setRemoval({ kind: 'transaction', id: tx.id })}
                         >
                           Delete
                         </Button>
@@ -422,6 +433,54 @@ export function ManualAccountDetailsPage(): JSX.Element {
           </Box>
         )}
       </Stack>
+      <Box mt={8} pt={5} borderTop="1px solid" borderColor="neutral.200">
+        <Button variant="ghost" color="error.700" onClick={() => setRemoval({ kind: 'account' })}>
+          Remove Account
+        </Button>
+      </Box>
+      <AlertDialog
+        isOpen={removal !== null}
+        leastDestructiveRef={cancelRemovalRef}
+        onClose={() => {
+          if (!isDeleting && !deleteTxMutation.isLoading) setRemoval(null)
+        }}
+        closeOnOverlayClick={!isDeleting && !deleteTxMutation.isLoading}
+        closeOnEsc={!isDeleting && !deleteTxMutation.isLoading}
+        isCentered
+      >
+        <AlertDialogOverlay>
+          <AlertDialogContent mx={4} borderRadius="dialog">
+            <AlertDialogHeader textStyle="text/xl">
+              {removal?.kind === 'account' ? 'Remove account?' : 'Remove transaction?'}
+            </AlertDialogHeader>
+            <AlertDialogBody textStyle="text/md">
+              {removal?.kind === 'account'
+                ? `This removes “${account.displayName}” and its manually recorded history from Control Center. Your Bitcoin is not moved. This cannot be undone.`
+                : 'This removes the selected transaction from your local records. This cannot be undone.'}
+            </AlertDialogBody>
+            <AlertDialogFooter gap={3}>
+              <Button
+                ref={cancelRemovalRef}
+                variant="outline"
+                onClick={() => setRemoval(null)}
+                isDisabled={isDeleting || deleteTxMutation.isLoading}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="error"
+                isLoading={isDeleting || deleteTxMutation.isLoading}
+                onClick={() => {
+                  if (removal?.kind === 'account') void handleDelete()
+                  else if (removal) void handleDeleteTransaction(removal.id)
+                }}
+              >
+                Remove
+              </Button>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialogOverlay>
+      </AlertDialog>
     </Box>
   )
 }

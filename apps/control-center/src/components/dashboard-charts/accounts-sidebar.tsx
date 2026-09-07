@@ -10,6 +10,7 @@ import type { ClaimDto } from '../../trpc/server-types'
 import { ensureClaimStatusNotExpired, mapClaimToClaimCardProps } from '../../utils/claim-utils'
 import { needsExchangeReconnect } from '../../utils/exchange-connection-status'
 import { BitcoinAmount } from '../bitcoin-amount'
+import { SensitiveValue } from '../sensitive-value'
 
 type ExchangeAccountDto = RouterOutput['portalProve']['exchange']['list'][number]
 type ManualAccountDto = RouterOutput['portalProve']['manual']['list'][number]
@@ -194,7 +195,9 @@ export function AccountsSidebar({
               fontWeight="medium"
               color="neutral.600"
             >
-              <BitcoinAmount btc={totalBtc} />
+              <SensitiveValue>
+                <BitcoinAmount btc={totalBtc} />
+              </SensitiveValue>
             </Text>
           </>
         ) : (
@@ -210,17 +213,21 @@ export function AccountsSidebar({
                 fontWeight="medium"
                 color="neutral.600"
               >
-                <BitcoinAmount btc={totalBtc} />
+                <SensitiveValue>
+                  <BitcoinAmount btc={totalBtc} />
+                </SensitiveValue>
               </Text>
             </Flex>
             <Text
               textStyle="text/xs"
-              color="success.600"
+              color="neutral.600"
               mt={1}
               fontFamily="body"
               sx={{ fontVariantNumeric: 'tabular-nums' }}
             >
-              ${totalUsd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              <SensitiveValue>
+                ${totalUsd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </SensitiveValue>
             </Text>
           </>
         )}
@@ -398,7 +405,7 @@ function ExchangeAccountPill({
             fontWeight="medium"
             color={needsReconnect ? 'neutral.400' : 'neutral.600'}
           >
-            {needsReconnect ? '—' : <BitcoinAmount btc={btcAmount} />}
+            <SensitiveValue>{needsReconnect ? '—' : <BitcoinAmount btc={btcAmount} />}</SensitiveValue>
           </Text>
           {!needsReconnect && <MiniPieChart pct={parseFloat(pct)} />}
         </Flex>
@@ -422,7 +429,7 @@ function ExchangeAccountPill({
               fontWeight="medium"
               color={needsReconnect ? 'neutral.400' : 'neutral.600'}
             >
-              {needsReconnect ? '—' : <BitcoinAmount btc={btcAmount} />}
+              <SensitiveValue>{needsReconnect ? '—' : <BitcoinAmount btc={btcAmount} />}</SensitiveValue>
             </Text>
           </Flex>
           {!needsReconnect && (
@@ -484,14 +491,14 @@ function ManualAccountPill({
           w={compact ? '20px' : '32px'}
           h={compact ? '20px' : '32px'}
           borderRadius={compact ? '4px' : '8px'}
-          bg="warning.50"
+          bg="neutral.100"
           align="center"
           justify="center"
           flexShrink={0}
         >
           <ManualNoteIcon boxSize={compact ? '12px' : '18px'} />
         </Flex>
-        <Tooltip label={compact ? `${name} · Manually added` : name} openDelay={300} hasArrow>
+        <Tooltip label={compact ? `${name} · Manually tracked` : name} openDelay={300} hasArrow>
           <Text textStyle="text/sm" fontWeight="medium" color="neutral.900" isTruncated flex={1}>
             {name}
           </Text>
@@ -507,15 +514,17 @@ function ManualAccountPill({
             fontWeight="medium"
             color="neutral.600"
           >
-            <BitcoinAmount btc={btcAmount} />
+            <SensitiveValue>
+              <BitcoinAmount btc={btcAmount} />
+            </SensitiveValue>
           </Text>
           <MiniPieChart pct={parseFloat(pct)} />
         </Flex>
       ) : (
         <>
           <Flex direction="column" align="flex-start" gap={2}>
-            <Text textStyle="text/xs" color="warning.700" fontWeight="medium">
-              Manually Added
+            <Text textStyle="text/xs" color="neutral.600" fontWeight="medium">
+              Manually tracked
             </Text>
             <Text
               fontFamily="body"
@@ -524,7 +533,9 @@ function ManualAccountPill({
               fontWeight="medium"
               color="neutral.600"
             >
-              <BitcoinAmount btc={btcAmount} />
+              <SensitiveValue>
+                <BitcoinAmount btc={btcAmount} />
+              </SensitiveValue>
             </Text>
           </Flex>
           <AccountFiat btcAmount={btcAmount} btcPrice={btcPrice} />
@@ -537,7 +548,7 @@ function ManualAccountPill({
 
 function ManualNoteIcon(props: { boxSize?: string }): JSX.Element {
   return (
-    <Icon viewBox="0 0 24 24" color="warning.700" {...props}>
+    <Icon viewBox="0 0 24 24" color="neutral.600" {...props}>
       <path
         d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
         stroke="currentColor"
@@ -654,7 +665,9 @@ function AccountPill({
             fontWeight="medium"
             color="neutral.600"
           >
-            <BitcoinAmount btc={btcAmount} />
+            <SensitiveValue>
+              <BitcoinAmount btc={btcAmount} />
+            </SensitiveValue>
           </Text>
           <MiniPieChart pct={parseFloat(pct)} />
         </Flex>
@@ -683,7 +696,9 @@ function AccountPill({
               fontWeight="medium"
               color="neutral.600"
             >
-              <BitcoinAmount btc={btcAmount} />
+              <SensitiveValue>
+                <BitcoinAmount btc={btcAmount} />
+              </SensitiveValue>
             </Text>
           </Flex>
           <AccountFiat btcAmount={btcAmount} btcPrice={btcPrice} />
@@ -724,7 +739,7 @@ function HistorySyncedCheckmark({ compact }: { compact: boolean }): JSX.Element 
           },
         }}
       >
-        <CheckCircleFilledIcon color="success.600" color2="white" boxSize={compact ? '12px' : '14px'} />
+        <CheckCircleFilledIcon color="neutral.600" color2="white" boxSize={compact ? '12px' : '14px'} />
       </Box>
     </Tooltip>
   )
@@ -796,7 +811,7 @@ function MiniPieChart({ pct }: { pct: number }): JSX.Element {
     <Tooltip label={`${displayPct} of total stack`} openDelay={200} hasArrow>
       <Box
         as="svg"
-        color="success.600"
+        color="neutral.600"
         w={`${size}px`}
         h={`${size}px`}
         flexShrink={0}
@@ -830,9 +845,11 @@ function MiniPieChart({ pct }: { pct: number }): JSX.Element {
 function AccountFiat({ btcAmount, btcPrice }: { btcAmount: number; btcPrice?: number | null }): JSX.Element {
   return (
     <Text textStyle="text/xs" color="neutral.500" mt={1} sx={{ fontVariantNumeric: 'tabular-nums' }}>
-      {btcPrice == null
-        ? 'USD unavailable'
-        : (btcAmount * btcPrice).toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
+      <SensitiveValue>
+        {btcPrice == null
+          ? 'USD unavailable'
+          : (btcAmount * btcPrice).toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
+      </SensitiveValue>
     </Text>
   )
 }
@@ -844,12 +861,12 @@ function ProportionBar({ pct }: { pct: string }): JSX.Element {
         <Text textStyle="text/xs" color="neutral.500">
           Share of portfolio
         </Text>
-        <Text textStyle="text/xs" fontWeight="medium" color="success.700" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+        <Text textStyle="text/xs" fontWeight="medium" color="neutral.700" sx={{ fontVariantNumeric: 'tabular-nums' }}>
           {pct}%
         </Text>
       </Flex>
       <Box h="3px" bg="neutral.100" borderRadius="full" overflow="hidden">
-        <Box h="100%" w={`${Math.min(100, Math.max(0, parseFloat(pct)))}%`} bg="success.600" borderRadius="full" />
+        <Box h="100%" w={`${Math.min(100, Math.max(0, parseFloat(pct)))}%`} bg="neutral.600" borderRadius="full" />
       </Box>
     </Box>
   )
@@ -874,7 +891,7 @@ function MultisigMiniAvatar({ ks, ...positionProps }: MultisigMiniAvatarProps): 
       >
         {ks.isVerified && (
           <KeystoreAvatar.Badge boxSize="10px" bottom="0" right="-1px">
-            <CheckCircleFilledIcon color="success.600" color2="white" boxSize="10px" />
+            <CheckCircleFilledIcon color="neutral.600" color2="white" boxSize="10px" />
           </KeystoreAvatar.Badge>
         )}
       </KeystoreAvatar>

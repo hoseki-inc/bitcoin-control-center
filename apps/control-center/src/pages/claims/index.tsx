@@ -10,6 +10,7 @@ import {
   Grid,
   HStack,
   Icon,
+  IconButton,
   Stack,
   Text,
   useDisclosure,
@@ -17,12 +18,13 @@ import {
 import { EmptyView, ErrorBanner, Spinner } from '@hoseki/packages/ui/design-system'
 import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
 import { ClaimCardKeystores, StatusBadge, getBadgeConfigForClaim } from '@hoseki/packages/ui/prove-verify-ui'
-import { ChartNoAxesCombined, PlusIcon } from 'lucide-react'
-import { useEffect } from 'react'
+import { ChartNoAxesCombined, LayoutGridIcon, ListIcon, PlusIcon } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router'
 import { toast } from 'sonner'
 import { BitcoinAmount } from '../../components/bitcoin-amount'
 import { DeleteClaimModal } from '../../components/claims/claim-details/delete-claim-modal'
+import { SensitiveValue } from '../../components/sensitive-value'
 import { useAutoRefreshExchanges } from '../../hooks/use-auto-refresh-exchanges'
 import { useQueryErrorToast } from '../../hooks/use-query-error-toast'
 import { useGetBalancesPerClaimIds } from '../../lib/balances'
@@ -37,6 +39,7 @@ type ManualAccountDto = RouterOutput['portalProve']['manual']['list'][number]
 type EtfAccountDto = RouterOutput['portalProve']['etf']['list'][number]
 
 export function ClaimsPage(): JSX.Element {
+  const [view, setView] = useState<'list' | 'cards'>('list')
   useAutoRefreshExchanges()
   const navigate = useNavigate()
   const location = useLocation()
@@ -121,9 +124,8 @@ export function ClaimsPage(): JSX.Element {
   const limit = claimCountLimitQuery?.data ?? null
   const hasClaims =
     claims.length > 0 || exchangeAccounts.length > 0 || manualAccounts.length > 0 || etfAccounts.length > 0
-  const verifiedCount =
-    claims.filter((c) => ensureClaimStatusNotExpired(c) === 'verified').length + connectedExchangeAccounts.length
-  const pendingCount = claims.length - (verifiedCount - connectedExchangeAccounts.length)
+  const verifiedCount = claims.filter((c) => ensureClaimStatusNotExpired(c) === 'verified').length
+  const pendingCount = claims.length - verifiedCount
 
   const claimTotalBtcSats = balancesQuery.data
     ? Array.from(balancesQuery.data.values()).reduce((sum, b) => {
@@ -149,6 +151,9 @@ export function ClaimsPage(): JSX.Element {
 
   const totalBtcSats = claimTotalBtcSats + exchangeTotalBtcSats + manualTotalBtcSats + etfTotalBtcSats
   const totalBtc = totalBtcSats / 100_000_000
+  const hasUnknownBalance =
+    claims.some((claim) => !balancesQuery.data?.get(claim.id)) ||
+    [...exchangeAccounts, ...manualAccounts, ...etfAccounts].some((account) => account.balance === null)
 
   const btcUsdPrice = btcPriceQuery.data?.value ? Number(btcPriceQuery.data.value) : null
 
@@ -207,7 +212,7 @@ export function ClaimsPage(): JSX.Element {
         {/* Header */}
         <Flex align="flex-start" justify="space-between" pb={6} gap={4} flexWrap="wrap">
           <Box>
-            <PageHeading title="My Holdings" description="Manage your wallets, exchanges, and Bitcoin holdings." />
+            <PageHeading title="Accounts" description="Manage your wallets, exchanges, and Bitcoin holdings." />
           </Box>
           {hasClaims && (
             <Button leftIcon={<PlusIcon size={16} />} onClick={() => navigate('/accounts/add')}>
@@ -220,26 +225,39 @@ export function ClaimsPage(): JSX.Element {
           <Flex align="center" justify="space-between" gap={4} flexWrap="wrap" mb={6}>
             <Flex align="baseline" gap={3} flexWrap="wrap" minW={0}>
               <Text
-                textStyle="text/xl"
+                textStyle={{ base: 'amount/compact', md: 'amount/primary' }}
                 fontWeight="medium"
                 color="neutral.900"
                 fontFamily="body"
                 sx={{ fontVariantNumeric: 'tabular-nums' }}
                 overflowWrap="anywhere"
               >
-                <BitcoinAmount btc={totalBtc.toFixed(8)} />
+                <SensitiveValue>{hasUnknownBalance ? '—' : <BitcoinAmount btc={totalBtc.toFixed(8)} />}</SensitiveValue>
               </Text>
               <Text textStyle="text/sm" color="neutral.500" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                ${totalUsd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                <SensitiveValue>
+                  {hasUnknownBalance
+                    ? 'Some balances are unavailable'
+                    : btcUsdPrice === null
+                      ? 'USD unavailable'
+                      : totalUsd.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
+                </SensitiveValue>
               </Text>
             </Flex>
             <Flex align="center" gap={3} flexWrap="wrap" aria-label="Account verification status">
-              <Flex align="center" gap={1.5}>
-                {verifiedCount > 0 && <VerifiedBadge />}
-                <Text textStyle="text/sm" color={verifiedCount > 0 ? 'success.700' : 'neutral.500'}>
-                  {verifiedCount === 0 ? 'No verified accounts' : `${verifiedCount} verified`}
+              {claims.length > 0 && (
+                <Flex align="center" gap={1.5}>
+                  {verifiedCount > 0 && <VerifiedBadge />}
+                  <Text textStyle="text/sm" color={verifiedCount > 0 ? 'success.700' : 'neutral.500'}>
+                    {verifiedCount === 0 ? 'No verified wallets' : `${verifiedCount} verified wallets`}
+                  </Text>
+                </Flex>
+              )}
+              {connectedExchangeAccounts.length > 0 && (
+                <Text textStyle="text/sm" color="neutral.600">
+                  {connectedExchangeAccounts.length} connected exchanges
                 </Text>
-              </Flex>
+              )}
               {pendingCount > 0 && (
                 <Text textStyle="text/sm" color="warning.700">
                   {pendingCount} pending
@@ -249,45 +267,112 @@ export function ClaimsPage(): JSX.Element {
           </Flex>
         )}
 
+        {hasClaims && (
+          <Flex justify="flex-end" gap={1} mb={3} role="group" aria-label="Account view">
+            <IconButton
+              aria-label="List view"
+              aria-pressed={view === 'list'}
+              icon={<ListIcon size={18} />}
+              variant={view === 'list' ? 'outline' : 'ghost'}
+              onClick={() => setView('list')}
+            />
+            <IconButton
+              aria-label="Card view"
+              aria-pressed={view === 'cards'}
+              icon={<LayoutGridIcon size={18} />}
+              variant={view === 'cards' ? 'outline' : 'ghost'}
+              onClick={() => setView('cards')}
+            />
+          </Flex>
+        )}
         {/* Account cards */}
         {hasClaims ? (
-          <Grid templateColumns={{ base: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(3, 1fr)' }} gap={4}>
-            {claims.map((claim) => (
-              <AccountCard
-                key={claim.id}
-                claim={claim}
-                balance={balancesQuery.data?.get(claim.id) ?? null}
-                totalBtcSats={totalBtcSats}
-                isLoadingBalance={balancesQuery.isLoading}
-              />
-            ))}
-            {exchangeAccounts.map((account) => (
-              <ExchangeAccountCard
-                key={account.id}
-                account={account}
-                totalBtcSats={totalBtcSats}
-                btcUsdPrice={btcUsdPrice}
-              />
-            ))}
-            {manualAccounts.map((account) => (
-              <ManualAccountCard
-                key={account.id}
-                account={account}
-                totalBtcSats={totalBtcSats}
-                btcUsdPrice={btcUsdPrice}
-              />
-            ))}
-            {etfAccounts.map((account) => (
-              <ManualAccountCard
-                key={account.id}
-                account={{ ...account, balance: account.balance }}
-                totalBtcSats={totalBtcSats}
-                btcUsdPrice={btcUsdPrice}
-                linkPrefix="/accounts/etf"
-              />
-            ))}
-            <AddAccountCard onClick={() => navigate('/accounts/add')} />
-          </Grid>
+          view === 'list' ? (
+            <Stack spacing={0} borderTop="1px solid" borderColor="neutral.200">
+              {claims.map((claim) => (
+                <AccountRow
+                  key={claim.id}
+                  name={claim.displayName ?? claim.officialName ?? 'Wallet'}
+                  to={
+                    claim.keystores.length > 1 && claim.status === 'pending'
+                      ? `/multisig/${claim.id}`
+                      : `/accounts/${claim.id}`
+                  }
+                  detail={getBadgeConfigForClaim(ensureClaimStatusNotExpired(claim)).label}
+                  sats={balancesQuery.data?.get(claim.id)?.current?.toString() ?? null}
+                  btcPrice={btcUsdPrice}
+                />
+              ))}
+              {exchangeAccounts.map((account) => (
+                <AccountRow
+                  key={account.id}
+                  name={account.displayName}
+                  to={`${(exchangeConfig[account.exchange] ?? defaultExchangeConfig).detailsPath}/${account.id}`}
+                  detail={`${(exchangeConfig[account.exchange] ?? defaultExchangeConfig).label} · ${isExchangeConnected(account) ? 'Connected' : 'Reconnect needed'}`}
+                  sats={account.balance}
+                  btcPrice={btcUsdPrice}
+                />
+              ))}
+              {manualAccounts.map((account) => (
+                <AccountRow
+                  key={account.id}
+                  name={account.displayName}
+                  to={`/accounts/manual/${account.id}`}
+                  detail="Manually tracked Bitcoin"
+                  sats={account.balance}
+                  btcPrice={btcUsdPrice}
+                />
+              ))}
+              {etfAccounts.map((account) => (
+                <AccountRow
+                  key={account.id}
+                  name={account.displayName}
+                  to={`/accounts/etf/${account.id}`}
+                  detail="Manually tracked ETF"
+                  sats={account.balance}
+                  btcPrice={btcUsdPrice}
+                />
+              ))}
+            </Stack>
+          ) : (
+            <Grid templateColumns={{ base: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(3, 1fr)' }} gap={4}>
+              {claims.map((claim) => (
+                <AccountCard
+                  key={claim.id}
+                  claim={claim}
+                  balance={balancesQuery.data?.get(claim.id) ?? null}
+                  totalBtcSats={totalBtcSats}
+                  isLoadingBalance={balancesQuery.isLoading}
+                />
+              ))}
+              {exchangeAccounts.map((account) => (
+                <ExchangeAccountCard
+                  key={account.id}
+                  account={account}
+                  totalBtcSats={totalBtcSats}
+                  btcUsdPrice={btcUsdPrice}
+                />
+              ))}
+              {manualAccounts.map((account) => (
+                <ManualAccountCard
+                  key={account.id}
+                  account={account}
+                  totalBtcSats={totalBtcSats}
+                  btcUsdPrice={btcUsdPrice}
+                />
+              ))}
+              {etfAccounts.map((account) => (
+                <ManualAccountCard
+                  key={account.id}
+                  account={{ ...account, balance: account.balance }}
+                  totalBtcSats={totalBtcSats}
+                  btcUsdPrice={btcUsdPrice}
+                  linkPrefix="/accounts/etf"
+                />
+              ))}
+              <AddAccountCard onClick={() => navigate('/accounts/add')} />
+            </Grid>
+          )
         ) : (
           <EmptyHoldings onAdd={() => navigate('/accounts/add')} />
         )}
@@ -406,6 +491,10 @@ function AccountCard({ claim, balance, totalBtcSats, isLoadingBalance }: Account
       <Stack gap={0} mx={4} mt={1}>
         {isLoadingBalance ? (
           <Box h="24px" w="120px" bg="neutral.50" borderRadius="4px" mx="auto" />
+        ) : !balance ? (
+          <Text textStyle="text/sm" color="neutral.600">
+            Balance unavailable
+          </Text>
         ) : (
           <>
             <Text
@@ -416,10 +505,14 @@ function AccountCard({ claim, balance, totalBtcSats, isLoadingBalance }: Account
               color="neutral.900"
               letterSpacing="-0.02em"
             >
-              <BitcoinAmount btc={btcAmount.toFixed(8)} />
+              <SensitiveValue>
+                <BitcoinAmount btc={btcAmount.toFixed(8)} />
+              </SensitiveValue>
             </Text>
-            <Text textStyle="text/sm" fontWeight="medium" color="success.600">
-              ${usdAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            <Text textStyle="text/sm" fontWeight="medium" color="neutral.600">
+              <SensitiveValue>
+                ${usdAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </SensitiveValue>
             </Text>
           </>
         )}
@@ -428,13 +521,7 @@ function AccountCard({ claim, balance, totalBtcSats, isLoadingBalance }: Account
       {/* Proportion bar */}
       <Flex align="center" gap={2.5} mx={4} mt={1}>
         <Box flex={1} h="3px" bg="neutral.50" borderRadius="2px" overflow="hidden">
-          <Box
-            h="100%"
-            w={`${Math.max(parseFloat(pct), 1.5)}%`}
-            bg="success.600"
-            borderRadius="2px"
-            transition="width 0.4s ease"
-          />
+          <Box h="100%" w={`${Math.max(parseFloat(pct), 1.5)}%`} bg="neutral.400" borderRadius="2px" />
         </Box>
         <Text
           textStyle="text/xs"
@@ -632,11 +719,15 @@ function ExchangeAccountCard({ account, totalBtcSats, btcUsdPrice }: ExchangeAcc
               color="neutral.900"
               letterSpacing="-0.02em"
             >
-              <BitcoinAmount btc={btcAmount.toFixed(8)} />
+              <SensitiveValue>
+                <BitcoinAmount btc={btcAmount.toFixed(8)} />
+              </SensitiveValue>
             </Text>
             {usdAmount !== null && (
-              <Text textStyle="text/sm" fontWeight="medium" color="success.600">
-                ${usdAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              <Text textStyle="text/sm" fontWeight="medium" color="neutral.600">
+                <SensitiveValue>
+                  ${usdAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </SensitiveValue>
               </Text>
             )}
           </>
@@ -646,13 +737,7 @@ function ExchangeAccountCard({ account, totalBtcSats, btcUsdPrice }: ExchangeAcc
       {/* Proportion bar */}
       <Flex align="center" gap={2.5} mx={4} mt={1}>
         <Box flex={1} h="3px" bg="neutral.50" borderRadius="2px" overflow="hidden">
-          <Box
-            h="100%"
-            w={`${Math.max(parseFloat(pct), 1.5)}%`}
-            bg="success.600"
-            borderRadius="2px"
-            transition="width 0.4s ease"
-          />
+          <Box h="100%" w={`${Math.max(parseFloat(pct), 1.5)}%`} bg="neutral.400" borderRadius="2px" />
         </Box>
         <Text
           textStyle="text/xs"
@@ -709,7 +794,7 @@ function ManualAccountCard({
     >
       {/* Top row: status badge */}
       <HStack>
-        <StatusBadge status="warning" label="Manually Added" size="sm" ml="auto" />
+        <StatusBadge status="neutral" label="Manually tracked" size="sm" ml="auto" />
       </HStack>
 
       {/* Manual icon */}
@@ -736,11 +821,15 @@ function ManualAccountCard({
           color="neutral.900"
           letterSpacing="-0.02em"
         >
-          <BitcoinAmount btc={btcAmount.toFixed(8)} />
+          <SensitiveValue>
+            <BitcoinAmount btc={btcAmount.toFixed(8)} />
+          </SensitiveValue>
         </Text>
         {usdAmount !== null && (
-          <Text textStyle="text/sm" fontWeight="medium" color="success.600">
-            ${usdAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          <Text textStyle="text/sm" fontWeight="medium" color="neutral.600">
+            <SensitiveValue>
+              ${usdAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </SensitiveValue>
           </Text>
         )}
       </Stack>
@@ -748,13 +837,7 @@ function ManualAccountCard({
       {/* Proportion bar */}
       <Flex align="center" gap={2.5} mx={4} mt={1}>
         <Box flex={1} h="3px" bg="neutral.50" borderRadius="2px" overflow="hidden">
-          <Box
-            h="100%"
-            w={`${Math.max(parseFloat(pct), 1.5)}%`}
-            bg="success.600"
-            borderRadius="2px"
-            transition="width 0.4s ease"
-          />
+          <Box h="100%" w={`${Math.max(parseFloat(pct), 1.5)}%`} bg="neutral.400" borderRadius="2px" />
         </Box>
         <Text
           textStyle="text/xs"
@@ -861,5 +944,60 @@ function ArchivedClaimRow({ claim, onRestore, isRestoring, isRestoreDisabled }: 
       </Flex>
       <DeleteClaimModal action="deletePermanently" isOpen={isOpen} onClose={onClose} claim={claim} />
     </>
+  )
+}
+
+function AccountRow({
+  name,
+  to,
+  detail,
+  sats,
+  btcPrice,
+}: {
+  name: string
+  to: string
+  detail: string
+  sats: string | null
+  btcPrice: number | null
+}): JSX.Element {
+  const btc = sats === null ? null : Number(sats) / 100_000_000
+  return (
+    <Flex
+      as={Link}
+      to={to}
+      align="center"
+      justify="space-between"
+      gap={4}
+      py={5}
+      px={3}
+      borderBottom="1px solid"
+      borderColor="neutral.200"
+      minW={0}
+      flexWrap="wrap"
+      transition="background-color 150ms ease"
+      _hover={{ bg: 'neutral.50' }}
+      _focusVisible={{ outline: '2px solid', outlineColor: 'activeState.80', outlineOffset: '2px' }}
+    >
+      <Box flex="1" minW="140px">
+        <Text textStyle="text/md" fontWeight="medium" overflowWrap="anywhere">
+          {name}
+        </Text>
+        <Text textStyle="text/sm" color="neutral.600" mt={1}>
+          {detail}
+        </Text>
+      </Box>
+      <Box textAlign="right" minW={0} sx={{ fontVariantNumeric: 'tabular-nums' }}>
+        <Text textStyle="text/lg" fontWeight="medium">
+          <SensitiveValue>{btc === null ? '—' : <BitcoinAmount btc={btc.toFixed(8)} />}</SensitiveValue>
+        </Text>
+        <Text textStyle="text/sm" color="neutral.600" mt={1}>
+          <SensitiveValue>
+            {btc === null || btcPrice === null
+              ? 'USD unavailable'
+              : (btc * btcPrice).toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
+          </SensitiveValue>
+        </Text>
+      </Box>
+    </Flex>
   )
 }

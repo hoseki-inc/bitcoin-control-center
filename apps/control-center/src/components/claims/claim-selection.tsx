@@ -30,6 +30,7 @@ import { trpc } from '../../trpc'
 import { withStatusBalance } from '../../utils/claim-utils'
 import { isExchangeConnected, needsExchangeReconnect } from '../../utils/exchange-connection-status'
 import { BitcoinAmount } from '../bitcoin-amount'
+import { SensitiveValue } from '../sensitive-value'
 
 interface ClaimSelectionProps extends StackProps {
   disabledClaims?: Set<string>
@@ -194,12 +195,14 @@ export function ClaimSelection({
                   </HStack>
                 </Td>
                 <Td px={0} isNumeric>
-                  <Text textStyle="text/sm" fontWeight="medium" whiteSpace="nowrap">
-                    {renderBalance(balanceWithStatus)}
-                  </Text>
+                  <SensitiveValue>
+                    <Text textStyle="text/sm" fontWeight="medium" whiteSpace="nowrap">
+                      {renderBalance(balanceWithStatus)}
+                    </Text>
+                  </SensitiveValue>
                 </Td>
                 <Td px={0} isNumeric>
-                  {renderUsdAmount(balanceWithStatus)}
+                  <SensitiveValue>{renderUsdAmount(balanceWithStatus)}</SensitiveValue>
                 </Td>
               </Tr>
             )
@@ -241,14 +244,18 @@ export function ClaimSelection({
                   </HStack>
                 </Td>
                 <Td px={0} isNumeric>
-                  <Text textStyle="text/sm" fontWeight="medium" whiteSpace="nowrap">
-                    {needsReconnect ? '—' : <BitcoinAmount btc={new Decimal(btcSats).div(100_000_000)} />}
-                  </Text>
+                  <SensitiveValue>
+                    <Text textStyle="text/sm" fontWeight="medium" whiteSpace="nowrap">
+                      {needsReconnect ? '—' : <BitcoinAmount btc={new Decimal(btcSats).div(100_000_000)} />}
+                    </Text>
+                  </SensitiveValue>
                 </Td>
                 <Td px={0} isNumeric>
-                  <Text textStyle="text/sm" fontWeight="medium" color="success.600" whiteSpace="nowrap">
-                    {!needsReconnect && usdAmount !== null ? formatUsd(usdAmount.toFixed(2)) : '—'}
-                  </Text>
+                  <SensitiveValue>
+                    <Text textStyle="text/sm" fontWeight="medium" color="success.600" whiteSpace="nowrap">
+                      {!needsReconnect && usdAmount !== null ? formatUsd(usdAmount.toFixed(2)) : '—'}
+                    </Text>
+                  </SensitiveValue>
                 </Td>
               </Tr>
             )
@@ -273,7 +280,7 @@ export function ClaimSelection({
             </Th>
             <Th px={0} isNumeric colSpan={2}>
               <Text textStyle="text/md" fontWeight="medium" color="success.600">
-                {formatUsd(totalUsdSelected.toFixed(2))}
+                <SensitiveValue>{formatUsd(totalUsdSelected.toFixed(2))}</SensitiveValue>
               </Text>
             </Th>
           </Tr>
@@ -304,7 +311,7 @@ function renderUsdAmount(balance: BalanceWithStatus) {
     )
   return (
     <Text textStyle="text/sm" fontWeight="medium" color="success.600" whiteSpace="nowrap">
-      {formatUsd(balance.value.usd.toFixed(2))}
+      <SensitiveValue>{formatUsd(balance.value.usd.toFixed(2))}</SensitiveValue>
     </Text>
   )
 }

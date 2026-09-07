@@ -13,6 +13,8 @@ const mocks = vi.hoisted(() => ({
   history: [] as Array<{ timestamp: string; totalBalance: string }>,
   isLoading: false,
   isError: false,
+  statementsError: false,
+  btcPrice: '50000',
   unit: 'btc' as BitcoinDisplayUnit,
 }))
 
@@ -25,7 +27,7 @@ vi.mock('../trpc', () => {
     trpc: {
       portalProve: {
         retrieveBitcoinPriceHistory: { useQuery: () => result(mocks.prices) },
-        statement: { list: { useQuery: () => result([]) } },
+        statement: { list: { useQuery: () => ({ ...result([]), isError: mocks.statementsError }) } },
         registry: { claims: accounts('claims') },
         exchange: accounts('exchange'),
         manual: accounts('manual'),
@@ -35,7 +37,7 @@ vi.mock('../trpc', () => {
             useQuery: () =>
               result({
                 currentTotalBalance: '0',
-                currentBtcPrice: '50000',
+                currentBtcPrice: mocks.btcPrice,
                 historicalData: mocks.history,
                 verifiedClaimsCount: 0,
                 exchangeAccountCount: 0,
@@ -81,6 +83,8 @@ beforeEach(() => {
   mocks.history = []
   mocks.isLoading = false
   mocks.isError = false
+  mocks.statementsError = false
+  mocks.btcPrice = '50000'
   mocks.unit = 'btc'
 })
 
@@ -95,14 +99,13 @@ describe('Home overview states', () => {
       '30d Change',
       'Bitcoin Price',
       'Last 7 days',
-      'satoshi-statement.jpg',
-      'Recent Statements',
+      'Statements',
       'data-chart="liveline"',
     ]) {
       expect(html).toContain(text)
     }
-    expect(html).toContain('Generate Statement')
-    expect(html).not.toContain('View Statements')
+    expect(html).not.toContain('Generate Statement')
+    expect(html).toContain('View Statements')
     expect(html).not.toContain('Sample chart')
     expect(html).not.toContain('$98,820')
     expect(html).not.toContain('Statement introduction')
@@ -140,7 +143,10 @@ describe('Home overview states', () => {
   it('does not present failed account queries as an empty portfolio', () => {
     mocks.isError = true
     const html = renderHome()
-    expect(html).not.toContain('role="alert"')
+    expect(html).toContain('role="alert"')
+    expect(html).toContain('Holdings unavailable')
+    expect(html).not.toContain('$0.00 USD')
+    expect(html).not.toContain('0 BTC')
     expect(html).toContain('Try Again')
     expect(html).not.toContain('Dashboard preview')
     expect(html).toContain('Bitcoin Price')
@@ -154,5 +160,28 @@ describe('Home overview states', () => {
     expect(html).toContain('Bitcoin Price')
     expect(html).not.toContain('0.00000000')
     expect(html).not.toContain('href="/accounts/add"')
+  })
+  it('keeps holdings visible when statements fail independently', () => {
+    mocks.statementsError = true
+    mocks.history = [{ timestamp: '2026-09-01T00:00:00.000Z', totalBalance: '0' }]
+    const html = renderHome()
+    expect(html).toContain('Balance chart')
+    expect(html).toContain('Recent statements could not be loaded')
+    expect(html).not.toContain('Holdings unavailable')
+  })
+
+  it('retains the last overview with a persistent warning when account refresh fails', () => {
+    mocks.isError = true
+    mocks.history = [{ timestamp: '2026-09-01T00:00:00.000Z', totalBalance: '0' }]
+    const html = renderHome()
+    expect(html).toContain('Balance chart')
+    expect(html).toContain('Showing the last available overview')
+    expect(html).not.toContain('href="/accounts/add"')
+  })
+
+  it('does not turn a missing market price into a zero fiat valuation', () => {
+    mocks.btcPrice = '0'
+    mocks.history = [{ timestamp: '2026-09-01T00:00:00.000Z', totalBalance: '100000000' }]
+    expect(renderHome()).toContain('USD value unavailable')
   })
 })

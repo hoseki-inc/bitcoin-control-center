@@ -138,10 +138,11 @@ function BitcoinDisplaySettings(): JSX.Element {
               key={option.value}
               p={4}
               border="1px solid"
-              borderRadius="xl"
+              borderRadius="panel"
               borderColor={unit === option.value ? 'neutral.900' : 'neutral.200'}
               bg={unit === option.value ? 'neutral.50' : 'shades.0'}
               cursor={isLoading || isSaving || isError ? 'default' : 'pointer'}
+              transition="border-color 150ms ease, background-color 150ms ease"
               _hover={{ borderColor: 'neutral.500' }}
               _focusWithin={{ outline: '2px solid', outlineColor: 'primary.500', outlineOffset: '3px' }}
             >
@@ -335,11 +336,12 @@ function ElectrumSettings(): JSX.Element {
 
       {/* Server preset selector */}
       <Stack gap={1} w="full">
-        <Text textStyle="label/sm" fontWeight="medium">
+        <FormLabel htmlFor="electrum-preset" textStyle="text/sm" mb={0}>
           Server Preset
-        </Text>
+        </FormLabel>
         <Select
           size="sm"
+          id="electrum-preset"
           value={SERVER_PRESETS.find((p) => p.host === host && p.port === port) ? host : 'custom'}
           onChange={(e) => {
             const preset = SERVER_PRESETS.find((p) => p.host === e.target.value)
@@ -388,11 +390,12 @@ function ElectrumSettings(): JSX.Element {
 
       {/* Host */}
       <Stack gap={1} w="full">
-        <Text textStyle="label/sm" fontWeight="medium">
+        <FormLabel htmlFor="electrum-host" textStyle="text/sm" mb={0}>
           Host
-        </Text>
+        </FormLabel>
         <Input
           size="sm"
+          id="electrum-host"
           placeholder="electrum.blockstream.info"
           value={host}
           onChange={(e) => {
@@ -407,11 +410,12 @@ function ElectrumSettings(): JSX.Element {
       {/* Port + Protocol side by side */}
       <HStack gap={3} w="full">
         <Stack gap={1} flex={1}>
-          <Text textStyle="label/sm" fontWeight="medium">
+          <FormLabel htmlFor="electrum-port" textStyle="text/sm" mb={0}>
             Port
-          </Text>
+          </FormLabel>
           <Input
             size="sm"
+            id="electrum-port"
             placeholder="50002"
             value={port}
             onChange={(e) => {
@@ -423,11 +427,12 @@ function ElectrumSettings(): JSX.Element {
           />
         </Stack>
         <Stack gap={1} w="120px">
-          <Text textStyle="label/sm" fontWeight="medium">
+          <FormLabel htmlFor="electrum-protocol" textStyle="text/sm" mb={0}>
             Protocol
-          </Text>
+          </FormLabel>
           <Select
             size="sm"
+            id="electrum-protocol"
             value={protocol}
             onChange={(e) => {
               setProtocol(e.target.value as 'tcp' | 'ssl')
@@ -445,14 +450,15 @@ function ElectrumSettings(): JSX.Element {
       {/* Tor toggle */}
       <HStack w="full" justify="space-between" align="center">
         <VStack align="start" gap={0}>
-          <Text textStyle="label/sm" fontWeight="medium">
+          <FormLabel htmlFor="electrum-tor" textStyle="text/sm" mb={0}>
             Connect via Tor
-          </Text>
+          </FormLabel>
           <Text textStyle="text/xs" color="neutral.600">
             Route through bundled Tor proxy. Required for .onion addresses.
           </Text>
         </VStack>
         <Switch
+          id="electrum-tor"
           isChecked={torEnabled}
           onChange={(e) => {
             setTorEnabled(e.target.checked)

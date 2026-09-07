@@ -39,6 +39,7 @@ const sizes = {
   },
   lg: {
     h: '3.5rem',
+    minW: '3.5rem',
     px: '20px',
     py: '14px',
     textStyle: 'text/lg',
@@ -46,6 +47,7 @@ const sizes = {
   },
   md: {
     h: '2.75rem',
+    minW: '2.75rem',
     px: '16px',
     py: '12px',
     textStyle: 'text/sm',
@@ -53,6 +55,7 @@ const sizes = {
   },
   sm: {
     h: '2.25rem',
+    minW: '2.25rem',
     px: '16px',
     py: '8px',
     textStyle: 'text/xs',

@@ -41,7 +41,7 @@ A standalone, local-first, watch-only Bitcoin portfolio tracker with supporting 
 
 ## Brand Commitments
 
-The product name is Bitcoin Control Center. Sentinel names the backend. Existing product copy uses accounts, holdings, portfolio, and statements as user-facing concepts.
+The product name is Bitcoin Control Center. Keep Hoseki as the visible brand. Sentinel names the backend. Existing product copy uses accounts, holdings, portfolio, and statements as user-facing concepts.
 
 ## Evidence on Hand
 
@@ -56,7 +56,7 @@ No customer testimonials, adoption metrics, or performance claims were supplied 
 
 ## Product Principles
 
-1. Make personal holdings easy to understand; keep statements a supporting workflow.
+1. Make personal holdings easy to understand; keep statements a supporting workflow. Keep Home and Portfolio separate: Home is a quick overview, Portfolio supports detailed analysis.
 2. Keep users' portfolio data local and external service dependencies explicit.
 3. Preserve watch-only safety and the distinction between tracking holdings and proving control.
 4. Keep balances, market prices, and unavailable data distinguishable so users can interpret what they see.
