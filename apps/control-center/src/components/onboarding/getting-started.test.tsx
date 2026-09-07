@@ -8,7 +8,15 @@ import superjson from 'superjson'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { FirstAccountReady, GettingStarted } from './getting-started'
 
-vi.mock('liveline', () => ({ Liveline: () => <canvas data-testid="liveline" /> }))
+vi.mock('liveline', () => ({
+  Liveline: ({ data, window }: { data: Array<{ time: number }>; window: number }) => (
+    <canvas
+      data-testid="liveline"
+      data-history-seconds={(data.at(-1)?.time ?? 0) - (data[0]?.time ?? 0)}
+      data-window-seconds={window}
+    />
+  ),
+}))
 
 let container: HTMLDivElement
 let root: Root
@@ -128,4 +136,18 @@ it('updates sample balances and period changes without changing onboarding progr
       .find((button) => button.textContent === 'Add First Account')
       ?.querySelector('svg'),
   ).toBeNull()
+})
+
+it('supplies a full year before a paused chart snapshots its data, then changes only the visible window', async () => {
+  await mount()
+  const chart = (): Element | null => container.querySelector('[data-testid="liveline"]')
+  expect(chart()?.getAttribute('data-history-seconds')).toBe(String(365 * 86400))
+  expect(chart()?.getAttribute('data-window-seconds')).toBe(String(90 * 86400))
+  await click('1Y')
+  expect(chart()?.getAttribute('data-history-seconds')).toBe(String(365 * 86400))
+  expect(chart()?.getAttribute('data-window-seconds')).toBe(String(365 * 86400))
+  expect(container.querySelector('[role="img"]')?.getAttribute('aria-label')).toContain('from 1.2000 BTC')
+  await click('30D')
+  expect(chart()?.getAttribute('data-history-seconds')).toBe(String(365 * 86400))
+  expect(chart()?.getAttribute('data-window-seconds')).toBe(String(30 * 86400))
 })

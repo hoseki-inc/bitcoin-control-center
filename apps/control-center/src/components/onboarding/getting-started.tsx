@@ -1,4 +1,15 @@
-import { Box, Button, Flex, Stack, Text } from '@chakra-ui/react'
+import {
+  Accordion,
+  AccordionButton,
+  AccordionIcon,
+  AccordionItem,
+  AccordionPanel,
+  Box,
+  Button,
+  Flex,
+  Stack,
+  Text,
+} from '@chakra-ui/react'
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import { useLocalSetting } from '../../hooks/use-local-settings'
@@ -63,15 +74,24 @@ export function GettingStarted(): JSX.Element {
           )}
         </Stack>
       </Flex>
-      <Box as="details" color="neutral.600">
-        <Box as="summary" cursor="pointer" py={3} textStyle="text/sm">
-          How your data is handled
-        </Box>
-        <Text textStyle="text/sm" maxW="65ch" pb={2}>
-          Connections use the internet to retrieve balances. Your history is stored on your own computer or server. Your
-          private keys stay with you. Control Center can’t spend your Bitcoin.
-        </Text>
-      </Box>
+      <Accordion allowToggle>
+        <AccordionItem borderRadius="panel" px={{ base: 4, md: 6 }}>
+          <Box as="h2">
+            <AccordionButton gap={4} minH="56px" _hover={{ bg: 'transparent', color: 'neutral.600' }}>
+              <Text flex="1" textStyle="text/sm" fontWeight="medium">
+                How your data is handled
+              </Text>
+              <AccordionIcon boxSize={5} color="neutral.500" />
+            </AccordionButton>
+          </Box>
+          <AccordionPanel>
+            <Text textStyle="text/sm" color="neutral.600" maxW="65ch">
+              Connections use the internet to retrieve balances. Your history is stored on your own computer or server.
+              Your private keys stay with you. Control Center can’t spend your Bitcoin.
+            </Text>
+          </AccordionPanel>
+        </AccordionItem>
+      </Accordion>
     </Stack>
   )
 }

@@ -1,6 +1,6 @@
 import { Box, Button, Flex, Grid, Text, usePrefersReducedMotion } from '@chakra-ui/react'
 import { Liveline } from 'liveline'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { getMonthlyChanges } from '../dashboard-charts/balance-history'
 import { MonthlyNetChangeChart } from '../dashboard-charts/monthly-net-change-chart'
 
@@ -18,17 +18,22 @@ export function PortfolioDemo(): JSX.Element {
   const [days, setDays] = useState<(typeof ranges)[number]>(90)
   const [end] = useState(() => Math.floor(Date.now() / 1000))
   const reducedMotion = usePrefersReducedMotion()
-  const history = Array.from({ length: 366 }, (_, day) => {
-    const balance =
-      120_000_000 +
-      Math.floor(day / 30) * 5_000_000 +
-      Math.floor(day / 7) * 1_000_000 -
-      Math.floor(day / 90) * 20_000_000
-    return {
-      time: end - (365 - day) * DAY,
-      value: balance / 100_000_000,
-    }
-  }).slice(-(days + 1))
+  const fullHistory = useMemo(
+    () =>
+      Array.from({ length: 366 }, (_, day) => {
+        const balance =
+          120_000_000 +
+          Math.floor(day / 30) * 5_000_000 +
+          Math.floor(day / 7) * 1_000_000 -
+          Math.floor(day / 90) * 20_000_000
+        return {
+          time: end - (365 - day) * DAY,
+          value: balance / 100_000_000,
+        }
+      }),
+    [end],
+  )
+  const history = fullHistory.slice(-(days + 1))
   const first = history[0]?.value ?? 0
   const total = history[history.length - 1]?.value ?? 0
   const change = total - first
@@ -114,7 +119,8 @@ export function PortfolioDemo(): JSX.Element {
         aria-label={`Sample balance history, from ${btc(first)} to ${btc(total)} over ${days} days`}
       >
         <Liveline
-          data={history}
+          // Paused Liveline snapshots its initial data; keep every selectable range available.
+          data={fullHistory}
           value={total}
           window={days * DAY}
           theme="light"
