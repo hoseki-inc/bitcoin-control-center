@@ -87,10 +87,10 @@ export function KrakenAccountDetailsPage(): JSX.Element {
 
       <Stack spacing={4}>
         <Box>
-          <Text textStyle="text/md" fontWeight="medium">
+          <Text textStyle="text/md" fontWeight="medium" overflowWrap="anywhere">
             {account.displayName}
           </Text>
-          <HStack spacing={1}>
+          <HStack spacing={1} flexWrap="wrap">
             <Box w={2} h={2} bg="success.600" borderRadius="full" />
             <Text textStyle="text/xs" color="neutral.600">
               First Connected
@@ -103,7 +103,7 @@ export function KrakenAccountDetailsPage(): JSX.Element {
 
         <hr />
 
-        <Stack align="center" justify="center" w="640px" mx="auto" mt={-4}>
+        <Stack align="center" justify="center" w="full" maxW="640px" minW={0} mx="auto" mt={-4}>
           <Box
             mx="auto"
             pt={10}
@@ -127,8 +127,8 @@ export function KrakenAccountDetailsPage(): JSX.Element {
             />
           </Box>
 
-          <HStack spacing={4} mb={4} w="100%" alignItems="flex-start">
-            <Box w={['100%', '50%', '25%']}>
+          <HStack spacing={0} gap={4} mb={4} w="100%" alignItems="flex-start" flexWrap="wrap">
+            <Box w={{ base: 'full', sm: 'calc(50% - 8px)' }} minW={0} overflowWrap="anywhere">
               <Text textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={1}>
                 Amount
               </Text>
@@ -145,7 +145,7 @@ export function KrakenAccountDetailsPage(): JSX.Element {
               )}
             </Box>
 
-            <Box w={['100%', '50%', '25%']}>
+            <Box w={{ base: 'full', sm: 'calc(50% - 8px)' }} minW={0} overflowWrap="anywhere">
               <Text textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={1}>
                 Status
               </Text>
@@ -156,7 +156,7 @@ export function KrakenAccountDetailsPage(): JSX.Element {
               )}
             </Box>
 
-            <Box w={['100%', '50%', '25%']}>
+            <Box w={{ base: 'full', sm: 'calc(50% - 8px)' }} minW={0} overflowWrap="anywhere">
               <Text textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={1}>
                 Account Type
               </Text>
@@ -165,7 +165,12 @@ export function KrakenAccountDetailsPage(): JSX.Element {
               </Text>
             </Box>
 
-            <Box w={['100%', '50%', '25%']} textAlign="right">
+            <Box
+              w={{ base: 'full', sm: 'calc(50% - 8px)' }}
+              minW={0}
+              overflowWrap="anywhere"
+              textAlign={{ base: 'left', sm: 'right' }}
+            >
               <Text textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={1}>
                 Date Added
               </Text>

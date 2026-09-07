@@ -410,7 +410,7 @@ function ElectrumSettings(): JSX.Element {
 
       {/* Port + Protocol side by side */}
       <HStack gap={3} w="full">
-        <Stack gap={1} flex={1}>
+        <Stack gap={1} flex={1} minW={0}>
           <FormLabel htmlFor="electrum-port" textStyle="text/sm" mb={0}>
             Port
           </FormLabel>
@@ -428,7 +428,7 @@ function ElectrumSettings(): JSX.Element {
             isDisabled={isLoading}
           />
         </Stack>
-        <Stack gap={1} w="120px">
+        <Stack gap={1} w="120px" flexShrink={0}>
           <FormLabel htmlFor="electrum-protocol" textStyle="text/sm" mb={0}>
             Protocol
           </FormLabel>

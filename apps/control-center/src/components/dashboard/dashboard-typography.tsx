@@ -19,6 +19,8 @@ export function DashboardAmount({
   return (
     <Text
       textStyle={primary ? { base: 'amount/compact', md: 'amount/primary' } : 'text/2xl'}
+      overflowWrap="anywhere"
+      minW={0}
       fontFamily="body"
       fontWeight="medium"
       color="neutral.900"

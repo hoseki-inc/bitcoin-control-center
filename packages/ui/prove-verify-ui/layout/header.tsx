@@ -21,6 +21,7 @@ export function MenuItemComponent({
     <chakra.li
       listStyleType="none"
       display="inline-block"
+      flex={{ base: 1, md: 'initial' }}
       textStyle="text/sm"
       fontWeight="medium"
       color="neutral.600"
@@ -29,7 +30,8 @@ export function MenuItemComponent({
           display: 'flex',
           alignItems: 'center',
           minHeight: '44px',
-          px: 4,
+          px: { base: 1, sm: 2, md: 4 },
+          justifyContent: 'center',
           borderRadius: 'control',
           transition: 'background-color 150ms ease, color 150ms ease',
         },
@@ -67,6 +69,7 @@ export function Header({ logo, menu, userInfo }: HeaderProps): JSX.Element {
           as="nav"
           aria-label="Main navigation"
           flexGrow="1"
+          minW={0}
           order={{ base: 3, md: 0 }}
           w={{ base: '100%', md: 'auto' }}
           overflowX="auto"

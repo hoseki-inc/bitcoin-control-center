@@ -4,6 +4,7 @@ const disabledColors = {
 } as const
 
 const baseStyle = {
+  '@media (pointer: coarse)': { minH: '44px', minW: '44px' },
   fontFamily: 'body',
   fontWeight: 'medium',
   borderRadius: 'control',

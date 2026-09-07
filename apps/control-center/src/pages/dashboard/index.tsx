@@ -520,16 +520,16 @@ export function DashboardPage(): JSX.Element {
     claims.length > 0 || exchangeAccounts.length > 0 || manualAccounts.length > 0 || etfAccounts.length > 0
 
   return (
-    <Flex minH="calc(100vh - 64px)" direction={{ base: 'column', md: 'row' }}>
+    <Flex minH="calc(100dvh - 64px)" direction={{ base: 'column', lg: 'row' }}>
       {/* Sidebar -- always visible when accounts exist */}
       {hasSidebar && (
         <Box
           as="aside"
           aria-label="Portfolio accounts"
           alignSelf="stretch"
-          position={{ base: 'static', md: 'sticky' }}
+          position={{ base: 'static', lg: 'sticky' }}
           top={0}
-          h={{ base: 'auto', md: 'calc(100vh - 64px)' }}
+          h={{ base: 'auto', lg: 'calc(100dvh - 64px)' }}
           flexShrink={0}
         >
           <AccountsSidebar

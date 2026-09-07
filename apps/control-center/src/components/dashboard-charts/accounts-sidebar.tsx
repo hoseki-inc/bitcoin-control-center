@@ -114,14 +114,14 @@ export function AccountsSidebar({
 
   return (
     <Box
-      w={{ base: '100%', md: compact ? '240px' : '304px' }}
-      maxH={{ base: '240px', md: 'none' }}
+      w={{ base: '100%', lg: compact ? '240px' : '304px' }}
+      maxH={{ base: '240px', lg: 'none' }}
       flexShrink={0}
-      borderBottomWidth={{ base: '1px', md: '0' }}
+      borderBottomWidth={{ base: '1px', lg: '0' }}
       borderBottomColor="neutral.200"
       bg="shades.0"
       px={compact ? 3 : 5}
-      py={{ base: 4, md: 8 }}
+      py={{ base: 4, lg: 8 }}
       display="flex"
       flexDirection="column"
       h="100%"

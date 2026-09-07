@@ -70,7 +70,20 @@ export const theme = extendBaseTheme({
     PinInput: pinInputTheme,
     Progress: progressTheme,
     Modal: modalTheme,
-    Select,
+    Select: {
+      ...Select,
+      sizes: {
+        ...Select.sizes,
+        sm: {
+          ...Select.sizes?.sm,
+          field: {
+            ...Select.sizes?.sm?.field,
+            textStyle: { base: 'text/md', md: 'text/sm' },
+            h: { base: '2.75rem', md: '2rem' },
+          },
+        },
+      },
+    },
     Table: tableTheme,
     Textarea: textareaTheme,
     Tooltip: tooltipTheme,

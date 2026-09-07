@@ -16,7 +16,7 @@ export interface AppLayoutProps {
 
 export function AppLayout({ header, children, fullWidth }: AppLayoutProps): JSX.Element {
   return (
-    <Box>
+    <Box pl="env(safe-area-inset-left)" pr="env(safe-area-inset-right)" pb="env(safe-area-inset-bottom)">
       {header}
       <Wrapper
         as="main"
