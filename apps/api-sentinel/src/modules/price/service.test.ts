@@ -23,8 +23,29 @@ describe('Bitcoin price history', () => {
     ])
     await service.getBitcoinPriceHistory()
     expect(fetch).toHaveBeenCalledTimes(1)
-    expect(fetch.mock.calls[0]?.[0]).toContain('days=7&interval=daily')
+    expect(fetch.mock.calls[0]?.[0]).toContain('days=7')
+    expect(fetch.mock.calls[0]?.[0]).not.toContain('interval=')
     expect(fetch.mock.calls[0]?.[1]?.signal).toBeInstanceOf(AbortSignal)
+  })
+
+  it('requests and caches each range separately', async () => {
+    const fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        prices: [
+          [1000, 100],
+          [2000, 102],
+        ],
+      }),
+    })
+    vi.stubGlobal('fetch', fetch)
+    const service = new PriceService({ logger: pino({ level: 'silent' }) })
+    for (const days of [1, 7, 30, 180, 365] as const) {
+      await service.getBitcoinPriceHistory(days)
+      expect(fetch.mock.lastCall?.[0]).toContain(`days=${days}`)
+      await service.getBitcoinPriceHistory(days)
+    }
+    expect(fetch).toHaveBeenCalledTimes(5)
   })
 
   it.each([

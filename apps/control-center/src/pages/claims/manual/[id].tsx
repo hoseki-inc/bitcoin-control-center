@@ -2,10 +2,10 @@ import {
   Box,
   Button,
   Checkbox,
+  Divider,
   FormControl,
   FormLabel,
   HStack,
-  Heading,
   Icon,
   Input,
   Select,
@@ -20,6 +20,7 @@ import {
   Tr,
 } from '@chakra-ui/react'
 import { ErrorBanner } from '@hoseki/packages/ui/design-system'
+import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
 import { TopBar } from '@hoseki/packages/ui/prove-verify-ui/top-bar'
 import { format } from 'date-fns'
 import { useState } from 'react'
@@ -150,8 +151,8 @@ export function ManualAccountDetailsPage(): JSX.Element {
   }
 
   return (
-    <Box py={6}>
-      <TopBar mb={6}>
+    <Box py={{ base: 6, md: 8 }} maxW="960px" w="full" mx="auto">
+      <TopBar mb={8}>
         <TopBar.Item as={Link} to="/accounts">
           Back to Accounts
         </TopBar.Item>
@@ -165,21 +166,19 @@ export function ManualAccountDetailsPage(): JSX.Element {
         <Box>
           <HStack spacing={3} mb={1}>
             <ManualIcon />
-            <Text textStyle="text/md" fontWeight="medium">
-              {account.displayName}
-            </Text>
+            <PageHeading title={account.displayName} />
           </HStack>
           <HStack spacing={1}>
             <Box w={2} h={2} bg="warning.500" borderRadius="full" />
-            <Text textStyle="text/xs" color="warning.600" fontWeight="medium">
+            <Text textStyle="text/sm" color="warning.600" fontWeight="medium">
               Manually Added
             </Text>
             {account.createdAt && (
               <>
-                <Text textStyle="text/xs" color="neutral.400">
+                <Text textStyle="text/sm" color="neutral.400">
                   ·
                 </Text>
-                <Text textStyle="text/xs" color="neutral.600">
+                <Text textStyle="text/sm" color="neutral.600">
                   {format(new Date(account.createdAt), 'MMMM do, yyyy')}
                 </Text>
               </>
@@ -187,57 +186,44 @@ export function ManualAccountDetailsPage(): JSX.Element {
           </HStack>
         </Box>
 
-        <hr />
+        <Divider borderColor="neutral.200" />
 
-        {/* Balance display */}
-        <Stack align="center" maxW="640px" mx="auto" w="100%">
-          <HStack spacing={4} mb={4} w="100%" alignItems="flex-start">
-            <Box w={['100%', '50%', '33%']}>
-              <Text textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={1}>
-                Balance
+        <Stack direction={{ base: 'column', sm: 'row' }} spacing={6} justify="space-between">
+          <Box>
+            <Text textStyle="text/sm" color="neutral.600" mb={1}>
+              Balance
+            </Text>
+            <Text textStyle="text/xl" fontWeight="medium" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+              <BitcoinAmount btc={btcAmount} />
+            </Text>
+          </Box>
+          {account.balanceAsOf && (
+            <Box>
+              <Text textStyle="text/sm" color="neutral.600" mb={1}>
+                Balance as of
               </Text>
-              <Text textStyle="label/sm" color="neutral.900" fontWeight="medium">
-                <BitcoinAmount btc={btcAmount} />
+              <Text textStyle="text/sm" color="neutral.900">
+                {format(new Date(account.balanceAsOf), 'MMMM do, yyyy')}
               </Text>
             </Box>
-            <Box w={['100%', '50%', '33%']}>
-              <Text textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={1}>
-                Status
-              </Text>
-              <HStack spacing={1}>
-                <Box w={2} h={2} bg="warning.500" borderRadius="full" />
-                <Text textStyle="text/xs" color="warning.600" fontWeight="medium">
-                  Manually Added
-                </Text>
-              </HStack>
-            </Box>
-            {account.balanceAsOf && (
-              <Box w={['100%', '50%', '33%']} textAlign="right">
-                <Text textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={1}>
-                  Balance As Of
-                </Text>
-                <Text textStyle="label/sm" color="neutral.900" fontWeight="medium">
-                  {format(new Date(account.balanceAsOf), 'MMMM do, yyyy')}
-                </Text>
-              </Box>
-            )}
-          </HStack>
+          )}
         </Stack>
-
-        <hr />
+        <Divider borderColor="neutral.200" />
 
         {/* Update Balance */}
-        <Box maxW="640px" mx="auto" w="100%">
-          <Heading textStyle="text/lg" fontWeight="semibold" mb={3}>
-            Update Balance
-          </Heading>
-          <HStack spacing={3} align="flex-end">
+        <Box w="100%">
+          <Text as="h2" textStyle="text/md" fontWeight="medium" mb={4}>
+            Update balance
+          </Text>
+          <Stack direction={{ base: 'column', md: 'row' }} spacing={3} align={{ base: 'stretch', md: 'flex-end' }}>
             <FormControl flex={1}>
-              <FormLabel textStyle="text/xs" color="neutral.600">
+              <FormLabel fontWeight="medium" textStyle="text/sm" color="neutral.600">
                 New Balance (BTC)
               </FormLabel>
               <Input
-                size="sm"
+                fontFamily="body"
+                size="md"
+                textStyle="text/sm"
                 type="number"
                 step="any"
                 min="0"
@@ -247,13 +233,20 @@ export function ManualAccountDetailsPage(): JSX.Element {
               />
             </FormControl>
             <FormControl flex={1}>
-              <FormLabel textStyle="text/xs" color="neutral.600">
+              <FormLabel fontWeight="medium" textStyle="text/sm" color="neutral.600">
                 As of Date
               </FormLabel>
-              <Input size="sm" type="date" value={newBalanceDate} onChange={(e) => setNewBalanceDate(e.target.value)} />
+              <Input
+                fontFamily="body"
+                size="md"
+                textStyle="text/sm"
+                type="date"
+                value={newBalanceDate}
+                onChange={(e) => setNewBalanceDate(e.target.value)}
+              />
             </FormControl>
             <Button
-              size="sm"
+              size="md"
               variant="outline"
               onClick={handleUpdateBalance}
               isLoading={updateBalanceMutation.isLoading}
@@ -261,23 +254,30 @@ export function ManualAccountDetailsPage(): JSX.Element {
             >
               Update
             </Button>
-          </HStack>
+          </Stack>
         </Box>
 
-        <hr />
+        <Divider borderColor="neutral.200" />
 
         {/* Add Transaction */}
-        <Box maxW="640px" mx="auto" w="100%">
-          <Heading textStyle="text/lg" fontWeight="semibold" mb={3}>
-            Add Transaction
-          </Heading>
+        <Box w="100%">
+          <Text as="h2" textStyle="text/md" fontWeight="medium" mb={4}>
+            Add transaction
+          </Text>
           <Stack spacing={3}>
             <HStack spacing={3}>
               <FormControl flex={1}>
-                <FormLabel textStyle="text/xs" color="neutral.600">
+                <FormLabel fontWeight="medium" textStyle="text/sm" color="neutral.600">
                   Type
                 </FormLabel>
-                <Select size="sm" value={txType} onChange={(e) => setTxType(e.target.value)}>
+                <Select
+                  fontFamily="body"
+                  size="md"
+                  borderRadius="control"
+                  textStyle="text/sm"
+                  value={txType}
+                  onChange={(e) => setTxType(e.target.value)}
+                >
                   <option value="buy">Buy</option>
                   <option value="transfer_in">Transfer In</option>
                   <option value="sell">Sell</option>
@@ -285,11 +285,13 @@ export function ManualAccountDetailsPage(): JSX.Element {
                 </Select>
               </FormControl>
               <FormControl flex={1}>
-                <FormLabel textStyle="text/xs" color="neutral.600">
+                <FormLabel fontWeight="medium" textStyle="text/sm" color="neutral.600">
                   Amount (BTC)
                 </FormLabel>
                 <Input
-                  size="sm"
+                  fontFamily="body"
+                  size="md"
+                  textStyle="text/sm"
                   type="number"
                   step="any"
                   min="0"
@@ -299,26 +301,35 @@ export function ManualAccountDetailsPage(): JSX.Element {
                 />
               </FormControl>
               <FormControl flex={1}>
-                <FormLabel textStyle="text/xs" color="neutral.600">
+                <FormLabel fontWeight="medium" textStyle="text/sm" color="neutral.600">
                   Date
                 </FormLabel>
-                <Input size="sm" type="date" value={txDate} onChange={(e) => setTxDate(e.target.value)} />
+                <Input
+                  fontFamily="body"
+                  size="md"
+                  textStyle="text/sm"
+                  type="date"
+                  value={txDate}
+                  onChange={(e) => setTxDate(e.target.value)}
+                />
               </FormControl>
             </HStack>
-            <HStack spacing={3} align="flex-end">
+            <Stack direction={{ base: 'column', md: 'row' }} spacing={3} align={{ base: 'stretch', md: 'flex-end' }}>
               <FormControl flex={1}>
-                <FormLabel textStyle="text/xs" color="neutral.600">
+                <FormLabel fontWeight="medium" textStyle="text/sm" color="neutral.600">
                   Note (optional)
                 </FormLabel>
                 <Input
-                  size="sm"
+                  fontFamily="body"
+                  size="md"
+                  textStyle="text/sm"
                   placeholder="Optional note"
                   value={txNote}
                   onChange={(e) => setTxNote(e.target.value)}
                 />
               </FormControl>
               <Button
-                size="sm"
+                size="md"
                 variant="outline"
                 onClick={handleAddTransaction}
                 isLoading={addTxMutation.isLoading}
@@ -326,14 +337,14 @@ export function ManualAccountDetailsPage(): JSX.Element {
               >
                 Add
               </Button>
-            </HStack>
+            </Stack>
             <Checkbox
               size="sm"
               isChecked={txAddToBalance}
               onChange={(e) => setTxAddToBalance(e.target.checked)}
               colorScheme="orange"
             >
-              <Text textStyle="text/xs" color="neutral.600">
+              <Text textStyle="text/sm" color="neutral.600">
                 Add this amount to balance
               </Text>
             </Checkbox>
@@ -342,19 +353,30 @@ export function ManualAccountDetailsPage(): JSX.Element {
 
         {/* Transaction History */}
         {txQuery.data && txQuery.data.length > 0 && (
-          <Box maxW="640px" mx="auto" w="100%">
-            <Heading textStyle="text/lg" fontWeight="semibold" mb={3}>
+          <Box w="100%">
+            <Text as="h2" textStyle="text/md" fontWeight="medium" mb={4}>
               Transactions
-            </Heading>
-            <Box borderWidth="1px" borderColor="neutral.200" borderRadius="md" overflow="hidden">
-              <Table size="sm">
+            </Text>
+            <Box borderWidth="1px" borderColor="neutral.200" borderRadius="panel" overflowX="auto">
+              <Table
+                size="sm"
+                sx={{ th: { textTransform: 'none', letterSpacing: 'normal' }, td: { whiteSpace: 'nowrap' } }}
+              >
                 <Thead>
                   <Tr>
-                    <Th>Type</Th>
-                    <Th>Amount</Th>
-                    <Th>Date</Th>
-                    <Th>Note</Th>
-                    <Th />
+                    <Th textStyle="text/sm" fontFamily="body" color="neutral.600">
+                      Type
+                    </Th>
+                    <Th textStyle="text/sm" fontFamily="body" color="neutral.600">
+                      Amount
+                    </Th>
+                    <Th textStyle="text/sm" fontFamily="body" color="neutral.600">
+                      Date
+                    </Th>
+                    <Th textStyle="text/sm" fontFamily="body" color="neutral.600">
+                      Note
+                    </Th>
+                    <Th textStyle="text/sm" fontFamily="body" color="neutral.600" />
                   </Tr>
                 </Thead>
                 <Tbody>
@@ -362,7 +384,7 @@ export function ManualAccountDetailsPage(): JSX.Element {
                     <Tr key={tx.id}>
                       <Td>
                         <Text
-                          textStyle="text/xs"
+                          textStyle="text/sm"
                           fontWeight="medium"
                           color={tx.type === 'buy' || tx.type === 'transfer_in' ? 'success.600' : 'error.600'}
                         >
@@ -370,15 +392,15 @@ export function ManualAccountDetailsPage(): JSX.Element {
                         </Text>
                       </Td>
                       <Td>
-                        <Text textStyle="text/xs">
+                        <Text textStyle="text/sm">
                           <BitcoinAmount btc={Number(tx.amountSats) / 1e8} />
                         </Text>
                       </Td>
                       <Td>
-                        <Text textStyle="text/xs">{format(new Date(tx.transactedAt), 'MMM d, yyyy')}</Text>
+                        <Text textStyle="text/sm">{format(new Date(tx.transactedAt), 'MMM d, yyyy')}</Text>
                       </Td>
                       <Td>
-                        <Text textStyle="text/xs" color="neutral.500">
+                        <Text textStyle="text/sm" color="neutral.600">
                           {tx.note || '—'}
                         </Text>
                       </Td>

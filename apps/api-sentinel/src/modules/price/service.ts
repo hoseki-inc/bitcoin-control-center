@@ -16,32 +16,37 @@ const historySchema = z.object({
   prices: z.array(z.tuple([z.number().finite().nonnegative(), z.number().finite().positive()])).min(2),
 })
 
+export type BitcoinPriceHistoryDays = 1 | 7 | 30 | 180 | 365
+
 export type BitcoinPricePoint = { time: number; value: number }
 
 export class PriceService {
-  private historyCache: { points: BitcoinPricePoint[]; fetchedAt: number } | null = null
+  private historyCache = new Map<BitcoinPriceHistoryDays, { points: BitcoinPricePoint[]; fetchedAt: number }>()
 
-  public getBitcoinPriceHistory = asyncFn(async (): Promise<Result<BitcoinPricePoint[], Error>> => {
-    if (this.historyCache && Date.now() - this.historyCache.fetchedAt < 300_000) return Ok(this.historyCache.points)
-    let response: Response
-    try {
-      response = await fetch(
-        'https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=usd&days=7&interval=daily',
-        { signal: AbortSignal.timeout(8_000) },
-      )
-    } catch {
-      return Err(new Error('Bitcoin price history is unavailable'))
-    }
-    if (!response.ok) return Err(new Error('Bitcoin price history is unavailable'))
-    const parsed = parseUnknown(historySchema, await response.json())
-    if (parsed.isErr()) return Err(new Error('Invalid Bitcoin price history'))
-    const points = parsed
-      .unwrap()
-      .prices.map(([time, value]) => ({ time: time / 1000, value }))
-      .sort((a, b) => a.time - b.time)
-    this.historyCache = { points, fetchedAt: Date.now() }
-    return Ok(points)
-  })
+  public getBitcoinPriceHistory = asyncFn(
+    async (days: BitcoinPriceHistoryDays = 7): Promise<Result<BitcoinPricePoint[], Error>> => {
+      const cached = this.historyCache.get(days)
+      if (cached && Date.now() - cached.fetchedAt < 300_000) return Ok(cached.points)
+      let response: Response
+      try {
+        response = await fetch(
+          `https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=usd&days=${days}`,
+          { signal: AbortSignal.timeout(8_000) },
+        )
+      } catch {
+        return Err(new Error('Bitcoin price history is unavailable'))
+      }
+      if (!response.ok) return Err(new Error('Bitcoin price history is unavailable'))
+      const parsed = parseUnknown(historySchema, await response.json())
+      if (parsed.isErr()) return Err(new Error('Invalid Bitcoin price history'))
+      const points = parsed
+        .unwrap()
+        .prices.map(([time, value]) => ({ time: time / 1000, value }))
+        .sort((a, b) => a.time - b.time)
+      this.historyCache.set(days, { points, fetchedAt: Date.now() })
+      return Ok(points)
+    },
+  )
 
   private readonly logger: Logger
   private cached: { price: BtcPrice; fetchedAt: number } | null = null

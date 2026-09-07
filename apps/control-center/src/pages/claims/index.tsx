@@ -17,7 +17,7 @@ import {
 import { EmptyView, ErrorBanner, Spinner } from '@hoseki/packages/ui/design-system'
 import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
 import { ClaimCardKeystores, StatusBadge, getBadgeConfigForClaim } from '@hoseki/packages/ui/prove-verify-ui'
-import { PlusIcon } from 'lucide-react'
+import { ChartNoAxesCombined, PlusIcon } from 'lucide-react'
 import { useEffect } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router'
 import { toast } from 'sonner'
@@ -363,6 +363,7 @@ function AccountCard({ claim, balance, totalBtcSats, isLoadingBalance }: Account
       transition="border-color 150ms ease, background-color 150ms ease"
       gap={1}
       textAlign="center"
+      _focusVisible={{ outline: '2px solid', outlineColor: 'activeState.80', outlineOffset: '3px' }}
       _hover={{
         borderColor: 'neutral.400',
         bg: 'neutral.50',
@@ -398,7 +399,8 @@ function AccountCard({ claim, balance, totalBtcSats, isLoadingBalance }: Account
         ) : (
           <>
             <Text
-              fontFamily="mono"
+              fontFamily="body"
+              sx={{ fontVariantNumeric: 'tabular-nums' }}
               textStyle="text/lg"
               fontWeight="semibold"
               color="neutral.900"
@@ -425,7 +427,13 @@ function AccountCard({ claim, balance, totalBtcSats, isLoadingBalance }: Account
             transition="width 0.4s ease"
           />
         </Box>
-        <Text textStyle="label/xs" color="neutral.500" fontFamily="mono" whiteSpace="nowrap">
+        <Text
+          textStyle="label/xs"
+          color="neutral.500"
+          fontFamily="body"
+          sx={{ fontVariantNumeric: 'tabular-nums' }}
+          whiteSpace="nowrap"
+        >
           {pct}%
         </Text>
       </Flex>
@@ -548,6 +556,7 @@ function ExchangeAccountCard({ account, totalBtcSats, btcUsdPrice }: ExchangeAcc
       transition="border-color 150ms ease, background-color 150ms ease"
       gap={1}
       textAlign="center"
+      _focusVisible={{ outline: '2px solid', outlineColor: 'activeState.80', outlineOffset: '3px' }}
       _hover={{
         borderColor: 'neutral.400',
         bg: 'neutral.50',
@@ -591,7 +600,14 @@ function ExchangeAccountCard({ account, totalBtcSats, btcUsdPrice }: ExchangeAcc
       {/* Balance */}
       <Stack gap={0} mx={4} mt={1}>
         {needsReconnect ? (
-          <Text fontFamily="mono" textStyle="text/lg" fontWeight="semibold" color="neutral.500" letterSpacing="-0.02em">
+          <Text
+            fontFamily="body"
+            sx={{ fontVariantNumeric: 'tabular-nums' }}
+            textStyle="text/lg"
+            fontWeight="semibold"
+            color="neutral.500"
+            letterSpacing="-0.02em"
+          >
             —
           </Text>
         ) : account.balance === null ? (
@@ -599,7 +615,8 @@ function ExchangeAccountCard({ account, totalBtcSats, btcUsdPrice }: ExchangeAcc
         ) : (
           <>
             <Text
-              fontFamily="mono"
+              fontFamily="body"
+              sx={{ fontVariantNumeric: 'tabular-nums' }}
               textStyle="text/lg"
               fontWeight="semibold"
               color="neutral.900"
@@ -628,7 +645,13 @@ function ExchangeAccountCard({ account, totalBtcSats, btcUsdPrice }: ExchangeAcc
             transition="width 0.4s ease"
           />
         </Box>
-        <Text textStyle="label/xs" color="neutral.500" fontFamily="mono" whiteSpace="nowrap">
+        <Text
+          textStyle="label/xs"
+          color="neutral.500"
+          fontFamily="body"
+          sx={{ fontVariantNumeric: 'tabular-nums' }}
+          whiteSpace="nowrap"
+        >
           {pct}%
         </Text>
       </Flex>
@@ -668,6 +691,7 @@ function ManualAccountCard({
       transition="border-color 150ms ease, background-color 150ms ease"
       gap={1}
       textAlign="center"
+      _focusVisible={{ outline: '2px solid', outlineColor: 'activeState.80', outlineOffset: '3px' }}
       _hover={{
         borderColor: 'neutral.400',
         bg: 'neutral.50',
@@ -680,7 +704,9 @@ function ManualAccountCard({
 
       {/* Manual icon */}
       <Flex justify="center" align="center" h="30px" my={2}>
-        <ManualNoteIcon />
+        <Box color="neutral.700">
+          {linkPrefix === '/accounts/etf' ? <ChartNoAxesCombined size={26} aria-hidden="true" /> : <ManualNoteIcon />}
+        </Box>
       </Flex>
 
       {/* Name */}
@@ -692,7 +718,14 @@ function ManualAccountCard({
 
       {/* Balance */}
       <Stack gap={0} mx={4} mt={1}>
-        <Text fontFamily="mono" textStyle="text/lg" fontWeight="semibold" color="neutral.900" letterSpacing="-0.02em">
+        <Text
+          fontFamily="body"
+          sx={{ fontVariantNumeric: 'tabular-nums' }}
+          textStyle="text/lg"
+          fontWeight="semibold"
+          color="neutral.900"
+          letterSpacing="-0.02em"
+        >
           <BitcoinAmount btc={btcAmount.toFixed(8)} />
         </Text>
         {usdAmount !== null && (
@@ -714,7 +747,13 @@ function ManualAccountCard({
             transition="width 0.4s ease"
           />
         </Box>
-        <Text textStyle="label/xs" color="neutral.500" fontFamily="mono" whiteSpace="nowrap">
+        <Text
+          textStyle="label/xs"
+          color="neutral.500"
+          fontFamily="body"
+          sx={{ fontVariantNumeric: 'tabular-nums' }}
+          whiteSpace="nowrap"
+        >
           {pct}%
         </Text>
       </Flex>
@@ -724,7 +763,7 @@ function ManualAccountCard({
 
 function ManualNoteIcon(): JSX.Element {
   return (
-    <Icon viewBox="0 0 24 24" w={7} h={7} color="warning.500">
+    <Icon viewBox="0 0 24 24" w={7} h={7} color="neutral.700">
       <path
         d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
         stroke="currentColor"

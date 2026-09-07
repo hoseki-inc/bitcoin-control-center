@@ -1,5 +1,6 @@
 import { Box, Button, Flex, Text, usePrefersReducedMotion } from '@chakra-ui/react'
 import { Liveline } from 'liveline'
+import { useState } from 'react'
 import { trpc } from '../../trpc'
 import { DashboardAmount, DashboardCardTitle } from './dashboard-typography'
 
@@ -8,13 +9,27 @@ const usd = (value: number): string =>
 const timeLabel = (time: number): string =>
   new Date(time * 1000).toLocaleDateString([], { month: 'short', day: 'numeric' })
 
+const PRICE_RANGES = [
+  { label: '24H', days: 1, description: 'Last 24 hours' },
+  { label: '7D', days: 7, description: 'Last 7 days' },
+  { label: '30D', days: 30, description: 'Last 30 days' },
+  { label: '6M', days: 180, description: 'Last 6 months' },
+  { label: '1Y', days: 365, description: 'Last year' },
+] as const
+
+type PriceRange = (typeof PRICE_RANGES)[number]
+
 export function BitcoinPriceChart(): JSX.Element {
+  const [range, setRange] = useState<PriceRange>(PRICE_RANGES[1])
   const reducedMotion = usePrefersReducedMotion()
-  const query = trpc.portalProve.retrieveBitcoinPriceHistory.useQuery(undefined, {
-    staleTime: 300_000,
-    refetchInterval: 300_000,
-    retry: false,
-  })
+  const query = trpc.portalProve.retrieveBitcoinPriceHistory.useQuery(
+    { days: range.days },
+    {
+      staleTime: 300_000,
+      refetchInterval: 300_000,
+      retry: false,
+    },
+  )
   const points = query.data ?? []
   const latest = points[points.length - 1]
   const first = points[0]
@@ -30,14 +45,37 @@ export function BitcoinPriceChart(): JSX.Element {
             {change !== null && (
               <Text textStyle="text/sm" color={change >= 0 ? 'success.700' : 'error.700'}>
                 {change >= 0 ? '+' : ''}
-                {change.toFixed(2)}% · 7d
+                {change.toFixed(2)}% · {range.label.toLowerCase()}
               </Text>
             )}
           </Flex>
         </Box>
-        <Text textStyle="text/xs" color="neutral.600" bg="neutral.100" px={3} py={1} borderRadius="control">
-          Last 7 days
-        </Text>
+        <Flex
+          role="group"
+          aria-label="Bitcoin price time range"
+          gap={1}
+          flexWrap="wrap"
+          bg="neutral.50"
+          p={1}
+          borderRadius="control"
+        >
+          {PRICE_RANGES.map((option) => (
+            <Button
+              key={option.label}
+              size="sm"
+              variant="ghost"
+              minH="40px"
+              px={3}
+              aria-label={option.description}
+              aria-pressed={range.days === option.days}
+              bg={range.days === option.days ? 'neutral.200' : 'transparent'}
+              color={range.days === option.days ? 'neutral.900' : 'neutral.600'}
+              onClick={() => setRange(option)}
+            >
+              {option.label}
+            </Button>
+          ))}
+        </Flex>
       </Flex>
       <Box
         h={{ base: '210px', md: '240px' }}
@@ -45,7 +83,7 @@ export function BitcoinPriceChart(): JSX.Element {
         role="img"
         aria-label={
           latest && first
-            ? `Bitcoin market price over seven days, from ${usd(first.value)} to ${usd(latest.value)}.`
+            ? `Bitcoin market price, ${range.description.toLowerCase()}, from ${usd(first.value)} to ${usd(latest.value)}.`
             : 'Bitcoin price history unavailable'
         }
       >
@@ -56,14 +94,18 @@ export function BitcoinPriceChart(): JSX.Element {
           emptyText="Price history is temporarily unavailable"
           theme="light"
           color="#D97706"
-          window={7 * 86400}
+          window={range.days * 86400}
           pulse={false}
           momentum={false}
           fill={false}
           badge={false}
           scrub={!reducedMotion}
           formatValue={usd}
-          formatTime={timeLabel}
+          formatTime={(time) =>
+            range.days === 1
+              ? new Date(time * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+              : timeLabel(time)
+          }
           padding={{ top: 12, right: 64, bottom: 32, left: 12 }}
         />
       </Box>
@@ -78,7 +120,7 @@ export function BitcoinPriceChart(): JSX.Element {
       >
         <Text textStyle="text/xs" color="neutral.600">
           {latest
-            ? `Daily prices from CoinGecko · Updated ${timeLabel(latest.time)}`
+            ? `${range.days === 1 ? 'Intraday' : range.days <= 30 ? 'Hourly' : 'Daily'} prices from CoinGecko · Updated ${timeLabel(latest.time)}`
             : query.isLoading
               ? 'Loading Bitcoin prices…'
               : 'Could not load market data.'}

@@ -118,7 +118,7 @@ function PortfolioSummary({ data }: { data: PortfolioData }): JSX.Element {
 
       {/* Chart */}
       <Box mb={3}>
-        <Text textStyle="label/xs" fontWeight="semibold" color="neutral.500" mb={2}>
+        <Text textStyle="text/sm" fontWeight="medium" color="neutral.600" mb={2}>
           Last 30 Days
         </Text>
         <Box position="relative" overflow="hidden">
@@ -135,6 +135,13 @@ function PortfolioSummary({ data }: { data: PortfolioData }): JSX.Element {
   )
 }
 
+const statValueProps = {
+  fontFamily: 'body',
+  textStyle: 'text/xl',
+  fontWeight: 'normal',
+  sx: { fontVariantNumeric: 'tabular-nums' },
+} as const
+
 function StatMini({
   label,
   value,
@@ -150,30 +157,25 @@ function StatMini({
   const usdValue = value && btcPrice ? value.toNumber() * btcPrice : null
 
   return (
-    <Box bg="neutral.50" borderRadius="control" px={4} py={3}>
-      <Text textStyle="label/xs" color="neutral.500" fontWeight="semibold" mb={1}>
+    <Box bg="neutral.50" borderRadius="control" p={4}>
+      <Text textStyle="text/md" color="neutral.900" fontWeight="medium" mb={2}>
         {label}
       </Text>
       {value !== undefined ? (
         <Flex align="baseline" gap={2} flexWrap="wrap">
-          <Text
-            fontFamily="mono"
-            textStyle="text/sm"
-            fontWeight="semibold"
-            color={isPositive ? 'success.600' : 'error.500'}
-          >
+          <Text {...statValueProps} color={isPositive ? 'success.600' : 'error.500'}>
             {isPositive ? '+' : ''}
             <BitcoinAmount btc={value.toFixed(8)} />
           </Text>
           {usdValue !== null && (
-            <Text textStyle="text/xs" color="neutral.500">
+            <Text {...statValueProps} color="neutral.600">
               {usdValue >= 0 ? '+' : '−'}$
               {Math.abs(usdValue).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </Text>
           )}
         </Flex>
       ) : (
-        <Text textStyle="text/sm" fontWeight="semibold" color="neutral.900">
+        <Text {...statValueProps} color="neutral.900">
           {count} verified
         </Text>
       )}
