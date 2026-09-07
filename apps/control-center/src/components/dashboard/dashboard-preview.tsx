@@ -1,6 +1,8 @@
 import { Box, Button, Flex, Grid, Stack, Text } from '@chakra-ui/react'
 import { Plus } from 'lucide-react'
 import { Link } from 'react-router'
+import { useBitcoinDisplay } from '../../hooks/use-bitcoin-display'
+import { formatBitcoin } from '../../lib/bitcoin-display'
 import { StatementsEmptyState } from '../statements/statements-empty-state'
 import { BitcoinPriceChart } from './bitcoin-price-chart'
 import { DashboardAmount, DashboardCardTitle } from './dashboard-typography'
@@ -12,6 +14,9 @@ export function DashboardPreview({
   loading?: boolean
   unavailable?: boolean
 }): JSX.Element {
+  const { unit } = useBitcoinDisplay()
+  const zeroBalance = formatBitcoin(0, unit)
+
   return (
     <Stack gap={6}>
       <Box border="1px solid" borderColor="neutral.200" borderRadius="panel" overflow="hidden">
@@ -19,10 +24,7 @@ export function DashboardPreview({
           <Box>
             <DashboardCardTitle>Total Bitcoin</DashboardCardTitle>
             <Flex align="baseline" gap={2} mt={1} flexWrap="wrap">
-              <DashboardAmount>{loading ? '—' : '0.00000000'}</DashboardAmount>
-              <Text textStyle="text/sm" color="neutral.600">
-                BTC
-              </Text>
+              <DashboardAmount>{loading ? '—' : zeroBalance}</DashboardAmount>
             </Flex>
             <Text textStyle="text/md" color="neutral.600" mt={1}>
               {loading ? 'Loading your holdings…' : '$0.00 USD'}
@@ -32,7 +34,7 @@ export function DashboardPreview({
         <Grid templateColumns="repeat(3, minmax(0, 1fr))" borderTop="1px solid" borderColor="neutral.200">
           {[
             ['Accounts', '0'],
-            ['30d Change', '0 BTC'],
+            ['30d Change', zeroBalance],
             ['Statements', '0'],
           ].map(([label, value]) => (
             <Box key={label} px={{ base: 4, md: 7 }} py={4}>

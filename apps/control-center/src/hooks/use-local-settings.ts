@@ -11,12 +11,15 @@ export function useLocalSetting(key: string): {
   isLoading: boolean
   save: (value: string) => void
   isSaving: boolean
+  isError: boolean
+  saveAsync: (value: string) => Promise<void>
 } {
   const queryClient = useQueryClient()
   const queryKey = ['local-settings', key]
 
   const query = useQuery({
     queryKey,
+    staleTime: 30_000,
     queryFn: async (): Promise<string | null> => {
       const input = superjson.serialize({ key })
       const params = new URLSearchParams({ input: JSON.stringify(input) })
@@ -36,8 +39,8 @@ export function useLocalSetting(key: string): {
       })
       if (!res.ok) throw new Error('Failed to save setting')
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey })
+    onSuccess: (_data, value) => {
+      queryClient.setQueryData(queryKey, value)
     },
   })
 
@@ -46,5 +49,7 @@ export function useLocalSetting(key: string): {
     isLoading: query.isLoading,
     save: (value: string) => mutation.mutate(value),
     isSaving: mutation.isLoading,
+    isError: query.isError,
+    saveAsync: mutation.mutateAsync,
   }
 }

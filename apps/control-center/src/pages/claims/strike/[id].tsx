@@ -23,6 +23,7 @@ import { format } from 'date-fns'
 import { useCallback, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { toast } from 'sonner'
+import { BitcoinAmount } from '../../../components/bitcoin-amount'
 import { trpc } from '../../../trpc'
 import { needsExchangeReconnect } from '../../../utils/exchange-connection-status'
 
@@ -319,7 +320,7 @@ export function StrikeAccountDetailsPage(): JSX.Element {
                 </Text>
               ) : (
                 <Text textStyle="label/sm" color="neutral.900" fontWeight="medium">
-                  {btcAmount} BTC
+                  <BitcoinAmount btc={btcAmount} />
                 </Text>
               )}
             </Box>
@@ -454,7 +455,7 @@ export function StrikeAccountDetailsPage(): JSX.Element {
                       <Tr>
                         <Th>Date</Th>
                         <Th>Type</Th>
-                        <Th isNumeric>BTC</Th>
+                        <Th isNumeric>Bitcoin</Th>
                         <Th isNumeric>USD</Th>
                         <Th isNumeric>Rate</Th>
                         <Th>Description</Th>
@@ -479,7 +480,8 @@ export function StrikeAccountDetailsPage(): JSX.Element {
                           </Td>
                           <Td isNumeric>
                             <Text textStyle="text/xs" fontFamily="mono">
-                              {formatBtcAmount(tx.amountBtc)}
+                              {Number(tx.amountBtc) >= 0 ? '+' : ''}
+                              <BitcoinAmount btc={tx.amountBtc} />
                             </Text>
                           </Td>
                           <Td isNumeric>
@@ -618,11 +620,6 @@ function formatMonth(yyyymm: string): string {
   const [year, month] = yyyymm.split('-')
   const date = new Date(Number(year), Number(month) - 1)
   return format(date, 'MMMM yyyy')
-}
-
-function formatBtcAmount(amount: string): string {
-  const num = Number(amount)
-  return num >= 0 ? `+${num.toFixed(8)}` : num.toFixed(8)
 }
 
 function truncateHash(hash: string | null): string {

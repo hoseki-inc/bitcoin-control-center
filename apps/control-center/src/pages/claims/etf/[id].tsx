@@ -25,6 +25,7 @@ import { format } from 'date-fns'
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { toast } from 'sonner'
+import { BitcoinAmount } from '../../../components/bitcoin-amount'
 import { trpc } from '../../../trpc'
 
 export function EtfAccountDetailsPage(): JSX.Element {
@@ -161,7 +162,7 @@ export function EtfAccountDetailsPage(): JSX.Element {
                 Computed Balance
               </Text>
               <Text textStyle="label/sm" color="neutral.900" fontWeight="medium">
-                {btcAmount} BTC
+                <BitcoinAmount btc={btcAmount} />
               </Text>
             </Box>
             <Box w={['100%', '50%', '33%']}>
@@ -193,8 +194,8 @@ export function EtfAccountDetailsPage(): JSX.Element {
                     <Th>Ticker</Th>
                     <Th>Issuer</Th>
                     <Th>Shares</Th>
-                    <Th>BTC/Share</Th>
-                    <Th>BTC Amount</Th>
+                    <Th>Bitcoin/share</Th>
+                    <Th>Bitcoin amount</Th>
                     <Th>Purchased</Th>
                     <Th />
                   </Tr>
@@ -219,12 +220,12 @@ export function EtfAccountDetailsPage(): JSX.Element {
                         </Td>
                         <Td>
                           <Text textStyle="text/xs" fontFamily="mono">
-                            {holding.btcPerShare.toFixed(8)}
+                            <BitcoinAmount btc={holding.btcPerShare} />
                           </Text>
                         </Td>
                         <Td>
                           <Text textStyle="text/xs" fontFamily="mono">
-                            {(Number(holding.btcSats) / 1e8).toFixed(8)}
+                            <BitcoinAmount btc={Number(holding.btcSats) / 1e8} />
                           </Text>
                         </Td>
                         <Td>

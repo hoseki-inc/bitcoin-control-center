@@ -19,7 +19,7 @@ import { type BalanceWithStatus } from '@hoseki/packages/lib/balance'
 import type { ClaimId } from '@hoseki/packages/schemas'
 import { ErrorInline, Spinner } from '@hoseki/packages/ui/design-system'
 import { LoadingTextSkeleton } from '@hoseki/packages/ui/prove-verify-ui/claims/loading-text-skeleton'
-import { formatUsd, toBitcoinAmountDisplayValue } from '@hoseki/packages/ui/utils'
+import { formatUsd } from '@hoseki/packages/ui/utils'
 import Decimal from 'decimal.js'
 import { PlusIcon } from 'lucide-react'
 import type { Dispatch, SetStateAction } from 'react'
@@ -29,6 +29,7 @@ import { setIsInGenerateStatementFlow } from '../../lib/flow-tracker'
 import { trpc } from '../../trpc'
 import { withStatusBalance } from '../../utils/claim-utils'
 import { isExchangeConnected, needsExchangeReconnect } from '../../utils/exchange-connection-status'
+import { BitcoinAmount } from '../bitcoin-amount'
 
 interface ClaimSelectionProps extends StackProps {
   disabledClaims?: Set<string>
@@ -150,7 +151,7 @@ export function ClaimSelection({
             </Th>
             <Th px={0} isNumeric>
               <Text textStyle="overline/sm" fontWeight={600} color="neutral.600">
-                BTC
+                Bitcoin
               </Text>
             </Th>
             <Th px={0} isNumeric>
@@ -241,7 +242,7 @@ export function ClaimSelection({
                 </Td>
                 <Td px={0} isNumeric>
                   <Text textStyle="text/sm" fontWeight="medium" whiteSpace="nowrap">
-                    {needsReconnect ? '—' : toBitcoinAmountDisplayValue(btcSats.toString())}
+                    {needsReconnect ? '—' : <BitcoinAmount btc={new Decimal(btcSats).div(100_000_000)} />}
                   </Text>
                 </Td>
                 <Td px={0} isNumeric>
@@ -285,7 +286,7 @@ export function ClaimSelection({
 function renderBalance(balance: BalanceWithStatus) {
   if (balance.status === 'loading') return <LoadingTextSkeleton width="8em" />
   if (balance.status === 'fail') return 'n/a'
-  return toBitcoinAmountDisplayValue(balance.value.current.toString())
+  return <BitcoinAmount btc={new Decimal(balance.value.current).div(100_000_000)} />
 }
 
 function renderUsdAmount(balance: BalanceWithStatus) {

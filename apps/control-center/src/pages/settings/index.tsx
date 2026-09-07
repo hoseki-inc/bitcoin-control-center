@@ -8,7 +8,10 @@ import {
   FormLabel,
   HStack,
   Input,
+  Radio,
+  RadioGroup,
   Select,
+  SimpleGrid,
   Stack,
   Switch,
   Text,
@@ -17,68 +20,158 @@ import {
 import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
+import { useBitcoinDisplay } from '../../hooks/use-bitcoin-display'
 import { useLocalSetting } from '../../hooks/use-local-settings'
+import { bitcoinDisplayUnit, formatBitcoin } from '../../lib/bitcoin-display'
 import { isDesktop } from '../../mode'
 
 export function SettingsPage(): JSX.Element {
-  const { data: savedName, isLoading, save, isSaving } = useLocalSetting('user_name')
+  const { data: savedName, isLoading, saveAsync, isSaving, isError } = useLocalSetting('user_name')
+  const [draftName, setDraftName] = useState<string | null>(null)
+  const name = draftName ?? savedName ?? ''
 
-  const [name, setName] = useState('')
-  const [isDirty, setIsDirty] = useState(false)
-
-  useEffect(() => {
-    if (savedName && !isDirty) {
-      setName(savedName)
+  const handleSave = async (): Promise<void> => {
+    try {
+      await saveAsync(name.trim())
+      setDraftName(null)
+      toast.success('Name saved')
+    } catch {
+      toast.error('Could not save your name. Please try again.')
     }
-  }, [savedName, isDirty])
-
-  const handleSave = (): void => {
-    save(name.trim())
-    setIsDirty(false)
-    toast.success('Name saved')
   }
 
   return (
-    <Box py={8}>
-      <VStack align="start" gap={6}>
-        <PageHeading title="Settings" description="App preferences and personal information." />
-
-        <Stack as={FormControl} gap={3} w="full" maxW="400px">
-          <FormLabel htmlFor="user-name" textStyle="text/sm" fontWeight="medium" mb={0}>
-            Your Name
-          </FormLabel>
-          <Text id="user-name-description" textStyle="text/sm" color="neutral.600">
-            This name will appear on your generated statements.
-          </Text>
-          <Input
-            id="user-name"
-            aria-describedby="user-name-description"
-            placeholder="Enter your name"
-            value={name}
-            onChange={(e) => {
-              setName(e.target.value)
-              setIsDirty(true)
+    <Box py={{ base: 6, md: 10 }} maxW="960px">
+      <PageHeading title="Settings" description="App preferences and personal information." />
+      <Stack mt={{ base: 8, md: 10 }} spacing={8} divider={<Divider borderColor="neutral.200" />}>
+        <SimpleGrid columns={{ base: 1, md: 2 }} spacing={{ base: 5, md: 10 }}>
+          <Box>
+            <Text as="h2" textStyle="text/md" fontWeight="semibold" color="neutral.900">
+              Personal information
+            </Text>
+            <Text id="user-name-description" mt={2} textStyle="text/sm" color="neutral.600" maxW="32ch">
+              This name will appear on your generated statements.
+            </Text>
+          </Box>
+          <Box
+            as="form"
+            onSubmit={(event: React.FormEvent) => {
+              event.preventDefault()
+              void handleSave()
             }}
-            isDisabled={isLoading}
-          />
-          <Button
-            size="sm"
-            alignSelf="flex-start"
-            onClick={handleSave}
-            isLoading={isSaving}
-            isDisabled={!isDirty || name.trim() === (savedName ?? '')}
           >
-            Save
-          </Button>
-        </Stack>
+            <FormControl isDisabled={isLoading || isSaving || isError}>
+              <FormLabel htmlFor="user-name" textStyle="text/sm" mb={2}>
+                Your name
+              </FormLabel>
+              <Input
+                id="user-name"
+                autoComplete="name"
+                aria-describedby="user-name-description"
+                maxLength={200}
+                placeholder="Enter your name"
+                value={name}
+                onChange={(event) => setDraftName(event.target.value)}
+              />
+              {isError && (
+                <Text role="alert" textStyle="text/sm" color="error.700" mt={2}>
+                  Could not load your name. Refresh to try again.
+                </Text>
+              )}
+              <Button
+                type="submit"
+                size="sm"
+                mt={4}
+                isLoading={isSaving}
+                loadingText="Saving"
+                isDisabled={isLoading || isError || name.trim() === (savedName ?? '')}
+              >
+                Save name
+              </Button>
+            </FormControl>
+          </Box>
+        </SimpleGrid>
+        <BitcoinDisplaySettings />
+        {isDesktop && <ElectrumSettings />}
+      </Stack>
+    </Box>
+  )
+}
 
-        {isDesktop && (
-          <>
-            <Divider />
-            <ElectrumSettings />
-          </>
-        )}
-      </VStack>
+const DISPLAY_OPTIONS = [
+  { value: 'symbol', label: 'Bitcoin symbol' },
+  { value: 'sats', label: 'Sats' },
+  { value: 'btc', label: 'BTC' },
+] as const
+
+function BitcoinDisplaySettings(): JSX.Element {
+  const { unit, saveAsync, isSaving, isLoading, isError } = useBitcoinDisplay()
+  const handleChange = async (value: string): Promise<void> => {
+    try {
+      await saveAsync(bitcoinDisplayUnit(value))
+      toast.success('Bitcoin display updated')
+    } catch {
+      toast.error('Could not save your display preference. Please try again.')
+    }
+  }
+
+  return (
+    <Box as="section" aria-labelledby="bitcoin-display-heading">
+      <Text as="h2" id="bitcoin-display-heading" textStyle="text/md" fontWeight="semibold" color="neutral.900">
+        Bitcoin display
+      </Text>
+      <Text mt={2} textStyle="text/sm" color="neutral.600" id="bitcoin-display-description">
+        Choose how Bitcoin amounts appear in the app. Each preview shows the same 2.1 BTC.
+      </Text>
+      <RadioGroup
+        value={unit}
+        onChange={(value) => void handleChange(value)}
+        mt={5}
+        aria-labelledby="bitcoin-display-heading"
+        aria-describedby="bitcoin-display-description"
+        isDisabled={isLoading || isSaving || isError}
+      >
+        <SimpleGrid columns={{ base: 1, md: 3 }} spacing={3}>
+          {DISPLAY_OPTIONS.map((option) => (
+            <Box
+              as="label"
+              key={option.value}
+              p={4}
+              border="1px solid"
+              borderRadius="xl"
+              borderColor={unit === option.value ? 'neutral.900' : 'neutral.200'}
+              bg={unit === option.value ? 'neutral.50' : 'shades.0'}
+              cursor={isLoading || isSaving || isError ? 'default' : 'pointer'}
+              _hover={{ borderColor: 'neutral.500' }}
+              _focusWithin={{ outline: '2px solid', outlineColor: 'primary.500', outlineOffset: '3px' }}
+            >
+              <HStack justify="space-between" mb={5}>
+                <Text textStyle="text/sm" fontWeight="medium">
+                  {option.label}
+                </Text>
+                <Radio as="span" value={option.value} colorScheme="gray" aria-label={option.label} />
+              </HStack>
+              <Text
+                textStyle="text/lg"
+                fontWeight="semibold"
+                color="neutral.900"
+                sx={{ fontVariantNumeric: 'tabular-nums' }}
+              >
+                {formatBitcoin('2.1', option.value)}
+              </Text>
+            </Box>
+          ))}
+        </SimpleGrid>
+      </RadioGroup>
+      <Text mt={3} textStyle="text/xs" color={isError ? 'error.700' : 'neutral.600'} role="status">
+        {isError
+          ? 'Could not load your preference. Refresh to try again.'
+          : isLoading
+            ? 'Loading preference…'
+            : isSaving
+              ? 'Saving preference…'
+              : 'Saved automatically on this Control Center.'}
+      </Text>
     </Box>
   )
 }

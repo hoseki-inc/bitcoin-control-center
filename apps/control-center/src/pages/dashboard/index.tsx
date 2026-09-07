@@ -22,6 +22,7 @@ import { format, isAfter, isBefore, startOfDay, subDays } from 'date-fns'
 import Decimal from 'decimal.js'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
+import { BitcoinAmount } from '../../components/bitcoin-amount'
 import { AccountsSidebar } from '../../components/dashboard-charts/accounts-sidebar'
 import { AccumulationChart } from '../../components/dashboard-charts/accumulation-chart'
 import {
@@ -76,17 +77,6 @@ function formatCustomDateRangeLabel(range: CustomDateRangeDraft): string {
     return `${format(range.startDate, 'MMM d')} – ${format(range.endDate, 'MMM d, yyyy')}`
   }
   return `${format(range.startDate, 'PP')} – ${format(range.endDate, 'PP')}`
-}
-
-function formatBtc(satoshis: string | Decimal | unknown): string {
-  try {
-    const sats = typeof satoshis === 'string' || satoshis instanceof Decimal ? satoshis : toSatoshisString(satoshis)
-    const btc = new Decimal(sats).div(100_000_000)
-    const formatted = btc.toFixed(8)
-    return formatted === '' || formatted === 'NaN' ? '0.00000000' : formatted
-  } catch {
-    return '0.00000000'
-  }
 }
 
 function formatUsd(btcAmount: number, btcPrice: number): string {
@@ -496,7 +486,6 @@ export function DashboardPage(): JSX.Element {
     manualAccounts.length > 0 ||
     etfAccounts.length > 0
   const hasHistoricalData = (allData?.historicalData?.length ?? 0) > 0 || (activeData?.historicalData?.length ?? 0) > 0
-  const totalBtcDisplay = formatBtc(displayBalanceSats.toString())
   const btcPrice = data?.currentBtcPrice
     ? Number(data.currentBtcPrice)
     : allData?.currentBtcPrice
@@ -613,13 +602,10 @@ export function DashboardPage(): JSX.Element {
               color="neutral.900"
               letterSpacing="-0.04em"
             >
-              {totalBtcDisplay}
+              <BitcoinAmount btc={new Decimal(displayBalanceSats).div(100_000_000)} />
             </Text>
             <Text textStyle="text/sm" color="neutral.500" fontWeight="medium" mt={1}>
-              <Text as="span" color="neutral.500">
-                BTC
-              </Text>
-              {'  ·  '}${formatUsd(currentBtcFloat, btcPrice)}
+              ${formatUsd(currentBtcFloat, btcPrice)}
             </Text>
           </Box>
 
@@ -639,7 +625,7 @@ export function DashboardPage(): JSX.Element {
               transition="opacity 0.2s ease"
             >
               <Text textStyle="text/sm" fontWeight="semibold" color={changeColor} fontFamily="mono">
-                {isUp ? '↑' : '↓'} {formatBtc(periodChange.abs().toString())} BTC ({isUp ? '+' : ''}
+                {isUp ? '↑' : '↓'} <BitcoinAmount btc={periodChange.abs().div(100_000_000)} /> ({isUp ? '+' : ''}
                 {periodChange.eq(0)
                   ? '0.0'
                   : periodChange
@@ -1048,10 +1034,7 @@ function StatCard({ label, data, mode, timezone }: StatCardProps): JSX.Element {
         letterSpacing="-0.02em"
       >
         {isPositive ? '+' : ''}
-        {value.toFixed(8)}
-      </Text>
-      <Text textStyle="label/xs" color="neutral.500" mt={0.5}>
-        BTC
+        <BitcoinAmount btc={value} />
       </Text>
     </Box>
   )

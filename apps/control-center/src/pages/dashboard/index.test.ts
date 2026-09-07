@@ -6,6 +6,8 @@ import { type Root, createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DashboardPage } from './index'
 
+vi.mock('../../hooks/use-bitcoin-display', () => ({ useBitcoinDisplay: () => ({ unit: 'btc' }) }))
+
 const mocks = vi.hoisted(() => {
   const base = {
     currentTotalBalance: '100',

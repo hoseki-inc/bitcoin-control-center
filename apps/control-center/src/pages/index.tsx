@@ -3,6 +3,7 @@ import { EmptyView } from '@hoseki/packages/ui/design-system'
 import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
 import Decimal from 'decimal.js'
 import { Link } from 'react-router'
+import { BitcoinAmount } from '../components/bitcoin-amount'
 import { AccumulationChart } from '../components/dashboard-charts/accumulation-chart'
 import { Banner } from '../components/dashboard/banner'
 import { BitcoinPriceChart } from '../components/dashboard/bitcoin-price-chart'
@@ -94,13 +95,12 @@ function PortfolioSummary({ data }: { data: PortfolioData }): JSX.Element {
         <Box>
           <DashboardCardTitle>Total Bitcoin</DashboardCardTitle>
           <Box mt={1}>
-            <DashboardAmount>{totalBtc.toFixed(8)}</DashboardAmount>
+            <DashboardAmount>
+              <BitcoinAmount btc={totalBtc} />
+            </DashboardAmount>
           </Box>
           <Text textStyle="text/sm" color="neutral.500" mt={0.5}>
-            <Text as="span" color="neutral.500">
-              BTC
-            </Text>
-            {'  ·  '}${totalUsd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            ${totalUsd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </Text>
         </Box>
         <Button
@@ -163,7 +163,7 @@ function StatMini({
             color={isPositive ? 'success.600' : 'error.500'}
           >
             {isPositive ? '+' : ''}
-            {value.toFixed(8)} BTC
+            <BitcoinAmount btc={value.toFixed(8)} />
           </Text>
           {usdValue !== null && (
             <Text textStyle="text/xs" color="neutral.500">

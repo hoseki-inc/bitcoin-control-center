@@ -1,0 +1,20 @@
+/* Supply Inter's Bitcoin glyph where the bundled Geist fonts have no coverage.
+ * The Unicode range leaves every other character in the original font.
+ */
+@font-face {
+  font-family: 'Geist';
+  src: url('./InterVariable.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  unicode-range: U+20BF;
+}
+
+@font-face {
+  font-family: 'Geist Mono';
+  src: url('./InterVariable.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  unicode-range: U+20BF;
+}

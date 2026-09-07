@@ -25,6 +25,7 @@ import { format } from 'date-fns'
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { toast } from 'sonner'
+import { BitcoinAmount } from '../../../components/bitcoin-amount'
 import { trpc } from '../../../trpc'
 
 const TX_TYPE_LABELS: Record<string, string> = {
@@ -196,7 +197,7 @@ export function ManualAccountDetailsPage(): JSX.Element {
                 Balance
               </Text>
               <Text textStyle="label/sm" color="neutral.900" fontWeight="medium">
-                {btcAmount} BTC
+                <BitcoinAmount btc={btcAmount} />
               </Text>
             </Box>
             <Box w={['100%', '50%', '33%']}>
@@ -350,7 +351,7 @@ export function ManualAccountDetailsPage(): JSX.Element {
                 <Thead>
                   <Tr>
                     <Th>Type</Th>
-                    <Th>Amount (BTC)</Th>
+                    <Th>Amount</Th>
                     <Th>Date</Th>
                     <Th>Note</Th>
                     <Th />
@@ -369,7 +370,9 @@ export function ManualAccountDetailsPage(): JSX.Element {
                         </Text>
                       </Td>
                       <Td>
-                        <Text textStyle="text/xs">{(Number(tx.amountSats) / 1e8).toFixed(8)}</Text>
+                        <Text textStyle="text/xs">
+                          <BitcoinAmount btc={Number(tx.amountSats) / 1e8} />
+                        </Text>
                       </Td>
                       <Td>
                         <Text textStyle="text/xs">{format(new Date(tx.transactedAt), 'MMM d, yyyy')}</Text>

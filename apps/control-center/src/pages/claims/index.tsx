@@ -21,6 +21,7 @@ import { PlusIcon } from 'lucide-react'
 import { useEffect } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router'
 import { toast } from 'sonner'
+import { BitcoinAmount } from '../../components/bitcoin-amount'
 import { DeleteClaimModal } from '../../components/claims/claim-details/delete-claim-modal'
 import { useAutoRefreshExchanges } from '../../hooks/use-auto-refresh-exchanges'
 import { useQueryErrorToast } from '../../hooks/use-query-error-toast'
@@ -210,7 +211,7 @@ export function ClaimsPage(): JSX.Element {
             {hasClaims && (
               <Flex align="center" gap={3} mt={2} flexWrap="wrap">
                 <Text textStyle="text/sm" fontWeight="semibold" color="neutral.900">
-                  {totalBtc.toFixed(8)} BTC
+                  <BitcoinAmount btc={totalBtc.toFixed(8)} />
                 </Text>
                 <Text color="neutral.200">·</Text>
                 <Text textStyle="text/sm" color="success.600">
@@ -403,7 +404,7 @@ function AccountCard({ claim, balance, totalBtcSats, isLoadingBalance }: Account
               color="neutral.900"
               letterSpacing="-0.02em"
             >
-              {btcAmount.toFixed(8)} BTC
+              <BitcoinAmount btc={btcAmount.toFixed(8)} />
             </Text>
             <Text textStyle="text/sm" fontWeight="medium" color="success.600">
               ${usdAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -604,7 +605,7 @@ function ExchangeAccountCard({ account, totalBtcSats, btcUsdPrice }: ExchangeAcc
               color="neutral.900"
               letterSpacing="-0.02em"
             >
-              {btcAmount.toFixed(8)} BTC
+              <BitcoinAmount btc={btcAmount.toFixed(8)} />
             </Text>
             {usdAmount !== null && (
               <Text textStyle="text/sm" fontWeight="medium" color="success.600">
@@ -692,7 +693,7 @@ function ManualAccountCard({
       {/* Balance */}
       <Stack gap={0} mx={4} mt={1}>
         <Text fontFamily="mono" textStyle="text/lg" fontWeight="semibold" color="neutral.900" letterSpacing="-0.02em">
-          {btcAmount.toFixed(8)} BTC
+          <BitcoinAmount btc={btcAmount.toFixed(8)} />
         </Text>
         {usdAmount !== null && (
           <Text textStyle="text/sm" fontWeight="medium" color="success.600">

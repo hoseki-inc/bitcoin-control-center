@@ -3,6 +3,8 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type * as DashboardBanner from '../components/dashboard/banner'
+import type { BitcoinDisplayUnit } from '../lib/bitcoin-display'
 import { HomePage } from './index'
 
 const mocks = vi.hoisted(() => ({
@@ -11,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   history: [] as Array<{ timestamp: string; totalBalance: string }>,
   isLoading: false,
   isError: false,
+  unit: 'btc' as BitcoinDisplayUnit,
 }))
 
 vi.mock('../trpc', () => {
@@ -47,9 +50,10 @@ vi.mock('../trpc', () => {
 vi.mock('../hooks/use-ui-settings', () => ({
   useUiSettings: () => ({ isStatementsMadeEasyDismissed: false, updateUiSettings: vi.fn() }),
 }))
+vi.mock('../hooks/use-bitcoin-display', () => ({ useBitcoinDisplay: () => ({ unit: mocks.unit }) }))
 vi.mock('liveline', () => ({ Liveline: () => createElement('canvas', { 'data-chart': 'liveline' }) }))
 vi.mock('../components/dashboard/banner', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../components/dashboard/banner')>()),
+  ...(await importOriginal<typeof DashboardBanner>()),
   Banner: () => createElement('div', null, 'Statement introduction'),
 }))
 vi.mock('../components/dashboard/recent-statements', () => ({ RecentStatements: () => null }))
@@ -77,6 +81,7 @@ beforeEach(() => {
   mocks.history = []
   mocks.isLoading = false
   mocks.isError = false
+  mocks.unit = 'btc'
 })
 
 describe('Home overview states', () => {
@@ -85,7 +90,7 @@ describe('Home overview states', () => {
     expect(html).toContain('Your Bitcoin, in one place')
     expect(html.match(/href="\/accounts\/add"/g)).toHaveLength(1)
     for (const text of [
-      '0.00000000',
+      '0 BTC',
       '$0.00 USD',
       '30d Change',
       'Bitcoin Price',
@@ -101,6 +106,18 @@ describe('Home overview states', () => {
     expect(html).not.toContain('Sample chart')
     expect(html).not.toContain('$98,820')
     expect(html).not.toContain('Statement introduction')
+  })
+
+  it.each([
+    ['btc', '0 BTC'],
+    ['sats', '0 sats'],
+    ['symbol', '₿ 0'],
+  ] as const)('uses %s for both empty-state Bitcoin values', (unit, expected) => {
+    mocks.unit = unit
+    const html = renderHome()
+    expect(html.split(`>${expected}<`)).toHaveLength(3)
+    expect(html).not.toContain('0.00000000')
+    if (unit !== 'btc') expect(html).not.toContain('0 BTC')
   })
 
   it.each(['claims', 'exchange', 'manual', 'etf'] as const)(

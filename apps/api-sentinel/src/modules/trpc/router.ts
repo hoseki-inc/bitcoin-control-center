@@ -1861,6 +1861,7 @@ const blocksRouter = t.router({
 
 const READABLE_SETTINGS = new Set([
   'user_name',
+  'bitcoin_display_unit',
   'owner_identifier',
   'electrum_host',
   'electrum_port',
@@ -1870,6 +1871,7 @@ const READABLE_SETTINGS = new Set([
 
 const WRITABLE_SETTINGS = new Set([
   'user_name',
+  'bitcoin_display_unit',
   'owner_identifier',
   'electrum_host',
   'electrum_port',
@@ -1992,6 +1994,12 @@ function validateWritableSetting(key: string, value: string): string {
   }
 
   switch (key) {
+    case 'bitcoin_display_unit': {
+      if (value !== 'symbol' && value !== 'sats' && value !== 'btc') {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Unsupported Bitcoin display unit' })
+      }
+      return value
+    }
     case 'user_name':
     case 'owner_identifier': {
       if (value.length > 200) {

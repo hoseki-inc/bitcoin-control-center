@@ -4,7 +4,10 @@ import { format } from 'date-fns'
 import Decimal from 'decimal.js'
 import { useMemo } from 'react'
 import { Area, AreaChart, ResponsiveContainer, Tooltip, type TooltipContentProps, XAxis, YAxis } from 'recharts'
+import { useBitcoinDisplay } from '../../hooks/use-bitcoin-display'
+import { formatBitcoin } from '../../lib/bitcoin-display'
 import { getBrowserTimezone } from '../../utils/timezone'
+import { BitcoinAmount } from '../bitcoin-amount'
 
 interface BalanceDataPoint {
   timestamp: string
@@ -17,15 +20,6 @@ interface AccumulationChartProps {
   hasActivity?: boolean
   isUp?: boolean
   timezone?: string
-}
-
-function formatBtcBalance(satoshis: string | Decimal): string {
-  return new Decimal(satoshis).div(100_000_000).toFixed(8)
-}
-
-function formatShortBtc(satoshis: string | Decimal): string {
-  const btc = new Decimal(satoshis).div(100_000_000)
-  return btc.gte(1) ? btc.toFixed(2) : btc.toFixed(4)
 }
 
 function formatUsd(btcAmount: number, btcPrice: number): string {
@@ -53,7 +47,7 @@ function ChartTooltip({
         {format(new TZDate(new Date(data.timestamp), timezone), 'MMMM d, yyyy')}
       </Text>
       <Text textStyle="text/sm" fontWeight="bold" color="shades.0" fontFamily="mono">
-        {formatBtcBalance(data.totalBalance)} BTC
+        <BitcoinAmount btc={new Decimal(data.totalBalance).div(100_000_000)} />
       </Text>
       {btcPrice > 0 && (
         <Text textStyle="label/xs" color="neutral.500" mt={0.5} fontFamily="mono">
@@ -70,6 +64,7 @@ export function AccumulationChart({
   isUp = true,
   timezone = getBrowserTimezone(),
 }: AccumulationChartProps): JSX.Element {
+  const { unit } = useBitcoinDisplay()
   const [success500, error500, neutral400] = useToken('colors', ['success.500', 'error.500', 'neutral.400'])
 
   const chartData = useMemo(
@@ -140,8 +135,8 @@ export function AccumulationChart({
             axisLine={false}
             tickLine={false}
             tick={{ fontSize: 10, fill: '#ccc', fontWeight: 500 }}
-            tickFormatter={(v: number) => formatShortBtc(new Decimal(v).mul(100_000_000).toString())}
-            width={52}
+            tickFormatter={(v: number) => formatBitcoin(v, unit)}
+            width={unit === 'sats' ? 112 : 96}
           />
           <Tooltip
             content={(tooltipProps) => <ChartTooltip {...tooltipProps} timezone={timezone} />}

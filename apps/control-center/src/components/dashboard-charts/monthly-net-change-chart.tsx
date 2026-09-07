@@ -1,6 +1,7 @@
 import { Box, Flex, Text, useToken } from '@chakra-ui/react'
 import { useMemo } from 'react'
 import { Bar, BarChart, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { BitcoinAmount } from '../bitcoin-amount'
 import { type BalanceDataPoint, type MonthlyChange, getMonthlyChanges } from './balance-history'
 
 interface MonthlyNetChangeChartProps {
@@ -23,7 +24,7 @@ function BarTooltip({
     <Box bg="neutral.900" borderRadius="8px" px={3} py={2} shadow="lg">
       <Text textStyle="text/sm" fontWeight="bold" fontFamily="mono" color={isPositive ? 'success.400' : 'error.400'}>
         {isPositive ? '+' : ''}
-        {change.toFixed(8)} BTC
+        <BitcoinAmount btc={change.toFixed(8)} />
       </Text>
     </Box>
   )

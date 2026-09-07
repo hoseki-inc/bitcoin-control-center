@@ -17,6 +17,7 @@ import { TopBar } from '@hoseki/packages/ui/prove-verify-ui/top-bar'
 import { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router'
 import { toast } from 'sonner'
+import { BitcoinAmount } from '../../../components/bitcoin-amount'
 import { trpc } from '../../../trpc'
 
 interface HoldingRow {
@@ -199,7 +200,7 @@ export function ClaimsVerifyEtfPage(): JSX.Element {
               Estimated BTC Total
             </Text>
             <Text fontFamily="mono" textStyle="text/lg" fontWeight="bold" color="neutral.900">
-              {totalBtc.toFixed(8)} BTC
+              <BitcoinAmount btc={totalBtc.toFixed(8)} />
             </Text>
           </Box>
         )}
