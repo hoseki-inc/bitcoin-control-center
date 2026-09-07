@@ -1,3 +1,5 @@
+import { Box } from '@chakra-ui/react'
+import { motion } from '@hoseki/packages/ui/design-system/animations/motion'
 import {
   AppLayout as BaseAppLayout,
   Logo as BaseLogo,
@@ -31,11 +33,35 @@ export function AppLayout({ fullWidth }: { fullWidth?: boolean }): JSX.Element {
 
   const menu = <BaseMenu items={menuItems} renderLink={(to, children) => <NavLink to={to}>{children}</NavLink>} />
 
-  const header = <Header logo={logo} menu={menu} userInfo={<UserInfo />} />
+  const header = (
+    <Box data-app-navbar>
+      <Header logo={logo} menu={menu} userInfo={<UserInfo />} />
+    </Box>
+  )
 
   return (
-    <BaseAppLayout header={header} fullWidth={fullWidth}>
-      <Outlet />
-    </BaseAppLayout>
+    <Box
+      display="contents"
+      sx={{
+        '& [data-app-navbar]': {
+          opacity: 1,
+          visibility: 'visible',
+          transition: `opacity ${motion.revealMs}ms ${motion.easeOut}`,
+        },
+        // Resolve from the rendered welcome state before paint, without a second timer.
+        '&:has([data-welcome-phase="welcome"], [data-welcome-phase="reveal"]) [data-app-navbar]': {
+          opacity: 0,
+          visibility: 'hidden',
+          transition: 'none',
+        },
+        '@media (prefers-reduced-motion: reduce)': {
+          '& [data-app-navbar]': { transition: 'none' },
+        },
+      }}
+    >
+      <BaseAppLayout header={header} fullWidth={fullWidth}>
+        <Outlet />
+      </BaseAppLayout>
+    </Box>
   )
 }

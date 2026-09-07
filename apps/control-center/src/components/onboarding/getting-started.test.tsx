@@ -77,6 +77,7 @@ async function mount(ready?: boolean): Promise<void> {
   await act(async () => {
     await new Promise((resolve) => setTimeout(resolve, 30))
   })
+  await act(async () => container.querySelector<HTMLButtonElement>('[aria-label^="Skip welcome"]')?.click())
 }
 async function click(label: string): Promise<void> {
   const button = Array.from(container.querySelectorAll('button')).find((item) => item.textContent === label)
