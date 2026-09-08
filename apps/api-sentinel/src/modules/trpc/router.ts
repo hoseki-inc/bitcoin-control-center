@@ -1782,6 +1782,18 @@ const portalProveRouter = t.router({
   etf: etfRouter,
   onchain: onchainRouter,
   statement: statementRouter,
+  retrieveBitcoinPriceHistory: publicProcedure
+    .input(
+      z
+        .object({ days: z.union([z.literal(1), z.literal(7), z.literal(30), z.literal(180), z.literal(365)]) })
+        .optional(),
+    )
+    .query(async ({ ctx, input }) => {
+      const result = await ctx.app.priceService.getBitcoinPriceHistory(input?.days)
+      if (result.isErr())
+        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Bitcoin price history is unavailable' })
+      return result.unwrap()
+    }),
   retrieveBitcoinPrice: publicProcedure.query(async ({ ctx }) => {
     const result = await ctx.app.priceService.getCurrentBtcPrice()
     if (result.isErr()) {
@@ -1843,6 +1855,8 @@ const blocksRouter = t.router({
 
 const READABLE_SETTINGS = new Set([
   'user_name',
+  'bitcoin_display_unit',
+  'onboarding_v1',
   'owner_identifier',
   'electrum_host',
   'electrum_port',
@@ -1852,6 +1866,8 @@ const READABLE_SETTINGS = new Set([
 
 const WRITABLE_SETTINGS = new Set([
   'user_name',
+  'bitcoin_display_unit',
+  'onboarding_v1',
   'owner_identifier',
   'electrum_host',
   'electrum_port',
@@ -1974,6 +1990,18 @@ function validateWritableSetting(key: string, value: string): string {
   }
 
   switch (key) {
+    case 'onboarding_v1': {
+      if (!['started', 'dismissed', 'completed'].includes(value)) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid onboarding state' })
+      }
+      return value
+    }
+    case 'bitcoin_display_unit': {
+      if (value !== 'symbol' && value !== 'sats' && value !== 'btc') {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Unsupported Bitcoin display unit' })
+      }
+      return value
+    }
     case 'user_name':
     case 'owner_identifier': {
       if (value.length > 200) {

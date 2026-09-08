@@ -5,6 +5,7 @@ import Decimal from 'decimal.js'
 import { Link } from 'react-router'
 import { BitcoinAmount } from '../components/bitcoin-amount'
 import { AccumulationChart } from '../components/dashboard-charts/accumulation-chart'
+import { BitcoinPriceChart } from '../components/dashboard/bitcoin-price-chart'
 import { DashboardPreview } from '../components/dashboard/dashboard-preview'
 import { DashboardAmount, DashboardCardTitle } from '../components/dashboard/dashboard-typography'
 import { RecentStatements } from '../components/dashboard/recent-statements'
@@ -86,6 +87,7 @@ export function HomePage(): JSX.Element {
           }
         />
       )}
+      <BitcoinPriceChart />
       {statementsError ? (
         <Flex role="status" justify="space-between" gap={4} align="center" flexWrap="wrap">
           <Text textStyle="text/sm" color="neutral.600">

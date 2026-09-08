@@ -97,11 +97,19 @@ beforeEach(() => {
 })
 
 describe('Home overview states', () => {
-  it('previews zero balances with one account action', () => {
+  it('previews zero balances and a labeled market chart with one account action', () => {
     const html = renderHome()
     expect(html).toContain('Your Bitcoin, in one place')
     expect(html.match(/href="\/accounts\/add"/g)).toHaveLength(1)
-    for (const text of ['0 BTC', '$0.00 USD', '30d Change', 'Your holdings, on record']) {
+    for (const text of [
+      '0 BTC',
+      '$0.00 USD',
+      '30d Change',
+      'Bitcoin Price',
+      'Last 7 days',
+      'Your holdings, on record',
+      'data-chart="history"',
+    ]) {
       expect(html).toContain(text)
     }
     expect(html).toContain('Generate Statement')
@@ -150,13 +158,15 @@ describe('Home overview states', () => {
     expect(html).not.toContain('0 BTC')
     expect(html).toContain('Try Again')
     expect(html).not.toContain('Dashboard preview')
+    expect(html).toContain('Bitcoin Price')
     expect(html).not.toContain('href="/accounts/add"')
   }, 20_000)
 
-  it('waits for account queries before offering account setup', () => {
+  it('waits for account queries before offering onboarding', () => {
     mocks.isLoading = true
     const html = renderHome()
     expect(html).toContain('Loading your holdings')
+    expect(html).toContain('Bitcoin Price')
     expect(html).not.toContain('0.00000000')
     expect(html).not.toContain('href="/accounts/add"')
   })
