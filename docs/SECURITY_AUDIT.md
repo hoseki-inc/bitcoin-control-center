@@ -6,6 +6,7 @@ This document records the baseline dependency review performed while extracting 
 
 - Baseline audit date: 2026-08-05
 - Latest remediation review: 2026-08-27
+- Latest Dependabot/security review: [2026-09-08](SECURITY_REVIEW_2026-09-08.md). Current main has no moderate-or-higher npm findings, but Electron 41 is out of support and the proposed StartOS SDK update introduces high-severity advisories. Automatic security-update PRs were enabled and verified in the September 8 follow-up.
 
 | Dependency graph          | Before                                                | After |
 | ------------------------- | ----------------------------------------------------- | ----- |
@@ -35,6 +36,8 @@ Removing it requires upstream changes or replacing security-sensitive wallet int
 ## Supply-chain controls
 
 - Exact versions are used for direct npm dependencies.
+- Dependabot groups routine patch/minor version updates separately from major migrations. Electron has a dedicated version-update group covering every release level so supported-runtime updates remain visible. These groups do not apply to security updates, which stay independent.
+- Coordinated major migrations, such as tRPC with React Query or Chakra with React types, require an application change and compatibility testing before their individual dependency PRs can be replaced or merged.
 - Optional peers are not installed automatically; required runtime peers are declared explicitly.
 - pnpm rejects newly published versions for seven days through `minimumReleaseAge`.
 - Patched transitive versions are enforced with root pnpm overrides.
