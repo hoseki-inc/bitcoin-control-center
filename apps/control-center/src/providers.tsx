@@ -6,6 +6,7 @@ import { MotionConfig } from 'framer-motion'
 import type { ReactNode } from 'react'
 import { BrowserRouter } from 'react-router'
 import { Toaster } from 'sonner'
+import './fonts/inter/bitcoin.css'
 import { StatementPollingProvider } from './providers/statement-polling-provider'
 import { queryClient, reactTrpcClient, trpc } from './trpc'
 

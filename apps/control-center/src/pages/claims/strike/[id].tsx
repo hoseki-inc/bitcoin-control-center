@@ -24,6 +24,7 @@ import { useCallback, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { toast } from 'sonner'
 import { BitcoinAmount } from '../../../components/bitcoin-amount'
+import { SensitiveValue } from '../../../components/sensitive-value'
 import { trpc } from '../../../trpc'
 import { needsExchangeReconnect } from '../../../utils/exchange-connection-status'
 
@@ -308,9 +309,9 @@ export function StrikeAccountDetailsPage(): JSX.Element {
                 </Text>
               ) : (
                 <Text textStyle="label/sm" color="neutral.900" fontWeight="medium">
-                  <>
+                  <SensitiveValue>
                     <BitcoinAmount btc={btcAmount} />
-                  </>
+                  </SensitiveValue>
                 </Text>
               )}
             </Box>
@@ -474,21 +475,25 @@ export function StrikeAccountDetailsPage(): JSX.Element {
                             </Text>
                           </Td>
                           <Td isNumeric>
-                            <>
+                            <SensitiveValue>
                               <Text textStyle="text/xs" fontFamily="mono">
                                 {Number(tx.amountBtc) >= 0 ? '+' : ''}
                                 <BitcoinAmount btc={tx.amountBtc} />
                               </Text>
-                            </>
+                            </SensitiveValue>
                           </Td>
                           <Td isNumeric>
                             <Text textStyle="text/xs" fontFamily="mono" color="neutral.500">
-                              <>{tx.amountUsd ? `$${Math.abs(Number(tx.amountUsd)).toFixed(2)}` : '—'}</>
+                              <SensitiveValue>
+                                {tx.amountUsd ? `$${Math.abs(Number(tx.amountUsd)).toFixed(2)}` : '—'}
+                              </SensitiveValue>
                             </Text>
                           </Td>
                           <Td isNumeric>
                             <Text textStyle="text/xs" color="neutral.500">
-                              <>{tx.exchangeRate ? `$${Number(tx.exchangeRate).toLocaleString()}` : '—'}</>
+                              <SensitiveValue>
+                                {tx.exchangeRate ? `$${Number(tx.exchangeRate).toLocaleString()}` : '—'}
+                              </SensitiveValue>
                             </Text>
                           </Td>
                           <Td>

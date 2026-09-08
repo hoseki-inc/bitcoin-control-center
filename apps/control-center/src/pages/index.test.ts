@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type * as DashboardBanner from '../components/dashboard/banner'
+import type { BitcoinDisplayUnit } from '../lib/bitcoin-display'
 import { HomePage } from './index'
 
 const mocks = vi.hoisted(() => ({
@@ -15,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   statementsError: false,
   btcPrice: '50000',
   onboarding: 'dismissed' as string | null,
+  unit: 'btc' as BitcoinDisplayUnit,
 }))
 
 vi.mock('../trpc', () => {
@@ -55,6 +57,7 @@ vi.mock('../hooks/use-local-settings', () => ({
 vi.mock('../hooks/use-ui-settings', () => ({
   useUiSettings: () => ({ isStatementsMadeEasyDismissed: false, updateUiSettings: vi.fn() }),
 }))
+vi.mock('../hooks/use-bitcoin-display', () => ({ useBitcoinDisplay: () => ({ unit: mocks.unit }) }))
 vi.mock('../components/dashboard-charts/history-line-chart', () => ({
   HistoryLineChart: () => createElement('svg', { 'data-chart': 'history' }),
 }))
@@ -90,6 +93,7 @@ beforeEach(() => {
   mocks.isError = false
   mocks.statementsError = false
   mocks.btcPrice = '50000'
+  mocks.unit = 'btc'
 })
 
 describe('Home overview states', () => {
@@ -106,6 +110,18 @@ describe('Home overview states', () => {
     expect(html).not.toContain('Sample chart')
     expect(html).not.toContain('$98,820')
     expect(html).not.toContain('Statement introduction')
+  })
+
+  it.each([
+    ['btc', '0 BTC'],
+    ['sats', '0 sats'],
+    ['symbol', '₿ 0'],
+  ] as const)('uses %s for both empty-state Bitcoin values', (unit, expected) => {
+    mocks.unit = unit
+    const html = renderHome()
+    expect(html.split(`>${expected}<`)).toHaveLength(3)
+    expect(html).not.toContain('0.00000000')
+    if (unit !== 'btc') expect(html).not.toContain('0 BTC')
   })
 
   it.each(['claims', 'exchange', 'manual', 'etf'] as const)(

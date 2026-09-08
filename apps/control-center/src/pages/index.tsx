@@ -9,6 +9,7 @@ import { DashboardPreview } from '../components/dashboard/dashboard-preview'
 import { DashboardAmount, DashboardCardTitle } from '../components/dashboard/dashboard-typography'
 import { RecentStatements } from '../components/dashboard/recent-statements'
 import { FiatAmountText } from '../components/fiat-amount-text'
+import { SensitiveValue } from '../components/sensitive-value'
 import { StatementsEmptyState } from '../components/statements/statements-empty-state'
 import { useQueryErrorToast } from '../hooks/use-query-error-toast'
 import { type RouterOutput, trpc } from '../trpc'
@@ -130,17 +131,17 @@ function PortfolioSummary({ data, accountCount }: { data: PortfolioData; account
           <DashboardCardTitle>Total Bitcoin</DashboardCardTitle>
           <Box mt={1}>
             <DashboardAmount primary>
-              <>
+              <SensitiveValue>
                 <BitcoinAmount btc={totalBtc} />
-              </>
+              </SensitiveValue>
             </DashboardAmount>
           </Box>
           <FiatAmountText primary mt={1}>
-            <>
+            <SensitiveValue>
               {totalUsd === null
                 ? 'USD value unavailable'
                 : totalUsd.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
-            </>
+            </SensitiveValue>
           </FiatAmountText>
         </Box>
         <Button as={Link} to="/portfolio" variant="outline" size="md" px={6} py={3} borderRadius="control">
@@ -154,9 +155,9 @@ function PortfolioSummary({ data, accountCount }: { data: PortfolioData; account
           Last 30 Days
         </Text>
         <Box position="relative" overflow="hidden">
-          <>
+          <SensitiveValue>
             <AccumulationChart data={historicalData} hasActivity={hasBalance} isUp={isUp} timezone={userTimezone} />
-          </>
+          </SensitiveValue>
         </Box>
       </Box>
 
@@ -205,17 +206,17 @@ function StatMini({
       {value !== undefined ? (
         <Flex align="baseline" gap={2} flexWrap="wrap">
           <Text {...statValueProps} color={value.isZero() ? 'neutral.900' : isPositive ? 'success.700' : 'error.700'}>
-            <>
+            <SensitiveValue>
               {isPositive ? '+' : ''}
               <BitcoinAmount btc={value.toFixed(8)} />
-            </>
+            </SensitiveValue>
           </Text>
           {usdValue !== null && (
             <Text {...statValueProps} color="neutral.600">
-              <>
+              <SensitiveValue>
                 {usdValue >= 0 ? '+' : '−'}$
                 {Math.abs(usdValue).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </>
+              </SensitiveValue>
             </Text>
           )}
         </Flex>

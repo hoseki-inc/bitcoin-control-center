@@ -28,6 +28,7 @@ import type { ClaimDto } from '../../trpc/server-types'
 import { ensureClaimStatusNotExpired } from '../../utils/claim-utils'
 import { needsExchangeReconnect } from '../../utils/exchange-connection-status'
 import { BitcoinAmount } from '../bitcoin-amount'
+import { SensitiveValue } from '../sensitive-value'
 import { UsdEquivalent } from '../usd-equivalent'
 import { HistorySyncStatus } from './history-sync-status'
 
@@ -206,9 +207,9 @@ export function AccountFilter({
                       mt={1}
                       sx={{ fontVariantNumeric: 'tabular-nums' }}
                     >
-                      <>
+                      <SensitiveValue>
                         <BitcoinAmount btc={account.sats / 100_000_000} />
-                      </>
+                      </SensitiveValue>
                     </Text>
                   ) : (
                     <Flex gridColumn={2} align="baseline" gap={1.5} flexWrap="wrap" color="neutral.600">
@@ -232,19 +233,19 @@ export function AccountFilter({
                       overflowWrap="anywhere"
                       sx={{ fontVariantNumeric: 'tabular-nums' }}
                     >
-                      <>
+                      <SensitiveValue>
                         <BitcoinAmount btc={account.sats / 100_000_000} />
-                      </>
+                      </SensitiveValue>
                     </Text>
                     <Text textStyle="text/xs" color="neutral.600" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                      <>
+                      <SensitiveValue>
                         <UsdEquivalent btc={account.sats / 100_000_000} btcPrice={btcPrice} />
-                      </>
+                      </SensitiveValue>
                     </Text>
                     {presentation !== 'sidebar' && (
-                      <>
+                      <SensitiveValue>
                         <AccountShare sats={account.sats} totalSats={totalSats} />
-                      </>
+                      </SensitiveValue>
                     )}
                   </Flex>
                 )}
@@ -252,9 +253,9 @@ export function AccountFilter({
             </Box>
             {presentation === 'sidebar' && !compact && (
               <Box position="absolute" bottom={3} right={3}>
-                <>
+                <SensitiveValue>
                   <AccountShare sats={account.sats} totalSats={totalSats} iconOnly />
-                </>
+                </SensitiveValue>
               </Box>
             )}
           </Checkbox>

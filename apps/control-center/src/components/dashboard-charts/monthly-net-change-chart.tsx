@@ -2,6 +2,7 @@ import { Box, Flex, Text, useToken } from '@chakra-ui/react'
 import { useMemo } from 'react'
 import { Bar, BarChart, Cell, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { BitcoinAmount } from '../bitcoin-amount'
+import { SensitiveValue } from '../sensitive-value'
 import { type BalanceDataPoint, type MonthlyChange, getMonthlyChanges } from './balance-history'
 
 interface MonthlyNetChangeChartProps {
@@ -38,10 +39,10 @@ function BarTooltip({
         {formatAmount ? (
           formatAmount(change)
         ) : (
-          <>
+          <SensitiveValue>
             {change > 0 ? '+' : ''}
             <BitcoinAmount btc={change.toFixed(8)} />
-          </>
+          </SensitiveValue>
         )}
       </Text>
     </Box>

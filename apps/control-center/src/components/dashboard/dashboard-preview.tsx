@@ -1,7 +1,9 @@
 import { Box, Button, Flex, Grid, Stack, Text } from '@chakra-ui/react'
 import { Link } from 'react-router'
+import { useBitcoinDisplay } from '../../hooks/use-bitcoin-display'
 import { formatBitcoin } from '../../lib/bitcoin-display'
 import { FiatAmountText } from '../fiat-amount-text'
+import { SensitiveValue } from '../sensitive-value'
 import { DashboardAmount, DashboardCardTitle } from './dashboard-typography'
 
 export function DashboardPreview({
@@ -11,7 +13,8 @@ export function DashboardPreview({
   loading?: boolean
   unavailable?: boolean
 }): JSX.Element {
-  const zeroBalance = formatBitcoin(0)
+  const { unit } = useBitcoinDisplay()
+  const zeroBalance = formatBitcoin(0, unit)
   const unresolved = loading || unavailable
 
   return (
@@ -42,11 +45,13 @@ export function DashboardPreview({
         <DashboardCardTitle>Total Bitcoin</DashboardCardTitle>
         <Box mt={1}>
           <DashboardAmount primary>
-            <>{unresolved ? '—' : zeroBalance}</>
+            <SensitiveValue>{unresolved ? '—' : zeroBalance}</SensitiveValue>
           </DashboardAmount>
         </Box>
         <FiatAmountText primary mt={2} role="status">
-          <>{loading ? 'Loading your holdings…' : unavailable ? 'Holdings unavailable' : '$0.00 USD'}</>
+          <SensitiveValue>
+            {loading ? 'Loading your holdings…' : unavailable ? 'Holdings unavailable' : '$0.00 USD'}
+          </SensitiveValue>
         </FiatAmountText>
         <Grid
           templateColumns="repeat(2, minmax(0, 1fr))"
@@ -65,7 +70,7 @@ export function DashboardPreview({
                 {label}
               </Text>
               <Text textStyle="text/md" fontWeight="medium" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                <>{unresolved ? '—' : value}</>
+                <SensitiveValue>{unresolved ? '—' : value}</SensitiveValue>
               </Text>
             </Box>
           ))}

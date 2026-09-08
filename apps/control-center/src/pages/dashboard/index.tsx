@@ -35,6 +35,7 @@ import {
 import { MonthlyNetChangeChart } from '../../components/dashboard-charts/monthly-net-change-chart'
 import { DashboardCardTitle } from '../../components/dashboard/dashboard-typography'
 import { FiatAmountText } from '../../components/fiat-amount-text'
+import { SensitiveValue } from '../../components/sensitive-value'
 import { UsdEquivalent } from '../../components/usd-equivalent'
 import { useAutoRefreshExchanges } from '../../hooks/use-auto-refresh-exchanges'
 import { useGetBalancesPerClaimIds } from '../../lib/balances'
@@ -551,18 +552,20 @@ export function DashboardPage(): JSX.Element {
                   color="neutral.900"
                   overflowWrap="anywhere"
                 >
-                  <>
+                  <SensitiveValue>
                     <BitcoinAmount btc={new Decimal(displayBalanceSats).div(100_000_000)} />
-                  </>
+                  </SensitiveValue>
                 </Text>
                 <FiatAmountText primary>
-                  <>{btcPrice === null ? 'USD unavailable' : `$${formatUsd(currentBtcFloat, btcPrice)}`}</>
+                  <SensitiveValue>
+                    {btcPrice === null ? 'USD unavailable' : `$${formatUsd(currentBtcFloat, btcPrice)}`}
+                  </SensitiveValue>
                 </FiatAmountText>
               </Flex>
               {periodChange !== null && (
                 <Flex align="baseline" gap={1.5} flexWrap="wrap" mt={2}>
                   <Text textStyle="text/sm" color={changeColor} sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                    <>
+                    <SensitiveValue>
                       {periodChange.eq(0) ? (
                         'No change'
                       ) : (
@@ -576,7 +579,7 @@ export function DashboardPage(): JSX.Element {
                           %)
                         </>
                       )}
-                    </>
+                    </SensitiveValue>
                   </Text>
                   <Text textStyle="text/sm" color="neutral.500">
                     · {periodLabel}
@@ -618,14 +621,14 @@ export function DashboardPage(): JSX.Element {
                 ) : isFullHistoryPending ? (
                   <HistoryRangeLoading height="220px" />
                 ) : (
-                  <>
+                  <SensitiveValue>
                     <AccumulationChart
                       data={historicalData}
                       hasActivity={hasBalance}
                       isUp={isUp}
                       timezone={userTimezone}
                     />
-                  </>
+                  </SensitiveValue>
                 )}
                 {isChartFetching && !isFullHistoryPending && (
                   <Box
@@ -669,9 +672,9 @@ export function DashboardPage(): JSX.Element {
                 ) : isFullHistoryPending ? (
                   <HistoryRangeLoading height="120px" />
                 ) : (
-                  <>
+                  <SensitiveValue>
                     <MonthlyNetChangeChart data={historicalData} timezone={userTimezone} />
-                  </>
+                  </SensitiveValue>
                 )}
                 {isChartFetching && !isFullHistoryPending && (
                   <Box
@@ -1010,7 +1013,7 @@ function StatCard({ label, data, mode, timezone, available, btcPrice }: StatCard
         color={value.eq(0) ? 'neutral.900' : isPositive ? 'success.700' : 'error.700'}
         letterSpacing="-0.02em"
       >
-        <>
+        <SensitiveValue>
           {available ? (
             <>
               {value.gt(0) ? '+' : ''}
@@ -1019,10 +1022,10 @@ function StatCard({ label, data, mode, timezone, available, btcPrice }: StatCard
           ) : (
             '—'
           )}
-        </>
+        </SensitiveValue>
       </Text>
       <Text textStyle="text/sm" color="neutral.600" mt={1} sx={{ fontVariantNumeric: 'tabular-nums' }}>
-        <>{available ? <UsdEquivalent btc={value} btcPrice={btcPrice} showSign /> : '—'}</>
+        <SensitiveValue>{available ? <UsdEquivalent btc={value} btcPrice={btcPrice} showSign /> : '—'}</SensitiveValue>
       </Text>
     </Box>
   )
