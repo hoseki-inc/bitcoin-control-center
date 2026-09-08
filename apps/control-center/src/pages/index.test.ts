@@ -194,3 +194,16 @@ describe('Home overview states', () => {
     expect(renderHome()).toContain('USD value unavailable')
   })
 })
+
+it('introduces the product only for a new empty installation', () => {
+  mocks.onboarding = null
+  expect(renderHome()).toContain('Explore First')
+  mocks.accounts.manual = [{}]
+  expect(renderHome()).not.toContain('Explore First')
+})
+
+it('does not treat a failed account request as a fresh installation', () => {
+  mocks.onboarding = null
+  mocks.isError = true
+  expect(renderHome()).not.toContain('Explore First')
+})

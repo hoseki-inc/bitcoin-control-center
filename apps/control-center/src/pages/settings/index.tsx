@@ -91,6 +91,17 @@ export function SettingsPage(): JSX.Element {
             </FormControl>
           </Box>
         </SimpleGrid>
+        <Stack align="start" gap={2}>
+          <Text as="h2" textStyle="text/md" fontWeight="semibold">
+            Getting Started
+          </Text>
+          <Text textStyle="text/sm" color="neutral.600">
+            Learn how to track your Bitcoin with Control Center.
+          </Text>
+          <Button as="a" href="/getting-started" variant="outline" mt={2}>
+            View Introduction
+          </Button>
+        </Stack>
         <BitcoinDisplaySettings />
         {isDesktop && <ElectrumSettings />}
       </Stack>

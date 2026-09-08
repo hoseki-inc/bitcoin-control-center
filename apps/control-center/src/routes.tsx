@@ -3,6 +3,8 @@ import { AppLayout } from './components/layout/app-layout'
 import { KeystoreReceiptPage } from './components/multisig/keystore-receipt'
 import { MultisigPageWrapper } from './components/multisig/multisig-page-wrapper'
 import { NotFound } from './components/not-found'
+import { GettingStarted } from './components/onboarding/getting-started'
+import { WelcomeReveal } from './components/onboarding/welcome-reveal'
 // Prove pages
 import { HomePage } from './pages'
 import { ClaimsPage } from './pages/claims'
@@ -45,12 +47,13 @@ import { StatementCreatePage } from './pages/statements/create'
 
 export default function AppRoutes(): JSX.Element {
   return (
-    <>
+    <WelcomeReveal>
       <Routes>
         <Route element={<AppLayout />}>
           <Route index element={<Navigate to="/home" replace />} />
           <Route path="portfolio" Component={DashboardPage} />
           <Route path="home" Component={HomePage} />
+          <Route path="getting-started" Component={GettingStarted} />
 
           <Route path="accounts">
             <Route path="" Component={ClaimsPage} />
@@ -108,6 +111,6 @@ export default function AppRoutes(): JSX.Element {
 
         <Route path="*" Component={NotFound} />
       </Routes>
-    </>
+    </WelcomeReveal>
   )
 }
