@@ -1,4 +1,6 @@
 version: 2
+# Group routine version updates only. Security fixes stay independent, and
+# unmatched major updates remain visible as separate migration PRs.
 updates:
   - package-ecosystem: npm
     directory: /
@@ -7,9 +9,13 @@ updates:
       day: monday
     groups:
       production-dependencies:
+        applies-to: version-updates
         dependency-type: production
+        update-types: [minor, patch]
       development-dependencies:
+        applies-to: version-updates
         dependency-type: development
+        update-types: [minor, patch]
 
   - package-ecosystem: npm
     directory: /desktop
@@ -18,8 +24,12 @@ updates:
       day: monday
     groups:
       desktop-dependencies:
+        applies-to: version-updates
         patterns:
           - '*'
+        exclude-patterns:
+          - electron
+        update-types: [minor, patch]
 
   - package-ecosystem: npm
     directory: /start9
@@ -28,8 +38,10 @@ updates:
       day: monday
     groups:
       startos-dependencies:
+        applies-to: version-updates
         patterns:
           - '*'
+        update-types: [minor, patch]
 
   - package-ecosystem: npm
     directory: /start9/runtime
@@ -38,8 +50,10 @@ updates:
       day: monday
     groups:
       startos-runtime-dependencies:
+        applies-to: version-updates
         patterns:
           - '*'
+        update-types: [minor, patch]
 
   - package-ecosystem: github-actions
     directory: /
