@@ -20,6 +20,7 @@ import { DateInput, EmptyView, Spinner } from '@hoseki/packages/ui/design-system
 import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
 import { format, isAfter, isBefore, startOfDay, subDays } from 'date-fns'
 import Decimal from 'decimal.js'
+import { motion, useReducedMotion } from 'framer-motion'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { BitcoinAmount } from '../../components/bitcoin-amount'
@@ -33,6 +34,7 @@ import {
 } from '../../components/dashboard-charts/balance-history'
 import { MonthlyNetChangeChart } from '../../components/dashboard-charts/monthly-net-change-chart'
 import { DashboardCardTitle } from '../../components/dashboard/dashboard-typography'
+import { FiatAmountText } from '../../components/fiat-amount-text'
 import { SensitiveValue } from '../../components/sensitive-value'
 import { UsdEquivalent } from '../../components/usd-equivalent'
 import { useAutoRefreshExchanges } from '../../hooks/use-auto-refresh-exchanges'
@@ -40,6 +42,8 @@ import { useGetBalancesPerClaimIds } from '../../lib/balances'
 import { trpc } from '../../trpc'
 import { isExchangeConnected } from '../../utils/exchange-connection-status'
 import { getBrowserTimezone } from '../../utils/timezone'
+
+const MotionBox = motion.create(Box)
 
 type PresetTimeRange = '7d' | '30d' | '90d' | '1y' | 'all'
 type TimeRange = PresetTimeRange | 'custom'
@@ -93,6 +97,7 @@ function formatUsd(btcAmount: number, btcPrice: number): string {
 export function DashboardPage(): JSX.Element {
   useAutoRefreshExchanges()
   const hasDesktopSidebar = useBreakpointValue({ base: false, lg: true }) ?? false
+  const reduceMotion = useReducedMotion()
   const [timeRange, setTimeRange] = useState<TimeRange>('90d')
   const [customDateRange, setCustomDateRange] = useState<CustomDateRangeDraft>({
     startDate: null,
@@ -480,7 +485,7 @@ export function DashboardPage(): JSX.Element {
 
         <Flex direction={{ base: 'column', lg: 'row' }} gap={{ base: 0, lg: 6 }} align="stretch">
           {hasAccounts && (
-            <Box mb={6}>
+            <Box mb={6} alignSelf="stretch">
               <AccountFilter
                 presentation={hasDesktopSidebar ? 'sidebar' : 'dropdown'}
                 claims={claims}
@@ -497,7 +502,12 @@ export function DashboardPage(): JSX.Element {
             </Box>
           )}
 
-          <Box flex="1" minW={0}>
+          <MotionBox
+            layout="position"
+            transition={{ duration: reduceMotion ? 0 : 0.24, ease: [0.32, 0.72, 0, 1] }}
+            flex="1"
+            minW={0}
+          >
             {hasCurrentRangeData && activeError && historyRangeError === null && (
               <Box role="alert" mb={4}>
                 <Text textStyle="text/sm" color="error.500">
@@ -546,11 +556,11 @@ export function DashboardPage(): JSX.Element {
                     <BitcoinAmount btc={new Decimal(displayBalanceSats).div(100_000_000)} />
                   </SensitiveValue>
                 </Text>
-                <Text textStyle="text/md" color="neutral.500" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                <FiatAmountText primary>
                   <SensitiveValue>
                     {btcPrice === null ? 'USD unavailable' : `$${formatUsd(currentBtcFloat, btcPrice)}`}
                   </SensitiveValue>
-                </Text>
+                </FiatAmountText>
               </Flex>
               {periodChange !== null && (
                 <Flex align="baseline" gap={1.5} flexWrap="wrap" mt={2}>
@@ -715,7 +725,7 @@ export function DashboardPage(): JSX.Element {
                 </Text>
               )}
             </Box>
-          </Box>
+          </MotionBox>
         </Flex>
       </Box>
     </Box>

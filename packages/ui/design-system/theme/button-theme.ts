@@ -74,10 +74,6 @@ export const primaryVariant = {
   _active: {
     bgColor: 'neutral.700',
   },
-  _focus: {
-    bgColor: 'neutral.700',
-    outlineColor: 'activeState.80',
-  },
   _disabled: {
     bgColor: 'neutral.200',
     color: 'neutral.400',
@@ -99,10 +95,6 @@ const variants = {
     _active: {
       bgColor: 'neutral.100',
     },
-    _focus: {
-      bgColor: 'neutral.100',
-      outlineColor: 'activeState.80',
-    },
     _disabled: {
       borderColor: 'neutral.200',
       bgColor: 'transparent',
@@ -119,10 +111,6 @@ const variants = {
     _active: {
       bgColor: 'neutral.100',
     },
-    _focus: {
-      bgColor: 'neutral.100',
-      outlineColor: 'activeState.80',
-    },
     _disabled: {
       bgColor: 'transparent',
     },
@@ -137,10 +125,6 @@ const variants = {
     },
     _active: {
       bgColor: 'neutral.100',
-    },
-    _focus: {
-      bgColor: 'neutral.100',
-      outlineColor: 'activeState.80',
     },
     _disabled: {
       bgColor: 'transparent',
@@ -161,10 +145,6 @@ const variants = {
     },
     _active: {
       bgColor: 'error.100',
-    },
-    _focus: {
-      bgColor: 'error.100',
-      outlineColor: 'activeState.80',
     },
     _disabled: {
       bgColor: 'transparent',

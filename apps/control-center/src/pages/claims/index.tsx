@@ -24,6 +24,7 @@ import { Link, useLocation, useNavigate } from 'react-router'
 import { toast } from 'sonner'
 import { BitcoinAmount } from '../../components/bitcoin-amount'
 import { DeleteClaimModal } from '../../components/claims/claim-details/delete-claim-modal'
+import { FiatAmountText } from '../../components/fiat-amount-text'
 import { FirstAccountReady } from '../../components/onboarding/getting-started'
 import { SensitiveValue } from '../../components/sensitive-value'
 import { useAutoRefreshExchanges } from '../../hooks/use-auto-refresh-exchanges'
@@ -252,7 +253,7 @@ export function ClaimsPage(): JSX.Element {
               >
                 <SensitiveValue>{hasUnknownBalance ? '—' : <BitcoinAmount btc={totalBtc.toFixed(8)} />}</SensitiveValue>
               </Text>
-              <Text textStyle="text/sm" color="neutral.500" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+              <FiatAmountText primary>
                 <SensitiveValue>
                   {hasUnknownBalance
                     ? 'Some balances are unavailable'
@@ -260,7 +261,7 @@ export function ClaimsPage(): JSX.Element {
                       ? 'USD unavailable'
                       : totalUsd.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
                 </SensitiveValue>
-              </Text>
+              </FiatAmountText>
             </Flex>
             <Flex align="center" gap={3} flexWrap="wrap" aria-label="Account verification status">
               {claims.length > 0 && (
@@ -502,7 +503,7 @@ function AccountCardBalance({
       <Text textStyle="text/xl" fontWeight="medium" color="neutral.900" letterSpacing="-0.02em" overflowWrap="anywhere">
         <SensitiveValue>{btc === null ? '—' : <BitcoinAmount btc={btc.toFixed(8)} />}</SensitiveValue>
       </Text>
-      <Text textStyle="text/sm" color="neutral.600" mt={1} overflowWrap="anywhere">
+      <FiatAmountText mt={1}>
         <SensitiveValue>
           {btc === null
             ? 'Balance unavailable'
@@ -510,7 +511,7 @@ function AccountCardBalance({
               ? 'USD unavailable'
               : usd.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
         </SensitiveValue>
-      </Text>
+      </FiatAmountText>
     </>
   )
 }
@@ -756,13 +757,13 @@ function AccountRow({
         <Text textStyle="text/lg" fontWeight="medium">
           <SensitiveValue>{btc === null ? '—' : <BitcoinAmount btc={btc.toFixed(8)} />}</SensitiveValue>
         </Text>
-        <Text textStyle="text/sm" color="neutral.600" mt={1}>
+        <FiatAmountText mt={1}>
           <SensitiveValue>
             {btc === null || btcPrice === null
               ? 'USD unavailable'
               : (btc * btcPrice).toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
           </SensitiveValue>
-        </Text>
+        </FiatAmountText>
       </Box>
     </Flex>
   )
@@ -775,17 +776,30 @@ function AddAccountTile({ view }: { view: 'list' | 'cards' }): JSX.Element {
       to="/accounts/add"
       aria-label="Add account"
       align="center"
-      justify="center"
-      minH={view === 'cards' ? '180px' : '88px'}
-      border={view === 'cards' ? '1px dashed' : undefined}
-      borderBottom="1px solid"
-      borderColor="neutral.200"
-      borderRadius={view === 'cards' ? 'panel' : undefined}
+      justify={view === 'cards' ? 'center' : 'flex-start'}
+      direction={view === 'cards' ? 'column' : 'row'}
+      gap={3}
+      p={5}
+      mt={view === 'list' ? 4 : undefined}
+      textAlign={view === 'cards' ? 'center' : 'left'}
+      minH={view === 'cards' ? '164px' : '104px'}
+      border="1px dashed"
+      borderColor="neutral.400"
+      borderRadius="panel"
+      transition="border-color 150ms ease, background-color 150ms ease"
       color="neutral.500"
-      _hover={{ bg: 'neutral.50', color: 'neutral.900' }}
+      _hover={{ bg: 'neutral.50', borderColor: 'neutral.600' }}
       _focusVisible={{ outline: '2px solid', outlineColor: 'activeState.80', outlineOffset: '2px' }}
     >
-      <Plus size={28} aria-hidden="true" />
+      <Plus size={24} aria-hidden="true" style={{ flexShrink: 0 }} />
+      <Box minW={0}>
+        <Text textStyle="text/md" fontWeight="medium" color="neutral.900">
+          Add account
+        </Text>
+        <Text textStyle="text/sm" color="neutral.600" mt={1} maxW={view === 'cards' ? '28ch' : undefined}>
+          Connect a wallet or exchange, or track holdings manually.
+        </Text>
+      </Box>
     </Flex>
   )
 }

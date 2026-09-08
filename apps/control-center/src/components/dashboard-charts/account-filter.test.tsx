@@ -166,17 +166,71 @@ it.each(['dropdown', 'sidebar'] as const)(
   },
 )
 
-it('supports immediate single and multiple selection beside the charts and remembers compact mode', async () => {
+it('supports immediate row selection beside the charts and remembers compact mode', async () => {
   await render(new Set(), 'sidebar')
-  await click('Paper Wallet')
-  expect(onSelectionChange).toHaveBeenLastCalledWith(new Set(['paper']))
+  const allButton = (): HTMLButtonElement =>
+    Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'All accounts')!
+  const borderWidth = getComputedStyle(allButton()).borderWidth
+  expect(borderWidth).toBe('1px')
+  expect(allButton().getAttribute('aria-pressed')).toBe('true')
+  const name = Array.from(container.querySelectorAll('p')).find((element) => element.textContent === 'Paper Wallet')!
+  await act(async () => name.click())
+  expect(onSelectionChange).toHaveBeenLastCalledWith(new Set(['cold']))
   await render(new Set(['paper']), 'sidebar')
+  expect(getComputedStyle(allButton()).borderWidth).toBe(borderWidth)
+  expect(allButton().getAttribute('aria-pressed')).toBe('false')
   await toggle(1)
   expect(onSelectionChange).toHaveBeenLastCalledWith(new Set())
   expect(document.body.textContent).not.toContain('Apply')
+  const sidebar = container.querySelector<HTMLElement>('[aria-label="Portfolio accounts"]')!
+  const compactWidth = getComputedStyle(sidebar).width
+  expect(compactWidth).toBe('280px')
   await click('Detailed view')
+  expect(getComputedStyle(sidebar).width).toBe(compactWidth)
+  expect(container.querySelector('[aria-label="Detailed view"]')?.getAttribute('aria-pressed')).toBe('true')
   expect(localStorage.getItem('hoseki:sidebar-compact')).toBe('false')
   expect(document.body.textContent).toContain('$312,500.00 USD')
   await click('Compact view')
+  expect(getComputedStyle(sidebar).width).toBe(compactWidth)
+  expect(container.querySelector('[aria-label="Compact view"]')?.getAttribute('aria-pressed')).toBe('true')
   expect(localStorage.getItem('hoseki:sidebar-compact')).toBe('true')
 })
+
+it('collapses the sidebar and restores the selected accounts and detail view', async () => {
+  await render(new Set(['paper']), 'sidebar')
+  await click('Detailed view')
+  onSelectionChange.mockClear()
+  await click('Collapse accounts')
+  expect(container.querySelector('[aria-label="Search accounts"]')).toBeNull()
+  expect(container.querySelector('[aria-label="Expand accounts"]')?.getAttribute('aria-expanded')).toBe('false')
+  await click('Expand accounts')
+  expect(container.querySelector('[aria-label="Detailed view"]')?.getAttribute('aria-pressed')).toBe('true')
+  expect(container.querySelector<HTMLInputElement>('[aria-label="Include Paper Wallet"]')?.checked).toBe(true)
+  expect(onSelectionChange).not.toHaveBeenCalled()
+})
+
+it.each(['sidebar', 'dropdown'] as const)(
+  'toggles once from the full row, balance, or checkbox in %s',
+  async (presentation) => {
+    await render(new Set(), presentation)
+    if (presentation === 'dropdown') await click('Filter accounts: All accounts')
+    const input = (): HTMLInputElement => document.querySelector('input[aria-label="Include Paper Wallet"]')!
+    const row = (): HTMLLabelElement => input().closest('label')!
+    const balance = (): HTMLElement =>
+      Array.from(row().querySelectorAll('p')).find((element) => element.textContent?.includes('6.25'))!
+    for (const target of [row, balance, input]) {
+      onSelectionChange.mockClear()
+      await act(async () => target().click())
+      if (presentation === 'sidebar') {
+        expect(onSelectionChange).toHaveBeenCalledExactlyOnceWith(new Set(['cold']))
+      } else {
+        expect(onSelectionChange).not.toHaveBeenCalled()
+      }
+    }
+    if (presentation === 'dropdown') {
+      expect(input().checked).toBe(false)
+      await click('Apply')
+      expect(onSelectionChange).toHaveBeenCalledExactlyOnceWith(new Set(['cold']))
+    }
+  },
+)

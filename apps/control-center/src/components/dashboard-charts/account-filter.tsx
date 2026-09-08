@@ -3,6 +3,7 @@ import {
   Button,
   Checkbox,
   Flex,
+  IconButton,
   Input,
   Popover,
   PopoverBody,
@@ -13,11 +14,13 @@ import {
   Portal,
   Stack,
   Text,
+  Tooltip,
   useDisclosure,
 } from '@chakra-ui/react'
 import type { BalanceValue } from '@hoseki/packages/lib/balance'
 import type { ClaimId } from '@hoseki/packages/schemas'
-import { ChevronDown } from 'lucide-react'
+import { motion, useReducedMotion } from 'framer-motion'
+import { ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useRef, useState } from 'react'
 import { Link } from 'react-router'
 import type { RouterOutput } from '../../trpc'
@@ -28,6 +31,8 @@ import { BitcoinAmount } from '../bitcoin-amount'
 import { SensitiveValue } from '../sensitive-value'
 import { UsdEquivalent } from '../usd-equivalent'
 import { HistorySyncStatus } from './history-sync-status'
+
+const MotionBox = motion.create(Box)
 
 interface AccountFilterProps {
   presentation?: 'dropdown' | 'sidebar'
@@ -56,6 +61,8 @@ export function AccountFilter({
   historySyncingAccountIds,
   recentlySyncedAccountIds,
 }: AccountFilterProps): JSX.Element {
+  const reduceMotion = useReducedMotion()
+  const [collapsed, setCollapsed] = useState(false)
   const [compact, setCompact] = useState(() => {
     try {
       return localStorage.getItem('hoseki:sidebar-compact') !== 'false'
@@ -112,7 +119,7 @@ export function AccountFilter({
   const draftCount = selectable.filter((account) => draft.has(account.id)).length
 
   const rows = (selection: Set<string>, toggle: (id: string, checked: boolean) => void): JSX.Element => (
-    <Stack spacing={0} px={2} pb={2}>
+    <Stack spacing={presentation === 'sidebar' ? 2 : 0} px={presentation === 'sidebar' ? 0 : 2} pb={2}>
       {matching.map((account) =>
         account.reconnectTo ? (
           <Flex
@@ -134,41 +141,58 @@ export function AccountFilter({
             </Text>
           </Flex>
         ) : (
-          <Flex
+          <Checkbox
+            as="label"
             key={account.id}
-            align="center"
-            gap={2}
+            aria-label={`Include ${account.name}`}
+            isChecked={selection.has(account.id)}
+            onChange={(event) => toggle(account.id, event.target.checked)}
+            colorScheme="gray"
+            sx={{
+              '.chakra-checkbox__label': { display: 'contents', margin: 0 },
+              '&:has(:focus-visible)': {
+                outline: '2px solid',
+                outlineColor: 'activeState.80',
+                outlineOffset: '2px',
+              },
+              '.chakra-checkbox__control': { gridColumn: 1, gridRow: 1, alignSelf: 'center' },
+            }}
+            cursor="pointer"
+            display={presentation === 'sidebar' ? 'grid' : 'flex'}
+            gridTemplateColumns={presentation === 'sidebar' ? '16px minmax(0, 1fr)' : undefined}
+            columnGap={3}
+            rowGap={1}
+            alignItems={presentation === 'sidebar' ? 'start' : 'center'}
+            gap={presentation === 'sidebar' ? undefined : 3}
             p={3}
+            position="relative"
             borderRadius="control"
             bg={selection.has(account.id) ? 'neutral.50' : 'transparent'}
             _hover={{ bg: 'neutral.100' }}
           >
-            <Checkbox
-              aria-label={`Include ${account.name}`}
-              isChecked={selection.has(account.id)}
-              onChange={(event) => toggle(account.id, event.target.checked)}
-              colorScheme="gray"
-            />
-            <Box flex="1" minW={0}>
-              <Flex align="center" justify="space-between" gap={3} flexWrap="wrap">
-                <Box minW={0}>
-                  <Flex align="center" gap={2}>
-                    <Button
-                      variant="link"
+            <Box flex="1" minW={0} display={presentation === 'sidebar' ? 'contents' : undefined}>
+              <Flex
+                display={presentation === 'sidebar' ? 'contents' : 'flex'}
+                direction={presentation === 'sidebar' ? 'column' : 'row'}
+                align={presentation === 'sidebar' ? 'stretch' : 'center'}
+                justify="space-between"
+                gap={presentation === 'sidebar' ? 2 : 3}
+                flexWrap={presentation === 'sidebar' ? 'nowrap' : 'wrap'}
+              >
+                <Box minW={0} display={presentation === 'sidebar' ? 'contents' : undefined}>
+                  <Flex align="center" gap={2} gridColumn={2} minW={0}>
+                    <Text
                       color="neutral.900"
                       textStyle="text/sm"
-                      whiteSpace="normal"
+                      fontWeight="medium"
                       textAlign="left"
                       overflowWrap="anywhere"
                       minW={0}
-                      onClick={() =>
-                        presentation === 'sidebar'
-                          ? onSelectionChange(new Set([account.id]))
-                          : toggle(account.id, !selection.has(account.id))
-                      }
+                      display="flex"
+                      alignItems="center"
                     >
                       {account.name}
-                    </Button>
+                    </Text>
                     <HistorySyncStatus
                       syncing={historySyncingAccountIds.includes(account.id)}
                       synced={recentlySyncedAccountIds.includes(account.id)}
@@ -176,20 +200,39 @@ export function AccountFilter({
                     />
                   </Flex>
                   {presentation === 'sidebar' && compact ? (
-                    <Text textStyle="text/xs" color="neutral.600" mt={1} sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                    <Text
+                      gridColumn={2}
+                      textStyle="text/xs"
+                      color="neutral.600"
+                      mt={1}
+                      sx={{ fontVariantNumeric: 'tabular-nums' }}
+                    >
                       <SensitiveValue>
                         <BitcoinAmount btc={account.sats / 100_000_000} />
                       </SensitiveValue>
                     </Text>
                   ) : (
-                    <Text textStyle="text/xs" color="neutral.600" textTransform="capitalize">
-                      {account.detail}
-                    </Text>
+                    <Flex gridColumn={2} align="baseline" gap={1.5} flexWrap="wrap" color="neutral.600">
+                      <Text textStyle="text/xs">{account.detail}</Text>
+                    </Flex>
                   )}
                 </Box>
                 {!(presentation === 'sidebar' && compact) && (
-                  <Flex direction="column" align="flex-end" gap={1} flexShrink={0}>
-                    <Text textStyle="text/xs" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                  <Flex
+                    gridColumn={2}
+                    mt={presentation === 'sidebar' ? 1 : undefined}
+                    pr={presentation === 'sidebar' ? 7 : undefined}
+                    direction="column"
+                    align={presentation === 'sidebar' ? 'flex-start' : 'flex-end'}
+                    gap={1}
+                    minW={0}
+                    flexShrink={0}
+                  >
+                    <Text
+                      textStyle={presentation === 'sidebar' ? 'text/sm' : 'text/xs'}
+                      overflowWrap="anywhere"
+                      sx={{ fontVariantNumeric: 'tabular-nums' }}
+                    >
                       <SensitiveValue>
                         <BitcoinAmount btc={account.sats / 100_000_000} />
                       </SensitiveValue>
@@ -199,14 +242,23 @@ export function AccountFilter({
                         <UsdEquivalent btc={account.sats / 100_000_000} btcPrice={btcPrice} />
                       </SensitiveValue>
                     </Text>
-                    <SensitiveValue>
-                      <AccountShare sats={account.sats} totalSats={totalSats} />
-                    </SensitiveValue>
+                    {presentation !== 'sidebar' && (
+                      <SensitiveValue>
+                        <AccountShare sats={account.sats} totalSats={totalSats} />
+                      </SensitiveValue>
+                    )}
                   </Flex>
                 )}
               </Flex>
             </Box>
-          </Flex>
+            {presentation === 'sidebar' && !compact && (
+              <Box position="absolute" bottom={3} right={3}>
+                <SensitiveValue>
+                  <AccountShare sats={account.sats} totalSats={totalSats} iconOnly />
+                </SensitiveValue>
+              </Box>
+            )}
+          </Checkbox>
         ),
       )}
       {matching.length === 0 && (
@@ -220,55 +272,147 @@ export function AccountFilter({
   if (presentation === 'sidebar') {
     const selection = new Set(included.map((account) => account.id))
     return (
-      <Box
+      <MotionBox
         as="aside"
+        layout
+        transition={{ duration: reduceMotion ? 0 : 0.24, ease: [0.32, 0.72, 0, 1] }}
         aria-label="Portfolio accounts"
-        w={compact ? '220px' : '320px'}
+        w={collapsed ? '44px' : '280px'}
+        minW={collapsed ? '44px' : '280px'}
+        h="full"
+        position="relative"
         flexShrink={0}
-        borderRight="1px solid"
-        borderColor="neutral.200"
-        pr={3}
+        pr={collapsed ? 0 : 3}
+        _after={{
+          content: '""',
+          position: 'absolute',
+          top: 0,
+          bottom: 0,
+          right: 0,
+          width: '1px',
+          bgGradient: 'linear(to-b, transparent, neutral.200 8%, neutral.200 92%, transparent)',
+          pointerEvents: 'none',
+        }}
       >
-        <Flex align="center" justify="space-between" gap={2} mb={3}>
-          <Text textStyle="text/md" fontWeight="medium">
-            Accounts
-          </Text>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => {
-              setCompact(!compact)
-              try {
-                localStorage.setItem('hoseki:sidebar-compact', String(!compact))
-              } catch {
-                /* Keep session preference. */
-              }
-            }}
-          >
-            {compact ? 'Detailed view' : 'Compact view'}
-          </Button>
-        </Flex>
-        <Input
-          aria-label="Search accounts"
-          placeholder="Search accounts"
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          mb={3}
-        />
-        <Button w="full" variant={isAll ? 'outline' : 'ghost'} mb={2} onClick={() => onSelectionChange(new Set())}>
-          All accounts
-        </Button>
-        {rows(selection, (id, checked) => {
-          const next = new Set(selection)
-          if (checked) next.add(id)
-          else next.delete(id)
-          // Empty sets mean all accounts in the API. Keep the last selected account checked.
-          if (next.size > 0) onSelectionChange(next.size === selectable.length ? new Set() : next)
-        })}
-        <Button as={Link} to="/accounts" variant="ghost" size="sm" mt={2}>
-          Manage accounts
-        </Button>
-      </Box>
+        {collapsed ? (
+          <Tooltip label="Expand accounts" placement="right">
+            <IconButton
+              aria-label="Expand accounts"
+              aria-expanded={false}
+              icon={<ChevronRight size={16} strokeWidth={1.5} />}
+              color="neutral.600"
+              variant="ghost"
+              onClick={() => setCollapsed(false)}
+            />
+          </Tooltip>
+        ) : (
+          <Box as={motion.div} layout="position" w="268px">
+            <Flex align="center" justify="space-between" gap={2} mb={3}>
+              <Text textStyle="text/md" fontWeight="medium">
+                Accounts
+              </Text>
+              <Flex align="center" gap={2}>
+                <Text textStyle="text/xs" color="neutral.600" aria-live="polite">
+                  {included.length} of {selectable.length}
+                </Text>
+                <Tooltip label="Collapse accounts" placement="top">
+                  <IconButton
+                    aria-label="Collapse accounts"
+                    aria-expanded={true}
+                    icon={<ChevronLeft size={16} strokeWidth={1.5} />}
+                    color="neutral.600"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setCollapsed(true)}
+                  />
+                </Tooltip>
+              </Flex>
+            </Flex>
+            <Flex
+              role="group"
+              aria-label="Account detail level"
+              gap={1}
+              p={1}
+              mb={3}
+              bg="neutral.50"
+              borderRadius="control"
+            >
+              {([true, false] as const).map((isCompact) => (
+                <Button
+                  key={String(isCompact)}
+                  flex="1"
+                  size="sm"
+                  px={3}
+                  minH="40px"
+                  variant="ghost"
+                  borderRadius="control"
+                  border="none"
+                  aria-label={isCompact ? 'Compact view' : 'Detailed view'}
+                  aria-pressed={compact === isCompact}
+                  bg={compact === isCompact ? 'neutral.200' : 'transparent'}
+                  color={compact === isCompact ? 'neutral.900' : 'neutral.600'}
+                  textStyle="text/xs"
+                  fontWeight="medium"
+                  _hover={{
+                    bg: compact === isCompact ? 'neutral.200' : 'neutral.100',
+                  }}
+                  onClick={() => {
+                    setCompact(isCompact)
+                    try {
+                      localStorage.setItem('hoseki:sidebar-compact', String(isCompact))
+                    } catch {
+                      /* Keep session preference. */
+                    }
+                  }}
+                >
+                  {isCompact ? 'Compact' : 'Detailed'}
+                </Button>
+              ))}
+            </Flex>
+            <Input
+              size="sm"
+              h="40px"
+              aria-label="Search accounts"
+              placeholder="Search accounts"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              mb={3}
+            />
+            <Button
+              w="full"
+              justifyContent="flex-start"
+              size="sm"
+              minH="40px"
+              variant="outline"
+              aria-pressed={isAll}
+              bg={isAll ? 'neutral.100' : 'transparent'}
+              mb={3}
+              onClick={() => onSelectionChange(new Set())}
+            >
+              All accounts
+            </Button>
+            {rows(selection, (id, checked) => {
+              const next = new Set(selection)
+              if (checked) next.add(id)
+              else next.delete(id)
+              // Empty sets mean all accounts in the API. Keep the last selected account checked.
+              if (next.size > 0) onSelectionChange(next.size === selectable.length ? new Set() : next)
+            })}
+            <Button
+              as={Link}
+              to="/accounts"
+              variant="ghost"
+              size="sm"
+              justifyContent="flex-start"
+              minH="40px"
+              w="full"
+              mt={2}
+            >
+              Manage accounts
+            </Button>
+          </Box>
+        )}
+      </MotionBox>
     )
   }
 
@@ -399,26 +543,48 @@ export function AccountFilter({
   )
 }
 
-function AccountShare({ sats, totalSats }: { sats: number; totalSats: number }): JSX.Element {
+function AccountShare({
+  sats,
+  totalSats,
+  iconOnly = false,
+}: {
+  sats: number
+  totalSats: number
+  iconOnly?: boolean
+}): JSX.Element {
   const percentage = totalSats > 0 ? Math.min(100, Math.max(0, (sats / totalSats) * 100)) : 0
   const label = percentage > 0 && percentage < 0.1 ? '<0.1' : percentage.toFixed(1)
 
+  const chart = (
+    <Box as="svg" viewBox="0 0 20 20" boxSize={4} flexShrink={0} aria-hidden="true" focusable="false">
+      <circle cx="10" cy="10" r="7" fill="none" stroke="currentColor" strokeWidth="3" opacity="0.15" />
+      <circle
+        cx="10"
+        cy="10"
+        r="7"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="3"
+        pathLength="100"
+        strokeDasharray={`${percentage} ${100 - percentage}`}
+        transform="rotate(-90 10 10)"
+      />
+    </Box>
+  )
+
+  if (iconOnly) {
+    return (
+      <Tooltip label={`${label}% of total`} hasArrow>
+        <Box as="span" display="flex" color="neutral.600" tabIndex={0} aria-label={`${label}% of total`}>
+          {chart}
+        </Box>
+      </Tooltip>
+    )
+  }
+
   return (
     <Flex align="center" gap={1.5} color="neutral.600">
-      <Box as="svg" viewBox="0 0 20 20" boxSize={4} flexShrink={0} aria-hidden="true" focusable="false">
-        <circle cx="10" cy="10" r="7" fill="none" stroke="currentColor" strokeWidth="3" opacity="0.15" />
-        <circle
-          cx="10"
-          cy="10"
-          r="7"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="3"
-          pathLength="100"
-          strokeDasharray={`${percentage} ${100 - percentage}`}
-          transform="rotate(-90 10 10)"
-        />
-      </Box>
+      {chart}
       <Text textStyle="text/xs" sx={{ fontVariantNumeric: 'tabular-nums' }}>
         {label}% of total
       </Text>

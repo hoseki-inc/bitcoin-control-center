@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react'
 import { getMonthlyChanges } from '../dashboard-charts/balance-history'
 import { HistoryLineChart } from '../dashboard-charts/history-line-chart'
 import { MonthlyNetChangeChart } from '../dashboard-charts/monthly-net-change-chart'
+import { FiatAmountText } from '../fiat-amount-text'
 
 const DAY = 86400
 const SAMPLE_PRICE = 80000
@@ -82,9 +83,9 @@ export function PortfolioDemo(): JSX.Element {
           >
             {btc(total)}
           </Text>
-          <Text textStyle="text/sm" color="neutral.600" mt={1}>
+          <FiatAmountText primary mt={1}>
             {usd(total * SAMPLE_PRICE)} USD
-          </Text>
+          </FiatAmountText>
         </Box>
         <Flex role="group" aria-label="Sample history date range" gap={1}>
           {ranges.map((range) => (

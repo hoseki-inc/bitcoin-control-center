@@ -9,6 +9,7 @@ import { BitcoinPriceChart } from '../components/dashboard/bitcoin-price-chart'
 import { DashboardPreview } from '../components/dashboard/dashboard-preview'
 import { DashboardAmount, DashboardCardTitle } from '../components/dashboard/dashboard-typography'
 import { RecentStatements } from '../components/dashboard/recent-statements'
+import { FiatAmountText } from '../components/fiat-amount-text'
 import { GettingStarted, ONBOARDING_KEY } from '../components/onboarding/getting-started'
 import { SensitiveValue } from '../components/sensitive-value'
 import { StatementsEmptyState } from '../components/statements/statements-empty-state'
@@ -151,13 +152,13 @@ function PortfolioSummary({ data, accountCount }: { data: PortfolioData; account
               </SensitiveValue>
             </DashboardAmount>
           </Box>
-          <Text textStyle="text/sm" color="neutral.600" mt={1}>
+          <FiatAmountText primary mt={1}>
             <SensitiveValue>
               {totalUsd === null
                 ? 'USD value unavailable'
                 : totalUsd.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
             </SensitiveValue>
-          </Text>
+          </FiatAmountText>
         </Box>
         <Button as={Link} to="/portfolio" variant="outline" size="md" px={6} py={3} borderRadius="control">
           View Portfolio

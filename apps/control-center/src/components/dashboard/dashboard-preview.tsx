@@ -2,6 +2,7 @@ import { Box, Button, Flex, Grid, Stack, Text } from '@chakra-ui/react'
 import { Link } from 'react-router'
 import { useBitcoinDisplay } from '../../hooks/use-bitcoin-display'
 import { formatBitcoin } from '../../lib/bitcoin-display'
+import { FiatAmountText } from '../fiat-amount-text'
 import { SensitiveValue } from '../sensitive-value'
 import { DashboardAmount, DashboardCardTitle } from './dashboard-typography'
 
@@ -47,11 +48,11 @@ export function DashboardPreview({
             <SensitiveValue>{unresolved ? '—' : zeroBalance}</SensitiveValue>
           </DashboardAmount>
         </Box>
-        <Text textStyle="text/sm" color="neutral.600" mt={2} role="status">
+        <FiatAmountText primary mt={2} role="status">
           <SensitiveValue>
             {loading ? 'Loading your holdings…' : unavailable ? 'Holdings unavailable' : '$0.00 USD'}
           </SensitiveValue>
-        </Text>
+        </FiatAmountText>
         <Grid
           templateColumns="repeat(2, minmax(0, 1fr))"
           gap={4}
