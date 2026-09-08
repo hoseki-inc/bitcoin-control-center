@@ -22,7 +22,6 @@ import {
   HowDoesThisWork,
   LabelWithTooltip,
 } from '@hoseki/packages/ui/design-system'
-import { greenCheckCircle } from '@hoseki/packages/ui/prove-verify-ui'
 import {
   AccountsList,
   type ColdcardGenericJsonFile,
@@ -44,7 +43,7 @@ import {
   parseSignatureFile,
 } from '@hoseki/packages/ui/wallet-ui'
 import type { Result } from '@patina/core'
-import Lottie from 'lottie-react'
+import { CheckCircle2 } from 'lucide-react'
 import { CircleXIcon, CopyIcon, InfoIcon, MoveRightIcon, TriangleAlertIcon, UsbIcon, WifiOffIcon } from 'lucide-react'
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
@@ -412,9 +411,7 @@ export function Step4({
   )
 }
 
-export const validIcon = (
-  <Lottie animationData={greenCheckCircle} loop={false} autoplay={true} style={{ height: '32px', width: '32px' }} />
-)
+export const validIcon = <CheckCircle2 size={32} aria-hidden="true" />
 
 export function Step5({
   model,

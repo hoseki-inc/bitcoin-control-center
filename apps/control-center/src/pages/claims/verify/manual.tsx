@@ -1,4 +1,6 @@
-import { Box, Button, Flex, FormControl, FormLabel, Heading, Input, Stack, Text } from '@chakra-ui/react'
+import { Box, Button, Flex, FormControl, FormLabel, Input, Stack } from '@chakra-ui/react'
+import { DateStringInput } from '@hoseki/packages/ui/design-system/forms/date-string-input'
+import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
 import { TopBar } from '@hoseki/packages/ui/prove-verify-ui/top-bar'
 import { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router'
@@ -43,28 +45,25 @@ export function ClaimsVerifyManualPage(): JSX.Element {
   }
 
   return (
-    <Box py={6}>
-      <TopBar mb={6}>
+    <Box py={{ base: 6, md: 8 }} maxW="640px" mx="auto" w="full">
+      <TopBar mb={8}>
         <TopBar.Item as={Link} to={returnTo}>
           Back
         </TopBar.Item>
       </TopBar>
 
-      <Stack spacing={6} maxW="480px" mx="auto">
-        <Box>
-          <Heading textStyle="text/2xl" fontWeight="bold" color="neutral.900" mb={2}>
-            Add Manual Holding
-          </Heading>
-          <Text textStyle="text/md" color="neutral.400">
-            Track Bitcoin holdings that aren&apos;t connected to a wallet or exchange.
-          </Text>
-        </Box>
+      <Stack spacing={6}>
+        <PageHeading
+          title="Add Manual Holding"
+          description="Track Bitcoin holdings that aren't connected to a wallet or exchange."
+        />
 
         <FormControl>
           <FormLabel textStyle="text/sm" color="neutral.600" fontWeight="medium">
-            Display Name
+            Display name
           </FormLabel>
           <Input
+            fontFamily="body"
             placeholder="e.g. Cold Storage, Paper Wallet"
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
@@ -76,6 +75,7 @@ export function ClaimsVerifyManualPage(): JSX.Element {
             Balance (BTC)
           </FormLabel>
           <Input
+            fontFamily="body"
             type="number"
             step="any"
             min="0"
@@ -87,13 +87,13 @@ export function ClaimsVerifyManualPage(): JSX.Element {
 
         <FormControl>
           <FormLabel textStyle="text/sm" color="neutral.600" fontWeight="medium">
-            As of Date
+            As of date
           </FormLabel>
-          <Input type="date" value={balanceDate} onChange={(e) => setBalanceDate(e.target.value)} />
+          <DateStringInput isRequired fontFamily="body" value={balanceDate} onChange={(date) => setBalanceDate(date)} />
         </FormControl>
 
-        <Flex justify="flex-end">
-          <Button colorScheme="blue" onClick={handleSubmit} isLoading={createMutation.isLoading} isDisabled={!isValid}>
+        <Flex justify="flex-end" pt={2}>
+          <Button onClick={handleSubmit} isLoading={createMutation.isLoading} isDisabled={!isValid}>
             Add Holding
           </Button>
         </Flex>

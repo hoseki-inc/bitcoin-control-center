@@ -4,7 +4,6 @@ import { MultiSigAccount } from '@hoseki/packages/bitcoin'
 import { Err, Ok, Result } from '@hoseki/packages/result'
 import { FileDropReader, type FileDropState, PageTransition } from '@hoseki/packages/ui/design-system'
 import { TipAlert } from '@hoseki/packages/ui/design-system/feedback/tip-alert'
-import { Spinner } from '@hoseki/packages/ui/design-system/spinner'
 import { ClaimConnectionWrapper, WizardFooter } from '@hoseki/packages/ui/wallet-ui'
 import { CircleAlert } from 'lucide-react'
 import { useState } from 'react'
@@ -22,7 +21,7 @@ import type { CreateMultisigClaimInput, CreateMultisigKeystoreInput } from '../.
 export function MultisigCreatePage(): JSX.Element {
   const navigate = useNavigate()
   const [isSaving, setIsSaving] = useState(false)
-  const [step, setStep] = useState<'get-ready' | 'upload' | 'fake-loading' | 'detection'>('get-ready')
+  const [step, setStep] = useState<'get-ready' | 'upload' | 'detection'>('get-ready')
   const [detectedWallet, setDetectedWallet] = useState<CreateMultisigClaimInput | null>(null)
 
   const trpcUtils = trpc.useUtils()
@@ -93,14 +92,6 @@ export function MultisigCreatePage(): JSX.Element {
             <GetReady onNext={() => setStep('upload')} />
           </>
         )}
-        {step === 'fake-loading' && (
-          <Stack alignItems="center" textAlign="center">
-            <Text textStyle="text/2xl" fontWeight="medium">
-              Reading Descriptor...
-            </Text>
-            <Spinner centered />
-          </Stack>
-        )}
         {step === 'upload' && (
           <>
             <MultisigAnimation animation="2" />
@@ -108,10 +99,7 @@ export function MultisigCreatePage(): JSX.Element {
               onBack={() => setStep('get-ready')}
               onNext={(data) => {
                 setDetectedWallet(data)
-                setStep('fake-loading')
-                setTimeout(() => {
-                  setStep('detection')
-                }, 2000)
+                setStep('detection')
               }}
             />
           </>
@@ -132,7 +120,7 @@ export function MultisigCreatePage(): JSX.Element {
 function GetReady({ onNext }: { onNext: () => void }) {
   return (
     <Stack gap={4}>
-      <Text textStyle="text/2xl" fontWeight="medium">
+      <Text as="h1" textStyle="text/2xl" fontWeight="medium">
         Connect Your Multisig Wallet
       </Text>
       <Text textStyle="text/md" color="neutral.900">
@@ -180,7 +168,7 @@ function ImportWallet({ onBack, onNext }: { onBack: () => void; onNext: (data: C
 
   return (
     <Stack gap={4}>
-      <Text textStyle="text/2xl" fontWeight="medium">
+      <Text as="h1" textStyle="text/2xl" fontWeight="medium">
         Upload Your Multisig Descriptor
       </Text>
       <Text textStyle="text/md" color="neutral.900">
@@ -301,7 +289,7 @@ function DetectionStep({
 
   return (
     <Stack gap={4}>
-      <Text textStyle="text/2xl" fontWeight="medium">
+      <Text as="h1" textStyle="text/2xl" fontWeight="medium">
         We've detected a {account.threshold} of {wallet.keystores.length} Multisig Wallet
       </Text>
 

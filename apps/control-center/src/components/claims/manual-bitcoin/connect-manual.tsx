@@ -1,5 +1,6 @@
 import { Button } from '@chakra-ui/react'
 import { BitcoinManualConnect } from '@hoseki/packages/ui/design-system'
+import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
 import type { BitcoinInput } from '@hoseki/packages/ui/utils/bitcoin'
 import { ClaimConnectionWrapper, WizardFooter } from '@hoseki/packages/ui/wallet-ui'
 import { useState } from 'react'
@@ -34,16 +35,17 @@ export function ConnectManual(): JSX.Element {
   return (
     <ClaimConnectionWrapper>
       <form onSubmit={handleFormSubmit}>
+        <PageHeading title="Add Watch-Only Account" mt={8} mb={6} />
         <BitcoinManualConnect
           bitcoinInput={bitcoinInput}
           setBitcoinInput={setBitcoinInput}
-          pt={12}
+          pt={0}
           pb={WizardFooter.padding}
         />
         <WizardFooter
           leftButton={
             <Button variant="outline" onClick={() => navigate(returnTo)}>
-              Cancel Claim
+              Back to Accounts
             </Button>
           }
           rightButton={

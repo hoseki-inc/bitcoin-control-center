@@ -1,4 +1,4 @@
-import { Box, type BoxProps, HStack, Text } from '@chakra-ui/react'
+import { Box, type BoxProps, Stack, Text } from '@chakra-ui/react'
 import type { ReactNode } from 'react'
 
 export function GenericAccountTable({
@@ -18,14 +18,20 @@ export function GenericAccountTable({
         {title}
       </Text>
       {rows.map(({ label, value }, index) => (
-        <HStack key={index} borderBottom="1px solid" borderColor="neutral.200">
-          <Text w="25%" p={2}>
+        <Stack
+          key={index}
+          direction={{ base: 'column', sm: 'row' }}
+          gap={0}
+          borderBottom="1px solid"
+          borderColor="neutral.200"
+        >
+          <Text w={{ base: 'full', sm: '25%' }} p={2}>
             {label}
           </Text>
-          <Box w="75%" p={2}>
+          <Box w={{ base: 'full', sm: '75%' }} minW={0} overflowWrap="anywhere" p={2}>
             {value}
           </Box>
-        </HStack>
+        </Stack>
       ))}
     </Box>
   )

@@ -5,18 +5,20 @@ import {
   Flex,
   FormControl,
   FormLabel,
-  HStack,
-  Heading,
+  Grid,
   Input,
   Select,
   Stack,
   Text,
 } from '@chakra-ui/react'
 import { ETF_CONFIGS, ETF_TICKERS, type EtfTicker, computeHoldingBtcSats } from '@hoseki/packages/etfs/holdings'
+import { DateStringInput } from '@hoseki/packages/ui/design-system/forms/date-string-input'
+import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
 import { TopBar } from '@hoseki/packages/ui/prove-verify-ui/top-bar'
 import { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router'
 import { toast } from 'sonner'
+import { BitcoinAmount } from '../../../components/bitcoin-amount'
 import { trpc } from '../../../trpc'
 
 interface HoldingRow {
@@ -108,28 +110,25 @@ export function ClaimsVerifyEtfPage(): JSX.Element {
   }
 
   return (
-    <Box py={6}>
-      <TopBar mb={6}>
+    <Box py={{ base: 6, md: 8 }} maxW="640px" mx="auto" w="full">
+      <TopBar mb={8}>
         <TopBar.Item as={Link} to={returnTo}>
           Back
         </TopBar.Item>
       </TopBar>
 
-      <Stack spacing={6} maxW="560px" mx="auto">
-        <Box>
-          <Heading textStyle="text/2xl" fontWeight="bold" color="neutral.900" mb={2}>
-            Add Bitcoin ETF Holdings
-          </Heading>
-          <Text textStyle="text/md" color="neutral.400">
-            Track your indirect Bitcoin exposure through ETF shares.
-          </Text>
-        </Box>
+      <Stack spacing={6}>
+        <PageHeading
+          title="Add Bitcoin ETF Holdings"
+          description="Track your indirect Bitcoin exposure through ETF shares."
+        />
 
         <FormControl>
           <FormLabel textStyle="text/sm" color="neutral.600" fontWeight="medium">
-            Display Name
+            Display name
           </FormLabel>
           <Input
+            fontFamily="body"
             placeholder="e.g. My ETF Portfolio, Brokerage Account"
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
@@ -137,17 +136,33 @@ export function ClaimsVerifyEtfPage(): JSX.Element {
         </FormControl>
 
         <Box>
-          <Text textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={3}>
+          <Text as="h2" textStyle="text/md" color="neutral.600" fontWeight="semibold" mb={3}>
             Holdings
           </Text>
           <Stack spacing={3}>
             {holdings.map((row) => (
-              <HStack key={row.key} spacing={2} align="flex-end">
-                <FormControl flex={1.2}>
-                  <FormLabel textStyle="text/xs" color="neutral.400">
+              <Grid
+                key={row.key}
+                templateColumns={{ base: 'minmax(0, 1fr)', md: 'minmax(0, 1.5fr) minmax(0, 0.8fr) minmax(0, 1fr)' }}
+                gap={4}
+                alignItems="end"
+                p={4}
+                bg="neutral.50"
+                borderRadius="panel"
+              >
+                <FormControl minW={0}>
+                  <FormLabel textStyle="text/sm" color="neutral.600">
                     ETF
                   </FormLabel>
-                  <Select size="sm" value={row.ticker} onChange={(e) => updateRow(row.key, 'ticker', e.target.value)}>
+                  <Select
+                    fontFamily="body"
+                    size="md"
+                    borderRadius="control"
+                    bg="shades.0"
+                    textStyle="text/sm"
+                    value={row.ticker}
+                    onChange={(e) => updateRow(row.key, 'ticker', e.target.value)}
+                  >
                     {ETF_TICKERS.map((ticker) => {
                       const config = ETF_CONFIGS[ticker]
                       return (
@@ -158,12 +173,15 @@ export function ClaimsVerifyEtfPage(): JSX.Element {
                     })}
                   </Select>
                 </FormControl>
-                <FormControl flex={0.8}>
-                  <FormLabel textStyle="text/xs" color="neutral.400">
+                <FormControl minW={0}>
+                  <FormLabel textStyle="text/sm" color="neutral.600">
                     Shares
                   </FormLabel>
                   <Input
-                    size="sm"
+                    fontFamily="body"
+                    size="md"
+                    bg="shades.0"
+                    textStyle="text/sm"
                     type="number"
                     step="any"
                     min="0"
@@ -172,40 +190,52 @@ export function ClaimsVerifyEtfPage(): JSX.Element {
                     onChange={(e) => updateRow(row.key, 'shares', e.target.value)}
                   />
                 </FormControl>
-                <FormControl flex={0.8}>
-                  <FormLabel textStyle="text/xs" color="neutral.400">
-                    Date Purchased
+                <FormControl minW={0}>
+                  <FormLabel textStyle="text/sm" color="neutral.600">
+                    Date purchased (optional)
                   </FormLabel>
-                  <Input
-                    size="sm"
-                    type="date"
+                  <DateStringInput
+                    fontFamily="body"
+                    size="md"
+                    bg="shades.0"
+                    textStyle="text/sm"
                     value={row.datePurchased}
-                    onChange={(e) => updateRow(row.key, 'datePurchased', e.target.value)}
+                    onChange={(date) => updateRow(row.key, 'datePurchased', date)}
                   />
                 </FormControl>
-                {holdings.length > 1 && <CloseButton size="sm" onClick={() => removeRow(row.key)} />}
-              </HStack>
+                {holdings.length > 1 && (
+                  <CloseButton
+                    size="md"
+                    aria-label={`Remove ${row.ticker} holding`}
+                    justifySelf="end"
+                    gridColumn={{ md: '1 / -1' }}
+                    onClick={() => removeRow(row.key)}
+                  />
+                )}
+              </Grid>
             ))}
           </Stack>
-          <Button size="sm" variant="ghost" mt={2} onClick={addRow}>
-            + Add Another ETF
+          <Button size="sm" variant="ghost" mt={3} onClick={addRow}>
+            Add another ETF
           </Button>
         </Box>
 
         {/* Live BTC total */}
         {totalBtcSats > 0n && (
-          <Box bg="neutral.50" p={4} borderRadius="md">
-            <Text textStyle="text/xs" color="neutral.400" fontWeight="medium" mb={1}>
-              Estimated BTC Total
+          <Box bg="neutral.50" p={4} borderRadius="panel">
+            <Text textStyle="text/xs" color="neutral.600" fontWeight="medium" mb={1}>
+              Estimated Bitcoin total
             </Text>
             <Text fontFamily="mono" textStyle="text/lg" fontWeight="bold" color="neutral.900">
-              {totalBtc.toFixed(8)} BTC
+              <>
+                <BitcoinAmount btc={totalBtc.toFixed(8)} />
+              </>
             </Text>
           </Box>
         )}
 
-        <Flex justify="flex-end">
-          <Button colorScheme="blue" onClick={handleSubmit} isLoading={createMutation.isLoading} isDisabled={!isValid}>
+        <Flex justify="flex-end" pt={2}>
+          <Button onClick={handleSubmit} isLoading={createMutation.isLoading} isDisabled={!isValid}>
             Add ETF Holdings
           </Button>
         </Flex>

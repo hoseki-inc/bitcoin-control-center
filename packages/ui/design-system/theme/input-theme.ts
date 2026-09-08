@@ -40,14 +40,14 @@ const variants = {
 const sizes = {
   sm: definePartsStyle({
     field: {
-      textStyle: 'text/sm',
-      h: '2rem',
+      textStyle: { base: 'text/md', md: 'text/sm' },
+      h: { base: '2.75rem', md: '2rem' },
     },
   }),
   md: definePartsStyle({
     field: {
       textStyle: 'text/md',
-      h: '2.5rem',
+      h: '2.75rem',
     },
   }),
   lg: definePartsStyle({

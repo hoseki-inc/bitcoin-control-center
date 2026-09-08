@@ -11,8 +11,9 @@ import {
   forwardRef,
 } from '@chakra-ui/react'
 import { type SupportedHardwareWallet, getSupportedHardwareWalletLogoPath } from '@hoseki/packages/wallet'
-import { AnimatePresence, motion } from 'framer-motion'
+import { useState } from 'react'
 import { rotateClockwise } from '../../design-system/animations/animations'
+import { opacityReveal } from '../../design-system/animations/motion'
 import { CheckCircleFilledIcon, DashedCircleFilledIcon, PlusCircleIcon, RoundKeyIcon } from '../icons'
 import { StatusBadge, type Status as StatusBadgeStatus } from '../status-badge'
 import { KeystoreAvatar } from './keystore-avatar'
@@ -65,6 +66,7 @@ export function KeystoresStatusIndicator({
     allKeystores: Keystore[],
   ) => null | ((keystore: Keystore) => void)
 }): JSX.Element {
+  const [revealDetails, setRevealDetails] = useState(false)
   const sortedKeystores = keystores.sort((a, b) => {
     if (a.status === 'verified') return -1
     if (b.status === 'verified') return 1
@@ -89,7 +91,10 @@ export function KeystoresStatusIndicator({
             disabled={!amIActionable}
             cursor={amIActionable ? 'pointer' : 'default'}
             key={keystore.name + keystore.id} // If we change this to just the `keystore.id`, it won't trigger the animation when user updates the name.
-            onClick={() => handler?.(keystore)}
+            onClick={(event) => {
+              setRevealDetails(event.detail > 0)
+              handler?.(keystore)
+            }}
             alignItems="center"
           >
             <Tooltip isDisabled={!tooltipCopy} label={tooltipCopy} hasArrow placement="top">
@@ -107,27 +112,16 @@ export function KeystoresStatusIndicator({
                 </KeystoreAvatar>
               </GradientAnimatedRing>
             </Tooltip>
-            <AnimatePresence mode="sync">
-              {amIExpanded && (
-                <motion.div
-                  initial="collapsed"
-                  animate="open"
-                  exit="collapsed"
-                  variants={{
-                    open: { opacity: 1, width: 'auto' },
-                    collapsed: { opacity: 0, width: 0 },
-                  }}
-                  transition={{ duration: 0.3, ease: [0.42, 0, 0.58, 1] }}
-                >
-                  <VStack ml={4} gap={1} alignItems="flex-start" overflow="hidden" maxW="200px">
-                    <Text textStyle="text/md" isTruncated maxW="full">
-                      {keystore.name}
-                    </Text>
-                    <StatusBadge status={getStatusBadgeStatus(keystore.status)} label={keystore.status} size="sm" />
-                  </VStack>
-                </motion.div>
-              )}
-            </AnimatePresence>
+            {amIExpanded && (
+              <Box minW={0} sx={revealDetails ? opacityReveal : undefined}>
+                <VStack ml={4} gap={1} alignItems="flex-start" overflow="hidden" maxW="200px">
+                  <Text textStyle="text/md" isTruncated maxW="full">
+                    {keystore.name}
+                  </Text>
+                  <StatusBadge status={getStatusBadgeStatus(keystore.status)} label={keystore.status} size="sm" />
+                </VStack>
+              </Box>
+            )}
           </Flex>
         )
       })}

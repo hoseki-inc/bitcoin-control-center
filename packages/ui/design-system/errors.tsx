@@ -4,14 +4,14 @@ export type ErrorVariant = 'error' | 'warning' | 'neutral'
 
 const colorMap = {
   error: {
-    color: '#EF4444',
-    backgroundColor: '#FFEFF0',
-    borderColor: '#FFE0E0',
+    color: 'error.700',
+    backgroundColor: 'error.50',
+    borderColor: 'error.100',
   },
   warning: {
-    color: '#F59E0B',
-    backgroundColor: '#FFFBEB',
-    borderColor: '#FDE68A',
+    color: 'warning.800',
+    backgroundColor: 'warning.50',
+    borderColor: 'warning.200',
   },
   neutral: {
     color: 'neutral.900',
@@ -29,7 +29,14 @@ export function ErrorBlock({ title, description, variant = 'error', ...rest }: E
   const { color } = colorMap[variant]
 
   return (
-    <Stack alignItems="center" gap={2} color={color} {...rest}>
+    <Stack
+      role={variant === 'error' ? 'alert' : 'status'}
+      alignItems="center"
+      textAlign="center"
+      gap={2}
+      color={color}
+      {...rest}
+    >
       <WarningTriangleFilledIcon boxSize="37px" />
       <Text textStyle="text/lg" fontWeight="medium">
         {title}
@@ -50,8 +57,10 @@ export function ErrorBanner({ message, variant = 'error', rightContent, ...rest 
 
   return (
     <HStack
-      alignItems="center"
-      gap={4}
+      role={variant === 'error' ? 'alert' : 'status'}
+      alignItems={{ base: 'stretch', sm: 'center' }}
+      flexDirection={{ base: 'column', sm: 'row' }}
+      gap={3}
       bg={backgroundColor}
       border="1px solid"
       borderColor={borderColor}
@@ -61,9 +70,9 @@ export function ErrorBanner({ message, variant = 'error', rightContent, ...rest 
       color={color}
       {...rest}
     >
-      <HStack flexGrow={1} py={rightContent ? 0 : 3}>
-        <WarningCircleFilledIcon boxSize="14px" />
-        <Text textStyle="text/sm" fontWeight="medium">
+      <HStack flexGrow={1} minW={0} align="start" py={2}>
+        <WarningCircleFilledIcon boxSize="16px" flexShrink={0} mt="2px" aria-hidden="true" />
+        <Text textStyle="text/sm" fontWeight="medium" overflowWrap="anywhere">
           {message}
         </Text>
       </HStack>
@@ -89,6 +98,8 @@ export function ErrorInline({
 
   return (
     <Stack
+      role={variant === 'error' ? 'alert' : 'status'}
+      overflowWrap="anywhere"
       gap={2}
       bg={backgroundColor}
       border="1px solid"

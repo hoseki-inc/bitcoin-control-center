@@ -1,3 +1,4 @@
+import { Box } from '@chakra-ui/react'
 import {
   AppLayout as BaseAppLayout,
   Logo as BaseLogo,
@@ -5,7 +6,7 @@ import {
   Header,
   getEnvSlug,
 } from '@hoseki/packages/ui/prove-verify-ui'
-import { Link, Outlet } from 'react-router'
+import { Link, NavLink, Outlet } from 'react-router'
 import { UserInfo } from './user-info'
 
 const HOSEKI_ENV = import.meta.env['VITE_HOSEKI_ENV']
@@ -29,9 +30,13 @@ export function AppLayout({ fullWidth }: { fullWidth?: boolean }): JSX.Element {
     />
   )
 
-  const menu = <BaseMenu items={menuItems} renderLink={(to, children) => <Link to={to}>{children}</Link>} />
+  const menu = <BaseMenu items={menuItems} renderLink={(to, children) => <NavLink to={to}>{children}</NavLink>} />
 
-  const header = <Header logo={logo} menu={menu} userInfo={<UserInfo />} />
+  const header = (
+    <Box data-app-navbar>
+      <Header logo={logo} menu={menu} userInfo={<UserInfo />} />
+    </Box>
+  )
 
   return (
     <BaseAppLayout header={header} fullWidth={fullWidth}>

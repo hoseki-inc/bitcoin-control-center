@@ -1,7 +1,14 @@
 import { Button, HStack, Spacer } from '@chakra-ui/react'
 import { ArrowLeftIcon, ArrowRightIcon } from 'lucide-react'
+import type { MouseEventHandler } from 'react'
 
-export function NavigationArrows({ onBack, onForward }: { onBack?: () => void; onForward?: () => void }): JSX.Element {
+export function NavigationArrows({
+  onBack,
+  onForward,
+}: {
+  onBack?: MouseEventHandler<HTMLButtonElement>
+  onForward?: MouseEventHandler<HTMLButtonElement>
+}): JSX.Element {
   return (
     <HStack justifyContent="space-between" width="full" mt={4}>
       {onBack ? <NavigationArrow onClick={onBack} direction="left" /> : <Spacer />}
@@ -10,7 +17,13 @@ export function NavigationArrows({ onBack, onForward }: { onBack?: () => void; o
   )
 }
 
-function NavigationArrow({ onClick, direction }: { onClick: () => void; direction: 'left' | 'right' }) {
+function NavigationArrow({
+  onClick,
+  direction,
+}: {
+  onClick: MouseEventHandler<HTMLButtonElement>
+  direction: 'left' | 'right'
+}) {
   const Icon = direction === 'left' ? ArrowLeftIcon : ArrowRightIcon
 
   return (

@@ -2,9 +2,7 @@ import { Button, Text, VStack } from '@chakra-ui/react'
 import { ErrorBanner, PageTransition } from '@hoseki/packages/ui/design-system'
 import { AppLayout, CheckCircleFilledIcon, Receipt, StatusBadge } from '@hoseki/packages/ui/prove-verify-ui'
 import { convertToOrdinalWords } from '@hoseki/packages/ui/utils'
-import { useEffect, useState } from 'react'
-import Fireworks from 'react-canvas-confetti/dist/presets/fireworks'
-import { useNavigate, useParams } from 'react-router'
+import { Link, useNavigate, useParams } from 'react-router'
 import { UrlParameter, useUrlParameter } from '../../hooks/use-url-parameters'
 import { trpc } from '../../trpc'
 import type { ClaimDto, KeystoreDto } from '../../trpc/server-types'
@@ -27,24 +25,37 @@ export function KeystoreReceiptPage(): JSX.Element {
   const { keystoreId } = useParams()
   const claimId = useUrlParameter(UrlParameter.claimId)
 
-  const { data: claim, isError } = trpc.portalProve.registry.claims.get.byId.useQuery(
-    { id: claimId ?? '' },
-    { enabled: Boolean(claimId) },
-  )
+  const {
+    data: claim,
+    isError,
+    isLoading,
+  } = trpc.portalProve.registry.claims.get.byId.useQuery({ id: claimId ?? '' }, { enabled: Boolean(claimId) })
 
   if (!claimId || isError) {
     return (
       <AppLayout header={<div />}>
-        <ErrorBanner mt={8} mb={4} message="Failed to get claim" />
+        <VStack mt={8} gap={4}>
+          <ErrorBanner message="This account verification could not be loaded." />
+          <Button as={Link} to="/accounts" variant="outline">
+            Back to Accounts
+          </Button>
+        </VStack>
       </AppLayout>
     )
   }
+
+  if (isLoading) return <Receipt title="Loading key verification…" state="loading" />
 
   const keystore = claim?.keystores.find((k) => k.id === keystoreId)
   if (!keystore) {
     return (
       <AppLayout header={<div />}>
-        <ErrorBanner mt={8} mb={4} message="Failed to get keystore" />
+        <VStack mt={8} gap={4}>
+          <ErrorBanner message="This key verification could not be loaded." />
+          <Button as={Link} to="/accounts" variant="outline">
+            Back to Accounts
+          </Button>
+        </VStack>
       </AppLayout>
     )
   }
@@ -57,19 +68,12 @@ export function KeystoreReceiptPage(): JSX.Element {
 }
 
 export function KeystoreReceipt({ shouldSetTimeout, keystore, claim }: KeystoreReceiptProps): JSX.Element {
-  const [isPending, setIsPending] = useState(true)
   const navigate = useNavigate()
 
-  useEffect(() => {
-    if (shouldSetTimeout) {
-      setTimeout(() => setIsPending(false), 1700)
-    }
-  }, [shouldSetTimeout])
-
-  if (isPending) {
+  if (!shouldSetTimeout) {
     return (
       <PageTransition>
-        <Receipt title="Validating key..." state="loading" />
+        <Receipt title="Loading key verification…" state="loading" />
       </PageTransition>
     )
   }
@@ -77,16 +81,23 @@ export function KeystoreReceipt({ shouldSetTimeout, keystore, claim }: KeystoreR
   if (!claim || !keystore) {
     return (
       <AppLayout header={<div />}>
-        <ErrorBanner mt={8} mb={4} message="Failed to get claim" />
+        <VStack mt={8} gap={4}>
+          <ErrorBanner message="This account verification could not be loaded." />
+          <Button as={Link} to="/accounts" variant="outline">
+            Back to Accounts
+          </Button>
+        </VStack>
       </AppLayout>
     )
   }
 
   const numberOfMissingSignatures = getNumberOfMissingSignatures(claim)
   const description2ndPart =
-    numberOfMissingSignatures === 1
-      ? 'Prove control of one more key to finish validating your multisig claim!'
-      : `Prove control of ${numberOfMissingSignatures} more keys to finish validating your multisig claim!`
+    numberOfMissingSignatures === 0
+      ? 'All required keys are verified.'
+      : numberOfMissingSignatures === 1
+        ? 'Prove control of one more key to verify this wallet.'
+        : `Prove control of ${numberOfMissingSignatures} more keys to verify this wallet.`
 
   function goBackToMultisigHub() {
     if (!claim) {
@@ -97,7 +108,6 @@ export function KeystoreReceipt({ shouldSetTimeout, keystore, claim }: KeystoreR
 
   return (
     <PageTransition>
-      <Fireworks autorun={{ speed: 2, duration: 5_000, delay: 500 }} />
       <Receipt
         title={`${convertToOrdinalWords(getNumberOfSignedMessages(claim))} Key Verified!`}
         state="success"
@@ -105,7 +115,7 @@ export function KeystoreReceipt({ shouldSetTimeout, keystore, claim }: KeystoreR
         closeTitle="Back to Multisig"
         content={
           <VStack spacing={8} maxWidth="840px" textAlign="center">
-            <Text textStyle="text/2xl" color="neutral.900">
+            <Text textStyle="text/md" color="neutral.900">
               You've successfully proven control of this key in your multisig setup. {description2ndPart}
             </Text>
             <VStack spacing={4}>
@@ -116,7 +126,7 @@ export function KeystoreReceipt({ shouldSetTimeout, keystore, claim }: KeystoreR
               <StatusBadge status="success" label="Verified" icon={CheckCircleFilledIcon} size="md" />
             </VStack>
             <Button variant="primary" onClick={goBackToMultisigHub}>
-              Verify Next Key
+              {numberOfMissingSignatures > 0 ? 'Continue Verification' : 'View Wallet'}
             </Button>
           </VStack>
         }
