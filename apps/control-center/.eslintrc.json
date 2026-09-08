@@ -19,7 +19,12 @@
     },
     {
       "files": ["*.ts", "*.tsx"],
-      "rules": {}
+      "parserOptions": {
+        "project": true
+      },
+      "rules": {
+        "@typescript-eslint/return-await": ["error", "error-handling-correctness-only"]
+      }
     },
     {
       "files": ["*.js", "*.jsx"],
