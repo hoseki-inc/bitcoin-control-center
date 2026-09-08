@@ -274,7 +274,7 @@ export function AccountFilter({
     return (
       <MotionBox
         as="aside"
-        layout
+        layout="position"
         transition={{ duration: reduceMotion ? 0 : 0.24, ease: [0.32, 0.72, 0, 1] }}
         aria-label="Portfolio accounts"
         w={collapsed ? '44px' : '280px'}
@@ -283,17 +283,20 @@ export function AccountFilter({
         position="relative"
         flexShrink={0}
         pr={collapsed ? 0 : 3}
-        _after={{
-          content: '""',
-          position: 'absolute',
-          top: 0,
-          bottom: 0,
-          right: 0,
-          width: '1px',
-          bgGradient: 'linear(to-b, transparent, neutral.200 8%, neutral.200 92%, transparent)',
-          pointerEvents: 'none',
-        }}
       >
+        <MotionBox
+          aria-hidden="true"
+          position="absolute"
+          top={0}
+          bottom={0}
+          left="43px"
+          w="1px"
+          bgGradient="linear(to-b, transparent, neutral.200 8%, neutral.200 92%, transparent)"
+          pointerEvents="none"
+          initial={false}
+          animate={{ transform: collapsed ? 'translateX(0px)' : 'translateX(236px)' }}
+          transition={{ duration: reduceMotion ? 0 : 0.24, ease: [0.32, 0.72, 0, 1] }}
+        />
         {collapsed ? (
           <Tooltip label="Expand accounts" placement="right">
             <IconButton
