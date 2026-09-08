@@ -1,3 +1,4 @@
+import { setDefaultResultOrder } from 'node:dns'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import cors from '@fastify/cors'
@@ -124,6 +125,9 @@ function isProtectedRoute(url: string): boolean {
 }
 
 export async function main(): Promise<SentinelServer> {
+  // Prefer IPv4 on dual-stack hosts; some local networks advertise IPv6 without
+  // a working outbound route. IPv6-only destinations remain supported.
+  setDefaultResultOrder('ipv4first')
   const isProduction = process.env['NODE_ENV'] === 'production'
   const logger = pino({
     level: process.env['LOG_LEVEL'] ?? 'info',
