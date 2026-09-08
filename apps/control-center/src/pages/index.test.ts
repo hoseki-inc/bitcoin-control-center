@@ -58,7 +58,9 @@ vi.mock('../hooks/use-ui-settings', () => ({
   useUiSettings: () => ({ isStatementsMadeEasyDismissed: false, updateUiSettings: vi.fn() }),
 }))
 vi.mock('../hooks/use-bitcoin-display', () => ({ useBitcoinDisplay: () => ({ unit: mocks.unit }) }))
-vi.mock('liveline', () => ({ Liveline: () => createElement('canvas', { 'data-chart': 'liveline' }) }))
+vi.mock('../components/dashboard-charts/history-line-chart', () => ({
+  HistoryLineChart: () => createElement('svg', { 'data-chart': 'history' }),
+}))
 vi.mock('../components/dashboard/banner', async (importOriginal) => ({
   ...(await importOriginal<typeof DashboardBanner>()),
   Banner: () => createElement('div', null, 'Statement introduction'),
@@ -106,7 +108,7 @@ describe('Home overview states', () => {
       'Bitcoin Price',
       'Last 7 days',
       'Your holdings, on record',
-      'data-chart="liveline"',
+      'data-chart="history"',
     ]) {
       expect(html).toContain(text)
     }

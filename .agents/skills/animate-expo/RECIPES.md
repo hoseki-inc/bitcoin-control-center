@@ -304,6 +304,7 @@ npx expo install react-native-keyboard-controller
 import { KeyboardProvider } from 'react-native-keyboard-controller'
 
 // Root _layout, next to GestureHandlerRootView — hooks below do nothing without it.
+
 ;<KeyboardProvider>
   <Stack />
 </KeyboardProvider>

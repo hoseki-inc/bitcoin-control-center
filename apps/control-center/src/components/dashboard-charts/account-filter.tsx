@@ -30,6 +30,7 @@ import { UsdEquivalent } from '../usd-equivalent'
 import { HistorySyncStatus } from './history-sync-status'
 
 interface AccountFilterProps {
+  presentation?: 'dropdown' | 'sidebar'
   claims: ClaimDto[]
   exchangeAccounts: RouterOutput['portalProve']['exchange']['list']
   manualAccounts: RouterOutput['portalProve']['manual']['list']
@@ -43,6 +44,7 @@ interface AccountFilterProps {
 }
 
 export function AccountFilter({
+  presentation = 'dropdown',
   claims,
   exchangeAccounts,
   manualAccounts,
@@ -54,6 +56,13 @@ export function AccountFilter({
   historySyncingAccountIds,
   recentlySyncedAccountIds,
 }: AccountFilterProps): JSX.Element {
+  const [compact, setCompact] = useState(() => {
+    try {
+      return localStorage.getItem('hoseki:sidebar-compact') !== 'false'
+    } catch {
+      return true
+    }
+  })
   const { isOpen, onOpen, onClose } = useDisclosure()
   const [search, setSearch] = useState('')
   const [draft, setDraft] = useState<Set<string>>(new Set())
@@ -63,30 +72,35 @@ export function AccountFilter({
       id: claim.id,
       name: claim.displayName ?? claim.officialName,
       detail: ensureClaimStatusNotExpired(claim) === 'pending' ? 'Self-custody · Pending' : 'Self-custody',
+      reconnectTo: null,
       sats: Number(balances?.get(claim.id)?.current ?? 0),
     })),
     ...exchangeAccounts.map((account) => ({
       id: account.id,
       name: account.displayName,
       detail: needsExchangeReconnect(account) ? `${account.exchange} · Reconnect needed` : account.exchange,
-      sats: Number(account.balance ?? 0),
+      reconnectTo: needsExchangeReconnect(account) ? `/accounts/${account.exchange}/${account.id}` : null,
+      sats: needsExchangeReconnect(account) ? 0 : Number(account.balance ?? 0),
     })),
     ...manualAccounts.map((account) => ({
       id: account.id,
       name: account.displayName,
       detail: 'Manual account',
+      reconnectTo: null,
       sats: Number(account.balance ?? 0),
     })),
     ...etfAccounts.map((account) => ({
       id: account.id,
       name: account.displayName,
       detail: 'ETF',
+      reconnectTo: null,
       sats: Number(account.balance ?? 0),
     })),
   ]
+  const selectable = accounts.filter((account) => !account.reconnectTo)
   const totalSats = accounts.reduce((total, account) => total + account.sats, 0)
-  const included = accounts.filter((account) => selected.size === 0 || selected.has(account.id))
-  const isAll = included.length === accounts.length
+  const included = selectable.filter((account) => selected.size === 0 || selected.has(account.id))
+  const isAll = included.length === selectable.length
   const label = isAll
     ? 'All accounts'
     : included.length === 1
@@ -95,7 +109,168 @@ export function AccountFilter({
   const matching = accounts.filter((account) =>
     `${account.name} ${account.detail}`.toLowerCase().includes(search.trim().toLowerCase()),
   )
-  const draftCount = accounts.filter((account) => draft.has(account.id)).length
+  const draftCount = selectable.filter((account) => draft.has(account.id)).length
+
+  const rows = (selection: Set<string>, toggle: (id: string, checked: boolean) => void): JSX.Element => (
+    <Stack spacing={0} px={2} pb={2}>
+      {matching.map((account) =>
+        account.reconnectTo ? (
+          <Flex
+            as={Link}
+            to={account.reconnectTo}
+            key={account.id}
+            direction="column"
+            p={3}
+            gap={1}
+            borderRadius="control"
+            _hover={{ bg: 'neutral.100' }}
+            aria-label={`Reconnect ${account.name}`}
+          >
+            <Text textStyle="text/sm" fontWeight="medium">
+              {account.name}
+            </Text>
+            <Text textStyle="text/xs" color="warning.700">
+              Reconnect needed
+            </Text>
+          </Flex>
+        ) : (
+          <Flex
+            key={account.id}
+            align="center"
+            gap={2}
+            p={3}
+            borderRadius="control"
+            bg={selection.has(account.id) ? 'neutral.50' : 'transparent'}
+            _hover={{ bg: 'neutral.100' }}
+          >
+            <Checkbox
+              aria-label={`Include ${account.name}`}
+              isChecked={selection.has(account.id)}
+              onChange={(event) => toggle(account.id, event.target.checked)}
+              colorScheme="gray"
+            />
+            <Box flex="1" minW={0}>
+              <Flex align="center" justify="space-between" gap={3} flexWrap="wrap">
+                <Box minW={0}>
+                  <Flex align="center" gap={2}>
+                    <Button
+                      variant="link"
+                      color="neutral.900"
+                      textStyle="text/sm"
+                      whiteSpace="normal"
+                      textAlign="left"
+                      overflowWrap="anywhere"
+                      minW={0}
+                      onClick={() =>
+                        presentation === 'sidebar'
+                          ? onSelectionChange(new Set([account.id]))
+                          : toggle(account.id, !selection.has(account.id))
+                      }
+                    >
+                      {account.name}
+                    </Button>
+                    <HistorySyncStatus
+                      syncing={historySyncingAccountIds.includes(account.id)}
+                      synced={recentlySyncedAccountIds.includes(account.id)}
+                      compact
+                    />
+                  </Flex>
+                  {presentation === 'sidebar' && compact ? (
+                    <Text textStyle="text/xs" color="neutral.600" mt={1} sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                      <SensitiveValue>
+                        <BitcoinAmount btc={account.sats / 100_000_000} />
+                      </SensitiveValue>
+                    </Text>
+                  ) : (
+                    <Text textStyle="text/xs" color="neutral.600" textTransform="capitalize">
+                      {account.detail}
+                    </Text>
+                  )}
+                </Box>
+                {!(presentation === 'sidebar' && compact) && (
+                  <Flex direction="column" align="flex-end" gap={1} flexShrink={0}>
+                    <Text textStyle="text/xs" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                      <SensitiveValue>
+                        <BitcoinAmount btc={account.sats / 100_000_000} />
+                      </SensitiveValue>
+                    </Text>
+                    <Text textStyle="text/xs" color="neutral.600" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                      <SensitiveValue>
+                        <UsdEquivalent btc={account.sats / 100_000_000} btcPrice={btcPrice} />
+                      </SensitiveValue>
+                    </Text>
+                    <SensitiveValue>
+                      <AccountShare sats={account.sats} totalSats={totalSats} />
+                    </SensitiveValue>
+                  </Flex>
+                )}
+              </Flex>
+            </Box>
+          </Flex>
+        ),
+      )}
+      {matching.length === 0 && (
+        <Text textStyle="text/sm" color="neutral.600" p={4}>
+          No accounts match your search.
+        </Text>
+      )}
+    </Stack>
+  )
+
+  if (presentation === 'sidebar') {
+    const selection = new Set(included.map((account) => account.id))
+    return (
+      <Box
+        as="aside"
+        aria-label="Portfolio accounts"
+        w={compact ? '220px' : '320px'}
+        flexShrink={0}
+        borderRight="1px solid"
+        borderColor="neutral.200"
+        pr={3}
+      >
+        <Flex align="center" justify="space-between" gap={2} mb={3}>
+          <Text textStyle="text/md" fontWeight="medium">
+            Accounts
+          </Text>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              setCompact(!compact)
+              try {
+                localStorage.setItem('hoseki:sidebar-compact', String(!compact))
+              } catch {
+                /* Keep session preference. */
+              }
+            }}
+          >
+            {compact ? 'Detailed view' : 'Compact view'}
+          </Button>
+        </Flex>
+        <Input
+          aria-label="Search accounts"
+          placeholder="Search accounts"
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          mb={3}
+        />
+        <Button w="full" variant={isAll ? 'outline' : 'ghost'} mb={2} onClick={() => onSelectionChange(new Set())}>
+          All accounts
+        </Button>
+        {rows(selection, (id, checked) => {
+          const next = new Set(selection)
+          if (checked) next.add(id)
+          else next.delete(id)
+          // Empty sets mean all accounts in the API. Keep the last selected account checked.
+          if (next.size > 0) onSelectionChange(next.size === selectable.length ? new Set() : next)
+        })}
+        <Button as={Link} to="/accounts" variant="ghost" size="sm" mt={2}>
+          Manage accounts
+        </Button>
+      </Box>
+    )
+  }
 
   return (
     <Flex align="center" gap={3} flexWrap="wrap">
@@ -122,7 +297,7 @@ export function AccountFilter({
               {label}
             </Text>
             <Text as="span" ml={2} color="neutral.600" fontWeight="normal">
-              {isAll ? accounts.length : `${included.length} of ${accounts.length}`}
+              {isAll ? selectable.length : `${included.length} of ${selectable.length}`}
             </Text>
           </Button>
         </PopoverTrigger>
@@ -153,79 +328,26 @@ export function AccountFilter({
             <PopoverBody p={0} overflowY="auto" minH={0}>
               <Flex px={4} py={2} align="center" justify="space-between" gap={2}>
                 <Text textStyle="text/xs" color="neutral.600" aria-live="polite">
-                  {draftCount} of {accounts.length} selected
+                  {draftCount} of {selectable.length} selected
                 </Text>
                 <Button
                   size="sm"
                   variant="ghost"
-                  onClick={() => setDraft(new Set(accounts.map((account) => account.id)))}
+                  onClick={() => setDraft(new Set(selectable.map((account) => account.id)))}
                 >
                   Select all
                 </Button>
               </Flex>
-              <Stack spacing={0} px={2} pb={2} maxH="320px" overflowY="auto">
-                {matching.map((account) => (
-                  <Checkbox
-                    key={account.id}
-                    isChecked={draft.has(account.id)}
-                    onChange={(event) => {
-                      const checked = event.target.checked
-                      setDraft((previous) => {
-                        const next = new Set(previous)
-                        if (checked) next.add(account.id)
-                        else next.delete(account.id)
-                        return next
-                      })
-                    }}
-                    colorScheme="gray"
-                    alignItems="center"
-                    p={3}
-                    minH="64px"
-                    borderRadius="control"
-                    bg={draft.has(account.id) ? 'neutral.50' : 'transparent'}
-                    _hover={{ bg: 'neutral.100' }}
-                    sx={{ '.chakra-checkbox__label': { width: '100%', minWidth: 0 } }}
-                  >
-                    <Flex align="center" justify="space-between" gap={3}>
-                      <Box minW={0}>
-                        <Flex align="center" gap={2}>
-                          <Text textStyle="text/sm" fontWeight="medium" overflowWrap="anywhere">
-                            {account.name}
-                          </Text>
-                          <HistorySyncStatus
-                            syncing={historySyncingAccountIds.includes(account.id)}
-                            synced={recentlySyncedAccountIds.includes(account.id)}
-                            compact
-                          />
-                        </Flex>
-                        <Text textStyle="text/xs" color="neutral.600" textTransform="capitalize">
-                          {account.detail}
-                        </Text>
-                      </Box>
-                      <Flex direction="column" align="flex-end" gap={1} flexShrink={0}>
-                        <Text textStyle="text/xs" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                          <SensitiveValue>
-                            <BitcoinAmount btc={account.sats / 100_000_000} />
-                          </SensitiveValue>
-                        </Text>
-                        <Text textStyle="text/xs" color="neutral.600" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                          <SensitiveValue>
-                            <UsdEquivalent btc={account.sats / 100_000_000} btcPrice={btcPrice} />
-                          </SensitiveValue>
-                        </Text>
-                        <SensitiveValue>
-                          <AccountShare sats={account.sats} totalSats={totalSats} />
-                        </SensitiveValue>
-                      </Flex>
-                    </Flex>
-                  </Checkbox>
-                ))}
-                {matching.length === 0 && (
-                  <Text textStyle="text/sm" color="neutral.600" p={4}>
-                    No accounts match your search.
-                  </Text>
+              <Box maxH="320px" overflowY="auto">
+                {rows(draft, (id, checked) =>
+                  setDraft((previous) => {
+                    const next = new Set(previous)
+                    if (checked) next.add(id)
+                    else next.delete(id)
+                    return next
+                  }),
                 )}
-              </Stack>
+              </Box>
             </PopoverBody>
             <PopoverFooter p={4} borderColor="neutral.200" flexShrink={0}>
               {draftCount === 0 && (
@@ -246,9 +368,9 @@ export function AccountFilter({
                     isDisabled={draftCount === 0}
                     onClick={() => {
                       onSelectionChange(
-                        draftCount === accounts.length
+                        draftCount === selectable.length
                           ? new Set()
-                          : new Set(accounts.filter((account) => draft.has(account.id)).map((account) => account.id)),
+                          : new Set(selectable.filter((account) => draft.has(account.id)).map((account) => account.id)),
                       )
                       onClose()
                     }}

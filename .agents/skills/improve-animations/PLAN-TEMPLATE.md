@@ -2,7 +2,7 @@
 
 Every plan written by `improve-animations` follows this structure. The executor may be a less capable model with zero context and zero taste — the plan must contain everything, exactly. No references to "the audit above" or "the easing we discussed."
 
-````markdown
+```markdown
 # NNN — <Short imperative title>
 
 - **Status**: TODO
@@ -63,7 +63,7 @@ imitate (token names, file placement, prop patterns):
   - In DevTools, set playback to 10% (Animations panel) and confirm <detail>.
   - Toggle `prefers-reduced-motion` (Rendering panel) and confirm movement is dropped but opacity feedback remains.
 - **Done when**: <machine- or eye-checkable completion criteria>.
-````
+```
 
 ## Notes for the plan author
 

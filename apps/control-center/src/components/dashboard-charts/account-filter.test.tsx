@@ -18,14 +18,31 @@ const accounts = [
   { id: 'cold', displayName: 'Cold Storage', balance: '260000000' },
 ] as React.ComponentProps<typeof AccountFilter>['manualAccounts']
 
-async function render(selected = new Set<string>()): Promise<void> {
+async function render(
+  selected = new Set<string>(),
+  presentation: 'dropdown' | 'sidebar' = 'dropdown',
+  disconnected = false,
+): Promise<void> {
   await act(async () =>
     root.render(
       <ChakraProvider>
         <MemoryRouter>
           <AccountFilter
+            presentation={presentation}
             claims={[]}
-            exchangeAccounts={[]}
+            exchangeAccounts={
+              disconnected
+                ? ([
+                    {
+                      id: 'strike',
+                      displayName: 'Offline Strike',
+                      exchange: 'strike',
+                      balance: '9999900000',
+                      connectionStatus: 'needs_reconnect',
+                    },
+                  ] as React.ComponentProps<typeof AccountFilter>['exchangeAccounts'])
+                : []
+            }
             manualAccounts={accounts}
             etfAccounts={[]}
             balances={new Map()}
@@ -130,4 +147,36 @@ it('resets the applied filter with Show all', async () => {
   await render(new Set(['cold']))
   await click('Show all')
   expect(onSelectionChange).toHaveBeenCalledWith(new Set())
+})
+
+it.each(['dropdown', 'sidebar'] as const)(
+  'routes disconnected exchanges to reconnect without exposing or selecting their saved balance in %s',
+  async (presentation) => {
+    await render(new Set(), presentation, true)
+    if (presentation === 'dropdown') await click('Filter accounts: All accounts')
+    const reconnect = document.querySelector<HTMLAnchorElement>('[aria-label="Reconnect Offline Strike"]')!
+    expect(reconnect.getAttribute('href')).toBe('/accounts/strike/strike')
+    expect(document.body.textContent).not.toContain('99.999')
+    expect(document.querySelectorAll('input[type="checkbox"]')).toHaveLength(2)
+    if (presentation === 'dropdown') {
+      await click('Select all')
+      await click('Apply')
+      expect(onSelectionChange).toHaveBeenCalledWith(new Set())
+    }
+  },
+)
+
+it('supports immediate single and multiple selection beside the charts and remembers compact mode', async () => {
+  await render(new Set(), 'sidebar')
+  await click('Paper Wallet')
+  expect(onSelectionChange).toHaveBeenLastCalledWith(new Set(['paper']))
+  await render(new Set(['paper']), 'sidebar')
+  await toggle(1)
+  expect(onSelectionChange).toHaveBeenLastCalledWith(new Set())
+  expect(document.body.textContent).not.toContain('Apply')
+  await click('Detailed view')
+  expect(localStorage.getItem('hoseki:sidebar-compact')).toBe('false')
+  expect(document.body.textContent).toContain('$312,500.00 USD')
+  await click('Compact view')
+  expect(localStorage.getItem('hoseki:sidebar-compact')).toBe('true')
 })

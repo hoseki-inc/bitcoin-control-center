@@ -18,7 +18,7 @@ import {
 import { EmptyView, ErrorBanner, Spinner } from '@hoseki/packages/ui/design-system'
 import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
 import { ClaimCardKeystores, getBadgeConfigForClaim } from '@hoseki/packages/ui/prove-verify-ui'
-import { ChartNoAxesCombined, FileText, LayoutGridIcon, ListIcon } from 'lucide-react'
+import { ChartNoAxesCombined, FileText, LayoutGridIcon, ListIcon, Plus } from 'lucide-react'
 import { type ReactNode, useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router'
 import { toast } from 'sonner'
@@ -40,7 +40,21 @@ type ManualAccountDto = RouterOutput['portalProve']['manual']['list'][number]
 type EtfAccountDto = RouterOutput['portalProve']['etf']['list'][number]
 
 export function ClaimsPage(): JSX.Element {
-  const [view, setView] = useState<'list' | 'cards'>('list')
+  const [view, updateView] = useState<'list' | 'cards'>(() => {
+    try {
+      return localStorage.getItem('bcc:accounts-view') === 'list' ? 'list' : 'cards'
+    } catch {
+      return 'cards'
+    }
+  })
+  const setView = (next: 'list' | 'cards'): void => {
+    updateView(next)
+    try {
+      localStorage.setItem('bcc:accounts-view', next)
+    } catch {
+      /* Keep the in-memory preference. */
+    }
+  }
   useAutoRefreshExchanges()
   const navigate = useNavigate()
   const location = useLocation()
@@ -135,7 +149,7 @@ export function ClaimsPage(): JSX.Element {
       }, 0)
     : 0
 
-  const exchangeTotalBtcSats = exchangeAccounts.reduce((sum, a) => {
+  const exchangeTotalBtcSats = connectedExchangeAccounts.reduce((sum, a) => {
     if (!a.balance) return sum
     return sum + Number(a.balance)
   }, 0)
@@ -154,6 +168,7 @@ export function ClaimsPage(): JSX.Element {
   const totalBtc = totalBtcSats / 100_000_000
   const hasUnknownBalance =
     claims.some((claim) => !balancesQuery.data?.get(claim.id)) ||
+    exchangeAccounts.some(needsExchangeReconnect) ||
     [...exchangeAccounts, ...manualAccounts, ...etfAccounts].some((account) => account.balance === null)
 
   const btcUsdPrice = btcPriceQuery.data?.value ? Number(btcPriceQuery.data.value) : null
@@ -167,7 +182,7 @@ export function ClaimsPage(): JSX.Element {
 
   const exchangeTotalUsd =
     btcUsdPrice !== null
-      ? exchangeAccounts.reduce((sum, a) => {
+      ? connectedExchangeAccounts.reduce((sum, a) => {
           if (!a.balance) return sum
           return sum + (Number(a.balance) / 100_000_000) * btcUsdPrice
         }, 0)
@@ -310,7 +325,7 @@ export function ClaimsPage(): JSX.Element {
                   name={account.displayName}
                   to={`${(exchangeConfig[account.exchange] ?? defaultExchangeConfig).detailsPath}/${account.id}`}
                   detail={`${(exchangeConfig[account.exchange] ?? defaultExchangeConfig).label} · ${isExchangeConnected(account) ? 'Connected' : 'Reconnect needed'}`}
-                  sats={account.balance}
+                  sats={needsExchangeReconnect(account) ? null : account.balance}
                   btcPrice={btcUsdPrice}
                 />
               ))}
@@ -334,6 +349,7 @@ export function ClaimsPage(): JSX.Element {
                   btcPrice={btcUsdPrice}
                 />
               ))}
+              <AddAccountTile view="list" />
             </Stack>
           ) : (
             <Grid
@@ -362,6 +378,7 @@ export function ClaimsPage(): JSX.Element {
                   linkPrefix="/accounts/etf"
                 />
               ))}
+              <AddAccountTile view="cards" />
             </Grid>
           )
         ) : (
@@ -747,6 +764,28 @@ function AccountRow({
           </SensitiveValue>
         </Text>
       </Box>
+    </Flex>
+  )
+}
+
+function AddAccountTile({ view }: { view: 'list' | 'cards' }): JSX.Element {
+  return (
+    <Flex
+      as={Link}
+      to="/accounts/add"
+      aria-label="Add account"
+      align="center"
+      justify="center"
+      minH={view === 'cards' ? '180px' : '88px'}
+      border={view === 'cards' ? '1px dashed' : undefined}
+      borderBottom="1px solid"
+      borderColor="neutral.200"
+      borderRadius={view === 'cards' ? 'panel' : undefined}
+      color="neutral.500"
+      _hover={{ bg: 'neutral.50', color: 'neutral.900' }}
+      _focusVisible={{ outline: '2px solid', outlineColor: 'activeState.80', outlineOffset: '2px' }}
+    >
+      <Plus size={28} aria-hidden="true" />
     </Flex>
   )
 }

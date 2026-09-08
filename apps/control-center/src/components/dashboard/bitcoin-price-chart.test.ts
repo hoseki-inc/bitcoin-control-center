@@ -7,8 +7,8 @@ import { BitcoinPriceChart } from './bitcoin-price-chart'
 
 const mocks = vi.hoisted(() => ({ query: vi.fn(), chart: vi.fn() }))
 vi.mock('../../trpc', () => ({ trpc: { portalProve: { retrieveBitcoinPriceHistory: { useQuery: mocks.query } } } }))
-vi.mock('liveline', () => ({
-  Liveline: (props: unknown) => {
+vi.mock('../dashboard-charts/history-line-chart', () => ({
+  HistoryLineChart: (props: unknown) => {
     mocks.chart(props)
     return null
   },
@@ -47,8 +47,7 @@ it.each([false, true])(
         expect(button.getAttribute('aria-pressed')).toBe('true')
         expect(container.querySelectorAll('[aria-pressed="true"]')).toHaveLength(1)
         expect(mocks.query.mock.lastCall?.[0]).toEqual({ days })
-        expect(mocks.chart.mock.lastCall?.[0].scrub).toBe(true)
-        expect(mocks.chart.mock.lastCall?.[0].window).toBe(days * 86400)
+        expect(mocks.chart.mock.lastCall?.[0].data).toEqual(mocks.query.mock.results.at(-1)?.value.data)
         expect(container.textContent).toContain(`10.00% · ${label.toLowerCase()}`)
       }
     } finally {

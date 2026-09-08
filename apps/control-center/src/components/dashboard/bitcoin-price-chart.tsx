@@ -1,7 +1,7 @@
 import { Box, Button, Flex, Text } from '@chakra-ui/react'
-import { Liveline } from 'liveline'
 import { useState } from 'react'
 import { trpc } from '../../trpc'
+import { HistoryLineChart } from '../dashboard-charts/history-line-chart'
 import { DashboardAmount, DashboardCardTitle } from './dashboard-typography'
 
 const usd = (value: number): string =>
@@ -88,26 +88,15 @@ export function BitcoinPriceChart(): JSX.Element {
               : 'Bitcoin price history unavailable'
         }
       >
-        <Liveline
+        <HistoryLineChart
           data={points}
-          value={latest?.value ?? 0}
           loading={query.isLoading}
-          emptyText="Price history is temporarily unavailable"
-          theme="light"
-          color="#D97706"
-          window={range.days * 86400}
-          pulse={false}
-          momentum={false}
-          fill={false}
-          badge={false}
-          scrub
           formatValue={usd}
           formatTime={(time) =>
             range.days === 1
               ? new Date(time * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
               : timeLabel(time)
           }
-          padding={{ top: 12, right: 64, bottom: 32, left: 12 }}
         />
       </Box>
       <Flex

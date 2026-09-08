@@ -13,6 +13,7 @@ import {
   Portal,
   Stack,
   Text,
+  useBreakpointValue,
   useDisclosure,
 } from '@chakra-ui/react'
 import { DateInput, EmptyView, Spinner } from '@hoseki/packages/ui/design-system'
@@ -37,6 +38,7 @@ import { UsdEquivalent } from '../../components/usd-equivalent'
 import { useAutoRefreshExchanges } from '../../hooks/use-auto-refresh-exchanges'
 import { useGetBalancesPerClaimIds } from '../../lib/balances'
 import { trpc } from '../../trpc'
+import { isExchangeConnected } from '../../utils/exchange-connection-status'
 import { getBrowserTimezone } from '../../utils/timezone'
 
 type PresetTimeRange = '7d' | '30d' | '90d' | '1y' | 'all'
@@ -90,6 +92,7 @@ function formatUsd(btcAmount: number, btcPrice: number): string {
 
 export function DashboardPage(): JSX.Element {
   useAutoRefreshExchanges()
+  const hasDesktopSidebar = useBreakpointValue({ base: false, lg: true }) ?? false
   const [timeRange, setTimeRange] = useState<TimeRange>('90d')
   const [customDateRange, setCustomDateRange] = useState<CustomDateRangeDraft>({
     startDate: null,
@@ -124,7 +127,11 @@ export function DashboardPage(): JSX.Element {
   // Filter from typed source arrays so the return types are preserved correctly.
   const selectedClaimIds = useMemo(() => claimIds.filter((id) => selected.has(id)), [claimIds, selected])
   const selectedExchangeIds = useMemo(
-    () => exchangeAccounts.map((a) => a.id).filter((id) => selected.has(id)),
+    () =>
+      exchangeAccounts
+        .filter(isExchangeConnected)
+        .map((a) => a.id)
+        .filter((id) => selected.has(id)),
     [exchangeAccounts, selected],
   )
   const selectedManualIds = useMemo(
@@ -305,7 +312,7 @@ export function DashboardPage(): JSX.Element {
       }, 0)
     : 0
 
-  const exchangeTotalBtcSats = exchangeAccounts.reduce((sum, a) => {
+  const exchangeTotalBtcSats = exchangeAccounts.filter(isExchangeConnected).reduce((sum, a) => {
     if (!a.balance) return sum
     return sum + Number(a.balance)
   }, 0)
@@ -471,235 +478,245 @@ export function DashboardPage(): JSX.Element {
           </Button>
         </Flex>
 
-        {hasAccounts && (
-          <Box mb={6}>
-            <AccountFilter
-              claims={claims}
-              exchangeAccounts={exchangeAccounts}
-              manualAccounts={manualAccounts}
-              etfAccounts={etfAccounts}
-              balances={balancesQuery.data}
-              btcPrice={btcPrice}
-              selected={selected}
-              onSelectionChange={setSelected}
-              historySyncingAccountIds={activeIsPreviousData ? [] : historySyncingAccountIds}
-              recentlySyncedAccountIds={recentlySyncedAccountIdList}
-            />
-          </Box>
-        )}
-
-        {hasCurrentRangeData && activeError && historyRangeError === null && (
-          <Box role="alert" mb={4}>
-            <Text textStyle="text/sm" color="error.500">
-              Couldn&apos;t refresh this date range. Showing previously loaded data.
-            </Text>
-            <Button
-              mt={2}
-              size="sm"
-              variant="outline"
-              onClick={() => void (isShowingAll ? refetchAllData : refetchFilteredData)({ cancelRefetch: false })}
-            >
-              Try again
-            </Button>
-          </Box>
-        )}
-        {historyBackfillFailed && !historyBackfillBlocked && !activeError && (
-          <Box mb={4}>
-            <HistoryBackfillError />
-          </Box>
-        )}
-
-        {/* Portfolio balance and period context */}
-        <Box mb={8} pt={2}>
-          <Flex align="center" justify="space-between" gap={4} mb={2} flexWrap="wrap">
-            <Flex align="center" gap={2} minW={0}>
-              <Text textStyle="text/sm" color="neutral.600" overflowWrap="anywhere">
-                {activeLabel}
-              </Text>
-            </Flex>
-            <SyncIndicator
-              historySyncingCount={historySyncingAccountIds.length}
-              isPending={!hasCurrentRangeData}
-              hasError={!!activeError || historyBackfillFailed}
-            />
-          </Flex>
-          <Flex align="baseline" gap={{ base: 2, sm: 4 }} flexWrap="wrap">
-            <Text
-              fontFamily="body"
-              sx={{ fontVariantNumeric: 'tabular-nums' }}
-              textStyle={{ base: 'amount/compact', md: 'amount/primary' }}
-              fontWeight="medium"
-              color="neutral.900"
-              overflowWrap="anywhere"
-            >
-              <SensitiveValue>
-                <BitcoinAmount btc={new Decimal(displayBalanceSats).div(100_000_000)} />
-              </SensitiveValue>
-            </Text>
-            <Text textStyle="text/md" color="neutral.500" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-              <SensitiveValue>
-                {btcPrice === null ? 'USD unavailable' : `$${formatUsd(currentBtcFloat, btcPrice)}`}
-              </SensitiveValue>
-            </Text>
-          </Flex>
-          {periodChange !== null && (
-            <Flex align="baseline" gap={1.5} flexWrap="wrap" mt={2}>
-              <Text textStyle="text/sm" color={changeColor} sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                <SensitiveValue>
-                  {periodChange.eq(0) ? (
-                    'No change'
-                  ) : (
-                    <>
-                      {isUp ? '+' : '−'}
-                      <BitcoinAmount btc={periodChange.abs().div(100_000_000)} /> ({isUp ? '+' : ''}
-                      {periodChange
-                        .div(new Decimal(toSatoshisString(historicalData[0]?.totalBalance)).abs().plus(1))
-                        .mul(100)
-                        .toFixed(1)}
-                      %)
-                    </>
-                  )}
-                </SensitiveValue>
-              </Text>
-              <Text textStyle="text/sm" color="neutral.500">
-                · {periodLabel}
-              </Text>
-            </Flex>
+        <Flex direction={{ base: 'column', lg: 'row' }} gap={{ base: 0, lg: 6 }} align="stretch">
+          {hasAccounts && (
+            <Box mb={6}>
+              <AccountFilter
+                presentation={hasDesktopSidebar ? 'sidebar' : 'dropdown'}
+                claims={claims}
+                exchangeAccounts={exchangeAccounts}
+                manualAccounts={manualAccounts}
+                etfAccounts={etfAccounts}
+                balances={balancesQuery.data}
+                btcPrice={btcPrice}
+                selected={selected}
+                onSelectionChange={setSelected}
+                historySyncingAccountIds={activeIsPreviousData ? [] : historySyncingAccountIds}
+                recentlySyncedAccountIds={recentlySyncedAccountIdList}
+              />
+            </Box>
           )}
-        </Box>
 
-        {/* Accumulation chart */}
-        <Box mb={6} border="1px solid" borderColor="neutral.200" borderRadius="panel" p={{ base: 4, md: 6 }}>
-          <Flex align="center" justify="space-between" mb={5} gap={3} flexWrap="wrap">
-            <Flex align="center" gap={2}>
-              <DashboardCardTitle>Accumulation</DashboardCardTitle>
-              {activeFetching && <Spinner size="xs" color="neutral.300" />}
-            </Flex>
-            <TimeRangeSelector
-              value={timeRange}
-              customDateRange={customDateRange}
-              today={today}
-              onPresetChange={setTimeRange}
-              onCustomApply={(range) => {
-                setCustomDateRange(range)
-                setTimeRange('custom')
-              }}
-            />
-          </Flex>
-
-          <Box bg="shades.0" pt={2} position="relative" overflow="hidden">
-            {historyRangeError !== null ? (
-              <HistoryRangeError
-                height="220px"
-                message={historyRangeError.message}
-                onRetry={() => void (isShowingAll ? refetchAllData : refetchFilteredData)({ cancelRefetch: false })}
-              />
-            ) : historyBackfillBlocked ? (
-              <Flex h="220px" align="center" justify="center" px={4} textAlign="center">
+          <Box flex="1" minW={0}>
+            {hasCurrentRangeData && activeError && historyRangeError === null && (
+              <Box role="alert" mb={4}>
+                <Text textStyle="text/sm" color="error.500">
+                  Couldn&apos;t refresh this date range. Showing previously loaded data.
+                </Text>
+                <Button
+                  mt={2}
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void (isShowingAll ? refetchAllData : refetchFilteredData)({ cancelRefetch: false })}
+                >
+                  Try again
+                </Button>
+              </Box>
+            )}
+            {historyBackfillFailed && !historyBackfillBlocked && !activeError && (
+              <Box mb={4}>
                 <HistoryBackfillError />
-              </Flex>
-            ) : isFullHistoryPending ? (
-              <HistoryRangeLoading height="220px" />
-            ) : (
-              <SensitiveValue>
-                <AccumulationChart data={historicalData} hasActivity={hasBalance} isUp={isUp} timezone={userTimezone} />
-              </SensitiveValue>
+              </Box>
             )}
-            {isChartFetching && !isFullHistoryPending && (
-              <Box
-                position="absolute"
-                inset={0}
-                borderRadius="panel"
-                pointerEvents="none"
-                sx={{
-                  background:
-                    'linear-gradient(90deg, rgba(240,242,245,0) 0%, rgba(240,242,245,0.85) 50%, rgba(240,242,245,0) 100%)',
-                  backgroundSize: '200% 100%',
-                  animation: 'shimmer 1.4s ease-in-out infinite',
-                  '@media (prefers-reduced-motion: reduce)': { animation: 'none' },
-                  '@keyframes shimmer': {
-                    '0%': { backgroundPosition: '-200% 0' },
-                    '100%': { backgroundPosition: '200% 0' },
-                  },
-                }}
-              />
-            )}
-          </Box>
-        </Box>
 
-        {/* Monthly net change */}
-        <Box mb={6} border="1px solid" borderColor="neutral.200" borderRadius="panel" p={{ base: 4, md: 6 }}>
-          <Flex align="center" gap={2} mb={5}>
-            <DashboardCardTitle>Monthly Net Change</DashboardCardTitle>
-            {activeFetching && <Spinner size="xs" color="neutral.300" />}
-          </Flex>
-          <Box bg="shades.0" pt={2} position="relative" overflow="hidden">
-            {historyRangeError !== null ? (
-              <HistoryRangeError
-                height="120px"
-                message={historyRangeError.message}
-                onRetry={() => void (isShowingAll ? refetchAllData : refetchFilteredData)({ cancelRefetch: false })}
-              />
-            ) : historyBackfillBlocked ? (
-              <Flex h="120px" align="center" justify="center" px={4} textAlign="center">
-                <HistoryBackfillError />
+            {/* Portfolio balance and period context */}
+            <Box mb={8} pt={2}>
+              <Flex align="center" justify="space-between" gap={4} mb={2} flexWrap="wrap">
+                <Flex align="center" gap={2} minW={0}>
+                  <Text textStyle="text/sm" color="neutral.600" overflowWrap="anywhere">
+                    {activeLabel}
+                  </Text>
+                </Flex>
+                <SyncIndicator
+                  historySyncingCount={historySyncingAccountIds.length}
+                  isPending={!hasCurrentRangeData}
+                  hasError={!!activeError || historyBackfillFailed}
+                />
               </Flex>
-            ) : isFullHistoryPending ? (
-              <HistoryRangeLoading height="120px" />
-            ) : (
-              <SensitiveValue>
-                <MonthlyNetChangeChart data={historicalData} timezone={userTimezone} />
-              </SensitiveValue>
-            )}
-            {isChartFetching && !isFullHistoryPending && (
-              <Box
-                position="absolute"
-                inset={0}
-                borderRadius="panel"
-                pointerEvents="none"
-                sx={{
-                  background:
-                    'linear-gradient(90deg, rgba(240,242,245,0) 0%, rgba(240,242,245,0.85) 50%, rgba(240,242,245,0) 100%)',
-                  backgroundSize: '200% 100%',
-                  animation: 'shimmer 1.4s ease-in-out infinite',
-                  '@media (prefers-reduced-motion: reduce)': { animation: 'none' },
-                }}
-              />
-            )}
+              <Flex align="baseline" gap={{ base: 2, sm: 4 }} flexWrap="wrap">
+                <Text
+                  fontFamily="body"
+                  sx={{ fontVariantNumeric: 'tabular-nums' }}
+                  textStyle={{ base: 'amount/compact', md: 'amount/primary' }}
+                  fontWeight="medium"
+                  color="neutral.900"
+                  overflowWrap="anywhere"
+                >
+                  <SensitiveValue>
+                    <BitcoinAmount btc={new Decimal(displayBalanceSats).div(100_000_000)} />
+                  </SensitiveValue>
+                </Text>
+                <Text textStyle="text/md" color="neutral.500" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                  <SensitiveValue>
+                    {btcPrice === null ? 'USD unavailable' : `$${formatUsd(currentBtcFloat, btcPrice)}`}
+                  </SensitiveValue>
+                </Text>
+              </Flex>
+              {periodChange !== null && (
+                <Flex align="baseline" gap={1.5} flexWrap="wrap" mt={2}>
+                  <Text textStyle="text/sm" color={changeColor} sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                    <SensitiveValue>
+                      {periodChange.eq(0) ? (
+                        'No change'
+                      ) : (
+                        <>
+                          {isUp ? '+' : '−'}
+                          <BitcoinAmount btc={periodChange.abs().div(100_000_000)} /> ({isUp ? '+' : ''}
+                          {periodChange
+                            .div(new Decimal(toSatoshisString(historicalData[0]?.totalBalance)).abs().plus(1))
+                            .mul(100)
+                            .toFixed(1)}
+                          %)
+                        </>
+                      )}
+                    </SensitiveValue>
+                  </Text>
+                  <Text textStyle="text/sm" color="neutral.500">
+                    · {periodLabel}
+                  </Text>
+                </Flex>
+              )}
+            </Box>
+
+            {/* Accumulation chart */}
+            <Box mb={6} border="1px solid" borderColor="neutral.200" borderRadius="panel" p={{ base: 4, md: 6 }}>
+              <Flex align="center" justify="space-between" mb={5} gap={3} flexWrap="wrap">
+                <Flex align="center" gap={2}>
+                  <DashboardCardTitle>Accumulation</DashboardCardTitle>
+                  {activeFetching && <Spinner size="xs" color="neutral.300" />}
+                </Flex>
+                <TimeRangeSelector
+                  value={timeRange}
+                  customDateRange={customDateRange}
+                  today={today}
+                  onPresetChange={setTimeRange}
+                  onCustomApply={(range) => {
+                    setCustomDateRange(range)
+                    setTimeRange('custom')
+                  }}
+                />
+              </Flex>
+
+              <Box bg="shades.0" pt={2} position="relative" overflow="hidden">
+                {historyRangeError !== null ? (
+                  <HistoryRangeError
+                    height="220px"
+                    message={historyRangeError.message}
+                    onRetry={() => void (isShowingAll ? refetchAllData : refetchFilteredData)({ cancelRefetch: false })}
+                  />
+                ) : historyBackfillBlocked ? (
+                  <Flex h="220px" align="center" justify="center" px={4} textAlign="center">
+                    <HistoryBackfillError />
+                  </Flex>
+                ) : isFullHistoryPending ? (
+                  <HistoryRangeLoading height="220px" />
+                ) : (
+                  <SensitiveValue>
+                    <AccumulationChart
+                      data={historicalData}
+                      hasActivity={hasBalance}
+                      isUp={isUp}
+                      timezone={userTimezone}
+                    />
+                  </SensitiveValue>
+                )}
+                {isChartFetching && !isFullHistoryPending && (
+                  <Box
+                    position="absolute"
+                    inset={0}
+                    borderRadius="panel"
+                    pointerEvents="none"
+                    sx={{
+                      background:
+                        'linear-gradient(90deg, rgba(240,242,245,0) 0%, rgba(240,242,245,0.85) 50%, rgba(240,242,245,0) 100%)',
+                      backgroundSize: '200% 100%',
+                      animation: 'shimmer 1.4s ease-in-out infinite',
+                      '@media (prefers-reduced-motion: reduce)': { animation: 'none' },
+                      '@keyframes shimmer': {
+                        '0%': { backgroundPosition: '-200% 0' },
+                        '100%': { backgroundPosition: '200% 0' },
+                      },
+                    }}
+                  />
+                )}
+              </Box>
+            </Box>
+
+            {/* Monthly net change */}
+            <Box mb={6} border="1px solid" borderColor="neutral.200" borderRadius="panel" p={{ base: 4, md: 6 }}>
+              <Flex align="center" gap={2} mb={5}>
+                <DashboardCardTitle>Monthly Net Change</DashboardCardTitle>
+                {activeFetching && <Spinner size="xs" color="neutral.300" />}
+              </Flex>
+              <Box bg="shades.0" pt={2} position="relative" overflow="hidden">
+                {historyRangeError !== null ? (
+                  <HistoryRangeError
+                    height="120px"
+                    message={historyRangeError.message}
+                    onRetry={() => void (isShowingAll ? refetchAllData : refetchFilteredData)({ cancelRefetch: false })}
+                  />
+                ) : historyBackfillBlocked ? (
+                  <Flex h="120px" align="center" justify="center" px={4} textAlign="center">
+                    <HistoryBackfillError />
+                  </Flex>
+                ) : isFullHistoryPending ? (
+                  <HistoryRangeLoading height="120px" />
+                ) : (
+                  <SensitiveValue>
+                    <MonthlyNetChangeChart data={historicalData} timezone={userTimezone} />
+                  </SensitiveValue>
+                )}
+                {isChartFetching && !isFullHistoryPending && (
+                  <Box
+                    position="absolute"
+                    inset={0}
+                    borderRadius="panel"
+                    pointerEvents="none"
+                    sx={{
+                      background:
+                        'linear-gradient(90deg, rgba(240,242,245,0) 0%, rgba(240,242,245,0.85) 50%, rgba(240,242,245,0) 100%)',
+                      backgroundSize: '200% 100%',
+                      animation: 'shimmer 1.4s ease-in-out infinite',
+                      '@media (prefers-reduced-motion: reduce)': { animation: 'none' },
+                    }}
+                  />
+                )}
+              </Box>
+              {/* Stats row */}
+              <Grid
+                templateColumns={{ base: 'minmax(0, 1fr)', sm: 'repeat(2, minmax(0, max-content))' }}
+                columnGap={{ base: 6, sm: 12, md: 16 }}
+                rowGap={6}
+                mt={5}
+                pt={5}
+                borderTop="1px solid"
+                borderColor="neutral.200"
+              >
+                <StatCard
+                  label="This Month"
+                  available={periodChange !== null}
+                  data={historicalData}
+                  mode="current"
+                  btcPrice={btcPrice}
+                  timezone={userTimezone}
+                />
+                <StatCard
+                  label="Monthly Avg (6mo)"
+                  available={periodChange !== null}
+                  data={historicalData}
+                  mode="average"
+                  btcPrice={btcPrice}
+                  timezone={userTimezone}
+                />
+              </Grid>
+              {periodChange !== null && btcPrice !== null && Number.isFinite(btcPrice) && btcPrice > 0 && (
+                <Text textStyle="text/xs" color="neutral.500" textAlign="right" mt={4}>
+                  USD equivalents use the current Bitcoin price.
+                </Text>
+              )}
+            </Box>
           </Box>
-          {/* Stats row */}
-          <Grid
-            templateColumns={{ base: 'minmax(0, 1fr)', sm: 'repeat(2, minmax(0, max-content))' }}
-            columnGap={{ base: 6, sm: 12, md: 16 }}
-            rowGap={6}
-            mt={5}
-            pt={5}
-            borderTop="1px solid"
-            borderColor="neutral.200"
-          >
-            <StatCard
-              label="This Month"
-              available={periodChange !== null}
-              data={historicalData}
-              mode="current"
-              btcPrice={btcPrice}
-              timezone={userTimezone}
-            />
-            <StatCard
-              label="Monthly Avg (6mo)"
-              available={periodChange !== null}
-              data={historicalData}
-              mode="average"
-              btcPrice={btcPrice}
-              timezone={userTimezone}
-            />
-          </Grid>
-          {periodChange !== null && btcPrice !== null && Number.isFinite(btcPrice) && btcPrice > 0 && (
-            <Text textStyle="text/xs" color="neutral.500" textAlign="right" mt={4}>
-              USD equivalents use the current Bitcoin price.
-            </Text>
-          )}
-        </Box>
+        </Flex>
       </Box>
     </Box>
   )

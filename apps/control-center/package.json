@@ -15,7 +15,6 @@
   "dependencies": {
     "bbqr": "1.2.0",
     "html5-qrcode": "2.3.8",
-    "liveline": "0.0.7",
     "recharts": "3.10.1"
   }
 }

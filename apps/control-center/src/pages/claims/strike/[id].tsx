@@ -484,12 +484,16 @@ export function StrikeAccountDetailsPage(): JSX.Element {
                           </Td>
                           <Td isNumeric>
                             <Text textStyle="text/xs" fontFamily="mono" color="neutral.500">
-                              {tx.amountUsd ? `$${Math.abs(Number(tx.amountUsd)).toFixed(2)}` : '—'}
+                              <SensitiveValue>
+                                {tx.amountUsd ? `$${Math.abs(Number(tx.amountUsd)).toFixed(2)}` : '—'}
+                              </SensitiveValue>
                             </Text>
                           </Td>
                           <Td isNumeric>
                             <Text textStyle="text/xs" color="neutral.500">
-                              {tx.exchangeRate ? `$${Number(tx.exchangeRate).toLocaleString()}` : '—'}
+                              <SensitiveValue>
+                                {tx.exchangeRate ? `$${Number(tx.exchangeRate).toLocaleString()}` : '—'}
+                              </SensitiveValue>
                             </Text>
                           </Td>
                           <Td>

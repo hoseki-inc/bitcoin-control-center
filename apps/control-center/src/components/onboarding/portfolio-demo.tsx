@@ -1,7 +1,7 @@
-import { Box, Button, Flex, Grid, Text, usePrefersReducedMotion } from '@chakra-ui/react'
-import { Liveline } from 'liveline'
+import { Box, Button, Flex, Grid, Text } from '@chakra-ui/react'
 import { useMemo, useState } from 'react'
 import { getMonthlyChanges } from '../dashboard-charts/balance-history'
+import { HistoryLineChart } from '../dashboard-charts/history-line-chart'
 import { MonthlyNetChangeChart } from '../dashboard-charts/monthly-net-change-chart'
 
 const DAY = 86400
@@ -17,7 +17,6 @@ const dateLabel = (time: number): string =>
 export function PortfolioDemo(): JSX.Element {
   const [days, setDays] = useState<(typeof ranges)[number]>(90)
   const [end] = useState(() => Math.floor(Date.now() / 1000))
-  const reducedMotion = usePrefersReducedMotion()
   const fullHistory = useMemo(
     () =>
       Array.from({ length: 366 }, (_, day) => {
@@ -118,25 +117,7 @@ export function PortfolioDemo(): JSX.Element {
         role="img"
         aria-label={`Sample balance history, from ${btc(first)} to ${btc(total)} over ${days} days`}
       >
-        <Liveline
-          // Paused Liveline snapshots its initial data; keep every selectable range available.
-          data={fullHistory}
-          value={total}
-          window={days * DAY}
-          theme="light"
-          color="#D97706"
-          paused
-          pulse={false}
-          momentum={false}
-          fill={false}
-          badge={false}
-          showValue={false}
-          scrub={!reducedMotion}
-          lerpSpeed={reducedMotion ? 1 : undefined}
-          formatValue={btc}
-          formatTime={dateLabel}
-          padding={{ top: 16, right: 96, bottom: 32, left: 12 }}
-        />
+        <HistoryLineChart data={history} formatValue={btc} formatTime={dateLabel} />
       </Box>
       <Box as="section" aria-label={`Sample monthly net change. ${monthlySummary}`} mt={6} mb={6}>
         <Text as="h2" textStyle="text/md" fontWeight="medium">

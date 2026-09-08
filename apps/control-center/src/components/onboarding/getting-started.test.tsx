@@ -8,13 +8,9 @@ import superjson from 'superjson'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { FirstAccountReady, GettingStarted } from './getting-started'
 
-vi.mock('liveline', () => ({
-  Liveline: ({ data, window }: { data: Array<{ time: number }>; window: number }) => (
-    <canvas
-      data-testid="liveline"
-      data-history-seconds={(data.at(-1)?.time ?? 0) - (data[0]?.time ?? 0)}
-      data-window-seconds={window}
-    />
+vi.mock('../dashboard-charts/history-line-chart', () => ({
+  HistoryLineChart: ({ data }: { data: Array<{ time: number }> }) => (
+    <canvas data-testid="history-line" data-history-seconds={(data.at(-1)?.time ?? 0) - (data[0]?.time ?? 0)} />
   ),
 }))
 
@@ -130,7 +126,7 @@ it('updates sample balances and period changes without changing onboarding progr
   await click('30D')
   expect(container.querySelector('[role="img"]')?.getAttribute('aria-label')).toContain('over 30 days')
   expect(container.textContent).toContain('Starting balance')
-  expect(container.querySelector('[data-testid="liveline"]')).not.toBeNull()
+  expect(container.querySelector('[data-testid="history-line"]')).not.toBeNull()
   expect(stored).toBeNull()
   expect(
     Array.from(container.querySelectorAll('button'))
@@ -139,16 +135,13 @@ it('updates sample balances and period changes without changing onboarding progr
   ).toBeNull()
 })
 
-it('supplies a full year before a paused chart snapshots its data, then changes only the visible window', async () => {
+it('supplies the selected date range to the shared history chart', async () => {
   await mount()
-  const chart = (): Element | null => container.querySelector('[data-testid="liveline"]')
-  expect(chart()?.getAttribute('data-history-seconds')).toBe(String(365 * 86400))
-  expect(chart()?.getAttribute('data-window-seconds')).toBe(String(90 * 86400))
+  const chart = (): Element | null => container.querySelector('[data-testid="history-line"]')
+  expect(chart()?.getAttribute('data-history-seconds')).toBe(String(90 * 86400))
   await click('1Y')
   expect(chart()?.getAttribute('data-history-seconds')).toBe(String(365 * 86400))
-  expect(chart()?.getAttribute('data-window-seconds')).toBe(String(365 * 86400))
   expect(container.querySelector('[role="img"]')?.getAttribute('aria-label')).toContain('from 1.2000 BTC')
   await click('30D')
-  expect(chart()?.getAttribute('data-history-seconds')).toBe(String(365 * 86400))
-  expect(chart()?.getAttribute('data-window-seconds')).toBe(String(30 * 86400))
+  expect(chart()?.getAttribute('data-history-seconds')).toBe(String(30 * 86400))
 })

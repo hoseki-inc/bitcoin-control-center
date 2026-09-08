@@ -21,7 +21,7 @@ import {
 import type { ClaimId } from '@hoseki/packages/schemas'
 import { DateInput, Panel } from '@hoseki/packages/ui/design-system'
 import { useMutation } from '@tanstack/react-query'
-import { addDays, endOfDay, isAfter, min, startOfDay, subMonths } from 'date-fns'
+import { addDays, endOfDay, isAfter, isBefore, isValid, min, startOfDay, subMonths } from 'date-fns'
 import { FileCheckIcon } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link, useLocation } from 'react-router'
@@ -80,8 +80,8 @@ export function StatementCreatePage(): JSX.Element {
   }, [exchangeAccountsQuery.data, hasAppliedExchangePreSelection])
 
   // dates
-  const [closingDate, setClosingDate] = useState<Date>(() => new Date())
-  const [openingDate, setOpeningDate] = useState<Date>(() => startOfDay(subMonths(new Date(), 3)))
+  const [closingDate, setClosingDate] = useState<Date | null>(() => new Date())
+  const [openingDate, setOpeningDate] = useState<Date | null>(() => startOfDay(subMonths(new Date(), 3)))
 
   // name and address — pre-populate from saved settings in local mode
   const { data: savedUserName } = useLocalSetting('user_name')
@@ -107,8 +107,8 @@ export function StatementCreatePage(): JSX.Element {
   const initiateStatementGenerationMutation = trpc.portalProve.statement.initiateGeneration.useMutation()
   const initiateMutationWithArgs = useMutation({
     mutationFn: async () => {
-      if (isAfter(openingDate, closingDate)) {
-        toast.error('Start date must be on or before end date')
+      if (dateError || !openingDate || !closingDate) {
+        toast.error(dateError ?? 'Choose both dates')
         return
       }
 
@@ -134,7 +134,17 @@ export function StatementCreatePage(): JSX.Element {
   })
 
   const LEFT_COLUMN_WIDTH = { base: 'auto', md: '35%' }
-  const invalidDateRange = isAfter(openingDate, closingDate)
+  const dateError =
+    !openingDate || !closingDate || !isValid(openingDate) || !isValid(closingDate)
+      ? 'Choose both a valid start date and end date.'
+      : isBefore(openingDate, addDays(MIN_STATEMENT_DATE, 1))
+        ? 'Start date must be after April 1, 2023.'
+        : isAfter(openingDate, closingDate)
+          ? 'Start date must be on or before end date.'
+          : isAfter(closingDate, new Date())
+            ? 'End date cannot be in the future.'
+            : null
+  const invalidDateRange = dateError !== null
 
   const hasAccounts =
     (claimsQuery.data && claimsQuery.data.length > 0) ||
@@ -178,7 +188,7 @@ export function StatementCreatePage(): JSX.Element {
                       max={new Date()}
                       min={addDays(MIN_STATEMENT_DATE, 1)}
                       value={openingDate}
-                      onChange={(date) => date && setOpeningDate(startOfDay(date))}
+                      onChange={(date) => setOpeningDate(date ? startOfDay(date) : null)}
                       size="md"
                     />
                   </FormControl>
@@ -194,12 +204,7 @@ export function StatementCreatePage(): JSX.Element {
                       max={new Date()}
                       value={closingDate}
                       onChange={(date) => {
-                        if (date) {
-                          setClosingDate(
-                            // Make sure the closing date is not greater than NOW
-                            min([endOfDay(date), new Date()]),
-                          )
-                        }
+                        setClosingDate(date ? min([endOfDay(date), new Date()]) : null)
                       }}
                       size="md"
                     />
@@ -207,7 +212,7 @@ export function StatementCreatePage(): JSX.Element {
                 </Stack>
                 {invalidDateRange && (
                   <Text id="date-range-error" role="alert" textStyle="text/sm" color="error.700">
-                    Start date must be on or before end date.
+                    {dateError}
                   </Text>
                 )}
               </Stack>
@@ -353,18 +358,20 @@ export function StatementCreatePage(): JSX.Element {
         statement={statement ?? null}
       />
 
-      <StatementPreviewModal
-        isOpen={isPreviewModalOpen}
-        onClose={() => setIsPreviewModalOpen(false)}
-        claimIds={Array.from(selectedClaimIds)}
-        exchangeAccountIds={Array.from(selectedExchangeAccountIds)}
-        openingDate={openingDate}
-        closingDate={closingDate}
-        timezone={userTimezone}
-        name={name || null}
-        address={address || null}
-        context="self_generated"
-      />
+      {openingDate && closingDate && !invalidDateRange && (
+        <StatementPreviewModal
+          isOpen={isPreviewModalOpen}
+          onClose={() => setIsPreviewModalOpen(false)}
+          claimIds={Array.from(selectedClaimIds)}
+          exchangeAccountIds={Array.from(selectedExchangeAccountIds)}
+          openingDate={openingDate}
+          closingDate={closingDate}
+          timezone={userTimezone}
+          name={name || null}
+          address={address || null}
+          context="self_generated"
+        />
+      )}
     </Stack>
   )
 }
