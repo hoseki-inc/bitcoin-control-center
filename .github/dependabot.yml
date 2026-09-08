@@ -23,12 +23,6 @@ updates:
       interval: weekly
       day: monday
     groups:
-      # Electron major releases carry runtime security support and must not
-      # wait for unrelated compiler or application dependency migrations.
-      electron-runtime:
-        applies-to: version-updates
-        patterns:
-          - electron
       desktop-dependencies:
         applies-to: version-updates
         patterns:
