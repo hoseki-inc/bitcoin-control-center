@@ -233,12 +233,9 @@ export function ClaimsPage(): JSX.Element {
         )}
 
         {/* Header */}
-        <Flex align="flex-start" justify="space-between" pb={6} gap={4} flexWrap="wrap">
-          <Box>
-            <PageHeading title="Accounts" description="Manage your wallets, exchanges, and Bitcoin holdings." />
-          </Box>
-          {hasClaims && <Button onClick={() => navigate('/accounts/add')}>Add Account</Button>}
-        </Flex>
+        <Box pb={6}>
+          <PageHeading title="Accounts" description="Manage your wallets, exchanges, and Bitcoin holdings." />
+        </Box>
 
         {hasClaims && (
           <Flex align="center" justify="space-between" gap={4} flexWrap="wrap" mb={6}>
