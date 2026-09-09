@@ -1,6 +1,7 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
-import { BrowserWindow, app, shell } from 'electron'
+import { BrowserWindow, app, dialog, shell } from 'electron'
+import { setupLedgerHidAccess } from './ledger-hid'
 import { TorManager } from './tor'
 import { setupTray } from './tray'
 
@@ -61,7 +62,9 @@ app.whenReady().then(async () => {
     },
   })
 
-  mainWindow.loadURL(`http://localhost:${PORT}`)
+  const appOrigin = `http://localhost:${PORT}`
+  setupLedgerHidAccess(mainWindow, appOrigin, (window, options) => dialog.showMessageBox(window, options))
+  mainWindow.loadURL(appOrigin)
 
   // Open external links in the system browser
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
