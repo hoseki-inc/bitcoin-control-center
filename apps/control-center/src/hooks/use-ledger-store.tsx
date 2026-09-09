@@ -9,7 +9,8 @@ export const useLedgerStore = createLedgerStore(browserLogger)
 export const useToastOnLedgerDisconnect = (): void => {
   useEffect(() => {
     const unsubscribe = useLedgerStore.subscribe((state, prevState) => {
-      if (prevState.isConnected && !state.isConnected) {
+      // Resetting for a new connection clears initialization; only a lost device keeps it.
+      if (state.isInitialized && prevState.isConnected && !state.isConnected) {
         toast.error('Ledger device disconnected', {
           description: 'Plug in your device and click in retry.',
           closeButton: true,

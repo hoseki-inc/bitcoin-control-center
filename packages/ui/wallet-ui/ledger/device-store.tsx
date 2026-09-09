@@ -17,6 +17,7 @@ export type LedgerDeviceModel = {
 }
 
 type InitializedState = {
+  connectionId: number
   isInitialized: true
   isConnected: boolean // Should be true, but if the device is disconnected, it will be false.
   transport: Transport
@@ -24,6 +25,7 @@ type InitializedState = {
   deviceModel: LedgerDeviceModel
 }
 type UninitializedState = {
+  connectionId: number
   isInitialized: false
   isConnected: false
   transport: null
@@ -33,8 +35,8 @@ type UninitializedState = {
 type LedgerStoreState = InitializedState | UninitializedState
 
 type LedgerStoreActions = {
-  init: () => Promise<void>
-  reset: () => Promise<void>
+  init: (openTransport?: () => Promise<Transport>, signal?: AbortSignal) => Promise<void>
+  reset: (closeTransport?: (transport: Transport) => Promise<void>) => Promise<void>
   getBitcoinXpub: (
     scriptType: 'p2pkh' | 'p2sh-p2wpkh' | 'p2wpkh' | 'p2tr',
     account: number,
@@ -49,6 +51,7 @@ export function createLedgerStore(
   browserLogger: Logger,
 ): UseBoundStore<StoreApi<LedgerStoreState & LedgerStoreActions>> {
   return create<LedgerStoreState & LedgerStoreActions>((set, get, store) => {
+    let connectionId = 0
     function notInitializedError() {
       browserLogger.error('Ledger not initialized')
       return Err(new HardwareDeviceError('Ledger not initialized', 'ledger', 'The Ledger device was not initialized.'))
@@ -114,25 +117,31 @@ export function createLedgerStore(
     }
 
     return {
+      connectionId: 0,
       isInitialized: false,
       isConnected: false,
       transport: null,
       btc: null,
       deviceModel: null,
 
-      init: async () => {
+      init: async (openTransport = () => TransportWebHID.create(), signal) => {
         const { transport, btc } = get()
         browserLogger.debug('Initializing ledger')
         if (transport && btc) {
           browserLogger.debug('Skipping initialization: Transport and ledger.btc already set')
           return
         }
-        const newTransport = await TransportWebHID.create()
+        const newTransport = await openTransport()
+        if (signal?.aborted) {
+          await newTransport.close()
+          throw new DOMException('Connection cancelled', 'AbortError')
+        }
         const newBtc = new LedgerBtcApp({ transport: newTransport })
 
         newTransport.on('disconnect', onDisconnect)
 
         const newState: InitializedState = {
+          connectionId: ++connectionId,
           isInitialized: true,
           isConnected: true,
           transport: newTransport,
@@ -147,18 +156,19 @@ export function createLedgerStore(
         browserLogger.debug({ newState }, 'Ledger initialized')
       },
 
-      reset: async () => {
+      reset: async (closeTransport) => {
         browserLogger.debug('Resetting ledger')
         const { transport } = get()
         if (transport) {
           transport.off('disconnect', onDisconnect)
-          // Intentionally not awaiting the close to avoid blocking the flow,
-          // thus not resetting the store and showing the toast to the user.
-          transport.close()
         } else {
           browserLogger.debug('Transport not initialized, skipping close')
         }
         set(store.getInitialState())
+        if (transport) {
+          if (closeTransport) await closeTransport(transport)
+          else void transport.close()
+        }
         browserLogger.debug({ newState: store.getInitialState() }, 'Ledger was reset')
       },
 
