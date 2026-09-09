@@ -67,7 +67,7 @@ export function BitcoinInputFormFields({
   const preSelectedScriptType = defaultValues?.data.account.scriptType
   const [encoding, setEncoding] = useState<SingleSigAccountScriptType | null>(preSelectedScriptType ?? null)
   useEffect(
-    () => setEncoding(showEncodingInput ? preSelectedScriptType ?? 'p2pkh' : null),
+    () => setEncoding(showEncodingInput ? (preSelectedScriptType ?? 'p2pkh') : null),
     [showEncodingInput, preSelectedScriptType],
   )
 

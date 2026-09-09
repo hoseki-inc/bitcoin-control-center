@@ -51,7 +51,7 @@ function PortfolioSummary(): JSX.Element | null {
   const totalUsd = totalBtc.toNumber() * btcPrice
 
   const historicalData = data.historicalData ?? []
-  const startSats = historicalData.length > 0 ? historicalData[0]?.totalBalance ?? '0' : '0'
+  const startSats = historicalData.length > 0 ? (historicalData[0]?.totalBalance ?? '0') : '0'
   const change30d = new Decimal(currentSats).minus(new Decimal(startSats))
   const change30dBtc = change30d.div(100_000_000)
   const isUp = change30d.gte(0)
