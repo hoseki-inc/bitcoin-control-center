@@ -85,8 +85,7 @@ export class EtfService {
 
   public getAccount(id: string): EtfAccountDto | null {
     const row = this.db.prepare('SELECT * FROM etf_accounts WHERE id = ?').get(id) as
-      | { id: string; display_name: string; created_at: string }
-      | undefined
+      { id: string; display_name: string; created_at: string } | undefined
 
     if (!row) return null
 
@@ -123,8 +122,7 @@ export class EtfService {
     datePurchased?: string
   }): Result<EtfHoldingDto, Error> {
     const account = this.db.prepare('SELECT id FROM etf_accounts WHERE id = ?').get(args.accountId) as
-      | { id: string }
-      | undefined
+      { id: string } | undefined
     if (!account) return Err(new Error('ETF account not found'))
 
     const id = nanoid()
@@ -191,8 +189,7 @@ export class EtfService {
 
   public removeHolding(holdingId: string): Result<string, Error> {
     const row = this.db.prepare('SELECT account_id FROM etf_holdings WHERE id = ?').get(holdingId) as
-      | { account_id: string }
-      | undefined
+      { account_id: string } | undefined
     if (!row) return Err(new Error('ETF holding not found'))
 
     this.db.prepare('DELETE FROM etf_holdings WHERE id = ?').run(holdingId)
