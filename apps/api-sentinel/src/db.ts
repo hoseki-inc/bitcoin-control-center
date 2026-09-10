@@ -439,4 +439,12 @@ const MIGRATIONS: Migration[] = [
       CREATE INDEX btc_quote_lookup_date ON btc_quote_lookups(requested_at, expires_at);
     `,
   },
+  {
+    name: '016_statement_quote_currency',
+    sql: `
+      ALTER TABLE statements ADD COLUMN quote_currency TEXT NOT NULL DEFAULT 'USD'
+        CHECK(quote_currency IN ('USD', 'CAD', 'GBP', 'EUR'));
+      ALTER TABLE statements ADD COLUMN error_message TEXT;
+    `,
+  },
 ]

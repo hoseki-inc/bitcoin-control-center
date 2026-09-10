@@ -1,4 +1,3 @@
-import { TZDate } from '@date-fns/tz'
 import { convertBtcToUsd } from '@hoseki/packages/currency'
 import { Err, Ok, type Result } from '@hoseki/packages/result'
 import type {
@@ -14,10 +13,10 @@ import type {
   SummaryEntry,
   Timezone,
 } from '@hoseki/packages/schemas'
-import { eachMonthOfInterval, endOfMonth } from 'date-fns'
 import Decimal from 'decimal.js'
 import type { DailyRate, DailyRates } from '../price/daily_rates'
 import { toDateKey } from '../price/daily_rates'
+import { getStatementPeriods } from './rate_dates'
 
 // ─── AggregatedTransaction ──────────────────────────────────────────────────
 
@@ -367,18 +366,11 @@ export class StatementMapper {
     statement: CompletedStatementData,
     timezone: Timezone,
   ): Result<StatementPeriodData[], Error> {
-    const tzOpeningDate = new TZDate(statement.openingDate, timezone)
-    const tzClosingDate = new TZDate(statement.closingDate, timezone)
-    const startOfEachMonth = eachMonthOfInterval({ start: tzOpeningDate, end: tzClosingDate })
+    const periods = getStatementPeriods(statement.openingDate, statement.closingDate, timezone)
 
     const months: StatementPeriodData[] = []
 
-    for (const [index, startOfMonth] of startOfEachMonth.entries()) {
-      const isFirstMonth = index === 0
-      const isLastMonth = index === startOfEachMonth.length - 1
-      const monthOpeningDate = isFirstMonth ? tzOpeningDate : startOfMonth
-      const monthClosingDate = isLastMonth ? tzClosingDate : endOfMonth(startOfMonth)
-
+    for (const { openingDate: monthOpeningDate, closingDate: monthClosingDate } of periods) {
       const aggregatedMonthRes = this.aggregateStatementData(
         monthOpeningDate.withTimeZone('UTC'),
         monthClosingDate.withTimeZone('UTC'),
