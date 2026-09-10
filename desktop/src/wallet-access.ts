@@ -2,7 +2,12 @@ import { BrowserWindow, type HIDDevice, type USBDevice, type WebContents, type W
 import { showDeviceChooser } from './device-chooser'
 import { TREZOR_ORIGIN, isAppUrl, isTrezorPopup, isWalletDevice } from './window-policy'
 
-export function setupWalletAccess(mainWindow: BrowserWindow, origin: string, trezorWindows: Set<WebContents>): void {
+export function setupWalletAccess(
+  mainWindow: BrowserWindow,
+  origin: string,
+  trezorWindows: Set<WebContents>,
+  options: { handleLedgerSelection?: boolean } = {},
+): void {
   const session = mainWindow.webContents.session
   const allowed = (contents: WebContents | null, type: string, requestingOrigin: string): boolean => {
     if (!contents) return false
@@ -109,10 +114,13 @@ export function setupWalletAccess(mainWindow: BrowserWindow, origin: string, tre
     owner.on('did-start-navigation', cancel)
     update()
   }
-  session.on('select-hid-device', (event, details, callback) => {
-    event.preventDefault()
-    choose('hid', details.frame, details.deviceList, callback)
-  })
+  // The inline Ledger connection flow owns HID selection when installed by the shell.
+  if (options.handleLedgerSelection !== false) {
+    session.on('select-hid-device', (event, details, callback) => {
+      event.preventDefault()
+      choose('hid', details.frame, details.deviceList, callback)
+    })
+  }
   session.on('select-usb-device', (event, details, callback) => {
     event.preventDefault()
     choose('usb', details.frame, details.deviceList, callback)

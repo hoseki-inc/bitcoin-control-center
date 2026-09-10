@@ -1,6 +1,7 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
-import { BrowserWindow, type Tray, type WebContents, app, dialog, shell } from 'electron'
+import { BrowserWindow, type Tray, type WebContents, app, dialog, ipcMain, shell } from 'electron'
+import { setupLedgerHidAccess } from './ledger-hid'
 import { findAvailablePort } from './ports'
 import { TorManager } from './tor'
 import { setupTray } from './tray'
@@ -68,13 +69,16 @@ async function start(): Promise<void> {
     minWidth: 900,
     minHeight: 600,
     webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
       sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
     },
   })
   const trezorWindows = new Set<WebContents>()
-  setupWalletAccess(mainWindow, origin, trezorWindows)
+  setupWalletAccess(mainWindow, origin, trezorWindows, { handleLedgerSelection: false })
+  setupLedgerHidAccess(mainWindow, origin, ipcMain, (window, options) => dialog.showMessageBox(window, options))
+
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (isTrezorPopup(url) && isAppUrl(mainWindow!.webContents.getURL(), origin)) {
       return {

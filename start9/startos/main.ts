@@ -2,6 +2,14 @@ import { sdk } from './sdk'
 import { uiPort } from './utils'
 
 export const main = sdk.setupMain(async ({ effects }) => {
+  // The SDK resolves only enabled addresses. Watching the resulting hostnames
+  // restarts Sentinel when an interface is enabled, disabled, or changes IP.
+  const allowedHosts = await sdk.serviceInterface
+    .getOwn(effects, 'main', (webInterface) =>
+      [...new Set(webInterface?.addressInfo?.hostnames.map(({ hostname }) => hostname) ?? [])].sort().join(','),
+    )
+    .const()
+
   return sdk.Daemons.of(effects).addDaemon('primary', {
     subcontainer: await sdk.SubContainer.of(
       effects,
@@ -14,7 +22,10 @@ export const main = sdk.setupMain(async ({ effects }) => {
       }),
       'hoseki-sentinel-sub',
     ),
-    exec: { command: ['/usr/local/bin/docker_entrypoint.sh'] },
+    exec: {
+      command: ['/usr/local/bin/docker_entrypoint.sh'],
+      env: { SENTINEL_ALLOWED_HOSTS: allowedHosts },
+    },
     ready: {
       display: 'Web Interface',
       fn: () =>

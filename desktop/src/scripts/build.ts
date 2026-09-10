@@ -41,6 +41,12 @@ async function main(): Promise<void> {
 
   await esbuild.build({
     ...shared,
+    entryPoints: [path.join(DESKTOP_DIR, 'src/preload.ts')],
+    outfile: path.join(appDir, 'main/preload.js'),
+  })
+
+  await esbuild.build({
+    ...shared,
     entryPoints: [path.join(DESKTOP_DIR, 'src/chooser-preload.ts')],
     outfile: path.join(appDir, 'main/chooser-preload.js'),
   })

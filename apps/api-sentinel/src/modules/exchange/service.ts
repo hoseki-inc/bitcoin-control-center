@@ -924,8 +924,8 @@ export class ExchangeService {
       id: row.id,
       exchange: row.provider as SupportedExchange,
       displayName: row.display_name,
-      balanceSats: isConnected ? row.balance_sats ?? null : null,
-      balanceAsOf: isConnected ? row.balance_as_of ?? null : null,
+      balanceSats: isConnected ? (row.balance_sats ?? null) : null,
+      balanceAsOf: isConnected ? (row.balance_as_of ?? null) : null,
       createdAt: row.created_at,
       connectionStatus,
     }

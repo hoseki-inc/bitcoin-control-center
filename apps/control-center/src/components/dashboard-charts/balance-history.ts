@@ -169,6 +169,6 @@ function nextMonthStartFromKey(key: string, timezone: string): Date {
   const [year, month] = key.split('-').map(Number)
   const monthIndex = month ?? 1
   const nextMonthIndex = monthIndex === 12 ? 1 : monthIndex + 1
-  const nextMonthYear = monthIndex === 12 ? (year ?? 0) + 1 : year ?? 0
+  const nextMonthYear = monthIndex === 12 ? (year ?? 0) + 1 : (year ?? 0)
   return new TZDate(nextMonthYear, nextMonthIndex - 1, 1, timezone)
 }

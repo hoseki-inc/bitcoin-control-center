@@ -8,14 +8,16 @@
   "author": "Hoseki, Inc.",
   "main": "app/main/index.js",
   "scripts": {
-    "check": "tsc --noEmit",
+    "check": "tsc --noEmit && node --experimental-strip-types --test scripts/ledger-hid.test.mjs",
     "dev": "electron app/main/index.js",
     "dist:mac": "electron-builder --mac --universal",
     "dist:win": "electron-builder --win",
-    "rebuild": "node -e \"const Database = require('better-sqlite3'); const database = new Database(':memory:'); database.close()\""
+    "install:electron": "node node_modules/electron/install.js",
+    "rebuild": "node -e \"const Database = require('better-sqlite3'); const database = new Database(':memory:'); database.close()\"",
+    "test:runtime": "node scripts/check-runtime.cjs"
   },
   "dependencies": {
-    "@react-pdf/renderer": "4.3.2",
+    "@react-pdf/renderer": "4.9.0",
     "better-sqlite3": "13.0.3",
     "electron-updater": "6.8.9",
     "react": "19.2.8",
@@ -23,7 +25,7 @@
     "yoga-layout": "3.2.1"
   },
   "devDependencies": {
-    "electron": "41.10.4",
+    "electron": "44.2.0",
     "electron-builder": "26.15.3",
     "typescript": "5.9.3"
   }

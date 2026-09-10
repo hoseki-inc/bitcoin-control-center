@@ -265,7 +265,7 @@ Run these commands from the repository root unless noted otherwise.
 | --------------------- | ------------------------------------------------------------ |
 | `pnpm dev`            | Run Sentinel and Control Center in watch mode                |
 | `pnpm check`          | Run TypeScript project-reference checks                      |
-| `pnpm test`           | Run the full Vitest suite through Turbo                      |
+| `pnpm test`           | Run application and shared-library tests through Turbo       |
 | `pnpm lint`           | Run ESLint with zero warnings allowed                        |
 | `pnpm format:check`   | Verify Prettier formatting                                   |
 | `pnpm format`         | Apply Prettier formatting                                    |
@@ -310,7 +310,9 @@ Run the dependency audit before releases and dependency changes:
 pnpm security:audit
 ```
 
-GitHub Actions additionally installs and type-checks the standalone packaging workspaces:
+The default `pnpm test` command requires only the root workspace dependencies.
+GitHub Actions additionally installs and type-checks the standalone packaging
+workspaces and runs the StartOS tests:
 
 ```bash
 npm ci --prefix desktop --ignore-scripts
@@ -318,7 +320,12 @@ npm ci --prefix start9 --ignore-scripts
 npm ci --prefix start9/runtime --ignore-scripts
 npm --prefix desktop run check
 npm --prefix start9 run check
+npm --prefix start9 test
 ```
+
+The complete `pnpm run ci` command also runs the StartOS tests and requires those
+packaging dependencies to be installed first. StartOS candidate and draft-release
+workflows use this complete verification command.
 
 Tests that open temporary localhost listeners may require normal host networking in restricted container or agent environments.
 
@@ -400,6 +407,8 @@ See [docs/STARTOS_RELEASES.md](docs/STARTOS_RELEASES.md) for the version rules, 
 
 ## Desktop packaging
 
+The Electron 44 desktop runtime requires macOS 13 (Ventura) or later. The pinned Tor bundles target Apple Silicon macOS and Windows x64; cross-built installers still require testing on their target systems.
+
 The desktop package embeds Sentinel, the web application, and pinned Tor binaries. The complete build requires:
 
 - Node.js, pnpm, and npm
@@ -423,6 +432,16 @@ The build script:
 6. Packages installers under `desktop/release/`.
 
 Cross-built installers should still be smoke-tested on each target operating system before release.
+
+Run the isolated dependency checks in Electron's bundled Node runtime with:
+
+```bash
+npm ci --prefix desktop --ignore-scripts
+npm --prefix desktop run install:electron
+npm --prefix desktop run test:runtime
+```
+
+The explicit Electron download verifies the checksum supplied by the locked package. The runtime check uses a temporary SQLite database and synthetic PDF content; it does not open a wallet or use application data. CI runs it on macOS ARM64 and Windows x64. Installer launch, Tor, hardware-wallet signing, and visual PDF checks remain required before a desktop release.
 
 ## Troubleshooting
 

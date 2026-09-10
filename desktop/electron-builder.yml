@@ -19,6 +19,7 @@ mac:
   binaries:
     - Contents/Resources/tor/tor
     - Contents/Resources/tor/libevent-2.1.7.dylib
+  minimumSystemVersion: '13.0.0'
   category: public.app-category.finance
   target:
     - target: dmg

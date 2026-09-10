@@ -196,8 +196,7 @@ export class StatementService {
     id: string,
   ): { row: StatementRow; transactionMap: Record<string, AggregatedTransaction[]>; dailyRates: DailyRates } | null {
     const row = this.db.prepare('SELECT * FROM statements WHERE id = ? AND status = ?').get(id, 'completed') as
-      | CompletedStatementRow
-      | undefined
+      CompletedStatementRow | undefined
     if (!row) return null
 
     return {

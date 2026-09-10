@@ -96,34 +96,26 @@ export function AccountsSidebar({
   type AccountItem = ClaimItem | ExchangeItem | ManualItem
 
   const allItems: AccountItem[] = [
-    ...claims.map(
-      (claim): ClaimItem => ({
-        type: 'claim',
-        claim,
-        btcSats: balances ? Number(balances.get(claim.id)?.current ?? 0) : 0,
-      }),
-    ),
-    ...exchangeAccounts.map(
-      (account): ExchangeItem => ({
-        type: 'exchange',
-        account,
-        btcSats: account.balance ? Number(account.balance) : 0,
-      }),
-    ),
-    ...manualAccounts.map(
-      (account): ManualItem => ({
-        type: 'manual',
-        account,
-        btcSats: account.balance ? Number(account.balance) : 0,
-      }),
-    ),
-    ...etfAccounts.map(
-      (account): ManualItem => ({
-        type: 'manual',
-        account: account as unknown as ManualAccountDto,
-        btcSats: account.balance ? Number(account.balance) : 0,
-      }),
-    ),
+    ...claims.map((claim): ClaimItem => ({
+      type: 'claim',
+      claim,
+      btcSats: balances ? Number(balances.get(claim.id)?.current ?? 0) : 0,
+    })),
+    ...exchangeAccounts.map((account): ExchangeItem => ({
+      type: 'exchange',
+      account,
+      btcSats: account.balance ? Number(account.balance) : 0,
+    })),
+    ...manualAccounts.map((account): ManualItem => ({
+      type: 'manual',
+      account,
+      btcSats: account.balance ? Number(account.balance) : 0,
+    })),
+    ...etfAccounts.map((account): ManualItem => ({
+      type: 'manual',
+      account: account as unknown as ManualAccountDto,
+      btcSats: account.balance ? Number(account.balance) : 0,
+    })),
   ].sort((a, b) => b.btcSats - a.btcSats)
 
   return (
@@ -330,8 +322,10 @@ export function AccountsSidebar({
 
           const isSelected = selected.has(item.claim.id)
           const isMultisig = item.claim.keystores.length > 1
-          const walletLabel = isMultisig ? 'Multisig' : item.claim.keystores[0]?.wallet ?? 'unknown'
-          const walletType: SupportedHardwareWallet | null = isMultisig ? null : item.claim.keystores[0]?.wallet ?? null
+          const walletLabel = isMultisig ? 'Multisig' : (item.claim.keystores[0]?.wallet ?? 'unknown')
+          const walletType: SupportedHardwareWallet | null = isMultisig
+            ? null
+            : (item.claim.keystores[0]?.wallet ?? null)
           const cardProps = isMultisig ? mapClaimToClaimCardProps(item.claim) : null
 
           const claimStatus = ensureClaimStatusNotExpired(item.claim)

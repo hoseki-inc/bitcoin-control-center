@@ -58,6 +58,22 @@ beforeEach(() => {
 })
 
 describe('wallet permissions and chooser lifecycle', () => {
+  it('keeps wallet permissions and Trezor selection while the inline Ledger flow owns HID selection', () => {
+    session.removeAllListeners()
+    setupWalletAccess(
+      { webContents: main } as unknown as BrowserWindow,
+      origin,
+      new Set([popup as unknown as WebContents]),
+      { handleLedgerSelection: false },
+    )
+    expect(session.listenerCount('select-hid-device')).toBe(0)
+    expect(session.listenerCount('select-usb-device')).toBe(1)
+    const check = session.setPermissionCheckHandler.mock.calls.at(-1)![0]
+    expect(check(main, 'hid', origin, { isMainFrame: true })).toBe(true)
+    expect(check(popup, 'usb', 'https://connect.trezor.io', { isMainFrame: true })).toBe(true)
+    expect(check(main, 'hid', 'https://untrusted.example', { isMainFrame: true })).toBe(false)
+  })
+
   it('limits Ledger to the local main frame and Trezor USB to registered approval windows', () => {
     const check = session.setPermissionCheckHandler.mock.calls[0]![0]
     expect(check(main, 'hid', origin, { isMainFrame: true })).toBe(true)
