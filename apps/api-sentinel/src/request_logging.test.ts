@@ -38,7 +38,7 @@ afterEach(async () => {
 describe('Sentinel request logging', () => {
   it.each([
     query,
-    `?descriptor=${descriptor.replace('#', '%23')}&xpub=${xpub}`,
+    `?descriptor=${descriptor.replaceAll('#', '%23')}&xpub=${xpub}`,
     `?input=%ZZ&input=${encodeURIComponent(input)}`,
     `?${xpub}=${encodeURIComponent(descriptor)}`,
   ])('omits all query data without changing the request: case %#', async (search) => {
