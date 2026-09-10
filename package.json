@@ -9,7 +9,7 @@
     "build:desktop": "./desktop/build.sh",
     "build:start9": "./start9/build.sh",
     "check": "tsc --build",
-    "ci": "pnpm security:audit && pnpm format:check && pnpm lint && pnpm check && npm --prefix desktop run check && npm --prefix start9 run check && pnpm test && pnpm build",
+    "ci": "pnpm security:audit && pnpm format:check && pnpm lint && pnpm check && npm --prefix desktop run check && npm --prefix start9 run check && pnpm test && npm --prefix start9 test && pnpm build",
     "dev": "turbo run dev:standalone --filter=api-sentinel --filter=control-center",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

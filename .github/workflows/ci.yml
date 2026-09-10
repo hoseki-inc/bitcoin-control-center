@@ -26,4 +26,5 @@ jobs:
       - run: npm --prefix desktop run check
       - run: npm --prefix start9 run check
       - run: pnpm test
+      - run: npm --prefix start9 test
       - run: pnpm build
