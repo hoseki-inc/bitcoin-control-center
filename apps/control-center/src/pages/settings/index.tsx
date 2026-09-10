@@ -370,7 +370,7 @@ function ElectrumSettings(): JSX.Element {
             ? 'Tor is ready.'
             : electrumStatus.tor.state === 'starting'
               ? 'Tor is connecting. This can take up to two minutes.'
-              : electrumStatus.tor.message ?? 'Tor starts when you test or save a Tor connection.'}
+              : (electrumStatus.tor.message ?? 'Tor starts when you test or save a Tor connection.')}
         </Text>
       )}
 

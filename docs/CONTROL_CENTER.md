@@ -14,6 +14,8 @@ Bitcoin Control Center has one application mode and one backend contract: the Co
 
 `VITE_PLATFORM=desktop` is the only frontend distribution flag. It enables desktop-only Electrum and Tor settings. StartOS supplies those settings through its service configuration.
 
+Desktop startup also adds the operating system's trusted certificate authorities to Node's existing defaults before starting Sentinel. This allows a StartOS Root CA already trusted on the computer to authenticate a direct public Electrum connection. Certificate-chain and address validation remain enabled for public endpoints. The launcher does not install authorities or modify system trust; restart the app after changing the OS trust store. StartOS and future node launchers retain their own connection configuration.
+
 ## Develop locally
 
 Copy Sentinel's checked-in example environment and point it at an Electrum server:
@@ -37,6 +39,8 @@ pnpm --filter control-center dev:desktop
 ```
 
 Desktop Tor behavior is only complete in a packaged Electron build because the Tor executable is bundled during packaging.
+
+Packaged desktop binds an available loopback HTTP port at startup. Development keeps port `3400`; either application can start first, and stopping one leaves the other running. The desktop UI and wallet permission checks follow its actual port.
 
 ## Build the application
 
@@ -79,9 +83,9 @@ node start9/scripts/version.mjs check
 node start9/scripts/version.mjs tag
 ```
 
-Use the manually triggered **StartOS 2 - Build candidate** GitHub Actions workflow for private remote builds. It builds the exact committed version and never creates a version, tag, GitHub Release, or registry publication.
+Use the manually triggered **Release 2 - Build candidates** GitHub Actions workflow for remote StartOS, macOS ARM64, and Windows x64 builds. It builds the exact committed version and never creates a version, tag, GitHub Release, or registry publication.
 
-Use **StartOS 1 - Prepare version** to select a version bump. It opens a version pull request and calculates the exact tag. Edit the generated version file in that pull request to replace its required release-notes placeholder with reviewed multiline notes; CI blocks the pull request until this is done. Once the pull request is merged and its candidate is tested, **StartOS 3 - Create draft release** rebuilds from the protected default branch and creates the matching draft GitHub Release without asking anyone to type a tag. It uses the permanent signing key when configured or a temporary clean-install key otherwise. See [STARTOS_RELEASES.md](STARTOS_RELEASES.md) for the complete candidate and release model.
+Use **Release 1 - Prepare version** to select a version bump. It opens a version pull request and calculates the exact tag. Edit the generated version file in that pull request to replace its required release-notes placeholder with reviewed multiline notes; CI blocks the pull request until this is done. Once the pull request is merged and its candidate is tested, **Release 3 - Create draft release** rebuilds all three packages from one protected default-branch commit and creates the matching draft GitHub Release without asking anyone to type a tag. StartOS uses the permanent signing key when configured or a temporary clean-install key otherwise. See [STARTOS_RELEASES.md](STARTOS_RELEASES.md) for the complete candidate and release model.
 
 ## Build desktop installers
 
@@ -89,7 +93,11 @@ Use **StartOS 1 - Prepare version** to select a version bump. It opens a version
 ./desktop/build.sh
 ```
 
-The script downloads pinned-platform Tor artifacts when absent, verifies their SHA-256 hashes, builds Sentinel and the desktop frontend, installs Electron dependencies, validates the bundled `better-sqlite3` native prebuilds, and packages macOS and Windows installers under `desktop/release/`.
+The script builds the current native platform: Apple Silicon macOS or Windows x64 (Git Bash). Use `--mac` or `--win` to select a target, or `--all` on macOS to also cross-build Windows. It downloads and verifies pinned Tor bundles, builds Sentinel and the desktop frontend, installs Electron dependencies, and validates the host's SQLite native prebuild. Installers, JSON build identity, and checksums are staged under `desktop/release/artifacts/mac/` or `desktop/release/artifacts/win/`.
+
+The protected version graph also supplies desktop's application version, with the full StartOS packaging revision retained in filenames and metadata. For `0.2.3:1`, the Mac installer is `desktop/release/artifacts/mac/Bitcoin-Control-Center-v0.2.3_1-mac-arm64.dmg`. Desktop and StartOS can have different connection settings while sharing the same product release.
+
+The reusable desktop workflow builds on native macOS and Windows runners for CI, candidates, and draft releases. It tests the packaged backend, SQLite, frontend assets, port selection, fixture Electrum connection, and Tor executable. Interactive installation, physical-wallet signing, and upgrades still need manual acceptance tests. Current installers use ad-hoc Mac signing without notarization and no Windows publisher signature.
 
 ## Add another distribution
 

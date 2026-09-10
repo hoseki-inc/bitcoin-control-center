@@ -9,6 +9,11 @@ permissions:
   contents: read
 
 jobs:
+  desktop:
+    uses: ./.github/workflows/build-desktop.yml
+    with:
+      source_ref: ${{ github.sha }}
+
   verify:
     runs-on: ubuntu-latest
     steps:

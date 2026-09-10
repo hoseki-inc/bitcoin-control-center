@@ -1,6 +1,8 @@
-# StartOS build and release model
+# Build and release model
 
 Bitcoin Control Center keeps the StartOS version graph in `start9/startos/versions/`. That checked-in graph is the only source of truth for the package version. Builds and Git tags must follow it; a workflow must never invent or silently increment a version.
+
+The same release workflow also builds desktop installers. Desktop's native application version uses `major.minor.patch`; its filename and embedded build metadata retain the full `major.minor.patch:revision`, tag, and source commit. For example, release `0.2.3:1` contains desktop version `0.2.3` with `v0.2.3_1` in its filenames. The build overrides `desktop/package.json`'s placeholder version without rewriting it. Platform-specific features, such as desktop connection profiles, can share a product version with StartOS.
 
 ## Version and tag formats
 
@@ -53,13 +55,13 @@ node start9/scripts/version.mjs assert-tag v0.2.1_0
 
 The workflows are numbered in the GitHub Actions sidebar because they have different jobs:
 
-| Goal                           | Workflow                             | Version choice?                               | Result                                 |
-| ------------------------------ | ------------------------------------ | --------------------------------------------- | -------------------------------------- |
-| Choose the next version        | **StartOS 1 - Prepare version**      | Yes: `patch`, `minor`, `major`, or `revision` | Opens a version pull request           |
-| Test what is already committed | **StartOS 2 - Build candidate**      | No                                            | Produces a private sideload artifact   |
-| Create a downloadable release  | **StartOS 3 - Create draft release** | No                                            | Produces a signed draft GitHub Release |
+| Goal                           | Workflow                             | Version choice?                               | Result                                    |
+| ------------------------------ | ------------------------------------ | --------------------------------------------- | ----------------------------------------- |
+| Choose the next version        | **Release 1 - Prepare version**      | Yes: `patch`, `minor`, `major`, or `revision` | Opens a version pull request              |
+| Test what is already committed | **Release 2 - Build candidates**     | No                                            | Produces all three test installers        |
+| Create a downloadable release  | **Release 3 - Create draft release** | No                                            | Creates a draft with all three installers |
 
-Running a candidate never changes the version. If the candidate reveals a fix that warrants a new version, merge the fix and then use **StartOS 1 - Prepare version** to choose the appropriate bump. After that version pull request is merged, run a new candidate from `main`.
+Running a candidate never changes the version. If the candidate reveals a fix that warrants a new version, merge the fix and then use **Release 1 - Prepare version** to choose the appropriate bump. After that version pull request is merged, run a new candidate from `main`.
 
 ### Local development build
 
@@ -71,13 +73,14 @@ This builds the checked-in version without changing it. Use the resulting `start
 
 ### Private remote candidate
 
-Run **StartOS 2 - Build candidate** manually from the repository's Actions page and choose the branch or commit to test. The workflow:
+Run **Release 2 - Build candidates** manually from the repository's Actions page and choose the branch or commit to test. The workflow:
 
 1. runs the complete repository verification suite;
 2. verifies that the source tree is clean and the version graph is valid;
-3. builds one universal x86_64/aarch64 package;
-4. verifies the package ID, version, architectures, and clean Git hash;
-5. uploads the `.s9pk` and `SHA256SUMS` as a private Actions artifact for 14 days.
+3. builds one universal x86_64/aarch64 StartOS package and native macOS ARM64 and Windows x64 installers from the same commit;
+4. verifies the StartOS package ID, version, architectures, and clean Git hash, and desktop's embedded version and source identity;
+5. smoke-tests each desktop package's backend, native SQLite, frontend assets, dynamically assigned port, local Electrum fixture, and bundled Tor executable;
+6. uploads the `.s9pk`, `.dmg`, and `.exe` in separate Actions artifacts with checksums and desktop build metadata, retained for 14 days.
 
 Candidate runs do not change the version, create a tag, create a GitHub Release, or publish to a StartOS registry. Their artifact name includes both the official tag form and the source commit, for example:
 
@@ -85,11 +88,13 @@ Candidate runs do not change the version, create a tag, create a GitHub Release,
 hoseki-sentinel-v0.2.1_0-0123456789ab.s9pk
 ```
 
+Desktop artifacts are named `desktop-mac-arm64` and `desktop-win-x64`. Their installer filenames contain the release tag and target platform; accompanying `mac.json` / `win.json` records the exact commit. Ordinary pull-request and `main` CI also run these native desktop builds and smoke tests. The Mac target is Apple Silicon only, matching its bundled Tor binary.
+
 If the repository secret `STARTOS_DEV_KEY` is absent, the workflow creates a temporary signing key. That is suitable for clean-install testing, but it must not be used to test signer continuity or upgrades. Configure a permanent StartOS developer key as that secret before testing upgrades between remote builds. Never print, commit, or attach the key.
 
 ### Version preparation
 
-Version changes belong in their own pull request. In GitHub, open **Actions**, choose **StartOS 1 - Prepare version**, and select **Run workflow** from the default branch. The form asks only for a release type: `patch`, `minor`, `major`, or `revision`.
+Version changes belong in their own pull request. In GitHub, open **Actions**, choose **Release 1 - Prepare version**, and select **Run workflow** from the default branch. The form asks only for a release type: `patch`, `minor`, `major`, or `revision`.
 
 The workflow calculates the next version and exact StartOS tag, rejects existing tag or branch names, and opens a pull request containing a generated version file. That file intentionally starts with a release-notes placeholder. The pull request's CI check remains failing until the placeholder is replaced, preventing unreviewed or flattened notes from reaching a package. The workflow does not create a tag or package.
 
@@ -130,16 +135,19 @@ Commit the version graph before producing any release candidate intended to have
 
 ### Downloadable draft GitHub Release
 
-After the version pull request is merged and its candidate is tested, open **Actions**, choose **StartOS 3 - Create draft release**, and run it from the default branch. There is no version or tag field. The workflow:
+After the version pull request is merged and its candidate is tested, open **Actions**, choose **Release 3 - Create draft release**, and run it from the default branch. There is no version or tag field. The workflow:
 
 1. derives the only valid tag from the committed version graph;
 2. rejects an existing tag or GitHub Release;
 3. uses the permanent `STARTOS_DEV_KEY` when configured, otherwise creates a temporary signing key;
-4. runs the complete verification suite and rebuilds from the protected default-branch commit;
-5. verifies the package ID, version, architectures, source commit, release notes, and checksum;
-6. creates an exact-tagged **draft** GitHub Release containing the signed `.s9pk` and `SHA256SUMS`.
+4. runs the complete verification suite and rebuilds all platforms from the default-branch commit captured when the workflow starts, even if the branch moves while builds run;
+5. waits for both native desktop packages and smoke tests to pass, then verifies the StartOS package ID, version, architectures, source commit, release notes, and checksum;
+6. verifies that both desktop manifests match that exact release and commit, rejects dirty builds or altered installer checksums, and assembles all assets;
+7. creates an exact-tagged **draft** GitHub Release containing the `.s9pk`, `.dmg`, `.exe`, `DESKTOP_BUILDS.json`, and combined `SHA256SUMS`.
 
-The release notes are read back from the built package, so the StartOS manifest and GitHub Release cannot silently diverge. When a temporary key is used, the GitHub Release also displays a warning that the package is intended for clean installs and testing, not signer-continuous upgrades. Review the draft and checksum before publishing it. The workflow does not publish to a StartOS registry.
+The product release notes are read back from the StartOS package. GitHub's draft adds packaging/signing details for the included desktop assets. When a temporary StartOS key is used, the GitHub Release also displays a warning that the package is intended for clean installs and testing, not signer-continuous upgrades. Review the draft and checksums before publishing it. The workflow does not publish to a StartOS registry.
+
+Desktop installers currently use ad-hoc macOS signing without notarization and have no Windows publisher signature. They are review builds and can produce operating-system installation warnings. Native runtime tests do not verify the installer UI, physical wallets, or preservation of existing data across upgrades. Developer ID/notarization, Windows signing, and automatic updates remain separate work. Do not treat a packaging-only revision as a separately ordered desktop application version; the full revision is tracked in the build metadata.
 
 A permanent StartOS developer signing key is not required to create a downloadable draft release. Configure `STARTOS_DEV_KEY` before using these builds to test upgrades or before publishing to a StartOS registry. Once deployed packages rely on a permanent signer, preserve that key to retain signer continuity.
 

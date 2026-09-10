@@ -3,10 +3,15 @@ const { spawnSync } = require('node:child_process')
 const { mkdtempSync, rmSync } = require('node:fs')
 const { tmpdir } = require('node:os')
 const { join } = require('node:path')
+const { pathToFileURL } = require('node:url')
 const { devDependencies } = require('../package.json')
 
 async function checkRuntime() {
   assert.equal(process.versions.electron, devDependencies.electron, 'Run the locked Electron runtime')
+
+  // Exercise the actual platform's certificate-store APIs in the locked runtime.
+  const { configureDesktopTlsTrust } = await import(pathToFileURL(join(__dirname, '../src/tls-trust.ts')).href)
+  configureDesktopTlsTrust()
 
   // Exercise the native addon with Electron's Node ABI, using synthetic data.
   const Database = require('better-sqlite3')
@@ -36,7 +41,7 @@ async function checkRuntime() {
   const pdf = await renderToBuffer(document)
   assert.equal(pdf.subarray(0, 5).toString(), '%PDF-')
   assert.ok(pdf.length > 1000, 'The PDF renderer must produce a complete document')
-  console.log(`Electron ${process.versions.electron}: SQLite persistence and PDF rendering passed`)
+  console.log(`Electron ${process.versions.electron}: system TLS trust, SQLite persistence, and PDF rendering passed`)
 }
 
 if (process.versions.electron) {

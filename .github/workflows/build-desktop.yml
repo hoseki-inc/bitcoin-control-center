@@ -1,0 +1,73 @@
+name: Build desktop packages
+
+on:
+  workflow_call:
+    inputs:
+      source_ref:
+        description: Exact source commit shared with the StartOS build
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  desktop:
+    name: Desktop ${{ matrix.target }} ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: mac
+            arch: arm64
+            runner: macos-15
+          - target: win
+            arch: x64
+            runner: windows-2025
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: bash
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.source_ref }}
+      - uses: ./.github/actions/setup
+      - name: Verify the selected commit
+        env:
+          SOURCE_REF: ${{ inputs.source_ref }}
+        run: test "$(git rev-parse HEAD)" = "$SOURCE_REF"
+      - name: Build native installer
+        env:
+          DESKTOP_TARGET: ${{ matrix.target }}
+        run: bash desktop/build.sh "--${DESKTOP_TARGET}"
+      - name: Check desktop types and tests
+        run: |
+          npm --prefix desktop run check
+          pnpm exec vitest run --config desktop/vitest.config.ts
+      - name: Smoke-test the packaged Mac runtime
+        if: matrix.target == 'mac'
+        run: |
+          APP="desktop/release/mac-arm64/Bitcoin Control Center.app"
+          codesign --verify --deep --strict "$APP"
+          ELECTRON_RUN_AS_NODE=1 "$APP/Contents/MacOS/Bitcoin Control Center" \
+            desktop/scripts/smoke.cjs "$APP/Contents/Resources"
+      - name: Smoke-test the packaged Windows runtime
+        if: matrix.target == 'win'
+        shell: pwsh
+        run: |
+          $env:ELECTRON_RUN_AS_NODE = '1'
+          & 'desktop/release/win-unpacked/Bitcoin Control Center.exe' desktop/scripts/smoke.cjs desktop/release/win-unpacked/resources
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Confirm packaging did not edit source files
+        run: git diff --exit-code
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: desktop-${{ matrix.target }}-${{ matrix.arch }}
+          path: desktop/release/artifacts/${{ matrix.target }}/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14

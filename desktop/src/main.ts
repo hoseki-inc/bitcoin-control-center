@@ -1,18 +1,23 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { BrowserWindow, type Tray, type WebContents, app, dialog, ipcMain, shell } from 'electron'
 import { setupLedgerHidAccess } from './ledger-hid'
 import { findAvailablePort } from './ports'
+import { configureDesktopTlsTrust } from './tls-trust'
 import { TorManager } from './tor'
 import { setupTray } from './tray'
 import { setupWalletAccess } from './wallet-access'
 import { isAppUrl, isExternalUrl, isTrezorPopup } from './window-policy'
 
-const PORT = 3400
-const origin = `http://localhost:${PORT}`
+interface LocalServer {
+  port: number
+  shutdown: () => Promise<void>
+}
+
 let mainWindow: BrowserWindow | null = null
 let torManager: TorManager | null = null
-let server: { shutdown: () => Promise<void> } | null = null
+let server: LocalServer | null = null
 let tray: Tray | null = null
 let quitting = false
 let cleanedUp = false
@@ -33,6 +38,8 @@ function openExternal(url: string): void {
 }
 
 async function start(): Promise<void> {
+  // Configure trust before Sentinel creates Electrum or other outbound TLS clients.
+  configureDesktopTlsTrust()
   const dataDir = path.join(app.getPath('userData'), 'data')
   fs.mkdirSync(dataDir, { recursive: true })
   const torPath = app.isPackaged
@@ -49,7 +56,6 @@ async function start(): Promise<void> {
     DATA_DIR: dataDir,
     APP_DIR: serverDir,
     HOST: 'localhost',
-    PORT: String(PORT),
     ELECTRUM_HOST: 'electrum.blockstream.info',
     ELECTRUM_PORT: '50002',
     ELECTRUM_PROTOCOL: 'ssl',
@@ -59,8 +65,12 @@ async function start(): Promise<void> {
     SOCKS_PROXY_HOST: '127.0.0.1',
     SOCKS_PROXY_PORT: String(torManager.socksPort),
   })
-  const { main } = await import(path.join(serverDir, 'main.js'))
-  server = await main({ waitForElectrum: false, tor: torManager })
+  const { main } = await import(pathToFileURL(path.join(serverDir, 'main.js')).href)
+  // Bind an OS-assigned port directly, without reserving then releasing one.
+  // This keeps desktop independent of the development server's configured port.
+  const localServer: LocalServer = await main({ waitForElectrum: false, tor: torManager, listenPort: 0 })
+  server = localServer
+  const origin = `http://localhost:${localServer.port}`
   if (quitting) return
 
   mainWindow = new BrowserWindow({
@@ -164,7 +174,7 @@ if (!app.requestSingleInstanceLock()) {
       if (!quitting) {
         dialog.showErrorBox(
           'Control Center could not start',
-          'The local service could not open. Check that another app is not using port 3400 and that your data folder is writable, then reopen Control Center.',
+          'The local service could not open. Check that your data folder is writable, then reopen Control Center.',
         )
         app.quit()
       }

@@ -1,4 +1,43 @@
-# Desktop app review — September 6, 2026
+# Desktop app review
+
+## Current status — September 10, 2026
+
+`desktop-app-review` includes `main` through `2020b55` (StartOS `0.2.4:0`) in merge commit `1bb219f`. This brings in the separately shipped Ledger multisig repair, the newer inline Ledger connection flow, Electron `44.2.0`, PDF renderer `4.9.0`, and the intervening security and dependency updates. This checkpoint includes the restored port-isolation and release-workflow changes plus the desktop system-certificate trust fix. The original stash remains available as a backup.
+
+The merge preserves the desktop connection recovery, Tor lifecycle, Trezor popup, and shutdown fixes. The main window now has the narrow Ledger preload required by the newer flow. Ledger owns HID selection while the existing wallet integration retains its device permissions and Trezor USB chooser, with a regression test guarding against duplicate HID handlers.
+
+### Public Electrum certificate trust follow-up
+
+While testing away from the LAN, the user enabled their StartOS Electrs public SSL interface and encountered `self signed certificate in certificate chain`. A diagnostic in the packaged Electron runtime reproduced the failure: the node's Root CA was already trusted by macOS but absent from the backend's default authority list. The server's certificate matched its public IP and was valid. Including the existing system authorities passed a fully verified TLS handshake in approximately 160 ms.
+
+The desktop launcher now supplements Node's existing certificate authorities with the operating system's trusted authorities before initializing Sentinel. It does not install authorities, trust certificates fetched from a server, or disable public certificate verification. This is desktop-specific startup configuration; shared Electrum behavior and StartOS configuration are unchanged. A per-connection certificate import UI and saved named profiles remain future work.
+
+The user confirmed that the rebuilt Mac app now connects successfully through the public interface.
+
+The desktop suite passes 18 tests, including real TLS handshakes covering the trusted-CA case and rejection of untrusted and wrong-address certificates. Desktop type checks and all 28 Ledger-handler tests pass. The Electron 44 runtime check also exercises system trust initialization, SQLite, and PDF rendering. The rebuilt Mac application's own `Test Connection` API successfully negotiated the user's public Electrs connection directly over verified TLS in 334 ms, using an isolated empty profile without saving settings or querying wallet data. These connection timings do not measure portfolio synchronization.
+
+Both installers were rebuilt with this fix, and the Mac package signature and isolated backend smoke test pass. The first combined wallet-window harness reached its cleanup deadline while packaging was running; a separate connection-and-quit check and a repeat of the combined check both passed. The repeat covered the public connection, inline Ledger request/cancel, Trezor popup/USB cancel, navigation policy, and graceful shutdown in approximately four seconds. Physical multisig signing remains the user's next acceptance test. Native Windows trust-store validation remains pending the GitHub runtime job.
+
+### Merge and release validation
+
+The full repository CI command passes: 565 shared/API/UI/desktop/release-assembly tests, 28 native Ledger-handler tests, and 8 StartOS tests. Formatting, lint, all type checks, builds, and the configured dependency-audit threshold pass; the audit reports one low-severity root advisory and none in the desktop or StartOS npm packages. The release workflows also pass actionlint.
+
+Both refreshed installers built successfully with desktop version `0.2.4` and full release identity `0.2.4:0`:
+
+- Mac ARM64: `desktop/release/artifacts/mac/Bitcoin-Control-Center-v0.2.4_0-mac-arm64.dmg`
+- Windows x64: `desktop/release/artifacts/win/Bitcoin-Control-Center-v0.2.4_0-win-x64.exe`
+
+Their metadata records the merge commit plus uncommitted changes. The actual Mac executable passes signature verification and the packaged backend/SQLite/frontend/local-Electrum/dynamic-port/Tor smoke test. Its packaged PDF renderer also produces a complete synthetic PDF. A separate Electron `44.2.0` launcher using the packaged application and an isolated empty profile verified Settings, the sandboxed Ledger bridge, exactly one HID-selection handler, inline Ledger request/cancellation, and blocked off-origin navigation. A synthetic page at the approved Trezor origin verified that the popup has an opener but no application bridge or Node access, and that its USB chooser opens and cancels. These checks do not connect to physical wallets. Windows was cross-built on macOS and has not been run locally.
+
+The recommended next work is:
+
+1. **Save named connection profiles.** [Issue #39](https://github.com/hoseki-inc/bitcoin-control-center/issues/39) tracks this intentional desktop-only feature. Start with saving, editing, deleting, and explicitly switching between named LAN, public SSL, and Tor connections; remember the active profile across restarts and preserve it when a replacement connection fails. This feature is not part of the current checkpoint.
+2. **Complete desktop acceptance testing.** Recheck physical Ledger multisig signing on the refreshed Mac build, run desktop alongside local development in both startup orders, and confirm accounts and connection settings survive a restart. The user has reported working Trezor and Ledger connections and statements on earlier builds. A Windows tester is still needed for installation, windows/tray, hardware wallets, and upgrades.
+3. **Finish release delivery.** Run the restored native packaging workflow on GitHub. The goal remains one release containing StartOS, Mac ARM64, and Windows x64 artifacts from the same commit. Main's [native runtime check](https://github.com/hoseki-inc/bitcoin-control-center/actions/runs/34409346254) already passed SQLite and PDF checks on Mac and Windows; the broader installer workflow has not yet run on GitHub. [Setup transfer #44](https://github.com/hoseki-inc/bitcoin-control-center/issues/44) and [connection fallback #67](https://github.com/hoseki-inc/bitcoin-control-center/issues/67) remain separate follow-ups.
+
+Mac signing/notarization, Windows publisher signing, and an update/recovery policy remain release-readiness work. The sections below retain the original review and dated validation history; their original findings and version numbers describe those earlier builds.
+
+## Initial review — September 6, 2026
 
 Reviewed `c2c3a89` on `desktop-app-review`. This is a review of the current repository and newly built desktop artifacts, compared with the checked-in StartOS package (`0.2.3:1`). It does not establish which version is currently installed on a particular user's computer or Start9 server.
 
@@ -40,7 +79,21 @@ The earlier packaged recovery check also passed: a previously failing profile op
 
 ### User testing feedback
 
-The user reports that the Trezor connection now works. Full ownership signing has not yet been confirmed. Connecting to a private Electrum server through Tor was reported to be very slow; this has not yet been timed or isolated to bootstrap, network requests, or history processing. The next priority is a clear setup path for a user-owned node over LAN or direct remote access, with Tor retained as an explicit choice.
+The user reports that Trezor and Ledger connections and statements work. Physical Ledger multisig signing on the refreshed build still needs confirmation after the separately shipped repair. Local Electrs connection tests passed, and the user is comparing whole-app speed over LAN. The selected connection approach is LAN at home and Tor away, without a paid VPN service. Saved desktop connection profiles are tracked in issue #39; they are intentionally specific to desktop.
+
+### Port isolation and release workflow follow-up (September 7)
+
+The desktop server now binds an operating-system-assigned loopback port instead of development's fixed `3400`. The actual bound port is returned to the Electron shell and used for its UI, navigation policy, and wallet permissions. Automated tests cover both startup orders, independent shutdown, and cleanup after a configured-port collision. This addresses issue #40 without changing the development or StartOS default port. The desktop launcher also converts its backend path to a file URL so Windows drive letters are valid dynamic-import targets.
+
+The numbered release workflows now build all three artifacts from one commit: universal StartOS `.s9pk`, Apple Silicon Mac `.dmg`, and Windows x64 `.exe`. A reusable native desktop matrix also runs in normal PR/main CI. Desktop build reports record the full protected release version, semantic desktop version, source commit, dirty-source status, and SHA-256 checksum. Draft assembly requires both desktop jobs to pass and rejects mismatched revisions, commits, filenames, dirty sources, missing installers, and altered checksums. It keeps StartOS's existing version preparation, signing-key handling, release-note validation, and draft-only publication behavior.
+
+Both local installer builds completed with the shared version `0.2.3:1` / desktop version `0.2.3`. The first exact Mac executable check caught a Team ID library-validation failure from combining ad-hoc signing with hardened runtime. Review builds now disable hardened runtime; Developer ID signing and notarization remain future release work. The corrected Mac signature and packaged-runtime smoke test pass, including SQLite, frontend assets, a local Electrum fixture, dynamic port binding, and execution of bundled Tor. Windows was cross-built on macOS; the new native Windows job has not yet run.
+
+**Validation:** the full repository CI command passed with 492 tests (321 shared, 86 API, 66 UI, 14 desktop, 5 release-assembly tests), root/desktop/StartOS type checks, formatting, lint, builds, and the configured dependency-audit threshold. The audit reports one low-severity root advisory and none in desktop or the StartOS npm packages. Workflow syntax passed actionlint. These are local results; no GitHub workflow run, release, or new commit is claimed.
+
+**Acceptance work:** install the rebuilt Mac DMG and run it alongside `pnpm dev` in both startup orders, then confirm saved connections and account data survive restart and repeat a hardware-wallet connection/signing flow. Browser-only appearance preferences are scoped to the changing HTTP origin and may reset; portfolio data and connection settings stay in the existing SQLite data folder. Native Windows installation, physical-wallet signing, upgrade/data preservation, publisher signing, automatic updates, and backup/restore remain unverified.
+
+The current local artifacts are `desktop/release/artifacts/mac/Bitcoin-Control-Center-v0.2.3_1-mac-arm64.dmg` and `desktop/release/artifacts/win/Bitcoin-Control-Center-v0.2.3_1-win-x64.exe`, with metadata and checksums beside them. Their manifests explicitly record the uncommitted source changes.
 
 ## What was verified
 

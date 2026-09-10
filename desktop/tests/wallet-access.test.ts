@@ -7,7 +7,7 @@ import { isAppUrl, isExternalUrl, isTrezorPopup } from '../src/window-policy'
 
 vi.mock('electron', () => ({ BrowserWindow: { fromWebContents: (contents: unknown) => ({ webContents: contents }) } }))
 vi.mock('../src/device-chooser', () => ({ showDeviceChooser: vi.fn() }))
-const origin = 'http://localhost:3400'
+const origin = 'http://localhost:49172'
 const popupUrl = 'https://connect.trezor.io/9/popup.html?version=9.7.3&env=web'
 const ledger = { deviceId: 'ledger', name: 'Nano', vendorId: 0x2c97, productId: 1 }
 const trezor = { deviceId: 'trezor', productName: 'Trezor', vendorId: 0x1209, productId: 0x53c1 }
@@ -77,7 +77,7 @@ describe('wallet permissions and chooser lifecycle', () => {
   it('limits Ledger to the local main frame and Trezor USB to registered approval windows', () => {
     const check = session.setPermissionCheckHandler.mock.calls[0]![0]
     expect(check(main, 'hid', origin, { isMainFrame: true })).toBe(true)
-    expect(check(main, 'hid', 'http://localhost:3401', { isMainFrame: true })).toBe(false)
+    expect(check(main, 'hid', 'http://localhost:3400', { isMainFrame: true })).toBe(false)
     expect(check(null, 'hid', `${origin}/`, { isMainFrame: false })).toBe(true)
     expect(check(popup, 'hid', 'https://connect.trezor.io', { isMainFrame: true })).toBe(false)
     expect(check(popup, 'usb', 'https://connect.trezor.io', { isMainFrame: true })).toBe(true)

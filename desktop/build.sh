@@ -1,44 +1,68 @@
-#!/bin/bash
-set -e
+#!/usr/bin/env bash
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+TARGET="${1:-}"
+case "$TARGET" in
+  '')
+    case "$(uname -s)" in
+      Darwin) TARGET=--mac ;;
+      MINGW*|MSYS*|CYGWIN*) TARGET=--win ;;
+      *) echo 'Specify --win to cross-build Windows, or use a native Mac/Windows runner.' >&2; exit 1 ;;
+    esac
+    ;;
+  --mac|--win|--all) ;;
+  *) echo 'Usage: ./desktop/build.sh [--mac|--win|--all]' >&2; exit 1 ;;
+esac
 
-echo "==> Downloading Tor binaries (if needed)..."
-if [ ! -f "$SCRIPT_DIR/tor/mac/tor" ] || [ ! -f "$SCRIPT_DIR/tor/win/tor.exe" ]; then
-  "$SCRIPT_DIR/download-tor.sh"
-else
-  echo "    Tor binaries already present, skipping download."
+cd "$REPO_ROOT"
+node start9/scripts/version.mjs check
+VERSION="$(node start9/scripts/version.mjs get)"
+TAG="$(node start9/scripts/version.mjs tag)"
+APP_VERSION="${VERSION%:*}"
+SOURCE_SHA="$(git rev-parse HEAD)"
+SOURCE_DIRTY=false
+if [[ -n "$(git status --porcelain)" ]]; then SOURCE_DIRTY=true; fi
+
+if [[ "$TARGET" == --mac || "$TARGET" == --all ]]; then
+  if [[ "$(uname -s)" != Darwin ]]; then
+    echo 'Mac packaging requires macOS. The supported Mac target is Apple Silicon.' >&2
+    exit 1
+  fi
 fi
 
-echo "==> Building api-sentinel..."
-cd "$REPO_ROOT"
-pnpm --filter api-sentinel build
+if [[ ! -f "$SCRIPT_DIR/tor/mac/tor" || ! -f "$SCRIPT_DIR/tor/win/tor.exe" ]]; then
+  "$SCRIPT_DIR/download-tor.sh"
+fi
 
-echo "==> Building Control Center web app (desktop mode)..."
-pnpm --filter control-center build --mode production.desktop
+corepack pnpm --filter api-sentinel build
+corepack pnpm --filter control-center build --mode production.desktop
+npm ci --prefix "$SCRIPT_DIR" --ignore-scripts
+node -e "const Database = require('./desktop/node_modules/better-sqlite3'); const db = new Database(':memory:'); db.close()"
+corepack pnpm exec tsx "$SCRIPT_DIR/src/scripts/build.ts"
 
-echo "==> Installing desktop dependencies..."
 cd "$SCRIPT_DIR"
-npm ci --ignore-scripts
+COMMON=(
+  --publish never
+  "-c.extraMetadata.version=$APP_VERSION"
+  "-c.extraMetadata.bccReleaseVersion=$VERSION"
+  "-c.extraMetadata.bccSourceCommit=$SOURCE_SHA"
+  "-c.extraMetadata.bccSourceDirty=$SOURCE_DIRTY"
+  "-c.buildVersion=$APP_VERSION"
+)
 
-echo "==> Validating native SQLite prebuilds..."
-test -f node_modules/better-sqlite3/prebuilds/darwin-arm64.node
-test -f node_modules/better-sqlite3/prebuilds/win32-x64.node
-node -e "const Database = require('better-sqlite3'); const database = new Database(':memory:'); database.close()"
+if [[ "$TARGET" == --mac || "$TARGET" == --all ]]; then
+  # Ad-hoc review signatures cannot satisfy hardened-runtime Team ID validation
+  # for Electron's framework. Enable hardened runtime with Developer ID signing.
+  npx --no-install electron-builder --mac --arm64 "${COMMON[@]}" -c.mac.identity=- -c.mac.hardenedRuntime=false \
+    "-c.artifactName=Bitcoin-Control-Center-${TAG}-mac-arm64.\${ext}"
+  node scripts/stage-artifact.cjs mac
+fi
+if [[ "$TARGET" == --win || "$TARGET" == --all ]]; then
+  npx --no-install electron-builder --win --x64 "${COMMON[@]}" \
+    "-c.artifactName=Bitcoin-Control-Center-${TAG}-win-x64.\${ext}"
+  node scripts/stage-artifact.cjs win
+fi
 
-echo "==> Building Electron shell..."
-cd "$REPO_ROOT"
-npx tsx "$SCRIPT_DIR/src/scripts/build.ts"
-
-# Package for both Mac and Windows
-echo "==> Packaging for macOS..."
-cd "$SCRIPT_DIR"
-npx electron-builder --mac
-
-echo "==> Packaging for Windows..."
-npx electron-builder --win
-
-echo ""
-echo "Done! Installers are in desktop/release/"
-ls -lh "$SCRIPT_DIR/release/"*.{dmg,exe} 2>/dev/null || true
+echo "Installers and release metadata are in desktop/release/artifacts/"

@@ -207,7 +207,7 @@ The normal development endpoints are:
 | Sentinel health check | `http://localhost:3400/health` |
 | Sentinel tRPC API     | `http://localhost:3400/trpc`   |
 
-Vite may select the next free port if `4269` is already occupied. Sentinel will stop with an address-in-use error if `3400` is occupied.
+Vite may select the next free port if `4269` is already occupied. The development Sentinel will stop with an address-in-use error if `3400` is occupied. The desktop app binds an available loopback port at each launch, so it can run alongside development; its UI and wallet permissions use that actual address.
 
 ### Run the services separately
 
@@ -395,13 +395,13 @@ The manifest version `0.2.1:0` maps to the official StartOS Git tag `v0.2.1_0`. 
 
 See [docs/CONTROL_CENTER.md](docs/CONTROL_CENTER.md) for more packaging and distribution guidance.
 
-## StartOS release candidates
+## Release candidates
 
-The manually triggered **StartOS 2 - Build candidate** GitHub Actions workflow builds a private universal `.s9pk` artifact from a selected branch or commit. It runs the full verification suite and validates the checked-in version, package ID, architectures, and clean Git hash. It does not bump a version, create a tag, publish a GitHub Release, or submit anything to a StartOS registry.
+The manually triggered **Release 2 - Build candidates** GitHub Actions workflow builds a universal StartOS `.s9pk`, macOS ARM64 `.dmg`, and Windows x64 `.exe` from the same selected commit. It runs the full verification suite and checks each package's version and source identity. Desktop installers are built and their packaged runtimes smoke-tested on native runners. It does not bump a version, create a tag, publish a GitHub Release, or submit anything to a StartOS registry.
 
-The artifact uses the StartOS tag form plus the source commit so similarly versioned test builds remain distinguishable. GitHub retains it for 14 days.
+The StartOS candidate filename includes the release tag and source commit. Desktop filenames include the release tag and platform; their accompanying JSON records the exact source commit and checksum. GitHub retains the Actions artifacts for 14 days.
 
-Use the separate **StartOS 1 - Prepare version** workflow to choose `patch`, `minor`, `major`, or `revision` from a dropdown and enter release notes. It calculates the next version and exact tag and opens a protected pull request. After that pull request is merged and tested, **StartOS 3 - Create draft release** derives the tag without manual entry, rebuilds the package, and creates a draft GitHub Release. It uses the permanent signing key when configured or a temporary clean-install key otherwise. Registry publication is intentionally not part of either workflow.
+Use the separate **Release 1 - Prepare version** workflow to choose `patch`, `minor`, `major`, or `revision` from a dropdown. It calculates the next version and exact tag and opens a protected pull request; replace its release-notes placeholder before merging. After that pull request is merged and tested, **Release 3 - Create draft release** rebuilds all three packages from one protected commit and creates a draft GitHub Release with installers, build metadata, and checksums. All platform jobs must pass first. StartOS uses the permanent signing key when configured or a temporary clean-install key otherwise. Desktop packages remain review builds with the signing limits described below. Registry publication is intentionally separate.
 
 See [docs/STARTOS_RELEASES.md](docs/STARTOS_RELEASES.md) for the version rules, candidate signing behavior, workflow instructions, and the intentionally separate registry-publication design.
 
@@ -416,11 +416,13 @@ The desktop package embeds Sentinel, the web application, and pinned Tor binarie
 - `curl`, `tar`, and either `shasum` or `sha256sum`
 - The native build and signing prerequisites required by Electron Builder for your host platform
 
-Build macOS and Windows installers with:
+Build for the current native platform (Apple Silicon macOS or Windows x64 with Git Bash):
 
 ```bash
 ./desktop/build.sh
 ```
+
+Use `./desktop/build.sh --mac` or `./desktop/build.sh --win` to select a target. On macOS, `./desktop/build.sh --all` also cross-builds Windows. Intel Mac packages are not supported by the bundled ARM64 Tor distribution.
 
 The build script:
 
@@ -428,10 +430,14 @@ The build script:
 2. Verifies the trusted SHA-256 hashes before using them.
 3. Builds Sentinel and the desktop-mode frontend.
 4. Installs Electron's isolated npm dependencies.
-5. Validates the macOS ARM64 and Windows x64 `better-sqlite3` prebuilds.
-6. Packages installers under `desktop/release/`.
+5. Validates that the host can load the bundled `better-sqlite3` native prebuild.
+6. Packages installers and stages them with build metadata and checksums under `desktop/release/artifacts/mac/` and `desktop/release/artifacts/win/`.
 
-Cross-built installers should still be smoke-tested on each target operating system before release.
+For release `0.2.3:1`, the filenames are `Bitcoin-Control-Center-v0.2.3_1-mac-arm64.dmg` and `Bitcoin-Control-Center-v0.2.3_1-win-x64.exe`. Installer application versions use the shared base `0.2.3`; metadata and filenames retain the full packaging revision and source commit. The build overrides the placeholder version in `desktop/package.json` without modifying it. Local uncommitted changes are recorded as a dirty build; CI rejects dirty artifacts.
+
+CI builds both native installers on pull requests and pushes to `main`. Its packaged-runtime smoke test checks SQLite, backend startup with an occupied configured port, frontend assets, a local Electrum fixture, and the bundled Tor executable. It does not replace installing the DMG/EXE, exercising the Electron window and physical wallets, or upgrade/data-preservation testing. Cross-built Windows installers still require Windows execution.
+
+These are review installers: macOS uses an ad-hoc signature without notarization, and Windows has no publisher signature configured. Developer ID/notarization, Windows publisher signing, and automatic updates remain separate release work.
 
 Run the isolated dependency checks in Electron's bundled Node runtime with:
 
@@ -475,6 +481,8 @@ Then edit the connection values before restarting `pnpm dev`.
 - Confirm that `BITCOIN_NETWORK` matches the server.
 - If the server is local, verify that it is listening on the configured interface.
 - If DNS or TLS fails only in a sandbox, retry from a normal host terminal.
+
+The desktop launcher includes certificate authorities already trusted by macOS or Windows alongside its bundled public authorities. For a StartOS Electrum interface using **Root CA**, download that authority from your trusted StartOS dashboard and follow [StartOS's certificate installation instructions](https://docs.start9.com/start-os/0.4.0.x/trust-ca.html), then fully quit and reopen the desktop app. Public TLS connections still require a valid certificate matching the configured IP address or hostname. This desktop trust setup does not change StartOS or other node distributions. The app does not install or automatically trust certificates received from a server.
 
 ### Port already in use
 
