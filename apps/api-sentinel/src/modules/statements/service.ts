@@ -606,7 +606,7 @@ export class StatementService {
         close: new Decimal(rate.close),
       }
     }
-    return { rates, source: raw.source }
+    return { rates, source: raw.source, quoteCurrency: 'USD' }
   }
 }
 

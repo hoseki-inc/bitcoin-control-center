@@ -210,7 +210,7 @@ export const createAppContext = asyncFn(
       mempoolApiUrl: env.MEMPOOL_API_URL,
       settings: () => readPriceSettings(getSetting),
     })
-    const dailyRatesService = new DailyRatesService({ logger, mempoolApiUrl: env.MEMPOOL_API_URL })
+    const dailyRatesService = new DailyRatesService({ db: database.db, logger, mempoolApiUrl: env.MEMPOOL_API_URL })
 
     const controlCenterService = new ControlCenterService({
       db: database.db,

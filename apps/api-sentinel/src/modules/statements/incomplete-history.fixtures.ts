@@ -128,7 +128,7 @@ function createStatementHarness(outcome: WithdrawalOutcome) {
     }),
   )
 
-  const dailyRatesService = new DailyRatesService({ logger, mempoolApiUrl: 'https://example.invalid' })
+  const dailyRatesService = new DailyRatesService({ db: database.db, logger, mempoolApiUrl: 'https://example.invalid' })
   const rate = new Decimal(40_000)
   const rates = Object.fromEntries(
     [openingDate, transactionDate, closingDate].map((date) => [
@@ -138,7 +138,7 @@ function createStatementHarness(outcome: WithdrawalOutcome) {
   )
   const getDailyRates = vi
     .spyOn(dailyRatesService, 'getDailyRates')
-    .mockImplementation(asyncFn(async () => Ok({ source: 'mempool' as const, rates })))
+    .mockImplementation(asyncFn(async () => Ok({ source: 'mempool' as const, quoteCurrency: 'USD' as const, rates })))
 
   const service = new StatementService({
     db: database.db,

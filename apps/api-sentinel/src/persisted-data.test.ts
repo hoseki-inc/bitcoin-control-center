@@ -114,7 +114,7 @@ describe('stored statement data', () => {
         logger,
         electrum: new ElectrumClient({ host: 'localhost', port: 50001, protocol: 'tcp' }),
       }),
-      dailyRatesService: new DailyRatesService({ logger, mempoolApiUrl: 'https://example.invalid' }),
+      dailyRatesService: new DailyRatesService({ db: database.db, logger, mempoolApiUrl: 'https://example.invalid' }),
       exchangeService: new ExchangeService({ db: database.db, logger }),
     })
   }
@@ -144,6 +144,7 @@ describe('stored statement data', () => {
       const price = new Decimal('42000.12345678')
       const dailyRates = {
         source: 'mempool' as const,
+        quoteCurrency: 'USD' as const,
         rates: { '2024-01-02': { timestamp: date, open: price, high: price, low: price, close: price } },
       }
       statements.complete(id, transactions, dailyRates)
@@ -159,7 +160,7 @@ describe('stored statement data', () => {
       const statements = service()
       const date = new Date('2024-01-02T00:00:00Z')
       const id = statements.create({ claimIds: [], openingDate: date, closingDate: date, timezone: 'UTC' })
-      statements.complete(id, {}, { rates: {}, source: 'mempool' })
+      statements.complete(id, {}, { rates: {}, source: 'mempool', quoteCurrency: 'USD' })
       database.db.prepare('UPDATE statements SET transaction_map = ? WHERE id = ?').run(
         JSON.stringify({
           Savings: [
@@ -201,7 +202,7 @@ describe('stored statement data', () => {
       const statements = service()
       const date = new Date('2024-01-02T00:00:00Z')
       const id = statements.create({ claimIds: [], openingDate: date, closingDate: date, timezone: 'UTC' })
-      statements.complete(id, {}, { rates: {}, source: 'mempool' })
+      statements.complete(id, {}, { rates: {}, source: 'mempool', quoteCurrency: 'USD' })
       database.db.prepare('UPDATE statements SET transaction_map = ? WHERE id = ?').run('{"wallet":[null]}', id)
       expect(() => statements.loadCompleted(id)).toThrow('Stored statement transactions are invalid')
     })
