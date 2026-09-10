@@ -263,7 +263,7 @@ Run these commands from the repository root unless noted otherwise.
 | --------------------- | ------------------------------------------------------------ |
 | `pnpm dev`            | Run Sentinel and Control Center in watch mode                |
 | `pnpm check`          | Run TypeScript project-reference checks                      |
-| `pnpm test`           | Run the full Vitest suite through Turbo                      |
+| `pnpm test`           | Run application and shared-library tests through Turbo       |
 | `pnpm lint`           | Run ESLint with zero warnings allowed                        |
 | `pnpm format:check`   | Verify Prettier formatting                                   |
 | `pnpm format`         | Apply Prettier formatting                                    |
@@ -308,7 +308,9 @@ Run the dependency audit before releases and dependency changes:
 pnpm security:audit
 ```
 
-GitHub Actions additionally installs and type-checks the standalone packaging workspaces:
+The default `pnpm test` command requires only the root workspace dependencies.
+GitHub Actions additionally installs and type-checks the standalone packaging
+workspaces and runs the StartOS tests:
 
 ```bash
 npm ci --prefix desktop --ignore-scripts
@@ -316,7 +318,12 @@ npm ci --prefix start9 --ignore-scripts
 npm ci --prefix start9/runtime --ignore-scripts
 npm --prefix desktop run check
 npm --prefix start9 run check
+npm --prefix start9 test
 ```
+
+The complete `pnpm run ci` command also runs the StartOS tests and requires those
+packaging dependencies to be installed first. StartOS candidate and draft-release
+workflows use this complete verification command.
 
 Tests that open temporary localhost listeners may require normal host networking in restricted container or agent environments.
 

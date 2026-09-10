@@ -29,6 +29,8 @@ export DATA_DIR=/data
 export MEMPOOL_API_URL="https://mempool.space"
 export NODE_ENV=production
 export LOG_LEVEL="$LOG_LVL"
-export SENTINEL_ALLOWED_HOSTS="${SENTINEL_ALLOWED_HOSTS:-hoseki-sentinel.local,hoseki-sentinel.embassy,*.local,*.onion,*.embassy}"
+# StartOS supplies its enabled interface addresses. Preserve an explicitly empty
+# list (loopback only); use the legacy defaults only for unmanaged container runs.
+export SENTINEL_ALLOWED_HOSTS="${SENTINEL_ALLOWED_HOSTS-hoseki-sentinel.local,hoseki-sentinel.embassy,*.local,*.onion,*.embassy}"
 
 exec node --enable-source-maps /app/dist/cli.js
