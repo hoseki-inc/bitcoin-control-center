@@ -11,8 +11,9 @@ import {
 import { PDFViewer, pdf } from '@react-pdf/renderer'
 import { format } from 'date-fns'
 import { DownloadIcon, ShieldCheckIcon } from 'lucide-react'
-import { type ReactElement, useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Link as RouterLink } from 'react-router'
+import { useRenderedStatement } from '../../hooks/use-rendered-statement'
 import { UrlParameter, useUrlParameter } from '../../hooks/use-url-parameters'
 import { baseTrpc, trpc } from '../../trpc'
 import type { StatementDto } from '../../trpc/server-types'
@@ -112,10 +113,14 @@ function StatementSummary({ statement }: { statement: StatementDto }) {
           </HStack>
         </Flex>
       </Stack>
+      {statement.status === 'failed' && statement.errorMessage !== null && (
+        <ErrorBanner message={statement.errorMessage} />
+      )}
       <Stack gap={2}>
         <Text as="h2" textStyle="text/lg" fontWeight="medium">
           Statement Attributes
         </Text>
+        <Text textStyle="text/sm">Currency: {statement.quoteCurrency}</Text>
         <Text textStyle="text/sm">
           Period: {format(statement.openingDate, 'd MMMM yyyy')} - {format(statement.closingDate, 'd MMMM yyyy')}
         </Text>
@@ -226,9 +231,12 @@ function StatementPreview({
   statementFormat: StatementDocumentFormat
   onStatementFormatChange: (format: StatementDocumentFormat) => void
 }) {
-  const [pdfDocument, setPdfDocument] = useState<ReactElement | null>(null)
-
-  const { data: statementData, isLoading } = trpc.portalProve.statement.retrieveDocumentData.useQuery(
+  const {
+    data: statementData,
+    isLoading,
+    error: queryError,
+    refetch,
+  } = trpc.portalProve.statement.retrieveDocumentData.useQuery(
     {
       statementId: statement.id,
       format: statementFormat,
@@ -239,25 +247,8 @@ function StatementPreview({
     },
   )
 
-  useEffect(() => {
-    async function loadPdf() {
-      try {
-        if (!statementData) {
-          return
-        }
-
-        const document = await renderStatementDocument({
-          watermarkText: 'Statement Preview',
-          statement: statementData,
-        })
-        setPdfDocument(document)
-      } catch (error) {
-        console.error('Error rendering PDF:', error)
-      }
-    }
-
-    void loadPdf()
-  }, [statementData])
+  const rendered = useRenderedStatement(statementData, statement.status === 'completed')
+  const previewError = queryError?.message ?? rendered.error
 
   return (
     <Box height={['600px', '600px', '100%']} width="100%" display="flex" justifyContent="center" alignItems="center">
@@ -271,7 +262,22 @@ function StatementPreview({
       >
         {statement.status !== 'completed' ? (
           <PreviewUnavailable />
-        ) : isLoading || !pdfDocument ? (
+        ) : previewError != null ? (
+          <Stack>
+            <ErrorBanner message={previewError} />
+            <Button
+              onClick={() => {
+                if (queryError) {
+                  void refetch()
+                } else {
+                  rendered.retry()
+                }
+              }}
+            >
+              Retry Preview
+            </Button>
+          </Stack>
+        ) : isLoading || !rendered.document ? (
           <Spinner centered />
         ) : (
           <Stack width="100%" height="100%">
@@ -284,7 +290,6 @@ function StatementPreview({
                     return
                   }
                   onStatementFormatChange('custom')
-                  setPdfDocument(null)
                 }}
               >
                 Full Period
@@ -297,7 +302,6 @@ function StatementPreview({
                     return
                   }
                   onStatementFormatChange('monthly')
-                  setPdfDocument(null)
                 }}
               >
                 Monthly
@@ -305,7 +309,7 @@ function StatementPreview({
             </HStack>
             <Box sx={Animations.fadeIn(0.25)} width="100%" height="100%">
               <PDFViewer width="100%" height="100%" style={{ border: 'none' }} showToolbar={false}>
-                {pdfDocument}
+                {rendered.document}
               </PDFViewer>
             </Box>
           </Stack>

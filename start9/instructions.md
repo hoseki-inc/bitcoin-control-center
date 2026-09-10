@@ -42,16 +42,20 @@ Use **Home** for the current portfolio summary and recent statements. Use
 account is still synchronizing, allow it to finish before treating charts or
 historical totals as complete.
 
-Exchange accounts contact the selected provider when they refresh. The current
-BTC/USD price comes from the source chosen in **Settings → Bitcoin price**: Block
-by default, with mempool.space, Coinbase and CoinGecko as fallbacks unless you
-turn them off. Statement prices and transaction enrichment use mempool.space.
+Exchange accounts contact the selected provider when they refresh. Choose the
+current BTC/USD source and its fallback setting in **Settings → Bitcoin price**.
+By default, it uses the configured mempool when available, otherwise Block.
+Statement prices and transaction enrichment use the mempool URL selected in
+**Configure**. Unless fallbacks are turned off, historical statement quotes fall
+back to public mempool.space when no valid quote is available within four days
+before or after the requested date.
 
 ## Generate a statement
 
 1. Select **Generate Statement** from Home, or open **Statements** and create a
    statement.
-2. Select the accounts and statement options you want to include.
+2. Select the accounts, date range, and USD, CAD, GBP, or EUR for approximate fiat values.
+   Bitcoin amounts remain in BTC. The exact rates are saved with the statement.
 3. Complete any requested proof-of-control signatures on the relevant hardware
    wallets.
 4. Wait for generation to finish, then review and download the statement.
@@ -60,9 +64,12 @@ A generated statement reflects the selected accounts and the data available at
 generation time. Confirm that account synchronization and exchange refreshes are
 complete first.
 
-## Configure logging
+## Configure mempool and logging
 
-Use the StartOS **Configure** action to change the log level. **Info** is the
+The optional mempool service is discovered automatically. If it is absent,
+Control Center uses public mempool.space. Use **Configure → Mempool URL Override**
+to choose an explicit HTTP(S) endpoint. Restart Control Center after
+changing the URL. The same action changes the log level. **Info** is the
 normal setting. Use **Debug** or **Trace** only while diagnosing a problem, then
 restart the service. Return to **Info** when finished to reduce unnecessary log
 detail.

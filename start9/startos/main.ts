@@ -1,3 +1,5 @@
+import { configFile } from './fileModels/configFile'
+import { resolveMempoolUrl } from './mempool'
 import { sdk } from './sdk'
 import { uiPort } from './utils'
 
@@ -10,6 +12,8 @@ export const main = sdk.setupMain(async ({ effects }) => {
     )
     .const()
 
+  const config = await configFile.read().const(effects)
+  const mempoolUrl = await resolveMempoolUrl(effects, config?.['mempool-url'])
   return sdk.Daemons.of(effects).addDaemon('primary', {
     subcontainer: await sdk.SubContainer.of(
       effects,
@@ -24,7 +28,7 @@ export const main = sdk.setupMain(async ({ effects }) => {
     ),
     exec: {
       command: ['/usr/local/bin/docker_entrypoint.sh'],
-      env: { SENTINEL_ALLOWED_HOSTS: allowedHosts },
+      env: { SENTINEL_ALLOWED_HOSTS: allowedHosts, MEMPOOL_API_URL: mempoolUrl },
     },
     ready: {
       display: 'Web Interface',

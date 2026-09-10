@@ -20,6 +20,7 @@ import {
   type ClaimStatus,
   type KeystoreId,
   type SignedMessageId,
+  StatementQuoteCurrencySchema,
   TimezoneSchema,
   hosid,
 } from '@hoseki/packages/schemas'
@@ -1582,7 +1583,7 @@ const statementRouter = t.router({
       z.object({
         claimIds: z.array(z.string()),
         exchangeAccountIds: z.array(z.string()).optional(),
-        quoteCurrency: z.literal('USD').default('USD'),
+        quoteCurrency: StatementQuoteCurrencySchema.default('USD'),
         openingDate: z.date(),
         closingDate: z.date(),
         timezone: z.string(),
@@ -1696,7 +1697,7 @@ const statementRouter = t.router({
       z.object({
         claimIds: z.array(z.string()),
         exchangeAccountIds: z.array(z.string()).optional(),
-        quoteCurrency: z.literal('USD').default('USD'),
+        quoteCurrency: StatementQuoteCurrencySchema.default('USD'),
         openingDate: z.date(),
         closingDate: z.date(),
         timezone: z.string(),

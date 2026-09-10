@@ -59,7 +59,16 @@ public-key retrieval and signing workflows.
 
 ## Configuration management
 
-The StartOS **Configure** action controls the application log level:
+The StartOS **Configure** action sets the mempool URL and application log level.
+Leave the URL override blank to discover an installed mempool service automatically.
+If it is absent, public `https://mempool.space` is used. An explicit HTTP(S) URL
+overrides discovery. Mempool is an optional dependency. Restart
+Control Center after changing the URL. Unless fallbacks are turned off in
+Settings, missing statement quotes fall back to public mempool.space after
+checking four days before and after the valuation date.
+Quotes share a persistent local cache with their source recorded.
+
+Available log levels:
 
 - Error
 - Warning
@@ -93,9 +102,9 @@ until StartOS supplies an enabled address. Host and origin checks remain enabled
 
 ## Actions
 
-| Action    | Availability       | Purpose                          |
-| --------- | ------------------ | -------------------------------- |
-| Configure | Any service status | Change the application log level |
+| Action    | Availability       | Purpose                           |
+| --------- | ------------------ | --------------------------------- |
+| Configure | Any service status | Set the mempool URL and log level |
 
 ## Backups and restore
 
@@ -117,17 +126,21 @@ synchronization additionally requires a healthy, synchronized Electrs service.
 
 ## Dependencies
 
-| Dependency | Required | Purpose                                           |
-| ---------- | -------- | ------------------------------------------------- |
-| `electrs`  | Yes      | On-chain address balances and transaction history |
+| Dependency | Required | Purpose                                                        |
+| ---------- | -------- | -------------------------------------------------------------- |
+| `electrs`  | Yes      | On-chain address balances and transaction history              |
+| `mempool`  | No       | Optional local prices and transaction details; public fallback |
 
 Bitcoin Control Center also makes outbound requests when the corresponding
 feature is used:
 
-- the current BTC/USD price comes from the source chosen in Settings: Block
-  (`https://pricing.bitcoin.block.xyz`) by default, with mempool.space, Coinbase
-  and CoinGecko as fallbacks unless they are turned off;
-- statement prices and transaction enrichment use `https://mempool.space`;
+- the current BTC/USD price comes from the source chosen in Settings: the
+  configured mempool by default when available, otherwise Block
+  (`https://pricing.bitcoin.block.xyz`), with public fallbacks unless turned off;
+- statement prices and transaction enrichment use the configured mempool URL
+  (public `https://mempool.space` by default); historical statement quotes fall
+  back to public mempool.space when no quote is available within four days
+  before or after the valuation date, unless fallbacks are turned off;
 - connected exchange accounts contact their selected exchange provider.
 
 These are application data sources, not StartOS package dependencies.
@@ -139,9 +152,15 @@ These are application data sources, not StartOS package dependencies.
    are not available in the StartOS web interface.
 3. Direct USB hardware-wallet support depends on browser capabilities and
    permissions. File and QR workflows remain device-specific alternatives.
-4. The StartOS package uses the public mempool.space API for statement prices
-   and transaction enrichment; that endpoint is not configurable through the
-   StartOS action. The current BTC/USD price source is chosen in Settings.
+
+- the current BTC/USD price comes from the source chosen in Settings: the
+  configured mempool by default when available, otherwise Block
+  (`https://pricing.bitcoin.block.xyz`), with public fallbacks unless turned off;
+- statement prices and transaction enrichment use the configured mempool URL
+  (public `https://mempool.space` by default); historical statement quotes fall
+  back to public mempool.space when no quote is available within four days
+  before or after the valuation date, unless fallbacks are turned off;
+
 5. Bitcoin Control Center is watch-only software. It must never receive or store
    a wallet seed or private key.
 

@@ -34,6 +34,12 @@ export const manifest = setupManifest({
     stop: null,
   },
   dependencies: {
+    mempool: {
+      description:
+        'Optional local source for prices and transaction details. Public mempool.space is used when unavailable.',
+      optional: true,
+      s9pk: null,
+    },
     electrs: {
       description: 'Required for on-chain Bitcoin data (address balances, transaction history).',
       optional: false,
