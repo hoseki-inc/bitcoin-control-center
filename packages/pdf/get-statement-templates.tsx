@@ -13,6 +13,7 @@ import type {
   StatementTransaction,
   SummaryEntry,
 } from '../schemas/pdf-statement'
+import type { StatementQuoteCurrency } from '../schemas/statement-quote'
 import { getColor } from '../ui/design-system/theme/extractors'
 import { formatDateRange } from '../ui/utils/date-and-time'
 
@@ -21,7 +22,7 @@ import { formatDateRange } from '../ui/utils/date-and-time'
  * Chosen based on available space considering header and footer.
  * This value determines how many table rows can fit on a single page.
  */
-const MAX_ROWS_PER_PAGE = 10
+const MAX_ROWS_PER_PAGE = 8
 
 export type DocumentInput = {
   watermarkText: string
@@ -73,7 +74,29 @@ interface StatementDocumentTemplates {
   EnvelopeDocument: React.FC<{ input: EnvelopeDocumentInput; qrCode: string }>
 }
 
-export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath: string): StatementDocumentTemplates {
+type RendererPrimitive =
+  | 'Document'
+  | 'Page'
+  | 'Text'
+  | 'View'
+  | 'Svg'
+  | 'Rect'
+  | 'Path'
+  | 'Image'
+  | 'Link'
+  | 'G'
+  | 'Defs'
+  | 'ClipPath'
+  | 'LinearGradient'
+  | 'Stop'
+type StatementRenderer = Pick<typeof ReactPDF, 'Font' | 'StyleSheet'> & {
+  [Primitive in RendererPrimitive]: React.ComponentType<React.ComponentProps<(typeof ReactPDF)[Primitive]>>
+}
+
+export function getStatementDocumentTemplates(
+  pdf: StatementRenderer,
+  geistDirPath: string,
+): StatementDocumentTemplates {
   const {
     Document,
     Page,
@@ -121,13 +144,14 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
     // Use the currency's exponent as the number of decimal places to display
     return money.toMajorAmount().absoluteValue().toFixed(currencyObj.exponent) + currencyLabel
   }
-  const formatUsd = (decimal: Decimal | null) => {
+  const formatQuote = (decimal: Decimal | null, quoteCurrency: StatementQuoteCurrency = 'USD'): string => {
     if (!decimal) {
       return 'N/A'
     }
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
-      currency: 'USD',
+      currency: quoteCurrency,
+      currencyDisplay: 'code',
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
       signDisplay: 'never',
@@ -519,14 +543,14 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
       fontWeight: tokens.typography.fontWeights.regular,
       fontFamily: tokens.typography.fontFamilyMono,
     },
-    totalUsdLabel: {
+    totalQuoteLabel: {
       fontSize: tokens.typography.fontSize.xs,
       color: getColor('neutral.900'),
       fontWeight: tokens.typography.fontWeights.medium,
       letterSpacing: 1,
       textTransform: 'uppercase',
     },
-    totalUsdValue: {
+    totalQuoteValue: {
       fontSize: tokens.typography.fontSize.xs,
       color: getColor('neutral.900'),
       fontWeight: tokens.typography.fontWeights.regular,
@@ -602,7 +626,7 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
       fontWeight: tokens.typography.fontWeights.medium,
       lineHeight: 1.5,
     },
-    usdAmount: {
+    quoteAmount: {
       fontSize: tokens.typography.fontSize.xs,
       color: getColor('neutral.500'),
       fontFamily: tokens.typography.fontFamilyMono,
@@ -951,18 +975,25 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
   // Amount Related Components
   interface AmountDisplayProps {
     minorUnits: bigint
-    usdAmount: Decimal | null
+    quoteAmount: Decimal | null
+    quoteCurrency: StatementQuoteCurrency
     currency: CurrencyCode
     isEmphasized?: boolean
   }
 
-  const AmountDisplay: React.FC<AmountDisplayProps> = ({ minorUnits, usdAmount, currency, isEmphasized = false }) => (
+  const AmountDisplay: React.FC<AmountDisplayProps> = ({
+    minorUnits,
+    quoteAmount,
+    currency,
+    quoteCurrency,
+    isEmphasized = false,
+  }) => (
     <View style={amountStyles.container}>
       <Text style={{ ...amountStyles.btcAmount, fontWeight: isEmphasized ? 'semibold' : 'normal' }}>
         {formatMinorToMajor(minorUnits, currency)}
       </Text>
-      <Text style={{ ...amountStyles.usdAmount, fontWeight: isEmphasized ? 'semibold' : 'normal' }}>
-        {formatUsd(usdAmount)}
+      <Text style={{ ...amountStyles.quoteAmount, fontWeight: isEmphasized ? 'semibold' : 'normal' }}>
+        {formatQuote(quoteAmount, quoteCurrency)}
       </Text>
     </View>
   )
@@ -1005,7 +1036,8 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
     }
     dateRange: string
     totalAmountMinorUnits: bigint
-    totalUsdAmount: string
+    totalQuoteAmount: string
+    quoteCurrency: StatementQuoteCurrency
     currency: CurrencyCode
   }
 
@@ -1013,8 +1045,9 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
     user,
     dateRange,
     totalAmountMinorUnits,
-    totalUsdAmount,
+    totalQuoteAmount,
     currency,
+    quoteCurrency,
   }) => {
     const hasName = user.name != null && user.name.trim() !== ''
     const hasAddress = user.address != null && user.address.trim() !== ''
@@ -1048,8 +1081,8 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
                     <Text style={styles.totalBtcValue}>{formatMinorToMajor(totalAmountMinorUnits, currency)}</Text>
                   </View>
                   <View style={styles.totalRow}>
-                    <Text style={styles.totalUsdLabel}>APPROX. USD VALUE:</Text>
-                    <Text style={styles.totalUsdValue}>{totalUsdAmount}</Text>
+                    <Text style={styles.totalQuoteLabel}>APPROX. {quoteCurrency} VALUE:</Text>
+                    <Text style={styles.totalQuoteValue}>{totalQuoteAmount}</Text>
                   </View>
                 </>
               )}
@@ -1061,10 +1094,14 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
   }
 
   interface HosekiFooterProps {
+    quoteCurrency: StatementQuoteCurrency
+    provider: string
+    providerUrl?: string
+    providerUrls?: string[]
     qrCodeSrc: string
   }
 
-  const RightColumnContent: React.FC<HosekiFooterProps> = ({ qrCodeSrc }) => (
+  const RightColumnContent: React.FC<Pick<HosekiFooterProps, 'qrCodeSrc'>> = ({ qrCodeSrc }) => (
     <View style={footerStyles.rightColumnContent}>
       <Text style={footerStyles.instructionsTitle}>Contact</Text>
       <View style={footerStyles.linksContainer}>
@@ -1075,7 +1112,13 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
     </View>
   )
 
-  const HosekiFooter: React.FC<HosekiFooterProps> = ({ qrCodeSrc }) => (
+  const HosekiFooter: React.FC<HosekiFooterProps> = ({
+    qrCodeSrc,
+    quoteCurrency,
+    provider,
+    providerUrl,
+    providerUrls,
+  }) => (
     <View style={footerStyles.container} fixed>
       <View style={footerStyles.innerContainer}>
         <View style={footerStyles.row}>
@@ -1094,10 +1137,25 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
               <Text style={footerStyles.instructionsText}>
                 This statement provides detailed information on your Bitcoin holdings in self-custody for the specified
                 period. All data is sourced directly from the Bitcoin network and self-custody ownership is validated by
-                Bitcoin Control Center&apos;s open-source verification process. USD values are calculated using the
-                Bitcoin-to-USD exchange rate from <Link src="https://www.coingecko.com">CoinGecko</Link> on the date of
-                each transaction or balance snapshot. For questions or discrepancies, please contact support@hoseki.app.
-                All rights reserved.
+                Bitcoin Control Center&apos;s open-source verification process. {quoteCurrency} values are approximate,
+                using saved Bitcoin-to-{quoteCurrency} rates from{' '}
+                {(providerUrls ?? (providerUrl !== undefined ? [providerUrl] : [])).length > 0
+                  ? (providerUrls ?? (providerUrl !== undefined ? [providerUrl] : [])).map((url, index) => (
+                      <React.Fragment key={url}>
+                        {index > 0 && ' and '}
+                        <Link src={url}>
+                          {url === 'https://mempool.space'
+                            ? 'mempool.space'
+                            : provider === 'mempool'
+                              ? 'configured mempool'
+                              : provider}
+                        </Link>
+                      </React.Fragment>
+                    ))
+                  : provider}
+                .
+                {provider === 'mempool' && ' The saved historical price may be from before or after the valuation day.'}{' '}
+                For questions or discrepancies, please contact support@hoseki.app.
               </Text>
             </View>
           </View>
@@ -1121,10 +1179,11 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
   interface SummaryTableRowProps {
     item: SummaryRowDisplayData
     index: number
+    quoteCurrency: StatementQuoteCurrency
     currency: CurrencyCode
   }
 
-  const SummaryTableRow: React.FC<SummaryTableRowProps> = ({ item: tableRow, index, currency }) => (
+  const SummaryTableRow: React.FC<SummaryTableRowProps> = ({ item: tableRow, index, currency, quoteCurrency }) => (
     <TableRow key={index} index={index}>
       <Cell columnName={SummaryColumn.Account} columnWidths={SUMMARY_COLUMN_WIDTHS}>
         <Text
@@ -1139,32 +1198,36 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
       <Cell columnName={SummaryColumn.OpeningBalance} columnWidths={SUMMARY_COLUMN_WIDTHS}>
         <AmountDisplay
           minorUnits={tableRow.openingBalance.sats}
-          usdAmount={tableRow.openingBalance.usdValue}
+          quoteAmount={tableRow.openingBalance.quoteValue}
           currency={currency}
+          quoteCurrency={quoteCurrency}
           isEmphasized={tableRow.displayName === 'Total'}
         />
       </Cell>
       <Cell columnName={SummaryColumn.MoneyOut} columnWidths={SUMMARY_COLUMN_WIDTHS}>
         <AmountDisplay
           minorUnits={tableRow.moneyOut.sats}
-          usdAmount={tableRow.moneyOut.usdValue}
+          quoteAmount={tableRow.moneyOut.quoteValue}
           currency={currency}
+          quoteCurrency={quoteCurrency}
           isEmphasized={tableRow.displayName === 'Total'}
         />
       </Cell>
       <Cell columnName={SummaryColumn.MoneyIn} columnWidths={SUMMARY_COLUMN_WIDTHS}>
         <AmountDisplay
           minorUnits={tableRow.moneyIn.sats}
-          usdAmount={tableRow.moneyIn.usdValue}
+          quoteAmount={tableRow.moneyIn.quoteValue}
           currency={currency}
+          quoteCurrency={quoteCurrency}
           isEmphasized={tableRow.displayName === 'Total'}
         />
       </Cell>
       <Cell columnName={SummaryColumn.ClosingBalance} columnWidths={SUMMARY_COLUMN_WIDTHS}>
         <AmountDisplay
           minorUnits={tableRow.closingBalance.sats}
-          usdAmount={tableRow.closingBalance.usdValue}
+          quoteAmount={tableRow.closingBalance.quoteValue}
           currency={currency}
+          quoteCurrency={quoteCurrency}
           isEmphasized={tableRow.displayName === 'Total'}
         />
       </Cell>
@@ -1174,7 +1237,7 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
   type CoverPageRowData = {
     displayName: string
     currency: CurrencyCode
-    closingBalance: { sats: bigint; usdValue: Decimal }
+    closingBalance: { sats: bigint; quoteValue: Decimal }
   }
 
   interface CoverPageTableRowProps {
@@ -1186,7 +1249,7 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
     // Calculate rate: USD value / major units
     const currencyObj = currencies[tableRow.currency]
     const majorUnits = Money.fromMinor(currencyObj, tableRow.closingBalance.sats).toMajorAmount()
-    const rate = majorUnits.isZero() ? new Decimal(0) : tableRow.closingBalance.usdValue.div(majorUnits)
+    const rate = majorUnits.isZero() ? new Decimal(0) : tableRow.closingBalance.quoteValue.div(majorUnits)
 
     return (
       <TableRow key={index} index={index}>
@@ -1203,17 +1266,17 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
           <Text style={styles.transactionRowText}>{majorUnits.toFixed(6)}</Text>
         </Cell>
         <Cell columnName={CoverPageColumn.Value} columnWidths={COVER_PAGE_COLUMN_WIDTHS}>
-          <Text style={{ ...styles.transactionRowText }}>{formatUsd(tableRow.closingBalance.usdValue)}</Text>
+          <Text style={{ ...styles.transactionRowText }}>{formatQuote(tableRow.closingBalance.quoteValue)}</Text>
         </Cell>
       </TableRow>
     )
   }
 
   interface CoverPageFooterRowProps {
-    totalUsdValue: Decimal
+    totalQuoteValue: Decimal
   }
 
-  const CoverPageFooterRow: React.FC<CoverPageFooterRowProps> = ({ totalUsdValue }) => {
+  const CoverPageFooterRow: React.FC<CoverPageFooterRowProps> = ({ totalQuoteValue }) => {
     return (
       <TableRow index={-1}>
         <Cell columnName={CoverPageColumn.Account} columnWidths={COVER_PAGE_COLUMN_WIDTHS}>
@@ -1229,7 +1292,7 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
           <Text style={styles.transactionRowText}></Text>
         </Cell>
         <Cell columnName={CoverPageColumn.Value} columnWidths={COVER_PAGE_COLUMN_WIDTHS}>
-          <Text style={{ ...styles.transactionRowText, fontWeight: 'semibold' }}>{formatUsd(totalUsdValue)}</Text>
+          <Text style={{ ...styles.transactionRowText, fontWeight: 'semibold' }}>{formatQuote(totalQuoteValue)}</Text>
         </Cell>
       </TableRow>
     )
@@ -1263,10 +1326,11 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
     ]
 
     const currency = props.statement.currency
+    const quoteCurrency = props.statement.quoteCurrency
 
     // Create a wrapper component that captures currency
     const RowComponentWithCurrency: React.FC<{ item: SummaryRowDisplayData; index: number }> = ({ item, index }) => (
-      <SummaryTableRow item={item} index={index} currency={currency} />
+      <SummaryTableRow item={item} index={index} currency={currency} quoteCurrency={quoteCurrency} />
     )
 
     if (props.format === 'custom') {
@@ -1327,7 +1391,7 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
     ]
 
     // Calculate total USD value
-    const totalUsdValue = entries.reduce((sum, entry) => sum.plus(entry.closingBalance.usdValue), new Decimal(0))
+    const totalQuoteValue = entries.reduce((sum, entry) => sum.plus(entry.closingBalance.quoteValue), new Decimal(0))
 
     const RowComponent: React.FC<{ item: CoverPageRowData; index: number }> = ({ item, index }) => (
       <CoverPageTableRow item={item} index={index} />
@@ -1344,7 +1408,7 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
           rowsPerPage={MAX_ROWS_PER_PAGE}
         />
         <View style={{ marginTop: 8 }}>
-          <CoverPageFooterRow totalUsdValue={totalUsdValue} />
+          <CoverPageFooterRow totalQuoteValue={totalQuoteValue} />
         </View>
       </View>
     )
@@ -1354,6 +1418,7 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
     item: StatementTransaction
     index: number
     timezone: string
+    quoteCurrency: StatementQuoteCurrency
     currency: CurrencyCode
   }
 
@@ -1362,6 +1427,7 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
     index,
     timezone,
     currency,
+    quoteCurrency,
   }) => {
     const rowKey = `tx-${index}`
     return (
@@ -1380,8 +1446,9 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
           {transaction.amount.sats < 0n && (
             <AmountDisplay
               minorUnits={transaction.amount.sats}
-              usdAmount={transaction.amount.usdValue}
+              quoteAmount={transaction.amount.quoteValue}
               currency={currency}
+              quoteCurrency={quoteCurrency}
             />
           )}
         </Cell>
@@ -1389,16 +1456,18 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
           {transaction.amount.sats > 0n && (
             <AmountDisplay
               minorUnits={transaction.amount.sats}
-              usdAmount={transaction.amount.usdValue}
+              quoteAmount={transaction.amount.quoteValue}
               currency={currency}
+              quoteCurrency={quoteCurrency}
             />
           )}
         </Cell>
         <Cell columnName={TransactionColumn.ClosingBalance} columnWidths={TRANSACTION_COLUMN_WIDTHS}>
           <AmountDisplay
             minorUnits={transaction.balance.sats}
-            usdAmount={transaction.balance.usdValue}
+            quoteAmount={transaction.balance.quoteValue}
             currency={currency}
+            quoteCurrency={quoteCurrency}
           />
         </Cell>
       </TableRow>
@@ -1411,6 +1480,7 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
     columnWidths: ColumnWidths
     title: React.ReactNode | null
     timezone: string
+    quoteCurrency: StatementQuoteCurrency
     currency: CurrencyCode
   }
 
@@ -1421,9 +1491,16 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
     title,
     timezone,
     currency,
+    quoteCurrency,
   }) => {
     const ActualRowComponent: React.FC<{ item: StatementTransaction; index: number }> = ({ item, index }) => (
-      <TransactionTableRow item={item} index={index} timezone={timezone} currency={currency} />
+      <TransactionTableRow
+        item={item}
+        index={index}
+        timezone={timezone}
+        currency={currency}
+        quoteCurrency={quoteCurrency}
+      />
     )
 
     return (
@@ -1441,7 +1518,11 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
     proofNumber: number
     qrCodeSrc: string
     watermarkText: string
+    quoteCurrency: StatementQuoteCurrency
     currency: CurrencyCode
+    quoteProviderUrl?: string
+    quoteProviderUrls?: string[]
+    quoteProvider: string
   }
 
   const TransactionsPages: React.FC<TransactionsPagesProps> = ({
@@ -1452,6 +1533,10 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
     qrCodeSrc,
     watermarkText,
     currency,
+    quoteCurrency,
+    quoteProviderUrl,
+    quoteProviderUrls,
+    quoteProvider,
   }) => {
     const transactions = statementEntry.transactions
 
@@ -1489,11 +1574,18 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
                 title={chunkIndex === 0 ? title : null}
                 timezone={timezone}
                 currency={currency}
+                quoteCurrency={quoteCurrency}
               />
             </View>
           </View>
         </View>
-        <HosekiFooter qrCodeSrc={qrCodeSrc} />
+        <HosekiFooter
+          qrCodeSrc={qrCodeSrc}
+          quoteCurrency={quoteCurrency}
+          provider={quoteProvider}
+          providerUrl={quoteProviderUrl}
+          providerUrls={quoteProviderUrls}
+        />
         {watermarkText && (
           <View style={styles.watermarkContainer}>
             <StatementExampleWatermark watermarkText={watermarkText} />
@@ -1514,7 +1606,7 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
 
     // Custom format behavior: single summary + all transactions
     const customStatement = statement
-    const totalUsdValue = formatUsd(customStatement.summary.closingBalance.usdValue)
+    const totalQuoteValue = formatQuote(customStatement.summary.closingBalance.quoteValue, statement.quoteCurrency)
     const totalBtcSats = customStatement.summary.closingBalance.sats
     const { openingDate, closingDate } = customStatement.summary
     const dateRange = formatDateRange(openingDate, closingDate, timezone)
@@ -1528,8 +1620,9 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
               user={statement.user}
               dateRange={dateRange}
               totalAmountMinorUnits={totalBtcSats}
-              totalUsdAmount={totalUsdValue}
+              totalQuoteAmount={totalQuoteValue}
               currency={statement.currency}
+              quoteCurrency={statement.quoteCurrency}
             />
             <View style={styles.mainContentContainer}>
               <View style={styles.contentWrapper}>
@@ -1537,7 +1630,13 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
               </View>
             </View>
           </View>
-          <HosekiFooter qrCodeSrc={qrCode} />
+          <HosekiFooter
+            qrCodeSrc={qrCode}
+            quoteCurrency={statement.quoteCurrency}
+            provider={customStatement.summary.closingBalance.provider}
+            providerUrl={statement.quoteProviderUrl}
+            providerUrls={statement.quoteProviderUrls}
+          />
           {input.watermarkText && (
             <View style={styles.watermarkContainer}>
               <StatementExampleWatermark watermarkText={input.watermarkText} />
@@ -1549,12 +1648,16 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
           <TransactionsPages
             key={`transactions-${idx}`}
             statementEntry={statementEntry}
+            quoteProvider={customStatement.summary.closingBalance.provider}
+            quoteProviderUrl={statement.quoteProviderUrl}
+            quoteProviderUrls={statement.quoteProviderUrls}
             dateRange={dateRange}
             timezone={timezone}
             proofNumber={proofNum}
             qrCodeSrc={qrCode}
             watermarkText={input.watermarkText}
             currency={statement.currency}
+            quoteCurrency={statement.quoteCurrency}
           />
         ))}
       </Document>
@@ -1597,8 +1700,9 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
               user={statement.user}
               dateRange={monthDateRange}
               totalAmountMinorUnits={month.summary.closingBalance.sats}
-              totalUsdAmount={formatUsd(month.summary.closingBalance.usdValue)}
+              totalQuoteAmount={formatQuote(month.summary.closingBalance.quoteValue, statement.quoteCurrency)}
               currency={statement.currency}
+              quoteCurrency={statement.quoteCurrency}
             />
             <View style={styles.mainContentContainer}>
               <View style={styles.contentWrapper}>
@@ -1614,7 +1718,13 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
               </View>
             </View>
           </View>
-          <HosekiFooter qrCodeSrc={qrCode} />
+          <HosekiFooter
+            qrCodeSrc={qrCode}
+            quoteCurrency={statement.quoteCurrency}
+            provider={month.summary.closingBalance.provider}
+            providerUrl={statement.quoteProviderUrl}
+            providerUrls={statement.quoteProviderUrls}
+          />
           {input.watermarkText && (
             <View style={styles.watermarkContainer}>
               <StatementExampleWatermark watermarkText={input.watermarkText} />
@@ -1629,12 +1739,16 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
           <TransactionsPages
             key={`${statement.id}-transactions-${statementEntry.displayName}-${month.summary.openingDate.toISOString()}`}
             statementEntry={statementEntry}
+            quoteProvider={month.summary.closingBalance.provider}
+            quoteProviderUrl={statement.quoteProviderUrl}
+            quoteProviderUrls={statement.quoteProviderUrls}
             dateRange={formatDateRange(month.summary.openingDate, month.summary.closingDate, timezone)}
             timezone={timezone}
             proofNumber={proofNum}
             qrCodeSrc={qrCode}
             watermarkText={input.watermarkText}
             currency={statement.currency}
+            quoteCurrency={statement.quoteCurrency}
           />,
         )
       }
@@ -1644,6 +1758,9 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
   }
 
   const EnvelopeDocument = ({ input, qrCode }: { input: EnvelopeDocumentInput; qrCode: string }) => {
+    if (input.statements.some((statement) => statement.quoteCurrency !== 'USD')) {
+      throw new Error('Combined envelopes require USD statements. Render other currencies individually.')
+    }
     // Check if cover page is needed (multiple currencies)
     const needsCoverPage = input.statements.length > 1
 
@@ -1690,7 +1807,7 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
       }
 
       // Calculate grand total (USD only) - sum of all closing balances
-      grandTotalUsd = allEntries.reduce((sum, entry) => sum.plus(entry.closingBalance.usdValue), new Decimal(0))
+      grandTotalUsd = allEntries.reduce((sum, entry) => sum.plus(entry.closingBalance.quoteValue), new Decimal(0))
 
       coverPageEntries = allEntries
     }
@@ -1705,8 +1822,9 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
                 user={firstStatement.user}
                 dateRange={coverPageDateRange}
                 totalAmountMinorUnits={BigInt(USD.fromDollars(grandTotalUsd).amount.toFixed(0))}
-                totalUsdAmount={formatUsd(grandTotalUsd)}
+                totalQuoteAmount={formatQuote(grandTotalUsd)}
                 currency="USD"
+                quoteCurrency="USD"
               />
               <View style={styles.mainContentContainer}>
                 <View style={styles.contentWrapper}>
@@ -1727,7 +1845,10 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
 
           // Custom format behavior: single summary + all transactions
           const customStatement = statement
-          const totalUsdValue = formatUsd(customStatement.summary.closingBalance.usdValue)
+          const totalQuoteValue = formatQuote(
+            customStatement.summary.closingBalance.quoteValue,
+            statement.quoteCurrency,
+          )
           const totalBtcSats = customStatement.summary.closingBalance.sats
           const { openingDate, closingDate } = customStatement.summary
           const dateRange = formatDateRange(openingDate, closingDate, timezone)
@@ -1741,8 +1862,9 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
                     user={statement.user}
                     dateRange={dateRange}
                     totalAmountMinorUnits={totalBtcSats}
-                    totalUsdAmount={totalUsdValue}
+                    totalQuoteAmount={totalQuoteValue}
                     currency={statement.currency}
+                    quoteCurrency={statement.quoteCurrency}
                   />
                   <View style={styles.mainContentContainer}>
                     <View style={styles.contentWrapper}>
@@ -1750,7 +1872,13 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
                     </View>
                   </View>
                 </View>
-                <HosekiFooter qrCodeSrc={qrCode} />
+                <HosekiFooter
+                  qrCodeSrc={qrCode}
+                  quoteCurrency={statement.quoteCurrency}
+                  provider={customStatement.summary.closingBalance.provider}
+                  providerUrl={statement.quoteProviderUrl}
+                  providerUrls={statement.quoteProviderUrls}
+                />
                 {input.watermarkText && (
                   <View style={styles.watermarkContainer}>
                     <StatementExampleWatermark watermarkText={input.watermarkText} />
@@ -1762,12 +1890,16 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
                 <TransactionsPages
                   key={`statement-${statementIdx}-transactions-${idx}`}
                   statementEntry={statementEntry}
+                  quoteProvider={customStatement.summary.closingBalance.provider}
+                  quoteProviderUrl={statement.quoteProviderUrl}
+                  quoteProviderUrls={statement.quoteProviderUrls}
                   dateRange={dateRange}
                   timezone={timezone}
                   proofNumber={proofNum}
                   qrCodeSrc={qrCode}
                   watermarkText={input.watermarkText}
                   currency={statement.currency}
+                  quoteCurrency={statement.quoteCurrency}
                 />
               ))}
             </React.Fragment>

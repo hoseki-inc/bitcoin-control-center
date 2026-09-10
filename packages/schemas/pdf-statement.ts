@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { CurrencyCodeSchema } from '../currency'
 import { decimal } from './decimal'
 import { StatementIdSchema } from './prove'
+import { StatementQuoteCurrencySchema } from './statement-quote'
 import { TimezoneSchema } from './timezone'
 import { StatementUserDataSchema } from './user-info'
 
@@ -12,13 +13,21 @@ export type StatementStatus = z.infer<typeof StatementStatusSchema>
 export const StatementTimezoneSchema = TimezoneSchema.optional().default('UTC')
 
 // Amount schema with all required fields
-export const AmountSchema = z.object({
+const CurrentAmountSchema = z.object({
   sats: z.coerce.bigint(),
-  usdValue: decimal(),
+  quoteValue: decimal(),
   rate: decimal(),
   timestamp: z.coerce.date(),
   provider: z.string(),
+  providerUrl: z.string().optional(),
 })
+// Accept saved USD payloads while exposing a currency-neutral amount to renderers.
+export const AmountSchema = z.union([
+  CurrentAmountSchema,
+  CurrentAmountSchema.omit({ quoteValue: true })
+    .extend({ usdValue: decimal(), quoteValue: z.null().optional() })
+    .transform(({ usdValue, ...amount }) => ({ ...amount, quoteValue: usdValue })),
+])
 export type Amount = z.infer<typeof AmountSchema>
 
 // Statement transaction schema
@@ -60,6 +69,9 @@ const BasePdfStatementSchema = z.object({
   timezone: StatementTimezoneSchema,
   user: StatementUserDataSchema,
   currency: CurrencyCodeSchema.optional().default('BTC'),
+  quoteCurrency: StatementQuoteCurrencySchema.default('USD'),
+  quoteProviderUrl: z.string().optional(),
+  quoteProviderUrls: z.array(z.string()).optional(),
 })
 
 // Summary schema
