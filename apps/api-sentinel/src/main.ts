@@ -7,6 +7,7 @@ import pino from 'pino'
 import { createAppContext } from './context'
 import type { TRPCContext } from './modules/trpc/init'
 import { type AppRouter, appRouter } from './modules/trpc/router'
+import { requestLoggerFactory } from './request_logging'
 import { registerStaticAssets } from './static_assets'
 
 export interface SentinelServer {
@@ -144,6 +145,7 @@ export async function main(): Promise<SentinelServer> {
 
   const server = Fastify({
     loggerInstance: logger.child({ module: 'fastify' }) as FastifyBaseLogger,
+    childLoggerFactory: requestLoggerFactory,
     forceCloseConnections: 'idle',
   })
 
