@@ -746,7 +746,9 @@ export function Step9Ui({
                 },
               }}
             >
-              {textFileContents?.map((line, i) => <Box key={i}>{line}</Box>)}
+              {textFileContents?.map((line, i) => (
+                <Box key={i}>{line}</Box>
+              ))}
             </Box>
           </Box>
           <Box textAlign="right" mt={2}>

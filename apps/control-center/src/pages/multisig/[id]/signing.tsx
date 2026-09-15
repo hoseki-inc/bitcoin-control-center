@@ -110,7 +110,7 @@ function TrezorSigning({ claim, keystore }: { claim: ClaimDto; keystore: Keystor
       })
 
       if (isLastRequiredSignature) {
-        return completeChallenge()
+        return await completeChallenge()
       }
 
       // Refetch claim, then navigate to the hub
@@ -183,7 +183,7 @@ function LedgerSigning({ claim, keystore }: { claim: ClaimDto; keystore: Keystor
     },
   })
 
-  const error = initiateLedgerMutation.error || signingError || { message: 'Oh noes' }
+  const error = initiateLedgerMutation.error || signingError
 
   const claimQuery = trpc.portalProve.registry.claims.get.byId.useQuery({ id: claim.id })
   const latestMessage = claim.latestChallenge?.messages.find((m) => m.keystoreId === keystore.id)
@@ -237,7 +237,7 @@ function LedgerSigning({ claim, keystore }: { claim: ClaimDto; keystore: Keystor
       })
 
       if (isLastRequiredSignature) {
-        return completeChallenge()
+        return await completeChallenge()
       }
 
       // Refetch claim, then navigate to the hub

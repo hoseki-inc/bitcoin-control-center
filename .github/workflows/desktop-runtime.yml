@@ -1,0 +1,39 @@
+name: Desktop runtime
+
+on:
+  pull_request:
+    paths:
+      - 'desktop/**'
+      - '.nvmrc'
+      - '.github/workflows/desktop-runtime.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'desktop/**'
+      - '.nvmrc'
+      - '.github/workflows/desktop-runtime.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  desktop-runtime:
+    name: Desktop runtime (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: '.nvmrc'
+      - name: Install locked desktop dependencies without lifecycle scripts
+        run: npm ci --prefix desktop --ignore-scripts
+      - name: Download the pinned Electron binary with checksum verification
+        run: npm --prefix desktop run install:electron
+      - name: Test native SQLite and PDF rendering in Electron
+        run: npm --prefix desktop run test:runtime

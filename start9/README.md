@@ -85,6 +85,12 @@ the request host and origin but does not add a second application login layer;
 access control and interface exposure are therefore part of the StartOS trust
 boundary.
 
+Sentinel's allowed hosts come from the addresses enabled for this interface in
+StartOS, including public and local IPs, mDNS, Tor, and custom domains. Changing
+the enabled addresses or an assigned IP automatically restarts Sentinel with the
+updated list. An unavailable or empty address list permits only loopback access
+until StartOS supplies an enabled address. Host and origin checks remain enabled.
+
 ## Actions
 
 | Action    | Availability       | Purpose                          |

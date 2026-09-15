@@ -4,14 +4,15 @@
   "license": "Apache-2.0",
   "scripts": {
     "build": "rm -rf ./javascript && ncc build startos/index.ts -o ./javascript",
-    "check": "node scripts/check-package-files.mjs && node scripts/version.mjs check && tsc --noEmit"
+    "check": "node scripts/check-package-files.mjs && node scripts/version.mjs check && tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
     "@start9labs/start-sdk": "1.5.3"
   },
   "devDependencies": {
     "@types/node": "22.20.1",
-    "@vercel/ncc": "0.38.4",
+    "@vercel/ncc": "0.45.0",
     "typescript": "5.9.3"
   }
 }

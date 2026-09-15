@@ -52,7 +52,7 @@ export function ClaimSelection({
   const exchangeAccountsQuery = trpc.portalProve.exchange.list.useQuery(undefined, { enabled: showExchanges })
   const btcPriceQuery = trpc.portalProve.retrieveBitcoinPrice.useQuery(undefined, { enabled: showExchanges })
 
-  const exchangeAccounts = showExchanges ? exchangeAccountsQuery.data ?? [] : []
+  const exchangeAccounts = showExchanges ? (exchangeAccountsQuery.data ?? []) : []
   const btcUsdPrice = btcPriceQuery.data?.value ? Number(btcPriceQuery.data.value) : null
 
   const handleClaimToggle = (claimId: ClaimId) => {

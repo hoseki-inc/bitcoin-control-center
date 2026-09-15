@@ -201,7 +201,7 @@ export function DashboardPage(): JSX.Element {
   )
 
   // Keep showing previous data while filtered query loads to avoid chart flash
-  const data = isShowingAll ? allData ?? filteredData : filteredData ?? allData
+  const data = isShowingAll ? (allData ?? filteredData) : (filteredData ?? allData)
   const activeData = isShowingAll ? allData : filteredData
   const activeLoading = isShowingAll ? allLoading : filteredLoading
   const activeFetching = isShowingAll ? allFetching : filteredFetching
@@ -213,12 +213,12 @@ export function DashboardPage(): JSX.Element {
   const filteredHistorySyncingAccountIds = filteredData?.historySyncingAccountIds ?? []
   const historySyncingAccountIds = isShowingAll ? allHistorySyncingAccountIds : filteredHistorySyncingAccountIds
   const historySyncedAccountIds = isShowingAll
-    ? allData?.historySyncedAccountIds ?? []
-    : filteredData?.historySyncedAccountIds ?? []
+    ? (allData?.historySyncedAccountIds ?? [])
+    : (filteredData?.historySyncedAccountIds ?? [])
   const historySyncingAccountIdsKey = historySyncingAccountIds.join('|')
   const historySyncedAccountIdsKey = historySyncedAccountIds.join('|')
   const historyRefreshingAccountIds = activeData?.historyRefreshingAccountIds ?? []
-  const historyFailedAccountIds = activeIsPreviousData ? [] : activeData?.historyFailedAccountIds ?? []
+  const historyFailedAccountIds = activeIsPreviousData ? [] : (activeData?.historyFailedAccountIds ?? [])
   const cachedHistory = completedHistory.current?.viewKey === historyViewKey ? completedHistory.current.points : null
   // Retain only a chart actually completed for this exact range and selection.
   // A cached prefix alone cannot establish a newly requested range's history.
@@ -515,11 +515,11 @@ export function DashboardPage(): JSX.Element {
   const activeLabel = isShowingAll
     ? 'Total Stack'
     : selected.size === 1
-      ? claims.find((c) => selected.has(c.id))?.displayName ??
+      ? (claims.find((c) => selected.has(c.id))?.displayName ??
         exchangeAccounts.find((a) => selected.has(a.id))?.displayName ??
         manualAccounts.find((a) => selected.has(a.id))?.displayName ??
         etfAccounts.find((a) => selected.has(a.id))?.displayName ??
-        'Account'
+        'Account')
       : `${selected.size} accounts`
 
   const hasSidebar =
