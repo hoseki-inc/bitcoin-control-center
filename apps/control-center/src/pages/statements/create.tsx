@@ -134,7 +134,7 @@ export function StatementCreatePage(): JSX.Element {
   })
 
   const LEFT_COLUMN_WIDTH = '35%'
-  const dateError = isBefore(openingDate, addDays(MIN_STATEMENT_DATE, 1))
+  const dateError = isBefore(openingDate, startOfDay(addDays(MIN_STATEMENT_DATE, 1)))
     ? 'Start date must be after April 1, 2023.'
     : isAfter(openingDate, closingDate)
       ? 'Start date must be on or before end date.'

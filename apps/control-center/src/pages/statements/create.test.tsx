@@ -36,6 +36,88 @@ type DateArgs = { openingDate: Date; closingDate: Date }
 const toDay = (date: Date): string => format(date, 'yyyy-MM-dd')
 
 it.each([
+  { timezone: 'UTC', firstDay: '2023-04-02', previousDay: '2023-04-01', offset: 0 },
+  { timezone: 'America/Los_Angeles', firstDay: '2023-04-01', previousDay: '2023-03-31', offset: 420 },
+  { timezone: 'Europe/Berlin', firstDay: '2023-04-02', previousDay: '2023-04-01', offset: -120 },
+])(
+  'validates the picker minimum as a calendar day in $timezone',
+  async ({ timezone, firstDay, previousDay, offset }) => {
+    vi.stubEnv('TZ', timezone)
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-09-08T12:00:00Z'))
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+    vi.stubGlobal('matchMedia', () => ({ matches: false, addListener: vi.fn(), removeListener: vi.fn() }))
+    const container = document.createElement('div')
+    document.body.append(container)
+    const root = createRoot(container)
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    generate.mockClear()
+    preview.mockClear()
+    try {
+      // Verify that Date arithmetic actually uses the requested timezone in the test worker.
+      expect(new Date(`${firstDay}T00:00:00`).getTimezoneOffset()).toBe(offset)
+      await act(async () =>
+        root.render(
+          <ChakraProvider>
+            <QueryClientProvider client={client}>
+              <MemoryRouter>
+                <StatementCreatePage />
+              </MemoryRouter>
+            </QueryClientProvider>
+          </ChakraProvider>,
+        ),
+      )
+      const openingInput = container.querySelector<HTMLInputElement>('#opening-date')!
+      const closingInput = container.querySelector<HTMLInputElement>('#closing-date')!
+      const button = (label: string): HTMLButtonElement =>
+        Array.from(container.querySelectorAll('button')).find((b) => b.textContent === label)!
+      const setDate = async (input: HTMLInputElement, value: string): Promise<void> => {
+        await act(async () => {
+          Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value)
+          input.dispatchEvent(new Event('input', { bubbles: true }))
+        })
+      }
+
+      expect(openingInput.min).toBe(firstDay)
+      await setDate(closingInput, '2023-05-01')
+      await setDate(openingInput, previousDay)
+      expect(openingInput.validity.rangeUnderflow).toBe(true)
+      expect(container.querySelector('#date-range-error')?.textContent).toBe('Start date must be after April 1, 2023.')
+      expect(button('Preview Statement').disabled).toBe(true)
+      expect(button('Generate Statement').disabled).toBe(true)
+      await act(async () => {
+        button('Preview Statement').click()
+        button('Generate Statement').click()
+      })
+      expect(generate).not.toHaveBeenCalled()
+      expect(preview.mock.calls.at(-1)![0]).toMatchObject({ isOpen: false })
+
+      await setDate(openingInput, firstDay)
+      expect(openingInput.validity.rangeUnderflow).toBe(false)
+      expect(container.querySelector('#date-range-error')).toBeNull()
+      expect(button('Preview Statement').disabled).toBe(false)
+      expect(button('Generate Statement').disabled).toBe(false)
+      const dates = {
+        openingDate: new Date(`${firstDay}T00:00:00`),
+        closingDate: new Date('2023-05-01T23:59:59.999'),
+      }
+      await act(async () => button('Preview Statement').click())
+      expect(preview.mock.calls.at(-1)![0]).toMatchObject({ isOpen: true, ...dates })
+      await act(async () => button('Generate Statement').click())
+      expect(generate).toHaveBeenCalledOnce()
+      expect(generate).toHaveBeenCalledWith(expect.objectContaining(dates))
+    } finally {
+      await act(async () => root.unmount())
+      client.clear()
+      container.remove()
+      vi.useRealTimers()
+      vi.unstubAllGlobals()
+      vi.unstubAllEnvs()
+    }
+  },
+)
+
+it.each([
   { id: 'opening-date', key: 'openingDate', replacement: '2026-04-02' },
   { id: 'closing-date', key: 'closingDate', replacement: '2026-09-07' },
 ] as const)(
