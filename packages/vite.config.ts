@@ -1,3 +1,4 @@
+import react from '@vitejs/plugin-react'
 import { resolve } from 'path'
 import { defineConfig, loadEnv } from 'vite'
 
@@ -6,6 +7,7 @@ export default defineConfig(
     ({
       root: import.meta.dirname,
       cacheDir: '../node_modules/.vite/packages',
+      plugins: [react()],
 
       resolve: {
         alias: {

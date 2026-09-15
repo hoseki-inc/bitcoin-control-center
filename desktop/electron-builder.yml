@@ -15,6 +15,7 @@ extraResources:
   - from: tor/${os}
     to: tor
 mac:
+  minimumSystemVersion: '13.0.0'
   category: public.app-category.finance
   target:
     - target: dmg

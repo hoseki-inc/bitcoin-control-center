@@ -69,8 +69,7 @@ function writeSecretFile(path: string, value: string): void {
 
 function readLegacyDatabaseKey(db: Database.Database): string | null {
   const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(legacySettingsKey) as
-    | { value: string }
-    | undefined
+    { value: string } | undefined
   return row?.value ?? null
 }
 

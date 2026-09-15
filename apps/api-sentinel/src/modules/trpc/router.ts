@@ -419,8 +419,7 @@ const registryRouter = t.router({
     deletePending: publicProcedure.input(z.object({ id: z.string() })).mutation(({ ctx, input }) => {
       const db = ctx.app.database.db
       const row = db.prepare('SELECT status, deleted_at FROM accounts WHERE id = ?').get(input.id) as
-        | { status: string; deleted_at: string | null }
-        | undefined
+        { status: string; deleted_at: string | null } | undefined
       if (!row) throw new TRPCError({ code: 'NOT_FOUND', message: 'Claim not found' })
       if (row.status !== 'pending') throw new TRPCError({ code: 'BAD_REQUEST', message: 'Claim is not pending' })
       if (row.deleted_at !== null) {
@@ -432,8 +431,7 @@ const registryRouter = t.router({
     delete: publicProcedure.input(z.object({ id: z.string() })).mutation(({ ctx, input }) => {
       const db = ctx.app.database.db
       const row = db.prepare('SELECT deleted_at FROM accounts WHERE id = ?').get(input.id) as
-        | { deleted_at: string | null }
-        | undefined
+        { deleted_at: string | null } | undefined
       if (!row) throw new TRPCError({ code: 'NOT_FOUND', message: 'Claim not found' })
       if (row.deleted_at === null) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Only archived claims can be permanently deleted' })
@@ -715,8 +713,7 @@ const registryRouter = t.router({
 
         // Check the account exists
         const accountRow = db.prepare('SELECT id FROM accounts WHERE id = ?').get(input.claimId) as
-          | { id: string }
-          | undefined
+          { id: string } | undefined
         if (!accountRow) {
           throw new TRPCError({ code: 'NOT_FOUND', message: 'Account not found' })
         }
@@ -761,8 +758,7 @@ const registryRouter = t.router({
     complete: publicProcedure.input(z.object({ challengeId: z.string() })).mutation(({ ctx, input }) => {
       const db = ctx.app.database.db
       const challenge = db.prepare('SELECT * FROM challenges WHERE id = ?').get(input.challengeId) as
-        | ChallengeRow
-        | undefined
+        ChallengeRow | undefined
       if (!challenge) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Challenge not found' })
       }
@@ -771,8 +767,7 @@ const registryRouter = t.router({
       }
 
       const accountRow = db.prepare('SELECT descriptor FROM accounts WHERE id = ?').get(challenge.account_id) as
-        | { descriptor: string }
-        | undefined
+        { descriptor: string } | undefined
       if (!accountRow) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Account not found' })
       }
@@ -844,8 +839,7 @@ const registryRouter = t.router({
         const db = ctx.app.database.db
 
         const challenge = db.prepare('SELECT * FROM challenges WHERE id = ?').get(input.challengeId) as
-          | ChallengeRow
-          | undefined
+          ChallengeRow | undefined
         if (!challenge) {
           throw new TRPCError({ code: 'NOT_FOUND', message: 'Challenge not found' })
         }
@@ -863,8 +857,7 @@ const registryRouter = t.router({
         }
 
         const keystore = db.prepare('SELECT * FROM keystores WHERE id = ?').get(input.keystoreId) as
-          | KeystoreRow
-          | undefined
+          KeystoreRow | undefined
         if (!keystore) {
           throw new TRPCError({ code: 'NOT_FOUND', message: 'Keystore not found' })
         }
@@ -879,8 +872,7 @@ const registryRouter = t.router({
 
         // Build message text
         const identifierRow = db.prepare("SELECT value FROM settings WHERE key = 'owner_identifier'").get() as
-          | { value: string }
-          | undefined
+          { value: string } | undefined
         const identifier = identifierRow?.value ?? 'the owner'
         const messageText = `I, ${identifier}, affirm sole control of this account. No other third-party claims/access permitted. Ownership revocable solely by me.`
 
@@ -939,8 +931,7 @@ const registryRouter = t.router({
       .mutation(({ ctx, input }): ChallengeMessageDto => {
         const db = ctx.app.database.db
         const sm = db.prepare('SELECT * FROM signed_messages WHERE id = ?').get(input.signedMessageId) as
-          | SignedMessageRow
-          | undefined
+          SignedMessageRow | undefined
         if (!sm) {
           throw new TRPCError({ code: 'NOT_FOUND', message: 'Signed message not found' })
         }
@@ -990,8 +981,7 @@ const registryRouter = t.router({
 
       // Find or create keystore
       const keystore = db.prepare('SELECT * FROM keystores WHERE account_id = ? LIMIT 1').get(accountRow.id) as
-        | KeystoreRow
-        | undefined
+        KeystoreRow | undefined
       if (!keystore) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Keystore not found' })
       }
@@ -1048,8 +1038,7 @@ const registryRouter = t.router({
       const signedMessageId = hosid('re_mesg')
       // Keep the established message format, using the configured owner identifier when available.
       const identifierRow = db.prepare("SELECT value FROM settings WHERE key = 'owner_identifier'").get() as
-        | { value: string }
-        | undefined
+        { value: string } | undefined
       const identifier = identifierRow?.value ?? 'the owner'
       const messageText = `I, ${identifier}, affirm sole control of this account. No other third-party claims/access permitted. Ownership revocable solely by me.`
       const now = new Date().toISOString()
@@ -1289,8 +1278,7 @@ const onchainRouter = t.router({
                LIMIT 1`,
             )
             .get(na.account.toString(), claimNetworkToNetwork(na.network.toString())) as
-            | { id: string; deleted_at: string | null }
-            | undefined
+            { id: string; deleted_at: string | null } | undefined
 
           if (row?.deleted_at) {
             const snapshot = ctx.app.database.db
@@ -2020,8 +2008,7 @@ const settingsRouter = t.router({
     }
 
     const row = ctx.app.database.db.prepare('SELECT value FROM settings WHERE key = ?').get(input.key) as
-      | { value: string }
-      | undefined
+      { value: string } | undefined
     return row?.value ?? null
   }),
 

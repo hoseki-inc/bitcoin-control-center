@@ -1,7 +1,9 @@
 import { LedgerConnectionInfoUI } from '@hoseki/packages/ui/wallet-ui'
 import { useMutation } from '@tanstack/react-query'
 import { useLedgerStore } from '../../../hooks/use-ledger-store'
+import { getDesktopLedger } from '../../../lib/desktop-ledger'
 import { browserLogger } from '../../../logger'
+import { DesktopLedgerConnection } from './desktop-ledger-connection'
 
 export function LedgerConnectionInfo({
   onBack,
@@ -26,6 +28,9 @@ export function LedgerConnectionInfo({
       browserLogger.error(error, 'Ledger connection error')
     },
   })
+
+  const desktopLedger = getDesktopLedger()
+  if (desktopLedger) return <DesktopLedgerConnection bridge={desktopLedger} onBack={onBack} onContinue={onContinue} />
 
   return (
     <LedgerConnectionInfoUI

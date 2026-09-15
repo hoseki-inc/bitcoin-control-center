@@ -18,11 +18,20 @@ export function LedgerScan({
   const trpcUtils = trpc.useUtils()
   const getBitcoinXpub = useLedgerStore((state) => state.getBitcoinXpub)
   const deviceModel = useLedgerStore((state) => state.deviceModel)
+  const connectionId = useLedgerStore((state) => state.connectionId)
 
   const walletsQuery = useQuery<HardwareWallet[], Error>({
-    queryKey: ['ledger-wallets'], // NOTE(Ben) 2025-08-21: This is caching ALL ledger wallets under a single query key. If user has two Ledgers, it'll keep showing the acounts from the first connected device. We should identify the device somehow and add it to the query key.
-    queryFn: async () => {
-      const probeRes = await probeLedger(trpcUtils, { getBitcoinXpub })
+    // Scan results belong to this connection, including when two devices share a model.
+    queryKey: ['ledger-wallets', connectionId],
+    queryFn: async ({ signal }) => {
+      const probeRes = await probeLedger(trpcUtils, {
+        getBitcoinXpub,
+        signal,
+        isCurrentConnection: () => {
+          const current = useLedgerStore.getState()
+          return current.isConnected && current.connectionId === connectionId
+        },
+      })
       if (probeRes.isErr()) {
         throw probeRes.unwrapErr()
       }

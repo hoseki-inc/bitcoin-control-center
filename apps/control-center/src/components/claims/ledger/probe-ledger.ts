@@ -24,6 +24,8 @@ export function scriptTypeToLedgerScriptLabel(scriptType: SingleSigAccount['scri
 export const probeLedger = asyncFn(async function (
   trpcUtils: ReturnType<typeof trpc.useUtils>,
   ctx: {
+    signal?: AbortSignal
+    isCurrentConnection: () => boolean
     getBitcoinXpub: (
       scriptType: 'p2pkh' | 'p2sh-p2wpkh' | 'p2wpkh' | 'p2tr',
       account: number,
@@ -31,6 +33,8 @@ export const probeLedger = asyncFn(async function (
   },
 ) {
   const wallets: HardwareWallet[] = []
+  const isCancelled = (): boolean => !!ctx.signal?.aborted || !ctx.isCurrentConnection()
+  const cancelled = (): Result<never, Error> => Err(new DOMException('Ledger scan cancelled', 'AbortError'))
 
   // Check every script type's first account
   let toCheck = [
@@ -45,7 +49,9 @@ export const probeLedger = asyncFn(async function (
 
     // This needs to be a for loop because `getBitcoinXpub` is a locking operation so cannot be parallelized
     for await (const { scriptType, account } of toCheck) {
+      if (isCancelled()) return cancelled()
       const dataRes = await ctx.getBitcoinXpub(scriptType, account)
+      if (isCancelled()) return cancelled()
       if (dataRes.isErr()) {
         const xpubErr = dataRes.unwrapErr()
         if (xpubErr instanceof HardwareDeviceError) {
@@ -100,6 +106,7 @@ export const probeLedger = asyncFn(async function (
     const balancesRes = await Result.fromPromise(
       trpcUtils.portalProve.onchain.bitcoinAccountBalances.fetch({ accounts }),
     )
+    if (isCancelled()) return cancelled()
     if (balancesRes.isErr()) {
       throw balancesRes.unwrapErr()
     }
