@@ -11,6 +11,7 @@
     "check": "tsc --build",
     "ci": "pnpm security:audit && pnpm format:check && pnpm lint && pnpm check && npm --prefix desktop run check && npm --prefix start9 run check && pnpm test && npm --prefix start9 test && pnpm build",
     "dev": "turbo run dev:standalone --filter=api-sentinel --filter=control-center",
+    "dev:desktop": "turbo run api-sentinel#dev:standalone control-center#dev:desktop",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "ladle:build": "ladle build",

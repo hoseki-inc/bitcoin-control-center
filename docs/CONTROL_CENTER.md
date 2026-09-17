@@ -32,13 +32,15 @@ The default ports are:
 - Sentinel: `3400`
 - Electrum: configured through `ELECTRUM_HOST`, `ELECTRUM_PORT`, and `ELECTRUM_PROTOCOL`
 
-To expose desktop-only settings while developing the browser UI:
+To start Sentinel and the live-reloading browser UI with desktop-only settings from one terminal:
 
 ```bash
-pnpm --filter control-center dev:desktop
+corepack pnpm dev:desktop
 ```
 
-Desktop Tor behavior is only complete in a packaged Electron build because the Tor executable is bundled during packaging.
+Stop any existing `pnpm dev` first, then open `http://localhost:4269`. Press `Ctrl+C` to stop both processes. This uses the development database; Sentinel still requires a working Electrum connection at startup. If Sentinel is running separately, start only the frontend with `corepack pnpm --filter control-center dev:desktop`.
+
+Electron-managed Tor, native wallet integration, and the desktop OS certificate trust setup require the Electron runtime; the browser preview does not start them.
 
 Packaged desktop binds an available loopback HTTP port at startup. Development keeps port `3400`; either application can start first, and stopping one leaves the other running. The desktop UI and wallet permission checks follow its actual port.
 

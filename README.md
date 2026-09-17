@@ -227,13 +227,17 @@ pnpm --filter control-center dev
 
 ### Preview desktop-only settings in a browser
 
-Run Sentinel normally, then start the frontend in desktop mode:
+From the repository root, start Sentinel and the live-reloading frontend in desktop mode together:
 
 ```bash
-pnpm --filter control-center dev:desktop
+corepack pnpm dev:desktop
 ```
 
-This exposes desktop-specific settings in the UI, but bundled Tor behavior requires the packaged Electron application.
+Open `http://localhost:4269`. Stop any existing `pnpm dev` first; press `Ctrl+C` to stop both processes.
+
+This uses Sentinel's development configuration and data, and exposes desktop-specific settings without building an installer. Electron-managed Tor, native wallet integration, and desktop OS certificate trust still require the Electron runtime. Development Sentinel requires a working Electrum connection at startup.
+
+If Sentinel is already running separately, use `corepack pnpm --filter control-center dev:desktop` to start only the frontend.
 
 ## Local data and backups
 
