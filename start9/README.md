@@ -160,9 +160,8 @@ Run the package build from the upstream repository root:
 ```
 
 The checked-in version graph under `start9/startos/versions/` is the package
-version source of truth. See
-[`docs/STARTOS_RELEASES.md`](../docs/STARTOS_RELEASES.md) for candidate and
-release workflow details.
+version source of truth. The [release workflows](../README.md#releases) automate
+version preparation, candidate builds, and draft releases for StartOS and desktop.
 
 ## Quick reference
 

@@ -35,7 +35,7 @@ This repository intentionally excludes Hoseki Services, Armadillo, hosted authen
 - [Testing and CI](#testing-and-ci)
 - [Production builds](#production-builds)
 - [StartOS packaging](#startos-packaging)
-- [Release candidates](#release-candidates)
+- [Releases](#releases)
 - [Desktop packaging](#desktop-packaging)
 - [Troubleshooting](#troubleshooting)
 - [Security and privacy](#security-and-privacy)
@@ -387,15 +387,7 @@ Build without changing the package version:
 
 The script builds Sentinel and the same-origin web application, compiles the StartOS SDK code, creates x86_64 and aarch64 images, and packs `start9/hoseki-sentinel.s9pk`.
 
-StartOS versions use `major.minor.patch:revision`:
-
-| Command                                                    | Use                                                                                |
-| ---------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| `./start9/build.sh --bump patch --notes "..."`             | Incremental feature, fix, or maintenance release                                   |
-| `./start9/build.sh --bump minor --notes "..."`             | Substantial feature release; resets patch and revision to `0`                      |
-| `./start9/build.sh --bump major --notes "..."`             | Breaking or major release; resets other components to `0`                          |
-| `./start9/build.sh --bump revision --notes "..."`          | Packaging-only rebuild without changing the application version                    |
-| `./start9/build.sh --version <next-version> --notes "..."` | Replace `<next-version>` with an explicit version greater than the current version |
+The checked-in graph under `start9/startos/versions/` supplies the shared release version. Use the [release workflows](#releases) to prepare version changes.
 
 Inspect the current version without building:
 
@@ -405,22 +397,24 @@ node start9/scripts/version.mjs get
 node start9/scripts/version.mjs tag
 ```
 
-For example, manifest version `0.2.1:0` maps to Git tag `v0.2.1_0`; use the commands above for the current version. Version-bump commands update the checked-in StartOS version graph before building. Review and commit those generated source changes with the release.
-
 > [!WARNING]
 > The internal StartOS package ID is `hoseki-sentinel`, and its persistent volume is `main`. Existing installations rely on both identifiers. Do not rename them without an explicit data-migration and upgrade-compatibility plan.
 
-See the [StartOS package reference](start9/README.md) for service configuration and the [release guide](docs/STARTOS_RELEASES.md) for build and release procedures.
+See the [StartOS package reference](start9/README.md) for service configuration.
 
-## Release candidates
+## Releases
 
-The manually triggered **Release 2 - Build candidates** GitHub Actions workflow builds a universal StartOS `.s9pk`, macOS ARM64 `.dmg`, and Windows x64 `.exe` from the same selected commit. It runs the full verification suite and checks each package's version and source identity. Desktop installers are built and their packaged runtimes smoke-tested on native runners. It does not bump a version, create a tag, publish a GitHub Release, or submit anything to a StartOS registry.
+GitHub Actions handles version preparation, builds, verification, checksums, and draft-release assembly:
 
-The StartOS candidate filename includes the release tag and source commit. Desktop filenames include the release tag and platform; their accompanying JSON records the exact source commit and checksum. GitHub retains the Actions artifacts for 14 days.
+| Workflow                                                                        | Result                                                                                                                       |
+| ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| [Release 1 - Prepare version](.github/workflows/prepare-startos-release.yml)    | Choose a release type; opens a version PR with a required release-notes placeholder.                                         |
+| [Release 2 - Build candidates](.github/workflows/startos-candidate.yml)         | Builds StartOS, Mac ARM64, and Windows x64 test packages from one commit; retains Actions artifacts for 14 days.             |
+| [Release 3 - Create draft release](.github/workflows/startos-draft-release.yml) | Verifies and builds all three platforms, then creates a draft GitHub Release with installers, build metadata, and checksums. |
 
-Use the separate **Release 1 - Prepare version** workflow to choose `patch`, `minor`, `major`, or `revision` from a dropdown. It calculates the next version and exact tag and opens a protected pull request; replace its release-notes placeholder before merging. After that pull request is merged and tested, **Release 3 - Create draft release** rebuilds all three packages from one protected commit and creates a draft GitHub Release with installers, build metadata, and checksums. All platform jobs must pass first. StartOS uses the permanent signing key when configured or a temporary clean-install key otherwise. Desktop packages remain review builds with the signing limits described below. Registry publication is intentionally separate.
+Start these workflows from the Actions page; version preparation and draft creation require the default branch. Review and replace the generated release notes before merging the version PR, test the candidate, and review the resulting draft before publishing. Candidates do not change versions or publish releases. The workflows do not publish to a StartOS registry.
 
-See [docs/STARTOS_RELEASES.md](docs/STARTOS_RELEASES.md) for the version rules, candidate signing behavior, workflow instructions, and the intentionally separate registry-publication design.
+Configure the existing permanent `STARTOS_DEV_KEY` secret before testing signer-continuous StartOS upgrades. Without it, candidate and draft builds use a temporary key suitable for clean-install testing. Desktop signing limitations are described below.
 
 ## Desktop packaging
 
@@ -452,7 +446,7 @@ The build script:
 
 Installer names follow `Bitcoin-Control-Center-<release-tag>-mac-arm64.dmg` and `Bitcoin-Control-Center-<release-tag>-win-x64.exe`. Print the current tag with `node start9/scripts/version.mjs tag`. Installer application versions use the shared `major.minor.patch`; metadata and filenames retain the full packaging revision, and metadata records the source commit. The build overrides the placeholder version in `desktop/package.json` without modifying it. Local uncommitted changes are recorded as a dirty build; CI rejects dirty artifacts.
 
-CI builds both native installers on pull requests and pushes to `main`. Its packaged-runtime smoke test checks SQLite, backend startup with an occupied configured port, frontend assets, a local Electrum fixture, saved-profile migration/API access, and execution of the bundled Tor binary. It does not replace installing the DMG/EXE, exercising the Electron window and physical wallets, real Tor bootstrap, or upgrade/data-preservation testing. Cross-built Windows installers still require Windows execution. Installer/release builds use the caller's exact commit and disable shared cache access; see the [release workflow contract](docs/STARTOS_RELEASES.md#source-identity-and-cache-isolation).
+CI builds both native installers on pull requests and pushes to `main`. Its packaged-runtime smoke test checks SQLite, backend startup with an occupied configured port, frontend assets, a local Electrum fixture, saved-profile migration/API access, and execution of the bundled Tor binary. It does not replace installing the DMG/EXE, exercising the Electron window and physical wallets, real Tor bootstrap, or upgrade/data-preservation testing. Cross-built Windows installers still require Windows execution. The [desktop build workflow](.github/workflows/build-desktop.yml) uses the caller's exact commit and disables shared cache access.
 
 These are review installers: macOS uses an ad-hoc signature without notarization, and Windows has no publisher signature configured. Developer ID/notarization, Windows publisher signing, and automatic updates remain separate release work.
 
@@ -570,7 +564,7 @@ Issues and pull requests are welcome. Keep changes within the product's local-fi
 
 Useful project documentation:
 
-- [Build and release guide](docs/STARTOS_RELEASES.md)
+- [Release workflows](#releases)
 - [Security policy](SECURITY.md)
 - [StartOS package reference](start9/README.md)
 - [Multisig device signing tests](docs/Multisig%20Keystore%20Device%20Signing%20Tests.md)
