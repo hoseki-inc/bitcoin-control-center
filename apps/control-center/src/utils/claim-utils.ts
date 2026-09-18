@@ -37,7 +37,9 @@ export function withStatusBalance(args: {
   isSuccess: boolean
   balance?: BalanceValue | null
 }): BalanceWithStatus {
-  if (args.isLoading) return { status: 'loading' }
+  if (args.isLoading) {
+    return { status: 'loading' }
+  }
 
   if (args.isSuccess && args.balance) {
     return { status: 'success', value: args.balance }

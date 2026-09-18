@@ -201,8 +201,9 @@ describe('portfolio history completion', () => {
   it.each(['missing start', 'gap before the tip', 'outdated certification'])(
     'does not call incomplete full history a background refresh: %s',
     async (scenario) => {
-      if (scenario === 'missing start') harness.sync(100)
-      else if (scenario === 'gap before the tip') {
+      if (scenario === 'missing start') {
+        harness.sync(100)
+      } else if (scenario === 'gap before the tip') {
         harness.sync(0, 100)
         harness.sync(200)
       } else {
@@ -222,7 +223,9 @@ describe('portfolio history completion', () => {
   it.each([true, false])(
     'reports an unavailable tip and preserves only certified history (cached: %s)',
     async (cached) => {
-      if (cached) harness.sync()
+      if (cached) {
+        harness.sync()
+      }
       harness.provider.getBlocksTip.mockResolvedValue(Err(new Error('Connection unavailable')))
       const data = (await harness.service.getData({ customDateRange: customRange })).unwrap()
       expect(data.historySyncingAccountIds).toEqual([accountId])
@@ -447,11 +450,14 @@ describe('compacted history coverage', () => {
     const insert = harness.db.prepare(`INSERT INTO account_history_syncs
       (account_id, from_block_height, to_block_height, range_start, range_end, sync_version)
       VALUES (?, ?, ?, ?, ?, 5)`)
-    for (let height = 0; height < 100; height++)
+    for (let height = 0; height < 100; height++) {
       insert.run(accountId, height, height, now.toISOString(), now.toISOString())
+    }
     harness.sync(100, 100)
     expect(harness.coverage()).toEqual([{ from_block_height: 0, to_block_height: 100 }])
-    for (let height = 101; height < 200; height++) harness.sync(height, height)
+    for (let height = 101; height < 200; height++) {
+      harness.sync(height, height)
+    }
     expect(harness.coverage()).toEqual([{ from_block_height: 0, to_block_height: 199 }])
   })
 

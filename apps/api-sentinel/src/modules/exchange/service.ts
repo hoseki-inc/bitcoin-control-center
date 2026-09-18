@@ -118,9 +118,13 @@ export class ExchangeService {
 
       // Encrypt credentials
       const encApiKey = Encrypted.encrypt(apiKey)
-      if (encApiKey.isErr()) return Err(encApiKey.unwrapErr())
+      if (encApiKey.isErr()) {
+        return Err(encApiKey.unwrapErr())
+      }
       const encSecret = Encrypted.encrypt(secretKey)
-      if (encSecret.isErr()) return Err(encSecret.unwrapErr())
+      if (encSecret.isErr()) {
+        return Err(encSecret.unwrapErr())
+      }
 
       const credentialData: CredentialData = {
         type: 'apiKey',
@@ -142,7 +146,9 @@ export class ExchangeService {
         credentialsConnectedAt: now,
         externalAccountId: btcAccount.uuid,
       })
-      if (saved.isErr()) return Err(saved.unwrapErr())
+      if (saved.isErr()) {
+        return Err(saved.unwrapErr())
+      }
       const { id, createdAt } = saved.unwrap()
 
       // Record initial snapshot
@@ -174,14 +180,18 @@ export class ExchangeService {
 
       // Validate key and get balance
       const balancesRes = await validateStrikeApiKey(apiKey, this.logger)
-      if (balancesRes.isErr()) return Err(balancesRes.unwrapErr())
+      if (balancesRes.isErr()) {
+        return Err(balancesRes.unwrapErr())
+      }
 
       const btcBalance = balancesRes.unwrap().find((b) => b.currency === 'BTC')
       const balanceSats = btcBalance ? new Decimal(btcBalance.total).mul(1e8).toFixed(0) : '0'
 
       // Encrypt API key
       const encApiKey = Encrypted.encrypt(apiKey)
-      if (encApiKey.isErr()) return Err(encApiKey.unwrapErr())
+      if (encApiKey.isErr()) {
+        return Err(encApiKey.unwrapErr())
+      }
 
       const credentialData: CredentialData = {
         type: 'apiKey',
@@ -199,7 +209,9 @@ export class ExchangeService {
         balanceAsOf: now,
         credentialsConnectedAt: now,
       })
-      if (saved.isErr()) return Err(saved.unwrapErr())
+      if (saved.isErr()) {
+        return Err(saved.unwrapErr())
+      }
       const { id, createdAt } = saved.unwrap()
 
       this.recordSnapshot(id, balanceSats, now)
@@ -233,14 +245,20 @@ export class ExchangeService {
 
       // Validate key and get balance
       const balanceResult = await client.getBtcBalance()
-      if (balanceResult.isErr()) return Err(balanceResult.unwrapErr())
+      if (balanceResult.isErr()) {
+        return Err(balanceResult.unwrapErr())
+      }
       const balanceSats = balanceResult.unwrap().toString()
 
       // Encrypt credentials
       const encApiKey = Encrypted.encrypt(apiKey)
-      if (encApiKey.isErr()) return Err(encApiKey.unwrapErr())
+      if (encApiKey.isErr()) {
+        return Err(encApiKey.unwrapErr())
+      }
       const encPrivateKey = Encrypted.encrypt(privateKeyBase64)
-      if (encPrivateKey.isErr()) return Err(encPrivateKey.unwrapErr())
+      if (encPrivateKey.isErr()) {
+        return Err(encPrivateKey.unwrapErr())
+      }
 
       const credentialData: CredentialData = {
         type: 'apiKey',
@@ -261,7 +279,9 @@ export class ExchangeService {
         balanceAsOf: now,
         credentialsConnectedAt: now,
       })
-      if (saved.isErr()) return Err(saved.unwrapErr())
+      if (saved.isErr()) {
+        return Err(saved.unwrapErr())
+      }
       const { id, createdAt } = saved.unwrap()
 
       this.recordSnapshot(id, balanceSats, now)
@@ -305,9 +325,13 @@ export class ExchangeService {
 
       // Encrypt credentials
       const encApiKey = Encrypted.encrypt(apiKey)
-      if (encApiKey.isErr()) return Err(encApiKey.unwrapErr())
+      if (encApiKey.isErr()) {
+        return Err(encApiKey.unwrapErr())
+      }
       const encSecret = Encrypted.encrypt(secretKey)
-      if (encSecret.isErr()) return Err(encSecret.unwrapErr())
+      if (encSecret.isErr()) {
+        return Err(encSecret.unwrapErr())
+      }
 
       const credentialData: CredentialData = {
         type: 'apiKey',
@@ -328,7 +352,9 @@ export class ExchangeService {
         balanceAsOf: now,
         credentialsConnectedAt: now,
       })
-      if (saved.isErr()) return Err(saved.unwrapErr())
+      if (saved.isErr()) {
+        return Err(saved.unwrapErr())
+      }
       const { id, createdAt } = saved.unwrap()
 
       this.recordSnapshot(id, balanceSats, now)
@@ -361,7 +387,9 @@ export class ExchangeService {
         }
       | undefined
 
-    if (!row) return Err(new Error('Exchange account not found'))
+    if (!row) {
+      return Err(new Error('Exchange account not found'))
+    }
     if (this.getAccountConnectionStatus(row) === 'needs_reconnect') {
       return Err(new Error('Exchange credentials are unavailable or expired. Reconnect this exchange account.'))
     }
@@ -373,42 +401,68 @@ export class ExchangeService {
 
     if (provider === 'strike') {
       const apiKeyEnc = Encrypted.fromString(credData.data['apiKey']?.blob ?? '')
-      if (apiKeyEnc.isErr()) return Err(apiKeyEnc.unwrapErr())
+      if (apiKeyEnc.isErr()) {
+        return Err(apiKeyEnc.unwrapErr())
+      }
       const apiKey = apiKeyEnc.unwrap().decrypt()
-      if (apiKey.isErr()) return Err(apiKey.unwrapErr())
+      if (apiKey.isErr()) {
+        return Err(apiKey.unwrapErr())
+      }
 
       const result = await getStrikeBtcBalance(apiKey.unwrap(), this.logger)
-      if (result.isErr()) return Err(result.unwrapErr())
+      if (result.isErr()) {
+        return Err(result.unwrapErr())
+      }
       balanceSats = result.unwrap().toString()
     } else if (provider === 'robinhood') {
       const apiKeyEnc = Encrypted.fromString(credData.data['apiKey']?.blob ?? '')
-      if (apiKeyEnc.isErr()) return Err(apiKeyEnc.unwrapErr())
+      if (apiKeyEnc.isErr()) {
+        return Err(apiKeyEnc.unwrapErr())
+      }
       const apiKey = apiKeyEnc.unwrap().decrypt()
-      if (apiKey.isErr()) return Err(apiKey.unwrapErr())
+      if (apiKey.isErr()) {
+        return Err(apiKey.unwrapErr())
+      }
 
       const privateKeyEnc = Encrypted.fromString(credData.data['privateKey']?.blob ?? '')
-      if (privateKeyEnc.isErr()) return Err(privateKeyEnc.unwrapErr())
+      if (privateKeyEnc.isErr()) {
+        return Err(privateKeyEnc.unwrapErr())
+      }
       const privateKey = privateKeyEnc.unwrap().decrypt()
-      if (privateKey.isErr()) return Err(privateKey.unwrapErr())
+      if (privateKey.isErr()) {
+        return Err(privateKey.unwrapErr())
+      }
 
       const client = new RobinhoodClient({ apiKey: apiKey.unwrap(), privateKeyBase64: privateKey.unwrap() })
       const result = await client.getBtcBalance()
-      if (result.isErr()) return Err(result.unwrapErr())
+      if (result.isErr()) {
+        return Err(result.unwrapErr())
+      }
       balanceSats = result.unwrap().toString()
     } else if (provider === 'kraken') {
       const apiKeyEnc = Encrypted.fromString(credData.data['apiKey']?.blob ?? '')
-      if (apiKeyEnc.isErr()) return Err(apiKeyEnc.unwrapErr())
+      if (apiKeyEnc.isErr()) {
+        return Err(apiKeyEnc.unwrapErr())
+      }
       const secretEnc = Encrypted.fromString(credData.data['secretKey']?.blob ?? '')
-      if (secretEnc.isErr()) return Err(secretEnc.unwrapErr())
+      if (secretEnc.isErr()) {
+        return Err(secretEnc.unwrapErr())
+      }
 
       const apiKey = apiKeyEnc.unwrap().decrypt()
-      if (apiKey.isErr()) return Err(apiKey.unwrapErr())
+      if (apiKey.isErr()) {
+        return Err(apiKey.unwrapErr())
+      }
       const secret = secretEnc.unwrap().decrypt()
-      if (secret.isErr()) return Err(secret.unwrapErr())
+      if (secret.isErr()) {
+        return Err(secret.unwrapErr())
+      }
 
       const client = new Kraken.Client({ apiKey: apiKey.unwrap(), secretKey: secret.unwrap() })
       const result = await client.getBalance()
-      if (result.isErr()) return Err(new Error(`Kraken error: ${result.unwrapErr().message}`))
+      if (result.isErr()) {
+        return Err(new Error(`Kraken error: ${result.unwrapErr().message}`))
+      }
 
       const balances = result.unwrap().data
       const btcValue = balances['XXBT'] ?? balances['XBT'] ?? '0'
@@ -416,14 +470,22 @@ export class ExchangeService {
     } else {
       // Coinbase
       const apiKeyEnc = Encrypted.fromString(credData.data['apiKey']?.blob ?? '')
-      if (apiKeyEnc.isErr()) return Err(apiKeyEnc.unwrapErr())
+      if (apiKeyEnc.isErr()) {
+        return Err(apiKeyEnc.unwrapErr())
+      }
       const secretEnc = Encrypted.fromString(credData.data['secretKey']?.blob ?? '')
-      if (secretEnc.isErr()) return Err(secretEnc.unwrapErr())
+      if (secretEnc.isErr()) {
+        return Err(secretEnc.unwrapErr())
+      }
 
       const apiKey = apiKeyEnc.unwrap().decrypt()
-      if (apiKey.isErr()) return Err(apiKey.unwrapErr())
+      if (apiKey.isErr()) {
+        return Err(apiKey.unwrapErr())
+      }
       const secret = secretEnc.unwrap().decrypt()
-      if (secret.isErr()) return Err(secret.unwrapErr())
+      if (secret.isErr()) {
+        return Err(secret.unwrapErr())
+      }
 
       const secretStr = secret.unwrap()
       const isPem = secretStr.trim().startsWith('-----BEGIN')
@@ -437,16 +499,22 @@ export class ExchangeService {
       let accountUuid = row.external_account_id
       if (!accountUuid) {
         const accountsRes = await client.advancedTrade.accounts.list()
-        if (accountsRes.isErr()) return Err(new Error(`Coinbase error: ${accountsRes.unwrapErr().message}`))
+        if (accountsRes.isErr()) {
+          return Err(new Error(`Coinbase error: ${accountsRes.unwrapErr().message}`))
+        }
         const btcAccount = accountsRes.unwrap().data.accounts?.find((a) => a.currency === 'BTC')
-        if (!btcAccount) return Err(new Error('No BTC account found'))
+        if (!btcAccount) {
+          return Err(new Error('No BTC account found'))
+        }
         accountUuid = btcAccount.uuid
         // Backfill the stored UUID for future calls
         this.db.prepare('UPDATE exchange_accounts SET external_account_id = ? WHERE id = ?').run(accountUuid, accountId)
       }
 
       const balanceRes = await client.advancedTrade.accounts.get({ accountUuid })
-      if (balanceRes.isErr()) return Err(new Error(`Coinbase error: ${balanceRes.unwrapErr().message}`))
+      if (balanceRes.isErr()) {
+        return Err(new Error(`Coinbase error: ${balanceRes.unwrapErr().message}`))
+      }
 
       const btcValue = balanceRes.unwrap().data.account?.available_balance?.value ?? '0'
       balanceSats = new Decimal(btcValue).mul(1e8).toFixed(0)
@@ -639,7 +707,9 @@ export class ExchangeService {
           for (const tx of transactions) {
             // Include all completed BTC transactions regardless of type.
             // The amount.amount field is already signed: positive for inflows, negative for outflows.
-            if (tx.status !== 'completed' || tx.amount.currency !== 'BTC') continue
+            if (tx.status !== 'completed' || tx.amount.currency !== 'BTC') {
+              continue
+            }
 
             const amountSats = new Decimal(tx.amount.amount).mul(1e8).toFixed(0)
             allEntries.push({
@@ -788,7 +858,9 @@ export class ExchangeService {
     }>
   }): Result<{ imported: number; skipped: number }, Error> {
     const account = this.getAccount(args.accountId)
-    if (!account) return Err(new Error('Exchange account not found'))
+    if (!account) {
+      return Err(new Error('Exchange account not found'))
+    }
 
     const stmt = this.db.prepare(
       `INSERT INTO exchange_statement_txs (id, account_id, external_id, transacted_at, type, amount_btc, amount_usd, fee_usd, fee_btc, exchange_rate, description, tx_hash, statement_month)
@@ -816,8 +888,11 @@ export class ExchangeService {
           tx.txHash ?? null,
           tx.statementMonth,
         )
-        if (result.changes > 0) imported++
-        else skipped++
+        if (result.changes > 0) {
+          imported++
+        } else {
+          skipped++
+        }
       }
     })
     runAll()
@@ -917,7 +992,9 @@ export class ExchangeService {
           credentials_connected_at: string | null
         }
       | undefined
-    if (!row) return null
+    if (!row) {
+      return null
+    }
     const connectionStatus = this.getAccountConnectionStatus(row)
     const isConnected = connectionStatus === 'connected'
     return {
@@ -951,7 +1028,9 @@ export class ExchangeService {
         .prepare('SELECT provider, created_at FROM exchange_accounts WHERE id = ?')
         .get(args.replaceAccountId) as { provider: string; created_at: string } | undefined
 
-      if (!existing) return Err(new Error('Exchange account not found'))
+      if (!existing) {
+        return Err(new Error('Exchange account not found'))
+      }
       if (existing.provider !== args.provider) {
         return Err(new Error(`Cannot reconnect ${args.provider} credentials to a ${existing.provider} account`))
       }
@@ -1021,14 +1100,20 @@ export class ExchangeService {
   }
 
   private areCredentialsExpired(connectedAt: string | null): boolean {
-    if (!connectedAt) return true
+    if (!connectedAt) {
+      return true
+    }
     const connectedAtMs = Date.parse(this.normalizeTimestamp(connectedAt))
-    if (!Number.isFinite(connectedAtMs)) return true
+    if (!Number.isFinite(connectedAtMs)) {
+      return true
+    }
     return Date.now() - connectedAtMs >= mandatoryReconnectIntervalMs
   }
 
   private normalizeTimestamp(timestamp: string): string {
-    if (timestamp.includes('T')) return timestamp
+    if (timestamp.includes('T')) {
+      return timestamp
+    }
     return `${timestamp.replace(' ', 'T')}Z`
   }
 
@@ -1036,13 +1121,19 @@ export class ExchangeService {
     try {
       const credData = JSON.parse(encryptedCredentials) as CredentialData
       const credentialBlobs = Object.values(credData.data)
-      if (credData.type !== 'apiKey' || credentialBlobs.length === 0) return 'needs_reconnect'
+      if (credData.type !== 'apiKey' || credentialBlobs.length === 0) {
+        return 'needs_reconnect'
+      }
 
       for (const credential of credentialBlobs) {
         const encrypted = Encrypted.fromString(credential.blob)
-        if (encrypted.isErr()) return 'needs_reconnect'
+        if (encrypted.isErr()) {
+          return 'needs_reconnect'
+        }
         const decrypted = encrypted.unwrap().decrypt()
-        if (decrypted.isErr()) return 'needs_reconnect'
+        if (decrypted.isErr()) {
+          return 'needs_reconnect'
+        }
       }
 
       return 'connected'

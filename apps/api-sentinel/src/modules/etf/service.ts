@@ -87,7 +87,9 @@ export class EtfService {
     const row = this.db.prepare('SELECT * FROM etf_accounts WHERE id = ?').get(id) as
       { id: string; display_name: string; created_at: string } | undefined
 
-    if (!row) return null
+    if (!row) {
+      return null
+    }
 
     return {
       id: row.id,
@@ -101,14 +103,18 @@ export class EtfService {
     const result = this.db
       .prepare('UPDATE etf_accounts SET display_name = ? WHERE id = ?')
       .run(args.displayName, args.accountId)
-    if (result.changes === 0) return Err(new Error('ETF account not found'))
+    if (result.changes === 0) {
+      return Err(new Error('ETF account not found'))
+    }
     this.logger.info({ accountId: args.accountId, displayName: args.displayName }, 'ETF account renamed')
     return Ok(undefined)
   }
 
   public removeAccount(accountId: string): Result<void, Error> {
     const result = this.db.prepare('DELETE FROM etf_accounts WHERE id = ?').run(accountId)
-    if (result.changes === 0) return Err(new Error('ETF account not found'))
+    if (result.changes === 0) {
+      return Err(new Error('ETF account not found'))
+    }
     this.logger.info({ accountId }, 'ETF account removed')
     return Ok(undefined)
   }
@@ -123,7 +129,9 @@ export class EtfService {
   }): Result<EtfHoldingDto, Error> {
     const account = this.db.prepare('SELECT id FROM etf_accounts WHERE id = ?').get(args.accountId) as
       { id: string } | undefined
-    if (!account) return Err(new Error('ETF account not found'))
+    if (!account) {
+      return Err(new Error('ETF account not found'))
+    }
 
     const id = nanoid()
     const now = new Date().toISOString()
@@ -190,7 +198,9 @@ export class EtfService {
   public removeHolding(holdingId: string): Result<string, Error> {
     const row = this.db.prepare('SELECT account_id FROM etf_holdings WHERE id = ?').get(holdingId) as
       { account_id: string } | undefined
-    if (!row) return Err(new Error('ETF holding not found'))
+    if (!row) {
+      return Err(new Error('ETF holding not found'))
+    }
 
     this.db.prepare('DELETE FROM etf_holdings WHERE id = ?').run(holdingId)
 
@@ -229,7 +239,9 @@ export class EtfService {
    * computed at that purchase date. Holdings without a date use createdAt.
    */
   public getAccumulationEntries(accountIds: string[]): Array<{ timestamp: Date; value: bigint }> {
-    if (accountIds.length === 0) return []
+    if (accountIds.length === 0) {
+      return []
+    }
 
     const placeholders = accountIds.map(() => '?').join(', ')
     const rows = this.db
@@ -245,7 +257,9 @@ export class EtfService {
 
     return rows.map((row) => {
       const config = ETF_CONFIGS[row.ticker as EtfTicker]
-      if (!config) return { timestamp: new Date(row.date_purchased ?? row.created_at), value: 0n }
+      if (!config) {
+        return { timestamp: new Date(row.date_purchased ?? row.created_at), value: 0n }
+      }
       const purchaseDate = new Date(row.date_purchased ?? row.created_at)
       const sats = computeHoldingBtcSats(config, parseFloat(row.shares), new Date())
       return { timestamp: purchaseDate, value: sats }
@@ -264,7 +278,9 @@ export class EtfService {
 
     for (const row of rows) {
       const config = ETF_CONFIGS[row.ticker as EtfTicker]
-      if (!config) continue
+      if (!config) {
+        continue
+      }
       totalSats += computeHoldingBtcSats(config, parseFloat(row.shares), asOf)
     }
 

@@ -116,10 +116,10 @@ function TrezorSigning({ claim, keystore }: { claim: ClaimDto; keystore: Keystor
       // Refetch claim, then navigate to the hub
       await claimQuery.refetch()
       navigate(`/multisig/verify/receipt/${claim.id}/${keystore.id}`)
-    } catch (error) {
-      console.error('error', error)
-      if (error instanceof Error) {
-        setError(error.message)
+    } catch (caughtError) {
+      console.error('error', caughtError)
+      if (caughtError instanceof Error) {
+        setError(caughtError.message)
       } else {
         setError('Error signing message')
       }
@@ -243,9 +243,9 @@ function LedgerSigning({ claim, keystore }: { claim: ClaimDto; keystore: Keystor
       // Refetch claim, then navigate to the hub
       await claimQuery.refetch()
       navigate(`/multisig/verify/receipt/${claim.id}/${keystore.id}`)
-    } catch (error) {
-      if (error instanceof Error) {
-        setSigningError(error)
+    } catch (caughtError) {
+      if (caughtError instanceof Error) {
+        setSigningError(caughtError)
       } else {
         setSigningError(new Error('Error signing message'))
       }
@@ -282,7 +282,9 @@ function LedgerSigning({ claim, keystore }: { claim: ClaimDto; keystore: Keystor
             return initiateLedgerMutation.mutate(undefined, { onSuccess: () => setStep(2) })
           }
           setStep((prev) => {
-            if (error) return prev
+            if (error) {
+              return prev
+            }
             return Math.min(prev + 1, 3)
           })
         }}
@@ -369,8 +371,8 @@ function ColdcardSigning({ claim, keystore }: { claim: ClaimDto; keystore: Keyst
         onSuccess: async () => {
           await claimQuery.refetch()
         },
-        onError: (error) => {
-          console.error('error', error)
+        onError: (completionError) => {
+          console.error('error', completionError)
           setError('Error completing challenge message')
         },
       },
@@ -484,8 +486,8 @@ function KeystoneSigning({ claim, keystore }: { claim: ClaimDto; keystore: Keyst
         onSuccess: async () => {
           await claimQuery.refetch()
         },
-        onError: (error) => {
-          console.error('error', error)
+        onError: (completionError) => {
+          console.error('error', completionError)
           setError('Error completing challenge message')
         },
       },
@@ -580,7 +582,9 @@ function useCompleteChallenge(claim: ClaimDto) {
 }
 
 function getSigningPath(keystore: KeystoreDto): string | null {
-  if (!keystore.derivationPath) return null
+  if (!keystore.derivationPath) {
+    return null
+  }
 
   const basePath = keystore.derivationPath?.replace(/h/g, "'")
   return basePath + '/0/0'

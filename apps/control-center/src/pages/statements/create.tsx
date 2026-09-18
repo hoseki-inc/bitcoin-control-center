@@ -55,7 +55,9 @@ export function StatementCreatePage(): JSX.Element {
   const exchangeAccountsQuery = trpc.portalProve.exchange.list.useQuery()
 
   useEffect(() => {
-    if (hasAppliedPreSelection || !claimsQuery.data) return
+    if (hasAppliedPreSelection || !claimsQuery.data) {
+      return
+    }
     setHasAppliedPreSelection(true)
 
     if (navState?.preSelectedClaimIds && navState.preSelectedClaimIds.length > 0) {
@@ -72,7 +74,9 @@ export function StatementCreatePage(): JSX.Element {
 
   // Select all exchange accounts by default once loaded
   useEffect(() => {
-    if (hasAppliedExchangePreSelection || !exchangeAccountsQuery.data) return
+    if (hasAppliedExchangePreSelection || !exchangeAccountsQuery.data) {
+      return
+    }
     setHasAppliedExchangePreSelection(true)
     setSelectedExchangeAccountIds(
       new Set(exchangeAccountsQuery.data.filter(isExchangeConnected).map((account) => account.id)),
@@ -112,7 +116,7 @@ export function StatementCreatePage(): JSX.Element {
         return
       }
 
-      const statement = await initiateStatementGenerationMutation.mutateAsync({
+      const generatedStatement = await initiateStatementGenerationMutation.mutateAsync({
         claimIds: Array.from(selectedClaimIds),
         exchangeAccountIds: Array.from(selectedExchangeAccountIds),
         timezone: userTimezone,
@@ -125,7 +129,7 @@ export function StatementCreatePage(): JSX.Element {
       // keeping them at the end of the fn to make sure we're overwriting
       // provider state via `startPolling(statement)` before opening the modal,
       // so that the modal doesn't show the old completed/failed statement screen
-      startPolling(statement.id)
+      startPolling(generatedStatement.id)
       setIsModalOpen(true)
     },
     onError: (error: { message: string }) => {

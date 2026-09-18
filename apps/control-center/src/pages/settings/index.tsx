@@ -117,7 +117,9 @@ function useElectrumStatus(): { status: ElectrumStatus | null; refresh: () => vo
       .then((data) => {
         // tRPC wraps response in result.data.json (superjson) or result.data
         const payload = data?.result?.data?.json ?? data?.result?.data
-        if (payload?.host) setStatus(payload as ElectrumStatus)
+        if (payload?.host) {
+          setStatus(payload as ElectrumStatus)
+        }
       })
       .catch(() => setStatus(null))
   }, [])

@@ -72,12 +72,14 @@ export function ClaimDetails({ claim }: { claim: ClaimDto }): JSX.Element {
                 tooltipVariant="none"
                 getKeystoreClickHandler={(keystore) => {
                   // SingleSig are not clickable
-                  if (!isMultisig || keystore.status === 'pending') return null
+                  if (!isMultisig || keystore.status === 'pending') {
+                    return null
+                  }
 
-                  return (keystore: IndicatorKeystore) => {
+                  return (selectedKeystore: IndicatorKeystore) => {
                     return navigate({
                       pathname: `/accounts/${claim.id}`,
-                      search: `?${createSearchParams({ keystoreId: keystore.id })}`,
+                      search: `?${createSearchParams({ keystoreId: selectedKeystore.id })}`,
                     })
                   }
                 }}

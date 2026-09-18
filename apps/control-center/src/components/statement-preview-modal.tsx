@@ -101,7 +101,9 @@ export function StatementPreviewModal(props: StatementPreviewModalProps): JSX.El
 
   useEffect(() => {
     async function generatePreview() {
-      if (!statementData) return
+      if (!statementData) {
+        return
+      }
 
       const document = await renderStatementDocument({
         watermarkText: 'Statement Preview',

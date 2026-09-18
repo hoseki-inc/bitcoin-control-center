@@ -126,22 +126,34 @@ function ManualSigningAccountAccordion({
   })
 
   const balance = useMemo(() => {
-    if (!networkAccount) return { noBalance: 'No account found', btc: null, usd: null }
-    if (balancesQuery.isLoading) return { noBalance: 'Loading...', btc: null, usd: null }
-    if (balancesQuery.error) return { noBalance: balancesQuery.error.message, btc: null, usd: null }
-    if (!balancesQuery.data?.accounts) return { noBalance: 'Balance not found', btc: null, usd: null }
+    if (!networkAccount) {
+      return { noBalance: 'No account found', btc: null, usd: null }
+    }
+    if (balancesQuery.isLoading) {
+      return { noBalance: 'Loading...', btc: null, usd: null }
+    }
+    if (balancesQuery.error) {
+      return { noBalance: balancesQuery.error.message, btc: null, usd: null }
+    }
+    if (!balancesQuery.data?.accounts) {
+      return { noBalance: 'Balance not found', btc: null, usd: null }
+    }
 
-    const balance = balancesQuery.data.accounts.get(networkAccount.toString())
-    if (!balance) return { noBalance: 'Balance not found', btc: null, usd: null }
+    const accountBalance = balancesQuery.data.accounts.get(networkAccount.toString())
+    if (!accountBalance) {
+      return { noBalance: 'Balance not found', btc: null, usd: null }
+    }
 
     return {
       noBalance: null,
-      btc: toBitcoinAmountDisplayValue(balance.current.toString()),
-      usd: balance.usd ? formatUsd(balance.usd.toFixed(2)) : 'n/a',
+      btc: toBitcoinAmountDisplayValue(accountBalance.current.toString()),
+      usd: accountBalance.usd ? formatUsd(accountBalance.usd.toFixed(2)) : 'n/a',
     }
   }, [networkAccount, balancesQuery])
 
-  if (!bitcoinInput) return null
+  if (!bitcoinInput) {
+    return null
+  }
 
   return <AccountAccordion bitcoinInput={bitcoinInput} balance={balance} onEditClick={onEditClick} />
 }

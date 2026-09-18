@@ -57,21 +57,33 @@ function createDefaultCustomDateRange(now: Date): CustomDateRangeDraft {
 }
 
 function validateCustomDateRange(range: CustomDateRangeDraft, now: Date): string | null {
-  if (range.startDate === null || range.endDate === null) return 'Choose both a start date and an end date.'
+  if (range.startDate === null || range.endDate === null) {
+    return 'Choose both a start date and an end date.'
+  }
 
-  if (isBefore(range.startDate, BITCOIN_GENESIS_DATE)) return 'Start date cannot be before Bitcoin genesis.'
-  if (isAfter(range.startDate, range.endDate)) return 'Start date must be on or before end date.'
-  if (isAfter(range.endDate, startOfDay(now))) return 'End date cannot be in the future.'
+  if (isBefore(range.startDate, BITCOIN_GENESIS_DATE)) {
+    return 'Start date cannot be before Bitcoin genesis.'
+  }
+  if (isAfter(range.startDate, range.endDate)) {
+    return 'Start date must be on or before end date.'
+  }
+  if (isAfter(range.endDate, startOfDay(now))) {
+    return 'End date cannot be in the future.'
+  }
   return null
 }
 
 function toCustomDateRangeInput(range: CustomDateRangeDraft): CustomDateRangeInput | null {
-  if (range.startDate === null || range.endDate === null) return null
+  if (range.startDate === null || range.endDate === null) {
+    return null
+  }
   return { startDate: format(range.startDate, 'yyyy-MM-dd'), endDate: format(range.endDate, 'yyyy-MM-dd') }
 }
 
 function formatCustomDateRangeLabel(range: CustomDateRangeDraft): string {
-  if (range.startDate === null || range.endDate === null) return 'custom'
+  if (range.startDate === null || range.endDate === null) {
+    return 'custom'
+  }
   if (format(range.startDate, 'yyyy') === format(range.endDate, 'yyyy')) {
     return `${format(range.startDate, 'MMM d')} – ${format(range.endDate, 'MMM d, yyyy')}`
   }
@@ -232,7 +244,9 @@ export function DashboardPage(): JSX.Element {
   const balancesQuery = useGetBalancesPerClaimIds({ claimIds, enabled: claimIds.length > 0 })
 
   useEffect(() => {
-    if (historySyncingAccountIds.length === 0) return
+    if (historySyncingAccountIds.length === 0) {
+      return
+    }
 
     const intervalId = window.setInterval(() => {
       // Slow Electrum/exchange requests may outlast the polling interval.
@@ -247,12 +261,16 @@ export function DashboardPage(): JSX.Element {
     if (previousHistorySync.current.viewKey !== historyViewKey) {
       previousHistorySync.current = { viewKey: historyViewKey, syncingIds: new Set() }
       shownRecentlySyncedAccountIds.current.clear()
-      for (const timeout of recentlySyncedTimeouts.current.values()) window.clearTimeout(timeout)
+      for (const timeout of recentlySyncedTimeouts.current.values()) {
+        window.clearTimeout(timeout)
+      }
       recentlySyncedTimeouts.current.clear()
       setRecentlySyncedAccountIds(new Set())
     }
     // Cached results for another range/selection cannot establish completion.
-    if (activeIsPreviousData || activeError || activeData === undefined) return
+    if (activeIsPreviousData || activeError || activeData === undefined) {
+      return
+    }
     const currentSyncingIds = new Set(historySyncingAccountIdsKey === '' ? [] : historySyncingAccountIdsKey.split('|'))
     const currentSyncedIds = new Set(historySyncedAccountIdsKey === '' ? [] : historySyncedAccountIdsKey.split('|'))
     const completedIds = Array.from(previousHistorySync.current.syncingIds).filter(
@@ -268,7 +286,9 @@ export function DashboardPage(): JSX.Element {
       }
 
       setRecentlySyncedAccountIds((prev) => {
-        if (!prev.has(id)) return prev
+        if (!prev.has(id)) {
+          return prev
+        }
         const next = new Set(prev)
         next.delete(id)
         return next
@@ -276,7 +296,9 @@ export function DashboardPage(): JSX.Element {
     }
 
     for (const id of completedIds) {
-      if (shownRecentlySyncedAccountIds.current.has(id)) continue
+      if (shownRecentlySyncedAccountIds.current.has(id)) {
+        continue
+      }
 
       shownRecentlySyncedAccountIds.current.add(id)
       setRecentlySyncedAccountIds((prev) => {
@@ -286,7 +308,9 @@ export function DashboardPage(): JSX.Element {
       })
 
       const existingTimeout = recentlySyncedTimeouts.current.get(id)
-      if (existingTimeout !== undefined) window.clearTimeout(existingTimeout)
+      if (existingTimeout !== undefined) {
+        window.clearTimeout(existingTimeout)
+      }
 
       const timeoutId = window.setTimeout(() => {
         recentlySyncedTimeouts.current.delete(id)
@@ -328,8 +352,11 @@ export function DashboardPage(): JSX.Element {
   const toggleAccount = useCallback((id: string) => {
     setSelected((prev) => {
       const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
       return next
     })
   }, [])
@@ -338,23 +365,31 @@ export function DashboardPage(): JSX.Element {
 
   const claimTotalBtcSats = balancesQuery.data
     ? Array.from(balancesQuery.data.values()).reduce((sum, b) => {
-        if (!b) return sum
+        if (!b) {
+          return sum
+        }
         return sum + Number(b.current)
       }, 0)
     : 0
 
   const exchangeTotalBtcSats = exchangeAccounts.reduce((sum, a) => {
-    if (!a.balance) return sum
+    if (!a.balance) {
+      return sum
+    }
     return sum + Number(a.balance)
   }, 0)
 
   const manualTotalBtcSats = manualAccounts.reduce((sum, a) => {
-    if (!a.balance) return sum
+    if (!a.balance) {
+      return sum
+    }
     return sum + Number(a.balance)
   }, 0)
 
   const etfTotalBtcSats = etfAccounts.reduce((sum, a) => {
-    if (!a.balance) return sum
+    if (!a.balance) {
+      return sum
+    }
     return sum + Number(a.balance)
   }, 0)
 
@@ -364,7 +399,9 @@ export function DashboardPage(): JSX.Element {
 
   const claimsTotalUsd = balancesQuery.data
     ? Array.from(balancesQuery.data.values()).reduce((sum, b) => {
-        if (!b?.usd) return sum
+        if (!b?.usd) {
+          return sum
+        }
         return sum + Number(b.usd)
       }, 0)
     : 0
@@ -372,7 +409,9 @@ export function DashboardPage(): JSX.Element {
   const exchangeTotalUsd =
     btcUsdPrice !== null
       ? exchangeAccounts.reduce((sum, a) => {
-          if (!a.balance) return sum
+          if (!a.balance) {
+            return sum
+          }
           return sum + (Number(a.balance) / 100_000_000) * btcUsdPrice
         }, 0)
       : 0
@@ -380,7 +419,9 @@ export function DashboardPage(): JSX.Element {
   const manualTotalUsd =
     btcUsdPrice !== null
       ? manualAccounts.reduce((sum, a) => {
-          if (!a.balance) return sum
+          if (!a.balance) {
+            return sum
+          }
           return sum + (Number(a.balance) / 100_000_000) * btcUsdPrice
         }, 0)
       : 0
@@ -388,7 +429,9 @@ export function DashboardPage(): JSX.Element {
   const etfTotalUsd =
     btcUsdPrice !== null
       ? etfAccounts.reduce((sum, a) => {
-          if (!a.balance) return sum
+          if (!a.balance) {
+            return sum
+          }
           return sum + (Number(a.balance) / 100_000_000) * btcUsdPrice
         }, 0)
       : 0
@@ -431,9 +474,15 @@ export function DashboardPage(): JSX.Element {
   const customEndsToday = timeRange === 'custom' && customDateRangeInput?.endDate === format(new Date(), 'yyyy-MM-dd')
   const historicalData = useMemo(() => {
     const history = data?.historicalData ?? []
-    if (historyRangeError !== null || isFullHistoryPending || historyBackfillBlocked) return []
-    if (isFullHistoryRange && isHistoryRefreshing && cachedHistory !== null) return cachedHistory
-    if (isFullHistoryRange && history.length === 0) return []
+    if (historyRangeError !== null || isFullHistoryPending || historyBackfillBlocked) {
+      return []
+    }
+    if (isFullHistoryRange && isHistoryRefreshing && cachedHistory !== null) {
+      return cachedHistory
+    }
+    if (isFullHistoryRange && history.length === 0) {
+      return []
+    }
     if (timeRange === 'custom') {
       return customEndsToday ? withCurrentBalancePoint(history, displayBalanceSats, new Date(), userTimezone) : history
     }
@@ -466,7 +515,9 @@ export function DashboardPage(): JSX.Element {
   ])
 
   const periodChange = useMemo(() => {
-    if (!historicalData.length) return null
+    if (!historicalData.length) {
+      return null
+    }
     const currentSats = new Decimal(toSatoshisString(historicalData[historicalData.length - 1]?.totalBalance))
     const startSats = new Decimal(toSatoshisString(historicalData[0]?.totalBalance))
     return currentSats.minus(startSats)
@@ -894,7 +945,9 @@ function TimeRangeSelector({
   }
 
   const handleApply = (): void => {
-    if (draftError !== null) return
+    if (draftError !== null) {
+      return
+    }
     onCustomApply(draft)
     onClose()
   }
@@ -1022,7 +1075,9 @@ interface StatCardProps {
 function StatCard({ label, data, mode, timezone }: StatCardProps): JSX.Element {
   const value = useMemo(() => {
     const monthlyChanges = getMonthlyChanges(data, 6, timezone)
-    if (monthlyChanges.length === 0) return new Decimal(0)
+    if (monthlyChanges.length === 0) {
+      return new Decimal(0)
+    }
 
     if (mode === 'current') {
       const currentMonthKey = getMonthKey(new Date(), timezone)

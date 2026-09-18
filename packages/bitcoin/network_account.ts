@@ -22,8 +22,8 @@ export class NetworkAccount<T extends Account = Account> {
       )
     }
     return Network.fromStringRaw(network).andThen((n) => {
-      return Account.fromDescriptor(account).map((account) => {
-        return new NetworkAccount(n, account)
+      return Account.fromDescriptor(account).map((parsedAccount) => {
+        return new NetworkAccount(n, parsedAccount)
       })
     })
   }

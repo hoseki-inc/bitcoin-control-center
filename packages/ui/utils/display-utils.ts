@@ -23,14 +23,20 @@ export function toUsdAmountDisplayValue(amount: number | string): string {
 }
 
 export function toXpubDisplayValue(xpubStr: string, mask = true): string {
-  if (xpubStr.length <= 32) return xpubStr
+  if (xpubStr.length <= 32) {
+    return xpubStr
+  }
 
   const chunks = chunk(xpubStr, 4)
 
-  const result = chunks.map((chunk, i) => {
-    if (i === 0 || i === 1) return chunk.join('')
-    if (i === chunks.length - 1 || i === chunks.length - 2) return chunk.join('')
-    return mask ? '****' : chunk.join('')
+  const result = chunks.map((group, i) => {
+    if (i === 0 || i === 1) {
+      return group.join('')
+    }
+    if (i === chunks.length - 1 || i === chunks.length - 2) {
+      return group.join('')
+    }
+    return mask ? '****' : group.join('')
   })
 
   return result.join(' ')
@@ -41,7 +47,9 @@ export function toXpubDisplayValue(xpubStr: string, mask = true): string {
  * Example: xpub1234567890abcd...wxyz5678
  */
 export function toXpubShortDisplayValue(xpubStr: string): string {
-  if (xpubStr.length <= 16) return xpubStr
+  if (xpubStr.length <= 16) {
+    return xpubStr
+  }
   const first4 = xpubStr.slice(0, 4)
   const second4 = xpubStr.slice(4, 8)
   const secondLast4 = xpubStr.slice(-8, -4)

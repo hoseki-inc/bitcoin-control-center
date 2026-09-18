@@ -264,7 +264,7 @@ Run these commands from the repository root unless noted otherwise.
 | `pnpm dev`            | Run Sentinel and Control Center in watch mode                |
 | `pnpm check`          | Run TypeScript project-reference checks                      |
 | `pnpm test`           | Run application and shared-library tests through Turbo       |
-| `pnpm lint`           | Run ESLint with zero warnings allowed                        |
+| `pnpm lint`           | Run Oxlint and ESLint with zero warnings allowed             |
 | `pnpm format:check`   | Verify Prettier formatting                                   |
 | `pnpm format`         | Apply Prettier formatting                                    |
 | `pnpm build`          | Build Sentinel and the production web application            |
@@ -272,6 +272,10 @@ Run these commands from the repository root unless noted otherwise.
 | `pnpm run ci`         | Run every audit, type check, test, and production build gate |
 | `pnpm ladle:serve`    | Run the shared component-workbench development server        |
 | `pnpm ladle:build`    | Build the component workbench                                |
+
+Issue [#91](https://github.com/hoseki-inc/bitcoin-control-center/issues/91) is being rolled out one lint rule per commit. Oxlint runs across all maintained JavaScript and TypeScript source, including desktop, StartOS, tests, and repository scripts. Its default rules are disabled, and the explicitly enabled rules accumulate in `.oxlintrc.json`. Existing ESLint checks remain in place during the migration. Run `pnpm lint:oxlint` to check the adopted rules on their own.
+
+The first checkpoint enables `curly` with the `all` option: every control-flow body must use braces. Oxfmt, type-aware linting, and the native TypeScript checker will be introduced in later checkpoints.
 
 Focused workflows:
 
@@ -324,6 +328,8 @@ npm --prefix start9 test
 The complete `pnpm run ci` command also runs the StartOS tests and requires those
 packaging dependencies to be installed first. StartOS candidate and draft-release
 workflows use this complete verification command.
+
+CodeQL scans pull requests targeting `main`, pushes to `main`, and `main` weekly on Mondays at 13:17 UTC. Manual scans are available in GitHub Actions.
 
 Tests that open temporary localhost listeners may require normal host networking in restricted container or agent environments.
 

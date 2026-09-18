@@ -1,0 +1,27 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": [],
+  "categories": {
+    "correctness": "off"
+  },
+  "rules": {
+    "curly": ["error", "all"],
+    "no-array-constructor": "error",
+    "no-restricted-imports": [
+      "error",
+      {
+        "patterns": [
+          {
+            "group": ["../**/packages/**", "./**/packages/**"],
+            "message": "Use '@hoseki/packages/*' instead of a relative path into packages/."
+          },
+          {
+            "group": ["../**/apps/**", "./**/apps/**"],
+            "message": "Use '@hoseki/apps/*' instead of a relative path into apps/."
+          }
+        ]
+      }
+    ],
+    "no-shadow": "error"
+  }
+}

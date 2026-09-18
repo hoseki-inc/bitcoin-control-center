@@ -185,9 +185,9 @@ function ConnectTrezorWalletCheckXpub({
       return 'One'
     }
 
-    const model = getTrezorModel(featuresRes.unwrap().internal_model) ?? 'One'
-    setModel(model)
-    return model
+    const detectedModel = getTrezorModel(featuresRes.unwrap().internal_model) ?? 'One'
+    setModel(detectedModel)
+    return detectedModel
   }
 
   return (
@@ -276,10 +276,12 @@ function GenericCheckWalletXpub({
       const withDeviceModel = { ...matchedKeyStore, model: deviceModel }
       setMatchedKeystore({ keystore: withDeviceModel, match: true })
       return
-    } catch (error) {
-      browserLogger.error(error, 'Error checking xpub')
+    } catch (caughtError) {
+      browserLogger.error(caughtError, 'Error checking xpub')
       setError(
-        error instanceof Error ? error : new Error('Error checking xpub. Was the device unlocked and plugged in?'),
+        caughtError instanceof Error
+          ? caughtError
+          : new Error('Error checking xpub. Was the device unlocked and plugged in?'),
       )
     } finally {
       setIsChecking(false)
@@ -287,7 +289,9 @@ function GenericCheckWalletXpub({
   }
 
   async function onSubmit(data: { keystoreName: string }) {
-    if (!matchedKeystore?.keystore) return
+    if (!matchedKeystore?.keystore) {
+      return
+    }
 
     try {
       setIsSaving(true)
@@ -306,9 +310,9 @@ function GenericCheckWalletXpub({
           challengeId: claim.latestChallenge?.id ?? '',
         })
       }
-    } catch (error) {
-      browserLogger.error('### Error: ', error)
-      setError(error instanceof Error ? error : new Error('Error saving keystore'))
+    } catch (caughtError) {
+      browserLogger.error('### Error: ', caughtError)
+      setError(caughtError instanceof Error ? caughtError : new Error('Error saving keystore'))
     } finally {
       setIsSaving(false)
     }
@@ -563,8 +567,11 @@ function ConnectKeystoneWallet({ claim }: { claim: ClaimDto }) {
   const [keystoneJson, setKeystoneJson] = useState<KeystoneExportFile>()
 
   const goBack = (): void => {
-    if (wizardStep === 1) void navigate(`/multisig/${claim.id}`)
-    else setWizardStep((prev) => prev - 1)
+    if (wizardStep === 1) {
+      void navigate(`/multisig/${claim.id}`)
+    } else {
+      setWizardStep((prev) => prev - 1)
+    }
   }
   const goForward = (): void => setWizardStep((prev) => prev + 1)
 

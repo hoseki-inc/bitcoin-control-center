@@ -10,9 +10,9 @@ export function chunk<T>(iter: Iterable<T>, size: number): T[][] {
       i = 1
       j += 1
     }
-    const chunk = chunks[j] ?? []
-    chunks[j] = chunk
-    chunk.push(value)
+    const currentChunk = chunks[j] ?? []
+    chunks[j] = currentChunk
+    currentChunk.push(value)
   }
   return chunks
 }

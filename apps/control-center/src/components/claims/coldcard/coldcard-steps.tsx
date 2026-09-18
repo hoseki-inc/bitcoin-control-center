@@ -218,7 +218,9 @@ function ColdcardSelectionBox({ name, image, onClick }: { name: string; image: R
       textAlign="center"
       onClick={() => {
         const box = boxRef.current
-        if (!box) return
+        if (!box) {
+          return
+        }
 
         box.classList.add('active')
         setTimeout(() => {
@@ -453,8 +455,8 @@ export function Step5({
           validationFn={(rawContent): Result<ColdcardGenericJsonFile, Error> => {
             return parseGenericJsonFile(rawContent)
           }}
-          onValidContentRead={(coldcardJson: ColdcardGenericJsonFile) => {
-            setColdcardJson(coldcardJson)
+          onValidContentRead={(parsedColdcardJson: ColdcardGenericJsonFile) => {
+            setColdcardJson(parsedColdcardJson)
           }}
           acceptedFileTypes={['json']}
           status={fileState}
