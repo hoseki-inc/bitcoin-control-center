@@ -69,6 +69,8 @@ jobs:
 
       - name: Set up Node workspace
         uses: ./.github/actions/setup
+        with:
+          cache: 'false'
 
       - name: Install packaging dependencies
         run: |

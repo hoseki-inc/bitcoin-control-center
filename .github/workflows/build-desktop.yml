@@ -38,6 +38,8 @@ jobs:
       - name: Verify the workflow commit before executing repository code
         run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
       - uses: ./.github/actions/setup
+        with:
+          cache: 'false'
       - name: Build native installer
         env:
           DESKTOP_TARGET: ${{ matrix.target }}
