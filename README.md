@@ -325,6 +325,10 @@ The complete `pnpm run ci` command also runs the StartOS tests and requires thos
 packaging dependencies to be installed first. StartOS candidate and draft-release
 workflows use this complete verification command.
 
+CodeQL scans pull requests and pushes to `main`, with a weekly follow-up on Tuesday
+at 10:17 UTC, 24 hours after Dependabot's Monday 10:17 UTC schedule. It also supports manual runs from
+GitHub Actions. See [CodeQL setup and activation](docs/SECURITY_AUDIT.md#codeql-scans).
+
 Tests that open temporary localhost listeners may require normal host networking in restricted container or agent environments.
 
 ## Production builds
