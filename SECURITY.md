@@ -21,3 +21,15 @@ Bitcoin Control Center stores sensitive portfolio configuration locally and conn
 Desktop adds authorities already trusted by the operating system to Node's existing defaults before starting Sentinel. Public SSL endpoints require a valid certificate chain and matching hostname/IP. The app does not install or automatically trust authorities received from a server.
 
 The shared Electrum transport currently skips certificate verification for hosts classified as local/private. A successful private SSL connection does not establish server identity. Per-profile certificate import and explicit private-host verification are not implemented. Plain TCP is unencrypted. Keep the StartOS internal service connection compatible when changing this policy.
+
+## Dependency and build security
+
+Run `pnpm security:audit` before releases and dependency changes. It checks the root workspace, desktop package, StartOS SDK, and StartOS container runtime, and fails on findings of moderate severity or higher; review low-severity findings too. It is deliberately not part of pull-request CI, so newly published advisories don't block unrelated changes; Dependabot and pull-request dependency review stay enabled.
+
+- Pin direct dependencies and third-party GitHub Actions; use the committed lockfiles for installation. Review Dependabot updates and required peer dependencies explicitly.
+- Keep dependency release-age protection and deliberate transitive overrides. Reassess wallet-library advisories whenever those integrations change.
+- Verify downloaded Tor archives against the pinned hashes from the Tor Project's signed checksum manifest. Review binary and checksum updates together.
+- Keep Lottie animation data restricted to trusted repository assets: the expression engine used by the Coldcard animations contains `eval`. Never render user-supplied Lottie JSON.
+- Preserve local credential encryption and file permissions. Back up the database with its encryption key, as described in the [README](README.md#local-data-and-backups).
+
+Release workflows verify their source commit and run without shared build caches. See the [desktop packaging notes](README.md#desktop-packaging) for current signing limitations. Preserve desktop's application ID and data location, and StartOS's package ID, volume, and configuration keys, unless a migration is designed and tested.

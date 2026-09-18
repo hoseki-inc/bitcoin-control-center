@@ -1,5 +1,5 @@
-name: StartOS 1 - Prepare version
-run-name: Prepare StartOS ${{ inputs.bump_type }} release
+name: Release 1 - Prepare version
+run-name: Prepare ${{ inputs.bump_type }} release
 
 on:
   workflow_dispatch:
@@ -155,7 +155,7 @@ jobs:
             echo ""
             echo "- Confirm the release notes preview correctly in the version-file diff."
             echo "- Let all protected checks pass."
-            echo "- Run the private StartOS candidate workflow from this branch when a release-like package is needed."
+            echo "- Run Release 2 - Build candidates from this branch to test StartOS and both desktop installers."
             echo ""
             echo "The tag is intentionally not created by this pull request."
           } > "$RUNNER_TEMP/startos-release-pr.md"
