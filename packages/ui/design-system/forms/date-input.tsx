@@ -21,15 +21,15 @@ export type DateInputProps = Omit<InputProps, 'type' | 'value' | 'onChange' | 'm
  * based on the locale defined in the user's OS.
  */
 export function DateInput({ value, onChange, min, max, type = 'date', ...props }: DateInputProps): JSX.Element {
-  const format = (date: Date) => formatDateForInput(date, type)
+  const formatInputDate = (date: Date) => formatDateForInput(date, type)
 
   return (
     <Input
       {...props}
       type={type}
-      max={max && isValid(max) ? format(max) : undefined}
-      min={min && isValid(min) ? format(min) : undefined}
-      value={value && isValid(value) ? format(value) : ''}
+      max={max && isValid(max) ? formatInputDate(max) : undefined}
+      min={min && isValid(min) ? formatInputDate(min) : undefined}
+      value={value && isValid(value) ? formatInputDate(value) : ''}
       onChange={(e) => {
         // Calling `new Date()` with a date string like "2025-04-02" interprets it as UTC,
         // then converts to local timezone.

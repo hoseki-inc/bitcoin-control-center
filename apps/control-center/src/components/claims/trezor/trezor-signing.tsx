@@ -28,14 +28,14 @@ export function TrezorSigning({
   // Replace 'h' with "'" in the derivation path to make it compatible with Trezor
   const signingPath = `${keystore.derivationPath}/0/0`.replace(/h/g, "'")
 
-  async function signCustomMessageOnTrezor(challenge: ChallengeDto, challengeMessage: ChallengeMessageDto) {
+  async function signCustomMessageOnTrezor(signingChallenge: ChallengeDto, signingMessage: ChallengeMessageDto) {
     setSigningInProgress(true)
     setSigningError(null)
 
     // Step 1: Sign the message on the device
     const signMessageResult = await trezorService.signCustomMessage(
       signingPath,
-      challengeMessage.signedMessage.messageTextToSign,
+      signingMessage.signedMessage.messageTextToSign,
     )
     if (signMessageResult.isErr()) {
       const trezorError = signMessageResult.unwrapErr()
@@ -53,7 +53,7 @@ export function TrezorSigning({
     // Step 2: Complete the challenge message
     const ccmResult = await Result.fromPromise(
       completeChallengeMessageMutation.mutateAsync({
-        signedMessageId: challengeMessage.signedMessage.id,
+        signedMessageId: signingMessage.signedMessage.id,
         signature: signMessageResult.unwrap().signature,
       }),
     )
@@ -63,7 +63,9 @@ export function TrezorSigning({
     }
 
     // Step 3: Complete the challenge
-    const ccResult = await Result.fromPromise(completeChallengeMutation.mutateAsync({ challengeId: challenge.id }))
+    const ccResult = await Result.fromPromise(
+      completeChallengeMutation.mutateAsync({ challengeId: signingChallenge.id }),
+    )
     if (ccResult.isErr()) {
       setSigningInProgress(false)
       return

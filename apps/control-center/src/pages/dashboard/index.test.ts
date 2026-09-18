@@ -58,13 +58,13 @@ vi.mock('../../lib/balances', () => ({ useGetBalancesPerClaimIds: () => ({ data:
 vi.mock('../../utils/timezone', () => ({ getBrowserTimezone: () => 'UTC' }))
 vi.mock('react-router', () => ({ useNavigate: () => vi.fn(), Link: 'a' }))
 vi.mock('@hoseki/packages/ui/design-system', async () => {
-  const { createElement } = await import('react')
+  const { createElement: createMockElement } = await import('react')
   const { format } = await import('date-fns')
   return {
-    Spinner: () => createElement('span', { 'data-spinner': true }),
-    Panel: ({ children }: { children: React.ReactNode }) => createElement('div', null, children),
+    Spinner: () => createMockElement('span', { 'data-spinner': true }),
+    Panel: ({ children }: { children: React.ReactNode }) => createMockElement('div', null, children),
     DateInput: ({ id, value, onChange }: { id: string; value: Date | null; onChange: (value: Date) => void }) =>
-      createElement('input', {
+      createMockElement('input', {
         id,
         type: 'date',
         value: value ? format(value, 'yyyy-MM-dd') : '',
@@ -73,32 +73,32 @@ vi.mock('@hoseki/packages/ui/design-system', async () => {
   }
 })
 vi.mock('../../components/dashboard-charts/accounts-sidebar', async () => {
-  const { createElement } = await import('react')
+  const { createElement: createMockElement } = await import('react')
   return {
     AccountsSidebar: (props: { onToggle: (id: string) => void; onClearAll: () => void }) => {
       mocks.sidebar(props)
-      return createElement(
+      return createMockElement(
         'div',
         null,
-        createElement('button', { onClick: () => props.onToggle('holding') }, 'Select holding'),
-        createElement('button', { onClick: () => props.onToggle('wallet') }, 'Select wallet'),
-        createElement('button', { onClick: props.onClearAll }, 'Clear selection'),
+        createMockElement('button', { onClick: () => props.onToggle('holding') }, 'Select holding'),
+        createMockElement('button', { onClick: () => props.onToggle('wallet') }, 'Select wallet'),
+        createMockElement('button', { onClick: props.onClearAll }, 'Clear selection'),
       )
     },
   }
 })
 vi.mock('../../components/dashboard-charts/accumulation-chart', async () => {
-  const { createElement } = await import('react')
+  const { createElement: createMockElement } = await import('react')
   return {
     AccumulationChart: ({ data }: { data: unknown }) =>
-      createElement('div', { 'data-chart': 'accumulation' }, JSON.stringify(data)),
+      createMockElement('div', { 'data-chart': 'accumulation' }, JSON.stringify(data)),
   }
 })
 vi.mock('../../components/dashboard-charts/monthly-net-change-chart', async () => {
-  const { createElement } = await import('react')
+  const { createElement: createMockElement } = await import('react')
   return {
     MonthlyNetChangeChart: ({ data }: { data: unknown }) =>
-      createElement('div', { 'data-chart': 'monthly' }, JSON.stringify(data)),
+      createMockElement('div', { 'data-chart': 'monthly' }, JSON.stringify(data)),
   }
 })
 
@@ -110,7 +110,9 @@ async function render(): Promise<void> {
 }
 
 async function click(label: string): Promise<void> {
-  const button = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === label)
+  const button = Array.from(document.querySelectorAll('button')).find(
+    (candidateButton) => candidateButton.textContent === label,
+  )
   expect(button, `Missing button: ${label}`).toBeDefined()
   await act(async () => button!.click())
 }

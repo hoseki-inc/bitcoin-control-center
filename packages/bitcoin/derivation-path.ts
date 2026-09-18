@@ -51,7 +51,7 @@ export class DerivationPath {
   }
 
   public static fromString(path: string): Result<DerivationPath, Error> {
-    return parse(DerivationPathString, path).map((path) => DerivationPath.from(path))
+    return parse(DerivationPathString, path).map((parsedPath) => DerivationPath.from(parsedPath))
   }
 
   public static from(path: DerivationPathString): DerivationPath {
