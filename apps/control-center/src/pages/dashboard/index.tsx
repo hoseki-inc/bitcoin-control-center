@@ -32,6 +32,7 @@ import {
 } from '../../components/dashboard-charts/balance-history'
 import { MonthlyNetChangeChart } from '../../components/dashboard-charts/monthly-net-change-chart'
 import { useAutoRefreshExchanges } from '../../hooks/use-auto-refresh-exchanges'
+import { useUiPreference } from '../../hooks/use-ui-preference'
 import { useGetBalancesPerClaimIds } from '../../lib/balances'
 import { trpc } from '../../trpc'
 import { getBrowserTimezone } from '../../utils/timezone'
@@ -116,23 +117,9 @@ export function DashboardPage(): JSX.Element {
   const today = new Date()
   const isShowingAll = selected.size === 0
   const isSmallScreen = useBreakpointValue({ base: true, xl: false }) ?? true
-  const [userCompact, setUserCompact] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem('hoseki:sidebar-compact') === 'true'
-    } catch {
-      return false
-    }
-  })
+  const [userCompact, setUserCompact] = useUiPreference('sidebar_compact')
   const compactSidebar = isSmallScreen || userCompact
-  const toggleCompact = useCallback(() => {
-    setUserCompact((prev) => {
-      const next = !prev
-      try {
-        localStorage.setItem('hoseki:sidebar-compact', String(next))
-      } catch {}
-      return next
-    })
-  }, [])
+  const toggleCompact = (): void => setUserCompact(!userCompact)
 
   const recordSnapshot = trpc.portalProve.controlCenter.recordSnapshot.useMutation()
   const claimsQuery = trpc.portalProve.registry.claims.list.useQuery({ excludePending: false })

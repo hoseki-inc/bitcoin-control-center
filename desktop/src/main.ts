@@ -4,7 +4,7 @@ import { pathToFileURL } from 'node:url'
 import { BrowserWindow, type Tray, type WebContents, app, dialog, ipcMain, shell } from 'electron'
 import { setupLedgerHidAccess } from './ledger-hid'
 import { findAvailablePort } from './ports'
-import { isAddressInUse, readPreferredPort, writePreferredPort } from './preferred-port'
+import { startOnPreferredPort } from './preferred-port'
 import { shutdownWithDeadline } from './shutdown'
 import { configureDesktopTlsTrust } from './tls-trust'
 import { TorManager } from './tor'
@@ -70,15 +70,9 @@ async function start(): Promise<void> {
   const { main } = await import(pathToFileURL(path.join(serverDir, 'main.js')).href)
   const options = { waitForElectrum: false, tor: torManager, connectionProfiles: true }
   const portFile = path.join(app.getPath('userData'), 'port')
-  // Reuse the last port so renderer storage, which is scoped to the origin, survives
-  // launches. Fall back to an OS-assigned port when another process holds it.
-  const localServer: LocalServer = await main({ ...options, listenPort: readPreferredPort(portFile) }).catch(
-    (error: unknown) => {
-      if (!isAddressInUse(error)) throw error
-      return main({ ...options, listenPort: 0 })
-    },
+  const localServer = await startOnPreferredPort<LocalServer>(portFile, (listenPort) =>
+    main({ ...options, listenPort }),
   )
-  writePreferredPort(portFile, localServer.port)
   server = localServer
   const origin = `http://localhost:${localServer.port}`
   if (quitting) return

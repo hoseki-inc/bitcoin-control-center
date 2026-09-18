@@ -207,7 +207,9 @@ The normal development endpoints are:
 | Sentinel health check | `http://localhost:3400/health` |
 | Sentinel tRPC API     | `http://localhost:3400/trpc`   |
 
-Vite may select the next free port if `4269` is already occupied. The development Sentinel will stop with an address-in-use error if `3400` is occupied. The desktop app reuses its previous loopback port when free and otherwise binds another, so it can run alongside development; its UI and wallet permissions use that actual address.
+Vite may select the next free port if `4269` is already occupied. The development Sentinel will stop with an address-in-use error if `3400` is occupied. Desktop leaves both development ports available: it reuses a saved non-development loopback port when free and otherwise requests an OS-assigned port. Its UI and wallet permissions use the actual bound address, so either environment can start first.
+
+Desktop stores the sidebar layout and dismissed-banner preferences in Sentinel's local database, so a port change does not reset newly saved preferences. Existing browser preferences are imported when available at the current origin. An upgrade moving away from the old desktop port `3400` may require setting those two display preferences once again; accounts and saved connections remain intact. StartOS keeps display preferences local to each browser.
 
 ### Run the services separately
 

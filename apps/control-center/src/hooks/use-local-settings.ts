@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import superjson from 'superjson'
 
 const baseUrl = import.meta.env['VITE_BACKEND_API_URL'] ?? ''
@@ -6,7 +7,10 @@ const baseUrl = import.meta.env['VITE_BACKEND_API_URL'] ?? ''
 /**
  * Hook for reading/writing local settings stored in api-sentinel's SQLite.
  */
-export function useLocalSetting(key: string): {
+export function useLocalSetting(
+  key: string,
+  enabled = true,
+): {
   data: string | null | undefined
   isLoading: boolean
   save: (value: string) => void
@@ -17,10 +21,11 @@ export function useLocalSetting(key: string): {
 
   const query = useQuery({
     queryKey,
-    queryFn: async (): Promise<string | null> => {
+    enabled,
+    queryFn: async ({ signal }): Promise<string | null> => {
       const input = superjson.serialize({ key })
       const params = new URLSearchParams({ input: JSON.stringify(input) })
-      const res = await fetch(`${baseUrl}/settings.get?${params}`)
+      const res = await fetch(`${baseUrl}/settings.get?${params}`, { signal })
       if (!res.ok) throw new Error('Failed to fetch setting')
       const json = await res.json()
       return superjson.deserialize(json.result.data) as string | null
@@ -36,9 +41,11 @@ export function useLocalSetting(key: string): {
       })
       if (!res.ok) throw new Error('Failed to save setting')
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey })
+    onSuccess: async (_result, value) => {
+      await queryClient.cancelQueries({ queryKey })
+      queryClient.setQueryData(queryKey, value)
     },
+    onError: () => toast.error('Could not save setting. Try again.'),
   })
 
   return {

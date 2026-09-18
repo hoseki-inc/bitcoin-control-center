@@ -54,6 +54,7 @@ vi.mock('../../trpc', () => {
   }
 })
 vi.mock('../../hooks/use-auto-refresh-exchanges', () => ({ useAutoRefreshExchanges: () => undefined }))
+vi.mock('../../hooks/use-ui-preference', () => ({ useUiPreference: () => [false, vi.fn()] }))
 vi.mock('../../lib/balances', () => ({ useGetBalancesPerClaimIds: () => ({ data: new Map() }) }))
 vi.mock('../../utils/timezone', () => ({ getBrowserTimezone: () => 'UTC' }))
 vi.mock('react-router', () => ({ useNavigate: () => vi.fn(), Link: 'a' }))
