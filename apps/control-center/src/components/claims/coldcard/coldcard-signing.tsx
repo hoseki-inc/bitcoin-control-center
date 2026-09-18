@@ -90,7 +90,7 @@ function ColdcardFileSigning({
 
 function SinglesigStep11({
   model,
-  claim,
+  claim: _claim,
   challenge,
   challengeMessage,
   onBack,
@@ -127,7 +127,7 @@ function SinglesigStep11({
       await completeChallengeMutation.mutateAsync({ challengeId: challenge.id })
 
       onSigningComplete()
-    } catch (error) {
+    } catch {
       toast.error('The signing process did not complete successfully.')
     }
   }

@@ -36,7 +36,7 @@ export function HardwareWalletTestPage(): JSX.Element {
             try {
               const model = deviceModel?.productName ?? 'Unknown'
               setJson({ model })
-            } catch (error) {
+            } catch {
               setJson({ error: 'Error, try one more time' })
             }
           }}
