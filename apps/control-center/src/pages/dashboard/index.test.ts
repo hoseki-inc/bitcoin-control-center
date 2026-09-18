@@ -198,7 +198,9 @@ describe('custom portfolio range UI', () => {
   })
 
   it.each(['Select holding', 'Clear selection'])('keeps the dashboard visible while %s loads', async (action) => {
-    if (action === 'Clear selection') await click('Select holding')
+    if (action === 'Clear selection') {
+      await click('Select holding')
+    }
     const loadedChart = chartData()
     const client = new QueryClient({ defaultOptions: { queries: { retry: false, cacheTime: 0 } } })
     let complete!: (value: typeof mocks.base) => void
@@ -265,7 +267,9 @@ describe('custom portfolio range UI', () => {
     'does not manufacture a current-balance point or change pill for empty %s history',
     async (range) => {
       await click(range)
-      if (range === 'Custom') await click('Apply')
+      if (range === 'Custom') {
+        await click('Apply')
+      }
       expect(chartData()).toEqual([])
       expect(container.textContent).not.toContain('BTC (+0.0%)')
     },
@@ -325,7 +329,9 @@ describe('custom portfolio range UI', () => {
     async ({ selection, hasPreviousData }) => {
       const client = new QueryClient({ defaultOptions: { queries: { retry: false, cacheTime: 0 } } })
       client.mount()
-      if (hasPreviousData) client.setQueryData(['portfolio', '90d'], mocks.base)
+      if (hasPreviousData) {
+        client.setQueryData(['portfolio', '90d'], mocks.base)
+      }
       onlineManager.setOnline(false)
       const options = { staleTime: 300_000, keepPreviousData: true }
       const observer = new QueryObserver(client, {
@@ -355,7 +361,9 @@ describe('custom portfolio range UI', () => {
         mocks.useQuery.mockImplementation((input) =>
           input.customDateRange ? observer.getCurrentResult() : defaultQuery(input),
         )
-        if (selection === 'filtered') await click('Select holding')
+        if (selection === 'filtered') {
+          await click('Select holding')
+        }
         await click('Custom')
         await changeDate('portfolio-range-start', '2020-01-01')
         await changeDate('portfolio-range-end', '2020-01-03')
@@ -392,7 +400,9 @@ describe('custom portfolio range UI', () => {
   it.each(['All', 'Custom'])('keeps an already certified %s chart visible during tail updates', async (range) => {
     mocks.rangeData = { ...mocks.base, historySyncedAccountIds: ['wallet'] }
     await click(range)
-    if (range === 'Custom') await click('Apply')
+    if (range === 'Custom') {
+      await click('Apply')
+    }
     const loadedChart = chartData()
     mocks.rangeData = {
       ...mocks.rangeData,
@@ -447,8 +457,11 @@ describe('custom portfolio range UI', () => {
       historyFailedAccountIds: ['wallet'],
       historyRefreshingAccountIds: refresh ? ['wallet'] : [],
     }
-    if (refresh) await render()
-    else await click('All')
+    if (refresh) {
+      await render()
+    } else {
+      await click('All')
+    }
     expect(container.textContent).toContain("Wallet history couldn't be loaded. Retrying automatically.")
     expect(container.textContent).not.toContain('Preparing history for this date range')
     expect(container.textContent).not.toContain('All synced')
@@ -483,10 +496,13 @@ describe('custom portfolio range UI', () => {
         const failed = await observer.refetch()
         expect(failed).toMatchObject({ status: 'error', data: mocks.base, isPreviousData: false })
         mocks.useQuery.mockImplementation(() => failed)
-        if (range === '90D') await render()
-        else {
+        if (range === '90D') {
+          await render()
+        } else {
           await click(range)
-          if (range === 'Custom') await click('Apply')
+          if (range === 'Custom') {
+            await click('Apply')
+          }
         }
         expect(container.querySelectorAll('[data-chart]')).toHaveLength(2)
         expect(container.textContent).toContain("Couldn't refresh this date range. Showing previously loaded data.")
@@ -602,7 +618,9 @@ describe('custom portfolio range UI', () => {
         )
         await render()
         await click(range)
-        if (range === 'Custom') await click('Apply')
+        if (range === 'Custom') {
+          await click('Apply')
+        }
 
         expect(container.textContent).toContain("Couldn't load this date range: Connection lost")
         expect(container.textContent).not.toContain('No verified claims yet')

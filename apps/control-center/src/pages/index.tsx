@@ -41,7 +41,9 @@ function PortfolioSummary(): JSX.Element | null {
     timezone: userTimezone,
   })
 
-  if (isLoading || !data) return null
+  if (isLoading || !data) {
+    return null
+  }
 
   const isChartFetching = isFetching && !isLoading
 

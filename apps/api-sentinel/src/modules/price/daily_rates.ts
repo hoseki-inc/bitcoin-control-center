@@ -111,11 +111,15 @@ export class DailyRatesService {
       prices?: Array<{ time: number; USD: number }>
     }
 
-    if (!json.prices || json.prices.length === 0) return null
+    if (!json.prices || json.prices.length === 0) {
+      return null
+    }
 
     // API returns the nearest daily price point
     const pricePoint = json.prices[0]
-    if (!pricePoint || !pricePoint.USD) return null
+    if (!pricePoint || !pricePoint.USD) {
+      return null
+    }
 
     const date = new Date(pricePoint.time * 1000)
     const dateKey = toDateKey(date)
@@ -137,7 +141,9 @@ export class DailyRatesService {
 /** Format a Date as 'YYYY-MM-DD' */
 export function toDateKey(date: Date): string {
   const key = date.toISOString().split('T')[0]
-  if (!key) throw new Error('Invalid date format')
+  if (!key) {
+    throw new Error('Invalid date format')
+  }
   return key
 }
 

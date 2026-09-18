@@ -14,7 +14,9 @@ export function useCountdown(initialTimeRemaining: number, autoReset: boolean = 
   const [isCounting, setIsCounting] = useState(false)
 
   useEffect(() => {
-    if (!isCounting) return
+    if (!isCounting) {
+      return
+    }
 
     const timerInterval = setInterval(() => {
       setTimeRemaining((prevTime) => {

@@ -71,15 +71,23 @@ export class ElectrumProvider extends OnchainBitcoinProvider {
       const results = await Promise.all(
         batch.map(async (address) => {
           const scripthash = addressToScripthash(address)
-          if (scripthash.isErr()) return { address, err: scripthash.unwrapErr() } as const
+          if (scripthash.isErr()) {
+            return { address, err: scripthash.unwrapErr() } as const
+          }
           const history = await this.deps.electrum.getHistory(scripthash.unwrap())
-          if (history.isErr()) return { address, err: history.unwrapErr() } as const
+          if (history.isErr()) {
+            return { address, err: history.unwrapErr() } as const
+          }
           return { address, used: history.unwrap().length > 0 } as const
         }),
       )
       for (const r of results) {
-        if ('err' in r) return Err(r.err ?? new Error('Electrum history request failed'))
-        if (r.used) used.add(r.address)
+        if ('err' in r) {
+          return Err(r.err ?? new Error('Electrum history request failed'))
+        }
+        if (r.used) {
+          used.add(r.address)
+        }
       }
     }
 
@@ -99,14 +107,20 @@ export class ElectrumProvider extends OnchainBitcoinProvider {
         const results = await Promise.all(
           batch.map(async (address) => {
             const scripthash = addressToScripthash(address)
-            if (scripthash.isErr()) return { address, err: scripthash.unwrapErr() } as const
+            if (scripthash.isErr()) {
+              return { address, err: scripthash.unwrapErr() } as const
+            }
             const balanceRes = await this.deps.electrum.getBalance(scripthash.unwrap())
-            if (balanceRes.isErr()) return { address, err: balanceRes.unwrapErr() } as const
+            if (balanceRes.isErr()) {
+              return { address, err: balanceRes.unwrapErr() } as const
+            }
             return { address, balance: BigInt(balanceRes.unwrap().confirmed) } as const
           }),
         )
         for (const r of results) {
-          if ('err' in r) return Err(r.err ?? new Error('Electrum balance request failed'))
+          if ('err' in r) {
+            return Err(r.err ?? new Error('Electrum balance request failed'))
+          }
           balances.set(r.address, r.balance)
         }
       }
@@ -131,12 +145,16 @@ export class ElectrumProvider extends OnchainBitcoinProvider {
       this.deps.logger.debug({ account }, 'Getting UTXO accumulation entries')
 
       const discoveryResult = await this.discoverAccount(account)
-      if (discoveryResult.isErr()) return Err(discoveryResult.unwrapErr())
+      if (discoveryResult.isErr()) {
+        return Err(discoveryResult.unwrapErr())
+      }
       const { lastUsedReceiveIndex, lastUsedChangeIndex } = discoveryResult.unwrap()
 
       // Get current block tip for timestamp estimation
       const blocksTipRes = await this.getBlocksTip()
-      if (blocksTipRes.isErr()) return Err(blocksTipRes.unwrapErr())
+      if (blocksTipRes.isErr()) {
+        return Err(blocksTipRes.unwrapErr())
+      }
       const tip = blocksTipRes.unwrap()
 
       const entries: Array<{ value: bigint; height: number; estimatedTimestamp: Date }> = []
@@ -153,7 +171,9 @@ export class ElectrumProvider extends OnchainBitcoinProvider {
         const results = await Promise.all(
           batch.map(async (address) => {
             const scripthashRes = addressToScripthash(address)
-            if (scripthashRes.isErr()) return []
+            if (scripthashRes.isErr()) {
+              return []
+            }
             const unspentRes = await this.deps.electrum.listUnspent(scripthashRes.unwrap())
             if (unspentRes.isErr()) {
               this.deps.logger.warn({ address, err: unspentRes.unwrapErr() }, 'Failed to list unspent, skipping')
@@ -166,10 +186,14 @@ export class ElectrumProvider extends OnchainBitcoinProvider {
         for (const utxos of results) {
           for (const utxo of utxos) {
             const key = `${utxo.tx_hash}:${utxo.tx_pos}`
-            if (seenTxids.has(key)) continue
+            if (seenTxids.has(key)) {
+              continue
+            }
             seenTxids.add(key)
 
-            if (utxo.height <= 0) continue // skip unconfirmed
+            if (utxo.height <= 0) {
+              continue
+            } // skip unconfirmed
 
             // Estimate timestamp: ~10 minutes per block from tip
             const blocksBehind = tip.height - utxo.height
@@ -280,7 +304,9 @@ export class ElectrumProvider extends OnchainBitcoinProvider {
     cache: Map<string, Result<bitcoin.Transaction, Error>>,
   ): Promise<Result<bitcoin.Transaction, Error>> {
     const cached = cache.get(txHash)
-    if (cached !== undefined) return cached
+    if (cached !== undefined) {
+      return cached
+    }
 
     const rawTxResult = await this.deps.electrum.getTransaction(txHash)
     if (rawTxResult.isErr()) {
@@ -304,10 +330,14 @@ export class ElectrumProvider extends OnchainBitcoinProvider {
     blockHeight: number | null,
     cache: Map<number, Result<Date, Error>>,
   ): Promise<Result<Date, Error>> {
-    if (blockHeight === null) return Ok(new Date())
+    if (blockHeight === null) {
+      return Ok(new Date())
+    }
 
     const cached = cache.get(blockHeight)
-    if (cached !== undefined) return cached
+    if (cached !== undefined) {
+      return cached
+    }
 
     const headerResult = await this.deps.electrum.getBlockHeader(blockHeight)
     if (headerResult.isErr()) {
@@ -331,7 +361,9 @@ export class ElectrumProvider extends OnchainBitcoinProvider {
     blocksTipHeight: number
   }): Promise<Result<TransactionEntry[], Error>> {
     const txidRes = Txid.fromString(args.txHash)
-    if (txidRes.isErr()) return Err(txidRes.unwrapErr())
+    if (txidRes.isErr()) {
+      return Err(txidRes.unwrapErr())
+    }
 
     const relatedAddressKeys = new Set(args.relatedAddresses.map(({ address }) => address.key()))
     const valuesByAddressKey = new Map<string, bigint>()
@@ -341,7 +373,9 @@ export class ElectrumProvider extends OnchainBitcoinProvider {
 
     for (const output of args.tx.outs) {
       const walletAddress = args.walletScriptAddresses.get(bytesToHex(output.script))
-      if (walletAddress === undefined || !relatedAddressKeys.has(walletAddress.key())) continue
+      if (walletAddress === undefined || !relatedAddressKeys.has(walletAddress.key())) {
+        continue
+      }
       valuesByAddressKey.set(
         walletAddress.key(),
         (valuesByAddressKey.get(walletAddress.key()) ?? 0n) + BigInt(output.value),
@@ -349,11 +383,15 @@ export class ElectrumProvider extends OnchainBitcoinProvider {
     }
 
     for (const input of args.tx.ins) {
-      if (isCoinbaseInput(input)) continue
+      if (isCoinbaseInput(input)) {
+        continue
+      }
 
       const previousTxHash = previousTxidFromInputHash(input.hash)
       const previousTxResult = await this.getRawTransaction(previousTxHash, args.rawTxCache)
-      if (previousTxResult.isErr()) return Err(previousTxResult.unwrapErr())
+      if (previousTxResult.isErr()) {
+        return Err(previousTxResult.unwrapErr())
+      }
 
       const previousOutput = previousTxResult.unwrap().outs[input.index]
       if (previousOutput === undefined) {
@@ -361,7 +399,9 @@ export class ElectrumProvider extends OnchainBitcoinProvider {
       }
 
       const walletAddress = args.walletScriptAddresses.get(bytesToHex(previousOutput.script))
-      if (walletAddress === undefined || !relatedAddressKeys.has(walletAddress.key())) continue
+      if (walletAddress === undefined || !relatedAddressKeys.has(walletAddress.key())) {
+        continue
+      }
       valuesByAddressKey.set(
         walletAddress.key(),
         (valuesByAddressKey.get(walletAddress.key()) ?? 0n) - BigInt(previousOutput.value),
@@ -371,7 +411,9 @@ export class ElectrumProvider extends OnchainBitcoinProvider {
     const historyEntry = args.relatedAddresses[0]?.historyEntry
     const blockHeight = historyEntry && historyEntry.height > 0 ? historyEntry.height : null
     const timestampResult = await this.getBlockTimestamp(blockHeight, args.blockTimestampCache)
-    if (timestampResult.isErr()) return Err(timestampResult.unwrapErr())
+    if (timestampResult.isErr()) {
+      return Err(timestampResult.unwrapErr())
+    }
 
     return Ok(
       args.relatedAddresses.map(({ address }) => ({

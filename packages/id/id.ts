@@ -40,7 +40,9 @@ export namespace Id {
   /** Remove the prefix, returning just the random part */
   export function strip<T extends string>(prefixedId: Id<T>): string {
     const lastPart = prefixedId.split('_').at(-1)
-    if (!lastPart) throw new Panic('Invalid id')
+    if (!lastPart) {
+      throw new Panic('Invalid id')
+    }
     return lastPart
   }
 }

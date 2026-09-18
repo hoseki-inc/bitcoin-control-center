@@ -64,7 +64,9 @@ export function EtfAccountDetailsPage(): JSX.Element {
   const btcAmount = (btcSats / 100_000_000).toFixed(8)
 
   async function invalidateAll(): Promise<void> {
-    if (!accountId) return
+    if (!accountId) {
+      return
+    }
     await utils.portalProve.etf.get.invalidate({ accountId })
     await utils.portalProve.etf.list.invalidate()
     await utils.portalProve.etf.holdings.list.invalidate({ accountId })
@@ -72,7 +74,9 @@ export function EtfAccountDetailsPage(): JSX.Element {
   }
 
   async function handleAddHolding(): Promise<void> {
-    if (!accountId || !newShares) return
+    if (!accountId || !newShares) {
+      return
+    }
     try {
       await addHoldingMutation.mutateAsync({
         accountId,
@@ -100,7 +104,9 @@ export function EtfAccountDetailsPage(): JSX.Element {
   }
 
   async function handleDelete(): Promise<void> {
-    if (!accountId) return
+    if (!accountId) {
+      return
+    }
     setIsDeleting(true)
     try {
       await deleteMutation.mutateAsync({ accountId })

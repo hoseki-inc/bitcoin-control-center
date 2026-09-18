@@ -21,7 +21,9 @@ export function useLocalSetting(key: string): {
       const input = superjson.serialize({ key })
       const params = new URLSearchParams({ input: JSON.stringify(input) })
       const res = await fetch(`${baseUrl}/settings.get?${params}`)
-      if (!res.ok) throw new Error('Failed to fetch setting')
+      if (!res.ok) {
+        throw new Error('Failed to fetch setting')
+      }
       const json = await res.json()
       return superjson.deserialize(json.result.data) as string | null
     },
@@ -34,7 +36,9 @@ export function useLocalSetting(key: string): {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(superjson.serialize({ key, value })),
       })
-      if (!res.ok) throw new Error('Failed to save setting')
+      if (!res.ok) {
+        throw new Error('Failed to save setting')
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey })

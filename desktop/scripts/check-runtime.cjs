@@ -21,7 +21,9 @@ async function checkRuntime() {
     database = new Database(databasePath)
     assert.deepEqual(database.prepare('SELECT value FROM smoke').get(), { value: 42 })
   } finally {
-    if (database?.open) database.close()
+    if (database?.open) {
+      database.close()
+    }
     rmSync(temporaryDirectory, { recursive: true, force: true })
   }
 
@@ -51,6 +53,8 @@ if (process.versions.electron) {
     stdio: 'inherit',
     timeout: 60_000,
   })
-  if (result.error) console.error(result.error.message)
+  if (result.error) {
+    console.error(result.error.message)
+  }
   process.exitCode = result.status ?? 1
 }

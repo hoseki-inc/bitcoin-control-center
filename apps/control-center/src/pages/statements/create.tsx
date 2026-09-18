@@ -55,7 +55,9 @@ export function StatementCreatePage(): JSX.Element {
   const exchangeAccountsQuery = trpc.portalProve.exchange.list.useQuery()
 
   useEffect(() => {
-    if (hasAppliedPreSelection || !claimsQuery.data) return
+    if (hasAppliedPreSelection || !claimsQuery.data) {
+      return
+    }
     setHasAppliedPreSelection(true)
 
     if (navState?.preSelectedClaimIds && navState.preSelectedClaimIds.length > 0) {
@@ -72,7 +74,9 @@ export function StatementCreatePage(): JSX.Element {
 
   // Select all exchange accounts by default once loaded
   useEffect(() => {
-    if (hasAppliedExchangePreSelection || !exchangeAccountsQuery.data) return
+    if (hasAppliedExchangePreSelection || !exchangeAccountsQuery.data) {
+      return
+    }
     setHasAppliedExchangePreSelection(true)
     setSelectedExchangeAccountIds(
       new Set(exchangeAccountsQuery.data.filter(isExchangeConnected).map((account) => account.id)),

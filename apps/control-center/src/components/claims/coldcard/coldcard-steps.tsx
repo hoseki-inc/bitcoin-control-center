@@ -218,7 +218,9 @@ function ColdcardSelectionBox({ name, image, onClick }: { name: string; image: R
       textAlign="center"
       onClick={() => {
         const box = boxRef.current
-        if (!box) return
+        if (!box) {
+          return
+        }
 
         box.classList.add('active')
         setTimeout(() => {

@@ -20,9 +20,13 @@ export function useAutoRefreshExchanges(): void {
   const hasTriggered = useRef(false)
 
   useEffect(() => {
-    if (hasTriggered.current) return
+    if (hasTriggered.current) {
+      return
+    }
     const now = Date.now()
-    if (now - lastRefreshAt < DEBOUNCE_MS) return
+    if (now - lastRefreshAt < DEBOUNCE_MS) {
+      return
+    }
 
     hasTriggered.current = true
     lastRefreshAt = now

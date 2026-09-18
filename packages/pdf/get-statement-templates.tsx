@@ -122,7 +122,9 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
     return money.toMajorAmount().absoluteValue().toFixed(currencyObj.exponent) + currencyLabel
   }
   const formatUsd = (decimal: Decimal | null) => {
-    if (!decimal) return 'N/A'
+    if (!decimal) {
+      return 'N/A'
+    }
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency: 'USD',
@@ -133,7 +135,9 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
   }
 
   const formatTzDate = (date: Date | null, formatString: string, timezone: string): string => {
-    if (!date) return 'N/A'
+    if (!date) {
+      return 'N/A'
+    }
     return format(new TZDate(date, timezone), formatString)
   }
 
@@ -1494,7 +1498,9 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
 
   const CustomStatementDocument = ({ input, qrCode }: { input: DocumentInput; qrCode: string }) => {
     const statement = input.statement
-    if (statement.format !== 'custom') return null
+    if (statement.format !== 'custom') {
+      return null
+    }
 
     const timezone = statement.timezone
     const proofNum = statement.counter
@@ -1564,7 +1570,9 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
 
   const MonthlyStatementDocument = ({ input, qrCode }: { input: DocumentInput; qrCode: string }) => {
     const statement = input.statement
-    if (statement.format !== 'monthly') return null
+    if (statement.format !== 'monthly') {
+      return null
+    }
 
     const pages: React.ReactElement[] = []
     const timezone = statement.timezone
@@ -1658,7 +1666,9 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
 
       // Collect entries from all statements
       for (const statement of input.statements) {
-        if (statement.format !== 'custom') continue
+        if (statement.format !== 'custom') {
+          continue
+        }
         const customStatement = statement
         const currency = statement.currency ?? 'BTC'
 
@@ -1701,7 +1711,9 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
           </Page>
         )}
         {input.statements.map((statement, statementIdx) => {
-          if (statement.format !== 'custom') return null
+          if (statement.format !== 'custom') {
+            return null
+          }
 
           const timezone = statement.timezone
           const proofNum = statement.counter

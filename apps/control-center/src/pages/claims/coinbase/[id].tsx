@@ -35,14 +35,18 @@ export function CoinbaseAccountDetailsPage(): JSX.Element {
   const needsReconnect = needsExchangeReconnect(account)
 
   function handleReconnect(): void {
-    if (!accountId) return
+    if (!accountId) {
+      return
+    }
     navigate('/accounts/verify/coinbase', {
       state: { returnTo: `/accounts/coinbase/${accountId}`, replaceAccountId: accountId },
     })
   }
 
   async function handleRefresh(): Promise<void> {
-    if (!accountId) return
+    if (!accountId) {
+      return
+    }
     setIsRefreshing(true)
     try {
       await refreshMutation.mutateAsync({ accountId })
@@ -57,7 +61,9 @@ export function CoinbaseAccountDetailsPage(): JSX.Element {
   }
 
   async function handleDelete(): Promise<void> {
-    if (!accountId) return
+    if (!accountId) {
+      return
+    }
     setIsDeleting(true)
     try {
       await deleteMutation.mutateAsync({ accountId })

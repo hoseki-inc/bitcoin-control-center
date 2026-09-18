@@ -155,7 +155,9 @@ function tryGenericMultisigSetup(exportFileLines: string[]): Result<ParsedWallet
     const trimmedLine = line.trim()
 
     // Skip comments and empty lines
-    if (trimmedLine.startsWith('#') || !trimmedLine) continue
+    if (trimmedLine.startsWith('#') || !trimmedLine) {
+      continue
+    }
 
     // Fail if a seed phrase is included
     if (trimmedLine.startsWith('seed:')) {
@@ -166,7 +168,9 @@ function tryGenericMultisigSetup(exportFileLines: string[]): Result<ParsedWallet
     if (trimmedLine.includes(':')) {
       const splitParts = trimmedLine.split(':')
       const key = splitParts[0]
-      if (!key) continue
+      if (!key) {
+        continue
+      }
 
       const valueParts = splitParts.slice(1)
       const value = valueParts.join(':').trim()
