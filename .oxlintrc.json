@@ -28,6 +28,7 @@
     "no-useless-constructor": "error",
     "oxc/approx-constant": "error",
     "oxc/bad-array-method-on-arguments": "error",
-    "oxc/bad-bitwise-operator": "error"
+    "oxc/bad-bitwise-operator": "error",
+    "oxc/bad-char-at-comparison": "error"
   }
 }
