@@ -35,7 +35,7 @@ This repository intentionally excludes Hoseki Services, Armadillo, hosted authen
 - [Testing and CI](#testing-and-ci)
 - [Production builds](#production-builds)
 - [StartOS packaging](#startos-packaging)
-- [StartOS release candidates](#startos-release-candidates)
+- [Release candidates](#release-candidates)
 - [Desktop packaging](#desktop-packaging)
 - [Troubleshooting](#troubleshooting)
 - [Security and privacy](#security-and-privacy)
@@ -235,7 +235,7 @@ corepack pnpm dev:desktop
 
 Open `http://localhost:4269`. Stop any existing `pnpm dev` first; press `Ctrl+C` to stop both processes.
 
-This uses Sentinel's development configuration and data, and exposes desktop-specific settings without building an installer. Desktop preview keeps settings available when Electrum is offline. Electron-managed Tor, native wallet integration, and desktop OS certificate trust still require the Electron runtime.
+This uses Sentinel's development configuration and data, and exposes desktop-specific settings without building an installer. `VITE_PLATFORM=desktop` enables the frontend controls; the desktop backend command separately enables saved connections. Desktop preview keeps settings available when Electrum is offline. Electron-managed Tor, native wallet integration, and desktop OS certificate trust still require the Electron runtime.
 
 To run the two processes separately, use `corepack pnpm --filter api-sentinel dev:desktop` and `corepack pnpm --filter control-center dev:desktop`. The desktop backend command enables saved connections; the regular development backend and StartOS retain their existing connection configuration.
 
@@ -245,7 +245,11 @@ Settings supports up to five local Electrum connections with editable nicknames.
 
 Use the trash icon on a saved connection, or beside the dropdown on smaller windows, to delete it after confirmation. Connect to another profile before deleting the active connection. Deleting frees a saved-connection slot and keeps your accounts and wallet data.
 
-Renaming, deleting, and saving an inactive connection do not contact its server. Failed switches preserve the previous active connection and saved settings. Profiles and the active choice persist in Sentinel's local SQLite database, and resizing the page keeps the current form edits. StartOS does not enable the saved-profile API or migrate its connection into a profile.
+Creating a new profile, renaming, and deleting do not contact its server. **Save & Reconnect** on an existing profile contacts and activates the edited server, including when that profile was inactive. Failed switches preserve the previous active connection and saved settings. Profiles and the active choice persist in Sentinel's local SQLite database, and resizing the page keeps the current form edits. StartOS does not enable the saved-profile API or migrate its connection into a profile.
+
+Saved connection settings take precedence over the `.env` defaults in desktop preview. Change the active profile in Settings; editing `ELECTRUM_HOST` alone will not replace an already-saved connection.
+
+Enter the advertised host, port, and TCP/SSL protocol separately; the form does not parse pasted Electrum URLs. **Test Connection** negotiates the server protocol without saving or activating the connection; it does not verify wallet synchronization. Onion addresses require Tor. Tor routes Electrum traffic only; price and exchange requests use their normal connection. Inactive profiles are not probed automatically, and no automatic server fallback is implemented. A fresh desktop installation initially uses the launcher's public Electrum default.
 
 ## Local data and backups
 
@@ -255,9 +259,11 @@ With the example configuration, local state is written under `apps/api-sentinel/
 - `secrets/exchange-credentials.key` encrypts locally stored exchange credentials.
 - SQLite may create `sentinel.db-wal` and `sentinel.db-shm` while Sentinel is running.
 
-The entire directory is ignored by Git. Never commit it, upload it to an issue, or include it in a diagnostic archive.
+The development data directory is ignored by Git. Packaged desktop keeps a separate `data/` directory under Electron's `userData` location: normally `~/Library/Application Support/Bitcoin Control Center/data/` on macOS and `%APPDATA%\Bitcoin Control Center\data\` on Windows. StartOS stores the equivalent state in its `main` volume at `/data`. The changing desktop HTTP port does not change this storage location.
 
-Back up the complete data directory while Sentinel is stopped. The database and encryption key must be preserved together; restoring only the database can make saved exchange credentials unreadable.
+Never commit these directories, upload them to an issue, or include them in a diagnostic archive.
+
+Back up the complete data directory while Sentinel is stopped; fully quit the desktop app for a desktop backup. The database and encryption key must be preserved together; restoring only the database can make saved exchange credentials unreadable. Desktop does not yet provide a backup/restore UI.
 
 To start with a fresh local profile without immediately deleting the old one, stop Sentinel and move the directory aside:
 
@@ -273,19 +279,20 @@ Database migrations run automatically during startup. There is no separate local
 
 Run these commands from the repository root unless noted otherwise.
 
-| Command               | Purpose                                                      |
-| --------------------- | ------------------------------------------------------------ |
-| `pnpm dev`            | Run Sentinel and Control Center in watch mode                |
-| `pnpm check`          | Run TypeScript project-reference checks                      |
-| `pnpm test`           | Run application and shared-library tests through Turbo       |
-| `pnpm lint`           | Run ESLint with zero warnings allowed                        |
-| `pnpm format:check`   | Verify Prettier formatting                                   |
-| `pnpm format`         | Apply Prettier formatting                                    |
-| `pnpm build`          | Build Sentinel and the production web application            |
-| `pnpm security:audit` | Audit root, desktop, and StartOS dependency graphs           |
-| `pnpm run ci`         | Run every audit, type check, test, and production build gate |
-| `pnpm ladle:serve`    | Run the shared component-workbench development server        |
-| `pnpm ladle:build`    | Build the component workbench                                |
+| Command                     | Purpose                                                                                                  |
+| --------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `pnpm dev`                  | Run Sentinel and Control Center in watch mode                                                            |
+| `corepack pnpm dev:desktop` | Run both services with desktop settings in a browser preview                                             |
+| `pnpm check`                | Run TypeScript project-reference checks                                                                  |
+| `pnpm test`                 | Run application, shared-library, desktop, and release-assembly tests                                     |
+| `pnpm lint`                 | Run ESLint with zero warnings allowed                                                                    |
+| `pnpm format:check`         | Verify Prettier formatting                                                                               |
+| `pnpm format`               | Apply Prettier formatting                                                                                |
+| `pnpm build`                | Build Sentinel and the production web application                                                        |
+| `pnpm security:audit`       | Audit root, desktop, and StartOS dependency graphs                                                       |
+| `pnpm run ci`               | Run repository audits, formatting, lint, types, tests, and application builds; installers run separately |
+| `pnpm ladle:serve`          | Run the shared component-workbench development server                                                    |
+| `pnpm ladle:build`          | Build the component workbench                                                                            |
 
 Focused workflows:
 
@@ -335,9 +342,7 @@ npm --prefix start9 run check
 npm --prefix start9 test
 ```
 
-The complete `pnpm run ci` command also runs the StartOS tests and requires those
-packaging dependencies to be installed first. StartOS candidate and draft-release
-workflows use this complete verification command.
+The complete `pnpm run ci` command also runs packaging type checks and StartOS tests, and requires those packaging dependencies to be installed first. Candidate and draft-release workflows use this complete verification command. Native desktop installer builds and Electron runtime checks are additional GitHub jobs; the local `ci` command does not build installers.
 
 Tests that open temporary localhost listeners may require normal host networking in restricted container or agent environments.
 
@@ -384,13 +389,13 @@ The script builds Sentinel and the same-origin web application, compiles the Sta
 
 StartOS versions use `major.minor.patch:revision`:
 
-| Command                                             | Use                                                             |
-| --------------------------------------------------- | --------------------------------------------------------------- |
-| `./start9/build.sh --bump patch --notes "..."`      | Incremental feature, fix, or maintenance release                |
-| `./start9/build.sh --bump minor --notes "..."`      | Substantial feature release; resets patch and revision to `0`   |
-| `./start9/build.sh --bump major --notes "..."`      | Breaking or major release; resets other components to `0`       |
-| `./start9/build.sh --bump revision --notes "..."`   | Packaging-only rebuild without changing the application version |
-| `./start9/build.sh --version 0.2.0:0 --notes "..."` | Set an explicit version greater than the current version        |
+| Command                                                    | Use                                                                                |
+| ---------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `./start9/build.sh --bump patch --notes "..."`             | Incremental feature, fix, or maintenance release                                   |
+| `./start9/build.sh --bump minor --notes "..."`             | Substantial feature release; resets patch and revision to `0`                      |
+| `./start9/build.sh --bump major --notes "..."`             | Breaking or major release; resets other components to `0`                          |
+| `./start9/build.sh --bump revision --notes "..."`          | Packaging-only rebuild without changing the application version                    |
+| `./start9/build.sh --version <next-version> --notes "..."` | Replace `<next-version>` with an explicit version greater than the current version |
 
 Inspect the current version without building:
 
@@ -400,12 +405,12 @@ node start9/scripts/version.mjs get
 node start9/scripts/version.mjs tag
 ```
 
-The manifest version `0.2.1:0` maps to the official StartOS Git tag `v0.2.1_0`. Version-bump commands update the checked-in StartOS version graph before building. Review and commit those generated source changes with the release.
+For example, manifest version `0.2.1:0` maps to Git tag `v0.2.1_0`; use the commands above for the current version. Version-bump commands update the checked-in StartOS version graph before building. Review and commit those generated source changes with the release.
 
 > [!WARNING]
 > The internal StartOS package ID is `hoseki-sentinel`, and its persistent volume is `main`. Existing installations rely on both identifiers. Do not rename them without an explicit data-migration and upgrade-compatibility plan.
 
-See [docs/CONTROL_CENTER.md](docs/CONTROL_CENTER.md) for more packaging and distribution guidance.
+See the [StartOS package reference](start9/README.md) for service configuration and the [release guide](docs/STARTOS_RELEASES.md) for build and release procedures.
 
 ## Release candidates
 
@@ -439,15 +444,15 @@ Use `./desktop/build.sh --mac` or `./desktop/build.sh --win` to select a target.
 The build script:
 
 1. Downloads pinned macOS and Windows Tor artifacts when absent.
-2. Verifies the trusted SHA-256 hashes before using them.
+2. Verifies downloaded archives against pinned SHA-256 hashes before extraction; existing bundles are reused on later builds.
 3. Builds Sentinel and the desktop-mode frontend.
 4. Installs Electron's isolated npm dependencies.
 5. Validates that the host can load the bundled `better-sqlite3` native prebuild.
 6. Packages installers and stages them with build metadata and checksums under `desktop/release/artifacts/mac/` and `desktop/release/artifacts/win/`.
 
-For release `0.2.3:1`, the filenames are `Bitcoin-Control-Center-v0.2.3_1-mac-arm64.dmg` and `Bitcoin-Control-Center-v0.2.3_1-win-x64.exe`. Installer application versions use the shared base `0.2.3`; metadata and filenames retain the full packaging revision and source commit. The build overrides the placeholder version in `desktop/package.json` without modifying it. Local uncommitted changes are recorded as a dirty build; CI rejects dirty artifacts.
+Installer names follow `Bitcoin-Control-Center-<release-tag>-mac-arm64.dmg` and `Bitcoin-Control-Center-<release-tag>-win-x64.exe`. Print the current tag with `node start9/scripts/version.mjs tag`. Installer application versions use the shared `major.minor.patch`; metadata and filenames retain the full packaging revision, and metadata records the source commit. The build overrides the placeholder version in `desktop/package.json` without modifying it. Local uncommitted changes are recorded as a dirty build; CI rejects dirty artifacts.
 
-CI builds both native installers on pull requests and pushes to `main`. Its packaged-runtime smoke test checks SQLite, backend startup with an occupied configured port, frontend assets, a local Electrum fixture, and the bundled Tor executable. It does not replace installing the DMG/EXE, exercising the Electron window and physical wallets, or upgrade/data-preservation testing. Cross-built Windows installers still require Windows execution.
+CI builds both native installers on pull requests and pushes to `main`. Its packaged-runtime smoke test checks SQLite, backend startup with an occupied configured port, frontend assets, a local Electrum fixture, saved-profile migration/API access, and execution of the bundled Tor binary. It does not replace installing the DMG/EXE, exercising the Electron window and physical wallets, real Tor bootstrap, or upgrade/data-preservation testing. Cross-built Windows installers still require Windows execution. Installer/release builds use the caller's exact commit and disable shared cache access; see the [release workflow contract](docs/STARTOS_RELEASES.md#source-identity-and-cache-isolation).
 
 These are review installers: macOS uses an ad-hoc signature without notarization, and Windows has no publisher signature configured. Developer ID/notarization, Windows publisher signing, and automatic updates remain separate release work.
 
@@ -505,7 +510,7 @@ lsof -nP -iTCP:3400 -sTCP:LISTEN
 lsof -nP -iTCP:4269 -sTCP:LISTEN
 ```
 
-Stop the conflicting process or change `PORT` in Sentinel's `.env`. If you change Sentinel's port, update `VITE_BACKEND_API_URL` and `VITE_BACKEND_BASE_URL` in `apps/control-center/.env.sentinel` for local frontend development.
+Stop the conflicting process or change `PORT` in Sentinel's `.env`. If you change Sentinel's port, update `VITE_BACKEND_API_URL` and `VITE_BACKEND_BASE_URL` in `apps/control-center/.env.sentinel` for regular development or `.env.desktop` for desktop browser preview. Packaged desktop chooses its own port automatically.
 
 ### Hardware wallet is not detected
 
@@ -546,7 +551,7 @@ Additional safeguards:
 
 Do not log wallet descriptors, exchange credentials, encryption keys, seed phrases, or full third-party API responses containing secrets.
 
-Report suspected vulnerabilities privately as described in [SECURITY.md](SECURITY.md). Review [docs/SECURITY_AUDIT.md](docs/SECURITY_AUDIT.md) for the dependency-audit model and accepted residual risks.
+See [SECURITY.md](SECURITY.md) for private vulnerability reporting, dependency checks, and Electrum TLS trust limitations.
 
 ## Contributing
 
@@ -565,10 +570,12 @@ Issues and pull requests are welcome. Keep changes within the product's local-fi
 
 Useful project documentation:
 
-- [Developer and release guide](docs/CONTROL_CENTER.md)
-- [Security audit](docs/SECURITY_AUDIT.md)
-- [Repository extraction checklist](docs/REPOSITORY_SPLIT.md)
+- [Build and release guide](docs/STARTOS_RELEASES.md)
+- [Security policy](SECURITY.md)
+- [StartOS package reference](start9/README.md)
 - [Multisig device signing tests](docs/Multisig%20Keystore%20Device%20Signing%20Tests.md)
+
+Dependency compatibility: React currently uses React 18 type definitions because Chakra UI 2 depends on the older global JSX model. Review that bridge when upgrading the UI system. Upgrade React Query and tRPC together when their compatibility requirements change.
 
 ## License
 

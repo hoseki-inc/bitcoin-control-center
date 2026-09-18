@@ -1,6 +1,7 @@
 /**
- * Desktop-specific flag. True only in the Electron desktop build.
- * Used to gate features like Electrum server settings and Tor that
- * don't apply to Start9 (which configures these at the OS level).
+ * Desktop distribution flag, also enabled by the browser desktop preview.
+ * Gates Electrum and Tor settings managed by StartOS in the node distribution.
+ * The backend separately opts into saved connections; this flag cannot enable
+ * Electron-managed Tor or native wallet integration in a regular browser.
  */
 export const isDesktop: boolean = import.meta.env['VITE_PLATFORM'] === 'desktop'

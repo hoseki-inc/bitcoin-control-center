@@ -15,3 +15,21 @@ The public repository must enable private vulnerability reporting before its fir
 ## Scope
 
 Bitcoin Control Center stores sensitive portfolio configuration locally and connects to user-selected Bitcoin and exchange infrastructure. Reports involving local credential storage, descriptor handling, proof generation, Electrum transport, Tor integration, Electron boundaries, or StartOS packaging are especially valuable.
+
+## Electrum TLS trust
+
+Desktop adds authorities already trusted by the operating system to Node's existing defaults before starting Sentinel. Public SSL endpoints require a valid certificate chain and matching hostname/IP. The app does not install or automatically trust authorities received from a server.
+
+The shared Electrum transport currently skips certificate verification for hosts classified as local/private. A successful private SSL connection does not establish server identity. Per-profile certificate import and explicit private-host verification are not implemented. Plain TCP is unencrypted. Keep the StartOS internal service connection compatible when changing this policy.
+
+## Dependency and build security
+
+Run `pnpm security:audit` before releases and dependency changes. It checks the root workspace, desktop package, StartOS SDK, and StartOS container runtime. CI fails on findings of moderate severity or higher; review low-severity findings too. Audit output and current manifests/lockfiles are authoritative, rather than historical finding counts.
+
+- Pin direct dependencies and third-party GitHub Actions; use the committed lockfiles for installation. Review Dependabot updates and required peer dependencies explicitly.
+- Keep dependency release-age protection and deliberate transitive overrides. Reassess wallet-library advisories whenever those integrations change.
+- Verify downloaded Tor archives against the pinned hashes from the Tor Project's signed checksum manifest. Review binary and checksum updates together.
+- Keep Lottie animation data restricted to trusted repository assets: the expression engine used by the Coldcard animations contains `eval`. Never render user-supplied Lottie JSON.
+- Preserve local credential encryption and file permissions. Back up the database with its encryption key, as described in the [README](README.md#local-data-and-backups).
+
+Installer and release workflows verify their source commit and disable shared cache access. See the [release guide](docs/STARTOS_RELEASES.md#source-identity-and-cache-isolation) for those controls and the current platform-signing limitations. Before public distribution, review secret history, dependency/asset licenses, private reporting, branch protection, and signer continuity; test installation and upgrades with disposable data.
