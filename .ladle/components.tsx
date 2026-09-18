@@ -1,10 +1,10 @@
 import { ChakraProvider } from '@chakra-ui/react'
+import { theme } from '@hoseki/packages/ui/design-system'
+import '@hoseki/packages/ui/design-system/fonts/geist/index.css'
 import type { GlobalProvider } from '@ladle/react'
 import { Buffer } from 'buffer'
 import React from 'react'
 import { Toaster } from 'sonner'
-import { theme } from '../packages/ui/design-system'
-import '../packages/ui/design-system/fonts/geist/index.css'
 
 // Removes a TS error with <ChakraProvider> below
 const _unused = React
