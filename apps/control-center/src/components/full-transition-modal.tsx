@@ -213,7 +213,9 @@ function ScreenFadeTransition({
    */
   duration?: number
 } & BoxProps) {
-  if (!isMounted) return null
+  if (!isMounted) {
+    return null
+  }
 
   return (
     <Box

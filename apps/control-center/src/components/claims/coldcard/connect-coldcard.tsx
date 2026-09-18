@@ -22,15 +22,20 @@ export function ConnectColdcard(): JSX.Element {
   const location = useLocation()
   const returnTo = (location.state as { returnTo?: string } | null)?.returnTo ?? '/accounts'
   const goBack = (): void => {
-    if (wizardStep === 1) void navigate(returnTo)
-    else setWizardStep((prev) => prev - 1)
+    if (wizardStep === 1) {
+      void navigate(returnTo)
+    } else {
+      setWizardStep((prev) => prev - 1)
+    }
   }
   const goForward = (): void => setWizardStep((prev) => prev + 1)
   const navigateToAnExistentOrNewClaim = useNavigateToAnExistentOrNewClaim()
   const isQrFlow = model === 'Q'
 
   function handleContinue(model: ColdcardModel): void {
-    if (!selectedWallet) return
+    if (!selectedWallet) {
+      return
+    }
 
     navigateToAnExistentOrNewClaim.execute({
       network: 'bitcoin_mainnet',

@@ -66,12 +66,24 @@ export function KeystoresStatusIndicator({
   ) => null | ((keystore: Keystore) => void)
 }): JSX.Element {
   const sortedKeystores = keystores.sort((a, b) => {
-    if (a.status === 'verified') return -1
-    if (b.status === 'verified') return 1
-    if (a.wallet) return -1
-    if (b.wallet) return 1
-    if (a.id === expandedKeystoreId) return -1
-    if (b.id === expandedKeystoreId) return 1
+    if (a.status === 'verified') {
+      return -1
+    }
+    if (b.status === 'verified') {
+      return 1
+    }
+    if (a.wallet) {
+      return -1
+    }
+    if (b.wallet) {
+      return 1
+    }
+    if (a.id === expandedKeystoreId) {
+      return -1
+    }
+    if (b.id === expandedKeystoreId) {
+      return 1
+    }
     return 0
   })
 

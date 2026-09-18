@@ -283,24 +283,30 @@ export function ClaimSelection({
 }
 
 function renderBalance(balance: BalanceWithStatus) {
-  if (balance.status === 'loading') return <LoadingTextSkeleton width="8em" />
-  if (balance.status === 'fail') return 'n/a'
+  if (balance.status === 'loading') {
+    return <LoadingTextSkeleton width="8em" />
+  }
+  if (balance.status === 'fail') {
+    return 'n/a'
+  }
   return toBitcoinAmountDisplayValue(balance.value.current.toString())
 }
 
 function renderUsdAmount(balance: BalanceWithStatus) {
-  if (balance.status === 'loading')
+  if (balance.status === 'loading') {
     return (
       <Text textStyle="text/sm" fontWeight="medium">
         <LoadingTextSkeleton width="5em" />
       </Text>
     )
-  if (balance.status === 'fail' || balance.value.usd === null)
+  }
+  if (balance.status === 'fail' || balance.value.usd === null) {
     return (
       <Text textStyle="text/sm" fontWeight="medium">
         'n/a'
       </Text>
     )
+  }
   return (
     <Text textStyle="text/sm" fontWeight="medium" color="success.600" whiteSpace="nowrap">
       {formatUsd(balance.value.usd.toFixed(2))}

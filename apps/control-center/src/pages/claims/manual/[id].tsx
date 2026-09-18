@@ -78,7 +78,9 @@ export function ManualAccountDetailsPage(): JSX.Element {
   const btcAmount = (btcSats / 100_000_000).toFixed(8)
 
   async function invalidateAll(): Promise<void> {
-    if (!accountId) return
+    if (!accountId) {
+      return
+    }
     await utils.portalProve.manual.get.invalidate({ accountId })
     await utils.portalProve.manual.list.invalidate()
     await utils.portalProve.manual.transactions.list.invalidate({ accountId })
@@ -86,7 +88,9 @@ export function ManualAccountDetailsPage(): JSX.Element {
   }
 
   async function handleUpdateBalance(): Promise<void> {
-    if (!accountId || !newBtcAmount) return
+    if (!accountId || !newBtcAmount) {
+      return
+    }
     const balanceSats = Math.round(Number(newBtcAmount) * 1e8).toString()
     try {
       await updateBalanceMutation.mutateAsync({
@@ -103,7 +107,9 @@ export function ManualAccountDetailsPage(): JSX.Element {
   }
 
   async function handleAddTransaction(): Promise<void> {
-    if (!accountId || !txAmount) return
+    if (!accountId || !txAmount) {
+      return
+    }
     const amountSats = Math.round(Number(txAmount) * 1e8).toString()
     try {
       await addTxMutation.mutateAsync({
@@ -135,7 +141,9 @@ export function ManualAccountDetailsPage(): JSX.Element {
   }
 
   async function handleDelete(): Promise<void> {
-    if (!accountId) return
+    if (!accountId) {
+      return
+    }
     setIsDeleting(true)
     try {
       await deleteMutation.mutateAsync({ accountId })

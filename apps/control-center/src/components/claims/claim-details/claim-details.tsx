@@ -72,7 +72,9 @@ export function ClaimDetails({ claim }: { claim: ClaimDto }): JSX.Element {
                 tooltipVariant="none"
                 getKeystoreClickHandler={(keystore) => {
                   // SingleSig are not clickable
-                  if (!isMultisig || keystore.status === 'pending') return null
+                  if (!isMultisig || keystore.status === 'pending') {
+                    return null
+                  }
 
                   return (keystore: IndicatorKeystore) => {
                     return navigate({

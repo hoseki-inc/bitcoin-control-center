@@ -37,7 +37,9 @@ const mocks = await vi.hoisted(async () => {
     requestAnimationFrame: window.requestAnimationFrame.bind(window),
     cancelAnimationFrame: window.cancelAnimationFrame.bind(window),
   }
-  for (const [name, value] of Object.entries(domGlobals)) vi.stubGlobal(name, value)
+  for (const [name, value] of Object.entries(domGlobals)) {
+    vi.stubGlobal(name, value)
+  }
   return {
     domGlobals,
     claim: {} as ClaimDto,
@@ -162,7 +164,9 @@ async function render(): Promise<void> {
 beforeEach(async () => {
   vi.clearAllMocks()
   mocks.walletType = 'ledger'
-  for (const [name, value] of Object.entries(mocks.domGlobals)) vi.stubGlobal(name, value)
+  for (const [name, value] of Object.entries(mocks.domGlobals)) {
+    vi.stubGlobal(name, value)
+  }
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
   vi.stubGlobal('matchMedia', () => ({
     matches: false,

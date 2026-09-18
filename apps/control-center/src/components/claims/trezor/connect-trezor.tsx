@@ -105,14 +105,20 @@ export function ConnectTrezor(): JSX.Element {
     const balanceRes = await Result.fromPromise(
       trpcUtils.portalProve.onchain.bitcoinAccountBalances.fetch({ accounts: [networkAccount.toString()] }),
     )
-    if (balanceRes.isErr()) return
+    if (balanceRes.isErr()) {
+      return
+    }
 
     const balance = balanceRes.unwrap()
     const balanceValue = balance.accounts.get(networkAccount.toString())
-    if (!balanceValue) return
+    if (!balanceValue) {
+      return
+    }
 
     setSelectedTrezorAccount((prev) => {
-      if (!prev) return prev
+      if (!prev) {
+        return prev
+      }
       return {
         ...prev,
         wallet: {
@@ -125,7 +131,9 @@ export function ConnectTrezor(): JSX.Element {
   }
 
   function handleContinue(trezorFeatures: Features) {
-    if (!selectedTrezorAccount) return
+    if (!selectedTrezorAccount) {
+      return
+    }
 
     navigateToAnExistentOrNewClaim.execute({
       network: 'bitcoin_mainnet',

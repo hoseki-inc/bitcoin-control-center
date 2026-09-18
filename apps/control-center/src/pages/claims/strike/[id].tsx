@@ -42,26 +42,38 @@ interface ParsedStrikeTx {
 
 function parseStrikeCsv(csvText: string): ParsedStrikeTx[] {
   const lines = csvText.trim().split('\n')
-  if (lines.length < 2) return []
+  if (lines.length < 2) {
+    return []
+  }
 
   const transactions: ParsedStrikeTx[] = []
 
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i]
-    if (!line) continue
+    if (!line) {
+      continue
+    }
     const cols = parseCsvLine(line)
-    if (cols.length < 11) continue
+    if (cols.length < 11) {
+      continue
+    }
 
     const [txId, timeUtc, status, txType, amountUsd, feeUsd, amountBtc, feeBtc, description, exchangeRate, txHash] =
       cols
 
     // Skip non-completed or non-BTC rows
-    if (status !== 'Completed') continue
-    if (!txId || !timeUtc || !txType || !amountBtc || amountBtc.trim() === '') continue
+    if (status !== 'Completed') {
+      continue
+    }
+    if (!txId || !timeUtc || !txType || !amountBtc || amountBtc.trim() === '') {
+      continue
+    }
 
     // Parse the date to extract statement month
     const date = new Date(timeUtc + ' UTC')
-    if (isNaN(date.getTime())) continue
+    if (isNaN(date.getTime())) {
+      continue
+    }
 
     const year = date.getUTCFullYear()
     const month = String(date.getUTCMonth() + 1).padStart(2, '0')
@@ -162,7 +174,9 @@ export function StrikeAccountDetailsPage(): JSX.Element {
   const accountDisplayName = account.displayName
 
   function handleReconnect(): void {
-    if (!accountId) return
+    if (!accountId) {
+      return
+    }
     navigate('/accounts/verify/strike', {
       state: {
         returnTo: `/accounts/strike/${accountId}`,
@@ -173,7 +187,9 @@ export function StrikeAccountDetailsPage(): JSX.Element {
   }
 
   async function handleRefresh(): Promise<void> {
-    if (!accountId) return
+    if (!accountId) {
+      return
+    }
     setIsRefreshing(true)
     try {
       await refreshMutation.mutateAsync({ accountId })
@@ -189,7 +205,9 @@ export function StrikeAccountDetailsPage(): JSX.Element {
   }
 
   async function handleDelete(): Promise<void> {
-    if (!accountId) return
+    if (!accountId) {
+      return
+    }
     setIsDeleting(true)
     try {
       await deleteMutation.mutateAsync({ accountId })
@@ -205,7 +223,9 @@ export function StrikeAccountDetailsPage(): JSX.Element {
   }
 
   async function handleCsvFile(file: File): Promise<void> {
-    if (!accountId) return
+    if (!accountId) {
+      return
+    }
     if (!file.name.toLowerCase().endsWith('.csv')) {
       toast.error('Please upload a CSV file')
       return
@@ -223,7 +243,9 @@ export function StrikeAccountDetailsPage(): JSX.Element {
 
       const result = await importMutation.mutateAsync({ accountId, transactions })
       await monthsQuery.refetch()
-      if (selectedMonth) await txQuery.refetch()
+      if (selectedMonth) {
+        await txQuery.refetch()
+      }
 
       toast.success(
         `Imported ${result.imported} transactions${result.skipped > 0 ? ` (${result.skipped} duplicates skipped)` : ''}`,
@@ -237,7 +259,9 @@ export function StrikeAccountDetailsPage(): JSX.Element {
   }
 
   async function handleDeleteMonth(month: string): Promise<void> {
-    if (!accountId) return
+    if (!accountId) {
+      return
+    }
     try {
       await deleteMonthMutation.mutateAsync({ accountId, statementMonth: month })
       await monthsQuery.refetch()
@@ -547,7 +571,9 @@ function CsvDropZone({
       e.preventDefault()
       setIsDragging(false)
       const file = e.dataTransfer.files[0]
-      if (file) onFile(file)
+      if (file) {
+        onFile(file)
+      }
     },
     [setIsDragging, onFile],
   )
@@ -606,7 +632,9 @@ function CsvDropZone({
         display="none"
         onChange={(e) => {
           const file = e.target.files?.[0]
-          if (file) onFile(file)
+          if (file) {
+            onFile(file)
+          }
           e.target.value = ''
         }}
       />
@@ -626,7 +654,11 @@ function formatBtcAmount(amount: string): string {
 }
 
 function truncateHash(hash: string | null): string {
-  if (!hash) return ''
-  if (hash.length <= 16) return hash
+  if (!hash) {
+    return ''
+  }
+  if (hash.length <= 16) {
+    return hash
+  }
   return `${hash.slice(0, 8)}...${hash.slice(-8)}`
 }

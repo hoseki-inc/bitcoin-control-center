@@ -75,7 +75,9 @@ export const createAppContext = asyncFn(async (logger: Logger): Promise<Result<A
     'Connecting to Electrum server',
   )
   const connectResult = await electrumClient.connect()
-  if (connectResult.isErr()) return Err(connectResult.unwrapErr())
+  if (connectResult.isErr()) {
+    return Err(connectResult.unwrapErr())
+  }
   logger.info({ version: connectResult.unwrap() }, 'Connected to Electrum server')
 
   const onchainProvider = new ElectrumProvider(network, {

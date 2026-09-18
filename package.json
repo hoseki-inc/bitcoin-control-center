@@ -15,7 +15,8 @@
     "format:check": "prettier --check .",
     "ladle:build": "ladle build",
     "ladle:serve": "ladle serve",
-    "lint": "turbo run lint -- --max-warnings=0",
+    "lint": "oxlint --deny-warnings . && turbo run lint -- --max-warnings=0",
+    "lint:oxlint": "oxlint --deny-warnings .",
     "prepare": "husky install",
     "security:audit": "pnpm audit --audit-level=moderate && npm --prefix desktop audit --audit-level=moderate && npm --prefix start9 audit --audit-level=moderate && npm --prefix start9/runtime audit --audit-level=moderate",
     "test": "turbo run test"
@@ -112,6 +113,7 @@
     "jsdom": "30.0.1",
     "jsonc-eslint-parser": "2.4.2",
     "lint-staged": "15.2.0",
+    "oxlint": "1.82.0",
     "prettier": "3.9.6",
     "prettier-plugin-packagejson": "3.0.2",
     "sass": "1.104.0",

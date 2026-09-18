@@ -211,7 +211,9 @@ export class RobinhoodClient {
     while (nextUrl) {
       const fullPath: string = nextUrl.startsWith('http') ? nextUrl.replace(`https://${BASE_HOST}`, '') : nextUrl
       const result: Result<PaginatedResponse<unknown>, Error> = await this.request(fullPath, schema)
-      if (result.isErr()) return Err(result.unwrapErr())
+      if (result.isErr()) {
+        return Err(result.unwrapErr())
+      }
 
       const page: PaginatedResponse<unknown> = result.unwrap()
       allResults.push(...(page.results as T[]))
@@ -233,7 +235,9 @@ export class RobinhoodClient {
    */
   public getBtcBalance = asyncFn(async (): Promise<Result<bigint, Error>> => {
     const holdingsResult = await this.getHoldings()
-    if (holdingsResult.isErr()) return Err(holdingsResult.unwrapErr())
+    if (holdingsResult.isErr()) {
+      return Err(holdingsResult.unwrapErr())
+    }
 
     const holdings = holdingsResult.unwrap()
     const btcHolding = holdings.find((h) => h.asset_code === 'BTC')
@@ -250,8 +254,12 @@ export class RobinhoodClient {
    */
   public getOrders(opts?: { symbol?: string; state?: string }): Promise<Result<RobinhoodOrder[], Error>> {
     const params = new URLSearchParams()
-    if (opts?.symbol) params.append('symbol', opts.symbol)
-    if (opts?.state) params.append('state', opts.state)
+    if (opts?.symbol) {
+      params.append('symbol', opts.symbol)
+    }
+    if (opts?.state) {
+      params.append('state', opts.state)
+    }
     const query = params.toString()
     const path = query ? `/api/v1/crypto/trading/orders/?${query}` : '/api/v1/crypto/trading/orders/'
     return this.paginate<RobinhoodOrder>(path, RobinhoodOrderSchema)

@@ -24,7 +24,9 @@ export function NewDeviceConnectionModal({
   isLoading,
 }: NewDeviceConnectionModalProps): JSX.Element {
   function handleClose() {
-    if (isLoading) return
+    if (isLoading) {
+      return
+    }
     onClose()
   }
 

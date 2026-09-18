@@ -36,7 +36,9 @@ export function DesktopLedgerConnection({
   useEffect(() => {
     const unsubscribe = bridge.subscribe((update) => {
       const current = attempt.current
-      if (!current || update.requestId !== current.id || current.abort.signal.aborted) return
+      if (!current || update.requestId !== current.id || current.abort.signal.aborted) {
+        return
+      }
       if (update.status === 'expired') {
         current.expired = true
         setState({
@@ -62,7 +64,9 @@ export function DesktopLedgerConnection({
       const current = attempt.current
       attempt.current = null
       current?.abort.abort()
-      if (current) bridge.cancel(current.id)
+      if (current) {
+        bridge.cancel(current.id)
+      }
     }
   }, [bridge])
 
@@ -79,13 +83,17 @@ export function DesktopLedgerConnection({
   function cancel(): void {
     const current = attempt.current
     current?.abort.abort()
-    if (current) bridge.cancel(current.id)
+    if (current) {
+      bridge.cancel(current.id)
+    }
     setSelected('')
     setState({ phase: current ? 'cancelling' : 'idle' })
   }
 
   async function connect(): Promise<void> {
-    if (attempt.current) return
+    if (attempt.current) {
+      return
+    }
     const current: Attempt = { id: crypto.randomUUID(), abort: new AbortController(), expired: false }
     attempt.current = current
     setState({ phase: 'searching' })
@@ -94,9 +102,13 @@ export function DesktopLedgerConnection({
     try {
       await queryClient.cancelQueries({ queryKey: ['ledger-wallets'] })
       queryClient.removeQueries({ queryKey: ['ledger-wallets'] })
-      if (!active()) return
+      if (!active()) {
+        return
+      }
       await reset(closeDesktopLedger)
-      if (!active()) return
+      if (!active()) {
+        return
+      }
       const accepted = await bridge.begin(current.id)
       if (!active()) {
         bridge.cancel(current.id)
@@ -126,7 +138,9 @@ export function DesktopLedgerConnection({
       bridge.end(current.id)
       if (attempt.current === current) {
         attempt.current = null
-        if (current.abort.signal.aborted) setState({ phase: 'idle' })
+        if (current.abort.signal.aborted) {
+          setState({ phase: 'idle' })
+        }
       }
     }
   }

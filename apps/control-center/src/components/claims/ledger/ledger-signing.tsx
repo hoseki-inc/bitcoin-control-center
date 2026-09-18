@@ -103,7 +103,9 @@ export function LedgerSigning({
 
   const handleNext = () =>
     setStep((prev) => {
-      if (error) return prev
+      if (error) {
+        return prev
+      }
       if (prev === 1) {
         initiateLedgerMutation.mutate(undefined, { onSuccess: () => setStep(prev + 1) })
         return prev

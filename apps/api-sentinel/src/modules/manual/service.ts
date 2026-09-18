@@ -95,7 +95,9 @@ export class ManualService {
         }
       | undefined
 
-    if (!row) return null
+    if (!row) {
+      return null
+    }
 
     return {
       id: row.id,
@@ -112,7 +114,9 @@ export class ManualService {
     balanceAsOf: string
   }): Result<ManualAccountDto, Error> {
     const account = this.getAccount(args.accountId)
-    if (!account) return Err(new Error('Manual account not found'))
+    if (!account) {
+      return Err(new Error('Manual account not found'))
+    }
 
     const netTxTotal = this.getNetTransactionTotal(args.accountId)
     const newBalance = BigInt(args.balanceSats)
@@ -137,7 +141,9 @@ export class ManualService {
 
   public renameAccount(args: { accountId: string; displayName: string }): Result<ManualAccountDto, Error> {
     const account = this.getAccount(args.accountId)
-    if (!account) return Err(new Error('Manual account not found'))
+    if (!account) {
+      return Err(new Error('Manual account not found'))
+    }
 
     this.db.prepare('UPDATE manual_accounts SET display_name = ? WHERE id = ?').run(args.displayName, args.accountId)
 
@@ -165,7 +171,9 @@ export class ManualService {
     addToBalance?: boolean
   }): Result<ManualTransactionDto, Error> {
     const account = this.getAccount(args.accountId)
-    if (!account) return Err(new Error('Manual account not found'))
+    if (!account) {
+      return Err(new Error('Manual account not found'))
+    }
 
     const id = nanoid()
     const now = new Date().toISOString()
@@ -177,7 +185,9 @@ export class ManualService {
     let newBalance = currentBalance
     if (args.addToBalance) {
       newBalance = currentBalance + signedAmount
-      if (newBalance < 0n) newBalance = 0n
+      if (newBalance < 0n) {
+        newBalance = 0n
+      }
       this.db
         .prepare('UPDATE manual_accounts SET balance_sats = ?, balance_as_of = ? WHERE id = ?')
         .run(newBalance.toString(), args.transactedAt, args.accountId)
@@ -246,10 +256,14 @@ export class ManualService {
       .prepare('SELECT account_id, type, amount_sats FROM manual_transactions WHERE id = ?')
       .get(transactionId) as { account_id: string; type: string; amount_sats: string } | undefined
 
-    if (!row) return Err(new Error('Transaction not found'))
+    if (!row) {
+      return Err(new Error('Transaction not found'))
+    }
 
     const account = this.getAccount(row.account_id)
-    if (!account) return Err(new Error('Manual account not found'))
+    if (!account) {
+      return Err(new Error('Manual account not found'))
+    }
 
     // Reverse the balance effect
     const signedAmount = this.getSignedAmount(row.type as ManualTransactionType, BigInt(row.amount_sats))
@@ -272,7 +286,9 @@ export class ManualService {
   // ─── Accumulation Chart ─────────────────────────────────────────────────
 
   public getTransactionEntries(accountIds?: string[]): Array<{ timestamp: Date; value: bigint }> {
-    if (accountIds !== undefined && accountIds.length === 0) return []
+    if (accountIds !== undefined && accountIds.length === 0) {
+      return []
+    }
 
     let query = 'SELECT type, amount_sats, transacted_at FROM manual_transactions'
     const params: string[] = []
