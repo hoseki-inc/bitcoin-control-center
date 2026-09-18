@@ -1,5 +1,10 @@
 name: 'Setup Node'
 description: 'Install pnpm, Node.js, and workspace dependencies'
+inputs:
+  cache:
+    description: Restore and save the shared Turborepo cache
+    required: false
+    default: 'true'
 runs:
   using: composite
   steps:
@@ -14,6 +19,7 @@ runs:
         node-version-file: '.nvmrc'
 
     - name: Restore Turborepo cache
+      if: inputs.cache == 'true'
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: .turbo
@@ -24,3 +30,9 @@ runs:
     - name: Install dependencies
       shell: bash
       run: pnpm install --frozen-lockfile
+
+    # SQLite 13 includes Node-API binaries; pnpm's implicit node-gyp rebuild is
+    # disabled in package.json. Verify the shipped host binary after installation.
+    - name: Verify SQLite native runtime
+      shell: bash
+      run: node -e "const Database = require('better-sqlite3'); const db = new Database(':memory:'); db.close()"
