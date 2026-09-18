@@ -513,6 +513,8 @@ Then edit the connection values before restarting `pnpm dev`.
 - If the server is local, verify that it is listening on the configured interface.
 - If DNS or TLS fails only in a sandbox, retry from a normal host terminal.
 
+The desktop launcher includes certificate authorities already trusted by macOS or Windows alongside its bundled public authorities. For a StartOS Electrum interface using **Root CA**, download that authority from your trusted StartOS dashboard and follow [StartOS's certificate installation instructions](https://docs.start9.com/start-os/0.4.0.x/trust-ca.html), then fully quit and reopen the desktop app. Public TLS connections still require a valid certificate matching the configured IP address or hostname. This desktop trust setup does not change StartOS or other node distributions. The app does not install or automatically trust certificates received from a server.
+
 ### Port already in use
 
 Check the default ports on macOS or Linux:

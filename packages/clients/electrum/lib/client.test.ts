@@ -1,9 +1,10 @@
 import * as net from 'node:net'
-import { describe, expect, it, onTestFinished } from 'vitest'
+import { SocksClient } from 'socks'
+import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { z } from 'zod'
 import { parseUnknown } from '../../../result'
 import { ElectrumClient } from './client'
-import { shouldVerifyElectrumTlsCertificate } from './protocol'
+import { ElectrumTransport, shouldVerifyElectrumTlsCertificate } from './protocol'
 
 interface MockServer {
   port: number
@@ -139,5 +140,74 @@ describe('Electrum TLS verification policy', () => {
   it('honors explicit TLS verification overrides', () => {
     expect(shouldVerifyElectrumTlsCertificate('electrum.blockstream.info', false)).toBe(false)
     expect(shouldVerifyElectrumTlsCertificate('localhost', true)).toBe(true)
+  })
+})
+
+it('cancels an unfinished SOCKS connection and closes a socket delivered after cancellation', async () => {
+  let completeProxy!: (value: Awaited<ReturnType<typeof SocksClient.createConnection>>) => void
+  const proxy = new Promise<Awaited<ReturnType<typeof SocksClient.createConnection>>>((resolve) => {
+    completeProxy = resolve
+  })
+  const connect = vi.spyOn(SocksClient, 'createConnection').mockReturnValue(proxy)
+  const transport = new ElectrumTransport({
+    host: 'electrum.example',
+    port: 50001,
+    protocol: 'tcp',
+    proxy: { host: '127.0.0.1', port: 9050 },
+  })
+  const lateSocket = new net.Socket()
+  try {
+    const pending = transport.connect()
+    transport.disconnect()
+    expect((await pending).unwrapErr().message).toBe('Connection closed')
+    completeProxy({ socket: lateSocket })
+    await vi.waitFor(() => {
+      expect(lateSocket.destroyed).toBe(true)
+    })
+    expect(transport.isConnected()).toBe(false)
+  } finally {
+    transport.disconnect()
+    lateSocket.destroy()
+    connect.mockRestore()
+  }
+})
+
+describe('managed connection prerequisite', () => {
+  it('cancels a connection waiting for readiness without opening a socket afterwards', async () => {
+    const { Ok } = await import('@hoseki/packages/result')
+    let ready!: (result: ReturnType<typeof Ok<undefined>>) => void
+    const prerequisite = new Promise<ReturnType<typeof Ok<undefined>>>((resolve) => {
+      ready = resolve
+    })
+    const socket = vi.spyOn(SocksClient, 'createConnection')
+    const client = new ElectrumClient({
+      host: 'example.invalid',
+      port: 50001,
+      protocol: 'tcp',
+      beforeConnect: async () => prerequisite,
+      proxy: { host: '127.0.0.1', port: 19450 },
+    })
+    const pending = client.connect()
+    client.disconnect()
+    ready(Ok(undefined))
+    expect((await pending).unwrapErr().message).toBe('Connection closed')
+    expect(socket).not.toHaveBeenCalled()
+    socket.mockRestore()
+  })
+
+  it('does not open a direct or SOCKS socket when readiness fails', async () => {
+    const { Err } = await import('@hoseki/packages/result')
+    const proxy = vi.spyOn(SocksClient, 'createConnection')
+    const client = new ElectrumClient({
+      host: 'example.onion',
+      port: 50001,
+      protocol: 'tcp',
+      proxy: { host: '127.0.0.1', port: 19450 },
+      beforeConnect: async () => Err(new Error('Tor is unavailable')),
+    })
+    expect((await client.connect()).unwrapErr().message).toBe('Tor is unavailable')
+    expect(proxy).not.toHaveBeenCalled()
+    client.disconnect()
+    proxy.mockRestore()
   })
 })

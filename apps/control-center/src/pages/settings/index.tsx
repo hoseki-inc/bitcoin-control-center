@@ -17,6 +17,7 @@ import {
 } from '@chakra-ui/react'
 import { parseUnknown } from '@hoseki/packages/result/lib/parse'
 import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
+import { useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { z } from 'zod'
@@ -127,6 +128,12 @@ const ElectrumStatusSchema = z.object({
   host: z.string(),
   port: z.number(),
   protocol: z.string(),
+  tor: z
+    .object({
+      state: z.enum(['stopped', 'starting', 'ready', 'failed', 'unavailable']),
+      message: z.string().optional(),
+    })
+    .optional(),
 })
 type ElectrumStatus = z.infer<typeof ElectrumStatusSchema>
 const ElectrumStatusResponseSchema = z.object({
@@ -169,11 +176,12 @@ function useElectrumStatus(): ElectrumStatusState {
 }
 
 function ElectrumSettings(): JSX.Element {
+  const queryClient = useQueryClient()
   const { status: electrumStatus, refresh: refreshStatus } = useElectrumStatus()
-  const { data: savedHost, isLoading: hostLoading, save: saveHost } = useLocalSetting('electrum_host')
-  const { data: savedPort, isLoading: portLoading, save: savePort } = useLocalSetting('electrum_port')
-  const { data: savedProtocol, isLoading: protocolLoading, save: saveProtocol } = useLocalSetting('electrum_protocol')
-  const { data: savedTorEnabled, isLoading: torLoading, save: saveTorEnabled } = useLocalSetting('tor_enabled')
+  const { data: savedHost, isLoading: hostLoading } = useLocalSetting('electrum_host')
+  const { data: savedPort, isLoading: portLoading } = useLocalSetting('electrum_port')
+  const { data: savedProtocol, isLoading: protocolLoading } = useLocalSetting('electrum_protocol')
+  const { data: savedTorEnabled, isLoading: torLoading } = useLocalSetting('tor_enabled')
 
   const isLoading = hostLoading || portLoading || protocolLoading || torLoading
 
@@ -201,10 +209,7 @@ function ElectrumSettings(): JSX.Element {
       host: host.trim(),
       port: Number(port.trim()),
       protocol,
-    }
-    if (torEnabled) {
-      payload.proxyHost = '127.0.0.1'
-      payload.proxyPort = 9050
+      torEnabled,
     }
     return {
       body: JSON.stringify(superjson.serialize(payload)),
@@ -241,11 +246,6 @@ function ElectrumSettings(): JSX.Element {
   const handleSave = async (): Promise<void> => {
     setIsSaving(true)
     try {
-      saveHost(host.trim())
-      savePort(port.trim())
-      saveProtocol(protocol)
-      saveTorEnabled(String(torEnabled))
-
       const baseUrl = import.meta.env.VITE_BACKEND_API_URL ?? ''
       const { body } = await buildElectrumPayload()
       const res = await fetch(`${baseUrl}/settings.reconnectElectrum`, {
@@ -259,9 +259,14 @@ function ElectrumSettings(): JSX.Element {
         throw new Error(data?.error.json?.message ?? data?.error.message ?? 'Failed to reconnect')
       }
 
+      await Promise.all(
+        ['electrum_host', 'electrum_port', 'electrum_protocol', 'tor_enabled'].map(async (key) =>
+          queryClient.invalidateQueries({ queryKey: ['local-settings', key] }),
+        ),
+      )
       setIsDirty(false)
       setTestResult(null)
-      setTimeout(refreshStatus, 1000)
+      refreshStatus()
       toast.success('Electrum server updated')
     } catch (err) {
       toast.error(`Failed to connect: ${err instanceof Error ? err.message : 'Unknown error'}`)
@@ -301,7 +306,7 @@ function ElectrumSettings(): JSX.Element {
               setTestResult(null)
             }
           }}
-          isDisabled={isLoading}
+          isDisabled={isLoading || isSaving || isTesting}
         >
           {SERVER_PRESETS.map((p) => (
             <option key={p.host} value={p.host}>
@@ -331,6 +336,12 @@ function ElectrumSettings(): JSX.Element {
             <Text textStyle="text/xs" color={electrumStatus.connected ? 'green.600' : 'red.600'} wordBreak="break-all">
               {electrumStatus.host}:{electrumStatus.port} ({electrumStatus.protocol.toUpperCase()})
             </Text>
+            {!electrumStatus.connected && (
+              <Text textStyle="text/sm" color="red.700">
+                Your saved data is still on this device. Check your connection or choose a server below, then use Save
+                &amp; Reconnect.
+              </Text>
+            )}
           </VStack>
         </HStack>
       )}
@@ -350,7 +361,7 @@ function ElectrumSettings(): JSX.Element {
             setIsDirty(true)
             setTestResult(null)
           }}
-          isDisabled={isLoading}
+          isDisabled={isLoading || isSaving || isTesting}
         />
       </Stack>
 
@@ -371,7 +382,7 @@ function ElectrumSettings(): JSX.Element {
               setIsDirty(true)
               setTestResult(null)
             }}
-            isDisabled={isLoading}
+            isDisabled={isLoading || isSaving || isTesting}
           />
         </Stack>
         <Stack gap={1} w="120px" flexShrink={0}>
@@ -391,13 +402,23 @@ function ElectrumSettings(): JSX.Element {
               setIsDirty(true)
               setTestResult(null)
             }}
-            isDisabled={isLoading}
+            isDisabled={isLoading || isSaving || isTesting}
           >
             <option value="ssl">SSL</option>
             <option value="tcp">TCP</option>
           </Select>
         </Stack>
       </HStack>
+
+      {electrumStatus?.tor && (
+        <Text textStyle="text/sm" color={electrumStatus.tor.state === 'failed' ? 'red.500' : 'neutral.600'} as="output">
+          {electrumStatus.tor.state === 'ready'
+            ? 'Tor is ready.'
+            : electrumStatus.tor.state === 'starting'
+              ? 'Tor is connecting. This can take up to two minutes.'
+              : (electrumStatus.tor.message ?? 'Tor starts when you test or save a Tor connection.')}
+        </Text>
+      )}
 
       {/* Tor toggle */}
       <HStack w="full" justify="space-between" align="center">
@@ -406,7 +427,8 @@ function ElectrumSettings(): JSX.Element {
             Connect via Tor
           </FormLabel>
           <Text textStyle="text/xs" color="neutral.600">
-            Route through bundled Tor proxy. Required for .onion addresses.
+            Routes Electrum requests through Tor. Exchange and price requests use your normal connection. Required for
+            .onion addresses.
           </Text>
         </VStack>
         <Switch
@@ -417,7 +439,7 @@ function ElectrumSettings(): JSX.Element {
             setIsDirty(true)
             setTestResult(null)
           }}
-          isDisabled={isLoading}
+          isDisabled={isLoading || isSaving || isTesting}
         />
       </HStack>
 
@@ -444,7 +466,7 @@ function ElectrumSettings(): JSX.Element {
           onClick={() => void handleTest()}
           isLoading={isTesting}
           loadingText="Testing..."
-          isDisabled={!host.trim() || !port.trim() || isLoading}
+          isDisabled={!host.trim() || !port.trim() || isLoading || isSaving}
         >
           Test Connection
         </Button>
@@ -452,7 +474,7 @@ function ElectrumSettings(): JSX.Element {
           colorScheme="green"
           onClick={() => void handleSave()}
           isLoading={isSaving}
-          isDisabled={!isDirty || isLoading}
+          isDisabled={(!isDirty && electrumStatus?.connected !== false) || isLoading || isTesting}
         >
           Save & Reconnect
         </Button>
