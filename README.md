@@ -329,7 +329,7 @@ The complete `pnpm run ci` command also runs the StartOS tests and requires thos
 packaging dependencies to be installed first. StartOS candidate and draft-release
 workflows use this complete verification command.
 
-CodeQL scans pull requests and pushes to `main`, and runs every Monday at 13:17 UTC—three hours after Dependabot's scheduled run. Manual scans are available in GitHub Actions.
+CodeQL scans pull requests targeting `main`, pushes to `main`, and `main` weekly on Mondays at 13:17 UTC. Manual scans are available in GitHub Actions.
 
 Tests that open temporary localhost listeners may require normal host networking in restricted container or agent environments.
 

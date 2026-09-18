@@ -6,7 +6,7 @@ on:
   push:
     branches: [main]
   schedule:
-    # Run three hours after Dependabot's Monday 10:17 UTC schedule.
+    # Scan main weekly, including weeks without new commits.
     - cron: '17 13 * * 1'
   workflow_dispatch:
 

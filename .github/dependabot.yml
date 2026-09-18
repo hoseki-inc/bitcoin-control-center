@@ -1,15 +1,12 @@
 version: 2
 # Group routine version updates only. Security fixes stay independent, and
 # unmatched major updates remain visible as separate migration PRs.
-# Keep all Monday runs at 10:17 UTC; CodeQL follows three hours later.
 updates:
   - package-ecosystem: npm
     directory: /
     schedule:
       interval: weekly
       day: monday
-      time: '10:17'
-      timezone: Etc/UTC
     groups:
       production-dependencies:
         applies-to: version-updates
@@ -25,8 +22,6 @@ updates:
     schedule:
       interval: weekly
       day: monday
-      time: '10:17'
-      timezone: Etc/UTC
     groups:
       desktop-dependencies:
         applies-to: version-updates
@@ -41,8 +36,6 @@ updates:
     schedule:
       interval: weekly
       day: monday
-      time: '10:17'
-      timezone: Etc/UTC
     groups:
       startos-dependencies:
         applies-to: version-updates
@@ -55,8 +48,6 @@ updates:
     schedule:
       interval: weekly
       day: monday
-      time: '10:17'
-      timezone: Etc/UTC
     groups:
       startos-runtime-dependencies:
         applies-to: version-updates
@@ -69,13 +60,9 @@ updates:
     schedule:
       interval: weekly
       day: monday
-      time: '10:17'
-      timezone: Etc/UTC
 
   - package-ecosystem: docker
     directory: /start9
     schedule:
       interval: weekly
       day: monday
-      time: '10:17'
-      timezone: Etc/UTC
