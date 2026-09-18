@@ -49,7 +49,9 @@ export function ClaimsVerifyEtfPage(): JSX.Element {
 
   function removeRow(key: number): void {
     setHoldings((prev) => {
-      if (prev.length <= 1) return prev
+      if (prev.length <= 1) {
+        return prev
+      }
       return prev.filter((r) => r.key !== key)
     })
   }
@@ -63,7 +65,9 @@ export function ClaimsVerifyEtfPage(): JSX.Element {
   let totalBtcSats = 0n
   for (const row of holdings) {
     const shares = parseFloat(row.shares)
-    if (isNaN(shares) || shares <= 0) continue
+    if (isNaN(shares) || shares <= 0) {
+      continue
+    }
     const config = ETF_CONFIGS[row.ticker]
     if (config) {
       totalBtcSats += computeHoldingBtcSats(config, shares, asOf)
@@ -78,7 +82,9 @@ export function ClaimsVerifyEtfPage(): JSX.Element {
   const isValid = displayName.trim().length > 0 && hasValidHoldings
 
   async function handleSubmit(): Promise<void> {
-    if (!isValid) return
+    if (!isValid) {
+      return
+    }
 
     const validHoldings = holdings
       .filter((r) => {

@@ -91,7 +91,9 @@ app.whenReady().then(async () => {
   // Second instance: show the existing window
   app.on('second-instance', () => {
     if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore()
+      if (mainWindow.isMinimized()) {
+        mainWindow.restore()
+      }
       mainWindow.show()
       mainWindow.focus()
     }

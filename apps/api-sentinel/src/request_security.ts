@@ -17,7 +17,9 @@ function isLoopbackAddress(address: string): boolean {
 }
 
 function getHostname(host: string | undefined): string | null {
-  if (!host) return null
+  if (!host) {
+    return null
+  }
 
   try {
     return normalizeHostname(new URL(`http://${host}`).hostname)
@@ -33,7 +35,9 @@ function getHeaderValue(header: string | string[] | undefined): string | undefin
 
 function normalizeAllowedHostPattern(pattern: string): string | null {
   const trimmed = pattern.trim()
-  if (trimmed.length === 0) return null
+  if (trimmed.length === 0) {
+    return null
+  }
 
   if (trimmed.startsWith('*.')) {
     const suffix = normalizeHostname(trimmed.slice(2))
@@ -55,7 +59,9 @@ function getAllowedHostPatterns(configuredHosts: string | undefined): string[] {
 
 function isAllowedHost(host: string | undefined, allowedPatterns: string[]): boolean {
   const hostname = getHostname(host)
-  if (!hostname) return false
+  if (!hostname) {
+    return false
+  }
 
   return allowedPatterns.some((pattern) => {
     if (pattern.startsWith('*.')) {
@@ -68,7 +74,9 @@ function isAllowedHost(host: string | undefined, allowedPatterns: string[]): boo
 }
 
 export function isAllowedDevelopmentOrigin(origin: string | undefined): boolean {
-  if (!origin) return true
+  if (!origin) {
+    return true
+  }
 
   try {
     const url = new URL(origin)
@@ -83,8 +91,12 @@ function isAllowedRequestOrigin(
   allowedHostPatterns: string[],
   isProduction: boolean,
 ): boolean {
-  if (!origin) return true
-  if (!isProduction) return isAllowedDevelopmentOrigin(origin)
+  if (!origin) {
+    return true
+  }
+  if (!isProduction) {
+    return isAllowedDevelopmentOrigin(origin)
+  }
 
   try {
     const originUrl = new URL(origin)
@@ -118,7 +130,9 @@ export function registerRequestSecurity(
   const allowedHostPatterns = getAllowedHostPatterns(configuredHosts)
 
   server.addHook('onRequest', async (request, reply) => {
-    if (!isProtectedRoute(request.url)) return
+    if (!isProtectedRoute(request.url)) {
+      return
+    }
 
     const secFetchSite = getHeaderValue(request.headers['sec-fetch-site'])
     if (secFetchSite === 'cross-site') {

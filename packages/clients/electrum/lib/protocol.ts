@@ -40,13 +40,17 @@ export interface ElectrumConnectionConfig {
 }
 
 export function shouldVerifyElectrumTlsCertificate(host: string, override?: boolean): boolean {
-  if (override !== undefined) return override
+  if (override !== undefined) {
+    return override
+  }
   return !isLocalOrPrivateHost(host)
 }
 
 function isLocalOrPrivateHost(host: string): boolean {
   const normalized = host.trim().toLowerCase().replace(/^\[/, '').replace(/\]$/, '').replace(/\.$/, '')
-  if (normalized.length === 0) return false
+  if (normalized.length === 0) {
+    return false
+  }
 
   if (
     normalized === 'localhost' ||
@@ -62,10 +66,16 @@ function isLocalOrPrivateHost(host: string): boolean {
     return true
   }
 
-  if (!normalized.includes('.') && !normalized.includes(':')) return true
+  if (!normalized.includes('.') && !normalized.includes(':')) {
+    return true
+  }
 
-  if (net.isIP(normalized) === 4) return isPrivateIpv4(normalized)
-  if (net.isIP(normalized) === 6) return isPrivateIpv6(normalized)
+  if (net.isIP(normalized) === 4) {
+    return isPrivateIpv4(normalized)
+  }
+  if (net.isIP(normalized) === 6) {
+    return isPrivateIpv6(normalized)
+  }
 
   return false
 }
@@ -304,7 +314,9 @@ export class ElectrumTransport {
       const line = this.buffer.slice(0, newlineIndex).trim()
       this.buffer = this.buffer.slice(newlineIndex + 1)
 
-      if (line.length === 0) continue
+      if (line.length === 0) {
+        continue
+      }
 
       const parseResult = (() => {
         try {
@@ -327,7 +339,9 @@ export class ElectrumTransport {
       }
 
       const pendingReq = this.pending.get(response.id)
-      if (!pendingReq) continue
+      if (!pendingReq) {
+        continue
+      }
 
       clearTimeout(pendingReq.timer)
       this.pending.delete(response.id)

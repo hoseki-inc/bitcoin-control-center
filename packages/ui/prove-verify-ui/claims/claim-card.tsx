@@ -96,14 +96,22 @@ export const ClaimCard = forwardRef<ClaimCardProps, 'div'>(
 )
 
 function renderBalance(balance: BalanceWithStatus): React.ReactNode {
-  if (balance.status === 'loading') return <LoadingTextSkeleton width="8em" />
-  if (balance.status === 'fail') return 'n/a'
+  if (balance.status === 'loading') {
+    return <LoadingTextSkeleton width="8em" />
+  }
+  if (balance.status === 'fail') {
+    return 'n/a'
+  }
   return `${formatSatsToBtc(balance.value.current.toString())} BTC`
 }
 
 function renderUsdAmount(balance: BalanceWithStatus): React.ReactNode {
-  if (balance.status === 'loading') return <LoadingTextSkeleton width="5em" />
-  if (balance.status === 'fail' || balance.value.usd === null) return null
+  if (balance.status === 'loading') {
+    return <LoadingTextSkeleton width="5em" />
+  }
+  if (balance.status === 'fail' || balance.value.usd === null) {
+    return null
+  }
   return formatUsd(balance.value.usd.toFixed(2))
 }
 
@@ -129,10 +137,18 @@ export function ClaimCardKeystores({ keystores, alt, status, ...props }: ClaimCa
       <KeystoreAvatar.Group {...props}>
         {keystores
           .sort((a, b) => {
-            if (a.isVerified) return -1
-            if (b.isVerified) return 1
-            if (a.wallet) return -1
-            if (b.wallet) return 1
+            if (a.isVerified) {
+              return -1
+            }
+            if (b.isVerified) {
+              return 1
+            }
+            if (a.wallet) {
+              return -1
+            }
+            if (b.wallet) {
+              return 1
+            }
             return 0
           })
           .slice(0, 3)

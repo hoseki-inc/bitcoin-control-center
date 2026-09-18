@@ -267,8 +267,12 @@ describe('ElectrumProvider', () => {
         getBlockHeader: vi.fn().mockReturnValue(Ok(TX_BLOCK_HEADER_HEX)),
         getHistory: vi.fn().mockReturnValue(Ok([{ tx_hash: tx.txid, height: 799_991 }])),
         getTransaction: vi.fn().mockImplementation((txHash: string) => {
-          if (txHash === tx.txid) return Ok(tx.hex)
-          if (txHash === externalFundingTx.txid) return Ok(externalFundingTx.hex)
+          if (txHash === tx.txid) {
+            return Ok(tx.hex)
+          }
+          if (txHash === externalFundingTx.txid) {
+            return Ok(externalFundingTx.hex)
+          }
           return Err(new Error(`unexpected tx ${txHash}`))
         }),
       })
@@ -308,8 +312,12 @@ describe('ElectrumProvider', () => {
         getBlockHeader: vi.fn().mockReturnValue(Ok(TX_BLOCK_HEADER_HEX)),
         getHistory: vi.fn().mockReturnValue(Ok([{ tx_hash: tx.txid, height: 799_981 }])),
         getTransaction: vi.fn().mockImplementation((txHash: string) => {
-          if (txHash === tx.txid) return Ok(tx.hex)
-          if (txHash === fundingTx.txid) return Ok(fundingTx.hex)
+          if (txHash === tx.txid) {
+            return Ok(tx.hex)
+          }
+          if (txHash === fundingTx.txid) {
+            return Ok(fundingTx.hex)
+          }
           return Err(new Error(`unexpected tx ${txHash}`))
         }),
       })
@@ -353,8 +361,12 @@ describe('ElectrumProvider', () => {
           return Ok([])
         }),
         getTransaction: vi.fn().mockImplementation((txHash: string) => {
-          if (txHash === tx.txid) return Ok(tx.hex)
-          if (txHash === fundingTx.txid) return Ok(fundingTx.hex)
+          if (txHash === tx.txid) {
+            return Ok(tx.hex)
+          }
+          if (txHash === fundingTx.txid) {
+            return Ok(fundingTx.hex)
+          }
           return Err(new Error(`unexpected tx ${txHash}`))
         }),
       })

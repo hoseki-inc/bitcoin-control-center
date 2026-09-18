@@ -169,7 +169,9 @@ export default function App(): JSX.Element {
   useEffect(() => {
     async function loadPdf() {
       try {
-        if (!parsedStatement) return
+        if (!parsedStatement) {
+          return
+        }
 
         const document = await renderStatementDocument({
           watermarkText: 'Statement Example',

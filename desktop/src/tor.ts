@@ -20,7 +20,9 @@ export class TorManager {
   }
 
   public async start(): Promise<void> {
-    if (this.process) return
+    if (this.process) {
+      return
+    }
 
     fs.mkdirSync(this.dataDir, { recursive: true })
 

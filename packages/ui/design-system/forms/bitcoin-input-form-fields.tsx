@@ -85,7 +85,9 @@ export function BitcoinInputFormFields({
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!bitcoinRaw) return
+    if (!bitcoinRaw) {
+      return
+    }
 
     let input: BitcoinInput
     if (xpub.isOk()) {

@@ -247,7 +247,9 @@ function getFullClaimDto(db: Database.Database, accountId: string): ClaimDto | n
   const row = db
     .prepare('SELECT id, network, descriptor, display_name, status, created_at, deleted_at FROM accounts WHERE id = ?')
     .get(accountId) as AccountRow | undefined
-  if (!row) return null
+  if (!row) {
+    return null
+  }
 
   const keystores = db.prepare('SELECT * FROM keystores WHERE account_id = ?').all(row.id) as KeystoreRow[]
   const latestChallenge = db
@@ -300,8 +302,12 @@ function verifySignedMessageSignature(message: SignedMessageRow, signature: stri
 }
 
 function getRequiredSignatureCount(account: Account): number {
-  if (account instanceof MultiSigAccount) return account.threshold
-  if (account instanceof SingleSigAccount) return 1
+  if (account instanceof MultiSigAccount) {
+    return account.threshold
+  }
+  if (account instanceof SingleSigAccount) {
+    return 1
+  }
   throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Unsupported account type' })
 }
 
@@ -370,10 +376,14 @@ const controlCenterRouter = t.router({
       }
     }
 
-    if (accounts.size === 0) return
+    if (accounts.size === 0) {
+      return
+    }
 
     const balancesResult = await ctx.app.onchainProvider.getConfirmedAccountBalances(accounts)
-    if (balancesResult.isErr()) return
+    if (balancesResult.isErr()) {
+      return
+    }
 
     const now = new Date().toISOString()
     for (const [account, balance] of balancesResult.unwrap()) {
@@ -420,8 +430,12 @@ const registryRouter = t.router({
       const db = ctx.app.database.db
       const row = db.prepare('SELECT status, deleted_at FROM accounts WHERE id = ?').get(input.id) as
         { status: string; deleted_at: string | null } | undefined
-      if (!row) throw new TRPCError({ code: 'NOT_FOUND', message: 'Claim not found' })
-      if (row.status !== 'pending') throw new TRPCError({ code: 'BAD_REQUEST', message: 'Claim is not pending' })
+      if (!row) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Claim not found' })
+      }
+      if (row.status !== 'pending') {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Claim is not pending' })
+      }
       if (row.deleted_at !== null) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Archived claims must be permanently deleted' })
       }
@@ -432,7 +446,9 @@ const registryRouter = t.router({
       const db = ctx.app.database.db
       const row = db.prepare('SELECT deleted_at FROM accounts WHERE id = ?').get(input.id) as
         { deleted_at: string | null } | undefined
-      if (!row) throw new TRPCError({ code: 'NOT_FOUND', message: 'Claim not found' })
+      if (!row) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Claim not found' })
+      }
       if (row.deleted_at === null) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Only archived claims can be permanently deleted' })
       }
@@ -452,7 +468,9 @@ const registryRouter = t.router({
 
     restore: publicProcedure.input(z.object({ id: z.string() })).mutation(({ ctx, input }) => {
       const result = ctx.app.controlCenterService.restoreAccount(input.id)
-      if (result.isErr()) throw new TRPCError({ code: 'NOT_FOUND', message: result.unwrapErr().message })
+      if (result.isErr()) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: result.unwrapErr().message })
+      }
     }),
 
     listArchived: publicProcedure.query(({ ctx }) => {
@@ -905,7 +923,9 @@ const registryRouter = t.router({
         const sm = ctx.app.database.db
           .prepare('SELECT * FROM signed_messages WHERE id = ?')
           .get(input.signedMessageId) as SignedMessageRow | undefined
-        if (!sm) throw new TRPCError({ code: 'NOT_FOUND', message: 'Signed message not found' })
+        if (!sm) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Signed message not found' })
+        }
         return {
           signedMessage: signedMessageRowToDto(sm),
           challengeId: sm.challenge_id,
@@ -1347,7 +1367,9 @@ const onchainRouter = t.router({
       const row = ctx.app.database.db
         .prepare('SELECT descriptor FROM accounts WHERE id = ? AND deleted_at IS NULL')
         .get(claimId) as { descriptor: string } | undefined
-      if (!row) continue
+      if (!row) {
+        continue
+      }
 
       const parsed = Account.fromDescriptor(row.descriptor)
       if (parsed.isOk()) {
@@ -1357,7 +1379,9 @@ const onchainRouter = t.router({
       }
     }
 
-    if (accounts.size === 0) return balanceMap
+    if (accounts.size === 0) {
+      return balanceMap
+    }
 
     const result = await ctx.app.onchainProvider.getConfirmedAccountBalances(accounts)
     if (result.isErr()) {
@@ -1369,7 +1393,9 @@ const onchainRouter = t.router({
       const activeClaim = ctx.app.database.db
         .prepare('SELECT 1 AS one FROM accounts WHERE id = ? AND deleted_at IS NULL')
         .get(claimId)
-      if (!activeClaim) continue
+      if (!activeClaim) {
+        continue
+      }
 
       const balance = accountBalances.get(account) ?? 0n
       balanceMap.set(claimId, new Decimal(balance.toString()))
@@ -1563,7 +1589,9 @@ const manualRouter = t.router({
 
   get: publicProcedure.input(z.object({ accountId: z.string() })).query(({ ctx, input }) => {
     const account = ctx.app.manualService.getAccount(input.accountId)
-    if (!account) throw new TRPCError({ code: 'NOT_FOUND', message: 'Manual account not found' })
+    if (!account) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Manual account not found' })
+    }
     return {
       id: account.id,
       displayName: account.displayName,
@@ -1686,7 +1714,9 @@ const etfRouter = t.router({
 
   get: publicProcedure.input(z.object({ accountId: z.string() })).query(({ ctx, input }) => {
     const account = ctx.app.etfService.getAccount(input.accountId)
-    if (!account) throw new TRPCError({ code: 'NOT_FOUND', message: 'ETF account not found' })
+    if (!account) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'ETF account not found' })
+    }
     return {
       id: account.id,
       displayName: account.displayName,
@@ -1876,7 +1906,9 @@ interface ValidatedElectrumConnection {
 }
 
 function normalizeBracketedIpv6Host(host: string): string {
-  if (!host.startsWith('[') && !host.endsWith(']')) return host
+  if (!host.startsWith('[') && !host.endsWith(']')) {
+    return host
+  }
   if (!host.startsWith('[') || !host.endsWith(']')) {
     throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid Electrum host' })
   }
@@ -1890,7 +1922,9 @@ function normalizeBracketedIpv6Host(host: string): string {
 }
 
 function isValidElectrumDnsHost(host: string): boolean {
-  if (!/^[a-z0-9.-]+$/.test(host)) return false
+  if (!/^[a-z0-9.-]+$/.test(host)) {
+    return false
+  }
 
   const labels = host.split('.')
   return labels.every((label) => {
@@ -1939,7 +1973,9 @@ function validateElectrumProxy(input: {
   proxyHost?: string
   proxyPort?: number
 }): ValidatedElectrumConnection['proxy'] {
-  if (!input.proxyHost && input.proxyPort === undefined) return undefined
+  if (!input.proxyHost && input.proxyPort === undefined) {
+    return undefined
+  }
   if (!input.proxyHost || input.proxyPort === undefined) {
     throw new TRPCError({ code: 'BAD_REQUEST', message: 'Proxy host and port must be provided together' })
   }

@@ -115,7 +115,9 @@ async function render(): Promise<void> {
 }
 function button(label: string): HTMLButtonElement {
   const found = Array.from(host.querySelectorAll('button')).find((item) => item.textContent === label)
-  if (!found) throw new Error(`Button not found: ${label}`)
+  if (!found) {
+    throw new Error(`Button not found: ${label}`)
+  }
   return found
 }
 async function click(label: string): Promise<void> {

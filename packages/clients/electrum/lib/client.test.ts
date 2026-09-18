@@ -22,7 +22,9 @@ async function startMockServer(): Promise<MockServer> {
       while ((idx = buffer.indexOf('\n')) !== -1) {
         const line = buffer.slice(0, idx).trim()
         buffer = buffer.slice(idx + 1)
-        if (line.length === 0) continue
+        if (line.length === 0) {
+          continue
+        }
         requests.push(line)
         const req = JSON.parse(line) as { id: number; method: string; params: unknown[] }
         const result =

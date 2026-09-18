@@ -55,7 +55,9 @@ export class ElectrumClient {
    * a reconnect and most would fail with "Not connected".
    */
   public connect(): AsyncResult<ServerVersion, Error> {
-    if (this.connectInFlight) return this.connectInFlight
+    if (this.connectInFlight) {
+      return this.connectInFlight
+    }
     const self = this
     const inner = tryBlockAsync(async function* () {
       yield* self.transport.connect().try()

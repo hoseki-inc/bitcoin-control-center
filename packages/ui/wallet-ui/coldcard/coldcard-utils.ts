@@ -153,7 +153,9 @@ export function getBitcoinXpubFromColdcardExport(
         let xpub = account.xpub
         for (const step of childSteps) {
           const index = parseInt(step, 10)
-          if (isNaN(index)) continue
+          if (isNaN(index)) {
+            continue
+          }
           xpub = xpub.derive(index)
         }
         return Ok(xpub)

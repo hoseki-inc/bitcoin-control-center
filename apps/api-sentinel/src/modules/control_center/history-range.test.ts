@@ -236,8 +236,11 @@ describe('custom portfolio history ranges', () => {
         '2026-04-06T04:00:00.000Z',
       ])
     } finally {
-      if (originalTimezone === undefined) delete process.env.TZ
-      else process.env.TZ = originalTimezone
+      if (originalTimezone === undefined) {
+        delete process.env.TZ
+      } else {
+        process.env.TZ = originalTimezone
+      }
     }
   })
 

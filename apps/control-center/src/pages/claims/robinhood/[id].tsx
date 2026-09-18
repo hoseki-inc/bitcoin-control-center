@@ -36,7 +36,9 @@ export function RobinhoodAccountDetailsPage(): JSX.Element {
   const accountDisplayName = account.displayName
 
   function handleReconnect(): void {
-    if (!accountId) return
+    if (!accountId) {
+      return
+    }
     navigate('/accounts/verify/robinhood', {
       state: {
         returnTo: `/accounts/robinhood/${accountId}`,
@@ -47,7 +49,9 @@ export function RobinhoodAccountDetailsPage(): JSX.Element {
   }
 
   async function handleRefresh(): Promise<void> {
-    if (!accountId) return
+    if (!accountId) {
+      return
+    }
     setIsRefreshing(true)
     try {
       await refreshMutation.mutateAsync({ accountId })
@@ -63,7 +67,9 @@ export function RobinhoodAccountDetailsPage(): JSX.Element {
   }
 
   async function handleDelete(): Promise<void> {
-    if (!accountId) return
+    if (!accountId) {
+      return
+    }
     setIsDeleting(true)
     try {
       await deleteMutation.mutateAsync({ accountId })

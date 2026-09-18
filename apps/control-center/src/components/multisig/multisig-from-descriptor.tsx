@@ -69,7 +69,9 @@ export function MultisigFromDescriptor({ onNext }: { onNext: (data: CreateMultis
   const [parsingError, setParsingError] = useState<string | null>(null)
 
   function validateDescriptor(value: string) {
-    if (!value) return 'Descriptor is required'
+    if (!value) {
+      return 'Descriptor is required'
+    }
 
     try {
       const parsed = WalletImporter.multisigFromDescriptor(value)
