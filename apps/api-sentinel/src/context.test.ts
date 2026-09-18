@@ -351,6 +351,12 @@ describe('desktop saved connections', () => {
     await expect(appRouter.createCaller({ app: ctx }).settings.connectionProfiles.list()).rejects.toMatchObject({
       code: 'FORBIDDEN',
     })
+    await expect(
+      appRouter.createCaller({ app: ctx }).settings.connectionProfiles.delete({
+        id: '00000000-0000-4000-8000-000000000001',
+        revision: 1,
+      }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' })
     expect(ctx.database.db.prepare('SELECT * FROM desktop_connection_profiles').all()).toEqual([])
   })
 
@@ -445,6 +451,91 @@ describe('desktop saved connections', () => {
     expect(saved.host).toBe('node.onion')
     await expect(api.connect(saved)).rejects.toThrow('Tor is not available')
     expect((await api.list()).activeId).not.toBe(saved.id)
+  })
+
+  it('deletes an inactive profile locally, frees a slot, and preserves the deletion after restart', async () => {
+    const ctx = await context(true, true)
+    const api = appRouter.createCaller({ app: ctx }).settings.connectionProfiles
+    const active = (await api.list()).activeId
+    const next = await startElectrum(200)
+    const removed = await api.create({ ...next.config, nickname: 'Remove me' })
+    for (let i = 0; i < 3; i++) await api.create({ ...next.config, nickname: `Keep ${i}` })
+    expect((await api.list()).profiles).toHaveLength(5)
+    const beforeSettings = settings(ctx)
+    await api.delete(removed)
+    expect((await api.list()).profiles).toHaveLength(4)
+    await api.create({ ...next.config, nickname: 'Replacement slot' })
+    expect((await api.list()).profiles).toHaveLength(5)
+    expect((await api.list()).activeId).toBe(active)
+    expect(settings(ctx)).toEqual(beforeSettings)
+    expect(next.methods).toEqual([])
+    expect((await ctx.statementService['onchainProvider'].getBlocksTip()).unwrap().height).toBe(100)
+    ctx.disconnectElectrum()
+    ctx.database.close()
+    contexts.delete(ctx)
+    const restarted = await context(true, true)
+    expect(restarted.connectionProfiles!.list()).toHaveLength(5)
+    expect(restarted.connectionProfiles!.list().some((profile) => profile.id === removed.id)).toBe(false)
+    expect(restarted.connectionProfiles!.getActiveId()).toBe(active)
+  })
+
+  it('protects the active or last profile even offline and permits deletion after switching', async () => {
+    const ctx = await context(true, true)
+    const api = appRouter.createCaller({ app: ctx }).settings.connectionProfiles
+    const initial = (await api.list()).profiles[0]!
+    await expect(api.delete(initial)).rejects.toThrow('Connect to another profile')
+    ctx.electrumClient.disconnect()
+    await expect(api.delete(initial)).rejects.toThrow('Connect to another profile')
+    const next = await api.create({ ...(await startElectrum(200)).config, nickname: 'New active' })
+    const connected = await api.connect(next)
+    await expect(api.delete(connected)).rejects.toThrow('Connect to another profile')
+    await api.delete(initial)
+    expect((await api.list()).profiles).toEqual([connected])
+    expect((await api.list()).activeId).toBe(next.id)
+    expect((await ctx.onchainProvider.getBlocksTip()).unwrap().height).toBe(200)
+  })
+
+  it('rejects stale deletion and repeated deletion without affecting other profiles', async () => {
+    const ctx = await context(true, true)
+    const api = appRouter.createCaller({ app: ctx }).settings.connectionProfiles
+    const saved = await api.create({ ...fixtures[0]!.config, nickname: 'Before' })
+    const renamed = await api.rename({ ...saved, nickname: 'After' })
+    await expect(api.delete(saved)).rejects.toThrow('another window')
+    expect((await api.list()).profiles).toContainEqual(renamed)
+    const outcomes = await Promise.allSettled([api.delete(renamed), api.delete(renamed)])
+    expect(outcomes.filter((outcome) => outcome.status === 'fulfilled')).toHaveLength(1)
+    expect((await api.list()).profiles).toHaveLength(1)
+  })
+
+  it('preserves the saved profiles and active runtime when deletion cannot be persisted', async () => {
+    const ctx = await context(true, true)
+    const api = appRouter.createCaller({ app: ctx }).settings.connectionProfiles
+    const saved = await api.create({ ...fixtures[0]!.config, nickname: 'Keep after failure' })
+    const before = await api.list()
+    ctx.database.db.exec(
+      "CREATE TRIGGER reject_profile_delete BEFORE DELETE ON desktop_connection_profiles BEGIN SELECT RAISE(FAIL, 'test deletion failure'); END",
+    )
+    await expect(api.delete(saved)).rejects.toThrow('Could not save connection settings')
+    expect(await api.list()).toEqual(before)
+    expect((await ctx.onchainProvider.getBlocksTip()).unwrap().height).toBe(100)
+  })
+
+  it('does not activate or recreate a profile deleted during its pending handshake', async () => {
+    const ctx = await context(true, true)
+    const api = appRouter.createCaller({ app: ctx }).settings.connectionProfiles
+    const active = (await api.list()).activeId
+    const next = await startElectrum(200, true)
+    const saved = await api.create({ ...next.config, nickname: 'Connecting' })
+    const pending = api.connect(saved)
+    const outcome = expect(pending).rejects.toThrow('no longer exists')
+    await vi.waitFor(() => expect(next.methods).toContain('server.version'))
+    await api.delete(saved)
+    next.releaseVersion()
+    await outcome
+    expect((await api.list()).activeId).toBe(active)
+    expect((await api.list()).profiles).toHaveLength(1)
+    expect((await ctx.onchainProvider.getBlocksTip()).unwrap().height).toBe(100)
+    await vi.waitFor(() => expect(next.sockets.size).toBe(0))
   })
 
   it('tests an inactive profile without activating it, then switches every provider and restores it on restart', async () => {

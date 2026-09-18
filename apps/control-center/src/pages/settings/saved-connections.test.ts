@@ -21,6 +21,8 @@ let queryClient: QueryClient
 let snapshot: Snapshot
 let finishSave: (result: { ok: boolean; message?: string }) => void
 let saveResponse: Promise<{ ok: boolean; message?: string }>
+let finishDelete: (result: { ok: boolean; message?: string }) => void
+let deleteResponse: Promise<{ ok: boolean; message?: string }>
 let requests: Array<{ path: string; input: Record<string, unknown> | null }>
 
 function response(data: unknown): Response {
@@ -76,6 +78,23 @@ async function change(id: string, value: string): Promise<void> {
 async function click(label: string): Promise<void> {
   await act(async () => button(label).click())
 }
+async function trash(nickname: string, layout = 'aside'): Promise<void> {
+  const target = [...container.querySelectorAll(`${layout} button`)].find(
+    (item) => item.getAttribute('aria-label') === `Delete ${nickname}`,
+  ) as HTMLButtonElement
+  expect(target).toBeDefined()
+  await act(async () => target.click())
+}
+function dialogButton(label: string): HTMLButtonElement {
+  const target = [...document.querySelectorAll('[role="alertdialog"] button')].find(
+    (item) => item.textContent === label,
+  )
+  expect(target).toBeDefined()
+  return target as HTMLButtonElement
+}
+async function clickDialog(label: string): Promise<void> {
+  await act(async () => dialogButton(label).click())
+}
 async function savedToast(): Promise<void> {
   await vi.waitFor(async () => {
     await flush()
@@ -124,6 +143,9 @@ beforeEach(() => {
   saveResponse = new Promise((resolve) => {
     finishSave = resolve
   })
+  deleteResponse = new Promise((resolve) => {
+    finishDelete = resolve
+  })
   vi.stubGlobal(
     'fetch',
     vi.fn(async (url: string, init?: RequestInit) => {
@@ -153,6 +175,12 @@ beforeEach(() => {
         found.nickname = String(payload!['nickname'])
         found.revision++
         return response(found)
+      }
+      if (path === 'settings.connectionProfiles.delete') {
+        const outcome = await deleteResponse
+        if (!outcome.ok) return failure(outcome.message ?? 'Could not delete connection')
+        snapshot.profiles = snapshot.profiles.filter((item) => item.id !== payload!['id'])
+        return response({ id: payload!['id'] })
       }
       if (path === 'settings.connectionProfiles.connect') {
         const outcome = await saveResponse
@@ -336,5 +364,126 @@ describe('desktop saved connections', () => {
     expect(snapshot.status.host).toBe('server-a.example')
     expect(snapshot.profiles[0]!.host).toBe('server-a.example')
     expect(requests.find(({ path }) => path === 'settings.testElectrum')!.input!['host']).toBe('test.example')
+  })
+
+  it('protects the active connection from deletion in both layouts', async () => {
+    await render()
+    const icons = [...container.querySelectorAll('button[aria-label="Delete Home LAN"]')] as HTMLButtonElement[]
+    expect(icons).toHaveLength(2)
+    expect(icons.every((icon) => icon.disabled)).toBe(true)
+    await trash('Home LAN')
+    expect(document.querySelector('[role="alertdialog"]')).toBeNull()
+    expect(requests.some(({ path }) => path.endsWith('.delete'))).toBe(false)
+  })
+
+  it('confirms deletion from the list without selecting or connecting to that profile', async () => {
+    await render()
+    await trash('Away')
+    expect(document.querySelector('[role="alertdialog"]')!.textContent).toContain('Delete “Away”?')
+    expect(requests.some(({ path }) => path.endsWith('.delete'))).toBe(false)
+    await clickDialog('Cancel')
+    expect(input('connection-host').value).toBe('server-a.example')
+    await trash('Away')
+    await clickDialog('Delete connection')
+    expect(dialogButton('Cancel').disabled).toBe(true)
+    await act(async () => finishDelete({ ok: true }))
+    await savedToast()
+    expect(container.querySelector('aside')!.textContent).not.toContain('Away')
+    expect(container.querySelector('#saved-connection')!.textContent).not.toContain('Away')
+    expect(input('connection-host').value).toBe('server-a.example')
+    expect(container.textContent).toContain('Connected · Home LAN')
+    expect(requests.some(({ path }) => path.endsWith('.connect') || path.endsWith('.testElectrum'))).toBe(false)
+  })
+
+  it('deletes the selected profile from the compact picker, discards its edits, and frees a slot', async () => {
+    while (snapshot.profiles.length < 5)
+      snapshot.profiles.push({ ...snapshot.profiles[0]!, id: `extra-${snapshot.profiles.length}` })
+    await render()
+    await change('saved-connection', snapshot.profiles[1]!.id)
+    await change('connection-host', 'unsaved.example')
+    await trash('Away', '.connection-picker')
+    expect(document.querySelector('[role="alertdialog"]')!.textContent).toContain('unsaved changes')
+    await clickDialog('Cancel')
+    expect(input('connection-host').value).toBe('unsaved.example')
+    await trash('Away', '.connection-picker')
+    await clickDialog('Delete connection')
+    await act(async () => finishDelete({ ok: true }))
+    await savedToast()
+    expect(input('connection-host').value).toBe('server-a.example')
+    expect((container.querySelector('#saved-connection') as HTMLSelectElement).value).toBe(snapshot.activeId)
+    const addButtons = [...container.querySelectorAll('button')].filter(
+      (item) => item.textContent === '+ New connection',
+    )
+    expect(addButtons.every((item) => !item.disabled)).toBe(true)
+    expect(snapshot.profiles).toHaveLength(4)
+  })
+
+  it('preserves a new draft when deleting another profile', async () => {
+    await render()
+    await click('+ New connection')
+    await change('connection-nickname', 'New draft')
+    await change('connection-host', 'new.example')
+    await trash('Away')
+    await clickDialog('Delete connection')
+    await act(async () => finishDelete({ ok: true }))
+    await savedToast()
+    expect(input('connection-nickname').value).toBe('New draft')
+    expect(input('connection-host').value).toBe('new.example')
+    expect(button('Save connection').disabled).toBe(false)
+  })
+
+  it('keeps the profile and draft when deletion fails and shows the error in the dialog', async () => {
+    await render()
+    await change('saved-connection', snapshot.profiles[1]!.id)
+    await change('connection-host', 'unsaved.example')
+    await trash('Away')
+    await clickDialog('Delete connection')
+    await act(async () => finishDelete({ ok: false, message: 'Connection changed in another window' }))
+    await vi.waitFor(async () => {
+      await flush()
+      expect(document.querySelector('[role="alertdialog"]')!.textContent).toContain(
+        'Connection changed in another window',
+      )
+    })
+    await clickDialog('Cancel')
+    expect(input('connection-host').value).toBe('unsaved.example')
+    expect(snapshot.profiles).toHaveLength(2)
+    expect(toasts.success).not.toHaveBeenCalled()
+  })
+
+  it('disables deletion if the target becomes active in another window while confirming', async () => {
+    await render()
+    await trash('Away')
+    snapshot.activeId = snapshot.profiles[1]!.id
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: ['connection-profiles'] })
+    })
+    await vi.waitFor(async () => {
+      await flush()
+      expect(dialogButton('Delete connection').disabled).toBe(true)
+    })
+    expect(document.querySelector('[role="alertdialog"]')!.textContent).toContain('Connect to another profile')
+    expect(requests.some(({ path }) => path.endsWith('.delete'))).toBe(false)
+  })
+
+  it('keeps an externally deleted draft visible without mislabeling it as another saved connection', async () => {
+    await render()
+    await change('saved-connection', snapshot.profiles[1]!.id)
+    await change('connection-host', 'unsaved.example')
+    snapshot.profiles = [snapshot.profiles[0]!]
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: ['connection-profiles'] })
+    })
+    await vi.waitFor(async () => {
+      await flush()
+      expect(container.textContent).toContain('This connection was deleted in another window')
+    })
+    const picker = container.querySelector('#saved-connection') as HTMLSelectElement
+    expect(picker.selectedOptions[0]!.textContent).toBe('Away — Deleted')
+    expect(input('connection-host').value).toBe('unsaved.example')
+    expect(button('Save & Reconnect').disabled).toBe(true)
+    await change('saved-connection', snapshot.activeId!)
+    await click('Discard changes')
+    expect(input('connection-host').value).toBe('server-a.example')
   })
 })

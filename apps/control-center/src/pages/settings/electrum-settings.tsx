@@ -1,22 +1,31 @@
 import {
   Alert,
   AlertDescription,
+  AlertDialog,
+  AlertDialogBody,
+  AlertDialogContent,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogOverlay,
   Box,
   Button,
   Circle,
   FormControl,
   FormLabel,
   HStack,
+  IconButton,
   Input,
   Select,
   Spinner,
   Stack,
   Switch,
   Text,
+  Tooltip,
   VStack,
 } from '@chakra-ui/react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useState } from 'react'
+import { Trash2 } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { type RouterOutput, baseTrpc } from '../../trpc'
 
@@ -50,7 +59,11 @@ export function ElectrumSettings(): JSX.Element {
     refetchInterval: 10_000,
   })
   const [draft, setDraft] = useState<Draft | null>(null)
-  const [busy, setBusy] = useState<'test' | 'save' | 'rename' | null>(null)
+  const [busy, setBusy] = useState<'test' | 'save' | 'rename' | 'delete' | null>(null)
+  const [deleting, setDeleting] = useState<Profile | null>(null)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+  const cancelDeleteRef = useRef<HTMLButtonElement>(null)
+  const hostRef = useRef<HTMLInputElement>(null)
   const [renaming, setRenaming] = useState(false)
   const [nickname, setNickname] = useState('')
   const [pendingSelection, setPendingSelection] = useState<Selection | null>(null)
@@ -59,10 +72,10 @@ export function ElectrumSettings(): JSX.Element {
   const saved = query.data?.profiles.find((item) => item.id === draft?.id)
   const isNew = draft !== null && !draft.id
   const dirty = draft !== null && (isNew ? Boolean(draft.host || draft.nickname) : connectionChanged(draft, saved))
-  const controlsDisabled = busy !== null || renaming
+  const controlsDisabled = busy !== null || renaming || deleting !== null
 
   useEffect(() => {
-    if (!query.data || busy || renaming) return
+    if (!query.data || busy || renaming || deleting) return
     if (!draft) {
       setDraft(
         query.data.profiles.find((item) => item.id === query.data.activeId) ?? query.data.profiles[0] ?? emptyDraft(),
@@ -70,7 +83,7 @@ export function ElectrumSettings(): JSX.Element {
     } else if (!dirty && saved && saved.revision !== draft.revision) {
       setDraft(saved)
     }
-  }, [query.data, draft, saved, dirty, busy, renaming])
+  }, [query.data, draft, saved, dirty, busy, renaming, deleting])
 
   const applySelection = (selection: Selection): void => {
     if (selection.kind === 'new') {
@@ -110,6 +123,33 @@ export function ElectrumSettings(): JSX.Element {
         : current,
     )
     void queryClient.invalidateQueries({ queryKey })
+  }
+  const deleteProfile = async (): Promise<void> => {
+    if (!deleting || busy) return
+    setBusy('delete')
+    setDeleteError(null)
+    try {
+      await api.delete.mutate({ id: deleting.id, revision: deleting.revision })
+      await queryClient.cancelQueries({ queryKey })
+      const remaining = queryClient.setQueryData<Snapshot>(queryKey, (current) =>
+        current ? { ...current, profiles: current.profiles.filter((item) => item.id !== deleting.id) } : current,
+      )
+      // Removing another row must leave the current form (including new drafts) intact.
+      if (draft?.id === deleting.id) {
+        setDraft(remaining?.profiles.find((item) => item.id === remaining.activeId) ?? remaining?.profiles[0] ?? null)
+        setTestResult(null)
+      }
+      setPendingSelection(null)
+      setDeleting(null)
+      toast.success('Connection deleted')
+      void queryClient.invalidateQueries({ queryKey })
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : 'Could not delete the connection')
+      // Refresh active/revision changes from another window without discarding this draft.
+      void queryClient.invalidateQueries({ queryKey })
+    } finally {
+      setBusy(null)
+    }
   }
   const run = async (operation: 'test' | 'save' | 'rename'): Promise<void> => {
     if (!draft || busy) return
@@ -173,6 +213,7 @@ export function ElectrumSettings(): JSX.Element {
   const active = profiles.find((item) => item.id === activeId)
   const atLimit = profiles.length >= 5
   const canSubmit =
+    (isNew || Boolean(saved)) &&
     Boolean(draft.host.trim()) &&
     Number.isInteger(draft.port) &&
     draft.port > 0 &&
@@ -207,6 +248,31 @@ export function ElectrumSettings(): JSX.Element {
     setRenaming(true)
     setTestResult(null)
   }
+  const deleteButton = (profile: Profile): JSX.Element => (
+    <Tooltip
+      label={
+        profile.id === activeId ? 'Connect to another profile before deleting this connection' : 'Delete connection'
+      }
+      shouldWrapChildren
+    >
+      <IconButton
+        aria-label={`Delete ${profile.nickname}`}
+        icon={<Trash2 size={16} aria-hidden="true" />}
+        variant="ghost"
+        size="sm"
+        minW={8}
+        w={8}
+        h={8}
+        color="neutral.600"
+        _hover={{ color: 'error.600', bg: 'error.50' }}
+        isDisabled={controlsDisabled || profile.id === activeId}
+        onClick={() => {
+          setDeleteError(null)
+          setDeleting(profile)
+        }}
+      />
+    </Tooltip>
+  )
 
   return (
     <Box w="full" sx={{ containerType: 'inline-size', containerName: 'electrum-settings' }}>
@@ -235,6 +301,13 @@ export function ElectrumSettings(): JSX.Element {
           <Button size="sm" onClick={() => select({ kind: 'saved', profile: saved, reload: true })}>
             Reload connection
           </Button>
+        </Alert>
+      )}
+      {draft.id && !saved && (
+        <Alert status="warning" mb={4} maxW="480px">
+          <AlertDescription>
+            This connection was deleted in another window. Choose another saved connection or create a new one.
+          </AlertDescription>
         </Alert>
       )}
       <Box
@@ -273,6 +346,11 @@ export function ElectrumSettings(): JSX.Element {
                 }}
               >
                 {isNew && <option value="new">New connection</option>}
+                {draft.id && !saved && (
+                  <option value={draft.id} disabled>
+                    {draft.nickname} — Deleted
+                  </option>
+                )}
                 {profiles.map((item) => (
                   <option key={item.id} value={item.id}>
                     {item.nickname}
@@ -281,9 +359,12 @@ export function ElectrumSettings(): JSX.Element {
                 ))}
               </Select>
               {saved && (
-                <Button variant="link" size="sm" isDisabled={controlsDisabled} onClick={() => startRename(saved)}>
-                  Rename
-                </Button>
+                <>
+                  <Button variant="link" size="sm" isDisabled={controlsDisabled} onClick={() => startRename(saved)}>
+                    Rename
+                  </Button>
+                  {deleteButton(saved)}
+                </>
               )}
             </HStack>
             {atLimit && (
@@ -403,6 +484,7 @@ export function ElectrumSettings(): JSX.Element {
             </FormLabel>
             <Input
               id="connection-host"
+              ref={hostRef}
               size="sm"
               placeholder="Your server address"
               value={draft.host}
@@ -538,6 +620,7 @@ export function ElectrumSettings(): JSX.Element {
               >
                 Rename
               </Button>
+              {deleteButton(item)}
             </HStack>
           ))}
           <Box mt={3}>{newButton}</Box>
@@ -548,6 +631,64 @@ export function ElectrumSettings(): JSX.Element {
           )}
         </Box>
       </Box>
+      <AlertDialog
+        isOpen={deleting !== null}
+        leastDestructiveRef={cancelDeleteRef}
+        finalFocusRef={hostRef}
+        onClose={() => {
+          if (busy !== 'delete') setDeleting(null)
+        }}
+        closeOnEsc={busy !== 'delete'}
+        closeOnOverlayClick={busy !== 'delete'}
+        isCentered
+      >
+        <AlertDialogOverlay />
+        <AlertDialogContent mx={4}>
+          <AlertDialogHeader>
+            <Text textStyle="text/lg" overflowWrap="anywhere">
+              Delete “{deleting?.nickname}”?
+            </Text>
+          </AlertDialogHeader>
+          <AlertDialogBody>
+            <Text textStyle="text/sm">This removes the saved connection. Your accounts and wallet data are kept.</Text>
+            {deleting?.id === draft.id && dirty && (
+              <Text textStyle="text/sm" mt={3}>
+                Your unsaved changes to this connection will also be discarded.
+              </Text>
+            )}
+            {deleting?.id === activeId && (
+              <Text textStyle="text/sm" mt={3}>
+                Connect to another profile before deleting the active connection.
+              </Text>
+            )}
+            {deleteError && (
+              <Alert status="error" mt={3}>
+                <AlertDescription>{deleteError}</AlertDescription>
+              </Alert>
+            )}
+          </AlertDialogBody>
+          <AlertDialogFooter gap={3}>
+            <Button
+              ref={cancelDeleteRef}
+              variant="outline"
+              size="sm"
+              isDisabled={busy === 'delete'}
+              onClick={() => setDeleting(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              variant="error"
+              isLoading={busy === 'delete'}
+              isDisabled={busy !== null || deleting?.id === activeId}
+              onClick={() => void deleteProfile()}
+            >
+              Delete connection
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Box>
   )
 }

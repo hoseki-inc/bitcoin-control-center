@@ -24,7 +24,7 @@ export interface ProfileReference {
 const ACTIVE_KEY = 'desktop_active_connection'
 export const MAX_CONNECTION_PROFILES = 5
 
-/** Local desktop preferences. Creating or renaming a profile never opens a connection. */
+/** Local desktop preferences. Creating, renaming, or deleting a profile never opens a connection. */
 export class ConnectionProfileStore {
   constructor(private readonly db: Database.Database) {}
 
@@ -47,7 +47,7 @@ export class ConnectionProfileStore {
     const profile = this.list().find((item) => item.id === reference.id)
     if (!profile) return Err(new Error('This saved connection no longer exists'))
     if (profile.revision !== reference.revision)
-      return Err(new Error('This connection changed in another window. Reload it before saving or connecting.'))
+      return Err(new Error('This connection changed in another window. Reload it before trying again.'))
     return Ok(profile)
   }
 
@@ -76,6 +76,17 @@ export class ConnectionProfileStore {
         .prepare('UPDATE desktop_connection_profiles SET nickname = ?, revision = revision + 1 WHERE id = ?')
         .run(nickname, reference.id)
       return Ok({ ...current.unwrap(), nickname, revision: reference.revision + 1 })
+    })
+  }
+
+  delete(reference: ProfileReference): Result<void, Error> {
+    return this.write(() => {
+      const current = this.get(reference)
+      if (current.isErr()) return Err(current.unwrapErr())
+      if (this.getActiveId() === reference.id)
+        return Err(new Error('Connect to another profile before deleting the active connection'))
+      this.db.prepare('DELETE FROM desktop_connection_profiles WHERE id = ?').run(reference.id)
+      return Ok(undefined)
     })
   }
 

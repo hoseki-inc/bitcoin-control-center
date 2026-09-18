@@ -243,7 +243,9 @@ To run the two processes separately, use `corepack pnpm --filter api-sentinel de
 
 Settings supports up to five local Electrum connections with editable nicknames. The existing connection becomes **Current connection** on the first desktop launch after upgrading. Select a saved connection in the list beside the form, or the dropdown above it when the window is narrower. Selection loads its settings; **Connect** makes it active after a successful connection test. **Save & Reconnect** applies changes to an existing connection, while **New connection → Save connection** saves a profile without connecting. Public-server starting points are available only when creating a connection.
 
-Renaming and saving an inactive connection do not contact its server. Failed switches preserve the previous active connection and saved settings. Profiles and the active choice persist in Sentinel's local SQLite database, and resizing the page keeps the current form edits. StartOS does not enable the saved-profile API or migrate its connection into a profile.
+Use the trash icon on a saved connection, or beside the dropdown on smaller windows, to delete it after confirmation. Connect to another profile before deleting the active connection. Deleting frees a saved-connection slot and keeps your accounts and wallet data.
+
+Renaming, deleting, and saving an inactive connection do not contact its server. Failed switches preserve the previous active connection and saved settings. Profiles and the active choice persist in Sentinel's local SQLite database, and resizing the page keeps the current form edits. StartOS does not enable the saved-profile API or migrate its connection into a profile.
 
 ## Local data and backups
 

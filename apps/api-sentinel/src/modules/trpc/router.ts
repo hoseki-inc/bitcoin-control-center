@@ -2006,6 +2006,11 @@ const connectionProfilesRouter = t.router({
       if (result.isErr()) throw new TRPCError({ code: 'CONFLICT', message: result.unwrapErr().message })
       return result.unwrap()
     }),
+  delete: desktopConnectionProcedure.input(profileReferenceInput).mutation(({ ctx, input }) => {
+    const result = ctx.profiles.delete(input)
+    if (result.isErr()) throw new TRPCError({ code: 'CONFLICT', message: result.unwrapErr().message })
+    return { id: input.id }
+  }),
   connect: desktopConnectionProcedure
     .input(profileReferenceInput.extend({ connection: connectionDetailsInput.optional() }))
     .mutation(async ({ ctx, input }) => {
