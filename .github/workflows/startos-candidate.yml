@@ -6,6 +6,9 @@ on:
 permissions:
   contents: read
 
+# Candidate packages must be built without shared caches, including called workflows.
+cache-mode: none
+
 concurrency:
   group: startos-candidate-${{ github.ref }}
   cancel-in-progress: true
