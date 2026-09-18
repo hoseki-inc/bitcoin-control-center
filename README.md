@@ -207,7 +207,7 @@ The normal development endpoints are:
 | Sentinel health check | `http://localhost:3400/health` |
 | Sentinel tRPC API     | `http://localhost:3400/trpc`   |
 
-Vite may select the next free port if `4269` is already occupied. The development Sentinel will stop with an address-in-use error if `3400` is occupied. The desktop app binds an available loopback port at each launch, so it can run alongside development; its UI and wallet permissions use that actual address.
+Vite may select the next free port if `4269` is already occupied. The development Sentinel will stop with an address-in-use error if `3400` is occupied. The desktop app reuses its previous loopback port when free and otherwise binds another, so it can run alongside development; its UI and wallet permissions use that actual address.
 
 ### Run the services separately
 
@@ -492,7 +492,7 @@ lsof -nP -iTCP:3400 -sTCP:LISTEN
 lsof -nP -iTCP:4269 -sTCP:LISTEN
 ```
 
-Stop the conflicting process or change `PORT` in Sentinel's `.env`. If you change Sentinel's port, update `VITE_BACKEND_API_URL` and `VITE_BACKEND_BASE_URL` in `apps/control-center/.env.sentinel` for regular development or `.env.desktop` for desktop browser preview. Packaged desktop chooses its own port automatically.
+Stop the conflicting process or change `PORT` in Sentinel's `.env`. If you change Sentinel's port, update `VITE_BACKEND_API_URL` and `VITE_BACKEND_BASE_URL` in `apps/control-center/.env.sentinel` for regular development or `.env.desktop` for desktop browser preview. Packaged desktop keeps its own port and falls back to a free one when it is taken.
 
 ### Hardware wallet is not detected
 

@@ -72,10 +72,11 @@ export function ElectrumSettings(): JSX.Element {
   const saved = query.data?.profiles.find((item) => item.id === draft?.id)
   const isNew = draft !== null && !draft.id
   const dirty = draft !== null && (isNew ? Boolean(draft.host || draft.nickname) : connectionChanged(draft, saved))
-  const controlsDisabled = busy !== null || renaming || deleting !== null
+  const actionsDisabled = busy !== null || deleting !== null || pendingSelection !== null
+  const controlsDisabled = actionsDisabled || renaming
 
   useEffect(() => {
-    if (!query.data || busy || renaming || deleting) return
+    if (!query.data || controlsDisabled) return
     if (!draft) {
       setDraft(
         query.data.profiles.find((item) => item.id === query.data.activeId) ?? query.data.profiles[0] ?? emptyDraft(),
@@ -83,23 +84,22 @@ export function ElectrumSettings(): JSX.Element {
     } else if (!dirty && saved && saved.revision !== draft.revision) {
       setDraft(saved)
     }
-  }, [query.data, draft, saved, dirty, busy, renaming, deleting])
+  }, [query.data, draft, saved, dirty, controlsDisabled])
 
   const applySelection = (selection: Selection): void => {
+    setRenaming(selection.kind === 'saved' && Boolean(selection.rename))
+    setNickname(selection.kind === 'saved' ? selection.profile.nickname : '')
     if (selection.kind === 'new') {
       setPreviousId(draft?.id)
       setDraft(emptyDraft())
     } else {
       setDraft(selection.profile)
-      if (selection.rename) {
-        setNickname(selection.profile.nickname)
-        setRenaming(true)
-      }
     }
     setTestResult(null)
     setPendingSelection(null)
   }
   const select = (selection: Selection): void => {
+    if (controlsDisabled) return
     if (selection.kind === 'saved' && selection.profile.id === draft?.id && !selection.rename && !selection.reload)
       return
     if (dirty) setPendingSelection(selection)
@@ -152,7 +152,7 @@ export function ElectrumSettings(): JSX.Element {
     }
   }
   const run = async (operation: 'test' | 'save' | 'rename'): Promise<void> => {
-    if (!draft || busy) return
+    if (!draft || actionsDisabled) return
     setBusy(operation)
     setTestResult(null)
     try {
@@ -239,6 +239,7 @@ export function ElectrumSettings(): JSX.Element {
     </Button>
   )
   const startRename = (profile: Profile): void => {
+    if (controlsDisabled) return
     // Switching to another profile first uses the same unsaved-edit guard as selection.
     if (profile.id !== draft.id) {
       select({ kind: 'saved', profile, rename: true })
@@ -298,7 +299,11 @@ export function ElectrumSettings(): JSX.Element {
       {saved && saved.revision !== draft.revision && dirty && !busy && (
         <Alert status="warning" mb={4} maxW="480px" flexWrap="wrap" gap={3}>
           <AlertDescription>This connection changed in another window. Reload it before saving.</AlertDescription>
-          <Button size="sm" onClick={() => select({ kind: 'saved', profile: saved, reload: true })}>
+          <Button
+            size="sm"
+            isDisabled={controlsDisabled}
+            onClick={() => select({ kind: 'saved', profile: saved, reload: true })}
+          >
             Reload connection
           </Button>
         </Alert>
@@ -386,7 +391,7 @@ export function ElectrumSettings(): JSX.Element {
                 placeholder="e.g. Home LAN"
                 autoFocus
                 value={renaming ? nickname : draft.nickname}
-                isDisabled={busy !== null}
+                isDisabled={actionsDisabled}
                 onChange={(event) =>
                   renaming ? setNickname(event.target.value) : update({ nickname: event.target.value })
                 }
@@ -397,7 +402,7 @@ export function ElectrumSettings(): JSX.Element {
                     size="sm"
                     colorScheme="green"
                     isLoading={busy === 'rename'}
-                    isDisabled={!nickname.trim() || busy !== null}
+                    isDisabled={!nickname.trim() || actionsDisabled}
                     onClick={() => void run('rename')}
                   >
                     Save name
@@ -406,7 +411,7 @@ export function ElectrumSettings(): JSX.Element {
                 <Button
                   variant="link"
                   size="sm"
-                  isDisabled={busy !== null}
+                  isDisabled={actionsDisabled}
                   onClick={() => {
                     if (renaming) setRenaming(false)
                     else {
