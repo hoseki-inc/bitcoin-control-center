@@ -397,13 +397,14 @@ export class ExchangeService {
     const credData = JSON.parse(row.encrypted_credentials) as CredentialData
     const provider = row.provider as SupportedExchange
 
+    const apiKeyEnc = Encrypted.fromString(credData.data['apiKey']?.blob ?? '')
+    if (apiKeyEnc.isErr()) {
+      return Err(apiKeyEnc.unwrapErr())
+    }
+
     let balanceSats: string
 
     if (provider === 'strike') {
-      const apiKeyEnc = Encrypted.fromString(credData.data['apiKey']?.blob ?? '')
-      if (apiKeyEnc.isErr()) {
-        return Err(apiKeyEnc.unwrapErr())
-      }
       const apiKey = apiKeyEnc.unwrap().decrypt()
       if (apiKey.isErr()) {
         return Err(apiKey.unwrapErr())
@@ -415,10 +416,6 @@ export class ExchangeService {
       }
       balanceSats = result.unwrap().toString()
     } else if (provider === 'robinhood') {
-      const apiKeyEnc = Encrypted.fromString(credData.data['apiKey']?.blob ?? '')
-      if (apiKeyEnc.isErr()) {
-        return Err(apiKeyEnc.unwrapErr())
-      }
       const apiKey = apiKeyEnc.unwrap().decrypt()
       if (apiKey.isErr()) {
         return Err(apiKey.unwrapErr())
@@ -440,10 +437,6 @@ export class ExchangeService {
       }
       balanceSats = result.unwrap().toString()
     } else if (provider === 'kraken') {
-      const apiKeyEnc = Encrypted.fromString(credData.data['apiKey']?.blob ?? '')
-      if (apiKeyEnc.isErr()) {
-        return Err(apiKeyEnc.unwrapErr())
-      }
       const secretEnc = Encrypted.fromString(credData.data['secretKey']?.blob ?? '')
       if (secretEnc.isErr()) {
         return Err(secretEnc.unwrapErr())
@@ -469,10 +462,6 @@ export class ExchangeService {
       balanceSats = new Decimal(btcValue).mul(1e8).toFixed(0)
     } else {
       // Coinbase
-      const apiKeyEnc = Encrypted.fromString(credData.data['apiKey']?.blob ?? '')
-      if (apiKeyEnc.isErr()) {
-        return Err(apiKeyEnc.unwrapErr())
-      }
       const secretEnc = Encrypted.fromString(credData.data['secretKey']?.blob ?? '')
       if (secretEnc.isErr()) {
         return Err(secretEnc.unwrapErr())
