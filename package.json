@@ -130,7 +130,6 @@
   },
   "pnpm": {
     "onlyBuiltDependencies": [
-      "better-sqlite3",
       "esbuild",
       "secp256k1",
       "tiny-secp256k1",
@@ -192,6 +191,9 @@
       "yaml@>=2.0.0 <2.8.3": "2.8.3",
       "yaml@>=1.0.0 <1.10.3": "1.10.3"
     },
+    "ignoredBuiltDependencies": [
+      "better-sqlite3"
+    ],
     "minimumReleaseAge": 10080
   }
 }

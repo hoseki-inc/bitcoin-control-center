@@ -17,7 +17,9 @@ Focused automated coverage includes migration, persistence, the five-profile lim
 
 ### Release validation still required
 
-The PR includes native Mac ARM64 and Windows x64 installer jobs, candidate builds for StartOS and both desktop platforms, and assembly of all three packages into one draft release with matching source/version identities and checksums. These broader GitHub packaging jobs have not yet been validated on this branch; inspect their first PR runs before treating the delivery work as complete.
+The PR includes native Mac ARM64 and Windows x64 installer jobs, candidate builds for StartOS and both desktop platforms, and assembly of all three packages into one draft release with matching source/version identities and checksums. Draft [PR #92](https://github.com/hoseki-inc/bitcoin-control-center/pull/92) is open; native packaging results are still pending.
+
+The first GitHub Mac job failed in dependency installation: pnpm attempted an unnecessary implicit `node-gyp` build of `better-sqlite3` 13 and hit a permissions error in pnpm's bundled gyp launcher. The workspace now explicitly skips SQLite's install build because this pinned version ships Node-API prebuilds, matching the existing desktop packaging policy. The shared CI setup verifies that its host SQLite binary opens successfully. A fresh isolated installation and SQLite write/read passed locally without compilation, as did the extended saved-connections smoke check against the local Mac artifact. Native GitHub reruns still need to pass.
 
 Mac notarization, Windows publisher signing, automatic updates, and hands-on Windows installation/wallet/upgrade testing remain outside this draft's completed work. A passing packaged-backend smoke check does not establish interactive installer readiness.
 
