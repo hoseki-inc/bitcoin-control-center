@@ -27,6 +27,7 @@
     "no-unused-vars": "error",
     "no-useless-constructor": "error",
     "oxc/approx-constant": "error",
-    "oxc/bad-array-method-on-arguments": "error"
+    "oxc/bad-array-method-on-arguments": "error",
+    "oxc/bad-bitwise-operator": "error"
   }
 }
