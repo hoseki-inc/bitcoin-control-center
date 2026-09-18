@@ -76,7 +76,7 @@ export function bitcoinNetwork<T extends z.ZodType<{ network: Network | (() => N
 ): z.ZodEffects<T, z.infer<T>, z.input<T>> {
   return schema.superRefine((value, ctx) => {
     const n = typeof value.network === 'function' ? value.network() : value.network
-    const network = allowed.find((network) => network.kind === n.kind)
+    const network = allowed.find((allowedNetwork) => allowedNetwork.kind === n.kind)
     if (!network) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Invalid network: ${n.toString()}` })
       return z.NEVER

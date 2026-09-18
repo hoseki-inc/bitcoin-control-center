@@ -43,8 +43,8 @@ describe('preset portfolio history ranges', () => {
   })
 
   it('uses local calendar dates, not UTC dates, for a preset crossing daylight saving', () => {
-    const now = new Date('2026-03-09T02:30:00.000Z')
-    const range = resolveHistoryRange('7d', undefined, 'America/New_York', now).unwrap()
+    const daylightSavingNow = new Date('2026-03-09T02:30:00.000Z')
+    const range = resolveHistoryRange('7d', undefined, 'America/New_York', daylightSavingNow).unwrap()
     expect(range.start.toISOString()).toBe('2026-03-01T05:00:00.000Z')
     expect(range.dayStarts.at(-1)?.toISOString()).toBe('2026-03-08T05:00:00.000Z')
     const data = buildHistoricalData(
@@ -55,7 +55,7 @@ describe('preset portfolio history ranges', () => {
     )
     expect(data).toHaveLength(8)
     expect(data.at(-2)?.timestamp).toBe('2026-03-08T04:59:59.999Z')
-    expect(data.at(-1)?.timestamp).toBe(now.toISOString())
+    expect(data.at(-1)?.timestamp).toBe(daylightSavingNow.toISOString())
   })
 })
 

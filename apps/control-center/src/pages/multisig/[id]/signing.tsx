@@ -116,10 +116,10 @@ function TrezorSigning({ claim, keystore }: { claim: ClaimDto; keystore: Keystor
       // Refetch claim, then navigate to the hub
       await claimQuery.refetch()
       navigate(`/multisig/verify/receipt/${claim.id}/${keystore.id}`)
-    } catch (error) {
-      console.error('error', error)
-      if (error instanceof Error) {
-        setError(error.message)
+    } catch (caughtError) {
+      console.error('error', caughtError)
+      if (caughtError instanceof Error) {
+        setError(caughtError.message)
       } else {
         setError('Error signing message')
       }
@@ -243,9 +243,9 @@ function LedgerSigning({ claim, keystore }: { claim: ClaimDto; keystore: Keystor
       // Refetch claim, then navigate to the hub
       await claimQuery.refetch()
       navigate(`/multisig/verify/receipt/${claim.id}/${keystore.id}`)
-    } catch (error) {
-      if (error instanceof Error) {
-        setSigningError(error)
+    } catch (caughtError) {
+      if (caughtError instanceof Error) {
+        setSigningError(caughtError)
       } else {
         setSigningError(new Error('Error signing message'))
       }
@@ -371,8 +371,8 @@ function ColdcardSigning({ claim, keystore }: { claim: ClaimDto; keystore: Keyst
         onSuccess: async () => {
           await claimQuery.refetch()
         },
-        onError: (error) => {
-          console.error('error', error)
+        onError: (completionError) => {
+          console.error('error', completionError)
           setError('Error completing challenge message')
         },
       },
@@ -486,8 +486,8 @@ function KeystoneSigning({ claim, keystore }: { claim: ClaimDto; keystore: Keyst
         onSuccess: async () => {
           await claimQuery.refetch()
         },
-        onError: (error) => {
-          console.error('error', error)
+        onError: (completionError) => {
+          console.error('error', completionError)
           setError('Error completing challenge message')
         },
       },

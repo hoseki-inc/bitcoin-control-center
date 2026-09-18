@@ -13,15 +13,15 @@ export function dateString(): z.ZodEffects<z.ZodString, Date, string> {
     .string()
     .date()
     .transform((input, ctx) => {
-      const result = Result.fromThrowable(() => parse(input, 'yyyy-MM-dd', new Date())).andThen((date: Date) => {
-        if (isNaN(date.getTime())) {
+      const result = Result.fromThrowable(() => parse(input, 'yyyy-MM-dd', new Date())).andThen((parsedDate: Date) => {
+        if (isNaN(parsedDate.getTime())) {
           ctx.addIssue({
             code: z.ZodIssueCode.custom,
             message: 'Invalid date',
           })
           return Err(new Error('Invalid date'))
         }
-        return Ok(date)
+        return Ok(parsedDate)
       })
 
       return result.isErr() ? z.NEVER : result.unwrap()
@@ -32,8 +32,8 @@ export function dateString(): z.ZodEffects<z.ZodString, Date, string> {
  * Truncate a JS Date to 00:00 *UTC* of the same calendar day.
  * Safe to store or stringify (ISO) with no daylight-shift surprises.
  */
-export function toUtcMidnight(date: Date): Date {
-  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate())) // 00:00:00.000Z
+export function toUtcMidnight(inputDate: Date): Date {
+  return new Date(Date.UTC(inputDate.getUTCFullYear(), inputDate.getUTCMonth(), inputDate.getUTCDate())) // 00:00:00.000Z
 }
 
 /**
@@ -41,8 +41,8 @@ export function toUtcMidnight(date: Date): Date {
  */
 export function utcDatetimeString(format: string): z.ZodEffects<z.ZodString, Date, string> {
   return z.string().transform((input, ctx) => {
-    const result = Result.fromThrowable(() => parse(input, format, new Date())).andThen((date: Date) => {
-      if (isNaN(date.getTime())) {
+    const result = Result.fromThrowable(() => parse(input, format, new Date())).andThen((parsedDate: Date) => {
+      if (isNaN(parsedDate.getTime())) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           message: 'Invalid date',
@@ -52,13 +52,13 @@ export function utcDatetimeString(format: string): z.ZodEffects<z.ZodString, Dat
       return Ok(
         new Date(
           Date.UTC(
-            date.getFullYear(),
-            date.getMonth(),
-            date.getDate(),
-            date.getHours(),
-            date.getMinutes(),
-            date.getSeconds(),
-            date.getMilliseconds(),
+            parsedDate.getFullYear(),
+            parsedDate.getMonth(),
+            parsedDate.getDate(),
+            parsedDate.getHours(),
+            parsedDate.getMinutes(),
+            parsedDate.getSeconds(),
+            parsedDate.getMilliseconds(),
           ),
         ),
       )
