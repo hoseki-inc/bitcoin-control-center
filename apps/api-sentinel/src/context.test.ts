@@ -427,7 +427,7 @@ describe('desktop saved connections', () => {
     expect((await api.list()).profiles).toHaveLength(5)
     await expect(
       api.create({ host: 'unused.example', port: 50002, protocol: 'ssl', nickname: 'Sixth' }),
-    ).rejects.toThrow('up to five')
+    ).rejects.toThrow('up to 5')
   })
 
   it('validates names, endpoints, and routes while allowing offline Tor profiles to be saved', async () => {

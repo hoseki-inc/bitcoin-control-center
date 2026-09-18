@@ -63,7 +63,8 @@ export class ConnectionProfileStore {
 
   create(input: ConnectionDetails & { nickname: string }): Result<ConnectionProfile, Error> {
     return this.write(() => {
-      if (this.list().length >= MAX_CONNECTION_PROFILES) return Err(new Error('You can save up to five connections'))
+      if (this.list().length >= MAX_CONNECTION_PROFILES)
+        return Err(new Error(`You can save up to ${MAX_CONNECTION_PROFILES} connections`))
       return Ok(this.insert(input))
     })
   }

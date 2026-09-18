@@ -129,6 +129,7 @@ beforeEach(() => {
   snapshot = {
     profiles: [first, second],
     activeId: first.id,
+    limit: 5,
     status: {
       connected: true,
       host: first.host,

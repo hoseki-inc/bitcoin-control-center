@@ -32,6 +32,7 @@ import * as bip322 from 'bip322-js'
 import { Decimal } from 'decimal.js'
 import { nanoid } from 'nanoid'
 import { z } from 'zod'
+import { MAX_CONNECTION_PROFILES } from '../connection_profiles/store'
 import { StatementMapper } from '../statements/mapper'
 import { publicProcedure, t } from './init'
 
@@ -1986,6 +1987,7 @@ const connectionProfilesRouter = t.router({
   list: desktopConnectionProcedure.query(({ ctx }) => ({
     profiles: ctx.profiles.list(),
     activeId: ctx.profiles.getActiveId(),
+    limit: MAX_CONNECTION_PROFILES,
     status: {
       ...ctx.app.electrumConfig,
       connected: ctx.app.electrumClient.isConnected(),

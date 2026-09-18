@@ -209,9 +209,9 @@ export function ElectrumSettings(): JSX.Element {
         )}
       </Stack>
     )
-  const { profiles, activeId, status } = query.data
+  const { profiles, activeId, status, limit } = query.data
   const active = profiles.find((item) => item.id === activeId)
-  const atLimit = profiles.length >= 5
+  const atLimit = profiles.length >= limit
   const canSubmit =
     (isNew || Boolean(saved)) &&
     Boolean(draft.host.trim()) &&
@@ -329,7 +329,7 @@ export function ElectrumSettings(): JSX.Element {
           <Stack className="connection-picker" gap={1}>
             <HStack justify="space-between" flexWrap="wrap" gap={2}>
               <FormLabel htmlFor="saved-connection" m={0} textStyle="label/sm">
-                Saved connection · {profiles.length} of 5
+                Saved connection · {profiles.length} of {limit}
               </FormLabel>
               {newButton}
             </HStack>
@@ -369,7 +369,7 @@ export function ElectrumSettings(): JSX.Element {
             </HStack>
             {atLimit && (
               <Text textStyle="text/xs" color="neutral.600">
-                Five connections saved. Maximum reached.
+                Maximum reached.
               </Text>
             )}
           </Stack>
@@ -581,7 +581,7 @@ export function ElectrumSettings(): JSX.Element {
           <HStack justify="space-between" mb={2} flexWrap="wrap">
             <Text textStyle="label/sm">Saved connections</Text>
             <Text textStyle="text/xs" color="neutral.600">
-              {profiles.length} of 5
+              {profiles.length} of {limit}
             </Text>
           </HStack>
           {profiles.map((item) => (

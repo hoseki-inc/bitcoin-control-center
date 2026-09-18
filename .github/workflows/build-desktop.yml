@@ -6,9 +6,6 @@ on:
 permissions:
   contents: read
 
-# Installer builds use fresh outputs and cannot read or poison shared build caches.
-cache-mode: none
-
 jobs:
   desktop:
     name: Desktop ${{ matrix.target }} ${{ matrix.arch }}

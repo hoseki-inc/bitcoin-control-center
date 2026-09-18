@@ -1,8 +1,12 @@
-import { execFileSync } from 'node:child_process'
 import * as fs from 'node:fs'
+import { createRequire } from 'node:module'
 import * as path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import * as esbuild from 'esbuild'
+
+const { signTorBinaries } = createRequire(import.meta.url)('../../scripts/sign-tor.cjs') as {
+  signTorBinaries: (directory: string) => void
+}
 
 async function main(): Promise<void> {
   const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -10,16 +14,9 @@ async function main(): Promise<void> {
   const REPO_ROOT = path.resolve(DESKTOP_DIR, '..')
   const appDir = path.join(DESKTOP_DIR, 'app')
 
-  // The development launcher uses the downloaded binaries directly. As with the
-  // staged installer copies, unsigned ARM64 Mach-O files cannot run on macOS.
+  // The development launcher runs the downloaded binaries directly.
   const torDir = path.join(DESKTOP_DIR, 'tor', 'mac')
-  if (process.platform === 'darwin' && fs.existsSync(path.join(torDir, 'tor'))) {
-    const libraries = fs.readdirSync(torDir).filter((name) => name.endsWith('.dylib'))
-    for (const name of [...libraries, 'tor']) {
-      execFileSync('codesign', ['--force', '--sign', '-', path.join(torDir, name)], { stdio: 'inherit' })
-      execFileSync('codesign', ['--verify', '--strict', path.join(torDir, name)], { stdio: 'inherit' })
-    }
-  }
+  if (process.platform === 'darwin' && fs.existsSync(path.join(torDir, 'tor'))) signTorBinaries(torDir)
 
   // Generated packaging input must not retain files from an older build.
   fs.rmSync(appDir, { recursive: true, force: true })

@@ -233,23 +233,13 @@ From the repository root, start Sentinel and the live-reloading frontend in desk
 corepack pnpm dev:desktop
 ```
 
-Open `http://localhost:4269`. Stop any existing `pnpm dev` first; press `Ctrl+C` to stop both processes.
-
-This uses Sentinel's development configuration and data, and exposes desktop-specific settings without building an installer. `VITE_PLATFORM=desktop` enables the frontend controls; the desktop backend command separately enables saved connections. Desktop preview keeps settings available when Electrum is offline. Electron-managed Tor, native wallet integration, and desktop OS certificate trust still require the Electron runtime.
-
-To run the two processes separately, use `corepack pnpm --filter api-sentinel dev:desktop` and `corepack pnpm --filter control-center dev:desktop`. The desktop backend command enables saved connections; the regular development backend and StartOS retain their existing connection configuration.
+Open `http://localhost:4269` (stop any running `pnpm dev` first). This uses Sentinel's development data and exposes the desktop-only settings, including saved connections, without building an installer. Electron-managed Tor, native wallet integration, and OS certificate trust still require the packaged app.
 
 ### Saved desktop connections
 
-Settings supports up to five local Electrum connections with editable nicknames. The existing connection becomes **Current connection** on the first desktop launch after upgrading. Select a saved connection in the list beside the form, or the dropdown above it when the window is narrower. Selection loads its settings; **Connect** makes it active after a successful connection test. **Save & Reconnect** applies changes to an existing connection, while **New connection → Save connection** saves a profile without connecting. Public-server starting points are available only when creating a connection.
+Desktop Settings stores up to five Electrum connections with nicknames in Sentinel's SQLite database. The existing connection becomes **Current connection** on the first launch after upgrading. **Test Connection** probes a server without saving it; **Connect** or **Save & Reconnect** activates a profile only after a successful connection, and a failed switch keeps the previous active connection. Creating, renaming, and deleting profiles never contacts a server, and deleting keeps your accounts and wallet data. The active connection cannot be deleted.
 
-Use the trash icon on a saved connection, or beside the dropdown on smaller windows, to delete it after confirmation. Connect to another profile before deleting the active connection. Deleting frees a saved-connection slot and keeps your accounts and wallet data.
-
-Creating a new profile, renaming, and deleting do not contact its server. **Save & Reconnect** on an existing profile contacts and activates the edited server, including when that profile was inactive. Failed switches preserve the previous active connection and saved settings. Profiles and the active choice persist in Sentinel's local SQLite database, and resizing the page keeps the current form edits. StartOS does not enable the saved-profile API or migrate its connection into a profile.
-
-Saved connection settings take precedence over the `.env` defaults in desktop preview. Change the active profile in Settings; editing `ELECTRUM_HOST` alone will not replace an already-saved connection.
-
-Enter the advertised host, port, and TCP/SSL protocol separately; the form does not parse pasted Electrum URLs. **Test Connection** negotiates the server protocol without saving or activating the connection; it does not verify wallet synchronization. Onion addresses require Tor. Tor routes Electrum traffic only; price and exchange requests use their normal connection. Inactive profiles are not probed automatically, and no automatic server fallback is implemented. A fresh desktop installation initially uses the launcher's public Electrum default.
+Saved connections take precedence over the `.env` Electrum defaults, so editing `ELECTRUM_HOST` alone will not replace one. Onion addresses require Tor, which routes Electrum traffic only. StartOS does not enable saved connections.
 
 ## Local data and backups
 
@@ -412,9 +402,7 @@ GitHub Actions handles version preparation, builds, verification, checksums, and
 | [Release 2 - Build candidates](.github/workflows/startos-candidate.yml)         | Builds StartOS, Mac ARM64, and Windows x64 test packages from one commit; retains Actions artifacts for 14 days.             |
 | [Release 3 - Create draft release](.github/workflows/startos-draft-release.yml) | Verifies and builds all three platforms, then creates a draft GitHub Release with installers, build metadata, and checksums. |
 
-Start these workflows from the Actions page; version preparation and draft creation require the default branch. Review and replace the generated release notes before merging the version PR, test the candidate, and review the resulting draft before publishing. Candidates do not change versions or publish releases. The workflows do not publish to a StartOS registry.
-
-Configure the existing permanent `STARTOS_DEV_KEY` secret before testing signer-continuous StartOS upgrades. Without it, candidate and draft builds use a temporary key suitable for clean-install testing. Desktop signing limitations are described below.
+Version preparation and draft creation run from the default branch. Replace the generated release notes before merging the version PR, and review the draft before publishing. Nothing publishes to a StartOS registry. Without the `STARTOS_DEV_KEY` secret, StartOS packages are signed with a temporary key suitable only for clean-install testing.
 
 ## Desktop packaging
 
@@ -444,11 +432,11 @@ The build script:
 5. Validates that the host can load the bundled `better-sqlite3` native prebuild.
 6. Packages installers and stages them with build metadata and checksums under `desktop/release/artifacts/mac/` and `desktop/release/artifacts/win/`.
 
-Installer names follow `Bitcoin-Control-Center-<release-tag>-mac-arm64.dmg` and `Bitcoin-Control-Center-<release-tag>-win-x64.exe`. Print the current tag with `node start9/scripts/version.mjs tag`. Installer application versions use the shared `major.minor.patch`; metadata and filenames retain the full packaging revision, and metadata records the source commit. The build overrides the placeholder version in `desktop/package.json` without modifying it. Local uncommitted changes are recorded as a dirty build; CI rejects dirty artifacts.
+Installers are named `Bitcoin-Control-Center-<release-tag>-<platform>-<arch>` and carry the shared release version and source commit in their metadata; the placeholder version in `desktop/package.json` is overridden, not edited. Builds from uncommitted changes are marked dirty, and CI rejects them.
 
-CI builds both native installers on pull requests and pushes to `main`. Its packaged-runtime smoke test checks SQLite, backend startup with an occupied configured port, frontend assets, a local Electrum fixture, saved-profile migration/API access, and execution of the bundled Tor binary. It does not replace installing the DMG/EXE, exercising the Electron window and physical wallets, real Tor bootstrap, or upgrade/data-preservation testing. Cross-built Windows installers still require Windows execution. The [desktop build workflow](.github/workflows/build-desktop.yml) uses the caller's exact commit and disables shared cache access.
+The [desktop build workflow](.github/workflows/build-desktop.yml) builds both installers on pull requests and pushes to `main`, then smoke-tests the packaged runtime (SQLite, backend startup, frontend assets, saved connections, and the bundled Tor binary). It does not replace installing the DMG/EXE, exercising hardware wallets, or testing upgrades with real data.
 
-These are review installers: macOS uses an ad-hoc signature without notarization, and Windows has no publisher signature configured. Developer ID/notarization, Windows publisher signing, and automatic updates remain separate release work.
+These are review installers: macOS is ad-hoc signed without notarization, and Windows has no publisher signature. Developer ID/notarization, Windows signing, and automatic updates are separate release work.
 
 Run the isolated dependency checks in Electron's bundled Node runtime with:
 

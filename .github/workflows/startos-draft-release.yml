@@ -6,9 +6,6 @@ on:
 permissions:
   contents: write
 
-# Release jobs and their reusable workflows cannot consume or publish shared caches.
-cache-mode: none
-
 concurrency:
   group: startos-draft-release
   cancel-in-progress: false
