@@ -83,7 +83,7 @@ export function MultisigFromDescriptor({ onNext }: { onNext: (data: CreateMultis
         setParsingError(parseErrorMessage)
         return parseErrorMessage
       }
-    } catch (e) {
+    } catch {
       setParsingError('Invalid descriptor')
       return 'Invalid descriptor'
     }

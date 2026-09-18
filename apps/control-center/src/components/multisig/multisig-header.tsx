@@ -30,17 +30,17 @@ export function MultisigHeader({
     index: number,
     allKeystores: IndicatorKeystore[],
   ): null | ((keystore: IndicatorKeystore) => void) {
-    function navigateToHubWithKeystoreIdSearch(keystore: IndicatorKeystore) {
+    function navigateToHubWithKeystoreIdSearch(selectedKeystore: IndicatorKeystore) {
       return navigate({
         pathname: `/multisig/${claim.id}`,
         search: `?${createSearchParams({
-          keystoreId: keystore.id,
+          keystoreId: selectedKeystore.id,
         })}`,
       })
     }
 
-    function navigateToKeystoreSigning(keystore: IndicatorKeystore) {
-      navigate(`/multisig/${claim.id}/signing/${keystore.wallet}/${keystore.id}`)
+    function navigateToKeystoreSigning(selectedKeystore: IndicatorKeystore) {
+      navigate(`/multisig/${claim.id}/signing/${selectedKeystore.wallet}/${selectedKeystore.id}`)
     }
 
     // We currently don't have a screen for verified keystores, so we don't allow the user to click on them.

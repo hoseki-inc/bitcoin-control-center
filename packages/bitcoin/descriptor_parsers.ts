@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { parse, parseUnknown } from '../result'
 import { type MultiSigAccountScriptType, type SingleSigAccountScriptType } from './account_props'
 import { derivationPathSchema } from './derivation-path'
-import * as descriptor from './descriptor_utils'
+import * as descriptorUtils from './descriptor_utils'
 import { InvalidFormatError } from './errors'
 import { KeyExpression, KeyOrigin, keyFingerprintSchema } from './key-expression'
 import { parseRecursiveParenthesisDescent } from './util/parse'
@@ -21,7 +21,7 @@ abstract class BaseAccountDescriptorParser {
    */
   protected static assertChecksum(desc: string, checksum: string | undefined): Result<void, Error> {
     if (checksum) {
-      const checksumResult = descriptor.getChecksum(desc)
+      const checksumResult = descriptorUtils.getChecksum(desc)
       if (checksumResult.isErr()) {
         return Err(checksumResult.unwrapErr())
       }

@@ -76,10 +76,10 @@ export function ClaimDetails({ claim }: { claim: ClaimDto }): JSX.Element {
                     return null
                   }
 
-                  return (keystore: IndicatorKeystore) => {
+                  return (selectedKeystore: IndicatorKeystore) => {
                     return navigate({
                       pathname: `/accounts/${claim.id}`,
-                      search: `?${createSearchParams({ keystoreId: keystore.id })}`,
+                      search: `?${createSearchParams({ keystoreId: selectedKeystore.id })}`,
                     })
                   }
                 }}

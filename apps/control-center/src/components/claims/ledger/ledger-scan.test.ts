@@ -19,8 +19,8 @@ type ScanProps = ComponentProps<typeof LedgerScanUI>
 
 const mocks = await vi.hoisted(async () => {
   // Preserve Node's byte-array globals for the Bitcoin SDK.
-  const { createRequire } = await import('node:module')
-  const { JSDOM } = createRequire(import.meta.url)('jsdom') as {
+  const { createRequire: createMockRequire } = await import('node:module')
+  const { JSDOM } = createMockRequire(import.meta.url)('jsdom') as {
     JSDOM: new (html: string, options: { url: string }) => { window: Window & typeof globalThis }
   }
   const { window } = new JSDOM('<!doctype html><html><body></body></html>', { url: 'http://localhost' })

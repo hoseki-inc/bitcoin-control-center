@@ -455,8 +455,8 @@ export function Step5({
           validationFn={(rawContent): Result<ColdcardGenericJsonFile, Error> => {
             return parseGenericJsonFile(rawContent)
           }}
-          onValidContentRead={(coldcardJson: ColdcardGenericJsonFile) => {
-            setColdcardJson(coldcardJson)
+          onValidContentRead={(parsedColdcardJson: ColdcardGenericJsonFile) => {
+            setColdcardJson(parsedColdcardJson)
           }}
           acceptedFileTypes={['json']}
           status={fileState}

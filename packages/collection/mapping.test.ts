@@ -80,8 +80,8 @@ test('forEach', () => {
   const values = [value(), value(), value()]
   const map = new Mapping(values)
   const entries: [string, Mappable][] = []
-  map.forEach((value, key) => {
-    entries.push([key, value])
+  map.forEach((entryValue, key) => {
+    entries.push([key, entryValue])
   })
   expect(entries).toEqual(values.map((v) => [v.key(), v]))
 })

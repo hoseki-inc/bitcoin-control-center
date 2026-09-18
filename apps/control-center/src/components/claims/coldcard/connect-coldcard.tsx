@@ -32,7 +32,7 @@ export function ConnectColdcard(): JSX.Element {
   const navigateToAnExistentOrNewClaim = useNavigateToAnExistentOrNewClaim()
   const isQrFlow = model === 'Q'
 
-  function handleContinue(model: ColdcardModel): void {
+  function handleContinue(selectedModel: ColdcardModel): void {
     if (!selectedWallet) {
       return
     }
@@ -42,7 +42,7 @@ export function ConnectColdcard(): JSX.Element {
       account: selectedWallet.account,
       derivationPath: selectedWallet.derivationPath,
       wallet: 'coldcard',
-      model,
+      model: selectedModel,
       displayName: selectedWallet.displayName ?? 'Coldcard Wallet',
     })
   }

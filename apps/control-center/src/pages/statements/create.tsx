@@ -116,7 +116,7 @@ export function StatementCreatePage(): JSX.Element {
         return
       }
 
-      const statement = await initiateStatementGenerationMutation.mutateAsync({
+      const generatedStatement = await initiateStatementGenerationMutation.mutateAsync({
         claimIds: Array.from(selectedClaimIds),
         exchangeAccountIds: Array.from(selectedExchangeAccountIds),
         timezone: userTimezone,
@@ -129,7 +129,7 @@ export function StatementCreatePage(): JSX.Element {
       // keeping them at the end of the fn to make sure we're overwriting
       // provider state via `startPolling(statement)` before opening the modal,
       // so that the modal doesn't show the old completed/failed statement screen
-      startPolling(statement.id)
+      startPolling(generatedStatement.id)
       setIsModalOpen(true)
     },
     onError: (error: { message: string }) => {

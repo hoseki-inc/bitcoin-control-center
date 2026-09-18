@@ -1,6 +1,6 @@
 import { Err, Ok, Result } from '@patina/core'
 import type { Opaque } from 'type-fest'
-import * as descriptor from './descriptor_utils'
+import * as descriptorUtils from './descriptor_utils'
 import { bitcoin } from './lib'
 import { Network } from './network'
 
@@ -207,7 +207,7 @@ export class Address {
   }
 
   public descriptor(): CheckedAddressDescriptor {
-    return descriptor.addr(this.toString())
+    return descriptorUtils.addr(this.toString())
   }
 
   public eq(other: Address): boolean {
