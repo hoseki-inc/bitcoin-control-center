@@ -35,11 +35,10 @@ export function ConnectTrezor(): JSX.Element {
 
   async function getTrezorAccountInfo(): Promise<Result<void, Error>> {
     const trezorFeaturesRes = await trezorService.getFeatures()
-    const trezorAccountInfoRes = await trezorService.getAccountInfo()
-
     if (trezorFeaturesRes.isErr()) {
       return Err(trezorFeaturesRes.unwrapErr())
     }
+    const trezorAccountInfoRes = await trezorService.getAccountInfo()
     if (trezorAccountInfoRes.isErr()) {
       return Err(trezorAccountInfoRes.unwrapErr())
     }

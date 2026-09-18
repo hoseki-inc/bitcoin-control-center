@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, shell } from 'electron'
+import { contextBridge, ipcRenderer } from 'electron'
 import type { LedgerHidApi, LedgerHidUpdate } from './ledger-hid-api'
 
 const ledger: LedgerHidApi = {
@@ -14,9 +14,6 @@ const ledger: LedgerHidApi = {
 }
 
 contextBridge.exposeInMainWorld('desktop', {
-  openExternal: (url: string): void => {
-    shell.openExternal(url)
-  },
   platform: process.platform,
   ledger,
 })

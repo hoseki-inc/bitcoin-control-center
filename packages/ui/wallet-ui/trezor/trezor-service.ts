@@ -20,7 +20,7 @@ export class TrezorService {
 
     TrezorConnect.init({
       lazyLoad: true,
-      debug: true,
+      debug: false,
       coreMode: 'popup',
       manifest: {
         email: 'support@hoseki.app',
