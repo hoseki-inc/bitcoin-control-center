@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import superjson from 'superjson'
 import { baseTrpc } from '../trpc'
 
@@ -15,13 +16,15 @@ const baseUrl = import.meta.env.VITE_BACKEND_API_URL ?? ''
 
 /**
  * Hook for reading/writing local settings stored in api-sentinel's SQLite.
+ * Pass `enabled: false` where a setting is not stored in Sentinel.
  */
-export function useLocalSetting(key: string): LocalSettingState {
+export function useLocalSetting(key: string, enabled = true): LocalSettingState {
   const queryClient = useQueryClient()
   const queryKey = ['local-settings', key]
 
   const query = useQuery({
     queryKey,
+    enabled,
     staleTime: 30_000,
     queryFn: async () => baseTrpc.settings.get.query({ key }),
   })
@@ -47,8 +50,13 @@ export function useLocalSetting(key: string): LocalSettingState {
   return {
     data: query.data,
     isLoading: query.isLoading,
+    // Fire-and-forget saves report failures here; saveAsync callers handle their own.
     save: (value: string) => {
-      mutation.mutate(value)
+      mutation.mutate(value, {
+        onError: () => {
+          toast.error('Could not save setting. Try again.')
+        },
+      })
     },
     isSaving: mutation.isLoading,
     isError: query.isError,

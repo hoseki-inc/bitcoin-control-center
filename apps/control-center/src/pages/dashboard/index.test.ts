@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { ChakraProvider } from '@chakra-ui/react'
 import { parseUnknown } from '@hoseki/packages/result'
-import { QueryClient, QueryObserver, onlineManager } from '@tanstack/react-query'
+import { QueryClient, QueryClientProvider, QueryObserver, onlineManager } from '@tanstack/react-query'
 import { format } from 'date-fns'
 import Decimal from 'decimal.js'
 import { act, createElement } from 'react'
@@ -147,7 +147,12 @@ async function render(): Promise<void> {
       createElement(
         ChakraProvider,
         null,
-        createElement(MemoryRouter, null, createElement(DashboardPage, { dataSource, views })),
+        // The sidebar preference hook reads through React Query on desktop.
+        createElement(
+          QueryClientProvider,
+          { client: new QueryClient() },
+          createElement(MemoryRouter, null, createElement(DashboardPage, { dataSource, views })),
+        ),
       ),
     )
   })

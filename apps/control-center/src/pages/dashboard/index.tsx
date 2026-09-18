@@ -32,6 +32,7 @@ import {
   withCurrentBalancePoint,
 } from '../../components/dashboard-charts/balance-history'
 import { MonthlyNetChangeChart as DefaultMonthlyNetChangeChart } from '../../components/dashboard-charts/monthly-net-change-chart'
+import { useUiPreference } from '../../hooks/use-ui-preference'
 import { type DashboardDataSource, dashboardDataSource } from './dashboard-data'
 
 type PresetTimeRange = '7d' | '30d' | '90d' | '1y' | 'all'
@@ -146,23 +147,9 @@ export function DashboardPage({
   const today = new Date()
   const isShowingAll = selected.size === 0
   const isSmallScreen = useBreakpointValue({ base: true, xl: false }) ?? true
-  const [userCompact, setUserCompact] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem('hoseki:sidebar-compact') === 'true'
-    } catch {
-      return false
-    }
-  })
+  const [userCompact, setUserCompact] = useUiPreference('sidebar_compact')
   const compactSidebar = isSmallScreen || userCompact
-  const toggleCompact = useCallback(() => {
-    setUserCompact((prev) => {
-      const next = !prev
-      try {
-        localStorage.setItem('hoseki:sidebar-compact', String(next))
-      } catch {}
-      return next
-    })
-  }, [])
+  const toggleCompact = (): void => setUserCompact(!userCompact)
 
   const { recordSnapshot, claimsQuery, exchangeAccountsQuery, manualAccountsQuery, etfAccountsQuery, btcPriceQuery } =
     dataSource.useAccounts()

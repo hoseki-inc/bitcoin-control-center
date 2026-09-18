@@ -4,6 +4,7 @@ import { pathToFileURL } from 'node:url'
 import { BrowserWindow, type Tray, type WebContents, app, dialog, ipcMain, shell } from 'electron'
 import { showDeviceChooser } from './device-chooser'
 import { setupLedgerHidAccess } from './ledger-hid'
+import { startOnPreferredPort } from './preferred-port'
 import { startServer } from './server'
 import { createQuitHandler } from './shutdown'
 import { configureDesktopTlsTrust } from './tls-trust'
@@ -13,6 +14,7 @@ import { setupWalletAccess } from './wallet-access'
 import { setupWindowPolicy } from './window-policy'
 
 interface LocalServer {
+  port: number
   shutdown: () => Promise<void>
 }
 
@@ -58,7 +60,6 @@ async function start(): Promise<void> {
     DATA_DIR: dataDir,
     APP_DIR: serverDir,
     HOST: 'localhost',
-    PORT: '3400',
     ELECTRUM_HOST: 'electrum.blockstream.info',
     ELECTRUM_PORT: '50002',
     ELECTRUM_PROTOCOL: 'ssl',
@@ -66,11 +67,13 @@ async function start(): Promise<void> {
     MEMPOOL_API_URL: 'https://mempool.space',
     NODE_ENV: 'production',
   })
-  server = await startServer(pathToFileURL(path.join(serverDir, 'main.js')).href, {
-    waitForElectrum: false,
-    tor: torManager,
-  })
-  const origin = 'http://localhost:3400'
+  const serverModule = pathToFileURL(path.join(serverDir, 'main.js')).href
+  const tor = torManager
+  // Keep the development ports free; reuse this app's own port across launches.
+  server = await startOnPreferredPort(path.join(app.getPath('userData'), 'port'), async (listenPort) =>
+    startServer(serverModule, { waitForElectrum: false, tor, listenPort }),
+  )
+  const origin = `http://localhost:${server.port}`
   if (quitting) {
     return
   }

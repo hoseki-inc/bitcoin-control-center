@@ -327,6 +327,28 @@ describe('Electrum connection lifecycle', () => {
   )
 })
 
+describe('UI preferences', () => {
+  it('persists boolean preferences across a Sentinel restart and rejects invalid values', async () => {
+    const ctx = await context()
+    const caller = appRouter.createCaller({ app: ctx })
+    for (const key of ['sidebar_compact', 'statements_banner_dismissed']) {
+      expect(await caller.settings.get({ key })).toBeNull()
+      await caller.settings.update({ key, value: 'true' })
+      await expect(caller.settings.update({ key, value: 'invalid' })).rejects.toMatchObject({ code: 'BAD_REQUEST' })
+      expect(await caller.settings.get({ key })).toBe('true')
+    }
+    ctx.stopElectrum()
+    ctx.database.close()
+    contexts.delete(ctx)
+    const restarted = appRouter.createCaller({ app: await context() })
+    for (const key of ['sidebar_compact', 'statements_banner_dismissed']) {
+      expect(await restarted.settings.get({ key })).toBe('true')
+      await restarted.settings.update({ key, value: 'false' })
+      expect(await restarted.settings.get({ key })).toBe('false')
+    }
+  })
+})
+
 describe('Tor connection policy', () => {
   it('does not fall back to direct connections when Tor is requested but unavailable', async () => {
     await withTestSetup(async () => {

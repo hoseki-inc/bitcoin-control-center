@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs'
+import type { AddressInfo } from 'node:net'
 import { join } from 'node:path'
 import cors from '@fastify/cors'
 import { type FastifyTRPCPluginOptions, fastifyTRPCPlugin } from '@trpc/server/adapters/fastify'
@@ -12,10 +13,16 @@ import { isAllowedDevelopmentOrigin, registerRequestSecurity } from './request_s
 import { registerStaticAssets } from './static_assets'
 
 export interface SentinelServer {
+  port: number
   shutdown: () => Promise<void>
 }
 
-export async function main(options: AppContextOptions = {}): Promise<SentinelServer> {
+export interface SentinelServerOptions extends AppContextOptions {
+  /** Override the configured port; zero lets the OS allocate and bind a free port. */
+  listenPort?: number
+}
+
+export async function main(options: SentinelServerOptions = {}): Promise<SentinelServer> {
   const isProduction = process.env['NODE_ENV'] === 'production'
   const logger = pino({
     level: process.env['LOG_LEVEL'] ?? 'info',
@@ -31,7 +38,7 @@ export async function main(options: AppContextOptions = {}): Promise<SentinelSer
   const appCtx = ctxResult.unwrap()
 
   const host = appCtx.env.HOST
-  const port = appCtx.env.PORT
+  const port = options.listenPort ?? appCtx.env.PORT
 
   const fastifyLogger: FastifyBaseLogger = logger.child({ module: 'fastify' })
   const server = Fastify({
@@ -74,15 +81,17 @@ export async function main(options: AppContextOptions = {}): Promise<SentinelSer
 
   // Start listening
   let snapshotTimer: ReturnType<typeof setInterval> | undefined
+  let boundPort: number
   try {
     await server.listen({ host, port })
+    boundPort = (server.server.address() as AddressInfo).port
   } catch (error) {
     appCtx.stopElectrum()
     appCtx.database.close()
     await server.close()
     throw error
   }
-  logger.info({ host, port }, 'api-sentinel is running')
+  logger.info({ host, port: boundPort }, 'api-sentinel is running')
 
   // Record initial balance snapshots, then every 15 minutes
   void appCtx.controlCenterService.recordAllSnapshots()
@@ -117,5 +126,5 @@ export async function main(options: AppContextOptions = {}): Promise<SentinelSer
   process.once('SIGTERM', onSignal)
   process.once('SIGINT', onSignal)
 
-  return { shutdown }
+  return { port: boundPort, shutdown }
 }
