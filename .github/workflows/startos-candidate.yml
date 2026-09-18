@@ -6,6 +6,9 @@ on:
 permissions:
   contents: read
 
+# Candidate packages must be built without shared caches, including called workflows.
+cache-mode: none
+
 concurrency:
   group: startos-candidate-${{ github.ref }}
   cancel-in-progress: true
@@ -13,8 +16,6 @@ concurrency:
 jobs:
   desktop:
     uses: ./.github/workflows/build-desktop.yml
-    with:
-      source_ref: ${{ github.sha }}
 
   build:
     name: Build private StartOS candidate
@@ -24,6 +25,12 @@ jobs:
     steps:
       - name: Check out selected revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Verify the workflow commit before executing repository code
+        run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
 
       - name: Set up Node workspace
         uses: ./.github/actions/setup

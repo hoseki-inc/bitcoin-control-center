@@ -2,14 +2,12 @@ name: Build desktop packages
 
 on:
   workflow_call:
-    inputs:
-      source_ref:
-        description: Exact source commit shared with the StartOS build
-        required: true
-        type: string
 
 permissions:
   contents: read
+
+# Installer builds use fresh outputs and cannot read or poison shared build caches.
+cache-mode: none
 
 jobs:
   desktop:
@@ -34,12 +32,12 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.source_ref }}
+          # Reusable workflows inherit the caller's exact event commit.
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify the workflow commit before executing repository code
+        run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
       - uses: ./.github/actions/setup
-      - name: Verify the selected commit
-        env:
-          SOURCE_REF: ${{ inputs.source_ref }}
-        run: test "$(git rev-parse HEAD)" = "$SOURCE_REF"
       - name: Build native installer
         env:
           DESKTOP_TARGET: ${{ matrix.target }}

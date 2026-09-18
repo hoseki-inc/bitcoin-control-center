@@ -6,6 +6,9 @@ on:
 permissions:
   contents: write
 
+# Release jobs and their reusable workflows cannot consume or publish shared caches.
+cache-mode: none
+
 concurrency:
   group: startos-draft-release
   cancel-in-progress: false
@@ -35,15 +38,15 @@ jobs:
           ref: ${{ github.sha }}
       - name: Record the exact source commit
         id: source
-        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          echo "sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
 
   desktop:
     needs: source
     permissions:
       contents: read
     uses: ./.github/workflows/build-desktop.yml
-    with:
-      source_ref: ${{ needs.source.outputs.sha }}
 
   release:
     name: Build StartOS and assemble complete draft release
@@ -54,8 +57,15 @@ jobs:
       - name: Check out the same protected release commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.source.outputs.sha }}
+          ref: ${{ github.sha }}
           fetch-depth: 0
+
+      - name: Verify the protected commit before executing repository code
+        env:
+          RELEASE_SHA: ${{ needs.source.outputs.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$GITHUB_SHA" = "$RELEASE_SHA"
 
       - name: Set up Node workspace
         uses: ./.github/actions/setup
