@@ -250,7 +250,7 @@ function QrSignConfirmOnDevice({
 
 function QrSignScanSignature({
   model,
-  claim,
+  claim: _claim,
   challenge,
   challengeMessage,
   onBack,

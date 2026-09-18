@@ -23,6 +23,7 @@
       }
     ],
     "no-shadow": "error",
-    "no-unused-expressions": "error"
+    "no-unused-expressions": "error",
+    "no-unused-vars": "error"
   }
 }
