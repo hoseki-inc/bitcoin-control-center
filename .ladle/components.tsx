@@ -15,7 +15,7 @@ if (!window.Buffer) {
   window.Buffer = Buffer
 }
 
-export const Provider: GlobalProvider = ({ children, globalState, storyMeta }) => (
+export const Provider: GlobalProvider = ({ children }) => (
   <ChakraProvider theme={theme}>
     <Toaster position="top-right" richColors />
     {children}

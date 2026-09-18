@@ -78,7 +78,7 @@ function BitcoinSigningStep({
       await completeChallengeMutation.mutateAsync({ challengeId: challenge.id })
 
       onSuccess(claimingState.claimId)
-    } catch (error) {
+    } catch {
       toast.error('Failed to complete claim registration')
     }
   }

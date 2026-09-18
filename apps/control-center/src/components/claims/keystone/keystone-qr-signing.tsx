@@ -223,7 +223,7 @@ function KeystoneSignConfirmOnDevice({
 // ---------------------------------------------------------------------------
 
 function KeystoneSignScanSignature({
-  claim,
+  claim: _claim,
   challenge,
   challengeMessage,
   onBack,

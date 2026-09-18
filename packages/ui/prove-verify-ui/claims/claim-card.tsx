@@ -38,7 +38,7 @@ export const ClaimCard = forwardRef<ClaimCardProps, 'div'>(
       threshold = 1, // Default to SingleSig. Only Multisig needs to pass the threshold in.
       balance,
       isSelected,
-      onClick,
+      onClick: _onClick,
       ...props
     },
     ref,
@@ -120,7 +120,12 @@ interface ClaimCardKeystoresProps extends KeystoreAvatarProps {
   alt: string
   status: ClaimStatus
 }
-export function ClaimCardKeystores({ keystores, alt, status, ...props }: ClaimCardKeystoresProps): JSX.Element | null {
+export function ClaimCardKeystores({
+  keystores,
+  alt: _alt,
+  status,
+  ...props
+}: ClaimCardKeystoresProps): JSX.Element | null {
   // explicit checking undefined because null is a valid value for wallet
   if (keystores.length === 1 && keystores[0]) {
     return (

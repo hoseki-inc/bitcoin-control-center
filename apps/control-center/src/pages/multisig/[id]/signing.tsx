@@ -515,9 +515,9 @@ function KeystoneSigning({ claim, keystore }: { claim: ClaimDto; keystore: Keyst
 
 function ColdcardMultisigStep11({
   model,
-  account,
-  walletDisplayName,
-  claim,
+  account: _account,
+  walletDisplayName: _walletDisplayName,
+  claim: _claim,
   onBack,
   onProveControl,
   ...rest
