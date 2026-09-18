@@ -22,6 +22,7 @@
         ]
       }
     ],
-    "no-shadow": "error"
+    "no-shadow": "error",
+    "no-unused-expressions": "error"
   }
 }
