@@ -224,8 +224,9 @@ test('window closure cancels a pending request and cleans up IPC and device list
   h.window.emit('closed')
   assert.equal(await result, undefined)
   assert.equal(h.handlers.size, 0)
-  for (const event of ['select-hid-device', 'hid-device-added', 'hid-device-removed'])
+  for (const event of ['select-hid-device', 'hid-device-added', 'hid-device-removed']) {
     assert.equal(h.session.listenerCount(event), 0)
+  }
   assert.equal(h.ipc.listenerCount('ledger-hid:cancel'), 0)
   assert.equal(h.ipc.listenerCount('ledger-hid:end'), 0)
 })

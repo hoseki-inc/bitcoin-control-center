@@ -287,7 +287,9 @@ function GenericCheckWalletXpub({
   }
 
   async function onSubmit(data: { keystoreName: string }) {
-    if (!matchedKeystore?.keystore) return
+    if (!matchedKeystore?.keystore) {
+      return
+    }
 
     try {
       setIsSaving(true)
@@ -563,8 +565,11 @@ function ConnectKeystoneWallet({ claim }: { claim: ClaimDto }) {
   const [keystoneJson, setKeystoneJson] = useState<KeystoneExportFile>()
 
   const goBack = (): void => {
-    if (wizardStep === 1) void navigate(`/multisig/${claim.id}`)
-    else setWizardStep((prev) => prev - 1)
+    if (wizardStep === 1) {
+      void navigate(`/multisig/${claim.id}`)
+    } else {
+      setWizardStep((prev) => prev - 1)
+    }
   }
   const goForward = (): void => setWizardStep((prev) => prev + 1)
 

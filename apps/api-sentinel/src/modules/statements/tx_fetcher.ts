@@ -54,7 +54,9 @@ export const fetchTransactionEntries = asyncFn(
 
     // 1. Discover account (find used address indices via Electrum history checks)
     const discoveryResult = await onchainProvider.discoverAccount(account)
-    if (discoveryResult.isErr()) return Err(discoveryResult.unwrapErr())
+    if (discoveryResult.isErr()) {
+      return Err(discoveryResult.unwrapErr())
+    }
     const { lastUsedReceiveIndex, lastUsedChangeIndex } = discoveryResult.unwrap()
 
     // 2. Generate all used addresses
@@ -98,7 +100,9 @@ export const fetchTransactionEntries = asyncFn(
 
     // 4. Get current tip for confirmation status
     const tipRes = await onchainProvider.getBlocksTip()
-    if (tipRes.isErr()) return Err(tipRes.unwrapErr())
+    if (tipRes.isErr()) {
+      return Err(tipRes.unwrapErr())
+    }
     const tip = tipRes.unwrap()
 
     // 5. Fetch transaction details from mempool.space in batches
@@ -110,7 +114,9 @@ export const fetchTransactionEntries = asyncFn(
       const results = await Promise.allSettled(
         batch.map(async (txid) => {
           const response = await fetch(`${baseUrl}/api/tx/${txid}`)
-          if (!response.ok) return null
+          if (!response.ok) {
+            return null
+          }
           return (await response.json()) as MempoolTx
         }),
       )
@@ -145,7 +151,9 @@ export const fetchTransactionEntries = asyncFn(
  */
 function parseMempoolTxEntry(tx: MempoolTx, address: Address, tipHeight: number): TransactionEntry | null {
   const txidRes = Txid.fromString(tx.txid)
-  if (txidRes.isErr()) return null
+  if (txidRes.isErr()) {
+    return null
+  }
   const txid = txidRes.unwrap()
   const addressStr = address.toString()
 

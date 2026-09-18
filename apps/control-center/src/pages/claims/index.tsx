@@ -68,7 +68,9 @@ export function ClaimsPage(): JSX.Element {
   const balancesQuery = useGetBalancesPerClaimIds({ claimIds, enabled: claimIds.length > 0 })
 
   useEffect(() => {
-    if (location.hash !== '#archived') return
+    if (location.hash !== '#archived') {
+      return
+    }
 
     const section = document.getElementById('archived')
     const toggle = document.getElementById('archived-accounts-toggle')
@@ -104,23 +106,31 @@ export function ClaimsPage(): JSX.Element {
 
   const claimTotalBtcSats = balancesQuery.data
     ? Array.from(balancesQuery.data.values()).reduce((sum, b) => {
-        if (!b) return sum
+        if (!b) {
+          return sum
+        }
         return sum + Number(b.current)
       }, 0)
     : 0
 
   const exchangeTotalBtcSats = exchangeAccounts.reduce((sum, a) => {
-    if (!a.balance) return sum
+    if (!a.balance) {
+      return sum
+    }
     return sum + Number(a.balance)
   }, 0)
 
   const manualTotalBtcSats = manualAccounts.reduce((sum, a) => {
-    if (!a.balance) return sum
+    if (!a.balance) {
+      return sum
+    }
     return sum + Number(a.balance)
   }, 0)
 
   const etfTotalBtcSats = etfAccounts.reduce((sum, a) => {
-    if (!a.balance) return sum
+    if (!a.balance) {
+      return sum
+    }
     return sum + Number(a.balance)
   }, 0)
 
@@ -131,7 +141,9 @@ export function ClaimsPage(): JSX.Element {
 
   const claimsTotalUsd = balancesQuery.data
     ? Array.from(balancesQuery.data.values()).reduce((sum, b) => {
-        if (!b?.usd) return sum
+        if (!b?.usd) {
+          return sum
+        }
         return sum + Number(b.usd)
       }, 0)
     : 0
@@ -139,7 +151,9 @@ export function ClaimsPage(): JSX.Element {
   const exchangeTotalUsd =
     btcUsdPrice !== null
       ? exchangeAccounts.reduce((sum, a) => {
-          if (!a.balance) return sum
+          if (!a.balance) {
+            return sum
+          }
           return sum + (Number(a.balance) / 100_000_000) * btcUsdPrice
         }, 0)
       : 0
@@ -147,7 +161,9 @@ export function ClaimsPage(): JSX.Element {
   const manualTotalUsd =
     btcUsdPrice !== null
       ? manualAccounts.reduce((sum, a) => {
-          if (!a.balance) return sum
+          if (!a.balance) {
+            return sum
+          }
           return sum + (Number(a.balance) / 100_000_000) * btcUsdPrice
         }, 0)
       : 0
@@ -155,7 +171,9 @@ export function ClaimsPage(): JSX.Element {
   const etfTotalUsd =
     btcUsdPrice !== null
       ? etfAccounts.reduce((sum, a) => {
-          if (!a.balance) return sum
+          if (!a.balance) {
+            return sum
+          }
           return sum + (Number(a.balance) / 100_000_000) * btcUsdPrice
         }, 0)
       : 0

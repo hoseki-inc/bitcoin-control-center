@@ -23,7 +23,9 @@ export function useUiSettings<T extends Record<string, Primitive>>(args: {
   const [uiSettings, setUiSettings] = useState<T>(() => getLocalStorage())
 
   function updateUiSettings(settings: Partial<T>) {
-    if (!args.userId) return
+    if (!args.userId) {
+      return
+    }
 
     const updatedSettings = { ...uiSettings, ...settings }
     setUiSettings(updatedSettings)

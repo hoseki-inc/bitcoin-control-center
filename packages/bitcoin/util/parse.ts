@@ -11,15 +11,23 @@ export function parseRecursiveParenthesisDescent(outputDescriptor: string): Resu
   const levels: string[][] = []
   let depth: number = 0
   for (const char of outputDescriptor) {
-    if (char === '(') depth++
+    if (char === '(') {
+      depth++
+    }
 
-    if (depth >= levels.length) levels.push([])
+    if (depth >= levels.length) {
+      levels.push([])
+    }
 
     // Insert content character, but keep parenthesis out of final values
-    if (char !== ')' && char !== '(') levels[depth]?.push(char)
+    if (char !== ')' && char !== '(') {
+      levels[depth]?.push(char)
+    }
 
     if (char === ')') {
-      if (depth <= 0) return Err(new InvalidFormatError('Parenthesis pairs are not valid'))
+      if (depth <= 0) {
+        return Err(new InvalidFormatError('Parenthesis pairs are not valid'))
+      }
       depth--
     }
   }

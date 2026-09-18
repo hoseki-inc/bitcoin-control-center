@@ -21,13 +21,19 @@ const CHECKMARK_DISPLAY_DURATION = 2000
 function splitXpubIntoTwoLines(displayValue: string): string {
   const spaces: number[] = []
   for (let i = 0; i < displayValue.length; i++) {
-    if (displayValue[i] === ' ') spaces.push(i)
+    if (displayValue[i] === ' ') {
+      spaces.push(i)
+    }
   }
 
-  if (spaces.length === 0) return displayValue
+  if (spaces.length === 0) {
+    return displayValue
+  }
 
   const middleSpaceIndex = spaces[Math.floor(spaces.length / 2)]
-  if (middleSpaceIndex === undefined) return displayValue
+  if (middleSpaceIndex === undefined) {
+    return displayValue
+  }
 
   return `${displayValue.substring(0, middleSpaceIndex)}\n${displayValue.substring(middleSpaceIndex + 1)}`
 }

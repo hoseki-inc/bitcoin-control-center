@@ -31,7 +31,9 @@ export function initEncryption(hexKey: string): void {
 }
 
 function getKey(): Uint8Array {
-  if (!_key) throw new Error('Encryption not initialized. Call initEncryption() first.')
+  if (!_key) {
+    throw new Error('Encryption not initialized. Call initEncryption() first.')
+  }
   return _key
 }
 
@@ -123,7 +125,9 @@ export class Encrypted {
 
   public static fromString(string: string): Result<Encrypted, Error> {
     const parsed = CiphertextBlob.safeParse(string)
-    if (!parsed.success) return Err(new Error(parsed.error.message))
+    if (!parsed.success) {
+      return Err(new Error(parsed.error.message))
+    }
     return Ok(Encrypted.from(parsed.data))
   }
 
@@ -146,7 +150,9 @@ export class Encrypted {
     return Result.fromThrowable(() => {
       const key = getKey()
       const [ivHex, ciphertextHex] = this.blob.split('_')
-      if (!ivHex || !ciphertextHex) throw new Error('Malformed ciphertext blob')
+      if (!ivHex || !ciphertextHex) {
+        throw new Error('Malformed ciphertext blob')
+      }
       const decipher = crypto.createDecipheriv(algorithm, key, new Uint8Array(Buffer.from(ivHex, encoding)))
       const part1 = decipher.update(new Uint8Array(Buffer.from(ciphertextHex, encoding)))
       const part2 = decipher.final()

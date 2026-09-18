@@ -245,7 +245,9 @@ function StatementPreview({
   useEffect(() => {
     async function loadPdf() {
       try {
-        if (!statementData) return
+        if (!statementData) {
+          return
+        }
 
         const document = await renderStatementDocument({
           watermarkText: 'Statement Preview',
@@ -281,7 +283,9 @@ function StatementPreview({
                 variant={statementFormat === 'custom' ? 'primary' : 'outline'}
                 size="sm"
                 onClick={() => {
-                  if (statementFormat === 'custom') return
+                  if (statementFormat === 'custom') {
+                    return
+                  }
                   onStatementFormatChange('custom')
                   setPdfDocument(null)
                 }}
@@ -292,7 +296,9 @@ function StatementPreview({
                 variant={statementFormat === 'monthly' ? 'primary' : 'outline'}
                 size="sm"
                 onClick={() => {
-                  if (statementFormat === 'monthly') return
+                  if (statementFormat === 'monthly') {
+                    return
+                  }
                   onStatementFormatChange('monthly')
                   setPdfDocument(null)
                 }}

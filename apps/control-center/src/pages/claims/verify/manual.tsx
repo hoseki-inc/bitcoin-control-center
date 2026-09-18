@@ -20,7 +20,9 @@ export function ClaimsVerifyManualPage(): JSX.Element {
   const isValid = displayName.trim().length > 0 && btcAmount.trim().length > 0 && Number(btcAmount) >= 0
 
   async function handleSubmit(): Promise<void> {
-    if (!isValid) return
+    if (!isValid) {
+      return
+    }
 
     const balanceSats = Math.round(Number(btcAmount) * 1e8).toString()
     const balanceAsOf = new Date(balanceDate).toISOString()

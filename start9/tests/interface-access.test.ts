@@ -42,7 +42,9 @@ function setupInterface(
     onLeaveContext: (callback: () => void) => leave.push(callback),
     getServiceInterface: vi.fn(async ({ serviceInterfaceId, callback }) => {
       expect(serviceInterfaceId).toBe('main')
-      if (callback) callbacks.add(callback)
+      if (callback) {
+        callbacks.add(callback)
+      }
       return present
         ? {
             id: 'main',
@@ -52,7 +54,9 @@ function setupInterface(
     }),
     getHostInfo: vi.fn(async ({ hostId, callback }) => {
       expect(hostId).toBe('ui')
-      if (callback) callbacks.add(callback)
+      if (callback) {
+        callbacks.add(callback)
+      }
       return { bindings: { 3400: { addresses } } }
     }),
   }
@@ -174,7 +178,9 @@ describe('StartOS entrypoint', () => {
     writeFileSync(join(directory, 'node'), '#!/bin/sh\nprintf "%s" "$SENTINEL_ALLOWED_HOSTS"\n', { mode: 0o755 })
     const env = { ...process.env, PATH: `${directory}:${process.env.PATH}` }
     delete env.SENTINEL_ALLOWED_HOSTS
-    if (hosts !== undefined) env.SENTINEL_ALLOWED_HOSTS = hosts
+    if (hosts !== undefined) {
+      env.SENTINEL_ALLOWED_HOSTS = hosts
+    }
     const output = execFileSync('bash', [fileURLToPath(new URL('../docker_entrypoint.sh', import.meta.url))], {
       env,
       encoding: 'utf8',

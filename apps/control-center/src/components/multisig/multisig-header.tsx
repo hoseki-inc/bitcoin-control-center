@@ -44,9 +44,13 @@ export function MultisigHeader({
     }
 
     // We currently don't have a screen for verified keystores, so we don't allow the user to click on them.
-    if (keystore.status === 'verified') return null
+    if (keystore.status === 'verified') {
+      return null
+    }
     // Prevents the user from losing work in progress by unintentionally leaving a wallet flow
-    if (!isUserOnMultisigDetailsPage(location.pathname)) return null
+    if (!isUserOnMultisigDetailsPage(location.pathname)) {
+      return null
+    }
 
     if (keystore.status === 'pending') {
       // There is no point on letting the user click on the current pending keystore if there is a pending keystore before it.
