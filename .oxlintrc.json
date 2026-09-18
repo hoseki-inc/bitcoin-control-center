@@ -5,6 +5,7 @@
     "correctness": "off"
   },
   "rules": {
-    "curly": ["error", "all"]
+    "curly": ["error", "all"],
+    "no-array-constructor": "error"
   }
 }
