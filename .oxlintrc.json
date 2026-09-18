@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": [],
+  "plugins": ["oxc"],
   "categories": {
     "correctness": "off"
   },
@@ -25,6 +25,7 @@
     "no-shadow": "error",
     "no-unused-expressions": "error",
     "no-unused-vars": "error",
-    "no-useless-constructor": "error"
+    "no-useless-constructor": "error",
+    "oxc/approx-constant": "error"
   }
 }
