@@ -68,7 +68,12 @@ async function start(): Promise<void> {
   const { main } = await import(pathToFileURL(path.join(serverDir, 'main.js')).href)
   // Bind an OS-assigned port directly, without reserving then releasing one.
   // This keeps desktop independent of the development server's configured port.
-  const localServer: LocalServer = await main({ waitForElectrum: false, tor: torManager, listenPort: 0 })
+  const localServer: LocalServer = await main({
+    waitForElectrum: false,
+    tor: torManager,
+    listenPort: 0,
+    connectionProfiles: true,
+  })
   server = localServer
   const origin = `http://localhost:${localServer.port}`
   if (quitting) return

@@ -69,8 +69,8 @@ async function startElectrum(height: number, holdVersion = false, rejectVersion 
   return fixture
 }
 
-async function context(waitForElectrum = true): Promise<AppContext> {
-  const ctx = (await createAppContext(logger, { waitForElectrum })).unwrap()
+async function context(waitForElectrum = true, connectionProfiles = false): Promise<AppContext> {
+  const ctx = (await createAppContext(logger, { waitForElectrum, connectionProfiles })).unwrap()
   contexts.add(ctx)
   return ctx
 }
@@ -331,5 +331,193 @@ describe('Tor connection policy', () => {
     expect(next.methods).toEqual([])
     expect(settings(ctx)).toEqual([])
     expect(ctx.electrumClient.isConnected()).toBe(true)
+  })
+})
+
+describe('desktop saved connections', () => {
+  it('restores the active profile even if launcher defaults change before any connection switch', async () => {
+    const ctx = await context(true, true)
+    const initial = ctx.electrumConfig.port
+    ctx.disconnectElectrum()
+    ctx.database.close()
+    contexts.delete(ctx)
+    env.ELECTRUM_PORT = (await startElectrum(200)).config.port
+    const restarted = await context(true, true)
+    expect(restarted.electrumConfig.port).toBe(initial)
+    expect((await restarted.onchainProvider.getBlocksTip()).unwrap().height).toBe(100)
+  })
+  it('keeps profile APIs disabled and the profile table empty in node deployments', async () => {
+    const ctx = await context()
+    await expect(appRouter.createCaller({ app: ctx }).settings.connectionProfiles.list()).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+    })
+    expect(ctx.database.db.prepare('SELECT * FROM desktop_connection_profiles').all()).toEqual([])
+  })
+
+  it('migrates the existing Tor connection once without changing its endpoint or connecting directly', async () => {
+    const previous = await context()
+    const save = previous.database.db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)')
+    save.run('electrum_host', 'my-node.onion')
+    save.run('electrum_port', '50001')
+    save.run('electrum_protocol', 'tcp')
+    save.run('tor_enabled', 'true')
+    previous.disconnectElectrum()
+    previous.database.close()
+    contexts.delete(previous)
+    const ctx = await context(false, true)
+    const snapshot = await appRouter.createCaller({ app: ctx }).settings.connectionProfiles.list()
+    expect(snapshot.profiles).toEqual([
+      expect.objectContaining({
+        nickname: 'Current connection',
+        host: 'my-node.onion',
+        port: 50001,
+        protocol: 'tcp',
+        torEnabled: true,
+      }),
+    ])
+    expect(snapshot.activeId).toBe(snapshot.profiles[0]!.id)
+    expect((await ctx.electrumClient.connect()).isErr()).toBe(true)
+    ctx.disconnectElectrum()
+    ctx.database.close()
+    contexts.delete(ctx)
+    const restarted = await context(false, true)
+    expect(restarted.connectionProfiles!.list()).toEqual(snapshot.profiles)
+  })
+
+  it('saves and renames inactive profiles without making network requests or changing the active connection', async () => {
+    const ctx = await context(true, true)
+    const api = appRouter.createCaller({ app: ctx }).settings.connectionProfiles
+    const before = await api.list()
+    const next = await startElectrum(200)
+    const saved = await api.create({ ...next.config, nickname: '  Home LAN  ' })
+    expect(saved.nickname).toBe('Home LAN')
+    const renamed = await api.rename({ ...saved, nickname: 'My node' })
+    expect(renamed.id).toBe(saved.id)
+    expect((await api.list()).activeId).toBe(before.activeId)
+    expect(next.methods).toEqual([])
+    await expect(api.rename({ ...saved, nickname: 'Stale edit' })).rejects.toThrow('another window')
+    expect((await api.list()).profiles[1]!.nickname).toBe('My node')
+    ctx.disconnectElectrum()
+    ctx.database.close()
+    contexts.delete(ctx)
+    const restarted = await context(true, true)
+    expect(restarted.connectionProfiles!.list()[1]).toEqual(renamed)
+  })
+
+  it('enforces the five-profile limit across concurrent requests', async () => {
+    const ctx = await context(true, true)
+    const api = appRouter.createCaller({ app: ctx }).settings.connectionProfiles
+    const results = await Promise.allSettled(
+      Array.from({ length: 8 }, (_, i) =>
+        api.create({
+          host: 'unused.example',
+          port: 50002,
+          protocol: 'ssl',
+          nickname: `Connection ${i}`,
+        }),
+      ),
+    )
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(4)
+    expect((await api.list()).profiles).toHaveLength(5)
+    await expect(
+      api.create({ host: 'unused.example', port: 50002, protocol: 'ssl', nickname: 'Sixth' }),
+    ).rejects.toThrow('up to five')
+  })
+
+  it('validates names, endpoints, and routes while allowing offline Tor profiles to be saved', async () => {
+    const ctx = await context(true, true)
+    const api = appRouter.createCaller({ app: ctx }).settings.connectionProfiles
+    await expect(api.create({ ...fixtures[0]!.config, nickname: '   ' })).rejects.toThrow('nickname')
+    await expect(api.create({ ...fixtures[0]!.config, nickname: 'x'.repeat(81) })).rejects.toThrow('80')
+    await expect(
+      api.create({ host: 'ssl://node.example:50002', port: 50002, protocol: 'ssl', nickname: 'Invalid' }),
+    ).rejects.toThrow('host')
+    await expect(
+      api.create({ host: 'node.onion', port: 50001, protocol: 'tcp', nickname: 'Invalid route' }),
+    ).rejects.toThrow('require Tor')
+    const saved = await api.create({
+      host: ' NODE.ONION. ',
+      port: 50001,
+      protocol: 'tcp',
+      torEnabled: true,
+      nickname: 'Away',
+    })
+    expect(saved.host).toBe('node.onion')
+    await expect(api.connect(saved)).rejects.toThrow('Tor is not available')
+    expect((await api.list()).activeId).not.toBe(saved.id)
+  })
+
+  it('tests an inactive profile without activating it, then switches every provider and restores it on restart', async () => {
+    const ctx = await context(true, true)
+    const caller = appRouter.createCaller({ app: ctx })
+    const api = caller.settings.connectionProfiles
+    const before = (await api.list()).activeId
+    const next = await startElectrum(200)
+    const saved = await api.create({ ...next.config, nickname: 'Home' })
+    await caller.settings.testElectrum(saved)
+    expect((await api.list()).activeId).toBe(before)
+    expect(next.methods).toEqual(['server.version'])
+    const connected = await api.connect(saved)
+    expect(connected.revision).toBe(saved.revision + 1)
+    expect((await api.list()).activeId).toBe(saved.id)
+    expect((await ctx.controlCenterService['onchainProvider'].getBlocksTip()).unwrap().height).toBe(200)
+    expect((await ctx.statementService['onchainProvider'].getBlocksTip()).unwrap().height).toBe(200)
+    ctx.disconnectElectrum()
+    ctx.database.close()
+    contexts.delete(ctx)
+    const restarted = await context(true, true)
+    expect(restarted.connectionProfiles!.getActiveId()).toBe(saved.id)
+    expect(restarted.electrumConfig.port).toBe(next.config.port)
+  })
+
+  it('preserves all profile and runtime state after failed connection or failed persistence', async () => {
+    const ctx = await context(true, true)
+    const api = appRouter.createCaller({ app: ctx }).settings.connectionProfiles
+    const next = await startElectrum(200)
+    const bad = await startElectrum(300, false, true)
+    const saved = await api.create({ ...next.config, nickname: 'Next' })
+    const before = await api.list()
+    await expect(api.connect({ ...saved, connection: { ...bad.config, torEnabled: false } })).rejects.toThrow()
+    expect(await api.list()).toEqual(before)
+    ctx.database.db.exec(
+      "CREATE TRIGGER reject_profile_save BEFORE INSERT ON settings WHEN NEW.key = 'electrum_port' BEGIN SELECT RAISE(FAIL, 'test write failure'); END",
+    )
+    await expect(api.connect(saved)).rejects.toThrow('Could not save')
+    expect(await api.list()).toEqual(before)
+    expect(settings(ctx)).toEqual([])
+    expect((await ctx.statementService['onchainProvider'].getBlocksTip()).unwrap().height).toBe(100)
+    await vi.waitFor(() => expect(next.sockets.size).toBe(0))
+  })
+
+  it('rejects concurrent switches and a profile edited during its pending handshake', async () => {
+    const ctx = await context(true, true)
+    const api = appRouter.createCaller({ app: ctx }).settings.connectionProfiles
+    const next = await startElectrum(200, true)
+    const saved = await api.create({ ...next.config, nickname: 'Next' })
+    const pending = api.connect(saved)
+    const outcome = expect(pending).rejects.toThrow('another window')
+    await vi.waitFor(() => expect(next.methods).toContain('server.version'))
+    await expect(api.connect(saved)).rejects.toThrow('already in progress')
+    await api.rename({ ...saved, nickname: 'Changed while connecting' })
+    next.releaseVersion()
+    await outcome
+    expect((await api.list()).activeId).not.toBe(saved.id)
+    expect((await ctx.onchainProvider.getBlocksTip()).unwrap().height).toBe(100)
+  })
+
+  it('cancels a pending profile activation on shutdown without changing its saved values', async () => {
+    const ctx = await context(true, true)
+    const api = appRouter.createCaller({ app: ctx }).settings.connectionProfiles
+    const next = await startElectrum(200, true)
+    const saved = await api.create({ ...next.config, nickname: 'Next' })
+    const before = ctx.connectionProfiles!.list()
+    const active = ctx.connectionProfiles!.getActiveId()
+    const pending = api.connect(saved)
+    const outcome = expect(pending).rejects.toThrow('shutting down')
+    await vi.waitFor(() => expect(next.methods).toContain('server.version'))
+    ctx.disconnectElectrum()
+    await outcome
+    expect(ctx.connectionProfiles!.list()).toEqual(before)
+    expect(ctx.connectionProfiles!.getActiveId()).toBe(active)
   })
 })

@@ -235,9 +235,15 @@ corepack pnpm dev:desktop
 
 Open `http://localhost:4269`. Stop any existing `pnpm dev` first; press `Ctrl+C` to stop both processes.
 
-This uses Sentinel's development configuration and data, and exposes desktop-specific settings without building an installer. Electron-managed Tor, native wallet integration, and desktop OS certificate trust still require the Electron runtime. Development Sentinel requires a working Electrum connection at startup.
+This uses Sentinel's development configuration and data, and exposes desktop-specific settings without building an installer. Desktop preview keeps settings available when Electrum is offline. Electron-managed Tor, native wallet integration, and desktop OS certificate trust still require the Electron runtime.
 
-If Sentinel is already running separately, use `corepack pnpm --filter control-center dev:desktop` to start only the frontend.
+To run the two processes separately, use `corepack pnpm --filter api-sentinel dev:desktop` and `corepack pnpm --filter control-center dev:desktop`. The desktop backend command enables saved connections; the regular development backend and StartOS retain their existing connection configuration.
+
+### Saved desktop connections
+
+Settings supports up to five local Electrum connections with editable nicknames. The existing connection becomes **Current connection** on the first desktop launch after upgrading. Select a saved connection in the list beside the form, or the dropdown above it when the window is narrower. Selection loads its settings; **Connect** makes it active after a successful connection test. **Save & Reconnect** applies changes to an existing connection, while **New connection → Save connection** saves a profile without connecting. Public-server starting points are available only when creating a connection.
+
+Renaming and saving an inactive connection do not contact its server. Failed switches preserve the previous active connection and saved settings. Profiles and the active choice persist in Sentinel's local SQLite database, and resizing the page keeps the current form edits. StartOS does not enable the saved-profile API or migrate its connection into a profile.
 
 ## Local data and backups
 

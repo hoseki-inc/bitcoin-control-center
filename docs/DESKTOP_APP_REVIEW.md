@@ -1,6 +1,27 @@
 # Desktop app review
 
-## Current status — September 10, 2026
+## Current status — September 17, 2026
+
+`desktop-saved-connections` contains the complete `desktop-app-review` checkpoint (`f70d733`) and the desktop browser-preview command (`19d4b91`), based on `main` through `2020b55`. The desktop fixes and shared release workflows are being submitted together for draft review. The dated sections below record earlier artifacts and test runs; they do not establish acceptance of the latest installer.
+
+The Settings page now saves up to five named Electrum connections in local SQLite. It preserves the existing configuration as **Current connection**, supports renaming and explicit connection changes, and retains the active profile across restarts. The list appears beside the form on wide windows and becomes a dropdown above it when space is limited. Public-server starting points appear only when creating a connection. Saving or testing a new profile does not activate it; failed or interrupted activation retains the previous connection. Desktop launchers explicitly enable this capability, including `corepack pnpm dev:desktop`; StartOS continues using its managed configuration.
+
+Focused automated coverage includes migration, persistence, the five-profile limit, endpoint validation, failed saves, simultaneous/interrupted switches, Tor routing, and maintaining a single provider for portfolio and statement consumers. Browser checks using an isolated local Electrum fixture cover both layouts, draft preservation at 800/600/390-pixel widths, rename, save without activation, explicit activation, and reload persistence. The packaged-runtime check also verifies that the saved-connections API is enabled and migrates the fixture connection.
+
+### Issue scope for the draft PR
+
+- **#40 — Sentinel port conflict:** implemented. Desktop binds an OS-assigned loopback port and uses its own data directory. Automated tests cover both startup orders and independent shutdown, alongside the packaged dynamic-port smoke check. This is the completed issue targeted for closure on merge.
+- **#39 — Saved connections:** substantially implemented under the agreed five-profile design. Keep open: profile deletion and its active-profile guard are still absent, and the issue's controlled-account LAN/Tor comparison and full packaged restart/route acceptance checks still need recorded results. Do not infer these from fixture tests.
+- **#29 — Mac desktop parity:** keep open for the remaining installed-app acceptance checklist, including physical multisig signing on the final artifact, sleep/wake, upgrades, and backup/restore. Earlier user tests reported working Trezor, Ledger, and statements.
+- **#67 — Automatic public fallback** and **#44 — Setup transfer:** separate follow-ups, not implemented here. Offline startup remains usable without selecting another server automatically.
+
+### Release validation still required
+
+The PR includes native Mac ARM64 and Windows x64 installer jobs, candidate builds for StartOS and both desktop platforms, and assembly of all three packages into one draft release with matching source/version identities and checksums. These broader GitHub packaging jobs have not yet been validated on this branch; inspect their first PR runs before treating the delivery work as complete.
+
+Mac notarization, Windows publisher signing, automatic updates, and hands-on Windows installation/wallet/upgrade testing remain outside this draft's completed work. A passing packaged-backend smoke check does not establish interactive installer readiness.
+
+## Checkpoint — September 10, 2026
 
 `desktop-app-review` includes `main` through `2020b55` (StartOS `0.2.4:0`) in merge commit `1bb219f`. This brings in the separately shipped Ledger multisig repair, the newer inline Ledger connection flow, Electron `44.2.0`, PDF renderer `4.9.0`, and the intervening security and dependency updates. This checkpoint includes the restored port-isolation and release-workflow changes plus the desktop system-certificate trust fix. The original stash remains available as a backup.
 

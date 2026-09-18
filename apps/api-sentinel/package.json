@@ -4,6 +4,7 @@
   "scripts": {
     "build": "tsx src/scripts/build.ts",
     "dev": "tsx watch --env-file=.env src/cli.ts",
+    "dev:desktop": "tsx watch --env-file=.env src/cli.ts --desktop",
     "dev:standalone": "tsx watch --env-file=.env src/cli.ts",
     "docker:build": "cd ../.. && docker build -f apps/api-sentinel/Dockerfile -t api-sentinel .",
     "lint": "ESLINT_USE_FLAT_CONFIG=false eslint . --ignore-path ../../.eslintignore",

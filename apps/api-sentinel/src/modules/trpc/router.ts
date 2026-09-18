@@ -1956,7 +1956,72 @@ function validateWritableSetting(key: string, value: string): string {
   throw new TRPCError({ code: 'FORBIDDEN', message: 'Setting is not writable' })
 }
 
+const connectionDetailsInput = z.object({
+  host: z.string(),
+  port: z.number().int().min(1).max(65_535),
+  protocol: z.enum(['tcp', 'ssl']),
+  torEnabled: z.boolean().default(false),
+})
+const profileReferenceInput = z.object({ id: z.string().uuid(), revision: z.number().int().positive() })
+const nicknameInput = z
+  .string()
+  .trim()
+  .min(1, 'Enter a nickname')
+  .max(80, 'Use 80 characters or fewer for the nickname')
+
+function profileDetails(input: z.infer<typeof connectionDetailsInput>): z.infer<typeof connectionDetailsInput> {
+  const connection = validateElectrumConnection(input)
+  if (connection.host.endsWith('.onion') && !input.torEnabled)
+    throw new TRPCError({ code: 'BAD_REQUEST', message: 'Onion addresses require Tor' })
+  return { ...connection, torEnabled: input.torEnabled }
+}
+
+const desktopConnectionProcedure = publicProcedure.use(({ ctx, next }) => {
+  if (!ctx.app.connectionProfiles)
+    throw new TRPCError({ code: 'FORBIDDEN', message: 'Saved connections are only available in desktop mode' })
+  return next({ ctx: { ...ctx, profiles: ctx.app.connectionProfiles } })
+})
+
+const connectionProfilesRouter = t.router({
+  list: desktopConnectionProcedure.query(({ ctx }) => ({
+    profiles: ctx.profiles.list(),
+    activeId: ctx.profiles.getActiveId(),
+    status: {
+      ...ctx.app.electrumConfig,
+      connected: ctx.app.electrumClient.isConnected(),
+      tor: ctx.app.getTorStatus(),
+    },
+  })),
+  create: desktopConnectionProcedure
+    .input(connectionDetailsInput.extend({ nickname: nicknameInput }))
+    .mutation(({ ctx, input }) => {
+      const result = ctx.profiles.create({ ...profileDetails(input), nickname: input.nickname })
+      if (result.isErr()) throw new TRPCError({ code: 'BAD_REQUEST', message: result.unwrapErr().message })
+      return result.unwrap()
+    }),
+  rename: desktopConnectionProcedure
+    .input(profileReferenceInput.extend({ nickname: nicknameInput }))
+    .mutation(({ ctx, input }) => {
+      const result = ctx.profiles.rename(input, input.nickname)
+      if (result.isErr()) throw new TRPCError({ code: 'CONFLICT', message: result.unwrapErr().message })
+      return result.unwrap()
+    }),
+  connect: desktopConnectionProcedure
+    .input(profileReferenceInput.extend({ connection: connectionDetailsInput.optional() }))
+    .mutation(async ({ ctx, input }) => {
+      const result = await ctx.app.connectProfile(
+        input,
+        input.connection ? profileDetails(input.connection) : undefined,
+      )
+      if (result.isErr()) throw new TRPCError({ code: 'BAD_REQUEST', message: result.unwrapErr().message })
+      const connected = ctx.profiles.list().find((profile) => profile.id === input.id)
+      if (!connected) throw new TRPCError({ code: 'NOT_FOUND', message: 'Saved connection not found' })
+      return connected
+    }),
+})
+
 const settingsRouter = t.router({
+  connectionProfiles: connectionProfilesRouter,
   get: publicProcedure.input(z.object({ key: z.string() })).query(({ ctx, input }) => {
     if (!isReadableSetting(input.key)) {
       throw new TRPCError({ code: 'FORBIDDEN', message: 'Setting is not readable' })

@@ -38,9 +38,13 @@ To start Sentinel and the live-reloading browser UI with desktop-only settings f
 corepack pnpm dev:desktop
 ```
 
-Stop any existing `pnpm dev` first, then open `http://localhost:4269`. Press `Ctrl+C` to stop both processes. This uses the development database; Sentinel still requires a working Electrum connection at startup. If Sentinel is running separately, start only the frontend with `corepack pnpm --filter control-center dev:desktop`.
+Stop any existing `pnpm dev` first, then open `http://localhost:4269`. Press `Ctrl+C` to stop both processes. This uses the development database and enables desktop saved connections, with settings available even when Electrum is offline. To run separately, use `corepack pnpm --filter api-sentinel dev:desktop` for Sentinel and `corepack pnpm --filter control-center dev:desktop` for the frontend.
 
 Electron-managed Tor, native wallet integration, and the desktop OS certificate trust setup require the Electron runtime; the browser preview does not start them.
+
+Desktop can save five named Electrum connections. The initial migration preserves the existing endpoint and Tor choice as **Current connection**. Saving and renaming are local operations; selecting a profile loads its form and **Connect** explicitly activates it. Activation validates the replacement connection, then transactionally saves the profile, active ID, and legacy connection settings before replacing the shared portfolio/statement provider's client. Stale profile revisions, failed handshakes, failed saves, and interrupted switches preserve the previous active connection. Inactive profiles are never probed automatically.
+
+The Settings form uses a container breakpoint at 760px of available content: a saved list on the right when both columns fit, and a dropdown above the same form otherwise. Public-server shortcuts appear only in **New connection**. Profile storage is in Sentinel; desktop launchers explicitly enable its API. Node launchers continue using their managed connection configuration.
 
 Packaged desktop binds an available loopback HTTP port at startup. Development keeps port `3400`; either application can start first, and stopping one leaves the other running. The desktop UI and wallet permission checks follow its actual port.
 

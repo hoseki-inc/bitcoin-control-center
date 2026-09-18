@@ -7,6 +7,11 @@ import type { Logger } from 'pino'
 import { type SentinelDatabase, initDatabase } from './db'
 import { type Env, loadEnv } from './env'
 import { initEncryption, loadCredentialEncryptionKey } from './lib/encrypted'
+import {
+  type ConnectionDetails,
+  ConnectionProfileStore,
+  type ProfileReference,
+} from './modules/connection_profiles/store'
 import { ControlCenterService } from './modules/control_center/service'
 import { EtfService } from './modules/etf/service'
 import { ExchangeService } from './modules/exchange/service'
@@ -34,12 +39,16 @@ export interface AppContext {
   statementService: StatementService
   network: Network
   reconnectElectrum: (config: ElectrumClientConfig) => Promise<Result<void, Error>>
+  connectionProfiles: ConnectionProfileStore | undefined
+  connectProfile: (reference: ProfileReference, connection?: ConnectionDetails) => Promise<Result<void, Error>>
   disconnectElectrum: () => void
   prepareElectrumConfig: (config: ElectrumClientConfig, torEnabled: boolean) => Result<ElectrumClientConfig, Error>
   getTorStatus: () => { state: 'stopped' | 'starting' | 'ready' | 'failed' | 'unavailable'; message?: string }
 }
 
 export interface AppContextOptions {
+  /** Enabled only by desktop launchers, including its browser development preview. */
+  connectionProfiles?: boolean
   /** Desktop must keep settings available even when its saved server is offline. */
   waitForElectrum?: boolean
   /** Distribution-owned Tor process; Sentinel owns connection policy. */
@@ -67,10 +76,32 @@ export const createAppContext = asyncFn(
     const getSetting = (key: string): string | undefined =>
       (database.db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined)?.value
 
-    const electrumHost = getSetting('electrum_host') ?? env.ELECTRUM_HOST
-    const electrumPort = Number(getSetting('electrum_port') ?? env.ELECTRUM_PORT)
-    const electrumProtocol = (getSetting('electrum_protocol') ?? env.ELECTRUM_PROTOCOL) as 'tcp' | 'ssl'
-    const torEnabled = getSetting('tor_enabled') === 'true'
+    let electrumHost = getSetting('electrum_host') ?? env.ELECTRUM_HOST
+    let electrumPort = Number(getSetting('electrum_port') ?? env.ELECTRUM_PORT)
+    let electrumProtocol = (getSetting('electrum_protocol') ?? env.ELECTRUM_PROTOCOL) as 'tcp' | 'ssl'
+    let torEnabled = getSetting('tor_enabled') === 'true'
+    const connectionProfiles = options.connectionProfiles ? new ConnectionProfileStore(database.db) : undefined
+    if (connectionProfiles) {
+      const initialized = connectionProfiles.initialize({
+        host: electrumHost,
+        port: electrumPort,
+        protocol: electrumProtocol,
+        torEnabled,
+      })
+      if (initialized.isErr()) {
+        database.close()
+        return Err(initialized.unwrapErr())
+      }
+      const active = connectionProfiles.list().find((profile) => profile.id === connectionProfiles.getActiveId())
+      if (!active) {
+        database.close()
+        return Err(new Error('The active saved connection is missing'))
+      }
+      electrumHost = active.host
+      electrumPort = active.port
+      electrumProtocol = active.protocol
+      torEnabled = active.torEnabled
+    }
     const tor = options.tor
 
     const prepareElectrumConfig = (
@@ -158,6 +189,33 @@ export const createAppContext = asyncFn(
     let pendingClient: ElectrumClient | null = null
     let stopped = false
 
+    const replaceConnection = async (
+      config: ElectrumClientConfig,
+      persist: () => Result<void, Error>,
+    ): Promise<Result<void, Error>> => {
+      if (stopped) return Err(new Error('The application is shutting down'))
+      if (pendingClient) return Err(new Error('An Electrum connection change is already in progress'))
+      const newClient = new ElectrumClient({ requestTimeout: 10_000, ...config })
+      pendingClient = newClient
+      try {
+        const result = await newClient.connect()
+        if (stopped) return Err(new Error('The application is shutting down'))
+        if (result.isErr()) return Err(result.unwrapErr())
+        const saved = persist()
+        if (saved.isErr()) return Err(saved.unwrapErr())
+        const previousClient = ctx.electrumClient
+        ctx.electrumClient = newClient
+        ctx.electrumConfig = { host: config.host, port: config.port, protocol: config.protocol }
+        onchainProvider.deps.electrum = newClient
+        previousClient.disconnect()
+        logger.info('Electrum connection and settings updated')
+        return Ok(undefined)
+      } finally {
+        if (ctx.electrumClient !== newClient) newClient.disconnect()
+        pendingClient = null
+      }
+    }
+
     const ctx: AppContext = {
       env,
       logger,
@@ -172,23 +230,21 @@ export const createAppContext = asyncFn(
       priceService,
       statementService,
       network,
+      connectionProfiles,
+      connectProfile: async (reference, connection): Promise<Result<void, Error>> => {
+        if (!connectionProfiles) return Err(new Error('Saved connections are only available in desktop mode'))
+        const saved = connectionProfiles.get(reference)
+        if (saved.isErr()) return Err(saved.unwrapErr())
+        const details = connection ?? saved.unwrap()
+        const prepared = prepareElectrumConfig(details, details.torEnabled)
+        if (prepared.isErr()) return Err(prepared.unwrapErr())
+        return replaceConnection(prepared.unwrap(), () => connectionProfiles.activate(reference, details))
+      },
       prepareElectrumConfig,
       getTorStatus: () => options.tor?.getStatus() ?? { state: 'unavailable' },
       reconnectElectrum: async (config: ElectrumClientConfig): Promise<Result<void, Error>> => {
-        if (stopped) return Err(new Error('The application is shutting down'))
-        if (pendingClient) return Err(new Error('An Electrum connection change is already in progress'))
-
-        logger.info(
-          { host: config.host, port: config.port, protocol: config.protocol },
-          'Reconnecting to Electrum server',
-        )
-        const newClient = new ElectrumClient({ requestTimeout: 10_000, ...config })
-        pendingClient = newClient
-        try {
-          const result = await newClient.connect()
-          if (stopped) return Err(new Error('The application is shutting down'))
-          if (result.isErr()) return Err(result.unwrapErr())
-
+        if (connectionProfiles) return Err(new Error('Choose a saved connection to connect in desktop mode'))
+        return replaceConnection(config, () => {
           // No runtime state changes until every setting has been saved. A failed
           // connection or transaction leaves the previous client and settings intact.
           try {
@@ -205,17 +261,8 @@ export const createAppContext = asyncFn(
             return Err(new Error('Could not save Electrum settings; the previous connection has been kept'))
           }
 
-          const previousClient = ctx.electrumClient
-          ctx.electrumClient = newClient
-          ctx.electrumConfig = { host: config.host, port: config.port, protocol: config.protocol }
-          onchainProvider.deps.electrum = newClient
-          previousClient.disconnect()
-          logger.info('Electrum connection and settings updated')
           return Ok(undefined)
-        } finally {
-          if (ctx.electrumClient !== newClient) newClient.disconnect()
-          pendingClient = null
-        }
+        })
       },
       disconnectElectrum: (): void => {
         stopped = true

@@ -52,7 +52,7 @@ async function main() {
     MEMPOOL_API_URL: 'http://127.0.0.1:1',
   })
   const backend = await import(pathToFileURL(join(appDir, 'main.js')).href)
-  server = await backend.main({ listenPort: 0 })
+  server = await backend.main({ listenPort: 0, connectionProfiles: true })
   assert.notEqual(server.port, occupiedPort)
   const origin = `http://127.0.0.1:${server.port}`
   assert.deepEqual(await (await fetch(`${origin}/health`)).json(), { status: 'ok' })
@@ -64,12 +64,21 @@ async function main() {
   const status = wrapped.result.data.json ?? wrapped.result.data
   assert.equal(status.connected, true)
   assert.equal(status.port, occupiedPort)
+  const profilesResponse = await fetch(`${origin}/trpc/settings.connectionProfiles.list`)
+  assert.equal(profilesResponse.status, 200)
+  const profilesWrapped = await profilesResponse.json()
+  const profiles = profilesWrapped.result.data.json ?? profilesWrapped.result.data
+  assert.equal(profiles.profiles.length, 1)
+  assert.equal(profiles.profiles[0].nickname, 'Current connection')
+  assert.equal(profiles.profiles[0].port, occupiedPort)
+  assert.equal(profiles.activeId, profiles.profiles[0].id)
+  assert.equal(profiles.status.connected, true)
   execFileSync(join(resources, 'tor', process.platform === 'win32' ? 'tor.exe' : 'tor'), ['--version'], {
     stdio: 'pipe',
     timeout: 10_000,
   })
   console.log(
-    'Packaged backend, native SQLite, frontend assets, dynamic port, fixture Electrum, and bundled Tor passed.',
+    'Packaged backend, native SQLite, saved connections, frontend assets, dynamic port, fixture Electrum, and bundled Tor passed.',
   )
 }
 
