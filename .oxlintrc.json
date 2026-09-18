@@ -30,6 +30,7 @@
     "oxc/bad-array-method-on-arguments": "error",
     "oxc/bad-bitwise-operator": "error",
     "oxc/bad-char-at-comparison": "error",
-    "oxc/bad-comparison-sequence": "error"
+    "oxc/bad-comparison-sequence": "error",
+    "oxc/bad-min-max-func": "error"
   }
 }
