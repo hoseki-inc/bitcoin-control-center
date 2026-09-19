@@ -206,4 +206,4 @@ export class IndexMap<K extends Indexable, V> implements Map<K, V> {
   }
 }
 
-export interface ReadonlyIndexMap<K extends Indexable, V> extends ReadonlyMap<K, V> {}
+export type ReadonlyIndexMap<K extends Indexable, V> = ReadonlyMap<K, V>

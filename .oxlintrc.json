@@ -65,7 +65,8 @@
     "typescript/no-confusing-void-expression": "error",
     "typescript/no-duplicate-enum-values": "error",
     "typescript/no-duplicate-type-constituents": "error",
-    "typescript/no-dynamic-delete": "error"
+    "typescript/no-dynamic-delete": "error",
+    "typescript/no-empty-object-type": "error"
   },
   "overrides": [
     {

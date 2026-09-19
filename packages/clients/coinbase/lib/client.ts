@@ -53,7 +53,7 @@ export interface CoinbaseClient {
   }
 }
 
-export interface Client extends CoinbaseClient {}
+export type Client = CoinbaseClient
 
 // This factory is not an elegant solution, but I've run out of ideas.
 export function Client(init?: ClientInit): CoinbaseClient {
