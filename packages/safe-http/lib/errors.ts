@@ -10,7 +10,7 @@ export class SafeBodyError extends ErrorWithCause<Error> {
   public readonly tag = 'SafeBodyError'
   public readonly kind: SafeBodyErrorKind
 
-  constructor(kind: SafeBodyErrorKind, message: string, cause: Error) {
+  public constructor(kind: SafeBodyErrorKind, message: string, cause: Error) {
     super(message, { cause })
     this.kind = kind
   }
@@ -40,7 +40,7 @@ export class SafeHttpError extends ErrorWithTag {
   public readonly tag = 'SafeHttpError'
   public readonly kind: SafeHttpErrorKindVariant
 
-  constructor(options: SafeHttpErrorKindVariant & { message: string }) {
+  public constructor(options: SafeHttpErrorKindVariant & { message: string }) {
     super(options.message)
     this.kind = {
       value: options.value,

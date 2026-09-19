@@ -71,7 +71,7 @@ export class ApiError extends ErrorWithTag {
   public readonly tag = 'CoinbaseError'
   public readonly kind: ErrorKind
 
-  constructor(kind: ErrorKind, message: string) {
+  public constructor(kind: ErrorKind, message: string) {
     super(message)
     this.kind = kind
   }

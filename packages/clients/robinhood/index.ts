@@ -51,7 +51,7 @@ export class RobinhoodApiError extends Error {
   public readonly tag = 'RobinhoodApiError'
   public readonly status: number
 
-  constructor(status: number, message: string) {
+  public constructor(status: number, message: string) {
     super(message)
     this.status = status
   }
@@ -104,7 +104,7 @@ export class RobinhoodClient {
   private readonly apiKey: string
   private readonly privateKeyBase64: string
 
-  constructor(config: RobinhoodClientConfig) {
+  public constructor(config: RobinhoodClientConfig) {
     this.apiKey = config.apiKey
     this.privateKeyBase64 = config.privateKeyBase64
   }

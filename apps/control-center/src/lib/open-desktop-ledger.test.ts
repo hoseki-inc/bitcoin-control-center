@@ -8,7 +8,7 @@ vi.mock('@ledgerhq/hw-transport-webhid', async () => {
   const { EventEmitter: NodeEventEmitter } = await import('node:events')
   return {
     default: class WebHID extends NodeEventEmitter {
-      static request = mocks.request
+      public static request = mocks.request
     },
   }
 })

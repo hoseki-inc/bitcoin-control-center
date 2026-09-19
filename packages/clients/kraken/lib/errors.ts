@@ -80,7 +80,7 @@ export class ApiError extends ErrorWithTag {
   public readonly tag = 'KrakenError'
   public readonly kind: ApiErrorKindVariant
 
-  constructor(kind: ApiErrorKindVariant, message: string) {
+  public constructor(kind: ApiErrorKindVariant, message: string) {
     super(message)
     this.kind = kind
   }

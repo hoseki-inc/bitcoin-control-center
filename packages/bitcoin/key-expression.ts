@@ -73,7 +73,7 @@ export class KeyOrigin {
     }
   }
 
-  [Symbol.for('nodejs.util.inspect.custom')](): string {
+  public [Symbol.for('nodejs.util.inspect.custom')](): string {
     return this.toString()
   }
 }
@@ -112,7 +112,7 @@ export class KeyExpression {
     }
   }
 
-  [Symbol.for('nodejs.util.inspect.custom')](): string {
+  public [Symbol.for('nodejs.util.inspect.custom')](): string {
     return this.toString()
   }
 }

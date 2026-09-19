@@ -73,13 +73,13 @@ export type FormatKey = keyof typeof FORMATS
 export type Format = (typeof FORMATS)[FormatKey]
 
 class UnsupportedVersionError extends Error {
-  constructor(version: number) {
+  public constructor(version: number) {
     super(`Unsupported version: "${version}"`)
   }
 }
 
 class UnsupportedPrefixError extends Error {
-  constructor(prefix: string) {
+  public constructor(prefix: string) {
     super(`Unsupported prefix: "${prefix}"`)
   }
 }
@@ -242,7 +242,7 @@ export class Address {
     }
   }
 
-  [Symbol.for('nodejs.util.inspect.custom')](): string {
+  public [Symbol.for('nodejs.util.inspect.custom')](): string {
     return this.toString()
   }
 }

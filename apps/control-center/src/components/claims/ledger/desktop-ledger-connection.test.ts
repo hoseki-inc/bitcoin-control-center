@@ -17,7 +17,7 @@ const mocks = vi.hoisted(() => ({
 }))
 vi.mock('@ledgerhq/hw-transport-webhid', () => ({
   default: class WebHID {
-    static request = mocks.request
+    public static request = mocks.request
   },
 }))
 vi.mock('@ledgerhq/hw-app-btc/lib/getAppAndVersion', () => ({ getAppAndVersion: mocks.app }))
