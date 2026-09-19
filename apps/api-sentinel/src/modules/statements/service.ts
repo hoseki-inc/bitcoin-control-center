@@ -152,6 +152,7 @@ export class StatementService {
     // Serialize bigint values in transactionMap to strings for JSON storage
     const serializedMap: Record<string, SerializedAggregatedTransaction[]> = {}
     for (const [key, txs] of Object.entries(transactionMap)) {
+      // oxlint-disable-next-line oxc/no-map-spread -- Preserve caller-owned transactions while converting values for storage.
       serializedMap[key] = txs.map((tx) => ({
         ...tx,
         balanceChange: tx.balanceChange.toString(),
@@ -525,6 +526,7 @@ export class StatementService {
     const raw = JSON.parse(json) as Record<string, SerializedAggregatedTransaction[]>
     const result: Record<string, AggregatedTransaction[]> = {}
     for (const [key, txs] of Object.entries(raw)) {
+      // oxlint-disable-next-line oxc/no-map-spread -- Preserve additional stored fields in a new object with restored value types.
       result[key] = txs.map((tx) => ({
         ...tx,
         balanceChange: BigInt(tx.balanceChange),

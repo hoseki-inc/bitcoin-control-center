@@ -42,6 +42,7 @@
     "oxc/missing-throw": "error",
     "oxc/no-accumulating-spread": "error",
     "oxc/no-barrel-file": "error",
-    "oxc/no-const-enum": "error"
+    "oxc/no-const-enum": "error",
+    "oxc/no-map-spread": "error"
   }
 }
