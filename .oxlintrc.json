@@ -59,7 +59,8 @@
     "typescript/dot-notation": "error",
     "typescript/explicit-member-accessibility": "error",
     "typescript/explicit-module-boundary-types": "error",
-    "typescript/no-array-delete": "error"
+    "typescript/no-array-delete": "error",
+    "typescript/no-base-to-string": "error"
   },
   "overrides": [
     {
