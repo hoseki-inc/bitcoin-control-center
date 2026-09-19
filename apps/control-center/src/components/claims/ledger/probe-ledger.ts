@@ -48,7 +48,7 @@ export const probeLedger = asyncFn(async function (
     const batch = []
 
     // This needs to be a for loop because `getBitcoinXpub` is a locking operation so cannot be parallelized
-    for await (const { scriptType, account } of toCheck) {
+    for (const { scriptType, account } of toCheck) {
       if (isCancelled()) {
         return cancelled()
       }
