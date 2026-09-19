@@ -144,7 +144,7 @@ export function parseKeystoneExport(input: string): Result<KeystoneExportFile, E
   // Fall back to JSON parsing
   return Result.fromThrowable(() => JSON.parse(trimmed) as unknown)
     .andThen((parsed) => parseUnknown(KeystoneExportJsonSchema, parsed))
-    .map((json) => ({ ...json, derivationPath: null, masterFingerprint: null }))
+    .map((json) => Object.assign(json, { derivationPath: null, masterFingerprint: null }))
 }
 
 /**
