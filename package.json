@@ -53,7 +53,7 @@
     "bbqr": "1.2.0",
     "better-sqlite3": "13.0.3",
     "bip32": "4.0.0",
-    "bip322-js": "2.0.0",
+    "bip322-js": "4.0.0",
     "bitcoinjs-lib": "6.1.5",
     "bs58check": "3.0.1",
     "buffer": "6.0.3",
