@@ -44,6 +44,9 @@ export const probeLedger = asyncFn(async function (
     { scriptType: 'p2tr' as const, account: 0 },
   ]
 
+  // Allow Strict Mode's immediate cancellation to stop this scan before it takes the device lock.
+  await Promise.resolve()
+
   while (toCheck.length > 0) {
     const batch = []
 

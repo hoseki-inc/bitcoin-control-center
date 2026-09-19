@@ -6,7 +6,7 @@ import type { LedgerScanUI } from '@hoseki/packages/ui/wallet-ui'
 import Transport from '@ledgerhq/hw-transport'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import Decimal from 'decimal.js'
-import { type ComponentProps, act, createElement } from 'react'
+import { type ComponentProps, StrictMode, act, createElement } from 'react'
 import { type Root, createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { useLedgerStore } from '../../../hooks/use-ledger-store'
@@ -143,6 +143,39 @@ async function waitForScan(): Promise<void> {
     expect(mocks.scan.mock.lastCall?.[0].walletsQuery.isLoading).toBe(false)
   })
 }
+
+it('Strict Mode restarts a scan without locking the Ledger with the cancelled invocation', async () => {
+  const firstRead = deferred<string>()
+  mocks.getXpub.mockImplementationOnce(() => firstRead.promise)
+  await useLedgerStore.getState().init(async () => fakeTransport())
+  await act(async () =>
+    root.render(
+      createElement(
+        StrictMode,
+        null,
+        createElement(
+          QueryClientProvider,
+          { client },
+          createElement(LedgerScan, {
+            isLoadingOnContinue: false,
+            onContinue: vi.fn(),
+            onBack: vi.fn(),
+            onCancel: vi.fn(),
+          }),
+        ),
+      ),
+    ),
+  )
+  await act(async () => firstRead.resolve(xpub))
+  await waitForScan()
+  expect(mocks.scan.mock.lastCall?.[0].walletsQuery).toMatchObject({
+    isLoading: false,
+    isError: false,
+    error: null,
+  })
+  expect(mocks.getXpub).toHaveBeenCalledTimes(4)
+  expect(mocks.fetch).toHaveBeenCalledOnce()
+})
 
 it('a cancelled scan cannot use or lock the next Ledger when its balance response arrives late', async () => {
   const oldBalances = deferred<Balances>()
