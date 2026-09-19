@@ -57,7 +57,8 @@
     "typescript/consistent-type-exports": "error",
     "typescript/consistent-type-imports": "error",
     "typescript/dot-notation": "error",
-    "typescript/explicit-member-accessibility": "error"
+    "typescript/explicit-member-accessibility": "error",
+    "typescript/explicit-module-boundary-types": "error"
   },
   "overrides": [
     {
