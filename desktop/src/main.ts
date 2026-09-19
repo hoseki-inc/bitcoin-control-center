@@ -29,20 +29,20 @@ app.whenReady().then(async () => {
 
   // Set env vars that api-sentinel reads (mirrors start9/docker_entrypoint.sh)
   const serverDir = path.join(__dirname, '..', 'server')
-  process.env['DATA_DIR'] = DATA_DIR
-  process.env['APP_DIR'] = serverDir
-  process.env['HOST'] = 'localhost'
-  process.env['PORT'] = String(PORT)
-  process.env['ELECTRUM_HOST'] = 'electrum.blockstream.info'
-  process.env['ELECTRUM_PORT'] = '50002'
-  process.env['ELECTRUM_PROTOCOL'] = 'ssl'
-  process.env['BITCOIN_NETWORK'] = 'mainnet'
-  process.env['MEMPOOL_API_URL'] = 'https://mempool.space'
-  process.env['NODE_ENV'] = 'production'
+  process.env.DATA_DIR = DATA_DIR
+  process.env.APP_DIR = serverDir
+  process.env.HOST = 'localhost'
+  process.env.PORT = String(PORT)
+  process.env.ELECTRUM_HOST = 'electrum.blockstream.info'
+  process.env.ELECTRUM_PORT = '50002'
+  process.env.ELECTRUM_PROTOCOL = 'ssl'
+  process.env.BITCOIN_NETWORK = 'mainnet'
+  process.env.MEMPOOL_API_URL = 'https://mempool.space'
+  process.env.NODE_ENV = 'production'
 
   // Tor SOCKS proxy will be available on port 9050 once bootstrapped
-  process.env['SOCKS_PROXY_HOST'] = '127.0.0.1'
-  process.env['SOCKS_PROXY_PORT'] = String(torManager.socksPort)
+  process.env.SOCKS_PROXY_HOST = '127.0.0.1'
+  process.env.SOCKS_PROXY_PORT = String(torManager.socksPort)
 
   // Start api-sentinel — imports the self-starting bundle
   const serverMain = path.join(serverDir, 'main.js')

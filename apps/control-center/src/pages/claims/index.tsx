@@ -316,9 +316,7 @@ export function ClaimsPage(): JSX.Element {
                         key={archivedClaim.id}
                         claim={archivedClaim}
                         onRestore={() => restoreMutation.mutate({ id: archivedClaim.id })}
-                        isRestoring={
-                          restoreMutation.isLoading && restoreMutation.variables?.['id'] === archivedClaim.id
-                        }
+                        isRestoring={restoreMutation.isLoading && restoreMutation.variables?.id === archivedClaim.id}
                         isRestoreDisabled={restoreMutation.isLoading}
                       />
                     ))}
