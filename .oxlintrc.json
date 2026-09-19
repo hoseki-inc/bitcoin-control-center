@@ -35,6 +35,7 @@
     "oxc/bad-object-literal-comparison": "error",
     "oxc/bad-replace-all-arg": "error",
     "oxc/branches-sharing-code": "error",
-    "oxc/const-comparisons": "error"
+    "oxc/const-comparisons": "error",
+    "oxc/double-comparisons": "error"
   }
 }
