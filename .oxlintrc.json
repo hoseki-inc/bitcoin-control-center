@@ -44,6 +44,7 @@
     "oxc/no-barrel-file": "error",
     "oxc/no-const-enum": "error",
     "oxc/no-map-spread": "error",
-    "oxc/no-this-in-exported-function": "error"
+    "oxc/no-this-in-exported-function": "error",
+    "oxc/number-arg-out-of-range": "error"
   }
 }
