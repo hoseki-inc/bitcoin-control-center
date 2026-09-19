@@ -253,7 +253,9 @@ export default function App(): JSX.Element {
               <Switch
                 id="show-toolbar"
                 isChecked={showToolbar}
-                onChange={(e) => setShowToolbar(e.target.checked)}
+                onChange={(e) => {
+                  setShowToolbar(e.target.checked)
+                }}
                 colorScheme="blue"
               />
             </FormControl>
@@ -265,7 +267,9 @@ export default function App(): JSX.Element {
               <Switch
                 id="example-watermark"
                 isChecked={hasExampleWatermark}
-                onChange={(e) => setHasExampleWatermark(e.target.checked)}
+                onChange={(e) => {
+                  setHasExampleWatermark(e.target.checked)
+                }}
                 colorScheme="blue"
               />
             </FormControl>

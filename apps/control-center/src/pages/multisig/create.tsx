@@ -90,7 +90,11 @@ export function MultisigCreatePage(): JSX.Element {
         {step === 'get-ready' && (
           <>
             <MultisigAnimation animation="1" />
-            <GetReady onNext={() => setStep('upload')} />
+            <GetReady
+              onNext={() => {
+                setStep('upload')
+              }}
+            />
           </>
         )}
         {step === 'fake-loading' && (
@@ -105,7 +109,9 @@ export function MultisigCreatePage(): JSX.Element {
           <>
             <MultisigAnimation animation="2" />
             <ImportWallet
-              onBack={() => setStep('get-ready')}
+              onBack={() => {
+                setStep('get-ready')
+              }}
               onNext={(data) => {
                 setDetectedWallet(data)
                 setStep('fake-loading')
@@ -120,7 +126,9 @@ export function MultisigCreatePage(): JSX.Element {
           <DetectionStep
             wallet={detectedWallet}
             isSaving={isSaving}
-            onBack={() => setStep('upload')}
+            onBack={() => {
+              setStep('upload')
+            }}
             onNext={handleClaimCreation}
           />
         )}

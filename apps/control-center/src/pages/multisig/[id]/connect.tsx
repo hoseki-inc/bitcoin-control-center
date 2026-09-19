@@ -90,7 +90,9 @@ function ConnectLedgerWallet({ claim }: { claim: ClaimDto }) {
       {step === 'ledger-device-unlock' && (
         <LedgerConnectionInfo
           onBack={() => navigate(`/multisig/${claim.id}`)}
-          onContinue={() => setStep('ledger-device-check-xpub')}
+          onContinue={() => {
+            setStep('ledger-device-check-xpub')
+          }}
         />
       )}
       {step === 'ledger-device-check-xpub' && <ConnectLedgerWalletCheckXpub claim={claim} />}
@@ -144,7 +146,15 @@ function ConnectTrezorWallet({ claim }: { claim: ClaimDto }) {
                 Back
               </Button>
             }
-            rightButton={<Button onClick={() => setStep('trezor-device-check-xpub')}>Next</Button>}
+            rightButton={
+              <Button
+                onClick={() => {
+                  setStep('trezor-device-check-xpub')
+                }}
+              >
+                Next
+              </Button>
+            }
           />
         </>
       )}
@@ -476,8 +486,18 @@ function ConnectColdcardWallet({ claim }: { claim: ClaimDto }) {
 
   const isQrFlow = model === 'Q'
 
-  const goBack = () => (wizardStep === 1 ? navigate(`/multisig/${claim.id}`) : setWizardStep((prev) => prev - 1))
-  const goForward = () => (wizardStep === 7 ? navigate(`/multisig/${claim.id}`) : setWizardStep((prev) => prev + 1))
+  const goBack = () => {
+    if (wizardStep === 1) {
+      return navigate(`/multisig/${claim.id}`)
+    }
+    setWizardStep((prev) => prev - 1)
+  }
+  const goForward = () => {
+    if (wizardStep === 7) {
+      return navigate(`/multisig/${claim.id}`)
+    }
+    setWizardStep((prev) => prev + 1)
+  }
 
   return (
     <ClaimConnectionWrapper>
@@ -500,7 +520,9 @@ function ConnectColdcardWallet({ claim }: { claim: ClaimDto }) {
             onBack={goBack}
             onNext={goForward}
             coldcardJson={coldcardJson ?? null}
-            setColdcardJson={(json) => setColdcardJson(json)}
+            setColdcardJson={(json) => {
+              setColdcardJson(json)
+            }}
             selectedWallet={null}
             setSelectedWallet={() => {}}
             isStep4Loading={false}
@@ -573,7 +595,9 @@ function ConnectKeystoneWallet({ claim }: { claim: ClaimDto }) {
       setWizardStep((prev) => prev - 1)
     }
   }
-  const goForward = (): void => setWizardStep((prev) => prev + 1)
+  const goForward = (): void => {
+    setWizardStep((prev) => prev + 1)
+  }
 
   return (
     <ClaimConnectionWrapper>
@@ -585,7 +609,9 @@ function ConnectKeystoneWallet({ claim }: { claim: ClaimDto }) {
             onBack={goBack}
             onNext={goForward}
             keystoneJson={keystoneJson ?? null}
-            setKeystoneJson={(json) => setKeystoneJson(json)}
+            setKeystoneJson={(json) => {
+              setKeystoneJson(json)
+            }}
             selectedWallet={null}
             setSelectedWallet={() => {}}
             isStep4Loading={false}

@@ -77,7 +77,9 @@ export function FullTransitionModal({
                     loop={false}
                     autoplay={false}
                     lottieRef={lottieRef}
-                    onComplete={() => setIsStatementAnimationCompleted(true)}
+                    onComplete={() => {
+                      setIsStatementAnimationCompleted(true)
+                    }}
                     style={{
                       width: '100%',
                       height: 'auto',

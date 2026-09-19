@@ -16,7 +16,13 @@ export const useToastOnLedgerDisconnect = (): void => {
           closeButton: true,
           duration: 30000,
           action: (
-            <Link as="button" fontWeight="semibold" onClick={() => window.location.reload()}>
+            <Link
+              as="button"
+              fontWeight="semibold"
+              onClick={() => {
+                window.location.reload()
+              }}
+            >
               Retry
             </Link>
           ),

@@ -19,7 +19,9 @@ export function ConnectKeystone(): JSX.Element {
       setWizardStep((prev) => prev - 1)
     }
   }
-  const goForward = (): void => setWizardStep((prev) => prev + 1)
+  const goForward = (): void => {
+    setWizardStep((prev) => prev + 1)
+  }
   const navigateToAnExistentOrNewClaim = useNavigateToAnExistentOrNewClaim()
 
   function handleContinue(): void {
@@ -45,7 +47,9 @@ export function ConnectKeystone(): JSX.Element {
           onBack={goBack}
           onNext={goForward}
           keystoneJson={keystoneJson ?? null}
-          setKeystoneJson={(json) => setKeystoneJson(json)}
+          setKeystoneJson={(json) => {
+            setKeystoneJson(json)
+          }}
           selectedWallet={selectedWallet}
           setSelectedWallet={setSelectedWallet}
           isStep4Loading={navigateToAnExistentOrNewClaim.isLoading}

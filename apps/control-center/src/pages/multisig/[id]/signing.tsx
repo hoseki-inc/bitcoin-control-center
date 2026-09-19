@@ -110,7 +110,8 @@ function TrezorSigning({ claim, keystore }: { claim: ClaimDto; keystore: Keystor
       })
 
       if (isLastRequiredSignature) {
-        return await completeChallenge()
+        await completeChallenge()
+        return
       }
 
       // Refetch claim, then navigate to the hub
@@ -237,7 +238,8 @@ function LedgerSigning({ claim, keystore }: { claim: ClaimDto; keystore: Keystor
       })
 
       if (isLastRequiredSignature) {
-        return await completeChallenge()
+        await completeChallenge()
+        return
       }
 
       // Refetch claim, then navigate to the hub
@@ -261,7 +263,9 @@ function LedgerSigning({ claim, keystore }: { claim: ClaimDto; keystore: Keystor
     return <ErrorBanner mb={4} message="Could not find signed message" />
   }
 
-  const handleBack = () => setStep((prev) => Math.max(prev - 1, 1))
+  const handleBack = () => {
+    setStep((prev) => Math.max(prev - 1, 1))
+  }
 
   return (
     <>
@@ -279,7 +283,12 @@ function LedgerSigning({ claim, keystore }: { claim: ClaimDto; keystore: Keystor
         step={step}
         onNext={() => {
           if (step === 1 && !error) {
-            return initiateLedgerMutation.mutate(undefined, { onSuccess: () => setStep(2) })
+            initiateLedgerMutation.mutate(undefined, {
+              onSuccess: () => {
+                setStep(2)
+              },
+            })
+            return
           }
           setStep((prev) => {
             if (error) {
@@ -318,8 +327,16 @@ function ColdcardSigning({ claim, keystore }: { claim: ClaimDto; keystore: Keyst
     5: 'Upload the signed message file',
   */
   const [wizardStep, setWizardStep] = useState<number>(1)
-  const goBack = () => (wizardStep === 1 ? () => {} : setWizardStep((prev) => prev - 1))
-  const goForward = () => (wizardStep === 5 ? () => {} : setWizardStep((prev) => prev + 1))
+  const goBack = () => {
+    if (wizardStep !== 1) {
+      setWizardStep((prev) => prev - 1)
+    }
+  }
+  const goForward = () => {
+    if (wizardStep !== 5) {
+      setWizardStep((prev) => prev + 1)
+    }
+  }
 
   const latestMessage = claim.latestChallenge?.messages.find((m) => m.keystoreId === keystore.id)
   const claimQuery = trpc.portalProve.registry.claims.get.byId.useQuery({ id: claim.id })

@@ -110,7 +110,8 @@ export function setupLedgerHidAccess(
       return
     }
     if (!isAppFrame(current.frame)) {
-      return finish()
+      finish()
+      return
     }
     clearTimeout(current.autoSelectTimer)
     if (current.devices.size > 1) {
@@ -138,7 +139,9 @@ export function setupLedgerHidAccess(
       devices: new Map(),
       needsChoice: false,
       cancelled: false,
-      timer: setTimeout(() => finish(undefined, 'expired'), REQUEST_TIMEOUT_MS),
+      timer: setTimeout(() => {
+        finish(undefined, 'expired')
+      }, REQUEST_TIMEOUT_MS),
     }
     return true
   })
@@ -179,14 +182,17 @@ export function setupLedgerHidAccess(
   ): Promise<void> {
     const devices = details.deviceList.filter((device) => device.vendorId === LEDGER_VENDOR_ID)
     if (!isAppFrame(details.frame) || !devices.length) {
-      return callback()
+      callback()
+      return
     }
     const current: NativeRequest = {
       frame: details.frame,
       callback,
       devices: new Map(devices.map((device) => [device.deviceId, device])),
       abort: new AbortController(),
-      timer: setTimeout(() => finishNative(), REQUEST_TIMEOUT_MS),
+      timer: setTimeout(() => {
+        finishNative()
+      }, REQUEST_TIMEOUT_MS),
     }
     nativeRequest = current
     try {
@@ -219,10 +225,12 @@ export function setupLedgerHidAccess(
   ): void => {
     event.preventDefault()
     if (!isAppFrame(details.frame)) {
-      return callback()
+      callback()
+      return
     }
     if (nativeRequest) {
-      return callback()
+      callback()
+      return
     }
     if (!request) {
       // Other connection entry points retain an explicit native permission prompt.
@@ -230,11 +238,13 @@ export function setupLedgerHidAccess(
       return
     }
     if (request.callback || request.frame !== details.frame) {
-      return callback()
+      callback()
+      return
     }
     request.callback = callback
     if (request.cancelled) {
-      return finish()
+      finish()
+      return
     }
     request.devices = new Map(
       details.deviceList

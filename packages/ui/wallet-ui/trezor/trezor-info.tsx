@@ -20,7 +20,15 @@ export function TrezorInfo({
 
   return (
     <>
-      {error && <HardwareWalletError error={error} mt={4} onRetry={() => window.location.reload()} />}
+      {error && (
+        <HardwareWalletError
+          error={error}
+          mt={4}
+          onRetry={() => {
+            window.location.reload()
+          }}
+        />
+      )}
 
       <WalletAnimation animation="trezorPlugIn" />
 

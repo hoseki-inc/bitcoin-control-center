@@ -38,7 +38,13 @@ export function ClaimDetails({ claim }: { claim: ClaimDto }): JSX.Element {
       <ClaimTopBar claim={claim} mb={6} />
       <Stack spacing={4}>
         {isRenaming ? (
-          <RenameClaim claimId={claim.id} defaultName={claim.displayName} onCancel={() => setIsRenaming(false)} />
+          <RenameClaim
+            claimId={claim.id}
+            defaultName={claim.displayName}
+            onCancel={() => {
+              setIsRenaming(false)
+            }}
+          />
         ) : (
           <Flex direction={['column', 'column', 'row']} gap={8} py={2}>
             <Box maxWidth={['100%', '100%', '30%']}>
@@ -85,7 +91,13 @@ export function ClaimDetails({ claim }: { claim: ClaimDto }): JSX.Element {
                 }}
               />
             </HStack>
-            <Button variant="outline" onClick={() => setIsRenaming(true)} w="fit-content">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsRenaming(true)
+              }}
+              w="fit-content"
+            >
               Rename
             </Button>
           </Flex>

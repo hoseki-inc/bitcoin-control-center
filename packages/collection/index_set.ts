@@ -72,7 +72,9 @@ export class IndexSet<T extends Indexable> implements Set<T> {
    * @param callbackfn The function to execute for each element.
    */
   public forEach(callbackfn: (value: T, value2: T, set: Set<T>) => void): void {
-    this._map.forEach((_, value) => callbackfn(value, value, this))
+    this._map.forEach((_, value) => {
+      callbackfn(value, value, this)
+    })
   }
 
   /**

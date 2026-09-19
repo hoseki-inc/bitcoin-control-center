@@ -44,8 +44,12 @@ function ColdcardFileSigning({
   model,
 }: SigningFlowProps & { model: ColdcardModel }): JSX.Element {
   const [step, setStep] = useState(1)
-  const onBack = (): void => setStep((prev) => prev - 1)
-  const onNext = (): void => setStep((prev) => prev + 1)
+  const onBack = (): void => {
+    setStep((prev) => prev - 1)
+  }
+  const onNext = (): void => {
+    setStep((prev) => prev + 1)
+  }
   const { scriptType } = Account.fromCheckedDescriptor(claim.account)
 
   if (!keystore.derivationPath) {

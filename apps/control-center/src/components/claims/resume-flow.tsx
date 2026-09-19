@@ -84,7 +84,9 @@ export function ResumeMultisigKeyFlow({
       <NewDeviceConnectionModal
         isOpen={isOpen}
         onClose={onClose}
-        onConfirm={() => updateKeystoreMutation.mutate({ id: keystoreId, label: 'Key', wallet: null, model: null })}
+        onConfirm={() => {
+          updateKeystoreMutation.mutate({ id: keystoreId, label: 'Key', wallet: null, model: null })
+        }}
         isLoading={updateKeystoreMutation.isLoading}
       />
     </>

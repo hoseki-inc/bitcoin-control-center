@@ -24,7 +24,9 @@ export function HomePage(): JSX.Element {
           {!isStatementsMadeEasyDismissed && (
             <Banner
               mode={statements.length > 0 ? 'compact' : 'large-with-cta'}
-              onDismissClick={() => updateUiSettings({ isStatementsMadeEasyDismissed: true })}
+              onDismissClick={() => {
+                updateUiSettings({ isStatementsMadeEasyDismissed: true })
+              }}
             />
           )}
           <RecentStatements statements={statements} />

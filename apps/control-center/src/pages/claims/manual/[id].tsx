@@ -250,14 +250,23 @@ export function ManualAccountDetailsPage(): JSX.Element {
                 min="0"
                 placeholder="0.00000000"
                 value={newBtcAmount}
-                onChange={(e) => setNewBtcAmount(e.target.value)}
+                onChange={(e) => {
+                  setNewBtcAmount(e.target.value)
+                }}
               />
             </FormControl>
             <FormControl flex={1}>
               <FormLabel textStyle="text/xs" color="neutral.600">
                 As of Date
               </FormLabel>
-              <Input size="sm" type="date" value={newBalanceDate} onChange={(e) => setNewBalanceDate(e.target.value)} />
+              <Input
+                size="sm"
+                type="date"
+                value={newBalanceDate}
+                onChange={(e) => {
+                  setNewBalanceDate(e.target.value)
+                }}
+              />
             </FormControl>
             <Button
               size="sm"
@@ -284,7 +293,13 @@ export function ManualAccountDetailsPage(): JSX.Element {
                 <FormLabel textStyle="text/xs" color="neutral.600">
                   Type
                 </FormLabel>
-                <Select size="sm" value={txType} onChange={(e) => setTxType(e.target.value)}>
+                <Select
+                  size="sm"
+                  value={txType}
+                  onChange={(e) => {
+                    setTxType(e.target.value)
+                  }}
+                >
                   <option value="buy">Buy</option>
                   <option value="transfer_in">Transfer In</option>
                   <option value="sell">Sell</option>
@@ -302,14 +317,23 @@ export function ManualAccountDetailsPage(): JSX.Element {
                   min="0"
                   placeholder="0.00000000"
                   value={txAmount}
-                  onChange={(e) => setTxAmount(e.target.value)}
+                  onChange={(e) => {
+                    setTxAmount(e.target.value)
+                  }}
                 />
               </FormControl>
               <FormControl flex={1}>
                 <FormLabel textStyle="text/xs" color="neutral.600">
                   Date
                 </FormLabel>
-                <Input size="sm" type="date" value={txDate} onChange={(e) => setTxDate(e.target.value)} />
+                <Input
+                  size="sm"
+                  type="date"
+                  value={txDate}
+                  onChange={(e) => {
+                    setTxDate(e.target.value)
+                  }}
+                />
               </FormControl>
             </HStack>
             <HStack spacing={3} align="flex-end">
@@ -321,7 +345,9 @@ export function ManualAccountDetailsPage(): JSX.Element {
                   size="sm"
                   placeholder="Optional note"
                   value={txNote}
-                  onChange={(e) => setTxNote(e.target.value)}
+                  onChange={(e) => {
+                    setTxNote(e.target.value)
+                  }}
                 />
               </FormControl>
               <Button
@@ -337,7 +363,9 @@ export function ManualAccountDetailsPage(): JSX.Element {
             <Checkbox
               size="sm"
               isChecked={txAddToBalance}
-              onChange={(e) => setTxAddToBalance(e.target.checked)}
+              onChange={(e) => {
+                setTxAddToBalance(e.target.checked)
+              }}
               colorScheme="orange"
             >
               <Text textStyle="text/xs" color="neutral.600">

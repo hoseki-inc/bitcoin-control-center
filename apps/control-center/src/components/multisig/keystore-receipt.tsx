@@ -62,7 +62,9 @@ export function KeystoreReceipt({ shouldSetTimeout, keystore, claim }: KeystoreR
 
   useEffect(() => {
     if (shouldSetTimeout) {
-      setTimeout(() => setIsPending(false), 1700)
+      setTimeout(() => {
+        setIsPending(false)
+      }, 1700)
     }
   }, [shouldSetTimeout])
 

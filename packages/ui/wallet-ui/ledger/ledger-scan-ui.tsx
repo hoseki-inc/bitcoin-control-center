@@ -37,7 +37,13 @@ export function LedgerScanUI({
   return (
     <>
       {walletsQuery.error && (
-        <HardwareWalletError error={walletsQuery.error} mt={4} onRetry={() => window.location.reload()} />
+        <HardwareWalletError
+          error={walletsQuery.error}
+          mt={4}
+          onRetry={() => {
+            window.location.reload()
+          }}
+        />
       )}
 
       {deviceModel && <FloatingLedgerImage modelName={getLedgerModel(deviceModel.id) ?? 'Nano S Plus'} />}
@@ -69,7 +75,9 @@ export function LedgerScanUI({
         rightButton={
           !selectedWallet ? null : (
             <Button
-              onClick={() => onContinue(selectedWallet, deviceModel?.id ?? 'unknown')}
+              onClick={() => {
+                onContinue(selectedWallet, deviceModel?.id ?? 'unknown')
+              }}
               isDisabled={!selectedWallet}
               isLoading={isLoadingOnContinue}
             >

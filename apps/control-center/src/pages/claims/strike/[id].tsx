@@ -441,7 +441,9 @@ export function StrikeAccountDetailsPage(): JSX.Element {
                     borderRadius="md"
                     cursor="pointer"
                     bg={selectedMonth === month ? 'neutral.50' : 'shades.0'}
-                    onClick={() => setSelectedMonth(selectedMonth === month ? null : month)}
+                    onClick={() => {
+                      setSelectedMonth(selectedMonth === month ? null : month)
+                    }}
                     _hover={{ borderColor: 'neutral.400' }}
                     transition="all 0.15s ease"
                   >

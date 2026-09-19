@@ -120,7 +120,9 @@ let queryClient: QueryClient
 async function clickNext(): Promise<void> {
   const button = container.querySelector('svg.lucide-arrow-right')?.closest('button')
   expect(button).toBeDefined()
-  await act(async () => button!.click())
+  await act(async () => {
+    button!.click()
+  })
 }
 
 async function waitForText(text: string): Promise<void> {
@@ -146,7 +148,9 @@ function getSignButton(): HTMLButtonElement {
 }
 
 async function clickSign(): Promise<void> {
-  await act(async () => getSignButton().click())
+  await act(async () => {
+    getSignButton().click()
+  })
 }
 
 async function render(): Promise<void> {
@@ -208,13 +212,17 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
-  await act(async () => root.unmount())
+  await act(async () => {
+    root.unmount()
+  })
   queryClient.clear()
   container.remove()
   vi.unstubAllGlobals()
 })
 
-afterAll(() => mocks.domGlobals.window.close())
+afterAll(() => {
+  mocks.domGlobals.window.close()
+})
 
 describe('Ledger multisig signing screen', () => {
   beforeEach(render)
@@ -274,7 +282,9 @@ describe.each(['ledger', 'trezor'] as const)('%s as the final multisig cosigner'
   it('completes the challenge and navigates to the verified account receipt', async () => {
     await reachSigning()
     await clickSign()
-    await vi.waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith('/accounts/verify/receipt/claim-1'))
+    await vi.waitFor(() => {
+      expect(mocks.navigate).toHaveBeenCalledWith('/accounts/verify/receipt/claim-1')
+    })
     expect(mocks.completeMessage).toHaveBeenCalledTimes(1)
     expect(mocks.completeChallenge).toHaveBeenCalledExactlyOnceWith({ challengeId: 'challenge-1' })
     expect(mocks.invalidateClaim).toHaveBeenCalledWith({ id: 'claim-1' })
@@ -300,9 +310,13 @@ describe.each(['ledger', 'trezor'] as const)('%s as the final multisig cosigner'
       expect(mocks.completeMessage).toHaveBeenCalledTimes(1)
       expect(mocks.completeChallenge).toHaveBeenCalledTimes(1)
     } finally {
-      await act(async () => resolveCompletion())
+      await act(async () => {
+        resolveCompletion()
+      })
     }
-    await vi.waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith('/accounts/verify/receipt/claim-1'))
+    await vi.waitFor(() => {
+      expect(mocks.navigate).toHaveBeenCalledWith('/accounts/verify/receipt/claim-1')
+    })
     expect(getSignButton().disabled).toBe(false)
   })
 

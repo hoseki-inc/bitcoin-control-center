@@ -103,19 +103,26 @@ export function LedgerSigning({
 
   const error = initiateLedgerMutation.error || signingError
 
-  const handleNext = () =>
+  const handleNext = () => {
     setStep((prev) => {
       if (error) {
         return prev
       }
       if (prev === 1) {
-        initiateLedgerMutation.mutate(undefined, { onSuccess: () => setStep(prev + 1) })
+        initiateLedgerMutation.mutate(undefined, {
+          onSuccess: () => {
+            setStep(prev + 1)
+          },
+        })
         return prev
       }
 
       return Math.min(prev + 1, 3)
     })
-  const handleBack = () => setStep((prev) => Math.max(prev - 1, 1))
+  }
+  const handleBack = () => {
+    setStep((prev) => Math.max(prev - 1, 1))
+  }
 
   return (
     <>

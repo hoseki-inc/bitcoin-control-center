@@ -51,7 +51,9 @@ export function StatementListPage(): JSX.Element {
             px={2}
             py={2}
             fontSize="xs"
-            onClick={() => setViewType(viewType === 'grid' ? 'table' : 'grid')}
+            onClick={() => {
+              setViewType(viewType === 'grid' ? 'table' : 'grid')
+            }}
             _focus={{ boxShadow: 'none' }}
           >
             {viewType === 'grid' ? <ListIcon size={16} /> : <Grid2X2Icon size={16} />}

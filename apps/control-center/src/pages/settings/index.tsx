@@ -121,13 +121,17 @@ function useElectrumStatus(): { status: ElectrumStatus | null; refresh: () => vo
           setStatus(payload as ElectrumStatus)
         }
       })
-      .catch(() => setStatus(null))
+      .catch(() => {
+        setStatus(null)
+      })
   }, [])
 
   useEffect(() => {
     refresh()
     const interval = setInterval(refresh, 10_000)
-    return (): void => clearInterval(interval)
+    return (): void => {
+      clearInterval(interval)
+    }
   }, [refresh])
 
   return { status, refresh }

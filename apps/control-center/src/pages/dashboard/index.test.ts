@@ -68,7 +68,9 @@ vi.mock('@hoseki/packages/ui/design-system', async () => {
         id,
         type: 'date',
         value: value ? format(value, 'yyyy-MM-dd') : '',
-        onChange: (event: React.ChangeEvent<HTMLInputElement>) => onChange(new Date(`${event.target.value}T00:00:00`)),
+        onChange: (event: React.ChangeEvent<HTMLInputElement>) => {
+          onChange(new Date(`${event.target.value}T00:00:00`))
+        },
       }),
   }
 })
@@ -80,8 +82,24 @@ vi.mock('../../components/dashboard-charts/accounts-sidebar', async () => {
       return createMockElement(
         'div',
         null,
-        createMockElement('button', { onClick: () => props.onToggle('holding') }, 'Select holding'),
-        createMockElement('button', { onClick: () => props.onToggle('wallet') }, 'Select wallet'),
+        createMockElement(
+          'button',
+          {
+            onClick: () => {
+              props.onToggle('holding')
+            },
+          },
+          'Select holding',
+        ),
+        createMockElement(
+          'button',
+          {
+            onClick: () => {
+              props.onToggle('wallet')
+            },
+          },
+          'Select wallet',
+        ),
         createMockElement('button', { onClick: props.onClearAll }, 'Clear selection'),
       )
     },
@@ -106,7 +124,9 @@ let root: Root
 let container: HTMLDivElement
 
 async function render(): Promise<void> {
-  await act(async () => root.render(createElement(ChakraProvider, null, createElement(DashboardPage))))
+  await act(async () => {
+    root.render(createElement(ChakraProvider, null, createElement(DashboardPage)))
+  })
 }
 
 async function click(label: string): Promise<void> {
@@ -114,7 +134,9 @@ async function click(label: string): Promise<void> {
     (candidateButton) => candidateButton.textContent === label,
   )
   expect(button, `Missing button: ${label}`).toBeDefined()
-  await act(async () => button!.click())
+  await act(async () => {
+    button!.click()
+  })
 }
 
 async function changeDate(id: string, value: string): Promise<void> {
@@ -169,7 +191,9 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
-  await act(async () => root.unmount())
+  await act(async () => {
+    root.unmount()
+  })
   container.remove()
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
@@ -233,7 +257,9 @@ describe('custom portfolio range UI', () => {
         ],
       }
       complete(completedData)
-      await vi.waitFor(() => expect(observer.getCurrentResult().data).toEqual(completedData))
+      await vi.waitFor(() => {
+        expect(observer.getCurrentResult().data).toEqual(completedData)
+      })
       await render()
       expect(chartData()).toEqual(completedData.historicalData)
     } finally {
@@ -376,7 +402,9 @@ describe('custom portfolio range UI', () => {
         expect(container.textContent).not.toContain('BTC (+0.0%)')
 
         onlineManager.setOnline(true)
-        await vi.waitFor(() => expect(observer.getCurrentResult().data).toEqual(completedData))
+        await vi.waitFor(() => {
+          expect(observer.getCurrentResult().data).toEqual(completedData)
+        })
         await render()
         expect(fetchRange).toHaveBeenCalledTimes(1)
         expect(container.querySelectorAll('[data-chart]')).toHaveLength(2)
@@ -469,7 +497,9 @@ describe('custom portfolio range UI', () => {
     expect(container.textContent).not.toContain('All synced')
     expect(container.querySelectorAll('[data-chart]')).toHaveLength(refresh ? 2 : 0)
     const poll = interval.mock.calls.find(([, delay]) => delay === 10_000)![0] as () => void
-    await act(async () => poll())
+    await act(async () => {
+      poll()
+    })
     expect(mocks.refetch).toHaveBeenCalledWith({ cancelRefetch: false })
     mocks.rangeData = { ...mocks.base, historySyncedAccountIds: ['wallet'] }
     await render()
@@ -629,7 +659,9 @@ describe('custom portfolio range UI', () => {
         expect(container.textContent).not.toContain('Add Your First Claim')
         expect(container.querySelectorAll('[data-chart]')).toHaveLength(0)
         await click('Try again')
-        await vi.waitFor(() => expect(observer.getCurrentResult().status).toBe('success'))
+        await vi.waitFor(() => {
+          expect(observer.getCurrentResult().status).toBe('success')
+        })
         await render()
         expect(fetchRange).toHaveBeenCalledTimes(2)
         expect(container.querySelectorAll('[data-chart]')).toHaveLength(2)
@@ -659,7 +691,9 @@ describe('custom portfolio range UI', () => {
     await click('All')
     const poll = interval.mock.calls.find(([, delay]) => delay === 10_000)?.[0]
     expect(typeof poll).toBe('function')
-    await act(async () => (poll as () => void)())
+    await act(async () => {
+      ;(poll as () => void)()
+    })
     expect(mocks.refetch).toHaveBeenCalledWith({ cancelRefetch: false })
   })
 })

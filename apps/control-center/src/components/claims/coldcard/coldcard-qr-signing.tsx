@@ -53,8 +53,12 @@ export function ColdcardQrSigning({
   onSubmitSignature,
 }: ColdcardQrSigningProps): JSX.Element {
   const [step, setStep] = useState(1)
-  const onBack = (): void => setStep((prev) => prev - 1)
-  const onNext = (): void => setStep((prev) => prev + 1)
+  const onBack = (): void => {
+    setStep((prev) => prev - 1)
+  }
+  const onNext = (): void => {
+    setStep((prev) => prev + 1)
+  }
   const model: ColdcardModel = keystore.model && isColdcardModel(keystore.model) ? keystore.model : 'Q'
 
   if (!keystore.derivationPath) {

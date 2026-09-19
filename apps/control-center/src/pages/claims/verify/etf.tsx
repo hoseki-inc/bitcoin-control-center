@@ -138,7 +138,9 @@ export function ClaimsVerifyEtfPage(): JSX.Element {
           <Input
             placeholder="e.g. My ETF Portfolio, Brokerage Account"
             value={displayName}
-            onChange={(e) => setDisplayName(e.target.value)}
+            onChange={(e) => {
+              setDisplayName(e.target.value)
+            }}
           />
         </FormControl>
 
@@ -153,7 +155,13 @@ export function ClaimsVerifyEtfPage(): JSX.Element {
                   <FormLabel textStyle="text/xs" color="neutral.400">
                     ETF
                   </FormLabel>
-                  <Select size="sm" value={row.ticker} onChange={(e) => updateRow(row.key, 'ticker', e.target.value)}>
+                  <Select
+                    size="sm"
+                    value={row.ticker}
+                    onChange={(e) => {
+                      updateRow(row.key, 'ticker', e.target.value)
+                    }}
+                  >
                     {ETF_TICKERS.map((ticker) => {
                       const config = ETF_CONFIGS[ticker]
                       return (
@@ -175,7 +183,9 @@ export function ClaimsVerifyEtfPage(): JSX.Element {
                     min="0"
                     placeholder="0"
                     value={row.shares}
-                    onChange={(e) => updateRow(row.key, 'shares', e.target.value)}
+                    onChange={(e) => {
+                      updateRow(row.key, 'shares', e.target.value)
+                    }}
                   />
                 </FormControl>
                 <FormControl flex={0.8}>
@@ -186,10 +196,19 @@ export function ClaimsVerifyEtfPage(): JSX.Element {
                     size="sm"
                     type="date"
                     value={row.datePurchased}
-                    onChange={(e) => updateRow(row.key, 'datePurchased', e.target.value)}
+                    onChange={(e) => {
+                      updateRow(row.key, 'datePurchased', e.target.value)
+                    }}
                   />
                 </FormControl>
-                {holdings.length > 1 && <CloseButton size="sm" onClick={() => removeRow(row.key)} />}
+                {holdings.length > 1 && (
+                  <CloseButton
+                    size="sm"
+                    onClick={() => {
+                      removeRow(row.key)
+                    }}
+                  />
+                )}
               </HStack>
             ))}
           </Stack>
