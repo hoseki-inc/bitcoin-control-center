@@ -52,6 +52,7 @@
     "oxc/only-used-in-recursion": "error",
     "oxc/uninvoked-array-callback": "error",
     "typescript/adjacent-overload-signatures": "error",
-    "typescript/await-thenable": "error"
+    "typescript/await-thenable": "error",
+    "typescript/ban-ts-comment": "error"
   }
 }
