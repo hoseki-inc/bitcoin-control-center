@@ -209,4 +209,4 @@ export class IndexSet<T extends Indexable> implements Set<T> {
   }
 }
 
-export interface ReadonlyIndexSet<T extends Indexable> extends ReadonlySet<T> {}
+export type ReadonlyIndexSet<T extends Indexable> = ReadonlySet<T>
