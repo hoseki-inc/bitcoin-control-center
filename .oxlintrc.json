@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["oxc"],
+  "plugins": ["oxc", "typescript"],
   "categories": {
     "correctness": "off"
   },
@@ -47,6 +47,7 @@
     "oxc/no-this-in-exported-function": "error",
     "oxc/number-arg-out-of-range": "error",
     "oxc/only-used-in-recursion": "error",
-    "oxc/uninvoked-array-callback": "error"
+    "oxc/uninvoked-array-callback": "error",
+    "typescript/adjacent-overload-signatures": "error"
   }
 }
