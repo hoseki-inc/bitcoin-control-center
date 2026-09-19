@@ -37,6 +37,7 @@
     "oxc/branches-sharing-code": "error",
     "oxc/const-comparisons": "error",
     "oxc/double-comparisons": "error",
-    "oxc/erasing-op": "error"
+    "oxc/erasing-op": "error",
+    "oxc/misrefactored-assign-op": "error"
   }
 }
