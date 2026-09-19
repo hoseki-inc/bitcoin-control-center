@@ -55,6 +55,20 @@
     "typescript/await-thenable": "error",
     "typescript/ban-ts-comment": "error",
     "typescript/consistent-type-exports": "error",
-    "typescript/consistent-type-imports": "error"
-  }
+    "typescript/consistent-type-imports": "error",
+    "typescript/dot-notation": "error"
+  },
+  "overrides": [
+    {
+      "files": ["**/*.test.ts", "**/*.test.tsx"],
+      "rules": {
+        "typescript/dot-notation": [
+          "error",
+          {
+            "allowPrivateClassPropertyAccess": true
+          }
+        ]
+      }
+    }
+  ]
 }
