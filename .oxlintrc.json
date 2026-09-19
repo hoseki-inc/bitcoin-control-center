@@ -46,6 +46,7 @@
     "oxc/no-map-spread": "error",
     "oxc/no-this-in-exported-function": "error",
     "oxc/number-arg-out-of-range": "error",
-    "oxc/only-used-in-recursion": "error"
+    "oxc/only-used-in-recursion": "error",
+    "oxc/uninvoked-array-callback": "error"
   }
 }
