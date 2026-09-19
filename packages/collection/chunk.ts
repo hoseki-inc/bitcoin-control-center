@@ -1,4 +1,3 @@
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function chunk<T>(iter: Iterable<T>, size: number): T[][] {
   const chunks: T[][] = []
   let i = 0
