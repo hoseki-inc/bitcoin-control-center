@@ -101,8 +101,8 @@ importers:
         specifier: 0.8.0
         version: 0.8.0
       '@ledgerhq/hw-app-btc':
-        specifier: 10.6.0
-        version: 10.6.0
+        specifier: 10.22.1
+        version: 10.22.1
       '@ledgerhq/hw-transport':
         specifier: 6.35.7
         version: 6.35.7
@@ -1717,6 +1717,9 @@ packages:
       react: '>=18.0.0'
       react-dom: '>=18.0.0'
 
+  '@ledgerhq/devices@8.14.2':
+    resolution: {integrity: sha512-T3pnfrsQEC/eJU0XHIqWI6qww+CL1k3NumR2XGWlMz8lVpoZ9HhcuGoCkMevp+8SWmymgyNIIFue3jlNA5KiMw==}
+
   '@ledgerhq/devices@8.16.0':
     resolution: {integrity: sha512-brXLPzkvGM3D5YNsWQ25P5G4SmWdSNBed9W8wKoOIRLGdRfvE+bg9mzFty0iZ+aRLBkLoXwX7xKIL9zUi6LBKQ==}
 
@@ -1729,11 +1732,14 @@ packages:
   '@ledgerhq/errors@7.0.0':
     resolution: {integrity: sha512-+Q/vykUlNeIxiM+I3cu1B660WLkzlmIsHLTV9QNV5D2/Ocplx3QMg52NYq2X7OAfGQnfH1rQvhn/NrjT+t9wBA==}
 
-  '@ledgerhq/hw-app-btc@10.6.0':
-    resolution: {integrity: sha512-Lm4zM10Vz+D1Ic0kOzYHRojponwVnp7YWlD0oTv7Nfq4+Fp1ipsvaIC07E6UqZ+rC7OlUJf3T3VNYTiwgDN+PQ==}
+  '@ledgerhq/hw-app-btc@10.22.1':
+    resolution: {integrity: sha512-DH+E4+Nq7O9zDGhMjRStRQjk2UH4gBM2Pn9vR0OXnajmHpylCVwKRPW/cDLZ4HcNISKUMHq2yNrmRQq7JHHXDg==}
 
   '@ledgerhq/hw-transport-webhid@6.36.0':
     resolution: {integrity: sha512-1mKWm3LyGOgmaYlAiqbmaGoupOZHbj2Kow5sXLxKZzQa4kFvQuUdinYOWhs7T8hqJyAkz9WlHYyKM7aIs8kjNg==}
+
+  '@ledgerhq/hw-transport@6.35.2':
+    resolution: {integrity: sha512-eSXFFqMDAB2Ra/5uqmlru0cUyc2XDQPEKf4ITWHeMms2fHhETw9lcgAEl61vszkiz0RLUVB4VQsLJjj7O8kCvg==}
 
   '@ledgerhq/hw-transport@6.35.5':
     resolution: {integrity: sha512-P4+wtLewLWgxPtIb90h5kjpzXVlC6f4IBQBmvowVFkInvZt34ffXkX7wa5KfMzu4l3cqCcpNSqtPSCMp+0vuqg==}
@@ -1741,11 +1747,11 @@ packages:
   '@ledgerhq/hw-transport@6.35.7':
     resolution: {integrity: sha512-vVhAVQ56+7A5FY5Mr09HY+bmf3H6TXpwsj+/xbadNkjl//e/YzTWfpXk4eBnj3hwk1PQ9Mn6pKFH0BHjS2BKlg==}
 
-  '@ledgerhq/logs@6.13.0':
-    resolution: {integrity: sha512-4+qRW2Pc8V+btL0QEmdB2X+uyx0kOWMWE1/LWsq5sZy3Q5tpi4eItJS6mB0XL3wGW59RQ+8bchNQQ1OW/va8Og==}
-
   '@ledgerhq/logs@6.19.0':
     resolution: {integrity: sha512-kmWj18C7eTtuytdaWygzVrQm9EoD4YWuYnd/kY8stVBBAzRdJzrGlm013ijQF6I/kGLKlGY7JKmll6j32KGpfQ==}
+
+  '@ledgerhq/psbtv2@0.5.0':
+    resolution: {integrity: sha512-hKp6iIIvFX1KUZA6Uf7rvjBIjEqHBdqSsFzWGLNc9+F0qy+C5C0xLlPbw/lKR+x8Xuau1dhvmw52BvPMQQz41A==}
 
   '@lukeed/ms@2.0.2':
     resolution: {integrity: sha512-9I2Zn6+NJLfaGoz9jN3lpwDgAYvfGeNYdbAIjJOqzs4Tpc+VU3Jqq4IofSUBKajiDS8k9fZIg18/z13mpk1bsA==}
@@ -3044,9 +3050,6 @@ packages:
   '@types/node-jose@1.1.13':
     resolution: {integrity: sha512-QjMd4yhwy1EvSToQn0YI3cD29YhyfxFwj7NecuymjLys2/P0FwxWnkgBlFxCai6Y3aBCe7rbwmqwJJawxlgcXw==}
 
-  '@types/node@10.12.18':
-    resolution: {integrity: sha512-fh+pAqt4xRzPfqA6eh3Z2y6fyZavRIumvjhaCL753+TVkGKGhpPeyrJG2JftD0T9q4GF00KjefsQ+PQNDdWQaQ==}
-
   '@types/node@22.20.1':
     resolution: {integrity: sha512-EANqOCF9QFyra+4pfxUcX9STKJpCLjMbObVzljIJomAWSnuSIEAvyzEU53GaajbXJEgdh0iEcPL+DGvpUd4k1Q==}
 
@@ -3464,9 +3467,6 @@ packages:
   bcp-47-match@2.0.3:
     resolution: {integrity: sha512-JtTezzbAibu8G0R9op9zb3vcWZd9JF6M0xOYGPn0fNCd7wOpRB1mU2mH9T8gaBGbAAyIIVgB2G7xG0GP98zMAQ==}
 
-  bech32@1.1.4:
-    resolution: {integrity: sha512-s0IrSOzLlbvX7yp4WBfPITzpAU8sqQcpsmwXDiKwrG4r491vwCO/XpejasRNl0piBMe/DvP4Tz0mIS/X1DPJBQ==}
-
   bech32@2.0.0:
     resolution: {integrity: sha512-LcknSilhIGatDAsY1ak2I8VtGaHNhgMSYVxFrGLXv+xLHytaKZKcaUJJUE7qmBr7h33o5YQwP55pMI0xmkpJwg==}
 
@@ -3502,16 +3502,9 @@ packages:
     resolution: {integrity: sha512-84DYLDeOSFG8M9S49DIimmoZjYGiAkbRBkthUd0G8PQ3Fh8+878JlKBkk7dNwiE4RM/FZqlFGxxG91K3wcWJ3Q==}
     engines: {node: '>=20.19.0'}
 
-  bip32@2.0.6:
-    resolution: {integrity: sha512-HpV5OMLLGTjSVblmrtYRfFFKuQB+GArM0+XP8HGWfJ5vxYBqo+DesvJwOdC2WJ3bCkZShGf0QIfoIpeomVzVdA==}
-    engines: {node: '>=6.0.0'}
-
   bip32@4.0.0:
     resolution: {integrity: sha512-aOGy88DDlVUhspIXJN+dVEtclhIsfAUppD43V0j40cPTld3pv/0X/MlrZSZ6jowIaQQzFwP8M6rFU2z2mVYjDQ==}
     engines: {node: '>=6.0.0'}
-
-  bip66@1.1.5:
-    resolution: {integrity: sha512-nemMHz95EmS38a26XbbdxIYj5csHd3RMP3H5bwQknX0WYHF01qhpufP42mLOwVICuH2JmhIhXiWs89MfUGL7Xw==}
 
   bip66@2.0.0:
     resolution: {integrity: sha512-kBG+hSpgvZBrkIm9dt5T1Hd/7xGCPEX2npoxAWZfsK1FvjgaxySEh2WizjyIstWXriKo9K9uJ4u0OnsyLDUPXQ==}
@@ -3523,12 +3516,12 @@ packages:
   bitcoin-ops@1.4.1:
     resolution: {integrity: sha512-pef6gxZFztEhaE9RY9HmWVmiIHqCb2OyS4HPKkpc6CIiiOa3Qmuoylxc5P2EkU3w+5eTSifI9SEZC88idAIGow==}
 
-  bitcoinjs-lib@5.2.0:
-    resolution: {integrity: sha512-5DcLxGUDejgNBYcieMIUfjORtUeNWl828VWLHJGVKZCb4zIS1oOySTUr0LGmcqJBQgTBz3bGbRQla4FgrdQEIQ==}
-    engines: {node: '>=8.0.0'}
-
   bitcoinjs-lib@6.1.5:
     resolution: {integrity: sha512-yuf6xs9QX/E8LWE2aMJPNd0IxGofwfuVOiYdNUESkc+2bHHVKjhJd8qewqapeoolh9fihzHGoDCB5Vkr57RZCQ==}
+    engines: {node: '>=8.0.0'}
+
+  bitcoinjs-lib@6.1.8:
+    resolution: {integrity: sha512-A6o+yq7BvwlmLj4F0NC5f3XX109rRe5evxi368S9zil5voOtUfiqfiMCzZYKHk4k7iIJ3+NmcQW05Ar4CBlKyg==}
     engines: {node: '>=8.0.0'}
 
   bitcoinjs-lib@7.0.2:
@@ -5420,9 +5413,6 @@ packages:
     resolution: {integrity: sha512-8q7VEgMJW4J8tcfVPy8g09NcQwZdbwFEqhe/WZkoIzjn/3TGDwtOCYtXGxA3O8tPzpczCCDgv+P2P5y00ZJOOg==}
     engines: {node: '>= 8'}
 
-  merkle-lib@2.0.10:
-    resolution: {integrity: sha512-XrNQvUbn1DL5hKNe46Ccs+Tu3/PYOlrcZILuGUhb95oKBPjc/nmIC8D462PQkipVDGKRvwhn+QFg2cCdIvmDJA==}
-
   micromark-core-commonmark@2.0.3:
     resolution: {integrity: sha512-RDBrHEMSxVFLg6xvnXmb1Ayr2WzLAWjeSATAoxwKYJV94TeNavgoIdA0a9ytzDSVzBy2YKFK+emCPOEibLeCrg==}
 
@@ -6355,6 +6345,9 @@ packages:
 
   run-parallel@1.2.0:
     resolution: {integrity: sha512-5l4VyZR86LZ/lDxZTR6jqL8AFE2S0IFLMP26AbjsLVADxHdhB/c0GUsH+y39UfCi3dzz8OlQuPmnaJOMoDHQBA==}
+
+  rxjs@7.8.2:
+    resolution: {integrity: sha512-dhKf903U/PQZY6boNNtAGdWbG85WAbjT/1xYoZIC7FAY0yWapOBQVsVrDl58W86//e1VpMNBtRV4MaXfdMySFA==}
 
   safe-array-concat@1.1.3:
     resolution: {integrity: sha512-AURm5f0jYEOydBj7VQlVvDrjeFgthDdEF5H1dP+6mNpoXOMo1quQqJ4wvJDyRZ9+pO3kGWoOdmV08cSv2aJV6Q==}
@@ -8805,6 +8798,13 @@ snapshots:
       - typescript
       - yaml
 
+  '@ledgerhq/devices@8.14.2':
+    dependencies:
+      '@ledgerhq/errors': 6.37.0
+      '@ledgerhq/logs': 6.19.0
+      rxjs: 7.8.2
+      semver: 7.7.3
+
   '@ledgerhq/devices@8.16.0':
     dependencies:
       semver: 7.7.3
@@ -8817,20 +8817,19 @@ snapshots:
 
   '@ledgerhq/errors@7.0.0': {}
 
-  '@ledgerhq/hw-app-btc@10.6.0':
+  '@ledgerhq/hw-app-btc@10.22.1':
     dependencies:
-      '@ledgerhq/hw-transport': 6.35.7
-      '@ledgerhq/logs': 6.13.0
+      '@ledgerhq/hw-transport': 6.35.2
+      '@ledgerhq/logs': 6.19.0
+      '@ledgerhq/psbtv2': 0.5.0
+      '@noble/curves': 1.9.7
+      '@noble/hashes': 1.8.0
       bip32-path: 0.4.2
-      bitcoinjs-lib: 5.2.0
+      bitcoinjs-lib: 6.1.8
       bs58: 4.0.1
       bs58check: 2.1.2
       invariant: 2.2.4
-      ripemd160: 2.0.3
       semver: 7.7.3
-      sha.js: 2.4.12
-      tiny-secp256k1: 1.1.7
-      varuint-bitcoin: 1.1.2
 
   '@ledgerhq/hw-transport-webhid@6.36.0':
     dependencies:
@@ -8838,6 +8837,13 @@ snapshots:
       '@ledgerhq/errors': 6.37.0
       '@ledgerhq/hw-transport': 6.35.5
       '@ledgerhq/logs': 6.19.0
+
+  '@ledgerhq/hw-transport@6.35.2':
+    dependencies:
+      '@ledgerhq/devices': 8.14.2
+      '@ledgerhq/errors': 6.37.0
+      '@ledgerhq/logs': 6.19.0
+      events: 3.3.0
 
   '@ledgerhq/hw-transport@6.35.5':
     dependencies:
@@ -8853,9 +8859,12 @@ snapshots:
       '@ledgerhq/logs': 6.19.0
       events: 3.3.0
 
-  '@ledgerhq/logs@6.13.0': {}
-
   '@ledgerhq/logs@6.19.0': {}
+
+  '@ledgerhq/psbtv2@0.5.0':
+    dependencies:
+      bitcoinjs-lib: 6.1.8
+      varuint-bitcoin: 1.1.2
 
   '@lukeed/ms@2.0.2': {}
 
@@ -10248,8 +10257,6 @@ snapshots:
     dependencies:
       '@types/node': 22.20.1
 
-  '@types/node@10.12.18': {}
-
   '@types/node@22.20.1':
     dependencies:
       undici-types: 6.21.0
@@ -10746,8 +10753,6 @@ snapshots:
 
   bcp-47-match@2.0.3: {}
 
-  bech32@1.1.4: {}
-
   bech32@2.0.0: {}
 
   better-sqlite3@13.0.3:
@@ -10786,16 +10791,6 @@ snapshots:
     transitivePeerDependencies:
       - typescript
 
-  bip32@2.0.6:
-    dependencies:
-      '@types/node': 10.12.18
-      bs58check: 2.1.2
-      create-hash: 1.2.0
-      create-hmac: 1.1.7
-      tiny-secp256k1: 1.1.7
-      typeforce: 1.18.0
-      wif: 2.0.6
-
   bip32@4.0.0:
     dependencies:
       '@noble/hashes': 1.8.0
@@ -10803,35 +10798,22 @@ snapshots:
       typeforce: 1.18.0
       wif: 2.0.6
 
-  bip66@1.1.5:
-    dependencies:
-      safe-buffer: 5.2.1
-
   bip66@2.0.0: {}
 
   bip68@1.0.4: {}
 
   bitcoin-ops@1.4.1: {}
 
-  bitcoinjs-lib@5.2.0:
+  bitcoinjs-lib@6.1.5:
     dependencies:
-      bech32: 1.1.4
+      '@noble/hashes': 1.8.0
+      bech32: 2.0.0
       bip174: 2.1.1
-      bip32: 2.0.6
-      bip66: 1.1.5
-      bitcoin-ops: 1.4.1
-      bs58check: 2.1.2
-      create-hash: 1.2.0
-      create-hmac: 1.1.7
-      merkle-lib: 2.0.10
-      pushdata-bitcoin: 1.0.1
-      randombytes: 2.1.0
-      tiny-secp256k1: 1.1.7
+      bs58check: 3.0.1
       typeforce: 1.18.0
       varuint-bitcoin: 1.1.2
-      wif: 2.0.6
 
-  bitcoinjs-lib@6.1.5:
+  bitcoinjs-lib@6.1.8:
     dependencies:
       '@noble/hashes': 1.8.0
       bech32: 2.0.0
@@ -13230,8 +13212,6 @@ snapshots:
 
   merge2@1.4.1: {}
 
-  merkle-lib@2.0.10: {}
-
   micromark-core-commonmark@2.0.3:
     dependencies:
       decode-named-character-reference: 1.3.0
@@ -14511,6 +14491,10 @@ snapshots:
   run-parallel@1.2.0:
     dependencies:
       queue-microtask: 1.2.3
+
+  rxjs@7.8.2:
+    dependencies:
+      tslib: 2.8.1
 
   safe-array-concat@1.1.3:
     dependencies:
