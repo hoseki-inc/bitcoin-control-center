@@ -54,6 +54,7 @@
     "typescript/adjacent-overload-signatures": "error",
     "typescript/await-thenable": "error",
     "typescript/ban-ts-comment": "error",
-    "typescript/consistent-type-exports": "error"
+    "typescript/consistent-type-exports": "error",
+    "typescript/consistent-type-imports": "error"
   }
 }
