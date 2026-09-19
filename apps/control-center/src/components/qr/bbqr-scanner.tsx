@@ -170,7 +170,9 @@ export function BBQrScanner({ onComplete, onPlainScan, onError, onCancel }: BBQr
         // Non-BBQr single QR code
         completedRef.current = true
         const cb = onPlainScanRef.current
-        void stopScannerInstance(scanner).then(() => cb(decodedText))
+        void stopScannerInstance(scanner).then(() => {
+          cb(decodedText)
+        })
       }
     }
 

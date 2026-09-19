@@ -64,7 +64,9 @@ export class Mapping<V extends Mappable> {
   }
 
   public forEach(callbackfn: (value: V, key: string, map: Mapping<V>) => void): void {
-    this.map.forEach((value, key) => callbackfn(value, key, this))
+    this.map.forEach((value, key) => {
+      callbackfn(value, key, this)
+    })
   }
 
   public [Symbol.toStringTag]: string = 'Mapping'

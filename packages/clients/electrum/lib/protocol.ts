@@ -159,7 +159,9 @@ export class ElectrumTransport {
 
         const setupSocket = (socket: net.Socket | tls.TLSSocket): void => {
           socket.setEncoding('utf8')
-          socket.on('data', (data: string) => this.onData(data))
+          socket.on('data', (data: string) => {
+            this.onData(data)
+          })
           socket.on('error', (err: Error) => {
             clearTimeout(timer)
             this.onError(err)
@@ -167,7 +169,9 @@ export class ElectrumTransport {
               resolve(Err(err))
             }
           })
-          socket.on('close', () => this.onClose())
+          socket.on('close', () => {
+            this.onClose()
+          })
           this.socket = socket
         }
 

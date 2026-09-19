@@ -48,7 +48,9 @@ export function useLocalSetting(key: string): {
   return {
     data: query.data,
     isLoading: query.isLoading,
-    save: (value: string) => mutation.mutate(value),
+    save: (value: string) => {
+      mutation.mutate(value)
+    },
     isSaving: mutation.isLoading,
   }
 }

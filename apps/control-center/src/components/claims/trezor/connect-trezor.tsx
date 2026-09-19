@@ -159,7 +159,9 @@ export function ConnectTrezor(): JSX.Element {
             trezorAccount={selectedTrezorAccount}
             setSelectedTrezorAccount={setSelectedTrezorAccount}
             isLoadingOnContinue={navigateToAnExistentOrNewClaim.isLoading}
-            onContinue={() => handleContinue(selectedTrezorAccount.trezorFeatures)}
+            onContinue={() => {
+              handleContinue(selectedTrezorAccount.trezorFeatures)
+            }}
             onCancel={() => navigate(returnTo)}
           />
         ))}

@@ -65,13 +65,19 @@ function setupInterface(
   vi.spyOn(sdk.SubContainer, 'of').mockResolvedValue({} as Awaited<ReturnType<typeof sdk.SubContainer.of>>)
   cleanups.push(() => {
     effects.isInContext = false
-    leave.forEach((callback) => callback())
+    leave.forEach((callback) => {
+      callback()
+    })
   })
   return {
     options: { effects } as unknown as MainOptions,
     addresses,
     retry,
-    changed: () => callbacks.forEach((callback) => callback()),
+    changed: () => {
+      callbacks.forEach((callback) => {
+        callback()
+      })
+    },
     allowedHosts: () => addDaemon.mock.lastCall?.[1].exec.env.SENTINEL_ALLOWED_HOSTS,
     setPresent: (value) => {
       present = value
@@ -80,7 +86,9 @@ function setupInterface(
 }
 
 afterEach(() => {
-  cleanups.splice(0).forEach((cleanup) => cleanup())
+  cleanups.splice(0).forEach((cleanup) => {
+    cleanup()
+  })
   vi.restoreAllMocks()
 })
 
@@ -120,13 +128,17 @@ describe('StartOS enabled interface addresses', () => {
 
     state.addresses.enabled.push(`${publicIp}:50399`)
     state.changed()
-    await vi.waitFor(() => expect(state.retry).toHaveBeenCalledTimes(1))
+    await vi.waitFor(() => {
+      expect(state.retry).toHaveBeenCalledTimes(1)
+    })
     await main(state.options)
     expect(state.allowedHosts()).toBe(publicIp)
 
     state.addresses.enabled = []
     state.changed()
-    await vi.waitFor(() => expect(state.retry).toHaveBeenCalledTimes(2))
+    await vi.waitFor(() => {
+      expect(state.retry).toHaveBeenCalledTimes(2)
+    })
     await main(state.options)
     expect(state.allowedHosts()).toBe('')
   })
@@ -137,7 +149,9 @@ describe('StartOS enabled interface addresses', () => {
     state.addresses.available = [{ ...publicAddress, hostname: '203.0.113.99' }]
     state.addresses.enabled = ['203.0.113.99:50399']
     state.changed()
-    await vi.waitFor(() => expect(state.retry).toHaveBeenCalledOnce())
+    await vi.waitFor(() => {
+      expect(state.retry).toHaveBeenCalledOnce()
+    })
     await main(state.options)
     expect(state.allowedHosts()).toBe('203.0.113.99')
   })
@@ -149,7 +163,9 @@ describe('StartOS enabled interface addresses', () => {
     expect(state.allowedHosts()).toBe('')
     state.setPresent(true)
     state.changed()
-    await vi.waitFor(() => expect(state.retry).toHaveBeenCalledOnce())
+    await vi.waitFor(() => {
+      expect(state.retry).toHaveBeenCalledOnce()
+    })
     await main(state.options)
     expect(state.allowedHosts()).toBe(publicIp)
   })
@@ -172,7 +188,9 @@ describe('StartOS enabled interface addresses', () => {
 describe('StartOS entrypoint', () => {
   it.each([undefined, '', `${publicIp},fd00::20,example.onion`])('preserves the configured allowlist: %s', (hosts) => {
     const directory = mkdtempSync(join(tmpdir(), 'sentinel-interface-'))
-    cleanups.push(() => rmSync(directory, { recursive: true, force: true }))
+    cleanups.push(() => {
+      rmSync(directory, { recursive: true, force: true })
+    })
     // Stub only external executables, so the actual shell entrypoint is exercised.
     writeFileSync(join(directory, 'yq'), '#!/bin/sh\nexit 1\n', { mode: 0o755 })
     writeFileSync(join(directory, 'node'), '#!/bin/sh\nprintf "%s" "$SENTINEL_ALLOWED_HOSTS"\n', { mode: 0o755 })

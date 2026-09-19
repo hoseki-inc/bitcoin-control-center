@@ -48,11 +48,15 @@ beforeEach(async () => {
   host = document.createElement('div')
   document.body.append(host)
   root = createRoot(host)
-  await act(async () => root.render(createElement(DisconnectNotifications)))
+  await act(async () => {
+    root.render(createElement(DisconnectNotifications))
+  })
 })
 
 afterEach(async () => {
-  await act(async () => root.unmount())
+  await act(async () => {
+    root.unmount()
+  })
   await useLedgerStore.getState().reset()
   host.remove()
 })
@@ -65,8 +69,12 @@ it.each([
   await useLedgerStore.getState().init(async () => previous)
 
   // Cancel/back leaves a valid transport in the store; returning mounts the listener again.
-  await act(async () => root.render(null))
-  await act(async () => root.render(createElement(DisconnectNotifications)))
+  await act(async () => {
+    root.render(null)
+  })
+  await act(async () => {
+    root.render(createElement(DisconnectNotifications))
+  })
   await useLedgerStore.getState().reset(close)
   await useLedgerStore.getState().init(async () => fakeTransport())
 
@@ -94,7 +102,9 @@ it('still warns once for a real disconnect after reconnecting and ignores the ol
 it('removes the disconnect notification listener when leaving the flow', async () => {
   const transport = fakeTransport()
   await useLedgerStore.getState().init(async () => transport)
-  await act(async () => root.render(null))
+  await act(async () => {
+    root.render(null)
+  })
   transport.emit('disconnect')
   expect(toast.error).not.toHaveBeenCalled()
 })

@@ -168,7 +168,9 @@ export function DeleteClaimModal({ action, isOpen, onClose, claim }: DeleteClaim
             <Button
               isLoading={archiveMutation.isLoading}
               isDisabled={!isArchiveBalanceKnown || (isMutating && !archiveMutation.isLoading)}
-              onClick={() => archiveMutation.mutate({ id: claim.id })}
+              onClick={() => {
+                archiveMutation.mutate({ id: claim.id })
+              }}
               size="md"
               flex={1}
               variant="outline"
@@ -179,7 +181,9 @@ export function DeleteClaimModal({ action, isOpen, onClose, claim }: DeleteClaim
             <Button
               isLoading={deleteMutation.isLoading}
               isDisabled={isMutating && !deleteMutation.isLoading}
-              onClick={() => deleteMutation.mutate({ id: claim.id })}
+              onClick={() => {
+                deleteMutation.mutate({ id: claim.id })
+              }}
               size="md"
               flex={1}
               variant="error"

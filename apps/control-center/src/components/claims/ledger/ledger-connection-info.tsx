@@ -37,7 +37,9 @@ export function LedgerConnectionInfo({
   return (
     <LedgerConnectionInfoUI
       onBack={onBack}
-      onContinue={() => connectLedger.mutate()}
+      onContinue={() => {
+        connectLedger.mutate()
+      }}
       isLoading={connectLedger.isLoading}
       error={connectLedger.error as Error | null}
     />

@@ -27,7 +27,9 @@ export const AllWallets: Story = () => {
             current: new Decimal(625000000),
           },
         }}
-        onClick={() => alert('Clicked')}
+        onClick={() => {
+          alert('Clicked')
+        }}
       />
       <ClaimCard
         officialName={dummyOfficialName(2)}
@@ -42,7 +44,9 @@ export const AllWallets: Story = () => {
           },
         }}
         isSelected={false}
-        onClick={() => alert('Clicked')}
+        onClick={() => {
+          alert('Clicked')
+        }}
       />
       <ClaimCard
         officialName={dummyOfficialName(3)}
@@ -57,7 +61,9 @@ export const AllWallets: Story = () => {
           },
         }}
         isSelected={false}
-        onClick={() => alert('Clicked')}
+        onClick={() => {
+          alert('Clicked')
+        }}
       />
       <ClaimCard
         officialName={dummyOfficialName(4)}
@@ -72,7 +78,9 @@ export const AllWallets: Story = () => {
           },
         }}
         isSelected={false}
-        onClick={() => alert('Clicked')}
+        onClick={() => {
+          alert('Clicked')
+        }}
       />
     </Grid>
   )
@@ -114,7 +122,9 @@ export const LongName: Story = () => (
         },
       }}
       isSelected={false}
-      onClick={() => alert('Clicked')}
+      onClick={() => {
+        alert('Clicked')
+      }}
     />
   </Box>
 )
@@ -134,7 +144,9 @@ export const Selected: Story = () => (
         },
       }}
       isSelected={true}
-      onClick={() => alert('Clicked')}
+      onClick={() => {
+        alert('Clicked')
+      }}
     />
   </Grid>
 )
@@ -154,7 +166,9 @@ export const LoadingSkeleton: Story = () => (
         },
       }}
       isSelected={false}
-      onClick={() => alert('Clicked')}
+      onClick={() => {
+        alert('Clicked')
+      }}
     />
     <ClaimCardLoadingSkeleton />
     <ClaimCardLoadingSkeleton />

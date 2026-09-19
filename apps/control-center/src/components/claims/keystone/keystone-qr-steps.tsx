@@ -56,7 +56,9 @@ export function KeystoneQrConnectionSteps({
           onBack={onBack}
           onComplete={(json) => {
             setKeystoneJson(json)
-            requestAnimationFrame(() => onNext())
+            requestAnimationFrame(() => {
+              onNext()
+            })
           }}
         />
       )

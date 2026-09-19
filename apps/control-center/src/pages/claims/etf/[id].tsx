@@ -269,7 +269,13 @@ export function EtfAccountDetailsPage(): JSX.Element {
               <FormLabel textStyle="text/xs" color="neutral.600">
                 ETF
               </FormLabel>
-              <Select size="sm" value={newTicker} onChange={(e) => setNewTicker(e.target.value as EtfTicker)}>
+              <Select
+                size="sm"
+                value={newTicker}
+                onChange={(e) => {
+                  setNewTicker(e.target.value as EtfTicker)
+                }}
+              >
                 {ETF_TICKERS.map((ticker) => {
                   const config = ETF_CONFIGS[ticker]
                   return (
@@ -291,7 +297,9 @@ export function EtfAccountDetailsPage(): JSX.Element {
                 min="0"
                 placeholder="0"
                 value={newShares}
-                onChange={(e) => setNewShares(e.target.value)}
+                onChange={(e) => {
+                  setNewShares(e.target.value)
+                }}
               />
             </FormControl>
             <FormControl flex={0.8}>
@@ -302,7 +310,9 @@ export function EtfAccountDetailsPage(): JSX.Element {
                 size="sm"
                 type="date"
                 value={newDatePurchased}
-                onChange={(e) => setNewDatePurchased(e.target.value)}
+                onChange={(e) => {
+                  setNewDatePurchased(e.target.value)
+                }}
               />
             </FormControl>
             <Button

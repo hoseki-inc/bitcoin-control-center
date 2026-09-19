@@ -33,7 +33,9 @@ export function useCountdown(initialTimeRemaining: number, autoReset: boolean = 
       })
     }, 1000)
 
-    return () => clearInterval(timerInterval)
+    return () => {
+      clearInterval(timerInterval)
+    }
   }, [isCounting, initialTimeRemaining, autoReset])
 
   return {
@@ -42,7 +44,9 @@ export function useCountdown(initialTimeRemaining: number, autoReset: boolean = 
     /** Total time remaining in seconds */
     timeRemaining,
     isCounting,
-    start: () => setIsCounting(true),
+    start: () => {
+      setIsCounting(true)
+    },
     restart: () => {
       setTimeRemaining(initialTimeRemaining)
       setIsCounting(true)

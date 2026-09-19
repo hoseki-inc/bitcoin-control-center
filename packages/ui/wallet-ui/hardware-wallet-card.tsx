@@ -81,7 +81,9 @@ export function HardwareWalletCard({
   const handleDisplayNameBlur = () => {
     if (isDisplayNameValid) {
       setShowCheckmark(true)
-      setTimeout(() => setShowCheckmark(false), CHECKMARK_DISPLAY_DURATION)
+      setTimeout(() => {
+        setShowCheckmark(false)
+      }, CHECKMARK_DISPLAY_DURATION)
     }
   }
 
@@ -179,7 +181,14 @@ export function HardwareWalletCard({
                       {splitXpubIntoTwoLines(toXpubDisplayValue(wallet.account.xpub.toString(), isMasked))}
                     </chakra.code>
                   </Stack>
-                  <Button variant="plain" onClick={() => setIsMasked((prev) => !prev)} p={2} flexShrink={0}>
+                  <Button
+                    variant="plain"
+                    onClick={() => {
+                      setIsMasked((prev) => !prev)
+                    }}
+                    p={2}
+                    flexShrink={0}
+                  >
                     <Icon as={isMasked ? EyeOffIcon : EyeIcon} color="neutral.600" boxSize="20px" />
                   </Button>
                 </HStack>
@@ -187,7 +196,9 @@ export function HardwareWalletCard({
             )}
           </AnimatePresence>
           <Button
-            onClick={() => setIsExpanded((prev) => !prev)}
+            onClick={() => {
+              setIsExpanded((prev) => !prev)
+            }}
             variant="outline"
             size="sm"
             p={0}

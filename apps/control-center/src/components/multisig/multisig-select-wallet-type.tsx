@@ -21,25 +21,33 @@ export function SelectWalletType({
           title="Trezor"
           imagePath={`${HOSEKI_ASSETS_CDN_URL}/hardware-wallets/trezor.svg`}
           imageAltText="Connect your Trezor"
-          onClick={() => onConnectionTypeClick('trezor')}
+          onClick={() => {
+            onConnectionTypeClick('trezor')
+          }}
         />
         <ConnectionType
           title="Ledger"
           imagePath={`${HOSEKI_ASSETS_CDN_URL}/hardware-wallets/ledger.svg`}
           imageAltText="Connect your Ledger"
-          onClick={() => onConnectionTypeClick('ledger')}
+          onClick={() => {
+            onConnectionTypeClick('ledger')
+          }}
         />
         <ConnectionType
           title="COLDCARD"
           imagePath={`${HOSEKI_ASSETS_CDN_URL}/hardware-wallets/coldcard.svg`}
           imageAltText="Connect your Coldcard"
-          onClick={() => onConnectionTypeClick('coldcard')}
+          onClick={() => {
+            onConnectionTypeClick('coldcard')
+          }}
         />
         <ConnectionType
           title="Keystone"
           imagePath="/images/hardware-wallets/keystone-logo.svg"
           imageAltText="Connect your Keystone"
-          onClick={() => onConnectionTypeClick('keystone')}
+          onClick={() => {
+            onConnectionTypeClick('keystone')
+          }}
         />
       </Grid>
     </Box>

@@ -144,7 +144,9 @@ export function ColdcardIndentification({
           setSelectedWallet={setSelectedWallet}
           isLoadingOnNext={isStep6Loading}
           {...commonProps}
-          onNext={() => handleAccountSelectConfirm(model)}
+          onNext={() => {
+            handleAccountSelectConfirm(model)
+          }}
         />
       ) : (
         <RequiredDataMissing coldcardJson={coldcardJson} />
@@ -260,7 +262,9 @@ function Step2({
             key={key}
             name={name}
             image={<chakra.img src={imageSrc} alt={imageAlt} h="150px" mx="auto" />}
-            onClick={() => onNext(key as ColdcardModel)}
+            onClick={() => {
+              onNext(key as ColdcardModel)
+            }}
           />
         ))}
       </HStack>
@@ -300,7 +304,9 @@ function Step3({
             key={key}
             name={name}
             image={icon}
-            onClick={() => onNext(key as keyof typeof ColdcardConnectionMethods)}
+            onClick={() => {
+              onNext(key as keyof typeof ColdcardConnectionMethods)
+            }}
           />
         ))}
       </HStack>

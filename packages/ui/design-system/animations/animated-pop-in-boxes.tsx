@@ -56,7 +56,9 @@ export function AnimatedPopInBoxes({ children, ...rest }: { children: ReactNode[
               key={index}
               layoutId={`item-${index}`}
               cursor="pointer"
-              onClick={() => setSelectedIndex(index)}
+              onClick={() => {
+                setSelectedIndex(index)
+              }}
               initial="hidden"
               animate="visible"
               variants={{

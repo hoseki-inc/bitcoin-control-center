@@ -104,14 +104,16 @@ beforeEach(() => {
 })
 
 afterEach(async () => {
-  await act(async () => root.unmount())
+  await act(async () => {
+    root.unmount()
+  })
   client.clear()
   await useLedgerStore.getState().reset()
   host.remove()
 })
 
 async function mountScan(): Promise<void> {
-  await act(async () =>
+  await act(async () => {
     root.render(
       createElement(
         QueryClientProvider,
@@ -123,12 +125,14 @@ async function mountScan(): Promise<void> {
           onCancel: vi.fn(),
         }),
       ),
-    ),
-  )
+    )
+  })
 }
 
 async function reconnect(): Promise<void> {
-  await act(async () => root.render(null))
+  await act(async () => {
+    root.render(null)
+  })
   await client.cancelQueries({ queryKey: ['ledger-wallets'] })
   client.removeQueries({ queryKey: ['ledger-wallets'] })
   await useLedgerStore.getState().reset((device) => device.close())
@@ -148,7 +152,7 @@ it('Strict Mode restarts a scan without locking the Ledger with the cancelled in
   const firstRead = deferred<string>()
   mocks.getXpub.mockImplementationOnce(() => firstRead.promise)
   await useLedgerStore.getState().init(async () => fakeTransport())
-  await act(async () =>
+  await act(async () => {
     root.render(
       createElement(
         StrictMode,
@@ -164,9 +168,11 @@ it('Strict Mode restarts a scan without locking the Ledger with the cancelled in
           }),
         ),
       ),
-    ),
-  )
-  await act(async () => firstRead.resolve(xpub))
+    )
+  })
+  await act(async () => {
+    firstRead.resolve(xpub)
+  })
   await waitForScan()
   expect(mocks.scan.mock.lastCall?.[0].walletsQuery).toMatchObject({
     isLoading: false,
@@ -184,11 +190,15 @@ it('a cancelled scan cannot use or lock the next Ledger when its balance respons
   mocks.getXpub.mockImplementation(async (_transport, path) => (path.endsWith("/1'") ? oldRead.promise : xpub))
   await useLedgerStore.getState().init(async () => fakeTransport())
   await mountScan()
-  await vi.waitFor(() => expect(mocks.fetch).toHaveBeenCalledOnce())
+  await vi.waitFor(() => {
+    expect(mocks.fetch).toHaveBeenCalledOnce()
+  })
   const oldAccounts = mocks.fetch.mock.calls[0]?.[0].accounts ?? []
   await reconnect()
   try {
-    await act(async () => oldBalances.resolve(balances(oldAccounts, true)))
+    await act(async () => {
+      oldBalances.resolve(balances(oldAccounts, true))
+    })
     await mountScan()
     await waitForScan()
     expect(mocks.scan.mock.lastCall?.[0].walletsQuery.isError).toBe(false)
@@ -204,9 +214,13 @@ it('a device response arriving after cancellation does not trigger more reads or
   mocks.getXpub.mockImplementationOnce(() => oldRead.promise)
   await useLedgerStore.getState().init(async () => fakeTransport())
   await mountScan()
-  await vi.waitFor(() => expect(mocks.getXpub).toHaveBeenCalledOnce())
+  await vi.waitFor(() => {
+    expect(mocks.getXpub).toHaveBeenCalledOnce()
+  })
   await reconnect()
-  await act(async () => oldRead.resolve(xpub))
+  await act(async () => {
+    oldRead.resolve(xpub)
+  })
   expect(mocks.getXpub).toHaveBeenCalledOnce()
   expect(mocks.fetch).not.toHaveBeenCalled()
   await mountScan()
@@ -229,7 +243,9 @@ it('discovery also stops on a changed connection even without an abort signal', 
       isCurrentConnection: () => useLedgerStore.getState().connectionId === connectionId,
     },
   )
-  await vi.waitFor(() => expect(mocks.fetch).toHaveBeenCalledOnce())
+  await vi.waitFor(() => {
+    expect(mocks.fetch).toHaveBeenCalledOnce()
+  })
   await reconnect()
   oldBalances.resolve(balances(mocks.fetch.mock.calls[0]?.[0].accounts ?? [], true))
   const result = await discovery

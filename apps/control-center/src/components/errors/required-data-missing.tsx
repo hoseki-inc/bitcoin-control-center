@@ -13,7 +13,12 @@ export function RequiredDataMissing(props: Record<string, unknown>): JSX.Element
       title="Something went wrong"
       message="We are missing some required data to continue. You'll need to start process again."
     >
-      <Button variant="outline" onClick={() => window.location.reload()}>
+      <Button
+        variant="outline"
+        onClick={() => {
+          window.location.reload()
+        }}
+      >
         Start over
       </Button>
     </GenericError>

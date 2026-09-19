@@ -315,7 +315,9 @@ export function AccountsSidebar({
                 pct={pct}
                 isSelected={isSelected}
                 compact={compact}
-                onClick={() => onToggle(item.account.id)}
+                onClick={() => {
+                  onToggle(item.account.id)
+                }}
               />
             )
           }
@@ -344,7 +346,9 @@ export function AccountsSidebar({
               isHistorySyncing={historySyncingAccountIds.includes(item.claim.id)}
               isHistorySynced={recentlySyncedAccountIds.includes(item.claim.id)}
               compact={compact}
-              onClick={() => onToggle(item.claim.id)}
+              onClick={() => {
+                onToggle(item.claim.id)
+              }}
             />
           )
         })}

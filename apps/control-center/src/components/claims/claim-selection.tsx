@@ -175,7 +175,9 @@ export function ClaimSelection({
                       id={`claim_${claim.id}`}
                       isChecked={disabledClaims?.has(claim.id) || selectedClaimIds.has(claim.id)}
                       isDisabled={disabledClaims?.has(claim.id)}
-                      onChange={() => handleClaimToggle(claim.id)}
+                      onChange={() => {
+                        handleClaimToggle(claim.id)
+                      }}
                     />
                     <Stack gap={0} overflow="hidden" minW={0} flex={1}>
                       <Text
@@ -217,7 +219,9 @@ export function ClaimSelection({
                       id={`exchange_${account.id}`}
                       isChecked={!needsReconnect && selectedExchangeAccountIds.has(account.id)}
                       isDisabled={needsReconnect}
-                      onChange={() => handleExchangeToggle(account.id)}
+                      onChange={() => {
+                        handleExchangeToggle(account.id)
+                      }}
                     />
                     <Stack gap={0} overflow="hidden" minW={0} flex={1}>
                       <Text

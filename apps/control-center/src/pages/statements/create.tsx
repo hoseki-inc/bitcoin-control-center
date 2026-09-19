@@ -179,7 +179,11 @@ export function StatementCreatePage(): JSX.Element {
                       max={new Date()}
                       min={addDays(MIN_STATEMENT_DATE, 1)}
                       value={openingDate}
-                      onChange={(date) => date && setOpeningDate(startOfDay(date))}
+                      onChange={(date) => {
+                        if (date) {
+                          setOpeningDate(startOfDay(date))
+                        }
+                      }}
                       size="md"
                     />
                   </FormControl>
@@ -249,7 +253,9 @@ export function StatementCreatePage(): JSX.Element {
                           <Input
                             id="name"
                             value={name}
-                            onChange={(e) => setName(e.target.value)}
+                            onChange={(e) => {
+                              setName(e.target.value)
+                            }}
                             placeholder="Enter your name"
                             size="md"
                           />
@@ -271,7 +277,9 @@ export function StatementCreatePage(): JSX.Element {
                           <Textarea
                             id="address"
                             value={address}
-                            onChange={(e) => setAddress(e.target.value)}
+                            onChange={(e) => {
+                              setAddress(e.target.value)
+                            }}
                             placeholder="Enter your address"
                             rows={2}
                             size="md"
@@ -320,13 +328,21 @@ export function StatementCreatePage(): JSX.Element {
                   Cancel
                 </Button>
                 <HStack>
-                  <Button isDisabled={!hasAnySelected} variant="outline" onClick={() => setIsPreviewModalOpen(true)}>
+                  <Button
+                    isDisabled={!hasAnySelected}
+                    variant="outline"
+                    onClick={() => {
+                      setIsPreviewModalOpen(true)
+                    }}
+                  >
                     Preview Statement
                   </Button>
                   <Button
                     isDisabled={!hasAnySelected || initiateMutationWithArgs.isLoading}
                     isLoading={initiateMutationWithArgs.isLoading}
-                    onClick={() => initiateMutationWithArgs.mutate()}
+                    onClick={() => {
+                      initiateMutationWithArgs.mutate()
+                    }}
                   >
                     Generate Statement
                   </Button>
@@ -339,13 +355,17 @@ export function StatementCreatePage(): JSX.Element {
 
       <StatementGenerationModal
         isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
+        onClose={() => {
+          setIsModalOpen(false)
+        }}
         statement={statement ?? null}
       />
 
       <StatementPreviewModal
         isOpen={isPreviewModalOpen}
-        onClose={() => setIsPreviewModalOpen(false)}
+        onClose={() => {
+          setIsPreviewModalOpen(false)
+        }}
         claimIds={Array.from(selectedClaimIds)}
         exchangeAccountIds={Array.from(selectedExchangeAccountIds)}
         openingDate={openingDate}

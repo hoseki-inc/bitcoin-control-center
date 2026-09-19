@@ -34,7 +34,9 @@ export const Default: Story = () => {
               return Err(new Error('Invalid JSON content'))
             }
           }}
-          onValidContentRead={(content) => console.log('Success!', content)}
+          onValidContentRead={(content) => {
+            console.log('Success!', content)
+          }}
           acceptedFileTypes={['json']}
           status={jsonStatus}
           onStatusChange={setJsonStatus}
@@ -54,7 +56,9 @@ export const Default: Story = () => {
               return Err(new Error('Invalid content, expected "foo"'))
             }
           }}
-          onValidContentRead={(content) => console.log('Success!', content)}
+          onValidContentRead={(content) => {
+            console.log('Success!', content)
+          }}
           acceptedFileTypes={['txt']}
           status={txtStatus}
           onStatusChange={setTxtStatus}
@@ -72,7 +76,9 @@ export const Default: Story = () => {
             }
             return Err(new Error('Failed to read image file'))
           }}
-          onValidContentRead={(_, file) => console.log('Image loaded successfully!', file.name)}
+          onValidContentRead={(_, file) => {
+            console.log('Image loaded successfully!', file.name)
+          }}
           acceptedFileTypes={['png', 'jpg', 'jpeg', 'webp']}
           status={imageStatus}
           onStatusChange={setImageStatus}

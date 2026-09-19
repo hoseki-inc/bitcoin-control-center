@@ -81,8 +81,9 @@ function createHarness() {
       'getTransactionEntriesByAccountSinceBlock',
     )
     .mockResolvedValue(Ok([entry(100n, '2020-01-02T12:00:00.000Z')]))
-  const sync = (from = 0, to = tip.height): void =>
+  const sync = (from = 0, to = tip.height): void => {
     service['recordAccountHistorySync'](accountId, { fromBlockHeight: from, toBlockHeight: to }, tip)
+  }
   const run = (balance: bigint = 100n, balanceTip?: Block): Promise<bigint | null> =>
     service['ensureAccountHistorySnapshots'](accountId, account, balance, new Date(0), true, undefined, balanceTip)
   const rows = (): Array<{ timestamp: string; balance_sats: string }> =>
@@ -158,9 +159,13 @@ describe('portfolio history completion', () => {
     history.mockReturnValueOnce(pendingHistory.promise)
     price.mockReturnValueOnce(pendingPrice.promise)
     const resultPromise = service.getData({ customDateRange: customRange })
-    await vi.waitFor(() => expect(history).toHaveBeenCalledTimes(1))
+    await vi.waitFor(() => {
+      expect(history).toHaveBeenCalledTimes(1)
+    })
     pendingHistory.resolve(Ok([entry(100n, '2020-01-02T12:00:00.000Z')]))
-    await vi.waitFor(() => expect(harness.coverage()).toHaveLength(1))
+    await vi.waitFor(() => {
+      expect(harness.coverage()).toHaveLength(1)
+    })
     pendingPrice.resolve(Ok({ value: 50_000 }))
     const data = (await resultPromise).unwrap()
     expect(data.historySyncingAccountIds).toEqual([])
@@ -177,7 +182,9 @@ describe('portfolio history completion', () => {
     expect(data.historyRefreshingAccountIds).toEqual([])
     expect(data.historyFailedAccountIds).toEqual([])
     pending.resolve(Ok([entry(100n, '2020-01-02T12:00:00.000Z')]))
-    await vi.waitFor(() => expect(harness.coverage()).toHaveLength(1))
+    await vi.waitFor(() => {
+      expect(harness.coverage()).toHaveLength(1)
+    })
   })
 
   it('keeps a certified history prefix available while a new block is fetched', async () => {
@@ -193,9 +200,9 @@ describe('portfolio history completion', () => {
     expect(data.historyFailedAccountIds).toEqual([])
     expect(data.historicalData.length).toBeGreaterThan(1)
     pending.resolve(Ok([]))
-    await vi.waitFor(() =>
-      expect(harness.coverage()).toEqual([{ from_block_height: 0, to_block_height: nextTip.height }]),
-    )
+    await vi.waitFor(() => {
+      expect(harness.coverage()).toEqual([{ from_block_height: 0, to_block_height: nextTip.height }])
+    })
   })
 
   it.each(['missing start', 'gap before the tip', 'outdated certification'])(
@@ -232,7 +239,9 @@ describe('portfolio history completion', () => {
       expect(data.historySyncedAccountIds).toEqual([])
       expect(data.historyFailedAccountIds).toEqual([accountId])
       expect(data.historyRefreshingAccountIds).toEqual(cached ? [accountId] : [])
-      await vi.waitFor(() => expect(harness.service['accountHistoryBackfillsInFlight'].size).toBe(0))
+      await vi.waitFor(() => {
+        expect(harness.service['accountHistoryBackfillsInFlight'].size).toBe(0)
+      })
     },
   )
 
@@ -360,7 +369,9 @@ describe('history scan boundaries', () => {
     const pending = deferred<Result<TransactionEntry[], Error>>()
     harness.history.mockReturnValueOnce(pending.promise)
     const result = harness.run()
-    await vi.waitFor(() => expect(harness.history).toHaveBeenCalledTimes(1))
+    await vi.waitFor(() => {
+      expect(harness.history).toHaveBeenCalledTimes(1)
+    })
     harness.service['invalidateAccountHistoryBackfill'](accountId)
     pending.resolve(Ok([entry(100n, '2020-01-02T12:00:00.000Z')]))
     expect(await result).toBeNull()
@@ -372,7 +383,9 @@ describe('history scan boundaries', () => {
 describe('history balance reuse', () => {
   it('avoids a second balance/discovery sweep during a stable-tip page request', async () => {
     await harness.service.getData({ timeRange: 'all' })
-    await vi.waitFor(() => expect(harness.service['accountHistoryBackfillsInFlight'].size).toBe(0))
+    await vi.waitFor(() => {
+      expect(harness.service['accountHistoryBackfillsInFlight'].size).toBe(0)
+    })
     expect(harness.provider.getConfirmedAccountBalances).toHaveBeenCalledTimes(1)
     expect(harness.history).toHaveBeenCalledTimes(1)
     expect(harness.coverage()).toEqual([{ from_block_height: 0, to_block_height: tip.height }])
@@ -398,7 +411,9 @@ describe('history balance reuse', () => {
     harness.provider.getConfirmedAccountBalances.mockResolvedValueOnce(Err(new Error('Balance unavailable')))
     harness.service.recordAccountSnapshot(accountId, '999', '2020-01-01T00:00:00.000Z')
     await harness.service.getData({ timeRange: 'all' })
-    await vi.waitFor(() => expect(harness.service['accountHistoryBackfillsInFlight'].size).toBe(0))
+    await vi.waitFor(() => {
+      expect(harness.service['accountHistoryBackfillsInFlight'].size).toBe(0)
+    })
     expect(harness.provider.getConfirmedAccountBalances).toHaveBeenCalledTimes(2)
     expect(harness.rows().at(-1)?.balance_sats).toBe('100')
   })
@@ -489,7 +504,9 @@ describe('compacted history coverage', () => {
     harness.sync(0, 99)
     harness.db.exec(`CREATE TEMP TRIGGER fail_sync BEFORE INSERT ON account_history_syncs
       BEGIN SELECT RAISE(ABORT, 'Synthetic write failure'); END`)
-    expect(() => harness.sync(100, 199)).toThrow('Synthetic write failure')
+    expect(() => {
+      harness.sync(100, 199)
+    }).toThrow('Synthetic write failure')
     expect(harness.coverage()).toEqual([{ from_block_height: 0, to_block_height: 99 }])
   })
 })
@@ -500,7 +517,9 @@ describe('history retry coordination', () => {
     history.mockResolvedValue(Err(new Error('Synthetic address failure')))
     for (let attempt = 1; attempt <= 12; attempt++) {
       service['queueAccountHistoryBackfill'](accountId, account, 100n, new Date(0), true)
-      await vi.waitFor(() => expect(service['accountHistoryBackfillsInFlight'].has(accountId)).toBe(false))
+      await vi.waitFor(() => {
+        expect(service['accountHistoryBackfillsInFlight'].has(accountId)).toBe(false)
+      })
       const data = (await service.getData({ customDateRange: customRange })).unwrap()
       expect(data.historyFailedAccountIds).toEqual([accountId])
       expect(data.historySyncingAccountIds).toEqual([accountId])
@@ -511,7 +530,9 @@ describe('history retry coordination', () => {
     }
     history.mockResolvedValue(Ok([entry(100n, '2020-01-02T12:00:00.000Z')]))
     service['queueAccountHistoryBackfill'](accountId, account, 100n, new Date(0), true)
-    await vi.waitFor(() => expect(service['accountHistoryBackfillsInFlight'].has(accountId)).toBe(false))
+    await vi.waitFor(() => {
+      expect(service['accountHistoryBackfillsInFlight'].has(accountId)).toBe(false)
+    })
     const recovered = (await service.getData({ customDateRange: customRange })).unwrap()
     expect(recovered.historyFailedAccountIds).toEqual([])
     expect(recovered.historySyncingAccountIds).toEqual([])
@@ -523,9 +544,13 @@ describe('history retry coordination', () => {
     const { service, history } = harness
     harness.sync(tip.height - 60_000)
     history.mockResolvedValueOnce(Err(new Error('Electrum temporarily unavailable')))
-    const request = (): void => service['queueAccountHistoryBackfill'](accountId, account, 100n, new Date(0), true)
+    const request = (): void => {
+      service['queueAccountHistoryBackfill'](accountId, account, 100n, new Date(0), true)
+    }
     request()
-    await vi.waitFor(() => expect(service['accountHistoryBackfillCooldownUntil'].has(accountId)).toBe(true))
+    await vi.waitFor(() => {
+      expect(service['accountHistoryBackfillCooldownUntil'].has(accountId)).toBe(true)
+    })
     const cooldown = service['accountHistoryBackfillCooldownUntil'].get(accountId)!
     const status = await service['getAccountHistoryStatus'](
       [{ id: accountId, descriptor: account.toString(), network: 'mainnet' }],
@@ -540,8 +565,12 @@ describe('history retry coordination', () => {
     expect(history).toHaveBeenCalledTimes(1)
     vi.setSystemTime(cooldown + 1)
     request()
-    await vi.waitFor(() => expect(history).toHaveBeenCalledTimes(2))
-    await vi.waitFor(() => expect(service['accountHistoryBackfillsInFlight'].has(accountId)).toBe(false))
+    await vi.waitFor(() => {
+      expect(history).toHaveBeenCalledTimes(2)
+    })
+    await vi.waitFor(() => {
+      expect(service['accountHistoryBackfillsInFlight'].has(accountId)).toBe(false)
+    })
     expect(service['accountHistoryBackfillFailureCounts'].has(accountId)).toBe(false)
   })
 })

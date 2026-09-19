@@ -30,7 +30,9 @@ export function ClaimVerificationReceipt({ shouldSetTimeout, claim }: ClaimVerif
 
   useEffect(() => {
     if (shouldSetTimeout) {
-      setTimeout(() => setIsPending(false), 1700)
+      setTimeout(() => {
+        setIsPending(false)
+      }, 1700)
     }
   }, [shouldSetTimeout])
 
@@ -53,7 +55,9 @@ export function ClaimVerificationReceipt({ shouldSetTimeout, claim }: ClaimVerif
       <Receipt
         title="Claim Verified!"
         state="success"
-        onClose={() => handleNavigation('/home')}
+        onClose={() => {
+          handleNavigation('/home')
+        }}
         closeTitle="Back to Home"
         content={
           <VStack spacing={8}>
@@ -74,10 +78,19 @@ export function ClaimVerificationReceipt({ shouldSetTimeout, claim }: ClaimVerif
               in ownership statements.
             </Text>
             <HStack spacing={4}>
-              <Button variant="outline" onClick={() => handleNavigation('/accounts')}>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  handleNavigation('/accounts')
+                }}
+              >
                 Connect Another Account
               </Button>
-              <Button onClick={() => handleNavigation('/statements/create')}>
+              <Button
+                onClick={() => {
+                  handleNavigation('/statements/create')
+                }}
+              >
                 {isStatementFlow ? 'Complete Statement' : 'Generate Statement'}
               </Button>
             </HStack>

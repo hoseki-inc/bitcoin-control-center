@@ -47,8 +47,12 @@ export function KeystoneQrSigning({
   onSubmitSignature,
 }: KeystoneQrSigningProps): JSX.Element {
   const [step, setStep] = useState(1)
-  const onBack = (): void => setStep((prev) => prev - 1)
-  const onNext = (): void => setStep((prev) => prev + 1)
+  const onBack = (): void => {
+    setStep((prev) => prev - 1)
+  }
+  const onNext = (): void => {
+    setStep((prev) => prev + 1)
+  }
 
   if (!keystore.derivationPath) {
     return <Alert status="error">Derivation path not found</Alert>

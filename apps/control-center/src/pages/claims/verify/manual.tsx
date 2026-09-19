@@ -69,7 +69,9 @@ export function ClaimsVerifyManualPage(): JSX.Element {
           <Input
             placeholder="e.g. Cold Storage, Paper Wallet"
             value={displayName}
-            onChange={(e) => setDisplayName(e.target.value)}
+            onChange={(e) => {
+              setDisplayName(e.target.value)
+            }}
           />
         </FormControl>
 
@@ -83,7 +85,9 @@ export function ClaimsVerifyManualPage(): JSX.Element {
             min="0"
             placeholder="0.00000000"
             value={btcAmount}
-            onChange={(e) => setBtcAmount(e.target.value)}
+            onChange={(e) => {
+              setBtcAmount(e.target.value)
+            }}
           />
         </FormControl>
 
@@ -91,7 +95,13 @@ export function ClaimsVerifyManualPage(): JSX.Element {
           <FormLabel textStyle="text/sm" color="neutral.600" fontWeight="medium">
             As of Date
           </FormLabel>
-          <Input type="date" value={balanceDate} onChange={(e) => setBalanceDate(e.target.value)} />
+          <Input
+            type="date"
+            value={balanceDate}
+            onChange={(e) => {
+              setBalanceDate(e.target.value)
+            }}
+          />
         </FormControl>
 
         <Flex justify="flex-end">

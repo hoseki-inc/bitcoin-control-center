@@ -254,7 +254,9 @@ export function DashboardPage(): JSX.Element {
       void (isShowingAll ? refetchAllData : refetchFilteredData)({ cancelRefetch: false })
     }, 10_000)
 
-    return () => window.clearInterval(intervalId)
+    return () => {
+      window.clearInterval(intervalId)
+    }
   }, [historySyncingAccountIds.length, isShowingAll, refetchAllData, refetchFilteredData])
 
   useEffect(() => {
@@ -361,7 +363,9 @@ export function DashboardPage(): JSX.Element {
     })
   }, [])
 
-  const clearAll = useCallback(() => setSelected(new Set()), [])
+  const clearAll = useCallback(() => {
+    setSelected(new Set())
+  }, [])
 
   const claimTotalBtcSats = balancesQuery.data
     ? Array.from(balancesQuery.data.values()).reduce((sum, b) => {
@@ -1021,7 +1025,9 @@ function TimeRangeSelector({
                         value={draft.startDate}
                         min={BITCOIN_GENESIS_DATE}
                         max={today}
-                        onChange={(startDate) => setDraft((current) => ({ ...current, startDate }))}
+                        onChange={(startDate) => {
+                          setDraft((current) => ({ ...current, startDate }))
+                        }}
                         size="sm"
                       />
                     </FormControl>
@@ -1034,7 +1040,9 @@ function TimeRangeSelector({
                         value={draft.endDate}
                         min={draft.startDate ?? BITCOIN_GENESIS_DATE}
                         max={today}
-                        onChange={(endDate) => setDraft((current) => ({ ...current, endDate }))}
+                        onChange={(endDate) => {
+                          setDraft((current) => ({ ...current, endDate }))
+                        }}
                         size="sm"
                       />
                     </FormControl>
