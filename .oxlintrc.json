@@ -40,6 +40,7 @@
     "oxc/erasing-op": "error",
     "oxc/misrefactored-assign-op": "error",
     "oxc/missing-throw": "error",
-    "oxc/no-accumulating-spread": "error"
+    "oxc/no-accumulating-spread": "error",
+    "oxc/no-barrel-file": "error"
   }
 }
