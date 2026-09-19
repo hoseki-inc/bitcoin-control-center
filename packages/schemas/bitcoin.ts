@@ -68,9 +68,7 @@ export const bitcoinMultisigAccountDescriptor = z.string().transform((str, ctx) 
  *
  * The input must be an object with a `network` property that is a function or a Network.
  */
-// We need `any` here for the zod type inference to work correctly
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function bitcoinNetwork<T extends z.ZodType<{ network: Network | (() => Network) }, any, any>>(
+export function bitcoinNetwork<T extends z.ZodType<{ network: Network | (() => Network) }, z.ZodTypeDef, unknown>>(
   schema: T,
   allowed: Network[],
 ): z.ZodEffects<T, z.infer<T>, z.input<T>> {

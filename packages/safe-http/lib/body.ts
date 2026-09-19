@@ -30,10 +30,7 @@ export class SafeBody {
     )
   }
 
-  public json<T, E extends Error>(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    parse: (json: any) => Result<T, E>,
-  ): AsyncResult<T, SafeBodyError> {
+  public json<T, E extends Error>(parse: (json: unknown) => Result<T, E>): AsyncResult<T, SafeBodyError> {
     return Result.fromPromise(this.originalBody.json())
       .mapErr((error) => new SafeBodyError(SafeBodyErrorKind.Unreadable, 'Failed to read JSON body', error))
       .andThen(parse)
