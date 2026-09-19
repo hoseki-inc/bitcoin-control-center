@@ -51,6 +51,7 @@
     "oxc/number-arg-out-of-range": "error",
     "oxc/only-used-in-recursion": "error",
     "oxc/uninvoked-array-callback": "error",
-    "typescript/adjacent-overload-signatures": "error"
+    "typescript/adjacent-overload-signatures": "error",
+    "typescript/await-thenable": "error"
   }
 }
