@@ -797,7 +797,7 @@ export class ControlCenterService {
     }
 
     let tip = tipResult.unwrap()
-    let requestedRange = fullHistory
+    const requestedRange = fullHistory
       ? { fromBlockHeight: 0, toBlockHeight: tip.height }
       : historySyncRangeForStartDate(rangeStart, tip)
     let missingRanges = this.getMissingAccountHistorySyncRanges(accountId, requestedRange)
@@ -886,7 +886,7 @@ export class ControlCenterService {
         ...tailResult.unwrap().filter((entry) => entry.blockHeight !== null && entry.blockHeight > tip.height),
       ]
       tip = verifiedTip
-      requestedRange = { ...requestedRange, toBlockHeight: tip.height }
+      requestedRange.toBlockHeight = tip.height
       missingRanges = this.getMissingAccountHistorySyncRanges(accountId, requestedRange)
     }
 
