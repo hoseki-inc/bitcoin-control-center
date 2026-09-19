@@ -1,2 +1,2 @@
-export * from './balance'
+export type * from './balance'
 export * from './util'
