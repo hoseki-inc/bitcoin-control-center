@@ -56,7 +56,8 @@
     "typescript/ban-ts-comment": "error",
     "typescript/consistent-type-exports": "error",
     "typescript/consistent-type-imports": "error",
-    "typescript/dot-notation": "error"
+    "typescript/dot-notation": "error",
+    "typescript/explicit-member-accessibility": "error"
   },
   "overrides": [
     {

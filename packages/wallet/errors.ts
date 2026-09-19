@@ -5,7 +5,7 @@ export class HardwareDeviceError extends Error {
   public readonly friendlyMessage: string
   public readonly details?: unknown
 
-  constructor(message: string, wallet: SupportedHardwareWallet, friendlyMessage: string, details?: unknown) {
+  public constructor(message: string, wallet: SupportedHardwareWallet, friendlyMessage: string, details?: unknown) {
     super(message)
 
     this.name = 'HardwareDeviceError'

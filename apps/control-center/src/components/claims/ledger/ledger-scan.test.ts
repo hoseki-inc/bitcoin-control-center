@@ -38,11 +38,11 @@ const mocks = await vi.hoisted(async () => {
 vi.mock('@ledgerhq/hw-app-btc', () => ({
   default: class LedgerBtcApp {
     private transport: Transport
-    constructor({ transport }: { transport: Transport }) {
+    public constructor({ transport }: { transport: Transport }) {
       this.transport = transport
       transport.decorateAppAPIMethods(this, ['getWalletXpub'], 'BTC')
     }
-    getWalletXpub(input: { path: string }): Promise<string> {
+    public getWalletXpub(input: { path: string }): Promise<string> {
       return mocks.getXpub(this.transport, input.path)
     }
   },

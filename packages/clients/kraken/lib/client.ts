@@ -127,7 +127,7 @@ function parseErrorData(response: SafeResponse): AsyncResult<ParsedData<ErrorRes
 }
 
 export class Client {
-  constructor(private readonly credentials: KrakenCredentials) {}
+  public constructor(private readonly credentials: KrakenCredentials) {}
 
   private makeRequest(path: string, postData: string): AsyncResult<SafeResponse, ApiError> {
     const self = this
@@ -188,7 +188,7 @@ export class Client {
    *
    * @see https://docs.kraken.com/api/docs/rest-api/get-account-balance
    */
-  getBalance(): AsyncResult<ParsedData<BalanceResult>, ApiError> {
+  public getBalance(): AsyncResult<ParsedData<BalanceResult>, ApiError> {
     const self = this
     return tryBlockAsync(async function* () {
       // Generate nonce
@@ -220,7 +220,7 @@ export class Client {
    *
    * @see https://docs.kraken.com/api/docs/rest-api/get-ledgers-info
    */
-  getLedgers(payload: LedgersPayload = {}): AsyncResult<ParsedData<LedgersResult>, ApiError> {
+  public getLedgers(payload: LedgersPayload = {}): AsyncResult<ParsedData<LedgersResult>, ApiError> {
     const self = this
     return tryBlockAsync(async function* () {
       // Validate payload

@@ -4,7 +4,7 @@ import { SafeResponse } from './response.ts'
 import { type Input, type Options } from './types.ts'
 
 export class SafeHttp {
-  constructor(public readonly options?: Options) {}
+  public constructor(public readonly options?: Options) {}
 
   public request(input: Input, options?: Options): AsyncResult<SafeResponse, SafeHttpError> {
     const request = new Request(input, { ...this.options, ...options })

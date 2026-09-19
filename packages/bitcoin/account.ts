@@ -140,7 +140,7 @@ export class SingleSigAccount {
     return this.toString()
   }
 
-  [Symbol.for('nodejs.util.inspect.custom')](): string {
+  public [Symbol.for('nodejs.util.inspect.custom')](): string {
     return this.toString()
   }
 }
@@ -307,7 +307,7 @@ export class MultiSigAccount {
     return this.toString()
   }
 
-  [Symbol.for('nodejs.util.inspect.custom')](): string {
+  public [Symbol.for('nodejs.util.inspect.custom')](): string {
     return this.toString()
   }
 }

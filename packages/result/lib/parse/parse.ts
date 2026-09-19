@@ -2,7 +2,7 @@ import { Err, ErrorWithCause, Ok, type Result } from '@patina/core'
 import { type z } from 'zod'
 
 export class ParseError<E extends Error = Error> extends ErrorWithCause<E> {
-  readonly tag = 'ParseError'
+  public readonly tag = 'ParseError'
 }
 
 export function parse<S extends z.ZodTypeAny, I extends z.input<S> | z.infer<S>, O extends z.infer<S>>(

@@ -112,7 +112,7 @@ export class IndexSet<T extends Indexable> implements Set<T> {
    * @param other The other IndexSet to compare against.
    * @returns A new IndexSet containing values that are in this set but not in the other.
    */
-  difference(other: IndexSet<T>): IndexSet<T> {
+  public difference(other: IndexSet<T>): IndexSet<T> {
     const set = new IndexSet<T>()
     for (const value of this) {
       if (!other.has(value)) {
@@ -127,7 +127,7 @@ export class IndexSet<T extends Indexable> implements Set<T> {
    * @param other The other IndexSet to compare against.
    * @returns A new IndexSet containing values that are present in both sets.
    */
-  intersection(other: IndexSet<T>): IndexSet<T> {
+  public intersection(other: IndexSet<T>): IndexSet<T> {
     const set = new IndexSet<T>()
     const [smaller, larger] = this.size < other.size ? [this, other] : [other, this]
     for (const value of smaller) {
@@ -143,7 +143,7 @@ export class IndexSet<T extends Indexable> implements Set<T> {
    * @param other The other IndexSet to compare against.
    * @returns A new IndexSet containing values that are in either set but not in both.
    */
-  symmetricDifference(other: IndexSet<T>): IndexSet<T> {
+  public symmetricDifference(other: IndexSet<T>): IndexSet<T> {
     const set = new IndexSet<T>()
     for (const value of this) {
       if (!other.has(value)) {
@@ -163,7 +163,7 @@ export class IndexSet<T extends Indexable> implements Set<T> {
    * @param other The other IndexSet to combine with.
    * @returns A new IndexSet containing all values from both sets.
    */
-  union(other: IndexSet<T>): IndexSet<T> {
+  public union(other: IndexSet<T>): IndexSet<T> {
     const set = new IndexSet<T>(this)
     for (const value of other) {
       set.add(value)
@@ -176,7 +176,7 @@ export class IndexSet<T extends Indexable> implements Set<T> {
    * @param other The other IndexSet to compare against.
    * @returns True if there are no common elements, otherwise false.
    */
-  isDisjointFrom(other: IndexSet<T>): boolean {
+  public isDisjointFrom(other: IndexSet<T>): boolean {
     return this.intersection(other).size === 0
   }
 
@@ -185,7 +185,7 @@ export class IndexSet<T extends Indexable> implements Set<T> {
    * @param other The other IndexSet to compare against.
    * @returns True if this set is a subset of the other, otherwise false.
    */
-  isSubsetOf(other: IndexSet<T>): boolean {
+  public isSubsetOf(other: IndexSet<T>): boolean {
     return this.intersection(other).size === this.size
   }
 
@@ -194,7 +194,7 @@ export class IndexSet<T extends Indexable> implements Set<T> {
    * @param other The other IndexSet to compare against.
    * @returns True if this set contains all elements of the other, otherwise false.
    */
-  isSupersetOf(other: IndexSet<T>): boolean {
+  public isSupersetOf(other: IndexSet<T>): boolean {
     return other.isSubsetOf(this)
   }
 
