@@ -38,6 +38,7 @@
     "oxc/const-comparisons": "error",
     "oxc/double-comparisons": "error",
     "oxc/erasing-op": "error",
-    "oxc/misrefactored-assign-op": "error"
+    "oxc/misrefactored-assign-op": "error",
+    "oxc/missing-throw": "error"
   }
 }
