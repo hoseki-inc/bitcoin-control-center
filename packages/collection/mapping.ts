@@ -70,8 +70,6 @@ export class Mapping<V extends Mappable> {
   public [Symbol.toStringTag]: string = 'Mapping'
 
   public toString(): string {
-    return `Mapping(${Array.from(this.entries())
-      .map(([key, value]) => `${key} => ${value}`)
-      .join(', ')})`
+    return `Mapping(${Array.from(this.keys()).join(', ')})`
   }
 }

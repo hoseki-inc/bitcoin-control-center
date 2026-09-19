@@ -2,7 +2,7 @@ import { Err, None, Ok, Some } from '@patina/core'
 import Decimal from 'decimal.js'
 import SuperJSON from 'superjson'
 import { expect, test } from 'vitest'
-import { Mapping } from '../../collection'
+import { IndexMap, IndexSet, Mapping } from '../../collection'
 import { registerCustomSerializers } from './custom-serializers'
 
 registerCustomSerializers(SuperJSON)
@@ -51,4 +51,25 @@ test('Result', () => {
   expect(deserialized.isErr()).toBe(true)
   expect(deserialized.error()).toBeInstanceOf(Error)
   expect(deserialized.error()).toMatchObject({ name: 'Error', message: 'error' })
+})
+
+test('IndexMap preserves object identifiers and bigint values after serialization', () => {
+  const value = new IndexMap<{ id: string }, bigint>([
+    [{ id: 'first' }, 1n],
+    [{ id: 'second' }, 2n],
+  ])
+  const restored = SuperJSON.parse<IndexMap<{ id: string }, bigint>>(SuperJSON.stringify(value))
+  expect(restored).toBeInstanceOf(IndexMap)
+  expect(restored.size).toBe(2)
+  expect(restored.get({ id: 'first' })).toBe(1n)
+  expect(restored.get({ id: 'second' })).toBe(2n)
+})
+
+test('IndexSet preserves object keys after serialization', () => {
+  const value = new IndexSet([{ key: 'first' }, { key: 'second' }])
+  const restored = SuperJSON.parse<IndexSet<{ key: string }>>(SuperJSON.stringify(value))
+  expect(restored).toBeInstanceOf(IndexSet)
+  expect(restored.size).toBe(2)
+  expect(restored.has({ key: 'first' })).toBe(true)
+  expect(restored.has({ key: 'second' })).toBe(true)
 })
