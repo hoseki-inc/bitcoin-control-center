@@ -67,7 +67,8 @@
     "typescript/no-duplicate-type-constituents": "error",
     "typescript/no-dynamic-delete": "error",
     "typescript/no-empty-object-type": "error",
-    "typescript/no-explicit-any": "error"
+    "typescript/no-explicit-any": "error",
+    "typescript/no-extra-non-null-assertion": "error"
   },
   "overrides": [
     {
