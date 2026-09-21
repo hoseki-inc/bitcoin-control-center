@@ -1,4 +1,4 @@
-import { type Decimal } from 'decimal.js'
+import type { Decimal } from 'decimal.js'
 import { type Code, Currency, type CurrencyOptions } from './currency'
 
 type Without<T, U> = {

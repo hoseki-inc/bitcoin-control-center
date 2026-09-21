@@ -15,7 +15,7 @@ import { useNavigate } from 'react-router'
 import { toast } from 'sonner'
 import { browserLogger } from '../../../logger'
 import { trpc } from '../../../trpc'
-import { type ClaimDto } from '../../../trpc/server-types'
+import type { ClaimDto } from '../../../trpc/server-types'
 
 export type DeleteClaimModalProps = {
   action: 'abandon' | 'archive' | 'deletePending' | 'deletePermanently'

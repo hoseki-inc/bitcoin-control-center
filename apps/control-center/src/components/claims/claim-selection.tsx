@@ -15,7 +15,7 @@ import {
   Thead,
   Tr,
 } from '@chakra-ui/react'
-import { type BalanceWithStatus } from '@hoseki/packages/lib/balance'
+import type { BalanceWithStatus } from '@hoseki/packages/lib/balance'
 import type { ClaimId } from '@hoseki/packages/schemas'
 import { ErrorInline, Spinner } from '@hoseki/packages/ui/design-system'
 import { LoadingTextSkeleton } from '@hoseki/packages/ui/prove-verify-ui/claims/loading-text-skeleton'

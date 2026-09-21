@@ -1,8 +1,8 @@
-import { type Result } from '@patina/core'
+import type { Result } from '@patina/core'
 import { z } from 'zod'
 import { parse } from '../result'
-import { type DerivationPath, type DerivationPathString } from './derivation-path'
-import { type CheckedXpubString, type Xpub } from './xpub'
+import type { DerivationPath, DerivationPathString } from './derivation-path'
+import type { CheckedXpubString, Xpub } from './xpub'
 
 /**
  * First 8 bytes of the SHA256 hash of the public key.

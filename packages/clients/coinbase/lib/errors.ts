@@ -1,5 +1,5 @@
 import { ErrorWithTag } from '@hoseki/packages/result'
-import { type SafeResponse } from '@hoseki/packages/safe-http'
+import type { SafeResponse } from '@hoseki/packages/safe-http'
 
 export namespace ErrorKind {
   export function Unauthorized(response: SafeResponse): {

@@ -1,5 +1,5 @@
 import { type AsyncResult, Err, Ok, type Result, asyncFn, tryBlockAsync } from '@patina/core'
-import { type Logger } from 'pino'
+import type { Logger } from 'pino'
 import { IndexMap, IndexSet } from '../../collection'
 import { asyncResultAll } from '../../result'
 import type { Account } from '../account'

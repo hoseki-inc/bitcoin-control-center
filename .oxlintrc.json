@@ -71,7 +71,8 @@
     "typescript/no-extra-non-null-assertion": "error",
     "typescript/no-floating-promises": "error",
     "typescript/no-for-in-array": "error",
-    "typescript/no-implied-eval": "error"
+    "typescript/no-implied-eval": "error",
+    "typescript/no-import-type-side-effects": "error"
   },
   "overrides": [
     {

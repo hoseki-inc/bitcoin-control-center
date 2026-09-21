@@ -1,7 +1,7 @@
 import { Err, Ok, type Result } from '@patina/core'
 import { z } from 'zod'
 import { parse, parseUnknown } from '../result'
-import { type MultiSigAccountScriptType, type SingleSigAccountScriptType } from './account_props'
+import type { MultiSigAccountScriptType, SingleSigAccountScriptType } from './account_props'
 import { derivationPathSchema } from './derivation-path'
 import * as descriptorUtils from './descriptor_utils'
 import { InvalidFormatError } from './errors'

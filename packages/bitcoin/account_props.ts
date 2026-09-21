@@ -1,4 +1,4 @@
-import { type Result } from '@patina/core'
+import type { Result } from '@patina/core'
 import { z } from 'zod'
 import { parse } from '../result'
 import { Xpub } from './xpub'

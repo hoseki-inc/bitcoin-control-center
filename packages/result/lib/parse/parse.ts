@@ -1,5 +1,5 @@
 import { Err, ErrorWithCause, Ok, type Result } from '@patina/core'
-import { type z } from 'zod'
+import type { z } from 'zod'
 
 export class ParseError<E extends Error = Error> extends ErrorWithCause<E> {
   public readonly tag = 'ParseError'

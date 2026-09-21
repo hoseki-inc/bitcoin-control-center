@@ -1,5 +1,5 @@
 import { ErrorWithTag } from '@hoseki/packages/result'
-import { type SafeResponse } from '@hoseki/packages/safe-http'
+import type { SafeResponse } from '@hoseki/packages/safe-http'
 
 export namespace ApiErrorKind {
   export type NetworkUnreachable = { readonly name: 'NetworkUnreachable'; readonly error: Error }

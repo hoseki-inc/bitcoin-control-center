@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { type Primitive } from 'type-fest'
+import type { Primitive } from 'type-fest'
 
 export function useUiSettings<T extends Record<string, Primitive>>(args: {
   userId?: string

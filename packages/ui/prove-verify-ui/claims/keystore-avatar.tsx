@@ -1,5 +1,5 @@
 import { Avatar, AvatarBadge, type AvatarBadgeProps, type AvatarProps, Flex } from '@chakra-ui/react'
-import { type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 
 export type KeystoreAvatarProps = {
   /**

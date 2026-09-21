@@ -1,4 +1,4 @@
-import { type Opaque } from 'type-fest'
+import type { Opaque } from 'type-fest'
 import { z } from 'zod'
 
 export type Email = Opaque<string, 'Email'>

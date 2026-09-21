@@ -6,7 +6,7 @@ import Fireworks from 'react-canvas-confetti/dist/presets/fireworks'
 import { useNavigate } from 'react-router'
 import { useGetClaimBalance } from '../../lib/balances'
 import { clearFlowSource, getFlowSource } from '../../lib/flow-tracker'
-import { type ClaimDto } from '../../trpc/server-types'
+import type { ClaimDto } from '../../trpc/server-types'
 import { mapClaimToClaimCardProps, withStatusBalance } from '../../utils/claim-utils'
 
 type ClaimVerificationReceiptProps =
