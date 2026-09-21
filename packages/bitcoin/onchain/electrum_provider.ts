@@ -44,19 +44,21 @@ export class ElectrumProvider extends OnchainBitcoinProvider {
   )
 
   public getBlocksTip(): AsyncResult<Block, Error> {
-    const self = this
-    return tryBlockAsync(async function* () {
-      const header = yield* self.deps.electrum.headersSubscribe().try()
-      return parseBlockHeader(header.height, header.hex)
-    })
+    return tryBlockAsync(
+      async function* (this: ElectrumProvider) {
+        const header = yield* this.deps.electrum.headersSubscribe().try()
+        return parseBlockHeader(header.height, header.hex)
+      }.bind(this),
+    )
   }
 
   public getBlock(height: number): AsyncResult<Block, Error> {
-    const self = this
-    return tryBlockAsync(async function* () {
-      const header = yield* self.deps.electrum.getBlockHeader(height).try()
-      return parseBlockHeader(height, header)
-    })
+    return tryBlockAsync(
+      async function* (this: ElectrumProvider) {
+        const header = yield* this.deps.electrum.getBlockHeader(height).try()
+        return parseBlockHeader(height, header)
+      }.bind(this),
+    )
   }
 
   public areAddressesUsed = asyncFn(async (addresses: IndexSet<Address>): Promise<Result<IndexSet<Address>, Error>> => {
