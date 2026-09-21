@@ -117,84 +117,83 @@ export abstract class OnchainBitcoinProvider {
   public discoverAccount(
     account: Account,
   ): AsyncResult<{ lastUsedReceiveIndex: number; lastUsedChangeIndex: number }, Error> {
-    const self = this
-    return tryBlockAsync(async function* () {
-      const { lastUsedReceiveIndex, lastUsedChangeIndex } = yield* self
-        .getLastKnownIndexes(account)
-        .inspectErr((err) => {
-          self.deps.logger.error({ err }, 'Error getting last known indexes')
-        })
-        .try()
-
-      self.deps.logger.debug({ account, lastUsedReceiveIndex, lastUsedChangeIndex }, 'Discovering account')
-
-      let newLastUsedReceiveIndex = 0
-      let newLastUsedChangeIndex = 0
-
-      let receiveUnusedCount = 0
-      let changeUnusedCount = 0
-
-      let receiveCheckFrom = 0
-      let receiveCheckUpTo = lastUsedReceiveIndex + CONFIG.GAP_LIMIT
-
-      let changeCheckFrom = 0
-      let changeCheckUpTo = lastUsedChangeIndex + CONFIG.GAP_LIMIT
-
-      while (receiveUnusedCount < CONFIG.GAP_LIMIT || changeUnusedCount < CONFIG.GAP_LIMIT) {
-        const addresses: Array<{ address: Address; change: boolean; index: number }> = []
-
-        if (receiveUnusedCount < CONFIG.GAP_LIMIT) {
-          for (let i = receiveCheckFrom; i < receiveCheckUpTo; i++) {
-            const address = account.receiveAddress(i, self.network)
-            addresses.push({ address, change: false, index: i })
-          }
-        }
-
-        if (changeUnusedCount < CONFIG.GAP_LIMIT) {
-          for (let i = changeCheckFrom; i < changeCheckUpTo; i++) {
-            const address = account.changeAddress(i, self.network)
-            addresses.push({ address, change: true, index: i })
-          }
-        }
-
-        self.deps.logger.debug({ addresses }, 'Checking if addresses are used')
-        const usedMap = yield* self
-          .areAddressesUsed(new IndexSet(addresses.map((a) => a.address)))
+    return tryBlockAsync(
+      async function* (this: OnchainBitcoinProvider) {
+        const { lastUsedReceiveIndex, lastUsedChangeIndex } = yield* this.getLastKnownIndexes(account)
           .inspectErr((err) => {
-            self.deps.logger.error({ err }, 'Error checking if addresses are used')
+            this.deps.logger.error({ err }, 'Error getting last known indexes')
           })
           .try()
 
-        for (const address of addresses) {
-          if (usedMap.has(address.address)) {
-            if (address.change) {
-              newLastUsedChangeIndex = address.index
-              changeUnusedCount = 0
-            } else {
-              newLastUsedReceiveIndex = address.index
-              receiveUnusedCount = 0
-            }
-          } else {
-            if (address.change) {
-              changeUnusedCount += 1
-            } else {
-              receiveUnusedCount += 1
+        this.deps.logger.debug({ account, lastUsedReceiveIndex, lastUsedChangeIndex }, 'Discovering account')
+
+        let newLastUsedReceiveIndex = 0
+        let newLastUsedChangeIndex = 0
+
+        let receiveUnusedCount = 0
+        let changeUnusedCount = 0
+
+        let receiveCheckFrom = 0
+        let receiveCheckUpTo = lastUsedReceiveIndex + CONFIG.GAP_LIMIT
+
+        let changeCheckFrom = 0
+        let changeCheckUpTo = lastUsedChangeIndex + CONFIG.GAP_LIMIT
+
+        while (receiveUnusedCount < CONFIG.GAP_LIMIT || changeUnusedCount < CONFIG.GAP_LIMIT) {
+          const addresses: Array<{ address: Address; change: boolean; index: number }> = []
+
+          if (receiveUnusedCount < CONFIG.GAP_LIMIT) {
+            for (let i = receiveCheckFrom; i < receiveCheckUpTo; i++) {
+              const address = account.receiveAddress(i, this.network)
+              addresses.push({ address, change: false, index: i })
             }
           }
+
+          if (changeUnusedCount < CONFIG.GAP_LIMIT) {
+            for (let i = changeCheckFrom; i < changeCheckUpTo; i++) {
+              const address = account.changeAddress(i, this.network)
+              addresses.push({ address, change: true, index: i })
+            }
+          }
+
+          this.deps.logger.debug({ addresses }, 'Checking if addresses are used')
+          const usedMap = yield* this.areAddressesUsed(new IndexSet(addresses.map((a) => a.address)))
+            .inspectErr((err) => {
+              this.deps.logger.error({ err }, 'Error checking if addresses are used')
+            })
+            .try()
+
+          for (const address of addresses) {
+            if (usedMap.has(address.address)) {
+              if (address.change) {
+                newLastUsedChangeIndex = address.index
+                changeUnusedCount = 0
+              } else {
+                newLastUsedReceiveIndex = address.index
+                receiveUnusedCount = 0
+              }
+            } else {
+              if (address.change) {
+                changeUnusedCount += 1
+              } else {
+                receiveUnusedCount += 1
+              }
+            }
+          }
+
+          receiveCheckFrom = receiveCheckUpTo
+          receiveCheckUpTo = receiveCheckFrom + (CONFIG.GAP_LIMIT - receiveUnusedCount)
+
+          changeCheckFrom = changeCheckUpTo
+          changeCheckUpTo = changeCheckFrom + (CONFIG.GAP_LIMIT - changeUnusedCount)
         }
 
-        receiveCheckFrom = receiveCheckUpTo
-        receiveCheckUpTo = receiveCheckFrom + (CONFIG.GAP_LIMIT - receiveUnusedCount)
-
-        changeCheckFrom = changeCheckUpTo
-        changeCheckUpTo = changeCheckFrom + (CONFIG.GAP_LIMIT - changeUnusedCount)
-      }
-
-      return Ok({
-        lastUsedReceiveIndex: newLastUsedReceiveIndex,
-        lastUsedChangeIndex: newLastUsedChangeIndex,
-      })
-    })
+        return Ok({
+          lastUsedReceiveIndex: newLastUsedReceiveIndex,
+          lastUsedChangeIndex: newLastUsedChangeIndex,
+        })
+      }.bind(this),
+    )
   }
 
   public getTransactionEntriesByAccount(account: Account): AsyncResult<TransactionEntry[], Error> {
