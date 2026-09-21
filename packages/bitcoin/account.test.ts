@@ -1,4 +1,4 @@
-import { describe, expect, it, test } from 'vitest'
+import { assert, describe, expect, it, test } from 'vitest'
 import { MultiSigAccount, SingleSigAccount, sortXpubs } from './account'
 import { Network } from './network'
 import { Xpub } from './xpub'
@@ -124,8 +124,14 @@ describe('MultiSigAccount', () => {
     const xpubs = [xpub1, xpub2, xpub3]
     const tpubs = [tpub1, tpub2, tpub3]
 
-    const sortedXpubs = sortXpubs(xpubs)
-    const sortedTpubs = sortXpubs(tpubs)
+    const [sortedXpub1, sortedXpub2, sortedXpub3] = sortXpubs(xpubs)
+    assert.exists(sortedXpub1, 'Expected sorted xpubs to contain three keys')
+    assert.exists(sortedXpub2, 'Expected sorted xpubs to contain three keys')
+    assert.exists(sortedXpub3, 'Expected sorted xpubs to contain three keys')
+    const [sortedTpub1, sortedTpub2, sortedTpub3] = sortXpubs(tpubs)
+    assert.exists(sortedTpub1, 'Expected sorted tpubs to contain three keys')
+    assert.exists(sortedTpub2, 'Expected sorted tpubs to contain three keys')
+    assert.exists(sortedTpub3, 'Expected sorted tpubs to contain three keys')
 
     const fixtures = [
       {
@@ -140,7 +146,7 @@ describe('MultiSigAccount', () => {
         threshold,
         xpubs,
         scriptType: 'p2sh',
-        descriptor: `sh(sortedmulti(2,${sortedXpubs[0]!.toString()}/<0;1>/*,${sortedXpubs[1]!.toString()}/<0;1>/*,${sortedXpubs[2]!.toString()}/<0;1>/*))#vv74t2uj`,
+        descriptor: `sh(sortedmulti(2,${sortedXpub1.toString()}/<0;1>/*,${sortedXpub2.toString()}/<0;1>/*,${sortedXpub3.toString()}/<0;1>/*))#vv74t2uj`,
       },
       {
         isSorted: false,
@@ -154,7 +160,7 @@ describe('MultiSigAccount', () => {
         threshold,
         xpubs,
         scriptType: 'p2sh-p2wsh',
-        descriptor: `sh(wsh(sortedmulti(2,${sortedXpubs[0]!.toString()}/<0;1>/*,${sortedXpubs[1]!.toString()}/<0;1>/*,${sortedXpubs[2]!.toString()}/<0;1>/*)))#qlsug8yc`,
+        descriptor: `sh(wsh(sortedmulti(2,${sortedXpub1.toString()}/<0;1>/*,${sortedXpub2.toString()}/<0;1>/*,${sortedXpub3.toString()}/<0;1>/*)))#qlsug8yc`,
       },
       {
         isSorted: false,
@@ -168,7 +174,7 @@ describe('MultiSigAccount', () => {
         threshold,
         xpubs,
         scriptType: 'p2wsh',
-        descriptor: `wsh(sortedmulti(2,${sortedXpubs[0]!.toString()}/<0;1>/*,${sortedXpubs[1]!.toString()}/<0;1>/*,${sortedXpubs[2]!.toString()}/<0;1>/*))#wx4sj5ka`,
+        descriptor: `wsh(sortedmulti(2,${sortedXpub1.toString()}/<0;1>/*,${sortedXpub2.toString()}/<0;1>/*,${sortedXpub3.toString()}/<0;1>/*))#wx4sj5ka`,
       },
       {
         isSorted: false,
@@ -182,7 +188,7 @@ describe('MultiSigAccount', () => {
         threshold,
         xpubs: tpubs,
         scriptType: 'p2sh',
-        descriptor: `sh(sortedmulti(2,${sortedTpubs[0]!.toString()}/<0;1>/*,${sortedTpubs[1]!.toString()}/<0;1>/*,${sortedTpubs[2]!.toString()}/<0;1>/*))#wvujtf83`,
+        descriptor: `sh(sortedmulti(2,${sortedTpub1.toString()}/<0;1>/*,${sortedTpub2.toString()}/<0;1>/*,${sortedTpub3.toString()}/<0;1>/*))#wvujtf83`,
       },
       {
         isSorted: false,
@@ -196,7 +202,7 @@ describe('MultiSigAccount', () => {
         threshold,
         xpubs: tpubs,
         scriptType: 'p2sh-p2wsh',
-        descriptor: `sh(wsh(sortedmulti(2,${sortedTpubs[0]!.toString()}/<0;1>/*,${sortedTpubs[1]!.toString()}/<0;1>/*,${sortedTpubs[2]!.toString()}/<0;1>/*)))#9uuwa920`,
+        descriptor: `sh(wsh(sortedmulti(2,${sortedTpub1.toString()}/<0;1>/*,${sortedTpub2.toString()}/<0;1>/*,${sortedTpub3.toString()}/<0;1>/*)))#9uuwa920`,
       },
       {
         isSorted: false,
@@ -210,7 +216,7 @@ describe('MultiSigAccount', () => {
         threshold,
         xpubs: tpubs,
         scriptType: 'p2wsh',
-        descriptor: `wsh(sortedmulti(2,${sortedTpubs[0]!.toString()}/<0;1>/*,${sortedTpubs[1]!.toString()}/<0;1>/*,${sortedTpubs[2]!.toString()}/<0;1>/*))#zxy26z43`,
+        descriptor: `wsh(sortedmulti(2,${sortedTpub1.toString()}/<0;1>/*,${sortedTpub2.toString()}/<0;1>/*,${sortedTpub3.toString()}/<0;1>/*))#zxy26z43`,
       },
     ] as const
 

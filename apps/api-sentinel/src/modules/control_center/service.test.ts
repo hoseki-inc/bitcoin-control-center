@@ -9,7 +9,7 @@ import { IndexMap } from '@hoseki/packages/collection'
 import { Wallets } from '@hoseki/packages/testing'
 import { Err, Ok, type Result } from '@patina/core'
 import pino from 'pino'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, assert, beforeEach, describe, expect, it, vi } from 'vitest'
 import { initDatabase } from '../../db'
 import type { EtfService } from '../etf/service'
 import type { ExchangeService } from '../exchange/service'
@@ -526,7 +526,9 @@ describe('history retry coordination', () => {
       expect(data.historyRefreshingAccountIds).toEqual([])
       expect(history).toHaveBeenCalledTimes(attempt)
       expect(harness.coverage()).toEqual([])
-      vi.setSystemTime(service['accountHistoryBackfillCooldownUntil'].get(accountId)! + 1)
+      const cooldown = service['accountHistoryBackfillCooldownUntil'].get(accountId)
+      assert.exists(cooldown, 'Expected a retry cooldown after a failed scan')
+      vi.setSystemTime(cooldown + 1)
     }
     history.mockResolvedValue(Ok([entry(100n, '2020-01-02T12:00:00.000Z')]))
     service['queueAccountHistoryBackfill'](accountId, account, 100n, new Date(0), true)
@@ -551,7 +553,8 @@ describe('history retry coordination', () => {
     await vi.waitFor(() => {
       expect(service['accountHistoryBackfillCooldownUntil'].has(accountId)).toBe(true)
     })
-    const cooldown = service['accountHistoryBackfillCooldownUntil'].get(accountId)!
+    const cooldown = service['accountHistoryBackfillCooldownUntil'].get(accountId)
+    assert.exists(cooldown, 'Expected a retry cooldown after a failed scan')
     const status = await service['getAccountHistoryStatus'](
       [{ id: accountId, descriptor: account.toString(), network: 'mainnet' }],
       new Date('2025-09-05'),
