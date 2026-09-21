@@ -77,7 +77,8 @@
     "typescript/no-meaningless-void-operator": "error",
     "typescript/no-misused-new": "error",
     "typescript/no-misused-promises": "error",
-    "typescript/no-misused-spread": "error"
+    "typescript/no-misused-spread": "error",
+    "typescript/no-mixed-enums": "error"
   },
   "overrides": [
     {
