@@ -32,47 +32,49 @@ export function TrezorSigning({
     setSigningInProgress(true)
     setSigningError(null)
 
-    // Step 1: Sign the message on the device
-    const signMessageResult = await trezorService.signCustomMessage(
-      signingPath,
-      signingMessage.signedMessage.messageTextToSign,
-    )
-    if (signMessageResult.isErr()) {
-      const trezorError = signMessageResult.unwrapErr()
-      captureHardwareWalletError(
-        trezorError,
-        trezorError.message,
-        { wallet: 'trezor', step: 'sign-message' },
-        { signingPath, keystoreDerivationPath: keystore.derivationPath },
+    try {
+      // Step 1: Sign the message on the device
+      const signMessageResult = await trezorService.signCustomMessage(
+        signingPath,
+        signingMessage.signedMessage.messageTextToSign,
       )
-      setSigningError(trezorError)
-      setSigningInProgress(false)
-      return
-    }
+      if (signMessageResult.isErr()) {
+        const trezorError = signMessageResult.unwrapErr()
+        captureHardwareWalletError(
+          trezorError,
+          trezorError.message,
+          { wallet: 'trezor', step: 'sign-message' },
+          { signingPath, keystoreDerivationPath: keystore.derivationPath },
+        )
+        setSigningError(trezorError)
+        return
+      }
 
-    // Step 2: Complete the challenge message
-    const ccmResult = await Result.fromPromise(
-      completeChallengeMessageMutation.mutateAsync({
-        signedMessageId: signingMessage.signedMessage.id,
-        signature: signMessageResult.unwrap().signature,
-      }),
-    )
-    if (ccmResult.isErr()) {
-      setSigningInProgress(false)
-      return
-    }
+      // Step 2: Complete the challenge message
+      const ccmResult = await Result.fromPromise(
+        completeChallengeMessageMutation.mutateAsync({
+          signedMessageId: signingMessage.signedMessage.id,
+          signature: signMessageResult.unwrap().signature,
+        }),
+      )
+      if (ccmResult.isErr()) {
+        return
+      }
 
-    // Step 3: Complete the challenge
-    const ccResult = await Result.fromPromise(
-      completeChallengeMutation.mutateAsync({ challengeId: signingChallenge.id }),
-    )
-    if (ccResult.isErr()) {
-      setSigningInProgress(false)
-      return
-    }
+      // Step 3: Complete the challenge
+      const ccResult = await Result.fromPromise(
+        completeChallengeMutation.mutateAsync({ challengeId: signingChallenge.id }),
+      )
+      if (ccResult.isErr()) {
+        return
+      }
 
-    setSigningInProgress(false)
-    onSigningComplete()
+      onSigningComplete()
+    } catch (caughtError) {
+      setSigningError(caughtError instanceof Error ? caughtError : new Error('Error signing message'))
+    } finally {
+      setSigningInProgress(false)
+    }
   }
 
   return (
@@ -86,7 +88,9 @@ export function TrezorSigning({
         address: Address.fromCheckedString(challengeMessage.signedMessage.address),
         signingPath,
       }}
-      onProveControl={() => signCustomMessageOnTrezor(challenge, challengeMessage)}
+      onProveControl={() => {
+        void signCustomMessageOnTrezor(challenge, challengeMessage)
+      }}
       onBack={onExitSigning}
       signingInProgress={signingInProgress}
     />

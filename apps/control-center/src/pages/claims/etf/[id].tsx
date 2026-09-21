@@ -125,7 +125,13 @@ export function EtfAccountDetailsPage(): JSX.Element {
         <TopBar.Item as={Link} to="/accounts">
           Back to Accounts
         </TopBar.Item>
-        <TopBar.Item as="button" color="error.600" onClick={handleDelete}>
+        <TopBar.Item
+          as="button"
+          color="error.600"
+          onClick={() => {
+            void handleDelete()
+          }}
+        >
           {isDeleting ? 'Removing...' : 'Remove Account'}
         </TopBar.Item>
       </TopBar>
@@ -243,7 +249,9 @@ export function EtfAccountDetailsPage(): JSX.Element {
                             size="xs"
                             variant="ghost"
                             color="error.500"
-                            onClick={() => handleRemoveHolding(holding.id)}
+                            onClick={() => {
+                              void handleRemoveHolding(holding.id)
+                            }}
                           >
                             Remove
                           </Button>
@@ -318,7 +326,9 @@ export function EtfAccountDetailsPage(): JSX.Element {
             <Button
               size="sm"
               variant="outline"
-              onClick={handleAddHolding}
+              onClick={() => {
+                void handleAddHolding()
+              }}
               isLoading={addHoldingMutation.isLoading}
               isDisabled={!newShares}
             >

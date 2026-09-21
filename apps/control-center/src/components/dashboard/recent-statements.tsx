@@ -27,7 +27,9 @@ export function RecentStatements({
           <StatementCard
             key={statement.id}
             statement={statement}
-            onView={() => navigate(`/statements/${statement.id}`)}
+            onView={() => {
+              void navigate(`/statements/${statement.id}`)
+            }}
           />
         ))}
       </SimpleGrid>

@@ -1,4 +1,4 @@
-import { Stack } from '@chakra-ui/react'
+import { Button, Stack } from '@chakra-ui/react'
 import { ErrorBanner, Spinner } from '@hoseki/packages/ui/design-system'
 import type { Keystore as IndicatorKeystore } from '@hoseki/packages/ui/prove-verify-ui/claims/keystores-status-indicator'
 import type { SupportedHardwareWallet } from '@hoseki/packages/wallet'
@@ -25,6 +25,8 @@ export function MultisigPageWrapper(): JSX.Element {
 
   const {
     isLoading,
+    isFetching,
+    refetch,
     error,
     data: claim,
   } = trpc.portalProve.registry.claims.get.byId.useQuery({ id: claimId }, { enabled: Boolean(claimId) })
@@ -36,7 +38,19 @@ export function MultisigPageWrapper(): JSX.Element {
     return <Spinner fullPage />
   }
   if (error || !claim) {
-    return <ErrorBanner mt={8} mb={4} message={`An error occurred while loading the claim: ${error?.message ?? ''}`} />
+    return (
+      <Stack mt={8} spacing={4} align="start">
+        <ErrorBanner message={`An error occurred while loading the claim: ${error?.message ?? ''}`} />
+        <Button
+          isLoading={isFetching}
+          onClick={() => {
+            void refetch()
+          }}
+        >
+          Retry
+        </Button>
+      </Stack>
+    )
   }
   if (claim.isArchived) {
     return <Navigate to="/accounts#archived" replace />

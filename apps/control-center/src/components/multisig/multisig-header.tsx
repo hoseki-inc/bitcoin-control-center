@@ -31,7 +31,7 @@ export function MultisigHeader({
     allKeystores: IndicatorKeystore[],
   ): null | ((keystore: IndicatorKeystore) => void) {
     function navigateToHubWithKeystoreIdSearch(selectedKeystore: IndicatorKeystore) {
-      return navigate({
+      void navigate({
         pathname: `/multisig/${claim.id}`,
         search: `?${createSearchParams({
           keystoreId: selectedKeystore.id,

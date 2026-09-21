@@ -30,7 +30,9 @@ export function ConnectLedger(): JSX.Element {
     <ClaimConnectionWrapper>
       {step === 'step-1-info' && (
         <LedgerConnectionInfo
-          onBack={() => navigate(returnTo)}
+          onBack={() => {
+            void navigate(returnTo)
+          }}
           onContinue={() => {
             setStep('step-2-scan')
           }}
@@ -44,7 +46,9 @@ export function ConnectLedger(): JSX.Element {
           onBack={() => {
             setStep('step-1-info')
           }}
-          onCancel={() => navigate(returnTo)}
+          onCancel={() => {
+            void navigate(returnTo)
+          }}
         />
       )}
     </ClaimConnectionWrapper>

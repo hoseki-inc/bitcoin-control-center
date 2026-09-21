@@ -151,7 +151,12 @@ export function ConnectTrezor(): JSX.Element {
   return (
     <ClaimConnectionWrapper>
       {step === 'step-1-info' && (
-        <TrezorInfo onBack={() => navigate(returnTo)} onConnectTrezor={getTrezorAccountInfo} />
+        <TrezorInfo
+          onBack={() => {
+            void navigate(returnTo)
+          }}
+          onConnectTrezor={getTrezorAccountInfo}
+        />
       )}
 
       {step === 'step-2-confirm' &&
@@ -165,7 +170,9 @@ export function ConnectTrezor(): JSX.Element {
             onContinue={() => {
               handleContinue(selectedTrezorAccount.trezorFeatures)
             }}
-            onCancel={() => navigate(returnTo)}
+            onCancel={() => {
+              void navigate(returnTo)
+            }}
           />
         ))}
     </ClaimConnectionWrapper>

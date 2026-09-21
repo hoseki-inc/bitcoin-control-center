@@ -162,7 +162,13 @@ export function ManualAccountDetailsPage(): JSX.Element {
         <TopBar.Item as={Link} to="/accounts">
           Back to Accounts
         </TopBar.Item>
-        <TopBar.Item as="button" color="error.600" onClick={handleDelete}>
+        <TopBar.Item
+          as="button"
+          color="error.600"
+          onClick={() => {
+            void handleDelete()
+          }}
+        >
           {isDeleting ? 'Removing...' : 'Remove Account'}
         </TopBar.Item>
       </TopBar>
@@ -271,7 +277,9 @@ export function ManualAccountDetailsPage(): JSX.Element {
             <Button
               size="sm"
               variant="outline"
-              onClick={handleUpdateBalance}
+              onClick={() => {
+                void handleUpdateBalance()
+              }}
               isLoading={updateBalanceMutation.isLoading}
               isDisabled={!newBtcAmount}
             >
@@ -353,7 +361,9 @@ export function ManualAccountDetailsPage(): JSX.Element {
               <Button
                 size="sm"
                 variant="outline"
-                onClick={handleAddTransaction}
+                onClick={() => {
+                  void handleAddTransaction()
+                }}
                 isLoading={addTxMutation.isLoading}
                 isDisabled={!txAmount}
               >
@@ -420,7 +430,9 @@ export function ManualAccountDetailsPage(): JSX.Element {
                           size="xs"
                           variant="ghost"
                           color="error.500"
-                          onClick={() => handleDeleteTransaction(tx.id)}
+                          onClick={() => {
+                            void handleDeleteTransaction(tx.id)
+                          }}
                         >
                           Delete
                         </Button>

@@ -144,7 +144,9 @@ function SinglesigStep11({
       fileState={fileState}
       setFileState={setFileState}
       onBack={onBack}
-      onProveControl={proveControl}
+      onProveControl={() => {
+        void proveControl()
+      }}
       {...rest}
     />
   )

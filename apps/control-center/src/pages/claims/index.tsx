@@ -234,7 +234,9 @@ export function ClaimsPage(): JSX.Element {
             color="shades.0"
             fontWeight="semibold"
             borderRadius="8px"
-            onClick={() => navigate('/accounts/add')}
+            onClick={() => {
+              void navigate('/accounts/add')
+            }}
             _hover={{ bg: 'neutral.700' }}
           >
             + Add Account
@@ -278,10 +280,18 @@ export function ClaimsPage(): JSX.Element {
                 linkPrefix="/accounts/etf"
               />
             ))}
-            <AddAccountCard onClick={() => navigate('/accounts/add')} />
+            <AddAccountCard
+              onClick={() => {
+                void navigate('/accounts/add')
+              }}
+            />
           </Grid>
         ) : (
-          <EmptyHoldings onAdd={() => navigate('/accounts/add')} />
+          <EmptyHoldings
+            onAdd={() => {
+              void navigate('/accounts/add')
+            }}
+          />
         )}
 
         {/* Archived accounts accordion */}
@@ -295,7 +305,13 @@ export function ClaimsPage(): JSX.Element {
           {archivedClaimsQuery.isError && (
             <Stack gap={3} align="flex-start">
               <ErrorBanner message={`Failed to load archived accounts: ${archivedClaimsQuery.error.message}`} />
-              <Button size="sm" variant="outline" onClick={() => archivedClaimsQuery.refetch()}>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  void archivedClaimsQuery.refetch()
+                }}
+              >
                 Retry
               </Button>
             </Stack>

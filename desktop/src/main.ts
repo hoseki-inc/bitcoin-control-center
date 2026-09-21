@@ -2,6 +2,7 @@ import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { BrowserWindow, app, dialog, ipcMain, shell } from 'electron'
 import { setupLedgerHidAccess } from './ledger-hid'
+import { createQuitHandler } from './shutdown'
 import { TorManager } from './tor'
 import { setupTray } from './tray'
 
@@ -111,11 +112,27 @@ app
     })
 
     // Graceful shutdown
-    app.on('before-quit', async () => {
-      await server.shutdown()
-      torManager?.stop()
-      tray.destroy()
-    })
+    app.on(
+      'before-quit',
+      createQuitHandler({
+        shutdownServer: () => server.shutdown(),
+        stopTor: () => {
+          torManager?.stop()
+        },
+        destroyTray: () => {
+          tray.destroy()
+        },
+        reportError: () => {
+          dialog.showErrorBox('Unable to finish shutting down', 'Bitcoin Control Center will now close.')
+        },
+        quit: () => {
+          app.quit()
+        },
+        forceQuit: () => {
+          app.exit(1)
+        },
+      }),
+    )
   })
   .catch(() => {
     dialog.showErrorBox('Unable to start Bitcoin Control Center', 'Please restart the app to try again.')

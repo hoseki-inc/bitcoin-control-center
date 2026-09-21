@@ -1,6 +1,7 @@
 import { Box, Button, FormControl, FormLabel, HStack, Input, chakra } from '@chakra-ui/react'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useForm } from 'react-hook-form'
+import { toast } from 'sonner'
 import { z } from 'zod'
 
 const schema = z.object({
@@ -42,7 +43,13 @@ export function RenameInput({
   }
 
   return (
-    <chakra.form onSubmit={handleSubmit(onSubmit)}>
+    <chakra.form
+      onSubmit={(event) => {
+        handleSubmit(onSubmit)(event).catch(() => {
+          toast.error('Unable to save the name. Please try again.')
+        })
+      }}
+    >
       <HStack spacing={8}>
         <Box flexGrow={1}>
           <FormControl isInvalid={Boolean(errors.name)}>

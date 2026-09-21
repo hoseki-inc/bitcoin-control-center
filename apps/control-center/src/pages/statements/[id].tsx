@@ -159,7 +159,7 @@ function ActionButtons({
   statement: StatementDto
   statementFormat: StatementDocumentFormat
 }) {
-  const { mutateAsync: downloadPdf, isLoading: isDownloadingPdf } = usePdfDownloadMutation({
+  const { mutate: downloadPdf, isLoading: isDownloadingPdf } = usePdfDownloadMutation({
     mutationFn: triggerPdfDownload,
   })
 
@@ -172,8 +172,8 @@ function ActionButtons({
         <Button
           variant="outline"
           size="md"
-          onClick={async () => {
-            await downloadPdf({ statement, format: statementFormat })
+          onClick={() => {
+            downloadPdf({ statement, format: statementFormat })
           }}
           isLoading={isDownloadingPdf}
           isDisabled={statement.status !== 'completed'}

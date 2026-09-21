@@ -129,7 +129,12 @@ export function MultisigCreatePage(): JSX.Element {
             onBack={() => {
               setStep('upload')
             }}
-            onNext={handleClaimCreation}
+            onNext={(name) => {
+              handleClaimCreation(name).catch(() => {
+                setIsSaving(false)
+                toast.error('Failed to save multisig account')
+              })
+            }}
           />
         )}
       </PageTransition>
@@ -319,7 +324,13 @@ function DetectionStep({
         Let's name your multisig claim. You rename this later at anytime.
       </Text>
 
-      <form onSubmit={handleSubmit(onSubmit)}>
+      <form
+        onSubmit={(event) => {
+          handleSubmit(onSubmit)(event).catch(() => {
+            toast.error('Unable to submit the account name. Please try again.')
+          })
+        }}
+      >
         <FormControl isInvalid={Boolean(errors.claimName)}>
           <FormLabel htmlFor="claim-name">Name</FormLabel>
           <Input id="claim-name" {...register('claimName')} placeholder="Multisig claim name" autoFocus />

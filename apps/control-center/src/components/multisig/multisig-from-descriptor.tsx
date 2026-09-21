@@ -113,7 +113,13 @@ export function MultisigFromDescriptor({ onNext }: { onNext: (data: CreateMultis
           </AccordionButton>
         </h2>
         <AccordionPanel p={4} pt={0} display="flex" flexDirection="column" gap={4}>
-          <form onSubmit={handleSubmit(onSubmit)}>
+          <form
+            onSubmit={(event) => {
+              handleSubmit(onSubmit)(event).catch(() => {
+                setParsingError('Unable to read the descriptor. Please check it and try again.')
+              })
+            }}
+          >
             <FormControl mb={4} isInvalid={!!errors.descriptor || !!parsingError}>
               <Textarea
                 {...register('descriptor', {
