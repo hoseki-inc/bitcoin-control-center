@@ -76,7 +76,12 @@
     "typescript/no-invalid-void-type": "error",
     "typescript/no-meaningless-void-operator": "error",
     "typescript/no-misused-new": "error",
-    "typescript/no-misused-promises": "error"
+    "typescript/no-misused-promises": "error",
+    "typescript/no-misused-spread": "error",
+    "typescript/no-mixed-enums": "error",
+    "typescript/no-non-null-asserted-nullish-coalescing": "error",
+    "typescript/no-non-null-asserted-optional-chain": "error",
+    "typescript/no-non-null-assertion": "error"
   },
   "overrides": [
     {
