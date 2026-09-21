@@ -16,7 +16,7 @@ import { type ReactElement, act, createElement } from 'react'
 import { type Root, createRoot } from 'react-dom/client'
 import type * as ReactRouter from 'react-router'
 import { RouterProvider, createMemoryRouter } from 'react-router'
-import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, assert, beforeEach, describe, expect, it, vi } from 'vitest'
 import { LedgerSigning as SinglesigLedgerSigning } from '../../../components/claims/ledger/ledger-signing'
 import { TrezorSigning as SinglesigTrezorSigning } from '../../../components/claims/trezor/trezor-signing'
 import type * as MultisigPageWrapperModule from '../../../components/multisig/multisig-page-wrapper'
@@ -167,9 +167,9 @@ let router: ReturnType<typeof createMemoryRouter> | undefined
 
 async function clickNext(): Promise<void> {
   const button = container.querySelector('svg.lucide-arrow-right')?.closest('button')
-  expect(button).toBeDefined()
+  assert.exists(button, 'Expected signing button')
   await act(async () => {
-    button!.click()
+    button.click()
   })
 }
 
@@ -191,8 +191,8 @@ async function reachSigning(): Promise<void> {
 
 function getSignButton(): HTMLButtonElement {
   const button = Array.from(container.querySelectorAll('button')).find((item) => item.textContent === 'Prove Control')
-  expect(button).toBeDefined()
-  return button!
+  assert.exists(button, 'Expected signing button')
+  return button
 }
 
 async function clickSign(): Promise<void> {
@@ -339,10 +339,13 @@ describe('Ledger multisig signing screen', () => {
 describe.each(['ledger', 'trezor'] as const)('%s as the final multisig cosigner', (walletType) => {
   beforeEach(async () => {
     mocks.walletType = walletType
-    const challenge = mocks.claim.latestChallenge!
+    const challenge = mocks.claim.latestChallenge
+    assert.exists(challenge, 'Expected the claim challenge')
+    assert.exists(challenge.messages[0], 'Expected the first challenge message')
+    assert.exists(mocks.claim.keystores[1], 'Expected the second keystore')
     challenge.messages.push({
-      ...challenge.messages[0]!,
-      keystoreId: mocks.claim.keystores[1]!.id,
+      ...challenge.messages[0],
+      keystoreId: mocks.claim.keystores[1].id,
       signedMessageId: 'message-0' as (typeof challenge.messages)[number]['signedMessageId'],
       signed: true,
     })
@@ -447,7 +450,8 @@ describe.each(['ledger', 'trezor'] as const)('%s as the final multisig cosigner'
       root.render(null)
     })
     queryClient.clear()
-    const completedChallenge = mocks.claim.latestChallenge!
+    const completedChallenge = mocks.claim.latestChallenge
+    assert.exists(completedChallenge, 'Expected the claim challenge')
     mocks.claim = {
       ...mocks.claim,
       isVerified: true,
@@ -554,9 +558,9 @@ describe.each(['singlesig', 'multisig'] as const)('%s Ledger retry', (flow) => {
       }),
     )
     const retry = Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Retry')
-    expect(retry).toBeDefined()
+    assert.exists(retry, 'Missing Retry button')
     await act(async () => {
-      retry!.click()
+      retry.click()
     })
     try {
       expect(sdkClose).not.toHaveBeenCalled()
@@ -581,9 +585,9 @@ type AirgappedFlow = 'coldcard-file' | 'coldcard-qr' | 'keystone'
 
 async function clickButton(text: string): Promise<void> {
   const button = Array.from(container.querySelectorAll('button')).find((element) => element.textContent === text)
-  expect(button).toBeDefined()
+  assert.exists(button, 'Expected signing button')
   await act(async () => {
-    button!.click()
+    button.click()
   })
 }
 
@@ -598,14 +602,14 @@ async function reachAirgappedSigning(flow: AirgappedFlow): Promise<void> {
       value: { writeText: vi.fn().mockResolvedValue(undefined) },
     })
     const copy = container.querySelector('svg.lucide-copy')?.closest('button')
-    expect(copy).toBeDefined()
+    assert.exists(copy, 'Missing copy button')
     await act(async () => {
-      copy!.click()
+      copy.click()
     })
     await clickButton('Next')
     await clickButton('Next')
     const input = container.querySelector<HTMLInputElement>('input[type="file"]')
-    expect(input).not.toBeNull()
+    assert.exists(input, 'Missing signature file input')
     const contents = [
       '-----BEGIN BITCOIN SIGNED MESSAGE-----',
       'Synthetic multisig ownership challenge',
@@ -618,7 +622,7 @@ async function reachAirgappedSigning(flow: AirgappedFlow): Promise<void> {
       value: [new mocks.domGlobals.window.File([contents], 'signature.txt', { type: 'text/plain' })],
     })
     await act(async () => {
-      input!.dispatchEvent(new Event('change', { bubbles: true }))
+      input.dispatchEvent(new Event('change', { bubbles: true }))
     })
     await waitForText('Prove Control')
   } else {
@@ -635,7 +639,8 @@ async function submitAirgappedSignature(flow: AirgappedFlow): Promise<void> {
 describe.each(['coldcard-file', 'coldcard-qr', 'keystone'] as const)('%s multisig completion', (flow) => {
   beforeEach(async () => {
     mocks.walletType = flow === 'keystone' ? 'keystone' : 'coldcard'
-    mocks.claim.keystores[0]!.model = flow === 'coldcard-qr' ? 'Q' : 'MK4'
+    assert.exists(mocks.claim.keystores[0], 'Expected the first keystore')
+    mocks.claim.keystores[0].model = flow === 'coldcard-qr' ? 'Q' : 'MK4'
   })
 
   it('waits for the claim refresh before opening the partial receipt', async () => {
@@ -700,10 +705,13 @@ describe.each(['coldcard-file', 'coldcard-qr', 'keystone'] as const)('%s multisi
   })
 
   it('waits for final completion before refreshing the verified account', async () => {
-    const challenge = mocks.claim.latestChallenge!
+    const challenge = mocks.claim.latestChallenge
+    assert.exists(challenge, 'Expected the claim challenge')
+    assert.exists(challenge.messages[0], 'Expected the first challenge message')
+    assert.exists(mocks.claim.keystores[1], 'Expected the second keystore')
     challenge.messages.push({
-      ...challenge.messages[0]!,
-      keystoreId: mocks.claim.keystores[1]!.id,
+      ...challenge.messages[0],
+      keystoreId: mocks.claim.keystores[1].id,
       signedMessageId: 'message-0' as (typeof challenge.messages)[number]['signedMessageId'],
       signed: true,
     })
@@ -734,10 +742,13 @@ describe.each(['coldcard-file', 'coldcard-qr', 'keystone'] as const)('%s multisi
   })
 
   it('handles final completion failures without opening a receipt', async () => {
-    const challenge = mocks.claim.latestChallenge!
+    const challenge = mocks.claim.latestChallenge
+    assert.exists(challenge, 'Expected the claim challenge')
+    assert.exists(challenge.messages[0], 'Expected the first challenge message')
+    assert.exists(mocks.claim.keystores[1], 'Expected the second keystore')
     challenge.messages.push({
-      ...challenge.messages[0]!,
-      keystoreId: mocks.claim.keystores[1]!.id,
+      ...challenge.messages[0],
+      keystoreId: mocks.claim.keystores[1].id,
       signedMessageId: 'message-0' as (typeof challenge.messages)[number]['signedMessageId'],
       signed: true,
     })
@@ -808,7 +819,8 @@ describe.each(['coldcard-file', 'coldcard-qr', 'keystone'] as const)('%s saved-s
     'recovers through the real page wrapper on %s without resubmitting',
     async (recovery) => {
       mocks.walletType = flow === 'keystone' ? 'keystone' : 'coldcard'
-      mocks.claim.keystores[0]!.model = flow === 'coldcard-qr' ? 'Q' : 'MK4'
+      assert.exists(mocks.claim.keystores[0], 'Expected the first keystore')
+      mocks.claim.keystores[0].model = flow === 'coldcard-qr' ? 'Q' : 'MK4'
       mocks.fetchClaim.mockRejectedValueOnce(new Error('Temporary account refresh failure'))
       mocks.completeMessage
         .mockResolvedValueOnce(undefined)
@@ -820,13 +832,13 @@ describe.each(['coldcard-file', 'coldcard-qr', 'keystone'] as const)('%s saved-s
       expect(mocks.toastError).toHaveBeenCalledWith(
         'Signature saved, but the account could not be refreshed. Retry loading the account.',
       )
+      const challenge = mocks.claim.latestChallenge
+      assert.exists(challenge, 'Expected the claim challenge')
       const savedClaim = {
         ...mocks.claim,
         latestChallenge: {
-          ...mocks.claim.latestChallenge!,
-          messages: mocks.claim.latestChallenge!.messages.map((message) =>
-            Object.assign({}, message, { signed: true }),
-          ),
+          ...challenge,
+          messages: challenge.messages.map((message) => Object.assign({}, message, { signed: true })),
         },
       }
       mocks.fetchClaim.mockResolvedValue(savedClaim)
@@ -842,8 +854,9 @@ describe.each(['coldcard-file', 'coldcard-qr', 'keystone'] as const)('%s saved-s
         await renderSigningRoute(true)
       }
       await waitForText('Key receipt')
-      expect(router!.state.location.pathname).toBe('/multisig/verify/receipt/claim-1/ledger-key')
-      expect(router!.state.historyAction).toBe('REPLACE')
+      assert.exists(router, 'Expected the signing router')
+      expect(router.state.location.pathname).toBe('/multisig/verify/receipt/claim-1/ledger-key')
+      expect(router.state.historyAction).toBe('REPLACE')
       expect(mocks.completeMessage).toHaveBeenCalledOnce()
       expect(mocks.completeChallenge).not.toHaveBeenCalled()
     },
@@ -851,21 +864,25 @@ describe.each(['coldcard-file', 'coldcard-qr', 'keystone'] as const)('%s saved-s
 })
 
 it('resumes final verification from saved signatures and permits retry without signing again', async () => {
-  const challenge = mocks.claim.latestChallenge!
+  const challenge = mocks.claim.latestChallenge
+  assert.exists(challenge, 'Expected the claim challenge')
+  assert.exists(challenge.messages[0], 'Expected the first challenge message')
+  assert.exists(mocks.claim.keystores[1], 'Expected the second keystore')
   mocks.claim = {
     ...mocks.claim,
     latestChallenge: {
       ...challenge,
       messages: [
-        { ...challenge.messages[0]!, signed: true },
-        { ...challenge.messages[0]!, keystoreId: mocks.claim.keystores[1]!.id, signed: true },
+        { ...challenge.messages[0], signed: true },
+        { ...challenge.messages[0], keystoreId: mocks.claim.keystores[1].id, signed: true },
       ],
     },
   }
   mocks.completeChallenge.mockRejectedValueOnce(new Error('Temporary completion failure'))
+  assert.exists(mocks.claim.latestChallenge, 'Expected the claim challenge')
   mocks.fetchClaim.mockResolvedValue({
     ...mocks.claim,
-    latestChallenge: { ...mocks.claim.latestChallenge!, completed: true },
+    latestChallenge: { ...mocks.claim.latestChallenge, completed: true },
   })
   await renderSigningRoute(true)
   await clickButton('Finish verification')
@@ -891,7 +908,8 @@ it('resumes final verification from saved signatures and permits retry without s
 
 it('does not submit a second Coldcard file signature while the first is pending', async () => {
   mocks.walletType = 'coldcard'
-  mocks.claim.keystores[0]!.model = 'MK4'
+  assert.exists(mocks.claim.keystores[0], 'Expected the first keystore')
+  mocks.claim.keystores[0].model = 'MK4'
   let finish!: () => void
   const pending = new Promise<void>((resolve) => {
     finish = resolve
@@ -914,11 +932,13 @@ it.each(['ledger', 'trezor'] as const)(
   'returns to the previous page with one Back after a %s signature',
   async (walletType) => {
     mocks.walletType = walletType
+    const challenge = mocks.claim.latestChallenge
+    assert.exists(challenge, 'Expected the claim challenge')
     mocks.fetchClaim.mockResolvedValue({
       ...mocks.claim,
       latestChallenge: {
-        ...mocks.claim.latestChallenge!,
-        messages: mocks.claim.latestChallenge!.messages.map((message) => Object.assign({}, message, { signed: true })),
+        ...challenge,
+        messages: challenge.messages.map((message) => Object.assign({}, message, { signed: true })),
       },
     })
     const signingRouter = await renderSigningRoute(true)

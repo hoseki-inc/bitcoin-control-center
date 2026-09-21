@@ -3,7 +3,7 @@ import { ChakraProvider } from '@chakra-ui/react'
 import { QueryClient, QueryObserver, onlineManager } from '@tanstack/react-query'
 import { act, createElement } from 'react'
 import { type Root, createRoot } from 'react-dom/client'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, assert, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DashboardPage } from './index'
 
 const mocks = vi.hoisted(() => {
@@ -133,23 +133,33 @@ async function click(label: string): Promise<void> {
   const button = Array.from(document.querySelectorAll('button')).find(
     (candidateButton) => candidateButton.textContent === label,
   )
-  expect(button, `Missing button: ${label}`).toBeDefined()
+  assert.exists(button, `Missing button: ${label}`)
   await act(async () => {
-    button!.click()
+    button.click()
   })
 }
 
 async function changeDate(id: string, value: string): Promise<void> {
   const input = document.getElementById(id) as HTMLInputElement
   await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value)
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    assert.exists(setValue, 'Expected the input value setter')
+    setValue.call(input, value)
     input.dispatchEvent(new Event('input', { bubbles: true }))
     input.dispatchEvent(new Event('change', { bubbles: true }))
   })
 }
 
 function chartData(): unknown {
-  return JSON.parse(container.querySelector('[data-chart="accumulation"]')!.textContent!)
+  const content = container.querySelector('[data-chart="accumulation"]')?.textContent
+  assert.exists(content, 'Expected accumulation chart data')
+  return JSON.parse(content)
+}
+
+function getQueryCall(index: number): (typeof mocks.useQuery.mock.calls)[number] {
+  const call = mocks.useQuery.mock.calls.at(index)
+  assert.exists(call, `Missing query call at index ${index}`)
+  return call
 }
 
 beforeEach(async () => {
@@ -202,7 +212,7 @@ afterEach(async () => {
 
 describe('custom portfolio range UI', () => {
   it('defaults to 90 days and still allows every other preset', async () => {
-    expect(mocks.useQuery.mock.calls.at(-2)![0].timeRange).toBe('90d')
+    expect(getQueryCall(-2)[0].timeRange).toBe('90d')
     for (const [label, timeRange] of [
       ['7D', '7d'],
       ['30D', '30d'],
@@ -211,13 +221,13 @@ describe('custom portfolio range UI', () => {
       ['90D', '90d'],
     ] as const) {
       await click(label)
-      const [input, options] = mocks.useQuery.mock.calls.at(-2)!
+      const [input, options] = getQueryCall(-2)
       expect(input.timeRange).toBe(timeRange)
       expect(input.customDateRange).toBeUndefined()
       expect(options.enabled).toBe(true)
     }
     await click('Select holding')
-    const [input, options] = mocks.useQuery.mock.calls.at(-1)!
+    const [input, options] = getQueryCall(-1)
     expect(input.timeRange).toBe('90d')
     expect(input.manualAccountIds).toEqual(['holding'])
     expect(options.enabled).toBe(true)
@@ -239,7 +249,8 @@ describe('custom portfolio range UI', () => {
     try {
       observer.setOptions({ ...options, enabled: true })
       expect(observer.getCurrentResult()).toMatchObject({ data: undefined, isLoading: true, isFetching: true })
-      const defaultQuery = mocks.useQuery.getMockImplementation()!
+      const defaultQuery = mocks.useQuery.getMockImplementation()
+      assert.exists(defaultQuery, 'Expected the default query implementation')
       mocks.useQuery.mockImplementation((input, queryOptions) =>
         (input.claimIds !== undefined) === (action === 'Select holding')
           ? observer.getCurrentResult()
@@ -269,7 +280,8 @@ describe('custom portfolio range UI', () => {
   })
 
   it('still shows the first-load spinner when neither query has data', async () => {
-    const defaultQuery = mocks.useQuery.getMockImplementation()!
+    const defaultQuery = mocks.useQuery.getMockImplementation()
+    assert.exists(defaultQuery, 'Expected the default query implementation')
     mocks.useQuery.mockImplementation((input) => ({ ...defaultQuery(input), data: undefined, isLoading: true }))
     await render()
     expect(container.textContent).not.toContain('Portfolio')
@@ -319,7 +331,8 @@ describe('custom portfolio range UI', () => {
     await click('Custom')
     await changeDate('portfolio-range-start', '2020-01-03')
     await changeDate('portfolio-range-end', '2020-01-01')
-    const apply = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Apply')!
+    const apply = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Apply')
+    assert.exists(apply, 'Missing Apply button')
     expect(apply.disabled).toBe(true)
     await click('Cancel')
     expect(mocks.useQuery.mock.calls.some(([input]) => input.customDateRange)).toBe(false)
@@ -329,8 +342,8 @@ describe('custom portfolio range UI', () => {
     await click('Select holding')
     await click('Custom')
     await click('Apply')
-    const [allInput, allOptions] = mocks.useQuery.mock.calls.at(-2)!
-    const [selectedInput, options] = mocks.useQuery.mock.calls.at(-1)!
+    const [allInput, allOptions] = getQueryCall(-2)
+    const [selectedInput, options] = getQueryCall(-1)
     expect(allInput.customDateRange).toEqual(selectedInput.customDateRange)
     expect(allOptions.enabled).toBe(false)
     expect(selectedInput.manualAccountIds).toEqual(['holding'])
@@ -385,7 +398,8 @@ describe('custom portfolio range UI', () => {
           isPreviousData: hasPreviousData,
           error: null,
         })
-        const defaultQuery = mocks.useQuery.getMockImplementation()!
+        const defaultQuery = mocks.useQuery.getMockImplementation()
+        assert.exists(defaultQuery, 'Expected the default query implementation')
         mocks.useQuery.mockImplementation((input) =>
           input.customDateRange ? observer.getCurrentResult() : defaultQuery(input),
         )
@@ -496,7 +510,8 @@ describe('custom portfolio range UI', () => {
     expect(container.textContent).not.toContain('Preparing history for this date range')
     expect(container.textContent).not.toContain('All synced')
     expect(container.querySelectorAll('[data-chart]')).toHaveLength(refresh ? 2 : 0)
-    const poll = interval.mock.calls.find(([, delay]) => delay === 10_000)![0] as () => void
+    const poll = interval.mock.calls.find(([, delay]) => delay === 10_000)?.[0]
+    assert(typeof poll === 'function', 'Expected the history polling callback')
     await act(async () => {
       poll()
     })
@@ -554,7 +569,8 @@ describe('custom portfolio range UI', () => {
       mocks.claims = [{ id: 'wallet', displayName: 'Test wallet' }]
       await render()
       await click('Select wallet')
-      const defaultQuery = mocks.useQuery.getMockImplementation()!
+      const defaultQuery = mocks.useQuery.getMockImplementation()
+      assert.exists(defaultQuery, 'Expected the default query implementation')
       mocks.useQuery.mockImplementation((input) => ({
         ...defaultQuery(input),
         data: input.claimIds ? { ...mocks.base, verifiedClaimsCount: 1, manualAccountCount: 0 } : undefined,
@@ -566,8 +582,8 @@ describe('custom portfolio range UI', () => {
       await click('Apply')
       expect(container.querySelectorAll('[data-chart]')).toHaveLength(2)
       expect(container.textContent).not.toContain('No verified claims yet')
-      const [allInput, allOptions] = mocks.useQuery.mock.calls.at(-2)!
-      const [filteredInput, filteredOptions] = mocks.useQuery.mock.calls.at(-1)!
+      const [allInput, allOptions] = getQueryCall(-2)
+      const [filteredInput, filteredOptions] = getQueryCall(-1)
       expect(allOptions.enabled).toBe(false)
       expect(filteredOptions.enabled).toBe(true)
       expect(allInput.customDateRange).toEqual(filteredInput.customDateRange)
@@ -579,7 +595,8 @@ describe('custom portfolio range UI', () => {
     await render()
     await click('Select wallet')
     mocks.rangeData = { ...mocks.base, historySyncingAccountIds: ['wallet'] }
-    const defaultQuery = mocks.useQuery.getMockImplementation()!
+    const defaultQuery = mocks.useQuery.getMockImplementation()
+    assert.exists(defaultQuery, 'Expected the default query implementation')
     mocks.useQuery.mockImplementation((input, options) =>
       input.claimIds === undefined && options.enabled === false
         ? { ...defaultQuery(input), data: { ...mocks.base, historySyncedAccountIds: ['wallet'] } }
@@ -587,14 +604,14 @@ describe('custom portfolio range UI', () => {
     )
     await click('Custom')
     await click('Apply')
-    expect(mocks.sidebar.mock.lastCall![0].historySyncingAccountIds).toEqual(['wallet'])
-    expect(mocks.sidebar.mock.lastCall![0].recentlySyncedAccountIds).toEqual([])
+    expect(mocks.sidebar.mock.lastCall?.[0].historySyncingAccountIds).toEqual(['wallet'])
+    expect(mocks.sidebar.mock.lastCall?.[0].recentlySyncedAccountIds).toEqual([])
 
     // Clearing the selection briefly exposes cached data from another query.
     mocks.previous = true
     mocks.rangeData = { ...mocks.base, historySyncedAccountIds: ['wallet'] }
     await click('Clear selection')
-    expect(mocks.sidebar.mock.lastCall![0].recentlySyncedAccountIds).toEqual([])
+    expect(mocks.sidebar.mock.lastCall?.[0].recentlySyncedAccountIds).toEqual([])
     expect(container.textContent).not.toContain('All synced')
 
     mocks.previous = false
@@ -602,7 +619,7 @@ describe('custom portfolio range UI', () => {
     await render()
     mocks.rangeData = { ...mocks.base, historySyncedAccountIds: ['wallet'] }
     await render()
-    expect(mocks.sidebar.mock.lastCall![0].recentlySyncedAccountIds).toEqual(['wallet'])
+    expect(mocks.sidebar.mock.lastCall?.[0].recentlySyncedAccountIds).toEqual(['wallet'])
   })
 
   it('shows a recoverable error instead of stale history when the selected range fails', async () => {
@@ -642,7 +659,8 @@ describe('custom portfolio range UI', () => {
         const failedResult = await observer.refetch({ cancelRefetch: false })
         // Unlike a failed background refresh, a failed new range drops previous data.
         expect(failedResult).toMatchObject({ status: 'error', data: undefined, isPreviousData: false })
-        const defaultQuery = mocks.useQuery.getMockImplementation()!
+        const defaultQuery = mocks.useQuery.getMockImplementation()
+        assert.exists(defaultQuery, 'Expected the default query implementation')
         mocks.useQuery.mockImplementation((input) =>
           input.customDateRange || input.timeRange === 'all'
             ? observer.getCurrentResult()
@@ -675,7 +693,8 @@ describe('custom portfolio range UI', () => {
 
   it('still shows the empty state after successfully loading a genuinely empty portfolio', async () => {
     mocks.holdings = []
-    const defaultQuery = mocks.useQuery.getMockImplementation()!
+    const defaultQuery = mocks.useQuery.getMockImplementation()
+    assert.exists(defaultQuery, 'Expected the default query implementation')
     mocks.useQuery.mockImplementation((input) => ({
       ...defaultQuery(input),
       data: { ...mocks.base, currentTotalBalance: '0', manualAccountCount: 0, historicalData: [] },
