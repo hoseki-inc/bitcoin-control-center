@@ -5,8 +5,6 @@ import type { ClaimId } from '@hoseki/packages/schemas'
 import type { Decimal } from 'decimal.js'
 import { trpc } from '../trpc'
 
-export type ClaimsWithBalancesQuery = void
-
 function getBalanceValue(balance: Decimal | bigint, price: Decimal | null): BalanceValue {
   const btc = BTC.fromSats(balance)
   const btcMajorAmount = btc.toMajorAmount()

@@ -72,7 +72,8 @@
     "typescript/no-floating-promises": "error",
     "typescript/no-for-in-array": "error",
     "typescript/no-implied-eval": "error",
-    "typescript/no-import-type-side-effects": "error"
+    "typescript/no-import-type-side-effects": "error",
+    "typescript/no-invalid-void-type": "error"
   },
   "overrides": [
     {
