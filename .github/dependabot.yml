@@ -60,6 +60,11 @@ updates:
     schedule:
       interval: weekly
       day: monday
+    groups:
+      codeql:
+        applies-to: version-updates
+        patterns:
+          - 'github/codeql-action/*'
 
   - package-ecosystem: docker
     directory: /start9
