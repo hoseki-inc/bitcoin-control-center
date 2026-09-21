@@ -89,7 +89,9 @@ function ConnectLedgerWallet({ claim }: { claim: ClaimDto }) {
     <>
       {step === 'ledger-device-unlock' && (
         <LedgerConnectionInfo
-          onBack={() => navigate(`/multisig/${claim.id}`)}
+          onBack={() => {
+            void navigate(`/multisig/${claim.id}`)
+          }}
           onContinue={() => {
             setStep('ledger-device-check-xpub')
           }}
@@ -142,7 +144,12 @@ function ConnectTrezorWallet({ claim }: { claim: ClaimDto }) {
           <TrezorInfoCopy />
           <WizardFooter
             leftButton={
-              <Button variant="outline" onClick={() => navigate(`/multisig/${claim.id}`)}>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  void navigate(`/multisig/${claim.id}`)
+                }}
+              >
                 Back
               </Button>
             }
@@ -383,7 +390,13 @@ function GenericCheckWalletXpub({
           <Text textStyle="text/md">This device is part of your multisig setup.</Text>
           <Text textStyle="text/md">Give this device a name—you can update it later at any time.</Text>
 
-          <form onSubmit={handleSubmit(onSubmit)}>
+          <form
+            onSubmit={(event) => {
+              handleSubmit(onSubmit)(event).catch(() => {
+                setError(new Error('Unable to submit the keystore name. Please try again.'))
+              })
+            }}
+          >
             <FormControl isInvalid={Boolean(errors.keystoreName)}>
               <FormLabel htmlFor="keystore-name">Name</FormLabel>
               <Input id="keystore-name" {...register('keystoreName')} placeholder="Multisig keystore name" />
@@ -391,7 +404,12 @@ function GenericCheckWalletXpub({
             </FormControl>
             <WizardFooter
               leftButton={
-                <Button variant="outline" onClick={() => navigate(`/multisig/${claim.id}`)}>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    void navigate(`/multisig/${claim.id}`)
+                  }}
+                >
                   Cancel
                 </Button>
               }
@@ -414,7 +432,12 @@ function GenericCheckWalletXpub({
             Not a match :(
           </Text>
           <Text textStyle="text/md">The xpub returned from your device does not match any of your keystores.</Text>
-          <Button onClick={() => navigate(`/multisig/${claim.id}`)} width="fit-content">
+          <Button
+            onClick={() => {
+              void navigate(`/multisig/${claim.id}`)
+            }}
+            width="fit-content"
+          >
             Try Again
           </Button>
         </Stack>
@@ -435,12 +458,23 @@ function GenericCheckWalletXpub({
 
           <WizardFooter
             leftButton={
-              <Button variant="outline" onClick={() => navigate(`/multisig/${claim.id}`)}>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  void navigate(`/multisig/${claim.id}`)
+                }}
+              >
                 Cancel
               </Button>
             }
             rightButton={
-              <Button onClick={performXpubCheck} width="fit-content" isLoading={isChecking}>
+              <Button
+                onClick={() => {
+                  void performXpubCheck()
+                }}
+                width="fit-content"
+                isLoading={isChecking}
+              >
                 {isChecking ? 'Checking...' : 'Check Now'}
               </Button>
             }
@@ -488,13 +522,15 @@ function ConnectColdcardWallet({ claim }: { claim: ClaimDto }) {
 
   const goBack = () => {
     if (wizardStep === 1) {
-      return navigate(`/multisig/${claim.id}`)
+      void navigate(`/multisig/${claim.id}`)
+      return
     }
     setWizardStep((prev) => prev - 1)
   }
   const goForward = () => {
     if (wizardStep === 7) {
-      return navigate(`/multisig/${claim.id}`)
+      void navigate(`/multisig/${claim.id}`)
+      return
     }
     setWizardStep((prev) => prev + 1)
   }

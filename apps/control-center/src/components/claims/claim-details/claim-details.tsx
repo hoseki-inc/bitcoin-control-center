@@ -83,7 +83,7 @@ export function ClaimDetails({ claim }: { claim: ClaimDto }): JSX.Element {
                   }
 
                   return (selectedKeystore: IndicatorKeystore) => {
-                    return navigate({
+                    void navigate({
                       pathname: `/accounts/${claim.id}`,
                       search: `?${createSearchParams({ keystoreId: selectedKeystore.id })}`,
                     })
@@ -133,7 +133,13 @@ function ClaimDetailsBody({
           rightButton={
             <HStack>
               {canAbandon && <AbandonClaimButton claim={claim} />}
-              <Button onClick={() => navigate(`./signing`, { relative: 'path' })}>Continue</Button>
+              <Button
+                onClick={() => {
+                  void navigate(`./signing`, { relative: 'path' })
+                }}
+              >
+                Continue
+              </Button>
             </HStack>
           }
         />

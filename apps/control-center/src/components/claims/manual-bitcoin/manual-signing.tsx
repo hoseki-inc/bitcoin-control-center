@@ -84,7 +84,11 @@ function BitcoinSigningStep({
   }
 
   return (
-    <form onSubmit={handleFormSubmit}>
+    <form
+      onSubmit={(event) => {
+        void handleFormSubmit(event)
+      }}
+    >
       <Stack gap={4} pb={WizardFooter.padding}>
         <ManualSigningAccountAccordion bitcoinInput={claimingState?.bitcoinInput} onEditClick={onBack} />
         <BitcoinSigningFormFields

@@ -86,18 +86,18 @@ export function ClaimsVerifyEtfPage(): JSX.Element {
       return
     }
 
-    const validHoldings = holdings
-      .filter((r) => {
-        const shares = parseFloat(r.shares)
-        return !isNaN(shares) && shares > 0
-      })
-      .map((r) => ({
-        ticker: r.ticker,
-        shares: r.shares,
-        datePurchased: r.datePurchased ? new Date(r.datePurchased + 'T12:00:00').toISOString() : undefined,
-      }))
-
     try {
+      const validHoldings = holdings
+        .filter((r) => {
+          const shares = parseFloat(r.shares)
+          return !isNaN(shares) && shares > 0
+        })
+        .map((r) => ({
+          ticker: r.ticker,
+          shares: r.shares,
+          datePurchased: r.datePurchased ? new Date(r.datePurchased + 'T12:00:00').toISOString() : undefined,
+        }))
+
       const result = await createMutation.mutateAsync({
         displayName: displayName.trim(),
         holdings: validHoldings,
@@ -230,7 +230,14 @@ export function ClaimsVerifyEtfPage(): JSX.Element {
         )}
 
         <Flex justify="flex-end">
-          <Button colorScheme="blue" onClick={handleSubmit} isLoading={createMutation.isLoading} isDisabled={!isValid}>
+          <Button
+            colorScheme="blue"
+            onClick={() => {
+              void handleSubmit()
+            }}
+            isLoading={createMutation.isLoading}
+            isDisabled={!isValid}
+          >
             Add ETF Holdings
           </Button>
         </Flex>

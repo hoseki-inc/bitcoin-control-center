@@ -9,36 +9,47 @@ export function HardwareWalletTestPage(): JSX.Element {
   const initLedger = useLedgerStore((state) => state.init)
   const deviceModel = useLedgerStore((state) => state.deviceModel)
 
+  async function showTrezorDetails(): Promise<void> {
+    setJson(null)
+    try {
+      const result = await trezorService.getFeatures()
+      if (result.isErr()) {
+        setJson({ error: 'Unable to read Trezor device details. Please try again.' })
+        return
+      }
+      const features = result.unwrap()
+      setJson({ label: features.label, model: features.model, internal_model: features.internal_model })
+    } catch {
+      setJson({ error: 'Unable to read Trezor device details. Please try again.' })
+    }
+  }
+
+  async function showLedgerDetails(): Promise<void> {
+    setJson(null)
+    try {
+      await initLedger()
+      const model = deviceModel?.productName ?? 'Unknown'
+      setJson({ model })
+    } catch {
+      setJson({ error: 'Error, try one more time' })
+    }
+  }
+
   return (
     <Stack gap={4} py={8}>
       <Text textStyle="text/4xl">Hardware Wallet Test Page</Text>
 
       <HStack>
         <Button
-          onClick={async () => {
-            setJson(null)
-
-            const features = (await trezorService.getFeatures()).expect('Expect this to work on a test page')
-            setJson({
-              label: features.label,
-              model: features.model,
-              internal_model: features.internal_model,
-            })
+          onClick={() => {
+            void showTrezorDetails()
           }}
         >
           Show Trezor Device Details
         </Button>
         <Button
-          onClick={async () => {
-            setJson(null)
-
-            await initLedger()
-            try {
-              const model = deviceModel?.productName ?? 'Unknown'
-              setJson({ model })
-            } catch {
-              setJson({ error: 'Error, try one more time' })
-            }
+          onClick={() => {
+            void showLedgerDetails()
           }}
         >
           Show Ledger Device Details

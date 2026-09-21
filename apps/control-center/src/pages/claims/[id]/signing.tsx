@@ -72,8 +72,12 @@ function SinglesigSigning() {
     keystore: firstKeystore,
     challenge: message.challenge,
     challengeMessage: message.challengeMessage,
-    onExitSigning: () => navigate(-1),
-    onSigningComplete: () => navigate('/accounts/verify/receipt/' + claim.id),
+    onExitSigning: () => {
+      void navigate(-1)
+    },
+    onSigningComplete: () => {
+      void navigate('/accounts/verify/receipt/' + claim.id)
+    },
   } as const
 
   switch (firstKeystore.wallet) {

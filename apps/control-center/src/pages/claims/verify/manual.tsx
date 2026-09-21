@@ -24,10 +24,9 @@ export function ClaimsVerifyManualPage(): JSX.Element {
       return
     }
 
-    const balanceSats = Math.round(Number(btcAmount) * 1e8).toString()
-    const balanceAsOf = new Date(balanceDate).toISOString()
-
     try {
+      const balanceSats = Math.round(Number(btcAmount) * 1e8).toString()
+      const balanceAsOf = new Date(balanceDate).toISOString()
       const result = await createMutation.mutateAsync({
         displayName: displayName.trim(),
         balanceSats,
@@ -105,7 +104,14 @@ export function ClaimsVerifyManualPage(): JSX.Element {
         </FormControl>
 
         <Flex justify="flex-end">
-          <Button colorScheme="blue" onClick={handleSubmit} isLoading={createMutation.isLoading} isDisabled={!isValid}>
+          <Button
+            colorScheme="blue"
+            onClick={() => {
+              void handleSubmit()
+            }}
+            isLoading={createMutation.isLoading}
+            isDisabled={!isValid}
+          >
             Add Holding
           </Button>
         </Flex>

@@ -76,7 +76,9 @@ function ConnectWallets({
       ) : expandedKeystore.status === 'pending' ? (
         <>
           <SelectWalletType
-            onConnectionTypeClick={handleNextSigningDeviceClick}
+            onConnectionTypeClick={(device) => {
+              void handleNextSigningDeviceClick(device)
+            }}
             signedMessagesLength={signedMessagesLength}
           />
           <Alert bgColor="neutral.50">
@@ -103,9 +105,9 @@ function ConnectWallets({
               <HStack>
                 {canAbandon && <AbandonClaimButton claim={claim} />}
                 <Button
-                  onClick={() =>
-                    navigate(`/multisig/${claim.id}/signing/${expandedKeystore.wallet}/${expandedKeystore.id}`)
-                  }
+                  onClick={() => {
+                    void navigate(`/multisig/${claim.id}/signing/${expandedKeystore.wallet}/${expandedKeystore.id}`)
+                  }}
                 >
                   Continue
                 </Button>

@@ -282,7 +282,13 @@ export function StrikeAccountDetailsPage(): JSX.Element {
         <TopBar.Item as={Link} to="/accounts">
           Back to Accounts
         </TopBar.Item>
-        <TopBar.Item as="button" color="error.600" onClick={handleDelete}>
+        <TopBar.Item
+          as="button"
+          color="error.600"
+          onClick={() => {
+            void handleDelete()
+          }}
+        >
           {isDeleting ? 'Removing...' : 'Remove Account'}
         </TopBar.Item>
       </TopBar>
@@ -391,7 +397,9 @@ export function StrikeAccountDetailsPage(): JSX.Element {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={handleRefresh}
+                onClick={() => {
+                  void handleRefresh()
+                }}
                 isLoading={isRefreshing}
                 loadingText="Refreshing..."
               >
@@ -419,7 +427,9 @@ export function StrikeAccountDetailsPage(): JSX.Element {
             setIsDragging={setIsDragging}
             isImporting={isImporting}
             fileInputRef={fileInputRef}
-            onFile={handleCsvFile}
+            onFile={(file) => {
+              void handleCsvFile(file)
+            }}
           />
 
           {/* Imported Months */}
