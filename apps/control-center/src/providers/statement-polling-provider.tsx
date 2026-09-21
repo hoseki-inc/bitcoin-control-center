@@ -3,7 +3,7 @@ import { createContext, useContext, useEffect, useState } from 'react'
 import { Link as RouterLink } from 'react-router'
 import { toast } from 'sonner'
 import { trpc } from '../trpc'
-import { type StatementDto } from '../trpc/server-types'
+import type { StatementDto } from '../trpc/server-types'
 
 const StatementPollingContext = createContext<{
   startPolling: (statementId: StatementDto['id']) => void

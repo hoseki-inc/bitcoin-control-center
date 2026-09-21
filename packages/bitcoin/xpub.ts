@@ -1,4 +1,4 @@
-import { type Opaque } from 'type-fest'
+import type { Opaque } from 'type-fest'
 import { Err, Result } from '../result'
 import { Address } from './address'
 import { type BIP32Interface, bip32, bitcoin } from './lib'

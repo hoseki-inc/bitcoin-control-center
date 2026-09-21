@@ -1,5 +1,5 @@
 import { ErrorWithCause, ErrorWithTag } from '../../result/index.ts'
-import { type SafeResponse } from './response.ts'
+import type { SafeResponse } from './response.ts'
 
 export enum SafeBodyErrorKind {
   Malformed,

@@ -1,5 +1,5 @@
 import { Box, HStack, Stack, Text, chakra } from '@chakra-ui/react'
-import { type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 
 export function SectionTitle({
   title,

@@ -1,7 +1,7 @@
 import { type AsyncResult, Err, Ok, Result } from '../../result/index.ts'
 import { SafeHttpError, SafeHttpErrorKind } from './errors.ts'
 import { SafeResponse } from './response.ts'
-import { type Input, type Options } from './types.ts'
+import type { Input, Options } from './types.ts'
 
 export class SafeHttp {
   public constructor(public readonly options?: Options) {}

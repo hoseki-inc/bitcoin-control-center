@@ -1,7 +1,7 @@
-import { type BalanceValue, type BalanceWithStatus } from '@hoseki/packages/lib/balance'
-import { type ClaimStatus } from '@hoseki/packages/schemas/prove'
-import { type ClaimCardProps } from '@hoseki/packages/ui/prove-verify-ui'
-import { type ClaimDto } from '../trpc/server-types'
+import type { BalanceValue, BalanceWithStatus } from '@hoseki/packages/lib/balance'
+import type { ClaimStatus } from '@hoseki/packages/schemas/prove'
+import type { ClaimCardProps } from '@hoseki/packages/ui/prove-verify-ui'
+import type { ClaimDto } from '../trpc/server-types'
 import { getThreshold } from './multisig-utils'
 
 /**

@@ -1,4 +1,4 @@
-import { type StackProps } from '@chakra-ui/react'
+import type { StackProps } from '@chakra-ui/react'
 import { Address, DerivationPath, SingleSigAccount } from '@hoseki/packages/bitcoin'
 import { ErrorBanner, type FileDropState, Spinner } from '@hoseki/packages/ui/design-system'
 import {

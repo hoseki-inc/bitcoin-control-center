@@ -1,4 +1,4 @@
-import { type Opaque } from 'type-fest'
+import type { Opaque } from 'type-fest'
 import { Err, Panic, Result } from '../result'
 import {
   type MultiSigAccountScriptType,
@@ -10,7 +10,7 @@ import * as descriptor from './descriptor_utils'
 import { bitcoin } from './lib/bitcoin'
 import { Network } from './network'
 import { Wallet } from './wallet'
-import { type Xpub } from './xpub'
+import type { Xpub } from './xpub'
 
 export type CheckedAccountDescriptor = CheckedSinglesigAccountDescriptor | CheckedMultisigAccountDescriptor
 

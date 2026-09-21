@@ -1,4 +1,4 @@
-import { type z } from 'zod'
+import type { z } from 'zod'
 import { Id } from '../id/id.ts'
 
 // 21 chars, similar collision probability as UUIDv4

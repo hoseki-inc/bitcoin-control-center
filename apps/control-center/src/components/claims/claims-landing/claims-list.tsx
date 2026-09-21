@@ -2,7 +2,7 @@ import { Grid, Stack } from '@chakra-ui/react'
 import { ClaimCard } from '@hoseki/packages/ui/prove-verify-ui'
 import { Link } from 'react-router'
 import { useGetBalancesPerClaimIds } from '../../../lib/balances'
-import { type ClaimDto } from '../../../trpc/server-types'
+import type { ClaimDto } from '../../../trpc/server-types'
 import { mapClaimToClaimCardProps, withStatusBalance } from '../../../utils/claim-utils'
 
 export function ClaimsList({ claims }: { claims: ClaimDto[] }): JSX.Element {

@@ -9,7 +9,7 @@ import {
   bs58check,
 } from '../bitcoin'
 import * as descriptors from '../bitcoin/descriptor_utils'
-import { type Result } from '../result'
+import type { Result } from '../result'
 import * as Slip132 from './slip-132'
 import { WalletImporter } from './wallet-importer'
 

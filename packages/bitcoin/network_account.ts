@@ -1,5 +1,5 @@
 import { Err, type Result } from '@patina/core'
-import { type Opaque } from 'type-fest'
+import type { Opaque } from 'type-fest'
 import { Account } from './account'
 import { Network } from './network'
 
