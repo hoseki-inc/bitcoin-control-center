@@ -14,7 +14,7 @@
     "dist:win": "electron-builder --win",
     "install:electron": "node node_modules/electron/install.js",
     "rebuild": "node -e \"const Database = require('better-sqlite3'); const database = new Database(':memory:'); database.close()\"",
-    "test:runtime": "node scripts/check-runtime.cjs"
+    "test:runtime": "node scripts/check-runtime.mjs"
   },
   "dependencies": {
     "@react-pdf/renderer": "4.9.0",
