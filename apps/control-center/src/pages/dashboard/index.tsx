@@ -90,7 +90,7 @@ function formatCustomDateRangeLabel(range: CustomDateRangeDraft): string {
   return `${format(range.startDate, 'PP')} – ${format(range.endDate, 'PP')}`
 }
 
-function formatBtc(satoshis: string | Decimal | unknown): string {
+function formatBtc(satoshis: unknown): string {
   try {
     const sats = typeof satoshis === 'string' || satoshis instanceof Decimal ? satoshis : toSatoshisString(satoshis)
     const btc = new Decimal(sats).div(100_000_000)
