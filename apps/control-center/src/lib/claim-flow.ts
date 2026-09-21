@@ -73,12 +73,12 @@ export function useNavigateToAnExistentOrNewClaim(): UseNavigateToAnExistentOrNe
           toast.info('This account is archived', {
             description: 'Restore it from Archived accounts before reconnecting.',
           })
-          navigate('/accounts#archived')
+          void navigate('/accounts#archived')
           setIsLoading(false)
           return Ok(claimId)
         }
 
-        navigate(`/accounts/${claimId}/signing`)
+        void navigate(`/accounts/${claimId}/signing`)
         setIsLoading(false)
         return Ok(claimId)
       })

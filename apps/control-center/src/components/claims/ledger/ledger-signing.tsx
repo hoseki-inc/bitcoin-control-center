@@ -8,9 +8,11 @@ import {
 import { Result } from '@patina/core'
 import { useMutation } from '@tanstack/react-query'
 import { useState } from 'react'
+import { toast } from 'sonner'
 import { useShallow } from 'zustand/react/shallow'
 import { useLedgerStore, useToastOnLedgerDisconnect } from '../../../hooks/use-ledger-store'
 import type { SigningFlowProps } from '../../../lib/claim-flow'
+import { closeDesktopLedger } from '../../../lib/open-desktop-ledger'
 import { browserLogger, captureHardwareWalletError } from '../../../logger'
 import { trpc } from '../../../trpc'
 import type { ChallengeDto, ChallengeMessageDto } from '../../../trpc/server-types'
@@ -134,8 +136,13 @@ export function LedgerSigning({
             // TODO: Is there any way to remove this whole error component?
             // Inside ControlledGenericSigningSteps, we already handle errors.
             // Is resetLedger really necessary?
-            resetLedger()
-            window.location.reload()
+            resetLedger(closeDesktopLedger)
+              .then(() => {
+                window.location.reload()
+              })
+              .catch(() => {
+                toast.error('Unable to reset Ledger. Reconnect the device and try again.')
+              })
           }}
         />
       )}

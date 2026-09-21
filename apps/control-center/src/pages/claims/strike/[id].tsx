@@ -177,7 +177,7 @@ export function StrikeAccountDetailsPage(): JSX.Element {
     if (!accountId) {
       return
     }
-    navigate('/accounts/verify/strike', {
+    void navigate('/accounts/verify/strike', {
       state: {
         returnTo: `/accounts/strike/${accountId}`,
         replaceAccountId: accountId,
@@ -214,7 +214,7 @@ export function StrikeAccountDetailsPage(): JSX.Element {
       await utils.portalProve.exchange.strike.list.invalidate()
       await utils.portalProve.exchange.list.invalidate()
       await utils.portalProve.controlCenter.invalidate()
-      navigate('/accounts')
+      void navigate('/accounts')
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to remove account'
       toast.error(message)
@@ -456,7 +456,7 @@ export function StrikeAccountDetailsPage(): JSX.Element {
                       color="error.500"
                       onClick={(e) => {
                         e.stopPropagation()
-                        handleDeleteMonth(month)
+                        void handleDeleteMonth(month)
                       }}
                     >
                       Remove

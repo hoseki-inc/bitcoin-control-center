@@ -68,7 +68,8 @@
     "typescript/no-dynamic-delete": "error",
     "typescript/no-empty-object-type": "error",
     "typescript/no-explicit-any": "error",
-    "typescript/no-extra-non-null-assertion": "error"
+    "typescript/no-extra-non-null-assertion": "error",
+    "typescript/no-floating-promises": "error"
   },
   "overrides": [
     {

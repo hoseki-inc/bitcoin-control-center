@@ -3,11 +3,21 @@ import { ChakraProvider } from '@chakra-ui/react'
 import { MultiSigAccount } from '@hoseki/packages/bitcoin'
 import { Err, Ok } from '@hoseki/packages/result'
 import { HardwareDeviceError, Slip132 } from '@hoseki/packages/wallet'
-import { QueryClient, QueryClientProvider, type UseMutationOptions } from '@tanstack/react-query'
-import { act, createElement } from 'react'
+import TransportWebHID from '@ledgerhq/hw-transport-webhid'
+import {
+  type InvalidateOptions,
+  type InvalidateQueryFilters,
+  QueryClient,
+  QueryClientProvider,
+  type UseMutationOptions,
+} from '@tanstack/react-query'
+import { type ReactElement, act, createElement } from 'react'
 import { type Root, createRoot } from 'react-dom/client'
 import type * as ReactRouter from 'react-router'
+import { RouterProvider, createMemoryRouter } from 'react-router'
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { LedgerSigning as SinglesigLedgerSigning } from '../../../components/claims/ledger/ledger-signing'
+import type { SigningFlowProps } from '../../../lib/claim-flow'
 import type { ClaimDto } from '../../../trpc/server-types'
 import { MultisigSigningPage } from './signing'
 
@@ -49,7 +59,7 @@ const mocks = await vi.hoisted(async () => {
     navigate: vi.fn(),
     completeMessage: vi.fn(),
     completeChallenge: vi.fn(),
-    refetch: vi.fn(),
+    fetchClaim: vi.fn(),
     invalidateClaim: vi.fn(),
     toastError: vi.fn(),
   }
@@ -77,7 +87,7 @@ vi.mock('react-router', async (importOriginal) => ({
   useNavigate: () => mocks.navigate,
 }))
 vi.mock('../../../trpc', async () => {
-  const { useMutation } = await import('@tanstack/react-query')
+  const { useMutation, useQuery } = await import('@tanstack/react-query')
   return {
     trpc: {
       useUtils: () => ({
@@ -85,10 +95,22 @@ vi.mock('../../../trpc', async () => {
       }),
       portalProve: {
         registry: {
-          claims: { get: { byId: { useQuery: () => ({ data: mocks.claim, refetch: mocks.refetch }) } } },
+          claims: {
+            get: {
+              byId: {
+                useQuery: ({ id }: { id: string }) =>
+                  useQuery({
+                    queryKey: ['claim', id],
+                    queryFn: mocks.fetchClaim,
+                    initialData: mocks.claim,
+                    staleTime: Infinity,
+                  }),
+              },
+            },
+          },
           challenges: {
             complete: {
-              useMutation: (options: UseMutationOptions<void, Error, { challengeId: string }>) =>
+              useMutation: (options?: UseMutationOptions<void, Error, { challengeId: string }>) =>
                 useMutation({ ...options, mutationFn: mocks.completeChallenge }),
             },
           },
@@ -116,6 +138,7 @@ vi.mock('../../../trpc', async () => {
 let root: Root
 let container: HTMLDivElement
 let queryClient: QueryClient
+let router: ReturnType<typeof createMemoryRouter> | undefined
 
 async function clickNext(): Promise<void> {
   const button = container.querySelector('svg.lucide-arrow-right')?.closest('button')
@@ -153,16 +176,23 @@ async function clickSign(): Promise<void> {
   })
 }
 
-async function render(): Promise<void> {
+async function render(page: ReactElement = createElement(MultisigSigningPage)): Promise<void> {
   await act(async () => {
-    root.render(
-      createElement(
-        ChakraProvider,
-        null,
-        createElement(QueryClientProvider, { client: queryClient }, createElement(MultisigSigningPage)),
-      ),
-    )
+    root.render(createElement(ChakraProvider, null, createElement(QueryClientProvider, { client: queryClient }, page)))
   })
+}
+
+async function renderSigningRoute(): Promise<ReturnType<typeof createMemoryRouter>> {
+  router = createMemoryRouter(
+    [
+      { path: '/accounts', element: createElement('div', null, 'Account list') },
+      { path: '/multisig/:id/signing/:walletType/:keystoreId', element: createElement(MultisigSigningPage) },
+      { path: '/accounts/verify/receipt/:id', element: createElement('div', null, 'Verified account receipt') },
+    ],
+    { initialEntries: ['/accounts', `/multisig/claim-1/signing/${mocks.walletType}/ledger-key`], initialIndex: 1 },
+  )
+  await render(createElement(RouterProvider, { router }))
+  return router
 }
 
 beforeEach(async () => {
@@ -203,9 +233,13 @@ beforeEach(async () => {
   mocks.trezorSign.mockReset().mockResolvedValue(Ok({ signature: 'synthetic-trezor-signature' }))
   mocks.completeMessage.mockReset().mockResolvedValue(undefined)
   mocks.completeChallenge.mockReset().mockResolvedValue(undefined)
-  mocks.refetch.mockReset().mockResolvedValue(undefined)
-  mocks.invalidateClaim.mockReset().mockResolvedValue(undefined)
-  queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } })
+  mocks.fetchClaim.mockReset().mockResolvedValue(mocks.claim)
+  queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+  mocks.invalidateClaim
+    .mockReset()
+    .mockImplementation((input: { id: string }, filters?: InvalidateQueryFilters, options?: InvalidateOptions) =>
+      queryClient.invalidateQueries({ ...filters, queryKey: ['claim', input.id] }, options),
+    )
   container = document.createElement('div')
   document.body.append(container)
   root = createRoot(container)
@@ -215,6 +249,8 @@ afterEach(async () => {
   await act(async () => {
     root.unmount()
   })
+  router?.dispose()
+  router = undefined
   queryClient.clear()
   container.remove()
   vi.unstubAllGlobals()
@@ -225,7 +261,9 @@ afterAll(() => {
 })
 
 describe('Ledger multisig signing screen', () => {
-  beforeEach(render)
+  beforeEach(async () => {
+    await render()
+  })
 
   it('advances through the real signing screens and submits the Ledger signature', async () => {
     expect(container.textContent).not.toContain('Unknown error')
@@ -287,8 +325,8 @@ describe.each(['ledger', 'trezor'] as const)('%s as the final multisig cosigner'
     })
     expect(mocks.completeMessage).toHaveBeenCalledTimes(1)
     expect(mocks.completeChallenge).toHaveBeenCalledExactlyOnceWith({ challengeId: 'challenge-1' })
-    expect(mocks.invalidateClaim).toHaveBeenCalledWith({ id: 'claim-1' })
-    expect(mocks.refetch).not.toHaveBeenCalled()
+    expect(mocks.invalidateClaim).toHaveBeenCalledWith({ id: 'claim-1' }, undefined, { throwOnError: true })
+    expect(mocks.fetchClaim).toHaveBeenCalledTimes(1)
     expect(mocks.toastError).not.toHaveBeenCalled()
   })
 
@@ -320,6 +358,89 @@ describe.each(['ledger', 'trezor'] as const)('%s as the final multisig cosigner'
     expect(getSignButton().disabled).toBe(false)
   })
 
+  it('blocks another signing attempt until the verified claim refresh finishes', async () => {
+    let resolveRefresh!: () => void
+    const pendingRefresh = new Promise<void>((resolve) => {
+      resolveRefresh = resolve
+    })
+    mocks.fetchClaim.mockImplementationOnce(async () => {
+      await pendingRefresh
+      return mocks.claim
+    })
+    await reachSigning()
+    await clickSign()
+    try {
+      expect(mocks.completeChallenge).toHaveBeenCalledTimes(1)
+      expect(mocks.invalidateClaim).toHaveBeenCalledWith({ id: 'claim-1' }, undefined, { throwOnError: true })
+      expect(mocks.navigate).not.toHaveBeenCalled()
+      expect(getSignButton().disabled).toBe(true)
+      await clickSign()
+      expect(walletType === 'ledger' ? mocks.ledger.signMessage : mocks.trezorSign).toHaveBeenCalledTimes(1)
+      expect(mocks.completeMessage).toHaveBeenCalledTimes(1)
+      expect(mocks.completeChallenge).toHaveBeenCalledTimes(1)
+    } finally {
+      await act(async () => {
+        resolveRefresh()
+      })
+    }
+    await vi.waitFor(() => {
+      expect(mocks.navigate).toHaveBeenCalledWith('/accounts/verify/receipt/claim-1')
+    })
+    expect(getSignButton().disabled).toBe(false)
+  })
+
+  it('recovers from a failed claim refresh on reload without requesting another signature', async () => {
+    mocks.fetchClaim.mockRejectedValueOnce(new Error('Sentinel account request failed'))
+    await reachSigning()
+    await clickSign()
+    await vi.waitFor(() => {
+      expect(mocks.toastError).toHaveBeenCalledExactlyOnceWith(
+        'Verification completed, but the account could not be refreshed. Reload the page.',
+      )
+    })
+    expect(queryClient.getQueryState(['claim', 'claim-1'])).toMatchObject({ status: 'error' })
+    expect(mocks.fetchClaim).toHaveBeenCalledTimes(1)
+    expect(mocks.completeChallenge).toHaveBeenCalledTimes(1)
+    expect(mocks.invalidateClaim).toHaveBeenCalledWith({ id: 'claim-1' }, undefined, { throwOnError: true })
+    expect(mocks.navigate).not.toHaveBeenCalled()
+    expect(
+      queryClient
+        .getMutationCache()
+        .getAll()
+        .find((mutation) => mutation.options.mutationFn === mocks.completeChallenge)?.state.status,
+    ).toBe('success')
+
+    // Simulate reloading the signing URL with the completed claim returned by Sentinel.
+    await act(async () => {
+      root.render(null)
+    })
+    queryClient.clear()
+    const completedChallenge = mocks.claim.latestChallenge!
+    mocks.claim = {
+      ...mocks.claim,
+      isVerified: true,
+      status: 'verified',
+      latestChallenge: {
+        ...completedChallenge,
+        completed: true,
+        messages: completedChallenge.messages.map((message) => Object.assign({}, message, { signed: true })),
+      },
+    }
+    mocks.fetchClaim.mockResolvedValue(mocks.claim)
+    const reloadedRouter = await renderSigningRoute()
+    await waitForText('Verified account receipt')
+    expect(reloadedRouter.state.location.pathname).toBe('/accounts/verify/receipt/claim-1')
+    expect(reloadedRouter.state.historyAction).toBe('REPLACE')
+    expect(walletType === 'ledger' ? mocks.ledger.signMessage : mocks.trezorSign).toHaveBeenCalledTimes(1)
+    expect(mocks.completeMessage).toHaveBeenCalledTimes(1)
+    expect(mocks.completeChallenge).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      await reloadedRouter.navigate(-1)
+    })
+    await waitForText('Account list')
+  })
+
   it('displays final completion failures without navigating to the receipt', async () => {
     mocks.completeChallenge.mockRejectedValueOnce(new Error('Sentinel could not complete verification'))
     await reachSigning()
@@ -330,5 +451,96 @@ describe.each(['ledger', 'trezor'] as const)('%s as the final multisig cosigner'
     expect(mocks.toastError).toHaveBeenCalledWith('There was an error when completing your Multisig claim')
     expect(mocks.navigate).not.toHaveBeenCalled()
     expect(mocks.invalidateClaim).not.toHaveBeenCalled()
+  })
+})
+
+describe.each(['ledger', 'trezor'] as const)('%s verification of an already-verified account', (walletType) => {
+  it('keeps a new incomplete challenge open for signing', async () => {
+    mocks.walletType = walletType
+    mocks.claim = { ...mocks.claim, isVerified: true, status: 'verified' }
+    const signingRouter = await renderSigningRoute()
+    await reachSigning()
+    expect(signingRouter.state.location.pathname).toBe(`/multisig/claim-1/signing/${walletType}/ledger-key`)
+    expect(getSignButton().disabled).toBe(false)
+    expect(container.textContent).not.toContain('Verified account receipt')
+    expect(mocks.navigate).not.toHaveBeenCalled()
+    expect(mocks.completeChallenge).not.toHaveBeenCalled()
+  })
+})
+
+describe.each(['singlesig', 'multisig'] as const)('%s Ledger retry', (flow) => {
+  it('releases the HID handle and reloads even when the SDK exchange is stuck', async () => {
+    let finishClose!: () => void
+    const close = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finishClose = resolve
+        }),
+    )
+    const device = {
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      close,
+    } as unknown as ConstructorParameters<typeof TransportWebHID>[0]
+    const transport = new TransportWebHID(device)
+    transport.exchangeBusyPromise = new Promise<void>(() => undefined)
+    const sdkClose = vi.spyOn(transport, 'close')
+    mocks.ledger.reset.mockImplementation(async (closeTransport?: (device: TransportWebHID) => Promise<void>) => {
+      if (closeTransport) {
+        await closeTransport(transport)
+      }
+    })
+    mocks.ledger.init.mockRejectedValueOnce(new Error('Ledger connection failed'))
+    if (flow === 'multisig') {
+      await render()
+    } else {
+      const props = {
+        claim: mocks.claim,
+        keystore: mocks.claim.keystores[0],
+        challenge: mocks.claim.latestChallenge,
+        challengeMessage: {
+          signedMessage: {
+            id: 'message-1',
+            address: '1BoatSLRHtKNngkdXEeobR76b53LETtpyT',
+            messageTextToSign: 'Synthetic ownership challenge',
+          },
+        },
+        onExitSigning: vi.fn(),
+        onSigningComplete: vi.fn(),
+      } as unknown as SigningFlowProps
+      await render(createElement(SinglesigLedgerSigning, props))
+    }
+    await clickNext()
+    await waitForText('Ledger connection failed')
+    const reload = vi.fn()
+    vi.stubGlobal(
+      'window',
+      new Proxy(mocks.domGlobals.window, {
+        get(target, key) {
+          return key === 'location' ? { reload } : Reflect.get(target, key, target)
+        },
+      }),
+    )
+    const retry = Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Retry')
+    expect(retry).toBeDefined()
+    await act(async () => {
+      retry!.click()
+    })
+    try {
+      expect(sdkClose).not.toHaveBeenCalled()
+      expect(close).toHaveBeenCalledOnce()
+      expect(device.removeEventListener).toHaveBeenCalledWith('inputreport', transport.onInputReport)
+      expect(reload).not.toHaveBeenCalled()
+    } finally {
+      if (finishClose) {
+        await act(async () => {
+          finishClose()
+        })
+      }
+    }
+    await vi.waitFor(() => {
+      expect(reload).toHaveBeenCalledOnce()
+    })
+    expect(mocks.toastError).not.toHaveBeenCalled()
   })
 })

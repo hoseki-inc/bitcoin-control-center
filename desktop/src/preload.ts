@@ -21,7 +21,9 @@ const ledger: LedgerHidApi = {
 
 contextBridge.exposeInMainWorld('desktop', {
   openExternal: (url: string): void => {
-    shell.openExternal(url)
+    shell.openExternal(url).catch(() => {
+      console.error('Unable to open the external link')
+    })
   },
   platform: process.platform,
   ledger,

@@ -183,7 +183,7 @@ export default function App(): JSX.Element {
       }
     }
 
-    loadPdf()
+    void loadPdf()
   }, [parsedStatement, hasExampleWatermark, setPdfDocument, showToolbar])
 
   const validateAndParseJson = useCallback(() => {

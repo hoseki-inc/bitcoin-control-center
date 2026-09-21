@@ -94,7 +94,7 @@ export function KeystoreReceipt({ shouldSetTimeout, keystore, claim }: KeystoreR
     if (!claim) {
       return
     }
-    navigate(`/multisig/${claim.id}`, { replace: true })
+    void navigate(`/multisig/${claim.id}`, { replace: true })
   }
 
   return (

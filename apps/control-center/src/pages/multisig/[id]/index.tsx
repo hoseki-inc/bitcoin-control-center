@@ -47,14 +47,14 @@ function ConnectWallets({
 
   async function handleNextSigningDeviceClick(signingDevice: SupportedHardwareWallet) {
     if (claim.latestChallenge) {
-      navigate(`/multisig/${claim.id}/connect/${signingDevice}/${expandedKeystore.id}`)
+      void navigate(`/multisig/${claim.id}/connect/${signingDevice}/${expandedKeystore.id}`)
       return
     }
 
     try {
       await createChallenge.mutateAsync({ claimId: claim.id })
       await trpcUtils.portalProve.registry.claims.get.byId.invalidate()
-      navigate(`/multisig/${claim.id}/connect/${signingDevice}/${expandedKeystore.id}`)
+      void navigate(`/multisig/${claim.id}/connect/${signingDevice}/${expandedKeystore.id}`)
     } catch (error) {
       browserLogger.error(error, 'Error creating challenge')
       setChallengeError('Error creating challenge')

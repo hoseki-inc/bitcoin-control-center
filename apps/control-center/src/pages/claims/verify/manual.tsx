@@ -37,7 +37,7 @@ export function ClaimsVerifyManualPage(): JSX.Element {
       await utils.portalProve.manual.list.invalidate()
       await utils.portalProve.controlCenter.invalidate()
       toast.success('Manual account created')
-      navigate(`/accounts/manual/${result.id}`)
+      void navigate(`/accounts/manual/${result.id}`)
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to create manual account'
       toast.error(message)

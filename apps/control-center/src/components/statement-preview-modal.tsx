@@ -112,7 +112,9 @@ export function StatementPreviewModal(props: StatementPreviewModalProps): JSX.El
       setPdfDocument(document)
     }
 
-    generatePreview()
+    generatePreview().catch(() => {
+      toast.error('Unable to generate the PDF preview. Reload the page and try again.')
+    })
   }, [statementData])
 
   if (isErrorStatementData) {
