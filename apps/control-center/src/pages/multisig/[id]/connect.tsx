@@ -279,7 +279,7 @@ function GenericCheckWalletXpub({
       if (status === 'verified') {
         setMatchedKeystore({ keystore: matchedKeyStore, match: true })
         toast.info('Device already signed', { description: 'Continue with a different device.' })
-        navigate(`/multisig/${claim.id}`)
+        void navigate(`/multisig/${claim.id}`)
         return
       }
 
@@ -327,7 +327,7 @@ function GenericCheckWalletXpub({
       setIsSaving(false)
     }
 
-    navigate(`/multisig/${claim.id}/signing/${keystoreMetadata.walletType}/${matchedKeystore.keystore.id}`)
+    void navigate(`/multisig/${claim.id}/signing/${keystoreMetadata.walletType}/${matchedKeystore.keystore.id}`)
   }
 
   if (isChecking) {

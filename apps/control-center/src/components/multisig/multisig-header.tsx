@@ -40,7 +40,7 @@ export function MultisigHeader({
     }
 
     function navigateToKeystoreSigning(selectedKeystore: IndicatorKeystore) {
-      navigate(`/multisig/${claim.id}/signing/${selectedKeystore.wallet}/${selectedKeystore.id}`)
+      void navigate(`/multisig/${claim.id}/signing/${selectedKeystore.wallet}/${selectedKeystore.id}`)
     }
 
     // We currently don't have a screen for verified keystores, so we don't allow the user to click on them.

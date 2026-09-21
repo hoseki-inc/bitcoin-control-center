@@ -20,6 +20,7 @@ import Decimal from 'decimal.js'
 import { useState } from 'react'
 import { useLocation, useNavigate } from 'react-router'
 import { useNavigateToAnExistentOrNewClaim } from '../../../lib/claim-flow'
+import { browserLogger } from '../../../logger'
 import { trpc } from '../../../trpc'
 import { RequiredDataMissing } from '../../errors/required-data-missing'
 import { trezorService } from './trezor-service-singleton'
@@ -95,7 +96,9 @@ export function ConnectTrezor(): JSX.Element {
     })
 
     // Fire-and-forget call because balances are just not shown if they were unable to load
-    getTrezorAccountBalance(account)
+    getTrezorAccountBalance(account).catch(() => {
+      browserLogger.warn('Unable to refresh the optional Trezor account balance')
+    })
     setStep('step-2-confirm')
     return Ok()
   }

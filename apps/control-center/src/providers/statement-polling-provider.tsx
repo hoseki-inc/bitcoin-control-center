@@ -24,7 +24,9 @@ export function StatementPollingProvider({ children }: { children: React.ReactNo
   useEffect(() => {
     if (isSuccess && retrievedStatement && shouldPoll && retrievedStatement.status !== 'pending') {
       // Invalidate the statements list to show the new statement
-      trpcUtils.portalProve.statement.list.invalidate()
+      trpcUtils.portalProve.statement.list.invalidate(undefined, undefined, { throwOnError: true }).catch(() => {
+        toast.error('Unable to refresh the statements list. Please reload the page.')
+      })
 
       if (retrievedStatement.status === 'completed') {
         toast.success('Your statement is ready!', {

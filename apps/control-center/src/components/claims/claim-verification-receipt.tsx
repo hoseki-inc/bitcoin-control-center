@@ -38,7 +38,7 @@ export function ClaimVerificationReceipt({ shouldSetTimeout, claim }: ClaimVerif
 
   const handleNavigation = (path: string) => {
     clearFlowSource()
-    navigate(path)
+    void navigate(path)
   }
 
   if (isPending) {

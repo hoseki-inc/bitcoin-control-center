@@ -296,7 +296,7 @@ export function AccountsSidebar({
                 compact={compact}
                 onClick={() => {
                   if (needsReconnect) {
-                    navigate(`${config.detailsPath}/${item.account.id}`)
+                    void navigate(`${config.detailsPath}/${item.account.id}`)
                     return
                   }
                   onToggle(item.account.id)

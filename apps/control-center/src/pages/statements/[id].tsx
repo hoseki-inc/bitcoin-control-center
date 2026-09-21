@@ -259,7 +259,7 @@ function StatementPreview({
       }
     }
 
-    loadPdf()
+    void loadPdf()
   }, [statementData])
 
   return (

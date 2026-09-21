@@ -52,7 +52,7 @@ export function DeleteClaimModal({ action, isOpen, onClose, claim }: DeleteClaim
         trpcUtils.portalProve.registry.claims.listArchived.invalidate(),
         trpcUtils.portalProve.controlCenter.getData.invalidate(),
       ])
-      navigate('/accounts')
+      void navigate('/accounts')
       onClose()
       toast.success(`'${claim.displayName}' archived`)
     },
@@ -68,7 +68,7 @@ export function DeleteClaimModal({ action, isOpen, onClose, claim }: DeleteClaim
       trpcUtils.portalProve.registry.claims.listArchived.invalidate(),
       trpcUtils.portalProve.controlCenter.getData.invalidate(),
     ])
-    navigate('/accounts')
+    void navigate('/accounts')
     onClose()
     toast.success(isAbandon ? `'${claim.displayName}' setup abandoned` : `'${claim.displayName}' account deleted`)
   }

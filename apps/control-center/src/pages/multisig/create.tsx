@@ -55,13 +55,13 @@ export function MultisigCreatePage(): JSX.Element {
         toast.info('This account is archived', {
           description: 'Restore it from Archived accounts before reconnecting.',
         })
-        navigate('/accounts#archived')
+        void navigate('/accounts#archived')
         return
       }
 
       await Result.fromPromise(updateClaimMutation.mutateAsync({ id: claim.id, displayName: updatedName }))
         .andThen((data) => {
-          navigate(data.status === 'pending' ? `/multisig/${claim.id}` : `/accounts/${claim.id}`)
+          void navigate(data.status === 'pending' ? `/multisig/${claim.id}` : `/accounts/${claim.id}`)
           return Ok()
         })
         .inspectErr((err) => {
@@ -73,7 +73,7 @@ export function MultisigCreatePage(): JSX.Element {
       // Create new claim
       await Result.fromPromise(createMultisigClaimMutation.mutateAsync(updatedWallet))
         .andThen((claimAggregate) => {
-          navigate(`/multisig/${claimAggregate.claim.id}`)
+          void navigate(`/multisig/${claimAggregate.claim.id}`)
           return Ok()
         })
         .inspectErr((err) => {

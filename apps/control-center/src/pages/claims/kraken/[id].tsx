@@ -38,7 +38,7 @@ export function KrakenAccountDetailsPage(): JSX.Element {
     if (!accountId) {
       return
     }
-    navigate('/accounts/verify/kraken', {
+    void navigate('/accounts/verify/kraken', {
       state: { returnTo: `/accounts/kraken/${accountId}`, replaceAccountId: accountId },
     })
   }
@@ -70,7 +70,7 @@ export function KrakenAccountDetailsPage(): JSX.Element {
       await utils.portalProve.exchange.kraken.list.invalidate()
       await utils.portalProve.exchange.list.invalidate()
       await utils.portalProve.controlCenter.invalidate()
-      navigate('/accounts')
+      void navigate('/accounts')
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to remove account'
       toast.error(message)

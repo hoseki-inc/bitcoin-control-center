@@ -72,7 +72,7 @@ function createHarness(t, choose = async () => ({ response: 0 })) {
 }
 
 for (const url of ['https://example.com', 'http://localhost:3401', 'http://localhost:3400.evil.test', 'not a URL']) {
-  test(`rejects device and IPC requests from ${url}`, async (t) => {
+  void test(`rejects device and IPC requests from ${url}`, async (t) => {
     const h = createHarness(t)
     h.frame.url = url
     assert.equal(h.begin(), false)
@@ -81,7 +81,7 @@ for (const url of ['https://example.com', 'http://localhost:3401', 'http://local
   })
 }
 
-test('rejects null, child and other-window frames and IPC senders', async (t) => {
+void test('rejects null, child and other-window frames and IPC senders', async (t) => {
   const h = createHarness(t)
   for (const frame of [null, { url: h.frame.url }]) {
     assert.equal(await h.request({ frame }), undefined)
@@ -90,7 +90,7 @@ test('rejects null, child and other-window frames and IPC senders', async (t) =>
   assert.equal(h.begin('request-1', { sender: {}, senderFrame: h.frame }), false)
 })
 
-test('one Ledger connects after explicit Connect, without a native picker', async (t) => {
+void test('one Ledger connects after explicit Connect, without a native picker', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] })
   const h = createHarness(t)
   assert.equal(h.begin(), true)
@@ -102,7 +102,7 @@ test('one Ledger connects after explicit Connect, without a native picker', asyn
   assert.equal(h.dialogs.length, 0)
 })
 
-test('multiple devices require a choice and expose only Ledger names and IDs', async (t) => {
+void test('multiple devices require a choice and expose only Ledger names and IDs', async (t) => {
   const h = createHarness(t)
   h.begin()
   const result = h.request({ deviceList: [otherDevice, ledger, secondLedger] })
@@ -115,7 +115,7 @@ test('multiple devices require a choice and expose only Ledger names and IDs', a
   assert.equal(await result, secondLedger.deviceId)
 })
 
-test('empty discovery stays open, then connects a hotplugged Ledger', async (t) => {
+void test('empty discovery stays open, then connects a hotplugged Ledger', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] })
   const h = createHarness(t)
   h.begin()
@@ -128,7 +128,7 @@ test('empty discovery stays open, then connects a hotplugged Ledger', async (t) 
   assert.equal(await result, ledger.deviceId)
 })
 
-test('simultaneous hotplug requires selection instead of choosing whichever arrived first', async (t) => {
+void test('simultaneous hotplug requires selection instead of choosing whichever arrived first', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] })
   const h = createHarness(t)
   h.begin()
@@ -141,7 +141,7 @@ test('simultaneous hotplug requires selection instead of choosing whichever arri
   assert.equal(await result, secondLedger.deviceId)
 })
 
-test('removal updates the list and prevents selecting a disconnected device', async (t) => {
+void test('removal updates the list and prevents selecting a disconnected device', async (t) => {
   const h = createHarness(t)
   h.begin()
   const result = h.request({ deviceList: [ledger, secondLedger] })
@@ -152,7 +152,7 @@ test('removal updates the list and prevents selecting a disconnected device', as
   assert.equal(await result, secondLedger.deviceId)
 })
 
-test('stale request IDs, malformed IDs and spoofed senders cannot select or cancel', async (t) => {
+void test('stale request IDs, malformed IDs and spoofed senders cannot select or cancel', async (t) => {
   const h = createHarness(t)
   assert.equal(h.begin({}), false)
   assert.equal(h.begin(), true)
@@ -166,7 +166,7 @@ test('stale request IDs, malformed IDs and spoofed senders cannot select or canc
   assert.equal(await result, secondLedger.deviceId)
 })
 
-test('cancel resolves the pending request once and allows retry', async (t) => {
+void test('cancel resolves the pending request once and allows retry', async (t) => {
   const h = createHarness(t)
   h.begin()
   const result = h.request({ deviceList: [] })
@@ -177,7 +177,7 @@ test('cancel resolves the pending request once and allows retry', async (t) => {
   assert.equal(h.begin('retry'), true)
 })
 
-test('late events from another frame cannot change the pending list', async (t) => {
+void test('late events from another frame cannot change the pending list', async (t) => {
   const h = createHarness(t)
   h.begin()
   const result = h.request({ deviceList: [] })
@@ -187,7 +187,7 @@ test('late events from another frame cannot change the pending list', async (t) 
   assert.equal(await result, undefined)
 })
 
-test('navigation cancels pending permission and stale choices are rejected', async (t) => {
+void test('navigation cancels pending permission and stale choices are rejected', async (t) => {
   const h = createHarness(t)
   h.begin()
   const result = h.request({ deviceList: [ledger, secondLedger] })
@@ -196,7 +196,7 @@ test('navigation cancels pending permission and stale choices are rejected', asy
   assert.equal(h.select(ledger.deviceId), false)
 })
 
-test('checks the origin again before automatic selection', async (t) => {
+void test('checks the origin again before automatic selection', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] })
   const h = createHarness(t)
   h.begin()
@@ -206,7 +206,7 @@ test('checks the origin again before automatic selection', async (t) => {
   assert.equal(await result, undefined)
 })
 
-test('requests expire with a distinct state and can be retried', async (t) => {
+void test('requests expire with a distinct state and can be retried', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] })
   const h = createHarness(t)
   h.begin()
@@ -217,7 +217,7 @@ test('requests expire with a distinct state and can be retried', async (t) => {
   assert.equal(h.begin('retry'), true)
 })
 
-test('window closure cancels a pending request and cleans up IPC and device listeners', async (t) => {
+void test('window closure cancels a pending request and cleans up IPC and device listeners', async (t) => {
   const h = createHarness(t)
   h.begin()
   const result = h.request({ deviceList: [] })
@@ -231,13 +231,13 @@ test('window closure cancels a pending request and cleans up IPC and device list
   assert.equal(h.ipc.listenerCount('ledger-hid:end'), 0)
 })
 
-test('other connection entry points retain the scoped native chooser', async (t) => {
+void test('other connection entry points retain the scoped native chooser', async (t) => {
   const h = createHarness(t, async () => ({ response: 1 }))
   assert.equal(await h.request({ deviceList: [otherDevice, ledger, secondLedger] }), secondLedger.deviceId)
   assert.deepEqual(h.dialogs[0].buttons, ['Flex', 'Nano X', 'Cancel'])
 })
 
-test('native chooser cancellation and errors do not grant access', async (t) => {
+void test('native chooser cancellation and errors do not grant access', async (t) => {
   const cancelled = createHarness(t, async (options) => ({ response: options.cancelId }))
   assert.equal(await cancelled.request(), undefined)
   const failed = createHarness(t, async () => {
@@ -246,7 +246,7 @@ test('native chooser cancellation and errors do not grant access', async (t) => 
   assert.equal(await failed.request(), undefined)
 })
 
-test('native fallback rechecks the requesting page after selection', async (t) => {
+void test('native fallback rechecks the requesting page after selection', async (t) => {
   const h = createHarness(t, async () => {
     h.frame.url = 'https://example.com'
     return { response: 0 }
@@ -254,7 +254,7 @@ test('native fallback rechecks the requesting page after selection', async (t) =
   assert.equal(await h.request(), undefined)
 })
 
-test('a late browser event after Cancel is denied without reopening a native chooser', async (t) => {
+void test('a late browser event after Cancel is denied without reopening a native chooser', async (t) => {
   const h = createHarness(t)
   h.begin()
   h.cancel()
@@ -264,7 +264,7 @@ test('a late browser event after Cancel is denied without reopening a native cho
   assert.equal(h.begin('retry'), true)
 })
 
-test('renderer settlement releases a reservation when no browser request was issued', async (t) => {
+void test('renderer settlement releases a reservation when no browser request was issued', async (t) => {
   const h = createHarness(t)
   h.begin()
   h.cancel()
@@ -275,7 +275,7 @@ test('renderer settlement releases a reservation when no browser request was iss
   assert.equal(h.begin('retry'), true)
 })
 
-test('expiration before the browser event also denies the late request', async (t) => {
+void test('expiration before the browser event also denies the late request', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] })
   const h = createHarness(t)
   h.begin()
@@ -286,7 +286,7 @@ test('expiration before the browser event also denies the late request', async (
   assert.equal(h.begin('retry'), true)
 })
 
-test('same-origin navigation cancels a native chooser immediately and ignores its late result', async (t) => {
+void test('same-origin navigation cancels a native chooser immediately and ignores its late result', async (t) => {
   let finishDialog
   const h = createHarness(t, () => new Promise((resolve) => (finishDialog = resolve)))
   const result = h.request()
@@ -304,7 +304,7 @@ test('same-origin navigation cancels a native chooser immediately and ignores it
   assert.equal(h.begin('another-request'), false)
 })
 
-test('native chooser timeout releases its callback even if the dialog promise stays pending', async (t) => {
+void test('native chooser timeout releases its callback even if the dialog promise stays pending', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] })
   const h = createHarness(t, () => new Promise(() => undefined))
   const result = h.request()
@@ -314,7 +314,7 @@ test('native chooser timeout releases its callback even if the dialog promise st
   assert.equal(h.begin('retry'), true)
 })
 
-test('native selection cannot grant a device removed while the dialog was open', async (t) => {
+void test('native selection cannot grant a device removed while the dialog was open', async (t) => {
   let finishDialog
   const h = createHarness(t, () => new Promise((resolve) => (finishDialog = resolve)))
   const result = h.request()
@@ -324,7 +324,7 @@ test('native selection cannot grant a device removed while the dialog was open',
 })
 
 for (const event of ['closed', 'render-process-gone']) {
-  test(`${event} cancels and closes a native chooser`, async (t) => {
+  void test(`${event} cancels and closes a native chooser`, async (t) => {
     const h = createHarness(t, () => new Promise(() => undefined))
     const result = h.request()
     ;(event === 'closed' ? h.window : h.contents).emit(event)

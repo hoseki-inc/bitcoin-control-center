@@ -41,7 +41,7 @@ export function useLocalSetting(key: string): {
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey })
+      return queryClient.invalidateQueries({ queryKey })
     },
   })
 

@@ -13,7 +13,7 @@ import {
 } from '@hoseki/packages/ui/wallet-ui'
 import { useMutation } from '@tanstack/react-query'
 import { useState } from 'react'
-import { useNavigate, useParams } from 'react-router'
+import { Navigate, useNavigate, useParams } from 'react-router'
 import { toast } from 'sonner'
 import { useShallow } from 'zustand/react/shallow'
 import { ColdcardQrSigning } from '../../../components/claims/coldcard/coldcard-qr-signing'
@@ -22,6 +22,7 @@ import { KeystoneQrSigning } from '../../../components/claims/keystone/keystone-
 import { trezorService } from '../../../components/claims/trezor/trezor-service-singleton'
 import { useMultisigPageWrapperContext } from '../../../components/multisig/multisig-page-wrapper'
 import { useLedgerStore, useToastOnLedgerDisconnect } from '../../../hooks/use-ledger-store'
+import { closeDesktopLedger } from '../../../lib/open-desktop-ledger'
 import { browserLogger, captureHardwareWalletError } from '../../../logger'
 import { trpc } from '../../../trpc'
 import type { ClaimDto, KeystoreDto } from '../../../trpc/server-types'
@@ -30,6 +31,10 @@ import { getNumberOfMissingSignatures } from '../../../utils/multisig-utils'
 export function MultisigSigningPage(): JSX.Element {
   const { keystoreId, walletType } = useParams<{ keystoreId: string; walletType: string }>()
   const { claim } = useMultisigPageWrapperContext()
+
+  if (claim.latestChallenge?.completed) {
+    return <Navigate to={`/accounts/verify/receipt/${claim.id}`} replace />
+  }
 
   if (!keystoreId) {
     return <ErrorBanner mb={4} message="Keystore ID missing" />
@@ -116,7 +121,7 @@ function TrezorSigning({ claim, keystore }: { claim: ClaimDto; keystore: Keystor
 
       // Refetch claim, then navigate to the hub
       await claimQuery.refetch()
-      navigate(`/multisig/verify/receipt/${claim.id}/${keystore.id}`)
+      void navigate(`/multisig/verify/receipt/${claim.id}/${keystore.id}`)
     } catch (caughtError) {
       console.error('error', caughtError)
       if (caughtError instanceof Error) {
@@ -244,7 +249,7 @@ function LedgerSigning({ claim, keystore }: { claim: ClaimDto; keystore: Keystor
 
       // Refetch claim, then navigate to the hub
       await claimQuery.refetch()
-      navigate(`/multisig/verify/receipt/${claim.id}/${keystore.id}`)
+      void navigate(`/multisig/verify/receipt/${claim.id}/${keystore.id}`)
     } catch (caughtError) {
       if (caughtError instanceof Error) {
         setSigningError(caughtError)
@@ -274,8 +279,13 @@ function LedgerSigning({ claim, keystore }: { claim: ClaimDto; keystore: Keystor
           error={error}
           mt={4}
           onRetry={() => {
-            resetLedger()
-            window.location.reload()
+            resetLedger(closeDesktopLedger)
+              .then(() => {
+                window.location.reload()
+              })
+              .catch(() => {
+                toast.error('Unable to reset Ledger. Reconnect the device and try again.')
+              })
           }}
         />
       )}
@@ -399,7 +409,7 @@ function ColdcardSigning({ claim, keystore }: { claim: ClaimDto; keystore: Keyst
       return completeChallenge()
     }
 
-    navigate(`/multisig/verify/receipt/${claim.id}/${keystore.id}`)
+    void navigate(`/multisig/verify/receipt/${claim.id}/${keystore.id}`)
   }
 
   // Coldcard Q uses QR-based signing flow
@@ -514,7 +524,7 @@ function KeystoneSigning({ claim, keystore }: { claim: ClaimDto; keystore: Keyst
       return completeChallenge()
     }
 
-    navigate(`/multisig/verify/receipt/${claim.id}/${keystore.id}`)
+    void navigate(`/multisig/verify/receipt/${claim.id}/${keystore.id}`)
   }
 
   return (
@@ -577,10 +587,16 @@ function useCompleteChallenge(claim: ClaimDto) {
   const navigate = useNavigate()
 
   const completeChallengeMutation = trpc.portalProve.registry.challenges.complete.useMutation({
-    onSuccess: () => {
-      trpcUtils.portalProve.registry.claims.get.byId.invalidate({ id: claim.id }).then(() => {
-        navigate('/accounts/verify/receipt/' + claim.id)
-      })
+    onSuccess: async () => {
+      try {
+        await trpcUtils.portalProve.registry.claims.get.byId.invalidate({ id: claim.id }, undefined, {
+          throwOnError: true,
+        })
+      } catch {
+        toast.error('Verification completed, but the account could not be refreshed. Reload the page.')
+        return
+      }
+      void navigate('/accounts/verify/receipt/' + claim.id)
     },
     onError: (error) => {
       browserLogger.error(error, 'There was an error when completing your Multisig claim')

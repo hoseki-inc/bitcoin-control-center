@@ -38,7 +38,7 @@ export function CoinbaseAccountDetailsPage(): JSX.Element {
     if (!accountId) {
       return
     }
-    navigate('/accounts/verify/coinbase', {
+    void navigate('/accounts/verify/coinbase', {
       state: { returnTo: `/accounts/coinbase/${accountId}`, replaceAccountId: accountId },
     })
   }
@@ -70,7 +70,7 @@ export function CoinbaseAccountDetailsPage(): JSX.Element {
       await utils.portalProve.exchange.coinbase.list.invalidate()
       await utils.portalProve.exchange.list.invalidate()
       await utils.portalProve.controlCenter.invalidate()
-      navigate('/accounts')
+      void navigate('/accounts')
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to remove account'
       toast.error(message)

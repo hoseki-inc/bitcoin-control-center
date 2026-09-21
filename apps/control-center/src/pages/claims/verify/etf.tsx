@@ -106,7 +106,7 @@ export function ClaimsVerifyEtfPage(): JSX.Element {
       await utils.portalProve.etf.list.invalidate()
       await utils.portalProve.controlCenter.invalidate()
       toast.success('ETF account created')
-      navigate(`/accounts/etf/${result.id}`)
+      void navigate(`/accounts/etf/${result.id}`)
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to create ETF account'
       toast.error(message)

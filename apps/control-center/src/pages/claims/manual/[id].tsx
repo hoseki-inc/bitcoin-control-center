@@ -149,7 +149,7 @@ export function ManualAccountDetailsPage(): JSX.Element {
       await deleteMutation.mutateAsync({ accountId })
       await utils.portalProve.manual.list.invalidate()
       await utils.portalProve.controlCenter.invalidate()
-      navigate('/accounts')
+      void navigate('/accounts')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to remove account')
       setIsDeleting(false)
