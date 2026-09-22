@@ -514,10 +514,22 @@ describe.each(['singlesig', 'multisig'] as const)('%s Ledger retry', (flow) => {
         }),
     )
     const device = {
+      opened: true,
+      vendorId: 0x2c97,
+      productId: 0,
+      productName: 'Test Ledger',
+      collections: [],
+      oninputreport: null,
       addEventListener: vi.fn(),
       removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(() => true),
+      open: vi.fn(async () => undefined),
       close,
-    }
+      forget: vi.fn(async () => undefined),
+      sendReport: vi.fn(async () => undefined),
+      sendFeatureReport: vi.fn(async () => undefined),
+      receiveFeatureReport: vi.fn(async () => new DataView(new ArrayBuffer(0))),
+    } satisfies HIDDevice
     const transport = new TransportWebHID(device)
     transport.exchangeBusyPromise = new Promise<void>(() => undefined)
     const sdkClose = vi.spyOn(transport, 'close')

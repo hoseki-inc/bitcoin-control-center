@@ -6,7 +6,7 @@
     "strict": true,
     "resolveJsonModule": true,
     "outDir": "../../dist/out-tsc",
-    "types": ["vite/client", "vitest/globals", "vitest/importMeta", "vitest", "node"]
+    "types": ["vite/client", "vitest/globals", "vitest/importMeta", "vitest", "node", "w3c-web-hid"]
   },
   "include": [
     "src/**/*.ts",

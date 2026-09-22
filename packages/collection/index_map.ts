@@ -1,3 +1,7 @@
+function isCallable(value: unknown): value is () => unknown {
+  return typeof value === 'function'
+}
+
 export type Index = string | number | bigint | boolean | symbol
 
 export type Indexable =
@@ -52,7 +56,7 @@ export class IndexMap<K extends Indexable, V> implements Map<K, V> {
 
     // If key is provided, use it
     if (key.key !== undefined) {
-      const keyValue: unknown = typeof key.key === 'function' ? key.key() : key.key
+      const keyValue: unknown = isCallable(key.key) ? key.key() : key.key
       if (keyValue !== null && keyValue !== undefined) {
         return this.requireIndex(keyValue)
       }
@@ -60,7 +64,7 @@ export class IndexMap<K extends Indexable, V> implements Map<K, V> {
 
     // If id is provided, use it
     if (key.id !== undefined) {
-      const idValue: unknown = typeof key.id === 'function' ? key.id() : key.id
+      const idValue: unknown = isCallable(key.id) ? key.id() : key.id
       if (idValue !== null && idValue !== undefined) {
         return this.requireIndex(idValue)
       }
