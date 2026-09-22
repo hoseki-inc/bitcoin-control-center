@@ -106,7 +106,8 @@
     "typescript/no-useless-default-assignment": "error",
     "typescript/no-wrapper-object-types": "error",
     "typescript/non-nullable-type-assertion-style": "error",
-    "typescript/only-throw-error": "error"
+    "typescript/only-throw-error": "error",
+    "typescript/parameter-properties": "error"
   },
   "overrides": [
     {

@@ -11,8 +11,11 @@ export interface SafeResponseJSON {
 }
 
 export class SafeResponse extends SafeBody {
-  public constructor(public response: Response) {
+  public response: Response
+
+  public constructor(response: Response) {
     super(response)
+    this.response = response
   }
 
   public get headers(): Headers {

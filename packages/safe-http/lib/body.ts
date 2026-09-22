@@ -2,7 +2,11 @@ import { type AsyncResult, Result } from '../../result/index.ts'
 import { SafeBodyError, SafeBodyErrorKind } from './errors.ts'
 
 export class SafeBody {
-  public constructor(private originalBody: Body) {}
+  private originalBody: Body
+
+  public constructor(originalBody: Body) {
+    this.originalBody = originalBody
+  }
 
   public get body(): ReadableStream<Uint8Array> | null {
     return this.originalBody.body
