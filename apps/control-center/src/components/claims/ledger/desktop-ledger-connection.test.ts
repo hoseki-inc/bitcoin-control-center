@@ -4,7 +4,7 @@ import TransportWebHID from '@ledgerhq/hw-transport-webhid'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, createElement } from 'react'
 import { type Root, createRoot } from 'react-dom/client'
-import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { afterEach, assert, beforeEach, expect, it, vi } from 'vitest'
 import type { LedgerHidApi, LedgerHidUpdate } from '../../../../../../desktop/src/ledger-hid-api'
 import { DesktopLedgerConnection } from './desktop-ledger-connection'
 
@@ -42,7 +42,7 @@ let listener: (update: LedgerHidUpdate) => void
 let bridge: LedgerHidApi
 let queryClient: QueryClient
 let resolveRequest: (value: typeof transport) => void
-let rejectRequest: (error: Error) => void
+let rejectRequest: ((error: Error) => void) | undefined
 let requestId: string
 const transport = {
   close: vi.fn(),
@@ -56,6 +56,7 @@ const onContinue = vi.fn()
 beforeEach(async () => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
   vi.clearAllMocks()
+  rejectRequest = undefined
   Object.setPrototypeOf(transport, TransportWebHID.prototype)
   transport.close.mockResolvedValue(undefined)
   transport.device.close.mockResolvedValue(undefined)
@@ -219,6 +220,7 @@ it('does not replace timeout guidance with a generic transport error', async () 
   await click('Connect Ledger')
   await update('expired')
   await act(async () => {
+    assert.exists(rejectRequest, 'Expected an active Ledger request')
     rejectRequest(new Error('Access denied'))
   })
   expect(host.textContent).toContain('Connection timed out')
@@ -278,6 +280,7 @@ it('keeps a cancelled reservation until the late browser request settles', async
   expect(bridge.end).not.toHaveBeenCalled()
   expect(button('Connect Ledger').disabled).toBe(true)
   await act(async () => {
+    assert.exists(rejectRequest, 'Expected an active Ledger request')
     rejectRequest(new Error('Cancelled by the main process'))
   })
   expect(bridge.end).toHaveBeenCalledWith(requestId)

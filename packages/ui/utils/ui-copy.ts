@@ -34,7 +34,6 @@ export function pluralize(
       const value = values[i]
       if (
         typeof value === 'object' &&
-        value !== null &&
         !Array.isArray(value) &&
         'count' in value &&
         'singular' in value &&

@@ -25,7 +25,7 @@ function createMultisigClaimInputFromDescriptor(
 ): Result<CreateMultisigClaimInput, Error> {
   const multisigWalletResult = WalletImporter.multisigFromDescriptor(descriptor)
   if (multisigWalletResult.isErr()) {
-    return Err(new Error(`Invalid descriptor: ${multisigWalletResult.unwrapErr()?.message}`))
+    return Err(new Error(`Invalid descriptor: ${multisigWalletResult.unwrapErr().message}`))
   }
 
   const multisigWallet = multisigWalletResult.unwrap()
@@ -79,7 +79,7 @@ export function MultisigFromDescriptor({ onNext }: { onNext: (data: CreateMultis
         setParsingError(null)
         return true
       } else {
-        const parseErrorMessage = `Invalid descriptor: ${parsed.unwrapErr()?.message}`
+        const parseErrorMessage = `Invalid descriptor: ${parsed.unwrapErr().message}`
         setParsingError(parseErrorMessage)
         return parseErrorMessage
       }
@@ -95,7 +95,7 @@ export function MultisigFromDescriptor({ onNext }: { onNext: (data: CreateMultis
       setParsingError(null)
       onNext(walletResult.unwrap())
     } else {
-      const errorMsg = walletResult.unwrapErr()?.message
+      const errorMsg = walletResult.unwrapErr().message
       setParsingError(`Invalid descriptor: ${errorMsg}`)
       setError('descriptor', { type: 'manual', message: `Invalid descriptor: ${errorMsg}` })
     }

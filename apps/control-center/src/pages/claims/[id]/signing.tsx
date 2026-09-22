@@ -22,10 +22,7 @@ function SinglesigSigning() {
   const claimId = useUrlParameter(UrlParameter.claimId)
   const navigate = useNavigate()
 
-  const claimQuery = trpc.portalProve.registry.claims.get.byId.useQuery(
-    { id: claimId ?? '' },
-    { enabled: Boolean(claimId) },
-  )
+  const claimQuery = trpc.portalProve.registry.claims.get.byId.useQuery({ id: claimId }, { enabled: Boolean(claimId) })
   const claim = claimQuery.data
   const messageQuery = trpc.portalProve.registry.getOrCreateSinglesigChallengeMessage.useQuery(
     {

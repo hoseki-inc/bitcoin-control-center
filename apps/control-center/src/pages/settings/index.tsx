@@ -159,7 +159,7 @@ function ElectrumSettings(): JSX.Element {
     if (!isDirty) {
       setHost(savedHost ?? 'electrum.blockstream.info')
       setPort(savedPort ?? '50002')
-      setProtocol((savedProtocol as 'tcp' | 'ssl') ?? 'ssl')
+      setProtocol((savedProtocol ?? 'ssl') as 'tcp' | 'ssl')
       setTorEnabled(savedTorEnabled === 'true')
     }
   }, [savedHost, savedPort, savedProtocol, savedTorEnabled, isDirty])

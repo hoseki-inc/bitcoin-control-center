@@ -127,7 +127,7 @@ export function ConnectTrezor(): JSX.Element {
         wallet: {
           ...prev.wallet,
           btcBalance: balanceValue.current,
-          usdBalance: balanceValue ? balanceValue.usd : null,
+          usdBalance: balanceValue.usd,
         },
       }
     })
@@ -144,7 +144,7 @@ export function ConnectTrezor(): JSX.Element {
       derivationPath: selectedTrezorAccount.wallet.derivationPath,
       wallet: 'trezor',
       model: getTrezorModel(trezorFeatures.internal_model),
-      displayName: selectedTrezorAccount.wallet.displayName ?? 'Trezor Wallet',
+      displayName: selectedTrezorAccount.wallet.displayName,
     })
   }
 

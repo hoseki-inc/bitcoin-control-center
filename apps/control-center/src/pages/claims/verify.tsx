@@ -33,7 +33,7 @@ export function ClaimVerificationReceiptPage(): JSX.Element {
   const claimId = useUrlParameter(UrlParameter.claimId)
 
   const { data: claim, isError } = trpc.portalProve.registry.claims.get.byId.useQuery(
-    { id: claimId ?? '' },
+    { id: claimId },
     { enabled: Boolean(claimId) },
   )
 

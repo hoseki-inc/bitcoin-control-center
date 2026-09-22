@@ -35,7 +35,7 @@ export function ConnectKeystone(): JSX.Element {
       derivationPath: selectedWallet.derivationPath,
       wallet: 'keystone',
       model: null,
-      displayName: selectedWallet.displayName ?? 'Keystone Wallet',
+      displayName: selectedWallet.displayName,
     })
   }
 

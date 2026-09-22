@@ -506,7 +506,7 @@ describe.each(['ledger', 'trezor'] as const)('%s verification of an already-veri
 
 describe.each(['singlesig', 'multisig'] as const)('%s Ledger retry', (flow) => {
   it('releases the HID handle and reloads even when the SDK exchange is stuck', async () => {
-    let finishClose!: () => void
+    let finishClose: (() => void) | undefined
     const close = vi.fn(
       () =>
         new Promise<void>((resolve) => {
@@ -569,8 +569,9 @@ describe.each(['singlesig', 'multisig'] as const)('%s Ledger retry', (flow) => {
       expect(reload).not.toHaveBeenCalled()
     } finally {
       if (finishClose) {
+        const finish = finishClose
         await act(async () => {
-          finishClose()
+          finish()
         })
       }
     }

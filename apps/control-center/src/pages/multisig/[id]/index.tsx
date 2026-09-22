@@ -37,7 +37,7 @@ function ConnectWallets({
   expandedKeystore,
 }: {
   claim: ClaimDto
-  expandedKeystore: IndicatorKeystoreWithModel
+  expandedKeystore: IndicatorKeystoreWithModel | null
 }) {
   const navigate = useNavigate()
   const [challengeError, setChallengeError] = useState<string | null>(null)
@@ -46,6 +46,9 @@ function ConnectWallets({
   const createChallenge = trpc.portalProve.registry.challenges.create.useMutation()
 
   async function handleNextSigningDeviceClick(signingDevice: SupportedHardwareWallet) {
+    if (!expandedKeystore) {
+      return
+    }
     if (claim.latestChallenge) {
       void navigate(`/multisig/${claim.id}/connect/${signingDevice}/${expandedKeystore.id}`)
       return
@@ -65,7 +68,7 @@ function ConnectWallets({
   const kLength = claim.keystores.length
   const canAbandon = claim.status === 'pending'
 
-  const signedMessagesLength = claim.latestChallenge?.messages?.filter((k) => k.signed)?.length ?? 0
+  const signedMessagesLength = claim.latestChallenge?.messages.filter((k) => k.signed).length ?? 0
 
   return (
     <Stack spacing={4}>

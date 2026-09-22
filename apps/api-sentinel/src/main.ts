@@ -89,9 +89,7 @@ export async function main(): Promise<SentinelServer> {
     shuttingDown = true
     logger.info('Starting graceful shutdown')
 
-    if (snapshotTimer) {
-      clearInterval(snapshotTimer)
-    }
+    clearInterval(snapshotTimer)
 
     try {
       await server.close()

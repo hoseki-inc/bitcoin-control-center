@@ -14,13 +14,14 @@ function createHarness(overrides = {}) {
   })
   const requestQuit = () => {
     let canceled = false
+    const isCanceled = () => canceled
     app.emit('before-quit', {
       preventDefault: () => {
         canceled = true
         prevented++
       },
     })
-    if (!canceled) {
+    if (!isCanceled()) {
       exits++
       resolveExit()
     }

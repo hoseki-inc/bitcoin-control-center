@@ -133,7 +133,7 @@ export function StatementCreatePage(): JSX.Element {
       setIsModalOpen(true)
     },
     onError: (error: { message: string }) => {
-      toast.error(error.message ?? 'Error when generating statement')
+      toast.error(error.message)
     },
   })
 

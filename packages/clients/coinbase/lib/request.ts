@@ -179,9 +179,9 @@ export const request = asyncFn(
     }
 
     if (args.credentials) {
-      if (args.credentials?.variant === 'AccessToken') {
+      if (args.credentials.variant === 'AccessToken') {
         headers['Authorization'] = `Bearer ${args.credentials.accessToken}`
-      } else if (args.credentials?.variant === 'ApiKey') {
+      } else if (args.credentials.variant === 'ApiKey') {
         const bodyForSign = body ?? ''
         const timestamp = Math.floor(Date.now() / 1000).toString()
         const signature = sign({

@@ -89,6 +89,11 @@ export const ETF_CONFIGS: Record<EtfTicker, EtfConfig> = {
   },
 }
 
+/** Look up a ticker from persisted or external data without assuming it is supported. */
+export function getEtfConfig(ticker: string): EtfConfig | undefined {
+  return Object.values(ETF_CONFIGS).find((config) => config.ticker === ticker)
+}
+
 export const ETF_TICKERS = Object.keys(ETF_CONFIGS) as EtfTicker[]
 
 // ─── Calculations ───────────────────────────────────────────────────────────

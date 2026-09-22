@@ -50,7 +50,7 @@ export type ParsedSignatureFile = {
 }
 
 export function parseSignatureFile(signedFileContents: string): Result<ParsedSignatureFile, Error> {
-  const signedMessageLines = (signedFileContents ?? '').split('\n')
+  const signedMessageLines = signedFileContents.split('\n')
   if (signedMessageLines.length < 5) {
     return Err(new Error('Invalid file contents'))
   }
@@ -130,7 +130,7 @@ export function getBitcoinXpubFromColdcardExport(
   ]
 
   for (const { account } of accountTypes) {
-    if (account && account.deriv) {
+    if (account) {
       const normalizedDeriv = account.deriv.toString().replace(/'/g, 'h')
 
       // Exact match

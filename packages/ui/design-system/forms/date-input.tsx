@@ -41,7 +41,7 @@ export function DateInput({ value, onChange, min, max, type = 'date', ...props }
 
         const localDateString = type === 'date' ? `${dateString}T00:00:00` : dateString
         const dateValue = new Date(localDateString)
-        onChange(dateValue && isValid(dateValue) ? dateValue : null)
+        onChange(isValid(dateValue) ? dateValue : null)
       }}
     />
   )

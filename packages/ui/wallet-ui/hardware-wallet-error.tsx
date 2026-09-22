@@ -15,8 +15,7 @@ export function HardwareWalletError({
   variant = 'error',
   ...rest
 }: HardwareWalletErrorProps): JSX.Element {
-  const errorMessage =
-    error instanceof HardwareDeviceError ? error.friendlyMessage : `Unknown error: ${error.message ?? 'Unknown error'}`
+  const errorMessage = error instanceof HardwareDeviceError ? error.friendlyMessage : `Unknown error: ${error.message}`
 
   return (
     <ErrorBanner

@@ -69,7 +69,9 @@ export class TorManager {
   private getTorBinaryPath(): string {
     // In packaged app, extraResources are at process.resourcesPath
     // In dev, they're relative to the desktop directory
-    const resourcesPath = process.resourcesPath ?? path.join(__dirname, '..', '..')
+    // resourcesPath is injected by Electron and may be absent under Node.
+    const runtime: { resourcesPath?: string } = process
+    const resourcesPath = runtime.resourcesPath ?? path.join(__dirname, '..', '..')
     const binary = process.platform === 'win32' ? 'tor.exe' : 'tor'
     return path.join(resourcesPath, 'tor', binary)
   }

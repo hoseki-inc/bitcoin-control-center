@@ -63,7 +63,7 @@ function BitcoinSigningStep({
 
   async function handleFormSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
-    if (!claimingState || !signature) {
+    if (!signature) {
       return
     }
 
@@ -90,7 +90,7 @@ function BitcoinSigningStep({
       }}
     >
       <Stack gap={4} pb={WizardFooter.padding}>
-        <ManualSigningAccountAccordion bitcoinInput={claimingState?.bitcoinInput} onEditClick={onBack} />
+        <ManualSigningAccountAccordion bitcoinInput={claimingState.bitcoinInput} onEditClick={onBack} />
         <BitcoinSigningFormFields
           message={challengeMessage.signedMessage.messageTextToSign}
           address={Address.fromCheckedString(challengeMessage.signedMessage.address)}
@@ -106,7 +106,7 @@ function BitcoinSigningStep({
         rightButton={
           <Button
             type="submit"
-            isDisabled={!claimingState || !signature}
+            isDisabled={!signature}
             isLoading={completeSignedMessageMutation.isLoading || completeChallengeMutation.isLoading}
           >
             Verify
@@ -139,10 +139,6 @@ function ManualSigningAccountAccordion({
     if (balancesQuery.error) {
       return { noBalance: balancesQuery.error.message, btc: null, usd: null }
     }
-    if (!balancesQuery.data?.accounts) {
-      return { noBalance: 'Balance not found', btc: null, usd: null }
-    }
-
     const accountBalance = balancesQuery.data.accounts.get(networkAccount.toString())
     if (!accountBalance) {
       return { noBalance: 'Balance not found', btc: null, usd: null }
