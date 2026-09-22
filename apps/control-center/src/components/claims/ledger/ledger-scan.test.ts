@@ -73,7 +73,7 @@ function fakeTransport(): Transport {
     setScrambleKey: vi.fn(),
     close: vi.fn(async () => undefined),
     deviceModel: { productName: 'Ledger Flex', id: 'flex' },
-  }) as unknown as Transport
+  })
 }
 
 function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {

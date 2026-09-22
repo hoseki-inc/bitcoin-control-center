@@ -34,7 +34,7 @@ export namespace Id {
       .refine((value): value is Id<T> => value.startsWith(`${prefix}_`), {
         message: `id must start with "${prefix}_"`,
       })
-      .transform((v) => v as Id<T>)
+      .transform((v) => v)
   }
 
   /** Remove the prefix, returning just the random part */
