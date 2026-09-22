@@ -31,7 +31,7 @@ export function toSatoshisString(value: unknown): string {
   if (typeof value === 'number' && !Number.isNaN(value)) {
     return String(Math.floor(value))
   }
-  if (typeof value === 'object' && value !== null && 'toString' in value) {
+  if (typeof value === 'object' && 'toString' in value) {
     const s = (value as { toString(): string }).toString()
     return typeof s === 'string' && s.trim() ? s.trim() : '0'
   }

@@ -132,7 +132,7 @@ export function BitcoinInputFormFields({
         <Input
           id="display-name"
           type="text"
-          value={displayName ?? ''}
+          value={displayName}
           onChange={(e) => {
             setDisplayName(e.target.value)
           }}
@@ -148,7 +148,7 @@ export function BitcoinInputFormFields({
         <Textarea
           id="bitcoin-source"
           rows={3}
-          value={bitcoinRaw ?? ''}
+          value={bitcoinRaw}
           onChange={(e) => {
             setBitcoinRaw(e.target.value)
           }}

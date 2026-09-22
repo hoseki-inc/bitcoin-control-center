@@ -217,7 +217,7 @@ export class WalletImporter {
 
     for (const match of body.matchAll(re)) {
       const matchedKey = match[0]
-      const idx = match.index ?? -1
+      const idx = match.index
       if (idx < 0) {
         return Err(new Error('failed to locate xpub match index while normalizing descriptor'))
       }

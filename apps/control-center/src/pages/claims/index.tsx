@@ -37,7 +37,6 @@ export function ClaimsPage(): JSX.Element {
   const navigate = useNavigate()
   const location = useLocation()
   const claimsQuery = trpc.portalProve.registry.claims.list.useQuery({ excludePending: false })
-  const claimCountLimitQuery = trpc.portalProve.registry.claims.getCountLimit.useQuery()
   const exchangeAccountsQuery = trpc.portalProve.exchange.list.useQuery()
   const manualAccountsQuery = trpc.portalProve.manual.list.useQuery()
   const etfAccountsQuery = trpc.portalProve.etf.list.useQuery()
@@ -97,21 +96,18 @@ export function ClaimsPage(): JSX.Element {
     )
   }
 
-  const limit = claimCountLimitQuery?.data ?? null
   const hasClaims =
     claims.length > 0 || exchangeAccounts.length > 0 || manualAccounts.length > 0 || etfAccounts.length > 0
   const verifiedCount =
     claims.filter((c) => ensureClaimStatusNotExpired(c) === 'verified').length + connectedExchangeAccounts.length
   const pendingCount = claims.length - (verifiedCount - connectedExchangeAccounts.length)
 
-  const claimTotalBtcSats = balancesQuery.data
-    ? Array.from(balancesQuery.data.values()).reduce((sum, b) => {
-        if (!b) {
-          return sum
-        }
-        return sum + Number(b.current)
-      }, 0)
-    : 0
+  const claimTotalBtcSats = Array.from(balancesQuery.data.values()).reduce((sum, b) => {
+    if (!b) {
+      return sum
+    }
+    return sum + Number(b.current)
+  }, 0)
 
   const exchangeTotalBtcSats = exchangeAccounts.reduce((sum, a) => {
     if (!a.balance) {
@@ -139,14 +135,12 @@ export function ClaimsPage(): JSX.Element {
 
   const btcUsdPrice = btcPriceQuery.data?.value ? Number(btcPriceQuery.data.value) : null
 
-  const claimsTotalUsd = balancesQuery.data
-    ? Array.from(balancesQuery.data.values()).reduce((sum, b) => {
-        if (!b?.usd) {
-          return sum
-        }
-        return sum + Number(b.usd)
-      }, 0)
-    : 0
+  const claimsTotalUsd = Array.from(balancesQuery.data.values()).reduce((sum, b) => {
+    if (!b?.usd) {
+      return sum
+    }
+    return sum + Number(b.usd)
+  }, 0)
 
   const exchangeTotalUsd =
     btcUsdPrice !== null
@@ -183,22 +177,6 @@ export function ClaimsPage(): JSX.Element {
   return (
     <>
       <Stack py={8} gap={0}>
-        {limit !== null && claims.length >= limit && (
-          <ErrorBanner
-            mb={6}
-            variant="warning"
-            message={
-              <>
-                You have reached the maximum number of accounts you can add. Contact{' '}
-                <Text as="a" href="mailto:support@hoseki.app" fontWeight="bold">
-                  support@hoseki.app
-                </Text>{' '}
-                to increase your limit.
-              </>
-            }
-          />
-        )}
-
         {/* Header */}
         <Flex align="flex-start" justify="space-between" pb={9}>
           <Box>
@@ -250,7 +228,7 @@ export function ClaimsPage(): JSX.Element {
               <AccountCard
                 key={claim.id}
                 claim={claim}
-                balance={balancesQuery.data?.get(claim.id) ?? null}
+                balance={balancesQuery.data.get(claim.id) ?? null}
                 totalBtcSats={totalBtcSats}
                 isLoadingBalance={balancesQuery.isLoading}
               />
@@ -406,7 +384,7 @@ function AccountCard({ claim, balance, totalBtcSats, isLoadingBalance }: Account
       {/* Name */}
       <Stack gap={0} mx={4}>
         <Text textStyle="label/md" fontWeight="medium" color="neutral.600" isTruncated>
-          {claim.displayName ?? claim.officialName}
+          {claim.displayName}
         </Text>
       </Stack>
 
@@ -806,7 +784,7 @@ function ArchivedClaimRow({ claim, onRestore, isRestoring, isRestoreDisabled }: 
         <Flex align="center" gap={3} minW={0}>
           <ClaimCardKeystores keystores={cardProps.keystores} alt={claim.displayName} status={cardProps.status} />
           <Text textStyle="text/sm" fontWeight="medium" color="neutral.900" isTruncated>
-            {claim.displayName ?? claim.officialName}
+            {claim.displayName}
           </Text>
         </Flex>
         <HStack gap={2} justify="flex-end" flexShrink={0}>

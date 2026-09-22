@@ -69,9 +69,7 @@ export function ClaimsVerifyEtfPage(): JSX.Element {
       continue
     }
     const config = ETF_CONFIGS[row.ticker]
-    if (config) {
-      totalBtcSats += computeHoldingBtcSats(config, shares, asOf)
-    }
+    totalBtcSats += computeHoldingBtcSats(config, shares, asOf)
   }
   const totalBtc = Number(totalBtcSats) / 1e8
 

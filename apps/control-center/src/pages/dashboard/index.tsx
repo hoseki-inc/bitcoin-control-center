@@ -367,14 +367,12 @@ export function DashboardPage(): JSX.Element {
     setSelected(new Set())
   }, [])
 
-  const claimTotalBtcSats = balancesQuery.data
-    ? Array.from(balancesQuery.data.values()).reduce((sum, b) => {
-        if (!b) {
-          return sum
-        }
-        return sum + Number(b.current)
-      }, 0)
-    : 0
+  const claimTotalBtcSats = Array.from(balancesQuery.data.values()).reduce((sum, b) => {
+    if (!b) {
+      return sum
+    }
+    return sum + Number(b.current)
+  }, 0)
 
   const exchangeTotalBtcSats = exchangeAccounts.reduce((sum, a) => {
     if (!a.balance) {
@@ -401,14 +399,12 @@ export function DashboardPage(): JSX.Element {
 
   const btcUsdPrice = btcPriceQuery.data?.value ? Number(btcPriceQuery.data.value) : null
 
-  const claimsTotalUsd = balancesQuery.data
-    ? Array.from(balancesQuery.data.values()).reduce((sum, b) => {
-        if (!b?.usd) {
-          return sum
-        }
-        return sum + Number(b.usd)
-      }, 0)
-    : 0
+  const claimsTotalUsd = Array.from(balancesQuery.data.values()).reduce((sum, b) => {
+    if (!b?.usd) {
+      return sum
+    }
+    return sum + Number(b.usd)
+  }, 0)
 
   const exchangeTotalUsd =
     btcUsdPrice !== null
@@ -447,7 +443,7 @@ export function DashboardPage(): JSX.Element {
   const displayBalanceSats = isShowingAll
     ? totalBtcSats
     : selectedClaimIds.reduce((sum, id) => {
-        const b = balancesQuery.data?.get(id)
+        const b = balancesQuery.data.get(id)
         return sum + (b ? Number(b.current) : 0)
       }, 0) +
       selectedExchangeIds.reduce((sum, id) => {
@@ -481,7 +477,7 @@ export function DashboardPage(): JSX.Element {
     if (historyRangeError !== null || isFullHistoryPending || historyBackfillBlocked) {
       return []
     }
-    if (isFullHistoryRange && isHistoryRefreshing && cachedHistory !== null) {
+    if (isFullHistoryRange && isHistoryRefreshing) {
       return cachedHistory
     }
     if (isFullHistoryRange && history.length === 0) {
@@ -550,7 +546,7 @@ export function DashboardPage(): JSX.Element {
     exchangeAccounts.length > 0 ||
     manualAccounts.length > 0 ||
     etfAccounts.length > 0
-  const hasHistoricalData = (allData?.historicalData?.length ?? 0) > 0 || (activeData?.historicalData?.length ?? 0) > 0
+  const hasHistoricalData = (allData?.historicalData.length ?? 0) > 0 || (activeData?.historicalData.length ?? 0) > 0
   const totalBtcDisplay = formatBtc(displayBalanceSats.toString())
   const btcPrice = data?.currentBtcPrice
     ? Number(data.currentBtcPrice)

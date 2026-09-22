@@ -680,6 +680,6 @@ function getSigningPath(keystore: KeystoreDto): string | null {
     return null
   }
 
-  const basePath = keystore.derivationPath?.replace(/h/g, "'")
+  const basePath = keystore.derivationPath.replace(/h/g, "'")
   return basePath + '/0/0'
 }

@@ -71,7 +71,7 @@ export const Default: Story = () => {
           invalidText="Invalid image file. Please check your file and try again."
           validText="Click 'Continue' to continue"
           validationFn={(content: ArrayBuffer): Result<ArrayBuffer, Error> => {
-            if (content && content.byteLength > 0) {
+            if (content.byteLength > 0) {
               return Ok(content)
             }
             return Err(new Error('Failed to read image file'))

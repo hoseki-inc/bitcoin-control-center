@@ -61,7 +61,7 @@ export function MultisigHeader({
     if (allKeystores.every((k) => k.status !== 'pending')) {
       return navigateToHubWithKeystoreIdSearch
     }
-    if (keystore.status === 'identified' && isUserOnMultisigDetailsPage(location.pathname)) {
+    if (isUserOnMultisigDetailsPage(location.pathname)) {
       return navigateToHubWithKeystoreIdSearch
     }
 
