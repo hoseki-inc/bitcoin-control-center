@@ -91,7 +91,7 @@ export function createHosidSchema<T extends Prefix>(prefix: T): z.ZodType<Hosid<
   return Id.schema(prefix)
 }
 
-export function removeHosidPrefix<T extends Prefix>(prefixedId: Hosid<T>): string {
+export function removeHosidPrefix(prefixedId: Hosid<Prefix>): string {
   return Id.strip(prefixedId)
 }
 
