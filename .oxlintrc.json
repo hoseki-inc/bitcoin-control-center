@@ -90,7 +90,8 @@
     "typescript/no-unnecessary-condition": "error",
     "typescript/no-unnecessary-template-expression": "error",
     "typescript/no-unnecessary-type-assertion": "error",
-    "typescript/no-unnecessary-type-constraint": "error"
+    "typescript/no-unnecessary-type-constraint": "error",
+    "typescript/no-unnecessary-type-conversion": "error"
   },
   "overrides": [
     {

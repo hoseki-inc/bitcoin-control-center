@@ -60,7 +60,7 @@ export function StatementPreviewModal(props: StatementPreviewModalProps): JSX.El
   const exchangeAccountIds = props.exchangeAccountIds ?? []
   const [pdfDocument, setPdfDocument] = useState<React.ReactElement | null>(null)
 
-  const enabled = Boolean(isOpen && (claimIds.length > 0 || exchangeAccountIds.length > 0))
+  const enabled = isOpen && (claimIds.length > 0 || exchangeAccountIds.length > 0)
 
   const input: GenerateStatementPreviewInput = {
     claimIds,
