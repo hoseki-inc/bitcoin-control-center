@@ -101,7 +101,8 @@
     "typescript/no-unsafe-function-type": "error",
     "typescript/no-unsafe-member-access": "error",
     "typescript/no-unsafe-return": "error",
-    "typescript/no-unsafe-type-assertion": "error"
+    "typescript/no-unsafe-type-assertion": "error",
+    "typescript/no-unsafe-unary-minus": "error"
   },
   "overrides": [
     {
