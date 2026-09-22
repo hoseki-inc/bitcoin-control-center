@@ -13,7 +13,7 @@ export function RenameKeystore({
   const trpcUtils = trpc.useUtils()
   const updateKeystoreMutation = trpc.portalProve.registry.claims.updateKeystore.useMutation({
     onSuccess: async () => {
-      trpcUtils.portalProve.registry.claims.get.byId.invalidate()
+      await trpcUtils.portalProve.registry.claims.get.byId.invalidate()
       onCancel()
     },
   })

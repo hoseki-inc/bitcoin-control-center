@@ -169,7 +169,9 @@ export default function App(): JSX.Element {
   useEffect(() => {
     async function loadPdf() {
       try {
-        if (!parsedStatement) return
+        if (!parsedStatement) {
+          return
+        }
 
         const document = await renderStatementDocument({
           watermarkText: 'Statement Example',
@@ -181,7 +183,7 @@ export default function App(): JSX.Element {
       }
     }
 
-    loadPdf()
+    void loadPdf()
   }, [parsedStatement, hasExampleWatermark, setPdfDocument, showToolbar])
 
   const validateAndParseJson = useCallback(() => {
@@ -251,7 +253,9 @@ export default function App(): JSX.Element {
               <Switch
                 id="show-toolbar"
                 isChecked={showToolbar}
-                onChange={(e) => setShowToolbar(e.target.checked)}
+                onChange={(e) => {
+                  setShowToolbar(e.target.checked)
+                }}
                 colorScheme="blue"
               />
             </FormControl>
@@ -263,7 +267,9 @@ export default function App(): JSX.Element {
               <Switch
                 id="example-watermark"
                 isChecked={hasExampleWatermark}
-                onChange={(e) => setHasExampleWatermark(e.target.checked)}
+                onChange={(e) => {
+                  setHasExampleWatermark(e.target.checked)
+                }}
                 colorScheme="blue"
               />
             </FormControl>

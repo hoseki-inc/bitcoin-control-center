@@ -18,9 +18,32 @@ export function TrezorInfo({
   const [accountSelectionInProgress, setAccountSelectionInProgress] = useState(false)
   const [error, setError] = useState<Error | null>(null)
 
+  async function connectTrezor(): Promise<void> {
+    setAccountSelectionInProgress(true)
+    setError(null)
+    try {
+      const result = await onConnectTrezor()
+      if (result.isErr()) {
+        setError(result.unwrapErr())
+      }
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError : new Error('Unable to connect to Trezor'))
+    } finally {
+      setAccountSelectionInProgress(false)
+    }
+  }
+
   return (
     <>
-      {error && <HardwareWalletError error={error} mt={4} onRetry={() => window.location.reload()} />}
+      {error && (
+        <HardwareWalletError
+          error={error}
+          mt={4}
+          onRetry={() => {
+            window.location.reload()
+          }}
+        />
+      )}
 
       <WalletAnimation animation="trezorPlugIn" />
 
@@ -39,16 +62,8 @@ export function TrezorInfo({
         rightButton={
           <Button
             isDisabled={accountSelectionInProgress}
-            onClick={async () => {
-              setAccountSelectionInProgress(true)
-              setError(null)
-
-              const result = await onConnectTrezor()
-              if (result.isErr()) {
-                setError(result.unwrapErr())
-              }
-
-              setAccountSelectionInProgress(false)
+            onClick={() => {
+              void connectTrezor()
             }}
           >
             Next

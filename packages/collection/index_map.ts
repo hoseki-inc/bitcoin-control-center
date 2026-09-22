@@ -66,8 +66,12 @@ export class IndexMap<K extends Indexable, V> implements Map<K, V> {
       }
     }
 
-    // If neither key nor id are provided, use the string representation of the key
-    return key.toString()
+    // A default object string is not an identifier: unrelated objects would share one entry.
+    const stringify = key.toString
+    if (typeof stringify !== 'function' || stringify === Object.prototype.toString) {
+      throw new TypeError('IndexMap keys must provide a key, id, or custom toString()')
+    }
+    return stringify.call(key)
   }
 
   private updateSize(): void {
@@ -202,4 +206,4 @@ export class IndexMap<K extends Indexable, V> implements Map<K, V> {
   }
 }
 
-export interface ReadonlyIndexMap<K extends Indexable, V> extends ReadonlyMap<K, V> {}
+export type ReadonlyIndexMap<K extends Indexable, V> = ReadonlyMap<K, V>

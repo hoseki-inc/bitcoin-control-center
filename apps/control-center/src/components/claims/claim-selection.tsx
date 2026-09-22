@@ -15,7 +15,7 @@ import {
   Thead,
   Tr,
 } from '@chakra-ui/react'
-import { type BalanceWithStatus } from '@hoseki/packages/lib/balance'
+import type { BalanceWithStatus } from '@hoseki/packages/lib/balance'
 import type { ClaimId } from '@hoseki/packages/schemas'
 import { ErrorInline, Spinner } from '@hoseki/packages/ui/design-system'
 import { LoadingTextSkeleton } from '@hoseki/packages/ui/prove-verify-ui/claims/loading-text-skeleton'
@@ -52,7 +52,7 @@ export function ClaimSelection({
   const exchangeAccountsQuery = trpc.portalProve.exchange.list.useQuery(undefined, { enabled: showExchanges })
   const btcPriceQuery = trpc.portalProve.retrieveBitcoinPrice.useQuery(undefined, { enabled: showExchanges })
 
-  const exchangeAccounts = showExchanges ? (exchangeAccountsQuery.data ?? []) : []
+  const exchangeAccounts = exchangeAccountsQuery.data ?? []
   const btcUsdPrice = btcPriceQuery.data?.value ? Number(btcPriceQuery.data.value) : null
 
   const handleClaimToggle = (claimId: ClaimId) => {
@@ -175,7 +175,9 @@ export function ClaimSelection({
                       id={`claim_${claim.id}`}
                       isChecked={disabledClaims?.has(claim.id) || selectedClaimIds.has(claim.id)}
                       isDisabled={disabledClaims?.has(claim.id)}
-                      onChange={() => handleClaimToggle(claim.id)}
+                      onChange={() => {
+                        handleClaimToggle(claim.id)
+                      }}
                     />
                     <Stack gap={0} overflow="hidden" minW={0} flex={1}>
                       <Text
@@ -187,7 +189,7 @@ export function ClaimSelection({
                         isTruncated
                         color="neutral.600"
                       >
-                        {claim.displayName ?? claim.officialName}
+                        {claim.displayName}
                       </Text>
                     </Stack>
                   </HStack>
@@ -217,7 +219,9 @@ export function ClaimSelection({
                       id={`exchange_${account.id}`}
                       isChecked={!needsReconnect && selectedExchangeAccountIds.has(account.id)}
                       isDisabled={needsReconnect}
-                      onChange={() => handleExchangeToggle(account.id)}
+                      onChange={() => {
+                        handleExchangeToggle(account.id)
+                      }}
                     />
                     <Stack gap={0} overflow="hidden" minW={0} flex={1}>
                       <Text
@@ -283,24 +287,30 @@ export function ClaimSelection({
 }
 
 function renderBalance(balance: BalanceWithStatus) {
-  if (balance.status === 'loading') return <LoadingTextSkeleton width="8em" />
-  if (balance.status === 'fail') return 'n/a'
+  if (balance.status === 'loading') {
+    return <LoadingTextSkeleton width="8em" />
+  }
+  if (balance.status === 'fail') {
+    return 'n/a'
+  }
   return toBitcoinAmountDisplayValue(balance.value.current.toString())
 }
 
 function renderUsdAmount(balance: BalanceWithStatus) {
-  if (balance.status === 'loading')
+  if (balance.status === 'loading') {
     return (
       <Text textStyle="text/sm" fontWeight="medium">
         <LoadingTextSkeleton width="5em" />
       </Text>
     )
-  if (balance.status === 'fail' || balance.value.usd === null)
+  }
+  if (balance.status === 'fail' || balance.value.usd === null) {
     return (
       <Text textStyle="text/sm" fontWeight="medium">
         'n/a'
       </Text>
     )
+  }
   return (
     <Text textStyle="text/sm" fontWeight="medium" color="success.600" whiteSpace="nowrap">
       {formatUsd(balance.value.usd.toFixed(2))}

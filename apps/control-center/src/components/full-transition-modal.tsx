@@ -77,7 +77,9 @@ export function FullTransitionModal({
                     loop={false}
                     autoplay={false}
                     lottieRef={lottieRef}
-                    onComplete={() => setIsStatementAnimationCompleted(true)}
+                    onComplete={() => {
+                      setIsStatementAnimationCompleted(true)
+                    }}
                     style={{
                       width: '100%',
                       height: 'auto',
@@ -162,7 +164,6 @@ export function getContent(): {
   const completedContent = (
     <>
       <Text {...textProps.title}>{copy.completed.title}</Text>
-      {copy.completed.subtitle && <Text {...textProps.subtitle}>{copy.completed.subtitle}</Text>}
       {copy.completed.body && <Text {...textProps.body}>{copy.completed.body}</Text>}
       <Box my={statusIndicatorVerticalMargin}>
         <Lottie
@@ -213,7 +214,9 @@ function ScreenFadeTransition({
    */
   duration?: number
 } & BoxProps) {
-  if (!isMounted) return null
+  if (!isMounted) {
+    return null
+  }
 
   return (
     <Box

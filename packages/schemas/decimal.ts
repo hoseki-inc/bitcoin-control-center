@@ -37,6 +37,13 @@ type DecimalSchemaUnion = z.ZodUnion<
 
 type DecimalLike = string | number | bigint | Decimal | { d: number[]; e: number; s: number }
 
+function formatDecimalInput(value: DecimalLike): string {
+  if (typeof value === 'object' && !Decimal.isDecimal(value)) {
+    return JSON.stringify(value)
+  }
+  return value.toString()
+}
+
 export function decimal(config?: Decimal.Config): z.ZodEffects<DecimalSchemaUnion, Decimal, DecimalLike> {
   return z.union([z.string(), z.number(), z.bigint(), decimalInstance, decimalObject]).transform((value, ctx) => {
     const constructor = config ? Decimal.clone(config) : Decimal
@@ -56,7 +63,7 @@ export function decimal(config?: Decimal.Config): z.ZodEffects<DecimalSchemaUnio
     if (result.isErr()) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: `cannot parse ${value} as decimal number`,
+        message: `cannot parse ${formatDecimalInput(value)} as decimal number`,
       })
       return z.NEVER
     }
@@ -64,7 +71,7 @@ export function decimal(config?: Decimal.Config): z.ZodEffects<DecimalSchemaUnio
     if (result.value().isNaN()) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: `${value} is not a valid decimal number`,
+        message: `${formatDecimalInput(value)} is not a valid decimal number`,
       })
       return z.NEVER
     }

@@ -144,7 +144,9 @@ export function ColdcardIndentification({
           setSelectedWallet={setSelectedWallet}
           isLoadingOnNext={isStep6Loading}
           {...commonProps}
-          onNext={() => handleAccountSelectConfirm(model)}
+          onNext={() => {
+            handleAccountSelectConfirm(model)
+          }}
         />
       ) : (
         <RequiredDataMissing coldcardJson={coldcardJson} />
@@ -218,7 +220,9 @@ function ColdcardSelectionBox({ name, image, onClick }: { name: string; image: R
       textAlign="center"
       onClick={() => {
         const box = boxRef.current
-        if (!box) return
+        if (!box) {
+          return
+        }
 
         box.classList.add('active')
         setTimeout(() => {
@@ -258,7 +262,9 @@ function Step2({
             key={key}
             name={name}
             image={<chakra.img src={imageSrc} alt={imageAlt} h="150px" mx="auto" />}
-            onClick={() => onNext(key as ColdcardModel)}
+            onClick={() => {
+              onNext(key as ColdcardModel)
+            }}
           />
         ))}
       </HStack>
@@ -298,7 +304,9 @@ function Step3({
             key={key}
             name={name}
             image={icon}
-            onClick={() => onNext(key as keyof typeof ColdcardConnectionMethods)}
+            onClick={() => {
+              onNext(key as keyof typeof ColdcardConnectionMethods)
+            }}
           />
         ))}
       </HStack>
@@ -453,8 +461,8 @@ export function Step5({
           validationFn={(rawContent): Result<ColdcardGenericJsonFile, Error> => {
             return parseGenericJsonFile(rawContent)
           }}
-          onValidContentRead={(coldcardJson: ColdcardGenericJsonFile) => {
-            setColdcardJson(coldcardJson)
+          onValidContentRead={(parsedColdcardJson: ColdcardGenericJsonFile) => {
+            setColdcardJson(parsedColdcardJson)
           }}
           acceptedFileTypes={['json']}
           status={fileState}
@@ -508,7 +516,7 @@ function Step6({
   const { isLoading, error, data: wallets } = useColdcardAccountsWithBalances(coldcardJson, model)
 
   useEffect(() => {
-    if (wallets?.length === 1 && wallets[0] && !selectedWallet) {
+    if (wallets.length === 1 && wallets[0] && !selectedWallet) {
       setSelectedWallet(wallets[0])
     }
   }, [wallets, selectedWallet, setSelectedWallet])

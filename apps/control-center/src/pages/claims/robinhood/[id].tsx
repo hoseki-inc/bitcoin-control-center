@@ -36,8 +36,10 @@ export function RobinhoodAccountDetailsPage(): JSX.Element {
   const accountDisplayName = account.displayName
 
   function handleReconnect(): void {
-    if (!accountId) return
-    navigate('/accounts/verify/robinhood', {
+    if (!accountId) {
+      return
+    }
+    void navigate('/accounts/verify/robinhood', {
       state: {
         returnTo: `/accounts/robinhood/${accountId}`,
         replaceAccountId: accountId,
@@ -47,7 +49,9 @@ export function RobinhoodAccountDetailsPage(): JSX.Element {
   }
 
   async function handleRefresh(): Promise<void> {
-    if (!accountId) return
+    if (!accountId) {
+      return
+    }
     setIsRefreshing(true)
     try {
       await refreshMutation.mutateAsync({ accountId })
@@ -63,14 +67,16 @@ export function RobinhoodAccountDetailsPage(): JSX.Element {
   }
 
   async function handleDelete(): Promise<void> {
-    if (!accountId) return
+    if (!accountId) {
+      return
+    }
     setIsDeleting(true)
     try {
       await deleteMutation.mutateAsync({ accountId })
       await utils.portalProve.exchange.robinhood.list.invalidate()
       await utils.portalProve.exchange.list.invalidate()
       await utils.portalProve.controlCenter.invalidate()
-      navigate('/accounts')
+      void navigate('/accounts')
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to remove account'
       toast.error(message)
@@ -85,7 +91,13 @@ export function RobinhoodAccountDetailsPage(): JSX.Element {
         <TopBar.Item as={Link} to="/accounts">
           Back to Accounts
         </TopBar.Item>
-        <TopBar.Item as="button" color="error.600" onClick={handleDelete}>
+        <TopBar.Item
+          as="button"
+          color="error.600"
+          onClick={() => {
+            void handleDelete()
+          }}
+        >
           {isDeleting ? 'Removing...' : 'Remove Account'}
         </TopBar.Item>
       </TopBar>
@@ -194,7 +206,9 @@ export function RobinhoodAccountDetailsPage(): JSX.Element {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={handleRefresh}
+                onClick={() => {
+                  void handleRefresh()
+                }}
                 isLoading={isRefreshing}
                 loadingText="Refreshing..."
               >

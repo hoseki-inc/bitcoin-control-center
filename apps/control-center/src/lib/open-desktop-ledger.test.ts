@@ -5,10 +5,10 @@ import { closeDesktopLedger, openDesktopLedger } from './open-desktop-ledger'
 
 const mocks = vi.hoisted(() => ({ request: vi.fn(), app: vi.fn() }))
 vi.mock('@ledgerhq/hw-transport-webhid', async () => {
-  const { EventEmitter } = await import('node:events')
+  const { EventEmitter: NodeEventEmitter } = await import('node:events')
   return {
-    default: class WebHID extends EventEmitter {
-      static request = mocks.request
+    default: class WebHID extends NodeEventEmitter {
+      public static request = mocks.request
     },
   }
 })

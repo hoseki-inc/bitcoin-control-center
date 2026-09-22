@@ -1,7 +1,7 @@
-import { Stack } from '@chakra-ui/react'
+import { Button, Stack } from '@chakra-ui/react'
 import { ErrorBanner, Spinner } from '@hoseki/packages/ui/design-system'
-import { type Keystore as IndicatorKeystore } from '@hoseki/packages/ui/prove-verify-ui/claims/keystores-status-indicator'
-import { type SupportedHardwareWallet } from '@hoseki/packages/wallet'
+import type { Keystore as IndicatorKeystore } from '@hoseki/packages/ui/prove-verify-ui/claims/keystores-status-indicator'
+import type { SupportedHardwareWallet } from '@hoseki/packages/wallet'
 import { Navigate, Outlet, useOutletContext, useParams, useSearchParams } from 'react-router'
 import { UrlParameter, useUrlParameter } from '../../hooks/use-url-parameters'
 import { getKeystoreStatus } from '../../lib/multisig/keystore'
@@ -15,7 +15,7 @@ export type IndicatorKeystoreWithModel = IndicatorKeystore & { model: string | n
 type ContextType = {
   claim: ClaimDto
   indicatorKeystores: IndicatorKeystoreWithModel[]
-  expandedKeystore: IndicatorKeystoreWithModel
+  expandedKeystore: IndicatorKeystoreWithModel | null
 }
 
 export function MultisigPageWrapper(): JSX.Element {
@@ -25,6 +25,8 @@ export function MultisigPageWrapper(): JSX.Element {
 
   const {
     isLoading,
+    isFetching,
+    refetch,
     error,
     data: claim,
   } = trpc.portalProve.registry.claims.get.byId.useQuery({ id: claimId }, { enabled: Boolean(claimId) })
@@ -35,8 +37,20 @@ export function MultisigPageWrapper(): JSX.Element {
   if (isLoading) {
     return <Spinner fullPage />
   }
-  if (error || !claim) {
-    return <ErrorBanner mt={8} mb={4} message={`An error occurred while loading the claim: ${error?.message ?? ''}`} />
+  if (error) {
+    return (
+      <Stack mt={8} spacing={4} align="start">
+        <ErrorBanner message={`An error occurred while loading the claim: ${error.message}`} />
+        <Button
+          isLoading={isFetching}
+          onClick={() => {
+            void refetch()
+          }}
+        >
+          Retry
+        </Button>
+      </Stack>
+    )
   }
   if (claim.isArchived) {
     return <Navigate to="/accounts#archived" replace />
@@ -67,7 +81,7 @@ export function MultisigPageWrapper(): JSX.Element {
 }
 
 export function useMultisigPageWrapperContext(): ContextType {
-  const context = useOutletContext<ContextType>()
+  const context = useOutletContext<ContextType | null | undefined>()
   if (!context) {
     throw new Error('usePageWrapperContext must be used within a MultisigPageWrapper')
   }

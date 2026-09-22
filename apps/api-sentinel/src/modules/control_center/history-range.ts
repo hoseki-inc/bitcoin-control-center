@@ -1,5 +1,5 @@
 import { TZDate, tzOffset } from '@date-fns/tz'
-import { type Timezone } from '@hoseki/packages/schemas'
+import type { Timezone } from '@hoseki/packages/schemas'
 import { Err, Ok, type Result } from '@patina/core'
 
 export type TimeRange = '7d' | '30d' | '90d' | '1y' | 'all'
@@ -98,7 +98,9 @@ export function buildHistoricalData(
   timezone: Timezone,
 ): BalanceDataPoint[] {
   if (allEntries.length === 0) {
-    if (range.isCustom || range.isAll || currentTotalBalance <= 0n) return []
+    if (range.isCustom || range.isAll || currentTotalBalance <= 0n) {
+      return []
+    }
 
     return range.dayStarts.map((date) => ({
       timestamp: date.toISOString(),
@@ -108,7 +110,9 @@ export function buildHistoricalData(
 
   const sortedEntries = [...allEntries].sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
   const firstActivity = sortedEntries.find((entry) => entry.value !== 0n && entry.timestamp <= range.end)
-  if (range.isAll && firstActivity === undefined) return []
+  if (range.isAll && firstActivity === undefined) {
+    return []
+  }
 
   // Include archived and selected accounts via the same entries used for the
   // balances. Zero-balance setup snapshots must not extend All into empty years.
@@ -125,12 +129,16 @@ export function buildHistoricalData(
 
   while (entryIndex < sortedEntries.length) {
     const entry = sortedEntries[entryIndex]
-    if (!entry || entry.timestamp >= start) break
+    if (!entry || entry.timestamp >= start) {
+      break
+    }
     runningBalance += entry.value
     entryIndex += 1
   }
 
-  if (range.isCustom || range.isAll) appendHistoricalPoint(historicalData, start, runningBalance)
+  if (range.isCustom || range.isAll) {
+    appendHistoricalPoint(historicalData, start, runningBalance)
+  }
 
   for (const [index, dayStart] of dayStarts.entries()) {
     const nextDayStart = dayStarts[index + 1]
@@ -144,7 +152,9 @@ export function buildHistoricalData(
 
     while (entryIndex < sortedEntries.length) {
       const entry = sortedEntries[entryIndex]
-      if (!entry || entry.timestamp > pointTime) break
+      if (!entry || entry.timestamp > pointTime) {
+        break
+      }
       runningBalance += entry.value
       entryIndex += 1
     }
@@ -154,7 +164,9 @@ export function buildHistoricalData(
 
   if (range.endsAtCurrentTime) {
     const latestPoint = historicalData.at(-1)
-    if (latestPoint) latestPoint.totalBalance = currentTotalBalance.toString()
+    if (latestPoint) {
+      latestPoint.totalBalance = currentTotalBalance.toString()
+    }
   }
 
   return historicalData
@@ -186,7 +198,9 @@ function timeRangeToDays(timeRange: TimeRange): number {
 
 function parseDateOnly(value: string): ZonedDateParts | null {
   const match = DATE_ONLY_PATTERN.exec(value)
-  if (!match) return null
+  if (!match) {
+    return null
+  }
 
   const year = Number(match[1])
   const month = Number(match[2])

@@ -1,6 +1,6 @@
 export * as AdvancedTrade from './advanced-trade-types'
 export * as App from './app_types'
 export * from './client'
-export * from './credentials'
+export type * from './credentials'
 export * from './errors'
 export * as OAuth from './oauth'

@@ -13,7 +13,9 @@ export function BitcoinNetworkSelect({
   return (
     <Select
       value={value.toString()}
-      onChange={(e) => onChange(Network.fromStringRaw(e.target.value).expect('valid enum value'))}
+      onChange={(e) => {
+        onChange(Network.fromStringRaw(e.target.value).expect('valid enum value'))
+      }}
       isDisabled={isDisabled}
     >
       {/* This is only for disambiguation between testnet and regtest, so we do not need mainnet here */}

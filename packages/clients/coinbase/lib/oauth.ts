@@ -1,7 +1,7 @@
-import { type SafeResponse } from '@hoseki/packages/safe-http'
-import { type AsyncResult } from '@patina/core'
+import type { SafeResponse } from '@hoseki/packages/safe-http'
+import type { AsyncResult } from '@patina/core'
 import { z } from 'zod'
-import { type ApiError } from './errors'
+import type { ApiError } from './errors'
 import { request } from './request'
 
 const errorSchema = z.object({
@@ -163,7 +163,7 @@ export const Token = z.object({
   // Won't exist if the client didn't request `offline_access`
   refresh_token: z.string().nullish(),
 })
-export interface Token extends z.infer<typeof Token> {}
+export type Token = z.infer<typeof Token>
 
 /**
  * https://docs.cloud.coinbase.com/sign-in-with-coinbase/docs/sign-in-with-coinbase-reference#token

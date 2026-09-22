@@ -49,19 +49,25 @@ export const WithClick: Story = () => (
       currency="USDC"
       balance={new Decimal('1234.56')}
       usdBalance={new Decimal('1234.56')}
-      onClick={() => alert('USDC clicked')}
+      onClick={() => {
+        alert('USDC clicked')
+      }}
     />
     <AssetCard
       currency="USDT"
       balance={new Decimal('5678.90')}
       usdBalance={new Decimal('5678.90')}
-      onClick={() => alert('USDT clicked')}
+      onClick={() => {
+        alert('USDT clicked')
+      }}
     />
     <AssetCard
       currency="ETH"
       balance={new Decimal('11.8')}
       usdBalance={new Decimal('34546.82')}
-      onClick={() => alert('ETH clicked')}
+      onClick={() => {
+        alert('ETH clicked')
+      }}
     />
   </Grid>
 )

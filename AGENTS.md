@@ -33,3 +33,11 @@ pnpm build
 - Shared UI and wallet logic belongs in `packages` only when used by Control Center.
 - Distribution-specific configuration belongs in `start9`, `desktop`, or a future platform package such as `umbrel`.
 - New functionality must preserve local storage, auditability, and the absence of an implicit cloud service.
+
+## Issue #91 lint rollout
+
+- Introduce one lint rule at a time, in the order listed in issue #91 unless the user chooses a different order.
+- Keep each rule's configuration and repository-wide fixes in its own commit. Do not bundle other rules or unrelated refactors into that commit.
+- Run the accumulated lint checks and the relevant type checks, tests, and builds before committing each rule.
+- Keep Oxlint's default rule categories disabled; enable rules explicitly so each checkpoint adds only the rule under review.
+- Apply rules to all maintained source, including desktop, StartOS, tests, and repository scripts.

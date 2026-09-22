@@ -173,3 +173,11 @@ describe('set composition', () => {
     expect(setA.isDisjointFrom(setC)).toBe(false)
   })
 })
+
+test('rejects an unidentified object without changing the set', () => {
+  const valid = { id: 'item' }
+  const set = new IndexSet<{ id?: string }>([valid])
+  expect(() => set.add({})).toThrow('IndexMap keys must provide a key, id, or custom toString()')
+  expect(set.size).toBe(1)
+  expect(set.has({ id: 'item' })).toBe(true)
+})

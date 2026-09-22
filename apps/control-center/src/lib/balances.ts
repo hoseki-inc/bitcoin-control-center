@@ -1,11 +1,9 @@
 import { BTC } from '@hoseki/packages/currency'
 import type { BalanceValue } from '@hoseki/packages/lib/balance'
 import { isNullish } from '@hoseki/packages/lib/util'
-import { type ClaimId } from '@hoseki/packages/schemas'
-import { type Decimal } from 'decimal.js'
+import type { ClaimId } from '@hoseki/packages/schemas'
+import type { Decimal } from 'decimal.js'
 import { trpc } from '../trpc'
-
-export type ClaimsWithBalancesQuery = void
 
 function getBalanceValue(balance: Decimal | bigint, price: Decimal | null): BalanceValue {
   const btc = BTC.fromSats(balance)

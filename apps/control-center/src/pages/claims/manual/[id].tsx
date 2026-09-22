@@ -78,7 +78,9 @@ export function ManualAccountDetailsPage(): JSX.Element {
   const btcAmount = (btcSats / 100_000_000).toFixed(8)
 
   async function invalidateAll(): Promise<void> {
-    if (!accountId) return
+    if (!accountId) {
+      return
+    }
     await utils.portalProve.manual.get.invalidate({ accountId })
     await utils.portalProve.manual.list.invalidate()
     await utils.portalProve.manual.transactions.list.invalidate({ accountId })
@@ -86,7 +88,9 @@ export function ManualAccountDetailsPage(): JSX.Element {
   }
 
   async function handleUpdateBalance(): Promise<void> {
-    if (!accountId || !newBtcAmount) return
+    if (!accountId || !newBtcAmount) {
+      return
+    }
     const balanceSats = Math.round(Number(newBtcAmount) * 1e8).toString()
     try {
       await updateBalanceMutation.mutateAsync({
@@ -103,7 +107,9 @@ export function ManualAccountDetailsPage(): JSX.Element {
   }
 
   async function handleAddTransaction(): Promise<void> {
-    if (!accountId || !txAmount) return
+    if (!accountId || !txAmount) {
+      return
+    }
     const amountSats = Math.round(Number(txAmount) * 1e8).toString()
     try {
       await addTxMutation.mutateAsync({
@@ -135,13 +141,15 @@ export function ManualAccountDetailsPage(): JSX.Element {
   }
 
   async function handleDelete(): Promise<void> {
-    if (!accountId) return
+    if (!accountId) {
+      return
+    }
     setIsDeleting(true)
     try {
       await deleteMutation.mutateAsync({ accountId })
       await utils.portalProve.manual.list.invalidate()
       await utils.portalProve.controlCenter.invalidate()
-      navigate('/accounts')
+      void navigate('/accounts')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to remove account')
       setIsDeleting(false)
@@ -154,7 +162,13 @@ export function ManualAccountDetailsPage(): JSX.Element {
         <TopBar.Item as={Link} to="/accounts">
           Back to Accounts
         </TopBar.Item>
-        <TopBar.Item as="button" color="error.600" onClick={handleDelete}>
+        <TopBar.Item
+          as="button"
+          color="error.600"
+          onClick={() => {
+            void handleDelete()
+          }}
+        >
           {isDeleting ? 'Removing...' : 'Remove Account'}
         </TopBar.Item>
       </TopBar>
@@ -242,19 +256,30 @@ export function ManualAccountDetailsPage(): JSX.Element {
                 min="0"
                 placeholder="0.00000000"
                 value={newBtcAmount}
-                onChange={(e) => setNewBtcAmount(e.target.value)}
+                onChange={(e) => {
+                  setNewBtcAmount(e.target.value)
+                }}
               />
             </FormControl>
             <FormControl flex={1}>
               <FormLabel textStyle="text/xs" color="neutral.600">
                 As of Date
               </FormLabel>
-              <Input size="sm" type="date" value={newBalanceDate} onChange={(e) => setNewBalanceDate(e.target.value)} />
+              <Input
+                size="sm"
+                type="date"
+                value={newBalanceDate}
+                onChange={(e) => {
+                  setNewBalanceDate(e.target.value)
+                }}
+              />
             </FormControl>
             <Button
               size="sm"
               variant="outline"
-              onClick={handleUpdateBalance}
+              onClick={() => {
+                void handleUpdateBalance()
+              }}
               isLoading={updateBalanceMutation.isLoading}
               isDisabled={!newBtcAmount}
             >
@@ -276,7 +301,13 @@ export function ManualAccountDetailsPage(): JSX.Element {
                 <FormLabel textStyle="text/xs" color="neutral.600">
                   Type
                 </FormLabel>
-                <Select size="sm" value={txType} onChange={(e) => setTxType(e.target.value)}>
+                <Select
+                  size="sm"
+                  value={txType}
+                  onChange={(e) => {
+                    setTxType(e.target.value)
+                  }}
+                >
                   <option value="buy">Buy</option>
                   <option value="transfer_in">Transfer In</option>
                   <option value="sell">Sell</option>
@@ -294,14 +325,23 @@ export function ManualAccountDetailsPage(): JSX.Element {
                   min="0"
                   placeholder="0.00000000"
                   value={txAmount}
-                  onChange={(e) => setTxAmount(e.target.value)}
+                  onChange={(e) => {
+                    setTxAmount(e.target.value)
+                  }}
                 />
               </FormControl>
               <FormControl flex={1}>
                 <FormLabel textStyle="text/xs" color="neutral.600">
                   Date
                 </FormLabel>
-                <Input size="sm" type="date" value={txDate} onChange={(e) => setTxDate(e.target.value)} />
+                <Input
+                  size="sm"
+                  type="date"
+                  value={txDate}
+                  onChange={(e) => {
+                    setTxDate(e.target.value)
+                  }}
+                />
               </FormControl>
             </HStack>
             <HStack spacing={3} align="flex-end">
@@ -313,13 +353,17 @@ export function ManualAccountDetailsPage(): JSX.Element {
                   size="sm"
                   placeholder="Optional note"
                   value={txNote}
-                  onChange={(e) => setTxNote(e.target.value)}
+                  onChange={(e) => {
+                    setTxNote(e.target.value)
+                  }}
                 />
               </FormControl>
               <Button
                 size="sm"
                 variant="outline"
-                onClick={handleAddTransaction}
+                onClick={() => {
+                  void handleAddTransaction()
+                }}
                 isLoading={addTxMutation.isLoading}
                 isDisabled={!txAmount}
               >
@@ -329,7 +373,9 @@ export function ManualAccountDetailsPage(): JSX.Element {
             <Checkbox
               size="sm"
               isChecked={txAddToBalance}
-              onChange={(e) => setTxAddToBalance(e.target.checked)}
+              onChange={(e) => {
+                setTxAddToBalance(e.target.checked)
+              }}
               colorScheme="orange"
             >
               <Text textStyle="text/xs" color="neutral.600">
@@ -384,7 +430,9 @@ export function ManualAccountDetailsPage(): JSX.Element {
                           size="xs"
                           variant="ghost"
                           color="error.500"
-                          onClick={() => handleDeleteTransaction(tx.id)}
+                          onClick={() => {
+                            void handleDeleteTransaction(tx.id)
+                          }}
                         >
                           Delete
                         </Button>

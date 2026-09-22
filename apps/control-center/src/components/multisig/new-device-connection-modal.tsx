@@ -24,7 +24,9 @@ export function NewDeviceConnectionModal({
   isLoading,
 }: NewDeviceConnectionModalProps): JSX.Element {
   function handleClose() {
-    if (isLoading) return
+    if (isLoading) {
+      return
+    }
     onClose()
   }
 
@@ -50,7 +52,15 @@ export function NewDeviceConnectionModal({
 
         <ModalFooter>
           <HStack width="full">
-            <Button variant="tertiary" onClick={() => onClose()} isDisabled={isLoading} size="md" flex={1}>
+            <Button
+              variant="tertiary"
+              onClick={() => {
+                onClose()
+              }}
+              isDisabled={isLoading}
+              size="md"
+              flex={1}
+            >
               Cancel
             </Button>
             <Button onClick={onConfirm} isLoading={isLoading} size="md" variant="outline" flex={1}>

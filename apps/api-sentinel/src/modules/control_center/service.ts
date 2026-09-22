@@ -3,7 +3,7 @@ import type { Address } from '@hoseki/packages/bitcoin/address'
 import type { Block, TransactionEntry } from '@hoseki/packages/bitcoin/onchain'
 import type { ElectrumProvider } from '@hoseki/packages/bitcoin/onchain/electrum_provider'
 import { IndexMap, IndexSet } from '@hoseki/packages/collection'
-import { type Timezone } from '@hoseki/packages/schemas'
+import type { Timezone } from '@hoseki/packages/schemas'
 import { Err, Ok, asyncFn } from '@patina/core'
 import type { Result } from '@patina/core'
 import type Database from 'better-sqlite3'
@@ -112,7 +112,9 @@ export class ControlCenterService {
       const timezone = args.timezone ?? DEFAULT_TIMEZONE
       const now = new Date()
       const historyRangeResult = resolveHistoryRange(timeRange, args.customDateRange, timezone, now)
-      if (historyRangeResult.isErr()) return Err(historyRangeResult.unwrapErr())
+      if (historyRangeResult.isErr()) {
+        return Err(historyRangeResult.unwrapErr())
+      }
 
       const historyRange = historyRangeResult.unwrap()
       const shouldSyncFullHistory = args.customDateRange !== undefined || timeRange === 'all'
@@ -170,7 +172,9 @@ export class ControlCenterService {
           // is only used to lazily backfill missing snapshot ranges.
           for (const row of accountRows) {
             const accountResult = Account.fromDescriptor(row.descriptor)
-            if (accountResult.isErr()) continue
+            if (accountResult.isErr()) {
+              continue
+            }
 
             const account = accountResult.unwrap()
             const accountBalance = accountBalances.get(account.toString()) ?? 0n
@@ -257,7 +261,9 @@ export class ControlCenterService {
         if (stmtTxs.length > 0 && firstSnapshotTime) {
           for (const tx of stmtTxs) {
             const txTime = new Date(tx.transactedAt)
-            if (txTime >= firstSnapshotTime) break // snapshots take over from here
+            if (txTime >= firstSnapshotTime) {
+              break
+            } // snapshots take over from here
             const sats = BigInt(Math.round(parseFloat(tx.amountBtc) * 1e8))
             if (sats !== 0n) {
               exchangeEntries.push({ timestamp: txTime, value: sats })
@@ -337,7 +343,9 @@ export class ControlCenterService {
       const historyStatus = await this.getAccountHistoryStatus(accountRows, historyRange.start, shouldSyncFullHistory)
       accountRows = accountRows.filter(({ id }) => this.isAccountActive(id))
       const onchainEntries = accountRows.flatMap(({ id }) => this.getAccountSnapshotEntries(id))
-      if (!args.accountIds) onchainEntries.push(...this.getArchivedAccountSnapshotEntries())
+      if (!args.accountIds) {
+        onchainEntries.push(...this.getArchivedAccountSnapshotEntries())
+      }
       const onchainBalance = accountRows.reduce((sum, { id }) => sum + (balancesByAccountId.get(id) ?? 0n), 0n)
 
       // ─── Compute totals ─────────────────────────────────────────
@@ -396,7 +404,9 @@ export class ControlCenterService {
    * Should be called periodically (e.g., daily) to build historical chart data.
    */
   public recordAccountSnapshot(accountId: string, balanceSats: string, timestamp: string): void {
-    if (!this.isAccountActive(accountId)) return
+    if (!this.isAccountActive(accountId)) {
+      return
+    }
     this.upsertAccountSnapshot(accountId, balanceSats, timestamp)
   }
 
@@ -404,18 +414,26 @@ export class ControlCenterService {
     const row = this.db
       .prepare('SELECT descriptor FROM accounts WHERE id = ? AND deleted_at IS NULL')
       .get(accountId) as { descriptor: string } | undefined
-    if (!row) return Err(new Error('Claim not found or already archived'))
+    if (!row) {
+      return Err(new Error('Claim not found or already archived'))
+    }
 
     const accountResult = Account.fromDescriptor(row.descriptor)
-    if (accountResult.isErr()) return Err(new Error('Failed to preserve account history: invalid descriptor'))
+    if (accountResult.isErr()) {
+      return Err(new Error('Failed to preserve account history: invalid descriptor'))
+    }
 
     const account = accountResult.unwrap()
     const preservedBalance = await this.ensureAccountHistorySnapshots(accountId, account, undefined, new Date(0), true)
-    if (preservedBalance === null) return Err(new Error('Failed to preserve full account history'))
+    if (preservedBalance === null) {
+      return Err(new Error('Failed to preserve full account history'))
+    }
 
     const archivedAt = new Date().toISOString()
     const archived = this.db.transaction((): boolean => {
-      if (!this.isAccountActive(accountId)) return false
+      if (!this.isAccountActive(accountId)) {
+        return false
+      }
 
       this.upsertAccountSnapshot(accountId, preservedBalance.toString(), archivedAt)
       return (
@@ -425,7 +443,9 @@ export class ControlCenterService {
       )
     })()
 
-    if (!archived) return Err(new Error('Claim not found or already archived'))
+    if (!archived) {
+      return Err(new Error('Claim not found or already archived'))
+    }
     this.invalidateAccountHistoryBackfill(accountId)
     return Ok(undefined)
   })
@@ -435,13 +455,17 @@ export class ControlCenterService {
       const result = this.db
         .prepare('UPDATE accounts SET deleted_at = NULL WHERE id = ? AND deleted_at IS NOT NULL')
         .run(accountId)
-      if (result.changes === 0) return false
+      if (result.changes === 0) {
+        return false
+      }
 
       this.db.prepare('DELETE FROM account_history_syncs WHERE account_id = ?').run(accountId)
       return true
     })()
 
-    if (!restored) return Err(new Error('Claim not found or not archived'))
+    if (!restored) {
+      return Err(new Error('Claim not found or not archived'))
+    }
     this.clearAccountHistoryBackfillState(accountId)
     return Ok(undefined)
   }
@@ -470,7 +494,9 @@ export class ControlCenterService {
   ): Array<{ id: string; descriptor: string; network: string }> {
     const archivedClause = includeArchived ? '' : 'WHERE deleted_at IS NULL'
     if (filterIds !== undefined) {
-      if (filterIds.length === 0) return []
+      if (filterIds.length === 0) {
+        return []
+      }
       const placeholders = filterIds.map(() => '?').join(', ')
       return this.db
         .prepare(
@@ -544,7 +570,9 @@ export class ControlCenterService {
     const allEntries: BalanceEntry[] = []
 
     for (const row of archivedRows) {
-      if (activeAccounts.has(accountDescriptorNetworkKey(row.descriptor, row.network))) continue
+      if (activeAccounts.has(accountDescriptorNetworkKey(row.descriptor, row.network))) {
+        continue
+      }
 
       const entries = this.getAccountSnapshotEntries(row.id, row.deleted_at)
       allEntries.push(...entries)
@@ -591,14 +619,20 @@ export class ControlCenterService {
     fullHistory: boolean,
     balanceTip?: Block,
   ): void {
-    if (!this.isAccountActive(accountId)) return
+    if (!this.isAccountActive(accountId)) {
+      return
+    }
     const generation = this.getAccountHistoryBackfillGeneration(accountId)
     const cooldownUntil = this.accountHistoryBackfillCooldownUntil.get(accountId)
     if (cooldownUntil !== undefined) {
-      if (cooldownUntil > Date.now()) return
+      if (cooldownUntil > Date.now()) {
+        return
+      }
       this.accountHistoryBackfillCooldownUntil.delete(accountId)
     }
-    if (this.accountHistoryBackfillsInFlight.has(accountId)) return
+    if (this.accountHistoryBackfillsInFlight.has(accountId)) {
+      return
+    }
 
     this.accountHistoryBackfillsInFlight.add(accountId)
 
@@ -612,7 +646,9 @@ export class ControlCenterService {
       balanceTip,
     )
       .then((preservedBalance) => {
-        if (!this.canContinueAccountHistoryBackfill(accountId, generation)) return
+        if (!this.canContinueAccountHistoryBackfill(accountId, generation)) {
+          return
+        }
         if (preservedBalance !== null) {
           this.clearAccountHistoryBackfillRetry(accountId)
           return
@@ -622,12 +658,16 @@ export class ControlCenterService {
         this.logger.warn({ accountId, retryDelayMs }, 'Self-custody history backfill retry scheduled')
       })
       .catch((err: unknown) => {
-        if (!this.canContinueAccountHistoryBackfill(accountId, generation)) return
+        if (!this.canContinueAccountHistoryBackfill(accountId, generation)) {
+          return
+        }
         const retryDelayMs = this.scheduleAccountHistoryBackfillRetry(accountId)
         this.logger.warn({ accountId, err, retryDelayMs }, 'Self-custody history backfill failed')
       })
       .finally(() => {
-        if (this.getAccountHistoryBackfillGeneration(accountId) !== generation) return
+        if (this.getAccountHistoryBackfillGeneration(accountId) !== generation) {
+          return
+        }
         this.accountHistoryBackfillsInFlight.delete(accountId)
       })
   }
@@ -704,7 +744,9 @@ export class ControlCenterService {
     const historyFailedAccountIds: string[] = []
 
     for (const row of accountRows) {
-      if (!this.isAccountActive(row.id)) continue
+      if (!this.isAccountActive(row.id)) {
+        continue
+      }
       const missingRanges = this.getMissingAccountHistorySyncRanges(row.id, requestedRange)
       if (missingRanges.length === 0) {
         // Completion of a narrower request says nothing about a wider job's
@@ -742,22 +784,28 @@ export class ControlCenterService {
     generation = this.getAccountHistoryBackfillGeneration(accountId),
     balanceTip?: Block,
   ): Promise<bigint | null> {
-    if (!this.canContinueAccountHistoryBackfill(accountId, generation)) return null
+    if (!this.canContinueAccountHistoryBackfill(accountId, generation)) {
+      return null
+    }
     const tipResult = await this.onchainProvider.getBlocksTip()
     if (tipResult.isErr()) {
       this.logger.warn({ accountId, err: tipResult.unwrapErr() }, 'Failed to inspect chain tip for history backfill')
       return null
     }
-    if (!this.canContinueAccountHistoryBackfill(accountId, generation)) return null
+    if (!this.canContinueAccountHistoryBackfill(accountId, generation)) {
+      return null
+    }
 
     let tip = tipResult.unwrap()
-    let requestedRange = fullHistory
+    const requestedRange = fullHistory
       ? { fromBlockHeight: 0, toBlockHeight: tip.height }
       : historySyncRangeForStartDate(rangeStart, tip)
     let missingRanges = this.getMissingAccountHistorySyncRanges(accountId, requestedRange)
     // The dashboard already fetched this balance. Only archival (which passes
     // no balance) needs to validate it when the requested history is cached.
-    if (missingRanges.length === 0 && currentBalance !== undefined) return currentBalance
+    if (missingRanges.length === 0 && currentBalance !== undefined) {
+      return currentBalance
+    }
     const backfillFromBlockHeight =
       missingRanges.length > 0 ? Math.min(...missingRanges.map((range) => range.fromBlockHeight)) : tip.height + 1
     const stopBeforeBlockHeight = Math.max(0, backfillFromBlockHeight - 1)
@@ -772,7 +820,9 @@ export class ControlCenterService {
         )
         return null
       }
-      if (!this.canContinueAccountHistoryBackfill(accountId, generation)) return null
+      if (!this.canContinueAccountHistoryBackfill(accountId, generation)) {
+        return null
+      }
       transactionEntries = entriesResult.unwrap()
     }
 
@@ -791,14 +841,18 @@ export class ControlCenterService {
         }
         boundaryBalance = balanceResult.unwrap().get(account) ?? 0n
       }
-      if (!this.canContinueAccountHistoryBackfill(accountId, generation)) return null
+      if (!this.canContinueAccountHistoryBackfill(accountId, generation)) {
+        return null
+      }
 
       const verifiedTipResult = await this.onchainProvider.getBlocksTip()
       if (verifiedTipResult.isErr()) {
         this.logger.warn({ accountId, err: verifiedTipResult.unwrapErr() }, 'Failed to verify history chain tip')
         return null
       }
-      if (!this.canContinueAccountHistoryBackfill(accountId, generation)) return null
+      if (!this.canContinueAccountHistoryBackfill(accountId, generation)) {
+        return null
+      }
 
       const verifiedTip = verifiedTipResult.unwrap()
       if (verifiedTip.height === tip.height && verifiedTip.hash === tip.hash) {
@@ -809,24 +863,36 @@ export class ControlCenterService {
       // A normal new block must not throw away a long history scan. Verify its
       // anchor is still on the chain, retain entries through that block, and
       // fetch only the new tail. Reorganizations still require a fresh scan.
-      if (verifiedTip.height <= tip.height) return null
+      if (verifiedTip.height <= tip.height) {
+        return null
+      }
       const anchorResult = await this.onchainProvider.getBlock(tip.height)
-      if (anchorResult.isErr() || anchorResult.unwrap().hash !== tip.hash) return null
-      if (!this.canContinueAccountHistoryBackfill(accountId, generation)) return null
+      if (anchorResult.isErr() || anchorResult.unwrap().hash !== tip.hash) {
+        return null
+      }
+      if (!this.canContinueAccountHistoryBackfill(accountId, generation)) {
+        return null
+      }
 
       const tailResult = await this.getTransactionEntriesByAccountSinceBlock(account, tip.height)
-      if (tailResult.isErr()) return null
-      if (!this.canContinueAccountHistoryBackfill(accountId, generation)) return null
+      if (tailResult.isErr()) {
+        return null
+      }
+      if (!this.canContinueAccountHistoryBackfill(accountId, generation)) {
+        return null
+      }
       transactionEntries = [
         ...transactionEntries.filter((entry) => entry.blockHeight !== null && entry.blockHeight <= tip.height),
         ...tailResult.unwrap().filter((entry) => entry.blockHeight !== null && entry.blockHeight > tip.height),
       ]
       tip = verifiedTip
-      requestedRange = { ...requestedRange, toBlockHeight: tip.height }
+      requestedRange.toBlockHeight = tip.height
       missingRanges = this.getMissingAccountHistorySyncRanges(accountId, requestedRange)
     }
 
-    if (missingRanges.length === 0) return reconstructionBalance
+    if (missingRanges.length === 0) {
+      return reconstructionBalance
+    }
 
     const deltas = transactionDeltasFromEntries(transactionEntries, stopBeforeBlockHeight, requestedRange.toBlockHeight)
     const startBalance = reconstructionBalance - deltas.reduce((sum, entry) => sum + entry.value, 0n)
@@ -879,7 +945,9 @@ export class ControlCenterService {
     stopBeforeBlockHeight: number,
   ): Promise<Result<TransactionEntry[], Error>> {
     const discoveredResult = await this.onchainProvider.discoverAccount(account)
-    if (discoveredResult.isErr()) return Err(discoveredResult.unwrapErr())
+    if (discoveredResult.isErr()) {
+      return Err(discoveredResult.unwrapErr())
+    }
 
     const { lastUsedReceiveIndex, lastUsedChangeIndex } = discoveredResult.unwrap()
     const addresses = new IndexMap<Address, number | null>()
@@ -894,7 +962,9 @@ export class ControlCenterService {
     const entries: TransactionEntry[] = []
     const gen = this.onchainProvider.getTransactionEntries(addresses)
     for await (const entry of gen) {
-      if (entry.isErr()) return Err(entry.unwrapErr())
+      if (entry.isErr()) {
+        return Err(entry.unwrapErr())
+      }
       entries.push(entry.unwrap())
     }
 
@@ -926,12 +996,16 @@ export class ControlCenterService {
 
       while (deltaIndex < deltas.length) {
         const delta = deltas[deltaIndex]
-        if (!delta || delta.timestamp > snapshotTime) break
+        if (!delta || delta.timestamp > snapshotTime) {
+          break
+        }
         runningBalance += delta.value
         deltaIndex++
       }
 
-      if (BigInt(snapshot.balance_sats) === runningBalance) continue
+      if (BigInt(snapshot.balance_sats) === runningBalance) {
+        continue
+      }
 
       this.recordAccountSnapshot(accountId, runningBalance.toString(), snapshot.timestamp)
       updatedCount++
@@ -978,14 +1052,18 @@ export class ControlCenterService {
     for (const row of rows) {
       const rowFrom = Math.max(row.from_block_height, requestedRange.fromBlockHeight)
       const rowTo = Math.min(row.to_block_height, requestedRange.toBlockHeight)
-      if (rowTo < cursor) continue
+      if (rowTo < cursor) {
+        continue
+      }
 
       if (rowFrom > cursor) {
         missingRanges.push({ fromBlockHeight: cursor, toBlockHeight: rowFrom - 1 })
       }
 
       cursor = Math.max(cursor, rowTo + 1)
-      if (cursor > requestedRange.toBlockHeight) break
+      if (cursor > requestedRange.toBlockHeight) {
+        break
+      }
     }
 
     if (cursor <= requestedRange.toBlockHeight) {
@@ -996,7 +1074,9 @@ export class ControlCenterService {
   }
 
   private recordAccountHistorySync(accountId: string, range: BlockRange, tip: Block): void {
-    if (!this.isAccountActive(accountId)) return
+    if (!this.isAccountActive(accountId)) {
+      return
+    }
     this.db.transaction(() => {
       // Coalesce only equally certified coverage. Never bridge an unscanned
       // block or promote an older version's range without actually scanning it.
@@ -1023,7 +1103,9 @@ export class ControlCenterService {
         (candidate) =>
           candidate.fromBlockHeight <= range.fromBlockHeight && candidate.toBlockHeight >= range.toBlockHeight,
       )
-      if (!mergedRange) return
+      if (!mergedRange) {
+        return
+      }
 
       // Replace just the connected range containing this successful scan.
       // Deletion and insertion must roll back together if either write fails.
@@ -1211,7 +1293,9 @@ function transactionDeltasFromEntries(
     .filter((entry) => entry.value !== 0n)
     .sort((a, b) => {
       const timeDelta = a.timestamp.getTime() - b.timestamp.getTime()
-      if (timeDelta !== 0) return timeDelta
+      if (timeDelta !== 0) {
+        return timeDelta
+      }
       return Number(a.value - b.value)
     })
 }

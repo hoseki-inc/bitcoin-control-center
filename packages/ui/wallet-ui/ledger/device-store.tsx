@@ -64,7 +64,9 @@ export function createLedgerStore(
 
     async function getBitcoinXpubFromPath_INTERNAL(path: string): Promise<Result<XpubWithPath, HardwareDeviceError>> {
       const { isInitialized, btc, transport } = get()
-      if (!isInitialized) return notInitializedError()
+      if (!isInitialized) {
+        return notInitializedError()
+      }
 
       const derivationPath = DerivationPath.fromString(path)
       if (derivationPath.isErr()) {
@@ -125,9 +127,9 @@ export function createLedgerStore(
       deviceModel: null,
 
       init: async (openTransport = () => TransportWebHID.create(), signal) => {
-        const { transport, btc } = get()
+        const { isInitialized } = get()
         browserLogger.debug('Initializing ledger')
-        if (transport && btc) {
+        if (isInitialized) {
           browserLogger.debug('Skipping initialization: Transport and ledger.btc already set')
           return
         }
@@ -166,8 +168,11 @@ export function createLedgerStore(
         }
         set(store.getInitialState())
         if (transport) {
-          if (closeTransport) await closeTransport(transport)
-          else void transport.close()
+          if (closeTransport) {
+            await closeTransport(transport)
+          } else {
+            void transport.close()
+          }
         }
         browserLogger.debug({ newState: store.getInitialState() }, 'Ledger was reset')
       },
@@ -183,7 +188,9 @@ export function createLedgerStore(
 
       signMessage: asyncFn(async (path: string, message: string) => {
         const { isInitialized, btc } = get()
-        if (!isInitialized) return notInitializedError()
+        if (!isInitialized) {
+          return notInitializedError()
+        }
 
         return await handleLedgerSdkCall(btc.signMessage(path, Buffer.from(message).toString('hex')), { path })
       }),

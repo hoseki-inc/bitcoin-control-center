@@ -117,15 +117,21 @@ function useElectrumStatus(): { status: ElectrumStatus | null; refresh: () => vo
       .then((data) => {
         // tRPC wraps response in result.data.json (superjson) or result.data
         const payload = data?.result?.data?.json ?? data?.result?.data
-        if (payload?.host) setStatus(payload as ElectrumStatus)
+        if (payload?.host) {
+          setStatus(payload as ElectrumStatus)
+        }
       })
-      .catch(() => setStatus(null))
+      .catch(() => {
+        setStatus(null)
+      })
   }, [])
 
   useEffect(() => {
     refresh()
     const interval = setInterval(refresh, 10_000)
-    return (): void => clearInterval(interval)
+    return (): void => {
+      clearInterval(interval)
+    }
   }, [refresh])
 
   return { status, refresh }
@@ -153,7 +159,7 @@ function ElectrumSettings(): JSX.Element {
     if (!isDirty) {
       setHost(savedHost ?? 'electrum.blockstream.info')
       setPort(savedPort ?? '50002')
-      setProtocol((savedProtocol as 'tcp' | 'ssl') ?? 'ssl')
+      setProtocol((savedProtocol ?? 'ssl') as 'tcp' | 'ssl')
       setTorEnabled(savedTorEnabled === 'true')
     }
   }, [savedHost, savedPort, savedProtocol, savedTorEnabled, isDirty])

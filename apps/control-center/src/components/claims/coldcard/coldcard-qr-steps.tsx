@@ -63,7 +63,9 @@ export function ColdcardQrConnectionSteps({
             setColdcardJson(json)
             // Defer step advancement so React processes the JSON state update first.
             // Advancing immediately can cause a render crash with @patina/core types.
-            requestAnimationFrame(() => onNext())
+            requestAnimationFrame(() => {
+              onNext()
+            })
           }}
         />
       )
@@ -76,7 +78,9 @@ export function ColdcardQrConnectionSteps({
           setSelectedWallet={setSelectedWallet}
           isLoadingOnNext={isStep4Loading}
           onBack={onBack}
-          onNext={() => handleAccountSelectConfirm(model)}
+          onNext={() => {
+            handleAccountSelectConfirm(model)
+          }}
         />
       ) : (
         <></>
@@ -286,7 +290,7 @@ function AccountSelectionStep({
   const { isLoading, error, data: wallets } = useColdcardAccountsWithBalances(coldcardJson, model)
 
   useEffect(() => {
-    if (wallets?.length === 1 && wallets[0] && !selectedWallet) {
+    if (wallets.length === 1 && wallets[0] && !selectedWallet) {
       setSelectedWallet(wallets[0])
     }
   }, [wallets, selectedWallet, setSelectedWallet])

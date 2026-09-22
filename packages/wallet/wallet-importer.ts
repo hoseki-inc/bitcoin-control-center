@@ -31,7 +31,7 @@ export class WalletImporter {
    * }
    * ```
    */
-  static singlesigFromDescriptor(descriptor: string): Result<Wallet.Singlesig, Error> {
+  public static singlesigFromDescriptor(descriptor: string): Result<Wallet.Singlesig, Error> {
     // Process descriptor: validate checksum (if present), strip it, and normalize SLIP-132 keys
     const processedDescriptor = this.processDescriptor(descriptor)
     if (processedDescriptor.isErr()) {
@@ -69,7 +69,7 @@ export class WalletImporter {
    * }
    * ```
    */
-  static multisigFromDescriptor(descriptor: string): Result<Wallet.Multisig, Error> {
+  public static multisigFromDescriptor(descriptor: string): Result<Wallet.Multisig, Error> {
     // Process descriptor: validate checksum (if present), strip it, and normalize SLIP-132 keys
     const processedDescriptor = this.processDescriptor(descriptor)
     if (processedDescriptor.isErr()) {
@@ -111,7 +111,7 @@ export class WalletImporter {
    * })
    * ```
    */
-  static multisigFromProps(props: MultisigProps): Result<Wallet.Multisig, Error> {
+  public static multisigFromProps(props: MultisigProps): Result<Wallet.Multisig, Error> {
     // Validate sufficient derivation paths before creating wallet
     const validationResult = this.assertSufficientDerivationPaths(props.threshold, props.keyExpressions)
     if (validationResult.isErr()) {
@@ -217,7 +217,7 @@ export class WalletImporter {
 
     for (const match of body.matchAll(re)) {
       const matchedKey = match[0]
-      const idx = match.index ?? -1
+      const idx = match.index
       if (idx < 0) {
         return Err(new Error('failed to locate xpub match index while normalizing descriptor'))
       }

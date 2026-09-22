@@ -152,6 +152,7 @@ export class StatementService {
     // Serialize bigint values in transactionMap to strings for JSON storage
     const serializedMap: Record<string, SerializedAggregatedTransaction[]> = {}
     for (const [key, txs] of Object.entries(transactionMap)) {
+      // oxlint-disable-next-line oxc/no-map-spread -- Preserve caller-owned transactions while converting values for storage.
       serializedMap[key] = txs.map((tx) => ({
         ...tx,
         balanceChange: tx.balanceChange.toString(),
@@ -187,7 +188,9 @@ export class StatementService {
   /** Find a statement by ID and return its DTO. */
   public findById(id: string): StatementDto | null {
     const row = this.db.prepare('SELECT * FROM statements WHERE id = ?').get(id) as StatementRow | undefined
-    if (!row) return null
+    if (!row) {
+      return null
+    }
     return this.rowToDto(row)
   }
 
@@ -197,7 +200,9 @@ export class StatementService {
   ): { row: StatementRow; transactionMap: Record<string, AggregatedTransaction[]>; dailyRates: DailyRates } | null {
     const row = this.db.prepare('SELECT * FROM statements WHERE id = ? AND status = ?').get(id, 'completed') as
       CompletedStatementRow | undefined
-    if (!row) return null
+    if (!row) {
+      return null
+    }
 
     return {
       row,
@@ -218,7 +223,9 @@ export class StatementService {
       input: GenerateStatementInput,
     ): Promise<Result<{ transactionMap: Record<string, AggregatedTransaction[]>; dailyRates: DailyRates }, Error>> => {
       const validation = validateStatementInput(input)
-      if (validation.isErr()) return Err(validation.unwrapErr())
+      if (validation.isErr()) {
+        return Err(validation.unwrapErr())
+      }
 
       this.logger.info(
         {
@@ -366,8 +373,11 @@ export class StatementService {
               const noonUtc = new Date(dayKey + 'T12:00:00.000Z')
               const existing = dailyAgg.get(dayKey) ?? { netIn: 0n, netOut: 0n, date: noonUtc }
               const sats = BigInt(Math.round(parseFloat(tx.amountBtc) * 1e8))
-              if (sats > 0n) existing.netIn += sats
-              else if (sats < 0n) existing.netOut += sats
+              if (sats > 0n) {
+                existing.netIn += sats
+              } else if (sats < 0n) {
+                existing.netOut += sats
+              }
               dailyAgg.set(dayKey, existing)
             }
 
@@ -462,7 +472,9 @@ export class StatementService {
   private getAccountRows(
     claimIds: string[],
   ): Array<{ id: string; descriptor: string; display_name: string; network: string; status: string }> {
-    if (claimIds.length === 0) return []
+    if (claimIds.length === 0) {
+      return []
+    }
     const placeholders = claimIds.map(() => '?').join(', ')
     return this.db
       .prepare(
@@ -514,6 +526,7 @@ export class StatementService {
     const raw = JSON.parse(json) as Record<string, SerializedAggregatedTransaction[]>
     const result: Record<string, AggregatedTransaction[]> = {}
     for (const [key, txs] of Object.entries(raw)) {
+      // oxlint-disable-next-line oxc/no-map-spread -- Preserve additional stored fields in a new object with restored value types.
       result[key] = txs.map((tx) => ({
         ...tx,
         balanceChange: BigInt(tx.balanceChange),
@@ -560,7 +573,9 @@ function calculateAccountTransactions(
   const transactions: AggregatedTransaction[] = []
 
   for (const groupedTransactions of grouped.values()) {
-    if (groupedTransactions.length === 0) continue
+    if (groupedTransactions.length === 0) {
+      continue
+    }
 
     let sum = 0n
     for (const tx of groupedTransactions) {
@@ -568,7 +583,9 @@ function calculateAccountTransactions(
     }
 
     const firstTx = groupedTransactions[0]
-    if (!firstTx) continue
+    if (!firstTx) {
+      continue
+    }
 
     transactions.push({
       address: firstTx.address.toString(),
@@ -589,7 +606,9 @@ function sortTxs<T extends { hash: string; transactedAt: Date }>(txs: T[]): T[] 
   return txs.sort((a, b) => {
     const dateA = a.transactedAt.getTime()
     const dateB = b.transactedAt.getTime()
-    if (dateA !== dateB) return dateA - dateB
+    if (dateA !== dateB) {
+      return dateA - dateB
+    }
     return a.hash.localeCompare(b.hash)
   })
 }

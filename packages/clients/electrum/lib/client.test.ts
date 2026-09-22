@@ -22,7 +22,9 @@ async function startMockServer(): Promise<MockServer> {
       while ((idx = buffer.indexOf('\n')) !== -1) {
         const line = buffer.slice(0, idx).trim()
         buffer = buffer.slice(idx + 1)
-        if (line.length === 0) continue
+        if (line.length === 0) {
+          continue
+        }
         requests.push(line)
         const req = JSON.parse(line) as { id: number; method: string; params: unknown[] }
         const result =
@@ -42,7 +44,12 @@ async function startMockServer(): Promise<MockServer> {
   return {
     port,
     requests,
-    close: () => new Promise<void>((resolve) => server.close(() => resolve())),
+    close: () =>
+      new Promise<void>((resolve) =>
+        server.close(() => {
+          resolve()
+        }),
+      ),
   }
 }
 
@@ -83,7 +90,7 @@ describe('ElectrumClient concurrent reconnect', () => {
     client.disconnect()
 
     const results = await Promise.all(Array.from({ length: 10 }, () => client.getHistory(scripthash)))
-    const errors = results.filter((r) => r.isErr()).map((r) => r.unwrapErr()?.message)
+    const errors = results.filter((r) => r.isErr()).map((r) => r.unwrapErr().message)
     expect(errors).toEqual([])
 
     const versionCalls = mock.requests.filter((r) => r.includes('server.version')).length

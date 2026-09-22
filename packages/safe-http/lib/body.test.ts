@@ -13,7 +13,7 @@ it('returns parsed json', async () => {
   const body = new SafeBody({
     json: () => Promise.resolve(json),
   } as unknown as Body)
-  const result = await body.json((json) => parseUnknown(schema, json))
+  const result = await body.json((responseJson) => parseUnknown(schema, responseJson))
   expectTypeOf<Result<{ id: number }, SafeBodyError>>(result)
   expect(result.unwrap()).toEqual(json)
 })

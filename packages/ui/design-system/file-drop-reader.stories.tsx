@@ -34,7 +34,9 @@ export const Default: Story = () => {
               return Err(new Error('Invalid JSON content'))
             }
           }}
-          onValidContentRead={(content) => console.log('Success!', content)}
+          onValidContentRead={(content) => {
+            console.log('Success!', content)
+          }}
           acceptedFileTypes={['json']}
           status={jsonStatus}
           onStatusChange={setJsonStatus}
@@ -54,7 +56,9 @@ export const Default: Story = () => {
               return Err(new Error('Invalid content, expected "foo"'))
             }
           }}
-          onValidContentRead={(content) => console.log('Success!', content)}
+          onValidContentRead={(content) => {
+            console.log('Success!', content)
+          }}
           acceptedFileTypes={['txt']}
           status={txtStatus}
           onStatusChange={setTxtStatus}
@@ -67,12 +71,14 @@ export const Default: Story = () => {
           invalidText="Invalid image file. Please check your file and try again."
           validText="Click 'Continue' to continue"
           validationFn={(content: ArrayBuffer): Result<ArrayBuffer, Error> => {
-            if (content && content.byteLength > 0) {
+            if (content.byteLength > 0) {
               return Ok(content)
             }
             return Err(new Error('Failed to read image file'))
           }}
-          onValidContentRead={(_, file) => console.log('Image loaded successfully!', file.name)}
+          onValidContentRead={(_, file) => {
+            console.log('Image loaded successfully!', file.name)
+          }}
           acceptedFileTypes={['png', 'jpg', 'jpeg', 'webp']}
           status={imageStatus}
           onStatusChange={setImageStatus}

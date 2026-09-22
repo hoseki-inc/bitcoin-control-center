@@ -1,9 +1,9 @@
 import { Err, Ok, type Result } from '@patina/core'
 import { z } from 'zod'
 import { parse, parseUnknown } from '../result'
-import { type MultiSigAccountScriptType, type SingleSigAccountScriptType } from './account_props'
+import type { MultiSigAccountScriptType, SingleSigAccountScriptType } from './account_props'
 import { derivationPathSchema } from './derivation-path'
-import * as descriptor from './descriptor_utils'
+import * as descriptorUtils from './descriptor_utils'
 import { InvalidFormatError } from './errors'
 import { KeyExpression, KeyOrigin, keyFingerprintSchema } from './key-expression'
 import { parseRecursiveParenthesisDescent } from './util/parse'
@@ -21,7 +21,7 @@ abstract class BaseAccountDescriptorParser {
    */
   protected static assertChecksum(desc: string, checksum: string | undefined): Result<void, Error> {
     if (checksum) {
-      const checksumResult = descriptor.getChecksum(desc)
+      const checksumResult = descriptorUtils.getChecksum(desc)
       if (checksumResult.isErr()) {
         return Err(checksumResult.unwrapErr())
       }
@@ -160,7 +160,7 @@ const SinglesigAccountDescriptorSchema = z
   }))
 
 export class SinglesigDescriptorParser extends BaseAccountDescriptorParser {
-  static parse(string: string): Result<SinglesigProps, Error> {
+  public static parse(string: string): Result<SinglesigProps, Error> {
     const [desc, checksum] = string.split('#')
 
     if (!desc) {
@@ -191,7 +191,7 @@ export class SinglesigDescriptorParser extends BaseAccountDescriptorParser {
    * @param descriptor Output descriptor, example: 'wpkh([00000000/84h/0h/0h]xpub6CoK65dNvMYXaBDCfHautt78ZrbZ3pPL46782nrjJtLXWKHTxYdFEfrionLgaQtUKw8vUeKda4ynE4sUiUgr4rR9nrqjexjUhZVpWkJULVr/<0;1>/*)'
    * @returns Parts structured into object or `InvalidFormatError`
    */
-  static transformOutputDescriptor(descriptor: string): Result<
+  public static transformOutputDescriptor(descriptor: string): Result<
     {
       keyExpression: {
         keyOrigin: {
@@ -217,7 +217,7 @@ export class SinglesigDescriptorParser extends BaseAccountDescriptorParser {
 
     // Handle nested scripts: sh(wpkh(...)) or just wpkh(...)
     // Strip outer scripts and collect them
-    while (true) {
+    for (;;) {
       // Check for script patterns: pkh, wpkh, tr, sh
       if (remaining.startsWith('pkh(')) {
         scriptTypeFactors.push('pkh')
@@ -350,7 +350,7 @@ const MultisigAccountDescriptorSchema = z
   }))
 
 export class MultisigDescriptorParser extends BaseAccountDescriptorParser {
-  static parse(string: string): Result<MultisigProps, Error> {
+  public static parse(string: string): Result<MultisigProps, Error> {
     const [desc, checksum] = string.split('#')
 
     if (!desc) {
@@ -383,7 +383,7 @@ export class MultisigDescriptorParser extends BaseAccountDescriptorParser {
    * @param descriptor Output descriptor, example: 'sh(wsh(sortedmulti(2,[00000000/49/0/0]xpub6DRLRDFmCH8MNwepL9RMBjRv5P2XidDj2uZ9NpFwx33uEu8NcoDHkipwtrZ17iaZmKWMfaBCeaNHWWd7AXN3YaRZrQrzeomF3WUYoeaQeAJ/<0;1>/*,[00000000/49/0/0]xpub6C2rutq6jJnZVMQxBtmAEGS9HitPFCsMouoL7FazS8sTojgwJfvv4kehuBqTeAggScs1mPuuWoFZCt1wqFWH5Qrk6edVogQevJbsSSQR92j/<0;1>/*,[00000000/49/0/0]xpub6BjX8bohDbdPjr486W3sTVHepnrFwUfeLbVUBCt5BJzYvEGaZ3w3cAWGJ9UTANAvdfythferf1ScXuyRs7oavkqVAbB38ofX4dGx7E9KG7m/<0;1>/*)))#mkl9ckkl'
    * @returns Parts structured into object or `InvalidFormatError`
    */
-  static transformOutputDescriptor(descriptor: string): Result<
+  public static transformOutputDescriptor(descriptor: string): Result<
     {
       threshold: string
       keyExpressions: Array<{

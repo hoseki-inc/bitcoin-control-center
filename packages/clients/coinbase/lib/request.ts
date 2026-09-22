@@ -2,8 +2,8 @@ import { Err, Ok, Result, asyncFn, parseUnknown } from '@hoseki/packages/result'
 import { SafeHttpErrorKind, type SafeResponse, safeHttp } from '@hoseki/packages/safe-http'
 import * as crypto from 'crypto'
 import jose from 'node-jose'
-import { type z } from 'zod'
-import { type Credentials } from './credentials'
+import type { z } from 'zod'
+import type { Credentials } from './credentials'
 import { ApiError, ErrorKind } from './errors'
 import { type JsonRecord, recordToHeaders, recordToSearchParams } from './util'
 
@@ -179,9 +179,9 @@ export const request = asyncFn(
     }
 
     if (args.credentials) {
-      if (args.credentials?.variant === 'AccessToken') {
+      if (args.credentials.variant === 'AccessToken') {
         headers['Authorization'] = `Bearer ${args.credentials.accessToken}`
-      } else if (args.credentials?.variant === 'ApiKey') {
+      } else if (args.credentials.variant === 'ApiKey') {
         const bodyForSign = body ?? ''
         const timestamp = Math.floor(Date.now() / 1000).toString()
         const signature = sign({

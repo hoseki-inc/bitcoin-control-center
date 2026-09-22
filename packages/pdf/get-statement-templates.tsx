@@ -122,7 +122,9 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
     return money.toMajorAmount().absoluteValue().toFixed(currencyObj.exponent) + currencyLabel
   }
   const formatUsd = (decimal: Decimal | null) => {
-    if (!decimal) return 'N/A'
+    if (!decimal) {
+      return 'N/A'
+    }
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency: 'USD',
@@ -133,7 +135,9 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
   }
 
   const formatTzDate = (date: Date | null, formatString: string, timezone: string): string => {
-    if (!date) return 'N/A'
+    if (!date) {
+      return 'N/A'
+    }
     return format(new TZDate(date, timezone), formatString)
   }
 
@@ -1254,7 +1258,7 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
       SummaryColumn.ClosingBalance,
     ]
 
-    const currency = props.statement.currency ?? 'BTC'
+    const currency = props.statement.currency
 
     // Create a wrapper component that captures currency
     const RowComponentWithCurrency: React.FC<{ item: SummaryRowDisplayData; index: number }> = ({ item, index }) => (
@@ -1494,7 +1498,9 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
 
   const CustomStatementDocument = ({ input, qrCode }: { input: DocumentInput; qrCode: string }) => {
     const statement = input.statement
-    if (statement.format !== 'custom') return null
+    if (statement.format !== 'custom') {
+      return null
+    }
 
     const timezone = statement.timezone
     const proofNum = statement.counter
@@ -1516,7 +1522,7 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
               dateRange={dateRange}
               totalAmountMinorUnits={totalBtcSats}
               totalUsdAmount={totalUsdValue}
-              currency={statement.currency ?? 'BTC'}
+              currency={statement.currency}
             />
             <View style={styles.mainContentContainer}>
               <View style={styles.contentWrapper}>
@@ -1541,7 +1547,7 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
             proofNumber={proofNum}
             qrCodeSrc={qrCode}
             watermarkText={input.watermarkText}
-            currency={statement.currency ?? 'BTC'}
+            currency={statement.currency}
           />
         ))}
       </Document>
@@ -1564,7 +1570,9 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
 
   const MonthlyStatementDocument = ({ input, qrCode }: { input: DocumentInput; qrCode: string }) => {
     const statement = input.statement
-    if (statement.format !== 'monthly') return null
+    if (statement.format !== 'monthly') {
+      return null
+    }
 
     const pages: React.ReactElement[] = []
     const timezone = statement.timezone
@@ -1583,7 +1591,7 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
               dateRange={monthDateRange}
               totalAmountMinorUnits={month.summary.closingBalance.sats}
               totalUsdAmount={formatUsd(month.summary.closingBalance.usdValue)}
-              currency={statement.currency ?? 'BTC'}
+              currency={statement.currency}
             />
             <View style={styles.mainContentContainer}>
               <View style={styles.contentWrapper}>
@@ -1619,7 +1627,7 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
             proofNumber={proofNum}
             qrCodeSrc={qrCode}
             watermarkText={input.watermarkText}
-            currency={statement.currency ?? 'BTC'}
+            currency={statement.currency}
           />,
         )
       }
@@ -1658,9 +1666,11 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
 
       // Collect entries from all statements
       for (const statement of input.statements) {
-        if (statement.format !== 'custom') continue
+        if (statement.format !== 'custom') {
+          continue
+        }
         const customStatement = statement
-        const currency = statement.currency ?? 'BTC'
+        const currency = statement.currency
 
         // Add each entry with its currency
         for (const entry of customStatement.summary.entries) {
@@ -1701,7 +1711,9 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
           </Page>
         )}
         {input.statements.map((statement, statementIdx) => {
-          if (statement.format !== 'custom') return null
+          if (statement.format !== 'custom') {
+            return null
+          }
 
           const timezone = statement.timezone
           const proofNum = statement.counter
@@ -1723,7 +1735,7 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
                     dateRange={dateRange}
                     totalAmountMinorUnits={totalBtcSats}
                     totalUsdAmount={totalUsdValue}
-                    currency={statement.currency ?? 'BTC'}
+                    currency={statement.currency}
                   />
                   <View style={styles.mainContentContainer}>
                     <View style={styles.contentWrapper}>
@@ -1748,7 +1760,7 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
                   proofNumber={proofNum}
                   qrCodeSrc={qrCode}
                   watermarkText={input.watermarkText}
-                  currency={statement.currency ?? 'BTC'}
+                  currency={statement.currency}
                 />
               ))}
             </React.Fragment>

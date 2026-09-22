@@ -66,10 +66,9 @@ export function BitcoinInputFormFields({
   })
   const preSelectedScriptType = defaultValues?.data.account.scriptType
   const [encoding, setEncoding] = useState<SingleSigAccountScriptType | null>(preSelectedScriptType ?? null)
-  useEffect(
-    () => setEncoding(showEncodingInput ? (preSelectedScriptType ?? 'p2pkh') : null),
-    [showEncodingInput, preSelectedScriptType],
-  )
+  useEffect(() => {
+    setEncoding(showEncodingInput ? (preSelectedScriptType ?? 'p2pkh') : null)
+  }, [showEncodingInput, preSelectedScriptType])
 
   // Show network input if not on Mainnet
   const showNetworkInput = singleSigAccount.match({
@@ -77,15 +76,16 @@ export function BitcoinInputFormFields({
     Err: () => false,
   })
   const [network, setNetwork] = useState<Network>(Network.Mainnet)
-  useEffect(
-    () => setNetwork(showNetworkInput ? getNetwork(descriptor) : Network.Mainnet),
-    [showNetworkInput, descriptor],
-  )
+  useEffect(() => {
+    setNetwork(showNetworkInput ? getNetwork(descriptor) : Network.Mainnet)
+  }, [showNetworkInput, descriptor])
 
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!bitcoinRaw) return
+    if (!bitcoinRaw) {
+      return
+    }
 
     let input: BitcoinInput
     if (xpub.isOk()) {
@@ -132,8 +132,10 @@ export function BitcoinInputFormFields({
         <Input
           id="display-name"
           type="text"
-          value={displayName ?? ''}
-          onChange={(e) => setDisplayName(e.target.value)}
+          value={displayName}
+          onChange={(e) => {
+            setDisplayName(e.target.value)
+          }}
           placeholder="Give this claim a name"
           isRequired
           maxLength={255}
@@ -146,8 +148,10 @@ export function BitcoinInputFormFields({
         <Textarea
           id="bitcoin-source"
           rows={3}
-          value={bitcoinRaw ?? ''}
-          onChange={(e) => setBitcoinRaw(e.target.value)}
+          value={bitcoinRaw}
+          onChange={(e) => {
+            setBitcoinRaw(e.target.value)
+          }}
           placeholder="Account descriptor or extended public key"
           sx={{ resize: 'none' }}
           isRequired
@@ -172,7 +176,9 @@ export function BitcoinInputFormFields({
             options={Object.keys(labelsToEncodings)}
             name="encoding"
             defaultValue={encodingsToLabels[encoding ?? getDefaultEncoding(bitcoinRaw)]}
-            onChange={(label: string) => setEncoding(labelsToEncodings[label] ?? 'p2pkh')}
+            onChange={(label: string) => {
+              setEncoding(labelsToEncodings[label] ?? 'p2pkh')
+            }}
           />
         </FormControl>
       )}

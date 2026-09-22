@@ -4,7 +4,7 @@ import TransportWebHID from '@ledgerhq/hw-transport-webhid'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, createElement } from 'react'
 import { type Root, createRoot } from 'react-dom/client'
-import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { afterEach, assert, beforeEach, expect, it, vi } from 'vitest'
 import type { LedgerHidApi, LedgerHidUpdate } from '../../../../../../desktop/src/ledger-hid-api'
 import { DesktopLedgerConnection } from './desktop-ledger-connection'
 
@@ -17,7 +17,7 @@ const mocks = vi.hoisted(() => ({
 }))
 vi.mock('@ledgerhq/hw-transport-webhid', () => ({
   default: class WebHID {
-    static request = mocks.request
+    public static request = mocks.request
   },
 }))
 vi.mock('@ledgerhq/hw-app-btc/lib/getAppAndVersion', () => ({ getAppAndVersion: mocks.app }))
@@ -42,7 +42,7 @@ let listener: (update: LedgerHidUpdate) => void
 let bridge: LedgerHidApi
 let queryClient: QueryClient
 let resolveRequest: (value: typeof transport) => void
-let rejectRequest: (error: Error) => void
+let rejectRequest: ((error: Error) => void) | undefined
 let requestId: string
 const transport = {
   close: vi.fn(),
@@ -56,6 +56,7 @@ const onContinue = vi.fn()
 beforeEach(async () => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
   vi.clearAllMocks()
+  rejectRequest = undefined
   Object.setPrototypeOf(transport, TransportWebHID.prototype)
   transport.close.mockResolvedValue(undefined)
   transport.device.close.mockResolvedValue(undefined)
@@ -94,12 +95,14 @@ beforeEach(async () => {
   await render()
 })
 afterEach(async () => {
-  await act(async () => root.unmount())
+  await act(async () => {
+    root.unmount()
+  })
   queryClient.clear()
   host.remove()
 })
 async function render(): Promise<void> {
-  await act(async () =>
+  await act(async () => {
     root.render(
       createElement(
         ChakraProvider,
@@ -110,19 +113,25 @@ async function render(): Promise<void> {
           createElement(DesktopLedgerConnection, { bridge, onContinue, onBack: vi.fn() }),
         ),
       ),
-    ),
-  )
+    )
+  })
 }
 function button(label: string): HTMLButtonElement {
   const found = Array.from(host.querySelectorAll('button')).find((item) => item.textContent === label)
-  if (!found) throw new Error(`Button not found: ${label}`)
+  if (!found) {
+    throw new Error(`Button not found: ${label}`)
+  }
   return found
 }
 async function click(label: string): Promise<void> {
-  await act(async () => button(label).click())
+  await act(async () => {
+    button(label).click()
+  })
 }
 async function update(status: LedgerHidUpdate['status'], devices: LedgerHidUpdate['devices'] = []): Promise<void> {
-  await act(async () => listener({ requestId, status, devices }))
+  await act(async () => {
+    listener({ requestId, status, devices })
+  })
 }
 
 it('starts only on Connect and clears cached accounts from earlier connections', async () => {
@@ -155,7 +164,9 @@ it('requires a choice for multiple Ledgers and forgets a removed selection', asy
   ]
   await update('choosing', devices)
   expect(button('Connect selected Ledger').disabled).toBe(true)
-  await act(async () => (host.querySelector('input[value="two"]') as HTMLInputElement).click())
+  await act(async () => {
+    ;(host.querySelector('input[value="two"]') as HTMLInputElement).click()
+  })
   await click('Connect selected Ledger')
   expect(bridge.choose).toHaveBeenCalledWith(requestId, 'two')
   await update('choosing', [])
@@ -179,12 +190,16 @@ it('does not ask users to distinguish identical device labels', async () => {
 it('checks the Bitcoin app before continuing and handles a locked device with an inline retry', async () => {
   mocks.app.mockRejectedValueOnce({ name: 'LockedDeviceError' })
   await click('Connect Ledger')
-  await act(async () => resolveRequest(transport))
+  await act(async () => {
+    resolveRequest(transport)
+  })
   expect(host.textContent).toContain('Unlock your Ledger')
   expect(transport.device.close).toHaveBeenCalled()
   expect(onContinue).not.toHaveBeenCalled()
   await click('Try again')
-  await act(async () => resolveRequest(transport))
+  await act(async () => {
+    resolveRequest(transport)
+  })
   expect(host.textContent).toContain('Ledger Flex is connected')
   expect(onContinue).not.toHaveBeenCalled()
   await click('Continue')
@@ -194,7 +209,9 @@ it('checks the Bitcoin app before continuing and handles a locked device with an
 it('asks for the Bitcoin app when a different app is open', async () => {
   mocks.app.mockResolvedValueOnce({ name: 'BOLOS' })
   await click('Connect Ledger')
-  await act(async () => resolveRequest(transport))
+  await act(async () => {
+    resolveRequest(transport)
+  })
   expect(host.textContent).toContain('Open the Bitcoin app')
   expect(transport.device.close).toHaveBeenCalled()
 })
@@ -202,7 +219,10 @@ it('asks for the Bitcoin app when a different app is open', async () => {
 it('does not replace timeout guidance with a generic transport error', async () => {
   await click('Connect Ledger')
   await update('expired')
-  await act(async () => rejectRequest(new Error('Access denied')))
+  await act(async () => {
+    assert.exists(rejectRequest, 'Expected an active Ledger request')
+    rejectRequest(new Error('Access denied'))
+  })
   expect(host.textContent).toContain('Connection timed out')
   expect(host.textContent).not.toContain('Access denied')
 })
@@ -212,13 +232,17 @@ it('ignores old request updates after cancellation and retry', async () => {
   const oldId = requestId
   await click('Cancel')
   await click('Connect Ledger')
-  await act(async () => listener({ requestId: oldId, status: 'choosing', devices: [] }))
+  await act(async () => {
+    listener({ requestId: oldId, status: 'choosing', devices: [] })
+  })
   expect(host.textContent).not.toContain('No Ledger detected')
 })
 
 it('requires reconnecting when a ready Ledger is unplugged', async () => {
   await click('Connect Ledger')
-  await act(async () => resolveRequest(transport))
+  await act(async () => {
+    resolveRequest(transport)
+  })
   mocks.connected = false
   await render()
   expect(host.textContent).toContain('Your Ledger was disconnected')
@@ -238,7 +262,9 @@ it('releases a reservation cancelled before requestDevice was called', async () 
   await click('Cancel')
   expect(mocks.request).not.toHaveBeenCalled()
   expect(bridge.end).not.toHaveBeenCalled()
-  await act(async () => accept(true))
+  await act(async () => {
+    accept(true)
+  })
   expect(bridge.end).toHaveBeenCalledWith(requestId)
   expect(mocks.request).not.toHaveBeenCalled()
   expect(button('Connect Ledger').disabled).toBe(false)
@@ -253,7 +279,10 @@ it('keeps a cancelled reservation until the late browser request settles', async
   expect(host.textContent).toContain('Cancelling connection')
   expect(bridge.end).not.toHaveBeenCalled()
   expect(button('Connect Ledger').disabled).toBe(true)
-  await act(async () => rejectRequest(new Error('Cancelled by the main process')))
+  await act(async () => {
+    assert.exists(rejectRequest, 'Expected an active Ledger request')
+    rejectRequest(new Error('Cancelled by the main process'))
+  })
   expect(bridge.end).toHaveBeenCalledWith(requestId)
   expect(button('Connect Ledger').disabled).toBe(false)
   expect(host.querySelector('[role="alert"]')).toBeNull()

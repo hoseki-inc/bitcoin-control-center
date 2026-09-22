@@ -1,12 +1,12 @@
 import type { StatementDocumentFormat } from '@hoseki/packages/schemas/pdf-statement'
-import { type UseMutationOptions, useMutation } from '@tanstack/react-query'
+import { type UseMutationOptions, type UseMutationResult, useMutation } from '@tanstack/react-query'
 import { toast } from 'sonner'
 
 export function usePdfDownloadMutation<T extends object>(
   options: UseMutationOptions<void, Error, { statement: T; format: StatementDocumentFormat }, unknown> & {
     mutationFn: (variables: { statement: T; format: StatementDocumentFormat }) => Promise<void>
   },
-): ReturnType<typeof useMutation<void, Error, { statement: T; format: StatementDocumentFormat }, unknown>> {
+): UseMutationResult<void, Error, { statement: T; format: StatementDocumentFormat }, unknown> {
   return useMutation({
     onError: (error) => {
       toast.error('Statement not downloaded', { description: error.message })

@@ -42,7 +42,12 @@ export function ConnectManual(): JSX.Element {
         />
         <WizardFooter
           leftButton={
-            <Button variant="outline" onClick={() => navigate(returnTo)}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                void navigate(returnTo)
+              }}
+            >
               Cancel Claim
             </Button>
           }

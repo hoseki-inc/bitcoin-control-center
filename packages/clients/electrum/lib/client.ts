@@ -55,17 +55,20 @@ export class ElectrumClient {
    * a reconnect and most would fail with "Not connected".
    */
   public connect(): AsyncResult<ServerVersion, Error> {
-    if (this.connectInFlight) return this.connectInFlight
-    const self = this
-    const inner = tryBlockAsync(async function* () {
-      yield* self.transport.connect().try()
-      const version = yield* self.serverVersion().try()
-      self.negotiated = true
-      return Ok(version)
-    })
+    if (this.connectInFlight) {
+      return this.connectInFlight
+    }
+    const inner = tryBlockAsync(
+      async function* (this: ElectrumClient) {
+        yield* this.transport.connect().try()
+        const version = yield* this.serverVersion().try()
+        this.negotiated = true
+        return Ok(version)
+      }.bind(this),
+    )
     const tracked = new AsyncResult(
       inner.finally(() => {
-        self.connectInFlight = null
+        this.connectInFlight = null
       }),
     )
     this.connectInFlight = tracked
@@ -152,20 +155,21 @@ export class ElectrumClient {
   // ─── Private ─────────────────────────────────────────────────────────────
 
   private call<T>(method: string, params: unknown[], schema: z.ZodType<T>): AsyncResult<T, Error> {
-    const self = this
-    return tryBlockAsync(async function* () {
-      // Reconnect if the underlying socket is down. connect() dedupes concurrent
-      // reconnects via connectInFlight. Checking transport state (rather than
-      // isConnected(), which also requires negotiated=true) lets the recursive
-      // serverVersion() call from inside connect() proceed without deadlocking.
-      if (!self.transport.isConnected()) {
-        yield* self.connect().try()
-      }
-      const raw = yield* self.transport.request(method, params).try()
-      const parsed = yield* parseUnknown(schema, raw)
-        .mapErr((err) => new Error(`Failed to parse response for ${method}: ${err.message}`, { cause: err }))
-        .try()
-      return Ok(parsed)
-    })
+    return tryBlockAsync(
+      async function* (this: ElectrumClient) {
+        // Reconnect if the underlying socket is down. connect() dedupes concurrent
+        // reconnects via connectInFlight. Checking transport state (rather than
+        // isConnected(), which also requires negotiated=true) lets the recursive
+        // serverVersion() call from inside connect() proceed without deadlocking.
+        if (!this.transport.isConnected()) {
+          yield* this.connect().try()
+        }
+        const raw = yield* this.transport.request(method, params).try()
+        const parsed = yield* parseUnknown(schema, raw)
+          .mapErr((err) => new Error(`Failed to parse response for ${method}: ${err.message}`, { cause: err }))
+          .try()
+        return Ok(parsed)
+      }.bind(this),
+    )
   }
 }

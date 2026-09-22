@@ -49,21 +49,6 @@
         "unused-imports/no-unused-imports": "error",
         "@typescript-eslint/no-empty-function": "off", // Allow no-op functions
         "import/no-relative-packages": "error",
-        "no-restricted-imports": [
-          "error",
-          {
-            "patterns": [
-              {
-                "group": ["../**/packages/*", "./**/packages/*"],
-                "message": "Use absolute import 'packages/*' instead of relative path to packages/"
-              },
-              {
-                "group": ["../**/apps/*", "./**/apps/*"],
-                "message": "Use absolute import 'apps/*' instead of relative path to apps/"
-              }
-            ]
-          }
-        ],
         "@next/next/no-img-element": "off"
       }
     },

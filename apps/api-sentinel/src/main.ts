@@ -83,11 +83,13 @@ export async function main(): Promise<SentinelServer> {
   // Graceful shutdown
   let shuttingDown = false
   const shutdown = async (): Promise<void> => {
-    if (shuttingDown) return
+    if (shuttingDown) {
+      return
+    }
     shuttingDown = true
     logger.info('Starting graceful shutdown')
 
-    if (snapshotTimer) clearInterval(snapshotTimer)
+    clearInterval(snapshotTimer)
 
     try {
       await server.close()

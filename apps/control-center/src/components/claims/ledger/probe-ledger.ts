@@ -44,14 +44,21 @@ export const probeLedger = asyncFn(async function (
     { scriptType: 'p2tr' as const, account: 0 },
   ]
 
+  // Allow Strict Mode's immediate cancellation to stop this scan before it takes the device lock.
+  await Promise.resolve()
+
   while (toCheck.length > 0) {
     const batch = []
 
     // This needs to be a for loop because `getBitcoinXpub` is a locking operation so cannot be parallelized
-    for await (const { scriptType, account } of toCheck) {
-      if (isCancelled()) return cancelled()
+    for (const { scriptType, account } of toCheck) {
+      if (isCancelled()) {
+        return cancelled()
+      }
       const dataRes = await ctx.getBitcoinXpub(scriptType, account)
-      if (isCancelled()) return cancelled()
+      if (isCancelled()) {
+        return cancelled()
+      }
       if (dataRes.isErr()) {
         const xpubErr = dataRes.unwrapErr()
         if (xpubErr instanceof HardwareDeviceError) {
@@ -106,7 +113,9 @@ export const probeLedger = asyncFn(async function (
     const balancesRes = await Result.fromPromise(
       trpcUtils.portalProve.onchain.bitcoinAccountBalances.fetch({ accounts }),
     )
-    if (isCancelled()) return cancelled()
+    if (isCancelled()) {
+      return cancelled()
+    }
     if (balancesRes.isErr()) {
       throw balancesRes.unwrapErr()
     }

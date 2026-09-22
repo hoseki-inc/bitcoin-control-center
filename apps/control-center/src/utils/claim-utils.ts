@@ -1,7 +1,7 @@
-import { type BalanceValue, type BalanceWithStatus } from '@hoseki/packages/lib/balance'
-import { type ClaimStatus } from '@hoseki/packages/schemas/prove'
-import { type ClaimCardProps } from '@hoseki/packages/ui/prove-verify-ui'
-import { type ClaimDto } from '../trpc/server-types'
+import type { BalanceValue, BalanceWithStatus } from '@hoseki/packages/lib/balance'
+import type { ClaimStatus } from '@hoseki/packages/schemas/prove'
+import type { ClaimCardProps } from '@hoseki/packages/ui/prove-verify-ui'
+import type { ClaimDto } from '../trpc/server-types'
 import { getThreshold } from './multisig-utils'
 
 /**
@@ -37,7 +37,9 @@ export function withStatusBalance(args: {
   isSuccess: boolean
   balance?: BalanceValue | null
 }): BalanceWithStatus {
-  if (args.isLoading) return { status: 'loading' }
+  if (args.isLoading) {
+    return { status: 'loading' }
+  }
 
   if (args.isSuccess && args.balance) {
     return { status: 'success', value: args.balance }

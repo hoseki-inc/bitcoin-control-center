@@ -28,7 +28,7 @@ export function KeystoreReceiptPage(): JSX.Element {
   const claimId = useUrlParameter(UrlParameter.claimId)
 
   const { data: claim, isError } = trpc.portalProve.registry.claims.get.byId.useQuery(
-    { id: claimId ?? '' },
+    { id: claimId },
     { enabled: Boolean(claimId) },
   )
 
@@ -62,7 +62,9 @@ export function KeystoreReceipt({ shouldSetTimeout, keystore, claim }: KeystoreR
 
   useEffect(() => {
     if (shouldSetTimeout) {
-      setTimeout(() => setIsPending(false), 1700)
+      setTimeout(() => {
+        setIsPending(false)
+      }, 1700)
     }
   }, [shouldSetTimeout])
 
@@ -74,7 +76,7 @@ export function KeystoreReceipt({ shouldSetTimeout, keystore, claim }: KeystoreR
     )
   }
 
-  if (!claim || !keystore) {
+  if (!claim) {
     return (
       <AppLayout header={<div />}>
         <ErrorBanner mt={8} mb={4} message="Failed to get claim" />
@@ -92,7 +94,7 @@ export function KeystoreReceipt({ shouldSetTimeout, keystore, claim }: KeystoreR
     if (!claim) {
       return
     }
-    navigate(`/multisig/${claim.id}`, { replace: true })
+    void navigate(`/multisig/${claim.id}`, { replace: true })
   }
 
   return (

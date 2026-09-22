@@ -25,7 +25,7 @@ export const requestLoggerFactory: NonNullable<FastifyServerOptions['childLogger
         method: request.method,
         url: requestPath(request.url),
         remoteAddress: request.ip,
-        remotePort: request.socket?.remotePort,
+        remotePort: request.socket.remotePort,
       }),
       // Fastify also embeds the raw URL in 404 and duplicate-reply messages.
       msg: redactUrl,

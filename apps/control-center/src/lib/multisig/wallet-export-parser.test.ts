@@ -37,7 +37,7 @@ describe('parseWalletExport', () => {
     const walletResult = parseWalletExport(JSON.stringify(electrumWallet), 'application/json')
     expect(walletResult.isOk()).toBe(true)
 
-    const parsed = walletResult.unwrap()!
+    const parsed = walletResult.expect('valid wallet export')
     expect(parsed.walletType).toBe('Electrum')
     expect(parsed.wallet.scriptType).toBe('p2sh-p2wsh')
     expect(parsed.wallet.threshold).toBe(2)
@@ -69,7 +69,7 @@ describe('parseWalletExport', () => {
     const walletResult = parseWalletExport(JSON.stringify(specterWallet), 'application/json')
     expect(walletResult.isOk()).toBe(true)
 
-    const parsed = walletResult.unwrap()!
+    const parsed = walletResult.expect('valid wallet export')
     expect(parsed.label).toBe('Multi Nested SegWit')
     expect(parsed.walletType).toBe('Specter Desktop')
     expect(parsed.wallet.scriptType).toBe('p2sh-p2wsh')
@@ -98,7 +98,7 @@ describe('parseWalletExport', () => {
     const walletResult = parseWalletExport(JSON.stringify(specterWallet), 'application/json')
     expect(walletResult.isOk()).toBe(true)
 
-    const parsed = walletResult.unwrap()!
+    const parsed = walletResult.expect('valid wallet export')
     expect(parsed.label).toBe('Multi Nested SegWit')
     expect(parsed.walletType).toBe('Specter Desktop')
     expect(parsed.wallet.scriptType).toBe('p2sh-p2wsh')
@@ -149,7 +149,7 @@ describe('parseWalletExport', () => {
     const walletResult = parseWalletExport(JSON.stringify(caravanWallet), 'application/json')
     expect(walletResult.isOk()).toBe(true)
 
-    const parsed = walletResult.unwrap()!
+    const parsed = walletResult.expect('valid wallet export')
     expect(parsed.label).toBe('Multi Nested SegWit')
     expect(parsed.walletType).toBe('Unchained Caravan')
     expect(parsed.wallet.scriptType).toBe('p2sh-p2wsh')
@@ -195,18 +195,18 @@ describe('parseWalletExport', () => {
     )
     expect(walletResult.isOk()).toBe(true)
 
-    const parsed = walletResult.unwrap()!
+    const parsed = walletResult.expect('valid wallet export')
     expect(parsed.walletType).toBe('Bitcoin Core')
     expect(parsed.wallet.scriptType).toBe('p2sh-p2wsh')
     expect(parsed.wallet.threshold).toBe(2)
     expect(parsed.keystoreMetadata).toHaveLength(2)
 
     // Check keystores and metadata
-    expect(parsed.keystoreMetadata[0]!.label).toEqual('Keystore 1')
+    expect(parsed.keystoreMetadata[0]?.label).toEqual('Keystore 1')
     expect(parsed.wallet.keyExpressions[0]?.keyOrigin?.fingerprint).toBe('ac16c6a4')
     expect(parsed.wallet.keyExpressions[0]?.keyOrigin?.derivationPath?.toString()).toBe('m/48h/0h/0h/1h')
 
-    expect(parsed.keystoreMetadata[1]!.label).toEqual('Keystore 2')
+    expect(parsed.keystoreMetadata[1]?.label).toEqual('Keystore 2')
     expect(parsed.wallet.keyExpressions[1]?.keyOrigin?.fingerprint).toBe('016e9edf')
     expect(parsed.wallet.keyExpressions[1]?.keyOrigin?.derivationPath?.toString()).toBe('m/48h/0h/0h/1h')
   })
@@ -230,7 +230,7 @@ describe('parseWalletExport', () => {
     )
     expect(walletResult.isOk()).toBe(true)
 
-    const parsed = walletResult.unwrap()!
+    const parsed = walletResult.expect('valid wallet export')
     expect(parsed.label).toBe('Multi Nested SegWit')
     expect(parsed.walletType).toBe('Coldcard')
     expect(parsed.wallet.scriptType).toBe('p2sh-p2wsh')
@@ -270,7 +270,7 @@ describe('parseWalletExport', () => {
     )
     expect(walletResult.isOk()).toBe(true)
 
-    const parsed = walletResult.unwrap()!
+    const parsed = walletResult.expect('valid wallet export')
     expect(parsed.label).toBe('Alexs Blue Multi')
     expect(parsed.walletType).toBe('BlueWallet')
     expect(parsed.wallet.scriptType).toBe('p2wsh')
@@ -342,7 +342,7 @@ describe('parseWalletExport', () => {
     )
     expect(walletResult.isOk()).toBe(true)
 
-    const parsed = walletResult.unwrap()!
+    const parsed = walletResult.expect('valid wallet export')
     expect(parsed.wallet.scriptType).toBe('p2wsh')
     expect(parsed.wallet.threshold).toBe(2)
     expect(parsed.keystoreMetadata).toHaveLength(2)

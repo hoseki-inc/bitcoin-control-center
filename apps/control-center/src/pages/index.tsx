@@ -24,7 +24,9 @@ export function HomePage(): JSX.Element {
           {!isStatementsMadeEasyDismissed && (
             <Banner
               mode={statements.length > 0 ? 'compact' : 'large-with-cta'}
-              onDismissClick={() => updateUiSettings({ isStatementsMadeEasyDismissed: true })}
+              onDismissClick={() => {
+                updateUiSettings({ isStatementsMadeEasyDismissed: true })
+              }}
             />
           )}
           <RecentStatements statements={statements} />
@@ -41,16 +43,18 @@ function PortfolioSummary(): JSX.Element | null {
     timezone: userTimezone,
   })
 
-  if (isLoading || !data) return null
+  if (isLoading || !data) {
+    return null
+  }
 
   const isChartFetching = isFetching && !isLoading
 
-  const currentSats = data.currentTotalBalance?.toString() ?? '0'
+  const currentSats = data.currentTotalBalance.toString()
   const btcPrice = data.currentBtcPrice ? Number(data.currentBtcPrice) : 0
   const totalBtc = new Decimal(currentSats).div(100_000_000)
   const totalUsd = totalBtc.toNumber() * btcPrice
 
-  const historicalData = data.historicalData ?? []
+  const historicalData = data.historicalData
   const startSats = historicalData.length > 0 ? (historicalData[0]?.totalBalance ?? '0') : '0'
   const change30d = new Decimal(currentSats).minus(new Decimal(startSats))
   const change30dBtc = change30d.div(100_000_000)
@@ -115,7 +119,7 @@ function PortfolioSummary(): JSX.Element | null {
       {/* Stats */}
       <Grid templateColumns="1fr 1fr" gap={3} mt={4}>
         <StatMini label="30d Change" value={change30dBtc} btcPrice={btcPrice} />
-        <StatMini label="Accounts" count={(data.verifiedClaimsCount ?? 0) + (data.exchangeAccountCount ?? 0)} />
+        <StatMini label="Accounts" count={data.verifiedClaimsCount + data.exchangeAccountCount} />
       </Grid>
     </Box>
   )

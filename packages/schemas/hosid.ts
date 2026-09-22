@@ -1,4 +1,4 @@
-import { type z } from 'zod'
+import type { z } from 'zod'
 import { Id } from '../id/id.ts'
 
 // 21 chars, similar collision probability as UUIDv4
@@ -91,8 +91,8 @@ export function createHosidSchema<T extends Prefix>(prefix: T): z.ZodType<Hosid<
   return Id.schema(prefix)
 }
 
-export function removeHosidPrefix<T extends Prefix>(hosid: Hosid<T>): string {
-  return Id.strip(hosid)
+export function removeHosidPrefix<T extends Prefix>(prefixedId: Hosid<T>): string {
+  return Id.strip(prefixedId)
 }
 
 export const AccessRequestIdSchema = createHosidSchema('vy_areq')

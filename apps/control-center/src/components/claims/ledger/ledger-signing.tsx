@@ -8,9 +8,11 @@ import {
 import { Result } from '@patina/core'
 import { useMutation } from '@tanstack/react-query'
 import { useState } from 'react'
+import { toast } from 'sonner'
 import { useShallow } from 'zustand/react/shallow'
 import { useLedgerStore, useToastOnLedgerDisconnect } from '../../../hooks/use-ledger-store'
 import type { SigningFlowProps } from '../../../lib/claim-flow'
+import { closeDesktopLedger } from '../../../lib/open-desktop-ledger'
 import { browserLogger, captureHardwareWalletError } from '../../../logger'
 import { trpc } from '../../../trpc'
 import type { ChallengeDto, ChallengeMessageDto } from '../../../trpc/server-types'
@@ -58,12 +60,12 @@ export function LedgerSigning({
   // Replace 'h' with "'" in the derivation path to make it compatible with Ledger
   const signingPath = `${keystore.derivationPath}/0/0`.replace(/h/g, "'")
 
-  async function signCustomMessageOnLedger(challenge: ChallengeDto, challengeMessage: ChallengeMessageDto) {
+  async function signCustomMessageOnLedger(signingChallenge: ChallengeDto, signingMessage: ChallengeMessageDto) {
     setSigningInProgress(true)
     setSigningError(null)
 
     // Step 1: Sign the message on the device
-    const signMessageResult = await signMessage(signingPath, challengeMessage.signedMessage.messageTextToSign)
+    const signMessageResult = await signMessage(signingPath, signingMessage.signedMessage.messageTextToSign)
     if (signMessageResult.isErr()) {
       captureHardwareWalletError(
         signMessageResult.unwrapErr(),
@@ -79,7 +81,7 @@ export function LedgerSigning({
     // Step 2: Complete the challenge message
     const ccmResult = await Result.fromPromise(
       completeChallengeMessageMutation.mutateAsync({
-        signedMessageId: challengeMessage.signedMessage.id,
+        signedMessageId: signingMessage.signedMessage.id,
         signature: encodeHwAppBtcSignature(signMessageResult.unwrap()),
       }),
     )
@@ -89,7 +91,9 @@ export function LedgerSigning({
     }
 
     // Step 3: Complete the challenge
-    const ccResult = await Result.fromPromise(completeChallengeMutation.mutateAsync({ challengeId: challenge.id }))
+    const ccResult = await Result.fromPromise(
+      completeChallengeMutation.mutateAsync({ challengeId: signingChallenge.id }),
+    )
     if (ccResult.isErr()) {
       setSigningInProgress(false)
       return
@@ -101,17 +105,26 @@ export function LedgerSigning({
 
   const error = initiateLedgerMutation.error || signingError
 
-  const handleNext = () =>
+  const handleNext = () => {
     setStep((prev) => {
-      if (error) return prev
+      if (error) {
+        return prev
+      }
       if (prev === 1) {
-        initiateLedgerMutation.mutate(undefined, { onSuccess: () => setStep(prev + 1) })
+        initiateLedgerMutation.mutate(undefined, {
+          onSuccess: () => {
+            setStep(prev + 1)
+          },
+        })
         return prev
       }
 
       return Math.min(prev + 1, 3)
     })
-  const handleBack = () => setStep((prev) => Math.max(prev - 1, 1))
+  }
+  const handleBack = () => {
+    setStep((prev) => Math.max(prev - 1, 1))
+  }
 
   return (
     <>
@@ -123,8 +136,13 @@ export function LedgerSigning({
             // TODO: Is there any way to remove this whole error component?
             // Inside ControlledGenericSigningSteps, we already handle errors.
             // Is resetLedger really necessary?
-            resetLedger()
-            window.location.reload()
+            resetLedger(closeDesktopLedger)
+              .then(() => {
+                window.location.reload()
+              })
+              .catch(() => {
+                toast.error('Unable to reset Ledger. Reconnect the device and try again.')
+              })
           }}
         />
       )}

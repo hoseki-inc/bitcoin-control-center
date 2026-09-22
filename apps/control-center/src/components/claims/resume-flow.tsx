@@ -45,7 +45,11 @@ export function ResumeMultisigKeyFlow({
     if (updateKeystoreMutation.isSuccess) {
       toast.success('Device was reset', { description: 'You can now connect a new device.' })
       onClose()
-      trpcUtils.portalProve.registry.claims.get.byId.invalidate()
+      trpcUtils.portalProve.registry.claims.get.byId
+        .invalidate(undefined, undefined, { throwOnError: true })
+        .catch(() => {
+          toast.error('Unable to refresh the account. Please reload the page.')
+        })
       // Reset the mutation success state to prevent re-triggering
       updateKeystoreMutation.reset()
     }
@@ -84,7 +88,9 @@ export function ResumeMultisigKeyFlow({
       <NewDeviceConnectionModal
         isOpen={isOpen}
         onClose={onClose}
-        onConfirm={() => updateKeystoreMutation.mutate({ id: keystoreId, label: 'Key', wallet: null, model: null })}
+        onConfirm={() => {
+          updateKeystoreMutation.mutate({ id: keystoreId, label: 'Key', wallet: null, model: null })
+        }}
         isLoading={updateKeystoreMutation.isLoading}
       />
     </>

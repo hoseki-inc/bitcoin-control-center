@@ -55,13 +55,13 @@ export function MultisigCreatePage(): JSX.Element {
         toast.info('This account is archived', {
           description: 'Restore it from Archived accounts before reconnecting.',
         })
-        navigate('/accounts#archived')
+        void navigate('/accounts#archived')
         return
       }
 
       await Result.fromPromise(updateClaimMutation.mutateAsync({ id: claim.id, displayName: updatedName }))
         .andThen((data) => {
-          navigate(data.status === 'pending' ? `/multisig/${claim.id}` : `/accounts/${claim.id}`)
+          void navigate(data.status === 'pending' ? `/multisig/${claim.id}` : `/accounts/${claim.id}`)
           return Ok()
         })
         .inspectErr((err) => {
@@ -73,7 +73,7 @@ export function MultisigCreatePage(): JSX.Element {
       // Create new claim
       await Result.fromPromise(createMultisigClaimMutation.mutateAsync(updatedWallet))
         .andThen((claimAggregate) => {
-          navigate(`/multisig/${claimAggregate.claim.id}`)
+          void navigate(`/multisig/${claimAggregate.claim.id}`)
           return Ok()
         })
         .inspectErr((err) => {
@@ -90,7 +90,11 @@ export function MultisigCreatePage(): JSX.Element {
         {step === 'get-ready' && (
           <>
             <MultisigAnimation animation="1" />
-            <GetReady onNext={() => setStep('upload')} />
+            <GetReady
+              onNext={() => {
+                setStep('upload')
+              }}
+            />
           </>
         )}
         {step === 'fake-loading' && (
@@ -105,7 +109,9 @@ export function MultisigCreatePage(): JSX.Element {
           <>
             <MultisigAnimation animation="2" />
             <ImportWallet
-              onBack={() => setStep('get-ready')}
+              onBack={() => {
+                setStep('get-ready')
+              }}
               onNext={(data) => {
                 setDetectedWallet(data)
                 setStep('fake-loading')
@@ -120,8 +126,15 @@ export function MultisigCreatePage(): JSX.Element {
           <DetectionStep
             wallet={detectedWallet}
             isSaving={isSaving}
-            onBack={() => setStep('upload')}
-            onNext={handleClaimCreation}
+            onBack={() => {
+              setStep('upload')
+            }}
+            onNext={(name) => {
+              handleClaimCreation(name).catch(() => {
+                setIsSaving(false)
+                toast.error('Failed to save multisig account')
+              })
+            }}
           />
         )}
       </PageTransition>
@@ -311,7 +324,13 @@ function DetectionStep({
         Let's name your multisig claim. You rename this later at anytime.
       </Text>
 
-      <form onSubmit={handleSubmit(onSubmit)}>
+      <form
+        onSubmit={(event) => {
+          handleSubmit(onSubmit)(event).catch(() => {
+            toast.error('Unable to submit the account name. Please try again.')
+          })
+        }}
+      >
         <FormControl isInvalid={Boolean(errors.claimName)}>
           <FormLabel htmlFor="claim-name">Name</FormLabel>
           <Input id="claim-name" {...register('claimName')} placeholder="Multisig claim name" autoFocus />

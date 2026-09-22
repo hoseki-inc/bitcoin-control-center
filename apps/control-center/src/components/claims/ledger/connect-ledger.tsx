@@ -22,22 +22,33 @@ export function ConnectLedger(): JSX.Element {
       derivationPath: selectedWallet.derivationPath,
       wallet: 'ledger',
       model: getLedgerModel(deviceId),
-      displayName: selectedWallet.displayName ?? 'Ledger Wallet',
+      displayName: selectedWallet.displayName,
     })
   }
 
   return (
     <ClaimConnectionWrapper>
       {step === 'step-1-info' && (
-        <LedgerConnectionInfo onBack={() => navigate(returnTo)} onContinue={() => setStep('step-2-scan')} />
+        <LedgerConnectionInfo
+          onBack={() => {
+            void navigate(returnTo)
+          }}
+          onContinue={() => {
+            setStep('step-2-scan')
+          }}
+        />
       )}
 
       {step === 'step-2-scan' && (
         <LedgerScan
           isLoadingOnContinue={navigateToAnExistentOrNewClaim.isLoading}
           onContinue={handleContinue}
-          onBack={() => setStep('step-1-info')}
-          onCancel={() => navigate(returnTo)}
+          onBack={() => {
+            setStep('step-1-info')
+          }}
+          onCancel={() => {
+            void navigate(returnTo)
+          }}
         />
       )}
     </ClaimConnectionWrapper>

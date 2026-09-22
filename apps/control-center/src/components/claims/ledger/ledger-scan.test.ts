@@ -6,7 +6,7 @@ import type { LedgerScanUI } from '@hoseki/packages/ui/wallet-ui'
 import Transport from '@ledgerhq/hw-transport'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import Decimal from 'decimal.js'
-import { type ComponentProps, act, createElement } from 'react'
+import { type ComponentProps, StrictMode, act, createElement } from 'react'
 import { type Root, createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { useLedgerStore } from '../../../hooks/use-ledger-store'
@@ -19,8 +19,8 @@ type ScanProps = ComponentProps<typeof LedgerScanUI>
 
 const mocks = await vi.hoisted(async () => {
   // Preserve Node's byte-array globals for the Bitcoin SDK.
-  const { createRequire } = await import('node:module')
-  const { JSDOM } = createRequire(import.meta.url)('jsdom') as {
+  const { createRequire: createMockRequire } = await import('node:module')
+  const { JSDOM } = createMockRequire(import.meta.url)('jsdom') as {
     JSDOM: new (html: string, options: { url: string }) => { window: Window & typeof globalThis }
   }
   const { window } = new JSDOM('<!doctype html><html><body></body></html>', { url: 'http://localhost' })
@@ -38,11 +38,11 @@ const mocks = await vi.hoisted(async () => {
 vi.mock('@ledgerhq/hw-app-btc', () => ({
   default: class LedgerBtcApp {
     private transport: Transport
-    constructor({ transport }: { transport: Transport }) {
+    public constructor({ transport }: { transport: Transport }) {
       this.transport = transport
       transport.decorateAppAPIMethods(this, ['getWalletXpub'], 'BTC')
     }
-    getWalletXpub(input: { path: string }): Promise<string> {
+    public getWalletXpub(input: { path: string }): Promise<string> {
       return mocks.getXpub(this.transport, input.path)
     }
   },
@@ -104,14 +104,16 @@ beforeEach(() => {
 })
 
 afterEach(async () => {
-  await act(async () => root.unmount())
+  await act(async () => {
+    root.unmount()
+  })
   client.clear()
   await useLedgerStore.getState().reset()
   host.remove()
 })
 
 async function mountScan(): Promise<void> {
-  await act(async () =>
+  await act(async () => {
     root.render(
       createElement(
         QueryClientProvider,
@@ -123,12 +125,14 @@ async function mountScan(): Promise<void> {
           onCancel: vi.fn(),
         }),
       ),
-    ),
-  )
+    )
+  })
 }
 
 async function reconnect(): Promise<void> {
-  await act(async () => root.render(null))
+  await act(async () => {
+    root.render(null)
+  })
   await client.cancelQueries({ queryKey: ['ledger-wallets'] })
   client.removeQueries({ queryKey: ['ledger-wallets'] })
   await useLedgerStore.getState().reset((device) => device.close())
@@ -144,6 +148,41 @@ async function waitForScan(): Promise<void> {
   })
 }
 
+it('Strict Mode restarts a scan without locking the Ledger with the cancelled invocation', async () => {
+  const firstRead = deferred<string>()
+  mocks.getXpub.mockImplementationOnce(() => firstRead.promise)
+  await useLedgerStore.getState().init(async () => fakeTransport())
+  await act(async () => {
+    root.render(
+      createElement(
+        StrictMode,
+        null,
+        createElement(
+          QueryClientProvider,
+          { client },
+          createElement(LedgerScan, {
+            isLoadingOnContinue: false,
+            onContinue: vi.fn(),
+            onBack: vi.fn(),
+            onCancel: vi.fn(),
+          }),
+        ),
+      ),
+    )
+  })
+  await act(async () => {
+    firstRead.resolve(xpub)
+  })
+  await waitForScan()
+  expect(mocks.scan.mock.lastCall?.[0].walletsQuery).toMatchObject({
+    isLoading: false,
+    isError: false,
+    error: null,
+  })
+  expect(mocks.getXpub).toHaveBeenCalledTimes(4)
+  expect(mocks.fetch).toHaveBeenCalledOnce()
+})
+
 it('a cancelled scan cannot use or lock the next Ledger when its balance response arrives late', async () => {
   const oldBalances = deferred<Balances>()
   const oldRead = deferred<string>()
@@ -151,11 +190,15 @@ it('a cancelled scan cannot use or lock the next Ledger when its balance respons
   mocks.getXpub.mockImplementation(async (_transport, path) => (path.endsWith("/1'") ? oldRead.promise : xpub))
   await useLedgerStore.getState().init(async () => fakeTransport())
   await mountScan()
-  await vi.waitFor(() => expect(mocks.fetch).toHaveBeenCalledOnce())
+  await vi.waitFor(() => {
+    expect(mocks.fetch).toHaveBeenCalledOnce()
+  })
   const oldAccounts = mocks.fetch.mock.calls[0]?.[0].accounts ?? []
   await reconnect()
   try {
-    await act(async () => oldBalances.resolve(balances(oldAccounts, true)))
+    await act(async () => {
+      oldBalances.resolve(balances(oldAccounts, true))
+    })
     await mountScan()
     await waitForScan()
     expect(mocks.scan.mock.lastCall?.[0].walletsQuery.isError).toBe(false)
@@ -171,9 +214,13 @@ it('a device response arriving after cancellation does not trigger more reads or
   mocks.getXpub.mockImplementationOnce(() => oldRead.promise)
   await useLedgerStore.getState().init(async () => fakeTransport())
   await mountScan()
-  await vi.waitFor(() => expect(mocks.getXpub).toHaveBeenCalledOnce())
+  await vi.waitFor(() => {
+    expect(mocks.getXpub).toHaveBeenCalledOnce()
+  })
   await reconnect()
-  await act(async () => oldRead.resolve(xpub))
+  await act(async () => {
+    oldRead.resolve(xpub)
+  })
   expect(mocks.getXpub).toHaveBeenCalledOnce()
   expect(mocks.fetch).not.toHaveBeenCalled()
   await mountScan()
@@ -196,7 +243,9 @@ it('discovery also stops on a changed connection even without an abort signal', 
       isCurrentConnection: () => useLedgerStore.getState().connectionId === connectionId,
     },
   )
-  await vi.waitFor(() => expect(mocks.fetch).toHaveBeenCalledOnce())
+  await vi.waitFor(() => {
+    expect(mocks.fetch).toHaveBeenCalledOnce()
+  })
   await reconnect()
   oldBalances.resolve(balances(mocks.fetch.mock.calls[0]?.[0].accounts ?? [], true))
   const result = await discovery

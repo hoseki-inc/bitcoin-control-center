@@ -55,7 +55,9 @@ function runMigrations(db: Database.Database, logger: Logger): void {
   )
 
   for (const migration of MIGRATIONS) {
-    if (applied.has(migration.name)) continue
+    if (applied.has(migration.name)) {
+      continue
+    }
     logger.info({ migration: migration.name }, 'Applying migration')
     db.transaction(() => {
       db.exec(migration.sql)

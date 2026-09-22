@@ -127,56 +127,60 @@ function parseErrorData(response: SafeResponse): AsyncResult<ParsedData<ErrorRes
 }
 
 export class Client {
-  constructor(private readonly credentials: KrakenCredentials) {}
+  public constructor(private readonly credentials: KrakenCredentials) {}
 
   private makeRequest(path: string, postData: string): AsyncResult<SafeResponse, ApiError> {
-    const self = this
-    return tryBlockAsync(async function* () {
-      // Generate authentication headers
-      const authHeaders = yield* getKrakenHeaders(path, Date.now().toString(), postData, self.credentials)
-        .mapErr((err) => {
-          return new ApiError(ApiErrorKind.InvalidCredentials(err.message), 'Failed to generate authentication headers')
-        })
-        .try()
-
-      const headers: Record<string, string> = {
-        ...authHeaders,
-        'Content-Type': 'application/x-www-form-urlencoded',
-      }
-
-      const url = `${KRAKEN_API_BASE_URL}${path}`
-
-      return safeHttp
-        .request(url, {
-          method: 'POST',
-          headers,
-          body: postData,
-        })
-        .mapErrAsync(async (error) => {
-          if (error.kind.value === SafeHttpErrorKind.NetworkUnreachable) {
-            return new ApiError(ApiErrorKind.NetworkUnreachable(error.kind.cause), 'Network unreachable')
-          }
-
-          if (
-            error.kind.value === SafeHttpErrorKind.ErrorResponse &&
-            (error.kind.cause.status === 401 || error.kind.cause.status === 403)
-          ) {
-            return new ApiError(ApiErrorKind.Unauthorized(error.kind.cause), 'Unauthorized')
-          }
-
-          // Try to parse error response
-          const errorParseResult = await parseErrorData(error.kind.cause)
-          if (errorParseResult.isOk()) {
-            const errorData = errorParseResult.unwrap()
+    return tryBlockAsync(
+      async function* (this: Client) {
+        // Generate authentication headers
+        const authHeaders = yield* getKrakenHeaders(path, Date.now().toString(), postData, this.credentials)
+          .mapErr((err) => {
             return new ApiError(
-              ApiErrorKind.ErrorResponse(errorData.data.error, errorData.response),
-              errorData.data.error.join(', '),
+              ApiErrorKind.InvalidCredentials(err.message),
+              'Failed to generate authentication headers',
             )
-          }
+          })
+          .try()
 
-          return new ApiError(ApiErrorKind.UnexpectedFailure({ response: error.kind.cause }), 'Request failed')
-        })
-    })
+        const headers: Record<string, string> = {
+          ...authHeaders,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        }
+
+        const url = `${KRAKEN_API_BASE_URL}${path}`
+
+        return safeHttp
+          .request(url, {
+            method: 'POST',
+            headers,
+            body: postData,
+          })
+          .mapErrAsync(async (error) => {
+            if (error.kind.value === SafeHttpErrorKind.NetworkUnreachable) {
+              return new ApiError(ApiErrorKind.NetworkUnreachable(error.kind.cause), 'Network unreachable')
+            }
+
+            if (
+              error.kind.value === SafeHttpErrorKind.ErrorResponse &&
+              (error.kind.cause.status === 401 || error.kind.cause.status === 403)
+            ) {
+              return new ApiError(ApiErrorKind.Unauthorized(error.kind.cause), 'Unauthorized')
+            }
+
+            // Try to parse error response
+            const errorParseResult = await parseErrorData(error.kind.cause)
+            if (errorParseResult.isOk()) {
+              const errorData = errorParseResult.unwrap()
+              return new ApiError(
+                ApiErrorKind.ErrorResponse(errorData.data.error, errorData.response),
+                errorData.data.error.join(', '),
+              )
+            }
+
+            return new ApiError(ApiErrorKind.UnexpectedFailure({ response: error.kind.cause }), 'Request failed')
+          })
+      }.bind(this),
+    )
   }
 
   /**
@@ -188,27 +192,28 @@ export class Client {
    *
    * @see https://docs.kraken.com/api/docs/rest-api/get-account-balance
    */
-  getBalance(): AsyncResult<ParsedData<BalanceResult>, ApiError> {
-    const self = this
-    return tryBlockAsync(async function* () {
-      // Generate nonce
-      const nonce = Date.now().toString()
-      const postData = `nonce=${nonce}`
+  public getBalance(): AsyncResult<ParsedData<BalanceResult>, ApiError> {
+    return tryBlockAsync(
+      async function* (this: Client) {
+        // Generate nonce
+        const nonce = Date.now().toString()
+        const postData = `nonce=${nonce}`
 
-      const response = yield* self.makeRequest('/0/private/Balance', postData).try()
+        const response = yield* this.makeRequest('/0/private/Balance', postData).try()
 
-      const { data, response: originalResponse } = yield* parseBalanceResponse(response).try()
+        const { data, response: originalResponse } = yield* parseBalanceResponse(response).try()
 
-      // Check for Kraken API errors in the response
-      if (data.error.length > 0) {
-        return Err(new ApiError(ApiErrorKind.ErrorResponse(data.error, originalResponse), data.error.join(', ')))
-      }
+        // Check for Kraken API errors in the response
+        if (data.error.length > 0) {
+          return Err(new ApiError(ApiErrorKind.ErrorResponse(data.error, originalResponse), data.error.join(', ')))
+        }
 
-      return Ok({
-        data: data.result,
-        response: originalResponse,
-      })
-    })
+        return Ok({
+          data: data.result,
+          response: originalResponse,
+        })
+      }.bind(this),
+    )
   }
 
   /**
@@ -220,45 +225,46 @@ export class Client {
    *
    * @see https://docs.kraken.com/api/docs/rest-api/get-ledgers-info
    */
-  getLedgers(payload: LedgersPayload = {}): AsyncResult<ParsedData<LedgersResult>, ApiError> {
-    const self = this
-    return tryBlockAsync(async function* () {
-      // Validate payload
-      const ledgersPayload = yield* parseUnknown(LedgersPayloadSchema, payload)
-        .mapErr((err) => {
-          return new ApiError(ApiErrorKind.ValidationError(err), `Invalid payload: ${err.message}`)
-        })
-        .try()
+  public getLedgers(payload: LedgersPayload = {}): AsyncResult<ParsedData<LedgersResult>, ApiError> {
+    return tryBlockAsync(
+      async function* (this: Client) {
+        // Validate payload
+        const ledgersPayload = yield* parseUnknown(LedgersPayloadSchema, payload)
+          .mapErr((err) => {
+            return new ApiError(ApiErrorKind.ValidationError(err), `Invalid payload: ${err.message}`)
+          })
+          .try()
 
-      // Generate nonce and serialize payload
-      const nonce = Date.now().toString()
-      const payloadString = serializeKrakenLedgersPayload(ledgersPayload)
+        // Generate nonce and serialize payload
+        const nonce = Date.now().toString()
+        const payloadString = serializeKrakenLedgersPayload(ledgersPayload)
 
-      let postData: string
-      if (payloadString) {
-        const postDataParams = new URLSearchParams()
-        postDataParams.append('nonce', nonce)
-        const payloadParams = new URLSearchParams(payloadString)
-        for (const [key, value] of payloadParams.entries()) {
-          postDataParams.append(key, value)
+        let postData: string
+        if (payloadString) {
+          const postDataParams = new URLSearchParams()
+          postDataParams.append('nonce', nonce)
+          const payloadParams = new URLSearchParams(payloadString)
+          for (const [key, value] of payloadParams.entries()) {
+            postDataParams.append(key, value)
+          }
+          postData = postDataParams.toString()
+        } else {
+          postData = `nonce=${nonce}`
         }
-        postData = postDataParams.toString()
-      } else {
-        postData = `nonce=${nonce}`
-      }
 
-      const response = yield* self.makeRequest('/0/private/Ledgers', postData).try()
-      const { data, response: originalResponse } = yield* parseLedgersResponse(response).try()
+        const response = yield* this.makeRequest('/0/private/Ledgers', postData).try()
+        const { data, response: originalResponse } = yield* parseLedgersResponse(response).try()
 
-      // Check for Kraken API errors in the response
-      if (data.error.length > 0) {
-        return Err(new ApiError(ApiErrorKind.ErrorResponse(data.error, originalResponse), data.error.join(', ')))
-      }
+        // Check for Kraken API errors in the response
+        if (data.error.length > 0) {
+          return Err(new ApiError(ApiErrorKind.ErrorResponse(data.error, originalResponse), data.error.join(', ')))
+        }
 
-      return Ok({
-        data: data.result,
-        response: originalResponse,
-      })
-    })
+        return Ok({
+          data: data.result,
+          response: originalResponse,
+        })
+      }.bind(this),
+    )
   }
 }

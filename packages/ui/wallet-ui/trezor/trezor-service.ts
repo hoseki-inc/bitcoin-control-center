@@ -27,6 +27,8 @@ export class TrezorService {
         appName: 'Bitcoin Control Center',
         appUrl: 'https://www.hoseki.app',
       },
+    }).catch(() => {
+      this.logger.error('Unable to initialize the Trezor connection')
     })
   }
 

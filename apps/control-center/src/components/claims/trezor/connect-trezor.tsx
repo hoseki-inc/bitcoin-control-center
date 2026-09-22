@@ -20,6 +20,7 @@ import Decimal from 'decimal.js'
 import { useState } from 'react'
 import { useLocation, useNavigate } from 'react-router'
 import { useNavigateToAnExistentOrNewClaim } from '../../../lib/claim-flow'
+import { browserLogger } from '../../../logger'
 import { trpc } from '../../../trpc'
 import { RequiredDataMissing } from '../../errors/required-data-missing'
 import { trezorService } from './trezor-service-singleton'
@@ -95,7 +96,9 @@ export function ConnectTrezor(): JSX.Element {
     })
 
     // Fire-and-forget call because balances are just not shown if they were unable to load
-    getTrezorAccountBalance(account)
+    getTrezorAccountBalance(account).catch(() => {
+      browserLogger.warn('Unable to refresh the optional Trezor account balance')
+    })
     setStep('step-2-confirm')
     return Ok()
   }
@@ -105,27 +108,35 @@ export function ConnectTrezor(): JSX.Element {
     const balanceRes = await Result.fromPromise(
       trpcUtils.portalProve.onchain.bitcoinAccountBalances.fetch({ accounts: [networkAccount.toString()] }),
     )
-    if (balanceRes.isErr()) return
+    if (balanceRes.isErr()) {
+      return
+    }
 
     const balance = balanceRes.unwrap()
     const balanceValue = balance.accounts.get(networkAccount.toString())
-    if (!balanceValue) return
+    if (!balanceValue) {
+      return
+    }
 
     setSelectedTrezorAccount((prev) => {
-      if (!prev) return prev
+      if (!prev) {
+        return prev
+      }
       return {
         ...prev,
         wallet: {
           ...prev.wallet,
           btcBalance: balanceValue.current,
-          usdBalance: balanceValue ? balanceValue.usd : null,
+          usdBalance: balanceValue.usd,
         },
       }
     })
   }
 
   function handleContinue(trezorFeatures: Features) {
-    if (!selectedTrezorAccount) return
+    if (!selectedTrezorAccount) {
+      return
+    }
 
     navigateToAnExistentOrNewClaim.execute({
       network: 'bitcoin_mainnet',
@@ -133,14 +144,19 @@ export function ConnectTrezor(): JSX.Element {
       derivationPath: selectedTrezorAccount.wallet.derivationPath,
       wallet: 'trezor',
       model: getTrezorModel(trezorFeatures.internal_model),
-      displayName: selectedTrezorAccount.wallet.displayName ?? 'Trezor Wallet',
+      displayName: selectedTrezorAccount.wallet.displayName,
     })
   }
 
   return (
     <ClaimConnectionWrapper>
       {step === 'step-1-info' && (
-        <TrezorInfo onBack={() => navigate(returnTo)} onConnectTrezor={getTrezorAccountInfo} />
+        <TrezorInfo
+          onBack={() => {
+            void navigate(returnTo)
+          }}
+          onConnectTrezor={getTrezorAccountInfo}
+        />
       )}
 
       {step === 'step-2-confirm' &&
@@ -151,8 +167,12 @@ export function ConnectTrezor(): JSX.Element {
             trezorAccount={selectedTrezorAccount}
             setSelectedTrezorAccount={setSelectedTrezorAccount}
             isLoadingOnContinue={navigateToAnExistentOrNewClaim.isLoading}
-            onContinue={() => handleContinue(selectedTrezorAccount.trezorFeatures)}
-            onCancel={() => navigate(returnTo)}
+            onContinue={() => {
+              handleContinue(selectedTrezorAccount.trezorFeatures)
+            }}
+            onCancel={() => {
+              void navigate(returnTo)
+            }}
           />
         ))}
     </ClaimConnectionWrapper>

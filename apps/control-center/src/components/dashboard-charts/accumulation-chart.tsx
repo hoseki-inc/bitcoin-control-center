@@ -40,10 +40,14 @@ function ChartTooltip({
   payload,
   timezone = getBrowserTimezone(),
 }: TooltipContentProps & { timezone?: string }): JSX.Element | null {
-  if (!active || !payload || payload.length === 0) return null
+  if (!active || payload.length === 0) {
+    return null
+  }
 
   const data = payload[0]?.payload as (BalanceDataPoint & { btcBalance: number }) | undefined
-  if (!data) return null
+  if (!data) {
+    return null
+  }
 
   const btcPrice = data.btcPrice ? Number(data.btcPrice) : 0
 

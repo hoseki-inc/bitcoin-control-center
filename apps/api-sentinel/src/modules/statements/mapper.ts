@@ -110,7 +110,9 @@ export class StatementMapper {
       statement.transactionMap,
       statement.dailyRates,
     )
-    if (aggregatedRes.isErr()) return Err(aggregatedRes.unwrapErr())
+    if (aggregatedRes.isErr()) {
+      return Err(aggregatedRes.unwrapErr())
+    }
     const agg = aggregatedRes.unwrap()
 
     return Ok(
@@ -138,7 +140,9 @@ export class StatementMapper {
 
   private createMonthlyPdfStatement = (statement: CompletedStatementData): Result<PdfStatement, Error> => {
     const monthlyData = this.createMonthlyData(statement, statement.timezone)
-    if (monthlyData.isErr()) return Err(monthlyData.unwrapErr())
+    if (monthlyData.isErr()) {
+      return Err(monthlyData.unwrapErr())
+    }
 
     return Ok(
       createPdfStatement({
@@ -168,8 +172,12 @@ export class StatementMapper {
     const openingRate = dailyRates.rates[openingKey]
     const closingRate = dailyRates.rates[closingKey]
 
-    if (!openingRate) return Err(new Error(`No daily rate for opening date ${openingKey}`))
-    if (!closingRate) return Err(new Error(`No daily rate for closing date ${closingKey}`))
+    if (!openingRate) {
+      return Err(new Error(`No daily rate for opening date ${openingKey}`))
+    }
+    if (!closingRate) {
+      return Err(new Error(`No daily rate for closing date ${closingKey}`))
+    }
 
     let totalOpeningBalance: Amount = {
       sats: 0n,
@@ -220,7 +228,9 @@ export class StatementMapper {
       const statementTxs: StatementTransaction[] = []
 
       for (const tx of accountTxs) {
-        if (tx.transactedAt > closingDate) continue
+        if (tx.transactedAt > closingDate) {
+          continue
+        }
 
         currentBalance += tx.balanceChange
 
@@ -230,7 +240,9 @@ export class StatementMapper {
         } else {
           const txDate = toDateKey(tx.transactedAt)
           const dailyRate = dailyRates.rates[txDate]
-          if (!dailyRate) return Err(new Error(`No daily rate for transaction date ${txDate}`))
+          if (!dailyRate) {
+            return Err(new Error(`No daily rate for transaction date ${txDate}`))
+          }
 
           const changeUsd = convertBtcToUsd(tx.balanceChange, dailyRate.close)
           const balanceUsd = convertBtcToUsd(currentBalance, dailyRate.close)
@@ -367,7 +379,9 @@ export class StatementMapper {
         statement.transactionMap,
         statement.dailyRates,
       )
-      if (aggregatedMonthRes.isErr()) return Err(aggregatedMonthRes.unwrapErr())
+      if (aggregatedMonthRes.isErr()) {
+        return Err(aggregatedMonthRes.unwrapErr())
+      }
       const agg = aggregatedMonthRes.unwrap()
 
       const entriesWithTotal = agg.entries.concat([

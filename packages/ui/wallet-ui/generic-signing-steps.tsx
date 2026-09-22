@@ -21,8 +21,12 @@ export function GenericSigningSteps(props: {
 }): JSX.Element {
   const [step, setStep] = useState<number>(1)
 
-  const handleNext = () => setStep((prev) => Math.min(prev + 1, 3))
-  const handleBack = () => setStep((prev) => Math.max(prev - 1, 1))
+  const handleNext = () => {
+    setStep((prev) => Math.min(prev + 1, 3))
+  }
+  const handleBack = () => {
+    setStep((prev) => Math.max(prev - 1, 1))
+  }
 
   if (props.isLoading) {
     return <Spinner fullPage />
@@ -70,7 +74,15 @@ export function ControlledGenericSigningSteps({
 
   return (
     <>
-      {error && <HardwareWalletError error={error} mt={4} onRetry={() => window.location.reload()} />}
+      {error && (
+        <HardwareWalletError
+          error={error}
+          mt={4}
+          onRetry={() => {
+            window.location.reload()
+          }}
+        />
+      )}
 
       {step === 1 && (
         <>

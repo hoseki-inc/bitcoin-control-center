@@ -21,13 +21,19 @@ const CHECKMARK_DISPLAY_DURATION = 2000
 function splitXpubIntoTwoLines(displayValue: string): string {
   const spaces: number[] = []
   for (let i = 0; i < displayValue.length; i++) {
-    if (displayValue[i] === ' ') spaces.push(i)
+    if (displayValue[i] === ' ') {
+      spaces.push(i)
+    }
   }
 
-  if (spaces.length === 0) return displayValue
+  if (spaces.length === 0) {
+    return displayValue
+  }
 
   const middleSpaceIndex = spaces[Math.floor(spaces.length / 2)]
-  if (middleSpaceIndex === undefined) return displayValue
+  if (middleSpaceIndex === undefined) {
+    return displayValue
+  }
 
   return `${displayValue.substring(0, middleSpaceIndex)}\n${displayValue.substring(middleSpaceIndex + 1)}`
 }
@@ -75,7 +81,9 @@ export function HardwareWalletCard({
   const handleDisplayNameBlur = () => {
     if (isDisplayNameValid) {
       setShowCheckmark(true)
-      setTimeout(() => setShowCheckmark(false), CHECKMARK_DISPLAY_DURATION)
+      setTimeout(() => {
+        setShowCheckmark(false)
+      }, CHECKMARK_DISPLAY_DURATION)
     }
   }
 
@@ -173,7 +181,14 @@ export function HardwareWalletCard({
                       {splitXpubIntoTwoLines(toXpubDisplayValue(wallet.account.xpub.toString(), isMasked))}
                     </chakra.code>
                   </Stack>
-                  <Button variant="plain" onClick={() => setIsMasked((prev) => !prev)} p={2} flexShrink={0}>
+                  <Button
+                    variant="plain"
+                    onClick={() => {
+                      setIsMasked((prev) => !prev)
+                    }}
+                    p={2}
+                    flexShrink={0}
+                  >
                     <Icon as={isMasked ? EyeOffIcon : EyeIcon} color="neutral.600" boxSize="20px" />
                   </Button>
                 </HStack>
@@ -181,7 +196,9 @@ export function HardwareWalletCard({
             )}
           </AnimatePresence>
           <Button
-            onClick={() => setIsExpanded((prev) => !prev)}
+            onClick={() => {
+              setIsExpanded((prev) => !prev)
+            }}
             variant="outline"
             size="sm"
             p={0}

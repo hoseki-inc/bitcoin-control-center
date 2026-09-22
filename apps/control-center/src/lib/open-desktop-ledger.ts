@@ -21,13 +21,18 @@ export async function openDesktopLedger(signal: AbortSignal): Promise<TransportW
   let onDisconnect = (): void => {}
   try {
     const app = await new Promise<{ name: string }>((resolve, reject) => {
-      onAbort = () => reject(new DOMException('Connection cancelled', 'AbortError'))
+      onAbort = () => {
+        reject(new DOMException('Connection cancelled', 'AbortError'))
+      }
       onDisconnect = () => {
         const error = new Error('Ledger disconnected')
         error.name = 'DisconnectedDevice'
         reject(error)
       }
-      if (signal.aborted) return onAbort()
+      if (signal.aborted) {
+        onAbort()
+        return
+      }
       signal.addEventListener('abort', onAbort, { once: true })
       transport.on('disconnect', onDisconnect)
       timer = setTimeout(() => {
@@ -37,7 +42,9 @@ export async function openDesktopLedger(signal: AbortSignal): Promise<TransportW
       }, 10_000)
       void getAppAndVersion(transport).then(resolve, reject)
     })
-    if (signal.aborted) throw new DOMException('Connection cancelled', 'AbortError')
+    if (signal.aborted) {
+      throw new DOMException('Connection cancelled', 'AbortError')
+    }
     if (app.name !== 'Bitcoin' && app.name !== 'Bitcoin Legacy') {
       const error = new Error('Open the Bitcoin app')
       error.name = 'BitcoinAppNotOpen'
