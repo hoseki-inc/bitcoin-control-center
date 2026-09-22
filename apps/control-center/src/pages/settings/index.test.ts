@@ -78,3 +78,58 @@ it.each([
   expect(toast.success).not.toHaveBeenCalled()
   expect(saveButton.disabled).toBe(false)
 })
+
+it.each([
+  ['SuperJSON error', { error: { json: { message: 'Server unavailable' } } }, 'Server unavailable'],
+  ['plain error', { error: { message: 'Connection refused' } }, 'Connection refused'],
+  ['invalid nested error', { error: { json: null, message: 'Plain fallback' } }, 'Plain fallback'],
+  ['non-string message', { error: { message: {} } }, 'Connection failed'],
+  ['null response', null, 'Connection failed'],
+  ['invalid JSON', '<html>Unavailable</html>', 'Connection failed'],
+])('handles a connection-test response with %s', async (_label, body, message) => {
+  fetchMock.mockImplementation(async (input) => {
+    if (typeof input === 'string' && input.endsWith('/settings.testElectrum')) {
+      return new Response(typeof body === 'string' ? body : JSON.stringify(body), { status: 500 })
+    }
+    return Response.json({ result: { data: { json: null } } })
+  })
+  await act(async () => {
+    root.render(createElement(ChakraProvider, null, createElement(SettingsPage)))
+  })
+  const button = Array.from(container.querySelectorAll('button')).find(
+    (candidate) => candidate.textContent === 'Test Connection',
+  )
+  if (!button) {
+    throw new Error('Missing connection test button')
+  }
+  await act(async () => {
+    button.click()
+  })
+  await vi.waitFor(async () => {
+    await act(async () => {})
+    expect(container.textContent).toContain(message)
+  })
+  expect(button.disabled).toBe(false)
+})
+
+const status = { connected: true, host: 'electrum.example', port: 50002, protocol: 'ssl' }
+it.each([
+  ['SuperJSON', { result: { data: { json: status } } }, true],
+  ['plain JSON', { result: { data: status } }, true],
+  ['null wrapper fallback', { result: { data: { ...status, json: null } } }, true],
+  ['missing protocol', { result: { data: { host: 'electrum.example' } } }, false],
+  ['invalid protocol', { result: { data: { ...status, protocol: 1 } } }, false],
+  ['invalid connection flag', { result: { data: { ...status, connected: 'false' } } }, false],
+  ['null response', null, false],
+])('validates the %s Electrum status response', async (_label, body, visible) => {
+  fetchMock.mockResolvedValue(Response.json(body))
+  await act(async () => {
+    root.render(createElement(ChakraProvider, null, createElement(SettingsPage)))
+  })
+  if (visible) {
+    expect(container.textContent).toContain('electrum.example:50002 (SSL)')
+    expect(container.textContent).toContain('Connected')
+  } else {
+    expect(container.textContent).not.toContain('electrum.example')
+  }
+})

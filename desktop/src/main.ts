@@ -2,6 +2,7 @@ import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { BrowserWindow, app, dialog, ipcMain, shell } from 'electron'
 import { setupLedgerHidAccess } from './ledger-hid'
+import { startServer } from './server'
 import { createQuitHandler } from './shutdown'
 import { TorManager } from './tor'
 import { setupTray } from './tray'
@@ -49,8 +50,7 @@ app
 
     // Start api-sentinel — imports the self-starting bundle
     const serverMain = path.join(serverDir, 'main.js')
-    const { main } = await import(serverMain)
-    const server = await main()
+    const server = await startServer(serverMain)
 
     // Create the browser window
     mainWindow = new BrowserWindow({

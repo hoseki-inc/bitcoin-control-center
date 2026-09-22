@@ -83,7 +83,7 @@ beforeEach(async () => {
       rejectRequest?.(new Error('Cancelled'))
     }),
     end: vi.fn(),
-    subscribe: vi.fn((callback) => {
+    subscribe: vi.fn<LedgerHidApi['subscribe']>((callback) => {
       listener = callback
       return vi.fn()
     }),

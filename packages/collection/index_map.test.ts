@@ -408,3 +408,35 @@ describe('object key resolution', () => {
     expect(map.delete(first)).toBe(true)
   })
 })
+
+describe('invalid index values', () => {
+  test.each(['key', 'id'] as const)('rejects non-primitive %s values without changing the map', (field) => {
+    for (const invalid of [{}, [], () => 'nested function']) {
+      const key = { [field]: () => invalid, toString: () => 'fallback' }
+      const map = new IndexMap<Indexable, number>([['fallback', 1]])
+      expect(() => map.set(key, 2)).toThrow('must resolve to a primitive index')
+      expect(() => map.get(key)).toThrow('must resolve to a primitive index')
+      expect(() => map.has(key)).toThrow('must resolve to a primitive index')
+      expect(() => map.delete(key)).toThrow('must resolve to a primitive index')
+      expect(map.size).toBe(1)
+      expect(map.get('fallback')).toBe(1)
+    }
+  })
+
+  test('keeps the receiver when resolving key and id methods', () => {
+    const key = {
+      value: 'item',
+      key(): string {
+        return this.value
+      },
+    }
+    const id = {
+      value: 'item',
+      id(): string {
+        return this.value
+      },
+    }
+    const map = new IndexMap<Indexable, number>([[key, 1]])
+    expect(map.get(id)).toBe(1)
+  })
+})

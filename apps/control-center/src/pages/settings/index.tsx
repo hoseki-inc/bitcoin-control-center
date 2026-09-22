@@ -109,25 +109,33 @@ const SERVER_PRESETS: ServerPreset[] = [
   { label: 'Mempool.space (Public)', host: 'electrum.mempool.space', port: '50002', protocol: 'ssl', tor: false },
 ]
 
-interface ElectrumStatus {
-  connected: boolean
-  host: string
-  port: number
-  protocol: string
-}
+const ElectrumStatusSchema = z.object({
+  connected: z.boolean(),
+  host: z.string(),
+  port: z.number(),
+  protocol: z.string(),
+})
+type ElectrumStatus = z.infer<typeof ElectrumStatusSchema>
+const ElectrumStatusResponseSchema = z.object({
+  result: z.object({ data: z.unknown() }),
+})
 
 function useElectrumStatus(): { status: ElectrumStatus | null; refresh: () => void } {
   const [status, setStatus] = useState<ElectrumStatus | null>(null)
 
   const refresh = useCallback((): void => {
-    const baseUrl = import.meta.env['VITE_BACKEND_API_URL'] ?? ''
+    const baseUrl = import.meta.env.VITE_BACKEND_API_URL ?? ''
     void fetch(`${baseUrl}/settings.electrumStatus`)
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         // tRPC wraps response in result.data.json (superjson) or result.data
-        const payload = data?.result?.data?.json ?? data?.result?.data
-        if (payload?.host) {
-          setStatus(payload as ElectrumStatus)
+        const response = parseUnknown(ElectrumStatusResponseSchema, data).unwrapOr(null)
+        const wrapped = response?.result.data
+        const payload =
+          wrapped && typeof wrapped === 'object' && 'json' in wrapped ? (wrapped.json ?? wrapped) : wrapped
+        const parsed = parseUnknown(ElectrumStatusSchema, payload).unwrapOr(null)
+        if (parsed?.host) {
+          setStatus(parsed)
         }
       })
       .catch(() => {
@@ -191,7 +199,7 @@ function ElectrumSettings(): JSX.Element {
     setIsTesting(true)
     setTestResult(null)
     try {
-      const baseUrl = import.meta.env['VITE_BACKEND_API_URL'] ?? ''
+      const baseUrl = import.meta.env.VITE_BACKEND_API_URL ?? ''
       const { body } = await buildElectrumPayload()
       const res = await fetch(`${baseUrl}/settings.testElectrum`, {
         method: 'POST',
@@ -200,8 +208,8 @@ function ElectrumSettings(): JSX.Element {
       })
 
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        const msg = data?.error?.json?.message ?? data?.error?.message ?? 'Connection failed'
+        const data = parseUnknown(ReconnectErrorSchema, await res.json().catch(() => null)).unwrapOr(null)
+        const msg = data?.error.json?.message ?? data?.error.message ?? 'Connection failed'
         setTestResult({ ok: false, message: msg })
         return
       }
@@ -222,7 +230,7 @@ function ElectrumSettings(): JSX.Element {
       saveProtocol(protocol)
       saveTorEnabled(String(torEnabled))
 
-      const baseUrl = import.meta.env['VITE_BACKEND_API_URL'] ?? ''
+      const baseUrl = import.meta.env.VITE_BACKEND_API_URL ?? ''
       const { body } = await buildElectrumPayload()
       const res = await fetch(`${baseUrl}/settings.reconnectElectrum`, {
         method: 'POST',

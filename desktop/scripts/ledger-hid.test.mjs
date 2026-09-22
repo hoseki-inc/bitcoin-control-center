@@ -8,6 +8,10 @@ const ledger = { vendorId: 0x2c97, deviceId: 'ledger-1', name: 'Flex', serialNum
 const secondLedger = { ...ledger, deviceId: 'ledger-2', name: 'Nano X' }
 const otherDevice = { vendorId: 0x1234, deviceId: 'other-1', name: 'Other device' }
 
+/**
+ * @param {import('node:test').TestContext} t
+ * @param {(options: import('electron').MessageBoxOptions) => Promise<{ response: number }>} choose
+ */
 function createHarness(t, choose = async () => ({ response: 0 })) {
   const session = new EventEmitter()
   const frame = { url: `${APP_ORIGIN}/claims/verify/ledger` }
@@ -66,7 +70,9 @@ function createHarness(t, choose = async () => ({ response: 0 })) {
     select: (deviceId, id = 'request-1', event = sender) => handlers.get('ledger-hid:choose')(event, id, deviceId),
     cancel: (id = 'request-1', event = sender) => ipc.emit('ledger-hid:cancel', event, id),
     end: (id = 'request-1', event = sender) => ipc.emit('ledger-hid:end', event, id),
+    /** @param {typeof ledger | typeof otherDevice} device */
     add: (device, deviceFrame = frame) => session.emit('hid-device-added', {}, { frame: deviceFrame, device }),
+    /** @param {typeof ledger | typeof otherDevice} device */
     remove: (device) => session.emit('hid-device-removed', {}, { frame, device }),
   }
 }
