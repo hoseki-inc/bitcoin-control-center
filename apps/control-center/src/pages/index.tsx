@@ -49,7 +49,7 @@ function PortfolioSummary(): JSX.Element | null {
 
   const isChartFetching = isFetching && !isLoading
 
-  const currentSats = data.currentTotalBalance.toString()
+  const currentSats = data.currentTotalBalance
   const btcPrice = data.currentBtcPrice ? Number(data.currentBtcPrice) : 0
   const totalBtc = new Decimal(currentSats).div(100_000_000)
   const totalUsd = totalBtc.toNumber() * btcPrice

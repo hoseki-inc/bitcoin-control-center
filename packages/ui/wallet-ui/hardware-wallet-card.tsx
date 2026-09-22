@@ -163,7 +163,7 @@ export function HardwareWalletCard({
                         borderRadius="24px"
                         flexShrink={0}
                       >
-                        {wallet.account.scriptType.toString()}
+                        {wallet.account.scriptType}
                       </Badge>
                       <Box width="28px" display="flex" alignItems="center" justifyContent="center" flexShrink={0}>
                         <ValidationIcon isValid={isDisplayNameValid} showSuccess={showCheckmark} />
