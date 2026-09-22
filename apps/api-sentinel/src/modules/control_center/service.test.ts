@@ -2,19 +2,22 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Account } from '@hoseki/packages/bitcoin/account'
+import { Network } from '@hoseki/packages/bitcoin/network'
 import type { Block, TransactionEntry } from '@hoseki/packages/bitcoin/onchain'
-import type { ElectrumProvider } from '@hoseki/packages/bitcoin/onchain/electrum_provider'
+import { ElectrumProvider } from '@hoseki/packages/bitcoin/onchain/electrum_provider'
 import { Txid } from '@hoseki/packages/bitcoin/txid'
+import { ElectrumClient } from '@hoseki/packages/clients/electrum'
 import { IndexMap } from '@hoseki/packages/collection'
 import { Wallets } from '@hoseki/packages/testing'
-import { Err, Ok, type Result } from '@patina/core'
+import { AsyncResult, Err, Ok, type Result, asyncFn } from '@patina/core'
+import Decimal from 'decimal.js'
 import pino from 'pino'
 import { afterEach, assert, beforeEach, describe, expect, it, vi } from 'vitest'
 import { initDatabase } from '../../db'
-import type { EtfService } from '../etf/service'
-import type { ExchangeService } from '../exchange/service'
-import type { ManualService } from '../manual/service'
-import type { PriceService } from '../price/service'
+import { EtfService } from '../etf/service'
+import { ExchangeService } from '../exchange/service'
+import { ManualService } from '../manual/service'
+import { PriceService } from '../price/service'
 import { ControlCenterService } from './service'
 
 const account = Wallets.singlesigNativeSegwitAccount
@@ -53,51 +56,60 @@ function createHarness() {
     account.toString(),
     'Test wallet',
   )
+  const onchainProvider = new ElectrumProvider(Network.Mainnet, {
+    logger,
+    electrum: new ElectrumClient({ host: 'localhost', port: 50001, protocol: 'tcp' }),
+  })
   const provider = {
-    getBlocksTip: vi.fn(async () => Ok(tip)),
-    getBlock: vi.fn(async () => Ok(tip)),
-    getConfirmedAccountBalances: vi.fn(async () => Ok(new IndexMap<Account, bigint>([[account, 100n]]))),
+    getBlocksTip: vi.spyOn(onchainProvider, 'getBlocksTip').mockImplementation(asyncFn(async () => Ok(tip))),
+    getBlock: vi.spyOn(onchainProvider, 'getBlock').mockImplementation(asyncFn(async () => Ok(tip))),
+    getConfirmedAccountBalances: vi
+      .spyOn(onchainProvider, 'getConfirmedAccountBalances')
+      .mockImplementation(asyncFn(async () => Ok(new IndexMap<Account, bigint>([[account, 100n]])))),
   }
-  const price = vi.fn(async () => Ok({ value: 50_000 }))
+  const priceService = new PriceService({ logger })
+  const price = vi
+    .spyOn(priceService, 'getCurrentBtcPrice')
+    .mockImplementation(asyncFn(async () => Ok({ value: new Decimal(50_000), asOf: now })))
   const service = new ControlCenterService({
     db,
     logger,
-    onchainProvider: provider as unknown as ElectrumProvider,
-    exchangeService: { listAccounts: () => [] } as unknown as ExchangeService,
-    manualService: { listAccounts: () => [], getTransactionEntries: () => [] } as unknown as ManualService,
-    etfService: { listAccounts: () => [], getAccumulationEntries: () => [] } as unknown as EtfService,
-    priceService: { getCurrentBtcPrice: price } as unknown as PriceService,
+    onchainProvider,
+    exchangeService: new ExchangeService({ db, logger }),
+    manualService: new ManualService({ db, logger }),
+    etfService: new EtfService({ db, logger }),
+    priceService,
   })
-  // Replace only the external history fetch. Snapshot storage, range coverage,
-  // retry scheduling and response construction all use the real service.
+  // Replace only external history fetching; storage, coverage, scheduling and responses remain real.
   const history = vi
-    .spyOn(
-      service as unknown as {
-        getTransactionEntriesByAccountSinceBlock(
-          account: Account,
-          height: number,
-        ): Promise<Result<TransactionEntry[], Error>>
-      },
-      'getTransactionEntriesByAccountSinceBlock',
-    )
+    .fn(service['getTransactionEntriesByAccountSinceBlock'])
     .mockResolvedValue(Ok([entry(100n, '2020-01-02T12:00:00.000Z')]))
+  service['getTransactionEntriesByAccountSinceBlock'] = history
   const sync = (from = 0, to = tip.height): void => {
     service['recordAccountHistorySync'](accountId, { fromBlockHeight: from, toBlockHeight: to }, tip)
   }
   const run = (balance: bigint = 100n, balanceTip?: Block): Promise<bigint | null> =>
     service['ensureAccountHistorySnapshots'](accountId, account, balance, new Date(0), true, undefined, balanceTip)
   const rows = (): Array<{ timestamp: string; balance_sats: string }> =>
-    db.prepare('SELECT timestamp, balance_sats FROM balance_snapshots ORDER BY timestamp').all() as Array<{
-      timestamp: string
-      balance_sats: string
-    }>
+    db
+      .prepare<
+        unknown[],
+        {
+          timestamp: string
+          balance_sats: string
+        }
+      >('SELECT timestamp, balance_sats FROM balance_snapshots ORDER BY timestamp')
+      .all()
   const coverage = (): Array<{ from_block_height: number; to_block_height: number }> =>
     db
-      .prepare('SELECT from_block_height, to_block_height FROM account_history_syncs ORDER BY from_block_height')
-      .all() as Array<{
-      from_block_height: number
-      to_block_height: number
-    }>
+      .prepare<
+        unknown[],
+        {
+          from_block_height: number
+          to_block_height: number
+        }
+      >('SELECT from_block_height, to_block_height FROM account_history_syncs ORDER BY from_block_height')
+      .all()
   const close = (): void => {
     database.close()
     rmSync(directory, { recursive: true, force: true })
@@ -155,9 +167,9 @@ describe('portfolio history completion', () => {
   it('returns the new snapshots when a backfill finishes while another data source is loading', async () => {
     const { service, history, price } = harness
     const pendingHistory = deferred<Result<TransactionEntry[], Error>>()
-    const pendingPrice = deferred<ReturnType<typeof Ok<{ value: number }>>>()
+    const pendingPrice = deferred<ReturnType<typeof Ok<{ value: Decimal; asOf: Date }>>>()
     history.mockReturnValueOnce(pendingHistory.promise)
-    price.mockReturnValueOnce(pendingPrice.promise)
+    price.mockReturnValueOnce(new AsyncResult(pendingPrice.promise))
     const resultPromise = service.getData({ customDateRange: customRange })
     await vi.waitFor(() => {
       expect(history).toHaveBeenCalledTimes(1)
@@ -166,7 +178,7 @@ describe('portfolio history completion', () => {
     await vi.waitFor(() => {
       expect(harness.coverage()).toHaveLength(1)
     })
-    pendingPrice.resolve(Ok({ value: 50_000 }))
+    pendingPrice.resolve(Ok({ value: new Decimal(50_000), asOf: now }))
     const data = (await resultPromise).unwrap()
     expect(data.historySyncingAccountIds).toEqual([])
     expect(data.historySyncedAccountIds).toEqual([accountId])

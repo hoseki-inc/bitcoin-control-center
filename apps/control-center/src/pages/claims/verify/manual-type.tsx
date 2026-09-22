@@ -1,10 +1,11 @@
 import { Box, Flex, Heading, Icon, Stack, Text } from '@chakra-ui/react'
 import { TopBar } from '@hoseki/packages/ui/prove-verify-ui/top-bar'
 import { Link, useLocation } from 'react-router'
+import { parseNavigationState } from '../../../lib/navigation-state'
 
 export function ManualTypeSelectorPage(): JSX.Element {
   const location = useLocation()
-  const returnTo = (location.state as { returnTo?: string } | null)?.returnTo ?? '/accounts'
+  const returnTo = parseNavigationState(location.state)?.returnTo ?? '/accounts'
 
   return (
     <Box py={6}>

@@ -58,8 +58,9 @@ export function pluralize(
   return result
 }
 
-export function capitalize<T extends string>(str: T): Capitalize<T> {
-  return (str.charAt(0).toUpperCase() + str.slice(1)) as Capitalize<T>
+export function capitalize<T extends string>(str: T): Capitalize<T>
+export function capitalize(str: string): string {
+  return str.charAt(0).toUpperCase() + str.slice(1)
 }
 
 export function convertToOrdinalWords(number: number): string {

@@ -6,6 +6,14 @@ export function isNullish(value: unknown): value is null | undefined {
  * Resolves CJS default export interop issues when importing CommonJS modules in ESM.
  * Some bundlers/runtimes nest the module under .default, others don't.
  */
-export function cjsInterop<T>(module: T): T extends { default: infer U } ? U : T {
-  return ((module as { default?: unknown }).default ?? module) as T extends { default: infer U } ? U : T
+export function cjsInterop<T>(module: T): T extends { default: infer U } ? U : T
+export function cjsInterop(module: unknown): unknown {
+  if (module !== null && (typeof module === 'object' || typeof module === 'function') && 'default' in module) {
+    return module.default ?? module
+  }
+  return module
+}
+
+export function hasKey<K extends PropertyKey>(value: object, key: K): value is object & Record<K, unknown> {
+  return key in value
 }

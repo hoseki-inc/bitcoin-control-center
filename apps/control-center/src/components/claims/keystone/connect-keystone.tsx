@@ -3,6 +3,7 @@ import { ClaimConnectionWrapper, type HardwareWallet, type KeystoneExportFile } 
 import { useState } from 'react'
 import { useLocation, useNavigate } from 'react-router'
 import { useNavigateToAnExistentOrNewClaim } from '../../../lib/claim-flow'
+import { parseNavigationState } from '../../../lib/navigation-state'
 import { KeystoneQrConnectionSteps } from './keystone-qr-steps'
 
 export function ConnectKeystone(): JSX.Element {
@@ -11,7 +12,7 @@ export function ConnectKeystone(): JSX.Element {
   const [selectedWallet, setSelectedWallet] = useState<HardwareWallet | null>(null)
   const navigate = useNavigate()
   const location = useLocation()
-  const returnTo = (location.state as { returnTo?: string } | null)?.returnTo ?? '/accounts'
+  const returnTo = parseNavigationState(location.state)?.returnTo ?? '/accounts'
   const goBack = (): void => {
     if (wizardStep === 1) {
       void navigate(returnTo)

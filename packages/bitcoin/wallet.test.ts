@@ -1,7 +1,7 @@
 import { describe, expect, it, test } from 'vitest'
 import { DerivationPath } from './derivation-path'
 import * as descriptors from './descriptor_utils'
-import type { KeyFingerprint } from './key-expression'
+import { KeyFingerprint } from './key-expression'
 import { KeyExpression, KeyOrigin } from './key-expression'
 import { Network } from './network'
 import { Wallet } from './wallet'
@@ -178,7 +178,7 @@ describe('Wallet', () => {
           scriptType: 'p2pkh',
           xpub: TEST_XPUB_STR,
           network: Network.Mainnet,
-          fingerprint: '00000000' as KeyFingerprint,
+          fingerprint: KeyFingerprint.DEFAULT,
           derivationPath: new DerivationPath([
             { index: 44, hardened: true },
             { index: 0, hardened: true },
@@ -191,7 +191,7 @@ describe('Wallet', () => {
           scriptType: 'p2sh-p2wpkh',
           xpub: TEST_XPUB_STR,
           network: Network.Mainnet,
-          fingerprint: '00000000' as KeyFingerprint,
+          fingerprint: KeyFingerprint.DEFAULT,
           derivationPath: new DerivationPath([
             { index: 49, hardened: false },
             { index: 0, hardened: false },
@@ -204,7 +204,7 @@ describe('Wallet', () => {
           scriptType: 'p2wpkh',
           xpub: TEST_XPUB_STR,
           network: Network.Mainnet,
-          fingerprint: '00000000' as KeyFingerprint,
+          fingerprint: KeyFingerprint.DEFAULT,
           derivationPath: new DerivationPath([
             { index: 84, hardened: true },
             { index: 0, hardened: true },
@@ -217,7 +217,7 @@ describe('Wallet', () => {
           scriptType: 'p2tr',
           xpub: TEST_XPUB_STR,
           network: Network.Mainnet,
-          fingerprint: '00000000' as KeyFingerprint,
+          fingerprint: KeyFingerprint.DEFAULT,
           derivationPath: new DerivationPath([
             { index: 84, hardened: false },
             { index: 0, hardened: false },
@@ -230,7 +230,7 @@ describe('Wallet', () => {
           scriptType: 'p2pkh',
           xpub: TPUB_STR,
           network: Network.Testnet,
-          fingerprint: '00000000' as KeyFingerprint,
+          fingerprint: KeyFingerprint.DEFAULT,
           derivationPath: new DerivationPath([
             { index: 44, hardened: true },
             { index: 1, hardened: true },
@@ -243,7 +243,7 @@ describe('Wallet', () => {
           scriptType: 'p2sh-p2wpkh',
           xpub: TPUB_STR,
           network: Network.Testnet,
-          fingerprint: '00000000' as KeyFingerprint,
+          fingerprint: KeyFingerprint.DEFAULT,
           derivationPath: new DerivationPath([
             { index: 49, hardened: false },
             { index: 1, hardened: false },
@@ -256,7 +256,7 @@ describe('Wallet', () => {
           scriptType: 'p2wpkh',
           xpub: TPUB_STR,
           network: Network.Testnet,
-          fingerprint: '00000000' as KeyFingerprint,
+          fingerprint: KeyFingerprint.DEFAULT,
           derivationPath: new DerivationPath([
             { index: 84, hardened: true },
             { index: 1, hardened: true },
@@ -269,7 +269,7 @@ describe('Wallet', () => {
           scriptType: 'p2tr',
           xpub: TPUB_STR,
           network: Network.Testnet,
-          fingerprint: '00000000' as KeyFingerprint,
+          fingerprint: KeyFingerprint.DEFAULT,
           derivationPath: new DerivationPath([
             { index: 84, hardened: false },
             { index: 1, hardened: false },
@@ -283,7 +283,7 @@ describe('Wallet', () => {
           scriptType: 'p2pkh',
           xpub: TEST_XPUB_STR,
           network: Network.Mainnet,
-          fingerprint: '00000000' as KeyFingerprint,
+          fingerprint: KeyFingerprint.DEFAULT,
           derivationPath: new DerivationPath([
             { index: 44, hardened: false },
             { index: 0, hardened: false },
@@ -296,7 +296,7 @@ describe('Wallet', () => {
           scriptType: 'p2sh-p2wpkh',
           xpub: TEST_XPUB_STR,
           network: Network.Mainnet,
-          fingerprint: '00000000' as KeyFingerprint,
+          fingerprint: KeyFingerprint.DEFAULT,
           derivationPath: new DerivationPath([
             { index: 49, hardened: false },
             { index: 0, hardened: false },
@@ -309,7 +309,7 @@ describe('Wallet', () => {
           scriptType: 'p2wpkh',
           xpub: TEST_XPUB_STR,
           network: Network.Mainnet,
-          fingerprint: '00000000' as KeyFingerprint,
+          fingerprint: KeyFingerprint.DEFAULT,
           derivationPath: new DerivationPath([
             { index: 84, hardened: false },
             { index: 0, hardened: false },
@@ -322,7 +322,7 @@ describe('Wallet', () => {
           scriptType: 'p2tr',
           xpub: TEST_XPUB_STR,
           network: Network.Mainnet,
-          fingerprint: '00000000' as KeyFingerprint,
+          fingerprint: KeyFingerprint.DEFAULT,
           derivationPath: new DerivationPath([
             { index: 84, hardened: false },
             { index: 0, hardened: false },
@@ -335,7 +335,7 @@ describe('Wallet', () => {
           scriptType: 'p2pkh',
           xpub: TPUB_STR,
           network: Network.Testnet,
-          fingerprint: '00000000' as KeyFingerprint,
+          fingerprint: KeyFingerprint.DEFAULT,
           derivationPath: new DerivationPath([
             { index: 44, hardened: false },
             { index: 1, hardened: false },
@@ -348,7 +348,7 @@ describe('Wallet', () => {
           scriptType: 'p2sh-p2wpkh',
           xpub: TPUB_STR,
           network: Network.Testnet,
-          fingerprint: '00000000' as KeyFingerprint,
+          fingerprint: KeyFingerprint.DEFAULT,
           derivationPath: new DerivationPath([
             { index: 49, hardened: false },
             { index: 1, hardened: false },
@@ -361,7 +361,7 @@ describe('Wallet', () => {
           scriptType: 'p2wpkh',
           xpub: TPUB_STR,
           network: Network.Testnet,
-          fingerprint: '00000000' as KeyFingerprint,
+          fingerprint: KeyFingerprint.DEFAULT,
           derivationPath: new DerivationPath([
             { index: 84, hardened: false },
             { index: 1, hardened: false },
@@ -374,7 +374,7 @@ describe('Wallet', () => {
           scriptType: 'p2tr',
           xpub: TPUB_STR,
           network: Network.Testnet,
-          fingerprint: '00000000' as KeyFingerprint,
+          fingerprint: KeyFingerprint.DEFAULT,
           derivationPath: new DerivationPath([
             { index: 84, hardened: false },
             { index: 1, hardened: false },
@@ -499,7 +499,7 @@ describe('Wallet', () => {
           scriptType: 'p2pkh',
           xpub: TEST_XPUB_STR,
           network: Network.Mainnet,
-          fingerprint: '00000000' as KeyFingerprint,
+          fingerprint: KeyFingerprint.DEFAULT,
           derivationPath: new DerivationPath([
             { index: 44, hardened: false },
             { index: 0, hardened: false },
@@ -512,7 +512,7 @@ describe('Wallet', () => {
           scriptType: 'p2sh-p2wpkh',
           xpub: TEST_XPUB_STR,
           network: Network.Mainnet,
-          fingerprint: '00000000' as KeyFingerprint,
+          fingerprint: KeyFingerprint.DEFAULT,
           derivationPath: new DerivationPath([
             { index: 49, hardened: true },
             { index: 0, hardened: true },
@@ -525,7 +525,7 @@ describe('Wallet', () => {
           scriptType: 'p2wpkh',
           xpub: TEST_XPUB_STR,
           network: Network.Mainnet,
-          fingerprint: '00000000' as KeyFingerprint,
+          fingerprint: KeyFingerprint.DEFAULT,
           derivationPath: new DerivationPath([
             { index: 84, hardened: false },
             { index: 0, hardened: false },
@@ -538,7 +538,7 @@ describe('Wallet', () => {
           scriptType: 'p2tr',
           xpub: TEST_XPUB_STR,
           network: Network.Mainnet,
-          fingerprint: '00000000' as KeyFingerprint,
+          fingerprint: KeyFingerprint.DEFAULT,
           derivationPath: new DerivationPath([
             { index: 84, hardened: true },
             { index: 0, hardened: true },
@@ -551,7 +551,7 @@ describe('Wallet', () => {
           scriptType: 'p2pkh',
           xpub: TPUB_STR,
           network: Network.Testnet,
-          fingerprint: '00000000' as KeyFingerprint,
+          fingerprint: KeyFingerprint.DEFAULT,
           derivationPath: new DerivationPath([
             { index: 44, hardened: false },
             { index: 1, hardened: false },
@@ -564,7 +564,7 @@ describe('Wallet', () => {
           scriptType: 'p2sh-p2wpkh',
           xpub: TPUB_STR,
           network: Network.Testnet,
-          fingerprint: '00000000' as KeyFingerprint,
+          fingerprint: KeyFingerprint.DEFAULT,
           derivationPath: new DerivationPath([
             { index: 49, hardened: true },
             { index: 1, hardened: true },
@@ -577,7 +577,7 @@ describe('Wallet', () => {
           scriptType: 'p2wpkh',
           xpub: TPUB_STR,
           network: Network.Testnet,
-          fingerprint: '00000000' as KeyFingerprint,
+          fingerprint: KeyFingerprint.DEFAULT,
           derivationPath: new DerivationPath([
             { index: 84, hardened: false },
             { index: 1, hardened: false },
@@ -590,7 +590,7 @@ describe('Wallet', () => {
           scriptType: 'p2tr',
           xpub: TPUB_STR,
           network: Network.Testnet,
-          fingerprint: '00000000' as KeyFingerprint,
+          fingerprint: KeyFingerprint.DEFAULT,
           derivationPath: new DerivationPath([
             { index: 84, hardened: true },
             { index: 1, hardened: true },
@@ -604,7 +604,7 @@ describe('Wallet', () => {
           scriptType: 'p2pkh',
           xpub: TEST_XPUB_STR,
           network: Network.Mainnet,
-          fingerprint: '00000000' as KeyFingerprint,
+          fingerprint: KeyFingerprint.DEFAULT,
           derivationPath: new DerivationPath([
             { index: 44, hardened: false },
             { index: 0, hardened: false },
@@ -617,7 +617,7 @@ describe('Wallet', () => {
           scriptType: 'p2sh-p2wpkh',
           xpub: TEST_XPUB_STR,
           network: Network.Mainnet,
-          fingerprint: '00000000' as KeyFingerprint,
+          fingerprint: KeyFingerprint.DEFAULT,
           derivationPath: new DerivationPath([
             { index: 49, hardened: false },
             { index: 0, hardened: false },
@@ -630,7 +630,7 @@ describe('Wallet', () => {
           scriptType: 'p2wpkh',
           xpub: TEST_XPUB_STR,
           network: Network.Mainnet,
-          fingerprint: '00000000' as KeyFingerprint,
+          fingerprint: KeyFingerprint.DEFAULT,
           derivationPath: new DerivationPath([
             { index: 84, hardened: false },
             { index: 0, hardened: false },
@@ -643,7 +643,7 @@ describe('Wallet', () => {
           scriptType: 'p2tr',
           xpub: TEST_XPUB_STR,
           network: Network.Mainnet,
-          fingerprint: '00000000' as KeyFingerprint,
+          fingerprint: KeyFingerprint.DEFAULT,
           derivationPath: new DerivationPath([
             { index: 84, hardened: false },
             { index: 0, hardened: false },
@@ -656,7 +656,7 @@ describe('Wallet', () => {
           scriptType: 'p2pkh',
           xpub: TPUB_STR,
           network: Network.Testnet,
-          fingerprint: '00000000' as KeyFingerprint,
+          fingerprint: KeyFingerprint.DEFAULT,
           derivationPath: new DerivationPath([
             { index: 44, hardened: false },
             { index: 1, hardened: false },
@@ -669,7 +669,7 @@ describe('Wallet', () => {
           scriptType: 'p2sh-p2wpkh',
           xpub: TPUB_STR,
           network: Network.Testnet,
-          fingerprint: '00000000' as KeyFingerprint,
+          fingerprint: KeyFingerprint.DEFAULT,
           derivationPath: new DerivationPath([
             { index: 49, hardened: false },
             { index: 1, hardened: false },
@@ -682,7 +682,7 @@ describe('Wallet', () => {
           scriptType: 'p2wpkh',
           xpub: TPUB_STR,
           network: Network.Testnet,
-          fingerprint: '00000000' as KeyFingerprint,
+          fingerprint: KeyFingerprint.DEFAULT,
           derivationPath: new DerivationPath([
             { index: 84, hardened: false },
             { index: 1, hardened: false },
@@ -695,7 +695,7 @@ describe('Wallet', () => {
           scriptType: 'p2tr',
           xpub: TPUB_STR,
           network: Network.Testnet,
-          fingerprint: '00000000' as KeyFingerprint,
+          fingerprint: KeyFingerprint.DEFAULT,
           derivationPath: new DerivationPath([
             { index: 84, hardened: false },
             { index: 1, hardened: false },
@@ -732,7 +732,7 @@ describe('Wallet', () => {
   describe('Multisig', () => {
     describe('fromDescriptor()', () => {
       it('returns with nested segwit script with valid checksum', async () => {
-        const fingerprint = '00000000' as KeyFingerprint
+        const fingerprint = KeyFingerprint.DEFAULT
         const derivationPath = new DerivationPath([
           { index: 49, hardened: false },
           { index: 0, hardened: false },
@@ -769,7 +769,7 @@ describe('Wallet', () => {
       })
 
       it('returns with segwit and sorted script', async () => {
-        const fingerprint = '00000000' as KeyFingerprint
+        const fingerprint = KeyFingerprint.DEFAULT
         const derivationPath = new DerivationPath([
           { index: 49, hardened: false },
           { index: 0, hardened: false },
@@ -835,7 +835,7 @@ describe('Wallet', () => {
       })
 
       it('returns with not sorted script and with threshold=2, xpubs.length=3', async () => {
-        const fingerprint = '00000000' as KeyFingerprint
+        const fingerprint = KeyFingerprint.DEFAULT
         const derivationPath = new DerivationPath([
           { index: 49, hardened: false },
           { index: 0, hardened: false },

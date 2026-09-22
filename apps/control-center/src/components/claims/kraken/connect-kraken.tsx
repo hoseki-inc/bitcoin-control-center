@@ -22,6 +22,7 @@ import { useForm } from 'react-hook-form'
 import { useLocation, useNavigate } from 'react-router'
 import { toast } from 'sonner'
 import { z } from 'zod'
+import { parseNavigationState } from '../../../lib/navigation-state'
 import { type RouterOutput, trpc } from '../../../trpc'
 
 type ConnectedAccount = RouterOutput['portalProve']['exchange']['kraken']['connect']
@@ -34,12 +35,11 @@ const krakenFormSchema = z.object({
 type KrakenFormData = z.infer<typeof krakenFormSchema>
 
 type Step = 'form' | 'loading' | 'success'
-type ConnectRouteState = { returnTo?: string; replaceAccountId?: string }
 
 export function ConnectKraken(): JSX.Element {
   const navigate = useNavigate()
   const location = useLocation()
-  const routeState = location.state as ConnectRouteState | null
+  const routeState = parseNavigationState(location.state)
   const returnTo = routeState?.returnTo ?? '/accounts'
   const replaceAccountId = routeState?.replaceAccountId
   const isReconnect = Boolean(replaceAccountId)

@@ -1,9 +1,11 @@
 import { Box, Flex, Text, useToken } from '@chakra-ui/react'
 import { TZDate } from '@date-fns/tz'
+import { parseUnknown } from '@hoseki/packages/result'
 import { format } from 'date-fns'
 import Decimal from 'decimal.js'
 import { useMemo } from 'react'
 import { Area, AreaChart, ResponsiveContainer, Tooltip, type TooltipContentProps, XAxis, YAxis } from 'recharts'
+import { z } from 'zod'
 import { getBrowserTimezone } from '../../utils/timezone'
 
 interface BalanceDataPoint {
@@ -44,10 +46,19 @@ function ChartTooltip({
     return null
   }
 
-  const data = payload[0]?.payload as (BalanceDataPoint & { btcBalance: number }) | undefined
-  if (!data) {
+  const parsed = parseUnknown(
+    z.object({
+      timestamp: z.string(),
+      totalBalance: z.string(),
+      btcPrice: z.string().optional(),
+      btcBalance: z.number(),
+    }),
+    payload[0]?.payload,
+  )
+  if (parsed.isErr()) {
     return null
   }
+  const data = parsed.unwrap()
 
   const btcPrice = data.btcPrice ? Number(data.btcPrice) : 0
 

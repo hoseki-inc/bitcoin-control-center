@@ -1,12 +1,18 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { Network } from '@hoseki/packages/bitcoin/network'
+import { ElectrumProvider } from '@hoseki/packages/bitcoin/onchain/electrum_provider'
+import { ElectrumClient } from '@hoseki/packages/clients/electrum'
+import Decimal from 'decimal.js'
 import pino from 'pino'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { type SentinelDatabase, initDatabase } from './db'
 import { Encrypted, initEncryption } from './lib/encrypted'
 import { EtfService } from './modules/etf/service'
 import { ExchangeService } from './modules/exchange/service'
+import { DailyRatesService } from './modules/price/daily_rates'
+import { StatementService } from './modules/statements/service'
 
 const logger = pino({ level: 'silent' })
 let directory: string
@@ -49,10 +55,15 @@ describe('stored exchange credentials', () => {
     ['missing blob', JSON.stringify({ type: 'apiKey', data: { key: {} } })],
     ['non-string blob', JSON.stringify({ type: 'apiKey', data: { key: { blob: 42 } } })],
     ['malformed ciphertext', JSON.stringify({ type: 'apiKey', data: { key: { blob: 'invalid' } } })],
-  ])('requires reconnection for %s without exposing a stale balance', (_label, credentials) => {
+  ])('requires reconnection for %s without exposing a stale balance', async (_label, credentials) => {
     expect(accountWithCredentials(credentials)).toEqual([
       expect.objectContaining({ connectionStatus: 'needs_reconnect', balanceSats: null, balanceAsOf: null }),
     ])
+    const service = new ExchangeService({ db: database.db, logger })
+    expect((await service.refreshBalance('exchange')).isErr()).toBe(true)
+    expect((await service.getKrakenTransactionEntries()).unwrap()).toEqual([])
+    database.db.prepare('UPDATE exchange_accounts SET provider = ? WHERE id = ?').run('coinbase', 'exchange')
+    expect((await service.getCoinbaseTransactionEntries()).unwrap()).toEqual([])
   })
 
   it('rejects an unsupported credential type even when its blobs decrypt', () => {
@@ -80,5 +91,60 @@ describe('stored ETF tickers', () => {
       timestamp: new Date('2020-01-01'),
       value: 0n,
     })
+  })
+})
+
+describe('stored statement data', () => {
+  function service(): StatementService {
+    return new StatementService({
+      db: database.db,
+      logger,
+      mempoolApiUrl: 'https://example.invalid',
+      onchainProvider: new ElectrumProvider(Network.Mainnet, {
+        logger,
+        electrum: new ElectrumClient({ host: 'localhost', port: 50001, protocol: 'tcp' }),
+      }),
+      dailyRatesService: new DailyRatesService({ logger, mempoolApiUrl: 'https://example.invalid' }),
+      exchangeService: new ExchangeService({ db: database.db, logger }),
+    })
+  }
+
+  it('round-trips transaction amounts, dates, rates and additional stored fields', () => {
+    const statements = service()
+    const date = new Date('2024-01-02T00:00:00Z')
+    const id = statements.create({ claimIds: [], openingDate: date, closingDate: date, timezone: 'UTC' })
+    const transactions = {
+      wallet: [
+        {
+          address: 'synthetic-address',
+          hash: 'synthetic-hash',
+          balanceChange: -9007199254740993n,
+          block: null,
+          transactedAt: date,
+          confirmed: false,
+          accountName: 'Test wallet',
+          extra: 'preserved',
+        },
+      ],
+    }
+    const price = new Decimal('42000.12345678')
+    const dailyRates = {
+      source: 'mempool' as const,
+      rates: { '2024-01-02': { timestamp: date, open: price, high: price, low: price, close: price } },
+    }
+    statements.complete(id, transactions, dailyRates)
+    const loaded = statements.loadCompleted(id)
+    expect(loaded?.transactionMap).toEqual(transactions)
+    expect(loaded?.dailyRates).toEqual(dailyRates)
+    expect(statements.findById(id)?.status).toBe('completed')
+  })
+
+  it('rejects malformed stored transaction shapes before restoring value types', () => {
+    const statements = service()
+    const date = new Date('2024-01-02T00:00:00Z')
+    const id = statements.create({ claimIds: [], openingDate: date, closingDate: date, timezone: 'UTC' })
+    statements.complete(id, {}, { rates: {}, source: 'mempool' })
+    database.db.prepare('UPDATE statements SET transaction_map = ? WHERE id = ?').run('{"wallet":[null]}', id)
+    expect(() => statements.loadCompleted(id)).toThrow('Stored statement transactions are invalid')
   })
 })

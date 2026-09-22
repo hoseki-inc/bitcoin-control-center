@@ -1,6 +1,5 @@
 // @vitest-environment node
-import type * as NodeBufferModule from 'node:buffer'
-import { createRequire } from 'node:module'
+import { getBuiltinModule } from 'node:process'
 import { bip32 } from '@hoseki/packages/bitcoin'
 import type { LedgerScanUI } from '@hoseki/packages/ui/wallet-ui'
 import Transport from '@ledgerhq/hw-transport'
@@ -19,10 +18,7 @@ type ScanProps = ComponentProps<typeof LedgerScanUI>
 
 const mocks = await vi.hoisted(async () => {
   // Preserve Node's byte-array globals for the Bitcoin SDK.
-  const { createRequire: createMockRequire } = await import('node:module')
-  const { JSDOM } = createMockRequire(import.meta.url)('jsdom') as {
-    JSDOM: new (html: string, options: { url: string }) => { window: Window & typeof globalThis }
-  }
+  const { JSDOM } = await import('jsdom')
   const { window } = new JSDOM('<!doctype html><html><body></body></html>', { url: 'http://localhost' })
   vi.stubGlobal('window', window)
   vi.stubGlobal('document', window.document)
@@ -62,7 +58,7 @@ vi.mock('../../../trpc', () => ({
   trpc: { useUtils: () => ({ portalProve: { onchain: { bitcoinAccountBalances: { fetch: mocks.fetch } } } }) },
 }))
 
-const { Buffer: NativeBuffer } = createRequire(import.meta.url)('node:buffer') as typeof NodeBufferModule
+const { Buffer: NativeBuffer } = getBuiltinModule('node:buffer')
 const xpub = bip32.fromSeed(NativeBuffer.alloc(32, 1)).neutered().toBase58()
 let root: Root
 let host: HTMLDivElement
@@ -235,9 +231,7 @@ it('discovery also stops on a changed connection even without an abort signal', 
   await useLedgerStore.getState().init(async () => fakeTransport())
   const { connectionId, getBitcoinXpub } = useLedgerStore.getState()
   const discovery = probeLedger(
-    { portalProve: { onchain: { bitcoinAccountBalances: { fetch: mocks.fetch } } } } as unknown as Parameters<
-      typeof probeLedger
-    >[0],
+    { portalProve: { onchain: { bitcoinAccountBalances: { fetch: mocks.fetch } } } },
     {
       getBitcoinXpub,
       isCurrentConnection: () => useLedgerStore.getState().connectionId === connectionId,

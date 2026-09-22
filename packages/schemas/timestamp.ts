@@ -17,6 +17,7 @@ export const TimestampSchema = z
 export type Timestamp = z.infer<typeof TimestampSchema>
 
 export function toTimestamp(date: Date): Timestamp {
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- Preserve Date conversion, including epoch/pre-epoch values; the stricter schema validates external timestamps.
   return Math.floor(date.getTime() / 1000) as Timestamp
 }
 

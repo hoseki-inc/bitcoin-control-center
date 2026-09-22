@@ -43,6 +43,7 @@ import {
   parseGenericJsonFile,
   parseSignatureFile,
 } from '@hoseki/packages/ui/wallet-ui'
+import { coldcardModelKeys } from '@hoseki/packages/ui/wallet-ui/coldcard/coldcard-utils'
 import type { Result } from '@patina/core'
 import Lottie from 'lottie-react'
 import { CircleXIcon, CopyIcon, InfoIcon, MoveRightIcon, TriangleAlertIcon, UsbIcon, WifiOffIcon } from 'lucide-react'
@@ -263,7 +264,10 @@ function Step2({
             name={name}
             image={<chakra.img src={imageSrc} alt={imageAlt} h="150px" mx="auto" />}
             onClick={() => {
-              onNext(key as ColdcardModel)
+              const model = coldcardModelKeys.find((candidate) => candidate === key)
+              if (model) {
+                onNext(model)
+              }
             }}
           />
         ))}
@@ -305,7 +309,9 @@ function Step3({
             name={name}
             image={icon}
             onClick={() => {
-              onNext(key as keyof typeof ColdcardConnectionMethods)
+              if (key === 'airgapping' || key === 'usb') {
+                onNext(key)
+              }
             }}
           />
         ))}
@@ -454,6 +460,7 @@ export function Step5({
 
       <Stack gap={4}>
         <FileDropReader
+          readAs="text"
           readyText="Drag 'coldcard-export.json' here"
           invalidText="Invalid file. Please check your file and try again."
           validText="Click 'Connect Wallet' to continue"
@@ -918,6 +925,7 @@ export function Step11Ui({
 
       <Box>
         <FileDropReader
+          readAs="text"
           readyText="Drag 'hoseki-ownership-claim-signed.txt' here"
           invalidText="Invalid file. Please check your file and try again."
           validText="Click 'Prove Control' to verify ownership and finalize your claim."

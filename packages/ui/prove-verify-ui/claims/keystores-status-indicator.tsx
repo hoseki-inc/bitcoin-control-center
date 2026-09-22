@@ -26,14 +26,14 @@ export type PendingKeystore = {
 
 export type IdentifiedKeystore = {
   id: string
-  wallet: SupportedHardwareWallet
+  wallet: SupportedHardwareWallet | null
   name: string
   status: 'identified'
 }
 
 export type VerifiedKeystore = {
   id: string
-  wallet: SupportedHardwareWallet
+  wallet: SupportedHardwareWallet | null
   name: string
   status: 'verified'
 }

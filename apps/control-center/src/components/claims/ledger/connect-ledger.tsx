@@ -3,13 +3,14 @@ import { useState } from 'react'
 import { useLocation, useNavigate } from 'react-router'
 import { useToastOnLedgerDisconnect } from '../../../hooks/use-ledger-store'
 import { useNavigateToAnExistentOrNewClaim } from '../../../lib/claim-flow'
+import { parseNavigationState } from '../../../lib/navigation-state'
 import { LedgerConnectionInfo } from './ledger-connection-info'
 import { LedgerScan } from './ledger-scan'
 
 export function ConnectLedger(): JSX.Element {
   const navigate = useNavigate()
   const location = useLocation()
-  const returnTo = (location.state as { returnTo?: string } | null)?.returnTo ?? '/accounts'
+  const returnTo = parseNavigationState(location.state)?.returnTo ?? '/accounts'
   const [step, setStep] = useState<'step-1-info' | 'step-2-scan'>('step-1-info')
   const navigateToAnExistentOrNewClaim = useNavigateToAnExistentOrNewClaim()
 

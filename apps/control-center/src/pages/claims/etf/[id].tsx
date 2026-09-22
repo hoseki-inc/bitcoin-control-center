@@ -281,7 +281,10 @@ export function EtfAccountDetailsPage(): JSX.Element {
                 size="sm"
                 value={newTicker}
                 onChange={(e) => {
-                  setNewTicker(e.target.value as EtfTicker)
+                  const ticker = ETF_TICKERS.find((candidate) => candidate === e.target.value)
+                  if (ticker) {
+                    setNewTicker(ticker)
+                  }
                 }}
               >
                 {ETF_TICKERS.map((ticker) => {

@@ -412,8 +412,8 @@ export class ControlCenterService {
 
   public archiveAccount = asyncFn(async (accountId: string): Promise<Result<void, Error>> => {
     const row = this.db
-      .prepare('SELECT descriptor FROM accounts WHERE id = ? AND deleted_at IS NULL')
-      .get(accountId) as { descriptor: string } | undefined
+      .prepare<unknown[], { descriptor: string }>('SELECT descriptor FROM accounts WHERE id = ? AND deleted_at IS NULL')
+      .get(accountId)
     if (!row) {
       return Err(new Error('Claim not found or already archived'))
     }
@@ -499,18 +499,21 @@ export class ControlCenterService {
       }
       const placeholders = filterIds.map(() => '?').join(', ')
       return this.db
-        .prepare(
+        .prepare<unknown[], { id: string; descriptor: string; network: string }>(
           `SELECT id, descriptor, network FROM accounts WHERE id IN (${placeholders})${includeArchived ? '' : ' AND deleted_at IS NULL'} ORDER BY created_at DESC`,
         )
-        .all(...filterIds) as Array<{ id: string; descriptor: string; network: string }>
+        .all(...filterIds)
     }
     return this.db
-      .prepare(`SELECT id, descriptor, network FROM accounts ${archivedClause} ORDER BY created_at DESC`)
-      .all() as Array<{
-      id: string
-      descriptor: string
-      network: string
-    }>
+      .prepare<
+        unknown[],
+        {
+          id: string
+          descriptor: string
+          network: string
+        }
+      >(`SELECT id, descriptor, network FROM accounts ${archivedClause} ORDER BY created_at DESC`)
+      .all()
   }
 
   private recordExchangeSnapshot(accountId: string, balanceSats: string, timestamp: string): void {
@@ -525,10 +528,10 @@ export class ControlCenterService {
 
   private getExchangeSnapshots(accountId: string): Array<{ balance_sats: string; timestamp: string }> {
     return this.db
-      .prepare(
+      .prepare<unknown[], { balance_sats: string; timestamp: string }>(
         'SELECT balance_sats, timestamp FROM exchange_balance_snapshots WHERE account_id = ? ORDER BY timestamp ASC',
       )
-      .all(accountId) as Array<{ balance_sats: string; timestamp: string }>
+      .all(accountId)
   }
 
   private getAccountSnapshotEntries(accountId: string, throughTimestamp?: string): BalanceEntry[] {
@@ -553,19 +556,23 @@ export class ControlCenterService {
 
   private getArchivedAccountSnapshotEntries(): BalanceEntry[] {
     const activeAccounts = new Set(
-      (
-        this.db.prepare('SELECT descriptor, network FROM accounts WHERE deleted_at IS NULL').all() as Array<{
-          descriptor: string
-          network: string
-        }>
-      ).map((row) => accountDescriptorNetworkKey(row.descriptor, row.network)),
+      this.db
+        .prepare<
+          unknown[],
+          {
+            descriptor: string
+            network: string
+          }
+        >('SELECT descriptor, network FROM accounts WHERE deleted_at IS NULL')
+        .all()
+        .map((row) => accountDescriptorNetworkKey(row.descriptor, row.network)),
     )
 
     const archivedRows = this.db
-      .prepare(
+      .prepare<unknown[], { id: string; descriptor: string; network: string; deleted_at: string }>(
         'SELECT id, descriptor, network, deleted_at FROM accounts WHERE deleted_at IS NOT NULL ORDER BY created_at DESC',
       )
-      .all() as Array<{ id: string; descriptor: string; network: string; deleted_at: string }>
+      .all()
 
     const allEntries: BalanceEntry[] = []
 
@@ -592,21 +599,25 @@ export class ControlCenterService {
   private getAccountSnapshots(accountId: string, throughTimestamp?: string): BalanceSnapshotRow[] {
     if (throughTimestamp !== undefined) {
       return this.db
-        .prepare(
+        .prepare<unknown[], BalanceSnapshotRow>(
           'SELECT balance_sats, timestamp FROM balance_snapshots WHERE account_id = ? AND timestamp <= ? ORDER BY timestamp ASC',
         )
-        .all(accountId, throughTimestamp) as BalanceSnapshotRow[]
+        .all(accountId, throughTimestamp)
     }
 
     return this.db
-      .prepare('SELECT balance_sats, timestamp FROM balance_snapshots WHERE account_id = ? ORDER BY timestamp ASC')
-      .all(accountId) as BalanceSnapshotRow[]
+      .prepare<unknown[], BalanceSnapshotRow>(
+        'SELECT balance_sats, timestamp FROM balance_snapshots WHERE account_id = ? ORDER BY timestamp ASC',
+      )
+      .all(accountId)
   }
 
   private getLatestAccountSnapshotBalance(accountId: string): bigint | null {
     const row = this.db
-      .prepare('SELECT balance_sats FROM balance_snapshots WHERE account_id = ? ORDER BY timestamp DESC LIMIT 1')
-      .get(accountId) as { balance_sats: string } | undefined
+      .prepare<unknown[], { balance_sats: string }>(
+        'SELECT balance_sats FROM balance_snapshots WHERE account_id = ? ORDER BY timestamp DESC LIMIT 1',
+      )
+      .get(accountId)
 
     return row ? BigInt(row.balance_sats) : null
   }
@@ -979,13 +990,13 @@ export class ControlCenterService {
     deltas: BalanceEntry[],
   ): number {
     const snapshots = this.db
-      .prepare(
+      .prepare<unknown[], BalanceSnapshotRow>(
         `SELECT balance_sats, timestamp
          FROM balance_snapshots
          WHERE account_id = ? AND timestamp >= ? AND timestamp <= ?
          ORDER BY timestamp ASC`,
       )
-      .all(accountId, rangeStart.toISOString(), rangeEnd.toISOString()) as BalanceSnapshotRow[]
+      .all(accountId, rangeStart.toISOString(), rangeEnd.toISOString())
 
     let runningBalance = startBalance
     let deltaIndex = 0
@@ -1016,21 +1027,21 @@ export class ControlCenterService {
 
   private hasCurrentVersionAccountHistorySync(accountId: string, fromGenesis = false): boolean {
     const row = this.db
-      .prepare(
+      .prepare<unknown[], { one: number }>(
         `SELECT 1 AS one
          FROM account_history_syncs
          WHERE account_id = ? AND sync_version >= ?
            AND (? = 0 OR from_block_height = 0)
          LIMIT 1`,
       )
-      .get(accountId, CURRENT_ACCOUNT_HISTORY_SYNC_VERSION, Number(fromGenesis)) as { one: number } | undefined
+      .get(accountId, CURRENT_ACCOUNT_HISTORY_SYNC_VERSION, Number(fromGenesis))
 
     return row !== undefined
   }
 
   private getMissingAccountHistorySyncRanges(accountId: string, requestedRange: BlockRange): BlockRange[] {
     const rows = this.db
-      .prepare(
+      .prepare<unknown[], AccountHistorySyncRow>(
         `SELECT from_block_height, to_block_height, sync_version
          FROM account_history_syncs
          WHERE account_id = ?
@@ -1044,7 +1055,7 @@ export class ControlCenterService {
         CURRENT_ACCOUNT_HISTORY_SYNC_VERSION,
         requestedRange.fromBlockHeight,
         requestedRange.toBlockHeight,
-      ) as AccountHistorySyncRow[]
+      )
 
     const missingRanges: BlockRange[] = []
     let cursor = requestedRange.fromBlockHeight
@@ -1081,11 +1092,11 @@ export class ControlCenterService {
       // Coalesce only equally certified coverage. Never bridge an unscanned
       // block or promote an older version's range without actually scanning it.
       const rows = this.db
-        .prepare(
+        .prepare<unknown[], AccountHistorySyncRow>(
           `SELECT from_block_height, to_block_height, sync_version FROM account_history_syncs
            WHERE account_id = ? AND sync_version = ?`,
         )
-        .all(accountId, CURRENT_ACCOUNT_HISTORY_SYNC_VERSION) as AccountHistorySyncRow[]
+        .all(accountId, CURRENT_ACCOUNT_HISTORY_SYNC_VERSION)
       const ranges = [
         range,
         ...rows.map((row) => ({ fromBlockHeight: row.from_block_height, toBlockHeight: row.to_block_height })),

@@ -41,10 +41,8 @@ export class SafeHttpError extends ErrorWithTag {
   public readonly kind: SafeHttpErrorKindVariant
 
   public constructor(options: SafeHttpErrorKindVariant & { message: string }) {
-    super(options.message)
-    this.kind = {
-      value: options.value,
-      cause: options.cause,
-    } as SafeHttpErrorKindVariant
+    const { message, ...kind } = options
+    super(message)
+    this.kind = kind
   }
 }

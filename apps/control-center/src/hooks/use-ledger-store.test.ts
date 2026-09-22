@@ -1,6 +1,5 @@
 // @vitest-environment node
-import { EventEmitter } from 'node:events'
-import type Transport from '@ledgerhq/hw-transport'
+import Transport from '@ledgerhq/hw-transport'
 import { act, createElement } from 'react'
 import { type Root, createRoot } from 'react-dom/client'
 import { toast } from 'sonner'
@@ -10,10 +9,7 @@ import { useLedgerStore, useToastOnLedgerDisconnect } from './use-ledger-store'
 
 await vi.hoisted(async () => {
   // Keep Node's byte-array globals for the Bitcoin SDK while rendering the hook in a DOM.
-  const { createRequire } = await import('node:module')
-  const { JSDOM } = createRequire(import.meta.url)('jsdom') as {
-    JSDOM: new (html: string, options: { url: string }) => { window: Window & typeof globalThis }
-  }
+  const { JSDOM } = await import('jsdom')
   const { window } = new JSDOM('<!doctype html><html><body></body></html>', { url: 'http://localhost' })
   vi.stubGlobal('window', window)
   vi.stubGlobal('document', window.document)
@@ -35,11 +31,11 @@ function DisconnectNotifications(): null {
   return null
 }
 
-function fakeTransport(): Transport & EventEmitter {
-  return Object.assign(new EventEmitter(), {
+function fakeTransport(): Transport {
+  return Object.assign(new Transport(), {
     close: vi.fn(async () => undefined),
     deviceModel: { productName: 'Ledger Flex', id: 'flex' },
-  }) as unknown as Transport & EventEmitter
+  })
 }
 
 beforeEach(async () => {

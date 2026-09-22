@@ -201,6 +201,7 @@ function ImportWallet({ onBack, onNext }: { onBack: () => void; onNext: (data: C
         your hardware wallet or multisig coordinator (such as Sparrow, Unchained, or Nunchuk).
       </Text>
       <FileDropReader
+        readAs="text"
         readyText="Drag the file here, or paste your descriptor manually below"
         invalidText="Invalid file. Please check your file and try again."
         validText="Success!"

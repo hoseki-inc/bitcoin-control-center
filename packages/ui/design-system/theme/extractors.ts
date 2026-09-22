@@ -1,3 +1,4 @@
+import { hasKey } from '../../../lib'
 import { colors } from './foundation/colors'
 import { fontWeights, newTextStyles } from './foundation/typography'
 
@@ -14,9 +15,9 @@ export function getColor(colorPath: string): string {
 
   // Navigate through each path segment
   for (const segment of pathSegments) {
-    if (current && typeof current === 'object' && segment in current) {
+    if (current && typeof current === 'object' && hasKey(current, segment)) {
       // The guard confirms this is an object containing the key; its value remains unknown.
-      current = (current as Record<string, unknown>)[segment]
+      current = current[segment]
     } else {
       // Path not found, return the original path or throw an error
       throw new Error(`Color path "${colorPath}" not found in colors`)

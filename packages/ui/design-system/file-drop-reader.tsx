@@ -1,5 +1,5 @@
 import { Box, Stack, Text } from '@chakra-ui/react'
-import type { Result } from '@patina/core'
+import { Err, type Result } from '@patina/core'
 import { CloudUploadIcon, RefreshCwIcon } from 'lucide-react'
 import { type ChangeEvent, type DragEvent, useRef, useState } from 'react'
 
@@ -9,35 +9,40 @@ type TextFileExtension = 'json' | 'txt'
 type BinaryFileExtension = 'png' | 'jpg' | 'jpeg' | 'webp'
 type FileExtension = TextFileExtension | BinaryFileExtension
 
-type ContentTypeForExtensions<T extends ReadonlyArray<FileExtension>> = T[number] extends TextFileExtension
-  ? string
-  : T[number] extends BinaryFileExtension
-    ? ArrayBuffer
-    : never
-
-export function FileDropReader<T, E extends ReadonlyArray<FileExtension>>({
-  readyText,
-  invalidText,
-  validText,
-  validationFn,
-  onValidContentRead,
-  onInvalidContentRead,
-  acceptedFileTypes,
-  status,
-  onStatusChange,
-  validIcon,
-}: {
+type FileDropReaderProps<T> = {
   readyText: string
   invalidText: string
   validText: string
-  validationFn: (rawContent: ContentTypeForExtensions<E>, file: File) => Result<T, Error>
   onValidContentRead: (validatedContent: T, file: File) => void
   onInvalidContentRead?: (error: Error) => void
-  acceptedFileTypes: E
   status: FileDropState
   onStatusChange?: (newStatus: FileDropState) => void
   validIcon?: React.ReactNode
-}): JSX.Element {
+} & (
+  | {
+      readAs: 'text'
+      acceptedFileTypes: ReadonlyArray<TextFileExtension>
+      validationFn: (content: string, file: File) => Result<T, Error>
+    }
+  | {
+      readAs: 'arrayBuffer'
+      acceptedFileTypes: ReadonlyArray<BinaryFileExtension>
+      validationFn: (content: ArrayBuffer, file: File) => Result<T, Error>
+    }
+)
+
+export function FileDropReader<T>(props: FileDropReaderProps<T>): JSX.Element {
+  const {
+    readyText,
+    invalidText,
+    validText,
+    onValidContentRead,
+    onInvalidContentRead,
+    status,
+    onStatusChange,
+    validIcon,
+  } = props
+  const acceptedFileTypes: ReadonlyArray<FileExtension> = props.acceptedFileTypes
   const [isDragging, setIsDragging] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const handledJpgExtension: ReadonlyArray<FileExtension> =
@@ -74,9 +79,14 @@ export function FileDropReader<T, E extends ReadonlyArray<FileExtension>>({
 
         const content = event.target.result
 
-        // TODO: I would like to avoid the type assertion here. But i will need to refactor
-        // this component to be more generic to handle both text and binary files.
-        const validationResult = validationFn(content as ContentTypeForExtensions<E>, file)
+        const validationResult =
+          props.readAs === 'text'
+            ? typeof content === 'string'
+              ? props.validationFn(content, file)
+              : Err(new Error('Expected text file content'))
+            : content instanceof ArrayBuffer
+              ? props.validationFn(content, file)
+              : Err(new Error('Expected binary file content'))
         const newStatus = validationResult.isOk() ? 'valid' : 'invalid'
         onStatusChange?.(newStatus)
 
@@ -88,7 +98,7 @@ export function FileDropReader<T, E extends ReadonlyArray<FileExtension>>({
       }
 
       // Choose reading method based on file type
-      if (file.type === 'application/json' || file.type === 'text/plain') {
+      if (props.readAs === 'text') {
         reader.readAsText(file)
       } else {
         reader.readAsArrayBuffer(file)

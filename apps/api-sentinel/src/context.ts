@@ -51,11 +51,12 @@ export const createAppContext = asyncFn(async (logger: Logger): Promise<Result<A
   // Check SQLite for user-saved Electrum settings (from desktop Settings page).
   // These override the env var defaults so the config persists across restarts.
   const getSetting = (key: string): string | undefined =>
-    (database.db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined)?.value
+    database.db.prepare<unknown[], { value: string }>('SELECT value FROM settings WHERE key = ?').get(key)?.value
 
   const electrumHost = getSetting('electrum_host') ?? env.ELECTRUM_HOST
   const electrumPort = Number(getSetting('electrum_port') ?? env.ELECTRUM_PORT)
-  const electrumProtocol = (getSetting('electrum_protocol') ?? env.ELECTRUM_PROTOCOL) as 'tcp' | 'ssl'
+  const storedProtocol = getSetting('electrum_protocol')
+  const electrumProtocol = storedProtocol === 'tcp' || storedProtocol === 'ssl' ? storedProtocol : env.ELECTRUM_PROTOCOL
   const torEnabled = getSetting('tor_enabled') === 'true'
 
   // If Tor is enabled and SOCKS proxy env vars are set, include proxy config

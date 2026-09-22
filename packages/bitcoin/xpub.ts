@@ -99,6 +99,7 @@ export class Xpub {
   }
 
   public toString(): CheckedXpubString {
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- BIP32 serializes this constructed key; external strings use fromString.
     return Result.fromThrowable(() => this.spec.toBase58() as CheckedXpubString).expect(
       'instance should have been a valid xpub that can be encoded to base58',
     )

@@ -23,6 +23,7 @@ export const Default: Story = () => {
       <Box>
         <p>Must be a JSON file, otherwise invalid:</p>
         <FileDropReader
+          readAs="text"
           readyText="Drag 'whatever.json' here"
           invalidText="Invalid file. Please check your file and try again."
           validText="Click 'Continue' to continue"
@@ -46,6 +47,7 @@ export const Default: Story = () => {
       <Box>
         <p>Must be a .txt file with contents "foo", otherwise invalid:</p>
         <FileDropReader
+          readAs="text"
           readyText="Drag 'foo.txt' here"
           invalidText="Invalid file. Please check your file and try again."
           validText="Click 'Continue' to continue"
@@ -67,6 +69,7 @@ export const Default: Story = () => {
       <Box>
         <p>Accepts PNG, JPEG, and WebP images:</p>
         <FileDropReader
+          readAs="arrayBuffer"
           readyText="Drag an image file here (PNG, JPEG, or WebP)"
           invalidText="Invalid image file. Please check your file and try again."
           validText="Click 'Continue' to continue"

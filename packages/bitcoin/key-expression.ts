@@ -20,7 +20,7 @@ export function KeyFingerprint(str: string): Result<KeyFingerprint, Error> {
   return parse(keyFingerprintSchema, str)
 }
 
-KeyFingerprint.DEFAULT = '00000000' as KeyFingerprint
+KeyFingerprint.DEFAULT = KeyFingerprint('00000000').expect('valid default fingerprint')
 
 /**
  * Key origin information, consisting of:

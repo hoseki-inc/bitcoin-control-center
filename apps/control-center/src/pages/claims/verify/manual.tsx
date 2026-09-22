@@ -3,12 +3,13 @@ import { TopBar } from '@hoseki/packages/ui/prove-verify-ui/top-bar'
 import { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router'
 import { toast } from 'sonner'
+import { parseNavigationState } from '../../../lib/navigation-state'
 import { trpc } from '../../../trpc'
 
 export function ClaimsVerifyManualPage(): JSX.Element {
   const navigate = useNavigate()
   const location = useLocation()
-  const returnTo = (location.state as { returnTo?: string } | null)?.returnTo ?? '/accounts'
+  const returnTo = parseNavigationState(location.state)?.returnTo ?? '/accounts'
 
   const [displayName, setDisplayName] = useState('')
   const [btcAmount, setBtcAmount] = useState('')

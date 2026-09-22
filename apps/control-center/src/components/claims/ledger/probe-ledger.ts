@@ -22,7 +22,16 @@ export function scriptTypeToLedgerScriptLabel(scriptType: SingleSigAccount['scri
  * Probes a Ledger device for all available Bitcoin accounts and returns a list of wallets with balances.
  */
 export const probeLedger = asyncFn(async function (
-  trpcUtils: ReturnType<typeof trpc.useUtils>,
+  trpcUtils: {
+    portalProve: {
+      onchain: {
+        bitcoinAccountBalances: Pick<
+          ReturnType<typeof trpc.useUtils>['portalProve']['onchain']['bitcoinAccountBalances'],
+          'fetch'
+        >
+      }
+    }
+  },
   ctx: {
     signal?: AbortSignal
     isCurrentConnection: () => boolean

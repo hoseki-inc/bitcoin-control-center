@@ -203,20 +203,20 @@ export class RobinhoodClient {
     return Ok(parsed.data)
   }
 
-  private async paginate<T>(path: string, itemSchema: z.ZodTypeAny): Promise<Result<T[], Error>> {
+  private async paginate<T>(path: string, itemSchema: z.ZodType<T>): Promise<Result<T[], Error>> {
     const schema = paginatedSchema(itemSchema)
     const allResults: T[] = []
     let nextUrl: string | null = path
 
     while (nextUrl) {
       const fullPath: string = nextUrl.startsWith('http') ? nextUrl.replace(`https://${BASE_HOST}`, '') : nextUrl
-      const result: Result<PaginatedResponse<unknown>, Error> = await this.request(fullPath, schema)
+      const result: Result<PaginatedResponse<T>, Error> = await this.request(fullPath, schema)
       if (result.isErr()) {
         return Err(result.unwrapErr())
       }
 
-      const page: PaginatedResponse<unknown> = result.unwrap()
-      allResults.push(...(page.results as T[]))
+      const page: PaginatedResponse<T> = result.unwrap()
+      allResults.push(...page.results)
       nextUrl = page.next
     }
 

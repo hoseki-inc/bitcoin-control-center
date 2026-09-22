@@ -1,6 +1,7 @@
 import * as net from 'node:net'
-import type { AddressInfo } from 'node:net'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, assert, beforeEach, describe, expect, it } from 'vitest'
+import { z } from 'zod'
+import { parseUnknown } from '../../../result'
 import { ElectrumClient } from './client'
 import { shouldVerifyElectrumTlsCertificate } from './protocol'
 
@@ -26,7 +27,10 @@ async function startMockServer(): Promise<MockServer> {
           continue
         }
         requests.push(line)
-        const req = JSON.parse(line) as { id: number; method: string; params: unknown[] }
+        const req = parseUnknown(
+          z.object({ id: z.number(), method: z.string(), params: z.array(z.unknown()) }),
+          JSON.parse(line) as unknown,
+        ).expect('valid JSON-RPC test request')
         const result =
           req.method === 'server.version'
             ? ['MockElectrum 1.0', '1.4']
@@ -39,7 +43,9 @@ async function startMockServer(): Promise<MockServer> {
   })
 
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
-  const port = (server.address() as AddressInfo).port
+  const address = server.address()
+  assert(address && typeof address !== 'string', 'Expected a TCP listener')
+  const port = address.port
 
   return {
     port,

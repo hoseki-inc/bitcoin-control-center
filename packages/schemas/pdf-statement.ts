@@ -106,8 +106,7 @@ export const PdfStatementSchema = z.discriminatedUnion('format', [CustomPdfState
 export type PdfStatement = z.infer<typeof PdfStatementSchema>
 
 // Statement document format schema
-type Property = keyof typeof documentFormatOptionsMap
 export const StatementDocumentFormatSchema = z
-  .enum(Object.values(documentFormatOptionsMap) as [Property, ...Property[]])
+  .enum([documentFormatOptionsMap.custom, documentFormatOptionsMap.monthly])
   .default(documentFormatOptionsMap.custom)
 export type StatementDocumentFormat = z.infer<typeof StatementDocumentFormatSchema>

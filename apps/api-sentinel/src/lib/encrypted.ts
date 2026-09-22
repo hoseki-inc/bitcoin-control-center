@@ -1,7 +1,7 @@
 import * as crypto from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { Err, Ok, Result } from '@hoseki/packages/result'
+import { Err, Ok, Result, parse } from '@hoseki/packages/result'
 import type Database from 'better-sqlite3'
 import type { Logger } from 'pino'
 import { z } from 'zod'
@@ -70,8 +70,9 @@ function writeSecretFile(path: string, value: string): void {
 }
 
 function readLegacyDatabaseKey(db: Database.Database): string | null {
-  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(legacySettingsKey) as
-    { value: string } | undefined
+  const row = db
+    .prepare<unknown[], { value: string }>('SELECT value FROM settings WHERE key = ?')
+    .get(legacySettingsKey)
   return row?.value ?? null
 }
 
@@ -141,7 +142,9 @@ export class Encrypted {
       const combined = new Uint8Array(part1.length + part2.length)
       combined.set(new Uint8Array(part1), 0)
       combined.set(new Uint8Array(part2), part1.length)
-      const blob = `${iv.toString(encoding)}_${Buffer.from(combined).toString(encoding)}` as CiphertextBlob
+      const blob = parse(CiphertextBlob, `${iv.toString(encoding)}_${Buffer.from(combined).toString(encoding)}`).expect(
+        'generated ciphertext should have a valid format',
+      )
       return new Encrypted(blob)
     })
   }

@@ -75,11 +75,16 @@ export class EtfService {
   }
 
   public listAccounts(): EtfAccountDto[] {
-    const rows = this.db.prepare('SELECT * FROM etf_accounts ORDER BY created_at DESC').all() as Array<{
-      id: string
-      display_name: string
-      created_at: string
-    }>
+    const rows = this.db
+      .prepare<
+        unknown[],
+        {
+          id: string
+          display_name: string
+          created_at: string
+        }
+      >('SELECT * FROM etf_accounts ORDER BY created_at DESC')
+      .all()
 
     return rows.map((row) => ({
       id: row.id,
@@ -90,8 +95,11 @@ export class EtfService {
   }
 
   public getAccount(id: string): EtfAccountDto | null {
-    const row = this.db.prepare('SELECT * FROM etf_accounts WHERE id = ?').get(id) as
-      { id: string; display_name: string; created_at: string } | undefined
+    const row = this.db
+      .prepare<unknown[], { id: string; display_name: string; created_at: string }>(
+        'SELECT * FROM etf_accounts WHERE id = ?',
+      )
+      .get(id)
 
     if (!row) {
       return null
@@ -133,8 +141,9 @@ export class EtfService {
     shares: string
     datePurchased?: string
   }): Result<EtfHoldingDto, Error> {
-    const account = this.db.prepare('SELECT id FROM etf_accounts WHERE id = ?').get(args.accountId) as
-      { id: string } | undefined
+    const account = this.db
+      .prepare<unknown[], { id: string }>('SELECT id FROM etf_accounts WHERE id = ?')
+      .get(args.accountId)
     if (!account) {
       return Err(new Error('ETF account not found'))
     }
@@ -172,21 +181,27 @@ export class EtfService {
 
   public listHoldings(accountId: string): EtfHoldingDto[] {
     const rows = this.db
-      .prepare('SELECT * FROM etf_holdings WHERE account_id = ? ORDER BY created_at ASC')
-      .all(accountId) as Array<{
-      id: string
-      account_id: string
-      ticker: string
-      shares: string
-      date_purchased: string | null
-      created_at: string
-    }>
+      .prepare<
+        unknown[],
+        {
+          id: string
+          account_id: string
+          ticker: string
+          shares: string
+          date_purchased: string | null
+          created_at: string
+        }
+      >('SELECT * FROM etf_holdings WHERE account_id = ? ORDER BY created_at ASC')
+      .all(accountId)
 
     const asOf = new Date()
 
     return rows.map((row) => {
-      const ticker = row.ticker as EtfTicker
-      const config = ETF_CONFIGS[ticker]
+      const config = getEtfConfig(row.ticker)
+      if (!config) {
+        throw new Error('Stored ETF ticker is unsupported')
+      }
+      const ticker = config.ticker
       const shares = parseFloat(row.shares)
       return {
         id: row.id,
@@ -202,8 +217,9 @@ export class EtfService {
   }
 
   public removeHolding(holdingId: string): Result<string, Error> {
-    const row = this.db.prepare('SELECT account_id FROM etf_holdings WHERE id = ?').get(holdingId) as
-      { account_id: string } | undefined
+    const row = this.db
+      .prepare<unknown[], { account_id: string }>('SELECT account_id FROM etf_holdings WHERE id = ?')
+      .get(holdingId)
     if (!row) {
       return Err(new Error('ETF holding not found'))
     }
@@ -223,8 +239,10 @@ export class EtfService {
 
   public getSnapshots(accountId: string): Array<{ balance_sats: string; timestamp: string }> {
     return this.db
-      .prepare('SELECT balance_sats, timestamp FROM etf_balance_snapshots WHERE account_id = ? ORDER BY timestamp ASC')
-      .all(accountId) as Array<{ balance_sats: string; timestamp: string }>
+      .prepare<unknown[], { balance_sats: string; timestamp: string }>(
+        'SELECT balance_sats, timestamp FROM etf_balance_snapshots WHERE account_id = ? ORDER BY timestamp ASC',
+      )
+      .all(accountId)
   }
 
   public recordSnapshot(accountId: string, balanceSats: string, timestamp: string): void {
@@ -251,15 +269,18 @@ export class EtfService {
 
     const placeholders = accountIds.map(() => '?').join(', ')
     const rows = this.db
-      .prepare(
+      .prepare<
+        unknown[],
+        {
+          ticker: string
+          shares: string
+          date_purchased: string | null
+          created_at: string
+        }
+      >(
         `SELECT ticker, shares, date_purchased, created_at FROM etf_holdings WHERE account_id IN (${placeholders}) ORDER BY COALESCE(date_purchased, created_at) ASC`,
       )
-      .all(...accountIds) as Array<{
-      ticker: string
-      shares: string
-      date_purchased: string | null
-      created_at: string
-    }>
+      .all(...accountIds)
 
     return rows.map((row) => {
       const config = getEtfConfig(row.ticker)
@@ -276,8 +297,10 @@ export class EtfService {
 
   public computeAccountBalance(accountId: string): bigint {
     const rows = this.db
-      .prepare('SELECT ticker, shares FROM etf_holdings WHERE account_id = ?')
-      .all(accountId) as Array<{ ticker: string; shares: string }>
+      .prepare<unknown[], { ticker: string; shares: string }>(
+        'SELECT ticker, shares FROM etf_holdings WHERE account_id = ?',
+      )
+      .all(accountId)
 
     const asOf = new Date()
     let totalSats = 0n

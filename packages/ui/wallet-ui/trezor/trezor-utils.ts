@@ -13,7 +13,7 @@ export function getTrezorDisplayName(features: Features): string {
 
 export const trezorModels = ['One', 'T', 'Safe 3 (Bitcoin-only)', 'Safe 3', 'Safe 5'] as const
 export function isTrezorModel(model: string): model is TrezorModel {
-  return trezorModels.includes(model as TrezorModel)
+  return trezorModels.some((candidate) => candidate === model)
 }
 export type TrezorModel = (typeof trezorModels)[number]
 /**

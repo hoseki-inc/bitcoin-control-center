@@ -41,7 +41,7 @@ export function LedgerConnectionInfo({
         connectLedger.mutate()
       }}
       isLoading={connectLedger.isLoading}
-      error={connectLedger.error as Error | null}
+      error={connectLedger.error instanceof Error ? connectLedger.error : null}
     />
   )
 }

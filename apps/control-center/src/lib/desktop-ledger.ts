@@ -7,31 +7,26 @@ export function getDesktopLedger(): LedgerHidApi | undefined {
 type ConnectionMessage = { title: string; detail: string }
 
 export function ledgerConnectionMessage(error: unknown): ConnectionMessage {
-  const details = error as { name?: string; statusText?: string; statusCode?: number } | null
-  if (details?.name === 'LedgerConnectionTimeout') {
+  const details = typeof error === 'object' && error !== null ? error : {}
+  const name = 'name' in details && typeof details.name === 'string' ? details.name : undefined
+  const statusText = 'statusText' in details ? details.statusText : undefined
+  const statusCode = 'statusCode' in details ? details.statusCode : undefined
+  if (name === 'LedgerConnectionTimeout') {
     return {
       title: 'Your Ledger didn’t respond',
       detail: 'Reconnect and unlock your Ledger, open the Bitcoin app, then try again.',
     }
   }
-  if (
-    details?.name === 'LockedDeviceError' ||
-    details?.statusText === 'LOCKED_DEVICE' ||
-    details?.statusCode === 21781
-  ) {
+  if (name === 'LockedDeviceError' || statusText === 'LOCKED_DEVICE' || statusCode === 21781) {
     return {
       title: 'Unlock your Ledger',
       detail: 'Enter your PIN on the device, open the Bitcoin app, then try again.',
     }
   }
-  if (
-    details?.name === 'BitcoinAppNotOpen' ||
-    details?.statusText === 'INS_NOT_SUPPORTED' ||
-    details?.statusCode === 27913
-  ) {
+  if (name === 'BitcoinAppNotOpen' || statusText === 'INS_NOT_SUPPORTED' || statusCode === 27913) {
     return { title: 'Open the Bitcoin app', detail: 'Open the Bitcoin app on your Ledger, then try again.' }
   }
-  if (details?.name?.includes('Disconnected')) {
+  if (name?.includes('Disconnected')) {
     return {
       title: 'Your Ledger was disconnected',
       detail: 'Reconnect and unlock your Ledger, then open the Bitcoin app to continue.',
