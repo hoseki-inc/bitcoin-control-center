@@ -17,11 +17,13 @@ const otherDevice = { vendorId: 0x1234, deviceId: 'other-1', name: 'Other device
 function createHarness(t, choose = async () => ({ response: 0 })) {
   const session = new EventEmitter()
   const frame = { url: `${APP_ORIGIN}/claims/verify/ledger` }
+  /** @type {import('../src/ledger-hid-api').LedgerHidUpdate[]} */
   const updates = []
   const contents = Object.assign(new EventEmitter(), {
     session,
     mainFrame: frame,
     isDestroyed: () => false,
+    /** @param {string} channel @param {import('../src/ledger-hid-api').LedgerHidUpdate} update */
     send: (channel, update) => {
       assert.equal(channel, 'ledger-hid:update')
       updates.push(update)
@@ -43,6 +45,7 @@ function createHarness(t, choose = async () => ({ response: 0 })) {
     return handler
   }
   const sender = { sender: contents, senderFrame: frame }
+  /** @type {import('electron').MessageBoxOptions[]} */
   const dialogs = []
   setupLedgerHidAccess(window, APP_ORIGIN, ipc, async (parent, options) => {
     assert.equal(parent, window)
@@ -69,7 +72,11 @@ function createHarness(t, choose = async () => ({ response: 0 })) {
   return {
     request,
     dialogs,
-    updates,
+    lastUpdate: () => {
+      const update = updates.at(-1)
+      assert.ok(update, 'Expected a Ledger device update')
+      return update
+    },
     frame,
     contents,
     window,
@@ -112,10 +119,10 @@ void test('one Ledger connects after explicit Connect, without a native picker',
   const h = createHarness(t)
   assert.equal(h.begin(), true)
   const result = h.request()
-  assert.equal(h.updates.at(-1).status, 'connecting')
+  assert.equal(h.lastUpdate().status, 'connecting')
   t.mock.timers.tick(150)
   assert.equal(await result, ledger.deviceId)
-  assert.equal(h.updates.at(-1).status, 'connecting')
+  assert.equal(h.lastUpdate().status, 'connecting')
   assert.equal(h.dialogs.length, 0)
 })
 
@@ -123,7 +130,7 @@ void test('multiple devices require a choice and expose only Ledger names and ID
   const h = createHarness(t)
   h.begin()
   const result = h.request({ deviceList: [otherDevice, ledger, secondLedger] })
-  assert.deepEqual(h.updates.at(-1).devices, [
+  assert.deepEqual(h.lastUpdate().devices, [
     { id: 'ledger-1', name: 'Flex' },
     { id: 'ledger-2', name: 'Nano X' },
   ])
@@ -137,9 +144,9 @@ void test('empty discovery stays open, then connects a hotplugged Ledger', async
   const h = createHarness(t)
   h.begin()
   const result = h.request({ deviceList: [] })
-  assert.deepEqual(h.updates.at(-1).devices, [])
+  assert.deepEqual(h.lastUpdate().devices, [])
   h.add(otherDevice)
-  assert.deepEqual(h.updates.at(-1).devices, [])
+  assert.deepEqual(h.lastUpdate().devices, [])
   h.add(ledger)
   t.mock.timers.tick(150)
   assert.equal(await result, ledger.deviceId)
@@ -153,7 +160,7 @@ void test('simultaneous hotplug requires selection instead of choosing whichever
   h.add(ledger)
   h.add(secondLedger)
   t.mock.timers.tick(150)
-  assert.equal(h.updates.at(-1).status, 'choosing')
+  assert.equal(h.lastUpdate().status, 'choosing')
   h.select(secondLedger.deviceId)
   assert.equal(await result, secondLedger.deviceId)
 })
@@ -163,7 +170,7 @@ void test('removal updates the list and prevents selecting a disconnected device
   h.begin()
   const result = h.request({ deviceList: [ledger, secondLedger] })
   h.remove(ledger)
-  assert.deepEqual(h.updates.at(-1).devices, [{ id: 'ledger-2', name: 'Nano X' }])
+  assert.deepEqual(h.lastUpdate().devices, [{ id: 'ledger-2', name: 'Nano X' }])
   assert.equal(h.select(ledger.deviceId), false)
   assert.equal(h.select(secondLedger.deviceId), true)
   assert.equal(await result, secondLedger.deviceId)
@@ -190,7 +197,7 @@ void test('cancel resolves the pending request once and allows retry', async (t)
   h.cancel()
   h.cancel()
   assert.equal(await result, undefined)
-  assert.equal(h.updates.at(-1).status, 'cancelled')
+  assert.equal(h.lastUpdate().status, 'cancelled')
   assert.equal(h.begin('retry'), true)
 })
 
@@ -199,7 +206,7 @@ void test('late events from another frame cannot change the pending list', async
   h.begin()
   const result = h.request({ deviceList: [] })
   h.add(ledger, { url: h.frame.url })
-  assert.deepEqual(h.updates.at(-1).devices, [])
+  assert.deepEqual(h.lastUpdate().devices, [])
   h.cancel()
   assert.equal(await result, undefined)
 })
@@ -230,7 +237,7 @@ void test('requests expire with a distinct state and can be retried', async (t) 
   const result = h.request({ deviceList: [] })
   t.mock.timers.tick(120_000)
   assert.equal(await result, undefined)
-  assert.equal(h.updates.at(-1).status, 'expired')
+  assert.equal(h.lastUpdate().status, 'expired')
   assert.equal(h.begin('retry'), true)
 })
 
@@ -251,7 +258,9 @@ void test('window closure cancels a pending request and cleans up IPC and device
 void test('other connection entry points retain the scoped native chooser', async (t) => {
   const h = createHarness(t, async () => ({ response: 1 }))
   assert.equal(await h.request({ deviceList: [otherDevice, ledger, secondLedger] }), secondLedger.deviceId)
-  assert.deepEqual(h.dialogs[0].buttons, ['Flex', 'Nano X', 'Cancel'])
+  const dialog = h.dialogs[0]
+  assert.ok(dialog, 'Expected a Ledger device chooser')
+  assert.deepEqual(dialog.buttons, ['Flex', 'Nano X', 'Cancel'])
 })
 
 void test('native chooser cancellation and errors do not grant access', async (t) => {
@@ -297,7 +306,7 @@ void test('expiration before the browser event also denies the late request', as
   const h = createHarness(t)
   h.begin()
   t.mock.timers.tick(120_000)
-  assert.equal(h.updates.at(-1).status, 'expired')
+  assert.equal(h.lastUpdate().status, 'expired')
   assert.equal(await h.request(), undefined)
   assert.equal(h.dialogs.length, 0)
   assert.equal(h.begin('retry'), true)
@@ -313,7 +322,9 @@ void test('same-origin navigation cancels a native chooser immediately and ignor
   h.contents.emit('did-start-navigation', { isMainFrame: true })
   h.frame.url = `${APP_ORIGIN}/accounts`
   assert.equal(await result, undefined)
-  assert.equal(h.dialogs[0].signal.aborted, true)
+  const signal = h.dialogs[0]?.signal
+  assert.ok(signal, 'Expected a device chooser abort signal')
+  assert.equal(signal.aborted, true)
   assert.equal(h.begin('next-page'), true)
   finishDialog({ response: 0 })
   await Promise.resolve()
@@ -327,7 +338,9 @@ void test('native chooser timeout releases its callback even if the dialog promi
   const result = h.request()
   t.mock.timers.tick(120_000)
   assert.equal(await result, undefined)
-  assert.equal(h.dialogs[0].signal.aborted, true)
+  const signal = h.dialogs[0]?.signal
+  assert.ok(signal, 'Expected a device chooser abort signal')
+  assert.equal(signal.aborted, true)
   assert.equal(h.begin('retry'), true)
 })
 
@@ -346,6 +359,8 @@ for (const event of ['closed', 'render-process-gone']) {
     const result = h.request()
     ;(event === 'closed' ? h.window : h.contents).emit(event)
     assert.equal(await result, undefined)
-    assert.equal(h.dialogs[0].signal.aborted, true)
+    const signal = h.dialogs[0]?.signal
+    assert.ok(signal, 'Expected a device chooser abort signal')
+    assert.equal(signal.aborted, true)
   })
 }

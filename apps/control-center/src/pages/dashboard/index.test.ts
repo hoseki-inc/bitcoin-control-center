@@ -4,8 +4,11 @@ import { QueryClient, QueryObserver, onlineManager } from '@tanstack/react-query
 import { act, createElement } from 'react'
 import { type Root, createRoot } from 'react-dom/client'
 import { afterEach, assert, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { AccountsSidebar } from '../../components/dashboard-charts/accounts-sidebar'
 import type { RouterInput } from '../../trpc'
 import { DashboardPage } from './index'
+
+type SidebarProps = Parameters<typeof AccountsSidebar>[0]
 
 const mocks = vi.hoisted(() => {
   const base = {
@@ -41,7 +44,7 @@ const mocks = vi.hoisted(() => {
         refetch: () => unknown
       }
     >(),
-    sidebar: vi.fn(),
+    sidebar: vi.fn<(props: SidebarProps) => void>(),
     recordSnapshot: { mutate: vi.fn() },
     claims: [] as Array<{ id: string; displayName: string }>,
     holdings: [{ id: 'holding', displayName: 'Test holding', balance: '100' }],
@@ -90,7 +93,7 @@ vi.mock('@hoseki/packages/ui/design-system', async () => {
 vi.mock('../../components/dashboard-charts/accounts-sidebar', async () => {
   const { createElement: createMockElement } = await import('react')
   return {
-    AccountsSidebar: (props: { onToggle: (id: string) => void; onClearAll: () => void }) => {
+    AccountsSidebar: (props: SidebarProps) => {
       mocks.sidebar(props)
       return createMockElement(
         'div',

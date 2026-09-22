@@ -3,7 +3,8 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { daemons } from '@start9labs/start-sdk'
+import { afterEach, assert, describe, expect, it, vi } from 'vitest'
 import { main } from '../startos/main'
 import { sdk } from '../startos/sdk'
 
@@ -62,7 +63,7 @@ function setupInterface(
       return { bindings: { 3400: { addresses } } }
     }),
   }
-  const addDaemon = vi.fn()
+  const addDaemon = vi.fn<(id: string, options: { exec: daemons.ExecCommandOptions }) => void>()
   vi.spyOn(sdk.Daemons, 'of').mockReturnValue({ addDaemon } as unknown as ReturnType<typeof sdk.Daemons.of>)
   vi.spyOn(sdk.SubContainer, 'of').mockResolvedValue({} as Awaited<ReturnType<typeof sdk.SubContainer.of>>)
   cleanups.push(() => {
@@ -80,7 +81,13 @@ function setupInterface(
         callback()
       })
     },
-    allowedHosts: () => addDaemon.mock.lastCall?.[1].exec.env.SENTINEL_ALLOWED_HOSTS,
+    allowedHosts: () => {
+      const call = addDaemon.mock.lastCall
+      assert.exists(call, 'Expected the Sentinel daemon to be registered')
+      const hosts = call[1].exec.env?.['SENTINEL_ALLOWED_HOSTS']
+      assert(typeof hosts === 'string', 'Expected an explicit Sentinel host allowlist')
+      return hosts
+    },
     setPresent: (value) => {
       present = value
     },
