@@ -43,7 +43,7 @@ export function parseWalletExport(jsonFileContents: string, fileType: string): R
 }
 
 function parseJsonWalletExport(jsonFileContents: string): Result<ParsedWalletExport, Error> {
-  return Result.fromThrowable(() => JSON.parse(jsonFileContents)).andThen((parsed) => {
+  return Result.fromThrowable((): unknown => JSON.parse(jsonFileContents)).andThen((parsed) => {
     const specterDesktopResult = trySpecterDesktop(parsed)
     if (specterDesktopResult.isOk()) {
       return specterDesktopResult

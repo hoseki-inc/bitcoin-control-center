@@ -38,7 +38,7 @@ const ColdcardGenericJsonFileSchema = z.object({
 export type ColdcardGenericJsonFile = z.infer<typeof ColdcardGenericJsonFileSchema>
 
 export function parseGenericJsonFile(jsonFileContents: string): Result<ColdcardGenericJsonFile, Error> {
-  return Result.fromThrowable(() => JSON.parse(jsonFileContents)).andThen((parsed) =>
+  return Result.fromThrowable((): unknown => JSON.parse(jsonFileContents)).andThen((parsed) =>
     parseUnknown(ColdcardGenericJsonFileSchema, parsed),
   )
 }

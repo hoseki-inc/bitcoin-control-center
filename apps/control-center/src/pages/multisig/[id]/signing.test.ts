@@ -564,7 +564,7 @@ describe.each(['singlesig', 'multisig'] as const)('%s Ledger retry', (flow) => {
     vi.stubGlobal(
       'window',
       new Proxy(mocks.domGlobals.window, {
-        get(target, key) {
+        get(target, key): unknown {
           // jsdom requires the real Window as the receiver for event-listener methods.
           if (key === 'addEventListener' || key === 'removeEventListener') {
             return target[key].bind(target)
