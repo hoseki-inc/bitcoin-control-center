@@ -41,3 +41,4 @@ pnpm build
 - Run the accumulated lint checks and the relevant type checks, tests, and builds before committing each rule.
 - Keep Oxlint's default rule categories disabled; enable rules explicitly so each checkpoint adds only the rule under review.
 - Apply rules to all maintained source, including desktop, StartOS, tests, and repository scripts.
+- After the user confirms a lint PR is merged and asks to continue, update main and remove the completed worktree after verifying it has no uncommitted or unpushed work. Preserve branch history and any unfinished work, and start the next rule in a new worktree.
