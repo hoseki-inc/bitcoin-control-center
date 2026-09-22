@@ -105,7 +105,8 @@
     "typescript/no-unsafe-unary-minus": "error",
     "typescript/no-useless-default-assignment": "error",
     "typescript/no-wrapper-object-types": "error",
-    "typescript/non-nullable-type-assertion-style": "error"
+    "typescript/non-nullable-type-assertion-style": "error",
+    "typescript/only-throw-error": "error"
   },
   "overrides": [
     {

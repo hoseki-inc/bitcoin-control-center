@@ -8,7 +8,7 @@ import { catchUnwindAsync } from './panic'
  *
  * Unfortunately `patina` library cannot handle combining Results into a single Result yet.
  */
-export async function asyncResultToPromise<T, E>(asyncResult: AsyncResult<T, E>): Promise<T> {
+export async function asyncResultToPromise<T>(asyncResult: AsyncResult<T, Error>): Promise<T> {
   const result = await asyncResult
   if (result.isErr()) {
     throw result.unwrapErr()
