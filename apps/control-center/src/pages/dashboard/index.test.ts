@@ -358,7 +358,7 @@ describe('custom portfolio range UI', () => {
     await click('Custom')
     await click('Apply')
     expect(container.querySelectorAll('[data-chart]')).toHaveLength(0)
-    expect(container.textContent?.match(/Preparing history for this date range/g)).toHaveLength(2)
+    expect(container.textContent.match(/Preparing history for this date range/g)).toHaveLength(2)
   })
 
   it.each([
@@ -412,7 +412,7 @@ describe('custom portfolio range UI', () => {
         await click('Apply')
         expect(fetchRange).not.toHaveBeenCalled()
         expect(container.querySelectorAll('[data-chart]')).toHaveLength(0)
-        expect(container.textContent?.match(/Preparing history for this date range/g)).toHaveLength(2)
+        expect(container.textContent.match(/Preparing history for this date range/g)).toHaveLength(2)
         expect(container.textContent).not.toContain('BTC (+0.0%)')
 
         onlineManager.setOnline(true)

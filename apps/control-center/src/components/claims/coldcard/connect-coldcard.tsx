@@ -45,7 +45,7 @@ export function ConnectColdcard(): JSX.Element {
       derivationPath: selectedWallet.derivationPath,
       wallet: 'coldcard',
       model: selectedModel,
-      displayName: selectedWallet.displayName ?? 'Coldcard Wallet',
+      displayName: selectedWallet.displayName,
     })
   }
 

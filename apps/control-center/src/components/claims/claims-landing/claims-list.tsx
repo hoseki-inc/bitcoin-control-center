@@ -7,7 +7,7 @@ import { mapClaimToClaimCardProps, withStatusBalance } from '../../../utils/clai
 
 export function ClaimsList({ claims }: { claims: ClaimDto[] }): JSX.Element {
   // Fetch balances separately to show claim card asap and display balances asynchronously.
-  const claimIds = claims.map((claim) => claim.id) ?? []
+  const claimIds = claims.map((claim) => claim.id)
   const claimUsdBalancesQuery = useGetBalancesPerClaimIds({ claimIds, enabled: claimIds.length > 0 })
 
   return (

@@ -33,21 +33,13 @@ function StatementDetailsPageContent({ statementId }: { statementId: StatementId
   if (error) {
     return (
       <Box p={4}>
-        <ErrorBanner mb={4} message={`Error: ${error?.message ?? ''}`} />
+        <ErrorBanner mb={4} message={`Error: ${error.message}`} />
       </Box>
     )
   }
 
   if (isLoading) {
     return <Spinner fullPage size="xl" />
-  }
-
-  if (!statement) {
-    return (
-      <Box pt={8}>
-        <Text>No statement found.</Text>
-      </Box>
-    )
   }
 
   return (
@@ -92,7 +84,7 @@ function StatementSummary({ statement }: { statement: StatementDto }) {
         </Text>
         <Flex flexDirection="column" gap={4}>
           <HStack justifyContent="space-between">
-            {statement.user?.name && (
+            {statement.user.name && (
               <Box>
                 <Text textStyle="text/sm" fontWeight="medium">
                   Name
@@ -104,7 +96,7 @@ function StatementSummary({ statement }: { statement: StatementDto }) {
               <Text textStyle="text/sm" fontWeight="medium">
                 Email
               </Text>
-              <Text>{statement.user?.email || 'N/A'}</Text>
+              <Text>{statement.user.email || 'N/A'}</Text>
             </Box>
             <Box>
               <Text textStyle="text/sm" fontWeight="medium">

@@ -319,7 +319,7 @@ function GenericCheckWalletXpub({
         model: matchedKeystore.keystore.model,
       })
 
-      const signedMessage = claim.latestChallenge?.messages.find((m) => m.keystoreId === matchedKeystore?.keystore?.id)
+      const signedMessage = claim.latestChallenge?.messages.find((m) => m.keystoreId === matchedKeystore.keystore?.id)
 
       if (!signedMessage) {
         await createChallengeMessage.mutateAsync({
@@ -475,7 +475,7 @@ function GenericCheckWalletXpub({
                 width="fit-content"
                 isLoading={isChecking}
               >
-                {isChecking ? 'Checking...' : 'Check Now'}
+                Check Now
               </Button>
             }
           />
@@ -569,7 +569,7 @@ function ConnectColdcardWallet({ claim }: { claim: ClaimDto }) {
         {/* QR flow step 6: xpub matching (reuses existing component) */}
         {isQrFlow &&
           wizardStep === 6 &&
-          (!model || !coldcardJson ? (
+          (!coldcardJson ? (
             <RequiredDataMissing />
           ) : (
             <ColdcardMultisigStep6 claim={claim} model={model} coldcardJson={coldcardJson} />

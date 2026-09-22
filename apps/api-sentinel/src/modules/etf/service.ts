@@ -1,4 +1,10 @@
-import { ETF_CONFIGS, type EtfTicker, computeBtcPerShare, computeHoldingBtcSats } from '@hoseki/packages/etfs/holdings'
+import {
+  ETF_CONFIGS,
+  type EtfTicker,
+  computeBtcPerShare,
+  computeHoldingBtcSats,
+  getEtfConfig,
+} from '@hoseki/packages/etfs/holdings'
 import { Err, Ok } from '@patina/core'
 import type { Result } from '@patina/core'
 import type Database from 'better-sqlite3'
@@ -256,7 +262,7 @@ export class EtfService {
     }>
 
     return rows.map((row) => {
-      const config = ETF_CONFIGS[row.ticker as EtfTicker]
+      const config = getEtfConfig(row.ticker)
       if (!config) {
         return { timestamp: new Date(row.date_purchased ?? row.created_at), value: 0n }
       }
@@ -277,7 +283,7 @@ export class EtfService {
     let totalSats = 0n
 
     for (const row of rows) {
-      const config = ETF_CONFIGS[row.ticker as EtfTicker]
+      const config = getEtfConfig(row.ticker)
       if (!config) {
         continue
       }

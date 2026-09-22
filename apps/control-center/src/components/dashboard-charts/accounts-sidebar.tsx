@@ -79,15 +79,13 @@ export function AccountsSidebar({
           const b = balances.get(c.id)
           return sum + (b ? Number(b.current) : 0)
         }, 0) +
-      (exchangeAccounts ?? [])
+      exchangeAccounts
         .filter((a) => selected.has(a.id))
         .reduce((sum, a) => sum + (a.balance ? Number(a.balance) : 0), 0) +
-      (manualAccounts ?? [])
+      manualAccounts
         .filter((a) => selected.has(a.id))
         .reduce((sum, a) => sum + (a.balance ? Number(a.balance) : 0), 0) +
-      (etfAccounts ?? [])
-        .filter((a) => selected.has(a.id))
-        .reduce((sum, a) => sum + (a.balance ? Number(a.balance) : 0), 0)
+      etfAccounts.filter((a) => selected.has(a.id)).reduce((sum, a) => sum + (a.balance ? Number(a.balance) : 0), 0)
 
   // Build unified sorted list — highest BTC balance first
   type ClaimItem = { type: 'claim'; claim: ClaimDto; btcSats: number }
@@ -99,7 +97,7 @@ export function AccountsSidebar({
     ...claims.map((claim): ClaimItem => ({
       type: 'claim',
       claim,
-      btcSats: balances ? Number(balances.get(claim.id)?.current ?? 0) : 0,
+      btcSats: Number(balances.get(claim.id)?.current ?? 0),
     })),
     ...exchangeAccounts.map((account): ExchangeItem => ({
       type: 'exchange',
@@ -335,7 +333,7 @@ export function AccountsSidebar({
           return (
             <AccountPill
               key={item.claim.id}
-              name={item.claim.displayName ?? item.claim.officialName}
+              name={item.claim.displayName}
               provider={walletLabel}
               walletType={walletType}
               keystores={cardProps?.keystores}
@@ -676,7 +674,7 @@ function AccountPill({
 
       {/* Logo + Name */}
       <Flex align="center" gap={compact ? 2 : 2.5} mb={compact ? 1 : 2}>
-        {isMultisig && keystores ? (
+        {isMultisig ? (
           <Box flexShrink={0} w={avatarSize} h={avatarSize} position="relative">
             {keystores[0] && <MultisigMiniAvatar ks={keystores[0]} top="0" left="50%" transform="translateX(-50%)" />}
             {keystores[1] && <MultisigMiniAvatar ks={keystores[1]} bottom="0" left="0" />}

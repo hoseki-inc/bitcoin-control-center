@@ -127,9 +127,9 @@ export function createLedgerStore(
       deviceModel: null,
 
       init: async (openTransport = () => TransportWebHID.create(), signal) => {
-        const { transport, btc } = get()
+        const { isInitialized } = get()
         browserLogger.debug('Initializing ledger')
-        if (transport && btc) {
+        if (isInitialized) {
           browserLogger.debug('Skipping initialization: Transport and ledger.btc already set')
           return
         }

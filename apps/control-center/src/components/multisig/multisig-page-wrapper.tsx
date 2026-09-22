@@ -15,7 +15,7 @@ export type IndicatorKeystoreWithModel = IndicatorKeystore & { model: string | n
 type ContextType = {
   claim: ClaimDto
   indicatorKeystores: IndicatorKeystoreWithModel[]
-  expandedKeystore: IndicatorKeystoreWithModel
+  expandedKeystore: IndicatorKeystoreWithModel | null
 }
 
 export function MultisigPageWrapper(): JSX.Element {
@@ -37,10 +37,10 @@ export function MultisigPageWrapper(): JSX.Element {
   if (isLoading) {
     return <Spinner fullPage />
   }
-  if (error || !claim) {
+  if (error) {
     return (
       <Stack mt={8} spacing={4} align="start">
-        <ErrorBanner message={`An error occurred while loading the claim: ${error?.message ?? ''}`} />
+        <ErrorBanner message={`An error occurred while loading the claim: ${error.message}`} />
         <Button
           isLoading={isFetching}
           onClick={() => {
@@ -81,7 +81,7 @@ export function MultisigPageWrapper(): JSX.Element {
 }
 
 export function useMultisigPageWrapperContext(): ContextType {
-  const context = useOutletContext<ContextType>()
+  const context = useOutletContext<ContextType | null | undefined>()
   if (!context) {
     throw new Error('usePageWrapperContext must be used within a MultisigPageWrapper')
   }

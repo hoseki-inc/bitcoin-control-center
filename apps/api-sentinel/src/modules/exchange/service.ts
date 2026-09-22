@@ -1,12 +1,14 @@
 import { Coinbase } from '@hoseki/packages/clients/coinbase'
 import { Kraken } from '@hoseki/packages/clients/kraken'
 import { RobinhoodClient } from '@hoseki/packages/clients/robinhood'
+import { parseUnknown } from '@hoseki/packages/result'
 import { Err, Ok, asyncFn } from '@patina/core'
 import type { Result } from '@patina/core'
 import type Database from 'better-sqlite3'
 import Decimal from 'decimal.js'
 import { nanoid } from 'nanoid'
 import type { Logger } from 'pino'
+import { z } from 'zod'
 import { Encrypted } from '../../lib/encrypted'
 import { getStrikeBtcBalance, validateStrikeApiKey } from './strike'
 
@@ -25,10 +27,11 @@ export interface ExchangeAccountDto {
   connectionStatus: ExchangeConnectionStatus
 }
 
-interface CredentialData {
-  type: 'apiKey'
-  data: Record<string, { blob: string }>
-}
+const CredentialDataSchema = z.object({
+  type: z.literal('apiKey'),
+  data: z.record(z.object({ blob: z.string() })),
+})
+type CredentialData = z.infer<typeof CredentialDataSchema>
 
 export class ExchangeService {
   private readonly db: Database.Database
@@ -102,7 +105,7 @@ export class ExchangeService {
         return Err(new Error(`Failed to list Coinbase accounts: ${accountsResult.unwrapErr().message}`))
       }
       const accounts = accountsResult.unwrap()
-      const btcAccount = accounts.data.accounts?.find((a) => a.currency === 'BTC')
+      const btcAccount = accounts.data.accounts.find((a) => a.currency === 'BTC')
       if (!btcAccount) {
         return Err(new Error('No BTC account found in Coinbase'))
       }
@@ -113,7 +116,7 @@ export class ExchangeService {
         return Err(new Error(`Failed to fetch Coinbase balance: ${balanceResult.unwrapErr().message}`))
       }
       const balanceData = balanceResult.unwrap()
-      const btcValue = balanceData.data.account?.available_balance?.value ?? '0'
+      const btcValue = balanceData.data.account.available_balance.value
       const balanceSats = new Decimal(btcValue).mul(1e8).toFixed(0)
 
       // Encrypt credentials
@@ -491,7 +494,7 @@ export class ExchangeService {
         if (accountsRes.isErr()) {
           return Err(new Error(`Coinbase error: ${accountsRes.unwrapErr().message}`))
         }
-        const btcAccount = accountsRes.unwrap().data.accounts?.find((a) => a.currency === 'BTC')
+        const btcAccount = accountsRes.unwrap().data.accounts.find((a) => a.currency === 'BTC')
         if (!btcAccount) {
           return Err(new Error('No BTC account found'))
         }
@@ -505,7 +508,7 @@ export class ExchangeService {
         return Err(new Error(`Coinbase error: ${balanceRes.unwrapErr().message}`))
       }
 
-      const btcValue = balanceRes.unwrap().data.account?.available_balance?.value ?? '0'
+      const btcValue = balanceRes.unwrap().data.account.available_balance.value
       balanceSats = new Decimal(btcValue).mul(1e8).toFixed(0)
     }
 
@@ -646,7 +649,7 @@ export class ExchangeService {
             )
             continue
           }
-          const btcAccount = accountsRes.unwrap().data.accounts?.find((a) => a.currency === 'BTC')
+          const btcAccount = accountsRes.unwrap().data.accounts.find((a) => a.currency === 'BTC')
           if (!btcAccount) {
             this.logger.warn({ accountId: row.id }, 'No BTC account found in Coinbase — skipping')
             continue
@@ -802,10 +805,7 @@ export class ExchangeService {
           )
 
           for (const entry of ledgerEntries) {
-            const amountSats = new Decimal(entry.amount)
-              .sub(entry.fee ?? 0)
-              .mul(1e8)
-              .toFixed(0)
+            const amountSats = new Decimal(entry.amount).sub(entry.fee).mul(1e8).toFixed(0)
             if (amountSats !== '0') {
               allEntries.push({
                 timestamp: new Date(entry.time * 1000),
@@ -1108,9 +1108,12 @@ export class ExchangeService {
 
   private getCredentialConnectionStatus(encryptedCredentials: string): ExchangeConnectionStatus {
     try {
-      const credData = JSON.parse(encryptedCredentials) as CredentialData
-      const credentialBlobs = Object.values(credData.data)
-      if (credData.type !== 'apiKey' || credentialBlobs.length === 0) {
+      const parsed = parseUnknown(CredentialDataSchema, JSON.parse(encryptedCredentials) as unknown)
+      if (parsed.isErr()) {
+        return 'needs_reconnect'
+      }
+      const credentialBlobs = Object.values(parsed.unwrap().data)
+      if (credentialBlobs.length === 0) {
         return 'needs_reconnect'
       }
 

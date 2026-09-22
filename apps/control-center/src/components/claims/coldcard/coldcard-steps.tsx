@@ -516,7 +516,7 @@ function Step6({
   const { isLoading, error, data: wallets } = useColdcardAccountsWithBalances(coldcardJson, model)
 
   useEffect(() => {
-    if (wallets?.length === 1 && wallets[0] && !selectedWallet) {
+    if (wallets.length === 1 && wallets[0] && !selectedWallet) {
       setSelectedWallet(wallets[0])
     }
   }, [wallets, selectedWallet, setSelectedWallet])

@@ -45,12 +45,14 @@ export function BBQrScanner({ onComplete, onPlainScan, onError, onCancel }: BBQr
 
   useEffect(() => {
     let mounted = true
+    // Cleanup may run while camera startup is awaiting a promise.
+    const isMounted = (): boolean => mounted
     let scanner: Html5Qrcode | null = null
 
     async function start(): Promise<void> {
       // Wait a tick to ensure the DOM element is rendered
       await new Promise((r) => setTimeout(r, 0))
-      if (!mounted) {
+      if (!isMounted()) {
         return
       }
 
@@ -87,18 +89,18 @@ export function BBQrScanner({ onComplete, onPlainScan, onError, onCancel }: BBQr
             aspectRatio: 1,
           },
           (decodedText) => {
-            if (!mounted || completedRef.current) {
+            if (!isMounted() || completedRef.current) {
               return
             }
             handleScan(decodedText)
           },
           undefined,
         )
-        if (mounted) {
+        if (isMounted()) {
           setState('scanning')
         }
       } catch (err) {
-        if (!mounted) {
+        if (!isMounted()) {
           return
         }
         const msg = err instanceof Error ? err.message : 'Camera access denied'

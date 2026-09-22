@@ -18,7 +18,7 @@ import {
   Thead,
   Tr,
 } from '@chakra-ui/react'
-import { ETF_CONFIGS, ETF_TICKERS, type EtfTicker } from '@hoseki/packages/etfs/holdings'
+import { ETF_CONFIGS, ETF_TICKERS, type EtfTicker, getEtfConfig } from '@hoseki/packages/etfs/holdings'
 import { ErrorBanner } from '@hoseki/packages/ui/design-system'
 import { TopBar } from '@hoseki/packages/ui/prove-verify-ui/top-bar'
 import { format } from 'date-fns'
@@ -213,7 +213,7 @@ export function EtfAccountDetailsPage(): JSX.Element {
                 </Thead>
                 <Tbody>
                   {holdingsQuery.data.map((holding) => {
-                    const config = ETF_CONFIGS[holding.ticker as EtfTicker]
+                    const config = getEtfConfig(holding.ticker)
                     return (
                       <Tr key={holding.id}>
                         <Td>

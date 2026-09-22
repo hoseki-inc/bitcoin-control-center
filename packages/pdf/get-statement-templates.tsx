@@ -1258,7 +1258,7 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
       SummaryColumn.ClosingBalance,
     ]
 
-    const currency = props.statement.currency ?? 'BTC'
+    const currency = props.statement.currency
 
     // Create a wrapper component that captures currency
     const RowComponentWithCurrency: React.FC<{ item: SummaryRowDisplayData; index: number }> = ({ item, index }) => (
@@ -1522,7 +1522,7 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
               dateRange={dateRange}
               totalAmountMinorUnits={totalBtcSats}
               totalUsdAmount={totalUsdValue}
-              currency={statement.currency ?? 'BTC'}
+              currency={statement.currency}
             />
             <View style={styles.mainContentContainer}>
               <View style={styles.contentWrapper}>
@@ -1547,7 +1547,7 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
             proofNumber={proofNum}
             qrCodeSrc={qrCode}
             watermarkText={input.watermarkText}
-            currency={statement.currency ?? 'BTC'}
+            currency={statement.currency}
           />
         ))}
       </Document>
@@ -1591,7 +1591,7 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
               dateRange={monthDateRange}
               totalAmountMinorUnits={month.summary.closingBalance.sats}
               totalUsdAmount={formatUsd(month.summary.closingBalance.usdValue)}
-              currency={statement.currency ?? 'BTC'}
+              currency={statement.currency}
             />
             <View style={styles.mainContentContainer}>
               <View style={styles.contentWrapper}>
@@ -1627,7 +1627,7 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
             proofNumber={proofNum}
             qrCodeSrc={qrCode}
             watermarkText={input.watermarkText}
-            currency={statement.currency ?? 'BTC'}
+            currency={statement.currency}
           />,
         )
       }
@@ -1670,7 +1670,7 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
           continue
         }
         const customStatement = statement
-        const currency = statement.currency ?? 'BTC'
+        const currency = statement.currency
 
         // Add each entry with its currency
         for (const entry of customStatement.summary.entries) {
@@ -1735,7 +1735,7 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
                     dateRange={dateRange}
                     totalAmountMinorUnits={totalBtcSats}
                     totalUsdAmount={totalUsdValue}
-                    currency={statement.currency ?? 'BTC'}
+                    currency={statement.currency}
                   />
                   <View style={styles.mainContentContainer}>
                     <View style={styles.contentWrapper}>
@@ -1760,7 +1760,7 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
                   proofNumber={proofNum}
                   qrCodeSrc={qrCode}
                   watermarkText={input.watermarkText}
-                  currency={statement.currency ?? 'BTC'}
+                  currency={statement.currency}
                 />
               ))}
             </React.Fragment>

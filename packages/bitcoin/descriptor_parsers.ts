@@ -217,7 +217,7 @@ export class SinglesigDescriptorParser extends BaseAccountDescriptorParser {
 
     // Handle nested scripts: sh(wpkh(...)) or just wpkh(...)
     // Strip outer scripts and collect them
-    while (true) {
+    for (;;) {
       // Check for script patterns: pkh, wpkh, tr, sh
       if (remaining.startsWith('pkh(')) {
         scriptTypeFactors.push('pkh')

@@ -22,7 +22,7 @@ export function ConnectLedger(): JSX.Element {
       derivationPath: selectedWallet.derivationPath,
       wallet: 'ledger',
       model: getLedgerModel(deviceId),
-      displayName: selectedWallet.displayName ?? 'Ledger Wallet',
+      displayName: selectedWallet.displayName,
     })
   }
 

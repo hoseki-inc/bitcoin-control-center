@@ -90,7 +90,7 @@ describe('ElectrumClient concurrent reconnect', () => {
     client.disconnect()
 
     const results = await Promise.all(Array.from({ length: 10 }, () => client.getHistory(scripthash)))
-    const errors = results.filter((r) => r.isErr()).map((r) => r.unwrapErr()?.message)
+    const errors = results.filter((r) => r.isErr()).map((r) => r.unwrapErr().message)
     expect(errors).toEqual([])
 
     const versionCalls = mock.requests.filter((r) => r.includes('server.version')).length
