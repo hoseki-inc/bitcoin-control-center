@@ -189,8 +189,7 @@ export default function App(): JSX.Element {
   const validateAndParseJson = useCallback(() => {
     try {
       // Parse the JSON and deserialize using superjson
-      const parsedJson = JSON.parse(jsonInput)
-      const processedJson = serializer.deserialize(parsedJson)
+      const processedJson = serializer.parse<unknown>(jsonInput)
 
       const result = PdfStatementSchema.safeParse(processedJson)
 

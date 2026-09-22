@@ -40,19 +40,21 @@ function setupInterface(
     isInContext: true,
     constRetry: retry,
     onLeaveContext: (callback: () => void) => leave.push(callback),
-    getServiceInterface: vi.fn(async ({ serviceInterfaceId, callback }) => {
-      expect(serviceInterfaceId).toBe('main')
-      if (callback) {
-        callbacks.add(callback)
-      }
-      return present
-        ? {
-            id: 'main',
-            addressInfo: { hostId: 'ui', internalPort: 3400, scheme: 'http', sslScheme: 'https', suffix: '' },
-          }
-        : null
-    }),
-    getHostInfo: vi.fn(async ({ hostId, callback }) => {
+    getServiceInterface: vi.fn(
+      async ({ serviceInterfaceId, callback }: Parameters<MainOptions['effects']['getServiceInterface']>[0]) => {
+        expect(serviceInterfaceId).toBe('main')
+        if (callback) {
+          callbacks.add(callback)
+        }
+        return present
+          ? {
+              id: 'main',
+              addressInfo: { hostId: 'ui', internalPort: 3400, scheme: 'http', sslScheme: 'https', suffix: '' },
+            }
+          : null
+      },
+    ),
+    getHostInfo: vi.fn(async ({ hostId, callback }: Parameters<MainOptions['effects']['getHostInfo']>[0]) => {
       expect(hostId).toBe('ui')
       if (callback) {
         callbacks.add(callback)

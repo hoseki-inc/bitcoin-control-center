@@ -34,11 +34,11 @@ export namespace Id {
       .refine((value): value is Id<T> => value.startsWith(`${prefix}_`), {
         message: `id must start with "${prefix}_"`,
       })
-      .transform((v) => v as Id<T>)
+      .transform((v) => v)
   }
 
   /** Remove the prefix, returning just the random part */
-  export function strip<T extends string>(prefixedId: Id<T>): string {
+  export function strip(prefixedId: Id<string>): string {
     const lastPart = prefixedId.split('_').at(-1)
     if (!lastPart) {
       throw new Panic('Invalid id')

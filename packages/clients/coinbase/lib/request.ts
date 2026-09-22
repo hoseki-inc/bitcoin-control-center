@@ -128,7 +128,7 @@ function parseData<S extends z.ZodTypeAny>(response: SafeResponse, schema: S) {
     })
 }
 
-function parseErrorData<S extends z.ZodTypeAny>(response: SafeResponse, schema: S) {
+function parseErrorData(response: SafeResponse, schema: z.ZodTypeAny) {
   return (
     parseData(response, schema)
       .andThen((errorData) => {
@@ -154,9 +154,9 @@ export interface RequestArgs<T extends z.ZodTypeAny, E extends z.ZodTypeAny> {
 }
 
 export const request = asyncFn(
-  async <ST extends z.ZodTypeAny, SE extends z.ZodTypeAny, T = z.infer<ST>>(
+  async <ST extends z.ZodTypeAny, SE extends z.ZodTypeAny>(
     args: RequestArgs<ST, SE>,
-  ): Promise<Result<{ data: T; response: SafeResponse }, ApiError>> => {
+  ): Promise<Result<{ data: z.infer<ST>; response: SafeResponse }, ApiError>> => {
     const headers: Record<string, string | undefined> = {
       'CB-VERSION': args.version,
       Accept: 'application/json',
