@@ -6,10 +6,12 @@
   "type": "module",
   "scripts": {
     "build": "turbo run build",
+    "build:ci": "pnpm build && npm --prefix start9 run build && pnpm build:desktop:app",
     "build:desktop": "./desktop/build.sh",
+    "build:desktop:app": "pnpm --filter api-sentinel build && pnpm --filter control-center build --mode production.desktop && tsx desktop/src/scripts/build.ts",
     "build:start9": "./start9/build.sh",
     "check": "tsc --build tsconfig.check.json",
-    "ci": "pnpm security:audit && pnpm format:check && pnpm lint && pnpm check && npm --prefix desktop run check && npm --prefix start9 run check && pnpm test && npm --prefix start9 test && pnpm build",
+    "ci": "pnpm security:audit && pnpm format:check && pnpm lint && pnpm check && npm --prefix desktop run check && npm --prefix start9 run check && pnpm test && npm --prefix start9 test && pnpm build:ci",
     "dev": "turbo run dev:standalone --filter=api-sentinel --filter=control-center",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

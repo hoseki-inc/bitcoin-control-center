@@ -259,19 +259,21 @@ Database migrations run automatically during startup. There is no separate local
 
 Run these commands from the repository root unless noted otherwise.
 
-| Command               | Purpose                                                      |
-| --------------------- | ------------------------------------------------------------ |
-| `pnpm dev`            | Run Sentinel and Control Center in watch mode                |
-| `pnpm check`          | Run TypeScript project-reference checks                      |
-| `pnpm test`           | Run application and shared-library tests through Turbo       |
-| `pnpm lint`           | Run Oxlint and ESLint with zero warnings allowed             |
-| `pnpm format:check`   | Verify Prettier formatting                                   |
-| `pnpm format`         | Apply Prettier formatting                                    |
-| `pnpm build`          | Build Sentinel and the production web application            |
-| `pnpm security:audit` | Audit root, desktop, and StartOS dependency graphs           |
-| `pnpm run ci`         | Run every audit, type check, test, and production build gate |
-| `pnpm ladle:serve`    | Run the shared component-workbench development server        |
-| `pnpm ladle:build`    | Build the component workbench                                |
+| Command                  | Purpose                                                          |
+| ------------------------ | ---------------------------------------------------------------- |
+| `pnpm dev`               | Run Sentinel and Control Center in watch mode                    |
+| `pnpm check`             | Run TypeScript project-reference checks                          |
+| `pnpm test`              | Run application and shared-library tests through Turbo           |
+| `pnpm lint`              | Run Oxlint and ESLint with zero warnings allowed                 |
+| `pnpm format:check`      | Verify Prettier formatting                                       |
+| `pnpm format`            | Apply Prettier formatting                                        |
+| `pnpm build`             | Build Sentinel and the production web application                |
+| `pnpm build:ci`          | Build web, StartOS, and desktop application bundles              |
+| `pnpm build:desktop:app` | Build Sentinel, the desktop web app, and Electron shell          |
+| `pnpm security:audit`    | Audit root, desktop, and StartOS dependency graphs               |
+| `pnpm run ci`            | Run audits, type checks, tests, and all production bundle builds |
+| `pnpm ladle:serve`       | Run the shared component-workbench development server            |
+| `pnpm ladle:build`       | Build the component workbench                                    |
 
 Issue [#91](https://github.com/hoseki-inc/bitcoin-control-center/issues/91) is being rolled out one lint rule per commit. Oxlint runs across all maintained JavaScript and TypeScript source, including desktop, StartOS, tests, and repository scripts. Its default rules are disabled, and the explicitly enabled rules accumulate in `.oxlintrc.json`. Existing ESLint checks remain in place during the migration. Run `pnpm lint:oxlint` to check the adopted rules on their own.
 
@@ -325,9 +327,32 @@ npm --prefix start9 run check
 npm --prefix start9 test
 ```
 
-The complete `pnpm run ci` command also runs the StartOS tests and requires those
-packaging dependencies to be installed first. StartOS candidate and draft-release
-workflows use this complete verification command.
+The complete `pnpm run ci` command requires those packaging dependencies to be
+installed first. It includes `pnpm build:ci`, which builds Sentinel, the web app in
+both Sentinel and desktop modes, the StartOS package definition, and the Electron
+main and preload scripts. Normal pull-request CI and the local command use the
+same build checks. StartOS candidate and draft-release workflows also run this
+complete verification command.
+
+CI calls the **Desktop build** and **StartOS build** workflows to build full
+installable packages when a pull request or push to `main` changes application
+code, dependencies, or the respective packaging inputs. Desktop checks build a
+macOS ARM64 DMG and Windows x64 installer and exercise SQLite and PDF rendering
+inside Electron. StartOS checks build a universal `.s9pk` for x86_64 and aarch64
+and verify its package ID, version, architectures, and source commit. Both
+workflows can also be run manually.
+
+The required `verify` check waits for repository checks and every applicable
+package build. It rejects failed, cancelled, or unexpectedly skipped builds.
+Documentation-only changes can skip the package jobs while still completing
+`verify`; the CI workflow itself always runs. Manual CI runs check both packages.
+
+These package checks use no release credentials: desktop publishing and signing
+identity discovery are disabled, and StartOS uses a temporary signing key.
+Generated installers remain on the disposable GitHub runners and are not
+uploaded or retained. Candidate and release workflows keep their existing
+artifact and signing behavior. Local `pnpm build:ci` leaves its generated bundles
+in the normal ignored build directories and does not create installers.
 
 Dependabot checks for updates on Mondays at 02:00 Eastern. CodeQL scans pull requests targeting `main`, pushes to `main`, and `main` weekly on Mondays at 03:00 Eastern, one hour after Dependabot's scheduled checks. Both schedules use `America/New_York` and follow daylight saving time. Manual CodeQL scans are available in GitHub Actions.
 
