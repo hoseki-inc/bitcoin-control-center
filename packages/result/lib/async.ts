@@ -1,4 +1,5 @@
-import { AsyncResult, Err, Ok } from '@patina/core'
+import type { AsyncResult } from '@patina/core'
+import { catchUnwindAsync } from './panic'
 
 /**
  * Converts an AsyncResult to a Promise.
@@ -18,10 +19,6 @@ export async function asyncResultToPromise<T, E>(asyncResult: AsyncResult<T, E>)
 /**
  * Combines an array of AsyncResults into a single AsyncResult.
  */
-export function asyncResultAll<T, E>(asyncResults: AsyncResult<T, E>[]): AsyncResult<T[], E> {
-  return new AsyncResult(
-    Promise.all(asyncResults.map(asyncResultToPromise))
-      .then((values) => Ok(values))
-      .catch((err) => Err(err)),
-  )
+export function asyncResultAll<T>(asyncResults: AsyncResult<T, Error>[]): AsyncResult<T[], Error> {
+  return catchUnwindAsync(() => Promise.all(asyncResults.map(asyncResultToPromise)))
 }
