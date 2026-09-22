@@ -29,7 +29,12 @@ Examples:
 `)
 }
 
+/** @param {unknown} version */
 function parseVersion(version) {
+  if (typeof version !== 'string') {
+    throw new Error('StartOS version must be a string.')
+  }
+
   const match = VERSION_RE.exec(version)
   if (!match) {
     throw new Error(`Invalid StartOS version "${version}". Expected major.minor.patch:revision, like 0.1.1:0.`)
