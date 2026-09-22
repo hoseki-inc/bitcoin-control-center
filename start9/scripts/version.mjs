@@ -48,6 +48,7 @@ function parseVersion(version) {
   }
 }
 
+/** @param {ReturnType<typeof parseVersion>} version */
 function formatVersion(version) {
   return `${version.major}.${version.minor}.${version.patch}:${version.revision}`
 }
