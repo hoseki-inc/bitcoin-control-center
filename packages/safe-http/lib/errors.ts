@@ -2,8 +2,8 @@ import { ErrorWithCause, ErrorWithTag } from '../../result/index.ts'
 import type { SafeResponse } from './response.ts'
 
 export enum SafeBodyErrorKind {
-  Malformed,
-  Unreadable,
+  Malformed = 0,
+  Unreadable = 1,
 }
 
 export class SafeBodyError extends ErrorWithCause<Error> {
@@ -17,9 +17,9 @@ export class SafeBodyError extends ErrorWithCause<Error> {
 }
 
 export enum SafeHttpErrorKind {
-  NotFound,
-  NetworkUnreachable,
-  ErrorResponse,
+  NotFound = 0,
+  NetworkUnreachable = 1,
+  ErrorResponse = 2,
 }
 
 export type SafeHttpErrorKindVariant =
