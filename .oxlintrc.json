@@ -107,7 +107,8 @@
     "typescript/no-wrapper-object-types": "error",
     "typescript/non-nullable-type-assertion-style": "error",
     "typescript/only-throw-error": "error",
-    "typescript/parameter-properties": "error"
+    "typescript/parameter-properties": "error",
+    "typescript/prefer-as-const": "error"
   },
   "overrides": [
     {
