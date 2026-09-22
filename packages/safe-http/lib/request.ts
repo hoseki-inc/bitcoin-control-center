@@ -1,8 +1,11 @@
 import { SafeBody } from './body.ts'
 
 export class SafeRequest extends SafeBody {
-  public constructor(public request: Request) {
+  public request: Request
+
+  public constructor(request: Request) {
     super(request)
+    this.request = request
   }
 
   public get cache(): RequestCache {

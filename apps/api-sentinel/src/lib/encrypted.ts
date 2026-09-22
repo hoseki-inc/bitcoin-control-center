@@ -118,7 +118,11 @@ export function loadCredentialEncryptionKey(deps: {
 }
 
 export class Encrypted {
-  private constructor(public readonly blob: CiphertextBlob) {}
+  public readonly blob: CiphertextBlob
+
+  private constructor(blob: CiphertextBlob) {
+    this.blob = blob
+  }
 
   public static from(blob: CiphertextBlob): Encrypted {
     return new Encrypted(blob)

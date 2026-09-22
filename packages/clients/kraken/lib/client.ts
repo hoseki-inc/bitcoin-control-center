@@ -127,7 +127,11 @@ function parseErrorData(response: SafeResponse): AsyncResult<ParsedData<ErrorRes
 }
 
 export class Client {
-  public constructor(private readonly credentials: KrakenCredentials) {}
+  private readonly credentials: KrakenCredentials
+
+  public constructor(credentials: KrakenCredentials) {
+    this.credentials = credentials
+  }
 
   private makeRequest(path: string, postData: string): AsyncResult<SafeResponse, ApiError> {
     return tryBlockAsync(

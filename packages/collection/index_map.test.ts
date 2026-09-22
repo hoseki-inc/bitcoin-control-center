@@ -339,7 +339,11 @@ describe('object key resolution', () => {
 
   test('preserves inherited custom stringification and its receiver', () => {
     class CustomKey {
-      public constructor(private readonly value: string) {}
+      private readonly value: string
+
+      public constructor(value: string) {
+        this.value = value
+      }
       public toString(): string {
         return this.value
       }
