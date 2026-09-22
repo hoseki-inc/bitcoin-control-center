@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import superjson from 'superjson'
+import { baseTrpc } from '../trpc'
 
 const baseUrl = import.meta.env['VITE_BACKEND_API_URL'] ?? ''
 
@@ -17,16 +18,7 @@ export function useLocalSetting(key: string): {
 
   const query = useQuery({
     queryKey,
-    queryFn: async (): Promise<string | null> => {
-      const input = superjson.serialize({ key })
-      const params = new URLSearchParams({ input: JSON.stringify(input) })
-      const res = await fetch(`${baseUrl}/settings.get?${params}`)
-      if (!res.ok) {
-        throw new Error('Failed to fetch setting')
-      }
-      const json = await res.json()
-      return superjson.deserialize(json.result.data) as string | null
-    },
+    queryFn: () => baseTrpc.settings.get.query({ key }),
   })
 
   const mutation = useMutation({

@@ -13,10 +13,19 @@ import {
   Text,
   VStack,
 } from '@chakra-ui/react'
+import { parseUnknown } from '@hoseki/packages/result/lib/parse'
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
+import { z } from 'zod'
 import { useLocalSetting } from '../../hooks/use-local-settings'
 import { isDesktop } from '../../mode'
+
+const ReconnectErrorSchema = z.object({
+  error: z.object({
+    json: z.object({ message: z.string() }).optional().catch(undefined),
+    message: z.string().optional().catch(undefined),
+  }),
+})
 
 export function SettingsPage(): JSX.Element {
   const { data: savedName, isLoading, save, isSaving } = useLocalSetting('user_name')
@@ -222,8 +231,8 @@ function ElectrumSettings(): JSX.Element {
       })
 
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        throw new Error(data?.error?.json?.message ?? data?.error?.message ?? 'Failed to reconnect')
+        const data = parseUnknown(ReconnectErrorSchema, await res.json().catch(() => null)).unwrapOr(null)
+        throw new Error(data?.error.json?.message ?? data?.error.message ?? 'Failed to reconnect')
       }
 
       setIsDirty(false)

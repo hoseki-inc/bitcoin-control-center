@@ -8,7 +8,7 @@ import {
 import { Link, Outlet } from 'react-router'
 import { UserInfo } from './user-info'
 
-const HOSEKI_ENV = import.meta.env['VITE_HOSEKI_ENV']
+const HOSEKI_ENV: unknown = import.meta.env['VITE_HOSEKI_ENV']
 
 const menuItems = [
   { to: '/home', title: 'Home' },
@@ -25,7 +25,7 @@ export function AppLayout({ fullWidth }: { fullWidth?: boolean }): JSX.Element {
       logoSrc="/hoseki-logo.svg"
       logoAlt="Bitcoin Control Center"
       renderLink={(children) => <Link to={logoLink}>{children}</Link>}
-      stickerLabel={getEnvSlug(HOSEKI_ENV)}
+      stickerLabel={getEnvSlug(typeof HOSEKI_ENV === 'string' ? HOSEKI_ENV : '')}
     />
   )
 
