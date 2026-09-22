@@ -111,7 +111,8 @@
     "typescript/prefer-as-const": "error",
     "typescript/prefer-enum-initializers": "error",
     "typescript/prefer-find": "error",
-    "typescript/prefer-includes": "error"
+    "typescript/prefer-includes": "error",
+    "typescript/prefer-literal-enum-member": "error"
   },
   "overrides": [
     {
