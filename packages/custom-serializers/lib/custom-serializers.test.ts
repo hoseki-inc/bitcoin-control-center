@@ -39,7 +39,7 @@ test('Option', () => {
 test('Result', () => {
   const ok = Ok(new Mapping([{ key: 'value', number: new Decimal(2) }]))
   let serialized = SuperJSON.stringify(ok)
-  let deserialized = SuperJSON.parse(serialized)
+  const deserialized = SuperJSON.parse(serialized)
   expect(deserialized).toEqual(ok)
 
   // SuperJSON reconstructs Error properties, which can differ in ownership from
@@ -47,10 +47,10 @@ test('Result', () => {
   // Result and Error contract rather than object-property identity.
   const err = Err(new Error('error'))
   serialized = SuperJSON.stringify(err)
-  deserialized = SuperJSON.parse(serialized)
-  expect(deserialized.isErr()).toBe(true)
-  expect(deserialized.error()).toBeInstanceOf(Error)
-  expect(deserialized.error()).toMatchObject({ name: 'Error', message: 'error' })
+  const deserializedError = SuperJSON.parse<typeof err>(serialized)
+  expect(deserializedError.isErr()).toBe(true)
+  expect(deserializedError.error()).toBeInstanceOf(Error)
+  expect(deserializedError.error()).toMatchObject({ name: 'Error', message: 'error' })
 })
 
 test('IndexMap preserves object identifiers and bigint values after serialization', () => {

@@ -3,6 +3,8 @@ import { EventEmitter } from 'node:events'
 import { test } from 'node:test'
 import { setupLedgerHidAccess } from '../src/ledger-hid.ts'
 
+/** @typedef {(event: unknown, ...args: unknown[]) => unknown} InvokeHandler */
+
 const APP_ORIGIN = 'http://localhost:3400'
 const ledger = { vendorId: 0x2c97, deviceId: 'ledger-1', name: 'Flex', serialNumber: 'private-serial' }
 const secondLedger = { ...ledger, deviceId: 'ledger-2', name: 'Nano X' }
@@ -26,11 +28,20 @@ function createHarness(t, choose = async () => ({ response: 0 })) {
     },
   })
   const window = Object.assign(new EventEmitter(), { webContents: contents, isDestroyed: () => false })
+  /** @type {Map<string, InvokeHandler>} */
   const handlers = new Map()
   const ipc = Object.assign(new EventEmitter(), {
+    /** @param {string} channel @param {InvokeHandler} handler */
     handle: (channel, handler) => handlers.set(channel, handler),
+    /** @param {string} channel */
     removeHandler: (channel) => handlers.delete(channel),
   })
+  /** @param {string} channel */
+  function getHandler(channel) {
+    const handler = handlers.get(channel)
+    assert.ok(handler, `Missing IPC handler: ${channel}`)
+    return handler
+  }
   const sender = { sender: contents, senderFrame: frame }
   const dialogs = []
   setupLedgerHidAccess(window, APP_ORIGIN, ipc, async (parent, options) => {
@@ -66,8 +77,8 @@ function createHarness(t, choose = async () => ({ response: 0 })) {
     ipc,
     handlers,
     sender,
-    begin: (id = 'request-1', event = sender) => handlers.get('ledger-hid:begin')(event, id),
-    select: (deviceId, id = 'request-1', event = sender) => handlers.get('ledger-hid:choose')(event, id, deviceId),
+    begin: (id = 'request-1', event = sender) => getHandler('ledger-hid:begin')(event, id),
+    select: (deviceId, id = 'request-1', event = sender) => getHandler('ledger-hid:choose')(event, id, deviceId),
     cancel: (id = 'request-1', event = sender) => ipc.emit('ledger-hid:cancel', event, id),
     end: (id = 'request-1', event = sender) => ipc.emit('ledger-hid:end', event, id),
     /** @param {typeof ledger | typeof otherDevice} device */

@@ -3,12 +3,15 @@ import { EventEmitter } from 'node:events'
 import { test } from 'node:test'
 import { createQuitHandler } from '../src/shutdown.ts'
 
+/** @param {Partial<Parameters<typeof createQuitHandler>[0]>} overrides */
 function createHarness(overrides = {}) {
   const app = new EventEmitter()
   const calls = []
   let prevented = 0
   let exits = 0
+  /** @type {() => void} */
   let resolveExit
+  /** @type {Promise<void>} */
   const exited = new Promise((resolve) => {
     resolveExit = resolve
   })
