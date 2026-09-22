@@ -315,6 +315,10 @@ pnpm security:audit
 ```
 
 The default `pnpm test` command requires only the root workspace dependencies.
+`better-sqlite3` uses its bundled native binaries on supported platforms. Its
+pnpm install scripts are disabled to avoid unnecessary native rebuilds; Sentinel
+tests and desktop runtime checks still exercise SQLite.
+
 GitHub Actions additionally installs and type-checks the standalone packaging
 workspaces and runs the StartOS tests:
 
