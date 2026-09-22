@@ -195,6 +195,7 @@ export class Address {
         ret = bitcoin.address.toBech32(this.data, this.format.version, this.format.network.bech32)
         break
     }
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- Address encoders above construct the checked address; avoid parsing generated addresses a second time.
     return ret as CheckedAddressString
   }
 

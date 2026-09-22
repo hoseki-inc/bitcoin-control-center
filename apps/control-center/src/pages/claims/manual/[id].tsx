@@ -46,7 +46,7 @@ export function ManualAccountDetailsPage(): JSX.Element {
   const [newBalanceDate, setNewBalanceDate] = useState(() => new Date().toISOString().slice(0, 10))
 
   // ─── Transaction form ───────────────────────────────────────────
-  const [txType, setTxType] = useState<string>('buy')
+  const [txType, setTxType] = useState<'buy' | 'sell' | 'transfer_in' | 'transfer_out'>('buy')
   const [txAmount, setTxAmount] = useState('')
   const [txDate, setTxDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [txNote, setTxNote] = useState('')
@@ -114,7 +114,7 @@ export function ManualAccountDetailsPage(): JSX.Element {
     try {
       await addTxMutation.mutateAsync({
         accountId,
-        type: txType as 'buy' | 'sell' | 'transfer_in' | 'transfer_out',
+        type: txType,
         amountSats,
         transactedAt: new Date(txDate + 'T12:00:00').toISOString(),
         note: txNote || undefined,
@@ -305,7 +305,10 @@ export function ManualAccountDetailsPage(): JSX.Element {
                   size="sm"
                   value={txType}
                   onChange={(e) => {
-                    setTxType(e.target.value)
+                    const value = e.target.value
+                    if (value === 'buy' || value === 'sell' || value === 'transfer_in' || value === 'transfer_out') {
+                      setTxType(value)
+                    }
                   }}
                 >
                   <option value="buy">Buy</option>

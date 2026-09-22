@@ -8,6 +8,7 @@ import {
 import { useState } from 'react'
 import { useLocation, useNavigate } from 'react-router'
 import { useNavigateToAnExistentOrNewClaim } from '../../../lib/claim-flow'
+import { parseNavigationState } from '../../../lib/navigation-state'
 import { RequiredDataMissing } from '../../errors/required-data-missing'
 import { ColdcardQrConnectionSteps } from './coldcard-qr-steps'
 import { ColdcardConnectionInfo, type ColdcardConnectionMethods, ColdcardIndentification } from './coldcard-steps'
@@ -20,7 +21,7 @@ export function ConnectColdcard(): JSX.Element {
   const [selectedWallet, setSelectedWallet] = useState<HardwareWallet | null>(null)
   const navigate = useNavigate()
   const location = useLocation()
-  const returnTo = (location.state as { returnTo?: string } | null)?.returnTo ?? '/accounts'
+  const returnTo = parseNavigationState(location.state)?.returnTo ?? '/accounts'
   const goBack = (): void => {
     if (wizardStep === 1) {
       void navigate(returnTo)

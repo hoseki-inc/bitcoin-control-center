@@ -1,7 +1,9 @@
+import { parseUnknown } from '@hoseki/packages/result'
 import { Err, Ok, asyncFn } from '@patina/core'
 import type { Result } from '@patina/core'
 import { Decimal } from 'decimal.js'
 import type { Logger } from 'pino'
+import { z } from 'zod'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -107,9 +109,14 @@ export class DailyRatesService {
       return null
     }
 
-    const json = (await response.json()) as {
-      prices?: Array<{ time: number; USD: number }>
+    const parsed = parseUnknown(
+      z.object({ prices: z.array(z.object({ time: z.number(), USD: z.number() })).optional() }),
+      await response.json(),
+    )
+    if (parsed.isErr()) {
+      return null
     }
+    const json = parsed.unwrap()
 
     if (!json.prices || json.prices.length === 0) {
       return null

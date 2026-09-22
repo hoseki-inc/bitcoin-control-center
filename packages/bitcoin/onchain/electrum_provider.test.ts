@@ -1,7 +1,7 @@
 import { Err, Ok } from '@patina/core'
-import type { Logger } from 'pino'
+import pino from 'pino'
 import { describe, expect, it, vi } from 'vitest'
-import type { ElectrumClient } from '../../clients/electrum'
+import { ElectrumClient } from '../../clients/electrum'
 import type { HeaderNotification, ScripthashBalance, ScripthashHistoryEntry } from '../../clients/electrum'
 import { IndexMap, IndexSet } from '../../collection'
 import { Wallets } from '../../testing'
@@ -15,7 +15,7 @@ import type { TransactionEntry } from './types'
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function mockElectrumClient(overrides: Partial<ElectrumClient> = {}): ElectrumClient {
-  return {
+  return Object.assign(new ElectrumClient({ host: 'localhost', port: 50001, protocol: 'tcp' }), {
     connect: vi.fn(),
     disconnect: vi.fn(),
     isConnected: vi.fn().mockReturnValue(true),
@@ -27,16 +27,10 @@ function mockElectrumClient(overrides: Partial<ElectrumClient> = {}): ElectrumCl
     listUnspent: vi.fn(),
     getTransaction: vi.fn(),
     ...overrides,
-  } as unknown as ElectrumClient
+  })
 }
 
-const mockLogger = {
-  debug: vi.fn(),
-  info: vi.fn(),
-  warn: vi.fn(),
-  error: vi.fn(),
-  child: vi.fn().mockReturnThis(),
-} as unknown as Logger
+const mockLogger = pino({ level: 'silent' })
 
 // A real mainnet block header hex (block 0 - genesis block)
 const GENESIS_HEADER_HEX =

@@ -62,6 +62,7 @@ function createPdfStatement(
   ),
 ): PdfStatement {
   const common = {
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- PDF previews intentionally use preview_ IDs; preserve the existing non-persisted identifier format.
     id: args.id as StatementId,
     createdAt: args.createdAt,
     status: args.status,

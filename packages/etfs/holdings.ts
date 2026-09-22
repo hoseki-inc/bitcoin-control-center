@@ -94,7 +94,7 @@ export function getEtfConfig(ticker: string): EtfConfig | undefined {
   return Object.values(ETF_CONFIGS).find((config) => config.ticker === ticker)
 }
 
-export const ETF_TICKERS = Object.keys(ETF_CONFIGS) as EtfTicker[]
+export const ETF_TICKERS = Object.values(ETF_CONFIGS).map((config) => config.ticker)
 
 // ─── Calculations ───────────────────────────────────────────────────────────
 

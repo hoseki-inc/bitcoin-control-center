@@ -30,6 +30,7 @@ import { ClaimSelection } from '../../components/claims/claim-selection'
 import { FullTransitionModal, getContent } from '../../components/full-transition-modal'
 import { StatementPreviewModal } from '../../components/statement-preview-modal'
 import { useLocalSetting } from '../../hooks/use-local-settings'
+import { parseNavigationState } from '../../lib/navigation-state'
 import { useStatementPolling } from '../../providers/statement-polling-provider'
 import { trpc } from '../../trpc'
 import type { StatementDto } from '../../trpc/server-types'
@@ -43,7 +44,7 @@ export function StatementCreatePage(): JSX.Element {
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false)
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState<boolean>(false)
   const location = useLocation()
-  const navState = location.state as { preSelectedClaimIds?: ClaimId[]; returnTo?: string } | null
+  const navState = parseNavigationState(location.state)
   const cancelPath = navState?.returnTo ?? '/home'
 
   // claims and exchange accounts
@@ -62,7 +63,10 @@ export function StatementCreatePage(): JSX.Element {
 
     if (navState?.preSelectedClaimIds && navState.preSelectedClaimIds.length > 0) {
       const validIds = claimsQuery.data.map((c) => c.id)
-      const preSelected = navState.preSelectedClaimIds.filter((id) => validIds.includes(id))
+      const preSelected = navState.preSelectedClaimIds.flatMap((id) => {
+        const validId = validIds.find((candidate) => candidate === id)
+        return validId ? [validId] : []
+      })
       if (preSelected.length > 0) {
         setSelectedClaimIds(new Set(preSelected))
       }

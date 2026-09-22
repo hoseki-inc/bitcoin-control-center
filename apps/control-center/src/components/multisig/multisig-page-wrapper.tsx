@@ -1,7 +1,6 @@
 import { Button, Stack } from '@chakra-ui/react'
 import { ErrorBanner, Spinner } from '@hoseki/packages/ui/design-system'
 import type { Keystore as IndicatorKeystore } from '@hoseki/packages/ui/prove-verify-ui/claims/keystores-status-indicator'
-import type { SupportedHardwareWallet } from '@hoseki/packages/wallet'
 import { Navigate, Outlet, useOutletContext, useParams, useSearchParams } from 'react-router'
 import { UrlParameter, useUrlParameter } from '../../hooks/use-url-parameters'
 import { getKeystoreStatus } from '../../lib/multisig/keystore'
@@ -117,7 +116,7 @@ export function getIndicatorKeystores(claim: ClaimDto): IndicatorKeystoreWithMod
         k = {
           ...common,
           status,
-          wallet: keystore.wallet as SupportedHardwareWallet,
+          wallet: keystore.wallet,
           model: keystore.model,
         }
         break

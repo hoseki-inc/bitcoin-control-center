@@ -156,7 +156,8 @@ async function click(label: string): Promise<void> {
 }
 
 async function changeDate(id: string, value: string): Promise<void> {
-  const input = document.getElementById(id) as HTMLInputElement
+  const input = document.getElementById(id)
+  assert(input instanceof HTMLInputElement, 'Expected a date input')
   await act(async () => {
     const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
     assert.exists(setValue, 'Expected the input value setter')
@@ -726,9 +727,9 @@ describe('custom portfolio range UI', () => {
     mocks.rangeData = { ...mocks.base, historySyncingAccountIds: ['wallet'] }
     await click('All')
     const poll = interval.mock.calls.find(([, delay]) => delay === 10_000)?.[0]
-    expect(typeof poll).toBe('function')
+    assert(typeof poll === 'function', 'Expected a polling callback')
     await act(async () => {
-      ;(poll as () => void)()
+      poll()
     })
     expect(mocks.refetch).toHaveBeenCalledWith({ cancelRefetch: false })
   })

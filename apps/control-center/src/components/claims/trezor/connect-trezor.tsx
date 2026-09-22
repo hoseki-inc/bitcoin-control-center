@@ -20,6 +20,7 @@ import Decimal from 'decimal.js'
 import { useState } from 'react'
 import { useLocation, useNavigate } from 'react-router'
 import { useNavigateToAnExistentOrNewClaim } from '../../../lib/claim-flow'
+import { parseNavigationState } from '../../../lib/navigation-state'
 import { browserLogger } from '../../../logger'
 import { trpc } from '../../../trpc'
 import { RequiredDataMissing } from '../../errors/required-data-missing'
@@ -28,7 +29,7 @@ import { trezorService } from './trezor-service-singleton'
 export function ConnectTrezor(): JSX.Element {
   const navigate = useNavigate()
   const location = useLocation()
-  const returnTo = (location.state as { returnTo?: string } | null)?.returnTo ?? '/accounts'
+  const returnTo = parseNavigationState(location.state)?.returnTo ?? '/accounts'
   const trpcUtils = trpc.useUtils()
   const [step, setStep] = useState<'step-1-info' | 'step-2-confirm'>('step-1-info')
   const [selectedTrezorAccount, setSelectedTrezorAccount] = useState<SelectedTrezorAccount>()
@@ -185,8 +186,9 @@ function getScriptType(path?: string): Result<SingleSigAccountScriptType, Error>
   }
   const split = path.split('/')
   const pathStart = split[0] + '/' + split[1]
-  if (pathStart && pathStart in DERIVATION_PATH_TO_SCRIPT_TYPE) {
-    return Ok(DERIVATION_PATH_TO_SCRIPT_TYPE[pathStart as keyof typeof DERIVATION_PATH_TO_SCRIPT_TYPE])
+  const script = Object.entries(DERIVATION_PATH_TO_SCRIPT_TYPE).find(([key]) => key === pathStart)
+  if (script) {
+    return Ok(script[1])
   } else {
     return Err(new Error(`Invalid derivation path: ${path}`))
   }

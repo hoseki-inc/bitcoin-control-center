@@ -64,7 +64,9 @@ function setupInterface(
     }),
   }
   const addDaemon = vi.fn<(id: string, options: { exec: daemons.ExecCommandOptions }) => void>()
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- The SDK builder is nominal; this integration test observes addDaemon without starting a daemon.
   vi.spyOn(sdk.Daemons, 'of').mockReturnValue({ addDaemon } as unknown as ReturnType<typeof sdk.Daemons.of>)
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- The container is an opaque token passed back to the mocked daemon builder; no container methods run.
   vi.spyOn(sdk.SubContainer, 'of').mockResolvedValue({} as Awaited<ReturnType<typeof sdk.SubContainer.of>>)
   cleanups.push(() => {
     effects.isInContext = false
@@ -73,6 +75,7 @@ function setupInterface(
     })
   })
   return {
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- StartOS supplies the full Effects interface; this fixture implements only the host methods exercised by main.
     options: { effects } as unknown as MainOptions,
     addresses,
     retry,

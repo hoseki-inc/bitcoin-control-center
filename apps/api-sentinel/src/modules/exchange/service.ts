@@ -2,8 +2,7 @@ import { Coinbase } from '@hoseki/packages/clients/coinbase'
 import { Kraken } from '@hoseki/packages/clients/kraken'
 import { RobinhoodClient } from '@hoseki/packages/clients/robinhood'
 import { parseUnknown } from '@hoseki/packages/result'
-import { Err, Ok, asyncFn } from '@patina/core'
-import type { Result } from '@patina/core'
+import { Err, Ok, Result, asyncFn } from '@patina/core'
 import type Database from 'better-sqlite3'
 import Decimal from 'decimal.js'
 import { nanoid } from 'nanoid'
@@ -33,6 +32,12 @@ const CredentialDataSchema = z.object({
 })
 type CredentialData = z.infer<typeof CredentialDataSchema>
 
+function parseCredentials(json: string): Result<CredentialData, Error> {
+  return Result.fromThrowable((): unknown => JSON.parse(json))
+    .andThen((value) => parseUnknown(CredentialDataSchema, value))
+    .mapErr(() => new Error('Stored exchange credentials are invalid'))
+}
+
 export class ExchangeService {
   private readonly db: Database.Database
   private readonly logger: Logger
@@ -49,23 +54,44 @@ export class ExchangeService {
       ? 'SELECT * FROM exchange_accounts WHERE provider = ? ORDER BY created_at DESC'
       : 'SELECT * FROM exchange_accounts ORDER BY created_at DESC'
 
-    const rows = (exchange ? this.db.prepare(query).all(exchange) : this.db.prepare(query).all()) as Array<{
-      id: string
-      provider: string
-      display_name: string
-      encrypted_credentials: string
-      balance_sats: string | null
-      balance_as_of: string | null
-      created_at: string
-      credentials_connected_at: string | null
-    }>
+    const rows = exchange
+      ? this.db
+          .prepare<
+            unknown[],
+            {
+              id: string
+              provider: SupportedExchange
+              display_name: string
+              encrypted_credentials: string
+              balance_sats: string | null
+              balance_as_of: string | null
+              created_at: string
+              credentials_connected_at: string | null
+            }
+          >(query)
+          .all(exchange)
+      : this.db
+          .prepare<
+            unknown[],
+            {
+              id: string
+              provider: SupportedExchange
+              display_name: string
+              encrypted_credentials: string
+              balance_sats: string | null
+              balance_as_of: string | null
+              created_at: string
+              credentials_connected_at: string | null
+            }
+          >(query)
+          .all()
 
     return rows.map((row) => {
       const connectionStatus = this.getAccountConnectionStatus(row)
       const isConnected = connectionStatus === 'connected'
       return {
         id: row.id,
-        exchange: row.provider as SupportedExchange,
+        exchange: row.provider,
         displayName: row.display_name,
         balanceSats: isConnected ? row.balance_sats : null,
         balanceAsOf: isConnected ? row.balance_as_of : null,
@@ -378,17 +404,20 @@ export class ExchangeService {
   // ─── Refresh Balance ───────────────────────────────────────────────────
 
   public refreshBalance = asyncFn(async (accountId: string): Promise<Result<ExchangeAccountDto, Error>> => {
-    const row = this.db.prepare('SELECT * FROM exchange_accounts WHERE id = ?').get(accountId) as
-      | {
+    const row = this.db
+      .prepare<
+        unknown[],
+        {
           id: string
-          provider: string
+          provider: SupportedExchange
           display_name: string
           encrypted_credentials: string
           external_account_id: string | null
           created_at: string
           credentials_connected_at: string | null
         }
-      | undefined
+      >('SELECT * FROM exchange_accounts WHERE id = ?')
+      .get(accountId)
 
     if (!row) {
       return Err(new Error('Exchange account not found'))
@@ -397,8 +426,12 @@ export class ExchangeService {
       return Err(new Error('Exchange credentials are unavailable or expired. Reconnect this exchange account.'))
     }
 
-    const credData = JSON.parse(row.encrypted_credentials) as CredentialData
-    const provider = row.provider as SupportedExchange
+    const parsedCredentials = parseCredentials(row.encrypted_credentials)
+    if (parsedCredentials.isErr()) {
+      return Err(parsedCredentials.unwrapErr())
+    }
+    const credData = parsedCredentials.unwrap()
+    const provider = row.provider
 
     const apiKeyEnc = Encrypted.fromString(credData.data['apiKey']?.blob ?? '')
     if (apiKeyEnc.isErr()) {
@@ -581,11 +614,16 @@ export class ExchangeService {
         params.push(...filterAccountIds)
       }
 
-      const rows = this.db.prepare(query).all(...params) as Array<{
-        id: string
-        encrypted_credentials: string
-        external_account_id: string | null
-      }>
+      const rows = this.db
+        .prepare<
+          unknown[],
+          {
+            id: string
+            encrypted_credentials: string
+            external_account_id: string | null
+          }
+        >(query)
+        .all(...params)
 
       this.logger.info(
         { rowCount: rows.length, filterAccountIds },
@@ -595,7 +633,12 @@ export class ExchangeService {
       const allEntries: { timestamp: Date; value: bigint }[] = []
 
       for (const row of rows) {
-        const credData = JSON.parse(row.encrypted_credentials) as CredentialData
+        const parsedCredentials = parseCredentials(row.encrypted_credentials)
+        if (parsedCredentials.isErr()) {
+          this.logger.warn({ accountId: row.id }, 'Invalid stored credentials — skipping')
+          continue
+        }
+        const credData = parsedCredentials.unwrap()
 
         // Decrypt credentials — skip account on failure
         const apiKeyEnc = Encrypted.fromString(credData.data['apiKey']?.blob ?? '')
@@ -741,10 +784,15 @@ export class ExchangeService {
         params.push(...filterAccountIds)
       }
 
-      const rows = this.db.prepare(query).all(...params) as Array<{
-        id: string
-        encrypted_credentials: string
-      }>
+      const rows = this.db
+        .prepare<
+          unknown[],
+          {
+            id: string
+            encrypted_credentials: string
+          }
+        >(query)
+        .all(...params)
 
       this.logger.info(
         { rowCount: rows.length, filterAccountIds },
@@ -754,7 +802,12 @@ export class ExchangeService {
       const allEntries: { timestamp: Date; value: bigint }[] = []
 
       for (const row of rows) {
-        const credData = JSON.parse(row.encrypted_credentials) as CredentialData
+        const parsedCredentials = parseCredentials(row.encrypted_credentials)
+        if (parsedCredentials.isErr()) {
+          this.logger.warn({ accountId: row.id }, 'Invalid stored credentials — skipping')
+          continue
+        }
+        const credData = parsedCredentials.unwrap()
 
         // Decrypt credentials — skip account on failure
         const apiKeyEnc = Encrypted.fromString(credData.data['apiKey']?.blob ?? '')
@@ -911,30 +964,47 @@ export class ExchangeService {
     txHash: string | null
     statementMonth: string
   }> {
-    const rows = (
-      statementMonth
-        ? this.db
-            .prepare(
-              'SELECT * FROM exchange_statement_txs WHERE account_id = ? AND statement_month = ? ORDER BY transacted_at ASC',
-            )
-            .all(accountId, statementMonth)
-        : this.db
-            .prepare('SELECT * FROM exchange_statement_txs WHERE account_id = ? ORDER BY transacted_at ASC')
-            .all(accountId)
-    ) as Array<{
-      id: string
-      external_id: string
-      transacted_at: string
-      type: string
-      amount_btc: string
-      amount_usd: string | null
-      fee_usd: string | null
-      fee_btc: string | null
-      exchange_rate: string | null
-      description: string | null
-      tx_hash: string | null
-      statement_month: string
-    }>
+    const rows = statementMonth
+      ? this.db
+          .prepare<
+            unknown[],
+            {
+              id: string
+              external_id: string
+              transacted_at: string
+              type: string
+              amount_btc: string
+              amount_usd: string | null
+              fee_usd: string | null
+              fee_btc: string | null
+              exchange_rate: string | null
+              description: string | null
+              tx_hash: string | null
+              statement_month: string
+            }
+          >(
+            'SELECT * FROM exchange_statement_txs WHERE account_id = ? AND statement_month = ? ORDER BY transacted_at ASC',
+          )
+          .all(accountId, statementMonth)
+      : this.db
+          .prepare<
+            unknown[],
+            {
+              id: string
+              external_id: string
+              transacted_at: string
+              type: string
+              amount_btc: string
+              amount_usd: string | null
+              fee_usd: string | null
+              fee_btc: string | null
+              exchange_rate: string | null
+              description: string | null
+              tx_hash: string | null
+              statement_month: string
+            }
+          >('SELECT * FROM exchange_statement_txs WHERE account_id = ? ORDER BY transacted_at ASC')
+          .all(accountId)
 
     return rows.map((r) => ({
       id: r.id,
@@ -954,10 +1024,10 @@ export class ExchangeService {
 
   public listStatementMonths(accountId: string): string[] {
     const rows = this.db
-      .prepare(
+      .prepare<unknown[], { statement_month: string }>(
         'SELECT DISTINCT statement_month FROM exchange_statement_txs WHERE account_id = ? ORDER BY statement_month DESC',
       )
-      .all(accountId) as Array<{ statement_month: string }>
+      .all(accountId)
     return rows.map((r) => r.statement_month)
   }
 
@@ -969,10 +1039,12 @@ export class ExchangeService {
   }
 
   private getAccount(id: string): ExchangeAccountDto | null {
-    const row = this.db.prepare('SELECT * FROM exchange_accounts WHERE id = ?').get(id) as
-      | {
+    const row = this.db
+      .prepare<
+        unknown[],
+        {
           id: string
-          provider: string
+          provider: SupportedExchange
           display_name: string
           encrypted_credentials: string
           balance_sats: string | null
@@ -980,7 +1052,8 @@ export class ExchangeService {
           created_at: string
           credentials_connected_at: string | null
         }
-      | undefined
+      >('SELECT * FROM exchange_accounts WHERE id = ?')
+      .get(id)
     if (!row) {
       return null
     }
@@ -988,7 +1061,7 @@ export class ExchangeService {
     const isConnected = connectionStatus === 'connected'
     return {
       id: row.id,
-      exchange: row.provider as SupportedExchange,
+      exchange: row.provider,
       displayName: row.display_name,
       balanceSats: isConnected ? (row.balance_sats ?? null) : null,
       balanceAsOf: isConnected ? (row.balance_as_of ?? null) : null,
@@ -1014,8 +1087,10 @@ export class ExchangeService {
       // imported statements, and generated statement references are keyed to
       // this id, so never delete/reinsert during a credential replacement.
       const existing = this.db
-        .prepare('SELECT provider, created_at FROM exchange_accounts WHERE id = ?')
-        .get(args.replaceAccountId) as { provider: string; created_at: string } | undefined
+        .prepare<unknown[], { provider: SupportedExchange; created_at: string }>(
+          'SELECT provider, created_at FROM exchange_accounts WHERE id = ?',
+        )
+        .get(args.replaceAccountId)
 
       if (!existing) {
         return Err(new Error('Exchange account not found'))
@@ -1108,7 +1183,7 @@ export class ExchangeService {
 
   private getCredentialConnectionStatus(encryptedCredentials: string): ExchangeConnectionStatus {
     try {
-      const parsed = parseUnknown(CredentialDataSchema, JSON.parse(encryptedCredentials) as unknown)
+      const parsed = parseCredentials(encryptedCredentials)
       if (parsed.isErr()) {
         return 'needs_reconnect'
       }

@@ -165,7 +165,9 @@ it('requires a choice for multiple Ledgers and forgets a removed selection', asy
   await update('choosing', devices)
   expect(button('Connect selected Ledger').disabled).toBe(true)
   await act(async () => {
-    ;(host.querySelector('input[value="two"]') as HTMLInputElement).click()
+    const input = host.querySelector('input[value="two"]')
+    assert(input instanceof HTMLInputElement, 'Expected a Ledger radio input')
+    input.click()
   })
   await click('Connect selected Ledger')
   expect(bridge.choose).toHaveBeenCalledWith(requestId, 'two')

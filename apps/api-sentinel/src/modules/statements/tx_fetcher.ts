@@ -5,31 +5,30 @@ import type { TransactionEntry } from '@hoseki/packages/bitcoin/onchain/types'
 import { isConfirmed } from '@hoseki/packages/bitcoin/onchain/types'
 import { addressToScripthash } from '@hoseki/packages/bitcoin/scripthash'
 import { Txid } from '@hoseki/packages/bitcoin/txid'
+import { parseUnknown } from '@hoseki/packages/result'
 import { Err, Ok, asyncFn } from '@patina/core'
 import type { Result } from '@patina/core'
 import type { Logger } from 'pino'
+import { z } from 'zod'
 
 /**
  * mempool.space /api/tx/{txid} response shape (subset we care about).
  */
-interface MempoolTx {
-  txid: string
-  vin: Array<{
-    prevout: {
-      scriptpubkey_address?: string
-      value: number
-    } | null
-  }>
-  vout: Array<{
-    scriptpubkey_address?: string
-    value: number
-  }>
-  status: {
-    confirmed: boolean
-    block_height?: number
-    block_time?: number
-  }
-}
+const MempoolTxSchema = z.object({
+  txid: z.string(),
+  vin: z.array(
+    z.object({
+      prevout: z.object({ scriptpubkey_address: z.string().optional(), value: z.number().int() }).nullable(),
+    }),
+  ),
+  vout: z.array(z.object({ scriptpubkey_address: z.string().optional(), value: z.number().int() })),
+  status: z.object({
+    confirmed: z.boolean(),
+    block_height: z.number().optional(),
+    block_time: z.number().optional(),
+  }),
+})
+type MempoolTx = z.infer<typeof MempoolTxSchema>
 
 /** Max concurrent API calls to mempool.space for tx lookups */
 const TX_CONCURRENCY = 10
@@ -117,7 +116,9 @@ export const fetchTransactionEntries = asyncFn(
           if (!response.ok) {
             return null
           }
-          return (await response.json()) as MempoolTx
+          return parseUnknown(MempoolTxSchema, await response.json()).mapErr(
+            () => new Error(`Invalid transaction data returned from mempool.space for ${txid}`),
+          )
         }),
       )
 
@@ -128,7 +129,10 @@ export const fetchTransactionEntries = asyncFn(
           continue
         }
 
-        const mempoolTx = result.value
+        if (result.value.isErr()) {
+          return Err(result.value.unwrapErr())
+        }
+        const mempoolTx = result.value.unwrap()
         const relatedAddresses = txHashToAddresses.get(mempoolTx.txid) ?? new Set()
 
         // Parse into TransactionEntry for each related address

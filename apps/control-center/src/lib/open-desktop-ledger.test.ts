@@ -1,28 +1,33 @@
-import { EventEmitter } from 'node:events'
 import TransportWebHID from '@ledgerhq/hw-transport-webhid'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { closeDesktopLedger, openDesktopLedger } from './open-desktop-ledger'
 
-const mocks = vi.hoisted(() => ({ request: vi.fn(), app: vi.fn() }))
-vi.mock('@ledgerhq/hw-transport-webhid', async () => {
-  const { EventEmitter: NodeEventEmitter } = await import('node:events')
-  return {
-    default: class WebHID extends NodeEventEmitter {
-      public static request = mocks.request
-    },
-  }
-})
+const mocks = vi.hoisted(() => ({ request: vi.fn<typeof TransportWebHID.request>(), app: vi.fn() }))
+vi.spyOn(TransportWebHID, 'request').mockImplementation(mocks.request)
 vi.mock('@ledgerhq/hw-app-btc/lib/getAppAndVersion', () => ({ getAppAndVersion: mocks.app }))
 
-let transport: TransportWebHID & EventEmitter
+let transport: TransportWebHID
 beforeEach(() => {
   vi.clearAllMocks()
-  transport = Object.assign(new EventEmitter(), {
-    device: { close: vi.fn(async () => undefined), removeEventListener: vi.fn() },
-    onInputReport: vi.fn(),
-    close: vi.fn(() => new Promise<void>(() => undefined)),
-  }) as unknown as TransportWebHID & EventEmitter
-  Object.setPrototypeOf(transport, TransportWebHID.prototype)
+  const device: HIDDevice = {
+    opened: true,
+    vendorId: 0x2c97,
+    productId: 0,
+    productName: 'Test Ledger',
+    collections: [],
+    oninputreport: null,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    dispatchEvent: vi.fn(() => true),
+    open: vi.fn(async () => undefined),
+    close: vi.fn(async () => undefined),
+    forget: vi.fn(async () => undefined),
+    sendReport: vi.fn(async () => undefined),
+    sendFeatureReport: vi.fn(async () => undefined),
+    receiveFeatureReport: vi.fn(async () => new DataView(new ArrayBuffer(0))),
+  }
+  transport = new TransportWebHID(device)
+  vi.spyOn(transport, 'close').mockImplementation(() => new Promise<void>(() => undefined))
   mocks.request.mockResolvedValue(transport)
   mocks.app.mockResolvedValue({ name: 'Bitcoin' })
 })
@@ -30,7 +35,7 @@ afterEach(() => vi.useRealTimers())
 
 it('checks the active app and returns a transport with no leftover connection listeners', async () => {
   expect(await openDesktopLedger(new AbortController().signal)).toBe(transport)
-  expect(transport.listenerCount('disconnect')).toBe(0)
+  expect(transport._events.listenerCount('disconnect')).toBe(0)
   expect(transport.device.close).not.toHaveBeenCalled()
 })
 

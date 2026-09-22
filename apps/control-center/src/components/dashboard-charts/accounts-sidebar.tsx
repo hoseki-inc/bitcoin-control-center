@@ -90,7 +90,7 @@ export function AccountsSidebar({
   // Build unified sorted list — highest BTC balance first
   type ClaimItem = { type: 'claim'; claim: ClaimDto; btcSats: number }
   type ExchangeItem = { type: 'exchange'; account: ExchangeAccountDto; btcSats: number }
-  type ManualItem = { type: 'manual'; account: ManualAccountDto; btcSats: number }
+  type ManualItem = { type: 'manual'; account: ManualAccountDto | EtfAccountDto; btcSats: number }
   type AccountItem = ClaimItem | ExchangeItem | ManualItem
 
   const allItems: AccountItem[] = [
@@ -111,7 +111,7 @@ export function AccountsSidebar({
     })),
     ...etfAccounts.map((account): ManualItem => ({
       type: 'manual',
-      account: account as unknown as ManualAccountDto,
+      account,
       btcSats: account.balance ? Number(account.balance) : 0,
     })),
   ].sort((a, b) => b.btcSats - a.btcSats)

@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { ChakraProvider } from '@chakra-ui/react'
-import { MultiSigAccount } from '@hoseki/packages/bitcoin'
+import { Address, DerivationPath, MultiSigAccount } from '@hoseki/packages/bitcoin'
 import { Err, Ok } from '@hoseki/packages/result'
 import { TrezorInfo } from '@hoseki/packages/ui/wallet-ui/trezor/trezor-info'
 import { HardwareDeviceError, Slip132 } from '@hoseki/packages/wallet'
@@ -20,20 +20,14 @@ import { afterAll, afterEach, assert, beforeEach, describe, expect, it, vi } fro
 import { LedgerSigning as SinglesigLedgerSigning } from '../../../components/claims/ledger/ledger-signing'
 import { TrezorSigning as SinglesigTrezorSigning } from '../../../components/claims/trezor/trezor-signing'
 import type * as MultisigPageWrapperModule from '../../../components/multisig/multisig-page-wrapper'
-import { MultisigPageWrapper } from '../../../components/multisig/multisig-page-wrapper'
+import { MultisigPageWrapper, getIndicatorKeystores } from '../../../components/multisig/multisig-page-wrapper'
 import type { SigningFlowProps } from '../../../lib/claim-flow'
 import type { ClaimDto } from '../../../trpc/server-types'
 import { MultisigSigningPage } from './signing'
 
 const mocks = await vi.hoisted(async () => {
   // Add a DOM without replacing Node byte-array globals used by the Bitcoin SDK.
-  const { createRequire } = await import('node:module')
-  const { JSDOM } = createRequire(import.meta.url)('jsdom') as {
-    JSDOM: new (
-      html: string,
-      options: { url: string; pretendToBeVisual: boolean },
-    ) => { window: Window & typeof globalThis }
-  }
+  const { JSDOM } = await import('jsdom')
   const { window } = new JSDOM('<!doctype html><html><body></body></html>', {
     url: 'http://localhost',
     pretendToBeVisual: true,
@@ -43,6 +37,7 @@ const mocks = await vi.hoisted(async () => {
     document: window.document,
     navigator: window.navigator,
     HTMLElement: window.HTMLElement,
+    Element: window.Element,
     HTMLButtonElement: window.HTMLButtonElement,
     Node: window.Node,
     Event: window.Event,
@@ -55,9 +50,18 @@ const mocks = await vi.hoisted(async () => {
   for (const [name, value] of Object.entries(domGlobals)) {
     vi.stubGlobal(name, value)
   }
+  let claim: ClaimDto | undefined
   return {
     domGlobals,
-    claim: {} as ClaimDto,
+    get claim(): ClaimDto {
+      if (!claim) {
+        throw new Error('Signing test claim has not been initialized')
+      }
+      return claim
+    },
+    set claim(value: ClaimDto) {
+      claim = value
+    },
     walletType: 'ledger' as 'ledger' | 'trezor' | 'coldcard' | 'keystone',
     ledger: { isInitialized: false, init: vi.fn(), reset: vi.fn(), signMessage: vi.fn() },
     trezorSign: vi.fn(),
@@ -94,7 +98,7 @@ vi.mock('lottie-react', () => ({ default: () => null }))
 vi.mock('sonner', () => ({ toast: { error: mocks.toastError, success: vi.fn() } }))
 vi.mock('react-router', async (importOriginal) => ({
   ...(await importOriginal<typeof ReactRouter>()),
-  useParams: () => ({ walletType: mocks.walletType, keystoreId: 'ledger-key' }),
+  useParams: () => ({ walletType: mocks.walletType, keystoreId: 're_ks_ledger' }),
   useNavigate: () => mocks.navigate,
 }))
 // Replace the camera and QR rendering only; exercise the real signing screens and callbacks.
@@ -145,7 +149,7 @@ vi.mock('../../../trpc', async () => {
                 isLoading: false,
                 data: {
                   signedMessage: {
-                    id: 'message-1',
+                    id: 're_mesg_message1',
                     address: '1BoatSLRHtKNngkdXEeobR76b53LETtpyT',
                     messageTextToSign: 'Synthetic multisig ownership challenge',
                   },
@@ -220,7 +224,10 @@ async function renderSigningRoute(withWrapper = false): Promise<ReturnType<typeo
       { path: '/multisig/verify/receipt/:id/:keystoreId', element: createElement('div', null, 'Key receipt') },
       { path: '/accounts/verify/receipt/:id', element: createElement('div', null, 'Verified account receipt') },
     ],
-    { initialEntries: ['/accounts', `/multisig/claim-1/signing/${mocks.walletType}/ledger-key`], initialIndex: 1 },
+    {
+      initialEntries: ['/accounts', `/multisig/re_clmx_claim1/signing/${mocks.walletType}/re_ks_ledger`],
+      initialIndex: 1,
+    },
   )
   await render(createElement(RouterProvider, { router }))
   return router
@@ -245,19 +252,41 @@ beforeEach(async () => {
     'xpub6BosfCnifzxcFwrSzQiqu2DBVTshkCXacvNsWGYJVVhhawA7d4R5WSWGFNbi8Aw6ZRc1brxMyWMzG3DSSSSoekkudhUd9yLb6qx39T9nMdj',
     'xpub6CUGRUonZSQ4TWtTMmzXdrXDtypWKiKrhko4egpiMZbpiaQL2jkwSB1icqYh2cfDfVxdx4df189oLKnC5fSwqPfgyP3hooxujYzAu3fDVmz',
   ].map((value) => Slip132.getXpubFromString(value).expect('public test xpub'))
+  const ledgerXpub = xpubs[0]
+  const otherXpub = xpubs[1]
+  assert.exists(ledgerXpub)
+  assert.exists(otherXpub)
+  const createdAt = new Date('2026-01-01T00:00:00Z')
+  const keystoreDefaults = {
+    createdAt,
+    updatedAt: createdAt,
+    wallet: null,
+    model: null,
+    isIdentified: false,
+    derivationPath: DerivationPath.fromString('m/48h/0h/0h/2h').expect('valid fixture path').toString(),
+  }
   mocks.claim = {
-    id: 'claim-1',
+    id: 're_clmx_claim1',
+    createdAt,
+    updatedAt: createdAt,
+    isVerified: false,
+    officialName: '',
+    displayName: 'Test multisig',
+    network: 'bitcoin_mainnet',
+    status: 'pending',
+    isArchived: false,
+    metadata: null,
     account: new MultiSigAccount('p2wsh', 2, true, xpubs).descriptor(),
     keystores: [
-      { id: 'ledger-key', derivationPath: 'm/48h/0h/0h/2h', xpub: xpubs[0] },
-      { id: 'other-key', derivationPath: 'm/48h/0h/0h/2h', xpub: xpubs[1] },
+      { ...keystoreDefaults, id: 're_ks_ledger', label: 'Ledger', xpub: ledgerXpub },
+      { ...keystoreDefaults, id: 're_ks_other', label: 'Other key', xpub: otherXpub },
     ],
     latestChallenge: {
-      id: 'challenge-1',
+      id: 're_chal_challenge1',
       completed: false,
-      messages: [{ signedMessageId: 'message-1', keystoreId: 'ledger-key', signed: false }],
+      messages: [{ signedMessageId: 're_mesg_message1', keystoreId: 're_ks_ledger', signed: false }],
     },
-  } as unknown as ClaimDto
+  }
   mocks.ledger.isInitialized = false
   mocks.ledger.init.mockReset().mockResolvedValue(undefined)
   mocks.ledger.reset.mockReset().mockResolvedValue(undefined)
@@ -307,11 +336,13 @@ describe('Ledger multisig signing screen', () => {
       'Synthetic multisig ownership challenge',
     )
     expect(mocks.completeMessage).toHaveBeenCalledWith({
-      signedMessageId: 'message-1',
+      signedMessageId: 're_mesg_message1',
       signature: Buffer.from([31, ...Buffer.alloc(32, 0x11), ...Buffer.alloc(32, 0x22)]).toString('base64'),
     })
     expect(mocks.completeChallenge).not.toHaveBeenCalled()
-    expect(mocks.navigate).toHaveBeenCalledWith('/multisig/verify/receipt/claim-1/ledger-key', { replace: true })
+    expect(mocks.navigate).toHaveBeenCalledWith('/multisig/verify/receipt/re_clmx_claim1/re_ks_ledger', {
+      replace: true,
+    })
   })
 
   it('shows a real initialization failure and does not advance to signing', async () => {
@@ -346,7 +377,7 @@ describe.each(['ledger', 'trezor'] as const)('%s as the final multisig cosigner'
     challenge.messages.push({
       ...challenge.messages[0],
       keystoreId: mocks.claim.keystores[1].id,
-      signedMessageId: 'message-0' as (typeof challenge.messages)[number]['signedMessageId'],
+      signedMessageId: 're_mesg_message0',
       signed: true,
     })
     await render()
@@ -356,11 +387,11 @@ describe.each(['ledger', 'trezor'] as const)('%s as the final multisig cosigner'
     await reachSigning()
     await clickSign()
     await vi.waitFor(() => {
-      expect(mocks.navigate).toHaveBeenCalledWith('/accounts/verify/receipt/claim-1')
+      expect(mocks.navigate).toHaveBeenCalledWith('/accounts/verify/receipt/re_clmx_claim1')
     })
     expect(mocks.completeMessage).toHaveBeenCalledTimes(1)
-    expect(mocks.completeChallenge).toHaveBeenCalledExactlyOnceWith({ challengeId: 'challenge-1' })
-    expect(mocks.invalidateClaim).toHaveBeenCalledWith({ id: 'claim-1' }, undefined, { throwOnError: true })
+    expect(mocks.completeChallenge).toHaveBeenCalledExactlyOnceWith({ challengeId: 're_chal_challenge1' })
+    expect(mocks.invalidateClaim).toHaveBeenCalledWith({ id: 're_clmx_claim1' }, undefined, { throwOnError: true })
     expect(mocks.fetchClaim).toHaveBeenCalledTimes(1)
     expect(mocks.toastError).not.toHaveBeenCalled()
   })
@@ -388,7 +419,7 @@ describe.each(['ledger', 'trezor'] as const)('%s as the final multisig cosigner'
       })
     }
     await vi.waitFor(() => {
-      expect(mocks.navigate).toHaveBeenCalledWith('/accounts/verify/receipt/claim-1')
+      expect(mocks.navigate).toHaveBeenCalledWith('/accounts/verify/receipt/re_clmx_claim1')
     })
     expect(getSignButton().disabled).toBe(false)
   })
@@ -406,7 +437,7 @@ describe.each(['ledger', 'trezor'] as const)('%s as the final multisig cosigner'
     await clickSign()
     try {
       expect(mocks.completeChallenge).toHaveBeenCalledTimes(1)
-      expect(mocks.invalidateClaim).toHaveBeenCalledWith({ id: 'claim-1' }, undefined, { throwOnError: true })
+      expect(mocks.invalidateClaim).toHaveBeenCalledWith({ id: 're_clmx_claim1' }, undefined, { throwOnError: true })
       expect(mocks.navigate).not.toHaveBeenCalled()
       expect(getSignButton().disabled).toBe(true)
       await clickSign()
@@ -419,7 +450,7 @@ describe.each(['ledger', 'trezor'] as const)('%s as the final multisig cosigner'
       })
     }
     await vi.waitFor(() => {
-      expect(mocks.navigate).toHaveBeenCalledWith('/accounts/verify/receipt/claim-1')
+      expect(mocks.navigate).toHaveBeenCalledWith('/accounts/verify/receipt/re_clmx_claim1')
     })
     expect(getSignButton().disabled).toBe(false)
   })
@@ -433,10 +464,10 @@ describe.each(['ledger', 'trezor'] as const)('%s as the final multisig cosigner'
         'Verification completed, but the account could not be refreshed. Reload the page.',
       )
     })
-    expect(queryClient.getQueryState(['claim', 'claim-1'])).toMatchObject({ status: 'error' })
+    expect(queryClient.getQueryState(['claim', 're_clmx_claim1'])).toMatchObject({ status: 'error' })
     expect(mocks.fetchClaim).toHaveBeenCalledTimes(1)
     expect(mocks.completeChallenge).toHaveBeenCalledTimes(1)
-    expect(mocks.invalidateClaim).toHaveBeenCalledWith({ id: 'claim-1' }, undefined, { throwOnError: true })
+    expect(mocks.invalidateClaim).toHaveBeenCalledWith({ id: 're_clmx_claim1' }, undefined, { throwOnError: true })
     expect(mocks.navigate).not.toHaveBeenCalled()
     expect(
       queryClient
@@ -465,7 +496,7 @@ describe.each(['ledger', 'trezor'] as const)('%s as the final multisig cosigner'
     mocks.fetchClaim.mockResolvedValue(mocks.claim)
     const reloadedRouter = await renderSigningRoute()
     await waitForText('Verified account receipt')
-    expect(reloadedRouter.state.location.pathname).toBe('/accounts/verify/receipt/claim-1')
+    expect(reloadedRouter.state.location.pathname).toBe('/accounts/verify/receipt/re_clmx_claim1')
     expect(reloadedRouter.state.historyAction).toBe('REPLACE')
     expect(walletType === 'ledger' ? mocks.ledger.signMessage : mocks.trezorSign).toHaveBeenCalledTimes(1)
     expect(mocks.completeMessage).toHaveBeenCalledTimes(1)
@@ -496,13 +527,50 @@ describe.each(['ledger', 'trezor'] as const)('%s verification of an already-veri
     mocks.claim = { ...mocks.claim, isVerified: true, status: 'verified' }
     const signingRouter = await renderSigningRoute()
     await reachSigning()
-    expect(signingRouter.state.location.pathname).toBe(`/multisig/claim-1/signing/${walletType}/ledger-key`)
+    expect(signingRouter.state.location.pathname).toBe(`/multisig/re_clmx_claim1/signing/${walletType}/re_ks_ledger`)
     expect(getSignButton().disabled).toBe(false)
     expect(container.textContent).not.toContain('Verified account receipt')
     expect(mocks.navigate).not.toHaveBeenCalled()
     expect(mocks.completeChallenge).not.toHaveBeenCalled()
   })
 })
+
+function signingProps(): SigningFlowProps {
+  const claim = mocks.claim
+  const keystore = claim.keystores[0]
+  const latest = claim.latestChallenge
+  assert.exists(keystore)
+  assert.exists(latest)
+  return {
+    claim,
+    keystore,
+    challenge: {
+      id: latest.id,
+      claimId: claim.id,
+      variant: 'signed_message',
+      isSatisfied: latest.completed,
+      createdAt: claim.createdAt,
+      updatedAt: claim.updatedAt,
+      completedAt: null,
+    },
+    challengeMessage: {
+      challengeId: latest.id,
+      keystoreId: keystore.id,
+      signedMessage: {
+        version: 0,
+        id: 're_mesg_message1',
+        createdAt: claim.createdAt,
+        updatedAt: claim.updatedAt,
+        address: Address.fromString('1BoatSLRHtKNngkdXEeobR76b53LETtpyT').expect('valid test address').toString(),
+        messageTextToSign: 'Synthetic ownership challenge',
+        signedAt: null,
+        signature: null,
+      },
+    },
+    onExitSigning: vi.fn(),
+    onSigningComplete: vi.fn(),
+  }
+}
 
 describe.each(['singlesig', 'multisig'] as const)('%s Ledger retry', (flow) => {
   it('releases the HID handle and reloads even when the SDK exchange is stuck', async () => {
@@ -542,20 +610,7 @@ describe.each(['singlesig', 'multisig'] as const)('%s Ledger retry', (flow) => {
     if (flow === 'multisig') {
       await render()
     } else {
-      const props = {
-        claim: mocks.claim,
-        keystore: mocks.claim.keystores[0],
-        challenge: mocks.claim.latestChallenge,
-        challengeMessage: {
-          signedMessage: {
-            id: 'message-1',
-            address: '1BoatSLRHtKNngkdXEeobR76b53LETtpyT',
-            messageTextToSign: 'Synthetic ownership challenge',
-          },
-        },
-        onExitSigning: vi.fn(),
-        onSigningComplete: vi.fn(),
-      } as unknown as SigningFlowProps
+      const props = signingProps()
       await render(createElement(SinglesigLedgerSigning, props))
     }
     await clickNext()
@@ -677,7 +732,7 @@ describe.each(['coldcard-file', 'coldcard-qr', 'keystone'] as const)('%s multisi
         expect(mocks.fetchClaim).toHaveBeenCalledOnce()
       })
       expect(mocks.completeMessage).toHaveBeenCalledExactlyOnceWith({
-        signedMessageId: 'message-1',
+        signedMessageId: 're_mesg_message1',
         signature: 'c3ludGhldGljLXNpZ25hdHVyZQ==',
       })
       expect(mocks.completeChallenge).not.toHaveBeenCalled()
@@ -688,7 +743,7 @@ describe.each(['coldcard-file', 'coldcard-qr', 'keystone'] as const)('%s multisi
       })
     }
     await vi.waitFor(() => {
-      expect(mocks.navigate).toHaveBeenCalledExactlyOnceWith('/multisig/verify/receipt/claim-1/ledger-key', {
+      expect(mocks.navigate).toHaveBeenCalledExactlyOnceWith('/multisig/verify/receipt/re_clmx_claim1/re_ks_ledger', {
         replace: true,
       })
     })
@@ -729,7 +784,7 @@ describe.each(['coldcard-file', 'coldcard-qr', 'keystone'] as const)('%s multisi
     challenge.messages.push({
       ...challenge.messages[0],
       keystoreId: mocks.claim.keystores[1].id,
-      signedMessageId: 'message-0' as (typeof challenge.messages)[number]['signedMessageId'],
+      signedMessageId: 're_mesg_message0',
       signed: true,
     })
     let finishCompletion!: () => void
@@ -742,7 +797,7 @@ describe.each(['coldcard-file', 'coldcard-qr', 'keystone'] as const)('%s multisi
     await submitAirgappedSignature(flow)
     try {
       await vi.waitFor(() => {
-        expect(mocks.completeChallenge).toHaveBeenCalledExactlyOnceWith({ challengeId: 'challenge-1' })
+        expect(mocks.completeChallenge).toHaveBeenCalledExactlyOnceWith({ challengeId: 're_chal_challenge1' })
       })
       expect(mocks.fetchClaim).not.toHaveBeenCalled()
       expect(mocks.navigate).not.toHaveBeenCalled()
@@ -752,7 +807,7 @@ describe.each(['coldcard-file', 'coldcard-qr', 'keystone'] as const)('%s multisi
       })
     }
     await vi.waitFor(() => {
-      expect(mocks.navigate).toHaveBeenCalledExactlyOnceWith('/accounts/verify/receipt/claim-1')
+      expect(mocks.navigate).toHaveBeenCalledExactlyOnceWith('/accounts/verify/receipt/re_clmx_claim1')
     })
     expect(mocks.fetchClaim).toHaveBeenCalledOnce()
     expect(mocks.toastError).not.toHaveBeenCalled()
@@ -766,7 +821,7 @@ describe.each(['coldcard-file', 'coldcard-qr', 'keystone'] as const)('%s multisi
     challenge.messages.push({
       ...challenge.messages[0],
       keystoreId: mocks.claim.keystores[1].id,
-      signedMessageId: 'message-0' as (typeof challenge.messages)[number]['signedMessageId'],
+      signedMessageId: 're_mesg_message0',
       signed: true,
     })
     mocks.completeChallenge.mockRejectedValueOnce(new Error('Synthetic final completion failure'))
@@ -806,20 +861,7 @@ describe('Trezor singlesig callback', () => {
   it('clears signing progress after an unexpected SDK rejection', async () => {
     mocks.walletType = 'trezor'
     mocks.trezorSign.mockRejectedValueOnce(new Error('Unexpected Trezor failure'))
-    const props = {
-      claim: mocks.claim,
-      keystore: mocks.claim.keystores[0],
-      challenge: mocks.claim.latestChallenge,
-      challengeMessage: {
-        signedMessage: {
-          id: 'message-1',
-          address: '1BoatSLRHtKNngkdXEeobR76b53LETtpyT',
-          messageTextToSign: 'Synthetic ownership challenge',
-        },
-      },
-      onExitSigning: vi.fn(),
-      onSigningComplete: vi.fn(),
-    } as unknown as SigningFlowProps
+    const props = signingProps()
     await render(createElement(SinglesigTrezorSigning, props))
     await reachSigning()
     await clickSign()
@@ -872,7 +914,7 @@ describe.each(['coldcard-file', 'coldcard-qr', 'keystone'] as const)('%s saved-s
       }
       await waitForText('Key receipt')
       assert.exists(router, 'Expected the signing router')
-      expect(router.state.location.pathname).toBe('/multisig/verify/receipt/claim-1/ledger-key')
+      expect(router.state.location.pathname).toBe('/multisig/verify/receipt/re_clmx_claim1/re_ks_ledger')
       expect(router.state.historyAction).toBe('REPLACE')
       expect(mocks.completeMessage).toHaveBeenCalledOnce()
       expect(mocks.completeChallenge).not.toHaveBeenCalled()
@@ -969,5 +1011,19 @@ it.each(['ledger', 'trezor'] as const)(
     await waitForText('Account list')
     expect(signingRouter.state.location.pathname).toBe('/accounts')
     expect(mocks.completeMessage).toHaveBeenCalledOnce()
+  },
+)
+
+it.each(['identified', 'verified'] as const)(
+  'preserves a key’s %s status when its device type is unknown',
+  (status) => {
+    const keystore = mocks.claim.keystores[0]
+    const message = mocks.claim.latestChallenge?.messages[0]
+    assert(keystore && message)
+    keystore.isIdentified = true
+    message.signed = status === 'verified'
+    expect(getIndicatorKeystores(mocks.claim)).toContainEqual(
+      expect.objectContaining({ id: keystore.id, status, wallet: null }),
+    )
   },
 )

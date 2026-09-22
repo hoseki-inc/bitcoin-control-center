@@ -1,5 +1,4 @@
-import { EventEmitter } from 'node:events'
-import type Transport from '@ledgerhq/hw-transport'
+import Transport from '@ledgerhq/hw-transport'
 import pino from 'pino'
 import { expect, it, vi } from 'vitest'
 import { createLedgerStore } from './device-store'
@@ -7,10 +6,10 @@ import { createLedgerStore } from './device-store'
 vi.mock('@ledgerhq/hw-app-btc', () => ({ default: class LedgerBtcApp {} }))
 
 function fakeTransport(): Transport {
-  return Object.assign(new EventEmitter(), {
+  return Object.assign(new Transport(), {
     close: vi.fn(async () => undefined),
     deviceModel: { productName: 'Ledger Flex', id: 'flex' },
-  }) as unknown as Transport
+  })
 }
 
 it('assigns a new scan identity when reconnecting even to an identical Ledger model', async () => {

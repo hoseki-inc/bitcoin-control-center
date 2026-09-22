@@ -93,9 +93,9 @@ export const ColdcardModels = {
 }
 
 export type ColdcardModel = keyof typeof ColdcardModels
-export const coldcardModelKeys = Object.keys(ColdcardModels) as ColdcardModel[]
+export const coldcardModelKeys = Object.keys(ColdcardModels).filter(isColdcardModel)
 export function isColdcardModel(model: string): model is ColdcardModel {
-  return coldcardModelKeys.includes(model as ColdcardModel)
+  return Object.hasOwn(ColdcardModels, model)
 }
 
 /**

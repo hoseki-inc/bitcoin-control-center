@@ -1,6 +1,9 @@
 import { z } from 'zod'
 import { Currency } from './currency'
 
+export const CurrencyCodeSchema = z.enum(['BTC', 'ETH', 'SOL', 'USDT', 'USDC', 'USD', 'EUR'])
+export type CurrencyCode = z.infer<typeof CurrencyCodeSchema>
+
 export const currencies = {
   // Major cryptocurrencies
   BTC: new Currency({
@@ -55,9 +58,4 @@ export const currencies = {
     exponent: 2,
     decimals: Currency.MAX_DECIMALS,
   }),
-} as const
-
-export type CurrencyCode = keyof typeof currencies
-
-const currencyKeys = Object.keys(currencies) as [CurrencyCode, ...CurrencyCode[]]
-export const CurrencyCodeSchema = z.enum(currencyKeys)
+} as const satisfies { [Code in CurrencyCode]: Currency<Code> }

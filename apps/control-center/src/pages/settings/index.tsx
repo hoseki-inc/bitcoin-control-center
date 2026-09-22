@@ -176,7 +176,7 @@ function ElectrumSettings(): JSX.Element {
     if (!isDirty) {
       setHost(savedHost ?? 'electrum.blockstream.info')
       setPort(savedPort ?? '50002')
-      setProtocol((savedProtocol ?? 'ssl') as 'tcp' | 'ssl')
+      setProtocol(savedProtocol === 'tcp' ? 'tcp' : 'ssl')
       setTorEnabled(savedTorEnabled === 'true')
     }
   }, [savedHost, savedPort, savedProtocol, savedTorEnabled, isDirty])
@@ -362,7 +362,11 @@ function ElectrumSettings(): JSX.Element {
             size="sm"
             value={protocol}
             onChange={(e) => {
-              setProtocol(e.target.value as 'tcp' | 'ssl')
+              const value = e.target.value
+              if (value !== 'tcp' && value !== 'ssl') {
+                return
+              }
+              setProtocol(value)
               setIsDirty(true)
               setTestResult(null)
             }}
