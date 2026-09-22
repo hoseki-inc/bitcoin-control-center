@@ -112,7 +112,8 @@
     "typescript/prefer-enum-initializers": "error",
     "typescript/prefer-find": "error",
     "typescript/prefer-includes": "error",
-    "typescript/prefer-literal-enum-member": "error"
+    "typescript/prefer-literal-enum-member": "error",
+    "typescript/prefer-namespace-keyword": "error"
   },
   "overrides": [
     {
