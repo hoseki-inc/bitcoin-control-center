@@ -5,9 +5,9 @@ export class ParseError<E extends Error = Error> extends ErrorWithCause<E> {
   public readonly tag = 'ParseError'
 }
 
-export function parse<S extends z.ZodTypeAny, I extends z.input<S> | z.infer<S>, O extends z.infer<S>>(
+export function parse<S extends z.ZodTypeAny, O extends z.infer<S>>(
   schema: S,
-  input: I,
+  input: z.input<S> | z.infer<S>,
 ): Result<O, ParseError<z.ZodError>> {
   const parsed = schema.safeParse(input)
   if (parsed.success) {

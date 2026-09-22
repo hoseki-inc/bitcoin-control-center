@@ -76,7 +76,7 @@ export function dateLike(): z.ZodPipeline<z.ZodUnion<[z.ZodNumber, z.ZodString, 
   return z.union([z.number(), z.string(), z.date()]).pipe(z.coerce.date())
 }
 
-function pastOrNow<T extends z.ZodDate | ReturnType<typeof dateLike>>(schema: T) {
+function pastOrNow(schema: z.ZodDate | ReturnType<typeof dateLike>) {
   return schema.refine(
     (v) => v <= new Date(),
     (v) => ({
