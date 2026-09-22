@@ -553,6 +553,10 @@ describe.each(['singlesig', 'multisig'] as const)('%s Ledger retry', (flow) => {
       'window',
       new Proxy(mocks.domGlobals.window, {
         get(target, key) {
+          // jsdom requires the real Window as the receiver for event-listener methods.
+          if (key === 'addEventListener' || key === 'removeEventListener') {
+            return target[key].bind(target)
+          }
           return key === 'location' ? { reload } : Reflect.get(target, key, target)
         },
       }),
