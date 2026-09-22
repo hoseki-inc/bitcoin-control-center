@@ -109,7 +109,8 @@
     "typescript/only-throw-error": "error",
     "typescript/parameter-properties": "error",
     "typescript/prefer-as-const": "error",
-    "typescript/prefer-enum-initializers": "error"
+    "typescript/prefer-enum-initializers": "error",
+    "typescript/prefer-find": "error"
   },
   "overrides": [
     {
