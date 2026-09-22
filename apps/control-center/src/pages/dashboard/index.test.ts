@@ -4,6 +4,7 @@ import { QueryClient, QueryObserver, onlineManager } from '@tanstack/react-query
 import { act, createElement } from 'react'
 import { type Root, createRoot } from 'react-dom/client'
 import { afterEach, assert, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { RouterInput } from '../../trpc'
 import { DashboardPage } from './index'
 
 const mocks = vi.hoisted(() => {
@@ -27,7 +28,19 @@ const mocks = vi.hoisted(() => {
     fetching: false,
     error: null as Error | null,
     refetch: vi.fn(),
-    useQuery: vi.fn(),
+    useQuery: vi.fn<
+      (
+        input: Exclude<RouterInput['portalProve']['controlCenter']['getData'], void>,
+        options?: { enabled: boolean },
+      ) => {
+        data?: unknown
+        isLoading: boolean
+        isFetching?: boolean
+        isPreviousData?: boolean
+        error?: unknown
+        refetch: () => unknown
+      }
+    >(),
     sidebar: vi.fn(),
     recordSnapshot: { mutate: vi.fn() },
     claims: [] as Array<{ id: string; displayName: string }>,
@@ -156,10 +169,13 @@ function chartData(): unknown {
   return JSON.parse(content)
 }
 
-function getQueryCall(index: number): (typeof mocks.useQuery.mock.calls)[number] {
+function getQueryCall(
+  index: number,
+): [Exclude<RouterInput['portalProve']['controlCenter']['getData'], void>, { enabled: boolean }] {
   const call = mocks.useQuery.mock.calls.at(index)
   assert.exists(call, `Missing query call at index ${index}`)
-  return call
+  assert.exists(call[1], 'Expected query options')
+  return [call[0], call[1]]
 }
 
 beforeEach(async () => {
@@ -181,19 +197,17 @@ beforeEach(async () => {
   mocks.rangeData = { ...mocks.base, historicalData: [], historySyncingAccountIds: [] }
   mocks.refetch.mockReset()
   mocks.sidebar.mockClear()
-  mocks.useQuery
-    .mockReset()
-    .mockImplementation((input: { customDateRange?: unknown; claimIds?: unknown; timeRange: string }) => {
-      const fullRange = input.customDateRange !== undefined || input.timeRange === 'all'
-      return {
-        data: fullRange ? mocks.rangeData : mocks.base,
-        isLoading: false,
-        isFetching: fullRange && mocks.fetching,
-        isPreviousData: fullRange && mocks.previous,
-        error: fullRange ? mocks.error : null,
-        refetch: mocks.refetch,
-      }
-    })
+  mocks.useQuery.mockReset().mockImplementation((input) => {
+    const fullRange = input.customDateRange !== undefined || input.timeRange === 'all'
+    return {
+      data: fullRange ? mocks.rangeData : mocks.base,
+      isLoading: false,
+      isFetching: fullRange && mocks.fetching,
+      isPreviousData: fullRange && mocks.previous,
+      error: fullRange ? mocks.error : null,
+      refetch: mocks.refetch,
+    }
+  })
   container = document.createElement('div')
   document.body.append(container)
   root = createRoot(container)
@@ -298,7 +312,7 @@ describe('custom portfolio range UI', () => {
     expect(
       mocks.useQuery.mock.calls.some(
         ([input]) =>
-          input.customDateRange?.startDate === '2020-01-01' && input.customDateRange?.endDate === '2020-01-03',
+          input.customDateRange?.startDate === '2020-01-01' && input.customDateRange.endDate === '2020-01-03',
       ),
     ).toBe(true)
   })
@@ -598,7 +612,7 @@ describe('custom portfolio range UI', () => {
     const defaultQuery = mocks.useQuery.getMockImplementation()
     assert.exists(defaultQuery, 'Expected the default query implementation')
     mocks.useQuery.mockImplementation((input, options) =>
-      input.claimIds === undefined && options.enabled === false
+      input.claimIds === undefined && options?.enabled === false
         ? { ...defaultQuery(input), data: { ...mocks.base, historySyncedAccountIds: ['wallet'] } }
         : defaultQuery(input),
     )

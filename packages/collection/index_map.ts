@@ -52,17 +52,17 @@ export class IndexMap<K extends Indexable, V> implements Map<K, V> {
 
     // If key is provided, use it
     if (key.key !== undefined) {
-      const keyValue = typeof key.key === 'function' ? key.key() : key.key
+      const keyValue: unknown = typeof key.key === 'function' ? key.key() : key.key
       if (keyValue !== null && keyValue !== undefined) {
-        return keyValue
+        return this.requireIndex(keyValue)
       }
     }
 
     // If id is provided, use it
     if (key.id !== undefined) {
-      const idValue = typeof key.id === 'function' ? key.id() : key.id
+      const idValue: unknown = typeof key.id === 'function' ? key.id() : key.id
       if (idValue !== null && idValue !== undefined) {
-        return idValue
+        return this.requireIndex(idValue)
       }
     }
 
@@ -72,6 +72,19 @@ export class IndexMap<K extends Indexable, V> implements Map<K, V> {
       throw new TypeError('IndexMap keys must provide a key, id, or custom toString()')
     }
     return stringify.call(key)
+  }
+
+  private requireIndex(value: unknown): Index {
+    if (
+      typeof value === 'string' ||
+      typeof value === 'number' ||
+      typeof value === 'bigint' ||
+      typeof value === 'boolean' ||
+      typeof value === 'symbol'
+    ) {
+      return value
+    }
+    throw new TypeError('IndexMap key and id values must resolve to a primitive index')
   }
 
   private updateSize(): void {

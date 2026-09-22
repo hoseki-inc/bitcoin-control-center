@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import superjson from 'superjson'
 import { baseTrpc } from '../trpc'
 
-const baseUrl = import.meta.env['VITE_BACKEND_API_URL'] ?? ''
+const baseUrl = import.meta.env.VITE_BACKEND_API_URL ?? ''
 
 /**
  * Hook for reading/writing local settings stored in api-sentinel's SQLite.

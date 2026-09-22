@@ -225,6 +225,7 @@ function validateVersionGraph() {
   return versions[0]
 }
 
+/** @param {string[]} args */
 function parseNotes(args) {
   const index = args.indexOf('--notes')
   if (index === -1) {
@@ -256,6 +257,10 @@ export const ${exportName} = VersionInfo.of({
   )
 }
 
+/**
+ * @param {string} currentExportName
+ * @param {string[]} otherExportNames
+ */
 function writeIndex(currentExportName, otherExportNames) {
   const allImports = [currentExportName, ...otherExportNames]
   const imports = allImports.map((name) => `import { ${name} } from './${name}'`).join('\n')

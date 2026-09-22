@@ -308,7 +308,7 @@ describe('Ledger multisig signing screen', () => {
     )
     expect(mocks.completeMessage).toHaveBeenCalledWith({
       signedMessageId: 'message-1',
-      signature: Buffer.from([31, ...Array(32).fill(0x11), ...Array(32).fill(0x22)]).toString('base64'),
+      signature: Buffer.from([31, ...Buffer.alloc(32, 0x11), ...Buffer.alloc(32, 0x22)]).toString('base64'),
     })
     expect(mocks.completeChallenge).not.toHaveBeenCalled()
     expect(mocks.navigate).toHaveBeenCalledWith('/multisig/verify/receipt/claim-1/ledger-key', { replace: true })
@@ -517,7 +517,7 @@ describe.each(['singlesig', 'multisig'] as const)('%s Ledger retry', (flow) => {
       addEventListener: vi.fn(),
       removeEventListener: vi.fn(),
       close,
-    } as unknown as ConstructorParameters<typeof TransportWebHID>[0]
+    }
     const transport = new TransportWebHID(device)
     transport.exchangeBusyPromise = new Promise<void>(() => undefined)
     const sdkClose = vi.spyOn(transport, 'close')
