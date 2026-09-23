@@ -84,12 +84,12 @@ function parseStrikeCsv(csvText: string): ParsedStrikeTx[] {
       transactedAt: date.toISOString(),
       type: txType.toLowerCase(),
       amountBtc,
-      amountUsd: amountUsd && amountUsd.trim() ? amountUsd : undefined,
-      feeUsd: feeUsd && feeUsd.trim() ? feeUsd : undefined,
-      feeBtc: feeBtc && feeBtc.trim() ? feeBtc : undefined,
-      exchangeRate: exchangeRate && exchangeRate.trim() ? exchangeRate : undefined,
-      description: description && description.trim() ? description : undefined,
-      txHash: txHash && txHash.trim() ? txHash : undefined,
+      amountUsd: amountUsd?.trim() ? amountUsd : undefined,
+      feeUsd: feeUsd?.trim() ? feeUsd : undefined,
+      feeBtc: feeBtc?.trim() ? feeBtc : undefined,
+      exchangeRate: exchangeRate?.trim() ? exchangeRate : undefined,
+      description: description?.trim() ? description : undefined,
+      txHash: txHash?.trim() ? txHash : undefined,
       statementMonth,
     })
   }

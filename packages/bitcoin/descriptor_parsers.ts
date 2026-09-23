@@ -92,7 +92,7 @@ const SinglesigAccountDescriptorSchema = z
           })
           .nullable()
           .transform((origin) => {
-            if (!origin || !origin.fingerprint) {
+            if (!origin?.fingerprint) {
               return null
             }
             return KeyOrigin.from(origin.fingerprint, origin.derivationPath)
@@ -277,7 +277,7 @@ const MultisigAccountDescriptorSchema = z
           })
           .nullable()
           .transform((origin) => {
-            if (!origin || !origin.fingerprint) {
+            if (!origin?.fingerprint) {
               return null
             }
             return KeyOrigin.from(origin.fingerprint, origin.derivationPath)

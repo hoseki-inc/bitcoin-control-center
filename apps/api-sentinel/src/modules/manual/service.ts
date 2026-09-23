@@ -299,7 +299,7 @@ export class ManualService {
   // ─── Accumulation Chart ─────────────────────────────────────────────────
 
   public getTransactionEntries(accountIds?: string[]): Array<{ timestamp: Date; value: bigint }> {
-    if (accountIds !== undefined && accountIds.length === 0) {
+    if (accountIds?.length === 0) {
       return []
     }
 

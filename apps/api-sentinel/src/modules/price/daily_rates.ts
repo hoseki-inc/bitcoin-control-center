@@ -124,7 +124,7 @@ export class DailyRatesService {
 
     // API returns the nearest daily price point
     const pricePoint = json.prices[0]
-    if (!pricePoint || !pricePoint.USD) {
+    if (!pricePoint?.USD) {
       return null
     }
 
