@@ -51,7 +51,7 @@ export function pluralize(
         // Tuple format
         result += value[2] === 1 ? value[0] : value[1]
       } else {
-        result += value // Regular interpolation
+        result += String(value) // Regular interpolation
       }
     }
   }
