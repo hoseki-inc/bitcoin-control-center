@@ -154,7 +154,8 @@
     "react/no-unknown-property": "error",
     "react/require-render-return": "error",
     "react/rules-of-hooks": "error",
-    "jsx-a11y/alt-text": "error"
+    "jsx-a11y/alt-text": "error",
+    "jsx-a11y/anchor-ambiguous-text": "error"
   },
   "overrides": [
     {
