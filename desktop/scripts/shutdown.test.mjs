@@ -73,10 +73,11 @@ function createHarness(overrides = {}) {
 
 void test('waits for the server before stopping Tor and resuming quit', async () => {
   let finish
+  /** @type {Promise<void>} */
   const pending = new Promise((resolve) => {
     finish = resolve
   })
-  const harness = createHarness({ shutdownServer: () => pending })
+  const harness = createHarness({ shutdownServer: async () => pending })
   harness.requestQuit()
   assert.deepEqual(harness.calls, ['server'])
   assert.equal(harness.prevented, 1)
@@ -89,10 +90,11 @@ void test('waits for the server before stopping Tor and resuming quit', async ()
 
 void test('repeated quit requests cannot bypass or duplicate pending cleanup', async () => {
   let finish
+  /** @type {Promise<void>} */
   const pending = new Promise((resolve) => {
     finish = resolve
   })
-  const harness = createHarness({ shutdownServer: () => pending })
+  const harness = createHarness({ shutdownServer: async () => pending })
   harness.requestQuit()
   harness.requestQuit()
   harness.requestQuit()
@@ -121,7 +123,7 @@ for (const failingStep of ['shutdownServer', 'stopTor', 'destroyTray']) {
 
 void test('forces quit after ten seconds when the server never settles', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] })
-  const harness = createHarness({ shutdownServer: () => new Promise(() => {}) })
+  const harness = createHarness({ shutdownServer: async () => new Promise(() => {}) })
   harness.requestQuit()
   t.mock.timers.tick(9_999)
   harness.requestQuit()
@@ -137,11 +139,12 @@ for (const rejects of [false, true]) {
   void test(`ignores a late server ${rejects ? 'rejection' : 'completion'} after forced exit`, async (t) => {
     t.mock.timers.enable({ apis: ['setTimeout'] })
     let resolve, reject
+    /** @type {Promise<void>} */
     const pending = new Promise((resolvePromise, rejectPromise) => {
       resolve = resolvePromise
       reject = rejectPromise
     })
-    const harness = createHarness({ shutdownServer: () => pending })
+    const harness = createHarness({ shutdownServer: async () => pending })
     harness.requestQuit()
     t.mock.timers.tick(10_000)
     await harness.exited
@@ -169,7 +172,7 @@ void test('clears the deadline after a normal shutdown', async (t) => {
 void test('still forces exit when cleanup throws after the deadline', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] })
   const harness = createHarness({
-    shutdownServer: () => new Promise(() => {}),
+    shutdownServer: async () => new Promise(() => {}),
     stopTor: () => {
       throw new Error('Cleanup failed')
     },

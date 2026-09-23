@@ -28,7 +28,7 @@ beforeEach(async () => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
   rejectStartup = undefined
   mocks.start.mockImplementation(
-    () =>
+    async () =>
       new Promise<void>((_resolve, reject) => {
         rejectStartup = reject
       }),

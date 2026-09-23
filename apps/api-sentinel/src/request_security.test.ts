@@ -18,7 +18,7 @@ function createServer(configuredHosts: string | undefined = allowedHosts, isProd
 }
 
 afterEach(async () => {
-  await Promise.all(servers.splice(0).map((server) => server.close()))
+  await Promise.all(servers.splice(0).map(async (server) => server.close()))
 })
 
 describe('Sentinel interface access', () => {

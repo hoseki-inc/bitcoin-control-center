@@ -59,7 +59,7 @@ export class RobinhoodApiError extends Error {
 
 // --- HTTP helper using native https (Node.js fetch/undici is blocked by Robinhood's CloudFront WAF) ---
 
-function httpsRequest(options: {
+async function httpsRequest(options: {
   hostname: string
   path: string
   method: string
@@ -226,7 +226,7 @@ export class RobinhoodClient {
   /**
    * Fetch all cryptocurrency holdings.
    */
-  public getHoldings(): Promise<Result<RobinhoodHolding[], Error>> {
+  public async getHoldings(): Promise<Result<RobinhoodHolding[], Error>> {
     return this.paginate<RobinhoodHolding>('/api/v1/crypto/trading/holdings/', RobinhoodHoldingSchema)
   }
 
@@ -252,7 +252,7 @@ export class RobinhoodClient {
   /**
    * Fetch orders with optional filtering.
    */
-  public getOrders(opts?: { symbol?: string; state?: string }): Promise<Result<RobinhoodOrder[], Error>> {
+  public async getOrders(opts?: { symbol?: string; state?: string }): Promise<Result<RobinhoodOrder[], Error>> {
     const params = new URLSearchParams()
     if (opts?.symbol) {
       params.append('symbol', opts.symbol)
@@ -268,7 +268,7 @@ export class RobinhoodClient {
   /**
    * Fetch filled BTC orders.
    */
-  public getBtcOrders(): Promise<Result<RobinhoodOrder[], Error>> {
+  public async getBtcOrders(): Promise<Result<RobinhoodOrder[], Error>> {
     return this.getOrders({ symbol: 'BTC-USD', state: 'filled' })
   }
 }

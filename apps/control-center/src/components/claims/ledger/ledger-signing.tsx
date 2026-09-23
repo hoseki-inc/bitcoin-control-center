@@ -160,7 +160,7 @@ export function LedgerSigning({
           signingPath,
         }}
         onProveControl={
-          initiateLedgerMutation.isError ? () => {} : () => signCustomMessageOnLedger(challenge, challengeMessage)
+          initiateLedgerMutation.isError ? () => {} : async () => signCustomMessageOnLedger(challenge, challengeMessage)
         }
         onExit={onExitSigning}
         signingInProgress={signingInProgress}

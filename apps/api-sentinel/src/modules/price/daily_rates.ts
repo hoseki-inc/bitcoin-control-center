@@ -69,7 +69,7 @@ export class DailyRatesService {
     // Fetch in batches with concurrency limit
     for (let i = 0; i < days.length; i += DailyRatesService.CONCURRENCY) {
       const batch = days.slice(i, i + DailyRatesService.CONCURRENCY)
-      const results = await Promise.allSettled(batch.map((ts) => this.fetchDayPrice(ts)))
+      const results = await Promise.allSettled(batch.map(async (ts) => this.fetchDayPrice(ts)))
 
       for (const result of results) {
         if (result.status === 'fulfilled' && result.value) {

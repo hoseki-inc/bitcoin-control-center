@@ -50,7 +50,7 @@ async function startMockServer(): Promise<MockServer> {
   return {
     port,
     requests,
-    close: () =>
+    close: async () =>
       new Promise<void>((resolve) =>
         server.close(() => {
           resolve()

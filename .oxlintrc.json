@@ -115,7 +115,8 @@
     "typescript/prefer-literal-enum-member": "error",
     "typescript/prefer-namespace-keyword": "error",
     "typescript/prefer-nullish-coalescing": "error",
-    "typescript/prefer-optional-chain": "error"
+    "typescript/prefer-optional-chain": "error",
+    "typescript/promise-function-async": "error"
   },
   "overrides": [
     {

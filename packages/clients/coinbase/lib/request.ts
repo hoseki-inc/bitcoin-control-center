@@ -128,7 +128,7 @@ function parseData<S extends z.ZodTypeAny>(response: SafeResponse, schema: S) {
     })
 }
 
-function parseErrorData(response: SafeResponse, schema: z.ZodTypeAny) {
+async function parseErrorData(response: SafeResponse, schema: z.ZodTypeAny) {
   return (
     parseData(response, schema)
       .andThen((errorData) => {

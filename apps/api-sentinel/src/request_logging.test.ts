@@ -48,7 +48,7 @@ function expectPrivateLogs(logs: string[]): void {
 }
 
 afterEach(async () => {
-  await Promise.all(servers.splice(0).map((server) => server.close()))
+  await Promise.all(servers.splice(0).map(async (server) => server.close()))
 })
 
 describe('Sentinel request logging', () => {

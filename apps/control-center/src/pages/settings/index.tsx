@@ -126,7 +126,7 @@ function useElectrumStatus(): { status: ElectrumStatus | null; refresh: () => vo
   const refresh = useCallback((): void => {
     const baseUrl = import.meta.env.VITE_BACKEND_API_URL ?? ''
     void fetch(`${baseUrl}/settings.electrumStatus`)
-      .then((res) => (res.ok ? res.json() : null))
+      .then(async (res): Promise<unknown> => (res.ok ? res.json() : null))
       .then((data) => {
         // tRPC wraps response in result.data.json (superjson) or result.data
         const response = parseUnknown(ElectrumStatusResponseSchema, data).unwrapOr(null)

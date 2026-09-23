@@ -27,7 +27,7 @@ beforeEach(() => {
     receiveFeatureReport: vi.fn(async () => new DataView(new ArrayBuffer(0))),
   }
   transport = new TransportWebHID(device)
-  vi.spyOn(transport, 'close').mockImplementation(() => new Promise<void>(() => undefined))
+  vi.spyOn(transport, 'close').mockImplementation(async () => new Promise<void>(() => undefined))
   mocks.request.mockResolvedValue(transport)
   mocks.app.mockResolvedValue({ name: 'Bitcoin' })
 })
@@ -40,7 +40,7 @@ it('checks the active app and returns a transport with no leftover connection li
 })
 
 it('cancellation releases the HID handle even when the SDK operation never settles', async () => {
-  mocks.app.mockImplementation(() => new Promise(() => undefined))
+  mocks.app.mockImplementation(async () => new Promise(() => undefined))
   const abort = new AbortController()
   const connection = openDesktopLedger(abort.signal)
   const result = expect(connection).rejects.toMatchObject({ name: 'AbortError' })
@@ -53,7 +53,7 @@ it('cancellation releases the HID handle even when the SDK operation never settl
 })
 
 it('disconnecting during the app check releases the handle and reports disconnection', async () => {
-  mocks.app.mockImplementation(() => new Promise(() => undefined))
+  mocks.app.mockImplementation(async () => new Promise(() => undefined))
   const result = expect(openDesktopLedger(new AbortController().signal)).rejects.toMatchObject({
     name: 'DisconnectedDevice',
   })
@@ -65,7 +65,7 @@ it('disconnecting during the app check releases the handle and reports disconnec
 
 it('an unresponsive device times out instead of leaving the connection spinner running', async () => {
   vi.useFakeTimers()
-  mocks.app.mockImplementation(() => new Promise(() => undefined))
+  mocks.app.mockImplementation(async () => new Promise(() => undefined))
   const result = expect(openDesktopLedger(new AbortController().signal)).rejects.toMatchObject({
     name: 'LedgerConnectionTimeout',
   })

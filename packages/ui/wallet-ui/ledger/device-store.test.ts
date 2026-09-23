@@ -41,7 +41,7 @@ it('reset waits for the previous USB handle to close before a retry can proceed'
   const transport = fakeTransport()
   let finishClose!: () => void
   vi.mocked(transport.close).mockImplementation(
-    () =>
+    async () =>
       new Promise((resolve) => {
         finishClose = resolve
       }),
@@ -50,7 +50,7 @@ it('reset waits for the previous USB handle to close before a retry can proceed'
   let finished = false
   const reset = store
     .getState()
-    .reset((device) => device.close())
+    .reset(async (device) => device.close())
     .then(() => {
       finished = true
     })

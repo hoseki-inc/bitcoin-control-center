@@ -66,7 +66,9 @@ app
     })
 
     const appOrigin = `http://localhost:${PORT}`
-    setupLedgerHidAccess(mainWindow, appOrigin, ipcMain, (window, options) => dialog.showMessageBox(window, options))
+    setupLedgerHidAccess(mainWindow, appOrigin, ipcMain, async (window, options) =>
+      dialog.showMessageBox(window, options),
+    )
     mainWindow.loadURL(appOrigin).catch(() => {
       dialog.showErrorBox('Unable to load Bitcoin Control Center', 'Please restart the app to try again.')
     })
@@ -115,7 +117,7 @@ app
     app.on(
       'before-quit',
       createQuitHandler({
-        shutdownServer: () => server.shutdown(),
+        shutdownServer: async () => server.shutdown(),
         stopTor: () => {
           torManager?.stop()
         },

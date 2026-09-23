@@ -53,7 +53,8 @@ function createHarness(t, choose = async () => ({ response: 0 })) {
     return choose(options)
   })
   t.after(() => window.emit('closed'))
-  function request(overrides = {}) {
+  /** @returns {Promise<string | undefined>} */
+  async function request(overrides = {}) {
     let calls = 0
     let prevented = false
     return new Promise((resolve) => {
@@ -61,6 +62,7 @@ function createHarness(t, choose = async () => ({ response: 0 })) {
         'select-hid-device',
         { preventDefault: () => (prevented = true) },
         { frame, deviceList: [ledger], ...overrides },
+        /** @param {string | undefined} deviceId */
         (deviceId) => {
           assert.equal(prevented, true)
           assert.equal(++calls, 1)
@@ -314,7 +316,7 @@ void test('expiration before the browser event also denies the late request', as
 
 void test('same-origin navigation cancels a native chooser immediately and ignores its late result', async (t) => {
   let finishDialog
-  const h = createHarness(t, () => new Promise((resolve) => (finishDialog = resolve)))
+  const h = createHarness(t, async () => new Promise((resolve) => (finishDialog = resolve)))
   const result = h.request()
   assert.equal(h.begin(), false)
   assert.equal(await h.request(), undefined)
@@ -334,7 +336,7 @@ void test('same-origin navigation cancels a native chooser immediately and ignor
 
 void test('native chooser timeout releases its callback even if the dialog promise stays pending', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] })
-  const h = createHarness(t, () => new Promise(() => undefined))
+  const h = createHarness(t, async () => new Promise(() => undefined))
   const result = h.request()
   t.mock.timers.tick(120_000)
   assert.equal(await result, undefined)
@@ -346,7 +348,7 @@ void test('native chooser timeout releases its callback even if the dialog promi
 
 void test('native selection cannot grant a device removed while the dialog was open', async (t) => {
   let finishDialog
-  const h = createHarness(t, () => new Promise((resolve) => (finishDialog = resolve)))
+  const h = createHarness(t, async () => new Promise((resolve) => (finishDialog = resolve)))
   const result = h.request()
   h.remove(ledger)
   finishDialog({ response: 0 })
@@ -355,7 +357,7 @@ void test('native selection cannot grant a device removed while the dialog was o
 
 for (const event of ['closed', 'render-process-gone']) {
   void test(`${event} cancels and closes a native chooser`, async (t) => {
-    const h = createHarness(t, () => new Promise(() => undefined))
+    const h = createHarness(t, async () => new Promise(() => undefined))
     const result = h.request()
     ;(event === 'closed' ? h.window : h.contents).emit(event)
     assert.equal(await result, undefined)
