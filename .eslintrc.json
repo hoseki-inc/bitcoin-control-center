@@ -61,6 +61,19 @@
         "@typescript-eslint/no-non-null-assertion": "off",
         "@typescript-eslint/no-require-imports": "off"
       }
+    },
+    {
+      // Preserve the upstream v3 snapshot; locally maintained changes follow in #143.
+      "files": ["**/result/lib/core/**/*.ts"],
+      "rules": {
+        "@typescript-eslint/ban-ts-comment": "off",
+        "@typescript-eslint/consistent-type-imports": "off",
+        "@typescript-eslint/explicit-module-boundary-types": "off",
+        "@typescript-eslint/no-explicit-any": "off",
+        "@typescript-eslint/no-non-null-assertion": "off",
+        "@typescript-eslint/no-unsafe-function-type": "off",
+        "unused-imports/no-unused-imports": "off"
+      }
     }
   ]
 }
