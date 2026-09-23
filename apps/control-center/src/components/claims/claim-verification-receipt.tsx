@@ -64,7 +64,7 @@ export function ClaimVerificationReceipt({ shouldSetTimeout, claim }: ClaimVerif
               Your {claim?.displayName ? `"${claim.displayName}" account` : `account`} is now verified and ready to
               include in ownership statements.
             </Text>
-            <Stack direction={{ base: 'column', sm: 'row' }} spacing={3} w="full">
+            <Stack direction={{ base: 'column', sm: 'row' }} justify="center" spacing={3} w="full">
               <Button variant="outline" onClick={() => handleNavigation('/accounts')}>
                 Connect Another Account
               </Button>

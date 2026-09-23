@@ -158,7 +158,7 @@ export function ClaimCardKeystores({ keystores, alt, status, ...props }: ClaimCa
 
 const commonProps = { stroke: 'shades.0', boxSize: '16px' } as const
 const alertIcon = <AlertTriangleFilledIcon fill="warning.600" color="shades.0" {...commonProps} />
-const verifiedIcon = <CheckCircleFilledIcon color="success.600" color2="white" {...commonProps} />
+const verifiedIcon = <CheckCircleFilledIcon color="success.700" color2="white" {...commonProps} aria-hidden="true" />
 function getMultisigKeystoreAvatarIcon(keystore: ClaimCardKeystore, status: ClaimStatus) {
   if (status === 'expired' && keystore.wallet) {
     return alertIcon
