@@ -939,7 +939,8 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
   }
 
   const Cell: React.FC<CellProps> = ({ children, columnName, columnWidths }) => {
-    const width = columnWidths[columnName] || 120
+    const columnWidth = columnWidths[columnName] ?? 0
+    const width = columnWidth === 0 || Number.isNaN(columnWidth) ? 120 : columnWidth
 
     return <View style={[styles.cell, { width }]}>{children}</View>
   }

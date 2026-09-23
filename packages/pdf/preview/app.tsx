@@ -42,7 +42,7 @@ const AlertPanel: React.FC<AlertPanelProps> = ({ validationError, parsedStatemen
     setAlertsMinimized(!alertsMinimized)
   }
 
-  const hasAlerts = validationError || parsedStatement
+  const hasAlerts = Boolean(validationError) || parsedStatement !== null
 
   if (!hasAlerts) {
     return null

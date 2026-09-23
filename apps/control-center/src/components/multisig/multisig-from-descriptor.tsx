@@ -130,7 +130,9 @@ export function MultisigFromDescriptor({ onNext }: { onNext: (data: CreateMultis
                 rows={10}
                 {...monoInputProps}
               />
-              <FormErrorMessage>{errors.descriptor?.message || parsingError}</FormErrorMessage>
+              <FormErrorMessage>
+                {errors.descriptor?.message?.length ? errors.descriptor.message : parsingError}
+              </FormErrorMessage>
             </FormControl>
             <Flex justifyContent="flex-end">
               <Button type="submit" isDisabled={!isValid} size="sm" variant="outline">

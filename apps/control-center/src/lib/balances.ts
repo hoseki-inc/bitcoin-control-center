@@ -52,7 +52,7 @@ export function useGetBalancesPerClaimIds({
     isLoading: queries.some((q) => q.isLoading),
     isError: queries.some((q) => q.isError),
     isSuccess: queries.every((q) => q.isSuccess),
-    error: btcClaimBalancesQuery.error || btcPriceQuery.error,
+    error: btcClaimBalancesQuery.error ?? btcPriceQuery.error,
     data: balanceMap,
   }
 }
@@ -80,7 +80,7 @@ export function useGetClaimBalance(claimId: ClaimId | null, { enabled } = { enab
     isLoading: queries.some((q) => q.isLoading),
     isError: queries.some((q) => q.isError),
     isSuccess: queries.every((q) => q.isSuccess),
-    error: btcClaimBalancesQuery.error || btcPriceQuery.error,
+    error: btcClaimBalancesQuery.error ?? btcPriceQuery.error,
     data: balance ? getBalanceValue(balance, btcPrice) : null,
   }
 }

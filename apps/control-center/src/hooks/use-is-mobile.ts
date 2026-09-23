@@ -9,7 +9,12 @@ export function useIsMobile(): boolean {
 
   useEffect(() => {
     const checkMobile = () => {
-      const userAgent = navigator.userAgent || navigator.vendor || (window as Window & { opera?: string }).opera || ''
+      const userAgent =
+        navigator.userAgent.length > 0
+          ? navigator.userAgent
+          : navigator.vendor.length > 0
+            ? navigator.vendor
+            : ((window as Window & { opera?: string }).opera ?? '')
 
       // Check for mobile devices
       const mobileRegex = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i

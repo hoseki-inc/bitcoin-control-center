@@ -143,9 +143,7 @@ export function StatementCreatePage(): JSX.Element {
 
   const LEFT_COLUMN_WIDTH = '35%'
 
-  const hasAccounts =
-    (claimsQuery.data && claimsQuery.data.length > 0) ||
-    (exchangeAccountsQuery.data && exchangeAccountsQuery.data.length > 0)
+  const hasAccounts = (claimsQuery.data?.length ?? 0) > 0 || (exchangeAccountsQuery.data?.length ?? 0) > 0
   const hasAnySelected = selectedClaimIds.size > 0 || selectedExchangeAccountIds.size > 0
 
   return (
