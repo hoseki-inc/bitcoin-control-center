@@ -152,7 +152,8 @@
     "react/no-string-refs": "error",
     "react/no-unescaped-entities": "error",
     "react/no-unknown-property": "error",
-    "react/require-render-return": "error"
+    "react/require-render-return": "error",
+    "react/rules-of-hooks": "error"
   },
   "overrides": [
     {
