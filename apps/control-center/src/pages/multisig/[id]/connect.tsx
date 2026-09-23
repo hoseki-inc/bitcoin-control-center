@@ -184,7 +184,7 @@ function ConnectTrezorWalletCheckXpub({
   setModel: (model: TrezorModel) => void
 }) {
   async function getXpubFromTrezor() {
-    return await getXpubFrom({
+    return getXpubFrom({
       claim,
       getXpubFromDevice: (derivationPath) =>
         trezorService
@@ -669,7 +669,7 @@ function ConnectKeystoneWallet({ claim }: { claim: ClaimDto }) {
 
 function KeystoneMultisigXpubCheck({ claim, keystoneJson }: { claim: ClaimDto; keystoneJson: KeystoneExportFile }) {
   async function getXpubFromKeystone(): Promise<Result<Xpub, Error>> {
-    return await getXpubFrom({
+    return getXpubFrom({
       claim,
       getXpubFromDevice: asyncFn(async (derivationPath) =>
         getBitcoinXpubFromKeystoneExport(derivationPath, keystoneJson),
@@ -699,7 +699,7 @@ function ColdcardMultisigStep6({
   coldcardJson: ColdcardGenericJsonFile
 }) {
   async function getXpubFromColdcard(): Promise<Result<Xpub, Error>> {
-    return await getXpubFrom({
+    return getXpubFrom({
       claim,
       getXpubFromDevice: asyncFn(async (derivationPath) =>
         getBitcoinXpubFromColdcardExport(derivationPath, coldcardJson),

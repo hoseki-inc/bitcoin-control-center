@@ -192,7 +192,7 @@ export function createLedgerStore(
           return notInitializedError()
         }
 
-        return await handleLedgerSdkCall(btc.signMessage(path, Buffer.from(message).toString('hex')), { path })
+        return handleLedgerSdkCall(btc.signMessage(path, Buffer.from(message).toString('hex')), { path })
       }),
     }
   })
