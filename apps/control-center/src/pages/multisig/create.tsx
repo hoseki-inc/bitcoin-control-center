@@ -324,7 +324,7 @@ function DetectionStep({
       >
         <FormControl isInvalid={Boolean(errors.claimName)}>
           <FormLabel htmlFor="claim-name">Name</FormLabel>
-          <Input id="claim-name" {...register('claimName')} placeholder="Multisig claim name" autoFocus />
+          <Input id="claim-name" {...register('claimName')} placeholder="Multisig claim name" />
           {errors.claimName && <FormErrorMessage>{errors.claimName.message}</FormErrorMessage>}
         </FormControl>
 
