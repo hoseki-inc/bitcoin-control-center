@@ -1,5 +1,5 @@
 import { parseUnknown } from '@hoseki/packages/result'
-import { AsyncResult, Ok, tryBlockAsync } from '@patina/core'
+import { AsyncResult, Ok, tryBlockAsync } from '@hoseki/packages/result'
 // Re-import z for the raw string overload
 import { z } from 'zod'
 import { type ElectrumConnectionConfig, ElectrumTransport } from './protocol'

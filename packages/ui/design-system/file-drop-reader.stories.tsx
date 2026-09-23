@@ -1,6 +1,6 @@
 import { Box, Icon, Stack } from '@chakra-ui/react'
+import { Err, Ok, type Result } from '@hoseki/packages/result'
 import type { Story, StoryDefault } from '@ladle/react'
-import { Err, Ok, type Result } from '@patina/core'
 import { CheckCircleIcon } from 'lucide-react'
 import { useState } from 'react'
 import { FileDropReader, type FileDropState } from './file-drop-reader'

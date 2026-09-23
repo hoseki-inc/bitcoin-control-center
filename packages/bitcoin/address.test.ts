@@ -1,4 +1,4 @@
-import { Result } from '@patina/core'
+import { Result } from '@hoseki/packages/result'
 import { expect, test } from 'vitest'
 import { Address, type AddressType, FORMATS, type Format } from './address'
 import { bip32, bitcoin } from './lib'

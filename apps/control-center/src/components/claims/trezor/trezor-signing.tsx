@@ -1,7 +1,7 @@
 import { Address } from '@hoseki/packages/bitcoin'
+import { Result } from '@hoseki/packages/result'
 import { Alert } from '@hoseki/packages/ui/design-system'
 import { GenericSigningSteps } from '@hoseki/packages/ui/wallet-ui'
-import { Result } from '@patina/core'
 import { useState } from 'react'
 import type { SigningFlowProps } from '../../../lib/claim-flow'
 import { captureHardwareWalletError } from '../../../logger'

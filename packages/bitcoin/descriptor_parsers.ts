@@ -1,4 +1,4 @@
-import { Err, Ok, type Result } from '@patina/core'
+import { Err, Ok, type Result } from '@hoseki/packages/result'
 import { z } from 'zod'
 import { parse, parseUnknown } from '../result'
 import type { MultiSigAccountScriptType, SingleSigAccountScriptType } from './account_props'

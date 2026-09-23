@@ -1,4 +1,4 @@
-import { AsyncResult, Err, Ok, Panic, type Result } from '@patina/core'
+import { AsyncResult, Err, Ok, Panic, type Result } from '@hoseki/packages/result'
 import { describe, expect, it } from 'vitest'
 import { asyncResultAll } from './async'
 

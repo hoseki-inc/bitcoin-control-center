@@ -1,4 +1,4 @@
-import { Err, Ok, Result } from '@patina/core'
+import { Err, Ok, Result } from '@hoseki/packages/result'
 import type { Opaque } from 'type-fest'
 import * as descriptorUtils from './descriptor_utils'
 import { bitcoin } from './lib'

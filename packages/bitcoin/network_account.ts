@@ -1,4 +1,4 @@
-import { Err, type Result } from '@patina/core'
+import { Err, type Result } from '@hoseki/packages/result'
 import type { Opaque } from 'type-fest'
 import { Account } from './account'
 import { Network } from './network'

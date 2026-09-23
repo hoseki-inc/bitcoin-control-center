@@ -1,4 +1,4 @@
-import { Panic } from '@patina/core'
+import { Panic } from '@hoseki/packages/result'
 import { customAlphabet } from 'nanoid'
 import { z } from 'zod'
 

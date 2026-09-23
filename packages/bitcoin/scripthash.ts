@@ -1,5 +1,5 @@
+import { Err, Ok, type Result } from '@hoseki/packages/result'
 import { sha256 } from '@noble/hashes/sha2.js'
-import { Err, Ok, type Result } from '@patina/core'
 import type { Address } from './address'
 import { bitcoin } from './lib'
 import type { Network } from './network'

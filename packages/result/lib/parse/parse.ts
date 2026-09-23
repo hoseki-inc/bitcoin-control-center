@@ -1,4 +1,4 @@
-import { Err, ErrorWithCause, Ok, type Result } from '@patina/core'
+import { Err, ErrorWithCause, Ok, type Result } from '@hoseki/packages/result'
 import type { z } from 'zod'
 
 export class ParseError<E extends Error = Error> extends ErrorWithCause<E> {

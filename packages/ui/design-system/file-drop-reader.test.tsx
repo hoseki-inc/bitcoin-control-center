@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { ChakraProvider } from '@chakra-ui/react'
-import { Err, Ok } from '@patina/core'
+import { Err, Ok } from '@hoseki/packages/result'
 import { act } from 'react'
 import { type Root, createRoot } from 'react-dom/client'
 import { afterEach, assert, beforeEach, expect, it, vi } from 'vitest'

@@ -1,6 +1,6 @@
 import { TZDate, tzOffset } from '@date-fns/tz'
+import { Err, Ok, type Result } from '@hoseki/packages/result'
 import type { Timezone } from '@hoseki/packages/schemas'
-import { Err, Ok, type Result } from '@patina/core'
 
 export type TimeRange = '7d' | '30d' | '90d' | '1y' | 'all'
 

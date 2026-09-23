@@ -14,6 +14,7 @@ import {
   chakra,
 } from '@chakra-ui/react'
 import type { Address } from '@hoseki/packages/bitcoin'
+import type { Result } from '@hoseki/packages/result'
 import {
   Alert,
   Animations,
@@ -44,7 +45,6 @@ import {
   parseSignatureFile,
 } from '@hoseki/packages/ui/wallet-ui'
 import { coldcardModelKeys } from '@hoseki/packages/ui/wallet-ui/coldcard/coldcard-utils'
-import type { Result } from '@patina/core'
 import Lottie from 'lottie-react'
 import { CircleXIcon, CopyIcon, InfoIcon, MoveRightIcon, TriangleAlertIcon, UsbIcon, WifiOffIcon } from 'lucide-react'
 import { type ReactNode, useEffect, useRef, useState } from 'react'

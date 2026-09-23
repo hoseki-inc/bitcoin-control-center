@@ -1,5 +1,5 @@
+import type { AsyncResult } from '@hoseki/packages/result'
 import type { SafeResponse } from '@hoseki/packages/safe-http'
-import type { AsyncResult } from '@patina/core'
 import { z } from 'zod'
 import type { ApiError } from './errors'
 import { request } from './request'

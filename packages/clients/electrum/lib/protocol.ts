@@ -1,7 +1,7 @@
 import * as net from 'node:net'
 import * as tls from 'node:tls'
 import { parseUnknown } from '@hoseki/packages/result'
-import { AsyncResult, Err, Ok, type Result } from '@patina/core'
+import { AsyncResult, Err, Ok, type Result } from '@hoseki/packages/result'
 import { SocksClient } from 'socks'
 import { type JsonRpcResponse, JsonRpcResponseSchema } from './schemas'
 

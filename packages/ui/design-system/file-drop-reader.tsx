@@ -1,5 +1,5 @@
 import { Box, Stack, Text } from '@chakra-ui/react'
-import { Err, type Result } from '@patina/core'
+import { Err, type Result } from '@hoseki/packages/result'
 import { CloudUploadIcon, RefreshCwIcon } from 'lucide-react'
 import { type ChangeEvent, type DragEvent, useRef, useState } from 'react'
 

@@ -1,5 +1,6 @@
 import { TZDate } from '@date-fns/tz'
 import { convertBtcToUsd } from '@hoseki/packages/currency'
+import { Err, Ok, type Result } from '@hoseki/packages/result'
 import type {
   Amount,
   BalanceEntry,
@@ -13,7 +14,6 @@ import type {
   SummaryEntry,
   Timezone,
 } from '@hoseki/packages/schemas'
-import { Err, Ok, type Result } from '@patina/core'
 import { eachMonthOfInterval, endOfMonth } from 'date-fns'
 import Decimal from 'decimal.js'
 import type { DailyRate, DailyRates } from '../price/daily_rates'

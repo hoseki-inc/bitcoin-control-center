@@ -1,7 +1,7 @@
 import { createPrivateKey, sign } from 'node:crypto'
 import https from 'node:https'
-import { Err, Ok, asyncFn } from '@patina/core'
-import type { Result } from '@patina/core'
+import { Err, Ok, asyncFn } from '@hoseki/packages/result'
+import type { Result } from '@hoseki/packages/result'
 import { z } from 'zod'
 
 const BASE_HOST = 'trading.robinhood.com'

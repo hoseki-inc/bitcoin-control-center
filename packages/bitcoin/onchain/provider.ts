@@ -1,4 +1,4 @@
-import { type AsyncResult, Err, Ok, type Result, asyncFn, tryBlockAsync } from '@patina/core'
+import { type AsyncResult, Err, Ok, type Result, asyncFn, tryBlockAsync } from '@hoseki/packages/result'
 import type { Logger } from 'pino'
 import { IndexMap, IndexSet } from '../../collection'
 import { asyncResultAll } from '../../result'

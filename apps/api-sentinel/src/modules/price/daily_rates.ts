@@ -1,6 +1,6 @@
 import { parseUnknown } from '@hoseki/packages/result'
-import { Err, Ok, asyncFn } from '@patina/core'
-import type { Result } from '@patina/core'
+import { Err, Ok, asyncFn } from '@hoseki/packages/result'
+import type { Result } from '@hoseki/packages/result'
 import { Decimal } from 'decimal.js'
 import type { Logger } from 'pino'
 import { z } from 'zod'

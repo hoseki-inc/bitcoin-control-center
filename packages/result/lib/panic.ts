@@ -1,4 +1,4 @@
-import { AsyncResult, Err, Ok, type Result } from '@patina/core'
+import { AsyncResult, Err, Ok, type Result } from '@hoseki/packages/result'
 
 function getErrorMessage(e: unknown): string {
   return e instanceof Error ? e.message : 'Unexpected thrown value'
