@@ -159,9 +159,9 @@ async function changeDate(id: string, value: string): Promise<void> {
   const input = document.getElementById(id)
   assert(input instanceof HTMLInputElement, 'Expected a date input')
   await act(async () => {
-    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
-    assert.exists(setValue, 'Expected the input value setter')
-    setValue.call(input, value)
+    const descriptor = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')
+    assert(descriptor?.set !== undefined, 'Expected the input value setter')
+    descriptor.set.call(input, value)
     input.dispatchEvent(new Event('input', { bubbles: true }))
     input.dispatchEvent(new Event('change', { bubbles: true }))
   })
