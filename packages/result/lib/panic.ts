@@ -28,7 +28,7 @@ export function catchUnwindAsync<T>(fn: () => Promise<T>): AsyncResult<T, Error>
       .then((value) => {
         return Ok(value)
       })
-      .catch((e) => {
+      .catch((e: unknown) => {
         return Err(unknownToError(e))
       }),
   )

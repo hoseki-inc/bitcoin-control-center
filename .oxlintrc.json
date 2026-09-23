@@ -133,7 +133,8 @@
     "typescript/switch-exhaustiveness-check": "error",
     "typescript/triple-slash-reference": "error",
     "typescript/unbound-method": "error",
-    "typescript/unified-signatures": "error"
+    "typescript/unified-signatures": "error",
+    "typescript/use-unknown-in-catch-callback-variable": "error"
   },
   "overrides": [
     {

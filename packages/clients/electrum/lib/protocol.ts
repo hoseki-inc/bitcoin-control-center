@@ -201,7 +201,7 @@ export class ElectrumTransport {
                   onConnected()
                 }
               })
-              .catch((err) => {
+              .catch((err: unknown) => {
                 clearTimeout(timer)
                 resolve(Err(err instanceof Error ? err : new Error(String(err))))
               })
