@@ -1,7 +1,7 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
   "ignorePatterns": ["packages/result/lib/core/**"],
-  "plugins": ["oxc", "typescript", "react"],
+  "plugins": ["oxc", "typescript", "react", "jsx-a11y"],
   "options": {
     "typeAware": true
   },
@@ -153,7 +153,8 @@
     "react/no-unescaped-entities": "error",
     "react/no-unknown-property": "error",
     "react/require-render-return": "error",
-    "react/rules-of-hooks": "error"
+    "react/rules-of-hooks": "error",
+    "jsx-a11y/alt-text": "error"
   },
   "overrides": [
     {
