@@ -308,7 +308,7 @@ function renderUsdAmount(balance: BalanceWithStatus) {
   if (balance.status === 'fail' || balance.value.usd === null) {
     return (
       <Text textStyle="text/sm" fontWeight="medium">
-        'n/a'
+        &apos;n/a&apos;
       </Text>
     )
   }

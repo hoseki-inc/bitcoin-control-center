@@ -361,7 +361,7 @@ function GenericCheckWalletXpub({
               <Icon as={InfoIcon} color="neutral.900" boxSize="20px" />
               <Box color="neutral.800">
                 <Text textStyle="text/sm" fontWeight="medium">
-                  Seeing an "unusual derivation path" warning?
+                  Seeing an &quot;unusual derivation path&quot; warning?
                 </Text>
                 <Text textStyle="text/sm" fontWeight="regular">
                   Some wallets use custom paths, which can trigger this message. This is normal.

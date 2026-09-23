@@ -171,15 +171,15 @@ function Step1({ onNext, onBack, ...rest }: { onNext: () => void; onBack: () => 
       </Text>
 
       <Text textStyle="text/md" color="neutral.900">
-        To verify ownership with your COLDCARD, you'll securely prove control of your keys by signing a message
+        To verify ownership with your COLDCARD, you&apos;ll securely prove control of your keys by signing a message
         offline—a 100% air-gapped process that keeps your private keys safe.
       </Text>
       <Text textStyle="text/md" color="neutral.900">
-        We'll guide you through each step—just follow the on-screen instructions.
+        We&apos;ll guide you through each step—just follow the on-screen instructions.
       </Text>
       <Box>
         <Text textStyle="text/md" color="neutral.900" fontWeight={500}>
-          You'll need:
+          You&apos;ll need:
         </Text>
         <chakra.ul ml={8} textStyle="text/md" color="neutral.900" fontWeight={400}>
           <li>A MicroSD card</li>
@@ -188,7 +188,7 @@ function Step1({ onNext, onBack, ...rest }: { onNext: () => void; onBack: () => 
         </chakra.ul>
       </Box>
 
-      <HowDoesThisWork>We use COLDCARD's native offline message signing process.</HowDoesThisWork>
+      <HowDoesThisWork>We use COLDCARD&apos;s native offline message signing process.</HowDoesThisWork>
 
       <NavigationArrows onForward={onNext} />
 
@@ -352,18 +352,18 @@ export function Step4({
           COLDCARD Setup Requires a MicroSD Card
         </Text>
         <Text textStyle="text/md" color="neutral.900">
-          To verify your COLDCARD ownership with our guided setup, you'll need a MicroSD card to securely transfer data.
-          USB connections aren't supported for COLDCARD at this time.
+          To verify your COLDCARD ownership with our guided setup, you&apos;ll need a MicroSD card to securely transfer
+          data. USB connections aren&apos;t supported for COLDCARD at this time.
         </Text>
         <Text textStyle="text/md" color="neutral.900">
-          Don't have a microSD card? You can also{' '}
+          Don&apos;t have a microSD card? You can also{' '}
           <Link to="/accounts/verify/advanced" style={{ textDecoration: 'underline' }}>
             verify manually
           </Link>{' '}
           by signing a message in your wallet and submitting the signature.
         </Text>
         <Text textStyle="text/md" color="neutral.900">
-          Click 'Next' to begin with a MicroSD card.
+          Click &apos;Next&apos; to begin with a MicroSD card.
         </Text>
 
         <WizardFooter
@@ -383,10 +383,10 @@ export function Step4({
       <WalletAnimation animation={getColdcardAnimation(model, 'coldcardExportWallet')} />
 
       <Text as="h2" textStyle="text/2xl" color="neutral.900" fontWeight="medium">
-        Next, Let's Connect Your Wallet
+        Next, Let&apos;s Connect Your Wallet
       </Text>
       <Text textStyle="text/md" color="neutral.900">
-        To identify the Bitcoin you're claiming, we need your wallet export from your device.
+        To identify the Bitcoin you&apos;re claiming, we need your wallet export from your device.
       </Text>
       <Text textStyle="text/md" color="neutral.900">
         Power on your COLDCARD, enter your PIN, and insert a MicroSD card. Once ready, navigate to:
@@ -398,10 +398,10 @@ export function Step4({
         <ColdcardMenuPill text="Generic JSON" />
       </HStack>
       <Text textStyle="text/md" color="neutral.900">
-        Select Generic JSON to save your export to the MicroSD card. We'll use this file to connect your wallet.
+        Select Generic JSON to save your export to the MicroSD card. We&apos;ll use this file to connect your wallet.
       </Text>
       <Text textStyle="text/md" color="neutral.900">
-        Once saved, click 'Next' to continue.
+        Once saved, click &apos;Next&apos; to continue.
       </Text>
       <Alert bgColor="neutral.50">
         <HStack>
@@ -409,7 +409,7 @@ export function Step4({
             <InfoIcon width="20px" height="20px" />
           </Box>
           <Text color="neutral.800" fontWeight="500" flexGrow="1">
-            If prompted to select an account number, choose the one for your wallet (typically "0").
+            If prompted to select an account number, choose the one for your wallet (typically &quot;0&quot;).
           </Text>
         </HStack>
       </Alert>
@@ -617,11 +617,11 @@ export function Step8({
       </Text>
 
       <Text textStyle="text/md" color="neutral.900">
-        You'll prove control by signing a unique message with your hardware wallet.
+        You&apos;ll prove control by signing a unique message with your hardware wallet.
       </Text>
       <Text textStyle="text/md" color="neutral.900">
-        This lets us confirm you control the private key for the Bitcoin you're claiming—without ever needing to see
-        your key.
+        This lets us confirm you control the private key for the Bitcoin you&apos;re claiming—without ever needing to
+        see your key.
       </Text>
 
       <NavigationArrows onBack={onBack} onForward={onNext} />
@@ -680,11 +680,11 @@ export function Step9Ui({
       </Text>
 
       <Text textStyle="text/md" color="neutral.900">
-        To sign our unique message, download the txt file below to your MicroSD card. This includes the message you'll
-        sign along with wallet identifiers used by COLDCARD to complete the signing process.
+        To sign our unique message, download the txt file below to your MicroSD card. This includes the message
+        you&apos;ll sign along with wallet identifiers used by COLDCARD to complete the signing process.
       </Text>
       <Text textStyle="text/md" color="neutral.900">
-        Once saved to your MicroSD card, click 'Next' to continue.
+        Once saved to your MicroSD card, click &apos;Next&apos; to continue.
       </Text>
 
       <Alert status="warning">
@@ -710,7 +710,7 @@ export function Step9Ui({
             style={{ textDecoration: 'underline' }}
             target="_blank"
           >
-            What's this?
+            What&apos;s this?
           </Link>
         </HStack>
         <Box>
@@ -845,7 +845,7 @@ export function Step10({
         and save it to your MicroSD card.
       </Text>
       <Text textStyle="text/md" color="neutral.900">
-        Once the file is signed, you can power off your COLDCARD and click 'Next' to continue.
+        Once the file is signed, you can power off your COLDCARD and click &apos;Next&apos; to continue.
       </Text>
 
       <Accordion allowToggle>

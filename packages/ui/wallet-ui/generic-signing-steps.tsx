@@ -131,7 +131,7 @@ export function SigningInfoStep1(): JSX.Element {
   return (
     <>
       <Text textStyle="text/2xl" color="neutral.900" fontWeight="medium">
-        Now that we've identified the Bitcoin you're claiming, the next step is proving control.
+        Now that we&apos;ve identified the Bitcoin you&apos;re claiming, the next step is proving control.
       </Text>
       <Text textStyle="text/md" color="neutral.900">
         Currently, your Bitcoin exists as anonymous, dormant savings. By proving control with Bitcoin Control Center,
@@ -151,11 +151,11 @@ function SigningInfoStep2({ walletType }: { walletType: WalletType }) {
         Proving Control With Your {walletType}
       </Text>
       <Text textStyle="text/md" color="neutral.900">
-        You'll prove control by signing a unique message with your hardware wallet.
+        You&apos;ll prove control by signing a unique message with your hardware wallet.
       </Text>
       <Text textStyle="text/md" color="neutral.900">
-        This lets us confirm you control the private key for the Bitcoin you're claiming—without ever needing to see
-        your key.
+        This lets us confirm you control the private key for the Bitcoin you&apos;re claiming—without ever needing to
+        see your key.
       </Text>
     </>
   )
@@ -181,7 +181,7 @@ export function SignAddressAndMessageStep({
           Proving Control With Your {walletType}
         </Text>
         <Text textStyle="text/md" mb={4}>
-          Click 'Prove Control' to sign the unique message below on your device.
+          Click &apos;Prove Control&apos; to sign the unique message below on your device.
         </Text>
         <SignAddressAndMessageInfo messageTextToSign={messageTextToSign} address={address} signingPath={signingPath} />
       </Stack>
