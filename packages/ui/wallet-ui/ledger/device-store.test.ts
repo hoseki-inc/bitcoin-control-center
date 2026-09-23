@@ -5,9 +5,9 @@ import { createLedgerStore } from './device-store'
 
 vi.mock('@ledgerhq/hw-app-btc', () => ({ default: class LedgerBtcApp {} }))
 
-function fakeTransport(): Transport {
+function fakeTransport() {
   return Object.assign(new Transport(), {
-    close: vi.fn(async () => undefined),
+    close: vi.fn<Transport['close']>(async () => undefined),
     deviceModel: { productName: 'Ledger Flex', id: 'flex' },
   })
 }
@@ -40,7 +40,7 @@ it('reset waits for the previous USB handle to close before a retry can proceed'
   const store = createLedgerStore(pino({ level: 'silent' }))
   const transport = fakeTransport()
   let finishClose!: () => void
-  vi.mocked(transport.close).mockImplementation(
+  transport.close.mockImplementation(
     async () =>
       new Promise((resolve) => {
         finishClose = resolve

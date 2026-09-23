@@ -1005,7 +1005,7 @@ it.each(['ledger', 'trezor'] as const)(
       },
     })
     const signingRouter = await renderSigningRoute(true)
-    mocks.navigate.mockImplementation(signingRouter.navigate)
+    mocks.navigate.mockImplementation(signingRouter.navigate.bind(signingRouter))
     await reachSigning()
     await clickSign()
     await waitForText('Key receipt')

@@ -1,9 +1,9 @@
 import { modalAnatomy as parts } from '@chakra-ui/anatomy'
 import { theme as chakraTheme, createMultiStyleConfigHelpers } from '@chakra-ui/react'
 
-const { definePartsStyle, defineMultiStyleConfig } = createMultiStyleConfigHelpers(parts.keys)
+const styleHelpers = createMultiStyleConfigHelpers(parts.keys)
 
-const extendedBaseStyle = definePartsStyle((props) => {
+const extendedBaseStyle = styleHelpers.definePartsStyle((props) => {
   const baseStyle = chakraTheme.components.Modal.baseStyle?.(props)
 
   return {
@@ -29,7 +29,7 @@ const extendedBaseStyle = definePartsStyle((props) => {
   }
 })
 
-const noPaddingVariant = definePartsStyle((props) => {
+const noPaddingVariant = styleHelpers.definePartsStyle((props) => {
   const baseStyle = chakraTheme.components.Modal.baseStyle?.(props)
 
   return {
@@ -53,7 +53,7 @@ const noPaddingVariant = definePartsStyle((props) => {
   }
 })
 
-export const modalTheme = defineMultiStyleConfig({
+export const modalTheme = styleHelpers.defineMultiStyleConfig({
   ...chakraTheme.components.Modal,
   baseStyle: extendedBaseStyle,
   variants: {
