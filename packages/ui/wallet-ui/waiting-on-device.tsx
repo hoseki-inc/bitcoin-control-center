@@ -6,7 +6,7 @@ export function WaitingOnDevice({ message, ...rest }: { message: string } & BoxP
   return (
     <Box textAlign="center" mb={-2} {...rest}>
       <Spinner size="sm" />
-      <Text textStyle="text/sm" color="neutral.600">
+      <Text textStyle="text/sm" color="text.secondary">
         {message}
       </Text>
       <TimedoutRetry />

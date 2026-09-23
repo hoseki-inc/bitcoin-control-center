@@ -4,19 +4,19 @@ export type ErrorVariant = 'error' | 'warning' | 'neutral'
 
 const colorMap = {
   error: {
-    color: 'error.700',
-    backgroundColor: 'error.50',
-    borderColor: 'error.100',
+    color: 'status.error.fg',
+    backgroundColor: 'status.error.bg',
+    borderColor: 'status.error.border',
   },
   warning: {
-    color: 'warning.800',
-    backgroundColor: 'warning.50',
-    borderColor: 'warning.200',
+    color: 'status.warning.fg',
+    backgroundColor: 'status.warning.bg',
+    borderColor: 'status.warning.border',
   },
   neutral: {
-    color: 'neutral.900',
-    backgroundColor: 'neutral.100',
-    borderColor: 'neutral.100',
+    color: 'text.primary',
+    backgroundColor: 'surface.muted',
+    borderColor: 'border.subtle',
   },
 } as const
 
@@ -115,10 +115,10 @@ export function ErrorInline({
           {title}
         </Text>
       </HStack>
-      <Text textStyle="text/sm" color="neutral.900" fontWeight="medium">
+      <Text textStyle="text/sm" color="text.primary" fontWeight="medium">
         {message}
       </Text>
-      {otherContent && <Box color="neutral.900">{otherContent}</Box>}
+      {otherContent && <Box color="text.primary">{otherContent}</Box>}
     </Stack>
   )
 }

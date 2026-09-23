@@ -15,11 +15,11 @@ export function HistoryLineChart({
   formatTime,
   loading = false,
 }: HistoryLineChartProps): JSX.Element {
-  const [axisColor, lineColor] = useToken('colors', ['neutral.600', 'warning.600'])
+  const [axisColor, lineColor] = useToken('colors', ['chart.axis', 'chart.price'])
   if (loading || data.length === 0) {
     return (
       <Flex h="full" align="center" justify="center" px={5}>
-        <Text textStyle="text/sm" color="neutral.600" role="status">
+        <Text textStyle="text/sm" color="text.secondary" role="status">
           {loading ? 'Loading history…' : 'Price history is temporarily unavailable'}
         </Text>
       </Flex>
@@ -53,7 +53,7 @@ export function HistoryLineChart({
             const point = props.payload?.[0]?.payload as { time: number; value: number } | undefined
             if (!props.active || !point) return null
             return (
-              <Box bg="neutral.900" color="white" borderRadius="control" px={3} py={2}>
+              <Box bg="surface.inverse" color="text.inverse" borderRadius="control" px={3} py={2}>
                 <Text textStyle="text/xs">{formatTime(point.time)}</Text>
                 <Text textStyle="text/sm" fontWeight="medium">
                   {formatValue(point.value)}

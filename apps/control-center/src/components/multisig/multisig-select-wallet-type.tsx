@@ -61,12 +61,12 @@ function ConnectionType({
     <Stack
       onClick={onClick}
       border="1px solid"
-      borderColor="neutral.200"
+      borderColor="border.subtle"
       borderRadius="4px"
       alignItems="center"
       p={8}
       gap={8}
-      _hover={{ cursor: 'pointer', bgColor: 'neutral.50' }}
+      _hover={{ cursor: 'pointer', bgColor: 'surface.subtle' }}
     >
       <Flex justifyContent="center" h="30px">
         <chakra.img src={imagePath} alt={imageAltText} maxW="100px" />

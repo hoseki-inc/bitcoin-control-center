@@ -98,7 +98,7 @@ export function DeleteClaimModal({ action, isOpen, onClose, claim }: DeleteClaim
       <ModalOverlay />
       <ModalContent>
         <ModalHeader>
-          <Text textStyle="text/lg" color="neutral.900">
+          <Text textStyle="text/lg" color="text.primary">
             {isArchive
               ? 'Archive Account?'
               : isAbandon
@@ -112,25 +112,25 @@ export function DeleteClaimModal({ action, isOpen, onClose, claim }: DeleteClaim
 
         <ModalBody>
           {isArchive && isCurrentBalanceLoading && (
-            <Text textStyle="text/sm" color="neutral.600" mb={3} fontWeight="medium">
+            <Text textStyle="text/sm" color="text.secondary" mb={3} fontWeight="medium">
               Checking the current balance before this account can be archived…
             </Text>
           )}
           {isArchive && !isCurrentBalanceLoading && currentBalanceSats === undefined && (
-            <Text textStyle="text/sm" color="error.600" mb={3} fontWeight="medium">
+            <Text textStyle="text/sm" color="status.error.fg" mb={3} fontWeight="medium">
               We could not determine this account&apos;s current balance. Archive is disabled; refresh and try again.
             </Text>
           )}
           {isArchive && currentBalanceSats !== undefined && currentBalanceSats > 0 && (
-            <Text textStyle="text/sm" color="warning.600" mb={3} fontWeight="medium">
+            <Text textStyle="text/sm" color="status.warning.fg" mb={3} fontWeight="medium">
               This wallet still holds {(currentBalanceSats / 100_000_000).toFixed(8)} BTC. Archiving stops live balance
               tracking, so your displayed portfolio will drop by this amount and may look like the BTC was lost. The
               funds remain in your wallet, and historical data up to now will be preserved.
             </Text>
           )}
           {isArchive && (
-            <Text textStyle="text/sm" color="neutral.600" mb={3}>
-              <Text as="strong" fontWeight="medium" color="neutral.900">
+            <Text textStyle="text/sm" color="text.secondary" mb={3}>
+              <Text as="strong" fontWeight="medium" color="text.primary">
                 Archive
               </Text>{' '}
               hides{' '}
@@ -142,8 +142,8 @@ export function DeleteClaimModal({ action, isOpen, onClose, claim }: DeleteClaim
             </Text>
           )}
           {!isArchive && (
-            <Text textStyle="text/sm" color="neutral.600">
-              <Text as="strong" fontWeight="medium" color="error.600">
+            <Text textStyle="text/sm" color="text.secondary">
+              <Text as="strong" fontWeight="medium" color="status.error.fg">
                 {isAbandon ? 'Abandon' : isPendingDelete ? 'Delete' : 'Delete Permanently'}
               </Text>{' '}
               removes{' '}
@@ -201,7 +201,7 @@ export function AbandonClaimButton({
 
   return (
     <>
-      <Button variant="ghost" color="error.600" onClick={onOpen} {...props}>
+      <Button variant="ghost" color="status.error.fg" onClick={onOpen} {...props}>
         Abandon
       </Button>
       <DeleteClaimModal action="abandon" isOpen={isOpen} onClose={onClose} claim={claim} />

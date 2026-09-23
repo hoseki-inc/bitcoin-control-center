@@ -456,7 +456,8 @@ export function DashboardPage(): JSX.Element {
   const hasBalance = displayBalanceSats > 0
 
   const isUp = periodChange === null || periodChange.gte(0)
-  const changeColor = periodChange === null || periodChange.eq(0) ? 'neutral.600' : isUp ? 'success.700' : 'error.700'
+  const changeColor =
+    periodChange === null || periodChange.eq(0) ? 'text.secondary' : isUp ? 'status.success.fg' : 'status.error.fg'
   // A failed range request cannot establish that the portfolio is empty.
   if (!hasVerifiedClaims && !hasHistoricalData && hasCurrentRangeData && !activeError && !historyBackfillFailed) {
     return <EmptyState />
@@ -517,7 +518,7 @@ export function DashboardPage(): JSX.Element {
             <Box mb={8} pt={2}>
               <Flex align="center" justify="space-between" gap={4} mb={2} flexWrap="wrap">
                 <Flex align="center" gap={2} minW={0}>
-                  <Text textStyle="text/sm" color="neutral.600" overflowWrap="anywhere">
+                  <Text textStyle="text/sm" color="text.secondary" overflowWrap="anywhere">
                     {activeLabel}
                   </Text>
                 </Flex>
@@ -533,7 +534,7 @@ export function DashboardPage(): JSX.Element {
                   sx={{ fontVariantNumeric: 'tabular-nums' }}
                   textStyle={{ base: 'amount/compact', md: 'amount/primary' }}
                   fontWeight="medium"
-                  color="neutral.900"
+                  color="text.primary"
                   overflowWrap="anywhere"
                 >
                   <SensitiveValue>
@@ -566,7 +567,7 @@ export function DashboardPage(): JSX.Element {
                         )}
                       </SensitiveValue>
                     </Text>
-                    <Text textStyle="text/sm" color="neutral.500">
+                    <Text textStyle="text/sm" color="text.tertiary">
                       · {periodLabel}
                     </Text>
                   </Flex>
@@ -575,7 +576,7 @@ export function DashboardPage(): JSX.Element {
             </Box>
 
             {/* Accumulation chart */}
-            <Box mb={6} border="1px solid" borderColor="neutral.200" borderRadius="panel" p={{ base: 4, md: 6 }}>
+            <Box mb={6} border="1px solid" borderColor="border.subtle" borderRadius="panel" p={{ base: 4, md: 6 }}>
               <Flex align="center" justify="space-between" mb={5} gap={3} flexWrap="wrap">
                 <Flex align="center" gap={2}>
                   <DashboardCardTitle>Accumulation</DashboardCardTitle>
@@ -625,7 +626,7 @@ export function DashboardPage(): JSX.Element {
             </Box>
 
             {/* Monthly net change */}
-            <Box mb={6} border="1px solid" borderColor="neutral.200" borderRadius="panel" p={{ base: 4, md: 6 }}>
+            <Box mb={6} border="1px solid" borderColor="border.subtle" borderRadius="panel" p={{ base: 4, md: 6 }}>
               <Flex align="center" gap={2} mb={5}>
                 <DashboardCardTitle>Monthly Net Change</DashboardCardTitle>
               </Flex>
@@ -662,7 +663,7 @@ export function DashboardPage(): JSX.Element {
                 mt={5}
                 pt={5}
                 borderTop="1px solid"
-                borderColor="neutral.200"
+                borderColor="border.subtle"
               >
                 <StatCard
                   label="This Month"
@@ -683,7 +684,7 @@ export function DashboardPage(): JSX.Element {
               </Grid>
               <Box minH="20px" mt={4}>
                 {periodChange !== null && btcPrice !== null && Number.isFinite(btcPrice) && btcPrice > 0 && (
-                  <Text textStyle="text/xs" color="neutral.500" textAlign="right">
+                  <Text textStyle="text/xs" color="text.tertiary" textAlign="right">
                     USD equivalents use the current Bitcoin price.
                   </Text>
                 )}
@@ -691,7 +692,7 @@ export function DashboardPage(): JSX.Element {
             </Box>
             {hasCurrentRangeData && activeError && historyRangeError === null && (
               <Box role="alert" mb={4}>
-                <Text textStyle="text/sm" color="error.500">
+                <Text textStyle="text/sm" color="status.error.fg">
                   Couldn&apos;t refresh this date range. Showing previously loaded data.
                 </Text>
                 <Button
@@ -727,10 +728,10 @@ function HistoryRangeError({
 }): JSX.Element {
   return (
     <Flex h={height} align="center" justify="center" direction="column" gap={3} px={4} textAlign="center">
-      <Text textStyle="text/sm" color="error.500">
+      <Text textStyle="text/sm" color="status.error.fg">
         Couldn&apos;t load this date range: {message}
       </Text>
-      <Text textStyle="text/xs" color="neutral.500">
+      <Text textStyle="text/xs" color="text.tertiary">
         Try again, or choose another range.
       </Text>
       <Button size="sm" variant="outline" onClick={onRetry}>
@@ -742,7 +743,7 @@ function HistoryRangeError({
 
 function HistoryBackfillError(): JSX.Element {
   return (
-    <Text role="alert" textStyle="text/sm" color="error.500">
+    <Text role="alert" textStyle="text/sm" color="status.error.fg">
       Wallet history couldn&apos;t be loaded. Retrying automatically. Check your Electrum connection if this continues.
     </Text>
   )
@@ -759,7 +760,7 @@ function SyncIndicator({
 }): JSX.Element {
   if (hasError) {
     return (
-      <Text textStyle="text/xs" color="error.500">
+      <Text textStyle="text/xs" color="status.error.fg">
         History unavailable
       </Text>
     )
@@ -767,8 +768,8 @@ function SyncIndicator({
   if (isPending || historySyncingCount > 0) {
     return (
       <Flex align="center" gap={1.5}>
-        <Spinner size="xs" color="neutral.400" />
-        <Text textStyle="text/xs" fontWeight="medium" color="neutral.500">
+        <Spinner size="xs" color="text.tertiary" />
+        <Text textStyle="text/xs" fontWeight="medium" color="text.tertiary">
           Updating history
         </Text>
       </Flex>
@@ -777,8 +778,8 @@ function SyncIndicator({
 
   return (
     <Flex align="center" gap={1.5}>
-      <Box w="6px" h="6px" borderRadius="full" bg="success.500" />
-      <Text textStyle="text/xs" fontWeight="medium" color="neutral.500">
+      <Box w="6px" h="6px" borderRadius="full" bg="status.success.solid" />
+      <Text textStyle="text/xs" fontWeight="medium" color="text.tertiary">
         All synced
       </Text>
     </Flex>
@@ -827,7 +828,7 @@ function TimeRangeSelector({
       <Flex
         role="group"
         aria-label="Portfolio time range"
-        bg="neutral.50"
+        bg="surface.subtle"
         borderRadius="control"
         p={1}
         gap={1}
@@ -847,12 +848,12 @@ function TimeRangeSelector({
             variant="ghost"
             borderRadius="control"
             border="none"
-            bg={value === option.value ? 'neutral.200' : 'transparent'}
-            color={value === option.value ? 'neutral.900' : 'neutral.600'}
+            bg={value === option.value ? 'surface.emphasis' : 'transparent'}
+            color={value === option.value ? 'text.primary' : 'text.secondary'}
             textStyle="text/xs"
             fontWeight="medium"
             _hover={{
-              bg: value === option.value ? 'neutral.200' : 'neutral.100',
+              bg: value === option.value ? 'surface.emphasis' : 'surface.muted',
             }}
           >
             {option.label}
@@ -870,11 +871,11 @@ function TimeRangeSelector({
               aria-pressed={value === 'custom'}
               borderRadius="control"
               border="none"
-              bg={value === 'custom' ? 'neutral.200' : 'transparent'}
-              color={value === 'custom' ? 'neutral.900' : 'neutral.600'}
+              bg={value === 'custom' ? 'surface.emphasis' : 'transparent'}
+              color={value === 'custom' ? 'text.primary' : 'text.secondary'}
               textStyle="text/xs"
               fontWeight="medium"
-              _hover={{ bg: value === 'custom' ? 'neutral.200' : 'neutral.100' }}
+              _hover={{ bg: value === 'custom' ? 'surface.emphasis' : 'surface.muted' }}
             >
               Custom
             </Button>
@@ -882,20 +883,20 @@ function TimeRangeSelector({
           <Portal>
             <PopoverContent
               w="min(360px, calc(100vw - 32px))"
-              bg="shades.0"
-              borderColor="neutral.200"
+              bg="surface.raised"
+              borderColor="border.subtle"
               borderRadius="panel"
               boxShadow="xl"
             >
-              <PopoverArrow bg="shades.0" />
+              <PopoverArrow bg="surface.raised" />
               <PopoverBody p={4}>
                 <Stack gap={4}>
-                  <Text textStyle="text/sm" fontWeight="medium" color="neutral.900">
+                  <Text textStyle="text/sm" fontWeight="medium" color="text.primary">
                     Choose a date range
                   </Text>
                   <Stack direction={{ base: 'column', sm: 'row' }} gap={3}>
                     <FormControl isInvalid={draftError !== null}>
-                      <FormLabel htmlFor="portfolio-range-start" textStyle="text/xs" color="neutral.600" mb={1.5}>
+                      <FormLabel htmlFor="portfolio-range-start" textStyle="text/xs" color="text.secondary" mb={1.5}>
                         Start date
                       </FormLabel>
                       <DateInput
@@ -908,7 +909,7 @@ function TimeRangeSelector({
                       />
                     </FormControl>
                     <FormControl isInvalid={draftError !== null}>
-                      <FormLabel htmlFor="portfolio-range-end" textStyle="text/xs" color="neutral.600" mb={1.5}>
+                      <FormLabel htmlFor="portfolio-range-end" textStyle="text/xs" color="text.secondary" mb={1.5}>
                         End date
                       </FormLabel>
                       <DateInput
@@ -921,7 +922,7 @@ function TimeRangeSelector({
                       />
                     </FormControl>
                   </Stack>
-                  <Text textStyle="text/xs" color={draftError === null ? 'neutral.500' : 'error.500'}>
+                  <Text textStyle="text/xs" color={draftError === null ? 'text.tertiary' : 'status.error.fg'}>
                     {draftError ?? 'Older self-custody history may take longer to prepare.'}
                   </Text>
                   <Flex justify="flex-end" gap={2}>
@@ -939,7 +940,7 @@ function TimeRangeSelector({
         </Popover>
       </Flex>
       {value === 'custom' && customDateRange.startDate !== null && customDateRange.endDate !== null && (
-        <Text textStyle="text/xs" color="neutral.500" pr={1}>
+        <Text textStyle="text/xs" color="text.tertiary" pr={1}>
           {formatCustomDateRangeLabel(customDateRange)}
         </Text>
       )}
@@ -975,7 +976,7 @@ function StatCard({ label, data, mode, timezone, available, btcPrice }: StatCard
 
   return (
     <Box minW={0}>
-      <Text textStyle="text/xs" color="neutral.500" fontWeight="medium" mb={2}>
+      <Text textStyle="text/xs" color="text.tertiary" fontWeight="medium" mb={2}>
         {label}
       </Text>
       <Text
@@ -983,7 +984,7 @@ function StatCard({ label, data, mode, timezone, available, btcPrice }: StatCard
         sx={{ fontVariantNumeric: 'tabular-nums' }}
         textStyle="text/lg"
         fontWeight="medium"
-        color={value.eq(0) ? 'neutral.900' : isPositive ? 'success.700' : 'error.700'}
+        color={value.eq(0) ? 'text.primary' : isPositive ? 'status.success.fg' : 'status.error.fg'}
         letterSpacing="-0.02em"
       >
         <SensitiveValue>
@@ -997,7 +998,7 @@ function StatCard({ label, data, mode, timezone, available, btcPrice }: StatCard
           )}
         </SensitiveValue>
       </Text>
-      <Text textStyle="text/sm" color="neutral.600" mt={1} sx={{ fontVariantNumeric: 'tabular-nums' }}>
+      <Text textStyle="text/sm" color="text.secondary" mt={1} sx={{ fontVariantNumeric: 'tabular-nums' }}>
         <SensitiveValue>{available ? <UsdEquivalent btc={value} btcPrice={btcPrice} showSign /> : '—'}</SensitiveValue>
       </Text>
     </Box>
@@ -1010,7 +1011,7 @@ function EmptyState(): JSX.Element {
       <PageHeading title="Portfolio" description="Choose accounts and a date range to see changes in your holdings." />
       <EmptyView
         border="1px solid"
-        borderColor="neutral.200"
+        borderColor="border.subtle"
         borderRadius="panel"
         bgGradient="linear(to-b, neutral.50, white)"
         title="Watch your Bitcoin grow"

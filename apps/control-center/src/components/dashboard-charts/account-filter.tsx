@@ -131,14 +131,14 @@ export function AccountFilter({
             gap={1}
             borderRadius="control"
             border="1px solid"
-            borderColor="neutral.200"
-            _hover={{ bg: 'neutral.50' }}
+            borderColor="border.subtle"
+            _hover={{ bg: 'surface.subtle' }}
             aria-label={`Reconnect ${account.name}`}
           >
             <Text textStyle="text/sm" fontWeight="medium" overflowWrap="anywhere">
               {account.name}
             </Text>
-            <Text textStyle="text/xs" color="warning.700">
+            <Text textStyle="text/xs" color="status.warning.fg">
               Reconnect needed
             </Text>
           </Flex>
@@ -156,11 +156,11 @@ export function AccountFilter({
               position="relative"
               borderRadius="control"
               border="1px solid"
-              borderColor={selected.has(account.id) ? 'neutral.700' : 'neutral.200'}
-              bg={selected.has(account.id) ? 'neutral.50' : 'shades.0'}
+              borderColor={selected.has(account.id) ? 'border.inverse' : 'border.subtle'}
+              bg={selected.has(account.id) ? 'surface.subtle' : 'surface.raised'}
               cursor="pointer"
-              _hover={{ bg: 'neutral.50', borderColor: 'neutral.600' }}
-              _focusVisible={{ outline: '2px solid', outlineColor: 'activeState.80', outlineOffset: '2px' }}
+              _hover={{ bg: 'surface.subtle', borderColor: 'border.strong' }}
+              _focusVisible={{ outline: '2px solid', outlineColor: 'focus.ring', outlineOffset: '2px' }}
               transition="background-color 120ms ease, border-color 120ms ease"
               sx={{ '@media (prefers-reduced-motion: reduce)': { transition: 'none' } }}
             >
@@ -171,7 +171,7 @@ export function AccountFilter({
                   minW={0}
                   textStyle="text/sm"
                   fontWeight="medium"
-                  color="neutral.900"
+                  color="text.primary"
                   overflowWrap="anywhere"
                 >
                   {account.name}
@@ -187,7 +187,7 @@ export function AccountFilter({
                   as="span"
                   pt={0.5}
                   flexShrink={0}
-                  color="neutral.900"
+                  color="text.primary"
                   aria-hidden="true"
                   opacity={selected.has(account.id) ? 1 : 0}
                 >
@@ -195,7 +195,7 @@ export function AccountFilter({
                 </Box>
               </Flex>
               {!compact && (
-                <Text as="span" display="block" textStyle="text/xs" color="neutral.600" mt={1}>
+                <Text as="span" display="block" textStyle="text/xs" color="text.secondary" mt={1}>
                   {account.detail}
                 </Text>
               )}
@@ -204,7 +204,7 @@ export function AccountFilter({
                 display="block"
                 mt={compact ? 1 : 3}
                 textStyle={compact ? 'text/xs' : 'text/sm'}
-                color="neutral.600"
+                color="text.secondary"
                 sx={{ fontVariantNumeric: 'tabular-nums' }}
                 overflowWrap="anywhere"
               >
@@ -213,7 +213,7 @@ export function AccountFilter({
                 </SensitiveValue>
               </Text>
               {!compact && (
-                <Flex mt={1} pr={8} minH="20px" align="center" color="neutral.600">
+                <Flex mt={1} pr={8} minH="20px" align="center" color="text.secondary">
                   <Text as="span" textStyle="text/xs" sx={{ fontVariantNumeric: 'tabular-nums' }}>
                     <SensitiveValue>
                       <UsdEquivalent btc={account.sats / 100_000_000} btcPrice={btcPrice} />
@@ -233,7 +233,7 @@ export function AccountFilter({
         ),
       )}
       {matching.length === 0 && (
-        <Text textStyle="text/sm" color="neutral.600" p={3}>
+        <Text textStyle="text/sm" color="text.secondary" p={3}>
           No accounts match your search.
         </Text>
       )}
@@ -247,8 +247,8 @@ export function AccountFilter({
       minH="44px"
       variant="outline"
       aria-pressed={isAll}
-      borderColor={isAll ? 'neutral.700' : 'neutral.200'}
-      bg={isAll ? 'neutral.50' : 'shades.0'}
+      borderColor={isAll ? 'border.inverse' : 'border.subtle'}
+      bg={isAll ? 'surface.subtle' : 'surface.raised'}
       onClick={() => onSelectionChange(new Set())}
     >
       All accounts
@@ -258,7 +258,7 @@ export function AccountFilter({
     </Button>
   )
   const densityControl = (
-    <Flex role="group" aria-label="Account detail level" gap={1} p={1} bg="neutral.50" borderRadius="control">
+    <Flex role="group" aria-label="Account detail level" gap={1} p={1} bg="surface.subtle" borderRadius="control">
       {([true, false] as const).map((isCompact) => (
         <Button
           key={String(isCompact)}
@@ -269,8 +269,8 @@ export function AccountFilter({
           border="none"
           aria-label={isCompact ? 'Compact view' : 'Detailed view'}
           aria-pressed={compact === isCompact}
-          bg={compact === isCompact ? 'neutral.200' : 'transparent'}
-          color={compact === isCompact ? 'neutral.900' : 'neutral.600'}
+          bg={compact === isCompact ? 'surface.emphasis' : 'transparent'}
+          color={compact === isCompact ? 'text.primary' : 'text.secondary'}
           textStyle="text/xs"
           fontWeight="medium"
           onClick={() => {
@@ -299,7 +299,7 @@ export function AccountFilter({
     />
   )
   const count = (
-    <Text textStyle="text/xs" color="neutral.600" aria-live="polite">
+    <Text textStyle="text/xs" color="text.secondary" aria-live="polite">
       {included.length} of {selectable.length}
     </Text>
   )
@@ -318,7 +318,7 @@ export function AccountFilter({
         maxH="calc(100dvh - 76px)"
         overflowY="auto"
         borderRight="1px solid"
-        borderColor="neutral.200"
+        borderColor="border.subtle"
         px={4}
         py={8}
         sx={{ scrollbarGutter: 'stable', overscrollBehavior: 'contain' }}
@@ -375,7 +375,7 @@ export function AccountFilter({
           borderRadius="panel"
           overflow="hidden"
         >
-          <PopoverHeader p={4} borderColor="neutral.200" flexShrink={0}>
+          <PopoverHeader p={4} borderColor="border.subtle" flexShrink={0}>
             <Stack spacing={3}>
               <Flex justify="space-between" align="center">
                 <Text textStyle="text/md" fontWeight="medium">
@@ -390,7 +390,7 @@ export function AccountFilter({
           <PopoverBody p={3} overflowY="auto" minH={0}>
             {rows}
           </PopoverBody>
-          <PopoverFooter p={3} borderColor="neutral.200" flexShrink={0}>
+          <PopoverFooter p={3} borderColor="border.subtle" flexShrink={0}>
             <Flex justify="space-between">
               <Button as={Link} to="/accounts" variant="ghost" size="sm">
                 Manage accounts
@@ -413,7 +413,7 @@ function formatShare(sats: number, totalSats: number): string {
 
 function AccountSharePie({ sats, totalSats, name }: { sats: number; totalSats: number; name: string }): JSX.Element {
   const percentage = totalSats > 0 ? Math.min(100, Math.max(0, (sats / totalSats) * 100)) : 0
-  const [fill, track] = useToken('colors', ['neutral.500', 'neutral.100'])
+  const [fill, track] = useToken('colors', ['chart.axis', 'surface.muted'])
   const label = `${formatShare(sats, totalSats)}% of your portfolio`
   return (
     <Tooltip label={label} placement="top" hasArrow>
@@ -426,7 +426,7 @@ function AccountSharePie({ sats, totalSats, name }: { sats: number; totalSats: n
         boxSize="20px"
         borderRadius="full"
         background={`conic-gradient(${fill} ${percentage}%, ${track} 0)`}
-        _focusVisible={{ outline: '2px solid', outlineColor: 'activeState.80', outlineOffset: '3px' }}
+        _focusVisible={{ outline: '2px solid', outlineColor: 'focus.ring', outlineOffset: '3px' }}
       />
     </Tooltip>
   )

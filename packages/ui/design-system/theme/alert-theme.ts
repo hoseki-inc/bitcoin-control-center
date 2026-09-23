@@ -15,8 +15,10 @@ const baseStyle = definePartsStyle((props) => {
       bgColor: `${c}.100`,
       border: 'none',
       borderRadius: 4,
+      _dark: { bgColor: `color-mix(in srgb, var(--hoseki-colors-${c}-500) 16%, transparent)` },
       '& a': {
         color: `${c}.700`,
+        _dark: { color: `${c}.200` },
         textDecoration: 'none',
 
         _hover: {
@@ -30,16 +32,19 @@ const baseStyle = definePartsStyle((props) => {
       color: `${c}.800`,
       textStyle: 'text/sm',
       fontWeight: 'medium',
+      _dark: { color: `${c}.200` },
     },
     description: {
       ...defaultAlertTheme.baseStyle?.description,
       color: `${c}.800`,
       textStyle: 'text/sm',
       fontWeight: 'normal',
+      _dark: { color: `${c}.100` },
     },
     icon: {
       ...defaultAlertTheme.baseStyle?.icon,
       color: `${c}.600`,
+      _dark: { color: `${c}.300` },
       boxSize: 3,
       mr: 2,
     },

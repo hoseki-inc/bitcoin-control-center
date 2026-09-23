@@ -12,10 +12,10 @@ export function TipAlert({
   children: React.ReactNode
 } & AlertProps): JSX.Element {
   return (
-    <Alert bgColor="neutral.50" px={6} py={4} borderRadius="4px" textAlign="left" {...props}>
+    <Alert bgColor="surface.subtle" px={6} py={4} borderRadius="4px" textAlign="left" {...props}>
       <HStack gap={2} align="center" w="full">
-        <Icon as={icon} boxSize={5} color="neutral.800" flexShrink={0} />
-        <Box color="neutral.800" fontSize="sm" lineHeight="20px" textAlign="left">
+        <Icon as={icon} boxSize={5} color="text.primary" flexShrink={0} />
+        <Box color="text.primary" fontSize="sm" lineHeight="20px" textAlign="left">
           <Text fontWeight="medium">{title}</Text>
           {children}
         </Box>

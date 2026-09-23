@@ -38,7 +38,7 @@ export function HistoryChartFrame({
   }, [controls, ready, reduceMotion, updating, viewKey])
 
   return (
-    <Box bg="shades.0" pt={2} position="relative" overflow="hidden" aria-busy={loading || updating || refreshing}>
+    <Box bg="surface.raised" pt={2} position="relative" overflow="hidden" aria-busy={loading || updating || refreshing}>
       <MotionBox
         minH={height}
         initial={false}
@@ -55,16 +55,16 @@ export function HistoryChartFrame({
         <Box position="absolute" insetX={0} top={0} pointerEvents="none">
           <Skeleton
             h="3px"
-            startColor="neutral.100"
-            endColor="neutral.300"
+            startColor="chart.skeletonFrom"
+            endColor="chart.skeletonTo"
             sx={{ '@media (prefers-reduced-motion: reduce)': { animation: 'none' } }}
           />
           {updating && (
             <Text
               role="status"
               textStyle="text/xs"
-              color="neutral.600"
-              bg="shades.0"
+              color="text.secondary"
+              bg="surface.raised"
               px={2}
               py={1}
               position="absolute"
@@ -98,13 +98,13 @@ export function HistoryRangeLoading({ height }: { height: string }): JSX.Element
             w={width}
             h="8px"
             borderRadius="control"
-            startColor="neutral.100"
-            endColor="neutral.200"
+            startColor="chart.skeletonFrom"
+            endColor="chart.skeletonTo"
             sx={{ '@media (prefers-reduced-motion: reduce)': { animation: 'none' } }}
           />
         ))}
       </Stack>
-      <Text textStyle="text/sm" color="neutral.600">
+      <Text textStyle="text/sm" color="text.secondary">
         Preparing history for this date range
       </Text>
     </Flex>

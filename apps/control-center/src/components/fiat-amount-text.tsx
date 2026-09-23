@@ -6,7 +6,7 @@ export function FiatAmountText({ primary = false, ...props }: TextProps & { prim
     <Text
       textStyle={primary ? { base: 'text/xl', md: 'text/2xl' } : 'text/md'}
       fontWeight={primary ? 'medium' : 'normal'}
-      color="neutral.600"
+      color="text.secondary"
       minW={0}
       overflowWrap="anywhere"
       sx={{ fontVariantNumeric: 'tabular-nums' }}

@@ -177,16 +177,16 @@ export function ManualAccountDetailsPage(): JSX.Element {
             <PageHeading title={account.displayName} />
           </HStack>
           <HStack spacing={1} flexWrap="wrap">
-            <Box w={2} h={2} bg="neutral.400" borderRadius="full" />
-            <Text textStyle="text/sm" color="neutral.600" fontWeight="medium">
+            <Box w={2} h={2} bg="border.strong" borderRadius="full" />
+            <Text textStyle="text/sm" color="text.secondary" fontWeight="medium">
               Manually tracked
             </Text>
             {account.createdAt && (
               <>
-                <Text textStyle="text/sm" color="neutral.400">
+                <Text textStyle="text/sm" color="text.tertiary">
                   ·
                 </Text>
-                <Text textStyle="text/sm" color="neutral.600">
+                <Text textStyle="text/sm" color="text.secondary">
                   {format(new Date(account.createdAt), 'MMMM do, yyyy')}
                 </Text>
               </>
@@ -194,11 +194,11 @@ export function ManualAccountDetailsPage(): JSX.Element {
           </HStack>
         </Box>
 
-        <Divider borderColor="neutral.200" />
+        <Divider borderColor="border.subtle" />
 
         <Stack direction={{ base: 'column', sm: 'row' }} spacing={6} justify="space-between">
           <Box>
-            <Text textStyle="text/sm" color="neutral.600" mb={1}>
+            <Text textStyle="text/sm" color="text.secondary" mb={1}>
               Balance
             </Text>
             <Text textStyle="text/xl" fontWeight="medium" sx={{ fontVariantNumeric: 'tabular-nums' }}>
@@ -209,16 +209,16 @@ export function ManualAccountDetailsPage(): JSX.Element {
           </Box>
           {account.balanceAsOf && (
             <Box>
-              <Text textStyle="text/sm" color="neutral.600" mb={1}>
+              <Text textStyle="text/sm" color="text.secondary" mb={1}>
                 Balance as of
               </Text>
-              <Text textStyle="text/sm" color="neutral.900">
+              <Text textStyle="text/sm" color="text.primary">
                 {format(new Date(account.balanceAsOf), 'MMMM do, yyyy')}
               </Text>
             </Box>
           )}
         </Stack>
-        <Divider borderColor="neutral.200" />
+        <Divider borderColor="border.subtle" />
 
         {/* Update Balance */}
         <Box w="100%">
@@ -227,7 +227,7 @@ export function ManualAccountDetailsPage(): JSX.Element {
           </Text>
           <Stack direction={{ base: 'column', md: 'row' }} spacing={3} align={{ base: 'stretch', md: 'flex-end' }}>
             <FormControl flex={1} minW={0}>
-              <FormLabel fontWeight="medium" textStyle="text/sm" color="neutral.600">
+              <FormLabel fontWeight="medium" textStyle="text/sm" color="text.secondary">
                 New Balance (BTC)
               </FormLabel>
               <Input
@@ -243,7 +243,7 @@ export function ManualAccountDetailsPage(): JSX.Element {
               />
             </FormControl>
             <FormControl flex={1} minW={0}>
-              <FormLabel fontWeight="medium" textStyle="text/sm" color="neutral.600">
+              <FormLabel fontWeight="medium" textStyle="text/sm" color="text.secondary">
                 As of Date
               </FormLabel>
               <DateStringInput
@@ -267,7 +267,7 @@ export function ManualAccountDetailsPage(): JSX.Element {
           </Stack>
         </Box>
 
-        <Divider borderColor="neutral.200" />
+        <Divider borderColor="border.subtle" />
 
         {/* Add Transaction */}
         <Box w="100%">
@@ -277,7 +277,7 @@ export function ManualAccountDetailsPage(): JSX.Element {
           <Stack spacing={3}>
             <Stack direction={{ base: 'column', md: 'row' }} spacing={3}>
               <FormControl flex={1} minW={0}>
-                <FormLabel fontWeight="medium" textStyle="text/sm" color="neutral.600">
+                <FormLabel fontWeight="medium" textStyle="text/sm" color="text.secondary">
                   Type
                 </FormLabel>
                 <Select
@@ -295,7 +295,7 @@ export function ManualAccountDetailsPage(): JSX.Element {
                 </Select>
               </FormControl>
               <FormControl flex={1} minW={0}>
-                <FormLabel fontWeight="medium" textStyle="text/sm" color="neutral.600">
+                <FormLabel fontWeight="medium" textStyle="text/sm" color="text.secondary">
                   Amount (BTC)
                 </FormLabel>
                 <Input
@@ -311,7 +311,7 @@ export function ManualAccountDetailsPage(): JSX.Element {
                 />
               </FormControl>
               <FormControl flex={1} minW={0}>
-                <FormLabel fontWeight="medium" textStyle="text/sm" color="neutral.600">
+                <FormLabel fontWeight="medium" textStyle="text/sm" color="text.secondary">
                   Date
                 </FormLabel>
                 <DateStringInput
@@ -326,7 +326,7 @@ export function ManualAccountDetailsPage(): JSX.Element {
             </Stack>
             <Stack direction={{ base: 'column', md: 'row' }} spacing={3} align={{ base: 'stretch', md: 'flex-end' }}>
               <FormControl flex={1} minW={0}>
-                <FormLabel fontWeight="medium" textStyle="text/sm" color="neutral.600">
+                <FormLabel fontWeight="medium" textStyle="text/sm" color="text.secondary">
                   Note (optional)
                 </FormLabel>
                 <Input
@@ -354,7 +354,7 @@ export function ManualAccountDetailsPage(): JSX.Element {
               onChange={(e) => setTxAddToBalance(e.target.checked)}
               colorScheme="orange"
             >
-              <Text textStyle="text/sm" color="neutral.600">
+              <Text textStyle="text/sm" color="text.secondary">
                 Add this amount to balance
               </Text>
             </Checkbox>
@@ -367,26 +367,26 @@ export function ManualAccountDetailsPage(): JSX.Element {
             <Text as="h2" textStyle="text/md" fontWeight="medium" mb={4}>
               Transactions
             </Text>
-            <Box borderWidth="1px" borderColor="neutral.200" borderRadius="panel" overflowX="auto">
+            <Box borderWidth="1px" borderColor="border.subtle" borderRadius="panel" overflowX="auto">
               <Table
                 size="sm"
                 sx={{ th: { textTransform: 'none', letterSpacing: 'normal' }, td: { whiteSpace: 'nowrap' } }}
               >
                 <Thead>
                   <Tr>
-                    <Th textStyle="text/sm" fontFamily="body" color="neutral.600">
+                    <Th textStyle="text/sm" fontFamily="body" color="text.secondary">
                       Type
                     </Th>
-                    <Th textStyle="text/sm" fontFamily="body" color="neutral.600">
+                    <Th textStyle="text/sm" fontFamily="body" color="text.secondary">
                       Amount
                     </Th>
-                    <Th textStyle="text/sm" fontFamily="body" color="neutral.600">
+                    <Th textStyle="text/sm" fontFamily="body" color="text.secondary">
                       Date
                     </Th>
-                    <Th textStyle="text/sm" fontFamily="body" color="neutral.600">
+                    <Th textStyle="text/sm" fontFamily="body" color="text.secondary">
                       Note
                     </Th>
-                    <Th textStyle="text/sm" fontFamily="body" color="neutral.600" />
+                    <Th textStyle="text/sm" fontFamily="body" color="text.secondary" />
                   </Tr>
                 </Thead>
                 <Tbody>
@@ -396,7 +396,9 @@ export function ManualAccountDetailsPage(): JSX.Element {
                         <Text
                           textStyle="text/sm"
                           fontWeight="medium"
-                          color={tx.type === 'buy' || tx.type === 'transfer_in' ? 'success.600' : 'error.600'}
+                          color={
+                            tx.type === 'buy' || tx.type === 'transfer_in' ? 'status.success.fg' : 'status.error.fg'
+                          }
                         >
                           {TX_TYPE_LABELS[tx.type] ?? tx.type}
                         </Text>
@@ -412,7 +414,7 @@ export function ManualAccountDetailsPage(): JSX.Element {
                         <Text textStyle="text/sm">{format(new Date(tx.transactedAt), 'MMM d, yyyy')}</Text>
                       </Td>
                       <Td>
-                        <Text textStyle="text/sm" color="neutral.600">
+                        <Text textStyle="text/sm" color="text.secondary">
                           {tx.note || '—'}
                         </Text>
                       </Td>
@@ -420,7 +422,7 @@ export function ManualAccountDetailsPage(): JSX.Element {
                         <Button
                           size="xs"
                           variant="ghost"
-                          color="error.500"
+                          color="status.error.fg"
                           onClick={() => setRemoval({ kind: 'transaction', id: tx.id })}
                         >
                           Delete
@@ -434,8 +436,8 @@ export function ManualAccountDetailsPage(): JSX.Element {
           </Box>
         )}
       </Stack>
-      <Box mt={8} pt={5} borderTop="1px solid" borderColor="neutral.200">
-        <Button variant="ghost" color="error.700" onClick={() => setRemoval({ kind: 'account' })}>
+      <Box mt={8} pt={5} borderTop="1px solid" borderColor="border.subtle">
+        <Button variant="ghost" color="status.error.fg" onClick={() => setRemoval({ kind: 'account' })}>
           Remove Account
         </Button>
       </Box>
@@ -488,7 +490,7 @@ export function ManualAccountDetailsPage(): JSX.Element {
 
 function ManualIcon(): JSX.Element {
   return (
-    <Icon viewBox="0 0 24 24" w={5} h={5} color="warning.500">
+    <Icon viewBox="0 0 24 24" w={5} h={5} color="status.warning.fg">
       <path
         d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
         stroke="currentColor"

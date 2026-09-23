@@ -36,7 +36,7 @@ export function Receipt({
           top={4}
           left={4}
           aria-label={closeTitle}
-          _hover={{ bgColor: 'neutral.100' }}
+          _hover={{ bgColor: 'surface.muted' }}
           onClick={onClose}
           p={4}
         >
@@ -58,7 +58,7 @@ export function Receipt({
           <Spinner size="xl" />
         </Flex>
       ) : (
-        <CheckCircleFilledIcon boxSize={12} color="success.700" color2="white" aria-hidden="true" />
+        <CheckCircleFilledIcon boxSize={12} color="status.success.fg" color2="text.inverse" aria-hidden="true" />
       )}
 
       <Box w="full" maxW="640px">

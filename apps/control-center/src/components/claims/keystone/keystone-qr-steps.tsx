@@ -87,22 +87,22 @@ function QrIntro({ onNext, onBack, ...rest }: { onNext: () => void; onBack: () =
     <Stack gap={4} {...rest}>
       <WalletAnimation animation="keystoneAnimation" />
 
-      <Text as="h2" textStyle="text/2xl" color="neutral.900" fontWeight="medium">
+      <Text as="h2" textStyle="text/2xl" color="text.primary" fontWeight="medium">
         Verifying Ownership With Your Keystone
       </Text>
 
-      <Text textStyle="text/md" color="neutral.900">
+      <Text textStyle="text/md" color="text.primary">
         To verify ownership with your Keystone, you'll securely prove control of your keys by scanning QR codes — fully
         air-gapped.
       </Text>
-      <Text textStyle="text/md" color="neutral.900">
+      <Text textStyle="text/md" color="text.primary">
         We'll guide you through each step — just follow the on-screen instructions.
       </Text>
       <Box>
-        <Text textStyle="text/md" color="neutral.900" fontWeight={500}>
+        <Text textStyle="text/md" color="text.primary" fontWeight={500}>
           You'll need:
         </Text>
-        <chakra.ul ml={8} textStyle="text/md" color="neutral.900" fontWeight={400}>
+        <chakra.ul ml={8} textStyle="text/md" color="text.primary" fontWeight={400}>
           <li>Your Keystone device</li>
           <li>A webcam on this computer</li>
         </chakra.ul>
@@ -141,17 +141,17 @@ function QrExportInstructions({
     <Stack gap={4} {...rest}>
       <WalletAnimation animation="keystoneAnimation" />
 
-      <Text as="h2" textStyle="text/2xl" color="neutral.900" fontWeight="medium">
+      <Text as="h2" textStyle="text/2xl" color="text.primary" fontWeight="medium">
         Display Your Wallet Export
       </Text>
-      <Text textStyle="text/md" color="neutral.900">
+      <Text textStyle="text/md" color="text.primary">
         To identify the Bitcoin you're claiming, we need your wallet export displayed as a QR code on your Keystone.
       </Text>
       {/* TODO: Add Keystone-specific menu navigation instructions once known */}
-      <Text textStyle="text/md" color="neutral.900">
+      <Text textStyle="text/md" color="text.primary">
         Navigate to your wallet export option on your Keystone device and display the QR code.
       </Text>
-      <Text textStyle="text/md" color="neutral.900">
+      <Text textStyle="text/md" color="text.primary">
         Once the QR is displayed, click 'Ready to Scan' to continue.
       </Text>
 
@@ -222,15 +222,15 @@ function QrScanWalletExport({
     <Stack gap={4} alignItems="center" {...rest}>
       <WalletAnimation animation="keystoneQrAnimation" />
 
-      <Text as="h2" textStyle="text/2xl" color="neutral.900" fontWeight="medium">
+      <Text as="h2" textStyle="text/2xl" color="text.primary" fontWeight="medium">
         Scan Your Wallet Export
       </Text>
-      <Text textStyle="text/md" color="neutral.900" textAlign="center">
+      <Text textStyle="text/md" color="text.primary" textAlign="center">
         Hold your Keystone screen in front of your webcam. We'll automatically detect and read the QR code.
       </Text>
 
       {error && (
-        <Text textStyle="text/sm" color="error.500" textAlign="center">
+        <Text textStyle="text/sm" color="status.error.fg" textAlign="center">
           {error}
         </Text>
       )}
@@ -284,12 +284,12 @@ function AccountSelectionStep({
       {!isLoading && wallets.length === 0 && (
         <Stack align="center" gap={2}>
           <IconWrapper>
-            <Icon as={CircleXIcon} stroke="error.500" boxSize="38px" />
+            <Icon as={CircleXIcon} stroke="status.error.fg" boxSize="38px" />
           </IconWrapper>
-          <Text textStyle="text/2xl" fontWeight="medium" color="neutral.900">
+          <Text textStyle="text/2xl" fontWeight="medium" color="text.primary">
             Scan complete.
           </Text>
-          <Text textStyle="text/md" color="neutral.900">
+          <Text textStyle="text/md" color="text.primary">
             We were unable to find any accounts with a non-zero balance.
           </Text>
         </Stack>

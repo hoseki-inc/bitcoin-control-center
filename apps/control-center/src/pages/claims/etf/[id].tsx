@@ -124,7 +124,7 @@ export function EtfAccountDetailsPage(): JSX.Element {
         <TopBar.Item as={Link} to="/accounts">
           Back to Accounts
         </TopBar.Item>
-        <TopBar.Item as="button" color="error.600" onClick={handleDelete}>
+        <TopBar.Item as="button" color="status.error.fg" onClick={handleDelete}>
           {isDeleting ? 'Removing...' : 'Remove Account'}
         </TopBar.Item>
       </TopBar>
@@ -133,22 +133,22 @@ export function EtfAccountDetailsPage(): JSX.Element {
         {/* Account header */}
         <Box>
           <HStack spacing={3} mb={1}>
-            <Box color="neutral.700">
+            <Box color="text.secondary">
               <ChartNoAxesCombined size={24} aria-hidden="true" />
             </Box>
             <PageHeading title={account.displayName} />
           </HStack>
           <HStack spacing={1}>
-            <Box w={2} h={2} bg="warning.500" borderRadius="full" />
-            <Text textStyle="text/sm" color="warning.600" fontWeight="medium">
+            <Box w={2} h={2} bg="status.warning.solid" borderRadius="full" />
+            <Text textStyle="text/sm" color="status.warning.fg" fontWeight="medium">
               Manually Added
             </Text>
             {account.createdAt && (
               <>
-                <Text textStyle="text/sm" color="neutral.400">
+                <Text textStyle="text/sm" color="text.tertiary">
                   ·
                 </Text>
-                <Text textStyle="text/sm" color="neutral.600">
+                <Text textStyle="text/sm" color="text.secondary">
                   {format(new Date(account.createdAt), 'MMMM do, yyyy')}
                 </Text>
               </>
@@ -156,10 +156,10 @@ export function EtfAccountDetailsPage(): JSX.Element {
           </HStack>
         </Box>
 
-        <Divider borderColor="neutral.200" />
+        <Divider borderColor="border.subtle" />
 
         <Box>
-          <Text textStyle="text/sm" color="neutral.600" mb={1}>
+          <Text textStyle="text/sm" color="text.secondary" mb={1}>
             Computed balance
           </Text>
           <Text textStyle="text/xl" fontWeight="medium" sx={{ fontVariantNumeric: 'tabular-nums' }}>
@@ -168,7 +168,7 @@ export function EtfAccountDetailsPage(): JSX.Element {
             </SensitiveValue>
           </Text>
         </Box>
-        <Divider borderColor="neutral.200" />
+        <Divider borderColor="border.subtle" />
 
         {/* Holdings table */}
         {holdingsQuery.data && holdingsQuery.data.length > 0 && (
@@ -176,7 +176,7 @@ export function EtfAccountDetailsPage(): JSX.Element {
             <Text as="h2" textStyle="text/md" fontWeight="medium" mb={4}>
               Holdings
             </Text>
-            <Box borderWidth="1px" borderColor="neutral.200" borderRadius="panel" overflowX="auto">
+            <Box borderWidth="1px" borderColor="border.subtle" borderRadius="panel" overflowX="auto">
               <Table variant="data" size="md" aria-label="ETF holdings">
                 <Thead>
                   <Tr>
@@ -208,7 +208,7 @@ export function EtfAccountDetailsPage(): JSX.Element {
                           </Text>
                         </Td>
                         <Td>
-                          <Text textStyle="text/sm" color="neutral.600">
+                          <Text textStyle="text/sm" color="text.secondary">
                             {config?.issuer ?? '—'}
                           </Text>
                         </Td>
@@ -226,7 +226,7 @@ export function EtfAccountDetailsPage(): JSX.Element {
                           </SensitiveValue>
                         </Td>
                         <Td>
-                          <Text textStyle="text/sm" color="neutral.600">
+                          <Text textStyle="text/sm" color="text.secondary">
                             {holding.datePurchased ? format(new Date(holding.datePurchased), 'MMM d, yyyy') : '—'}
                           </Text>
                         </Td>
@@ -236,7 +236,7 @@ export function EtfAccountDetailsPage(): JSX.Element {
                             textStyle="text/sm"
                             aria-label={`Remove ${holding.ticker} holding`}
                             variant="ghost"
-                            color="error.500"
+                            color="status.error.fg"
                             onClick={() => handleRemoveHolding(holding.id)}
                           >
                             Remove
@@ -251,7 +251,7 @@ export function EtfAccountDetailsPage(): JSX.Element {
           </Box>
         )}
 
-        <Divider borderColor="neutral.200" />
+        <Divider borderColor="border.subtle" />
 
         {/* Add Holding */}
         <Box w="100%">
@@ -260,7 +260,7 @@ export function EtfAccountDetailsPage(): JSX.Element {
           </Text>
           <Stack direction={{ base: 'column', md: 'row' }} spacing={3} align={{ base: 'stretch', md: 'flex-end' }}>
             <FormControl flex={1.2} minW={0}>
-              <FormLabel fontWeight="medium" textStyle="text/sm" color="neutral.600">
+              <FormLabel fontWeight="medium" textStyle="text/sm" color="text.secondary">
                 ETF
               </FormLabel>
               <Select
@@ -282,7 +282,7 @@ export function EtfAccountDetailsPage(): JSX.Element {
               </Select>
             </FormControl>
             <FormControl flex={0.8} minW={0}>
-              <FormLabel fontWeight="medium" textStyle="text/sm" color="neutral.600">
+              <FormLabel fontWeight="medium" textStyle="text/sm" color="text.secondary">
                 Shares
               </FormLabel>
               <Input
@@ -298,7 +298,7 @@ export function EtfAccountDetailsPage(): JSX.Element {
               />
             </FormControl>
             <FormControl flex={0.8} minW={0}>
-              <FormLabel fontWeight="medium" textStyle="text/sm" color="neutral.600">
+              <FormLabel fontWeight="medium" textStyle="text/sm" color="text.secondary">
                 Date purchased (optional)
               </FormLabel>
               <DateStringInput

@@ -41,10 +41,10 @@ export function AnimatedDetectedKeystoreAvatars({
               {index < threshold ? (
                 <PlusCircleIcon
                   {...commonProps}
-                  stroke="shades.0"
+                  stroke="text.inverse"
                   strokeWidth="2"
-                  fill="neutral.100"
-                  color="shades.100"
+                  fill="surface.muted"
+                  color="text.primary"
                 />
               ) : (
                 <DashedCircleFilledIcon {...commonProps} />

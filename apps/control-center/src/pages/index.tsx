@@ -60,7 +60,7 @@ export function HomePage(): JSX.Element {
           justify="space-between"
           gap={4}
           p={4}
-          bg="neutral.50"
+          bg="surface.subtle"
           borderRadius="control"
           flexWrap="wrap"
         >
@@ -68,7 +68,7 @@ export function HomePage(): JSX.Element {
             <Text textStyle="text/sm" fontWeight="medium">
               Some holdings data is unavailable
             </Text>
-            <Text textStyle="text/sm" color="neutral.600" mt={1}>
+            <Text textStyle="text/sm" color="text.secondary" mt={1}>
               {hasHistory
                 ? 'Showing the last available overview. Refresh to check for updates.'
                 : 'Your balances could not be confirmed. Try again to load your holdings.'}
@@ -90,7 +90,7 @@ export function HomePage(): JSX.Element {
       ) : (
         <EmptyView
           border="1px solid"
-          borderColor="neutral.200"
+          borderColor="border.subtle"
           borderRadius="panel"
           title="Your history will appear here"
           description="View your accounts to check their connection and verification status."
@@ -104,7 +104,7 @@ export function HomePage(): JSX.Element {
       <BitcoinPriceChart />
       {statementsError ? (
         <Flex role="status" justify="space-between" gap={4} align="center" flexWrap="wrap">
-          <Text textStyle="text/sm" color="neutral.600">
+          <Text textStyle="text/sm" color="text.secondary">
             Recent statements could not be loaded.
           </Text>
           <Button as={Link} to="/statements" variant="ghost">
@@ -112,7 +112,7 @@ export function HomePage(): JSX.Element {
           </Button>
         </Flex>
       ) : statementsLoading ? (
-        <Text role="status" textStyle="text/sm" color="neutral.600">
+        <Text role="status" textStyle="text/sm" color="text.secondary">
           Loading recent statements…
         </Text>
       ) : statements.length > 0 ? (
@@ -140,7 +140,7 @@ function PortfolioSummary({ data, accountCount }: { data: PortfolioData; account
   const hasBalance = totalBtc.gt(0)
 
   return (
-    <Box bg="shades.0" border="1px solid" borderColor="neutral.200" borderRadius="panel" p={{ base: 4, md: 6 }}>
+    <Box bg="surface.raised" border="1px solid" borderColor="border.subtle" borderRadius="panel" p={{ base: 4, md: 6 }}>
       {/* Top row: balance + generate button */}
       <Flex align="flex-start" justify="space-between" mb={6} gap={4} flexWrap="wrap">
         <Box>
@@ -167,7 +167,7 @@ function PortfolioSummary({ data, accountCount }: { data: PortfolioData; account
 
       {/* Chart */}
       <Box mb={3}>
-        <Text textStyle="text/sm" fontWeight="medium" color="neutral.600" mb={2}>
+        <Text textStyle="text/sm" fontWeight="medium" color="text.secondary" mb={2}>
           Last 30 Days
         </Text>
         <Box position="relative" overflow="hidden">
@@ -184,7 +184,7 @@ function PortfolioSummary({ data, accountCount }: { data: PortfolioData; account
         mt={6}
         pt={5}
         borderTop="1px solid"
-        borderColor="neutral.200"
+        borderColor="border.subtle"
       >
         <StatMini label="30d Change" value={change30dBtc} btcPrice={btcPrice} />
         <StatMini label="Accounts" count={accountCount} />
@@ -216,19 +216,22 @@ function StatMini({
 
   return (
     <Box minW={0}>
-      <Text textStyle="text/md" color="neutral.900" fontWeight="medium" mb={2}>
+      <Text textStyle="text/md" color="text.primary" fontWeight="medium" mb={2}>
         {label}
       </Text>
       {value !== undefined ? (
         <Flex align="baseline" gap={2} flexWrap="wrap">
-          <Text {...statValueProps} color={value.isZero() ? 'neutral.900' : isPositive ? 'success.700' : 'error.700'}>
+          <Text
+            {...statValueProps}
+            color={value.isZero() ? 'text.primary' : isPositive ? 'status.success.fg' : 'status.error.fg'}
+          >
             <SensitiveValue>
               {isPositive ? '+' : ''}
               <BitcoinAmount btc={value.toFixed(8)} />
             </SensitiveValue>
           </Text>
           {usdValue !== null && (
-            <Text {...statValueProps} color="neutral.600">
+            <Text {...statValueProps} color="text.secondary">
               <SensitiveValue>
                 {usdValue >= 0 ? '+' : '−'}$
                 {Math.abs(usdValue).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -237,9 +240,9 @@ function StatMini({
           )}
         </Flex>
       ) : (
-        <Text {...statValueProps} color="neutral.900">
+        <Text {...statValueProps} color="text.primary">
           {count === null ? '—' : count}{' '}
-          <Text as="span" textStyle="text/sm" color="neutral.600">
+          <Text as="span" textStyle="text/sm" color="text.secondary">
             tracked
           </Text>
         </Text>

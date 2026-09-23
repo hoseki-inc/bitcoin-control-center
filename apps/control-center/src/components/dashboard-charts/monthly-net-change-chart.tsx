@@ -25,8 +25,8 @@ function BarTooltip({
   const isPositive = change >= 0
 
   return (
-    <Box bg="neutral.900" borderRadius="8px" px={3} py={2} shadow="lg">
-      <Text textStyle="text/xs" color="neutral.300" mb={1}>
+    <Box bg="surface.inverse" borderRadius="8px" px={3} py={2} shadow="lg">
+      <Text textStyle="text/xs" color="text.disabled" mb={1}>
         {label}
       </Text>
       <Text
@@ -34,7 +34,7 @@ function BarTooltip({
         fontWeight="medium"
         fontFamily="body"
         sx={{ fontVariantNumeric: 'tabular-nums' }}
-        color={change === 0 ? 'shades.0' : isPositive ? 'success.400' : 'error.400'}
+        color={change === 0 ? 'text.inverse' : isPositive ? 'status.success.fg' : 'status.error.fg'}
       >
         {formatAmount ? (
           formatAmount(change)
@@ -51,10 +51,10 @@ function BarTooltip({
 
 export function MonthlyNetChangeChart({ data, timezone, formatAmount }: MonthlyNetChangeChartProps): JSX.Element {
   const [success500, error500, axisColor, baselineColor] = useToken('colors', [
-    'success.500',
-    'error.500',
-    'neutral.600',
-    'neutral.200',
+    'chart.positive',
+    'chart.negative',
+    'chart.axis',
+    'chart.grid',
   ])
 
   const monthlyChanges = useMemo(() => getMonthlyChanges(data, 6, timezone), [data, timezone])
@@ -62,7 +62,7 @@ export function MonthlyNetChangeChart({ data, timezone, formatAmount }: MonthlyN
   if (monthlyChanges.length === 0) {
     return (
       <Flex h="120px" align="center" justify="center">
-        <Text color="neutral.600" textStyle="text/sm">
+        <Text color="text.secondary" textStyle="text/sm">
           Not enough data yet
         </Text>
       </Flex>
@@ -72,7 +72,7 @@ export function MonthlyNetChangeChart({ data, timezone, formatAmount }: MonthlyN
   return (
     <Box w="100%">
       {monthlyChanges.every((month) => month.change === 0) && (
-        <Text textStyle="text/sm" color="neutral.600" mb={3}>
+        <Text textStyle="text/sm" color="text.secondary" mb={3}>
           No net change in this date range.
         </Text>
       )}
@@ -97,7 +97,8 @@ export function MonthlyNetChangeChart({ data, timezone, formatAmount }: MonthlyN
                 <Cell
                   key={entry.key}
                   fill={entry.change >= 0 ? success500 : error500}
-                  stroke={entry.change >= 0 ? `${success500}66` : `${error500}59`}
+                  stroke={entry.change >= 0 ? success500 : error500}
+                  strokeOpacity={entry.change >= 0 ? 0.4 : 0.35}
                   strokeWidth={1}
                 />
               ))}

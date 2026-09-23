@@ -27,7 +27,7 @@ export function BannerContent({
       direction={{ base: 'column', md: 'row' }}
       align="center"
       gap={{ base: 8, md: 10 }}
-      bg="neutral.50"
+      bg="surface.subtle"
       borderRadius="panel"
       overflow="hidden"
       p={{ base: 6, md: compact ? 6 : 8 }}
@@ -55,7 +55,7 @@ export function BannerContent({
         >
           Your holdings, on record
         </Text>
-        <Text textStyle={compact ? 'text/sm' : 'text/md'} color="neutral.600" maxW="34ch">
+        <Text textStyle={compact ? 'text/sm' : 'text/md'} color="text.secondary" maxW="34ch">
           Download a statement of your holdings for a selected period.
         </Text>
         <Button as={Link} to="/statements/create" mt={2}>
@@ -80,7 +80,7 @@ export function BannerContent({
           mx="auto"
           mt={3}
           border="1px solid"
-          borderColor="neutral.200"
+          borderColor="border.subtle"
           borderRadius="control"
           boxShadow="0 8px 24px rgba(16, 24, 40, 0.08)"
         />

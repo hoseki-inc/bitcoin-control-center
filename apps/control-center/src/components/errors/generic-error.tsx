@@ -14,12 +14,12 @@ export function GenericError({
   return (
     <Stack align="center" gap={6} py={16}>
       <HStack>
-        <Icon as={CircleXIcon} color="red.500" height="20px" width="20px" />
-        <Text textStyle="text/lg" fontWeight="medium" color="neutral.900">
+        <Icon as={CircleXIcon} color="status.error.fg" height="20px" width="20px" />
+        <Text textStyle="text/lg" fontWeight="medium" color="text.primary">
           {title}
         </Text>
       </HStack>
-      <Text textStyle="text/md" color="neutral.900">
+      <Text textStyle="text/md" color="text.primary">
         {message}
       </Text>
       {children}

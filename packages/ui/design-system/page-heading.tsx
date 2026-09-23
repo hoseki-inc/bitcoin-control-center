@@ -8,11 +8,11 @@ export function PageHeading({
 }: { title: string; description?: ReactNode } & BoxProps): JSX.Element {
   return (
     <Box minW={0} {...props}>
-      <Text as="h1" textStyle="text/2xl" fontWeight="medium" color="neutral.900" overflowWrap="anywhere">
+      <Text as="h1" textStyle="text/2xl" fontWeight="medium" color="text.primary" overflowWrap="anywhere">
         {title}
       </Text>
       {description && (
-        <Text textStyle="text/md" color="neutral.600" mt={1} maxW="65ch">
+        <Text textStyle="text/md" color="text.secondary" mt={1} maxW="65ch">
           {description}
         </Text>
       )}

@@ -10,8 +10,8 @@ const baseStyle = definePartsStyle({
     fontWeight: 400,
     ...inputProps,
     _invalid: {
-      borderColor: 'red.500',
-      bgColor: 'red.50',
+      borderColor: 'status.error.solid',
+      bgColor: 'status.error.bg',
     },
   },
 })

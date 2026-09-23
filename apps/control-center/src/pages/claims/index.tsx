@@ -252,7 +252,7 @@ export function ClaimsPage(): JSX.Element {
                 <Text
                   textStyle={{ base: 'amount/compact', md: 'amount/primary' }}
                   fontWeight="medium"
-                  color="neutral.900"
+                  color="text.primary"
                   fontFamily="body"
                   sx={{ fontVariantNumeric: 'tabular-nums' }}
                   overflowWrap="anywhere"
@@ -263,7 +263,7 @@ export function ClaimsPage(): JSX.Element {
                 </Text>
                 <FiatAmountText
                   primary
-                  color={hasUnknownBalance || btcUsdPrice === null ? 'neutral.600' : 'success.700'}
+                  color={hasUnknownBalance || btcUsdPrice === null ? 'text.secondary' : 'status.success.fg'}
                 >
                   <SensitiveValue>
                     {hasUnknownBalance
@@ -278,7 +278,7 @@ export function ClaimsPage(): JSX.Element {
                 {claims.length > 0 && (
                   <Flex align="center" gap={1.5}>
                     {verifiedCount > 0 && <VerifiedBadge />}
-                    <Text textStyle="text/sm" color={verifiedCount > 0 ? 'success.700' : 'neutral.500'}>
+                    <Text textStyle="text/sm" color={verifiedCount > 0 ? 'status.success.fg' : 'text.tertiary'}>
                       {verifiedCount === 0
                         ? 'No verified wallets'
                         : `${verifiedCount} Verified ${verifiedCount === 1 ? 'wallet' : 'wallets'}`}
@@ -286,13 +286,13 @@ export function ClaimsPage(): JSX.Element {
                   </Flex>
                 )}
                 {connectedExchangeAccounts.length > 0 && (
-                  <Text textStyle="text/sm" color="success.700">
+                  <Text textStyle="text/sm" color="status.success.fg">
                     {connectedExchangeAccounts.length} connected{' '}
                     {connectedExchangeAccounts.length === 1 ? 'exchange' : 'exchanges'}
                   </Text>
                 )}
                 {pendingCount > 0 && (
-                  <Text textStyle="text/sm" color="warning.700">
+                  <Text textStyle="text/sm" color="status.warning.fg">
                     {pendingCount} pending
                   </Text>
                 )}
@@ -320,7 +320,7 @@ export function ClaimsPage(): JSX.Element {
         {/* Account cards */}
         {hasClaims ? (
           view === 'list' ? (
-            <Stack spacing={0} borderTop="1px solid" borderColor="neutral.200">
+            <Stack spacing={0} borderTop="1px solid" borderColor="border.subtle">
               {claims.map((claim) => (
                 <AccountRow
                   key={claim.id}
@@ -416,7 +416,7 @@ export function ClaimsPage(): JSX.Element {
         {/* Archived accounts accordion */}
         <Box id="archived" mt={6} tabIndex={-1}>
           {archivedClaimsQuery.isLoading && (
-            <Flex align="center" gap={2} color="neutral.600" role="status">
+            <Flex align="center" gap={2} color="text.secondary" role="status">
               <Spinner size="sm" />
               <Text textStyle="text/sm">Loading archived accounts…</Text>
             </Flex>
@@ -430,9 +430,9 @@ export function ClaimsPage(): JSX.Element {
           )}
           {archivedClaimsQuery.data && archivedClaimsQuery.data.length > 0 && (
             <Accordion allowToggle defaultIndex={location.hash === '#archived' ? 0 : undefined}>
-              <AccordionItem border="1px solid" borderColor="neutral.200" borderRadius="md">
-                <AccordionButton id="archived-accounts-toggle" px={4} py={3} _hover={{ bg: 'neutral.50' }}>
-                  <Text textStyle="text/sm" fontWeight="medium" color="neutral.600" flex={1} textAlign="left">
+              <AccordionItem border="1px solid" borderColor="border.subtle" borderRadius="md">
+                <AccordionButton id="archived-accounts-toggle" px={4} py={3} _hover={{ bg: 'surface.subtle' }}>
+                  <Text textStyle="text/sm" fontWeight="medium" color="text.secondary" flex={1} textAlign="left">
                     Archived ({archivedClaimsQuery.data.length})
                   </Text>
                   <AccordionIcon />
@@ -482,9 +482,9 @@ function AccountCardFrame({
     <Stack
       as={Link}
       to={to}
-      bg="shades.0"
+      bg="surface.raised"
       border="1px solid"
-      borderColor="neutral.200"
+      borderColor="border.subtle"
       borderRadius="panel"
       p={4}
       gap={3}
@@ -492,17 +492,22 @@ function AccountCardFrame({
       minH="280px"
       textAlign="center"
       transition="border-color 150ms ease, background-color 150ms ease"
-      _hover={{ borderColor: 'neutral.400', bg: 'neutral.50' }}
-      _focusVisible={{ outline: '2px solid', outlineColor: 'activeState.80', outlineOffset: '3px' }}
+      _hover={{ borderColor: 'border.strong', bg: 'surface.subtle' }}
+      _focusVisible={{ outline: '2px solid', outlineColor: 'focus.ring', outlineOffset: '3px' }}
     >
       <Flex minH={5} align="flex-start">
         <StatusBadge status={badge.status} label={badge.label} size="sm" />
       </Flex>
-      <Flex align="center" justify="center" h={12} color={badge.status === 'warning' ? 'warning.700' : 'neutral.600'}>
+      <Flex
+        align="center"
+        justify="center"
+        h={12}
+        color={badge.status === 'warning' ? 'status.warning.fg' : 'text.secondary'}
+      >
         {icon}
       </Flex>
       <Stack gap={2} flex={1} justify="center" minW={0}>
-        <Text textStyle="text/md" fontWeight="medium" color="neutral.900" overflowWrap="anywhere">
+        <Text textStyle="text/md" fontWeight="medium" color="text.primary" overflowWrap="anywhere">
           {name}
         </Text>
         <Box minW={0} sx={{ fontVariantNumeric: 'tabular-nums' }}>
@@ -525,16 +530,22 @@ function AccountCardBalance({
 }): JSX.Element {
   if (loading)
     return (
-      <Text textStyle="text/sm" color="neutral.600" role="status">
+      <Text textStyle="text/sm" color="text.secondary" role="status">
         Loading balance…
       </Text>
     )
   return (
     <Stack gap={1} align="center">
-      <Text textStyle="text/xl" fontWeight="medium" color="neutral.900" letterSpacing="-0.02em" overflowWrap="anywhere">
+      <Text
+        textStyle="text/xl"
+        fontWeight="medium"
+        color="text.primary"
+        letterSpacing="-0.02em"
+        overflowWrap="anywhere"
+      >
         <SensitiveValue>{btc === null ? '—' : <BitcoinAmount btc={btc.toFixed(8)} />}</SensitiveValue>
       </Text>
-      <FiatAmountText textAlign="center" color={btc === null || usd === null ? 'neutral.600' : 'success.700'}>
+      <FiatAmountText textAlign="center" color={btc === null || usd === null ? 'text.secondary' : 'status.success.fg'}>
         <SensitiveValue>
           {btc === null
             ? 'Balance unavailable'
@@ -553,10 +564,17 @@ function PortfolioShare({ balanceSats, totalBtcSats }: { balanceSats: number; to
 
   return (
     <Flex align="center" gap={2.5} pt={1}>
-      <Box flex={1} h="3px" bg="neutral.100" borderRadius="full" overflow="hidden">
-        <Box h="full" w={`${fill}%`} bg="neutral.900" borderRadius="full" opacity={0.2} transition="width 150ms ease" />
+      <Box flex={1} h="3px" bg="surface.muted" borderRadius="full" overflow="hidden">
+        <Box
+          h="full"
+          w={`${fill}%`}
+          bg="surface.inverse"
+          borderRadius="full"
+          opacity={0.2}
+          transition="width 150ms ease"
+        />
       </Box>
-      <Text textStyle="text/xs" color="neutral.500" whiteSpace="nowrap" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+      <Text textStyle="text/xs" color="text.tertiary" whiteSpace="nowrap" sx={{ fontVariantNumeric: 'tabular-nums' }}>
         {percentage.toFixed(1)}%
       </Text>
     </Flex>
@@ -596,7 +614,7 @@ function EmptyHoldings({ onAdd }: { onAdd: () => void }): JSX.Element {
   return (
     <EmptyView
       border="1px solid"
-      borderColor="neutral.200"
+      borderColor="border.subtle"
       borderRadius="panel"
       bgGradient="linear(to-b, neutral.50, white)"
       title="Your Bitcoin, in one place"
@@ -700,7 +718,7 @@ function ManualAccountCard({
 }
 
 function VerifiedBadge(): JSX.Element {
-  return <CheckCircleFilledIcon boxSize="16px" color="success.700" color2="white" aria-hidden="true" />
+  return <CheckCircleFilledIcon boxSize="16px" color="status.success.fg" color2="text.inverse" aria-hidden="true" />
 }
 
 interface ArchivedClaimRowProps {
@@ -725,17 +743,17 @@ function ArchivedClaimRow({ claim, onRestore, isRestoring, isRestoreDisabled }: 
         py={2}
         borderRadius="md"
         border="1px solid"
-        borderColor="neutral.200"
-        bg="neutral.50"
+        borderColor="border.subtle"
+        bg="surface.subtle"
       >
         <Flex align="center" gap={3} minW={0}>
           <ClaimCardKeystores keystores={cardProps.keystores} alt={claim.displayName} status={cardProps.status} />
-          <Text textStyle="text/sm" fontWeight="medium" color="neutral.900" isTruncated>
+          <Text textStyle="text/sm" fontWeight="medium" color="text.primary" isTruncated>
             {claim.displayName ?? claim.officialName}
           </Text>
         </Flex>
         <HStack gap={2} justify="flex-end" flexShrink={0}>
-          <Button color="error.600" variant="ghost" size="sm" onClick={onOpen} isDisabled={isRestoreDisabled}>
+          <Button color="status.error.fg" variant="ghost" size="sm" onClick={onOpen} isDisabled={isRestoreDisabled}>
             Delete Permanently
           </Button>
           <Button
@@ -778,18 +796,18 @@ function AccountRow({
       py={5}
       px={3}
       borderBottom="1px solid"
-      borderColor="neutral.200"
+      borderColor="border.subtle"
       minW={0}
       flexWrap="wrap"
       transition="background-color 150ms ease"
-      _hover={{ bg: 'neutral.50' }}
-      _focusVisible={{ outline: '2px solid', outlineColor: 'activeState.80', outlineOffset: '2px' }}
+      _hover={{ bg: 'surface.subtle' }}
+      _focusVisible={{ outline: '2px solid', outlineColor: 'focus.ring', outlineOffset: '2px' }}
     >
       <Box flex="1" minW="140px">
         <Text textStyle="text/md" fontWeight="medium" overflowWrap="anywhere">
           {name}
         </Text>
-        <Text textStyle="text/sm" color="neutral.600" mt={1}>
+        <Text textStyle="text/sm" color="text.secondary" mt={1}>
           {detail}
         </Text>
       </Box>
@@ -797,7 +815,7 @@ function AccountRow({
         <Text textStyle="text/lg" fontWeight="medium">
           <SensitiveValue>{btc === null ? '—' : <BitcoinAmount btc={btc.toFixed(8)} />}</SensitiveValue>
         </Text>
-        <FiatAmountText mt={1} color={btc === null || btcPrice === null ? 'neutral.600' : 'success.700'}>
+        <FiatAmountText mt={1} color={btc === null || btcPrice === null ? 'text.secondary' : 'status.success.fg'}>
           <SensitiveValue>
             {btc === null || btcPrice === null
               ? 'USD unavailable'
@@ -824,19 +842,19 @@ function AddAccountTile({ view }: { view: 'list' | 'cards' }): JSX.Element {
       textAlign={view === 'cards' ? 'center' : 'left'}
       minH={view === 'cards' ? '164px' : '104px'}
       border="1px dashed"
-      borderColor="neutral.400"
+      borderColor="border.strong"
       borderRadius="panel"
       transition="border-color 150ms ease, background-color 150ms ease"
-      color="neutral.500"
-      _hover={{ bg: 'neutral.50', borderColor: 'neutral.600' }}
-      _focusVisible={{ outline: '2px solid', outlineColor: 'activeState.80', outlineOffset: '2px' }}
+      color="text.tertiary"
+      _hover={{ bg: 'surface.subtle', borderColor: 'border.strong' }}
+      _focusVisible={{ outline: '2px solid', outlineColor: 'focus.ring', outlineOffset: '2px' }}
     >
       <Plus size={24} aria-hidden="true" style={{ flexShrink: 0 }} />
       <Box minW={0}>
-        <Text textStyle="text/md" fontWeight="medium" color="neutral.900">
+        <Text textStyle="text/md" fontWeight="medium" color="text.primary">
           Add account
         </Text>
-        <Text textStyle="text/sm" color="neutral.600" mt={1} maxW={view === 'cards' ? '28ch' : undefined}>
+        <Text textStyle="text/sm" color="text.secondary" mt={1} maxW={view === 'cards' ? '28ch' : undefined}>
           Connect a wallet or exchange, or track holdings manually.
         </Text>
       </Box>

@@ -108,10 +108,10 @@ function parseCsvLine(line: string): string[] {
 }
 
 const TX_TYPE_COLORS: Record<string, string> = {
-  purchase: 'success.600',
-  receive: 'success.600',
-  send: 'error.600',
-  sale: 'error.600',
+  purchase: 'status.success.fg',
+  receive: 'status.success.fg',
+  send: 'status.error.fg',
+  sale: 'status.error.fg',
 }
 
 const TX_TYPE_LABELS: Record<string, string> = {
@@ -260,7 +260,7 @@ export function StrikeAccountDetailsPage(): JSX.Element {
         <TopBar.Item as={Link} to="/accounts">
           Back to Accounts
         </TopBar.Item>
-        <TopBar.Item as="button" color="error.600" onClick={handleDelete}>
+        <TopBar.Item as="button" color="status.error.fg" onClick={handleDelete}>
           {isDeleting ? 'Removing...' : 'Remove Account'}
         </TopBar.Item>
       </TopBar>
@@ -272,11 +272,11 @@ export function StrikeAccountDetailsPage(): JSX.Element {
             {account.displayName}
           </Text>
           <HStack spacing={1} flexWrap="wrap">
-            <Box w={2} h={2} bg="success.600" borderRadius="full" />
-            <Text textStyle="text/xs" color="neutral.600">
+            <Box w={2} h={2} bg="status.success.solid" borderRadius="full" />
+            <Text textStyle="text/xs" color="text.secondary">
               First Connected
             </Text>
-            <Text textStyle="text/xs" color="neutral.900" fontWeight="medium">
+            <Text textStyle="text/xs" color="text.primary" fontWeight="medium">
               {format(new Date(account.createdAt), 'MMMM do, yyyy')}
             </Text>
           </HStack>
@@ -300,15 +300,15 @@ export function StrikeAccountDetailsPage(): JSX.Element {
           <HStack spacing={0} gap={4} mb={4} w="100%" alignItems="flex-start" flexWrap="wrap">
             {/* Amount */}
             <Box w={{ base: 'full', sm: 'calc(50% - 8px)' }} minW={0} overflowWrap="anywhere">
-              <Text textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={1}>
+              <Text textStyle="text/sm" color="text.secondary" fontWeight="medium" mb={1}>
                 Amount
               </Text>
               {account.balance === null ? (
-                <Text textStyle="label/sm" color="neutral.400" fontWeight="medium">
+                <Text textStyle="label/sm" color="text.tertiary" fontWeight="medium">
                   —
                 </Text>
               ) : (
-                <Text textStyle="label/sm" color="neutral.900" fontWeight="medium">
+                <Text textStyle="label/sm" color="text.primary" fontWeight="medium">
                   <SensitiveValue>
                     <BitcoinAmount btc={btcAmount} />
                   </SensitiveValue>
@@ -318,7 +318,7 @@ export function StrikeAccountDetailsPage(): JSX.Element {
 
             {/* Status */}
             <Box w={{ base: 'full', sm: 'calc(50% - 8px)' }} minW={0} overflowWrap="anywhere">
-              <Text textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={1}>
+              <Text textStyle="text/sm" color="text.secondary" fontWeight="medium" mb={1}>
                 Status
               </Text>
               {needsReconnect ? (
@@ -330,10 +330,10 @@ export function StrikeAccountDetailsPage(): JSX.Element {
 
             {/* Account Type */}
             <Box w={{ base: 'full', sm: 'calc(50% - 8px)' }} minW={0} overflowWrap="anywhere">
-              <Text textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={1}>
+              <Text textStyle="text/sm" color="text.secondary" fontWeight="medium" mb={1}>
                 Account Type
               </Text>
-              <Text textStyle="label/sm" color="neutral.900" fontWeight="medium">
+              <Text textStyle="label/sm" color="text.primary" fontWeight="medium">
                 Custodial
               </Text>
             </Box>
@@ -345,10 +345,10 @@ export function StrikeAccountDetailsPage(): JSX.Element {
               overflowWrap="anywhere"
               textAlign={{ base: 'left', sm: 'right' }}
             >
-              <Text textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={1}>
+              <Text textStyle="text/sm" color="text.secondary" fontWeight="medium" mb={1}>
                 Date Added
               </Text>
-              <Text textStyle="label/sm" color="neutral.900" fontWeight="medium">
+              <Text textStyle="label/sm" color="text.primary" fontWeight="medium">
                 {format(new Date(account.createdAt), 'MMMM do, yyyy')}
               </Text>
             </Box>
@@ -381,7 +381,7 @@ export function StrikeAccountDetailsPage(): JSX.Element {
           <Heading textStyle="text/lg" fontWeight="semibold" mb={1}>
             Account Statements
           </Heading>
-          <Text textStyle="text/xs" color="neutral.500" mb={4}>
+          <Text textStyle="text/xs" color="text.tertiary" mb={4}>
             Import your monthly Strike account statements (CSV) to add transaction detail. Any data imported here will
             appear on your Bitcoin Control Center statements.
           </Text>
@@ -410,12 +410,12 @@ export function StrikeAccountDetailsPage(): JSX.Element {
                     px={4}
                     py={2.5}
                     borderWidth="1px"
-                    borderColor={selectedMonth === month ? 'neutral.900' : 'neutral.200'}
+                    borderColor={selectedMonth === month ? 'border.inverse' : 'border.subtle'}
                     borderRadius="md"
                     cursor="pointer"
-                    bg={selectedMonth === month ? 'neutral.50' : 'shades.0'}
+                    bg={selectedMonth === month ? 'surface.subtle' : 'surface.raised'}
                     onClick={() => setSelectedMonth(selectedMonth === month ? null : month)}
-                    _hover={{ borderColor: 'neutral.400' }}
+                    _hover={{ borderColor: 'border.strong' }}
                     transition="all 0.15s ease"
                   >
                     <Text textStyle="text/sm" fontWeight="medium">
@@ -424,7 +424,7 @@ export function StrikeAccountDetailsPage(): JSX.Element {
                     <Button
                       size="xs"
                       variant="ghost"
-                      color="error.500"
+                      color="status.error.fg"
                       onClick={(e) => {
                         e.stopPropagation()
                         handleDeleteMonth(month)
@@ -444,7 +444,7 @@ export function StrikeAccountDetailsPage(): JSX.Element {
               <Text textStyle="label/sm" fontWeight="semibold" mb={2}>
                 {formatMonth(selectedMonth)} — {txQuery.data.length} transaction{txQuery.data.length !== 1 ? 's' : ''}
               </Text>
-              <Box borderWidth="1px" borderColor="neutral.200" borderRadius="md" overflow="hidden">
+              <Box borderWidth="1px" borderColor="border.subtle" borderRadius="md" overflow="hidden">
                 <Box overflowX="auto">
                   <Table size="sm">
                     <Thead>
@@ -469,7 +469,7 @@ export function StrikeAccountDetailsPage(): JSX.Element {
                             <Text
                               textStyle="text/xs"
                               fontWeight="medium"
-                              color={TX_TYPE_COLORS[tx.type] ?? 'neutral.600'}
+                              color={TX_TYPE_COLORS[tx.type] ?? 'text.secondary'}
                             >
                               {TX_TYPE_LABELS[tx.type] ?? tx.type}
                             </Text>
@@ -483,21 +483,21 @@ export function StrikeAccountDetailsPage(): JSX.Element {
                             </SensitiveValue>
                           </Td>
                           <Td isNumeric>
-                            <Text textStyle="text/xs" fontFamily="mono" color="neutral.500">
+                            <Text textStyle="text/xs" fontFamily="mono" color="text.tertiary">
                               <SensitiveValue>
                                 {tx.amountUsd ? `$${Math.abs(Number(tx.amountUsd)).toFixed(2)}` : '—'}
                               </SensitiveValue>
                             </Text>
                           </Td>
                           <Td isNumeric>
-                            <Text textStyle="text/xs" color="neutral.500">
+                            <Text textStyle="text/xs" color="text.tertiary">
                               <SensitiveValue>
                                 {tx.exchangeRate ? `$${Number(tx.exchangeRate).toLocaleString()}` : '—'}
                               </SensitiveValue>
                             </Text>
                           </Td>
                           <Td>
-                            <Text textStyle="text/xs" color="neutral.500" maxW="200px" isTruncated>
+                            <Text textStyle="text/xs" color="text.tertiary" maxW="200px" isTruncated>
                               {tx.description || tx.txHash ? truncateHash(tx.txHash) : '—'}
                             </Text>
                           </Td>
@@ -565,18 +565,18 @@ function CsvDropZone({
       px={4}
       borderWidth="2px"
       borderStyle="dashed"
-      borderColor={isDragging ? 'primary.400' : 'neutral.200'}
+      borderColor={isDragging ? 'primary.400' : 'border.subtle'}
       borderRadius="lg"
-      bg={isDragging ? 'primary.50' : 'neutral.25'}
+      bg={isDragging ? 'accent.subtle' : 'surface.subtle'}
       cursor="pointer"
       transition="all 0.15s ease"
-      _hover={{ borderColor: 'neutral.400', bg: 'neutral.50' }}
+      _hover={{ borderColor: 'border.strong', bg: 'surface.subtle' }}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
       onClick={() => fileInputRef.current?.click()}
     >
-      <Icon viewBox="0 0 24 24" boxSize="28px" color="neutral.400" mb={2}>
+      <Icon viewBox="0 0 24 24" boxSize="28px" color="text.tertiary" mb={2}>
         <path
           d="M12 16V4m0 0l-4 4m4-4l4 4M4 14v4a2 2 0 002 2h12a2 2 0 002-2v-4"
           stroke="currentColor"
@@ -589,16 +589,16 @@ function CsvDropZone({
       {isImporting ? (
         <HStack spacing={2}>
           <Spinner size="sm" />
-          <Text textStyle="text/sm" color="neutral.600">
+          <Text textStyle="text/sm" color="text.secondary">
             Importing...
           </Text>
         </HStack>
       ) : (
         <>
-          <Text textStyle="text/sm" fontWeight="medium" color="neutral.700">
+          <Text textStyle="text/sm" fontWeight="medium" color="text.secondary">
             Drop Strike CSV here or click to browse
           </Text>
-          <Text textStyle="text/xs" color="neutral.400" mt={0.5}>
+          <Text textStyle="text/xs" color="text.tertiary" mt={0.5}>
             Exported from Strike → Account → Statements
           </Text>
         </>

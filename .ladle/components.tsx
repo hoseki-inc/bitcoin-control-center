@@ -1,7 +1,7 @@
-import { ChakraProvider } from '@chakra-ui/react'
+import { ChakraProvider, useColorMode } from '@chakra-ui/react'
 import type { GlobalProvider } from '@ladle/react'
 import { Buffer } from 'buffer'
-import React from 'react'
+import React, { useEffect } from 'react'
 import { Toaster } from 'sonner'
 import { theme } from '../packages/ui/design-system'
 import '../packages/ui/design-system/fonts/geist/index.css'
@@ -15,9 +15,21 @@ if (!window.Buffer) {
   window.Buffer = Buffer
 }
 
+// Follows Ladle's theme switcher so every story can be checked in light and dark glass.
+function ColorModeFromLadle({ theme: ladleTheme }: { theme: string }): null {
+  const { setColorMode } = useColorMode()
+  useEffect(() => {
+    const dark =
+      ladleTheme === 'dark' || (ladleTheme === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches)
+    setColorMode(dark ? 'dark' : 'light')
+  }, [ladleTheme, setColorMode])
+  return null
+}
+
 export const Provider: GlobalProvider = ({ children, globalState, storyMeta }) => (
   <ChakraProvider theme={theme}>
-    <Toaster position="top-right" richColors />
+    <ColorModeFromLadle theme={globalState.theme} />
+    <Toaster position="top-right" richColors theme={globalState.theme === 'dark' ? 'dark' : 'light'} />
     {children}
   </ChakraProvider>
 )

@@ -60,7 +60,7 @@ export function ClaimVerificationReceipt({ shouldSetTimeout, claim }: ClaimVerif
                 maxWidth="364px"
               />
             )}
-            <Text textStyle="text/md" color="neutral.900" textAlign="center">
+            <Text textStyle="text/md" color="text.primary" textAlign="center">
               Your {claim?.displayName ? `"${claim.displayName}" account` : `account`} is now verified and ready to
               include in ownership statements.
             </Text>

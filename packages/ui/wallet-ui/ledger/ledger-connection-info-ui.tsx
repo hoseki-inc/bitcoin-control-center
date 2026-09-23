@@ -20,18 +20,18 @@ export function LedgerConnectionInfoUI({
 
       <WalletAnimation animation="ledgerPlugIn" />
 
-      <Text as="h2" textStyle="text/2xl" color="neutral.900" fontWeight="medium">
+      <Text as="h2" textStyle="text/2xl" color="text.primary" fontWeight="medium">
         Verifying Ownership With Your Ledger
       </Text>
 
-      <Text textStyle="text/md" color="neutral.900">
+      <Text textStyle="text/md" color="text.primary">
         To start verifying ownership, connect your Ledger via USB, unlock it with your PIN, and open the Bitcoin app.
       </Text>
-      <Text textStyle="text/md" color="neutral.900">
+      <Text textStyle="text/md" color="text.primary">
         We'll guide you through each step—just follow the on-screen instructions. Your Ledger will verify ownership
         while your keys remain safely stored on your device.
       </Text>
-      <Text textStyle="text/md" color="neutral.900">
+      <Text textStyle="text/md" color="text.primary">
         Once your Ledger is connected and the Bitcoin app is open, click 'Next'. If prompted, please accept any browser
         notifications allowing Bitcoin Control Center to securely connect with your device.
       </Text>

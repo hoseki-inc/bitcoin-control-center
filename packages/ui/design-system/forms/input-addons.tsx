@@ -17,8 +17,8 @@ export function CopyButtonAddon({ fieldName, value }: { fieldName: string; value
   return (
     <InputRightAddon
       border="1px solid"
-      borderColor="neutral.50"
-      bgColor="neutral.50"
+      borderColor="border.subtle"
+      bgColor="surface.subtle"
       borderLeftWidth={0}
       borderTopRightRadius={4}
       borderBottomRightRadius={4}
@@ -34,8 +34,8 @@ export function EditButtonAddon({ onClick }: { onClick: () => void }): JSX.Eleme
   return (
     <InputRightAddon
       border="1px solid"
-      borderColor="neutral.50"
-      bgColor="neutral.50"
+      borderColor="border.subtle"
+      bgColor="surface.subtle"
       borderLeftWidth={0}
       borderTopRightRadius={4}
       borderBottomRightRadius={4}

@@ -35,14 +35,14 @@ export function BitcoinPriceChart(): JSX.Element {
   const change = latest && first ? ((latest.value - first.value) / first.value) * 100 : null
 
   return (
-    <Box border="1px solid" borderColor="neutral.200" borderRadius="panel" pt={{ base: 5, md: 6 }} overflow="hidden">
+    <Box border="1px solid" borderColor="border.subtle" borderRadius="panel" pt={{ base: 5, md: 6 }} overflow="hidden">
       <Flex px={{ base: 5, md: 6 }} justify="space-between" align="start" gap={4} flexWrap="wrap">
         <Box>
           <DashboardCardTitle>Bitcoin Price</DashboardCardTitle>
           <Flex align="baseline" gap={3} mt={1} flexWrap="wrap">
             <DashboardAmount>{latest ? usd(latest.value) : '—'}</DashboardAmount>
             {change !== null && (
-              <Text textStyle="text/sm" color={change >= 0 ? 'success.700' : 'error.700'}>
+              <Text textStyle="text/sm" color={change >= 0 ? 'status.success.fg' : 'status.error.fg'}>
                 {change >= 0 ? '+' : ''}
                 {change.toFixed(2)}% · {range.label.toLowerCase()}
               </Text>
@@ -54,7 +54,7 @@ export function BitcoinPriceChart(): JSX.Element {
           aria-label="Bitcoin price time range"
           gap={1}
           flexWrap="wrap"
-          bg="neutral.50"
+          bg="surface.subtle"
           p={1}
           borderRadius="control"
         >
@@ -67,8 +67,8 @@ export function BitcoinPriceChart(): JSX.Element {
               px={3}
               aria-label={option.description}
               aria-pressed={range.days === option.days}
-              bg={range.days === option.days ? 'neutral.200' : 'transparent'}
-              color={range.days === option.days ? 'neutral.900' : 'neutral.600'}
+              bg={range.days === option.days ? 'surface.emphasis' : 'transparent'}
+              color={range.days === option.days ? 'text.primary' : 'text.secondary'}
               onClick={() => setRange(option)}
             >
               {option.label}
@@ -101,7 +101,7 @@ export function BitcoinPriceChart(): JSX.Element {
       </Box>
       <Flex
         borderTop="1px solid"
-        borderColor="neutral.200"
+        borderColor="border.subtle"
         px={{ base: 5, md: 6 }}
         py={3}
         justify="space-between"
@@ -109,7 +109,7 @@ export function BitcoinPriceChart(): JSX.Element {
         gap={3}
         flexWrap="wrap"
       >
-        <Text textStyle="text/xs" color="neutral.600" role="status">
+        <Text textStyle="text/xs" color="text.secondary" role="status">
           {latest
             ? `${range.days === 1 ? 'Intraday' : range.days <= 30 ? 'Hourly' : 'Daily'} prices from CoinGecko · Updated ${new Date(latest.time * 1000).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`
             : query.isLoading

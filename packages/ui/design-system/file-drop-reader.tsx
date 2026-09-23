@@ -147,12 +147,12 @@ export function FileDropReader<T, E extends ReadonlyArray<FileExtension>>({
         cursor="pointer"
         borderRadius="10px"
         border={status === 'valid' ? '1.5px solid' : '1.5px dashed'}
-        borderColor={isDragging ? 'primary.500' : 'neutral.200'}
+        borderColor={isDragging ? 'primary.500' : 'border.subtle'}
         transition="border-color 0.3s ease"
       >
         {status === 'ready' && (
           <>
-            <CloudUploadIcon color="#64748B" width="32px" height="32px" />
+            <CloudUploadIcon color="var(--hoseki-colors-text-tertiary)" width="32px" height="32px" />
             <Text textStyle="label/lg" fontWeight="semibold">
               {readyText}
             </Text>
@@ -160,8 +160,8 @@ export function FileDropReader<T, E extends ReadonlyArray<FileExtension>>({
         )}
         {status === 'invalid' && (
           <>
-            <RefreshCwIcon color="#64748B" width="32px" height="32px" />
-            <Text textStyle="label/lg" fontWeight="semibold" color="red.500">
+            <RefreshCwIcon color="var(--hoseki-colors-text-tertiary)" width="32px" height="32px" />
+            <Text textStyle="label/lg" fontWeight="semibold" color="status.error.fg">
               {invalidText}
             </Text>
           </>

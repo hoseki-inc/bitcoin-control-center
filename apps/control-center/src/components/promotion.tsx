@@ -12,7 +12,7 @@ export function Promotion({
   imageAlt: string
 }): JSX.Element {
   return (
-    <HStack align="flex-start" border="2px solid" borderColor="gray.200" borderRadius={8} p={4} mb={8}>
+    <HStack align="flex-start" border="2px solid" borderColor="border.subtle" borderRadius={8} p={4} mb={8}>
       <Box flexGrow={1}>
         <Heading size="md" mb={4}>
           {title}

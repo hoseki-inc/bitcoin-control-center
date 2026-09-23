@@ -98,7 +98,7 @@ export function ConnectCoinbase(): JSX.Element {
           content={
             <VStack spacing={8}>
               <img src="/images/exchanges/coinbase.svg" alt="Coinbase" style={{ height: '64px' }} />
-              <Text textStyle="text/2xl" color="neutral.900" textAlign="center">
+              <Text textStyle="text/2xl" color="text.primary" textAlign="center">
                 Your Coinbase account &ldquo;{connectedAccount.displayName}&rdquo; is now{' '}
                 {isReconnect ? 'reconnected' : 'connected'}.
               </Text>
@@ -126,18 +126,18 @@ export function ConnectCoinbase(): JSX.Element {
           {/* Header */}
           <Flex align="center" gap={3}>
             <img src="/images/exchanges/coinbase.svg" alt="Coinbase" style={{ height: '32px' }} />
-            <Heading as="h1" textStyle="text/2xl" fontWeight="bold" color="neutral.900">
+            <Heading as="h1" textStyle="text/2xl" fontWeight="bold" color="text.primary">
               {isReconnect ? 'Reconnect Coinbase Account' : 'Connect Coinbase Account'}
             </Heading>
           </Flex>
-          <Text textStyle="text/md" color="neutral.600">
+          <Text textStyle="text/md" color="text.secondary">
             Enter your Coinbase CDP API credentials to import your Bitcoin balance. Only read-only access is required.
           </Text>
 
           {/* Form fields */}
           <Stack gap={4}>
             <FormControl isInvalid={!!errors.apiKey}>
-              <FormLabel textStyle="text/sm" color="neutral.600">
+              <FormLabel textStyle="text/sm" color="text.secondary">
                 API Key Name
               </FormLabel>
               <Input {...register('apiKey')} placeholder="e.g. organizations/abc123/apiKeys/xyz" />
@@ -145,7 +145,7 @@ export function ConnectCoinbase(): JSX.Element {
             </FormControl>
 
             <FormControl isInvalid={!!errors.secretKey}>
-              <FormLabel textStyle="text/sm" color="neutral.600">
+              <FormLabel textStyle="text/sm" color="text.secondary">
                 Private Key (PEM format)
               </FormLabel>
               <Textarea
@@ -160,19 +160,19 @@ export function ConnectCoinbase(): JSX.Element {
           </Stack>
 
           {/* Instructions */}
-          <Box bg="neutral.50" borderRadius="md" p={4}>
-            <Text textStyle="text/sm" fontWeight="semibold" color="neutral.900" mb={2}>
+          <Box bg="surface.subtle" borderRadius="md" p={4}>
+            <Text textStyle="text/sm" fontWeight="semibold" color="text.primary" mb={2}>
               How to create a Coinbase API key
             </Text>
             <Stack gap={2} as="ol" listStyleType="decimal" pl={4}>
-              <Text as="li" textStyle="text/sm" color="neutral.700">
+              <Text as="li" textStyle="text/sm" color="text.secondary">
                 Go to{' '}
                 <Text
                   as="a"
                   href="https://www.coinbase.com/settings/api"
                   target="_blank"
                   rel="noopener noreferrer"
-                  color="neutral.900"
+                  color="text.primary"
                   textDecoration="underline"
                 >
                   Coinbase API Settings
@@ -180,11 +180,11 @@ export function ConnectCoinbase(): JSX.Element {
                 , sign in, and click &ldquo;Create API Key&rdquo;. Give it a nickname like &ldquo;Bitcoin Control
                 Center&rdquo;.
               </Text>
-              <Text as="li" textStyle="text/sm" color="neutral.700">
+              <Text as="li" textStyle="text/sm" color="text.secondary">
                 Under Advanced, select &ldquo;ECDSA (Legacy SDKs)&rdquo;. Under Permissions, check only &ldquo;View
                 (Read-Only)&rdquo;; leave Trade and Transfer unchecked.
               </Text>
-              <Text as="li" textStyle="text/sm" color="neutral.700">
+              <Text as="li" textStyle="text/sm" color="text.secondary">
                 Click &ldquo;Create &amp; Download&rdquo;. Open the downloaded file and copy both the API Key Name and
                 the entire PEM private key, then paste them above.
               </Text>
@@ -192,11 +192,11 @@ export function ConnectCoinbase(): JSX.Element {
           </Box>
 
           {/* Info box */}
-          <Box border="1px solid" borderColor="neutral.200" borderRadius="md" p={4} bg="shades.0">
-            <Text textStyle="text/sm" fontWeight="semibold" color="neutral.900" mb={1}>
+          <Box border="1px solid" borderColor="border.subtle" borderRadius="md" p={4} bg="surface.raised">
+            <Text textStyle="text/sm" fontWeight="semibold" color="text.primary" mb={1}>
               What is being accessed?
             </Text>
-            <Text textStyle="text/sm" color="neutral.600">
+            <Text textStyle="text/sm" color="text.secondary">
               Only your Bitcoin balance is read. No trading or withdrawal permissions are required or granted.
             </Text>
           </Box>

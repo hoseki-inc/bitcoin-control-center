@@ -12,7 +12,7 @@ export function StatementsTable({ statements }: { statements: StatementDto[] }):
       role="region"
       aria-label="Statements table"
       border="1px solid"
-      borderColor="neutral.200"
+      borderColor="border.subtle"
       borderRadius="panel"
     >
       <Table variant="data">
@@ -28,15 +28,15 @@ export function StatementsTable({ statements }: { statements: StatementDto[] }):
           {statements.map((statement) => (
             <Tr key={statement.id}>
               <Td>
-                <Text color="neutral.900" fontWeight="medium">
+                <Text color="text.primary" fontWeight="medium">
                   {format(statement.createdAt, 'dd/MM/yyyy')}
                 </Text>
-                <Text color="neutral.600">{format(statement.createdAt, 'h:mm a')}</Text>
+                <Text color="text.secondary">{format(statement.createdAt, 'h:mm a')}</Text>
               </Td>
               <Td>
                 <Text
                   textStyle="text/sm"
-                  color="neutral.700"
+                  color="text.secondary"
                   fontWeight="medium"
                   whiteSpace="normal"
                   minW="120px"

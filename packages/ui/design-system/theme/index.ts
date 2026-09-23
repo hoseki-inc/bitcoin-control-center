@@ -3,12 +3,15 @@ import { accordionTheme } from './accordion'
 import { alertTheme } from './alert-theme'
 import { buttonTheme } from './button-theme'
 import { formLabelTheme } from './form-label-theme'
+import { layerStyles, materialGlobalStyles } from './foundation/materials'
+import { semanticTokens } from './foundation/semantic-tokens'
 import { tokens } from './foundation/tokens'
 import { chakraTextStyles } from './foundation/typography'
 import { inputTheme } from './input-theme'
 import { menuTheme } from './menu'
 import { modalTheme } from './modal'
 import { pinInputTheme } from './pin-input-theme'
+import { popoverTheme } from './popover'
 import { progressTheme } from './progress-theme'
 import { tableTheme } from './table'
 import { textareaTheme } from './textarea-theme'
@@ -19,16 +22,17 @@ const { Drawer, FormError, Select } = chakraTheme.components
 export const theme = extendBaseTheme({
   styles: {
     global: {
+      ...materialGlobalStyles,
       html: { scrollbarGutter: 'stable' },
       body: {
         textStyle: 'text/sm',
-        color: 'neutral.900',
-        bg: 'white',
+        color: 'text.primary',
+        bg: 'surface.base',
         WebkitFontSmoothing: 'antialiased',
         MozOsxFontSmoothing: 'grayscale',
       },
-      '::selection': { bg: 'secondary.400', color: 'neutral.900' },
-      ':focus-visible': { outline: '2px solid', outlineColor: 'activeState.80', outlineOffset: '3px' },
+      '::selection': { bg: 'accent.solid', color: 'accent.fg' },
+      ':focus-visible': { outline: '2px solid', outlineColor: 'focus.ring', outlineOffset: '3px' },
       '@media (prefers-reduced-motion: reduce)': {
         '*, *::before, *::after': {
           animationDuration: '0.01ms !important',
@@ -41,10 +45,13 @@ export const theme = extendBaseTheme({
   },
   textStyles: chakraTextStyles,
   config: {
+    // The app's appearance store resolves system/light/dark and drives Chakra's mode.
     useSystemColorMode: false,
     initialColorMode: 'light',
     cssVarPrefix: 'hoseki',
   },
+  semanticTokens,
+  layerStyles,
   fonts: {
     heading: `'Geist', sans-serif`,
     body: `'Geist', sans-serif`,
@@ -60,7 +67,7 @@ export const theme = extendBaseTheme({
     Button: buttonTheme,
     Heading: {
       ...chakraTheme.components.Heading,
-      baseStyle: { ...chakraTheme.components.Heading.baseStyle, fontWeight: 'medium', color: 'neutral.900' },
+      baseStyle: { ...chakraTheme.components.Heading.baseStyle, fontWeight: 'medium', color: 'text.primary' },
     },
     Drawer,
     FormError,
@@ -68,6 +75,7 @@ export const theme = extendBaseTheme({
     Input: inputTheme,
     Menu: menuTheme,
     PinInput: pinInputTheme,
+    Popover: popoverTheme,
     Progress: progressTheme,
     Modal: modalTheme,
     Select: {

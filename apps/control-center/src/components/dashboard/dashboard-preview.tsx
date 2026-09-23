@@ -30,7 +30,7 @@ export function DashboardPreview({
             <Text as="h2" textStyle="text/xl" fontWeight="medium">
               Your Bitcoin, in one place
             </Text>
-            <Text textStyle="text/md" color="neutral.600" mt={2}>
+            <Text textStyle="text/md" color="text.secondary" mt={2}>
               Add your first wallet, exchange, or manually tracked holding.
               <br />
               Your wallets remain watch-only.
@@ -41,7 +41,13 @@ export function DashboardPreview({
           </Button>
         </Flex>
       )}
-      <Box border="1px solid" borderColor="neutral.200" borderRadius="panel" p={{ base: 5, md: 6 }} aria-busy={loading}>
+      <Box
+        border="1px solid"
+        borderColor="border.subtle"
+        borderRadius="panel"
+        p={{ base: 5, md: 6 }}
+        aria-busy={loading}
+      >
         <DashboardCardTitle>Total Bitcoin</DashboardCardTitle>
         <Box mt={1}>
           <DashboardAmount primary>
@@ -59,14 +65,14 @@ export function DashboardPreview({
           mt={6}
           pt={5}
           borderTop="1px solid"
-          borderColor="neutral.200"
+          borderColor="border.subtle"
         >
           {[
             ['Accounts', '0'],
             ['30d Change', zeroBalance],
           ].map(([label, value]) => (
             <Box key={label} minW={0}>
-              <Text textStyle="text/sm" color="neutral.600" mb={1}>
+              <Text textStyle="text/sm" color="text.secondary" mb={1}>
                 {label}
               </Text>
               <Text textStyle="text/md" fontWeight="medium" sx={{ fontVariantNumeric: 'tabular-nums' }}>

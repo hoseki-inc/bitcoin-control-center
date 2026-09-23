@@ -63,15 +63,15 @@ export function PortfolioDemo(): JSX.Element {
         flexWrap="wrap"
         pb={5}
         borderBottom="1px solid"
-        borderColor="neutral.200"
+        borderColor="border.subtle"
       >
-        <Text textStyle="text/sm" color="neutral.600">
+        <Text textStyle="text/sm" color="text.secondary">
           Sample portfolio
         </Text>
       </Flex>
       <Flex justify="space-between" align="end" gap={5} flexWrap="wrap" pt={6}>
         <Box>
-          <Text textStyle="text/sm" color="neutral.600">
+          <Text textStyle="text/sm" color="text.secondary">
             Bitcoin balance
           </Text>
           <Text
@@ -95,7 +95,7 @@ export function PortfolioDemo(): JSX.Element {
               variant="ghost"
               minH="44px"
               aria-pressed={range === days}
-              bg={range === days ? 'neutral.100' : 'transparent'}
+              bg={range === days ? 'surface.muted' : 'transparent'}
               onClick={() => setDays(range)}
             >
               {range === 365 ? '1Y' : `${range}D`}
@@ -103,11 +103,11 @@ export function PortfolioDemo(): JSX.Element {
           ))}
         </Flex>
       </Flex>
-      <Text textStyle="text/sm" color={change >= 0 ? 'success.700' : 'error.700'} mt={3}>
+      <Text textStyle="text/sm" color={change >= 0 ? 'status.success.fg' : 'status.error.fg'} mt={3}>
         {change >= 0 ? '+' : ''}
         {btc(change)} ({change >= 0 ? '+' : ''}
         {first ? ((change / first) * 100).toFixed(1) : '0.0'}%)
-        <Text as="span" color="neutral.600">
+        <Text as="span" color="text.secondary">
           {' '}
           · past {days === 365 ? 'year' : `${days} days`}
         </Text>
@@ -124,7 +124,7 @@ export function PortfolioDemo(): JSX.Element {
         <Text as="h2" textStyle="text/md" fontWeight="medium">
           Monthly Net Change
         </Text>
-        <Text textStyle="text/sm" color="neutral.600" mt={1} mb={5}>
+        <Text textStyle="text/sm" color="text.secondary" mt={1} mb={5}>
           Green is an increase. Red is a decrease.
         </Text>
         <MonthlyNetChangeChart data={balanceHistory} formatAmount={btc} />
@@ -135,7 +135,7 @@ export function PortfolioDemo(): JSX.Element {
         py={5}
         borderTop="1px solid"
         borderBottom="1px solid"
-        borderColor="neutral.200"
+        borderColor="border.subtle"
       >
         {[
           ['Starting balance', btc(first)],
@@ -143,7 +143,7 @@ export function PortfolioDemo(): JSX.Element {
           ['Removed', `−${btc(withdrawals)}`],
         ].map(([label, value]) => (
           <Flex key={label} direction={{ base: 'row', sm: 'column' }} justify="space-between" gap={1} minW={0}>
-            <Text textStyle="text/sm" color="neutral.600">
+            <Text textStyle="text/sm" color="text.secondary">
               {label}
             </Text>
             <Text textStyle="text/md" fontWeight="medium" sx={{ fontVariantNumeric: 'tabular-nums' }}>
@@ -152,7 +152,7 @@ export function PortfolioDemo(): JSX.Element {
           </Flex>
         ))}
       </Grid>
-      <Text textStyle="text/xs" color="neutral.600" mt={3}>
+      <Text textStyle="text/xs" color="text.secondary" mt={3}>
         Illustrative balances. USD values use a sample price of $80,000 per BTC.
       </Text>
     </Box>

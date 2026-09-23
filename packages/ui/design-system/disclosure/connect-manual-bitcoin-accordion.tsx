@@ -13,13 +13,13 @@ import { Badge } from '..'
 
 export function ConnectManualBitcoinAccordion({ to, state }: { to: To; state?: Record<string, unknown> }): JSX.Element {
   return (
-    <Accordion allowMultiple border="solid 1px" borderColor="neutral.200" borderRadius="4px">
+    <Accordion allowMultiple border="solid 1px" borderColor="border.subtle" borderRadius="4px">
       <AccordionItem border="none">
         <h2>
           <AccordionButton p={4} _hover={{ bgColor: 'inherit' }}>
             <HStack flex="1" textAlign="left">
               <Badge>Advanced</Badge>
-              <Text as="h3" textStyle="text/sm" color="neutral.600" fontWeight={500}>
+              <Text as="h3" textStyle="text/sm" color="text.secondary" fontWeight={500}>
                 Manually Verify Your Self-Custodial Bitcoin Holdings
               </Text>
             </HStack>
@@ -27,7 +27,7 @@ export function ConnectManualBitcoinAccordion({ to, state }: { to: To; state?: R
           </AccordionButton>
         </h2>
         <AccordionPanel p={4} pt={0} display="flex" flexDirection="column" gap={4} textAlign="left">
-          <Text textStyle="text/sm" color="neutral.600">
+          <Text textStyle="text/sm" color="text.secondary">
             You can manually sign a message to verify your bitcoin holdings. This is recommended for users comfortable
             with Bitcoin message signing tools.
           </Text>

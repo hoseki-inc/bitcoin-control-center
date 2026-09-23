@@ -1,5 +1,6 @@
 import { modalAnatomy as parts } from '@chakra-ui/anatomy'
 import { theme as chakraTheme, createMultiStyleConfigHelpers } from '@chakra-ui/react'
+import { layerStyles } from './foundation/materials'
 
 const { definePartsStyle, defineMultiStyleConfig } = createMultiStyleConfigHelpers(parts.keys)
 
@@ -10,14 +11,19 @@ const extendedBaseStyle = definePartsStyle((props) => {
     ...baseStyle,
     overlay: {
       ...baseStyle?.overlay,
-      bg: 'blackAlpha.400',
+      bg: 'rgba(15, 23, 42, 0.4)',
       backdropFilter: 'blur(8px)',
+      _dark: { bg: 'rgba(0, 0, 0, 0.6)' },
     },
     dialog: {
       ...baseStyle?.dialog,
       p: { base: 5, md: 6 },
-      borderRadius: 'dialog',
+      bg: 'surface.overlay',
+      color: 'text.primary',
+      borderRadius: 'var(--radius-modal)',
       boxShadow: 'floating',
+      // Dark dialogs are glass; a heavier tint keeps form content legible over busy pages.
+      _dark: { ...layerStyles.material, bg: 'rgb(20 21 26 / 0.78)', borderRadius: 'var(--radius-modal)' },
       mx: 4,
       gap: 4,
     },

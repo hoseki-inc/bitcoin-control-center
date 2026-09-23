@@ -1,6 +1,6 @@
 const disabledColors = {
-  bgColor: 'neutral.200',
-  color: 'neutral.400',
+  bgColor: 'surface.emphasis',
+  color: 'text.tertiary',
 } as const
 
 const baseStyle = {
@@ -13,7 +13,7 @@ const baseStyle = {
 
   outlineWidth: '2px',
   outlineOffset: '3px',
-  _focusVisible: { outline: '2px solid', outlineColor: 'activeState.80', outlineOffset: '3px' },
+  _focusVisible: { outline: '2px solid', outlineColor: 'focus.ring', outlineOffset: '3px' },
 
   _hover: {
     cursor: 'pointer',
@@ -65,18 +65,18 @@ const sizes = {
 } as const
 
 export const primaryVariant = {
-  bgColor: 'neutral.900',
-  color: 'neutral.50',
+  bgColor: 'surface.inverse',
+  color: 'text.inverse',
 
   _hover: {
-    bgColor: 'neutral.800',
+    bgColor: 'surface.inverse',
   },
   _active: {
-    bgColor: 'neutral.700',
+    bgColor: 'surface.inversePressed',
   },
   _disabled: {
-    bgColor: 'neutral.200',
-    color: 'neutral.400',
+    bgColor: 'surface.emphasis',
+    color: 'text.tertiary',
   },
 } as const
 
@@ -84,32 +84,32 @@ const variants = {
   primary: primaryVariant,
 
   outline: {
-    bgColor: 'shades.0',
-    color: 'neutral.900',
+    bgColor: 'surface.raised',
+    color: 'text.primary',
     border: '1px solid',
-    borderColor: 'neutral.200',
+    borderColor: 'border.subtle',
 
     _hover: {
-      bgColor: 'neutral.50',
+      bgColor: 'surface.subtle',
     },
     _active: {
-      bgColor: 'neutral.100',
+      bgColor: 'surface.muted',
     },
     _disabled: {
-      borderColor: 'neutral.200',
+      borderColor: 'border.subtle',
       bgColor: 'transparent',
     },
   },
 
   ghost: {
     bgColor: 'transparent',
-    color: 'neutral.900',
+    color: 'text.primary',
 
     _hover: {
-      bgColor: 'neutral.50',
+      bgColor: 'surface.subtle',
     },
     _active: {
-      bgColor: 'neutral.100',
+      bgColor: 'surface.muted',
     },
     _disabled: {
       bgColor: 'transparent',
@@ -118,13 +118,13 @@ const variants = {
 
   tertiary: {
     bgColor: 'transparent',
-    color: 'neutral.900',
+    color: 'text.primary',
 
     _hover: {
-      bgColor: 'neutral.50',
+      bgColor: 'surface.subtle',
     },
     _active: {
-      bgColor: 'neutral.100',
+      bgColor: 'surface.muted',
     },
     _disabled: {
       bgColor: 'transparent',
@@ -132,23 +132,23 @@ const variants = {
   },
 
   error: {
-    bgColor: 'shades.0',
-    color: 'error.600',
+    bgColor: 'surface.raised',
+    color: 'status.error.fg',
 
     _hover: {
-      bgColor: 'error.50',
+      bgColor: 'status.error.bg',
 
       _disabled: {
-        bgColor: 'error.100',
-        color: 'neutral.50',
+        bgColor: 'status.error.bg',
+        color: 'text.tertiary',
       },
     },
     _active: {
-      bgColor: 'error.100',
+      bgColor: 'status.error.bg',
     },
     _disabled: {
       bgColor: 'transparent',
-      color: 'error.100',
+      color: 'status.error.fg',
     },
   },
 } as const

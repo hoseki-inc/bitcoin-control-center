@@ -19,9 +19,9 @@ export const AssetCard = forwardRef<AssetCardProps, 'div'>(
         textAlign="center"
         borderWidth="1px"
         borderRadius="md"
-        borderColor="neutral.200"
+        borderColor="border.subtle"
         p={4}
-        bg="white"
+        bg="surface.raised"
         transition="all 0.2s"
         cursor={onClick ? 'pointer' : undefined}
         _hover={
@@ -38,13 +38,13 @@ export const AssetCard = forwardRef<AssetCardProps, 'div'>(
       >
         <Image src={HOSEKI_ASSETS_CDN_URLS.COIN_LOGOS[currency]} alt={currency} boxSize="32px" mx="auto" />
 
-        <Text mt={2} textStyle="label/md" fontWeight="medium" color="neutral.600">
+        <Text mt={2} textStyle="label/md" fontWeight="medium" color="text.secondary">
           {currency}
         </Text>
-        <Text mt={1} textStyle="label/md" fontWeight="medium" color="neutral.900">
+        <Text mt={1} textStyle="label/md" fontWeight="medium" color="text.primary">
           {new Intl.NumberFormat('en-US').format(balance.toNumber())}
         </Text>
-        <Text textStyle="label/md" fontWeight="medium" color="success.600">
+        <Text textStyle="label/md" fontWeight="medium" color="status.success.fg">
           {formatUsd(usdBalance)}
         </Text>
       </Box>

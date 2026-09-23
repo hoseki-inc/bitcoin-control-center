@@ -16,8 +16,8 @@ export function LabelWithTooltip({
       <FormLabel htmlFor={htmlFor} mb={0} {...labelProps}>
         {labelText}
       </FormLabel>
-      <Tooltip hasArrow bg="white" color="black" placement="right" label={tooltipText} p={1.5}>
-        <InfoTooltip color="neutral.400" boxSize="16px" />
+      <Tooltip hasArrow placement="right" label={tooltipText} p={1.5}>
+        <InfoTooltip color="text.tertiary" boxSize="16px" />
       </Tooltip>
     </HStack>
   )

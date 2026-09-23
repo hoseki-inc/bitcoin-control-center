@@ -33,16 +33,16 @@ export function NewDeviceConnectionModal({
       <ModalOverlay />
       <ModalContent>
         <ModalHeader>
-          <Text textStyle="text/lg" color="neutral.900" fontWeight="medium">
+          <Text textStyle="text/lg" color="text.primary" fontWeight="medium">
             Start Over With a New Device?
           </Text>
         </ModalHeader>
 
         <ModalBody>
-          <Text textStyle="text/sm" color="neutral.600" mb={4}>
+          <Text textStyle="text/sm" color="text.secondary" mb={4}>
             You're about to reconnect your wallet using a new hardware device.
           </Text>
-          <Text textStyle="text/sm" color="neutral.600">
+          <Text textStyle="text/sm" color="text.secondary">
             To keep your proof secure, we'll need to start the verification process from scratch and check that this
             device still controls the same key you previously verified
           </Text>

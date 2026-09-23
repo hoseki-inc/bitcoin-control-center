@@ -52,10 +52,10 @@ export const ClaimCard = forwardRef<ClaimCardProps, 'div'>(
         textAlign="center"
         borderWidth="1px"
         borderRadius="md"
-        borderColor={isSelected ? 'primary.600' : 'neutral.200'}
+        borderColor={isSelected ? 'primary.600' : 'border.subtle'}
         p={2}
         pb={6}
-        bg={isSelected ? 'primary.50' : 'white'}
+        bg={isSelected ? 'accent.subtle' : 'surface.raised'}
         transition="all 0.2s"
         ref={ref}
         {...props}
@@ -75,17 +75,17 @@ export const ClaimCard = forwardRef<ClaimCardProps, 'div'>(
         <ClaimCardKeystores keystores={keystores} alt={displayName} mx="auto" status={status} />
 
         <Stack gap={1} mx={4}>
-          <Text textStyle="label/md" fontWeight="medium" color="neutral.600">
+          <Text textStyle="label/md" fontWeight="medium" color="text.secondary">
             {officialName}
           </Text>
-          <Text textStyle="label/md" fontWeight="medium" color="neutral.600" isTruncated>
+          <Text textStyle="label/md" fontWeight="medium" color="text.secondary" isTruncated>
             {displayName}
           </Text>
           <Stack gap={0}>
-            <Text textStyle="label/md" fontWeight="medium" color="neutral.900">
+            <Text textStyle="label/md" fontWeight="medium" color="text.primary">
               {renderBalance(balance)}
             </Text>
-            <Text textStyle="label/md" fontWeight="medium" color="success.600" _empty={{ display: 'none' }}>
+            <Text textStyle="label/md" fontWeight="medium" color="status.success.fg" _empty={{ display: 'none' }}>
               {renderUsdAmount(balance)}
             </Text>
           </Stack>
@@ -156,9 +156,11 @@ export function ClaimCardKeystores({ keystores, alt, status, ...props }: ClaimCa
   return null
 }
 
-const commonProps = { stroke: 'shades.0', boxSize: '16px' } as const
-const alertIcon = <AlertTriangleFilledIcon fill="warning.600" color="shades.0" {...commonProps} />
-const verifiedIcon = <CheckCircleFilledIcon color="success.700" color2="white" {...commonProps} aria-hidden="true" />
+const commonProps = { stroke: 'text.inverse', boxSize: '16px' } as const
+const alertIcon = <AlertTriangleFilledIcon fill="status.warning.fg" color="text.inverse" {...commonProps} />
+const verifiedIcon = (
+  <CheckCircleFilledIcon color="status.success.fg" color2="text.inverse" {...commonProps} aria-hidden="true" />
+)
 function getMultisigKeystoreAvatarIcon(keystore: ClaimCardKeystore, status: ClaimStatus) {
   if (status === 'expired' && keystore.wallet) {
     return alertIcon
@@ -171,7 +173,7 @@ function getMultisigKeystoreAvatarIcon(keystore: ClaimCardKeystore, status: Clai
   // at this point it means it's pending
 
   if (keystore.isVerified) {
-    return <CheckCircleFilledIcon color="neutral.100" color2="neutral.900" {...commonProps} />
+    return <CheckCircleFilledIcon color="surface.muted" color2="text.primary" {...commonProps} />
   }
 
   return null // show nothing

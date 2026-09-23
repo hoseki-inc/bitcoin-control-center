@@ -111,14 +111,14 @@ function QrSignIntro({
     <Stack gap={4} {...rest}>
       <WalletAnimation animation={getColdcardAnimation(model, 'coldcardSignMessage')} />
 
-      <Text as="h2" textStyle="text/2xl" fontWeight="medium" color="neutral.900">
+      <Text as="h2" textStyle="text/2xl" fontWeight="medium" color="text.primary">
         Proving Control With Your COLDCARD Q
       </Text>
 
-      <Text textStyle="text/md" color="neutral.900">
+      <Text textStyle="text/md" color="text.primary">
         You'll sign a unique message by scanning a QR code with your COLDCARD Q. No file downloads needed.
       </Text>
-      <Text textStyle="text/md" color="neutral.900">
+      <Text textStyle="text/md" color="text.primary">
         This lets us confirm you control the private key for the Bitcoin you're claiming — without ever needing to see
         your key.
       </Text>
@@ -160,10 +160,10 @@ function QrSignDisplayMessage({
     <Stack gap={4} alignItems="center" {...rest}>
       <ColdcardModelImage model={model} />
 
-      <Text as="h2" textStyle="text/2xl" fontWeight="medium" color="neutral.900" textAlign="center">
+      <Text as="h2" textStyle="text/2xl" fontWeight="medium" color="text.primary" textAlign="center">
         Scan This Message With Your COLDCARD Q
       </Text>
-      <Text textStyle="text/md" color="neutral.900" textAlign="center">
+      <Text textStyle="text/md" color="text.primary" textAlign="center">
         From the main menu on your COLDCARD Q, press the{' '}
         <Text as="span" fontWeight={600}>
           QR
@@ -217,17 +217,17 @@ function QrSignConfirmOnDevice({
     <Stack gap={4} {...rest}>
       <WalletAnimation animation={getColdcardAnimation(model, 'coldcardSignTextFile')} />
 
-      <Text as="h2" textStyle="text/2xl" fontWeight="medium" color="neutral.900">
+      <Text as="h2" textStyle="text/2xl" fontWeight="medium" color="text.primary">
         Confirm and Sign on Your COLDCARD Q
       </Text>
-      <Text textStyle="text/md" color="neutral.900">
+      <Text textStyle="text/md" color="text.primary">
         Review the message and address on your COLDCARD Q screen, then press{' '}
         <Text as="span" fontWeight={600}>
           ENTER
         </Text>{' '}
         to sign.
       </Text>
-      <Text textStyle="text/md" color="neutral.900">
+      <Text textStyle="text/md" color="text.primary">
         After signing, your COLDCARD Q will display a QR code containing the signature. Click 'Ready to Scan' when it
         appears.
       </Text>
@@ -312,15 +312,15 @@ function QrSignScanSignature({
     <Stack gap={4} alignItems="center" {...rest}>
       <ColdcardModelImage model={model} />
 
-      <Text as="h2" textStyle="text/2xl" fontWeight="medium" color="neutral.900" textAlign="center">
+      <Text as="h2" textStyle="text/2xl" fontWeight="medium" color="text.primary" textAlign="center">
         Scan the Signed Message
       </Text>
-      <Text textStyle="text/md" color="neutral.900" textAlign="center">
+      <Text textStyle="text/md" color="text.primary" textAlign="center">
         Hold your COLDCARD Q screen in front of your webcam to scan the signature.
       </Text>
 
       {isSubmitting ? (
-        <Text textStyle="text/md" color="neutral.500">
+        <Text textStyle="text/md" color="text.tertiary">
           Verifying signature...
         </Text>
       ) : (

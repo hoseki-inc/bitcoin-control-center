@@ -12,8 +12,8 @@ export function WizardFooter({
   return (
     <Box
       borderTop="1px solid"
-      borderColor="neutral.200"
-      bgColor="white"
+      borderColor="border.subtle"
+      bgColor="surface.base"
       px={0}
       pt={4}
       pb="max(1rem, env(safe-area-inset-bottom))"

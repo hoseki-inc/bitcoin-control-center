@@ -115,7 +115,7 @@ export function DateStringInput({ value, onChange, min, max, ...props }: DateStr
                 w="full"
                 minW={0}
                 p={0}
-                color="neutral.600"
+                color="text.secondary"
                 isDisabled={isDisabled || isReadOnly}
               />
             </PopoverTrigger>
@@ -136,13 +136,13 @@ export function DateStringInput({ value, onChange, min, max, ...props }: DateStr
         border={0}
         borderRadius="panel"
         boxShadow="floating"
-        bg="shades.0"
+        bg="surface.raised"
         overflow="hidden"
       >
         <PopoverBody p={3}>
           <Box
             textStyle="text/sm"
-            color="neutral.900"
+            color="text.primary"
             sx={{
               '.rdp-root': {
                 '--rdp-accent-color': 'var(--hoseki-colors-neutral-900)',
@@ -160,25 +160,25 @@ export function DateStringInput({ value, onChange, min, max, ...props }: DateStr
               '.rdp-month_caption': { textStyle: 'text/sm', fontWeight: 'medium', px: 2 },
               '.rdp-caption_label': { fontWeight: 'medium' },
               '.rdp-dropdown_root': { borderRadius: 'control', px: 1, py: 1 },
-              '.rdp-dropdown_root:hover': { bg: 'neutral.100' },
+              '.rdp-dropdown_root:hover': { bg: 'surface.muted' },
               '.rdp-dropdown_root:focus-within': {
                 outline: '2px solid',
-                outlineColor: 'activeState.80',
+                outlineColor: 'focus.ring',
                 outlineOffset: '2px',
               },
-              '.rdp-weekday': { textStyle: 'text/xs', color: 'neutral.500', fontWeight: 'normal', py: 3 },
+              '.rdp-weekday': { textStyle: 'text/xs', color: 'text.tertiary', fontWeight: 'normal', py: 3 },
               '.rdp-day_button': { textStyle: 'text/sm', fontVariantNumeric: 'tabular-nums' },
-              '.rdp-day_button:hover:not(:disabled)': { bg: 'neutral.100' },
-              '.rdp-outside': { color: 'neutral.500' },
-              '.rdp-today:not(.rdp-selected) .rdp-day_button': { fontWeight: 'semibold', bg: 'neutral.100' },
+              '.rdp-day_button:hover:not(:disabled)': { bg: 'surface.muted' },
+              '.rdp-outside': { color: 'text.tertiary' },
+              '.rdp-today:not(.rdp-selected) .rdp-day_button': { fontWeight: 'semibold', bg: 'surface.muted' },
               '.rdp-selected .rdp-day_button, .rdp-selected .rdp-day_button:hover': {
-                bg: 'neutral.900',
-                color: 'white',
+                bg: 'surface.inverse',
+                color: 'text.inverse',
                 fontWeight: 'medium',
               },
               '.rdp-button_previous, .rdp-button_next': { borderRadius: 'control' },
               '.rdp-button_previous:hover:not(:disabled), .rdp-button_next:hover:not(:disabled)': {
-                bg: 'neutral.100',
+                bg: 'surface.muted',
               },
               '.rdp-chevron': { width: '18px', height: '18px' },
             }}
@@ -201,7 +201,7 @@ export function DateStringInput({ value, onChange, min, max, ...props }: DateStr
               autoFocus
             />
           </Box>
-          <Flex borderTop="1px solid" borderColor="neutral.200" mt={2} pt={2} justify="space-between" gap={3}>
+          <Flex borderTop="1px solid" borderColor="border.subtle" mt={2} pt={2} justify="space-between" gap={3}>
             <Button size="sm" variant="ghost" onClick={() => select(today)} isDisabled={!allowed(today)}>
               Today
             </Button>
@@ -209,7 +209,7 @@ export function DateStringInput({ value, onChange, min, max, ...props }: DateStr
               <Button
                 size="sm"
                 variant="ghost"
-                color="neutral.600"
+                color="text.secondary"
                 onClick={() => select(undefined)}
                 isDisabled={!value}
               >

@@ -44,20 +44,20 @@ export function KeystoreDetailsSingleSig({
 
       <SimpleGrid columns={{ base: 2, md: 4 }} spacing={4} mb={8} w="full" mt={keystore.wallet ? 0 : 8}>
         <Box minW={0}>
-          <Text textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={1}>
+          <Text textStyle="text/sm" color="text.secondary" fontWeight="medium" mb={1}>
             Amount
           </Text>
           {isBalanceLoading ? (
             <Spinner size="xs" />
           ) : (
             <>
-              <Text textStyle="label/sm" color="neutral.900" fontWeight="medium">
+              <Text textStyle="label/sm" color="text.primary" fontWeight="medium">
                 <SensitiveValue>
                   {balance?.current ? <BitcoinAmount btc={balance.current.div(100_000_000)} /> : 'n/a'}
                 </SensitiveValue>
               </Text>
               {balance?.usd && (
-                <Text textStyle="label/sm" color="success.600" fontWeight="medium">
+                <Text textStyle="label/sm" color="status.success.fg" fontWeight="medium">
                   <SensitiveValue>{formatUsd(balance.usd.toFixed(2))}</SensitiveValue>
                 </Text>
               )}
@@ -65,7 +65,7 @@ export function KeystoreDetailsSingleSig({
           )}
         </Box>
         <Box minW={0}>
-          <Text textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={1}>
+          <Text textStyle="text/sm" color="text.secondary" fontWeight="medium" mb={1}>
             Status
           </Text>
           {claimStatus === 'pending' ? (
@@ -77,18 +77,18 @@ export function KeystoreDetailsSingleSig({
           )}
         </Box>
         <Box minW={0}>
-          <Text textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={1}>
+          <Text textStyle="text/sm" color="text.secondary" fontWeight="medium" mb={1}>
             Script Type
           </Text>
-          <Text textStyle="label/sm" color="neutral.900" fontWeight="medium">
+          <Text textStyle="label/sm" color="text.primary" fontWeight="medium">
             {encodingsToLabels[account.scriptType]}
           </Text>
         </Box>
         <Box minW={0} textAlign={{ base: 'left', md: 'right' }}>
-          <Text textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={1}>
+          <Text textStyle="text/sm" color="text.secondary" fontWeight="medium" mb={1}>
             Date Added
           </Text>
-          <Text textStyle="label/sm" color="neutral.900" fontWeight="medium">
+          <Text textStyle="label/sm" color="text.primary" fontWeight="medium">
             {format(keystore.createdAt, 'MMMM do, yyyy')}
           </Text>
         </Box>
@@ -146,24 +146,24 @@ export function KeystoreDetailsMultiSig({
 
       <Flex direction={['column', 'row', 'row']} gap={4} mb={8} w="100%">
         <Box w={{ base: 'full', sm: '37.5%' }}>
-          <Text textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={1}>
+          <Text textStyle="text/sm" color="text.secondary" fontWeight="medium" mb={1}>
             Status
           </Text>
           <StatusBadge {...getBadgeConfigForKeystore(keystoreStatus)} w="fit-content" />
         </Box>
         <Box w={{ base: 'full', sm: '37.5%' }}>
-          <Text textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={1}>
+          <Text textStyle="text/sm" color="text.secondary" fontWeight="medium" mb={1}>
             Script Type
           </Text>
-          <Text textStyle="label/sm" color="neutral.900" fontWeight="medium">
+          <Text textStyle="label/sm" color="text.primary" fontWeight="medium">
             {encodingsToLabels[account.scriptType]}
           </Text>
         </Box>
         <Box w={{ base: 'full', sm: '25%' }} textAlign={['left', 'right', 'right']}>
-          <Text textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={1}>
+          <Text textStyle="text/sm" color="text.secondary" fontWeight="medium" mb={1}>
             Date Added
           </Text>
-          <Text textStyle="label/sm" color="neutral.900" fontWeight="medium">
+          <Text textStyle="label/sm" color="text.primary" fontWeight="medium">
             {format(keystore.createdAt, 'MMMM do, yyyy')}
           </Text>
         </Box>
@@ -178,8 +178,15 @@ function KeystoreXpub({ xpub }: { xpub: Xpub }) {
   const [isMasked, setIsMasked] = useState(true)
 
   return (
-    <HStack w="full" minW={0} border="1px solid" borderColor="neutral.200" borderRadius="control" p={3} mb={8}>
-      <chakra.code color="neutral.600" textStyle="text/sm" fontFamily="mono" minW={0} flex={1} overflowWrap="anywhere">
+    <HStack w="full" minW={0} border="1px solid" borderColor="border.subtle" borderRadius="control" p={3} mb={8}>
+      <chakra.code
+        color="text.secondary"
+        textStyle="text/sm"
+        fontFamily="mono"
+        minW={0}
+        flex={1}
+        overflowWrap="anywhere"
+      >
         {toXpubDisplayValue(xpub.toString(), isMasked)}
       </chakra.code>
       <Button
@@ -190,7 +197,11 @@ function KeystoreXpub({ xpub }: { xpub: Xpub }) {
         p={2}
         flexShrink={0}
       >
-        {isMasked ? <EyeOffIcon color="#475569" /> : <EyeIcon color="#475569" />}
+        {isMasked ? (
+          <EyeOffIcon color="var(--hoseki-colors-text-secondary)" />
+        ) : (
+          <EyeIcon color="var(--hoseki-colors-text-secondary)" />
+        )}
       </Button>
     </HStack>
   )

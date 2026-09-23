@@ -23,7 +23,6 @@ export function AppLayout({ fullWidth }: { fullWidth?: boolean }): JSX.Element {
 
   const logo = (
     <BaseLogo
-      logoSrc="/hoseki-logo.svg"
       logoAlt="Bitcoin Control Center"
       renderLink={(children) => <Link to={logoLink}>{children}</Link>}
       stickerLabel={getEnvSlug(HOSEKI_ENV)}

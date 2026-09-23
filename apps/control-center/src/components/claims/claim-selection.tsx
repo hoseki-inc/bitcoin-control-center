@@ -146,17 +146,17 @@ export function ClaimSelection({
         <Thead>
           <Tr>
             <Th px={0}>
-              <Text textStyle="overline/sm" fontWeight={600} color="neutral.600">
+              <Text textStyle="overline/sm" fontWeight={600} color="text.secondary">
                 Accounts
               </Text>
             </Th>
             <Th px={0} isNumeric>
-              <Text textStyle="overline/sm" fontWeight={600} color="neutral.600">
+              <Text textStyle="overline/sm" fontWeight={600} color="text.secondary">
                 Bitcoin
               </Text>
             </Th>
             <Th px={0} isNumeric>
-              <Text textStyle="overline/sm" fontWeight={600} color="neutral.600">
+              <Text textStyle="overline/sm" fontWeight={600} color="text.secondary">
                 USD
               </Text>
             </Th>
@@ -187,7 +187,7 @@ export function ClaimSelection({
                         fontWeight="medium"
                         noOfLines={1}
                         isTruncated
-                        color="neutral.600"
+                        color="text.secondary"
                       >
                         {claim.displayName ?? claim.officialName}
                       </Text>
@@ -231,12 +231,12 @@ export function ClaimSelection({
                         fontWeight="medium"
                         noOfLines={1}
                         isTruncated
-                        color="neutral.600"
+                        color="text.secondary"
                       >
                         {account.exchange.charAt(0).toUpperCase() + account.exchange.slice(1)}
                       </Text>
                       {needsReconnect && (
-                        <Text textStyle="text/xs" color="warning.600">
+                        <Text textStyle="text/xs" color="status.warning.fg">
                           Reconnect
                         </Text>
                       )}
@@ -252,7 +252,7 @@ export function ClaimSelection({
                 </Td>
                 <Td px={0} isNumeric>
                   <SensitiveValue>
-                    <Text textStyle="text/sm" fontWeight="medium" color="success.600" whiteSpace="nowrap">
+                    <Text textStyle="text/sm" fontWeight="medium" color="status.success.fg" whiteSpace="nowrap">
                       {!needsReconnect && usdAmount !== null ? formatUsd(usdAmount.toFixed(2)) : '—'}
                     </Text>
                   </SensitiveValue>
@@ -262,7 +262,7 @@ export function ClaimSelection({
           })}
           <Tr>
             <Td px={0} colSpan={3}>
-              <HStack textStyle="text/sm" fontWeight="regular" color="neutral.600">
+              <HStack textStyle="text/sm" fontWeight="regular" color="text.secondary">
                 <PlusIcon size="18px" />
                 <Link to="/accounts" onClick={handleAddClaim}>
                   Add account
@@ -274,12 +274,12 @@ export function ClaimSelection({
         <Tfoot>
           <Tr>
             <Th px={0}>
-              <Text textTransform="none" textStyle="text/md" fontWeight="medium" color="neutral.900">
+              <Text textTransform="none" textStyle="text/md" fontWeight="medium" color="text.primary">
                 Total
               </Text>
             </Th>
             <Th px={0} isNumeric colSpan={2}>
-              <Text textStyle="text/md" fontWeight="medium" color="success.600">
+              <Text textStyle="text/md" fontWeight="medium" color="status.success.fg">
                 <SensitiveValue>{formatUsd(totalUsdSelected.toFixed(2))}</SensitiveValue>
               </Text>
             </Th>
@@ -310,7 +310,7 @@ function renderUsdAmount(balance: BalanceWithStatus) {
       </Text>
     )
   return (
-    <Text textStyle="text/sm" fontWeight="medium" color="success.600" whiteSpace="nowrap">
+    <Text textStyle="text/sm" fontWeight="medium" color="status.success.fg" whiteSpace="nowrap">
       <SensitiveValue>{formatUsd(balance.value.usd.toFixed(2))}</SensitiveValue>
     </Text>
   )

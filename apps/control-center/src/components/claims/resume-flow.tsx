@@ -63,7 +63,7 @@ export function ResumeMultisigKeyFlow({
       title="Replace this device?"
       icon={CircleAlertIcon}
       children={
-        <Text textAlign="left" color="neutral.800">
+        <Text textAlign="left" color="text.primary">
           Click here to use a different device or start over with this key.
         </Text>
       }
@@ -108,11 +108,11 @@ function ResumeFlow({ wallet, model, description, bottomContent, ...props }: Res
       )}
 
       <VStack spacing={2} alignSelf="start" align="start">
-        <Text as="h1" textStyle="text/2xl" fontWeight="medium" color="neutral.900" align="start">
+        <Text as="h1" textStyle="text/2xl" fontWeight="medium" color="text.primary" align="start">
           Continue Verification?
         </Text>
         <VStack spacing={0} align="start">
-          <Text textStyle="text/md" color="neutral.900">
+          <Text textStyle="text/md" color="text.primary">
             {description}
           </Text>
         </VStack>

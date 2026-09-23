@@ -22,7 +22,7 @@ export function ConfirmActionModal({ isOpen, onClose, title, body, footer }: Con
       <ModalOverlay />
       <ModalContent>
         <ModalHeader>
-          <Text textStyle="text/lg" color="neutral.900">
+          <Text textStyle="text/lg" color="text.primary">
             {title}
           </Text>
         </ModalHeader>

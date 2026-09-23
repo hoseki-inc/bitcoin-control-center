@@ -13,8 +13,8 @@ export function GenericAccountTable({
   }[]
 }): JSX.Element {
   return (
-    <Box borderRadius="4px" border="1px solid" borderColor="neutral.200" {...boxProps}>
-      <Text bgColor="neutral.200" p={2} textTransform="uppercase">
+    <Box borderRadius="4px" border="1px solid" borderColor="border.subtle" {...boxProps}>
+      <Text bgColor="surface.emphasis" p={2} textTransform="uppercase">
         {title}
       </Text>
       {rows.map(({ label, value }, index) => (
@@ -23,7 +23,7 @@ export function GenericAccountTable({
           direction={{ base: 'column', sm: 'row' }}
           gap={0}
           borderBottom="1px solid"
-          borderColor="neutral.200"
+          borderColor="border.subtle"
         >
           <Text w={{ base: 'full', sm: '25%' }} p={2}>
             {label}

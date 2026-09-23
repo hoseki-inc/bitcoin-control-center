@@ -45,23 +45,23 @@ export const StatusBadge = forwardRef<StatusBadgeProps, 'span'>(
 function getBadgeColors(status: Status) {
   if (status === 'warning') {
     return {
-      bgColor: 'warning.50',
-      color: 'warning.500',
+      bgColor: 'status.warning.bg',
+      color: 'status.warning.fg',
     }
   } else if (status === 'success') {
     return {
-      bgColor: 'success.50',
-      color: 'success.500',
+      bgColor: 'status.success.bg',
+      color: 'status.success.fg',
     }
   } else if (status === 'error') {
     return {
-      bgColor: 'error.50',
-      color: 'error.500',
+      bgColor: 'status.error.bg',
+      color: 'status.error.fg',
     }
   } else if (status === 'neutral') {
     return {
-      bgColor: 'neutral.100',
-      color: 'neutral.700',
+      bgColor: 'surface.muted',
+      color: 'text.secondary',
     }
   }
 
@@ -69,6 +69,7 @@ function getBadgeColors(status: Status) {
   return {
     bgColor: 'blue.50',
     color: 'blue.500',
+    _dark: { bgColor: 'rgba(59, 130, 246, 0.16)', color: 'blue.200' },
   }
 }
 

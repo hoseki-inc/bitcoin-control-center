@@ -24,8 +24,10 @@ function ContainedAvatar({ sx, size = '36px', ...props }: CommonProps) {
   return (
     <Avatar
       borderWidth="1px"
-      borderColor="neutral.200"
-      bg="shades.0"
+      borderColor="border.subtle"
+      bg="surface.raised"
+      // Wallet marks are dark monochrome artwork, so they sit on a light chip in dark mode.
+      _dark={{ bg: 'rgba(255, 255, 255, 0.92)', borderColor: 'transparent' }}
       width={size}
       height={size}
       onError={() => {}}
@@ -45,7 +47,8 @@ function ContainedAvatar({ sx, size = '36px', ...props }: CommonProps) {
 function FilledAvatar({ sx, size = '44px', ...props }: CommonProps) {
   return (
     <Avatar
-      bg="neutral.50"
+      bg="surface.subtle"
+      _dark={{ bg: 'rgba(255, 255, 255, 0.92)' }}
       width={size}
       height={size}
       onError={() => {}}

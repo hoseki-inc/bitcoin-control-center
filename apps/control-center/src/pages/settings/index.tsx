@@ -20,6 +20,7 @@ import {
 import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
+import { type AppearancePreference, useAppearance } from '../../hooks/use-appearance'
 import { useBitcoinDisplay } from '../../hooks/use-bitcoin-display'
 import { useLocalSetting } from '../../hooks/use-local-settings'
 import { bitcoinDisplayUnit, formatBitcoin } from '../../lib/bitcoin-display'
@@ -43,13 +44,13 @@ export function SettingsPage(): JSX.Element {
   return (
     <Box py={{ base: 6, md: 10 }} maxW="960px">
       <PageHeading title="Settings" description="App preferences and personal information." />
-      <Stack mt={{ base: 8, md: 10 }} spacing={8} divider={<Divider borderColor="neutral.200" />}>
+      <Stack mt={{ base: 8, md: 10 }} spacing={8} divider={<Divider borderColor="border.subtle" />}>
         <SimpleGrid columns={{ base: 1, md: 2 }} spacing={{ base: 5, md: 10 }}>
           <Box>
-            <Text as="h2" textStyle="text/md" fontWeight="semibold" color="neutral.900">
+            <Text as="h2" textStyle="text/md" fontWeight="semibold" color="text.primary">
               Personal information
             </Text>
-            <Text id="user-name-description" mt={2} textStyle="text/sm" color="neutral.600" maxW="32ch">
+            <Text id="user-name-description" mt={2} textStyle="text/sm" color="text.secondary" maxW="32ch">
               This name will appear on your generated statements.
             </Text>
           </Box>
@@ -74,7 +75,7 @@ export function SettingsPage(): JSX.Element {
                 onChange={(event) => setDraftName(event.target.value)}
               />
               {isError && (
-                <Text role="alert" textStyle="text/sm" color="error.700" mt={2}>
+                <Text role="alert" textStyle="text/sm" color="status.error.fg" mt={2}>
                   Could not load your name. Refresh to try again.
                 </Text>
               )}
@@ -95,16 +96,73 @@ export function SettingsPage(): JSX.Element {
           <Text as="h2" textStyle="text/md" fontWeight="semibold">
             Getting Started
           </Text>
-          <Text textStyle="text/sm" color="neutral.600">
+          <Text textStyle="text/sm" color="text.secondary">
             Learn how to track your Bitcoin with Control Center.
           </Text>
           <Button as="a" href="/getting-started" variant="outline" mt={2}>
             View Introduction
           </Button>
         </Stack>
+        <AppearanceSettings />
         <BitcoinDisplaySettings />
         {isDesktop && <ElectrumSettings />}
       </Stack>
+    </Box>
+  )
+}
+
+const APPEARANCE_OPTIONS: ReadonlyArray<{ value: AppearancePreference; label: string; preview: string }> = [
+  { value: 'system', label: 'Match system', preview: 'linear-gradient(135deg, #F8FAFC 50%, #0B0C10 50%)' },
+  { value: 'light', label: 'Light', preview: 'linear-gradient(160deg, #FFFFFF, #E2E8F0)' },
+  { value: 'dark', label: 'Dark', preview: 'linear-gradient(160deg, #1B1D24, #0B0C10)' },
+]
+
+function AppearanceSettings(): JSX.Element {
+  const { preference, setPreference } = useAppearance()
+  return (
+    <Box as="section" aria-labelledby="appearance-heading">
+      <Text as="h2" id="appearance-heading" textStyle="text/md" fontWeight="semibold" color="text.primary">
+        Appearance
+      </Text>
+      <Text mt={2} textStyle="text/sm" color="text.secondary" id="appearance-description">
+        Use light or dark glass, or follow your device setting.
+      </Text>
+      <RadioGroup
+        value={preference}
+        onChange={(value) => setPreference(value as AppearancePreference)}
+        mt={5}
+        aria-labelledby="appearance-heading"
+        aria-describedby="appearance-description"
+      >
+        <SimpleGrid columns={{ base: 1, md: 3 }} spacing={3}>
+          {APPEARANCE_OPTIONS.map((option) => (
+            <Box
+              as="label"
+              key={option.value}
+              p={4}
+              border="1px solid"
+              borderRadius="panel"
+              borderColor={preference === option.value ? 'border.inverse' : 'border.subtle'}
+              bg={preference === option.value ? 'surface.subtle' : 'surface.raised'}
+              cursor="pointer"
+              transition="border-color 150ms ease, background-color 150ms ease"
+              _hover={{ borderColor: 'border.strong' }}
+              _focusWithin={{ outline: '2px solid', outlineColor: 'focus.ring', outlineOffset: '3px' }}
+            >
+              <HStack justify="space-between" mb={4}>
+                <Text textStyle="text/sm" fontWeight="medium">
+                  {option.label}
+                </Text>
+                <Radio as="span" value={option.value} colorScheme="gray" aria-label={option.label} />
+              </HStack>
+              <Box h={12} borderRadius="control" bg={option.preview} border="1px solid" borderColor="border.subtle" />
+            </Box>
+          ))}
+        </SimpleGrid>
+      </RadioGroup>
+      <Text mt={3} textStyle="text/xs" color="text.secondary">
+        Saved automatically in this browser.
+      </Text>
     </Box>
   )
 }
@@ -128,10 +186,10 @@ function BitcoinDisplaySettings(): JSX.Element {
 
   return (
     <Box as="section" aria-labelledby="bitcoin-display-heading">
-      <Text as="h2" id="bitcoin-display-heading" textStyle="text/md" fontWeight="semibold" color="neutral.900">
+      <Text as="h2" id="bitcoin-display-heading" textStyle="text/md" fontWeight="semibold" color="text.primary">
         Bitcoin display
       </Text>
-      <Text mt={2} textStyle="text/sm" color="neutral.600" id="bitcoin-display-description">
+      <Text mt={2} textStyle="text/sm" color="text.secondary" id="bitcoin-display-description">
         Choose how Bitcoin amounts appear in the app. The Bitcoin symbol and sats both show whole satoshi amounts. Each
         preview shows the same 2.1 BTC.
       </Text>
@@ -151,12 +209,12 @@ function BitcoinDisplaySettings(): JSX.Element {
               p={4}
               border="1px solid"
               borderRadius="panel"
-              borderColor={unit === option.value ? 'neutral.900' : 'neutral.200'}
-              bg={unit === option.value ? 'neutral.50' : 'shades.0'}
+              borderColor={unit === option.value ? 'border.inverse' : 'border.subtle'}
+              bg={unit === option.value ? 'surface.subtle' : 'surface.raised'}
               cursor={isLoading || isSaving || isError ? 'default' : 'pointer'}
               transition="border-color 150ms ease, background-color 150ms ease"
-              _hover={{ borderColor: 'neutral.500' }}
-              _focusWithin={{ outline: '2px solid', outlineColor: 'activeState.80', outlineOffset: '3px' }}
+              _hover={{ borderColor: 'border.strong' }}
+              _focusWithin={{ outline: '2px solid', outlineColor: 'focus.ring', outlineOffset: '3px' }}
             >
               <HStack justify="space-between" mb={5}>
                 <Text textStyle="text/sm" fontWeight="medium">
@@ -167,7 +225,7 @@ function BitcoinDisplaySettings(): JSX.Element {
               <Text
                 textStyle="text/lg"
                 fontWeight="semibold"
-                color="neutral.900"
+                color="text.primary"
                 sx={{ fontVariantNumeric: 'tabular-nums' }}
               >
                 {formatBitcoin('2.1', option.value)}
@@ -176,7 +234,7 @@ function BitcoinDisplaySettings(): JSX.Element {
           ))}
         </SimpleGrid>
       </RadioGroup>
-      <Text mt={3} textStyle="text/xs" color={isError ? 'error.700' : 'neutral.600'} role="status">
+      <Text mt={3} textStyle="text/xs" color={isError ? 'status.error.fg' : 'text.secondary'} role="status">
         {isError
           ? 'Could not load your preference. Refresh to try again.'
           : isLoading
@@ -341,7 +399,7 @@ function ElectrumSettings(): JSX.Element {
         <Text as="h2" textStyle="text/md" fontWeight="semibold">
           Electrum Server
         </Text>
-        <Text textStyle="text/sm" color="neutral.600">
+        <Text textStyle="text/sm" color="text.secondary">
           Configure your Bitcoin Electrum server connection. Use your own server for maximum privacy.
         </Text>
       </VStack>
@@ -385,15 +443,28 @@ function ElectrumSettings(): JSX.Element {
           py={2}
           w="full"
           borderRadius="md"
-          bg={electrumStatus.connected ? 'green.50' : 'red.50'}
+          bg={electrumStatus.connected ? 'status.success.bg' : 'status.error.bg'}
           align="start"
         >
-          <Circle size="8px" bg={electrumStatus.connected ? 'green.500' : 'red.500'} flexShrink={0} mt="6px" />
+          <Circle
+            size="8px"
+            bg={electrumStatus.connected ? 'status.success.solid' : 'status.error.solid'}
+            flexShrink={0}
+            mt="6px"
+          />
           <VStack align="start" gap={0} minW={0}>
-            <Text textStyle="text/sm" fontWeight="medium" color={electrumStatus.connected ? 'green.700' : 'red.700'}>
+            <Text
+              textStyle="text/sm"
+              fontWeight="medium"
+              color={electrumStatus.connected ? 'status.success.fg' : 'status.error.fg'}
+            >
               {electrumStatus.connected ? 'Connected' : 'Disconnected'}
             </Text>
-            <Text textStyle="text/xs" color={electrumStatus.connected ? 'green.600' : 'red.600'} wordBreak="break-all">
+            <Text
+              textStyle="text/xs"
+              color={electrumStatus.connected ? 'status.success.fg' : 'status.error.fg'}
+              wordBreak="break-all"
+            >
               {electrumStatus.host}:{electrumStatus.port} ({electrumStatus.protocol.toUpperCase()})
             </Text>
           </VStack>
@@ -466,7 +537,7 @@ function ElectrumSettings(): JSX.Element {
           <FormLabel htmlFor="electrum-tor" textStyle="text/sm" mb={0}>
             Connect via Tor
           </FormLabel>
-          <Text textStyle="text/xs" color="neutral.600">
+          <Text textStyle="text/xs" color="text.secondary">
             Route through bundled Tor proxy. Required for .onion addresses.
           </Text>
         </VStack>
@@ -491,10 +562,15 @@ function ElectrumSettings(): JSX.Element {
           py={2}
           w="full"
           borderRadius="md"
-          bg={testResult.ok ? 'green.50' : 'red.50'}
+          bg={testResult.ok ? 'status.success.bg' : 'status.error.bg'}
         >
-          <Circle size="8px" bg={testResult.ok ? 'green.500' : 'red.500'} flexShrink={0} />
-          <Text textStyle="text/sm" overflowWrap="anywhere" minW={0} color={testResult.ok ? 'green.700' : 'red.700'}>
+          <Circle size="8px" bg={testResult.ok ? 'status.success.solid' : 'status.error.solid'} flexShrink={0} />
+          <Text
+            textStyle="text/sm"
+            overflowWrap="anywhere"
+            minW={0}
+            color={testResult.ok ? 'status.success.fg' : 'status.error.fg'}
+          >
             {testResult.message}
           </Text>
         </HStack>

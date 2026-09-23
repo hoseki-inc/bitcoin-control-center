@@ -15,7 +15,7 @@ export function ScanningInProgress(): JSX.Element {
       <IconWrapper>
         <Spinner h={38} w={38} />
       </IconWrapper>
-      <Text textStyle="text/lg" fontWeight="medium" color="neutral.900">
+      <Text textStyle="text/lg" fontWeight="medium" color="text.primary">
         Scanning for active accounts...
       </Text>
       <TimedoutRetry />
@@ -41,10 +41,10 @@ export function SingleAccount({
             style={{ height: '50px', width: '50px' }}
           />
         </IconWrapper>
-        <Text textStyle="text/2xl" fontWeight="medium" color="neutral.900">
+        <Text textStyle="text/2xl" fontWeight="medium" color="text.primary">
           Scan complete!
         </Text>
-        <Text textStyle="text/md" color="neutral.900">
+        <Text textStyle="text/md" color="text.primary">
           We've found the following bitcoin account on your device. Continue with verification?
         </Text>
       </Stack>
@@ -81,10 +81,10 @@ export function AccountsList({
             style={{ height: '50px', width: '50px' }}
           />
         </IconWrapper>
-        <Text textStyle="text/2xl" fontWeight="medium" color="neutral.900">
+        <Text textStyle="text/2xl" fontWeight="medium" color="text.primary">
           Scan complete!
         </Text>
-        <Text textStyle="text/md" color="neutral.900">
+        <Text textStyle="text/md" color="text.primary">
           {selectedWallet
             ? 'Continue verification with the selected account?'
             : "We've found the following bitcoin accounts on your device. Select one to continue:"}

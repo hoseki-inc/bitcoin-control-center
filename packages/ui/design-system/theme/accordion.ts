@@ -10,7 +10,7 @@ const { definePartsStyle, defineMultiStyleConfig } = createMultiStyleConfigHelpe
 const baseStyle = definePartsStyle({
   container: {
     border: 'solid 1px',
-    borderColor: 'neutral.200',
+    borderColor: 'border.subtle',
     borderRadius: 'md',
     px: 6,
   },
@@ -26,7 +26,7 @@ const baseStyle = definePartsStyle({
     px: 0,
     border: 'none',
     _hover: {
-      bg: 'white',
+      bg: 'transparent',
     },
   },
   panel: {

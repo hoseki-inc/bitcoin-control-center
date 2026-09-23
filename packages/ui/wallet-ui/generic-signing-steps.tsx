@@ -145,10 +145,10 @@ export function ControlledGenericSigningSteps({
 export function SigningInfoStep1(): JSX.Element {
   return (
     <>
-      <Text textStyle="text/2xl" color="neutral.900" fontWeight="medium">
+      <Text textStyle="text/2xl" color="text.primary" fontWeight="medium">
         Now that we've identified the Bitcoin you're claiming, the next step is proving control.
       </Text>
-      <Text textStyle="text/md" color="neutral.900">
+      <Text textStyle="text/md" color="text.primary">
         Currently, your Bitcoin exists as anonymous, dormant savings. By proving control with Bitcoin Control Center,
         you unlock its potential—transforming your self-custodial Bitcoin into verifiable, private capital recognized by
         third parties.
@@ -162,13 +162,13 @@ type WalletType = 'Ledger' | 'Trezor'
 function SigningInfoStep2({ walletType }: { walletType: WalletType }) {
   return (
     <>
-      <Text as="h2" textStyle="text/2xl" color="neutral.900" fontWeight="medium">
+      <Text as="h2" textStyle="text/2xl" color="text.primary" fontWeight="medium">
         Proving Control With Your {walletType}
       </Text>
-      <Text textStyle="text/md" color="neutral.900">
+      <Text textStyle="text/md" color="text.primary">
         You'll prove control by signing a unique message with your hardware wallet.
       </Text>
-      <Text textStyle="text/md" color="neutral.900">
+      <Text textStyle="text/md" color="text.primary">
         This lets us confirm you control the private key for the Bitcoin you're claiming—without ever needing to see
         your key.
       </Text>
@@ -197,7 +197,7 @@ export function SignAddressAndMessageStep({
         <Text
           as="h2"
           textStyle="text/2xl"
-          color="neutral.900"
+          color="text.primary"
           fontWeight="medium"
           sx={revealCopy ? opacityReveal : undefined}
         >
@@ -232,15 +232,15 @@ export function SignAddressAndMessageInfo({
         />
         <Box
           border="1px solid"
-          borderColor="neutral.200"
+          borderColor="border.subtle"
           p={2}
           borderRadius="md"
-          bgColor="neutral.50"
+          bgColor="surface.subtle"
           fontFamily="'Geist Mono', monospace"
           fontSize={12}
           h="75px"
         >
-          <Text textStyle="text/xs" color="neutral.600">
+          <Text textStyle="text/xs" color="text.secondary">
             {messageTextToSign}
           </Text>
         </Box>
@@ -253,14 +253,14 @@ export function SignAddressAndMessageInfo({
           />
           <Box
             border="1px solid"
-            borderColor="neutral.200"
+            borderColor="border.subtle"
             p={2}
             borderRadius="md"
-            bgColor="neutral.50"
+            bgColor="surface.subtle"
             fontFamily="'Geist Mono', monospace"
             fontSize={12}
           >
-            <Text textStyle="text/xs" color="neutral.600">
+            <Text textStyle="text/xs" color="text.secondary">
               {address.toString()}
             </Text>
           </Box>
@@ -273,14 +273,14 @@ export function SignAddressAndMessageInfo({
             />
             <Box
               border="1px solid"
-              borderColor="neutral.200"
+              borderColor="border.subtle"
               p={2}
               borderRadius="md"
-              bgColor="neutral.50"
+              bgColor="surface.subtle"
               fontFamily="'Geist Mono', monospace"
               fontSize={12}
             >
-              <Text textStyle="text/xs" color="neutral.600">
+              <Text textStyle="text/xs" color="text.secondary">
                 {signingPath}
               </Text>
             </Box>

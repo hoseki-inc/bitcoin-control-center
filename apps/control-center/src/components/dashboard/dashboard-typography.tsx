@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 
 export function DashboardCardTitle({ children }: { children: ReactNode }): JSX.Element {
   return (
-    <Text as="h2" textStyle="text/md" fontWeight="medium" color="neutral.900">
+    <Text as="h2" textStyle="text/md" fontWeight="medium" color="text.primary">
       {children}
     </Text>
   )
@@ -23,7 +23,7 @@ export function DashboardAmount({
       minW={0}
       fontFamily="body"
       fontWeight="medium"
-      color="neutral.900"
+      color="text.primary"
       sx={{ fontVariantNumeric: 'tabular-nums' }}
     >
       {children}

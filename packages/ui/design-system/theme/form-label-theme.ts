@@ -9,7 +9,7 @@ const sizes = {
 
 export const formLabelTheme = defineStyleConfig({
   baseStyle: {
-    color: 'neutral.500',
+    color: 'text.tertiary',
     display: 'inline-block',
     mb: 1,
   },

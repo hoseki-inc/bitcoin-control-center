@@ -125,7 +125,7 @@ export function ClaimsVerifyEtfPage(): JSX.Element {
         />
 
         <FormControl>
-          <FormLabel textStyle="text/sm" color="neutral.600" fontWeight="medium">
+          <FormLabel textStyle="text/sm" color="text.secondary" fontWeight="medium">
             Display name
           </FormLabel>
           <Input
@@ -137,7 +137,7 @@ export function ClaimsVerifyEtfPage(): JSX.Element {
         </FormControl>
 
         <Box>
-          <Text as="h2" textStyle="text/md" color="neutral.600" fontWeight="semibold" mb={3}>
+          <Text as="h2" textStyle="text/md" color="text.secondary" fontWeight="semibold" mb={3}>
             Holdings
           </Text>
           <Stack spacing={3}>
@@ -148,18 +148,18 @@ export function ClaimsVerifyEtfPage(): JSX.Element {
                 gap={4}
                 alignItems="end"
                 p={4}
-                bg="neutral.50"
+                bg="surface.subtle"
                 borderRadius="panel"
               >
                 <FormControl minW={0}>
-                  <FormLabel textStyle="text/sm" color="neutral.600">
+                  <FormLabel textStyle="text/sm" color="text.secondary">
                     ETF
                   </FormLabel>
                   <Select
                     fontFamily="body"
                     size="md"
                     borderRadius="control"
-                    bg="shades.0"
+                    bg="surface.raised"
                     textStyle="text/sm"
                     value={row.ticker}
                     onChange={(e) => updateRow(row.key, 'ticker', e.target.value)}
@@ -175,13 +175,13 @@ export function ClaimsVerifyEtfPage(): JSX.Element {
                   </Select>
                 </FormControl>
                 <FormControl minW={0}>
-                  <FormLabel textStyle="text/sm" color="neutral.600">
+                  <FormLabel textStyle="text/sm" color="text.secondary">
                     Shares
                   </FormLabel>
                   <Input
                     fontFamily="body"
                     size="md"
-                    bg="shades.0"
+                    bg="surface.raised"
                     textStyle="text/sm"
                     type="number"
                     step="any"
@@ -192,13 +192,13 @@ export function ClaimsVerifyEtfPage(): JSX.Element {
                   />
                 </FormControl>
                 <FormControl minW={0}>
-                  <FormLabel textStyle="text/sm" color="neutral.600">
+                  <FormLabel textStyle="text/sm" color="text.secondary">
                     Date purchased (optional)
                   </FormLabel>
                   <DateStringInput
                     fontFamily="body"
                     size="md"
-                    bg="shades.0"
+                    bg="surface.raised"
                     textStyle="text/sm"
                     value={row.datePurchased}
                     onChange={(date) => updateRow(row.key, 'datePurchased', date)}
@@ -223,11 +223,11 @@ export function ClaimsVerifyEtfPage(): JSX.Element {
 
         {/* Live BTC total */}
         {totalBtcSats > 0n && (
-          <Box bg="neutral.50" p={4} borderRadius="panel">
-            <Text textStyle="text/xs" color="neutral.600" fontWeight="medium" mb={1}>
+          <Box bg="surface.subtle" p={4} borderRadius="panel">
+            <Text textStyle="text/xs" color="text.secondary" fontWeight="medium" mb={1}>
               Estimated Bitcoin total
             </Text>
-            <Text fontFamily="mono" textStyle="text/lg" fontWeight="bold" color="neutral.900">
+            <Text fontFamily="mono" textStyle="text/lg" fontWeight="bold" color="text.primary">
               <SensitiveValue>
                 <BitcoinAmount btc={totalBtc.toFixed(8)} />
               </SensitiveValue>

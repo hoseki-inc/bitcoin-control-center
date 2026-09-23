@@ -59,7 +59,7 @@ export function ClaimsVerifyManualPage(): JSX.Element {
         />
 
         <FormControl>
-          <FormLabel textStyle="text/sm" color="neutral.600" fontWeight="medium">
+          <FormLabel textStyle="text/sm" color="text.secondary" fontWeight="medium">
             Display name
           </FormLabel>
           <Input
@@ -71,7 +71,7 @@ export function ClaimsVerifyManualPage(): JSX.Element {
         </FormControl>
 
         <FormControl>
-          <FormLabel textStyle="text/sm" color="neutral.600" fontWeight="medium">
+          <FormLabel textStyle="text/sm" color="text.secondary" fontWeight="medium">
             Balance (BTC)
           </FormLabel>
           <Input
@@ -86,7 +86,7 @@ export function ClaimsVerifyManualPage(): JSX.Element {
         </FormControl>
 
         <FormControl>
-          <FormLabel textStyle="text/sm" color="neutral.600" fontWeight="medium">
+          <FormLabel textStyle="text/sm" color="text.secondary" fontWeight="medium">
             As of date
           </FormLabel>
           <DateStringInput isRequired fontFamily="body" value={balanceDate} onChange={(date) => setBalanceDate(date)} />

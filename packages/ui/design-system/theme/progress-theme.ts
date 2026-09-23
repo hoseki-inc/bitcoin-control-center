@@ -6,7 +6,7 @@ export const progressTheme = defineStyleConfig({
     ...chakraTheme.components.Progress.variants,
     hoseki: {
       track: {
-        bg: 'neutral.100',
+        bg: 'surface.muted',
       },
       filledTrack: {
         bg: 'linear-gradient(180deg, #FFF7A0 0%, #FFE56C 39%, #FFD54A 91.67%)',

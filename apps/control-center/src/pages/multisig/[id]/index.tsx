@@ -79,10 +79,10 @@ function ConnectWallets({
             onConnectionTypeClick={handleNextSigningDeviceClick}
             signedMessagesLength={signedMessagesLength}
           />
-          <Alert bgColor="neutral.50">
+          <Alert bgColor="surface.subtle">
             <HStack>
               <InfoIcon size={20} />
-              <Text color="neutral.600">
+              <Text color="text.secondary">
                 {threshold < kLength
                   ? `You only need to sign with ${threshold} of your ${kLength} keys to complete verification.`
                   : `You need to sign with all ${kLength} of your keys to complete verification.`}

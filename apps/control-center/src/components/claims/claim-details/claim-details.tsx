@@ -55,10 +55,10 @@ export function ClaimDetails({ claim }: { claim: ClaimDto }): JSX.Element {
               </Text>
               <HStack spacing={1}>
                 <StatusDot status={claimStatus} />
-                <Text textStyle="text/xs" color="neutral.600">
+                <Text textStyle="text/xs" color="text.secondary">
                   First Connected
                 </Text>
-                <Text textStyle="text/xs" color="neutral.900" fontWeight="medium">
+                <Text textStyle="text/xs" color="text.primary" fontWeight="medium">
                   {format(claim.createdAt, 'MMMM do, yyyy')}
                 </Text>
               </HStack>
@@ -115,7 +115,7 @@ function ClaimDetailsBody({
     return (
       <>
         <ResumeSinglesigFlow wallet={singleKeystore.wallet} model={singleKeystore.model} />
-        <Text textStyle="text/sm" color="neutral.600">
+        <Text textStyle="text/sm" color="text.secondary">
           Sign a message with your wallet to show you control it. No Bitcoin is sent.
         </Text>
         <WizardFooter
@@ -147,13 +147,13 @@ function StatusDot({ status }: { status: ClaimDto['status'] }) {
   let color = ''
   switch (status) {
     case 'pending':
-      color = 'warning.600'
+      color = 'status.warning.fg'
       break
     case 'expired':
-      color = 'error.600'
+      color = 'status.error.fg'
       break
     case 'verified':
-      color = 'success.600'
+      color = 'status.success.fg'
       break
   }
   return <Box w={2} h={2} bg={color} borderRadius="full" />

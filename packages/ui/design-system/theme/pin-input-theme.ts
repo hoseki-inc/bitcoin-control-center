@@ -8,7 +8,7 @@ export const pinInputTheme = defineStyleConfig({
   baseStyle: {
     ...chakraTheme.components.PinInput.baseStyle,
     border: '1px solid',
-    borderColor: 'neutral.300',
+    borderColor: 'border.strong',
     borderRadius: 'md',
   },
   sizes,

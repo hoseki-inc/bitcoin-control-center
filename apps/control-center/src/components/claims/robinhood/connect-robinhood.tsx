@@ -98,7 +98,7 @@ export function ConnectRobinhood(): JSX.Element {
           content={
             <VStack spacing={8}>
               <img src="/images/exchanges/robinhood-icon.svg" alt="Robinhood" style={{ height: '64px' }} />
-              <Text textStyle="text/2xl" color="neutral.900" textAlign="center">
+              <Text textStyle="text/2xl" color="text.primary" textAlign="center">
                 Your Robinhood account &ldquo;{connectedAccount.displayName}&rdquo; is now{' '}
                 {isReconnect ? 'reconnected' : 'connected'}.
               </Text>
@@ -126,11 +126,11 @@ export function ConnectRobinhood(): JSX.Element {
           {/* Header */}
           <Flex align="center" gap={3}>
             <img src="/images/exchanges/robinhood-icon.svg" alt="Robinhood" style={{ height: '32px' }} />
-            <Heading as="h1" textStyle="text/2xl" fontWeight="bold" color="neutral.900">
+            <Heading as="h1" textStyle="text/2xl" fontWeight="bold" color="text.primary">
               {isReconnect ? 'Reconnect Robinhood Account' : 'Connect Robinhood Account'}
             </Heading>
           </Flex>
-          <Text textStyle="text/md" color="neutral.600">
+          <Text textStyle="text/md" color="text.secondary">
             Enter your Robinhood Crypto API credentials to import your Bitcoin balance and order history. Only read-only
             access is required.
           </Text>
@@ -138,7 +138,7 @@ export function ConnectRobinhood(): JSX.Element {
           {/* Form fields */}
           <Stack gap={4}>
             <FormControl isInvalid={!!errors.displayName}>
-              <FormLabel textStyle="text/sm" color="neutral.600">
+              <FormLabel textStyle="text/sm" color="text.secondary">
                 Account Name
               </FormLabel>
               <Input {...register('displayName')} placeholder="e.g. My Robinhood Account" />
@@ -146,7 +146,7 @@ export function ConnectRobinhood(): JSX.Element {
             </FormControl>
 
             <FormControl isInvalid={!!errors.apiKey}>
-              <FormLabel textStyle="text/sm" color="neutral.600">
+              <FormLabel textStyle="text/sm" color="text.secondary">
                 API Key
               </FormLabel>
               <Input
@@ -158,7 +158,7 @@ export function ConnectRobinhood(): JSX.Element {
             </FormControl>
 
             <FormControl isInvalid={!!errors.privateKey}>
-              <FormLabel textStyle="text/sm" color="neutral.600">
+              <FormLabel textStyle="text/sm" color="text.secondary">
                 Private Key (Base64)
               </FormLabel>
               <Input
@@ -172,40 +172,40 @@ export function ConnectRobinhood(): JSX.Element {
           </Stack>
 
           {/* Instructions */}
-          <Box bg="neutral.50" borderRadius="md" p={4}>
-            <Text textStyle="text/sm" fontWeight="semibold" color="neutral.900" mb={2}>
+          <Box bg="surface.subtle" borderRadius="md" p={4}>
+            <Text textStyle="text/sm" fontWeight="semibold" color="text.primary" mb={2}>
               How to set up Robinhood Crypto API credentials
             </Text>
             <Stack gap={2} as="ol" listStyleType="decimal" pl={4}>
-              <Text as="li" textStyle="text/sm" color="neutral.700">
+              <Text as="li" textStyle="text/sm" color="text.secondary">
                 Generate an Ed25519 key pair using the script in{' '}
                 <Text
                   as="a"
                   href="https://docs.robinhood.com/crypto/trading/#section/Authentication"
                   target="_blank"
                   rel="noopener noreferrer"
-                  color="neutral.900"
+                  color="text.primary"
                   textDecoration="underline"
                 >
                   Robinhood&apos;s API docs
                 </Text>
                 . Save both the private key (base64) and public key (base64).
               </Text>
-              <Text as="li" textStyle="text/sm" color="neutral.700">
+              <Text as="li" textStyle="text/sm" color="text.secondary">
                 Open{' '}
                 <Text
                   as="a"
                   href="https://robinhood.com/account/crypto"
                   target="_blank"
                   rel="noopener noreferrer"
-                  color="neutral.900"
+                  color="text.primary"
                   textDecoration="underline"
                 >
                   Robinhood Crypto Account Settings
                 </Text>{' '}
                 and create an API credential using your public key.
               </Text>
-              <Text as="li" textStyle="text/sm" color="neutral.700">
+              <Text as="li" textStyle="text/sm" color="text.secondary">
                 Copy the API key (e.g. rh-api-...) and your base64 private key, then paste them above. Both will be
                 encrypted and stored securely.
               </Text>
@@ -213,11 +213,11 @@ export function ConnectRobinhood(): JSX.Element {
           </Box>
 
           {/* Info box */}
-          <Box border="1px solid" borderColor="neutral.200" borderRadius="md" p={4} bg="shades.0">
-            <Text textStyle="text/sm" fontWeight="semibold" color="neutral.900" mb={1}>
+          <Box border="1px solid" borderColor="border.subtle" borderRadius="md" p={4} bg="surface.raised">
+            <Text textStyle="text/sm" fontWeight="semibold" color="text.primary" mb={1}>
               What is being accessed?
             </Text>
-            <Text textStyle="text/sm" color="neutral.600">
+            <Text textStyle="text/sm" color="text.secondary">
               Only your Bitcoin holdings and order history are read. No trading or withdrawal permissions are required
               or granted.
             </Text>

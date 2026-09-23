@@ -44,10 +44,10 @@ function Header({ showGenerateButton }: { showGenerateButton: boolean }): JSX.El
   return (
     <Flex justifyContent="space-between" mb={6} gap={4} flexWrap="wrap">
       <Box flexGrow={1}>
-        <Text as="h2" textStyle="text/xl" color="neutral.900" fontWeight="medium">
+        <Text as="h2" textStyle="text/xl" color="text.primary" fontWeight="medium">
           Recent Statements
         </Text>
-        <Text textStyle="text/sm" color="neutral.600" mt={2}>
+        <Text textStyle="text/sm" color="text.secondary" mt={2}>
           Your latest Bitcoin statements, ready to view or download.
         </Text>
       </Box>

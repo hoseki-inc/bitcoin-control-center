@@ -38,7 +38,7 @@ export function GettingStarted(): JSX.Element {
         <Text as="h1" textStyle="text/2xl" fontWeight="medium">
           See your Bitcoin over time.
         </Text>
-        <Text textStyle="text/md" color="neutral.600" mt={2}>
+        <Text textStyle="text/md" color="text.secondary" mt={2}>
           Track your balance, what you’ve added, and what you’ve withdrawn. Try a sample portfolio below.
         </Text>
       </Box>
@@ -54,7 +54,7 @@ export function GettingStarted(): JSX.Element {
           <Text textStyle="text/lg" fontWeight="medium">
             Start with one account.
           </Text>
-          <Text textStyle="text/sm" color="neutral.600" mt={1}>
+          <Text textStyle="text/sm" color="text.secondary" mt={1}>
             Connect a wallet or exchange, or enter holdings yourself.
           </Text>
         </Box>
@@ -68,7 +68,7 @@ export function GettingStarted(): JSX.Element {
             </Button>
           </Flex>
           {error && (
-            <Text role="alert" textStyle="text/sm" color="error.700">
+            <Text role="alert" textStyle="text/sm" color="status.error.fg">
               Could not save your progress. Try again.
             </Text>
           )}
@@ -77,15 +77,15 @@ export function GettingStarted(): JSX.Element {
       <Accordion allowToggle>
         <AccordionItem borderRadius="panel" px={{ base: 4, md: 6 }}>
           <Box as="h2">
-            <AccordionButton gap={4} minH="56px" _hover={{ bg: 'transparent', color: 'neutral.600' }}>
+            <AccordionButton gap={4} minH="56px" _hover={{ bg: 'transparent', color: 'text.secondary' }}>
               <Text flex="1" textStyle="text/sm" fontWeight="medium">
                 How your data is handled
               </Text>
-              <AccordionIcon boxSize={5} color="neutral.500" />
+              <AccordionIcon boxSize={5} color="text.tertiary" />
             </AccordionButton>
           </Box>
           <AccordionPanel>
-            <Text textStyle="text/sm" color="neutral.600" maxW="65ch">
+            <Text textStyle="text/sm" color="text.secondary" maxW="65ch">
               Connections use the internet to retrieve balances. Your history is stored on your own computer or server.
               Your private keys stay with you. Control Center can’t spend your Bitcoin.
             </Text>
@@ -113,11 +113,11 @@ export function FirstAccountReady({ ready }: { ready: boolean }): JSX.Element | 
   }
 
   return (
-    <Stack as="section" gap={3} mb={8} pb={6} borderBottom="1px solid" borderColor="neutral.200">
+    <Stack as="section" gap={3} mb={8} pb={6} borderBottom="1px solid" borderColor="border.subtle">
       <Text as="h2" textStyle="text/xl" fontWeight="medium">
         Your account is ready
       </Text>
-      <Text textStyle="text/md" color="neutral.600">
+      <Text textStyle="text/md" color="text.secondary">
         Open your portfolio to see your balance and available history.
       </Text>
       <Flex gap={3} flexWrap="wrap">
@@ -132,7 +132,7 @@ export function FirstAccountReady({ ready }: { ready: boolean }): JSX.Element | 
         </Button>
       </Flex>
       {error && (
-        <Text role="alert" textStyle="text/sm" color="error.700">
+        <Text role="alert" textStyle="text/sm" color="status.error.fg">
           Could not save your progress. Try again.
         </Text>
       )}

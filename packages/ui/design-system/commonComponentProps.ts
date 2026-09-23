@@ -1,10 +1,10 @@
 // NOTE: These are put here because they are used by both <Input> and <Textarea>
 export const inputProps = {
   border: '1px solid',
-  borderColor: 'neutral.200',
+  borderColor: 'border.subtle',
   borderRadius: 'control',
 
-  color: 'neutral.900',
+  color: 'text.primary',
   textStyle: 'text/md',
 
   px: '3',
@@ -16,20 +16,20 @@ export const inputProps = {
   _placeholder: {
     textStyle: 'text/md',
     fontWeight: 'normal',
-    color: 'neutral.500',
+    color: 'text.tertiary',
   },
   _focus: {
-    borderColor: 'activeState.80',
+    borderColor: 'focus.ring',
     borderWidth: '1px',
     outline: '2px solid',
     outlineOffset: '2px',
-    outlineColor: 'activeState.80',
+    outlineColor: 'focus.ring',
   },
   _disabled: {
-    bgColor: 'neutral.50',
-    borderColor: 'neutral.50',
+    bgColor: 'surface.subtle',
+    borderColor: 'border.subtle',
   },
   _invalid: {
-    borderColor: 'error.500',
+    borderColor: 'status.error.solid',
   },
 }

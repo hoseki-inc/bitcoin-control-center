@@ -323,7 +323,7 @@ function GenericCheckWalletXpub({
         <Box textAlign="center">
           <Spinner centered />
         </Box>
-        <Text as="h2" textStyle="text/2xl" color="neutral.900" fontWeight="medium">
+        <Text as="h2" textStyle="text/2xl" color="text.primary" fontWeight="medium">
           Verifying Your Wallet...
         </Text>
         <Text textStyle="text/md">Checking if this device belongs to your multisig setup...</Text>
@@ -332,10 +332,10 @@ function GenericCheckWalletXpub({
           remain safely stored on your device.
         </Text>
         {containsNonStandardPaths && (
-          <Alert bgColor="neutral.50">
+          <Alert bgColor="surface.subtle">
             <HStack>
-              <Icon as={InfoIcon} color="neutral.900" boxSize="20px" />
-              <Box color="neutral.800">
+              <Icon as={InfoIcon} color="text.primary" boxSize="20px" />
+              <Box color="text.primary">
                 <Text textStyle="text/sm" fontWeight="medium">
                   Seeing an "unusual derivation path" warning?
                 </Text>
@@ -359,9 +359,9 @@ function GenericCheckWalletXpub({
           {media}
           <Box>
             <Box textAlign="center">
-              <GreenCheckIcon boxSize={12} color="green.500" />
+              <GreenCheckIcon boxSize={12} color="status.success.fg" />
             </Box>
-            <Text as="h2" textStyle="text/2xl" color="neutral.900" fontWeight="medium">
+            <Text as="h2" textStyle="text/2xl" color="text.primary" fontWeight="medium">
               Wallet Identified
             </Text>
           </Box>
@@ -396,7 +396,7 @@ function GenericCheckWalletXpub({
           <Box textAlign="center">
             <Icon as={XIcon} color="red" mx="auto" boxSize={10} />
           </Box>
-          <Text as="h2" textStyle="text/2xl" color="neutral.900" fontWeight="medium">
+          <Text as="h2" textStyle="text/2xl" color="text.primary" fontWeight="medium">
             Not a match :(
           </Text>
           <Text textStyle="text/md">The xpub returned from your device does not match any of your keystores.</Text>
@@ -409,7 +409,7 @@ function GenericCheckWalletXpub({
       {!matchedKeystore && (
         <Stack gap={4}>
           {media}
-          <Text as="h2" textStyle="text/2xl" color="neutral.900" fontWeight="medium">
+          <Text as="h2" textStyle="text/2xl" color="text.primary" fontWeight="medium">
             Confirm This Device Is Part of Your Multisig
           </Text>
           <Text textStyle="text/md" fontWeight="normal">
@@ -439,13 +439,13 @@ function GenericCheckWalletXpub({
 
 function TechnicalDetailsAccordion() {
   return (
-    <Accordion allowMultiple border="solid 1px" borderColor="neutral.200" borderRadius="4px">
+    <Accordion allowMultiple border="solid 1px" borderColor="border.subtle" borderRadius="4px">
       <AccordionItem border="none">
         <h2>
           <AccordionButton p={4} _hover={{ bgColor: 'inherit' }}>
             <HStack flex="1">
               <Badge>Advanced</Badge>
-              <Text as="h3" textStyle="text/sm" color="neutral.600" fontWeight={500}>
+              <Text as="h3" textStyle="text/sm" color="text.secondary" fontWeight={500}>
                 Show Technical Details
               </Text>
             </HStack>
@@ -453,7 +453,7 @@ function TechnicalDetailsAccordion() {
           </AccordionButton>
         </h2>
         <AccordionPanel p={4} pt={0}>
-          <Text textStyle="text/sm" color="neutral.600">
+          <Text textStyle="text/sm" color="text.secondary">
             This check uses the xpubs and derivation paths from you multisig setup provided by you.
           </Text>
         </AccordionPanel>

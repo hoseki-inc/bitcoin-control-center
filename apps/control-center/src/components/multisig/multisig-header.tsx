@@ -71,7 +71,7 @@ export function MultisigHeader({
     : ''
 
   return (
-    <HStack spacing={8} borderBottom="1px solid" borderColor="neutral.200" pb={2} {...props}>
+    <HStack spacing={8} borderBottom="1px solid" borderColor="border.subtle" pb={2} {...props}>
       <Box
         as={LinkIfNotCurrent}
         to={`/multisig/${claim.id}${searchParams}`}
@@ -81,7 +81,7 @@ export function MultisigHeader({
         <Text
           as="h1"
           textStyle="text/md"
-          color="neutral.900"
+          color="text.primary"
           fontWeight="medium"
           className="wallet-label"
           noOfLines={1}
@@ -89,7 +89,7 @@ export function MultisigHeader({
         >
           {claim.displayName}
         </Text>
-        <Text textStyle="text/sm" color="neutral.600">
+        <Text textStyle="text/sm" color="text.secondary">
           {threshold} of {claim.keystores.length} multisig wallet
         </Text>
       </Box>

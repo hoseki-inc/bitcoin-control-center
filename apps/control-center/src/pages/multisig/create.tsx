@@ -123,20 +123,20 @@ function GetReady({ onNext }: { onNext: () => void }) {
       <Text as="h1" textStyle="text/2xl" fontWeight="medium">
         Connect Your Multisig Wallet
       </Text>
-      <Text textStyle="text/md" color="neutral.900">
+      <Text textStyle="text/md" color="text.primary">
         You’re about to connect your multisig wallet to Bitcoin Control Center. This lets you verify ownership of your
         bitcoin using your existing multisig setup—no funds will be moved, and your custody remains unchanged.
       </Text>
       <Box>
-        <Text textStyle="text/md" color="neutral.900">
+        <Text textStyle="text/md" color="text.primary">
           To complete this step, you will:
         </Text>
-        <chakra.ol ml={6} textStyle="text/md" color="neutral.900">
+        <chakra.ol ml={6} textStyle="text/md" color="text.primary">
           <li>Upload your wallet’s descriptor file.</li>
           <li>Sign a message with your hardware keys.</li>
         </chakra.ol>
       </Box>
-      <Text textStyle="text/md" color="neutral.900">
+      <Text textStyle="text/md" color="text.primary">
         You can sign with your keys in any order—whichever is most convenient for your setup.
       </Text>
 
@@ -144,7 +144,7 @@ function GetReady({ onNext }: { onNext: () => void }) {
         title="Security tip"
         icon={CircleAlert}
         children={
-          <Text color="neutral.800">
+          <Text color="text.primary">
             Only upload this file to Bitcoin Control Center. For best security, delete it once you’ve completed the
             process.
           </Text>
@@ -171,7 +171,7 @@ function ImportWallet({ onBack, onNext }: { onBack: () => void; onNext: (data: C
       <Text as="h1" textStyle="text/2xl" fontWeight="medium">
         Upload Your Multisig Descriptor
       </Text>
-      <Text textStyle="text/md" color="neutral.900">
+      <Text textStyle="text/md" color="text.primary">
         Upload your wallet’s output descriptor so we can read your multisig configuration. You can export this file from
         your hardware wallet or multisig coordinator (such as Sparrow, Unchained, or Nunchuk).
       </Text>
@@ -192,7 +192,7 @@ function ImportWallet({ onBack, onNext }: { onBack: () => void; onNext: (data: C
         title="Need help?"
         icon={CircleAlert}
         children={
-          <Text color="neutral.800">
+          <Text color="text.primary">
             Visit our{' '}
             <Link
               to="https://help.hoseki.app/article/43-how-to-export-your-multisig-wallet"
@@ -295,7 +295,7 @@ function DetectionStep({
 
       <AnimatedDetectedKeystoreAvatars totalKeystores={wallet.keystores.length} threshold={account.threshold} />
 
-      <Text textStyle="text/md" color="neutral.900">
+      <Text textStyle="text/md" color="text.primary">
         Let's name your multisig claim. You rename this later at anytime.
       </Text>
 

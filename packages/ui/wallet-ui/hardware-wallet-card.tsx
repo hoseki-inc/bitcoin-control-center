@@ -79,31 +79,31 @@ export function HardwareWalletCard({
       textAlign="center"
       alignItems="center"
       border="1px solid"
-      borderColor="neutral.200"
-      bgColor={isSelected ? 'neutral.50' : 'white'}
+      borderColor="border.subtle"
+      bgColor={isSelected ? 'surface.subtle' : 'surface.raised'}
       borderRadius="md"
       p={4}
       w="fit-content"
       maxW="full"
       cursor={isClickable ? 'pointer' : 'default'}
-      _hover={isClickable ? { bgColor: 'neutral.50' } : undefined}
+      _hover={isClickable ? { bgColor: 'surface.subtle' } : undefined}
       onClick={handleCardClick}
       gap={0}
     >
       {isSelected && (
-        <Box position="absolute" left={0} top={0} bottom={0} width="4px" bg="neutral.900" borderRadius="md" />
+        <Box position="absolute" left={0} top={0} bottom={0} width="4px" bg="surface.inverse" borderRadius="md" />
       )}
       <Stack minW="164px" w="164px" gap={1} flexShrink={0}>
         <chakra.img src={`${HOSEKI_ASSETS_CDN_URL}/bitcoin-medium.svg`} alt="Wallet" w="32px" mx="auto" mb={1} />
-        <Text textStyle="label/md" fontWeight="medium" color="neutral.600">
+        <Text textStyle="label/md" fontWeight="medium" color="text.secondary">
           {wallet.label}
         </Text>
         <Stack gap={0}>
-          <Text textStyle="label/md" fontWeight="medium" color="neutral.900">
+          <Text textStyle="label/md" fontWeight="medium" color="text.primary">
             {toBitcoinAmountDisplayValue(wallet.btcBalance.toString())}
           </Text>
           {wallet.usdBalance && (
-            <Text textStyle="label/md" fontWeight="medium" color="success.600">
+            <Text textStyle="label/md" fontWeight="medium" color="status.success.fg">
               {formatUsd(wallet.usdBalance.toFixed(2))}
             </Text>
           )}
@@ -119,19 +119,19 @@ export function HardwareWalletCard({
                   <HStack spacing={2} overflowX="auto">
                     <Input
                       defaultValue={wallet.displayName}
-                      bgColor={isDisplayNameValid ? 'neutral.100' : 'red.50'}
-                      borderColor={isDisplayNameValid ? 'neutral.200' : 'red.500'}
+                      bgColor={isDisplayNameValid ? 'surface.muted' : 'status.error.bg'}
+                      borderColor={isDisplayNameValid ? 'border.subtle' : 'status.error.solid'}
                       fontSize="14px"
                       fontWeight={500}
-                      color="neutral.900"
+                      color="text.primary"
                       p={2}
                       minW="100px"
                       onChange={handleDisplayNameChange}
                       onBlur={handleDisplayNameBlur}
                     />
                     <Badge
-                      color="neutral.600"
-                      bgColor="neutral.100"
+                      color="text.secondary"
+                      bgColor="surface.muted"
                       py={0.5}
                       px={1.5}
                       fontWeight={500}
@@ -146,7 +146,7 @@ export function HardwareWalletCard({
                     </Box>
                   </HStack>
                   <chakra.code
-                    color="neutral.600"
+                    color="text.secondary"
                     fontSize="xs"
                     display="block"
                     whiteSpace="pre"
@@ -158,7 +158,7 @@ export function HardwareWalletCard({
                   </chakra.code>
                 </Stack>
                 <Button variant="plain" onClick={() => setIsMasked((prev) => !prev)} p={2} flexShrink={0}>
-                  <Icon as={isMasked ? EyeOffIcon : EyeIcon} color="neutral.600" boxSize="20px" />
+                  <Icon as={isMasked ? EyeOffIcon : EyeIcon} color="text.secondary" boxSize="20px" />
                 </Button>
               </HStack>
             </Box>
@@ -174,7 +174,7 @@ export function HardwareWalletCard({
             size="sm"
             p={0}
             flexShrink={0}
-            _hover={{ bg: 'neutral.100' }}
+            _hover={{ bg: 'surface.muted' }}
           >
             {isExpanded ? <ChevronLeftIcon /> : <ChevronRightIcon />}
           </Button>

@@ -24,7 +24,7 @@ export function MenuItemComponent({
       flex={{ base: 1, md: 'initial' }}
       textStyle="text/sm"
       fontWeight="medium"
-      color="neutral.600"
+      color="text.secondary"
       sx={{
         '& > a': {
           display: 'flex',
@@ -35,8 +35,8 @@ export function MenuItemComponent({
           borderRadius: 'control',
           transition: 'background-color 150ms ease, color 150ms ease',
         },
-        '& > a:hover': { bg: 'neutral.100', color: 'neutral.900' },
-        '& > a[aria-current="page"]': { bg: 'neutral.100', color: 'neutral.900' },
+        '& > a:hover': { bg: 'surface.muted', color: 'text.primary' },
+        '& > a[aria-current="page"]': { bg: 'surface.muted', color: 'text.primary' },
       }}
     >
       {renderLink(to, title)}
@@ -62,7 +62,7 @@ export interface HeaderProps {
 
 export function Header({ logo, menu, userInfo }: HeaderProps): JSX.Element {
   return (
-    <Box as="header" borderBottom="1px solid" borderColor="neutral.200" bg="white">
+    <Box as="header" borderBottom="1px solid" borderColor="border.subtle" bg="surface.base">
       <Wrapper display="flex" alignItems="center" flexWrap="wrap" maxW="928px" gap={{ base: 2, md: 6 }} py={3}>
         {logo}
         <Box

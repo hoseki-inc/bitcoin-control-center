@@ -35,8 +35,8 @@ export function ClaimsList({ claims }: { claims: ClaimDto[] }): JSX.Element {
                 balance: claimUsdBalancesQuery.data.get(claim.id),
               })}
               _hover={{
-                borderColor: 'neutral.200',
-                bgColor: 'neutral.50',
+                borderColor: 'border.subtle',
+                bgColor: 'surface.subtle',
                 cursor: 'pointer',
               }}
             />

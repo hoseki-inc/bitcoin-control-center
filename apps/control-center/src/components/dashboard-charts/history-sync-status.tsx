@@ -23,7 +23,7 @@ export function HistorySyncStatus({
           <Spinner
             label=""
             size="xs"
-            color="neutral.600"
+            color="text.secondary"
             w={size}
             h={size}
             // Hidden spinners remain still; only real work gets continuous motion.
@@ -31,7 +31,7 @@ export function HistorySyncStatus({
           />
         </Box>
         <Box position="absolute" inset={0} opacity={complete ? 1 : 0} transition={transition} aria-hidden="true">
-          <CheckCircleFilledIcon color="neutral.600" color2="white" boxSize={size} />
+          <CheckCircleFilledIcon color="text.secondary" color2="text.inverse" boxSize={size} />
         </Box>
       </Box>
     </Tooltip>

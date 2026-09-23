@@ -149,7 +149,7 @@ export function StatementCreatePage(): JSX.Element {
               <Text as="h2" textStyle="text/md" fontWeight="medium">
                 What is a Bitcoin Control Center statement?
               </Text>
-              <Text textStyle="text/sm" color="neutral.600">
+              <Text textStyle="text/sm" color="text.secondary">
                 A Bitcoin Control Center statement is like a bank statement for your self-custodial Bitcoin, showing
                 your transactions over a customizable time period.
               </Text>
@@ -167,7 +167,7 @@ export function StatementCreatePage(): JSX.Element {
                 </Stack>
                 <Stack direction={{ base: 'column', sm: 'row' }} spacing={5}>
                   <FormControl>
-                    <FormLabel textStyle="label/md" fontWeight="medium" color="neutral.900" htmlFor="opening-date">
+                    <FormLabel textStyle="label/md" fontWeight="medium" color="text.primary" htmlFor="opening-date">
                       Start Date
                     </FormLabel>
                     <DateInput
@@ -181,7 +181,7 @@ export function StatementCreatePage(): JSX.Element {
                   </FormControl>
 
                   <FormControl>
-                    <FormLabel textStyle="label/md" fontWeight="medium" color="neutral.900" htmlFor="closing-date">
+                    <FormLabel textStyle="label/md" fontWeight="medium" color="text.primary" htmlFor="closing-date">
                       End Date
                     </FormLabel>
                     <DateInput
@@ -222,7 +222,7 @@ export function StatementCreatePage(): JSX.Element {
                         flexShrink={0}
                       >
                         Contact Information{' '}
-                        <Text as="span" fontWeight="normal" color="neutral.600" fontStyle="italic">
+                        <Text as="span" fontWeight="normal" color="text.secondary" fontStyle="italic">
                           (optional)
                         </Text>
                       </Text>
@@ -233,13 +233,13 @@ export function StatementCreatePage(): JSX.Element {
                   <AccordionPanel px={0} py={1}>
                     <Stack alignItems="stretch" direction={{ base: 'column', md: 'row' }} gap={{ base: 4, md: 8 }}>
                       <Stack gap={1} flexBasis={LEFT_COLUMN_WIDTH} flexShrink={0}>
-                        <Text textStyle="text/sm" color="neutral.600">
+                        <Text textStyle="text/sm" color="text.secondary">
                           Add your name and address to be included on the statement.
                         </Text>
                       </Stack>
                       <Stack gap={4} flexGrow="1" minW={0}>
                         <FormControl>
-                          <FormLabel textStyle="label/md" fontWeight="medium" color="neutral.900" htmlFor="name">
+                          <FormLabel textStyle="label/md" fontWeight="medium" color="text.primary" htmlFor="name">
                             Name
                           </FormLabel>
                           <Input
@@ -251,13 +251,13 @@ export function StatementCreatePage(): JSX.Element {
                           />
                         </FormControl>
                         <FormControl>
-                          <FormLabel textStyle="label/md" fontWeight="medium" color="neutral.900" htmlFor="address">
+                          <FormLabel textStyle="label/md" fontWeight="medium" color="text.primary" htmlFor="address">
                             Address
                             <FormHelperText
                               as="span"
                               ml={2}
                               textStyle="text/sm"
-                              color="neutral.600"
+                              color="text.secondary"
                               fontWeight="normal"
                               fontStyle="italic"
                             >
@@ -288,7 +288,7 @@ export function StatementCreatePage(): JSX.Element {
               <Text as="h2" textStyle="text/md" fontWeight="medium">
                 {hasAccounts ? 'Select Accounts' : 'First, Connect an Account.'}
               </Text>
-              <Text textStyle="text/sm" color="neutral.600">
+              <Text textStyle="text/sm" color="text.secondary">
                 {hasAccounts
                   ? 'Verified wallets and connected exchange accounts.'
                   : 'Before you can generate a bitcoin ownership statement, you’ll need to connect a wallet and verify control.'}

@@ -100,11 +100,11 @@ export function MultisigFromDescriptor({ onNext }: { onNext: (data: CreateMultis
   }
 
   return (
-    <Accordion allowMultiple border="solid 1px" borderColor="neutral.200" borderRadius="4px">
+    <Accordion allowMultiple border="solid 1px" borderColor="border.subtle" borderRadius="4px">
       <AccordionItem border="none">
         <h2>
           <AccordionButton p={4} _hover={{ bgColor: 'inherit' }}>
-            <Text flex="1" as="h3" textStyle="text/sm" color="neutral.600" fontWeight={500} textAlign="left">
+            <Text flex="1" as="h3" textStyle="text/sm" color="text.secondary" fontWeight={500} textAlign="left">
               Paste Your Multisig Descriptor
             </Text>
             <AccordionIcon />

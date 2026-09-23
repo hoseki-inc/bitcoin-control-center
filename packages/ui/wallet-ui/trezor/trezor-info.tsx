@@ -62,17 +62,17 @@ export function TrezorInfo({
 export function TrezorInfoCopy(): JSX.Element {
   return (
     <>
-      <Text as="h2" textStyle="text/2xl" color="neutral.900" fontWeight="medium">
+      <Text as="h2" textStyle="text/2xl" color="text.primary" fontWeight="medium">
         Verifying Ownership With Your Trezor
       </Text>
-      <Text textStyle="text/md" color="neutral.900">
+      <Text textStyle="text/md" color="text.primary">
         To start verifying ownership, connect your Trezor and unlock it.
       </Text>
-      <Text textStyle="text/md" color="neutral.900">
+      <Text textStyle="text/md" color="text.primary">
         We'll guide you through each step—just follow the on-screen instructions. Your Trezor will verify ownership
         while your keys remain safely stored on your device.
       </Text>
-      <Text textStyle="text/md" color="neutral.900">
+      <Text textStyle="text/md" color="text.primary">
         Once your Trezor is connected and unlocked, click 'Next'.
       </Text>
       <HowDoesThisWork>

@@ -43,14 +43,14 @@ function ChartTooltip({
   const btcPrice = data.btcPrice ? Number(data.btcPrice) : 0
 
   return (
-    <Box bg="neutral.900" borderRadius="10px" px={3.5} py={2.5} shadow="lg">
-      <Text textStyle="text/xs" color="neutral.300" mb={1}>
+    <Box bg="surface.inverse" borderRadius="10px" px={3.5} py={2.5} shadow="lg">
+      <Text textStyle="text/xs" color="text.disabled" mb={1}>
         {format(new TZDate(new Date(data.timestamp), timezone), 'MMMM d, yyyy')}
       </Text>
       <Text
         textStyle="text/sm"
         fontWeight="medium"
-        color="shades.0"
+        color="text.inverse"
         fontFamily="body"
         sx={{ fontVariantNumeric: 'tabular-nums' }}
       >
@@ -61,7 +61,7 @@ function ChartTooltip({
       {btcPrice > 0 && (
         <Text
           textStyle="text/xs"
-          color="neutral.300"
+          color="text.disabled"
           mt={0.5}
           fontFamily="body"
           sx={{ fontVariantNumeric: 'tabular-nums' }}
@@ -80,8 +80,8 @@ export function AccumulationChart({
   timezone = getBrowserTimezone(),
 }: AccumulationChartProps): JSX.Element {
   const { unit } = useBitcoinDisplay()
-  const [axisColor] = useToken('colors', ['neutral.600'])
-  const [success500, error500, neutral400] = useToken('colors', ['success.500', 'error.500', 'neutral.400'])
+  const [axisColor, cursorColor, dotFill] = useToken('colors', ['chart.axis', 'border.strong', 'surface.base'])
+  const [success500, error500, neutral400] = useToken('colors', ['chart.positive', 'chart.negative', 'chart.muted'])
 
   const chartData = useMemo(
     () =>
@@ -102,10 +102,10 @@ export function AccumulationChart({
   if (chartData.length === 0) {
     return (
       <Flex h="220px" align="center" justify="center" direction="column" gap={2} px={6} textAlign="center">
-        <Text textStyle="text/md" fontWeight="medium" color="neutral.900">
+        <Text textStyle="text/md" fontWeight="medium" color="text.primary">
           No history for this range
         </Text>
-        <Text textStyle="text/sm" color="neutral.600">
+        <Text textStyle="text/sm" color="text.secondary">
           Try a different date range or allow your accounts to finish syncing.
         </Text>
       </Flex>
@@ -165,7 +165,7 @@ export function AccumulationChart({
           />
           <Tooltip
             content={(tooltipProps) => <ChartTooltip {...tooltipProps} timezone={timezone} />}
-            cursor={{ stroke: 'rgba(0,0,0,0.08)', strokeWidth: 1, strokeDasharray: '4 4' }}
+            cursor={{ stroke: cursorColor, strokeWidth: 1, strokeDasharray: '4 4' }}
           />
           <Area
             isAnimationActive={false}
@@ -175,7 +175,7 @@ export function AccumulationChart({
             strokeWidth={2}
             fill={`url(#${gradientId})`}
             dot={chartData.length === 1 ? { r: 3, fill: strokeColor } : false}
-            activeDot={{ r: 4, stroke: strokeColor, strokeWidth: 2, fill: '#fff' }}
+            activeDot={{ r: 4, stroke: strokeColor, strokeWidth: 2, fill: dotFill }}
           />
         </AreaChart>
       </ResponsiveContainer>

@@ -7,6 +7,37 @@
 
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+    <meta name="theme-color" content="#FFFFFF" />
+    <meta name="color-scheme" content="light dark" />
+    <!-- The app has its own light and dark glass themes; stop Dark Reader from re-colouring them. -->
+    <meta name="darkreader-lock" />
+    <style>
+      html {
+        background: #ffffff;
+      }
+      html[data-theme='dark'] {
+        background: #0b0c10;
+        color-scheme: dark;
+      }
+    </style>
+    <script>
+      // Resolve the appearance before first paint so dark mode never flashes white.
+      // Mirrors resolveAppearance() in src/hooks/use-appearance.ts.
+      ;(function () {
+        var preference = 'system'
+        try {
+          var stored = localStorage.getItem('control-center:appearance')
+          if (stored === 'light' || stored === 'dark' || stored === 'system') preference = stored
+        } catch (error) {}
+        var dark =
+          preference === 'dark' ||
+          (preference === 'system' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)
+        var mode = dark ? 'dark' : 'light'
+        document.documentElement.dataset.theme = mode
+        document.documentElement.style.colorScheme = mode
+        document.querySelector('meta[name="theme-color"]').setAttribute('content', dark ? '#0B0C10' : '#FFFFFF')
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>

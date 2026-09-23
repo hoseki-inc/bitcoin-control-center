@@ -181,15 +181,15 @@ export function DesktopLedgerConnection({
   return (
     <>
       <WalletAnimation animation="ledgerPlugIn" />
-      <Text as="h2" textStyle="text/2xl" color="neutral.900" fontWeight="medium">
+      <Text as="h2" textStyle="text/2xl" color="text.primary" fontWeight="medium">
         Connect your Ledger
       </Text>
-      <Text textStyle="text/md" color="neutral.700">
+      <Text textStyle="text/md" color="text.secondary">
         Connect via USB, unlock your Ledger with your PIN, and open the Bitcoin app.
       </Text>
       {state.phase !== 'idle' && (
         <Box
-          bg="neutral.50"
+          bg="surface.subtle"
           borderRadius="lg"
           p={5}
           my={3}
@@ -199,10 +199,10 @@ export function DesktopLedgerConnection({
           <HStack align="start" spacing={3}>
             {(state.phase === 'searching' || state.phase === 'connecting') && <Spinner size="sm" mt={1} />}
             <Stack spacing={2} flex={1}>
-              <Text textStyle="text/md" fontWeight="medium" color="neutral.900">
+              <Text textStyle="text/md" fontWeight="medium" color="text.primary">
                 {title}
               </Text>
-              <Text textStyle="text/sm" color="neutral.700">
+              <Text textStyle="text/sm" color="text.secondary">
                 {detail}
               </Text>
               {devices.length > 1 && (
@@ -225,15 +225,15 @@ export function DesktopLedgerConnection({
         </Box>
       )}
       <Stack spacing={2} my={3}>
-        <Text textStyle="text/md" color="neutral.900" fontWeight="medium">
+        <Text textStyle="text/md" color="text.primary" fontWeight="medium">
           Your private keys stay private.
         </Text>
-        <Text textStyle="text/sm" color="neutral.700">
+        <Text textStyle="text/sm" color="text.secondary">
           We use the official Ledger SDK to access public account information. Your private keys never leave your
           Ledger, and ownership proofs require your approval on the device.
         </Text>
       </Stack>
-      <Box as="details" color="neutral.700" my={3}>
+      <Box as="details" color="text.secondary" my={3}>
         <Box as="summary" cursor="pointer" textStyle="text/sm">
           Connection help
         </Box>

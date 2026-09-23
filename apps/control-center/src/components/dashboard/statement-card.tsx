@@ -10,8 +10,8 @@ export function StatementCard({ statement, onView }: { statement: StatementDto; 
       role="group"
       borderRadius="panel"
       borderWidth="1px"
-      borderColor="neutral.200"
-      bg="neutral.50"
+      borderColor="border.subtle"
+      bg="surface.subtle"
       p={0}
       overflow="hidden"
       position="relative"
@@ -80,15 +80,15 @@ export function StatementCard({ statement, onView }: { statement: StatementDto; 
           </Button>
         </LinearGradient>
       </Box>
-      <HStack bg="white" borderTopWidth="1px" borderColor="neutral.200">
+      <HStack bg="surface.raised" borderTopWidth="1px" borderColor="border.subtle">
         <Stack py={2} px={4} spacing={0} flexGrow="1">
-          <Text textStyle="text/sm" fontWeight="medium" color="neutral.900">
+          <Text textStyle="text/sm" fontWeight="medium" color="text.primary">
             Statement
           </Text>
-          <Text textStyle="text/xs" color="neutral.600">
+          <Text textStyle="text/xs" color="text.secondary">
             Period: {formatDateRange(statement.openingDate, statement.closingDate)}
           </Text>
-          <Text textStyle="text/xs" color="neutral.600">
+          <Text textStyle="text/xs" color="text.secondary">
             Created: {format(new Date(statement.createdAt), 'dd MMM yyyy h:mm a')}
           </Text>
         </Stack>

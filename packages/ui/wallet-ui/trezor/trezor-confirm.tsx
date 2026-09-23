@@ -37,7 +37,7 @@ export function TrezorConfirm({
           autoplay={true}
           style={{ height: '56px', width: '56px' }}
         />
-        <Text textStyle="text/2xl" fontWeight="medium" color="neutral.900">
+        <Text textStyle="text/2xl" fontWeight="medium" color="text.primary">
           Account Connected
         </Text>
         <Text textStyle="text/md" textAlign="center">

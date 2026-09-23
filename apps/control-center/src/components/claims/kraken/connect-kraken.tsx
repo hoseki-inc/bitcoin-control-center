@@ -96,7 +96,7 @@ export function ConnectKraken(): JSX.Element {
           content={
             <VStack spacing={8}>
               <img src="/images/exchanges/kraken.svg" alt="Kraken" style={{ height: '64px' }} />
-              <Text textStyle="text/2xl" color="neutral.900" textAlign="center">
+              <Text textStyle="text/2xl" color="text.primary" textAlign="center">
                 Your Kraken account &ldquo;{connectedAccount.displayName}&rdquo; is now{' '}
                 {isReconnect ? 'reconnected' : 'connected'}.
               </Text>
@@ -124,18 +124,18 @@ export function ConnectKraken(): JSX.Element {
           {/* Header */}
           <Flex align="center" gap={3}>
             <img src="/images/exchanges/kraken.svg" alt="Kraken" style={{ height: '32px' }} />
-            <Heading as="h1" textStyle="text/2xl" fontWeight="bold" color="neutral.900">
+            <Heading as="h1" textStyle="text/2xl" fontWeight="bold" color="text.primary">
               {isReconnect ? 'Reconnect Kraken Account' : 'Connect Kraken Account'}
             </Heading>
           </Flex>
-          <Text textStyle="text/md" color="neutral.600">
+          <Text textStyle="text/md" color="text.secondary">
             Enter your Kraken API credentials to import your Bitcoin balance. Only read-only access is required.
           </Text>
 
           {/* Form fields */}
           <Stack gap={4}>
             <FormControl isInvalid={!!errors.apiKey}>
-              <FormLabel textStyle="text/sm" color="neutral.600">
+              <FormLabel textStyle="text/sm" color="text.secondary">
                 API Key
               </FormLabel>
               <Input {...register('apiKey')} placeholder="Your Kraken API key" fontFamily="mono" fontSize="sm" />
@@ -143,7 +143,7 @@ export function ConnectKraken(): JSX.Element {
             </FormControl>
 
             <FormControl isInvalid={!!errors.secretKey}>
-              <FormLabel textStyle="text/sm" color="neutral.600">
+              <FormLabel textStyle="text/sm" color="text.secondary">
                 Secret Key
               </FormLabel>
               <Input
@@ -158,30 +158,30 @@ export function ConnectKraken(): JSX.Element {
           </Stack>
 
           {/* Instructions */}
-          <Box bg="neutral.50" borderRadius="md" p={4}>
-            <Text textStyle="text/sm" fontWeight="semibold" color="neutral.900" mb={2}>
+          <Box bg="surface.subtle" borderRadius="md" p={4}>
+            <Text textStyle="text/sm" fontWeight="semibold" color="text.primary" mb={2}>
               How to create a Kraken API key
             </Text>
             <Stack gap={2} as="ol" listStyleType="decimal" pl={4}>
-              <Text as="li" textStyle="text/sm" color="neutral.700">
+              <Text as="li" textStyle="text/sm" color="text.secondary">
                 Go to{' '}
                 <Text
                   as="a"
                   href="https://www.kraken.com/c/account-settings/api"
                   target="_blank"
                   rel="noopener noreferrer"
-                  color="neutral.900"
+                  color="text.primary"
                   textDecoration="underline"
                 >
                   Kraken API Settings
                 </Text>
                 , sign in, and click &ldquo;Create API Key&rdquo;.
               </Text>
-              <Text as="li" textStyle="text/sm" color="neutral.700">
+              <Text as="li" textStyle="text/sm" color="text.secondary">
                 Under Permissions, check &ldquo;Query Funds&rdquo; and &ldquo;Query Ledger Entries&rdquo;. Leave all
                 other permissions unchecked.
               </Text>
-              <Text as="li" textStyle="text/sm" color="neutral.700">
+              <Text as="li" textStyle="text/sm" color="text.secondary">
                 Click &ldquo;Generate Key&rdquo;. Copy both the API Key and the Private Key (base64 string), then paste
                 them above.
               </Text>
@@ -189,11 +189,11 @@ export function ConnectKraken(): JSX.Element {
           </Box>
 
           {/* Info box */}
-          <Box border="1px solid" borderColor="neutral.200" borderRadius="md" p={4} bg="shades.0">
-            <Text textStyle="text/sm" fontWeight="semibold" color="neutral.900" mb={1}>
+          <Box border="1px solid" borderColor="border.subtle" borderRadius="md" p={4} bg="surface.raised">
+            <Text textStyle="text/sm" fontWeight="semibold" color="text.primary" mb={1}>
               What is being accessed?
             </Text>
-            <Text textStyle="text/sm" color="neutral.600">
+            <Text textStyle="text/sm" color="text.secondary">
               Only your Bitcoin balance and transaction history are read. No trading or withdrawal permissions are
               required or granted.
             </Text>

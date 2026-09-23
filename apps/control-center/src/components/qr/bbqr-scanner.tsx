@@ -186,8 +186,8 @@ export function BBQrScanner({ onComplete, onPlainScan, onError, onCancel }: BBQr
         borderRadius="12px"
         overflow="hidden"
         border="1px solid"
-        borderColor="neutral.200"
-        bg="neutral.900"
+        borderColor="border.subtle"
+        bg="surface.inverse"
         sx={{
           // html5-qrcode injects child elements; keep them tidy
           '& video': { borderRadius: '12px' },
@@ -200,16 +200,16 @@ export function BBQrScanner({ onComplete, onPlainScan, onError, onCancel }: BBQr
       {state === 'requesting-camera' && (
         <Flex align="center" gap={2}>
           <Spinner size="sm" />
-          <Text textStyle="text/sm" color="neutral.500">
+          <Text textStyle="text/sm" color="text.tertiary">
             Requesting camera access...
           </Text>
         </Flex>
       )}
 
       {state === 'scanning' && totalParts > 1 && (
-        <Flex align="center" gap={2} bg="neutral.50" px={4} py={2} borderRadius="8px">
+        <Flex align="center" gap={2} bg="surface.subtle" px={4} py={2} borderRadius="8px">
           <CameraIcon size={16} />
-          <Text textStyle="text/sm" fontWeight="medium" color="neutral.700">
+          <Text textStyle="text/sm" fontWeight="medium" color="text.secondary">
             Scanned {scannedCount} of {totalParts} parts
           </Text>
         </Flex>
@@ -218,7 +218,7 @@ export function BBQrScanner({ onComplete, onPlainScan, onError, onCancel }: BBQr
       {state === 'scanning' && totalParts <= 1 && (
         <Flex align="center" gap={2}>
           <CameraIcon size={16} />
-          <Text textStyle="text/sm" color="neutral.500">
+          <Text textStyle="text/sm" color="text.tertiary">
             Point your webcam at the QR code...
           </Text>
         </Flex>
@@ -226,13 +226,13 @@ export function BBQrScanner({ onComplete, onPlainScan, onError, onCancel }: BBQr
 
       {state === 'error' && (
         <Flex direction="column" align="center" gap={2}>
-          <Flex align="center" gap={2} color="error.500">
+          <Flex align="center" gap={2} color="status.error.fg">
             <CameraOffIcon size={16} />
             <Text textStyle="text/sm" fontWeight="medium">
               {errorMessage ?? 'Camera error'}
             </Text>
           </Flex>
-          <Text textStyle="text/xs" color="neutral.400">
+          <Text textStyle="text/xs" color="text.tertiary">
             Make sure your browser has camera permissions enabled.
           </Text>
         </Flex>

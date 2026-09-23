@@ -153,7 +153,7 @@ export function BitcoinInputFormFields({
           {...monoInputProps}
         />
         {!isInvalid && xpub.isOk() && (
-          <Text textStyle="label/sm" color="neutral.500" mt={1}>
+          <Text textStyle="label/sm" color="text.tertiary" mt={1}>
             Account descriptors are preferred over extended public keys because they include the script type.
           </Text>
         )}

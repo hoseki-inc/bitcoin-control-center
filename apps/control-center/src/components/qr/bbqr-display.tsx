@@ -52,11 +52,11 @@ export function BBQrDisplay({
 
   return (
     <Box display="flex" flexDirection="column" alignItems="center" gap={2}>
-      <Box bg="white" p={4} borderRadius="12px" border="1px solid" borderColor="neutral.200">
+      <Box bg="white" p={4} borderRadius="12px" border="1px solid" borderColor="border.subtle">
         <QRCodeSVG value={currentValue} size={size} level="L" />
       </Box>
       {isAnimated && (
-        <Text textStyle="text/sm" color="neutral.400" fontWeight="medium">
+        <Text textStyle="text/sm" color="text.tertiary" fontWeight="medium">
           Part {frameIndex + 1} of {parts.length}
         </Text>
       )}

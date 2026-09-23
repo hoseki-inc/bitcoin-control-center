@@ -42,22 +42,22 @@ export function AccountAccordion({
     <Accordion allowToggle>
       <AccordionItem border="none">
         <h2>
-          <AccordionButton py={4} px={0} border="none" _hover={{ bg: 'white' }}>
+          <AccordionButton py={4} px={0} border="none" _hover={{ bg: 'transparent' }}>
             <HStack flexGrow={1}>
               <Box as="span" flex="1" textAlign="left">
                 <Text as="span" mr={3}>
                   Bitcoin Core Wallet
                 </Text>
                 {balance.noBalance ? (
-                  <Text as="span" color="neutral.600">
+                  <Text as="span" color="text.secondary">
                     {balance.noBalance}
                   </Text>
                 ) : (
                   <>
-                    <Text as="span" color="success.600" fontWeight="medium" display="inline-block" mr={2}>
+                    <Text as="span" color="status.success.fg" fontWeight="medium" display="inline-block" mr={2}>
                       {balance.usd}
                     </Text>
-                    <Text as="span" color="neutral.600">
+                    <Text as="span" color="text.secondary">
                       {balance.btc}
                     </Text>
                   </>

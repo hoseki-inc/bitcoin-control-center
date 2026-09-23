@@ -97,7 +97,7 @@ export function ConnectStrike(): JSX.Element {
           content={
             <VStack spacing={8}>
               <img src="/images/exchanges/strike-icon.svg" alt="Strike" style={{ height: '64px' }} />
-              <Text textStyle="text/2xl" color="neutral.900" textAlign="center">
+              <Text textStyle="text/2xl" color="text.primary" textAlign="center">
                 Your Strike account &ldquo;{connectedAccount.displayName}&rdquo; is now{' '}
                 {isReconnect ? 'reconnected' : 'connected'}.
               </Text>
@@ -125,18 +125,18 @@ export function ConnectStrike(): JSX.Element {
           {/* Header */}
           <Flex align="center" gap={3}>
             <img src="/images/exchanges/strike-icon.svg" alt="Strike" style={{ height: '32px' }} />
-            <Heading as="h1" textStyle="text/2xl" fontWeight="bold" color="neutral.900">
+            <Heading as="h1" textStyle="text/2xl" fontWeight="bold" color="text.primary">
               {isReconnect ? 'Reconnect Strike Account' : 'Connect Strike Account'}
             </Heading>
           </Flex>
-          <Text textStyle="text/md" color="neutral.600">
+          <Text textStyle="text/md" color="text.secondary">
             Enter your Strike API key to import your Bitcoin balance. Only read-only access is required.
           </Text>
 
           {/* Form fields */}
           <Stack gap={4}>
             <FormControl isInvalid={!!errors.displayName}>
-              <FormLabel textStyle="text/sm" color="neutral.600">
+              <FormLabel textStyle="text/sm" color="text.secondary">
                 Account Name
               </FormLabel>
               <Input {...register('displayName')} placeholder="e.g. My Strike Account" />
@@ -144,7 +144,7 @@ export function ConnectStrike(): JSX.Element {
             </FormControl>
 
             <FormControl isInvalid={!!errors.apiKey}>
-              <FormLabel textStyle="text/sm" color="neutral.600">
+              <FormLabel textStyle="text/sm" color="text.secondary">
                 API Key
               </FormLabel>
               <Input {...register('apiKey')} placeholder="Paste your Strike API key" fontFamily="mono" />
@@ -153,41 +153,41 @@ export function ConnectStrike(): JSX.Element {
           </Stack>
 
           {/* Instructions */}
-          <Box bg="neutral.50" borderRadius="md" p={4}>
-            <Text textStyle="text/sm" fontWeight="semibold" color="neutral.900" mb={2}>
+          <Box bg="surface.subtle" borderRadius="md" p={4}>
+            <Text textStyle="text/sm" fontWeight="semibold" color="text.primary" mb={2}>
               How to create a Strike API key
             </Text>
             <Stack gap={2} as="ol" listStyleType="decimal" pl={4}>
-              <Text as="li" textStyle="text/sm" color="neutral.700">
+              <Text as="li" textStyle="text/sm" color="text.secondary">
                 Go to{' '}
                 <Text
                   as="a"
                   href="https://dashboard.strike.me/developer/api-keys"
                   target="_blank"
                   rel="noopener noreferrer"
-                  color="neutral.900"
+                  color="text.primary"
                   textDecoration="underline"
                 >
                   Strike Developer Dashboard
                 </Text>{' '}
                 and sign in.
               </Text>
-              <Text as="li" textStyle="text/sm" color="neutral.700">
+              <Text as="li" textStyle="text/sm" color="text.secondary">
                 Click &ldquo;Generate API Key&rdquo; and give it a descriptive name like &ldquo;Bitcoin Control
                 Center&rdquo;.
               </Text>
-              <Text as="li" textStyle="text/sm" color="neutral.700">
+              <Text as="li" textStyle="text/sm" color="text.secondary">
                 Copy the API key and paste it above. Your key will be encrypted and stored securely.
               </Text>
             </Stack>
           </Box>
 
           {/* Info box */}
-          <Box border="1px solid" borderColor="neutral.200" borderRadius="md" p={4} bg="shades.0">
-            <Text textStyle="text/sm" fontWeight="semibold" color="neutral.900" mb={1}>
+          <Box border="1px solid" borderColor="border.subtle" borderRadius="md" p={4} bg="surface.raised">
+            <Text textStyle="text/sm" fontWeight="semibold" color="text.primary" mb={1}>
               What is being accessed?
             </Text>
-            <Text textStyle="text/sm" color="neutral.600">
+            <Text textStyle="text/sm" color="text.secondary">
               Only your Bitcoin balance is read. No trading or withdrawal permissions are required or granted.
             </Text>
           </Box>

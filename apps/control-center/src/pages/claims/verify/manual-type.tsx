@@ -54,20 +54,20 @@ function TypeCard(props: {
       state={props.state}
       p={{ base: 4, md: 5 }}
       border="1px solid"
-      borderColor="neutral.200"
+      borderColor="border.subtle"
       borderRadius="panel"
       align="center"
       gap={4}
       cursor="pointer"
-      _focusVisible={{ outline: '2px solid', outlineColor: 'activeState.80', outlineOffset: '3px' }}
-      _hover={{ borderColor: 'neutral.400', bg: 'neutral.50' }}
+      _focusVisible={{ outline: '2px solid', outlineColor: 'focus.ring', outlineOffset: '3px' }}
+      _hover={{ borderColor: 'border.strong', bg: 'surface.subtle' }}
     >
       <Flex
         w={10}
         h={10}
         borderRadius="control"
-        bg="neutral.100"
-        color="neutral.700"
+        bg="surface.muted"
+        color="text.secondary"
         align="center"
         justify="center"
         flexShrink={0}
@@ -75,10 +75,10 @@ function TypeCard(props: {
         {props.icon}
       </Flex>
       <Box flex={1} minW={0}>
-        <Text textStyle="text/md" fontWeight="semibold" color="neutral.900">
+        <Text textStyle="text/md" fontWeight="semibold" color="text.primary">
           {props.title}
         </Text>
-        <Text textStyle="text/sm" color="neutral.600" mt={1}>
+        <Text textStyle="text/sm" color="text.secondary" mt={1}>
           {props.description}
         </Text>
       </Box>

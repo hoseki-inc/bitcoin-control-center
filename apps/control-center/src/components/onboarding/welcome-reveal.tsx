@@ -1,9 +1,10 @@
-import { Box, Button, Image, Spinner, Stack, Text, usePrefersReducedMotion } from '@chakra-ui/react'
+import { Box, Button, Image, Spinner, Stack, Text, useColorModeValue, usePrefersReducedMotion } from '@chakra-ui/react'
 import { motion } from '@hoseki/packages/ui/design-system/animations/motion'
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 
 export function WelcomeReveal({ children }: { children: ReactNode }): JSX.Element {
   const reducedMotion = usePrefersReducedMotion()
+  const logoSrc = useColorModeValue('/hoseki-logo.svg', '/hoseki-logo-light.svg')
   const [phase, setPhase] = useState<'welcome' | 'reveal' | 'done'>('welcome')
   const contentRef = useRef<HTMLDivElement | null>(null)
   const welcomeRef = useRef<HTMLButtonElement | null>(null)
@@ -67,9 +68,9 @@ export function WelcomeReveal({ children }: { children: ReactNode }): JSX.Elemen
           sx={{ '@media (prefers-reduced-motion: reduce)': { transition: 'none' } }}
         >
           <Stack align="center" gap={5} px={6} aria-hidden="true">
-            <Spinner size="lg" color="neutral.500" mb={3} />
+            <Spinner size="lg" color="text.tertiary" mb={3} />
             <Image
-              src="/hoseki-logo.svg"
+              src={logoSrc}
               alt=""
               w={{ base: '168px', md: '208px' }}
               h="auto"
@@ -85,7 +86,7 @@ export function WelcomeReveal({ children }: { children: ReactNode }): JSX.Elemen
             <Text
               textStyle={{ base: 'text/2xl', md: 'text/3xl' }}
               fontWeight="medium"
-              color="neutral.900"
+              color="text.primary"
               letterSpacing="-0.02em"
               sx={{
                 animation: `welcomeIdentity 480ms ${motion.easeOut} 180ms both`,

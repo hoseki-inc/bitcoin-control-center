@@ -43,7 +43,7 @@ export type ExpandedRingColor = 'yellow' | 'green'
 
 export type Keystore = PendingKeystore | IdentifiedKeystore | VerifiedKeystore
 
-export const keyIcon = <Icon as={RoundKeyIcon} fill="neutral.400" color2="shades.0" stroke="none" boxSize="90%" />
+export const keyIcon = <Icon as={RoundKeyIcon} fill="text.tertiary" color2="surface.base" stroke="none" boxSize="90%" />
 
 type TooltipVariant = 'none' | 'pending' | 'verified'
 
@@ -147,7 +147,7 @@ function getKeystoreHints(
   amIExpanded: boolean,
   tooltipVariant: TooltipVariant,
 ): { tooltipCopy: string | null; icon: JSX.Element } {
-  const commonProps = { stroke: 'shades.0', boxSize: '16px' } as const
+  const commonProps = { stroke: 'text.inverse', boxSize: '16px' } as const
 
   switch (status) {
     case 'pending': {
@@ -158,7 +158,7 @@ function getKeystoreHints(
               : tooltipVariant === 'pending'
                 ? 'Start with one key before moving on; keys can be added in any order.'
                 : null,
-            icon: <PlusCircleIcon strokeWidth="2" fill="neutral.100" color="shades.100" {...commonProps} />,
+            icon: <PlusCircleIcon strokeWidth="2" fill="surface.muted" color="text.primary" {...commonProps} />,
           }
         : {
             tooltipCopy:
@@ -170,12 +170,14 @@ function getKeystoreHints(
     case 'identified':
       return {
         tooltipCopy: null,
-        icon: <CheckCircleFilledIcon color="neutral.100" color2="neutral.900" {...commonProps} />,
+        icon: <CheckCircleFilledIcon color="surface.muted" color2="text.primary" {...commonProps} />,
       }
     case 'verified':
       return {
         tooltipCopy: null,
-        icon: <CheckCircleFilledIcon color="success.700" color2="white" {...commonProps} aria-hidden="true" />,
+        icon: (
+          <CheckCircleFilledIcon color="status.success.fg" color2="text.inverse" {...commonProps} aria-hidden="true" />
+        ),
       }
   }
 }
@@ -220,7 +222,7 @@ export const GradientAnimatedRing = forwardRef<
             {...ringProps}
           />
         )}
-        <Box outline="1px solid" outlineColor="shades.0" borderRadius="full" zIndex={1}>
+        <Box outline="1px solid" outlineColor="border.subtle" borderRadius="full" zIndex={1}>
           {children}
         </Box>
       </>

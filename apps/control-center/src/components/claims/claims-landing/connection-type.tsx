@@ -32,7 +32,7 @@ export function ConnectionType({
       to={to}
       state={state}
       border="1px solid"
-      borderColor="neutral.200"
+      borderColor="border.subtle"
       borderRadius="4px"
       alignItems="center"
       direction="column"
@@ -42,8 +42,8 @@ export function ConnectionType({
       transition="background-color 150ms ease, border-color 150ms ease"
       p={{ base: 4, md: 6 }}
       gap={8}
-      _focusVisible={{ outline: '2px solid', outlineColor: 'neutral.900', outlineOffset: '3px' }}
-      _hover={{ cursor: 'pointer', bgColor: 'neutral.50' }}
+      _focusVisible={{ outline: '2px solid', outlineColor: 'border.inverse', outlineOffset: '3px' }}
+      _hover={{ cursor: 'pointer', bgColor: 'surface.subtle' }}
     >
       <Flex aria-hidden="true" justifyContent="center" align="center" w="full" flexShrink={0} h="30px">
         {imagePath ? <chakra.img src={imagePath} alt={imageAltText} maxW="min(120px, 100%)" maxH="30px" /> : media}

@@ -24,26 +24,26 @@ export function MultisigClaimProperties({ claim }: { claim: ClaimDto }): JSX.Ele
       </Text>
       <Flex flexDirection="row" flexWrap="wrap">
         <Box w={['50%', '30%']} boxSizing="border-box" pb={[4, 0]}>
-          <Text textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={1}>
+          <Text textStyle="text/sm" color="text.secondary" fontWeight="medium" mb={1}>
             Status
           </Text>
           <StatusBadge {...getBadgeConfigForClaim(claimStatus)} w="fit-content" />
         </Box>
         <Box w={['50%', '30%']} boxSizing="border-box" pb={[4, 0]}>
-          <Text textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={1}>
+          <Text textStyle="text/sm" color="text.secondary" fontWeight="medium" mb={1}>
             Amount
           </Text>
           {isBalanceLoading ? (
             <Spinner size="xs" />
           ) : (
             <>
-              <Text textStyle="label/sm" color="neutral.900" fontWeight="medium" whiteSpace="nowrap">
+              <Text textStyle="label/sm" color="text.primary" fontWeight="medium" whiteSpace="nowrap">
                 <SensitiveValue>
                   {balance?.current ? <BitcoinAmount btc={balance.current.div(100_000_000)} /> : 'n/a'}
                 </SensitiveValue>
               </Text>
               {balance?.usd && (
-                <Text textStyle="label/sm" color="success.600" fontWeight="medium">
+                <Text textStyle="label/sm" color="status.success.fg" fontWeight="medium">
                   <SensitiveValue>{formatUsd(balance.usd.toFixed(2))}</SensitiveValue>
                 </Text>
               )}
@@ -51,18 +51,18 @@ export function MultisigClaimProperties({ claim }: { claim: ClaimDto }): JSX.Ele
           )}
         </Box>
         <Box w={['50%', '30%']} boxSizing="border-box">
-          <Text textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={1} whiteSpace="nowrap">
+          <Text textStyle="text/sm" color="text.secondary" fontWeight="medium" mb={1} whiteSpace="nowrap">
             Claim Type
           </Text>
-          <Text textStyle="label/sm" color="neutral.900" fontWeight="medium">
+          <Text textStyle="label/sm" color="text.primary" fontWeight="medium">
             {isMultisig ? 'Multisig' : 'Singlesig'}
           </Text>
         </Box>
         <Box w={['50%', '10%']} textAlign={['left', 'right']} boxSizing="border-box">
-          <Text textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={1}>
+          <Text textStyle="text/sm" color="text.secondary" fontWeight="medium" mb={1}>
             Quorum
           </Text>
-          <Text textStyle="label/sm" color="neutral.900" fontWeight="medium">
+          <Text textStyle="label/sm" color="text.primary" fontWeight="medium">
             {threshold} of {claim.keystores.length}
           </Text>
         </Box>

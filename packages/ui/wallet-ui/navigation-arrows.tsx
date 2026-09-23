@@ -29,17 +29,17 @@ function NavigationArrow({
   return (
     <Button
       onClick={onClick}
-      bgColor="neutral.50"
+      bgColor="surface.subtle"
       borderRadius="50%"
       width="40px"
       height="40px"
       minWidth="40px"
       p={0}
-      _hover={{ bgColor: 'neutral.100' }}
-      _active={{ bgColor: 'neutral.200' }}
-      _focus={{ bgColor: 'neutral.200' }}
+      _hover={{ bgColor: 'surface.muted' }}
+      _active={{ bgColor: 'surface.emphasis' }}
+      _focus={{ bgColor: 'surface.emphasis' }}
     >
-      <Icon color="black" />
+      <Icon color="text.primary" />
     </Button>
   )
 }

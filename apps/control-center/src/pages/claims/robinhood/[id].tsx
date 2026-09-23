@@ -87,7 +87,7 @@ export function RobinhoodAccountDetailsPage(): JSX.Element {
         <TopBar.Item as={Link} to="/accounts">
           Back to Accounts
         </TopBar.Item>
-        <TopBar.Item as="button" color="error.600" onClick={handleDelete}>
+        <TopBar.Item as="button" color="status.error.fg" onClick={handleDelete}>
           {isDeleting ? 'Removing...' : 'Remove Account'}
         </TopBar.Item>
       </TopBar>
@@ -99,11 +99,11 @@ export function RobinhoodAccountDetailsPage(): JSX.Element {
             {account.displayName}
           </Text>
           <HStack spacing={1} flexWrap="wrap">
-            <Box w={2} h={2} bg="success.600" borderRadius="full" />
-            <Text textStyle="text/xs" color="neutral.600">
+            <Box w={2} h={2} bg="status.success.solid" borderRadius="full" />
+            <Text textStyle="text/xs" color="text.secondary">
               First Connected
             </Text>
-            <Text textStyle="text/xs" color="neutral.900" fontWeight="medium">
+            <Text textStyle="text/xs" color="text.primary" fontWeight="medium">
               {format(new Date(account.createdAt), 'MMMM do, yyyy')}
             </Text>
           </HStack>
@@ -127,15 +127,15 @@ export function RobinhoodAccountDetailsPage(): JSX.Element {
           <HStack spacing={0} gap={4} mb={4} w="100%" alignItems="flex-start" flexWrap="wrap">
             {/* Amount */}
             <Box w={{ base: 'full', sm: 'calc(50% - 8px)' }} minW={0} overflowWrap="anywhere">
-              <Text textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={1}>
+              <Text textStyle="text/sm" color="text.secondary" fontWeight="medium" mb={1}>
                 Amount
               </Text>
               {account.balance === null ? (
-                <Text textStyle="label/sm" color="neutral.400" fontWeight="medium">
+                <Text textStyle="label/sm" color="text.tertiary" fontWeight="medium">
                   —
                 </Text>
               ) : (
-                <Text textStyle="label/sm" color="neutral.900" fontWeight="medium">
+                <Text textStyle="label/sm" color="text.primary" fontWeight="medium">
                   <SensitiveValue>
                     <BitcoinAmount btc={btcAmount} />
                   </SensitiveValue>
@@ -145,7 +145,7 @@ export function RobinhoodAccountDetailsPage(): JSX.Element {
 
             {/* Status */}
             <Box w={{ base: 'full', sm: 'calc(50% - 8px)' }} minW={0} overflowWrap="anywhere">
-              <Text textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={1}>
+              <Text textStyle="text/sm" color="text.secondary" fontWeight="medium" mb={1}>
                 Status
               </Text>
               {needsReconnect ? (
@@ -157,10 +157,10 @@ export function RobinhoodAccountDetailsPage(): JSX.Element {
 
             {/* Account Type */}
             <Box w={{ base: 'full', sm: 'calc(50% - 8px)' }} minW={0} overflowWrap="anywhere">
-              <Text textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={1}>
+              <Text textStyle="text/sm" color="text.secondary" fontWeight="medium" mb={1}>
                 Account Type
               </Text>
-              <Text textStyle="label/sm" color="neutral.900" fontWeight="medium">
+              <Text textStyle="label/sm" color="text.primary" fontWeight="medium">
                 Custodial
               </Text>
             </Box>
@@ -172,10 +172,10 @@ export function RobinhoodAccountDetailsPage(): JSX.Element {
               overflowWrap="anywhere"
               textAlign={{ base: 'left', sm: 'right' }}
             >
-              <Text textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={1}>
+              <Text textStyle="text/sm" color="text.secondary" fontWeight="medium" mb={1}>
                 Date Added
               </Text>
-              <Text textStyle="label/sm" color="neutral.900" fontWeight="medium">
+              <Text textStyle="label/sm" color="text.primary" fontWeight="medium">
                 {format(new Date(account.createdAt), 'MMMM do, yyyy')}
               </Text>
             </Box>

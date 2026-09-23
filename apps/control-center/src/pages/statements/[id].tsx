@@ -75,7 +75,7 @@ function StatementDetailsPageContent({ statementId }: { statementId: StatementId
         flexBasis={{ base: 'auto', xl: '60%' }}
         minW={0}
         width={{ base: 'full', xl: '60%' }}
-        bg="#F9F9F9"
+        bg="surface.subtle"
       >
         <StatementPreview
           statement={statement}
@@ -196,9 +196,9 @@ function BackLink() {
       to="/portfolio"
       display="inline-flex"
       alignItems="center"
-      color="neutral.900"
+      color="text.primary"
       fontWeight="medium"
-      _hover={{ textDecoration: 'none', color: 'neutral.500' }}
+      _hover={{ textDecoration: 'none', color: 'text.tertiary' }}
     >
       Back to Home
     </Link>
@@ -207,12 +207,12 @@ function BackLink() {
 
 function LearnMore() {
   return (
-    <Box bg="neutral.50" p={4} borderRadius="md">
+    <Box bg="surface.subtle" p={4} borderRadius="md">
       <HStack spacing={3}>
         <ShieldCheckIcon size={20} />
         <Text fontWeight="medium">Your Proof is Private & Secure</Text>
       </HStack>
-      <Text ml={7} color="neutral.900">
+      <Text ml={7} color="text.primary">
         This proof securely verifies your bitcoin holdings. Learn more in our{' '}
         <Link href="https://help.hoseki.app" isExternal textDecoration="underline" fontWeight="medium">
           Help Center
@@ -270,7 +270,7 @@ function StatementPreview({
         alignItems="center"
         height="90%"
         width="90%"
-        borderColor="neutral.200"
+        borderColor="border.subtle"
         borderWidth="1px"
       >
         {statement.status !== 'completed' ? (
@@ -318,10 +318,10 @@ function StatementPreview({
 function PreviewUnavailable() {
   return (
     <Box textAlign="center">
-      <Text fontSize="lg" fontWeight="medium" color="neutral.700">
+      <Text fontSize="lg" fontWeight="medium" color="text.secondary">
         Preview Unavailable
       </Text>
-      <Text color="neutral.600" mt={2}>
+      <Text color="text.secondary" mt={2}>
         Only requests that have been accepted can be previewed.
       </Text>
     </Box>

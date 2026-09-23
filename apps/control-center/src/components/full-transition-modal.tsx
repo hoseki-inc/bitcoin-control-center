@@ -45,8 +45,8 @@ export function FullTransitionModal({
                 boxSize="32px"
                 flexShrink={0}
                 borderRadius="full"
-                bg={status === 'completed' ? 'success.600' : 'neutral.50'}
-                color={status === 'completed' ? 'shades.0' : 'neutral.600'}
+                bg={status === 'completed' ? 'status.success.solid' : 'surface.subtle'}
+                color={status === 'completed' ? 'text.inverse' : 'text.secondary'}
                 aria-hidden="true"
               >
                 {status === 'completed' ? <Check size={20} strokeWidth={3} /> : <Spinner size="sm" />}
@@ -92,17 +92,17 @@ export function getContent(): {
 } {
   return {
     pendingContent: (
-      <Text textStyle="text/md" color="neutral.600">
+      <Text textStyle="text/md" color="text.secondary">
         Your statement will appear in Statements when it’s ready. You can continue using Control Center.
       </Text>
     ),
     completedContent: (
-      <Text textStyle="text/md" color="neutral.600">
+      <Text textStyle="text/md" color="text.secondary">
         Your statement is ready to view and download.
       </Text>
     ),
     failedContent: (
-      <Text textStyle="text/md" color="neutral.600">
+      <Text textStyle="text/md" color="text.secondary">
         Your statement could not be created. Close this dialog to review your selection and try again.
       </Text>
     ),

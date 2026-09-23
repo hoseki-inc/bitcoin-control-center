@@ -18,7 +18,7 @@ export function AddAccountFlow({ onClose, linkState }: AddAccountFlowProps): JSX
         variant="ghost"
         size="sm"
         onClick={onClose}
-        color="neutral.900"
+        color="text.primary"
         fontWeight="medium"
         mb={6}
         pl={0}
@@ -26,10 +26,10 @@ export function AddAccountFlow({ onClose, linkState }: AddAccountFlowProps): JSX
       >
         Back to Accounts
       </Button>
-      <Heading as="h1" textStyle="text/3xl" fontWeight="bold" color="neutral.900" mb={2}>
+      <Heading as="h1" textStyle="text/3xl" fontWeight="bold" color="text.primary" mb={2}>
         Connect New Account
       </Heading>
-      <Text textStyle="text/md" color="neutral.600" mb={10}>
+      <Text textStyle="text/md" color="text.secondary" mb={10}>
         Connect your hardware wallet to securely link your Bitcoin holdings. Your private keys never leave your device.
       </Text>
       <Grid templateColumns={{ base: 'repeat(2, minmax(0, 1fr))', md: 'repeat(3, minmax(0, 1fr))' }} gap={4} mb={8}>
@@ -115,7 +115,7 @@ export function AddAccountFlow({ onClose, linkState }: AddAccountFlowProps): JSX
 
 function ManualEntryIcon(): JSX.Element {
   return (
-    <Icon viewBox="0 0 24 24" w={6} h={6} color="neutral.600">
+    <Icon viewBox="0 0 24 24" w={6} h={6} color="text.secondary">
       <path
         d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
         stroke="currentColor"

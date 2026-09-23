@@ -3,16 +3,16 @@ import { Box, type BoxProps, HStack, Text } from '@chakra-ui/react'
 const styles = {
   neutral: {
     header: {
-      bgColor: 'neutral.50',
-      color: 'neutral.600',
+      bgColor: 'surface.subtle',
+      color: 'text.secondary',
       borderBottom: 'solid 1px',
-      borderColor: 'neutral.200',
+      borderColor: 'border.subtle',
     },
   },
   warning: {
     header: {
-      bgColor: 'warning.100',
-      color: 'warning.800',
+      bgColor: 'status.warning.bg',
+      color: 'status.warning.fg',
     },
   },
 } as const
@@ -39,7 +39,7 @@ export function Panel(props: PanelProps): JSX.Element {
   const { children, colorMode = 'neutral', customHeader, title, icon, ...rest } = props
 
   return (
-    <Box as="section" border="solid 1px" borderColor="neutral.200" borderRadius="panel" {...rest}>
+    <Box as="section" border="solid 1px" borderColor="border.subtle" borderRadius="panel" {...rest}>
       {customHeader ?? <Header icon={icon} title={title ?? ''} colorMode={colorMode} />}
       {children}
     </Box>

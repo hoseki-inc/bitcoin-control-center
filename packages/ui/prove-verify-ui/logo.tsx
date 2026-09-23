@@ -1,4 +1,4 @@
-import { Box, Flex, chakra } from '@chakra-ui/react'
+import { Box, Flex, chakra, useColorModeValue } from '@chakra-ui/react'
 import type { PropsWithChildren, ReactNode } from 'react'
 
 interface LogoProps {
@@ -10,13 +10,14 @@ interface LogoProps {
 }
 
 export function Logo({
-  logoSrc = '/hoseki-logo.svg',
+  logoSrc,
   logoAlt = 'Bitcoin Control Center',
   logoHeight = '32px',
   stickerLabel,
   renderLink,
 }: LogoProps): JSX.Element {
-  const LogoImage = <chakra.img src={logoSrc} alt={logoAlt} h={logoHeight} />
+  const themedSrc = useColorModeValue('/hoseki-logo.svg', '/hoseki-logo-light.svg')
+  const LogoImage = <chakra.img src={logoSrc ?? themedSrc} alt={logoAlt} h={logoHeight} />
   return (
     <Flex justify="center">
       <Box position="relative">
@@ -71,11 +72,11 @@ export const Sticker = ({ children }: PropsWithChildren): JSX.Element => {
       top={0}
       transform="translateX(45%) translateY(-45%) rotateZ(15deg)"
       opacity={0.85}
-      color="neutral.900"
-      bgColor="secondary.400"
+      color="accent.fg"
+      bgColor="accent.solid"
       pointerEvents="none"
       border="1px solid"
-      borderColor="neutral.100"
+      borderColor="border.subtle"
     >
       {children}
     </Flex>

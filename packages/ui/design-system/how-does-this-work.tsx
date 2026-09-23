@@ -3,10 +3,10 @@ import { InfoIcon } from 'lucide-react'
 
 export function HowDoesThisWork({ children }: { children: React.ReactNode }): JSX.Element {
   return (
-    <Alert bgColor="neutral.50">
+    <Alert bgColor="surface.subtle">
       <HStack>
-        <Icon as={InfoIcon} color="neutral.900" boxSize="20px" />
-        <Box color="neutral.800">
+        <Icon as={InfoIcon} color="text.primary" boxSize="20px" />
+        <Box color="text.primary">
           <Text textStyle="text/sm" fontWeight="medium">
             How does this work?
           </Text>

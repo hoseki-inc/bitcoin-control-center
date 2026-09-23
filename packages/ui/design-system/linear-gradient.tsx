@@ -11,7 +11,7 @@ export const LinearGradient = ({
   gradientDirection,
   gradientSize = 30,
   gradientPercentage = 90,
-  baseColor = '#FFF',
+  baseColor = 'var(--hoseki-colors-surface-base)',
   ...flexProps
 }: LinearGradientProps): JSX.Element => {
   const gradientStyles = {

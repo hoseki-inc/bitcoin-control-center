@@ -6,9 +6,9 @@ export function ClaimCardLoadingSkeleton(): JSX.Element {
       textAlign="center"
       borderWidth="1px"
       borderRadius="md"
-      borderColor="neutral.200"
+      borderColor="border.subtle"
       p={4}
-      bg="white"
+      bg="surface.raised"
       transition="all 0.2s"
     >
       <chakra.img src="/bitcoin-gray.svg" alt="Bitcoin Wallet Example" mx="auto" mb={2} mt={3} />
