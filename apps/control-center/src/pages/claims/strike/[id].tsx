@@ -50,7 +50,7 @@ function parseStrikeCsv(csvText: string): ParsedStrikeTx[] {
 
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i]
-    if (!line) {
+    if (line == null || line === '') {
       continue
     }
     const cols = parseCsvLine(line)
@@ -65,7 +65,17 @@ function parseStrikeCsv(csvText: string): ParsedStrikeTx[] {
     if (status !== 'Completed') {
       continue
     }
-    if (!txId || !timeUtc || !txType || !amountBtc || amountBtc.trim() === '') {
+    if (
+      txId == null ||
+      txId === '' ||
+      timeUtc == null ||
+      timeUtc === '' ||
+      txType == null ||
+      txType === '' ||
+      amountBtc == null ||
+      amountBtc === '' ||
+      amountBtc.trim() === ''
+    ) {
       continue
     }
 
@@ -84,12 +94,12 @@ function parseStrikeCsv(csvText: string): ParsedStrikeTx[] {
       transactedAt: date.toISOString(),
       type: txType.toLowerCase(),
       amountBtc,
-      amountUsd: amountUsd?.trim() ? amountUsd : undefined,
-      feeUsd: feeUsd?.trim() ? feeUsd : undefined,
-      feeBtc: feeBtc?.trim() ? feeBtc : undefined,
-      exchangeRate: exchangeRate?.trim() ? exchangeRate : undefined,
-      description: description?.trim() ? description : undefined,
-      txHash: txHash?.trim() ? txHash : undefined,
+      amountUsd: (amountUsd?.trim() ?? '') !== '' ? amountUsd : undefined,
+      feeUsd: (feeUsd?.trim() ?? '') !== '' ? feeUsd : undefined,
+      feeBtc: (feeBtc?.trim() ?? '') !== '' ? feeBtc : undefined,
+      exchangeRate: (exchangeRate?.trim() ?? '') !== '' ? exchangeRate : undefined,
+      description: (description?.trim() ?? '') !== '' ? description : undefined,
+      txHash: (txHash?.trim() ?? '') !== '' ? txHash : undefined,
       statementMonth,
     })
   }
@@ -150,12 +160,12 @@ export function StrikeAccountDetailsPage(): JSX.Element {
 
   const monthsQuery = trpc.portalProve.exchange.strike.listStatementMonths.useQuery(
     { accountId: accountId ?? '' },
-    { enabled: !!accountId },
+    { enabled: accountId != null && accountId !== '' },
   )
 
   const txQuery = trpc.portalProve.exchange.strike.listStatementTransactions.useQuery(
     { accountId: accountId ?? '', statementMonth: selectedMonth ?? undefined },
-    { enabled: !!accountId && !!selectedMonth },
+    { enabled: accountId != null && accountId !== '' && selectedMonth != null && selectedMonth !== '' },
   )
 
   if (listQuery.isLoading) {
@@ -168,13 +178,13 @@ export function StrikeAccountDetailsPage(): JSX.Element {
     return <ErrorBanner mt={8} mb={4} message="Strike account not found." />
   }
 
-  const btcSats = account.balance ? Number(account.balance) : 0
+  const btcSats = account.balance != null && account.balance !== '' ? Number(account.balance) : 0
   const btcAmount = (btcSats / 100_000_000).toFixed(8)
   const needsReconnect = needsExchangeReconnect(account)
   const accountDisplayName = account.displayName
 
   function handleReconnect(): void {
-    if (!accountId) {
+    if (accountId == null || accountId === '') {
       return
     }
     void navigate('/accounts/verify/strike', {
@@ -187,7 +197,7 @@ export function StrikeAccountDetailsPage(): JSX.Element {
   }
 
   async function handleRefresh(): Promise<void> {
-    if (!accountId) {
+    if (accountId == null || accountId === '') {
       return
     }
     setIsRefreshing(true)
@@ -205,7 +215,7 @@ export function StrikeAccountDetailsPage(): JSX.Element {
   }
 
   async function handleDelete(): Promise<void> {
-    if (!accountId) {
+    if (accountId == null || accountId === '') {
       return
     }
     setIsDeleting(true)
@@ -223,7 +233,7 @@ export function StrikeAccountDetailsPage(): JSX.Element {
   }
 
   async function handleCsvFile(file: File): Promise<void> {
-    if (!accountId) {
+    if (accountId == null || accountId === '') {
       return
     }
     if (!file.name.toLowerCase().endsWith('.csv')) {
@@ -243,7 +253,7 @@ export function StrikeAccountDetailsPage(): JSX.Element {
 
       const result = await importMutation.mutateAsync({ accountId, transactions })
       await monthsQuery.refetch()
-      if (selectedMonth) {
+      if (selectedMonth != null && selectedMonth !== '') {
         await txQuery.refetch()
       }
 
@@ -259,7 +269,7 @@ export function StrikeAccountDetailsPage(): JSX.Element {
   }
 
   async function handleDeleteMonth(month: string): Promise<void> {
-    if (!accountId) {
+    if (accountId == null || accountId === '') {
       return
     }
     try {
@@ -478,7 +488,7 @@ export function StrikeAccountDetailsPage(): JSX.Element {
           )}
 
           {/* Transaction Table */}
-          {selectedMonth && txQuery.data && txQuery.data.length > 0 && (
+          {selectedMonth != null && selectedMonth !== '' && txQuery.data && txQuery.data.length > 0 && (
             <Box mt={4}>
               <Text textStyle="label/sm" fontWeight="semibold" mb={2}>
                 {formatMonth(selectedMonth)} — {txQuery.data.length} transaction{txQuery.data.length !== 1 ? 's' : ''}
@@ -520,17 +530,24 @@ export function StrikeAccountDetailsPage(): JSX.Element {
                           </Td>
                           <Td isNumeric>
                             <Text textStyle="text/xs" fontFamily="mono" color="neutral.500">
-                              {tx.amountUsd ? `$${Math.abs(Number(tx.amountUsd)).toFixed(2)}` : '—'}
+                              {tx.amountUsd != null && tx.amountUsd !== ''
+                                ? `$${Math.abs(Number(tx.amountUsd)).toFixed(2)}`
+                                : '—'}
                             </Text>
                           </Td>
                           <Td isNumeric>
                             <Text textStyle="text/xs" color="neutral.500">
-                              {tx.exchangeRate ? `$${Number(tx.exchangeRate).toLocaleString()}` : '—'}
+                              {tx.exchangeRate != null && tx.exchangeRate !== ''
+                                ? `$${Number(tx.exchangeRate).toLocaleString()}`
+                                : '—'}
                             </Text>
                           </Td>
                           <Td>
                             <Text textStyle="text/xs" color="neutral.500" maxW="200px" isTruncated>
-                              {tx.description || tx.txHash ? truncateHash(tx.txHash) : '—'}
+                              {(tx.description != null && tx.description !== '') ||
+                              (tx.txHash != null && tx.txHash !== '')
+                                ? truncateHash(tx.txHash)
+                                : '—'}
                             </Text>
                           </Td>
                         </Tr>
@@ -542,7 +559,9 @@ export function StrikeAccountDetailsPage(): JSX.Element {
             </Box>
           )}
 
-          {selectedMonth && txQuery.isLoading && <Spinner mt={4} display="block" mx="auto" />}
+          {selectedMonth != null && selectedMonth !== '' && txQuery.isLoading && (
+            <Spinner mt={4} display="block" mx="auto" />
+          )}
         </Box>
       </Stack>
     </Box>
@@ -666,7 +685,7 @@ function formatBtcAmount(amount: string): string {
 }
 
 function truncateHash(hash: string | null): string {
-  if (!hash) {
+  if (hash == null || hash === '') {
     return ''
   }
   if (hash.length <= 16) {

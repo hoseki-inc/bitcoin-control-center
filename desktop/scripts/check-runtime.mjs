@@ -22,7 +22,7 @@ async function checkRuntime() {
     database = new Database(databasePath)
     assert.deepEqual(database.prepare('SELECT value FROM smoke').get(), { value: 42 })
   } finally {
-    if (database?.open) {
+    if (database?.open === true) {
       database.close()
     }
     rmSync(temporaryDirectory, { recursive: true, force: true })

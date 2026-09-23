@@ -63,7 +63,7 @@ function BitcoinSigningStep({
 
   async function handleFormSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
-    if (!signature) {
+    if (signature == null || signature === '') {
       return
     }
 
@@ -106,7 +106,7 @@ function BitcoinSigningStep({
         rightButton={
           <Button
             type="submit"
-            isDisabled={!signature}
+            isDisabled={signature == null || signature === ''}
             isLoading={completeSignedMessageMutation.isLoading || completeChallengeMutation.isLoading}
           >
             Verify

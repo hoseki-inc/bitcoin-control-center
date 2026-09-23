@@ -70,11 +70,14 @@ export function useGetClaimBalance(claimId: ClaimId | null, { enabled } = { enab
   const balanceQueriesOpts = { enabled }
   const queries = trpc.useQueries((t) => [
     t.portalProve.retrieveBitcoinPrice(undefined, balanceQueriesOpts),
-    t.portalProve.onchain.claimBalances({ claimIds: claimId ? [claimId] : [] }, balanceQueriesOpts),
+    t.portalProve.onchain.claimBalances(
+      { claimIds: claimId != null && claimId.length > 0 ? [claimId] : [] },
+      balanceQueriesOpts,
+    ),
   ])
   const [btcPriceQuery, btcClaimBalancesQuery] = queries
   const btcPrice = btcPriceQuery.data?.value ?? null
-  const balance = claimId ? btcClaimBalancesQuery.data?.get(claimId) : null
+  const balance = claimId != null && claimId.length > 0 ? btcClaimBalancesQuery.data?.get(claimId) : null
 
   return {
     isLoading: queries.some((q) => q.isLoading),

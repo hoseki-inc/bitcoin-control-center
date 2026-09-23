@@ -144,7 +144,7 @@ export function BBQrScanner({ onComplete, onPlainScan, onError, onCancel }: BBQr
           const allParts: string[] = []
           for (let i = 0; i < expectedTotalRef.current; i++) {
             const part = partsRef.current.get(i)
-            if (!part) {
+            if (part == null || part === '') {
               setState('error')
               setErrorMessage(`Missing part ${i}`)
               onErrorRef.current?.(`Missing part ${i}`)

@@ -13,7 +13,9 @@ export function useUiSettings<T extends Record<string, Primitive>>(args: {
   function getLocalStorage(): T {
     try {
       const value = localStorage.getItem(localStorageKey)
-      return value ? parseUnknown(args.schema, JSON.parse(value)).unwrapOr(args.defaultSettings) : args.defaultSettings
+      return value != null && value !== ''
+        ? parseUnknown(args.schema, JSON.parse(value)).unwrapOr(args.defaultSettings)
+        : args.defaultSettings
     } catch (error) {
       console.error('Error retrieving UI settings from localStorage', error)
       return args.defaultSettings
@@ -23,7 +25,7 @@ export function useUiSettings<T extends Record<string, Primitive>>(args: {
   const [uiSettings, setUiSettings] = useState<T>(() => getLocalStorage())
 
   function updateUiSettings(settings: Partial<T>) {
-    if (!args.userId) {
+    if (args.userId == null || args.userId === '') {
       return
     }
 

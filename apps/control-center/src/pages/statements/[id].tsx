@@ -84,7 +84,7 @@ function StatementSummary({ statement }: { statement: StatementDto }) {
         </Text>
         <Flex flexDirection="column" gap={4}>
           <HStack justifyContent="space-between">
-            {statement.user.name && (
+            {statement.user.name != null && statement.user.name !== '' && (
               <Box>
                 <Text textStyle="text/sm" fontWeight="medium">
                   Name
@@ -96,7 +96,7 @@ function StatementSummary({ statement }: { statement: StatementDto }) {
               <Text textStyle="text/sm" fontWeight="medium">
                 Email
               </Text>
-              <Text>{statement.user.email?.length ? statement.user.email : 'N/A'}</Text>
+              <Text>{(statement.user.email?.length ?? 0) > 0 ? statement.user.email : 'N/A'}</Text>
             </Box>
             <Box>
               <Text textStyle="text/sm" fontWeight="medium">

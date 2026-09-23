@@ -842,7 +842,7 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
     <View style={styles.tableHeader}>
       {columns.map((column, index) => {
         const width = columnWidths[column]
-        if (!width) {
+        if (width === undefined || width === 0 || Number.isNaN(width)) {
           throw new Error(`Column width not found for column key: ${column}`)
         }
         return (
@@ -910,7 +910,10 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
             <>
               <TableHeader columns={columns} columnWidths={columnWidths} />
               {data.map((item, rowIndex) => {
-                const originalIndex = rowsPerPage ? rowIndex * rowsPerPage + rowIndex : rowIndex
+                const originalIndex =
+                  rowsPerPage !== undefined && rowsPerPage !== 0 && !Number.isNaN(rowsPerPage)
+                    ? rowIndex * rowsPerPage + rowIndex
+                    : rowIndex
                 return <RowComponent key={originalIndex} item={item} index={originalIndex} />
               })}
             </>
@@ -927,7 +930,7 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
   }
 
   const TableRow: React.FC<TableRowProps> = ({ children, index, isAlternate }) => (
-    <View style={[styles.tableRow, ...(isAlternate || index % 2 === 1 ? [styles.tableRowAlternate] : [])]}>
+    <View style={[styles.tableRow, ...(isAlternate === true || index % 2 === 1 ? [styles.tableRowAlternate] : [])]}>
       {children}
     </View>
   )
@@ -1024,7 +1027,7 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
             <Text style={styles.providedByLabel}>Provided by user</Text>
             <View style={styles.contactContainer}>
               {hasName && <Text style={styles.nameText}>{user.name}</Text>}
-              {user.email && <Text style={styles.emailText}>{user.email}</Text>}
+              {user.email != null && user.email !== '' && <Text style={styles.emailText}>{user.email}</Text>}
               {hasAddress && <Text style={styles.addressText}>{user.address}</Text>}
             </View>
           </View>
@@ -1365,7 +1368,10 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
       <TableRow key={rowKey} index={index}>
         <Cell columnName={TransactionColumn.Date} columnWidths={TRANSACTION_COLUMN_WIDTHS}>
           <Text style={styles.transactionRowText}>
-            {transaction.blockHeight || transaction.confirmed
+            {(transaction.blockHeight !== null &&
+              transaction.blockHeight !== 0 &&
+              !Number.isNaN(transaction.blockHeight)) ||
+            transaction.confirmed
               ? formatTzDate(transaction.date, 'yyyy-MM-dd HH:mm:ss', timezone)
               : 'PENDING'}
           </Text>

@@ -80,7 +80,12 @@ export function setupLedgerHidAccess(
     }
     clearTimeout(current.timer)
     clearTimeout(current.autoSelectTimer)
-    const allowed = !current.cancelled && isAppFrame(current.frame) && deviceId && current.devices.has(deviceId)
+    const allowed =
+      !current.cancelled &&
+      isAppFrame(current.frame) &&
+      deviceId != null &&
+      deviceId !== '' &&
+      current.devices.has(deviceId)
     publish(current, allowed ? 'connecting' : status)
     if (current.callback) {
       request = undefined
@@ -100,7 +105,7 @@ export function setupLedgerHidAccess(
     nativeRequest = undefined
     clearTimeout(current.timer)
     current.abort.abort()
-    const allowed = isAppFrame(current.frame) && deviceId && current.devices.has(deviceId)
+    const allowed = isAppFrame(current.frame) && deviceId != null && deviceId !== '' && current.devices.has(deviceId)
     current.callback(allowed ? deviceId : undefined)
   }
 

@@ -21,7 +21,7 @@ export function Logo({
     <Flex justify="center">
       <Box position="relative">
         {renderLink ? renderLink(LogoImage) : LogoImage}
-        {stickerLabel && <Sticker>{stickerLabel}</Sticker>}
+        {stickerLabel != null && stickerLabel !== '' && <Sticker>{stickerLabel}</Sticker>}
       </Box>
     </Flex>
   )
@@ -40,7 +40,7 @@ export function IconLogo({
     <Flex justify="center">
       <Box position="relative" w="auto">
         {renderLink ? renderLink(LogoImage) : LogoImage}
-        {stickerLabel && <Sticker>{stickerLabel}</Sticker>}
+        {stickerLabel != null && stickerLabel !== '' && <Sticker>{stickerLabel}</Sticker>}
       </Box>
     </Flex>
   )

@@ -345,7 +345,7 @@ export function DashboardPage(): JSX.Element {
   }, [])
 
   useEffect(() => {
-    if (allData?.verifiedClaimsCount && allData.verifiedClaimsCount > 0 && !hasRecordedSnapshot.current) {
+    if ((allData?.verifiedClaimsCount ?? 0) > 0 && !hasRecordedSnapshot.current) {
       hasRecordedSnapshot.current = true
       recordSnapshot.mutate(undefined)
     }
@@ -375,7 +375,7 @@ export function DashboardPage(): JSX.Element {
   }, 0)
 
   const exchangeTotalBtcSats = exchangeAccounts.reduce((sum, a) => {
-    if (!a.balance) {
+    if (a.balance == null || a.balance === '') {
       return sum
     }
     return sum + Number(a.balance)
@@ -409,7 +409,7 @@ export function DashboardPage(): JSX.Element {
   const exchangeTotalUsd =
     btcUsdPrice !== null
       ? exchangeAccounts.reduce((sum, a) => {
-          if (!a.balance) {
+          if (a.balance == null || a.balance === '') {
             return sum
           }
           return sum + (Number(a.balance) / 100_000_000) * btcUsdPrice
@@ -448,15 +448,15 @@ export function DashboardPage(): JSX.Element {
       }, 0) +
       selectedExchangeIds.reduce((sum, id) => {
         const acc = exchangeAccounts.find((a) => a.id === id)
-        return sum + (acc?.balance ? Number(acc.balance) : 0)
+        return sum + (acc?.balance != null && acc.balance !== '' ? Number(acc.balance) : 0)
       }, 0) +
       selectedManualIds.reduce((sum, id) => {
         const acc = manualAccounts.find((a) => a.id === id)
-        return sum + (acc?.balance ? Number(acc.balance) : 0)
+        return sum + (acc?.balance != null && acc.balance !== '' ? Number(acc.balance) : 0)
       }, 0) +
       selectedEtfIds.reduce((sum, id) => {
         const acc = etfAccounts.find((a) => a.id === id)
-        return sum + (acc?.balance ? Number(acc.balance) : 0)
+        return sum + (acc?.balance != null && acc.balance !== '' ? Number(acc.balance) : 0)
       }, 0)
 
   const isFullHistoryRange = timeRange === 'custom' || timeRange === 'all'
@@ -548,11 +548,12 @@ export function DashboardPage(): JSX.Element {
     etfAccounts.length > 0
   const hasHistoricalData = (allData?.historicalData.length ?? 0) > 0 || (activeData?.historicalData.length ?? 0) > 0
   const totalBtcDisplay = formatBtc(displayBalanceSats.toString())
-  const btcPrice = data?.currentBtcPrice
-    ? Number(data.currentBtcPrice)
-    : allData?.currentBtcPrice
-      ? Number(allData.currentBtcPrice)
-      : 0
+  const btcPrice =
+    data?.currentBtcPrice != null && data.currentBtcPrice !== ''
+      ? Number(data.currentBtcPrice)
+      : allData?.currentBtcPrice != null && allData.currentBtcPrice !== ''
+        ? Number(allData.currentBtcPrice)
+        : 0
   const currentBtcFloat = displayBalanceSats / 100_000_000
   const hasBalance = displayBalanceSats > 0
 

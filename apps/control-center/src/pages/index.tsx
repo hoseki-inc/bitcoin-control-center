@@ -137,7 +137,8 @@ function StatMini({
   count?: number
 }): JSX.Element {
   const isPositive = value ? value.gte(0) : true
-  const usdValue = value && btcPrice ? value.toNumber() * btcPrice : null
+  const usdValue =
+    value && btcPrice !== undefined && btcPrice !== 0 && !Number.isNaN(btcPrice) ? value.toNumber() * btcPrice : null
 
   return (
     <Box bg="neutral.50" borderRadius="8px" px={3.5} py={3}>

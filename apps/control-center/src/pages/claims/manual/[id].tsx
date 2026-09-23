@@ -53,10 +53,13 @@ export function ManualAccountDetailsPage(): JSX.Element {
   const [txAddToBalance, setTxAddToBalance] = useState(false)
 
   // ─── Queries ────────────────────────────────────────────────────
-  const accountQuery = trpc.portalProve.manual.get.useQuery({ accountId: accountId ?? '' }, { enabled: !!accountId })
+  const accountQuery = trpc.portalProve.manual.get.useQuery(
+    { accountId: accountId ?? '' },
+    { enabled: accountId != null && accountId !== '' },
+  )
   const txQuery = trpc.portalProve.manual.transactions.list.useQuery(
     { accountId: accountId ?? '' },
-    { enabled: !!accountId },
+    { enabled: accountId != null && accountId !== '' },
   )
 
   // ─── Mutations ──────────────────────────────────────────────────
@@ -78,7 +81,7 @@ export function ManualAccountDetailsPage(): JSX.Element {
   const btcAmount = (btcSats / 100_000_000).toFixed(8)
 
   async function invalidateAll(): Promise<void> {
-    if (!accountId) {
+    if (accountId == null || accountId === '') {
       return
     }
     await utils.portalProve.manual.get.invalidate({ accountId })
@@ -88,7 +91,7 @@ export function ManualAccountDetailsPage(): JSX.Element {
   }
 
   async function handleUpdateBalance(): Promise<void> {
-    if (!accountId || !newBtcAmount) {
+    if (accountId == null || accountId === '' || !newBtcAmount) {
       return
     }
     const balanceSats = Math.round(Number(newBtcAmount) * 1e8).toString()
@@ -107,7 +110,7 @@ export function ManualAccountDetailsPage(): JSX.Element {
   }
 
   async function handleAddTransaction(): Promise<void> {
-    if (!accountId || !txAmount) {
+    if (accountId == null || accountId === '' || !txAmount) {
       return
     }
     const amountSats = Math.round(Number(txAmount) * 1e8).toString()
@@ -141,7 +144,7 @@ export function ManualAccountDetailsPage(): JSX.Element {
   }
 
   async function handleDelete(): Promise<void> {
-    if (!accountId) {
+    if (accountId == null || accountId === '') {
       return
     }
     setIsDeleting(true)
@@ -224,7 +227,7 @@ export function ManualAccountDetailsPage(): JSX.Element {
                 </Text>
               </HStack>
             </Box>
-            {account.balanceAsOf && (
+            {account.balanceAsOf != null && account.balanceAsOf !== '' && (
               <Box w={['100%', '50%', '33%']} textAlign="right">
                 <Text textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={1}>
                   Balance As Of
@@ -425,7 +428,7 @@ export function ManualAccountDetailsPage(): JSX.Element {
                       </Td>
                       <Td>
                         <Text textStyle="text/xs" color="neutral.500">
-                          {tx.note?.length ? tx.note : '—'}
+                          {(tx.note?.length ?? 0) > 0 ? tx.note : '—'}
                         </Text>
                       </Td>
                       <Td>

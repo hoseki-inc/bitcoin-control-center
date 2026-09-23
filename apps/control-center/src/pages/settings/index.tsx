@@ -34,7 +34,7 @@ export function SettingsPage(): JSX.Element {
   const [isDirty, setIsDirty] = useState(false)
 
   useEffect(() => {
-    if (savedName && !isDirty) {
+    if (savedName != null && savedName !== '' && !isDirty) {
       setName(savedName)
     }
   }, [savedName, isDirty])
@@ -132,9 +132,9 @@ function useElectrumStatus(): { status: ElectrumStatus | null; refresh: () => vo
         const response = parseUnknown(ElectrumStatusResponseSchema, data).unwrapOr(null)
         const wrapped = response?.result.data
         const payload =
-          wrapped && typeof wrapped === 'object' && 'json' in wrapped ? (wrapped.json ?? wrapped) : wrapped
+          wrapped !== null && typeof wrapped === 'object' && 'json' in wrapped ? (wrapped.json ?? wrapped) : wrapped
         const parsed = parseUnknown(ElectrumStatusSchema, payload).unwrapOr(null)
-        if (parsed?.host) {
+        if (parsed?.host != null && parsed.host !== '') {
           setStatus(parsed)
         }
       })

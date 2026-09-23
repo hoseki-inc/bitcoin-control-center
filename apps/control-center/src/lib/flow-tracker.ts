@@ -12,7 +12,7 @@ function setFlowSource(source: FlowSource): void {
 
 export function getFlowSource(): FlowSource | null {
   const source = localStorage.getItem(FLOW_SOURCE_KEY)
-  if (!source) {
+  if (source == null || source === '') {
     return null
   }
   return Result.fromThrowable((): unknown => JSON.parse(source))

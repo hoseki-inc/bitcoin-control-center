@@ -90,7 +90,7 @@ export function convertToOrdinalWords(number: number): string {
 
   if (number >= 0 && number < ordinals.length) {
     const r = ordinals[number]
-    if (!r) {
+    if (r == null || r === '') {
       // This should never happen, but we'll add a guard to satisfy the type checker
       throw new Error(`Ordinal ${number} is out of range`)
     }

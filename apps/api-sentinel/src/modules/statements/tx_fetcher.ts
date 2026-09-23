@@ -179,7 +179,10 @@ function parseMempoolTxEntry(tx: MempoolTx, address: Address, tipHeight: number)
 
   const blockHeight = tx.status.block_height ?? null
   const confirmed = blockHeight !== null && isConfirmed({ tip: tipHeight, height: blockHeight })
-  const timestamp = tx.status.block_time ? new Date(tx.status.block_time * 1000) : new Date()
+  const timestamp =
+    tx.status.block_time !== undefined && tx.status.block_time !== 0 && !Number.isNaN(tx.status.block_time)
+      ? new Date(tx.status.block_time * 1000)
+      : new Date()
 
   return {
     txid,

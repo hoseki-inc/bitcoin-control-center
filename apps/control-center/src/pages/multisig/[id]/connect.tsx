@@ -247,7 +247,10 @@ function GenericCheckWalletXpub({
   const createChallengeMessage = trpc.portalProve.registry.challengeMessages.create.useMutation()
 
   const containsNonStandardPaths = claim.keystores.some(
-    (keystore) => keystore.derivationPath && !DerivationPath.from(keystore.derivationPath).isStandardAccount(),
+    (keystore) =>
+      keystore.derivationPath != null &&
+      keystore.derivationPath.length > 0 &&
+      !DerivationPath.from(keystore.derivationPath).isStandardAccount(),
   )
 
   const {

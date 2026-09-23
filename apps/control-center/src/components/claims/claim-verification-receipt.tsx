@@ -23,7 +23,7 @@ export function ClaimVerificationReceipt({ shouldSetTimeout, claim }: ClaimVerif
   const [isPending, setIsPending] = useState(true)
   const navigate = useNavigate()
 
-  const balanceQuery = useGetClaimBalance(claim?.id ?? null, { enabled: !!claim?.id })
+  const balanceQuery = useGetClaimBalance(claim?.id ?? null, { enabled: claim?.id != null && claim.id.length > 0 })
 
   const flowSource = getFlowSource()
   const isStatementFlow = flowSource?.type === 'statement'
@@ -74,8 +74,8 @@ export function ClaimVerificationReceipt({ shouldSetTimeout, claim }: ClaimVerif
               />
             )}
             <Text textStyle="text/2xl" color="neutral.900" textAlign="center">
-              Your {claim?.displayName ? `"${claim.displayName}" claim` : `claim`} is now verified and ready to include
-              in ownership statements.
+              Your {claim?.displayName != null && claim.displayName !== '' ? `"${claim.displayName}" claim` : `claim`}{' '}
+              is now verified and ready to include in ownership statements.
             </Text>
             <HStack spacing={4}>
               <Button

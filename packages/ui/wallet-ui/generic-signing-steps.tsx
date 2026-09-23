@@ -223,7 +223,7 @@ export function SignAddressAndMessageInfo({
         </Box>
       </Box>
       <HStack>
-        <Box w={signingPath ? '65%' : '100%'}>
+        <Box w={signingPath != null && signingPath !== '' ? '65%' : '100%'}>
           <LabelWithTooltip
             labelText="Address"
             tooltipText="A signed message requires an address (which acts as the public key) to verify which private key created it. We use the first receive address for this verification."
@@ -242,7 +242,7 @@ export function SignAddressAndMessageInfo({
             </Text>
           </Box>
         </Box>
-        {signingPath && (
+        {signingPath != null && signingPath !== '' && (
           <Box w="35%">
             <LabelWithTooltip
               labelText="Derivation path"

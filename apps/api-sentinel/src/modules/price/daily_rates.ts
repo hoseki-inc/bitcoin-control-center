@@ -124,7 +124,7 @@ export class DailyRatesService {
 
     // API returns the nearest daily price point
     const pricePoint = json.prices[0]
-    if (!pricePoint?.USD) {
+    if (pricePoint === undefined || pricePoint.USD === 0 || Number.isNaN(pricePoint.USD)) {
       return null
     }
 
@@ -148,7 +148,7 @@ export class DailyRatesService {
 /** Format a Date as 'YYYY-MM-DD' */
 export function toDateKey(date: Date): string {
   const key = date.toISOString().split('T')[0]
-  if (!key) {
+  if (key == null || key === '') {
     throw new Error('Invalid date format')
   }
   return key

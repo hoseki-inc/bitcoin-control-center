@@ -54,7 +54,7 @@ const AlertPanel: React.FC<AlertPanelProps> = ({ validationError, parsedStatemen
       {!alertsMinimized && (
         <>
           {/* Validation Error Display */}
-          {validationError && (
+          {validationError != null && validationError !== '' && (
             <Alert status="error" borderTop="1px" borderColor="red.200" alignItems="flex-start" maxH="500px">
               <AlertIcon />
               <Box flex={1} minH={0} display="flex" flexDir="column">
@@ -113,8 +113,8 @@ const AlertPanel: React.FC<AlertPanelProps> = ({ validationError, parsedStatemen
       {alertsMinimized && (
         <Box position="absolute" bottom={4} right={4} zIndex={10}>
           <Badge
-            bg={validationError ? 'red.200' : 'green.200'}
-            color={validationError ? 'red.800' : 'green.800'}
+            bg={validationError != null && validationError !== '' ? 'red.200' : 'green.200'}
+            color={validationError != null && validationError !== '' ? 'red.800' : 'green.800'}
             px={3}
             py={2}
             borderRadius="md"
@@ -127,15 +127,15 @@ const AlertPanel: React.FC<AlertPanelProps> = ({ validationError, parsedStatemen
             fontWeight="medium"
             boxShadow="md"
             _hover={{
-              bg: validationError ? 'red.300' : 'green.300',
+              bg: validationError != null && validationError !== '' ? 'red.300' : 'green.300',
               transform: 'translateY(-1px)',
               boxShadow: 'lg',
             }}
             transition="all 0.2s"
           >
             <Icon
-              as={validationError ? AlertTriangle : CheckCircle}
-              color={validationError ? 'red.600' : 'green.600'}
+              as={validationError != null && validationError !== '' ? AlertTriangle : CheckCircle}
+              color={validationError != null && validationError !== '' ? 'red.600' : 'green.600'}
               boxSize={4}
             />
             <Icon as={Eye} boxSize={4} />
@@ -309,7 +309,7 @@ export default function App(): JSX.Element {
               </PDFViewer>
             ) : (
               <Center h="100%" color="gray.500">
-                {validationError ? (
+                {validationError != null && validationError !== '' ? (
                   <VStack>
                     <Icon as={XCircle} color="red.500" boxSize={6} />
                     <Text textAlign="center">Fix the JSON validation errors to see the PDF preview</Text>

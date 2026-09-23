@@ -61,7 +61,9 @@ export const createAppContext = asyncFn(async (logger: Logger): Promise<Result<A
 
   // If Tor is enabled and SOCKS proxy env vars are set, include proxy config
   const proxy =
-    torEnabled && env.SOCKS_PROXY_HOST ? { host: env.SOCKS_PROXY_HOST, port: Number(env.SOCKS_PROXY_PORT) } : undefined
+    torEnabled && env.SOCKS_PROXY_HOST != null && env.SOCKS_PROXY_HOST !== ''
+      ? { host: env.SOCKS_PROXY_HOST, port: Number(env.SOCKS_PROXY_PORT) }
+      : undefined
 
   const electrumClient = new ElectrumClient({
     host: electrumHost,

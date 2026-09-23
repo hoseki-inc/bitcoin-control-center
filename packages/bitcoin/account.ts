@@ -256,7 +256,7 @@ export class MultiSigAccount {
       }
     })
       .andThen((address) => {
-        if (!address) {
+        if (address == null || address === '') {
           return Err(new Error('Invalid address encoding'))
         }
         return Address.fromString(address)
