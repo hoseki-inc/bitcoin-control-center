@@ -142,7 +142,8 @@
     "react/jsx-no-duplicate-props": "error",
     "react/jsx-no-target-blank": "error",
     "react/jsx-no-undef": "error",
-    "react/no-children-prop": "error"
+    "react/no-children-prop": "error",
+    "react/no-danger-with-children": "error"
   },
   "overrides": [
     {
