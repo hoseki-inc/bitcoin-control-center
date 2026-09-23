@@ -145,7 +145,7 @@ export function Wallpaper({
       aria-hidden
       position={fixed ? 'fixed' : 'absolute'}
       inset={0}
-      overflow="hidden"
+      overflow="clip"
       pointerEvents="none"
       bg={wallpaperFallback(preset, mode)}
       zIndex={0}

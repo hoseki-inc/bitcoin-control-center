@@ -1,6 +1,6 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
-import { BrowserWindow, app, dialog, ipcMain, shell } from 'electron'
+import { BrowserWindow, app, dialog, ipcMain, nativeTheme, shell } from 'electron'
 import { setupLedgerHidAccess } from './ledger-hid'
 import { TorManager } from './tor'
 import { setupTray } from './tray'
@@ -57,6 +57,8 @@ app.whenReady().then(async () => {
     minHeight: 600,
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 16, y: 16 },
+    // Match the UI's first paint so a dark appearance never flashes white while loading.
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#0B0C10' : '#FFFFFF',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
     },

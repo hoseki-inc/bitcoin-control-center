@@ -314,8 +314,8 @@ export function AccountFilter({
         position="sticky"
         top={0}
         alignSelf="flex-start"
-        minH="calc(100dvh - 76px)"
-        maxH="calc(100dvh - 76px)"
+        minH="var(--shell-viewport-height, calc(100dvh - 76px))"
+        maxH="var(--shell-viewport-height, calc(100dvh - 76px))"
         overflowY="auto"
         borderRight="1px solid"
         borderColor="border.subtle"

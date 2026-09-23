@@ -54,7 +54,7 @@ function StatementDetailsPageContent({ statementId }: { statementId: StatementId
     <Flex gap={0} flexDirection={{ base: 'column', xl: 'row' }} align="flex-start">
       <Stack
         gap={6}
-        height={{ base: 'auto', xl: 'calc(100dvh - 66px)' }}
+        height={{ base: 'auto', xl: 'var(--shell-viewport-height, calc(100dvh - 66px))' }}
         flexBasis={{ base: 'auto', xl: '40%' }}
         minW={0}
         w="full"
@@ -71,7 +71,7 @@ function StatementDetailsPageContent({ statementId }: { statementId: StatementId
         </Stack>
       </Stack>
       <Box
-        height={{ base: 'auto', xl: 'calc(100dvh - 66px)' }}
+        height={{ base: 'auto', xl: 'var(--shell-viewport-height, calc(100dvh - 66px))' }}
         flexBasis={{ base: 'auto', xl: '60%' }}
         minW={0}
         width={{ base: 'full', xl: '60%' }}

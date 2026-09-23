@@ -499,7 +499,7 @@ export function DashboardPage(): JSX.Element {
     (activeFetching || historySyncingAccountIds.length > 0)
 
   return (
-    <Flex minH="calc(100dvh - 76px)" align="stretch">
+    <Flex minH="var(--shell-viewport-height, calc(100dvh - 76px))" align="stretch">
       {hasDesktopSidebar && accountFilter}
       <Box flex="1" minW={0}>
         <Wrapper maxW="928px" w="full" py={{ base: 6, md: 8 }}>

@@ -10,26 +10,17 @@ export function WizardFooter({
   rightButton?: ReactNode
 }): JSX.Element {
   return (
-    <Box
-      borderTop="1px solid"
-      borderColor="border.subtle"
-      bgColor="surface.base"
-      px={0}
-      pt={4}
-      pb="max(1rem, env(safe-area-inset-bottom))"
-      position="fixed"
-      bottom={0}
-      left={0}
-      width="100%"
-      zIndex={10}
-    >
-      <Wrapper maxW="928px">
+    // A floating glass bar that sticks to the bottom of the window, clear of the dock.
+    <Box position="sticky" bottom="var(--sheet-footer-offset, 16px)" zIndex={10} mt={6} px={0}>
+      <Wrapper maxW="928px" px={0}>
         <HStack
+          layerStyle="materialMenu"
           justifyContent={leftButton ? 'space-between' : 'flex-end'}
           width="full"
           minH="44px"
           gap={3}
           flexWrap="wrap"
+          p={2}
         >
           {leftButton}
           {rightButton}
