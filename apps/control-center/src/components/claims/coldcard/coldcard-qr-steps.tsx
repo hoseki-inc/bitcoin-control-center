@@ -62,7 +62,7 @@ export function ColdcardQrConnectionSteps({
           onComplete={(json) => {
             setColdcardJson(json)
             // Defer step advancement so React processes the JSON state update first.
-            // Advancing immediately can cause a render crash with @patina/core types.
+            // Advancing immediately can cause a render crash with @hoseki/packages/result types.
             requestAnimationFrame(() => {
               onNext()
             })

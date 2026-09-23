@@ -5,8 +5,8 @@ import {
   computeHoldingBtcSats,
   getEtfConfig,
 } from '@hoseki/packages/etfs/holdings'
-import { Err, Ok } from '@patina/core'
-import type { Result } from '@patina/core'
+import { Err, Ok } from '@hoseki/packages/result'
+import type { Result } from '@hoseki/packages/result'
 import type Database from 'better-sqlite3'
 import { nanoid } from 'nanoid'
 import type { Logger } from 'pino'

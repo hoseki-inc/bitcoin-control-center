@@ -1,4 +1,4 @@
-import type { AsyncResult } from '@patina/core'
+import type { AsyncResult } from '@hoseki/packages/result'
 import { catchUnwindAsync } from './panic'
 
 /**

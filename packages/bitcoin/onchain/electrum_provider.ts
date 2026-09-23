@@ -1,5 +1,5 @@
+import { type AsyncResult, Err, Ok, type Result, asyncFn, tryBlockAsync } from '@hoseki/packages/result'
 import { sha256 } from '@noble/hashes/sha2.js'
-import { type AsyncResult, Err, Ok, type Result, asyncFn, tryBlockAsync } from '@patina/core'
 import type { Logger } from 'pino'
 import type { ElectrumClient, ScripthashHistoryEntry } from '../../clients/electrum'
 import { IndexMap, IndexSet } from '../../collection'

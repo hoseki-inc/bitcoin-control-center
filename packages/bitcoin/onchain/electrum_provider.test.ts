@@ -1,4 +1,4 @@
-import { Err, Ok } from '@patina/core'
+import { Err, Ok } from '@hoseki/packages/result'
 import pino from 'pino'
 import { describe, expect, it, vi } from 'vitest'
 import { ElectrumClient } from '../../clients/electrum'

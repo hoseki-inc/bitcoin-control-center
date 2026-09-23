@@ -1,11 +1,11 @@
 import { Address } from '@hoseki/packages/bitcoin'
+import { Result } from '@hoseki/packages/result'
 import { Alert } from '@hoseki/packages/ui/design-system'
 import {
   ControlledGenericSigningSteps,
   HardwareWalletError,
   encodeHwAppBtcSignature,
 } from '@hoseki/packages/ui/wallet-ui'
-import { Result } from '@patina/core'
 import { useMutation } from '@tanstack/react-query'
 import { useState } from 'react'
 import { toast } from 'sonner'

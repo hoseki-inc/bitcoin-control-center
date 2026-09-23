@@ -5,6 +5,7 @@ import {
   SingleSigAccount,
   type SingleSigAccountScriptType,
 } from '@hoseki/packages/bitcoin'
+import { Err, Ok, Result } from '@hoseki/packages/result'
 import {
   ClaimConnectionWrapper,
   type SelectedTrezorAccount,
@@ -14,7 +15,6 @@ import {
   getTrezorModel,
 } from '@hoseki/packages/ui/wallet-ui'
 import { DERIVATION_PATH_TO_SCRIPT_TYPE, Slip132 } from '@hoseki/packages/wallet'
-import { Err, Ok, Result } from '@patina/core'
 import type { Features } from '@trezor/connect-web'
 import Decimal from 'decimal.js'
 import { useState } from 'react'

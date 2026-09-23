@@ -1,4 +1,4 @@
-import { type AsyncResult, Err, Ok, Result, asyncFn } from '@patina/core'
+import { type AsyncResult, Err, Ok, Result, asyncFn } from '@hoseki/packages/result'
 import TrezorConnectModule, {
   type AccountInfo,
   type Features,

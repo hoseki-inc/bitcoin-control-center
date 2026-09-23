@@ -1,4 +1,4 @@
-import { Ok, type Result } from '@patina/core'
+import { Ok, type Result } from '@hoseki/packages/result'
 import { describe, expect, expectTypeOf, it } from 'vitest'
 import { z } from 'zod'
 import { ParseError, parse, parseUnknown } from './parse'

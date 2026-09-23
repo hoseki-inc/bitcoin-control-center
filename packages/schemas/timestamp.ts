@@ -1,4 +1,4 @@
-import { Err, Ok, type Result } from '@patina/core'
+import { Err, Ok, type Result } from '@hoseki/packages/result'
 import { z } from 'zod'
 
 export const TimestampSchema = z

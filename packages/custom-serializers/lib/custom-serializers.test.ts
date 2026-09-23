@@ -1,4 +1,4 @@
-import { Err, None, Ok, Some } from '@patina/core'
+import { Err, None, Ok, Some } from '@hoseki/packages/result'
 import Decimal from 'decimal.js'
 import SuperJSON from 'superjson'
 import { expect, test } from 'vitest'

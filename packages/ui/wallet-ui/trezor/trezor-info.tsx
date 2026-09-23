@@ -1,5 +1,5 @@
 import { Button, Text, chakra } from '@chakra-ui/react'
-import type { Result } from '@patina/core'
+import type { Result } from '@hoseki/packages/result'
 import { useState } from 'react'
 import { HardwareWalletError } from '../../../ui/wallet-ui'
 import type { HardwareDeviceError } from '../../../wallet'

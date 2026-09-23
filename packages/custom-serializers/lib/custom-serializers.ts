@@ -1,4 +1,4 @@
-import { Err, None, Ok, type Option, type Result, Some, isOption, isResult } from '@patina/core'
+import { Err, None, Ok, type Option, type Result, Some, isOption, isResult } from '@hoseki/packages/result'
 import { Decimal } from 'decimal.js'
 import type superjson from 'superjson'
 import { IndexMap, IndexSet, type Indexable, Mapping } from '../../collection'

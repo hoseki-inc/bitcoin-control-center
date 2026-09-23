@@ -1,5 +1,6 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "ignorePatterns": ["packages/result/lib/core/**"],
   "plugins": ["oxc", "typescript", "react"],
   "options": {
     "typeAware": true
