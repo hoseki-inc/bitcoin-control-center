@@ -38,7 +38,7 @@ vi.mock('@ledgerhq/hw-app-btc', () => ({
       this.transport = transport
       transport.decorateAppAPIMethods(this, ['getWalletXpub'], 'BTC')
     }
-    public getWalletXpub(input: { path: string }): Promise<string> {
+    public async getWalletXpub(input: { path: string }): Promise<string> {
       return mocks.getXpub(this.transport, input.path)
     }
   },
@@ -131,7 +131,7 @@ async function reconnect(): Promise<void> {
   })
   await client.cancelQueries({ queryKey: ['ledger-wallets'] })
   client.removeQueries({ queryKey: ['ledger-wallets'] })
-  await useLedgerStore.getState().reset((device) => device.close())
+  await useLedgerStore.getState().reset(async (device) => device.close())
   await useLedgerStore.getState().init(async () => fakeTransport())
 }
 
@@ -146,7 +146,7 @@ async function waitForScan(): Promise<void> {
 
 it('Strict Mode restarts a scan without locking the Ledger with the cancelled invocation', async () => {
   const firstRead = deferred<string>()
-  mocks.getXpub.mockImplementationOnce(() => firstRead.promise)
+  mocks.getXpub.mockImplementationOnce(async () => firstRead.promise)
   await useLedgerStore.getState().init(async () => fakeTransport())
   await act(async () => {
     root.render(
@@ -182,7 +182,7 @@ it('Strict Mode restarts a scan without locking the Ledger with the cancelled in
 it('a cancelled scan cannot use or lock the next Ledger when its balance response arrives late', async () => {
   const oldBalances = deferred<Balances>()
   const oldRead = deferred<string>()
-  mocks.fetch.mockImplementationOnce(() => oldBalances.promise)
+  mocks.fetch.mockImplementationOnce(async () => oldBalances.promise)
   mocks.getXpub.mockImplementation(async (_transport, path) => (path.endsWith("/1'") ? oldRead.promise : xpub))
   await useLedgerStore.getState().init(async () => fakeTransport())
   await mountScan()
@@ -207,7 +207,7 @@ it('a cancelled scan cannot use or lock the next Ledger when its balance respons
 
 it('a device response arriving after cancellation does not trigger more reads or balance lookups', async () => {
   const oldRead = deferred<string>()
-  mocks.getXpub.mockImplementationOnce(() => oldRead.promise)
+  mocks.getXpub.mockImplementationOnce(async () => oldRead.promise)
   await useLedgerStore.getState().init(async () => fakeTransport())
   await mountScan()
   await vi.waitFor(() => {
@@ -227,7 +227,7 @@ it('a device response arriving after cancellation does not trigger more reads or
 
 it('discovery also stops on a changed connection even without an abort signal', async () => {
   const oldBalances = deferred<Balances>()
-  mocks.fetch.mockImplementationOnce(() => oldBalances.promise)
+  mocks.fetch.mockImplementationOnce(async () => oldBalances.promise)
   await useLedgerStore.getState().init(async () => fakeTransport())
   const { connectionId, getBitcoinXpub } = useLedgerStore.getState()
   const discovery = probeLedger(

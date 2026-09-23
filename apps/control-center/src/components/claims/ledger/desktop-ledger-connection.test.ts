@@ -64,7 +64,7 @@ beforeEach(async () => {
   mocks.reset.mockResolvedValue(undefined)
   mocks.app.mockResolvedValue({ name: 'Bitcoin' })
   mocks.request.mockImplementation(
-    () =>
+    async () =>
       new Promise((resolve, reject) => {
         resolveRequest = resolve
         rejectRequest = reject
@@ -254,7 +254,7 @@ it('requires reconnecting when a ready Ledger is unplugged', async () => {
 it('releases a reservation cancelled before requestDevice was called', async () => {
   let accept = (_value: boolean): void => {}
   vi.mocked(bridge.begin).mockImplementationOnce(
-    (id) =>
+    async (id) =>
       new Promise((resolve) => {
         requestId = id
         accept = resolve

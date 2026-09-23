@@ -2,8 +2,8 @@ import { contextBridge, ipcRenderer, shell } from 'electron'
 import type { LedgerHidApi, LedgerHidUpdate } from './ledger-hid-api'
 
 const ledger: LedgerHidApi = {
-  begin: (requestId) => ipcRenderer.invoke('ledger-hid:begin', requestId),
-  choose: (requestId, deviceId) => ipcRenderer.invoke('ledger-hid:choose', requestId, deviceId),
+  begin: async (requestId) => (await ipcRenderer.invoke('ledger-hid:begin', requestId)) === true,
+  choose: async (requestId, deviceId) => (await ipcRenderer.invoke('ledger-hid:choose', requestId, deviceId)) === true,
   cancel: (requestId) => {
     ipcRenderer.send('ledger-hid:cancel', requestId)
   },

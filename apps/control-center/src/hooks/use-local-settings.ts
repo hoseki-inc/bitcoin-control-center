@@ -18,7 +18,7 @@ export function useLocalSetting(key: string): {
 
   const query = useQuery({
     queryKey,
-    queryFn: () => baseTrpc.settings.get.query({ key }),
+    queryFn: async () => baseTrpc.settings.get.query({ key }),
   })
 
   const mutation = useMutation({
@@ -32,7 +32,7 @@ export function useLocalSetting(key: string): {
         throw new Error('Failed to save setting')
       }
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       return queryClient.invalidateQueries({ queryKey })
     },
   })

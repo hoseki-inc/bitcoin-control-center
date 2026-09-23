@@ -261,7 +261,7 @@ describe('custom portfolio range UI', () => {
     const pending = new Promise<typeof mocks.base>((resolve) => {
       complete = resolve
     })
-    const options = { queryKey: ['portfolio', '90d', action], queryFn: () => pending, keepPreviousData: true }
+    const options = { queryKey: ['portfolio', '90d', action], queryFn: async () => pending, keepPreviousData: true }
     const observer = new QueryObserver(client, { ...options, enabled: false })
     const unsubscribe = observer.subscribe(() => undefined)
     try {

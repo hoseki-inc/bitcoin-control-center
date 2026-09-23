@@ -20,5 +20,5 @@ export async function asyncResultToPromise<T>(asyncResult: AsyncResult<T, Error>
  * Combines an array of AsyncResults into a single AsyncResult.
  */
 export function asyncResultAll<T>(asyncResults: AsyncResult<T, Error>[]): AsyncResult<T[], Error> {
-  return catchUnwindAsync(() => Promise.all(asyncResults.map(asyncResultToPromise)))
+  return catchUnwindAsync(async () => Promise.all(asyncResults.map(asyncResultToPromise)))
 }

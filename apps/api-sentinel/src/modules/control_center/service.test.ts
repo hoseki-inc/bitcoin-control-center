@@ -88,7 +88,7 @@ function createHarness() {
   const sync = (from = 0, to = tip.height): void => {
     service['recordAccountHistorySync'](accountId, { fromBlockHeight: from, toBlockHeight: to }, tip)
   }
-  const run = (balance: bigint = 100n, balanceTip?: Block): Promise<bigint | null> =>
+  const run = async (balance: bigint = 100n, balanceTip?: Block): Promise<bigint | null> =>
     service['ensureAccountHistorySnapshots'](accountId, account, balance, new Date(0), true, undefined, balanceTip)
   const rows = (): Array<{ timestamp: string; balance_sats: string }> =>
     db

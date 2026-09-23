@@ -298,7 +298,7 @@ beforeEach(async () => {
   queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
   mocks.invalidateClaim
     .mockReset()
-    .mockImplementation((input: { id: string }, filters?: InvalidateQueryFilters, options?: InvalidateOptions) =>
+    .mockImplementation(async (input: { id: string }, filters?: InvalidateQueryFilters, options?: InvalidateOptions) =>
       queryClient.invalidateQueries({ ...filters, queryKey: ['claim', input.id] }, options),
     )
   container = document.createElement('div')
@@ -576,7 +576,7 @@ describe.each(['singlesig', 'multisig'] as const)('%s Ledger retry', (flow) => {
   it('releases the HID handle and reloads even when the SDK exchange is stuck', async () => {
     let finishClose: (() => void) | undefined
     const close = vi.fn(
-      () =>
+      async () =>
         new Promise<void>((resolve) => {
           finishClose = resolve
         }),

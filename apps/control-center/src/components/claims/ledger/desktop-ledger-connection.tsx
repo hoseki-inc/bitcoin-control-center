@@ -122,7 +122,7 @@ export function DesktopLedgerConnection({
         })
         return
       }
-      await init(() => openDesktopLedger(current.abort.signal), current.abort.signal)
+      await init(async () => openDesktopLedger(current.abort.signal), current.abort.signal)
       if (active()) {
         browserLogger.info('Desktop Ledger connected')
         setState({ phase: 'ready' })
