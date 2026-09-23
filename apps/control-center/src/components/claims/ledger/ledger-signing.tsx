@@ -103,7 +103,7 @@ export function LedgerSigning({
     onSigningComplete()
   }
 
-  const error = initiateLedgerMutation.error || signingError
+  const error = initiateLedgerMutation.error ?? signingError
 
   const handleNext = () => {
     setStep((prev) => {

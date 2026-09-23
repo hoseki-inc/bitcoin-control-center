@@ -217,7 +217,7 @@ function LedgerSigning({ claim, keystore }: { claim: ClaimDto; keystore: Keystor
     },
   })
 
-  const error = initiateLedgerMutation.error || signingError
+  const error = initiateLedgerMutation.error ?? signingError
 
   const claimQuery = trpc.portalProve.registry.claims.get.byId.useQuery({ id: claim.id })
   const latestMessage = claim.latestChallenge?.messages.find((m) => m.keystoreId === keystore.id)

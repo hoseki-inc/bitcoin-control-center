@@ -425,7 +425,7 @@ export function ManualAccountDetailsPage(): JSX.Element {
                       </Td>
                       <Td>
                         <Text textStyle="text/xs" color="neutral.500">
-                          {tx.note || '—'}
+                          {tx.note?.length ? tx.note : '—'}
                         </Text>
                       </Td>
                       <Td>

@@ -173,7 +173,7 @@ export function ClaimSelection({
                   <HStack>
                     <Checkbox
                       id={`claim_${claim.id}`}
-                      isChecked={disabledClaims?.has(claim.id) || selectedClaimIds.has(claim.id)}
+                      isChecked={(disabledClaims?.has(claim.id) ?? false) || selectedClaimIds.has(claim.id)}
                       isDisabled={disabledClaims?.has(claim.id)}
                       onChange={() => {
                         handleClaimToggle(claim.id)

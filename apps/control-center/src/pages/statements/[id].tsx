@@ -96,7 +96,7 @@ function StatementSummary({ statement }: { statement: StatementDto }) {
               <Text textStyle="text/sm" fontWeight="medium">
                 Email
               </Text>
-              <Text>{statement.user.email || 'N/A'}</Text>
+              <Text>{statement.user.email?.length ? statement.user.email : 'N/A'}</Text>
             </Box>
             <Box>
               <Text textStyle="text/sm" fontWeight="medium">
