@@ -245,6 +245,41 @@ describe('custom portfolio range UI', () => {
     }
   })
 
+  it('never appends a newly selected balance to the retained chart and ignores a late abandoned view', async () => {
+    mocks.holdings = [
+      { id: 'holding', displayName: 'Test holding', balance: '25' },
+      { id: 'other', displayName: 'Other holding', balance: '75' },
+    ]
+    mocks.claims = [{ id: 'wallet', displayName: 'Test wallet' }]
+    await render()
+    const loadedChart = chartData()
+    const defaultQuery = mocks.useQuery.getMockImplementation()!
+    let abandonedData: typeof mocks.base | undefined
+    mocks.useQuery.mockImplementation((input, options) => {
+      if (input.claimIds === undefined) return defaultQuery(input, options)
+      return {
+        data: input.manualAccountIds.includes('holding') ? abandonedData : undefined,
+        isLoading: true,
+        isFetching: true,
+        isPreviousData: false,
+        error: null,
+        refetch: mocks.refetch,
+      }
+    })
+    await click('Select holding')
+    expect(chartData()).toEqual(loadedChart)
+    expect(container.querySelectorAll('[inert]')).toHaveLength(2)
+    expect(container.textContent).toContain('Updating view')
+    await click('Select wallet')
+    abandonedData = { ...mocks.base, historicalData: [{ timestamp: '2026-08-05T00:00:00.000Z', totalBalance: '999' }] }
+    await render()
+    expect(chartData()).toEqual(loadedChart)
+    expect(container.textContent).not.toContain('999')
+    await click('Clear selection')
+    expect(container.querySelectorAll('[inert]')).toHaveLength(0)
+    expect(chartData()).toEqual(loadedChart)
+  })
+
   it('still shows the first-load spinner when neither query has data', async () => {
     const defaultQuery = mocks.useQuery.getMockImplementation()!
     mocks.useQuery.mockImplementation((input) => ({ ...defaultQuery(input), data: undefined, isLoading: true }))
