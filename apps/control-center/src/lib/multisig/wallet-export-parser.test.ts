@@ -53,7 +53,9 @@ describe('parseWalletExport', () => {
     })
 
     // Check metadata - Electrum stores hardware wallet types
-    const hardwareTypes = parsed.keystoreMetadata.map((ks) => ks.walletType).sort()
+    const hardwareTypes = parsed.keystoreMetadata
+      .map((ks) => ks.walletType)
+      .sort((a = '', b = '') => (a < b ? -1 : a > b ? 1 : 0))
     expect(hardwareTypes).toEqual(['ledger', 'trezor'])
   })
 
@@ -166,7 +168,9 @@ describe('parseWalletExport', () => {
     })
 
     // Check metadata - Unchained Caravan stores hardware wallet methods
-    const hardwareMethods = parsed.keystoreMetadata.map((ks) => ks.walletType).sort()
+    const hardwareMethods = parsed.keystoreMetadata
+      .map((ks) => ks.walletType)
+      .sort((a = '', b = '') => (a < b ? -1 : a > b ? 1 : 0))
     expect(hardwareMethods).toEqual(['ledger', 'trezor'])
   })
 
