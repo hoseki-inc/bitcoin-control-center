@@ -136,7 +136,8 @@
     "typescript/unified-signatures": "error",
     "typescript/use-unknown-in-catch-callback-variable": "error",
     "react/display-name": "error",
-    "react/exhaustive-deps": "error"
+    "react/exhaustive-deps": "error",
+    "react/jsx-key": "error"
   },
   "overrides": [
     {
