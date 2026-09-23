@@ -7,7 +7,7 @@ import type { StatementDto } from '../../trpc/server-types'
 export function StatementCard({ statement, onView }: { statement: StatementDto; onView: () => void }): JSX.Element {
   return (
     <Box
-      role="group"
+      data-group=""
       borderRadius="4px"
       borderWidth="1px"
       borderColor="neutral.200"
