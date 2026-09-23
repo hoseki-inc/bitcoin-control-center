@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["oxc", "typescript"],
+  "plugins": ["oxc", "typescript", "react"],
   "options": {
     "typeAware": true
   },
@@ -134,7 +134,8 @@
     "typescript/triple-slash-reference": "error",
     "typescript/unbound-method": "error",
     "typescript/unified-signatures": "error",
-    "typescript/use-unknown-in-catch-callback-variable": "error"
+    "typescript/use-unknown-in-catch-callback-variable": "error",
+    "react/display-name": "error"
   },
   "overrides": [
     {
