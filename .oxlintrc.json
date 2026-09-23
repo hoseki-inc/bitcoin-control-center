@@ -146,7 +146,8 @@
     "react/no-danger-with-children": "error",
     "react/no-direct-mutation-state": "error",
     "react/no-find-dom-node": "error",
-    "react/no-is-mounted": "error"
+    "react/no-is-mounted": "error",
+    "react/no-render-return-value": "error"
   },
   "overrides": [
     {
