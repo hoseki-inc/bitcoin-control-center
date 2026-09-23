@@ -163,16 +163,12 @@ function GetReady({ onNext }: { onNext: () => void }) {
         You can sign with your keys in any order—whichever is most convenient for your setup.
       </Text>
 
-      <TipAlert
-        title="Security tip"
-        icon={CircleAlert}
-        children={
-          <Text color="neutral.800">
-            Only upload this file to Bitcoin Control Center. For best security, delete it once you’ve completed the
-            process.
-          </Text>
-        }
-      />
+      <TipAlert title="Security tip" icon={CircleAlert}>
+        <Text color="neutral.800">
+          Only upload this file to Bitcoin Control Center. For best security, delete it once you’ve completed the
+          process.
+        </Text>
+      </TipAlert>
 
       <WizardFooter
         leftButton={
@@ -212,23 +208,19 @@ function ImportWallet({ onBack, onNext }: { onBack: () => void; onNext: (data: C
         onStatusChange={setFileDropStatus}
       />
 
-      <TipAlert
-        title="Need help?"
-        icon={CircleAlert}
-        children={
-          <Text color="neutral.800">
-            Visit our{' '}
-            <Link
-              to="https://help.hoseki.app/article/43-how-to-export-your-multisig-wallet"
-              style={{ textDecoration: 'underline' }}
-              target="_blank"
-            >
-              Help Center
-            </Link>{' '}
-            for step-by-step export instructions.
-          </Text>
-        }
-      />
+      <TipAlert title="Need help?" icon={CircleAlert}>
+        <Text color="neutral.800">
+          Visit our{' '}
+          <Link
+            to="https://help.hoseki.app/article/43-how-to-export-your-multisig-wallet"
+            style={{ textDecoration: 'underline' }}
+            target="_blank"
+          >
+            Help Center
+          </Link>{' '}
+          for step-by-step export instructions.
+        </Text>
+      </TipAlert>
 
       <MultisigFromDescriptor onNext={onNext} />
 

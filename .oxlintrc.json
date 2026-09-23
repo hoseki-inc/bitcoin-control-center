@@ -141,7 +141,8 @@
     "react/jsx-no-comment-textnodes": "error",
     "react/jsx-no-duplicate-props": "error",
     "react/jsx-no-target-blank": "error",
-    "react/jsx-no-undef": "error"
+    "react/jsx-no-undef": "error",
+    "react/no-children-prop": "error"
   },
   "overrides": [
     {
