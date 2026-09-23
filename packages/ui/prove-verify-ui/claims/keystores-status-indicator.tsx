@@ -250,3 +250,5 @@ export const GradientAnimatedRing = forwardRef<
     </Flex>
   )
 })
+
+GradientAnimatedRing.displayName = 'GradientAnimatedRing'

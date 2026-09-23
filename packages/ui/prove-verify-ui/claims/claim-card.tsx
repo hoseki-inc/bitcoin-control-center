@@ -95,6 +95,8 @@ export const ClaimCard = forwardRef<ClaimCardProps, 'div'>(
   },
 )
 
+ClaimCard.displayName = 'ClaimCard'
+
 function renderBalance(balance: BalanceWithStatus): React.ReactNode {
   if (balance.status === 'loading') {
     return <LoadingTextSkeleton width="8em" />
