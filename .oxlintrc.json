@@ -124,7 +124,8 @@
     "typescript/prefer-return-this-type": "error",
     "typescript/prefer-string-starts-ends-with": "error",
     "typescript/related-getter-setter-pairs": "error",
-    "typescript/require-array-sort-compare": "error"
+    "typescript/require-array-sort-compare": "error",
+    "typescript/restrict-plus-operands": "error"
   },
   "overrides": [
     {
