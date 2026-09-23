@@ -18,7 +18,7 @@ const baseStyle = definePartsStyle(() => {
       borderRadius: 'var(--radius-menu)',
       boxShadow: 'floating',
       '--popper-arrow-bg': 'var(--hoseki-colors-surface-overlay)',
-      _dark: { ...layerStyles['material.menu'], '--popper-arrow-bg': 'rgb(38 39 44)' },
+      _dark: { ...layerStyles.materialMenu, '--popper-arrow-bg': 'rgb(38 39 44)' },
     },
   }
 })

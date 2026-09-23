@@ -2,6 +2,7 @@ import { HStack, IconButton, Tooltip } from '@chakra-ui/react'
 import { Eye, EyeOff, SettingsIcon } from 'lucide-react'
 import { Link } from 'react-router'
 import { usePrivacy } from '../../hooks/use-privacy'
+import { AppearanceToggle } from '../appearance-toggle'
 
 export function UserInfo(): JSX.Element {
   const { hidden, toggle } = usePrivacy()
@@ -17,6 +18,7 @@ export function UserInfo(): JSX.Element {
           onClick={toggle}
         />
       </Tooltip>
+      <AppearanceToggle />
       <IconButton as={Link} to="/settings" aria-label="Settings" variant="ghost" icon={<SettingsIcon size={20} />} />
     </HStack>
   )

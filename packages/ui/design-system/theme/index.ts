@@ -32,6 +32,8 @@ export const theme = extendBaseTheme({
         MozOsxFontSmoothing: 'grayscale',
       },
       '::selection': { bg: 'accent.solid', color: 'accent.fg' },
+      // The appearance toggle reveals the new theme with its own clip-path animation.
+      '::view-transition-old(root), ::view-transition-new(root)': { animation: 'none', mixBlendMode: 'normal' },
       ':focus-visible': { outline: '2px solid', outlineColor: 'focus.ring', outlineOffset: '3px' },
       '@media (prefers-reduced-motion: reduce)': {
         '*, *::before, *::after': {

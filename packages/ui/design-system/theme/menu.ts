@@ -11,7 +11,7 @@ const extendedBaseStyle = definePartsStyle(() => {
     ...defaultMenuTheme.baseStyle,
     list: {
       ...defaultMenuTheme.baseStyle?.list,
-      ...layerStyles['material.menu'],
+      ...layerStyles.materialMenu,
       p: 1,
       minW: '12rem',
       zIndex: 1,

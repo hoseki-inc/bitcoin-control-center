@@ -33,6 +33,7 @@ import { ManualTypeSelectorPage } from './pages/claims/verify/manual-type'
 import { ClaimsVerifyRobinhoodPage } from './pages/claims/verify/robinhood'
 import { ClaimsVerifyStrikePage } from './pages/claims/verify/strike'
 import { DashboardPage } from './pages/dashboard'
+import { GlassLabPage } from './pages/glass-lab'
 import { HardwareWalletTestPage } from './pages/hardware-wallet-test'
 import { MultisigDetailsPage } from './pages/multisig/[id]'
 import { MultisigConnectPage } from './pages/multisig/[id]/connect'
@@ -110,6 +111,7 @@ export default function AppRoutes(): JSX.Element {
         <Route path="/multisig/verify/receipt/:claimId/:keystoreId" Component={KeystoreReceiptPage} />
 
         <Route path="/test/hardware-wallets" Component={HardwareWalletTestPage} />
+        <Route path="/test/glass" Component={GlassLabPage} />
 
         <Route path="*" Component={NotFound} />
       </Routes>

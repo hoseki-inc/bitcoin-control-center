@@ -27,14 +27,19 @@ const darkMaterial = {
   '--glass-track-bg': 'rgb(255 255 255 / 0.1)',
   '--glass-track-shadow': 'inset 0 1px 1.5px rgb(0 0 0 / 0.22), inset 0 -0.5px 0 rgb(255 255 255 / 0.07)',
   '--focus-band': 'rgb(0 0 0 / 0.4)',
+  '--glass-edge': 'rgb(255 255 255 / 0.1)',
+  '--glass-outline': 'rgb(0 0 0 / 0)',
+  '--glass-shine': '0.2',
+  '--glass-drop': '0 4px 24px rgb(0 0 0 / 0.56)',
+  '--glass-widget-shadow': '0 10px 20px rgb(0 0 0 / 0.25)',
 }
 
 const lightMaterial: typeof darkMaterial = {
-  '--material-tint': 'rgb(255 255 255 / 0.55)',
-  '--material-filter': 'blur(20px) saturate(160%) brightness(105%)',
-  '--material-edge': 'rgb(15 23 42 / 0.08)',
-  '--material-shine': '0.7',
-  '--material-shadow': '0 14px 34px rgb(15 23 42 / 0.14)',
+  '--material-tint': 'rgb(255 255 255 / 0.68)',
+  '--material-filter': 'blur(20px) saturate(170%) brightness(106%)',
+  '--material-edge': 'rgb(15 23 42 / 0.1)',
+  '--material-shine': '0.8',
+  '--material-shadow': '0 0 0 0.5px rgb(15 23 42 / 0.04), 0 14px 34px rgb(15 23 42 / 0.16)',
   '--toast-tint': 'rgb(255 255 255 / 0.7)',
   '--toast-filter': 'blur(10px) saturate(160%) brightness(105%)',
   '--toast-shadow': '0 6px 16px rgb(15 23 42 / 0.12)',
@@ -48,6 +53,11 @@ const lightMaterial: typeof darkMaterial = {
   '--glass-track-bg': 'rgb(15 23 42 / 0.08)',
   '--glass-track-shadow': 'inset 0 1px 1.5px rgb(15 23 42 / 0.12), inset 0 -0.5px 0 rgb(255 255 255 / 0.7)',
   '--focus-band': 'rgb(255 255 255 / 0.6)',
+  '--glass-edge': 'rgb(255 255 255 / 0.6)',
+  '--glass-outline': 'rgb(15 23 42 / 0.1)',
+  '--glass-shine': '0.85',
+  '--glass-drop': '0 4px 24px rgb(15 23 42 / 0.16)',
+  '--glass-widget-shadow': '0 10px 24px rgb(15 23 42 / 0.12)',
 }
 
 const shared = {
@@ -94,9 +104,9 @@ const material: SystemStyleObject = {
 
 export const layerStyles = {
   material,
-  'material.menu': { ...material, borderRadius: 'var(--radius-menu)' },
-  'material.modal': { ...material, borderRadius: 'var(--radius-modal)' },
-  'material.toast': {
+  materialMenu: { ...material, borderRadius: 'var(--radius-menu)' },
+  materialModal: { ...material, borderRadius: 'var(--radius-modal)' },
+  materialToast: {
     ...material,
     bg: 'var(--toast-tint)',
     backdropFilter: 'var(--toast-filter)',
@@ -109,10 +119,22 @@ export const layerStyles = {
     borderTopRadius: 'var(--radius-window)',
     boxShadow: 'var(--window-shadow)',
   },
-  'window.chrome': {
+  windowChrome: {
     border: '0.5px solid var(--window-edge)',
     borderTopRadius: 'var(--radius-window)',
     boxShadow: shine('--window-shine', '--window-shadow'),
+    pointerEvents: 'none',
+  },
+  // Edge highlight for <Glass>: a hairline plus the four-part inner shine, no drop shadow.
+  glassShine: {
+    border: '0.5px solid var(--glass-edge)',
+    boxShadow: [
+      'inset 1px 0 rgb(255 255 255 / calc(var(--glass-shine) * 0.2))',
+      'inset -1px 0 rgb(255 255 255 / calc(var(--glass-shine) * 0.2))',
+      'inset 0 1px rgb(255 255 255 / var(--glass-shine))',
+      'inset 0 0.5px rgb(255 255 255 / calc(var(--glass-shine) * 0.5))',
+      '0 0 0 0.5px var(--glass-outline)',
+    ].join(', '),
     pointerEvents: 'none',
   },
   glassCell: { bgImage: 'var(--glass-cell-bg)', boxShadow: 'var(--glass-cell-shadow)' },

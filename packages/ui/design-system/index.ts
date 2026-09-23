@@ -38,3 +38,4 @@ export * from './forms/radio-card'
 export * from './typography/overflown-text'
 
 export * from './linear-gradient'
+export * from './glass'
