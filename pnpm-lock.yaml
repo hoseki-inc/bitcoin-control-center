@@ -112,9 +112,6 @@ importers:
       '@noble/hashes':
         specifier: 2.4.0
         version: 2.4.0
-      '@patina/core':
-        specifier: 3.0.0
-        version: 3.0.0
       '@react-pdf/renderer':
         specifier: 4.9.0
         version: 4.9.0(react@19.3.0)
@@ -384,9 +381,6 @@ importers:
       '@keystonehq/bc-ur-registry':
         specifier: 0.8.0
         version: 0.8.0
-      '@patina/core':
-        specifier: 3.0.0
-        version: 3.0.0
       date-fns:
         specifier: 4.4.0
         version: 4.4.0
@@ -2070,9 +2064,6 @@ packages:
   '@parcel/watcher@2.6.0':
     resolution: {integrity: sha512-7FNeNl8NCE7aINx7WXiKQrPYZWC/hvrTsmk6zmxbI7LTXE7hVek/n8AfVgpe2y82zl3w0HvCHN0bVKMBoJcC0w==}
     engines: {node: '>= 10.0.0'}
-
-  '@patina/core@3.0.0':
-    resolution: {integrity: sha512-Gnf3ZZHvPlIiLSRdhlqpwI4QP+IIw2vaVwxUnQTg5Z0gj5a1cElD/YPsZ6hbV/iZSl46Xa6m1m1f0bIuaAvLNA==}
 
   '@pinojs/redact@0.4.0':
     resolution: {integrity: sha512-k2ENnmBugE/rzQfEcdWHcCY+/FM3VLzH9cYEsbdsoqrvzAKRhUZeRNhAZvB8OitQJ1TBed3yqWtdjzS6wJKBwg==}
@@ -9103,8 +9094,6 @@ snapshots:
       '@parcel/watcher-win32-arm64': 2.6.0
       '@parcel/watcher-win32-x64': 2.6.0
     optional: true
-
-  '@patina/core@3.0.0': {}
 
   '@pinojs/redact@0.4.0': {}
 
