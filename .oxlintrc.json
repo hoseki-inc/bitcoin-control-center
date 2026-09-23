@@ -119,7 +119,8 @@
     "typescript/promise-function-async": "error",
     "typescript/prefer-promise-reject-errors": "error",
     "typescript/prefer-readonly": "error",
-    "typescript/prefer-reduce-type-parameter": "error"
+    "typescript/prefer-reduce-type-parameter": "error",
+    "typescript/prefer-regexp-exec": "error"
   },
   "overrides": [
     {

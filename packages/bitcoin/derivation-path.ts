@@ -29,7 +29,7 @@ import { type Result, parse } from '../result'
 const regex = /^(m)(\/\d+['h]?)+$/
 export const DerivationPathString = z
   .string()
-  .refine((path) => path.match(regex) !== null, {
+  .refine((path) => regex.exec(path) !== null, {
     message: 'Invalid derivation path',
   })
   .brand('DerivationPathString')
