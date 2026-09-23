@@ -193,7 +193,10 @@ function tryGenericMultisigSetup(exportFileLines: string[]): Result<ParsedWallet
         case 'Derivation': {
           const derivationPathResult = DerivationPath.fromString(value)
           if (derivationPathResult.isErr()) {
-            browserLogger.error(derivationPathResult.unwrapErr(), `Error parsing derivation path: ${derivation}`)
+            browserLogger.error(
+              derivationPathResult.unwrapErr(),
+              `Error parsing derivation path: ${String(derivation)}`,
+            )
             return Err(derivationPathResult.unwrapErr())
           }
           derivation = derivationPathResult.unwrap()

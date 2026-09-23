@@ -164,5 +164,5 @@ export function getBitcoinXpubFromColdcardExport(
   }
 
   // If no match is found, return an error
-  return Err(new Error(`No xpub found for derivation path: ${derivationPath}`))
+  return Err(new Error(`No xpub found for derivation path: ${derivationPath.toString()}`))
 }

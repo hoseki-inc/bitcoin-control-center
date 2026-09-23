@@ -125,7 +125,8 @@
     "typescript/prefer-string-starts-ends-with": "error",
     "typescript/related-getter-setter-pairs": "error",
     "typescript/require-array-sort-compare": "error",
-    "typescript/restrict-plus-operands": "error"
+    "typescript/restrict-plus-operands": "error",
+    "typescript/restrict-template-expressions": "error"
   },
   "overrides": [
     {
