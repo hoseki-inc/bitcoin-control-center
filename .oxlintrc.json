@@ -137,7 +137,8 @@
     "typescript/use-unknown-in-catch-callback-variable": "error",
     "react/display-name": "error",
     "react/exhaustive-deps": "error",
-    "react/jsx-key": "error"
+    "react/jsx-key": "error",
+    "react/jsx-no-comment-textnodes": "error"
   },
   "overrides": [
     {
