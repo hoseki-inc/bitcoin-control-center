@@ -104,7 +104,7 @@ export class StatementMapper {
     }
   }
 
-  private createCustomPdfStatement = (statement: CompletedStatementData): Result<PdfStatement, Error> => {
+  private readonly createCustomPdfStatement = (statement: CompletedStatementData): Result<PdfStatement, Error> => {
     const aggregatedRes = this.aggregateStatementData(
       statement.openingDate,
       statement.closingDate,
@@ -139,7 +139,7 @@ export class StatementMapper {
     )
   }
 
-  private createMonthlyPdfStatement = (statement: CompletedStatementData): Result<PdfStatement, Error> => {
+  private readonly createMonthlyPdfStatement = (statement: CompletedStatementData): Result<PdfStatement, Error> => {
     const monthlyData = this.createMonthlyData(statement, statement.timezone)
     if (monthlyData.isErr()) {
       return Err(monthlyData.unwrapErr())

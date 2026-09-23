@@ -76,9 +76,10 @@ export function ConnectTrezor(): JSX.Element {
       account = new SingleSigAccount(scriptTypeResult.unwrap(), xpubResult.unwrap())
     }
 
-    const derivationPath = trezorAccountInfo.path
-      ? DerivationPath.fromString(trezorAccountInfo.path).unwrapOr(null)
-      : null
+    const derivationPath =
+      trezorAccountInfo.path != null && trezorAccountInfo.path !== ''
+        ? DerivationPath.fromString(trezorAccountInfo.path).unwrapOr(null)
+        : null
 
     // Set the selected Trezor account
     setSelectedTrezorAccount({
@@ -181,7 +182,7 @@ export function ConnectTrezor(): JSX.Element {
 }
 
 function getScriptType(path?: string): Result<SingleSigAccountScriptType, Error> {
-  if (!path) {
+  if (path == null || path === '') {
     return Err(new Error('Derivation path was missing'))
   }
   const split = path.split('/')

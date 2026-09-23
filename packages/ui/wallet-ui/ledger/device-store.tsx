@@ -134,7 +134,7 @@ export function createLedgerStore(
           return
         }
         const newTransport = await openTransport()
-        if (signal?.aborted) {
+        if (signal?.aborted === true) {
           await newTransport.close()
           throw new DOMException('Connection cancelled', 'AbortError')
         }
@@ -192,7 +192,7 @@ export function createLedgerStore(
           return notInitializedError()
         }
 
-        return await handleLedgerSdkCall(btc.signMessage(path, Buffer.from(message).toString('hex')), { path })
+        return handleLedgerSdkCall(btc.signMessage(path, Buffer.from(message).toString('hex')), { path })
       }),
     }
   })

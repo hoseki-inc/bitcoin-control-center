@@ -316,7 +316,13 @@ void test('expiration before the browser event also denies the late request', as
 
 void test('same-origin navigation cancels a native chooser immediately and ignores its late result', async (t) => {
   let finishDialog
-  const h = createHarness(t, async () => new Promise((resolve) => (finishDialog = resolve)))
+  const h = createHarness(
+    t,
+    async () =>
+      new Promise((resolve) => {
+        finishDialog = resolve
+      }),
+  )
   const result = h.request()
   assert.equal(h.begin(), false)
   assert.equal(await h.request(), undefined)
@@ -348,7 +354,13 @@ void test('native chooser timeout releases its callback even if the dialog promi
 
 void test('native selection cannot grant a device removed while the dialog was open', async (t) => {
   let finishDialog
-  const h = createHarness(t, async () => new Promise((resolve) => (finishDialog = resolve)))
+  const h = createHarness(
+    t,
+    async () =>
+      new Promise((resolve) => {
+        finishDialog = resolve
+      }),
+  )
   const result = h.request()
   h.remove(ledger)
   finishDialog({ response: 0 })

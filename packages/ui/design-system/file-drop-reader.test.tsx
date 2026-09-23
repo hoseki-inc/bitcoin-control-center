@@ -110,3 +110,36 @@ it('rejects the wrong file type before validation', async () => {
   expect(onInvalidContentRead).toHaveBeenCalledWith(expect.any(Error))
   expect(validate).not.toHaveBeenCalled()
 })
+
+it('rejects empty text before calling the content validator', async () => {
+  const validate = vi.fn((text: string) => Ok(text))
+  await act(async () => {
+    root.render(
+      <ChakraProvider>
+        <FileDropReader {...common} readAs="text" acceptedFileTypes={['txt']} validationFn={validate} />
+      </ChakraProvider>,
+    )
+  })
+  await selectFile(new File([], 'empty.txt', { type: 'text/plain' }))
+  expect(validate).not.toHaveBeenCalled()
+  expect(onStatusChange).toHaveBeenCalledWith('invalid')
+  expect(onInvalidContentRead).toHaveBeenCalledWith(new Error('Invalid file'))
+  expect(onValidContentRead).not.toHaveBeenCalled()
+})
+
+it('passes a zero-length ArrayBuffer to the content validator', async () => {
+  const validate = vi.fn((bytes: ArrayBuffer) => Ok(bytes.byteLength))
+  await act(async () => {
+    root.render(
+      <ChakraProvider>
+        <FileDropReader {...common} readAs="arrayBuffer" acceptedFileTypes={['png']} validationFn={validate} />
+      </ChakraProvider>,
+    )
+  })
+  const file = new File([], 'empty.png', { type: 'image/png' })
+  await selectFile(file)
+  expect(validate).toHaveBeenCalledTimes(1)
+  expect(onValidContentRead).toHaveBeenCalledWith(0, file)
+  expect(onStatusChange).toHaveBeenCalledWith('valid')
+  expect(onInvalidContentRead).not.toHaveBeenCalled()
+})

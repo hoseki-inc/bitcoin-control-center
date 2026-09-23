@@ -61,7 +61,7 @@ export function ErrorBanner({ message, variant = 'error', rightContent, ...rest 
       color={color}
       {...rest}
     >
-      <HStack flexGrow={1} py={rightContent ? 0 : 3}>
+      <HStack flexGrow={1} py={Boolean(rightContent) ? 0 : 3}>
         <WarningCircleFilledIcon boxSize="14px" />
         <Text textStyle="text/sm" fontWeight="medium">
           {message}
@@ -107,7 +107,7 @@ export function ErrorInline({
       <Text textStyle="text/sm" color="neutral.900" fontWeight="medium">
         {message}
       </Text>
-      {otherContent && <Box color="neutral.900">{otherContent}</Box>}
+      {Boolean(otherContent) ? <Box color="neutral.900">{otherContent}</Box> : otherContent}
     </Stack>
   )
 }

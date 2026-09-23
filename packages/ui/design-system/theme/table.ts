@@ -1,9 +1,9 @@
 import { tableAnatomy } from '@chakra-ui/anatomy'
 import { theme as chakraTheme, createMultiStyleConfigHelpers } from '@chakra-ui/react'
 
-const { definePartsStyle, defineMultiStyleConfig } = createMultiStyleConfigHelpers(tableAnatomy.keys)
+const styleHelpers = createMultiStyleConfigHelpers(tableAnatomy.keys)
 
-const extendedBaseStyle = definePartsStyle({
+const extendedBaseStyle = styleHelpers.definePartsStyle({
   ...chakraTheme.components.Table.baseStyle,
   table: {
     ...chakraTheme.components.Table.baseStyle?.table,
@@ -30,7 +30,7 @@ const extendedBaseStyle = definePartsStyle({
   },
 })
 
-export const tableTheme = defineMultiStyleConfig({
+export const tableTheme = styleHelpers.defineMultiStyleConfig({
   ...chakraTheme.components.Table,
   baseStyle: extendedBaseStyle,
   defaultProps: {

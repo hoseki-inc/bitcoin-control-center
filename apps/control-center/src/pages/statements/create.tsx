@@ -65,7 +65,7 @@ export function StatementCreatePage(): JSX.Element {
       const validIds = claimsQuery.data.map((c) => c.id)
       const preSelected = navState.preSelectedClaimIds.flatMap((id) => {
         const validId = validIds.find((candidate) => candidate === id)
-        return validId ? [validId] : []
+        return validId != null && validId.length > 0 ? [validId] : []
       })
       if (preSelected.length > 0) {
         setSelectedClaimIds(new Set(preSelected))
@@ -98,7 +98,7 @@ export function StatementCreatePage(): JSX.Element {
   const [address, setAddress] = useState<string>('')
 
   useEffect(() => {
-    if (savedUserName && !nameInitialized) {
+    if (savedUserName != null && savedUserName !== '' && !nameInitialized) {
       setName(savedUserName)
       setNameInitialized(true)
     }

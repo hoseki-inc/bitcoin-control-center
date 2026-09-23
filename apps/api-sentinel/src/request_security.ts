@@ -17,7 +17,7 @@ function isLoopbackAddress(address: string): boolean {
 }
 
 function getHostname(host: string | undefined): string | null {
-  if (!host) {
+  if (host == null || host === '') {
     return null
   }
 
@@ -59,7 +59,7 @@ function getAllowedHostPatterns(configuredHosts: string | undefined): string[] {
 
 function isAllowedHost(host: string | undefined, allowedPatterns: string[]): boolean {
   const hostname = getHostname(host)
-  if (!hostname) {
+  if (hostname == null || hostname === '') {
     return false
   }
 
@@ -74,7 +74,7 @@ function isAllowedHost(host: string | undefined, allowedPatterns: string[]): boo
 }
 
 export function isAllowedDevelopmentOrigin(origin: string | undefined): boolean {
-  if (!origin) {
+  if (origin == null || origin === '') {
     return true
   }
 
@@ -91,7 +91,7 @@ function isAllowedRequestOrigin(
   allowedHostPatterns: string[],
   isProduction: boolean,
 ): boolean {
-  if (!origin) {
+  if (origin == null || origin === '') {
     return true
   }
   if (!isProduction) {
@@ -149,7 +149,11 @@ export function registerRequestSecurity(
       return reply.status(403).send({ code: 'forbidden_origin', message: 'Origin is not allowed' })
     }
 
-    if (!request.headers.origin && isUnsafeMethod(request.method) && !isLoopbackAddress(request.ip)) {
+    if (
+      (request.headers.origin == null || request.headers.origin === '') &&
+      isUnsafeMethod(request.method) &&
+      !isLoopbackAddress(request.ip)
+    ) {
       return reply.status(403).send({ code: 'forbidden_origin', message: 'Origin is required' })
     }
   })

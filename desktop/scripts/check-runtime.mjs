@@ -22,7 +22,7 @@ async function checkRuntime() {
     database = new Database(databasePath)
     assert.deepEqual(database.prepare('SELECT value FROM smoke').get(), { value: 42 })
   } finally {
-    if (database?.open) {
+    if (database?.open === true) {
       database.close()
     }
     rmSync(temporaryDirectory, { recursive: true, force: true })
@@ -43,10 +43,12 @@ async function checkRuntime() {
 }
 
 if (process.versions.electron) {
-  checkRuntime().catch((error) => {
-    console.error(error)
-    process.exitCode = 1
-  })
+  checkRuntime().catch(
+    /** @param {unknown} error */ (error) => {
+      console.error(error)
+      process.exitCode = 1
+    },
+  )
 } else {
   // Loading the native addon in the host Node process misses Electron ABI issues.
   const { default: electronPath } = await import('electron')

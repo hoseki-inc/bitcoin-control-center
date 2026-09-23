@@ -120,7 +120,7 @@ export function MultisigFromDescriptor({ onNext }: { onNext: (data: CreateMultis
               })
             }}
           >
-            <FormControl mb={4} isInvalid={!!errors.descriptor || !!parsingError}>
+            <FormControl mb={4} isInvalid={!!errors.descriptor || (parsingError != null && parsingError !== '')}>
               <Textarea
                 {...register('descriptor', {
                   required: 'Descriptor is required',
@@ -131,7 +131,9 @@ export function MultisigFromDescriptor({ onNext }: { onNext: (data: CreateMultis
                 {...monoInputProps}
               />
               <FormErrorMessage>
-                {errors.descriptor?.message?.length ? errors.descriptor.message : parsingError}
+                {errors.descriptor?.message != null && errors.descriptor.message !== ''
+                  ? errors.descriptor.message
+                  : parsingError}
               </FormErrorMessage>
             </FormControl>
             <Flex justifyContent="flex-end">

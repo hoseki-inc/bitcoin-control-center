@@ -290,7 +290,7 @@ export class StatementService {
           const activeAccount = this.db
             .prepare('SELECT 1 AS one FROM accounts WHERE id = ? AND deleted_at IS NULL')
             .get(row.id)
-          if (!activeAccount) {
+          if (activeAccount === undefined) {
             return Err(new Error(`Account "${row.display_name}" was archived while generating the statement`))
           }
 

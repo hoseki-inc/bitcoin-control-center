@@ -27,7 +27,7 @@ export const configure = sdk.Action.withInput(
   },
   inputSpec,
   async ({ effects }) => {
-    return await configFile.read().const(effects)
+    return configFile.read().const(effects)
   },
   async ({ effects, input }) => {
     await configFile.write(effects, input)

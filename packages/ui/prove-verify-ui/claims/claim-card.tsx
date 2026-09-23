@@ -52,10 +52,10 @@ export const ClaimCard = forwardRef<ClaimCardProps, 'div'>(
         textAlign="center"
         borderWidth="1px"
         borderRadius="md"
-        borderColor={isSelected ? 'primary.600' : 'neutral.200'}
+        borderColor={isSelected === true ? 'primary.600' : 'neutral.200'}
         p={2}
         pb={6}
-        bg={isSelected ? 'primary.50' : 'white'}
+        bg={isSelected === true ? 'primary.50' : 'white'}
         transition="all 0.2s"
         ref={ref}
         {...props}
@@ -94,6 +94,8 @@ export const ClaimCard = forwardRef<ClaimCardProps, 'div'>(
     )
   },
 )
+
+ClaimCard.displayName = 'ClaimCard'
 
 function renderBalance(balance: BalanceWithStatus): React.ReactNode {
   if (balance.status === 'loading') {
@@ -142,10 +144,10 @@ export function ClaimCardKeystores({
       <KeystoreAvatar.Group {...props}>
         {keystores
           .sort((a, b) => {
-            if (a.isVerified) {
+            if (a.isVerified === true) {
               return -1
             }
-            if (b.isVerified) {
+            if (b.isVerified === true) {
               return 1
             }
             if (a.wallet) {
@@ -163,7 +165,7 @@ export function ClaimCardKeystores({
               icon={!keystore.wallet ? keyIcon : undefined}
               src={keystore.wallet ? getSupportedHardwareWalletLogoPath(keystore.wallet) : undefined}
               // put the identified/verified ones first, just identified in the middle and unidentified/unverified at the end
-              order={keystore.isVerified ? 1 : keystore.wallet ? 0 : -1}
+              order={keystore.isVerified === true ? 1 : keystore.wallet ? 0 : -1}
               alt={`${keystore.wallet} wallet`}
             >
               <KeystoreAvatar.Badge>{getMultisigKeystoreAvatarIcon(keystore, status)}</KeystoreAvatar.Badge>
@@ -191,7 +193,7 @@ function getMultisigKeystoreAvatarIcon(keystore: ClaimCardKeystore, status: Clai
 
   // at this point it means it's pending
 
-  if (keystore.isVerified) {
+  if (keystore.isVerified === true) {
     return <CheckCircleFilledIcon color="neutral.100" color2="neutral.900" {...commonProps} />
   }
 

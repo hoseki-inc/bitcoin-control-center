@@ -51,3 +51,5 @@ export const AssetCard = forwardRef<AssetCardProps, 'div'>(
     )
   },
 )
+
+AssetCard.displayName = 'AssetCard'

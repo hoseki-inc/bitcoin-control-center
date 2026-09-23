@@ -162,7 +162,7 @@ export const NoPaddingVariant: Story = () => {
 
   return (
     <>
-      <Button onClick={onOpen}>Open variant="noPadding"</Button>
+      <Button onClick={onOpen}>Open variant=&quot;noPadding&quot;</Button>
 
       <Modal isOpen={isOpen} onClose={onClose} isCentered variant="noPadding" size="4xl">
         <ModalOverlay />
@@ -237,11 +237,11 @@ export const NewDeviceConnectionExample: Story = () => {
 
           <ModalBody>
             <Text textStyle="text/sm" color="neutral.600" mb={4}>
-              You're about to reconnect your wallet using a new hardware device.
+              You&apos;re about to reconnect your wallet using a new hardware device.
             </Text>
             <Text textStyle="text/sm" color="neutral.600">
-              To keep your proof secure, we'll need to start the verification process from scratch and check that this
-              device still controls the same key you previously verified
+              To keep your proof secure, we&apos;ll need to start the verification process from scratch and check that
+              this device still controls the same key you previously verified
             </Text>
           </ModalBody>
 

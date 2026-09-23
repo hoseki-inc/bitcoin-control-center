@@ -44,13 +44,15 @@ export function Alert({
         )}
         {variant !== 'toast' && (
           <VStack spacing={0} alignItems="flex-start">
-            {displayTitle && (
+            {Boolean(displayTitle) ? (
               <Flex alignItems="center">
                 <AlertIcon mr={1} />
                 <AlertTitle>{displayTitle}</AlertTitle>
               </Flex>
+            ) : (
+              displayTitle
             )}
-            {children && <AlertDescription>{children}</AlertDescription>}
+            {Boolean(children) ? <AlertDescription>{children}</AlertDescription> : children}
           </VStack>
         )}
       </Flex>

@@ -8,7 +8,7 @@ const iconSizeMap: Record<string, string> = {
 
 export function Button({ leftIcon, rightIcon, ...props }: ButtonProps): JSX.Element {
   const breakpointSize = useBreakpointValue(typeof props.size === 'object' ? props.size : { base: props.size })
-  const resolvedSize = breakpointSize?.length ? breakpointSize : 'md'
+  const resolvedSize = breakpointSize != null && breakpointSize !== '' ? breakpointSize : 'md'
 
   const iconSize = iconSizeMap[resolvedSize]
 

@@ -190,7 +190,9 @@ describe('StartOS enabled interface addresses', () => {
     state.addresses.available.reverse()
     state.changed()
     // Flush the SDK's asynchronous subscription; no changed mapped value should trigger a retry.
-    await new Promise((resolve) => setImmediate(resolve))
+    await new Promise((resolve) => {
+      setImmediate(resolve)
+    })
     expect(state.retry).not.toHaveBeenCalled()
     await main(state.options)
     expect(state.allowedHosts()).toBe(publicIp)

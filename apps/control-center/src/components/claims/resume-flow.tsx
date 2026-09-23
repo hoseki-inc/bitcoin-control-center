@@ -66,14 +66,13 @@ export function ResumeMultisigKeyFlow({
       as="button"
       title="Replace this device?"
       icon={CircleAlertIcon}
-      children={
-        <Text textAlign="left" color="neutral.800">
-          Click here to use a different device or start over with this key.
-        </Text>
-      }
       onClick={onOpen}
       _hover={{ opacity: 0.8 }}
-    />
+    >
+      <Text textAlign="left" color="neutral.800">
+        Click here to use a different device or start over with this key.
+      </Text>
+    </TipAlert>
   ) : null
 
   return (
@@ -107,7 +106,7 @@ type ResumeFlowProps = {
 function ResumeFlow({ wallet, model, description, bottomContent, ...props }: ResumeFlowProps) {
   return (
     <VStack spacing={4} left="center" maxW="640px" mx="auto" {...props}>
-      {model ? (
+      {model != null && model !== '' ? (
         <WalletImageFromKnownModel wallet={wallet} model={model} />
       ) : (
         <KeystoreAvatar icon={keyIcon} variant="filled" size="200px" alt="Unidentified key" mb={8} />

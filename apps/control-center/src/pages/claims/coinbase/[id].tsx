@@ -30,12 +30,12 @@ export function CoinbaseAccountDetailsPage(): JSX.Element {
     return <ErrorBanner mt={8} mb={4} message="Coinbase account not found." />
   }
 
-  const btcSats = account.balance ? Number(account.balance) : 0
+  const btcSats = account.balance != null && account.balance !== '' ? Number(account.balance) : 0
   const btcAmount = (btcSats / 100_000_000).toFixed(8)
   const needsReconnect = needsExchangeReconnect(account)
 
   function handleReconnect(): void {
-    if (!accountId) {
+    if (accountId == null || accountId === '') {
       return
     }
     void navigate('/accounts/verify/coinbase', {
@@ -44,7 +44,7 @@ export function CoinbaseAccountDetailsPage(): JSX.Element {
   }
 
   async function handleRefresh(): Promise<void> {
-    if (!accountId) {
+    if (accountId == null || accountId === '') {
       return
     }
     setIsRefreshing(true)
@@ -61,7 +61,7 @@ export function CoinbaseAccountDetailsPage(): JSX.Element {
   }
 
   async function handleDelete(): Promise<void> {
-    if (!accountId) {
+    if (accountId == null || accountId === '') {
       return
     }
     setIsDeleting(true)

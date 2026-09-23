@@ -107,7 +107,7 @@ function tryBitcoinCore(exportFileLines: string[]): Result<ParsedWalletExport, E
     }
   }
 
-  if (!descriptorLine) {
+  if (descriptorLine == null || descriptorLine === '') {
     return Err(
       new Error(
         'No BIP389 descriptor found in file. Expected "# Receive and change descriptor (BIP389):" followed by a descriptor.',
@@ -168,7 +168,7 @@ function tryGenericMultisigSetup(exportFileLines: string[]): Result<ParsedWallet
     if (trimmedLine.includes(':')) {
       const splitParts = trimmedLine.split(':')
       const key = splitParts[0]
-      if (!key) {
+      if (key == null || key === '') {
         continue
       }
 
@@ -181,8 +181,8 @@ function tryGenericMultisigSetup(exportFileLines: string[]): Result<ParsedWallet
           break
         case 'Policy': {
           // Parse "2 of 2" format
-          const policyMatch = value.match(/^(\d+)\s+of\s+(\d+)$/)
-          if (policyMatch?.[1] && policyMatch[2]) {
+          const policyMatch = /^(\d+)\s+of\s+(\d+)$/.exec(value)
+          if (policyMatch?.[1] != null && policyMatch[1] !== '' && policyMatch[2] != null && policyMatch[2] !== '') {
             policy = {
               threshold: parseInt(policyMatch[1], 10),
               total: parseInt(policyMatch[2], 10),
@@ -193,7 +193,10 @@ function tryGenericMultisigSetup(exportFileLines: string[]): Result<ParsedWallet
         case 'Derivation': {
           const derivationPathResult = DerivationPath.fromString(value)
           if (derivationPathResult.isErr()) {
-            browserLogger.error(derivationPathResult.unwrapErr(), `Error parsing derivation path: ${derivation}`)
+            browserLogger.error(
+              derivationPathResult.unwrapErr(),
+              `Error parsing derivation path: ${String(derivation)}`,
+            )
             return Err(derivationPathResult.unwrapErr())
           }
           derivation = derivationPathResult.unwrap()
@@ -220,7 +223,7 @@ function tryGenericMultisigSetup(exportFileLines: string[]): Result<ParsedWallet
   }
 
   // Validate required fields
-  if (!name) {
+  if (name == null || name === '') {
     return Err(new Error('Missing Name field in wallet file'))
   }
   if (!policy) {
@@ -229,7 +232,7 @@ function tryGenericMultisigSetup(exportFileLines: string[]): Result<ParsedWallet
   if (!derivation) {
     return Err(new Error('Missing Derivation field in wallet file'))
   }
-  if (!format) {
+  if (format == null || format === '') {
     return Err(new Error('Missing Format field in wallet file'))
   }
   if (keystores.length !== policy.total) {
@@ -309,7 +312,7 @@ function tryRawDescriptor(exportFileLines: string[]): Result<ParsedWalletExport,
     return Err(new Error('Raw descriptor file must contain exactly one non-empty line'))
   }
   const descriptorLine = nonEmptyLines[0]
-  if (!descriptorLine) {
+  if (descriptorLine == null || descriptorLine === '') {
     return Err(new Error('Descriptor line is empty'))
   }
 
@@ -408,7 +411,7 @@ const xpubPattern = new RegExp(`(${Slip132.pubKeyRegex.source})(?!\\/<0;1>\\/\\*
 function fixBrokenDescriptor(descriptor: string): Result<string, Error> {
   // Split the descriptor to remove the old checksum
   const [descriptorWithoutChecksum] = descriptor.split('#')
-  if (!descriptorWithoutChecksum) {
+  if (descriptorWithoutChecksum == null || descriptorWithoutChecksum === '') {
     return Err(new Error('Invalid descriptor format'))
   }
 
@@ -548,8 +551,8 @@ const ElectrumJsonFileSchema = z
     wallet_type: z
       .string()
       .transform((val, ctx) => {
-        const match = val.match(/^(\d+)of(\d+)$/)
-        if (!match?.[1] || !match[2]) {
+        const match = /^(\d+)of(\d+)$/.exec(val)
+        if (match?.[1] == null || match[1] === '' || match[2] == null || match[2] === '') {
           ctx.addIssue({
             code: z.ZodIssueCode.custom,
             message: `Invalid wallet_type format: ${val}`,

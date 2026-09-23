@@ -130,7 +130,7 @@ export class ElectrumTransport {
   private socket: net.Socket | tls.TLSSocket | null = null
   private buffer = ''
   private nextId = 0
-  private pending = new Map<number, PendingRequest>()
+  private readonly pending = new Map<number, PendingRequest>()
   private connected = false
 
   public constructor(config: ElectrumConnectionConfig) {
@@ -201,7 +201,7 @@ export class ElectrumTransport {
                   onConnected()
                 }
               })
-              .catch((err) => {
+              .catch((err: unknown) => {
                 clearTimeout(timer)
                 resolve(Err(err instanceof Error ? err : new Error(String(err))))
               })

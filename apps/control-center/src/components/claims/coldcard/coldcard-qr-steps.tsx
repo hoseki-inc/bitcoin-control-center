@@ -104,15 +104,15 @@ function QrIntro({ onNext, onBack, ...rest }: { onNext: () => void; onBack: () =
       </Text>
 
       <Text textStyle="text/md" color="neutral.900">
-        To verify ownership with your COLDCARD Q, you'll securely prove control of your keys by scanning QR codes — no
-        MicroSD card needed.
+        To verify ownership with your COLDCARD Q, you&apos;ll securely prove control of your keys by scanning QR codes —
+        no MicroSD card needed.
       </Text>
       <Text textStyle="text/md" color="neutral.900">
-        We'll guide you through each step — just follow the on-screen instructions.
+        We&apos;ll guide you through each step — just follow the on-screen instructions.
       </Text>
       <Box>
         <Text textStyle="text/md" color="neutral.900" fontWeight={500}>
-          You'll need:
+          You&apos;ll need:
         </Text>
         <chakra.ul ml={8} textStyle="text/md" color="neutral.900" fontWeight={400}>
           <li>Your COLDCARD Q</li>
@@ -121,7 +121,7 @@ function QrIntro({ onNext, onBack, ...rest }: { onNext: () => void; onBack: () =
       </Box>
 
       <HowDoesThisWork>
-        We use COLDCARD Q's built-in QR scanner and display for a fully air-gapped process.
+        We use COLDCARD Q&apos;s built-in QR scanner and display for a fully air-gapped process.
       </HowDoesThisWork>
 
       <NavigationArrows onForward={onNext} />
@@ -159,7 +159,8 @@ function QrExportInstructions({
         Display Your Wallet Export
       </Text>
       <Text textStyle="text/md" color="neutral.900">
-        To identify the Bitcoin you're claiming, we need your wallet export displayed as a QR code on your COLDCARD Q.
+        To identify the Bitcoin you&apos;re claiming, we need your wallet export displayed as a QR code on your COLDCARD
+        Q.
       </Text>
       <Text textStyle="text/md" color="neutral.900">
         Power on your COLDCARD Q, enter your PIN, and navigate to:
@@ -177,7 +178,7 @@ function QrExportInstructions({
         on your device. Your COLDCARD Q will display an animated QR code.
       </Text>
       <Text textStyle="text/md" color="neutral.900">
-        Once the QR is displayed, click 'Ready to Scan' to continue.
+        Once the QR is displayed, click &apos;Ready to Scan&apos; to continue.
       </Text>
 
       <WizardFooter
@@ -251,10 +252,10 @@ function QrScanWalletExport({
         Scan Your Wallet Export
       </Text>
       <Text textStyle="text/md" color="neutral.900" textAlign="center">
-        Hold your COLDCARD Q screen in front of your webcam. We'll automatically detect and read the QR code.
+        Hold your COLDCARD Q screen in front of your webcam. We&apos;ll automatically detect and read the QR code.
       </Text>
 
-      {error && (
+      {error != null && error !== '' && (
         <Text textStyle="text/sm" color="error.500" textAlign="center">
           {error}
         </Text>

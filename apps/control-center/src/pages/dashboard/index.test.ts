@@ -159,9 +159,9 @@ async function changeDate(id: string, value: string): Promise<void> {
   const input = document.getElementById(id)
   assert(input instanceof HTMLInputElement, 'Expected a date input')
   await act(async () => {
-    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
-    assert.exists(setValue, 'Expected the input value setter')
-    setValue.call(input, value)
+    const descriptor = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')
+    assert(descriptor?.set !== undefined, 'Expected the input value setter')
+    descriptor.set.call(input, value)
     input.dispatchEvent(new Event('input', { bubbles: true }))
     input.dispatchEvent(new Event('change', { bubbles: true }))
   })
@@ -544,7 +544,7 @@ describe('custom portfolio range UI', () => {
     'warns about failed background refreshes without hiding a loaded %s chart',
     async (range) => {
       const client = new QueryClient({
-        logger: { log: vi.fn(), warn: vi.fn(), error: vi.fn() },
+        logger: { log: vi.fn<() => void>(), warn: vi.fn<() => void>(), error: vi.fn<() => void>() },
         defaultOptions: { queries: { retry: false, cacheTime: 0 } },
       })
       client.setQueryData(['portfolio', range], mocks.base)
@@ -663,7 +663,7 @@ describe('custom portfolio range UI', () => {
       mocks.claims = archivedOnly ? [] : [{ id: 'wallet', displayName: 'Test wallet' }]
       const portfolioData = { ...mocks.base, verifiedClaimsCount: archivedOnly ? 0 : 1, manualAccountCount: 0 }
       const client = new QueryClient({
-        logger: { log: vi.fn(), warn: vi.fn(), error: vi.fn() },
+        logger: { log: vi.fn<() => void>(), warn: vi.fn<() => void>(), error: vi.fn<() => void>() },
         defaultOptions: { queries: { retry: false, cacheTime: 0 } },
       })
       client.setQueryData(['portfolio', '90d'], portfolioData)

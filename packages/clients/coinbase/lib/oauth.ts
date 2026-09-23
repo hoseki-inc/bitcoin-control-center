@@ -125,7 +125,7 @@ const prefix = '/oauth2'
 export function getAuthorizationUrl(args: AuthorizationUrlArgs): URL {
   const authorizationUrl = new URL(prefix + '/auth', url)
   Object.entries(authorizeArgsToPayload(args)).forEach(([key, value]) => {
-    if (value) {
+    if (value != null && value !== '') {
       authorizationUrl.searchParams.set(key, value)
     }
   })

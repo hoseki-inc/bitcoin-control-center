@@ -33,7 +33,7 @@ const mocks = await vi.hoisted(async () => {
 // Keep the SDK's actual operation lock while replacing USB exchanges with synthetic data.
 vi.mock('@ledgerhq/hw-app-btc', () => ({
   default: class LedgerBtcApp {
-    private transport: Transport
+    private readonly transport: Transport
     public constructor({ transport }: { transport: Transport }) {
       this.transport = transport
       transport.decorateAppAPIMethods(this, ['getWalletXpub'], 'BTC')
@@ -116,9 +116,9 @@ async function mountScan(): Promise<void> {
         { client },
         createElement(LedgerScan, {
           isLoadingOnContinue: false,
-          onContinue: vi.fn(),
-          onBack: vi.fn(),
-          onCancel: vi.fn(),
+          onContinue: vi.fn<() => void>(),
+          onBack: vi.fn<() => void>(),
+          onCancel: vi.fn<() => void>(),
         }),
       ),
     )
@@ -138,7 +138,9 @@ async function reconnect(): Promise<void> {
 async function waitForScan(): Promise<void> {
   await vi.waitFor(async () => {
     await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 0))
+      await new Promise((resolve) => {
+        setTimeout(resolve, 0)
+      })
     })
     expect(mocks.scan.mock.lastCall?.[0].walletsQuery.isLoading).toBe(false)
   })
@@ -158,9 +160,9 @@ it('Strict Mode restarts a scan without locking the Ledger with the cancelled in
           { client },
           createElement(LedgerScan, {
             isLoadingOnContinue: false,
-            onContinue: vi.fn(),
-            onBack: vi.fn(),
-            onCancel: vi.fn(),
+            onContinue: vi.fn<() => void>(),
+            onBack: vi.fn<() => void>(),
+            onCancel: vi.fn<() => void>(),
           }),
         ),
       ),

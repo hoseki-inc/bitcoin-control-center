@@ -117,7 +117,8 @@ export function ClaimSelection({
     if (
       isExchangeConnected(account) &&
       selectedExchangeAccountIds.has(account.id) &&
-      account.balance &&
+      account.balance != null &&
+      account.balance !== '' &&
       btcUsdPrice !== null
     ) {
       const btcAmount = Number(account.balance) / 100_000_000
@@ -207,7 +208,7 @@ export function ClaimSelection({
           })}
           {exchangeAccounts.map((account) => {
             const needsReconnect = needsExchangeReconnect(account)
-            const btcSats = account.balance ? Number(account.balance) : 0
+            const btcSats = account.balance != null && account.balance !== '' ? Number(account.balance) : 0
             const btcAmount = btcSats / 100_000_000
             const usdAmount = btcUsdPrice !== null ? btcAmount * btcUsdPrice : null
 
@@ -307,7 +308,7 @@ function renderUsdAmount(balance: BalanceWithStatus) {
   if (balance.status === 'fail' || balance.value.usd === null) {
     return (
       <Text textStyle="text/sm" fontWeight="medium">
-        'n/a'
+        &apos;n/a&apos;
       </Text>
     )
   }

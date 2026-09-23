@@ -78,7 +78,7 @@ export function LedgerScanUI({
               onClick={() => {
                 onContinue(selectedWallet, deviceModel?.id ?? 'unknown')
               }}
-              isDisabled={!selectedWallet}
+              isDisabled={false}
               isLoading={isLoadingOnContinue}
             >
               Yes, Continue

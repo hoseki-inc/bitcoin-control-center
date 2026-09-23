@@ -101,9 +101,9 @@ it.each([
           createElement(ClaimSelection, {
             disabledClaims: disabled === undefined ? undefined : new Set(disabled ? [claimId] : []),
             selectedClaimIds: new Set(selected ? [claimId] : []),
-            setSelectedClaimIds: vi.fn(),
+            setSelectedClaimIds: vi.fn<() => void>(),
             selectedExchangeAccountIds: new Set<string>(),
-            setSelectedExchangeAccountIds: vi.fn(),
+            setSelectedExchangeAccountIds: vi.fn<() => void>(),
           }),
         ),
       ),

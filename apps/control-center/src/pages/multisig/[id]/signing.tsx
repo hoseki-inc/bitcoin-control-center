@@ -32,11 +32,11 @@ export function MultisigSigningPage(): JSX.Element {
   const { keystoreId, walletType } = useParams<{ keystoreId: string; walletType: string }>()
   const { claim } = useMultisigPageWrapperContext()
 
-  if (claim.latestChallenge?.completed) {
+  if (claim.latestChallenge?.completed === true) {
     return <Navigate to={`/accounts/verify/receipt/${claim.id}`} replace />
   }
 
-  if (!keystoreId) {
+  if (keystoreId == null || keystoreId === '') {
     return <ErrorBanner mb={4} message="Keystore ID missing" />
   }
 
@@ -45,7 +45,9 @@ export function MultisigSigningPage(): JSX.Element {
     return <ErrorBanner mb={4} message="Keystore not found" />
   }
 
-  if (claim.latestChallenge?.messages.some((message) => message.keystoreId === keystore.id && message.signed)) {
+  if (
+    claim.latestChallenge?.messages.some((message) => message.keystoreId === keystore.id && message.signed) === true
+  ) {
     return getNumberOfMissingSignatures(claim) <= 0 ? (
       <FinishSavedChallenge claim={claim} />
     ) : (
@@ -110,7 +112,7 @@ function TrezorSigning({ claim, keystore }: { claim: ClaimDto; keystore: Keystor
     }
 
     const signingPath = getSigningPath(keystore)
-    if (!signingPath) {
+    if (signingPath == null || signingPath === '') {
       setError('No signing path found')
       return
     }
@@ -158,7 +160,7 @@ function TrezorSigning({ claim, keystore }: { claim: ClaimDto; keystore: Keystor
     }
   }
 
-  if (error) {
+  if (error != null && error !== '') {
     return <ErrorBanner mb={4} message={error} />
   }
   if (challengeMessageQuery.isLoading) {
@@ -244,7 +246,7 @@ function LedgerSigning({ claim, keystore }: { claim: ClaimDto; keystore: Keystor
     }
 
     const signingPath = getSigningPath(keystore)
-    if (!signingPath) {
+    if (signingPath == null || signingPath === '') {
       setSigningError(new Error('No signing path found'))
       return
     }
@@ -403,7 +405,7 @@ function ColdcardSigning({ claim, keystore }: { claim: ClaimDto; keystore: Keyst
   if (derivationPathRes.isErr()) {
     return <ErrorBanner mb={4} message="Invalid derivation path" />
   }
-  if (error) {
+  if (error != null && error !== '') {
     return <ErrorBanner mb={4} message={error} />
   }
   if (challengeMessageQuery.isLoading) {
@@ -525,7 +527,7 @@ function KeystoneSigning({ claim, keystore }: { claim: ClaimDto; keystore: Keyst
   const completeChallengeMessageMutation = trpc.portalProve.registry.challengeMessages.complete.useMutation()
   const completeChallenge = useCompleteChallenge(claim)
 
-  if (error) {
+  if (error != null && error !== '') {
     return <ErrorBanner mb={4} message={error} />
   }
   if (challengeMessageQuery.isLoading) {
@@ -666,7 +668,7 @@ function useCompleteChallenge(claim: ClaimDto) {
   })
 
   async function completeChallenge() {
-    if (!claim.latestChallenge?.id) {
+    if (claim.latestChallenge?.id == null || claim.latestChallenge.id.length === 0) {
       return
     }
     await completeChallengeMutation.mutateAsync({ challengeId: claim.latestChallenge.id })

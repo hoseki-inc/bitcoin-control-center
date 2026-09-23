@@ -184,7 +184,7 @@ function ConnectTrezorWalletCheckXpub({
   setModel: (model: TrezorModel) => void
 }) {
   async function getXpubFromTrezor() {
-    return await getXpubFrom({
+    return getXpubFrom({
       claim,
       getXpubFromDevice: (derivationPath) =>
         trezorService
@@ -247,7 +247,10 @@ function GenericCheckWalletXpub({
   const createChallengeMessage = trpc.portalProve.registry.challengeMessages.create.useMutation()
 
   const containsNonStandardPaths = claim.keystores.some(
-    (keystore) => keystore.derivationPath && !DerivationPath.from(keystore.derivationPath).isStandardAccount(),
+    (keystore) =>
+      keystore.derivationPath != null &&
+      keystore.derivationPath.length > 0 &&
+      !DerivationPath.from(keystore.derivationPath).isStandardAccount(),
   )
 
   const {
@@ -358,7 +361,7 @@ function GenericCheckWalletXpub({
               <Icon as={InfoIcon} color="neutral.900" boxSize="20px" />
               <Box color="neutral.800">
                 <Text textStyle="text/sm" fontWeight="medium">
-                  Seeing an "unusual derivation path" warning?
+                  Seeing an &quot;unusual derivation path&quot; warning?
                 </Text>
                 <Text textStyle="text/sm" fontWeight="regular">
                   Some wallets use custom paths, which can trigger this message. This is normal.
@@ -669,7 +672,7 @@ function ConnectKeystoneWallet({ claim }: { claim: ClaimDto }) {
 
 function KeystoneMultisigXpubCheck({ claim, keystoneJson }: { claim: ClaimDto; keystoneJson: KeystoneExportFile }) {
   async function getXpubFromKeystone(): Promise<Result<Xpub, Error>> {
-    return await getXpubFrom({
+    return getXpubFrom({
       claim,
       getXpubFromDevice: asyncFn(async (derivationPath) =>
         getBitcoinXpubFromKeystoneExport(derivationPath, keystoneJson),
@@ -699,7 +702,7 @@ function ColdcardMultisigStep6({
   coldcardJson: ColdcardGenericJsonFile
 }) {
   async function getXpubFromColdcard(): Promise<Result<Xpub, Error>> {
-    return await getXpubFrom({
+    return getXpubFrom({
       claim,
       getXpubFromDevice: asyncFn(async (derivationPath) =>
         getBitcoinXpubFromColdcardExport(derivationPath, coldcardJson),

@@ -72,7 +72,7 @@ function ConnectWallets({
 
   return (
     <Stack spacing={4}>
-      {challengeError && <ErrorBanner mb={4} message={challengeError} />}
+      {challengeError != null && challengeError !== '' && <ErrorBanner mb={4} message={challengeError} />}
 
       {!expandedKeystore ? (
         <Spinner fullPage size="xl" isLazy />

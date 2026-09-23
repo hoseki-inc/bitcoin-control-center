@@ -147,7 +147,7 @@ export const AllowToggle: Story = () => {
             <AccordionIcon />
           </AccordionButton>
           <AccordionPanel pb={4}>
-            <Text>With allowToggle, you can close an item by clicking it again when it's open.</Text>
+            <Text>With allowToggle, you can close an item by clicking it again when it&apos;s open.</Text>
           </AccordionPanel>
         </AccordionItem>
 

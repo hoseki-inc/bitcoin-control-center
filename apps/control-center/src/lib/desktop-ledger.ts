@@ -26,7 +26,7 @@ export function ledgerConnectionMessage(error: unknown): ConnectionMessage {
   if (name === 'BitcoinAppNotOpen' || statusText === 'INS_NOT_SUPPORTED' || statusCode === 27913) {
     return { title: 'Open the Bitcoin app', detail: 'Open the Bitcoin app on your Ledger, then try again.' }
   }
-  if (name?.includes('Disconnected')) {
+  if (name?.includes('Disconnected') === true) {
     return {
       title: 'Your Ledger was disconnected',
       detail: 'Reconnect and unlock your Ledger, then open the Bitcoin app to continue.',

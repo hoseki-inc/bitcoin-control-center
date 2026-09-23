@@ -103,7 +103,7 @@ export function loadCredentialEncryptionKey(deps: {
   }
 
   const legacyKey = readLegacyDatabaseKey(deps.db)
-  if (legacyKey) {
+  if (legacyKey != null && legacyKey !== '') {
     const key = normalizeEncryptionKey(legacyKey)
     writeSecretFile(keyPath, key)
     deleteLegacyDatabaseKey(deps.db)
@@ -157,7 +157,7 @@ export class Encrypted {
     return Result.fromThrowable(() => {
       const key = getKey()
       const [ivHex, ciphertextHex] = this.blob.split('_')
-      if (!ivHex || !ciphertextHex) {
+      if (ivHex == null || ivHex === '' || ciphertextHex == null || ciphertextHex === '') {
         throw new Error('Malformed ciphertext blob')
       }
       const decipher = crypto.createDecipheriv(algorithm, key, new Uint8Array(Buffer.from(ivHex, encoding)))

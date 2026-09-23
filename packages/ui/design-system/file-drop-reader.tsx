@@ -62,6 +62,7 @@ export function FileDropReader<T>(props: FileDropReaderProps<T>): JSX.Element {
         return 'image/jpeg'
       case 'webp':
         return 'image/webp'
+      case 'txt':
       default:
         return 'text/plain'
     }
@@ -71,13 +72,12 @@ export function FileDropReader<T>(props: FileDropReaderProps<T>): JSX.Element {
     if (mimeTypes.includes(file.type)) {
       const reader = new FileReader()
       reader.onload = (event) => {
-        if (!event.target?.result) {
+        const content = event.target?.result
+        if (content == null || content === '') {
           onStatusChange?.('invalid')
           onInvalidContentRead?.(new Error('Invalid file'))
           return
         }
-
-        const content = event.target.result
 
         const validationResult =
           props.readAs === 'text'

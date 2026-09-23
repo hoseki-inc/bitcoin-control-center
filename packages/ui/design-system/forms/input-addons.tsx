@@ -8,7 +8,7 @@ export function CopyButtonAddon({ fieldName, value }: { fieldName: string; value
       () => {
         toast.success(`The ${fieldName} was copied to the clipboard.`)
       },
-      (_err) => {
+      () => {
         toast.error(`Error trying to copy ${fieldName} to the clipboard.`)
       },
     )

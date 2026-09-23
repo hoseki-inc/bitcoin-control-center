@@ -51,6 +51,7 @@ describe('asyncResultAll', () => {
   it.each(['rejected value', null, undefined, { reason: 'unexpected' }])(
     'wraps a non-Error rejection and retains its cause (%j)',
     async (cause) => {
+      // oxlint-disable-next-line typescript/prefer-promise-reject-errors -- Intentionally reject non-Error values to verify normalization and cause preservation.
       const rejected = new AsyncResult<number, Error>(Promise.reject(cause))
       const result = await asyncResultAll([rejected])
       const error = result.expectErr('rejection should fail')

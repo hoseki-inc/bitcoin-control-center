@@ -108,10 +108,12 @@ export function KeystoreReceipt({ shouldSetTimeout, keystore, claim }: KeystoreR
         content={
           <VStack spacing={8} maxWidth="840px" textAlign="center">
             <Text textStyle="text/2xl" color="neutral.900">
-              You've successfully proven control of this key in your multisig setup. {description2ndPart}
+              You&apos;ve successfully proven control of this key in your multisig setup. {description2ndPart}
             </Text>
             <VStack spacing={4}>
-              {keystore.model && <WalletImageFromKnownModel wallet={keystore.wallet} model={keystore.model} />}
+              {keystore.model != null && keystore.model !== '' && (
+                <WalletImageFromKnownModel wallet={keystore.wallet} model={keystore.model} />
+              )}
               <Text textStyle="text/md" fontWeight="medium" color="neutral.900">
                 {keystore.label}
               </Text>

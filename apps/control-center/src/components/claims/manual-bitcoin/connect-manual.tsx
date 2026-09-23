@@ -18,7 +18,7 @@ export function ConnectManual(): JSX.Element {
     e.preventDefault()
 
     // If input is empty, skip creation
-    if (!bitcoinInput?.displayName) {
+    if (bitcoinInput?.displayName == null || bitcoinInput.displayName === '') {
       return
     }
 
@@ -55,7 +55,7 @@ export function ConnectManual(): JSX.Element {
           rightButton={
             <Button
               type="submit"
-              isDisabled={!bitcoinInput?.displayName}
+              isDisabled={bitcoinInput?.displayName == null || bitcoinInput.displayName === ''}
               isLoading={navigateToAnExistentOrNewClaim.isLoading}
             >
               Add Account

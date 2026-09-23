@@ -51,7 +51,9 @@ export function BBQrScanner({ onComplete, onPlainScan, onError, onCancel }: BBQr
 
     async function start(): Promise<void> {
       // Wait a tick to ensure the DOM element is rendered
-      await new Promise((r) => setTimeout(r, 0))
+      await new Promise((r) => {
+        setTimeout(r, 0)
+      })
       if (!isMounted()) {
         return
       }
@@ -144,7 +146,7 @@ export function BBQrScanner({ onComplete, onPlainScan, onError, onCancel }: BBQr
           const allParts: string[] = []
           for (let i = 0; i < expectedTotalRef.current; i++) {
             const part = partsRef.current.get(i)
-            if (!part) {
+            if (part == null || part === '') {
               setState('error')
               setErrorMessage(`Missing part ${i}`)
               onErrorRef.current?.(`Missing part ${i}`)

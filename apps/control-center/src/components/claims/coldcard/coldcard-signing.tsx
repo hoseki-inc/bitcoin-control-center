@@ -13,7 +13,8 @@ import { Step9Ui, Step10, Step11Ui } from './coldcard-steps'
 
 export function ColdcardSigning(props: SigningFlowProps): JSX.Element {
   const { claim, keystore, challenge, challengeMessage, onExitSigning, onSigningComplete } = props
-  const model: ColdcardModel = keystore.model && isColdcardModel(keystore.model) ? keystore.model : 'MK4'
+  const model: ColdcardModel =
+    keystore.model != null && keystore.model !== '' && isColdcardModel(keystore.model) ? keystore.model : 'MK4'
 
   // Coldcard Q uses QR-based signing flow
   if (model === 'Q') {

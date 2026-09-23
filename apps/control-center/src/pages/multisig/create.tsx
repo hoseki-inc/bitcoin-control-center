@@ -67,7 +67,6 @@ export function MultisigCreatePage(): JSX.Element {
         .inspectErr((err) => {
           setIsSaving(false)
           toast.error('Failed to update claim', { description: err.message })
-          return Err(err)
         })
     } else {
       // Create new claim
@@ -79,7 +78,6 @@ export function MultisigCreatePage(): JSX.Element {
         .inspectErr((err) => {
           setIsSaving(false)
           toast.error('Failed to create claim', { description: err.message })
-          return Err(err)
         })
     }
   }
@@ -165,16 +163,12 @@ function GetReady({ onNext }: { onNext: () => void }) {
         You can sign with your keys in any order—whichever is most convenient for your setup.
       </Text>
 
-      <TipAlert
-        title="Security tip"
-        icon={CircleAlert}
-        children={
-          <Text color="neutral.800">
-            Only upload this file to Bitcoin Control Center. For best security, delete it once you’ve completed the
-            process.
-          </Text>
-        }
-      />
+      <TipAlert title="Security tip" icon={CircleAlert}>
+        <Text color="neutral.800">
+          Only upload this file to Bitcoin Control Center. For best security, delete it once you’ve completed the
+          process.
+        </Text>
+      </TipAlert>
 
       <WizardFooter
         leftButton={
@@ -214,23 +208,19 @@ function ImportWallet({ onBack, onNext }: { onBack: () => void; onNext: (data: C
         onStatusChange={setFileDropStatus}
       />
 
-      <TipAlert
-        title="Need help?"
-        icon={CircleAlert}
-        children={
-          <Text color="neutral.800">
-            Visit our{' '}
-            <Link
-              to="https://help.hoseki.app/article/43-how-to-export-your-multisig-wallet"
-              style={{ textDecoration: 'underline' }}
-              target="_blank"
-            >
-              Help Center
-            </Link>{' '}
-            for step-by-step export instructions.
-          </Text>
-        }
-      />
+      <TipAlert title="Need help?" icon={CircleAlert}>
+        <Text color="neutral.800">
+          Visit our{' '}
+          <Link
+            to="https://help.hoseki.app/article/43-how-to-export-your-multisig-wallet"
+            style={{ textDecoration: 'underline' }}
+            target="_blank"
+          >
+            Help Center
+          </Link>{' '}
+          for step-by-step export instructions.
+        </Text>
+      </TipAlert>
 
       <MultisigFromDescriptor onNext={onNext} />
 
@@ -316,13 +306,13 @@ function DetectionStep({
   return (
     <Stack gap={4}>
       <Text textStyle="text/2xl" fontWeight="medium">
-        We've detected a {account.threshold} of {wallet.keystores.length} Multisig Wallet
+        We&apos;ve detected a {account.threshold} of {wallet.keystores.length} Multisig Wallet
       </Text>
 
       <AnimatedDetectedKeystoreAvatars totalKeystores={wallet.keystores.length} threshold={account.threshold} />
 
       <Text textStyle="text/md" color="neutral.900">
-        Let's name your multisig claim. You rename this later at anytime.
+        Let&apos;s name your multisig claim. You rename this later at anytime.
       </Text>
 
       <form

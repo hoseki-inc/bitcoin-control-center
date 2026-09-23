@@ -180,7 +180,9 @@ async function clickNext(): Promise<void> {
 async function waitForText(text: string): Promise<void> {
   await vi.waitFor(async () => {
     await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 0))
+      await new Promise((resolve) => {
+        setTimeout(resolve, 0)
+      })
     })
     expect(container.textContent).toContain(text)
   })
@@ -567,8 +569,8 @@ function signingProps(): SigningFlowProps {
         signature: null,
       },
     },
-    onExitSigning: vi.fn(),
-    onSigningComplete: vi.fn(),
+    onExitSigning: vi.fn<() => void>(),
+    onSigningComplete: vi.fn<() => void>(),
   }
 }
 
@@ -588,8 +590,8 @@ describe.each(['singlesig', 'multisig'] as const)('%s Ledger retry', (flow) => {
       productName: 'Test Ledger',
       collections: [],
       oninputreport: null,
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
+      addEventListener: vi.fn<() => void>(),
+      removeEventListener: vi.fn<() => void>(),
       dispatchEvent: vi.fn(() => true),
       open: vi.fn(async () => undefined),
       close,
@@ -846,7 +848,7 @@ describe('Trezor connection callback', () => {
       onConnectTrezor.mockRejectedValueOnce(error)
     }
     onConnectTrezor.mockResolvedValue(Ok())
-    await render(createElement(TrezorInfo, { onBack: vi.fn(), onConnectTrezor }))
+    await render(createElement(TrezorInfo, { onBack: vi.fn<() => void>(), onConnectTrezor }))
     await clickButton('Next')
     await waitForText('Synthetic connection failure')
     expect(container.textContent).not.toContain('Awaiting account selection')
@@ -950,7 +952,9 @@ it('resumes final verification from saved signatures and permits retry without s
   })
   await vi.waitFor(async () => {
     await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 0))
+      await new Promise((resolve) => {
+        setTimeout(resolve, 0)
+      })
     })
     expect(
       Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Finish verification')
@@ -1001,7 +1005,7 @@ it.each(['ledger', 'trezor'] as const)(
       },
     })
     const signingRouter = await renderSigningRoute(true)
-    mocks.navigate.mockImplementation(signingRouter.navigate)
+    mocks.navigate.mockImplementation(signingRouter.navigate.bind(signingRouter))
     await reachSigning()
     await clickSign()
     await waitForText('Key receipt')

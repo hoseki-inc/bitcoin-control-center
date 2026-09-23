@@ -104,7 +104,12 @@ export function KeystoresStatusIndicator({
             onClick={() => handler?.(keystore)}
             alignItems="center"
           >
-            <Tooltip isDisabled={!tooltipCopy} label={tooltipCopy} hasArrow placement="top">
+            <Tooltip
+              isDisabled={tooltipCopy == null || tooltipCopy === ''}
+              label={tooltipCopy}
+              hasArrow
+              placement="top"
+            >
               <GradientAnimatedRing
                 isEnabled={amIExpanded || amIActionable}
                 color={amIActionable ? 'gray' : expandedRingColor}
@@ -245,3 +250,5 @@ export const GradientAnimatedRing = forwardRef<
     </Flex>
   )
 })
+
+GradientAnimatedRing.displayName = 'GradientAnimatedRing'

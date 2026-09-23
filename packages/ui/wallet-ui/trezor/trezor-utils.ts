@@ -5,7 +5,7 @@ export function getTrezorDisplayName(features: Features): string {
   if (features.model) {
     displayName += ` ${features.model}`
   }
-  if (features.label) {
+  if (features.label != null && features.label !== '') {
     displayName += ` (${features.label})`
   }
   return displayName
@@ -32,6 +32,8 @@ export function getTrezorModel(model: Features['internal_model']): TrezorModel |
       return 'Safe 3'
     case PROTO.DeviceModelInternal.T3T1:
       return 'Safe 5'
+    case PROTO.DeviceModelInternal.T3W1:
+    case PROTO.DeviceModelInternal.UNKNOWN:
     default:
       return null
   }

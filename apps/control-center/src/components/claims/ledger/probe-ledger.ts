@@ -42,7 +42,7 @@ export const probeLedger = asyncFn(async function (
   },
 ) {
   const wallets: HardwareWallet[] = []
-  const isCancelled = (): boolean => !!ctx.signal?.aborted || !ctx.isCurrentConnection()
+  const isCancelled = (): boolean => ctx.signal?.aborted === true || !ctx.isCurrentConnection()
   const cancelled = (): Result<never, Error> => Err(new DOMException('Ledger scan cancelled', 'AbortError'))
 
   // Check every script type's first account

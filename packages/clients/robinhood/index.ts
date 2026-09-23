@@ -76,7 +76,9 @@ async function httpsRequest(options: {
       },
       (res) => {
         const chunks: Uint8Array[] = []
-        res.on('data', (chunk: Uint8Array) => chunks.push(chunk))
+        res.on('data', (chunk: Uint8Array) => {
+          chunks.push(chunk)
+        })
         res.on('end', () => {
           resolve({
             status: res.statusCode ?? 0,
@@ -86,7 +88,7 @@ async function httpsRequest(options: {
       },
     )
     req.on('error', reject)
-    if (options.body) {
+    if (options.body != null && options.body !== '') {
       req.write(options.body)
     }
     req.end()
@@ -208,7 +210,7 @@ export class RobinhoodClient {
     const allResults: T[] = []
     let nextUrl: string | null = path
 
-    while (nextUrl) {
+    while (nextUrl != null && nextUrl !== '') {
       const fullPath: string = nextUrl.startsWith('http') ? nextUrl.replace(`https://${BASE_HOST}`, '') : nextUrl
       const result: Result<PaginatedResponse<T>, Error> = await this.request(fullPath, schema)
       if (result.isErr()) {
@@ -254,10 +256,10 @@ export class RobinhoodClient {
    */
   public async getOrders(opts?: { symbol?: string; state?: string }): Promise<Result<RobinhoodOrder[], Error>> {
     const params = new URLSearchParams()
-    if (opts?.symbol) {
+    if (opts?.symbol != null && opts.symbol !== '') {
       params.append('symbol', opts.symbol)
     }
-    if (opts?.state) {
+    if (opts?.state != null && opts.state !== '') {
       params.append('state', opts.state)
     }
     const query = params.toString()

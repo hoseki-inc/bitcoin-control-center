@@ -45,7 +45,7 @@ export const Default: Story = () => {
         />
       </Box>
       <Box>
-        <p>Must be a .txt file with contents "foo", otherwise invalid:</p>
+        <p>Must be a .txt file with contents &quot;foo&quot;, otherwise invalid:</p>
         <FileDropReader
           readAs="text"
           readyText="Drag 'foo.txt' here"

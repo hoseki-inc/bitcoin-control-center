@@ -31,9 +31,9 @@ function DisconnectNotifications(): null {
   return null
 }
 
-function fakeTransport(): Transport {
+function fakeTransport() {
   return Object.assign(new Transport(), {
-    close: vi.fn(async () => undefined),
+    close: vi.fn<Transport['close']>(async () => undefined),
     deviceModel: { productName: 'Ledger Flex', id: 'flex' },
   })
 }
