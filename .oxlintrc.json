@@ -121,7 +121,8 @@
     "typescript/prefer-readonly": "error",
     "typescript/prefer-reduce-type-parameter": "error",
     "typescript/prefer-regexp-exec": "error",
-    "typescript/prefer-return-this-type": "error"
+    "typescript/prefer-return-this-type": "error",
+    "typescript/prefer-string-starts-ends-with": "error"
   },
   "overrides": [
     {
