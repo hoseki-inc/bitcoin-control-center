@@ -41,6 +41,6 @@ export function getFilenameFromResponse(response: Response): string {
   // Extract filename from content disposition header
   // Format: attachment; filename="HOSEKI_STATEMENT_28APR2025_28JUL2025_b140aae4.pdf"
   const filenameRegex = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/
-  const filenameMatch = contentDisposition.match(filenameRegex)
+  const filenameMatch = filenameRegex.exec(contentDisposition)
   return filenameMatch?.[1] ?? 'statement.pdf'
 }

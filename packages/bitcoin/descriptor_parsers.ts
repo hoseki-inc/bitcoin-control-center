@@ -45,7 +45,7 @@ abstract class BaseAccountDescriptorParser {
     xpub: string
   } {
     const bracketRegex = /\[(.*?)\]/ // match `[<everything>]`
-    const originResult = keyExpressionStr.match(bracketRegex)
+    const originResult = bracketRegex.exec(keyExpressionStr)
 
     const keyOriginWithBrackets = originResult?.[0]
     const keyOriginWithoutBrackets = originResult?.[1]
