@@ -111,16 +111,15 @@ export class TrezorService {
 // Trezor error example: { error: 'Action cancelled by user', code: 'Failure_ActionCancelled' }
 
 function getFriendlyErrorMessage(unsuccessful: Unsuccessful): string {
-  switch (unsuccessful.payload.code) {
-    // This seems to happen when the user cancels via Trezor Suite / WebUI
-    case 'Method_Cancel':
-      return 'The user cancelled the action.'
-    // This seems to happen when the user cancels via their hardware wallet
-    case 'Failure_ActionCancelled':
-      return 'The user cancelled the action on the device.'
-    default:
-      return `Trezor error: ${unsuccessful.payload.error}`
+  // This seems to happen when the user cancels via Trezor Suite / WebUI
+  if (unsuccessful.payload.code === 'Method_Cancel') {
+    return 'The user cancelled the action.'
   }
+  // This seems to happen when the user cancels via their hardware wallet
+  if (unsuccessful.payload.code === 'Failure_ActionCancelled') {
+    return 'The user cancelled the action on the device.'
+  }
+  return `Trezor error: ${unsuccessful.payload.error}`
 }
 
 function isPayloadWithError(payload: unknown): payload is { error: string } {

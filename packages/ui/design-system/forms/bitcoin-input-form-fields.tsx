@@ -21,6 +21,7 @@ function getDefaultEncoding(btcStr: string) {
     case 'z':
     case 'v':
       return 'p2wpkh'
+    case undefined:
     default:
       return 'p2pkh'
   }

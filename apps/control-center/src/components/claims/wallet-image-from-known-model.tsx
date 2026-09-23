@@ -29,6 +29,7 @@ export function WalletImageFromKnownModel({
       return <WalletFloatingImage {...getTrezorImageByModelName(isTrezorModel(model) ? model : 'One')} />
     case 'keystone':
       return <FloatingKeystoneImage />
+    case null:
     default:
       return null
   }

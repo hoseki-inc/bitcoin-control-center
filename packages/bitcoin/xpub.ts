@@ -19,6 +19,7 @@ export class Xpub {
       case 't':
         network = Network.Testnet
         break
+      case undefined:
       default:
         return Err(
           new Error(
