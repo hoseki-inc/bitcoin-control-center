@@ -1,6 +1,7 @@
 import {
   Box,
   Button,
+  HStack,
   Modal,
   ModalBody,
   ModalCloseButton,
@@ -13,7 +14,7 @@ import {
   Text,
 } from '@chakra-ui/react'
 import { Spinner } from '@hoseki/packages/ui/design-system'
-import { CheckCircle2 } from 'lucide-react'
+import { Check } from 'lucide-react'
 import type { ReactNode } from 'react'
 
 export type FullTransitionModalStatus = 'pending' | 'completed' | 'failed'
@@ -34,12 +35,31 @@ export function FullTransitionModal({
     <Modal size="lg" isCentered scrollBehavior="inside" {...props}>
       <ModalOverlay />
       <ModalContent>
-        <ModalHeader pr={8}>
-          {status === 'pending'
-            ? 'Preparing statement'
-            : status === 'completed'
-              ? 'Statement ready'
-              : 'Statement not created'}
+        <ModalHeader pr={12}>
+          <HStack spacing={3}>
+            {status !== 'failed' && (
+              <Box
+                display="flex"
+                alignItems="center"
+                justifyContent="center"
+                boxSize="32px"
+                flexShrink={0}
+                borderRadius="full"
+                bg={status === 'completed' ? 'success.600' : 'neutral.50'}
+                color={status === 'completed' ? 'shades.0' : 'neutral.600'}
+                aria-hidden="true"
+              >
+                {status === 'completed' ? <Check size={20} strokeWidth={3} /> : <Spinner size="sm" />}
+              </Box>
+            )}
+            <Box as="span">
+              {status === 'pending'
+                ? 'Preparing statement'
+                : status === 'completed'
+                  ? 'Statement ready'
+                  : 'Statement not created'}
+            </Box>
+          </HStack>
         </ModalHeader>
         <ModalCloseButton aria-label="Close statement status" />
         <ModalBody>
@@ -51,7 +71,7 @@ export function FullTransitionModal({
                 : content.failedContent}
           </Stack>
         </ModalBody>
-        <ModalFooter justifyContent="flex-start" flexWrap="wrap" gap={3}>
+        <ModalFooter justifyContent="flex-end" flexWrap="wrap" gap={3}>
           {status === 'completed' ? (
             additionalCompletedContent
           ) : (
@@ -72,22 +92,14 @@ export function getContent(): {
 } {
   return {
     pendingContent: (
-      <>
-        <Text textStyle="text/md" color="neutral.600">
-          You can keep using Control Center while your statement is prepared. It will appear in Statements when ready.
-        </Text>
-        <Box>
-          <Spinner height="32px" width="32px" />
-        </Box>
-      </>
+      <Text textStyle="text/md" color="neutral.600">
+        Your statement will appear in Statements when it’s ready. You can continue using Control Center.
+      </Text>
     ),
     completedContent: (
-      <>
-        <CheckCircle2 size={32} aria-hidden="true" />
-        <Text textStyle="text/md" color="neutral.600">
-          Your statement is ready to view and download.
-        </Text>
-      </>
+      <Text textStyle="text/md" color="neutral.600">
+        Your statement is ready to view and download.
+      </Text>
     ),
     failedContent: (
       <Text textStyle="text/md" color="neutral.600">

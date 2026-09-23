@@ -175,7 +175,7 @@ function getKeystoreHints(
     case 'verified':
       return {
         tooltipCopy: null,
-        icon: <CheckCircleFilledIcon color="success.600" color2="white" {...commonProps} />,
+        icon: <CheckCircleFilledIcon color="success.700" color2="white" {...commonProps} aria-hidden="true" />,
       }
   }
 }

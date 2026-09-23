@@ -33,28 +33,22 @@ export function ConnectionType({
       state={state}
       border="1px solid"
       borderColor="neutral.200"
-      borderRadius="panel"
+      borderRadius="4px"
       alignItems="center"
-      direction="row"
+      direction="column"
+      justifyContent="center"
       minW={0}
-      minH="64px"
+      minH="144px"
       transition="background-color 150ms ease, border-color 150ms ease"
-      p={4}
-      gap={4}
+      p={{ base: 4, md: 6 }}
+      gap={8}
+      _focusVisible={{ outline: '2px solid', outlineColor: 'neutral.900', outlineOffset: '3px' }}
       _hover={{ cursor: 'pointer', bgColor: 'neutral.50' }}
     >
-      <Flex
-        aria-hidden="true"
-        justifyContent="center"
-        align="center"
-        w={imagePath ? '96px' : '32px'}
-        flexShrink={0}
-        h="30px"
-        overflow="hidden"
-      >
-        {imagePath ? <chakra.img src={imagePath} alt={imageAltText} maxW="96px" maxH="28px" /> : media}
+      <Flex aria-hidden="true" justifyContent="center" align="center" w="full" flexShrink={0} h="30px">
+        {imagePath ? <chakra.img src={imagePath} alt={imageAltText} maxW="min(120px, 100%)" maxH="30px" /> : media}
       </Flex>
-      <Text minW={0} overflowWrap="anywhere" textStyle="text/sm" fontWeight="medium">
+      <Text minW={0} textAlign="center" overflowWrap="anywhere" textStyle="text/sm" fontWeight="medium">
         {title}
       </Text>
     </Stack>

@@ -1,4 +1,4 @@
-import { Box, Button, Image, Stack, Text, usePrefersReducedMotion } from '@chakra-ui/react'
+import { Box, Button, Image, Spinner, Stack, Text, usePrefersReducedMotion } from '@chakra-ui/react'
 import { motion } from '@hoseki/packages/ui/design-system/animations/motion'
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 
@@ -67,6 +67,7 @@ export function WelcomeReveal({ children }: { children: ReactNode }): JSX.Elemen
           sx={{ '@media (prefers-reduced-motion: reduce)': { transition: 'none' } }}
         >
           <Stack align="center" gap={5} px={6} aria-hidden="true">
+            <Spinner size="lg" color="neutral.500" mb={3} />
             <Image
               src="/hoseki-logo.svg"
               alt=""
@@ -104,6 +105,8 @@ export function WelcomeReveal({ children }: { children: ReactNode }): JSX.Elemen
         tabIndex={-1}
         aria-hidden={welcoming ? true : undefined}
         visibility={welcoming ? 'hidden' : 'visible'}
+        // Descendants such as page spinners explicitly set visibility to visible.
+        opacity={welcoming ? 0 : 1}
         sx={
           phase === 'reveal'
             ? {

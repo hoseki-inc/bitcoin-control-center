@@ -1,7 +1,8 @@
 import { Box, Button, Flex, Stack, type StackProps, chakra } from '@chakra-ui/react'
-import { CheckCircle2, XIcon } from 'lucide-react'
+import { XIcon } from 'lucide-react'
 import { Spinner } from '../design-system'
 import { Animations } from '../design-system/animations/animations'
+import { CheckCircleFilledIcon } from './icons'
 
 export function Receipt({
   title,
@@ -57,9 +58,7 @@ export function Receipt({
           <Spinner size="xl" />
         </Flex>
       ) : (
-        <Box>
-          <CheckCircle2 size={40} aria-hidden="true" />
-        </Box>
+        <CheckCircleFilledIcon boxSize={12} color="success.700" color2="white" aria-hidden="true" />
       )}
 
       <Box w="full" maxW="640px">

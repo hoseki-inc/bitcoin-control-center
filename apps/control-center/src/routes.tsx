@@ -49,9 +49,11 @@ export default function AppRoutes(): JSX.Element {
   return (
     <WelcomeReveal>
       <Routes>
+        <Route element={<AppLayout fullWidth />}>
+          <Route path="portfolio" Component={DashboardPage} />
+        </Route>
         <Route element={<AppLayout />}>
           <Route index element={<Navigate to="/home" replace />} />
-          <Route path="portfolio" Component={DashboardPage} />
           <Route path="home" Component={HomePage} />
           <Route path="getting-started" Component={GettingStarted} />
 
