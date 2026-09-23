@@ -32,6 +32,8 @@ export function getTrezorModel(model: Features['internal_model']): TrezorModel |
       return 'Safe 3'
     case PROTO.DeviceModelInternal.T3T1:
       return 'Safe 5'
+    case PROTO.DeviceModelInternal.T3W1:
+    case PROTO.DeviceModelInternal.UNKNOWN:
     default:
       return null
   }

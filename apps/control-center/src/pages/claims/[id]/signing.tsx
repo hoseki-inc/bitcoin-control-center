@@ -86,6 +86,7 @@ function SinglesigSigning() {
       return <LedgerSigning {...commonProps} />
     case 'trezor':
       return <TrezorSigning {...commonProps} />
+    case null:
     default:
       return <ManualSigning {...commonProps} />
   }

@@ -62,6 +62,7 @@ export function FileDropReader<T>(props: FileDropReaderProps<T>): JSX.Element {
         return 'image/jpeg'
       case 'webp':
         return 'image/webp'
+      case 'txt':
       default:
         return 'text/plain'
     }
