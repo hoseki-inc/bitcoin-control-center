@@ -51,7 +51,7 @@ const transport = {
   onInputReport: vi.fn(),
   device: { close: vi.fn(), removeEventListener: vi.fn() },
 }
-const onContinue = vi.fn()
+const onContinue = vi.fn<() => void>()
 
 beforeEach(async () => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
@@ -82,10 +82,10 @@ beforeEach(async () => {
     cancel: vi.fn(() => {
       rejectRequest?.(new Error('Cancelled'))
     }),
-    end: vi.fn(),
+    end: vi.fn<() => void>(),
     subscribe: vi.fn<LedgerHidApi['subscribe']>((callback) => {
       listener = callback
-      return vi.fn()
+      return vi.fn<() => void>()
     }),
   }
   queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -110,7 +110,7 @@ async function render(): Promise<void> {
         createElement(
           QueryClientProvider,
           { client: queryClient },
-          createElement(DesktopLedgerConnection, { bridge, onContinue, onBack: vi.fn() }),
+          createElement(DesktopLedgerConnection, { bridge, onContinue, onBack: vi.fn<() => void>() }),
         ),
       ),
     )

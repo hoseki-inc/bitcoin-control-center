@@ -8,12 +8,36 @@ export default {
 
 export const Default: Story = () => (
   <Stack alignItems="flex-start">
-    <Button onClick={() => toast.success('The action you performed was a success.')}>Success</Button>
-    <Button onClick={() => toast.error('The action you performed was a failure.')}>Error</Button>
-    <Button onClick={() => toast.info('This is an information message.')}>Info</Button>
-    <Button onClick={() => toast.warning('This is a warning message.')}>Warning</Button>
     <Button
-      onClick={() =>
+      onClick={() => {
+        toast.success('The action you performed was a success.')
+      }}
+    >
+      Success
+    </Button>
+    <Button
+      onClick={() => {
+        toast.error('The action you performed was a failure.')
+      }}
+    >
+      Error
+    </Button>
+    <Button
+      onClick={() => {
+        toast.info('This is an information message.')
+      }}
+    >
+      Info
+    </Button>
+    <Button
+      onClick={() => {
+        toast.warning('This is a warning message.')
+      }}
+    >
+      Warning
+    </Button>
+    <Button
+      onClick={() => {
         toast.info('Custom content', {
           duration: 7000,
           description: (
@@ -26,7 +50,7 @@ export const Default: Story = () => (
             </Text>
           ),
         })
-      }
+      }}
     >
       Custom Content
     </Button>

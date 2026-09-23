@@ -21,7 +21,7 @@ vi.mock('html5-qrcode', () => ({
 let root: Root | null
 let host: HTMLDivElement
 let rejectStartup: ((reason: Error) => void) | undefined
-const onError = vi.fn()
+const onError = vi.fn<(error: string) => void>()
 
 beforeEach(async () => {
   vi.clearAllMocks()
@@ -38,7 +38,9 @@ beforeEach(async () => {
   root = createRoot(host)
   const renderer = root
   await act(async () => {
-    renderer.render(createElement(ChakraProvider, {}, createElement(BBQrScanner, { onComplete: vi.fn(), onError })))
+    renderer.render(
+      createElement(ChakraProvider, {}, createElement(BBQrScanner, { onComplete: vi.fn<() => void>(), onError })),
+    )
   })
   await vi.waitFor(() => {
     expect(mocks.start).toHaveBeenCalledOnce()

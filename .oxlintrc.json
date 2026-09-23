@@ -128,7 +128,8 @@
     "typescript/restrict-plus-operands": "error",
     "typescript/restrict-template-expressions": "error",
     "typescript/return-await": "error",
-    "typescript/strict-boolean-expressions": "error"
+    "typescript/strict-boolean-expressions": "error",
+    "typescript/strict-void-return": "error"
   },
   "overrides": [
     {

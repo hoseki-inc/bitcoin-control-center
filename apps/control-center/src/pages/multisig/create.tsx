@@ -67,7 +67,6 @@ export function MultisigCreatePage(): JSX.Element {
         .inspectErr((err) => {
           setIsSaving(false)
           toast.error('Failed to update claim', { description: err.message })
-          return Err(err)
         })
     } else {
       // Create new claim
@@ -79,7 +78,6 @@ export function MultisigCreatePage(): JSX.Element {
         .inspectErr((err) => {
           setIsSaving(false)
           toast.error('Failed to create claim', { description: err.message })
-          return Err(err)
         })
     }
   }

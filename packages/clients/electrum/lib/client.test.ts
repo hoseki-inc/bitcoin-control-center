@@ -42,7 +42,9 @@ async function startMockServer(): Promise<MockServer> {
     })
   })
 
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  await new Promise<void>((resolve) => {
+    server.listen(0, '127.0.0.1', resolve)
+  })
   const address = server.address()
   assert(address !== null && typeof address !== 'string', 'Expected a TCP listener')
   const port = address.port
@@ -51,11 +53,11 @@ async function startMockServer(): Promise<MockServer> {
     port,
     requests,
     close: async () =>
-      new Promise<void>((resolve) =>
+      new Promise<void>((resolve) => {
         server.close(() => {
           resolve()
-        }),
-      ),
+        })
+      }),
   }
 }
 

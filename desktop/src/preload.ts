@@ -15,7 +15,9 @@ const ledger: LedgerHidApi = {
       listener(update)
     }
     ipcRenderer.on('ledger-hid:update', onUpdate)
-    return () => ipcRenderer.off('ledger-hid:update', onUpdate)
+    return () => {
+      ipcRenderer.off('ledger-hid:update', onUpdate)
+    }
   },
 }
 
