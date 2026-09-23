@@ -275,9 +275,11 @@ export function ClaimsPage(): JSX.Element {
         {/* Archived accounts accordion */}
         <Box id="archived" mt={6} tabIndex={-1}>
           {archivedClaimsQuery.isLoading && (
-            <Flex align="center" gap={2} color="neutral.600" role="status">
+            <Flex align="center" gap={2} color="neutral.600">
               <Spinner size="sm" />
-              <Text textStyle="text/sm">Loading archived accounts…</Text>
+              <Text as="output" textStyle="text/sm">
+                Loading archived accounts…
+              </Text>
             </Flex>
           )}
           {archivedClaimsQuery.isError && (
