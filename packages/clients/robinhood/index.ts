@@ -76,7 +76,9 @@ async function httpsRequest(options: {
       },
       (res) => {
         const chunks: Uint8Array[] = []
-        res.on('data', (chunk: Uint8Array) => chunks.push(chunk))
+        res.on('data', (chunk: Uint8Array) => {
+          chunks.push(chunk)
+        })
         res.on('end', () => {
           resolve({
             status: res.statusCode ?? 0,

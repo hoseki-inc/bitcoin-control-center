@@ -153,7 +153,9 @@ for (const rejects of [false, true]) {
     } else {
       resolve()
     }
-    await new Promise((done) => setImmediate(done))
+    await new Promise((done) => {
+      setImmediate(done)
+    })
     assert.deepEqual(harness.calls, ['server', 'tor', 'tray', 'force-quit'])
     assert.equal(harness.exits, 1)
   })

@@ -332,7 +332,9 @@ function QrSignScanSignature({
         <BBQrScanner
           onComplete={handleBBQrComplete}
           onPlainScan={handlePlainScan}
-          onError={(msg) => toast.error('Scanner error', { description: msg })}
+          onError={(msg) => {
+            toast.error('Scanner error', { description: msg })
+          }}
           onCancel={onBack}
         />
       )}

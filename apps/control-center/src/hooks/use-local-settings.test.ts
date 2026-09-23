@@ -32,7 +32,7 @@ beforeEach(() => {
   vi.stubGlobal('fetch', fetchMock.mockReset())
   client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
-    logger: { log: vi.fn(), warn: vi.fn(), error: vi.fn() },
+    logger: { log: vi.fn<() => void>(), warn: vi.fn<() => void>(), error: vi.fn<() => void>() },
   })
   container = document.createElement('div')
   root = createRoot(container)

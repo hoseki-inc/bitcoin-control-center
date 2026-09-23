@@ -13,7 +13,14 @@ const servers: FastifyInstance[] = []
 
 function createServer(): { server: FastifyInstance; logs: string[] } {
   const logs: string[] = []
-  const logger = pino({ level: 'trace' }, { write: (line) => logs.push(line) })
+  const logger = pino(
+    { level: 'trace' },
+    {
+      write: (line) => {
+        logs.push(line)
+      },
+    },
+  )
   const fastifyLogger: FastifyBaseLogger = logger.child({ module: 'fastify' })
   const server = Fastify({
     loggerInstance: fastifyLogger,

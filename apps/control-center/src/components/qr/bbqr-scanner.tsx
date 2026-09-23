@@ -51,7 +51,9 @@ export function BBQrScanner({ onComplete, onPlainScan, onError, onCancel }: BBQr
 
     async function start(): Promise<void> {
       // Wait a tick to ensure the DOM element is rendered
-      await new Promise((r) => setTimeout(r, 0))
+      await new Promise((r) => {
+        setTimeout(r, 0)
+      })
       if (!isMounted()) {
         return
       }
