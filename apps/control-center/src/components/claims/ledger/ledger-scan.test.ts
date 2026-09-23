@@ -33,7 +33,7 @@ const mocks = await vi.hoisted(async () => {
 // Keep the SDK's actual operation lock while replacing USB exchanges with synthetic data.
 vi.mock('@ledgerhq/hw-app-btc', () => ({
   default: class LedgerBtcApp {
-    private transport: Transport
+    private readonly transport: Transport
     public constructor({ transport }: { transport: Transport }) {
       this.transport = transport
       transport.decorateAppAPIMethods(this, ['getWalletXpub'], 'BTC')

@@ -117,7 +117,8 @@
     "typescript/prefer-nullish-coalescing": "error",
     "typescript/prefer-optional-chain": "error",
     "typescript/promise-function-async": "error",
-    "typescript/prefer-promise-reject-errors": "error"
+    "typescript/prefer-promise-reject-errors": "error",
+    "typescript/prefer-readonly": "error"
   },
   "overrides": [
     {
