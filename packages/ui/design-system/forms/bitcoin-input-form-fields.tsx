@@ -7,7 +7,7 @@ import {
   type SingleSigAccountScriptType,
 } from '@hoseki/packages/bitcoin'
 import { Slip132 } from '@hoseki/packages/wallet'
-import { type Dispatch, type SetStateAction, useEffect, useState } from 'react'
+import { type Dispatch, type SetStateAction, useEffect, useMemo, useState } from 'react'
 import { ErrorBanner, FormErrorMessage, LabelWithTooltip, RadioCardGroup } from '..'
 import { type BitcoinInput, encodingsToLabels, labelsToEncodings, monoInputProps } from '../../utils/bitcoin'
 import { BitcoinNetworkSelect } from './bitcoin-network-select'
@@ -53,11 +53,14 @@ export function BitcoinInputFormFields({
   const [bitcoinRaw, setBitcoinRaw] = useState<string>(defaultValues?.rawInput ?? '')
   const [displayName, setDisplayName] = useState<string>(defaultValues?.displayName ?? '')
 
-  // Derived based on user input
-  const xpub = Slip132.getXpubFromString(bitcoinRaw)
+  // Keep parsed values stable when publishing the input causes a parent render.
+  const xpub = useMemo(() => Slip132.getXpubFromString(bitcoinRaw), [bitcoinRaw])
 
   const bitcoinRawDescriptorInput = bitcoinRaw.split(/[\n\s]+/)[0]?.trim() ?? bitcoinRaw
-  const singleSigAccount = SingleSigAccount.fromDescriptor(bitcoinRawDescriptorInput)
+  const singleSigAccount = useMemo(
+    () => SingleSigAccount.fromDescriptor(bitcoinRawDescriptorInput),
+    [bitcoinRawDescriptorInput],
+  )
   const descriptor = singleSigAccount.unwrapOr(null)?.descriptor()
 
   // Encoding/script-type input should only be shown if x-prefixed xpub
@@ -120,7 +123,7 @@ export function BitcoinInputFormFields({
 
     setError(null)
     setBitcoinInput(input)
-  }, [bitcoinRaw, displayName, encoding, network])
+  }, [bitcoinRaw, displayName, encoding, network, showEncodingInput, setBitcoinInput, xpub, singleSigAccount])
 
   const isInvalid = bitcoinRaw !== '' && xpub.isErr() && singleSigAccount.isErr()
 
