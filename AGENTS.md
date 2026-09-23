@@ -38,6 +38,7 @@ pnpm build
 
 - Introduce one lint rule at a time, in the order listed in issue #91 unless the user chooses a different order.
 - Keep each rule's configuration and repository-wide fixes in its own commit. Do not bundle other rules or unrelated refactors into that commit.
+- Automatically fix, validate, and commit each rule with ten or fewer violations when all fixes are straightforward, then continue to the next rule. Stop before fixing a rule with more than ten violations or any complex fixes. Do not push or open a PR until the user asks.
 - Run the accumulated lint checks and the relevant type checks, tests, and builds before committing each rule.
 - Keep Oxlint's default rule categories disabled; enable rules explicitly so each checkpoint adds only the rule under review.
 - Apply rules to all maintained source, including desktop, StartOS, tests, and repository scripts.
