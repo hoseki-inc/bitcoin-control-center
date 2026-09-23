@@ -107,7 +107,7 @@ type ResumeFlowProps = {
 function ResumeFlow({ wallet, model, description, bottomContent, ...props }: ResumeFlowProps) {
   return (
     <VStack spacing={4} left="center" maxW="640px" mx="auto" {...props}>
-      {model ? (
+      {model != null && model !== '' ? (
         <WalletImageFromKnownModel wallet={wallet} model={model} />
       ) : (
         <KeystoreAvatar icon={keyIcon} variant="filled" size="200px" alt="Unidentified key" mb={8} />

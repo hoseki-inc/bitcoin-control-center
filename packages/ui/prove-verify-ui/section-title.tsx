@@ -19,10 +19,12 @@ export function SectionTitle({
           <Text as="h1" textStyle="text/md" color="neutral.900" fontWeight="medium">
             {title}
           </Text>
-          {description && (
+          {Boolean(description) ? (
             <Text textStyle="text/sm" color="neutral.600">
               {description}
             </Text>
+          ) : (
+            description
           )}
         </Box>
         {rightContent}

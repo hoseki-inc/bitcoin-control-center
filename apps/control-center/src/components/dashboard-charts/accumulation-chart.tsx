@@ -60,7 +60,7 @@ function ChartTooltip({
   }
   const data = parsed.unwrap()
 
-  const btcPrice = data.btcPrice ? Number(data.btcPrice) : 0
+  const btcPrice = data.btcPrice != null && data.btcPrice !== '' ? Number(data.btcPrice) : 0
 
   return (
     <Box bg="neutral.900" borderRadius="10px" px={3.5} py={2.5} shadow="lg">

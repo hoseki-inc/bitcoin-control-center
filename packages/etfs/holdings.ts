@@ -129,7 +129,7 @@ export function computeHoldingBtcSats(config: EtfConfig, shares: number, asOfDat
  * HODL has a 0% effective rate until its waiver expiry.
  */
 function getEffectiveExpenseRate(config: EtfConfig, asOfDate: Date): number {
-  if (config.expenseWaivedUntil) {
+  if (config.expenseWaivedUntil != null && config.expenseWaivedUntil !== '') {
     const waiverEnd = new Date(config.expenseWaivedUntil + 'T23:59:59Z')
     if (asOfDate <= waiverEnd) {
       return 0

@@ -191,7 +191,7 @@ export class ManualService {
     const newNetTotal = netTxTotal + signedAmount
 
     let newBalance = currentBalance
-    if (args.addToBalance) {
+    if (args.addToBalance === true) {
       newBalance = currentBalance + signedAmount
       if (newBalance < 0n) {
         newBalance = 0n

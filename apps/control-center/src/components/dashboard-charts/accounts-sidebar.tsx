@@ -81,7 +81,7 @@ export function AccountsSidebar({
         }, 0) +
       exchangeAccounts
         .filter((a) => selected.has(a.id))
-        .reduce((sum, a) => sum + (a.balance ? Number(a.balance) : 0), 0) +
+        .reduce((sum, a) => sum + (a.balance != null && a.balance !== '' ? Number(a.balance) : 0), 0) +
       manualAccounts
         .filter((a) => selected.has(a.id))
         .reduce((sum, a) => sum + (a.balance ? Number(a.balance) : 0), 0) +
@@ -102,7 +102,7 @@ export function AccountsSidebar({
     ...exchangeAccounts.map((account): ExchangeItem => ({
       type: 'exchange',
       account,
-      btcSats: account.balance ? Number(account.balance) : 0,
+      btcSats: account.balance != null && account.balance !== '' ? Number(account.balance) : 0,
     })),
     ...manualAccounts.map((account): ManualItem => ({
       type: 'manual',
@@ -658,10 +658,10 @@ function AccountPill({
       onClick={onClick}
       px={compact ? 2.5 : 4}
       py={compact ? 2 : 3.5}
-      mt={compact && isPending ? 1 : 0}
+      mt={compact && isPending === true ? 1 : 0}
       borderRadius={compact ? '8px' : '12px'}
       border="1px solid"
-      borderColor={compact && isPending ? 'warning.300' : isSelected ? 'neutral.900' : 'neutral.200'}
+      borderColor={compact && isPending === true ? 'warning.300' : isSelected ? 'neutral.900' : 'neutral.200'}
       bg={isSelected ? 'neutral.50' : 'shades.0'}
       cursor="pointer"
       transition="all 0.15s ease"
@@ -670,11 +670,11 @@ function AccountPill({
     >
       {/* Check indicator — full mode only */}
       {isSelected && <SelectedCheckmark compact={compact} />}
-      {compact && isPending && <StatusBadge label="Pending" />}
+      {compact && isPending === true && <StatusBadge label="Pending" />}
 
       {/* Logo + Name */}
       <Flex align="center" gap={compact ? 2 : 2.5} mb={compact ? 1 : 2}>
-        {isMultisig ? (
+        {isMultisig === true ? (
           <Box flexShrink={0} w={avatarSize} h={avatarSize} position="relative">
             {keystores[0] && <MultisigMiniAvatar ks={keystores[0]} top="0" left="50%" transform="translateX(-50%)" />}
             {keystores[1] && <MultisigMiniAvatar ks={keystores[1]} bottom="0" left="0" />}
@@ -723,7 +723,7 @@ function AccountPill({
               <Text textStyle="label/sm" color="neutral.500" textTransform="capitalize">
                 {provider}
               </Text>
-              {isPending && (
+              {isPending === true && (
                 <Text textStyle="label/xs" color="warning.500" fontWeight="medium">
                   · Pending
                 </Text>
@@ -904,7 +904,7 @@ function MultisigMiniAvatar({ ks, ...positionProps }: MultisigMiniAvatarProps): 
         src={ks.wallet ? getSupportedHardwareWalletLogoPath(ks.wallet) : undefined}
         alt={`${ks.wallet ?? 'key'} wallet`}
       >
-        {ks.isVerified && (
+        {ks.isVerified === true && (
           <KeystoreAvatar.Badge boxSize="10px" bottom="0" right="-1px">
             <CheckCircleFilledIcon color="success.600" color2="white" boxSize="10px" />
           </KeystoreAvatar.Badge>

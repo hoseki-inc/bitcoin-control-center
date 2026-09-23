@@ -20,6 +20,7 @@ const txid = '1'.repeat(64)
 const timestamp = 1704153600
 
 afterEach(() => {
+  vi.useRealTimers()
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
 })
@@ -84,7 +85,7 @@ it('rejects partial history when a later batch contains a malformed transaction'
   assert(address)
   const transactionIds = Array.from({ length: 11 }, (_, index) => (index + 1).toString(16).padStart(64, '0'))
   const invalidId = transactionIds.at(-1)
-  assert(invalidId)
+  assert(invalidId != null && invalidId !== '')
   const deps = setup(null, transactionIds)
   for (const id of transactionIds) {
     vi.mocked(fetch).mockResolvedValueOnce(
@@ -137,4 +138,24 @@ it('stops statement generation when a known transaction fails validation', async
     database.close()
     rmSync(directory, { recursive: true, force: true })
   }
+})
+
+it.each([
+  { blockTime: undefined, expected: '2024-06-01T00:00:00.000Z' },
+  { blockTime: 0, expected: '2024-06-01T00:00:00.000Z' },
+  { blockTime: -1, expected: '1969-12-31T23:59:59.000Z' },
+])('preserves the timestamp fallback for block_time=$blockTime', async ({ blockTime, expected }) => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(new Date('2024-06-01T00:00:00.000Z'))
+  const address = account.receiveAddresses(0, 1, Network.Mainnet)[0]
+  assert(address)
+  const result = await fetchTransactionEntries(
+    setup({
+      txid,
+      vin: [{ prevout: null }],
+      vout: [{ scriptpubkey_address: address.toString(), value: 100 }],
+      status: { confirmed: true, block_height: 800000, block_time: blockTime },
+    }),
+  )
+  expect(result.unwrap()).toEqual([expect.objectContaining({ timestamp: new Date(expected) })])
 })

@@ -14,7 +14,7 @@ export type NetworkAccountCheckedString = Opaque<
 export class NetworkAccount<T extends Account = Account> {
   public static fromString(str: string): Result<NetworkAccount, Error> {
     const [network, account] = str.split('::')
-    if (!network || !account) {
+    if (network == null || network === '' || account == null || account === '') {
       return Err(
         new Error(
           'Invalid format, expected "bitcoin_mainnet::<account>", "bitcoin_testnet::<account>", or "bitcoin_regtest::<account>"',

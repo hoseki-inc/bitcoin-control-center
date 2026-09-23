@@ -90,7 +90,7 @@ export class Xpub {
       }
     })
       .andThen((address) => {
-        if (!address) {
+        if (address == null || address === '') {
           return Err(new Error('failed to generate address from xpub'))
         }
         return Address.fromString(address)

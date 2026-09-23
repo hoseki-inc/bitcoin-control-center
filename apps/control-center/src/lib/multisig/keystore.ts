@@ -6,7 +6,7 @@ import type { ClaimDto, KeystoreDto } from '../../trpc/server-types'
 
 export function getKeystoreStatus(keystore: KeystoreDto, claim: ClaimDto): 'pending' | 'identified' | 'verified' {
   const keystoreIsSigned = claim.latestChallenge?.messages.some((m) => m.keystoreId === keystore.id && m.signed)
-  return keystoreIsSigned ? 'verified' : keystore.isIdentified ? 'identified' : 'pending'
+  return keystoreIsSigned === true ? 'verified' : keystore.isIdentified ? 'identified' : 'pending'
 }
 
 type Keystore = {

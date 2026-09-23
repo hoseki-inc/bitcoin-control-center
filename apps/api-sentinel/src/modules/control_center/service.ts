@@ -217,7 +217,7 @@ export class ControlCenterService {
       )
 
       for (const account of connectedExchangeAccounts) {
-        if (account.balanceSats) {
+        if (account.balanceSats != null && account.balanceSats !== '') {
           exchangeBalance += BigInt(account.balanceSats)
         }
       }
@@ -254,7 +254,8 @@ export class ControlCenterService {
       for (const account of snapshotOnlyAccounts) {
         const snapshots = this.getExchangeSnapshots(account.id)
         const firstSnapshotTimestamp = snapshots[0]?.timestamp
-        const firstSnapshotTime = firstSnapshotTimestamp ? new Date(firstSnapshotTimestamp) : null
+        const firstSnapshotTime =
+          firstSnapshotTimestamp != null && firstSnapshotTimestamp !== '' ? new Date(firstSnapshotTimestamp) : null
 
         // Use imported transactions for the period before our first snapshot
         const stmtTxs = this.exchangeService.listStatementTransactions(account.id)
@@ -1186,7 +1187,7 @@ export class ControlCenterService {
         } else {
           for (const [account, balance] of balancesResult.unwrap()) {
             const accountId = idMap.get(account.toString())
-            if (accountId) {
+            if (accountId != null && accountId !== '') {
               this.recordAccountSnapshot(accountId, balance.toString(), now)
             }
           }

@@ -5,7 +5,7 @@ export function getTrezorDisplayName(features: Features): string {
   if (features.model) {
     displayName += ` ${features.model}`
   }
-  if (features.label) {
+  if (features.label != null && features.label !== '') {
     displayName += ` (${features.label})`
   }
   return displayName

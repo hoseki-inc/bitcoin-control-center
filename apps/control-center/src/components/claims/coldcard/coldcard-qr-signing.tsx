@@ -59,7 +59,8 @@ export function ColdcardQrSigning({
   const onNext = (): void => {
     setStep((prev) => prev + 1)
   }
-  const model: ColdcardModel = keystore.model && isColdcardModel(keystore.model) ? keystore.model : 'Q'
+  const model: ColdcardModel =
+    keystore.model != null && keystore.model !== '' && isColdcardModel(keystore.model) ? keystore.model : 'Q'
 
   if (!keystore.derivationPath) {
     return <Alert status="error">Derivation path not found</Alert>

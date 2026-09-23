@@ -272,7 +272,7 @@ function signedMessageRowToDto(row: SignedMessageRow): SignedMessageDto {
     updatedAt: new Date(row.signed_at ?? row.created_at),
     address: row.address,
     messageTextToSign: getMessageTextToSign(row.id, row.message_text),
-    signedAt: row.signed_at ? new Date(row.signed_at) : null,
+    signedAt: row.signed_at != null && row.signed_at !== '' ? new Date(row.signed_at) : null,
     signature: row.signature,
   }
 }
@@ -280,7 +280,7 @@ function signedMessageRowToDto(row: SignedMessageRow): SignedMessageDto {
 /** Generate the stable message format used by existing Control Center deployments. */
 function getMessageTextToSign(id: string, text: string): string {
   const suffix = id.split('_').at(-1)
-  if (!suffix) {
+  if (suffix == null || suffix === '') {
     throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Invalid signed-message ID' })
   }
   return text + ` ID=${suffix}`
@@ -396,7 +396,7 @@ const controlCenterRouter = t.router({
     const now = new Date().toISOString()
     for (const [account, balance] of balancesResult.unwrap()) {
       const accountId = idMap.get(account.toString())
-      if (accountId) {
+      if (accountId != null && accountId !== '') {
         ctx.app.controlCenterService.recordAccountSnapshot(accountId, balance.toString(), now)
       }
     }
@@ -1338,7 +1338,7 @@ const onchainRouter = t.router({
             )
             .get(na.account.toString(), claimNetworkToNetwork(na.network.toString()))
 
-          if (row?.deleted_at) {
+          if (row?.deleted_at != null && row.deleted_at !== '') {
             const snapshot = ctx.app.database.db
               .prepare<unknown[], { balance_sats: string }>(
                 `SELECT balance_sats
@@ -1433,7 +1433,7 @@ const onchainRouter = t.router({
       const activeClaim = ctx.app.database.db
         .prepare('SELECT 1 AS one FROM accounts WHERE id = ? AND deleted_at IS NULL')
         .get(claimId)
-      if (!activeClaim) {
+      if (activeClaim === undefined) {
         continue
       }
 
@@ -1875,7 +1875,7 @@ const portalProveRouter = t.router({
         const duplicate = ctx.app.database.db
           .prepare('SELECT 1 AS one FROM accounts WHERE descriptor = ? AND network = ? LIMIT 1')
           .get(input.descriptor, input.network)
-        if (duplicate) {
+        if (duplicate !== undefined) {
           throw new TRPCError({ code: 'CONFLICT', message: 'An account with this descriptor already exists' })
         }
 
@@ -2013,10 +2013,10 @@ function validateElectrumProxy(input: {
   proxyHost?: string
   proxyPort?: number
 }): ValidatedElectrumConnection['proxy'] {
-  if (!input.proxyHost && input.proxyPort === undefined) {
+  if ((input.proxyHost == null || input.proxyHost === '') && input.proxyPort === undefined) {
     return undefined
   }
-  if (!input.proxyHost || input.proxyPort === undefined) {
+  if (input.proxyHost == null || input.proxyHost === '' || input.proxyPort === undefined) {
     throw new TRPCError({ code: 'BAD_REQUEST', message: 'Proxy host and port must be provided together' })
   }
 

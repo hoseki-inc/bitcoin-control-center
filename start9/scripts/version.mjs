@@ -233,7 +233,7 @@ function parseNotes(args) {
     return 'Maintenance release.'
   }
   const notes = args[index + 1]
-  if (!notes) {
+  if (notes == null || notes === '') {
     throw new Error('--notes requires a value.')
   }
   return notes
@@ -309,9 +309,9 @@ function setVersion(targetVersion, releaseNotes) {
 const [command, value, ...rest] = process.argv.slice(2)
 
 try {
-  if (!command || command === '--help' || command === '-h') {
+  if (command == null || command === '' || command === '--help' || command === '-h') {
     usage()
-    process.exit(command ? 0 : 1)
+    process.exit(command != null && command !== '' ? 0 : 1)
   }
 
   if (command === 'get') {
@@ -331,7 +331,7 @@ try {
   }
 
   if (command === 'assert-tag') {
-    if (!value) {
+    if (value == null || value === '') {
       throw new Error('assert-tag requires a tag like v0.2.1_0.')
     }
     const expectedTag = tagNameForVersion(validateVersionGraph())
@@ -343,7 +343,7 @@ try {
   }
 
   if (command === 'bump') {
-    if (!value) {
+    if (value == null || value === '') {
       throw new Error('bump requires major, minor, patch, or revision.')
     }
     setVersion(bumpVersion(currentVersion(), value), parseNotes(rest))
@@ -351,7 +351,7 @@ try {
   }
 
   if (command === 'set') {
-    if (!value) {
+    if (value == null || value === '') {
       throw new Error('set requires a version like 0.1.1:0.')
     }
     parseVersion(value)

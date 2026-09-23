@@ -522,7 +522,7 @@ export class ExchangeService {
 
       // Use stored account UUID if available, otherwise discover it
       let accountUuid = row.external_account_id
-      if (!accountUuid) {
+      if (accountUuid == null || accountUuid === '') {
         const accountsRes = await client.advancedTrade.accounts.list()
         if (accountsRes.isErr()) {
           return Err(new Error(`Coinbase error: ${accountsRes.unwrapErr().message}`))
@@ -682,7 +682,7 @@ export class ExchangeService {
 
         // Discover and backfill external_account_id if missing (pre-migration accounts)
         let accountUuid = row.external_account_id
-        if (!accountUuid) {
+        if (accountUuid == null || accountUuid === '') {
           this.logger.info({ accountId: row.id }, 'Discovering Coinbase BTC account UUID')
           const accountsRes = await client.advancedTrade.accounts.list()
           if (accountsRes.isErr()) {
@@ -733,7 +733,7 @@ export class ExchangeService {
             {
               accountId: row.id,
               transactionCount: transactions.length,
-              hasNextUri: !!pagination.next_uri,
+              hasNextUri: pagination.next_uri != null && pagination.next_uri !== '',
               startingAfter,
             },
             'getCoinbaseTransactionEntries: page fetched',
@@ -753,7 +753,7 @@ export class ExchangeService {
             })
           }
 
-          if (pagination.next_uri && transactions.length > 0) {
+          if (pagination.next_uri != null && pagination.next_uri !== '' && transactions.length > 0) {
             startingAfter = transactions[transactions.length - 1]?.id
           } else {
             hasMore = false
@@ -964,47 +964,48 @@ export class ExchangeService {
     txHash: string | null
     statementMonth: string
   }> {
-    const rows = statementMonth
-      ? this.db
-          .prepare<
-            unknown[],
-            {
-              id: string
-              external_id: string
-              transacted_at: string
-              type: string
-              amount_btc: string
-              amount_usd: string | null
-              fee_usd: string | null
-              fee_btc: string | null
-              exchange_rate: string | null
-              description: string | null
-              tx_hash: string | null
-              statement_month: string
-            }
-          >(
-            'SELECT * FROM exchange_statement_txs WHERE account_id = ? AND statement_month = ? ORDER BY transacted_at ASC',
-          )
-          .all(accountId, statementMonth)
-      : this.db
-          .prepare<
-            unknown[],
-            {
-              id: string
-              external_id: string
-              transacted_at: string
-              type: string
-              amount_btc: string
-              amount_usd: string | null
-              fee_usd: string | null
-              fee_btc: string | null
-              exchange_rate: string | null
-              description: string | null
-              tx_hash: string | null
-              statement_month: string
-            }
-          >('SELECT * FROM exchange_statement_txs WHERE account_id = ? ORDER BY transacted_at ASC')
-          .all(accountId)
+    const rows =
+      statementMonth != null && statementMonth !== ''
+        ? this.db
+            .prepare<
+              unknown[],
+              {
+                id: string
+                external_id: string
+                transacted_at: string
+                type: string
+                amount_btc: string
+                amount_usd: string | null
+                fee_usd: string | null
+                fee_btc: string | null
+                exchange_rate: string | null
+                description: string | null
+                tx_hash: string | null
+                statement_month: string
+              }
+            >(
+              'SELECT * FROM exchange_statement_txs WHERE account_id = ? AND statement_month = ? ORDER BY transacted_at ASC',
+            )
+            .all(accountId, statementMonth)
+        : this.db
+            .prepare<
+              unknown[],
+              {
+                id: string
+                external_id: string
+                transacted_at: string
+                type: string
+                amount_btc: string
+                amount_usd: string | null
+                fee_usd: string | null
+                fee_btc: string | null
+                exchange_rate: string | null
+                description: string | null
+                tx_hash: string | null
+                statement_month: string
+              }
+            >('SELECT * FROM exchange_statement_txs WHERE account_id = ? ORDER BY transacted_at ASC')
+            .all(accountId)
 
     return rows.map((r) => ({
       id: r.id,
@@ -1082,7 +1083,7 @@ export class ExchangeService {
     credentialsConnectedAt: string
     externalAccountId?: string
   }): Result<{ id: string; createdAt: string }, Error> {
-    if (args.replaceAccountId) {
+    if (args.replaceAccountId != null && args.replaceAccountId !== '') {
       // Reconnect must preserve the internal account id. Balance snapshots,
       // imported statements, and generated statement references are keyed to
       // this id, so never delete/reinsert during a credential replacement.
@@ -1164,7 +1165,7 @@ export class ExchangeService {
   }
 
   private areCredentialsExpired(connectedAt: string | null): boolean {
-    if (!connectedAt) {
+    if (connectedAt == null || connectedAt === '') {
       return true
     }
     const connectedAtMs = Date.parse(this.normalizeTimestamp(connectedAt))

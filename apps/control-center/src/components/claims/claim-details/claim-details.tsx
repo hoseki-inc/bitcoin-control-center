@@ -151,7 +151,7 @@ function ClaimDetailsBody({
     <>
       {!isMultisig ? (
         <KeystoreDetailsSingleSig claim={claim} keystore={claim.keystores[0]} />
-      ) : selectedKeystoreId ? (
+      ) : selectedKeystoreId != null && selectedKeystoreId !== '' ? (
         <KeystoreDetailsMultiSig claim={claim} keystore={claim.keystores.find((k) => k.id === selectedKeystoreId)} />
       ) : (
         <MultisigClaimProperties claim={claim} />

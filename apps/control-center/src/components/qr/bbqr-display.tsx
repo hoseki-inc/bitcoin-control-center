@@ -27,7 +27,7 @@ export function BBQrDisplay({
   const intervalRef = useRef<ReturnType<typeof setInterval>>()
 
   const parts = useMemo(() => {
-    if (value) {
+    if (value != null && value !== '') {
       return [value]
     }
     if (!data) {
@@ -54,7 +54,7 @@ export function BBQrDisplay({
   }, [isAnimated, parts.length, frameDelay])
 
   const firstPart = parts[0]
-  if (!firstPart) {
+  if (firstPart == null || firstPart === '') {
     return <></>
   }
 

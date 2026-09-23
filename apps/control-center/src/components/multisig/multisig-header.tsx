@@ -68,11 +68,12 @@ export function MultisigHeader({
     return navigateToKeystoreSigning
   }
 
-  const searchParams = expandedKeystoreId
-    ? `?${createSearchParams({
-        keystoreId: expandedKeystoreId,
-      })}`
-    : ''
+  const searchParams =
+    expandedKeystoreId != null && expandedKeystoreId !== ''
+      ? `?${createSearchParams({
+          keystoreId: expandedKeystoreId,
+        })}`
+      : ''
 
   return (
     <HStack spacing={8} borderBottom="1px solid" borderColor="neutral.200" pb={2} {...props}>

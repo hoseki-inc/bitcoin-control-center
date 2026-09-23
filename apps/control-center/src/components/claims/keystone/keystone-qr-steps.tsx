@@ -231,7 +231,7 @@ function QrScanWalletExport({
         Hold your Keystone screen in front of your webcam. We'll automatically detect and read the QR code.
       </Text>
 
-      {error && (
+      {error != null && error !== '' && (
         <Text textStyle="text/sm" color="error.500" textAlign="center">
           {error}
         </Text>

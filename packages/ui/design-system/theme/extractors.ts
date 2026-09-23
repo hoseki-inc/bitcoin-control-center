@@ -15,7 +15,7 @@ export function getColor(colorPath: string): string {
 
   // Navigate through each path segment
   for (const segment of pathSegments) {
-    if (current && typeof current === 'object' && hasKey(current, segment)) {
+    if (current !== null && typeof current === 'object' && hasKey(current, segment)) {
       // The guard confirms this is an object containing the key; its value remains unknown.
       current = current[segment]
     } else {

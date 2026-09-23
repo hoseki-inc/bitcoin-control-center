@@ -20,7 +20,7 @@ abstract class BaseAccountDescriptorParser {
    * @returns Ok if valid or no checksum, Err if checksum validation fails
    */
   protected static assertChecksum(desc: string, checksum: string | undefined): Result<void, Error> {
-    if (checksum) {
+    if (checksum != null && checksum !== '') {
       const checksumResult = descriptorUtils.getChecksum(desc)
       if (checksumResult.isErr()) {
         return Err(checksumResult.unwrapErr())
@@ -50,9 +50,10 @@ abstract class BaseAccountDescriptorParser {
     const keyOriginWithBrackets = originResult?.[0]
     const keyOriginWithoutBrackets = originResult?.[1]
 
-    const keyDescriptorWithoutOrigin = keyOriginWithBrackets
-      ? keyExpressionStr.replace(keyOriginWithBrackets, '')
-      : keyExpressionStr
+    const keyDescriptorWithoutOrigin =
+      keyOriginWithBrackets != null && keyOriginWithBrackets !== ''
+        ? keyExpressionStr.replace(keyOriginWithBrackets, '')
+        : keyExpressionStr
 
     // Get /0/* or /<0;1>/*
     const receivePath = keyDescriptorWithoutOrigin.substring(keyDescriptorWithoutOrigin.indexOf('/'))
@@ -61,12 +62,13 @@ abstract class BaseAccountDescriptorParser {
     const nonEmptyDerivationPath = derivationPathStart.filter((segment) => segment.length > 0)
 
     return {
-      keyOrigin: fingerprint
-        ? {
-            fingerprint,
-            derivationPath: nonEmptyDerivationPath.length ? `m/${nonEmptyDerivationPath.join('/')}` : null,
-          }
-        : null,
+      keyOrigin:
+        fingerprint != null && fingerprint !== ''
+          ? {
+              fingerprint,
+              derivationPath: nonEmptyDerivationPath.length ? `m/${nonEmptyDerivationPath.join('/')}` : null,
+            }
+          : null,
       xpub: justXpub,
     }
   }
@@ -163,7 +165,7 @@ export class SinglesigDescriptorParser extends BaseAccountDescriptorParser {
   public static parse(string: string): Result<SinglesigProps, Error> {
     const [desc, checksum] = string.split('#')
 
-    if (!desc) {
+    if (desc == null || desc === '') {
       return Err(new Error('Empty script string'))
     }
 
@@ -353,7 +355,7 @@ export class MultisigDescriptorParser extends BaseAccountDescriptorParser {
   public static parse(string: string): Result<MultisigProps, Error> {
     const [desc, checksum] = string.split('#')
 
-    if (!desc) {
+    if (desc == null || desc === '') {
       return Err(new Error('Empty script string'))
     }
     const transformedDescriptorResult = MultisigDescriptorParser.transformOutputDescriptor(desc)
@@ -412,10 +414,10 @@ export class MultisigDescriptorParser extends BaseAccountDescriptorParser {
     const reversedParsedDescent = parsedDescentResult.unwrap().reverse()
     const [thresholdAndKeyExpressionStr, multiScript, ...reversedScriptTypeFactors] = reversedParsedDescent
     const scriptTypeFactors = reversedScriptTypeFactors.reverse()
-    if (!thresholdAndKeyExpressionStr) {
+    if (thresholdAndKeyExpressionStr == null || thresholdAndKeyExpressionStr === '') {
       return Err(new InvalidFormatError('Number of required keys and keyOrigin are empty'))
     }
-    if (!multiScript) {
+    if (multiScript == null || multiScript === '') {
       return Err(new InvalidFormatError('Empty multi script type'))
     }
     if (!scriptTypeFactors.length || !scriptTypeFactors.every(Boolean)) {
@@ -423,7 +425,7 @@ export class MultisigDescriptorParser extends BaseAccountDescriptorParser {
     }
 
     const [threshold, ...keyExpressionStr] = thresholdAndKeyExpressionStr.split(',')
-    if (!threshold) {
+    if (threshold == null || threshold === '') {
       return Err(new InvalidFormatError('Number of required keys is empty'))
     }
     if (!keyExpressionStr.length || !keyExpressionStr.every(Boolean)) {

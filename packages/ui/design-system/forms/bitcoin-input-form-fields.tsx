@@ -125,7 +125,7 @@ export function BitcoinInputFormFields({
 
   return (
     <Stack gap={4}>
-      {error && <ErrorBanner mb={4} message={error} />}
+      {error != null && error !== '' && <ErrorBanner mb={4} message={error} />}
 
       <FormControl>
         <FormLabel htmlFor="display-name">Display name</FormLabel>

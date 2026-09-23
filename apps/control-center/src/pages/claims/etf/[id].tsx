@@ -40,10 +40,13 @@ export function EtfAccountDetailsPage(): JSX.Element {
   const [newDatePurchased, setNewDatePurchased] = useState('')
 
   // ─── Queries ────────────────────────────────────────────────
-  const accountQuery = trpc.portalProve.etf.get.useQuery({ accountId: accountId ?? '' }, { enabled: !!accountId })
+  const accountQuery = trpc.portalProve.etf.get.useQuery(
+    { accountId: accountId ?? '' },
+    { enabled: accountId != null && accountId !== '' },
+  )
   const holdingsQuery = trpc.portalProve.etf.holdings.list.useQuery(
     { accountId: accountId ?? '' },
-    { enabled: !!accountId },
+    { enabled: accountId != null && accountId !== '' },
   )
 
   // ─── Mutations ──────────────────────────────────────────────
@@ -64,7 +67,7 @@ export function EtfAccountDetailsPage(): JSX.Element {
   const btcAmount = (btcSats / 100_000_000).toFixed(8)
 
   async function invalidateAll(): Promise<void> {
-    if (!accountId) {
+    if (accountId == null || accountId === '') {
       return
     }
     await utils.portalProve.etf.get.invalidate({ accountId })
@@ -74,7 +77,7 @@ export function EtfAccountDetailsPage(): JSX.Element {
   }
 
   async function handleAddHolding(): Promise<void> {
-    if (!accountId || !newShares) {
+    if (accountId == null || accountId === '' || !newShares) {
       return
     }
     try {
@@ -104,7 +107,7 @@ export function EtfAccountDetailsPage(): JSX.Element {
   }
 
   async function handleDelete(): Promise<void> {
-    if (!accountId) {
+    if (accountId == null || accountId === '') {
       return
     }
     setIsDeleting(true)
@@ -241,7 +244,9 @@ export function EtfAccountDetailsPage(): JSX.Element {
                         </Td>
                         <Td>
                           <Text textStyle="text/xs" color="neutral.500">
-                            {holding.datePurchased ? format(new Date(holding.datePurchased), 'MMM d, yyyy') : '—'}
+                            {holding.datePurchased != null && holding.datePurchased !== ''
+                              ? format(new Date(holding.datePurchased), 'MMM d, yyyy')
+                              : '—'}
                           </Text>
                         </Td>
                         <Td>

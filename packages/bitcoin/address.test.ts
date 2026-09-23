@@ -101,7 +101,7 @@ const rawFixtures: Array<{ format: Format; address: string | undefined; type: Ad
 ]
 
 const fixtures = rawFixtures.filter((fixture, i): fixture is { format: Format; address: string; type: AddressType } => {
-  if (!fixture.address) {
+  if (fixture.address == null || fixture.address === '') {
     throw new Error(`Invalid generated address for ${fixture.format.kind} v${fixture.format.version} at index ${i}`)
   }
   return true

@@ -110,7 +110,7 @@ export function ClaimsPage(): JSX.Element {
   }, 0)
 
   const exchangeTotalBtcSats = exchangeAccounts.reduce((sum, a) => {
-    if (!a.balance) {
+    if (a.balance == null || a.balance === '') {
       return sum
     }
     return sum + Number(a.balance)
@@ -145,7 +145,7 @@ export function ClaimsPage(): JSX.Element {
   const exchangeTotalUsd =
     btcUsdPrice !== null
       ? exchangeAccounts.reduce((sum, a) => {
-          if (!a.balance) {
+          if (a.balance == null || a.balance === '') {
             return sum
           }
           return sum + (Number(a.balance) / 100_000_000) * btcUsdPrice
@@ -343,7 +343,8 @@ function AccountCard({ claim, balance, totalBtcSats, isLoadingBalance }: Account
 
   const btcSats = balance ? Number(balance.current) : 0
   const btcAmount = btcSats / 100_000_000
-  const usdAmount = balance?.usd ? Number(balance.usd) : 0
+  const usdValue = balance?.usd
+  const usdAmount = Boolean(usdValue) ? Number(usdValue) : 0
   const pct = totalBtcSats > 0 ? ((btcSats / totalBtcSats) * 100).toFixed(1) : '0.0'
 
   return (
@@ -525,7 +526,7 @@ const exchangeConfig: Record<string, ExchangeConfig> = {
 
 function ExchangeAccountCard({ account, totalBtcSats, btcUsdPrice }: ExchangeAccountCardProps): JSX.Element {
   const needsReconnect = needsExchangeReconnect(account)
-  const btcSats = account.balance ? Number(account.balance) : 0
+  const btcSats = account.balance != null && account.balance !== '' ? Number(account.balance) : 0
   const btcAmount = btcSats / 100_000_000
   const usdAmount = btcUsdPrice !== null ? btcAmount * btcUsdPrice : null
   const pct = totalBtcSats > 0 ? ((btcSats / totalBtcSats) * 100).toFixed(1) : '0.0'
