@@ -665,7 +665,7 @@ export function Step9Ui({
       () => {
         toast.success('The text file contents was copied to the clipboard.')
       },
-      (_err) => {
+      () => {
         toast.error('Error trying to copy the text file contents to the clipboard.')
       },
     )

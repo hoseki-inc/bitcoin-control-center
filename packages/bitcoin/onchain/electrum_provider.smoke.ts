@@ -105,7 +105,7 @@ async function main(): Promise<void> {
   logger.info('Disconnected. Smoke test complete!')
 }
 
-main().catch((err) => {
+main().catch((err: unknown) => {
   console.error('Smoke test failed:', err)
   process.exit(1)
 })
