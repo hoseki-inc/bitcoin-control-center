@@ -306,13 +306,13 @@ function DetectionStep({
   return (
     <Stack gap={4}>
       <Text textStyle="text/2xl" fontWeight="medium">
-        We've detected a {account.threshold} of {wallet.keystores.length} Multisig Wallet
+        We&apos;ve detected a {account.threshold} of {wallet.keystores.length} Multisig Wallet
       </Text>
 
       <AnimatedDetectedKeystoreAvatars totalKeystores={wallet.keystores.length} threshold={account.threshold} />
 
       <Text textStyle="text/md" color="neutral.900">
-        Let's name your multisig claim. You rename this later at anytime.
+        Let&apos;s name your multisig claim. You rename this later at anytime.
       </Text>
 
       <form

@@ -1094,7 +1094,7 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
               <Text style={footerStyles.instructionsText}>
                 This statement provides detailed information on your Bitcoin holdings in self-custody for the specified
                 period. All data is sourced directly from the Bitcoin network and self-custody ownership is validated by
-                Bitcoin Control Center's open-source verification process. USD values are calculated using the
+                Bitcoin Control Center&apos;s open-source verification process. USD values are calculated using the
                 Bitcoin-to-USD exchange rate from <Link src="https://www.coingecko.com">CoinGecko</Link> on the date of
                 each transaction or balance snapshot. For questions or discrepancies, please contact support@hoseki.app.
                 All rights reserved.
