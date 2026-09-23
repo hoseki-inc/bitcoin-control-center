@@ -135,7 +135,8 @@
     "typescript/unbound-method": "error",
     "typescript/unified-signatures": "error",
     "typescript/use-unknown-in-catch-callback-variable": "error",
-    "react/display-name": "error"
+    "react/display-name": "error",
+    "react/exhaustive-deps": "error"
   },
   "overrides": [
     {

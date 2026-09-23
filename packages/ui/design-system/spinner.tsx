@@ -21,7 +21,7 @@ export function Spinner({
     return () => {
       clearTimeout(timer)
     }
-  }, [])
+  }, [isLazy])
 
   const spinner = <ChakraSpinner visibility={showSpinner ? 'visible' : 'hidden'} {...props} />
 
