@@ -182,7 +182,7 @@ function tryGenericMultisigSetup(exportFileLines: string[]): Result<ParsedWallet
         case 'Policy': {
           // Parse "2 of 2" format
           const policyMatch = value.match(/^(\d+)\s+of\s+(\d+)$/)
-          if (policyMatch && policyMatch[1] && policyMatch[2]) {
+          if (policyMatch?.[1] && policyMatch[2]) {
             policy = {
               threshold: parseInt(policyMatch[1], 10),
               total: parseInt(policyMatch[2], 10),
@@ -549,7 +549,7 @@ const ElectrumJsonFileSchema = z
       .string()
       .transform((val, ctx) => {
         const match = val.match(/^(\d+)of(\d+)$/)
-        if (!match || !match[1] || !match[2]) {
+        if (!match?.[1] || !match[2]) {
           ctx.addIssue({
             code: z.ZodIssueCode.custom,
             message: `Invalid wallet_type format: ${val}`,
