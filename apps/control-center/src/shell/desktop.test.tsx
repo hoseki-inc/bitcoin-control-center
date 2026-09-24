@@ -194,6 +194,17 @@ describe('Desktop', () => {
     expect(container.querySelector('[data-testid="location"]')!.textContent).toBe('/statements/create')
   })
 
+  it('returns focus to the icon when its menu closes with Escape', async () => {
+    await render()
+    const icon = container.querySelector<HTMLElement>('[aria-label="Cold Wallet, verified"]')!
+    icon.focus()
+    await act(async () => icon.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 0, clientY: 0 })))
+    expect(document.activeElement?.getAttribute('role')).toBe('menuitem')
+    await act(async () => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
+    expect(document.querySelector('[role="menu"]')).toBeNull()
+    expect(document.activeElement).toBe(icon)
+  })
+
   it('switches appearance and opens the wallpaper picker from the desktop menu', async () => {
     await render()
     const desktop = container.querySelector<HTMLElement>('[aria-label="Overview"]')!

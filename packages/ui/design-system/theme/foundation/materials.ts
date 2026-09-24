@@ -97,8 +97,20 @@ export const materialGlobalStyles: Record<string, SystemStyleObject> = {
   '@media (min-width: 1024px)': { ':root': { '--radius-window': '40px' } },
   // Umbrel-style fallbacks: opaque materials when transparency is unwanted or unsupported.
   '@media (prefers-reduced-transparency: reduce), (prefers-contrast: more)': {
-    ':root': { '--material-filter': 'none', '--toast-filter': 'none', '--material-tint': 'rgb(255 255 255 / 0.96)' },
-    ':root[data-theme="dark"]': { '--material-tint': 'rgb(14 15 19 / 0.94)' },
+    ':root': {
+      '--material-filter': 'none',
+      '--toast-filter': 'none',
+      '--material-tint': 'rgb(255 255 255 / 0.96)',
+      '--toast-tint': 'rgb(255 255 255 / 0.98)',
+      '--window-tint': 'rgb(255 255 255 / 0.98)',
+      '--edge-bg': 'rgb(255 255 255 / 1)',
+    },
+    ':root[data-theme="dark"]': {
+      '--material-tint': 'rgb(14 15 19 / 0.94)',
+      '--toast-tint': 'rgb(18 19 24 / 0.97)',
+      '--window-tint': 'rgb(11 12 16 / 0.97)',
+      '--edge-bg': 'rgb(28 29 34 / 1)',
+    },
   },
   '@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px)))': {
     ':root': { '--material-tint': 'rgb(255 255 255 / 0.9)' },

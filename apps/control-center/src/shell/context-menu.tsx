@@ -53,6 +53,14 @@ export function ContextMenu({
   const ref = useRef<HTMLDivElement | null>(null)
   const [position, setPosition] = useState(anchor)
 
+  // Give focus back to whatever had it (the icon, usually) when the menu closes.
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null
+    return () => {
+      if (previous?.isConnected === true) previous.focus({ preventScroll: true })
+    }
+  }, [])
+
   // Keep the menu on screen and focus its first item.
   useEffect(() => {
     const menu = ref.current
