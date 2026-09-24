@@ -454,7 +454,7 @@ function ExchangeAccountPill({
       cursor="pointer"
       transition="all 0.15s ease"
       position="relative"
-      _hover={!isSelected ? { shadow: 'sm', ...(compact ? {} : { transform: 'translateY(-1px)' }) } : undefined}
+      _hover={isSelected ? undefined : compact ? { shadow: 'sm' } : { shadow: 'sm', transform: 'translateY(-1px)' }}
     >
       {/* Check indicator — full mode only */}
       {isSelected && !needsReconnect && <SelectedCheckmark compact={compact} />}
@@ -583,7 +583,7 @@ function ManualAccountPill({
       cursor="pointer"
       transition="all 0.15s ease"
       position="relative"
-      _hover={!isSelected ? { shadow: 'sm', ...(compact ? {} : { transform: 'translateY(-1px)' }) } : undefined}
+      _hover={isSelected ? undefined : compact ? { shadow: 'sm' } : { shadow: 'sm', transform: 'translateY(-1px)' }}
     >
       {isSelected && <SelectedCheckmark compact={compact} />}
       {compact && <StatusBadge label="Manually Added" />}
@@ -736,7 +736,7 @@ function AccountPill({
       cursor="pointer"
       transition="all 0.15s ease"
       position="relative"
-      _hover={!isSelected ? { shadow: 'sm', ...(compact ? {} : { transform: 'translateY(-1px)' }) } : undefined}
+      _hover={isSelected ? undefined : compact ? { shadow: 'sm' } : { shadow: 'sm', transform: 'translateY(-1px)' }}
     >
       {/* Check indicator — full mode only */}
       {isSelected && <SelectedCheckmark compact={compact} />}

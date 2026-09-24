@@ -159,13 +159,16 @@ export class RobinhoodClient {
 
     let response: { status: number; body: string }
     try {
-      response = await httpsRequest({
+      const options: Parameters<typeof httpsRequest>[0] = {
         hostname: BASE_HOST,
         path,
         method,
         headers,
-        ...(body ? { body } : {}),
-      })
+      }
+      if (body) {
+        options.body = body
+      }
+      response = await httpsRequest(options)
     } catch (err) {
       return Err(new Error(`Failed to connect to Robinhood API: ${err instanceof Error ? err.message : String(err)}`))
     }
