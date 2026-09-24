@@ -1,5 +1,14 @@
 import { spawnSync } from 'node:child_process'
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  copyFileSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -14,6 +23,7 @@ async function withTestSetup(run: () => Promise<void>): Promise<void> {
     rmSync(fixture, { recursive: true, force: true })
   })
   fixture = realpathSync(mkdtempSync(join(tmpdir(), 'bcc-oxlint-')))
+  symlinkSync(join(repository, 'tools'), join(fixture, 'tools'), 'junction')
   for (const scope of scopes) {
     mkdirSync(join(fixture, scope), { recursive: true })
   }
