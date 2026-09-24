@@ -248,6 +248,9 @@ importers:
       '@ladle/react':
         specifier: 5.1.1
         version: 5.1.1(@types/node@22.20.1)(@types/react@18.3.31)(lightningcss@1.33.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(sass@1.104.1)(tsx@4.23.13)(typescript@5.9.3)(yaml@2.8.3)
+      '@oxlint/plugins':
+        specifier: 1.83.0
+        version: 1.83.0
       '@tanstack/eslint-plugin-query':
         specifier: 5.103.1
         version: 5.103.1(eslint@9.15.0)(typescript@5.9.3)
@@ -1985,6 +1988,10 @@ packages:
     engines: {node: ^20.19.0 || >=22.12.0}
     cpu: [x64]
     os: [win32]
+
+  '@oxlint/plugins@1.83.0':
+    resolution: {integrity: sha512-qD64wr6SS1DL7YbJQ8WWjyUfFfrJsvAy9Vo0sG/PYUQy30w0uemN2h6j4xuvj4noyETDpzcGC20sv+FH7GrN5A==}
+    engines: {node: ^12.22.0 || ^14.17.0 || >=16.0.0}
 
   '@parcel/watcher-android-arm64@2.6.0':
     resolution: {integrity: sha512-trgpLSCKRC/huFjXX/Smh+0sWe4+YtKfktIToiMl59ghz7z+qkH6kMvNnUbLyRs9N11t8l4svSCs1+5B3rOAhA==}
@@ -9040,6 +9047,8 @@ snapshots:
 
   '@oxlint/binding-win32-x64-msvc@1.83.0':
     optional: true
+
+  '@oxlint/plugins@1.83.0': {}
 
   '@parcel/watcher-android-arm64@2.6.0':
     optional: true
