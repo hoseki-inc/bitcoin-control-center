@@ -26,6 +26,9 @@ vi.mock('./widgets/desktop-widgets', () => ({
   ConnectionsWidget: () => null,
   VerificationWidget: () => null,
 }))
+vi.mock('./search/command-palette', () => ({
+  CommandPalette: ({ open }: { open: boolean }) => (open ? <div role="dialog" aria-label="Search" /> : null),
+}))
 vi.mock('../hooks/use-accounts', () => ({
   useAccounts: () => ({
     accounts: [],
@@ -165,6 +168,19 @@ describe('DesktopLayout', () => {
     await finishWelcome()
     await act(async () => container.querySelector<HTMLButtonElement>('button[aria-label="Close"]')!.click())
     expect(location()).toBe('/home')
+  })
+
+  it('opens and closes search with ⌘K or Ctrl+K once the welcome has cleared', async () => {
+    mockMatchMedia(true)
+    await render('/home')
+    const search = (): Element | null => container.querySelector('[role="dialog"][aria-label="Search"]')
+    await act(async () => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true })))
+    expect(search()).toBeNull()
+    await finishWelcome()
+    await act(async () => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true })))
+    expect(search()).not.toBeNull()
+    await act(async () => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'K', ctrlKey: true })))
+    expect(search()).toBeNull()
   })
 
   it('toggles privacy from the dock', async () => {

@@ -10,6 +10,8 @@ import { SettingsPage } from './index'
 
 vi.mock('../../mode', () => ({ isDesktop: false }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
+// The wallpaper picker renders WebGL previews and reads the chain tip; it is covered separately.
+vi.mock('./wallpaper-settings', () => ({ WallpaperSettings: () => null }))
 
 let root: Root
 let container: HTMLDivElement

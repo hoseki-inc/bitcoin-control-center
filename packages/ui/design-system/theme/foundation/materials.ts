@@ -43,8 +43,9 @@ const lightMaterial: typeof darkMaterial = {
   '--toast-tint': 'rgb(255 255 255 / 0.7)',
   '--toast-filter': 'blur(10px) saturate(160%) brightness(105%)',
   '--toast-shadow': '0 6px 16px rgb(15 23 42 / 0.12)',
-  '--window-tint': 'rgb(255 255 255 / 0.62)',
-  '--window-wallpaper-filter': 'blur(40px) saturate(160%) brightness(112%)',
+  // Dense frost: page text sits on this, so dark wallpaper regions must not bleed through.
+  '--window-tint': 'rgb(255 255 255 / 0.86)',
+  '--window-wallpaper-filter': 'blur(40px) saturate(140%) brightness(135%)',
   '--window-edge': 'rgb(15 23 42 / 0.08)',
   '--window-shine': '0.8',
   '--window-shadow': '0 10px 64px rgb(15 23 42 / 0.25)',

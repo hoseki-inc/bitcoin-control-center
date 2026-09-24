@@ -9,6 +9,7 @@ import { usePrivacy } from '../hooks/use-privacy'
 import { AccountGrid } from './account-grid'
 import { type ContextMenuAnchor, anchorFromEvent, useContextMenu } from './context-menu'
 import { Entrance } from './entrance'
+import { SearchPill } from './search/search-pill'
 import { WallpaperPicker } from './wallpaper-picker'
 import { ConnectionsWidget, HoldingsWidget, PriceWidget, VerificationWidget } from './widgets/desktop-widgets'
 
@@ -20,7 +21,7 @@ export function greetingFor(date: Date): string {
 }
 
 /** The home screen behind every sheet: greeting, widgets, and accounts as app icons. */
-export function Desktop({ covered }: { covered: boolean }): JSX.Element {
+export function Desktop({ covered, onOpenSearch }: { covered: boolean; onOpenSearch: () => void }): JSX.Element {
   const navigate = useNavigate()
   const { data: name } = useLocalSetting('user_name')
   const onboarding = useLocalSetting(ONBOARDING_KEY)
@@ -110,6 +111,7 @@ export function Desktop({ covered }: { covered: boolean }): JSX.Element {
           <AccountGrid accounts={accounts.accounts} />
         </Box>
       </Stack>
+      <SearchPill onOpen={onOpenSearch} />
       {menu}
       {wallpaperAnchor !== null && (
         <WallpaperPicker anchor={wallpaperAnchor} onClose={() => setWallpaperAnchor(null)} />

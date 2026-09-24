@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   accountsLoading: false,
   onboarding: 'completed' as string | null,
   userName: 'Satoshi Nakamoto' as string | null,
+  openSearch: vi.fn(),
 }))
 
 vi.mock('../hooks/use-local-settings', () => ({
@@ -128,7 +129,7 @@ describe('Desktop', () => {
         <ChakraProvider>
           <MemoryRouter initialEntries={['/home']}>
             <Routes>
-              <Route path="*" element={<Desktop covered={false} />} />
+              <Route path="*" element={<Desktop covered={false} onOpenSearch={mocks.openSearch} />} />
             </Routes>
             <LocationProbe />
           </MemoryRouter>
@@ -213,6 +214,12 @@ describe('Desktop', () => {
     )!
     await act(async () => wallpaper.click())
     expect(container.querySelector('[aria-label="Choose a wallpaper"]')).not.toBeNull()
+  })
+
+  it('opens search from the pill above the dock', async () => {
+    await render()
+    await act(async () => container.querySelector<HTMLButtonElement>('button[aria-label^="Search"]')!.click())
+    expect(mocks.openSearch).toHaveBeenCalledOnce()
   })
 
   it('opens Getting Started on first run', async () => {

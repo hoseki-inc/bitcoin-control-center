@@ -25,6 +25,7 @@ import { useBitcoinDisplay } from '../../hooks/use-bitcoin-display'
 import { useLocalSetting } from '../../hooks/use-local-settings'
 import { bitcoinDisplayUnit, formatBitcoin } from '../../lib/bitcoin-display'
 import { isDesktop } from '../../mode'
+import { WallpaperSettings } from './wallpaper-settings'
 
 export function SettingsPage(): JSX.Element {
   const { data: savedName, isLoading, saveAsync, isSaving, isError } = useLocalSetting('user_name')
@@ -104,6 +105,7 @@ export function SettingsPage(): JSX.Element {
           </Button>
         </Stack>
         <AppearanceSettings />
+        <WallpaperSettings />
         <BitcoinDisplaySettings />
         {isDesktop && <ElectrumSettings />}
       </Stack>

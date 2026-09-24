@@ -59,7 +59,7 @@ function GlyphTile({
   )
 }
 
-function AccountArtwork({ account }: { account: AccountSummary }): JSX.Element {
+export function AccountArtwork({ account }: { account: AccountSummary }): JSX.Element {
   switch (account.kind) {
     case 'wallet':
       return account.wallet === null ? (
