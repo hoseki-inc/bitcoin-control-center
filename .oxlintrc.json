@@ -224,7 +224,8 @@
     "vitest/no-test-prefixes": "error",
     "vitest/prefer-comparison-matcher": "error",
     "vitest/prefer-equality-matcher": "error",
-    "vitest/prefer-expect-resolves": "error"
+    "vitest/prefer-expect-resolves": "error",
+    "vitest/prefer-expect-type-of": "error"
   },
   "overrides": [
     {
