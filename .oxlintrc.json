@@ -1,7 +1,7 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
   "ignorePatterns": ["packages/result/lib/core/**"],
-  "plugins": ["oxc", "typescript", "react", "jsx-a11y"],
+  "plugins": ["oxc", "typescript", "react", "jsx-a11y", "vitest"],
   "options": {
     "typeAware": true
   },
@@ -199,7 +199,8 @@
     "jsx-a11y/role-has-required-aria-props": "error",
     "jsx-a11y/role-supports-aria-props": "error",
     "jsx-a11y/scope": "error",
-    "jsx-a11y/tabindex-no-positive": "error"
+    "jsx-a11y/tabindex-no-positive": "error",
+    "vitest/consistent-each-for": ["error", { "describe": "each", "it": "each", "suite": "each", "test": "each" }]
   },
   "overrides": [
     {
