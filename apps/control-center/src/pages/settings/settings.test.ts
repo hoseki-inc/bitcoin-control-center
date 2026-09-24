@@ -3,6 +3,7 @@ import { ChakraProvider } from '@chakra-ui/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, createElement } from 'react'
 import { type Root, createRoot } from 'react-dom/client'
+import { MemoryRouter } from 'react-router'
 import superjson from 'superjson'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { BitcoinAmount } from '../../components/bitcoin-amount'
@@ -11,7 +12,7 @@ import { SettingsPage } from './index'
 vi.mock('../../mode', () => ({ isDesktop: false }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 // The wallpaper picker renders WebGL previews and reads the chain tip; it is covered separately.
-vi.mock('./wallpaper-settings', () => ({ WallpaperSettings: () => null }))
+vi.mock('./wallpaper-settings', () => ({ WallpaperRow: () => null }))
 
 let root: Root
 let container: HTMLDivElement
@@ -38,7 +39,7 @@ async function mount(): Promise<void> {
         createElement(
           ChakraProvider,
           null,
-          createElement(SettingsPage),
+          createElement(MemoryRouter, null, createElement(SettingsPage)),
           createElement('div', { id: 'live-balance' }, createElement(BitcoinAmount, { btc: '2.1' })),
         ),
       ),

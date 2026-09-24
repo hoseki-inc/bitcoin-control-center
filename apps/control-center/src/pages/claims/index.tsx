@@ -15,10 +15,12 @@ import {
   useDisclosure,
 } from '@chakra-ui/react'
 import { EmptyView, ErrorBanner, Spinner } from '@hoseki/packages/ui/design-system'
+import { springs } from '@hoseki/packages/ui/design-system/animations/motion'
 import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
 import { ClaimCardKeystores, getBadgeConfigForClaim } from '@hoseki/packages/ui/prove-verify-ui'
 import { CheckCircleFilledIcon } from '@hoseki/packages/ui/prove-verify-ui/icons/check-circle-filled'
 import { StatusBadge, type StatusBadgeProps } from '@hoseki/packages/ui/prove-verify-ui/status-badge'
+import { motion } from 'framer-motion'
 import { ChartNoAxesCombined, FileText, LayoutGridIcon, ListIcon, Plus } from 'lucide-react'
 import { type ReactNode, useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router'
@@ -39,6 +41,13 @@ import { isExchangeConnected, needsExchangeReconnect } from '../../utils/exchang
 import { queryErrorMessage } from '../../utils/query-error-message'
 
 type ExchangeAccountDto = RouterOutput['portalProve']['exchange']['list'][number]
+
+const MotionBox = motion.create(Box)
+
+const VIEW_OPTIONS = [
+  { value: 'list', label: 'List view', icon: <ListIcon size={18} /> },
+  { value: 'cards', label: 'Card view', icon: <LayoutGridIcon size={18} /> },
+] as const
 type ManualAccountDto = RouterOutput['portalProve']['manual']['list'][number]
 type EtfAccountDto = RouterOutput['portalProve']['etf']['list'][number]
 
@@ -249,21 +258,43 @@ export function ClaimsPage(): JSX.Element {
                 )}
               </Flex>
             </Stack>
-            <Flex justify="flex-end" gap={1} flexShrink={0} role="group" aria-label="Account view">
-              <IconButton
-                aria-label="List view"
-                aria-pressed={view === 'list'}
-                icon={<ListIcon size={18} />}
-                variant={view === 'list' ? 'outline' : 'ghost'}
-                onClick={() => setView('list')}
-              />
-              <IconButton
-                aria-label="Card view"
-                aria-pressed={view === 'cards'}
-                icon={<LayoutGridIcon size={18} />}
-                variant={view === 'cards' ? 'outline' : 'ghost'}
-                onClick={() => setView('cards')}
-              />
+            <Flex
+              flexShrink={0}
+              role="group"
+              aria-label="Account view"
+              p="4px"
+              gap="2px"
+              borderRadius="full"
+              bg="var(--segment-track)"
+              boxShadow="inset 0 1px 2px rgb(0 0 0 / 0.06)"
+            >
+              {VIEW_OPTIONS.map((option) => (
+                <Box key={option.value} position="relative">
+                  {view === option.value && (
+                    <MotionBox
+                      layoutId="accounts-view-pill"
+                      position="absolute"
+                      inset={0}
+                      borderRadius="full"
+                      bg="var(--segment-pill)"
+                      boxShadow="var(--segment-pill-shadow)"
+                      transition={springs.pill}
+                    />
+                  )}
+                  <IconButton
+                    aria-label={option.label}
+                    aria-pressed={view === option.value}
+                    icon={option.icon}
+                    variant="ghost"
+                    size="sm"
+                    position="relative"
+                    color={view === option.value ? 'text.primary' : 'text.secondary'}
+                    _hover={{ bg: 'transparent', color: 'text.primary' }}
+                    _active={{ bg: 'transparent', transform: 'scale(0.94)' }}
+                    onClick={() => setView(option.value)}
+                  />
+                </Box>
+              ))}
             </Flex>
           </Flex>
         )}
@@ -433,9 +464,7 @@ function AccountCardFrame({
     <Stack
       as={Link}
       to={to}
-      bg="surface.raised"
-      border="1px solid"
-      borderColor="border.subtle"
+      layerStyle="edge"
       borderRadius="panel"
       p={4}
       gap={3}
@@ -443,7 +472,7 @@ function AccountCardFrame({
       minH="280px"
       textAlign="center"
       transition="border-color 150ms ease, background-color 150ms ease"
-      _hover={{ borderColor: 'border.strong', bg: 'surface.subtle' }}
+      _hover={{ bg: 'var(--edge-bg-hover)' }}
       _focusVisible={{ outline: '2px solid', outlineColor: 'focus.ring', outlineOffset: '3px' }}
     >
       <Flex minH={5} align="flex-start">
@@ -564,10 +593,9 @@ function AccountCard({ claim, balance, totalBtcSats, isLoadingBalance }: Account
 function EmptyHoldings({ onAdd }: { onAdd: () => void }): JSX.Element {
   return (
     <EmptyView
-      border="1px solid"
-      borderColor="border.subtle"
+      layerStyle="edge"
       borderRadius="panel"
-      bgGradient="linear(to-b, neutral.50, white)"
+      bgGradient="linear(to-b, surface.subtle, surface.raised)"
       title="Your Bitcoin, in one place"
       description="Connect a wallet or exchange to see your Bitcoin balance and start verifying your ownership."
       action={<Button onClick={onAdd}>Add Your First Account</Button>}

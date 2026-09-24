@@ -13,6 +13,7 @@ import { modalTheme } from './modal'
 import { pinInputTheme } from './pin-input-theme'
 import { popoverTheme } from './popover'
 import { progressTheme } from './progress-theme'
+import { switchTheme } from './switch-theme'
 import { tableTheme } from './table'
 import { textareaTheme } from './textarea-theme'
 import { tooltipTheme } from './tooltip'
@@ -79,6 +80,7 @@ export const theme = extendBaseTheme({
     PinInput: pinInputTheme,
     Popover: popoverTheme,
     Progress: progressTheme,
+    Switch: switchTheme,
     Modal: modalTheme,
     Select: {
       ...Select,

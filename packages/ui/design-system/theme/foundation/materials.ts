@@ -32,6 +32,18 @@ const darkMaterial = {
   '--glass-shine': '0.2',
   '--glass-drop': '0 4px 24px rgb(0 0 0 / 0.56)',
   '--glass-widget-shadow': '0 10px 20px rgb(0 0 0 / 0.25)',
+  // Raised cards and groups inside windows.
+  '--edge-bg': 'rgb(255 255 255 / 0.035)',
+  '--edge-bg-hover': 'rgb(255 255 255 / 0.06)',
+  '--edge-border': 'rgb(255 255 255 / 0.07)',
+  '--edge-shadow':
+    '0 4px 8px rgb(0 0 0 / 0.1), inset 0 1px 0 rgb(255 255 255 / 0.08), inset 0 0.5px 0 rgb(255 255 255 / 0.03), inset 0 -1px 0 rgb(0 0 0 / 0.12)',
+  // Segmented controls and form fields.
+  '--segment-track': 'rgb(255 255 255 / 0.06)',
+  '--segment-pill': 'rgb(255 255 255 / 0.14)',
+  '--segment-pill-shadow': 'inset 0 1px 0 rgb(255 255 255 / 0.12), 0 1px 3px rgb(0 0 0 / 0.25)',
+  '--field-bg': 'rgb(255 255 255 / 0.04)',
+  '--field-bg-hover': 'rgb(255 255 255 / 0.07)',
 }
 
 const lightMaterial: typeof darkMaterial = {
@@ -59,6 +71,16 @@ const lightMaterial: typeof darkMaterial = {
   '--glass-shine': '0.85',
   '--glass-drop': '0 4px 24px rgb(15 23 42 / 0.16)',
   '--glass-widget-shadow': '0 10px 24px rgb(15 23 42 / 0.12)',
+  '--edge-bg': 'rgb(255 255 255 / 0.72)',
+  '--edge-bg-hover': 'rgb(255 255 255 / 0.92)',
+  '--edge-border': 'rgb(15 23 42 / 0.08)',
+  '--edge-shadow':
+    '0 1px 2px rgb(15 23 42 / 0.04), 0 4px 12px rgb(15 23 42 / 0.04), inset 0 1px 0 rgb(255 255 255 / 0.9)',
+  '--segment-track': 'rgb(15 23 42 / 0.05)',
+  '--segment-pill': 'rgb(255 255 255 / 1)',
+  '--segment-pill-shadow': '0 1px 3px rgb(15 23 42 / 0.12), 0 0 0 0.5px rgb(15 23 42 / 0.06)',
+  '--field-bg': 'rgb(255 255 255 / 0.7)',
+  '--field-bg-hover': 'rgb(255 255 255 / 0.95)',
 }
 
 const shared = {
@@ -137,6 +159,12 @@ export const layerStyles = {
       '0 0 0 0.5px var(--glass-outline)',
     ].join(', '),
     pointerEvents: 'none',
+  },
+  /** A raised card or settings group inside a window. */
+  edge: {
+    bg: 'var(--edge-bg)',
+    border: '0.5px solid var(--edge-border)',
+    boxShadow: 'var(--edge-shadow)',
   },
   glassCell: { bgImage: 'var(--glass-cell-bg)', boxShadow: 'var(--glass-cell-shadow)' },
   glassTrack: { bg: 'var(--glass-track-bg)', boxShadow: 'var(--glass-track-shadow)' },

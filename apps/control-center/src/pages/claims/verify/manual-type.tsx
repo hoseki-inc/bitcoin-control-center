@@ -53,8 +53,7 @@ function TypeCard(props: {
       to={props.to}
       state={props.state}
       p={{ base: 4, md: 5 }}
-      border="1px solid"
-      borderColor="border.subtle"
+      layerStyle="edge"
       borderRadius="panel"
       align="center"
       gap={4}

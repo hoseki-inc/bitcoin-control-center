@@ -35,7 +35,7 @@ export function BitcoinPriceChart(): JSX.Element {
   const change = latest && first ? ((latest.value - first.value) / first.value) * 100 : null
 
   return (
-    <Box border="1px solid" borderColor="border.subtle" borderRadius="panel" pt={{ base: 5, md: 6 }} overflow="hidden">
+    <Box layerStyle="edge" borderRadius="panel" pt={{ base: 5, md: 6 }} overflow="hidden">
       <Flex px={{ base: 5, md: 6 }} justify="space-between" align="start" gap={4} flexWrap="wrap">
         <Box>
           <DashboardCardTitle>Bitcoin Price</DashboardCardTitle>

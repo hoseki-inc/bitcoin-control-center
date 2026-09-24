@@ -3,31 +3,78 @@ import {
   Button,
   ButtonGroup,
   Circle,
-  Divider,
   FormControl,
   FormLabel,
   HStack,
   Input,
-  Radio,
-  RadioGroup,
   Select,
-  SimpleGrid,
   Stack,
   Switch,
   Text,
   VStack,
 } from '@chakra-ui/react'
+import { SegmentedControl } from '@hoseki/packages/ui/design-system/forms/segmented-control'
 import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
+import { Bitcoin, ChevronRight, EyeOff, Rocket, SunMoon, UserRound } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
+import { Link } from 'react-router'
 import { toast } from 'sonner'
 import { type AppearancePreference, useAppearance } from '../../hooks/use-appearance'
 import { useBitcoinDisplay } from '../../hooks/use-bitcoin-display'
 import { useLocalSetting } from '../../hooks/use-local-settings'
+import { usePrivacy } from '../../hooks/use-privacy'
 import { bitcoinDisplayUnit, formatBitcoin } from '../../lib/bitcoin-display'
 import { isDesktop } from '../../mode'
-import { WallpaperSettings } from './wallpaper-settings'
+import { SettingsGroup, SettingsRow } from './settings-rows'
+import { WallpaperRow } from './wallpaper-settings'
 
 export function SettingsPage(): JSX.Element {
+  return (
+    <Box py={{ base: 6, md: 10 }} maxW="880px">
+      <PageHeading title="Settings" description="App preferences and personal information." />
+      <Stack mt={{ base: 8, md: 10 }} spacing={7}>
+        <SettingsGroup label="You">
+          <NameRow tone={0} />
+        </SettingsGroup>
+        <SettingsGroup label="Look and feel">
+          <AppearanceRow tone={1} />
+          <WallpaperRow tone={2} />
+          <PrivacyRow tone={3} />
+        </SettingsGroup>
+        <SettingsGroup label="Bitcoin">
+          <BitcoinDisplayRow tone={4} />
+        </SettingsGroup>
+        <SettingsGroup label="Help">
+          <Box
+            as={Link}
+            to="/getting-started"
+            display="block"
+            transition="background-color 150ms"
+            _hover={{ bg: 'var(--edge-bg-hover)' }}
+            _focusVisible={{ outline: '2px solid', outlineColor: 'focus.ring', outlineOffset: '-2px' }}
+          >
+            <SettingsRow
+              icon={Rocket}
+              tone={5}
+              title="Getting started"
+              description="Learn how to track your Bitcoin with Control Center."
+              control={<ChevronRight size={18} color="var(--hoseki-colors-text-tertiary)" aria-hidden />}
+            />
+          </Box>
+        </SettingsGroup>
+        {isDesktop && (
+          <SettingsGroup label="Connection">
+            <Box px={{ base: 4, md: 5 }} py={5}>
+              <ElectrumSettings />
+            </Box>
+          </SettingsGroup>
+        )}
+      </Stack>
+    </Box>
+  )
+}
+
+function NameRow({ tone }: { tone: number }): JSX.Element {
   const { data: savedName, isLoading, saveAsync, isSaving, isError } = useLocalSetting('user_name')
   const [draftName, setDraftName] = useState<string | null>(null)
   const name = draftName ?? savedName ?? ''
@@ -43,129 +90,96 @@ export function SettingsPage(): JSX.Element {
   }
 
   return (
-    <Box py={{ base: 6, md: 10 }} maxW="960px">
-      <PageHeading title="Settings" description="App preferences and personal information." />
-      <Stack mt={{ base: 8, md: 10 }} spacing={8} divider={<Divider borderColor="border.subtle" />}>
-        <SimpleGrid columns={{ base: 1, md: 2 }} spacing={{ base: 5, md: 10 }}>
-          <Box>
-            <Text as="h2" textStyle="text/md" fontWeight="semibold" color="text.primary">
-              Personal information
-            </Text>
-            <Text id="user-name-description" mt={2} textStyle="text/sm" color="text.secondary" maxW="32ch">
-              This name will appear on your generated statements.
-            </Text>
-          </Box>
-          <Box
-            as="form"
-            onSubmit={(event: React.FormEvent) => {
-              event.preventDefault()
-              void handleSave()
-            }}
+    <SettingsRow
+      icon={UserRound}
+      tone={tone}
+      title={<label htmlFor="user-name">Your name</label>}
+      description="Used in your greeting and on generated statements."
+      descriptionId="user-name-description"
+      control={
+        <Box
+          as="form"
+          display="flex"
+          gap={2}
+          onSubmit={(event: React.FormEvent) => {
+            event.preventDefault()
+            void handleSave()
+          }}
+        >
+          <FormControl isDisabled={isLoading || isSaving || isError} w={{ base: 'full', md: '240px' }}>
+            <Input
+              id="user-name"
+              autoComplete="name"
+              aria-describedby="user-name-description"
+              maxLength={200}
+              placeholder="Enter your name"
+              size="sm"
+              value={name}
+              onChange={(event) => setDraftName(event.target.value)}
+            />
+          </FormControl>
+          <Button
+            type="submit"
+            size="sm"
+            isLoading={isSaving}
+            loadingText="Saving"
+            isDisabled={isLoading || isError || name.trim() === (savedName ?? '')}
           >
-            <FormControl isDisabled={isLoading || isSaving || isError}>
-              <FormLabel htmlFor="user-name" textStyle="text/sm" mb={2}>
-                Your name
-              </FormLabel>
-              <Input
-                id="user-name"
-                autoComplete="name"
-                aria-describedby="user-name-description"
-                maxLength={200}
-                placeholder="Enter your name"
-                value={name}
-                onChange={(event) => setDraftName(event.target.value)}
-              />
-              {isError && (
-                <Text role="alert" textStyle="text/sm" color="status.error.fg" mt={2}>
-                  Could not load your name. Refresh to try again.
-                </Text>
-              )}
-              <Button
-                type="submit"
-                size="sm"
-                mt={4}
-                isLoading={isSaving}
-                loadingText="Saving"
-                isDisabled={isLoading || isError || name.trim() === (savedName ?? '')}
-              >
-                Save name
-              </Button>
-            </FormControl>
-          </Box>
-        </SimpleGrid>
-        <Stack align="start" gap={2}>
-          <Text as="h2" textStyle="text/md" fontWeight="semibold">
-            Getting Started
-          </Text>
-          <Text textStyle="text/sm" color="text.secondary">
-            Learn how to track your Bitcoin with Control Center.
-          </Text>
-          <Button as="a" href="/getting-started" variant="outline" mt={2}>
-            View Introduction
+            Save name
           </Button>
-        </Stack>
-        <AppearanceSettings />
-        <WallpaperSettings />
-        <BitcoinDisplaySettings />
-        {isDesktop && <ElectrumSettings />}
-      </Stack>
-    </Box>
+        </Box>
+      }
+      footer={
+        isError ? (
+          <Text role="alert" textStyle="text/sm" color="status.error.fg">
+            Could not load your name. Refresh to try again.
+          </Text>
+        ) : undefined
+      }
+    />
   )
 }
 
-const APPEARANCE_OPTIONS: ReadonlyArray<{ value: AppearancePreference; label: string; preview: string }> = [
-  { value: 'system', label: 'Match system', preview: 'linear-gradient(135deg, #F8FAFC 50%, #0B0C10 50%)' },
-  { value: 'light', label: 'Light', preview: 'linear-gradient(160deg, #FFFFFF, #E2E8F0)' },
-  { value: 'dark', label: 'Dark', preview: 'linear-gradient(160deg, #1B1D24, #0B0C10)' },
+const APPEARANCE_OPTIONS: ReadonlyArray<{ value: AppearancePreference; label: string }> = [
+  { value: 'system', label: 'System' },
+  { value: 'light', label: 'Light' },
+  { value: 'dark', label: 'Dark' },
 ]
 
-function AppearanceSettings(): JSX.Element {
+function AppearanceRow({ tone }: { tone: number }): JSX.Element {
   const { preference, setPreference } = useAppearance()
   return (
-    <Box as="section" aria-labelledby="appearance-heading">
-      <Text as="h2" id="appearance-heading" textStyle="text/md" fontWeight="semibold" color="text.primary">
-        Appearance
-      </Text>
-      <Text mt={2} textStyle="text/sm" color="text.secondary" id="appearance-description">
-        Use light or dark glass, or follow your device setting.
-      </Text>
-      <RadioGroup
-        value={preference}
-        onChange={(value) => setPreference(value as AppearancePreference)}
-        mt={5}
-        aria-labelledby="appearance-heading"
-        aria-describedby="appearance-description"
-      >
-        <SimpleGrid columns={{ base: 1, md: 3 }} spacing={3}>
-          {APPEARANCE_OPTIONS.map((option) => (
-            <Box
-              as="label"
-              key={option.value}
-              p={4}
-              border="1px solid"
-              borderRadius="panel"
-              borderColor={preference === option.value ? 'border.inverse' : 'border.subtle'}
-              bg={preference === option.value ? 'surface.subtle' : 'surface.raised'}
-              cursor="pointer"
-              transition="border-color 150ms ease, background-color 150ms ease"
-              _hover={{ borderColor: 'border.strong' }}
-              _focusWithin={{ outline: '2px solid', outlineColor: 'focus.ring', outlineOffset: '3px' }}
-            >
-              <HStack justify="space-between" mb={4}>
-                <Text textStyle="text/sm" fontWeight="medium">
-                  {option.label}
-                </Text>
-                <Radio as="span" value={option.value} colorScheme="gray" aria-label={option.label} />
-              </HStack>
-              <Box h={12} borderRadius="control" bg={option.preview} border="1px solid" borderColor="border.subtle" />
-            </Box>
-          ))}
-        </SimpleGrid>
-      </RadioGroup>
-      <Text mt={3} textStyle="text/xs" color="text.secondary">
-        Saved automatically in this browser.
-      </Text>
-    </Box>
+    <SettingsRow
+      icon={SunMoon}
+      tone={tone}
+      title="Appearance"
+      titleId="appearance-heading"
+      description="Light or dark glass, or follow your device."
+      descriptionId="appearance-description"
+      control={
+        <SegmentedControl
+          name="appearance"
+          value={preference}
+          options={APPEARANCE_OPTIONS}
+          onChange={setPreference}
+          ariaLabel="Appearance"
+          ariaDescribedBy="appearance-description"
+        />
+      }
+    />
+  )
+}
+
+function PrivacyRow({ tone }: { tone: number }): JSX.Element {
+  const { hidden, toggle } = usePrivacy()
+  return (
+    <SettingsRow
+      icon={EyeOff}
+      tone={tone}
+      title={<label htmlFor="hide-balances">Hide balances</label>}
+      description="Mask amounts everywhere, for screen sharing or working in public. Also in the dock."
+      control={<Switch id="hide-balances" isChecked={hidden} onChange={toggle} size="lg" />}
+    />
   )
 }
 
@@ -175,7 +189,7 @@ const DISPLAY_OPTIONS = [
   { value: 'btc', label: 'BTC' },
 ] as const
 
-function BitcoinDisplaySettings(): JSX.Element {
+function BitcoinDisplayRow({ tone }: { tone: number }): JSX.Element {
   const { unit, saveAsync, isSaving, isLoading, isError } = useBitcoinDisplay()
   const handleChange = async (value: string): Promise<void> => {
     try {
@@ -187,65 +201,45 @@ function BitcoinDisplaySettings(): JSX.Element {
   }
 
   return (
-    <Box as="section" aria-labelledby="bitcoin-display-heading">
-      <Text as="h2" id="bitcoin-display-heading" textStyle="text/md" fontWeight="semibold" color="text.primary">
-        Bitcoin display
-      </Text>
-      <Text mt={2} textStyle="text/sm" color="text.secondary" id="bitcoin-display-description">
-        Choose how Bitcoin amounts appear in the app. The Bitcoin symbol and sats both show whole satoshi amounts. Each
-        preview shows the same 2.1 BTC.
-      </Text>
-      <RadioGroup
-        value={unit}
-        onChange={(value) => void handleChange(value)}
-        mt={5}
-        aria-labelledby="bitcoin-display-heading"
-        aria-describedby="bitcoin-display-description"
-        isDisabled={isLoading || isSaving || isError}
-      >
-        <SimpleGrid columns={{ base: 1, md: 3 }} spacing={3}>
-          {DISPLAY_OPTIONS.map((option) => (
-            <Box
-              as="label"
-              key={option.value}
-              p={4}
-              border="1px solid"
-              borderRadius="panel"
-              borderColor={unit === option.value ? 'border.inverse' : 'border.subtle'}
-              bg={unit === option.value ? 'surface.subtle' : 'surface.raised'}
-              cursor={isLoading || isSaving || isError ? 'default' : 'pointer'}
-              transition="border-color 150ms ease, background-color 150ms ease"
-              _hover={{ borderColor: 'border.strong' }}
-              _focusWithin={{ outline: '2px solid', outlineColor: 'focus.ring', outlineOffset: '3px' }}
-            >
-              <HStack justify="space-between" mb={5}>
-                <Text textStyle="text/sm" fontWeight="medium">
-                  {option.label}
-                </Text>
-                <Radio as="span" value={option.value} colorScheme="gray" aria-label={option.label} />
-              </HStack>
-              <Text
-                textStyle="text/lg"
-                fontWeight="semibold"
-                color="text.primary"
-                sx={{ fontVariantNumeric: 'tabular-nums' }}
-              >
-                {formatBitcoin('2.1', option.value)}
-              </Text>
-            </Box>
-          ))}
-        </SimpleGrid>
-      </RadioGroup>
-      <Text mt={3} textStyle="text/xs" color={isError ? 'status.error.fg' : 'text.secondary'} role="status">
-        {isError
-          ? 'Could not load your preference. Refresh to try again.'
-          : isLoading
-            ? 'Loading preference…'
-            : isSaving
-              ? 'Saving preference…'
-              : 'Saved automatically on this Control Center.'}
-      </Text>
-    </Box>
+    <SettingsRow
+      icon={Bitcoin}
+      tone={tone}
+      title="Bitcoin display"
+      titleId="bitcoin-display-heading"
+      description="The Bitcoin symbol and sats both show whole satoshi amounts. Each option previews 2.1 BTC."
+      descriptionId="bitcoin-display-description"
+      footer={
+        <Stack spacing={3}>
+          <SegmentedControl
+            name="bitcoin-display"
+            value={unit}
+            onChange={(value) => void handleChange(value)}
+            ariaLabel="Bitcoin display"
+            ariaDescribedBy="bitcoin-display-description"
+            isDisabled={isLoading || isSaving || isError}
+            fullWidth
+            options={DISPLAY_OPTIONS.map((option) => ({
+              value: option.value,
+              ariaLabel: option.label,
+              label: (
+                <Box as="span" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                  {formatBitcoin('2.1', option.value)}
+                </Box>
+              ),
+            }))}
+          />
+          <Text textStyle="text/xs" color={isError ? 'status.error.fg' : 'text.secondary'} role="status">
+            {isError
+              ? 'Could not load your preference. Refresh to try again.'
+              : isLoading
+                ? 'Loading preference…'
+                : isSaving
+                  ? 'Saving preference…'
+                  : 'Saved automatically on this Control Center.'}
+          </Text>
+        </Stack>
+      }
+    />
   )
 }
 

@@ -577,7 +577,7 @@ export function DashboardPage(): JSX.Element {
             </Box>
 
             {/* Accumulation chart */}
-            <Box mb={6} border="1px solid" borderColor="border.subtle" borderRadius="panel" p={{ base: 4, md: 6 }}>
+            <Box mb={6} layerStyle="edge" borderRadius="panel" p={{ base: 4, md: 6 }}>
               <Flex align="center" justify="space-between" mb={5} gap={3} flexWrap="wrap">
                 <Flex align="center" gap={2}>
                   <DashboardCardTitle>Accumulation</DashboardCardTitle>
@@ -627,7 +627,7 @@ export function DashboardPage(): JSX.Element {
             </Box>
 
             {/* Monthly net change */}
-            <Box mb={6} border="1px solid" borderColor="border.subtle" borderRadius="panel" p={{ base: 4, md: 6 }}>
+            <Box mb={6} layerStyle="edge" borderRadius="panel" p={{ base: 4, md: 6 }}>
               <Flex align="center" gap={2} mb={5}>
                 <DashboardCardTitle>Monthly Net Change</DashboardCardTitle>
               </Flex>
@@ -1015,8 +1015,7 @@ function EmptyState(): JSX.Element {
     <Stack py={{ base: 6, md: 8 }} gap={6}>
       <PageHeading title="Portfolio" description="Choose accounts and a date range to see changes in your holdings." />
       <EmptyView
-        border="1px solid"
-        borderColor="border.subtle"
+        layerStyle="edge"
         borderRadius="panel"
         bgGradient="linear(to-b, neutral.50, white)"
         title="Watch your Bitcoin grow"

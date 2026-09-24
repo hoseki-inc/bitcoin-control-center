@@ -2,7 +2,11 @@
 export const inputProps = {
   border: '1px solid',
   borderColor: 'border.subtle',
-  borderRadius: 'control',
+  borderRadius: '12px',
+  bg: 'var(--field-bg)',
+  transitionProperty: 'background-color, border-color',
+  transitionDuration: '150ms',
+  _hover: { bg: 'var(--field-bg-hover)', borderColor: 'border.strong' },
 
   color: 'text.primary',
   textStyle: 'text/md',
@@ -19,6 +23,7 @@ export const inputProps = {
     color: 'text.tertiary',
   },
   _focus: {
+    bg: 'var(--field-bg-hover)',
     borderColor: 'focus.ring',
     borderWidth: '1px',
     outline: '2px solid',

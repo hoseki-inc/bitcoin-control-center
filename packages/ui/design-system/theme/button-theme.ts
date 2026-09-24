@@ -7,7 +7,8 @@ const baseStyle = {
   '@media (pointer: coarse)': { minH: '44px', minW: '44px' },
   fontFamily: 'body',
   fontWeight: 'medium',
-  borderRadius: 'control',
+  // Pills sit naturally on glass and match the dock, search and menus.
+  borderRadius: 'full',
   transitionProperty: 'common',
   transitionDuration: 'normal',
 
@@ -84,10 +85,11 @@ const variants = {
   primary: primaryVariant,
 
   outline: {
-    bgColor: 'surface.raised',
+    bgColor: 'var(--edge-bg)',
     color: 'text.primary',
     border: '1px solid',
     borderColor: 'border.subtle',
+    boxShadow: 'var(--edge-shadow)',
 
     _hover: {
       bgColor: 'surface.subtle',

@@ -4,7 +4,8 @@ export const tokens = {
   colors,
   radii: {
     control: '8px',
-    panel: '12px',
+    // Softer corners suit glass windows; dialogs and windows go rounder still.
+    panel: '16px',
     dialog: '16px',
   },
   shadows: {

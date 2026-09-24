@@ -20,9 +20,21 @@ const appearanceManager: NonNullable<ChakraProviderProps['colorModeManager']> = 
   set: () => undefined,
 }
 
+// Toasts use the glass toast material; sonner's own icons carry the status colour.
+const toastStyle = {
+  background: 'var(--toast-tint)',
+  backdropFilter: 'var(--toast-filter)',
+  WebkitBackdropFilter: 'var(--toast-filter)',
+  border: '0.5px solid var(--material-edge)',
+  borderRadius: 'var(--radius-toast)',
+  boxShadow: 'inset 0 1px rgb(255 255 255 / var(--material-shine)), var(--toast-shadow)',
+  color: 'var(--hoseki-colors-text-primary)',
+  fontFamily: 'inherit',
+} as const
+
 function ThemedToaster(): JSX.Element {
   const { colorMode } = useColorMode()
-  return <Toaster position="top-right" richColors theme={colorMode} />
+  return <Toaster position="top-right" theme={colorMode} offset={20} toastOptions={{ style: toastStyle }} />
 }
 
 export function Providers({ children }: { children: ReactNode }): JSX.Element {

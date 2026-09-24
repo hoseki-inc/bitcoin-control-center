@@ -6,7 +6,7 @@ export function Card({
   ...rest
 }: { skipPadding?: boolean; children: React.ReactNode } & BoxProps): JSX.Element {
   return (
-    <Box bgColor="surface.raised" p={skipPadding ? 0 : 6} borderRadius="panel" {...rest}>
+    <Box layerStyle="edge" p={skipPadding ? 0 : 6} borderRadius="panel" {...rest}>
       {children}
     </Box>
   )

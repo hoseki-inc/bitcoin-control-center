@@ -11,8 +11,7 @@ export function StatementsTable({ statements }: { statements: StatementDto[] }):
       tabIndex={0}
       role="region"
       aria-label="Statements table"
-      border="1px solid"
-      borderColor="border.subtle"
+      layerStyle="edge"
       borderRadius="panel"
     >
       <Table variant="data">
