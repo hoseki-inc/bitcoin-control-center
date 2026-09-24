@@ -216,7 +216,8 @@
     "vitest/no-disabled-tests": "error",
     "vitest/no-focused-tests": "error",
     "vitest/no-hooks": "error",
-    "vitest/no-identical-title": "error"
+    "vitest/no-identical-title": "error",
+    "vitest/no-import-node-test": "error"
   },
   "overrides": [
     {

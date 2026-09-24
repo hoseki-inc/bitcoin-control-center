@@ -8,7 +8,7 @@
   "author": "Hoseki, Inc.",
   "main": "app/main/index.js",
   "scripts": {
-    "check": "tsc --noEmit && node --experimental-strip-types --test scripts/*.test.mjs",
+    "check": "tsc --noEmit && vitest run",
     "dev": "electron app/main/index.js",
     "dist:mac": "electron-builder --mac --universal",
     "dist:win": "electron-builder --win",

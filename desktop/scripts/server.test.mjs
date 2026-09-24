@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { test } from 'node:test'
+import { test } from 'vitest'
 import { startServer } from '../src/server.ts'
 
 /** @param {string} source */
@@ -7,7 +7,7 @@ function moduleUrl(source) {
   return `data:text/javascript,${encodeURIComponent(source)}`
 }
 
-void test('starts the bundled server and preserves the shutdown receiver', async () => {
+test('starts the bundled server and preserves the shutdown receiver', async () => {
   const server = await startServer(
     moduleUrl(`
     export async function main() {
@@ -20,7 +20,7 @@ void test('starts the bundled server and preserves the shutdown receiver', async
   await server.shutdown()
 })
 
-void test('awaits asynchronous shutdown and propagates its failure', async () => {
+test('awaits asynchronous shutdown and propagates its failure', async () => {
   const server = await startServer(
     moduleUrl(`
     export async function main() { return { async shutdown() {
@@ -32,7 +32,7 @@ void test('awaits asynchronous shutdown and propagates its failure', async () =>
   await assert.rejects(server.shutdown(), /Shutdown failed/)
 })
 
-void test('propagates startup failure', async () => {
+test('propagates startup failure', async () => {
   await assert.rejects(
     startServer(
       moduleUrl(`
@@ -44,12 +44,12 @@ void test('propagates startup failure', async () => {
 })
 
 for (const source of ['export const value = 1', 'export const main = 1']) {
-  void test(`rejects a missing or invalid entry point: ${source}`, async () => {
+  test(`rejects a missing or invalid entry point: ${source}`, async () => {
     await assert.rejects(startServer(moduleUrl(source)), /must export a main function/)
   })
 }
 for (const value of ['null', '{}', '{ shutdown: 1 }']) {
-  void test(`rejects an invalid server handle: ${value}`, async () => {
+  test(`rejects an invalid server handle: ${value}`, async () => {
     await assert.rejects(
       startServer(moduleUrl(`export async function main() { return ${value} }`)),
       /must provide a shutdown function/,

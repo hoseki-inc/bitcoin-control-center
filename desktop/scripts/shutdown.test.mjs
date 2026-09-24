@@ -1,7 +1,16 @@
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
-import { test } from 'node:test'
+import { test, vi } from 'vitest'
 import { createQuitHandler } from '../src/shutdown.ts'
+
+/** @param {import('vitest').TestContext} t */
+function useFakeTimers(t) {
+  // Restore timers for this test even if it fails or times out.
+  t.onTestFinished(() => {
+    vi.useRealTimers()
+  })
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+}
 
 /** @param {Partial<Parameters<typeof createQuitHandler>[0]>} overrides */
 function createHarness(overrides = {}) {
@@ -71,7 +80,7 @@ function createHarness(overrides = {}) {
   }
 }
 
-void test('waits for the server before stopping Tor and resuming quit', async () => {
+test('waits for the server before stopping Tor and resuming quit', async () => {
   let finish
   /** @type {Promise<void>} */
   const pending = new Promise((resolve) => {
@@ -88,7 +97,7 @@ void test('waits for the server before stopping Tor and resuming quit', async ()
   assert.equal(harness.exits, 1)
 })
 
-void test('repeated quit requests cannot bypass or duplicate pending cleanup', async () => {
+test('repeated quit requests cannot bypass or duplicate pending cleanup', async () => {
   let finish
   /** @type {Promise<void>} */
   const pending = new Promise((resolve) => {
@@ -108,7 +117,7 @@ void test('repeated quit requests cannot bypass or duplicate pending cleanup', a
 })
 
 for (const failingStep of ['shutdownServer', 'stopTor', 'destroyTray']) {
-  void test(`continues cleanup and quits after a failure in ${failingStep}`, async () => {
+  test(`continues cleanup and quits after a failure in ${failingStep}`, async () => {
     const harness = createHarness({
       [failingStep]: () => {
         throw new Error('Synthetic cleanup failure')
@@ -121,23 +130,23 @@ for (const failingStep of ['shutdownServer', 'stopTor', 'destroyTray']) {
   })
 }
 
-void test('forces quit after ten seconds when the server never settles', async (t) => {
-  t.mock.timers.enable({ apis: ['setTimeout'] })
+test('forces quit after ten seconds when the server never settles', async (t) => {
+  useFakeTimers(t)
   const harness = createHarness({ shutdownServer: async () => new Promise(() => {}) })
   harness.requestQuit()
-  t.mock.timers.tick(9_999)
+  vi.advanceTimersByTime(9_999)
   harness.requestQuit()
   assert.equal(harness.exits, 0)
   assert.deepEqual(harness.calls, ['server'])
-  t.mock.timers.tick(1)
+  vi.advanceTimersByTime(1)
   await harness.exited
   assert.deepEqual(harness.calls, ['server', 'tor', 'tray', 'force-quit'])
   assert.equal(harness.exits, 1)
 })
 
 for (const rejects of [false, true]) {
-  void test(`ignores a late server ${rejects ? 'rejection' : 'completion'} after forced exit`, async (t) => {
-    t.mock.timers.enable({ apis: ['setTimeout'] })
+  test(`ignores a late server ${rejects ? 'rejection' : 'completion'} after forced exit`, async (t) => {
+    useFakeTimers(t)
     let resolve, reject
     /** @type {Promise<void>} */
     const pending = new Promise((resolvePromise, rejectPromise) => {
@@ -146,7 +155,7 @@ for (const rejects of [false, true]) {
     })
     const harness = createHarness({ shutdownServer: async () => pending })
     harness.requestQuit()
-    t.mock.timers.tick(10_000)
+    vi.advanceTimersByTime(10_000)
     await harness.exited
     if (rejects) {
       reject(new Error('Late failure'))
@@ -161,18 +170,18 @@ for (const rejects of [false, true]) {
   })
 }
 
-void test('clears the deadline after a normal shutdown', async (t) => {
-  t.mock.timers.enable({ apis: ['setTimeout'] })
+test('clears the deadline after a normal shutdown', async (t) => {
+  useFakeTimers(t)
   const harness = createHarness()
   harness.requestQuit()
   await harness.exited
-  t.mock.timers.tick(10_000)
+  vi.advanceTimersByTime(10_000)
   assert.deepEqual(harness.calls, ['server', 'tor', 'tray', 'quit'])
   assert.equal(harness.exits, 1)
 })
 
-void test('still forces exit when cleanup throws after the deadline', async (t) => {
-  t.mock.timers.enable({ apis: ['setTimeout'] })
+test('still forces exit when cleanup throws after the deadline', async (t) => {
+  useFakeTimers(t)
   const harness = createHarness({
     shutdownServer: async () => new Promise(() => {}),
     stopTor: () => {
@@ -180,7 +189,7 @@ void test('still forces exit when cleanup throws after the deadline', async (t) 
     },
   })
   harness.requestQuit()
-  t.mock.timers.tick(10_000)
+  vi.advanceTimersByTime(10_000)
   await harness.exited
   assert.deepEqual(harness.calls, ['server', 'tor', 'tray', 'force-quit'])
   assert.equal(harness.exits, 1)
