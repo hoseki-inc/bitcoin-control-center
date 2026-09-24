@@ -1,16 +1,20 @@
 // @vitest-environment jsdom
 import { ChakraProvider } from '@chakra-ui/react'
+import type { PartialModuleMock } from '@hoseki/packages/testing/partial-module-mock'
 import { act, createElement } from 'react'
 import { type Root, createRoot } from 'react-dom/client'
+import type * as Sonner from 'sonner'
 import { toast } from 'sonner'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import { SettingsPage } from './index'
 
-vi.mock('../../mode', () => ({ isDesktop: true }))
-vi.mock('../../hooks/use-local-settings', () => ({
-  useLocalSetting: () => ({ data: null, isLoading: false, save: vi.fn(), isSaving: false }),
+vi.mock(import('../../mode'), () => ({ isDesktop: true }))
+vi.mock(import('../../hooks/use-local-settings'), () => ({
+  useLocalSetting: () => ({ data: null, isLoading: false, save: vi.fn<() => void>(), isSaving: false }),
 }))
-vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
+vi.mock<PartialModuleMock<typeof Sonner>>(import('sonner'), () => ({
+  toast: Object.assign(vi.fn<typeof Sonner.toast>(), { success: vi.fn(), error: vi.fn() }),
+}))
 
 let root: Root
 let container: HTMLDivElement

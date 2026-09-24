@@ -1,14 +1,19 @@
 // @vitest-environment node
 import { getBuiltinModule } from 'node:process'
 import { bip32 } from '@hoseki/packages/bitcoin'
+import type { PartialModuleMock } from '@hoseki/packages/testing/partial-module-mock'
+import type * as WalletUiModule from '@hoseki/packages/ui/wallet-ui'
 import type { LedgerScanUI } from '@hoseki/packages/ui/wallet-ui'
+import type * as LedgerBtcModule from '@ledgerhq/hw-app-btc'
 import Transport from '@ledgerhq/hw-transport'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import Decimal from 'decimal.js'
-import { type ComponentProps, StrictMode, act, createElement } from 'react'
+import { type ComponentProps, Fragment, StrictMode, act, createElement } from 'react'
 import { type Root, createRoot } from 'react-dom/client'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import { useLedgerStore } from '../../../hooks/use-ledger-store'
+import type * as LoggerModule from '../../../logger'
+import type * as TrpcModule from '../../../trpc'
 import type { RouterOutput } from '../../../trpc'
 import { LedgerScan } from './ledger-scan'
 import { probeLedger } from './probe-ledger'
@@ -31,7 +36,7 @@ const mocks = await vi.hoisted(async () => {
   }
 })
 // Keep the SDK's actual operation lock while replacing USB exchanges with synthetic data.
-vi.mock('@ledgerhq/hw-app-btc', () => ({
+vi.mock<PartialModuleMock<typeof LedgerBtcModule>>(import('@ledgerhq/hw-app-btc'), () => ({
   default: class LedgerBtcApp {
     private readonly transport: Transport
     public constructor({ transport }: { transport: Transport }) {
@@ -43,18 +48,18 @@ vi.mock('@ledgerhq/hw-app-btc', () => ({
     }
   },
 }))
-vi.mock('@hoseki/packages/ui/wallet-ui', async () => ({
+vi.mock<PartialModuleMock<typeof WalletUiModule>>(import('@hoseki/packages/ui/wallet-ui'), async () => ({
   createLedgerStore: (await import('@hoseki/packages/ui/wallet-ui/ledger/device-store')).createLedgerStore,
-  LedgerScanUI: (props: ScanProps): null => {
+  LedgerScanUI: (props: ScanProps) => {
     mocks.scan(props)
-    return null
+    return createElement(Fragment)
   },
 }))
-vi.mock('../../../logger', () => ({
-  browserLogger: { debug: vi.fn(), error: vi.fn() },
-  captureHardwareWalletError: vi.fn(),
+vi.mock<PartialModuleMock<typeof LoggerModule>>(import('../../../logger'), () => ({
+  browserLogger: { debug: vi.fn<() => void>(), error: vi.fn<() => void>() },
+  captureHardwareWalletError: vi.fn<() => void>(),
 }))
-vi.mock('../../../trpc', () => ({
+vi.mock<PartialModuleMock<typeof TrpcModule>>(import('../../../trpc'), () => ({
   trpc: { useUtils: () => ({ portalProve: { onchain: { bitcoinAccountBalances: { fetch: mocks.fetch } } } }) },
 }))
 

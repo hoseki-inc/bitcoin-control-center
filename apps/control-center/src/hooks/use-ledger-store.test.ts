@@ -1,10 +1,14 @@
 // @vitest-environment node
+import type { PartialModuleMock } from '@hoseki/packages/testing/partial-module-mock'
+import type * as LedgerBtcModule from '@ledgerhq/hw-app-btc'
 import Transport from '@ledgerhq/hw-transport'
 import { act, createElement } from 'react'
 import { type Root, createRoot } from 'react-dom/client'
+import type * as Sonner from 'sonner'
 import { toast } from 'sonner'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import { closeDesktopLedger } from '../lib/open-desktop-ledger'
+import type * as LoggerModule from '../logger'
 import { useLedgerStore, useToastOnLedgerDisconnect } from './use-ledger-store'
 
 await vi.hoisted(async () => {
@@ -16,12 +20,18 @@ await vi.hoisted(async () => {
   vi.stubGlobal('navigator', window.navigator)
 })
 
-vi.mock('@ledgerhq/hw-app-btc', () => ({ default: class LedgerBtcApp {} }))
-vi.mock('@hoseki/packages/ui/wallet-ui', async () => ({
+vi.mock<PartialModuleMock<typeof LedgerBtcModule>>(import('@ledgerhq/hw-app-btc'), () => ({
+  default: class LedgerBtcApp {},
+}))
+vi.mock(import('@hoseki/packages/ui/wallet-ui'), async () => ({
   createLedgerStore: (await import('@hoseki/packages/ui/wallet-ui/ledger/device-store')).createLedgerStore,
 }))
-vi.mock('../logger', () => ({ browserLogger: { debug: vi.fn(), error: vi.fn() } }))
-vi.mock('sonner', () => ({ toast: { error: vi.fn() } }))
+vi.mock<PartialModuleMock<typeof LoggerModule>>(import('../logger'), () => ({
+  browserLogger: { debug: vi.fn<() => void>(), error: vi.fn<() => void>() },
+}))
+vi.mock<PartialModuleMock<typeof Sonner>>(import('sonner'), () => ({
+  toast: Object.assign(vi.fn<typeof Sonner.toast>(), { error: vi.fn() }),
+}))
 
 let root: Root
 let host: HTMLDivElement

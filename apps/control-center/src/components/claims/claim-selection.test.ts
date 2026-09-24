@@ -2,10 +2,13 @@
 import { Box } from '@chakra-ui/react'
 import type { ClaimId } from '@hoseki/packages/schemas'
 import { TestChakraProvider as ChakraProvider } from '@hoseki/packages/testing/chakra-provider'
+import type { PartialModuleMock } from '@hoseki/packages/testing/partial-module-mock'
 import { act, createElement } from 'react'
 import { type Root, createRoot } from 'react-dom/client'
 import { MemoryRouter } from 'react-router'
 import { assert, expect, it, onTestFinished, vi } from 'vitest'
+import type * as BalancesModule from '../../lib/balances'
+import type * as TrpcModule from '../../trpc'
 import { ClaimSelection } from './claim-selection'
 
 const { claimId, acquireDom } = await vi.hoisted(async () => {
@@ -46,7 +49,7 @@ const { claimId, acquireDom } = await vi.hoisted(async () => {
   return { claimId: 're_clmx_wallet' as const, acquireDom: takeDom }
 })
 
-vi.mock('../../trpc', () => ({
+vi.mock<PartialModuleMock<typeof TrpcModule>>(import('../../trpc'), () => ({
   trpc: {
     portalProve: {
       registry: {
@@ -54,8 +57,8 @@ vi.mock('../../trpc', () => ({
           list: {
             useQuery: () => ({
               data: [{ id: claimId, displayName: 'Savings wallet' }],
-              isLoading: false,
-              isError: false,
+              isLoading: false as const,
+              isError: false as const,
             }),
           },
         },
@@ -65,8 +68,8 @@ vi.mock('../../trpc', () => ({
     },
   },
 }))
-vi.mock('../../lib/balances', () => ({
-  useGetBalancesPerClaimIds: () => ({ data: new Map<ClaimId, null>(), isLoading: false, isSuccess: true }),
+vi.mock<PartialModuleMock<typeof BalancesModule>>(import('../../lib/balances'), () => ({
+  useGetBalancesPerClaimIds: () => ({ data: new Map<ClaimId, null>(), isLoading: false as const, isSuccess: true }),
 }))
 
 let root: Root
