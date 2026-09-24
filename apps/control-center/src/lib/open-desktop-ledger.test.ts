@@ -10,6 +10,17 @@ let transport: TransportWebHID
 let closeTransport: MockInstance<TransportWebHID['close']>
 let closeDevice: Mock<HIDDevice['close']>
 let removeDeviceListener: Mock<() => void>
+async function expectRejectedWithName(operation: Promise<unknown>, name: string): Promise<void> {
+  await operation.then(
+    () => {
+      throw new Error(`Expected operation to reject with ${name}`)
+    },
+    (error: unknown) => {
+      expect(error).toMatchObject({ name })
+    },
+  )
+}
+
 async function withTestSetup(run: () => Promise<void>): Promise<void> {
   // Vitest owns teardown so it has its own timeout and runs once, even after a test timeout.
   onTestFinished(async () => {
@@ -56,7 +67,7 @@ it('cancellation releases the HID handle even when the SDK operation never settl
     mocks.app.mockImplementation(async () => new Promise(() => undefined))
     const abort = new AbortController()
     const connection = openDesktopLedger(abort.signal)
-    const result = expect(connection).rejects.toMatchObject({ name: 'AbortError' })
+    const result = expectRejectedWithName(connection, 'AbortError')
     await Promise.resolve()
     abort.abort()
     await result
@@ -69,9 +80,7 @@ it('cancellation releases the HID handle even when the SDK operation never settl
 it('disconnecting during the app check releases the handle and reports disconnection', async () => {
   await withTestSetup(async () => {
     mocks.app.mockImplementation(async () => new Promise(() => undefined))
-    const result = expect(openDesktopLedger(new AbortController().signal)).rejects.toMatchObject({
-      name: 'DisconnectedDevice',
-    })
+    const result = expectRejectedWithName(openDesktopLedger(new AbortController().signal), 'DisconnectedDevice')
     await Promise.resolve()
     transport.emit('disconnect')
     await result
@@ -83,9 +92,7 @@ it('an unresponsive device times out instead of leaving the connection spinner r
   await withTestSetup(async () => {
     vi.useFakeTimers()
     mocks.app.mockImplementation(async () => new Promise(() => undefined))
-    const result = expect(openDesktopLedger(new AbortController().signal)).rejects.toMatchObject({
-      name: 'LedgerConnectionTimeout',
-    })
+    const result = expectRejectedWithName(openDesktopLedger(new AbortController().signal), 'LedgerConnectionTimeout')
     await vi.advanceTimersByTimeAsync(10_000)
     await result
     expect(closeDevice).toHaveBeenCalledOnce()
