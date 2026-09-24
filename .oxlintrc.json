@@ -219,7 +219,8 @@
     "vitest/no-identical-title": "error",
     "vitest/no-import-node-test": "error",
     "vitest/no-interpolation-in-snapshots": "error",
-    "vitest/no-mocks-import": "error"
+    "vitest/no-mocks-import": "error",
+    "vitest/no-standalone-expect": "error"
   },
   "overrides": [
     {
