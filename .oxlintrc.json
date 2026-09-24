@@ -214,7 +214,8 @@
     "vitest/no-commented-out-tests": "error",
     "vitest/no-conditional-tests": "error",
     "vitest/no-disabled-tests": "error",
-    "vitest/no-focused-tests": "error"
+    "vitest/no-focused-tests": "error",
+    "vitest/no-hooks": "error"
   },
   "overrides": [
     {

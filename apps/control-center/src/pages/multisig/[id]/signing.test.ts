@@ -1,7 +1,8 @@
 // @vitest-environment node
-import { ChakraProvider } from '@chakra-ui/react'
+import { Box } from '@chakra-ui/react'
 import { Address, DerivationPath, MultiSigAccount } from '@hoseki/packages/bitcoin'
 import { Err, Ok } from '@hoseki/packages/result'
+import { TestChakraProvider as ChakraProvider } from '@hoseki/packages/testing/chakra-provider'
 import { TrezorInfo } from '@hoseki/packages/ui/wallet-ui/trezor/trezor-info'
 import { HardwareDeviceError, Slip132 } from '@hoseki/packages/wallet'
 import TransportWebHID from '@ledgerhq/hw-transport-webhid'
@@ -16,7 +17,7 @@ import { type ReactElement, act, createElement } from 'react'
 import { type Root, createRoot } from 'react-dom/client'
 import type * as ReactRouter from 'react-router'
 import { RouterProvider, createMemoryRouter } from 'react-router'
-import { afterAll, afterEach, assert, beforeEach, describe, expect, it, vi } from 'vitest'
+import { assert, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { LedgerSigning as SinglesigLedgerSigning } from '../../../components/claims/ledger/ledger-signing'
 import { TrezorSigning as SinglesigTrezorSigning } from '../../../components/claims/trezor/trezor-signing'
 import type * as MultisigPageWrapperModule from '../../../components/multisig/multisig-page-wrapper'
@@ -28,31 +29,48 @@ import { MultisigSigningPage } from './signing'
 const mocks = await vi.hoisted(async () => {
   // Add a DOM without replacing Node byte-array globals used by the Bitcoin SDK.
   const { JSDOM } = await import('jsdom')
-  const { window } = new JSDOM('<!doctype html><html><body></body></html>', {
-    url: 'http://localhost',
-    pretendToBeVisual: true,
-  })
-  const domGlobals = {
-    window,
-    document: window.document,
-    navigator: window.navigator,
-    HTMLElement: window.HTMLElement,
-    Element: window.Element,
-    HTMLButtonElement: window.HTMLButtonElement,
-    Node: window.Node,
-    Event: window.Event,
-    FileReader: window.FileReader,
-    MouseEvent: window.MouseEvent,
-    getComputedStyle: window.getComputedStyle.bind(window),
-    requestAnimationFrame: window.requestAnimationFrame.bind(window),
-    cancelAnimationFrame: window.cancelAnimationFrame.bind(window),
+  function createDom() {
+    const { window } = new JSDOM('<!doctype html><html><body></body></html>', {
+      url: 'http://localhost',
+      pretendToBeVisual: true,
+    })
+    const domGlobals = {
+      window,
+      document: window.document,
+      navigator: window.navigator,
+      HTMLElement: window.HTMLElement,
+      Element: window.Element,
+      HTMLButtonElement: window.HTMLButtonElement,
+      Node: window.Node,
+      Event: window.Event,
+      FileReader: window.FileReader,
+      MouseEvent: window.MouseEvent,
+      getComputedStyle: window.getComputedStyle.bind(window),
+      requestAnimationFrame: window.requestAnimationFrame.bind(window),
+      cancelAnimationFrame: window.cancelAnimationFrame.bind(window),
+    }
+
+    return domGlobals
   }
-  for (const [name, value] of Object.entries(domGlobals)) {
+  let currentDom = createDom()
+  let acquired = false
+  for (const [name, value] of Object.entries(currentDom)) {
     vi.stubGlobal(name, value)
   }
+  function acquireDom() {
+    if (acquired) {
+      currentDom = createDom()
+    }
+    acquired = true
+    return currentDom
+  }
+
   let claim: ClaimDto | undefined
   return {
-    domGlobals,
+    acquireDom,
+    get domGlobals() {
+      return currentDom
+    },
     get claim(): ClaimDto {
       if (!claim) {
         throw new Error('Signing test claim has not been initialized')
@@ -235,11 +253,30 @@ async function renderSigningRoute(withWrapper = false): Promise<ReturnType<typeo
   return router
 }
 
-beforeEach(async () => {
+async function withTestSetup(run: () => Promise<void>, setup?: () => Promise<void>): Promise<void> {
+  const domGlobals = mocks.acquireDom()
+  const lifecycle = { finished: false }
+  // Vitest owns teardown so it has its own timeout and runs once, even after a test timeout.
+  onTestFinished(async () => {
+    lifecycle.finished = true
+
+    try {
+      await act(async () => {
+        root.unmount()
+      })
+      router?.dispose()
+      router = undefined
+      queryClient.clear()
+      container.remove()
+    } finally {
+      vi.unstubAllGlobals()
+      domGlobals.window.close()
+    }
+  })
   vi.clearAllMocks()
   mocks.navigate.mockReset()
   mocks.walletType = 'ledger'
-  for (const [name, value] of Object.entries(mocks.domGlobals)) {
+  for (const [name, value] of Object.entries(domGlobals)) {
     vi.stubGlobal(name, value)
   }
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
@@ -306,71 +343,69 @@ beforeEach(async () => {
   container = document.createElement('div')
   document.body.append(container)
   root = createRoot(container)
-})
-
-afterEach(async () => {
-  await act(async () => {
-    root.unmount()
-  })
-  router?.dispose()
-  router = undefined
-  queryClient.clear()
-  container.remove()
-  vi.unstubAllGlobals()
-})
-
-afterAll(() => {
-  mocks.domGlobals.window.close()
-})
+  if (setup) {
+    await setup()
+  }
+  if (lifecycle.finished) {
+    return
+  }
+  await run()
+}
 
 describe('Ledger multisig signing screen', () => {
-  beforeEach(async () => {
+  async function setupLedgerSigning(): Promise<void> {
     await render()
-  })
+  }
 
   it('advances through the real signing screens and submits the Ledger signature', async () => {
-    expect(container.textContent).not.toContain('Unknown error')
-    await reachSigning()
-    expect(mocks.ledger.init).toHaveBeenCalledTimes(1)
-    await clickSign()
-    expect(mocks.ledger.signMessage).toHaveBeenCalledWith(
-      "m/48'/0'/0'/2'/0/0",
-      'Synthetic multisig ownership challenge',
-    )
-    expect(mocks.completeMessage).toHaveBeenCalledWith({
-      signedMessageId: 're_mesg_message1',
-      signature: Buffer.from([31, ...Buffer.alloc(32, 0x11), ...Buffer.alloc(32, 0x22)]).toString('base64'),
-    })
-    expect(mocks.completeChallenge).not.toHaveBeenCalled()
-    expect(mocks.navigate).toHaveBeenCalledWith('/multisig/verify/receipt/re_clmx_claim1/re_ks_ledger', {
-      replace: true,
-    })
+    await withTestSetup(async () => {
+      expect(container.textContent).not.toContain('Unknown error')
+      await reachSigning()
+      expect(mocks.ledger.init).toHaveBeenCalledTimes(1)
+      await clickSign()
+      expect(mocks.ledger.signMessage).toHaveBeenCalledWith(
+        "m/48'/0'/0'/2'/0/0",
+        'Synthetic multisig ownership challenge',
+      )
+      expect(mocks.completeMessage).toHaveBeenCalledWith({
+        signedMessageId: 're_mesg_message1',
+        signature: Buffer.from([31, ...Buffer.alloc(32, 0x11), ...Buffer.alloc(32, 0x22)]).toString('base64'),
+      })
+      expect(mocks.completeChallenge).not.toHaveBeenCalled()
+      expect(mocks.navigate).toHaveBeenCalledWith('/multisig/verify/receipt/re_clmx_claim1/re_ks_ledger', {
+        replace: true,
+      })
+    }, setupLedgerSigning)
   })
 
   it('shows a real initialization failure and does not advance to signing', async () => {
-    mocks.ledger.init.mockRejectedValue(new Error('Ledger disconnected'))
-    await clickNext()
-    await waitForText('Ledger disconnected')
-    await clickNext()
-    expect(container.textContent).not.toContain('Proving Control With Your Ledger')
-    expect(mocks.ledger.signMessage).not.toHaveBeenCalled()
-    expect(mocks.completeMessage).not.toHaveBeenCalled()
+    await withTestSetup(async () => {
+      mocks.ledger.init.mockRejectedValue(new Error('Ledger disconnected'))
+      await clickNext()
+      await waitForText('Ledger disconnected')
+      await clickNext()
+      expect(container.textContent).not.toContain('Proving Control With Your Ledger')
+      expect(mocks.ledger.signMessage).not.toHaveBeenCalled()
+      expect(mocks.completeMessage).not.toHaveBeenCalled()
+    }, setupLedgerSigning)
   })
 
   it('shows a rejected device signature without submitting or completing the challenge', async () => {
-    mocks.ledger.signMessage.mockResolvedValue(Err(new HardwareDeviceError('Rejected', 'ledger', 'Signing canceled')))
-    await reachSigning()
-    await clickSign()
-    await waitForText('Signing canceled')
-    expect(container.textContent).not.toContain('Waiting for device confirmation')
-    expect(mocks.completeMessage).not.toHaveBeenCalled()
-    expect(mocks.completeChallenge).not.toHaveBeenCalled()
-    expect(mocks.navigate).not.toHaveBeenCalled()
+    await withTestSetup(async () => {
+      mocks.ledger.signMessage.mockResolvedValue(Err(new HardwareDeviceError('Rejected', 'ledger', 'Signing canceled')))
+      await reachSigning()
+      await clickSign()
+      await waitForText('Signing canceled')
+      expect(container.textContent).not.toContain('Waiting for device confirmation')
+      expect(mocks.completeMessage).not.toHaveBeenCalled()
+      expect(mocks.completeChallenge).not.toHaveBeenCalled()
+      expect(mocks.navigate).not.toHaveBeenCalled()
+    }, setupLedgerSigning)
   })
 })
 
 describe.each(['ledger', 'trezor'] as const)('%s as the final multisig cosigner', (walletType) => {
-  beforeEach(async () => {
+  async function setupFinalCosigner(): Promise<void> {
     mocks.walletType = walletType
     const challenge = mocks.claim.latestChallenge
     assert.exists(challenge, 'Expected the claim challenge')
@@ -383,157 +418,169 @@ describe.each(['ledger', 'trezor'] as const)('%s as the final multisig cosigner'
       signed: true,
     })
     await render()
-  })
+  }
 
   it('completes the challenge and navigates to the verified account receipt', async () => {
-    await reachSigning()
-    await clickSign()
-    await vi.waitFor(() => {
-      expect(mocks.navigate).toHaveBeenCalledWith('/accounts/verify/receipt/re_clmx_claim1')
-    })
-    expect(mocks.completeMessage).toHaveBeenCalledTimes(1)
-    expect(mocks.completeChallenge).toHaveBeenCalledExactlyOnceWith({ challengeId: 're_chal_challenge1' })
-    expect(mocks.invalidateClaim).toHaveBeenCalledWith({ id: 're_clmx_claim1' }, undefined, { throwOnError: true })
-    expect(mocks.fetchClaim).toHaveBeenCalledTimes(1)
-    expect(mocks.toastError).not.toHaveBeenCalled()
+    await withTestSetup(async () => {
+      await reachSigning()
+      await clickSign()
+      await vi.waitFor(() => {
+        expect(mocks.navigate).toHaveBeenCalledWith('/accounts/verify/receipt/re_clmx_claim1')
+      })
+      expect(mocks.completeMessage).toHaveBeenCalledTimes(1)
+      expect(mocks.completeChallenge).toHaveBeenCalledExactlyOnceWith({ challengeId: 're_chal_challenge1' })
+      expect(mocks.invalidateClaim).toHaveBeenCalledWith({ id: 're_clmx_claim1' }, undefined, { throwOnError: true })
+      expect(mocks.fetchClaim).toHaveBeenCalledTimes(1)
+      expect(mocks.toastError).not.toHaveBeenCalled()
+    }, setupFinalCosigner)
   })
 
   it('blocks another signing attempt until the final completion request finishes', async () => {
-    let resolveCompletion!: () => void
-    const pendingCompletion = new Promise<void>((resolve) => {
-      resolveCompletion = resolve
-    })
-    mocks.completeChallenge.mockReturnValueOnce(pendingCompletion)
-    await reachSigning()
-    await clickSign()
-    try {
-      expect(mocks.completeChallenge).toHaveBeenCalledTimes(1)
-      expect(mocks.navigate).not.toHaveBeenCalled()
-      expect(mocks.invalidateClaim).not.toHaveBeenCalled()
-      expect(getSignButton().disabled).toBe(true)
-      await clickSign()
-      expect(walletType === 'ledger' ? mocks.ledger.signMessage : mocks.trezorSign).toHaveBeenCalledTimes(1)
-      expect(mocks.completeMessage).toHaveBeenCalledTimes(1)
-      expect(mocks.completeChallenge).toHaveBeenCalledTimes(1)
-    } finally {
-      await act(async () => {
-        resolveCompletion()
+    await withTestSetup(async () => {
+      let resolveCompletion!: () => void
+      const pendingCompletion = new Promise<void>((resolve) => {
+        resolveCompletion = resolve
       })
-    }
-    await vi.waitFor(() => {
-      expect(mocks.navigate).toHaveBeenCalledWith('/accounts/verify/receipt/re_clmx_claim1')
-    })
-    expect(getSignButton().disabled).toBe(false)
+      mocks.completeChallenge.mockReturnValueOnce(pendingCompletion)
+      await reachSigning()
+      await clickSign()
+      try {
+        expect(mocks.completeChallenge).toHaveBeenCalledTimes(1)
+        expect(mocks.navigate).not.toHaveBeenCalled()
+        expect(mocks.invalidateClaim).not.toHaveBeenCalled()
+        expect(getSignButton().disabled).toBe(true)
+        await clickSign()
+        expect(walletType === 'ledger' ? mocks.ledger.signMessage : mocks.trezorSign).toHaveBeenCalledTimes(1)
+        expect(mocks.completeMessage).toHaveBeenCalledTimes(1)
+        expect(mocks.completeChallenge).toHaveBeenCalledTimes(1)
+      } finally {
+        await act(async () => {
+          resolveCompletion()
+        })
+      }
+      await vi.waitFor(() => {
+        expect(mocks.navigate).toHaveBeenCalledWith('/accounts/verify/receipt/re_clmx_claim1')
+      })
+      expect(getSignButton().disabled).toBe(false)
+    }, setupFinalCosigner)
   })
 
   it('blocks another signing attempt until the verified claim refresh finishes', async () => {
-    let resolveRefresh!: () => void
-    const pendingRefresh = new Promise<void>((resolve) => {
-      resolveRefresh = resolve
-    })
-    mocks.fetchClaim.mockImplementationOnce(async () => {
-      await pendingRefresh
-      return mocks.claim
-    })
-    await reachSigning()
-    await clickSign()
-    try {
-      expect(mocks.completeChallenge).toHaveBeenCalledTimes(1)
-      expect(mocks.invalidateClaim).toHaveBeenCalledWith({ id: 're_clmx_claim1' }, undefined, { throwOnError: true })
-      expect(mocks.navigate).not.toHaveBeenCalled()
-      expect(getSignButton().disabled).toBe(true)
-      await clickSign()
-      expect(walletType === 'ledger' ? mocks.ledger.signMessage : mocks.trezorSign).toHaveBeenCalledTimes(1)
-      expect(mocks.completeMessage).toHaveBeenCalledTimes(1)
-      expect(mocks.completeChallenge).toHaveBeenCalledTimes(1)
-    } finally {
-      await act(async () => {
-        resolveRefresh()
+    await withTestSetup(async () => {
+      let resolveRefresh!: () => void
+      const pendingRefresh = new Promise<void>((resolve) => {
+        resolveRefresh = resolve
       })
-    }
-    await vi.waitFor(() => {
-      expect(mocks.navigate).toHaveBeenCalledWith('/accounts/verify/receipt/re_clmx_claim1')
-    })
-    expect(getSignButton().disabled).toBe(false)
+      mocks.fetchClaim.mockImplementationOnce(async () => {
+        await pendingRefresh
+        return mocks.claim
+      })
+      await reachSigning()
+      await clickSign()
+      try {
+        expect(mocks.completeChallenge).toHaveBeenCalledTimes(1)
+        expect(mocks.invalidateClaim).toHaveBeenCalledWith({ id: 're_clmx_claim1' }, undefined, { throwOnError: true })
+        expect(mocks.navigate).not.toHaveBeenCalled()
+        expect(getSignButton().disabled).toBe(true)
+        await clickSign()
+        expect(walletType === 'ledger' ? mocks.ledger.signMessage : mocks.trezorSign).toHaveBeenCalledTimes(1)
+        expect(mocks.completeMessage).toHaveBeenCalledTimes(1)
+        expect(mocks.completeChallenge).toHaveBeenCalledTimes(1)
+      } finally {
+        await act(async () => {
+          resolveRefresh()
+        })
+      }
+      await vi.waitFor(() => {
+        expect(mocks.navigate).toHaveBeenCalledWith('/accounts/verify/receipt/re_clmx_claim1')
+      })
+      expect(getSignButton().disabled).toBe(false)
+    }, setupFinalCosigner)
   })
 
   it('recovers from a failed claim refresh on reload without requesting another signature', async () => {
-    mocks.fetchClaim.mockRejectedValueOnce(new Error('Sentinel account request failed'))
-    await reachSigning()
-    await clickSign()
-    await vi.waitFor(() => {
-      expect(mocks.toastError).toHaveBeenCalledExactlyOnceWith(
-        'Verification completed, but the account could not be refreshed. Reload the page.',
-      )
-    })
-    expect(queryClient.getQueryState(['claim', 're_clmx_claim1'])).toMatchObject({ status: 'error' })
-    expect(mocks.fetchClaim).toHaveBeenCalledTimes(1)
-    expect(mocks.completeChallenge).toHaveBeenCalledTimes(1)
-    expect(mocks.invalidateClaim).toHaveBeenCalledWith({ id: 're_clmx_claim1' }, undefined, { throwOnError: true })
-    expect(mocks.navigate).not.toHaveBeenCalled()
-    expect(
-      queryClient
-        .getMutationCache()
-        .getAll()
-        .find((mutation) => mutation.options.mutationFn === mocks.completeChallenge)?.state.status,
-    ).toBe('success')
+    await withTestSetup(async () => {
+      mocks.fetchClaim.mockRejectedValueOnce(new Error('Sentinel account request failed'))
+      await reachSigning()
+      await clickSign()
+      await vi.waitFor(() => {
+        expect(mocks.toastError).toHaveBeenCalledExactlyOnceWith(
+          'Verification completed, but the account could not be refreshed. Reload the page.',
+        )
+      })
+      expect(queryClient.getQueryState(['claim', 're_clmx_claim1'])).toMatchObject({ status: 'error' })
+      expect(mocks.fetchClaim).toHaveBeenCalledTimes(1)
+      expect(mocks.completeChallenge).toHaveBeenCalledTimes(1)
+      expect(mocks.invalidateClaim).toHaveBeenCalledWith({ id: 're_clmx_claim1' }, undefined, { throwOnError: true })
+      expect(mocks.navigate).not.toHaveBeenCalled()
+      expect(
+        queryClient
+          .getMutationCache()
+          .getAll()
+          .find((mutation) => mutation.options.mutationFn === mocks.completeChallenge)?.state.status,
+      ).toBe('success')
 
-    // Simulate reloading the signing URL with the completed claim returned by Sentinel.
-    await act(async () => {
-      root.render(null)
-    })
-    queryClient.clear()
-    const completedChallenge = mocks.claim.latestChallenge
-    assert.exists(completedChallenge, 'Expected the claim challenge')
-    mocks.claim = {
-      ...mocks.claim,
-      isVerified: true,
-      status: 'verified',
-      latestChallenge: {
-        ...completedChallenge,
-        completed: true,
-        messages: completedChallenge.messages.map((message) => Object.assign({}, message, { signed: true })),
-      },
-    }
-    mocks.fetchClaim.mockResolvedValue(mocks.claim)
-    const reloadedRouter = await renderSigningRoute()
-    await waitForText('Verified account receipt')
-    expect(reloadedRouter.state.location.pathname).toBe('/accounts/verify/receipt/re_clmx_claim1')
-    expect(reloadedRouter.state.historyAction).toBe('REPLACE')
-    expect(walletType === 'ledger' ? mocks.ledger.signMessage : mocks.trezorSign).toHaveBeenCalledTimes(1)
-    expect(mocks.completeMessage).toHaveBeenCalledTimes(1)
-    expect(mocks.completeChallenge).toHaveBeenCalledTimes(1)
+      // Simulate reloading the signing URL with the completed claim returned by Sentinel.
+      await act(async () => {
+        root.render(null)
+      })
+      queryClient.clear()
+      const completedChallenge = mocks.claim.latestChallenge
+      assert.exists(completedChallenge, 'Expected the claim challenge')
+      mocks.claim = {
+        ...mocks.claim,
+        isVerified: true,
+        status: 'verified',
+        latestChallenge: {
+          ...completedChallenge,
+          completed: true,
+          messages: completedChallenge.messages.map((message) => Object.assign({}, message, { signed: true })),
+        },
+      }
+      mocks.fetchClaim.mockResolvedValue(mocks.claim)
+      const reloadedRouter = await renderSigningRoute()
+      await waitForText('Verified account receipt')
+      expect(reloadedRouter.state.location.pathname).toBe('/accounts/verify/receipt/re_clmx_claim1')
+      expect(reloadedRouter.state.historyAction).toBe('REPLACE')
+      expect(walletType === 'ledger' ? mocks.ledger.signMessage : mocks.trezorSign).toHaveBeenCalledTimes(1)
+      expect(mocks.completeMessage).toHaveBeenCalledTimes(1)
+      expect(mocks.completeChallenge).toHaveBeenCalledTimes(1)
 
-    await act(async () => {
-      await reloadedRouter.navigate(-1)
-    })
-    await waitForText('Account list')
+      await act(async () => {
+        await reloadedRouter.navigate(-1)
+      })
+      await waitForText('Account list')
+    }, setupFinalCosigner)
   })
 
   it('displays final completion failures without navigating to the receipt', async () => {
-    mocks.completeChallenge.mockRejectedValueOnce(new Error('Sentinel could not complete verification'))
-    await reachSigning()
-    await clickSign()
-    await waitForText('Sentinel could not complete verification')
-    expect(container.textContent).not.toContain('Waiting for device confirmation')
-    expect(mocks.completeChallenge).toHaveBeenCalledTimes(1)
-    expect(mocks.toastError).toHaveBeenCalledWith('There was an error when completing your Multisig claim')
-    expect(mocks.navigate).not.toHaveBeenCalled()
-    expect(mocks.invalidateClaim).not.toHaveBeenCalled()
+    await withTestSetup(async () => {
+      mocks.completeChallenge.mockRejectedValueOnce(new Error('Sentinel could not complete verification'))
+      await reachSigning()
+      await clickSign()
+      await waitForText('Sentinel could not complete verification')
+      expect(container.textContent).not.toContain('Waiting for device confirmation')
+      expect(mocks.completeChallenge).toHaveBeenCalledTimes(1)
+      expect(mocks.toastError).toHaveBeenCalledWith('There was an error when completing your Multisig claim')
+      expect(mocks.navigate).not.toHaveBeenCalled()
+      expect(mocks.invalidateClaim).not.toHaveBeenCalled()
+    }, setupFinalCosigner)
   })
 })
 
 describe.each(['ledger', 'trezor'] as const)('%s verification of an already-verified account', (walletType) => {
   it('keeps a new incomplete challenge open for signing', async () => {
-    mocks.walletType = walletType
-    mocks.claim = { ...mocks.claim, isVerified: true, status: 'verified' }
-    const signingRouter = await renderSigningRoute()
-    await reachSigning()
-    expect(signingRouter.state.location.pathname).toBe(`/multisig/re_clmx_claim1/signing/${walletType}/re_ks_ledger`)
-    expect(getSignButton().disabled).toBe(false)
-    expect(container.textContent).not.toContain('Verified account receipt')
-    expect(mocks.navigate).not.toHaveBeenCalled()
-    expect(mocks.completeChallenge).not.toHaveBeenCalled()
+    await withTestSetup(async () => {
+      mocks.walletType = walletType
+      mocks.claim = { ...mocks.claim, isVerified: true, status: 'verified' }
+      const signingRouter = await renderSigningRoute()
+      await reachSigning()
+      expect(signingRouter.state.location.pathname).toBe(`/multisig/re_clmx_claim1/signing/${walletType}/re_ks_ledger`)
+      expect(getSignButton().disabled).toBe(false)
+      expect(container.textContent).not.toContain('Verified account receipt')
+      expect(mocks.navigate).not.toHaveBeenCalled()
+      expect(mocks.completeChallenge).not.toHaveBeenCalled()
+    })
   })
 })
 
@@ -576,82 +623,84 @@ function signingProps(): SigningFlowProps {
 
 describe.each(['singlesig', 'multisig'] as const)('%s Ledger retry', (flow) => {
   it('releases the HID handle and reloads even when the SDK exchange is stuck', async () => {
-    let finishClose: (() => void) | undefined
-    const close = vi.fn(
-      async () =>
-        new Promise<void>((resolve) => {
-          finishClose = resolve
+    await withTestSetup(async () => {
+      let finishClose: (() => void) | undefined
+      const close = vi.fn(
+        async () =>
+          new Promise<void>((resolve) => {
+            finishClose = resolve
+          }),
+      )
+      const device = {
+        opened: true,
+        vendorId: 0x2c97,
+        productId: 0,
+        productName: 'Test Ledger',
+        collections: [],
+        oninputreport: null,
+        addEventListener: vi.fn<() => void>(),
+        removeEventListener: vi.fn<() => void>(),
+        dispatchEvent: vi.fn(() => true),
+        open: vi.fn(async () => undefined),
+        close,
+        forget: vi.fn(async () => undefined),
+        sendReport: vi.fn(async () => undefined),
+        sendFeatureReport: vi.fn(async () => undefined),
+        receiveFeatureReport: vi.fn(async () => new DataView(new ArrayBuffer(0))),
+      } satisfies HIDDevice
+      const transport = new TransportWebHID(device)
+      transport.exchangeBusyPromise = new Promise<void>(() => undefined)
+      const sdkClose = vi.spyOn(transport, 'close')
+      mocks.ledger.reset.mockImplementation(async (closeTransport?: (device: TransportWebHID) => Promise<void>) => {
+        if (closeTransport) {
+          await closeTransport(transport)
+        }
+      })
+      mocks.ledger.init.mockRejectedValueOnce(new Error('Ledger connection failed'))
+      if (flow === 'multisig') {
+        await render()
+      } else {
+        const props = signingProps()
+        await render(createElement(SinglesigLedgerSigning, props))
+      }
+      await clickNext()
+      await waitForText('Ledger connection failed')
+      const reload = vi.fn()
+      vi.stubGlobal(
+        'window',
+        new Proxy(mocks.domGlobals.window, {
+          get(target, key): unknown {
+            // jsdom requires the real Window as the receiver for event-listener methods.
+            if (key === 'addEventListener' || key === 'removeEventListener') {
+              return target[key].bind(target)
+            }
+            return key === 'location' ? { reload } : Reflect.get(target, key, target)
+          },
         }),
-    )
-    const device = {
-      opened: true,
-      vendorId: 0x2c97,
-      productId: 0,
-      productName: 'Test Ledger',
-      collections: [],
-      oninputreport: null,
-      addEventListener: vi.fn<() => void>(),
-      removeEventListener: vi.fn<() => void>(),
-      dispatchEvent: vi.fn(() => true),
-      open: vi.fn(async () => undefined),
-      close,
-      forget: vi.fn(async () => undefined),
-      sendReport: vi.fn(async () => undefined),
-      sendFeatureReport: vi.fn(async () => undefined),
-      receiveFeatureReport: vi.fn(async () => new DataView(new ArrayBuffer(0))),
-    } satisfies HIDDevice
-    const transport = new TransportWebHID(device)
-    transport.exchangeBusyPromise = new Promise<void>(() => undefined)
-    const sdkClose = vi.spyOn(transport, 'close')
-    mocks.ledger.reset.mockImplementation(async (closeTransport?: (device: TransportWebHID) => Promise<void>) => {
-      if (closeTransport) {
-        await closeTransport(transport)
+      )
+      const retry = Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Retry')
+      assert.exists(retry, 'Missing Retry button')
+      await act(async () => {
+        retry.click()
+      })
+      try {
+        expect(sdkClose).not.toHaveBeenCalled()
+        expect(close).toHaveBeenCalledOnce()
+        expect(device.removeEventListener).toHaveBeenCalledWith('inputreport', transport.onInputReport)
+        expect(reload).not.toHaveBeenCalled()
+      } finally {
+        if (finishClose) {
+          const finish = finishClose
+          await act(async () => {
+            finish()
+          })
+        }
       }
+      await vi.waitFor(() => {
+        expect(reload).toHaveBeenCalledOnce()
+      })
+      expect(mocks.toastError).not.toHaveBeenCalled()
     })
-    mocks.ledger.init.mockRejectedValueOnce(new Error('Ledger connection failed'))
-    if (flow === 'multisig') {
-      await render()
-    } else {
-      const props = signingProps()
-      await render(createElement(SinglesigLedgerSigning, props))
-    }
-    await clickNext()
-    await waitForText('Ledger connection failed')
-    const reload = vi.fn()
-    vi.stubGlobal(
-      'window',
-      new Proxy(mocks.domGlobals.window, {
-        get(target, key): unknown {
-          // jsdom requires the real Window as the receiver for event-listener methods.
-          if (key === 'addEventListener' || key === 'removeEventListener') {
-            return target[key].bind(target)
-          }
-          return key === 'location' ? { reload } : Reflect.get(target, key, target)
-        },
-      }),
-    )
-    const retry = Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Retry')
-    assert.exists(retry, 'Missing Retry button')
-    await act(async () => {
-      retry.click()
-    })
-    try {
-      expect(sdkClose).not.toHaveBeenCalled()
-      expect(close).toHaveBeenCalledOnce()
-      expect(device.removeEventListener).toHaveBeenCalledWith('inputreport', transport.onInputReport)
-      expect(reload).not.toHaveBeenCalled()
-    } finally {
-      if (finishClose) {
-        const finish = finishClose
-        await act(async () => {
-          finish()
-        })
-      }
-    }
-    await vi.waitFor(() => {
-      expect(reload).toHaveBeenCalledOnce()
-    })
-    expect(mocks.toastError).not.toHaveBeenCalled()
   })
 })
 
@@ -711,167 +760,181 @@ async function submitAirgappedSignature(flow: AirgappedFlow): Promise<void> {
 }
 
 describe.each(['coldcard-file', 'coldcard-qr', 'keystone'] as const)('%s multisig completion', (flow) => {
-  beforeEach(async () => {
+  async function setupAirgappedSigning(): Promise<void> {
     mocks.walletType = flow === 'keystone' ? 'keystone' : 'coldcard'
     assert.exists(mocks.claim.keystores[0], 'Expected the first keystore')
     mocks.claim.keystores[0].model = flow === 'coldcard-qr' ? 'Q' : 'MK4'
-  })
+  }
 
   it('waits for the claim refresh before opening the partial receipt', async () => {
-    let finishRefresh!: () => void
-    const pending = new Promise<void>((resolve) => {
-      finishRefresh = resolve
-    })
-    mocks.fetchClaim.mockImplementationOnce(async () => {
-      await pending
-      return mocks.claim
-    })
-    await renderSigningRoute()
-    await reachAirgappedSigning(flow)
-    await submitAirgappedSignature(flow)
-    try {
+    await withTestSetup(async () => {
+      let finishRefresh!: () => void
+      const pending = new Promise<void>((resolve) => {
+        finishRefresh = resolve
+      })
+      mocks.fetchClaim.mockImplementationOnce(async () => {
+        await pending
+        return mocks.claim
+      })
+      await renderSigningRoute()
+      await reachAirgappedSigning(flow)
+      await submitAirgappedSignature(flow)
+      try {
+        await vi.waitFor(() => {
+          expect(mocks.fetchClaim).toHaveBeenCalledOnce()
+        })
+        expect(mocks.completeMessage).toHaveBeenCalledExactlyOnceWith({
+          signedMessageId: 're_mesg_message1',
+          signature: 'c3ludGhldGljLXNpZ25hdHVyZQ==',
+        })
+        expect(mocks.completeChallenge).not.toHaveBeenCalled()
+        expect(mocks.navigate).not.toHaveBeenCalled()
+      } finally {
+        await act(async () => {
+          finishRefresh()
+        })
+      }
       await vi.waitFor(() => {
-        expect(mocks.fetchClaim).toHaveBeenCalledOnce()
+        expect(mocks.navigate).toHaveBeenCalledExactlyOnceWith('/multisig/verify/receipt/re_clmx_claim1/re_ks_ledger', {
+          replace: true,
+        })
       })
-      expect(mocks.completeMessage).toHaveBeenCalledExactlyOnceWith({
-        signedMessageId: 're_mesg_message1',
-        signature: 'c3ludGhldGljLXNpZ25hdHVyZQ==',
-      })
-      expect(mocks.completeChallenge).not.toHaveBeenCalled()
-      expect(mocks.navigate).not.toHaveBeenCalled()
-    } finally {
-      await act(async () => {
-        finishRefresh()
-      })
-    }
-    await vi.waitFor(() => {
-      expect(mocks.navigate).toHaveBeenCalledExactlyOnceWith('/multisig/verify/receipt/re_clmx_claim1/re_ks_ledger', {
-        replace: true,
-      })
-    })
+    }, setupAirgappedSigning)
   })
 
   it('handles a rejected refresh without opening the receipt', async () => {
-    mocks.fetchClaim.mockRejectedValueOnce(new Error('Synthetic refresh failure'))
-    await renderSigningRoute()
-    await reachAirgappedSigning(flow)
-    await submitAirgappedSignature(flow)
-    await vi.waitFor(() => {
-      expect(mocks.toastError).toHaveBeenCalledWith(
-        'Signature saved, but the account could not be refreshed. Retry loading the account.',
-      )
-    })
-    expect(mocks.completeMessage).toHaveBeenCalledOnce()
-    expect(mocks.navigate).not.toHaveBeenCalled()
-    expect(mocks.completeChallenge).not.toHaveBeenCalled()
+    await withTestSetup(async () => {
+      mocks.fetchClaim.mockRejectedValueOnce(new Error('Synthetic refresh failure'))
+      await renderSigningRoute()
+      await reachAirgappedSigning(flow)
+      await submitAirgappedSignature(flow)
+      await vi.waitFor(() => {
+        expect(mocks.toastError).toHaveBeenCalledWith(
+          'Signature saved, but the account could not be refreshed. Retry loading the account.',
+        )
+      })
+      expect(mocks.completeMessage).toHaveBeenCalledOnce()
+      expect(mocks.navigate).not.toHaveBeenCalled()
+      expect(mocks.completeChallenge).not.toHaveBeenCalled()
+    }, setupAirgappedSigning)
   })
 
   it('handles rejected signatures without refreshing or completing the challenge', async () => {
-    mocks.completeMessage.mockRejectedValueOnce(new Error('Synthetic signature rejection'))
-    await renderSigningRoute()
-    await reachAirgappedSigning(flow)
-    await submitAirgappedSignature(flow)
-    await waitForText('Error completing challenge message')
-    expect(mocks.toastError).toHaveBeenCalledWith('The signing process did not complete successfully.')
-    expect(mocks.fetchClaim).not.toHaveBeenCalled()
-    expect(mocks.completeChallenge).not.toHaveBeenCalled()
-    expect(mocks.navigate).not.toHaveBeenCalled()
+    await withTestSetup(async () => {
+      mocks.completeMessage.mockRejectedValueOnce(new Error('Synthetic signature rejection'))
+      await renderSigningRoute()
+      await reachAirgappedSigning(flow)
+      await submitAirgappedSignature(flow)
+      await waitForText('Error completing challenge message')
+      expect(mocks.toastError).toHaveBeenCalledWith('The signing process did not complete successfully.')
+      expect(mocks.fetchClaim).not.toHaveBeenCalled()
+      expect(mocks.completeChallenge).not.toHaveBeenCalled()
+      expect(mocks.navigate).not.toHaveBeenCalled()
+    }, setupAirgappedSigning)
   })
 
   it('waits for final completion before refreshing the verified account', async () => {
-    const challenge = mocks.claim.latestChallenge
-    assert.exists(challenge, 'Expected the claim challenge')
-    assert.exists(challenge.messages[0], 'Expected the first challenge message')
-    assert.exists(mocks.claim.keystores[1], 'Expected the second keystore')
-    challenge.messages.push({
-      ...challenge.messages[0],
-      keystoreId: mocks.claim.keystores[1].id,
-      signedMessageId: 're_mesg_message0',
-      signed: true,
-    })
-    let finishCompletion!: () => void
-    const pending = new Promise<void>((resolve) => {
-      finishCompletion = resolve
-    })
-    mocks.completeChallenge.mockReturnValueOnce(pending)
-    await renderSigningRoute()
-    await reachAirgappedSigning(flow)
-    await submitAirgappedSignature(flow)
-    try {
+    await withTestSetup(async () => {
+      const challenge = mocks.claim.latestChallenge
+      assert.exists(challenge, 'Expected the claim challenge')
+      assert.exists(challenge.messages[0], 'Expected the first challenge message')
+      assert.exists(mocks.claim.keystores[1], 'Expected the second keystore')
+      challenge.messages.push({
+        ...challenge.messages[0],
+        keystoreId: mocks.claim.keystores[1].id,
+        signedMessageId: 're_mesg_message0',
+        signed: true,
+      })
+      let finishCompletion!: () => void
+      const pending = new Promise<void>((resolve) => {
+        finishCompletion = resolve
+      })
+      mocks.completeChallenge.mockReturnValueOnce(pending)
+      await renderSigningRoute()
+      await reachAirgappedSigning(flow)
+      await submitAirgappedSignature(flow)
+      try {
+        await vi.waitFor(() => {
+          expect(mocks.completeChallenge).toHaveBeenCalledExactlyOnceWith({ challengeId: 're_chal_challenge1' })
+        })
+        expect(mocks.fetchClaim).not.toHaveBeenCalled()
+        expect(mocks.navigate).not.toHaveBeenCalled()
+      } finally {
+        await act(async () => {
+          finishCompletion()
+        })
+      }
       await vi.waitFor(() => {
-        expect(mocks.completeChallenge).toHaveBeenCalledExactlyOnceWith({ challengeId: 're_chal_challenge1' })
+        expect(mocks.navigate).toHaveBeenCalledExactlyOnceWith('/accounts/verify/receipt/re_clmx_claim1')
       })
-      expect(mocks.fetchClaim).not.toHaveBeenCalled()
-      expect(mocks.navigate).not.toHaveBeenCalled()
-    } finally {
-      await act(async () => {
-        finishCompletion()
-      })
-    }
-    await vi.waitFor(() => {
-      expect(mocks.navigate).toHaveBeenCalledExactlyOnceWith('/accounts/verify/receipt/re_clmx_claim1')
-    })
-    expect(mocks.fetchClaim).toHaveBeenCalledOnce()
-    expect(mocks.toastError).not.toHaveBeenCalled()
+      expect(mocks.fetchClaim).toHaveBeenCalledOnce()
+      expect(mocks.toastError).not.toHaveBeenCalled()
+    }, setupAirgappedSigning)
   })
 
   it('handles final completion failures without opening a receipt', async () => {
-    const challenge = mocks.claim.latestChallenge
-    assert.exists(challenge, 'Expected the claim challenge')
-    assert.exists(challenge.messages[0], 'Expected the first challenge message')
-    assert.exists(mocks.claim.keystores[1], 'Expected the second keystore')
-    challenge.messages.push({
-      ...challenge.messages[0],
-      keystoreId: mocks.claim.keystores[1].id,
-      signedMessageId: 're_mesg_message0',
-      signed: true,
-    })
-    mocks.completeChallenge.mockRejectedValueOnce(new Error('Synthetic final completion failure'))
-    await renderSigningRoute()
-    await reachAirgappedSigning(flow)
-    await submitAirgappedSignature(flow)
-    await vi.waitFor(() => {
-      expect(mocks.toastError).toHaveBeenCalledWith('The signing process did not complete successfully.')
-    })
-    expect(mocks.navigate).not.toHaveBeenCalled()
-    expect(mocks.fetchClaim).not.toHaveBeenCalled()
+    await withTestSetup(async () => {
+      const challenge = mocks.claim.latestChallenge
+      assert.exists(challenge, 'Expected the claim challenge')
+      assert.exists(challenge.messages[0], 'Expected the first challenge message')
+      assert.exists(mocks.claim.keystores[1], 'Expected the second keystore')
+      challenge.messages.push({
+        ...challenge.messages[0],
+        keystoreId: mocks.claim.keystores[1].id,
+        signedMessageId: 're_mesg_message0',
+        signed: true,
+      })
+      mocks.completeChallenge.mockRejectedValueOnce(new Error('Synthetic final completion failure'))
+      await renderSigningRoute()
+      await reachAirgappedSigning(flow)
+      await submitAirgappedSignature(flow)
+      await vi.waitFor(() => {
+        expect(mocks.toastError).toHaveBeenCalledWith('The signing process did not complete successfully.')
+      })
+      expect(mocks.navigate).not.toHaveBeenCalled()
+      expect(mocks.fetchClaim).not.toHaveBeenCalled()
+    }, setupAirgappedSigning)
   })
 })
 
 describe('Trezor connection callback', () => {
   it.each(['result', 'rejection'] as const)('clears loading after a %s failure and permits retry', async (failure) => {
-    const error = new Error('Synthetic connection failure')
-    const onConnectTrezor = vi.fn<Parameters<typeof TrezorInfo>[0]['onConnectTrezor']>()
-    if (failure === 'result') {
-      onConnectTrezor.mockResolvedValueOnce(Err(error))
-    } else {
-      onConnectTrezor.mockRejectedValueOnce(error)
-    }
-    onConnectTrezor.mockResolvedValue(Ok())
-    await render(createElement(TrezorInfo, { onBack: vi.fn<() => void>(), onConnectTrezor }))
-    await clickButton('Next')
-    await waitForText('Synthetic connection failure')
-    expect(container.textContent).not.toContain('Awaiting account selection')
-    await clickButton('Next')
-    expect(onConnectTrezor).toHaveBeenCalledTimes(2)
-    expect(container.textContent).not.toContain('Synthetic connection failure')
-    expect(container.textContent).not.toContain('Awaiting account selection')
+    await withTestSetup(async () => {
+      const error = new Error('Synthetic connection failure')
+      const onConnectTrezor = vi.fn<Parameters<typeof TrezorInfo>[0]['onConnectTrezor']>()
+      if (failure === 'result') {
+        onConnectTrezor.mockResolvedValueOnce(Err(error))
+      } else {
+        onConnectTrezor.mockRejectedValueOnce(error)
+      }
+      onConnectTrezor.mockResolvedValue(Ok())
+      await render(createElement(TrezorInfo, { onBack: vi.fn<() => void>(), onConnectTrezor }))
+      await clickButton('Next')
+      await waitForText('Synthetic connection failure')
+      expect(container.textContent).not.toContain('Awaiting account selection')
+      await clickButton('Next')
+      expect(onConnectTrezor).toHaveBeenCalledTimes(2)
+      expect(container.textContent).not.toContain('Synthetic connection failure')
+      expect(container.textContent).not.toContain('Awaiting account selection')
+    })
   })
 })
 
 describe('Trezor singlesig callback', () => {
   it('clears signing progress after an unexpected SDK rejection', async () => {
-    mocks.walletType = 'trezor'
-    mocks.trezorSign.mockRejectedValueOnce(new Error('Unexpected Trezor failure'))
-    const props = signingProps()
-    await render(createElement(SinglesigTrezorSigning, props))
-    await reachSigning()
-    await clickSign()
-    await waitForText('Unexpected Trezor failure')
-    expect(container.textContent).not.toContain('Waiting for device confirmation')
-    expect(mocks.completeMessage).not.toHaveBeenCalled()
-    expect(mocks.completeChallenge).not.toHaveBeenCalled()
-    expect(props.onSigningComplete).not.toHaveBeenCalled()
+    await withTestSetup(async () => {
+      mocks.walletType = 'trezor'
+      mocks.trezorSign.mockRejectedValueOnce(new Error('Unexpected Trezor failure'))
+      const props = signingProps()
+      await render(createElement(SinglesigTrezorSigning, props))
+      await reachSigning()
+      await clickSign()
+      await waitForText('Unexpected Trezor failure')
+      expect(container.textContent).not.toContain('Waiting for device confirmation')
+      expect(mocks.completeMessage).not.toHaveBeenCalled()
+      expect(mocks.completeChallenge).not.toHaveBeenCalled()
+      expect(props.onSigningComplete).not.toHaveBeenCalled()
+    })
   })
 })
 
@@ -879,155 +942,193 @@ describe.each(['coldcard-file', 'coldcard-qr', 'keystone'] as const)('%s saved-s
   it.each(['retry', 'reload'] as const)(
     'recovers through the real page wrapper on %s without resubmitting',
     async (recovery) => {
-      mocks.walletType = flow === 'keystone' ? 'keystone' : 'coldcard'
-      assert.exists(mocks.claim.keystores[0], 'Expected the first keystore')
-      mocks.claim.keystores[0].model = flow === 'coldcard-qr' ? 'Q' : 'MK4'
-      mocks.fetchClaim.mockRejectedValueOnce(new Error('Temporary account refresh failure'))
-      mocks.completeMessage
-        .mockResolvedValueOnce(undefined)
-        .mockRejectedValue(new Error('Signed message already completed'))
-      await renderSigningRoute(true)
-      await reachAirgappedSigning(flow)
-      await submitAirgappedSignature(flow)
-      await waitForText('An error occurred while loading the claim')
-      expect(mocks.toastError).toHaveBeenCalledWith(
-        'Signature saved, but the account could not be refreshed. Retry loading the account.',
-      )
-      const challenge = mocks.claim.latestChallenge
-      assert.exists(challenge, 'Expected the claim challenge')
-      const savedClaim = {
-        ...mocks.claim,
-        latestChallenge: {
-          ...challenge,
-          messages: challenge.messages.map((message) => Object.assign({}, message, { signed: true })),
-        },
-      }
-      mocks.fetchClaim.mockResolvedValue(savedClaim)
-      if (recovery === 'retry') {
-        await clickButton('Retry')
-      } else {
-        await act(async () => {
-          root.render(null)
-        })
-        router?.dispose()
-        queryClient.clear()
-        mocks.claim = savedClaim
+      await withTestSetup(async () => {
+        mocks.walletType = flow === 'keystone' ? 'keystone' : 'coldcard'
+        assert.exists(mocks.claim.keystores[0], 'Expected the first keystore')
+        mocks.claim.keystores[0].model = flow === 'coldcard-qr' ? 'Q' : 'MK4'
+        mocks.fetchClaim.mockRejectedValueOnce(new Error('Temporary account refresh failure'))
+        mocks.completeMessage
+          .mockResolvedValueOnce(undefined)
+          .mockRejectedValue(new Error('Signed message already completed'))
         await renderSigningRoute(true)
-      }
-      await waitForText('Key receipt')
-      assert.exists(router, 'Expected the signing router')
-      expect(router.state.location.pathname).toBe('/multisig/verify/receipt/re_clmx_claim1/re_ks_ledger')
-      expect(router.state.historyAction).toBe('REPLACE')
-      expect(mocks.completeMessage).toHaveBeenCalledOnce()
-      expect(mocks.completeChallenge).not.toHaveBeenCalled()
+        await reachAirgappedSigning(flow)
+        await submitAirgappedSignature(flow)
+        await waitForText('An error occurred while loading the claim')
+        expect(mocks.toastError).toHaveBeenCalledWith(
+          'Signature saved, but the account could not be refreshed. Retry loading the account.',
+        )
+        const challenge = mocks.claim.latestChallenge
+        assert.exists(challenge, 'Expected the claim challenge')
+        const savedClaim = {
+          ...mocks.claim,
+          latestChallenge: {
+            ...challenge,
+            messages: challenge.messages.map((message) => Object.assign({}, message, { signed: true })),
+          },
+        }
+        mocks.fetchClaim.mockResolvedValue(savedClaim)
+        if (recovery === 'retry') {
+          await clickButton('Retry')
+        } else {
+          await act(async () => {
+            root.render(null)
+          })
+          router?.dispose()
+          queryClient.clear()
+          mocks.claim = savedClaim
+          await renderSigningRoute(true)
+        }
+        await waitForText('Key receipt')
+        assert.exists(router, 'Expected the signing router')
+        expect(router.state.location.pathname).toBe('/multisig/verify/receipt/re_clmx_claim1/re_ks_ledger')
+        expect(router.state.historyAction).toBe('REPLACE')
+        expect(mocks.completeMessage).toHaveBeenCalledOnce()
+        expect(mocks.completeChallenge).not.toHaveBeenCalled()
+      })
     },
   )
 })
 
 it('resumes final verification from saved signatures and permits retry without signing again', async () => {
-  const challenge = mocks.claim.latestChallenge
-  assert.exists(challenge, 'Expected the claim challenge')
-  assert.exists(challenge.messages[0], 'Expected the first challenge message')
-  assert.exists(mocks.claim.keystores[1], 'Expected the second keystore')
-  mocks.claim = {
-    ...mocks.claim,
-    latestChallenge: {
-      ...challenge,
-      messages: [
-        { ...challenge.messages[0], signed: true },
-        { ...challenge.messages[0], keystoreId: mocks.claim.keystores[1].id, signed: true },
-      ],
-    },
-  }
-  mocks.completeChallenge.mockRejectedValueOnce(new Error('Temporary completion failure'))
-  assert.exists(mocks.claim.latestChallenge, 'Expected the claim challenge')
-  mocks.fetchClaim.mockResolvedValue({
-    ...mocks.claim,
-    latestChallenge: { ...mocks.claim.latestChallenge, completed: true },
-  })
-  await renderSigningRoute(true)
-  await clickButton('Finish verification')
-  await vi.waitFor(() => {
-    expect(mocks.toastError).toHaveBeenCalledWith('There was an error when completing your Multisig claim')
-  })
-  await vi.waitFor(async () => {
-    await act(async () => {
-      await new Promise((resolve) => {
-        setTimeout(resolve, 0)
-      })
+  await withTestSetup(async () => {
+    const challenge = mocks.claim.latestChallenge
+    assert.exists(challenge, 'Expected the claim challenge')
+    assert.exists(challenge.messages[0], 'Expected the first challenge message')
+    assert.exists(mocks.claim.keystores[1], 'Expected the second keystore')
+    mocks.claim = {
+      ...mocks.claim,
+      latestChallenge: {
+        ...challenge,
+        messages: [
+          { ...challenge.messages[0], signed: true },
+          { ...challenge.messages[0], keystoreId: mocks.claim.keystores[1].id, signed: true },
+        ],
+      },
+    }
+    mocks.completeChallenge.mockRejectedValueOnce(new Error('Temporary completion failure'))
+    assert.exists(mocks.claim.latestChallenge, 'Expected the claim challenge')
+    mocks.fetchClaim.mockResolvedValue({
+      ...mocks.claim,
+      latestChallenge: { ...mocks.claim.latestChallenge, completed: true },
     })
-    expect(
-      Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Finish verification')
-        ?.disabled,
-    ).toBe(false)
+    await renderSigningRoute(true)
+    await clickButton('Finish verification')
+    await vi.waitFor(() => {
+      expect(mocks.toastError).toHaveBeenCalledWith('There was an error when completing your Multisig claim')
+    })
+    await vi.waitFor(async () => {
+      await act(async () => {
+        await new Promise((resolve) => {
+          setTimeout(resolve, 0)
+        })
+      })
+      expect(
+        Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Finish verification')
+          ?.disabled,
+      ).toBe(false)
+    })
+    await clickButton('Finish verification')
+    await waitForText('Verified account receipt')
+    expect(mocks.completeMessage).not.toHaveBeenCalled()
+    expect(mocks.ledger.signMessage).not.toHaveBeenCalled()
+    expect(mocks.trezorSign).not.toHaveBeenCalled()
+    expect(mocks.completeChallenge).toHaveBeenCalledTimes(2)
   })
-  await clickButton('Finish verification')
-  await waitForText('Verified account receipt')
-  expect(mocks.completeMessage).not.toHaveBeenCalled()
-  expect(mocks.ledger.signMessage).not.toHaveBeenCalled()
-  expect(mocks.trezorSign).not.toHaveBeenCalled()
-  expect(mocks.completeChallenge).toHaveBeenCalledTimes(2)
 })
 
 it('does not submit a second Coldcard file signature while the first is pending', async () => {
-  mocks.walletType = 'coldcard'
-  assert.exists(mocks.claim.keystores[0], 'Expected the first keystore')
-  mocks.claim.keystores[0].model = 'MK4'
-  let finish!: () => void
-  const pending = new Promise<void>((resolve) => {
-    finish = resolve
-  })
-  mocks.completeMessage.mockReturnValueOnce(pending)
-  await renderSigningRoute()
-  await reachAirgappedSigning('coldcard-file')
-  try {
-    await submitAirgappedSignature('coldcard-file')
-    await submitAirgappedSignature('coldcard-file')
-    expect(mocks.completeMessage).toHaveBeenCalledOnce()
-  } finally {
-    await act(async () => {
-      finish()
+  await withTestSetup(async () => {
+    mocks.walletType = 'coldcard'
+    assert.exists(mocks.claim.keystores[0], 'Expected the first keystore')
+    mocks.claim.keystores[0].model = 'MK4'
+    let finish!: () => void
+    const pending = new Promise<void>((resolve) => {
+      finish = resolve
     })
-  }
+    mocks.completeMessage.mockReturnValueOnce(pending)
+    await renderSigningRoute()
+    await reachAirgappedSigning('coldcard-file')
+    try {
+      await submitAirgappedSignature('coldcard-file')
+      await submitAirgappedSignature('coldcard-file')
+      expect(mocks.completeMessage).toHaveBeenCalledOnce()
+    } finally {
+      await act(async () => {
+        finish()
+      })
+    }
+  })
 })
 
 it.each(['ledger', 'trezor'] as const)(
   'returns to the previous page with one Back after a %s signature',
   async (walletType) => {
-    mocks.walletType = walletType
-    const challenge = mocks.claim.latestChallenge
-    assert.exists(challenge, 'Expected the claim challenge')
-    mocks.fetchClaim.mockResolvedValue({
-      ...mocks.claim,
-      latestChallenge: {
-        ...challenge,
-        messages: challenge.messages.map((message) => Object.assign({}, message, { signed: true })),
-      },
+    await withTestSetup(async () => {
+      mocks.walletType = walletType
+      const challenge = mocks.claim.latestChallenge
+      assert.exists(challenge, 'Expected the claim challenge')
+      mocks.fetchClaim.mockResolvedValue({
+        ...mocks.claim,
+        latestChallenge: {
+          ...challenge,
+          messages: challenge.messages.map((message) => Object.assign({}, message, { signed: true })),
+        },
+      })
+      const signingRouter = await renderSigningRoute(true)
+      mocks.navigate.mockImplementation(signingRouter.navigate.bind(signingRouter))
+      await reachSigning()
+      await clickSign()
+      await waitForText('Key receipt')
+      await act(async () => {
+        await signingRouter.navigate(-1)
+      })
+      await waitForText('Account list')
+      expect(signingRouter.state.location.pathname).toBe('/accounts')
+      expect(mocks.completeMessage).toHaveBeenCalledOnce()
     })
-    const signingRouter = await renderSigningRoute(true)
-    mocks.navigate.mockImplementation(signingRouter.navigate.bind(signingRouter))
-    await reachSigning()
-    await clickSign()
-    await waitForText('Key receipt')
-    await act(async () => {
-      await signingRouter.navigate(-1)
-    })
-    await waitForText('Account list')
-    expect(signingRouter.state.location.pathname).toBe('/accounts')
-    expect(mocks.completeMessage).toHaveBeenCalledOnce()
   },
 )
 
 it.each(['identified', 'verified'] as const)(
   'preserves a key’s %s status when its device type is unknown',
-  (status) => {
-    const keystore = mocks.claim.keystores[0]
-    const message = mocks.claim.latestChallenge?.messages[0]
-    assert(keystore && message)
-    keystore.isIdentified = true
-    message.signed = status === 'verified'
-    expect(getIndicatorKeystores(mocks.claim)).toContainEqual(
-      expect.objectContaining({ id: keystore.id, status, wallet: null }),
-    )
+  async (status) => {
+    await withTestSetup(async () => {
+      const keystore = mocks.claim.keystores[0]
+      const message = mocks.claim.latestChallenge?.messages[0]
+      assert(keystore && message)
+      keystore.isIdentified = true
+      message.signed = status === 'verified'
+      expect(getIndicatorKeystores(mocks.claim)).toContainEqual(
+        expect.objectContaining({ id: keystore.id, status, wallet: null }),
+      )
+    })
   },
 )
+
+it.each([1, 2])('preserves Chakra visibility styles across test documents (%s)', async () => {
+  await withTestSetup(async () => {
+    await act(async () => {
+      root.render(
+        createElement(
+          ChakraProvider,
+          null,
+          createElement(Box, { 'data-style-probe': true, display: 'none' }, 'Style probe'),
+        ),
+      )
+    })
+    const probe = container.querySelector('[data-style-probe]')
+    assert.exists(probe)
+    expect(getComputedStyle(probe).display).toBe('none')
+
+    await act(async () => {
+      root.render(
+        createElement(
+          ChakraProvider,
+          null,
+          createElement(Box, { 'data-style-probe': true, display: 'flex' }, 'Style probe'),
+        ),
+      )
+    })
+    expect(getComputedStyle(probe).display).toBe('flex')
+  })
+})

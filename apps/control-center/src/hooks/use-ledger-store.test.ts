@@ -3,7 +3,7 @@ import Transport from '@ledgerhq/hw-transport'
 import { act, createElement } from 'react'
 import { type Root, createRoot } from 'react-dom/client'
 import { toast } from 'sonner'
-import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { expect, it, onTestFinished, vi } from 'vitest'
 import { closeDesktopLedger } from '../lib/open-desktop-ledger'
 import { useLedgerStore, useToastOnLedgerDisconnect } from './use-ledger-store'
 
@@ -38,7 +38,18 @@ function fakeTransport() {
   })
 }
 
-beforeEach(async () => {
+async function withTestSetup(run: () => Promise<void>): Promise<void> {
+  const lifecycle = { finished: false }
+  // Vitest owns teardown so it has its own timeout and runs once, even after a test timeout.
+  onTestFinished(async () => {
+    lifecycle.finished = true
+
+    await act(async () => {
+      root.unmount()
+    })
+    await useLedgerStore.getState().reset()
+    host.remove()
+  })
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
   vi.clearAllMocks()
   host = document.createElement('div')
@@ -47,60 +58,63 @@ beforeEach(async () => {
   await act(async () => {
     root.render(createElement(DisconnectNotifications))
   })
-})
+  if (lifecycle.finished) {
+    return
+  }
 
-afterEach(async () => {
-  await act(async () => {
-    root.unmount()
-  })
-  await useLedgerStore.getState().reset()
-  host.remove()
-})
+  await run()
+}
 
 it.each([
   { name: 'desktop', close: closeDesktopLedger },
   { name: 'browser', close: undefined },
 ])('does not show a disconnect error when reconnecting after leaving the $name flow', async ({ close }) => {
-  const previous = fakeTransport()
-  await useLedgerStore.getState().init(async () => previous)
+  await withTestSetup(async () => {
+    const previous = fakeTransport()
+    await useLedgerStore.getState().init(async () => previous)
 
-  // Cancel/back leaves a valid transport in the store; returning mounts the listener again.
-  await act(async () => {
-    root.render(null)
-  })
-  await act(async () => {
-    root.render(createElement(DisconnectNotifications))
-  })
-  await useLedgerStore.getState().reset(close)
-  await useLedgerStore.getState().init(async () => fakeTransport())
+    // Cancel/back leaves a valid transport in the store; returning mounts the listener again.
+    await act(async () => {
+      root.render(null)
+    })
+    await act(async () => {
+      root.render(createElement(DisconnectNotifications))
+    })
+    await useLedgerStore.getState().reset(close)
+    await useLedgerStore.getState().init(async () => fakeTransport())
 
-  expect(previous.close).toHaveBeenCalledOnce()
-  expect(useLedgerStore.getState().isConnected).toBe(true)
-  expect(toast.error).not.toHaveBeenCalled()
+    expect(previous.close).toHaveBeenCalledOnce()
+    expect(useLedgerStore.getState().isConnected).toBe(true)
+    expect(toast.error).not.toHaveBeenCalled()
+  })
 })
 
 it('still warns once for a real disconnect after reconnecting and ignores the old device', async () => {
-  const previous = fakeTransport()
-  const current = fakeTransport()
-  await useLedgerStore.getState().init(async () => previous)
-  await useLedgerStore.getState().reset(closeDesktopLedger)
-  await useLedgerStore.getState().init(async () => current)
+  await withTestSetup(async () => {
+    const previous = fakeTransport()
+    const current = fakeTransport()
+    await useLedgerStore.getState().init(async () => previous)
+    await useLedgerStore.getState().reset(closeDesktopLedger)
+    await useLedgerStore.getState().init(async () => current)
 
-  previous.emit('disconnect')
-  expect(toast.error).not.toHaveBeenCalled()
-  current.emit('disconnect')
-  current.emit('disconnect')
-  expect(toast.error).toHaveBeenCalledOnce()
-  expect(toast.error).toHaveBeenCalledWith('Ledger device disconnected', expect.any(Object))
-  expect(useLedgerStore.getState().isConnected).toBe(false)
+    previous.emit('disconnect')
+    expect(toast.error).not.toHaveBeenCalled()
+    current.emit('disconnect')
+    current.emit('disconnect')
+    expect(toast.error).toHaveBeenCalledOnce()
+    expect(toast.error).toHaveBeenCalledWith('Ledger device disconnected', expect.any(Object))
+    expect(useLedgerStore.getState().isConnected).toBe(false)
+  })
 })
 
 it('removes the disconnect notification listener when leaving the flow', async () => {
-  const transport = fakeTransport()
-  await useLedgerStore.getState().init(async () => transport)
-  await act(async () => {
-    root.render(null)
+  await withTestSetup(async () => {
+    const transport = fakeTransport()
+    await useLedgerStore.getState().init(async () => transport)
+    await act(async () => {
+      root.render(null)
+    })
+    transport.emit('disconnect')
+    expect(toast.error).not.toHaveBeenCalled()
   })
-  transport.emit('disconnect')
-  expect(toast.error).not.toHaveBeenCalled()
 })
