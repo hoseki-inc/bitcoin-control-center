@@ -6,6 +6,15 @@ import { z } from 'zod'
 
 const BASE_HOST = 'trading.robinhood.com'
 
+type RobinhoodRequestHeaders = {
+  'x-api-key': string
+  'x-timestamp': string
+  'x-signature': string
+  Accept: string
+  'User-Agent': string
+  'Content-Type'?: string
+}
+
 // --- Zod Schemas ---
 
 const RobinhoodHoldingSchema = z.object({
@@ -146,7 +155,7 @@ export class RobinhoodClient {
       return Err(new Error(`Failed to sign Robinhood API request: ${err instanceof Error ? err.message : String(err)}`))
     }
 
-    const headers: Record<string, string> = {
+    const headers: RobinhoodRequestHeaders = {
       'x-api-key': this.apiKey,
       'x-timestamp': String(timestamp),
       'x-signature': signature,

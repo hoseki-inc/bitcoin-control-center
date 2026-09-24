@@ -17,3 +17,8 @@ export function cjsInterop(module: unknown): unknown {
 export function hasKey<K extends PropertyKey>(value: object, key: K): value is object & Record<K, unknown> {
   return key in value
 }
+
+/** Read a possibly missing string key without widening the source table's type. */
+export function getRecordValue<T>(record: Readonly<Record<string, T>>, key: string): T | undefined {
+  return record[key]
+}

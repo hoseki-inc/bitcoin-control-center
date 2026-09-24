@@ -17,6 +17,10 @@ import { fetchTransactionEntries } from './tx_fetcher'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
+export interface StatementTransactions {
+  [accountId: string]: AggregatedTransaction[]
+}
+
 export interface StatementDto {
   id: string
   createdAt: Date
@@ -159,7 +163,7 @@ export class StatementService {
   }
 
   /** Mark a statement as completed with transaction data. */
-  public complete(id: string, transactionMap: Record<string, AggregatedTransaction[]>, dailyRates: DailyRates): void {
+  public complete(id: string, transactionMap: StatementTransactions, dailyRates: DailyRates): void {
     // Serialize bigint values in transactionMap to strings for JSON storage
     const serializedMap: Record<string, SerializedAggregatedTransaction[]> = {}
     for (const [key, txs] of Object.entries(transactionMap)) {
@@ -208,7 +212,7 @@ export class StatementService {
   /** Load a completed statement with deserialized transaction data. */
   public loadCompleted(
     id: string,
-  ): { row: StatementRow; transactionMap: Record<string, AggregatedTransaction[]>; dailyRates: DailyRates } | null {
+  ): { row: StatementRow; transactionMap: StatementTransactions; dailyRates: DailyRates } | null {
     const row = this.db
       .prepare<unknown[], CompletedStatementRow>('SELECT * FROM statements WHERE id = ? AND status = ?')
       .get(id, 'completed')
@@ -233,7 +237,7 @@ export class StatementService {
   public generateStatementData = asyncFn(
     async (
       input: GenerateStatementInput,
-    ): Promise<Result<{ transactionMap: Record<string, AggregatedTransaction[]>; dailyRates: DailyRates }, Error>> => {
+    ): Promise<Result<{ transactionMap: StatementTransactions; dailyRates: DailyRates }, Error>> => {
       const validation = validateStatementInput(input)
       if (validation.isErr()) {
         return Err(validation.unwrapErr())
@@ -249,7 +253,7 @@ export class StatementService {
         'Generating statement data',
       )
 
-      const transactionMap: Record<string, AggregatedTransaction[]> = {}
+      const transactionMap: StatementTransactions = {}
 
       // 1. Look up on-chain account descriptors
       const claimIds = [...new Set(input.claimIds)]
@@ -545,12 +549,12 @@ export class StatementService {
     }
   }
 
-  private deserializeTransactionMap(json: string): Record<string, AggregatedTransaction[]> {
+  private deserializeTransactionMap(json: string): StatementTransactions {
     const raw = parseUnknown(
       z.record(z.array(SerializedAggregatedTransactionSchema)),
       JSON.parse(json) as unknown,
     ).expect('Stored statement transactions are invalid')
-    const result: Record<string, AggregatedTransaction[]> = {}
+    const result: StatementTransactions = {}
     for (const [key, txs] of Object.entries(raw)) {
       // oxlint-disable-next-line oxc/no-map-spread -- Preserve additional stored fields in a new object with restored value types.
       result[key] = txs.map((tx) => ({

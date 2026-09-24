@@ -9,6 +9,14 @@ import { KeyExpression, KeyOrigin, keyFingerprintSchema } from './key-expression
 import { parseRecursiveParenthesisDescent } from './util/parse'
 import { Xpub } from './xpub'
 
+type ParsedDescriptorKey = {
+  keyOrigin: {
+    fingerprint: string
+    derivationPath: string | null
+  } | null
+  xpub: string
+}
+
 /**
  * Base class for account descriptor parsing with shared functionality.
  */
@@ -37,13 +45,7 @@ abstract class BaseAccountDescriptorParser {
    * @param keyExpressionStr Example: '[00000000/84h/0h/0h]xpub6CoK65dNvMYXaBDCfHautt78ZrbZ3pPL46782nrjJtLXWKHTxYdFEfrionLgaQtUKw8vUeKda4ynE4sUiUgr4rR9nrqjexjUhZVpWkJULVr/<0;1>/*'
    * @returns Parts structured into object
    */
-  protected static transformKey(keyExpressionStr: string): {
-    keyOrigin: {
-      fingerprint: string
-      derivationPath: string | null
-    } | null
-    xpub: string
-  } {
+  protected static transformKey(keyExpressionStr: string): ParsedDescriptorKey {
     const bracketRegex = /\[(.*?)\]/ // match `[<everything>]`
     const originResult = bracketRegex.exec(keyExpressionStr)
 

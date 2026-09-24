@@ -21,6 +21,12 @@ import { useEffect, useRef, useState } from 'react'
 import { type TransitionState, useTransitionState } from 'react-transition-state'
 import statementSheetAnimation from '../assets/lottie-animations/statement-entrance-animation.json'
 
+export type TransitionContent = {
+  pendingContent: JSX.Element
+  completedContent: JSX.Element
+  failedContent: JSX.Element
+}
+
 export type FullTransitionModalStatus = 'pending' | 'completed' | 'failed'
 type FullTransitionModalProps = {
   content: ReturnType<typeof getContent>
@@ -111,11 +117,7 @@ export function FullTransitionModal({
  * Returns the content for the three states: pending, completed, and failed.
  * Keeps the statement-generation copy in one place for the modal.
  */
-export function getContent(): {
-  pendingContent: JSX.Element
-  completedContent: JSX.Element
-  failedContent: JSX.Element
-} {
+export function getContent(): TransitionContent {
   const copy = {
     pending: {
       title: 'Finalizing Your Statement',

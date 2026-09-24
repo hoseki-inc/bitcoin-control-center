@@ -1,6 +1,8 @@
 import { Decimal as DecimalLib } from 'decimal.js'
 import { Panic } from '../result'
 
+export type CurrencyJson<T extends Code> = { code: T; exponent: number; decimals: number }
+
 export type Code = string
 
 export type CurrencyOptions<T extends Code> = Pick<Currency<T>, 'code' | 'decimals' | 'exponent'>
@@ -71,7 +73,7 @@ export class Currency<T extends Code = Code> {
     }
   }
 
-  public toJSON(): { code: T; exponent: number; decimals: number } {
+  public toJSON(): CurrencyJson<T> {
     return {
       code: this.code,
       exponent: this.exponent,

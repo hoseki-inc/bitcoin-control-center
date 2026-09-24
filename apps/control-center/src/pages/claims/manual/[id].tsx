@@ -19,6 +19,7 @@ import {
   Thead,
   Tr,
 } from '@chakra-ui/react'
+import { getRecordValue } from '@hoseki/packages/lib'
 import { ErrorBanner } from '@hoseki/packages/ui/design-system'
 import { TopBar } from '@hoseki/packages/ui/prove-verify-ui/top-bar'
 import { format } from 'date-fns'
@@ -27,12 +28,12 @@ import { Link, useNavigate, useParams } from 'react-router'
 import { toast } from 'sonner'
 import { trpc } from '../../../trpc'
 
-const TX_TYPE_LABELS: Record<string, string> = {
+const TX_TYPE_LABELS = {
   buy: 'Buy',
   sell: 'Sell',
   transfer_in: 'Transfer In',
   transfer_out: 'Transfer Out',
-}
+} satisfies Record<string, string>
 
 export function ManualAccountDetailsPage(): JSX.Element {
   const { accountId } = useParams<{ accountId: string }>()
@@ -417,7 +418,7 @@ export function ManualAccountDetailsPage(): JSX.Element {
                           fontWeight="medium"
                           color={tx.type === 'buy' || tx.type === 'transfer_in' ? 'success.600' : 'error.600'}
                         >
-                          {TX_TYPE_LABELS[tx.type] ?? tx.type}
+                          {getRecordValue(TX_TYPE_LABELS, tx.type) ?? tx.type}
                         </Text>
                       </Td>
                       <Td>

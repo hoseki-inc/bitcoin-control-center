@@ -8,6 +8,15 @@ import { assert, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { main } from '../startos/main'
 import { sdk } from '../startos/sdk'
 
+type InterfaceFixture = {
+  options: MainOptions
+  addresses: { available: Hostname[]; enabled: string[]; disabled: [string, number][] }
+  retry: ReturnType<typeof vi.fn>
+  changed: () => void
+  allowedHosts: () => string
+  setPresent: (present: boolean) => void
+}
+
 type MainOptions = Parameters<typeof main>[0]
 type Hostname = { hostname: string; port: number; ssl: boolean; public: boolean; metadata: { kind: string } }
 
@@ -21,17 +30,7 @@ const publicAddress: Hostname = {
 }
 const cleanups: (() => void)[] = []
 
-function setupInterface(
-  available: Hostname[],
-  enabled: string[] = [],
-): {
-  options: MainOptions
-  addresses: { available: Hostname[]; enabled: string[]; disabled: [string, number][] }
-  retry: ReturnType<typeof vi.fn>
-  changed: () => void
-  allowedHosts: () => string
-  setPresent: (present: boolean) => void
-} {
+function setupInterface(available: Hostname[], enabled: string[] = []): InterfaceFixture {
   const addresses = { available, enabled, disabled: [] as [string, number][] }
   const callbacks = new Set<() => void>()
   const leave: (() => void)[] = []

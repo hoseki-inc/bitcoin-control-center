@@ -3,6 +3,8 @@ import type { Opaque } from 'type-fest'
 import { Account } from './account'
 import { Network } from './network'
 
+export type NetworkAccountJson = { network: string; account: string }
+
 export type NetworkAccountCheckedString = Opaque<
   `${'bitcoin_mainnet' | 'bitcoin_testnet' | 'bitcoin_regtest'}::${string}`,
   'NetworkAccountString'
@@ -49,7 +51,7 @@ export class NetworkAccount<T extends Account = Account> {
     return `${this.network.toString()}::${this.account.toString()}` as NetworkAccountCheckedString
   }
 
-  public toJSON(): { network: string; account: string } {
+  public toJSON(): NetworkAccountJson {
     return {
       network: this.network.toString(),
       account: this.account.toString(),

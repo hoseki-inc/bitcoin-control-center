@@ -1,9 +1,11 @@
 import { expect, test } from 'vitest'
 import { type Mappable, Mapping } from './mapping'
 
+type MappingValue = { key: () => string }
+
 let c = 0
 
-function value(): { key: () => string } {
+function value(): MappingValue {
   const k = c
   c += 1
   return {

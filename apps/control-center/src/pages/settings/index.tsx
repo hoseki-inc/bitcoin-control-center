@@ -21,6 +21,8 @@ import { useLocalSetting } from '../../hooks/use-local-settings'
 import { isDesktop } from '../../mode'
 import type { RouterInput } from '../../trpc'
 
+type ElectrumStatusState = { status: ElectrumStatus | null; refresh: () => void }
+
 const ReconnectErrorSchema = z.object({
   error: z.object({
     json: z.object({ message: z.string() }).optional().catch(undefined),
@@ -121,7 +123,7 @@ const ElectrumStatusResponseSchema = z.object({
   result: z.object({ data: z.unknown() }),
 })
 
-function useElectrumStatus(): { status: ElectrumStatus | null; refresh: () => void } {
+function useElectrumStatus(): ElectrumStatusState {
   const [status, setStatus] = useState<ElectrumStatus | null>(null)
 
   const refresh = useCallback((): void => {

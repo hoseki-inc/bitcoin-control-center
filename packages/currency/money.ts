@@ -1,6 +1,16 @@
 import type { Decimal } from 'decimal.js'
 import { type Code, Currency, type CurrencyOptions } from './currency'
 
+export type MoneyJson<T extends Code> = { code: T; amount: string }
+
+export type MoneyDto<T extends Code> = {
+  code: T
+  minor: string
+  major: string
+  usdRate?: string
+  usdValue?: string
+}
+
 type Without<T, U> = {
   [K in Exclude<keyof T, keyof U>]?: never
 }
@@ -130,7 +140,7 @@ export class Money<T extends Code = Code> {
     return quote.withMinor(convertedAmount.times(quoteFactor))
   }
 
-  public toJSON(): { code: T; amount: string } {
+  public toJSON(): MoneyJson<T> {
     return { code: this.currency.code, amount: this.amount.toFixed() }
   }
 
@@ -138,13 +148,7 @@ export class Money<T extends Code = Code> {
     return JSON.stringify(this.toJSON())
   }
 
-  public toDto(rate?: Money<'USD'>): {
-    code: T
-    minor: string
-    major: string
-    usdRate?: string
-    usdValue?: string
-  } {
+  public toDto(rate?: Money<'USD'>): MoneyDto<T> {
     return {
       code: this.currency.code,
       minor: this.amount.toFixed(),

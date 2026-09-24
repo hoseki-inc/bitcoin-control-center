@@ -10,6 +10,11 @@ import { trpc } from '../trpc'
 import type { StatementDto } from '../trpc/server-types'
 import { getBrowserTimezone } from '../utils/timezone'
 
+type DashboardData = {
+  statements: StatementDto[]
+  isLoading: boolean
+}
+
 export function HomePage(): JSX.Element {
   const { statements, isLoading } = useDashboardData()
   const { isStatementsMadeEasyDismissed, updateUiSettings } = useUiSettings()
@@ -172,10 +177,7 @@ function StatMini({
   )
 }
 
-function useDashboardData(): {
-  statements: StatementDto[]
-  isLoading: boolean
-} {
+function useDashboardData(): DashboardData {
   const { data: statements, isLoading: isLoadingStatements } = trpc.portalProve.statement.list.useQuery()
   const { isLoading: isLoadingControlCenter } = trpc.portalProve.controlCenter.getData.useQuery({
     timeRange: '30d',

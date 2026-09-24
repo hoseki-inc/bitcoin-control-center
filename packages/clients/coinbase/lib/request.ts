@@ -7,6 +7,16 @@ import type { Credentials } from './credentials'
 import { ApiError, ErrorKind } from './errors'
 import { type JsonRecord, recordToHeaders, recordToSearchParams } from './util'
 
+type CoinbaseRequestHeaders = {
+  'CB-VERSION': string | undefined
+  Accept: string
+  'Content-Type': string
+  Authorization?: string
+  'CB-ACCESS-SIGN'?: string
+  'CB-ACCESS-TIMESTAMP'?: string
+  'CB-ACCESS-KEY'?: string
+}
+
 /** https://docs.cdp.coinbase.com/sign-in-with-coinbase/docs/api-key-auth-legacy */
 function sign(args: { timestamp: string; secret: string; method: 'GET' | 'POST'; path: string; body?: string }) {
   const message = args.timestamp + args.method + args.path + (args.body ?? '')
@@ -157,7 +167,7 @@ export const request = asyncFn(
   async <ST extends z.ZodTypeAny, SE extends z.ZodTypeAny>(
     args: RequestArgs<ST, SE>,
   ): Promise<Result<{ data: z.infer<ST>; response: SafeResponse }, ApiError>> => {
-    const headers: Record<string, string | undefined> = {
+    const headers: CoinbaseRequestHeaders = {
       'CB-VERSION': args.version,
       Accept: 'application/json',
       'Content-Type': 'application/json',
@@ -180,7 +190,7 @@ export const request = asyncFn(
 
     if (args.credentials) {
       if (args.credentials.variant === 'AccessToken') {
-        headers['Authorization'] = `Bearer ${args.credentials.accessToken}`
+        headers.Authorization = `Bearer ${args.credentials.accessToken}`
       } else if (args.credentials.variant === 'ApiKey') {
         const bodyForSign = body ?? ''
         const timestamp = Math.floor(Date.now() / 1000).toString()
@@ -205,7 +215,7 @@ export const request = asyncFn(
         if (token.isErr()) {
           return Err(new ApiError(ErrorKind.UnexpectedFailure({ error: token.error() }), 'Failed to sign request'))
         }
-        headers['Authorization'] = `Bearer ${token.value()}`
+        headers.Authorization = `Bearer ${token.value()}`
       }
     }
 
