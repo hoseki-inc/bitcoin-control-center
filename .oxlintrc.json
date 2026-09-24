@@ -208,7 +208,8 @@
         "pattern": "\\.test\\.[cm]?[jt]sx?$"
       }
     ],
-    "vitest/consistent-vitest-vi": "error"
+    "vitest/consistent-vitest-vi": "error",
+    "vitest/hoisted-apis-on-top": "error"
   },
   "overrides": [
     {
