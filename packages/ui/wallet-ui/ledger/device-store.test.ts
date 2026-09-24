@@ -1,9 +1,13 @@
+import type { PartialModuleMock } from '@hoseki/packages/testing/partial-module-mock'
+import type * as LedgerBtcModule from '@ledgerhq/hw-app-btc'
 import Transport from '@ledgerhq/hw-transport'
 import pino from 'pino'
 import { expect, it, vi } from 'vitest'
 import { createLedgerStore } from './device-store'
 
-vi.mock('@ledgerhq/hw-app-btc', () => ({ default: class LedgerBtcApp {} }))
+vi.mock<PartialModuleMock<typeof LedgerBtcModule>>(import('@ledgerhq/hw-app-btc'), () => ({
+  default: class LedgerBtcApp {},
+}))
 
 function fakeTransport() {
   return Object.assign(new Transport(), {

@@ -1,10 +1,14 @@
 // @vitest-environment jsdom
 import { ChakraProvider } from '@chakra-ui/react'
+import type { PartialModuleMock } from '@hoseki/packages/testing/partial-module-mock'
+import type * as DesignSystemModule from '@hoseki/packages/ui/design-system'
 import { QueryClient, QueryObserver, onlineManager } from '@tanstack/react-query'
 import { act, createElement } from 'react'
 import { type Root, createRoot } from 'react-dom/client'
+import type * as ReactRouter from 'react-router'
 import { assert, describe, expect, it, onTestFinished, vi } from 'vitest'
 import type { AccountsSidebar } from '../../components/dashboard-charts/accounts-sidebar'
+import type * as BalancesModule from '../../lib/balances'
 import type { RouterInput } from '../../trpc'
 import { DashboardPage } from './index'
 
@@ -51,7 +55,8 @@ const mocks = vi.hoisted(() => {
   }
 })
 
-vi.mock('../../trpc', () => {
+// These tRPC fixtures intentionally model only the query states exercised below.
+vi.mock<{ trpc: unknown }>(import('../../trpc'), () => {
   const emptyList = { data: [], isLoading: false }
   return {
     trpc: {
@@ -69,17 +74,22 @@ vi.mock('../../trpc', () => {
     },
   }
 })
-vi.mock('../../hooks/use-auto-refresh-exchanges', () => ({ useAutoRefreshExchanges: () => undefined }))
-vi.mock('../../lib/balances', () => ({ useGetBalancesPerClaimIds: () => ({ data: new Map() }) }))
-vi.mock('../../utils/timezone', () => ({ getBrowserTimezone: () => 'UTC' }))
-vi.mock('react-router', () => ({ useNavigate: () => vi.fn(), Link: 'a' }))
-vi.mock('@hoseki/packages/ui/design-system', async () => {
+vi.mock(import('../../hooks/use-auto-refresh-exchanges'), () => ({ useAutoRefreshExchanges: () => undefined }))
+vi.mock<PartialModuleMock<typeof BalancesModule>>(import('../../lib/balances'), () => ({
+  useGetBalancesPerClaimIds: () => ({ data: new Map() }),
+}))
+vi.mock(import('../../utils/timezone'), () => ({ getBrowserTimezone: () => 'UTC' }))
+vi.mock<PartialModuleMock<typeof ReactRouter>>(import('react-router'), () => ({
+  useNavigate: () => vi.fn(),
+  Link: (props: Parameters<typeof ReactRouter.Link>[0]) => createElement('a', props),
+}))
+vi.mock<PartialModuleMock<typeof DesignSystemModule>>(import('@hoseki/packages/ui/design-system'), async () => {
   const { createElement: createMockElement } = await import('react')
   const { format } = await import('date-fns')
   return {
     Spinner: () => createMockElement('span', { 'data-spinner': true }),
     Panel: ({ children }: { children: React.ReactNode }) => createMockElement('div', null, children),
-    DateInput: ({ id, value, onChange }: { id: string; value: Date | null; onChange: (value: Date) => void }) =>
+    DateInput: ({ id, value, onChange }: Parameters<typeof DesignSystemModule.DateInput>[0]) =>
       createMockElement('input', {
         id,
         type: 'date',
@@ -90,7 +100,7 @@ vi.mock('@hoseki/packages/ui/design-system', async () => {
       }),
   }
 })
-vi.mock('../../components/dashboard-charts/accounts-sidebar', async () => {
+vi.mock(import('../../components/dashboard-charts/accounts-sidebar'), async () => {
   const { createElement: createMockElement } = await import('react')
   return {
     AccountsSidebar: (props: SidebarProps) => {
@@ -121,14 +131,14 @@ vi.mock('../../components/dashboard-charts/accounts-sidebar', async () => {
     },
   }
 })
-vi.mock('../../components/dashboard-charts/accumulation-chart', async () => {
+vi.mock(import('../../components/dashboard-charts/accumulation-chart'), async () => {
   const { createElement: createMockElement } = await import('react')
   return {
     AccumulationChart: ({ data }: { data: unknown }) =>
       createMockElement('div', { 'data-chart': 'accumulation' }, JSON.stringify(data)),
   }
 })
-vi.mock('../../components/dashboard-charts/monthly-net-change-chart', async () => {
+vi.mock(import('../../components/dashboard-charts/monthly-net-change-chart'), async () => {
   const { createElement: createMockElement } = await import('react')
   return {
     MonthlyNetChangeChart: ({ data }: { data: unknown }) =>

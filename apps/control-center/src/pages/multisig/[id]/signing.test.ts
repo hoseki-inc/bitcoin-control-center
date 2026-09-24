@@ -3,6 +3,7 @@ import { Box } from '@chakra-ui/react'
 import { Address, DerivationPath, MultiSigAccount } from '@hoseki/packages/bitcoin'
 import { Err, Ok } from '@hoseki/packages/result'
 import { TestChakraProvider as ChakraProvider } from '@hoseki/packages/testing/chakra-provider'
+import type { PartialModuleMock } from '@hoseki/packages/testing/partial-module-mock'
 import { TrezorInfo } from '@hoseki/packages/ui/wallet-ui/trezor/trezor-info'
 import { HardwareDeviceError, Slip132 } from '@hoseki/packages/wallet'
 import TransportWebHID from '@ledgerhq/hw-transport-webhid'
@@ -13,16 +14,22 @@ import {
   QueryClientProvider,
   type UseMutationOptions,
 } from '@tanstack/react-query'
-import { type ReactElement, act, createElement } from 'react'
+import { Fragment, type ReactElement, act, createElement } from 'react'
 import { type Root, createRoot } from 'react-dom/client'
 import type * as ReactRouter from 'react-router'
 import { RouterProvider, createMemoryRouter } from 'react-router'
+import type * as Sonner from 'sonner'
 import { assert, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { LedgerSigning as SinglesigLedgerSigning } from '../../../components/claims/ledger/ledger-signing'
+import type * as TrezorServiceSingletonModule from '../../../components/claims/trezor/trezor-service-singleton'
 import { TrezorSigning as SinglesigTrezorSigning } from '../../../components/claims/trezor/trezor-signing'
 import type * as MultisigPageWrapperModule from '../../../components/multisig/multisig-page-wrapper'
 import { MultisigPageWrapper, getIndicatorKeystores } from '../../../components/multisig/multisig-page-wrapper'
+import type * as BbqrScannerModule from '../../../components/qr/bbqr-scanner'
+import type * as UseLedgerStoreModule from '../../../hooks/use-ledger-store'
+import type * as UseUrlParametersModule from '../../../hooks/use-url-parameters'
 import type { SigningFlowProps } from '../../../lib/claim-flow'
+import type * as LoggerModule from '../../../logger'
 import type { ClaimDto } from '../../../trpc/server-types'
 import { MultisigSigningPage } from './signing'
 
@@ -92,48 +99,71 @@ const mocks = await vi.hoisted(async () => {
   }
 })
 
-vi.mock('../../../hooks/use-ledger-store', () => ({
-  useLedgerStore: (selector: (state: typeof mocks.ledger) => unknown) => selector(mocks.ledger),
+vi.mock<PartialModuleMock<typeof UseLedgerStoreModule>>(import('../../../hooks/use-ledger-store'), () => ({
+  useLedgerStore: (
+    selector: (
+      state: Pick<
+        ReturnType<typeof UseLedgerStoreModule.useLedgerStore.getState>,
+        'isInitialized' | 'init' | 'reset' | 'signMessage'
+      >,
+    ) => unknown,
+  ) => selector(mocks.ledger),
   useToastOnLedgerDisconnect: () => undefined,
 }))
-vi.mock('../../../components/multisig/multisig-page-wrapper', async (importOriginal) => {
-  const original = await importOriginal<typeof MultisigPageWrapperModule>()
-  const { useOutletContext } = await import('react-router')
-  return { ...original, useMultisigPageWrapperContext: () => useOutletContext() ?? { claim: mocks.claim } }
-})
-vi.mock('../../../hooks/use-url-parameters', () => ({
-  useUrlParameter: () => mocks.claim.id,
-  UrlParameter: { claimId: 'claimId' },
+vi.mock<PartialModuleMock<typeof MultisigPageWrapperModule>>(
+  import('../../../components/multisig/multisig-page-wrapper'),
+  async (importOriginal) => {
+    const original = await importOriginal<typeof MultisigPageWrapperModule>()
+    const { useOutletContext } = await import('react-router')
+    return {
+      ...original,
+      useMultisigPageWrapperContext: () => useOutletContext<{ claim: ClaimDto } | null>() ?? { claim: mocks.claim },
+    }
+  },
+)
+vi.mock<PartialModuleMock<typeof UseUrlParametersModule>>(
+  import('../../../hooks/use-url-parameters'),
+  async (importOriginal) => ({
+    ...(await importOriginal()),
+    useUrlParameter: () => mocks.claim.id,
+  }),
+)
+vi.mock<PartialModuleMock<typeof TrezorServiceSingletonModule>>(
+  import('../../../components/claims/trezor/trezor-service-singleton'),
+  () => ({
+    trezorService: { signCustomMessage: mocks.trezorSign },
+  }),
+)
+vi.mock<PartialModuleMock<typeof LoggerModule>>(import('../../../logger'), () => ({
+  browserLogger: { error: vi.fn<() => void>() },
+  captureHardwareWalletError: vi.fn<() => void>(),
 }))
-vi.mock('../../../components/claims/trezor/trezor-service-singleton', () => ({
-  trezorService: { signCustomMessage: mocks.trezorSign },
+vi.mock(import('lottie-react'), () => ({ default: () => createElement(Fragment) }))
+vi.mock<PartialModuleMock<typeof Sonner>>(import('sonner'), () => ({
+  toast: Object.assign(vi.fn<typeof Sonner.toast>(), { error: mocks.toastError, success: vi.fn() }),
 }))
-vi.mock('../../../logger', () => ({
-  browserLogger: { error: vi.fn() },
-  captureHardwareWalletError: vi.fn(),
-}))
-vi.mock('lottie-react', () => ({ default: () => null }))
-vi.mock('sonner', () => ({ toast: { error: mocks.toastError, success: vi.fn() } }))
-vi.mock('react-router', async (importOriginal) => ({
+vi.mock<PartialModuleMock<typeof ReactRouter>>(import('react-router'), async (importOriginal) => ({
   ...(await importOriginal<typeof ReactRouter>()),
   useParams: () => ({ walletType: mocks.walletType, keystoreId: 're_ks_ledger' }),
   useNavigate: () => mocks.navigate,
 }))
 // Replace the camera and QR rendering only; exercise the real signing screens and callbacks.
-vi.mock('../../../components/qr/bbqr-display', () => ({ BBQrDisplay: () => null }))
-vi.mock('../../../components/qr/bbqr-scanner', () => ({
-  BBQrScanner: ({ onPlainScan }: { onPlainScan: (value: string) => void }) =>
+vi.mock(import('../../../components/qr/bbqr-display'), () => ({ BBQrDisplay: () => createElement(Fragment) }))
+vi.mock<PartialModuleMock<typeof BbqrScannerModule>>(import('../../../components/qr/bbqr-scanner'), () => ({
+  BBQrScanner: ({ onPlainScan }: { onPlainScan?: (value: string) => void }) =>
     createElement(
       'button',
       {
         onClick: () => {
+          assert.exists(onPlainScan)
           onPlainScan('c3ludGhldGljLXNpZ25hdHVyZQ==')
         },
       },
       'Scan signature',
     ),
 }))
-vi.mock('../../../trpc', async () => {
+// These tRPC fixtures intentionally model only the query states exercised below.
+vi.mock<{ trpc: unknown }>(import('../../../trpc'), async () => {
   const { useMutation, useQuery } = await import('@tanstack/react-query')
   return {
     trpc: {

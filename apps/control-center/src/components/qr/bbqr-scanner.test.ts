@@ -1,16 +1,18 @@
 // @vitest-environment jsdom
 import { ChakraProvider } from '@chakra-ui/react'
-import { act, createElement } from 'react'
+import type { PartialModuleMock } from '@hoseki/packages/testing/partial-module-mock'
+import type * as QrCodeModule from 'html5-qrcode'
+import { Fragment, act, createElement } from 'react'
 import { type Root, createRoot } from 'react-dom/client'
 import { assert, expect, it, onTestFinished, vi } from 'vitest'
 import { BBQrScanner } from './bbqr-scanner'
 
 const mocks = vi.hoisted(() => ({ start: vi.fn(), clear: vi.fn() }))
-vi.mock('@hoseki/packages/ui/design-system', () => ({ Spinner: () => null }))
-vi.mock('html5-qrcode', () => ({
+vi.mock(import('@hoseki/packages/ui/design-system'), () => ({ Spinner: () => createElement(Fragment) }))
+vi.mock<PartialModuleMock<typeof QrCodeModule>>(import('html5-qrcode'), () => ({
   Html5Qrcode: class {
-    public static async getCameras(): Promise<Array<{ id: string }>> {
-      return [{ id: 'test-camera' }]
+    public static async getCameras(): Promise<Array<{ id: string; label: string }>> {
+      return [{ id: 'test-camera', label: 'Test camera' }]
     }
     public isScanning = false
     public start = mocks.start

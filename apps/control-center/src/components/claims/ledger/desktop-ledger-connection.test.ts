@@ -1,11 +1,15 @@
 // @vitest-environment jsdom
 import { ChakraProvider } from '@chakra-ui/react'
+import type { PartialModuleMock } from '@hoseki/packages/testing/partial-module-mock'
+import type * as WalletUiModule from '@hoseki/packages/ui/wallet-ui'
+import type * as TransportWebHidModule from '@ledgerhq/hw-transport-webhid'
 import TransportWebHID from '@ledgerhq/hw-transport-webhid'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act, createElement } from 'react'
+import { Fragment, act, createElement } from 'react'
 import { type Root, createRoot } from 'react-dom/client'
 import { assert, expect, it, onTestFinished, vi } from 'vitest'
 import type { LedgerHidApi, LedgerHidUpdate } from '../../../../../../desktop/src/ledger-hid-api'
+import type * as UseLedgerStoreModule from '../../../hooks/use-ledger-store'
 import { DesktopLedgerConnection } from './desktop-ledger-connection'
 
 const mocks = vi.hoisted(() => ({
@@ -15,13 +19,13 @@ const mocks = vi.hoisted(() => ({
   connected: true,
   init: vi.fn(),
 }))
-vi.mock('@ledgerhq/hw-transport-webhid', () => ({
+vi.mock<PartialModuleMock<typeof TransportWebHidModule>>(import('@ledgerhq/hw-transport-webhid'), () => ({
   default: class WebHID {
     public static request = mocks.request
   },
 }))
-vi.mock('@ledgerhq/hw-app-btc/lib/getAppAndVersion', () => ({ getAppAndVersion: mocks.app }))
-vi.mock('../../../hooks/use-ledger-store', () => ({
+vi.mock(import('@ledgerhq/hw-app-btc/lib/getAppAndVersion'), () => ({ getAppAndVersion: mocks.app }))
+vi.mock<PartialModuleMock<typeof UseLedgerStoreModule>>(import('../../../hooks/use-ledger-store'), () => ({
   useLedgerStore: (select: (value: unknown) => unknown) =>
     select({
       init: mocks.init,
@@ -30,8 +34,8 @@ vi.mock('../../../hooks/use-ledger-store', () => ({
       deviceModel: { productName: 'Ledger Flex' },
     }),
 }))
-vi.mock('@hoseki/packages/ui/wallet-ui', () => ({
-  WalletAnimation: () => null,
+vi.mock<PartialModuleMock<typeof WalletUiModule>>(import('@hoseki/packages/ui/wallet-ui'), () => ({
+  WalletAnimation: () => createElement(Fragment),
   WizardFooter: ({ leftButton, rightButton }: { leftButton: React.ReactNode; rightButton: React.ReactNode }) =>
     createElement('footer', null, leftButton, rightButton),
 }))

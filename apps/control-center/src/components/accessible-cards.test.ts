@@ -2,7 +2,7 @@
 import { Box } from '@chakra-ui/react'
 import { TestChakraProvider as ChakraProvider } from '@hoseki/packages/testing/chakra-provider'
 import type { SupportedHardwareWallet } from '@hoseki/packages/wallet/hardware-wallet'
-import { type FormEvent, type ReactNode, act, createElement } from 'react'
+import { type FormEvent, Fragment, type ReactNode, act, createElement } from 'react'
 import { type Root, createRoot } from 'react-dom/client'
 import { MemoryRouter } from 'react-router'
 import { assert, expect, it, onTestFinished, vi } from 'vitest'
@@ -50,7 +50,7 @@ const acquireDom = await vi.hoisted(async () => {
   return takeDom
 })
 
-vi.mock('lottie-react', () => ({ default: () => null }))
+vi.mock(import('lottie-react'), () => ({ default: () => createElement(Fragment) }))
 
 let root: Root
 let host: HTMLDivElement
