@@ -1,13 +1,13 @@
 import { Network } from '@hoseki/packages/bitcoin/network'
 import { ElectrumProvider } from '@hoseki/packages/bitcoin/onchain/electrum_provider'
-import { ElectrumClient, type ElectrumClientConfig } from '@hoseki/packages/clients/electrum'
-import { Err, Ok, asyncFn } from '@patina/core'
+import { Ok, asyncFn } from '@patina/core'
 import type { Result } from '@patina/core'
 import type { Logger } from 'pino'
 import { type SentinelDatabase, initDatabase } from './db'
 import { type Env, loadEnv } from './env'
 import { initEncryption, loadCredentialEncryptionKey } from './lib/encrypted'
 import { ControlCenterService } from './modules/control_center/service'
+import { ElectrumConnection, loadElectrumServer } from './modules/electrum/connection'
 import { EtfService } from './modules/etf/service'
 import { ExchangeService } from './modules/exchange/service'
 import { ManualService } from './modules/manual/service'
@@ -23,8 +23,7 @@ export interface AppContext {
   env: Env
   logger: Logger
   database: SentinelDatabase
-  electrumClient: ElectrumClient
-  electrumConfig: { host: string; port: number; protocol: 'tcp' | 'ssl' }
+  electrum: ElectrumConnection
   onchainProvider: ElectrumProvider
   exchangeService: ExchangeService
   manualService: ManualService
@@ -33,7 +32,6 @@ export interface AppContext {
   priceService: PriceService
   statementService: StatementService
   network: Network
-  reconnectElectrum: (config: ElectrumClientConfig) => Promise<Result<void, Error>>
 }
 
 export const createAppContext = asyncFn(async (logger: Logger): Promise<Result<AppContext, Error>> => {
@@ -48,40 +46,29 @@ export const createAppContext = asyncFn(async (logger: Logger): Promise<Result<A
 
   const network = env.BITCOIN_NETWORK === 'mainnet' ? Network.Mainnet : Network.Testnet
 
-  // Check SQLite for user-saved Electrum settings (from desktop Settings page).
-  // These override the env var defaults so the config persists across restarts.
-  const getSetting = (key: string): string | undefined =>
-    (database.db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined)?.value
-
-  const electrumHost = getSetting('electrum_host') ?? env.ELECTRUM_HOST
-  const electrumPort = Number(getSetting('electrum_port') ?? env.ELECTRUM_PORT)
-  const electrumProtocol = (getSetting('electrum_protocol') ?? env.ELECTRUM_PROTOCOL) as 'tcp' | 'ssl'
-  const torEnabled = getSetting('tor_enabled') === 'true'
-
-  // If Tor is enabled and SOCKS proxy env vars are set, include proxy config
-  const proxy =
-    torEnabled && env.SOCKS_PROXY_HOST ? { host: env.SOCKS_PROXY_HOST, port: Number(env.SOCKS_PROXY_PORT) } : undefined
-
-  const electrumClient = new ElectrumClient({
-    host: electrumHost,
-    port: electrumPort,
-    protocol: electrumProtocol,
-    requestTimeout: 10_000,
-    proxy,
+  // The server saved in Settings overrides the platform default. Sentinel starts even
+  // when it cannot be reached, so the app always opens and the server can be changed.
+  const electrum = new ElectrumConnection({
+    logger: logger.child({ module: 'electrum' }),
+    server: loadElectrumServer(database.db, {
+      host: env.ELECTRUM_HOST,
+      port: env.ELECTRUM_PORT,
+      protocol: env.ELECTRUM_PROTOCOL,
+    }),
+    ...(env.SOCKS_PROXY_HOST !== undefined && env.SOCKS_PROXY_PORT !== undefined
+      ? { socksProxy: { host: env.SOCKS_PROXY_HOST, port: env.SOCKS_PROXY_PORT } }
+      : {}),
+    // Services hold this provider, so it follows the connection to a new server.
+    onClientChange: (client) => {
+      onchainProvider.deps.electrum = client
+    },
   })
-
-  logger.info(
-    { host: electrumHost, port: electrumPort, protocol: electrumProtocol, tor: torEnabled },
-    'Connecting to Electrum server',
-  )
-  const connectResult = await electrumClient.connect()
-  if (connectResult.isErr()) return Err(connectResult.unwrapErr())
-  logger.info({ version: connectResult.unwrap() }, 'Connected to Electrum server')
 
   const onchainProvider = new ElectrumProvider(network, {
     logger: logger.child({ module: 'electrum-provider' }),
-    electrum: electrumClient,
+    electrum: electrum.client,
   })
+  electrum.start()
 
   const exchangeService = new ExchangeService({
     db: database.db,
@@ -124,8 +111,7 @@ export const createAppContext = asyncFn(async (logger: Logger): Promise<Result<A
     env,
     logger,
     database,
-    electrumClient,
-    electrumConfig: { host: electrumHost, port: electrumPort, protocol: electrumProtocol },
+    electrum,
     onchainProvider,
     exchangeService,
     manualService,
@@ -134,27 +120,6 @@ export const createAppContext = asyncFn(async (logger: Logger): Promise<Result<A
     priceService,
     statementService,
     network,
-    reconnectElectrum: async (config: ElectrumClientConfig): Promise<Result<void, Error>> => {
-      logger.info(
-        { host: config.host, port: config.port, protocol: config.protocol },
-        'Reconnecting to Electrum server',
-      )
-      ctx.electrumClient.disconnect()
-      const newClient = new ElectrumClient({ requestTimeout: 10_000, ...config })
-      const result = await newClient.connect()
-      if (result.isErr()) {
-        logger.error({ error: result.unwrapErr().message }, 'Failed to reconnect to Electrum server')
-        return Err(result.unwrapErr())
-      }
-      ctx.electrumClient = newClient
-      ctx.electrumConfig = { host: config.host, port: config.port, protocol: config.protocol }
-      ctx.onchainProvider = new ElectrumProvider(network, {
-        logger: logger.child({ module: 'electrum-provider' }),
-        electrum: newClient,
-      })
-      logger.info({ version: result.unwrap() }, 'Reconnected to Electrum server')
-      return Ok(undefined)
-    },
   }
 
   return Ok(ctx)

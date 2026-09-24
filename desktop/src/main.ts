@@ -44,10 +44,22 @@ app.whenReady().then(async () => {
   process.env['SOCKS_PROXY_HOST'] = '127.0.0.1'
   process.env['SOCKS_PROXY_PORT'] = String(torManager.socksPort)
 
-  // Start api-sentinel — imports the self-starting bundle
+  // Start api-sentinel — imports the self-starting bundle. An unreachable Electrum server
+  // does not stop it; anything that does is reported rather than leaving no window.
   const serverMain = path.join(serverDir, 'main.js')
-  const { main } = await import(serverMain)
-  const server = await main()
+  let server: { shutdown: () => Promise<void> }
+  try {
+    const { main } = await import(serverMain)
+    server = await main()
+  } catch (error) {
+    dialog.showErrorBox(
+      'Control Center could not start',
+      `${error instanceof Error ? error.message : String(error)}\n\nYour data is stored in ${DATA_DIR}.`,
+    )
+    torManager.stop()
+    app.exit(1)
+    return
+  }
 
   // Create the browser window
   mainWindow = new BrowserWindow({

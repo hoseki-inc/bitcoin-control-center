@@ -32,6 +32,7 @@ import * as bip322 from 'bip322-js'
 import { Decimal } from 'decimal.js'
 import { nanoid } from 'nanoid'
 import { z } from 'zod'
+import { type ElectrumProtocol, saveElectrumServer } from '../electrum/connection'
 import { StatementMapper } from '../statements/mapper'
 import { publicProcedure, t } from './init'
 
@@ -1864,31 +1865,12 @@ const READABLE_SETTINGS = new Set([
   'tor_enabled',
 ])
 
-const WRITABLE_SETTINGS = new Set([
-  'user_name',
-  'bitcoin_display_unit',
-  'onboarding_v1',
-  'owner_identifier',
-  'electrum_host',
-  'electrum_port',
-  'electrum_protocol',
-  'tor_enabled',
-])
+// The Electrum settings are saved by settings.reconnectElectrum, and only once the
+// server has answered, so a restart never starts from a server that was never reached.
+const WRITABLE_SETTINGS = new Set(['user_name', 'bitcoin_display_unit', 'onboarding_v1', 'owner_identifier'])
 
 function isReadableSetting(key: string): boolean {
   return READABLE_SETTINGS.has(key)
-}
-
-type ElectrumProtocol = 'tcp' | 'ssl'
-
-interface ValidatedElectrumConnection {
-  host: string
-  port: number
-  protocol: ElectrumProtocol
-  proxy?: {
-    host: string
-    port: number
-  }
 }
 
 function normalizeBracketedIpv6Host(host: string): string {
@@ -1947,43 +1929,6 @@ function validateElectrumProtocol(value: string): ElectrumProtocol {
   return value
 }
 
-function isLoopbackElectrumHost(host: string): boolean {
-  return host === 'localhost' || host.endsWith('.localhost') || host === '127.0.0.1' || host === '::1'
-}
-
-function validateElectrumProxy(input: {
-  proxyHost?: string
-  proxyPort?: number
-}): ValidatedElectrumConnection['proxy'] {
-  if (!input.proxyHost && input.proxyPort === undefined) return undefined
-  if (!input.proxyHost || input.proxyPort === undefined) {
-    throw new TRPCError({ code: 'BAD_REQUEST', message: 'Proxy host and port must be provided together' })
-  }
-
-  const host = validateElectrumHost(input.proxyHost)
-  if (!isLoopbackElectrumHost(host)) {
-    throw new TRPCError({ code: 'BAD_REQUEST', message: 'Proxy host must be a loopback host' })
-  }
-
-  return { host, port: validateElectrumPort(input.proxyPort) }
-}
-
-function validateElectrumConnection(input: {
-  host: string
-  port: number
-  protocol: ElectrumProtocol
-  proxyHost?: string
-  proxyPort?: number
-}): ValidatedElectrumConnection {
-  const proxy = validateElectrumProxy(input)
-  return {
-    host: validateElectrumHost(input.host),
-    port: validateElectrumPort(input.port),
-    protocol: validateElectrumProtocol(input.protocol),
-    ...(proxy ? { proxy } : {}),
-  }
-}
-
 function validateWritableSetting(key: string, value: string): string {
   if (!WRITABLE_SETTINGS.has(key)) {
     throw new TRPCError({ code: 'FORBIDDEN', message: 'Setting is not writable' })
@@ -2006,21 +1951,6 @@ function validateWritableSetting(key: string, value: string): string {
     case 'owner_identifier': {
       if (value.length > 200) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Setting value is too long' })
-      }
-      return value
-    }
-    case 'electrum_host': {
-      return validateElectrumHost(value)
-    }
-    case 'electrum_port': {
-      return String(validateElectrumPort(Number(value)))
-    }
-    case 'electrum_protocol': {
-      return validateElectrumProtocol(value)
-    }
-    case 'tor_enabled': {
-      if (value !== 'true' && value !== 'false') {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid Tor setting' })
       }
       return value
     }
@@ -2047,59 +1977,35 @@ const settingsRouter = t.router({
       .run(input.key, value)
   }),
 
-  electrumStatus: publicProcedure.query(({ ctx }) => {
-    const { host, port, protocol } = ctx.app.electrumConfig
-    return {
-      connected: ctx.app.electrumClient.isConnected(),
-      host,
-      port,
-      protocol,
-    }
-  }),
+  electrumStatus: publicProcedure.query(({ ctx }) => ctx.app.electrum.status()),
 
-  testElectrum: publicProcedure
-    .input(
-      z.object({
-        host: z.string(),
-        port: z.number().int().min(1).max(65_535),
-        protocol: z.enum(['tcp', 'ssl']),
-        proxyHost: z.string().optional(),
-        proxyPort: z.number().int().min(1).max(65_535).optional(),
-      }),
-    )
-    .mutation(async ({ input }) => {
-      const config = validateElectrumConnection(input)
-      const { ElectrumClient } = await import('@hoseki/packages/clients/electrum')
-      const testClient = new ElectrumClient({
-        host: config.host,
-        port: config.port,
-        protocol: config.protocol,
-        requestTimeout: 15_000,
-        ...(config.proxy ? { proxy: config.proxy } : {}),
-      })
-      const result = await testClient.connect()
-      testClient.disconnect()
-      if (result.isErr()) {
-        throw new Error(result.unwrapErr().message)
-      }
-      return { success: true, version: result.unwrap() }
-    }),
-
+  /** Connects to a new Electrum server and, once it answers, uses and saves it. */
   reconnectElectrum: publicProcedure
     .input(
       z.object({
         host: z.string(),
         port: z.number().int().min(1).max(65_535),
         protocol: z.enum(['tcp', 'ssl']),
-        proxyHost: z.string().optional(),
-        proxyPort: z.number().int().min(1).max(65_535).optional(),
+        tor: z.boolean(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const result = await ctx.app.reconnectElectrum(validateElectrumConnection(input))
-      if (result.isErr()) {
-        throw new Error(result.unwrapErr().message)
+      const server = {
+        host: validateElectrumHost(input.host),
+        port: validateElectrumPort(input.port),
+        protocol: validateElectrumProtocol(input.protocol),
+        tor: input.tor,
       }
+      const problem = ctx.app.electrum.problemWith(server)
+      if (problem !== null) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: problem })
+      }
+      const result = await ctx.app.electrum.switchTo(server)
+      if (result.isErr()) {
+        throw new TRPCError({ code: 'PRECONDITION_FAILED', message: result.unwrapErr().message })
+      }
+      saveElectrumServer(ctx.app.database.db, server)
+      return ctx.app.electrum.status()
     }),
 })
 

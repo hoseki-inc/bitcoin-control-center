@@ -95,7 +95,7 @@ export async function main(): Promise<SentinelServer> {
       logger.error({ err }, 'Error closing Fastify')
     }
 
-    appCtx.electrumClient.disconnect()
+    appCtx.electrum.stop()
     appCtx.database.close()
 
     logger.info('Shutdown complete')
