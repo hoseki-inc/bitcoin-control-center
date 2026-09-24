@@ -14,35 +14,35 @@ const TPUB = Xpub.fromString(TPUB_STR).expect('valid account')
 describe('SingleSigAccount', () => {
   test('descriptor', () => {
     const acc0 = new SingleSigAccount('p2pkh', XPUB)
-    expect(acc0.descriptor()).toEqual(`pkh(${XPUB_STR}/<0;1>/*)#kdnywuy7`)
+    expect(acc0.descriptor()).toBe(`pkh(${XPUB_STR}/<0;1>/*)#kdnywuy7`)
     expect(acc0.network()).toEqual(Network.Mainnet)
 
     const acc1 = new SingleSigAccount('p2sh-p2wpkh', XPUB)
-    expect(acc1.descriptor()).toEqual(`sh(wpkh(${XPUB_STR}/<0;1>/*))#una0ueqx`)
+    expect(acc1.descriptor()).toBe(`sh(wpkh(${XPUB_STR}/<0;1>/*))#una0ueqx`)
     expect(acc1.network()).toEqual(Network.Mainnet)
 
     const acc2 = new SingleSigAccount('p2wpkh', XPUB)
-    expect(acc2.descriptor()).toEqual(`wpkh(${XPUB_STR}/<0;1>/*)#l3xcgp8q`)
+    expect(acc2.descriptor()).toBe(`wpkh(${XPUB_STR}/<0;1>/*)#l3xcgp8q`)
     expect(acc2.network()).toEqual(Network.Mainnet)
 
     const acc3 = new SingleSigAccount('p2tr', XPUB)
-    expect(acc3.descriptor()).toEqual(`tr(${XPUB_STR}/<0;1>/*)#40y9k7ac`)
+    expect(acc3.descriptor()).toBe(`tr(${XPUB_STR}/<0;1>/*)#40y9k7ac`)
     expect(acc3.network()).toEqual(Network.Mainnet)
 
     const acc4 = new SingleSigAccount('p2pkh', TPUB)
-    expect(acc4.descriptor()).toEqual(`pkh(${TPUB_STR}/<0;1>/*)#c4nu0fm0`)
+    expect(acc4.descriptor()).toBe(`pkh(${TPUB_STR}/<0;1>/*)#c4nu0fm0`)
     expect(acc4.network()).toEqual(Network.Testnet)
 
     const acc5 = new SingleSigAccount('p2sh-p2wpkh', TPUB)
-    expect(acc5.descriptor()).toEqual(`sh(wpkh(${TPUB_STR}/<0;1>/*))#5aznr2h2`)
+    expect(acc5.descriptor()).toBe(`sh(wpkh(${TPUB_STR}/<0;1>/*))#5aznr2h2`)
     expect(acc5.network()).toEqual(Network.Testnet)
 
     const acc6 = new SingleSigAccount('p2wpkh', TPUB)
-    expect(acc6.descriptor()).toEqual(`wpkh(${TPUB_STR}/<0;1>/*)#sh2qurlp`)
+    expect(acc6.descriptor()).toBe(`wpkh(${TPUB_STR}/<0;1>/*)#sh2qurlp`)
     expect(acc6.network()).toEqual(Network.Testnet)
 
     const acc7 = new SingleSigAccount('p2tr', TPUB)
-    expect(acc7.descriptor()).toEqual(`tr(${TPUB_STR}/<0;1>/*)#j4rhkue7`)
+    expect(acc7.descriptor()).toBe(`tr(${TPUB_STR}/<0;1>/*)#j4rhkue7`)
     expect(acc7.network()).toEqual(Network.Testnet)
   })
 

@@ -206,11 +206,11 @@ describe('parseWalletExport', () => {
     expect(parsed.keystoreMetadata).toHaveLength(2)
 
     // Check keystores and metadata
-    expect(parsed.keystoreMetadata[0]?.label).toEqual('Keystore 1')
+    expect(parsed.keystoreMetadata[0]?.label).toBe('Keystore 1')
     expect(parsed.wallet.keyExpressions[0]?.keyOrigin?.fingerprint).toBe('ac16c6a4')
     expect(parsed.wallet.keyExpressions[0]?.keyOrigin?.derivationPath?.toString()).toBe('m/48h/0h/0h/1h')
 
-    expect(parsed.keystoreMetadata[1]?.label).toEqual('Keystore 2')
+    expect(parsed.keystoreMetadata[1]?.label).toBe('Keystore 2')
     expect(parsed.wallet.keyExpressions[1]?.keyOrigin?.fingerprint).toBe('016e9edf')
     expect(parsed.wallet.keyExpressions[1]?.keyOrigin?.derivationPath?.toString()).toBe('m/48h/0h/0h/1h')
   })
