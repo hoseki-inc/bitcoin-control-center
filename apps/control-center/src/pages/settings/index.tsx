@@ -19,6 +19,7 @@ import { toast } from 'sonner'
 import { z } from 'zod'
 import { useLocalSetting } from '../../hooks/use-local-settings'
 import { isDesktop } from '../../mode'
+import type { RouterInput } from '../../trpc'
 
 const ReconnectErrorSchema = z.object({
   error: z.object({
@@ -183,15 +184,17 @@ function ElectrumSettings(): JSX.Element {
 
   const buildElectrumPayload = async (): Promise<{ body: string }> => {
     const superjson = (await import('superjson')).default
+    const payload: RouterInput['settings']['testElectrum'] = {
+      host: host.trim(),
+      port: Number(port.trim()),
+      protocol,
+    }
+    if (torEnabled) {
+      payload.proxyHost = '127.0.0.1'
+      payload.proxyPort = 9050
+    }
     return {
-      body: JSON.stringify(
-        superjson.serialize({
-          host: host.trim(),
-          port: Number(port.trim()),
-          protocol,
-          ...(torEnabled ? { proxyHost: '127.0.0.1', proxyPort: 9050 } : {}),
-        }),
-      ),
+      body: JSON.stringify(superjson.serialize(payload)),
     }
   }
 

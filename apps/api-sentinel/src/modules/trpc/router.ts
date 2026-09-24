@@ -2036,12 +2036,15 @@ function validateElectrumConnection(input: {
   proxyPort?: number
 }): ValidatedElectrumConnection {
   const proxy = validateElectrumProxy(input)
-  return {
+  const config: ValidatedElectrumConnection = {
     host: validateElectrumHost(input.host),
     port: validateElectrumPort(input.port),
     protocol: validateElectrumProtocol(input.protocol),
-    ...(proxy ? { proxy } : {}),
   }
+  if (proxy) {
+    config.proxy = proxy
+  }
+  return config
 }
 
 function validateWritableSetting(key: string, value: string): string {
@@ -2120,11 +2123,8 @@ const settingsRouter = t.router({
       const config = validateElectrumConnection(input)
       const { ElectrumClient } = await import('@hoseki/packages/clients/electrum')
       const testClient = new ElectrumClient({
-        host: config.host,
-        port: config.port,
-        protocol: config.protocol,
+        ...config,
         requestTimeout: 15_000,
-        ...(config.proxy ? { proxy: config.proxy } : {}),
       })
       const result = await testClient.connect()
       testClient.disconnect()
