@@ -2,7 +2,9 @@ import { AsyncResult, Err, Ok, Panic, type Result } from '@hoseki/packages/resul
 import { describe, expect, it } from 'vitest'
 import { asyncResultAll } from './async'
 
-function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+type Deferred<T> = { promise: Promise<T>; resolve: (value: T) => void }
+
+function deferred<T>(): Deferred<T> {
   let resolve = (_value: T): void => {}
   const promise = new Promise<T>((finish) => {
     resolve = finish

@@ -16,6 +16,10 @@ export type Indexable =
       toString: () => string
     }
 
+export interface IndexMapJson<V> {
+  [serializedKey: string]: V
+}
+
 export class IndexMap<K extends Indexable, V> implements Map<K, V> {
   /**
    * https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Map/groupBy
@@ -210,8 +214,8 @@ export class IndexMap<K extends Indexable, V> implements Map<K, V> {
     return this.entries()
   }
 
-  public toJSON(): Record<string, V> {
-    const rec: Record<string, V> = {}
+  public toJSON(): IndexMapJson<V> {
+    const rec: IndexMapJson<V> = {}
     for (const [key, value] of this.entries()) {
       rec[this.getIndex(key).toString()] = value
     }

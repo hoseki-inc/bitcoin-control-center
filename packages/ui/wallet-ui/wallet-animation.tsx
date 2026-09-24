@@ -158,7 +158,12 @@ export function WalletAnimation({ animation }: { animation: WalletAnimationType 
   )
 }
 
-export function WalletFloatingImage({ href, alt, ...rest }: { href: string; alt: string } & BoxProps): JSX.Element {
+export interface WalletImage {
+  href: string
+  alt: string
+}
+
+export function WalletFloatingImage({ href, alt, ...rest }: WalletImage & BoxProps): JSX.Element {
   return (
     <Box
       mx="auto"

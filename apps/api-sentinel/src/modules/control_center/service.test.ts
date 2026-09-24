@@ -20,6 +20,8 @@ import { ManualService } from '../manual/service'
 import { PriceService } from '../price/service'
 import { ControlCenterService } from './service'
 
+type Deferred<T> = { promise: Promise<T>; resolve: (value: T) => void }
+
 const account = Wallets.singlesigNativeSegwitAccount
 const accountId = 'test-account'
 const now = new Date('2026-09-05T12:00:00.000Z')
@@ -38,7 +40,7 @@ function entry(value: bigint, timestamp: string, blockHeight = 600_000): Transac
   }
 }
 
-function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+function deferred<T>(): Deferred<T> {
   let resolve!: (value: T) => void
   const promise = new Promise<T>((done) => {
     resolve = done

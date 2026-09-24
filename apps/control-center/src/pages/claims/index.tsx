@@ -15,6 +15,7 @@ import {
   Text,
   useDisclosure,
 } from '@chakra-ui/react'
+import { getRecordValue } from '@hoseki/packages/lib'
 import { ErrorBanner, Spinner } from '@hoseki/packages/ui/design-system'
 import { ClaimCardKeystores, StatusBadge, getBadgeConfigForClaim } from '@hoseki/packages/ui/prove-verify-ui'
 import { useEffect } from 'react'
@@ -507,7 +508,7 @@ const defaultExchangeConfig: ExchangeConfig = {
   detailsPath: '/accounts/coinbase',
 }
 
-const exchangeConfig: Record<string, ExchangeConfig> = {
+const exchangeConfig = {
   coinbase: defaultExchangeConfig,
   kraken: {
     label: 'Kraken',
@@ -527,7 +528,7 @@ const exchangeConfig: Record<string, ExchangeConfig> = {
     logoAlt: 'Strike',
     detailsPath: '/accounts/strike',
   },
-}
+} satisfies Record<string, ExchangeConfig>
 
 function ExchangeAccountCard({ account, totalBtcSats, btcUsdPrice }: ExchangeAccountCardProps): JSX.Element {
   const needsReconnect = needsExchangeReconnect(account)
@@ -536,7 +537,7 @@ function ExchangeAccountCard({ account, totalBtcSats, btcUsdPrice }: ExchangeAcc
   const usdAmount = btcUsdPrice !== null ? btcAmount * btcUsdPrice : null
   const pct = totalBtcSats > 0 ? ((btcSats / totalBtcSats) * 100).toFixed(1) : '0.0'
 
-  const config = exchangeConfig[account.exchange] ?? defaultExchangeConfig
+  const config = getRecordValue(exchangeConfig, account.exchange) ?? defaultExchangeConfig
 
   return (
     <Stack

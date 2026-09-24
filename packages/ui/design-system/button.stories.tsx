@@ -8,12 +8,12 @@ export default {
 } satisfies StoryDefault
 
 const variants = ['primary', 'outline', 'tertiary', 'error']
-const sizes = ['sm', 'md', 'lg']
-const sizesNamings: Record<string, string> = {
+const sizes = ['sm', 'md', 'lg'] as const
+const sizesNamings = {
   sm: 'Small',
   md: 'Medium',
   lg: 'Large',
-}
+} satisfies Record<string, string>
 
 export const Default: Story = () => {
   return (

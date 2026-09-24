@@ -18,6 +18,8 @@ import type { RouterOutput } from '../../../trpc'
 import { LedgerScan } from './ledger-scan'
 import { probeLedger } from './probe-ledger'
 
+type Deferred<T> = { promise: Promise<T>; resolve: (value: T) => void }
+
 type Balances = RouterOutput['portalProve']['onchain']['bitcoinAccountBalances']
 type ScanProps = ComponentProps<typeof LedgerScanUI>
 
@@ -77,7 +79,7 @@ function fakeTransport(): Transport {
   })
 }
 
-function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+function deferred<T>(): Deferred<T> {
   let resolve = (_value: T): void => {}
   const promise = new Promise<T>((finish) => {
     resolve = finish

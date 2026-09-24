@@ -146,10 +146,10 @@ export class Client {
           })
           .try()
 
-        const headers: Record<string, string> = {
+        const headers = {
           ...authHeaders,
           'Content-Type': 'application/x-www-form-urlencoded',
-        }
+        } satisfies Record<string, string>
 
         const url = `${KRAKEN_API_BASE_URL}${path}`
 

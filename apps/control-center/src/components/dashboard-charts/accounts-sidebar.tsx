@@ -1,4 +1,5 @@
 import { Box, Divider, Flex, Icon, Spinner, Stack, Text, Tooltip } from '@chakra-ui/react'
+import { getRecordValue } from '@hoseki/packages/lib'
 import type { BalanceValue } from '@hoseki/packages/lib/balance'
 import type { ClaimId } from '@hoseki/packages/schemas'
 import { CheckCircleFilledIcon, KeystoreAvatar } from '@hoseki/packages/ui/prove-verify-ui'
@@ -26,12 +27,12 @@ const defaultExchangeConfig: ExchangeConfig = {
   detailsPath: '/accounts/coinbase',
 }
 
-const exchangeConfig: Record<string, ExchangeConfig> = {
+const exchangeConfig = {
   coinbase: defaultExchangeConfig,
   kraken: { label: 'Kraken', logo: '/images/exchanges/kraken.svg', detailsPath: '/accounts/kraken' },
   robinhood: { label: 'Robinhood', logo: '/images/exchanges/robinhood-icon.svg', detailsPath: '/accounts/robinhood' },
   strike: { label: 'Strike', logo: '/images/exchanges/strike-icon.svg', detailsPath: '/accounts/strike' },
-}
+} satisfies Record<string, ExchangeConfig>
 
 interface AccountsSidebarProps {
   claims: ClaimDto[]
@@ -305,7 +306,7 @@ export function AccountsSidebar({
           if (item.type === 'exchange') {
             const isSelected = selected.has(item.account.id)
             const needsReconnect = needsExchangeReconnect(item.account)
-            const config = exchangeConfig[item.account.exchange] ?? defaultExchangeConfig
+            const config = getRecordValue(exchangeConfig, item.account.exchange) ?? defaultExchangeConfig
             return (
               <ExchangeAccountPill
                 key={item.account.id}
@@ -433,7 +434,7 @@ function ExchangeAccountPill({
   compact,
   onClick,
 }: ExchangeAccountPillProps): JSX.Element {
-  const config = exchangeConfig[exchange] ?? defaultExchangeConfig
+  const config = getRecordValue(exchangeConfig, exchange) ?? defaultExchangeConfig
   return (
     <Box
       as="button"

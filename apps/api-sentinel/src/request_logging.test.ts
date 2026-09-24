@@ -5,13 +5,15 @@ import { assert, describe, expect, it, onTestFinished } from 'vitest'
 import { z } from 'zod'
 import { requestLoggerFactory } from './request_logging'
 
+type LoggingServer = { server: FastifyInstance; logs: string[] }
+
 const xpub = 'xpubSENTINEL_PRIVATE_WALLET_TEST'
 const descriptor = `wpkh([d34db33f/84h/0h/0h]${xpub}/0/*)#testsum`
 const input = JSON.stringify({ 0: { json: { descriptor } }, 1: { json: { xpub } } })
 const query = `?batch=1&input=${encodeURIComponent(input)}`
 const servers: FastifyInstance[] = []
 
-function createServer(): { server: FastifyInstance; logs: string[] } {
+function createServer(): LoggingServer {
   const logs: string[] = []
   const logger = pino(
     { level: 'trace' },

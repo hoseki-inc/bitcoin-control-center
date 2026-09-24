@@ -16,6 +16,7 @@ import {
   Tr,
   chakra,
 } from '@chakra-ui/react'
+import { getRecordValue } from '@hoseki/packages/lib'
 import { ErrorBanner } from '@hoseki/packages/ui/design-system'
 import { CheckCircleFilledIcon, StatusBadge } from '@hoseki/packages/ui/prove-verify-ui'
 import { TopBar } from '@hoseki/packages/ui/prove-verify-ui/top-bar'
@@ -127,19 +128,19 @@ function parseCsvLine(line: string): string[] {
   return result
 }
 
-const TX_TYPE_COLORS: Record<string, string> = {
+const TX_TYPE_COLORS = {
   purchase: 'success.600',
   receive: 'success.600',
   send: 'error.600',
   sale: 'error.600',
-}
+} satisfies Record<string, string>
 
-const TX_TYPE_LABELS: Record<string, string> = {
+const TX_TYPE_LABELS = {
   purchase: 'Purchase',
   receive: 'Receive',
   send: 'Send',
   sale: 'Sale',
-}
+} satisfies Record<string, string>
 
 export function StrikeAccountDetailsPage(): JSX.Element {
   const { accountId } = useParams<{ accountId: string }>()
@@ -526,9 +527,9 @@ export function StrikeAccountDetailsPage(): JSX.Element {
                             <Text
                               textStyle="text/xs"
                               fontWeight="medium"
-                              color={TX_TYPE_COLORS[tx.type] ?? 'neutral.600'}
+                              color={getRecordValue(TX_TYPE_COLORS, tx.type) ?? 'neutral.600'}
                             >
-                              {TX_TYPE_LABELS[tx.type] ?? tx.type}
+                              {getRecordValue(TX_TYPE_LABELS, tx.type) ?? tx.type}
                             </Text>
                           </Td>
                           <Td isNumeric>

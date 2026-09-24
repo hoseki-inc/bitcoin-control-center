@@ -7,18 +7,20 @@ import type {
 } from '@hoseki/packages/ui/wallet-ui'
 import { useBitcoinAccountBalances } from '../../../lib/balance/bitcoin-account'
 
+type ColdcardAccount = {
+  network: Network
+  account: SingleSigAccount
+  derivationPath: DerivationPath | null
+  rawInput: string
+}
+
 type BalancesQuery = ReturnType<typeof useBitcoinAccountBalances>
 
 interface UseColdcardAccountsWithBalancesReturn extends Omit<BalancesQuery, 'data'> {
   data: HardwareWallet[]
 }
 
-function makeAccount(acc: ColdcardSingleSigAccount): {
-  network: Network
-  account: SingleSigAccount
-  derivationPath: DerivationPath | null
-  rawInput: string
-} {
+function makeAccount(acc: ColdcardSingleSigAccount): ColdcardAccount {
   if (acc.desc) {
     return {
       network: Network.Mainnet,

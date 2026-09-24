@@ -802,20 +802,20 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
   type ColumnWidths = Record<string, number>
 
   // Define column widths using the const objects
-  const TRANSACTION_COLUMN_WIDTHS: ColumnWidths = {
+  const TRANSACTION_COLUMN_WIDTHS = {
     [TransactionColumn.Date]: 260,
     [TransactionColumn.MoneyOut]: 105,
     [TransactionColumn.MoneyIn]: 105,
     [TransactionColumn.ClosingBalance]: 120,
-  }
+  } satisfies ColumnWidths
 
-  const SUMMARY_COLUMN_WIDTHS: ColumnWidths = {
+  const SUMMARY_COLUMN_WIDTHS = {
     [SummaryColumn.Account]: 130,
     [SummaryColumn.OpeningBalance]: 125,
     [SummaryColumn.MoneyOut]: 100,
     [SummaryColumn.MoneyIn]: 100,
     [SummaryColumn.ClosingBalance]: 120,
-  }
+  } satisfies ColumnWidths
 
   const CoverPageColumn = {
     Account: 'Account',
@@ -825,13 +825,13 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
     Value: 'Value',
   } as const
 
-  const COVER_PAGE_COLUMN_WIDTHS: ColumnWidths = {
+  const COVER_PAGE_COLUMN_WIDTHS = {
     [CoverPageColumn.Account]: 120,
     [CoverPageColumn.Currency]: 100,
     [CoverPageColumn.Amount]: 100,
     [CoverPageColumn.Rate]: 100,
     [CoverPageColumn.Value]: 120,
-  }
+  } satisfies ColumnWidths
 
   interface TableHeaderProps {
     columns: string[]

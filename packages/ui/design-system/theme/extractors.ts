@@ -2,6 +2,13 @@ import { hasKey } from '../../../lib'
 import { colors } from './foundation/colors'
 import { fontWeights, newTextStyles } from './foundation/typography'
 
+export type ResolvedTextStyle = {
+  fontSize: string
+  lineHeight: string
+  letterSpacing: string | undefined
+  textTransform: string | undefined
+}
+
 /**
  * Extracts a color from the colors object
  * @param colorPath - The color path (e.g. 'primary.50')
@@ -34,12 +41,7 @@ export function getColor(colorPath: string): string {
 
 // Typography token extractor
 
-export function getTextStyle(styleName: keyof typeof newTextStyles): {
-  fontSize: string
-  lineHeight: string
-  letterSpacing: string | undefined
-  textTransform: string | undefined
-} {
+export function getTextStyle(styleName: keyof typeof newTextStyles): ResolvedTextStyle {
   const style = newTextStyles[styleName]
   const letterSpacing = 'letterSpacing' in style ? getValueInPx(style.letterSpacing) : undefined
   const textTransform = 'textTransform' in style ? style.textTransform : undefined

@@ -4,6 +4,16 @@ import { parse } from '../result'
 import type { DerivationPath, DerivationPathString } from './derivation-path'
 import type { CheckedXpubString, Xpub } from './xpub'
 
+export type KeyOriginJson = {
+  fingerprint: KeyFingerprint
+  derivationPath: DerivationPathString | null
+}
+
+export type KeyExpressionJson = {
+  keyOrigin: ReturnType<typeof KeyOrigin.prototype.toJSON> | null
+  xpub: CheckedXpubString
+}
+
 /**
  * First 8 bytes of the SHA256 hash of the public key.
  * This is used to identify the key origin.
@@ -63,10 +73,7 @@ export class KeyOrigin {
     return str
   }
 
-  public toJSON(): {
-    fingerprint: KeyFingerprint
-    derivationPath: DerivationPathString | null
-  } {
+  public toJSON(): KeyOriginJson {
     return {
       fingerprint: this.fingerprint,
       derivationPath: this.derivationPath?.toString() ?? null,
@@ -102,10 +109,7 @@ export class KeyExpression {
     return str
   }
 
-  public toJSON(): {
-    keyOrigin: ReturnType<typeof KeyOrigin.prototype.toJSON> | null
-    xpub: CheckedXpubString
-  } {
+  public toJSON(): KeyExpressionJson {
     return {
       keyOrigin: this.keyOrigin?.toJSON() ?? null,
       xpub: this.xpub.toString(),

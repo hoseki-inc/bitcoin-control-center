@@ -17,6 +17,8 @@ import { CheckCircleFilledIcon, DashedCircleFilledIcon, PlusCircleIcon, RoundKey
 import { StatusBadge, type Status as StatusBadgeStatus } from '../status-badge'
 import { KeystoreAvatar } from './keystore-avatar'
 
+type KeystoreHints = { tooltipCopy: string | null; icon: JSX.Element }
+
 export type PendingKeystore = {
   id: string
   wallet: null
@@ -169,7 +171,7 @@ function getKeystoreHints(
   threshold: number,
   amIExpanded: boolean,
   tooltipVariant: TooltipVariant,
-): { tooltipCopy: string | null; icon: JSX.Element } {
+): KeystoreHints {
   const commonProps = { stroke: 'shades.0', boxSize: '16px' } as const
 
   switch (status) {

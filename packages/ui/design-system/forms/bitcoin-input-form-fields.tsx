@@ -6,6 +6,7 @@ import {
   SingleSigAccount,
   type SingleSigAccountScriptType,
 } from '@hoseki/packages/bitcoin'
+import { getRecordValue } from '@hoseki/packages/lib'
 import { Slip132 } from '@hoseki/packages/wallet'
 import { type Dispatch, type SetStateAction, useEffect, useMemo, useState } from 'react'
 import { ErrorBanner, FormErrorMessage, LabelWithTooltip, RadioCardGroup } from '..'
@@ -181,7 +182,7 @@ export function BitcoinInputFormFields({
             name="encoding"
             defaultValue={encodingsToLabels[encoding ?? getDefaultEncoding(bitcoinRaw)]}
             onChange={(label: string) => {
-              setEncoding(labelsToEncodings[label] ?? 'p2pkh')
+              setEncoding(getRecordValue(labelsToEncodings, label) ?? 'p2pkh')
             }}
           />
         </FormControl>

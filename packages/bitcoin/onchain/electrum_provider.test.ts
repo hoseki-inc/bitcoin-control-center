@@ -12,6 +12,8 @@ import { addressToScripthash } from '../scripthash'
 import { ElectrumProvider } from './electrum_provider'
 import type { TransactionEntry } from './types'
 
+type RawTransaction = { txid: string; hex: string }
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function mockElectrumClient(overrides: Partial<ElectrumClient> = {}): ElectrumClient {
@@ -47,7 +49,7 @@ function blockHeaderHexWithTimestamp(timestamp: number): string {
 function createRawTx(args: {
   inputs?: Array<{ txid: string; vout: number }>
   outputs: Array<{ address: Address; value: number }>
-}): { txid: string; hex: string } {
+}): RawTransaction {
   const tx = new bitcoin.Transaction()
   tx.version = 2
 
