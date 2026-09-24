@@ -209,7 +209,8 @@
       }
     ],
     "vitest/consistent-vitest-vi": "error",
-    "vitest/hoisted-apis-on-top": "error"
+    "vitest/hoisted-apis-on-top": "error",
+    "vitest/no-alias-methods": "error"
   },
   "overrides": [
     {
