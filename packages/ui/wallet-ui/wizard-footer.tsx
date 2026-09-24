@@ -1,5 +1,5 @@
 import { Box, HStack } from '@chakra-ui/react'
-import type { ReactNode } from 'react'
+import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { Wrapper } from '../prove-verify-ui'
 
 /**
@@ -14,8 +14,10 @@ export function WizardFooter({
   leftButton?: ReactNode
   rightButton?: ReactNode
 }): JSX.Element {
+  const ref = useRef<HTMLDivElement | null>(null)
+  const pinned = usePinned(ref)
   return (
-    <Box position="sticky" bottom="var(--sheet-footer-offset, 16px)" zIndex={10} mt={8}>
+    <Box ref={ref} position="sticky" bottom="var(--sheet-footer-offset, 16px)" zIndex={10} mt={8}>
       <Box
         aria-hidden
         position="absolute"
@@ -25,6 +27,10 @@ export function WizardFooter({
         top={-10}
         bottom="-200px"
         pointerEvents="none"
+        // Only while pinned over scrolling content; on a short page the footer simply
+        // follows the content and a fade would end in a hard edge mid-window.
+        opacity={pinned ? 1 : 0}
+        transition="opacity 200ms ease"
         bg="var(--footer-fade)"
         sx={{
           backdropFilter: 'blur(10px)',
@@ -67,4 +73,34 @@ export function WizardFooter({
 }
 
 // The footer sits in the flow now, so pages no longer need to reserve room beneath their content.
+/** True while the sticky footer is held at its offset, i.e. content continues beneath it. */
+function usePinned(ref: React.RefObject<HTMLDivElement | null>): boolean {
+  const [pinned, setPinned] = useState(false)
+  useEffect(() => {
+    const footer = ref.current
+    if (footer === null) return
+    const scroller = footer.closest<HTMLElement>('#main-content') ?? document.scrollingElement
+    if (scroller == null) return
+    const update = (): void => {
+      const offset = Number.parseFloat(getComputedStyle(footer).bottom) || 0
+      const limit =
+        scroller === document.scrollingElement ? window.innerHeight : scroller.getBoundingClientRect().bottom
+      const canScroll = scroller.scrollHeight > scroller.clientHeight + 1
+      const atEnd = scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 1
+      setPinned(canScroll && !atEnd && footer.getBoundingClientRect().bottom >= limit - offset - 1)
+    }
+    update()
+    const target: Element | Window = scroller === document.scrollingElement ? window : scroller
+    target.addEventListener('scroll', update, { passive: true })
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(update)
+    observer?.observe(scroller)
+    if (scroller.firstElementChild) observer?.observe(scroller.firstElementChild)
+    return () => {
+      target.removeEventListener('scroll', update)
+      observer?.disconnect()
+    }
+  }, [ref])
+  return pinned
+}
+
 WizardFooter.padding = 0

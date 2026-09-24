@@ -183,7 +183,7 @@ describe('DesktopLayout', () => {
     expect(search()).toBeNull()
   })
 
-  it('toggles privacy from the dock', async () => {
+  it('toggles privacy from the top-right pill', async () => {
     mockMatchMedia(true)
     localStorage.removeItem('control-center:privacy')
     await render('/home')

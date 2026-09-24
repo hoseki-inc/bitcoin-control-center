@@ -1,5 +1,6 @@
 import { Box, HStack } from '@chakra-ui/react'
 import { AppearanceToggle } from '../components/appearance-toggle'
+import { PrivacyToggle } from '../components/privacy-toggle'
 import { isDesktop } from '../mode'
 
 /**
@@ -30,10 +31,11 @@ export function TopBar({ sheetOpen }: { sheetOpen: boolean }): JSX.Element {
         zIndex={30}
         // Below lg an open sheet reaches the top corner, so its close button takes the spot.
         display={{ base: sheetOpen ? 'none' : 'flex', lg: 'flex' }}
-        spacing={0}
+        spacing={0.5}
         p={1}
         sx={{ WebkitAppRegion: 'no-drag' }}
       >
+        <PrivacyToggle size="sm" borderRadius="full" minW="36px" h="36px" />
         <AppearanceToggle size="sm" borderRadius="full" minW="36px" h="36px" />
       </HStack>
     </>

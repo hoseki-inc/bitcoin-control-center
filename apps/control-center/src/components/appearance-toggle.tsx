@@ -1,10 +1,10 @@
 import { IconButton, type IconButtonProps, Tooltip, useColorMode } from '@chakra-ui/react'
 import { curves } from '@hoseki/packages/ui/design-system/animations/motion'
-import { AnimatePresence, motion } from 'framer-motion'
 import { Moon, Sun } from 'lucide-react'
 import { type MouseEvent } from 'react'
 import { flushSync } from 'react-dom'
 import { type ResolvedAppearance, useAppearance } from '../hooks/use-appearance'
+import { IconSwap } from './reveal'
 
 type ViewTransitionDocument = Document & {
   startViewTransition?: (update: () => void) => { ready: Promise<void> }
@@ -57,20 +57,7 @@ export function AppearanceToggle(props: Omit<IconButtonProps, 'aria-label'>): JS
         aria-label={label}
         variant="ghost"
         overflow="hidden"
-        icon={
-          <AnimatePresence initial={false} mode="popLayout">
-            <motion.span
-              key={resolved}
-              style={{ display: 'inline-flex' }}
-              initial={{ opacity: 0, rotate: -90, scale: 0.6 }}
-              animate={{ opacity: 1, rotate: 0, scale: 1 }}
-              exit={{ opacity: 0, rotate: 90, scale: 0.6 }}
-              transition={{ duration: 0.3, ease: curves.enter }}
-            >
-              {resolved === 'dark' ? <Moon size={20} /> : <Sun size={20} />}
-            </motion.span>
-          </AnimatePresence>
-        }
+        icon={<IconSwap swapKey={resolved}>{resolved === 'dark' ? <Moon size={20} /> : <Sun size={20} />}</IconSwap>}
         onClick={handleClick}
         {...props}
       />

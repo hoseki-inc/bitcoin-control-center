@@ -10,11 +10,10 @@ import {
   useSpring,
   useTransform,
 } from 'framer-motion'
-import { Eye, EyeOff, type LucideIcon } from 'lucide-react'
+import { type LucideIcon } from 'lucide-react'
 import { type KeyboardEvent, type PointerEvent, type ReactNode, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router'
 import { useWelcomeRevealed } from '../components/onboarding/welcome-reveal'
-import { usePrivacy } from '../hooks/use-privacy'
 import { SECTIONS, type Section, sectionForPath } from './sections'
 
 const MotionBox = motion.create(Box)
@@ -187,33 +186,6 @@ function SectionItem({
   )
 }
 
-function PrivacyItem({ mouseX }: { mouseX: MotionValue<number> }): JSX.Element {
-  const { hidden, toggle } = usePrivacy()
-  const label = hidden ? 'Show balances' : 'Hide balances'
-  return (
-    <DockSlot mouseX={mouseX} label={label} active={false}>
-      {() => (
-        <Box
-          as="button"
-          type="button"
-          data-dock-item
-          aria-label={label}
-          aria-pressed={hidden}
-          display="block"
-          w="100%"
-          h="100%"
-          borderRadius="24%"
-          _active={{ filter: 'brightness(0.85)' }}
-          _focusVisible={{ outline: '2px solid', outlineColor: 'focus.ring', outlineOffset: '3px' }}
-          onClick={toggle}
-        >
-          <DockTile tile={['#C9B8FF', '#6D28D9']} glyph="#FFFFFF" icon={hidden ? EyeOff : Eye} />
-        </Box>
-      )}
-    </DockSlot>
-  )
-}
-
 /** Moves focus between dock items with the arrow keys, Home and End. */
 function handleArrowKeys(event: KeyboardEvent<HTMLElement>): void {
   const items = [...event.currentTarget.querySelectorAll<HTMLElement>('[data-dock-item]')]
@@ -281,8 +253,6 @@ export function Dock(): JSX.Element {
         {SECTIONS.map((section) => (
           <SectionItem key={section.id} section={section} mouseX={mouseX} active={activeId === section.id} />
         ))}
-        <Box aria-hidden alignSelf="center" w="1px" h="36px" bg="border.subtle" mx={0.5} mb={-1} />
-        <PrivacyItem mouseX={mouseX} />
       </Glass>
     </MotionBox>
   )

@@ -177,7 +177,7 @@ function PrivacyRow({ tone }: { tone: number }): JSX.Element {
       icon={EyeOff}
       tone={tone}
       title={<label htmlFor="hide-balances">Hide balances</label>}
-      description="Mask amounts everywhere, for screen sharing or working in public. Also in the dock."
+      description="Mask amounts everywhere, for screen sharing or working in public. Also in the top-right corner."
       control={<Switch id="hide-balances" isChecked={hidden} onChange={toggle} size="lg" />}
     />
   )

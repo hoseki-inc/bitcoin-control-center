@@ -1,4 +1,4 @@
-import { Box, type BoxProps, chakra, keyframes } from '@chakra-ui/react'
+import { Box, type BoxProps, chakra, keyframes, useColorMode } from '@chakra-ui/react'
 import Lottie from 'lottie-react'
 import coldcardWhatYouNeed_M3 from './assets/lottie-animations/coldcard/M3/01.json'
 import coldcardExportWallet_M3 from './assets/lottie-animations/coldcard/M3/02.json'
@@ -26,6 +26,7 @@ import ledgerUniqueMessage from './assets/lottie-animations/ledger-unique-messag
 import trezorPlugIn from './assets/lottie-animations/trezor-plug-in.json'
 import trezorUniqueMessage from './assets/lottie-animations/trezor-unique-message.json'
 import type { ColdcardModel } from './coldcard/coldcard-utils'
+import { useThemedLottie } from './use-themed-lottie'
 
 const animations = {
   // Trezor animations
@@ -144,17 +145,54 @@ export function getColdcardAnimation(model: ColdcardModel, animation: coldcardAn
 export type WalletAnimationType = keyof typeof allAnimations
 
 export function WalletAnimation({ animation }: { animation: WalletAnimationType }): JSX.Element {
-  return (
+  const { colorMode } = useColorMode()
+  const { animationData, needsLightStage } = useThemedLottie(allAnimations[animation])
+  const player = (
     <Lottie
-      animationData={allAnimations[animation]}
+      animationData={animationData}
       loop={true}
       autoplay={true}
       style={{
         width: '320px',
         height: '240px',
-        margin: '0 auto -20px auto',
+        margin: needsLightStage ? '0 auto' : '0 auto -20px auto',
       }}
     />
+  )
+  if (!needsLightStage) {
+    if (colorMode !== 'dark') return player
+    // Without their white backdrop, dark devices (a black Trezor) need a little light
+    // behind them to read on dark glass: a soft spotlight rather than a frame.
+    return (
+      <Box
+        position="relative"
+        w="320px"
+        mx="auto"
+        _before={{
+          content: '""',
+          position: 'absolute',
+          inset: '-10% -20% 0',
+          bg: 'radial-gradient(closest-side, rgb(255 255 255 / 0.16), rgb(255 255 255 / 0.05) 55%, transparent)',
+          pointerEvents: 'none',
+        }}
+      >
+        {player}
+      </Box>
+    )
+  }
+  // Raster frames carry a white background, so present them as a card on purpose.
+  return (
+    <Box
+      w="320px"
+      mx="auto"
+      mb={2}
+      bg="white"
+      borderRadius="16px"
+      overflow="hidden"
+      boxShadow="0 0 0 0.5px var(--edge-border), 0 8px 24px rgb(0 0 0 / 0.35)"
+    >
+      {player}
+    </Box>
   )
 }
 

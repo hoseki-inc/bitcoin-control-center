@@ -10,7 +10,8 @@ from `apps/web-marketing` still governs type. Sentinel remains the only backend.
 - The appearance preference is System, Light or Dark, stored per browser
   (`control-center:appearance`) and applied before first paint by the script in
   `apps/control-center/index.html`. `AppearanceSync` keeps Chakra in step. The header
-  pill, the desktop menu, search and Settings can all change it.
+  pill, the desktop menu, search and Settings can all change it. Hide balances sits beside it
+  in the top-right pill.
 - Use semantic colour roles, never palette steps, in components:
   `text.primary|secondary|tertiary|disabled|inverse`, `border.subtle|strong|inverse`,
   `surface.base|raised|subtle|muted|emphasis|inverse|overlay`, `accent.*`,
@@ -43,7 +44,7 @@ becomes opaque; without `backdrop-filter` support, tints thicken.
 - `/home` is the desktop: greeting, four widgets (Holdings, Bitcoin, Connections,
   Verified), and accounts as app icons. Every other route opens in one persistent sheet
   window that grows out of the dock; URLs and deep links are unchanged.
-- The dock holds the five sections and the privacy toggle. It magnifies under a mouse
+- The dock holds the five sections. It magnifies under a mouse
   only, shows labels on hover or focus, marks the current section with `aria-current`
   and a dot, and moves focus with the arrow keys.
 - ⌘K / Ctrl+K opens search from anywhere after the welcome. Commands come from

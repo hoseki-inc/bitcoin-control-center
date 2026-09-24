@@ -17,6 +17,7 @@ import { getKeystoreStatus } from '../../../lib/multisig/keystore'
 import type { ClaimDto } from '../../../trpc/server-types'
 import { ensureClaimStatusNotExpired } from '../../../utils/claim-utils'
 import { BitcoinAmount } from '../../bitcoin-amount'
+import { DecodeText, IconSwap } from '../../reveal'
 import { SensitiveValue } from '../../sensitive-value'
 import { WalletImageFromKnownModel } from '../wallet-image-from-known-model'
 import { RenameKeystore } from './rename-keystore'
@@ -187,7 +188,7 @@ function KeystoreXpub({ xpub }: { xpub: Xpub }) {
         flex={1}
         overflowWrap="anywhere"
       >
-        {toXpubDisplayValue(xpub.toString(), isMasked)}
+        <DecodeText text={toXpubDisplayValue(xpub.toString(), isMasked)} revealKey={isMasked ? 'masked' : 'shown'} />
       </chakra.code>
       <Button
         variant="ghost"
@@ -197,11 +198,13 @@ function KeystoreXpub({ xpub }: { xpub: Xpub }) {
         p={2}
         flexShrink={0}
       >
-        {isMasked ? (
-          <EyeOffIcon color="var(--hoseki-colors-text-secondary)" />
-        ) : (
-          <EyeIcon color="var(--hoseki-colors-text-secondary)" />
-        )}
+        <IconSwap swapKey={isMasked ? 'masked' : 'shown'}>
+          {isMasked ? (
+            <EyeOffIcon color="var(--hoseki-colors-text-secondary)" />
+          ) : (
+            <EyeIcon color="var(--hoseki-colors-text-secondary)" />
+          )}
+        </IconSwap>
       </Button>
     </HStack>
   )
