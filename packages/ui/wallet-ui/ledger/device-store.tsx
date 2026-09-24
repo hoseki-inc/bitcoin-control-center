@@ -16,12 +16,14 @@ export type LedgerDeviceModel = {
   id: string
 }
 
+export type LedgerBitcoinApp = Pick<LedgerBtcApp, 'getWalletXpub' | 'signMessage'>
+
 type InitializedState = {
   connectionId: number
   isInitialized: true
   isConnected: boolean // Should be true, but if the device is disconnected, it will be false.
   transport: Transport
-  btc: LedgerBtcApp
+  btc: LedgerBitcoinApp
   deviceModel: LedgerDeviceModel
 }
 type UninitializedState = {
@@ -49,6 +51,7 @@ type XpubWithPath = { xpub: string; path: string }
 
 export function createLedgerStore(
   browserLogger: Logger,
+  createBitcoinApp: (transport: Transport) => LedgerBitcoinApp = (transport) => new LedgerBtcApp({ transport }),
 ): UseBoundStore<StoreApi<LedgerStoreState & LedgerStoreActions>> {
   return create<LedgerStoreState & LedgerStoreActions>((set, get, store) => {
     let connectionId = 0
@@ -138,7 +141,7 @@ export function createLedgerStore(
           await newTransport.close()
           throw new DOMException('Connection cancelled', 'AbortError')
         }
-        const newBtc = new LedgerBtcApp({ transport: newTransport })
+        const newBtc = createBitcoinApp(newTransport)
 
         newTransport.on('disconnect', onDisconnect)
 

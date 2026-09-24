@@ -1,33 +1,49 @@
-// @vitest-environment jsdom
+// @vitest-environment node
 import { ChakraProvider } from '@chakra-ui/react'
-import type { PartialModuleMock } from '@hoseki/packages/testing/partial-module-mock'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, createElement } from 'react'
 import { type Root, createRoot } from 'react-dom/client'
-import type * as Sonner from 'sonner'
 import { toast } from 'sonner'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import { SettingsPage } from './index'
 
-vi.mock(import('../../mode'), () => ({ isDesktop: true }))
-vi.mock(import('../../hooks/use-local-settings'), () => ({
-  useLocalSetting: () => ({ data: null, isLoading: false, save: vi.fn<() => void>(), isSaving: false }),
-}))
-vi.mock<PartialModuleMock<typeof Sonner>>(import('sonner'), () => ({
-  toast: Object.assign(vi.fn<typeof Sonner.toast>(), { success: vi.fn(), error: vi.fn() }),
-}))
+const browser = await vi.hoisted(async () => {
+  const { createBrowserDom, installBrowserDom } = await import('@hoseki/packages/testing/browser-dom')
+  let initialDom: ReturnType<typeof createBrowserDom> | undefined = createBrowserDom()
+  installBrowserDom(initialDom)
+  return {
+    acquire: () => {
+      const dom = initialDom ?? createBrowserDom()
+      initialDom = undefined
+      installBrowserDom(dom)
+      return dom
+    },
+  }
+})
 
+let queryClient: QueryClient
 let root: Root
 let container: HTMLDivElement
 const fetchMock = vi.fn<typeof fetch>()
 
 async function withTestSetup(run: () => Promise<void>): Promise<void> {
+  const dom = browser.acquire()
+  queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+  for (const key of ['user_name', 'electrum_host', 'electrum_port', 'electrum_protocol', 'tor_enabled']) {
+    queryClient.setQueryData(['local-settings', key], null)
+  }
+  vi.spyOn(toast, 'error').mockReturnValue('test-toast')
+  vi.spyOn(toast, 'success').mockReturnValue('test-toast')
   // Vitest owns teardown so it has its own timeout and runs once, even after a test timeout.
   onTestFinished(async () => {
     await act(async () => {
       root.unmount()
     })
     container.remove()
+    queryClient.clear()
+    vi.restoreAllMocks()
     vi.unstubAllGlobals()
+    dom.window.close()
   })
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
   vi.stubGlobal('fetch', fetchMock.mockReset())
@@ -59,7 +75,13 @@ it.each([
       return Response.json({ result: { data: { json: null } } })
     })
     await act(async () => {
-      root.render(createElement(ChakraProvider, null, createElement(SettingsPage)))
+      root.render(
+        createElement(
+          ChakraProvider,
+          null,
+          createElement(QueryClientProvider, { client: queryClient }, createElement(SettingsPage, { desktop: true })),
+        ),
+      )
     })
     const preset = container.querySelector('select')
     if (!preset) {
@@ -103,7 +125,13 @@ it.each([
       return Response.json({ result: { data: { json: null } } })
     })
     await act(async () => {
-      root.render(createElement(ChakraProvider, null, createElement(SettingsPage)))
+      root.render(
+        createElement(
+          ChakraProvider,
+          null,
+          createElement(QueryClientProvider, { client: queryClient }, createElement(SettingsPage, { desktop: true })),
+        ),
+      )
     })
     const button = Array.from(container.querySelectorAll('button')).find(
       (candidate) => candidate.textContent === 'Test Connection',
@@ -135,7 +163,13 @@ it.each([
   await withTestSetup(async () => {
     fetchMock.mockResolvedValue(Response.json(body))
     await act(async () => {
-      root.render(createElement(ChakraProvider, null, createElement(SettingsPage)))
+      root.render(
+        createElement(
+          ChakraProvider,
+          null,
+          createElement(QueryClientProvider, { client: queryClient }, createElement(SettingsPage, { desktop: true })),
+        ),
+      )
     })
     if (visible) {
       expect(container.textContent).toContain('electrum.example:50002 (SSL)')

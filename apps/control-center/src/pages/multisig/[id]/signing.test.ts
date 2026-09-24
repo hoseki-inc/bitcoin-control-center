@@ -1,46 +1,41 @@
 // @vitest-environment node
 import { Box } from '@chakra-ui/react'
 import { Address, DerivationPath, MultiSigAccount } from '@hoseki/packages/bitcoin'
-import { Err, Ok } from '@hoseki/packages/result'
+import { Err, Ok, asyncFn } from '@hoseki/packages/result'
 import { TestChakraProvider as ChakraProvider } from '@hoseki/packages/testing/chakra-provider'
-import type { PartialModuleMock } from '@hoseki/packages/testing/partial-module-mock'
 import { TrezorInfo } from '@hoseki/packages/ui/wallet-ui/trezor/trezor-info'
 import { HardwareDeviceError, Slip132 } from '@hoseki/packages/wallet'
 import TransportWebHID from '@ledgerhq/hw-transport-webhid'
-import {
-  type InvalidateOptions,
-  type InvalidateQueryFilters,
-  QueryClient,
-  QueryClientProvider,
-  type UseMutationOptions,
-} from '@tanstack/react-query'
-import { Fragment, type ReactElement, act, createElement } from 'react'
+import { QueryClient } from '@tanstack/react-query'
+import { getQueryKey } from '@trpc/react-query'
+import { type ReactElement, act, createElement } from 'react'
 import { type Root, createRoot } from 'react-dom/client'
-import type * as ReactRouter from 'react-router'
 import { RouterProvider, createMemoryRouter } from 'react-router'
-import type * as Sonner from 'sonner'
-import { assert, describe, expect, it, onTestFinished, vi } from 'vitest'
+import { Outlet } from 'react-router'
+import { toast } from 'sonner'
+import { type MockInstance, assert, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { LedgerSigning as SinglesigLedgerSigning } from '../../../components/claims/ledger/ledger-signing'
-import type * as TrezorServiceSingletonModule from '../../../components/claims/trezor/trezor-service-singleton'
+import { trezorService } from '../../../components/claims/trezor/trezor-service-singleton'
 import { TrezorSigning as SinglesigTrezorSigning } from '../../../components/claims/trezor/trezor-signing'
-import type * as MultisigPageWrapperModule from '../../../components/multisig/multisig-page-wrapper'
 import { MultisigPageWrapper, getIndicatorKeystores } from '../../../components/multisig/multisig-page-wrapper'
-import type * as BbqrScannerModule from '../../../components/qr/bbqr-scanner'
-import type * as UseLedgerStoreModule from '../../../hooks/use-ledger-store'
-import type * as UseUrlParametersModule from '../../../hooks/use-url-parameters'
+import { type QrCamera, type QrCameraFactory, QrCameraProvider } from '../../../components/qr/bbqr-scanner'
+import { useLedgerStore } from '../../../hooks/use-ledger-store'
 import type { SigningFlowProps } from '../../../lib/claim-flow'
-import type * as LoggerModule from '../../../logger'
-import type { ClaimDto } from '../../../trpc/server-types'
+import { TestTrpcProvider, createTestTrpcClient } from '../../../testing/trpc'
+import { type RouterOutput, trpc } from '../../../trpc'
+import type { ChallengeMessageDto, ClaimDto } from '../../../trpc/server-types'
 import { MultisigSigningPage } from './signing'
 
 const mocks = await vi.hoisted(async () => {
   // Add a DOM without replacing Node byte-array globals used by the Bitcoin SDK.
   const { JSDOM } = await import('jsdom')
+  const { installAnimationPlaceholder } = await import('@hoseki/packages/testing/animation-dom')
   function createDom() {
     const { window } = new JSDOM('<!doctype html><html><body></body></html>', {
       url: 'http://localhost',
       pretendToBeVisual: true,
     })
+    installAnimationPlaceholder(window.HTMLCanvasElement)
     const domGlobals = {
       window,
       document: window.document,
@@ -88,130 +83,105 @@ const mocks = await vi.hoisted(async () => {
       claim = value
     },
     walletType: 'ledger' as 'ledger' | 'trezor' | 'coldcard' | 'keystone',
-    ledger: { isInitialized: false, init: vi.fn(), reset: vi.fn(), signMessage: vi.fn() },
-    trezorSign: vi.fn(),
+    ledger: {
+      isInitialized: false,
+      init: vi.fn(),
+      reset: vi.fn(),
+      signMessage:
+        vi.fn<
+          (
+            ...args: Parameters<ReturnType<typeof useLedgerStore.getState>['signMessage']>
+          ) => Promise<Awaited<ReturnType<ReturnType<typeof useLedgerStore.getState>['signMessage']>>>
+        >(),
+    },
+    trezorSign:
+      vi.fn<
+        (
+          ...args: Parameters<typeof trezorService.signCustomMessage>
+        ) => Promise<Awaited<ReturnType<typeof trezorService.signCustomMessage>>>
+      >(),
     navigate: vi.fn(),
-    completeMessage: vi.fn(),
-    completeChallenge: vi.fn(),
-    fetchClaim: vi.fn(),
-    invalidateClaim: vi.fn(),
+    completeMessage: vi.fn<(input: unknown) => Promise<void>>(),
+    completeChallenge: vi.fn<(input: unknown) => Promise<void>>(),
+    fetchClaim: vi.fn<() => Promise<ClaimDto>>(),
     toastError: vi.fn(),
   }
 })
 
-vi.mock<PartialModuleMock<typeof UseLedgerStoreModule>>(import('../../../hooks/use-ledger-store'), () => ({
-  useLedgerStore: (
-    selector: (
-      state: Pick<
-        ReturnType<typeof UseLedgerStoreModule.useLedgerStore.getState>,
-        'isInitialized' | 'init' | 'reset' | 'signMessage'
-      >,
-    ) => unknown,
-  ) => selector(mocks.ledger),
-  useToastOnLedgerDisconnect: () => undefined,
-}))
-vi.mock<PartialModuleMock<typeof MultisigPageWrapperModule>>(
-  import('../../../components/multisig/multisig-page-wrapper'),
-  async (importOriginal) => {
-    const original = await importOriginal<typeof MultisigPageWrapperModule>()
-    const { useOutletContext } = await import('react-router')
-    return {
-      ...original,
-      useMultisigPageWrapperContext: () => useOutletContext<{ claim: ClaimDto } | null>() ?? { claim: mocks.claim },
+const claimQueryKey = getQueryKey(trpc.portalProve.registry.claims.get.byId, { id: 're_clmx_claim1' }, 'query')
+let invalidateClaim: MockInstance<QueryClient['invalidateQueries']>
+const rpc = createTestTrpcClient(async ({ path, input }) => {
+  switch (path) {
+    case 'portalProve.registry.claims.get.byId':
+      return mocks.fetchClaim()
+    case 'portalProve.registry.challengeMessages.get':
+      return challengeMessage()
+    case 'portalProve.registry.challengeMessages.complete': {
+      await mocks.completeMessage(input)
+      const message = challengeMessage()
+      return {
+        ...message,
+        signedMessage: { ...message.signedMessage, signedAt: new Date(), signature: 'synthetic-signature' },
+      } satisfies ChallengeMessageDto
     }
-  },
-)
-vi.mock<PartialModuleMock<typeof UseUrlParametersModule>>(
-  import('../../../hooks/use-url-parameters'),
-  async (importOriginal) => ({
-    ...(await importOriginal()),
-    useUrlParameter: () => mocks.claim.id,
-  }),
-)
-vi.mock<PartialModuleMock<typeof TrezorServiceSingletonModule>>(
-  import('../../../components/claims/trezor/trezor-service-singleton'),
-  () => ({
-    trezorService: { signCustomMessage: mocks.trezorSign },
-  }),
-)
-vi.mock<PartialModuleMock<typeof LoggerModule>>(import('../../../logger'), () => ({
-  browserLogger: { error: vi.fn<() => void>() },
-  captureHardwareWalletError: vi.fn<() => void>(),
-}))
-vi.mock(import('lottie-react'), () => ({ default: () => createElement(Fragment) }))
-vi.mock<PartialModuleMock<typeof Sonner>>(import('sonner'), () => ({
-  toast: Object.assign(vi.fn<typeof Sonner.toast>(), { error: mocks.toastError, success: vi.fn() }),
-}))
-vi.mock<PartialModuleMock<typeof ReactRouter>>(import('react-router'), async (importOriginal) => ({
-  ...(await importOriginal<typeof ReactRouter>()),
-  useParams: () => ({ walletType: mocks.walletType, keystoreId: 're_ks_ledger' }),
-  useNavigate: () => mocks.navigate,
-}))
-// Replace the camera and QR rendering only; exercise the real signing screens and callbacks.
-vi.mock(import('../../../components/qr/bbqr-display'), () => ({ BBQrDisplay: () => createElement(Fragment) }))
-vi.mock<PartialModuleMock<typeof BbqrScannerModule>>(import('../../../components/qr/bbqr-scanner'), () => ({
-  BBQrScanner: ({ onPlainScan }: { onPlainScan?: (value: string) => void }) =>
-    createElement(
-      'button',
-      {
-        onClick: () => {
-          assert.exists(onPlainScan)
-          onPlainScan('c3ludGhldGljLXNpZ25hdHVyZQ==')
-        },
-      },
-      'Scan signature',
-    ),
-}))
-// These tRPC fixtures intentionally model only the query states exercised below.
-vi.mock<{ trpc: unknown }>(import('../../../trpc'), async () => {
-  const { useMutation, useQuery } = await import('@tanstack/react-query')
-  return {
-    trpc: {
-      useUtils: () => ({
-        portalProve: { registry: { claims: { get: { byId: { invalidate: mocks.invalidateClaim } } } } },
-      }),
-      portalProve: {
-        registry: {
-          claims: {
-            get: {
-              byId: {
-                useQuery: ({ id }: { id: string }) =>
-                  useQuery({
-                    queryKey: ['claim', id],
-                    queryFn: mocks.fetchClaim,
-                    initialData: mocks.claim,
-                    staleTime: Infinity,
-                  }),
-              },
-            },
-          },
-          challenges: {
-            complete: {
-              useMutation: (options?: UseMutationOptions<void, Error, { challengeId: string }>) =>
-                useMutation({ ...options, mutationFn: mocks.completeChallenge }),
-            },
-          },
-          challengeMessages: {
-            get: {
-              useQuery: () => ({
-                isLoading: false,
-                data: {
-                  signedMessage: {
-                    id: 're_mesg_message1',
-                    address: '1BoatSLRHtKNngkdXEeobR76b53LETtpyT',
-                    messageTextToSign: 'Synthetic multisig ownership challenge',
-                  },
-                },
-              }),
-            },
-            complete: { useMutation: () => useMutation({ mutationFn: mocks.completeMessage }) },
-          },
-        },
-      },
-    },
+    case 'portalProve.registry.challenges.complete':
+      await mocks.completeChallenge(input)
+      return {
+        id: 're_chal_challenge1',
+        claimId: mocks.claim.id,
+        variant: 'signed_message',
+        isSatisfied: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        completedAt: new Date(),
+      } satisfies RouterOutput['portalProve']['registry']['challenges']['complete']
+    default:
+      throw new Error(`Unexpected signing request: ${path}`)
   }
 })
-
+function challengeMessage(): ChallengeMessageDto {
+  return {
+    signedMessage: {
+      version: 0 as const,
+      id: 're_mesg_message1',
+      address: Address.fromString('1BoatSLRHtKNngkdXEeobR76b53LETtpyT').expect('valid challenge address').toString(),
+      messageTextToSign: 'Synthetic multisig ownership challenge',
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+      updatedAt: new Date('2026-01-01T00:00:00Z'),
+      signedAt: null,
+      signature: null,
+    },
+    challengeId: 're_chal_challenge1',
+    keystoreId: 're_ks_ledger',
+  }
+}
+let scanText: (text: string) => void = () => {
+  throw new Error('Camera has not started')
+}
+const cameraFactory: QrCameraFactory = {
+  getCameras: async () => [{ id: 'signing-camera', label: 'Signing camera' }],
+  create: () => {
+    const camera: QrCamera = {
+      isScanning: false,
+      start: async (_id, _config, onSuccess) => {
+        assert.exists(onSuccess, 'Expected QR success callback')
+        camera.isScanning = true
+        scanText = (text) => {
+          onSuccess(text, { decodedText: text, result: { text } })
+        }
+        return null
+      },
+      stop: async () => {
+        camera.isScanning = false
+      },
+      clear: () => undefined,
+    }
+    return camera
+  },
+}
+function SigningOutlet(): JSX.Element {
+  return createElement(Outlet, { context: { claim: mocks.claim, indicatorKeystores: [], expandedKeystore: null } })
+}
 let root: Root
 let container: HTMLDivElement
 let queryClient: QueryClient
@@ -255,30 +225,63 @@ async function clickSign(): Promise<void> {
   })
 }
 
-async function render(page: ReactElement = createElement(MultisigSigningPage)): Promise<void> {
+async function render(page?: ReactElement): Promise<void> {
+  if (!page) {
+    await renderSigningRoute()
+    return
+  }
   await act(async () => {
-    root.render(createElement(ChakraProvider, null, createElement(QueryClientProvider, { client: queryClient }, page)))
+    root.render(
+      createElement(
+        ChakraProvider,
+        null,
+        createElement(
+          TestTrpcProvider,
+          { client: queryClient, rpc },
+          createElement(QrCameraProvider, { value: cameraFactory }, page),
+        ),
+      ),
+    )
   })
 }
 
 async function renderSigningRoute(withWrapper = false): Promise<ReturnType<typeof createMemoryRouter>> {
+  queryClient.setQueryData(claimQueryKey, mocks.claim)
+  queryClient.setQueryData(
+    getQueryKey(trpc.portalProve.registry.challengeMessages.get, { signedMessageId: 're_mesg_message1' }, 'query'),
+    challengeMessage(),
+  )
+  router?.dispose()
   router = createMemoryRouter(
     [
       { path: '/accounts', element: createElement('div', null, 'Account list') },
       {
-        element: withWrapper ? createElement(MultisigPageWrapper) : undefined,
+        element: withWrapper ? createElement(MultisigPageWrapper) : createElement(SigningOutlet),
         children: [
-          { path: '/multisig/:id/signing/:walletType/:keystoreId', element: createElement(MultisigSigningPage) },
+          { path: '/multisig/:claimId/signing/:walletType/:keystoreId', element: createElement(MultisigSigningPage) },
         ],
       },
-      { path: '/multisig/verify/receipt/:id/:keystoreId', element: createElement('div', null, 'Key receipt') },
-      { path: '/accounts/verify/receipt/:id', element: createElement('div', null, 'Verified account receipt') },
+      { path: '/multisig/verify/receipt/:claimId/:keystoreId', element: createElement('div', null, 'Key receipt') },
+      { path: '/accounts/verify/receipt/:claimId', element: createElement('div', null, 'Verified account receipt') },
     ],
     {
       initialEntries: ['/accounts', `/multisig/re_clmx_claim1/signing/${mocks.walletType}/re_ks_ledger`],
       initialIndex: 1,
     },
   )
+  const navigate = router.navigate.bind(router)
+  vi.spyOn(router, 'navigate').mockImplementation(async (to, options) => {
+    if (options?.replace === true) {
+      mocks.navigate(to, { replace: true })
+    } else {
+      mocks.navigate(to)
+    }
+    if (typeof to === 'number') {
+      await navigate(to)
+    } else {
+      await navigate(to, options)
+    }
+  })
   await render(createElement(RouterProvider, { router }))
   return router
 }
@@ -297,6 +300,8 @@ async function withTestSetup(run: () => Promise<void>, setup?: () => Promise<voi
       router?.dispose()
       router = undefined
       queryClient.clear()
+      useLedgerStore.setState(useLedgerStore.getInitialState(), true)
+      vi.restoreAllMocks()
       container.remove()
     } finally {
       vi.unstubAllGlobals()
@@ -356,20 +361,32 @@ async function withTestSetup(run: () => Promise<void>, setup?: () => Promise<voi
       messages: [{ signedMessageId: 're_mesg_message1', keystoreId: 're_ks_ledger', signed: false }],
     },
   }
-  mocks.ledger.isInitialized = false
+  useLedgerStore.setState(useLedgerStore.getInitialState(), true)
+  useLedgerStore.setState({
+    init: mocks.ledger.init,
+    reset: mocks.ledger.reset,
+    signMessage: asyncFn(async (path: string, message: string) => mocks.ledger.signMessage(path, message)),
+  })
+  vi.spyOn(trezorService, 'signCustomMessage').mockImplementation(
+    asyncFn(async (path: string, message: string) => mocks.trezorSign(path, message)),
+  )
+  vi.spyOn(toast, 'error').mockImplementation((...args) => {
+    mocks.toastError(...args)
+    return 'test-toast'
+  })
   mocks.ledger.init.mockReset().mockResolvedValue(undefined)
   mocks.ledger.reset.mockReset().mockResolvedValue(undefined)
   mocks.ledger.signMessage.mockReset().mockResolvedValue(Ok({ v: 0, r: '11'.repeat(32), s: '22'.repeat(32) }))
-  mocks.trezorSign.mockReset().mockResolvedValue(Ok({ signature: 'synthetic-trezor-signature' }))
+  mocks.trezorSign
+    .mockReset()
+    .mockResolvedValue(Ok({ signature: 'synthetic-trezor-signature', address: '1BoatSLRHtKNngkdXEeobR76b53LETtpyT' }))
   mocks.completeMessage.mockReset().mockResolvedValue(undefined)
   mocks.completeChallenge.mockReset().mockResolvedValue(undefined)
   mocks.fetchClaim.mockReset().mockResolvedValue(mocks.claim)
-  queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
-  mocks.invalidateClaim
-    .mockReset()
-    .mockImplementation(async (input: { id: string }, filters?: InvalidateQueryFilters, options?: InvalidateOptions) =>
-      queryClient.invalidateQueries({ ...filters, queryKey: ['claim', input.id] }, options),
-    )
+  queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: Infinity }, mutations: { retry: false } },
+  })
+  invalidateClaim = vi.spyOn(queryClient, 'invalidateQueries')
   container = document.createElement('div')
   document.body.append(container)
   root = createRoot(container)
@@ -459,7 +476,12 @@ describe.each(['ledger', 'trezor'] as const)('%s as the final multisig cosigner'
       })
       expect(mocks.completeMessage).toHaveBeenCalledTimes(1)
       expect(mocks.completeChallenge).toHaveBeenCalledExactlyOnceWith({ challengeId: 're_chal_challenge1' })
-      expect(mocks.invalidateClaim).toHaveBeenCalledWith({ id: 're_clmx_claim1' }, undefined, { throwOnError: true })
+      expect(invalidateClaim).toHaveBeenCalledWith(
+        expect.objectContaining({
+          queryKey: getQueryKey(trpc.portalProve.registry.claims.get.byId, { id: 're_clmx_claim1' }),
+        }),
+        { throwOnError: true },
+      )
       expect(mocks.fetchClaim).toHaveBeenCalledTimes(1)
       expect(mocks.toastError).not.toHaveBeenCalled()
     }, setupFinalCosigner)
@@ -477,7 +499,7 @@ describe.each(['ledger', 'trezor'] as const)('%s as the final multisig cosigner'
       try {
         expect(mocks.completeChallenge).toHaveBeenCalledTimes(1)
         expect(mocks.navigate).not.toHaveBeenCalled()
-        expect(mocks.invalidateClaim).not.toHaveBeenCalled()
+        expect(invalidateClaim).not.toHaveBeenCalled()
         expect(getSignButton().disabled).toBe(true)
         await clickSign()
         expect(walletType === 'ledger' ? mocks.ledger.signMessage : mocks.trezorSign).toHaveBeenCalledTimes(1)
@@ -491,7 +513,7 @@ describe.each(['ledger', 'trezor'] as const)('%s as the final multisig cosigner'
       await vi.waitFor(() => {
         expect(mocks.navigate).toHaveBeenCalledWith('/accounts/verify/receipt/re_clmx_claim1')
       })
-      expect(getSignButton().disabled).toBe(false)
+      expect(router?.state.location.pathname).toBe('/accounts/verify/receipt/re_clmx_claim1')
     }, setupFinalCosigner)
   })
 
@@ -509,7 +531,12 @@ describe.each(['ledger', 'trezor'] as const)('%s as the final multisig cosigner'
       await clickSign()
       try {
         expect(mocks.completeChallenge).toHaveBeenCalledTimes(1)
-        expect(mocks.invalidateClaim).toHaveBeenCalledWith({ id: 're_clmx_claim1' }, undefined, { throwOnError: true })
+        expect(invalidateClaim).toHaveBeenCalledWith(
+          expect.objectContaining({
+            queryKey: getQueryKey(trpc.portalProve.registry.claims.get.byId, { id: 're_clmx_claim1' }),
+          }),
+          { throwOnError: true },
+        )
         expect(mocks.navigate).not.toHaveBeenCalled()
         expect(getSignButton().disabled).toBe(true)
         await clickSign()
@@ -524,7 +551,7 @@ describe.each(['ledger', 'trezor'] as const)('%s as the final multisig cosigner'
       await vi.waitFor(() => {
         expect(mocks.navigate).toHaveBeenCalledWith('/accounts/verify/receipt/re_clmx_claim1')
       })
-      expect(getSignButton().disabled).toBe(false)
+      expect(router?.state.location.pathname).toBe('/accounts/verify/receipt/re_clmx_claim1')
     }, setupFinalCosigner)
   })
 
@@ -538,16 +565,25 @@ describe.each(['ledger', 'trezor'] as const)('%s as the final multisig cosigner'
           'Verification completed, but the account could not be refreshed. Reload the page.',
         )
       })
-      expect(queryClient.getQueryState(['claim', 're_clmx_claim1'])).toMatchObject({ status: 'error' })
+      expect(queryClient.getQueryState(claimQueryKey)).toMatchObject({ status: 'error' })
       expect(mocks.fetchClaim).toHaveBeenCalledTimes(1)
       expect(mocks.completeChallenge).toHaveBeenCalledTimes(1)
-      expect(mocks.invalidateClaim).toHaveBeenCalledWith({ id: 're_clmx_claim1' }, undefined, { throwOnError: true })
+      expect(invalidateClaim).toHaveBeenCalledWith(
+        expect.objectContaining({
+          queryKey: getQueryKey(trpc.portalProve.registry.claims.get.byId, { id: 're_clmx_claim1' }),
+        }),
+        { throwOnError: true },
+      )
       expect(mocks.navigate).not.toHaveBeenCalled()
       expect(
         queryClient
           .getMutationCache()
           .getAll()
-          .find((mutation) => mutation.options.mutationFn === mocks.completeChallenge)?.state.status,
+          .find(
+            (mutation) =>
+              JSON.stringify(mutation.options.mutationKey) ===
+              JSON.stringify([['portalProve', 'registry', 'challenges', 'complete']]),
+          )?.state.status,
       ).toBe('success')
 
       // Simulate reloading the signing URL with the completed claim returned by Sentinel.
@@ -593,7 +629,7 @@ describe.each(['ledger', 'trezor'] as const)('%s as the final multisig cosigner'
       expect(mocks.completeChallenge).toHaveBeenCalledTimes(1)
       expect(mocks.toastError).toHaveBeenCalledWith('There was an error when completing your Multisig claim')
       expect(mocks.navigate).not.toHaveBeenCalled()
-      expect(mocks.invalidateClaim).not.toHaveBeenCalled()
+      expect(invalidateClaim).not.toHaveBeenCalled()
     }, setupFinalCosigner)
   })
 })
@@ -781,12 +817,18 @@ async function reachAirgappedSigning(flow: AirgappedFlow): Promise<void> {
   } else {
     await clickButton('Next')
     await clickButton('Ready to Scan')
-    await waitForText('Scan signature')
+    await waitForText('Point your webcam at the QR code...')
   }
 }
 
 async function submitAirgappedSignature(flow: AirgappedFlow): Promise<void> {
-  await clickButton(flow === 'coldcard-file' ? 'Prove Control' : 'Scan signature')
+  if (flow === 'coldcard-file') {
+    await clickButton('Prove Control')
+  } else {
+    await act(async () => {
+      scanText('c3ludGhldGljLXNpZ25hdHVyZQ==')
+    })
+  }
 }
 
 describe.each(['coldcard-file', 'coldcard-qr', 'keystone'] as const)('%s multisig completion', (flow) => {
@@ -1105,7 +1147,6 @@ it.each(['ledger', 'trezor'] as const)(
         },
       })
       const signingRouter = await renderSigningRoute(true)
-      mocks.navigate.mockImplementation(signingRouter.navigate.bind(signingRouter))
       await reachSigning()
       await clickSign()
       await waitForText('Key receipt')

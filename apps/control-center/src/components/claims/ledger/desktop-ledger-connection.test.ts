@@ -1,16 +1,30 @@
-// @vitest-environment jsdom
+// @vitest-environment node
 import { ChakraProvider } from '@chakra-ui/react'
-import type { PartialModuleMock } from '@hoseki/packages/testing/partial-module-mock'
-import type * as WalletUiModule from '@hoseki/packages/ui/wallet-ui'
-import type * as TransportWebHidModule from '@ledgerhq/hw-transport-webhid'
+import { createLedgerStore } from '@hoseki/packages/ui/wallet-ui/ledger/device-store'
+import Transport from '@ledgerhq/hw-transport'
 import TransportWebHID from '@ledgerhq/hw-transport-webhid'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { Fragment, act, createElement } from 'react'
+import pino from 'pino'
+import { act, createElement } from 'react'
 import { type Root, createRoot } from 'react-dom/client'
 import { assert, expect, it, onTestFinished, vi } from 'vitest'
 import type { LedgerHidApi, LedgerHidUpdate } from '../../../../../../desktop/src/ledger-hid-api'
-import type * as UseLedgerStoreModule from '../../../hooks/use-ledger-store'
+import { openDesktopLedger } from '../../../lib/open-desktop-ledger'
 import { DesktopLedgerConnection } from './desktop-ledger-connection'
+
+const browser = await vi.hoisted(async () => {
+  const { createBrowserDom, installBrowserDom } = await import('@hoseki/packages/testing/browser-dom')
+  let initialDom: ReturnType<typeof createBrowserDom> | undefined = createBrowserDom()
+  installBrowserDom(initialDom)
+  return {
+    acquire: () => {
+      const dom = initialDom ?? createBrowserDom()
+      initialDom = undefined
+      installBrowserDom(dom)
+      return dom
+    },
+  }
+})
 
 const mocks = vi.hoisted(() => ({
   request: vi.fn(),
@@ -19,26 +33,9 @@ const mocks = vi.hoisted(() => ({
   connected: true,
   init: vi.fn(),
 }))
-vi.mock<PartialModuleMock<typeof TransportWebHidModule>>(import('@ledgerhq/hw-transport-webhid'), () => ({
-  default: class WebHID {
-    public static request = mocks.request
-  },
-}))
-vi.mock(import('@ledgerhq/hw-app-btc/lib/getAppAndVersion'), () => ({ getAppAndVersion: mocks.app }))
-vi.mock<PartialModuleMock<typeof UseLedgerStoreModule>>(import('../../../hooks/use-ledger-store'), () => ({
-  useLedgerStore: (select: (value: unknown) => unknown) =>
-    select({
-      init: mocks.init,
-      reset: mocks.reset,
-      isConnected: mocks.connected,
-      deviceModel: { productName: 'Ledger Flex' },
-    }),
-}))
-vi.mock<PartialModuleMock<typeof WalletUiModule>>(import('@hoseki/packages/ui/wallet-ui'), () => ({
-  WalletAnimation: () => createElement(Fragment),
-  WizardFooter: ({ leftButton, rightButton }: { leftButton: React.ReactNode; rightButton: React.ReactNode }) =>
-    createElement('footer', null, leftButton, rightButton),
-}))
+const ledgerStore = createLedgerStore(pino({ level: 'silent' }))
+const adapter = { request: mocks.request, getAppAndVersion: mocks.app }
+const openTransport = async (signal: AbortSignal): Promise<TransportWebHID> => openDesktopLedger(signal, adapter)
 
 let root: Root
 let host: HTMLDivElement
@@ -58,6 +55,7 @@ const transport = {
 const onContinue = vi.fn<() => void>()
 
 async function withTestSetup(run: () => Promise<void>): Promise<void> {
+  const dom = browser.acquire()
   const lifecycle = { finished: false }
   // Vitest owns teardown so it has its own timeout and runs once, even after a test timeout.
   onTestFinished(async () => {
@@ -68,6 +66,8 @@ async function withTestSetup(run: () => Promise<void>): Promise<void> {
     })
     queryClient.clear()
     host.remove()
+    vi.unstubAllGlobals()
+    dom.window.close()
   })
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
   vi.clearAllMocks()
@@ -75,7 +75,13 @@ async function withTestSetup(run: () => Promise<void>): Promise<void> {
   Object.setPrototypeOf(transport, TransportWebHID.prototype)
   transport.close.mockResolvedValue(undefined)
   transport.device.close.mockResolvedValue(undefined)
-  mocks.connected = true
+  ledgerStore.setState(ledgerStore.getInitialState(), true)
+  await ledgerStore.getState().init(async () => new Transport())
+  ledgerStore.setState({
+    init: mocks.init,
+    reset: mocks.reset,
+    deviceModel: { productName: 'Ledger Flex', id: 'flex' },
+  })
   mocks.reset.mockResolvedValue(undefined)
   mocks.app.mockResolvedValue({ name: 'Bitcoin' })
   mocks.request.mockImplementation(
@@ -124,7 +130,13 @@ async function render(): Promise<void> {
         createElement(
           QueryClientProvider,
           { client: queryClient },
-          createElement(DesktopLedgerConnection, { bridge, onContinue, onBack: vi.fn<() => void>() }),
+          createElement(DesktopLedgerConnection, {
+            bridge,
+            ledgerStore,
+            openTransport,
+            onContinue,
+            onBack: vi.fn<() => void>(),
+          }),
         ),
       ),
     )
@@ -276,7 +288,9 @@ it('requires reconnecting when a ready Ledger is unplugged', async () => {
     await act(async () => {
       resolveRequest(transport)
     })
-    mocks.connected = false
+    await act(async () => {
+      ledgerStore.setState({ isConnected: false })
+    })
     await render()
     expect(host.textContent).toContain('Your Ledger was disconnected')
     expect(host.querySelector('button')?.textContent).not.toBe('Continue')

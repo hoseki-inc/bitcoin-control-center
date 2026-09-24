@@ -30,7 +30,7 @@ const ReconnectErrorSchema = z.object({
   }),
 })
 
-export function SettingsPage(): JSX.Element {
+export function SettingsPage({ desktop = isDesktop }: { desktop?: boolean }): JSX.Element {
   const { data: savedName, isLoading, save, isSaving } = useLocalSetting('user_name')
 
   const [name, setName] = useState('')
@@ -86,7 +86,7 @@ export function SettingsPage(): JSX.Element {
           </Button>
         </Stack>
 
-        {isDesktop && (
+        {desktop && (
           <>
             <Divider />
             <ElectrumSettings />

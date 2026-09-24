@@ -4,31 +4,44 @@ import { useLedgerStore } from '../../../hooks/use-ledger-store'
 import { trpc } from '../../../trpc'
 import { probeLedger } from './probe-ledger'
 
-export function LedgerScan({
-  isLoadingOnContinue,
-  onContinue,
-  onBack,
-  onCancel,
-}: {
+interface LedgerScanProps {
   isLoadingOnContinue: boolean
   onContinue: (wallet: HardwareWallet, deviceId: string) => void
   onBack: () => void
   onCancel: () => void
+}
+
+export function LedgerScan(props: LedgerScanProps): JSX.Element {
+  const balanceApi = trpc.useUtils()
+  return <LedgerAccountScan {...props} balanceApi={balanceApi} ledgerStore={useLedgerStore} />
+}
+
+export function LedgerAccountScan({
+  isLoadingOnContinue,
+  onContinue,
+  onBack,
+  onCancel,
+  balanceApi,
+  ledgerStore,
+  ScanView = LedgerScanUI,
+}: LedgerScanProps & {
+  balanceApi: Parameters<typeof probeLedger>[0]
+  ledgerStore: typeof useLedgerStore
+  ScanView?: typeof LedgerScanUI
 }): JSX.Element {
-  const trpcUtils = trpc.useUtils()
-  const getBitcoinXpub = useLedgerStore((state) => state.getBitcoinXpub)
-  const deviceModel = useLedgerStore((state) => state.deviceModel)
-  const connectionId = useLedgerStore((state) => state.connectionId)
+  const getBitcoinXpub = ledgerStore((state) => state.getBitcoinXpub)
+  const deviceModel = ledgerStore((state) => state.deviceModel)
+  const connectionId = ledgerStore((state) => state.connectionId)
 
   const walletsQuery = useQuery<HardwareWallet[], Error>({
     // Scan results belong to this connection, including when two devices share a model.
     queryKey: ['ledger-wallets', connectionId],
     queryFn: async ({ signal }) => {
-      const probeRes = await probeLedger(trpcUtils, {
+      const probeRes = await probeLedger(balanceApi, {
         getBitcoinXpub,
         signal,
         isCurrentConnection: () => {
-          const current = useLedgerStore.getState()
+          const current = ledgerStore.getState()
           return current.isConnected && current.connectionId === connectionId
         },
       })
@@ -44,7 +57,7 @@ export function LedgerScan({
   })
 
   return (
-    <LedgerScanUI
+    <ScanView
       isLoadingOnContinue={isLoadingOnContinue}
       onContinue={onContinue}
       onBack={onBack}
