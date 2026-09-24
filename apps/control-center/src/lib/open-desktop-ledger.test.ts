@@ -1,10 +1,11 @@
 import TransportWebHID from '@ledgerhq/hw-transport-webhid'
 import { type Mock, type MockInstance, expect, it, onTestFinished, vi } from 'vitest'
-import { closeDesktopLedger, openDesktopLedger } from './open-desktop-ledger'
+import { closeDesktopLedger, openDesktopLedger as openLedger } from './open-desktop-ledger'
 
 const mocks = vi.hoisted(() => ({ request: vi.fn<typeof TransportWebHID.request>(), app: vi.fn() }))
-vi.spyOn(TransportWebHID, 'request').mockImplementation(mocks.request)
-vi.mock(import('@ledgerhq/hw-app-btc/lib/getAppAndVersion'), () => ({ getAppAndVersion: mocks.app }))
+async function openDesktopLedger(signal: AbortSignal): Promise<TransportWebHID> {
+  return openLedger(signal, { request: mocks.request, getAppAndVersion: mocks.app })
+}
 
 let transport: TransportWebHID
 let closeTransport: MockInstance<TransportWebHID['close']>

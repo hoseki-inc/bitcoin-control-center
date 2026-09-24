@@ -1,18 +1,34 @@
-// @vitest-environment jsdom
+// @vitest-environment node
 import { ChakraProvider } from '@chakra-ui/react'
-import type { PartialModuleMock } from '@hoseki/packages/testing/partial-module-mock'
-import type * as DesignSystemModule from '@hoseki/packages/ui/design-system'
 import { QueryClient, QueryObserver, onlineManager } from '@tanstack/react-query'
+import { format } from 'date-fns'
+import Decimal from 'decimal.js'
 import { act, createElement } from 'react'
 import { type Root, createRoot } from 'react-dom/client'
-import type * as ReactRouter from 'react-router'
+import { MemoryRouter } from 'react-router'
 import { assert, describe, expect, it, onTestFinished, vi } from 'vitest'
 import type { AccountsSidebar } from '../../components/dashboard-charts/accounts-sidebar'
-import type * as BalancesModule from '../../lib/balances'
+import { claimFixture } from '../../testing/claims'
 import type { RouterInput } from '../../trpc'
-import { DashboardPage } from './index'
+import type { ClaimDto } from '../../trpc/server-types'
+import type { DashboardDataSource, PortfolioQuery } from './dashboard-data'
+import { DashboardPage, type DashboardViews } from './index'
 
 type SidebarProps = Parameters<typeof AccountsSidebar>[0]
+
+const browser = await vi.hoisted(async () => {
+  const { createBrowserDom, installBrowserDom } = await import('@hoseki/packages/testing/browser-dom')
+  let initialDom: ReturnType<typeof createBrowserDom> | undefined = createBrowserDom()
+  installBrowserDom(initialDom)
+  return {
+    acquire: () => {
+      const dom = initialDom ?? createBrowserDom()
+      initialDom = undefined
+      installBrowserDom(dom)
+      return dom
+    },
+  }
+})
 
 const mocks = vi.hoisted(() => {
   const base = {
@@ -35,123 +51,96 @@ const mocks = vi.hoisted(() => {
     fetching: false,
     error: null as Error | null,
     refetch: vi.fn(),
-    useQuery: vi.fn<
-      (
-        input: Exclude<RouterInput['portalProve']['controlCenter']['getData'], void>,
-        options?: { enabled: boolean },
-      ) => {
-        data?: unknown
-        isLoading: boolean
-        isFetching?: boolean
-        isPreviousData?: boolean
-        error?: unknown
-        refetch: () => unknown
-      }
-    >(),
+    useQuery:
+      vi.fn<
+        (
+          input: Exclude<RouterInput['portalProve']['controlCenter']['getData'], void>,
+          options?: { enabled: boolean },
+        ) => PortfolioQuery
+      >(),
     sidebar: vi.fn<(props: SidebarProps) => void>(),
     recordSnapshot: { mutate: vi.fn() },
-    claims: [] as Array<{ id: string; displayName: string }>,
-    holdings: [{ id: 'holding', displayName: 'Test holding', balance: '100' }],
+    claims: [] as ClaimDto[],
+    holdings: [
+      {
+        id: 'holding',
+        displayName: 'Test holding',
+        balance: '100',
+        currency: 'BTC' as const,
+        balanceAsOf: null,
+        createdAt: '2026-01-01T00:00:00Z',
+      },
+    ],
   }
 })
 
-// These tRPC fixtures intentionally model only the query states exercised below.
-vi.mock<{ trpc: unknown }>(import('../../trpc'), () => {
-  const emptyList = { data: [], isLoading: false }
-  return {
-    trpc: {
-      portalProve: {
-        controlCenter: {
-          getData: { useQuery: mocks.useQuery },
-          recordSnapshot: { useMutation: () => mocks.recordSnapshot },
-        },
-        registry: { claims: { list: { useQuery: () => ({ data: mocks.claims, isLoading: false }) } } },
-        exchange: { list: { useQuery: () => emptyList } },
-        etf: { list: { useQuery: () => emptyList } },
-        manual: { list: { useQuery: () => ({ data: mocks.holdings, isLoading: false }) } },
-        retrieveBitcoinPrice: { useQuery: () => ({ data: { value: 50_000 }, isLoading: false }) },
+const dataSource: DashboardDataSource = {
+  useAccounts: () => ({
+    recordSnapshot: mocks.recordSnapshot,
+    claimsQuery: { data: mocks.claims, isLoading: false },
+    exchangeAccountsQuery: { data: [], isLoading: false },
+    manualAccountsQuery: { data: mocks.holdings, isLoading: false },
+    etfAccountsQuery: { data: [], isLoading: false },
+    btcPriceQuery: { data: { value: new Decimal(50_000), asOf: new Date('2026-01-01T00:00:00Z') }, isLoading: false },
+  }),
+  useHistory: (input, options) => mocks.useQuery(input, options),
+  useBalances: () => ({ data: new Map() }),
+  useAutoRefresh: () => undefined,
+  getTimezone: () => 'UTC',
+}
+const views: DashboardViews = {
+  DateInput: ({ id, value, onChange }) =>
+    createElement('input', {
+      id,
+      type: 'date',
+      value: value ? format(value, 'yyyy-MM-dd') : '',
+      onChange: (event: React.ChangeEvent<HTMLInputElement>) => {
+        onChange(new Date(`${event.target.value}T00:00:00`))
       },
-    },
-  }
-})
-vi.mock(import('../../hooks/use-auto-refresh-exchanges'), () => ({ useAutoRefreshExchanges: () => undefined }))
-vi.mock<PartialModuleMock<typeof BalancesModule>>(import('../../lib/balances'), () => ({
-  useGetBalancesPerClaimIds: () => ({ data: new Map() }),
-}))
-vi.mock(import('../../utils/timezone'), () => ({ getBrowserTimezone: () => 'UTC' }))
-vi.mock<PartialModuleMock<typeof ReactRouter>>(import('react-router'), () => ({
-  useNavigate: () => vi.fn(),
-  Link: (props: Parameters<typeof ReactRouter.Link>[0]) => createElement('a', props),
-}))
-vi.mock<PartialModuleMock<typeof DesignSystemModule>>(import('@hoseki/packages/ui/design-system'), async () => {
-  const { createElement: createMockElement } = await import('react')
-  const { format } = await import('date-fns')
-  return {
-    Spinner: () => createMockElement('span', { 'data-spinner': true }),
-    Panel: ({ children }: { children: React.ReactNode }) => createMockElement('div', null, children),
-    DateInput: ({ id, value, onChange }: Parameters<typeof DesignSystemModule.DateInput>[0]) =>
-      createMockElement('input', {
-        id,
-        type: 'date',
-        value: value ? format(value, 'yyyy-MM-dd') : '',
-        onChange: (event: React.ChangeEvent<HTMLInputElement>) => {
-          onChange(new Date(`${event.target.value}T00:00:00`))
+    }),
+  AccountsSidebar: (props: SidebarProps) => {
+    mocks.sidebar(props)
+    return createElement(
+      'div',
+      null,
+      createElement(
+        'button',
+        {
+          onClick: () => {
+            props.onToggle('holding')
+          },
         },
-      }),
-  }
-})
-vi.mock(import('../../components/dashboard-charts/accounts-sidebar'), async () => {
-  const { createElement: createMockElement } = await import('react')
-  return {
-    AccountsSidebar: (props: SidebarProps) => {
-      mocks.sidebar(props)
-      return createMockElement(
-        'div',
-        null,
-        createMockElement(
-          'button',
-          {
-            onClick: () => {
-              props.onToggle('holding')
-            },
+        'Select holding',
+      ),
+      createElement(
+        'button',
+        {
+          onClick: () => {
+            props.onToggle('re_clmx_wallet')
           },
-          'Select holding',
-        ),
-        createMockElement(
-          'button',
-          {
-            onClick: () => {
-              props.onToggle('wallet')
-            },
-          },
-          'Select wallet',
-        ),
-        createMockElement('button', { onClick: props.onClearAll }, 'Clear selection'),
-      )
-    },
-  }
-})
-vi.mock(import('../../components/dashboard-charts/accumulation-chart'), async () => {
-  const { createElement: createMockElement } = await import('react')
-  return {
-    AccumulationChart: ({ data }: { data: unknown }) =>
-      createMockElement('div', { 'data-chart': 'accumulation' }, JSON.stringify(data)),
-  }
-})
-vi.mock(import('../../components/dashboard-charts/monthly-net-change-chart'), async () => {
-  const { createElement: createMockElement } = await import('react')
-  return {
-    MonthlyNetChangeChart: ({ data }: { data: unknown }) =>
-      createMockElement('div', { 'data-chart': 'monthly' }, JSON.stringify(data)),
-  }
-})
+        },
+        'Select wallet',
+      ),
+      createElement('button', { onClick: props.onClearAll }, 'Clear selection'),
+    )
+  },
+
+  AccumulationChart: ({ data }) => createElement('div', { 'data-chart': 'accumulation' }, JSON.stringify(data)),
+  MonthlyNetChangeChart: ({ data }) => createElement('div', { 'data-chart': 'monthly' }, JSON.stringify(data)),
+}
 
 let root: Root
 let container: HTMLDivElement
 
 async function render(): Promise<void> {
   await act(async () => {
-    root.render(createElement(ChakraProvider, null, createElement(DashboardPage)))
+    root.render(
+      createElement(
+        ChakraProvider,
+        null,
+        createElement(MemoryRouter, null, createElement(DashboardPage, { dataSource, views })),
+      ),
+    )
   })
 }
 
@@ -193,6 +182,7 @@ function getQueryCall(
 }
 
 async function withTestSetup(run: () => Promise<void>): Promise<void> {
+  const dom = browser.acquire()
   const lifecycle = { finished: false }
   // Vitest owns teardown so it has its own timeout and runs once, even after a test timeout.
   onTestFinished(async () => {
@@ -204,6 +194,7 @@ async function withTestSetup(run: () => Promise<void>): Promise<void> {
     container.remove()
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
+    dom.window.close()
     vi.useRealTimers()
   })
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
@@ -220,7 +211,16 @@ async function withTestSetup(run: () => Promise<void>): Promise<void> {
   mocks.fetching = false
   mocks.error = null
   mocks.claims = []
-  mocks.holdings = [{ id: 'holding', displayName: 'Test holding', balance: '100' }]
+  mocks.holdings = [
+    {
+      id: 'holding',
+      displayName: 'Test holding',
+      balance: '100',
+      currency: 'BTC' as const,
+      balanceAsOf: null,
+      createdAt: '2026-01-01T00:00:00Z',
+    },
+  ]
   mocks.rangeData = { ...mocks.base, historicalData: [], historySyncingAccountIds: [] }
   mocks.refetch.mockReset()
   mocks.sidebar.mockClear()
@@ -283,7 +283,7 @@ describe('custom portfolio range UI', () => {
         complete = resolve
       })
       const options = { queryKey: ['portfolio', '90d', action], queryFn: async () => pending, keepPreviousData: true }
-      const observer = new QueryObserver(client, { ...options, enabled: false })
+      const observer = new QueryObserver<typeof mocks.base, Error>(client, { ...options, enabled: false })
       const unsubscribe = observer.subscribe(() => undefined)
       try {
         observer.setOptions({ ...options, enabled: true })
@@ -327,7 +327,7 @@ describe('custom portfolio range UI', () => {
       await render()
       expect(container.textContent).not.toContain('Portfolio')
       expect(container.querySelectorAll('[data-chart]')).toHaveLength(0)
-      expect(container.querySelector('[data-spinner]')).not.toBeNull()
+      expect(container.querySelector('.chakra-spinner')).not.toBeNull()
     })
   })
 
@@ -430,7 +430,7 @@ describe('custom portfolio range UI', () => {
         }
         onlineManager.setOnline(false)
         const options = { staleTime: 300_000, keepPreviousData: true }
-        const observer = new QueryObserver(client, {
+        const observer = new QueryObserver<typeof mocks.base, Error>(client, {
           ...options,
           queryKey: ['portfolio', '90d'],
           queryFn: async () => mocks.base,
@@ -490,10 +490,10 @@ describe('custom portfolio range UI', () => {
 
   it('keeps loading during full-history backfill and shows both charts on completion', async () => {
     await withTestSetup(async () => {
-      mocks.rangeData = { ...mocks.base, historySyncingAccountIds: ['wallet'] }
+      mocks.rangeData = { ...mocks.base, historySyncingAccountIds: ['re_clmx_wallet'] }
       await click('All')
       expect(container.querySelectorAll('[data-chart]')).toHaveLength(0)
-      mocks.rangeData = { ...mocks.base, historySyncedAccountIds: ['wallet'] }
+      mocks.rangeData = { ...mocks.base, historySyncedAccountIds: ['re_clmx_wallet'] }
       await render()
       expect(container.querySelectorAll('[data-chart]')).toHaveLength(2)
     })
@@ -501,7 +501,7 @@ describe('custom portfolio range UI', () => {
 
   it.each(['All', 'Custom'])('keeps an already certified %s chart visible during tail updates', async (range) => {
     await withTestSetup(async () => {
-      mocks.rangeData = { ...mocks.base, historySyncedAccountIds: ['wallet'] }
+      mocks.rangeData = { ...mocks.base, historySyncedAccountIds: ['re_clmx_wallet'] }
       await click(range)
       if (range === 'Custom') {
         await click('Apply')
@@ -512,8 +512,8 @@ describe('custom portfolio range UI', () => {
         // A partial refresh must not replace the certified chart with new values.
         historicalData: [{ timestamp: '2026-09-05T12:00:00.000Z', totalBalance: '999' }],
         historySyncedAccountIds: [],
-        historySyncingAccountIds: ['wallet'],
-        historyRefreshingAccountIds: ['wallet'],
+        historySyncingAccountIds: ['re_clmx_wallet'],
+        historyRefreshingAccountIds: ['re_clmx_wallet'],
       }
       await render()
       expect(container.querySelectorAll('[data-chart]')).toHaveLength(2)
@@ -527,8 +527,8 @@ describe('custom portfolio range UI', () => {
     await withTestSetup(async () => {
       mocks.rangeData = {
         ...mocks.base,
-        historySyncingAccountIds: ['wallet', 'new-wallet'],
-        historyRefreshingAccountIds: ['wallet'],
+        historySyncingAccountIds: ['re_clmx_wallet', 'new-wallet'],
+        historyRefreshingAccountIds: ['re_clmx_wallet'],
       }
       await click('All')
       expect(container.querySelectorAll('[data-chart]')).toHaveLength(0)
@@ -538,12 +538,12 @@ describe('custom portfolio range UI', () => {
 
   it('does not reuse an All chart or a partial prefix for a newly requested custom range', async () => {
     await withTestSetup(async () => {
-      mocks.rangeData = { ...mocks.base, historySyncedAccountIds: ['wallet'] }
+      mocks.rangeData = { ...mocks.base, historySyncedAccountIds: ['re_clmx_wallet'] }
       await click('All')
       mocks.rangeData = {
         ...mocks.base,
-        historySyncingAccountIds: ['wallet'],
-        historyRefreshingAccountIds: ['wallet'],
+        historySyncingAccountIds: ['re_clmx_wallet'],
+        historyRefreshingAccountIds: ['re_clmx_wallet'],
       }
       await click('Custom')
       await changeDate('portfolio-range-start', '2020-01-01')
@@ -557,14 +557,14 @@ describe('custom portfolio range UI', () => {
     await withTestSetup(async () => {
       const interval = vi.spyOn(window, 'setInterval')
       if (refresh) {
-        mocks.rangeData = { ...mocks.base, historySyncedAccountIds: ['wallet'] }
+        mocks.rangeData = { ...mocks.base, historySyncedAccountIds: ['re_clmx_wallet'] }
         await click('All')
       }
       mocks.rangeData = {
         ...mocks.base,
-        historySyncingAccountIds: ['wallet'],
-        historyFailedAccountIds: ['wallet'],
-        historyRefreshingAccountIds: refresh ? ['wallet'] : [],
+        historySyncingAccountIds: ['re_clmx_wallet'],
+        historyFailedAccountIds: ['re_clmx_wallet'],
+        historyRefreshingAccountIds: refresh ? ['re_clmx_wallet'] : [],
       }
       if (refresh) {
         await render()
@@ -581,7 +581,7 @@ describe('custom portfolio range UI', () => {
         poll()
       })
       expect(mocks.refetch).toHaveBeenCalledWith({ cancelRefetch: false })
-      mocks.rangeData = { ...mocks.base, historySyncedAccountIds: ['wallet'] }
+      mocks.rangeData = { ...mocks.base, historySyncedAccountIds: ['re_clmx_wallet'] }
       await render()
       expect(container.querySelectorAll('[data-chart]')).toHaveLength(2)
       expect(container.textContent).not.toContain('Retrying automatically')
@@ -597,7 +597,7 @@ describe('custom portfolio range UI', () => {
           defaultOptions: { queries: { retry: false, cacheTime: 0 } },
         })
         client.setQueryData(['portfolio', range], mocks.base)
-        const observer = new QueryObserver(client, {
+        const observer = new QueryObserver<typeof mocks.base, Error>(client, {
           queryKey: ['portfolio', range],
           queryFn: async () => {
             throw new Error('Connection lost')
@@ -635,7 +635,7 @@ describe('custom portfolio range UI', () => {
     async (state) => {
       await withTestSetup(async () => {
         mocks.holdings = []
-        mocks.claims = [{ id: 'wallet', displayName: 'Test wallet' }]
+        mocks.claims = [claimFixture('re_clmx_wallet', 'Test wallet')]
         await render()
         await click('Select wallet')
         const defaultQuery = mocks.useQuery.getMockImplementation()
@@ -662,35 +662,35 @@ describe('custom portfolio range UI', () => {
 
   it('uses selected-range sync status in the sidebar and ignores completion from a previous view', async () => {
     await withTestSetup(async () => {
-      mocks.claims = [{ id: 'wallet', displayName: 'Test wallet' }]
+      mocks.claims = [claimFixture('re_clmx_wallet', 'Test wallet')]
       await render()
       await click('Select wallet')
-      mocks.rangeData = { ...mocks.base, historySyncingAccountIds: ['wallet'] }
+      mocks.rangeData = { ...mocks.base, historySyncingAccountIds: ['re_clmx_wallet'] }
       const defaultQuery = mocks.useQuery.getMockImplementation()
       assert.exists(defaultQuery, 'Expected the default query implementation')
       mocks.useQuery.mockImplementation((input, options) =>
         input.claimIds === undefined && options?.enabled === false
-          ? { ...defaultQuery(input), data: { ...mocks.base, historySyncedAccountIds: ['wallet'] } }
+          ? { ...defaultQuery(input), data: { ...mocks.base, historySyncedAccountIds: ['re_clmx_wallet'] } }
           : defaultQuery(input),
       )
       await click('Custom')
       await click('Apply')
-      expect(mocks.sidebar.mock.lastCall?.[0].historySyncingAccountIds).toEqual(['wallet'])
+      expect(mocks.sidebar.mock.lastCall?.[0].historySyncingAccountIds).toEqual(['re_clmx_wallet'])
       expect(mocks.sidebar.mock.lastCall?.[0].recentlySyncedAccountIds).toEqual([])
 
       // Clearing the selection briefly exposes cached data from another query.
       mocks.previous = true
-      mocks.rangeData = { ...mocks.base, historySyncedAccountIds: ['wallet'] }
+      mocks.rangeData = { ...mocks.base, historySyncedAccountIds: ['re_clmx_wallet'] }
       await click('Clear selection')
       expect(mocks.sidebar.mock.lastCall?.[0].recentlySyncedAccountIds).toEqual([])
       expect(container.textContent).not.toContain('All synced')
 
       mocks.previous = false
-      mocks.rangeData = { ...mocks.base, historySyncingAccountIds: ['wallet'] }
+      mocks.rangeData = { ...mocks.base, historySyncingAccountIds: ['re_clmx_wallet'] }
       await render()
-      mocks.rangeData = { ...mocks.base, historySyncedAccountIds: ['wallet'] }
+      mocks.rangeData = { ...mocks.base, historySyncedAccountIds: ['re_clmx_wallet'] }
       await render()
-      expect(mocks.sidebar.mock.lastCall?.[0].recentlySyncedAccountIds).toEqual(['wallet'])
+      expect(mocks.sidebar.mock.lastCall?.[0].recentlySyncedAccountIds).toEqual(['re_clmx_wallet'])
     })
   })
 
@@ -717,7 +717,7 @@ describe('custom portfolio range UI', () => {
     async ({ range, archivedOnly }) => {
       await withTestSetup(async () => {
         mocks.holdings = []
-        mocks.claims = archivedOnly ? [] : [{ id: 'wallet', displayName: 'Test wallet' }]
+        mocks.claims = archivedOnly ? [] : [claimFixture('re_clmx_wallet', 'Test wallet')]
         const portfolioData = { ...mocks.base, verifiedClaimsCount: archivedOnly ? 0 : 1, manualAccountCount: 0 }
         const client = new QueryClient({
           logger: { log: vi.fn<() => void>(), warn: vi.fn<() => void>(), error: vi.fn<() => void>() },
@@ -725,9 +725,15 @@ describe('custom portfolio range UI', () => {
         })
         client.setQueryData(['portfolio', '90d'], portfolioData)
         const options = { staleTime: 300_000, keepPreviousData: true }
-        const observer = new QueryObserver(client, { ...options, queryKey: ['portfolio', '90d'] })
+        const observer = new QueryObserver<typeof mocks.base, Error>(client, {
+          ...options,
+          queryKey: ['portfolio', '90d'],
+        })
         const unsubscribe = observer.subscribe(() => undefined)
-        const fetchRange = vi.fn().mockRejectedValueOnce(new Error('Connection lost')).mockResolvedValue(portfolioData)
+        const fetchRange = vi
+          .fn<() => Promise<typeof mocks.base>>()
+          .mockRejectedValueOnce(new Error('Connection lost'))
+          .mockResolvedValue(portfolioData)
 
         try {
           observer.setOptions({ ...options, queryKey: ['portfolio', range], queryFn: fetchRange })
@@ -785,7 +791,7 @@ describe('custom portfolio range UI', () => {
   it('does not let polling cancel a slow request that is still running', async () => {
     await withTestSetup(async () => {
       const interval = vi.spyOn(window, 'setInterval')
-      mocks.rangeData = { ...mocks.base, historySyncingAccountIds: ['wallet'] }
+      mocks.rangeData = { ...mocks.base, historySyncingAccountIds: ['re_clmx_wallet'] }
       await click('All')
       const poll = interval.mock.calls.find(([, delay]) => delay === 10_000)?.[0]
       assert(typeof poll === 'function', 'Expected a polling callback')

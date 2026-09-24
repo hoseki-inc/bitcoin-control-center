@@ -1,24 +1,28 @@
 // @vitest-environment node
 import { Box } from '@chakra-ui/react'
-import type { ClaimId } from '@hoseki/packages/schemas'
 import { TestChakraProvider as ChakraProvider } from '@hoseki/packages/testing/chakra-provider'
-import type { PartialModuleMock } from '@hoseki/packages/testing/partial-module-mock'
+import { QueryClient } from '@tanstack/react-query'
+import { getQueryKey } from '@trpc/react-query'
 import { act, createElement } from 'react'
 import { type Root, createRoot } from 'react-dom/client'
 import { MemoryRouter } from 'react-router'
 import { assert, expect, it, onTestFinished, vi } from 'vitest'
-import type * as BalancesModule from '../../lib/balances'
-import type * as TrpcModule from '../../trpc'
+import { claimFixture } from '../../testing/claims'
+import { TestTrpcProvider, createTestTrpcClient } from '../../testing/trpc'
+import { trpc } from '../../trpc'
+import type { ClaimDto } from '../../trpc/server-types'
 import { ClaimSelection } from './claim-selection'
 
 const { claimId, acquireDom } = await vi.hoisted(async () => {
   // Preserve Node byte-array globals used by the Bitcoin SDK.
   const { JSDOM } = await import('jsdom')
+  const { installAnimationPlaceholder } = await import('@hoseki/packages/testing/animation-dom')
   function createDom() {
     const { window } = new JSDOM('<!doctype html><html><body></body></html>', {
       url: 'http://localhost',
       pretendToBeVisual: true,
     })
+    installAnimationPlaceholder(window.HTMLCanvasElement)
     const globals = {
       window,
       document: window.document,
@@ -49,34 +53,26 @@ const { claimId, acquireDom } = await vi.hoisted(async () => {
   return { claimId: 're_clmx_wallet' as const, acquireDom: takeDom }
 })
 
-vi.mock<PartialModuleMock<typeof TrpcModule>>(import('../../trpc'), () => ({
-  trpc: {
-    portalProve: {
-      registry: {
-        claims: {
-          list: {
-            useQuery: () => ({
-              data: [{ id: claimId, displayName: 'Savings wallet' }],
-              isLoading: false as const,
-              isError: false as const,
-            }),
-          },
-        },
-      },
-      exchange: { list: { useQuery: () => ({ data: [] }) } },
-      retrieveBitcoinPrice: { useQuery: () => ({ data: undefined }) },
-    },
-  },
-}))
-vi.mock<PartialModuleMock<typeof BalancesModule>>(import('../../lib/balances'), () => ({
-  useGetBalancesPerClaimIds: () => ({ data: new Map<ClaimId, null>(), isLoading: false as const, isSuccess: true }),
-}))
-
+let queryClient: QueryClient
+const rpc = createTestTrpcClient(async ({ path }) => {
+  throw new Error(`Unexpected request: ${path}`)
+})
 let root: Root
 let container: HTMLDivElement
 
 async function withTestSetup(run: () => Promise<void>): Promise<void> {
   const domGlobals = acquireDom()
+  queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+  queryClient.setQueryData<ClaimDto[]>(
+    getQueryKey(trpc.portalProve.registry.claims.list, { excludePending: true }, 'query'),
+    [claimFixture(claimId, 'Savings wallet')],
+  )
+  queryClient.setQueryData(getQueryKey(trpc.portalProve.exchange.list, undefined, 'query'), [])
+  queryClient.setQueryData(getQueryKey(trpc.portalProve.retrieveBitcoinPrice, undefined, 'query'), null)
+  queryClient.setQueryData(
+    getQueryKey(trpc.portalProve.onchain.claimBalances, { claimIds: [claimId] }, 'query'),
+    new Map(),
+  )
 
   // Vitest owns teardown so it has its own timeout and runs once, even after a test timeout.
   onTestFinished(async () => {
@@ -85,6 +81,7 @@ async function withTestSetup(run: () => Promise<void>): Promise<void> {
         root.unmount()
       })
       container.remove()
+      queryClient.clear()
     } finally {
       vi.unstubAllGlobals()
       domGlobals.window.close()
@@ -116,15 +113,19 @@ it.each([
           ChakraProvider,
           null,
           createElement(
-            MemoryRouter,
-            null,
-            createElement(ClaimSelection, {
-              disabledClaims: disabled === undefined ? undefined : new Set(disabled ? [claimId] : []),
-              selectedClaimIds: new Set(selected ? [claimId] : []),
-              setSelectedClaimIds: vi.fn<() => void>(),
-              selectedExchangeAccountIds: new Set<string>(),
-              setSelectedExchangeAccountIds: vi.fn<() => void>(),
-            }),
+            TestTrpcProvider,
+            { client: queryClient, rpc },
+            createElement(
+              MemoryRouter,
+              null,
+              createElement(ClaimSelection, {
+                disabledClaims: disabled === undefined ? undefined : new Set(disabled ? [claimId] : []),
+                selectedClaimIds: new Set(selected ? [claimId] : []),
+                setSelectedClaimIds: vi.fn<() => void>(),
+                selectedExchangeAccountIds: new Set<string>(),
+                setSelectedExchangeAccountIds: vi.fn<() => void>(),
+              }),
+            ),
           ),
         ),
       )

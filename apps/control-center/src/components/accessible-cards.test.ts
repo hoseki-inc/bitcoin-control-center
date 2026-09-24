@@ -2,7 +2,7 @@
 import { Box } from '@chakra-ui/react'
 import { TestChakraProvider as ChakraProvider } from '@hoseki/packages/testing/chakra-provider'
 import type { SupportedHardwareWallet } from '@hoseki/packages/wallet/hardware-wallet'
-import { type FormEvent, Fragment, type ReactNode, act, createElement } from 'react'
+import { type FormEvent, type ReactNode, act, createElement } from 'react'
 import { type Root, createRoot } from 'react-dom/client'
 import { MemoryRouter } from 'react-router'
 import { assert, expect, it, onTestFinished, vi } from 'vitest'
@@ -14,11 +14,13 @@ import { SelectWalletType } from './multisig/multisig-select-wallet-type'
 const acquireDom = await vi.hoisted(async () => {
   // Preserve Node byte-array globals used by the Bitcoin SDK.
   const { JSDOM } = await import('jsdom')
+  const { installAnimationPlaceholder } = await import('@hoseki/packages/testing/animation-dom')
   function createDom() {
     const { window } = new JSDOM('<!doctype html><html><body></body></html>', {
       url: 'http://localhost',
       pretendToBeVisual: true,
     })
+    installAnimationPlaceholder(window.HTMLCanvasElement)
     const globals = {
       window,
       document: window.document,
@@ -49,8 +51,6 @@ const acquireDom = await vi.hoisted(async () => {
 
   return takeDom
 })
-
-vi.mock(import('lottie-react'), () => ({ default: () => createElement(Fragment) }))
 
 let root: Root
 let host: HTMLDivElement

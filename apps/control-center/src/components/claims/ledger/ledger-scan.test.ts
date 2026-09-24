@@ -1,21 +1,17 @@
 // @vitest-environment node
 import { getBuiltinModule } from 'node:process'
 import { bip32 } from '@hoseki/packages/bitcoin'
-import type { PartialModuleMock } from '@hoseki/packages/testing/partial-module-mock'
-import type * as WalletUiModule from '@hoseki/packages/ui/wallet-ui'
 import type { LedgerScanUI } from '@hoseki/packages/ui/wallet-ui'
-import type * as LedgerBtcModule from '@ledgerhq/hw-app-btc'
+import { type LedgerBitcoinApp, createLedgerStore } from '@hoseki/packages/ui/wallet-ui/ledger/device-store'
 import Transport from '@ledgerhq/hw-transport'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import Decimal from 'decimal.js'
+import pino from 'pino'
 import { type ComponentProps, Fragment, StrictMode, act, createElement } from 'react'
 import { type Root, createRoot } from 'react-dom/client'
 import { expect, it, onTestFinished, vi } from 'vitest'
-import { useLedgerStore } from '../../../hooks/use-ledger-store'
-import type * as LoggerModule from '../../../logger'
-import type * as TrpcModule from '../../../trpc'
 import type { RouterOutput } from '../../../trpc'
-import { LedgerScan } from './ledger-scan'
+import { LedgerAccountScan as LedgerScan } from './ledger-scan'
 import { probeLedger } from './probe-ledger'
 
 type Deferred<T> = { promise: Promise<T>; resolve: (value: T) => void }
@@ -26,7 +22,9 @@ type ScanProps = ComponentProps<typeof LedgerScanUI>
 const mocks = await vi.hoisted(async () => {
   // Preserve Node's byte-array globals for the Bitcoin SDK.
   const { JSDOM } = await import('jsdom')
+  const { installAnimationPlaceholder } = await import('@hoseki/packages/testing/animation-dom')
   const { window } = new JSDOM('<!doctype html><html><body></body></html>', { url: 'http://localhost' })
+  installAnimationPlaceholder(window.HTMLCanvasElement)
   vi.stubGlobal('window', window)
   vi.stubGlobal('document', window.document)
   vi.stubGlobal('navigator', window.navigator)
@@ -37,33 +35,21 @@ const mocks = await vi.hoisted(async () => {
     scan: vi.fn<(props: ScanProps) => void>(),
   }
 })
-// Keep the SDK's actual operation lock while replacing USB exchanges with synthetic data.
-vi.mock<PartialModuleMock<typeof LedgerBtcModule>>(import('@ledgerhq/hw-app-btc'), () => ({
-  default: class LedgerBtcApp {
-    private readonly transport: Transport
-    public constructor({ transport }: { transport: Transport }) {
-      this.transport = transport
-      transport.decorateAppAPIMethods(this, ['getWalletXpub'], 'BTC')
-    }
-    public async getWalletXpub(input: { path: string }): Promise<string> {
-      return mocks.getXpub(this.transport, input.path)
-    }
-  },
-}))
-vi.mock<PartialModuleMock<typeof WalletUiModule>>(import('@hoseki/packages/ui/wallet-ui'), async () => ({
-  createLedgerStore: (await import('@hoseki/packages/ui/wallet-ui/ledger/device-store')).createLedgerStore,
-  LedgerScanUI: (props: ScanProps) => {
-    mocks.scan(props)
-    return createElement(Fragment)
-  },
-}))
-vi.mock<PartialModuleMock<typeof LoggerModule>>(import('../../../logger'), () => ({
-  browserLogger: { debug: vi.fn<() => void>(), error: vi.fn<() => void>() },
-  captureHardwareWalletError: vi.fn<() => void>(),
-}))
-vi.mock<PartialModuleMock<typeof TrpcModule>>(import('../../../trpc'), () => ({
-  trpc: { useUtils: () => ({ portalProve: { onchain: { bitcoinAccountBalances: { fetch: mocks.fetch } } } }) },
-}))
+const useLedgerStore = createLedgerStore(pino({ level: 'silent' }), (transport) => {
+  const app: LedgerBitcoinApp = {
+    getWalletXpub: async ({ path }) => mocks.getXpub(transport, path),
+    signMessage: async () => {
+      throw new Error('Signing is not part of account discovery')
+    },
+  }
+  transport.decorateAppAPIMethods(app, ['getWalletXpub'], 'BTC')
+  return app
+})
+const balanceApi = { portalProve: { onchain: { bitcoinAccountBalances: { fetch: mocks.fetch } } } }
+function ScanView(props: ScanProps): JSX.Element {
+  mocks.scan(props)
+  return createElement(Fragment)
+}
 
 const { Buffer: NativeBuffer } = getBuiltinModule('node:buffer')
 const xpub = bip32.fromSeed(NativeBuffer.alloc(32, 1)).neutered().toBase58()
@@ -124,6 +110,9 @@ async function mountScan(): Promise<void> {
         QueryClientProvider,
         { client },
         createElement(LedgerScan, {
+          ledgerStore: useLedgerStore,
+          balanceApi,
+          ScanView,
           isLoadingOnContinue: false,
           onContinue: vi.fn<() => void>(),
           onBack: vi.fn<() => void>(),
@@ -169,6 +158,9 @@ it('Strict Mode restarts a scan without locking the Ledger with the cancelled in
             QueryClientProvider,
             { client },
             createElement(LedgerScan, {
+              ledgerStore: useLedgerStore,
+              balanceApi,
+              ScanView,
               isLoadingOnContinue: false,
               onContinue: vi.fn<() => void>(),
               onBack: vi.fn<() => void>(),

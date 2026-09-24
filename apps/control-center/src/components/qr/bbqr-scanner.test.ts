@@ -1,24 +1,15 @@
 // @vitest-environment jsdom
 import { ChakraProvider } from '@chakra-ui/react'
-import type { PartialModuleMock } from '@hoseki/packages/testing/partial-module-mock'
-import type * as QrCodeModule from 'html5-qrcode'
-import { Fragment, act, createElement } from 'react'
+import { act, createElement } from 'react'
 import { type Root, createRoot } from 'react-dom/client'
 import { assert, expect, it, onTestFinished, vi } from 'vitest'
-import { BBQrScanner } from './bbqr-scanner'
+import { BBQrScanner, type QrCamera, type QrCameraFactory, QrCameraProvider } from './bbqr-scanner'
 
-const mocks = vi.hoisted(() => ({ start: vi.fn(), clear: vi.fn() }))
-vi.mock(import('@hoseki/packages/ui/design-system'), () => ({ Spinner: () => createElement(Fragment) }))
-vi.mock<PartialModuleMock<typeof QrCodeModule>>(import('html5-qrcode'), () => ({
-  Html5Qrcode: class {
-    public static async getCameras(): Promise<Array<{ id: string; label: string }>> {
-      return [{ id: 'test-camera', label: 'Test camera' }]
-    }
-    public isScanning = false
-    public start = mocks.start
-    public clear = mocks.clear
-  },
-}))
+const mocks = vi.hoisted(() => ({ start: vi.fn<QrCamera['start']>(), clear: vi.fn<QrCamera['clear']>() }))
+const cameraFactory: QrCameraFactory = {
+  getCameras: async () => [{ id: 'test-camera', label: 'Test camera' }],
+  create: () => ({ isScanning: false, start: mocks.start, clear: mocks.clear, stop: async () => undefined }),
+}
 
 let root: Root | null
 let host: HTMLDivElement
@@ -44,7 +35,7 @@ async function withTestSetup(run: () => Promise<void>): Promise<void> {
   rejectStartup = undefined
   mocks.start.mockImplementation(
     async () =>
-      new Promise<void>((_resolve, reject) => {
+      new Promise<null>((_resolve, reject) => {
         rejectStartup = reject
       }),
   )
@@ -54,7 +45,15 @@ async function withTestSetup(run: () => Promise<void>): Promise<void> {
   const renderer = root
   await act(async () => {
     renderer.render(
-      createElement(ChakraProvider, {}, createElement(BBQrScanner, { onComplete: vi.fn<() => void>(), onError })),
+      createElement(
+        ChakraProvider,
+        {},
+        createElement(
+          QrCameraProvider,
+          { value: cameraFactory },
+          createElement(BBQrScanner, { onComplete: vi.fn<() => void>(), onError }),
+        ),
+      ),
     )
   })
   if (isFinished()) {
