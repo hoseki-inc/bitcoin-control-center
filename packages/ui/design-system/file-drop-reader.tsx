@@ -109,7 +109,7 @@ export function FileDropReader<T>(props: FileDropReaderProps<T>): JSX.Element {
     }
   }
 
-  function handleDrop(e: DragEvent<HTMLDivElement>) {
+  function handleDrop(e: DragEvent<HTMLElement>) {
     e.preventDefault()
     setIsDragging(false)
     const file = e.dataTransfer.files[0]
@@ -125,7 +125,7 @@ export function FileDropReader<T>(props: FileDropReaderProps<T>): JSX.Element {
     }
   }
 
-  function handleDragOver(e: DragEvent<HTMLDivElement>) {
+  function handleDragOver(e: DragEvent<HTMLElement>) {
     e.preventDefault()
     setIsDragging(true)
   }
@@ -148,6 +148,10 @@ export function FileDropReader<T>(props: FileDropReaderProps<T>): JSX.Element {
         style={{ display: 'none' }}
       />
       <Stack
+        as="button"
+        type="button"
+        width="full"
+        _focusVisible={{ boxShadow: 'outline' }}
         onClick={handleClick}
         onDrop={handleDrop}
         onDragOver={handleDragOver}
@@ -163,7 +167,7 @@ export function FileDropReader<T>(props: FileDropReaderProps<T>): JSX.Element {
         {status === 'ready' && (
           <>
             <CloudUploadIcon color="#64748B" width="32px" height="32px" />
-            <Text textStyle="label/lg" fontWeight="semibold">
+            <Text as="span" textStyle="label/lg" fontWeight="semibold">
               {readyText}
             </Text>
           </>
@@ -171,7 +175,7 @@ export function FileDropReader<T>(props: FileDropReaderProps<T>): JSX.Element {
         {status === 'invalid' && (
           <>
             <RefreshCwIcon color="#64748B" width="32px" height="32px" />
-            <Text textStyle="label/lg" fontWeight="semibold" color="red.500">
+            <Text as="span" textStyle="label/lg" fontWeight="semibold" color="red.500">
               {invalidText}
             </Text>
           </>
@@ -179,7 +183,7 @@ export function FileDropReader<T>(props: FileDropReaderProps<T>): JSX.Element {
         {status === 'valid' && (
           <>
             {validIcon}
-            <Text textStyle="label/lg" fontWeight="semibold">
+            <Text as="span" textStyle="label/lg" fontWeight="semibold">
               {validText}
             </Text>
           </>

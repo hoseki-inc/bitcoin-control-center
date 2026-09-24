@@ -434,6 +434,9 @@ interface AddAccountCardProps {
 function AddAccountCard({ onClick }: AddAccountCardProps): JSX.Element {
   return (
     <Flex
+      as="button"
+      type="button"
+      _focusVisible={{ boxShadow: 'outline' }}
       onClick={onClick}
       borderRadius="10px"
       border="1.5px dashed"
@@ -449,10 +452,10 @@ function AddAccountCard({ onClick }: AddAccountCardProps): JSX.Element {
       transition="all 0.15s ease"
       _hover={{ bg: 'neutral.50' }}
     >
-      <Text textStyle="text/xl" color="neutral.300" fontWeight="light">
+      <Text as="span" textStyle="text/xl" color="neutral.300" fontWeight="light">
         +
       </Text>
-      <Text textStyle="text/sm" color="neutral.300">
+      <Text as="span" textStyle="text/sm" color="neutral.300">
         Add account
       </Text>
     </Flex>

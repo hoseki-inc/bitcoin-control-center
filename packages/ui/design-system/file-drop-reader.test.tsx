@@ -143,3 +143,31 @@ it('passes a zero-length ArrayBuffer to the content validator', async () => {
   expect(onStatusChange).toHaveBeenCalledWith('valid')
   expect(onInvalidContentRead).not.toHaveBeenCalled()
 })
+
+it('opens the file picker once without submitting its containing form', async () => {
+  const onSubmit = vi.fn((event: React.FormEvent) => {
+    event.preventDefault()
+  })
+  await act(async () => {
+    root.render(
+      <ChakraProvider>
+        <form onSubmit={onSubmit}>
+          <FileDropReader {...common} readAs="text" acceptedFileTypes={['txt']} validationFn={Ok} />
+        </form>
+      </ChakraProvider>,
+    )
+  })
+  const input = host.querySelector('input')
+  const button = host.querySelector('button')
+  assert(input instanceof HTMLInputElement)
+  assert(button instanceof HTMLButtonElement)
+  const openPicker = vi.spyOn(input, 'click').mockImplementation(() => {})
+  expect(button.type).toBe('button')
+  expect(button.contains(input)).toBe(false)
+  await act(async () => {
+    button.click()
+  })
+  expect(openPicker).toHaveBeenCalledTimes(1)
+  expect(onSubmit).not.toHaveBeenCalled()
+  openPicker.mockRestore()
+})

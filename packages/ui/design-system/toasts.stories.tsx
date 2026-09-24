@@ -44,7 +44,7 @@ export const Default: Story = () => (
             <Text color="salmon">
               This is custom <b>HTML content</b> with{' '}
               <chakra.a href="/statements" color="purple" textDecoration="underline">
-                a link
+                View statements
               </chakra.a>
               .
             </Text>

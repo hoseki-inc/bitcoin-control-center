@@ -60,14 +60,6 @@ export function HardwareWalletCard({
   const [isDisplayNameValid, setIsDisplayNameValid] = useState(true)
   const [showCheckmark, setShowCheckmark] = useState(false)
 
-  const handleCardClick = (e: React.MouseEvent) => {
-    if (isSelected || !onClick) {
-      e.stopPropagation()
-      return
-    }
-    onClick(wallet)
-  }
-
   const handleDisplayNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newDisplayName = e.target.value.trim()
     const isValid = isValidDisplayName(newDisplayName)
@@ -103,9 +95,21 @@ export function HardwareWalletCard({
       maxW="full"
       cursor={isClickable ? 'pointer' : 'default'}
       _hover={isClickable ? { bgColor: 'neutral.50' } : undefined}
-      onClick={handleCardClick}
       gap={0}
     >
+      {isClickable && (
+        <Box
+          as="button"
+          type="button"
+          aria-label={`Select ${wallet.label}`}
+          position="absolute"
+          inset={0}
+          zIndex={1}
+          borderRadius="inherit"
+          _focusVisible={{ boxShadow: 'outline' }}
+          onClick={() => onClick?.(wallet)}
+        />
+      )}
       {isSelected && (
         <Box position="absolute" left={0} top={0} bottom={0} width="4px" bg="neutral.900" borderRadius="md" />
       )}
@@ -182,6 +186,7 @@ export function HardwareWalletCard({
                     </chakra.code>
                   </Stack>
                   <Button
+                    aria-label={isMasked ? 'Show extended public key' : 'Hide extended public key'}
                     variant="plain"
                     onClick={() => {
                       setIsMasked((prev) => !prev)
@@ -196,6 +201,7 @@ export function HardwareWalletCard({
             )}
           </AnimatePresence>
           <Button
+            aria-label={isExpanded ? 'Collapse wallet details' : 'Expand wallet details'}
             onClick={() => {
               setIsExpanded((prev) => !prev)
             }}

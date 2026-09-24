@@ -204,11 +204,14 @@ function Step1({ onNext, onBack, ...rest }: { onNext: () => void; onBack: () => 
 }
 
 function ColdcardSelectionBox({ name, image, onClick }: { name: string; image: ReactNode; onClick: () => void }) {
-  const boxRef = useRef<HTMLDivElement>(null)
+  const boxRef = useRef<HTMLButtonElement>(null)
   const clickAnimationInSeconds = 0.2
 
   return (
     <Box
+      as="button"
+      type="button"
+      _focusVisible={{ boxShadow: 'outline' }}
       ref={boxRef}
       display="flex"
       alignItems="center"
@@ -234,9 +237,9 @@ function ColdcardSelectionBox({ name, image, onClick }: { name: string; image: R
       _hover={{ cursor: 'pointer', bgColor: 'neutral.50' }}
       sx={Animations.scaleAndGlow(clickAnimationInSeconds)}
     >
-      <Stack gap={4} alignItems="center">
+      <Stack as="span" gap={4} alignItems="center">
         {image}
-        <Text textStyle="label/md" fontWeight={500}>
+        <Text as="span" textStyle="label/md" fontWeight={500}>
           {name}
         </Text>
       </Stack>
@@ -724,6 +727,7 @@ export function Step9Ui({
                   <Button
                     variant="ghost"
                     size="sm"
+                    aria-label="Copy message"
                     onClick={handleCopy}
                     border="none"
                     bgColor="neutral.100"
