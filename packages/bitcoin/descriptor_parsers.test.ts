@@ -126,7 +126,7 @@ describe('MultisigDescriptorParser with core xpub/tpub', () => {
     const descriptor = `wsh(sortedmulti(2,${MULTISIG_XPUB_1}/<0;1>/*,${MULTISIG_XPUB_2}/<0;1>/*,${MULTISIG_XPUB_3}/<0;1>/*))`
     const result = MultisigDescriptorParser.parse(descriptor).expect('valid descriptor')
 
-    expect(result.keyExpressions.length).toBe(3)
+    expect(result.keyExpressions).toHaveLength(3)
     expect(result.keyExpressions[0]?.xpub.network).toEqual(Network.Mainnet)
     expect(result.scriptType).toBe('p2wsh')
     expect(result.threshold).toBe(2)

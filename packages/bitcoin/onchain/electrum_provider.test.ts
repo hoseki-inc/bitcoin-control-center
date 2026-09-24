@@ -78,7 +78,7 @@ describe('addressToScripthash', () => {
     const scripthash = result.unwrap()
     // Known scripthash for this address
     expect(scripthash).toMatch(/^[a-f0-9]{64}$/)
-    expect(scripthash.length).toBe(64)
+    expect(scripthash).toHaveLength(64)
   })
 
   it('should compute scripthash for all address types', () => {
@@ -283,7 +283,7 @@ describe('ElectrumProvider', () => {
         entries.push(entry.unwrap())
       }
 
-      expect(entries.length).toBe(1)
+      expect(entries).toHaveLength(1)
       expect(entries[0].txid.toString()).toBe(tx.txid)
       expect(entries[0].address.toString()).toBe(address.toString())
       expect(entries[0].value).toBe(90_000n) // Received 90,000 sats
@@ -327,7 +327,7 @@ describe('ElectrumProvider', () => {
         entries.push(entry.unwrap())
       }
 
-      expect(entries.length).toBe(1)
+      expect(entries).toHaveLength(1)
       // -100,000 (spent) + 49,000 (change) = -51,000
       expect(entries[0].value).toBe(-51_000n)
     })
