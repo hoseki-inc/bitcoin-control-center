@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { Box } from '@chakra-ui/react'
 import { Address, DerivationPath, MultiSigAccount } from '@hoseki/packages/bitcoin'
+import { hasKey } from '@hoseki/packages/lib/util'
 import { Err, Ok, asyncFn } from '@hoseki/packages/result'
 import { TestChakraProvider as ChakraProvider } from '@hoseki/packages/testing/chakra-provider'
 import { TrezorInfo } from '@hoseki/packages/ui/wallet-ui/trezor/trezor-info'
@@ -735,12 +736,16 @@ describe.each(['singlesig', 'multisig'] as const)('%s Ledger retry', (flow) => {
       vi.stubGlobal(
         'window',
         new Proxy(mocks.domGlobals.window, {
-          get(target, key): unknown {
+          get(target, key) {
             // jsdom requires the real Window as the receiver for event-listener methods.
             if (key === 'addEventListener' || key === 'removeEventListener') {
               return target[key].bind(target)
             }
-            return key === 'location' ? { reload } : Reflect.get(target, key, target)
+            if (key === 'location') {
+              return { reload }
+            }
+            const value: unknown = hasKey(target, key) ? target[key] : undefined
+            return value
           },
         }),
       )
