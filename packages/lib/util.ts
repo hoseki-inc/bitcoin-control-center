@@ -14,8 +14,8 @@ export function cjsInterop(module: unknown): unknown {
   return module
 }
 
-export function hasKey<K extends PropertyKey>(value: object, key: K): value is object & Record<K, unknown> {
-  return key in value
+export function hasKey<K extends PropertyKey>(value: unknown, key: K): value is object & Record<K, unknown> {
+  return value !== null && (typeof value === 'object' || typeof value === 'function') && key in value
 }
 
 /** Read a possibly missing string key without widening the source table's type. */
