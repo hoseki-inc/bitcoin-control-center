@@ -1,5 +1,5 @@
 import * as net from 'node:net'
-import { afterEach, assert, beforeEach, describe, expect, it } from 'vitest'
+import { assert, describe, expect, it, onTestFinished } from 'vitest'
 import { z } from 'zod'
 import { parseUnknown } from '../../../result'
 import { ElectrumClient } from './client'
@@ -64,47 +64,62 @@ async function startMockServer(): Promise<MockServer> {
 describe('ElectrumClient concurrent reconnect', () => {
   let mock: MockServer
 
-  beforeEach(async () => {
-    mock = await startMockServer()
-  })
+  async function withTestSetup(run: () => Promise<void>): Promise<void> {
+    const pendingMock = startMockServer()
+    const lifecycle = { finished: false }
+    // Vitest owns teardown so it has its own timeout and runs once, even after a test timeout.
+    onTestFinished(async () => {
+      lifecycle.finished = true
 
-  afterEach(async () => {
-    await mock.close()
-  })
+      const serverForTest = await pendingMock
+      await serverForTest.close()
+    })
+    const serverForTest = await pendingMock
+    if (lifecycle.finished) {
+      return
+    }
+    mock = serverForTest
+
+    await run()
+  }
 
   it('shares a single connect across concurrent callers from cold start', async () => {
-    const client = new ElectrumClient({ host: '127.0.0.1', port: mock.port, protocol: 'tcp' })
+    await withTestSetup(async () => {
+      const client = new ElectrumClient({ host: '127.0.0.1', port: mock.port, protocol: 'tcp' })
 
-    const scripthash = 'a'.repeat(64)
-    const results = await Promise.all(Array.from({ length: 10 }, () => client.getHistory(scripthash)))
+      const scripthash = 'a'.repeat(64)
+      const results = await Promise.all(Array.from({ length: 10 }, () => client.getHistory(scripthash)))
 
-    for (const r of results) {
-      expect(r.isOk()).toBe(true)
-    }
+      for (const r of results) {
+        expect(r.isOk()).toBe(true)
+      }
 
-    const versionCalls = mock.requests.filter((r) => r.includes('server.version')).length
-    expect(versionCalls).toBe(1)
+      const versionCalls = mock.requests.filter((r) => r.includes('server.version')).length
+      expect(versionCalls).toBe(1)
 
-    client.disconnect()
+      client.disconnect()
+    })
   })
 
   it('reconnects cleanly after an explicit disconnect under concurrency', async () => {
-    const client = new ElectrumClient({ host: '127.0.0.1', port: mock.port, protocol: 'tcp' })
-    const scripthash = 'a'.repeat(64)
+    await withTestSetup(async () => {
+      const client = new ElectrumClient({ host: '127.0.0.1', port: mock.port, protocol: 'tcp' })
+      const scripthash = 'a'.repeat(64)
 
-    const first = await client.getHistory(scripthash)
-    expect(first.isOk()).toBe(true)
+      const first = await client.getHistory(scripthash)
+      expect(first.isOk()).toBe(true)
 
-    client.disconnect()
+      client.disconnect()
 
-    const results = await Promise.all(Array.from({ length: 10 }, () => client.getHistory(scripthash)))
-    const errors = results.filter((r) => r.isErr()).map((r) => r.unwrapErr().message)
-    expect(errors).toEqual([])
+      const results = await Promise.all(Array.from({ length: 10 }, () => client.getHistory(scripthash)))
+      const errors = results.filter((r) => r.isErr()).map((r) => r.unwrapErr().message)
+      expect(errors).toEqual([])
 
-    const versionCalls = mock.requests.filter((r) => r.includes('server.version')).length
-    expect(versionCalls).toBe(2)
+      const versionCalls = mock.requests.filter((r) => r.includes('server.version')).length
+      expect(versionCalls).toBe(2)
 
-    client.disconnect()
+      client.disconnect()
+    })
   })
 })
 

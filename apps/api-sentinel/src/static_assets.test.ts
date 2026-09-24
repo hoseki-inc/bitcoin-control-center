@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import Fastify from 'fastify'
-import { afterEach, describe, expect, it } from 'vitest'
+import { describe, expect, it, onTestFinished } from 'vitest'
 import { registerStaticAssets } from './static_assets'
 
 const temporaryDirectories: string[] = []
@@ -14,35 +14,44 @@ async function createPublicDirectory(): Promise<string> {
   return publicDir
 }
 
-afterEach(async () => {
-  await Promise.all(
-    temporaryDirectories.splice(0).map(async (directory) => rm(directory, { recursive: true, force: true })),
-  )
-})
+async function withTestSetup(run: () => Promise<void>): Promise<void> {
+  // Vitest owns teardown so it has its own timeout and runs once, even after a test timeout.
+  onTestFinished(async () => {
+    await Promise.all(
+      temporaryDirectories.splice(0).map(async (directory) => rm(directory, { recursive: true, force: true })),
+    )
+  })
+
+  await run()
+}
 
 describe('registerStaticAssets', () => {
   it('serves the SPA shell when a browser route is loaded directly', async () => {
-    const server = Fastify()
-    const publicDir = await createPublicDirectory()
-    await registerStaticAssets(server, publicDir)
+    await withTestSetup(async () => {
+      const server = Fastify()
+      const publicDir = await createPublicDirectory()
+      await registerStaticAssets(server, publicDir)
 
-    const response = await server.inject({ method: 'GET', url: '/portfolio' })
+      const response = await server.inject({ method: 'GET', url: '/portfolio' })
 
-    expect(response.statusCode).toBe(200)
-    expect(response.headers['content-type']).toContain('text/html')
-    expect(response.body).toContain('Control Center')
-    await server.close()
+      expect(response.statusCode).toBe(200)
+      expect(response.headers['content-type']).toContain('text/html')
+      expect(response.body).toContain('Control Center')
+      await server.close()
+    })
   })
 
   it('preserves JSON 404 responses for unknown API routes', async () => {
-    const server = Fastify()
-    const publicDir = await createPublicDirectory()
-    await registerStaticAssets(server, publicDir)
+    await withTestSetup(async () => {
+      const server = Fastify()
+      const publicDir = await createPublicDirectory()
+      await registerStaticAssets(server, publicDir)
 
-    const response = await server.inject({ method: 'GET', url: '/trpc/missing' })
+      const response = await server.inject({ method: 'GET', url: '/trpc/missing' })
 
-    expect(response.statusCode).toBe(404)
-    expect(response.json()).toEqual({ error: 'Not found' })
-    await server.close()
+      expect(response.statusCode).toBe(404)
+      expect(response.json()).toEqual({ error: 'Not found' })
+      await server.close()
+    })
   })
 })

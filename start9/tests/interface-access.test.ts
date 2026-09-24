@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { daemons } from '@start9labs/start-sdk'
-import { afterEach, assert, describe, expect, it, vi } from 'vitest'
+import { assert, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { main } from '../startos/main'
 import { sdk } from '../startos/sdk'
 
@@ -97,126 +97,146 @@ function setupInterface(
   }
 }
 
-afterEach(() => {
-  cleanups.splice(0).forEach((cleanup) => {
-    cleanup()
+async function withTestSetup(run: () => Promise<void>): Promise<void> {
+  // Vitest owns teardown so it has its own timeout and runs once, even after a test timeout.
+  onTestFinished(async () => {
+    cleanups.splice(0).forEach((dispose) => {
+      dispose()
+    })
+    vi.restoreAllMocks()
   })
-  vi.restoreAllMocks()
-})
+
+  await run()
+}
 
 describe('StartOS enabled interface addresses', () => {
   it('passes only SDK-enabled IPs and hostnames to Sentinel', async () => {
-    const state = setupInterface(
-      [
-        publicAddress,
-        { ...publicAddress, hostname: '203.0.113.43' },
-        { ...publicAddress, hostname: '10.0.0.20', public: false },
-        { ...publicAddress, hostname: 'fd00::20', public: false, metadata: { kind: 'ipv6' } },
-        { ...publicAddress, hostname: 'node.local', public: false, metadata: { kind: 'mdns' } },
-        { ...publicAddress, hostname: 'example.onion', metadata: { kind: 'plugin' } },
-        { ...publicAddress, hostname: 'control.example.com', metadata: { kind: 'public-domain' } },
-        { ...publicAddress, hostname: 'disabled.local', public: false, metadata: { kind: 'mdns' } },
-      ],
-      [`${publicIp}:50399`],
-    )
-    state.addresses.disabled.push(['disabled.local', 50399])
+    await withTestSetup(async () => {
+      const state = setupInterface(
+        [
+          publicAddress,
+          { ...publicAddress, hostname: '203.0.113.43' },
+          { ...publicAddress, hostname: '10.0.0.20', public: false },
+          { ...publicAddress, hostname: 'fd00::20', public: false, metadata: { kind: 'ipv6' } },
+          { ...publicAddress, hostname: 'node.local', public: false, metadata: { kind: 'mdns' } },
+          { ...publicAddress, hostname: 'example.onion', metadata: { kind: 'plugin' } },
+          { ...publicAddress, hostname: 'control.example.com', metadata: { kind: 'public-domain' } },
+          { ...publicAddress, hostname: 'disabled.local', public: false, metadata: { kind: 'mdns' } },
+        ],
+        [`${publicIp}:50399`],
+      )
+      state.addresses.disabled.push(['disabled.local', 50399])
 
-    await main(state.options)
+      await main(state.options)
 
-    expect(state.allowedHosts().split(',')).toEqual([
-      '10.0.0.20',
-      publicIp,
-      'control.example.com',
-      'example.onion',
-      'fd00::20',
-      'node.local',
-    ])
+      expect(state.allowedHosts().split(',')).toEqual([
+        '10.0.0.20',
+        publicIp,
+        'control.example.com',
+        'example.onion',
+        'fd00::20',
+        'node.local',
+      ])
+    })
   })
 
   it('restarts with a changed allowlist when public access is enabled, then disabled', async () => {
-    const state = setupInterface([publicAddress])
-    await main(state.options)
-    expect(state.allowedHosts()).toBe('')
+    await withTestSetup(async () => {
+      const state = setupInterface([publicAddress])
+      await main(state.options)
+      expect(state.allowedHosts()).toBe('')
 
-    state.addresses.enabled.push(`${publicIp}:50399`)
-    state.changed()
-    await vi.waitFor(() => {
-      expect(state.retry).toHaveBeenCalledTimes(1)
-    })
-    await main(state.options)
-    expect(state.allowedHosts()).toBe(publicIp)
+      state.addresses.enabled.push(`${publicIp}:50399`)
+      state.changed()
+      await vi.waitFor(() => {
+        expect(state.retry).toHaveBeenCalledTimes(1)
+      })
+      await main(state.options)
+      expect(state.allowedHosts()).toBe(publicIp)
 
-    state.addresses.enabled = []
-    state.changed()
-    await vi.waitFor(() => {
-      expect(state.retry).toHaveBeenCalledTimes(2)
+      state.addresses.enabled = []
+      state.changed()
+      await vi.waitFor(() => {
+        expect(state.retry).toHaveBeenCalledTimes(2)
+      })
+      await main(state.options)
+      expect(state.allowedHosts()).toBe('')
     })
-    await main(state.options)
-    expect(state.allowedHosts()).toBe('')
   })
 
   it('replaces an old public IP when the enabled address changes', async () => {
-    const state = setupInterface([publicAddress], [`${publicIp}:50399`])
-    await main(state.options)
-    state.addresses.available = [{ ...publicAddress, hostname: '203.0.113.99' }]
-    state.addresses.enabled = ['203.0.113.99:50399']
-    state.changed()
-    await vi.waitFor(() => {
-      expect(state.retry).toHaveBeenCalledOnce()
+    await withTestSetup(async () => {
+      const state = setupInterface([publicAddress], [`${publicIp}:50399`])
+      await main(state.options)
+      state.addresses.available = [{ ...publicAddress, hostname: '203.0.113.99' }]
+      state.addresses.enabled = ['203.0.113.99:50399']
+      state.changed()
+      await vi.waitFor(() => {
+        expect(state.retry).toHaveBeenCalledOnce()
+      })
+      await main(state.options)
+      expect(state.allowedHosts()).toBe('203.0.113.99')
     })
-    await main(state.options)
-    expect(state.allowedHosts()).toBe('203.0.113.99')
   })
 
   it('waits with an empty allowlist when the interface is missing, then reacts when it appears', async () => {
-    const state = setupInterface([publicAddress], [`${publicIp}:50399`])
-    state.setPresent(false)
-    await main(state.options)
-    expect(state.allowedHosts()).toBe('')
-    state.setPresent(true)
-    state.changed()
-    await vi.waitFor(() => {
-      expect(state.retry).toHaveBeenCalledOnce()
+    await withTestSetup(async () => {
+      const state = setupInterface([publicAddress], [`${publicIp}:50399`])
+      state.setPresent(false)
+      await main(state.options)
+      expect(state.allowedHosts()).toBe('')
+      state.setPresent(true)
+      state.changed()
+      await vi.waitFor(() => {
+        expect(state.retry).toHaveBeenCalledOnce()
+      })
+      await main(state.options)
+      expect(state.allowedHosts()).toBe(publicIp)
     })
-    await main(state.options)
-    expect(state.allowedHosts()).toBe(publicIp)
   })
 
   it('deduplicates multiple ports and ignores changes that leave allowed hostnames unchanged', async () => {
-    const state = setupInterface([publicAddress], [`${publicIp}:50399`])
-    await main(state.options)
-    state.addresses.available.push({ ...publicAddress, port: 50400 })
-    state.addresses.enabled.push(`${publicIp}:50400`)
-    state.addresses.available.reverse()
-    state.changed()
-    // Flush the SDK's asynchronous subscription; no changed mapped value should trigger a retry.
-    await new Promise((resolve) => {
-      setImmediate(resolve)
+    await withTestSetup(async () => {
+      const state = setupInterface([publicAddress], [`${publicIp}:50399`])
+      await main(state.options)
+      state.addresses.available.push({ ...publicAddress, port: 50400 })
+      state.addresses.enabled.push(`${publicIp}:50400`)
+      state.addresses.available.reverse()
+      state.changed()
+      // Flush the SDK's asynchronous subscription; no changed mapped value should trigger a retry.
+      await new Promise((resolve) => {
+        setImmediate(resolve)
+      })
+      expect(state.retry).not.toHaveBeenCalled()
+      await main(state.options)
+      expect(state.allowedHosts()).toBe(publicIp)
     })
-    expect(state.retry).not.toHaveBeenCalled()
-    await main(state.options)
-    expect(state.allowedHosts()).toBe(publicIp)
   })
 })
 
 describe('StartOS entrypoint', () => {
-  it.each([undefined, '', `${publicIp},fd00::20,example.onion`])('preserves the configured allowlist: %s', (hosts) => {
-    const directory = mkdtempSync(join(tmpdir(), 'sentinel-interface-'))
-    cleanups.push(() => {
-      rmSync(directory, { recursive: true, force: true })
-    })
-    // Stub only external executables, so the actual shell entrypoint is exercised.
-    writeFileSync(join(directory, 'yq'), '#!/bin/sh\nexit 1\n', { mode: 0o755 })
-    writeFileSync(join(directory, 'node'), '#!/bin/sh\nprintf "%s" "$SENTINEL_ALLOWED_HOSTS"\n', { mode: 0o755 })
-    const env = { ...process.env, PATH: `${directory}:${process.env.PATH}` }
-    delete env.SENTINEL_ALLOWED_HOSTS
-    if (hosts !== undefined) {
-      env.SENTINEL_ALLOWED_HOSTS = hosts
-    }
-    const output = execFileSync('bash', [fileURLToPath(new URL('../docker_entrypoint.sh', import.meta.url))], {
-      env,
-      encoding: 'utf8',
-    })
-    expect(output).toBe(hosts ?? 'hoseki-sentinel.local,hoseki-sentinel.embassy,*.local,*.onion,*.embassy')
-  })
+  it.each([undefined, '', `${publicIp},fd00::20,example.onion`])(
+    'preserves the configured allowlist: %s',
+    async (hosts) => {
+      await withTestSetup(async () => {
+        const directory = mkdtempSync(join(tmpdir(), 'sentinel-interface-'))
+        cleanups.push(() => {
+          rmSync(directory, { recursive: true, force: true })
+        })
+        // Stub only external executables, so the actual shell entrypoint is exercised.
+        writeFileSync(join(directory, 'yq'), '#!/bin/sh\nexit 1\n', { mode: 0o755 })
+        writeFileSync(join(directory, 'node'), '#!/bin/sh\nprintf "%s" "$SENTINEL_ALLOWED_HOSTS"\n', { mode: 0o755 })
+        const env = { ...process.env, PATH: `${directory}:${process.env.PATH}` }
+        delete env.SENTINEL_ALLOWED_HOSTS
+        if (hosts !== undefined) {
+          env.SENTINEL_ALLOWED_HOSTS = hosts
+        }
+        const output = execFileSync('bash', [fileURLToPath(new URL('../docker_entrypoint.sh', import.meta.url))], {
+          env,
+          encoding: 'utf8',
+        })
+        expect(output).toBe(hosts ?? 'hoseki-sentinel.local,hoseki-sentinel.embassy,*.local,*.onion,*.embassy')
+      })
+    },
+  )
 })
