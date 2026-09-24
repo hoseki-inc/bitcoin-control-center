@@ -230,7 +230,8 @@
     "vitest/prefer-mock-promise-shorthand": "error",
     "vitest/prefer-snapshot-hint": "error",
     "vitest/prefer-strict-boolean-matchers": "error",
-    "vitest/prefer-to-be": "error"
+    "vitest/prefer-to-be": "error",
+    "vitest/prefer-to-be-object": "error"
   },
   "overrides": [
     {
