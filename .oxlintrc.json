@@ -200,7 +200,14 @@
     "jsx-a11y/role-supports-aria-props": "error",
     "jsx-a11y/scope": "error",
     "jsx-a11y/tabindex-no-positive": "error",
-    "vitest/consistent-each-for": ["error", { "describe": "each", "it": "each", "suite": "each", "test": "each" }]
+    "vitest/consistent-each-for": ["error", { "describe": "each", "it": "each", "suite": "each", "test": "each" }],
+    "vitest/consistent-test-filename": [
+      "error",
+      {
+        "allTestPattern": "(^|[\\\\/])__tests__[\\\\/]|\\.(test|spec)\\.[cm]?[jt]sx?$",
+        "pattern": "\\.test\\.[cm]?[jt]sx?$"
+      }
+    ]
   },
   "overrides": [
     {
