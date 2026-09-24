@@ -11,10 +11,10 @@ export function ClaimTopBar({ claim, ...props }: { claim: ClaimDto } & Omit<TopB
   return (
     <>
       <TopBar {...props}>
-        <TopBar.Item as={Link} to="/accounts">
+        <TopBar.Back as={Link} to="/accounts">
           Back to Accounts
-        </TopBar.Item>
-        <TopBar.Item as="button" onClick={onOpen}>
+        </TopBar.Back>
+        <TopBar.Item as="button" color="status.error.fg" onClick={onOpen}>
           Archive Account
         </TopBar.Item>
       </TopBar>

@@ -11,9 +11,9 @@ export function ManualTypeSelectorPage(): JSX.Element {
   return (
     <Box py={{ base: 6, md: 8 }} maxW="640px" mx="auto" w="full">
       <TopBar mb={8}>
-        <TopBar.Item as={Link} to={returnTo}>
+        <TopBar.Back as={Link} to={returnTo}>
           Back
-        </TopBar.Item>
+        </TopBar.Back>
       </TopBar>
 
       <Stack spacing={6}>

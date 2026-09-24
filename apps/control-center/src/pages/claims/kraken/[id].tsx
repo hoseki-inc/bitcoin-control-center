@@ -77,9 +77,9 @@ export function KrakenAccountDetailsPage(): JSX.Element {
   return (
     <Box py={6}>
       <TopBar mb={6}>
-        <TopBar.Item as={Link} to="/accounts">
+        <TopBar.Back as={Link} to="/accounts">
           Back to Accounts
-        </TopBar.Item>
+        </TopBar.Back>
         <TopBar.Item as="button" color="status.error.fg" onClick={handleDelete}>
           {isDeleting ? 'Removing...' : 'Remove Account'}
         </TopBar.Item>

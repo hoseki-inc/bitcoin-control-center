@@ -1,8 +1,8 @@
-import { Box, Button, Grid, Heading, Icon, Text } from '@chakra-ui/react'
+import { Box, Grid, Heading, Icon, Text } from '@chakra-ui/react'
 import { ConnectManualBitcoinAccordion } from '@hoseki/packages/ui/design-system'
 import { KeystoreAvatar } from '@hoseki/packages/ui/prove-verify-ui/claims/keystore-avatar'
 import { keyIcon } from '@hoseki/packages/ui/prove-verify-ui/claims/keystores-status-indicator'
-import { ChevronLeft } from 'lucide-react'
+import { TopBar } from '@hoseki/packages/ui/prove-verify-ui/top-bar'
 import { ConnectionType } from './claims-landing/connection-type'
 
 interface AddAccountFlowProps {
@@ -14,18 +14,11 @@ interface AddAccountFlowProps {
 export function AddAccountFlow({ onClose, linkState }: AddAccountFlowProps): JSX.Element {
   return (
     <Box w="full" py={{ base: 6, md: 8 }}>
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={onClose}
-        color="text.primary"
-        fontWeight="medium"
-        mb={6}
-        pl={0}
-        leftIcon={<Icon as={ChevronLeft} boxSize={4} />}
-      >
-        Back to Accounts
-      </Button>
+      <TopBar mb={6}>
+        <TopBar.Back as="button" onClick={onClose}>
+          Back to Accounts
+        </TopBar.Back>
+      </TopBar>
       <Heading as="h1" textStyle="text/3xl" fontWeight="bold" color="text.primary" mb={2}>
         Connect New Account
       </Heading>

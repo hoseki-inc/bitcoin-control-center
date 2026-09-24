@@ -3,6 +3,7 @@ import { renderStatementDocument } from '@hoseki/packages/pdf'
 import { type StatementDocumentFormat, type StatementId } from '@hoseki/packages/schemas'
 import { Animations, ErrorBanner, Spinner } from '@hoseki/packages/ui/design-system'
 import { StatusBadge, getBadgeConfigForStatement, usePdfDownloadMutation } from '@hoseki/packages/ui/prove-verify-ui'
+import { TopBar } from '@hoseki/packages/ui/prove-verify-ui/top-bar'
 import { PDFViewer, pdf } from '@react-pdf/renderer'
 import { format } from 'date-fns'
 import { ShieldCheckIcon } from 'lucide-react'
@@ -191,17 +192,9 @@ function ActionButtons({
 
 function BackLink() {
   return (
-    <Link
-      as={RouterLink}
-      to="/portfolio"
-      display="inline-flex"
-      alignItems="center"
-      color="text.primary"
-      fontWeight="medium"
-      _hover={{ textDecoration: 'none', color: 'text.tertiary' }}
-    >
-      Back to Home
-    </Link>
+    <TopBar.Back as={RouterLink} to="/statements" alignSelf="flex-start">
+      Back to Statements
+    </TopBar.Back>
   )
 }
 

@@ -164,9 +164,9 @@ export function ManualAccountDetailsPage(): JSX.Element {
   return (
     <Box py={{ base: 6, md: 8 }} maxW="960px" w="full" mx="auto">
       <TopBar mb={8}>
-        <TopBar.Item as={Link} to="/accounts">
+        <TopBar.Back as={Link} to="/accounts">
           Back to Accounts
-        </TopBar.Item>
+        </TopBar.Back>
       </TopBar>
 
       <Stack spacing={6}>

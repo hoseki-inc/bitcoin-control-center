@@ -29,7 +29,7 @@ export const Default: Story = () => (
 
     <Wrapper title="TopBar with Single Item">
       <TopBar>
-        <TopBar.Item href="/back">← Back to Dashboard</TopBar.Item>
+        <TopBar.Back href="/back">Back to Dashboard</TopBar.Back>
       </TopBar>
     </Wrapper>
   </Stack>

@@ -20,7 +20,9 @@ from `apps/web-marketing` still governs type. Sentinel remains the only backend.
   light and a dark value; a test checks that both resolve.
 - The accent is Hoseki yellow in both themes, used as a fill with dark text (selected
   wallpaper, switches, the orb). Primary buttons are the inverse surface.
-- Brand marks drawn for white backgrounds sit on a light chip in dark mode.
+- Brand marks drawn for white backgrounds sit on a light chip in dark mode. Black
+  wordmarks have white `*-dark.svg` variants, chosen by `logoForMode`
+  (`apps/control-center/src/utils/themed-logo.ts`); coloured marks stay as they are.
 
 ## Materials
 
@@ -65,6 +67,10 @@ becomes opaque; without `backdrop-filter` support, tints thicken.
   `lg`). Buttons are pills, 44px high by default.
 - Use `SegmentedControl` for a small set of exclusive options; it is a radio group with
   a sliding selection. Switches are Hoseki yellow when on.
+- Back navigation at the top of a page is `TopBar.Back`: a chevron and a label naming the
+  destination ("Back to Accounts"). Back inside a flow is the footer's left button, which
+  `WizardFooter` draws with the same chevron. Destructive top-bar actions such as Archive
+  Account use `status.error.fg`.
 - `EmptyView` for initial empty states: a `text/xl` title, one explanation, one action.
 
 ## Motion

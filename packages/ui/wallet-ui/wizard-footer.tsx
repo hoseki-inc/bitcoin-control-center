@@ -2,6 +2,10 @@ import { Box, HStack } from '@chakra-ui/react'
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { Wrapper } from '../prove-verify-ui'
 
+// Lucide's chevron-left, as used by TopBar.Back.
+const CHEVRON_LEFT =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>'
+
 /**
  * Actions for a step-by-step flow, pinned to the bottom of the window above the dock.
  * No card: content scrolling underneath softens into a blurred fade, the way a sheet
@@ -55,11 +59,19 @@ export function WizardFooter({
                   bg: 'transparent',
                   border: 'none',
                   boxShadow: 'none',
-                  color: 'text.secondary',
                   pl: 2,
+                  color: 'text.primary',
                   _hover: { bg: 'surface.muted', color: 'text.primary' },
                 },
-                '& .chakra-button::before': { content: '"‹"', fontSize: '1.4em', lineHeight: 1, mr: 1.5, mt: '-2px' },
+                // The same chevron as TopBar.Back, drawn with a mask so it takes the text colour.
+                '& .chakra-button::before': {
+                  content: '""',
+                  boxSize: '16px',
+                  mr: 1,
+                  bg: 'currentColor',
+                  mask: `url("data:image/svg+xml,${encodeURIComponent(CHEVRON_LEFT)}") center / contain no-repeat`,
+                  WebkitMask: `url("data:image/svg+xml,${encodeURIComponent(CHEVRON_LEFT)}") center / contain no-repeat`,
+                },
               }}
             >
               {leftButton}
