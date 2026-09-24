@@ -245,7 +245,8 @@
         "maxArgs": 2
       }
     ],
-    "vitest/valid-expect-in-promise": "error"
+    "vitest/valid-expect-in-promise": "error",
+    "vitest/warn-todo": "error"
   },
   "overrides": [
     {
