@@ -2,7 +2,7 @@ import { Box, SimpleGrid, Text, useColorMode } from '@chakra-ui/react'
 import { curves } from '@hoseki/packages/ui/design-system/animations/motion'
 import { motion } from 'framer-motion'
 import { useEffect, useRef, useState } from 'react'
-import { type ContextMenuAnchor } from './context-menu'
+import type { ContextMenuAnchor } from './context-menu'
 import { WALLPAPER_PRESETS } from './wallpaper/presets'
 import { useWallpaperThumbnails } from './wallpaper/thumbnails'
 import { useBlockSeed, useWallpaper } from './wallpaper/use-wallpaper'
@@ -22,7 +22,9 @@ export function WallpaperPicker({ anchor, onClose }: { anchor: ContextMenuAnchor
 
   useEffect(() => {
     const panel = ref.current
-    if (panel === null) return
+    if (panel === null) {
+      return
+    }
     const { width, height } = panel.getBoundingClientRect()
     setPosition({
       x: Math.max(EDGE, Math.min(anchor.x, window.innerWidth - width - EDGE)),
@@ -33,10 +35,14 @@ export function WallpaperPicker({ anchor, onClose }: { anchor: ContextMenuAnchor
 
   useEffect(() => {
     const onPointerDown = (event: PointerEvent): void => {
-      if (!ref.current?.contains(event.target as Node)) onClose()
+      if (!(event.target instanceof Node && ref.current?.contains(event.target) === true)) {
+        onClose()
+      }
     }
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key !== 'Escape') return
+      if (event.key !== 'Escape') {
+        return
+      }
       event.preventDefault()
       onClose()
     }
@@ -51,6 +57,7 @@ export function WallpaperPicker({ anchor, onClose }: { anchor: ContextMenuAnchor
   return (
     <MotionBox
       ref={ref}
+      // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- An animated popover at the pointer; the motion wrapper cannot render a native dialog.
       role="dialog"
       aria-label="Choose a wallpaper"
       layerStyle="materialMenu"
@@ -77,7 +84,9 @@ export function WallpaperPicker({ anchor, onClose }: { anchor: ContextMenuAnchor
               key={option.id}
               aria-pressed={selected}
               aria-label={option.name}
-              onClick={() => setWallpaper(option.id)}
+              onClick={() => {
+                setWallpaper(option.id)
+              }}
               borderRadius="10px"
               outline="2px solid"
               outlineColor={selected ? 'accent.solid' : 'transparent'}

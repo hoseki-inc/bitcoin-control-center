@@ -14,7 +14,7 @@ import {
   Text,
   useDisclosure,
 } from '@chakra-ui/react'
-import { EmptyView, ErrorBanner, Spinner } from '@hoseki/packages/ui/design-system'
+import { EmptyView, Spinner } from '@hoseki/packages/ui/design-system'
 import { springs } from '@hoseki/packages/ui/design-system/animations/motion'
 import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
 import { ClaimCardKeystores, getBadgeConfigForClaim } from '@hoseki/packages/ui/prove-verify-ui'
@@ -35,7 +35,7 @@ import { useQueryErrorToast } from '../../hooks/use-query-error-toast'
 import { computeAccountTotals } from '../../lib/account-totals'
 import { useGetBalancesPerClaimIds } from '../../lib/balances'
 import { type RouterOutput, trpc } from '../../trpc'
-import { type ClaimDto } from '../../trpc/server-types'
+import type { ClaimDto } from '../../trpc/server-types'
 import { ensureClaimStatusNotExpired, mapClaimToClaimCardProps } from '../../utils/claim-utils'
 import { isExchangeConnected, needsExchangeReconnect } from '../../utils/exchange-connection-status'
 import { queryErrorMessage } from '../../utils/query-error-message'
@@ -71,7 +71,6 @@ export function ClaimsPage(): JSX.Element {
   const navigate = useNavigate()
   const location = useLocation()
   const claimsQuery = trpc.portalProve.registry.claims.list.useQuery({ excludePending: false })
-  const claimCountLimitQuery = trpc.portalProve.registry.claims.getCountLimit.useQuery()
   const exchangeAccountsQuery = trpc.portalProve.exchange.list.useQuery()
   const manualAccountsQuery = trpc.portalProve.manual.list.useQuery()
   const etfAccountsQuery = trpc.portalProve.etf.list.useQuery()
@@ -102,7 +101,9 @@ export function ClaimsPage(): JSX.Element {
   const balancesQuery = useGetBalancesPerClaimIds({ claimIds, enabled: claimIds.length > 0 })
 
   useEffect(() => {
-    if (location.hash !== '#archived') return
+    if (location.hash !== '#archived') {
+      return
+    }
 
     const section = document.getElementById('archived')
     const toggle = document.getElementById('archived-accounts-toggle')
@@ -115,7 +116,9 @@ export function ClaimsPage(): JSX.Element {
   const failedAccountQuery = accountQueries.find((query) => query.isError)
 
   const retryAccounts = (): void => {
-    for (const query of [...accountQueries, archivedClaimsQuery]) void query.refetch()
+    for (const query of [...accountQueries, archivedClaimsQuery]) {
+      void query.refetch()
+    }
   }
   useQueryErrorToast(
     failedAccountQuery
@@ -148,7 +151,6 @@ export function ClaimsPage(): JSX.Element {
     )
   }
 
-  const limit = claimCountLimitQuery?.data ?? null
   const hasClaims =
     claims.length > 0 || exchangeAccounts.length > 0 || manualAccounts.length > 0 || etfAccounts.length > 0
   const btcUsdPrice = btcPriceQuery.data?.value ? Number(btcPriceQuery.data.value) : null
@@ -173,25 +175,10 @@ export function ClaimsPage(): JSX.Element {
       <Stack py={8} gap={0}>
         <FirstAccountReady
           ready={
-            claims.some((claim) => balancesQuery.data?.get(claim.id)?.current != null) ||
+            claims.some((claim) => balancesQuery.data.get(claim.id)?.current != null) ||
             [...exchangeAccounts, ...manualAccounts, ...etfAccounts].some((account) => account.balance !== null)
           }
         />
-        {limit !== null && claims.length >= limit && (
-          <ErrorBanner
-            mb={6}
-            variant="warning"
-            message={
-              <>
-                You have reached the maximum number of accounts you can add. Contact{' '}
-                <Text as="a" href="mailto:support@hoseki.app" fontWeight="semibold">
-                  support@hoseki.app
-                </Text>{' '}
-                to increase your limit.
-              </>
-            }
-          />
-        )}
 
         {/* Header */}
         <Flex align="flex-start" justify="space-between" pb={6} gap={4} flexWrap="wrap">
@@ -199,7 +186,12 @@ export function ClaimsPage(): JSX.Element {
             <PageHeading title="Accounts" description="Manage your wallets, exchanges, and Bitcoin holdings." />
           </Box>
           {hasClaims && (
-            <Button variant="outline" onClick={() => navigate('/accounts/add')}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                void navigate('/accounts/add')
+              }}
+            >
               Add Account
             </Button>
           )}
@@ -260,7 +252,10 @@ export function ClaimsPage(): JSX.Element {
             </Stack>
             <Flex
               flexShrink={0}
-              role="group"
+              as="fieldset"
+              border="none"
+              m={0}
+              minW={0}
               aria-label="Account view"
               p="4px"
               gap="2px"
@@ -291,7 +286,9 @@ export function ClaimsPage(): JSX.Element {
                     color={view === option.value ? 'text.primary' : 'text.secondary'}
                     _hover={{ bg: 'transparent', color: 'text.primary' }}
                     _active={{ bg: 'transparent', transform: 'scale(0.94)' }}
-                    onClick={() => setView(option.value)}
+                    onClick={() => {
+                      setView(option.value)
+                    }}
                   />
                 </Box>
               ))}
@@ -306,14 +303,14 @@ export function ClaimsPage(): JSX.Element {
               {claims.map((claim) => (
                 <AccountRow
                   key={claim.id}
-                  name={claim.displayName ?? claim.officialName ?? 'Wallet'}
+                  name={claim.displayName || claim.officialName || 'Wallet'}
                   to={
                     claim.keystores.length > 1 && claim.status === 'pending'
                       ? `/multisig/${claim.id}`
                       : `/accounts/${claim.id}`
                   }
                   detail={getBadgeConfigForClaim(ensureClaimStatusNotExpired(claim)).label}
-                  sats={balancesQuery.data?.get(claim.id)?.current?.toString() ?? null}
+                  sats={balancesQuery.data.get(claim.id)?.current.toString() ?? null}
                   btcPrice={btcUsdPrice}
                 />
               ))}
@@ -358,7 +355,7 @@ export function ClaimsPage(): JSX.Element {
                 <AccountCard
                   key={claim.id}
                   claim={claim}
-                  balance={balancesQuery.data?.get(claim.id) ?? null}
+                  balance={balancesQuery.data.get(claim.id) ?? null}
                   totalBtcSats={totalBtcSats}
                   isLoadingBalance={balancesQuery.isLoading}
                 />
@@ -392,20 +389,32 @@ export function ClaimsPage(): JSX.Element {
             </Grid>
           )
         ) : (
-          <EmptyHoldings onAdd={() => navigate('/accounts/add')} />
+          <EmptyHoldings
+            onAdd={() => {
+              void navigate('/accounts/add')
+            }}
+          />
         )}
 
         {/* Archived accounts accordion */}
         <Box id="archived" mt={6} tabIndex={-1}>
           {archivedClaimsQuery.isLoading && (
-            <Flex align="center" gap={2} color="text.secondary" role="status">
+            <Flex as="output" align="center" gap={2} color="text.secondary">
               <Spinner size="sm" />
-              <Text textStyle="text/sm">Loading archived accounts…</Text>
+              <Text as="output" textStyle="text/sm">
+                Loading archived accounts…
+              </Text>
             </Flex>
           )}
           {archivedClaimsQuery.isError && (
             <Stack gap={3} align="flex-start">
-              <Button size="sm" variant="outline" onClick={() => archivedClaimsQuery.refetch()}>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  void archivedClaimsQuery.refetch()
+                }}
+              >
                 Retry
               </Button>
             </Stack>
@@ -425,10 +434,10 @@ export function ClaimsPage(): JSX.Element {
                       <ArchivedClaimRow
                         key={archivedClaim.id}
                         claim={archivedClaim}
-                        onRestore={() => restoreMutation.mutate({ id: archivedClaim.id })}
-                        isRestoring={
-                          restoreMutation.isLoading && restoreMutation.variables?.['id'] === archivedClaim.id
-                        }
+                        onRestore={() => {
+                          restoreMutation.mutate({ id: archivedClaim.id })
+                        }}
+                        isRestoring={restoreMutation.isLoading && restoreMutation.variables?.id === archivedClaim.id}
                         isRestoreDisabled={restoreMutation.isLoading}
                       />
                     ))}
@@ -508,12 +517,13 @@ function AccountCardBalance({
   usd: number | null
   loading?: boolean
 }): JSX.Element {
-  if (loading)
+  if (loading) {
     return (
-      <Text textStyle="text/sm" color="text.secondary" role="status">
+      <Text as="output" display="block" textStyle="text/sm" color="text.secondary">
         Loading balance…
       </Text>
     )
+  }
   return (
     <Stack gap={1} align="center">
       <Text
@@ -575,7 +585,7 @@ function AccountCard({ claim, balance, totalBtcSats, isLoadingBalance }: Account
   return (
     <AccountCardFrame
       to={isPendingMultisig ? `/multisig/${claim.id}` : `/accounts/${claim.id}`}
-      name={claim.displayName ?? claim.officialName ?? 'Wallet'}
+      name={claim.displayName || claim.officialName || 'Wallet'}
       icon={<ClaimCardKeystores keystores={cardProps.keystores} alt="" status={status} />}
       badge={getBadgeConfigForClaim(status)}
       balanceSats={balance ? Number(balance.current) : 0}
@@ -680,7 +690,7 @@ function ManualAccountCard({
   btcUsdPrice,
   linkPrefix = '/accounts/manual',
 }: ManualAccountCardProps): JSX.Element {
-  const btc = account.balance === null ? null : Number(account.balance) / 100_000_000
+  const btc = Number(account.balance) / 100_000_000
   const isEtf = linkPrefix === '/accounts/etf'
   return (
     <AccountCardFrame
@@ -688,10 +698,10 @@ function ManualAccountCard({
       name={account.displayName}
       icon={isEtf ? <ChartNoAxesCombined size={20} /> : <FileText size={20} />}
       badge={{ status: 'warning', label: 'Manually Added' }}
-      balanceSats={account.balance === null ? 0 : Number(account.balance)}
+      balanceSats={Number(account.balance)}
       totalBtcSats={totalBtcSats}
     >
-      <AccountCardBalance btc={btc} usd={btc !== null && btcUsdPrice !== null ? btc * btcUsdPrice : null} />
+      <AccountCardBalance btc={btc} usd={btcUsdPrice !== null ? btc * btcUsdPrice : null} />
     </AccountCardFrame>
   )
 }
@@ -728,7 +738,7 @@ function ArchivedClaimRow({ claim, onRestore, isRestoring, isRestoreDisabled }: 
         <Flex align="center" gap={3} minW={0}>
           <ClaimCardKeystores keystores={cardProps.keystores} alt={claim.displayName} status={cardProps.status} />
           <Text textStyle="text/sm" fontWeight="medium" color="text.primary" isTruncated>
-            {claim.displayName ?? claim.officialName}
+            {claim.displayName}
           </Text>
         </Flex>
         <HStack gap={2} justify="flex-end" flexShrink={0}>

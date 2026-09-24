@@ -12,9 +12,9 @@ it('shows completion and failure immediately, without waiting for an animation',
   const container = document.createElement('div')
   document.body.append(container)
   const root = createRoot(container)
-  const onClose = vi.fn()
+  const onClose = vi.fn<() => void>()
   const render = async (status: 'pending' | 'completed' | 'failed'): Promise<void> => {
-    await act(async () =>
+    await act(async () => {
       root.render(
         createElement(
           ChakraProvider,
@@ -27,8 +27,8 @@ it('shows completion and failure immediately, without waiting for an animation',
             additionalCompletedContent: createElement('button', null, 'View Statement'),
           }),
         ),
-      ),
-    )
+      )
+    })
   }
   try {
     await render('pending')
@@ -43,7 +43,9 @@ it('shows completion and failure immediately, without waiting for an animation',
     await act(async () => back?.click())
     expect(onClose).toHaveBeenCalledOnce()
   } finally {
-    await act(async () => root.unmount())
+    await act(async () => {
+      root.unmount()
+    })
     container.remove()
   }
 })

@@ -45,13 +45,13 @@ export function WizardFooter({
       />
       <Wrapper maxW="928px" px={0} position="relative">
         <HStack
-          justifyContent={leftButton ? 'space-between' : 'flex-end'}
+          justifyContent={Boolean(leftButton) ? 'space-between' : 'flex-end'}
           width="full"
           minH="44px"
           gap={3}
           flexWrap="wrap"
         >
-          {leftButton && (
+          {Boolean(leftButton) ? (
             <Box
               sx={{
                 // Back is secondary navigation: a text button with a leading chevron.
@@ -76,7 +76,7 @@ export function WizardFooter({
             >
               {leftButton}
             </Box>
-          )}
+          ) : null}
           {rightButton}
         </HStack>
       </Wrapper>
@@ -90,9 +90,13 @@ function usePinned(ref: React.RefObject<HTMLDivElement | null>): boolean {
   const [pinned, setPinned] = useState(false)
   useEffect(() => {
     const footer = ref.current
-    if (footer === null) return
+    if (footer === null) {
+      return
+    }
     const scroller = footer.closest<HTMLElement>('#main-content') ?? document.scrollingElement
-    if (scroller == null) return
+    if (scroller == null) {
+      return
+    }
     const update = (): void => {
       const offset = Number.parseFloat(getComputedStyle(footer).bottom) || 0
       const limit =
@@ -106,7 +110,9 @@ function usePinned(ref: React.RefObject<HTMLDivElement | null>): boolean {
     target.addEventListener('scroll', update, { passive: true })
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(update)
     observer?.observe(scroller)
-    if (scroller.firstElementChild) observer?.observe(scroller.firstElementChild)
+    if (scroller.firstElementChild) {
+      observer?.observe(scroller.firstElementChild)
+    }
     return () => {
       target.removeEventListener('scroll', update)
       observer?.disconnect()

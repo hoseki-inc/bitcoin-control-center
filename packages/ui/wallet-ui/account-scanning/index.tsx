@@ -45,7 +45,7 @@ export function SingleAccount({
           Scan complete!
         </Text>
         <Text textStyle="text/md" color="text.primary">
-          We've found the following bitcoin account on your device. Continue with verification?
+          We&apos;ve found the following bitcoin account on your device. Continue with verification?
         </Text>
       </Stack>
       <AnimatedPopInSingleBox display="flex" justifyContent="center" gap={4} maxW="640px">

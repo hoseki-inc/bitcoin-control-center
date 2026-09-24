@@ -1,4 +1,4 @@
-import { type Result } from '@patina/core'
+import type { Result } from '@hoseki/packages/result'
 import {
   type MultiSigAccountScriptType,
   type SingleSigAccountScriptType,

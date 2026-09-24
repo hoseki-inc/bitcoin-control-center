@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { ChakraProvider } from '@chakra-ui/react'
+import { expectElement } from '@hoseki/packages/testing/dom'
 import { type ReactElement, act, cloneElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import type * as Recharts from 'recharts'
@@ -26,7 +27,7 @@ it.each([false, true])('supports keyboard inspection with reduced motion = %s', 
   document.body.append(container)
   const root = createRoot(container)
   try {
-    await act(async () =>
+    await act(async () => {
       root.render(
         <ChakraProvider>
           <HistoryLineChart
@@ -38,10 +39,9 @@ it.each([false, true])('supports keyboard inspection with reduced motion = %s', 
             formatTime={(time) => `Time ${time}`}
           />
         </ChakraProvider>,
-      ),
-    )
-    const chart = container.querySelector<SVGSVGElement>('svg[role="application"]')!
-    expect(chart).not.toBeNull()
+      )
+    })
+    const chart = expectElement(container.querySelector('svg[role="application"]'), SVGSVGElement)
     expect(chart.getAttribute('tabindex')).toBe('0')
     expect(container.querySelector('.recharts-line-curve')).not.toBeNull()
     await act(async () => chart.dispatchEvent(new FocusEvent('focusin', { bubbles: true })))
@@ -49,7 +49,9 @@ it.each([false, true])('supports keyboard inspection with reduced motion = %s', 
     expect(container.querySelector('.recharts-tooltip-wrapper')?.textContent).toContain('$110')
     expect(container.querySelector('.recharts-tooltip-wrapper')?.textContent).toContain('Time 2000')
   } finally {
-    await act(async () => root.unmount())
+    await act(async () => {
+      root.unmount()
+    })
     container.remove()
     vi.unstubAllGlobals()
   }

@@ -23,7 +23,9 @@ describe('wallpaper presets', () => {
     (_id, preset) => {
       for (const mode of ['light', 'dark'] as const) {
         expect(preset.palettes[mode]).toHaveLength(5)
-        for (const colour of preset.palettes[mode]) expect(colour).toMatch(/^#[0-9A-F]{6}$/i)
+        for (const colour of preset.palettes[mode]) {
+          expect(colour).toMatch(/^#[0-9A-F]{6}$/i)
+        }
       }
     },
   )

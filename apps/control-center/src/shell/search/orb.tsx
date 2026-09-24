@@ -105,7 +105,9 @@ const EPOCH = performance.now()
 
 function compile(gl: WebGL2RenderingContext, type: number, source: string): WebGLShader | null {
   const shader = gl.createShader(type)
-  if (shader === null) return null
+  if (shader === null) {
+    return null
+  }
   gl.shaderSource(shader, source)
   gl.compileShader(shader)
   if (gl.getShaderParameter(shader, gl.COMPILE_STATUS) !== true) {
@@ -134,22 +136,30 @@ export function Orb({
 
   useEffect(() => {
     const canvas = canvasRef.current
-    if (canvas === null) return
+    if (canvas === null) {
+      return
+    }
     const gl = canvas.getContext('webgl2', {
       alpha: true,
       premultipliedAlpha: true,
       antialias: false,
       powerPreference: 'low-power',
     })
-    if (!gl) return
+    if (!gl) {
+      return
+    }
     const vertex = compile(gl, gl.VERTEX_SHADER, VERTEX)
     const fragment = compile(gl, gl.FRAGMENT_SHADER, FRAGMENT)
-    if (vertex === null || fragment === null) return
+    if (vertex === null || fragment === null) {
+      return
+    }
     const program = gl.createProgram()
     gl.attachShader(program, vertex)
     gl.attachShader(program, fragment)
     gl.linkProgram(program)
-    if (gl.getProgramParameter(program, gl.LINK_STATUS) !== true) return
+    if (gl.getProgramParameter(program, gl.LINK_STATUS) !== true) {
+      return
+    }
     gl.useProgram(program)
     canvas.dataset['ready'] = 'true'
 
@@ -158,7 +168,9 @@ export function Orb({
     canvas.height = Math.round(size * dpr)
     gl.viewport(0, 0, canvas.width, canvas.height)
     gl.uniform2f(gl.getUniformLocation(program, 'u_resolution'), canvas.width, canvas.height)
-    for (const [name, [r, g, b]] of Object.entries(PALETTE)) gl.uniform3f(gl.getUniformLocation(program, name), r, g, b)
+    for (const [name, [r, g, b]] of Object.entries(PALETTE)) {
+      gl.uniform3f(gl.getUniformLocation(program, name), r, g, b)
+    }
     const timeLocation = gl.getUniformLocation(program, 'u_time')
     const energyLocation = gl.getUniformLocation(program, 'u_energy')
 
@@ -185,7 +197,9 @@ export function Orb({
     }
     // Draw once straight away so the orb is never blank while waiting for the first frame.
     draw(performance.now())
-    if (live && !reducedMotion) frame = window.requestAnimationFrame(loop)
+    if (live && !reducedMotion) {
+      frame = window.requestAnimationFrame(loop)
+    }
 
     return () => {
       window.cancelAnimationFrame(frame)

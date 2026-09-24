@@ -13,7 +13,8 @@ import { primaryVariant } from '../theme/button-theme'
 export function RadioCardGroup(
   props: {
     options: string[]
-  } & UseRadioGroupProps,
+    onChange?: (value: string) => void
+  } & Omit<UseRadioGroupProps, 'onChange'>,
 ): JSX.Element {
   const { options, ...groupProps } = props
   const { getRootProps, getRadioProps } = useRadioGroup(groupProps)

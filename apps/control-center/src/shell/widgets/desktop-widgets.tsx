@@ -55,7 +55,9 @@ export function HoldingsWidget({ accounts }: { accounts: ReturnType<typeof useAc
 function Sparkline({ values, rising }: { values: number[]; rising: boolean }): JSX.Element | null {
   const gradientId = useId()
   const [up, down] = useToken('colors', ['chart.positive', 'chart.negative'])
-  if (values.length < 2) return null
+  if (values.length < 2) {
+    return null
+  }
   const min = Math.min(...values)
   const max = Math.max(...values)
   const span = max - min || 1

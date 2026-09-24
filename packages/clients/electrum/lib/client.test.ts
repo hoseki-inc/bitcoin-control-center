@@ -1,6 +1,7 @@
 import * as net from 'node:net'
-import type { AddressInfo } from 'node:net'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { assert, describe, expect, it, onTestFinished } from 'vitest'
+import { z } from 'zod'
+import { parseUnknown } from '../../../result'
 import { ElectrumClient } from './client'
 import { shouldVerifyElectrumTlsCertificate } from './protocol'
 
@@ -22,9 +23,14 @@ async function startMockServer(): Promise<MockServer> {
       while ((idx = buffer.indexOf('\n')) !== -1) {
         const line = buffer.slice(0, idx).trim()
         buffer = buffer.slice(idx + 1)
-        if (line.length === 0) continue
+        if (line.length === 0) {
+          continue
+        }
         requests.push(line)
-        const req = JSON.parse(line) as { id: number; method: string; params: unknown[] }
+        const req = parseUnknown(
+          z.object({ id: z.number(), method: z.string(), params: z.array(z.unknown()) }),
+          JSON.parse(line) as unknown,
+        ).expect('valid JSON-RPC test request')
         const result =
           req.method === 'server.version'
             ? ['MockElectrum 1.0', '1.4']
@@ -36,60 +42,84 @@ async function startMockServer(): Promise<MockServer> {
     })
   })
 
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
-  const port = (server.address() as AddressInfo).port
+  await new Promise<void>((resolve) => {
+    server.listen(0, '127.0.0.1', resolve)
+  })
+  const address = server.address()
+  assert(address !== null && typeof address !== 'string', 'Expected a TCP listener')
+  const port = address.port
 
   return {
     port,
     requests,
-    close: () => new Promise<void>((resolve) => server.close(() => resolve())),
+    close: async () =>
+      new Promise<void>((resolve) => {
+        server.close(() => {
+          resolve()
+        })
+      }),
   }
 }
 
 describe('ElectrumClient concurrent reconnect', () => {
   let mock: MockServer
 
-  beforeEach(async () => {
-    mock = await startMockServer()
-  })
+  async function withTestSetup(run: () => Promise<void>): Promise<void> {
+    const pendingMock = startMockServer()
+    const lifecycle = { finished: false }
+    // Vitest owns teardown so it has its own timeout and runs once, even after a test timeout.
+    onTestFinished(async () => {
+      lifecycle.finished = true
 
-  afterEach(async () => {
-    await mock.close()
-  })
+      const serverForTest = await pendingMock
+      await serverForTest.close()
+    })
+    const serverForTest = await pendingMock
+    if (lifecycle.finished) {
+      return
+    }
+    mock = serverForTest
+
+    await run()
+  }
 
   it('shares a single connect across concurrent callers from cold start', async () => {
-    const client = new ElectrumClient({ host: '127.0.0.1', port: mock.port, protocol: 'tcp' })
+    await withTestSetup(async () => {
+      const client = new ElectrumClient({ host: '127.0.0.1', port: mock.port, protocol: 'tcp' })
 
-    const scripthash = 'a'.repeat(64)
-    const results = await Promise.all(Array.from({ length: 10 }, () => client.getHistory(scripthash)))
+      const scripthash = 'a'.repeat(64)
+      const results = await Promise.all(Array.from({ length: 10 }, () => client.getHistory(scripthash)))
 
-    for (const r of results) {
-      expect(r.isOk()).toBe(true)
-    }
+      for (const r of results) {
+        expect(r.isOk()).toBe(true)
+      }
 
-    const versionCalls = mock.requests.filter((r) => r.includes('server.version')).length
-    expect(versionCalls).toBe(1)
+      const versionCalls = mock.requests.filter((r) => r.includes('server.version')).length
+      expect(versionCalls).toBe(1)
 
-    client.disconnect()
+      client.disconnect()
+    })
   })
 
   it('reconnects cleanly after an explicit disconnect under concurrency', async () => {
-    const client = new ElectrumClient({ host: '127.0.0.1', port: mock.port, protocol: 'tcp' })
-    const scripthash = 'a'.repeat(64)
+    await withTestSetup(async () => {
+      const client = new ElectrumClient({ host: '127.0.0.1', port: mock.port, protocol: 'tcp' })
+      const scripthash = 'a'.repeat(64)
 
-    const first = await client.getHistory(scripthash)
-    expect(first.isOk()).toBe(true)
+      const first = await client.getHistory(scripthash)
+      expect(first.isOk()).toBe(true)
 
-    client.disconnect()
+      client.disconnect()
 
-    const results = await Promise.all(Array.from({ length: 10 }, () => client.getHistory(scripthash)))
-    const errors = results.filter((r) => r.isErr()).map((r) => r.unwrapErr()?.message)
-    expect(errors).toEqual([])
+      const results = await Promise.all(Array.from({ length: 10 }, () => client.getHistory(scripthash)))
+      const errors = results.filter((r) => r.isErr()).map((r) => r.unwrapErr().message)
+      expect(errors).toEqual([])
 
-    const versionCalls = mock.requests.filter((r) => r.includes('server.version')).length
-    expect(versionCalls).toBe(2)
+      const versionCalls = mock.requests.filter((r) => r.includes('server.version')).length
+      expect(versionCalls).toBe(2)
 
-    client.disconnect()
+      client.disconnect()
+    })
   })
 })
 

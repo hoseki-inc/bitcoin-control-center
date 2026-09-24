@@ -1,19 +1,19 @@
 import { ChakraProvider, useColorMode } from '@chakra-ui/react'
-import type { GlobalProvider } from '@ladle/react'
+import { theme } from '@hoseki/packages/ui/design-system'
+import '@hoseki/packages/ui/design-system/fonts/geist/index.css'
+import { type GlobalProvider, ThemeState } from '@ladle/react'
 import { Buffer } from 'buffer'
 import React, { useEffect } from 'react'
 import { Toaster } from 'sonner'
-import { theme } from '../packages/ui/design-system'
-import '../packages/ui/design-system/fonts/geist/index.css'
 
 // Removes a TS error with <ChakraProvider> below
 const _unused = React
 
 // Various hacks to make Ladle work. Also see comments in vite.config.ts
-window.global ||= window
-if (!window.Buffer) {
-  window.Buffer = Buffer
-}
+// Node typings include these globals, but the browser may not have them yet.
+const browserGlobals: { global?: typeof globalThis; Buffer?: typeof Buffer } = window
+browserGlobals.global ??= window
+browserGlobals.Buffer ??= Buffer
 
 // Follows Ladle's theme switcher so every story can be checked in light and dark glass.
 function ColorModeFromLadle({ theme: ladleTheme }: { theme: string }): null {
@@ -26,10 +26,10 @@ function ColorModeFromLadle({ theme: ladleTheme }: { theme: string }): null {
   return null
 }
 
-export const Provider: GlobalProvider = ({ children, globalState, storyMeta }) => (
+export const Provider: GlobalProvider = ({ children, globalState }) => (
   <ChakraProvider theme={theme}>
     <ColorModeFromLadle theme={globalState.theme} />
-    <Toaster position="top-right" richColors theme={globalState.theme === 'dark' ? 'dark' : 'light'} />
+    <Toaster position="top-right" richColors theme={globalState.theme === ThemeState.Dark ? 'dark' : 'light'} />
     {children}
   </ChakraProvider>
 )

@@ -8,19 +8,27 @@ function isModeValue(value: unknown): value is ModeValue {
   return typeof value === 'object' && value !== null && 'default' in value && '_dark' in value
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
 function collect(node: Record<string, unknown>, path: string[] = []): Array<[string, ModeValue]> {
   return Object.entries(node).flatMap(([key, value]) =>
     isModeValue(value)
       ? [[[...path, key].join('.'), value] as [string, ModeValue]]
-      : collect(value as Record<string, unknown>, [...path, key]),
+      : isRecord(value)
+        ? collect(value, [...path, key])
+        : [],
   )
 }
 
 function resolves(value: string): boolean {
-  if (/^(#|rgba?\(|hsla?\(|color-mix\()/.test(value)) return true
-  const [palette, step] = value.split('.')
-  const scale = (colors as Record<string, Record<string, string> | undefined>)[palette]
-  return scale?.[step] !== undefined
+  if (/^(#|rgba?\(|hsla?\(|color-mix\()/.test(value)) {
+    return true
+  }
+  const [palette = '', step = ''] = value.split('.')
+  const scale: unknown = Reflect.get(colors, palette)
+  return isRecord(scale) && scale[step] !== undefined
 }
 
 const tokens = collect(semanticColors)
@@ -40,6 +48,8 @@ describe('semantic colour tokens', () => {
   })
 
   it('avoids the reserved "default" key so Chakra does not mistake a role group for a mode value', () => {
-    for (const [name] of tokens) expect(name.split('.')).not.toContain('default')
+    for (const [name] of tokens) {
+      expect(name.split('.')).not.toContain('default')
+    }
   })
 })

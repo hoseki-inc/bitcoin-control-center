@@ -12,7 +12,9 @@ export function StatementsGrid({ statements }: { statements: StatementDto[] }): 
         <StatementCard
           key={statement.id}
           statement={statement}
-          onView={() => navigate(`/statements/${statement.id}`)}
+          onView={() => {
+            void navigate(`/statements/${statement.id}`)
+          }}
         />
       ))}
     </SimpleGrid>

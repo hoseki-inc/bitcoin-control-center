@@ -29,7 +29,7 @@ export function KeystoreReceiptPage(): JSX.Element {
     data: claim,
     isError,
     isLoading,
-  } = trpc.portalProve.registry.claims.get.byId.useQuery({ id: claimId ?? '' }, { enabled: Boolean(claimId) })
+  } = trpc.portalProve.registry.claims.get.byId.useQuery({ id: claimId }, { enabled: Boolean(claimId) })
 
   if (!claimId || isError) {
     return (
@@ -44,9 +44,11 @@ export function KeystoreReceiptPage(): JSX.Element {
     )
   }
 
-  if (isLoading) return <Receipt title="Loading key verification…" state="loading" />
+  if (isLoading) {
+    return <Receipt title="Loading key verification…" state="loading" />
+  }
 
-  const keystore = claim?.keystores.find((k) => k.id === keystoreId)
+  const keystore = claim.keystores.find((k) => k.id === keystoreId)
   if (!keystore) {
     return (
       <AppLayout header={<div />}>
@@ -60,11 +62,7 @@ export function KeystoreReceiptPage(): JSX.Element {
     )
   }
 
-  const props = claim
-    ? ({ shouldSetTimeout: true, keystore, claim } as const)
-    : ({ shouldSetTimeout: false, keystore: null, claim: null } as const)
-
-  return <KeystoreReceipt {...props} />
+  return <KeystoreReceipt shouldSetTimeout keystore={keystore} claim={claim} />
 }
 
 export function KeystoreReceipt({ shouldSetTimeout, keystore, claim }: KeystoreReceiptProps): JSX.Element {
@@ -75,19 +73,6 @@ export function KeystoreReceipt({ shouldSetTimeout, keystore, claim }: KeystoreR
       <PageTransition>
         <Receipt title="Loading key verification…" state="loading" />
       </PageTransition>
-    )
-  }
-
-  if (!claim || !keystore) {
-    return (
-      <AppLayout header={<div />}>
-        <VStack mt={8} gap={4}>
-          <ErrorBanner message="This account verification could not be loaded." />
-          <Button as={Link} to="/accounts" variant="outline">
-            Back to Accounts
-          </Button>
-        </VStack>
-      </AppLayout>
     )
   }
 
@@ -103,7 +88,7 @@ export function KeystoreReceipt({ shouldSetTimeout, keystore, claim }: KeystoreR
     if (!claim) {
       return
     }
-    navigate(`/multisig/${claim.id}`, { replace: true })
+    void navigate(`/multisig/${claim.id}`, { replace: true })
   }
 
   return (
@@ -116,10 +101,12 @@ export function KeystoreReceipt({ shouldSetTimeout, keystore, claim }: KeystoreR
         content={
           <VStack spacing={8} maxWidth="840px" textAlign="center">
             <Text textStyle="text/md" color="text.primary">
-              You've successfully proven control of this key in your multisig setup. {description2ndPart}
+              You&apos;ve successfully proven control of this key in your multisig setup. {description2ndPart}
             </Text>
             <VStack spacing={4}>
-              {keystore.model && <WalletImageFromKnownModel wallet={keystore.wallet} model={keystore.model} />}
+              {keystore.model != null && keystore.model !== '' && (
+                <WalletImageFromKnownModel wallet={keystore.wallet} model={keystore.model} />
+              )}
               <Text textStyle="text/md" fontWeight="medium" color="text.primary">
                 {keystore.label}
               </Text>

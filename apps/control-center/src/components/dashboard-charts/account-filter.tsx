@@ -13,6 +13,7 @@ import {
   Stack,
   Text,
   Tooltip,
+  VisuallyHidden,
   useDisclosure,
   useToken,
 } from '@chakra-ui/react'
@@ -72,10 +73,10 @@ export function AccountFilter({
   const accounts = [
     ...claims.map((claim) => ({
       id: claim.id,
-      name: claim.displayName ?? claim.officialName,
+      name: claim.displayName || claim.officialName,
       detail: ensureClaimStatusNotExpired(claim) === 'pending' ? 'Self-custody · Pending' : 'Self-custody',
       reconnectTo: null,
-      sats: Number(balances?.get(claim.id)?.current ?? 0),
+      sats: Number(balances.get(claim.id)?.current ?? 0),
     })),
     ...exchangeAccounts.map((account) => ({
       id: account.id,
@@ -89,17 +90,17 @@ export function AccountFilter({
       name: account.displayName,
       detail: 'Manual account',
       reconnectTo: null,
-      sats: Number(account.balance ?? 0),
+      sats: Number(account.balance),
     })),
     ...etfAccounts.map((account) => ({
       id: account.id,
       name: account.displayName,
       detail: 'ETF',
       reconnectTo: null,
-      sats: Number(account.balance ?? 0),
+      sats: Number(account.balance),
     })),
   ]
-  const selectable = accounts.filter((account) => !account.reconnectTo)
+  const selectable = accounts.filter((account) => account.reconnectTo === null)
   const totalSats = accounts.reduce((total, account) => total + account.sats, 0)
   const included = selectable.filter((account) => selected.size === 0 || selected.has(account.id))
   const isAll = selected.size === 0
@@ -114,14 +115,17 @@ export function AccountFilter({
 
   const toggleAccount = (id: string): void => {
     const next = new Set(selected)
-    if (next.has(id)) next.delete(id)
-    else next.add(id)
+    if (next.has(id)) {
+      next.delete(id)
+    } else {
+      next.add(id)
+    }
     onSelectionChange(next)
   }
   const rows = (
     <Stack spacing={2}>
       {matching.map((account) =>
-        account.reconnectTo ? (
+        account.reconnectTo !== null ? (
           <Flex
             as={Link}
             to={account.reconnectTo}
@@ -151,7 +155,9 @@ export function AccountFilter({
               textAlign="left"
               aria-label={`Include ${account.name}`}
               aria-pressed={selected.has(account.id)}
-              onClick={() => toggleAccount(account.id)}
+              onClick={() => {
+                toggleAccount(account.id)
+              }}
               p={3}
               position="relative"
               borderRadius="control"
@@ -249,7 +255,9 @@ export function AccountFilter({
       aria-pressed={isAll}
       borderColor={isAll ? 'border.inverse' : 'border.subtle'}
       bg={isAll ? 'surface.subtle' : 'surface.raised'}
-      onClick={() => onSelectionChange(new Set())}
+      onClick={() => {
+        onSelectionChange(new Set())
+      }}
     >
       All accounts
       <Box as="span" opacity={isAll ? 1 : 0} aria-hidden="true">
@@ -258,7 +266,17 @@ export function AccountFilter({
     </Button>
   )
   const densityControl = (
-    <Flex role="group" aria-label="Account detail level" gap={1} p={1} bg="surface.subtle" borderRadius="control">
+    <Flex
+      as="fieldset"
+      border="none"
+      m={0}
+      minW={0}
+      aria-label="Account detail level"
+      gap={1}
+      p={1}
+      bg="surface.subtle"
+      borderRadius="control"
+    >
       {([true, false] as const).map((isCompact) => (
         <Button
           key={String(isCompact)}
@@ -295,7 +313,9 @@ export function AccountFilter({
       aria-label="Search accounts"
       placeholder="Search accounts"
       value={search}
-      onChange={(event) => setSearch(event.target.value)}
+      onChange={(event) => {
+        setSearch(event.target.value)
+      }}
     />
   )
   const count = (
@@ -416,18 +436,19 @@ function AccountSharePie({ sats, totalSats, name }: { sats: number; totalSats: n
   const [fill, track] = useToken('colors', ['chart.axis', 'surface.muted'])
   const label = `${formatShare(sats, totalSats)}% of your portfolio`
   return (
-    <Tooltip label={label} placement="top" hasArrow>
-      <Box
-        as="span"
-        role="img"
-        aria-label={`${name}: ${label}`}
-        tabIndex={0}
-        display="block"
-        boxSize="20px"
-        borderRadius="full"
-        background={`conic-gradient(${fill} ${percentage}%, ${track} 0)`}
-        _focusVisible={{ outline: '2px solid', outlineColor: 'focus.ring', outlineOffset: '3px' }}
-      />
-    </Tooltip>
+    <>
+      <Tooltip label={label} placement="top" hasArrow>
+        <Box
+          as="span"
+          aria-hidden="true"
+          display="block"
+          boxSize="20px"
+          borderRadius="full"
+          background={`conic-gradient(${fill} ${percentage}%, ${track} 0)`}
+        />
+      </Tooltip>
+      {/* Read as text beside the row rather than being a separate focus stop. */}
+      <VisuallyHidden>{`${name}: ${label}`}</VisuallyHidden>
+    </>
   )
 }

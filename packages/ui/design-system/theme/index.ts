@@ -89,7 +89,7 @@ export const theme = extendBaseTheme({
         sm: {
           ...Select.sizes?.sm,
           field: {
-            ...Select.sizes?.sm?.field,
+            ...Select.sizes?.sm.field,
             textStyle: { base: 'text/md', md: 'text/sm' },
             h: { base: '2.75rem', md: '2rem' },
           },

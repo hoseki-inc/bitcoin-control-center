@@ -17,7 +17,7 @@ import { Server } from 'lucide-react'
 import { type FormEvent, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { trpc } from '../../trpc/base'
-import { type RouterOutput } from '../../trpc/index'
+import type { RouterOutput } from '../../trpc/index'
 import { SettingsRow } from './settings-rows'
 
 type ElectrumStatus = RouterOutput['settings']['electrumStatus']
@@ -34,6 +34,8 @@ const PRESETS: Record<Exclude<Choice, 'custom'>, Endpoint & { name: string }> = 
   blockstream: { name: 'Blockstream', host: 'electrum.blockstream.info', port: '50002', protocol: 'ssl' },
   mempool: { name: 'Mempool', host: 'electrum.mempool.space', port: '50002', protocol: 'ssl' },
 }
+
+const PRESET_KEYS = ['blockstream', 'mempool'] as const satisfies ReadonlyArray<keyof typeof PRESETS>
 
 const CHOICES: ReadonlyArray<{ value: Choice; label: string }> = [
   { value: 'blockstream', label: 'Blockstream' },
@@ -52,11 +54,17 @@ export function formatServer({ host, port }: { host: string; port: number | stri
 }
 
 function presetFor(status: ElectrumStatus): Choice {
-  const match = (Object.keys(PRESETS) as Array<keyof typeof PRESETS>).find((key) => {
+  const match = PRESET_KEYS.find((key) => {
     const preset = PRESETS[key]
     return preset.host === status.host && preset.port === String(status.port) && preset.protocol === status.protocol
   })
   return match ?? 'custom'
+}
+
+/** Sentinel's reason when it has one, and a plain sentence when it does not. */
+function connectionError(message: string | undefined): string {
+  const reason = message?.trim() ?? ''
+  return reason === '' ? 'Couldn’t connect to this server.' : `Couldn’t connect. ${reason}`
 }
 
 function parsePort(value: string): number | null {
@@ -95,7 +103,9 @@ export function ElectrumRow({ tone }: { tone: number }): JSX.Element {
               ref={changeRef}
               size="sm"
               variant="outline"
-              onClick={() => setEditing(true)}
+              onClick={() => {
+                setEditing(true)
+              }}
               isDisabled={status.data === undefined}
             >
               Change
@@ -110,7 +120,9 @@ export function ElectrumRow({ tone }: { tone: number }): JSX.Element {
           unmountOnExit
           // The row is last on the page, so bring the whole editor above the dock once open.
           onAnimationComplete={(definition) => {
-            if (definition !== 'enter') return
+            if (definition !== 'enter') {
+              return
+            }
             document
               .getElementById('electrum-editor')
               ?.scrollIntoView({ block: 'nearest', behavior: reducedMotion ? 'auto' : 'smooth' })
@@ -130,7 +142,7 @@ function ConnectionSummary({ status, isError }: { status: ElectrumStatus | undef
   const server = formatServer(status)
   const tone = status.connected ? 'status.success.solid' : 'status.error.solid'
   return (
-    <Box as="span" role="status" display="inline-flex" alignItems="baseline" gap={1.5} minW={0} maxW="100%">
+    <Box as="output" display="inline-flex" alignItems="baseline" gap={1.5} minW={0} maxW="100%">
       <Box as="span" boxSize="7px" flexShrink={0} borderRadius="full" bg={tone} transform="translateY(-1px)" />
       <Box as="span" minW={0} overflowWrap="anywhere">
         {status.connected ? `Connected to ${server}` : `Can’t reach ${server}. Retrying…`}
@@ -178,7 +190,9 @@ function ElectrumEditor({ status, onDone }: { status: ElectrumStatus; onDone: ()
 
   const handleSubmit = async (event: FormEvent): Promise<void> => {
     event.preventDefault()
-    if (!canConnect || port === null) return
+    if (!canConnect) {
+      return
+    }
     try {
       const next = await reconnect.mutateAsync({ host, port, protocol: endpoint.protocol, tor })
       utils.settings.electrumStatus.setData(undefined, next)
@@ -245,7 +259,9 @@ function ElectrumEditor({ status, onDone }: { status: ElectrumStatus; onDone: ()
                   autoCapitalize="none"
                   spellCheck={false}
                   value={custom.host}
-                  onChange={(event) => updateCustom({ host: event.target.value })}
+                  onChange={(event) => {
+                    updateCustom({ host: event.target.value })
+                  }}
                 />
               </FormControl>
               <FormControl w={{ base: 'full', sm: '112px' }}>
@@ -264,7 +280,9 @@ function ElectrumEditor({ status, onDone }: { status: ElectrumStatus; onDone: ()
                   inputMode="numeric"
                   placeholder="50001"
                   value={custom.port}
-                  onChange={(event) => updateCustom({ port: event.target.value })}
+                  onChange={(event) => {
+                    updateCustom({ port: event.target.value })
+                  }}
                 />
               </FormControl>
             </Flex>
@@ -282,7 +300,9 @@ function ElectrumEditor({ status, onDone }: { status: ElectrumStatus; onDone: ()
                 size="sm"
                 value={custom.protocol}
                 options={PROTOCOLS}
-                onChange={(protocol) => updateCustom({ protocol })}
+                onChange={(protocol) => {
+                  updateCustom({ protocol })
+                }}
                 ariaLabel="Encryption"
                 ariaDescribedBy="electrum-protocol-hint"
               />
@@ -316,7 +336,7 @@ function ElectrumEditor({ status, onDone }: { status: ElectrumStatus; onDone: ()
 
         {(problem !== null || reconnect.error !== null) && (
           <Text role="alert" textStyle="text/sm" color="status.error.fg" overflowWrap="anywhere">
-            {problem ?? `Couldn’t connect. ${reconnect.error?.message ?? ''}`}
+            {problem ?? connectionError(reconnect.error?.message)}
           </Text>
         )}
 

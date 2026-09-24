@@ -1,7 +1,7 @@
-import { Err, Ok } from '@patina/core'
-import type { Logger } from 'pino'
+import { Err, Ok } from '@hoseki/packages/result'
+import pino from 'pino'
 import { describe, expect, it, vi } from 'vitest'
-import type { ElectrumClient } from '../../clients/electrum'
+import { ElectrumClient } from '../../clients/electrum'
 import type { HeaderNotification, ScripthashBalance, ScripthashHistoryEntry } from '../../clients/electrum'
 import { IndexMap, IndexSet } from '../../collection'
 import { Wallets } from '../../testing'
@@ -15,7 +15,7 @@ import type { TransactionEntry } from './types'
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function mockElectrumClient(overrides: Partial<ElectrumClient> = {}): ElectrumClient {
-  return {
+  return Object.assign(new ElectrumClient({ host: 'localhost', port: 50001, protocol: 'tcp' }), {
     connect: vi.fn(),
     disconnect: vi.fn(),
     isConnected: vi.fn().mockReturnValue(true),
@@ -27,16 +27,10 @@ function mockElectrumClient(overrides: Partial<ElectrumClient> = {}): ElectrumCl
     listUnspent: vi.fn(),
     getTransaction: vi.fn(),
     ...overrides,
-  } as unknown as ElectrumClient
+  })
 }
 
-const mockLogger = {
-  debug: vi.fn(),
-  info: vi.fn(),
-  warn: vi.fn(),
-  error: vi.fn(),
-  child: vi.fn().mockReturnThis(),
-} as unknown as Logger
+const mockLogger = pino({ level: 'silent' })
 
 // A real mainnet block header hex (block 0 - genesis block)
 const GENESIS_HEADER_HEX =
@@ -112,10 +106,11 @@ describe('addressToScripthash', () => {
 describe('ElectrumProvider', () => {
   describe('getBlocksTip', () => {
     it('reads a historical block anchor for history-scan verification', async () => {
-      const client = mockElectrumClient({ getBlockHeader: vi.fn().mockReturnValue(Ok(GENESIS_HEADER_HEX)) })
+      const getBlockHeader = vi.fn().mockReturnValue(Ok(GENESIS_HEADER_HEX))
+      const client = mockElectrumClient({ getBlockHeader })
       const provider = new ElectrumProvider(Network.Mainnet, { logger: mockLogger, electrum: client })
       const block = (await provider.getBlock(0)).unwrap()
-      expect(client.getBlockHeader).toHaveBeenCalledWith(0)
+      expect(getBlockHeader).toHaveBeenCalledWith(0)
       expect(block.height).toBe(0)
       expect(block.hash).toBe('000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f')
     })
@@ -227,7 +222,9 @@ describe('ElectrumProvider', () => {
   describe('getTransactionEntries', () => {
     it('returns an error instead of certifying partial history when one address fails', async () => {
       const failure = new Error('Electrum history unavailable')
+      const getTransaction = vi.fn()
       const client = mockElectrumClient({
+        getTransaction,
         headersSubscribe: vi.fn().mockReturnValue(Ok({ height: 800_000, hex: GENESIS_HEADER_HEX })),
         getHistory: vi
           .fn()
@@ -246,7 +243,7 @@ describe('ElectrumProvider', () => {
       }
       expect(results).toHaveLength(1)
       expect(results[0]?.unwrapErr()).toBe(failure)
-      expect(client.getTransaction).not.toHaveBeenCalled()
+      expect(getTransaction).not.toHaveBeenCalled()
     })
 
     it('should return transaction entries for addresses', async () => {
@@ -267,8 +264,12 @@ describe('ElectrumProvider', () => {
         getBlockHeader: vi.fn().mockReturnValue(Ok(TX_BLOCK_HEADER_HEX)),
         getHistory: vi.fn().mockReturnValue(Ok([{ tx_hash: tx.txid, height: 799_991 }])),
         getTransaction: vi.fn().mockImplementation((txHash: string) => {
-          if (txHash === tx.txid) return Ok(tx.hex)
-          if (txHash === externalFundingTx.txid) return Ok(externalFundingTx.hex)
+          if (txHash === tx.txid) {
+            return Ok(tx.hex)
+          }
+          if (txHash === externalFundingTx.txid) {
+            return Ok(externalFundingTx.hex)
+          }
           return Err(new Error(`unexpected tx ${txHash}`))
         }),
       })
@@ -308,8 +309,12 @@ describe('ElectrumProvider', () => {
         getBlockHeader: vi.fn().mockReturnValue(Ok(TX_BLOCK_HEADER_HEX)),
         getHistory: vi.fn().mockReturnValue(Ok([{ tx_hash: tx.txid, height: 799_981 }])),
         getTransaction: vi.fn().mockImplementation((txHash: string) => {
-          if (txHash === tx.txid) return Ok(tx.hex)
-          if (txHash === fundingTx.txid) return Ok(fundingTx.hex)
+          if (txHash === tx.txid) {
+            return Ok(tx.hex)
+          }
+          if (txHash === fundingTx.txid) {
+            return Ok(fundingTx.hex)
+          }
           return Err(new Error(`unexpected tx ${txHash}`))
         }),
       })
@@ -343,6 +348,15 @@ describe('ElectrumProvider', () => {
       const changeScripthash = addressToScripthash(changeAddress).unwrap()
       const headerNotification: HeaderNotification = { height: 800_000, hex: GENESIS_HEADER_HEX }
 
+      const getTransaction = vi.fn().mockImplementation((txHash: string) => {
+        if (txHash === tx.txid) {
+          return Ok(tx.hex)
+        }
+        if (txHash === fundingTx.txid) {
+          return Ok(fundingTx.hex)
+        }
+        return Err(new Error(`unexpected tx ${txHash}`))
+      })
       const client = mockElectrumClient({
         headersSubscribe: vi.fn().mockReturnValue(Ok(headerNotification)),
         getBlockHeader: vi.fn().mockReturnValue(Ok(TX_BLOCK_HEADER_HEX)),
@@ -352,11 +366,7 @@ describe('ElectrumProvider', () => {
           }
           return Ok([])
         }),
-        getTransaction: vi.fn().mockImplementation((txHash: string) => {
-          if (txHash === tx.txid) return Ok(tx.hex)
-          if (txHash === fundingTx.txid) return Ok(fundingTx.hex)
-          return Err(new Error(`unexpected tx ${txHash}`))
-        }),
+        getTransaction,
       })
 
       const provider = new ElectrumProvider(Network.Mainnet, { logger: mockLogger, electrum: client })
@@ -370,7 +380,7 @@ describe('ElectrumProvider', () => {
         entries.push(entry.unwrap())
       }
 
-      expect(client.getTransaction).toHaveBeenCalledTimes(2)
+      expect(getTransaction).toHaveBeenCalledTimes(2)
       expect(entries).toHaveLength(2)
       expect(entries.reduce((sum, entry) => sum + entry.value, 0n)).toBe(-51_000n)
       expect(entries.find((entry) => entry.address.toString() === receiveAddress.toString())?.value).toBe(-100_000n)
@@ -382,10 +392,11 @@ describe('ElectrumProvider', () => {
       const txid = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
       const headerNotification: HeaderNotification = { height: 800_000, hex: GENESIS_HEADER_HEX }
 
+      const getTransaction = vi.fn().mockReturnValue(Err(new Error('timeout')))
       const client = mockElectrumClient({
         headersSubscribe: vi.fn().mockReturnValue(Ok(headerNotification)),
         getHistory: vi.fn().mockReturnValue(Ok([{ tx_hash: txid, height: 799_990 }])),
-        getTransaction: vi.fn().mockReturnValue(Err(new Error('timeout'))),
+        getTransaction,
       })
 
       const provider = new ElectrumProvider(Network.Mainnet, { logger: mockLogger, electrum: client })
@@ -395,7 +406,7 @@ describe('ElectrumProvider', () => {
       const first = await gen.next()
       expect(first.done).toBe(false)
       expect(first.value?.isErr()).toBe(true)
-      expect(client.getTransaction).toHaveBeenCalledTimes(1)
+      expect(getTransaction).toHaveBeenCalledTimes(1)
 
       const second = await gen.next()
       expect(second.done).toBe(true)

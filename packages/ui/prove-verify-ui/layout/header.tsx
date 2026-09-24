@@ -1,5 +1,5 @@
 import { Box, chakra } from '@chakra-ui/react'
-import { type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import { Wrapper } from '.'
 
 interface MenuItem {

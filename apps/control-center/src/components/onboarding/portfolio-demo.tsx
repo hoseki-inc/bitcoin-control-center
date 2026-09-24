@@ -87,7 +87,7 @@ export function PortfolioDemo(): JSX.Element {
             {usd(total * SAMPLE_PRICE)} USD
           </FiatAmountText>
         </Box>
-        <Flex role="group" aria-label="Sample history date range" gap={1}>
+        <Flex as="fieldset" border="none" m={0} minW={0} p={0} aria-label="Sample history date range" gap={1}>
           {ranges.map((range) => (
             <Button
               key={range}
@@ -96,7 +96,9 @@ export function PortfolioDemo(): JSX.Element {
               minH="44px"
               aria-pressed={range === days}
               bg={range === days ? 'surface.muted' : 'transparent'}
-              onClick={() => setDays(range)}
+              onClick={() => {
+                setDays(range)
+              }}
             >
               {range === 365 ? '1Y' : `${range}D`}
             </Button>
@@ -115,6 +117,7 @@ export function PortfolioDemo(): JSX.Element {
       <Box
         h={{ base: '240px', md: '300px' }}
         mt={4}
+        // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- A drawn chart has no native element; role=img carries its summary.
         role="img"
         aria-label={`Sample balance history, from ${btc(first)} to ${btc(total)} over ${days} days`}
       >

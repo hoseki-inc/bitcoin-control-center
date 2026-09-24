@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { assert, describe, expect, it } from 'vitest'
 import { rankCommands, scoreCommand, scoreText } from './score'
 
 describe('scoreText', () => {
@@ -35,7 +35,9 @@ describe('rankCommands', () => {
   })
 
   it('finds commands by keyword, slightly below a label match', () => {
-    expect(scoreCommand('electrum', commands[0]!)).toBeCloseTo(0.9)
+    const first = commands[0]
+    assert(first !== undefined)
+    expect(scoreCommand('electrum', first)).toBeCloseTo(0.9)
   })
 
   it('keeps the original order for an empty query', () => {

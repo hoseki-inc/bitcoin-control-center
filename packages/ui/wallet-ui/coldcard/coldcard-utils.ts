@@ -38,7 +38,7 @@ const ColdcardGenericJsonFileSchema = z.object({
 export type ColdcardGenericJsonFile = z.infer<typeof ColdcardGenericJsonFileSchema>
 
 export function parseGenericJsonFile(jsonFileContents: string): Result<ColdcardGenericJsonFile, Error> {
-  return Result.fromThrowable(() => JSON.parse(jsonFileContents)).andThen((parsed) =>
+  return Result.fromThrowable((): unknown => JSON.parse(jsonFileContents)).andThen((parsed) =>
     parseUnknown(ColdcardGenericJsonFileSchema, parsed),
   )
 }
@@ -50,7 +50,7 @@ export type ParsedSignatureFile = {
 }
 
 export function parseSignatureFile(signedFileContents: string): Result<ParsedSignatureFile, Error> {
-  const signedMessageLines = (signedFileContents ?? '').split('\n')
+  const signedMessageLines = signedFileContents.split('\n')
   if (signedMessageLines.length < 5) {
     return Err(new Error('Invalid file contents'))
   }
@@ -93,9 +93,9 @@ export const ColdcardModels = {
 }
 
 export type ColdcardModel = keyof typeof ColdcardModels
-export const coldcardModelKeys = Object.keys(ColdcardModels) as ColdcardModel[]
+export const coldcardModelKeys = Object.keys(ColdcardModels).filter(isColdcardModel)
 export function isColdcardModel(model: string): model is ColdcardModel {
-  return coldcardModelKeys.includes(model as ColdcardModel)
+  return Object.hasOwn(ColdcardModels, model)
 }
 
 /**
@@ -130,7 +130,7 @@ export function getBitcoinXpubFromColdcardExport(
   ]
 
   for (const { account } of accountTypes) {
-    if (account && account.deriv) {
+    if (account) {
       const normalizedDeriv = account.deriv.toString().replace(/'/g, 'h')
 
       // Exact match
@@ -153,7 +153,9 @@ export function getBitcoinXpubFromColdcardExport(
         let xpub = account.xpub
         for (const step of childSteps) {
           const index = parseInt(step, 10)
-          if (isNaN(index)) continue
+          if (isNaN(index)) {
+            continue
+          }
           xpub = xpub.derive(index)
         }
         return Ok(xpub)
@@ -162,5 +164,5 @@ export function getBitcoinXpubFromColdcardExport(
   }
 
   // If no match is found, return an error
-  return Err(new Error(`No xpub found for derivation path: ${derivationPath}`))
+  return Err(new Error(`No xpub found for derivation path: ${derivationPath.toString()}`))
 }

@@ -1,3 +1,7 @@
+function isCallable(value: unknown): value is () => unknown {
+  return typeof value === 'function'
+}
+
 export type Index = string | number | bigint | boolean | symbol
 
 export type Indexable =
@@ -52,22 +56,39 @@ export class IndexMap<K extends Indexable, V> implements Map<K, V> {
 
     // If key is provided, use it
     if (key.key !== undefined) {
-      const keyValue = typeof key.key === 'function' ? key.key() : key.key
+      const keyValue: unknown = isCallable(key.key) ? key.key() : key.key
       if (keyValue !== null && keyValue !== undefined) {
-        return keyValue
+        return this.requireIndex(keyValue)
       }
     }
 
     // If id is provided, use it
     if (key.id !== undefined) {
-      const idValue = typeof key.id === 'function' ? key.id() : key.id
+      const idValue: unknown = isCallable(key.id) ? key.id() : key.id
       if (idValue !== null && idValue !== undefined) {
-        return idValue
+        return this.requireIndex(idValue)
       }
     }
 
-    // If neither key nor id are provided, use the string representation of the key
-    return key.toString()
+    // A default object string is not an identifier: unrelated objects would share one entry.
+    const stringify = key.toString
+    if (typeof stringify !== 'function' || stringify === Object.prototype.toString) {
+      throw new TypeError('IndexMap keys must provide a key, id, or custom toString()')
+    }
+    return stringify.call(key)
+  }
+
+  private requireIndex(value: unknown): Index {
+    if (
+      typeof value === 'string' ||
+      typeof value === 'number' ||
+      typeof value === 'bigint' ||
+      typeof value === 'boolean' ||
+      typeof value === 'symbol'
+    ) {
+      return value
+    }
+    throw new TypeError('IndexMap key and id values must resolve to a primitive index')
   }
 
   private updateSize(): void {
@@ -202,4 +223,4 @@ export class IndexMap<K extends Indexable, V> implements Map<K, V> {
   }
 }
 
-export interface ReadonlyIndexMap<K extends Indexable, V> extends ReadonlyMap<K, V> {}
+export type ReadonlyIndexMap<K extends Indexable, V> = ReadonlyMap<K, V>

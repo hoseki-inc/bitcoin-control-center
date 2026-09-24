@@ -1,5 +1,5 @@
-import { Err, type Result } from '@patina/core'
-import { type Opaque } from 'type-fest'
+import { Err, type Result } from '@hoseki/packages/result'
+import type { Opaque } from 'type-fest'
 import { Account } from './account'
 import { Network } from './network'
 
@@ -14,7 +14,7 @@ export type NetworkAccountCheckedString = Opaque<
 export class NetworkAccount<T extends Account = Account> {
   public static fromString(str: string): Result<NetworkAccount, Error> {
     const [network, account] = str.split('::')
-    if (!network || !account) {
+    if (network == null || network === '' || account == null || account === '') {
       return Err(
         new Error(
           'Invalid format, expected "bitcoin_mainnet::<account>", "bitcoin_testnet::<account>", or "bitcoin_regtest::<account>"',
@@ -22,8 +22,8 @@ export class NetworkAccount<T extends Account = Account> {
       )
     }
     return Network.fromStringRaw(network).andThen((n) => {
-      return Account.fromDescriptor(account).map((account) => {
-        return new NetworkAccount(n, account)
+      return Account.fromDescriptor(account).map((parsedAccount) => {
+        return new NetworkAccount(n, parsedAccount)
       })
     })
   }
@@ -45,6 +45,7 @@ export class NetworkAccount<T extends Account = Account> {
   }
 
   public toString(): NetworkAccountCheckedString {
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- Brand the serialization of the network and account; external strings use fromString.
     return `${this.network.toString()}::${this.account.toString()}` as NetworkAccountCheckedString
   }
 

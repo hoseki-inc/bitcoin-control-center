@@ -3,12 +3,15 @@ import type { ClaimDto } from '../trpc/server-types'
 import { type AccountTotalsInput, computeAccountTotals } from './account-totals'
 
 const claim = (id: string, status: 'verified' | 'pending' | 'expired'): ClaimDto =>
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- Totals read only these fields; full DTO fixtures would hide what matters.
   ({ id, status }) as unknown as ClaimDto
 type Exchange = AccountTotalsInput['exchangeAccounts'][number]
 type Manual = AccountTotalsInput['manualAccounts'][number]
 const exchange = (balance: string | null, connectionStatus: 'connected' | 'needs_reconnect'): Exchange =>
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- As above.
   ({ balance, connectionStatus }) as unknown as Exchange
-const manual = (balance: string | null): Manual => ({ balance }) as unknown as Manual
+// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- As above.
+const manual = (balance: string): Manual => ({ balance }) as unknown as Manual
 
 describe('computeAccountTotals', () => {
   it('sums every source and prices non-claim balances at the Bitcoin price', () => {

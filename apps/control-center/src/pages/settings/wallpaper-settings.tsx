@@ -69,7 +69,9 @@ export function WallpaperRow({ tone }: { tone: number }): JSX.Element {
                     value={option.id}
                     checked={selected}
                     aria-label={option.name}
-                    onChange={() => setWallpaper(option.id)}
+                    onChange={() => {
+                      setWallpaper(option.id)
+                    }}
                   />
                 </Box>
               </Tooltip>

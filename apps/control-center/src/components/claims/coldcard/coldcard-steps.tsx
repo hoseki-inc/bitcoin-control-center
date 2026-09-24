@@ -14,6 +14,7 @@ import {
   chakra,
 } from '@chakra-ui/react'
 import type { Address } from '@hoseki/packages/bitcoin'
+import type { Result } from '@hoseki/packages/result'
 import {
   Alert,
   Animations,
@@ -42,7 +43,7 @@ import {
   parseGenericJsonFile,
   parseSignatureFile,
 } from '@hoseki/packages/ui/wallet-ui'
-import type { Result } from '@patina/core'
+import { coldcardModelKeys } from '@hoseki/packages/ui/wallet-ui/coldcard/coldcard-utils'
 import { CheckCircle2 } from 'lucide-react'
 import { CircleXIcon, CopyIcon, InfoIcon, MoveRightIcon, TriangleAlertIcon, UsbIcon, WifiOffIcon } from 'lucide-react'
 import { type ReactNode, useEffect, useRef, useState } from 'react'
@@ -143,7 +144,9 @@ export function ColdcardIndentification({
           setSelectedWallet={setSelectedWallet}
           isLoadingOnNext={isStep6Loading}
           {...commonProps}
-          onNext={() => handleAccountSelectConfirm(model)}
+          onNext={() => {
+            handleAccountSelectConfirm(model)
+          }}
         />
       ) : (
         <RequiredDataMissing coldcardJson={coldcardJson} />
@@ -167,15 +170,15 @@ function Step1({ onNext, onBack, ...rest }: { onNext: () => void; onBack: () => 
       </Text>
 
       <Text textStyle="text/md" color="text.primary">
-        To verify ownership with your COLDCARD, you'll securely prove control of your keys by signing a message
+        To verify ownership with your COLDCARD, you&apos;ll securely prove control of your keys by signing a message
         offline—a 100% air-gapped process that keeps your private keys safe.
       </Text>
       <Text textStyle="text/md" color="text.primary">
-        We'll guide you through each step—just follow the on-screen instructions.
+        We&apos;ll guide you through each step—just follow the on-screen instructions.
       </Text>
       <Box>
         <Text textStyle="text/md" color="text.primary" fontWeight={500}>
-          You'll need:
+          You&apos;ll need:
         </Text>
         <chakra.ul ml={8} textStyle="text/md" color="text.primary" fontWeight={400}>
           <li>A MicroSD card</li>
@@ -184,7 +187,7 @@ function Step1({ onNext, onBack, ...rest }: { onNext: () => void; onBack: () => 
         </chakra.ul>
       </Box>
 
-      <HowDoesThisWork>We use COLDCARD's native offline message signing process.</HowDoesThisWork>
+      <HowDoesThisWork>We use COLDCARD&apos;s native offline message signing process.</HowDoesThisWork>
 
       <NavigationArrows onForward={onNext} />
 
@@ -200,11 +203,14 @@ function Step1({ onNext, onBack, ...rest }: { onNext: () => void; onBack: () => 
 }
 
 function ColdcardSelectionBox({ name, image, onClick }: { name: string; image: ReactNode; onClick: () => void }) {
-  const boxRef = useRef<HTMLDivElement>(null)
+  const boxRef = useRef<HTMLButtonElement>(null)
   const clickAnimationInSeconds = 0.2
 
   return (
     <Box
+      as="button"
+      type="button"
+      _focusVisible={{ boxShadow: 'outline' }}
       ref={boxRef}
       display="flex"
       alignItems="center"
@@ -217,7 +223,9 @@ function ColdcardSelectionBox({ name, image, onClick }: { name: string; image: R
       textAlign="center"
       onClick={() => {
         const box = boxRef.current
-        if (!box) return
+        if (!box) {
+          return
+        }
 
         box.classList.add('active')
         setTimeout(() => {
@@ -228,9 +236,9 @@ function ColdcardSelectionBox({ name, image, onClick }: { name: string; image: R
       _hover={{ cursor: 'pointer', bgColor: 'surface.subtle' }}
       sx={Animations.scaleAndGlow(clickAnimationInSeconds)}
     >
-      <Stack gap={4} alignItems="center">
+      <Stack as="span" gap={4} alignItems="center">
         {image}
-        <Text textStyle="label/md" fontWeight={500}>
+        <Text as="span" textStyle="label/md" fontWeight={500}>
           {name}
         </Text>
       </Stack>
@@ -257,7 +265,12 @@ function Step2({
             key={key}
             name={name}
             image={<chakra.img src={imageSrc} alt={imageAlt} h="150px" mx="auto" />}
-            onClick={() => onNext(key as ColdcardModel)}
+            onClick={() => {
+              const model = coldcardModelKeys.find((candidate) => candidate === key)
+              if (model) {
+                onNext(model)
+              }
+            }}
           />
         ))}
       </HStack>
@@ -297,7 +310,11 @@ function Step3({
             key={key}
             name={name}
             image={icon}
-            onClick={() => onNext(key as keyof typeof ColdcardConnectionMethods)}
+            onClick={() => {
+              if (key === 'airgapping' || key === 'usb') {
+                onNext(key)
+              }
+            }}
           />
         ))}
       </HStack>
@@ -337,18 +354,18 @@ export function Step4({
           COLDCARD Setup Requires a MicroSD Card
         </Text>
         <Text textStyle="text/md" color="text.primary">
-          To verify your COLDCARD ownership with our guided setup, you'll need a MicroSD card to securely transfer data.
-          USB connections aren't supported for COLDCARD at this time.
+          To verify your COLDCARD ownership with our guided setup, you&apos;ll need a MicroSD card to securely transfer
+          data. USB connections aren&apos;t supported for COLDCARD at this time.
         </Text>
         <Text textStyle="text/md" color="text.primary">
-          Don't have a microSD card? You can also{' '}
+          Don&apos;t have a microSD card? You can also{' '}
           <Link to="/accounts/verify/advanced" style={{ textDecoration: 'underline' }}>
             verify manually
           </Link>{' '}
           by signing a message in your wallet and submitting the signature.
         </Text>
         <Text textStyle="text/md" color="text.primary">
-          Click 'Next' to begin with a MicroSD card.
+          Click &apos;Next&apos; to begin with a MicroSD card.
         </Text>
 
         <WizardFooter
@@ -368,10 +385,10 @@ export function Step4({
       <WalletAnimation animation={getColdcardAnimation(model, 'coldcardExportWallet')} />
 
       <Text as="h2" textStyle="text/2xl" color="text.primary" fontWeight="medium">
-        Next, Let's Connect Your Wallet
+        Next, Let&apos;s Connect Your Wallet
       </Text>
       <Text textStyle="text/md" color="text.primary">
-        To identify the Bitcoin you're claiming, we need your wallet export from your device.
+        To identify the Bitcoin you&apos;re claiming, we need your wallet export from your device.
       </Text>
       <Text textStyle="text/md" color="text.primary">
         Power on your COLDCARD, enter your PIN, and insert a MicroSD card. Once ready, navigate to:
@@ -383,10 +400,10 @@ export function Step4({
         <ColdcardMenuPill text="Generic JSON" />
       </HStack>
       <Text textStyle="text/md" color="text.primary">
-        Select Generic JSON to save your export to the MicroSD card. We'll use this file to connect your wallet.
+        Select Generic JSON to save your export to the MicroSD card. We&apos;ll use this file to connect your wallet.
       </Text>
       <Text textStyle="text/md" color="text.primary">
-        Once saved, click 'Next' to continue.
+        Once saved, click &apos;Next&apos; to continue.
       </Text>
       <Alert bgColor="surface.subtle">
         <HStack>
@@ -394,7 +411,7 @@ export function Step4({
             <InfoIcon width="20px" height="20px" />
           </Box>
           <Text color="text.primary" fontWeight="500" flexGrow="1">
-            If prompted to select an account number, choose the one for your wallet (typically "0").
+            If prompted to select an account number, choose the one for your wallet (typically &quot;0&quot;).
           </Text>
         </HStack>
       </Alert>
@@ -443,6 +460,7 @@ export function Step5({
 
       <Stack gap={4}>
         <FileDropReader
+          readAs="text"
           readyText="Drag 'coldcard-export.json' here"
           invalidText="Invalid file. Please check your file and try again."
           validText="Click 'Connect Wallet' to continue"
@@ -450,8 +468,8 @@ export function Step5({
           validationFn={(rawContent): Result<ColdcardGenericJsonFile, Error> => {
             return parseGenericJsonFile(rawContent)
           }}
-          onValidContentRead={(coldcardJson: ColdcardGenericJsonFile) => {
-            setColdcardJson(coldcardJson)
+          onValidContentRead={(parsedColdcardJson: ColdcardGenericJsonFile) => {
+            setColdcardJson(parsedColdcardJson)
           }}
           acceptedFileTypes={['json']}
           status={fileState}
@@ -505,7 +523,7 @@ function Step6({
   const { isLoading, error, data: wallets } = useColdcardAccountsWithBalances(coldcardJson, model)
 
   useEffect(() => {
-    if (wallets?.length === 1 && wallets[0] && !selectedWallet) {
+    if (wallets.length === 1 && wallets[0] && !selectedWallet) {
       setSelectedWallet(wallets[0])
     }
   }, [wallets, selectedWallet, setSelectedWallet])
@@ -599,11 +617,11 @@ export function Step8({
       </Text>
 
       <Text textStyle="text/md" color="text.primary">
-        You'll prove control by signing a unique message with your hardware wallet.
+        You&apos;ll prove control by signing a unique message with your hardware wallet.
       </Text>
       <Text textStyle="text/md" color="text.primary">
-        This lets us confirm you control the private key for the Bitcoin you're claiming—without ever needing to see
-        your key.
+        This lets us confirm you control the private key for the Bitcoin you&apos;re claiming—without ever needing to
+        see your key.
       </Text>
 
       <NavigationArrows onBack={onBack} onForward={onNext} />
@@ -647,7 +665,7 @@ export function Step9Ui({
       () => {
         toast.success('The text file contents was copied to the clipboard.')
       },
-      (_err) => {
+      () => {
         toast.error('Error trying to copy the text file contents to the clipboard.')
       },
     )
@@ -662,11 +680,11 @@ export function Step9Ui({
       </Text>
 
       <Text textStyle="text/md" color="text.primary">
-        To sign our unique message, download the txt file below to your MicroSD card. This includes the message you'll
-        sign along with wallet identifiers used by COLDCARD to complete the signing process.
+        To sign our unique message, download the txt file below to your MicroSD card. This includes the message
+        you&apos;ll sign along with wallet identifiers used by COLDCARD to complete the signing process.
       </Text>
       <Text textStyle="text/md" color="text.primary">
-        Once saved to your MicroSD card, click 'Next' to continue.
+        Once saved to your MicroSD card, click &apos;Next&apos; to continue.
       </Text>
 
       <Alert status="warning">
@@ -692,7 +710,7 @@ export function Step9Ui({
             style={{ textDecoration: 'underline' }}
             target="_blank"
           >
-            What's this?
+            What&apos;s this?
           </Link>
         </HStack>
         <Box>
@@ -706,6 +724,7 @@ export function Step9Ui({
                   <Button
                     variant="ghost"
                     size="sm"
+                    aria-label="Copy message"
                     onClick={handleCopy}
                     border="none"
                     bgColor="surface.muted"
@@ -827,7 +846,7 @@ export function Step10({
         and save it to your MicroSD card.
       </Text>
       <Text textStyle="text/md" color="text.primary">
-        Once the file is signed, you can power off your COLDCARD and click 'Next' to continue.
+        Once the file is signed, you can power off your COLDCARD and click &apos;Next&apos; to continue.
       </Text>
 
       <Accordion allowToggle>
@@ -907,6 +926,7 @@ export function Step11Ui({
 
       <Box>
         <FileDropReader
+          readAs="text"
           readyText="Drag 'hoseki-ownership-claim-signed.txt' here"
           invalidText="Invalid file. Please check your file and try again."
           validText="Click 'Prove Control' to verify ownership and finalize your claim."

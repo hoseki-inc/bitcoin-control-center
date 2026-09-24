@@ -21,6 +21,7 @@ import { useForm } from 'react-hook-form'
 import { useLocation, useNavigate } from 'react-router'
 import { toast } from 'sonner'
 import { z } from 'zod'
+import { parseNavigationState } from '../../../lib/navigation-state'
 import { type RouterOutput, trpc } from '../../../trpc'
 
 type ConnectedAccount = RouterOutput['portalProve']['exchange']['robinhood']['connect']
@@ -34,12 +35,11 @@ const robinhoodFormSchema = z.object({
 type RobinhoodFormData = z.infer<typeof robinhoodFormSchema>
 
 type Step = 'form' | 'loading' | 'success'
-type ConnectRouteState = { returnTo?: string; replaceAccountId?: string; displayName?: string }
 
 export function ConnectRobinhood(): JSX.Element {
   const navigate = useNavigate()
   const location = useLocation()
-  const routeState = location.state as ConnectRouteState | null
+  const routeState = parseNavigationState(location.state)
   const returnTo = routeState?.returnTo ?? '/accounts'
   const replaceAccountId = routeState?.replaceAccountId
   const isReconnect = Boolean(replaceAccountId)
@@ -93,7 +93,9 @@ export function ConnectRobinhood(): JSX.Element {
         <Receipt
           title={isReconnect ? 'Robinhood Reconnected!' : 'Robinhood Connected!'}
           state="success"
-          onClose={() => navigate(successPath)}
+          onClose={() => {
+            void navigate(successPath)
+          }}
           closeTitle={isReconnect ? 'Back to Account' : 'Go to My Holdings'}
           content={
             <VStack spacing={8}>
@@ -104,11 +106,20 @@ export function ConnectRobinhood(): JSX.Element {
               </Text>
               <HStack spacing={4}>
                 {!isReconnect && (
-                  <Button variant="outline" onClick={() => navigate('/accounts/add')}>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      void navigate('/accounts/add')
+                    }}
+                  >
                     Connect Another Account
                   </Button>
                 )}
-                <Button onClick={() => navigate(successPath)}>
+                <Button
+                  onClick={() => {
+                    void navigate(successPath)
+                  }}
+                >
                   {isReconnect ? 'Back to Account' : 'Go to My Holdings'}
                 </Button>
               </HStack>
@@ -121,7 +132,13 @@ export function ConnectRobinhood(): JSX.Element {
 
   return (
     <ClaimConnectionWrapper>
-      <form onSubmit={handleSubmit(onSubmit)}>
+      <form
+        onSubmit={(event) => {
+          handleSubmit(onSubmit)(event).catch(() => {
+            toast.error('Unable to submit the connection form. Please try again.')
+          })
+        }}
+      >
         <Stack gap={6} pt={8} pb={WizardFooter.padding}>
           {/* Header */}
           <Flex align="center" gap={3}>
@@ -226,7 +243,12 @@ export function ConnectRobinhood(): JSX.Element {
 
         <WizardFooter
           leftButton={
-            <Button variant="outline" onClick={() => navigate(returnTo)}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                void navigate(returnTo)
+              }}
+            >
               Cancel
             </Button>
           }

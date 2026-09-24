@@ -36,7 +36,7 @@ export function TimedoutRetry(): JSX.Element | null {
     window.location.reload()
   }
 
-  return retryCopy ? (
+  return retryCopy != null && retryCopy !== '' ? (
     <Link as="button" textStyle="text/xs" color="primary.500" onClick={handleRetry}>
       {retryCopy}
     </Link>

@@ -1,7 +1,7 @@
 import { switchAnatomy } from '@chakra-ui/anatomy'
 import { theme as chakraTheme, createMultiStyleConfigHelpers } from '@chakra-ui/react'
 
-const { definePartsStyle, defineMultiStyleConfig } = createMultiStyleConfigHelpers(switchAnatomy.keys)
+const styleHelpers = createMultiStyleConfigHelpers(switchAnatomy.keys)
 
 const defaultSwitchTheme = chakraTheme.components.Switch
 
@@ -9,7 +9,7 @@ const defaultSwitchTheme = chakraTheme.components.Switch
  * Switches glow Hoseki yellow when on and sit in a quiet groove when off. Chakra's base
  * style is kept: its sizes live in CSS variables set there.
  */
-const baseStyle = definePartsStyle((props) => {
+const baseStyle = styleHelpers.definePartsStyle((props) => {
   const base = defaultSwitchTheme.baseStyle?.(props)
   return {
     ...base,
@@ -17,7 +17,7 @@ const baseStyle = definePartsStyle((props) => {
       ...base?.track,
       bg: 'surface.emphasis',
       boxShadow: 'inset 0 1px 2px rgb(0 0 0 / 0.15)',
-      _checked: { ...base?.track?._checked, bg: 'accent.solid' },
+      _checked: { ...base?.track._checked, bg: 'accent.solid' },
       _focusVisible: { boxShadow: '0 0 0 2px var(--hoseki-colors-focus-ring)' },
     },
     thumb: {
@@ -28,4 +28,4 @@ const baseStyle = definePartsStyle((props) => {
   }
 })
 
-export const switchTheme = defineMultiStyleConfig({ ...defaultSwitchTheme, baseStyle })
+export const switchTheme = styleHelpers.defineMultiStyleConfig({ ...defaultSwitchTheme, baseStyle })

@@ -22,10 +22,7 @@ function SinglesigSigning() {
   const claimId = useUrlParameter(UrlParameter.claimId)
   const navigate = useNavigate()
 
-  const claimQuery = trpc.portalProve.registry.claims.get.byId.useQuery(
-    { id: claimId ?? '' },
-    { enabled: Boolean(claimId) },
-  )
+  const claimQuery = trpc.portalProve.registry.claims.get.byId.useQuery({ id: claimId }, { enabled: Boolean(claimId) })
   const claim = claimQuery.data
   const messageQuery = trpc.portalProve.registry.getOrCreateSinglesigChallengeMessage.useQuery(
     {
@@ -72,8 +69,12 @@ function SinglesigSigning() {
     keystore: firstKeystore,
     challenge: message.challenge,
     challengeMessage: message.challengeMessage,
-    onExitSigning: () => navigate(-1),
-    onSigningComplete: () => navigate('/accounts/verify/receipt/' + claim.id),
+    onExitSigning: () => {
+      void navigate(-1)
+    },
+    onSigningComplete: () => {
+      void navigate('/accounts/verify/receipt/' + claim.id)
+    },
   } as const
 
   switch (firstKeystore.wallet) {
@@ -85,6 +86,7 @@ function SinglesigSigning() {
       return <LedgerSigning {...commonProps} />
     case 'trezor':
       return <TrezorSigning {...commonProps} />
+    case null:
     default:
       return <ManualSigning {...commonProps} />
   }

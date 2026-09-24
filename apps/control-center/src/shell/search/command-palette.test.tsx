@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import { ChakraProvider } from '@chakra-ui/react'
+import { expectElement } from '@hoseki/packages/testing/dom'
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { assert, describe, expect, it, onTestFinished, vi } from 'vitest'
 import type { AccountSummary } from '../../hooks/use-accounts'
 import { CommandPalette } from './command-palette'
 import type { Command } from './commands'
@@ -17,7 +18,9 @@ vi.mock('./commands', () => {
     group,
     label,
     icon: <span />,
-    run: () => mocks.runs.push(id),
+    run: () => {
+      mocks.runs.push(id)
+    },
     ...extra,
   })
   const account: AccountSummary = {
@@ -48,16 +51,28 @@ vi.mock('./commands', () => {
 describe('CommandPalette', () => {
   let container: HTMLDivElement
   let root: ReturnType<typeof createRoot>
-  const onClose = vi.fn()
+  const onClose = vi.fn<() => void>()
 
-  beforeEach(() => {
+  async function withTestSetup(run: () => Promise<void>): Promise<void> {
+    // Vitest owns teardown, so it runs once even after a failure or timeout.
+    onTestFinished(async () => {
+      await act(async () => {
+        root.unmount()
+      })
+      container.remove()
+    })
+
     Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
-    globalThis.ResizeObserver ??= class {
-      observe(): void {}
-      disconnect(): void {}
-      unobserve(): void {}
-    }
-    Element.prototype.scrollIntoView ??= vi.fn()
+    // jsdom has neither; the palette only needs them to exist.
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        public observe(): void {}
+        public disconnect(): void {}
+        public unobserve(): void {}
+      },
+    )
+    Element.prototype.scrollIntoView = vi.fn<() => void>()
     window.matchMedia = vi.fn().mockImplementation((query: string) => ({
       matches: query.includes('reduce'),
       media: query,
@@ -71,30 +86,29 @@ describe('CommandPalette', () => {
     container = document.createElement('div')
     document.body.append(container)
     root = createRoot(container)
-  })
 
-  afterEach(async () => {
-    await act(async () => root.unmount())
-    container.remove()
-  })
+    await run()
+  }
 
   const render = async (): Promise<void> => {
-    await act(async () =>
+    await act(async () => {
       root.render(
         <ChakraProvider>
           <CommandPalette open onClose={onClose} />
         </ChakraProvider>,
-      ),
-    )
+      )
+    })
   }
-  const input = (): HTMLInputElement => container.querySelector<HTMLInputElement>('input[role="combobox"]')!
-  const options = (): string[] => [...container.querySelectorAll('[role="option"]')].map((o) => o.textContent ?? '')
+  const input = (): HTMLInputElement =>
+    expectElement(container.querySelector('input[role="combobox"]'), HTMLInputElement)
+  const options = (): string[] => [...container.querySelectorAll('[role="option"]')].map((o) => o.textContent)
   const selected = (): string | null =>
     container.querySelector('[role="option"][aria-selected="true"]')?.textContent ?? null
   const type = async (value: string): Promise<void> => {
-    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!
+    const descriptor = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')
+    assert(descriptor?.set !== undefined, 'Expected the input value setter')
+    descriptor.set.call(input(), value)
     await act(async () => {
-      setter.call(input(), value)
       input().dispatchEvent(new Event('input', { bubbles: true }))
     })
   }
@@ -103,45 +117,53 @@ describe('CommandPalette', () => {
   }
 
   it('opens focused, with suggestions and account shortcuts', async () => {
-    await render()
-    expect(container.querySelector('[role="dialog"][aria-label="Search"]')).not.toBeNull()
-    expect(document.activeElement).toBe(input())
-    expect(options()).toEqual(['Portfolio', 'Statements', 'Hide balances'])
-    expect(container.textContent).toContain('Cold Wallet')
-    expect(selected()).toBe('Portfolio')
+    await withTestSetup(async () => {
+      await render()
+      expect(container.querySelector('dialog[aria-label="Search"]')).not.toBeNull()
+      expect(document.activeElement).toBe(input())
+      expect(options()).toEqual(['Portfolio', 'Statements', 'Hide balances'])
+      expect(container.textContent).toContain('Cold Wallet')
+      expect(selected()).toBe('Portfolio')
+    })
   })
 
   it('filters as you type, including accounts, settings and keywords', async () => {
-    await render()
-    await type('cold')
-    expect(options()).toEqual(['Cold Wallet Self-custody wallet'])
-    await type('sats')
-    // The keyword hit ranks first; looser in-order letter matches may follow it.
-    expect(options()[0]).toBe('Bitcoin display')
-    expect(selected()).toBe('Bitcoin display')
-    await type('zzz')
-    expect(container.textContent).toContain('No matches for “zzz”')
+    await withTestSetup(async () => {
+      await render()
+      await type('cold')
+      expect(options()).toEqual(['Cold Wallet Self-custody wallet'])
+      await type('sats')
+      // The keyword hit ranks first; looser in-order letter matches may follow it.
+      expect(options()[0]).toBe('Bitcoin display')
+      expect(selected()).toBe('Bitcoin display')
+      await type('zzz')
+      expect(container.textContent).toContain('No matches for “zzz”')
+    })
   })
 
   it('moves with the arrow keys and runs the selection on Enter', async () => {
-    await render()
-    await press('ArrowDown')
-    expect(selected()).toBe('Statements')
-    await press('ArrowUp')
-    await press('ArrowUp')
-    expect(selected()).toBe('Hide balances')
-    await press('Enter')
-    expect(onClose).toHaveBeenCalledOnce()
-    expect(mocks.runs).toEqual(['privacy'])
+    await withTestSetup(async () => {
+      await render()
+      await press('ArrowDown')
+      expect(selected()).toBe('Statements')
+      await press('ArrowUp')
+      await press('ArrowUp')
+      expect(selected()).toBe('Hide balances')
+      await press('Enter')
+      expect(onClose).toHaveBeenCalledOnce()
+      expect(mocks.runs).toEqual(['privacy'])
+    })
   })
 
   it('clears the query on the first Escape and closes on the second', async () => {
-    await render()
-    await type('port')
-    await press('Escape')
-    expect(input().value).toBe('')
-    expect(onClose).not.toHaveBeenCalled()
-    await press('Escape')
-    expect(onClose).toHaveBeenCalledOnce()
+    await withTestSetup(async () => {
+      await render()
+      await type('port')
+      await press('Escape')
+      expect(input().value).toBe('')
+      expect(onClose).not.toHaveBeenCalled()
+      await press('Escape')
+      expect(onClose).toHaveBeenCalledOnce()
+    })
   })
 })

@@ -91,7 +91,9 @@ export function SegmentedControl<T extends string>({
                 checked={selected}
                 disabled={isDisabled}
                 aria-label={option.ariaLabel}
-                onChange={() => onChange(option.value)}
+                onChange={() => {
+                  onChange(option.value)
+                }}
               />
               {selected && (
                 <MotionBox

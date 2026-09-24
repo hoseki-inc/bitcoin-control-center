@@ -2,9 +2,9 @@ import { modalAnatomy as parts } from '@chakra-ui/anatomy'
 import { theme as chakraTheme, createMultiStyleConfigHelpers } from '@chakra-ui/react'
 import { layerStyles } from './foundation/materials'
 
-const { definePartsStyle, defineMultiStyleConfig } = createMultiStyleConfigHelpers(parts.keys)
+const styleHelpers = createMultiStyleConfigHelpers(parts.keys)
 
-const extendedBaseStyle = definePartsStyle((props) => {
+const extendedBaseStyle = styleHelpers.definePartsStyle((props) => {
   const baseStyle = chakraTheme.components.Modal.baseStyle?.(props)
 
   return {
@@ -55,25 +55,25 @@ const extendedBaseStyle = definePartsStyle((props) => {
   }
 })
 
-const noPaddingVariant = definePartsStyle((props) => {
+const noPaddingVariant = styleHelpers.definePartsStyle((props) => {
   const baseStyle = extendedBaseStyle(props)
 
   return {
     ...baseStyle,
     dialog: {
-      ...baseStyle?.dialog,
+      ...baseStyle.dialog,
       p: 0,
     },
     header: {
-      ...baseStyle?.header,
+      ...baseStyle.header,
       p: 0,
     },
     body: {
-      ...baseStyle?.body,
+      ...baseStyle.body,
       p: 0,
     },
     footer: {
-      ...baseStyle?.footer,
+      ...baseStyle.footer,
       p: 0,
       flexWrap: 'wrap',
       gap: 3,
@@ -81,7 +81,7 @@ const noPaddingVariant = definePartsStyle((props) => {
   }
 })
 
-export const modalTheme = defineMultiStyleConfig({
+export const modalTheme = styleHelpers.defineMultiStyleConfig({
   ...chakraTheme.components.Modal,
   baseStyle: extendedBaseStyle,
   variants: {

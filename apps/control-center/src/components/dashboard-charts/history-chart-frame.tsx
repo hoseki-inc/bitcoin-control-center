@@ -26,7 +26,7 @@ export function HistoryChartFrame({
 
   useEffect(() => {
     controls.stop()
-    if (reduceMotion || !ready) {
+    if (reduceMotion === true || !ready) {
       controls.set({ opacity: updating ? 0.55 : 1 })
     } else {
       void controls.start({
@@ -34,7 +34,9 @@ export function HistoryChartFrame({
         transition: { duration: motionTokens.revealMs / 1000, ease: [0.23, 1, 0.32, 1] },
       })
     }
-    return () => controls.stop()
+    return () => {
+      controls.stop()
+    }
   }, [controls, ready, reduceMotion, updating, viewKey])
 
   return (
@@ -61,7 +63,8 @@ export function HistoryChartFrame({
           />
           {updating && (
             <Text
-              role="status"
+              as="output"
+              display="block"
               textStyle="text/xs"
               color="text.secondary"
               bg="surface.raised"
@@ -88,7 +91,7 @@ export function HistoryRangeLoading({ height }: { height: string }): JSX.Element
       justify="center"
       px={{ base: 4, md: 8 }}
       gap={4}
-      role="status"
+      as="output"
       aria-label="Preparing history for this date range"
     >
       <Stack spacing={3} aria-hidden="true">

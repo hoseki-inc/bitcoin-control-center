@@ -1,5 +1,5 @@
 import { Avatar, AvatarBadge, type AvatarBadgeProps, type AvatarProps, Flex } from '@chakra-ui/react'
-import { type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 
 export type KeystoreAvatarProps = {
   /**
@@ -31,14 +31,13 @@ function ContainedAvatar({ sx, size = '36px', ...props }: CommonProps) {
       width={size}
       height={size}
       onError={() => {}}
-      sx={{
-        ...sx,
+      sx={Object.assign({}, sx, {
         '& > *:first-of-type': {
           borderRadius: 'none',
           objectFit: 'contain',
           padding: '22.22%',
         },
-      }}
+      })}
       {...props}
     />
   )
@@ -52,14 +51,13 @@ function FilledAvatar({ sx, size = '44px', ...props }: CommonProps) {
       width={size}
       height={size}
       onError={() => {}}
-      sx={{
-        ...sx,
+      sx={Object.assign({}, sx, {
         '& > *:first-of-type': {
           borderRadius: 'none',
           objectFit: 'contain',
           padding: '9%',
         },
-      }}
+      })}
       {...props}
     />
   )

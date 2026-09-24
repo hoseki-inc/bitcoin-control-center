@@ -1,5 +1,5 @@
 import { ElectrumClient, type ElectrumClientConfig } from '@hoseki/packages/clients/electrum'
-import { Err, Ok, type Result } from '@patina/core'
+import { Err, Ok, type Result } from '@hoseki/packages/result'
 import type Database from 'better-sqlite3'
 import type { Logger } from 'pino'
 
@@ -68,7 +68,10 @@ export class ElectrumConnection {
   private stopped = true
   private switchSeq = 0
 
-  public constructor(private readonly deps: ElectrumConnectionDeps) {
+  private readonly deps: ElectrumConnectionDeps
+
+  public constructor(deps: ElectrumConnectionDeps) {
+    this.deps = deps
     this.server = deps.server
     this.current = this.createClient(deps.server)
   }
@@ -89,7 +92,9 @@ export class ElectrumConnection {
 
   /** Connects in the background and keeps the connection up. Never fails. */
   public start(): void {
-    if (!this.stopped) return
+    if (!this.stopped) {
+      return
+    }
     this.stopped = false
     void this.check()
   }
@@ -117,7 +122,9 @@ export class ElectrumConnection {
    */
   public async switchTo(server: ElectrumServer): Promise<Result<void, Error>> {
     const problem = this.problemWith(server)
-    if (problem !== null) return Err(new Error(problem))
+    if (problem !== null) {
+      return Err(new Error(problem))
+    }
 
     const seq = ++this.switchSeq
     const client = this.createClient(server)
@@ -142,7 +149,9 @@ export class ElectrumConnection {
       { host: server.host, port: server.port, protocol: server.protocol, tor: server.tor },
       'Switched Electrum server',
     )
-    if (!this.stopped) this.schedule(this.deps.healthCheckMs ?? HEALTH_CHECK_MS)
+    if (!this.stopped) {
+      this.schedule(this.deps.healthCheckMs ?? HEALTH_CHECK_MS)
+    }
     return Ok(undefined)
   }
 
@@ -159,7 +168,9 @@ export class ElectrumConnection {
 
   private async check(): Promise<void> {
     this.timer = null
-    if (this.stopped) return
+    if (this.stopped) {
+      return
+    }
 
     const client = this.current
     if (client.isConnected()) {
@@ -169,7 +180,9 @@ export class ElectrumConnection {
 
     const result = await client.connect()
     // A server change while this attempt was in flight schedules its own check.
-    if (this.stopped || client !== this.current) return
+    if (this.isStale(client)) {
+      return
+    }
 
     const { host, port, protocol, tor } = this.server
     if (result.isOk()) {
@@ -193,6 +206,11 @@ export class ElectrumConnection {
     this.schedule(delay)
   }
 
+  /** Whether the connection stopped or moved to another client while `client` was connecting. */
+  private isStale(client: ElectrumClient): boolean {
+    return this.stopped || client !== this.current
+  }
+
   private schedule(ms: number): void {
     this.clearTimer()
     this.timer = setTimeout(() => void this.check(), ms)
@@ -200,7 +218,9 @@ export class ElectrumConnection {
   }
 
   private clearTimer(): void {
-    if (this.timer !== null) clearTimeout(this.timer)
+    if (this.timer !== null) {
+      clearTimeout(this.timer)
+    }
     this.timer = null
   }
 }
@@ -218,7 +238,7 @@ export function loadElectrumServer(
   defaults: { host: string; port: number; protocol: ElectrumProtocol },
 ): ElectrumServer {
   const read = (key: string): string | undefined =>
-    (db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined)?.value
+    db.prepare<[string], { value: string }>('SELECT value FROM settings WHERE key = ?').get(key)?.value
 
   const port = Number(read(SETTING_KEYS.port))
   const protocol = read(SETTING_KEYS.protocol)

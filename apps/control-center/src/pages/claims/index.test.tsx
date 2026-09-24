@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { ChakraProvider } from '@chakra-ui/react'
+import { expectElement } from '@hoseki/packages/testing/dom'
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { MemoryRouter } from 'react-router'
@@ -69,15 +70,15 @@ it('defaults to cards, remembers view across remounts, and offers add/reconnect 
   document.body.append(container)
   let root = createRoot(container)
   const mount = async (): Promise<void> => {
-    await act(async () =>
+    await act(async () => {
       root.render(
         <ChakraProvider>
           <MemoryRouter>
             <ClaimsPage />
           </MemoryRouter>
         </ChakraProvider>,
-      ),
-    )
+      )
+    })
   }
   const verifyLinks = (): void => {
     expect(container.querySelector('[aria-label="Add account"]')?.getAttribute('href')).toBe('/accounts/add')
@@ -89,16 +90,22 @@ it('defaults to cards, remembers view across remounts, and offers add/reconnect 
     await mount()
     expect(container.querySelector('[aria-label="Card view"]')?.getAttribute('aria-pressed')).toBe('true')
     verifyLinks()
-    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="List view"]')!.click())
+    await act(async () => {
+      expectElement(container.querySelector('[aria-label="List view"]'), HTMLButtonElement).click()
+    })
     verifyLinks()
     expect(container.querySelector('a[href="/accounts/strike/strike"]')?.textContent).toContain('Reconnect needed')
-    await act(async () => root.unmount())
+    await act(async () => {
+      root.unmount()
+    })
     root = createRoot(container)
     await mount()
     expect(container.querySelector('[aria-label="List view"]')?.getAttribute('aria-pressed')).toBe('true')
     verifyLinks()
   } finally {
-    await act(async () => root.unmount())
+    await act(async () => {
+      root.unmount()
+    })
     container.remove()
     localStorage.clear()
     vi.unstubAllGlobals()

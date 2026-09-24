@@ -1,11 +1,15 @@
 // @vitest-environment jsdom
 import { ChakraProvider } from '@chakra-ui/react'
+import { expectElement } from '@hoseki/packages/testing/dom'
 import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
-import { expect, it, vi } from 'vitest'
+import { assert, expect, it, vi } from 'vitest'
 import { BitcoinPriceChart } from './bitcoin-price-chart'
 
-const mocks = vi.hoisted(() => ({ query: vi.fn(), chart: vi.fn() }))
+const mocks = vi.hoisted(() => ({
+  query: vi.fn<(input: { days: number }) => { data: unknown; isLoading: boolean; isError: boolean }>(),
+  chart: vi.fn<(props: unknown) => void>(),
+}))
 vi.mock('../../trpc', () => ({ trpc: { portalProve: { retrieveBitcoinPriceHistory: { useQuery: mocks.query } } } }))
 vi.mock('../dashboard-charts/history-line-chart', () => ({
   HistoryLineChart: (props: unknown) => {
@@ -33,7 +37,9 @@ it.each([false, true])(
     document.body.append(container)
     const root = createRoot(container)
     try {
-      await act(async () => root.render(createElement(ChakraProvider, null, createElement(BitcoinPriceChart))))
+      await act(async () => {
+        root.render(createElement(ChakraProvider, null, createElement(BitcoinPriceChart)))
+      })
       expect(mocks.query.mock.lastCall?.[0]).toEqual({ days: 7 })
       for (const [label, days] of [
         ['24H', 1],
@@ -42,16 +48,25 @@ it.each([false, true])(
         ['6M', 180],
         ['1Y', 365],
       ] as const) {
-        const button = Array.from(container.querySelectorAll('button')).find((item) => item.textContent === label)!
-        await act(async () => button.click())
+        const button = expectElement(
+          Array.from(container.querySelectorAll('button')).find((item) => item.textContent === label),
+          HTMLButtonElement,
+        )
+        await act(async () => {
+          button.click()
+        })
         expect(button.getAttribute('aria-pressed')).toBe('true')
         expect(container.querySelectorAll('[aria-pressed="true"]')).toHaveLength(1)
         expect(mocks.query.mock.lastCall?.[0]).toEqual({ days })
-        expect(mocks.chart.mock.lastCall?.[0].data).toEqual(mocks.query.mock.results.at(-1)?.value.data)
+        const last = mocks.query.mock.results.at(-1)
+        assert(last?.type === 'return')
+        expect(mocks.chart.mock.lastCall?.[0]).toMatchObject({ data: last.value.data })
         expect(container.textContent).toContain(`10.00% · ${label.toLowerCase()}`)
       }
     } finally {
-      await act(async () => root.unmount())
+      await act(async () => {
+        root.unmount()
+      })
       container.remove()
     }
   },

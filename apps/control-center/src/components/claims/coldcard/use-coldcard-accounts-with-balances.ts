@@ -39,10 +39,7 @@ export function useColdcardAccountsWithBalances(
   coldcardJson: ColdcardGenericJsonFile,
   model: ColdcardModel,
 ): UseColdcardAccountsWithBalancesReturn {
-  const accounts = []
-  if (coldcardJson.bip44) {
-    accounts.push(makeAccount(coldcardJson.bip44))
-  }
+  const accounts = [makeAccount(coldcardJson.bip44)]
   if (coldcardJson.bip49) {
     accounts.push(makeAccount(coldcardJson.bip49))
   }

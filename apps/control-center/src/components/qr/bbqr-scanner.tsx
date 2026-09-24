@@ -45,15 +45,23 @@ export function BBQrScanner({ onComplete, onPlainScan, onError, onCancel }: BBQr
 
   useEffect(() => {
     let mounted = true
+    // Cleanup may run while camera startup is awaiting a promise.
+    const isMounted = (): boolean => mounted
     let scanner: Html5Qrcode | null = null
 
     async function start(): Promise<void> {
       // Wait a tick to ensure the DOM element is rendered
-      await new Promise((r) => setTimeout(r, 0))
-      if (!mounted) return
+      await new Promise((r) => {
+        setTimeout(r, 0)
+      })
+      if (!isMounted()) {
+        return
+      }
 
       const el = document.getElementById(elementIdRef.current)
-      if (!el) return
+      if (!el) {
+        return
+      }
 
       // Get the first available camera (more reliable on desktop than facingMode)
       let cameraId: string | undefined
@@ -83,14 +91,20 @@ export function BBQrScanner({ onComplete, onPlainScan, onError, onCancel }: BBQr
             aspectRatio: 1,
           },
           (decodedText) => {
-            if (!mounted || completedRef.current) return
+            if (!isMounted() || completedRef.current) {
+              return
+            }
             handleScan(decodedText)
           },
           undefined,
         )
-        if (mounted) setState('scanning')
+        if (isMounted()) {
+          setState('scanning')
+        }
       } catch (err) {
-        if (!mounted) return
+        if (!isMounted()) {
+          return
+        }
         const msg = err instanceof Error ? err.message : 'Camera access denied'
         setState('error')
         setErrorMessage(msg)
@@ -99,14 +113,18 @@ export function BBQrScanner({ onComplete, onPlainScan, onError, onCancel }: BBQr
     }
 
     function handleScan(decodedText: string): void {
-      if (completedRef.current) return
+      if (completedRef.current) {
+        return
+      }
 
       // Check if this is a BBQr frame
       if (decodedText.startsWith(BBQR_HEADER) && decodedText.length >= 8) {
         const total = parseInt(decodedText.slice(4, 6), 36)
         const partIndex = parseInt(decodedText.slice(6, 8), 36)
 
-        if (isNaN(total) || isNaN(partIndex) || total < 1 || partIndex >= total) return
+        if (isNaN(total) || isNaN(partIndex) || total < 1 || partIndex >= total) {
+          return
+        }
 
         // First frame: set expected total
         if (expectedTotalRef.current === 0) {
@@ -128,7 +146,7 @@ export function BBQrScanner({ onComplete, onPlainScan, onError, onCancel }: BBQr
           const allParts: string[] = []
           for (let i = 0; i < expectedTotalRef.current; i++) {
             const part = partsRef.current.get(i)
-            if (!part) {
+            if (part == null || part === '') {
               setState('error')
               setErrorMessage(`Missing part ${i}`)
               onErrorRef.current?.(`Missing part ${i}`)
@@ -156,7 +174,9 @@ export function BBQrScanner({ onComplete, onPlainScan, onError, onCancel }: BBQr
         // Non-BBQr single QR code
         completedRef.current = true
         const cb = onPlainScanRef.current
-        void stopScannerInstance(scanner).then(() => cb(decodedText))
+        void stopScannerInstance(scanner).then(() => {
+          cb(decodedText)
+        })
       }
     }
 
@@ -249,7 +269,9 @@ export function BBQrScanner({ onComplete, onPlainScan, onError, onCancel }: BBQr
 }
 
 async function stopScannerInstance(scanner: Html5Qrcode | null): Promise<void> {
-  if (!scanner) return
+  if (!scanner) {
+    return
+  }
   if (scanner.isScanning) {
     try {
       await scanner.stop()

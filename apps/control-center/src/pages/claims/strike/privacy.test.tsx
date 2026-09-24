@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { ChakraProvider } from '@chakra-ui/react'
+import { expectElement } from '@hoseki/packages/testing/dom'
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { MemoryRouter, Route, Routes } from 'react-router'
@@ -61,7 +62,7 @@ it('masks and restores all financial values in the actual Strike transaction tab
   document.body.append(container)
   const root = createRoot(container)
   try {
-    await act(async () =>
+    await act(async () => {
       root.render(
         <ChakraProvider>
           <MemoryRouter initialEntries={['/accounts/strike/strike']}>
@@ -70,11 +71,16 @@ it('masks and restores all financial values in the actual Strike transaction tab
             </Routes>
           </MemoryRouter>
         </ChakraProvider>,
-      ),
+      )
+    })
+    const month = expectElement(
+      Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'August 2026'),
+      HTMLButtonElement,
     )
-    const month = Array.from(container.querySelectorAll('p')).find((p) => p.textContent === 'August 2026')!
-    await act(async () => month.click())
-    const table = (): HTMLTableElement => container.querySelector('table')!
+    await act(async () => {
+      month.click()
+    })
+    const table = (): HTMLTableElement => expectElement(container.querySelector('table'), HTMLTableElement)
     expect(table().textContent).toContain('$12345.00')
     for (const hidden of [true, false]) {
       await act(async () => {
@@ -82,11 +88,13 @@ it('masks and restores all financial values in the actual Strike transaction tab
         window.dispatchEvent(new StorageEvent('storage', { key: 'control-center:privacy' }))
       })
       for (const value of ['12345', '50,000', '0.2469']) {
-        expect(table().textContent?.includes(value)).toBe(!hidden)
+        expect(table().textContent.includes(value)).toBe(!hidden)
       }
     }
   } finally {
-    await act(async () => root.unmount())
+    await act(async () => {
+      root.unmount()
+    })
     container.remove()
     localStorage.clear()
     vi.unstubAllGlobals()

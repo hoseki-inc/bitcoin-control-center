@@ -48,7 +48,7 @@ export function AccountAccordion({
                 <Text as="span" mr={3}>
                   Bitcoin Core Wallet
                 </Text>
-                {balance.noBalance ? (
+                {balance.noBalance != null && balance.noBalance !== '' ? (
                   <Text as="span" color="text.secondary">
                     {balance.noBalance}
                   </Text>

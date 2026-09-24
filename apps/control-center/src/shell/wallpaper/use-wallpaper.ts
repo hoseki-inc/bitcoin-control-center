@@ -46,7 +46,9 @@ const FALLBACK_SEED: WallpaperSeed = [0.137, 0.618, 0.271, 0.828]
 
 /** Four numbers in [0, 1) taken from a 64-character block hash. */
 export function seedFromHash(hash: string | undefined): WallpaperSeed {
-  if (hash === undefined || !/^[0-9a-f]{64}$/i.test(hash)) return FALLBACK_SEED
+  if (hash === undefined || !/^[0-9a-f]{64}$/i.test(hash)) {
+    return FALLBACK_SEED
+  }
   // Skip the leading zeros of proof-of-work; the tail of the hash carries the entropy.
   const tail = hash.slice(32)
   const part = (index: number): number => Number.parseInt(tail.slice(index * 8, index * 8 + 8), 16) / 2 ** 32

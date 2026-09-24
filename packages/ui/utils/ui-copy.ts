@@ -34,7 +34,6 @@ export function pluralize(
       const value = values[i]
       if (
         typeof value === 'object' &&
-        value !== null &&
         !Array.isArray(value) &&
         'count' in value &&
         'singular' in value &&
@@ -52,15 +51,16 @@ export function pluralize(
         // Tuple format
         result += value[2] === 1 ? value[0] : value[1]
       } else {
-        result += value // Regular interpolation
+        result += String(value) // Regular interpolation
       }
     }
   }
   return result
 }
 
-export function capitalize<T extends string>(str: T): Capitalize<T> {
-  return (str.charAt(0).toUpperCase() + str.slice(1)) as Capitalize<T>
+export function capitalize<T extends string>(str: T): Capitalize<T>
+export function capitalize(str: string): string {
+  return str.charAt(0).toUpperCase() + str.slice(1)
 }
 
 export function convertToOrdinalWords(number: number): string {
@@ -90,7 +90,7 @@ export function convertToOrdinalWords(number: number): string {
 
   if (number >= 0 && number < ordinals.length) {
     const r = ordinals[number]
-    if (!r) {
+    if (r == null || r === '') {
       // This should never happen, but we'll add a guard to satisfy the type checker
       throw new Error(`Ordinal ${number} is out of range`)
     }

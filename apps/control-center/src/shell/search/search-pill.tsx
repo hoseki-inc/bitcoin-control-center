@@ -11,8 +11,12 @@ export function SearchPill({ onOpen }: { onOpen: () => void }): JSX.Element {
       as="button"
       type="button"
       onClick={onOpen}
-      onPointerEnter={() => setHovered(true)}
-      onPointerLeave={() => setHovered(false)}
+      onPointerEnter={() => {
+        setHovered(true)
+      }}
+      onPointerLeave={() => {
+        setHovered(false)
+      }}
       aria-label={`Search (${SEARCH_SHORTCUT})`}
       aria-keyshortcuts="Meta+K Control+K"
       layerStyle="material"

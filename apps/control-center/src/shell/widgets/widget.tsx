@@ -2,7 +2,7 @@ import { Box, Stack, Text } from '@chakra-ui/react'
 import { springs } from '@hoseki/packages/ui/design-system/animations/motion'
 import { Glass, useGlassPreset } from '@hoseki/packages/ui/design-system/glass'
 import { motion, useMotionValue, useReducedMotion, useSpring } from 'framer-motion'
-import { type PointerEvent, type ReactNode } from 'react'
+import type { PointerEvent, ReactNode } from 'react'
 import { Link } from 'react-router'
 
 const MotionBox = motion.create(Box)
@@ -37,7 +37,9 @@ export function Widget({
   const scale = useSpring(useMotionValue(1), springs.tilt)
 
   const onPointerMove = (event: PointerEvent<HTMLElement>): void => {
-    if (reduced || event.pointerType !== 'mouse') return
+    if (reduced || event.pointerType !== 'mouse') {
+      return
+    }
     const rect = event.currentTarget.getBoundingClientRect()
     const x = (event.clientX - rect.left) / rect.width - 0.5
     const y = (event.clientY - rect.top) / rect.height - 0.5
@@ -56,10 +58,22 @@ export function Widget({
         borderRadius={{ base: '12px', sm: '20px' }}
         style={{ rotateX, rotateY, scale, transformPerspective: 900 }}
         onPointerMove={onPointerMove}
-        onPointerEnter={() => !reduced && scale.set(1.05)}
+        onPointerEnter={() => {
+          if (!reduced) {
+            scale.set(1.05)
+          }
+        }}
         onPointerLeave={settle}
-        onPointerDown={() => !reduced && scale.set(0.97)}
-        onPointerUp={() => !reduced && scale.set(1.05)}
+        onPointerDown={() => {
+          if (!reduced) {
+            scale.set(0.97)
+          }
+        }}
+        onPointerUp={() => {
+          if (!reduced) {
+            scale.set(1.05)
+          }
+        }}
       >
         <Box
           as={Link}

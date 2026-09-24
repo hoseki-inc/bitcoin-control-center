@@ -1,4 +1,4 @@
-import { type z } from 'zod'
+import type { z } from 'zod'
 import { createHosidSchema } from './hosid'
 
 export const metadataIdPrefix = 're_mtdt'

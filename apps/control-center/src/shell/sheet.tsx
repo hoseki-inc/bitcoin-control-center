@@ -18,7 +18,9 @@ function PresentOutlet(): ReactNode {
   const outlet = useOutlet()
   const isPresent = useIsPresent()
   const last = useRef(outlet)
-  if (isPresent) last.current = outlet
+  if (isPresent) {
+    last.current = outlet
+  }
   return last.current
 }
 
@@ -42,26 +44,40 @@ export function Sheet({ wallpaperSnapshot }: { wallpaperSnapshot: string | null 
   const current = sectionForPath(pathname)
   // Freeze the section while exiting too, or the page would remount blank mid-animation.
   const sectionRef = useRef(current)
-  if (isPresent) sectionRef.current = current
+  if (isPresent) {
+    sectionRef.current = current
+  }
   const section = sectionRef.current
   const pageKey = useRef(pathname)
-  if (isPresent && current?.id !== undefined) pageKey.current = current.id
+  if (isPresent && current?.id !== undefined) {
+    pageKey.current = current.id
+  }
 
   useEffect(() => {
-    if (!isPresent) return
+    if (!isPresent) {
+      return
+    }
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key !== 'Escape' || event.defaultPrevented || modalOrWelcomeIsOpen()) return
-      navigate('/home')
+      if (event.key !== 'Escape' || event.defaultPrevented || modalOrWelcomeIsOpen()) {
+        return
+      }
+      void navigate('/home')
     }
     window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+    }
   }, [isPresent, navigate])
 
   // Each route starts at the top, and focus moves to it so screen readers hear the change.
   useEffect(() => {
-    if (!isPresent) return
+    if (!isPresent) {
+      return
+    }
     const scroller = scrollerRef.current
-    if (scroller === null) return
+    if (scroller === null) {
+      return
+    }
     scroller.scrollTop = 0
     scroller.focus({ preventScroll: true })
   }, [pathname, isPresent])
@@ -166,7 +182,9 @@ export function Sheet({ wallpaperSnapshot }: { wallpaperSnapshot: string | null 
         <IconButton
           aria-label="Close"
           icon={<X size={16} strokeWidth={2.5} />}
-          onClick={() => navigate('/home')}
+          onClick={() => {
+            void navigate('/home')
+          }}
           position="absolute"
           top={{ base: 3, lg: 5 }}
           right={{ base: 3, lg: 5 }}

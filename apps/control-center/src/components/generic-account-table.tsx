@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 
 export function GenericAccountTable({
   title,
-  rows = [],
+  rows,
   ...boxProps
 }: BoxProps & {
   title: string

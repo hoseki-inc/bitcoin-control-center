@@ -19,7 +19,7 @@ export function HistoryLineChart({
   if (loading || data.length === 0) {
     return (
       <Flex h="full" align="center" justify="center" px={5}>
-        <Text textStyle="text/sm" color="text.secondary" role="status">
+        <Text as="output" display="block" textStyle="text/sm" color="text.secondary">
           {loading ? 'Loading history…' : 'Price history is temporarily unavailable'}
         </Text>
       </Flex>
@@ -50,8 +50,10 @@ export function HistoryLineChart({
         <Tooltip
           isAnimationActive={false}
           content={(props: TooltipContentProps) => {
-            const point = props.payload?.[0]?.payload as { time: number; value: number } | undefined
-            if (!props.active || !point) return null
+            const point: unknown = props.payload[0]?.payload
+            if (!props.active || !isPoint(point)) {
+              return null
+            }
             return (
               <Box bg="surface.inverse" color="text.inverse" borderRadius="control" px={3} py={2}>
                 <Text textStyle="text/xs">{formatTime(point.time)}</Text>
@@ -73,5 +75,16 @@ export function HistoryLineChart({
         />
       </LineChart>
     </ResponsiveContainer>
+  )
+}
+
+function isPoint(value: unknown): value is { time: number; value: number } {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'time' in value &&
+    'value' in value &&
+    typeof value.time === 'number' &&
+    typeof value.value === 'number'
   )
 }

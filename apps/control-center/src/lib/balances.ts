@@ -1,11 +1,9 @@
 import { BTC } from '@hoseki/packages/currency'
 import type { BalanceValue } from '@hoseki/packages/lib/balance'
 import { isNullish } from '@hoseki/packages/lib/util'
-import { type ClaimId } from '@hoseki/packages/schemas'
-import { type Decimal } from 'decimal.js'
+import type { ClaimId } from '@hoseki/packages/schemas'
+import type { Decimal } from 'decimal.js'
 import { trpc } from '../trpc'
-
-export type ClaimsWithBalancesQuery = void
 
 function getBalanceValue(balance: Decimal | bigint, price: Decimal | null): BalanceValue {
   const btc = BTC.fromSats(balance)
@@ -54,7 +52,7 @@ export function useGetBalancesPerClaimIds({
     isLoading: queries.some((q) => q.isLoading),
     isError: queries.some((q) => q.isError),
     isSuccess: queries.every((q) => q.isSuccess),
-    error: btcClaimBalancesQuery.error || btcPriceQuery.error,
+    error: btcClaimBalancesQuery.error ?? btcPriceQuery.error,
     data: balanceMap,
   }
 }
@@ -72,17 +70,20 @@ export function useGetClaimBalance(claimId: ClaimId | null, { enabled } = { enab
   const balanceQueriesOpts = { enabled }
   const queries = trpc.useQueries((t) => [
     t.portalProve.retrieveBitcoinPrice(undefined, balanceQueriesOpts),
-    t.portalProve.onchain.claimBalances({ claimIds: claimId ? [claimId] : [] }, balanceQueriesOpts),
+    t.portalProve.onchain.claimBalances(
+      { claimIds: claimId != null && claimId.length > 0 ? [claimId] : [] },
+      balanceQueriesOpts,
+    ),
   ])
   const [btcPriceQuery, btcClaimBalancesQuery] = queries
   const btcPrice = btcPriceQuery.data?.value ?? null
-  const balance = claimId ? btcClaimBalancesQuery.data?.get(claimId) : null
+  const balance = claimId != null && claimId.length > 0 ? btcClaimBalancesQuery.data?.get(claimId) : null
 
   return {
     isLoading: queries.some((q) => q.isLoading),
     isError: queries.some((q) => q.isError),
     isSuccess: queries.every((q) => q.isSuccess),
-    error: btcClaimBalancesQuery.error || btcPriceQuery.error,
+    error: btcClaimBalancesQuery.error ?? btcPriceQuery.error,
     data: balance ? getBalanceValue(balance, btcPrice) : null,
   }
 }

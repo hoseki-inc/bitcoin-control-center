@@ -2,9 +2,9 @@ import { inputAnatomy } from '@chakra-ui/anatomy'
 import { createMultiStyleConfigHelpers } from '@chakra-ui/react'
 import { inputProps } from '../../design-system'
 
-const { definePartsStyle, defineMultiStyleConfig } = createMultiStyleConfigHelpers(inputAnatomy.keys)
+const styleHelpers = createMultiStyleConfigHelpers(inputAnatomy.keys)
 
-const baseStyle = definePartsStyle({
+const baseStyle = styleHelpers.definePartsStyle({
   field: {
     width: '100%',
     fontWeight: 400,
@@ -17,7 +17,7 @@ const baseStyle = definePartsStyle({
 })
 
 const variants = {
-  tertiary: definePartsStyle({
+  tertiary: styleHelpers.definePartsStyle({
     field: {
       bg: '#1D1F2A', // dark background
       border: 'none',
@@ -38,26 +38,26 @@ const variants = {
 }
 
 const sizes = {
-  sm: definePartsStyle({
+  sm: styleHelpers.definePartsStyle({
     field: {
       textStyle: { base: 'text/md', md: 'text/sm' },
       h: { base: '2.75rem', md: '2rem' },
     },
   }),
-  md: definePartsStyle({
+  md: styleHelpers.definePartsStyle({
     field: {
       textStyle: 'text/md',
       h: '2.75rem',
     },
   }),
-  lg: definePartsStyle({
+  lg: styleHelpers.definePartsStyle({
     field: {
       textStyle: 'text/md',
       px: 4,
       h: '3.25rem', // 52px
     },
   }),
-  xl: definePartsStyle({
+  xl: styleHelpers.definePartsStyle({
     field: {
       textStyle: 'text/md',
       px: 4,
@@ -66,7 +66,7 @@ const sizes = {
   }),
 }
 
-export const inputTheme = defineMultiStyleConfig({
+export const inputTheme = styleHelpers.defineMultiStyleConfig({
   baseStyle,
   variants,
   sizes,

@@ -1,7 +1,7 @@
 import { Box } from '@chakra-ui/react'
 import { durations } from '@hoseki/packages/ui/design-system/animations/motion'
 import { motion } from 'framer-motion'
-import { type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import { useWelcomeRevealed } from '../components/onboarding/welcome-reveal'
 
 const MotionBox = motion.create(Box)

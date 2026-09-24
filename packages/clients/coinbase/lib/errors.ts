@@ -1,5 +1,5 @@
 import { ErrorWithTag } from '@hoseki/packages/result'
-import { type SafeResponse } from '@hoseki/packages/safe-http'
+import type { SafeResponse } from '@hoseki/packages/safe-http'
 
 export namespace ErrorKind {
   export function Unauthorized(response: SafeResponse): {
@@ -71,7 +71,7 @@ export class ApiError extends ErrorWithTag {
   public readonly tag = 'CoinbaseError'
   public readonly kind: ErrorKind
 
-  constructor(kind: ErrorKind, message: string) {
+  public constructor(kind: ErrorKind, message: string) {
     super(message)
     this.kind = kind
   }

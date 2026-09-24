@@ -1,6 +1,6 @@
-import { Err, Ok, Result } from '@patina/core'
+import { Err, Ok, Result } from '@hoseki/packages/result'
 import type { Opaque } from 'type-fest'
-import * as descriptor from './descriptor_utils'
+import * as descriptorUtils from './descriptor_utils'
 import { bitcoin } from './lib'
 import { Network } from './network'
 
@@ -73,13 +73,13 @@ export type FormatKey = keyof typeof FORMATS
 export type Format = (typeof FORMATS)[FormatKey]
 
 class UnsupportedVersionError extends Error {
-  constructor(version: number) {
+  public constructor(version: number) {
     super(`Unsupported version: "${version}"`)
   }
 }
 
 class UnsupportedPrefixError extends Error {
-  constructor(prefix: string) {
+  public constructor(prefix: string) {
     super(`Unsupported prefix: "${prefix}"`)
   }
 }
@@ -195,6 +195,7 @@ export class Address {
         ret = bitcoin.address.toBech32(this.data, this.format.version, this.format.network.bech32)
         break
     }
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- Address encoders above construct the checked address; avoid parsing generated addresses a second time.
     return ret as CheckedAddressString
   }
 
@@ -207,7 +208,7 @@ export class Address {
   }
 
   public descriptor(): CheckedAddressDescriptor {
-    return descriptor.addr(this.toString())
+    return descriptorUtils.addr(this.toString())
   }
 
   public eq(other: Address): boolean {
@@ -242,7 +243,7 @@ export class Address {
     }
   }
 
-  [Symbol.for('nodejs.util.inspect.custom')](): string {
+  public [Symbol.for('nodejs.util.inspect.custom')](): string {
     return this.toString()
   }
 }

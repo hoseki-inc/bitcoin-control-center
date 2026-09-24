@@ -1,5 +1,5 @@
 import { Flex, Stack, Text, chakra, useColorMode } from '@chakra-ui/react'
-import { type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import { Link } from 'react-router'
 import { logoForMode } from '../../../utils/themed-logo'
 

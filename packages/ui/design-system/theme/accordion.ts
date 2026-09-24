@@ -5,9 +5,9 @@ import { createMultiStyleConfigHelpers } from '@chakra-ui/react'
  * Chakra Accordion theming:
  * https://v2.chakra-ui.com/docs/components/accordion/theming
  */
-const { definePartsStyle, defineMultiStyleConfig } = createMultiStyleConfigHelpers(accordionAnatomy.keys)
+const styleHelpers = createMultiStyleConfigHelpers(accordionAnatomy.keys)
 
-const baseStyle = definePartsStyle({
+const baseStyle = styleHelpers.definePartsStyle({
   container: {
     border: 'solid 1px',
     borderColor: 'border.subtle',
@@ -40,6 +40,6 @@ const baseStyle = definePartsStyle({
   },
 })
 
-export const accordionTheme = defineMultiStyleConfig({
+export const accordionTheme = styleHelpers.defineMultiStyleConfig({
   baseStyle,
 })

@@ -71,7 +71,7 @@ export function useAccounts(): {
       return {
         id: claim.id,
         kind: multisig ? 'multisig' : 'wallet',
-        name: claim.displayName ?? claim.officialName ?? 'Wallet',
+        name: claim.displayName || claim.officialName || 'Wallet',
         to: multisig && claim.status === 'pending' ? `/multisig/${claim.id}` : `/accounts/${claim.id}`,
         sats: balance ? Number(balance.current) : null,
         state: ensureClaimStatusNotExpired(claim) === 'verified' ? 'verified' : 'pending',
@@ -96,7 +96,7 @@ export function useAccounts(): {
       kind: 'manual',
       name: account.displayName,
       to: `/accounts/manual/${account.id}`,
-      sats: account.balance === null ? null : Number(account.balance),
+      sats: Number(account.balance),
       state: 'manual',
       wallet: null,
       exchange: null,
@@ -107,7 +107,7 @@ export function useAccounts(): {
       kind: 'etf',
       name: account.displayName,
       to: `/accounts/etf/${account.id}`,
-      sats: account.balance === null ? null : Number(account.balance),
+      sats: Number(account.balance),
       state: 'manual',
       wallet: null,
       exchange: null,
@@ -131,7 +131,9 @@ export function useAccounts(): {
     isLoading: queries.some((query) => query.isLoading),
     isError: queries.some((query) => query.isError),
     retry: () => {
-      for (const query of queries) void query.refetch()
+      for (const query of queries) {
+        void query.refetch()
+      }
     },
   }
 }

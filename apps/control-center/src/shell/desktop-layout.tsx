@@ -30,19 +30,29 @@ export function DesktopLayout(): JSX.Element {
   const [wallpaperPaused, setWallpaperPaused] = useState(sheetOpen)
   const [searchOpen, setSearchOpen] = useState(false)
   const revealed = useWelcomeRevealed()
-  const openSearch = useCallback(() => setSearchOpen(true), [])
-  const closeSearch = useCallback(() => setSearchOpen(false), [])
+  const openSearch = useCallback(() => {
+    setSearchOpen(true)
+  }, [])
+  const closeSearch = useCallback(() => {
+    setSearchOpen(false)
+  }, [])
 
   // ⌘K (Ctrl+K elsewhere) opens search from anywhere once the welcome has cleared.
   useEffect(() => {
-    if (!revealed) return
+    if (!revealed) {
+      return
+    }
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key.toLowerCase() !== 'k' || !(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return
+      if (event.key.toLowerCase() !== 'k' || !(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) {
+        return
+      }
       event.preventDefault()
       setSearchOpen((open) => !open)
     }
     window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+    }
   }, [revealed])
 
   useEffect(() => {
@@ -50,8 +60,12 @@ export function DesktopLayout(): JSX.Element {
       setWallpaperPaused(false)
       return
     }
-    const timer = window.setTimeout(() => setWallpaperPaused(true), PAUSE_UNDER_SHEET_MS)
-    return () => window.clearTimeout(timer)
+    const timer = window.setTimeout(() => {
+      setWallpaperPaused(true)
+    }, PAUSE_UNDER_SHEET_MS)
+    return () => {
+      window.clearTimeout(timer)
+    }
   }, [sheetOpen])
 
   return (

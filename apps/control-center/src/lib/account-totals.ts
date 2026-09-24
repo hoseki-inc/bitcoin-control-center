@@ -52,7 +52,7 @@ export function computeAccountTotals({
   const connectedExchanges = exchangeAccounts.filter(isExchangeConnected)
   const claimValues = claimBalances ? [...claimBalances.values()] : []
   const claimSats = claimValues.reduce((sum, balance) => sum + (balance ? Number(balance.current) : 0), 0)
-  const claimUsd = claimValues.reduce((sum, balance) => sum + (balance?.usd ? Number(balance.usd) : 0), 0)
+  const claimUsd = claimValues.reduce((sum, balance) => sum + (balance?.usd == null ? 0 : Number(balance.usd)), 0)
 
   const priced = [...connectedExchanges, ...manualAccounts, ...etfAccounts]
   const pricedSats = priced.reduce((sum, account) => sum + sats(account.balance), 0)

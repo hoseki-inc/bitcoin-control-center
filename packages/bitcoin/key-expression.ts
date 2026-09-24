@@ -1,8 +1,8 @@
-import { type Result } from '@patina/core'
+import type { Result } from '@hoseki/packages/result'
 import { z } from 'zod'
 import { parse } from '../result'
-import { type DerivationPath, type DerivationPathString } from './derivation-path'
-import { type CheckedXpubString, type Xpub } from './xpub'
+import type { DerivationPath, DerivationPathString } from './derivation-path'
+import type { CheckedXpubString, Xpub } from './xpub'
 
 /**
  * First 8 bytes of the SHA256 hash of the public key.
@@ -20,7 +20,7 @@ export function KeyFingerprint(str: string): Result<KeyFingerprint, Error> {
   return parse(keyFingerprintSchema, str)
 }
 
-KeyFingerprint.DEFAULT = '00000000' as KeyFingerprint
+KeyFingerprint.DEFAULT = KeyFingerprint('00000000').expect('valid default fingerprint')
 
 /**
  * Key origin information, consisting of:
@@ -73,7 +73,7 @@ export class KeyOrigin {
     }
   }
 
-  [Symbol.for('nodejs.util.inspect.custom')](): string {
+  public [Symbol.for('nodejs.util.inspect.custom')](): string {
     return this.toString()
   }
 }
@@ -112,7 +112,7 @@ export class KeyExpression {
     }
   }
 
-  [Symbol.for('nodejs.util.inspect.custom')](): string {
+  public [Symbol.for('nodejs.util.inspect.custom')](): string {
     return this.toString()
   }
 }

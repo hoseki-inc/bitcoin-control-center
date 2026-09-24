@@ -45,7 +45,9 @@ export function isWhiteBackdrop(layer: LottieLayer, width: number, height: numbe
 /** A copy of the animation without its white backdrops. The input is never modified. */
 export function withoutWhiteBackdrops<T extends object>(animation: T): T {
   const data = animation as LottieData
-  if (data.layers === undefined) return animation
+  if (data.layers === undefined) {
+    return animation
+  }
   const width = data.w ?? 0
   const height = data.h ?? 0
   return { ...animation, layers: data.layers.filter((layer) => !isWhiteBackdrop(layer, width, height)) }

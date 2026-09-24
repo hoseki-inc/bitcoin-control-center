@@ -7,7 +7,7 @@ export function DesktopRequired(): JSX.Element {
       <VStack spacing={8} maxW="400px" textAlign="center">
         <VStack spacing={4}>
           <Box position="relative" pb={4}>
-            <Image src="/desktop-required.png" />
+            <Image src="/desktop-required.png" alt="" />
             <LinearGradient
               gradientDirection="from-bottom"
               baseColor="var(--hoseki-colors-surface-subtle)"

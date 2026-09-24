@@ -100,7 +100,9 @@ function NameRow({ tone }: { tone: number }): JSX.Element {
               placeholder="Enter your name"
               size="sm"
               value={name}
-              onChange={(event) => setDraftName(event.target.value)}
+              onChange={(event) => {
+                setDraftName(event.target.value)
+              }}
             />
           </FormControl>
           <Button
@@ -213,7 +215,7 @@ function BitcoinDisplayRow({ tone }: { tone: number }): JSX.Element {
               ),
             }))}
           />
-          <Text textStyle="text/xs" color={isError ? 'status.error.fg' : 'text.secondary'} role="status">
+          <Text as="output" display="block" textStyle="text/xs" color={isError ? 'status.error.fg' : 'text.secondary'}>
             {isError
               ? 'Could not load your preference. Refresh to try again.'
               : isLoading

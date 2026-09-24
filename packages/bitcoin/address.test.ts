@@ -1,4 +1,4 @@
-import { Result } from '@patina/core'
+import { Result } from '@hoseki/packages/result'
 import { expect, test } from 'vitest'
 import { Address, type AddressType, FORMATS, type Format } from './address'
 import { bip32, bitcoin } from './lib'
@@ -7,7 +7,7 @@ const seed = 'deadbeef000000000000000000000000'
 const keyPair = Result.fromThrowable(() => {
   return bip32.fromSeed(Buffer.from(seed, 'hex'))
 }).expect('valid key pair')
-const pubkey = keyPair.neutered().publicKey
+const testPublicKey = keyPair.neutered().publicKey
 
 function mainnetPubkeyHash(pubkey: Buffer) {
   return bitcoin.payments.p2pkh({
@@ -88,21 +88,21 @@ function regtestTaproot(pubkey: Buffer) {
 }
 
 const rawFixtures: Array<{ format: Format; address: string | undefined; type: AddressType }> = [
-  { format: FORMATS.MAINNET_PUBKEY_HASH, address: mainnetPubkeyHash(pubkey), type: 'legacy' },
-  { format: FORMATS.MAINNET_SCRIPT_HASH, address: mainnetScriptHash(pubkey), type: 'script' },
-  { format: FORMATS.MAINNET_SEGWIT, address: mainnetSegwit(pubkey), type: 'segwit' },
-  { format: FORMATS.MAINNET_TAPROOT, address: mainnetTaproot(pubkey), type: 'taproot' },
-  { format: FORMATS.TESTNET_PUBKEY_HASH, address: testnetPubkeyHash(pubkey), type: 'legacy' },
-  { format: FORMATS.TESTNET_SCRIPT_HASH, address: testnetScriptHash(pubkey), type: 'script' },
-  { format: FORMATS.TESTNET_SEGWIT, address: testnetSegwit(pubkey), type: 'segwit' },
-  { format: FORMATS.TESTNET_TAPROOT, address: testnetTaproot(pubkey), type: 'taproot' },
-  { format: FORMATS.REGTEST_SEGWIT, address: regtestSegwit(pubkey), type: 'segwit' },
-  { format: FORMATS.REGTEST_TAPROOT, address: regtestTaproot(pubkey), type: 'taproot' },
+  { format: FORMATS.MAINNET_PUBKEY_HASH, address: mainnetPubkeyHash(testPublicKey), type: 'legacy' },
+  { format: FORMATS.MAINNET_SCRIPT_HASH, address: mainnetScriptHash(testPublicKey), type: 'script' },
+  { format: FORMATS.MAINNET_SEGWIT, address: mainnetSegwit(testPublicKey), type: 'segwit' },
+  { format: FORMATS.MAINNET_TAPROOT, address: mainnetTaproot(testPublicKey), type: 'taproot' },
+  { format: FORMATS.TESTNET_PUBKEY_HASH, address: testnetPubkeyHash(testPublicKey), type: 'legacy' },
+  { format: FORMATS.TESTNET_SCRIPT_HASH, address: testnetScriptHash(testPublicKey), type: 'script' },
+  { format: FORMATS.TESTNET_SEGWIT, address: testnetSegwit(testPublicKey), type: 'segwit' },
+  { format: FORMATS.TESTNET_TAPROOT, address: testnetTaproot(testPublicKey), type: 'taproot' },
+  { format: FORMATS.REGTEST_SEGWIT, address: regtestSegwit(testPublicKey), type: 'segwit' },
+  { format: FORMATS.REGTEST_TAPROOT, address: regtestTaproot(testPublicKey), type: 'taproot' },
 ]
 
 const fixtures = rawFixtures.filter((fixture, i): fixture is { format: Format; address: string; type: AddressType } => {
-  if (!fixture.address) {
-    throw new Error(`Invalid generated address for ${fixture.format} at index ${i}`)
+  if (fixture.address == null || fixture.address === '') {
+    throw new Error(`Invalid generated address for ${fixture.format.kind} v${fixture.format.version} at index ${i}`)
   }
   return true
 })

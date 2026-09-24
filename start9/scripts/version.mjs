@@ -29,7 +29,12 @@ Examples:
 `)
 }
 
+/** @param {unknown} version */
 function parseVersion(version) {
+  if (typeof version !== 'string') {
+    throw new Error('StartOS version must be a string.')
+  }
+
   const match = VERSION_RE.exec(version)
   if (!match) {
     throw new Error(`Invalid StartOS version "${version}". Expected major.minor.patch:revision, like 0.1.1:0.`)
@@ -43,6 +48,7 @@ function parseVersion(version) {
   }
 }
 
+/** @param {ReturnType<typeof parseVersion>} version */
 function formatVersion(version) {
   return `${version.major}.${version.minor}.${version.patch}:${version.revision}`
 }
@@ -64,14 +70,18 @@ function readIndexSource() {
 function readCurrentExportName() {
   const source = readIndexSource()
   const match = /current:\s*(v\d+_\d+_\d+_\d+)/.exec(source)
-  if (!match) throw new Error(`Could not find current version in ${indexPath}.`)
+  if (!match) {
+    throw new Error(`Could not find current version in ${indexPath}.`)
+  }
   return match[1]
 }
 
 function readOtherExportNames() {
   const source = readIndexSource()
   const match = /other:\s*\[([^\]]*)\]/m.exec(source)
-  if (!match) return []
+  if (!match) {
+    return []
+  }
   return match[1]
     .split(',')
     .map((part) => part.trim())
@@ -91,7 +101,9 @@ function readVersionForExport(exportName) {
   }
 
   const match = /version:\s*'([^']+)'/.exec(source)
-  if (!match) throw new Error(`Could not find version string in ${versionPath}.`)
+  if (!match) {
+    throw new Error(`Could not find version string in ${versionPath}.`)
+  }
   return match[1]
 }
 
@@ -128,8 +140,12 @@ function compareVersions(left, right) {
   const a = parseVersion(left)
   const b = parseVersion(right)
   for (const key of ['major', 'minor', 'patch', 'revision']) {
-    if (a[key] > b[key]) return 1
-    if (a[key] < b[key]) return -1
+    if (a[key] > b[key]) {
+      return 1
+    }
+    if (a[key] < b[key]) {
+      return -1
+    }
   }
   return 0
 }
@@ -210,17 +226,24 @@ function validateVersionGraph() {
   return versions[0]
 }
 
+/** @param {string[]} args */
 function parseNotes(args) {
   const index = args.indexOf('--notes')
-  if (index === -1) return 'Maintenance release.'
+  if (index === -1) {
+    return 'Maintenance release.'
+  }
   const notes = args[index + 1]
-  if (!notes) throw new Error('--notes requires a value.')
+  if (notes == null || notes === '') {
+    throw new Error('--notes requires a value.')
+  }
   return notes
 }
 
 function writeVersionFile(exportName, version, releaseNotes) {
   const versionPath = join(versionsDir, `${exportName}.ts`)
-  if (existsSync(versionPath)) return
+  if (existsSync(versionPath)) {
+    return
+  }
 
   writeFileSync(
     versionPath,
@@ -235,6 +258,10 @@ export const ${exportName} = VersionInfo.of({
   )
 }
 
+/**
+ * @param {string} currentExportName
+ * @param {string[]} otherExportNames
+ */
 function writeIndex(currentExportName, otherExportNames) {
   const allImports = [currentExportName, ...otherExportNames]
   const imports = allImports.map((name) => `import { ${name} } from './${name}'`).join('\n')
@@ -282,9 +309,9 @@ function setVersion(targetVersion, releaseNotes) {
 const [command, value, ...rest] = process.argv.slice(2)
 
 try {
-  if (!command || command === '--help' || command === '-h') {
+  if (command == null || command === '' || command === '--help' || command === '-h') {
     usage()
-    process.exit(command ? 0 : 1)
+    process.exit(command != null && command !== '' ? 0 : 1)
   }
 
   if (command === 'get') {
@@ -304,7 +331,9 @@ try {
   }
 
   if (command === 'assert-tag') {
-    if (!value) throw new Error('assert-tag requires a tag like v0.2.1_0.')
+    if (value == null || value === '') {
+      throw new Error('assert-tag requires a tag like v0.2.1_0.')
+    }
     const expectedTag = tagNameForVersion(validateVersionGraph())
     if (value !== expectedTag) {
       throw new Error(`Tag ${value} does not match StartOS version ${currentVersion()}; expected ${expectedTag}.`)
@@ -314,13 +343,17 @@ try {
   }
 
   if (command === 'bump') {
-    if (!value) throw new Error('bump requires major, minor, patch, or revision.')
+    if (value == null || value === '') {
+      throw new Error('bump requires major, minor, patch, or revision.')
+    }
     setVersion(bumpVersion(currentVersion(), value), parseNotes(rest))
     process.exit(0)
   }
 
   if (command === 'set') {
-    if (!value) throw new Error('set requires a version like 0.1.1:0.')
+    if (value == null || value === '') {
+      throw new Error('set requires a version like 0.1.1:0.')
+    }
     parseVersion(value)
     setVersion(value, parseNotes(rest))
     process.exit(0)

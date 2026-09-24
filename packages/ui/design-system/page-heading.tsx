@@ -11,10 +11,12 @@ export function PageHeading({
       <Text as="h1" textStyle="text/2xl" fontWeight="medium" color="text.primary" overflowWrap="anywhere">
         {title}
       </Text>
-      {description && (
+      {Boolean(description) ? (
         <Text textStyle="text/md" color="text.secondary" mt={1} maxW="65ch">
           {description}
         </Text>
+      ) : (
+        description
       )}
     </Box>
   )

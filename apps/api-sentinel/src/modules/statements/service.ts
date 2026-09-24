@@ -1,12 +1,14 @@
 import { Account } from '@hoseki/packages/bitcoin/account'
 import type { ElectrumProvider } from '@hoseki/packages/bitcoin/onchain/electrum_provider'
 import type { TransactionEntry } from '@hoseki/packages/bitcoin/onchain/types'
-import { Err, Ok, asyncFn } from '@patina/core'
-import type { Result } from '@patina/core'
+import { parseUnknown } from '@hoseki/packages/result'
+import { Err, Ok, asyncFn } from '@hoseki/packages/result'
+import type { Result } from '@hoseki/packages/result'
 import type Database from 'better-sqlite3'
 import Decimal from 'decimal.js'
 import { nanoid } from 'nanoid'
 import type { Logger } from 'pino'
+import { z } from 'zod'
 import type { ExchangeService } from '../exchange/service'
 import type { DailyRates } from '../price/daily_rates'
 import type { DailyRatesService } from '../price/daily_rates'
@@ -31,7 +33,7 @@ export interface StatementDto {
 
 export interface StatementRow {
   id: string
-  status: string
+  status: StatementDto['status']
   timezone: string
   opening_date: string
   closing_date: string
@@ -61,18 +63,27 @@ export interface GenerateStatementInput {
   address?: string | null
 }
 
-type SerializedAggregatedTransaction = Omit<AggregatedTransaction, 'balanceChange' | 'transactedAt'> & {
-  balanceChange: string
-  transactedAt: string
-}
+const SerializedAggregatedTransactionSchema = z
+  .object({
+    address: z.string(),
+    hash: z.string(),
+    balanceChange: z.string(),
+    block: z.number().nullable(),
+    transactedAt: z.string(),
+    confirmed: z.boolean(),
+    accountName: z.string(),
+  })
+  .passthrough()
+type SerializedAggregatedTransaction = z.infer<typeof SerializedAggregatedTransactionSchema>
 
-interface SerializedDailyRate {
-  timestamp: string
-  open: string
-  high: string
-  low: string
-  close: string
-}
+const SerializedDailyRateSchema = z.object({
+  timestamp: z.string(),
+  open: z.string(),
+  high: z.string(),
+  low: z.string(),
+  close: z.string(),
+})
+type SerializedDailyRate = z.infer<typeof SerializedDailyRateSchema>
 
 const MAX_STATEMENT_RANGE_YEARS = 2
 const MAX_STATEMENT_RANGE_DAYS = MAX_STATEMENT_RANGE_YEARS * 366
@@ -152,6 +163,7 @@ export class StatementService {
     // Serialize bigint values in transactionMap to strings for JSON storage
     const serializedMap: Record<string, SerializedAggregatedTransaction[]> = {}
     for (const [key, txs] of Object.entries(transactionMap)) {
+      // oxlint-disable-next-line oxc/no-map-spread -- Preserve caller-owned transactions while converting values for storage.
       serializedMap[key] = txs.map((tx) => ({
         ...tx,
         balanceChange: tx.balanceChange.toString(),
@@ -186,8 +198,10 @@ export class StatementService {
 
   /** Find a statement by ID and return its DTO. */
   public findById(id: string): StatementDto | null {
-    const row = this.db.prepare('SELECT * FROM statements WHERE id = ?').get(id) as StatementRow | undefined
-    if (!row) return null
+    const row = this.db.prepare<unknown[], StatementRow>('SELECT * FROM statements WHERE id = ?').get(id)
+    if (!row) {
+      return null
+    }
     return this.rowToDto(row)
   }
 
@@ -195,9 +209,12 @@ export class StatementService {
   public loadCompleted(
     id: string,
   ): { row: StatementRow; transactionMap: Record<string, AggregatedTransaction[]>; dailyRates: DailyRates } | null {
-    const row = this.db.prepare('SELECT * FROM statements WHERE id = ? AND status = ?').get(id, 'completed') as
-      CompletedStatementRow | undefined
-    if (!row) return null
+    const row = this.db
+      .prepare<unknown[], CompletedStatementRow>('SELECT * FROM statements WHERE id = ? AND status = ?')
+      .get(id, 'completed')
+    if (!row) {
+      return null
+    }
 
     return {
       row,
@@ -208,7 +225,7 @@ export class StatementService {
 
   /** List all statements as DTOs. */
   public list(): StatementDto[] {
-    const rows = this.db.prepare('SELECT * FROM statements ORDER BY created_at DESC').all() as StatementRow[]
+    const rows = this.db.prepare<unknown[], StatementRow>('SELECT * FROM statements ORDER BY created_at DESC').all()
     return rows.map((row) => this.rowToDto(row))
   }
 
@@ -218,7 +235,9 @@ export class StatementService {
       input: GenerateStatementInput,
     ): Promise<Result<{ transactionMap: Record<string, AggregatedTransaction[]>; dailyRates: DailyRates }, Error>> => {
       const validation = validateStatementInput(input)
-      if (validation.isErr()) return Err(validation.unwrapErr())
+      if (validation.isErr()) {
+        return Err(validation.unwrapErr())
+      }
 
       this.logger.info(
         {
@@ -271,7 +290,7 @@ export class StatementService {
           const activeAccount = this.db
             .prepare('SELECT 1 AS one FROM accounts WHERE id = ? AND deleted_at IS NULL')
             .get(row.id)
-          if (!activeAccount) {
+          if (activeAccount === undefined) {
             return Err(new Error(`Account "${row.display_name}" was archived while generating the statement`))
           }
 
@@ -366,8 +385,11 @@ export class StatementService {
               const noonUtc = new Date(dayKey + 'T12:00:00.000Z')
               const existing = dailyAgg.get(dayKey) ?? { netIn: 0n, netOut: 0n, date: noonUtc }
               const sats = BigInt(Math.round(parseFloat(tx.amountBtc) * 1e8))
-              if (sats > 0n) existing.netIn += sats
-              else if (sats < 0n) existing.netOut += sats
+              if (sats > 0n) {
+                existing.netIn += sats
+              } else if (sats < 0n) {
+                existing.netOut += sats
+              }
               dailyAgg.set(dayKey, existing)
             }
 
@@ -462,34 +484,47 @@ export class StatementService {
   private getAccountRows(
     claimIds: string[],
   ): Array<{ id: string; descriptor: string; display_name: string; network: string; status: string }> {
-    if (claimIds.length === 0) return []
+    if (claimIds.length === 0) {
+      return []
+    }
     const placeholders = claimIds.map(() => '?').join(', ')
     return this.db
-      .prepare(
+      .prepare<
+        unknown[],
+        {
+          id: string
+          descriptor: string
+          display_name: string
+          network: string
+          status: string
+        }
+      >(
         `SELECT id, descriptor, display_name, network, status
          FROM accounts
          WHERE id IN (${placeholders}) AND deleted_at IS NULL`,
       )
-      .all(...claimIds) as Array<{
-      id: string
-      descriptor: string
-      display_name: string
-      network: string
-      status: string
-    }>
+      .all(...claimIds)
   }
 
   private getExchangeSnapshots(accountId: string): Array<{ balance_sats: string; timestamp: string }> {
     return this.db
-      .prepare(
+      .prepare<unknown[], { balance_sats: string; timestamp: string }>(
         'SELECT balance_sats, timestamp FROM exchange_balance_snapshots WHERE account_id = ? ORDER BY timestamp ASC',
       )
-      .all(accountId) as Array<{ balance_sats: string; timestamp: string }>
+      .all(accountId)
   }
 
   private getNextCounter(): number {
-    const result = this.db.prepare('SELECT COALESCE(MAX(counter), 0) + 1 AS next FROM statements').get() as {
-      next: number
+    const result = this.db
+      .prepare<
+        unknown[],
+        {
+          next: number
+        }
+      >('SELECT COALESCE(MAX(counter), 0) + 1 AS next FROM statements')
+      .get()
+    if (!result) {
+      throw new Error('Statement counter query returned no row')
     }
     return result.next
   }
@@ -503,7 +538,7 @@ export class StatementService {
       timezone: row.timezone,
       openingDate: new Date(row.opening_date),
       closingDate: new Date(row.closing_date),
-      status: row.status as 'pending' | 'completed' | 'failed',
+      status: row.status,
       user: { name: row.user_name, email: null },
       integrator: null,
       userId: 'local',
@@ -511,9 +546,13 @@ export class StatementService {
   }
 
   private deserializeTransactionMap(json: string): Record<string, AggregatedTransaction[]> {
-    const raw = JSON.parse(json) as Record<string, SerializedAggregatedTransaction[]>
+    const raw = parseUnknown(
+      z.record(z.array(SerializedAggregatedTransactionSchema)),
+      JSON.parse(json) as unknown,
+    ).expect('Stored statement transactions are invalid')
     const result: Record<string, AggregatedTransaction[]> = {}
     for (const [key, txs] of Object.entries(raw)) {
+      // oxlint-disable-next-line oxc/no-map-spread -- Preserve additional stored fields in a new object with restored value types.
       result[key] = txs.map((tx) => ({
         ...tx,
         balanceChange: BigInt(tx.balanceChange),
@@ -524,7 +563,10 @@ export class StatementService {
   }
 
   private deserializeDailyRates(json: string): DailyRates {
-    const raw = JSON.parse(json) as { rates: Record<string, SerializedDailyRate>; source: 'mempool' }
+    const raw = parseUnknown(
+      z.object({ rates: z.record(SerializedDailyRateSchema), source: z.literal('mempool') }),
+      JSON.parse(json) as unknown,
+    ).expect('Stored statement rates are invalid')
     const rates: DailyRates['rates'] = {}
     for (const [key, rate] of Object.entries(raw.rates)) {
       rates[key] = {
@@ -560,7 +602,9 @@ function calculateAccountTransactions(
   const transactions: AggregatedTransaction[] = []
 
   for (const groupedTransactions of grouped.values()) {
-    if (groupedTransactions.length === 0) continue
+    if (groupedTransactions.length === 0) {
+      continue
+    }
 
     let sum = 0n
     for (const tx of groupedTransactions) {
@@ -568,7 +612,9 @@ function calculateAccountTransactions(
     }
 
     const firstTx = groupedTransactions[0]
-    if (!firstTx) continue
+    if (!firstTx) {
+      continue
+    }
 
     transactions.push({
       address: firstTx.address.toString(),
@@ -589,7 +635,9 @@ function sortTxs<T extends { hash: string; transactedAt: Date }>(txs: T[]): T[] 
   return txs.sort((a, b) => {
     const dateA = a.transactedAt.getTime()
     const dateB = b.transactedAt.getTime()
-    if (dateA !== dateB) return dateA - dateB
+    if (dateA !== dateB) {
+      return dateA - dateB
+    }
     return a.hash.localeCompare(b.hash)
   })
 }

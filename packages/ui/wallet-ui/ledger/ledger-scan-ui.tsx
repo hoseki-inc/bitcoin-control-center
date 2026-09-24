@@ -29,7 +29,7 @@ export function LedgerScanUI({
   const [selectedWallet, setSelectedWallet] = useState<HardwareWallet | null>(null)
 
   useEffect(() => {
-    if (walletsQuery.data?.length === 1 && walletsQuery.data[0] && !selectedWallet) {
+    if (walletsQuery.data.length === 1 && walletsQuery.data[0] && !selectedWallet) {
       setSelectedWallet(walletsQuery.data[0])
     }
   }, [walletsQuery.data, selectedWallet, setSelectedWallet])
@@ -37,20 +37,26 @@ export function LedgerScanUI({
   return (
     <>
       {walletsQuery.error && (
-        <HardwareWalletError error={walletsQuery.error} mt={4} onRetry={() => window.location.reload()} />
+        <HardwareWalletError
+          error={walletsQuery.error}
+          mt={4}
+          onRetry={() => {
+            window.location.reload()
+          }}
+        />
       )}
 
       {deviceModel && <FloatingLedgerImage modelName={getLedgerModel(deviceModel.id) ?? 'Nano S Plus'} />}
 
       {walletsQuery.isLoading && <ScanningInProgress />}
 
-      {walletsQuery.data && walletsQuery.data.length === 1 && walletsQuery.data[0] && (
+      {walletsQuery.data.length === 1 && walletsQuery.data[0] && (
         <SingleAccount wallet={walletsQuery.data[0]} setWallet={setSelectedWallet} />
       )}
-      {walletsQuery.data && walletsQuery.data.length > 1 && (
+      {walletsQuery.data.length > 1 && (
         <AccountsList wallets={walletsQuery.data} selectedWallet={selectedWallet} setWallet={setSelectedWallet} />
       )}
-      {walletsQuery.data?.length === 0 && !walletsQuery.isLoading && !walletsQuery.error && (
+      {walletsQuery.data.length === 0 && !walletsQuery.isLoading && !walletsQuery.error && (
         <Alert status="warning" title="No wallets found" />
       )}
 
@@ -69,8 +75,10 @@ export function LedgerScanUI({
         rightButton={
           !selectedWallet ? null : (
             <Button
-              onClick={() => onContinue(selectedWallet, deviceModel?.id ?? 'unknown')}
-              isDisabled={!selectedWallet}
+              onClick={() => {
+                onContinue(selectedWallet, deviceModel?.id ?? 'unknown')
+              }}
+              isDisabled={false}
               isLoading={isLoadingOnContinue}
             >
               Yes, Continue

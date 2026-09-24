@@ -15,8 +15,12 @@ import { ConnectionsWidget, HoldingsWidget, PriceWidget, VerificationWidget } fr
 
 export function greetingFor(date: Date): string {
   const hour = date.getHours()
-  if (hour < 12) return 'Good morning'
-  if (hour < 18) return 'Good afternoon'
+  if (hour < 12) {
+    return 'Good morning'
+  }
+  if (hour < 18) {
+    return 'Good afternoon'
+  }
   return 'Good evening'
 }
 
@@ -28,7 +32,7 @@ export function Desktop({ covered, onOpenSearch }: { covered: boolean; onOpenSea
   const accounts = useAccounts()
   const logo = useColorModeValue('/hoseki-logo.svg', '/hoseki-logo-light.svg')
   const firstName = typeof name === 'string' ? name.trim().split(/\s+/)[0] : ''
-  const greeting = `${greetingFor(new Date())}${firstName ? `, ${firstName}` : ''}.`
+  const greeting = `${greetingFor(new Date())}${firstName !== undefined && firstName !== '' ? `, ${firstName}` : ''}.`
   const { preference, setPreference } = useAppearance()
   const { hidden, toggle } = usePrivacy()
   const { open, menu } = useContextMenu('Desktop')
@@ -43,18 +47,48 @@ export function Desktop({ covered, onOpenSearch }: { covered: boolean; onOpenSea
     !onboarding.isError &&
     onboarding.data === null
   useEffect(() => {
-    if (firstRun && !covered) navigate('/getting-started', { replace: true })
+    if (firstRun && !covered) {
+      void navigate('/getting-started', { replace: true })
+    }
   }, [firstRun, covered, navigate])
 
   const openDesktopMenu = (event: MouseEvent<HTMLElement>): void => {
     const anchor = anchorFromEvent(event)
     open(event, [
-      { label: 'Add account', onSelect: () => navigate('/accounts/add') },
-      { label: 'Change wallpaper…', onSelect: () => setWallpaperAnchor(anchor) },
+      {
+        label: 'Add account',
+        onSelect: () => {
+          void navigate('/accounts/add')
+        },
+      },
+      {
+        label: 'Change wallpaper…',
+        onSelect: () => {
+          setWallpaperAnchor(anchor)
+        },
+      },
       { divider: true },
-      { label: 'Light', checked: preference === 'light', onSelect: () => setPreference('light') },
-      { label: 'Dark', checked: preference === 'dark', onSelect: () => setPreference('dark') },
-      { label: 'Match system', checked: preference === 'system', onSelect: () => setPreference('system') },
+      {
+        label: 'Light',
+        checked: preference === 'light',
+        onSelect: () => {
+          setPreference('light')
+        },
+      },
+      {
+        label: 'Dark',
+        checked: preference === 'dark',
+        onSelect: () => {
+          setPreference('dark')
+        },
+      },
+      {
+        label: 'Match system',
+        checked: preference === 'system',
+        onSelect: () => {
+          setPreference('system')
+        },
+      },
       { divider: true },
       { label: hidden ? 'Show balances' : 'Hide balances', onSelect: toggle },
     ])
@@ -114,7 +148,12 @@ export function Desktop({ covered, onOpenSearch }: { covered: boolean; onOpenSea
       <SearchPill onOpen={onOpenSearch} />
       {menu}
       {wallpaperAnchor !== null && (
-        <WallpaperPicker anchor={wallpaperAnchor} onClose={() => setWallpaperAnchor(null)} />
+        <WallpaperPicker
+          anchor={wallpaperAnchor}
+          onClose={() => {
+            setWallpaperAnchor(null)
+          }}
+        />
       )}
     </Box>
   )

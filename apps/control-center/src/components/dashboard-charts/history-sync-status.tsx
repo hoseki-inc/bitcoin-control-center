@@ -18,7 +18,16 @@ export function HistorySyncStatus({
 
   return (
     <Tooltip label={label} isDisabled={!label} openDelay={250} hasArrow>
-      <Box role="status" aria-label={label} position="relative" flexShrink={0} ml={compact ? 0 : 0.5} w={size} h={size}>
+      <Box
+        as="output"
+        display="block"
+        aria-label={label}
+        position="relative"
+        flexShrink={0}
+        ml={compact ? 0 : 0.5}
+        w={size}
+        h={size}
+      >
         <Box position="absolute" inset={0} opacity={syncing ? 1 : 0} transition={transition} aria-hidden="true">
           <Spinner
             label=""

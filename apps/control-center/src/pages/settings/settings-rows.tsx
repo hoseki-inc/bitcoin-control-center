@@ -1,6 +1,6 @@
 import { Box, Flex, Stack, Text } from '@chakra-ui/react'
-import { type LucideIcon } from 'lucide-react'
-import { type ReactNode } from 'react'
+import type { LucideIcon } from 'lucide-react'
+import type { ReactNode } from 'react'
 
 /**
  * Icon tile tones run from the Hoseki yellow down through amber, so a column of rows

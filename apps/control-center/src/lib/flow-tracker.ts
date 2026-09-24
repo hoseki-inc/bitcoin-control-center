@@ -1,8 +1,10 @@
+import { Result, parseUnknown } from '@hoseki/packages/result'
+import { z } from 'zod'
+
 const FLOW_SOURCE_KEY = 'flowSource'
 
-type FlowSource = {
-  type: 'statement'
-}
+const FlowSourceSchema = z.object({ type: z.literal('statement') })
+type FlowSource = z.infer<typeof FlowSourceSchema>
 
 function setFlowSource(source: FlowSource): void {
   localStorage.setItem(FLOW_SOURCE_KEY, JSON.stringify(source))
@@ -10,7 +12,12 @@ function setFlowSource(source: FlowSource): void {
 
 export function getFlowSource(): FlowSource | null {
   const source = localStorage.getItem(FLOW_SOURCE_KEY)
-  return source ? JSON.parse(source) : null
+  if (source == null || source === '') {
+    return null
+  }
+  return Result.fromThrowable((): unknown => JSON.parse(source))
+    .andThen((parsed) => parseUnknown(FlowSourceSchema, parsed))
+    .unwrapOr(null)
 }
 
 export function clearFlowSource(): void {

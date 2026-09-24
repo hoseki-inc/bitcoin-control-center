@@ -45,7 +45,9 @@ export function GlassLabPage(): JSX.Element {
                   as="button"
                   key={option.id}
                   type="button"
-                  onClick={() => setWallpaper(option.id)}
+                  onClick={() => {
+                    setWallpaper(option.id)
+                  }}
                   aria-pressed={option.id === preset.id}
                   aria-label={option.name}
                   borderRadius="12px"

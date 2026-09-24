@@ -50,7 +50,10 @@ export function BitcoinPriceChart(): JSX.Element {
           </Flex>
         </Box>
         <Flex
-          role="group"
+          as="fieldset"
+          border="none"
+          m={0}
+          minW={0}
           aria-label="Bitcoin price time range"
           gap={1}
           flexWrap="wrap"
@@ -69,7 +72,9 @@ export function BitcoinPriceChart(): JSX.Element {
               aria-pressed={range.days === option.days}
               bg={range.days === option.days ? 'surface.emphasis' : 'transparent'}
               color={range.days === option.days ? 'text.primary' : 'text.secondary'}
-              onClick={() => setRange(option)}
+              onClick={() => {
+                setRange(option)
+              }}
             >
               {option.label}
             </Button>
@@ -79,6 +84,7 @@ export function BitcoinPriceChart(): JSX.Element {
       <Box
         h={{ base: '210px', md: '240px' }}
         mt={4}
+        // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- A drawn chart has no native element; role=img carries its summary.
         role="img"
         aria-label={
           latest && first
@@ -109,7 +115,7 @@ export function BitcoinPriceChart(): JSX.Element {
         gap={3}
         flexWrap="wrap"
       >
-        <Text textStyle="text/xs" color="text.secondary" role="status">
+        <Text as="output" display="block" textStyle="text/xs" color="text.secondary">
           {latest
             ? `${range.days === 1 ? 'Intraday' : range.days <= 30 ? 'Hourly' : 'Daily'} prices from CoinGecko · Updated ${new Date(latest.time * 1000).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`
             : query.isLoading

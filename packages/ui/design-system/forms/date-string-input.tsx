@@ -30,29 +30,38 @@ export type DateStringInputProps = Omit<InputProps, 'type' | 'value' | 'onChange
 
 /** Date-only values stay in local calendar time and never pass through UTC. */
 function parseDate(value: string): Date | undefined {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return undefined
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return undefined
+  }
   const date = parseISO(value)
   return isValid(date) && format(date, 'yyyy-MM-dd') === value ? date : undefined
+}
+
+/** Chakra types the form control context as always present, but it is undefined outside a FormControl. */
+function useOptionalFormControl(): ReturnType<typeof useFormControlContext> | undefined {
+  return useFormControlContext()
 }
 
 export function DateStringInput({ value, onChange, min, max, ...props }: DateStringInputProps): JSX.Element {
   const { isOpen, onOpen, onClose } = useDisclosure()
   const calendarRef = useRef<HTMLDivElement>(null)
-  const form = useFormControlContext()
-  const isDisabled = props.isDisabled ?? form?.isDisabled
-  const isReadOnly = props.isReadOnly ?? form?.isReadOnly
-  const isRequired = props.isRequired ?? form?.isRequired
+  const form = useOptionalFormControl()
+  const isDisabled = props.isDisabled ?? form?.isDisabled ?? false
+  const isReadOnly = props.isReadOnly ?? form?.isReadOnly ?? false
+  const isRequired = props.isRequired ?? form?.isRequired ?? false
   const selected = parseDate(value)
-  const requestedMin = min ? parseDate(min) : undefined
+  const requestedMin = min !== undefined && min !== '' ? parseDate(min) : undefined
   const earliestDay = new Date(2009, 0, 1)
   const firstDay = requestedMin && requestedMin > earliestDay ? requestedMin : earliestDay
-  const lastDay = max ? parseDate(max) : undefined
+  const lastDay = max !== undefined && max !== '' ? parseDate(max) : undefined
   const today = startOfDay(new Date())
   const [draft, setDraft] = useState(value)
   const [month, setMonth] = useState(selected ?? today)
-  useEffect(() => setDraft(value), [value])
+  useEffect(() => {
+    setDraft(value)
+  }, [value])
 
-  const allowed = (date: Date): boolean => (!firstDay || date >= firstDay) && (!lastDay || date <= lastDay)
+  const allowed = (date: Date): boolean => date >= firstDay && (!lastDay || date <= lastDay)
   const select = (date: Date | undefined): void => {
     const next = date ? format(date, 'yyyy-MM-dd') : ''
     setDraft(next)
@@ -72,7 +81,7 @@ export function DateStringInput({ value, onChange, min, max, ...props }: DateStr
     <Popover
       isOpen={isOpen}
       onOpen={() => {
-        setMonth(selected ?? (allowed(today) ? today : (firstDay ?? lastDay ?? today)))
+        setMonth(selected ?? (allowed(today) ? today : firstDay))
         onOpen()
       }}
       onClose={onClose}
@@ -90,14 +99,18 @@ export function DateStringInput({ value, onChange, min, max, ...props }: DateStr
             placeholder={props.placeholder ?? 'YYYY-MM-DD'}
             autoComplete="off"
             pr={12}
-            onChange={(event) => setDraft(event.target.value)}
+            onChange={(event) => {
+              setDraft(event.target.value)
+            }}
             onBlur={(event) => {
               commitDraft()
               props.onBlur?.(event)
             }}
             onKeyDown={(event) => {
               props.onKeyDown?.(event)
-              if (event.defaultPrevented) return
+              if (event.defaultPrevented) {
+                return
+              }
               if (event.key === 'Enter') {
                 event.preventDefault()
                 commitDraft()
@@ -125,10 +138,14 @@ export function DateStringInput({ value, onChange, min, max, ...props }: DateStr
       <PopoverContent
         ref={calendarRef}
         onKeyDown={(event) => {
-          if (event.key === 'Escape') event.stopPropagation()
+          if (event.key === 'Escape') {
+            event.stopPropagation()
+          }
         }}
         onAnimationComplete={() => {
-          if (isOpen) calendarRef.current?.querySelector<HTMLButtonElement>('.rdp-day_button[tabindex="0"]')?.focus()
+          if (isOpen) {
+            calendarRef.current?.querySelector<HTMLButtonElement>('.rdp-day_button[tabindex="0"]')?.focus()
+          }
         }}
         aria-label="Choose date"
         w="max-content"
@@ -194,15 +211,23 @@ export function DateStringInput({ value, onChange, min, max, ...props }: DateStr
               endMonth={lastDay ?? new Date(Math.max(today.getFullYear() + 10, selected?.getFullYear() ?? 0), 11)}
               captionLayout="dropdown-years"
               navLayout="after"
-              disabled={[...(firstDay ? [{ before: firstDay }] : []), ...(lastDay ? [{ after: lastDay }] : [])]}
+              disabled={[{ before: firstDay }, ...(lastDay ? [{ after: lastDay }] : [])]}
               weekStartsOn={1}
               showOutsideDays
               fixedWeeks
+              // oxlint-disable-next-line jsx-a11y/no-autofocus -- DayPicker's own prop: it moves focus to the selected day as the calendar opens.
               autoFocus
             />
           </Box>
           <Flex borderTop="1px solid" borderColor="border.subtle" mt={2} pt={2} justify="space-between" gap={3}>
-            <Button size="sm" variant="ghost" onClick={() => select(today)} isDisabled={!allowed(today)}>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                select(today)
+              }}
+              isDisabled={!allowed(today)}
+            >
               Today
             </Button>
             {!isRequired && (
@@ -210,7 +235,9 @@ export function DateStringInput({ value, onChange, min, max, ...props }: DateStr
                 size="sm"
                 variant="ghost"
                 color="text.secondary"
-                onClick={() => select(undefined)}
+                onClick={() => {
+                  select(undefined)
+                }}
                 isDisabled={!value}
               >
                 Clear

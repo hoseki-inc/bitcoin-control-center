@@ -67,7 +67,7 @@ it('requires confirmation and allows cancellation before removing an account', a
     await act(async () => button?.click())
   }
   try {
-    await act(async () =>
+    await act(async () => {
       root.render(
         createElement(
           ChakraProvider,
@@ -86,8 +86,8 @@ it('requires confirmation and allows cancellation before removing an account', a
             ),
           ),
         ),
-      ),
-    )
+      )
+    })
     await click('Remove Account')
     expect(document.querySelector('[role="alertdialog"]')?.textContent).toContain('Test holding')
     expect(mocks.remove).not.toHaveBeenCalled()
@@ -97,7 +97,9 @@ it('requires confirmation and allows cancellation before removing an account', a
     await click('Remove')
     expect(mocks.remove).toHaveBeenCalledExactlyOnceWith({ accountId: 'test' })
   } finally {
-    await act(async () => root.unmount())
+    await act(async () => {
+      root.unmount()
+    })
     container.remove()
   }
 })

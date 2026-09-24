@@ -1,4 +1,4 @@
-import { type Opaque } from 'type-fest'
+import type { Opaque } from 'type-fest'
 import { Err, Panic, Result } from '../result'
 import {
   type MultiSigAccountScriptType,
@@ -10,7 +10,7 @@ import * as descriptor from './descriptor_utils'
 import { bitcoin } from './lib/bitcoin'
 import { Network } from './network'
 import { Wallet } from './wallet'
-import { type Xpub } from './xpub'
+import type { Xpub } from './xpub'
 
 export type CheckedAccountDescriptor = CheckedSinglesigAccountDescriptor | CheckedMultisigAccountDescriptor
 
@@ -79,6 +79,7 @@ export class SingleSigAccount {
         desc = descriptor.tr(desc)
         break
     }
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- Brand the checksummed descriptor built from the typed singlesig account.
     return descriptor.checksum(desc).expect('checksum should be valid') as CheckedSinglesigAccountDescriptor
   }
 
@@ -140,7 +141,7 @@ export class SingleSigAccount {
     return this.toString()
   }
 
-  [Symbol.for('nodejs.util.inspect.custom')](): string {
+  public [Symbol.for('nodejs.util.inspect.custom')](): string {
     return this.toString()
   }
 }
@@ -216,6 +217,7 @@ export class MultiSigAccount {
         desc = descriptor.wsh(desc)
         break
     }
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- Brand the checksummed descriptor built from the typed multisig account.
     return descriptor.checksum(desc).expect('checksum should be valid') as CheckedMultisigAccountDescriptor
   }
 
@@ -254,7 +256,7 @@ export class MultiSigAccount {
       }
     })
       .andThen((address) => {
-        if (!address) {
+        if (address == null || address === '') {
           return Err(new Error('Invalid address encoding'))
         }
         return Address.fromString(address)
@@ -307,7 +309,7 @@ export class MultiSigAccount {
     return this.toString()
   }
 
-  [Symbol.for('nodejs.util.inspect.custom')](): string {
+  public [Symbol.for('nodejs.util.inspect.custom')](): string {
     return this.toString()
   }
 }

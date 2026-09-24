@@ -101,7 +101,7 @@ export function getColdcardAnimation(model: ColdcardModel, animation: coldcardAn
         case 'coldcardSignTextFile':
           return 'coldcardSignTextFile_M3'
         default:
-          throw new Error(`Invalid animation "${animation}" for model "${model}"`)
+          throw new Error(`Invalid animation "${String(animation)}" for model "${model}"`)
       }
     case 'MK4':
       switch (animation) {
@@ -118,7 +118,7 @@ export function getColdcardAnimation(model: ColdcardModel, animation: coldcardAn
         case 'coldcardSignTextFile':
           return 'coldcardSignTextFile_M4'
         default:
-          throw new Error(`Invalid animation "${animation}" for model "${model}"`)
+          throw new Error(`Invalid animation "${String(animation)}" for model "${model}"`)
       }
     case 'Q':
       switch (animation) {
@@ -135,10 +135,10 @@ export function getColdcardAnimation(model: ColdcardModel, animation: coldcardAn
         case 'coldcardSignTextFile':
           return 'coldcardSignTextFile_Q'
         default:
-          throw new Error(`Invalid animation "${animation}" for model "${model}"`)
+          throw new Error(`Invalid animation "${String(animation)}" for model "${model}"`)
       }
     default:
-      throw new Error(`Invalid animation "${animation}" for model "${model}"`)
+      throw new Error(`Invalid animation "${animation}" for model "${String(model)}"`)
   }
 }
 
@@ -160,7 +160,9 @@ export function WalletAnimation({ animation }: { animation: WalletAnimationType 
     />
   )
   if (!needsLightStage) {
-    if (colorMode !== 'dark') return player
+    if (colorMode !== 'dark') {
+      return player
+    }
     // Without their white backdrop, dark devices (a black Trezor) need a little light
     // behind them to read on dark glass: a soft spotlight rather than a frame.
     return (

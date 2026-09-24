@@ -1,4 +1,4 @@
-import { AsyncResult, Err, Ok, type Result } from '@patina/core'
+import { AsyncResult, Err, Ok, type Result } from '@hoseki/packages/result'
 
 function getErrorMessage(e: unknown): string {
   return e instanceof Error ? e.message : 'Unexpected thrown value'
@@ -28,7 +28,7 @@ export function catchUnwindAsync<T>(fn: () => Promise<T>): AsyncResult<T, Error>
       .then((value) => {
         return Ok(value)
       })
-      .catch((e) => {
+      .catch((e: unknown) => {
         return Err(unknownToError(e))
       }),
   )

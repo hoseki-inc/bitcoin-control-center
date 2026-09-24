@@ -14,10 +14,16 @@ const DARK_VARIANTS: Record<string, string> = {
 const MONOCHROME_RASTER = ['exchanges/robinhood-lockup.png']
 
 export function logoForMode(path: string, mode: 'light' | 'dark'): { src: string; filter?: string } {
-  if (mode === 'light') return { src: path }
+  if (mode === 'light') {
+    return { src: path }
+  }
   // Match on the file's own path so CDN-hosted copies of the same mark are covered too.
   const variant = Object.entries(DARK_VARIANTS).find(([suffix]) => path.endsWith(suffix))
-  if (variant !== undefined) return { src: variant[1] }
-  if (MONOCHROME_RASTER.some((suffix) => path.endsWith(suffix))) return { src: path, filter: 'brightness(0) invert(1)' }
+  if (variant !== undefined) {
+    return { src: variant[1] }
+  }
+  if (MONOCHROME_RASTER.some((suffix) => path.endsWith(suffix))) {
+    return { src: path, filter: 'brightness(0) invert(1)' }
+  }
   return { src: path }
 }

@@ -1,9 +1,9 @@
-import { Box, Flex, Grid, Image, Text } from '@chakra-ui/react'
+import { Box, Link as ChakraLink, Flex, Grid, Image, Text } from '@chakra-ui/react'
 import { getSupportedHardwareWalletLogoPath } from '@hoseki/packages/wallet/logo'
 import { Bitcoin, ChartNoAxesCombined, Check, KeyRound, type LucideIcon, NotebookPen, Plus } from 'lucide-react'
-import { type ReactNode } from 'react'
-import { Link, useNavigate } from 'react-router'
-import { type AccountSummary } from '../hooks/use-accounts'
+import type { ReactNode } from 'react'
+import { Link as RouterLink, useNavigate } from 'react-router'
+import type { AccountSummary } from '../hooks/use-accounts'
 import { useContextMenu } from './context-menu'
 import { Entrance } from './entrance'
 
@@ -49,8 +49,8 @@ function GlyphTile({
       borderRadius="inherit"
       color={glyph}
     >
-      <Icon size={caption ? '40%' : '46%'} strokeWidth={2} aria-hidden />
-      {caption && (
+      <Icon size={caption !== undefined && caption !== '' ? '40%' : '46%'} strokeWidth={2} aria-hidden />
+      {caption !== undefined && caption !== '' && (
         <Text as="span" fontSize="10px" lineHeight="1" fontWeight="semibold" opacity={0.85}>
           {caption}
         </Text>
@@ -79,7 +79,9 @@ export function AccountArtwork({ account }: { account: AccountSummary }): JSX.El
 }
 
 function StatusBadge({ state }: { state: AccountSummary['state'] }): JSX.Element | null {
-  if (state === 'connected' || state === 'manual') return null
+  if (state === 'connected' || state === 'manual') {
+    return null
+  }
   const style =
     state === 'verified'
       ? { bg: 'status.success.solid', label: 'Verified' }
@@ -132,10 +134,10 @@ function IconCell({
   onContextMenu?: (event: React.MouseEvent<HTMLElement>) => void
 }): JSX.Element {
   return (
-    <Box
-      as={Link}
+    <ChakraLink
+      as={RouterLink}
       to={to}
-      role="group"
+      data-group=""
       data-desktop-item
       aria-label={`${label}, ${description}`}
       display="flex"
@@ -146,6 +148,7 @@ function IconCell({
       py={2}
       borderRadius="16px"
       outline="none"
+      _hover={{ textDecoration: 'none' }}
       onContextMenu={onContextMenu}
     >
       <Box
@@ -174,7 +177,7 @@ function IconCell({
       >
         {label}
       </Text>
-    </Box>
+    </ChakraLink>
   )
 }
 
@@ -210,19 +213,43 @@ export function AccountGrid({ accounts }: { accounts: readonly AccountSummary[] 
               description={DESCRIPTIONS[account.state]}
               artwork={<AccountArtwork account={account} />}
               badge={<StatusBadge state={account.state} />}
-              onContextMenu={(event) =>
+              onContextMenu={(event) => {
                 open(event, [
-                  { label: 'Open', onSelect: () => navigate(account.to) },
+                  {
+                    label: 'Open',
+                    onSelect: () => {
+                      void navigate(account.to)
+                    },
+                  },
                   ...(account.state === 'pending'
-                    ? [{ label: 'Verify ownership', onSelect: () => navigate(account.to) }]
+                    ? [
+                        {
+                          label: 'Verify ownership',
+                          onSelect: () => {
+                            void navigate(account.to)
+                          },
+                        },
+                      ]
                     : []),
                   ...(account.state === 'reconnect'
-                    ? [{ label: 'Reconnect', onSelect: () => navigate(account.to) }]
+                    ? [
+                        {
+                          label: 'Reconnect',
+                          onSelect: () => {
+                            void navigate(account.to)
+                          },
+                        },
+                      ]
                     : []),
                   { divider: true as const },
-                  { label: 'Create statement', onSelect: () => navigate('/statements/create') },
+                  {
+                    label: 'Create statement',
+                    onSelect: () => {
+                      void navigate('/statements/create')
+                    },
+                  },
                 ])
-              }
+              }}
             />
           </Entrance>
         ))}

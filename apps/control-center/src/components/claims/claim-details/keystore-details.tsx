@@ -126,7 +126,13 @@ export function KeystoreDetailsMultiSig({
       </Text>
 
       {isRenaming ? (
-        <RenameKeystore keystoreId={keystore.id} defaultName={keystore.label} onCancel={() => setIsRenaming(false)} />
+        <RenameKeystore
+          keystoreId={keystore.id}
+          defaultName={keystore.label}
+          onCancel={() => {
+            setIsRenaming(false)
+          }}
+        />
       ) : (
         <HStack spacing={8} py={2} justifyContent="space-between">
           <Stack spacing={1} maxWidth="50%">
@@ -138,7 +144,12 @@ export function KeystoreDetailsMultiSig({
             </Text>
           </Stack>
           <Box alignSelf="flex-end">
-            <Button variant="outline" onClick={() => setIsRenaming(true)}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsRenaming(true)
+              }}
+            >
               Rename
             </Button>
           </Box>
@@ -194,7 +205,9 @@ function KeystoreXpub({ xpub }: { xpub: Xpub }) {
         variant="ghost"
         aria-label={isMasked ? 'Show extended public key' : 'Hide extended public key'}
         aria-pressed={!isMasked}
-        onClick={() => setIsMasked((prev) => !prev)}
+        onClick={() => {
+          setIsMasked((prev) => !prev)
+        }}
         p={2}
         flexShrink={0}
       >

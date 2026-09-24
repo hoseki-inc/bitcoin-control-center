@@ -1,5 +1,6 @@
 import { useColorMode } from '@chakra-ui/react'
 import { useEffect, useSyncExternalStore } from 'react'
+import { mediaQuery } from '../lib/media-query'
 
 export type AppearancePreference = 'system' | 'light' | 'dark'
 export type ResolvedAppearance = 'light' | 'dark'
@@ -26,7 +27,7 @@ export function readAppearancePreference(): AppearancePreference {
 }
 
 function systemAppearance(): ResolvedAppearance {
-  return typeof window !== 'undefined' && window.matchMedia?.(DARK_QUERY).matches ? 'dark' : 'light'
+  return mediaQuery(DARK_QUERY)?.matches === true ? 'dark' : 'light'
 }
 
 export function resolveAppearance(value: AppearancePreference = readAppearancePreference()): ResolvedAppearance {
@@ -34,14 +35,14 @@ export function resolveAppearance(value: AppearancePreference = readAppearancePr
 }
 
 function subscribe(onChange: () => void): () => void {
-  const media = window.matchMedia?.(DARK_QUERY)
+  const media = mediaQuery(DARK_QUERY)
   window.addEventListener(CHANGE_EVENT, onChange)
   window.addEventListener('storage', onChange)
-  media?.addEventListener?.('change', onChange)
+  media?.addEventListener('change', onChange)
   return () => {
     window.removeEventListener(CHANGE_EVENT, onChange)
     window.removeEventListener('storage', onChange)
-    media?.removeEventListener?.('change', onChange)
+    media?.removeEventListener('change', onChange)
   }
 }
 
@@ -56,7 +57,9 @@ export function useAppearance(): {
   setPreference: (value: AppearancePreference) => void
 } {
   const snapshot = useSyncExternalStore(subscribe, getSnapshot, () => 'system:light')
-  const [storedPreference, resolved] = snapshot.split(':') as [AppearancePreference, ResolvedAppearance]
+  const [storedValue, resolvedValue] = snapshot.split(':')
+  const storedPreference = isPreference(storedValue) ? storedValue : 'system'
+  const resolved: ResolvedAppearance = resolvedValue === 'dark' ? 'dark' : 'light'
   return {
     preference: storedPreference,
     resolved,
@@ -77,7 +80,9 @@ export function AppearanceSync(): null {
   const { resolved } = useAppearance()
   const { colorMode, setColorMode } = useColorMode()
   useEffect(() => {
-    if (colorMode !== resolved) setColorMode(resolved)
+    if (colorMode !== resolved) {
+      setColorMode(resolved)
+    }
   }, [colorMode, resolved, setColorMode])
   useEffect(() => {
     document

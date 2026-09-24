@@ -55,16 +55,20 @@ export function ContextMenu({
 
   // Give focus back to whatever had it (the icon, usually) when the menu closes.
   useEffect(() => {
-    const previous = document.activeElement as HTMLElement | null
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null
     return () => {
-      if (previous?.isConnected === true) previous.focus({ preventScroll: true })
+      if (previous?.isConnected === true) {
+        previous.focus({ preventScroll: true })
+      }
     }
   }, [])
 
   // Keep the menu on screen and focus its first item.
   useEffect(() => {
     const menu = ref.current
-    if (menu === null) return
+    if (menu === null) {
+      return
+    }
     const { width, height } = menu.getBoundingClientRect()
     setPosition({
       x: Math.min(anchor.x, window.innerWidth - width - EDGE),
@@ -75,10 +79,14 @@ export function ContextMenu({
 
   useEffect(() => {
     const onPointerDown = (event: PointerEvent): void => {
-      if (!ref.current?.contains(event.target as Node)) onClose()
+      if (!(event.target instanceof Node && ref.current?.contains(event.target) === true)) {
+        onClose()
+      }
     }
     const onEscape = (event: globalThis.KeyboardEvent): void => {
-      if (event.key !== 'Escape') return
+      if (event.key !== 'Escape') {
+        return
+      }
       event.preventDefault()
       onClose()
     }
@@ -96,7 +104,7 @@ export function ContextMenu({
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
     const items = [...event.currentTarget.querySelectorAll<HTMLElement>('[role^="menuitem"]')]
-    const index = items.indexOf(document.activeElement as HTMLElement)
+    const index = items.findIndex((item) => item === document.activeElement)
     const move = event.key === 'ArrowDown' ? 1 : event.key === 'ArrowUp' ? -1 : 0
     if (move !== 0) {
       event.preventDefault()
@@ -120,14 +128,16 @@ export function ContextMenu({
       w={`${MENU_WIDTH}px`}
       p={1}
       onKeyDown={onKeyDown}
-      onContextMenu={(event: ReactMouseEvent) => event.preventDefault()}
+      onContextMenu={(event: ReactMouseEvent) => {
+        event.preventDefault()
+      }}
       style={{ transformOrigin: 'top left' }}
       initial={{ opacity: 0, scale: 0.95, x: -8 }}
       animate={{ opacity: 1, scale: 1, x: 0, transition: { duration: 0.15, ease: curves.enter } }}
     >
       {entries.map((entry, index) =>
         'divider' in entry ? (
-          <Box key={`divider-${index}`} role="separator" h="1px" bg="border.subtle" mx={2} my={1} />
+          <Box as="hr" key={`divider-${index}`} border="none" h="1px" bg="border.subtle" mx={2} my={1} />
         ) : (
           <MenuItem key={entry.label} entry={entry} onClose={onClose} />
         ),
@@ -180,7 +190,9 @@ export function useContextMenu(label: string): {
   menu: ReactNode
 } {
   const [state, setState] = useState<{ anchor: ContextMenuAnchor; entries: readonly ContextMenuEntry[] } | null>(null)
-  const close = useCallback(() => setState(null), [])
+  const close = useCallback(() => {
+    setState(null)
+  }, [])
   const open = useCallback((event: ReactMouseEvent<HTMLElement>, entries: readonly ContextMenuEntry[]) => {
     event.preventDefault()
     event.stopPropagation()

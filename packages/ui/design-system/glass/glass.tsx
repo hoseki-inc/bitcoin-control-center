@@ -40,8 +40,12 @@ let refractionSupport: boolean | undefined
  * the syntax but render nothing, so they get frosted glass instead.
  */
 export function supportsGlassRefraction(): boolean {
-  if (refractionSupport !== undefined) return refractionSupport
-  if (typeof navigator === 'undefined' || typeof CSS === 'undefined') return (refractionSupport = false)
+  if (refractionSupport !== undefined) {
+    return refractionSupport
+  }
+  if (typeof navigator === 'undefined' || typeof CSS === 'undefined') {
+    return (refractionSupport = false)
+  }
   const brands = (navigator as Navigator & { userAgentData?: { brands?: Array<{ brand: string }> } }).userAgentData
     ?.brands
   const chromium =
@@ -63,10 +67,16 @@ async function encodeLens(width: number, height: number, radius: number, bevel: 
   canvas.width = map.width
   canvas.height = map.height
   const context = canvas.getContext('2d')
-  if (context === null) throw new Error('Canvas 2D unavailable')
+  if (context === null) {
+    throw new Error('Canvas 2D unavailable')
+  }
   context.putImageData(new ImageData(map.data, map.width, map.height), 0, 0)
-  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'))
-  if (blob === null) throw new Error('Could not encode glass map')
+  const blob = await new Promise<Blob | null>((resolve) => {
+    canvas.toBlob(resolve, 'image/png')
+  })
+  if (blob === null) {
+    throw new Error('Could not encode glass map')
+  }
   const url = URL.createObjectURL(blob)
   // Decode before use: an undecoded map makes the backdrop jump by half the scale for a frame.
   const image = new Image()
@@ -103,7 +113,9 @@ export const Glass = forwardRef<GlassProps, 'div'>(function Glass(
 
   useEffect(() => {
     const host = hostRef.current
-    if (!refract || host === null) return
+    if (!refract || host === null) {
+      return
+    }
     let cancelled = false
     let build = 0
     let timer: number | undefined
@@ -113,7 +125,9 @@ export const Glass = forwardRef<GlassProps, 'div'>(function Glass(
     const rebuild = (): void => {
       const width = host.offsetWidth
       const height = host.offsetHeight
-      if (width === 0 || height === 0) return
+      if (width === 0 || height === 0) {
+        return
+      }
       const radius = parseRadius(getComputedStyle(host).borderTopLeftRadius)
       const rim = bevel === 'dome' ? Math.min(width, height) / 2 : bevel
       const version = ++build
@@ -143,12 +157,21 @@ export const Glass = forwardRef<GlassProps, 'div'>(function Glass(
       cancelled = true
       observer.disconnect()
       window.clearTimeout(timer)
-      if (frame !== undefined) window.cancelAnimationFrame(frame)
+      if (frame !== undefined) {
+        window.cancelAnimationFrame(frame)
+      }
     }
   }, [refract, bevel, uid])
 
   // Release each map once a newer one (or unmount) replaces it.
-  useEffect(() => () => (lens !== null ? URL.revokeObjectURL(lens.url) : undefined), [lens])
+  useEffect(
+    () => () => {
+      if (lens !== null) {
+        URL.revokeObjectURL(lens.url)
+      }
+    },
+    [lens],
+  )
 
   const tone = `blur(${blur}px) saturate(${saturate}) brightness(${brightness})`
   const frosted = `blur(${Math.max(blur * 3, 8)}px) saturate(${saturate}) brightness(${brightness})`
@@ -158,8 +181,11 @@ export const Glass = forwardRef<GlassProps, 'div'>(function Glass(
     <Box
       ref={(node: HTMLDivElement | null) => {
         hostRef.current = node
-        if (typeof forwardedRef === 'function') forwardedRef(node)
-        else if (forwardedRef) forwardedRef.current = node
+        if (typeof forwardedRef === 'function') {
+          forwardedRef(node)
+        } else if (forwardedRef) {
+          forwardedRef.current = node
+        }
       }}
       position="relative"
       isolation="isolate"

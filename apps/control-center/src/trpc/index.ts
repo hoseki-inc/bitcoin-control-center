@@ -12,7 +12,7 @@ export type RouterInput = inferRouterInputs<Router>
 
 export const transformer = registerCustomSerializers(superjson)
 
-const url = import.meta.env['VITE_BACKEND_API_URL'] ?? ''
+const url = import.meta.env.VITE_BACKEND_API_URL ?? ''
 
 export const baseTrpc = createTRPCProxyClient<Router>({
   transformer,

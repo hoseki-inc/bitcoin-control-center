@@ -2,9 +2,9 @@ import { tableAnatomy } from '@chakra-ui/anatomy'
 import { theme as chakraTheme, createMultiStyleConfigHelpers } from '@chakra-ui/react'
 import { chakraTextStyles } from './foundation/typography'
 
-const { definePartsStyle, defineMultiStyleConfig } = createMultiStyleConfigHelpers(tableAnatomy.keys)
+const styleHelpers = createMultiStyleConfigHelpers(tableAnatomy.keys)
 
-const extendedBaseStyle = definePartsStyle({
+const extendedBaseStyle = styleHelpers.definePartsStyle({
   ...chakraTheme.components.Table.baseStyle,
   table: {
     ...chakraTheme.components.Table.baseStyle?.table,
@@ -32,7 +32,7 @@ const extendedBaseStyle = definePartsStyle({
 })
 
 // Standard data tables use the same typography and spacing for labels and values.
-const dataVariant = definePartsStyle({
+const dataVariant = styleHelpers.definePartsStyle({
   table: { border: 'none', fontFamily: 'body' },
   thead: { bg: 'surface.subtle' },
   th: {
@@ -64,7 +64,7 @@ const dataVariant = definePartsStyle({
   tbody: { 'tr:last-of-type td': { borderBottom: 'none' } },
 })
 
-export const tableTheme = defineMultiStyleConfig({
+export const tableTheme = styleHelpers.defineMultiStyleConfig({
   ...chakraTheme.components.Table,
   baseStyle: extendedBaseStyle,
   variants: { ...chakraTheme.components.Table.variants, data: dataVariant },

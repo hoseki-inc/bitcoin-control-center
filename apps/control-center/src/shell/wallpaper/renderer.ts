@@ -1,19 +1,8 @@
-import { type WallpaperFamily, type WallpaperMode, type WallpaperPreset } from './presets'
+import type { WallpaperFamily, WallpaperMode, WallpaperPreset } from './presets'
 import { FRAGMENT_SHADERS, VERTEX_SHADER } from './shaders'
 
-const UNIFORMS = [
-  'u_resolution',
-  'u_time',
-  'u_seed',
-  'u_params',
-  'u_grain',
-  'u_c0',
-  'u_c1',
-  'u_c2',
-  'u_c3',
-  'u_c4',
-] as const
-type UniformName = (typeof UNIFORMS)[number]
+type UniformName =
+  'u_resolution' | 'u_time' | 'u_seed' | 'u_params' | 'u_grain' | 'u_c0' | 'u_c1' | 'u_c2' | 'u_c3' | 'u_c4'
 
 interface ProgramInfo {
   program: WebGLProgram
@@ -40,12 +29,15 @@ function hexToRgb(hex: string): [number, number, number] {
 export class WallpaperRenderer {
   private readonly programs = new Map<WallpaperFamily, ProgramInfo>()
 
-  private constructor(
-    private readonly canvas: HTMLCanvasElement,
-    private readonly gl: WebGL2RenderingContext,
-  ) {}
+  private readonly canvas: HTMLCanvasElement
+  private readonly gl: WebGL2RenderingContext
 
-  static create(canvas: HTMLCanvasElement): WallpaperRenderer | null {
+  private constructor(canvas: HTMLCanvasElement, gl: WebGL2RenderingContext) {
+    this.canvas = canvas
+    this.gl = gl
+  }
+
+  public static create(canvas: HTMLCanvasElement): WallpaperRenderer | null {
     const gl = canvas.getContext('webgl2', {
       alpha: false,
       antialias: false,
@@ -57,11 +49,15 @@ export class WallpaperRenderer {
     return gl === null ? null : new WallpaperRenderer(canvas, gl)
   }
 
-  render({ preset, mode, time, seed, width, height }: WallpaperFrame): boolean {
+  public render({ preset, mode, time, seed, width, height }: WallpaperFrame): boolean {
     const { gl, canvas } = this
-    if (gl.isContextLost()) return false
+    if (gl.isContextLost()) {
+      return false
+    }
     const info = this.program(preset.family)
-    if (info === null) return false
+    if (info === null) {
+      return false
+    }
 
     if (canvas.width !== width || canvas.height !== height) {
       canvas.width = width
@@ -97,18 +93,24 @@ export class WallpaperRenderer {
     return true
   }
 
-  dispose(): void {
-    for (const { program } of this.programs.values()) this.gl.deleteProgram(program)
+  public dispose(): void {
+    for (const { program } of this.programs.values()) {
+      this.gl.deleteProgram(program)
+    }
     this.programs.clear()
   }
 
   private program(family: WallpaperFamily): ProgramInfo | null {
     const cached = this.programs.get(family)
-    if (cached !== undefined) return cached
+    if (cached !== undefined) {
+      return cached
+    }
     const { gl } = this
     const vertex = this.compile(gl.VERTEX_SHADER, VERTEX_SHADER)
     const fragment = this.compile(gl.FRAGMENT_SHADER, FRAGMENT_SHADERS[family])
-    if (vertex === null || fragment === null) return null
+    if (vertex === null || fragment === null) {
+      return null
+    }
     const program = gl.createProgram()
     gl.attachShader(program, vertex)
     gl.attachShader(program, fragment)
@@ -120,10 +122,19 @@ export class WallpaperRenderer {
       gl.deleteProgram(program)
       return null
     }
-    const uniforms = Object.fromEntries(UNIFORMS.map((name) => [name, gl.getUniformLocation(program, name)])) as Record<
-      UniformName,
-      WebGLUniformLocation | null
-    >
+    const locate = (name: UniformName): WebGLUniformLocation | null => gl.getUniformLocation(program, name)
+    const uniforms: Record<UniformName, WebGLUniformLocation | null> = {
+      u_resolution: locate('u_resolution'),
+      u_time: locate('u_time'),
+      u_seed: locate('u_seed'),
+      u_params: locate('u_params'),
+      u_grain: locate('u_grain'),
+      u_c0: locate('u_c0'),
+      u_c1: locate('u_c1'),
+      u_c2: locate('u_c2'),
+      u_c3: locate('u_c3'),
+      u_c4: locate('u_c4'),
+    }
     const info = { program, uniforms }
     this.programs.set(family, info)
     return info
@@ -132,7 +143,9 @@ export class WallpaperRenderer {
   private compile(type: number, source: string): WebGLShader | null {
     const { gl } = this
     const shader = gl.createShader(type)
-    if (shader === null) return null
+    if (shader === null) {
+      return null
+    }
     gl.shaderSource(shader, source)
     gl.compileShader(shader)
     if (gl.getShaderParameter(shader, gl.COMPILE_STATUS) !== true) {

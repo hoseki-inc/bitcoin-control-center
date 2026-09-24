@@ -1,4 +1,4 @@
-import { Box, Flex, Text } from '@chakra-ui/react'
+import { Box, Link as ChakraLink, Flex, Text } from '@chakra-ui/react'
 import { curves, durations, springs } from '@hoseki/packages/ui/design-system/animations/motion'
 import { Glass, useGlassPreset } from '@hoseki/packages/ui/design-system/glass'
 import {
@@ -10,9 +10,9 @@ import {
   useSpring,
   useTransform,
 } from 'framer-motion'
-import { type LucideIcon } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import { type KeyboardEvent, type PointerEvent, type ReactNode, useRef, useState } from 'react'
-import { Link, useLocation } from 'react-router'
+import { Link as RouterLink, useLocation } from 'react-router'
 import { useWelcomeRevealed } from '../components/onboarding/welcome-reveal'
 import { SECTIONS, type Section, sectionForPath } from './sections'
 
@@ -81,10 +81,18 @@ function DockSlot({
       position="relative"
       flexShrink={0}
       style={{ width: size, height: size }}
-      onPointerEnter={() => setHovered(true)}
-      onPointerLeave={() => setHovered(false)}
-      onFocusCapture={() => setHovered(true)}
-      onBlurCapture={() => setHovered(false)}
+      onPointerEnter={() => {
+        setHovered(true)
+      }}
+      onPointerLeave={() => {
+        setHovered(false)
+      }}
+      onFocusCapture={() => {
+        setHovered(true)
+      }}
+      onBlurCapture={() => {
+        setHovered(false)
+      }}
     >
       <Box
         key={bounceKey}
@@ -102,7 +110,9 @@ function DockSlot({
             : undefined
         }
       >
-        {children(bounceKey, () => setBounceKey((value) => value + 1))}
+        {children(bounceKey, () => {
+          setBounceKey((value) => value + 1)
+        })}
       </Box>
 
       <AnimatePresence>
@@ -162,8 +172,9 @@ function SectionItem({
   return (
     <DockSlot mouseX={mouseX} label={section.label} active={active}>
       {(_key, bounce) => (
-        <Box
-          as={Link}
+        // oxlint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions -- A router link: React Router renders its href from `to`.
+        <ChakraLink
+          as={RouterLink}
           to={section.path}
           data-dock-item
           aria-label={section.label}
@@ -173,14 +184,17 @@ function SectionItem({
           h="100%"
           borderRadius="24%"
           transition="filter 150ms"
+          _hover={{ textDecoration: 'none' }}
           _active={{ filter: 'brightness(0.85)' }}
           _focusVisible={{ outline: '2px solid', outlineColor: 'focus.ring', outlineOffset: '3px' }}
           onClick={() => {
-            if (!active) bounce()
+            if (!active) {
+              bounce()
+            }
           }}
         >
           <DockTile tile={section.tile} glyph={section.glyph} icon={section.icon} />
-        </Box>
+        </ChakraLink>
       )}
     </DockSlot>
   )
@@ -189,8 +203,10 @@ function SectionItem({
 /** Moves focus between dock items with the arrow keys, Home and End. */
 function handleArrowKeys(event: KeyboardEvent<HTMLElement>): void {
   const items = [...event.currentTarget.querySelectorAll<HTMLElement>('[data-dock-item]')]
-  const index = items.indexOf(document.activeElement as HTMLElement)
-  if (index === -1) return
+  const index = items.findIndex((item) => item === document.activeElement)
+  if (index === -1) {
+    return
+  }
   const next =
     event.key === 'ArrowRight'
       ? items[(index + 1) % items.length]
@@ -201,7 +217,9 @@ function handleArrowKeys(event: KeyboardEvent<HTMLElement>): void {
           : event.key === 'End'
             ? items[items.length - 1]
             : undefined
-  if (next === undefined) return
+  if (next === undefined) {
+    return
+  }
   event.preventDefault()
   next.focus()
 }
@@ -215,7 +233,9 @@ export function Dock(): JSX.Element {
 
   const onPointerMove = (event: PointerEvent<HTMLElement>): void => {
     // Touch never magnifies; a finger has no hover position.
-    if (event.pointerType === 'mouse') mouseX.set(event.clientX)
+    if (event.pointerType === 'mouse') {
+      mouseX.set(event.clientX)
+    }
   }
 
   return (
@@ -232,6 +252,7 @@ export function Dock(): JSX.Element {
       initial={{ y: 80 }}
       animate={revealed ? { y: 0, transition: { ...springs.dock, delay: 0.2 } } : undefined}
     >
+      {/* oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- Arrow keys move focus between the dock's links, like a toolbar. */}
       <Glass
         {...glass}
         as="nav"
@@ -247,7 +268,9 @@ export function Dock(): JSX.Element {
         px={3}
         pb={3}
         onPointerMove={onPointerMove}
-        onPointerLeave={() => mouseX.set(Number.POSITIVE_INFINITY)}
+        onPointerLeave={() => {
+          mouseX.set(Number.POSITIVE_INFINITY)
+        }}
         onKeyDown={handleArrowKeys}
       >
         {SECTIONS.map((section) => (

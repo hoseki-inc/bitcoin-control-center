@@ -11,7 +11,9 @@ export function useThemedLottie<T extends object>(animation: T): { animationData
   const dark = colorMode === 'dark'
   return useMemo(() => {
     const raster = hasRasterFrames(animation)
-    if (!dark || raster) return { animationData: animation, needsLightStage: dark && raster }
+    if (!dark || raster) {
+      return { animationData: animation, needsLightStage: dark && raster }
+    }
     return { animationData: withoutWhiteBackdrops(animation), needsLightStage: false }
   }, [animation, dark])
 }

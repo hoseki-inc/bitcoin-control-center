@@ -1,5 +1,5 @@
 import { useColorMode } from '@chakra-ui/react'
-import { type GlassOptions } from './glass'
+import type { GlassOptions } from './glass'
 
 type Surface = 'dock' | 'widget'
 

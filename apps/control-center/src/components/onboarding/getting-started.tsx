@@ -26,7 +26,7 @@ export function GettingStarted(): JSX.Element {
     setError(false)
     try {
       await setting.saveAsync(state)
-      navigate(path)
+      void navigate(path)
     } catch {
       setError(true)
     }
@@ -100,13 +100,15 @@ export function FirstAccountReady({ ready }: { ready: boolean }): JSX.Element | 
   const setting = useLocalSetting(ONBOARDING_KEY)
   const navigate = useNavigate()
   const [error, setError] = useState(false)
-  if (setting.data !== 'started' || !ready) return null
+  if (setting.data !== 'started' || !ready) {
+    return null
+  }
 
   const finish = async (path: string): Promise<void> => {
     setError(false)
     try {
       await setting.saveAsync('completed')
-      navigate(path)
+      void navigate(path)
     } catch {
       setError(true)
     }

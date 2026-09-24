@@ -7,9 +7,10 @@ import type { StatementDto } from '../../trpc/server-types'
 export function StatementsTable({ statements }: { statements: StatementDto[] }): JSX.Element {
   return (
     <Box
+      as="section"
       overflowX="auto"
+      // oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- Lets keyboard users scroll the table sideways.
       tabIndex={0}
-      role="region"
       aria-label="Statements table"
       layerStyle="edge"
       borderRadius="panel"

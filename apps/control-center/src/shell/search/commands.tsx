@@ -23,7 +23,7 @@ import { SECTIONS } from '../sections'
 import { WALLPAPER_FAMILIES, WALLPAPER_PRESETS } from '../wallpaper/presets'
 import { useWallpaperThumbnails } from '../wallpaper/thumbnails'
 import { useBlockSeed, useWallpaper } from '../wallpaper/use-wallpaper'
-import { type Searchable } from './score'
+import type { Searchable } from './score'
 
 export type CommandGroup = 'Suggestions' | 'Accounts' | 'Go to' | 'Actions' | 'Wallpaper' | 'Settings'
 
@@ -84,7 +84,9 @@ export function useCommands(): { commands: Command[]; accounts: AccountSummary[]
   const thumbnails = useWallpaperThumbnails(colorMode === 'dark' ? 'dark' : 'light', seed)
 
   const commands = useMemo((): Command[] => {
-    const go = (to: string) => () => navigate(to)
+    const go = (to: string) => (): void => {
+      void navigate(to)
+    }
     const sections: Command[] = SECTIONS.map((section) => ({
       id: `go-${section.id}`,
       group: 'Go to',
@@ -158,7 +160,9 @@ export function useCommands(): { commands: Command[]; accounts: AccountSummary[]
         label: resolved === 'dark' ? 'Switch to light mode' : 'Switch to dark mode',
         keywords: ['appearance', 'theme', 'dark', 'light'],
         icon: <ActionTile icon={resolved === 'dark' ? Sun : Moon} from="#A3B1C6" to="#334155" />,
-        run: () => setPreference(resolved === 'dark' ? 'light' : 'dark'),
+        run: () => {
+          setPreference(resolved === 'dark' ? 'light' : 'dark')
+        },
       },
       ...(preference === 'system'
         ? []
@@ -169,7 +173,9 @@ export function useCommands(): { commands: Command[]; accounts: AccountSummary[]
               label: 'Match system appearance',
               keywords: ['appearance', 'theme', 'automatic', 'os'],
               icon: <ActionTile icon={Monitor} from="#A3B1C6" to="#334155" />,
-              run: () => setPreference('system'),
+              run: () => {
+                setPreference('system')
+              },
               searchOnly: true,
             },
           ]),
@@ -191,7 +197,9 @@ export function useCommands(): { commands: Command[]; accounts: AccountSummary[]
           />
         </Tile>
       ),
-      run: () => setWallpaper(option.id),
+      run: () => {
+        setWallpaper(option.id)
+      },
       searchOnly: true,
     }))
 

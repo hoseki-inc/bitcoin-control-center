@@ -3,7 +3,7 @@ import { curves, durations } from '@hoseki/packages/ui/design-system/animations/
 import { useEffect, useRef, useState } from 'react'
 import { type WallpaperMode, type WallpaperPreset, wallpaperFallback } from './presets'
 import { WallpaperRenderer } from './renderer'
-import { type WallpaperSeed } from './use-wallpaper'
+import type { WallpaperSeed } from './use-wallpaper'
 
 export interface WallpaperProps {
   preset: WallpaperPreset
@@ -48,24 +48,36 @@ export function Wallpaper({
   const draw = (): void => {
     const canvas = canvasRef.current
     const renderer = rendererRef.current
-    if (canvas === null || renderer === null) return
+    if (canvas === null || renderer === null) {
+      return
+    }
     const scale = renderScale()
     const width = Math.max(1, Math.round(canvas.clientWidth * scale))
     const height = Math.max(1, Math.round(canvas.clientHeight * scale))
     const look = lookRef.current
-    if (!renderer.render({ ...look, time: timeRef.current, width, height })) return
-    if (!wantSnapshotRef.current) return
+    if (!renderer.render({ ...look, time: timeRef.current, width, height })) {
+      return
+    }
+    if (!wantSnapshotRef.current) {
+      return
+    }
     wantSnapshotRef.current = false
     // Read the frame back in the same task, before the drawing buffer is discarded.
     canvas.toBlob(
       (blob) => {
-        if (blob === null) return
+        if (blob === null) {
+          return
+        }
         const url = URL.createObjectURL(blob)
         const old = snapshotRef.current
         snapshotRef.current = url
         look.onSnapshot?.(url)
         setRevealed(true)
-        if (old !== null) window.setTimeout(() => URL.revokeObjectURL(old), durations.wallpaperReveal + 500)
+        if (old !== null) {
+          window.setTimeout(() => {
+            URL.revokeObjectURL(old)
+          }, durations.wallpaperReveal + 500)
+        }
       },
       'image/jpeg',
       0.9,
@@ -75,7 +87,9 @@ export function Wallpaper({
   // Create the renderer, and recover if the GPU drops the context.
   useEffect(() => {
     const canvas = canvasRef.current
-    if (canvas === null) return
+    if (canvas === null) {
+      return
+    }
     const setup = (): void => {
       rendererRef.current = WallpaperRenderer.create(canvas)
       setFailed(rendererRef.current === null)
@@ -101,7 +115,9 @@ export function Wallpaper({
 
   // A new look crossfades from a snapshot of the old one.
   useEffect(() => {
-    if (snapshotRef.current !== null) setPrevious(snapshotRef.current)
+    if (snapshotRef.current !== null) {
+      setPrevious(snapshotRef.current)
+    }
     wantSnapshotRef.current = true
     draw()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -120,21 +136,31 @@ export function Wallpaper({
       frame = window.requestAnimationFrame(tick)
       const delta = Math.min(now - last, 100) / 1000
       last = now
-      if (document.hidden) return
+      if (document.hidden) {
+        return
+      }
       timeRef.current += delta * lookRef.current.preset.speed
-      if (now - lastDraw < 1000 / FPS - 2) return
+      if (now - lastDraw < 1000 / FPS - 2) {
+        return
+      }
       lastDraw = now
       draw()
     }
     frame = window.requestAnimationFrame(tick)
-    return () => window.cancelAnimationFrame(frame)
+    return () => {
+      window.cancelAnimationFrame(frame)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paused, reducedMotion])
 
   useEffect(() => {
-    const onResize = (): void => draw()
+    const onResize = (): void => {
+      draw()
+    }
     window.addEventListener('resize', onResize)
-    return () => window.removeEventListener('resize', onResize)
+    return () => {
+      window.removeEventListener('resize', onResize)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -175,7 +201,9 @@ export function Wallpaper({
           w="100%"
           h="100%"
           objectFit="cover"
-          onAnimationEnd={() => setPrevious(null)}
+          onAnimationEnd={() => {
+            setPrevious(null)
+          }}
           sx={{
             animation: reducedMotion
               ? 'wallpaperFadeOut 150ms ease-out both'

@@ -6,20 +6,36 @@
 export function scoreText(query: string, text: string): number {
   const q = query.trim().toLowerCase()
   const t = text.toLowerCase()
-  if (q === '') return 1
-  if (t === q) return 1
-  if (t.startsWith(q)) return 0.9
+  if (q === '') {
+    return 1
+  }
+  if (t === q) {
+    return 1
+  }
+  if (t.startsWith(q)) {
+    return 0.9
+  }
   const words = t.split(/[\s\-_/·,.]+/)
-  if (words.some((word) => word.startsWith(q))) return 0.8
-  if (q.includes(' ') && q.split(/\s+/).every((part) => words.some((word) => word.startsWith(part)))) return 0.75
-  if (t.includes(q)) return 0.6
+  if (words.some((word) => word.startsWith(q))) {
+    return 0.8
+  }
+  if (q.includes(' ') && q.split(/\s+/).every((part) => words.some((word) => word.startsWith(part)))) {
+    return 0.75
+  }
+  if (t.includes(q)) {
+    return 0.6
+  }
   // Letters in order, with a penalty for how spread out they are.
   let from = 0
   let first = -1
   for (const char of q) {
     const at = t.indexOf(char, from)
-    if (at === -1) return 0
-    if (first === -1) first = at
+    if (at === -1) {
+      return 0
+    }
+    if (first === -1) {
+      first = at
+    }
     from = at + 1
   }
   const span = from - first
@@ -41,7 +57,9 @@ export function scoreCommand(query: string, command: Searchable): number {
 
 /** Commands that match, best first; ties keep their original order. */
 export function rankCommands<T extends Searchable>(query: string, commands: readonly T[]): T[] {
-  if (query.trim() === '') return [...commands]
+  if (query.trim() === '') {
+    return [...commands]
+  }
   return commands
     .map((command, index) => ({ command, index, score: scoreCommand(query, command) }))
     .filter(({ score }) => score > 0)

@@ -1,9 +1,10 @@
 import { IconButton, type IconButtonProps, Tooltip, useColorMode } from '@chakra-ui/react'
 import { curves } from '@hoseki/packages/ui/design-system/animations/motion'
 import { Moon, Sun } from 'lucide-react'
-import { type MouseEvent } from 'react'
+import type { MouseEvent } from 'react'
 import { flushSync } from 'react-dom'
 import { type ResolvedAppearance, useAppearance } from '../hooks/use-appearance'
+import { mediaQuery } from '../lib/media-query'
 import { IconSwap } from './reveal'
 
 type ViewTransitionDocument = Document & {
@@ -28,8 +29,8 @@ export function AppearanceToggle(props: Omit<IconButtonProps, 'aria-label'>): JS
       setPreference(next)
     }
     const doc = document as ViewTransitionDocument
-    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
-    if (doc.startViewTransition === undefined || reduceMotion === true) {
+    const reduceMotion = mediaQuery('(prefers-reduced-motion: reduce)')?.matches === true
+    if (typeof doc.startViewTransition !== 'function' || reduceMotion) {
       apply()
       return
     }
@@ -38,7 +39,9 @@ export function AppearanceToggle(props: Omit<IconButtonProps, 'aria-label'>): JS
     const x = rect.left + rect.width / 2
     const y = rect.top + rect.height / 2
     const radius = Math.hypot(Math.max(x, window.innerWidth - x), Math.max(y, window.innerHeight - y))
-    const transition = doc.startViewTransition(() => flushSync(apply))
+    const transition = doc.startViewTransition(() => {
+      flushSync(apply)
+    })
     void transition.ready.then(() => {
       document.documentElement.animate(
         { clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${radius}px at ${x}px ${y}px)`] },

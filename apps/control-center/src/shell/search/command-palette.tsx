@@ -44,25 +44,39 @@ function PaletteDialog({ onClose }: { onClose: () => void }): JSX.Element {
 
   // Remember where focus was, and give it back on close.
   useEffect(() => {
-    const previous = document.activeElement as HTMLElement | null
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null
     inputRef.current?.focus()
-    return () => previous?.focus?.()
+    return () => {
+      previous?.focus()
+    }
   }, [])
 
   // Typing stirs the orb; it settles shortly after the last keystroke.
   useEffect(() => {
-    if (energy === 0) return
-    const timer = window.setTimeout(() => setEnergy(0), ENERGY_SETTLE_MS)
-    return () => window.clearTimeout(timer)
+    if (energy === 0) {
+      return
+    }
+    const timer = window.setTimeout(() => {
+      setEnergy(0)
+    }, ENERGY_SETTLE_MS)
+    return () => {
+      window.clearTimeout(timer)
+    }
   }, [energy, query])
 
   // The card's height glides between result counts instead of jumping.
   useLayoutEffect(() => {
     const content = contentRef.current
-    if (content === null) return
-    const observer = new ResizeObserver(() => setContentHeight(content.offsetHeight))
+    if (content === null) {
+      return
+    }
+    const observer = new ResizeObserver(() => {
+      setContentHeight(content.offsetHeight)
+    })
     observer.observe(content)
-    return () => observer.disconnect()
+    return () => {
+      observer.disconnect()
+    }
   }, [])
 
   useEffect(() => {
@@ -70,7 +84,9 @@ function PaletteDialog({ onClose }: { onClose: () => void }): JSX.Element {
   }, [selected, results])
 
   const run = (command: Command | undefined): void => {
-    if (command === undefined) return
+    if (command === undefined) {
+      return
+    }
     onClose()
     command.run()
   }
@@ -78,7 +94,9 @@ function PaletteDialog({ onClose }: { onClose: () => void }): JSX.Element {
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>): void => {
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault()
-      if (results.length === 0) return
+      if (results.length === 0) {
+        return
+      }
       const step = event.key === 'ArrowDown' ? 1 : -1
       setSelected((index) => (Math.min(index, results.length - 1) + step + results.length) % results.length)
     } else if (event.key === 'Enter') {
@@ -103,7 +121,25 @@ function PaletteDialog({ onClose }: { onClose: () => void }): JSX.Element {
   const showTiles = query.trim() === '' && accounts.length > 0
 
   return (
-    <Box role="dialog" aria-modal="true" aria-label="Search" position="fixed" inset={0} zIndex={1100}>
+    <Box
+      as="dialog"
+      open
+      aria-modal="true"
+      aria-label="Search"
+      position="fixed"
+      inset={0}
+      zIndex={1100}
+      // Undo the browser's own dialog box so the palette lays itself out.
+      w="100%"
+      h="100%"
+      maxW="100%"
+      maxH="100%"
+      m={0}
+      p={0}
+      border="none"
+      bg="transparent"
+      color="inherit"
+    >
       <MotionBox
         position="absolute"
         inset={0}
@@ -221,9 +257,9 @@ function PaletteDialog({ onClose }: { onClose: () => void }): JSX.Element {
                       py={2}
                       borderRadius="12px"
                       _hover={{ bg: 'surface.muted' }}
-                      onClick={() =>
+                      onClick={() => {
                         run(commands.find((command) => command.id === `account-${account.kind}-${account.id}`))
-                      }
+                      }}
                     >
                       <Box boxSize="44px" borderRadius="11px" overflow="hidden" boxShadow="0 2px 6px rgb(0 0 0 / 0.2)">
                         <AccountArtwork account={account} />
@@ -240,6 +276,7 @@ function PaletteDialog({ onClose }: { onClose: () => void }): JSX.Element {
             <Box
               ref={listRef}
               id={listId}
+              // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- A combobox's rich results cannot be a native select.
               role="listbox"
               aria-label="Results"
               mt={3}
@@ -258,6 +295,7 @@ function PaletteDialog({ onClose }: { onClose: () => void }): JSX.Element {
                 groups.map(({ group, items }) => (
                   <MotionBox
                     key={group}
+                    // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- Groups options inside the listbox.
                     role="group"
                     aria-label={group}
                     pt={1}
@@ -271,9 +309,11 @@ function PaletteDialog({ onClose }: { onClose: () => void }): JSX.Element {
                     {items.map((command) => {
                       const isActive = command === active
                       return (
+                        // oxlint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/interactive-supports-focus -- Keys and focus stay in the input; it drives the options via aria-activedescendant.
                         <Flex
                           key={command.id}
                           id={`${listId}-${command.id}`}
+                          // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- Options are chosen from the input via aria-activedescendant.
                           role="option"
                           aria-selected={isActive}
                           align="center"
@@ -282,8 +322,12 @@ function PaletteDialog({ onClose }: { onClose: () => void }): JSX.Element {
                           borderRadius="12px"
                           cursor="pointer"
                           bg={isActive ? 'surface.muted' : 'transparent'}
-                          onMouseMove={() => setSelected(results.indexOf(command))}
-                          onClick={() => run(command)}
+                          onMouseMove={() => {
+                            setSelected(results.indexOf(command))
+                          }}
+                          onClick={() => {
+                            run(command)
+                          }}
                         >
                           {command.icon}
                           <Text
@@ -323,8 +367,12 @@ function PaletteDialog({ onClose }: { onClose: () => void }): JSX.Element {
  * but are gathered under their group, in the order each group first appears.
  */
 function groupResults(results: readonly Command[], query: string): Array<{ group: CommandGroup; items: Command[] }> {
-  if (query.trim() === '') return results.length === 0 ? [] : [{ group: 'Suggestions', items: [...results] }]
+  if (query.trim() === '') {
+    return results.length === 0 ? [] : [{ group: 'Suggestions', items: [...results] }]
+  }
   const groups = new Map<CommandGroup, Command[]>()
-  for (const command of results) groups.set(command.group, [...(groups.get(command.group) ?? []), command])
+  for (const command of results) {
+    groups.set(command.group, [...(groups.get(command.group) ?? []), command])
+  }
   return [...groups].map(([group, items]) => ({ group, items }))
 }

@@ -2,13 +2,13 @@ import { popoverAnatomy } from '@chakra-ui/anatomy'
 import { theme as chakraTheme, createMultiStyleConfigHelpers } from '@chakra-ui/react'
 import { layerStyles } from './foundation/materials'
 
-const { definePartsStyle, defineMultiStyleConfig } = createMultiStyleConfigHelpers(popoverAnatomy.keys)
+const styleHelpers = createMultiStyleConfigHelpers(popoverAnatomy.keys)
 
 const defaultPopoverTheme = chakraTheme.components.Popover
 
 const base = defaultPopoverTheme.baseStyle
 
-const baseStyle = definePartsStyle(() => {
+const baseStyle = styleHelpers.definePartsStyle(() => {
   return {
     ...base,
     content: {
@@ -23,4 +23,4 @@ const baseStyle = definePartsStyle(() => {
   }
 })
 
-export const popoverTheme = defineMultiStyleConfig({ ...defaultPopoverTheme, baseStyle })
+export const popoverTheme = styleHelpers.defineMultiStyleConfig({ ...defaultPopoverTheme, baseStyle })

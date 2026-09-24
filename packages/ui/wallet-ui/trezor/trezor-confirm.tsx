@@ -51,7 +51,9 @@ export function TrezorConfirm({
           isSelected={true}
           onUpdateDisplayName={(newDisplayName) => {
             setSelectedTrezorAccount((prev?: SelectedTrezorAccount) => {
-              if (!prev) return prev
+              if (!prev) {
+                return prev
+              }
               return {
                 ...prev,
                 wallet: {

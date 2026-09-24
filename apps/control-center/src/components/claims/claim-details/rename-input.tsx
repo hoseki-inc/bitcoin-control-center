@@ -1,6 +1,8 @@
 import { Box, Button, FormControl, FormErrorMessage, FormLabel, HStack, Input, Stack, chakra } from '@chakra-ui/react'
 import { zodResolver } from '@hookform/resolvers/zod'
+import { useEffect } from 'react'
 import { useForm } from 'react-hook-form'
+import { toast } from 'sonner'
 import { z } from 'zod'
 
 const schema = z.object({
@@ -27,6 +29,7 @@ export function RenameInput({
   const {
     register,
     handleSubmit,
+    setFocus,
     formState: { errors, isSubmitting, isValid },
   } = useForm<RenameForm>({
     defaultValues: {
@@ -37,17 +40,28 @@ export function RenameInput({
     resolver: zodResolver(schema),
   })
 
+  // Renaming starts with the field ready to type into.
+  useEffect(() => {
+    setFocus('name')
+  }, [setFocus])
+
   function onSubmit(data: { name: string }) {
     onSaveClick(data.name)
   }
 
   return (
-    <chakra.form onSubmit={handleSubmit(onSubmit)}>
+    <chakra.form
+      onSubmit={(event) => {
+        handleSubmit(onSubmit)(event).catch(() => {
+          toast.error('Unable to save the name. Please try again.')
+        })
+      }}
+    >
       <Stack direction={{ base: 'column', sm: 'row' }} spacing={3} align="end">
         <Box flexGrow={1} minW={0} w="full">
           <FormControl isInvalid={Boolean(errors.name)}>
             <FormLabel htmlFor={inputId}>Name</FormLabel>
-            <Input id={inputId} {...register('name')} width="100%" placeholder={placeholderName} autoFocus />
+            <Input id={inputId} {...register('name')} width="100%" placeholder={placeholderName} />
             <FormErrorMessage>{errors.name?.message}</FormErrorMessage>
           </FormControl>
         </Box>

@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 import { ChakraProvider } from '@chakra-ui/react'
+import { expectElement } from '@hoseki/packages/testing/dom'
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import type { AccountSummary } from '../hooks/use-accounts'
 import { Desktop, greetingFor } from './desktop'
 
@@ -12,7 +13,7 @@ const mocks = vi.hoisted(() => ({
   accountsLoading: false,
   onboarding: 'completed' as string | null,
   userName: 'Satoshi Nakamoto' as string | null,
-  openSearch: vi.fn(),
+  openSearch: vi.fn<() => void>(),
 }))
 
 vi.mock('../hooks/use-local-settings', () => ({
@@ -64,7 +65,7 @@ vi.mock('../trpc', () => ({
   },
 }))
 
-vi.mock('./wallpaper-picker', () => ({ WallpaperPicker: () => <div role="dialog" aria-label="Choose a wallpaper" /> }))
+vi.mock('./wallpaper-picker', () => ({ WallpaperPicker: () => <dialog open aria-label="Choose a wallpaper" /> }))
 
 const account = (overrides: Partial<AccountSummary>): AccountSummary => ({
   id: 'id',
@@ -87,7 +88,15 @@ describe('Desktop', () => {
   let container: HTMLDivElement
   let root: ReturnType<typeof createRoot>
 
-  beforeEach(() => {
+  async function withTestSetup(run: () => Promise<void>): Promise<void> {
+    // Vitest owns teardown, so it runs once even after a failure or timeout.
+    onTestFinished(async () => {
+      await act(async () => {
+        root.unmount()
+      })
+      container.remove()
+    })
+
     Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
     window.matchMedia = vi.fn().mockImplementation((query: string) => ({
       matches: query.includes('reduce'),
@@ -116,15 +125,12 @@ describe('Desktop', () => {
     container = document.createElement('div')
     document.body.append(container)
     root = createRoot(container)
-  })
 
-  afterEach(async () => {
-    await act(async () => root.unmount())
-    container.remove()
-  })
+    await run()
+  }
 
   const render = async (): Promise<void> => {
-    await act(async () =>
+    await act(async () => {
       root.render(
         <ChakraProvider>
           <MemoryRouter initialEntries={['/home']}>
@@ -134,124 +140,167 @@ describe('Desktop', () => {
             <LocationProbe />
           </MemoryRouter>
         </ChakraProvider>,
-      ),
-    )
+      )
+    })
   }
-  const text = (): string => container.textContent ?? ''
+  const text = (): string => container.textContent
 
-  it('greets by time of day', () => {
-    expect(greetingFor(new Date(2026, 0, 1, 8))).toBe('Good morning')
-    expect(greetingFor(new Date(2026, 0, 1, 14))).toBe('Good afternoon')
-    expect(greetingFor(new Date(2026, 0, 1, 20))).toBe('Good evening')
+  it('greets by time of day', async () => {
+    await withTestSetup(async () => {
+      expect(greetingFor(new Date(2026, 0, 1, 8))).toBe('Good morning')
+      expect(greetingFor(new Date(2026, 0, 1, 14))).toBe('Good afternoon')
+      expect(greetingFor(new Date(2026, 0, 1, 20))).toBe('Good evening')
+    })
   })
 
   it('shows the greeting, the four widgets, and every account as an icon', async () => {
-    await render()
-    expect(container.querySelector('h1')!.textContent).toMatch(/, Satoshi\.$/)
-    expect(text()).toContain('₿ 150,000,000')
-    expect(text()).toContain('$90,000.00 · 3 accounts')
-    expect(text()).toContain('$55,000')
-    expect(text()).toContain('+10.00% · 7 days')
-    expect(text()).toContain('Connected')
-    expect(text()).toContain('914,203')
-    expect(text()).toContain('1 of 2')
-    expect(text()).toContain('1 awaiting a signature')
+    await withTestSetup(async () => {
+      await render()
+      expect(expectElement(container.querySelector('h1'), Element).textContent).toMatch(/, Satoshi\.$/)
+      expect(text()).toContain('₿ 150,000,000')
+      expect(text()).toContain('$90,000.00 · 3 accounts')
+      expect(text()).toContain('$55,000')
+      expect(text()).toContain('+10.00% · 7 days')
+      expect(text()).toContain('Connected')
+      expect(text()).toContain('914,203')
+      expect(text()).toContain('1 of 2')
+      expect(text()).toContain('1 awaiting a signature')
 
-    const icons = [...container.querySelectorAll<HTMLAnchorElement>('[data-desktop-item]')]
-    expect(icons.map((icon) => icon.getAttribute('aria-label'))).toEqual([
-      'Cold Wallet, verified',
-      'Spending, awaiting a signature',
-      'Paper Wallet, tracked manually',
-      'Add account, connect a wallet or exchange, or track holdings manually',
-    ])
-    expect(icons.map((icon) => icon.getAttribute('href'))).toEqual([
-      '/accounts/id',
-      '/accounts/b',
-      '/accounts/manual/c',
-      '/accounts/add',
-    ])
-    // Each widget opens its section.
-    expect(container.querySelector('a[href="/portfolio"]')).not.toBeNull()
-    expect(container.querySelector('a[href="/settings"]')).not.toBeNull()
+      const icons = [...container.querySelectorAll<HTMLAnchorElement>('[data-desktop-item]')]
+      expect(icons.map((icon) => icon.getAttribute('aria-label'))).toEqual([
+        'Cold Wallet, verified',
+        'Spending, awaiting a signature',
+        'Paper Wallet, tracked manually',
+        'Add account, connect a wallet or exchange, or track holdings manually',
+      ])
+      expect(icons.map((icon) => icon.getAttribute('href'))).toEqual([
+        '/accounts/id',
+        '/accounts/b',
+        '/accounts/manual/c',
+        '/accounts/add',
+      ])
+      // Each widget opens its section.
+      expect(container.querySelector('a[href="/portfolio"]')).not.toBeNull()
+      expect(container.querySelector('a[href="/settings"]')).not.toBeNull()
+    })
   })
 
   it('hides balances in privacy mode', async () => {
-    localStorage.setItem('control-center:privacy', 'true')
-    await render()
-    expect(text()).not.toContain('150,000,000')
-    expect(container.querySelectorAll('[aria-label="Hidden value"]').length).toBeGreaterThan(0)
+    await withTestSetup(async () => {
+      localStorage.setItem('control-center:privacy', 'true')
+      await render()
+      expect(text()).not.toContain('150,000,000')
+      expect(container.querySelectorAll('[aria-label="Hidden value"]').length).toBeGreaterThan(0)
+    })
   })
 
   it('offers account actions on right-click, including verification for pending wallets', async () => {
-    await render()
-    const pending = container.querySelector<HTMLElement>('[aria-label="Spending, awaiting a signature"]')!
-    await act(async () =>
-      pending.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 40, clientY: 40 })),
-    )
-    const items = [...document.querySelectorAll('[role="menuitem"]')].map((item) => item.textContent)
-    expect(items).toEqual(['Open', 'Verify ownership', 'Create statement'])
-    await act(async () => document.querySelector<HTMLElement>('[role="menuitem"]:last-of-type')!.click())
-    expect(container.querySelector('[data-testid="location"]')!.textContent).toBe('/statements/create')
+    await withTestSetup(async () => {
+      await render()
+      const pending = expectElement(
+        container.querySelector('[aria-label="Spending, awaiting a signature"]'),
+        HTMLElement,
+      )
+      await act(async () =>
+        pending.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 40, clientY: 40 })),
+      )
+      const items = [...document.querySelectorAll('[role="menuitem"]')].map((item) => item.textContent)
+      expect(items).toEqual(['Open', 'Verify ownership', 'Create statement'])
+      await act(async () => {
+        expectElement(document.querySelector('[role="menuitem"]:last-of-type'), HTMLElement).click()
+      })
+      expect(expectElement(container.querySelector('[data-testid="location"]'), Element).textContent).toBe(
+        '/statements/create',
+      )
+    })
   })
 
   it('returns focus to the icon when its menu closes with Escape', async () => {
-    await render()
-    const icon = container.querySelector<HTMLElement>('[aria-label="Cold Wallet, verified"]')!
-    icon.focus()
-    await act(async () => icon.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 0, clientY: 0 })))
-    expect(document.activeElement?.getAttribute('role')).toBe('menuitem')
-    await act(async () => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
-    expect(document.querySelector('[role="menu"]')).toBeNull()
-    expect(document.activeElement).toBe(icon)
+    await withTestSetup(async () => {
+      await render()
+      const icon = expectElement(container.querySelector('[aria-label="Cold Wallet, verified"]'), HTMLElement)
+      icon.focus()
+      await act(async () =>
+        icon.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 0, clientY: 0 })),
+      )
+      expect(document.activeElement?.getAttribute('role')).toBe('menuitem')
+      await act(async () => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
+      expect(document.querySelector('[role="menu"]')).toBeNull()
+      expect(document.activeElement).toBe(icon)
+    })
   })
 
   it('switches appearance and opens the wallpaper picker from the desktop menu', async () => {
-    await render()
-    const desktop = container.querySelector<HTMLElement>('[aria-label="Overview"]')!
-    await act(async () =>
-      desktop.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 10, clientY: 10 })),
-    )
-    const dark = [...document.querySelectorAll<HTMLElement>('[role="menuitemradio"]')].find(
-      (item) => item.textContent === 'Dark',
-    )!
-    await act(async () => dark.click())
-    expect(localStorage.getItem('control-center:appearance')).toBe('dark')
+    await withTestSetup(async () => {
+      await render()
+      const desktop = expectElement(container.querySelector('[aria-label="Overview"]'), HTMLElement)
+      await act(async () =>
+        desktop.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 10, clientY: 10 })),
+      )
+      const dark = expectElement(
+        [...document.querySelectorAll<HTMLElement>('[role="menuitemradio"]')].find(
+          (item) => item.textContent === 'Dark',
+        ),
+        HTMLElement,
+      )
+      await act(async () => {
+        dark.click()
+      })
+      expect(localStorage.getItem('control-center:appearance')).toBe('dark')
 
-    await act(async () =>
-      desktop.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 10, clientY: 10 })),
-    )
-    const wallpaper = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((item) =>
-      item.textContent?.startsWith('Change wallpaper'),
-    )!
-    await act(async () => wallpaper.click())
-    expect(container.querySelector('[aria-label="Choose a wallpaper"]')).not.toBeNull()
+      await act(async () =>
+        desktop.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 10, clientY: 10 })),
+      )
+      const wallpaper = expectElement(
+        [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((item) =>
+          item.textContent.startsWith('Change wallpaper'),
+        ),
+        HTMLElement,
+      )
+      await act(async () => {
+        wallpaper.click()
+      })
+      expect(container.querySelector('[aria-label="Choose a wallpaper"]')).not.toBeNull()
+    })
   })
 
   it('opens search from the pill above the dock', async () => {
-    await render()
-    await act(async () => container.querySelector<HTMLButtonElement>('button[aria-label^="Search"]')!.click())
-    expect(mocks.openSearch).toHaveBeenCalledOnce()
+    await withTestSetup(async () => {
+      await render()
+      await act(async () => {
+        expectElement(container.querySelector('button[aria-label^="Search"]'), HTMLButtonElement).click()
+      })
+      expect(mocks.openSearch).toHaveBeenCalledOnce()
+    })
   })
 
   it('opens Getting Started on first run', async () => {
-    mocks.accounts = []
-    mocks.onboarding = null
-    await render()
-    expect(container.querySelector('[data-testid="location"]')!.textContent).toBe('/getting-started')
+    await withTestSetup(async () => {
+      mocks.accounts = []
+      mocks.onboarding = null
+      await render()
+      expect(expectElement(container.querySelector('[data-testid="location"]'), Element).textContent).toBe(
+        '/getting-started',
+      )
+    })
   })
 
   it('never shows a zero total when no balance is known yet', async () => {
-    mocks.accounts = mocks.accounts.map((item) => ({ ...item, sats: null }))
-    await render()
-    expect(text()).not.toContain('₿ 150,000,000')
-    expect(text()).toContain('Balances unavailable right now')
+    await withTestSetup(async () => {
+      mocks.accounts = mocks.accounts.map((item) => ({ ...item, sats: null }))
+      await render()
+      expect(text()).not.toContain('₿ 150,000,000')
+      expect(text()).toContain('Balances unavailable right now')
+    })
   })
 
   it('stays on the desktop without accounts once onboarding was dismissed', async () => {
-    mocks.accounts = []
-    mocks.onboarding = 'dismissed'
-    await render()
-    expect(container.querySelector('[data-testid="location"]')!.textContent).toBe('/home')
-    expect(text()).toContain('No accounts yet')
+    await withTestSetup(async () => {
+      mocks.accounts = []
+      mocks.onboarding = 'dismissed'
+      await render()
+      expect(expectElement(container.querySelector('[data-testid="location"]'), Element).textContent).toBe('/home')
+      expect(text()).toContain('No accounts yet')
+    })
   })
 })

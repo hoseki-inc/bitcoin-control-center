@@ -70,7 +70,9 @@ export function RevealSpan({ revealKey, children }: { revealKey: string; childre
  */
 export function DecodeText({ text, revealKey }: { text: string; revealKey: string }): JSX.Element {
   const animate = useHasMounted()
-  if (!animate) return <>{text}</>
+  if (!animate) {
+    return <>{text}</>
+  }
   const step = Math.min(14, WAVE_MS / Math.max(1, text.length))
   return (
     <Box
@@ -85,7 +87,7 @@ export function DecodeText({ text, revealKey }: { text: string; revealKey: strin
         '@media (prefers-reduced-motion: reduce)': { '& > span': { animation: 'none' } },
       }}
     >
-      {[...text].map((char, index) => (
+      {Array.from(text).map((char, index) => (
         <span key={index} style={{ animationDelay: `${Math.round(index * step)}ms` }}>
           {char}
         </span>

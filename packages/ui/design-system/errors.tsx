@@ -118,7 +118,7 @@ export function ErrorInline({
       <Text textStyle="text/sm" color="text.primary" fontWeight="medium">
         {message}
       </Text>
-      {otherContent && <Box color="text.primary">{otherContent}</Box>}
+      {Boolean(otherContent) ? <Box color="text.primary">{otherContent}</Box> : otherContent}
     </Stack>
   )
 }

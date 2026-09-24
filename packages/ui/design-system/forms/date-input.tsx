@@ -16,16 +16,18 @@ export type DateInputProps = Omit<InputProps, 'type' | 'value' | 'onChange' | 'm
 
 /** Shared date picker with Date values; date-only values use local midnight. */
 export function DateInput({ value, onChange, min, max, type = 'date', ...props }: DateInputProps): JSX.Element {
-  const format = (date: Date): string => formatDateForInput(date, type)
+  const formatInputDate = (date: Date): string => formatDateForInput(date, type)
 
   if (type === 'date') {
     return (
       <DateStringInput
         {...props}
-        value={value && isValid(value) ? format(value) : ''}
-        min={min && isValid(min) ? format(min) : undefined}
-        max={max && isValid(max) ? format(max) : undefined}
-        onChange={(date) => onChange(date ? parseISO(date) : null)}
+        value={value && isValid(value) ? formatInputDate(value) : ''}
+        min={min && isValid(min) ? formatInputDate(min) : undefined}
+        max={max && isValid(max) ? formatInputDate(max) : undefined}
+        onChange={(date) => {
+          onChange(date ? parseISO(date) : null)
+        }}
       />
     )
   }
@@ -34,12 +36,12 @@ export function DateInput({ value, onChange, min, max, type = 'date', ...props }
     <Input
       {...props}
       type={type}
-      max={max && isValid(max) ? format(max) : undefined}
-      min={min && isValid(min) ? format(min) : undefined}
-      value={value && isValid(value) ? format(value) : ''}
+      max={max && isValid(max) ? formatInputDate(max) : undefined}
+      min={min && isValid(min) ? formatInputDate(min) : undefined}
+      value={value && isValid(value) ? formatInputDate(value) : ''}
       onChange={(e) => {
         const dateValue = new Date(e.target.value)
-        onChange(dateValue && isValid(dateValue) ? dateValue : null)
+        onChange(isValid(dateValue) ? dateValue : null)
       }}
     />
   )

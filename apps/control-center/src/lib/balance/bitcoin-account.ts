@@ -1,5 +1,5 @@
 import type { Router } from '@hoseki/apps/api-sentinel/src/external_types'
-import { type NetworkAccountCheckedString } from '@hoseki/packages/bitcoin'
+import type { NetworkAccountCheckedString } from '@hoseki/packages/bitcoin'
 import type { inferProcedureOutput } from '@trpc/server'
 import { trpc } from '../../trpc'
 
