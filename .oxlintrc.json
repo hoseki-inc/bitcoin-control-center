@@ -244,7 +244,8 @@
       {
         "maxArgs": 2
       }
-    ]
+    ],
+    "vitest/valid-expect-in-promise": "error"
   },
   "overrides": [
     {
