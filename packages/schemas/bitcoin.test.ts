@@ -35,14 +35,14 @@ const ADDRESS_FIXTURES = [...MAINNET_ADDRESSES, ...TESTNET_ADDRESSES, ...REGTEST
 test('bitcoinAddressString', () => {
   for (const fixture of ADDRESS_FIXTURES) {
     const address = bitcoinAddressString.safeParse(fixture)
-    expect(address.success, fixture).toEqual(true)
+    expect(address.success, fixture).toBe(true)
   }
 })
 
 test('bitcoinAddressDescriptor', () => {
   for (const fixture of ADDRESS_FIXTURES) {
     const address = bitcoinAddressDescriptor.safeParse(`addr(${fixture})`)
-    expect(address.success, fixture).toEqual(true)
+    expect(address.success, fixture).toBe(true)
   }
 })
 
@@ -56,7 +56,7 @@ const XPUB_FIXTURES = [XPUB, TPUB]
 test('bitcoinXpubStringSchema - accepts only core xpub/tpub', () => {
   for (const fixture of XPUB_FIXTURES) {
     const xpub = bitcoinXpubStringSchema.safeParse(fixture)
-    expect(xpub.success, fixture).toEqual(true)
+    expect(xpub.success, fixture).toBe(true)
   }
 })
 
@@ -73,7 +73,7 @@ test('bitcoinXpubStringSchema - rejects SLIP-132 extended public keys', () => {
   ]
   for (const key of slip132Keys) {
     const result = bitcoinXpubStringSchema.safeParse(key)
-    expect(result.success, `Should reject SLIP-132 key: ${key}`).toEqual(false)
+    expect(result.success, `Should reject SLIP-132 key: ${key}`).toBe(false)
   }
 })
 
@@ -100,11 +100,11 @@ test('bitcoinSinglesigAccountDescriptor', () => {
       for (const range of ADDRESS_RANGE_FIXTURES) {
         const descriptor: string = wrapScript(script, `${fixture}/${range}/*`)
         let account = bitcoinSinglesigAccountDescriptor.safeParse(descriptor)
-        expect(account.success, descriptor).toEqual(true)
+        expect(account.success, descriptor).toBe(true)
 
         const withChecksum = descriptors.checksum(descriptor).expect('valid checksum')
         account = bitcoinSinglesigAccountDescriptor.safeParse(withChecksum)
-        expect(account.success, descriptor).toEqual(true)
+        expect(account.success, descriptor).toBe(true)
       }
     }
   }
@@ -158,7 +158,7 @@ test('bitcoinMultisigAccountDescriptor', () => {
           const accountRanges = fixture.map((xpub) => `${xpub}/${range}/*`)
           const descriptor: string = wrapMultiScript(script, multi, accountRanges)
           let account = bitcoinMultisigAccountDescriptor.safeParse(descriptor)
-          expect(account.success, descriptor).toEqual(true)
+          expect(account.success, descriptor).toBe(true)
         }
       }
     }
@@ -185,19 +185,19 @@ test('bitcoinNetwork', () => {
     dummy: true,
     network: Network.Mainnet,
   })
-  expect(parsed.success).toEqual(true)
+  expect(parsed.success).toBe(true)
 
   // Check that the schema accepts a function that returns the network
   parsed = schema.safeParse({
     dummy: true,
     network: () => Network.Mainnet,
   })
-  expect(parsed.success).toEqual(true)
+  expect(parsed.success).toBe(true)
 
   // Check that the schema rejects a different Network
   parsed = schema.safeParse({
     dummy: true,
     network: Network.Testnet,
   })
-  expect(parsed.success).toEqual(false)
+  expect(parsed.success).toBe(false)
 })

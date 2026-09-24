@@ -59,7 +59,7 @@ it('should parse with config', () => {
     })
       .parse(new Decimal('1'))
       .precision(),
-  ).toEqual(1)
+  ).toBe(1)
 })
 
 it.each([

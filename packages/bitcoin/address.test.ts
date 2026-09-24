@@ -137,5 +137,5 @@ test('fromDescriptor', () => {
 test('eq', () => {
   const a = Address.fromString('1CqbkfcUn2wDWs13xEncHPuwc3ki6QGCxT').expect('valid address')
   const b = Address.fromString('1CqbkfcUn2wDWs13xEncHPuwc3ki6QGCxT').expect('valid address')
-  expect(a.eq(b)).toEqual(true)
+  expect(a.eq(b)).toBe(true)
 })
