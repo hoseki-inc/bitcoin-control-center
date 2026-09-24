@@ -220,7 +220,8 @@
     "vitest/no-import-node-test": "error",
     "vitest/no-interpolation-in-snapshots": "error",
     "vitest/no-mocks-import": "error",
-    "vitest/no-standalone-expect": "error"
+    "vitest/no-standalone-expect": "error",
+    "vitest/no-test-prefixes": "error"
   },
   "overrides": [
     {
