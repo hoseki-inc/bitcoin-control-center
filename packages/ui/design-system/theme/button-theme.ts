@@ -1,6 +1,8 @@
-const disabledColors = {
-  bgColor: 'surface.emphasis',
-  color: 'text.tertiary',
+// Disabled buttons keep their shape and colour and simply recede, rather than turning
+// into a grey block that reads as a different kind of control.
+const disabledStyle = {
+  opacity: 0.4,
+  boxShadow: 'none',
 } as const
 
 const baseStyle = {
@@ -18,16 +20,14 @@ const baseStyle = {
 
   _hover: {
     cursor: 'pointer',
-    _disabled: {
-      ...disabledColors,
-    },
+    _disabled: disabledStyle,
   },
   _active: {
     transitionTimingFunction: 'ease-in-out', // Chakra overrides this with `cubic-bezier(0.4, 0, 0.2, 1)`, don't know how to disable this yet
     transitionDuration: '150ms',
   },
   _disabled: {
-    ...disabledColors,
+    ...disabledStyle,
     pointerEvents: 'none',
   },
 } as const
@@ -76,8 +76,8 @@ export const primaryVariant = {
     bgColor: 'surface.inversePressed',
   },
   _disabled: {
-    bgColor: 'surface.emphasis',
-    color: 'text.tertiary',
+    bgColor: 'surface.inverse',
+    color: 'text.inverse',
   },
 } as const
 

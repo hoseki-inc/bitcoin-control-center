@@ -44,6 +44,8 @@ const darkMaterial = {
   '--segment-pill-shadow': 'inset 0 1px 0 rgb(255 255 255 / 0.12), 0 1px 3px rgb(0 0 0 / 0.25)',
   '--field-bg': 'rgb(255 255 255 / 0.04)',
   '--field-bg-hover': 'rgb(255 255 255 / 0.07)',
+  // Soft backdrop behind sticky actions at the bottom of a window.
+  '--footer-fade': 'rgb(10 11 14 / 0.55)',
 }
 
 const lightMaterial: typeof darkMaterial = {
@@ -81,6 +83,7 @@ const lightMaterial: typeof darkMaterial = {
   '--segment-pill-shadow': '0 1px 3px rgb(15 23 42 / 0.12), 0 0 0 0.5px rgb(15 23 42 / 0.06)',
   '--field-bg': 'rgb(255 255 255 / 0.7)',
   '--field-bg-hover': 'rgb(255 255 255 / 0.95)',
+  '--footer-fade': 'rgb(255 255 255 / 0.8)',
 }
 
 const shared = {
