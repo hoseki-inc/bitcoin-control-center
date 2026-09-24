@@ -207,7 +207,8 @@
         "allTestPattern": "(^|[\\\\/])__tests__[\\\\/]|\\.(test|spec)\\.[cm]?[jt]sx?$",
         "pattern": "\\.test\\.[cm]?[jt]sx?$"
       }
-    ]
+    ],
+    "vitest/consistent-vitest-vi": "error"
   },
   "overrides": [
     {
