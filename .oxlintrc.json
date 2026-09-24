@@ -223,7 +223,8 @@
     "vitest/no-standalone-expect": "error",
     "vitest/no-test-prefixes": "error",
     "vitest/prefer-comparison-matcher": "error",
-    "vitest/prefer-equality-matcher": "error"
+    "vitest/prefer-equality-matcher": "error",
+    "vitest/prefer-expect-resolves": "error"
   },
   "overrides": [
     {
