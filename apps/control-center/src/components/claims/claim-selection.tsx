@@ -261,6 +261,8 @@ export function ClaimSelection({
             <Td px={0} colSpan={3}>
               <HStack textStyle="text/sm" fontWeight="regular" color="neutral.600">
                 <PlusIcon size="18px" />
+                {/* React Router supplies the anchor href from to; Oxlint cannot infer that for event rules. */}
+                {/* oxlint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */}
                 <Link to="/accounts" onClick={handleAddClaim}>
                   Add account
                 </Link>

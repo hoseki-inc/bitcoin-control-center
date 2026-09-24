@@ -619,6 +619,9 @@ export function DashboardPage(): JSX.Element {
                     textStyle="label/xs"
                     color="neutral.300"
                     cursor="pointer"
+                    as="button"
+                    type="button"
+                    aria-label="Clear account filter"
                     onClick={clearAll}
                     _hover={{ color: 'neutral.500' }}
                   >

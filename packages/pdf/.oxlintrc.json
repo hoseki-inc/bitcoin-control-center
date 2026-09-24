@@ -1,0 +1,12 @@
+{
+  "extends": ["../../.oxlintrc.json"],
+  "plugins": ["oxc", "typescript", "react", "jsx-a11y"],
+  "categories": {
+    "correctness": "off"
+  },
+  "settings": {
+    "jsx-a11y": {
+      "components": {}
+    }
+  }
+}

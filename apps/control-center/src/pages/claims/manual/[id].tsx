@@ -405,7 +405,7 @@ export function ManualAccountDetailsPage(): JSX.Element {
                     <Th>Amount (BTC)</Th>
                     <Th>Date</Th>
                     <Th>Note</Th>
-                    <Th />
+                    <Th aria-label="Actions" />
                   </Tr>
                 </Thead>
                 <Tbody>

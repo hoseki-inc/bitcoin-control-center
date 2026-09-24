@@ -57,7 +57,15 @@ export function Alert({
         )}
       </Flex>
       {onRetry && (
-        <Link onClick={onRetry} cursor="pointer" textDecoration="underline" textStyle="text/sm" fontWeight="medium">
+        <Link
+          as="button"
+          type="button"
+          onClick={onRetry}
+          cursor="pointer"
+          textDecoration="underline"
+          textStyle="text/sm"
+          fontWeight="medium"
+        >
           Retry
         </Link>
       )}

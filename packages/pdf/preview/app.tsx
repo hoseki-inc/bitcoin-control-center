@@ -113,6 +113,9 @@ const AlertPanel: React.FC<AlertPanelProps> = ({ validationError, parsedStatemen
       {alertsMinimized && (
         <Box position="absolute" bottom={4} right={4} zIndex={10}>
           <Badge
+            as="button"
+            aria-label="Expand validation details"
+            type="button"
             bg={validationError != null && validationError !== '' ? 'red.200' : 'green.200'}
             color={validationError != null && validationError !== '' ? 'red.800' : 'green.800'}
             px={3}

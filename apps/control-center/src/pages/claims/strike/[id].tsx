@@ -461,13 +461,21 @@ export function StrikeAccountDetailsPage(): JSX.Element {
                     borderRadius="md"
                     cursor="pointer"
                     bg={selectedMonth === month ? 'neutral.50' : 'shades.0'}
-                    onClick={() => {
-                      setSelectedMonth(selectedMonth === month ? null : month)
-                    }}
                     _hover={{ borderColor: 'neutral.400' }}
                     transition="all 0.15s ease"
                   >
-                    <Text textStyle="text/sm" fontWeight="medium">
+                    <Text
+                      as="button"
+                      type="button"
+                      flex={1}
+                      textAlign="left"
+                      textStyle="text/sm"
+                      fontWeight="medium"
+                      aria-pressed={selectedMonth === month}
+                      onClick={() => {
+                        setSelectedMonth(selectedMonth === month ? null : month)
+                      }}
+                    >
                       {formatMonth(month)}
                     </Text>
                     <Button
@@ -610,52 +618,58 @@ function CsvDropZone({
   )
 
   return (
-    <Flex
-      direction="column"
-      align="center"
-      justify="center"
-      py={8}
-      px={4}
-      borderWidth="2px"
-      borderStyle="dashed"
-      borderColor={isDragging ? 'primary.400' : 'neutral.200'}
-      borderRadius="lg"
-      bg={isDragging ? 'primary.50' : 'neutral.25'}
-      cursor="pointer"
-      transition="all 0.15s ease"
-      _hover={{ borderColor: 'neutral.400', bg: 'neutral.50' }}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
-      onClick={() => fileInputRef.current?.click()}
-    >
-      <Icon viewBox="0 0 24 24" boxSize="28px" color="neutral.400" mb={2}>
-        <path
-          d="M12 16V4m0 0l-4 4m4-4l4 4M4 14v4a2 2 0 002 2h12a2 2 0 002-2v-4"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          fill="none"
-        />
-      </Icon>
-      {isImporting ? (
-        <HStack spacing={2}>
-          <Spinner size="sm" />
-          <Text textStyle="text/sm" color="neutral.600">
-            Importing...
-          </Text>
-        </HStack>
-      ) : (
-        <>
-          <Text textStyle="text/sm" fontWeight="medium" color="neutral.700">
-            Drop Strike CSV here or click to browse
-          </Text>
-          <Text textStyle="text/xs" color="neutral.400" mt={0.5}>
-            Exported from Strike → Account → Statements
-          </Text>
-        </>
-      )}
+    <>
+      <Flex
+        as="button"
+        type="button"
+        width="full"
+        _focusVisible={{ boxShadow: 'outline' }}
+        direction="column"
+        align="center"
+        justify="center"
+        py={8}
+        px={4}
+        borderWidth="2px"
+        borderStyle="dashed"
+        borderColor={isDragging ? 'primary.400' : 'neutral.200'}
+        borderRadius="lg"
+        bg={isDragging ? 'primary.50' : 'neutral.25'}
+        cursor="pointer"
+        transition="all 0.15s ease"
+        _hover={{ borderColor: 'neutral.400', bg: 'neutral.50' }}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        onClick={() => fileInputRef.current?.click()}
+      >
+        <Icon viewBox="0 0 24 24" boxSize="28px" color="neutral.400" mb={2}>
+          <path
+            d="M12 16V4m0 0l-4 4m4-4l4 4M4 14v4a2 2 0 002 2h12a2 2 0 002-2v-4"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            fill="none"
+          />
+        </Icon>
+        {isImporting ? (
+          <HStack as="span" spacing={2}>
+            <Spinner as="span" size="sm" />
+            <Text as="span" textStyle="text/sm" color="neutral.600">
+              Importing...
+            </Text>
+          </HStack>
+        ) : (
+          <>
+            <Text as="span" textStyle="text/sm" fontWeight="medium" color="neutral.700">
+              Drop Strike CSV here or click to browse
+            </Text>
+            <Text as="span" textStyle="text/xs" color="neutral.400" mt={0.5}>
+              Exported from Strike → Account → Statements
+            </Text>
+          </>
+        )}
+      </Flex>
       <chakra.input
         ref={fileInputRef}
         type="file"
@@ -669,7 +683,7 @@ function CsvDropZone({
           e.target.value = ''
         }}
       />
-    </Flex>
+    </>
   )
 }
 

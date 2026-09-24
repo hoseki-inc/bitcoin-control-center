@@ -67,6 +67,9 @@ function ConnectionType({
 }) {
   return (
     <Stack
+      as="button"
+      type="button"
+      _focusVisible={{ boxShadow: 'outline' }}
       onClick={onClick}
       border="1px solid"
       borderColor="neutral.200"
@@ -76,10 +79,10 @@ function ConnectionType({
       gap={8}
       _hover={{ cursor: 'pointer', bgColor: 'neutral.50' }}
     >
-      <Flex justifyContent="center" h="30px">
+      <Flex as="span" justifyContent="center" h="30px">
         <chakra.img src={imagePath} alt={imageAltText} maxW="100px" />
       </Flex>
-      <Text textStyle="label/md" fontWeight="medium">
+      <Text as="span" textStyle="label/md" fontWeight="medium">
         {title}
       </Text>
     </Stack>

@@ -211,7 +211,7 @@ export function EtfAccountDetailsPage(): JSX.Element {
                     <Th>BTC/Share</Th>
                     <Th>BTC Amount</Th>
                     <Th>Purchased</Th>
-                    <Th />
+                    <Th aria-label="Actions" />
                   </Tr>
                 </Thead>
                 <Tbody>
