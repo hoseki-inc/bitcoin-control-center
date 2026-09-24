@@ -1,6 +1,13 @@
 import { Box, Button, Image, Spinner, Stack, Text, useColorModeValue, usePrefersReducedMotion } from '@chakra-ui/react'
 import { motion } from '@hoseki/packages/ui/design-system/animations/motion'
-import { type ReactNode, useEffect, useRef, useState } from 'react'
+import { type ReactNode, createContext, useContext, useEffect, useRef, useState } from 'react'
+
+const WelcomeRevealedContext = createContext(true)
+
+/** False while the launch welcome still covers the app, so entrances can wait to be seen. */
+export function useWelcomeRevealed(): boolean {
+  return useContext(WelcomeRevealedContext)
+}
 
 export function WelcomeReveal({ children }: { children: ReactNode }): JSX.Element {
   const reducedMotion = usePrefersReducedMotion()
@@ -121,7 +128,7 @@ export function WelcomeReveal({ children }: { children: ReactNode }): JSX.Elemen
             : undefined
         }
       >
-        {children}
+        <WelcomeRevealedContext.Provider value={!welcoming}>{children}</WelcomeRevealedContext.Provider>
       </Box>
     </Box>
   )

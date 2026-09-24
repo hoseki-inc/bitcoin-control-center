@@ -16,7 +16,26 @@ vi.mock('./wallpaper/use-wallpaper', async () => {
     useBlockSeed: () => [0, 0, 0, 0],
   }
 })
-vi.mock('../hooks/use-local-settings', () => ({ useLocalSetting: () => ({ data: 'Satoshi Nakamoto' }) }))
+vi.mock('../hooks/use-local-settings', () => ({
+  useLocalSetting: (key: string) => ({ data: key === 'user_name' ? 'Satoshi Nakamoto' : 'completed' }),
+}))
+// The shell's job is navigation; the desktop's widgets and data have their own tests.
+vi.mock('./widgets/desktop-widgets', () => ({
+  HoldingsWidget: () => null,
+  PriceWidget: () => null,
+  ConnectionsWidget: () => null,
+  VerificationWidget: () => null,
+}))
+vi.mock('../hooks/use-accounts', () => ({
+  useAccounts: () => ({
+    accounts: [],
+    totals: { accountCount: 1 },
+    btcUsdPrice: null,
+    isLoading: false,
+    isError: false,
+    retry: vi.fn(),
+  }),
+}))
 
 function mockMatchMedia(reducedMotion: boolean): void {
   window.matchMedia = vi.fn().mockImplementation((query: string) => ({

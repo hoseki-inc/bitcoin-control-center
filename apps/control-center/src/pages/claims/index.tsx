@@ -30,6 +30,7 @@ import { FirstAccountReady } from '../../components/onboarding/getting-started'
 import { SensitiveValue } from '../../components/sensitive-value'
 import { useAutoRefreshExchanges } from '../../hooks/use-auto-refresh-exchanges'
 import { useQueryErrorToast } from '../../hooks/use-query-error-toast'
+import { computeAccountTotals } from '../../lib/account-totals'
 import { useGetBalancesPerClaimIds } from '../../lib/balances'
 import { type RouterOutput, trpc } from '../../trpc'
 import { type ClaimDto } from '../../trpc/server-types'
@@ -141,72 +142,22 @@ export function ClaimsPage(): JSX.Element {
   const limit = claimCountLimitQuery?.data ?? null
   const hasClaims =
     claims.length > 0 || exchangeAccounts.length > 0 || manualAccounts.length > 0 || etfAccounts.length > 0
-  const verifiedCount = claims.filter((c) => ensureClaimStatusNotExpired(c) === 'verified').length
-  const pendingCount = claims.length - verifiedCount
-
-  const claimTotalBtcSats = balancesQuery.data
-    ? Array.from(balancesQuery.data.values()).reduce((sum, b) => {
-        if (!b) return sum
-        return sum + Number(b.current)
-      }, 0)
-    : 0
-
-  const exchangeTotalBtcSats = connectedExchangeAccounts.reduce((sum, a) => {
-    if (!a.balance) return sum
-    return sum + Number(a.balance)
-  }, 0)
-
-  const manualTotalBtcSats = manualAccounts.reduce((sum, a) => {
-    if (!a.balance) return sum
-    return sum + Number(a.balance)
-  }, 0)
-
-  const etfTotalBtcSats = etfAccounts.reduce((sum, a) => {
-    if (!a.balance) return sum
-    return sum + Number(a.balance)
-  }, 0)
-
-  const totalBtcSats = claimTotalBtcSats + exchangeTotalBtcSats + manualTotalBtcSats + etfTotalBtcSats
-  const totalBtc = totalBtcSats / 100_000_000
-  const hasUnknownBalance =
-    claims.some((claim) => !balancesQuery.data?.get(claim.id)) ||
-    exchangeAccounts.some(needsExchangeReconnect) ||
-    [...exchangeAccounts, ...manualAccounts, ...etfAccounts].some((account) => account.balance === null)
-
   const btcUsdPrice = btcPriceQuery.data?.value ? Number(btcPriceQuery.data.value) : null
-
-  const claimsTotalUsd = balancesQuery.data
-    ? Array.from(balancesQuery.data.values()).reduce((sum, b) => {
-        if (!b?.usd) return sum
-        return sum + Number(b.usd)
-      }, 0)
-    : 0
-
-  const exchangeTotalUsd =
-    btcUsdPrice !== null
-      ? connectedExchangeAccounts.reduce((sum, a) => {
-          if (!a.balance) return sum
-          return sum + (Number(a.balance) / 100_000_000) * btcUsdPrice
-        }, 0)
-      : 0
-
-  const manualTotalUsd =
-    btcUsdPrice !== null
-      ? manualAccounts.reduce((sum, a) => {
-          if (!a.balance) return sum
-          return sum + (Number(a.balance) / 100_000_000) * btcUsdPrice
-        }, 0)
-      : 0
-
-  const etfTotalUsd =
-    btcUsdPrice !== null
-      ? etfAccounts.reduce((sum, a) => {
-          if (!a.balance) return sum
-          return sum + (Number(a.balance) / 100_000_000) * btcUsdPrice
-        }, 0)
-      : 0
-
-  const totalUsd = claimsTotalUsd + exchangeTotalUsd + manualTotalUsd + etfTotalUsd
+  const {
+    totalSats: totalBtcSats,
+    totalUsd,
+    hasUnknownBalance,
+    verifiedCount,
+    pendingCount,
+  } = computeAccountTotals({
+    claims,
+    claimBalances: balancesQuery.data,
+    exchangeAccounts,
+    manualAccounts,
+    etfAccounts,
+    btcUsdPrice,
+  })
+  const totalBtc = totalBtcSats / 100_000_000
 
   return (
     <>

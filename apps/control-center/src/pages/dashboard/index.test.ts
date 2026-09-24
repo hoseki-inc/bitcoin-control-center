@@ -51,6 +51,17 @@ vi.mock('../../trpc', () => {
         etf: { list: { useQuery: () => emptyList } },
         manual: { list: { useQuery: () => ({ data: mocks.holdings, isLoading: false }) } },
         retrieveBitcoinPrice: { useQuery: () => ({ data: { value: 50_000 }, isLoading: false }) },
+        // The market price chart sits below the portfolio charts.
+        retrieveBitcoinPriceHistory: {
+          useQuery: () => ({
+            data: [],
+            isLoading: false,
+            isFetching: false,
+            isError: false,
+            dataUpdatedAt: 0,
+            refetch: vi.fn(),
+          }),
+        },
       },
     },
   }

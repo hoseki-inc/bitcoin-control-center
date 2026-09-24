@@ -13,6 +13,7 @@ import {
 import { Eye, EyeOff, type LucideIcon } from 'lucide-react'
 import { type KeyboardEvent, type PointerEvent, type ReactNode, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router'
+import { useWelcomeRevealed } from '../components/onboarding/welcome-reveal'
 import { usePrivacy } from '../hooks/use-privacy'
 import { SECTIONS, type Section, sectionForPath } from './sections'
 
@@ -238,6 +239,7 @@ export function Dock(): JSX.Element {
   const { pathname } = useLocation()
   const activeId = pathname === '/' ? 'home' : sectionForPath(pathname)?.id
   const glass = useGlassPreset('dock')
+  const revealed = useWelcomeRevealed()
 
   const onPointerMove = (event: PointerEvent<HTMLElement>): void => {
     // Touch never magnifies; a finger has no hover position.
@@ -245,14 +247,18 @@ export function Dock(): JSX.Element {
   }
 
   return (
-    <Flex
+    <MotionBox
       position="fixed"
       left={0}
       right={0}
       bottom="calc(10px + env(safe-area-inset-bottom))"
-      justify="center"
+      display="flex"
+      justifyContent="center"
       zIndex={30}
       pointerEvents="none"
+      // The dock rises into place once the welcome reveals the desktop.
+      initial={{ y: 80 }}
+      animate={revealed ? { y: 0, transition: { ...springs.dock, delay: 0.2 } } : undefined}
     >
       <Glass
         {...glass}
@@ -278,6 +284,6 @@ export function Dock(): JSX.Element {
         <Box aria-hidden alignSelf="center" w="1px" h="36px" bg="border.subtle" mx={0.5} mb={-1} />
         <PrivacyItem mouseX={mouseX} />
       </Glass>
-    </Flex>
+    </MotionBox>
   )
 }

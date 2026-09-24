@@ -34,6 +34,7 @@ import {
 } from '../../components/dashboard-charts/balance-history'
 import { HistoryChartFrame, HistoryRangeLoading } from '../../components/dashboard-charts/history-chart-frame'
 import { MonthlyNetChangeChart } from '../../components/dashboard-charts/monthly-net-change-chart'
+import { BitcoinPriceChart } from '../../components/dashboard/bitcoin-price-chart'
 import { DashboardCardTitle } from '../../components/dashboard/dashboard-typography'
 import { FiatAmountText } from '../../components/fiat-amount-text'
 import { SensitiveValue } from '../../components/sensitive-value'
@@ -710,6 +711,10 @@ export function DashboardPage(): JSX.Element {
                 <HistoryBackfillError />
               </Box>
             )}
+          </Box>
+          {/* Market price lives here now that Home is the desktop; it stays separate from holdings. */}
+          <Box mt={8}>
+            <BitcoinPriceChart />
           </Box>
         </Wrapper>
       </Box>
