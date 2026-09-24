@@ -12,7 +12,7 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
 
 describe('asyncResultAll', () => {
   it('returns an empty success for no operations', async () => {
-    expect(await asyncResultAll([])).toEqual(Ok([]))
+    await expect(asyncResultAll([])).resolves.toEqual(Ok([]))
   })
 
   it('preserves input order when operations complete in reverse order', async () => {
@@ -24,7 +24,7 @@ describe('asyncResultAll', () => {
     await second.promise
     first.resolve(Ok(1))
 
-    expect(await combined).toEqual(Ok([1, 2]))
+    await expect(combined).resolves.toEqual(Ok([1, 2]))
   })
 
   it('returns the first completed error without waiting for an earlier pending operation', async () => {

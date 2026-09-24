@@ -276,7 +276,7 @@ describe('portfolio history completion', () => {
   it('does not fetch history or balances again when coverage is complete', async () => {
     await withTestSetup(async () => {
       harness.sync()
-      expect(await harness.run()).toBe(100n)
+      await expect(harness.run()).resolves.toBe(100n)
       expect(harness.history).not.toHaveBeenCalled()
       expect(harness.provider.getConfirmedAccountBalances).not.toHaveBeenCalled()
       expect(harness.provider.getBlocksTip).toHaveBeenCalledTimes(1)
@@ -286,9 +286,9 @@ describe('portfolio history completion', () => {
   it('still verifies the balance for archival with complete coverage', async () => {
     await withTestSetup(async () => {
       harness.sync()
-      expect(
-        await harness.service['ensureAccountHistorySnapshots'](accountId, account, undefined, new Date(0), true),
-      ).toBe(100n)
+      await expect(
+        harness.service['ensureAccountHistorySnapshots'](accountId, account, undefined, new Date(0), true),
+      ).resolves.toBe(100n)
       expect(harness.provider.getConfirmedAccountBalances).toHaveBeenCalledTimes(1)
       expect(harness.history).not.toHaveBeenCalled()
     })
@@ -298,7 +298,7 @@ describe('portfolio history completion', () => {
     await withTestSetup(async () => {
       harness.sync()
       harness.db.prepare('UPDATE account_history_syncs SET sync_version = 4').run()
-      expect(await harness.run()).toBe(100n)
+      await expect(harness.run()).resolves.toBe(100n)
       expect(harness.history).toHaveBeenCalledWith(account, 0)
       expect(harness.db.prepare('SELECT sync_version FROM account_history_syncs').get()).toEqual({ sync_version: 5 })
     })
@@ -310,7 +310,7 @@ describe('history scan boundaries', () => {
     await withTestSetup(async () => {
       harness.service.recordAccountSnapshot(accountId, '50', '2009-01-04T12:00:00.000Z')
       harness.history.mockResolvedValue(Ok([entry(100n, '2009-01-05T12:00:00.000Z', 100)]))
-      expect(await harness.run()).toBe(100n)
+      await expect(harness.run()).resolves.toBe(100n)
       expect(harness.rows().find(({ timestamp }) => timestamp === '2009-01-04T12:00:00.000Z')?.balance_sats).toBe('0')
     })
   })
@@ -333,7 +333,7 @@ describe('history scan boundaries', () => {
         .mockResolvedValueOnce(Ok([entry(100n, '2020-01-02T12:00:00.000Z')]))
         .mockResolvedValueOnce(Ok([entry(20n, nextTip.timestamp.toISOString(), nextTip.height)]))
         .mockResolvedValueOnce(Ok([entry(10n, thirdTip.timestamp.toISOString(), thirdTip.height)]))
-      expect(await harness.run()).toBe(130n)
+      await expect(harness.run()).resolves.toBe(130n)
       expect(harness.history.mock.calls.map(([, height]) => height)).toEqual([0, tip.height, nextTip.height])
       expect(harness.rows().find(({ timestamp }) => timestamp === '2020-01-02T12:00:00.000Z')?.balance_sats).toBe('100')
       expect(harness.rows().at(-1)?.balance_sats).toBe('130')
@@ -346,7 +346,7 @@ describe('history scan boundaries', () => {
       harness.history
         .mockResolvedValueOnce(Ok([entry(100n, '2020-01-02T12:00:00.000Z')]))
         .mockResolvedValueOnce(Err(new Error('Tail unavailable')))
-      expect(await harness.run()).toBeNull()
+      await expect(harness.run()).resolves.toBeNull()
       expect(harness.coverage()).toEqual([])
       expect(harness.rows()).toEqual([])
     })
@@ -361,7 +361,7 @@ describe('history scan boundaries', () => {
       harness.history
         .mockResolvedValueOnce(Ok([entry(100n, '2020-01-02T12:00:00.000Z'), tail]))
         .mockResolvedValueOnce(Ok([tail]))
-      expect(await harness.run()).toBe(120n)
+      await expect(harness.run()).resolves.toBe(120n)
       expect(harness.history.mock.calls.map(([, height]) => height)).toEqual([0, tip.height])
       expect(harness.provider.getBlock).toHaveBeenCalledWith(tip.height)
       expect(harness.rows().find(({ timestamp }) => timestamp === '2020-01-02T12:00:00.000Z')?.balance_sats).toBe('100')
@@ -397,7 +397,7 @@ describe('history scan boundaries', () => {
               : nextTip
         harness.provider.getBlocksTip.mockResolvedValueOnce(Ok(tip)).mockResolvedValue(Ok(changedTip))
         harness.provider.getBlock.mockResolvedValue(Ok({ ...tip, hash: 'reorganized' }))
-        expect(await harness.run()).toBeNull()
+        await expect(harness.run()).resolves.toBeNull()
         expect(harness.coverage()).toEqual([])
         expect(harness.rows()).toEqual([])
       })
@@ -407,7 +407,7 @@ describe('history scan boundaries', () => {
   it('does not save snapshots or completion after a partial history failure', async () => {
     await withTestSetup(async () => {
       harness.history.mockResolvedValue(Err(new Error('Electrum unavailable')))
-      expect(await harness.run()).toBeNull()
+      await expect(harness.run()).resolves.toBeNull()
       expect(harness.coverage()).toEqual([])
       expect(harness.rows()).toEqual([])
     })
@@ -423,7 +423,7 @@ describe('history scan boundaries', () => {
       })
       harness.service['invalidateAccountHistoryBackfill'](accountId)
       pending.resolve(Ok([entry(100n, '2020-01-02T12:00:00.000Z')]))
-      expect(await result).toBeNull()
+      await expect(result).resolves.toBeNull()
       expect(harness.coverage()).toEqual([])
       expect(harness.rows()).toEqual([])
     })
@@ -445,7 +445,7 @@ describe('history balance reuse', () => {
 
   it.each([0n, 100n])('reuses an anchored balance of %s only after verifying the tip', async (balance) => {
     await withTestSetup(async () => {
-      expect(await harness.run(balance, tip)).toBe(balance)
+      await expect(harness.run(balance, tip)).resolves.toBe(balance)
       expect(harness.provider.getConfirmedAccountBalances).not.toHaveBeenCalled()
       expect(harness.provider.getBlocksTip).toHaveBeenCalledTimes(2)
       expect(harness.rows().at(-1)?.balance_sats).toBe(balance.toString())
@@ -456,7 +456,7 @@ describe('history balance reuse', () => {
     'fetches a fresh balance without a matching anchor (%j)',
     async (balanceTip) => {
       await withTestSetup(async () => {
-        expect(await harness.run(999n, balanceTip)).toBe(100n)
+        await expect(harness.run(999n, balanceTip)).resolves.toBe(100n)
         expect(harness.provider.getConfirmedAccountBalances).toHaveBeenCalledTimes(1)
       })
     },
@@ -483,7 +483,7 @@ describe('history balance reuse', () => {
       harness.history
         .mockResolvedValueOnce(Ok([entry(100n, '2020-01-02T12:00:00.000Z')]))
         .mockResolvedValueOnce(Ok([entry(20n, nextTip.timestamp.toISOString(), nextTip.height)]))
-      expect(await harness.run(100n, tip)).toBe(120n)
+      await expect(harness.run(100n, tip)).resolves.toBe(120n)
       expect(harness.provider.getConfirmedAccountBalances).toHaveBeenCalledTimes(1)
       expect(harness.provider.getBlock).toHaveBeenCalledWith(tip.height)
       expect(harness.history.mock.calls.map(([, height]) => height)).toEqual([0, tip.height])
@@ -498,7 +498,7 @@ describe('history balance reuse', () => {
         .mockResolvedValue(
           failure === 'reorganization' ? Ok({ ...tip, hash: 'reorganized' }) : Err(new Error('Tip unavailable')),
         )
-      expect(await harness.run(100n, tip)).toBeNull()
+      await expect(harness.run(100n, tip)).resolves.toBeNull()
       expect(harness.rows()).toEqual([])
       expect(harness.coverage()).toEqual([])
     })

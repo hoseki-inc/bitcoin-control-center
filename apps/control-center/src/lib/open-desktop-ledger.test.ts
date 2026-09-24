@@ -45,7 +45,7 @@ async function withTestSetup(run: () => Promise<void>): Promise<void> {
 
 it('checks the active app and returns a transport with no leftover connection listeners', async () => {
   await withTestSetup(async () => {
-    expect(await openDesktopLedger(new AbortController().signal)).toBe(transport)
+    await expect(openDesktopLedger(new AbortController().signal)).resolves.toBe(transport)
     expect(transport._events.listenerCount('disconnect')).toBe(0)
     expect(closeDevice).not.toHaveBeenCalled()
   })
