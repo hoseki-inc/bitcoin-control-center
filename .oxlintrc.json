@@ -237,7 +237,8 @@
     "vitest/prefer-to-have-length": "error",
     "vitest/require-awaited-expect-poll": "error",
     "vitest/require-local-test-context-for-concurrent-snapshots": "error",
-    "vitest/require-to-throw-message": "error"
+    "vitest/require-to-throw-message": "error",
+    "vitest/valid-describe-callback": "error"
   },
   "overrides": [
     {
