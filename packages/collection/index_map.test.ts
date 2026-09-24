@@ -132,7 +132,7 @@ describe('forEach', () => {
     ])
   })
 
-  test('should iterate over object keys with ID', () => {
+  test('should iterate over object keys with key', () => {
     const map = new IndexMap<{ key: string }, number>()
     map.set({ key: 'a' }, 1)
     map.set({ key: 'b' }, 2)
