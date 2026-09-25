@@ -1,5 +1,6 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "extends": ["./.oxlintrc.imports.json"],
   "ignorePatterns": ["packages/result/lib/core/**", "tools/oxlint/anti-slop/vendor/**"],
   "plugins": ["oxc", "typescript", "react", "jsx-a11y", "vitest"],
   "jsPlugins": [{ "name": "anti-slop", "specifier": "./tools/oxlint/anti-slop/vendor/index.ts" }],

@@ -262,11 +262,11 @@ Run these commands from the repository root unless noted otherwise.
 | Command                  | Purpose                                                          |
 | ------------------------ | ---------------------------------------------------------------- |
 | `pnpm dev`               | Run Sentinel and Control Center in watch mode                    |
-| `pnpm check`             | Run TypeScript project-reference checks                          |
+| `pnpm check`             | Run native TypeScript project-reference checks                   |
 | `pnpm test`              | Run application and shared-library tests through Turbo           |
 | `pnpm lint`              | Run Oxlint and ESLint with zero warnings allowed                 |
-| `pnpm format:check`      | Verify Prettier formatting                                       |
-| `pnpm format`            | Apply Prettier formatting                                        |
+| `pnpm format:check`      | Verify Oxfmt formatting                                          |
+| `pnpm format`            | Apply Oxfmt formatting                                           |
 | `pnpm build`             | Build Sentinel and the production web application                |
 | `pnpm build:ci`          | Build web, StartOS, and desktop application bundles              |
 | `pnpm build:desktop:app` | Build Sentinel, the desktop web app, and Electron shell          |
@@ -275,9 +275,13 @@ Run these commands from the repository root unless noted otherwise.
 | `pnpm ladle:serve`       | Run the shared component-workbench development server            |
 | `pnpm ladle:build`       | Build the component workbench                                    |
 
-Issue [#91](https://github.com/hoseki-inc/bitcoin-control-center/issues/91) is being rolled out one lint rule per commit. Oxlint runs across all maintained JavaScript and TypeScript source, including desktop, StartOS, tests, and repository scripts. Its default rules are disabled, and the explicitly enabled rules accumulate in `.oxlintrc.json`. Existing ESLint checks remain in place during the migration. Run `pnpm lint:oxlint` to check the adopted rules on their own.
+All 218 lint rules from issue [#91](https://github.com/hoseki-inc/bitcoin-control-center/issues/91) are configured in `.oxlintrc.json`. Oxlint runs with type-aware checking across maintained JavaScript and TypeScript source, including desktop, StartOS, tests, and repository scripts. Its default rule categories are disabled so only explicitly configured rules apply. Existing ESLint checks remain in place. Run `pnpm lint:oxlint` to check the adopted rules on their own.
 
-The first checkpoint enables `curly` with the `all` option: every control-flow body must use braces. Oxfmt, type-aware linting, and the native TypeScript checker will be introduced in later checkpoints.
+Oxfmt handles repository formatting, import-statement ordering, and `package.json` sorting. Oxlint’s `import-members/sort` rule uses the existing ESLint sorter to alphabetize named imports, including imports after test setup. Both run through `pnpm format`, `pnpm format:check`, and the pre-commit hook; the named-import rule also runs with the full lint checks. Formatter settings and exclusions live in `.oxfmtrc.json`. The focused named-import configuration in `.oxlintrc.imports.json` is also inherited by `.oxlintrc.json`. Generated output and the pinned anti-slop plugin source are excluded. Local formatting, the pre-commit hook, CI, and StartOS release preparation use the same formatter.
+
+Type checking uses native TypeScript 7.0.2 through the existing `tsc` commands in the workspace, desktop, and StartOS. The workspace and StartOS install it as `@typescript/native`; their `typescript` dependency aliases `@typescript/typescript6` 6.0.2 to retain the JavaScript compiler API required by ESLint and build tools. CI invokes the same checks. The pinned Ladle 5.1.1 patch removes a duplicate source file from its declarations folder so the checker uses Ladle’s existing `ui.d.ts`; runtime files and our story types remain unchanged. Reassess this patch when upgrading Ladle.
+
+For format-on-save in VS Code or Cursor, install the [Oxc extension](https://marketplace.visualstudio.com/items?itemName=oxc.oxc-vscode) and select `oxc.oxc-vscode` as your default formatter, including any language-specific overrides. Disable the editor’s separate organize-imports action so it does not compete with Oxfmt’s import ordering.
 
 Focused workflows:
 
