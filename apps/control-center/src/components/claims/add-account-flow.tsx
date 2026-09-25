@@ -19,7 +19,7 @@ const StrikeMedia = (
 interface AddAccountFlowProps {
   onClose: () => void
   /** When set, verify flows will navigate back here (e.g. { returnTo: '/accounts/add' }) */
-  linkState?: Record<string, unknown>
+  linkState?: { returnTo?: string }
 }
 
 export function AddAccountFlow({ onClose, linkState }: AddAccountFlowProps): JSX.Element {

@@ -25,20 +25,22 @@ export const requestLoggerFactory: NonNullable<FastifyServerOptions['childLogger
         method: request.method,
         url: requestPath(request.url),
         remoteAddress: request.ip,
-        remotePort: request.socket?.remotePort,
+        remotePort: request.socket.remotePort,
       }),
       // Fastify also embeds the raw URL in 404 and duplicate-reply messages.
       msg: redactUrl,
       err: (error: Error) => {
         const serialized = pino.stdSerializers.err(error)
+        const code: unknown = serialized['code']
+        const statusCode: unknown = serialized['statusCode']
         // Keep diagnostic fields only; arbitrary error properties can contain
         // request bodies, headers, or URLs that bypass the request serializer.
         return {
           type: serialized.type,
           message: redactUrl(serialized.message),
           stack: serialized.stack ? redactUrl(serialized.stack) : undefined,
-          code: serialized['code'],
-          statusCode: serialized['statusCode'],
+          code,
+          statusCode,
         }
       },
     },

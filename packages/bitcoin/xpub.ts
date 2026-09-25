@@ -1,4 +1,4 @@
-import { type Opaque } from 'type-fest'
+import type { Opaque } from 'type-fest'
 import { Err, Result } from '../result'
 import { Address } from './address'
 import { type BIP32Interface, bip32, bitcoin } from './lib'
@@ -19,6 +19,7 @@ export class Xpub {
       case 't':
         network = Network.Testnet
         break
+      case undefined:
       default:
         return Err(
           new Error(
@@ -90,7 +91,7 @@ export class Xpub {
       }
     })
       .andThen((address) => {
-        if (!address) {
+        if (address == null || address === '') {
           return Err(new Error('failed to generate address from xpub'))
         }
         return Address.fromString(address)
@@ -99,6 +100,7 @@ export class Xpub {
   }
 
   public toString(): CheckedXpubString {
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- SAFETY: BIP32 serializes this constructed key, and fromString validates all external xpub strings.
     return Result.fromThrowable(() => this.spec.toBase58() as CheckedXpubString).expect(
       'instance should have been a valid xpub that can be encoded to base58',
     )

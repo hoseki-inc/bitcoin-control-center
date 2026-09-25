@@ -6,15 +6,14 @@ import { expect, it, vi } from 'vitest'
 import { FullTransitionModal, getContent } from './full-transition-modal'
 
 vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
-vi.mock('@hoseki/packages/ui/design-system', () => ({ Spinner: () => createElement('span', null, 'Preparing') }))
 
 it('shows completion and failure immediately, without waiting for an animation', async () => {
   const container = document.createElement('div')
   document.body.append(container)
   const root = createRoot(container)
-  const onClose = vi.fn()
+  const onClose = vi.fn<() => void>()
   const render = async (status: 'pending' | 'completed' | 'failed'): Promise<void> => {
-    await act(async () =>
+    await act(async () => {
       root.render(
         createElement(
           ChakraProvider,
@@ -27,8 +26,8 @@ it('shows completion and failure immediately, without waiting for an animation',
             additionalCompletedContent: createElement('button', null, 'View Statement'),
           }),
         ),
-      ),
-    )
+      )
+    })
   }
   try {
     await render('pending')
@@ -40,10 +39,14 @@ it('shows completion and failure immediately, without waiting for an animation',
     await render('failed')
     expect(document.body.textContent).toContain('Statement not created')
     const back = [...document.querySelectorAll('button')].find((button) => button.textContent === 'Back to statement')
-    await act(async () => back?.click())
+    await act(async () => {
+      back?.click()
+    })
     expect(onClose).toHaveBeenCalledOnce()
   } finally {
-    await act(async () => root.unmount())
+    await act(async () => {
+      root.unmount()
+    })
     container.remove()
   }
 })

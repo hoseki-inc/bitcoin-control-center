@@ -1,11 +1,11 @@
 import { alertAnatomy } from '@chakra-ui/anatomy'
 import { theme as chakraTheme, createMultiStyleConfigHelpers } from '@chakra-ui/react'
 
-const { definePartsStyle, defineMultiStyleConfig } = createMultiStyleConfigHelpers(alertAnatomy.keys)
+const styleHelpers = createMultiStyleConfigHelpers(alertAnatomy.keys)
 
 const defaultAlertTheme = chakraTheme.components.Alert
 
-const baseStyle = definePartsStyle((props) => {
+const baseStyle = styleHelpers.definePartsStyle((props) => {
   const { colorScheme: c } = props
 
   return {
@@ -46,7 +46,7 @@ const baseStyle = definePartsStyle((props) => {
   }
 })
 
-export const alertTheme = defineMultiStyleConfig({
+export const alertTheme = styleHelpers.defineMultiStyleConfig({
   ...defaultAlertTheme,
   baseStyle,
   defaultProps: {

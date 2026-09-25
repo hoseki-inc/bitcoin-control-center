@@ -1,10 +1,10 @@
-import { type StackProps } from '@chakra-ui/react'
+import type { StackProps } from '@chakra-ui/react'
 import { Account, Address } from '@hoseki/packages/bitcoin'
 import { Alert, type FileDropState } from '@hoseki/packages/ui/design-system'
 import { type ColdcardModel, type ParsedSignatureFile, isColdcardModel } from '@hoseki/packages/ui/wallet-ui'
 import { useState } from 'react'
 import { toast } from 'sonner'
-import { type SigningFlowProps } from '../../../lib/claim-flow'
+import type { SigningFlowProps } from '../../../lib/claim-flow'
 import { trpc } from '../../../trpc'
 import type { ChallengeDto, ChallengeMessageDto, ClaimDto } from '../../../trpc/server-types'
 import { GenericError } from '../../errors/generic-error'
@@ -13,7 +13,8 @@ import { Step9Ui, Step10, Step11Ui } from './coldcard-steps'
 
 export function ColdcardSigning(props: SigningFlowProps): JSX.Element {
   const { claim, keystore, challenge, challengeMessage, onExitSigning, onSigningComplete } = props
-  const model: ColdcardModel = keystore.model && isColdcardModel(keystore.model) ? keystore.model : 'MK4'
+  const model: ColdcardModel =
+    keystore.model != null && keystore.model !== '' && isColdcardModel(keystore.model) ? keystore.model : 'MK4'
 
   // Coldcard Q uses QR-based signing flow
   if (model === 'Q') {
@@ -44,8 +45,12 @@ function ColdcardFileSigning({
   model,
 }: SigningFlowProps & { model: ColdcardModel }): JSX.Element {
   const [step, setStep] = useState(1)
-  const onBack = (): void => setStep((prev) => prev - 1)
-  const onNext = (): void => setStep((prev) => prev + 1)
+  const onBack = (): void => {
+    setStep((prev) => prev - 1)
+  }
+  const onNext = (): void => {
+    setStep((prev) => prev + 1)
+  }
   const { scriptType } = Account.fromCheckedDescriptor(claim.account)
 
   if (!keystore.derivationPath) {
@@ -90,7 +95,7 @@ function ColdcardFileSigning({
 
 function SinglesigStep11({
   model,
-  claim,
+  claim: _claim,
   challenge,
   challengeMessage,
   onBack,
@@ -127,7 +132,7 @@ function SinglesigStep11({
       await completeChallengeMutation.mutateAsync({ challengeId: challenge.id })
 
       onSigningComplete()
-    } catch (error) {
+    } catch {
       toast.error('The signing process did not complete successfully.')
     }
   }
@@ -140,7 +145,9 @@ function SinglesigStep11({
       fileState={fileState}
       setFileState={setFileState}
       onBack={onBack}
-      onProveControl={proveControl}
+      onProveControl={() => {
+        void proveControl()
+      }}
       {...rest}
     />
   )

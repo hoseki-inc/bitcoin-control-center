@@ -29,7 +29,7 @@ import { type Result, parse } from '../result'
 const regex = /^(m)(\/\d+['h]?)+$/
 export const DerivationPathString = z
   .string()
-  .refine((path) => path.match(regex) !== null, {
+  .refine((path) => regex.exec(path) !== null, {
     message: 'Invalid derivation path',
   })
   .brand('DerivationPathString')
@@ -51,7 +51,7 @@ export class DerivationPath {
   }
 
   public static fromString(path: string): Result<DerivationPath, Error> {
-    return parse(DerivationPathString, path).map((path) => DerivationPath.from(path))
+    return parse(DerivationPathString, path).map((parsedPath) => DerivationPath.from(parsedPath))
   }
 
   public static from(path: DerivationPathString): DerivationPath {
@@ -68,6 +68,7 @@ export class DerivationPath {
 
   public toString(toApostropheNotation: boolean = false): DerivationPathString {
     const hardenedCharacter = toApostropheNotation ? "'" : 'h'
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- SAFETY: Preserve constructor serialization, including legacy empty paths; external strings are validated by fromString.
     return `m/${this.steps.map((step) => `${step.index}${step.hardened ? hardenedCharacter : ''}`).join('/')}` as DerivationPathString
   }
 

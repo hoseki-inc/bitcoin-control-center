@@ -3,13 +3,14 @@ import { useState } from 'react'
 import { useLocation, useNavigate } from 'react-router'
 import { useToastOnLedgerDisconnect } from '../../../hooks/use-ledger-store'
 import { useNavigateToAnExistentOrNewClaim } from '../../../lib/claim-flow'
+import { parseNavigationState } from '../../../lib/navigation-state'
 import { LedgerConnectionInfo } from './ledger-connection-info'
 import { LedgerScan } from './ledger-scan'
 
 export function ConnectLedger(): JSX.Element {
   const navigate = useNavigate()
   const location = useLocation()
-  const returnTo = (location.state as { returnTo?: string } | null)?.returnTo ?? '/accounts'
+  const returnTo = parseNavigationState(location.state)?.returnTo ?? '/accounts'
   const [step, setStep] = useState<'step-1-info' | 'step-2-scan'>('step-1-info')
   const navigateToAnExistentOrNewClaim = useNavigateToAnExistentOrNewClaim()
 
@@ -22,22 +23,33 @@ export function ConnectLedger(): JSX.Element {
       derivationPath: selectedWallet.derivationPath,
       wallet: 'ledger',
       model: getLedgerModel(deviceId),
-      displayName: selectedWallet.displayName ?? 'Ledger Wallet',
+      displayName: selectedWallet.displayName,
     })
   }
 
   return (
     <ClaimConnectionWrapper>
       {step === 'step-1-info' && (
-        <LedgerConnectionInfo onBack={() => navigate(returnTo)} onContinue={() => setStep('step-2-scan')} />
+        <LedgerConnectionInfo
+          onBack={() => {
+            void navigate(returnTo)
+          }}
+          onContinue={() => {
+            setStep('step-2-scan')
+          }}
+        />
       )}
 
       {step === 'step-2-scan' && (
         <LedgerScan
           isLoadingOnContinue={navigateToAnExistentOrNewClaim.isLoading}
           onContinue={handleContinue}
-          onBack={() => setStep('step-1-info')}
-          onCancel={() => navigate(returnTo)}
+          onBack={() => {
+            setStep('step-1-info')
+          }}
+          onCancel={() => {
+            void navigate(returnTo)
+          }}
         />
       )}
     </ClaimConnectionWrapper>

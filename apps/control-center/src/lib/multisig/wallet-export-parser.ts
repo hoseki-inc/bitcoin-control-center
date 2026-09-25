@@ -43,7 +43,8 @@ export function parseWalletExport(jsonFileContents: string, fileType: string): R
 }
 
 function parseJsonWalletExport(jsonFileContents: string): Result<ParsedWalletExport, Error> {
-  return Result.fromThrowable(() => JSON.parse(jsonFileContents)).andThen((parsed) => {
+  // oxlint-disable-next-line anti-slop/no-unknown-returns -- JSON.parse stays unknown until one of the format schemas accepts it.
+  return Result.fromThrowable((): unknown => JSON.parse(jsonFileContents)).andThen((parsed) => {
     const specterDesktopResult = trySpecterDesktop(parsed)
     if (specterDesktopResult.isOk()) {
       return specterDesktopResult
@@ -107,7 +108,7 @@ function tryBitcoinCore(exportFileLines: string[]): Result<ParsedWalletExport, E
     }
   }
 
-  if (!descriptorLine) {
+  if (descriptorLine == null || descriptorLine === '') {
     return Err(
       new Error(
         'No BIP389 descriptor found in file. Expected "# Receive and change descriptor (BIP389):" followed by a descriptor.',
@@ -155,7 +156,9 @@ function tryGenericMultisigSetup(exportFileLines: string[]): Result<ParsedWallet
     const trimmedLine = line.trim()
 
     // Skip comments and empty lines
-    if (trimmedLine.startsWith('#') || !trimmedLine) continue
+    if (trimmedLine.startsWith('#') || !trimmedLine) {
+      continue
+    }
 
     // Fail if a seed phrase is included
     if (trimmedLine.startsWith('seed:')) {
@@ -166,7 +169,9 @@ function tryGenericMultisigSetup(exportFileLines: string[]): Result<ParsedWallet
     if (trimmedLine.includes(':')) {
       const splitParts = trimmedLine.split(':')
       const key = splitParts[0]
-      if (!key) continue
+      if (key == null || key === '') {
+        continue
+      }
 
       const valueParts = splitParts.slice(1)
       const value = valueParts.join(':').trim()
@@ -177,8 +182,8 @@ function tryGenericMultisigSetup(exportFileLines: string[]): Result<ParsedWallet
           break
         case 'Policy': {
           // Parse "2 of 2" format
-          const policyMatch = value.match(/^(\d+)\s+of\s+(\d+)$/)
-          if (policyMatch && policyMatch[1] && policyMatch[2]) {
+          const policyMatch = /^(\d+)\s+of\s+(\d+)$/.exec(value)
+          if (policyMatch?.[1] != null && policyMatch[1] !== '' && policyMatch[2] != null && policyMatch[2] !== '') {
             policy = {
               threshold: parseInt(policyMatch[1], 10),
               total: parseInt(policyMatch[2], 10),
@@ -189,7 +194,10 @@ function tryGenericMultisigSetup(exportFileLines: string[]): Result<ParsedWallet
         case 'Derivation': {
           const derivationPathResult = DerivationPath.fromString(value)
           if (derivationPathResult.isErr()) {
-            browserLogger.error(derivationPathResult.unwrapErr(), `Error parsing derivation path: ${derivation}`)
+            browserLogger.error(
+              derivationPathResult.unwrapErr(),
+              `Error parsing derivation path: ${String(derivation)}`,
+            )
             return Err(derivationPathResult.unwrapErr())
           }
           derivation = derivationPathResult.unwrap()
@@ -216,7 +224,7 @@ function tryGenericMultisigSetup(exportFileLines: string[]): Result<ParsedWallet
   }
 
   // Validate required fields
-  if (!name) {
+  if (name == null || name === '') {
     return Err(new Error('Missing Name field in wallet file'))
   }
   if (!policy) {
@@ -225,7 +233,7 @@ function tryGenericMultisigSetup(exportFileLines: string[]): Result<ParsedWallet
   if (!derivation) {
     return Err(new Error('Missing Derivation field in wallet file'))
   }
-  if (!format) {
+  if (format == null || format === '') {
     return Err(new Error('Missing Format field in wallet file'))
   }
   if (keystores.length !== policy.total) {
@@ -305,7 +313,7 @@ function tryRawDescriptor(exportFileLines: string[]): Result<ParsedWalletExport,
     return Err(new Error('Raw descriptor file must contain exactly one non-empty line'))
   }
   const descriptorLine = nonEmptyLines[0]
-  if (!descriptorLine) {
+  if (descriptorLine == null || descriptorLine === '') {
     return Err(new Error('Descriptor line is empty'))
   }
 
@@ -347,6 +355,7 @@ const SpecterDesktopJsonFileSchema = z
     descriptor: true,
   })
 
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- Each wallet format parser validates the raw JSON value against its own schema.
 function trySpecterDesktop(parsedJson: unknown): Result<ParsedWalletExport, Error> {
   const jsonParseResult = parseUnknown(SpecterDesktopJsonFileSchema, parsedJson)
   if (jsonParseResult.isOk()) {
@@ -404,7 +413,7 @@ const xpubPattern = new RegExp(`(${Slip132.pubKeyRegex.source})(?!\\/<0;1>\\/\\*
 function fixBrokenDescriptor(descriptor: string): Result<string, Error> {
   // Split the descriptor to remove the old checksum
   const [descriptorWithoutChecksum] = descriptor.split('#')
-  if (!descriptorWithoutChecksum) {
+  if (descriptorWithoutChecksum == null || descriptorWithoutChecksum === '') {
     return Err(new Error('Invalid descriptor format'))
   }
 
@@ -450,6 +459,7 @@ const UnchainedCaravanJsonFileSchema = z
     quorum: true,
   })
 
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- Each wallet format parser validates the raw JSON value against its own schema.
 function tryUnchainedCaravan(parsedJson: unknown): Result<ParsedWalletExport, Error> {
   const jsonParseResult = parseUnknown(UnchainedCaravanJsonFileSchema, parsedJson)
 
@@ -544,8 +554,8 @@ const ElectrumJsonFileSchema = z
     wallet_type: z
       .string()
       .transform((val, ctx) => {
-        const match = val.match(/^(\d+)of(\d+)$/)
-        if (!match || !match[1] || !match[2]) {
+        const match = /^(\d+)of(\d+)$/.exec(val)
+        if (match?.[1] == null || match[1] === '' || match[2] == null || match[2] === '') {
           ctx.addIssue({
             code: z.ZodIssueCode.custom,
             message: `Invalid wallet_type format: ${val}`,
@@ -582,6 +592,7 @@ const ElectrumJsonFileSchema = z
     return { wallet_type, use_encryption, keystores }
   })
 
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- Each wallet format parser validates the raw JSON value against its own schema.
 function tryElectrum(parsedJson: unknown): Result<ParsedWalletExport, Error> {
   const jsonParseResult = parseUnknown(ElectrumJsonFileSchema, parsedJson)
   if (jsonParseResult.isErr()) {

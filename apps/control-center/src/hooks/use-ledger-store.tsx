@@ -1,5 +1,5 @@
 import { Link } from '@chakra-ui/react'
-import { createLedgerStore } from '@hoseki/packages/ui/wallet-ui'
+import { createLedgerStore } from '@hoseki/packages/ui/wallet-ui/ledger/device-store'
 import { useEffect } from 'react'
 import { toast } from 'sonner'
 import { browserLogger } from '../logger'
@@ -16,7 +16,13 @@ export const useToastOnLedgerDisconnect = (): void => {
           closeButton: true,
           duration: 30000,
           action: (
-            <Link as="button" fontWeight="semibold" onClick={() => window.location.reload()}>
+            <Link
+              as="button"
+              fontWeight="semibold"
+              onClick={() => {
+                window.location.reload()
+              }}
+            >
               Retry
             </Link>
           ),

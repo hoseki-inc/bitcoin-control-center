@@ -84,7 +84,7 @@ describe('SLIP-132 conversion', () => {
       if (result.isOk()) {
         const xpub = result.unwrap()
         // Verify it's a valid Xpub instance
-        expect(xpub.toString()).toBeTruthy()
+        expect(xpub.toString().length).toBeGreaterThan(0)
       }
     }
   })

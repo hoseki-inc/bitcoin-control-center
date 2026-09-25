@@ -1,0 +1,45 @@
+name: StartOS build
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: startos-build-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  startos-build:
+    name: StartOS package (x86_64 and aarch64)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup
+      - name: Install locked StartOS dependencies
+        run: npm ci --prefix start9 --ignore-scripts
+      - uses: ./.github/actions/setup-startos
+      - name: Create temporary package signing key
+        run: |
+          start-cli init-key
+          mkdir -p .startos
+          install -m 600 ~/.startos/id.key.pem .startos/build.key.pem
+      - name: Build universal StartOS package
+        run: ./start9/build.sh
+      - name: Verify package identity and architectures
+        env:
+          EXPECTED_GIT_HASH: ${{ github.sha }}
+        run: |
+          PACKAGE="start9/hoseki-sentinel.s9pk"
+          test -s "$PACKAGE"
+          MANIFEST="$(start-cli s9pk inspect "$PACKAGE" manifest)"
+          EXPECTED_VERSION="$(node start9/scripts/version.mjs get)"
+          [[ "$(jq -r '.id' <<< "$MANIFEST")" == "hoseki-sentinel" ]]
+          [[ "$(jq -r '.version' <<< "$MANIFEST")" == "$EXPECTED_VERSION" ]]
+          [[ "$(jq -r '.gitHash' <<< "$MANIFEST")" == "$EXPECTED_GIT_HASH" ]]
+          [[ "$(jq -r '[.images[].arch // []] | flatten | unique | join(",")' <<< "$MANIFEST")" == "aarch64,x86_64" ]]
+          git diff --exit-code
+      # Verification outputs stay on the disposable runner; do not upload them.

@@ -5,7 +5,9 @@ import multisigAnimation1 from '../../assets/lottie-animations/multisig.json'
 
 export function MultisigAnimation({ animation }: { animation: '1' | '2' }): JSX.Element {
   const reducedMotion = usePrefersReducedMotion()
-  if (reducedMotion) return <></>
+  if (reducedMotion) {
+    return <></>
+  }
   return (
     <Box mt={-4} mb={4}>
       <Lottie

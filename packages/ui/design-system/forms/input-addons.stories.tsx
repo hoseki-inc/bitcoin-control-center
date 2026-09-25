@@ -44,11 +44,17 @@ export const EditButton: Story = () => {
           <Input
             id="edit-input"
             value={value}
-            onChange={(e) => setValue(e.target.value)}
+            onChange={(e) => {
+              setValue(e.target.value)
+            }}
             pr={0}
             isReadOnly={!isEditing}
           />
-          <EditButtonAddon onClick={() => setIsEditing(!isEditing)} />
+          <EditButtonAddon
+            onClick={() => {
+              setIsEditing(!isEditing)
+            }}
+          />
         </InputGroup>
       </FormControl>
       <div>

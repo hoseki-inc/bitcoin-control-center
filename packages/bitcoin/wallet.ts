@@ -1,4 +1,4 @@
-import { type Result } from '@patina/core'
+import type { Result } from '@hoseki/packages/result'
 import {
   type MultiSigAccountScriptType,
   type SingleSigAccountScriptType,
@@ -13,6 +13,18 @@ import {
 } from './descriptor_parsers'
 import { KeyExpression, KeyOrigin } from './key-expression'
 import { Xpub } from './xpub'
+
+export type SinglesigWalletJson = {
+  scriptType: SingleSigAccountScriptType
+  keyExpression: ReturnType<typeof KeyExpression.prototype.toJSON>
+}
+
+export type MultisigWalletJson = {
+  scriptType: MultiSigAccountScriptType
+  threshold: number
+  isSorted: boolean
+  keyExpressions: ReturnType<typeof KeyExpression.prototype.toJSON>[]
+}
 
 export namespace Wallet {
   export type Policy = 'singlesig' | 'multisig'
@@ -39,10 +51,7 @@ export namespace Wallet {
       this.keyExpression = props.keyExpression
     }
 
-    public toJSON(): {
-      scriptType: SingleSigAccountScriptType
-      keyExpression: ReturnType<typeof KeyExpression.prototype.toJSON>
-    } {
+    public toJSON(): SinglesigWalletJson {
       return {
         scriptType: this.scriptType,
         keyExpression: this.keyExpression.toJSON(),
@@ -97,12 +106,7 @@ export namespace Wallet {
       this.keyExpressions = props.keyExpressions
     }
 
-    public toJSON(): {
-      scriptType: MultiSigAccountScriptType
-      threshold: number
-      isSorted: boolean
-      keyExpressions: ReturnType<typeof KeyExpression.prototype.toJSON>[]
-    } {
+    public toJSON(): MultisigWalletJson {
       return {
         scriptType: this.scriptType,
         threshold: this.threshold,

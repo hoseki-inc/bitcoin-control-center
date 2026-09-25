@@ -11,7 +11,6 @@
   },
   "dependencies": {
     "@keystonehq/bc-ur-registry": "0.8.0",
-    "@patina/core": "3.0.0",
     "date-fns": "4.4.0",
     "decimal.js": "10.6.0",
     "nanoid": "5.1.16",

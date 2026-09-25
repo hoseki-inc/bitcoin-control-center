@@ -4,6 +4,10 @@ export type Mappable = {
   key: string | (() => string)
 }
 
+function isComputedKey(key: Mappable['key']): key is () => string {
+  return typeof key === 'function'
+}
+
 /**
  * @deprecated Use `Map` or `IndexMap` instead.
  */
@@ -19,7 +23,7 @@ export class Mapping<V extends Mappable> {
   }
 
   private key(value: V): string {
-    return typeof value.key === 'function' ? value.key() : value.key
+    return isComputedKey(value.key) ? value.key() : value.key
   }
 
   public size(): number {
@@ -64,14 +68,14 @@ export class Mapping<V extends Mappable> {
   }
 
   public forEach(callbackfn: (value: V, key: string, map: Mapping<V>) => void): void {
-    this.map.forEach((value, key) => callbackfn(value, key, this))
+    this.map.forEach((value, key) => {
+      callbackfn(value, key, this)
+    })
   }
 
   public [Symbol.toStringTag]: string = 'Mapping'
 
   public toString(): string {
-    return `Mapping(${Array.from(this.entries())
-      .map(([key, value]) => `${key} => ${value}`)
-      .join(', ')})`
+    return `Mapping(${Array.from(this.keys()).join(', ')})`
   }
 }

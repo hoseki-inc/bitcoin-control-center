@@ -1,9 +1,11 @@
 import { expect, test } from 'vitest'
 import { type Mappable, Mapping } from './mapping'
 
+type MappingValue = { key: () => string }
+
 let c = 0
 
-function value(): { key: () => string } {
+function value(): MappingValue {
   const k = c
   c += 1
   return {
@@ -80,8 +82,30 @@ test('forEach', () => {
   const values = [value(), value(), value()]
   const map = new Mapping(values)
   const entries: [string, Mappable][] = []
-  map.forEach((value, key) => {
-    entries.push([key, value])
+  map.forEach((entryValue, key) => {
+    entries.push([key, entryValue])
   })
   expect(entries).toEqual(values.map((v) => [v.key(), v]))
+})
+
+test('toString shows stored keys without coercing values or reevaluating keys', () => {
+  let keyCalls = 0
+  const first = {
+    key(): string {
+      keyCalls += 1
+      return 'first'
+    },
+    amount: 1n,
+    toString(): string {
+      throw new Error('must not stringify a mapped value')
+    },
+  }
+  const map = new Mapping<Mappable>([first, { key: 'second' }])
+  expect(map.toString()).toBe('Mapping(first, second)')
+  expect(keyCalls).toBe(1)
+  expect(map.get('first').unwrap()).toBe(first)
+})
+
+test('toString handles an empty Mapping', () => {
+  expect(new Mapping().toString()).toBe('Mapping()')
 })

@@ -31,8 +31,8 @@ export const TrezorImages: Story = () => (
 
 export const ColdcardImages: Story = () => {
   const mk2mk3 = ColdcardModels['MK2/MK3']
-  const mk4 = ColdcardModels['MK4']
-  const q = ColdcardModels['Q']
+  const mk4 = ColdcardModels.MK4
+  const q = ColdcardModels.Q
 
   return (
     <Stack spacing={4}>

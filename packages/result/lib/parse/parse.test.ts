@@ -1,7 +1,7 @@
-import { Ok, type Result } from '@patina/core'
+import { Ok, type Result } from '@hoseki/packages/result'
 import { describe, expect, expectTypeOf, it } from 'vitest'
 import { z } from 'zod'
-import { ParseError, parse } from './parse'
+import { ParseError, parse, parseUnknown } from './parse'
 
 describe('types', () => {
   it('should return correct type for schema', () => {
@@ -24,9 +24,9 @@ it('should return Ok when parsing is successful', () => {
 })
 
 it('should return Err when parsing is unsuccessful', () => {
-  const result = parse(z.string(), 123 as unknown as string)
-  expect(result.isErr()).toEqual(true)
-  const error = result.unwrapErr()
+  const result = parseUnknown(z.string(), 123)
+  expect(result.isErr()).toBe(true)
+  const error = result.expectErr('invalid input should fail parsing')
   expect(error).toBeInstanceOf(ParseError)
-  expect(error!.cause).toBeInstanceOf(z.ZodError)
+  expect(error.cause).toBeInstanceOf(z.ZodError)
 })

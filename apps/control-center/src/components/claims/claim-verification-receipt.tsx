@@ -4,7 +4,7 @@ import { ClaimCard, Receipt } from '@hoseki/packages/ui/prove-verify-ui'
 import { useNavigate } from 'react-router'
 import { useGetClaimBalance } from '../../lib/balances'
 import { clearFlowSource, getFlowSource } from '../../lib/flow-tracker'
-import { type ClaimDto } from '../../trpc/server-types'
+import type { ClaimDto } from '../../trpc/server-types'
 import { mapClaimToClaimCardProps, withStatusBalance } from '../../utils/claim-utils'
 
 type ClaimVerificationReceiptProps =
@@ -20,14 +20,14 @@ type ClaimVerificationReceiptProps =
 export function ClaimVerificationReceipt({ shouldSetTimeout, claim }: ClaimVerificationReceiptProps): JSX.Element {
   const navigate = useNavigate()
 
-  const balanceQuery = useGetClaimBalance(claim?.id ?? null, { enabled: !!claim?.id })
+  const balanceQuery = useGetClaimBalance(claim?.id ?? null, { enabled: claim?.id != null && claim.id.length > 0 })
 
   const flowSource = getFlowSource()
   const isStatementFlow = flowSource?.type === 'statement'
 
   const handleNavigation = (path: string) => {
     clearFlowSource()
-    navigate(path)
+    void navigate(path)
   }
 
   if (!shouldSetTimeout) {
@@ -43,32 +43,41 @@ export function ClaimVerificationReceipt({ shouldSetTimeout, claim }: ClaimVerif
       <Receipt
         title="Account verified"
         state="success"
-        onClose={() => handleNavigation('/portfolio')}
+        onClose={() => {
+          handleNavigation('/portfolio')
+        }}
         closeTitle="Back to Portfolio"
         content={
           <VStack spacing={8}>
-            {claim && (
-              <ClaimCard
-                {...mapClaimToClaimCardProps(claim)}
-                balance={withStatusBalance({
-                  ...balanceQuery,
-                  balance: balanceQuery.data,
-                })}
-                pointerEvents="none"
-                minWidth={0}
-                w="full"
-                maxWidth="364px"
-              />
-            )}
+            <ClaimCard
+              {...mapClaimToClaimCardProps(claim)}
+              balance={withStatusBalance({
+                ...balanceQuery,
+                balance: balanceQuery.data,
+              })}
+              pointerEvents="none"
+              minWidth={0}
+              w="full"
+              maxWidth="364px"
+            />
             <Text textStyle="text/md" color="neutral.900" textAlign="center">
-              Your {claim?.displayName ? `"${claim.displayName}" account` : `account`} is now verified and ready to
+              Your {claim.displayName ? `"${claim.displayName}" account` : `account`} is now verified and ready to
               include in ownership statements.
             </Text>
             <Stack direction={{ base: 'column', sm: 'row' }} spacing={3} w="full">
-              <Button variant="outline" onClick={() => handleNavigation('/accounts')}>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  handleNavigation('/accounts')
+                }}
+              >
                 Connect Another Account
               </Button>
-              <Button onClick={() => handleNavigation(isStatementFlow ? '/statements/create' : '/portfolio')}>
+              <Button
+                onClick={() => {
+                  handleNavigation(isStatementFlow ? '/statements/create' : '/portfolio')
+                }}
+              >
                 {isStatementFlow ? 'Complete Statement' : 'View Portfolio'}
               </Button>
             </Stack>

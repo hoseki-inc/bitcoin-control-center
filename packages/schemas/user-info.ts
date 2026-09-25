@@ -1,11 +1,7 @@
-import { type Opaque } from 'type-fest'
 import { z } from 'zod'
 
-export type Email = Opaque<string, 'Email'>
-export const emailSchema = z
-  .string()
-  .email()
-  .transform((val) => val as Email)
+export const emailSchema = z.string().email().brand('Email')
+export type Email = z.infer<typeof emailSchema>
 
 export const personNameSchema = z.string().min(1).max(255)
 export type PersonName = z.infer<typeof personNameSchema>

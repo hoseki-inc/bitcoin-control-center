@@ -34,6 +34,10 @@ type ExtraColors = {
 }
 export type ComponentProps = IconProps & ExtraColors
 
+function isPathRenderer(path: CreateIconOptions['path']): path is (props: ComponentProps) => React.ReactElement {
+  return typeof path === 'function'
+}
+
 /**
  * Our version of createIcon from chakra-ui.
  * Useful when we want to apply different combinations of colors to its
@@ -68,7 +72,7 @@ export function createIcon(
     return (
       <Icon ref={ref} viewBox={viewBox} {...defaultProps} {...props}>
         {path ? (
-          typeof path === 'function' ? (
+          isPathRenderer(path) ? (
             path({ ...props, color2: color2Resolved, color3: color3Resolved, color4: color4Resolved })
           ) : (
             path

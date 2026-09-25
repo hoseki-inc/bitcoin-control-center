@@ -1,7 +1,9 @@
-import { Err, type Result } from '@patina/core'
-import { type Opaque } from 'type-fest'
+import { Err, type Result } from '@hoseki/packages/result'
+import type { Opaque } from 'type-fest'
 import { Account } from './account'
 import { Network } from './network'
+
+export type NetworkAccountJson = { network: string; account: string }
 
 export type NetworkAccountCheckedString = Opaque<
   `${'bitcoin_mainnet' | 'bitcoin_testnet' | 'bitcoin_regtest'}::${string}`,
@@ -14,7 +16,7 @@ export type NetworkAccountCheckedString = Opaque<
 export class NetworkAccount<T extends Account = Account> {
   public static fromString(str: string): Result<NetworkAccount, Error> {
     const [network, account] = str.split('::')
-    if (!network || !account) {
+    if (network == null || network === '' || account == null || account === '') {
       return Err(
         new Error(
           'Invalid format, expected "bitcoin_mainnet::<account>", "bitcoin_testnet::<account>", or "bitcoin_regtest::<account>"',
@@ -22,8 +24,8 @@ export class NetworkAccount<T extends Account = Account> {
       )
     }
     return Network.fromStringRaw(network).andThen((n) => {
-      return Account.fromDescriptor(account).map((account) => {
-        return new NetworkAccount(n, account)
+      return Account.fromDescriptor(account).map((parsedAccount) => {
+        return new NetworkAccount(n, parsedAccount)
       })
     })
   }
@@ -45,10 +47,11 @@ export class NetworkAccount<T extends Account = Account> {
   }
 
   public toString(): NetworkAccountCheckedString {
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- SAFETY: Both serialized components come from typed Network and Account values; external strings are checked by fromString.
     return `${this.network.toString()}::${this.account.toString()}` as NetworkAccountCheckedString
   }
 
-  public toJSON(): { network: string; account: string } {
+  public toJSON(): NetworkAccountJson {
     return {
       network: this.network.toString(),
       account: this.account.toString(),

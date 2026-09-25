@@ -1,5 +1,5 @@
 // Typed copy of bitcoinjs-lib/src/networks.js
-import { type Result } from '../result'
+import type { Result } from '../result'
 import { Err, Ok } from '../result'
 
 // Interfaces and objects are duplicated to get a nice Network interface instead of the readonly literal objects

@@ -54,31 +54,29 @@ export function MultisigCreatePage(): JSX.Element {
         toast.info('This account is archived', {
           description: 'Restore it from Archived accounts before reconnecting.',
         })
-        navigate('/accounts#archived')
+        void navigate('/accounts#archived')
         return
       }
 
       await Result.fromPromise(updateClaimMutation.mutateAsync({ id: claim.id, displayName: updatedName }))
         .andThen((data) => {
-          navigate(data.status === 'pending' ? `/multisig/${claim.id}` : `/accounts/${claim.id}`)
+          void navigate(data.status === 'pending' ? `/multisig/${claim.id}` : `/accounts/${claim.id}`)
           return Ok()
         })
         .inspectErr((err) => {
           setIsSaving(false)
           toast.error('Failed to update claim', { description: err.message })
-          return Err(err)
         })
     } else {
       // Create new claim
       await Result.fromPromise(createMultisigClaimMutation.mutateAsync(updatedWallet))
         .andThen((claimAggregate) => {
-          navigate(`/multisig/${claimAggregate.claim.id}`)
+          void navigate(`/multisig/${claimAggregate.claim.id}`)
           return Ok()
         })
         .inspectErr((err) => {
           setIsSaving(false)
           toast.error('Failed to create claim', { description: err.message })
-          return Err(err)
         })
     }
   }
@@ -89,14 +87,20 @@ export function MultisigCreatePage(): JSX.Element {
         {step === 'get-ready' && (
           <>
             <MultisigAnimation animation="1" />
-            <GetReady onNext={() => setStep('upload')} />
+            <GetReady
+              onNext={() => {
+                setStep('upload')
+              }}
+            />
           </>
         )}
         {step === 'upload' && (
           <>
             <MultisigAnimation animation="2" />
             <ImportWallet
-              onBack={() => setStep('get-ready')}
+              onBack={() => {
+                setStep('get-ready')
+              }}
               onNext={(data) => {
                 setDetectedWallet(data)
                 setStep('detection')
@@ -108,8 +112,15 @@ export function MultisigCreatePage(): JSX.Element {
           <DetectionStep
             wallet={detectedWallet}
             isSaving={isSaving}
-            onBack={() => setStep('upload')}
-            onNext={handleClaimCreation}
+            onBack={() => {
+              setStep('upload')
+            }}
+            onNext={(name) => {
+              handleClaimCreation(name).catch(() => {
+                setIsSaving(false)
+                toast.error('Failed to save multisig account')
+              })
+            }}
           />
         )}
       </PageTransition>
@@ -140,16 +151,12 @@ function GetReady({ onNext }: { onNext: () => void }) {
         You can sign with your keys in any order—whichever is most convenient for your setup.
       </Text>
 
-      <TipAlert
-        title="Security tip"
-        icon={CircleAlert}
-        children={
-          <Text color="neutral.800">
-            Only upload this file to Bitcoin Control Center. For best security, delete it once you’ve completed the
-            process.
-          </Text>
-        }
-      />
+      <TipAlert title="Security tip" icon={CircleAlert}>
+        <Text color="neutral.800">
+          Only upload this file to Bitcoin Control Center. For best security, delete it once you’ve completed the
+          process.
+        </Text>
+      </TipAlert>
 
       <WizardFooter
         leftButton={
@@ -176,6 +183,7 @@ function ImportWallet({ onBack, onNext }: { onBack: () => void; onNext: (data: C
         your hardware wallet or multisig coordinator (such as Sparrow, Unchained, or Nunchuk).
       </Text>
       <FileDropReader
+        readAs="text"
         readyText="Drag the file here, or paste your descriptor manually below"
         invalidText="Invalid file. Please check your file and try again."
         validText="Success!"
@@ -188,23 +196,19 @@ function ImportWallet({ onBack, onNext }: { onBack: () => void; onNext: (data: C
         onStatusChange={setFileDropStatus}
       />
 
-      <TipAlert
-        title="Need help?"
-        icon={CircleAlert}
-        children={
-          <Text color="neutral.800">
-            Visit our{' '}
-            <Link
-              to="https://help.hoseki.app/article/43-how-to-export-your-multisig-wallet"
-              style={{ textDecoration: 'underline' }}
-              target="_blank"
-            >
-              Help Center
-            </Link>{' '}
-            for step-by-step export instructions.
-          </Text>
-        }
-      />
+      <TipAlert title="Need help?" icon={CircleAlert}>
+        <Text color="neutral.800">
+          Visit our{' '}
+          <Link
+            to="https://help.hoseki.app/article/43-how-to-export-your-multisig-wallet"
+            style={{ textDecoration: 'underline' }}
+            target="_blank"
+          >
+            Help Center
+          </Link>{' '}
+          for step-by-step export instructions.
+        </Text>
+      </TipAlert>
 
       <MultisigFromDescriptor onNext={onNext} />
 
@@ -290,19 +294,25 @@ function DetectionStep({
   return (
     <Stack gap={4}>
       <Text as="h1" textStyle="text/2xl" fontWeight="medium">
-        We've detected a {account.threshold} of {wallet.keystores.length} Multisig Wallet
+        We&apos;ve detected a {account.threshold} of {wallet.keystores.length} Multisig Wallet
       </Text>
 
       <AnimatedDetectedKeystoreAvatars totalKeystores={wallet.keystores.length} threshold={account.threshold} />
 
       <Text textStyle="text/md" color="neutral.900">
-        Let's name your multisig claim. You rename this later at anytime.
+        Let&apos;s name your multisig claim. You rename this later at anytime.
       </Text>
 
-      <form onSubmit={handleSubmit(onSubmit)}>
+      <form
+        onSubmit={(event) => {
+          handleSubmit(onSubmit)(event).catch(() => {
+            toast.error('Unable to submit the account name. Please try again.')
+          })
+        }}
+      >
         <FormControl isInvalid={Boolean(errors.claimName)}>
           <FormLabel htmlFor="claim-name">Name</FormLabel>
-          <Input id="claim-name" {...register('claimName')} placeholder="Multisig claim name" autoFocus />
+          <Input id="claim-name" {...register('claimName')} placeholder="Multisig claim name" />
           {errors.claimName && <FormErrorMessage>{errors.claimName.message}</FormErrorMessage>}
         </FormControl>
 

@@ -29,7 +29,7 @@ export function StatementListPage(): JSX.Element {
         <ErrorBanner
           mt={8}
           mb={4}
-          message={`Error fetching your statements: ${error?.message}`}
+          message={`Error fetching your statements: ${error.message}`}
           rightContent={
             <Button variant="outline" flexShrink={0} onClick={() => void refetch()} isLoading={isFetching}>
               Try Again
@@ -40,7 +40,7 @@ export function StatementListPage(): JSX.Element {
     )
   }
 
-  if (!statements || statements.length === 0) {
+  if (statements.length === 0) {
     return (
       <Box mt={8}>
         <Header showGenerateButton={false} hideDivider descriptionVersion="empty-state" />
@@ -53,20 +53,24 @@ export function StatementListPage(): JSX.Element {
     <Box mt={8}>
       <Header showGenerateButton={true} />
       <Stack gap={2}>
-        <Flex justify="flex-end" gap={1} role="group" aria-label="Statement view">
+        <Flex as="fieldset" justify="flex-end" gap={1} aria-label="Statement view">
           <IconButton
             variant={viewType === 'table' ? 'outline' : 'ghost'}
             aria-label="List view"
             aria-pressed={viewType === 'table'}
             icon={<ListIcon size={18} />}
-            onClick={() => setViewType('table')}
+            onClick={() => {
+              setViewType('table')
+            }}
           />
           <IconButton
             variant={viewType === 'grid' ? 'outline' : 'ghost'}
             aria-label="Card view"
             aria-pressed={viewType === 'grid'}
             icon={<Grid2X2Icon size={18} />}
-            onClick={() => setViewType('grid')}
+            onClick={() => {
+              setViewType('grid')
+            }}
           />
         </Flex>
         {viewType === 'grid' ? <StatementsGrid statements={statements} /> : <StatementsTable statements={statements} />}

@@ -1,106 +1,152 @@
-// @vitest-environment jsdom
-import { ChakraProvider } from '@chakra-ui/react'
+// @vitest-environment node
+import { TestChakraProvider as ChakraProvider } from '@hoseki/packages/testing/chakra-provider'
+import { QueryClient } from '@tanstack/react-query'
+import { getQueryKey } from '@trpc/react-query'
+import Decimal from 'decimal.js'
 import { act } from 'react'
-import { createRoot } from 'react-dom/client'
+import { type Root, createRoot } from 'react-dom/client'
 import { MemoryRouter } from 'react-router'
-import { expect, it, vi } from 'vitest'
+import { assert, expect, it, onTestFinished, vi } from 'vitest'
+import { TestTrpcProvider, createTestTrpcClient } from '../../testing/trpc'
+import { type RouterOutput, trpc } from '../../trpc'
 import { ClaimsPage } from './index'
 
-vi.mock('../../hooks/use-bitcoin-display', () => ({ useBitcoinDisplay: () => ({ unit: 'btc' }) }))
-vi.mock('../../hooks/use-auto-refresh-exchanges', () => ({ useAutoRefreshExchanges: () => undefined }))
-vi.mock('../../hooks/use-query-error-toast', () => ({ useQueryErrorToast: () => undefined }))
-vi.mock('../../lib/balances', () => ({ useGetBalancesPerClaimIds: () => ({ data: new Map() }) }))
-vi.mock('../../utils/claim-utils', () => ({
-  ensureClaimStatusNotExpired: () => 'verified',
-  mapClaimToClaimCardProps: () => ({}),
-}))
-vi.mock('../../components/onboarding/getting-started', () => ({ FirstAccountReady: () => null }))
-vi.mock('../../components/claims/claim-details/delete-claim-modal', () => ({ DeleteClaimModal: () => null }))
-vi.mock('@hoseki/packages/ui/design-system', () => ({
-  EmptyView: () => null,
-  ErrorBanner: () => null,
-  Spinner: () => null,
-}))
-vi.mock('@hoseki/packages/ui/prove-verify-ui', () => ({
-  ClaimCardKeystores: () => null,
-  getBadgeConfigForClaim: () => ({}),
-}))
-vi.mock('../../trpc', () => ({
-  trpc: {
-    useUtils: () => ({}),
-    portalProve: {
-      registry: {
-        claims: {
-          list: { useQuery: () => ({ data: [] }) },
-          listArchived: { useQuery: () => ({ data: [] }) },
-          getCountLimit: { useQuery: () => ({ data: null }) },
-          restore: { useMutation: () => ({}) },
-        },
-      },
-      exchange: {
-        list: {
-          useQuery: () => ({
-            data: [
-              {
-                id: 'strike',
-                displayName: 'Offline Strike',
-                exchange: 'strike',
-                balance: '98765000000',
-                connectionStatus: 'needs_reconnect',
-              },
-            ],
-          }),
-        },
-      },
-      manual: {
-        list: { useQuery: () => ({ data: [{ id: 'manual', displayName: 'Savings', balance: '100000000' }] }) },
-      },
-      etf: { list: { useQuery: () => ({ data: [] }) } },
-      retrieveBitcoinPrice: { useQuery: () => ({ data: { value: 50000 } }) },
+const browser = await vi.hoisted(async () => {
+  const { createBrowserDom, installBrowserDom } = await import('@hoseki/packages/testing/browser-dom')
+  let initialDom: ReturnType<typeof createBrowserDom> | undefined = createBrowserDom()
+  installBrowserDom(initialDom)
+  return {
+    acquire: () => {
+      const dom = initialDom ?? createBrowserDom()
+      initialDom = undefined
+      installBrowserDom(dom)
+      return dom
     },
-  },
-}))
+  }
+})
 
-it('defaults to cards, remembers view across remounts, and offers add/reconnect links in both views', async () => {
-  vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
-  vi.stubGlobal('matchMedia', () => ({ matches: false, addListener: vi.fn(), removeListener: vi.fn() }))
-  localStorage.clear()
-  const container = document.createElement('div')
-  document.body.append(container)
-  let root = createRoot(container)
-  const mount = async (): Promise<void> => {
-    await act(async () =>
-      root.render(
-        <ChakraProvider>
+type Output = RouterOutput['portalProve']
+
+const exchangeAccounts: Output['exchange']['list'] = [
+  {
+    id: 'strike',
+    displayName: 'Offline Strike',
+    exchange: 'strike',
+    currency: 'BTC',
+    balance: '98765000000',
+    balanceAsOf: null,
+    createdAt: '2026-09-01T00:00:00Z',
+    connectionStatus: 'needs_reconnect',
+  },
+]
+const manualAccounts: Output['manual']['list'] = [
+  {
+    id: 'manual',
+    displayName: 'Savings',
+    currency: 'BTC',
+    balance: '100000000',
+    balanceAsOf: null,
+    createdAt: '2026-09-01T00:00:00Z',
+  },
+]
+
+/** Serves the page's requests from local fixtures, as the local Sentinel service would. */
+const rpc = createTestTrpcClient(async ({ path }) => {
+  switch (path) {
+    case 'portalProve.exchange.refreshAllBalances':
+    case 'portalProve.controlCenter.getData':
+      return null
+    case 'portalProve.exchange.list':
+      return exchangeAccounts
+    default:
+      throw new Error(`Unexpected request: ${path}`)
+  }
+})
+
+let queryClient: QueryClient
+let root: Root
+let container: HTMLDivElement
+
+function seedQueries(client: QueryClient): void {
+  client.setQueryData<Output['registry']['claims']['list']>(
+    getQueryKey(trpc.portalProve.registry.claims.list, { excludePending: false }, 'query'),
+    [],
+  )
+  client.setQueryData<Output['registry']['claims']['listArchived']>(
+    getQueryKey(trpc.portalProve.registry.claims.listArchived, undefined, 'query'),
+    [],
+  )
+  client.setQueryData(getQueryKey(trpc.portalProve.exchange.list, undefined, 'query'), exchangeAccounts)
+  client.setQueryData(getQueryKey(trpc.portalProve.manual.list, undefined, 'query'), manualAccounts)
+  client.setQueryData<Output['etf']['list']>(getQueryKey(trpc.portalProve.etf.list, undefined, 'query'), [])
+  client.setQueryData<Output['retrieveBitcoinPrice']>(
+    getQueryKey(trpc.portalProve.retrieveBitcoinPrice, undefined, 'query'),
+    { value: new Decimal(50_000), asOf: new Date('2026-09-01T00:00:00Z') },
+  )
+}
+
+async function mount(): Promise<void> {
+  await act(async () => {
+    root.render(
+      <ChakraProvider>
+        <TestTrpcProvider client={queryClient} rpc={rpc}>
           <MemoryRouter>
             <ClaimsPage />
           </MemoryRouter>
-        </ChakraProvider>,
-      ),
+        </TestTrpcProvider>
+      </ChakraProvider>,
     )
-  }
-  const verifyLinks = (): void => {
-    expect(container.querySelector('[aria-label="Add account"]')?.getAttribute('href')).toBe('/accounts/add')
-    expect(container.querySelector('a[href="/accounts/strike/strike"]')?.textContent).not.toContain('987.65')
-    expect(container.textContent).not.toContain('987.65')
-    expect(container.textContent).toContain('Some balances are unavailable')
-  }
-  try {
+  })
+}
+
+async function withTestSetup(run: () => Promise<void>): Promise<void> {
+  const dom = browser.acquire()
+  queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+  seedQueries(queryClient)
+  // Vitest owns teardown so it has its own timeout and runs once, even after a test timeout.
+  onTestFinished(async () => {
+    await act(async () => {
+      root.unmount()
+    })
+    container.remove()
+    queryClient.clear()
+    localStorage.clear()
+    vi.unstubAllGlobals()
+    dom.window.close()
+  })
+  localStorage.clear()
+  container = document.createElement('div')
+  document.body.append(container)
+  root = createRoot(container)
+
+  await run()
+}
+
+function verifyLinks(): void {
+  expect(container.querySelector('[aria-label="Add account"]')?.getAttribute('href')).toBe('/accounts/add')
+  expect(container.querySelector('a[href="/accounts/strike/strike"]')?.textContent).not.toContain('987.65')
+  expect(container.textContent).not.toContain('987.65')
+  expect(container.textContent).toContain('Some balances are unavailable')
+}
+
+it('defaults to cards, remembers view across remounts, and offers add/reconnect links in both views', async () => {
+  await withTestSetup(async () => {
     await mount()
     expect(container.querySelector('[aria-label="Card view"]')?.getAttribute('aria-pressed')).toBe('true')
     verifyLinks()
-    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="List view"]')!.click())
+    const listViewButton = container.querySelector<HTMLButtonElement>('[aria-label="List view"]')
+    assert.exists(listViewButton, 'Missing list view button')
+    await act(async () => {
+      listViewButton.click()
+    })
     verifyLinks()
     expect(container.querySelector('a[href="/accounts/strike/strike"]')?.textContent).toContain('Reconnect needed')
-    await act(async () => root.unmount())
+    await act(async () => {
+      root.unmount()
+    })
     root = createRoot(container)
     await mount()
     expect(container.querySelector('[aria-label="List view"]')?.getAttribute('aria-pressed')).toBe('true')
     verifyLinks()
-  } finally {
-    await act(async () => root.unmount())
-    container.remove()
-    localStorage.clear()
-    vi.unstubAllGlobals()
-  }
+  })
 })

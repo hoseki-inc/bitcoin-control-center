@@ -20,7 +20,7 @@ export function BitcoinSigningFormFields({
 
   return (
     <>
-      {error && <ErrorBanner mb={4} message={error} />}
+      {error != null && error !== '' && <ErrorBanner mb={4} message={error} />}
 
       <FormControl>
         <LabelWithTooltip
@@ -67,7 +67,9 @@ export function BitcoinSigningFormFields({
           placeholder="Enter your signed message output"
           {...monoInputProps}
         />
-        {error && <FormErrorMessage>Invalid input, please enter a valid xPub/yPub/zPub key</FormErrorMessage>}
+        {error != null && error !== '' && (
+          <FormErrorMessage>Invalid input, please enter a valid xPub/yPub/zPub key</FormErrorMessage>
+        )}
       </FormControl>
     </>
   )
