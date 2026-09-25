@@ -1,4 +1,5 @@
-import { AsyncResult, Err, Ok } from '@patina/core'
+import type { AsyncResult } from '@hoseki/packages/result'
+import { catchUnwindAsync } from './panic'
 
 /**
  * Converts an AsyncResult to a Promise.
@@ -7,7 +8,7 @@ import { AsyncResult, Err, Ok } from '@patina/core'
  *
  * Unfortunately `patina` library cannot handle combining Results into a single Result yet.
  */
-export async function asyncResultToPromise<T, E>(asyncResult: AsyncResult<T, E>): Promise<T> {
+export async function asyncResultToPromise<T>(asyncResult: AsyncResult<T, Error>): Promise<T> {
   const result = await asyncResult
   if (result.isErr()) {
     throw result.unwrapErr()
@@ -18,10 +19,6 @@ export async function asyncResultToPromise<T, E>(asyncResult: AsyncResult<T, E>)
 /**
  * Combines an array of AsyncResults into a single AsyncResult.
  */
-export function asyncResultAll<T, E>(asyncResults: AsyncResult<T, E>[]): AsyncResult<T[], E> {
-  return new AsyncResult(
-    Promise.all(asyncResults.map(asyncResultToPromise))
-      .then((values) => Ok(values))
-      .catch((err) => Err(err)),
-  )
+export function asyncResultAll<T>(asyncResults: AsyncResult<T, Error>[]): AsyncResult<T[], Error> {
+  return catchUnwindAsync(async () => Promise.all(asyncResults.map(asyncResultToPromise)))
 }

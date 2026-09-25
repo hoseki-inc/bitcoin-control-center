@@ -38,14 +38,28 @@ export const Sizes: Story = () => {
       </Text>
       <SimpleGrid columns={3} spacing={4}>
         {modalSizes.map((size) => (
-          <Button key={size} onClick={() => setActiveModal(size)} size="sm">
+          <Button
+            key={size}
+            onClick={() => {
+              setActiveModal(size)
+            }}
+            size="sm"
+          >
             {size}
           </Button>
         ))}
       </SimpleGrid>
 
       {modalSizes.map((size) => (
-        <Modal key={size} isOpen={activeModal === size} onClose={() => setActiveModal(null)} isCentered size={size}>
+        <Modal
+          key={size}
+          isOpen={activeModal === size}
+          onClose={() => {
+            setActiveModal(null)
+          }}
+          isCentered
+          size={size}
+        >
           <ModalOverlay />
           <ModalContent>
             <ModalHeader>
@@ -67,10 +81,22 @@ export const Sizes: Story = () => {
 
             <ModalFooter>
               <SimpleGrid columns={2} spacing={3} width="full">
-                <Button variant="outline" onClick={() => setActiveModal(null)} size="md">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setActiveModal(null)
+                  }}
+                  size="md"
+                >
                   Cancel
                 </Button>
-                <Button onClick={() => setActiveModal(null)} size="md" colorScheme="blue">
+                <Button
+                  onClick={() => {
+                    setActiveModal(null)
+                  }}
+                  size="md"
+                  colorScheme="blue"
+                >
                   Confirm
                 </Button>
               </SimpleGrid>
@@ -136,7 +162,7 @@ export const NoPaddingVariant: Story = () => {
 
   return (
     <>
-      <Button onClick={onOpen}>Open variant="noPadding"</Button>
+      <Button onClick={onOpen}>Open variant=&quot;noPadding&quot;</Button>
 
       <Modal isOpen={isOpen} onClose={onClose} isCentered variant="noPadding" size="4xl">
         <ModalOverlay />
@@ -211,11 +237,11 @@ export const NewDeviceConnectionExample: Story = () => {
 
           <ModalBody>
             <Text textStyle="text/sm" color="neutral.600" mb={4}>
-              You're about to reconnect your wallet using a new hardware device.
+              You&apos;re about to reconnect your wallet using a new hardware device.
             </Text>
             <Text textStyle="text/sm" color="neutral.600">
-              To keep your proof secure, we'll need to start the verification process from scratch and check that this
-              device still controls the same key you previously verified
+              To keep your proof secure, we&apos;ll need to start the verification process from scratch and check that
+              this device still controls the same key you previously verified
             </Text>
           </ModalBody>
 
@@ -253,15 +279,32 @@ export const LoadingStates: Story = () => {
         Modal Loading States
       </Text>
       <SimpleGrid columns={2} spacing={4}>
-        <Button onClick={() => setActiveModal('normal')} size="sm">
+        <Button
+          onClick={() => {
+            setActiveModal('normal')
+          }}
+          size="sm"
+        >
           Normal State
         </Button>
-        <Button onClick={() => setActiveModal('loading')} size="sm">
+        <Button
+          onClick={() => {
+            setActiveModal('loading')
+          }}
+          size="sm"
+        >
           Loading State
         </Button>
       </SimpleGrid>
 
-      <Modal isOpen={activeModal === 'normal'} onClose={() => setActiveModal(null)} isCentered size="sm">
+      <Modal
+        isOpen={activeModal === 'normal'}
+        onClose={() => {
+          setActiveModal(null)
+        }}
+        isCentered
+        size="sm"
+      >
         <ModalOverlay />
         <ModalContent>
           <ModalHeader>
@@ -279,10 +322,22 @@ export const LoadingStates: Story = () => {
 
           <ModalFooter>
             <SimpleGrid columns={2} spacing={3} width="full">
-              <Button variant="outline" onClick={() => setActiveModal(null)} size="md">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setActiveModal(null)
+                }}
+                size="md"
+              >
                 Cancel
               </Button>
-              <Button onClick={() => handleAction()} size="md" colorScheme="blue">
+              <Button
+                onClick={() => {
+                  handleAction()
+                }}
+                size="md"
+                colorScheme="blue"
+              >
                 Confirm
               </Button>
             </SimpleGrid>
@@ -290,7 +345,14 @@ export const LoadingStates: Story = () => {
         </ModalContent>
       </Modal>
 
-      <Modal isOpen={activeModal === 'loading'} onClose={() => setActiveModal(null)} isCentered size="sm">
+      <Modal
+        isOpen={activeModal === 'loading'}
+        onClose={() => {
+          setActiveModal(null)
+        }}
+        isCentered
+        size="sm"
+      >
         <ModalOverlay />
         <ModalContent>
           <ModalHeader>
@@ -308,10 +370,24 @@ export const LoadingStates: Story = () => {
 
           <ModalFooter>
             <SimpleGrid columns={2} spacing={3} width="full">
-              <Button variant="outline" onClick={() => setActiveModal(null)} isDisabled={loadingState} size="md">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setActiveModal(null)
+                }}
+                isDisabled={loadingState}
+                size="md"
+              >
                 Cancel
               </Button>
-              <Button onClick={() => handleAction()} isLoading={loadingState} size="md" colorScheme="blue">
+              <Button
+                onClick={() => {
+                  handleAction()
+                }}
+                isLoading={loadingState}
+                size="md"
+                colorScheme="blue"
+              >
                 Processing...
               </Button>
             </SimpleGrid>
@@ -331,15 +407,32 @@ export const ErrorStates: Story = () => {
         Modal Error States
       </Text>
       <SimpleGrid columns={2} spacing={4}>
-        <Button onClick={() => setActiveModal('inline-top')} size="sm">
+        <Button
+          onClick={() => {
+            setActiveModal('inline-top')
+          }}
+          size="sm"
+        >
           With ErrorInline on top
         </Button>
-        <Button onClick={() => setActiveModal('banner-top')} size="sm">
+        <Button
+          onClick={() => {
+            setActiveModal('banner-top')
+          }}
+          size="sm"
+        >
           With ErrorBanner on top
         </Button>
       </SimpleGrid>
 
-      <Modal isOpen={activeModal === 'inline-top'} onClose={() => setActiveModal(null)} isCentered size="sm">
+      <Modal
+        isOpen={activeModal === 'inline-top'}
+        onClose={() => {
+          setActiveModal(null)
+        }}
+        isCentered
+        size="sm"
+      >
         <ModalOverlay />
         <ModalContent>
           <ErrorInline mt={2} title="Something went wrong" message="Contact support if the problem persists" />
@@ -360,7 +453,13 @@ export const ErrorStates: Story = () => {
 
           <ModalFooter>
             <SimpleGrid columns={2} spacing={3} width="full">
-              <Button variant="outline" onClick={() => setActiveModal(null)} size="md">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setActiveModal(null)
+                }}
+                size="md"
+              >
                 Cancel
               </Button>
               <Button size="md" colorScheme="blue">
@@ -371,7 +470,14 @@ export const ErrorStates: Story = () => {
         </ModalContent>
       </Modal>
 
-      <Modal isOpen={activeModal === 'banner-top'} onClose={() => setActiveModal(null)} isCentered size="sm">
+      <Modal
+        isOpen={activeModal === 'banner-top'}
+        onClose={() => {
+          setActiveModal(null)
+        }}
+        isCentered
+        size="sm"
+      >
         <ModalOverlay />
         <ModalContent>
           <ErrorBanner mt={2} title="Something went wrong" message="Contact support if the problem persists" />
@@ -392,7 +498,13 @@ export const ErrorStates: Story = () => {
 
           <ModalFooter>
             <SimpleGrid columns={2} spacing={3} width="full">
-              <Button variant="outline" onClick={() => setActiveModal(null)} size="md">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setActiveModal(null)
+                }}
+                size="md"
+              >
                 Cancel
               </Button>
               <Button size="md" colorScheme="blue">

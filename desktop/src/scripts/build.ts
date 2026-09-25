@@ -52,7 +52,7 @@ async function main(): Promise<void> {
   console.log('Desktop build complete.')
 }
 
-main().catch((err) => {
-  console.error(err)
+main().catch((cause: unknown) => {
+  console.error(cause)
   process.exit(1)
 })

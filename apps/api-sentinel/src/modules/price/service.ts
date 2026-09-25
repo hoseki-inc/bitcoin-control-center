@@ -1,6 +1,6 @@
-import { parseUnknown } from '@hoseki/packages/result/lib/parse'
-import { Err, Ok, asyncFn } from '@patina/core'
-import type { Result } from '@patina/core'
+import { parseUnknown } from '@hoseki/packages/result'
+import { Err, Ok, asyncFn } from '@hoseki/packages/result'
+import type { Result } from '@hoseki/packages/result'
 import { Decimal } from 'decimal.js'
 import type { Logger } from 'pino'
 import { z } from 'zod'
@@ -21,12 +21,14 @@ export type BitcoinPriceHistoryDays = 1 | 7 | 30 | 180 | 365
 export type BitcoinPricePoint = { time: number; value: number }
 
 export class PriceService {
-  private historyCache = new Map<BitcoinPriceHistoryDays, { points: BitcoinPricePoint[]; fetchedAt: number }>()
+  private readonly historyCache = new Map<BitcoinPriceHistoryDays, { points: BitcoinPricePoint[]; fetchedAt: number }>()
 
   public getBitcoinPriceHistory = asyncFn(
     async (days: BitcoinPriceHistoryDays = 7): Promise<Result<BitcoinPricePoint[], Error>> => {
       const cached = this.historyCache.get(days)
-      if (cached && Date.now() - cached.fetchedAt < 300_000) return Ok(cached.points)
+      if (cached && Date.now() - cached.fetchedAt < 300_000) {
+        return Ok(cached.points)
+      }
       let response: Response
       try {
         response = await fetch(
@@ -36,9 +38,13 @@ export class PriceService {
       } catch {
         return Err(new Error('Bitcoin price history is unavailable'))
       }
-      if (!response.ok) return Err(new Error('Bitcoin price history is unavailable'))
+      if (!response.ok) {
+        return Err(new Error('Bitcoin price history is unavailable'))
+      }
       const parsed = parseUnknown(historySchema, await response.json())
-      if (parsed.isErr()) return Err(new Error('Invalid Bitcoin price history'))
+      if (parsed.isErr()) {
+        return Err(new Error('Invalid Bitcoin price history'))
+      }
       const points = parsed
         .unwrap()
         .prices.map(([time, value]) => ({ time: time / 1000, value }))
@@ -74,8 +80,8 @@ export class PriceService {
       return Err(new Error(`CoinGecko API error: ${response.status} ${response.statusText}`))
     }
 
-    const json = (await response.json()) as { bitcoin?: { usd?: number } }
-    const usd = json.bitcoin?.usd
+    const parsed = parseUnknown(z.object({ bitcoin: z.object({ usd: z.number() }) }), await response.json())
+    const usd = parsed.isOk() ? parsed.unwrap().bitcoin.usd : undefined
     if (usd == null) {
       return Err(new Error('BTC price not found in CoinGecko response'))
     }

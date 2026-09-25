@@ -42,7 +42,9 @@ export type Env = z.infer<typeof EnvSchema>
 let cached: Env | null = null
 
 export function loadEnv(): Env {
-  if (cached) return cached
+  if (cached) {
+    return cached
+  }
   cached = EnvSchema.parse(process.env)
   return cached
 }

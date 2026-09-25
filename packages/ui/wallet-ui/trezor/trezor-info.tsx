@@ -1,5 +1,5 @@
 import { Button, Text, chakra } from '@chakra-ui/react'
-import type { Result } from '@patina/core'
+import type { Result } from '@hoseki/packages/result'
 import { useState } from 'react'
 import { HardwareWalletError } from '../../../ui/wallet-ui'
 import type { HardwareDeviceError } from '../../../wallet'
@@ -18,9 +18,32 @@ export function TrezorInfo({
   const [accountSelectionInProgress, setAccountSelectionInProgress] = useState(false)
   const [error, setError] = useState<Error | null>(null)
 
+  async function connectTrezor(): Promise<void> {
+    setAccountSelectionInProgress(true)
+    setError(null)
+    try {
+      const result = await onConnectTrezor()
+      if (result.isErr()) {
+        setError(result.unwrapErr())
+      }
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError : new Error('Unable to connect to Trezor'))
+    } finally {
+      setAccountSelectionInProgress(false)
+    }
+  }
+
   return (
     <>
-      {error && <HardwareWalletError error={error} mt={4} onRetry={() => window.location.reload()} />}
+      {error && (
+        <HardwareWalletError
+          error={error}
+          mt={4}
+          onRetry={() => {
+            window.location.reload()
+          }}
+        />
+      )}
 
       <WalletAnimation animation="trezorPlugIn" />
 
@@ -39,16 +62,8 @@ export function TrezorInfo({
         rightButton={
           <Button
             isDisabled={accountSelectionInProgress}
-            onClick={async () => {
-              setAccountSelectionInProgress(true)
-              setError(null)
-
-              const result = await onConnectTrezor()
-              if (result.isErr()) {
-                setError(result.unwrapErr())
-              }
-
-              setAccountSelectionInProgress(false)
+            onClick={() => {
+              void connectTrezor()
             }}
           >
             Next
@@ -69,11 +84,11 @@ export function TrezorInfoCopy(): JSX.Element {
         To start verifying ownership, connect your Trezor and unlock it.
       </Text>
       <Text textStyle="text/md" color="neutral.900">
-        We'll guide you through each step—just follow the on-screen instructions. Your Trezor will verify ownership
+        We&apos;ll guide you through each step—just follow the on-screen instructions. Your Trezor will verify ownership
         while your keys remain safely stored on your device.
       </Text>
       <Text textStyle="text/md" color="neutral.900">
-        Once your Trezor is connected and unlocked, click 'Next'.
+        Once your Trezor is connected and unlocked, click &apos;Next&apos;.
       </Text>
       <HowDoesThisWork>
         <>

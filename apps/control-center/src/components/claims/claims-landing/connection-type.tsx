@@ -1,5 +1,5 @@
 import { Flex, Stack, Text, chakra } from '@chakra-ui/react'
-import { type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import { Link } from 'react-router'
 
 type MediaProps =
@@ -24,7 +24,7 @@ export function ConnectionType({
 }: {
   title: string
   to: string
-  state?: Record<string, unknown>
+  state?: { returnTo?: string }
 } & MediaProps): JSX.Element {
   return (
     <Stack
@@ -47,12 +47,16 @@ export function ConnectionType({
         aria-hidden="true"
         justifyContent="center"
         align="center"
-        w={imagePath ? '96px' : '32px'}
+        w={imagePath != null && imagePath !== '' ? '96px' : '32px'}
         flexShrink={0}
         h="30px"
         overflow="hidden"
       >
-        {imagePath ? <chakra.img src={imagePath} alt={imageAltText} maxW="96px" maxH="28px" /> : media}
+        {imagePath != null && imagePath !== '' ? (
+          <chakra.img src={imagePath} alt={imageAltText} maxW="96px" maxH="28px" />
+        ) : (
+          media
+        )}
       </Flex>
       <Text minW={0} overflowWrap="anywhere" textStyle="text/sm" fontWeight="medium">
         {title}

@@ -1,15 +1,13 @@
 import { Box } from '@chakra-ui/react'
-import {
-  AppLayout as BaseAppLayout,
-  Logo as BaseLogo,
-  Menu as BaseMenu,
-  Header,
-  getEnvSlug,
-} from '@hoseki/packages/ui/prove-verify-ui'
+import { parseUnknown } from '@hoseki/packages/result/lib/parse'
+import { AppLayout as BaseAppLayout } from '@hoseki/packages/ui/prove-verify-ui/layout'
+import { Menu as BaseMenu, Header } from '@hoseki/packages/ui/prove-verify-ui/layout/header'
+import { Logo as BaseLogo, getEnvSlug } from '@hoseki/packages/ui/prove-verify-ui/logo'
 import { Link, NavLink, Outlet } from 'react-router'
+import { z } from 'zod'
 import { UserInfo } from './user-info'
 
-const HOSEKI_ENV = import.meta.env['VITE_HOSEKI_ENV']
+const HOSEKI_ENV = parseUnknown(z.string(), import.meta.env['VITE_HOSEKI_ENV']).unwrapOr('')
 
 const menuItems = [
   { to: '/home', title: 'Home' },

@@ -11,13 +11,6 @@ else
   echo "    Tor binaries already present, skipping download."
 fi
 
-echo "==> Building api-sentinel..."
-cd "$REPO_ROOT"
-pnpm --filter api-sentinel build
-
-echo "==> Building Control Center web app (desktop mode)..."
-pnpm --filter control-center build --mode production.desktop
-
 echo "==> Installing desktop dependencies..."
 cd "$SCRIPT_DIR"
 npm ci --ignore-scripts
@@ -27,9 +20,9 @@ test -f node_modules/better-sqlite3/prebuilds/darwin-arm64.node
 test -f node_modules/better-sqlite3/prebuilds/win32-x64.node
 node -e "const Database = require('better-sqlite3'); const database = new Database(':memory:'); database.close()"
 
-echo "==> Building Electron shell..."
+echo "==> Building Sentinel, desktop web app, and Electron shell..."
 cd "$REPO_ROOT"
-npx tsx "$SCRIPT_DIR/src/scripts/build.ts"
+pnpm build:desktop:app
 
 # Package for both Mac and Windows
 echo "==> Packaging for macOS..."

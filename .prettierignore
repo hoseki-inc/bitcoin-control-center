@@ -12,3 +12,6 @@ generated
 
 **/lottie-animations/**
 *.timestamp-*.mjs
+
+# Preserve the pinned upstream plugin source.
+/tools/oxlint/anti-slop/vendor/

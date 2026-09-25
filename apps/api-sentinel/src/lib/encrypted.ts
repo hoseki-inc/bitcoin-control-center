@@ -1,7 +1,7 @@
 import * as crypto from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { Err, Ok, Result } from '@hoseki/packages/result'
+import { Err, Ok, Result, parse } from '@hoseki/packages/result'
 import type Database from 'better-sqlite3'
 import type { Logger } from 'pino'
 import { z } from 'zod'
@@ -31,7 +31,9 @@ export function initEncryption(hexKey: string): void {
 }
 
 function getKey(): Uint8Array {
-  if (!_key) throw new Error('Encryption not initialized. Call initEncryption() first.')
+  if (!_key) {
+    throw new Error('Encryption not initialized. Call initEncryption() first.')
+  }
   return _key
 }
 
@@ -68,8 +70,9 @@ function writeSecretFile(path: string, value: string): void {
 }
 
 function readLegacyDatabaseKey(db: Database.Database): string | null {
-  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(legacySettingsKey) as
-    { value: string } | undefined
+  const row = db
+    .prepare<unknown[], { value: string }>('SELECT value FROM settings WHERE key = ?')
+    .get(legacySettingsKey)
   return row?.value ?? null
 }
 
@@ -100,7 +103,7 @@ export function loadCredentialEncryptionKey(deps: {
   }
 
   const legacyKey = readLegacyDatabaseKey(deps.db)
-  if (legacyKey) {
+  if (legacyKey != null && legacyKey !== '') {
     const key = normalizeEncryptionKey(legacyKey)
     writeSecretFile(keyPath, key)
     deleteLegacyDatabaseKey(deps.db)
@@ -115,7 +118,11 @@ export function loadCredentialEncryptionKey(deps: {
 }
 
 export class Encrypted {
-  private constructor(public readonly blob: CiphertextBlob) {}
+  public readonly blob: CiphertextBlob
+
+  private constructor(blob: CiphertextBlob) {
+    this.blob = blob
+  }
 
   public static from(blob: CiphertextBlob): Encrypted {
     return new Encrypted(blob)
@@ -123,7 +130,9 @@ export class Encrypted {
 
   public static fromString(string: string): Result<Encrypted, Error> {
     const parsed = CiphertextBlob.safeParse(string)
-    if (!parsed.success) return Err(new Error(parsed.error.message))
+    if (!parsed.success) {
+      return Err(new Error(parsed.error.message))
+    }
     return Ok(Encrypted.from(parsed.data))
   }
 
@@ -137,7 +146,9 @@ export class Encrypted {
       const combined = new Uint8Array(part1.length + part2.length)
       combined.set(new Uint8Array(part1), 0)
       combined.set(new Uint8Array(part2), part1.length)
-      const blob = `${iv.toString(encoding)}_${Buffer.from(combined).toString(encoding)}` as CiphertextBlob
+      const blob = parse(CiphertextBlob, `${iv.toString(encoding)}_${Buffer.from(combined).toString(encoding)}`).expect(
+        'generated ciphertext should have a valid format',
+      )
       return new Encrypted(blob)
     })
   }
@@ -146,7 +157,9 @@ export class Encrypted {
     return Result.fromThrowable(() => {
       const key = getKey()
       const [ivHex, ciphertextHex] = this.blob.split('_')
-      if (!ivHex || !ciphertextHex) throw new Error('Malformed ciphertext blob')
+      if (ivHex == null || ivHex === '' || ciphertextHex == null || ciphertextHex === '') {
+        throw new Error('Malformed ciphertext blob')
+      }
       const decipher = crypto.createDecipheriv(algorithm, key, new Uint8Array(Buffer.from(ivHex, encoding)))
       const part1 = decipher.update(new Uint8Array(Buffer.from(ciphertextHex, encoding)))
       const part2 = decipher.final()

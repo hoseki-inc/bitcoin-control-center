@@ -1,5 +1,6 @@
 import { TZDate } from '@date-fns/tz'
 import { convertBtcToUsd } from '@hoseki/packages/currency'
+import { Err, Ok, type Result } from '@hoseki/packages/result'
 import type {
   Amount,
   BalanceEntry,
@@ -13,7 +14,6 @@ import type {
   SummaryEntry,
   Timezone,
 } from '@hoseki/packages/schemas'
-import { Err, Ok, type Result } from '@patina/core'
 import { eachMonthOfInterval, endOfMonth } from 'date-fns'
 import Decimal from 'decimal.js'
 import type { DailyRate, DailyRates } from '../price/daily_rates'
@@ -62,6 +62,7 @@ function createPdfStatement(
   ),
 ): PdfStatement {
   const common = {
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- SAFETY: Preview IDs intentionally use the same branded shape without persistence; they are never written to the statement table.
     id: args.id as StatementId,
     createdAt: args.createdAt,
     status: args.status,
@@ -103,14 +104,16 @@ export class StatementMapper {
     }
   }
 
-  private createCustomPdfStatement = (statement: CompletedStatementData): Result<PdfStatement, Error> => {
+  private readonly createCustomPdfStatement = (statement: CompletedStatementData): Result<PdfStatement, Error> => {
     const aggregatedRes = this.aggregateStatementData(
       statement.openingDate,
       statement.closingDate,
       statement.transactionMap,
       statement.dailyRates,
     )
-    if (aggregatedRes.isErr()) return Err(aggregatedRes.unwrapErr())
+    if (aggregatedRes.isErr()) {
+      return Err(aggregatedRes.unwrapErr())
+    }
     const agg = aggregatedRes.unwrap()
 
     return Ok(
@@ -136,9 +139,11 @@ export class StatementMapper {
     )
   }
 
-  private createMonthlyPdfStatement = (statement: CompletedStatementData): Result<PdfStatement, Error> => {
+  private readonly createMonthlyPdfStatement = (statement: CompletedStatementData): Result<PdfStatement, Error> => {
     const monthlyData = this.createMonthlyData(statement, statement.timezone)
-    if (monthlyData.isErr()) return Err(monthlyData.unwrapErr())
+    if (monthlyData.isErr()) {
+      return Err(monthlyData.unwrapErr())
+    }
 
     return Ok(
       createPdfStatement({
@@ -168,8 +173,12 @@ export class StatementMapper {
     const openingRate = dailyRates.rates[openingKey]
     const closingRate = dailyRates.rates[closingKey]
 
-    if (!openingRate) return Err(new Error(`No daily rate for opening date ${openingKey}`))
-    if (!closingRate) return Err(new Error(`No daily rate for closing date ${closingKey}`))
+    if (!openingRate) {
+      return Err(new Error(`No daily rate for opening date ${openingKey}`))
+    }
+    if (!closingRate) {
+      return Err(new Error(`No daily rate for closing date ${closingKey}`))
+    }
 
     let totalOpeningBalance: Amount = {
       sats: 0n,
@@ -220,7 +229,9 @@ export class StatementMapper {
       const statementTxs: StatementTransaction[] = []
 
       for (const tx of accountTxs) {
-        if (tx.transactedAt > closingDate) continue
+        if (tx.transactedAt > closingDate) {
+          continue
+        }
 
         currentBalance += tx.balanceChange
 
@@ -230,7 +241,9 @@ export class StatementMapper {
         } else {
           const txDate = toDateKey(tx.transactedAt)
           const dailyRate = dailyRates.rates[txDate]
-          if (!dailyRate) return Err(new Error(`No daily rate for transaction date ${txDate}`))
+          if (!dailyRate) {
+            return Err(new Error(`No daily rate for transaction date ${txDate}`))
+          }
 
           const changeUsd = convertBtcToUsd(tx.balanceChange, dailyRate.close)
           const balanceUsd = convertBtcToUsd(currentBalance, dailyRate.close)
@@ -367,7 +380,9 @@ export class StatementMapper {
         statement.transactionMap,
         statement.dailyRates,
       )
-      if (aggregatedMonthRes.isErr()) return Err(aggregatedMonthRes.unwrapErr())
+      if (aggregatedMonthRes.isErr()) {
+        return Err(aggregatedMonthRes.unwrapErr())
+      }
       const agg = aggregatedMonthRes.unwrap()
 
       const entriesWithTotal = agg.entries.concat([

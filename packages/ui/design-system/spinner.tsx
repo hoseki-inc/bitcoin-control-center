@@ -15,13 +15,17 @@ export function Spinner({
       return
     }
 
-    const timer = setTimeout(() => setShowSpinner(true), 200)
-    return () => clearTimeout(timer)
-  }, [])
+    const timer = setTimeout(() => {
+      setShowSpinner(true)
+    }, 200)
+    return () => {
+      clearTimeout(timer)
+    }
+  }, [isLazy])
 
   const spinner = <ChakraSpinner visibility={showSpinner ? 'visible' : 'hidden'} {...props} />
 
-  if (fullPage) {
+  if (fullPage === true) {
     return (
       <Flex
         position="fixed"
@@ -39,7 +43,7 @@ export function Spinner({
     )
   }
 
-  if (centered) {
+  if (centered === true) {
     return (
       <Flex w="full" justifyContent="center" py={8}>
         {spinner}

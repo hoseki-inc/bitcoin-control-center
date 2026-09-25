@@ -71,7 +71,7 @@ export const User = z.object({
     })
     .merge(ApiUser),
 })
-export interface User extends z.infer<typeof User> {}
+export type User = z.infer<typeof User>
 
 export const TransactionTypeSchema = literalUnion([
   /** Fills for an advanced trade order */
@@ -309,12 +309,12 @@ export const TransactionSchema = z
       .nullish(),
   })
   .strict()
-export interface Transaction extends z.infer<typeof TransactionSchema> {}
+export type Transaction = z.infer<typeof TransactionSchema>
 
 export const ShowTransactionResponseSchema = z.object({
   data: TransactionSchema,
 })
-export interface ShowTransactionResponse extends z.infer<typeof ShowTransactionResponseSchema> {}
+export type ShowTransactionResponse = z.infer<typeof ShowTransactionResponseSchema>
 
 export const PaginationSchema = z.object({
   ending_before: z.string().nullish(),
@@ -347,7 +347,7 @@ export const ListTransactionsResponseSchema = z
     data: z.array(TransactionSchema),
   })
   .strict()
-export interface ListTransactionsResponse extends z.infer<typeof ListTransactionsResponseSchema> {}
+export type ListTransactionsResponse = z.infer<typeof ListTransactionsResponseSchema>
 
 export const ErrorSchema = z.object({
   errors: z

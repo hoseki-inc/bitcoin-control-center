@@ -1,5 +1,5 @@
 import { HOSEKI_ASSETS_CDN_URL } from '@hoseki/packages/constants'
-import { WalletFloatingImage } from '../wallet-animation'
+import { WalletFloatingImage, type WalletImage } from '../wallet-animation'
 import type { TrezorModel } from './trezor-utils'
 
 export function FloatingTrezorImage({ modelName }: { modelName: TrezorModel }): JSX.Element {
@@ -7,7 +7,7 @@ export function FloatingTrezorImage({ modelName }: { modelName: TrezorModel }): 
   return <WalletFloatingImage {...trezorImage} />
 }
 
-export function getTrezorImageByModelName(modelName: TrezorModel): { href: string; alt: string } {
+export function getTrezorImageByModelName(modelName: TrezorModel): WalletImage {
   switch (modelName) {
     case 'T':
       return {

@@ -28,7 +28,14 @@ export const Toast: Story = () => (
     <Alert variant="toast" status="warning" title="Save your API key">
       Please save this API key now. You will not be able to see it again after closing this window.
     </Alert>
-    <Alert variant="toast" status="error" title="Connection failed" onRetry={() => alert('Retried!')}>
+    <Alert
+      variant="toast"
+      status="error"
+      title="Connection failed"
+      onRetry={() => {
+        alert('Retried!')
+      }}
+    >
       Unable to connect to your wallet. Please check your device connection and try again.
     </Alert>
   </VStack>

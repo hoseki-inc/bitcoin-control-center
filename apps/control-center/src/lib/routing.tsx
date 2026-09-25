@@ -15,3 +15,5 @@ export const LinkIfNotCurrent = forwardRef<{ to: string; children: React.ReactNo
     )
   },
 )
+
+LinkIfNotCurrent.displayName = 'LinkIfNotCurrent'

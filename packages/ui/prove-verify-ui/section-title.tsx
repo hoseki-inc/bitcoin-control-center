@@ -1,5 +1,5 @@
 import { Flex, Stack, chakra } from '@chakra-ui/react'
-import { type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import { PageHeading } from '../design-system/page-heading'
 
 export function SectionTitle({

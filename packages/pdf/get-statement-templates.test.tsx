@@ -1,16 +1,21 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import { parseUnknown } from '@hoseki/packages/result/lib/parse'
 import pdfRenderer, { renderToBuffer } from '@react-pdf/renderer'
 import QRCode from 'qrcode'
 import React from 'react'
 import { describe, expect, it } from 'vitest'
+import { z } from 'zod'
 import { getStatementDocumentTemplates } from './get-statement-templates'
 import { sampleCustomStatement, sampleMonthlyStatement } from './preview/presets'
 
 describe('statement PDF runtime', () => {
   it('keeps the tested renderer version aligned with both packaged runtimes', () => {
     const rendererVersion = (relativePath: string): string => {
-      const manifest = JSON.parse(readFileSync(new URL(relativePath, import.meta.url), 'utf8'))
+      const manifest = parseUnknown(
+        z.object({ dependencies: z.object({ '@react-pdf/renderer': z.string() }) }),
+        JSON.parse(readFileSync(new URL(relativePath, import.meta.url), 'utf8')),
+      ).expect('Expected a PDF renderer dependency in the manifest')
       return manifest.dependencies['@react-pdf/renderer']
     }
 

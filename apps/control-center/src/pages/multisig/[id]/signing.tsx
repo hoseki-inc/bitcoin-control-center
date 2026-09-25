@@ -1,4 +1,4 @@
-import { type StackProps } from '@chakra-ui/react'
+import { Button, Stack, type StackProps, Text } from '@chakra-ui/react'
 import { Address, DerivationPath, SingleSigAccount } from '@hoseki/packages/bitcoin'
 import { ErrorBanner, type FileDropState, Spinner } from '@hoseki/packages/ui/design-system'
 import {
@@ -12,8 +12,8 @@ import {
   isColdcardModel,
 } from '@hoseki/packages/ui/wallet-ui'
 import { useMutation } from '@tanstack/react-query'
-import { useState } from 'react'
-import { useNavigate, useParams } from 'react-router'
+import { useRef, useState } from 'react'
+import { Navigate, useNavigate, useParams } from 'react-router'
 import { toast } from 'sonner'
 import { useShallow } from 'zustand/react/shallow'
 import { ColdcardQrSigning } from '../../../components/claims/coldcard/coldcard-qr-signing'
@@ -22,6 +22,7 @@ import { KeystoneQrSigning } from '../../../components/claims/keystone/keystone-
 import { trezorService } from '../../../components/claims/trezor/trezor-service-singleton'
 import { useMultisigPageWrapperContext } from '../../../components/multisig/multisig-page-wrapper'
 import { useLedgerStore, useToastOnLedgerDisconnect } from '../../../hooks/use-ledger-store'
+import { closeDesktopLedger } from '../../../lib/open-desktop-ledger'
 import { browserLogger, captureHardwareWalletError } from '../../../logger'
 import { trpc } from '../../../trpc'
 import type { ClaimDto, KeystoreDto } from '../../../trpc/server-types'
@@ -31,13 +32,27 @@ export function MultisigSigningPage(): JSX.Element {
   const { keystoreId, walletType } = useParams<{ keystoreId: string; walletType: string }>()
   const { claim } = useMultisigPageWrapperContext()
 
-  if (!keystoreId) {
+  if (claim.latestChallenge?.completed === true) {
+    return <Navigate to={`/accounts/verify/receipt/${claim.id}`} replace />
+  }
+
+  if (keystoreId == null || keystoreId === '') {
     return <ErrorBanner mb={4} message="Keystore ID missing" />
   }
 
   const keystore = claim.keystores.find((ks) => ks.id === keystoreId)
   if (!keystore) {
     return <ErrorBanner mb={4} message="Keystore not found" />
+  }
+
+  if (
+    claim.latestChallenge?.messages.some((message) => message.keystoreId === keystore.id && message.signed) === true
+  ) {
+    return getNumberOfMissingSignatures(claim) <= 0 ? (
+      <FinishSavedChallenge claim={claim} />
+    ) : (
+      <Navigate to={`/multisig/verify/receipt/${claim.id}/${keystore.id}`} replace />
+    )
   }
 
   return (
@@ -47,6 +62,23 @@ export function MultisigSigningPage(): JSX.Element {
       {walletType === 'coldcard' && <ColdcardSigning claim={claim} keystore={keystore} />}
       {walletType === 'keystone' && <KeystoneSigning claim={claim} keystore={keystore} />}
     </ClaimConnectionWrapper>
+  )
+}
+
+function FinishSavedChallenge({ claim }: { claim: ClaimDto }): JSX.Element {
+  const { mutate, isLoading } = useMutation({ mutationFn: useCompleteChallenge(claim) })
+  return (
+    <Stack spacing={4} align="start">
+      <Text>All required signatures are saved. Finish verifying this account.</Text>
+      <Button
+        isLoading={isLoading}
+        onClick={() => {
+          mutate()
+        }}
+      >
+        Finish verification
+      </Button>
+    </Stack>
   )
 }
 
@@ -70,8 +102,6 @@ function TrezorSigning({ claim, keystore }: { claim: ClaimDto; keystore: Keystor
   const completeChallenge = useCompleteChallenge(claim)
 
   async function handleTrezorSign() {
-    setSigningInProgress(true)
-
     if (!keystore.derivationPath) {
       setError('No derivation path found')
       return
@@ -82,11 +112,12 @@ function TrezorSigning({ claim, keystore }: { claim: ClaimDto; keystore: Keystor
     }
 
     const signingPath = getSigningPath(keystore)
-    if (!signingPath) {
+    if (signingPath == null || signingPath === '') {
       setError('No signing path found')
       return
     }
 
+    setSigningInProgress(true)
     try {
       // Wait for user to sign message on device
       const result = await trezorService.signCustomMessage(signingPath, signedMessage.messageTextToSign)
@@ -110,16 +141,17 @@ function TrezorSigning({ claim, keystore }: { claim: ClaimDto; keystore: Keystor
       })
 
       if (isLastRequiredSignature) {
-        return await completeChallenge()
+        await completeChallenge()
+        return
       }
 
       // Refetch claim, then navigate to the hub
       await claimQuery.refetch()
-      navigate(`/multisig/verify/receipt/${claim.id}/${keystore.id}`)
-    } catch (error) {
-      console.error('error', error)
-      if (error instanceof Error) {
-        setError(error.message)
+      void navigate(`/multisig/verify/receipt/${claim.id}/${keystore.id}`, { replace: true })
+    } catch (caughtError) {
+      console.error('error', caughtError)
+      if (caughtError instanceof Error) {
+        setError(caughtError.message)
       } else {
         setError('Error signing message')
       }
@@ -128,7 +160,7 @@ function TrezorSigning({ claim, keystore }: { claim: ClaimDto; keystore: Keystor
     }
   }
 
-  if (error) {
+  if (error != null && error !== '') {
     return <ErrorBanner mb={4} message={error} />
   }
   if (challengeMessageQuery.isLoading) {
@@ -148,8 +180,12 @@ function TrezorSigning({ claim, keystore }: { claim: ClaimDto; keystore: Keystor
         address: Address.fromCheckedString(signedMessage.address),
         signingPath: getSigningPath(keystore),
       }}
-      onProveControl={handleTrezorSign}
-      onBack={() => navigate(-1)}
+      onProveControl={() => {
+        void handleTrezorSign()
+      }}
+      onBack={() => {
+        void navigate(-1)
+      }}
       signingInProgress={signingInProgress}
     />
   )
@@ -183,7 +219,7 @@ function LedgerSigning({ claim, keystore }: { claim: ClaimDto; keystore: Keystor
     },
   })
 
-  const error = initiateLedgerMutation.error || signingError
+  const error = initiateLedgerMutation.error ?? signingError
 
   const claimQuery = trpc.portalProve.registry.claims.get.byId.useQuery({ id: claim.id })
   const latestMessage = claim.latestChallenge?.messages.find((m) => m.keystoreId === keystore.id)
@@ -200,8 +236,6 @@ function LedgerSigning({ claim, keystore }: { claim: ClaimDto; keystore: Keystor
   const signedMessage = challengeMessageQuery.data?.signedMessage
 
   async function handleLedgerSign() {
-    setSigningInProgress(true)
-
     if (!keystore.derivationPath) {
       setSigningError(new Error('No derivation path found'))
       return
@@ -212,11 +246,12 @@ function LedgerSigning({ claim, keystore }: { claim: ClaimDto; keystore: Keystor
     }
 
     const signingPath = getSigningPath(keystore)
-    if (!signingPath) {
+    if (signingPath == null || signingPath === '') {
       setSigningError(new Error('No signing path found'))
       return
     }
 
+    setSigningInProgress(true)
     try {
       // Wait for user to sign message on device
       const result = await signMessage(signingPath, signedMessage.messageTextToSign)
@@ -237,15 +272,16 @@ function LedgerSigning({ claim, keystore }: { claim: ClaimDto; keystore: Keystor
       })
 
       if (isLastRequiredSignature) {
-        return await completeChallenge()
+        await completeChallenge()
+        return
       }
 
       // Refetch claim, then navigate to the hub
       await claimQuery.refetch()
-      navigate(`/multisig/verify/receipt/${claim.id}/${keystore.id}`)
-    } catch (error) {
-      if (error instanceof Error) {
-        setSigningError(error)
+      void navigate(`/multisig/verify/receipt/${claim.id}/${keystore.id}`, { replace: true })
+    } catch (caughtError) {
+      if (caughtError instanceof Error) {
+        setSigningError(caughtError)
       } else {
         setSigningError(new Error('Error signing message'))
       }
@@ -261,7 +297,9 @@ function LedgerSigning({ claim, keystore }: { claim: ClaimDto; keystore: Keystor
     return <ErrorBanner mb={4} message="Could not find signed message" />
   }
 
-  const handleBack = () => setStep((prev) => Math.max(prev - 1, 1))
+  const handleBack = () => {
+    setStep((prev) => Math.max(prev - 1, 1))
+  }
 
   return (
     <>
@@ -270,8 +308,13 @@ function LedgerSigning({ claim, keystore }: { claim: ClaimDto; keystore: Keystor
           error={error}
           mt={4}
           onRetry={() => {
-            resetLedger()
-            window.location.reload()
+            resetLedger(closeDesktopLedger)
+              .then(() => {
+                window.location.reload()
+              })
+              .catch(() => {
+                toast.error('Unable to reset Ledger. Reconnect the device and try again.')
+              })
           }}
         />
       )}
@@ -279,10 +322,17 @@ function LedgerSigning({ claim, keystore }: { claim: ClaimDto; keystore: Keystor
         step={step}
         onNext={() => {
           if (step === 1 && !error) {
-            return initiateLedgerMutation.mutate(undefined, { onSuccess: () => setStep(2) })
+            initiateLedgerMutation.mutate(undefined, {
+              onSuccess: () => {
+                setStep(2)
+              },
+            })
+            return
           }
           setStep((prev) => {
-            if (error) return prev
+            if (error) {
+              return prev
+            }
             return Math.min(prev + 1, 3)
           })
         }}
@@ -295,8 +345,12 @@ function LedgerSigning({ claim, keystore }: { claim: ClaimDto; keystore: Keystor
           address: Address.fromCheckedString(signedMessage.address),
           signingPath: getSigningPath(keystore),
         }}
-        onProveControl={handleLedgerSign}
-        onExit={() => navigate(-1)}
+        onProveControl={() => {
+          void handleLedgerSign()
+        }}
+        onExit={() => {
+          void navigate(-1)
+        }}
         signingInProgress={signingInProgress}
       />
     </>
@@ -316,8 +370,16 @@ function ColdcardSigning({ claim, keystore }: { claim: ClaimDto; keystore: Keyst
     5: 'Upload the signed message file',
   */
   const [wizardStep, setWizardStep] = useState<number>(1)
-  const goBack = () => (wizardStep === 1 ? () => {} : setWizardStep((prev) => prev - 1))
-  const goForward = () => (wizardStep === 5 ? () => {} : setWizardStep((prev) => prev + 1))
+  const goBack = () => {
+    if (wizardStep !== 1) {
+      setWizardStep((prev) => prev - 1)
+    }
+  }
+  const goForward = () => {
+    if (wizardStep !== 5) {
+      setWizardStep((prev) => prev + 1)
+    }
+  }
 
   const latestMessage = claim.latestChallenge?.messages.find((m) => m.keystoreId === keystore.id)
   const claimQuery = trpc.portalProve.registry.claims.get.byId.useQuery({ id: claim.id })
@@ -343,7 +405,7 @@ function ColdcardSigning({ claim, keystore }: { claim: ClaimDto; keystore: Keyst
   if (derivationPathRes.isErr()) {
     return <ErrorBanner mb={4} message="Invalid derivation path" />
   }
-  if (error) {
+  if (error != null && error !== '') {
     return <ErrorBanner mb={4} message={error} />
   }
   if (challengeMessageQuery.isLoading) {
@@ -360,27 +422,31 @@ function ColdcardSigning({ claim, keystore }: { claim: ClaimDto; keystore: Keyst
     }
 
     const isLastRequiredSignature = getNumberOfMissingSignatures(claim) === 1
-    await completeChallengeMessageMutation.mutateAsync(
-      {
-        signedMessageId: signedMessage.id,
-        signature,
-      },
-      {
-        onSuccess: async () => {
-          await claimQuery.refetch()
+    if (!completeChallengeMessageMutation.isSuccess) {
+      await completeChallengeMessageMutation.mutateAsync(
+        {
+          signedMessageId: signedMessage.id,
+          signature,
         },
-        onError: (error) => {
-          console.error('error', error)
-          setError('Error completing challenge message')
+        {
+          onError: (completionError) => {
+            console.error('error', completionError)
+            setError('Error completing challenge message')
+          },
         },
-      },
-    )
+      )
+    }
 
     if (isLastRequiredSignature) {
       return completeChallenge()
     }
 
-    navigate(`/multisig/verify/receipt/${claim.id}/${keystore.id}`)
+    try {
+      await claimQuery.refetch({ throwOnError: true })
+      void navigate(`/multisig/verify/receipt/${claim.id}/${keystore.id}`, { replace: true })
+    } catch {
+      toast.error('Signature saved, but the account could not be refreshed. Retry loading the account.')
+    }
   }
 
   // Coldcard Q uses QR-based signing flow
@@ -391,7 +457,9 @@ function ColdcardSigning({ claim, keystore }: { claim: ClaimDto; keystore: Keyst
         keystore={keystore}
         challenge={claim.latestChallenge}
         challengeMessage={challengeMessageQuery.data}
-        onExitSigning={() => navigate(`/multisig/${claim.id}/connect/coldcard/${keystore.id}`)}
+        onExitSigning={() => {
+          void navigate(`/multisig/${claim.id}/connect/coldcard/${keystore.id}`)
+        }}
         onSigningComplete={() => {}}
         onSubmitSignature={handleOnProveControl}
       />
@@ -402,7 +470,12 @@ function ColdcardSigning({ claim, keystore }: { claim: ClaimDto; keystore: Keyst
   return (
     <>
       {wizardStep === 1 && (
-        <Step7 onBack={() => navigate(`/multisig/${claim.id}/connect/coldcard/${keystore.id}`)} onNext={goForward} />
+        <Step7
+          onBack={() => {
+            void navigate(`/multisig/${claim.id}/connect/coldcard/${keystore.id}`)
+          }}
+          onNext={goForward}
+        />
       )}
 
       {wizardStep === 2 && <Step8 model={modelToDisplay} onBack={goBack} onNext={goForward} />}
@@ -454,7 +527,7 @@ function KeystoneSigning({ claim, keystore }: { claim: ClaimDto; keystore: Keyst
   const completeChallengeMessageMutation = trpc.portalProve.registry.challengeMessages.complete.useMutation()
   const completeChallenge = useCompleteChallenge(claim)
 
-  if (error) {
+  if (error != null && error !== '') {
     return <ErrorBanner mb={4} message={error} />
   }
   if (challengeMessageQuery.isLoading) {
@@ -475,27 +548,31 @@ function KeystoneSigning({ claim, keystore }: { claim: ClaimDto; keystore: Keyst
     }
 
     const isLastRequiredSignature = getNumberOfMissingSignatures(claim) === 1
-    await completeChallengeMessageMutation.mutateAsync(
-      {
-        signedMessageId: signedMessage.id,
-        signature,
-      },
-      {
-        onSuccess: async () => {
-          await claimQuery.refetch()
+    if (!completeChallengeMessageMutation.isSuccess) {
+      await completeChallengeMessageMutation.mutateAsync(
+        {
+          signedMessageId: signedMessage.id,
+          signature,
         },
-        onError: (error) => {
-          console.error('error', error)
-          setError('Error completing challenge message')
+        {
+          onError: (completionError) => {
+            console.error('error', completionError)
+            setError('Error completing challenge message')
+          },
         },
-      },
-    )
+      )
+    }
 
     if (isLastRequiredSignature) {
       return completeChallenge()
     }
 
-    navigate(`/multisig/verify/receipt/${claim.id}/${keystore.id}`)
+    try {
+      await claimQuery.refetch({ throwOnError: true })
+      void navigate(`/multisig/verify/receipt/${claim.id}/${keystore.id}`, { replace: true })
+    } catch {
+      toast.error('Signature saved, but the account could not be refreshed. Retry loading the account.')
+    }
   }
 
   return (
@@ -504,7 +581,9 @@ function KeystoneSigning({ claim, keystore }: { claim: ClaimDto; keystore: Keyst
       keystore={keystore}
       challenge={claim.latestChallenge}
       challengeMessage={challengeMessageQuery.data}
-      onExitSigning={() => navigate(`/multisig/${claim.id}/connect/keystone/${keystore.id}`)}
+      onExitSigning={() => {
+        void navigate(`/multisig/${claim.id}/connect/keystone/${keystore.id}`)
+      }}
       onSigningComplete={() => {}}
       onSubmitSignature={handleOnProveControl}
     />
@@ -513,9 +592,9 @@ function KeystoneSigning({ claim, keystore }: { claim: ClaimDto; keystore: Keyst
 
 function ColdcardMultisigStep11({
   model,
-  account,
-  walletDisplayName,
-  claim,
+  account: _account,
+  walletDisplayName: _walletDisplayName,
+  claim: _claim,
   onBack,
   onProveControl,
   ...rest
@@ -525,18 +604,29 @@ function ColdcardMultisigStep11({
   walletDisplayName: string
   claim: ClaimDto
   onBack: () => void
-  onProveControl: (signature: string) => void
+  onProveControl: (signature: string) => Promise<void>
 } & StackProps) {
   const [signatureFile, setSignatureFile] = useState<ParsedSignatureFile | null>(null)
   const [fileState, setFileState] = useState<FileDropState>('ready')
+  const inProgress = useRef(false)
 
   async function proveControl() {
+    if (inProgress.current) {
+      return
+    }
     if (!signatureFile) {
       toast.error('The signature file was not found.')
       return
     }
 
-    onProveControl(signatureFile.signature)
+    inProgress.current = true
+    try {
+      await onProveControl(signatureFile.signature)
+    } catch {
+      toast.error('The signing process did not complete successfully.')
+    } finally {
+      inProgress.current = false
+    }
   }
 
   return (
@@ -547,7 +637,9 @@ function ColdcardMultisigStep11({
       setFileState={setFileState}
       model={model}
       onBack={onBack}
-      onProveControl={proveControl}
+      onProveControl={() => {
+        void proveControl()
+      }}
       {...rest}
     />
   )
@@ -558,10 +650,16 @@ function useCompleteChallenge(claim: ClaimDto) {
   const navigate = useNavigate()
 
   const completeChallengeMutation = trpc.portalProve.registry.challenges.complete.useMutation({
-    onSuccess: () => {
-      trpcUtils.portalProve.registry.claims.get.byId.invalidate({ id: claim.id }).then(() => {
-        navigate('/accounts/verify/receipt/' + claim.id)
-      })
+    onSuccess: async () => {
+      try {
+        await trpcUtils.portalProve.registry.claims.get.byId.invalidate({ id: claim.id }, undefined, {
+          throwOnError: true,
+        })
+      } catch {
+        toast.error('Verification completed, but the account could not be refreshed. Reload the page.')
+        return
+      }
+      void navigate('/accounts/verify/receipt/' + claim.id)
     },
     onError: (error) => {
       browserLogger.error(error, 'There was an error when completing your Multisig claim')
@@ -570,7 +668,7 @@ function useCompleteChallenge(claim: ClaimDto) {
   })
 
   async function completeChallenge() {
-    if (!claim.latestChallenge?.id) {
+    if (claim.latestChallenge?.id == null || claim.latestChallenge.id.length === 0) {
       return
     }
     await completeChallengeMutation.mutateAsync({ challengeId: claim.latestChallenge.id })
@@ -580,8 +678,10 @@ function useCompleteChallenge(claim: ClaimDto) {
 }
 
 function getSigningPath(keystore: KeystoreDto): string | null {
-  if (!keystore.derivationPath) return null
+  if (!keystore.derivationPath) {
+    return null
+  }
 
-  const basePath = keystore.derivationPath?.replace(/h/g, "'")
+  const basePath = keystore.derivationPath.replace(/h/g, "'")
   return basePath + '/0/0'
 }

@@ -1,16 +1,13 @@
-import { EventEmitter } from 'node:events'
-import type Transport from '@ledgerhq/hw-transport'
+import Transport from '@ledgerhq/hw-transport'
 import pino from 'pino'
 import { expect, it, vi } from 'vitest'
 import { createLedgerStore } from './device-store'
 
-vi.mock('@ledgerhq/hw-app-btc', () => ({ default: class LedgerBtcApp {} }))
-
-function fakeTransport(): Transport {
-  return Object.assign(new EventEmitter(), {
-    close: vi.fn(async () => undefined),
+function fakeTransport() {
+  return Object.assign(new Transport(), {
+    close: vi.fn<Transport['close']>(async () => undefined),
     deviceModel: { productName: 'Ledger Flex', id: 'flex' },
-  }) as unknown as Transport
+  })
 }
 
 it('assigns a new scan identity when reconnecting even to an identical Ledger model', async () => {
@@ -41,8 +38,8 @@ it('reset waits for the previous USB handle to close before a retry can proceed'
   const store = createLedgerStore(pino({ level: 'silent' }))
   const transport = fakeTransport()
   let finishClose!: () => void
-  vi.mocked(transport.close).mockImplementation(
-    () =>
+  transport.close.mockImplementation(
+    async () =>
       new Promise((resolve) => {
         finishClose = resolve
       }),
@@ -51,7 +48,7 @@ it('reset waits for the previous USB handle to close before a retry can proceed'
   let finished = false
   const reset = store
     .getState()
-    .reset((device) => device.close())
+    .reset(async (device) => device.close())
     .then(() => {
       finished = true
     })

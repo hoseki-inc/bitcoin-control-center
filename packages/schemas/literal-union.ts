@@ -16,6 +16,8 @@ type InferPrimitiveValue<T> = T extends string
 export function literalUnion<T extends PrimitiveValue>(
   values: Readonly<[T, ...T[]]>,
 ): z.ZodType<LiteralUnion<T, InferPrimitiveValue<T>>, z.ZodTypeDef, LiteralUnion<T, InferPrimitiveValue<T>>> {
-  const primitiveType = typeof values[0]
-  return z.custom<LiteralUnion<T, InferPrimitiveValue<T>>>((value) => typeof value === primitiveType)
+  const reference = values[0]
+  return z.custom<LiteralUnion<T, InferPrimitiveValue<T>>>(
+    (value): value is LiteralUnion<T, InferPrimitiveValue<T>> => typeof value === typeof reference,
+  )
 }

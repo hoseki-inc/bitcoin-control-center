@@ -7,7 +7,7 @@ export const BitcoinImage = (): JSX.Element => {
           d="M1.02022 12.2638L1.02026 12.2637C3.08208 3.98888 11.4621 -1.04685 19.7343 1.01589L19.7343 1.0159C28.0085 3.07866 33.0434 11.4601 30.9806 19.7345C28.9179 28.0082 20.5379 33.0436 12.2631 30.9803C3.99183 28.9175 -1.04351 20.5371 1.02022 12.2638Z"
           fill="url(#paint0_linear_6094_21103)"
           stroke="url(#paint1_linear_6094_21103)"
-          stroke-width="1.11111"
+          strokeWidth="1.11111"
         />
         <path
           id="Vector_2"
@@ -24,8 +24,8 @@ export const BitcoinImage = (): JSX.Element => {
           y2="31.9984"
           gradientUnits="userSpaceOnUse"
         >
-          <stop stop-color="#F1F5F9" />
-          <stop offset="1" stop-color="#F9F9F9" />
+          <stop stopColor="#F1F5F9" />
+          <stop offset="1" stopColor="#F9F9F9" />
         </linearGradient>
         <linearGradient
           id="paint1_linear_6094_21103"
@@ -35,8 +35,8 @@ export const BitcoinImage = (): JSX.Element => {
           y2="31.9984"
           gradientUnits="userSpaceOnUse"
         >
-          <stop stop-color="#E2E8F0" />
-          <stop offset="1" stop-color="#F9F9F9" />
+          <stop stopColor="#E2E8F0" />
+          <stop offset="1" stopColor="#F9F9F9" />
         </linearGradient>
       </defs>
     </svg>

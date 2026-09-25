@@ -1,12 +1,12 @@
 import type { StatementDocumentFormat } from '@hoseki/packages/schemas/pdf-statement'
-import { type UseMutationOptions, useMutation } from '@tanstack/react-query'
+import { type UseMutationOptions, type UseMutationResult, useMutation } from '@tanstack/react-query'
 import { toast } from 'sonner'
 
 export function usePdfDownloadMutation<T extends object>(
   options: UseMutationOptions<void, Error, { statement: T; format: StatementDocumentFormat }, unknown> & {
     mutationFn: (variables: { statement: T; format: StatementDocumentFormat }) => Promise<void>
   },
-): ReturnType<typeof useMutation<void, Error, { statement: T; format: StatementDocumentFormat }, unknown>> {
+): UseMutationResult<void, Error, { statement: T; format: StatementDocumentFormat }, unknown> {
   return useMutation({
     onError: (error) => {
       toast.error('Statement not downloaded', { description: error.message })
@@ -41,6 +41,6 @@ export function getFilenameFromResponse(response: Response): string {
   // Extract filename from content disposition header
   // Format: attachment; filename="HOSEKI_STATEMENT_28APR2025_28JUL2025_b140aae4.pdf"
   const filenameRegex = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/
-  const filenameMatch = contentDisposition.match(filenameRegex)
+  const filenameMatch = filenameRegex.exec(contentDisposition)
   return filenameMatch?.[1] ?? 'statement.pdf'
 }

@@ -30,14 +30,18 @@ export function LedgerConnectionInfo({
   })
 
   const desktopLedger = getDesktopLedger()
-  if (desktopLedger) return <DesktopLedgerConnection bridge={desktopLedger} onBack={onBack} onContinue={onContinue} />
+  if (desktopLedger) {
+    return <DesktopLedgerConnection bridge={desktopLedger} onBack={onBack} onContinue={onContinue} />
+  }
 
   return (
     <LedgerConnectionInfoUI
       onBack={onBack}
-      onContinue={() => connectLedger.mutate()}
+      onContinue={() => {
+        connectLedger.mutate()
+      }}
       isLoading={connectLedger.isLoading}
-      error={connectLedger.error as Error | null}
+      error={connectLedger.error instanceof Error ? connectLedger.error : null}
     />
   )
 }

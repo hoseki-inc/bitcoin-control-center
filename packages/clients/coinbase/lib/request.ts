@@ -2,10 +2,20 @@ import { Err, Ok, Result, asyncFn, parseUnknown } from '@hoseki/packages/result'
 import { SafeHttpErrorKind, type SafeResponse, safeHttp } from '@hoseki/packages/safe-http'
 import * as crypto from 'crypto'
 import jose from 'node-jose'
-import { type z } from 'zod'
-import { type Credentials } from './credentials'
+import { z } from 'zod'
+import type { Credentials } from './credentials'
 import { ApiError, ErrorKind } from './errors'
 import { type JsonRecord, recordToHeaders, recordToSearchParams } from './util'
+
+type CoinbaseRequestHeaders = {
+  'CB-VERSION': string | undefined
+  Accept: string
+  'Content-Type': string
+  Authorization?: string
+  'CB-ACCESS-SIGN'?: string
+  'CB-ACCESS-TIMESTAMP'?: string
+  'CB-ACCESS-KEY'?: string
+}
 
 /** https://docs.cdp.coinbase.com/sign-in-with-coinbase/docs/api-key-auth-legacy */
 function sign(args: { timestamp: string; secret: string; method: 'GET' | 'POST'; path: string; body?: string }) {
@@ -104,14 +114,10 @@ const signCdp = asyncFn(
       return jose.JWS.createSign({ format: 'compact', fields }, privateKey).update(payload).final()
     }
 
-    return Result.fromPromise(createSign()).andThen((signed) => {
-      // Need a type guard here because the library exports invalid types 👍
-      const unk = signed as unknown
-      if (typeof unk === 'string') {
-        return Ok(unk)
-      }
-      return Err(new Error('Invalid signature'))
-    })
+    // node-jose's declared result includes formats other than the requested compact JWT.
+    return Result.fromPromise(createSign()).andThen((signed) =>
+      parseUnknown(z.string(), signed).mapErr(() => new Error('Invalid signature')),
+    )
   },
 )
 
@@ -128,7 +134,7 @@ function parseData<S extends z.ZodTypeAny>(response: SafeResponse, schema: S) {
     })
 }
 
-function parseErrorData<S extends z.ZodTypeAny>(response: SafeResponse, schema: S) {
+async function parseErrorData(response: SafeResponse, schema: z.ZodTypeAny) {
   return (
     parseData(response, schema)
       .andThen((errorData) => {
@@ -154,10 +160,10 @@ export interface RequestArgs<T extends z.ZodTypeAny, E extends z.ZodTypeAny> {
 }
 
 export const request = asyncFn(
-  async <ST extends z.ZodTypeAny, SE extends z.ZodTypeAny, T = z.infer<ST>>(
+  async <ST extends z.ZodTypeAny, SE extends z.ZodTypeAny>(
     args: RequestArgs<ST, SE>,
-  ): Promise<Result<{ data: T; response: SafeResponse }, ApiError>> => {
-    const headers: Record<string, string | undefined> = {
+  ): Promise<Result<{ data: z.infer<ST>; response: SafeResponse }, ApiError>> => {
+    const headers: CoinbaseRequestHeaders = {
       'CB-VERSION': args.version,
       Accept: 'application/json',
       'Content-Type': 'application/json',
@@ -179,9 +185,9 @@ export const request = asyncFn(
     }
 
     if (args.credentials) {
-      if (args.credentials?.variant === 'AccessToken') {
-        headers['Authorization'] = `Bearer ${args.credentials.accessToken}`
-      } else if (args.credentials?.variant === 'ApiKey') {
+      if (args.credentials.variant === 'AccessToken') {
+        headers.Authorization = `Bearer ${args.credentials.accessToken}`
+      } else if (args.credentials.variant === 'ApiKey') {
         const bodyForSign = body ?? ''
         const timestamp = Math.floor(Date.now() / 1000).toString()
         const signature = sign({
@@ -205,7 +211,7 @@ export const request = asyncFn(
         if (token.isErr()) {
           return Err(new ApiError(ErrorKind.UnexpectedFailure({ error: token.error() }), 'Failed to sign request'))
         }
-        headers['Authorization'] = `Bearer ${token.value()}`
+        headers.Authorization = `Bearer ${token.value()}`
       }
     }
 

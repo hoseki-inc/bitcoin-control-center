@@ -33,10 +33,6 @@
     "check": {
       "outputs": []
     },
-    "docker:build": {
-      "dependsOn": ["build"],
-      "cache": false
-    },
     "dev:databases": {
       "cache": false
     },

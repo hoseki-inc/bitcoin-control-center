@@ -19,7 +19,7 @@ export const Default: Story = () => {
   return (
     <Stack gap={4} maxW="700px">
       <BitcoinSigningFormFields message={MOCK_MESSAGE} address={address} setSignature={setSignature} />
-      {signature && (
+      {signature != null && signature !== '' && (
         <div>
           <strong>Signature:</strong>
           <pre>{signature}</pre>
@@ -38,7 +38,7 @@ export const WithLongMessage: Story = () => {
   return (
     <Stack gap={4} maxW="700px">
       <BitcoinSigningFormFields message={longMessage} address={address} setSignature={setSignature} />
-      {signature && (
+      {signature != null && signature !== '' && (
         <div>
           <strong>Signature:</strong>
           <pre>{signature}</pre>

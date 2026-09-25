@@ -1,7 +1,7 @@
 import { Box, Button, Flex, Grid, Text } from '@chakra-ui/react'
 import { useMemo, useState } from 'react'
 import { getMonthlyChanges } from '../dashboard-charts/balance-history'
-import { HistoryLineChart } from '../dashboard-charts/history-line-chart'
+import { HistoryLineChart as DefaultHistoryLineChart } from '../dashboard-charts/history-line-chart'
 import { MonthlyNetChangeChart } from '../dashboard-charts/monthly-net-change-chart'
 import { FiatAmountText } from '../fiat-amount-text'
 
@@ -14,8 +14,17 @@ const usd = (value: number): string =>
 const dateLabel = (time: number): string =>
   new Date(time * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 
+export interface PortfolioDemoViews {
+  HistoryLineChart: typeof DefaultHistoryLineChart
+}
+
+const portfolioDemoViews: PortfolioDemoViews = {
+  HistoryLineChart: DefaultHistoryLineChart,
+}
+
 /** Fictional holdings, generated from deposits and withdrawals rather than market-price movements. */
-export function PortfolioDemo(): JSX.Element {
+export function PortfolioDemo({ views = portfolioDemoViews }: { views?: PortfolioDemoViews }): JSX.Element {
+  const { HistoryLineChart } = views
   const [days, setDays] = useState<(typeof ranges)[number]>(90)
   const [end] = useState(() => Math.floor(Date.now() / 1000))
   const fullHistory = useMemo(
@@ -87,7 +96,7 @@ export function PortfolioDemo(): JSX.Element {
             {usd(total * SAMPLE_PRICE)} USD
           </FiatAmountText>
         </Box>
-        <Flex role="group" aria-label="Sample history date range" gap={1}>
+        <Flex as="fieldset" aria-label="Sample history date range" gap={1}>
           {ranges.map((range) => (
             <Button
               key={range}
@@ -96,7 +105,9 @@ export function PortfolioDemo(): JSX.Element {
               minH="44px"
               aria-pressed={range === days}
               bg={range === days ? 'neutral.100' : 'transparent'}
-              onClick={() => setDays(range)}
+              onClick={() => {
+                setDays(range)
+              }}
             >
               {range === 365 ? '1Y' : `${range}D`}
             </Button>
@@ -115,7 +126,7 @@ export function PortfolioDemo(): JSX.Element {
       <Box
         h={{ base: '240px', md: '300px' }}
         mt={4}
-        role="img"
+        as="figure"
         aria-label={`Sample balance history, from ${btc(first)} to ${btc(total)} over ${days} days`}
       >
         <HistoryLineChart data={history} formatValue={btc} formatTime={dateLabel} />

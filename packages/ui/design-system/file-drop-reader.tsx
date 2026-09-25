@@ -1,7 +1,9 @@
 import { Box, Stack, Text } from '@chakra-ui/react'
-import type { Result } from '@patina/core'
+import { Err, type Result } from '@hoseki/packages/result'
+import { parseUnknown } from '@hoseki/packages/result/lib/parse'
 import { CloudUploadIcon, RefreshCwIcon } from 'lucide-react'
 import { type ChangeEvent, type DragEvent, useRef, useState } from 'react'
+import { z } from 'zod'
 
 export type FileDropState = 'ready' | 'invalid' | 'valid'
 
@@ -9,35 +11,40 @@ type TextFileExtension = 'json' | 'txt'
 type BinaryFileExtension = 'png' | 'jpg' | 'jpeg' | 'webp'
 type FileExtension = TextFileExtension | BinaryFileExtension
 
-type ContentTypeForExtensions<T extends ReadonlyArray<FileExtension>> = T[number] extends TextFileExtension
-  ? string
-  : T[number] extends BinaryFileExtension
-    ? ArrayBuffer
-    : never
-
-export function FileDropReader<T, E extends ReadonlyArray<FileExtension>>({
-  readyText,
-  invalidText,
-  validText,
-  validationFn,
-  onValidContentRead,
-  onInvalidContentRead,
-  acceptedFileTypes,
-  status,
-  onStatusChange,
-  validIcon,
-}: {
+type FileDropReaderProps<T> = {
   readyText: string
   invalidText: string
   validText: string
-  validationFn: (rawContent: ContentTypeForExtensions<E>, file: File) => Result<T, Error>
   onValidContentRead: (validatedContent: T, file: File) => void
   onInvalidContentRead?: (error: Error) => void
-  acceptedFileTypes: E
   status: FileDropState
   onStatusChange?: (newStatus: FileDropState) => void
   validIcon?: React.ReactNode
-}): JSX.Element {
+} & (
+  | {
+      readAs: 'text'
+      acceptedFileTypes: ReadonlyArray<TextFileExtension>
+      validationFn: (content: string, file: File) => Result<T, Error>
+    }
+  | {
+      readAs: 'arrayBuffer'
+      acceptedFileTypes: ReadonlyArray<BinaryFileExtension>
+      validationFn: (content: ArrayBuffer, file: File) => Result<T, Error>
+    }
+)
+
+export function FileDropReader<T>(props: FileDropReaderProps<T>): JSX.Element {
+  const {
+    readyText,
+    invalidText,
+    validText,
+    onValidContentRead,
+    onInvalidContentRead,
+    status,
+    onStatusChange,
+    validIcon,
+  } = props
+  const acceptedFileTypes: ReadonlyArray<FileExtension> = props.acceptedFileTypes
   const [isDragging, setIsDragging] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const handledJpgExtension: ReadonlyArray<FileExtension> =
@@ -57,6 +64,7 @@ export function FileDropReader<T, E extends ReadonlyArray<FileExtension>>({
         return 'image/jpeg'
       case 'webp':
         return 'image/webp'
+      case 'txt':
       default:
         return 'text/plain'
     }
@@ -66,17 +74,21 @@ export function FileDropReader<T, E extends ReadonlyArray<FileExtension>>({
     if (mimeTypes.includes(file.type)) {
       const reader = new FileReader()
       reader.onload = (event) => {
-        if (!event.target?.result) {
+        const content = event.target?.result
+        if (content == null || content === '') {
           onStatusChange?.('invalid')
           onInvalidContentRead?.(new Error('Invalid file'))
           return
         }
 
-        const content = event.target.result
-
-        // TODO: I would like to avoid the type assertion here. But i will need to refactor
-        // this component to be more generic to handle both text and binary files.
-        const validationResult = validationFn(content as ContentTypeForExtensions<E>, file)
+        const validationResult =
+          props.readAs === 'text'
+            ? parseUnknown(z.string(), content)
+                .mapErr(() => new Error('Expected text file content'))
+                .andThen((text) => props.validationFn(text, file))
+            : content instanceof ArrayBuffer
+              ? props.validationFn(content, file)
+              : Err(new Error('Expected binary file content'))
         const newStatus = validationResult.isOk() ? 'valid' : 'invalid'
         onStatusChange?.(newStatus)
 
@@ -88,7 +100,7 @@ export function FileDropReader<T, E extends ReadonlyArray<FileExtension>>({
       }
 
       // Choose reading method based on file type
-      if (file.type === 'application/json' || file.type === 'text/plain') {
+      if (props.readAs === 'text') {
         reader.readAsText(file)
       } else {
         reader.readAsArrayBuffer(file)
@@ -99,7 +111,7 @@ export function FileDropReader<T, E extends ReadonlyArray<FileExtension>>({
     }
   }
 
-  function handleDrop(e: DragEvent<HTMLDivElement>) {
+  function handleDrop(e: DragEvent<HTMLElement>) {
     e.preventDefault()
     setIsDragging(false)
     const file = e.dataTransfer.files[0]
@@ -115,7 +127,7 @@ export function FileDropReader<T, E extends ReadonlyArray<FileExtension>>({
     }
   }
 
-  function handleDragOver(e: DragEvent<HTMLDivElement>) {
+  function handleDragOver(e: DragEvent<HTMLElement>) {
     e.preventDefault()
     setIsDragging(true)
   }
@@ -138,6 +150,10 @@ export function FileDropReader<T, E extends ReadonlyArray<FileExtension>>({
         style={{ display: 'none' }}
       />
       <Stack
+        as="button"
+        type="button"
+        width="full"
+        _focusVisible={{ boxShadow: 'outline' }}
         onClick={handleClick}
         onDrop={handleDrop}
         onDragOver={handleDragOver}
@@ -153,7 +169,7 @@ export function FileDropReader<T, E extends ReadonlyArray<FileExtension>>({
         {status === 'ready' && (
           <>
             <CloudUploadIcon color="#64748B" width="32px" height="32px" />
-            <Text textStyle="label/lg" fontWeight="semibold">
+            <Text as="span" textStyle="label/lg" fontWeight="semibold">
               {readyText}
             </Text>
           </>
@@ -161,7 +177,7 @@ export function FileDropReader<T, E extends ReadonlyArray<FileExtension>>({
         {status === 'invalid' && (
           <>
             <RefreshCwIcon color="#64748B" width="32px" height="32px" />
-            <Text textStyle="label/lg" fontWeight="semibold" color="red.500">
+            <Text as="span" textStyle="label/lg" fontWeight="semibold" color="red.500">
               {invalidText}
             </Text>
           </>
@@ -169,7 +185,7 @@ export function FileDropReader<T, E extends ReadonlyArray<FileExtension>>({
         {status === 'valid' && (
           <>
             {validIcon}
-            <Text textStyle="label/lg" fontWeight="semibold">
+            <Text as="span" textStyle="label/lg" fontWeight="semibold">
               {validText}
             </Text>
           </>
