@@ -1,4 +1,4 @@
-import type { RefetchOptions } from '@tanstack/react-query'
+import type { UseQueryResult } from '@tanstack/react-query'
 import { useAutoRefreshExchanges } from '../../hooks/use-auto-refresh-exchanges'
 import { useGetBalancesPerClaimIds } from '../../lib/balances'
 import { type RouterInput, type RouterOutput, trpc } from '../../trpc'
@@ -14,7 +14,7 @@ export interface PortfolioQuery {
   isFetching: boolean
   isPreviousData: boolean
   error?: Pick<Error, 'message'> | null
-  refetch: (options?: RefetchOptions) => unknown
+  refetch: UseQueryResult<PortfolioData | undefined, Pick<Error, 'message'>>['refetch']
 }
 
 export interface DashboardAccounts {

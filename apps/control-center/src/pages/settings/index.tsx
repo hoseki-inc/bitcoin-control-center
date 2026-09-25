@@ -129,6 +129,7 @@ function useElectrumStatus(): ElectrumStatusState {
   const refresh = useCallback((): void => {
     const baseUrl = import.meta.env.VITE_BACKEND_API_URL ?? ''
     void fetch(`${baseUrl}/settings.electrumStatus`)
+      // oxlint-disable-next-line anti-slop/no-unknown-returns -- the network response remains untrusted until the schemas below parse it.
       .then(async (res): Promise<unknown> => (res.ok ? res.json() : null))
       .then((data) => {
         // tRPC wraps response in result.data.json (superjson) or result.data

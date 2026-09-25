@@ -91,7 +91,7 @@ async function withTestSetup(run: () => Promise<void>): Promise<void> {
         rejectRequest = reject
       }),
   )
-  mocks.init.mockImplementation(async (open: () => Promise<unknown>) => {
+  mocks.init.mockImplementation(async (open: () => Promise<TransportWebHID>) => {
     await open()
   })
   bridge = {

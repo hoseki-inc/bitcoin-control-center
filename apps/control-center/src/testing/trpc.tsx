@@ -7,7 +7,7 @@ import { transformer, trpc } from '../trpc'
 type TestTrpcClient = ReturnType<typeof trpc.createClient>
 
 /** Run the real tRPC hooks against a local service implementation. */
-export function createTestTrpcClient(handle: (operation: Operation) => Promise<unknown>): TestTrpcClient {
+export function createTestTrpcClient<TResult>(handle: (operation: Operation) => Promise<TResult>): TestTrpcClient {
   return trpc.createClient({
     transformer,
     links: [

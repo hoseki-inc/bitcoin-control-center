@@ -11,13 +11,15 @@ function hasDefaultExport(module: unknown): module is { default: unknown } {
  * Some bundlers/runtimes nest the module under .default, others don't.
  */
 export function cjsInterop<T>(module: T): T extends { default: infer U } ? U : T
-// oxlint-disable-next-line anti-slop/no-unknown-parameters -- The overload implementation must inspect any module shape supplied by a runtime.
+// oxlint-disable anti-slop/no-unknown-parameters -- The overload implementation must inspect any module shape supplied by a runtime.
+// oxlint-disable-next-line anti-slop/no-unknown-returns -- The implementation preserves the unknown type until the generic overload resolves the caller-facing type.
 export function cjsInterop(module: unknown): unknown {
   if (hasDefaultExport(module)) {
     return module.default ?? module
   }
   return module
 }
+// oxlint-enable anti-slop/no-unknown-parameters
 
 export function hasKey<K extends PropertyKey>(value: unknown, key: K): value is object & Record<K, unknown> {
   return value !== null && (typeof value === 'object' || typeof value === 'function') && key in value

@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { ChakraProvider } from '@chakra-ui/react'
+import { parseUnknown } from '@hoseki/packages/result'
 import { QueryClient, QueryObserver, onlineManager } from '@tanstack/react-query'
 import { format } from 'date-fns'
 import Decimal from 'decimal.js'
@@ -7,6 +8,7 @@ import { act, createElement } from 'react'
 import { type Root, createRoot } from 'react-dom/client'
 import { MemoryRouter } from 'react-router'
 import { assert, describe, expect, it, onTestFinished, vi } from 'vitest'
+import { z } from 'zod'
 import type { AccountsSidebar } from '../../components/dashboard-charts/accounts-sidebar'
 import { claimFixture } from '../../testing/claims'
 import type { RouterInput } from '../../trpc'
@@ -166,10 +168,15 @@ async function changeDate(id: string, value: string): Promise<void> {
   })
 }
 
-function chartData(): unknown {
+type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue }
+const JsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
+  z.union([z.null(), z.boolean(), z.number(), z.string(), z.array(JsonValueSchema), z.record(JsonValueSchema)]),
+)
+
+function chartData(): JsonValue {
   const content = container.querySelector('[data-chart="accumulation"]')?.textContent
   assert.exists(content, 'Expected accumulation chart data')
-  return JSON.parse(content)
+  return parseUnknown(JsonValueSchema, JSON.parse(content) as unknown).expect('Expected JSON chart data')
 }
 
 function getQueryCall(

@@ -38,6 +38,7 @@ const ColdcardGenericJsonFileSchema = z.object({
 export type ColdcardGenericJsonFile = z.infer<typeof ColdcardGenericJsonFileSchema>
 
 export function parseGenericJsonFile(jsonFileContents: string): Result<ColdcardGenericJsonFile, Error> {
+  // oxlint-disable-next-line anti-slop/no-unknown-returns -- Coldcard JSON remains unknown until the file schema validates it.
   return Result.fromThrowable((): unknown => JSON.parse(jsonFileContents)).andThen((parsed) =>
     parseUnknown(ColdcardGenericJsonFileSchema, parsed),
   )
