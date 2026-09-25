@@ -21,6 +21,7 @@ export function cjsInterop(module: unknown): unknown {
 }
 // oxlint-enable anti-slop/no-unknown-parameters
 
+// oxlint-disable-next-line anti-slop/no-unsafe-dictionary-type -- The guard proves key presence only; callers must validate the unknown value before use.
 export function hasKey<K extends PropertyKey>(value: unknown, key: K): value is object & Record<K, unknown> {
   return value !== null && (typeof value === 'object' || typeof value === 'function') && key in value
 }

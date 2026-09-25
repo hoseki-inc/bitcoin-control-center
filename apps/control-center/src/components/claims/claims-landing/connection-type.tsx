@@ -24,7 +24,7 @@ export function ConnectionType({
 }: {
   title: string
   to: string
-  state?: Record<string, unknown>
+  state?: { returnTo?: string }
 } & MediaProps): JSX.Element {
   return (
     <Stack

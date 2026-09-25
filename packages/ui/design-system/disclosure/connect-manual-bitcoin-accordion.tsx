@@ -11,7 +11,7 @@ import {
 import { Link, type To } from 'react-router'
 import { Badge } from '..'
 
-export function ConnectManualBitcoinAccordion({ to, state }: { to: To; state?: Record<string, unknown> }): JSX.Element {
+export function ConnectManualBitcoinAccordion({ to, state }: { to: To; state?: { returnTo?: string } }): JSX.Element {
   return (
     <Accordion allowMultiple border="solid 1px" borderColor="neutral.200" borderRadius="4px">
       <AccordionItem border="none">
