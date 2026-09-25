@@ -15,6 +15,7 @@ export function getFlowSource(): FlowSource | null {
   if (source == null || source === '') {
     return null
   }
+  // oxlint-disable-next-line anti-slop/no-unknown-returns -- localStorage JSON remains unknown until FlowSourceSchema validates it.
   return Result.fromThrowable((): unknown => JSON.parse(source))
     .andThen((parsed) => parseUnknown(FlowSourceSchema, parsed))
     .unwrapOr(null)

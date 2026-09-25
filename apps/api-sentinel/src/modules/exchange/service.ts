@@ -33,6 +33,7 @@ const CredentialDataSchema = z.object({
 type CredentialData = z.infer<typeof CredentialDataSchema>
 
 function parseCredentials(json: string): Result<CredentialData, Error> {
+  // oxlint-disable-next-line anti-slop/no-unknown-returns -- Stored JSON remains unknown until CredentialDataSchema validates it.
   return Result.fromThrowable((): unknown => JSON.parse(json))
     .andThen((value) => parseUnknown(CredentialDataSchema, value))
     .mapErr(() => new Error('Stored exchange credentials are invalid'))

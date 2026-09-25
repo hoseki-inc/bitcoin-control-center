@@ -1,3 +1,4 @@
+// oxlint-disable-next-line anti-slop/no-unknown-returns -- Index selector callbacks may return arbitrary values, which is validated by isIndex before use.
 function isCallable(value: unknown): value is () => unknown {
   return typeof value === 'function'
 }

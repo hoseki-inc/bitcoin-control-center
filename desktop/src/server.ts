@@ -1,11 +1,14 @@
+// oxlint-disable-next-line anti-slop/no-unknown-returns -- A dynamically loaded server method can return any runtime value, which is checked by its caller.
 function isCallable(value: unknown): value is () => unknown {
   return typeof value === 'function'
 }
 
+// oxlint-disable-next-line anti-slop/no-unknown-returns -- Runtime-loaded server exports are checked structurally before use.
 function isServerModule(value: unknown): value is { main: () => unknown } {
   return value !== null && typeof value === 'object' && 'main' in value && isCallable(value.main)
 }
 
+// oxlint-disable-next-line anti-slop/no-unknown-returns -- Runtime-loaded server shutdown values are checked structurally before use.
 function hasShutdown(value: unknown): value is { shutdown: () => unknown } {
   return value !== null && typeof value === 'object' && 'shutdown' in value && isCallable(value.shutdown)
 }

@@ -43,6 +43,7 @@ export function parseWalletExport(jsonFileContents: string, fileType: string): R
 }
 
 function parseJsonWalletExport(jsonFileContents: string): Result<ParsedWalletExport, Error> {
+  // oxlint-disable-next-line anti-slop/no-unknown-returns -- JSON.parse stays unknown until one of the format schemas accepts it.
   return Result.fromThrowable((): unknown => JSON.parse(jsonFileContents)).andThen((parsed) => {
     const specterDesktopResult = trySpecterDesktop(parsed)
     if (specterDesktopResult.isOk()) {
