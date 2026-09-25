@@ -669,12 +669,12 @@ export class ControlCenterService {
         const retryDelayMs = this.scheduleAccountHistoryBackfillRetry(accountId)
         this.logger.warn({ accountId, retryDelayMs }, 'Self-custody history backfill retry scheduled')
       })
-      .catch((err: unknown) => {
+      .catch((cause: unknown) => {
         if (!this.canContinueAccountHistoryBackfill(accountId, generation)) {
           return
         }
         const retryDelayMs = this.scheduleAccountHistoryBackfillRetry(accountId)
-        this.logger.warn({ accountId, err, retryDelayMs }, 'Self-custody history backfill failed')
+        this.logger.warn({ accountId, err: cause, retryDelayMs }, 'Self-custody history backfill failed')
       })
       .finally(() => {
         if (this.getAccountHistoryBackfillGeneration(accountId) !== generation) {

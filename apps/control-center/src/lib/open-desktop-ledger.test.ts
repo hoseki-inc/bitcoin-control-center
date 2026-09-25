@@ -16,8 +16,8 @@ async function expectRejectedWithName(operation: Promise<unknown>, name: string)
     () => {
       throw new Error(`Expected operation to reject with ${name}`)
     },
-    (error: unknown) => {
-      expect(error).toMatchObject({ name })
+    (cause: unknown) => {
+      expect(cause).toMatchObject({ name })
     },
   )
 }

@@ -354,6 +354,7 @@ const SpecterDesktopJsonFileSchema = z
     descriptor: true,
   })
 
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- Each wallet format parser validates the raw JSON value against its own schema.
 function trySpecterDesktop(parsedJson: unknown): Result<ParsedWalletExport, Error> {
   const jsonParseResult = parseUnknown(SpecterDesktopJsonFileSchema, parsedJson)
   if (jsonParseResult.isOk()) {
@@ -457,6 +458,7 @@ const UnchainedCaravanJsonFileSchema = z
     quorum: true,
   })
 
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- Each wallet format parser validates the raw JSON value against its own schema.
 function tryUnchainedCaravan(parsedJson: unknown): Result<ParsedWalletExport, Error> {
   const jsonParseResult = parseUnknown(UnchainedCaravanJsonFileSchema, parsedJson)
 
@@ -589,6 +591,7 @@ const ElectrumJsonFileSchema = z
     return { wallet_type, use_encryption, keystores }
   })
 
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- Each wallet format parser validates the raw JSON value against its own schema.
 function tryElectrum(parsedJson: unknown): Result<ParsedWalletExport, Error> {
   const jsonParseResult = parseUnknown(ElectrumJsonFileSchema, parsedJson)
   if (jsonParseResult.isErr()) {

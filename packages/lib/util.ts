@@ -11,6 +11,7 @@ function hasDefaultExport(module: unknown): module is { default: unknown } {
  * Some bundlers/runtimes nest the module under .default, others don't.
  */
 export function cjsInterop<T>(module: T): T extends { default: infer U } ? U : T
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- The overload implementation must inspect any module shape supplied by a runtime.
 export function cjsInterop(module: unknown): unknown {
   if (hasDefaultExport(module)) {
     return module.default ?? module

@@ -1,11 +1,11 @@
 import type { SupportedHardwareWallet } from './hardware-wallet'
 
-export class HardwareDeviceError extends Error {
+export class HardwareDeviceError<Details = unknown> extends Error {
   public readonly wallet: SupportedHardwareWallet
   public readonly friendlyMessage: string
-  public readonly details?: unknown
+  public readonly details?: Details
 
-  public constructor(message: string, wallet: SupportedHardwareWallet, friendlyMessage: string, details?: unknown) {
+  public constructor(message: string, wallet: SupportedHardwareWallet, friendlyMessage: string, details?: Details) {
     super(message)
 
     this.name = 'HardwareDeviceError'

@@ -24,11 +24,11 @@ export function createTestTrpcClient(handle: (operation: Operation) => Promise<u
                     observer.complete()
                   }
                 },
-                (error: unknown) => {
+                (cause: unknown) => {
                   if (!cancelled) {
                     observer.error(
                       TRPCClientError.from(
-                        error instanceof Error ? error : new Error('Test service failed', { cause: error }),
+                        cause instanceof Error ? cause : new Error('Test service failed', { cause }),
                       ),
                     )
                   }

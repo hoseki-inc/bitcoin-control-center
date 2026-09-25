@@ -18,6 +18,7 @@ const logger = pino({ level: 'silent' })
 const account = Wallets.singlesigNativeSegwitAccount
 const txid = '1'.repeat(64)
 const timestamp = 1704153600
+type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue }
 
 async function withTestSetup(run: () => Promise<void>): Promise<void> {
   // Vitest owns teardown so it has its own timeout and runs once, even after a test timeout.
@@ -30,7 +31,7 @@ async function withTestSetup(run: () => Promise<void>): Promise<void> {
   await run()
 }
 
-function setup(body: unknown, transactionIds = [txid]) {
+function setup(body: JsonValue, transactionIds = [txid]) {
   vi.stubGlobal(
     'fetch',
     vi.fn(async () => Response.json(body)),

@@ -201,9 +201,9 @@ export class ElectrumTransport {
                   onConnected()
                 }
               })
-              .catch((err: unknown) => {
+              .catch((cause: unknown) => {
                 clearTimeout(timer)
-                resolve(Err(err instanceof Error ? err : new Error(String(err))))
+                resolve(Err(cause instanceof Error ? cause : new Error(String(cause))))
               })
           } else {
             // Direct connection (no proxy)

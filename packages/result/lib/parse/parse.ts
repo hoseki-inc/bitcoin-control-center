@@ -33,6 +33,7 @@ export function parseInput<S extends z.ZodTypeAny>(
 
 export function parseUnknown<S extends z.ZodTypeAny, O extends z.infer<S>>(
   schema: S,
+  // oxlint-disable-next-line anti-slop/no-unknown-parameters -- Accept arbitrary runtime values so the supplied schema can validate them.
   input: unknown,
 ): Result<O, ParseError> {
   return parse(schema, input)

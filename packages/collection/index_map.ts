@@ -76,7 +76,10 @@ export class IndexMap<K extends Indexable, V> implements Map<K, V> {
     if (key.key !== undefined) {
       const keyValue: unknown = isCallable(key.key) ? key.key() : key.key
       if (keyValue !== null && keyValue !== undefined) {
-        return this.requireIndex(keyValue)
+        if (isIndex(keyValue)) {
+          return keyValue
+        }
+        throw new TypeError('IndexMap key and id values must resolve to a primitive index')
       }
     }
 
@@ -84,7 +87,10 @@ export class IndexMap<K extends Indexable, V> implements Map<K, V> {
     if (key.id !== undefined) {
       const idValue: unknown = isCallable(key.id) ? key.id() : key.id
       if (idValue !== null && idValue !== undefined) {
-        return this.requireIndex(idValue)
+        if (isIndex(idValue)) {
+          return idValue
+        }
+        throw new TypeError('IndexMap key and id values must resolve to a primitive index')
       }
     }
 
@@ -94,13 +100,6 @@ export class IndexMap<K extends Indexable, V> implements Map<K, V> {
       throw new TypeError('IndexMap keys must provide a key, id, or custom toString()')
     }
     return stringify.call(key)
-  }
-
-  private requireIndex(value: unknown): Index {
-    if (isIndex(value)) {
-      return value
-    }
-    throw new TypeError('IndexMap key and id values must resolve to a primitive index')
   }
 
   private updateSize(): void {
