@@ -13,7 +13,7 @@ const EXPAND_COLLAPSE_VARIANTS = {
 
 const EXPAND_COLLAPSE_TRANSITION = {
   duration: 0.3,
-  ease: [0.42, 0, 0.58, 1] as [number, number, number, number],
+  ease: [0.42, 0, 0.58, 1] satisfies [number, number, number, number],
 }
 
 const CHECKMARK_DISPLAY_DURATION = 2000

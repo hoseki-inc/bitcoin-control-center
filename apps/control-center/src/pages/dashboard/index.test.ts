@@ -33,7 +33,9 @@ const browser = await vi.hoisted(async () => {
 })
 
 const mocks = vi.hoisted(() => {
-  const base = {
+  let error: Error | null = null
+  const claims: ClaimDto[] = []
+  const base: NonNullable<PortfolioQuery['data']> = {
     currentTotalBalance: '100',
     currentBtcPrice: '50000',
     verifiedClaimsCount: 0,
@@ -41,17 +43,22 @@ const mocks = vi.hoisted(() => {
     manualAccountCount: 1,
     etfAccountCount: 0,
     historicalData: [{ timestamp: '2026-08-05T00:00:00.000Z', totalBalance: '100' }],
-    historySyncingAccountIds: [] as string[],
-    historySyncedAccountIds: [] as string[],
-    historyRefreshingAccountIds: [] as string[],
-    historyFailedAccountIds: [] as string[],
+    historySyncingAccountIds: Array<string>(),
+    historySyncedAccountIds: Array<string>(),
+    historyRefreshingAccountIds: Array<string>(),
+    historyFailedAccountIds: Array<string>(),
   }
   return {
     base,
-    rangeData: { ...base, historicalData: [] as Array<{ timestamp: string; totalBalance: string }> },
+    rangeData: { ...base, historicalData: Array<{ timestamp: string; totalBalance: string }>() },
     previous: false,
     fetching: false,
-    error: null as Error | null,
+    get error() {
+      return error
+    },
+    set error(value: Error | null) {
+      error = value
+    },
     refetch: vi.fn(),
     useQuery:
       vi.fn<
@@ -62,7 +69,7 @@ const mocks = vi.hoisted(() => {
       >(),
     sidebar: vi.fn<(props: SidebarProps) => void>(),
     recordSnapshot: { mutate: vi.fn() },
-    claims: [] as ClaimDto[],
+    claims,
     holdings: [
       {
         id: 'holding',
@@ -176,6 +183,7 @@ const JsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
 function chartData(): JsonValue {
   const content = container.querySelector('[data-chart="accumulation"]')?.textContent
   assert.exists(content, 'Expected accumulation chart data')
+  // SAFETY: DOM text is JSON from the chart renderer; parseUnknown below verifies the full recursive JSON shape.
   return parseUnknown(JsonValueSchema, JSON.parse(content) as unknown).expect('Expected JSON chart data')
 }
 

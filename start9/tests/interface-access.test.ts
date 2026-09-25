@@ -31,7 +31,7 @@ const publicAddress: Hostname = {
 const cleanups: (() => void)[] = []
 
 function setupInterface(available: Hostname[], enabled: string[] = []): InterfaceFixture {
-  const addresses = { available, enabled, disabled: [] as [string, number][] }
+  const addresses: InterfaceFixture['addresses'] = { available, enabled, disabled: [] }
   const callbacks = new Set<() => void>()
   const leave: (() => void)[] = []
   const retry = vi.fn()
@@ -63,9 +63,9 @@ function setupInterface(available: Hostname[], enabled: string[] = []): Interfac
     }),
   }
   const addDaemon = vi.fn<(id: string, options: { exec: daemons.ExecCommandOptions }) => void>()
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- The SDK builder is nominal; this integration test observes addDaemon without starting a daemon.
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- SAFETY: The mocked builder exposes only addDaemon, the sole method exercised by this integration test; no daemon starts.
   vi.spyOn(sdk.Daemons, 'of').mockReturnValue({ addDaemon } as ReturnType<typeof sdk.Daemons.of>)
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- The container is an opaque token passed back to the mocked daemon builder; no container methods run.
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- SAFETY: The SDK container is an opaque token passed back to a mocked builder; no container methods run.
   vi.spyOn(sdk.SubContainer, 'of').mockResolvedValue({} as Awaited<ReturnType<typeof sdk.SubContainer.of>>)
   cleanups.push(() => {
     effects.isInContext = false
@@ -74,7 +74,7 @@ function setupInterface(available: Hostname[], enabled: string[] = []): Interfac
     })
   })
   return {
-    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- StartOS supplies the full Effects interface; this fixture implements only the host methods exercised by main.
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- SAFETY: StartOS supplies the full Effects interface; this fixture implements only the host methods exercised by main.
     options: { effects } as MainOptions,
     addresses,
     retry,

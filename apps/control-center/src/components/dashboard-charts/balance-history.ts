@@ -27,6 +27,19 @@ function isBalanceObject(value: unknown): value is object {
   return value !== null && typeof value === 'object'
 }
 
+interface BalanceStringifierReceiver {
+  toString: unknown
+}
+
+interface CallableStringifier {
+  // oxlint-disable-next-line anti-slop/no-unknown-returns -- Third-party stringifiers can return arbitrary runtime values; the caller validates the result.
+  call(thisArg: BalanceStringifierReceiver): unknown
+}
+
+function isCallableStringifier(value: unknown): value is CallableStringifier {
+  return typeof value === 'function'
+}
+
 const scalarBalance = z.union([
   z.string().transform((value) => value.trim() || '0'),
   z.number().transform((value) => String(Math.floor(value))),
@@ -42,10 +55,14 @@ export function toSatoshisString(value: unknown): string {
     return scalar.value()
   }
   if (isBalanceObject(value) && 'toString' in value) {
-    const content = (value as { toString(): string }).toString()
-    return parseUnknown(z.string(), content)
-      .map((text) => text.trim() || '0')
-      .unwrapOr('0')
+    // oxlint-disable-next-line typescript/unbound-method -- The call below explicitly supplies the original object as `this`.
+    const stringifier = value.toString
+    if (isCallableStringifier(stringifier)) {
+      const content = stringifier.call(value)
+      return parseUnknown(z.string(), content)
+        .map((text) => text.trim() || '0')
+        .unwrapOr('0')
+    }
   }
   return '0'
 }

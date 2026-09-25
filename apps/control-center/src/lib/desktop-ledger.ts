@@ -2,8 +2,14 @@ import { parseUnknown } from '@hoseki/packages/result/lib/parse'
 import { z } from 'zod'
 import type { LedgerHidApi } from '../../../../desktop/src/ledger-hid-api'
 
+declare global {
+  interface Window {
+    desktop?: { ledger?: LedgerHidApi }
+  }
+}
+
 export function getDesktopLedger(): LedgerHidApi | undefined {
-  return (window as Window & { desktop?: { ledger?: LedgerHidApi } }).desktop?.ledger
+  return window.desktop?.ledger
 }
 
 type ConnectionMessage = { title: string; detail: string }
