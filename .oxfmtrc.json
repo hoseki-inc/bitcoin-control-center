@@ -1,0 +1,50 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "bracketSpacing": true,
+  "singleQuote": true,
+  "semi": false,
+  "printWidth": 120,
+  "trailingComma": "all",
+  "sortPackageJson": {
+    "sortScripts": true
+  },
+  "ignorePatterns": [
+    ".claude",
+    "/dist",
+    "/coverage",
+    "pnpm-lock.yaml",
+    "*.test.html",
+    "generated",
+    "**/lottie-animations/**",
+    "*.timestamp-*.mjs",
+    "/tools/oxlint/anti-slop/vendor/"
+  ],
+  "sortImports": {
+    "customGroups": [
+      {
+        "groupName": "node-prefix",
+        "elementNamePattern": ["node:*", "node:*/**"]
+      },
+      {
+        "groupName": "workspace-packages",
+        "elementNamePattern": ["packages/**"]
+      },
+      {
+        "groupName": "workspace-apps",
+        "elementNamePattern": ["apps/**"]
+      },
+      {
+        "groupName": "relative-paths",
+        "elementNamePattern": [".", "..", "./**", "../**", "/**"]
+      },
+      {
+        "groupName": "third-party",
+        "elementNamePattern": ["**"]
+      }
+    ],
+    "groups": ["node-prefix", "third-party", "workspace-packages", "workspace-apps", "relative-paths"],
+    "ignoreCase": false,
+    "newlinesBetween": false,
+    "sortSideEffects": false
+  }
+}

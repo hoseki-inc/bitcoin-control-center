@@ -9,7 +9,7 @@ import { trpc } from '../../../trpc'
 import type { ChallengeDto, ChallengeMessageDto, ClaimDto } from '../../../trpc/server-types'
 import { GenericError } from '../../errors/generic-error'
 import { ColdcardQrSigning } from './coldcard-qr-signing'
-import { Step9Ui, Step10, Step11Ui } from './coldcard-steps'
+import { Step10, Step11Ui, Step9Ui } from './coldcard-steps'
 
 export function ColdcardSigning(props: SigningFlowProps): JSX.Element {
   const { claim, keystore, challenge, challengeMessage, onExitSigning, onSigningComplete } = props
