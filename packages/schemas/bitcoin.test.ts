@@ -169,7 +169,10 @@ test('bitcoinNetwork', () => {
   // Make a generic schema that accepts a dummy object
   const dummy = z.object({
     dummy: z.literal(true),
-    network: z.custom<Network | (() => Network)>((value: unknown) => Boolean(value)),
+    network: z.custom<Network | (() => Network)>(
+      (value): value is Network | (() => Network) =>
+        (typeof value === 'object' && value !== null) || typeof value === 'function',
+    ),
   })
   const schema = bitcoinNetwork(dummy, [Network.Mainnet])
 

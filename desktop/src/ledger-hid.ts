@@ -142,6 +142,7 @@ export function setupLedgerHidAccess(
     }
   }
 
+  // oxlint-disable-next-line anti-slop/no-unknown-parameters -- IPC arguments are untrusted; validate the request id before use.
   ipc.handle('ledger-hid:begin', (event, id: unknown): boolean => {
     if (!isAppIpc(event) || !isRequestId(id) || request || nativeRequest) {
       return false
@@ -158,6 +159,7 @@ export function setupLedgerHidAccess(
     }
     return true
   })
+  // oxlint-disable-next-line anti-slop/no-unknown-parameters -- IPC arguments are untrusted; validate them before device selection.
   ipc.handle('ledger-hid:choose', (event, id: unknown, deviceId: unknown): boolean => {
     if (!isAppIpc(event) || !request?.callback || request.cancelled || request.id !== id || !isDeviceId(deviceId)) {
       return false
@@ -168,12 +170,14 @@ export function setupLedgerHidAccess(
     finish(deviceId)
     return true
   })
+  // oxlint-disable-next-line anti-slop/no-unknown-parameters -- IPC arguments are untrusted; compare only against the active request id.
   const onCancel = (event: IpcMainEvent, id: unknown): void => {
     if (isAppIpc(event) && request?.id === id) {
       finish()
     }
   }
   ipc.on('ledger-hid:cancel', onCancel)
+  // oxlint-disable-next-line anti-slop/no-unknown-parameters -- IPC arguments are untrusted; compare only against the active request id.
   const onEnd = (event: IpcMainEvent, id: unknown): void => {
     if (!isAppIpc(event) || request?.id !== id) {
       return

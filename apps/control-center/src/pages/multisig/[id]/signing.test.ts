@@ -2,7 +2,7 @@
 import { Box } from '@chakra-ui/react'
 import { Address, DerivationPath, MultiSigAccount } from '@hoseki/packages/bitcoin'
 import { hasKey } from '@hoseki/packages/lib/util'
-import { Err, Ok, asyncFn } from '@hoseki/packages/result'
+import { Err, Ok, asyncFn, parseUnknown } from '@hoseki/packages/result'
 import { TestChakraProvider as ChakraProvider } from '@hoseki/packages/testing/chakra-provider'
 import { TrezorInfo } from '@hoseki/packages/ui/wallet-ui/trezor/trezor-info'
 import { HardwareDeviceError, Slip132 } from '@hoseki/packages/wallet'
@@ -15,6 +15,7 @@ import { RouterProvider, createMemoryRouter } from 'react-router'
 import { Outlet } from 'react-router'
 import { toast } from 'sonner'
 import { type MockInstance, assert, describe, expect, it, onTestFinished, vi } from 'vitest'
+import { z } from 'zod'
 import { LedgerSigning as SinglesigLedgerSigning } from '../../../components/claims/ledger/ledger-signing'
 import { trezorService } from '../../../components/claims/trezor/trezor-service-singleton'
 import { TrezorSigning as SinglesigTrezorSigning } from '../../../components/claims/trezor/trezor-signing'
@@ -102,8 +103,8 @@ const mocks = await vi.hoisted(async () => {
         ) => Promise<Awaited<ReturnType<typeof trezorService.signCustomMessage>>>
       >(),
     navigate: vi.fn(),
-    completeMessage: vi.fn<(input: unknown) => Promise<void>>(),
-    completeChallenge: vi.fn<(input: unknown) => Promise<void>>(),
+    completeMessage: vi.fn<(input: { signedMessageId: string; signature: string }) => Promise<void>>(),
+    completeChallenge: vi.fn<(input: { challengeId: string }) => Promise<void>>(),
     fetchClaim: vi.fn<() => Promise<ClaimDto>>(),
     toastError: vi.fn(),
   }
@@ -118,7 +119,11 @@ const rpc = createTestTrpcClient(async ({ path, input }) => {
     case 'portalProve.registry.challengeMessages.get':
       return challengeMessage()
     case 'portalProve.registry.challengeMessages.complete': {
-      await mocks.completeMessage(input)
+      await mocks.completeMessage(
+        parseUnknown(z.object({ signedMessageId: z.string(), signature: z.string() }), input).expect(
+          'Expected a signed-message completion input',
+        ),
+      )
       const message = challengeMessage()
       return {
         ...message,
@@ -126,7 +131,9 @@ const rpc = createTestTrpcClient(async ({ path, input }) => {
       } satisfies ChallengeMessageDto
     }
     case 'portalProve.registry.challenges.complete':
-      await mocks.completeChallenge(input)
+      await mocks.completeChallenge(
+        parseUnknown(z.object({ challengeId: z.string() }), input).expect('Expected a challenge completion input'),
+      )
       return {
         id: 're_chal_challenge1',
         claimId: mocks.claim.id,

@@ -14,8 +14,8 @@ const ledgerErrorDetails = z.object({
   statusCode: z.number().optional().catch(undefined),
 })
 
-export function ledgerConnectionMessage(error: unknown): ConnectionMessage {
-  const details = parseUnknown(ledgerErrorDetails, error).unwrapOr(null)
+export function ledgerConnectionMessage(cause: unknown): ConnectionMessage {
+  const details = parseUnknown(ledgerErrorDetails, cause).unwrapOr(null)
   const name = details?.name
   const statusText = details?.statusText
   const statusCode = details?.statusCode

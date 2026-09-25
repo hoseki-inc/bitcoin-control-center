@@ -32,6 +32,7 @@ const scalarBalance = z.union([
   z.number().transform((value) => String(Math.floor(value))),
 ])
 
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- This normalization boundary accepts untrusted balance values and returns a safe string.
 export function toSatoshisString(value: unknown): string {
   if (value === null || value === undefined) {
     return '0'
@@ -51,7 +52,7 @@ export function toSatoshisString(value: unknown): string {
 
 export function withCurrentBalancePoint(
   data: BalanceDataPoint[],
-  currentBalanceSats: unknown,
+  currentBalanceSats: number | string,
   now: Date = new Date(),
   timezone: string = getBrowserTimezone(),
 ): BalanceDataPoint[] {

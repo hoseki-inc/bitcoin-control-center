@@ -34,6 +34,7 @@ export class SafeBody {
     )
   }
 
+  // oxlint-disable-next-line anti-slop/no-unknown-parameters -- JSON from an HTTP response stays untrusted until the caller parses it.
   public json<T, E extends Error>(parse: (json: unknown) => Result<T, E>): AsyncResult<T, SafeBodyError> {
     return Result.fromPromise(this.originalBody.json())
       .mapErr((error) => new SafeBodyError(SafeBodyErrorKind.Unreadable, 'Failed to read JSON body', error))

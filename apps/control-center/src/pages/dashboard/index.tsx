@@ -87,14 +87,9 @@ function formatCustomDateRangeLabel(range: CustomDateRangeDraft): string {
   return `${format(range.startDate, 'PP')} – ${format(range.endDate, 'PP')}`
 }
 
-function isDecimalInput(value: unknown): value is string | Decimal {
-  return typeof value === 'string' || value instanceof Decimal
-}
-
-function formatBtc(satoshis: unknown): string {
+function formatBtc(satoshis: string | Decimal): string {
   try {
-    const sats = isDecimalInput(satoshis) ? satoshis : toSatoshisString(satoshis)
-    const btc = new Decimal(sats).div(100_000_000)
+    const btc = new Decimal(satoshis).div(100_000_000)
     const formatted = btc.toFixed(8)
     return formatted === '' || formatted === 'NaN' ? '0.00000000' : formatted
   } catch {

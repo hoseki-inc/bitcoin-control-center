@@ -73,8 +73,8 @@ export function DeleteClaimModal({ action, isOpen, onClose, claim }: DeleteClaim
     toast.success(isAbandon ? `'${claim.displayName}' setup abandoned` : `'${claim.displayName}' account deleted`)
   }
 
-  const onDeleteError = (err: unknown): void => {
-    browserLogger.error({ err }, 'Failed to delete claim')
+  const onDeleteError = (cause: { message: string }): void => {
+    browserLogger.error({ err: cause }, 'Failed to delete claim')
     toast.error(isAbandon ? 'Failed to abandon setup' : 'Failed to delete account')
   }
 
