@@ -9,10 +9,17 @@ export function useQueryErrorToast(message: string | null, retry: () => void): v
   }, [retry])
 
   useEffect(() => {
-    if (!message) return
+    if (message === null || message === '') {
+      return
+    }
     const toastId = toast.error(message, {
       duration: 8000,
-      action: { label: 'Try Again', onClick: () => retryRef.current() },
+      action: {
+        label: 'Try Again',
+        onClick: () => {
+          retryRef.current()
+        },
+      },
     })
     return () => {
       toast.dismiss(toastId)

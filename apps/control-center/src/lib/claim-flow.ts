@@ -1,13 +1,13 @@
-import { type DerivationPath, type SingleSigAccount } from '@hoseki/packages/bitcoin'
+import type { DerivationPath, SingleSigAccount } from '@hoseki/packages/bitcoin'
 import { type AsyncResult, Ok, Result } from '@hoseki/packages/result'
-import { type BitcoinNetworkString, type ClaimId } from '@hoseki/packages/schemas'
-import { type SupportedHardwareWallet } from '@hoseki/packages/wallet'
+import type { BitcoinNetworkString, ClaimId } from '@hoseki/packages/schemas'
+import type { SupportedHardwareWallet } from '@hoseki/packages/wallet'
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import { toast } from 'sonner'
 import { browserLogger } from '../logger'
 import { trpc } from '../trpc'
-import { type ChallengeDto, type ChallengeMessageDto, type ClaimDto, type KeystoreDto } from '../trpc/server-types'
+import type { ChallengeDto, ChallengeMessageDto, ClaimDto, KeystoreDto } from '../trpc/server-types'
 
 type CreateSingleSigClaimMutation = ReturnType<typeof trpc.portalProve.registry.claims.create.singlesig.useMutation>
 
@@ -73,12 +73,12 @@ export function useNavigateToAnExistentOrNewClaim(): UseNavigateToAnExistentOrNe
           toast.info('This account is archived', {
             description: 'Restore it from Archived accounts before reconnecting.',
           })
-          navigate('/accounts#archived')
+          void navigate('/accounts#archived')
           setIsLoading(false)
           return Ok(claimId)
         }
 
-        navigate(`/accounts/${claimId}/signing`)
+        void navigate(`/accounts/${claimId}/signing`)
         setIsLoading(false)
         return Ok(claimId)
       })

@@ -18,7 +18,7 @@ import {
   Tr,
   VisuallyHidden,
 } from '@chakra-ui/react'
-import { ETF_CONFIGS, ETF_TICKERS, type EtfTicker } from '@hoseki/packages/etfs/holdings'
+import { ETF_CONFIGS, ETF_TICKERS, type EtfTicker, getEtfConfig } from '@hoseki/packages/etfs/holdings'
 import { ErrorBanner } from '@hoseki/packages/ui/design-system'
 import { DateStringInput } from '@hoseki/packages/ui/design-system/forms/date-string-input'
 import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
@@ -44,10 +44,13 @@ export function EtfAccountDetailsPage(): JSX.Element {
   const [newDatePurchased, setNewDatePurchased] = useState('')
 
   // ─── Queries ────────────────────────────────────────────────
-  const accountQuery = trpc.portalProve.etf.get.useQuery({ accountId: accountId ?? '' }, { enabled: !!accountId })
+  const accountQuery = trpc.portalProve.etf.get.useQuery(
+    { accountId: accountId ?? '' },
+    { enabled: accountId != null && accountId !== '' },
+  )
   const holdingsQuery = trpc.portalProve.etf.holdings.list.useQuery(
     { accountId: accountId ?? '' },
-    { enabled: !!accountId },
+    { enabled: accountId != null && accountId !== '' },
   )
 
   // ─── Mutations ──────────────────────────────────────────────
@@ -68,7 +71,9 @@ export function EtfAccountDetailsPage(): JSX.Element {
   const btcAmount = (btcSats / 100_000_000).toFixed(8)
 
   async function invalidateAll(): Promise<void> {
-    if (!accountId) return
+    if (accountId == null || accountId === '') {
+      return
+    }
     await utils.portalProve.etf.get.invalidate({ accountId })
     await utils.portalProve.etf.list.invalidate()
     await utils.portalProve.etf.holdings.list.invalidate({ accountId })
@@ -76,7 +81,9 @@ export function EtfAccountDetailsPage(): JSX.Element {
   }
 
   async function handleAddHolding(): Promise<void> {
-    if (!accountId || !newShares) return
+    if (accountId == null || accountId === '' || !newShares) {
+      return
+    }
     try {
       await addHoldingMutation.mutateAsync({
         accountId,
@@ -104,13 +111,15 @@ export function EtfAccountDetailsPage(): JSX.Element {
   }
 
   async function handleDelete(): Promise<void> {
-    if (!accountId) return
+    if (accountId == null || accountId === '') {
+      return
+    }
     setIsDeleting(true)
     try {
       await deleteMutation.mutateAsync({ accountId })
       await utils.portalProve.etf.list.invalidate()
       await utils.portalProve.controlCenter.invalidate()
-      navigate('/accounts')
+      void navigate('/accounts')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to remove account')
       setIsDeleting(false)
@@ -123,7 +132,13 @@ export function EtfAccountDetailsPage(): JSX.Element {
         <TopBar.Item as={Link} to="/accounts">
           Back to Accounts
         </TopBar.Item>
-        <TopBar.Item as="button" color="error.600" onClick={handleDelete}>
+        <TopBar.Item
+          as="button"
+          color="error.600"
+          onClick={() => {
+            void handleDelete()
+          }}
+        >
           {isDeleting ? 'Removing...' : 'Remove Account'}
         </TopBar.Item>
       </TopBar>
@@ -198,7 +213,7 @@ export function EtfAccountDetailsPage(): JSX.Element {
                 </Thead>
                 <Tbody>
                   {holdingsQuery.data.map((holding) => {
-                    const config = ETF_CONFIGS[holding.ticker as EtfTicker]
+                    const config = getEtfConfig(holding.ticker)
                     return (
                       <Tr key={holding.id}>
                         <Td>
@@ -226,7 +241,9 @@ export function EtfAccountDetailsPage(): JSX.Element {
                         </Td>
                         <Td>
                           <Text textStyle="text/sm" color="neutral.600">
-                            {holding.datePurchased ? format(new Date(holding.datePurchased), 'MMM d, yyyy') : '—'}
+                            {holding.datePurchased != null && holding.datePurchased !== ''
+                              ? format(new Date(holding.datePurchased), 'MMM d, yyyy')
+                              : '—'}
                           </Text>
                         </Td>
                         <Td>
@@ -236,7 +253,9 @@ export function EtfAccountDetailsPage(): JSX.Element {
                             aria-label={`Remove ${holding.ticker} holding`}
                             variant="ghost"
                             color="error.500"
-                            onClick={() => handleRemoveHolding(holding.id)}
+                            onClick={() => {
+                              void handleRemoveHolding(holding.id)
+                            }}
                           >
                             Remove
                           </Button>
@@ -268,7 +287,12 @@ export function EtfAccountDetailsPage(): JSX.Element {
                 borderRadius="control"
                 textStyle="text/sm"
                 value={newTicker}
-                onChange={(e) => setNewTicker(e.target.value as EtfTicker)}
+                onChange={(e) => {
+                  const ticker = ETF_TICKERS.find((candidate) => candidate === e.target.value)
+                  if (ticker) {
+                    setNewTicker(ticker)
+                  }
+                }}
               >
                 {ETF_TICKERS.map((ticker) => {
                   const config = ETF_CONFIGS[ticker]
@@ -293,7 +317,9 @@ export function EtfAccountDetailsPage(): JSX.Element {
                 min="0"
                 placeholder="0"
                 value={newShares}
-                onChange={(e) => setNewShares(e.target.value)}
+                onChange={(e) => {
+                  setNewShares(e.target.value)
+                }}
               />
             </FormControl>
             <FormControl flex={0.8} minW={0}>
@@ -305,13 +331,17 @@ export function EtfAccountDetailsPage(): JSX.Element {
                 size="md"
                 textStyle="text/sm"
                 value={newDatePurchased}
-                onChange={(date) => setNewDatePurchased(date)}
+                onChange={(date) => {
+                  setNewDatePurchased(date)
+                }}
               />
             </FormControl>
             <Button
               size="md"
               flexShrink={0}
-              onClick={handleAddHolding}
+              onClick={() => {
+                void handleAddHolding()
+              }}
               isLoading={addHoldingMutation.isLoading}
               isDisabled={!newShares}
             >

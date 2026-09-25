@@ -1,7 +1,9 @@
-import { Err, Ok, asyncFn } from '@patina/core'
-import type { Result } from '@patina/core'
+import { parseUnknown } from '@hoseki/packages/result'
+import { Err, Ok, asyncFn } from '@hoseki/packages/result'
+import type { Result } from '@hoseki/packages/result'
 import { Decimal } from 'decimal.js'
 import type { Logger } from 'pino'
+import { z } from 'zod'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -67,7 +69,7 @@ export class DailyRatesService {
     // Fetch in batches with concurrency limit
     for (let i = 0; i < days.length; i += DailyRatesService.CONCURRENCY) {
       const batch = days.slice(i, i + DailyRatesService.CONCURRENCY)
-      const results = await Promise.allSettled(batch.map((ts) => this.fetchDayPrice(ts)))
+      const results = await Promise.allSettled(batch.map(async (ts) => this.fetchDayPrice(ts)))
 
       for (const result of results) {
         if (result.status === 'fulfilled' && result.value) {
@@ -107,15 +109,24 @@ export class DailyRatesService {
       return null
     }
 
-    const json = (await response.json()) as {
-      prices?: Array<{ time: number; USD: number }>
+    const parsed = parseUnknown(
+      z.object({ prices: z.array(z.object({ time: z.number(), USD: z.number() })).optional() }),
+      await response.json(),
+    )
+    if (parsed.isErr()) {
+      return null
     }
+    const json = parsed.unwrap()
 
-    if (!json.prices || json.prices.length === 0) return null
+    if (!json.prices || json.prices.length === 0) {
+      return null
+    }
 
     // API returns the nearest daily price point
     const pricePoint = json.prices[0]
-    if (!pricePoint || !pricePoint.USD) return null
+    if (pricePoint === undefined || pricePoint.USD === 0 || Number.isNaN(pricePoint.USD)) {
+      return null
+    }
 
     const date = new Date(pricePoint.time * 1000)
     const dateKey = toDateKey(date)
@@ -137,7 +148,9 @@ export class DailyRatesService {
 /** Format a Date as 'YYYY-MM-DD' */
 export function toDateKey(date: Date): string {
   const key = date.toISOString().split('T')[0]
-  if (!key) throw new Error('Invalid date format')
+  if (key == null || key === '') {
+    throw new Error('Invalid date format')
+  }
   return key
 }
 

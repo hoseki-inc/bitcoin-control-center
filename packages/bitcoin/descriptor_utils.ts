@@ -2,16 +2,16 @@ import { DescriptorChecksum } from '@bitcoinerlab/descriptors/dist/checksum'
 import { Err, Ok, Result } from '../result'
 
 export function getChecksum(span: string): Result<string, Error> {
-  return Result.from(() => DescriptorChecksum(span)).andThen((checksum) => {
-    if (checksum === '') {
+  return Result.from(() => DescriptorChecksum(span)).andThen((computedChecksum) => {
+    if (computedChecksum === '') {
       return Err(new Error(`could not compute checksum, invalid character in ${span}`))
     }
-    return Ok(checksum)
+    return Ok(computedChecksum)
   })
 }
 
 export function checksum(span: string): Result<`${string}#${string}`, Error> {
-  return getChecksum(span).map((checksum) => `${span}#${checksum}` as const)
+  return getChecksum(span).map((computedChecksum) => `${span}#${computedChecksum}` as const)
 }
 
 export function pkh(span: string): `pkh(${string})` {

@@ -29,5 +29,5 @@ export const SCRIPT_TYPE_LABELS: Record<SingleSigAccountScriptType | MultiSigAcc
  * ```
  */
 export function formatScriptType(scriptType: SingleSigAccountScriptType | MultiSigAccountScriptType): string {
-  return SCRIPT_TYPE_LABELS[scriptType] ?? scriptType
+  return SCRIPT_TYPE_LABELS[scriptType]
 }

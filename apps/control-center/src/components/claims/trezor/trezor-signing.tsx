@@ -1,7 +1,7 @@
 import { Address } from '@hoseki/packages/bitcoin'
+import { Result } from '@hoseki/packages/result'
 import { Alert } from '@hoseki/packages/ui/design-system'
 import { GenericSigningSteps } from '@hoseki/packages/ui/wallet-ui'
-import { Result } from '@patina/core'
 import { useState } from 'react'
 import type { SigningFlowProps } from '../../../lib/claim-flow'
 import { captureHardwareWalletError } from '../../../logger'
@@ -28,49 +28,53 @@ export function TrezorSigning({
   // Replace 'h' with "'" in the derivation path to make it compatible with Trezor
   const signingPath = `${keystore.derivationPath}/0/0`.replace(/h/g, "'")
 
-  async function signCustomMessageOnTrezor(challenge: ChallengeDto, challengeMessage: ChallengeMessageDto) {
+  async function signCustomMessageOnTrezor(signingChallenge: ChallengeDto, signingMessage: ChallengeMessageDto) {
     setSigningInProgress(true)
     setSigningError(null)
 
-    // Step 1: Sign the message on the device
-    const signMessageResult = await trezorService.signCustomMessage(
-      signingPath,
-      challengeMessage.signedMessage.messageTextToSign,
-    )
-    if (signMessageResult.isErr()) {
-      const trezorError = signMessageResult.unwrapErr()
-      captureHardwareWalletError(
-        trezorError,
-        trezorError.message,
-        { wallet: 'trezor', step: 'sign-message' },
-        { signingPath, keystoreDerivationPath: keystore.derivationPath },
+    try {
+      // Step 1: Sign the message on the device
+      const signMessageResult = await trezorService.signCustomMessage(
+        signingPath,
+        signingMessage.signedMessage.messageTextToSign,
       )
-      setSigningError(trezorError)
-      setSigningInProgress(false)
-      return
-    }
+      if (signMessageResult.isErr()) {
+        const trezorError = signMessageResult.unwrapErr()
+        captureHardwareWalletError(
+          trezorError,
+          trezorError.message,
+          { wallet: 'trezor', step: 'sign-message' },
+          { signingPath, keystoreDerivationPath: keystore.derivationPath },
+        )
+        setSigningError(trezorError)
+        return
+      }
 
-    // Step 2: Complete the challenge message
-    const ccmResult = await Result.fromPromise(
-      completeChallengeMessageMutation.mutateAsync({
-        signedMessageId: challengeMessage.signedMessage.id,
-        signature: signMessageResult.unwrap().signature,
-      }),
-    )
-    if (ccmResult.isErr()) {
-      setSigningInProgress(false)
-      return
-    }
+      // Step 2: Complete the challenge message
+      const ccmResult = await Result.fromPromise(
+        completeChallengeMessageMutation.mutateAsync({
+          signedMessageId: signingMessage.signedMessage.id,
+          signature: signMessageResult.unwrap().signature,
+        }),
+      )
+      if (ccmResult.isErr()) {
+        return
+      }
 
-    // Step 3: Complete the challenge
-    const ccResult = await Result.fromPromise(completeChallengeMutation.mutateAsync({ challengeId: challenge.id }))
-    if (ccResult.isErr()) {
-      setSigningInProgress(false)
-      return
-    }
+      // Step 3: Complete the challenge
+      const ccResult = await Result.fromPromise(
+        completeChallengeMutation.mutateAsync({ challengeId: signingChallenge.id }),
+      )
+      if (ccResult.isErr()) {
+        return
+      }
 
-    setSigningInProgress(false)
-    onSigningComplete()
+      onSigningComplete()
+    } catch (caughtError) {
+      setSigningError(caughtError instanceof Error ? caughtError : new Error('Error signing message'))
+    } finally {
+      setSigningInProgress(false)
+    }
   }
 
   return (
@@ -84,7 +88,9 @@ export function TrezorSigning({
         address: Address.fromCheckedString(challengeMessage.signedMessage.address),
         signingPath,
       }}
-      onProveControl={() => signCustomMessageOnTrezor(challenge, challengeMessage)}
+      onProveControl={() => {
+        void signCustomMessageOnTrezor(challenge, challengeMessage)
+      }}
       onBack={onExitSigning}
       signingInProgress={signingInProgress}
     />

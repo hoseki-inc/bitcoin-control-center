@@ -18,6 +18,8 @@ import { CheckCircleFilledIcon, DashedCircleFilledIcon, PlusCircleIcon, RoundKey
 import { StatusBadge, type Status as StatusBadgeStatus } from '../status-badge'
 import { KeystoreAvatar } from './keystore-avatar'
 
+type KeystoreHints = { tooltipCopy: string | null; icon: JSX.Element }
+
 export type PendingKeystore = {
   id: string
   wallet: null
@@ -27,14 +29,14 @@ export type PendingKeystore = {
 
 export type IdentifiedKeystore = {
   id: string
-  wallet: SupportedHardwareWallet
+  wallet: SupportedHardwareWallet | null
   name: string
   status: 'identified'
 }
 
 export type VerifiedKeystore = {
   id: string
-  wallet: SupportedHardwareWallet
+  wallet: SupportedHardwareWallet | null
   name: string
   status: 'verified'
 }
@@ -68,12 +70,24 @@ export function KeystoresStatusIndicator({
 }): JSX.Element {
   const [revealDetails, setRevealDetails] = useState(false)
   const sortedKeystores = keystores.sort((a, b) => {
-    if (a.status === 'verified') return -1
-    if (b.status === 'verified') return 1
-    if (a.wallet) return -1
-    if (b.wallet) return 1
-    if (a.id === expandedKeystoreId) return -1
-    if (b.id === expandedKeystoreId) return 1
+    if (a.status === 'verified') {
+      return -1
+    }
+    if (b.status === 'verified') {
+      return 1
+    }
+    if (a.wallet) {
+      return -1
+    }
+    if (b.wallet) {
+      return 1
+    }
+    if (a.id === expandedKeystoreId) {
+      return -1
+    }
+    if (b.id === expandedKeystoreId) {
+      return 1
+    }
     return 0
   })
 
@@ -97,7 +111,12 @@ export function KeystoresStatusIndicator({
             }}
             alignItems="center"
           >
-            <Tooltip isDisabled={!tooltipCopy} label={tooltipCopy} hasArrow placement="top">
+            <Tooltip
+              isDisabled={tooltipCopy == null || tooltipCopy === ''}
+              label={tooltipCopy}
+              hasArrow
+              placement="top"
+            >
               <GradientAnimatedRing
                 isEnabled={amIExpanded || amIActionable}
                 color={amIActionable ? 'gray' : expandedRingColor}
@@ -146,7 +165,7 @@ function getKeystoreHints(
   threshold: number,
   amIExpanded: boolean,
   tooltipVariant: TooltipVariant,
-): { tooltipCopy: string | null; icon: JSX.Element } {
+): KeystoreHints {
   const commonProps = { stroke: 'shades.0', boxSize: '16px' } as const
 
   switch (status) {
@@ -227,3 +246,5 @@ export const GradientAnimatedRing = forwardRef<
     </Flex>
   )
 })
+
+GradientAnimatedRing.displayName = 'GradientAnimatedRing'

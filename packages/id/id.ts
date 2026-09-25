@@ -1,13 +1,13 @@
-import { Panic } from '@patina/core'
+import { Panic } from '@hoseki/packages/result'
 import { customAlphabet } from 'nanoid'
 import { z } from 'zod'
 
-const SIZE = 21 as const
+const ID_SIZE = 21 as const
 const lowercase = 'abcdefghijklmnopqrstuvwxyz'
 const uppercase = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 const numbers = '0123456789'
-const ALPHABET = lowercase + uppercase + numbers
-const generate = customAlphabet(ALPHABET, SIZE)
+const ID_ALPHABET = lowercase + uppercase + numbers
+const generate = customAlphabet(ID_ALPHABET, ID_SIZE)
 
 /** Generic prefixed ID type */
 export type Id<T extends string> = `${T}_${string}`
@@ -34,13 +34,15 @@ export namespace Id {
       .refine((value): value is Id<T> => value.startsWith(`${prefix}_`), {
         message: `id must start with "${prefix}_"`,
       })
-      .transform((v) => v as Id<T>)
+      .transform((v) => v)
   }
 
   /** Remove the prefix, returning just the random part */
-  export function strip<T extends string>(prefixedId: Id<T>): string {
+  export function strip(prefixedId: Id<string>): string {
     const lastPart = prefixedId.split('_').at(-1)
-    if (!lastPart) throw new Panic('Invalid id')
+    if (lastPart == null || lastPart === '') {
+      throw new Panic('Invalid id')
+    }
     return lastPart
   }
 }

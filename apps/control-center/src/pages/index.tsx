@@ -4,7 +4,7 @@ import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
 import Decimal from 'decimal.js'
 import { Link } from 'react-router'
 import { BitcoinAmount } from '../components/bitcoin-amount'
-import { AccumulationChart } from '../components/dashboard-charts/accumulation-chart'
+import { AccumulationChart as DefaultAccumulationChart } from '../components/dashboard-charts/accumulation-chart'
 import { DashboardPreview } from '../components/dashboard/dashboard-preview'
 import { DashboardAmount, DashboardCardTitle } from '../components/dashboard/dashboard-typography'
 import { RecentStatements } from '../components/dashboard/recent-statements'
@@ -18,7 +18,13 @@ import { getBrowserTimezone } from '../utils/timezone'
 
 type PortfolioData = RouterOutput['portalProve']['controlCenter']['getData']
 
-export function HomePage(): JSX.Element {
+export function HomePage({
+  dataSource = homeDataSource,
+  views = homeViews,
+}: {
+  dataSource?: HomeDataSource
+  views?: HomeViews
+}): JSX.Element {
   const {
     statements,
     portfolio,
@@ -30,7 +36,7 @@ export function HomePage(): JSX.Element {
     retry,
     statementsLoading,
     statementsError,
-  } = useDashboardData()
+  } = useDashboardData(dataSource)
   useQueryErrorToast(hasError ? errorMessage : null, retry)
   const hasHistory = (portfolio?.historicalData.length ?? 0) > 0
 
@@ -64,7 +70,7 @@ export function HomePage(): JSX.Element {
         </Flex>
       )}
       {hasHistory && portfolio ? (
-        <PortfolioSummary data={portfolio} accountCount={hasError ? null : accountCount} />
+        <PortfolioSummary data={portfolio} accountCount={hasError ? null : accountCount} views={views} />
       ) : isLoading ? (
         <DashboardPreview loading />
       ) : hasError ? (
@@ -86,8 +92,8 @@ export function HomePage(): JSX.Element {
         />
       )}
       {statementsError ? (
-        <Flex role="status" justify="space-between" gap={4} align="center" flexWrap="wrap">
-          <Text textStyle="text/sm" color="neutral.600">
+        <Flex justify="space-between" gap={4} align="center" flexWrap="wrap">
+          <Text as="output" textStyle="text/sm" color="neutral.600">
             Recent statements could not be loaded.
           </Text>
           <Button as={Link} to="/statements" variant="ghost">
@@ -95,7 +101,7 @@ export function HomePage(): JSX.Element {
           </Button>
         </Flex>
       ) : statementsLoading ? (
-        <Text role="status" textStyle="text/sm" color="neutral.600">
+        <Text as="output" textStyle="text/sm" color="neutral.600">
           Loading recent statements…
         </Text>
       ) : statements.length > 0 ? (
@@ -107,15 +113,23 @@ export function HomePage(): JSX.Element {
   )
 }
 
-function PortfolioSummary({ data, accountCount }: { data: PortfolioData; accountCount: number | null }): JSX.Element {
+function PortfolioSummary({
+  data,
+  accountCount,
+  views: { AccumulationChart },
+}: {
+  data: PortfolioData
+  accountCount: number | null
+  views: HomeViews
+}): JSX.Element {
   const userTimezone = getBrowserTimezone()
 
-  const currentSats = data.currentTotalBalance?.toString() ?? '0'
+  const currentSats = data.currentTotalBalance
   const btcPrice = data.currentBtcPrice && Number(data.currentBtcPrice) > 0 ? Number(data.currentBtcPrice) : null
   const totalBtc = new Decimal(currentSats).div(100_000_000)
   const totalUsd = btcPrice === null ? null : totalBtc.toNumber() * btcPrice
 
-  const historicalData = data.historicalData ?? []
+  const historicalData = data.historicalData
   const startSats = historicalData.length > 0 ? (historicalData[0]?.totalBalance ?? '0') : '0'
   const change30d = new Decimal(currentSats).minus(new Decimal(startSats))
   const change30dBtc = change30d.div(100_000_000)
@@ -195,7 +209,8 @@ function StatMini({
   count?: number | null
 }): JSX.Element {
   const isPositive = value ? value.gte(0) : true
-  const usdValue = value && btcPrice ? value.toNumber() * btcPrice : null
+  const usdValue =
+    value && btcPrice != null && btcPrice !== 0 && !Number.isNaN(btcPrice) ? value.toNumber() * btcPrice : null
 
   return (
     <Box minW={0}>
@@ -231,7 +246,42 @@ function StatMini({
   )
 }
 
-function useDashboardData(): {
+interface HomeQuery<T> {
+  data?: T
+  isLoading: boolean
+  isError: boolean
+  error?: { message: string } | null
+  refetch: () => Promise<{ isError: boolean }>
+}
+
+type AccountList = readonly unknown[]
+
+/** The queries behind the home overview, independent of their transport. */
+export interface HomeDataSource {
+  useStatements: () => HomeQuery<StatementDto[]>
+  usePortfolio: (input: { timeRange: '30d'; timezone: string }) => HomeQuery<PortfolioData>
+  useClaims: () => HomeQuery<AccountList>
+  useExchanges: () => HomeQuery<AccountList>
+  useManual: () => HomeQuery<AccountList>
+  useEtfs: () => HomeQuery<AccountList>
+}
+
+export const homeDataSource: HomeDataSource = {
+  useStatements: () => trpc.portalProve.statement.list.useQuery(),
+  usePortfolio: (input) => trpc.portalProve.controlCenter.getData.useQuery(input),
+  useClaims: () => trpc.portalProve.registry.claims.list.useQuery({ excludePending: false }),
+  useExchanges: () => trpc.portalProve.exchange.list.useQuery(),
+  useManual: () => trpc.portalProve.manual.list.useQuery(),
+  useEtfs: () => trpc.portalProve.etf.list.useQuery(),
+}
+
+export interface HomeViews {
+  AccumulationChart: typeof DefaultAccumulationChart
+}
+
+const homeViews: HomeViews = { AccumulationChart: DefaultAccumulationChart }
+
+interface HomeData {
   statements: StatementDto[]
   portfolio: PortfolioData | undefined
   hasAccounts: boolean
@@ -242,16 +292,18 @@ function useDashboardData(): {
   hasError: boolean
   errorMessage: string
   retry: () => void
-} {
-  const statements = trpc.portalProve.statement.list.useQuery()
-  const portfolio = trpc.portalProve.controlCenter.getData.useQuery({
+}
+
+function useDashboardData(dataSource: HomeDataSource): HomeData {
+  const statements = dataSource.useStatements()
+  const portfolio = dataSource.usePortfolio({
     timeRange: '30d',
     timezone: getBrowserTimezone(),
   })
-  const claims = trpc.portalProve.registry.claims.list.useQuery({ excludePending: false })
-  const exchanges = trpc.portalProve.exchange.list.useQuery()
-  const manual = trpc.portalProve.manual.list.useQuery()
-  const etfs = trpc.portalProve.etf.list.useQuery()
+  const claims = dataSource.useClaims()
+  const exchanges = dataSource.useExchanges()
+  const manual = dataSource.useManual()
+  const etfs = dataSource.useEtfs()
   const queries = [portfolio, claims, exchanges, manual, etfs]
 
   return {
@@ -271,7 +323,9 @@ function useDashboardData(): {
       "Your overview couldn't be loaded. Try again to see your holdings and statements.",
     ),
     retry: () => {
-      for (const query of queries) void query.refetch()
+      for (const query of queries) {
+        void query.refetch()
+      }
     },
   }
 }

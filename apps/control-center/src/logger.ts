@@ -24,6 +24,14 @@ export const browserLogger: Logger = pino({
   },
 })
 
+type HardwareWalletErrorContext = {
+  path?: string
+  signingPath?: string
+  keystoreDerivationPath?: string | null
+  scriptType?: string
+  account?: number
+}
+
 export const captureHardwareWalletError = (
   hwError: HardwareDeviceError,
   description: string,
@@ -32,7 +40,7 @@ export const captureHardwareWalletError = (
     step: 'connect' | 'scan' | 'account-select' | 'multisig-xpub-check' | 'sign-message'
     model?: string
   },
-  additionalProperties: Record<string, unknown>,
+  additionalProperties: HardwareWalletErrorContext,
 ): void => {
   browserLogger.error({ err: hwError, description, ...properties, ...additionalProperties }, description)
 }

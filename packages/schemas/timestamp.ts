@@ -1,4 +1,4 @@
-import { Err, Ok, type Result } from '@patina/core'
+import { Err, Ok, type Result } from '@hoseki/packages/result'
 import { z } from 'zod'
 
 export const TimestampSchema = z
@@ -17,6 +17,7 @@ export const TimestampSchema = z
 export type Timestamp = z.infer<typeof TimestampSchema>
 
 export function toTimestamp(date: Date): Timestamp {
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- SAFETY: Date callers own validity; this conversion intentionally preserves epoch and pre-epoch seconds, which the external-input schema rejects.
   return Math.floor(date.getTime() / 1000) as Timestamp
 }
 

@@ -1,0 +1,134 @@
+{
+  "repository": "https://github.com/dmmulroy/anti-slop",
+  "revision": "c44ef22ca116d0ba62a3ff663a0bd13a3f3fa40b",
+  "subset": "Generic plugin runtime; excludes upstream tests and Effect-specific rules.",
+  "files": {
+    "index.ts": {
+      "path": "src/index.ts",
+      "sha256": "9deed4cb455b9a6251001dc3a525d5b5e2c6ef989dd1c01e804c2edf0a697415"
+    },
+    "rules/no-array-filter-map.ts": {
+      "path": "src/rules/no-array-filter-map.ts",
+      "sha256": "528bba857b84712c038e35e59079cc1e6c78a0421c65bb3c6117c9d412a2f28a"
+    },
+    "rules/no-chained-type-assertions.ts": {
+      "path": "src/rules/no-chained-type-assertions.ts",
+      "sha256": "72f8e981520f94adac0ffbdab8f8e84e5f2a4595f14e4a6471be917a85a20a15"
+    },
+    "rules/no-conditional-empty-object-spread.ts": {
+      "path": "src/rules/no-conditional-empty-object-spread.ts",
+      "sha256": "33f044030d208fcc10be73bb19c8172c275c5229df4b0ca8ec10f069bbe60062"
+    },
+    "rules/no-known-value-widening.ts": {
+      "path": "src/rules/no-known-value-widening.ts",
+      "sha256": "321944d20912acc93f65f4b84075916202adfda6b8eaa839d96f0d8b8ec1463b"
+    },
+    "rules/no-module-mocking.ts": {
+      "path": "src/rules/no-module-mocking.ts",
+      "sha256": "e29ba7d9ba4a5aed971002840bf434beef93393f60a589e55b72c203dde4c8db"
+    },
+    "rules/no-object-parameters.ts": {
+      "path": "src/rules/no-object-parameters.ts",
+      "sha256": "2056e99dcb228604d9b2534952045e8ebf9f90af54add67d07a1211657d32941"
+    },
+    "rules/no-reduce-accumulator-copy.ts": {
+      "path": "src/rules/no-reduce-accumulator-copy.ts",
+      "sha256": "dce4b08ee7ac4bbedfe743f6fa4a3d423cde50b37691130b899cc4573c05d2ae"
+    },
+    "rules/no-reflect-apply.ts": {
+      "path": "src/rules/no-reflect-apply.ts",
+      "sha256": "f7920a332106252d6a24cdc917a2c1a433eb438792996ccceb5a25cd6e591dbb"
+    },
+    "rules/no-reflect-get.ts": {
+      "path": "src/rules/no-reflect-get.ts",
+      "sha256": "95c5aa0f8e23b10d9345b1776082e08704ec6590298176a8ede8dfdb6e7cb56f"
+    },
+    "rules/no-runtime-typeof.ts": {
+      "path": "src/rules/no-runtime-typeof.ts",
+      "sha256": "c3ff29662f9f5a0cbad527b200aadd486cbe63ee0d9bbf10c409ce9c39ec678c"
+    },
+    "rules/no-shape-in-symbol-names.ts": {
+      "path": "src/rules/no-shape-in-symbol-names.ts",
+      "sha256": "4e5edcb5ed083de77970a2e4f64e4b2090ba6c4588e9fc6bcb1f01900ae905b7"
+    },
+    "rules/no-unknown-parameters.ts": {
+      "path": "src/rules/no-unknown-parameters.ts",
+      "sha256": "81df45f83b1bca1bbf0bbc36e9211e10cad1aa2bb0ab604840ed9f1b94eaa2e5"
+    },
+    "rules/no-unknown-returns.ts": {
+      "path": "src/rules/no-unknown-returns.ts",
+      "sha256": "67f3ac72d9f98ce29426e70be1e0c359599d94b5799f1130b7ec4cc34129f26b"
+    },
+    "rules/no-unknown-type-aliases.ts": {
+      "path": "src/rules/no-unknown-type-aliases.ts",
+      "sha256": "e34000ccdd5c496fadb1418e29b44a1df970ebc9075e89ef2412f7029ec4c15b"
+    },
+    "rules/no-unsafe-dictionary-type.ts": {
+      "path": "src/rules/no-unsafe-dictionary-type.ts",
+      "sha256": "6ff0b3aafe00bc42300080c514ddbee54a45508d5781cab2fb78156a19756a71"
+    },
+    "rules/no-widen-then-assert.ts": {
+      "path": "src/rules/no-widen-then-assert.ts",
+      "sha256": "63f2c07cc42b8ad60a7e868efbd7b29e462b9ba960fbd07bbc8f590ef9e3f879"
+    },
+    "rules/require-readable-spacing.ts": {
+      "path": "src/rules/require-readable-spacing.ts",
+      "sha256": "e63084ad77e215ad25e963c452d8ee819fb1cac3aefe3401e169985a145ac4bc"
+    },
+    "rules/require-safety-comment-for-type-assertion.ts": {
+      "path": "src/rules/require-safety-comment-for-type-assertion.ts",
+      "sha256": "c8ed9f50f1c6e3592b77165dd8847d187ee9b0ef955d50f8099498d3139aa27c"
+    },
+    "shared/array-method.ts": {
+      "path": "src/shared/array-method.ts",
+      "sha256": "e360557253c56ab7c256623f3338415743e5027e9d999f801fb79d98240d217b"
+    },
+    "shared/dictionary-types.ts": {
+      "path": "src/shared/dictionary-types.ts",
+      "sha256": "0f319a2d2cb34c7b3902fb78301c91e1a750bd663c754e73d669f31dc5026525"
+    },
+    "shared/function-parameters.ts": {
+      "path": "src/shared/function-parameters.ts",
+      "sha256": "ad80a650ea14847736ab9ee4c872dc89cc7d527bf60e7de20112bcb8f679545c"
+    },
+    "shared/lexical-type-parameters.ts": {
+      "path": "src/shared/lexical-type-parameters.ts",
+      "sha256": "1ae0aa3ec245f1dc43c4bbbd8be1e2e4230e5dc389d1ca4e8de8f51b62ceff29"
+    },
+    "shared/reflect-method.ts": {
+      "path": "src/shared/reflect-method.ts",
+      "sha256": "d1b7bd13ca714bf20bec15e835ed0526316b7274e06bd9a582cf623c09ac1d40"
+    },
+    "shared/scope.ts": {
+      "path": "src/shared/scope.ts",
+      "sha256": "e38d41eeada854dbd02285e84e065d10e69460695e06e53fbe8662c963ae7eb4"
+    },
+    "shared/type-alias-resolution.ts": {
+      "path": "src/shared/type-alias-resolution.ts",
+      "sha256": "5520e97b177f0093af2943808ac63cef0f6c03fedd197a36137c66209d78a8e0"
+    },
+    "vendor/eslint-stylistic/LICENSE": {
+      "path": "src/vendor/eslint-stylistic/LICENSE",
+      "sha256": "a429d52d537b871facb01c086191ec8a56a22bf1a10f4e641daff114bccc4a74"
+    },
+    "vendor/eslint-stylistic/padding-line-ast.ts": {
+      "path": "src/vendor/eslint-stylistic/padding-line-ast.ts",
+      "sha256": "ae3624502620452022691c89a30ed95d669dc961a5802dbe27c44e45a647c3d0"
+    },
+    "vendor/eslint-stylistic/padding-line-between-statements.ts": {
+      "path": "src/vendor/eslint-stylistic/padding-line-between-statements.ts",
+      "sha256": "6974d23a3d2769bfcd5211f1c1fb29c966be122dd37e764c2cf84c5f639a380d"
+    },
+    "vendor/eslint-stylistic/padding-line-options.d.ts": {
+      "path": "src/vendor/eslint-stylistic/padding-line-options.d.ts",
+      "sha256": "ff3d52f2b1c103bc429e030976641715caec676af4b8a0be802c0009874a0d58"
+    },
+    "LICENSE": {
+      "path": "LICENSE",
+      "sha256": "10ed33bf340d6d63dc0633dfc917a346b369b6aa41fe20734aefc6a3fb75ba17"
+    }
+  },
+  "thirdPartyProvenance": {
+    "vendor/eslint-stylistic": "# Vendored padding-line-between-statements\n\nSource: [ESLint Stylistic](https://github.com/eslint-stylistic/eslint-stylistic), commit `435c3ea0fd26a5fef9042c4b36b6e165fbbf8d08`.\n\nCopied files:\n\n- `packages/eslint-plugin/rules/padding-line-between-statements/padding-line-between-statements.ts`\n- `packages/eslint-plugin/rules/padding-line-between-statements/types.d.ts` \u2192 `padding-line-options.d.ts`\n- Root `LICENSE`, retained verbatim. Both OpenJS Foundation and ESLint Stylistic notices apply.\n\nThe rule is MIT-licensed. Keep `LICENSE` with every redistributed copy, including skill assets. No Stylistic, ESLint, TypeScript-ESLint, or additional parser runtime dependency is required.\n\n## Local adaptations\n\n- Replace upstream type aliases with Oxlint's ESTree, context, token/comment, and rule types. Upstream's token type includes comments; Oxlint exposes those separately.\n- Replace `AST_NODE_TYPES` enum members with identical string literals.\n- Guard indexed reads for consuming repositories with `noUncheckedIndexedAccess`. Impossible missing AST/configuration entries raise explicit invariant errors rather than introducing new non-null assertions.\n- Replace the repository-specific `createRule` factory with `createPaddingLineRule(options)`. The anti-slop wrapper supplies typed options directly; it exposes no user configuration options.\n- Implement the small required AST helper surface in `padding-line-ast.ts` using Oxlint's public source-code/token API. `isParenthesized` only needs the one-pair check used to exclude parenthesized directive strings, not the upstream general-purpose overloads.\n- Retain the upstream statement matchers, scope tracking, comment-aware insertion/removal, selector support, and diagnostic text. Upstream naming and non-null assumptions remain localized here to keep future diffs reviewable; the file is not a model for new application code.\n\nThe opinionated policy lives outside this directory in `../../rules/require-readable-spacing.ts`. It adds spacing without collapsing existing blank lines. Short local bindings, consecutive imports, and adjacent overload signatures/implementation remain grouped. Spacing is syntactic, not an inference of business-logic boundaries.\n\n## Updating and verification\n\nFetch an explicit upstream revision, compare the original rule and types against this revision, and port relevant fixes while retaining the adapters above. Update this record and preserve the license. Run `pnpm check` and `pnpm sync:skill-assets` as required by repository guidance.\n\nFocused Oxlint RuleTester cases live in `../../rules/require-readable-spacing.test.ts`; they test exact fixes, JSDoc/trailing comments, same-line statements, semicolon-free code, TypeScript exports/overloads, Effect-style generators, and upstream removal behavior. `../../rules/require-readable-spacing-cli.test.ts` verifies the exported plugin through the native Oxlint CLI on multiple files, including rejection, autofix, and repeated-fix stability. The complete upstream JS/TS test suites have not been ported; this is focused compatibility evidence, not a claim of full upstream conformance.\n"
+  }
+}

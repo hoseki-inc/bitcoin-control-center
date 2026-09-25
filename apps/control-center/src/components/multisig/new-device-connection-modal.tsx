@@ -24,7 +24,9 @@ export function NewDeviceConnectionModal({
   isLoading,
 }: NewDeviceConnectionModalProps): JSX.Element {
   function handleClose() {
-    if (isLoading) return
+    if (isLoading) {
+      return
+    }
     onClose()
   }
 
@@ -40,17 +42,25 @@ export function NewDeviceConnectionModal({
 
         <ModalBody>
           <Text textStyle="text/sm" color="neutral.600" mb={4}>
-            You're about to reconnect your wallet using a new hardware device.
+            You&apos;re about to reconnect your wallet using a new hardware device.
           </Text>
           <Text textStyle="text/sm" color="neutral.600">
-            To keep your proof secure, we'll need to start the verification process from scratch and check that this
-            device still controls the same key you previously verified
+            To keep your proof secure, we&apos;ll need to start the verification process from scratch and check that
+            this device still controls the same key you previously verified
           </Text>
         </ModalBody>
 
         <ModalFooter>
           <HStack width="full">
-            <Button variant="tertiary" onClick={() => onClose()} isDisabled={isLoading} size="md" flex={1}>
+            <Button
+              variant="tertiary"
+              onClick={() => {
+                onClose()
+              }}
+              isDisabled={isLoading}
+              size="md"
+              flex={1}
+            >
               Cancel
             </Button>
             <Button onClick={onConfirm} isLoading={isLoading} size="md" variant="outline" flex={1}>

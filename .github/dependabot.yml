@@ -7,6 +7,8 @@ updates:
     schedule:
       interval: weekly
       day: monday
+      time: '02:00'
+      timezone: America/New_York
     groups:
       production-dependencies:
         applies-to: version-updates
@@ -22,6 +24,8 @@ updates:
     schedule:
       interval: weekly
       day: monday
+      time: '02:00'
+      timezone: America/New_York
     groups:
       desktop-dependencies:
         applies-to: version-updates
@@ -36,6 +40,8 @@ updates:
     schedule:
       interval: weekly
       day: monday
+      time: '02:00'
+      timezone: America/New_York
     groups:
       startos-dependencies:
         applies-to: version-updates
@@ -48,6 +54,8 @@ updates:
     schedule:
       interval: weekly
       day: monday
+      time: '02:00'
+      timezone: America/New_York
     groups:
       startos-runtime-dependencies:
         applies-to: version-updates
@@ -60,9 +68,18 @@ updates:
     schedule:
       interval: weekly
       day: monday
+      time: '02:00'
+      timezone: America/New_York
+    groups:
+      codeql:
+        applies-to: version-updates
+        patterns:
+          - 'github/codeql-action/*'
 
   - package-ecosystem: docker
     directory: /start9
     schedule:
       interval: weekly
       day: monday
+      time: '02:00'
+      timezone: America/New_York

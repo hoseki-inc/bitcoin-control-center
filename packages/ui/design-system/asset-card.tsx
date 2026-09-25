@@ -16,6 +16,7 @@ export const AssetCard = forwardRef<AssetCardProps, 'div'>(
   ({ currency, balance, usdBalance, onClick, ...props }, ref) => {
     return (
       <Box
+        position="relative"
         textAlign="center"
         borderWidth="1px"
         borderRadius="md"
@@ -32,10 +33,22 @@ export const AssetCard = forwardRef<AssetCardProps, 'div'>(
               }
             : undefined
         }
-        onClick={onClick}
         ref={ref}
         {...props}
       >
+        {onClick && (
+          <Box
+            as="button"
+            type="button"
+            aria-label={`Select ${currency}`}
+            position="absolute"
+            inset={0}
+            zIndex={1}
+            borderRadius="inherit"
+            _focusVisible={{ boxShadow: 'outline' }}
+            onClick={onClick}
+          />
+        )}
         <Image src={HOSEKI_ASSETS_CDN_URLS.COIN_LOGOS[currency]} alt={currency} boxSize="32px" mx="auto" />
 
         <Text mt={2} textStyle="label/md" fontWeight="medium" color="neutral.600">
@@ -51,3 +64,5 @@ export const AssetCard = forwardRef<AssetCardProps, 'div'>(
     )
   },
 )
+
+AssetCard.displayName = 'AssetCard'

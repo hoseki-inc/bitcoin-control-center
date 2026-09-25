@@ -7,9 +7,8 @@ import type { StatementDto } from '../../trpc/server-types'
 export function StatementsTable({ statements }: { statements: StatementDto[] }): JSX.Element {
   return (
     <Box
+      as="section"
       overflowX="auto"
-      tabIndex={0}
-      role="region"
       aria-label="Statements table"
       border="1px solid"
       borderColor="neutral.200"

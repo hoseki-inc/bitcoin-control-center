@@ -19,7 +19,9 @@ function BarTooltip({
   formatAmount?: (value: number) => string
   payload?: Array<{ payload: MonthlyChange }>
 }): JSX.Element | null {
-  if (!active || !payload?.[0]) return null
+  if (active !== true || !payload?.[0]) {
+    return null
+  }
   const { change, label } = payload[0].payload
   const isPositive = change >= 0
 

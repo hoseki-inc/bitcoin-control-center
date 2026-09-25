@@ -76,10 +76,10 @@ export function AccountFilter({
   const accounts = [
     ...claims.map((claim) => ({
       id: claim.id,
-      name: claim.displayName ?? claim.officialName,
+      name: claim.displayName,
       detail: ensureClaimStatusNotExpired(claim) === 'pending' ? 'Self-custody · Pending' : 'Self-custody',
       reconnectTo: null,
-      sats: Number(balances?.get(claim.id)?.current ?? 0),
+      sats: Number(balances.get(claim.id)?.current ?? 0),
     })),
     ...exchangeAccounts.map((account) => ({
       id: account.id,
@@ -93,17 +93,17 @@ export function AccountFilter({
       name: account.displayName,
       detail: 'Manual account',
       reconnectTo: null,
-      sats: Number(account.balance ?? 0),
+      sats: Number(account.balance),
     })),
     ...etfAccounts.map((account) => ({
       id: account.id,
       name: account.displayName,
       detail: 'ETF',
       reconnectTo: null,
-      sats: Number(account.balance ?? 0),
+      sats: Number(account.balance),
     })),
   ]
-  const selectable = accounts.filter((account) => !account.reconnectTo)
+  const selectable = accounts.filter((account) => account.reconnectTo === null)
   const totalSats = accounts.reduce((total, account) => total + account.sats, 0)
   const included = selectable.filter((account) => selected.size === 0 || selected.has(account.id))
   const isAll = included.length === selectable.length
@@ -120,7 +120,7 @@ export function AccountFilter({
   const rows = (selection: Set<string>, toggle: (id: string, checked: boolean) => void): JSX.Element => (
     <Stack spacing={presentation === 'sidebar' ? 2 : 0} px={presentation === 'sidebar' ? 0 : 2} pb={2}>
       {matching.map((account) =>
-        account.reconnectTo ? (
+        account.reconnectTo !== null ? (
           <Flex
             as={Link}
             to={account.reconnectTo}
@@ -145,7 +145,9 @@ export function AccountFilter({
             key={account.id}
             aria-label={`Include ${account.name}`}
             isChecked={selection.has(account.id)}
-            onChange={(event) => toggle(account.id, event.target.checked)}
+            onChange={(event) => {
+              toggle(account.id, event.target.checked)
+            }}
             colorScheme="gray"
             sx={{
               '.chakra-checkbox__label': { display: 'contents', margin: 0 },
@@ -274,7 +276,7 @@ export function AccountFilter({
       <MotionBox
         as="aside"
         layout="position"
-        transition={{ duration: reduceMotion ? 0 : 0.24, ease: [0.32, 0.72, 0, 1] }}
+        transition={{ duration: reduceMotion === true ? 0 : 0.24, ease: [0.32, 0.72, 0, 1] }}
         aria-label="Portfolio accounts"
         w={collapsed ? '44px' : '280px'}
         minW={collapsed ? '44px' : '280px'}
@@ -294,7 +296,7 @@ export function AccountFilter({
           pointerEvents="none"
           initial={false}
           animate={{ transform: collapsed ? 'translateX(0px)' : 'translateX(236px)' }}
-          transition={{ duration: reduceMotion ? 0 : 0.24, ease: [0.32, 0.72, 0, 1] }}
+          transition={{ duration: reduceMotion === true ? 0 : 0.24, ease: [0.32, 0.72, 0, 1] }}
         />
         {collapsed ? (
           <Tooltip label="Expand accounts" placement="right">
@@ -304,7 +306,9 @@ export function AccountFilter({
               icon={<ChevronRight size={16} strokeWidth={1.5} />}
               color="neutral.600"
               variant="ghost"
-              onClick={() => setCollapsed(false)}
+              onClick={() => {
+                setCollapsed(false)
+              }}
             />
           </Tooltip>
         ) : (
@@ -325,13 +329,15 @@ export function AccountFilter({
                     color="neutral.600"
                     variant="ghost"
                     size="sm"
-                    onClick={() => setCollapsed(true)}
+                    onClick={() => {
+                      setCollapsed(true)
+                    }}
                   />
                 </Tooltip>
               </Flex>
             </Flex>
             <Flex
-              role="group"
+              as="fieldset"
               aria-label="Account detail level"
               gap={1}
               p={1}
@@ -377,7 +383,9 @@ export function AccountFilter({
               aria-label="Search accounts"
               placeholder="Search accounts"
               value={search}
-              onChange={(event) => setSearch(event.target.value)}
+              onChange={(event) => {
+                setSearch(event.target.value)
+              }}
               mb={3}
             />
             <Button
@@ -389,16 +397,23 @@ export function AccountFilter({
               aria-pressed={isAll}
               bg={isAll ? 'neutral.100' : 'transparent'}
               mb={3}
-              onClick={() => onSelectionChange(new Set())}
+              onClick={() => {
+                onSelectionChange(new Set())
+              }}
             >
               All accounts
             </Button>
             {rows(selection, (id, checked) => {
               const next = new Set(selection)
-              if (checked) next.add(id)
-              else next.delete(id)
+              if (checked) {
+                next.add(id)
+              } else {
+                next.delete(id)
+              }
               // Empty sets mean all accounts in the API. Keep the last selected account checked.
-              if (next.size > 0) onSelectionChange(next.size === selectable.length ? new Set() : next)
+              if (next.size > 0) {
+                onSelectionChange(next.size === selectable.length ? new Set() : next)
+              }
             })}
             <Button
               as={Link}
@@ -467,7 +482,9 @@ export function AccountFilter({
                 aria-label="Search accounts"
                 placeholder="Search accounts"
                 value={search}
-                onChange={(event) => setSearch(event.target.value)}
+                onChange={(event) => {
+                  setSearch(event.target.value)
+                }}
                 mt={3}
               />
             </PopoverHeader>
@@ -479,20 +496,25 @@ export function AccountFilter({
                 <Button
                   size="sm"
                   variant="ghost"
-                  onClick={() => setDraft(new Set(selectable.map((account) => account.id)))}
+                  onClick={() => {
+                    setDraft(new Set(selectable.map((account) => account.id)))
+                  }}
                 >
                   Select all
                 </Button>
               </Flex>
               <Box maxH="320px" overflowY="auto">
-                {rows(draft, (id, checked) =>
+                {rows(draft, (id, checked) => {
                   setDraft((previous) => {
                     const next = new Set(previous)
-                    if (checked) next.add(id)
-                    else next.delete(id)
+                    if (checked) {
+                      next.add(id)
+                    } else {
+                      next.delete(id)
+                    }
                     return next
-                  }),
-                )}
+                  })
+                })}
               </Box>
             </PopoverBody>
             <PopoverFooter p={4} borderColor="neutral.200" flexShrink={0}>
@@ -536,7 +558,13 @@ export function AccountFilter({
               {included.map((account) => account.name).join(', ')}
             </Text>
           )}
-          <Button variant="ghost" size="sm" onClick={() => onSelectionChange(new Set())}>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              onSelectionChange(new Set())
+            }}
+          >
             Show all
           </Button>
         </>
@@ -577,7 +605,7 @@ function AccountShare({
   if (iconOnly) {
     return (
       <Tooltip label={`${label}% of total`} hasArrow>
-        <Box as="span" display="flex" color="neutral.600" tabIndex={0} aria-label={`${label}% of total`}>
+        <Box as="span" display="flex" color="neutral.600" aria-label={`${label}% of total`}>
           {chart}
         </Box>
       </Tooltip>

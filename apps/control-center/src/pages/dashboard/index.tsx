@@ -16,7 +16,7 @@ import {
   useBreakpointValue,
   useDisclosure,
 } from '@chakra-ui/react'
-import { DateInput, EmptyView, Spinner } from '@hoseki/packages/ui/design-system'
+import { DateInput as DefaultDateInput, EmptyView, Spinner } from '@hoseki/packages/ui/design-system'
 import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
 import { format, isAfter, isBefore, startOfDay, subDays } from 'date-fns'
 import Decimal from 'decimal.js'
@@ -24,23 +24,20 @@ import { motion, useReducedMotion } from 'framer-motion'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { BitcoinAmount } from '../../components/bitcoin-amount'
-import { AccountFilter } from '../../components/dashboard-charts/account-filter'
-import { AccumulationChart } from '../../components/dashboard-charts/accumulation-chart'
+import { AccountFilter as DefaultAccountFilter } from '../../components/dashboard-charts/account-filter'
+import { AccumulationChart as DefaultAccumulationChart } from '../../components/dashboard-charts/accumulation-chart'
 import {
   getMonthKey,
   getMonthlyChanges,
   toSatoshisString,
   withCurrentBalancePoint,
 } from '../../components/dashboard-charts/balance-history'
-import { MonthlyNetChangeChart } from '../../components/dashboard-charts/monthly-net-change-chart'
+import { MonthlyNetChangeChart as DefaultMonthlyNetChangeChart } from '../../components/dashboard-charts/monthly-net-change-chart'
 import { DashboardCardTitle } from '../../components/dashboard/dashboard-typography'
 import { FiatAmountText } from '../../components/fiat-amount-text'
 import { UsdEquivalent } from '../../components/usd-equivalent'
-import { useAutoRefreshExchanges } from '../../hooks/use-auto-refresh-exchanges'
-import { useGetBalancesPerClaimIds } from '../../lib/balances'
-import { trpc } from '../../trpc'
 import { isExchangeConnected } from '../../utils/exchange-connection-status'
-import { getBrowserTimezone } from '../../utils/timezone'
+import { type DashboardDataSource, dashboardDataSource } from './dashboard-data'
 
 const MotionBox = motion.create(Box)
 
@@ -65,21 +62,33 @@ function createDefaultCustomDateRange(now: Date): CustomDateRangeDraft {
 }
 
 function validateCustomDateRange(range: CustomDateRangeDraft, now: Date): string | null {
-  if (range.startDate === null || range.endDate === null) return 'Choose both a start date and an end date.'
+  if (range.startDate === null || range.endDate === null) {
+    return 'Choose both a start date and an end date.'
+  }
 
-  if (isBefore(range.startDate, BITCOIN_GENESIS_DATE)) return 'Start date cannot be before Bitcoin genesis.'
-  if (isAfter(range.startDate, range.endDate)) return 'Start date must be on or before end date.'
-  if (isAfter(range.endDate, startOfDay(now))) return 'End date cannot be in the future.'
+  if (isBefore(range.startDate, BITCOIN_GENESIS_DATE)) {
+    return 'Start date cannot be before Bitcoin genesis.'
+  }
+  if (isAfter(range.startDate, range.endDate)) {
+    return 'Start date must be on or before end date.'
+  }
+  if (isAfter(range.endDate, startOfDay(now))) {
+    return 'End date cannot be in the future.'
+  }
   return null
 }
 
 function toCustomDateRangeInput(range: CustomDateRangeDraft): CustomDateRangeInput | null {
-  if (range.startDate === null || range.endDate === null) return null
+  if (range.startDate === null || range.endDate === null) {
+    return null
+  }
   return { startDate: format(range.startDate, 'yyyy-MM-dd'), endDate: format(range.endDate, 'yyyy-MM-dd') }
 }
 
 function formatCustomDateRangeLabel(range: CustomDateRangeDraft): string {
-  if (range.startDate === null || range.endDate === null) return 'custom'
+  if (range.startDate === null || range.endDate === null) {
+    return 'custom'
+  }
   if (format(range.startDate, 'yyyy') === format(range.endDate, 'yyyy')) {
     return `${format(range.startDate, 'MMM d')} – ${format(range.endDate, 'MMM d, yyyy')}`
   }
@@ -93,8 +102,29 @@ function formatUsd(btcAmount: number, btcPrice: number): string {
   })
 }
 
-export function DashboardPage(): JSX.Element {
-  useAutoRefreshExchanges()
+export interface DashboardViews {
+  AccountFilter: typeof DefaultAccountFilter
+  AccumulationChart: typeof DefaultAccumulationChart
+  MonthlyNetChangeChart: typeof DefaultMonthlyNetChangeChart
+  DateInput: typeof DefaultDateInput
+}
+
+const dashboardViews: DashboardViews = {
+  AccountFilter: DefaultAccountFilter,
+  AccumulationChart: DefaultAccumulationChart,
+  MonthlyNetChangeChart: DefaultMonthlyNetChangeChart,
+  DateInput: DefaultDateInput,
+}
+
+export function DashboardPage({
+  dataSource = dashboardDataSource,
+  views = dashboardViews,
+}: {
+  dataSource?: DashboardDataSource
+  views?: DashboardViews
+}): JSX.Element {
+  const { AccountFilter, AccumulationChart, MonthlyNetChangeChart, DateInput } = views
+  dataSource.useAutoRefresh()
   const hasDesktopSidebar = useBreakpointValue({ base: false, lg: true }) ?? false
   const reduceMotion = useReducedMotion()
   const [timeRange, setTimeRange] = useState<TimeRange>('90d')
@@ -111,15 +141,11 @@ export function DashboardPage(): JSX.Element {
   const shownRecentlySyncedAccountIds = useRef<Set<string>>(new Set())
 
   const navigate = useNavigate()
-  const userTimezone = useMemo(() => getBrowserTimezone(), [])
+  const userTimezone = useMemo(() => dataSource.getTimezone(), [dataSource])
   const today = new Date()
   const isShowingAll = selected.size === 0
-  const recordSnapshot = trpc.portalProve.controlCenter.recordSnapshot.useMutation()
-  const claimsQuery = trpc.portalProve.registry.claims.list.useQuery({ excludePending: false })
-  const exchangeAccountsQuery = trpc.portalProve.exchange.list.useQuery()
-  const manualAccountsQuery = trpc.portalProve.manual.list.useQuery()
-  const etfAccountsQuery = trpc.portalProve.etf.list.useQuery()
-  const btcPriceQuery = trpc.portalProve.retrieveBitcoinPrice.useQuery()
+  const { recordSnapshot, claimsQuery, exchangeAccountsQuery, manualAccountsQuery, etfAccountsQuery, btcPriceQuery } =
+    dataSource.useAccounts()
 
   const claims = useMemo(() => claimsQuery.data ?? [], [claimsQuery.data])
   const exchangeAccounts = useMemo(() => exchangeAccountsQuery.data ?? [], [exchangeAccountsQuery.data])
@@ -161,7 +187,7 @@ export function DashboardPage(): JSX.Element {
     isPreviousData: allIsPreviousData,
     error: allError,
     refetch: refetchAllData,
-  } = trpc.portalProve.controlCenter.getData.useQuery(
+  } = dataSource.useHistory(
     { ...rangeQueryInput, timezone: userTimezone },
     { enabled: isShowingAll, staleTime: 5 * 60 * 1000, keepPreviousData: true },
   )
@@ -172,7 +198,7 @@ export function DashboardPage(): JSX.Element {
     isPreviousData: filteredIsPreviousData,
     error: filteredError,
     refetch: refetchFilteredData,
-  } = trpc.portalProve.controlCenter.getData.useQuery(
+  } = dataSource.useHistory(
     {
       ...rangeQueryInput,
       timezone: userTimezone,
@@ -213,10 +239,12 @@ export function DashboardPage(): JSX.Element {
     historySyncingAccountIds.every((id) => historyRefreshingAccountIds.includes(id))
   const historyNeedsInitialLoad = historySyncingAccountIds.length > 0 && !isHistoryRefreshing
   const recentlySyncedAccountIdList = useMemo(() => Array.from(recentlySyncedAccountIds), [recentlySyncedAccountIds])
-  const balancesQuery = useGetBalancesPerClaimIds({ claimIds, enabled: claimIds.length > 0 })
+  const balancesQuery = dataSource.useBalances({ claimIds, enabled: claimIds.length > 0 })
 
   useEffect(() => {
-    if (historySyncingAccountIds.length === 0) return
+    if (historySyncingAccountIds.length === 0) {
+      return
+    }
 
     const intervalId = window.setInterval(() => {
       // Slow Electrum/exchange requests may outlast the polling interval.
@@ -224,19 +252,25 @@ export function DashboardPage(): JSX.Element {
       void (isShowingAll ? refetchAllData : refetchFilteredData)({ cancelRefetch: false })
     }, 10_000)
 
-    return () => window.clearInterval(intervalId)
+    return () => {
+      window.clearInterval(intervalId)
+    }
   }, [historySyncingAccountIds.length, isShowingAll, refetchAllData, refetchFilteredData])
 
   useEffect(() => {
     if (previousHistorySync.current.viewKey !== historyViewKey) {
       previousHistorySync.current = { viewKey: historyViewKey, syncingIds: new Set() }
       shownRecentlySyncedAccountIds.current.clear()
-      for (const timeout of recentlySyncedTimeouts.current.values()) window.clearTimeout(timeout)
+      for (const timeout of recentlySyncedTimeouts.current.values()) {
+        window.clearTimeout(timeout)
+      }
       recentlySyncedTimeouts.current.clear()
       setRecentlySyncedAccountIds(new Set())
     }
     // Cached results for another range/selection cannot establish completion.
-    if (activeIsPreviousData || activeError || activeData === undefined) return
+    if (activeIsPreviousData || activeError || activeData === undefined) {
+      return
+    }
     const currentSyncingIds = new Set(historySyncingAccountIdsKey === '' ? [] : historySyncingAccountIdsKey.split('|'))
     const currentSyncedIds = new Set(historySyncedAccountIdsKey === '' ? [] : historySyncedAccountIdsKey.split('|'))
     const completedIds = Array.from(previousHistorySync.current.syncingIds).filter(
@@ -252,7 +286,9 @@ export function DashboardPage(): JSX.Element {
       }
 
       setRecentlySyncedAccountIds((prev) => {
-        if (!prev.has(id)) return prev
+        if (!prev.has(id)) {
+          return prev
+        }
         const next = new Set(prev)
         next.delete(id)
         return next
@@ -260,7 +296,9 @@ export function DashboardPage(): JSX.Element {
     }
 
     for (const id of completedIds) {
-      if (shownRecentlySyncedAccountIds.current.has(id)) continue
+      if (shownRecentlySyncedAccountIds.current.has(id)) {
+        continue
+      }
 
       shownRecentlySyncedAccountIds.current.add(id)
       setRecentlySyncedAccountIds((prev) => {
@@ -270,7 +308,9 @@ export function DashboardPage(): JSX.Element {
       })
 
       const existingTimeout = recentlySyncedTimeouts.current.get(id)
-      if (existingTimeout !== undefined) window.clearTimeout(existingTimeout)
+      if (existingTimeout !== undefined) {
+        window.clearTimeout(existingTimeout)
+      }
 
       const timeoutId = window.setTimeout(() => {
         recentlySyncedTimeouts.current.delete(id)
@@ -303,31 +343,37 @@ export function DashboardPage(): JSX.Element {
   }, [])
 
   useEffect(() => {
-    if (allData?.verifiedClaimsCount && allData.verifiedClaimsCount > 0 && !hasRecordedSnapshot.current) {
+    if ((allData?.verifiedClaimsCount ?? 0) > 0 && !hasRecordedSnapshot.current) {
       hasRecordedSnapshot.current = true
       recordSnapshot.mutate(undefined)
     }
   }, [allData?.verifiedClaimsCount, recordSnapshot])
 
-  const claimTotalBtcSats = balancesQuery.data
-    ? Array.from(balancesQuery.data.values()).reduce((sum, b) => {
-        if (!b) return sum
-        return sum + Number(b.current)
-      }, 0)
-    : 0
+  const claimTotalBtcSats = Array.from(balancesQuery.data.values()).reduce((sum, b) => {
+    if (!b) {
+      return sum
+    }
+    return sum + Number(b.current)
+  }, 0)
 
   const exchangeTotalBtcSats = exchangeAccounts.filter(isExchangeConnected).reduce((sum, a) => {
-    if (!a.balance) return sum
+    if (a.balance == null || a.balance === '') {
+      return sum
+    }
     return sum + Number(a.balance)
   }, 0)
 
   const manualTotalBtcSats = manualAccounts.reduce((sum, a) => {
-    if (!a.balance) return sum
+    if (!a.balance) {
+      return sum
+    }
     return sum + Number(a.balance)
   }, 0)
 
   const etfTotalBtcSats = etfAccounts.reduce((sum, a) => {
-    if (!a.balance) return sum
+    if (!a.balance) {
+      return sum
+    }
     return sum + Number(a.balance)
   }, 0)
 
@@ -339,20 +385,20 @@ export function DashboardPage(): JSX.Element {
   const displayBalanceSats = isShowingAll
     ? totalBtcSats
     : selectedClaimIds.reduce((sum, id) => {
-        const b = balancesQuery.data?.get(id)
+        const b = balancesQuery.data.get(id)
         return sum + (b ? Number(b.current) : 0)
       }, 0) +
       selectedExchangeIds.reduce((sum, id) => {
         const acc = exchangeAccounts.find((a) => a.id === id)
-        return sum + (acc?.balance ? Number(acc.balance) : 0)
+        return sum + (acc?.balance != null && acc.balance !== '' ? Number(acc.balance) : 0)
       }, 0) +
       selectedManualIds.reduce((sum, id) => {
         const acc = manualAccounts.find((a) => a.id === id)
-        return sum + (acc?.balance ? Number(acc.balance) : 0)
+        return sum + (acc?.balance != null && acc.balance !== '' ? Number(acc.balance) : 0)
       }, 0) +
       selectedEtfIds.reduce((sum, id) => {
         const acc = etfAccounts.find((a) => a.id === id)
-        return sum + (acc?.balance ? Number(acc.balance) : 0)
+        return sum + (acc?.balance != null && acc.balance !== '' ? Number(acc.balance) : 0)
       }, 0)
 
   const isFullHistoryRange = timeRange === 'custom' || timeRange === 'all'
@@ -370,9 +416,15 @@ export function DashboardPage(): JSX.Element {
   const customEndsToday = timeRange === 'custom' && customDateRangeInput?.endDate === format(new Date(), 'yyyy-MM-dd')
   const historicalData = useMemo(() => {
     const history = data?.historicalData ?? []
-    if (historyRangeError !== null || isFullHistoryPending || historyBackfillBlocked) return []
-    if (isFullHistoryRange && isHistoryRefreshing && cachedHistory !== null) return cachedHistory
-    if (isFullHistoryRange && history.length === 0) return []
+    if (historyRangeError !== null || isFullHistoryPending || historyBackfillBlocked) {
+      return []
+    }
+    if (isFullHistoryRange && isHistoryRefreshing) {
+      return cachedHistory
+    }
+    if (isFullHistoryRange && history.length === 0) {
+      return []
+    }
     if (timeRange === 'custom') {
       return customEndsToday ? withCurrentBalancePoint(history, displayBalanceSats, new Date(), userTimezone) : history
     }
@@ -405,7 +457,9 @@ export function DashboardPage(): JSX.Element {
   ])
 
   const periodChange = useMemo(() => {
-    if (!historicalData.length) return null
+    if (!historicalData.length) {
+      return null
+    }
     const currentSats = new Decimal(toSatoshisString(historicalData[historicalData.length - 1]?.totalBalance))
     const startSats = new Decimal(toSatoshisString(historicalData[0]?.totalBalance))
     return currentSats.minus(startSats)
@@ -413,7 +467,7 @@ export function DashboardPage(): JSX.Element {
 
   const handleGenerateStatement = useCallback((): void => {
     const preSelectedIds = isShowingAll ? claimIds : selectedClaimIds
-    navigate('/statements/create', { state: { preSelectedClaimIds: preSelectedIds, returnTo: '/portfolio' } })
+    void navigate('/statements/create', { state: { preSelectedClaimIds: preSelectedIds, returnTo: '/portfolio' } })
   }, [isShowingAll, claimIds, selectedClaimIds, navigate])
 
   const isInitialLoading =
@@ -434,7 +488,7 @@ export function DashboardPage(): JSX.Element {
     exchangeAccounts.length > 0 ||
     manualAccounts.length > 0 ||
     etfAccounts.length > 0
-  const hasHistoricalData = (allData?.historicalData?.length ?? 0) > 0 || (activeData?.historicalData?.length ?? 0) > 0
+  const hasHistoricalData = (allData?.historicalData.length ?? 0) > 0 || (activeData?.historicalData.length ?? 0) > 0
   const historyBtcPrice = Number(data?.currentBtcPrice ?? allData?.currentBtcPrice ?? 0)
   const btcPrice = btcUsdPrice ?? (historyBtcPrice > 0 ? historyBtcPrice : null)
   const periodLabel =
@@ -503,7 +557,7 @@ export function DashboardPage(): JSX.Element {
 
           <MotionBox
             layout="position"
-            transition={{ duration: reduceMotion ? 0 : 0.24, ease: [0.32, 0.72, 0, 1] }}
+            transition={{ duration: reduceMotion === true ? 0 : 0.24, ease: [0.32, 0.72, 0, 1] }}
             flex="1"
             minW={0}
           >
@@ -593,6 +647,7 @@ export function DashboardPage(): JSX.Element {
                   {activeFetching && <Spinner size="xs" color="neutral.300" />}
                 </Flex>
                 <TimeRangeSelector
+                  DateInput={DateInput}
                   value={timeRange}
                   customDateRange={customDateRange}
                   today={today}
@@ -815,9 +870,11 @@ interface TimeRangeSelectorProps {
   today: Date
   onPresetChange: (value: PresetTimeRange) => void
   onCustomApply: (range: CustomDateRangeDraft) => void
+  DateInput: typeof DefaultDateInput
 }
 
 function TimeRangeSelector({
+  DateInput,
   value,
   customDateRange,
   today,
@@ -841,7 +898,9 @@ function TimeRangeSelector({
   }
 
   const handleApply = (): void => {
-    if (draftError !== null) return
+    if (draftError !== null) {
+      return
+    }
     onCustomApply(draft)
     onClose()
   }
@@ -849,7 +908,7 @@ function TimeRangeSelector({
   return (
     <Stack align="flex-end" gap={1}>
       <Flex
-        role="group"
+        as="fieldset"
         aria-label="Portfolio time range"
         bg="neutral.50"
         borderRadius="control"
@@ -927,7 +986,9 @@ function TimeRangeSelector({
                         value={draft.startDate}
                         min={BITCOIN_GENESIS_DATE}
                         max={today}
-                        onChange={(startDate) => setDraft((current) => ({ ...current, startDate }))}
+                        onChange={(startDate) => {
+                          setDraft((current) => ({ ...current, startDate }))
+                        }}
                         size="sm"
                       />
                     </FormControl>
@@ -940,7 +1001,9 @@ function TimeRangeSelector({
                         value={draft.endDate}
                         min={draft.startDate ?? BITCOIN_GENESIS_DATE}
                         max={today}
-                        onChange={(endDate) => setDraft((current) => ({ ...current, endDate }))}
+                        onChange={(endDate) => {
+                          setDraft((current) => ({ ...current, endDate }))
+                        }}
                         size="sm"
                       />
                     </FormControl>
@@ -983,7 +1046,9 @@ interface StatCardProps {
 function StatCard({ label, data, mode, timezone, available, btcPrice }: StatCardProps): JSX.Element {
   const value = useMemo(() => {
     const monthlyChanges = getMonthlyChanges(data, 6, timezone)
-    if (monthlyChanges.length === 0) return new Decimal(0)
+    if (monthlyChanges.length === 0) {
+      return new Decimal(0)
+    }
 
     if (mode === 'current') {
       const currentMonthKey = getMonthKey(new Date(), timezone)

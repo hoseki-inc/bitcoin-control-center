@@ -15,7 +15,7 @@ import {
   Thead,
   Tr,
 } from '@chakra-ui/react'
-import { type BalanceWithStatus } from '@hoseki/packages/lib/balance'
+import type { BalanceWithStatus } from '@hoseki/packages/lib/balance'
 import type { ClaimId } from '@hoseki/packages/schemas'
 import { ErrorInline, Spinner } from '@hoseki/packages/ui/design-system'
 import { LoadingTextSkeleton } from '@hoseki/packages/ui/prove-verify-ui/claims/loading-text-skeleton'
@@ -53,7 +53,7 @@ export function ClaimSelection({
   const exchangeAccountsQuery = trpc.portalProve.exchange.list.useQuery(undefined, { enabled: showExchanges })
   const btcPriceQuery = trpc.portalProve.retrieveBitcoinPrice.useQuery(undefined, { enabled: showExchanges })
 
-  const exchangeAccounts = showExchanges ? (exchangeAccountsQuery.data ?? []) : []
+  const exchangeAccounts = exchangeAccountsQuery.data ?? []
   const btcUsdPrice = btcPriceQuery.data?.value ? Number(btcPriceQuery.data.value) : null
 
   const handleClaimToggle = (claimId: ClaimId) => {
@@ -118,7 +118,8 @@ export function ClaimSelection({
     if (
       isExchangeConnected(account) &&
       selectedExchangeAccountIds.has(account.id) &&
-      account.balance &&
+      account.balance != null &&
+      account.balance !== '' &&
       btcUsdPrice !== null
     ) {
       const btcAmount = Number(account.balance) / 100_000_000
@@ -174,9 +175,11 @@ export function ClaimSelection({
                   <HStack>
                     <Checkbox
                       id={`claim_${claim.id}`}
-                      isChecked={disabledClaims?.has(claim.id) || selectedClaimIds.has(claim.id)}
+                      isChecked={(disabledClaims?.has(claim.id) ?? false) || selectedClaimIds.has(claim.id)}
                       isDisabled={disabledClaims?.has(claim.id)}
-                      onChange={() => handleClaimToggle(claim.id)}
+                      onChange={() => {
+                        handleClaimToggle(claim.id)
+                      }}
                     />
                     <Stack gap={0} overflow="hidden" minW={0} flex={1}>
                       <Text
@@ -188,7 +191,7 @@ export function ClaimSelection({
                         isTruncated
                         color="neutral.600"
                       >
-                        {claim.displayName ?? claim.officialName}
+                        {claim.displayName}
                       </Text>
                     </Stack>
                   </HStack>
@@ -208,7 +211,7 @@ export function ClaimSelection({
           })}
           {exchangeAccounts.map((account) => {
             const needsReconnect = needsExchangeReconnect(account)
-            const btcSats = account.balance ? Number(account.balance) : 0
+            const btcSats = account.balance != null && account.balance !== '' ? Number(account.balance) : 0
             const btcAmount = btcSats / 100_000_000
             const usdAmount = btcUsdPrice !== null ? btcAmount * btcUsdPrice : null
 
@@ -220,7 +223,9 @@ export function ClaimSelection({
                       id={`exchange_${account.id}`}
                       isChecked={!needsReconnect && selectedExchangeAccountIds.has(account.id)}
                       isDisabled={needsReconnect}
-                      onChange={() => handleExchangeToggle(account.id)}
+                      onChange={() => {
+                        handleExchangeToggle(account.id)
+                      }}
                     />
                     <Stack gap={0} overflow="hidden" minW={0} flex={1}>
                       <Text
@@ -263,6 +268,8 @@ export function ClaimSelection({
             <Td px={0} colSpan={3}>
               <HStack textStyle="text/sm" fontWeight="regular" color="neutral.600">
                 <PlusIcon size="18px" />
+                {/* React Router supplies the anchor href from to; Oxlint cannot infer that for event rules. */}
+                {/* oxlint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */}
                 <Link to="/accounts" onClick={handleAddClaim}>
                   Add account
                 </Link>
@@ -290,24 +297,30 @@ export function ClaimSelection({
 }
 
 function renderBalance(balance: BalanceWithStatus) {
-  if (balance.status === 'loading') return <LoadingTextSkeleton width="8em" />
-  if (balance.status === 'fail') return 'n/a'
+  if (balance.status === 'loading') {
+    return <LoadingTextSkeleton width="8em" />
+  }
+  if (balance.status === 'fail') {
+    return 'n/a'
+  }
   return <BitcoinAmount btc={new Decimal(balance.value.current).div(100_000_000)} />
 }
 
 function renderUsdAmount(balance: BalanceWithStatus) {
-  if (balance.status === 'loading')
+  if (balance.status === 'loading') {
     return (
       <Text textStyle="text/sm" fontWeight="medium">
         <LoadingTextSkeleton width="5em" />
       </Text>
     )
-  if (balance.status === 'fail' || balance.value.usd === null)
+  }
+  if (balance.status === 'fail' || balance.value.usd === null) {
     return (
       <Text textStyle="text/sm" fontWeight="medium">
-        'n/a'
+        &apos;n/a&apos;
       </Text>
     )
+  }
   return (
     <Text textStyle="text/sm" fontWeight="medium" color="success.600" whiteSpace="nowrap">
       <>{formatUsd(balance.value.usd.toFixed(2))}</>

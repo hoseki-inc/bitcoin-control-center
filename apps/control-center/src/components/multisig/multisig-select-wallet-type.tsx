@@ -21,25 +21,33 @@ export function SelectWalletType({
           title="Trezor"
           imagePath={`${HOSEKI_ASSETS_CDN_URL}/hardware-wallets/trezor.svg`}
           imageAltText="Connect your Trezor"
-          onClick={() => onConnectionTypeClick('trezor')}
+          onClick={() => {
+            onConnectionTypeClick('trezor')
+          }}
         />
         <ConnectionType
           title="Ledger"
           imagePath={`${HOSEKI_ASSETS_CDN_URL}/hardware-wallets/ledger.svg`}
           imageAltText="Connect your Ledger"
-          onClick={() => onConnectionTypeClick('ledger')}
+          onClick={() => {
+            onConnectionTypeClick('ledger')
+          }}
         />
         <ConnectionType
           title="COLDCARD"
           imagePath={`${HOSEKI_ASSETS_CDN_URL}/hardware-wallets/coldcard.svg`}
           imageAltText="Connect your Coldcard"
-          onClick={() => onConnectionTypeClick('coldcard')}
+          onClick={() => {
+            onConnectionTypeClick('coldcard')
+          }}
         />
         <ConnectionType
           title="Keystone"
           imagePath="/images/hardware-wallets/keystone-logo.svg"
           imageAltText="Connect your Keystone"
-          onClick={() => onConnectionTypeClick('keystone')}
+          onClick={() => {
+            onConnectionTypeClick('keystone')
+          }}
         />
       </Grid>
     </Box>
@@ -59,6 +67,9 @@ function ConnectionType({
 }) {
   return (
     <Stack
+      as="button"
+      type="button"
+      _focusVisible={{ boxShadow: 'outline' }}
       onClick={onClick}
       border="1px solid"
       borderColor="neutral.200"
@@ -68,10 +79,10 @@ function ConnectionType({
       gap={8}
       _hover={{ cursor: 'pointer', bgColor: 'neutral.50' }}
     >
-      <Flex justifyContent="center" h="30px">
+      <Flex as="span" justifyContent="center" h="30px">
         <chakra.img src={imagePath} alt={imageAltText} maxW="100px" />
       </Flex>
-      <Text textStyle="label/md" fontWeight="medium">
+      <Text as="span" textStyle="label/md" fontWeight="medium">
         {title}
       </Text>
     </Stack>

@@ -1,6 +1,6 @@
 import { HStack, Icon, Stack, Text } from '@chakra-ui/react'
 import { CircleXIcon } from 'lucide-react'
-import { type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 
 export function GenericError({
   title = 'An error occurred',

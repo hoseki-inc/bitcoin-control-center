@@ -45,7 +45,7 @@ export function DashboardPreview({
             <>{unresolved ? '—' : zeroBalance}</>
           </DashboardAmount>
         </Box>
-        <FiatAmountText primary mt={2} role="status">
+        <FiatAmountText as="output" display="block" primary mt={2}>
           <>{loading ? 'Loading your holdings…' : unavailable ? 'Holdings unavailable' : '$0.00 USD'}</>
         </FiatAmountText>
         <Grid

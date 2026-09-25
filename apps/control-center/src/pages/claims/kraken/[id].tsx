@@ -31,19 +31,23 @@ export function KrakenAccountDetailsPage(): JSX.Element {
     return <ErrorBanner mt={8} mb={4} message="Kraken account not found." />
   }
 
-  const btcSats = account.balance ? Number(account.balance) : 0
+  const btcSats = account.balance != null && account.balance !== '' ? Number(account.balance) : 0
   const btcAmount = (btcSats / 100_000_000).toFixed(8)
   const needsReconnect = needsExchangeReconnect(account)
 
   function handleReconnect(): void {
-    if (!accountId) return
-    navigate('/accounts/verify/kraken', {
+    if (accountId == null || accountId === '') {
+      return
+    }
+    void navigate('/accounts/verify/kraken', {
       state: { returnTo: `/accounts/kraken/${accountId}`, replaceAccountId: accountId },
     })
   }
 
   async function handleRefresh(): Promise<void> {
-    if (!accountId) return
+    if (accountId == null || accountId === '') {
+      return
+    }
     setIsRefreshing(true)
     try {
       await refreshMutation.mutateAsync({ accountId })
@@ -58,14 +62,16 @@ export function KrakenAccountDetailsPage(): JSX.Element {
   }
 
   async function handleDelete(): Promise<void> {
-    if (!accountId) return
+    if (accountId == null || accountId === '') {
+      return
+    }
     setIsDeleting(true)
     try {
       await deleteMutation.mutateAsync({ accountId })
       await utils.portalProve.exchange.kraken.list.invalidate()
       await utils.portalProve.exchange.list.invalidate()
       await utils.portalProve.controlCenter.invalidate()
-      navigate('/accounts')
+      void navigate('/accounts')
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to remove account'
       toast.error(message)
@@ -79,7 +85,13 @@ export function KrakenAccountDetailsPage(): JSX.Element {
         <TopBar.Item as={Link} to="/accounts">
           Back to Accounts
         </TopBar.Item>
-        <TopBar.Item as="button" color="error.600" onClick={handleDelete}>
+        <TopBar.Item
+          as="button"
+          color="error.600"
+          onClick={() => {
+            void handleDelete()
+          }}
+        >
           {isDeleting ? 'Removing...' : 'Remove Account'}
         </TopBar.Item>
       </TopBar>
@@ -176,7 +188,9 @@ export function KrakenAccountDetailsPage(): JSX.Element {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={handleRefresh}
+                onClick={() => {
+                  void handleRefresh()
+                }}
                 isLoading={isRefreshing}
                 loadingText="Refreshing..."
               >

@@ -5,5 +5,5 @@ export function formatBitcoin(value: Decimal.Value): string {
   const amount = new Decimal(value).toFixed(8).replace(/\.?0+$/, '')
   const [integer = '0', fraction] = amount.split('.')
   const grouped = integer.replace(/\B(?=(\d{3})+(?!\d))/g, ',')
-  return `${grouped}${fraction ? `.${fraction}` : ''} BTC`
+  return `${grouped}${fraction !== undefined && fraction !== '' ? `.${fraction}` : ''} BTC`
 }

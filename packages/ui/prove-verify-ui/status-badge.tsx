@@ -42,6 +42,8 @@ export const StatusBadge = forwardRef<StatusBadgeProps, 'span'>(
   },
 )
 
+StatusBadge.displayName = 'StatusBadge'
+
 function getBadgeColors(status: Status) {
   if (status === 'warning') {
     return {

@@ -1,5 +1,5 @@
-// Reexport ruts so all Result utilities are available from a single package
-export * from '@patina/core'
+// Export the vendored Patina v3 core alongside Control Center's Result utilities.
+export * from './lib/core/index.ts'
 // Custom utilities
 export * from './lib/async.ts'
 export * from './lib/panic.ts'

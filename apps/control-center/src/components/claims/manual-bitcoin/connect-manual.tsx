@@ -6,11 +6,12 @@ import { ClaimConnectionWrapper, WizardFooter } from '@hoseki/packages/ui/wallet
 import { useState } from 'react'
 import { useLocation, useNavigate } from 'react-router'
 import { useNavigateToAnExistentOrNewClaim } from '../../../lib/claim-flow'
+import { parseNavigationState } from '../../../lib/navigation-state'
 
 export function ConnectManual(): JSX.Element {
   const navigate = useNavigate()
   const location = useLocation()
-  const returnTo = (location.state as { returnTo?: string } | null)?.returnTo ?? '/accounts'
+  const returnTo = parseNavigationState(location.state)?.returnTo ?? '/accounts'
   const [bitcoinInput, setBitcoinInput] = useState<BitcoinInput | null>(null)
   const navigateToAnExistentOrNewClaim = useNavigateToAnExistentOrNewClaim()
 
@@ -18,7 +19,7 @@ export function ConnectManual(): JSX.Element {
     e.preventDefault()
 
     // If input is empty, skip creation
-    if (!bitcoinInput || !bitcoinInput.displayName) {
+    if (bitcoinInput?.displayName == null || bitcoinInput.displayName === '') {
       return
     }
 
@@ -44,14 +45,19 @@ export function ConnectManual(): JSX.Element {
         />
         <WizardFooter
           leftButton={
-            <Button variant="outline" onClick={() => navigate(returnTo)}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                void navigate(returnTo)
+              }}
+            >
               Back to Accounts
             </Button>
           }
           rightButton={
             <Button
               type="submit"
-              isDisabled={!bitcoinInput || !bitcoinInput.displayName}
+              isDisabled={bitcoinInput?.displayName == null || bitcoinInput.displayName === ''}
               isLoading={navigateToAnExistentOrNewClaim.isLoading}
             >
               Add Account
