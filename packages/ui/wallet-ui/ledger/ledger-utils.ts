@@ -3,7 +3,7 @@ export const ledgerModels = ['Nano S', 'Nano S Plus', 'Nano X', 'Flex', 'Stax'] 
 export type LedgerModel = (typeof ledgerModels)[number]
 
 export function isLedgerModel(model: string): model is LedgerModel {
-  return ledgerModels.includes(model as LedgerModel)
+  return ledgerModels.some((candidate) => candidate === model)
 }
 
 /**

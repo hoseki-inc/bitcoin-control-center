@@ -14,23 +14,35 @@ export const Default: Story = () => (
     <HardwareWalletCard
       wallet={HARDCODED_WALLETS[0]!}
       isSelected={false}
-      onClick={() => alert('clicked')}
-      onUpdateDisplayName={(newDisplayName) => alert('newDisplayName: ' + newDisplayName)}
+      onClick={() => {
+        alert('clicked')
+      }}
+      onUpdateDisplayName={(newDisplayName) => {
+        alert('newDisplayName: ' + newDisplayName)
+      }}
     />
     {/* eslint-disable @typescript-eslint/no-non-null-assertion */}
     <HardwareWalletCard
       wallet={HARDCODED_WALLETS[1]!}
       isSelected={true}
-      onClick={() => alert('clicked')}
-      onUpdateDisplayName={(newDisplayName) => alert('newDisplayName: ' + newDisplayName)}
+      onClick={() => {
+        alert('clicked')
+      }}
+      onUpdateDisplayName={(newDisplayName) => {
+        alert('newDisplayName: ' + newDisplayName)
+      }}
     />
     {/* eslint-disable @typescript-eslint/no-non-null-assertion */}
     <HardwareWalletCard
       wallet={HARDCODED_WALLETS[1]!}
       isSelected={true}
       isDefaultExpanded={true}
-      onClick={() => alert('clicked')}
-      onUpdateDisplayName={(newDisplayName) => alert('newDisplayName: ' + newDisplayName)}
+      onClick={() => {
+        alert('clicked')
+      }}
+      onUpdateDisplayName={(newDisplayName) => {
+        alert('newDisplayName: ' + newDisplayName)
+      }}
     />
     <chakra.div {...borders.greenSolid} p={4}>
       something below

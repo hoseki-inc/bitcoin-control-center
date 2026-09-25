@@ -25,7 +25,7 @@ function createMultisigClaimInputFromDescriptor(
 ): Result<CreateMultisigClaimInput, Error> {
   const multisigWalletResult = WalletImporter.multisigFromDescriptor(descriptor)
   if (multisigWalletResult.isErr()) {
-    return Err(new Error(`Invalid descriptor: ${multisigWalletResult.unwrapErr()?.message}`))
+    return Err(new Error(`Invalid descriptor: ${multisigWalletResult.unwrapErr().message}`))
   }
 
   const multisigWallet = multisigWalletResult.unwrap()
@@ -69,7 +69,9 @@ export function MultisigFromDescriptor({ onNext }: { onNext: (data: CreateMultis
   const [parsingError, setParsingError] = useState<string | null>(null)
 
   function validateDescriptor(value: string) {
-    if (!value) return 'Descriptor is required'
+    if (!value) {
+      return 'Descriptor is required'
+    }
 
     try {
       const parsed = WalletImporter.multisigFromDescriptor(value)
@@ -77,11 +79,11 @@ export function MultisigFromDescriptor({ onNext }: { onNext: (data: CreateMultis
         setParsingError(null)
         return true
       } else {
-        const parseErrorMessage = `Invalid descriptor: ${parsed.unwrapErr()?.message}`
+        const parseErrorMessage = `Invalid descriptor: ${parsed.unwrapErr().message}`
         setParsingError(parseErrorMessage)
         return parseErrorMessage
       }
-    } catch (e) {
+    } catch {
       setParsingError('Invalid descriptor')
       return 'Invalid descriptor'
     }
@@ -93,7 +95,7 @@ export function MultisigFromDescriptor({ onNext }: { onNext: (data: CreateMultis
       setParsingError(null)
       onNext(walletResult.unwrap())
     } else {
-      const errorMsg = walletResult.unwrapErr()?.message
+      const errorMsg = walletResult.unwrapErr().message
       setParsingError(`Invalid descriptor: ${errorMsg}`)
       setError('descriptor', { type: 'manual', message: `Invalid descriptor: ${errorMsg}` })
     }
@@ -111,8 +113,14 @@ export function MultisigFromDescriptor({ onNext }: { onNext: (data: CreateMultis
           </AccordionButton>
         </h2>
         <AccordionPanel p={4} pt={0} display="flex" flexDirection="column" gap={4}>
-          <form onSubmit={handleSubmit(onSubmit)}>
-            <FormControl mb={4} isInvalid={!!errors.descriptor || !!parsingError}>
+          <form
+            onSubmit={(event) => {
+              handleSubmit(onSubmit)(event).catch(() => {
+                setParsingError('Unable to read the descriptor. Please check it and try again.')
+              })
+            }}
+          >
+            <FormControl mb={4} isInvalid={!!errors.descriptor || (parsingError != null && parsingError !== '')}>
               <Textarea
                 {...register('descriptor', {
                   required: 'Descriptor is required',
@@ -122,7 +130,11 @@ export function MultisigFromDescriptor({ onNext }: { onNext: (data: CreateMultis
                 rows={10}
                 {...monoInputProps}
               />
-              <FormErrorMessage>{errors.descriptor?.message || parsingError}</FormErrorMessage>
+              <FormErrorMessage>
+                {errors.descriptor?.message != null && errors.descriptor.message !== ''
+                  ? errors.descriptor.message
+                  : parsingError}
+              </FormErrorMessage>
             </FormControl>
             <Flex justifyContent="flex-end">
               <Button type="submit" isDisabled={!isValid} size="sm" variant="outline">

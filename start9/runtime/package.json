@@ -6,8 +6,8 @@
   "dependencies": {
     "@react-pdf/renderer": "4.9.0",
     "better-sqlite3": "13.0.3",
-    "react": "19.2.8",
-    "react-dom": "19.2.8",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
     "yoga-layout": "3.2.1"
   },
   "engines": {

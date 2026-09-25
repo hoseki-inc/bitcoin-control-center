@@ -2,12 +2,12 @@ import { Grid, Stack } from '@chakra-ui/react'
 import { ClaimCard } from '@hoseki/packages/ui/prove-verify-ui'
 import { Link } from 'react-router'
 import { useGetBalancesPerClaimIds } from '../../../lib/balances'
-import { type ClaimDto } from '../../../trpc/server-types'
+import type { ClaimDto } from '../../../trpc/server-types'
 import { mapClaimToClaimCardProps, withStatusBalance } from '../../../utils/claim-utils'
 
 export function ClaimsList({ claims }: { claims: ClaimDto[] }): JSX.Element {
   // Fetch balances separately to show claim card asap and display balances asynchronously.
-  const claimIds = claims.map((claim) => claim.id) ?? []
+  const claimIds = claims.map((claim) => claim.id)
   const claimUsdBalancesQuery = useGetBalancesPerClaimIds({ claimIds, enabled: claimIds.length > 0 })
 
   return (

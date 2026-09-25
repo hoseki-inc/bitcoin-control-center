@@ -100,7 +100,7 @@ export function getColdcardAnimation(model: ColdcardModel, animation: coldcardAn
         case 'coldcardSignTextFile':
           return 'coldcardSignTextFile_M3'
         default:
-          throw new Error(`Invalid animation "${animation}" for model "${model}"`)
+          throw new Error(`Invalid animation "${String(animation)}" for model "${model}"`)
       }
     case 'MK4':
       switch (animation) {
@@ -117,7 +117,7 @@ export function getColdcardAnimation(model: ColdcardModel, animation: coldcardAn
         case 'coldcardSignTextFile':
           return 'coldcardSignTextFile_M4'
         default:
-          throw new Error(`Invalid animation "${animation}" for model "${model}"`)
+          throw new Error(`Invalid animation "${String(animation)}" for model "${model}"`)
       }
     case 'Q':
       switch (animation) {
@@ -134,10 +134,10 @@ export function getColdcardAnimation(model: ColdcardModel, animation: coldcardAn
         case 'coldcardSignTextFile':
           return 'coldcardSignTextFile_Q'
         default:
-          throw new Error(`Invalid animation "${animation}" for model "${model}"`)
+          throw new Error(`Invalid animation "${String(animation)}" for model "${model}"`)
       }
     default:
-      throw new Error(`Invalid animation "${animation}" for model "${model}"`)
+      throw new Error(`Invalid animation "${animation}" for model "${String(model)}"`)
   }
 }
 
@@ -160,7 +160,12 @@ export function WalletAnimation({ animation }: { animation: WalletAnimationType 
 
 const walletFloat = keyframes`0%, 100% { transform: translateY(0); } 50% { transform: translateY(-8px); }`
 
-export function WalletFloatingImage({ href, alt, ...rest }: { href: string; alt: string } & BoxProps): JSX.Element {
+export interface WalletImage {
+  href: string
+  alt: string
+}
+
+export function WalletFloatingImage({ href, alt, ...rest }: WalletImage & BoxProps): JSX.Element {
   return (
     <Box mx="auto" pt={10} pb={6} {...rest}>
       <chakra.img

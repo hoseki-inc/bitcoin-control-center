@@ -1,115 +1,107 @@
+// @vitest-environment node
 import { ChakraProvider } from '@chakra-ui/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter } from 'react-router'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type * as DashboardBanner from '../components/dashboard/banner'
+import { describe, expect, it, vi } from 'vitest'
+import { ONBOARDING_KEY } from '../components/onboarding/getting-started'
 import type { BitcoinDisplayUnit } from '../lib/bitcoin-display'
-import { HomePage } from './index'
+import { type HomeDataSource, HomePage, type HomeViews } from './index'
 
-const mocks = vi.hoisted(() => ({
-  accounts: { claims: [] as unknown[], exchange: [] as unknown[], manual: [] as unknown[], etf: [] as unknown[] },
-  prices: [] as Array<{ time: number; value: number }>,
-  history: [] as Array<{ timestamp: string; totalBalance: string }>,
-  isLoading: false,
-  isError: false,
-  statementsError: false,
-  btcPrice: '50000',
-  onboarding: 'dismissed' as string | null,
-  unit: 'btc' as BitcoinDisplayUnit,
-}))
+type PortfolioData = NonNullable<ReturnType<HomeDataSource['usePortfolio']>['data']>
+type AccountKind = 'claims' | 'exchange' | 'manual' | 'etf'
 
-vi.mock('../trpc', () => {
-  const result = (data: unknown) => ({ data, isLoading: false, isError: false, refetch: vi.fn() })
-  const accounts = (key: keyof typeof mocks.accounts) => ({
-    list: { useQuery: () => ({ ...result(mocks.accounts[key]), isLoading: mocks.isLoading, isError: mocks.isError }) },
-  })
+interface HomeState {
+  accounts: Record<AccountKind, { id: string; status: string; balance: string }[]>
+  history: PortfolioData['historicalData']
+  isLoading: boolean
+  isError: boolean
+  statementsError: boolean
+  btcPrice: string
+  unit: BitcoinDisplayUnit
+  onboarding: string | null
+}
+
+function query<T>(data: T, state: { isLoading?: boolean; isError?: boolean } = {}) {
   return {
-    trpc: {
-      portalProve: {
-        retrieveBitcoinPriceHistory: { useQuery: () => result(mocks.prices) },
-        statement: { list: { useQuery: () => ({ ...result([]), isError: mocks.statementsError }) } },
-        registry: { claims: accounts('claims') },
-        exchange: accounts('exchange'),
-        manual: accounts('manual'),
-        etf: accounts('etf'),
-        controlCenter: {
-          getData: {
-            useQuery: () =>
-              result({
-                currentTotalBalance: '0',
-                currentBtcPrice: mocks.btcPrice,
-                historicalData: mocks.history,
-                verifiedClaimsCount: 0,
-                exchangeAccountCount: 0,
-              }),
-          },
-        },
-      },
-    },
+    data,
+    isLoading: state.isLoading ?? false,
+    isError: state.isError ?? false,
+    error: null,
+    refetch: vi.fn(async () => Promise.resolve({ isError: false })),
   }
-})
+}
 
-vi.mock('../hooks/use-local-settings', () => ({
-  useLocalSetting: () => ({ data: mocks.onboarding, isLoading: false, isError: false }),
-}))
+function fakeDataSource(state: HomeState): HomeDataSource {
+  const accounts = (kind: AccountKind) => () =>
+    query(state.accounts[kind], { isLoading: state.isLoading, isError: state.isError })
+  const portfolio: PortfolioData = {
+    currentTotalBalance: '0',
+    currentBtcPrice: state.btcPrice,
+    verifiedClaimsCount: 0,
+    exchangeAccountCount: 0,
+    manualAccountCount: 0,
+    etfAccountCount: 0,
+    historicalData: state.history,
+    historySyncingAccountIds: [],
+    historySyncedAccountIds: [],
+    historyRefreshingAccountIds: [],
+    historyFailedAccountIds: [],
+  }
+  return {
+    useStatements: () => query([], { isError: state.statementsError }),
+    usePortfolio: () => query(portfolio),
+    useClaims: accounts('claims'),
+    useExchanges: accounts('exchange'),
+    useManual: accounts('manual'),
+    useEtfs: accounts('etf'),
+  }
+}
 
-vi.mock('../hooks/use-ui-settings', () => ({
-  useUiSettings: () => ({ isStatementsMadeEasyDismissed: false, updateUiSettings: vi.fn() }),
-}))
-vi.mock('../hooks/use-bitcoin-display', () => ({ useBitcoinDisplay: () => ({ unit: mocks.unit }) }))
-vi.mock('../components/dashboard-charts/history-line-chart', () => ({
-  HistoryLineChart: () => createElement('svg', { 'data-chart': 'history' }),
-}))
-vi.mock('../components/dashboard/banner', async (importOriginal) => ({
-  ...(await importOriginal<typeof DashboardBanner>()),
-  Banner: () => createElement('div', null, 'Statement introduction'),
-}))
-vi.mock('../components/dashboard/recent-statements', () => ({ RecentStatements: () => null }))
-vi.mock('../components/dashboard-charts/accumulation-chart', () => ({
+const views: HomeViews = {
   AccumulationChart: () => createElement('div', null, 'Balance chart'),
-}))
-vi.mock('@hoseki/packages/ui/design-system', async () => {
-  const { EmptyView } = await import('@hoseki/packages/ui/design-system/empty-view')
-  return {
-    EmptyView,
-    Spinner: () => createElement('div', null, 'Loading overview'),
-    ErrorBanner: ({ message }: { message: string }) => createElement('div', { role: 'alert' }, message),
-  }
-})
+  // The price chart's own states are covered in bitcoin-price-chart.test.ts; here we only check placement.
+  BitcoinPriceChart: () => createElement('section', { 'data-chart': 'price' }, 'Bitcoin Price'),
+}
 
-function renderHome(): string {
+function renderHome(overrides: Partial<HomeState> = {}): string {
+  const state: HomeState = {
+    accounts: { claims: [], exchange: [], manual: [], etf: [] },
+    history: [],
+    isLoading: false,
+    isError: false,
+    statementsError: false,
+    btcPrice: '50000',
+    unit: 'btc',
+    onboarding: 'dismissed',
+    ...overrides,
+  }
+  // Seed the stored display preference the same way a loaded settings query would.
+  const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity, retry: false } } })
+  queryClient.setQueryData(['local-settings', 'bitcoin_display_unit'], state.unit)
+  queryClient.setQueryData(['local-settings', ONBOARDING_KEY], state.onboarding)
   return renderToStaticMarkup(
-    createElement(ChakraProvider, null, createElement(MemoryRouter, null, createElement(HomePage))),
+    createElement(
+      QueryClientProvider,
+      { client: queryClient },
+      createElement(
+        ChakraProvider,
+        null,
+        createElement(MemoryRouter, null, createElement(HomePage, { dataSource: fakeDataSource(state), views })),
+      ),
+    ),
   )
 }
 
-beforeEach(() => {
-  mocks.accounts = { claims: [], exchange: [], manual: [], etf: [] }
-  mocks.onboarding = 'dismissed'
-  mocks.prices = []
-  mocks.history = []
-  mocks.isLoading = false
-  mocks.isError = false
-  mocks.statementsError = false
-  mocks.btcPrice = '50000'
-  mocks.unit = 'btc'
-})
+const zeroBalanceHistory = [{ timestamp: '2026-09-01T00:00:00.000Z', totalBalance: '0' }]
 
 describe('Home overview states', () => {
   it('previews zero balances and a labeled market chart with one account action', () => {
     const html = renderHome()
     expect(html).toContain('Your Bitcoin, in one place')
     expect(html.match(/href="\/accounts\/add"/g)).toHaveLength(1)
-    for (const text of [
-      '0 BTC',
-      '$0.00 USD',
-      '30d Change',
-      'Bitcoin Price',
-      'Last 7 days',
-      'Your holdings, on record',
-      'data-chart="history"',
-    ]) {
+    for (const text of ['0 BTC', '$0.00 USD', '30d Change', 'Bitcoin Price', 'Your holdings, on record']) {
       expect(html).toContain(text)
     }
     expect(html).toContain('Generate Statement')
@@ -125,18 +117,20 @@ describe('Home overview states', () => {
     ['sats', '0 sats'],
     ['symbol', '₿ 0'],
   ] as const)('uses %s for both empty-state Bitcoin values', (unit, expected) => {
-    mocks.unit = unit
-    const html = renderHome()
+    const html = renderHome({ unit })
     expect(html.split(`>${expected}<`)).toHaveLength(3)
     expect(html).not.toContain('0.00000000')
-    if (unit !== 'btc') expect(html).not.toContain('0 BTC')
+    if (unit !== 'btc') {
+      expect(html).not.toContain('0 BTC')
+    }
   })
 
   it.each(['claims', 'exchange', 'manual', 'etf'] as const)(
     'keeps a zero-balance %s account distinct from no accounts',
     (kind) => {
-      mocks.accounts[kind] = [{ id: 'account', status: 'pending', balance: '0' }]
-      const html = renderHome()
+      const accounts: HomeState['accounts'] = { claims: [], exchange: [], manual: [], etf: [] }
+      accounts[kind] = [{ id: 'account', status: 'pending', balance: '0' }]
+      const html = renderHome({ accounts })
       expect(html).toContain('Your history will appear here')
       expect(html).toContain('href="/accounts"')
       expect(html).not.toContain('href="/accounts/add"')
@@ -145,65 +139,59 @@ describe('Home overview states', () => {
   )
 
   it('keeps the dashboard available when history exists, including a zero balance', () => {
-    mocks.history = [{ timestamp: '2026-09-01T00:00:00.000Z', totalBalance: '0' }]
-    expect(renderHome()).toContain('Balance chart')
+    expect(renderHome({ history: zeroBalanceHistory })).toContain('Balance chart')
   })
 
   it('does not present failed account queries as an empty portfolio', () => {
-    mocks.isError = true
-    const html = renderHome()
+    const html = renderHome({ isError: true })
     expect(html).toContain('role="alert"')
     expect(html).toContain('Holdings unavailable')
     expect(html).not.toContain('$0.00 USD')
     expect(html).not.toContain('0 BTC')
     expect(html).toContain('Try Again')
-    expect(html).not.toContain('Dashboard preview')
     expect(html).toContain('Bitcoin Price')
+    expect(html).not.toContain('Dashboard preview')
     expect(html).not.toContain('href="/accounts/add"')
   }, 20_000)
 
-  it('waits for account queries before offering onboarding', () => {
-    mocks.isLoading = true
-    const html = renderHome()
+  it('waits for account queries before offering account setup', () => {
+    const html = renderHome({ isLoading: true })
     expect(html).toContain('Loading your holdings')
     expect(html).toContain('Bitcoin Price')
     expect(html).not.toContain('0.00000000')
     expect(html).not.toContain('href="/accounts/add"')
   })
   it('keeps holdings visible when statements fail independently', () => {
-    mocks.statementsError = true
-    mocks.history = [{ timestamp: '2026-09-01T00:00:00.000Z', totalBalance: '0' }]
-    const html = renderHome()
+    const html = renderHome({ statementsError: true, history: zeroBalanceHistory })
     expect(html).toContain('Balance chart')
     expect(html).toContain('Recent statements could not be loaded')
     expect(html).not.toContain('Holdings unavailable')
   })
 
   it('retains the last overview with a persistent warning when account refresh fails', () => {
-    mocks.isError = true
-    mocks.history = [{ timestamp: '2026-09-01T00:00:00.000Z', totalBalance: '0' }]
-    const html = renderHome()
+    const html = renderHome({ isError: true, history: zeroBalanceHistory })
     expect(html).toContain('Balance chart')
     expect(html).toContain('Showing the last available overview')
     expect(html).not.toContain('href="/accounts/add"')
   })
 
   it('does not turn a missing market price into a zero fiat valuation', () => {
-    mocks.btcPrice = '0'
-    mocks.history = [{ timestamp: '2026-09-01T00:00:00.000Z', totalBalance: '100000000' }]
-    expect(renderHome()).toContain('USD value unavailable')
+    const html = renderHome({
+      btcPrice: '0',
+      history: [{ timestamp: '2026-09-01T00:00:00.000Z', totalBalance: '100000000' }],
+    })
+    expect(html).toContain('USD value unavailable')
   })
 })
 
 it('introduces the product only for a new empty installation', () => {
-  mocks.onboarding = null
-  expect(renderHome()).toContain('Explore First')
-  mocks.accounts.manual = [{}]
-  expect(renderHome()).not.toContain('Explore First')
+  expect(renderHome({ onboarding: null })).toContain('Explore First')
+  const manual = [{ id: 'manual', status: 'verified', balance: '0' }]
+  expect(renderHome({ onboarding: null, accounts: { claims: [], exchange: [], manual, etf: [] } })).not.toContain(
+    'Explore First',
+  )
 })
 
 it('does not treat a failed account request as a fresh installation', () => {
-  mocks.onboarding = null
-  mocks.isError = true
-  expect(renderHome()).not.toContain('Explore First')
+  expect(renderHome({ onboarding: null, isError: true })).not.toContain('Explore First')
 })

@@ -27,7 +27,9 @@ describe('Bitcoin display', () => {
     expect(formatBitcoin('20999999.99999999', 'sats')).toBe('2,099,999,999,999,999 sats')
   })
   it('defaults missing or invalid saved preferences to BTC', () => {
-    for (const value of [null, undefined, '', 'invalid', 'btc']) expect(bitcoinDisplayUnit(value)).toBe('btc')
+    for (const value of [null, undefined, '', 'invalid', 'btc']) {
+      expect(bitcoinDisplayUnit(value)).toBe('btc')
+    }
     expect(bitcoinDisplayUnit('symbol')).toBe('symbol')
     expect(bitcoinDisplayUnit('sats')).toBe('sats')
   })

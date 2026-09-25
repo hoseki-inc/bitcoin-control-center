@@ -27,8 +27,12 @@ export function BBQrDisplay({
   const intervalRef = useRef<ReturnType<typeof setInterval>>()
 
   const parts = useMemo(() => {
-    if (value) return [value]
-    if (!data) return []
+    if (value != null && value !== '') {
+      return [value]
+    }
+    if (!data) {
+      return []
+    }
     const result = splitQRs(data, fileType)
     return result.parts
   }, [data, fileType, value])
@@ -36,17 +40,23 @@ export function BBQrDisplay({
   const isAnimated = parts.length > 1
 
   useEffect(() => {
-    if (!isAnimated) return
+    if (!isAnimated) {
+      return
+    }
     intervalRef.current = setInterval(() => {
       setFrameIndex((prev) => (prev + 1) % parts.length)
     }, frameDelay)
     return (): void => {
-      if (intervalRef.current) clearInterval(intervalRef.current)
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current)
+      }
     }
   }, [isAnimated, parts.length, frameDelay])
 
   const firstPart = parts[0]
-  if (!firstPart) return <></>
+  if (firstPart == null || firstPart === '') {
+    return <></>
+  }
 
   const currentValue = parts[frameIndex] ?? firstPart
 

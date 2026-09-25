@@ -1,3 +1,23 @@
+type PluralObject = { singular: string; plural: string; count: number }
+type PluralTuple = readonly [singular: string, plural: string, count: number]
+type PluralValue = number | string | PluralObject | PluralTuple
+
+function isPluralObject(value: PluralValue | undefined): value is PluralObject {
+  return (
+    typeof value === 'object' && !Array.isArray(value) && 'count' in value && 'singular' in value && 'plural' in value
+  )
+}
+
+function isPluralTuple(value: PluralValue | undefined): value is PluralTuple {
+  return (
+    Array.isArray(value) &&
+    value.length === 3 &&
+    typeof value[0] === 'string' &&
+    typeof value[1] === 'string' &&
+    typeof value[2] === 'number'
+  )
+}
+
 /**
  * Utility function to help pluralize a string.
  *
@@ -18,49 +38,29 @@
  *
  * @returns The interpolated string.
  */
-export function pluralize(
-  strings: TemplateStringsArray,
-  ...values: (
-    | number
-    | string
-    | { singular: string; plural: string; count: number }
-    | readonly [singular: string, plural: string, count: number]
-  )[]
-): string {
+export function pluralize(strings: TemplateStringsArray, ...values: PluralValue[]): string {
   let result = ''
   for (let i = 0; i < strings.length; i++) {
     result += strings[i]
     if (i < values.length) {
       const value = values[i]
-      if (
-        typeof value === 'object' &&
-        value !== null &&
-        !Array.isArray(value) &&
-        'count' in value &&
-        'singular' in value &&
-        'plural' in value
-      ) {
+      if (isPluralObject(value)) {
         // Object format
         result += value.count === 1 ? value.singular : value.plural
-      } else if (
-        Array.isArray(value) &&
-        value.length === 3 &&
-        typeof value[0] === 'string' &&
-        typeof value[1] === 'string' &&
-        typeof value[2] === 'number'
-      ) {
+      } else if (isPluralTuple(value)) {
         // Tuple format
         result += value[2] === 1 ? value[0] : value[1]
       } else {
-        result += value // Regular interpolation
+        result += String(value) // Regular interpolation
       }
     }
   }
   return result
 }
 
-export function capitalize<T extends string>(str: T): Capitalize<T> {
-  return (str.charAt(0).toUpperCase() + str.slice(1)) as Capitalize<T>
+export function capitalize<T extends string>(str: T): Capitalize<T>
+export function capitalize(str: string): string {
+  return str.charAt(0).toUpperCase() + str.slice(1)
 }
 
 export function convertToOrdinalWords(number: number): string {
@@ -90,7 +90,7 @@ export function convertToOrdinalWords(number: number): string {
 
   if (number >= 0 && number < ordinals.length) {
     const r = ordinals[number]
-    if (!r) {
+    if (r == null || r === '') {
       // This should never happen, but we'll add a guard to satisfy the type checker
       throw new Error(`Ordinal ${number} is out of range`)
     }

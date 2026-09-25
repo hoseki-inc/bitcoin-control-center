@@ -1,33 +1,29 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import superjson from 'superjson'
+import { baseTrpc } from '../trpc'
 
-const baseUrl = import.meta.env['VITE_BACKEND_API_URL'] ?? ''
-
-/**
- * Hook for reading/writing local settings stored in api-sentinel's SQLite.
- */
-export function useLocalSetting(key: string): {
+export type LocalSettingState = {
   data: string | null | undefined
   isLoading: boolean
   save: (value: string) => void
   isSaving: boolean
   isError: boolean
   saveAsync: (value: string) => Promise<void>
-} {
+}
+
+const baseUrl = import.meta.env.VITE_BACKEND_API_URL ?? ''
+
+/**
+ * Hook for reading/writing local settings stored in api-sentinel's SQLite.
+ */
+export function useLocalSetting(key: string): LocalSettingState {
   const queryClient = useQueryClient()
   const queryKey = ['local-settings', key]
 
   const query = useQuery({
     queryKey,
     staleTime: 30_000,
-    queryFn: async (): Promise<string | null> => {
-      const input = superjson.serialize({ key })
-      const params = new URLSearchParams({ input: JSON.stringify(input) })
-      const res = await fetch(`${baseUrl}/settings.get?${params}`)
-      if (!res.ok) throw new Error('Failed to fetch setting')
-      const json = await res.json()
-      return superjson.deserialize(json.result.data) as string | null
-    },
+    queryFn: async () => baseTrpc.settings.get.query({ key }),
   })
 
   const mutation = useMutation({
@@ -37,7 +33,9 @@ export function useLocalSetting(key: string): {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(superjson.serialize({ key, value })),
       })
-      if (!res.ok) throw new Error('Failed to save setting')
+      if (!res.ok) {
+        throw new Error('Failed to save setting')
+      }
     },
     onSuccess: (_data, value) => {
       queryClient.setQueryData(queryKey, value)
@@ -47,7 +45,9 @@ export function useLocalSetting(key: string): {
   return {
     data: query.data,
     isLoading: query.isLoading,
-    save: (value: string) => mutation.mutate(value),
+    save: (value: string) => {
+      mutation.mutate(value)
+    },
     isSaving: mutation.isLoading,
     isError: query.isError,
     saveAsync: mutation.mutateAsync,

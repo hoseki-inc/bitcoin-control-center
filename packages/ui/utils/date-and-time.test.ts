@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
+import { describe, expect, onTestFinished, test, vi } from 'vitest'
 import { formatDateRange, getRelativeTimeFromNow } from './date-and-time'
 
 describe('formatDateRange', () => {
@@ -88,125 +88,166 @@ describe('formatDateRange', () => {
 })
 
 describe('getRelativeTimeFromNow', () => {
-  beforeEach(() => {
-    // Mock the current date to 2025-01-01 00:00:00 UTC
+  async function withTestSetup(run: () => Promise<void>): Promise<void> {
+    // Vitest owns teardown so it has its own timeout and runs once, even after a test timeout.
+    onTestFinished(async () => {
+      vi.useRealTimers()
+    })
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2025-01-01T00:00:00.000Z'))
-  })
 
-  afterEach(() => {
-    vi.useRealTimers()
-  })
+    await run()
+  }
 
   describe('future dates', () => {
-    test('returns "in X seconds" for near future', () => {
-      const future = new Date('2025-01-01T00:00:30.000Z') // 30 seconds
-      expect(getRelativeTimeFromNow(future)).toBe('in 30 seconds')
+    test('returns "in X seconds" for near future', async () => {
+      await withTestSetup(async () => {
+        const future = new Date('2025-01-01T00:00:30.000Z') // 30 seconds
+        expect(getRelativeTimeFromNow(future)).toBe('in 30 seconds')
+      })
     })
 
-    test('returns "in X minutes" for minutes away', () => {
-      const future = new Date('2025-01-01T00:05:00.000Z') // 5 minutes
-      expect(getRelativeTimeFromNow(future)).toBe('in 5 minutes')
+    test('returns "in X minutes" for minutes away', async () => {
+      await withTestSetup(async () => {
+        const future = new Date('2025-01-01T00:05:00.000Z') // 5 minutes
+        expect(getRelativeTimeFromNow(future)).toBe('in 5 minutes')
+      })
     })
 
-    test('returns "in X hours" for hours away', () => {
-      const future = new Date('2025-01-01T03:00:00.000Z') // 3 hours
-      expect(getRelativeTimeFromNow(future)).toBe('in 3 hours')
+    test('returns "in X hours" for hours away', async () => {
+      await withTestSetup(async () => {
+        const future = new Date('2025-01-01T03:00:00.000Z') // 3 hours
+        expect(getRelativeTimeFromNow(future)).toBe('in 3 hours')
+      })
     })
 
-    test('returns "tomorrow" for next day', () => {
-      const future = new Date('2025-01-02T00:00:00.000Z') // 1 day
-      expect(getRelativeTimeFromNow(future)).toBe('tomorrow')
+    test('returns "tomorrow" for next day', async () => {
+      await withTestSetup(async () => {
+        const future = new Date('2025-01-02T00:00:00.000Z') // 1 day
+        expect(getRelativeTimeFromNow(future)).toBe('tomorrow')
+      })
     })
 
-    test('returns "in X days" for multiple days', () => {
-      const future = new Date('2025-01-04T00:00:00.000Z') // 3 days
-      expect(getRelativeTimeFromNow(future)).toBe('in 3 days')
+    test('returns "in X days" for multiple days', async () => {
+      await withTestSetup(async () => {
+        const future = new Date('2025-01-04T00:00:00.000Z') // 3 days
+        expect(getRelativeTimeFromNow(future)).toBe('in 3 days')
+      })
     })
 
-    test('returns "next week" for week away', () => {
-      const future = new Date('2025-01-08T00:00:00.000Z') // 7 days
-      expect(getRelativeTimeFromNow(future)).toBe('next week')
+    test('returns "next week" for week away', async () => {
+      await withTestSetup(async () => {
+        const future = new Date('2025-01-08T00:00:00.000Z') // 7 days
+        expect(getRelativeTimeFromNow(future)).toBe('next week')
+      })
     })
 
-    test('returns "in X months" for months away', () => {
-      const future = new Date('2025-04-01T00:00:00.000Z') // ~3 months
-      expect(getRelativeTimeFromNow(future)).toBe('in 3 months')
+    test('returns "in X months" for months away', async () => {
+      await withTestSetup(async () => {
+        const future = new Date('2025-04-01T00:00:00.000Z') // ~3 months
+        expect(getRelativeTimeFromNow(future)).toBe('in 3 months')
+      })
     })
 
-    test('returns "next year" for year away', () => {
-      const future = new Date('2026-01-01T00:00:00.000Z') // 1 year
-      expect(getRelativeTimeFromNow(future)).toBe('next year')
+    test('returns "next year" for year away', async () => {
+      await withTestSetup(async () => {
+        const future = new Date('2026-01-01T00:00:00.000Z') // 1 year
+        expect(getRelativeTimeFromNow(future)).toBe('next year')
+      })
     })
 
-    test('returns "in X years" for multiple years', () => {
-      const future = new Date('2028-01-01T00:00:00.000Z') // 3 years
-      expect(getRelativeTimeFromNow(future)).toBe('in 3 years')
+    test('returns "in X years" for multiple years', async () => {
+      await withTestSetup(async () => {
+        const future = new Date('2028-01-01T00:00:00.000Z') // 3 years
+        expect(getRelativeTimeFromNow(future)).toBe('in 3 years')
+      })
     })
   })
 
   describe('past dates', () => {
-    test('returns "X seconds ago" for recent past', () => {
-      const past = new Date('2024-12-31T23:59:30.000Z') // 30 seconds ago
-      expect(getRelativeTimeFromNow(past)).toBe('30 seconds ago')
+    test('returns "X seconds ago" for recent past', async () => {
+      await withTestSetup(async () => {
+        const past = new Date('2024-12-31T23:59:30.000Z') // 30 seconds ago
+        expect(getRelativeTimeFromNow(past)).toBe('30 seconds ago')
+      })
     })
 
-    test('returns "X minutes ago" for minutes past', () => {
-      const past = new Date('2024-12-31T23:55:00.000Z') // 5 minutes ago
-      expect(getRelativeTimeFromNow(past)).toBe('5 minutes ago')
+    test('returns "X minutes ago" for minutes past', async () => {
+      await withTestSetup(async () => {
+        const past = new Date('2024-12-31T23:55:00.000Z') // 5 minutes ago
+        expect(getRelativeTimeFromNow(past)).toBe('5 minutes ago')
+      })
     })
 
-    test('returns "X hours ago" for hours past', () => {
-      const past = new Date('2024-12-31T21:00:00.000Z') // 3 hours ago
-      expect(getRelativeTimeFromNow(past)).toBe('3 hours ago')
+    test('returns "X hours ago" for hours past', async () => {
+      await withTestSetup(async () => {
+        const past = new Date('2024-12-31T21:00:00.000Z') // 3 hours ago
+        expect(getRelativeTimeFromNow(past)).toBe('3 hours ago')
+      })
     })
 
-    test('returns "yesterday" for previous day', () => {
-      const past = new Date('2024-12-31T00:00:00.000Z') // 1 day ago
-      expect(getRelativeTimeFromNow(past)).toBe('yesterday')
+    test('returns "yesterday" for previous day', async () => {
+      await withTestSetup(async () => {
+        const past = new Date('2024-12-31T00:00:00.000Z') // 1 day ago
+        expect(getRelativeTimeFromNow(past)).toBe('yesterday')
+      })
     })
 
-    test('returns "X days ago" for multiple days', () => {
-      const past = new Date('2024-12-29T00:00:00.000Z') // 3 days ago
-      expect(getRelativeTimeFromNow(past)).toBe('3 days ago')
+    test('returns "X days ago" for multiple days', async () => {
+      await withTestSetup(async () => {
+        const past = new Date('2024-12-29T00:00:00.000Z') // 3 days ago
+        expect(getRelativeTimeFromNow(past)).toBe('3 days ago')
+      })
     })
 
-    test('returns "last week" for week ago', () => {
-      const past = new Date('2024-12-25T00:00:00.000Z') // 7 days ago
-      expect(getRelativeTimeFromNow(past)).toBe('last week')
+    test('returns "last week" for week ago', async () => {
+      await withTestSetup(async () => {
+        const past = new Date('2024-12-25T00:00:00.000Z') // 7 days ago
+        expect(getRelativeTimeFromNow(past)).toBe('last week')
+      })
     })
 
-    test('returns "X months ago" for months past', () => {
-      const past = new Date('2024-09-01T00:00:00.000Z') // ~5 months ago based on 30-day calculation
-      expect(getRelativeTimeFromNow(past)).toBe('5 months ago')
+    test('returns "X months ago" for months past', async () => {
+      await withTestSetup(async () => {
+        const past = new Date('2024-09-01T00:00:00.000Z') // ~5 months ago based on 30-day calculation
+        expect(getRelativeTimeFromNow(past)).toBe('5 months ago')
+      })
     })
 
-    test('returns relative year format for past years', () => {
-      // From 2025-01-01 to 2024-01-01 should be 1 year, but may round to 2 depending on calculation
-      const past = new Date('2024-01-01T00:00:00.000Z')
-      const result = getRelativeTimeFromNow(past)
-      // Accept either "last year" or "2 years ago" depending on rounding
-      expect(result).toMatch(/last year|2 years ago/)
+    test('returns relative year format for past years', async () => {
+      await withTestSetup(async () => {
+        // From 2025-01-01 to 2024-01-01 should be 1 year, but may round to 2 depending on calculation
+        const past = new Date('2024-01-01T00:00:00.000Z')
+        const result = getRelativeTimeFromNow(past)
+        // Accept either "last year" or "2 years ago" depending on rounding
+        expect(result).toMatch(/last year|2 years ago/)
+      })
     })
 
-    test('returns "X years ago" for multiple years', () => {
-      const past = new Date('2021-01-01T00:00:00.000Z') // 4+ years ago
-      expect(getRelativeTimeFromNow(past)).toBe('5 years ago')
+    test('returns "X years ago" for multiple years', async () => {
+      await withTestSetup(async () => {
+        const past = new Date('2021-01-01T00:00:00.000Z') // 4+ years ago
+        expect(getRelativeTimeFromNow(past)).toBe('5 years ago')
+      })
     })
   })
 
   describe('edge cases', () => {
-    test('handles now/very recent', () => {
-      const now = new Date('2025-01-01T00:00:00.000Z')
-      const result = getRelativeTimeFromNow(now)
-      expect(result).toMatch(/now|0 seconds ago|in 0 seconds/)
+    test('handles now/very recent', async () => {
+      await withTestSetup(async () => {
+        const now = new Date('2025-01-01T00:00:00.000Z')
+        const result = getRelativeTimeFromNow(now)
+        expect(result).toMatch(/now|0 seconds ago|in 0 seconds/)
+      })
     })
 
-    test('accepts custom Intl.RelativeTimeFormat options', () => {
-      const future = new Date('2025-01-02T00:00:00.000Z')
-      // With numeric: 'always', it should always show the number
-      const result = getRelativeTimeFromNow(future, { numeric: 'always' })
-      expect(result).toBe('in 1 day')
+    test('accepts custom Intl.RelativeTimeFormat options', async () => {
+      await withTestSetup(async () => {
+        const future = new Date('2025-01-02T00:00:00.000Z')
+        // With numeric: 'always', it should always show the number
+        const result = getRelativeTimeFromNow(future, { numeric: 'always' })
+        expect(result).toBe('in 1 day')
+      })
     })
   })
 })

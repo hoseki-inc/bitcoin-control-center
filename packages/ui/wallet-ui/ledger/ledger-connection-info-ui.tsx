@@ -16,7 +16,15 @@ export function LedgerConnectionInfoUI({
 }): JSX.Element {
   return (
     <>
-      {error && <HardwareWalletError error={error} mt={4} onRetry={() => window.location.reload()} />}
+      {error && (
+        <HardwareWalletError
+          error={error}
+          mt={4}
+          onRetry={() => {
+            window.location.reload()
+          }}
+        />
+      )}
 
       <WalletAnimation animation="ledgerPlugIn" />
 
@@ -28,12 +36,12 @@ export function LedgerConnectionInfoUI({
         To start verifying ownership, connect your Ledger via USB, unlock it with your PIN, and open the Bitcoin app.
       </Text>
       <Text textStyle="text/md" color="neutral.900">
-        We'll guide you through each step—just follow the on-screen instructions. Your Ledger will verify ownership
+        We&apos;ll guide you through each step—just follow the on-screen instructions. Your Ledger will verify ownership
         while your keys remain safely stored on your device.
       </Text>
       <Text textStyle="text/md" color="neutral.900">
-        Once your Ledger is connected and the Bitcoin app is open, click 'Next'. If prompted, please accept any browser
-        notifications allowing Bitcoin Control Center to securely connect with your device.
+        Once your Ledger is connected and the Bitcoin app is open, click &apos;Next&apos;. If prompted, please accept
+        any browser notifications allowing Bitcoin Control Center to securely connect with your device.
       </Text>
 
       <HowDoesThisWork>

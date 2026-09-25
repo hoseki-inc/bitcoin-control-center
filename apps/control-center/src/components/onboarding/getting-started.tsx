@@ -13,11 +13,11 @@ import {
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import { useLocalSetting } from '../../hooks/use-local-settings'
-import { PortfolioDemo } from './portfolio-demo'
+import { PortfolioDemo, type PortfolioDemoViews } from './portfolio-demo'
 
 export const ONBOARDING_KEY = 'onboarding_v1'
 
-export function GettingStarted(): JSX.Element {
+export function GettingStarted({ views }: { views?: PortfolioDemoViews }): JSX.Element {
   const navigate = useNavigate()
   const setting = useLocalSetting(ONBOARDING_KEY)
   const [error, setError] = useState(false)
@@ -26,7 +26,7 @@ export function GettingStarted(): JSX.Element {
     setError(false)
     try {
       await setting.saveAsync(state)
-      navigate(path)
+      void navigate(path)
     } catch {
       setError(true)
     }
@@ -42,7 +42,7 @@ export function GettingStarted(): JSX.Element {
           Track your balance, what you’ve added, and what you’ve withdrawn. Try a sample portfolio below.
         </Text>
       </Box>
-      <PortfolioDemo />
+      <PortfolioDemo views={views} />
       <Flex
         direction={{ base: 'column', md: 'row' }}
         justify="space-between"
@@ -100,13 +100,15 @@ export function FirstAccountReady({ ready }: { ready: boolean }): JSX.Element | 
   const setting = useLocalSetting(ONBOARDING_KEY)
   const navigate = useNavigate()
   const [error, setError] = useState(false)
-  if (setting.data !== 'started' || !ready) return null
+  if (setting.data !== 'started' || !ready) {
+    return null
+  }
 
   const finish = async (path: string): Promise<void> => {
     setError(false)
     try {
       await setting.saveAsync('completed')
-      navigate(path)
+      void navigate(path)
     } catch {
       setError(true)
     }

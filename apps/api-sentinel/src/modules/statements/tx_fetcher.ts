@@ -5,31 +5,30 @@ import type { TransactionEntry } from '@hoseki/packages/bitcoin/onchain/types'
 import { isConfirmed } from '@hoseki/packages/bitcoin/onchain/types'
 import { addressToScripthash } from '@hoseki/packages/bitcoin/scripthash'
 import { Txid } from '@hoseki/packages/bitcoin/txid'
-import { Err, Ok, asyncFn } from '@patina/core'
-import type { Result } from '@patina/core'
+import { parseUnknown } from '@hoseki/packages/result'
+import { Err, Ok, asyncFn } from '@hoseki/packages/result'
+import type { Result } from '@hoseki/packages/result'
 import type { Logger } from 'pino'
+import { z } from 'zod'
 
 /**
  * mempool.space /api/tx/{txid} response shape (subset we care about).
  */
-interface MempoolTx {
-  txid: string
-  vin: Array<{
-    prevout: {
-      scriptpubkey_address?: string
-      value: number
-    } | null
-  }>
-  vout: Array<{
-    scriptpubkey_address?: string
-    value: number
-  }>
-  status: {
-    confirmed: boolean
-    block_height?: number
-    block_time?: number
-  }
-}
+const MempoolTxSchema = z.object({
+  txid: z.string(),
+  vin: z.array(
+    z.object({
+      prevout: z.object({ scriptpubkey_address: z.string().optional(), value: z.number().int() }).nullable(),
+    }),
+  ),
+  vout: z.array(z.object({ scriptpubkey_address: z.string().optional(), value: z.number().int() })),
+  status: z.object({
+    confirmed: z.boolean(),
+    block_height: z.number().optional(),
+    block_time: z.number().optional(),
+  }),
+})
+type MempoolTx = z.infer<typeof MempoolTxSchema>
 
 /** Max concurrent API calls to mempool.space for tx lookups */
 const TX_CONCURRENCY = 10
@@ -54,7 +53,9 @@ export const fetchTransactionEntries = asyncFn(
 
     // 1. Discover account (find used address indices via Electrum history checks)
     const discoveryResult = await onchainProvider.discoverAccount(account)
-    if (discoveryResult.isErr()) return Err(discoveryResult.unwrapErr())
+    if (discoveryResult.isErr()) {
+      return Err(discoveryResult.unwrapErr())
+    }
     const { lastUsedReceiveIndex, lastUsedChangeIndex } = discoveryResult.unwrap()
 
     // 2. Generate all used addresses
@@ -98,7 +99,9 @@ export const fetchTransactionEntries = asyncFn(
 
     // 4. Get current tip for confirmation status
     const tipRes = await onchainProvider.getBlocksTip()
-    if (tipRes.isErr()) return Err(tipRes.unwrapErr())
+    if (tipRes.isErr()) {
+      return Err(tipRes.unwrapErr())
+    }
     const tip = tipRes.unwrap()
 
     // 5. Fetch transaction details from mempool.space in batches
@@ -110,8 +113,12 @@ export const fetchTransactionEntries = asyncFn(
       const results = await Promise.allSettled(
         batch.map(async (txid) => {
           const response = await fetch(`${baseUrl}/api/tx/${txid}`)
-          if (!response.ok) return null
-          return (await response.json()) as MempoolTx
+          if (!response.ok) {
+            return null
+          }
+          return parseUnknown(MempoolTxSchema, await response.json()).mapErr(
+            () => new Error(`Invalid transaction data returned from mempool.space for ${txid}`),
+          )
         }),
       )
 
@@ -122,7 +129,10 @@ export const fetchTransactionEntries = asyncFn(
           continue
         }
 
-        const mempoolTx = result.value
+        if (result.value.isErr()) {
+          return Err(result.value.unwrapErr())
+        }
+        const mempoolTx = result.value.unwrap()
         const relatedAddresses = txHashToAddresses.get(mempoolTx.txid) ?? new Set()
 
         // Parse into TransactionEntry for each related address
@@ -145,7 +155,9 @@ export const fetchTransactionEntries = asyncFn(
  */
 function parseMempoolTxEntry(tx: MempoolTx, address: Address, tipHeight: number): TransactionEntry | null {
   const txidRes = Txid.fromString(tx.txid)
-  if (txidRes.isErr()) return null
+  if (txidRes.isErr()) {
+    return null
+  }
   const txid = txidRes.unwrap()
   const addressStr = address.toString()
 
@@ -167,7 +179,10 @@ function parseMempoolTxEntry(tx: MempoolTx, address: Address, tipHeight: number)
 
   const blockHeight = tx.status.block_height ?? null
   const confirmed = blockHeight !== null && isConfirmed({ tip: tipHeight, height: blockHeight })
-  const timestamp = tx.status.block_time ? new Date(tx.status.block_time * 1000) : new Date()
+  const timestamp =
+    tx.status.block_time !== undefined && tx.status.block_time !== 0 && !Number.isNaN(tx.status.block_time)
+      ? new Date(tx.status.block_time * 1000)
+      : new Date()
 
   return {
     txid,

@@ -12,7 +12,9 @@ export function RecentStatements({
 }): JSX.Element | null {
   const navigate = useNavigate()
 
-  if (!statements || statements.length === 0) return null
+  if (statements.length === 0) {
+    return null
+  }
 
   const showViewAll = statements.length > 3
   const visibleStatements = statements.slice(0, 3)
@@ -25,7 +27,9 @@ export function RecentStatements({
           <StatementCard
             key={statement.id}
             statement={statement}
-            onView={() => navigate(`/statements/${statement.id}`)}
+            onView={() => {
+              void navigate(`/statements/${statement.id}`)
+            }}
           />
         ))}
       </SimpleGrid>

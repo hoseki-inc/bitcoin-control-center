@@ -1,17 +1,9 @@
 // @vitest-environment jsdom
 import { ChakraProvider } from '@chakra-ui/react'
-import { type ReactElement, act, cloneElement } from 'react'
+import { act } from 'react'
 import { createRoot } from 'react-dom/client'
-import type * as Recharts from 'recharts'
-import { expect, it, vi } from 'vitest'
+import { assert, expect, it, vi } from 'vitest'
 import { HistoryLineChart } from './history-line-chart'
-
-// Give Recharts a deterministic viewport; all chart and tooltip behavior stays real.
-vi.mock('recharts', async (importOriginal) => ({
-  ...(await importOriginal<typeof Recharts>()),
-  ResponsiveContainer: ({ children }: { children: ReactElement<{ width: number; height: number }> }) =>
-    cloneElement(children, { width: 640, height: 240 }),
-}))
 
 it.each([false, true])('supports keyboard inspection with reduced motion = %s', async (reducedMotion) => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
@@ -26,7 +18,7 @@ it.each([false, true])('supports keyboard inspection with reduced motion = %s', 
   document.body.append(container)
   const root = createRoot(container)
   try {
-    await act(async () =>
+    await act(async () => {
       root.render(
         <ChakraProvider>
           <HistoryLineChart
@@ -36,12 +28,14 @@ it.each([false, true])('supports keyboard inspection with reduced motion = %s', 
             ]}
             formatValue={(value) => `$${value}`}
             formatTime={(time) => `Time ${time}`}
+            // Give Recharts a deterministic viewport; all chart and tooltip behavior stays real.
+            size={{ width: 640, height: 240 }}
           />
         </ChakraProvider>,
-      ),
-    )
-    const chart = container.querySelector<SVGSVGElement>('svg[role="application"]')!
-    expect(chart).not.toBeNull()
+      )
+    })
+    const chart = container.querySelector<SVGSVGElement>('svg[role="application"]')
+    assert(chart !== null, 'Expected an inspectable chart')
     expect(chart.getAttribute('tabindex')).toBe('0')
     expect(container.querySelector('.recharts-line-curve')).not.toBeNull()
     await act(async () => chart.dispatchEvent(new FocusEvent('focusin', { bubbles: true })))
@@ -49,7 +43,9 @@ it.each([false, true])('supports keyboard inspection with reduced motion = %s', 
     expect(container.querySelector('.recharts-tooltip-wrapper')?.textContent).toContain('$110')
     expect(container.querySelector('.recharts-tooltip-wrapper')?.textContent).toContain('Time 2000')
   } finally {
-    await act(async () => root.unmount())
+    await act(async () => {
+      root.unmount()
+    })
     container.remove()
     vi.unstubAllGlobals()
   }

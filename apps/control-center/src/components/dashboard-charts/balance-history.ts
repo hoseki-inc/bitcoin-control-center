@@ -1,5 +1,7 @@
 import { TZDate } from '@date-fns/tz'
+import { parseUnknown } from '@hoseki/packages/result/lib/parse'
 import Decimal from 'decimal.js'
+import { z } from 'zod'
 import { getBrowserTimezone } from '../../utils/timezone'
 
 export interface BalanceDataPoint {
@@ -21,20 +23,53 @@ interface ParsedBalancePoint {
   point: BalanceDataPoint
 }
 
+function isBalanceObject(value: unknown): value is object {
+  return value !== null && typeof value === 'object'
+}
+
+interface BalanceStringifierReceiver {
+  toString: unknown
+}
+
+interface CallableStringifier {
+  // oxlint-disable-next-line anti-slop/no-unknown-returns -- Third-party stringifiers can return arbitrary runtime values; the caller validates the result.
+  call(thisArg: BalanceStringifierReceiver): unknown
+}
+
+function isCallableStringifier(value: unknown): value is CallableStringifier {
+  return typeof value === 'function'
+}
+
+const scalarBalance = z.union([
+  z.string().transform((value) => value.trim() || '0'),
+  z.number().transform((value) => String(Math.floor(value))),
+])
+
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- This normalization boundary accepts untrusted balance values and returns a safe string.
 export function toSatoshisString(value: unknown): string {
-  if (value === null || value === undefined) return '0'
-  if (typeof value === 'string') return value.trim() || '0'
-  if (typeof value === 'number' && !Number.isNaN(value)) return String(Math.floor(value))
-  if (typeof value === 'object' && value !== null && 'toString' in value) {
-    const s = (value as { toString(): string }).toString()
-    return typeof s === 'string' && s.trim() ? s.trim() : '0'
+  if (value === null || value === undefined) {
+    return '0'
+  }
+  const scalar = parseUnknown(scalarBalance, value)
+  if (scalar.isOk()) {
+    return scalar.value()
+  }
+  if (isBalanceObject(value) && 'toString' in value) {
+    // oxlint-disable-next-line typescript/unbound-method -- The call below explicitly supplies the original object as `this`.
+    const stringifier = value.toString
+    if (isCallableStringifier(stringifier)) {
+      const content = stringifier.call(value)
+      return parseUnknown(z.string(), content)
+        .map((text) => text.trim() || '0')
+        .unwrapOr('0')
+    }
   }
   return '0'
 }
 
 export function withCurrentBalancePoint(
   data: BalanceDataPoint[],
-  currentBalanceSats: unknown,
+  currentBalanceSats: number | string,
   now: Date = new Date(),
   timezone: string = getBrowserTimezone(),
 ): BalanceDataPoint[] {
@@ -47,7 +82,9 @@ export function withCurrentBalancePoint(
   }
 
   const latestPoint = points[points.length - 1]
-  if (!latestPoint) return [{ timestamp: nowTimestamp, totalBalance: currentBalance }]
+  if (!latestPoint) {
+    return [{ timestamp: nowTimestamp, totalBalance: currentBalance }]
+  }
 
   const latestTimestampMs = new Date(latestPoint.timestamp).getTime()
   const latestMonthKey = getMonthKey(new Date(latestPoint.timestamp), timezone)
@@ -78,7 +115,9 @@ export function getMonthlyChanges(
   timezone: string = getBrowserTimezone(),
 ): MonthlyChange[] {
   const points = parseBalancePoints(data)
-  if (points.length === 0) return []
+  if (points.length === 0) {
+    return []
+  }
 
   const monthKeys = uniqueMonthKeys(points, timezone).slice(-maxMonths)
   const changes: MonthlyChange[] = []
@@ -89,7 +128,9 @@ export function getMonthlyChanges(
     const baseline = lastPointBefore(points, monthStart.getTime()) ?? firstPointBefore(points, nextMonthStart.getTime())
     const end = lastPointBefore(points, nextMonthStart.getTime())
 
-    if (!baseline || !end || end.timestampMs < monthStart.getTime()) continue
+    if (!baseline || !end || end.timestampMs < monthStart.getTime()) {
+      continue
+    }
 
     const change = Number(end.balanceSats.minus(baseline.balanceSats).div(100_000_000).toFixed(8))
     changes.push({
@@ -107,7 +148,9 @@ function parseBalancePoints(data: BalanceDataPoint[]): ParsedBalancePoint[] {
   return data
     .map((point) => {
       const timestampMs = new Date(point.timestamp).getTime()
-      if (!Number.isFinite(timestampMs)) return null
+      if (!Number.isFinite(timestampMs)) {
+        return null
+      }
 
       try {
         return {
@@ -129,7 +172,9 @@ function uniqueMonthKeys(points: ParsedBalancePoint[], timezone: string): string
 
   for (const point of points) {
     const key = getMonthKey(new Date(point.timestampMs), timezone)
-    if (seen.has(key)) continue
+    if (seen.has(key)) {
+      continue
+    }
 
     seen.add(key)
     keys.push(key)
@@ -141,7 +186,9 @@ function uniqueMonthKeys(points: ParsedBalancePoint[], timezone: string): string
 function lastPointBefore(points: ParsedBalancePoint[], timestampMs: number): ParsedBalancePoint | null {
   for (let i = points.length - 1; i >= 0; i -= 1) {
     const point = points[i]
-    if (point && point.timestampMs < timestampMs) return point
+    if (point && point.timestampMs < timestampMs) {
+      return point
+    }
   }
 
   return null
@@ -149,7 +196,9 @@ function lastPointBefore(points: ParsedBalancePoint[], timestampMs: number): Par
 
 function firstPointBefore(points: ParsedBalancePoint[], timestampMs: number): ParsedBalancePoint | null {
   for (const point of points) {
-    if (point.timestampMs < timestampMs) return point
+    if (point.timestampMs < timestampMs) {
+      return point
+    }
   }
 
   return null

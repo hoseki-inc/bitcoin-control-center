@@ -1,10 +1,19 @@
 import { createPrivateKey, sign } from 'node:crypto'
 import https from 'node:https'
-import { Err, Ok, asyncFn } from '@patina/core'
-import type { Result } from '@patina/core'
+import { Err, Ok, asyncFn } from '@hoseki/packages/result'
+import type { Result } from '@hoseki/packages/result'
 import { z } from 'zod'
 
 const BASE_HOST = 'trading.robinhood.com'
+
+type RobinhoodRequestHeaders = {
+  'x-api-key': string
+  'x-timestamp': string
+  'x-signature': string
+  Accept: string
+  'User-Agent': string
+  'Content-Type'?: string
+}
 
 // --- Zod Schemas ---
 
@@ -36,7 +45,7 @@ function paginatedSchema<T extends z.ZodTypeAny>(itemSchema: T): z.ZodType<Pagin
     previous: z.string().nullable(),
     results: z.array(itemSchema),
     next: z.string().nullable(),
-  }) as z.ZodType<PaginatedResponse<z.infer<T>>>
+  }) satisfies z.ZodType<PaginatedResponse<z.infer<T>>>
 }
 
 export interface PaginatedResponse<T> {
@@ -51,7 +60,7 @@ export class RobinhoodApiError extends Error {
   public readonly tag = 'RobinhoodApiError'
   public readonly status: number
 
-  constructor(status: number, message: string) {
+  public constructor(status: number, message: string) {
     super(message)
     this.status = status
   }
@@ -59,7 +68,7 @@ export class RobinhoodApiError extends Error {
 
 // --- HTTP helper using native https (Node.js fetch/undici is blocked by Robinhood's CloudFront WAF) ---
 
-function httpsRequest(options: {
+async function httpsRequest(options: {
   hostname: string
   path: string
   method: string
@@ -76,7 +85,9 @@ function httpsRequest(options: {
       },
       (res) => {
         const chunks: Uint8Array[] = []
-        res.on('data', (chunk: Uint8Array) => chunks.push(chunk))
+        res.on('data', (chunk: Uint8Array) => {
+          chunks.push(chunk)
+        })
         res.on('end', () => {
           resolve({
             status: res.statusCode ?? 0,
@@ -86,7 +97,7 @@ function httpsRequest(options: {
       },
     )
     req.on('error', reject)
-    if (options.body) {
+    if (options.body != null && options.body !== '') {
       req.write(options.body)
     }
     req.end()
@@ -104,7 +115,7 @@ export class RobinhoodClient {
   private readonly apiKey: string
   private readonly privateKeyBase64: string
 
-  constructor(config: RobinhoodClientConfig) {
+  public constructor(config: RobinhoodClientConfig) {
     this.apiKey = config.apiKey
     this.privateKeyBase64 = config.privateKeyBase64
   }
@@ -144,7 +155,7 @@ export class RobinhoodClient {
       return Err(new Error(`Failed to sign Robinhood API request: ${err instanceof Error ? err.message : String(err)}`))
     }
 
-    const headers: Record<string, string> = {
+    const headers: RobinhoodRequestHeaders = {
       'x-api-key': this.apiKey,
       'x-timestamp': String(timestamp),
       'x-signature': signature,
@@ -157,13 +168,16 @@ export class RobinhoodClient {
 
     let response: { status: number; body: string }
     try {
-      response = await httpsRequest({
+      const options: Parameters<typeof httpsRequest>[0] = {
         hostname: BASE_HOST,
         path,
         method,
         headers,
-        ...(body ? { body } : {}),
-      })
+      }
+      if (body) {
+        options.body = body
+      }
+      response = await httpsRequest(options)
     } catch (err) {
       return Err(new Error(`Failed to connect to Robinhood API: ${err instanceof Error ? err.message : String(err)}`))
     }
@@ -203,18 +217,20 @@ export class RobinhoodClient {
     return Ok(parsed.data)
   }
 
-  private async paginate<T>(path: string, itemSchema: z.ZodTypeAny): Promise<Result<T[], Error>> {
+  private async paginate<T>(path: string, itemSchema: z.ZodType<T>): Promise<Result<T[], Error>> {
     const schema = paginatedSchema(itemSchema)
     const allResults: T[] = []
     let nextUrl: string | null = path
 
-    while (nextUrl) {
+    while (nextUrl != null && nextUrl !== '') {
       const fullPath: string = nextUrl.startsWith('http') ? nextUrl.replace(`https://${BASE_HOST}`, '') : nextUrl
-      const result: Result<PaginatedResponse<unknown>, Error> = await this.request(fullPath, schema)
-      if (result.isErr()) return Err(result.unwrapErr())
+      const result: Result<PaginatedResponse<T>, Error> = await this.request(fullPath, schema)
+      if (result.isErr()) {
+        return Err(result.unwrapErr())
+      }
 
-      const page: PaginatedResponse<unknown> = result.unwrap()
-      allResults.push(...(page.results as T[]))
+      const page: PaginatedResponse<T> = result.unwrap()
+      allResults.push(...page.results)
       nextUrl = page.next
     }
 
@@ -224,7 +240,7 @@ export class RobinhoodClient {
   /**
    * Fetch all cryptocurrency holdings.
    */
-  public getHoldings(): Promise<Result<RobinhoodHolding[], Error>> {
+  public async getHoldings(): Promise<Result<RobinhoodHolding[], Error>> {
     return this.paginate<RobinhoodHolding>('/api/v1/crypto/trading/holdings/', RobinhoodHoldingSchema)
   }
 
@@ -233,7 +249,9 @@ export class RobinhoodClient {
    */
   public getBtcBalance = asyncFn(async (): Promise<Result<bigint, Error>> => {
     const holdingsResult = await this.getHoldings()
-    if (holdingsResult.isErr()) return Err(holdingsResult.unwrapErr())
+    if (holdingsResult.isErr()) {
+      return Err(holdingsResult.unwrapErr())
+    }
 
     const holdings = holdingsResult.unwrap()
     const btcHolding = holdings.find((h) => h.asset_code === 'BTC')
@@ -248,10 +266,14 @@ export class RobinhoodClient {
   /**
    * Fetch orders with optional filtering.
    */
-  public getOrders(opts?: { symbol?: string; state?: string }): Promise<Result<RobinhoodOrder[], Error>> {
+  public async getOrders(opts?: { symbol?: string; state?: string }): Promise<Result<RobinhoodOrder[], Error>> {
     const params = new URLSearchParams()
-    if (opts?.symbol) params.append('symbol', opts.symbol)
-    if (opts?.state) params.append('state', opts.state)
+    if (opts?.symbol != null && opts.symbol !== '') {
+      params.append('symbol', opts.symbol)
+    }
+    if (opts?.state != null && opts.state !== '') {
+      params.append('state', opts.state)
+    }
     const query = params.toString()
     const path = query ? `/api/v1/crypto/trading/orders/?${query}` : '/api/v1/crypto/trading/orders/'
     return this.paginate<RobinhoodOrder>(path, RobinhoodOrderSchema)
@@ -260,7 +282,7 @@ export class RobinhoodClient {
   /**
    * Fetch filled BTC orders.
    */
-  public getBtcOrders(): Promise<Result<RobinhoodOrder[], Error>> {
+  public async getBtcOrders(): Promise<Result<RobinhoodOrder[], Error>> {
     return this.getOrders({ symbol: 'BTC-USD', state: 'filled' })
   }
 }

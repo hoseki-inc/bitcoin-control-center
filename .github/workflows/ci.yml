@@ -4,12 +4,63 @@ on:
   pull_request:
   push:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  verify:
+  changes:
+    name: Select package builds
+    runs-on: ubuntu-latest
+    outputs:
+      desktop: ${{ steps.paths.outputs.desktop }}
+      startos: ${{ steps.paths.outputs.startos }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Check changed build inputs
+        id: paths
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          desktop=false
+          startos=false
+          # Manual runs, new branches, and unavailable history must check both packages.
+          if [[ -z "$BASE_SHA" || "$BASE_SHA" =~ ^0+$ ]] || ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            desktop=true
+            startos=true
+          else
+            changed_files="$RUNNER_TEMP/ci-changed-files"
+            git diff --no-renames --name-only -z "$BASE_SHA" "$HEAD_SHA" -- > "$changed_files"
+            while IFS= read -r -d '' path; do
+              case "$path" in
+                apps/*|packages/*|scripts/*|package.json|pnpm-lock.yaml|pnpm-workspace.yaml|tsconfig*.json|turbo.json|.npmrc|.nvmrc|.github/actions/setup/*|.github/workflows/ci.yml)
+                  desktop=true
+                  startos=true
+                  ;;
+                desktop/*|.github/workflows/desktop-runtime.yml)
+                  desktop=true
+                  ;;
+                start9/*|.github/actions/setup-startos/*|.github/workflows/startos-build.yml)
+                  startos=true
+                  ;;
+              esac
+            done < "$changed_files"
+          fi
+          {
+            echo "desktop=$desktop"
+            echo "startos=$startos"
+          } >> "$GITHUB_OUTPUT"
+
+  checks:
+    name: Checks and bundles
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -27,4 +78,49 @@ jobs:
       - run: npm --prefix start9 run check
       - run: pnpm test
       - run: npm --prefix start9 test
-      - run: pnpm build
+      - name: Build web, StartOS, and desktop bundles
+        run: pnpm build:ci
+
+  desktop:
+    needs: changes
+    if: needs.changes.outputs.desktop == 'true'
+    uses: ./.github/workflows/desktop-runtime.yml
+
+  startos:
+    needs: changes
+    if: needs.changes.outputs.startos == 'true'
+    uses: ./.github/workflows/startos-build.yml
+
+  # Keep the existing required check name. A skipped or failed dependency must
+  # never skip this gate and accidentally satisfy branch protection.
+  verify:
+    if: always()
+    needs: [changes, checks, desktop, startos]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every applicable build to pass
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          CHECKS_RESULT: ${{ needs.checks.result }}
+          DESKTOP_REQUIRED: ${{ needs.changes.outputs.desktop }}
+          DESKTOP_RESULT: ${{ needs.desktop.result }}
+          STARTOS_REQUIRED: ${{ needs.changes.outputs.startos }}
+          STARTOS_RESULT: ${{ needs.startos.result }}
+        run: |
+          if [[ "$CHANGES_RESULT" != success || "$CHECKS_RESULT" != success ]]; then
+            echo "::error::Build selection and repository checks must succeed."
+            exit 1
+          fi
+          for platform in DESKTOP STARTOS; do
+            required_variable="${platform}_REQUIRED"
+            result_variable="${platform}_RESULT"
+            required="${!required_variable}"
+            result="${!result_variable}"
+            case "$required:$result" in
+              true:success|false:skipped) ;;
+              *)
+                echo "::error::$platform build was required=$required and finished with result=$result."
+                exit 1
+                ;;
+            esac
+          done

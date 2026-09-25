@@ -1,4 +1,3 @@
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function chunk<T>(iter: Iterable<T>, size: number): T[][] {
   const chunks: T[][] = []
   let i = 0
@@ -10,9 +9,9 @@ export function chunk<T>(iter: Iterable<T>, size: number): T[][] {
       i = 1
       j += 1
     }
-    const chunk = chunks[j] ?? []
-    chunks[j] = chunk
-    chunk.push(value)
+    const currentChunk = chunks[j] ?? []
+    chunks[j] = currentChunk
+    currentChunk.push(value)
   }
   return chunks
 }

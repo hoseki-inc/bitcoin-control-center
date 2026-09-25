@@ -1,8 +1,7 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-import { Err, None, Ok, type Option, type Result, Some, isOption, isResult } from '@patina/core'
+import { Err, None, Ok, type Option, type Result, Some, isOption, isResult } from '@hoseki/packages/result'
 import { Decimal } from 'decimal.js'
 import type superjson from 'superjson'
-import { IndexMap, IndexSet, Mapping } from '../../collection'
+import { IndexMap, IndexSet, type Indexable, Mapping } from '../../collection'
 
 /**
  * Decimal Serializer
@@ -22,8 +21,8 @@ function registerMapping(sj: typeof superjson) {
   sj.registerCustom<Mapping<{ key: string }>, string[]>(
     {
       isApplicable: (v): v is Mapping<{ key: string }> => v instanceof Mapping,
-      serialize: (v) => Array.from(v.values()).map((v) => sj.stringify(v)),
-      deserialize: (v) => new Mapping(v.map((v) => sj.parse(v))),
+      serialize: (v) => Array.from(v.values()).map((entryValue) => sj.stringify(entryValue)),
+      deserialize: (v) => new Mapping(v.map((serializedEntry) => sj.parse(serializedEntry))),
     },
     'Mapping',
   )
@@ -69,22 +68,22 @@ function registerResult(sj: typeof superjson) {
 }
 
 function registerIndexMap(sj: typeof superjson) {
-  sj.registerCustom<IndexMap<any, unknown>, string[]>(
+  sj.registerCustom<IndexMap<Indexable, unknown>, string[]>(
     {
-      isApplicable: (v): v is IndexMap<any, unknown> => v instanceof IndexMap,
-      serialize: (v) => Array.from(v.entries()).map(([k, v]) => sj.stringify([k, v])),
-      deserialize: (v) => new IndexMap(v.map((v) => sj.parse(v))),
+      isApplicable: (v): v is IndexMap<Indexable, unknown> => v instanceof IndexMap,
+      serialize: (v) => Array.from(v.entries()).map(([k, entryValue]) => sj.stringify([k, entryValue])),
+      deserialize: (v) => new IndexMap(v.map((serializedEntry) => sj.parse<[Indexable, unknown]>(serializedEntry))),
     },
     'IndexMap',
   )
 }
 
 function registerIndexSet(sj: typeof superjson) {
-  sj.registerCustom<IndexSet<any>, string[]>(
+  sj.registerCustom<IndexSet<Indexable>, string[]>(
     {
-      isApplicable: (v): v is IndexSet<any> => v instanceof IndexSet,
-      serialize: (v) => Array.from(v.values()).map((v) => sj.stringify(v)),
-      deserialize: (v) => new IndexSet(v.map((v) => sj.parse(v))),
+      isApplicable: (v): v is IndexSet<Indexable> => v instanceof IndexSet,
+      serialize: (v) => Array.from(v.values()).map((entryValue) => sj.stringify(entryValue)),
+      deserialize: (v) => new IndexSet(v.map((serializedEntry) => sj.parse<Indexable>(serializedEntry))),
     },
     'IndexSet',
   )

@@ -17,15 +17,27 @@ import {
   Text,
   VStack,
 } from '@chakra-ui/react'
+import { parseUnknown } from '@hoseki/packages/result/lib/parse'
 import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
+import { z } from 'zod'
 import { useBitcoinDisplay } from '../../hooks/use-bitcoin-display'
 import { useLocalSetting } from '../../hooks/use-local-settings'
 import { bitcoinDisplayUnit, formatBitcoin } from '../../lib/bitcoin-display'
 import { isDesktop } from '../../mode'
+import type { RouterInput } from '../../trpc'
 
-export function SettingsPage(): JSX.Element {
+type ElectrumStatusState = { status: ElectrumStatus | null; refresh: () => void }
+
+const ReconnectErrorSchema = z.object({
+  error: z.object({
+    json: z.object({ message: z.string() }).optional().catch(undefined),
+    message: z.string().optional().catch(undefined),
+  }),
+})
+
+export function SettingsPage({ desktop = isDesktop }: { desktop?: boolean }): JSX.Element {
   const { data: savedName, isLoading, saveAsync, isSaving, isError } = useLocalSetting('user_name')
   const [draftName, setDraftName] = useState<string | null>(null)
   const name = draftName ?? savedName ?? ''
@@ -71,7 +83,9 @@ export function SettingsPage(): JSX.Element {
                 maxLength={200}
                 placeholder="Enter your name"
                 value={name}
-                onChange={(event) => setDraftName(event.target.value)}
+                onChange={(event) => {
+                  setDraftName(event.target.value)
+                }}
               />
               {isError && (
                 <Text role="alert" textStyle="text/sm" color="error.700" mt={2}>
@@ -103,7 +117,7 @@ export function SettingsPage(): JSX.Element {
           </Button>
         </Stack>
         <BitcoinDisplaySettings />
-        {isDesktop && <ElectrumSettings />}
+        {desktop && <ElectrumSettings />}
       </Stack>
     </Box>
   )
@@ -176,7 +190,7 @@ function BitcoinDisplaySettings(): JSX.Element {
           ))}
         </SimpleGrid>
       </RadioGroup>
-      <Text mt={3} textStyle="text/xs" color={isError ? 'error.700' : 'neutral.600'} role="status">
+      <Text as="output" display="block" mt={3} textStyle="text/xs" color={isError ? 'error.700' : 'neutral.600'}>
         {isError
           ? 'Could not load your preference. Refresh to try again.'
           : isLoading
@@ -204,32 +218,47 @@ const SERVER_PRESETS: ServerPreset[] = [
   { label: 'Mempool.space (Public)', host: 'electrum.mempool.space', port: '50002', protocol: 'ssl', tor: false },
 ]
 
-interface ElectrumStatus {
-  connected: boolean
-  host: string
-  port: number
-  protocol: string
-}
+const ElectrumStatusSchema = z.object({
+  connected: z.boolean(),
+  host: z.string(),
+  port: z.number(),
+  protocol: z.string(),
+})
+type ElectrumStatus = z.infer<typeof ElectrumStatusSchema>
+const ElectrumStatusResponseSchema = z.object({
+  result: z.object({ data: z.unknown() }),
+})
 
-function useElectrumStatus(): { status: ElectrumStatus | null; refresh: () => void } {
+function useElectrumStatus(): ElectrumStatusState {
   const [status, setStatus] = useState<ElectrumStatus | null>(null)
 
   const refresh = useCallback((): void => {
-    const baseUrl = import.meta.env['VITE_BACKEND_API_URL'] ?? ''
+    const baseUrl = import.meta.env.VITE_BACKEND_API_URL ?? ''
     void fetch(`${baseUrl}/settings.electrumStatus`)
-      .then((res) => (res.ok ? res.json() : null))
+      // oxlint-disable-next-line anti-slop/no-unknown-returns -- the network response remains untrusted until the schemas below parse it.
+      .then(async (res): Promise<unknown> => (res.ok ? res.json() : null))
       .then((data) => {
         // tRPC wraps response in result.data.json (superjson) or result.data
-        const payload = data?.result?.data?.json ?? data?.result?.data
-        if (payload?.host) setStatus(payload as ElectrumStatus)
+        const response = parseUnknown(ElectrumStatusResponseSchema, data).unwrapOr(null)
+        const wrapped = response?.result.data
+        const envelope = parseUnknown(z.object({ json: z.unknown() }), wrapped).unwrapOr(null)
+        const payload = envelope?.json ?? wrapped
+        const parsed = parseUnknown(ElectrumStatusSchema, payload).unwrapOr(null)
+        if (parsed?.host != null && parsed.host !== '') {
+          setStatus(parsed)
+        }
       })
-      .catch(() => setStatus(null))
+      .catch(() => {
+        setStatus(null)
+      })
   }, [])
 
   useEffect(() => {
     refresh()
     const interval = setInterval(refresh, 10_000)
-    return (): void => clearInterval(interval)
+    return (): void => {
+      clearInterval(interval)
+    }
   }, [refresh])
 
   return { status, refresh }
@@ -257,22 +286,24 @@ function ElectrumSettings(): JSX.Element {
     if (!isDirty) {
       setHost(savedHost ?? 'electrum.blockstream.info')
       setPort(savedPort ?? '50002')
-      setProtocol((savedProtocol as 'tcp' | 'ssl') ?? 'ssl')
+      setProtocol(savedProtocol === 'tcp' ? 'tcp' : 'ssl')
       setTorEnabled(savedTorEnabled === 'true')
     }
   }, [savedHost, savedPort, savedProtocol, savedTorEnabled, isDirty])
 
   const buildElectrumPayload = async (): Promise<{ body: string }> => {
     const superjson = (await import('superjson')).default
+    const payload: RouterInput['settings']['testElectrum'] = {
+      host: host.trim(),
+      port: Number(port.trim()),
+      protocol,
+    }
+    if (torEnabled) {
+      payload.proxyHost = '127.0.0.1'
+      payload.proxyPort = 9050
+    }
     return {
-      body: JSON.stringify(
-        superjson.serialize({
-          host: host.trim(),
-          port: Number(port.trim()),
-          protocol,
-          ...(torEnabled ? { proxyHost: '127.0.0.1', proxyPort: 9050 } : {}),
-        }),
-      ),
+      body: JSON.stringify(superjson.serialize(payload)),
     }
   }
 
@@ -280,7 +311,7 @@ function ElectrumSettings(): JSX.Element {
     setIsTesting(true)
     setTestResult(null)
     try {
-      const baseUrl = import.meta.env['VITE_BACKEND_API_URL'] ?? ''
+      const baseUrl = import.meta.env.VITE_BACKEND_API_URL ?? ''
       const { body } = await buildElectrumPayload()
       const res = await fetch(`${baseUrl}/settings.testElectrum`, {
         method: 'POST',
@@ -289,8 +320,8 @@ function ElectrumSettings(): JSX.Element {
       })
 
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        const msg = data?.error?.json?.message ?? data?.error?.message ?? 'Connection failed'
+        const data = parseUnknown(ReconnectErrorSchema, await res.json().catch(() => null)).unwrapOr(null)
+        const msg = data?.error.json?.message ?? data?.error.message ?? 'Connection failed'
         setTestResult({ ok: false, message: msg })
         return
       }
@@ -311,7 +342,7 @@ function ElectrumSettings(): JSX.Element {
       saveProtocol(protocol)
       saveTorEnabled(String(torEnabled))
 
-      const baseUrl = import.meta.env['VITE_BACKEND_API_URL'] ?? ''
+      const baseUrl = import.meta.env.VITE_BACKEND_API_URL ?? ''
       const { body } = await buildElectrumPayload()
       const res = await fetch(`${baseUrl}/settings.reconnectElectrum`, {
         method: 'POST',
@@ -320,8 +351,8 @@ function ElectrumSettings(): JSX.Element {
       })
 
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        throw new Error(data?.error?.json?.message ?? data?.error?.message ?? 'Failed to reconnect')
+        const data = parseUnknown(ReconnectErrorSchema, await res.json().catch(() => null)).unwrapOr(null)
+        throw new Error(data?.error.json?.message ?? data?.error.message ?? 'Failed to reconnect')
       }
 
       setIsDirty(false)
@@ -448,7 +479,11 @@ function ElectrumSettings(): JSX.Element {
             id="electrum-protocol"
             value={protocol}
             onChange={(e) => {
-              setProtocol(e.target.value as 'tcp' | 'ssl')
+              const value = e.target.value
+              if (value !== 'tcp' && value !== 'ssl') {
+                return
+              }
+              setProtocol(value)
               setIsDirty(true)
               setTestResult(null)
             }}
@@ -484,17 +519,15 @@ function ElectrumSettings(): JSX.Element {
 
       {/* Test result banner */}
       {testResult && (
-        <HStack
-          role="status"
-          gap={2}
-          px={3}
-          py={2}
-          w="full"
-          borderRadius="md"
-          bg={testResult.ok ? 'green.50' : 'red.50'}
-        >
+        <HStack gap={2} px={3} py={2} w="full" borderRadius="md" bg={testResult.ok ? 'green.50' : 'red.50'}>
           <Circle size="8px" bg={testResult.ok ? 'green.500' : 'red.500'} flexShrink={0} />
-          <Text textStyle="text/sm" overflowWrap="anywhere" minW={0} color={testResult.ok ? 'green.700' : 'red.700'}>
+          <Text
+            as="output"
+            textStyle="text/sm"
+            overflowWrap="anywhere"
+            minW={0}
+            color={testResult.ok ? 'green.700' : 'red.700'}
+          >
             {testResult.message}
           </Text>
         </HStack>

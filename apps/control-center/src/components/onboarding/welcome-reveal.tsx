@@ -18,26 +18,39 @@ export function WelcomeReveal({ children }: { children: ReactNode }): JSX.Elemen
   }, [welcoming, phase])
 
   useEffect(() => {
-    if (phase === 'done') return
+    if (phase === 'done') {
+      return
+    }
     const timer = window.setTimeout(
-      () => setPhase(phase === 'welcome' ? 'reveal' : 'done'),
+      () => {
+        setPhase(phase === 'welcome' ? 'reveal' : 'done')
+      },
       phase === 'welcome' ? (reducedMotion ? 600 : 1280) : reducedMotion ? 150 : 420,
     )
-    return () => window.clearTimeout(timer)
+    return () => {
+      window.clearTimeout(timer)
+    }
   }, [phase, reducedMotion])
 
   useEffect(() => {
-    if (phase === 'done') return
+    if (phase === 'done') {
+      return
+    }
     const skip = (event: KeyboardEvent): void => {
-      if (event.metaKey || event.ctrlKey || event.altKey || ['Shift', 'Control', 'Alt', 'Meta'].includes(event.key))
+      if (event.metaKey || event.ctrlKey || event.altKey || ['Shift', 'Control', 'Alt', 'Meta'].includes(event.key)) {
         return
+      }
       // Do not let the skip key activate a control revealed beneath the welcome.
-      if (event.key === 'Enter' || event.key === ' ') event.preventDefault()
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault()
+      }
       moveFocus.current = event.key !== 'Tab'
       setPhase('done')
     }
     window.addEventListener('keydown', skip)
-    return () => window.removeEventListener('keydown', skip)
+    return () => {
+      window.removeEventListener('keydown', skip)
+    }
   }, [phase])
 
   return (
@@ -99,7 +112,9 @@ export function WelcomeReveal({ children }: { children: ReactNode }): JSX.Elemen
       <Box
         ref={(element: HTMLDivElement | null) => {
           contentRef.current = element
-          if (element) element.inert = welcoming
+          if (element) {
+            element.inert = welcoming
+          }
         }}
         tabIndex={-1}
         aria-hidden={welcoming ? true : undefined}

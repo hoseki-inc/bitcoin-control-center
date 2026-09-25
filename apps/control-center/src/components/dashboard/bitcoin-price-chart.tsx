@@ -1,7 +1,7 @@
 import { Box, Button, Flex, Text } from '@chakra-ui/react'
 import { useState } from 'react'
 import { trpc } from '../../trpc'
-import { HistoryLineChart } from '../dashboard-charts/history-line-chart'
+import { HistoryLineChart as DefaultHistoryLineChart } from '../dashboard-charts/history-line-chart'
 import { DashboardAmount, DashboardCardTitle } from './dashboard-typography'
 
 const usd = (value: number): string =>
@@ -19,7 +19,16 @@ const PRICE_RANGES = [
 
 type PriceRange = (typeof PRICE_RANGES)[number]
 
-export function BitcoinPriceChart(): JSX.Element {
+export interface BitcoinPriceChartViews {
+  HistoryLineChart: typeof DefaultHistoryLineChart
+}
+
+const bitcoinPriceChartViews: BitcoinPriceChartViews = {
+  HistoryLineChart: DefaultHistoryLineChart,
+}
+
+export function BitcoinPriceChart({ views = bitcoinPriceChartViews }: { views?: BitcoinPriceChartViews }): JSX.Element {
+  const { HistoryLineChart } = views
   const [range, setRange] = useState<PriceRange>(PRICE_RANGES[1])
   const query = trpc.portalProve.retrieveBitcoinPriceHistory.useQuery(
     { days: range.days },
@@ -50,7 +59,7 @@ export function BitcoinPriceChart(): JSX.Element {
           </Flex>
         </Box>
         <Flex
-          role="group"
+          as="fieldset"
           aria-label="Bitcoin price time range"
           gap={1}
           flexWrap="wrap"
@@ -69,7 +78,9 @@ export function BitcoinPriceChart(): JSX.Element {
               aria-pressed={range.days === option.days}
               bg={range.days === option.days ? 'neutral.200' : 'transparent'}
               color={range.days === option.days ? 'neutral.900' : 'neutral.600'}
-              onClick={() => setRange(option)}
+              onClick={() => {
+                setRange(option)
+              }}
             >
               {option.label}
             </Button>
@@ -79,7 +90,7 @@ export function BitcoinPriceChart(): JSX.Element {
       <Box
         h={{ base: '210px', md: '240px' }}
         mt={4}
-        role="img"
+        as="figure"
         aria-label={
           latest && first
             ? `Bitcoin market price, ${range.description.toLowerCase()}, from ${usd(first.value)} to ${usd(latest.value)}.`
@@ -109,7 +120,7 @@ export function BitcoinPriceChart(): JSX.Element {
         gap={3}
         flexWrap="wrap"
       >
-        <Text textStyle="text/xs" color="neutral.600" role="status">
+        <Text as="output" textStyle="text/xs" color="neutral.600">
           {latest
             ? `${range.days === 1 ? 'Intraday' : range.days <= 30 ? 'Hourly' : 'Daily'} prices from CoinGecko · Updated ${new Date(latest.time * 1000).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`
             : query.isLoading

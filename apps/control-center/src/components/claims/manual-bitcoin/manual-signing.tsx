@@ -5,7 +5,7 @@ import type { ClaimId } from '@hoseki/packages/schemas'
 import { AccountAccordion, AdvancedFeatureAlert, Alert } from '@hoseki/packages/ui/design-system'
 import { BitcoinSigningFormFields } from '@hoseki/packages/ui/design-system/forms/bitcoin-signing-form-fields'
 import { formatUsd, toBitcoinAmountDisplayValue } from '@hoseki/packages/ui/utils'
-import { type BitcoinInput } from '@hoseki/packages/ui/utils/bitcoin'
+import type { BitcoinInput } from '@hoseki/packages/ui/utils/bitcoin'
 import { WizardFooter } from '@hoseki/packages/ui/wallet-ui'
 import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
@@ -63,7 +63,7 @@ function BitcoinSigningStep({
 
   async function handleFormSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
-    if (!claimingState || !signature) {
+    if (signature == null || signature === '') {
       return
     }
 
@@ -78,15 +78,19 @@ function BitcoinSigningStep({
       await completeChallengeMutation.mutateAsync({ challengeId: challenge.id })
 
       onSuccess(claimingState.claimId)
-    } catch (error) {
+    } catch {
       toast.error('Failed to complete claim registration')
     }
   }
 
   return (
-    <form onSubmit={handleFormSubmit}>
+    <form
+      onSubmit={(event) => {
+        void handleFormSubmit(event)
+      }}
+    >
       <Stack gap={4} pb={WizardFooter.padding}>
-        <ManualSigningAccountAccordion bitcoinInput={claimingState?.bitcoinInput} onEditClick={onBack} />
+        <ManualSigningAccountAccordion bitcoinInput={claimingState.bitcoinInput} onEditClick={onBack} />
         <BitcoinSigningFormFields
           message={challengeMessage.signedMessage.messageTextToSign}
           address={Address.fromCheckedString(challengeMessage.signedMessage.address)}
@@ -102,7 +106,7 @@ function BitcoinSigningStep({
         rightButton={
           <Button
             type="submit"
-            isDisabled={!claimingState || !signature}
+            isDisabled={signature == null || signature === ''}
             isLoading={completeSignedMessageMutation.isLoading || completeChallengeMutation.isLoading}
           >
             Verify
@@ -126,22 +130,30 @@ function ManualSigningAccountAccordion({
   })
 
   const balance = useMemo(() => {
-    if (!networkAccount) return { noBalance: 'No account found', btc: null, usd: null }
-    if (balancesQuery.isLoading) return { noBalance: 'Loading...', btc: null, usd: null }
-    if (balancesQuery.error) return { noBalance: balancesQuery.error.message, btc: null, usd: null }
-    if (!balancesQuery.data?.accounts) return { noBalance: 'Balance not found', btc: null, usd: null }
-
-    const balance = balancesQuery.data.accounts.get(networkAccount.toString())
-    if (!balance) return { noBalance: 'Balance not found', btc: null, usd: null }
+    if (!networkAccount) {
+      return { noBalance: 'No account found', btc: null, usd: null }
+    }
+    if (balancesQuery.isLoading) {
+      return { noBalance: 'Loading...', btc: null, usd: null }
+    }
+    if (balancesQuery.error) {
+      return { noBalance: balancesQuery.error.message, btc: null, usd: null }
+    }
+    const accountBalance = balancesQuery.data.accounts.get(networkAccount.toString())
+    if (!accountBalance) {
+      return { noBalance: 'Balance not found', btc: null, usd: null }
+    }
 
     return {
       noBalance: null,
-      btc: toBitcoinAmountDisplayValue(balance.current.toString()),
-      usd: balance.usd ? formatUsd(balance.usd.toFixed(2)) : 'n/a',
+      btc: toBitcoinAmountDisplayValue(accountBalance.current.toString()),
+      usd: accountBalance.usd ? formatUsd(accountBalance.usd.toFixed(2)) : 'n/a',
     }
   }, [networkAccount, balancesQuery])
 
-  if (!bitcoinInput) return null
+  if (!bitcoinInput) {
+    return null
+  }
 
   return <AccountAccordion bitcoinInput={bitcoinInput} balance={balance} onEditClick={onEditClick} />
 }
