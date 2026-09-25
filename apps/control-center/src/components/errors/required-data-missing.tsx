@@ -1,9 +1,16 @@
 import { Button } from '@chakra-ui/react'
+import type { ColdcardGenericJsonFile } from '@hoseki/packages/ui/wallet-ui'
 import { useEffect } from 'react'
 import { browserLogger } from '../../logger'
 import { GenericError } from './generic-error'
 
-export function RequiredDataMissing(props: Record<string, unknown>): JSX.Element {
+type RequiredDataMissingProps = {
+  model?: string | null
+  connectionMethod?: string | null
+  coldcardJson?: ColdcardGenericJsonFile | null
+}
+
+export function RequiredDataMissing(props: RequiredDataMissingProps): JSX.Element {
   useEffect(() => {
     browserLogger.error(props, 'Required data missing. Dependencies:')
   }, [props])

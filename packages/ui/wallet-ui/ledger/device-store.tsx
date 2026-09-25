@@ -100,9 +100,11 @@ export function createLedgerStore(
       return Ok({ xpub: xpubRes.unwrap(), path })
     }
 
+    type LedgerCallContext = { path?: string }
+
     async function handleLedgerSdkCall<T>(
       sdkCall: Promise<T>,
-      extraContext: Record<string, unknown> = {},
+      extraContext: LedgerCallContext = {},
     ): Promise<Result<T, HardwareDeviceError>> {
       const sdkResult = await Result.fromPromise(sdkCall)
       if (sdkResult.isErr()) {
