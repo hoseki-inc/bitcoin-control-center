@@ -108,7 +108,7 @@ export function createLedgerStore(
     ): Promise<Result<T, HardwareDeviceError>> {
       const sdkResult = await Result.fromPromise(sdkCall)
       if (sdkResult.isErr()) {
-        // SAFETY: This helper only wraps Ledger SDK calls, whose documented rejections are LedgerError instances.
+        // SAFETY: fromPromise normalizes rejections to Error; Ledger status fields are optional metadata handled below.
         const err = sdkResult.unwrapErr() as LedgerError
         browserLogger.error(err, `Ledger error: ${err.message}`)
         return Err(

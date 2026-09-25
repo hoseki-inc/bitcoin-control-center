@@ -79,7 +79,7 @@ export class SingleSigAccount {
         desc = descriptor.tr(desc)
         break
     }
-    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- SAFETY: checksum() validates the descriptor built from the typed singlesig account before branding.
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- SAFETY: This serializes the account's typed script type and xpub; checksum() only computes and appends a checksum.
     return descriptor.checksum(desc).expect('checksum should be valid') as CheckedSinglesigAccountDescriptor
   }
 
@@ -217,7 +217,7 @@ export class MultiSigAccount {
         desc = descriptor.wsh(desc)
         break
     }
-    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- SAFETY: checksum() validates the descriptor built from the typed multisig account before branding.
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- SAFETY: Callers must construct a valid multisig account; these helpers serialize its fields and checksum() only appends a checksum.
     return descriptor.checksum(desc).expect('checksum should be valid') as CheckedMultisigAccountDescriptor
   }
 
