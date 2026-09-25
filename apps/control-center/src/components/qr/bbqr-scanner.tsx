@@ -1,9 +1,23 @@
 import { Box, Button, Flex, Text } from '@chakra-ui/react'
-import { Spinner } from '@hoseki/packages/ui/design-system'
+import { Spinner } from '@hoseki/packages/ui/design-system/spinner'
 import { joinQRs } from 'bbqr'
 import { Html5Qrcode } from 'html5-qrcode'
 import { CameraIcon, CameraOffIcon } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { createContext, useContext, useEffect, useRef, useState } from 'react'
+
+export type QrCamera = Pick<Html5Qrcode, 'start' | 'stop' | 'clear' | 'isScanning'>
+
+export interface QrCameraFactory {
+  getCameras: typeof Html5Qrcode.getCameras
+  create: (elementId: string) => QrCamera
+}
+
+const QrCameraContext = createContext<QrCameraFactory>({
+  getCameras: async () => Html5Qrcode.getCameras(),
+  create: (elementId) => new Html5Qrcode(elementId, { verbose: false }),
+})
+
+export const QrCameraProvider = QrCameraContext.Provider
 
 const BBQR_HEADER = 'B$'
 
@@ -23,6 +37,7 @@ type ScannerState = 'requesting-camera' | 'scanning' | 'error'
 let scannerIdCounter = 0
 
 export function BBQrScanner({ onComplete, onPlainScan, onError, onCancel }: BBQrScannerProps): JSX.Element {
+  const cameraFactory = useContext(QrCameraContext)
   const [state, setState] = useState<ScannerState>('requesting-camera')
   const [errorMessage, setErrorMessage] = useState<string>()
   const [totalParts, setTotalParts] = useState(0)
@@ -38,27 +53,35 @@ export function BBQrScanner({ onComplete, onPlainScan, onError, onCancel }: BBQr
 
   // Unique ID per mount to avoid element ID collisions
   const elementIdRef = useRef(`bbqr-scanner-${++scannerIdCounter}`)
-  const scannerRef = useRef<Html5Qrcode | null>(null)
+  const scannerRef = useRef<QrCamera | null>(null)
   const partsRef = useRef<Map<number, string>>(new Map())
   const expectedTotalRef = useRef<number>(0)
   const completedRef = useRef(false)
 
   useEffect(() => {
     let mounted = true
-    let scanner: Html5Qrcode | null = null
+    // Cleanup may run while camera startup is awaiting a promise.
+    const isMounted = (): boolean => mounted
+    let scanner: QrCamera | null = null
 
     async function start(): Promise<void> {
       // Wait a tick to ensure the DOM element is rendered
-      await new Promise((r) => setTimeout(r, 0))
-      if (!mounted) return
+      await new Promise((r) => {
+        setTimeout(r, 0)
+      })
+      if (!isMounted()) {
+        return
+      }
 
       const el = document.getElementById(elementIdRef.current)
-      if (!el) return
+      if (!el) {
+        return
+      }
 
       // Get the first available camera (more reliable on desktop than facingMode)
       let cameraId: string | undefined
       try {
-        const cameras = await Html5Qrcode.getCameras()
+        const cameras = await cameraFactory.getCameras()
         if (cameras.length > 0) {
           cameraId = cameras[0]?.id
         }
@@ -66,7 +89,7 @@ export function BBQrScanner({ onComplete, onPlainScan, onError, onCancel }: BBQr
         // Fall through to facingMode fallback
       }
 
-      scanner = new Html5Qrcode(elementIdRef.current, { verbose: false })
+      scanner = cameraFactory.create(elementIdRef.current)
       scannerRef.current = scanner
 
       try {
@@ -83,14 +106,20 @@ export function BBQrScanner({ onComplete, onPlainScan, onError, onCancel }: BBQr
             aspectRatio: 1,
           },
           (decodedText) => {
-            if (!mounted || completedRef.current) return
+            if (!isMounted() || completedRef.current) {
+              return
+            }
             handleScan(decodedText)
           },
           undefined,
         )
-        if (mounted) setState('scanning')
+        if (isMounted()) {
+          setState('scanning')
+        }
       } catch (err) {
-        if (!mounted) return
+        if (!isMounted()) {
+          return
+        }
         const msg = err instanceof Error ? err.message : 'Camera access denied'
         setState('error')
         setErrorMessage(msg)
@@ -99,14 +128,18 @@ export function BBQrScanner({ onComplete, onPlainScan, onError, onCancel }: BBQr
     }
 
     function handleScan(decodedText: string): void {
-      if (completedRef.current) return
+      if (completedRef.current) {
+        return
+      }
 
       // Check if this is a BBQr frame
       if (decodedText.startsWith(BBQR_HEADER) && decodedText.length >= 8) {
         const total = parseInt(decodedText.slice(4, 6), 36)
         const partIndex = parseInt(decodedText.slice(6, 8), 36)
 
-        if (isNaN(total) || isNaN(partIndex) || total < 1 || partIndex >= total) return
+        if (isNaN(total) || isNaN(partIndex) || total < 1 || partIndex >= total) {
+          return
+        }
 
         // First frame: set expected total
         if (expectedTotalRef.current === 0) {
@@ -128,7 +161,7 @@ export function BBQrScanner({ onComplete, onPlainScan, onError, onCancel }: BBQr
           const allParts: string[] = []
           for (let i = 0; i < expectedTotalRef.current; i++) {
             const part = partsRef.current.get(i)
-            if (!part) {
+            if (part == null || part === '') {
               setState('error')
               setErrorMessage(`Missing part ${i}`)
               onErrorRef.current?.(`Missing part ${i}`)
@@ -156,7 +189,9 @@ export function BBQrScanner({ onComplete, onPlainScan, onError, onCancel }: BBQr
         // Non-BBQr single QR code
         completedRef.current = true
         const cb = onPlainScanRef.current
-        void stopScannerInstance(scanner).then(() => cb(decodedText))
+        void stopScannerInstance(scanner).then(() => {
+          cb(decodedText)
+        })
       }
     }
 
@@ -167,9 +202,7 @@ export function BBQrScanner({ onComplete, onPlainScan, onError, onCancel }: BBQr
       void stopScannerInstance(scanner ?? scannerRef.current)
       scannerRef.current = null
     }
-    // Empty deps: runs once on mount, cleans up on unmount
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [cameraFactory])
 
   function handleCancel(): void {
     void stopScannerInstance(scannerRef.current)
@@ -248,8 +281,10 @@ export function BBQrScanner({ onComplete, onPlainScan, onError, onCancel }: BBQr
   )
 }
 
-async function stopScannerInstance(scanner: Html5Qrcode | null): Promise<void> {
-  if (!scanner) return
+async function stopScannerInstance(scanner: QrCamera | null): Promise<void> {
+  if (!scanner) {
+    return
+  }
   if (scanner.isScanning) {
     try {
       await scanner.stop()

@@ -13,7 +13,7 @@ const EXPAND_COLLAPSE_VARIANTS = {
 
 const EXPAND_COLLAPSE_TRANSITION = {
   duration: 0.3,
-  ease: [0.42, 0, 0.58, 1] as [number, number, number, number],
+  ease: [0.42, 0, 0.58, 1] satisfies [number, number, number, number],
 }
 
 const CHECKMARK_DISPLAY_DURATION = 2000
@@ -21,13 +21,19 @@ const CHECKMARK_DISPLAY_DURATION = 2000
 function splitXpubIntoTwoLines(displayValue: string): string {
   const spaces: number[] = []
   for (let i = 0; i < displayValue.length; i++) {
-    if (displayValue[i] === ' ') spaces.push(i)
+    if (displayValue[i] === ' ') {
+      spaces.push(i)
+    }
   }
 
-  if (spaces.length === 0) return displayValue
+  if (spaces.length === 0) {
+    return displayValue
+  }
 
   const middleSpaceIndex = spaces[Math.floor(spaces.length / 2)]
-  if (middleSpaceIndex === undefined) return displayValue
+  if (middleSpaceIndex === undefined) {
+    return displayValue
+  }
 
   return `${displayValue.substring(0, middleSpaceIndex)}\n${displayValue.substring(middleSpaceIndex + 1)}`
 }
@@ -54,14 +60,6 @@ export function HardwareWalletCard({
   const [isDisplayNameValid, setIsDisplayNameValid] = useState(true)
   const [showCheckmark, setShowCheckmark] = useState(false)
 
-  const handleCardClick = (e: React.MouseEvent) => {
-    if (isSelected || !onClick) {
-      e.stopPropagation()
-      return
-    }
-    onClick(wallet)
-  }
-
   const handleDisplayNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newDisplayName = e.target.value.trim()
     const isValid = isValidDisplayName(newDisplayName)
@@ -75,7 +73,9 @@ export function HardwareWalletCard({
   const handleDisplayNameBlur = () => {
     if (isDisplayNameValid) {
       setShowCheckmark(true)
-      setTimeout(() => setShowCheckmark(false), CHECKMARK_DISPLAY_DURATION)
+      setTimeout(() => {
+        setShowCheckmark(false)
+      }, CHECKMARK_DISPLAY_DURATION)
     }
   }
 
@@ -95,9 +95,21 @@ export function HardwareWalletCard({
       maxW="full"
       cursor={isClickable ? 'pointer' : 'default'}
       _hover={isClickable ? { bgColor: 'neutral.50' } : undefined}
-      onClick={handleCardClick}
       gap={0}
     >
+      {isClickable && (
+        <Box
+          as="button"
+          type="button"
+          aria-label={`Select ${wallet.label}`}
+          position="absolute"
+          inset={0}
+          zIndex={1}
+          borderRadius="inherit"
+          _focusVisible={{ boxShadow: 'outline' }}
+          onClick={() => onClick?.(wallet)}
+        />
+      )}
       {isSelected && (
         <Box position="absolute" left={0} top={0} bottom={0} width="4px" bg="neutral.900" borderRadius="md" />
       )}
@@ -155,7 +167,7 @@ export function HardwareWalletCard({
                         borderRadius="24px"
                         flexShrink={0}
                       >
-                        {wallet.account.scriptType.toString()}
+                        {wallet.account.scriptType}
                       </Badge>
                       <Box width="28px" display="flex" alignItems="center" justifyContent="center" flexShrink={0}>
                         <ValidationIcon isValid={isDisplayNameValid} showSuccess={showCheckmark} />
@@ -173,7 +185,15 @@ export function HardwareWalletCard({
                       {splitXpubIntoTwoLines(toXpubDisplayValue(wallet.account.xpub.toString(), isMasked))}
                     </chakra.code>
                   </Stack>
-                  <Button variant="plain" onClick={() => setIsMasked((prev) => !prev)} p={2} flexShrink={0}>
+                  <Button
+                    aria-label={isMasked ? 'Show extended public key' : 'Hide extended public key'}
+                    variant="plain"
+                    onClick={() => {
+                      setIsMasked((prev) => !prev)
+                    }}
+                    p={2}
+                    flexShrink={0}
+                  >
                     <Icon as={isMasked ? EyeOffIcon : EyeIcon} color="neutral.600" boxSize="20px" />
                   </Button>
                 </HStack>
@@ -181,7 +201,10 @@ export function HardwareWalletCard({
             )}
           </AnimatePresence>
           <Button
-            onClick={() => setIsExpanded((prev) => !prev)}
+            aria-label={isExpanded ? 'Collapse wallet details' : 'Expand wallet details'}
+            onClick={() => {
+              setIsExpanded((prev) => !prev)
+            }}
             variant="outline"
             size="sm"
             p={0}

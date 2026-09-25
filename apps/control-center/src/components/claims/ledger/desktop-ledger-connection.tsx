@@ -17,10 +17,14 @@ type Attempt = { id: string; abort: AbortController; expired: boolean }
 
 export function DesktopLedgerConnection({
   bridge,
+  ledgerStore = useLedgerStore,
+  openTransport = openDesktopLedger,
   onBack,
   onContinue,
 }: {
   bridge: LedgerHidApi
+  ledgerStore?: typeof useLedgerStore
+  openTransport?: (signal: AbortSignal) => ReturnType<typeof openDesktopLedger>
   onBack?: () => void
   onContinue: () => void
 }): JSX.Element {
@@ -28,15 +32,17 @@ export function DesktopLedgerConnection({
   const [selected, setSelected] = useState('')
   const attempt = useRef<Attempt | null>(null)
   const queryClient = useQueryClient()
-  const init = useLedgerStore((store) => store.init)
-  const reset = useLedgerStore((store) => store.reset)
-  const isConnected = useLedgerStore((store) => store.isConnected)
-  const deviceModel = useLedgerStore((store) => store.deviceModel)
+  const init = ledgerStore((store) => store.init)
+  const reset = ledgerStore((store) => store.reset)
+  const isConnected = ledgerStore((store) => store.isConnected)
+  const deviceModel = ledgerStore((store) => store.deviceModel)
 
   useEffect(() => {
     const unsubscribe = bridge.subscribe((update) => {
       const current = attempt.current
-      if (!current || update.requestId !== current.id || current.abort.signal.aborted) return
+      if (!current || update.requestId !== current.id || current.abort.signal.aborted) {
+        return
+      }
       if (update.status === 'expired') {
         current.expired = true
         setState({
@@ -62,7 +68,9 @@ export function DesktopLedgerConnection({
       const current = attempt.current
       attempt.current = null
       current?.abort.abort()
-      if (current) bridge.cancel(current.id)
+      if (current) {
+        bridge.cancel(current.id)
+      }
     }
   }, [bridge])
 
@@ -79,13 +87,17 @@ export function DesktopLedgerConnection({
   function cancel(): void {
     const current = attempt.current
     current?.abort.abort()
-    if (current) bridge.cancel(current.id)
+    if (current) {
+      bridge.cancel(current.id)
+    }
     setSelected('')
     setState({ phase: current ? 'cancelling' : 'idle' })
   }
 
   async function connect(): Promise<void> {
-    if (attempt.current) return
+    if (attempt.current) {
+      return
+    }
     const current: Attempt = { id: crypto.randomUUID(), abort: new AbortController(), expired: false }
     attempt.current = current
     setState({ phase: 'searching' })
@@ -94,9 +106,13 @@ export function DesktopLedgerConnection({
     try {
       await queryClient.cancelQueries({ queryKey: ['ledger-wallets'] })
       queryClient.removeQueries({ queryKey: ['ledger-wallets'] })
-      if (!active()) return
+      if (!active()) {
+        return
+      }
       await reset(closeDesktopLedger)
-      if (!active()) return
+      if (!active()) {
+        return
+      }
       const accepted = await bridge.begin(current.id)
       if (!active()) {
         bridge.cancel(current.id)
@@ -110,7 +126,7 @@ export function DesktopLedgerConnection({
         })
         return
       }
-      await init(() => openDesktopLedger(current.abort.signal), current.abort.signal)
+      await init(async () => openTransport(current.abort.signal), current.abort.signal)
       if (active()) {
         browserLogger.info('Desktop Ledger connected')
         setState({ phase: 'ready' })
@@ -126,7 +142,9 @@ export function DesktopLedgerConnection({
       bridge.end(current.id)
       if (attempt.current === current) {
         attempt.current = null
-        if (current.abort.signal.aborted) setState({ phase: 'idle' })
+        if (current.abort.signal.aborted) {
+          setState({ phase: 'idle' })
+        }
       }
     }
   }

@@ -1,7 +1,9 @@
-import { Err, Ok, asyncFn } from '@patina/core'
-import type { Result } from '@patina/core'
+import { parseUnknown } from '@hoseki/packages/result'
+import { Err, Ok, asyncFn } from '@hoseki/packages/result'
+import type { Result } from '@hoseki/packages/result'
 import { Decimal } from 'decimal.js'
 import type { Logger } from 'pino'
+import { z } from 'zod'
 
 export interface BtcPrice {
   value: Decimal
@@ -30,8 +32,8 @@ export class PriceService {
       return Err(new Error(`CoinGecko API error: ${response.status} ${response.statusText}`))
     }
 
-    const json = (await response.json()) as { bitcoin?: { usd?: number } }
-    const usd = json.bitcoin?.usd
+    const parsed = parseUnknown(z.object({ bitcoin: z.object({ usd: z.number() }) }), await response.json())
+    const usd = parsed.isOk() ? parsed.unwrap().bitcoin.usd : undefined
     if (usd == null) {
       return Err(new Error('BTC price not found in CoinGecko response'))
     }

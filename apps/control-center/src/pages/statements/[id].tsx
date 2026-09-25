@@ -1,6 +1,6 @@
 import { Box, Button, Flex, HStack, Icon, Link, Stack, Text } from '@chakra-ui/react'
 import { renderStatementDocument } from '@hoseki/packages/pdf'
-import { type StatementDocumentFormat, type StatementId } from '@hoseki/packages/schemas'
+import type { StatementDocumentFormat, StatementId } from '@hoseki/packages/schemas'
 import { Animations, ErrorBanner, Spinner } from '@hoseki/packages/ui/design-system'
 import { StatusBadge, getBadgeConfigForStatement, usePdfDownloadMutation } from '@hoseki/packages/ui/prove-verify-ui'
 import { PDFViewer, pdf } from '@react-pdf/renderer'
@@ -33,21 +33,13 @@ function StatementDetailsPageContent({ statementId }: { statementId: StatementId
   if (error) {
     return (
       <Box p={4}>
-        <ErrorBanner mb={4} message={`Error: ${error?.message ?? ''}`} />
+        <ErrorBanner mb={4} message={`Error: ${error.message}`} />
       </Box>
     )
   }
 
   if (isLoading) {
     return <Spinner fullPage size="xl" />
-  }
-
-  if (!statement) {
-    return (
-      <Box pt={8}>
-        <Text>No statement found.</Text>
-      </Box>
-    )
   }
 
   return (
@@ -92,7 +84,7 @@ function StatementSummary({ statement }: { statement: StatementDto }) {
         </Text>
         <Flex flexDirection="column" gap={4}>
           <HStack justifyContent="space-between">
-            {statement.user?.name && (
+            {statement.user.name != null && statement.user.name !== '' && (
               <Box>
                 <Text textStyle="text/sm" fontWeight="medium">
                   Name
@@ -104,7 +96,7 @@ function StatementSummary({ statement }: { statement: StatementDto }) {
               <Text textStyle="text/sm" fontWeight="medium">
                 Email
               </Text>
-              <Text>{statement.user?.email || 'N/A'}</Text>
+              <Text>{(statement.user.email?.length ?? 0) > 0 ? statement.user.email : 'N/A'}</Text>
             </Box>
             <Box>
               <Text textStyle="text/sm" fontWeight="medium">
@@ -159,7 +151,7 @@ function ActionButtons({
   statement: StatementDto
   statementFormat: StatementDocumentFormat
 }) {
-  const { mutateAsync: downloadPdf, isLoading: isDownloadingPdf } = usePdfDownloadMutation({
+  const { mutate: downloadPdf, isLoading: isDownloadingPdf } = usePdfDownloadMutation({
     mutationFn: triggerPdfDownload,
   })
 
@@ -172,8 +164,8 @@ function ActionButtons({
         <Button
           variant="outline"
           size="md"
-          onClick={async () => {
-            await downloadPdf({ statement, format: statementFormat })
+          onClick={() => {
+            downloadPdf({ statement, format: statementFormat })
           }}
           isLoading={isDownloadingPdf}
           isDisabled={statement.status !== 'completed'}
@@ -245,7 +237,9 @@ function StatementPreview({
   useEffect(() => {
     async function loadPdf() {
       try {
-        if (!statementData) return
+        if (!statementData) {
+          return
+        }
 
         const document = await renderStatementDocument({
           watermarkText: 'Statement Preview',
@@ -257,7 +251,7 @@ function StatementPreview({
       }
     }
 
-    loadPdf()
+    void loadPdf()
   }, [statementData])
 
   return (
@@ -281,7 +275,9 @@ function StatementPreview({
                 variant={statementFormat === 'custom' ? 'primary' : 'outline'}
                 size="sm"
                 onClick={() => {
-                  if (statementFormat === 'custom') return
+                  if (statementFormat === 'custom') {
+                    return
+                  }
                   onStatementFormatChange('custom')
                   setPdfDocument(null)
                 }}
@@ -292,7 +288,9 @@ function StatementPreview({
                 variant={statementFormat === 'monthly' ? 'primary' : 'outline'}
                 size="sm"
                 onClick={() => {
-                  if (statementFormat === 'monthly') return
+                  if (statementFormat === 'monthly') {
+                    return
+                  }
                   onStatementFormatChange('monthly')
                   setPdfDocument(null)
                 }}

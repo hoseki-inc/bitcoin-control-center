@@ -10,6 +10,11 @@ import { trpc } from '../trpc'
 import type { StatementDto } from '../trpc/server-types'
 import { getBrowserTimezone } from '../utils/timezone'
 
+type DashboardData = {
+  statements: StatementDto[]
+  isLoading: boolean
+}
+
 export function HomePage(): JSX.Element {
   const { statements, isLoading } = useDashboardData()
   const { isStatementsMadeEasyDismissed, updateUiSettings } = useUiSettings()
@@ -24,7 +29,9 @@ export function HomePage(): JSX.Element {
           {!isStatementsMadeEasyDismissed && (
             <Banner
               mode={statements.length > 0 ? 'compact' : 'large-with-cta'}
-              onDismissClick={() => updateUiSettings({ isStatementsMadeEasyDismissed: true })}
+              onDismissClick={() => {
+                updateUiSettings({ isStatementsMadeEasyDismissed: true })
+              }}
             />
           )}
           <RecentStatements statements={statements} />
@@ -41,16 +48,18 @@ function PortfolioSummary(): JSX.Element | null {
     timezone: userTimezone,
   })
 
-  if (isLoading || !data) return null
+  if (isLoading || !data) {
+    return null
+  }
 
   const isChartFetching = isFetching && !isLoading
 
-  const currentSats = data.currentTotalBalance?.toString() ?? '0'
+  const currentSats = data.currentTotalBalance
   const btcPrice = data.currentBtcPrice ? Number(data.currentBtcPrice) : 0
   const totalBtc = new Decimal(currentSats).div(100_000_000)
   const totalUsd = totalBtc.toNumber() * btcPrice
 
-  const historicalData = data.historicalData ?? []
+  const historicalData = data.historicalData
   const startSats = historicalData.length > 0 ? (historicalData[0]?.totalBalance ?? '0') : '0'
   const change30d = new Decimal(currentSats).minus(new Decimal(startSats))
   const change30dBtc = change30d.div(100_000_000)
@@ -115,7 +124,7 @@ function PortfolioSummary(): JSX.Element | null {
       {/* Stats */}
       <Grid templateColumns="1fr 1fr" gap={3} mt={4}>
         <StatMini label="30d Change" value={change30dBtc} btcPrice={btcPrice} />
-        <StatMini label="Accounts" count={(data.verifiedClaimsCount ?? 0) + (data.exchangeAccountCount ?? 0)} />
+        <StatMini label="Accounts" count={data.verifiedClaimsCount + data.exchangeAccountCount} />
       </Grid>
     </Box>
   )
@@ -133,7 +142,8 @@ function StatMini({
   count?: number
 }): JSX.Element {
   const isPositive = value ? value.gte(0) : true
-  const usdValue = value && btcPrice ? value.toNumber() * btcPrice : null
+  const usdValue =
+    value && btcPrice !== undefined && btcPrice !== 0 && !Number.isNaN(btcPrice) ? value.toNumber() * btcPrice : null
 
   return (
     <Box bg="neutral.50" borderRadius="8px" px={3.5} py={3}>
@@ -167,10 +177,7 @@ function StatMini({
   )
 }
 
-function useDashboardData(): {
-  statements: StatementDto[]
-  isLoading: boolean
-} {
+function useDashboardData(): DashboardData {
   const { data: statements, isLoading: isLoadingStatements } = trpc.portalProve.statement.list.useQuery()
   const { isLoading: isLoadingControlCenter } = trpc.portalProve.controlCenter.getData.useQuery({
     timeRange: '30d',

@@ -1,5 +1,5 @@
 import { Stack } from '@chakra-ui/react'
-import { type Story, type StoryDefault } from '@ladle/react'
+import type { Story, StoryDefault } from '@ladle/react'
 import { OverflownText as OverflownTextComponent } from './overflown-text'
 
 export default {

@@ -71,7 +71,7 @@ export const Account = z.object({
     currency: z.string(),
   }),
 })
-export interface Account extends z.infer<typeof Account> {}
+export type Account = z.infer<typeof Account>
 
 export const AccountList = z.object({
   accounts: z.array(Account),
@@ -86,4 +86,4 @@ export const AccountList = z.object({
   /** Number of accounts returned */
   size: z.number(),
 })
-export interface AccountList extends z.infer<typeof AccountList> {}
+export type AccountList = z.infer<typeof AccountList>

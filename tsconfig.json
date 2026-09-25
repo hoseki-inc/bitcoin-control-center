@@ -1,4 +1,4 @@
 {
   "files": [],
-  "references": [{ "path": "./apps/api-sentinel" }, { "path": "./apps/control-center" }, { "path": "./packages" }]
+  "references": [{ "path": "./tsconfig.check.json" }, { "path": "./tsconfig.lint.json" }]
 }

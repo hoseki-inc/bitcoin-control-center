@@ -1,3 +1,4 @@
+import { parseUnknown } from '@hoseki/packages/result/lib/parse'
 import {
   AppLayout as BaseAppLayout,
   Logo as BaseLogo,
@@ -6,9 +7,10 @@ import {
   getEnvSlug,
 } from '@hoseki/packages/ui/prove-verify-ui'
 import { Link, Outlet } from 'react-router'
+import { z } from 'zod'
 import { UserInfo } from './user-info'
 
-const HOSEKI_ENV = import.meta.env['VITE_HOSEKI_ENV']
+const HOSEKI_ENV = parseUnknown(z.string(), import.meta.env['VITE_HOSEKI_ENV']).unwrapOr('')
 
 const menuItems = [
   { to: '/home', title: 'Home' },

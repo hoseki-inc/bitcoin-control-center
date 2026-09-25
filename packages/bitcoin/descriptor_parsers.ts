@@ -1,13 +1,21 @@
-import { Err, Ok, type Result } from '@patina/core'
+import { Err, Ok, type Result } from '@hoseki/packages/result'
 import { z } from 'zod'
 import { parse, parseUnknown } from '../result'
-import { type MultiSigAccountScriptType, type SingleSigAccountScriptType } from './account_props'
+import type { MultiSigAccountScriptType, SingleSigAccountScriptType } from './account_props'
 import { derivationPathSchema } from './derivation-path'
-import * as descriptor from './descriptor_utils'
+import * as descriptorUtils from './descriptor_utils'
 import { InvalidFormatError } from './errors'
 import { KeyExpression, KeyOrigin, keyFingerprintSchema } from './key-expression'
 import { parseRecursiveParenthesisDescent } from './util/parse'
 import { Xpub } from './xpub'
+
+type ParsedDescriptorKey = {
+  keyOrigin: {
+    fingerprint: string
+    derivationPath: string | null
+  } | null
+  xpub: string
+}
 
 /**
  * Base class for account descriptor parsing with shared functionality.
@@ -20,8 +28,8 @@ abstract class BaseAccountDescriptorParser {
    * @returns Ok if valid or no checksum, Err if checksum validation fails
    */
   protected static assertChecksum(desc: string, checksum: string | undefined): Result<void, Error> {
-    if (checksum) {
-      const checksumResult = descriptor.getChecksum(desc)
+    if (checksum != null && checksum !== '') {
+      const checksumResult = descriptorUtils.getChecksum(desc)
       if (checksumResult.isErr()) {
         return Err(checksumResult.unwrapErr())
       }
@@ -37,22 +45,17 @@ abstract class BaseAccountDescriptorParser {
    * @param keyExpressionStr Example: '[00000000/84h/0h/0h]xpub6CoK65dNvMYXaBDCfHautt78ZrbZ3pPL46782nrjJtLXWKHTxYdFEfrionLgaQtUKw8vUeKda4ynE4sUiUgr4rR9nrqjexjUhZVpWkJULVr/<0;1>/*'
    * @returns Parts structured into object
    */
-  protected static transformKey(keyExpressionStr: string): {
-    keyOrigin: {
-      fingerprint: string
-      derivationPath: string | null
-    } | null
-    xpub: string
-  } {
+  protected static transformKey(keyExpressionStr: string): ParsedDescriptorKey {
     const bracketRegex = /\[(.*?)\]/ // match `[<everything>]`
-    const originResult = keyExpressionStr.match(bracketRegex)
+    const originResult = bracketRegex.exec(keyExpressionStr)
 
     const keyOriginWithBrackets = originResult?.[0]
     const keyOriginWithoutBrackets = originResult?.[1]
 
-    const keyDescriptorWithoutOrigin = keyOriginWithBrackets
-      ? keyExpressionStr.replace(keyOriginWithBrackets, '')
-      : keyExpressionStr
+    const keyDescriptorWithoutOrigin =
+      keyOriginWithBrackets != null && keyOriginWithBrackets !== ''
+        ? keyExpressionStr.replace(keyOriginWithBrackets, '')
+        : keyExpressionStr
 
     // Get /0/* or /<0;1>/*
     const receivePath = keyDescriptorWithoutOrigin.substring(keyDescriptorWithoutOrigin.indexOf('/'))
@@ -61,12 +64,13 @@ abstract class BaseAccountDescriptorParser {
     const nonEmptyDerivationPath = derivationPathStart.filter((segment) => segment.length > 0)
 
     return {
-      keyOrigin: fingerprint
-        ? {
-            fingerprint,
-            derivationPath: nonEmptyDerivationPath.length ? `m/${nonEmptyDerivationPath.join('/')}` : null,
-          }
-        : null,
+      keyOrigin:
+        fingerprint != null && fingerprint !== ''
+          ? {
+              fingerprint,
+              derivationPath: nonEmptyDerivationPath.length ? `m/${nonEmptyDerivationPath.join('/')}` : null,
+            }
+          : null,
       xpub: justXpub,
     }
   }
@@ -92,7 +96,7 @@ const SinglesigAccountDescriptorSchema = z
           })
           .nullable()
           .transform((origin) => {
-            if (!origin || !origin.fingerprint) {
+            if (!origin?.fingerprint) {
               return null
             }
             return KeyOrigin.from(origin.fingerprint, origin.derivationPath)
@@ -160,10 +164,10 @@ const SinglesigAccountDescriptorSchema = z
   }))
 
 export class SinglesigDescriptorParser extends BaseAccountDescriptorParser {
-  static parse(string: string): Result<SinglesigProps, Error> {
+  public static parse(string: string): Result<SinglesigProps, Error> {
     const [desc, checksum] = string.split('#')
 
-    if (!desc) {
+    if (desc == null || desc === '') {
       return Err(new Error('Empty script string'))
     }
 
@@ -191,7 +195,7 @@ export class SinglesigDescriptorParser extends BaseAccountDescriptorParser {
    * @param descriptor Output descriptor, example: 'wpkh([00000000/84h/0h/0h]xpub6CoK65dNvMYXaBDCfHautt78ZrbZ3pPL46782nrjJtLXWKHTxYdFEfrionLgaQtUKw8vUeKda4ynE4sUiUgr4rR9nrqjexjUhZVpWkJULVr/<0;1>/*)'
    * @returns Parts structured into object or `InvalidFormatError`
    */
-  static transformOutputDescriptor(descriptor: string): Result<
+  public static transformOutputDescriptor(descriptor: string): Result<
     {
       keyExpression: {
         keyOrigin: {
@@ -217,7 +221,7 @@ export class SinglesigDescriptorParser extends BaseAccountDescriptorParser {
 
     // Handle nested scripts: sh(wpkh(...)) or just wpkh(...)
     // Strip outer scripts and collect them
-    while (true) {
+    for (;;) {
       // Check for script patterns: pkh, wpkh, tr, sh
       if (remaining.startsWith('pkh(')) {
         scriptTypeFactors.push('pkh')
@@ -277,7 +281,7 @@ const MultisigAccountDescriptorSchema = z
           })
           .nullable()
           .transform((origin) => {
-            if (!origin || !origin.fingerprint) {
+            if (!origin?.fingerprint) {
               return null
             }
             return KeyOrigin.from(origin.fingerprint, origin.derivationPath)
@@ -350,10 +354,10 @@ const MultisigAccountDescriptorSchema = z
   }))
 
 export class MultisigDescriptorParser extends BaseAccountDescriptorParser {
-  static parse(string: string): Result<MultisigProps, Error> {
+  public static parse(string: string): Result<MultisigProps, Error> {
     const [desc, checksum] = string.split('#')
 
-    if (!desc) {
+    if (desc == null || desc === '') {
       return Err(new Error('Empty script string'))
     }
     const transformedDescriptorResult = MultisigDescriptorParser.transformOutputDescriptor(desc)
@@ -383,7 +387,7 @@ export class MultisigDescriptorParser extends BaseAccountDescriptorParser {
    * @param descriptor Output descriptor, example: 'sh(wsh(sortedmulti(2,[00000000/49/0/0]xpub6DRLRDFmCH8MNwepL9RMBjRv5P2XidDj2uZ9NpFwx33uEu8NcoDHkipwtrZ17iaZmKWMfaBCeaNHWWd7AXN3YaRZrQrzeomF3WUYoeaQeAJ/<0;1>/*,[00000000/49/0/0]xpub6C2rutq6jJnZVMQxBtmAEGS9HitPFCsMouoL7FazS8sTojgwJfvv4kehuBqTeAggScs1mPuuWoFZCt1wqFWH5Qrk6edVogQevJbsSSQR92j/<0;1>/*,[00000000/49/0/0]xpub6BjX8bohDbdPjr486W3sTVHepnrFwUfeLbVUBCt5BJzYvEGaZ3w3cAWGJ9UTANAvdfythferf1ScXuyRs7oavkqVAbB38ofX4dGx7E9KG7m/<0;1>/*)))#mkl9ckkl'
    * @returns Parts structured into object or `InvalidFormatError`
    */
-  static transformOutputDescriptor(descriptor: string): Result<
+  public static transformOutputDescriptor(descriptor: string): Result<
     {
       threshold: string
       keyExpressions: Array<{
@@ -412,10 +416,10 @@ export class MultisigDescriptorParser extends BaseAccountDescriptorParser {
     const reversedParsedDescent = parsedDescentResult.unwrap().reverse()
     const [thresholdAndKeyExpressionStr, multiScript, ...reversedScriptTypeFactors] = reversedParsedDescent
     const scriptTypeFactors = reversedScriptTypeFactors.reverse()
-    if (!thresholdAndKeyExpressionStr) {
+    if (thresholdAndKeyExpressionStr == null || thresholdAndKeyExpressionStr === '') {
       return Err(new InvalidFormatError('Number of required keys and keyOrigin are empty'))
     }
-    if (!multiScript) {
+    if (multiScript == null || multiScript === '') {
       return Err(new InvalidFormatError('Empty multi script type'))
     }
     if (!scriptTypeFactors.length || !scriptTypeFactors.every(Boolean)) {
@@ -423,7 +427,7 @@ export class MultisigDescriptorParser extends BaseAccountDescriptorParser {
     }
 
     const [threshold, ...keyExpressionStr] = thresholdAndKeyExpressionStr.split(',')
-    if (!threshold) {
+    if (threshold == null || threshold === '') {
       return Err(new InvalidFormatError('Number of required keys is empty'))
     }
     if (!keyExpressionStr.length || !keyExpressionStr.every(Boolean)) {

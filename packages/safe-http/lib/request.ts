@@ -1,59 +1,62 @@
 import { SafeBody } from './body.ts'
 
 export class SafeRequest extends SafeBody {
-  constructor(public request: Request) {
+  public request: Request
+
+  public constructor(request: Request) {
     super(request)
+    this.request = request
   }
 
-  get cache(): RequestCache {
+  public get cache(): RequestCache {
     return this.request.cache
   }
 
-  get credentials(): RequestCredentials {
+  public get credentials(): RequestCredentials {
     return this.request.credentials
   }
 
-  get destination(): RequestDestination {
+  public get destination(): RequestDestination {
     return this.request.destination
   }
 
-  get headers(): Headers {
+  public get headers(): Headers {
     return this.request.headers
   }
 
-  get integrity(): string {
+  public get integrity(): string {
     return this.request.integrity
   }
 
-  get keepalive(): boolean {
+  public get keepalive(): boolean {
     return this.request.keepalive
   }
 
-  get method(): string {
+  public get method(): string {
     return this.request.method
   }
 
-  get mode(): RequestMode {
+  public get mode(): RequestMode {
     return this.request.mode
   }
 
-  get redirect(): RequestRedirect {
+  public get redirect(): RequestRedirect {
     return this.request.redirect
   }
 
-  get referrer(): string {
+  public get referrer(): string {
     return this.request.referrer
   }
 
-  get referrerPolicy(): ReferrerPolicy {
+  public get referrerPolicy(): ReferrerPolicy {
     return this.request.referrerPolicy
   }
 
-  get url(): string {
+  public get url(): string {
     return this.request.url
   }
 
-  clone(): SafeRequest {
+  public clone(): SafeRequest {
     return new SafeRequest(this.request.clone())
   }
 }

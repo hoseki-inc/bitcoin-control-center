@@ -1,5 +1,5 @@
 import { HOSEKI_ASSETS_CDN_URL } from '@hoseki/packages/constants'
-import { WalletFloatingImage } from '../wallet-animation'
+import { WalletFloatingImage, type WalletImage } from '../wallet-animation'
 import type { LedgerModel } from './ledger-utils'
 
 export function FloatingLedgerImage({ modelName }: { modelName: LedgerModel }): JSX.Element {
@@ -7,7 +7,7 @@ export function FloatingLedgerImage({ modelName }: { modelName: LedgerModel }): 
   return <WalletFloatingImage {...ledgerImage} />
 }
 
-export function getLedgerImageByModelName(modelName: LedgerModel): { href: string; alt: string } {
+export function getLedgerImageByModelName(modelName: LedgerModel): WalletImage {
   switch (modelName) {
     case 'Nano X':
       return {

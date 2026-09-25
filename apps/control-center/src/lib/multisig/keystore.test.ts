@@ -39,7 +39,9 @@ describe('getXpubFrom', () => {
     xpub: Xpub
   }
 
-  const mockClaimDto: { keystores: Keystore[] } = {
+  type ClaimWithKeystores = { keystores: Keystore[] }
+
+  const mockClaimDto: ClaimWithKeystores = {
     keystores: [mockKeystoreDto1, mockKeystoreDto2],
   } as const
 
@@ -98,7 +100,7 @@ describe('getXpubFrom', () => {
       xpub: xpub1,
     }
 
-    const claimWithMissingPath: { keystores: Keystore[] } = {
+    const claimWithMissingPath: ClaimWithKeystores = {
       keystores: [keystoreWithoutPath, mockKeystoreDto2],
     }
 
@@ -117,7 +119,7 @@ describe('getXpubFrom', () => {
   })
 
   it('should return error when all keystores lack derivation paths', async () => {
-    const claimWithNoPaths: { keystores: Keystore[] } = {
+    const claimWithNoPaths: ClaimWithKeystores = {
       keystores: [
         { ...mockKeystoreDto1, derivationPath: null },
         { ...mockKeystoreDto2, derivationPath: null },
@@ -153,7 +155,7 @@ describe('getXpubFrom', () => {
   })
 
   it('should return first matching xpub when multiple keystores could match', async () => {
-    const claimWithDuplicates: { keystores: Keystore[] } = {
+    const claimWithDuplicates: ClaimWithKeystores = {
       keystores: [mockKeystoreDto1, { ...mockKeystoreDto2, xpub: mockKeystoreDto1.xpub }],
     }
 
@@ -171,7 +173,7 @@ describe('getXpubFrom', () => {
   })
 
   it('should handle empty keystores array', async () => {
-    const claimWithNoKeystores: { keystores: Keystore[] } = {
+    const claimWithNoKeystores: ClaimWithKeystores = {
       keystores: [],
     }
 
@@ -197,7 +199,7 @@ describe('getXpubFrom', () => {
       xpub: wrongDerivedXpub, // This won't match the derived result
     }
 
-    const claim: { keystores: Keystore[] } = {
+    const claim: ClaimWithKeystores = {
       keystores: [keystoreWithMixedPath],
     }
 

@@ -45,7 +45,11 @@ export function ResumeMultisigKeyFlow({
     if (updateKeystoreMutation.isSuccess) {
       toast.success('Device was reset', { description: 'You can now connect a new device.' })
       onClose()
-      trpcUtils.portalProve.registry.claims.get.byId.invalidate()
+      trpcUtils.portalProve.registry.claims.get.byId
+        .invalidate(undefined, undefined, { throwOnError: true })
+        .catch(() => {
+          toast.error('Unable to refresh the account. Please reload the page.')
+        })
       // Reset the mutation success state to prevent re-triggering
       updateKeystoreMutation.reset()
     }
@@ -62,14 +66,13 @@ export function ResumeMultisigKeyFlow({
       as="button"
       title="Replace this device?"
       icon={CircleAlertIcon}
-      children={
-        <Text textAlign="left" color="neutral.800">
-          Click here to use a different device or start over with this key.
-        </Text>
-      }
       onClick={onOpen}
       _hover={{ opacity: 0.8 }}
-    />
+    >
+      <Text textAlign="left" color="neutral.800">
+        Click here to use a different device or start over with this key.
+      </Text>
+    </TipAlert>
   ) : null
 
   return (
@@ -84,7 +87,9 @@ export function ResumeMultisigKeyFlow({
       <NewDeviceConnectionModal
         isOpen={isOpen}
         onClose={onClose}
-        onConfirm={() => updateKeystoreMutation.mutate({ id: keystoreId, label: 'Key', wallet: null, model: null })}
+        onConfirm={() => {
+          updateKeystoreMutation.mutate({ id: keystoreId, label: 'Key', wallet: null, model: null })
+        }}
         isLoading={updateKeystoreMutation.isLoading}
       />
     </>
@@ -101,7 +106,7 @@ type ResumeFlowProps = {
 function ResumeFlow({ wallet, model, description, bottomContent, ...props }: ResumeFlowProps) {
   return (
     <VStack spacing={4} left="center" maxW="640px" mx="auto" {...props}>
-      {model ? (
+      {model != null && model !== '' ? (
         <WalletImageFromKnownModel wallet={wallet} model={model} />
       ) : (
         <KeystoreAvatar icon={keyIcon} variant="filled" size="200px" alt="Unidentified key" mb={8} />

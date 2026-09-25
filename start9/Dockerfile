@@ -36,11 +36,9 @@ COPY apps/api-sentinel/assets ./assets
 # Copy the Control Center static build (served by Fastify)
 COPY apps/control-center/dist ./public
 
-# Copy Start9 scripts
+# Copy the Start9 entrypoint
 COPY start9/docker_entrypoint.sh /usr/local/bin/
-COPY start9/check-api.sh /usr/local/bin/
-COPY start9/backup.sh /usr/local/bin/
-RUN chmod +x /usr/local/bin/docker_entrypoint.sh /usr/local/bin/check-api.sh /usr/local/bin/backup.sh
+RUN chmod +x /usr/local/bin/docker_entrypoint.sh
 
 STOPSIGNAL SIGINT
 

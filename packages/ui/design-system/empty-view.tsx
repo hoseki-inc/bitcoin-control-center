@@ -13,7 +13,7 @@ export function EmptyView({
       <Text mt={2} textStyle="text/sm" fontWeight="medium">
         {title}
       </Text>
-      {description && (
+      {description != null && description !== '' && (
         <Text textStyle="text/sm" fontWeight="regular">
           {description}
         </Text>

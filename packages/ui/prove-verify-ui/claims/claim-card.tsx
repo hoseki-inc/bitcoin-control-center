@@ -38,7 +38,7 @@ export const ClaimCard = forwardRef<ClaimCardProps, 'div'>(
       threshold = 1, // Default to SingleSig. Only Multisig needs to pass the threshold in.
       balance,
       isSelected,
-      onClick,
+      onClick: _onClick,
       ...props
     },
     ref,
@@ -52,10 +52,10 @@ export const ClaimCard = forwardRef<ClaimCardProps, 'div'>(
         textAlign="center"
         borderWidth="1px"
         borderRadius="md"
-        borderColor={isSelected ? 'primary.600' : 'neutral.200'}
+        borderColor={isSelected === true ? 'primary.600' : 'neutral.200'}
         p={2}
         pb={6}
-        bg={isSelected ? 'primary.50' : 'white'}
+        bg={isSelected === true ? 'primary.50' : 'white'}
         transition="all 0.2s"
         ref={ref}
         {...props}
@@ -95,15 +95,25 @@ export const ClaimCard = forwardRef<ClaimCardProps, 'div'>(
   },
 )
 
+ClaimCard.displayName = 'ClaimCard'
+
 function renderBalance(balance: BalanceWithStatus): React.ReactNode {
-  if (balance.status === 'loading') return <LoadingTextSkeleton width="8em" />
-  if (balance.status === 'fail') return 'n/a'
+  if (balance.status === 'loading') {
+    return <LoadingTextSkeleton width="8em" />
+  }
+  if (balance.status === 'fail') {
+    return 'n/a'
+  }
   return `${formatSatsToBtc(balance.value.current.toString())} BTC`
 }
 
 function renderUsdAmount(balance: BalanceWithStatus): React.ReactNode {
-  if (balance.status === 'loading') return <LoadingTextSkeleton width="5em" />
-  if (balance.status === 'fail' || balance.value.usd === null) return null
+  if (balance.status === 'loading') {
+    return <LoadingTextSkeleton width="5em" />
+  }
+  if (balance.status === 'fail' || balance.value.usd === null) {
+    return null
+  }
   return formatUsd(balance.value.usd.toFixed(2))
 }
 
@@ -112,7 +122,12 @@ interface ClaimCardKeystoresProps extends KeystoreAvatarProps {
   alt: string
   status: ClaimStatus
 }
-export function ClaimCardKeystores({ keystores, alt, status, ...props }: ClaimCardKeystoresProps): JSX.Element | null {
+export function ClaimCardKeystores({
+  keystores,
+  alt: _alt,
+  status,
+  ...props
+}: ClaimCardKeystoresProps): JSX.Element | null {
   // explicit checking undefined because null is a valid value for wallet
   if (keystores.length === 1 && keystores[0]) {
     return (
@@ -129,10 +144,18 @@ export function ClaimCardKeystores({ keystores, alt, status, ...props }: ClaimCa
       <KeystoreAvatar.Group {...props}>
         {keystores
           .sort((a, b) => {
-            if (a.isVerified) return -1
-            if (b.isVerified) return 1
-            if (a.wallet) return -1
-            if (b.wallet) return 1
+            if (a.isVerified === true) {
+              return -1
+            }
+            if (b.isVerified === true) {
+              return 1
+            }
+            if (a.wallet) {
+              return -1
+            }
+            if (b.wallet) {
+              return 1
+            }
             return 0
           })
           .slice(0, 3)
@@ -142,7 +165,7 @@ export function ClaimCardKeystores({ keystores, alt, status, ...props }: ClaimCa
               icon={!keystore.wallet ? keyIcon : undefined}
               src={keystore.wallet ? getSupportedHardwareWalletLogoPath(keystore.wallet) : undefined}
               // put the identified/verified ones first, just identified in the middle and unidentified/unverified at the end
-              order={keystore.isVerified ? 1 : keystore.wallet ? 0 : -1}
+              order={keystore.isVerified === true ? 1 : keystore.wallet ? 0 : -1}
               alt={`${keystore.wallet} wallet`}
             >
               <KeystoreAvatar.Badge>{getMultisigKeystoreAvatarIcon(keystore, status)}</KeystoreAvatar.Badge>
@@ -170,7 +193,7 @@ function getMultisigKeystoreAvatarIcon(keystore: ClaimCardKeystore, status: Clai
 
   // at this point it means it's pending
 
-  if (keystore.isVerified) {
+  if (keystore.isVerified === true) {
     return <CheckCircleFilledIcon color="neutral.100" color2="neutral.900" {...commonProps} />
   }
 

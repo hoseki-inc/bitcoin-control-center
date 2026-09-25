@@ -16,6 +16,7 @@ import {
   Tr,
   chakra,
 } from '@chakra-ui/react'
+import { getRecordValue } from '@hoseki/packages/lib'
 import { ErrorBanner } from '@hoseki/packages/ui/design-system'
 import { CheckCircleFilledIcon, StatusBadge } from '@hoseki/packages/ui/prove-verify-ui'
 import { TopBar } from '@hoseki/packages/ui/prove-verify-ui/top-bar'
@@ -42,26 +43,48 @@ interface ParsedStrikeTx {
 
 function parseStrikeCsv(csvText: string): ParsedStrikeTx[] {
   const lines = csvText.trim().split('\n')
-  if (lines.length < 2) return []
+  if (lines.length < 2) {
+    return []
+  }
 
   const transactions: ParsedStrikeTx[] = []
 
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i]
-    if (!line) continue
+    if (line == null || line === '') {
+      continue
+    }
     const cols = parseCsvLine(line)
-    if (cols.length < 11) continue
+    if (cols.length < 11) {
+      continue
+    }
 
     const [txId, timeUtc, status, txType, amountUsd, feeUsd, amountBtc, feeBtc, description, exchangeRate, txHash] =
       cols
 
     // Skip non-completed or non-BTC rows
-    if (status !== 'Completed') continue
-    if (!txId || !timeUtc || !txType || !amountBtc || amountBtc.trim() === '') continue
+    if (status !== 'Completed') {
+      continue
+    }
+    if (
+      txId == null ||
+      txId === '' ||
+      timeUtc == null ||
+      timeUtc === '' ||
+      txType == null ||
+      txType === '' ||
+      amountBtc == null ||
+      amountBtc === '' ||
+      amountBtc.trim() === ''
+    ) {
+      continue
+    }
 
     // Parse the date to extract statement month
     const date = new Date(timeUtc + ' UTC')
-    if (isNaN(date.getTime())) continue
+    if (isNaN(date.getTime())) {
+      continue
+    }
 
     const year = date.getUTCFullYear()
     const month = String(date.getUTCMonth() + 1).padStart(2, '0')
@@ -72,12 +95,12 @@ function parseStrikeCsv(csvText: string): ParsedStrikeTx[] {
       transactedAt: date.toISOString(),
       type: txType.toLowerCase(),
       amountBtc,
-      amountUsd: amountUsd && amountUsd.trim() ? amountUsd : undefined,
-      feeUsd: feeUsd && feeUsd.trim() ? feeUsd : undefined,
-      feeBtc: feeBtc && feeBtc.trim() ? feeBtc : undefined,
-      exchangeRate: exchangeRate && exchangeRate.trim() ? exchangeRate : undefined,
-      description: description && description.trim() ? description : undefined,
-      txHash: txHash && txHash.trim() ? txHash : undefined,
+      amountUsd: (amountUsd?.trim() ?? '') !== '' ? amountUsd : undefined,
+      feeUsd: (feeUsd?.trim() ?? '') !== '' ? feeUsd : undefined,
+      feeBtc: (feeBtc?.trim() ?? '') !== '' ? feeBtc : undefined,
+      exchangeRate: (exchangeRate?.trim() ?? '') !== '' ? exchangeRate : undefined,
+      description: (description?.trim() ?? '') !== '' ? description : undefined,
+      txHash: (txHash?.trim() ?? '') !== '' ? txHash : undefined,
       statementMonth,
     })
   }
@@ -105,19 +128,19 @@ function parseCsvLine(line: string): string[] {
   return result
 }
 
-const TX_TYPE_COLORS: Record<string, string> = {
+const TX_TYPE_COLORS = {
   purchase: 'success.600',
   receive: 'success.600',
   send: 'error.600',
   sale: 'error.600',
-}
+} satisfies Record<string, string>
 
-const TX_TYPE_LABELS: Record<string, string> = {
+const TX_TYPE_LABELS = {
   purchase: 'Purchase',
   receive: 'Receive',
   send: 'Send',
   sale: 'Sale',
-}
+} satisfies Record<string, string>
 
 export function StrikeAccountDetailsPage(): JSX.Element {
   const { accountId } = useParams<{ accountId: string }>()
@@ -138,12 +161,12 @@ export function StrikeAccountDetailsPage(): JSX.Element {
 
   const monthsQuery = trpc.portalProve.exchange.strike.listStatementMonths.useQuery(
     { accountId: accountId ?? '' },
-    { enabled: !!accountId },
+    { enabled: accountId != null && accountId !== '' },
   )
 
   const txQuery = trpc.portalProve.exchange.strike.listStatementTransactions.useQuery(
     { accountId: accountId ?? '', statementMonth: selectedMonth ?? undefined },
-    { enabled: !!accountId && !!selectedMonth },
+    { enabled: accountId != null && accountId !== '' && selectedMonth != null && selectedMonth !== '' },
   )
 
   if (listQuery.isLoading) {
@@ -156,14 +179,16 @@ export function StrikeAccountDetailsPage(): JSX.Element {
     return <ErrorBanner mt={8} mb={4} message="Strike account not found." />
   }
 
-  const btcSats = account.balance ? Number(account.balance) : 0
+  const btcSats = account.balance != null && account.balance !== '' ? Number(account.balance) : 0
   const btcAmount = (btcSats / 100_000_000).toFixed(8)
   const needsReconnect = needsExchangeReconnect(account)
   const accountDisplayName = account.displayName
 
   function handleReconnect(): void {
-    if (!accountId) return
-    navigate('/accounts/verify/strike', {
+    if (accountId == null || accountId === '') {
+      return
+    }
+    void navigate('/accounts/verify/strike', {
       state: {
         returnTo: `/accounts/strike/${accountId}`,
         replaceAccountId: accountId,
@@ -173,7 +198,9 @@ export function StrikeAccountDetailsPage(): JSX.Element {
   }
 
   async function handleRefresh(): Promise<void> {
-    if (!accountId) return
+    if (accountId == null || accountId === '') {
+      return
+    }
     setIsRefreshing(true)
     try {
       await refreshMutation.mutateAsync({ accountId })
@@ -189,14 +216,16 @@ export function StrikeAccountDetailsPage(): JSX.Element {
   }
 
   async function handleDelete(): Promise<void> {
-    if (!accountId) return
+    if (accountId == null || accountId === '') {
+      return
+    }
     setIsDeleting(true)
     try {
       await deleteMutation.mutateAsync({ accountId })
       await utils.portalProve.exchange.strike.list.invalidate()
       await utils.portalProve.exchange.list.invalidate()
       await utils.portalProve.controlCenter.invalidate()
-      navigate('/accounts')
+      void navigate('/accounts')
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to remove account'
       toast.error(message)
@@ -205,7 +234,9 @@ export function StrikeAccountDetailsPage(): JSX.Element {
   }
 
   async function handleCsvFile(file: File): Promise<void> {
-    if (!accountId) return
+    if (accountId == null || accountId === '') {
+      return
+    }
     if (!file.name.toLowerCase().endsWith('.csv')) {
       toast.error('Please upload a CSV file')
       return
@@ -223,7 +254,9 @@ export function StrikeAccountDetailsPage(): JSX.Element {
 
       const result = await importMutation.mutateAsync({ accountId, transactions })
       await monthsQuery.refetch()
-      if (selectedMonth) await txQuery.refetch()
+      if (selectedMonth != null && selectedMonth !== '') {
+        await txQuery.refetch()
+      }
 
       toast.success(
         `Imported ${result.imported} transactions${result.skipped > 0 ? ` (${result.skipped} duplicates skipped)` : ''}`,
@@ -237,7 +270,9 @@ export function StrikeAccountDetailsPage(): JSX.Element {
   }
 
   async function handleDeleteMonth(month: string): Promise<void> {
-    if (!accountId) return
+    if (accountId == null || accountId === '') {
+      return
+    }
     try {
       await deleteMonthMutation.mutateAsync({ accountId, statementMonth: month })
       await monthsQuery.refetch()
@@ -258,7 +293,13 @@ export function StrikeAccountDetailsPage(): JSX.Element {
         <TopBar.Item as={Link} to="/accounts">
           Back to Accounts
         </TopBar.Item>
-        <TopBar.Item as="button" color="error.600" onClick={handleDelete}>
+        <TopBar.Item
+          as="button"
+          color="error.600"
+          onClick={() => {
+            void handleDelete()
+          }}
+        >
           {isDeleting ? 'Removing...' : 'Remove Account'}
         </TopBar.Item>
       </TopBar>
@@ -367,7 +408,9 @@ export function StrikeAccountDetailsPage(): JSX.Element {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={handleRefresh}
+                onClick={() => {
+                  void handleRefresh()
+                }}
                 isLoading={isRefreshing}
                 loadingText="Refreshing..."
               >
@@ -395,7 +438,9 @@ export function StrikeAccountDetailsPage(): JSX.Element {
             setIsDragging={setIsDragging}
             isImporting={isImporting}
             fileInputRef={fileInputRef}
-            onFile={handleCsvFile}
+            onFile={(file) => {
+              void handleCsvFile(file)
+            }}
           />
 
           {/* Imported Months */}
@@ -417,11 +462,21 @@ export function StrikeAccountDetailsPage(): JSX.Element {
                     borderRadius="md"
                     cursor="pointer"
                     bg={selectedMonth === month ? 'neutral.50' : 'shades.0'}
-                    onClick={() => setSelectedMonth(selectedMonth === month ? null : month)}
                     _hover={{ borderColor: 'neutral.400' }}
                     transition="all 0.15s ease"
                   >
-                    <Text textStyle="text/sm" fontWeight="medium">
+                    <Text
+                      as="button"
+                      type="button"
+                      flex={1}
+                      textAlign="left"
+                      textStyle="text/sm"
+                      fontWeight="medium"
+                      aria-pressed={selectedMonth === month}
+                      onClick={() => {
+                        setSelectedMonth(selectedMonth === month ? null : month)
+                      }}
+                    >
                       {formatMonth(month)}
                     </Text>
                     <Button
@@ -430,7 +485,7 @@ export function StrikeAccountDetailsPage(): JSX.Element {
                       color="error.500"
                       onClick={(e) => {
                         e.stopPropagation()
-                        handleDeleteMonth(month)
+                        void handleDeleteMonth(month)
                       }}
                     >
                       Remove
@@ -442,7 +497,7 @@ export function StrikeAccountDetailsPage(): JSX.Element {
           )}
 
           {/* Transaction Table */}
-          {selectedMonth && txQuery.data && txQuery.data.length > 0 && (
+          {selectedMonth != null && selectedMonth !== '' && txQuery.data && txQuery.data.length > 0 && (
             <Box mt={4}>
               <Text textStyle="label/sm" fontWeight="semibold" mb={2}>
                 {formatMonth(selectedMonth)} — {txQuery.data.length} transaction{txQuery.data.length !== 1 ? 's' : ''}
@@ -472,9 +527,9 @@ export function StrikeAccountDetailsPage(): JSX.Element {
                             <Text
                               textStyle="text/xs"
                               fontWeight="medium"
-                              color={TX_TYPE_COLORS[tx.type] ?? 'neutral.600'}
+                              color={getRecordValue(TX_TYPE_COLORS, tx.type) ?? 'neutral.600'}
                             >
-                              {TX_TYPE_LABELS[tx.type] ?? tx.type}
+                              {getRecordValue(TX_TYPE_LABELS, tx.type) ?? tx.type}
                             </Text>
                           </Td>
                           <Td isNumeric>
@@ -484,17 +539,24 @@ export function StrikeAccountDetailsPage(): JSX.Element {
                           </Td>
                           <Td isNumeric>
                             <Text textStyle="text/xs" fontFamily="mono" color="neutral.500">
-                              {tx.amountUsd ? `$${Math.abs(Number(tx.amountUsd)).toFixed(2)}` : '—'}
+                              {tx.amountUsd != null && tx.amountUsd !== ''
+                                ? `$${Math.abs(Number(tx.amountUsd)).toFixed(2)}`
+                                : '—'}
                             </Text>
                           </Td>
                           <Td isNumeric>
                             <Text textStyle="text/xs" color="neutral.500">
-                              {tx.exchangeRate ? `$${Number(tx.exchangeRate).toLocaleString()}` : '—'}
+                              {tx.exchangeRate != null && tx.exchangeRate !== ''
+                                ? `$${Number(tx.exchangeRate).toLocaleString()}`
+                                : '—'}
                             </Text>
                           </Td>
                           <Td>
                             <Text textStyle="text/xs" color="neutral.500" maxW="200px" isTruncated>
-                              {tx.description || tx.txHash ? truncateHash(tx.txHash) : '—'}
+                              {(tx.description != null && tx.description !== '') ||
+                              (tx.txHash != null && tx.txHash !== '')
+                                ? truncateHash(tx.txHash)
+                                : '—'}
                             </Text>
                           </Td>
                         </Tr>
@@ -506,7 +568,9 @@ export function StrikeAccountDetailsPage(): JSX.Element {
             </Box>
           )}
 
-          {selectedMonth && txQuery.isLoading && <Spinner mt={4} display="block" mx="auto" />}
+          {selectedMonth != null && selectedMonth !== '' && txQuery.isLoading && (
+            <Spinner mt={4} display="block" mx="auto" />
+          )}
         </Box>
       </Stack>
     </Box>
@@ -547,58 +611,66 @@ function CsvDropZone({
       e.preventDefault()
       setIsDragging(false)
       const file = e.dataTransfer.files[0]
-      if (file) onFile(file)
+      if (file) {
+        onFile(file)
+      }
     },
     [setIsDragging, onFile],
   )
 
   return (
-    <Flex
-      direction="column"
-      align="center"
-      justify="center"
-      py={8}
-      px={4}
-      borderWidth="2px"
-      borderStyle="dashed"
-      borderColor={isDragging ? 'primary.400' : 'neutral.200'}
-      borderRadius="lg"
-      bg={isDragging ? 'primary.50' : 'neutral.25'}
-      cursor="pointer"
-      transition="all 0.15s ease"
-      _hover={{ borderColor: 'neutral.400', bg: 'neutral.50' }}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
-      onClick={() => fileInputRef.current?.click()}
-    >
-      <Icon viewBox="0 0 24 24" boxSize="28px" color="neutral.400" mb={2}>
-        <path
-          d="M12 16V4m0 0l-4 4m4-4l4 4M4 14v4a2 2 0 002 2h12a2 2 0 002-2v-4"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          fill="none"
-        />
-      </Icon>
-      {isImporting ? (
-        <HStack spacing={2}>
-          <Spinner size="sm" />
-          <Text textStyle="text/sm" color="neutral.600">
-            Importing...
-          </Text>
-        </HStack>
-      ) : (
-        <>
-          <Text textStyle="text/sm" fontWeight="medium" color="neutral.700">
-            Drop Strike CSV here or click to browse
-          </Text>
-          <Text textStyle="text/xs" color="neutral.400" mt={0.5}>
-            Exported from Strike → Account → Statements
-          </Text>
-        </>
-      )}
+    <>
+      <Flex
+        as="button"
+        type="button"
+        width="full"
+        _focusVisible={{ boxShadow: 'outline' }}
+        direction="column"
+        align="center"
+        justify="center"
+        py={8}
+        px={4}
+        borderWidth="2px"
+        borderStyle="dashed"
+        borderColor={isDragging ? 'primary.400' : 'neutral.200'}
+        borderRadius="lg"
+        bg={isDragging ? 'primary.50' : 'neutral.25'}
+        cursor="pointer"
+        transition="all 0.15s ease"
+        _hover={{ borderColor: 'neutral.400', bg: 'neutral.50' }}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        onClick={() => fileInputRef.current?.click()}
+      >
+        <Icon viewBox="0 0 24 24" boxSize="28px" color="neutral.400" mb={2}>
+          <path
+            d="M12 16V4m0 0l-4 4m4-4l4 4M4 14v4a2 2 0 002 2h12a2 2 0 002-2v-4"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            fill="none"
+          />
+        </Icon>
+        {isImporting ? (
+          <HStack as="span" spacing={2}>
+            <Spinner as="span" size="sm" />
+            <Text as="span" textStyle="text/sm" color="neutral.600">
+              Importing...
+            </Text>
+          </HStack>
+        ) : (
+          <>
+            <Text as="span" textStyle="text/sm" fontWeight="medium" color="neutral.700">
+              Drop Strike CSV here or click to browse
+            </Text>
+            <Text as="span" textStyle="text/xs" color="neutral.400" mt={0.5}>
+              Exported from Strike → Account → Statements
+            </Text>
+          </>
+        )}
+      </Flex>
       <chakra.input
         ref={fileInputRef}
         type="file"
@@ -606,11 +678,13 @@ function CsvDropZone({
         display="none"
         onChange={(e) => {
           const file = e.target.files?.[0]
-          if (file) onFile(file)
+          if (file) {
+            onFile(file)
+          }
           e.target.value = ''
         }}
       />
-    </Flex>
+    </>
   )
 }
 
@@ -626,7 +700,11 @@ function formatBtcAmount(amount: string): string {
 }
 
 function truncateHash(hash: string | null): string {
-  if (!hash) return ''
-  if (hash.length <= 16) return hash
+  if (hash == null || hash === '') {
+    return ''
+  }
+  if (hash.length <= 16) {
+    return hash
+  }
   return `${hash.slice(0, 8)}...${hash.slice(-8)}`
 }

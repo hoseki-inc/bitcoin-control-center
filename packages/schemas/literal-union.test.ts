@@ -1,4 +1,4 @@
-import { type LiteralUnion } from 'type-fest'
+import type { LiteralUnion } from 'type-fest'
 import { describe, expect, expectTypeOf, it } from 'vitest'
 import { literalUnion } from './literal-union'
 

@@ -3,12 +3,13 @@ import { TopBar } from '@hoseki/packages/ui/prove-verify-ui/top-bar'
 import { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router'
 import { toast } from 'sonner'
+import { parseNavigationState } from '../../../lib/navigation-state'
 import { trpc } from '../../../trpc'
 
 export function ClaimsVerifyManualPage(): JSX.Element {
   const navigate = useNavigate()
   const location = useLocation()
-  const returnTo = (location.state as { returnTo?: string } | null)?.returnTo ?? '/accounts'
+  const returnTo = parseNavigationState(location.state)?.returnTo ?? '/accounts'
 
   const [displayName, setDisplayName] = useState('')
   const [btcAmount, setBtcAmount] = useState('')
@@ -20,12 +21,13 @@ export function ClaimsVerifyManualPage(): JSX.Element {
   const isValid = displayName.trim().length > 0 && btcAmount.trim().length > 0 && Number(btcAmount) >= 0
 
   async function handleSubmit(): Promise<void> {
-    if (!isValid) return
-
-    const balanceSats = Math.round(Number(btcAmount) * 1e8).toString()
-    const balanceAsOf = new Date(balanceDate).toISOString()
+    if (!isValid) {
+      return
+    }
 
     try {
+      const balanceSats = Math.round(Number(btcAmount) * 1e8).toString()
+      const balanceAsOf = new Date(balanceDate).toISOString()
       const result = await createMutation.mutateAsync({
         displayName: displayName.trim(),
         balanceSats,
@@ -35,7 +37,7 @@ export function ClaimsVerifyManualPage(): JSX.Element {
       await utils.portalProve.manual.list.invalidate()
       await utils.portalProve.controlCenter.invalidate()
       toast.success('Manual account created')
-      navigate(`/accounts/manual/${result.id}`)
+      void navigate(`/accounts/manual/${result.id}`)
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to create manual account'
       toast.error(message)
@@ -67,7 +69,9 @@ export function ClaimsVerifyManualPage(): JSX.Element {
           <Input
             placeholder="e.g. Cold Storage, Paper Wallet"
             value={displayName}
-            onChange={(e) => setDisplayName(e.target.value)}
+            onChange={(e) => {
+              setDisplayName(e.target.value)
+            }}
           />
         </FormControl>
 
@@ -81,7 +85,9 @@ export function ClaimsVerifyManualPage(): JSX.Element {
             min="0"
             placeholder="0.00000000"
             value={btcAmount}
-            onChange={(e) => setBtcAmount(e.target.value)}
+            onChange={(e) => {
+              setBtcAmount(e.target.value)
+            }}
           />
         </FormControl>
 
@@ -89,11 +95,24 @@ export function ClaimsVerifyManualPage(): JSX.Element {
           <FormLabel textStyle="text/sm" color="neutral.600" fontWeight="medium">
             As of Date
           </FormLabel>
-          <Input type="date" value={balanceDate} onChange={(e) => setBalanceDate(e.target.value)} />
+          <Input
+            type="date"
+            value={balanceDate}
+            onChange={(e) => {
+              setBalanceDate(e.target.value)
+            }}
+          />
         </FormControl>
 
         <Flex justify="flex-end">
-          <Button colorScheme="blue" onClick={handleSubmit} isLoading={createMutation.isLoading} isDisabled={!isValid}>
+          <Button
+            colorScheme="blue"
+            onClick={() => {
+              void handleSubmit()
+            }}
+            isLoading={createMutation.isLoading}
+            isDisabled={!isValid}
+          >
             Add Holding
           </Button>
         </Flex>

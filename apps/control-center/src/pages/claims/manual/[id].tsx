@@ -19,6 +19,7 @@ import {
   Thead,
   Tr,
 } from '@chakra-ui/react'
+import { getRecordValue } from '@hoseki/packages/lib'
 import { ErrorBanner } from '@hoseki/packages/ui/design-system'
 import { TopBar } from '@hoseki/packages/ui/prove-verify-ui/top-bar'
 import { format } from 'date-fns'
@@ -27,12 +28,12 @@ import { Link, useNavigate, useParams } from 'react-router'
 import { toast } from 'sonner'
 import { trpc } from '../../../trpc'
 
-const TX_TYPE_LABELS: Record<string, string> = {
+const TX_TYPE_LABELS = {
   buy: 'Buy',
   sell: 'Sell',
   transfer_in: 'Transfer In',
   transfer_out: 'Transfer Out',
-}
+} satisfies Record<string, string>
 
 export function ManualAccountDetailsPage(): JSX.Element {
   const { accountId } = useParams<{ accountId: string }>()
@@ -46,17 +47,20 @@ export function ManualAccountDetailsPage(): JSX.Element {
   const [newBalanceDate, setNewBalanceDate] = useState(() => new Date().toISOString().slice(0, 10))
 
   // ─── Transaction form ───────────────────────────────────────────
-  const [txType, setTxType] = useState<string>('buy')
+  const [txType, setTxType] = useState<'buy' | 'sell' | 'transfer_in' | 'transfer_out'>('buy')
   const [txAmount, setTxAmount] = useState('')
   const [txDate, setTxDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [txNote, setTxNote] = useState('')
   const [txAddToBalance, setTxAddToBalance] = useState(false)
 
   // ─── Queries ────────────────────────────────────────────────────
-  const accountQuery = trpc.portalProve.manual.get.useQuery({ accountId: accountId ?? '' }, { enabled: !!accountId })
+  const accountQuery = trpc.portalProve.manual.get.useQuery(
+    { accountId: accountId ?? '' },
+    { enabled: accountId != null && accountId !== '' },
+  )
   const txQuery = trpc.portalProve.manual.transactions.list.useQuery(
     { accountId: accountId ?? '' },
-    { enabled: !!accountId },
+    { enabled: accountId != null && accountId !== '' },
   )
 
   // ─── Mutations ──────────────────────────────────────────────────
@@ -78,7 +82,9 @@ export function ManualAccountDetailsPage(): JSX.Element {
   const btcAmount = (btcSats / 100_000_000).toFixed(8)
 
   async function invalidateAll(): Promise<void> {
-    if (!accountId) return
+    if (accountId == null || accountId === '') {
+      return
+    }
     await utils.portalProve.manual.get.invalidate({ accountId })
     await utils.portalProve.manual.list.invalidate()
     await utils.portalProve.manual.transactions.list.invalidate({ accountId })
@@ -86,7 +92,9 @@ export function ManualAccountDetailsPage(): JSX.Element {
   }
 
   async function handleUpdateBalance(): Promise<void> {
-    if (!accountId || !newBtcAmount) return
+    if (accountId == null || accountId === '' || !newBtcAmount) {
+      return
+    }
     const balanceSats = Math.round(Number(newBtcAmount) * 1e8).toString()
     try {
       await updateBalanceMutation.mutateAsync({
@@ -103,12 +111,14 @@ export function ManualAccountDetailsPage(): JSX.Element {
   }
 
   async function handleAddTransaction(): Promise<void> {
-    if (!accountId || !txAmount) return
+    if (accountId == null || accountId === '' || !txAmount) {
+      return
+    }
     const amountSats = Math.round(Number(txAmount) * 1e8).toString()
     try {
       await addTxMutation.mutateAsync({
         accountId,
-        type: txType as 'buy' | 'sell' | 'transfer_in' | 'transfer_out',
+        type: txType,
         amountSats,
         transactedAt: new Date(txDate + 'T12:00:00').toISOString(),
         note: txNote || undefined,
@@ -135,13 +145,15 @@ export function ManualAccountDetailsPage(): JSX.Element {
   }
 
   async function handleDelete(): Promise<void> {
-    if (!accountId) return
+    if (accountId == null || accountId === '') {
+      return
+    }
     setIsDeleting(true)
     try {
       await deleteMutation.mutateAsync({ accountId })
       await utils.portalProve.manual.list.invalidate()
       await utils.portalProve.controlCenter.invalidate()
-      navigate('/accounts')
+      void navigate('/accounts')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to remove account')
       setIsDeleting(false)
@@ -154,7 +166,13 @@ export function ManualAccountDetailsPage(): JSX.Element {
         <TopBar.Item as={Link} to="/accounts">
           Back to Accounts
         </TopBar.Item>
-        <TopBar.Item as="button" color="error.600" onClick={handleDelete}>
+        <TopBar.Item
+          as="button"
+          color="error.600"
+          onClick={() => {
+            void handleDelete()
+          }}
+        >
           {isDeleting ? 'Removing...' : 'Remove Account'}
         </TopBar.Item>
       </TopBar>
@@ -210,7 +228,7 @@ export function ManualAccountDetailsPage(): JSX.Element {
                 </Text>
               </HStack>
             </Box>
-            {account.balanceAsOf && (
+            {account.balanceAsOf != null && account.balanceAsOf !== '' && (
               <Box w={['100%', '50%', '33%']} textAlign="right">
                 <Text textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={1}>
                   Balance As Of
@@ -242,19 +260,30 @@ export function ManualAccountDetailsPage(): JSX.Element {
                 min="0"
                 placeholder="0.00000000"
                 value={newBtcAmount}
-                onChange={(e) => setNewBtcAmount(e.target.value)}
+                onChange={(e) => {
+                  setNewBtcAmount(e.target.value)
+                }}
               />
             </FormControl>
             <FormControl flex={1}>
               <FormLabel textStyle="text/xs" color="neutral.600">
                 As of Date
               </FormLabel>
-              <Input size="sm" type="date" value={newBalanceDate} onChange={(e) => setNewBalanceDate(e.target.value)} />
+              <Input
+                size="sm"
+                type="date"
+                value={newBalanceDate}
+                onChange={(e) => {
+                  setNewBalanceDate(e.target.value)
+                }}
+              />
             </FormControl>
             <Button
               size="sm"
               variant="outline"
-              onClick={handleUpdateBalance}
+              onClick={() => {
+                void handleUpdateBalance()
+              }}
               isLoading={updateBalanceMutation.isLoading}
               isDisabled={!newBtcAmount}
             >
@@ -276,7 +305,16 @@ export function ManualAccountDetailsPage(): JSX.Element {
                 <FormLabel textStyle="text/xs" color="neutral.600">
                   Type
                 </FormLabel>
-                <Select size="sm" value={txType} onChange={(e) => setTxType(e.target.value)}>
+                <Select
+                  size="sm"
+                  value={txType}
+                  onChange={(e) => {
+                    const value = e.target.value
+                    if (value === 'buy' || value === 'sell' || value === 'transfer_in' || value === 'transfer_out') {
+                      setTxType(value)
+                    }
+                  }}
+                >
                   <option value="buy">Buy</option>
                   <option value="transfer_in">Transfer In</option>
                   <option value="sell">Sell</option>
@@ -294,14 +332,23 @@ export function ManualAccountDetailsPage(): JSX.Element {
                   min="0"
                   placeholder="0.00000000"
                   value={txAmount}
-                  onChange={(e) => setTxAmount(e.target.value)}
+                  onChange={(e) => {
+                    setTxAmount(e.target.value)
+                  }}
                 />
               </FormControl>
               <FormControl flex={1}>
                 <FormLabel textStyle="text/xs" color="neutral.600">
                   Date
                 </FormLabel>
-                <Input size="sm" type="date" value={txDate} onChange={(e) => setTxDate(e.target.value)} />
+                <Input
+                  size="sm"
+                  type="date"
+                  value={txDate}
+                  onChange={(e) => {
+                    setTxDate(e.target.value)
+                  }}
+                />
               </FormControl>
             </HStack>
             <HStack spacing={3} align="flex-end">
@@ -313,13 +360,17 @@ export function ManualAccountDetailsPage(): JSX.Element {
                   size="sm"
                   placeholder="Optional note"
                   value={txNote}
-                  onChange={(e) => setTxNote(e.target.value)}
+                  onChange={(e) => {
+                    setTxNote(e.target.value)
+                  }}
                 />
               </FormControl>
               <Button
                 size="sm"
                 variant="outline"
-                onClick={handleAddTransaction}
+                onClick={() => {
+                  void handleAddTransaction()
+                }}
                 isLoading={addTxMutation.isLoading}
                 isDisabled={!txAmount}
               >
@@ -329,7 +380,9 @@ export function ManualAccountDetailsPage(): JSX.Element {
             <Checkbox
               size="sm"
               isChecked={txAddToBalance}
-              onChange={(e) => setTxAddToBalance(e.target.checked)}
+              onChange={(e) => {
+                setTxAddToBalance(e.target.checked)
+              }}
               colorScheme="orange"
             >
               <Text textStyle="text/xs" color="neutral.600">
@@ -353,7 +406,7 @@ export function ManualAccountDetailsPage(): JSX.Element {
                     <Th>Amount (BTC)</Th>
                     <Th>Date</Th>
                     <Th>Note</Th>
-                    <Th />
+                    <Th aria-label="Actions" />
                   </Tr>
                 </Thead>
                 <Tbody>
@@ -365,7 +418,7 @@ export function ManualAccountDetailsPage(): JSX.Element {
                           fontWeight="medium"
                           color={tx.type === 'buy' || tx.type === 'transfer_in' ? 'success.600' : 'error.600'}
                         >
-                          {TX_TYPE_LABELS[tx.type] ?? tx.type}
+                          {getRecordValue(TX_TYPE_LABELS, tx.type) ?? tx.type}
                         </Text>
                       </Td>
                       <Td>
@@ -376,7 +429,7 @@ export function ManualAccountDetailsPage(): JSX.Element {
                       </Td>
                       <Td>
                         <Text textStyle="text/xs" color="neutral.500">
-                          {tx.note || '—'}
+                          {(tx.note?.length ?? 0) > 0 ? tx.note : '—'}
                         </Text>
                       </Td>
                       <Td>
@@ -384,7 +437,9 @@ export function ManualAccountDetailsPage(): JSX.Element {
                           size="xs"
                           variant="ghost"
                           color="error.500"
-                          onClick={() => handleDeleteTransaction(tx.id)}
+                          onClick={() => {
+                            void handleDeleteTransaction(tx.id)
+                          }}
                         >
                           Delete
                         </Button>

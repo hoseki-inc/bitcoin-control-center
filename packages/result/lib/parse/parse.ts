@@ -1,13 +1,13 @@
-import { Err, ErrorWithCause, Ok, type Result } from '@patina/core'
-import { type z } from 'zod'
+import { Err, ErrorWithCause, Ok, type Result } from '@hoseki/packages/result'
+import type { z } from 'zod'
 
 export class ParseError<E extends Error = Error> extends ErrorWithCause<E> {
-  readonly tag = 'ParseError'
+  public readonly tag = 'ParseError'
 }
 
-export function parse<S extends z.ZodTypeAny, I extends z.input<S> | z.infer<S>, O extends z.infer<S>>(
+export function parse<S extends z.ZodTypeAny, O extends z.infer<S>>(
   schema: S,
-  input: I,
+  input: z.input<S> | z.infer<S>,
 ): Result<O, ParseError<z.ZodError>> {
   const parsed = schema.safeParse(input)
   if (parsed.success) {
@@ -33,6 +33,7 @@ export function parseInput<S extends z.ZodTypeAny>(
 
 export function parseUnknown<S extends z.ZodTypeAny, O extends z.infer<S>>(
   schema: S,
+  // oxlint-disable-next-line anti-slop/no-unknown-parameters -- Accept arbitrary runtime values so the supplied schema can validate them.
   input: unknown,
 ): Result<O, ParseError> {
   return parse(schema, input)
