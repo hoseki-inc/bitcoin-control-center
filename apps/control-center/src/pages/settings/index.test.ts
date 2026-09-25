@@ -1,10 +1,12 @@
 // @vitest-environment node
 import { ChakraProvider } from '@chakra-ui/react'
+import { parseUnknown } from '@hoseki/packages/result/lib/parse'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, createElement } from 'react'
 import { type Root, createRoot } from 'react-dom/client'
 import { toast } from 'sonner'
 import { expect, it, onTestFinished, vi } from 'vitest'
+import { z } from 'zod'
 import { SettingsPage } from './index'
 
 const browser = await vi.hoisted(async () => {
@@ -69,8 +71,11 @@ it.each([
 ])('handles a reconnect response with %s', async (_label, body, message) => {
   await withTestSetup(async () => {
     fetchMock.mockImplementation(async (input) => {
-      if (typeof input === 'string' && input.endsWith('/settings.reconnectElectrum')) {
-        return new Response(typeof body === 'string' ? body : JSON.stringify(body), { status: 500 })
+      if (parseUnknown(z.string(), input).unwrapOr('').endsWith('/settings.reconnectElectrum')) {
+        return new Response(
+          parseUnknown(z.string(), body).unwrapOrElse(() => JSON.stringify(body)),
+          { status: 500 },
+        )
       }
       return Response.json({ result: { data: { json: null } } })
     })
@@ -119,8 +124,11 @@ it.each([
 ])('handles a connection-test response with %s', async (_label, body, message) => {
   await withTestSetup(async () => {
     fetchMock.mockImplementation(async (input) => {
-      if (typeof input === 'string' && input.endsWith('/settings.testElectrum')) {
-        return new Response(typeof body === 'string' ? body : JSON.stringify(body), { status: 500 })
+      if (parseUnknown(z.string(), input).unwrapOr('').endsWith('/settings.testElectrum')) {
+        return new Response(
+          parseUnknown(z.string(), body).unwrapOrElse(() => JSON.stringify(body)),
+          { status: 500 },
+        )
       }
       return Response.json({ result: { data: { json: null } } })
     })

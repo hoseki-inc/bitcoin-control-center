@@ -1,3 +1,5 @@
+import { parseUnknown } from '@hoseki/packages/result/lib/parse'
+import { z } from 'zod'
 import type { LedgerHidApi } from '../../../../desktop/src/ledger-hid-api'
 
 export function getDesktopLedger(): LedgerHidApi | undefined {
@@ -6,11 +8,17 @@ export function getDesktopLedger(): LedgerHidApi | undefined {
 
 type ConnectionMessage = { title: string; detail: string }
 
+const ledgerErrorDetails = z.object({
+  name: z.string().optional().catch(undefined),
+  statusText: z.string().optional().catch(undefined),
+  statusCode: z.number().optional().catch(undefined),
+})
+
 export function ledgerConnectionMessage(error: unknown): ConnectionMessage {
-  const details = typeof error === 'object' && error !== null ? error : {}
-  const name = 'name' in details && typeof details.name === 'string' ? details.name : undefined
-  const statusText = 'statusText' in details ? details.statusText : undefined
-  const statusCode = 'statusCode' in details ? details.statusCode : undefined
+  const details = parseUnknown(ledgerErrorDetails, error).unwrapOr(null)
+  const name = details?.name
+  const statusText = details?.statusText
+  const statusCode = details?.statusCode
   if (name === 'LedgerConnectionTimeout') {
     return {
       title: 'Your Ledger didn’t respond',

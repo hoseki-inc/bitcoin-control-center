@@ -7,8 +7,12 @@ const iconSizeMap = {
   lg: '18px',
 } satisfies Record<string, string>
 
+function isResponsiveSize(size: ButtonProps['size']): size is Exclude<ButtonProps['size'], string | undefined> {
+  return typeof size === 'object'
+}
+
 export function Button({ leftIcon, rightIcon, ...props }: ButtonProps): JSX.Element {
-  const breakpointSize = useBreakpointValue(typeof props.size === 'object' ? props.size : { base: props.size })
+  const breakpointSize = useBreakpointValue(isResponsiveSize(props.size) ? props.size : { base: props.size })
   const resolvedSize = breakpointSize != null && breakpointSize !== '' ? breakpointSize : 'md'
 
   const iconSize = getRecordValue(iconSizeMap, resolvedSize)

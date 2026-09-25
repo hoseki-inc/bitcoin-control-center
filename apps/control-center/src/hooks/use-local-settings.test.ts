@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
+import { parseUnknown } from '@hoseki/packages/result/lib/parse'
 import { QueryClient, QueryClientProvider, notifyManager } from '@tanstack/react-query'
 import { act, createElement } from 'react'
 import { type Root, createRoot } from 'react-dom/client'
 import { expect, it, onTestFinished, vi } from 'vitest'
+import { z } from 'zod'
 import { useLocalSetting } from './use-local-settings'
 
 const fetchMock = vi.fn<typeof fetch>()
@@ -71,10 +73,7 @@ it.each(['Saved name', '', null])('decodes the setting value %j through the API 
       expect(container.textContent).toBe(JSON.stringify(value))
     })
     const [url, options] = fetchMock.mock.calls[0] ?? []
-    if (typeof url !== 'string') {
-      throw new Error('Expected a settings URL')
-    }
-    const requestUrl = new URL(url, 'http://localhost')
+    const requestUrl = new URL(parseUnknown(z.string(), url).expect('Expected a settings URL'), 'http://localhost')
     expect(requestUrl.pathname).toBe('/settings.get')
     expect(requestUrl.searchParams.get('input')).toBe(JSON.stringify({ json: { key: 'user_name' } }))
     expect(options?.method).toBe('GET')

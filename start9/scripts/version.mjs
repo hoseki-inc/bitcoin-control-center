@@ -29,12 +29,8 @@ Examples:
 `)
 }
 
-/** @param {unknown} version */
+/** @param {string} version */
 function parseVersion(version) {
-  if (typeof version !== 'string') {
-    throw new Error('StartOS version must be a string.')
-  }
-
   const match = VERSION_RE.exec(version)
   if (!match) {
     throw new Error(`Invalid StartOS version "${version}". Expected major.minor.patch:revision, like 0.1.1:0.`)
@@ -53,11 +49,13 @@ function formatVersion(version) {
   return `${version.major}.${version.minor}.${version.patch}:${version.revision}`
 }
 
+/** @param {string} version */
 function exportNameForVersion(version) {
   const parsed = parseVersion(version)
   return `v${parsed.major}_${parsed.minor}_${parsed.patch}_${parsed.revision}`
 }
 
+/** @param {string} version */
 function tagNameForVersion(version) {
   const parsed = parseVersion(version)
   return `v${parsed.major}.${parsed.minor}.${parsed.patch}_${parsed.revision}`
@@ -111,6 +109,10 @@ function currentVersion() {
   return readVersionForExport(readCurrentExportName())
 }
 
+/**
+ * @param {string} current
+ * @param {string} bumpType
+ */
 function bumpVersion(current, bumpType) {
   const parsed = parseVersion(current)
 
@@ -136,6 +138,10 @@ function bumpVersion(current, bumpType) {
   }
 }
 
+/**
+ * @param {string} left
+ * @param {string} right
+ */
 function compareVersions(left, right) {
   const a = parseVersion(left)
   const b = parseVersion(right)
@@ -280,6 +286,10 @@ export const versionGraph = VersionGraph.of({
   )
 }
 
+/**
+ * @param {string} targetVersion
+ * @param {string} releaseNotes
+ */
 function setVersion(targetVersion, releaseNotes) {
   const currentExportName = readCurrentExportName()
   const oldVersion = readVersionForExport(currentExportName)

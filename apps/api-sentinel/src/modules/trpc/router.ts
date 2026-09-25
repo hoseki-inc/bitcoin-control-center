@@ -138,11 +138,13 @@ interface ChallengeMessageDto {
 const supportedHardwareWalletSchema = z.enum(['trezor', 'coldcard', 'ledger', 'keystone'])
 const etfTickerSchema = z.enum(['IBIT', 'FBTC', 'GBTC', 'ARKB', 'BITB', 'HODL', 'BTC', 'MSBT'])
 const checkedSinglesigAccountDescriptorSchema = z.custom<CheckedSinglesigAccountDescriptor>(
-  (value) => typeof value === 'string' && SingleSigAccount.fromDescriptor(value).isOk(),
+  (value): value is CheckedSinglesigAccountDescriptor =>
+    typeof value === 'string' && SingleSigAccount.fromDescriptor(value).isOk(),
   'Invalid singlesig account descriptor',
 )
 const checkedMultisigAccountDescriptorSchema = z.custom<CheckedMultisigAccountDescriptor>(
-  (value) => typeof value === 'string' && MultiSigAccount.fromDescriptor(value).isOk(),
+  (value): value is CheckedMultisigAccountDescriptor =>
+    typeof value === 'string' && MultiSigAccount.fromDescriptor(value).isOk(),
   'Invalid multisig account descriptor',
 )
 const hardwareWalletDisplayNames = {

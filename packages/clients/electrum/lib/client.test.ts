@@ -1,5 +1,5 @@
 import * as net from 'node:net'
-import { assert, describe, expect, it, onTestFinished } from 'vitest'
+import { describe, expect, it, onTestFinished } from 'vitest'
 import { z } from 'zod'
 import { parseUnknown } from '../../../result'
 import { ElectrumClient } from './client'
@@ -45,8 +45,7 @@ async function startMockServer(): Promise<MockServer> {
   await new Promise<void>((resolve) => {
     server.listen(0, '127.0.0.1', resolve)
   })
-  const address = server.address()
-  assert(address !== null && typeof address !== 'string', 'Expected a TCP listener')
+  const address = parseUnknown(z.object({ port: z.number() }), server.address()).expect('Expected a TCP listener')
   const port = address.port
 
   return {
