@@ -45,7 +45,7 @@ function paginatedSchema<T extends z.ZodTypeAny>(itemSchema: T): z.ZodType<Pagin
     previous: z.string().nullable(),
     results: z.array(itemSchema),
     next: z.string().nullable(),
-  }) as z.ZodType<PaginatedResponse<z.infer<T>>>
+  }) satisfies z.ZodType<PaginatedResponse<z.infer<T>>>
 }
 
 export interface PaginatedResponse<T> {

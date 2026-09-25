@@ -93,11 +93,13 @@ describe('Sentinel request logging', () => {
       const entries = readLogs(logs)
       const incoming = entries.find((entry) => entry.msg === 'incoming request')
       assert.exists(incoming)
+      // SAFETY: Vitest asymmetric matchers have matcher-specific types; these assertions keep the partial log expectation's value types opaque.
       expect(incoming).toMatchObject({
         module: 'fastify',
         reqId: expect.any(String) as unknown,
         req: { method: 'GET', url: path, remoteAddress: '127.0.0.1' },
       })
+      // SAFETY: Vitest's asymmetric matcher represents a numeric duration in this partial log expectation.
       expect(entries).toContainEqual(
         expect.objectContaining({
           msg: 'request completed',
@@ -144,6 +146,7 @@ describe('Sentinel request logging', () => {
       expectPrivateLogs(logs)
       const failure = readLogs(logs).find((entry) => entry.level === 50)
       assert.exists(failure)
+      // SAFETY: Vitest's string matcher represents a serialized stack substring in this partial log expectation.
       expect(failure).toMatchObject({
         msg: 'Could not handle /failure',
         req: { method: 'GET', url: '/failure' },
@@ -175,6 +178,7 @@ describe('Sentinel request logging', () => {
 
       expect(response.statusCode).toBe(200)
       expectPrivateLogs(logs)
+      // SAFETY: Vitest's asymmetric matcher represents only the matching error shape in this partial log expectation.
       expect(readLogs(logs)).toContainEqual(
         expect.objectContaining({
           level: 40,
@@ -203,6 +207,7 @@ describe('Sentinel request logging', () => {
 
       expect(response.statusCode).toBe(200)
       expectPrivateLogs(logs)
+      // SAFETY: Vitest's asymmetric matcher represents only the matching request fields in this partial log expectation.
       expect(readLogs(logs)).toContainEqual(
         expect.objectContaining({
           msg: 'Processing request',
@@ -220,6 +225,7 @@ describe('Sentinel request logging', () => {
       const response = await server.inject({ url: '/health' })
 
       expect(response.statusCode).toBe(200)
+      // SAFETY: Vitest's asymmetric matcher represents only the matching health request fields in this partial log expectation.
       expect(readLogs(logs)).toContainEqual(
         expect.objectContaining({ req: expect.objectContaining({ method: 'GET', url: '/health' }) as unknown }),
       )

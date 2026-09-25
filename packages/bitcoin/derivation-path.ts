@@ -68,7 +68,7 @@ export class DerivationPath {
 
   public toString(toApostropheNotation: boolean = false): DerivationPathString {
     const hardenedCharacter = toApostropheNotation ? "'" : 'h'
-    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- Preserve constructor serialization, including legacy empty paths; external paths are validated by fromString.
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- SAFETY: Serialization uses validated path steps; external paths are validated by fromString.
     return `m/${this.steps.map((step) => `${step.index}${step.hardened ? hardenedCharacter : ''}`).join('/')}` as DerivationPathString
   }
 

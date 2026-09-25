@@ -27,6 +27,7 @@ async function startMockServer(): Promise<MockServer> {
           continue
         }
         requests.push(line)
+        // SAFETY: Socket input is arbitrary text; the JSON-RPC request schema below validates its shape.
         const req = parseUnknown(
           z.object({ id: z.number(), method: z.string(), params: z.array(z.unknown()) }),
           JSON.parse(line) as unknown,

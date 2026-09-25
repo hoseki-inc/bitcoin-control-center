@@ -47,7 +47,7 @@ export class NetworkAccount<T extends Account = Account> {
   }
 
   public toString(): NetworkAccountCheckedString {
-    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- Brand the serialization of the network and account; external strings use fromString.
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- SAFETY: Both serialized components come from typed Network and Account values; external strings are checked by fromString.
     return `${this.network.toString()}::${this.account.toString()}` as NetworkAccountCheckedString
   }
 

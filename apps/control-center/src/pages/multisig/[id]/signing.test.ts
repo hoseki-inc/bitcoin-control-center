@@ -70,6 +70,7 @@ const mocks = await vi.hoisted(async () => {
   }
 
   let claim: ClaimDto | undefined
+  let walletType: 'ledger' | 'trezor' | 'coldcard' | 'keystone' = 'ledger'
   return {
     acquireDom,
     get domGlobals() {
@@ -84,7 +85,12 @@ const mocks = await vi.hoisted(async () => {
     set claim(value: ClaimDto) {
       claim = value
     },
-    walletType: 'ledger' as 'ledger' | 'trezor' | 'coldcard' | 'keystone',
+    get walletType() {
+      return walletType
+    },
+    set walletType(value: 'ledger' | 'trezor' | 'coldcard' | 'keystone') {
+      walletType = value
+    },
     ledger: {
       isInitialized: false,
       init: vi.fn(),

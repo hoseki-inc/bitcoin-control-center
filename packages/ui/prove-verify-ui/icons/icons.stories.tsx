@@ -23,6 +23,7 @@ export const AllIcons: Story = () => {
   return (
     <Flex gap={4} wrap="wrap">
       {Object.entries(All).map(([key, Icon]) => {
+        // SAFETY: Every export in All is a generated icon component with the shared icon props contract.
         const IconComponent = Icon as FC<IconComponentProps>
         return (
           <Fragment key={key}>

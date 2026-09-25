@@ -550,6 +550,7 @@ export class StatementService {
   }
 
   private deserializeTransactionMap(json: string): StatementTransactions {
+    // SAFETY: Database JSON is untrusted until the schema below validates the complete transaction map.
     const raw = parseUnknown(
       z.record(z.array(SerializedAggregatedTransactionSchema)),
       JSON.parse(json) as unknown,
@@ -567,6 +568,7 @@ export class StatementService {
   }
 
   private deserializeDailyRates(json: string): DailyRates {
+    // SAFETY: Database JSON is untrusted until the schema below validates the complete daily-rate payload.
     const raw = parseUnknown(
       z.object({ rates: z.record(SerializedDailyRateSchema), source: z.literal('mempool') }),
       JSON.parse(json) as unknown,

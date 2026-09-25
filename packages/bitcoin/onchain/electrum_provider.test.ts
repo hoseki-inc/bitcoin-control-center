@@ -158,7 +158,7 @@ describe('ElectrumProvider', () => {
           if (scripthash === usedScripthash) {
             return Ok([{ tx_hash: 'abc'.padEnd(64, '0'), height: 100 }] satisfies ScripthashHistoryEntry[])
           }
-          return Ok([] as ScripthashHistoryEntry[])
+          return Ok(Array<ScripthashHistoryEntry>())
         }),
       })
 
