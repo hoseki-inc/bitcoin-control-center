@@ -66,7 +66,7 @@ function parseArmoredFormat(content: string): Result<ArmoredSignature, Error> {
     .filter(Boolean)
 
   const [address, ...signatureLines] = sigLines
-  if (!address || signatureLines.length === 0) {
+  if (address == null || address === '' || signatureLines.length === 0) {
     return Err(new Error('Invalid armored format: expected address and signature in signature block'))
   }
 

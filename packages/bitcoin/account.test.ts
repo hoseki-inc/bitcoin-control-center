@@ -1,4 +1,4 @@
-import { describe, expect, it, test } from 'vitest'
+import { assert, describe, expect, it, test } from 'vitest'
 import { MultiSigAccount, SingleSigAccount, sortXpubs } from './account'
 import { Network } from './network'
 import { Xpub } from './xpub'
@@ -14,35 +14,35 @@ const TPUB = Xpub.fromString(TPUB_STR).expect('valid account')
 describe('SingleSigAccount', () => {
   test('descriptor', () => {
     const acc0 = new SingleSigAccount('p2pkh', XPUB)
-    expect(acc0.descriptor()).toEqual(`pkh(${XPUB_STR}/<0;1>/*)#kdnywuy7`)
+    expect(acc0.descriptor()).toBe(`pkh(${XPUB_STR}/<0;1>/*)#kdnywuy7`)
     expect(acc0.network()).toEqual(Network.Mainnet)
 
     const acc1 = new SingleSigAccount('p2sh-p2wpkh', XPUB)
-    expect(acc1.descriptor()).toEqual(`sh(wpkh(${XPUB_STR}/<0;1>/*))#una0ueqx`)
+    expect(acc1.descriptor()).toBe(`sh(wpkh(${XPUB_STR}/<0;1>/*))#una0ueqx`)
     expect(acc1.network()).toEqual(Network.Mainnet)
 
     const acc2 = new SingleSigAccount('p2wpkh', XPUB)
-    expect(acc2.descriptor()).toEqual(`wpkh(${XPUB_STR}/<0;1>/*)#l3xcgp8q`)
+    expect(acc2.descriptor()).toBe(`wpkh(${XPUB_STR}/<0;1>/*)#l3xcgp8q`)
     expect(acc2.network()).toEqual(Network.Mainnet)
 
     const acc3 = new SingleSigAccount('p2tr', XPUB)
-    expect(acc3.descriptor()).toEqual(`tr(${XPUB_STR}/<0;1>/*)#40y9k7ac`)
+    expect(acc3.descriptor()).toBe(`tr(${XPUB_STR}/<0;1>/*)#40y9k7ac`)
     expect(acc3.network()).toEqual(Network.Mainnet)
 
     const acc4 = new SingleSigAccount('p2pkh', TPUB)
-    expect(acc4.descriptor()).toEqual(`pkh(${TPUB_STR}/<0;1>/*)#c4nu0fm0`)
+    expect(acc4.descriptor()).toBe(`pkh(${TPUB_STR}/<0;1>/*)#c4nu0fm0`)
     expect(acc4.network()).toEqual(Network.Testnet)
 
     const acc5 = new SingleSigAccount('p2sh-p2wpkh', TPUB)
-    expect(acc5.descriptor()).toEqual(`sh(wpkh(${TPUB_STR}/<0;1>/*))#5aznr2h2`)
+    expect(acc5.descriptor()).toBe(`sh(wpkh(${TPUB_STR}/<0;1>/*))#5aznr2h2`)
     expect(acc5.network()).toEqual(Network.Testnet)
 
     const acc6 = new SingleSigAccount('p2wpkh', TPUB)
-    expect(acc6.descriptor()).toEqual(`wpkh(${TPUB_STR}/<0;1>/*)#sh2qurlp`)
+    expect(acc6.descriptor()).toBe(`wpkh(${TPUB_STR}/<0;1>/*)#sh2qurlp`)
     expect(acc6.network()).toEqual(Network.Testnet)
 
     const acc7 = new SingleSigAccount('p2tr', TPUB)
-    expect(acc7.descriptor()).toEqual(`tr(${TPUB_STR}/<0;1>/*)#j4rhkue7`)
+    expect(acc7.descriptor()).toBe(`tr(${TPUB_STR}/<0;1>/*)#j4rhkue7`)
     expect(acc7.network()).toEqual(Network.Testnet)
   })
 
@@ -124,8 +124,14 @@ describe('MultiSigAccount', () => {
     const xpubs = [xpub1, xpub2, xpub3]
     const tpubs = [tpub1, tpub2, tpub3]
 
-    const sortedXpubs = sortXpubs(xpubs)
-    const sortedTpubs = sortXpubs(tpubs)
+    const [sortedXpub1, sortedXpub2, sortedXpub3] = sortXpubs(xpubs)
+    assert.exists(sortedXpub1, 'Expected sorted xpubs to contain three keys')
+    assert.exists(sortedXpub2, 'Expected sorted xpubs to contain three keys')
+    assert.exists(sortedXpub3, 'Expected sorted xpubs to contain three keys')
+    const [sortedTpub1, sortedTpub2, sortedTpub3] = sortXpubs(tpubs)
+    assert.exists(sortedTpub1, 'Expected sorted tpubs to contain three keys')
+    assert.exists(sortedTpub2, 'Expected sorted tpubs to contain three keys')
+    assert.exists(sortedTpub3, 'Expected sorted tpubs to contain three keys')
 
     const fixtures = [
       {
@@ -140,7 +146,7 @@ describe('MultiSigAccount', () => {
         threshold,
         xpubs,
         scriptType: 'p2sh',
-        descriptor: `sh(sortedmulti(2,${sortedXpubs[0]!.toString()}/<0;1>/*,${sortedXpubs[1]!.toString()}/<0;1>/*,${sortedXpubs[2]!.toString()}/<0;1>/*))#vv74t2uj`,
+        descriptor: `sh(sortedmulti(2,${sortedXpub1.toString()}/<0;1>/*,${sortedXpub2.toString()}/<0;1>/*,${sortedXpub3.toString()}/<0;1>/*))#vv74t2uj`,
       },
       {
         isSorted: false,
@@ -154,7 +160,7 @@ describe('MultiSigAccount', () => {
         threshold,
         xpubs,
         scriptType: 'p2sh-p2wsh',
-        descriptor: `sh(wsh(sortedmulti(2,${sortedXpubs[0]!.toString()}/<0;1>/*,${sortedXpubs[1]!.toString()}/<0;1>/*,${sortedXpubs[2]!.toString()}/<0;1>/*)))#qlsug8yc`,
+        descriptor: `sh(wsh(sortedmulti(2,${sortedXpub1.toString()}/<0;1>/*,${sortedXpub2.toString()}/<0;1>/*,${sortedXpub3.toString()}/<0;1>/*)))#qlsug8yc`,
       },
       {
         isSorted: false,
@@ -168,7 +174,7 @@ describe('MultiSigAccount', () => {
         threshold,
         xpubs,
         scriptType: 'p2wsh',
-        descriptor: `wsh(sortedmulti(2,${sortedXpubs[0]!.toString()}/<0;1>/*,${sortedXpubs[1]!.toString()}/<0;1>/*,${sortedXpubs[2]!.toString()}/<0;1>/*))#wx4sj5ka`,
+        descriptor: `wsh(sortedmulti(2,${sortedXpub1.toString()}/<0;1>/*,${sortedXpub2.toString()}/<0;1>/*,${sortedXpub3.toString()}/<0;1>/*))#wx4sj5ka`,
       },
       {
         isSorted: false,
@@ -182,7 +188,7 @@ describe('MultiSigAccount', () => {
         threshold,
         xpubs: tpubs,
         scriptType: 'p2sh',
-        descriptor: `sh(sortedmulti(2,${sortedTpubs[0]!.toString()}/<0;1>/*,${sortedTpubs[1]!.toString()}/<0;1>/*,${sortedTpubs[2]!.toString()}/<0;1>/*))#wvujtf83`,
+        descriptor: `sh(sortedmulti(2,${sortedTpub1.toString()}/<0;1>/*,${sortedTpub2.toString()}/<0;1>/*,${sortedTpub3.toString()}/<0;1>/*))#wvujtf83`,
       },
       {
         isSorted: false,
@@ -196,7 +202,7 @@ describe('MultiSigAccount', () => {
         threshold,
         xpubs: tpubs,
         scriptType: 'p2sh-p2wsh',
-        descriptor: `sh(wsh(sortedmulti(2,${sortedTpubs[0]!.toString()}/<0;1>/*,${sortedTpubs[1]!.toString()}/<0;1>/*,${sortedTpubs[2]!.toString()}/<0;1>/*)))#9uuwa920`,
+        descriptor: `sh(wsh(sortedmulti(2,${sortedTpub1.toString()}/<0;1>/*,${sortedTpub2.toString()}/<0;1>/*,${sortedTpub3.toString()}/<0;1>/*)))#9uuwa920`,
       },
       {
         isSorted: false,
@@ -210,7 +216,7 @@ describe('MultiSigAccount', () => {
         threshold,
         xpubs: tpubs,
         scriptType: 'p2wsh',
-        descriptor: `wsh(sortedmulti(2,${sortedTpubs[0]!.toString()}/<0;1>/*,${sortedTpubs[1]!.toString()}/<0;1>/*,${sortedTpubs[2]!.toString()}/<0;1>/*))#zxy26z43`,
+        descriptor: `wsh(sortedmulti(2,${sortedTpub1.toString()}/<0;1>/*,${sortedTpub2.toString()}/<0;1>/*,${sortedTpub3.toString()}/<0;1>/*))#zxy26z43`,
       },
     ] as const
 

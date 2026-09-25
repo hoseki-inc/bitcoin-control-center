@@ -12,9 +12,15 @@ import {
   Stack,
   Text,
 } from '@chakra-ui/react'
-import { Spinner } from '@hoseki/packages/ui/design-system'
+import { Spinner } from '@hoseki/packages/ui/design-system/spinner'
 import { CheckCircle2 } from 'lucide-react'
 import type { ReactNode } from 'react'
+
+export type TransitionContent = {
+  pendingContent: JSX.Element
+  completedContent: JSX.Element
+  failedContent: JSX.Element
+}
 
 export type FullTransitionModalStatus = 'pending' | 'completed' | 'failed'
 
@@ -65,11 +71,7 @@ export function FullTransitionModal({
   )
 }
 
-export function getContent(): {
-  pendingContent: JSX.Element
-  completedContent: JSX.Element
-  failedContent: JSX.Element
-} {
+export function getContent(): TransitionContent {
   return {
     pendingContent: (
       <>

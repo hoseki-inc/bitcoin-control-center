@@ -1,11 +1,11 @@
 import { menuAnatomy } from '@chakra-ui/anatomy'
 import { theme as chakraTheme, createMultiStyleConfigHelpers } from '@chakra-ui/react'
 
-const { definePartsStyle, defineMultiStyleConfig } = createMultiStyleConfigHelpers(menuAnatomy.keys)
+const styleHelpers = createMultiStyleConfigHelpers(menuAnatomy.keys)
 
 const defaultMenuTheme = chakraTheme.components.Menu
 
-const extendedBaseStyle = definePartsStyle(() => {
+const extendedBaseStyle = styleHelpers.definePartsStyle(() => {
   return {
     ...defaultMenuTheme.baseStyle,
     item: {
@@ -17,7 +17,7 @@ const extendedBaseStyle = definePartsStyle(() => {
   }
 })
 
-export const menuTheme = defineMultiStyleConfig({
+export const menuTheme = styleHelpers.defineMultiStyleConfig({
   ...defaultMenuTheme,
   baseStyle: extendedBaseStyle,
 })

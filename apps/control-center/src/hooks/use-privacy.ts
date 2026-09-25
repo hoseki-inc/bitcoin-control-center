@@ -22,7 +22,12 @@ function subscribe(onChange: () => void): () => void {
   }
 }
 
-export function usePrivacy(): { hidden: boolean; toggle: () => void } {
+export interface PrivacyState {
+  hidden: boolean
+  toggle: () => void
+}
+
+export function usePrivacy(): PrivacyState {
   const isHidden = useSyncExternalStore(subscribe, getSnapshot, () => false)
   return {
     hidden: isHidden,

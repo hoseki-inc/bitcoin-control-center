@@ -1,5 +1,5 @@
 import { Text, VStack } from '@chakra-ui/react'
-import { type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 
 export function EmptyState({
   icon,

@@ -6,6 +6,11 @@ export default defineConfig({
   // NOTE: This is needed for images, such as the ones in <ClaimCard />
   // We may have to use another approach if we use Ladle for other web apps with different public directories
   publicDir: resolve(import.meta.dirname, '../apps/control-center/public'),
+  resolve: {
+    alias: {
+      '@hoseki/packages': resolve(import.meta.dirname, '../packages'),
+    },
+  },
   plugins: [
     nodePolyfills({
       include: ['buffer'],

@@ -28,7 +28,7 @@ export const main = sdk.setupMain(async ({ effects }) => {
     },
     ready: {
       display: 'Web Interface',
-      fn: () =>
+      fn: async () =>
         sdk.healthCheck.checkPortListening(effects, uiPort, {
           successMessage: 'Bitcoin Control Center is running and responding.',
           errorMessage: 'Bitcoin Control Center is not responding.',

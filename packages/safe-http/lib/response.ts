@@ -11,43 +11,46 @@ export interface SafeResponseJSON {
 }
 
 export class SafeResponse extends SafeBody {
-  constructor(public response: Response) {
+  public response: Response
+
+  public constructor(response: Response) {
     super(response)
+    this.response = response
   }
 
-  get headers(): Headers {
+  public get headers(): Headers {
     return this.response.headers
   }
 
-  get ok(): boolean {
+  public get ok(): boolean {
     return this.response.ok
   }
 
-  get redirected(): boolean {
+  public get redirected(): boolean {
     return this.response.redirected
   }
 
-  get status(): number {
+  public get status(): number {
     return this.response.status
   }
 
-  get statusText(): string {
+  public get statusText(): string {
     return this.response.statusText
   }
 
-  get type(): ResponseType {
+  public get type(): ResponseType {
     return this.response.type
   }
 
-  get url(): string {
+  public get url(): string {
     return this.response.url
   }
 
-  clone(): SafeResponse {
+  public clone(): SafeResponse {
     return new SafeResponse(this.response.clone())
   }
 
-  toJSON(): SafeResponseJSON {
+  public toJSON(): SafeResponseJSON {
     return {
       ok: this.ok,
       headers: this.headers,

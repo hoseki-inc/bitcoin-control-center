@@ -7,14 +7,22 @@ export default {
 }
 
 export const Loading: Story = () => (
-  <ReceiptComponent title="Hang tight..." state="loading" onClose={() => alert('close')} />
+  <ReceiptComponent
+    title="Hang tight..."
+    state="loading"
+    onClose={() => {
+      alert('close')
+    }}
+  />
 )
 
 export const Receipt: Story = () => (
   <ReceiptComponent
     title="Claim Verified!"
     state="success"
-    onClose={() => alert('close')}
+    onClose={() => {
+      alert('close')
+    }}
     content={
       <HStack spacing={4}>
         <Button variant="outline">Back to Dashboard</Button>

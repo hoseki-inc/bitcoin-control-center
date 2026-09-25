@@ -1,7 +1,55 @@
+import Decimal from 'decimal.js'
 import { describe, expect, it } from 'vitest'
-import { getMonthlyChanges, withCurrentBalancePoint } from './balance-history'
+import { getMonthlyChanges, toSatoshisString, withCurrentBalancePoint } from './balance-history'
 
 const BTC = 100_000_000
+
+describe('balance input normalization', () => {
+  it.each([
+    ['text', ' 123 ', '123'],
+    ['empty text', '  ', '0'],
+    ['large integer text', '900719925474099312345', '900719925474099312345'],
+    ['positive fraction', 1.9, '1'],
+    ['negative fraction', -1.1, '-2'],
+    ['NaN', NaN, '0'],
+    ['infinity', Infinity, 'Infinity'],
+    ['null', null, '0'],
+    ['undefined', undefined, '0'],
+    ['boolean', true, '0'],
+    ['bigint', 1n, '0'],
+    ['Decimal', new Decimal('123.45'), '123.45'],
+    ['array', ['123'], '123'],
+    ['empty array', [], '0'],
+    ['non-string method result', { toString: () => 123 }, '0'],
+  ] as const)('preserves normalization of %s', (_label, value, expected) => {
+    expect(toSatoshisString(value)).toBe(expected)
+  })
+
+  it('reads an object stringifier once and preserves its receiver', () => {
+    let reads = 0
+    const balance = {
+      raw: ' 123 ',
+      get toString() {
+        reads += 1
+        return function (this: { raw: string }): string {
+          return this.raw
+        }
+      },
+    }
+    expect(toSatoshisString(balance)).toBe('123')
+    expect(reads).toBe(1)
+  })
+
+  it('preserves errors raised by an object stringifier', () => {
+    expect(() =>
+      toSatoshisString({
+        toString: () => {
+          throw new Error('balance unreadable')
+        },
+      }),
+    ).toThrow('balance unreadable')
+  })
+})
 
 function sats(btc: number): string {
   return String(Math.round(btc * BTC))

@@ -1,4 +1,19 @@
+// oxlint-disable-next-line anti-slop/no-unknown-returns -- Index selector callbacks may return arbitrary values, which is validated by isIndex before use.
+function isCallable(value: unknown): value is () => unknown {
+  return typeof value === 'function'
+}
+
 export type Index = string | number | bigint | boolean | symbol
+
+function isIndex(value: unknown): value is Index {
+  return (
+    typeof value === 'string' ||
+    typeof value === 'number' ||
+    typeof value === 'bigint' ||
+    typeof value === 'boolean' ||
+    typeof value === 'symbol'
+  )
+}
 
 export type Indexable =
   | Index
@@ -11,6 +26,14 @@ export type Indexable =
       key?: unknown
       toString: () => string
     }
+
+function isIndexObject(value: Indexable): value is Exclude<Indexable, Index> {
+  return typeof value === 'object'
+}
+
+export interface IndexMapJson<V> {
+  [serializedKey: string]: V
+}
 
 export class IndexMap<K extends Indexable, V> implements Map<K, V> {
   /**
@@ -46,28 +69,38 @@ export class IndexMap<K extends Indexable, V> implements Map<K, V> {
 
   private getIndex(key: K): Index {
     // If key is not an object, use it
-    if (typeof key !== 'object') {
+    if (!isIndexObject(key)) {
       return key
     }
 
     // If key is provided, use it
     if (key.key !== undefined) {
-      const keyValue = typeof key.key === 'function' ? key.key() : key.key
+      const keyValue: unknown = isCallable(key.key) ? key.key() : key.key
       if (keyValue !== null && keyValue !== undefined) {
-        return keyValue
+        if (isIndex(keyValue)) {
+          return keyValue
+        }
+        throw new TypeError('IndexMap key and id values must resolve to a primitive index')
       }
     }
 
     // If id is provided, use it
     if (key.id !== undefined) {
-      const idValue = typeof key.id === 'function' ? key.id() : key.id
+      const idValue: unknown = isCallable(key.id) ? key.id() : key.id
       if (idValue !== null && idValue !== undefined) {
-        return idValue
+        if (isIndex(idValue)) {
+          return idValue
+        }
+        throw new TypeError('IndexMap key and id values must resolve to a primitive index')
       }
     }
 
-    // If neither key nor id are provided, use the string representation of the key
-    return key.toString()
+    // A default object string is not an identifier: unrelated objects would share one entry.
+    const stringify = key.toString
+    if (!isCallable(stringify) || stringify === Object.prototype.toString) {
+      throw new TypeError('IndexMap keys must provide a key, id, or custom toString()')
+    }
+    return stringify.call(key)
   }
 
   private updateSize(): void {
@@ -189,8 +222,8 @@ export class IndexMap<K extends Indexable, V> implements Map<K, V> {
     return this.entries()
   }
 
-  public toJSON(): Record<string, V> {
-    const rec: Record<string, V> = {}
+  public toJSON(): IndexMapJson<V> {
+    const rec: IndexMapJson<V> = {}
     for (const [key, value] of this.entries()) {
       rec[this.getIndex(key).toString()] = value
     }
@@ -202,4 +235,4 @@ export class IndexMap<K extends Indexable, V> implements Map<K, V> {
   }
 }
 
-export interface ReadonlyIndexMap<K extends Indexable, V> extends ReadonlyMap<K, V> {}
+export type ReadonlyIndexMap<K extends Indexable, V> = ReadonlyMap<K, V>

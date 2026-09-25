@@ -1,10 +1,10 @@
-import { type AsyncResult, type Result } from '@hoseki/packages/result'
-import { type SafeResponse } from '@hoseki/packages/safe-http'
+import type { AsyncResult, Result } from '@hoseki/packages/result'
+import type { SafeResponse } from '@hoseki/packages/safe-http'
 import { z } from 'zod'
 import * as AdvancedTrade from './advanced-trade-types'
 import * as App from './app_types'
-import { type Credentials } from './credentials'
-import { type ApiError } from './errors'
+import type { Credentials } from './credentials'
+import type { ApiError } from './errors'
 import * as Exchange from './exchange-types'
 import { type RequestArgs, request } from './request'
 import * as Wallets from './wallets-types'
@@ -53,7 +53,7 @@ export interface CoinbaseClient {
   }
 }
 
-export interface Client extends CoinbaseClient {}
+export type Client = CoinbaseClient
 
 // This factory is not an elegant solution, but I've run out of ideas.
 export function Client(init?: ClientInit): CoinbaseClient {

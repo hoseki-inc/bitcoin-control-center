@@ -3,7 +3,7 @@ import { createContext, useContext, useEffect, useState } from 'react'
 import { Link as RouterLink } from 'react-router'
 import { toast } from 'sonner'
 import { trpc } from '../trpc'
-import { type StatementDto } from '../trpc/server-types'
+import type { StatementDto } from '../trpc/server-types'
 
 const StatementPollingContext = createContext<{
   startPolling: (statementId: StatementDto['id']) => void
@@ -22,9 +22,11 @@ export function StatementPollingProvider({ children }: { children: React.ReactNo
   })
 
   useEffect(() => {
-    if (isSuccess && retrievedStatement && shouldPoll && retrievedStatement.status !== 'pending') {
+    if (isSuccess && shouldPoll && retrievedStatement.status !== 'pending') {
       // Invalidate the statements list to show the new statement
-      trpcUtils.portalProve.statement.list.invalidate()
+      trpcUtils.portalProve.statement.list.invalidate(undefined, undefined, { throwOnError: true }).catch(() => {
+        toast.error('Unable to refresh the statements list. Please reload the page.')
+      })
 
       if (retrievedStatement.status === 'completed') {
         toast.success('Your statement is ready!', {

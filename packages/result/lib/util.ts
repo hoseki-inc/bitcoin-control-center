@@ -1,4 +1,4 @@
-import { AsyncResult, Err, Ok } from '@patina/core'
+import { AsyncResult, Err, Ok } from '@hoseki/packages/result'
 
 export function AsyncOk<T>(value: T): AsyncResult<T, never> {
   return new AsyncResult(Promise.resolve(Ok(value)))

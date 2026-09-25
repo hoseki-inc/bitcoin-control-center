@@ -39,7 +39,13 @@ export const WithBalance: Story = () => {
 
   return (
     <Stack gap={4} maxW="700px">
-      <AccountAccordion bitcoinInput={bitcoinInput} balance={balance} onEditClick={() => alert('Edit clicked')} />
+      <AccountAccordion
+        bitcoinInput={bitcoinInput}
+        balance={balance}
+        onEditClick={() => {
+          alert('Edit clicked')
+        }}
+      />
     </Stack>
   )
 }
@@ -54,7 +60,13 @@ export const WithoutBalance: Story = () => {
 
   return (
     <Stack gap={4} maxW="700px">
-      <AccountAccordion bitcoinInput={bitcoinInput} balance={balance} onEditClick={() => alert('Edit clicked')} />
+      <AccountAccordion
+        bitcoinInput={bitcoinInput}
+        balance={balance}
+        onEditClick={() => {
+          alert('Edit clicked')
+        }}
+      />
     </Stack>
   )
 }
@@ -69,7 +81,13 @@ export const Taproot: Story = () => {
 
   return (
     <Stack gap={4} maxW="700px">
-      <AccountAccordion bitcoinInput={bitcoinInput} balance={balance} onEditClick={() => alert('Edit clicked')} />
+      <AccountAccordion
+        bitcoinInput={bitcoinInput}
+        balance={balance}
+        onEditClick={() => {
+          alert('Edit clicked')
+        }}
+      />
     </Stack>
   )
 }
@@ -84,7 +102,13 @@ export const NestedSegWit: Story = () => {
 
   return (
     <Stack gap={4} maxW="700px">
-      <AccountAccordion bitcoinInput={bitcoinInput} balance={balance} onEditClick={() => alert('Edit clicked')} />
+      <AccountAccordion
+        bitcoinInput={bitcoinInput}
+        balance={balance}
+        onEditClick={() => {
+          alert('Edit clicked')
+        }}
+      />
     </Stack>
   )
 }

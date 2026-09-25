@@ -9,7 +9,9 @@ export function UsdEquivalent({
   btcPrice: number | null
   showSign?: boolean
 }): JSX.Element {
-  if (btcPrice === null || !Number.isFinite(btcPrice) || btcPrice <= 0) return <>USD unavailable</>
+  if (btcPrice === null || !Number.isFinite(btcPrice) || btcPrice <= 0) {
+    return <>USD unavailable</>
+  }
 
   const value = new Decimal(btc).times(btcPrice).toNumber()
   return (

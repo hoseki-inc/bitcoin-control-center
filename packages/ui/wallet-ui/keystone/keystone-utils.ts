@@ -1,7 +1,7 @@
 import { DerivationPath, Xpub } from '@hoseki/packages/bitcoin'
-import { Err, Ok, Result, parseUnknown } from '@hoseki/packages/result'
+import { Ok, Result, parseUnknown } from '@hoseki/packages/result'
 import { Slip132 } from '@hoseki/packages/wallet'
-import { CryptoAccount, URRegistryDecoder } from '@keystonehq/bc-ur-registry'
+import { CryptoAccount, type CryptoHDKey, type CryptoKeypath, URRegistryDecoder } from '@keystonehq/bc-ur-registry'
 import { z } from 'zod'
 
 // JSON format (for future multisig support or richer exports)
@@ -85,7 +85,8 @@ function parseUrCryptoAccount(urString: string): Result<KeystoneExportFile, Erro
     if (!descriptor) {
       throw new Error('No output descriptors found in UR:CRYPTO-ACCOUNT')
     }
-    const hdKey = descriptor.getHDKey()
+    // SAFETY: The SDK returns undefined for non-HD keys despite its declared return type; the guard below rejects that case.
+    const hdKey = descriptor.getHDKey() as CryptoHDKey | undefined
     if (!hdKey) {
       throw new Error('No HD key found in output descriptor')
     }
@@ -97,7 +98,8 @@ function parseUrCryptoAccount(urString: string): Result<KeystoneExportFile, Erro
     }
 
     let derivationPath: DerivationPath | null = null
-    const origin = hdKey.getOrigin()
+    // SAFETY: Origin is optional in the encoded key despite the SDK's declared return type; the branch below handles absence.
+    const origin = hdKey.getOrigin() as CryptoKeypath | undefined
     if (origin) {
       const pathStr = origin.getPath()
       if (pathStr) {
@@ -142,9 +144,10 @@ export function parseKeystoneExport(input: string): Result<KeystoneExportFile, E
   }
 
   // Fall back to JSON parsing
+  // SAFETY: External Keystone JSON remains unknown until KeystoneExportJsonSchema validates it.
   return Result.fromThrowable(() => JSON.parse(trimmed) as unknown)
     .andThen((parsed) => parseUnknown(KeystoneExportJsonSchema, parsed))
-    .map((json) => ({ ...json, derivationPath: null, masterFingerprint: null }))
+    .map((json) => Object.assign(json, { derivationPath: null, masterFingerprint: null }))
 }
 
 /**
@@ -154,8 +157,5 @@ export function getBitcoinXpubFromKeystoneExport(
   _derivationPath: DerivationPath,
   keystoneExport: KeystoneExportFile,
 ): Result<Xpub, Error> {
-  if (keystoneExport.xpub) {
-    return Ok(keystoneExport.xpub)
-  }
-  return Err(new Error('No xpub found in Keystone export'))
+  return Ok(keystoneExport.xpub)
 }

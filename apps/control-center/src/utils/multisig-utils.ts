@@ -1,5 +1,5 @@
 import { Account, type CheckedAccountDescriptor, MultiSigAccount } from '@hoseki/packages/bitcoin'
-import { type ClaimDto } from '../trpc/server-types'
+import type { ClaimDto } from '../trpc/server-types'
 
 export function getThreshold(checkedAccountDescriptor: CheckedAccountDescriptor): number {
   const account = Account.fromCheckedDescriptor(checkedAccountDescriptor)

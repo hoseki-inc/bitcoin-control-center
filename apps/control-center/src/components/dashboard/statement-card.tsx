@@ -7,7 +7,7 @@ import type { StatementDto } from '../../trpc/server-types'
 export function StatementCard({ statement, onView }: { statement: StatementDto; onView: () => void }): JSX.Element {
   return (
     <Box
-      role="group"
+      data-group=""
       borderRadius="panel"
       borderWidth="1px"
       borderColor="neutral.200"
@@ -20,6 +20,7 @@ export function StatementCard({ statement, onView }: { statement: StatementDto; 
       {/* Integrator Ribbon */}
       {statement.integrator && (
         <Box
+          as="span"
           position="absolute"
           top={0}
           left={0}
@@ -43,6 +44,7 @@ export function StatementCard({ statement, onView }: { statement: StatementDto; 
         </Box>
       )}
       <Box
+        as="span"
         position="relative"
         p={6}
         pb={0}
@@ -52,6 +54,8 @@ export function StatementCard({ statement, onView }: { statement: StatementDto; 
         justifyContent="center"
       >
         <Box
+          as="span"
+          display="block"
           maxH="150px"
           w="150px"
           overflow="hidden"
@@ -60,6 +64,7 @@ export function StatementCard({ statement, onView }: { statement: StatementDto; 
           <Image src="/statements/satoshi-statement.jpg" alt="Statement Preview" w="150px" />
         </Box>
         <LinearGradient
+          as="span"
           gradientDirection="from-bottom"
           baseColor="rgba(0, 0, 0, 0.20)"
           gradientSize={60}
@@ -80,15 +85,15 @@ export function StatementCard({ statement, onView }: { statement: StatementDto; 
           </Button>
         </LinearGradient>
       </Box>
-      <HStack bg="white" borderTopWidth="1px" borderColor="neutral.200">
-        <Stack py={2} px={4} spacing={0} flexGrow="1">
-          <Text textStyle="text/sm" fontWeight="medium" color="neutral.900">
+      <HStack as="span" bg="white" borderTopWidth="1px" borderColor="neutral.200">
+        <Stack as="span" py={2} px={4} spacing={0} flexGrow="1">
+          <Text as="span" display="block" textStyle="text/sm" fontWeight="medium" color="neutral.900">
             Statement
           </Text>
-          <Text textStyle="text/xs" color="neutral.600">
+          <Text as="span" display="block" textStyle="text/xs" color="neutral.600">
             Period: {formatDateRange(statement.openingDate, statement.closingDate)}
           </Text>
-          <Text textStyle="text/xs" color="neutral.600">
+          <Text as="span" display="block" textStyle="text/xs" color="neutral.600">
             Created: {format(new Date(statement.createdAt), 'dd MMM yyyy h:mm a')}
           </Text>
         </Stack>

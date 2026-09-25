@@ -3,10 +3,11 @@ import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
 import { TopBar } from '@hoseki/packages/ui/prove-verify-ui/top-bar'
 import { Bitcoin, ChartNoAxesCombined, ChevronRight } from 'lucide-react'
 import { Link, useLocation } from 'react-router'
+import { parseNavigationState } from '../../../lib/navigation-state'
 
 export function ManualTypeSelectorPage(): JSX.Element {
   const location = useLocation()
-  const returnTo = (location.state as { returnTo?: string } | null)?.returnTo ?? '/accounts'
+  const returnTo = parseNavigationState(location.state)?.returnTo ?? '/accounts'
 
   return (
     <Box py={{ base: 6, md: 8 }} maxW="640px" mx="auto" w="full">

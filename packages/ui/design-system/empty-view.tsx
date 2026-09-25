@@ -12,12 +12,12 @@ export function EmptyView({
       <Text as="h2" textStyle="text/xl" fontWeight="medium" color="neutral.900">
         {title}
       </Text>
-      {description && (
+      {description !== undefined && description !== '' && (
         <Text textStyle="text/md" fontWeight="regular" color="neutral.600" maxW="46ch">
           {description}
         </Text>
       )}
-      {action && <Box mt={3}>{action}</Box>}
+      {Boolean(action) ? <Box mt={3}>{action}</Box> : action}
     </VStack>
   )
 }

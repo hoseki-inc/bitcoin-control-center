@@ -15,7 +15,7 @@ import { useNavigate } from 'react-router'
 import { toast } from 'sonner'
 import { browserLogger } from '../../../logger'
 import { trpc } from '../../../trpc'
-import { type ClaimDto } from '../../../trpc/server-types'
+import type { ClaimDto } from '../../../trpc/server-types'
 
 export type DeleteClaimModalProps = {
   action: 'abandon' | 'archive' | 'deletePending' | 'deletePermanently'
@@ -52,7 +52,7 @@ export function DeleteClaimModal({ action, isOpen, onClose, claim }: DeleteClaim
         trpcUtils.portalProve.registry.claims.listArchived.invalidate(),
         trpcUtils.portalProve.controlCenter.getData.invalidate(),
       ])
-      navigate('/accounts')
+      void navigate('/accounts')
       onClose()
       toast.success(`'${claim.displayName}' archived`)
     },
@@ -68,13 +68,13 @@ export function DeleteClaimModal({ action, isOpen, onClose, claim }: DeleteClaim
       trpcUtils.portalProve.registry.claims.listArchived.invalidate(),
       trpcUtils.portalProve.controlCenter.getData.invalidate(),
     ])
-    navigate('/accounts')
+    void navigate('/accounts')
     onClose()
     toast.success(isAbandon ? `'${claim.displayName}' setup abandoned` : `'${claim.displayName}' account deleted`)
   }
 
-  const onDeleteError = (err: unknown): void => {
-    browserLogger.error({ err }, 'Failed to delete claim')
+  const onDeleteError = (cause: { message: string }): void => {
+    browserLogger.error({ err: cause }, 'Failed to delete claim')
     toast.error(isAbandon ? 'Failed to abandon setup' : 'Failed to delete account')
   }
 
@@ -168,7 +168,9 @@ export function DeleteClaimModal({ action, isOpen, onClose, claim }: DeleteClaim
             <Button
               isLoading={archiveMutation.isLoading}
               isDisabled={!isArchiveBalanceKnown || (isMutating && !archiveMutation.isLoading)}
-              onClick={() => archiveMutation.mutate({ id: claim.id })}
+              onClick={() => {
+                archiveMutation.mutate({ id: claim.id })
+              }}
               size="md"
               flex={1}
               variant="outline"
@@ -179,7 +181,9 @@ export function DeleteClaimModal({ action, isOpen, onClose, claim }: DeleteClaim
             <Button
               isLoading={deleteMutation.isLoading}
               isDisabled={isMutating && !deleteMutation.isLoading}
-              onClick={() => deleteMutation.mutate({ id: claim.id })}
+              onClick={() => {
+                deleteMutation.mutate({ id: claim.id })
+              }}
               size="md"
               flex={1}
               variant="error"

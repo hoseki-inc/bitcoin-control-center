@@ -28,6 +28,7 @@ function NavigationArrow({
 
   return (
     <Button
+      aria-label={direction === 'left' ? 'Back' : 'Next'}
       onClick={onClick}
       bgColor="neutral.50"
       borderRadius="50%"

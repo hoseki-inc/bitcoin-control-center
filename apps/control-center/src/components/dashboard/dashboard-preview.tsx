@@ -48,7 +48,7 @@ export function DashboardPreview({
             <SensitiveValue>{unresolved ? '—' : zeroBalance}</SensitiveValue>
           </DashboardAmount>
         </Box>
-        <FiatAmountText primary mt={2} role="status">
+        <FiatAmountText as="output" display="block" primary mt={2}>
           <SensitiveValue>
             {loading ? 'Loading your holdings…' : unavailable ? 'Holdings unavailable' : '$0.00 USD'}
           </SensitiveValue>

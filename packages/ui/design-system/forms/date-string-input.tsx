@@ -6,5 +6,14 @@ export type DateStringInputProps = Omit<InputProps, 'type' | 'value' | 'onChange
 }
 
 export function DateStringInput({ value, onChange, ...props }: DateStringInputProps): JSX.Element {
-  return <Input {...props} type="date" value={value} onChange={(event) => onChange(event.target.value)} />
+  return (
+    <Input
+      {...props}
+      type="date"
+      value={value}
+      onChange={(event) => {
+        onChange(event.target.value)
+      }}
+    />
+  )
 }

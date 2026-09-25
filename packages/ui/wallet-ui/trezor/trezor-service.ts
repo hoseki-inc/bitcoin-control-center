@@ -1,4 +1,4 @@
-import { type AsyncResult, Err, Ok, Result, asyncFn } from '@patina/core'
+import { type AsyncResult, Err, Ok, Result, asyncFn } from '@hoseki/packages/result'
 import TrezorConnectModule, {
   type AccountInfo,
   type Features,
@@ -27,6 +27,8 @@ export class TrezorService {
         appName: 'Bitcoin Control Center',
         appUrl: 'https://www.hoseki.app',
       },
+    }).catch(() => {
+      this.logger.error('Unable to initialize the Trezor connection')
     })
   }
 
@@ -80,43 +82,44 @@ export class TrezorService {
     return new HardwareDeviceError(payload.error, 'trezor', `Trezor error: ${payload.error}`, payload)
   }
 
-  private handleTrezorSdkCall = asyncFn(async <T>(sdkCall: Response<T>): Promise<Result<T, HardwareDeviceError>> => {
-    const sdkResult = await Result.fromPromise(sdkCall)
+  private readonly handleTrezorSdkCall = asyncFn(
+    async <T>(sdkCall: Response<T>): Promise<Result<T, HardwareDeviceError>> => {
+      const sdkResult = await Result.fromPromise(sdkCall)
 
-    // An unexpected error was thrown by the Trezor SDK.
-    if (sdkResult.isErr()) {
-      return Err(this.unexpectedTrezorError(sdkResult.unwrapErr()))
-    }
+      // An unexpected error was thrown by the Trezor SDK.
+      if (sdkResult.isErr()) {
+        return Err(this.unexpectedTrezorError(sdkResult.unwrapErr()))
+      }
 
-    const sdkResponse = sdkResult.unwrap()
+      const sdkResponse = sdkResult.unwrap()
 
-    // Trezor SDK failed gracefully with an error message
-    if (!sdkResponse.success) {
-      return Err(this.expectedTrezorError(sdkResponse))
-    }
+      // Trezor SDK failed gracefully with an error message
+      if (!sdkResponse.success) {
+        return Err(this.expectedTrezorError(sdkResponse))
+      }
 
-    // Despite Trezor's types disallowing it, a success response can contain an error in the payload
-    if (isPayloadWithError(sdkResponse.payload)) {
-      return Err(this.payloadContainsError(sdkResponse.payload))
-    }
+      // Despite Trezor's types disallowing it, a success response can contain an error in the payload
+      if (isPayloadWithError(sdkResponse.payload)) {
+        return Err(this.payloadContainsError(sdkResponse.payload))
+      }
 
-    return Ok(sdkResponse.payload)
-  })
+      return Ok(sdkResponse.payload)
+    },
+  )
 }
 
 // Trezor error example: { error: 'Action cancelled by user', code: 'Failure_ActionCancelled' }
 
 function getFriendlyErrorMessage(unsuccessful: Unsuccessful): string {
-  switch (unsuccessful.payload.code) {
-    // This seems to happen when the user cancels via Trezor Suite / WebUI
-    case 'Method_Cancel':
-      return 'The user cancelled the action.'
-    // This seems to happen when the user cancels via their hardware wallet
-    case 'Failure_ActionCancelled':
-      return 'The user cancelled the action on the device.'
-    default:
-      return `Trezor error: ${unsuccessful.payload.error}`
+  // This seems to happen when the user cancels via Trezor Suite / WebUI
+  if (unsuccessful.payload.code === 'Method_Cancel') {
+    return 'The user cancelled the action.'
   }
+  // This seems to happen when the user cancels via their hardware wallet
+  if (unsuccessful.payload.code === 'Failure_ActionCancelled') {
+    return 'The user cancelled the action on the device.'
+  }
+  return `Trezor error: ${unsuccessful.payload.error}`
 }
 
 function isPayloadWithError(payload: unknown): payload is { error: string } {

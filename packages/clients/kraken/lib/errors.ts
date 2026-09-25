@@ -1,5 +1,5 @@
 import { ErrorWithTag } from '@hoseki/packages/result'
-import { type SafeResponse } from '@hoseki/packages/safe-http'
+import type { SafeResponse } from '@hoseki/packages/safe-http'
 
 export namespace ApiErrorKind {
   export type NetworkUnreachable = { readonly name: 'NetworkUnreachable'; readonly error: Error }
@@ -80,7 +80,7 @@ export class ApiError extends ErrorWithTag {
   public readonly tag = 'KrakenError'
   public readonly kind: ApiErrorKindVariant
 
-  constructor(kind: ApiErrorKindVariant, message: string) {
+  public constructor(kind: ApiErrorKindVariant, message: string) {
     super(message)
     this.kind = kind
   }
