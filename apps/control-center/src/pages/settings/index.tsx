@@ -134,8 +134,8 @@ function useElectrumStatus(): ElectrumStatusState {
         // tRPC wraps response in result.data.json (superjson) or result.data
         const response = parseUnknown(ElectrumStatusResponseSchema, data).unwrapOr(null)
         const wrapped = response?.result.data
-        const payload =
-          wrapped !== null && typeof wrapped === 'object' && 'json' in wrapped ? (wrapped.json ?? wrapped) : wrapped
+        const envelope = parseUnknown(z.object({ json: z.unknown() }), wrapped).unwrapOr(null)
+        const payload = envelope?.json ?? wrapped
         const parsed = parseUnknown(ElectrumStatusSchema, payload).unwrapOr(null)
         if (parsed?.host != null && parsed.host !== '') {
           setStatus(parsed)

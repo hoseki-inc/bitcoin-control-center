@@ -37,8 +37,16 @@ type DecimalSchemaUnion = z.ZodUnion<
 
 type DecimalLike = string | number | bigint | Decimal | { d: number[]; e: number; s: number }
 
+function isDecimalObject(value: DecimalLike): value is z.infer<typeof decimalObject> {
+  return typeof value === 'object' && !Decimal.isDecimal(value)
+}
+
+function isDecimalConstructorValue(value: DecimalLike): value is string | number | Decimal {
+  return typeof value === 'string' || typeof value === 'number' || Decimal.isDecimal(value)
+}
+
 function formatDecimalInput(value: DecimalLike): string {
-  if (typeof value === 'object' && !Decimal.isDecimal(value)) {
+  if (isDecimalObject(value)) {
     return JSON.stringify(value)
   }
   return value.toString()
@@ -48,16 +56,11 @@ export function decimal(config?: Decimal.Config): z.ZodEffects<DecimalSchemaUnio
   return z.union([z.string(), z.number(), z.bigint(), decimalInstance, decimalObject]).transform((value, ctx) => {
     const constructor = config ? Decimal.clone(config) : Decimal
 
-    let from: string | number | Decimal
-    if (typeof value === 'string' || typeof value === 'number') {
-      from = value
-    } else if (typeof value === 'bigint') {
-      from = value.toString()
-    } else if (Decimal.isDecimal(value)) {
-      from = value
-    } else if (typeof value === 'object') {
-      from = decimalObjectToDecimalInstance(value)
-    }
+    const from = isDecimalConstructorValue(value)
+      ? value
+      : isDecimalObject(value)
+        ? decimalObjectToDecimalInstance(value)
+        : value.toString()
     const result = Result.from(() => new constructor(from))
 
     if (result.isErr()) {

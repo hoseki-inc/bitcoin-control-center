@@ -1,3 +1,23 @@
+type PluralObject = { singular: string; plural: string; count: number }
+type PluralTuple = readonly [singular: string, plural: string, count: number]
+type PluralValue = number | string | PluralObject | PluralTuple
+
+function isPluralObject(value: PluralValue | undefined): value is PluralObject {
+  return (
+    typeof value === 'object' && !Array.isArray(value) && 'count' in value && 'singular' in value && 'plural' in value
+  )
+}
+
+function isPluralTuple(value: PluralValue | undefined): value is PluralTuple {
+  return (
+    Array.isArray(value) &&
+    value.length === 3 &&
+    typeof value[0] === 'string' &&
+    typeof value[1] === 'string' &&
+    typeof value[2] === 'number'
+  )
+}
+
 /**
  * Utility function to help pluralize a string.
  *
@@ -18,36 +38,16 @@
  *
  * @returns The interpolated string.
  */
-export function pluralize(
-  strings: TemplateStringsArray,
-  ...values: (
-    | number
-    | string
-    | { singular: string; plural: string; count: number }
-    | readonly [singular: string, plural: string, count: number]
-  )[]
-): string {
+export function pluralize(strings: TemplateStringsArray, ...values: PluralValue[]): string {
   let result = ''
   for (let i = 0; i < strings.length; i++) {
     result += strings[i]
     if (i < values.length) {
       const value = values[i]
-      if (
-        typeof value === 'object' &&
-        !Array.isArray(value) &&
-        'count' in value &&
-        'singular' in value &&
-        'plural' in value
-      ) {
+      if (isPluralObject(value)) {
         // Object format
         result += value.count === 1 ? value.singular : value.plural
-      } else if (
-        Array.isArray(value) &&
-        value.length === 3 &&
-        typeof value[0] === 'string' &&
-        typeof value[1] === 'string' &&
-        typeof value[2] === 'number'
-      ) {
+      } else if (isPluralTuple(value)) {
         // Tuple format
         result += value[2] === 1 ? value[0] : value[1]
       } else {

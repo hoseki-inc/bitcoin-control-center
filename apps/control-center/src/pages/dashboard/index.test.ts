@@ -576,7 +576,7 @@ describe('custom portfolio range UI', () => {
       expect(container.textContent).not.toContain('All synced')
       expect(container.querySelectorAll('[data-chart]')).toHaveLength(refresh ? 2 : 0)
       const poll = interval.mock.calls.find(([, delay]) => delay === 10_000)?.[0]
-      assert(typeof poll === 'function', 'Expected the history polling callback')
+      assert.exists(poll, 'Expected the history polling callback')
       await act(async () => {
         poll()
       })
@@ -794,7 +794,7 @@ describe('custom portfolio range UI', () => {
       mocks.rangeData = { ...mocks.base, historySyncingAccountIds: ['re_clmx_wallet'] }
       await click('All')
       const poll = interval.mock.calls.find(([, delay]) => delay === 10_000)?.[0]
-      assert(typeof poll === 'function', 'Expected a polling callback')
+      assert.exists(poll, 'Expected a polling callback')
       await act(async () => {
         poll()
       })

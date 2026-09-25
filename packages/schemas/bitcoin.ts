@@ -63,17 +63,23 @@ export const bitcoinMultisigAccountDescriptor = z.string().transform((str, ctx) 
   return account.unwrap()
 })
 
+type NetworkSource = { network: Network | (() => Network) }
+
+function isNetworkMethod(network: NetworkSource['network']): network is () => Network {
+  return typeof network === 'function'
+}
+
 /**
  * Validates that the input is valid on the allowed networks.
  *
  * The input must be an object with a `network` property that is a function or a Network.
  */
-export function bitcoinNetwork<T extends z.ZodType<{ network: Network | (() => Network) }, z.ZodTypeDef, unknown>>(
+export function bitcoinNetwork<T extends z.ZodType<NetworkSource, z.ZodTypeDef, unknown>>(
   schema: T,
   allowed: Network[],
 ): z.ZodEffects<T, z.infer<T>, z.input<T>> {
   return schema.superRefine((value, ctx) => {
-    const n = typeof value.network === 'function' ? value.network() : value.network
+    const n = isNetworkMethod(value.network) ? value.network() : value.network
     const network = allowed.find((allowedNetwork) => allowedNetwork.kind === n.kind)
     if (!network) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Invalid network: ${n.toString()}` })

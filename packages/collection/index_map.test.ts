@@ -11,6 +11,19 @@ describe('constructor', () => {
 })
 
 describe('set and get', () => {
+  test('keeps callable keys distinct by identity', () => {
+    const createKey = () => () => 'same source'
+    const first = createKey()
+    const second = createKey()
+    const map = new IndexMap<typeof first, number>([
+      [first, 1],
+      [second, 2],
+    ])
+    expect(map.size).toBe(2)
+    expect(map.get(first)).toBe(1)
+    expect(map.get(second)).toBe(2)
+  })
+
   test('should set and get a string key', () => {
     const map = new IndexMap<string, number>()
     map.set('one', 1)

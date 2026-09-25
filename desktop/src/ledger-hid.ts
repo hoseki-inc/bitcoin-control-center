@@ -15,6 +15,14 @@ import type { LedgerHidUpdate } from './ledger-hid-api'
 const LEDGER_VENDOR_ID = 0x2c97
 const REQUEST_TIMEOUT_MS = 120_000
 
+function isRequestId(value: unknown): value is string {
+  return typeof value === 'string' && /^[a-zA-Z0-9-]{1,80}$/.test(value)
+}
+
+function isDeviceId(value: unknown): value is string {
+  return typeof value === 'string'
+}
+
 type Request = {
   id: string
   frame: WebFrameMain
@@ -135,7 +143,7 @@ export function setupLedgerHidAccess(
   }
 
   ipc.handle('ledger-hid:begin', (event, id: unknown): boolean => {
-    if (!isAppIpc(event) || typeof id !== 'string' || !/^[a-zA-Z0-9-]{1,80}$/.test(id) || request || nativeRequest) {
+    if (!isAppIpc(event) || !isRequestId(id) || request || nativeRequest) {
       return false
     }
     request = {
@@ -151,13 +159,7 @@ export function setupLedgerHidAccess(
     return true
   })
   ipc.handle('ledger-hid:choose', (event, id: unknown, deviceId: unknown): boolean => {
-    if (
-      !isAppIpc(event) ||
-      !request?.callback ||
-      request.cancelled ||
-      request.id !== id ||
-      typeof deviceId !== 'string'
-    ) {
+    if (!isAppIpc(event) || !request?.callback || request.cancelled || request.id !== id || !isDeviceId(deviceId)) {
       return false
     }
     if (!isAppFrame(request.frame) || !request.devices.has(deviceId)) {

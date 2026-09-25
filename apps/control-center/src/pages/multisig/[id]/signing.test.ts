@@ -277,7 +277,7 @@ async function renderSigningRoute(withWrapper = false): Promise<ReturnType<typeo
     } else {
       mocks.navigate(to)
     }
-    if (typeof to === 'number') {
+    if (isHistoryDelta(to)) {
       await navigate(to)
     } else {
       await navigate(to, options)
@@ -650,6 +650,10 @@ describe.each(['ledger', 'trezor'] as const)('%s verification of an already-veri
     })
   })
 })
+
+function isHistoryDelta(to: unknown): to is number {
+  return typeof to === 'number'
+}
 
 function signingProps(): SigningFlowProps {
   const claim = mocks.claim

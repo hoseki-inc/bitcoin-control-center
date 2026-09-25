@@ -1,7 +1,9 @@
 import { Box, Stack, Text } from '@chakra-ui/react'
 import { Err, type Result } from '@hoseki/packages/result'
+import { parseUnknown } from '@hoseki/packages/result/lib/parse'
 import { CloudUploadIcon, RefreshCwIcon } from 'lucide-react'
 import { type ChangeEvent, type DragEvent, useRef, useState } from 'react'
+import { z } from 'zod'
 
 export type FileDropState = 'ready' | 'invalid' | 'valid'
 
@@ -81,9 +83,9 @@ export function FileDropReader<T>(props: FileDropReaderProps<T>): JSX.Element {
 
         const validationResult =
           props.readAs === 'text'
-            ? typeof content === 'string'
-              ? props.validationFn(content, file)
-              : Err(new Error('Expected text file content'))
+            ? parseUnknown(z.string(), content)
+                .mapErr(() => new Error('Expected text file content'))
+                .andThen((text) => props.validationFn(text, file))
             : content instanceof ArrayBuffer
               ? props.validationFn(content, file)
               : Err(new Error('Expected binary file content'))

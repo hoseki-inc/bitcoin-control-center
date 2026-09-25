@@ -2,7 +2,7 @@ import { Err, Ok, Result, asyncFn, parseUnknown } from '@hoseki/packages/result'
 import { SafeHttpErrorKind, type SafeResponse, safeHttp } from '@hoseki/packages/safe-http'
 import * as crypto from 'crypto'
 import jose from 'node-jose'
-import type { z } from 'zod'
+import { z } from 'zod'
 import type { Credentials } from './credentials'
 import { ApiError, ErrorKind } from './errors'
 import { type JsonRecord, recordToHeaders, recordToSearchParams } from './util'
@@ -114,14 +114,10 @@ const signCdp = asyncFn(
       return jose.JWS.createSign({ format: 'compact', fields }, privateKey).update(payload).final()
     }
 
-    return Result.fromPromise(createSign()).andThen((signed) => {
-      // Need a type guard here because the library exports invalid types 👍
-      const unk = signed as unknown
-      if (typeof unk === 'string') {
-        return Ok(unk)
-      }
-      return Err(new Error('Invalid signature'))
-    })
+    // node-jose's declared result includes formats other than the requested compact JWT.
+    return Result.fromPromise(createSign()).andThen((signed) =>
+      parseUnknown(z.string(), signed).mapErr(() => new Error('Invalid signature')),
+    )
   },
 )
 

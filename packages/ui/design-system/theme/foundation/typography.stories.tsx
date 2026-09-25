@@ -30,8 +30,9 @@ export const Typography: Story = () => {
 }
 
 function displayPxIfRem(value: string | number) {
-  if (typeof value === 'string' && value.includes('rem')) {
-    return `${Number(value.replace('rem', '')) * 16}px`
+  const text = String(value)
+  if (text.includes('rem')) {
+    return `${Number(text.replace('rem', '')) * 16}px`
   }
   return value
 }

@@ -4,6 +4,16 @@ function isCallable(value: unknown): value is () => unknown {
 
 export type Index = string | number | bigint | boolean | symbol
 
+function isIndex(value: unknown): value is Index {
+  return (
+    typeof value === 'string' ||
+    typeof value === 'number' ||
+    typeof value === 'bigint' ||
+    typeof value === 'boolean' ||
+    typeof value === 'symbol'
+  )
+}
+
 export type Indexable =
   | Index
   | {
@@ -15,6 +25,10 @@ export type Indexable =
       key?: unknown
       toString: () => string
     }
+
+function isIndexObject(value: Indexable): value is Exclude<Indexable, Index> {
+  return typeof value === 'object'
+}
 
 export interface IndexMapJson<V> {
   [serializedKey: string]: V
@@ -54,7 +68,7 @@ export class IndexMap<K extends Indexable, V> implements Map<K, V> {
 
   private getIndex(key: K): Index {
     // If key is not an object, use it
-    if (typeof key !== 'object') {
+    if (!isIndexObject(key)) {
       return key
     }
 
@@ -76,20 +90,14 @@ export class IndexMap<K extends Indexable, V> implements Map<K, V> {
 
     // A default object string is not an identifier: unrelated objects would share one entry.
     const stringify = key.toString
-    if (typeof stringify !== 'function' || stringify === Object.prototype.toString) {
+    if (!isCallable(stringify) || stringify === Object.prototype.toString) {
       throw new TypeError('IndexMap keys must provide a key, id, or custom toString()')
     }
     return stringify.call(key)
   }
 
   private requireIndex(value: unknown): Index {
-    if (
-      typeof value === 'string' ||
-      typeof value === 'number' ||
-      typeof value === 'bigint' ||
-      typeof value === 'boolean' ||
-      typeof value === 'symbol'
-    ) {
+    if (isIndex(value)) {
       return value
     }
     throw new TypeError('IndexMap key and id values must resolve to a primitive index')

@@ -4,6 +4,10 @@ export type Mappable = {
   key: string | (() => string)
 }
 
+function isComputedKey(key: Mappable['key']): key is () => string {
+  return typeof key === 'function'
+}
+
 /**
  * @deprecated Use `Map` or `IndexMap` instead.
  */
@@ -19,7 +23,7 @@ export class Mapping<V extends Mappable> {
   }
 
   private key(value: V): string {
-    return typeof value.key === 'function' ? value.key() : value.key
+    return isComputedKey(value.key) ? value.key() : value.key
   }
 
   public size(): number {

@@ -1,4 +1,6 @@
+import { z } from 'zod'
 import { hasKey } from '../../../lib'
+import { parseUnknown } from '../../../result/lib/parse'
 import { colors } from './foundation/colors'
 import { fontWeights, newTextStyles } from './foundation/typography'
 
@@ -7,6 +9,10 @@ export type ResolvedTextStyle = {
   lineHeight: string
   letterSpacing: string | undefined
   textTransform: string | undefined
+}
+
+function isColorGroup(value: unknown): value is object {
+  return value !== null && typeof value === 'object'
 }
 
 /**
@@ -22,7 +28,7 @@ export function getColor(colorPath: string): string {
 
   // Navigate through each path segment
   for (const segment of pathSegments) {
-    if (current !== null && typeof current === 'object' && hasKey(current, segment)) {
+    if (isColorGroup(current) && hasKey(current, segment)) {
       // The guard confirms this is an object containing the key; its value remains unknown.
       current = current[segment]
     } else {
@@ -32,8 +38,9 @@ export function getColor(colorPath: string): string {
   }
 
   // Ensure we ended up with a string (the actual color value)
-  if (typeof current === 'string') {
-    return current
+  const color = parseUnknown(z.string(), current)
+  if (color.isOk()) {
+    return color.value()
   } else {
     throw new Error(`Color path "${colorPath}" does not resolve to a color value`)
   }

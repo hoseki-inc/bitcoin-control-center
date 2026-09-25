@@ -87,7 +87,7 @@ function setupInterface(available: Hostname[], enabled: string[] = []): Interfac
       const call = addDaemon.mock.lastCall
       assert.exists(call, 'Expected the Sentinel daemon to be registered')
       const hosts = call[1].exec.env?.['SENTINEL_ALLOWED_HOSTS']
-      assert(typeof hosts === 'string', 'Expected an explicit Sentinel host allowlist')
+      assert.exists(hosts, 'Expected an explicit Sentinel host allowlist')
       return hosts
     },
     setPresent: (value) => {
