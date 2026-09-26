@@ -6,7 +6,11 @@ import Decimal from 'decimal.js'
 import { useMemo } from 'react'
 import { Area, AreaChart, ResponsiveContainer, Tooltip, type TooltipContentProps, XAxis, YAxis } from 'recharts'
 import { z } from 'zod'
+import { useBitcoinDisplay } from '../../hooks/use-bitcoin-display'
+import type { BitcoinDisplayUnit } from '../../lib/bitcoin-display'
 import { getBrowserTimezone } from '../../utils/timezone'
+import { BitcoinAmount } from '../bitcoin-amount'
+import { SensitiveValue } from '../sensitive-value'
 
 interface BalanceDataPoint {
   timestamp: string
@@ -21,12 +25,14 @@ interface AccumulationChartProps {
   timezone?: string
 }
 
-function formatBtcBalance(satoshis: string | Decimal): string {
-  return new Decimal(satoshis).div(100_000_000).toFixed(8)
-}
+const compactSats = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 })
 
-function formatShortBtc(satoshis: string | Decimal): string {
-  const btc = new Decimal(satoshis).div(100_000_000)
+/** Short axis labels in the chosen display unit; the tooltip shows the exact amount. */
+function formatAxisAmount(satoshis: Decimal, unit: BitcoinDisplayUnit): string {
+  if (unit !== 'btc') {
+    return compactSats.format(satoshis.round().toNumber())
+  }
+  const btc = satoshis.div(100_000_000)
   return btc.gte(1) ? btc.toFixed(2) : btc.toFixed(4)
 }
 
@@ -68,11 +74,11 @@ function ChartTooltip({
         {format(new TZDate(new Date(data.timestamp), timezone), 'MMMM d, yyyy')}
       </Text>
       <Text textStyle="text/sm" fontWeight="bold" color="shades.0" fontFamily="mono">
-        {formatBtcBalance(data.totalBalance)} BTC
+        <BitcoinAmount btc={new Decimal(data.totalBalance).div(100_000_000)} />
       </Text>
       {btcPrice > 0 && (
         <Text textStyle="label/xs" color="neutral.500" mt={0.5} fontFamily="mono">
-          ${formatUsd(data.btcBalance, btcPrice)}
+          <SensitiveValue>${formatUsd(data.btcBalance, btcPrice)}</SensitiveValue>
         </Text>
       )}
     </Box>
@@ -85,6 +91,7 @@ export function AccumulationChart({
   isUp = true,
   timezone = getBrowserTimezone(),
 }: AccumulationChartProps): JSX.Element {
+  const { unit } = useBitcoinDisplay()
   const [success500, error500, neutral400] = useToken('colors', ['success.500', 'error.500', 'neutral.400'])
 
   const chartData = useMemo(
@@ -150,7 +157,7 @@ export function AccumulationChart({
             axisLine={false}
             tickLine={false}
             tick={{ fontSize: 10, fill: '#ccc', fontWeight: 500 }}
-            tickFormatter={(v: number) => formatShortBtc(new Decimal(v).mul(100_000_000).toString())}
+            tickFormatter={(v: number) => formatAxisAmount(new Decimal(v).mul(100_000_000), unit)}
             width={52}
           />
           <Tooltip

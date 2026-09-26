@@ -24,6 +24,8 @@ import { format } from 'date-fns'
 import { useCallback, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { toast } from 'sonner'
+import { BitcoinAmount } from '../../../components/bitcoin-amount'
+import { SensitiveValue } from '../../../components/sensitive-value'
 import { trpc } from '../../../trpc'
 import { needsExchangeReconnect } from '../../../utils/exchange-connection-status'
 
@@ -360,7 +362,7 @@ export function StrikeAccountDetailsPage(): JSX.Element {
                 </Text>
               ) : (
                 <Text textStyle="label/sm" color="neutral.900" fontWeight="medium">
-                  {btcAmount} BTC
+                  <BitcoinAmount btc={btcAmount} />
                 </Text>
               )}
             </Box>
@@ -534,21 +536,28 @@ export function StrikeAccountDetailsPage(): JSX.Element {
                           </Td>
                           <Td isNumeric>
                             <Text textStyle="text/xs" fontFamily="mono">
-                              {formatBtcAmount(tx.amountBtc)}
+                              <SensitiveValue>
+                                {Number(tx.amountBtc) >= 0 ? '+' : ''}
+                                <BitcoinAmount btc={tx.amountBtc} />
+                              </SensitiveValue>
                             </Text>
                           </Td>
                           <Td isNumeric>
                             <Text textStyle="text/xs" fontFamily="mono" color="neutral.500">
-                              {tx.amountUsd != null && tx.amountUsd !== ''
-                                ? `$${Math.abs(Number(tx.amountUsd)).toFixed(2)}`
-                                : '—'}
+                              <SensitiveValue>
+                                {tx.amountUsd != null && tx.amountUsd !== ''
+                                  ? `$${Math.abs(Number(tx.amountUsd)).toFixed(2)}`
+                                  : '—'}
+                              </SensitiveValue>
                             </Text>
                           </Td>
                           <Td isNumeric>
                             <Text textStyle="text/xs" color="neutral.500">
-                              {tx.exchangeRate != null && tx.exchangeRate !== ''
-                                ? `$${Number(tx.exchangeRate).toLocaleString()}`
-                                : '—'}
+                              <SensitiveValue>
+                                {tx.exchangeRate != null && tx.exchangeRate !== ''
+                                  ? `$${Number(tx.exchangeRate).toLocaleString()}`
+                                  : '—'}
+                              </SensitiveValue>
                             </Text>
                           </Td>
                           <Td>
@@ -692,11 +701,6 @@ function formatMonth(yyyymm: string): string {
   const [year, month] = yyyymm.split('-')
   const date = new Date(Number(year), Number(month) - 1)
   return format(date, 'MMMM yyyy')
-}
-
-function formatBtcAmount(amount: string): string {
-  const num = Number(amount)
-  return num >= 0 ? `+${num.toFixed(8)}` : num.toFixed(8)
 }
 
 function truncateHash(hash: string | null): string {

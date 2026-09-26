@@ -10,6 +10,8 @@ import type { RouterOutput } from '../../trpc'
 import type { ClaimDto } from '../../trpc/server-types'
 import { ensureClaimStatusNotExpired, mapClaimToClaimCardProps } from '../../utils/claim-utils'
 import { needsExchangeReconnect } from '../../utils/exchange-connection-status'
+import { BitcoinAmount } from '../bitcoin-amount'
+import { SensitiveValue } from '../sensitive-value'
 
 type ExchangeAccountDto = RouterOutput['portalProve']['exchange']['list'][number]
 type ManualAccountDto = RouterOutput['portalProve']['manual']['list'][number]
@@ -268,7 +270,7 @@ export function AccountsSidebar({
               fontWeight="semibold"
               color="neutral.600"
             >
-              {totalBtc.toFixed(8)}
+              <BitcoinAmount btc={totalBtc} />
             </Text>
           </>
         ) : (
@@ -285,11 +287,13 @@ export function AccountsSidebar({
                 fontWeight="semibold"
                 color="neutral.600"
               >
-                {totalBtc.toFixed(8)}
+                <BitcoinAmount btc={totalBtc} />
               </Text>
             </Flex>
             <Text as="span" display="block" textStyle="label/sm" color="success.600" mt={1} fontFamily="mono">
-              ${totalUsd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              <SensitiveValue>
+                ${totalUsd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </SensitiveValue>
             </Text>
           </>
         )}
@@ -385,7 +389,7 @@ export function AccountsSidebar({
               {selected.size} selected
             </Text>
             <Text textStyle="text/xs" fontWeight="bold" color="neutral.900" fontFamily="mono">
-              {(selectedBtcSats / 100_000_000).toFixed(8)} BTC
+              <BitcoinAmount btc={selectedBtcSats / 100_000_000} />
             </Text>
           </Box>
         ) : (
@@ -401,10 +405,7 @@ export function AccountsSidebar({
                 ·
               </Text>
               <Text textStyle="text/sm" fontWeight="bold" color="neutral.900" fontFamily="mono">
-                {(selectedBtcSats / 100_000_000).toFixed(8)}
-              </Text>
-              <Text textStyle="text/sm" color="neutral.400">
-                BTC
+                <BitcoinAmount btc={selectedBtcSats / 100_000_000} />
               </Text>
             </Flex>
           </Box>
@@ -497,7 +498,7 @@ function ExchangeAccountPill({
         </Tooltip>
         {!compact && !needsReconnect && !isSelected && (
           <Text as="span" display="block" textStyle="label/sm" color="neutral.500" fontWeight="semibold" flexShrink={0}>
-            {pct}%
+            <SensitiveValue>{pct}%</SensitiveValue>
           </Text>
         )}
       </Flex>
@@ -512,9 +513,13 @@ function ExchangeAccountPill({
             fontWeight="semibold"
             color={needsReconnect ? 'neutral.400' : 'neutral.600'}
           >
-            {needsReconnect ? '—' : btcAmount.toFixed(8)}
+            {needsReconnect ? '—' : <BitcoinAmount btc={btcAmount} />}
           </Text>
-          {!needsReconnect && <MiniPieChart pct={parseFloat(pct)} />}
+          {!needsReconnect && (
+            <SensitiveValue>
+              <MiniPieChart pct={parseFloat(pct)} />
+            </SensitiveValue>
+          )}
         </Flex>
       ) : (
         <>
@@ -537,10 +542,14 @@ function ExchangeAccountPill({
               fontWeight="semibold"
               color={needsReconnect ? 'neutral.400' : 'neutral.600'}
             >
-              {needsReconnect ? '—' : btcAmount.toFixed(8)}
+              {needsReconnect ? '—' : <BitcoinAmount btc={btcAmount} />}
             </Text>
           </Flex>
-          {!needsReconnect && <ProportionBar pct={pct} isSelected={isSelected} />}
+          {!needsReconnect && (
+            <SensitiveValue>
+              <ProportionBar pct={pct} isSelected={isSelected} />
+            </SensitiveValue>
+          )}
         </>
       )}
     </Box>
@@ -617,7 +626,7 @@ function ManualAccountPill({
         </Tooltip>
         {!compact && !isSelected && (
           <Text as="span" display="block" textStyle="label/sm" color="neutral.500" fontWeight="semibold" flexShrink={0}>
-            {pct}%
+            <SensitiveValue>{pct}%</SensitiveValue>
           </Text>
         )}
       </Flex>
@@ -632,9 +641,11 @@ function ManualAccountPill({
             fontWeight="semibold"
             color="neutral.600"
           >
-            {btcAmount.toFixed(8)}
+            <BitcoinAmount btc={btcAmount} />
           </Text>
-          <MiniPieChart pct={parseFloat(pct)} />
+          <SensitiveValue>
+            <MiniPieChart pct={parseFloat(pct)} />
+          </SensitiveValue>
         </Flex>
       ) : (
         <>
@@ -650,10 +661,12 @@ function ManualAccountPill({
               fontWeight="semibold"
               color="neutral.600"
             >
-              {btcAmount.toFixed(8)}
+              <BitcoinAmount btc={btcAmount} />
             </Text>
           </Flex>
-          <ProportionBar pct={pct} isSelected={isSelected} />
+          <SensitiveValue>
+            <ProportionBar pct={pct} isSelected={isSelected} />
+          </SensitiveValue>
         </>
       )}
     </Box>
@@ -775,7 +788,7 @@ function AccountPill({
         </Tooltip>
         {!compact && !isSelected && (
           <Text as="span" display="block" textStyle="label/sm" color="neutral.500" fontWeight="semibold" flexShrink={0}>
-            {pct}%
+            <SensitiveValue>{pct}%</SensitiveValue>
           </Text>
         )}
         {isHistorySyncing && <HistorySyncSpinner compact={compact} />}
@@ -792,9 +805,11 @@ function AccountPill({
             fontWeight="semibold"
             color="neutral.600"
           >
-            {btcAmount.toFixed(8)}
+            <BitcoinAmount btc={btcAmount} />
           </Text>
-          <MiniPieChart pct={parseFloat(pct)} />
+          <SensitiveValue>
+            <MiniPieChart pct={parseFloat(pct)} />
+          </SensitiveValue>
         </Flex>
       ) : (
         <>
@@ -822,10 +837,12 @@ function AccountPill({
               fontWeight="semibold"
               color="neutral.600"
             >
-              {btcAmount.toFixed(8)}
+              <BitcoinAmount btc={btcAmount} />
             </Text>
           </Flex>
-          <ProportionBar pct={pct} isSelected={isSelected} />
+          <SensitiveValue>
+            <ProportionBar pct={pct} isSelected={isSelected} />
+          </SensitiveValue>
         </>
       )}
     </Box>

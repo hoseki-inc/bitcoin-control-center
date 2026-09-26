@@ -21,7 +21,9 @@ import { ClaimCardKeystores, StatusBadge, getBadgeConfigForClaim } from '@hoseki
 import { useEffect } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router'
 import { toast } from 'sonner'
+import { BitcoinAmount } from '../../components/bitcoin-amount'
 import { DeleteClaimModal } from '../../components/claims/claim-details/delete-claim-modal'
+import { SensitiveValue } from '../../components/sensitive-value'
 import { useAutoRefreshExchanges } from '../../hooks/use-auto-refresh-exchanges'
 import { useGetBalancesPerClaimIds } from '../../lib/balances'
 import { type RouterOutput, trpc } from '../../trpc'
@@ -187,11 +189,13 @@ export function ClaimsPage(): JSX.Element {
             {hasClaims && (
               <Flex align="center" gap={3} mt={2} flexWrap="wrap">
                 <Text textStyle="text/sm" fontWeight="semibold" color="neutral.900">
-                  {totalBtc.toFixed(8)} BTC
+                  <BitcoinAmount btc={totalBtc} />
                 </Text>
                 <Text color="neutral.200">·</Text>
                 <Text textStyle="text/sm" color="success.600">
-                  ${totalUsd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  <SensitiveValue>
+                    ${totalUsd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </SensitiveValue>
                 </Text>
                 <Text color="neutral.200">·</Text>
                 <Flex align="center" gap={1}>
@@ -399,10 +403,12 @@ function AccountCard({ claim, balance, totalBtcSats, isLoadingBalance }: Account
         ) : (
           <>
             <Text fontFamily="mono" textStyle="text/lg" fontWeight="bold" color="neutral.900" letterSpacing="-0.02em">
-              {btcAmount.toFixed(8)} BTC
+              <BitcoinAmount btc={btcAmount} />
             </Text>
             <Text textStyle="text/sm" fontWeight="medium" color="success.600">
-              ${usdAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              <SensitiveValue>
+                ${usdAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </SensitiveValue>
             </Text>
           </>
         )}
@@ -604,11 +610,13 @@ function ExchangeAccountCard({ account, totalBtcSats, btcUsdPrice }: ExchangeAcc
         ) : (
           <>
             <Text fontFamily="mono" textStyle="text/lg" fontWeight="bold" color="neutral.900" letterSpacing="-0.02em">
-              {btcAmount.toFixed(8)} BTC
+              <BitcoinAmount btc={btcAmount} />
             </Text>
             {usdAmount !== null && (
               <Text textStyle="text/sm" fontWeight="medium" color="success.600">
-                ${usdAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                <SensitiveValue>
+                  ${usdAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </SensitiveValue>
               </Text>
             )}
           </>
@@ -692,11 +700,13 @@ function ManualAccountCard({
       {/* Balance */}
       <Stack gap={0} mx={4} mt={1}>
         <Text fontFamily="mono" textStyle="text/lg" fontWeight="bold" color="neutral.900" letterSpacing="-0.02em">
-          {btcAmount.toFixed(8)} BTC
+          <BitcoinAmount btc={btcAmount} />
         </Text>
         {usdAmount !== null && (
           <Text textStyle="text/sm" fontWeight="medium" color="success.600">
-            ${usdAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            <SensitiveValue>
+              ${usdAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </SensitiveValue>
           </Text>
         )}
       </Stack>
