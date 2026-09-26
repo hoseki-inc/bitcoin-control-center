@@ -19,7 +19,7 @@ import type { BalanceWithStatus } from '@hoseki/packages/lib/balance'
 import type { ClaimId } from '@hoseki/packages/schemas'
 import { ErrorInline, Spinner } from '@hoseki/packages/ui/design-system'
 import { LoadingTextSkeleton } from '@hoseki/packages/ui/prove-verify-ui/claims/loading-text-skeleton'
-import { formatUsd, toBitcoinAmountDisplayValue } from '@hoseki/packages/ui/utils'
+import { formatUsd } from '@hoseki/packages/ui/utils'
 import Decimal from 'decimal.js'
 import { PlusIcon } from 'lucide-react'
 import type { Dispatch, SetStateAction } from 'react'
@@ -29,6 +29,7 @@ import { setIsInGenerateStatementFlow } from '../../lib/flow-tracker'
 import { trpc } from '../../trpc'
 import { withStatusBalance } from '../../utils/claim-utils'
 import { isExchangeConnected, needsExchangeReconnect } from '../../utils/exchange-connection-status'
+import { BitcoinAmount } from '../bitcoin-amount'
 
 interface ClaimSelectionProps extends StackProps {
   disabledClaims?: Set<string>
@@ -151,7 +152,7 @@ export function ClaimSelection({
             </Th>
             <Th px={0} isNumeric>
               <Text textStyle="overline/sm" fontWeight={600} color="neutral.600">
-                BTC
+                Bitcoin
               </Text>
             </Th>
             <Th px={0} isNumeric>
@@ -196,12 +197,14 @@ export function ClaimSelection({
                   </HStack>
                 </Td>
                 <Td px={0} isNumeric>
-                  <Text textStyle="text/sm" fontWeight="medium" whiteSpace="nowrap">
-                    {renderBalance(balanceWithStatus)}
-                  </Text>
+                  <>
+                    <Text textStyle="text/sm" fontWeight="medium" whiteSpace="nowrap">
+                      {renderBalance(balanceWithStatus)}
+                    </Text>
+                  </>
                 </Td>
                 <Td px={0} isNumeric>
-                  {renderUsdAmount(balanceWithStatus)}
+                  <>{renderUsdAmount(balanceWithStatus)}</>
                 </Td>
               </Tr>
             )
@@ -245,14 +248,18 @@ export function ClaimSelection({
                   </HStack>
                 </Td>
                 <Td px={0} isNumeric>
-                  <Text textStyle="text/sm" fontWeight="medium" whiteSpace="nowrap">
-                    {needsReconnect ? '—' : toBitcoinAmountDisplayValue(btcSats.toString())}
-                  </Text>
+                  <>
+                    <Text textStyle="text/sm" fontWeight="medium" whiteSpace="nowrap">
+                      {needsReconnect ? '—' : <BitcoinAmount btc={new Decimal(btcSats).div(100_000_000)} />}
+                    </Text>
+                  </>
                 </Td>
                 <Td px={0} isNumeric>
-                  <Text textStyle="text/sm" fontWeight="medium" color="success.600" whiteSpace="nowrap">
-                    {!needsReconnect && usdAmount !== null ? formatUsd(usdAmount.toFixed(2)) : '—'}
-                  </Text>
+                  <>
+                    <Text textStyle="text/sm" fontWeight="medium" color="success.600" whiteSpace="nowrap">
+                      {!needsReconnect && usdAmount !== null ? formatUsd(usdAmount.toFixed(2)) : '—'}
+                    </Text>
+                  </>
                 </Td>
               </Tr>
             )
@@ -279,7 +286,7 @@ export function ClaimSelection({
             </Th>
             <Th px={0} isNumeric colSpan={2}>
               <Text textStyle="text/md" fontWeight="medium" color="success.600">
-                {formatUsd(totalUsdSelected.toFixed(2))}
+                <>{formatUsd(totalUsdSelected.toFixed(2))}</>
               </Text>
             </Th>
           </Tr>
@@ -296,7 +303,7 @@ function renderBalance(balance: BalanceWithStatus) {
   if (balance.status === 'fail') {
     return 'n/a'
   }
-  return toBitcoinAmountDisplayValue(balance.value.current.toString())
+  return <BitcoinAmount btc={new Decimal(balance.value.current).div(100_000_000)} />
 }
 
 function renderUsdAmount(balance: BalanceWithStatus) {
@@ -316,7 +323,7 @@ function renderUsdAmount(balance: BalanceWithStatus) {
   }
   return (
     <Text textStyle="text/sm" fontWeight="medium" color="success.600" whiteSpace="nowrap">
-      {formatUsd(balance.value.usd.toFixed(2))}
+      <>{formatUsd(balance.value.usd.toFixed(2))}</>
     </Text>
   )
 }
