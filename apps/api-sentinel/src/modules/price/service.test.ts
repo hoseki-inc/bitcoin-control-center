@@ -74,3 +74,95 @@ describe('price response validation', () => {
     })
   })
 })
+
+describe('Bitcoin price history', () => {
+  type MarketChartPrices = [number, number][] | string
+
+  function marketChart(prices: MarketChartPrices): Response {
+    return Response.json({ prices })
+  }
+
+  it('validates, orders, converts milliseconds and caches market data', async () => {
+    await withTestSetup(async () => {
+      const fetch = vi.fn(async (_url: string, _init?: RequestInit) =>
+        marketChart([
+          [2000, 102],
+          [1000, 100],
+        ]),
+      )
+      vi.stubGlobal('fetch', fetch)
+      const service = new PriceService({ logger })
+      expect((await service.getBitcoinPriceHistory()).expect('valid history')).toEqual([
+        { time: 1, value: 100 },
+        { time: 2, value: 102 },
+      ])
+      await service.getBitcoinPriceHistory()
+      expect(fetch).toHaveBeenCalledTimes(1)
+      expect(fetch.mock.calls[0]?.[0]).toContain('days=7')
+      expect(fetch.mock.calls[0]?.[0]).not.toContain('interval=')
+      expect(fetch.mock.calls[0]?.[1]?.signal).toBeInstanceOf(AbortSignal)
+    })
+  })
+
+  it('requests and caches each range separately', async () => {
+    await withTestSetup(async () => {
+      const fetch = vi.fn(async (_url: string) =>
+        marketChart([
+          [1000, 100],
+          [2000, 102],
+        ]),
+      )
+      vi.stubGlobal('fetch', fetch)
+      const service = new PriceService({ logger })
+      for (const days of [1, 7, 30, 180, 365] as const) {
+        await service.getBitcoinPriceHistory(days)
+        expect(fetch.mock.lastCall?.[0]).toContain(`days=${days}`)
+        await service.getBitcoinPriceHistory(days)
+      }
+      expect(fetch).toHaveBeenCalledTimes(5)
+    })
+  })
+
+  it.each([
+    [[]],
+    [
+      [
+        [1000, -1],
+        [2000, 100],
+      ],
+    ],
+    ['invalid'],
+  ])('rejects malformed data without caching it: %j', async (prices) => {
+    await withTestSetup(async () => {
+      const fetch = vi.fn(async () => marketChart(prices))
+      vi.stubGlobal('fetch', fetch)
+      const service = new PriceService({ logger })
+      expect((await service.getBitcoinPriceHistory()).isErr()).toBe(true)
+      await service.getBitcoinPriceHistory()
+      expect(fetch).toHaveBeenCalledTimes(2)
+    })
+  })
+
+  it('returns a result on network timeouts so local balances can still load', async () => {
+    await withTestSetup(async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => Promise.reject(new Error('timeout'))),
+      )
+      const service = new PriceService({ logger })
+      expect((await service.getBitcoinPriceHistory()).isErr()).toBe(true)
+      expect((await service.getCurrentBtcPrice()).isErr()).toBe(true)
+    })
+  })
+
+  it('returns an expected failure when the provider is unavailable', async () => {
+    await withTestSetup(async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => new Response(null, { status: 503 })),
+      )
+      const service = new PriceService({ logger })
+      expect((await service.getBitcoinPriceHistory()).isErr()).toBe(true)
+    })
+  })
+})
