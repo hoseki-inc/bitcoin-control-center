@@ -1,4 +1,4 @@
-import { Box, Button, HStack, SimpleGrid, Text } from '@chakra-ui/react'
+import { Box, Button, Flex, SimpleGrid, Text } from '@chakra-ui/react'
 import { Link as RouterLink, useNavigate } from 'react-router'
 import type { StatementDto } from '../../trpc/server-types'
 import { StatementCard } from './statement-card'
@@ -44,15 +44,15 @@ export function RecentStatements({
   )
 }
 
-function Header({ showGenerateButton }: { showGenerateButton: boolean }) {
+function Header({ showGenerateButton }: { showGenerateButton: boolean }): JSX.Element {
   return (
-    <HStack justifyContent="space-between" mb={8}>
+    <Flex justifyContent="space-between" mb={6} gap={4} flexWrap="wrap">
       <Box flexGrow={1}>
-        <Text as="h1" textStyle="text/md" color="neutral.900" fontWeight="medium">
+        <Text as="h2" textStyle="text/xl" color="neutral.900" fontWeight="medium">
           Recent Statements
         </Text>
-        <Text textStyle="text/sm" color="neutral.600">
-          Includes your statement activity plus partner-generated requests through secure API connections.
+        <Text textStyle="text/sm" color="neutral.600" mt={2}>
+          Your latest Bitcoin statements, ready to view or download.
         </Text>
       </Box>
       {showGenerateButton && (
@@ -60,6 +60,6 @@ function Header({ showGenerateButton }: { showGenerateButton: boolean }) {
           Generate Statement
         </Button>
       )}
-    </HStack>
+    </Flex>
   )
 }
