@@ -1,11 +1,17 @@
 import {
+  AlertDialog,
+  AlertDialogBody,
+  AlertDialogContent,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogOverlay,
   Box,
   Button,
   Checkbox,
+  Divider,
   FormControl,
   FormLabel,
   HStack,
-  Heading,
   Icon,
   Input,
   Select,
@@ -21,11 +27,14 @@ import {
 } from '@chakra-ui/react'
 import { getRecordValue } from '@hoseki/packages/lib'
 import { ErrorBanner } from '@hoseki/packages/ui/design-system'
+import { DateStringInput } from '@hoseki/packages/ui/design-system/forms/date-string-input'
+import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
 import { TopBar } from '@hoseki/packages/ui/prove-verify-ui/top-bar'
 import { format } from 'date-fns'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { toast } from 'sonner'
+import { BitcoinAmount } from '../../../components/bitcoin-amount'
 import { trpc } from '../../../trpc'
 
 const TX_TYPE_LABELS = {
@@ -41,6 +50,8 @@ export function ManualAccountDetailsPage(): JSX.Element {
   const utils = trpc.useUtils()
 
   const [isDeleting, setIsDeleting] = useState(false)
+  const [removal, setRemoval] = useState<{ kind: 'account' } | { kind: 'transaction'; id: string } | null>(null)
+  const cancelRemovalRef = useRef<HTMLButtonElement>(null)
 
   // ─── Balance update form ────────────────────────────────────────
   const [newBtcAmount, setNewBtcAmount] = useState('')
@@ -139,6 +150,7 @@ export function ManualAccountDetailsPage(): JSX.Element {
       await deleteTxMutation.mutateAsync({ transactionId })
       await invalidateAll()
       toast.success('Transaction deleted')
+      setRemoval(null)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to delete transaction')
     }
@@ -161,19 +173,10 @@ export function ManualAccountDetailsPage(): JSX.Element {
   }
 
   return (
-    <Box py={6}>
-      <TopBar mb={6}>
+    <Box py={{ base: 6, md: 8 }} maxW="960px" w="full" mx="auto">
+      <TopBar mb={8}>
         <TopBar.Item as={Link} to="/accounts">
           Back to Accounts
-        </TopBar.Item>
-        <TopBar.Item
-          as="button"
-          color="error.600"
-          onClick={() => {
-            void handleDelete()
-          }}
-        >
-          {isDeleting ? 'Removing...' : 'Remove Account'}
         </TopBar.Item>
       </TopBar>
 
@@ -182,21 +185,19 @@ export function ManualAccountDetailsPage(): JSX.Element {
         <Box>
           <HStack spacing={3} mb={1}>
             <ManualIcon />
-            <Text textStyle="text/md" fontWeight="medium">
-              {account.displayName}
-            </Text>
+            <PageHeading title={account.displayName} />
           </HStack>
-          <HStack spacing={1}>
-            <Box w={2} h={2} bg="warning.500" borderRadius="full" />
-            <Text textStyle="text/xs" color="warning.600" fontWeight="medium">
-              Manually Added
+          <HStack spacing={1} flexWrap="wrap">
+            <Box w={2} h={2} bg="neutral.400" borderRadius="full" />
+            <Text textStyle="text/sm" color="neutral.600" fontWeight="medium">
+              Manually tracked
             </Text>
             {account.createdAt && (
               <>
-                <Text textStyle="text/xs" color="neutral.400">
+                <Text textStyle="text/sm" color="neutral.400">
                   ·
                 </Text>
-                <Text textStyle="text/xs" color="neutral.600">
+                <Text textStyle="text/sm" color="neutral.600">
                   {format(new Date(account.createdAt), 'MMMM do, yyyy')}
                 </Text>
               </>
@@ -204,57 +205,46 @@ export function ManualAccountDetailsPage(): JSX.Element {
           </HStack>
         </Box>
 
-        <hr />
+        <Divider borderColor="neutral.200" />
 
-        {/* Balance display */}
-        <Stack align="center" maxW="640px" mx="auto" w="100%">
-          <HStack spacing={4} mb={4} w="100%" alignItems="flex-start">
-            <Box w={['100%', '50%', '33%']}>
-              <Text textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={1}>
-                Balance
+        <Stack direction={{ base: 'column', sm: 'row' }} spacing={6} justify="space-between">
+          <Box>
+            <Text textStyle="text/sm" color="neutral.600" mb={1}>
+              Balance
+            </Text>
+            <Text textStyle="text/xl" fontWeight="medium" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+              <>
+                <BitcoinAmount btc={btcAmount} />
+              </>
+            </Text>
+          </Box>
+          {account.balanceAsOf != null && account.balanceAsOf !== '' && (
+            <Box>
+              <Text textStyle="text/sm" color="neutral.600" mb={1}>
+                Balance as of
               </Text>
-              <Text textStyle="label/sm" color="neutral.900" fontWeight="medium">
-                {btcAmount} BTC
+              <Text textStyle="text/sm" color="neutral.900">
+                {format(new Date(account.balanceAsOf), 'MMMM do, yyyy')}
               </Text>
             </Box>
-            <Box w={['100%', '50%', '33%']}>
-              <Text textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={1}>
-                Status
-              </Text>
-              <HStack spacing={1}>
-                <Box w={2} h={2} bg="warning.500" borderRadius="full" />
-                <Text textStyle="text/xs" color="warning.600" fontWeight="medium">
-                  Manually Added
-                </Text>
-              </HStack>
-            </Box>
-            {account.balanceAsOf != null && account.balanceAsOf !== '' && (
-              <Box w={['100%', '50%', '33%']} textAlign="right">
-                <Text textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={1}>
-                  Balance As Of
-                </Text>
-                <Text textStyle="label/sm" color="neutral.900" fontWeight="medium">
-                  {format(new Date(account.balanceAsOf), 'MMMM do, yyyy')}
-                </Text>
-              </Box>
-            )}
-          </HStack>
+          )}
         </Stack>
-
-        <hr />
+        <Divider borderColor="neutral.200" />
 
         {/* Update Balance */}
-        <Box maxW="640px" mx="auto" w="100%">
-          <Heading textStyle="text/lg" fontWeight="semibold" mb={3}>
-            Update Balance
-          </Heading>
-          <HStack spacing={3} align="flex-end">
-            <FormControl flex={1}>
-              <FormLabel textStyle="text/xs" color="neutral.600">
+        <Box w="100%">
+          <Text as="h2" textStyle="text/md" fontWeight="medium" mb={4}>
+            Update balance
+          </Text>
+          <Stack direction={{ base: 'column', md: 'row' }} spacing={3} align={{ base: 'stretch', md: 'flex-end' }}>
+            <FormControl flex={1} minW={0}>
+              <FormLabel fontWeight="medium" textStyle="text/sm" color="neutral.600">
                 New Balance (BTC)
               </FormLabel>
               <Input
-                size="sm"
+                fontFamily="body"
+                size="md"
+                textStyle="text/sm"
                 type="number"
                 step="any"
                 min="0"
@@ -265,21 +255,23 @@ export function ManualAccountDetailsPage(): JSX.Element {
                 }}
               />
             </FormControl>
-            <FormControl flex={1}>
-              <FormLabel textStyle="text/xs" color="neutral.600">
+            <FormControl flex={1} minW={0}>
+              <FormLabel fontWeight="medium" textStyle="text/sm" color="neutral.600">
                 As of Date
               </FormLabel>
-              <Input
-                size="sm"
-                type="date"
+              <DateStringInput
+                isRequired
+                fontFamily="body"
+                size="md"
+                textStyle="text/sm"
                 value={newBalanceDate}
-                onChange={(e) => {
-                  setNewBalanceDate(e.target.value)
+                onChange={(date) => {
+                  setNewBalanceDate(date)
                 }}
               />
             </FormControl>
             <Button
-              size="sm"
+              size="md"
               variant="outline"
               onClick={() => {
                 void handleUpdateBalance()
@@ -289,24 +281,27 @@ export function ManualAccountDetailsPage(): JSX.Element {
             >
               Update
             </Button>
-          </HStack>
+          </Stack>
         </Box>
 
-        <hr />
+        <Divider borderColor="neutral.200" />
 
         {/* Add Transaction */}
-        <Box maxW="640px" mx="auto" w="100%">
-          <Heading textStyle="text/lg" fontWeight="semibold" mb={3}>
-            Add Transaction
-          </Heading>
+        <Box w="100%">
+          <Text as="h2" textStyle="text/md" fontWeight="medium" mb={4}>
+            Add transaction
+          </Text>
           <Stack spacing={3}>
-            <HStack spacing={3}>
-              <FormControl flex={1}>
-                <FormLabel textStyle="text/xs" color="neutral.600">
+            <Stack direction={{ base: 'column', md: 'row' }} spacing={3}>
+              <FormControl flex={1} minW={0}>
+                <FormLabel fontWeight="medium" textStyle="text/sm" color="neutral.600">
                   Type
                 </FormLabel>
                 <Select
-                  size="sm"
+                  fontFamily="body"
+                  size="md"
+                  borderRadius="control"
+                  textStyle="text/sm"
                   value={txType}
                   onChange={(e) => {
                     const value = e.target.value
@@ -321,12 +316,14 @@ export function ManualAccountDetailsPage(): JSX.Element {
                   <option value="transfer_out">Transfer Out</option>
                 </Select>
               </FormControl>
-              <FormControl flex={1}>
-                <FormLabel textStyle="text/xs" color="neutral.600">
+              <FormControl flex={1} minW={0}>
+                <FormLabel fontWeight="medium" textStyle="text/sm" color="neutral.600">
                   Amount (BTC)
                 </FormLabel>
                 <Input
-                  size="sm"
+                  fontFamily="body"
+                  size="md"
+                  textStyle="text/sm"
                   type="number"
                   step="any"
                   min="0"
@@ -337,27 +334,31 @@ export function ManualAccountDetailsPage(): JSX.Element {
                   }}
                 />
               </FormControl>
-              <FormControl flex={1}>
-                <FormLabel textStyle="text/xs" color="neutral.600">
+              <FormControl flex={1} minW={0}>
+                <FormLabel fontWeight="medium" textStyle="text/sm" color="neutral.600">
                   Date
                 </FormLabel>
-                <Input
-                  size="sm"
-                  type="date"
+                <DateStringInput
+                  isRequired
+                  fontFamily="body"
+                  size="md"
+                  textStyle="text/sm"
                   value={txDate}
-                  onChange={(e) => {
-                    setTxDate(e.target.value)
+                  onChange={(date) => {
+                    setTxDate(date)
                   }}
                 />
               </FormControl>
-            </HStack>
-            <HStack spacing={3} align="flex-end">
-              <FormControl flex={1}>
-                <FormLabel textStyle="text/xs" color="neutral.600">
+            </Stack>
+            <Stack direction={{ base: 'column', md: 'row' }} spacing={3} align={{ base: 'stretch', md: 'flex-end' }}>
+              <FormControl flex={1} minW={0}>
+                <FormLabel fontWeight="medium" textStyle="text/sm" color="neutral.600">
                   Note (optional)
                 </FormLabel>
                 <Input
-                  size="sm"
+                  fontFamily="body"
+                  size="md"
+                  textStyle="text/sm"
                   placeholder="Optional note"
                   value={txNote}
                   onChange={(e) => {
@@ -366,7 +367,7 @@ export function ManualAccountDetailsPage(): JSX.Element {
                 />
               </FormControl>
               <Button
-                size="sm"
+                size="md"
                 variant="outline"
                 onClick={() => {
                   void handleAddTransaction()
@@ -376,7 +377,7 @@ export function ManualAccountDetailsPage(): JSX.Element {
               >
                 Add
               </Button>
-            </HStack>
+            </Stack>
             <Checkbox
               size="sm"
               isChecked={txAddToBalance}
@@ -385,7 +386,7 @@ export function ManualAccountDetailsPage(): JSX.Element {
               }}
               colorScheme="orange"
             >
-              <Text textStyle="text/xs" color="neutral.600">
+              <Text textStyle="text/sm" color="neutral.600">
                 Add this amount to balance
               </Text>
             </Checkbox>
@@ -394,19 +395,30 @@ export function ManualAccountDetailsPage(): JSX.Element {
 
         {/* Transaction History */}
         {txQuery.data && txQuery.data.length > 0 && (
-          <Box maxW="640px" mx="auto" w="100%">
-            <Heading textStyle="text/lg" fontWeight="semibold" mb={3}>
+          <Box w="100%">
+            <Text as="h2" textStyle="text/md" fontWeight="medium" mb={4}>
               Transactions
-            </Heading>
-            <Box borderWidth="1px" borderColor="neutral.200" borderRadius="md" overflow="hidden">
-              <Table size="sm">
+            </Text>
+            <Box borderWidth="1px" borderColor="neutral.200" borderRadius="panel" overflowX="auto">
+              <Table
+                size="sm"
+                sx={{ th: { textTransform: 'none', letterSpacing: 'normal' }, td: { whiteSpace: 'nowrap' } }}
+              >
                 <Thead>
                   <Tr>
-                    <Th>Type</Th>
-                    <Th>Amount (BTC)</Th>
-                    <Th>Date</Th>
-                    <Th>Note</Th>
-                    <Th aria-label="Actions" />
+                    <Th textStyle="text/sm" fontFamily="body" color="neutral.600">
+                      Type
+                    </Th>
+                    <Th textStyle="text/sm" fontFamily="body" color="neutral.600">
+                      Amount
+                    </Th>
+                    <Th textStyle="text/sm" fontFamily="body" color="neutral.600">
+                      Date
+                    </Th>
+                    <Th textStyle="text/sm" fontFamily="body" color="neutral.600">
+                      Note
+                    </Th>
+                    <Th textStyle="text/sm" fontFamily="body" color="neutral.600" aria-label="Actions" />
                   </Tr>
                 </Thead>
                 <Tbody>
@@ -414,7 +426,7 @@ export function ManualAccountDetailsPage(): JSX.Element {
                     <Tr key={tx.id}>
                       <Td>
                         <Text
-                          textStyle="text/xs"
+                          textStyle="text/sm"
                           fontWeight="medium"
                           color={tx.type === 'buy' || tx.type === 'transfer_in' ? 'success.600' : 'error.600'}
                         >
@@ -422,13 +434,17 @@ export function ManualAccountDetailsPage(): JSX.Element {
                         </Text>
                       </Td>
                       <Td>
-                        <Text textStyle="text/xs">{(Number(tx.amountSats) / 1e8).toFixed(8)}</Text>
+                        <>
+                          <Text textStyle="text/sm">
+                            <BitcoinAmount btc={Number(tx.amountSats) / 1e8} />
+                          </Text>
+                        </>
                       </Td>
                       <Td>
-                        <Text textStyle="text/xs">{format(new Date(tx.transactedAt), 'MMM d, yyyy')}</Text>
+                        <Text textStyle="text/sm">{format(new Date(tx.transactedAt), 'MMM d, yyyy')}</Text>
                       </Td>
                       <Td>
-                        <Text textStyle="text/xs" color="neutral.500">
+                        <Text textStyle="text/sm" color="neutral.600">
                           {(tx.note?.length ?? 0) > 0 ? tx.note : '—'}
                         </Text>
                       </Td>
@@ -438,7 +454,7 @@ export function ManualAccountDetailsPage(): JSX.Element {
                           variant="ghost"
                           color="error.500"
                           onClick={() => {
-                            void handleDeleteTransaction(tx.id)
+                            setRemoval({ kind: 'transaction', id: tx.id })
                           }}
                         >
                           Delete
@@ -452,6 +468,67 @@ export function ManualAccountDetailsPage(): JSX.Element {
           </Box>
         )}
       </Stack>
+      <Box mt={8} pt={5} borderTop="1px solid" borderColor="neutral.200">
+        <Button
+          variant="ghost"
+          color="error.700"
+          onClick={() => {
+            setRemoval({ kind: 'account' })
+          }}
+        >
+          Remove Account
+        </Button>
+      </Box>
+      <AlertDialog
+        isOpen={removal !== null}
+        leastDestructiveRef={cancelRemovalRef}
+        onClose={() => {
+          if (!isDeleting && !deleteTxMutation.isLoading) {
+            setRemoval(null)
+          }
+        }}
+        closeOnOverlayClick={!isDeleting && !deleteTxMutation.isLoading}
+        closeOnEsc={!isDeleting && !deleteTxMutation.isLoading}
+        isCentered
+      >
+        <AlertDialogOverlay>
+          <AlertDialogContent mx={4} borderRadius="dialog">
+            <AlertDialogHeader textStyle="text/xl">
+              {removal?.kind === 'account' ? 'Remove account?' : 'Remove transaction?'}
+            </AlertDialogHeader>
+            <AlertDialogBody textStyle="text/md">
+              {removal?.kind === 'account'
+                ? `This removes “${account.displayName}” and its manually recorded history from Control Center. Your Bitcoin is not moved. This cannot be undone.`
+                : 'This removes the selected transaction from your local records. This cannot be undone.'}
+            </AlertDialogBody>
+            <AlertDialogFooter gap={3}>
+              <Button
+                ref={cancelRemovalRef}
+                variant="outline"
+                onClick={() => {
+                  setRemoval(null)
+                }}
+                isDisabled={isDeleting || deleteTxMutation.isLoading}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="error"
+                isLoading={isDeleting || deleteTxMutation.isLoading}
+                onClick={() => {
+                  if (removal?.kind === 'account') {
+                    void handleDelete()
+                  } else if (removal) {
+                    void handleDeleteTransaction(removal.id)
+                  }
+                }}
+              >
+                Remove
+              </Button>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialogOverlay>
+      </AlertDialog>
     </Box>
   )
 }

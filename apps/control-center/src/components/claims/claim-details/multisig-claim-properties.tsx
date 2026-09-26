@@ -1,10 +1,11 @@
 import { Box, Flex, Spinner, Stack, Text } from '@chakra-ui/react'
 import { Account, MultiSigAccount } from '@hoseki/packages/bitcoin'
 import { StatusBadge, getBadgeConfigForClaim } from '@hoseki/packages/ui/prove-verify-ui'
-import { formatUsd, toBitcoinAmountDisplayValue } from '@hoseki/packages/ui/utils'
+import { formatUsd } from '@hoseki/packages/ui/utils'
 import { useGetClaimBalance } from '../../../lib/balances'
 import type { ClaimDto } from '../../../trpc/server-types'
 import { ensureClaimStatusNotExpired } from '../../../utils/claim-utils'
+import { BitcoinAmount } from '../../bitcoin-amount'
 
 export function MultisigClaimProperties({ claim }: { claim: ClaimDto }): JSX.Element {
   const { data: balance, isLoading: isBalanceLoading } = useGetClaimBalance(claim.id)
@@ -36,11 +37,11 @@ export function MultisigClaimProperties({ claim }: { claim: ClaimDto }): JSX.Ele
           ) : (
             <>
               <Text textStyle="label/sm" color="neutral.900" fontWeight="medium" whiteSpace="nowrap">
-                {balance?.current ? toBitcoinAmountDisplayValue(balance.current.toString()) : 'n/a'}
+                <>{balance?.current ? <BitcoinAmount btc={balance.current.div(100_000_000)} /> : 'n/a'}</>
               </Text>
               {balance?.usd && (
                 <Text textStyle="label/sm" color="success.600" fontWeight="medium">
-                  {formatUsd(balance.usd.toFixed(2))}
+                  <>{formatUsd(balance.usd.toFixed(2))}</>
                 </Text>
               )}
             </>

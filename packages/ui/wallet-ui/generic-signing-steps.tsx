@@ -3,6 +3,7 @@ import { useState } from 'react'
 import type { Address } from '../../bitcoin'
 import type { HardwareDeviceError } from '../../wallet'
 import { LabelWithTooltip, Spinner } from '../design-system'
+import { opacityReveal } from '../design-system/animations/motion'
 import { HardwareWalletError } from './hardware-wallet-error'
 import { NavigationArrows } from './navigation-arrows'
 import { WaitingOnDevice } from './waiting-on-device'
@@ -68,6 +69,8 @@ export function ControlledGenericSigningSteps({
   onExit: () => void
   signingInProgress: boolean
 }): JSX.Element {
+  const [revealCopy, setRevealCopy] = useState(false)
+
   if (isLoading) {
     return <Spinner fullPage />
   }
@@ -87,16 +90,23 @@ export function ControlledGenericSigningSteps({
       {step === 1 && (
         <>
           <WalletAnimation animation="genericProveControl" />
-          <SigningInfoStep1 />
+          <Box display="contents" sx={revealCopy ? { '& > *': opacityReveal } : undefined}>
+            <SigningInfoStep1 />
+          </Box>
         </>
       )}
       {[2, 3].includes(step) && (
         <>
           <WalletAnimation animation={signingAnimation} />
-          {step === 2 && <SigningInfoStep2 walletType={walletType} />}
+          {step === 2 && (
+            <Box display="contents" sx={revealCopy ? { '& > *': opacityReveal } : undefined}>
+              <SigningInfoStep2 walletType={walletType} />
+            </Box>
+          )}
           {step === 3 && (
             <SignAddressAndMessageStep
               walletType={walletType}
+              revealCopy={revealCopy}
               signingInProgress={signingInProgress}
               messageTextToSign={signedMessage.messageTextToSign}
               address={signedMessage.address}
@@ -105,7 +115,24 @@ export function ControlledGenericSigningSteps({
           )}
         </>
       )}
-      <NavigationArrows onBack={step > 1 ? onBack : undefined} onForward={step < 3 ? onNext : undefined} />
+      <NavigationArrows
+        onBack={
+          step > 1
+            ? (event) => {
+                setRevealCopy(event.detail > 0)
+                onBack()
+              }
+            : undefined
+        }
+        onForward={
+          step < 3
+            ? (event) => {
+                setRevealCopy(event.detail > 0)
+                onNext()
+              }
+            : undefined
+        }
+      />
 
       <WizardFooter
         leftButton={
@@ -163,12 +190,14 @@ function SigningInfoStep2({ walletType }: { walletType: WalletType }) {
 
 export function SignAddressAndMessageStep({
   walletType,
+  revealCopy = false,
   signingInProgress,
   messageTextToSign,
   address,
   signingPath,
 }: {
   walletType: WalletType
+  revealCopy?: boolean
   signingInProgress: boolean
   messageTextToSign: string
   address: Address
@@ -177,10 +206,16 @@ export function SignAddressAndMessageStep({
   return (
     <>
       <Stack>
-        <Text as="h2" textStyle="text/2xl" color="neutral.900" fontWeight="medium">
+        <Text
+          as="h2"
+          textStyle="text/2xl"
+          color="neutral.900"
+          fontWeight="medium"
+          sx={revealCopy ? opacityReveal : undefined}
+        >
           Proving Control With Your {walletType}
         </Text>
-        <Text textStyle="text/md" mb={4}>
+        <Text textStyle="text/md" mb={4} sx={revealCopy ? opacityReveal : undefined}>
           Click &apos;Prove Control&apos; to sign the unique message below on your device.
         </Text>
         <SignAddressAndMessageInfo messageTextToSign={messageTextToSign} address={address} signingPath={signingPath} />

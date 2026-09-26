@@ -129,6 +129,9 @@ function ClaimDetailsBody({
     return (
       <>
         <ResumeSinglesigFlow wallet={singleKeystore.wallet} model={singleKeystore.model} />
+        <Text textStyle="text/sm" color="neutral.600">
+          Sign a message with your wallet to show you control it. No Bitcoin is sent.
+        </Text>
         <WizardFooter
           rightButton={
             <HStack>
