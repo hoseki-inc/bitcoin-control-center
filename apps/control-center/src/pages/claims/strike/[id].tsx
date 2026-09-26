@@ -24,6 +24,7 @@ import { format } from 'date-fns'
 import { useCallback, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { toast } from 'sonner'
+import { BitcoinAmount } from '../../../components/bitcoin-amount'
 import { trpc } from '../../../trpc'
 import { needsExchangeReconnect } from '../../../utils/exchange-connection-status'
 
@@ -307,10 +308,10 @@ export function StrikeAccountDetailsPage(): JSX.Element {
       <Stack spacing={4}>
         {/* Account name + status row */}
         <Box>
-          <Text textStyle="text/md" fontWeight="medium">
+          <Text textStyle="text/md" fontWeight="medium" overflowWrap="anywhere">
             {account.displayName}
           </Text>
-          <HStack spacing={1}>
+          <HStack spacing={1} flexWrap="wrap">
             <Box w={2} h={2} bg="success.600" borderRadius="full" />
             <Text textStyle="text/xs" color="neutral.600">
               First Connected
@@ -323,21 +324,9 @@ export function StrikeAccountDetailsPage(): JSX.Element {
 
         <hr />
 
-        {/* Floating logo + metadata */}
-        <Stack align="center" justify="center" w="640px" mx="auto" mt={-4}>
-          <Box
-            mx="auto"
-            pt={10}
-            pb={6}
-            sx={{
-              animation: 'float 4s ease-in-out infinite',
-              '@keyframes float': {
-                '0%': { transform: 'translateY(0)' },
-                '50%': { transform: 'translateY(-6px)' },
-                '100%': { transform: 'translateY(0)' },
-              },
-            }}
-          >
+        {/* Logo + metadata */}
+        <Stack align="center" justify="center" w="full" maxW="640px" minW={0} mx="auto" mt={-4}>
+          <Box mx="auto" pt={10} pb={6}>
             <chakra.img
               src="/images/exchanges/strike-icon.svg"
               alt="Strike"
@@ -348,9 +337,9 @@ export function StrikeAccountDetailsPage(): JSX.Element {
             />
           </Box>
 
-          <HStack spacing={4} mb={4} w="100%" alignItems="flex-start">
+          <HStack spacing={0} gap={4} mb={4} w="100%" alignItems="flex-start" flexWrap="wrap">
             {/* Amount */}
-            <Box w={['100%', '50%', '25%']}>
+            <Box w={{ base: 'full', sm: 'calc(50% - 8px)' }} minW={0} overflowWrap="anywhere">
               <Text textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={1}>
                 Amount
               </Text>
@@ -360,13 +349,15 @@ export function StrikeAccountDetailsPage(): JSX.Element {
                 </Text>
               ) : (
                 <Text textStyle="label/sm" color="neutral.900" fontWeight="medium">
-                  {btcAmount} BTC
+                  <>
+                    <BitcoinAmount btc={btcAmount} />
+                  </>
                 </Text>
               )}
             </Box>
 
             {/* Status */}
-            <Box w={['100%', '50%', '25%']}>
+            <Box w={{ base: 'full', sm: 'calc(50% - 8px)' }} minW={0} overflowWrap="anywhere">
               <Text textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={1}>
                 Status
               </Text>
@@ -378,7 +369,7 @@ export function StrikeAccountDetailsPage(): JSX.Element {
             </Box>
 
             {/* Account Type */}
-            <Box w={['100%', '50%', '25%']}>
+            <Box w={{ base: 'full', sm: 'calc(50% - 8px)' }} minW={0} overflowWrap="anywhere">
               <Text textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={1}>
                 Account Type
               </Text>
@@ -388,7 +379,12 @@ export function StrikeAccountDetailsPage(): JSX.Element {
             </Box>
 
             {/* Date Added */}
-            <Box w={['100%', '50%', '25%']} textAlign="right">
+            <Box
+              w={{ base: 'full', sm: 'calc(50% - 8px)' }}
+              minW={0}
+              overflowWrap="anywhere"
+              textAlign={{ base: 'left', sm: 'right' }}
+            >
               <Text textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={1}>
                 Date Added
               </Text>
@@ -509,7 +505,7 @@ export function StrikeAccountDetailsPage(): JSX.Element {
                       <Tr>
                         <Th>Date</Th>
                         <Th>Type</Th>
-                        <Th isNumeric>BTC</Th>
+                        <Th isNumeric>Bitcoin</Th>
                         <Th isNumeric>USD</Th>
                         <Th isNumeric>Rate</Th>
                         <Th>Description</Th>
@@ -533,22 +529,29 @@ export function StrikeAccountDetailsPage(): JSX.Element {
                             </Text>
                           </Td>
                           <Td isNumeric>
-                            <Text textStyle="text/xs" fontFamily="mono">
-                              {formatBtcAmount(tx.amountBtc)}
-                            </Text>
+                            <>
+                              <Text textStyle="text/xs" fontFamily="mono">
+                                {Number(tx.amountBtc) >= 0 ? '+' : ''}
+                                <BitcoinAmount btc={tx.amountBtc} />
+                              </Text>
+                            </>
                           </Td>
                           <Td isNumeric>
                             <Text textStyle="text/xs" fontFamily="mono" color="neutral.500">
-                              {tx.amountUsd != null && tx.amountUsd !== ''
-                                ? `$${Math.abs(Number(tx.amountUsd)).toFixed(2)}`
-                                : '—'}
+                              <>
+                                {tx.amountUsd != null && tx.amountUsd !== ''
+                                  ? `$${Math.abs(Number(tx.amountUsd)).toFixed(2)}`
+                                  : '—'}
+                              </>
                             </Text>
                           </Td>
                           <Td isNumeric>
                             <Text textStyle="text/xs" color="neutral.500">
-                              {tx.exchangeRate != null && tx.exchangeRate !== ''
-                                ? `$${Number(tx.exchangeRate).toLocaleString()}`
-                                : '—'}
+                              <>
+                                {tx.exchangeRate != null && tx.exchangeRate !== ''
+                                  ? `$${Number(tx.exchangeRate).toLocaleString()}`
+                                  : '—'}
+                              </>
                             </Text>
                           </Td>
                           <Td>
@@ -692,11 +695,6 @@ function formatMonth(yyyymm: string): string {
   const [year, month] = yyyymm.split('-')
   const date = new Date(Number(year), Number(month) - 1)
   return format(date, 'MMMM yyyy')
-}
-
-function formatBtcAmount(amount: string): string {
-  const num = Number(amount)
-  return num >= 0 ? `+${num.toFixed(8)}` : num.toFixed(8)
 }
 
 function truncateHash(hash: string | null): string {

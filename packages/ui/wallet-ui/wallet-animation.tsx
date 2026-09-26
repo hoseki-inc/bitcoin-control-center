@@ -1,4 +1,4 @@
-import { Box, type BoxProps, chakra } from '@chakra-ui/react'
+import { Box, type BoxProps, chakra, keyframes } from '@chakra-ui/react'
 import Lottie from 'lottie-react'
 import coldcardWhatYouNeed_M3 from './assets/lottie-animations/coldcard/M3/01.json'
 import coldcardExportWallet_M3 from './assets/lottie-animations/coldcard/M3/02.json'
@@ -158,6 +158,8 @@ export function WalletAnimation({ animation }: { animation: WalletAnimationType 
   )
 }
 
+const walletFloat = keyframes`0%, 100% { transform: translateY(0); } 50% { transform: translateY(-8px); }`
+
 export interface WalletImage {
   href: string
   alt: string
@@ -165,31 +167,14 @@ export interface WalletImage {
 
 export function WalletFloatingImage({ href, alt, ...rest }: WalletImage & BoxProps): JSX.Element {
   return (
-    <Box
-      mx="auto"
-      pt={10}
-      pb={6}
-      sx={{
-        animation: 'float 4s ease-in-out infinite',
-        '@keyframes float': {
-          '0%': {
-            transform: 'translateY(0)',
-          },
-          '50%': {
-            transform: 'translateY(-6px)',
-          },
-          '100%': {
-            transform: 'translateY(0)',
-          },
-        },
-      }}
-      {...rest}
-    >
+    <Box mx="auto" pt={10} pb={6} {...rest}>
       <chakra.img
         src={href}
         alt={alt}
         h="200px"
         display="block"
+        animation={`${walletFloat} 4s cubic-bezier(0.77, 0, 0.175, 1) infinite`}
+        sx={{ '@media (prefers-reduced-motion: reduce)': { animation: 'none' } }}
         filter="drop-shadow(-8px 10px 15px rgba(0, 0, 0, 0.5))"
       />
     </Box>
