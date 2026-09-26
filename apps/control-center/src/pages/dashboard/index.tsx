@@ -22,6 +22,7 @@ import { format, isAfter, isBefore, startOfDay, subDays } from 'date-fns'
 import Decimal from 'decimal.js'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
+import { BitcoinAmount } from '../../components/bitcoin-amount'
 import { AccountsSidebar as DefaultAccountsSidebar } from '../../components/dashboard-charts/accounts-sidebar'
 import { AccumulationChart as DefaultAccumulationChart } from '../../components/dashboard-charts/accumulation-chart'
 import {
@@ -31,6 +32,7 @@ import {
   withCurrentBalancePoint,
 } from '../../components/dashboard-charts/balance-history'
 import { MonthlyNetChangeChart as DefaultMonthlyNetChangeChart } from '../../components/dashboard-charts/monthly-net-change-chart'
+import { SensitiveValue } from '../../components/sensitive-value'
 import { type DashboardDataSource, dashboardDataSource } from './dashboard-data'
 
 type PresetTimeRange = '7d' | '30d' | '90d' | '1y' | 'all'
@@ -85,16 +87,6 @@ function formatCustomDateRangeLabel(range: CustomDateRangeDraft): string {
     return `${format(range.startDate, 'MMM d')} – ${format(range.endDate, 'MMM d, yyyy')}`
   }
   return `${format(range.startDate, 'PP')} – ${format(range.endDate, 'PP')}`
-}
-
-function formatBtc(satoshis: string | Decimal): string {
-  try {
-    const btc = new Decimal(satoshis).div(100_000_000)
-    const formatted = btc.toFixed(8)
-    return formatted === '' || formatted === 'NaN' ? '0.00000000' : formatted
-  } catch {
-    return '0.00000000'
-  }
 }
 
 function formatUsd(btcAmount: number, btcPrice: number): string {
@@ -560,7 +552,6 @@ export function DashboardPage({
     manualAccounts.length > 0 ||
     etfAccounts.length > 0
   const hasHistoricalData = (allData?.historicalData.length ?? 0) > 0 || (activeData?.historicalData.length ?? 0) > 0
-  const totalBtcDisplay = formatBtc(displayBalanceSats.toString())
   const btcPrice =
     data?.currentBtcPrice != null && data.currentBtcPrice !== ''
       ? Number(data.currentBtcPrice)
@@ -683,13 +674,10 @@ export function DashboardPage({
               color="neutral.900"
               letterSpacing="-0.04em"
             >
-              {totalBtcDisplay}
+              <BitcoinAmount btc={new Decimal(displayBalanceSats).div(100_000_000)} />
             </Text>
             <Text textStyle="text/sm" color="neutral.400" fontWeight="medium" mt={1}>
-              <Text as="span" color="neutral.300">
-                BTC
-              </Text>
-              {'  ·  '}${formatUsd(currentBtcFloat, btcPrice)}
+              <SensitiveValue>${formatUsd(currentBtcFloat, btcPrice)}</SensitiveValue>
             </Text>
           </Box>
 
@@ -709,14 +697,16 @@ export function DashboardPage({
               transition="opacity 0.2s ease"
             >
               <Text textStyle="text/sm" fontWeight="semibold" color={changeColor} fontFamily="mono">
-                {isUp ? '↑' : '↓'} {formatBtc(periodChange.abs().toString())} BTC ({isUp ? '+' : ''}
-                {periodChange.eq(0)
-                  ? '0.0'
-                  : periodChange
-                      .div(new Decimal(toSatoshisString(historicalData[0]?.totalBalance)).abs().plus(1))
-                      .mul(100)
-                      .toFixed(1)}
-                %)
+                <SensitiveValue>
+                  {isUp ? '↑' : '↓'} <BitcoinAmount btc={periodChange.abs().div(100_000_000)} /> ({isUp ? '+' : ''}
+                  {periodChange.eq(0)
+                    ? '0.0'
+                    : periodChange
+                        .div(new Decimal(toSatoshisString(historicalData[0]?.totalBalance)).abs().plus(1))
+                        .mul(100)
+                        .toFixed(1)}
+                  %)
+                </SensitiveValue>
               </Text>
             </Box>
           )}
@@ -766,7 +756,14 @@ export function DashboardPage({
               ) : isFullHistoryPending ? (
                 <HistoryRangeLoading height="220px" />
               ) : (
-                <AccumulationChart data={historicalData} hasActivity={hasBalance} isUp={isUp} timezone={userTimezone} />
+                <SensitiveValue>
+                  <AccumulationChart
+                    data={historicalData}
+                    hasActivity={hasBalance}
+                    isUp={isUp}
+                    timezone={userTimezone}
+                  />
+                </SensitiveValue>
               )}
               {isChartFetching && !isFullHistoryPending && (
                 <Box
@@ -821,7 +818,9 @@ export function DashboardPage({
               ) : isFullHistoryPending ? (
                 <HistoryRangeLoading height="120px" />
               ) : (
-                <MonthlyNetChangeChart data={historicalData} timezone={userTimezone} />
+                <SensitiveValue>
+                  <MonthlyNetChangeChart data={historicalData} timezone={userTimezone} />
+                </SensitiveValue>
               )}
               {isChartFetching && !isFullHistoryPending && (
                 <Box
@@ -1127,11 +1126,10 @@ function StatCard({ label, data, mode, timezone }: StatCardProps): JSX.Element {
         color={isPositive ? 'success.600' : 'error.500'}
         letterSpacing="-0.02em"
       >
-        {isPositive ? '+' : ''}
-        {value.toFixed(8)}
-      </Text>
-      <Text textStyle="label/xs" color="neutral.300" mt={0.5}>
-        BTC
+        <SensitiveValue>
+          {isPositive ? '+' : ''}
+          <BitcoinAmount btc={value} />
+        </SensitiveValue>
       </Text>
     </Box>
   )

@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { ChakraProvider } from '@chakra-ui/react'
 import { parseUnknown } from '@hoseki/packages/result'
-import { QueryClient, QueryObserver, onlineManager } from '@tanstack/react-query'
+import { QueryClient, QueryClientProvider, QueryObserver, onlineManager } from '@tanstack/react-query'
 import { format } from 'date-fns'
 import Decimal from 'decimal.js'
 import { act, createElement } from 'react'
@@ -142,12 +142,19 @@ let root: Root
 let container: HTMLDivElement
 
 async function render(): Promise<void> {
+  // Seed the stored display preference the same way a loaded settings query would.
+  const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity, retry: false } } })
+  queryClient.setQueryData(['local-settings', 'bitcoin_display_unit'], 'btc')
   await act(async () => {
     root.render(
       createElement(
-        ChakraProvider,
-        null,
-        createElement(MemoryRouter, null, createElement(DashboardPage, { dataSource, views })),
+        QueryClientProvider,
+        { client: queryClient },
+        createElement(
+          ChakraProvider,
+          null,
+          createElement(MemoryRouter, null, createElement(DashboardPage, { dataSource, views })),
+        ),
       ),
     )
   })

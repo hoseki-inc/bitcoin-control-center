@@ -8,6 +8,8 @@ import {
   FormLabel,
   HStack,
   Input,
+  Radio,
+  RadioGroup,
   Select,
   SimpleGrid,
   Stack,
@@ -20,7 +22,9 @@ import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { z } from 'zod'
+import { useBitcoinDisplay } from '../../hooks/use-bitcoin-display'
 import { useLocalSetting } from '../../hooks/use-local-settings'
+import { bitcoinDisplayUnit, formatBitcoin } from '../../lib/bitcoin-display'
 import { isDesktop } from '../../mode'
 import type { RouterInput } from '../../trpc'
 
@@ -101,8 +105,89 @@ export function SettingsPage({ desktop = isDesktop }: { desktop?: boolean }): JS
             </FormControl>
           </Box>
         </SimpleGrid>
+        <BitcoinDisplaySettings />
         {desktop && <ElectrumSettings />}
       </Stack>
+    </Box>
+  )
+}
+
+const DISPLAY_OPTIONS = [
+  { value: 'symbol', label: 'Bitcoin symbol' },
+  { value: 'sats', label: 'Sats' },
+  { value: 'btc', label: 'BTC' },
+] as const
+
+function BitcoinDisplaySettings(): JSX.Element {
+  const { unit, saveAsync, isSaving, isLoading, isError } = useBitcoinDisplay()
+  const handleChange = async (value: string): Promise<void> => {
+    try {
+      await saveAsync(bitcoinDisplayUnit(value))
+      toast.success('Bitcoin display updated')
+    } catch {
+      toast.error('Could not save your display preference. Please try again.')
+    }
+  }
+
+  return (
+    <Box as="section" aria-labelledby="bitcoin-display-heading">
+      <Text as="h2" id="bitcoin-display-heading" textStyle="text/md" fontWeight="semibold" color="neutral.900">
+        Bitcoin display
+      </Text>
+      <Text mt={2} textStyle="text/sm" color="neutral.600" id="bitcoin-display-description">
+        Choose how Bitcoin amounts appear in the app. The Bitcoin symbol and sats both show whole satoshi amounts. Each
+        preview shows the same 2.1 BTC.
+      </Text>
+      <RadioGroup
+        value={unit}
+        onChange={(value) => void handleChange(value)}
+        mt={5}
+        aria-labelledby="bitcoin-display-heading"
+        aria-describedby="bitcoin-display-description"
+        isDisabled={isLoading || isSaving || isError}
+      >
+        <SimpleGrid columns={{ base: 1, md: 3 }} spacing={3}>
+          {DISPLAY_OPTIONS.map((option) => (
+            <Box
+              as="label"
+              key={option.value}
+              p={4}
+              border="1px solid"
+              borderRadius="panel"
+              borderColor={unit === option.value ? 'neutral.900' : 'neutral.200'}
+              bg={unit === option.value ? 'neutral.50' : 'shades.0'}
+              cursor={isLoading || isSaving || isError ? 'default' : 'pointer'}
+              transition="border-color 150ms ease, background-color 150ms ease"
+              _hover={{ borderColor: 'neutral.500' }}
+              _focusWithin={{ outline: '2px solid', outlineColor: 'activeState.80', outlineOffset: '3px' }}
+            >
+              <HStack justify="space-between" mb={5}>
+                <Text textStyle="text/sm" fontWeight="medium">
+                  {option.label}
+                </Text>
+                <Radio as="span" value={option.value} colorScheme="gray" aria-label={option.label} />
+              </HStack>
+              <Text
+                textStyle="text/lg"
+                fontWeight="semibold"
+                color="neutral.900"
+                sx={{ fontVariantNumeric: 'tabular-nums' }}
+              >
+                {formatBitcoin('2.1', option.value)}
+              </Text>
+            </Box>
+          ))}
+        </SimpleGrid>
+      </RadioGroup>
+      <Text as="output" display="block" mt={3} textStyle="text/xs" color={isError ? 'error.700' : 'neutral.600'}>
+        {isError
+          ? 'Could not load your preference. Refresh to try again.'
+          : isLoading
+            ? 'Loading preference…'
+            : isSaving
+              ? 'Saving preference…'
+              : 'Saved automatically on this Control Center.'}
+      </Text>
     </Box>
   )
 }
