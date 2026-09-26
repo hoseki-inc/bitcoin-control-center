@@ -9,14 +9,14 @@ import { type Root, createRoot } from 'react-dom/client'
 import { MemoryRouter } from 'react-router'
 import { assert, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { z } from 'zod'
-import type { AccountsSidebar } from '../../components/dashboard-charts/accounts-sidebar'
+import type { AccountFilter } from '../../components/dashboard-charts/account-filter'
 import { claimFixture } from '../../testing/claims'
 import type { RouterInput } from '../../trpc'
 import type { ClaimDto } from '../../trpc/server-types'
 import type { DashboardDataSource, PortfolioQuery } from './dashboard-data'
 import { DashboardPage, type DashboardViews } from './index'
 
-type SidebarProps = Parameters<typeof AccountsSidebar>[0]
+type SidebarProps = Parameters<typeof AccountFilter>[0]
 
 const browser = await vi.hoisted(async () => {
   const { createBrowserDom, installBrowserDom } = await import('@hoseki/packages/testing/browser-dom')
@@ -107,7 +107,7 @@ const views: DashboardViews = {
         onChange(new Date(`${event.target.value}T00:00:00`))
       },
     }),
-  AccountsSidebar: (props: SidebarProps) => {
+  AccountFilter: (props: SidebarProps) => {
     mocks.sidebar(props)
     return createElement(
       'div',
@@ -116,7 +116,7 @@ const views: DashboardViews = {
         'button',
         {
           onClick: () => {
-            props.onToggle('holding')
+            props.onSelectionChange(new Set(['holding']))
           },
         },
         'Select holding',
@@ -125,12 +125,20 @@ const views: DashboardViews = {
         'button',
         {
           onClick: () => {
-            props.onToggle('re_clmx_wallet')
+            props.onSelectionChange(new Set(['re_clmx_wallet']))
           },
         },
         'Select wallet',
       ),
-      createElement('button', { onClick: props.onClearAll }, 'Clear selection'),
+      createElement(
+        'button',
+        {
+          onClick: () => {
+            props.onSelectionChange(new Set())
+          },
+        },
+        'Clear selection',
+      ),
     )
   },
 
@@ -331,6 +339,63 @@ describe('custom portfolio range UI', () => {
         unsubscribe()
         client.clear()
       }
+    })
+  })
+
+  it('never appends a newly selected balance to the retained chart and ignores a late abandoned view', async () => {
+    await withTestSetup(async () => {
+      mocks.holdings = [
+        {
+          id: 'holding',
+          displayName: 'Test holding',
+          balance: '25',
+          currency: 'BTC' as const,
+          balanceAsOf: null,
+          createdAt: '2026-01-01T00:00:00Z',
+        },
+        {
+          id: 'other',
+          displayName: 'Other holding',
+          balance: '75',
+          currency: 'BTC' as const,
+          balanceAsOf: null,
+          createdAt: '2026-01-01T00:00:00Z',
+        },
+      ]
+      mocks.claims = [claimFixture('re_clmx_wallet', 'Test wallet')]
+      await render()
+      const loadedChart = chartData()
+      const defaultQuery = mocks.useQuery.getMockImplementation()
+      assert.exists(defaultQuery, 'Expected the default query implementation')
+      let abandonedData: typeof mocks.base | undefined
+      mocks.useQuery.mockImplementation((input, options) => {
+        if (input.claimIds === undefined) {
+          return defaultQuery(input, options)
+        }
+        return {
+          data: input.manualAccountIds?.includes('holding') === true ? abandonedData : undefined,
+          isLoading: true,
+          isFetching: true,
+          isPreviousData: false,
+          error: null,
+          refetch: mocks.refetch,
+        }
+      })
+      await click('Select holding')
+      expect(chartData()).toEqual(loadedChart)
+      expect(container.querySelectorAll('[inert]')).toHaveLength(2)
+      expect(container.textContent).toContain('Updating view')
+      await click('Select wallet')
+      abandonedData = {
+        ...mocks.base,
+        historicalData: [{ timestamp: '2026-08-05T00:00:00.000Z', totalBalance: '999' }],
+      }
+      await render()
+      expect(chartData()).toEqual(loadedChart)
+      expect(container.textContent).not.toContain('999')
+      await click('Clear selection')
+      expect(container.querySelectorAll('[inert]')).toHaveLength(0)
+      expect(chartData()).toEqual(loadedChart)
     })
   })
 
@@ -636,7 +701,7 @@ describe('custom portfolio range UI', () => {
           expect(container.querySelectorAll('[data-chart]')).toHaveLength(2)
           expect(container.textContent).toContain("Couldn't refresh this date range. Showing previously loaded data.")
           expect(container.textContent).not.toContain('All synced')
-          expect(container.textContent).not.toContain('No verified claims yet')
+          expect(container.textContent).not.toContain('Watch your Bitcoin grow')
         } finally {
           unsubscribe()
           client.clear()
@@ -665,7 +730,7 @@ describe('custom portfolio range UI', () => {
         await click('Custom')
         await click('Apply')
         expect(container.querySelectorAll('[data-chart]')).toHaveLength(2)
-        expect(container.textContent).not.toContain('No verified claims yet')
+        expect(container.textContent).not.toContain('Watch your Bitcoin grow')
         const [allInput, allOptions] = getQueryCall(-2)
         const [filteredInput, filteredOptions] = getQueryCall(-1)
         expect(allOptions.enabled).toBe(false)
@@ -769,7 +834,7 @@ describe('custom portfolio range UI', () => {
           }
 
           expect(container.textContent).toContain("Couldn't load this date range: Connection lost")
-          expect(container.textContent).not.toContain('No verified claims yet')
+          expect(container.textContent).not.toContain('Watch your Bitcoin grow')
           expect(container.textContent).not.toContain('Add Your First Claim')
           expect(container.querySelectorAll('[data-chart]')).toHaveLength(0)
           await click('Try again')
@@ -798,7 +863,8 @@ describe('custom portfolio range UI', () => {
         data: { ...mocks.base, currentTotalBalance: '0', manualAccountCount: 0, historicalData: [] },
       }))
       await render()
-      expect(container.textContent).toContain('No verified claims yet')
+      expect(container.textContent).toContain('Watch your Bitcoin grow')
+      expect(container.querySelector('a[href="/accounts/add"]')?.textContent).toBe('Add Your First Account')
       expect(container.textContent).not.toContain("Couldn't load this date range")
     })
   })

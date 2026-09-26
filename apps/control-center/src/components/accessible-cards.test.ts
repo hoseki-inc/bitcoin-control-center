@@ -7,7 +7,7 @@ import { type Root, createRoot } from 'react-dom/client'
 import { MemoryRouter } from 'react-router'
 import { assert, expect, it, onTestFinished, vi } from 'vitest'
 import type { StatementDto } from '../trpc/server-types'
-import { AccountsSidebar } from './dashboard-charts/accounts-sidebar'
+import { AccountFilter } from './dashboard-charts/account-filter'
 import { StatementCard } from './dashboard/statement-card'
 import { SelectWalletType } from './multisig/multisig-select-wallet-type'
 
@@ -125,34 +125,39 @@ it('activates a statement once from View without nesting controls or submitting 
 })
 it.each([false, true])('keeps account reset and view mode controls operable (compact=%s)', async (compact) => {
   await withTestSetup(async () => {
-    const onClearAll = vi.fn<() => void>()
-    const onToggleCompact = vi.fn<() => void>()
+    vi.stubGlobal('localStorage', window.localStorage)
+    localStorage.setItem('hoseki:sidebar-compact', String(compact))
+    const onSelectionChange = vi.fn<(ids: Set<string>) => void>()
     await render(
-      createElement(AccountsSidebar, {
+      createElement(AccountFilter, {
+        presentation: 'sidebar',
         claims: [],
+        exchangeAccounts: [],
+        manualAccounts: [],
+        etfAccounts: [],
         balances: new Map(),
+        btcPrice: null,
         selected: new Set<string>(),
-        onToggle: vi.fn<(id: string) => void>(),
-        onClearAll,
-        totalBtcSats: 0,
-        totalUsd: 0,
-        compact,
-        onToggleCompact,
+        onSelectionChange,
+        historySyncingAccountIds: [],
+        recentlySyncedAccountIds: [],
       }),
     )
-    const reset = button('All Accounts')
+    const reset = button('All accounts')
     expect(reset.getAttribute('aria-pressed')).toBe('true')
     expect(reset.querySelector('div,p,button')).toBeNull()
     await act(async () => {
       reset.click()
     })
-    expect(onClearAll).toHaveBeenCalledTimes(1)
-    const mode = host.querySelector('button[aria-label]')
+    expect(onSelectionChange).toHaveBeenCalledExactlyOnceWith(new Set())
+    const mode = host.querySelector(`button[aria-label="${compact ? 'Detailed view' : 'Compact view'}"]`)
     assert(mode instanceof HTMLButtonElement)
+    expect(mode.getAttribute('aria-pressed')).toBe('false')
     await act(async () => {
       mode.click()
     })
-    expect(onToggleCompact).toHaveBeenCalledTimes(1)
+    expect(mode.getAttribute('aria-pressed')).toBe('true')
+    expect(localStorage.getItem('hoseki:sidebar-compact')).toBe(String(!compact))
   })
 })
 it('offers native signing-device buttons and preserves the selected device', async () => {
