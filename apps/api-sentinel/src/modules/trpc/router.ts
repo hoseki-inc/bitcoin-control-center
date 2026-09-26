@@ -1928,6 +1928,7 @@ const blocksRouter = t.router({
 
 const READABLE_SETTINGS = new Set([
   'user_name',
+  'bitcoin_display_unit',
   'onboarding_v1',
   'owner_identifier',
   'electrum_host',
@@ -1938,6 +1939,7 @@ const READABLE_SETTINGS = new Set([
 
 const WRITABLE_SETTINGS = new Set([
   'user_name',
+  'bitcoin_display_unit',
   'onboarding_v1',
   'owner_identifier',
   'electrum_host',
@@ -2073,6 +2075,12 @@ function validateWritableSetting(key: string, value: string): string {
     case 'onboarding_v1': {
       if (!['started', 'dismissed', 'completed'].includes(value)) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid onboarding state' })
+      }
+      return value
+    }
+    case 'bitcoin_display_unit': {
+      if (value !== 'symbol' && value !== 'sats' && value !== 'btc') {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Unsupported Bitcoin display unit' })
       }
       return value
     }

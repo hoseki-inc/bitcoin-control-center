@@ -6,9 +6,11 @@ import Decimal from 'decimal.js'
 import { useMemo } from 'react'
 import { Area, AreaChart, ResponsiveContainer, Tooltip, type TooltipContentProps, XAxis, YAxis } from 'recharts'
 import { z } from 'zod'
+import { useBitcoinDisplay } from '../../hooks/use-bitcoin-display'
 import { formatBitcoin } from '../../lib/bitcoin-display'
 import { getBrowserTimezone } from '../../utils/timezone'
 import { BitcoinAmount } from '../bitcoin-amount'
+import { SensitiveValue } from '../sensitive-value'
 
 interface BalanceDataPoint {
   timestamp: string
@@ -67,9 +69,9 @@ function ChartTooltip({
         fontFamily="body"
         sx={{ fontVariantNumeric: 'tabular-nums' }}
       >
-        <>
+        <SensitiveValue>
           <BitcoinAmount btc={new Decimal(data.totalBalance).div(100_000_000)} />
-        </>
+        </SensitiveValue>
       </Text>
       {btcPrice > 0 && (
         <Text
@@ -79,7 +81,7 @@ function ChartTooltip({
           fontFamily="body"
           sx={{ fontVariantNumeric: 'tabular-nums' }}
         >
-          <>${formatUsd(data.btcBalance, btcPrice)}</>
+          <SensitiveValue>${formatUsd(data.btcBalance, btcPrice)}</SensitiveValue>
         </Text>
       )}
     </Box>
@@ -92,6 +94,7 @@ export function AccumulationChart({
   isUp = true,
   timezone = getBrowserTimezone(),
 }: AccumulationChartProps): JSX.Element {
+  const { unit } = useBitcoinDisplay()
   const [axisColor] = useToken('colors', ['neutral.600'])
   const [success500, error500, neutral400] = useToken('colors', ['success.500', 'error.500', 'neutral.400'])
 
@@ -172,7 +175,7 @@ export function AccumulationChart({
             axisLine={false}
             tickLine={false}
             tick={{ fontSize: 12, fill: axisColor, fontWeight: 500 }}
-            tickFormatter={(v: number) => formatBitcoin(v).replace(/ /g, '\u00a0')}
+            tickFormatter={(v: number) => formatBitcoin(v, unit).replace(/ /g, '\u00a0')}
             width="auto"
           />
           <Tooltip

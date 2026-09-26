@@ -35,6 +35,7 @@ import { useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { toast } from 'sonner'
 import { BitcoinAmount } from '../../../components/bitcoin-amount'
+import { SensitiveValue } from '../../../components/sensitive-value'
 import { trpc } from '../../../trpc'
 
 const TX_TYPE_LABELS = {
@@ -213,9 +214,9 @@ export function ManualAccountDetailsPage(): JSX.Element {
               Balance
             </Text>
             <Text textStyle="text/xl" fontWeight="medium" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-              <>
+              <SensitiveValue>
                 <BitcoinAmount btc={btcAmount} />
-              </>
+              </SensitiveValue>
             </Text>
           </Box>
           {account.balanceAsOf != null && account.balanceAsOf !== '' && (
@@ -434,11 +435,11 @@ export function ManualAccountDetailsPage(): JSX.Element {
                         </Text>
                       </Td>
                       <Td>
-                        <>
+                        <SensitiveValue>
                           <Text textStyle="text/sm">
                             <BitcoinAmount btc={Number(tx.amountSats) / 1e8} />
                           </Text>
-                        </>
+                        </SensitiveValue>
                       </Td>
                       <Td>
                         <Text textStyle="text/sm">{format(new Date(tx.transactedAt), 'MMM d, yyyy')}</Text>

@@ -19,6 +19,7 @@ import { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router'
 import { toast } from 'sonner'
 import { BitcoinAmount } from '../../../components/bitcoin-amount'
+import { SensitiveValue } from '../../../components/sensitive-value'
 import { parseNavigationState } from '../../../lib/navigation-state'
 import { trpc } from '../../../trpc'
 
@@ -242,9 +243,9 @@ export function ClaimsVerifyEtfPage(): JSX.Element {
               Estimated Bitcoin total
             </Text>
             <Text fontFamily="mono" textStyle="text/lg" fontWeight="bold" color="neutral.900">
-              <>
+              <SensitiveValue>
                 <BitcoinAmount btc={totalBtc.toFixed(8)} />
-              </>
+              </SensitiveValue>
             </Text>
           </Box>
         )}

@@ -6,6 +6,7 @@ import { useGetClaimBalance } from '../../../lib/balances'
 import type { ClaimDto } from '../../../trpc/server-types'
 import { ensureClaimStatusNotExpired } from '../../../utils/claim-utils'
 import { BitcoinAmount } from '../../bitcoin-amount'
+import { SensitiveValue } from '../../sensitive-value'
 
 export function MultisigClaimProperties({ claim }: { claim: ClaimDto }): JSX.Element {
   const { data: balance, isLoading: isBalanceLoading } = useGetClaimBalance(claim.id)
@@ -37,11 +38,13 @@ export function MultisigClaimProperties({ claim }: { claim: ClaimDto }): JSX.Ele
           ) : (
             <>
               <Text textStyle="label/sm" color="neutral.900" fontWeight="medium" whiteSpace="nowrap">
-                <>{balance?.current ? <BitcoinAmount btc={balance.current.div(100_000_000)} /> : 'n/a'}</>
+                <SensitiveValue>
+                  {balance?.current ? <BitcoinAmount btc={balance.current.div(100_000_000)} /> : 'n/a'}
+                </SensitiveValue>
               </Text>
               {balance?.usd && (
                 <Text textStyle="label/sm" color="success.600" fontWeight="medium">
-                  <>{formatUsd(balance.usd.toFixed(2))}</>
+                  <SensitiveValue>{formatUsd(balance.usd.toFixed(2))}</SensitiveValue>
                 </Text>
               )}
             </>
