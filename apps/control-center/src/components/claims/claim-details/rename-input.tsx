@@ -1,5 +1,6 @@
-import { Box, Button, FormControl, FormLabel, HStack, Input, chakra } from '@chakra-ui/react'
+import { Box, Button, FormControl, FormErrorMessage, FormLabel, HStack, Input, Stack, chakra } from '@chakra-ui/react'
 import { zodResolver } from '@hookform/resolvers/zod'
+import { useEffect } from 'react'
 import { useForm } from 'react-hook-form'
 import { toast } from 'sonner'
 import { z } from 'zod'
@@ -28,6 +29,7 @@ export function RenameInput({
   const {
     register,
     handleSubmit,
+    setFocus,
     formState: { errors, isSubmitting, isValid },
   } = useForm<RenameForm>({
     defaultValues: {
@@ -37,6 +39,10 @@ export function RenameInput({
     reValidateMode: 'onChange',
     resolver: zodResolver(schema),
   })
+
+  useEffect(() => {
+    setFocus('name')
+  }, [setFocus])
 
   function onSubmit(data: { name: string }) {
     onSaveClick(data.name)
@@ -50,11 +56,12 @@ export function RenameInput({
         })
       }}
     >
-      <HStack spacing={8}>
-        <Box flexGrow={1}>
+      <Stack direction={{ base: 'column', sm: 'row' }} spacing={3} align="end">
+        <Box flexGrow={1} minW={0} w="full">
           <FormControl isInvalid={Boolean(errors.name)}>
             <FormLabel htmlFor={inputId}>Name</FormLabel>
-            <Input {...register('name')} width="100%" placeholder={placeholderName} />
+            <Input id={inputId} {...register('name')} width="100%" placeholder={placeholderName} />
+            <FormErrorMessage>{errors.name?.message}</FormErrorMessage>
           </FormControl>
         </Box>
         <HStack alignSelf="flex-end">
@@ -65,7 +72,7 @@ export function RenameInput({
             Cancel
           </Button>
         </HStack>
-      </HStack>
+      </Stack>
     </chakra.form>
   )
 }

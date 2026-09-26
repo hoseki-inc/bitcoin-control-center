@@ -1,10 +1,14 @@
-import { Box } from '@chakra-ui/react'
+import { Box, usePrefersReducedMotion } from '@chakra-ui/react'
 // Lottie runs animation expressions with eval: only render bundled animations.
 import Lottie from 'lottie-react'
 import multisigAnimation2 from '../../assets/lottie-animations/multisig-2.json'
 import multisigAnimation1 from '../../assets/lottie-animations/multisig.json'
 
 export function MultisigAnimation({ animation }: { animation: '1' | '2' }): JSX.Element {
+  const reducedMotion = usePrefersReducedMotion()
+  if (reducedMotion) {
+    return <></>
+  }
   return (
     <Box mt={-4} mb={4}>
       <Lottie

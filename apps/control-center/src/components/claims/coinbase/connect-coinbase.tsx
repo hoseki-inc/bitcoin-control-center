@@ -18,7 +18,6 @@ import { PageTransition } from '@hoseki/packages/ui/design-system'
 import { Receipt } from '@hoseki/packages/ui/prove-verify-ui'
 import { ClaimConnectionWrapper, WizardFooter } from '@hoseki/packages/ui/wallet-ui'
 import { useState } from 'react'
-import Fireworks from 'react-canvas-confetti/dist/presets/fireworks'
 import { useForm } from 'react-hook-form'
 import { useLocation, useNavigate } from 'react-router'
 import { toast } from 'sonner'
@@ -91,7 +90,6 @@ export function ConnectCoinbase(): JSX.Element {
   if (step === 'success' && connectedAccount) {
     return (
       <PageTransition>
-        <Fireworks autorun={{ speed: 2, duration: 5_000, delay: 500 }} />
         <Receipt
           title={isReconnect ? 'Coinbase Reconnected!' : 'Coinbase Connected!'}
           state="success"
@@ -145,7 +143,7 @@ export function ConnectCoinbase(): JSX.Element {
           {/* Header */}
           <Flex align="center" gap={3}>
             <img src="/images/exchanges/coinbase.svg" alt="Coinbase" style={{ height: '32px' }} />
-            <Heading textStyle="text/2xl" fontWeight="bold" color="neutral.900">
+            <Heading as="h1" textStyle="text/2xl" fontWeight="bold" color="neutral.900">
               {isReconnect ? 'Reconnect Coinbase Account' : 'Connect Coinbase Account'}
             </Heading>
           </Flex>

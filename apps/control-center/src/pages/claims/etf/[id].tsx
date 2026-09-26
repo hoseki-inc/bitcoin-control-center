@@ -1,11 +1,10 @@
 import {
   Box,
   Button,
+  Divider,
   FormControl,
   FormLabel,
   HStack,
-  Heading,
-  Icon,
   Input,
   Select,
   Spinner,
@@ -17,14 +16,19 @@ import {
   Th,
   Thead,
   Tr,
+  VisuallyHidden,
 } from '@chakra-ui/react'
 import { ETF_CONFIGS, ETF_TICKERS, type EtfTicker, getEtfConfig } from '@hoseki/packages/etfs/holdings'
 import { ErrorBanner } from '@hoseki/packages/ui/design-system'
+import { DateStringInput } from '@hoseki/packages/ui/design-system/forms/date-string-input'
+import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
 import { TopBar } from '@hoseki/packages/ui/prove-verify-ui/top-bar'
 import { format } from 'date-fns'
+import { ChartNoAxesCombined } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { toast } from 'sonner'
+import { BitcoinAmount } from '../../../components/bitcoin-amount'
 import { trpc } from '../../../trpc'
 
 export function EtfAccountDetailsPage(): JSX.Element {
@@ -123,8 +127,8 @@ export function EtfAccountDetailsPage(): JSX.Element {
   }
 
   return (
-    <Box py={6}>
-      <TopBar mb={6}>
+    <Box py={{ base: 6, md: 8 }} maxW="960px" w="full" mx="auto">
+      <TopBar mb={8}>
         <TopBar.Item as={Link} to="/accounts">
           Back to Accounts
         </TopBar.Item>
@@ -143,22 +147,22 @@ export function EtfAccountDetailsPage(): JSX.Element {
         {/* Account header */}
         <Box>
           <HStack spacing={3} mb={1}>
-            <ManualIcon />
-            <Text textStyle="text/md" fontWeight="medium">
-              {account.displayName}
-            </Text>
+            <Box color="neutral.700">
+              <ChartNoAxesCombined size={24} aria-hidden="true" />
+            </Box>
+            <PageHeading title={account.displayName} />
           </HStack>
           <HStack spacing={1}>
             <Box w={2} h={2} bg="warning.500" borderRadius="full" />
-            <Text textStyle="text/xs" color="warning.600" fontWeight="medium">
+            <Text textStyle="text/sm" color="warning.600" fontWeight="medium">
               Manually Added
             </Text>
             {account.createdAt && (
               <>
-                <Text textStyle="text/xs" color="neutral.400">
+                <Text textStyle="text/sm" color="neutral.400">
                   ·
                 </Text>
-                <Text textStyle="text/xs" color="neutral.600">
+                <Text textStyle="text/sm" color="neutral.600">
                   {format(new Date(account.createdAt), 'MMMM do, yyyy')}
                 </Text>
               </>
@@ -166,52 +170,45 @@ export function EtfAccountDetailsPage(): JSX.Element {
           </HStack>
         </Box>
 
-        <hr />
+        <Divider borderColor="neutral.200" />
 
-        {/* Balance display */}
-        <Stack align="center" maxW="640px" mx="auto" w="100%">
-          <HStack spacing={4} mb={4} w="100%" alignItems="flex-start">
-            <Box w={['100%', '50%', '33%']}>
-              <Text textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={1}>
-                Computed Balance
-              </Text>
-              <Text textStyle="label/sm" color="neutral.900" fontWeight="medium">
-                {btcAmount} BTC
-              </Text>
-            </Box>
-            <Box w={['100%', '50%', '33%']}>
-              <Text textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={1}>
-                Status
-              </Text>
-              <HStack spacing={1}>
-                <Box w={2} h={2} bg="warning.500" borderRadius="full" />
-                <Text textStyle="text/xs" color="warning.600" fontWeight="medium">
-                  Manually Added
-                </Text>
-              </HStack>
-            </Box>
-          </HStack>
-        </Stack>
-
-        <hr />
+        <Box>
+          <Text textStyle="text/sm" color="neutral.600" mb={1}>
+            Computed balance
+          </Text>
+          <Text textStyle="text/xl" fontWeight="medium" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+            <>
+              <BitcoinAmount btc={btcAmount} />
+            </>
+          </Text>
+        </Box>
+        <Divider borderColor="neutral.200" />
 
         {/* Holdings table */}
         {holdingsQuery.data && holdingsQuery.data.length > 0 && (
-          <Box maxW="740px" mx="auto" w="100%">
-            <Heading textStyle="text/lg" fontWeight="semibold" mb={3}>
+          <Box w="100%">
+            <Text as="h2" textStyle="text/md" fontWeight="medium" mb={4}>
               Holdings
-            </Heading>
-            <Box borderWidth="1px" borderColor="neutral.200" borderRadius="md" overflow="hidden">
-              <Table size="sm">
+            </Text>
+            <Box borderWidth="1px" borderColor="neutral.200" borderRadius="panel" overflowX="auto">
+              <Table variant="data" size="md" aria-label="ETF holdings">
                 <Thead>
                   <Tr>
-                    <Th>Ticker</Th>
-                    <Th>Issuer</Th>
-                    <Th>Shares</Th>
-                    <Th>BTC/Share</Th>
-                    <Th>BTC Amount</Th>
-                    <Th>Purchased</Th>
-                    <Th aria-label="Actions" />
+                    <Th scope="col">Ticker</Th>
+                    <Th scope="col">Issuer</Th>
+                    <Th scope="col" isNumeric>
+                      Shares
+                    </Th>
+                    <Th scope="col" isNumeric>
+                      Bitcoin/share
+                    </Th>
+                    <Th scope="col" isNumeric>
+                      Bitcoin amount
+                    </Th>
+                    <Th scope="col">Purchased</Th>
+                    <Th scope="col">
+                      <VisuallyHidden>Actions</VisuallyHidden>
+                    </Th>
                   </Tr>
                 </Thead>
                 <Tbody>
@@ -220,30 +217,30 @@ export function EtfAccountDetailsPage(): JSX.Element {
                     return (
                       <Tr key={holding.id}>
                         <Td>
-                          <Text textStyle="text/xs" fontWeight="semibold">
+                          <Text textStyle="text/sm" fontWeight="medium">
                             {holding.ticker}
                           </Text>
                         </Td>
                         <Td>
-                          <Text textStyle="text/xs" color="neutral.500">
+                          <Text textStyle="text/sm" color="neutral.600">
                             {config?.issuer ?? '—'}
                           </Text>
                         </Td>
-                        <Td>
-                          <Text textStyle="text/xs">{holding.shares}</Text>
+                        <Td isNumeric>
+                          <>{holding.shares}</>
+                        </Td>
+                        <Td isNumeric>
+                          <>
+                            <BitcoinAmount btc={holding.btcPerShare} />
+                          </>
+                        </Td>
+                        <Td isNumeric>
+                          <>
+                            <BitcoinAmount btc={Number(holding.btcSats) / 1e8} />
+                          </>
                         </Td>
                         <Td>
-                          <Text textStyle="text/xs" fontFamily="mono">
-                            {holding.btcPerShare.toFixed(8)}
-                          </Text>
-                        </Td>
-                        <Td>
-                          <Text textStyle="text/xs" fontFamily="mono">
-                            {(Number(holding.btcSats) / 1e8).toFixed(8)}
-                          </Text>
-                        </Td>
-                        <Td>
-                          <Text textStyle="text/xs" color="neutral.500">
+                          <Text textStyle="text/sm" color="neutral.600">
                             {holding.datePurchased != null && holding.datePurchased !== ''
                               ? format(new Date(holding.datePurchased), 'MMM d, yyyy')
                               : '—'}
@@ -251,7 +248,9 @@ export function EtfAccountDetailsPage(): JSX.Element {
                         </Td>
                         <Td>
                           <Button
-                            size="xs"
+                            size="sm"
+                            textStyle="text/sm"
+                            aria-label={`Remove ${holding.ticker} holding`}
                             variant="ghost"
                             color="error.500"
                             onClick={() => {
@@ -270,20 +269,23 @@ export function EtfAccountDetailsPage(): JSX.Element {
           </Box>
         )}
 
-        <hr />
+        <Divider borderColor="neutral.200" />
 
         {/* Add Holding */}
-        <Box maxW="740px" mx="auto" w="100%">
-          <Heading textStyle="text/lg" fontWeight="semibold" mb={3}>
-            Add Holding
-          </Heading>
-          <HStack spacing={3} align="flex-end">
-            <FormControl flex={1.2}>
-              <FormLabel textStyle="text/xs" color="neutral.600">
+        <Box w="100%">
+          <Text as="h2" textStyle="text/md" fontWeight="medium" mb={4}>
+            Add holding
+          </Text>
+          <Stack direction={{ base: 'column', md: 'row' }} spacing={3} align={{ base: 'stretch', md: 'flex-end' }}>
+            <FormControl flex={1.2} minW={0}>
+              <FormLabel fontWeight="medium" textStyle="text/sm" color="neutral.600">
                 ETF
               </FormLabel>
               <Select
-                size="sm"
+                fontFamily="body"
+                size="md"
+                borderRadius="control"
+                textStyle="text/sm"
                 value={newTicker}
                 onChange={(e) => {
                   const ticker = ETF_TICKERS.find((candidate) => candidate === e.target.value)
@@ -302,12 +304,14 @@ export function EtfAccountDetailsPage(): JSX.Element {
                 })}
               </Select>
             </FormControl>
-            <FormControl flex={0.8}>
-              <FormLabel textStyle="text/xs" color="neutral.600">
+            <FormControl flex={0.8} minW={0}>
+              <FormLabel fontWeight="medium" textStyle="text/sm" color="neutral.600">
                 Shares
               </FormLabel>
               <Input
-                size="sm"
+                fontFamily="body"
+                size="md"
+                textStyle="text/sm"
                 type="number"
                 step="any"
                 min="0"
@@ -318,22 +322,23 @@ export function EtfAccountDetailsPage(): JSX.Element {
                 }}
               />
             </FormControl>
-            <FormControl flex={0.8}>
-              <FormLabel textStyle="text/xs" color="neutral.600">
-                Date Purchased
+            <FormControl flex={0.8} minW={0}>
+              <FormLabel fontWeight="medium" textStyle="text/sm" color="neutral.600">
+                Date purchased (optional)
               </FormLabel>
-              <Input
-                size="sm"
-                type="date"
+              <DateStringInput
+                fontFamily="body"
+                size="md"
+                textStyle="text/sm"
                 value={newDatePurchased}
-                onChange={(e) => {
-                  setNewDatePurchased(e.target.value)
+                onChange={(date) => {
+                  setNewDatePurchased(date)
                 }}
               />
             </FormControl>
             <Button
-              size="sm"
-              variant="outline"
+              size="md"
+              flexShrink={0}
               onClick={() => {
                 void handleAddHolding()
               }}
@@ -342,34 +347,9 @@ export function EtfAccountDetailsPage(): JSX.Element {
             >
               Add
             </Button>
-          </HStack>
+          </Stack>
         </Box>
       </Stack>
     </Box>
-  )
-}
-
-function ManualIcon(): JSX.Element {
-  return (
-    <Icon viewBox="0 0 24 24" w={5} h={5} color="warning.500">
-      <path
-        d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        fill="none"
-      />
-      <polyline
-        points="14 2 14 8 20 8"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        fill="none"
-      />
-      <line x1="16" y1="13" x2="8" y2="13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-      <line x1="16" y1="17" x2="8" y2="17" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-    </Icon>
   )
 }
