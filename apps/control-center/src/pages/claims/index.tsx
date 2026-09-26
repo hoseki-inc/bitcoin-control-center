@@ -22,6 +22,7 @@ import { useEffect } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router'
 import { toast } from 'sonner'
 import { DeleteClaimModal } from '../../components/claims/claim-details/delete-claim-modal'
+import { FirstAccountReady } from '../../components/onboarding/getting-started'
 import { useAutoRefreshExchanges } from '../../hooks/use-auto-refresh-exchanges'
 import { useGetBalancesPerClaimIds } from '../../lib/balances'
 import { type RouterOutput, trpc } from '../../trpc'
@@ -178,6 +179,12 @@ export function ClaimsPage(): JSX.Element {
   return (
     <>
       <Stack py={8} gap={0}>
+        <FirstAccountReady
+          ready={
+            claims.some((claim) => balancesQuery.data.get(claim.id)?.current != null) ||
+            [...exchangeAccounts, ...manualAccounts, ...etfAccounts].some((account) => account.balance !== null)
+          }
+        />
         {/* Header */}
         <Flex align="flex-start" justify="space-between" pb={9}>
           <Box>

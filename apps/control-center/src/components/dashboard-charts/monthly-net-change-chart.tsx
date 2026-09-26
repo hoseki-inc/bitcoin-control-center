@@ -6,13 +6,16 @@ import { type BalanceDataPoint, type MonthlyChange, getMonthlyChanges } from './
 interface MonthlyNetChangeChartProps {
   data: BalanceDataPoint[]
   timezone?: string
+  formatAmount?: (value: number) => string
 }
 
 function BarTooltip({
   active,
   payload,
+  formatAmount,
 }: {
   active?: boolean
+  formatAmount?: (value: number) => string
   payload?: Array<{ payload: MonthlyChange }>
 }): JSX.Element | null {
   if (active !== true || !payload?.[0]) {
@@ -24,14 +27,20 @@ function BarTooltip({
   return (
     <Box bg="neutral.900" borderRadius="8px" px={3} py={2} shadow="lg">
       <Text textStyle="text/sm" fontWeight="bold" fontFamily="mono" color={isPositive ? 'success.400' : 'error.400'}>
-        {isPositive ? '+' : ''}
-        {change.toFixed(8)} BTC
+        {formatAmount ? (
+          formatAmount(change)
+        ) : (
+          <>
+            {isPositive ? '+' : ''}
+            {change.toFixed(8)} BTC
+          </>
+        )}
       </Text>
     </Box>
   )
 }
 
-export function MonthlyNetChangeChart({ data, timezone }: MonthlyNetChangeChartProps): JSX.Element {
+export function MonthlyNetChangeChart({ data, timezone, formatAmount }: MonthlyNetChangeChartProps): JSX.Element {
   const [success500, error500] = useToken('colors', ['success.500', 'error.500'])
 
   const monthlyChanges = useMemo(() => getMonthlyChanges(data, 6, timezone), [data, timezone])
@@ -58,7 +67,7 @@ export function MonthlyNetChangeChart({ data, timezone }: MonthlyNetChangeChartP
             dy={4}
           />
           <YAxis hide domain={[0, 'auto']} />
-          <Tooltip content={<BarTooltip />} cursor={false} />
+          <Tooltip content={<BarTooltip formatAmount={formatAmount} />} cursor={false} />
           <Bar dataKey="absChange" radius={[4, 4, 0, 0]} maxBarSize={36}>
             {monthlyChanges.map((entry) => (
               <Cell
