@@ -1,9 +1,12 @@
 // @vitest-environment node
 import { ChakraProvider } from '@chakra-ui/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter } from 'react-router'
 import { describe, expect, it, vi } from 'vitest'
+import { ONBOARDING_KEY } from '../components/onboarding/getting-started'
+import type { BitcoinDisplayUnit } from '../lib/bitcoin-display'
 import { type HomeDataSource, HomePage, type HomeViews } from './index'
 
 type PortfolioData = NonNullable<ReturnType<HomeDataSource['usePortfolio']>['data']>
@@ -16,6 +19,8 @@ interface HomeState {
   isError: boolean
   statementsError: boolean
   btcPrice: string
+  unit: BitcoinDisplayUnit
+  onboarding: string | null
 }
 
 function query<T>(data: T, state: { isLoading?: boolean; isError?: boolean } = {}) {
@@ -56,6 +61,8 @@ function fakeDataSource(state: HomeState): HomeDataSource {
 
 const views: HomeViews = {
   AccumulationChart: () => createElement('div', null, 'Balance chart'),
+  // The price chart's own states are covered in bitcoin-price-chart.test.ts; here we only check placement.
+  BitcoinPriceChart: () => createElement('section', { 'data-chart': 'price' }, 'Bitcoin Price'),
 }
 
 function renderHome(overrides: Partial<HomeState> = {}): string {
@@ -66,13 +73,23 @@ function renderHome(overrides: Partial<HomeState> = {}): string {
     isError: false,
     statementsError: false,
     btcPrice: '50000',
+    unit: 'btc',
+    onboarding: 'dismissed',
     ...overrides,
   }
+  // Seed the stored display preference the same way a loaded settings query would.
+  const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity, retry: false } } })
+  queryClient.setQueryData(['local-settings', 'bitcoin_display_unit'], state.unit)
+  queryClient.setQueryData(['local-settings', ONBOARDING_KEY], state.onboarding)
   return renderToStaticMarkup(
     createElement(
-      ChakraProvider,
-      null,
-      createElement(MemoryRouter, null, createElement(HomePage, { dataSource: fakeDataSource(state), views })),
+      QueryClientProvider,
+      { client: queryClient },
+      createElement(
+        ChakraProvider,
+        null,
+        createElement(MemoryRouter, null, createElement(HomePage, { dataSource: fakeDataSource(state), views })),
+      ),
     ),
   )
 }
@@ -80,11 +97,11 @@ function renderHome(overrides: Partial<HomeState> = {}): string {
 const zeroBalanceHistory = [{ timestamp: '2026-09-01T00:00:00.000Z', totalBalance: '0' }]
 
 describe('Home overview states', () => {
-  it('previews zero balances with one account action', () => {
+  it('previews zero balances and a labeled market chart with one account action', () => {
     const html = renderHome()
     expect(html).toContain('Your Bitcoin, in one place')
     expect(html.match(/href="\/accounts\/add"/g)).toHaveLength(1)
-    for (const text of ['0 BTC', '$0.00 USD', '30d Change', 'Your holdings, on record']) {
+    for (const text of ['0 BTC', '$0.00 USD', '30d Change', 'Bitcoin Price', 'Your holdings, on record']) {
       expect(html).toContain(text)
     }
     expect(html).toContain('Generate Statement')
@@ -93,6 +110,19 @@ describe('Home overview states', () => {
     expect(html).not.toContain('Sample chart')
     expect(html).not.toContain('$98,820')
     expect(html).not.toContain('Statement introduction')
+  })
+
+  it.each([
+    ['btc', '0 BTC'],
+    ['sats', '0 sats'],
+    ['symbol', '₿ 0'],
+  ] as const)('uses %s for both empty-state Bitcoin values', (unit, expected) => {
+    const html = renderHome({ unit })
+    expect(html.split(`>${expected}<`)).toHaveLength(3)
+    expect(html).not.toContain('0.00000000')
+    if (unit !== 'btc') {
+      expect(html).not.toContain('0 BTC')
+    }
   })
 
   it.each(['claims', 'exchange', 'manual', 'etf'] as const)(
@@ -119,6 +149,7 @@ describe('Home overview states', () => {
     expect(html).not.toContain('$0.00 USD')
     expect(html).not.toContain('0 BTC')
     expect(html).toContain('Try Again')
+    expect(html).toContain('Bitcoin Price')
     expect(html).not.toContain('Dashboard preview')
     expect(html).not.toContain('href="/accounts/add"')
   }, 20_000)
@@ -126,6 +157,7 @@ describe('Home overview states', () => {
   it('waits for account queries before offering account setup', () => {
     const html = renderHome({ isLoading: true })
     expect(html).toContain('Loading your holdings')
+    expect(html).toContain('Bitcoin Price')
     expect(html).not.toContain('0.00000000')
     expect(html).not.toContain('href="/accounts/add"')
   })
@@ -150,4 +182,16 @@ describe('Home overview states', () => {
     })
     expect(html).toContain('USD value unavailable')
   })
+})
+
+it('introduces the product only for a new empty installation', () => {
+  expect(renderHome({ onboarding: null })).toContain('Explore First')
+  const manual = [{ id: 'manual', status: 'verified', balance: '0' }]
+  expect(renderHome({ onboarding: null, accounts: { claims: [], exchange: [], manual, etf: [] } })).not.toContain(
+    'Explore First',
+  )
+})
+
+it('does not treat a failed account request as a fresh installation', () => {
+  expect(renderHome({ onboarding: null, isError: true })).not.toContain('Explore First')
 })

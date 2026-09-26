@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { TestChakraProvider as ChakraProvider } from '@hoseki/packages/testing/chakra-provider'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, useState } from 'react'
 import { type Root, createRoot } from 'react-dom/client'
 import { MemoryRouter } from 'react-router'
@@ -117,15 +118,20 @@ async function render(
   presentation: Presentation = 'dropdown',
   disconnected = false,
 ): Promise<void> {
+  // Seed the stored display preference the same way a loaded settings query would.
+  const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity, retry: false } } })
+  queryClient.setQueryData(['local-settings', 'bitcoin_display_unit'], 'btc')
   revision += 1
   const key = revision
   await act(async () => {
     root.render(
-      <ChakraProvider>
-        <MemoryRouter>
-          <Harness key={key} initial={selected} presentation={presentation} disconnected={disconnected} />
-        </MemoryRouter>
-      </ChakraProvider>,
+      <QueryClientProvider client={queryClient}>
+        <ChakraProvider>
+          <MemoryRouter>
+            <Harness key={key} initial={selected} presentation={presentation} disconnected={disconnected} />
+          </MemoryRouter>
+        </ChakraProvider>
+      </QueryClientProvider>,
     )
   })
 }

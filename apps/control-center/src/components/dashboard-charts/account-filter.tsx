@@ -27,6 +27,7 @@ import type { ClaimDto } from '../../trpc/server-types'
 import { ensureClaimStatusNotExpired } from '../../utils/claim-utils'
 import { needsExchangeReconnect } from '../../utils/exchange-connection-status'
 import { BitcoinAmount } from '../bitcoin-amount'
+import { SensitiveValue } from '../sensitive-value'
 import { UsdEquivalent } from '../usd-equivalent'
 import { HistorySyncStatus } from './history-sync-status'
 
@@ -213,25 +214,25 @@ export function AccountFilter({
                 sx={{ fontVariantNumeric: 'tabular-nums' }}
                 overflowWrap="anywhere"
               >
-                <>
+                <SensitiveValue>
                   <BitcoinAmount btc={account.sats / 100_000_000} />
-                </>
+                </SensitiveValue>
               </Text>
               {!compact && (
                 <Flex mt={1} pr={8} minH="20px" align="center" color="neutral.600">
                   <Text as="span" textStyle="text/xs" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                    <>
+                    <SensitiveValue>
                       <UsdEquivalent btc={account.sats / 100_000_000} btcPrice={btcPrice} />
-                    </>
+                    </SensitiveValue>
                   </Text>
                 </Flex>
               )}
             </Box>
             {!compact && (
               <Box position="absolute" bottom={3} right={3}>
-                <>
+                <SensitiveValue>
                   <AccountSharePie sats={account.sats} totalSats={totalSats} name={account.name} />
-                </>
+                </SensitiveValue>
               </Box>
             )}
           </Box>
