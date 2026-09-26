@@ -137,7 +137,7 @@ export function StatementCreatePage(): JSX.Element {
     },
   })
 
-  const LEFT_COLUMN_WIDTH = '35%'
+  const LEFT_COLUMN_WIDTH = { base: 'auto', md: '35%' }
 
   // Ask the user to connect a wallet only once we know they have none.
   const hasAccounts = !claimsQuery.isSuccess || claimsQuery.data.length > 0
@@ -147,8 +147,8 @@ export function StatementCreatePage(): JSX.Element {
     <Stack py={8} spacing={8}>
       <Panel icon={<FileCheckIcon />} title="Generate Statement">
         <Box pt={8} pb={hasAccounts ? 0 : 8} px={4}>
-          <Stack direction={{ base: 'column', md: 'row' }} alignItems="flex-start" gap={8}>
-            <Stack gap={1} flexBasis={{ base: 'auto', md: LEFT_COLUMN_WIDTH }} flexShrink={0}>
+          <Stack alignItems="stretch" direction={{ base: 'column', md: 'row' }} gap={{ base: 4, md: 8 }}>
+            <Stack gap={1} flexBasis={LEFT_COLUMN_WIDTH} flexShrink={0}>
               <Text as="h2" textStyle="text/md" fontWeight="medium">
                 What is a Bitcoin Control Center statement?
               </Text>
@@ -263,13 +263,13 @@ export function StatementCreatePage(): JSX.Element {
                     <AccordionIcon />
                   </AccordionButton>
                   <AccordionPanel px={0} py={1}>
-                    <HStack alignItems="flex-start" gap={8}>
+                    <Stack alignItems="stretch" direction={{ base: 'column', md: 'row' }} gap={{ base: 4, md: 8 }}>
                       <Stack gap={1} flexBasis={LEFT_COLUMN_WIDTH} flexShrink={0}>
                         <Text textStyle="text/sm" color="neutral.600">
                           Add your name and address to be included on the statement.
                         </Text>
                       </Stack>
-                      <Stack gap={4} flexGrow="1">
+                      <Stack gap={4} flexGrow="1" minW={0}>
                         <FormControl>
                           <FormLabel textStyle="label/md" fontWeight="medium" color="neutral.900" htmlFor="name">
                             Name
@@ -310,7 +310,7 @@ export function StatementCreatePage(): JSX.Element {
                           />
                         </FormControl>
                       </Stack>
-                    </HStack>
+                    </Stack>
                   </AccordionPanel>
                 </AccordionItem>
               </Accordion>
@@ -319,7 +319,7 @@ export function StatementCreatePage(): JSX.Element {
 
           <chakra.hr my={8} />
 
-          <HStack alignItems="flex-start" gap={8}>
+          <Stack alignItems="stretch" direction={{ base: 'column', md: 'row' }} gap={{ base: 4, md: 8 }}>
             <Stack gap={1} flexBasis={LEFT_COLUMN_WIDTH} flexShrink={0}>
               <Text as="h2" textStyle="text/md" fontWeight="medium">
                 {hasAccounts ? 'Select Accounts' : 'First, Connect an Account.'}
@@ -330,7 +330,7 @@ export function StatementCreatePage(): JSX.Element {
                   : 'Before you can generate a bitcoin ownership statement, you’ll need to connect a wallet and verify control.'}
               </Text>
               {!hasAccounts && (
-                <Button as={Link} to="/accounts" mt={4} alignSelf="flex-start" size="sm">
+                <Button as={Link} to="/accounts/add" mt={4} alignSelf="flex-start" size="sm">
                   Connect Wallet
                 </Button>
               )}
@@ -341,15 +341,15 @@ export function StatementCreatePage(): JSX.Element {
               selectedClaimIds={selectedClaimIds}
               setSelectedClaimIds={setSelectedClaimIds}
             />
-          </HStack>
+          </Stack>
 
           {hasAccounts && (
             <Box py={4} px={0}>
-              <HStack justifyContent="space-between">
+              <Stack direction={{ base: 'column-reverse', md: 'row' }} justifyContent="space-between">
                 <Button as={Link} to={cancelPath} variant="outline">
                   Cancel
                 </Button>
-                <HStack>
+                <Stack direction={{ base: 'column', sm: 'row' }}>
                   <Button
                     isDisabled={!hasAnySelected}
                     variant="outline"
@@ -368,8 +368,8 @@ export function StatementCreatePage(): JSX.Element {
                   >
                     Generate Statement
                   </Button>
-                </HStack>
-              </HStack>
+                </Stack>
+              </Stack>
             </Box>
           )}
         </Box>
@@ -406,8 +406,8 @@ function StatementGenerationModal({
   ...props
 }: { statement: StatementDto | null } & Omit<ModalProps, 'children'>) {
   const completedContent = (
-    <HStack>
-      <Button as={Link} to="/portfolio" variant="outline">
+    <Stack direction={{ base: 'column', sm: 'row' }}>
+      <Button as={Link} to="/home" variant="outline">
         Back to Home
       </Button>
       {statement && (
@@ -415,7 +415,7 @@ function StatementGenerationModal({
           View Statement
         </Button>
       )}
-    </HStack>
+    </Stack>
   )
 
   return (
@@ -430,7 +430,7 @@ function StatementGenerationModal({
 
 function StatementExampleAsEmptyState() {
   return (
-    <Box position="relative">
+    <Box position="relative" maxW="360px" mx="auto">
       <Image src="/empty-view/claims-empty-state-download-example.png" alt="Example Bitcoin statement." />
     </Box>
   )

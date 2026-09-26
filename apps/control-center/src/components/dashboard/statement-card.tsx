@@ -7,23 +7,15 @@ import type { StatementDto } from '../../trpc/server-types'
 export function StatementCard({ statement, onView }: { statement: StatementDto; onView: () => void }): JSX.Element {
   return (
     <Box
-      as="button"
-      type="button"
-      display="block"
-      width="full"
-      textAlign="left"
-      _focusVisible={{ boxShadow: 'outline' }}
       data-group=""
-      borderRadius="4px"
+      borderRadius="panel"
       borderWidth="1px"
       borderColor="neutral.200"
       bg="neutral.50"
       p={0}
       overflow="hidden"
       position="relative"
-      minWidth="256px"
-      cursor="pointer"
-      onClick={onView}
+      minWidth={0}
     >
       {/* Integrator Ribbon */}
       {statement.integrator && (
@@ -76,16 +68,19 @@ export function StatementCard({ statement, onView }: { statement: StatementDto; 
           gradientDirection="from-bottom"
           baseColor="rgba(0, 0, 0, 0.20)"
           gradientSize={60}
-          opacity={0}
+          opacity={1}
           transition="opacity 0.4s"
-          _groupHover={{ opacity: 1 }}
-          _groupFocusVisible={{ opacity: 1 }}
           justify="center"
           alignItems="flex-end"
           pointerEvents="auto"
           pb={4}
         >
-          <Button as="span" size="sm" variant="outline">
+          <Button
+            onClick={onView}
+            size="sm"
+            variant="outline"
+            aria-label={`View statement created ${format(new Date(statement.createdAt), 'dd MMM yyyy h:mm a')}`}
+          >
             View
           </Button>
         </LinearGradient>
