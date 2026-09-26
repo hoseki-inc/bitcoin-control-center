@@ -4,16 +4,19 @@ import {
   ButtonGroup,
   Circle,
   Divider,
+  FormControl,
+  FormLabel,
   HStack,
-  Heading,
   Input,
   Select,
+  SimpleGrid,
   Stack,
   Switch,
   Text,
   VStack,
 } from '@chakra-ui/react'
 import { parseUnknown } from '@hoseki/packages/result/lib/parse'
+import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { z } from 'zod'
@@ -31,68 +34,75 @@ const ReconnectErrorSchema = z.object({
 })
 
 export function SettingsPage({ desktop = isDesktop }: { desktop?: boolean }): JSX.Element {
-  const { data: savedName, isLoading, save, isSaving } = useLocalSetting('user_name')
+  const { data: savedName, isLoading, saveAsync, isSaving, isError } = useLocalSetting('user_name')
+  const [draftName, setDraftName] = useState<string | null>(null)
+  const name = draftName ?? savedName ?? ''
 
-  const [name, setName] = useState('')
-  const [isDirty, setIsDirty] = useState(false)
-
-  useEffect(() => {
-    if (savedName != null && savedName !== '' && !isDirty) {
-      setName(savedName)
+  const handleSave = async (): Promise<void> => {
+    try {
+      await saveAsync(name.trim())
+      setDraftName(null)
+      toast.success('Name saved')
+    } catch {
+      toast.error('Could not save your name. Please try again.')
     }
-  }, [savedName, isDirty])
-
-  const handleSave = (): void => {
-    save(name.trim())
-    setIsDirty(false)
-    toast.success('Name saved')
   }
 
   return (
-    <Box p={6}>
-      <VStack align="start" gap={8}>
-        <VStack align="start" gap={1}>
-          <Heading size="lg">Settings</Heading>
-          <Text textStyle="text/md" color="neutral.600">
-            App preferences and personal information.
-          </Text>
-        </VStack>
-
-        <Stack gap={2} w="full" maxW="400px">
-          <Text textStyle="label/sm" fontWeight="medium">
-            Your Name
-          </Text>
-          <Text textStyle="text/sm" color="neutral.600">
-            This name will appear on your generated statements.
-          </Text>
-          <Input
-            placeholder="Enter your name"
-            value={name}
-            onChange={(e) => {
-              setName(e.target.value)
-              setIsDirty(true)
+    <Box py={{ base: 6, md: 10 }} maxW="960px">
+      <PageHeading title="Settings" description="App preferences and personal information." />
+      <Stack mt={{ base: 8, md: 10 }} spacing={8} divider={<Divider borderColor="neutral.200" />}>
+        <SimpleGrid columns={{ base: 1, md: 2 }} spacing={{ base: 5, md: 10 }}>
+          <Box>
+            <Text as="h2" textStyle="text/md" fontWeight="semibold" color="neutral.900">
+              Personal information
+            </Text>
+            <Text id="user-name-description" mt={2} textStyle="text/sm" color="neutral.600" maxW="32ch">
+              This name will appear on your generated statements.
+            </Text>
+          </Box>
+          <Box
+            as="form"
+            onSubmit={(event: React.FormEvent) => {
+              event.preventDefault()
+              void handleSave()
             }}
-            isDisabled={isLoading}
-          />
-          <Button
-            size="sm"
-            colorScheme="green"
-            alignSelf="flex-start"
-            onClick={handleSave}
-            isLoading={isSaving}
-            isDisabled={!isDirty || name.trim() === (savedName ?? '')}
           >
-            Save
-          </Button>
-        </Stack>
-
-        {desktop && (
-          <>
-            <Divider />
-            <ElectrumSettings />
-          </>
-        )}
-      </VStack>
+            <FormControl isDisabled={isLoading || isSaving || isError}>
+              <FormLabel htmlFor="user-name" textStyle="text/sm" mb={2}>
+                Your name
+              </FormLabel>
+              <Input
+                id="user-name"
+                autoComplete="name"
+                aria-describedby="user-name-description"
+                maxLength={200}
+                placeholder="Enter your name"
+                value={name}
+                onChange={(event) => {
+                  setDraftName(event.target.value)
+                }}
+              />
+              {isError && (
+                <Text role="alert" textStyle="text/sm" color="error.700" mt={2}>
+                  Could not load your name. Refresh to try again.
+                </Text>
+              )}
+              <Button
+                type="submit"
+                size="sm"
+                mt={4}
+                isLoading={isSaving}
+                loadingText="Saving"
+                isDisabled={isLoading || isError || name.trim() === (savedName ?? '')}
+              >
+                Save name
+              </Button>
+            </FormControl>
+          </Box>
+        </SimpleGrid>
+        {desktop && <ElectrumSettings />}
+      </Stack>
     </Box>
   )
 }
@@ -263,7 +273,7 @@ function ElectrumSettings(): JSX.Element {
   return (
     <VStack align="start" gap={5} w="full" maxW="480px">
       <VStack align="start" gap={1}>
-        <Text textStyle="label/md" fontWeight="semibold">
+        <Text as="h2" textStyle="text/md" fontWeight="semibold">
           Electrum Server
         </Text>
         <Text textStyle="text/sm" color="neutral.600">
@@ -273,11 +283,12 @@ function ElectrumSettings(): JSX.Element {
 
       {/* Server preset selector */}
       <Stack gap={1} w="full">
-        <Text textStyle="label/sm" fontWeight="medium">
+        <FormLabel htmlFor="electrum-preset" textStyle="text/sm" mb={0}>
           Server Preset
-        </Text>
+        </FormLabel>
         <Select
           size="sm"
+          id="electrum-preset"
           value={SERVER_PRESETS.find((p) => p.host === host && p.port === port) ? host : 'custom'}
           onChange={(e) => {
             const preset = SERVER_PRESETS.find((p) => p.host === e.target.value)
@@ -313,7 +324,7 @@ function ElectrumSettings(): JSX.Element {
           align="start"
         >
           <Circle size="8px" bg={electrumStatus.connected ? 'green.500' : 'red.500'} flexShrink={0} mt="6px" />
-          <VStack align="start" gap={0}>
+          <VStack align="start" gap={0} minW={0}>
             <Text textStyle="text/sm" fontWeight="medium" color={electrumStatus.connected ? 'green.700' : 'red.700'}>
               {electrumStatus.connected ? 'Connected' : 'Disconnected'}
             </Text>
@@ -326,11 +337,12 @@ function ElectrumSettings(): JSX.Element {
 
       {/* Host */}
       <Stack gap={1} w="full">
-        <Text textStyle="label/sm" fontWeight="medium">
+        <FormLabel htmlFor="electrum-host" textStyle="text/sm" mb={0}>
           Host
-        </Text>
+        </FormLabel>
         <Input
           size="sm"
+          id="electrum-host"
           placeholder="electrum.blockstream.info"
           value={host}
           onChange={(e) => {
@@ -344,12 +356,14 @@ function ElectrumSettings(): JSX.Element {
 
       {/* Port + Protocol side by side */}
       <HStack gap={3} w="full">
-        <Stack gap={1} flex={1}>
-          <Text textStyle="label/sm" fontWeight="medium">
+        <Stack gap={1} flex={1} minW={0}>
+          <FormLabel htmlFor="electrum-port" textStyle="text/sm" mb={0}>
             Port
-          </Text>
+          </FormLabel>
           <Input
             size="sm"
+            id="electrum-port"
+            inputMode="numeric"
             placeholder="50002"
             value={port}
             onChange={(e) => {
@@ -360,12 +374,13 @@ function ElectrumSettings(): JSX.Element {
             isDisabled={isLoading}
           />
         </Stack>
-        <Stack gap={1} w="120px">
-          <Text textStyle="label/sm" fontWeight="medium">
+        <Stack gap={1} w="120px" flexShrink={0}>
+          <FormLabel htmlFor="electrum-protocol" textStyle="text/sm" mb={0}>
             Protocol
-          </Text>
+          </FormLabel>
           <Select
             size="sm"
+            id="electrum-protocol"
             value={protocol}
             onChange={(e) => {
               const value = e.target.value
@@ -387,14 +402,15 @@ function ElectrumSettings(): JSX.Element {
       {/* Tor toggle */}
       <HStack w="full" justify="space-between" align="center">
         <VStack align="start" gap={0}>
-          <Text textStyle="label/sm" fontWeight="medium">
+          <FormLabel htmlFor="electrum-tor" textStyle="text/sm" mb={0}>
             Connect via Tor
-          </Text>
+          </FormLabel>
           <Text textStyle="text/xs" color="neutral.600">
             Route through bundled Tor proxy. Required for .onion addresses.
           </Text>
         </VStack>
         <Switch
+          id="electrum-tor"
           isChecked={torEnabled}
           onChange={(e) => {
             setTorEnabled(e.target.checked)
@@ -409,14 +425,20 @@ function ElectrumSettings(): JSX.Element {
       {testResult && (
         <HStack gap={2} px={3} py={2} w="full" borderRadius="md" bg={testResult.ok ? 'green.50' : 'red.50'}>
           <Circle size="8px" bg={testResult.ok ? 'green.500' : 'red.500'} flexShrink={0} />
-          <Text textStyle="text/sm" color={testResult.ok ? 'green.700' : 'red.700'}>
+          <Text
+            as="output"
+            textStyle="text/sm"
+            overflowWrap="anywhere"
+            minW={0}
+            color={testResult.ok ? 'green.700' : 'red.700'}
+          >
             {testResult.message}
           </Text>
         </HStack>
       )}
 
       {/* Action buttons */}
-      <ButtonGroup size="sm" gap={2}>
+      <ButtonGroup size="sm" gap={2} flexWrap="wrap">
         <Button
           variant="outline"
           onClick={() => void handleTest()}
