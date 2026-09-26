@@ -30,17 +30,17 @@ export function MultisigHeader({
     index: number,
     allKeystores: IndicatorKeystore[],
   ): null | ((keystore: IndicatorKeystore) => void) {
-    function navigateToHubWithKeystoreIdSearch(keystore: IndicatorKeystore) {
-      return navigate({
+    function navigateToHubWithKeystoreIdSearch(selectedKeystore: IndicatorKeystore) {
+      void navigate({
         pathname: `/multisig/${claim.id}`,
         search: `?${createSearchParams({
-          keystoreId: keystore.id,
+          keystoreId: selectedKeystore.id,
         })}`,
       })
     }
 
-    function navigateToKeystoreSigning(keystore: IndicatorKeystore) {
-      navigate(`/multisig/${claim.id}/signing/${keystore.wallet}/${keystore.id}`)
+    function navigateToKeystoreSigning(selectedKeystore: IndicatorKeystore) {
+      void navigate(`/multisig/${claim.id}/signing/${selectedKeystore.wallet}/${selectedKeystore.id}`)
     }
 
     // We currently don't have a screen for verified keystores, so we don't allow the user to click on them.
@@ -61,18 +61,19 @@ export function MultisigHeader({
     if (allKeystores.every((k) => k.status !== 'pending')) {
       return navigateToHubWithKeystoreIdSearch
     }
-    if (keystore.status === 'identified' && isUserOnMultisigDetailsPage(location.pathname)) {
+    if (isUserOnMultisigDetailsPage(location.pathname)) {
       return navigateToHubWithKeystoreIdSearch
     }
 
     return navigateToKeystoreSigning
   }
 
-  const searchParams = expandedKeystoreId
-    ? `?${createSearchParams({
-        keystoreId: expandedKeystoreId,
-      })}`
-    : ''
+  const searchParams =
+    expandedKeystoreId != null && expandedKeystoreId !== ''
+      ? `?${createSearchParams({
+          keystoreId: expandedKeystoreId,
+        })}`
+      : ''
 
   return (
     <HStack spacing={8} borderBottom="1px solid" borderColor="neutral.200" pb={2} {...props}>

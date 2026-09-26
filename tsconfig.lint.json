@@ -1,0 +1,27 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": false,
+    "jsx": "react-jsx",
+    "types": ["node", "vitest/globals", "vite/client"]
+  },
+  "include": [
+    "*.ts",
+    "*.mts",
+    "*.cts",
+    "*.js",
+    "*.mjs",
+    "*.cjs",
+    ".ladle/**/*",
+    "apps/api-sentinel/**/*.test.ts",
+    "apps/api-sentinel/**/*.test.tsx",
+    "packages/**/*.test.ts",
+    "packages/**/*.test.tsx",
+    "desktop/scripts/**/*",
+    "start9/scripts/**/*",
+    "start9/tests/**/*",
+    "start9/vitest.config.mts"
+  ],
+  "exclude": ["**/node_modules/**", "**/dist/**", "coverage", "tmp"]
+}

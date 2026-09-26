@@ -17,6 +17,7 @@ import { TopBar } from '@hoseki/packages/ui/prove-verify-ui/top-bar'
 import { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router'
 import { toast } from 'sonner'
+import { parseNavigationState } from '../../../lib/navigation-state'
 import { trpc } from '../../../trpc'
 
 interface HoldingRow {
@@ -35,7 +36,7 @@ function createEmptyRow(): HoldingRow {
 export function ClaimsVerifyEtfPage(): JSX.Element {
   const navigate = useNavigate()
   const location = useLocation()
-  const returnTo = (location.state as { returnTo?: string } | null)?.returnTo ?? '/accounts'
+  const returnTo = parseNavigationState(location.state)?.returnTo ?? '/accounts'
 
   const [displayName, setDisplayName] = useState('')
   const [holdings, setHoldings] = useState<HoldingRow[]>([createEmptyRow()])
@@ -69,9 +70,7 @@ export function ClaimsVerifyEtfPage(): JSX.Element {
       continue
     }
     const config = ETF_CONFIGS[row.ticker]
-    if (config) {
-      totalBtcSats += computeHoldingBtcSats(config, shares, asOf)
-    }
+    totalBtcSats += computeHoldingBtcSats(config, shares, asOf)
   }
   const totalBtc = Number(totalBtcSats) / 1e8
 
@@ -86,18 +85,18 @@ export function ClaimsVerifyEtfPage(): JSX.Element {
       return
     }
 
-    const validHoldings = holdings
-      .filter((r) => {
-        const shares = parseFloat(r.shares)
-        return !isNaN(shares) && shares > 0
-      })
-      .map((r) => ({
-        ticker: r.ticker,
-        shares: r.shares,
-        datePurchased: r.datePurchased ? new Date(r.datePurchased + 'T12:00:00').toISOString() : undefined,
-      }))
-
     try {
+      const validHoldings = holdings
+        .filter((r) => {
+          const shares = parseFloat(r.shares)
+          return !isNaN(shares) && shares > 0
+        })
+        .map((r) => ({
+          ticker: r.ticker,
+          shares: r.shares,
+          datePurchased: r.datePurchased ? new Date(r.datePurchased + 'T12:00:00').toISOString() : undefined,
+        }))
+
       const result = await createMutation.mutateAsync({
         displayName: displayName.trim(),
         holdings: validHoldings,
@@ -106,7 +105,7 @@ export function ClaimsVerifyEtfPage(): JSX.Element {
       await utils.portalProve.etf.list.invalidate()
       await utils.portalProve.controlCenter.invalidate()
       toast.success('ETF account created')
-      navigate(`/accounts/etf/${result.id}`)
+      void navigate(`/accounts/etf/${result.id}`)
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to create ETF account'
       toast.error(message)
@@ -138,7 +137,9 @@ export function ClaimsVerifyEtfPage(): JSX.Element {
           <Input
             placeholder="e.g. My ETF Portfolio, Brokerage Account"
             value={displayName}
-            onChange={(e) => setDisplayName(e.target.value)}
+            onChange={(e) => {
+              setDisplayName(e.target.value)
+            }}
           />
         </FormControl>
 
@@ -153,7 +154,13 @@ export function ClaimsVerifyEtfPage(): JSX.Element {
                   <FormLabel textStyle="text/xs" color="neutral.400">
                     ETF
                   </FormLabel>
-                  <Select size="sm" value={row.ticker} onChange={(e) => updateRow(row.key, 'ticker', e.target.value)}>
+                  <Select
+                    size="sm"
+                    value={row.ticker}
+                    onChange={(e) => {
+                      updateRow(row.key, 'ticker', e.target.value)
+                    }}
+                  >
                     {ETF_TICKERS.map((ticker) => {
                       const config = ETF_CONFIGS[ticker]
                       return (
@@ -175,7 +182,9 @@ export function ClaimsVerifyEtfPage(): JSX.Element {
                     min="0"
                     placeholder="0"
                     value={row.shares}
-                    onChange={(e) => updateRow(row.key, 'shares', e.target.value)}
+                    onChange={(e) => {
+                      updateRow(row.key, 'shares', e.target.value)
+                    }}
                   />
                 </FormControl>
                 <FormControl flex={0.8}>
@@ -186,10 +195,19 @@ export function ClaimsVerifyEtfPage(): JSX.Element {
                     size="sm"
                     type="date"
                     value={row.datePurchased}
-                    onChange={(e) => updateRow(row.key, 'datePurchased', e.target.value)}
+                    onChange={(e) => {
+                      updateRow(row.key, 'datePurchased', e.target.value)
+                    }}
                   />
                 </FormControl>
-                {holdings.length > 1 && <CloseButton size="sm" onClick={() => removeRow(row.key)} />}
+                {holdings.length > 1 && (
+                  <CloseButton
+                    size="sm"
+                    onClick={() => {
+                      removeRow(row.key)
+                    }}
+                  />
+                )}
               </HStack>
             ))}
           </Stack>
@@ -211,7 +229,14 @@ export function ClaimsVerifyEtfPage(): JSX.Element {
         )}
 
         <Flex justify="flex-end">
-          <Button colorScheme="blue" onClick={handleSubmit} isLoading={createMutation.isLoading} isDisabled={!isValid}>
+          <Button
+            colorScheme="blue"
+            onClick={() => {
+              void handleSubmit()
+            }}
+            isLoading={createMutation.isLoading}
+            isDisabled={!isValid}
+          >
             Add ETF Holdings
           </Button>
         </Flex>

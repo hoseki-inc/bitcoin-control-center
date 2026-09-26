@@ -1,7 +1,7 @@
 import * as net from 'node:net'
 import * as tls from 'node:tls'
 import { parseUnknown } from '@hoseki/packages/result'
-import { AsyncResult, Err, Ok, type Result } from '@patina/core'
+import { AsyncResult, Err, Ok, type Result } from '@hoseki/packages/result'
 import { SocksClient } from 'socks'
 import { type JsonRpcResponse, JsonRpcResponseSchema } from './schemas'
 
@@ -130,7 +130,7 @@ export class ElectrumTransport {
   private socket: net.Socket | tls.TLSSocket | null = null
   private buffer = ''
   private nextId = 0
-  private pending = new Map<number, PendingRequest>()
+  private readonly pending = new Map<number, PendingRequest>()
   private connected = false
 
   public constructor(config: ElectrumConnectionConfig) {
@@ -159,7 +159,9 @@ export class ElectrumTransport {
 
         const setupSocket = (socket: net.Socket | tls.TLSSocket): void => {
           socket.setEncoding('utf8')
-          socket.on('data', (data: string) => this.onData(data))
+          socket.on('data', (data: string) => {
+            this.onData(data)
+          })
           socket.on('error', (err: Error) => {
             clearTimeout(timer)
             this.onError(err)
@@ -167,7 +169,9 @@ export class ElectrumTransport {
               resolve(Err(err))
             }
           })
-          socket.on('close', () => this.onClose())
+          socket.on('close', () => {
+            this.onClose()
+          })
           this.socket = socket
         }
 
@@ -197,9 +201,9 @@ export class ElectrumTransport {
                   onConnected()
                 }
               })
-              .catch((err) => {
+              .catch((cause: unknown) => {
                 clearTimeout(timer)
-                resolve(Err(err instanceof Error ? err : new Error(String(err))))
+                resolve(Err(cause instanceof Error ? cause : new Error(String(cause))))
               })
           } else {
             // Direct connection (no proxy)

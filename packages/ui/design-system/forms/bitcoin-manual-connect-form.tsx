@@ -1,5 +1,5 @@
 import { Box, Stack, type StackProps } from '@chakra-ui/react'
-import { type Dispatch, type SetStateAction } from 'react'
+import type { Dispatch, SetStateAction } from 'react'
 import type { BitcoinInput } from '../../utils'
 import { AdvancedFeatureAlert } from '../feedback/advanced-feature-alert'
 import { BitcoinInputFormFields } from './bitcoin-input-form-fields'

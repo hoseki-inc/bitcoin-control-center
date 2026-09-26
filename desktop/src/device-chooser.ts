@@ -11,6 +11,10 @@ export interface DeviceChooser {
   cancel: () => void
 }
 
+function isDeviceId(value: unknown): value is string {
+  return typeof value === 'string'
+}
+
 export function showDeviceChooser(parent: BrowserWindow, name: string, selected: (id: string) => void): DeviceChooser {
   const window = new BrowserWindow({
     parent,
@@ -41,11 +45,12 @@ export function showDeviceChooser(parent: BrowserWindow, name: string, selected:
       window.destroy()
     }
   }
+  // oxlint-disable-next-line anti-slop/no-unknown-parameters -- The IPC payload is untrusted; validate its type and membership before selecting a device.
   const onSelection = (event: IpcMainEvent, id: unknown): void => {
     if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame) {
       return
     }
-    if (id === '' || (typeof id === 'string' && devices.some((device) => device.deviceId === id))) {
+    if (id === '' || (isDeviceId(id) && devices.some((device) => device.deviceId === id))) {
       finish(id)
     }
   }
@@ -56,14 +61,27 @@ export function showDeviceChooser(parent: BrowserWindow, name: string, selected:
     }
   }
   ipcMain.on('wallet-chooser:select', onSelection)
-  window.on('closed', () => finish(''))
+  window.on('closed', () => {
+    finish('')
+  })
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
-  window.webContents.on('will-navigate', (event) => event.preventDefault())
-  window.webContents.on('will-redirect', (event) => event.preventDefault())
+  window.webContents.on('will-navigate', (event) => {
+    event.preventDefault()
+  })
+  window.webContents.on('will-redirect', (event) => {
+    event.preventDefault()
+  })
   window.webContents.once('did-finish-load', () => {
     update(devices)
     window.show()
   })
-  void window.loadFile(path.join(__dirname, 'chooser.html')).catch(() => finish(''))
-  return { update, cancel: () => finish('') }
+  void window.loadFile(path.join(__dirname, 'chooser.html')).catch(() => {
+    finish('')
+  })
+  return {
+    update,
+    cancel: () => {
+      finish('')
+    },
+  }
 }

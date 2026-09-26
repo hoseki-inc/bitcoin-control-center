@@ -1,12 +1,17 @@
-import { BrowserWindow, type HIDDevice, type USBDevice, type WebContents, type WebFrameMain } from 'electron'
-import { showDeviceChooser } from './device-chooser'
+import type { BrowserWindow, HIDDevice, USBDevice, WebContents, WebFrameMain } from 'electron'
+import type { DeviceChooser } from './device-chooser'
 import { TREZOR_ORIGIN, isAppUrl, isTrezorPopup, isWalletDevice } from './window-policy'
+
+interface WalletAccessOptions {
+  handleLedgerSelection?: boolean
+}
 
 export function setupWalletAccess(
   mainWindow: BrowserWindow,
   origin: string,
   trezorWindows: Set<WebContents>,
-  options: { handleLedgerSelection?: boolean } = {},
+  showChooser: (owner: WebContents, name: string, selected: (id: string) => void) => DeviceChooser,
+  options: WalletAccessOptions = {},
 ): void {
   const session = mainWindow.webContents.session
   const allowed = (contents: WebContents | null, type: string, requestingOrigin: string): boolean => {
@@ -56,37 +61,35 @@ export function setupWalletAccess(
     initial: (HIDDevice | USBDevice)[],
     callback: (id: string) => void,
   ): void => {
-    const parent = frame ? BrowserWindow.fromWebContents(mainWindow.webContents) : null
     const owner = frame && [mainWindow.webContents, ...trezorWindows].find((contents) => contents.mainFrame === frame)
-    if (!frame || !parent || !owner || !allowed(owner, type, frame.origin)) {
+    if (!frame || !owner || !allowed(owner, type, frame.origin)) {
       callback('')
       return
     }
     let devices = initial.filter((device) => isWalletDevice(type, device))
-    const chooser = showDeviceChooser(
-      BrowserWindow.fromWebContents(owner) ?? parent,
-      type === 'hid' ? 'Ledger' : 'Trezor',
-      (id) => {
-        if (type === 'hid') {
-          session.off('hid-device-added', added)
-          session.off('hid-device-removed', removed)
-        } else {
-          session.off('usb-device-added', usbAdded)
-          session.off('usb-device-removed', usbRemoved)
-        }
-        owner.off('destroyed', cancel)
-        owner.off('did-start-navigation', cancel)
-        callback(id && devices.some((device) => device.deviceId === id) ? id : '')
-      },
-    )
-    const cancel = (): void => chooser.cancel()
-    const update = (): void =>
+    const chooser = showChooser(owner, type === 'hid' ? 'Ledger' : 'Trezor', (id) => {
+      if (type === 'hid') {
+        session.off('hid-device-added', added)
+        session.off('hid-device-removed', removed)
+      } else {
+        session.off('usb-device-added', usbAdded)
+        session.off('usb-device-removed', usbRemoved)
+      }
+      owner.off('destroyed', cancel)
+      owner.off('did-start-navigation', cancel)
+      callback(id && devices.some((device) => device.deviceId === id) ? id : '')
+    })
+    const cancel = (): void => {
+      chooser.cancel()
+    }
+    const update = (): void => {
       chooser.update(
         devices.map((device) => ({
           deviceId: device.deviceId,
           productName: ('name' in device ? device.name : device.productName) ?? '',
         })),
       )
+    }
     const added = (
       _event: Electron.Event,
       details: { frame: WebFrameMain | null; device: HIDDevice | USBDevice },

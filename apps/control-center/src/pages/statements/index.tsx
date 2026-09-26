@@ -26,12 +26,12 @@ export function StatementListPage(): JSX.Element {
     return (
       <Box mt={8}>
         <Header showGenerateButton={true} />
-        <ErrorBanner mt={8} mb={4} message={`Error fetching your statements: ${error?.message}`} />
+        <ErrorBanner mt={8} mb={4} message={`Error fetching your statements: ${error.message}`} />
       </Box>
     )
   }
 
-  if (!statements || statements.length === 0) {
+  if (statements.length === 0) {
     return (
       <Box mt={8}>
         <Header showGenerateButton={false} hideDivider descriptionVersion="empty-state" />
@@ -51,7 +51,9 @@ export function StatementListPage(): JSX.Element {
             px={2}
             py={2}
             fontSize="xs"
-            onClick={() => setViewType(viewType === 'grid' ? 'table' : 'grid')}
+            onClick={() => {
+              setViewType(viewType === 'grid' ? 'table' : 'grid')
+            }}
             _focus={{ boxShadow: 'none' }}
           >
             {viewType === 'grid' ? <ListIcon size={16} /> : <Grid2X2Icon size={16} />}

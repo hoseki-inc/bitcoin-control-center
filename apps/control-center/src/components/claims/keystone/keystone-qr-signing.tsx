@@ -47,8 +47,12 @@ export function KeystoneQrSigning({
   onSubmitSignature,
 }: KeystoneQrSigningProps): JSX.Element {
   const [step, setStep] = useState(1)
-  const onBack = (): void => setStep((prev) => prev - 1)
-  const onNext = (): void => setStep((prev) => prev + 1)
+  const onBack = (): void => {
+    setStep((prev) => prev - 1)
+  }
+  const onNext = (): void => {
+    setStep((prev) => prev + 1)
+  }
 
   if (!keystore.derivationPath) {
     return <Alert status="error">Derivation path not found</Alert>
@@ -104,11 +108,11 @@ function KeystoneSignIntro({
       </Text>
 
       <Text textStyle="text/md" color="neutral.900">
-        You'll sign a unique message by scanning a QR code with your Keystone. No cables or file downloads needed.
+        You&apos;ll sign a unique message by scanning a QR code with your Keystone. No cables or file downloads needed.
       </Text>
       <Text textStyle="text/md" color="neutral.900">
-        This lets us confirm you control the private key for the Bitcoin you're claiming — without ever needing to see
-        your key.
+        This lets us confirm you control the private key for the Bitcoin you&apos;re claiming — without ever needing to
+        see your key.
       </Text>
 
       <NavigationArrows onBack={onBack} onForward={onNext} />
@@ -202,8 +206,8 @@ function KeystoneSignConfirmOnDevice({
         Review the message and address on your Keystone screen, then confirm to sign.
       </Text>
       <Text textStyle="text/md" color="neutral.900">
-        After signing, your Keystone will display a QR code containing the signature. Click 'Ready to Scan' when it
-        appears.
+        After signing, your Keystone will display a QR code containing the signature. Click &apos;Ready to Scan&apos;
+        when it appears.
       </Text>
 
       <WizardFooter
@@ -223,7 +227,7 @@ function KeystoneSignConfirmOnDevice({
 // ---------------------------------------------------------------------------
 
 function KeystoneSignScanSignature({
-  claim,
+  claim: _claim,
   challenge,
   challengeMessage,
   onBack,
@@ -299,7 +303,9 @@ function KeystoneSignScanSignature({
         <BBQrScanner
           onComplete={handleBBQrComplete}
           onPlainScan={handlePlainScan}
-          onError={(msg) => toast.error('Scanner error', { description: msg })}
+          onError={(msg) => {
+            toast.error('Scanner error', { description: msg })
+          }}
           onCancel={onBack}
         />
       )}

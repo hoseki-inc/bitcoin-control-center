@@ -17,10 +17,14 @@ type Attempt = { id: string; abort: AbortController; expired: boolean }
 
 export function DesktopLedgerConnection({
   bridge,
+  ledgerStore = useLedgerStore,
+  openTransport = openDesktopLedger,
   onBack,
   onContinue,
 }: {
   bridge: LedgerHidApi
+  ledgerStore?: typeof useLedgerStore
+  openTransport?: (signal: AbortSignal) => ReturnType<typeof openDesktopLedger>
   onBack?: () => void
   onContinue: () => void
 }): JSX.Element {
@@ -28,10 +32,10 @@ export function DesktopLedgerConnection({
   const [selected, setSelected] = useState('')
   const attempt = useRef<Attempt | null>(null)
   const queryClient = useQueryClient()
-  const init = useLedgerStore((store) => store.init)
-  const reset = useLedgerStore((store) => store.reset)
-  const isConnected = useLedgerStore((store) => store.isConnected)
-  const deviceModel = useLedgerStore((store) => store.deviceModel)
+  const init = ledgerStore((store) => store.init)
+  const reset = ledgerStore((store) => store.reset)
+  const isConnected = ledgerStore((store) => store.isConnected)
+  const deviceModel = ledgerStore((store) => store.deviceModel)
 
   useEffect(() => {
     const unsubscribe = bridge.subscribe((update) => {
@@ -122,7 +126,7 @@ export function DesktopLedgerConnection({
         })
         return
       }
-      await init(() => openDesktopLedger(current.abort.signal), current.abort.signal)
+      await init(async () => openTransport(current.abort.signal), current.abort.signal)
       if (active()) {
         browserLogger.info('Desktop Ledger connected')
         setState({ phase: 'ready' })

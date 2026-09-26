@@ -25,7 +25,7 @@ describe('SinglesigDescriptorParser with core xpub/tpub', () => {
     const expectedXpub = Xpub.fromString(TEST_XPUB_STR).expect('valid xpub')
     expect(result.keyExpression.xpub.toString()).toEqual(expectedXpub.toString())
     expect(result.keyExpression.xpub.network).toEqual(Network.Mainnet)
-    expect(result.scriptType).toEqual('p2wpkh')
+    expect(result.scriptType).toBe('p2wpkh')
   })
 
   it('parses descriptor with tpub (testnet)', () => {
@@ -35,7 +35,7 @@ describe('SinglesigDescriptorParser with core xpub/tpub', () => {
     const expectedXpub = Xpub.fromString(TPUB_STR).expect('valid xpub')
     expect(result.keyExpression.xpub.toString()).toEqual(expectedXpub.toString())
     expect(result.keyExpression.xpub.network).toEqual(Network.Testnet)
-    expect(result.scriptType).toEqual('p2wpkh')
+    expect(result.scriptType).toBe('p2wpkh')
   })
 
   it('parses descriptor with key origin', () => {
@@ -43,8 +43,8 @@ describe('SinglesigDescriptorParser with core xpub/tpub', () => {
     const result = SinglesigDescriptorParser.parse(descriptor).expect('valid descriptor')
 
     expect(result.keyExpression.xpub.network).toEqual(Network.Mainnet)
-    expect(result.keyExpression.keyOrigin?.fingerprint).toEqual('00000000')
-    expect(result.scriptType).toEqual('p2wpkh')
+    expect(result.keyExpression.keyOrigin?.fingerprint).toBe('00000000')
+    expect(result.scriptType).toBe('p2wpkh')
   })
 
   it('parses descriptor with address ranges', () => {
@@ -52,7 +52,7 @@ describe('SinglesigDescriptorParser with core xpub/tpub', () => {
     const result = SinglesigDescriptorParser.parse(descriptor).expect('valid descriptor')
 
     expect(result.keyExpression.xpub.network).toEqual(Network.Mainnet)
-    expect(result.scriptType).toEqual('p2wpkh')
+    expect(result.scriptType).toBe('p2wpkh')
   })
 
   it('parses descriptor with checksum', () => {
@@ -60,29 +60,29 @@ describe('SinglesigDescriptorParser with core xpub/tpub', () => {
     const result = SinglesigDescriptorParser.parse(descriptor).expect('valid descriptor')
 
     expect(result.keyExpression.xpub.network).toEqual(Network.Mainnet)
-    expect(result.scriptType).toEqual('p2wpkh')
+    expect(result.scriptType).toBe('p2wpkh')
   })
 
   it('parses P2SH-P2WPKH descriptor', () => {
     const descriptor = `sh(wpkh(${TEST_XPUB_STR}/0/*))`
     const result = SinglesigDescriptorParser.parse(descriptor).expect('valid descriptor')
 
-    expect(result.scriptType).toEqual('p2sh-p2wpkh')
+    expect(result.scriptType).toBe('p2sh-p2wpkh')
   })
 
   it('parses descriptor with no key origin (keyOrigin is null)', () => {
     const descriptor = `wpkh(${TEST_XPUB_STR}/0/*)`
     const result = SinglesigDescriptorParser.parse(descriptor).expect('valid descriptor')
 
-    expect(result.keyExpression.keyOrigin).toEqual(null)
+    expect(result.keyExpression.keyOrigin).toBeNull()
   })
 
   it('parses descriptor with fingerprint but no derivation path', () => {
     const descriptor = `wpkh([00000000/]${TEST_XPUB_STR}/0/*)`
     const result = SinglesigDescriptorParser.parse(descriptor).expect('valid descriptor')
 
-    expect(result.keyExpression.keyOrigin?.fingerprint).toEqual('00000000')
-    expect(result.keyExpression.keyOrigin?.derivationPath).toEqual(null)
+    expect(result.keyExpression.keyOrigin?.fingerprint).toBe('00000000')
+    expect(result.keyExpression.keyOrigin?.derivationPath).toBeNull()
   })
 
   it('rejects descriptor containing SLIP-132 ypub/zpub/etc keys', () => {
@@ -126,36 +126,36 @@ describe('MultisigDescriptorParser with core xpub/tpub', () => {
     const descriptor = `wsh(sortedmulti(2,${MULTISIG_XPUB_1}/<0;1>/*,${MULTISIG_XPUB_2}/<0;1>/*,${MULTISIG_XPUB_3}/<0;1>/*))`
     const result = MultisigDescriptorParser.parse(descriptor).expect('valid descriptor')
 
-    expect(result.keyExpressions.length).toEqual(3)
+    expect(result.keyExpressions).toHaveLength(3)
     expect(result.keyExpressions[0]?.xpub.network).toEqual(Network.Mainnet)
-    expect(result.scriptType).toEqual('p2wsh')
-    expect(result.threshold).toEqual(2)
-    expect(result.isSorted).toEqual(true)
+    expect(result.scriptType).toBe('p2wsh')
+    expect(result.threshold).toBe(2)
+    expect(result.isSorted).toBe(true)
   })
 
   it('parses P2SH-P2WSH descriptor', () => {
     const descriptor = `sh(wsh(sortedmulti(2,${MULTISIG_XPUB_1}/<0;1>/*,${MULTISIG_XPUB_2}/<0;1>/*,${MULTISIG_XPUB_3}/<0;1>/*)))`
     const result = MultisigDescriptorParser.parse(descriptor).expect('valid descriptor')
 
-    expect(result.scriptType).toEqual('p2sh-p2wsh')
-    expect(result.threshold).toEqual(2)
-    expect(result.isSorted).toEqual(true)
+    expect(result.scriptType).toBe('p2sh-p2wsh')
+    expect(result.threshold).toBe(2)
+    expect(result.isSorted).toBe(true)
   })
 
   it('parses descriptor with multi (not sorted)', () => {
     const descriptor = `wsh(multi(2,${MULTISIG_XPUB_1}/<0;1>/*,${MULTISIG_XPUB_2}/<0;1>/*,${MULTISIG_XPUB_3}/<0;1>/*))`
     const result = MultisigDescriptorParser.parse(descriptor).expect('valid descriptor')
 
-    expect(result.isSorted).toEqual(false)
+    expect(result.isSorted).toBe(false)
   })
 
   it('parses descriptor with key origins', () => {
     const descriptor = `sh(wsh(sortedmulti(2,[00000000/49/0/0]${MULTISIG_XPUB_1}/<0;1>/*,[11111111/49/0/0]${MULTISIG_XPUB_2}/<0;1>/*,[22222222/49/0/0]${MULTISIG_XPUB_3}/<0;1>/*)))`
     const result = MultisigDescriptorParser.parse(descriptor).expect('valid descriptor')
 
-    expect(result.keyExpressions[0]?.keyOrigin?.fingerprint).toEqual('00000000')
-    expect(result.keyExpressions[1]?.keyOrigin?.fingerprint).toEqual('11111111')
-    expect(result.keyExpressions[2]?.keyOrigin?.fingerprint).toEqual('22222222')
+    expect(result.keyExpressions[0]?.keyOrigin?.fingerprint).toBe('00000000')
+    expect(result.keyExpressions[1]?.keyOrigin?.fingerprint).toBe('11111111')
+    expect(result.keyExpressions[2]?.keyOrigin?.fingerprint).toBe('22222222')
   })
 
   it('parses descriptor with checksum', () => {
@@ -164,8 +164,8 @@ describe('MultisigDescriptorParser with core xpub/tpub', () => {
     )
     const result = MultisigDescriptorParser.parse(descriptor).expect('valid descriptor')
 
-    expect(result.scriptType).toEqual('p2wsh')
-    expect(result.threshold).toEqual(2)
+    expect(result.scriptType).toBe('p2wsh')
+    expect(result.threshold).toBe(2)
   })
 
   it('parses multisig descriptors with no origin brackets (keyOrigin is null)', () => {
@@ -173,7 +173,7 @@ describe('MultisigDescriptorParser with core xpub/tpub', () => {
     const result = MultisigDescriptorParser.parse(descriptor).expect('valid descriptor')
 
     for (const ke of result.keyExpressions) {
-      expect(ke.keyOrigin).toEqual(null)
+      expect(ke.keyOrigin).toBeNull()
     }
   })
 
@@ -181,7 +181,7 @@ describe('MultisigDescriptorParser with core xpub/tpub', () => {
     const descriptor = `wsh(sortedmulti(2,[00000000/]${MULTISIG_XPUB_1}/<0;1>/*,[11111111/]${MULTISIG_XPUB_2}/<0;1>/*,[22222222/]${MULTISIG_XPUB_3}/<0;1>/*))`
     const result = MultisigDescriptorParser.parse(descriptor).expect('valid descriptor')
 
-    expect(result.keyExpressions[0]?.keyOrigin?.fingerprint).toEqual('00000000')
-    expect(result.keyExpressions[0]?.keyOrigin?.derivationPath).toEqual(null)
+    expect(result.keyExpressions[0]?.keyOrigin?.fingerprint).toBe('00000000')
+    expect(result.keyExpressions[0]?.keyOrigin?.derivationPath).toBeNull()
   })
 })

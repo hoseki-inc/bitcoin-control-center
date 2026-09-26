@@ -16,12 +16,14 @@ export type LedgerDeviceModel = {
   id: string
 }
 
+export type LedgerBitcoinApp = Pick<LedgerBtcApp, 'getWalletXpub' | 'signMessage'>
+
 type InitializedState = {
   connectionId: number
   isInitialized: true
   isConnected: boolean // Should be true, but if the device is disconnected, it will be false.
   transport: Transport
-  btc: LedgerBtcApp
+  btc: LedgerBitcoinApp
   deviceModel: LedgerDeviceModel
 }
 type UninitializedState = {
@@ -49,6 +51,7 @@ type XpubWithPath = { xpub: string; path: string }
 
 export function createLedgerStore(
   browserLogger: Logger,
+  createBitcoinApp: (transport: Transport) => LedgerBitcoinApp = (transport) => new LedgerBtcApp({ transport }),
 ): UseBoundStore<StoreApi<LedgerStoreState & LedgerStoreActions>> {
   return create<LedgerStoreState & LedgerStoreActions>((set, get, store) => {
     let connectionId = 0
@@ -97,12 +100,15 @@ export function createLedgerStore(
       return Ok({ xpub: xpubRes.unwrap(), path })
     }
 
+    type LedgerCallContext = { path?: string }
+
     async function handleLedgerSdkCall<T>(
       sdkCall: Promise<T>,
-      extraContext: Record<string, unknown> = {},
+      extraContext: LedgerCallContext = {},
     ): Promise<Result<T, HardwareDeviceError>> {
       const sdkResult = await Result.fromPromise(sdkCall)
       if (sdkResult.isErr()) {
+        // SAFETY: fromPromise normalizes rejections to Error; Ledger status fields are optional metadata handled below.
         const err = sdkResult.unwrapErr() as LedgerError
         browserLogger.error(err, `Ledger error: ${err.message}`)
         return Err(
@@ -126,19 +132,19 @@ export function createLedgerStore(
       btc: null,
       deviceModel: null,
 
-      init: async (openTransport = () => TransportWebHID.create(), signal) => {
-        const { transport, btc } = get()
+      init: async (openTransport = async () => TransportWebHID.create(), signal) => {
+        const { isInitialized } = get()
         browserLogger.debug('Initializing ledger')
-        if (transport && btc) {
+        if (isInitialized) {
           browserLogger.debug('Skipping initialization: Transport and ledger.btc already set')
           return
         }
         const newTransport = await openTransport()
-        if (signal?.aborted) {
+        if (signal?.aborted === true) {
           await newTransport.close()
           throw new DOMException('Connection cancelled', 'AbortError')
         }
-        const newBtc = new LedgerBtcApp({ transport: newTransport })
+        const newBtc = createBitcoinApp(newTransport)
 
         newTransport.on('disconnect', onDisconnect)
 
@@ -192,7 +198,7 @@ export function createLedgerStore(
           return notInitializedError()
         }
 
-        return await handleLedgerSdkCall(btc.signMessage(path, Buffer.from(message).toString('hex')), { path })
+        return handleLedgerSdkCall(btc.signMessage(path, Buffer.from(message).toString('hex')), { path })
       }),
     }
   })

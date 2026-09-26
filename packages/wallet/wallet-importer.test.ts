@@ -1,15 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import {
-  DerivationPath,
-  KeyExpression,
-  type KeyFingerprint,
-  KeyOrigin,
-  Network,
-  type Wallet,
-  bs58check,
-} from '../bitcoin'
+import { DerivationPath, KeyExpression, KeyFingerprint, KeyOrigin, Network, type Wallet, bs58check } from '../bitcoin'
 import * as descriptors from '../bitcoin/descriptor_utils'
-import { type Result } from '../result'
+import type { Result } from '../result'
 import * as Slip132 from './slip-132'
 import { WalletImporter } from './wallet-importer'
 
@@ -158,7 +150,7 @@ describe('WalletImporter', () => {
       })
 
       it('accepts descriptor with all keys having derivation paths', () => {
-        const fingerprint = '00000000' as KeyFingerprint
+        const fingerprint = KeyFingerprint.DEFAULT
         const derivationPath = new DerivationPath([
           { index: 49, hardened: false },
           { index: 0, hardened: false },
@@ -191,7 +183,7 @@ describe('WalletImporter', () => {
 
     describe('multisigFromProps()', () => {
       it('rejects multisig with insufficient derivation paths', () => {
-        const fingerprint1 = '00000000' as KeyFingerprint
+        const fingerprint1 = KeyFingerprint.DEFAULT
         const derivationPath = new DerivationPath([
           { index: 49, hardened: false },
           { index: 0, hardened: false },
@@ -199,10 +191,10 @@ describe('WalletImporter', () => {
         ])
         const origin1 = KeyOrigin.from(fingerprint1, derivationPath)
 
-        const fingerprint2 = '11111111' as KeyFingerprint
+        const fingerprint2 = KeyFingerprint('11111111').expect('valid test fingerprint')
         const origin2 = KeyOrigin.from(fingerprint2, null) // No derivation path
 
-        const fingerprint3 = '22222222' as KeyFingerprint
+        const fingerprint3 = KeyFingerprint('22222222').expect('valid test fingerprint')
         const origin3 = KeyOrigin.from(fingerprint3, null) // No derivation path
 
         const xpub1 = Slip132.getXpubFromString(
@@ -234,13 +226,13 @@ describe('WalletImporter', () => {
       })
 
       it('rejects multisig with no derivation paths', () => {
-        const fingerprint1 = '00000000' as KeyFingerprint
+        const fingerprint1 = KeyFingerprint.DEFAULT
         const origin1 = KeyOrigin.from(fingerprint1, null) // No derivation path
 
-        const fingerprint2 = '11111111' as KeyFingerprint
+        const fingerprint2 = KeyFingerprint('11111111').expect('valid test fingerprint')
         const origin2 = KeyOrigin.from(fingerprint2, null) // No derivation path
 
-        const fingerprint3 = '22222222' as KeyFingerprint
+        const fingerprint3 = KeyFingerprint('22222222').expect('valid test fingerprint')
         const origin3 = KeyOrigin.from(fingerprint3, null) // No derivation path
 
         const xpub1 = Slip132.getXpubFromString(
@@ -272,7 +264,7 @@ describe('WalletImporter', () => {
       })
 
       it('accepts multisig with sufficient derivation paths', () => {
-        const fingerprint = '00000000' as KeyFingerprint
+        const fingerprint = KeyFingerprint.DEFAULT
         const derivationPath = new DerivationPath([
           { index: 49, hardened: false },
           { index: 0, hardened: false },

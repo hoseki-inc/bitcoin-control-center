@@ -1,5 +1,19 @@
+import { z } from 'zod'
+import { hasKey } from '../../../lib'
+import { parseUnknown } from '../../../result/lib/parse'
 import { colors } from './foundation/colors'
 import { fontWeights, newTextStyles } from './foundation/typography'
+
+export type ResolvedTextStyle = {
+  fontSize: string
+  lineHeight: string
+  letterSpacing: string | undefined
+  textTransform: string | undefined
+}
+
+function isColorGroup(value: unknown): value is object {
+  return value !== null && typeof value === 'object'
+}
 
 /**
  * Extracts a color from the colors object
@@ -10,12 +24,12 @@ export function getColor(colorPath: string): string {
   const pathSegments = colorPath.split('.')
 
   // Start with the colors object
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let current: any = colors
+  let current: unknown = colors
 
   // Navigate through each path segment
   for (const segment of pathSegments) {
-    if (current && typeof current === 'object' && segment in current) {
+    if (isColorGroup(current) && hasKey(current, segment)) {
+      // The guard confirms this is an object containing the key; its value remains unknown.
       current = current[segment]
     } else {
       // Path not found, return the original path or throw an error
@@ -24,8 +38,9 @@ export function getColor(colorPath: string): string {
   }
 
   // Ensure we ended up with a string (the actual color value)
-  if (typeof current === 'string') {
-    return current
+  const color = parseUnknown(z.string(), current)
+  if (color.isOk()) {
+    return color.value()
   } else {
     throw new Error(`Color path "${colorPath}" does not resolve to a color value`)
   }
@@ -33,12 +48,7 @@ export function getColor(colorPath: string): string {
 
 // Typography token extractor
 
-export function getTextStyle(styleName: keyof typeof newTextStyles): {
-  fontSize: string
-  lineHeight: string
-  letterSpacing: string | undefined
-  textTransform: string | undefined
-} {
+export function getTextStyle(styleName: keyof typeof newTextStyles): ResolvedTextStyle {
   const style = newTextStyles[styleName]
   const letterSpacing = 'letterSpacing' in style ? getValueInPx(style.letterSpacing) : undefined
   const textTransform = 'textTransform' in style ? style.textTransform : undefined

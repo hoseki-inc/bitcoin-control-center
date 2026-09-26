@@ -1,6 +1,6 @@
 import { TZDate } from '@date-fns/tz'
 import { format, isSameDay, isSameMonth, isSameYear } from 'date-fns'
-import { type Timezone } from '../../schemas/timezone'
+import type { Timezone } from '../../schemas/timezone'
 
 /**
  *

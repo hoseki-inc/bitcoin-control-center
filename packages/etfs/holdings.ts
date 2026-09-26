@@ -89,7 +89,12 @@ export const ETF_CONFIGS: Record<EtfTicker, EtfConfig> = {
   },
 }
 
-export const ETF_TICKERS = Object.keys(ETF_CONFIGS) as EtfTicker[]
+/** Look up a ticker from persisted or external data without assuming it is supported. */
+export function getEtfConfig(ticker: string): EtfConfig | undefined {
+  return Object.values(ETF_CONFIGS).find((config) => config.ticker === ticker)
+}
+
+export const ETF_TICKERS = Object.values(ETF_CONFIGS).map((config) => config.ticker)
 
 // ─── Calculations ───────────────────────────────────────────────────────────
 
@@ -124,7 +129,7 @@ export function computeHoldingBtcSats(config: EtfConfig, shares: number, asOfDat
  * HODL has a 0% effective rate until its waiver expiry.
  */
 function getEffectiveExpenseRate(config: EtfConfig, asOfDate: Date): number {
-  if (config.expenseWaivedUntil) {
+  if (config.expenseWaivedUntil != null && config.expenseWaivedUntil !== '') {
     const waiverEnd = new Date(config.expenseWaivedUntil + 'T23:59:59Z')
     if (asOfDate <= waiverEnd) {
       return 0

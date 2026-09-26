@@ -1,11 +1,11 @@
-import { AsyncResult, Err, Ok, type Result } from '@patina/core'
+import { AsyncResult, Err, Ok, type Result } from '@hoseki/packages/result'
 
-function getErrorMessage(e: unknown): string {
-  return e instanceof Error ? e.message : 'Unexpected thrown value'
+function getErrorMessage(cause: unknown): string {
+  return cause instanceof Error ? cause.message : 'Unexpected thrown value'
 }
 
-function unknownToError(e: unknown): Error {
-  return e instanceof Error ? e : new Error(getErrorMessage(e), { cause: e })
+function unknownToError(cause: unknown): Error {
+  return cause instanceof Error ? cause : new Error(getErrorMessage(cause), { cause })
 }
 
 /**
@@ -28,8 +28,8 @@ export function catchUnwindAsync<T>(fn: () => Promise<T>): AsyncResult<T, Error>
       .then((value) => {
         return Ok(value)
       })
-      .catch((e) => {
-        return Err(unknownToError(e))
+      .catch((cause: unknown) => {
+        return Err(unknownToError(cause))
       }),
   )
 }

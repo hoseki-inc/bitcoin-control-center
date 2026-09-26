@@ -1,6 +1,6 @@
 import { SingleSigAccount, type Xpub } from '@hoseki/packages/bitcoin'
+import { Err, Ok, type Result } from '@hoseki/packages/result'
 import { Slip132 } from '@hoseki/packages/wallet'
-import { Err, Ok, type Result } from '@patina/core'
 
 export function validateBitcoinStringInput(value: string): Result<Xpub | SingleSigAccount | null, string> {
   if (value === '') {

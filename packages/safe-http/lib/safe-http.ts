@@ -1,10 +1,14 @@
 import { type AsyncResult, Err, Ok, Result } from '../../result/index.ts'
 import { SafeHttpError, SafeHttpErrorKind } from './errors.ts'
 import { SafeResponse } from './response.ts'
-import { type Input, type Options } from './types.ts'
+import type { Input, Options } from './types.ts'
 
 export class SafeHttp {
-  constructor(public readonly options?: Options) {}
+  public readonly options?: Options
+
+  public constructor(options?: Options) {
+    this.options = options
+  }
 
   public request(input: Input, options?: Options): AsyncResult<SafeResponse, SafeHttpError> {
     const request = new Request(input, { ...this.options, ...options })

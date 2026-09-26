@@ -1,0 +1,29 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "categories": {
+    "correctness": "off"
+  },
+  "jsPlugins": [
+    {
+      "name": "import-members",
+      "specifier": "./tools/oxlint/import-members.mjs"
+    }
+  ],
+  "ignorePatterns": [
+    ".claude/**",
+    "dist/**",
+    "coverage/**",
+    "**/generated/**",
+    "**/lottie-animations/**",
+    "**/*.timestamp-*.mjs",
+    "tools/oxlint/anti-slop/vendor/**"
+  ],
+  "rules": {
+    "import-members/sort": [
+      "error",
+      {
+        "ignoreDeclarationSort": true
+      }
+    ]
+  }
+}

@@ -12,7 +12,7 @@ export function RecentStatements({
 }): JSX.Element | null {
   const navigate = useNavigate()
 
-  if (!statements || statements.length === 0) {
+  if (statements.length === 0) {
     return null
   }
 
@@ -27,7 +27,9 @@ export function RecentStatements({
           <StatementCard
             key={statement.id}
             statement={statement}
-            onView={() => navigate(`/statements/${statement.id}`)}
+            onView={() => {
+              void navigate(`/statements/${statement.id}`)
+            }}
           />
         ))}
       </SimpleGrid>

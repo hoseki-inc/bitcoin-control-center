@@ -53,9 +53,14 @@ export function ColdcardQrSigning({
   onSubmitSignature,
 }: ColdcardQrSigningProps): JSX.Element {
   const [step, setStep] = useState(1)
-  const onBack = (): void => setStep((prev) => prev - 1)
-  const onNext = (): void => setStep((prev) => prev + 1)
-  const model: ColdcardModel = keystore.model && isColdcardModel(keystore.model) ? keystore.model : 'Q'
+  const onBack = (): void => {
+    setStep((prev) => prev - 1)
+  }
+  const onNext = (): void => {
+    setStep((prev) => prev + 1)
+  }
+  const model: ColdcardModel =
+    keystore.model != null && keystore.model !== '' && isColdcardModel(keystore.model) ? keystore.model : 'Q'
 
   if (!keystore.derivationPath) {
     return <Alert status="error">Derivation path not found</Alert>
@@ -116,11 +121,11 @@ function QrSignIntro({
       </Text>
 
       <Text textStyle="text/md" color="neutral.900">
-        You'll sign a unique message by scanning a QR code with your COLDCARD Q. No file downloads needed.
+        You&apos;ll sign a unique message by scanning a QR code with your COLDCARD Q. No file downloads needed.
       </Text>
       <Text textStyle="text/md" color="neutral.900">
-        This lets us confirm you control the private key for the Bitcoin you're claiming — without ever needing to see
-        your key.
+        This lets us confirm you control the private key for the Bitcoin you&apos;re claiming — without ever needing to
+        see your key.
       </Text>
 
       <NavigationArrows onBack={onBack} onForward={onNext} />
@@ -228,8 +233,8 @@ function QrSignConfirmOnDevice({
         to sign.
       </Text>
       <Text textStyle="text/md" color="neutral.900">
-        After signing, your COLDCARD Q will display a QR code containing the signature. Click 'Ready to Scan' when it
-        appears.
+        After signing, your COLDCARD Q will display a QR code containing the signature. Click &apos;Ready to Scan&apos;
+        when it appears.
       </Text>
 
       <WizardFooter
@@ -250,7 +255,7 @@ function QrSignConfirmOnDevice({
 
 function QrSignScanSignature({
   model,
-  claim,
+  claim: _claim,
   challenge,
   challengeMessage,
   onBack,
@@ -327,7 +332,9 @@ function QrSignScanSignature({
         <BBQrScanner
           onComplete={handleBBQrComplete}
           onPlainScan={handlePlainScan}
-          onError={(msg) => toast.error('Scanner error', { description: msg })}
+          onError={(msg) => {
+            toast.error('Scanner error', { description: msg })
+          }}
           onCancel={onBack}
         />
       )}

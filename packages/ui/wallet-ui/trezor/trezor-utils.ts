@@ -1,11 +1,11 @@
-import type { Features } from '@trezor/connect-web'
+import { type Features, PROTO } from '@trezor/connect-web'
 
 export function getTrezorDisplayName(features: Features): string {
   let displayName = 'Trezor'
   if (features.model) {
     displayName += ` ${features.model}`
   }
-  if (features.label) {
+  if (features.label != null && features.label !== '') {
     displayName += ` (${features.label})`
   }
   return displayName
@@ -13,7 +13,7 @@ export function getTrezorDisplayName(features: Features): string {
 
 export const trezorModels = ['One', 'T', 'Safe 3 (Bitcoin-only)', 'Safe 3', 'Safe 5'] as const
 export function isTrezorModel(model: string): model is TrezorModel {
-  return trezorModels.includes(model as TrezorModel)
+  return trezorModels.some((candidate) => candidate === model)
 }
 export type TrezorModel = (typeof trezorModels)[number]
 /**
@@ -22,16 +22,18 @@ export type TrezorModel = (typeof trezorModels)[number]
  */
 export function getTrezorModel(model: Features['internal_model']): TrezorModel | null {
   switch (model) {
-    case 'T1B1':
+    case PROTO.DeviceModelInternal.T1B1:
       return 'One'
-    case 'T2T1':
+    case PROTO.DeviceModelInternal.T2T1:
       return 'T'
-    case 'T2B1':
+    case PROTO.DeviceModelInternal.T2B1:
       return 'Safe 3 (Bitcoin-only)'
-    case 'T3B1':
+    case PROTO.DeviceModelInternal.T3B1:
       return 'Safe 3'
-    case 'T3T1':
+    case PROTO.DeviceModelInternal.T3T1:
       return 'Safe 5'
+    case PROTO.DeviceModelInternal.T3W1:
+    case PROTO.DeviceModelInternal.UNKNOWN:
     default:
       return null
   }

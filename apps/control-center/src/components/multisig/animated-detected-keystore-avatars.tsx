@@ -38,7 +38,9 @@ export function AnimatedDetectedKeystoreAvatars({
     // Start the sequence after initial render
     const initialTimeout = setTimeout(advanceStage, 1500)
 
-    return () => clearTimeout(initialTimeout)
+    return () => {
+      clearTimeout(initialTimeout)
+    }
   }, [totalKeystores, threshold])
 
   // Generate keystore data for visualization

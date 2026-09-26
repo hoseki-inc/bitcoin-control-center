@@ -13,22 +13,38 @@ export async function closeDesktopLedger(transport: Transport): Promise<void> {
   }
 }
 
-export async function openDesktopLedger(signal: AbortSignal): Promise<TransportWebHID> {
+export interface LedgerConnectionAdapter {
+  request: typeof TransportWebHID.request
+  getAppAndVersion: typeof getAppAndVersion
+}
+
+const ledgerConnectionAdapter: LedgerConnectionAdapter = {
+  request: async () => TransportWebHID.request(),
+  getAppAndVersion,
+}
+
+export async function openDesktopLedger(
+  signal: AbortSignal,
+  adapter: LedgerConnectionAdapter = ledgerConnectionAdapter,
+): Promise<TransportWebHID> {
   // Request the intended device even if another Ledger was previously authorized.
-  const transport = await TransportWebHID.request()
+  const transport = await adapter.request()
   let timer: ReturnType<typeof setTimeout> | undefined
   let onAbort = (): void => {}
   let onDisconnect = (): void => {}
   try {
     const app = await new Promise<{ name: string }>((resolve, reject) => {
-      onAbort = () => reject(new DOMException('Connection cancelled', 'AbortError'))
+      onAbort = () => {
+        reject(new DOMException('Connection cancelled', 'AbortError'))
+      }
       onDisconnect = () => {
         const error = new Error('Ledger disconnected')
         error.name = 'DisconnectedDevice'
         reject(error)
       }
       if (signal.aborted) {
-        return onAbort()
+        onAbort()
+        return
       }
       signal.addEventListener('abort', onAbort, { once: true })
       transport.on('disconnect', onDisconnect)
@@ -37,7 +53,7 @@ export async function openDesktopLedger(signal: AbortSignal): Promise<TransportW
         error.name = 'LedgerConnectionTimeout'
         reject(error)
       }, 10_000)
-      void getAppAndVersion(transport).then(resolve, reject)
+      void adapter.getAppAndVersion(transport).then(resolve, reject)
     })
     if (signal.aborted) {
       throw new DOMException('Connection cancelled', 'AbortError')

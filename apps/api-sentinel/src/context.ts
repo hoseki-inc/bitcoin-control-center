@@ -1,8 +1,8 @@
 import { Network } from '@hoseki/packages/bitcoin/network'
 import { ElectrumProvider } from '@hoseki/packages/bitcoin/onchain/electrum_provider'
 import { ElectrumClient, type ElectrumClientConfig } from '@hoseki/packages/clients/electrum'
-import { Err, Ok, asyncFn } from '@patina/core'
-import type { Result } from '@patina/core'
+import { Err, Ok, asyncFn } from '@hoseki/packages/result'
+import type { Result } from '@hoseki/packages/result'
 import type { Logger } from 'pino'
 import { type SentinelDatabase, initDatabase } from './db'
 import { type Env, loadEnv } from './env'
@@ -51,16 +51,19 @@ export const createAppContext = asyncFn(async (logger: Logger): Promise<Result<A
   // Check SQLite for user-saved Electrum settings (from desktop Settings page).
   // These override the env var defaults so the config persists across restarts.
   const getSetting = (key: string): string | undefined =>
-    (database.db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined)?.value
+    database.db.prepare<unknown[], { value: string }>('SELECT value FROM settings WHERE key = ?').get(key)?.value
 
   const electrumHost = getSetting('electrum_host') ?? env.ELECTRUM_HOST
   const electrumPort = Number(getSetting('electrum_port') ?? env.ELECTRUM_PORT)
-  const electrumProtocol = (getSetting('electrum_protocol') ?? env.ELECTRUM_PROTOCOL) as 'tcp' | 'ssl'
+  const storedProtocol = getSetting('electrum_protocol')
+  const electrumProtocol = storedProtocol === 'tcp' || storedProtocol === 'ssl' ? storedProtocol : env.ELECTRUM_PROTOCOL
   const torEnabled = getSetting('tor_enabled') === 'true'
 
   // If Tor is enabled and SOCKS proxy env vars are set, include proxy config
   const proxy =
-    torEnabled && env.SOCKS_PROXY_HOST ? { host: env.SOCKS_PROXY_HOST, port: Number(env.SOCKS_PROXY_PORT) } : undefined
+    torEnabled && env.SOCKS_PROXY_HOST != null && env.SOCKS_PROXY_HOST !== ''
+      ? { host: env.SOCKS_PROXY_HOST, port: Number(env.SOCKS_PROXY_PORT) }
+      : undefined
 
   const electrumClient = new ElectrumClient({
     host: electrumHost,

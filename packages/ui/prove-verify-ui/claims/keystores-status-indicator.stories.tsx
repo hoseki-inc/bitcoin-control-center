@@ -1,5 +1,5 @@
 import { Select, Stack, Text } from '@chakra-ui/react'
-import { type Story, type StoryDefault } from '@ladle/react'
+import type { Story, StoryDefault } from '@ladle/react'
 import { useState } from 'react'
 import { type Keystore, KeystoresStatusIndicator } from './keystores-status-indicator'
 

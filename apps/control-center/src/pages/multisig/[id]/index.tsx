@@ -37,7 +37,7 @@ function ConnectWallets({
   expandedKeystore,
 }: {
   claim: ClaimDto
-  expandedKeystore: IndicatorKeystoreWithModel
+  expandedKeystore: IndicatorKeystoreWithModel | null
 }) {
   const navigate = useNavigate()
   const [challengeError, setChallengeError] = useState<string | null>(null)
@@ -46,15 +46,18 @@ function ConnectWallets({
   const createChallenge = trpc.portalProve.registry.challenges.create.useMutation()
 
   async function handleNextSigningDeviceClick(signingDevice: SupportedHardwareWallet) {
+    if (!expandedKeystore) {
+      return
+    }
     if (claim.latestChallenge) {
-      navigate(`/multisig/${claim.id}/connect/${signingDevice}/${expandedKeystore.id}`)
+      void navigate(`/multisig/${claim.id}/connect/${signingDevice}/${expandedKeystore.id}`)
       return
     }
 
     try {
       await createChallenge.mutateAsync({ claimId: claim.id })
       await trpcUtils.portalProve.registry.claims.get.byId.invalidate()
-      navigate(`/multisig/${claim.id}/connect/${signingDevice}/${expandedKeystore.id}`)
+      void navigate(`/multisig/${claim.id}/connect/${signingDevice}/${expandedKeystore.id}`)
     } catch (error) {
       browserLogger.error(error, 'Error creating challenge')
       setChallengeError('Error creating challenge')
@@ -65,18 +68,20 @@ function ConnectWallets({
   const kLength = claim.keystores.length
   const canAbandon = claim.status === 'pending'
 
-  const signedMessagesLength = claim.latestChallenge?.messages?.filter((k) => k.signed)?.length ?? 0
+  const signedMessagesLength = claim.latestChallenge?.messages.filter((k) => k.signed).length ?? 0
 
   return (
     <Stack spacing={4}>
-      {challengeError && <ErrorBanner mb={4} message={challengeError} />}
+      {challengeError != null && challengeError !== '' && <ErrorBanner mb={4} message={challengeError} />}
 
       {!expandedKeystore ? (
         <Spinner fullPage size="xl" isLazy />
       ) : expandedKeystore.status === 'pending' ? (
         <>
           <SelectWalletType
-            onConnectionTypeClick={handleNextSigningDeviceClick}
+            onConnectionTypeClick={(device) => {
+              void handleNextSigningDeviceClick(device)
+            }}
             signedMessagesLength={signedMessagesLength}
           />
           <Alert bgColor="neutral.50">
@@ -103,9 +108,9 @@ function ConnectWallets({
               <HStack>
                 {canAbandon && <AbandonClaimButton claim={claim} />}
                 <Button
-                  onClick={() =>
-                    navigate(`/multisig/${claim.id}/signing/${expandedKeystore.wallet}/${expandedKeystore.id}`)
-                  }
+                  onClick={() => {
+                    void navigate(`/multisig/${claim.id}/signing/${expandedKeystore.wallet}/${expandedKeystore.id}`)
+                  }}
                 >
                   Continue
                 </Button>

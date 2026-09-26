@@ -15,6 +15,14 @@ import type { LedgerHidUpdate } from './ledger-hid-api'
 const LEDGER_VENDOR_ID = 0x2c97
 const REQUEST_TIMEOUT_MS = 120_000
 
+function isRequestId(value: unknown): value is string {
+  return typeof value === 'string' && /^[a-zA-Z0-9-]{1,80}$/.test(value)
+}
+
+function isDeviceId(value: unknown): value is string {
+  return typeof value === 'string'
+}
+
 type Request = {
   id: string
   frame: WebFrameMain
@@ -80,7 +88,12 @@ export function setupLedgerHidAccess(
     }
     clearTimeout(current.timer)
     clearTimeout(current.autoSelectTimer)
-    const allowed = !current.cancelled && isAppFrame(current.frame) && deviceId && current.devices.has(deviceId)
+    const allowed =
+      !current.cancelled &&
+      isAppFrame(current.frame) &&
+      deviceId != null &&
+      deviceId !== '' &&
+      current.devices.has(deviceId)
     publish(current, allowed ? 'connecting' : status)
     if (current.callback) {
       request = undefined
@@ -100,7 +113,7 @@ export function setupLedgerHidAccess(
     nativeRequest = undefined
     clearTimeout(current.timer)
     current.abort.abort()
-    const allowed = isAppFrame(current.frame) && deviceId && current.devices.has(deviceId)
+    const allowed = isAppFrame(current.frame) && deviceId != null && deviceId !== '' && current.devices.has(deviceId)
     current.callback(allowed ? deviceId : undefined)
   }
 
@@ -110,7 +123,8 @@ export function setupLedgerHidAccess(
       return
     }
     if (!isAppFrame(current.frame)) {
-      return finish()
+      finish()
+      return
     }
     clearTimeout(current.autoSelectTimer)
     if (current.devices.size > 1) {
@@ -128,8 +142,9 @@ export function setupLedgerHidAccess(
     }
   }
 
+  // oxlint-disable-next-line anti-slop/no-unknown-parameters -- IPC arguments are untrusted; validate the request id before use.
   ipc.handle('ledger-hid:begin', (event, id: unknown): boolean => {
-    if (!isAppIpc(event) || typeof id !== 'string' || !/^[a-zA-Z0-9-]{1,80}$/.test(id) || request || nativeRequest) {
+    if (!isAppIpc(event) || !isRequestId(id) || request || nativeRequest) {
       return false
     }
     request = {
@@ -138,18 +153,15 @@ export function setupLedgerHidAccess(
       devices: new Map(),
       needsChoice: false,
       cancelled: false,
-      timer: setTimeout(() => finish(undefined, 'expired'), REQUEST_TIMEOUT_MS),
+      timer: setTimeout(() => {
+        finish(undefined, 'expired')
+      }, REQUEST_TIMEOUT_MS),
     }
     return true
   })
+  // oxlint-disable-next-line anti-slop/no-unknown-parameters -- IPC arguments are untrusted; validate them before device selection.
   ipc.handle('ledger-hid:choose', (event, id: unknown, deviceId: unknown): boolean => {
-    if (
-      !isAppIpc(event) ||
-      !request?.callback ||
-      request.cancelled ||
-      request.id !== id ||
-      typeof deviceId !== 'string'
-    ) {
+    if (!isAppIpc(event) || !request?.callback || request.cancelled || request.id !== id || !isDeviceId(deviceId)) {
       return false
     }
     if (!isAppFrame(request.frame) || !request.devices.has(deviceId)) {
@@ -158,12 +170,14 @@ export function setupLedgerHidAccess(
     finish(deviceId)
     return true
   })
+  // oxlint-disable-next-line anti-slop/no-unknown-parameters -- IPC arguments are untrusted; compare only against the active request id.
   const onCancel = (event: IpcMainEvent, id: unknown): void => {
     if (isAppIpc(event) && request?.id === id) {
       finish()
     }
   }
   ipc.on('ledger-hid:cancel', onCancel)
+  // oxlint-disable-next-line anti-slop/no-unknown-parameters -- IPC arguments are untrusted; compare only against the active request id.
   const onEnd = (event: IpcMainEvent, id: unknown): void => {
     if (!isAppIpc(event) || request?.id !== id) {
       return
@@ -179,14 +193,17 @@ export function setupLedgerHidAccess(
   ): Promise<void> {
     const devices = details.deviceList.filter((device) => device.vendorId === LEDGER_VENDOR_ID)
     if (!isAppFrame(details.frame) || !devices.length) {
-      return callback()
+      callback()
+      return
     }
     const current: NativeRequest = {
       frame: details.frame,
       callback,
       devices: new Map(devices.map((device) => [device.deviceId, device])),
       abort: new AbortController(),
-      timer: setTimeout(() => finishNative(), REQUEST_TIMEOUT_MS),
+      timer: setTimeout(() => {
+        finishNative()
+      }, REQUEST_TIMEOUT_MS),
     }
     nativeRequest = current
     try {
@@ -219,10 +236,12 @@ export function setupLedgerHidAccess(
   ): void => {
     event.preventDefault()
     if (!isAppFrame(details.frame)) {
-      return callback()
+      callback()
+      return
     }
     if (nativeRequest) {
-      return callback()
+      callback()
+      return
     }
     if (!request) {
       // Other connection entry points retain an explicit native permission prompt.
@@ -230,11 +249,13 @@ export function setupLedgerHidAccess(
       return
     }
     if (request.callback || request.frame !== details.frame) {
-      return callback()
+      callback()
+      return
     }
     request.callback = callback
     if (request.cancelled) {
-      return finish()
+      finish()
+      return
     }
     request.devices = new Map(
       details.deviceList

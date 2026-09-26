@@ -6,7 +6,7 @@ import Fireworks from 'react-canvas-confetti/dist/presets/fireworks'
 import { useNavigate } from 'react-router'
 import { useGetClaimBalance } from '../../lib/balances'
 import { clearFlowSource, getFlowSource } from '../../lib/flow-tracker'
-import { type ClaimDto } from '../../trpc/server-types'
+import type { ClaimDto } from '../../trpc/server-types'
 import { mapClaimToClaimCardProps, withStatusBalance } from '../../utils/claim-utils'
 
 type ClaimVerificationReceiptProps =
@@ -23,20 +23,22 @@ export function ClaimVerificationReceipt({ shouldSetTimeout, claim }: ClaimVerif
   const [isPending, setIsPending] = useState(true)
   const navigate = useNavigate()
 
-  const balanceQuery = useGetClaimBalance(claim?.id ?? null, { enabled: !!claim?.id })
+  const balanceQuery = useGetClaimBalance(claim?.id ?? null, { enabled: claim?.id != null && claim.id.length > 0 })
 
   const flowSource = getFlowSource()
   const isStatementFlow = flowSource?.type === 'statement'
 
   useEffect(() => {
     if (shouldSetTimeout) {
-      setTimeout(() => setIsPending(false), 1700)
+      setTimeout(() => {
+        setIsPending(false)
+      }, 1700)
     }
   }, [shouldSetTimeout])
 
   const handleNavigation = (path: string) => {
     clearFlowSource()
-    navigate(path)
+    void navigate(path)
   }
 
   if (isPending) {
@@ -53,7 +55,9 @@ export function ClaimVerificationReceipt({ shouldSetTimeout, claim }: ClaimVerif
       <Receipt
         title="Claim Verified!"
         state="success"
-        onClose={() => handleNavigation('/home')}
+        onClose={() => {
+          handleNavigation('/home')
+        }}
         closeTitle="Back to Home"
         content={
           <VStack spacing={8}>
@@ -70,14 +74,23 @@ export function ClaimVerificationReceipt({ shouldSetTimeout, claim }: ClaimVerif
               />
             )}
             <Text textStyle="text/2xl" color="neutral.900" textAlign="center">
-              Your {claim?.displayName ? `"${claim.displayName}" claim` : `claim`} is now verified and ready to include
-              in ownership statements.
+              Your {claim?.displayName != null && claim.displayName !== '' ? `"${claim.displayName}" claim` : `claim`}{' '}
+              is now verified and ready to include in ownership statements.
             </Text>
             <HStack spacing={4}>
-              <Button variant="outline" onClick={() => handleNavigation('/accounts')}>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  handleNavigation('/accounts')
+                }}
+              >
                 Connect Another Account
               </Button>
-              <Button onClick={() => handleNavigation('/statements/create')}>
+              <Button
+                onClick={() => {
+                  handleNavigation('/statements/create')
+                }}
+              >
                 {isStatementFlow ? 'Complete Statement' : 'Generate Statement'}
               </Button>
             </HStack>

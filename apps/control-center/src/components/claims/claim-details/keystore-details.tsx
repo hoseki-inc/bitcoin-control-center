@@ -126,7 +126,13 @@ export function KeystoreDetailsMultiSig({
       </Text>
 
       {isRenaming ? (
-        <RenameKeystore keystoreId={keystore.id} defaultName={keystore.label} onCancel={() => setIsRenaming(false)} />
+        <RenameKeystore
+          keystoreId={keystore.id}
+          defaultName={keystore.label}
+          onCancel={() => {
+            setIsRenaming(false)
+          }}
+        />
       ) : (
         <HStack spacing={8} py={2} justifyContent="space-between">
           <Stack spacing={1} maxWidth="50%">
@@ -138,7 +144,12 @@ export function KeystoreDetailsMultiSig({
             </Text>
           </Stack>
           <Box alignSelf="flex-end">
-            <Button variant="outline" onClick={() => setIsRenaming(true)}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsRenaming(true)
+              }}
+            >
               Rename
             </Button>
           </Box>
@@ -181,7 +192,14 @@ function KeystoreXpub({ xpub }: { xpub: Xpub }) {
   return (
     <HStack border="1px solid" borderColor="neutral.200" borderRadius="md" p={4} mb={8}>
       <chakra.code color="neutral.600">{toXpubDisplayValue(xpub.toString(), isMasked)}</chakra.code>
-      <Button variant="plain" onClick={() => setIsMasked((prev) => !prev)} p={2} pr={0}>
+      <Button
+        variant="plain"
+        onClick={() => {
+          setIsMasked((prev) => !prev)
+        }}
+        p={2}
+        pr={0}
+      >
         {isMasked ? <EyeOffIcon color="#475569" /> : <EyeIcon color="#475569" />}
       </Button>
     </HStack>

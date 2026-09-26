@@ -1,5 +1,6 @@
 import { TZDate } from '@date-fns/tz'
 import { convertBtcToUsd } from '@hoseki/packages/currency'
+import { Err, Ok, type Result } from '@hoseki/packages/result'
 import type {
   Amount,
   BalanceEntry,
@@ -13,7 +14,6 @@ import type {
   SummaryEntry,
   Timezone,
 } from '@hoseki/packages/schemas'
-import { Err, Ok, type Result } from '@patina/core'
 import { eachMonthOfInterval, endOfMonth } from 'date-fns'
 import Decimal from 'decimal.js'
 import type { DailyRate, DailyRates } from '../price/daily_rates'
@@ -62,6 +62,7 @@ function createPdfStatement(
   ),
 ): PdfStatement {
   const common = {
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- SAFETY: Preview IDs intentionally use the same branded shape without persistence; they are never written to the statement table.
     id: args.id as StatementId,
     createdAt: args.createdAt,
     status: args.status,
@@ -103,7 +104,7 @@ export class StatementMapper {
     }
   }
 
-  private createCustomPdfStatement = (statement: CompletedStatementData): Result<PdfStatement, Error> => {
+  private readonly createCustomPdfStatement = (statement: CompletedStatementData): Result<PdfStatement, Error> => {
     const aggregatedRes = this.aggregateStatementData(
       statement.openingDate,
       statement.closingDate,
@@ -138,7 +139,7 @@ export class StatementMapper {
     )
   }
 
-  private createMonthlyPdfStatement = (statement: CompletedStatementData): Result<PdfStatement, Error> => {
+  private readonly createMonthlyPdfStatement = (statement: CompletedStatementData): Result<PdfStatement, Error> => {
     const monthlyData = this.createMonthlyData(statement, statement.timezone)
     if (monthlyData.isErr()) {
       return Err(monthlyData.unwrapErr())

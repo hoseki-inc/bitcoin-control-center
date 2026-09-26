@@ -1,5 +1,7 @@
 import { TZDate } from '@date-fns/tz'
+import { parseUnknown } from '@hoseki/packages/result/lib/parse'
 import Decimal from 'decimal.js'
+import { z } from 'zod'
 import { getBrowserTimezone } from '../../utils/timezone'
 
 export interface BalanceDataPoint {
@@ -21,26 +23,53 @@ interface ParsedBalancePoint {
   point: BalanceDataPoint
 }
 
+function isBalanceObject(value: unknown): value is object {
+  return value !== null && typeof value === 'object'
+}
+
+interface BalanceStringifierReceiver {
+  toString: unknown
+}
+
+interface CallableStringifier {
+  // oxlint-disable-next-line anti-slop/no-unknown-returns -- Third-party stringifiers can return arbitrary runtime values; the caller validates the result.
+  call(thisArg: BalanceStringifierReceiver): unknown
+}
+
+function isCallableStringifier(value: unknown): value is CallableStringifier {
+  return typeof value === 'function'
+}
+
+const scalarBalance = z.union([
+  z.string().transform((value) => value.trim() || '0'),
+  z.number().transform((value) => String(Math.floor(value))),
+])
+
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- This normalization boundary accepts untrusted balance values and returns a safe string.
 export function toSatoshisString(value: unknown): string {
   if (value === null || value === undefined) {
     return '0'
   }
-  if (typeof value === 'string') {
-    return value.trim() || '0'
+  const scalar = parseUnknown(scalarBalance, value)
+  if (scalar.isOk()) {
+    return scalar.value()
   }
-  if (typeof value === 'number' && !Number.isNaN(value)) {
-    return String(Math.floor(value))
-  }
-  if (typeof value === 'object' && value !== null && 'toString' in value) {
-    const s = (value as { toString(): string }).toString()
-    return typeof s === 'string' && s.trim() ? s.trim() : '0'
+  if (isBalanceObject(value) && 'toString' in value) {
+    // oxlint-disable-next-line typescript/unbound-method -- The call below explicitly supplies the original object as `this`.
+    const stringifier = value.toString
+    if (isCallableStringifier(stringifier)) {
+      const content = stringifier.call(value)
+      return parseUnknown(z.string(), content)
+        .map((text) => text.trim() || '0')
+        .unwrapOr('0')
+    }
   }
   return '0'
 }
 
 export function withCurrentBalancePoint(
   data: BalanceDataPoint[],
-  currentBalanceSats: unknown,
+  currentBalanceSats: number | string,
   now: Date = new Date(),
   timezone: string = getBrowserTimezone(),
 ): BalanceDataPoint[] {

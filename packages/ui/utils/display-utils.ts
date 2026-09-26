@@ -29,14 +29,14 @@ export function toXpubDisplayValue(xpubStr: string, mask = true): string {
 
   const chunks = chunk(xpubStr, 4)
 
-  const result = chunks.map((chunk, i) => {
+  const result = chunks.map((group, i) => {
     if (i === 0 || i === 1) {
-      return chunk.join('')
+      return group.join('')
     }
     if (i === chunks.length - 1 || i === chunks.length - 2) {
-      return chunk.join('')
+      return group.join('')
     }
-    return mask ? '****' : chunk.join('')
+    return mask ? '****' : group.join('')
   })
 
   return result.join(' ')

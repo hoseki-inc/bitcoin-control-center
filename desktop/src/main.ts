@@ -2,8 +2,10 @@ import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { BrowserWindow, type Tray, type WebContents, app, dialog, ipcMain, shell } from 'electron'
+import { showDeviceChooser } from './device-chooser'
 import { setupLedgerHidAccess } from './ledger-hid'
-import { shutdownWithDeadline } from './shutdown'
+import { startServer } from './server'
+import { createQuitHandler } from './shutdown'
 import { TorManager } from './tor'
 import { setupTray } from './tray'
 import { setupWalletAccess } from './wallet-access'
@@ -18,7 +20,6 @@ let torManager: TorManager | null = null
 let server: LocalServer | null = null
 let tray: Tray | null = null
 let quitting = false
-let cleanedUp = false
 let startup: Promise<void> | null = null
 
 function showMainWindow(): void {
@@ -61,15 +62,13 @@ async function start(): Promise<void> {
     SOCKS_PROXY_HOST: '127.0.0.1',
     SOCKS_PROXY_PORT: String(torManager.socksPort),
   })
-  const { main } = await import(pathToFileURL(path.join(serverDir, 'main.js')).href)
-  const localServer = await main()
-  server = localServer
+  server = await startServer(pathToFileURL(path.join(serverDir, 'main.js')).href)
   const origin = 'http://localhost:3400'
   if (quitting) {
     return
   }
 
-  mainWindow = new BrowserWindow({
+  const window = new BrowserWindow({
     width: 1280,
     height: 800,
     minWidth: 900,
@@ -81,16 +80,23 @@ async function start(): Promise<void> {
       nodeIntegration: false,
     },
   })
+  mainWindow = window
   const trezorWindows = new Set<WebContents>()
-  setupWalletAccess(mainWindow, origin, trezorWindows, { handleLedgerSelection: false })
-  setupLedgerHidAccess(mainWindow, origin, ipcMain, (window, options) => dialog.showMessageBox(window, options))
+  setupWalletAccess(
+    window,
+    origin,
+    trezorWindows,
+    (owner, name, selected) => showDeviceChooser(BrowserWindow.fromWebContents(owner) ?? window, name, selected),
+    { handleLedgerSelection: false },
+  )
+  setupLedgerHidAccess(window, origin, ipcMain, async (parent, options) => dialog.showMessageBox(parent, options))
 
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (isTrezorPopup(url) && isAppUrl(mainWindow!.webContents.getURL(), origin)) {
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    if (isTrezorPopup(url) && isAppUrl(window.webContents.getURL(), origin)) {
       return {
         action: 'allow',
         overrideBrowserWindowOptions: {
-          parent: mainWindow!,
+          parent: window,
           width: 480,
           height: 720,
           autoHideMenuBar: true,
@@ -101,10 +107,12 @@ async function start(): Promise<void> {
     openExternal(url)
     return { action: 'deny' }
   })
-  mainWindow.webContents.on('did-create-window', (popup) => {
+  window.webContents.on('did-create-window', (popup) => {
     const contents = popup.webContents
     trezorWindows.add(contents)
-    popup.on('closed', () => trezorWindows.delete(contents))
+    popup.on('closed', () => {
+      trezorWindows.delete(contents)
+    })
     popup.webContents.setWindowOpenHandler(({ url }) => {
       openExternal(url)
       return { action: 'deny' }
@@ -121,25 +129,25 @@ async function start(): Promise<void> {
       }
     })
   })
-  mainWindow.webContents.on('will-navigate', (event, url) => {
+  window.webContents.on('will-navigate', (event, url) => {
     if (!isAppUrl(url, origin)) {
       event.preventDefault()
       openExternal(url)
     }
   })
-  mainWindow.webContents.on('will-redirect', (event, url) => {
+  window.webContents.on('will-redirect', (event, url) => {
     if (!isAppUrl(url, origin)) {
       event.preventDefault()
     }
   })
-  mainWindow.on('close', (event) => {
+  window.on('close', (event) => {
     if (!quitting) {
       event.preventDefault()
-      mainWindow?.hide()
+      window.hide()
     }
   })
-  tray = setupTray(mainWindow)
-  await mainWindow.loadURL(origin)
+  tray = setupTray(window)
+  await window.loadURL(origin)
 }
 
 if (!app.requestSingleInstanceLock()) {
@@ -147,36 +155,37 @@ if (!app.requestSingleInstanceLock()) {
 } else {
   app.on('second-instance', showMainWindow)
   app.on('activate', showMainWindow)
+  const quit = createQuitHandler({
+    shutdownServer: async () => {
+      await startup
+      // Stop Tor before draining requests; the final cleanup also covers forced exit.
+      torManager?.stop()
+      await server?.shutdown()
+    },
+    stopTor: () => {
+      torManager?.stop()
+    },
+    destroyTray: () => {
+      tray?.destroy()
+    },
+    reportError: () => {
+      dialog.showErrorBox('Unable to finish shutting down', 'Bitcoin Control Center will now close.')
+    },
+    quit: () => {
+      app.quit()
+    },
+    forceQuit: () => {
+      app.exit(1)
+    },
+  })
   app.on('before-quit', (event) => {
-    if (cleanedUp) {
-      return
-    }
-    event.preventDefault()
+    quitting = true
+    quit(event)
+  })
+  void app.whenReady().then(() => {
     if (quitting) {
       return
     }
-    quitting = true
-    void shutdownWithDeadline(
-      async () => {
-        await startup
-        // Stop Tor first to release any requests waiting for bootstrap before
-        // draining the HTTP server and closing SQLite.
-        await torManager?.stop()
-        await server?.shutdown()
-        tray?.destroy()
-        cleanedUp = true
-        app.quit()
-      },
-      () => app.exit(0),
-    ).catch(() => {
-      dialog.showErrorBox(
-        'Could not finish quitting',
-        'Control Center could not close its local services. Try quitting again.',
-      )
-      quitting = false
-    })
-  })
-  void app.whenReady().then(() => {
     startup = start().catch(() => {
       if (!quitting) {
         dialog.showErrorBox(

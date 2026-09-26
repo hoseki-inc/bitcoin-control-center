@@ -802,20 +802,20 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
   type ColumnWidths = Record<string, number>
 
   // Define column widths using the const objects
-  const TRANSACTION_COLUMN_WIDTHS: ColumnWidths = {
+  const TRANSACTION_COLUMN_WIDTHS = {
     [TransactionColumn.Date]: 260,
     [TransactionColumn.MoneyOut]: 105,
     [TransactionColumn.MoneyIn]: 105,
     [TransactionColumn.ClosingBalance]: 120,
-  }
+  } satisfies ColumnWidths
 
-  const SUMMARY_COLUMN_WIDTHS: ColumnWidths = {
+  const SUMMARY_COLUMN_WIDTHS = {
     [SummaryColumn.Account]: 130,
     [SummaryColumn.OpeningBalance]: 125,
     [SummaryColumn.MoneyOut]: 100,
     [SummaryColumn.MoneyIn]: 100,
     [SummaryColumn.ClosingBalance]: 120,
-  }
+  } satisfies ColumnWidths
 
   const CoverPageColumn = {
     Account: 'Account',
@@ -825,13 +825,13 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
     Value: 'Value',
   } as const
 
-  const COVER_PAGE_COLUMN_WIDTHS: ColumnWidths = {
+  const COVER_PAGE_COLUMN_WIDTHS = {
     [CoverPageColumn.Account]: 120,
     [CoverPageColumn.Currency]: 100,
     [CoverPageColumn.Amount]: 100,
     [CoverPageColumn.Rate]: 100,
     [CoverPageColumn.Value]: 120,
-  }
+  } satisfies ColumnWidths
 
   interface TableHeaderProps {
     columns: string[]
@@ -842,7 +842,7 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
     <View style={styles.tableHeader}>
       {columns.map((column, index) => {
         const width = columnWidths[column]
-        if (!width) {
+        if (width === undefined || width === 0 || Number.isNaN(width)) {
           throw new Error(`Column width not found for column key: ${column}`)
         }
         return (
@@ -910,7 +910,10 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
             <>
               <TableHeader columns={columns} columnWidths={columnWidths} />
               {data.map((item, rowIndex) => {
-                const originalIndex = rowsPerPage ? rowIndex * rowsPerPage + rowIndex : rowIndex
+                const originalIndex =
+                  rowsPerPage !== undefined && rowsPerPage !== 0 && !Number.isNaN(rowsPerPage)
+                    ? rowIndex * rowsPerPage + rowIndex
+                    : rowIndex
                 return <RowComponent key={originalIndex} item={item} index={originalIndex} />
               })}
             </>
@@ -927,7 +930,7 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
   }
 
   const TableRow: React.FC<TableRowProps> = ({ children, index, isAlternate }) => (
-    <View style={[styles.tableRow, ...(isAlternate || index % 2 === 1 ? [styles.tableRowAlternate] : [])]}>
+    <View style={[styles.tableRow, ...(isAlternate === true || index % 2 === 1 ? [styles.tableRowAlternate] : [])]}>
       {children}
     </View>
   )
@@ -939,7 +942,8 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
   }
 
   const Cell: React.FC<CellProps> = ({ children, columnName, columnWidths }) => {
-    const width = columnWidths[columnName] || 120
+    const columnWidth = columnWidths[columnName] ?? 0
+    const width = columnWidth === 0 || Number.isNaN(columnWidth) ? 120 : columnWidth
 
     return <View style={[styles.cell, { width }]}>{children}</View>
   }
@@ -1023,7 +1027,7 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
             <Text style={styles.providedByLabel}>Provided by user</Text>
             <View style={styles.contactContainer}>
               {hasName && <Text style={styles.nameText}>{user.name}</Text>}
-              {user.email && <Text style={styles.emailText}>{user.email}</Text>}
+              {user.email != null && user.email !== '' && <Text style={styles.emailText}>{user.email}</Text>}
               {hasAddress && <Text style={styles.addressText}>{user.address}</Text>}
             </View>
           </View>
@@ -1090,7 +1094,7 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
               <Text style={footerStyles.instructionsText}>
                 This statement provides detailed information on your Bitcoin holdings in self-custody for the specified
                 period. All data is sourced directly from the Bitcoin network and self-custody ownership is validated by
-                Bitcoin Control Center's open-source verification process. USD values are calculated using the
+                Bitcoin Control Center&apos;s open-source verification process. USD values are calculated using the
                 Bitcoin-to-USD exchange rate from <Link src="https://www.coingecko.com">CoinGecko</Link> on the date of
                 each transaction or balance snapshot. For questions or discrepancies, please contact support@hoseki.app.
                 All rights reserved.
@@ -1258,7 +1262,7 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
       SummaryColumn.ClosingBalance,
     ]
 
-    const currency = props.statement.currency ?? 'BTC'
+    const currency = props.statement.currency
 
     // Create a wrapper component that captures currency
     const RowComponentWithCurrency: React.FC<{ item: SummaryRowDisplayData; index: number }> = ({ item, index }) => (
@@ -1364,7 +1368,10 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
       <TableRow key={rowKey} index={index}>
         <Cell columnName={TransactionColumn.Date} columnWidths={TRANSACTION_COLUMN_WIDTHS}>
           <Text style={styles.transactionRowText}>
-            {transaction.blockHeight || transaction.confirmed
+            {(transaction.blockHeight !== null &&
+              transaction.blockHeight !== 0 &&
+              !Number.isNaN(transaction.blockHeight)) ||
+            transaction.confirmed
               ? formatTzDate(transaction.date, 'yyyy-MM-dd HH:mm:ss', timezone)
               : 'PENDING'}
           </Text>
@@ -1522,7 +1529,7 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
               dateRange={dateRange}
               totalAmountMinorUnits={totalBtcSats}
               totalUsdAmount={totalUsdValue}
-              currency={statement.currency ?? 'BTC'}
+              currency={statement.currency}
             />
             <View style={styles.mainContentContainer}>
               <View style={styles.contentWrapper}>
@@ -1547,7 +1554,7 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
             proofNumber={proofNum}
             qrCodeSrc={qrCode}
             watermarkText={input.watermarkText}
-            currency={statement.currency ?? 'BTC'}
+            currency={statement.currency}
           />
         ))}
       </Document>
@@ -1591,7 +1598,7 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
               dateRange={monthDateRange}
               totalAmountMinorUnits={month.summary.closingBalance.sats}
               totalUsdAmount={formatUsd(month.summary.closingBalance.usdValue)}
-              currency={statement.currency ?? 'BTC'}
+              currency={statement.currency}
             />
             <View style={styles.mainContentContainer}>
               <View style={styles.contentWrapper}>
@@ -1627,7 +1634,7 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
             proofNumber={proofNum}
             qrCodeSrc={qrCode}
             watermarkText={input.watermarkText}
-            currency={statement.currency ?? 'BTC'}
+            currency={statement.currency}
           />,
         )
       }
@@ -1670,7 +1677,7 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
           continue
         }
         const customStatement = statement
-        const currency = statement.currency ?? 'BTC'
+        const currency = statement.currency
 
         // Add each entry with its currency
         for (const entry of customStatement.summary.entries) {
@@ -1735,7 +1742,7 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
                     dateRange={dateRange}
                     totalAmountMinorUnits={totalBtcSats}
                     totalUsdAmount={totalUsdValue}
-                    currency={statement.currency ?? 'BTC'}
+                    currency={statement.currency}
                   />
                   <View style={styles.mainContentContainer}>
                     <View style={styles.contentWrapper}>
@@ -1760,7 +1767,7 @@ export function getStatementDocumentTemplates(pdf: typeof ReactPDF, geistDirPath
                   proofNumber={proofNum}
                   qrCodeSrc={qrCode}
                   watermarkText={input.watermarkText}
-                  currency={statement.currency ?? 'BTC'}
+                  currency={statement.currency}
                 />
               ))}
             </React.Fragment>

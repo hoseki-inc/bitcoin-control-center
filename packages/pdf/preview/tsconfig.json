@@ -15,8 +15,7 @@
     "isolatedModules": true,
     "noEmit": true,
     "jsx": "react-jsx",
-    "incremental": true,
-    "baseUrl": "."
+    "incremental": true
   },
   "include": ["*.tsx", "*.ts", "vite.config.ts"],
   "exclude": ["node_modules", "dist"]

@@ -1,5 +1,6 @@
 import { Decimal } from 'decimal.js'
 import { describe, expect, it, test } from 'vitest'
+import { parse } from '../result/lib/parse'
 import { decimal } from './decimal'
 
 it('should parse string', () => {
@@ -58,5 +59,21 @@ it('should parse with config', () => {
     })
       .parse(new Decimal('1'))
       .precision(),
-  ).toEqual(1)
+  ).toBe(1)
+})
+
+it.each([
+  ['invalid numeric string', 'not-a-number', 'cannot parse not-a-number as decimal number'],
+  ['NaN string', 'NaN', 'NaN is not a valid decimal number'],
+  ['NaN instance', new Decimal(NaN), 'NaN is not a valid decimal number'],
+  ['invalid decimal representation', { d: [1], e: 0, s: 0 }, '{"d":[1],"e":0,"s":0} is not a valid decimal number'],
+])('reports a readable validation error for %s', (_label, input, message) => {
+  const result = parse(decimal(), input)
+  expect(result.isErr()).toBe(true)
+  expect(result.expectErr('invalid decimal should fail validation').message).toBe(message)
+})
+
+it('preserves bigint precision', () => {
+  const result = parse(decimal(), 900719925474099312345n)
+  expect(result.expect('valid bigint').toString()).toBe('900719925474099312345')
 })

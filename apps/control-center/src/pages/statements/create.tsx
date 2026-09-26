@@ -30,6 +30,7 @@ import { ClaimSelection } from '../../components/claims/claim-selection'
 import { FullTransitionModal, getContent } from '../../components/full-transition-modal'
 import { StatementPreviewModal } from '../../components/statement-preview-modal'
 import { useLocalSetting } from '../../hooks/use-local-settings'
+import { parseNavigationState } from '../../lib/navigation-state'
 import { useStatementPolling } from '../../providers/statement-polling-provider'
 import { trpc } from '../../trpc'
 import type { StatementDto } from '../../trpc/server-types'
@@ -43,7 +44,7 @@ export function StatementCreatePage(): JSX.Element {
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false)
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState<boolean>(false)
   const location = useLocation()
-  const navState = location.state as { preSelectedClaimIds?: ClaimId[]; returnTo?: string } | null
+  const navState = parseNavigationState(location.state)
   const cancelPath = navState?.returnTo ?? '/home'
 
   // claims and exchange accounts
@@ -62,7 +63,10 @@ export function StatementCreatePage(): JSX.Element {
 
     if (navState?.preSelectedClaimIds && navState.preSelectedClaimIds.length > 0) {
       const validIds = claimsQuery.data.map((c) => c.id)
-      const preSelected = navState.preSelectedClaimIds.filter((id) => validIds.includes(id))
+      const preSelected = navState.preSelectedClaimIds.flatMap((id) => {
+        const validId = validIds.find((candidate) => candidate === id)
+        return validId != null && validId.length > 0 ? [validId] : []
+      })
       if (preSelected.length > 0) {
         setSelectedClaimIds(new Set(preSelected))
       }
@@ -94,7 +98,7 @@ export function StatementCreatePage(): JSX.Element {
   const [address, setAddress] = useState<string>('')
 
   useEffect(() => {
-    if (savedUserName && !nameInitialized) {
+    if (savedUserName != null && savedUserName !== '' && !nameInitialized) {
       setName(savedUserName)
       setNameInitialized(true)
     }
@@ -116,7 +120,7 @@ export function StatementCreatePage(): JSX.Element {
         return
       }
 
-      const statement = await initiateStatementGenerationMutation.mutateAsync({
+      const generatedStatement = await initiateStatementGenerationMutation.mutateAsync({
         claimIds: Array.from(selectedClaimIds),
         exchangeAccountIds: Array.from(selectedExchangeAccountIds),
         timezone: userTimezone,
@@ -129,19 +133,17 @@ export function StatementCreatePage(): JSX.Element {
       // keeping them at the end of the fn to make sure we're overwriting
       // provider state via `startPolling(statement)` before opening the modal,
       // so that the modal doesn't show the old completed/failed statement screen
-      startPolling(statement.id)
+      startPolling(generatedStatement.id)
       setIsModalOpen(true)
     },
     onError: (error: { message: string }) => {
-      toast.error(error.message ?? 'Error when generating statement')
+      toast.error(error.message)
     },
   })
 
   const LEFT_COLUMN_WIDTH = '35%'
 
-  const hasAccounts =
-    (claimsQuery.data && claimsQuery.data.length > 0) ||
-    (exchangeAccountsQuery.data && exchangeAccountsQuery.data.length > 0)
+  const hasAccounts = (claimsQuery.data?.length ?? 0) > 0 || (exchangeAccountsQuery.data?.length ?? 0) > 0
   const hasAnySelected = selectedClaimIds.size > 0 || selectedExchangeAccountIds.size > 0
 
   return (
@@ -179,7 +181,11 @@ export function StatementCreatePage(): JSX.Element {
                       max={new Date()}
                       min={addDays(MIN_STATEMENT_DATE, 1)}
                       value={openingDate}
-                      onChange={(date) => date && setOpeningDate(startOfDay(date))}
+                      onChange={(date) => {
+                        if (date) {
+                          setOpeningDate(startOfDay(date))
+                        }
+                      }}
                       size="md"
                     />
                   </FormControl>
@@ -249,7 +255,9 @@ export function StatementCreatePage(): JSX.Element {
                           <Input
                             id="name"
                             value={name}
-                            onChange={(e) => setName(e.target.value)}
+                            onChange={(e) => {
+                              setName(e.target.value)
+                            }}
                             placeholder="Enter your name"
                             size="md"
                           />
@@ -271,7 +279,9 @@ export function StatementCreatePage(): JSX.Element {
                           <Textarea
                             id="address"
                             value={address}
-                            onChange={(e) => setAddress(e.target.value)}
+                            onChange={(e) => {
+                              setAddress(e.target.value)
+                            }}
                             placeholder="Enter your address"
                             rows={2}
                             size="md"
@@ -320,13 +330,21 @@ export function StatementCreatePage(): JSX.Element {
                   Cancel
                 </Button>
                 <HStack>
-                  <Button isDisabled={!hasAnySelected} variant="outline" onClick={() => setIsPreviewModalOpen(true)}>
+                  <Button
+                    isDisabled={!hasAnySelected}
+                    variant="outline"
+                    onClick={() => {
+                      setIsPreviewModalOpen(true)
+                    }}
+                  >
                     Preview Statement
                   </Button>
                   <Button
                     isDisabled={!hasAnySelected || initiateMutationWithArgs.isLoading}
                     isLoading={initiateMutationWithArgs.isLoading}
-                    onClick={() => initiateMutationWithArgs.mutate()}
+                    onClick={() => {
+                      initiateMutationWithArgs.mutate()
+                    }}
                   >
                     Generate Statement
                   </Button>
@@ -339,13 +357,17 @@ export function StatementCreatePage(): JSX.Element {
 
       <StatementGenerationModal
         isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
+        onClose={() => {
+          setIsModalOpen(false)
+        }}
         statement={statement ?? null}
       />
 
       <StatementPreviewModal
         isOpen={isPreviewModalOpen}
-        onClose={() => setIsPreviewModalOpen(false)}
+        onClose={() => {
+          setIsPreviewModalOpen(false)
+        }}
         claimIds={Array.from(selectedClaimIds)}
         exchangeAccountIds={Array.from(selectedExchangeAccountIds)}
         openingDate={openingDate}

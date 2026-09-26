@@ -23,7 +23,7 @@ export function WizardFooter({
       zIndex={10}
     >
       <Wrapper>
-        <HStack justifyContent={leftButton ? 'space-between' : 'flex-end'} width="full" minH="50px">
+        <HStack justifyContent={Boolean(leftButton) ? 'space-between' : 'flex-end'} width="full" minH="50px">
           {leftButton}
           {rightButton}
         </HStack>

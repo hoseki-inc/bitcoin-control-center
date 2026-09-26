@@ -33,16 +33,21 @@
     "check": {
       "outputs": []
     },
-    "docker:build": {
-      "dependsOn": ["build"],
-      "cache": false
-    },
     "dev:databases": {
       "cache": false
     },
     "dev:standalone": {
       "cache": false,
       "persistent": true
+    },
+    "@bitcoin-control-center/shared#test": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.oxlintrc*.json",
+        "$TURBO_ROOT$/tools/oxlint/**",
+        "$TURBO_ROOT$/apps/control-center/src/**/*.test.*"
+      ],
+      "outputs": ["coverage/**"]
     }
   }
 }

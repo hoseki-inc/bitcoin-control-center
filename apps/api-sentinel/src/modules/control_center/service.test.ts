@@ -2,20 +2,25 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Account } from '@hoseki/packages/bitcoin/account'
+import { Network } from '@hoseki/packages/bitcoin/network'
 import type { Block, TransactionEntry } from '@hoseki/packages/bitcoin/onchain'
-import type { ElectrumProvider } from '@hoseki/packages/bitcoin/onchain/electrum_provider'
+import { ElectrumProvider } from '@hoseki/packages/bitcoin/onchain/electrum_provider'
 import { Txid } from '@hoseki/packages/bitcoin/txid'
+import { ElectrumClient } from '@hoseki/packages/clients/electrum'
 import { IndexMap } from '@hoseki/packages/collection'
+import { AsyncResult, Err, Ok, type Result, asyncFn } from '@hoseki/packages/result'
 import { Wallets } from '@hoseki/packages/testing'
-import { Err, Ok, type Result } from '@patina/core'
+import Decimal from 'decimal.js'
 import pino from 'pino'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { assert, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { initDatabase } from '../../db'
-import type { EtfService } from '../etf/service'
-import type { ExchangeService } from '../exchange/service'
-import type { ManualService } from '../manual/service'
-import type { PriceService } from '../price/service'
+import { EtfService } from '../etf/service'
+import { ExchangeService } from '../exchange/service'
+import { ManualService } from '../manual/service'
+import { PriceService } from '../price/service'
 import { ControlCenterService } from './service'
+
+type Deferred<T> = { promise: Promise<T>; resolve: (value: T) => void }
 
 const account = Wallets.singlesigNativeSegwitAccount
 const accountId = 'test-account'
@@ -35,7 +40,7 @@ function entry(value: bigint, timestamp: string, blockHeight = 600_000): Transac
   }
 }
 
-function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+function deferred<T>(): Deferred<T> {
   let resolve!: (value: T) => void
   const promise = new Promise<T>((done) => {
     resolve = done
@@ -53,50 +58,60 @@ function createHarness() {
     account.toString(),
     'Test wallet',
   )
+  const onchainProvider = new ElectrumProvider(Network.Mainnet, {
+    logger,
+    electrum: new ElectrumClient({ host: 'localhost', port: 50001, protocol: 'tcp' }),
+  })
   const provider = {
-    getBlocksTip: vi.fn(async () => Ok(tip)),
-    getBlock: vi.fn(async () => Ok(tip)),
-    getConfirmedAccountBalances: vi.fn(async () => Ok(new IndexMap<Account, bigint>([[account, 100n]]))),
+    getBlocksTip: vi.spyOn(onchainProvider, 'getBlocksTip').mockImplementation(asyncFn(async () => Ok(tip))),
+    getBlock: vi.spyOn(onchainProvider, 'getBlock').mockImplementation(asyncFn(async () => Ok(tip))),
+    getConfirmedAccountBalances: vi
+      .spyOn(onchainProvider, 'getConfirmedAccountBalances')
+      .mockImplementation(asyncFn(async () => Ok(new IndexMap<Account, bigint>([[account, 100n]])))),
   }
-  const price = vi.fn(async () => Ok({ value: 50_000 }))
+  const priceService = new PriceService({ logger })
+  const price = vi
+    .spyOn(priceService, 'getCurrentBtcPrice')
+    .mockImplementation(asyncFn(async () => Ok({ value: new Decimal(50_000), asOf: now })))
   const service = new ControlCenterService({
     db,
     logger,
-    onchainProvider: provider as unknown as ElectrumProvider,
-    exchangeService: { listAccounts: () => [] } as unknown as ExchangeService,
-    manualService: { listAccounts: () => [], getTransactionEntries: () => [] } as unknown as ManualService,
-    etfService: { listAccounts: () => [], getAccumulationEntries: () => [] } as unknown as EtfService,
-    priceService: { getCurrentBtcPrice: price } as unknown as PriceService,
+    onchainProvider,
+    exchangeService: new ExchangeService({ db, logger }),
+    manualService: new ManualService({ db, logger }),
+    etfService: new EtfService({ db, logger }),
+    priceService,
   })
-  // Replace only the external history fetch. Snapshot storage, range coverage,
-  // retry scheduling and response construction all use the real service.
+  // Replace only external history fetching; storage, coverage, scheduling and responses remain real.
   const history = vi
-    .spyOn(
-      service as unknown as {
-        getTransactionEntriesByAccountSinceBlock(
-          account: Account,
-          height: number,
-        ): Promise<Result<TransactionEntry[], Error>>
-      },
-      'getTransactionEntriesByAccountSinceBlock',
-    )
+    .fn(service['getTransactionEntriesByAccountSinceBlock'])
     .mockResolvedValue(Ok([entry(100n, '2020-01-02T12:00:00.000Z')]))
-  const sync = (from = 0, to = tip.height): void =>
+  service['getTransactionEntriesByAccountSinceBlock'] = history
+  const sync = (from = 0, to = tip.height): void => {
     service['recordAccountHistorySync'](accountId, { fromBlockHeight: from, toBlockHeight: to }, tip)
-  const run = (balance: bigint = 100n, balanceTip?: Block): Promise<bigint | null> =>
+  }
+  const run = async (balance: bigint = 100n, balanceTip?: Block): Promise<bigint | null> =>
     service['ensureAccountHistorySnapshots'](accountId, account, balance, new Date(0), true, undefined, balanceTip)
   const rows = (): Array<{ timestamp: string; balance_sats: string }> =>
-    db.prepare('SELECT timestamp, balance_sats FROM balance_snapshots ORDER BY timestamp').all() as Array<{
-      timestamp: string
-      balance_sats: string
-    }>
+    db
+      .prepare<
+        unknown[],
+        {
+          timestamp: string
+          balance_sats: string
+        }
+      >('SELECT timestamp, balance_sats FROM balance_snapshots ORDER BY timestamp')
+      .all()
   const coverage = (): Array<{ from_block_height: number; to_block_height: number }> =>
     db
-      .prepare('SELECT from_block_height, to_block_height FROM account_history_syncs ORDER BY from_block_height')
-      .all() as Array<{
-      from_block_height: number
-      to_block_height: number
-    }>
+      .prepare<
+        unknown[],
+        {
+          from_block_height: number
+          to_block_height: number
+        }
+      >('SELECT from_block_height, to_block_height FROM account_history_syncs ORDER BY from_block_height')
+      .all()
   const close = (): void => {
     database.close()
     rmSync(directory, { recursive: true, force: true })
@@ -106,442 +121,535 @@ function createHarness() {
 
 let harness: ReturnType<typeof createHarness>
 
-beforeEach(() => {
+async function withTestSetup(run: () => Promise<void>): Promise<void> {
+  // Vitest owns teardown so it has its own timeout and runs once, even after a test timeout.
+  onTestFinished(async () => {
+    harness.close()
+    vi.restoreAllMocks()
+    vi.useRealTimers()
+  })
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(now)
   harness = createHarness()
-})
 
-afterEach(() => {
-  harness.close()
-  vi.restoreAllMocks()
-  vi.useRealTimers()
-})
+  await run()
+}
 
 describe('portfolio history completion', () => {
   it('starts All at the earliest current or archived wallet activity and respects account selection', async () => {
-    const { db, service } = harness
-    harness.sync()
-    service.recordAccountSnapshot(accountId, '0', '2009-01-03T00:00:00.000Z')
-    service.recordAccountSnapshot(accountId, '100', '2020-01-02T12:00:00.000Z')
+    await withTestSetup(async () => {
+      const { db, service } = harness
+      harness.sync()
+      service.recordAccountSnapshot(accountId, '0', '2009-01-03T00:00:00.000Z')
+      service.recordAccountSnapshot(accountId, '100', '2020-01-02T12:00:00.000Z')
 
-    const archivedId = 'archived-wallet'
-    db.prepare('INSERT INTO accounts (id, descriptor, display_name) VALUES (?, ?, ?)').run(
-      archivedId,
-      Wallets.singlesigLegacyAccount.toString(),
-      'Archived wallet',
-    )
-    service.recordAccountSnapshot(archivedId, '0', '2009-01-03T00:00:00.000Z')
-    service.recordAccountSnapshot(archivedId, '50', '2018-06-05T12:00:00.000Z')
-    db.prepare('UPDATE accounts SET deleted_at = ? WHERE id = ?').run('2019-01-01T12:00:00.000Z', archivedId)
+      const archivedId = 'archived-wallet'
+      db.prepare('INSERT INTO accounts (id, descriptor, display_name) VALUES (?, ?, ?)').run(
+        archivedId,
+        Wallets.singlesigLegacyAccount.toString(),
+        'Archived wallet',
+      )
+      service.recordAccountSnapshot(archivedId, '0', '2009-01-03T00:00:00.000Z')
+      service.recordAccountSnapshot(archivedId, '50', '2018-06-05T12:00:00.000Z')
+      db.prepare('UPDATE accounts SET deleted_at = ? WHERE id = ?').run('2019-01-01T12:00:00.000Z', archivedId)
 
-    const all = (await service.getData({ timeRange: 'all' })).unwrap()
-    expect(all.historicalData[0]?.timestamp).toBe('2018-06-05T00:00:00.000Z')
-    expect(all.historicalData[1]?.totalBalance).toBe('50')
-    expect(all.historicalData.find(({ timestamp }) => timestamp === '2019-01-01T23:59:59.999Z')?.totalBalance).toBe('0')
-    expect(all.historicalData.at(-1)?.totalBalance).toBe('100')
-    expect(all.historySyncingAccountIds).toEqual([])
+      const all = (await service.getData({ timeRange: 'all' })).unwrap()
+      expect(all.historicalData[0]?.timestamp).toBe('2018-06-05T00:00:00.000Z')
+      expect(all.historicalData[1]?.totalBalance).toBe('50')
+      expect(all.historicalData.find(({ timestamp }) => timestamp === '2019-01-01T23:59:59.999Z')?.totalBalance).toBe(
+        '0',
+      )
+      expect(all.historicalData.at(-1)?.totalBalance).toBe('100')
+      expect(all.historySyncingAccountIds).toEqual([])
 
-    const selected = (await service.getData({ timeRange: 'all', accountIds: [accountId] })).unwrap()
-    expect(selected.historicalData[0]?.timestamp).toBe('2020-01-02T00:00:00.000Z')
+      const selected = (await service.getData({ timeRange: 'all', accountIds: [accountId] })).unwrap()
+      expect(selected.historicalData[0]?.timestamp).toBe('2020-01-02T00:00:00.000Z')
 
-    db.prepare('UPDATE accounts SET deleted_at = ? WHERE id = ?').run('2021-01-01T12:00:00.000Z', accountId)
-    const archivedOnly = (await service.getData({ timeRange: 'all' })).unwrap()
-    expect(archivedOnly.historicalData[0]?.timestamp).toBe('2018-06-05T00:00:00.000Z')
-    expect(archivedOnly.historicalData.at(-1)?.totalBalance).toBe('0')
+      db.prepare('UPDATE accounts SET deleted_at = ? WHERE id = ?').run('2021-01-01T12:00:00.000Z', accountId)
+      const archivedOnly = (await service.getData({ timeRange: 'all' })).unwrap()
+      expect(archivedOnly.historicalData[0]?.timestamp).toBe('2018-06-05T00:00:00.000Z')
+      expect(archivedOnly.historicalData.at(-1)?.totalBalance).toBe('0')
+    })
   })
 
   it('returns the new snapshots when a backfill finishes while another data source is loading', async () => {
-    const { service, history, price } = harness
-    const pendingHistory = deferred<Result<TransactionEntry[], Error>>()
-    const pendingPrice = deferred<ReturnType<typeof Ok<{ value: number }>>>()
-    history.mockReturnValueOnce(pendingHistory.promise)
-    price.mockReturnValueOnce(pendingPrice.promise)
-    const resultPromise = service.getData({ customDateRange: customRange })
-    await vi.waitFor(() => expect(history).toHaveBeenCalledTimes(1))
-    pendingHistory.resolve(Ok([entry(100n, '2020-01-02T12:00:00.000Z')]))
-    await vi.waitFor(() => expect(harness.coverage()).toHaveLength(1))
-    pendingPrice.resolve(Ok({ value: 50_000 }))
-    const data = (await resultPromise).unwrap()
-    expect(data.historySyncingAccountIds).toEqual([])
-    expect(data.historySyncedAccountIds).toEqual([accountId])
-    expect(data.historicalData.map(({ totalBalance }) => totalBalance)).toEqual(['0', '0', '100', '100'])
+    await withTestSetup(async () => {
+      const { service, history, price } = harness
+      const pendingHistory = deferred<Result<TransactionEntry[], Error>>()
+      const pendingPrice = deferred<ReturnType<typeof Ok<{ value: Decimal; asOf: Date }>>>()
+      history.mockReturnValueOnce(pendingHistory.promise)
+      price.mockReturnValueOnce(new AsyncResult(pendingPrice.promise))
+      const resultPromise = service.getData({ customDateRange: customRange })
+      await vi.waitFor(() => {
+        expect(history).toHaveBeenCalledTimes(1)
+      })
+      pendingHistory.resolve(Ok([entry(100n, '2020-01-02T12:00:00.000Z')]))
+      await vi.waitFor(() => {
+        expect(harness.coverage()).toHaveLength(1)
+      })
+      pendingPrice.resolve(Ok({ value: new Decimal(50_000), asOf: now }))
+      const data = (await resultPromise).unwrap()
+      expect(data.historySyncingAccountIds).toEqual([])
+      expect(data.historySyncedAccountIds).toEqual([accountId])
+      expect(data.historicalData.map(({ totalBalance }) => totalBalance)).toEqual(['0', '0', '100', '100'])
+    })
   })
 
   it('reports loading until the requested full history has completed', async () => {
-    const pending = deferred<Result<TransactionEntry[], Error>>()
-    harness.history.mockReturnValueOnce(pending.promise)
-    const data = (await harness.service.getData({ customDateRange: customRange })).unwrap()
-    expect(data.historySyncingAccountIds).toEqual([accountId])
-    expect(data.historySyncedAccountIds).toEqual([])
-    expect(data.historyRefreshingAccountIds).toEqual([])
-    expect(data.historyFailedAccountIds).toEqual([])
-    pending.resolve(Ok([entry(100n, '2020-01-02T12:00:00.000Z')]))
-    await vi.waitFor(() => expect(harness.coverage()).toHaveLength(1))
+    await withTestSetup(async () => {
+      const pending = deferred<Result<TransactionEntry[], Error>>()
+      harness.history.mockReturnValueOnce(pending.promise)
+      const data = (await harness.service.getData({ customDateRange: customRange })).unwrap()
+      expect(data.historySyncingAccountIds).toEqual([accountId])
+      expect(data.historySyncedAccountIds).toEqual([])
+      expect(data.historyRefreshingAccountIds).toEqual([])
+      expect(data.historyFailedAccountIds).toEqual([])
+      pending.resolve(Ok([entry(100n, '2020-01-02T12:00:00.000Z')]))
+      await vi.waitFor(() => {
+        expect(harness.coverage()).toHaveLength(1)
+      })
+    })
   })
 
   it('keeps a certified history prefix available while a new block is fetched', async () => {
-    harness.sync()
-    harness.service.recordAccountSnapshot(accountId, '100', '2020-01-02T12:00:00.000Z')
-    harness.provider.getBlocksTip.mockResolvedValue(Ok(nextTip))
-    const pending = deferred<Result<TransactionEntry[], Error>>()
-    harness.history.mockReturnValueOnce(pending.promise)
-    const data = (await harness.service.getData({ timeRange: 'all' })).unwrap()
-    expect(data.historySyncingAccountIds).toEqual([accountId])
-    expect(data.historyRefreshingAccountIds).toEqual([accountId])
-    expect(data.historySyncedAccountIds).toEqual([])
-    expect(data.historyFailedAccountIds).toEqual([])
-    expect(data.historicalData.length).toBeGreaterThan(1)
-    pending.resolve(Ok([]))
-    await vi.waitFor(() =>
-      expect(harness.coverage()).toEqual([{ from_block_height: 0, to_block_height: nextTip.height }]),
-    )
+    await withTestSetup(async () => {
+      harness.sync()
+      harness.service.recordAccountSnapshot(accountId, '100', '2020-01-02T12:00:00.000Z')
+      harness.provider.getBlocksTip.mockResolvedValue(Ok(nextTip))
+      const pending = deferred<Result<TransactionEntry[], Error>>()
+      harness.history.mockReturnValueOnce(pending.promise)
+      const data = (await harness.service.getData({ timeRange: 'all' })).unwrap()
+      expect(data.historySyncingAccountIds).toEqual([accountId])
+      expect(data.historyRefreshingAccountIds).toEqual([accountId])
+      expect(data.historySyncedAccountIds).toEqual([])
+      expect(data.historyFailedAccountIds).toEqual([])
+      expect(data.historicalData.length).toBeGreaterThan(1)
+      pending.resolve(Ok([]))
+      await vi.waitFor(() => {
+        expect(harness.coverage()).toEqual([{ from_block_height: 0, to_block_height: nextTip.height }])
+      })
+    })
   })
 
   it.each(['missing start', 'gap before the tip', 'outdated certification'])(
     'does not call incomplete full history a background refresh: %s',
     async (scenario) => {
-      if (scenario === 'missing start') {
-        harness.sync(100)
-      } else if (scenario === 'gap before the tip') {
-        harness.sync(0, 100)
-        harness.sync(200)
-      } else {
-        harness.sync()
-        harness.db.prepare('UPDATE account_history_syncs SET sync_version = 4').run()
-      }
-      const status = await harness.service['getAccountHistoryStatus'](
-        [{ id: accountId, descriptor: account.toString(), network: 'mainnet' }],
-        new Date(0),
-        true,
-      )
-      expect(status.historySyncingAccountIds).toEqual([accountId])
-      expect(status.historyRefreshingAccountIds).toEqual([])
+      await withTestSetup(async () => {
+        if (scenario === 'missing start') {
+          harness.sync(100)
+        } else if (scenario === 'gap before the tip') {
+          harness.sync(0, 100)
+          harness.sync(200)
+        } else {
+          harness.sync()
+          harness.db.prepare('UPDATE account_history_syncs SET sync_version = 4').run()
+        }
+        const status = await harness.service['getAccountHistoryStatus'](
+          [{ id: accountId, descriptor: account.toString(), network: 'mainnet' }],
+          new Date(0),
+          true,
+        )
+        expect(status.historySyncingAccountIds).toEqual([accountId])
+        expect(status.historyRefreshingAccountIds).toEqual([])
+      })
     },
   )
 
   it.each([true, false])(
     'reports an unavailable tip and preserves only certified history (cached: %s)',
     async (cached) => {
-      if (cached) {
-        harness.sync()
-      }
-      harness.provider.getBlocksTip.mockResolvedValue(Err(new Error('Connection unavailable')))
-      const data = (await harness.service.getData({ customDateRange: customRange })).unwrap()
-      expect(data.historySyncingAccountIds).toEqual([accountId])
-      expect(data.historySyncedAccountIds).toEqual([])
-      expect(data.historyFailedAccountIds).toEqual([accountId])
-      expect(data.historyRefreshingAccountIds).toEqual(cached ? [accountId] : [])
-      await vi.waitFor(() => expect(harness.service['accountHistoryBackfillsInFlight'].size).toBe(0))
+      await withTestSetup(async () => {
+        if (cached) {
+          harness.sync()
+        }
+        harness.provider.getBlocksTip.mockResolvedValue(Err(new Error('Connection unavailable')))
+        const data = (await harness.service.getData({ customDateRange: customRange })).unwrap()
+        expect(data.historySyncingAccountIds).toEqual([accountId])
+        expect(data.historySyncedAccountIds).toEqual([])
+        expect(data.historyFailedAccountIds).toEqual([accountId])
+        expect(data.historyRefreshingAccountIds).toEqual(cached ? [accountId] : [])
+        await vi.waitFor(() => {
+          expect(harness.service['accountHistoryBackfillsInFlight'].size).toBe(0)
+        })
+      })
     },
   )
 
   it('does not fetch history or balances again when coverage is complete', async () => {
-    harness.sync()
-    expect(await harness.run()).toBe(100n)
-    expect(harness.history).not.toHaveBeenCalled()
-    expect(harness.provider.getConfirmedAccountBalances).not.toHaveBeenCalled()
-    expect(harness.provider.getBlocksTip).toHaveBeenCalledTimes(1)
+    await withTestSetup(async () => {
+      harness.sync()
+      await expect(harness.run()).resolves.toBe(100n)
+      expect(harness.history).not.toHaveBeenCalled()
+      expect(harness.provider.getConfirmedAccountBalances).not.toHaveBeenCalled()
+      expect(harness.provider.getBlocksTip).toHaveBeenCalledTimes(1)
+    })
   })
 
   it('still verifies the balance for archival with complete coverage', async () => {
-    harness.sync()
-    expect(
-      await harness.service['ensureAccountHistorySnapshots'](accountId, account, undefined, new Date(0), true),
-    ).toBe(100n)
-    expect(harness.provider.getConfirmedAccountBalances).toHaveBeenCalledTimes(1)
-    expect(harness.history).not.toHaveBeenCalled()
+    await withTestSetup(async () => {
+      harness.sync()
+      await expect(
+        harness.service['ensureAccountHistorySnapshots'](accountId, account, undefined, new Date(0), true),
+      ).resolves.toBe(100n)
+      expect(harness.provider.getConfirmedAccountBalances).toHaveBeenCalledTimes(1)
+      expect(harness.history).not.toHaveBeenCalled()
+    })
   })
 
   it('rechecks history certified by the old partial-response implementation', async () => {
-    harness.sync()
-    harness.db.prepare('UPDATE account_history_syncs SET sync_version = 4').run()
-    expect(await harness.run()).toBe(100n)
-    expect(harness.history).toHaveBeenCalledWith(account, 0)
-    expect(harness.db.prepare('SELECT sync_version FROM account_history_syncs').get()).toEqual({ sync_version: 5 })
+    await withTestSetup(async () => {
+      harness.sync()
+      harness.db.prepare('UPDATE account_history_syncs SET sync_version = 4').run()
+      await expect(harness.run()).resolves.toBe(100n)
+      expect(harness.history).toHaveBeenCalledWith(account, 0)
+      expect(harness.db.prepare('SELECT sync_version FROM account_history_syncs').get()).toEqual({ sync_version: 5 })
+    })
   })
 })
 
 describe('history scan boundaries', () => {
   it('reconciles snapshots that predate the estimated genesis timestamp', async () => {
-    harness.service.recordAccountSnapshot(accountId, '50', '2009-01-04T12:00:00.000Z')
-    harness.history.mockResolvedValue(Ok([entry(100n, '2009-01-05T12:00:00.000Z', 100)]))
-    expect(await harness.run()).toBe(100n)
-    expect(harness.rows().find(({ timestamp }) => timestamp === '2009-01-04T12:00:00.000Z')?.balance_sats).toBe('0')
+    await withTestSetup(async () => {
+      harness.service.recordAccountSnapshot(accountId, '50', '2009-01-04T12:00:00.000Z')
+      harness.history.mockResolvedValue(Ok([entry(100n, '2009-01-05T12:00:00.000Z', 100)]))
+      await expect(harness.run()).resolves.toBe(100n)
+      expect(harness.rows().find(({ timestamp }) => timestamp === '2009-01-04T12:00:00.000Z')?.balance_sats).toBe('0')
+    })
   })
 
   it('retains progress through multiple new blocks without rescanning old transactions', async () => {
-    const thirdTip = {
-      ...nextTip,
-      height: nextTip.height + 1,
-      hash: 'third-tip',
-      timestamp: new Date('2026-09-05T11:20:00Z'),
-    }
-    harness.provider.getBlocksTip
-      .mockResolvedValueOnce(Ok(tip))
-      .mockResolvedValueOnce(Ok(nextTip))
-      .mockResolvedValue(Ok(thirdTip))
-    harness.provider.getBlock.mockResolvedValueOnce(Ok(tip)).mockResolvedValueOnce(Ok(nextTip))
-    harness.provider.getConfirmedAccountBalances.mockResolvedValue(Ok(new IndexMap([[account, 130n]])))
-    harness.history
-      .mockResolvedValueOnce(Ok([entry(100n, '2020-01-02T12:00:00.000Z')]))
-      .mockResolvedValueOnce(Ok([entry(20n, nextTip.timestamp.toISOString(), nextTip.height)]))
-      .mockResolvedValueOnce(Ok([entry(10n, thirdTip.timestamp.toISOString(), thirdTip.height)]))
-    expect(await harness.run()).toBe(130n)
-    expect(harness.history.mock.calls.map(([, height]) => height)).toEqual([0, tip.height, nextTip.height])
-    expect(harness.rows().find(({ timestamp }) => timestamp === '2020-01-02T12:00:00.000Z')?.balance_sats).toBe('100')
-    expect(harness.rows().at(-1)?.balance_sats).toBe('130')
+    await withTestSetup(async () => {
+      const thirdTip = {
+        ...nextTip,
+        height: nextTip.height + 1,
+        hash: 'third-tip',
+        timestamp: new Date('2026-09-05T11:20:00Z'),
+      }
+      harness.provider.getBlocksTip
+        .mockResolvedValueOnce(Ok(tip))
+        .mockResolvedValueOnce(Ok(nextTip))
+        .mockResolvedValue(Ok(thirdTip))
+      harness.provider.getBlock.mockResolvedValueOnce(Ok(tip)).mockResolvedValueOnce(Ok(nextTip))
+      harness.provider.getConfirmedAccountBalances.mockResolvedValue(Ok(new IndexMap([[account, 130n]])))
+      harness.history
+        .mockResolvedValueOnce(Ok([entry(100n, '2020-01-02T12:00:00.000Z')]))
+        .mockResolvedValueOnce(Ok([entry(20n, nextTip.timestamp.toISOString(), nextTip.height)]))
+        .mockResolvedValueOnce(Ok([entry(10n, thirdTip.timestamp.toISOString(), thirdTip.height)]))
+      await expect(harness.run()).resolves.toBe(130n)
+      expect(harness.history.mock.calls.map(([, height]) => height)).toEqual([0, tip.height, nextTip.height])
+      expect(harness.rows().find(({ timestamp }) => timestamp === '2020-01-02T12:00:00.000Z')?.balance_sats).toBe('100')
+      expect(harness.rows().at(-1)?.balance_sats).toBe('130')
+    })
   })
 
   it('does not certify an unverified or incomplete tail after the chain advances', async () => {
-    harness.provider.getBlocksTip.mockResolvedValueOnce(Ok(tip)).mockResolvedValue(Ok(nextTip))
-    harness.history
-      .mockResolvedValueOnce(Ok([entry(100n, '2020-01-02T12:00:00.000Z')]))
-      .mockResolvedValueOnce(Err(new Error('Tail unavailable')))
-    expect(await harness.run()).toBeNull()
-    expect(harness.coverage()).toEqual([])
-    expect(harness.rows()).toEqual([])
+    await withTestSetup(async () => {
+      harness.provider.getBlocksTip.mockResolvedValueOnce(Ok(tip)).mockResolvedValue(Ok(nextTip))
+      harness.history
+        .mockResolvedValueOnce(Ok([entry(100n, '2020-01-02T12:00:00.000Z')]))
+        .mockResolvedValueOnce(Err(new Error('Tail unavailable')))
+      await expect(harness.run()).resolves.toBeNull()
+      expect(harness.coverage()).toEqual([])
+      expect(harness.rows()).toEqual([])
+    })
   })
 
   it('keeps the long scan and fetches only the new tail when the chain advances', async () => {
-    const tail = entry(20n, nextTip.timestamp.toISOString(), nextTip.height)
-    harness.provider.getBlocksTip.mockResolvedValueOnce(Ok(tip)).mockResolvedValue(Ok(nextTip))
-    harness.provider.getConfirmedAccountBalances.mockResolvedValue(Ok(new IndexMap([[account, 120n]])))
-    // The initial scan may already contain the new block; it must not be counted twice.
-    harness.history
-      .mockResolvedValueOnce(Ok([entry(100n, '2020-01-02T12:00:00.000Z'), tail]))
-      .mockResolvedValueOnce(Ok([tail]))
-    expect(await harness.run()).toBe(120n)
-    expect(harness.history.mock.calls.map(([, height]) => height)).toEqual([0, tip.height])
-    expect(harness.provider.getBlock).toHaveBeenCalledWith(tip.height)
-    expect(harness.rows().find(({ timestamp }) => timestamp === '2020-01-02T12:00:00.000Z')?.balance_sats).toBe('100')
-    expect(harness.rows().at(-1)?.balance_sats).toBe('120')
-    expect(harness.coverage()).toEqual([{ from_block_height: 0, to_block_height: nextTip.height }])
+    await withTestSetup(async () => {
+      const tail = entry(20n, nextTip.timestamp.toISOString(), nextTip.height)
+      harness.provider.getBlocksTip.mockResolvedValueOnce(Ok(tip)).mockResolvedValue(Ok(nextTip))
+      harness.provider.getConfirmedAccountBalances.mockResolvedValue(Ok(new IndexMap([[account, 120n]])))
+      // The initial scan may already contain the new block; it must not be counted twice.
+      harness.history
+        .mockResolvedValueOnce(Ok([entry(100n, '2020-01-02T12:00:00.000Z'), tail]))
+        .mockResolvedValueOnce(Ok([tail]))
+      await expect(harness.run()).resolves.toBe(120n)
+      expect(harness.history.mock.calls.map(([, height]) => height)).toEqual([0, tip.height])
+      expect(harness.provider.getBlock).toHaveBeenCalledWith(tip.height)
+      expect(harness.rows().find(({ timestamp }) => timestamp === '2020-01-02T12:00:00.000Z')?.balance_sats).toBe('100')
+      expect(harness.rows().at(-1)?.balance_sats).toBe('120')
+      expect(harness.coverage()).toEqual([{ from_block_height: 0, to_block_height: nextTip.height }])
+    })
   })
 
   it('preserves archived history if a new block arrives after the cached-range check', async () => {
-    harness.sync()
-    harness.service.recordAccountSnapshot(accountId, '100', '2020-01-02T12:00:00.000Z')
-    harness.provider.getBlocksTip.mockResolvedValueOnce(Ok(tip)).mockResolvedValue(Ok(nextTip))
-    harness.provider.getConfirmedAccountBalances.mockResolvedValue(Ok(new IndexMap([[account, 120n]])))
-    harness.history.mockResolvedValue(Ok([entry(20n, nextTip.timestamp.toISOString(), nextTip.height)]))
-    expect((await harness.service.archiveAccount(accountId)).isOk()).toBe(true)
-    expect(harness.history.mock.calls.map(([, height]) => height)).toEqual([tip.height])
-    expect(harness.rows()[0]?.balance_sats).toBe('100')
-    expect(harness.rows().at(-1)?.balance_sats).toBe('120')
-    expect(harness.coverage()).toEqual([{ from_block_height: 0, to_block_height: nextTip.height }])
+    await withTestSetup(async () => {
+      harness.sync()
+      harness.service.recordAccountSnapshot(accountId, '100', '2020-01-02T12:00:00.000Z')
+      harness.provider.getBlocksTip.mockResolvedValueOnce(Ok(tip)).mockResolvedValue(Ok(nextTip))
+      harness.provider.getConfirmedAccountBalances.mockResolvedValue(Ok(new IndexMap([[account, 120n]])))
+      harness.history.mockResolvedValue(Ok([entry(20n, nextTip.timestamp.toISOString(), nextTip.height)]))
+      expect((await harness.service.archiveAccount(accountId)).isOk()).toBe(true)
+      expect(harness.history.mock.calls.map(([, height]) => height)).toEqual([tip.height])
+      expect(harness.rows()[0]?.balance_sats).toBe('100')
+      expect(harness.rows().at(-1)?.balance_sats).toBe('120')
+      expect(harness.coverage()).toEqual([{ from_block_height: 0, to_block_height: nextTip.height }])
+    })
   })
 
   it.each(['same-height reorganization', 'deeper reorganization', 'height rollback'])(
     'does not certify history after a %s',
     async (scenario) => {
-      const changedTip =
-        scenario === 'same-height reorganization'
-          ? { ...tip, hash: 'reorganized' }
-          : scenario === 'height rollback'
-            ? { ...tip, height: tip.height - 1 }
-            : nextTip
-      harness.provider.getBlocksTip.mockResolvedValueOnce(Ok(tip)).mockResolvedValue(Ok(changedTip))
-      harness.provider.getBlock.mockResolvedValue(Ok({ ...tip, hash: 'reorganized' }))
-      expect(await harness.run()).toBeNull()
-      expect(harness.coverage()).toEqual([])
-      expect(harness.rows()).toEqual([])
+      await withTestSetup(async () => {
+        const changedTip =
+          scenario === 'same-height reorganization'
+            ? { ...tip, hash: 'reorganized' }
+            : scenario === 'height rollback'
+              ? { ...tip, height: tip.height - 1 }
+              : nextTip
+        harness.provider.getBlocksTip.mockResolvedValueOnce(Ok(tip)).mockResolvedValue(Ok(changedTip))
+        harness.provider.getBlock.mockResolvedValue(Ok({ ...tip, hash: 'reorganized' }))
+        await expect(harness.run()).resolves.toBeNull()
+        expect(harness.coverage()).toEqual([])
+        expect(harness.rows()).toEqual([])
+      })
     },
   )
 
   it('does not save snapshots or completion after a partial history failure', async () => {
-    harness.history.mockResolvedValue(Err(new Error('Electrum unavailable')))
-    expect(await harness.run()).toBeNull()
-    expect(harness.coverage()).toEqual([])
-    expect(harness.rows()).toEqual([])
+    await withTestSetup(async () => {
+      harness.history.mockResolvedValue(Err(new Error('Electrum unavailable')))
+      await expect(harness.run()).resolves.toBeNull()
+      expect(harness.coverage()).toEqual([])
+      expect(harness.rows()).toEqual([])
+    })
   })
 
   it('does not let an invalidated background scan overwrite account history', async () => {
-    const pending = deferred<Result<TransactionEntry[], Error>>()
-    harness.history.mockReturnValueOnce(pending.promise)
-    const result = harness.run()
-    await vi.waitFor(() => expect(harness.history).toHaveBeenCalledTimes(1))
-    harness.service['invalidateAccountHistoryBackfill'](accountId)
-    pending.resolve(Ok([entry(100n, '2020-01-02T12:00:00.000Z')]))
-    expect(await result).toBeNull()
-    expect(harness.coverage()).toEqual([])
-    expect(harness.rows()).toEqual([])
+    await withTestSetup(async () => {
+      const pending = deferred<Result<TransactionEntry[], Error>>()
+      harness.history.mockReturnValueOnce(pending.promise)
+      const result = harness.run()
+      await vi.waitFor(() => {
+        expect(harness.history).toHaveBeenCalledTimes(1)
+      })
+      harness.service['invalidateAccountHistoryBackfill'](accountId)
+      pending.resolve(Ok([entry(100n, '2020-01-02T12:00:00.000Z')]))
+      await expect(result).resolves.toBeNull()
+      expect(harness.coverage()).toEqual([])
+      expect(harness.rows()).toEqual([])
+    })
   })
 })
 
 describe('history balance reuse', () => {
   it('avoids a second balance/discovery sweep during a stable-tip page request', async () => {
-    await harness.service.getData({ timeRange: 'all' })
-    await vi.waitFor(() => expect(harness.service['accountHistoryBackfillsInFlight'].size).toBe(0))
-    expect(harness.provider.getConfirmedAccountBalances).toHaveBeenCalledTimes(1)
-    expect(harness.history).toHaveBeenCalledTimes(1)
-    expect(harness.coverage()).toEqual([{ from_block_height: 0, to_block_height: tip.height }])
+    await withTestSetup(async () => {
+      await harness.service.getData({ timeRange: 'all' })
+      await vi.waitFor(() => {
+        expect(harness.service['accountHistoryBackfillsInFlight'].size).toBe(0)
+      })
+      expect(harness.provider.getConfirmedAccountBalances).toHaveBeenCalledTimes(1)
+      expect(harness.history).toHaveBeenCalledTimes(1)
+      expect(harness.coverage()).toEqual([{ from_block_height: 0, to_block_height: tip.height }])
+    })
   })
 
   it.each([0n, 100n])('reuses an anchored balance of %s only after verifying the tip', async (balance) => {
-    expect(await harness.run(balance, tip)).toBe(balance)
-    expect(harness.provider.getConfirmedAccountBalances).not.toHaveBeenCalled()
-    expect(harness.provider.getBlocksTip).toHaveBeenCalledTimes(2)
-    expect(harness.rows().at(-1)?.balance_sats).toBe(balance.toString())
+    await withTestSetup(async () => {
+      await expect(harness.run(balance, tip)).resolves.toBe(balance)
+      expect(harness.provider.getConfirmedAccountBalances).not.toHaveBeenCalled()
+      expect(harness.provider.getBlocksTip).toHaveBeenCalledTimes(2)
+      expect(harness.rows().at(-1)?.balance_sats).toBe(balance.toString())
+    })
   })
 
   it.each([undefined, nextTip, { ...tip, hash: 'different-chain' }])(
     'fetches a fresh balance without a matching anchor (%j)',
     async (balanceTip) => {
-      expect(await harness.run(999n, balanceTip)).toBe(100n)
-      expect(harness.provider.getConfirmedAccountBalances).toHaveBeenCalledTimes(1)
+      await withTestSetup(async () => {
+        await expect(harness.run(999n, balanceTip)).resolves.toBe(100n)
+        expect(harness.provider.getConfirmedAccountBalances).toHaveBeenCalledTimes(1)
+      })
     },
   )
 
   it('does not treat an unavailable anchor or a cached balance as reusable', async () => {
-    harness.provider.getBlocksTip.mockResolvedValueOnce(Err(new Error('Tip unavailable')))
-    harness.provider.getConfirmedAccountBalances.mockResolvedValueOnce(Err(new Error('Balance unavailable')))
-    harness.service.recordAccountSnapshot(accountId, '999', '2020-01-01T00:00:00.000Z')
-    await harness.service.getData({ timeRange: 'all' })
-    await vi.waitFor(() => expect(harness.service['accountHistoryBackfillsInFlight'].size).toBe(0))
-    expect(harness.provider.getConfirmedAccountBalances).toHaveBeenCalledTimes(2)
-    expect(harness.rows().at(-1)?.balance_sats).toBe('100')
+    await withTestSetup(async () => {
+      harness.provider.getBlocksTip.mockResolvedValueOnce(Err(new Error('Tip unavailable')))
+      harness.provider.getConfirmedAccountBalances.mockResolvedValueOnce(Err(new Error('Balance unavailable')))
+      harness.service.recordAccountSnapshot(accountId, '999', '2020-01-01T00:00:00.000Z')
+      await harness.service.getData({ timeRange: 'all' })
+      await vi.waitFor(() => {
+        expect(harness.service['accountHistoryBackfillsInFlight'].size).toBe(0)
+      })
+      expect(harness.provider.getConfirmedAccountBalances).toHaveBeenCalledTimes(2)
+      expect(harness.rows().at(-1)?.balance_sats).toBe('100')
+    })
   })
 
   it('discards the reused balance and fetches a new balance and tail when the tip advances', async () => {
-    harness.provider.getBlocksTip.mockResolvedValueOnce(Ok(tip)).mockResolvedValue(Ok(nextTip))
-    harness.provider.getConfirmedAccountBalances.mockResolvedValue(Ok(new IndexMap([[account, 120n]])))
-    harness.history
-      .mockResolvedValueOnce(Ok([entry(100n, '2020-01-02T12:00:00.000Z')]))
-      .mockResolvedValueOnce(Ok([entry(20n, nextTip.timestamp.toISOString(), nextTip.height)]))
-    expect(await harness.run(100n, tip)).toBe(120n)
-    expect(harness.provider.getConfirmedAccountBalances).toHaveBeenCalledTimes(1)
-    expect(harness.provider.getBlock).toHaveBeenCalledWith(tip.height)
-    expect(harness.history.mock.calls.map(([, height]) => height)).toEqual([0, tip.height])
-    expect(harness.rows().find(({ timestamp }) => timestamp === '2020-01-02T12:00:00.000Z')?.balance_sats).toBe('100')
+    await withTestSetup(async () => {
+      harness.provider.getBlocksTip.mockResolvedValueOnce(Ok(tip)).mockResolvedValue(Ok(nextTip))
+      harness.provider.getConfirmedAccountBalances.mockResolvedValue(Ok(new IndexMap([[account, 120n]])))
+      harness.history
+        .mockResolvedValueOnce(Ok([entry(100n, '2020-01-02T12:00:00.000Z')]))
+        .mockResolvedValueOnce(Ok([entry(20n, nextTip.timestamp.toISOString(), nextTip.height)]))
+      await expect(harness.run(100n, tip)).resolves.toBe(120n)
+      expect(harness.provider.getConfirmedAccountBalances).toHaveBeenCalledTimes(1)
+      expect(harness.provider.getBlock).toHaveBeenCalledWith(tip.height)
+      expect(harness.history.mock.calls.map(([, height]) => height)).toEqual([0, tip.height])
+      expect(harness.rows().find(({ timestamp }) => timestamp === '2020-01-02T12:00:00.000Z')?.balance_sats).toBe('100')
+    })
   })
 
   it.each(['reorganization', 'tip failure'])('does not save an anchored balance after a %s', async (failure) => {
-    harness.provider.getBlocksTip
-      .mockResolvedValueOnce(Ok(tip))
-      .mockResolvedValue(
-        failure === 'reorganization' ? Ok({ ...tip, hash: 'reorganized' }) : Err(new Error('Tip unavailable')),
-      )
-    expect(await harness.run(100n, tip)).toBeNull()
-    expect(harness.rows()).toEqual([])
-    expect(harness.coverage()).toEqual([])
+    await withTestSetup(async () => {
+      harness.provider.getBlocksTip
+        .mockResolvedValueOnce(Ok(tip))
+        .mockResolvedValue(
+          failure === 'reorganization' ? Ok({ ...tip, hash: 'reorganized' }) : Err(new Error('Tip unavailable')),
+        )
+      await expect(harness.run(100n, tip)).resolves.toBeNull()
+      expect(harness.rows()).toEqual([])
+      expect(harness.coverage()).toEqual([])
+    })
   })
 })
 
 describe('compacted history coverage', () => {
-  it('combines overlaps and adjacent ranges on both sides without closing real gaps', () => {
-    harness.sync(0, 99)
-    harness.sync(200, 299)
-    harness.sync(400, 499)
-    harness.sync(100, 199)
-    harness.sync(50, 250)
-    expect(harness.coverage()).toEqual([
-      { from_block_height: 0, to_block_height: 299 },
-      { from_block_height: 400, to_block_height: 499 },
-    ])
-    expect(
-      harness.service['getMissingAccountHistorySyncRanges'](accountId, { fromBlockHeight: 0, toBlockHeight: 499 }),
-    ).toEqual([{ fromBlockHeight: 300, toBlockHeight: 399 }])
-    harness.sync(300, 399)
-    expect(harness.coverage()).toEqual([{ from_block_height: 0, to_block_height: 499 }])
+  it('combines overlaps and adjacent ranges on both sides without closing real gaps', async () => {
+    await withTestSetup(async () => {
+      harness.sync(0, 99)
+      harness.sync(200, 299)
+      harness.sync(400, 499)
+      harness.sync(100, 199)
+      harness.sync(50, 250)
+      expect(harness.coverage()).toEqual([
+        { from_block_height: 0, to_block_height: 299 },
+        { from_block_height: 400, to_block_height: 499 },
+      ])
+      expect(
+        harness.service['getMissingAccountHistorySyncRanges'](accountId, { fromBlockHeight: 0, toBlockHeight: 499 }),
+      ).toEqual([{ fromBlockHeight: 300, toBlockHeight: 399 }])
+      harness.sync(300, 399)
+      expect(harness.coverage()).toEqual([{ from_block_height: 0, to_block_height: 499 }])
+    })
   })
 
-  it('compacts previously accumulated adjacent records when the next tail is recorded', () => {
-    const insert = harness.db.prepare(`INSERT INTO account_history_syncs
+  it('compacts previously accumulated adjacent records when the next tail is recorded', async () => {
+    await withTestSetup(async () => {
+      const insert = harness.db.prepare(`INSERT INTO account_history_syncs
       (account_id, from_block_height, to_block_height, range_start, range_end, sync_version)
       VALUES (?, ?, ?, ?, ?, 5)`)
-    for (let height = 0; height < 100; height++) {
-      insert.run(accountId, height, height, now.toISOString(), now.toISOString())
-    }
-    harness.sync(100, 100)
-    expect(harness.coverage()).toEqual([{ from_block_height: 0, to_block_height: 100 }])
-    for (let height = 101; height < 200; height++) {
-      harness.sync(height, height)
-    }
-    expect(harness.coverage()).toEqual([{ from_block_height: 0, to_block_height: 199 }])
+      for (let height = 0; height < 100; height++) {
+        insert.run(accountId, height, height, now.toISOString(), now.toISOString())
+      }
+      harness.sync(100, 100)
+      expect(harness.coverage()).toEqual([{ from_block_height: 0, to_block_height: 100 }])
+      for (let height = 101; height < 200; height++) {
+        harness.sync(height, height)
+      }
+      expect(harness.coverage()).toEqual([{ from_block_height: 0, to_block_height: 199 }])
+    })
   })
 
-  it('keeps old certification versions and other accounts separate', () => {
-    harness.sync(0, 99)
-    harness.db.prepare('UPDATE account_history_syncs SET sync_version = 4').run()
-    harness.db
-      .prepare('INSERT INTO accounts (id, descriptor, display_name) VALUES (?, ?, ?)')
-      .run('other', Wallets.singlesigLegacyAccount.toString(), 'Other wallet')
-    harness.service['recordAccountHistorySync']('other', { fromBlockHeight: 0, toBlockHeight: 99 }, tip)
-    harness.sync(100, 199)
-    expect(
+  it('keeps old certification versions and other accounts separate', async () => {
+    await withTestSetup(async () => {
+      harness.sync(0, 99)
+      harness.db.prepare('UPDATE account_history_syncs SET sync_version = 4').run()
       harness.db
-        .prepare(
-          'SELECT account_id, from_block_height, to_block_height, sync_version FROM account_history_syncs ORDER BY account_id, from_block_height',
-        )
-        .all(),
-    ).toEqual([
-      { account_id: 'other', from_block_height: 0, to_block_height: 99, sync_version: 5 },
-      { account_id: accountId, from_block_height: 0, to_block_height: 99, sync_version: 4 },
-      { account_id: accountId, from_block_height: 100, to_block_height: 199, sync_version: 5 },
-    ])
-    expect(
-      harness.service['getMissingAccountHistorySyncRanges'](accountId, { fromBlockHeight: 0, toBlockHeight: 199 }),
-    ).toEqual([{ fromBlockHeight: 0, toBlockHeight: 99 }])
+        .prepare('INSERT INTO accounts (id, descriptor, display_name) VALUES (?, ?, ?)')
+        .run('other', Wallets.singlesigLegacyAccount.toString(), 'Other wallet')
+      harness.service['recordAccountHistorySync']('other', { fromBlockHeight: 0, toBlockHeight: 99 }, tip)
+      harness.sync(100, 199)
+      expect(
+        harness.db
+          .prepare(
+            'SELECT account_id, from_block_height, to_block_height, sync_version FROM account_history_syncs ORDER BY account_id, from_block_height',
+          )
+          .all(),
+      ).toEqual([
+        { account_id: 'other', from_block_height: 0, to_block_height: 99, sync_version: 5 },
+        { account_id: accountId, from_block_height: 0, to_block_height: 99, sync_version: 4 },
+        { account_id: accountId, from_block_height: 100, to_block_height: 199, sync_version: 5 },
+      ])
+      expect(
+        harness.service['getMissingAccountHistorySyncRanges'](accountId, { fromBlockHeight: 0, toBlockHeight: 199 }),
+      ).toEqual([{ fromBlockHeight: 0, toBlockHeight: 99 }])
+    })
   })
 
-  it('rolls back the deletion if the replacement record cannot be written', () => {
-    harness.sync(0, 99)
-    harness.db.exec(`CREATE TEMP TRIGGER fail_sync BEFORE INSERT ON account_history_syncs
+  it('rolls back the deletion if the replacement record cannot be written', async () => {
+    await withTestSetup(async () => {
+      harness.sync(0, 99)
+      harness.db.exec(`CREATE TEMP TRIGGER fail_sync BEFORE INSERT ON account_history_syncs
       BEGIN SELECT RAISE(ABORT, 'Synthetic write failure'); END`)
-    expect(() => harness.sync(100, 199)).toThrow('Synthetic write failure')
-    expect(harness.coverage()).toEqual([{ from_block_height: 0, to_block_height: 99 }])
+      expect(() => {
+        harness.sync(100, 199)
+      }).toThrow('Synthetic write failure')
+      expect(harness.coverage()).toEqual([{ from_block_height: 0, to_block_height: 99 }])
+    })
   })
 })
 
 describe('history retry coordination', () => {
   it('reports persistent failures without stopping automatic retries, then clears the error on success', async () => {
-    const { service, history } = harness
-    history.mockResolvedValue(Err(new Error('Synthetic address failure')))
-    for (let attempt = 1; attempt <= 12; attempt++) {
+    await withTestSetup(async () => {
+      const { service, history } = harness
+      history.mockResolvedValue(Err(new Error('Synthetic address failure')))
+      for (let attempt = 1; attempt <= 12; attempt++) {
+        service['queueAccountHistoryBackfill'](accountId, account, 100n, new Date(0), true)
+        await vi.waitFor(() => {
+          expect(service['accountHistoryBackfillsInFlight'].has(accountId)).toBe(false)
+        })
+        const data = (await service.getData({ customDateRange: customRange })).unwrap()
+        expect(data.historyFailedAccountIds).toEqual([accountId])
+        expect(data.historySyncingAccountIds).toEqual([accountId])
+        expect(data.historyRefreshingAccountIds).toEqual([])
+        expect(history).toHaveBeenCalledTimes(attempt)
+        expect(harness.coverage()).toEqual([])
+        const cooldown = service['accountHistoryBackfillCooldownUntil'].get(accountId)
+        assert.exists(cooldown, 'Expected a retry cooldown after a failed scan')
+        vi.setSystemTime(cooldown + 1)
+      }
+      history.mockResolvedValue(Ok([entry(100n, '2020-01-02T12:00:00.000Z')]))
       service['queueAccountHistoryBackfill'](accountId, account, 100n, new Date(0), true)
-      await vi.waitFor(() => expect(service['accountHistoryBackfillsInFlight'].has(accountId)).toBe(false))
-      const data = (await service.getData({ customDateRange: customRange })).unwrap()
-      expect(data.historyFailedAccountIds).toEqual([accountId])
-      expect(data.historySyncingAccountIds).toEqual([accountId])
-      expect(data.historyRefreshingAccountIds).toEqual([])
-      expect(history).toHaveBeenCalledTimes(attempt)
-      expect(harness.coverage()).toEqual([])
-      vi.setSystemTime(service['accountHistoryBackfillCooldownUntil'].get(accountId)! + 1)
-    }
-    history.mockResolvedValue(Ok([entry(100n, '2020-01-02T12:00:00.000Z')]))
-    service['queueAccountHistoryBackfill'](accountId, account, 100n, new Date(0), true)
-    await vi.waitFor(() => expect(service['accountHistoryBackfillsInFlight'].has(accountId)).toBe(false))
-    const recovered = (await service.getData({ customDateRange: customRange })).unwrap()
-    expect(recovered.historyFailedAccountIds).toEqual([])
-    expect(recovered.historySyncingAccountIds).toEqual([])
-    expect(recovered.historySyncedAccountIds).toEqual([accountId])
-    expect(history).toHaveBeenCalledTimes(13)
+      await vi.waitFor(() => {
+        expect(service['accountHistoryBackfillsInFlight'].has(accountId)).toBe(false)
+      })
+      const recovered = (await service.getData({ customDateRange: customRange })).unwrap()
+      expect(recovered.historyFailedAccountIds).toEqual([])
+      expect(recovered.historySyncingAccountIds).toEqual([])
+      expect(recovered.historySyncedAccountIds).toEqual([accountId])
+      expect(history).toHaveBeenCalledTimes(13)
+    })
   })
 
   it('does not clear a failed wider scan cooldown when a narrower range is complete', async () => {
-    const { service, history } = harness
-    harness.sync(tip.height - 60_000)
-    history.mockResolvedValueOnce(Err(new Error('Electrum temporarily unavailable')))
-    const request = (): void => service['queueAccountHistoryBackfill'](accountId, account, 100n, new Date(0), true)
-    request()
-    await vi.waitFor(() => expect(service['accountHistoryBackfillCooldownUntil'].has(accountId)).toBe(true))
-    const cooldown = service['accountHistoryBackfillCooldownUntil'].get(accountId)!
-    const status = await service['getAccountHistoryStatus'](
-      [{ id: accountId, descriptor: account.toString(), network: 'mainnet' }],
-      new Date('2025-09-05'),
-      false,
-    )
-    expect(status.historySyncedAccountIds).toEqual([accountId])
-    expect(status.historyFailedAccountIds).toEqual([])
-    expect(service['accountHistoryBackfillCooldownUntil'].get(accountId)).toBe(cooldown)
-    expect(service['accountHistoryBackfillFailureCounts'].get(accountId)).toBe(1)
-    request()
-    expect(history).toHaveBeenCalledTimes(1)
-    vi.setSystemTime(cooldown + 1)
-    request()
-    await vi.waitFor(() => expect(history).toHaveBeenCalledTimes(2))
-    await vi.waitFor(() => expect(service['accountHistoryBackfillsInFlight'].has(accountId)).toBe(false))
-    expect(service['accountHistoryBackfillFailureCounts'].has(accountId)).toBe(false)
+    await withTestSetup(async () => {
+      const { service, history } = harness
+      harness.sync(tip.height - 60_000)
+      history.mockResolvedValueOnce(Err(new Error('Electrum temporarily unavailable')))
+      const request = (): void => {
+        service['queueAccountHistoryBackfill'](accountId, account, 100n, new Date(0), true)
+      }
+      request()
+      await vi.waitFor(() => {
+        expect(service['accountHistoryBackfillCooldownUntil'].has(accountId)).toBe(true)
+      })
+      const cooldown = service['accountHistoryBackfillCooldownUntil'].get(accountId)
+      assert.exists(cooldown, 'Expected a retry cooldown after a failed scan')
+      const status = await service['getAccountHistoryStatus'](
+        [{ id: accountId, descriptor: account.toString(), network: 'mainnet' }],
+        new Date('2025-09-05'),
+        false,
+      )
+      expect(status.historySyncedAccountIds).toEqual([accountId])
+      expect(status.historyFailedAccountIds).toEqual([])
+      expect(service['accountHistoryBackfillCooldownUntil'].get(accountId)).toBe(cooldown)
+      expect(service['accountHistoryBackfillFailureCounts'].get(accountId)).toBe(1)
+      request()
+      expect(history).toHaveBeenCalledTimes(1)
+      vi.setSystemTime(cooldown + 1)
+      request()
+      await vi.waitFor(() => {
+        expect(history).toHaveBeenCalledTimes(2)
+      })
+      await vi.waitFor(() => {
+        expect(service['accountHistoryBackfillsInFlight'].has(accountId)).toBe(false)
+      })
+      expect(service['accountHistoryBackfillFailureCounts'].has(accountId)).toBe(false)
+    })
   })
 })

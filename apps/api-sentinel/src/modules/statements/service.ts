@@ -1,12 +1,14 @@
 import { Account } from '@hoseki/packages/bitcoin/account'
 import type { ElectrumProvider } from '@hoseki/packages/bitcoin/onchain/electrum_provider'
 import type { TransactionEntry } from '@hoseki/packages/bitcoin/onchain/types'
-import { Err, Ok, asyncFn } from '@patina/core'
-import type { Result } from '@patina/core'
+import { parseUnknown } from '@hoseki/packages/result'
+import { Err, Ok, asyncFn } from '@hoseki/packages/result'
+import type { Result } from '@hoseki/packages/result'
 import type Database from 'better-sqlite3'
 import Decimal from 'decimal.js'
 import { nanoid } from 'nanoid'
 import type { Logger } from 'pino'
+import { z } from 'zod'
 import type { ExchangeService } from '../exchange/service'
 import type { DailyRates } from '../price/daily_rates'
 import type { DailyRatesService } from '../price/daily_rates'
@@ -14,6 +16,10 @@ import type { AggregatedTransaction } from './mapper'
 import { fetchTransactionEntries } from './tx_fetcher'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
+
+export interface StatementTransactions {
+  [accountId: string]: AggregatedTransaction[]
+}
 
 export interface StatementDto {
   id: string
@@ -31,7 +37,7 @@ export interface StatementDto {
 
 export interface StatementRow {
   id: string
-  status: string
+  status: StatementDto['status']
   timezone: string
   opening_date: string
   closing_date: string
@@ -61,18 +67,27 @@ export interface GenerateStatementInput {
   address?: string | null
 }
 
-type SerializedAggregatedTransaction = Omit<AggregatedTransaction, 'balanceChange' | 'transactedAt'> & {
-  balanceChange: string
-  transactedAt: string
-}
+const SerializedAggregatedTransactionSchema = z
+  .object({
+    address: z.string(),
+    hash: z.string(),
+    balanceChange: z.string(),
+    block: z.number().nullable(),
+    transactedAt: z.string(),
+    confirmed: z.boolean(),
+    accountName: z.string(),
+  })
+  .passthrough()
+type SerializedAggregatedTransaction = z.infer<typeof SerializedAggregatedTransactionSchema>
 
-interface SerializedDailyRate {
-  timestamp: string
-  open: string
-  high: string
-  low: string
-  close: string
-}
+const SerializedDailyRateSchema = z.object({
+  timestamp: z.string(),
+  open: z.string(),
+  high: z.string(),
+  low: z.string(),
+  close: z.string(),
+})
+type SerializedDailyRate = z.infer<typeof SerializedDailyRateSchema>
 
 const MAX_STATEMENT_RANGE_YEARS = 2
 const MAX_STATEMENT_RANGE_DAYS = MAX_STATEMENT_RANGE_YEARS * 366
@@ -148,10 +163,11 @@ export class StatementService {
   }
 
   /** Mark a statement as completed with transaction data. */
-  public complete(id: string, transactionMap: Record<string, AggregatedTransaction[]>, dailyRates: DailyRates): void {
+  public complete(id: string, transactionMap: StatementTransactions, dailyRates: DailyRates): void {
     // Serialize bigint values in transactionMap to strings for JSON storage
     const serializedMap: Record<string, SerializedAggregatedTransaction[]> = {}
     for (const [key, txs] of Object.entries(transactionMap)) {
+      // oxlint-disable-next-line oxc/no-map-spread -- Preserve caller-owned transactions while converting values for storage.
       serializedMap[key] = txs.map((tx) => ({
         ...tx,
         balanceChange: tx.balanceChange.toString(),
@@ -186,7 +202,7 @@ export class StatementService {
 
   /** Find a statement by ID and return its DTO. */
   public findById(id: string): StatementDto | null {
-    const row = this.db.prepare('SELECT * FROM statements WHERE id = ?').get(id) as StatementRow | undefined
+    const row = this.db.prepare<unknown[], StatementRow>('SELECT * FROM statements WHERE id = ?').get(id)
     if (!row) {
       return null
     }
@@ -196,9 +212,10 @@ export class StatementService {
   /** Load a completed statement with deserialized transaction data. */
   public loadCompleted(
     id: string,
-  ): { row: StatementRow; transactionMap: Record<string, AggregatedTransaction[]>; dailyRates: DailyRates } | null {
-    const row = this.db.prepare('SELECT * FROM statements WHERE id = ? AND status = ?').get(id, 'completed') as
-      CompletedStatementRow | undefined
+  ): { row: StatementRow; transactionMap: StatementTransactions; dailyRates: DailyRates } | null {
+    const row = this.db
+      .prepare<unknown[], CompletedStatementRow>('SELECT * FROM statements WHERE id = ? AND status = ?')
+      .get(id, 'completed')
     if (!row) {
       return null
     }
@@ -212,7 +229,7 @@ export class StatementService {
 
   /** List all statements as DTOs. */
   public list(): StatementDto[] {
-    const rows = this.db.prepare('SELECT * FROM statements ORDER BY created_at DESC').all() as StatementRow[]
+    const rows = this.db.prepare<unknown[], StatementRow>('SELECT * FROM statements ORDER BY created_at DESC').all()
     return rows.map((row) => this.rowToDto(row))
   }
 
@@ -220,7 +237,7 @@ export class StatementService {
   public generateStatementData = asyncFn(
     async (
       input: GenerateStatementInput,
-    ): Promise<Result<{ transactionMap: Record<string, AggregatedTransaction[]>; dailyRates: DailyRates }, Error>> => {
+    ): Promise<Result<{ transactionMap: StatementTransactions; dailyRates: DailyRates }, Error>> => {
       const validation = validateStatementInput(input)
       if (validation.isErr()) {
         return Err(validation.unwrapErr())
@@ -236,7 +253,7 @@ export class StatementService {
         'Generating statement data',
       )
 
-      const transactionMap: Record<string, AggregatedTransaction[]> = {}
+      const transactionMap: StatementTransactions = {}
 
       // 1. Look up on-chain account descriptors
       const claimIds = [...new Set(input.claimIds)]
@@ -277,7 +294,7 @@ export class StatementService {
           const activeAccount = this.db
             .prepare('SELECT 1 AS one FROM accounts WHERE id = ? AND deleted_at IS NULL')
             .get(row.id)
-          if (!activeAccount) {
+          if (activeAccount === undefined) {
             return Err(new Error(`Account "${row.display_name}" was archived while generating the statement`))
           }
 
@@ -476,31 +493,42 @@ export class StatementService {
     }
     const placeholders = claimIds.map(() => '?').join(', ')
     return this.db
-      .prepare(
+      .prepare<
+        unknown[],
+        {
+          id: string
+          descriptor: string
+          display_name: string
+          network: string
+          status: string
+        }
+      >(
         `SELECT id, descriptor, display_name, network, status
          FROM accounts
          WHERE id IN (${placeholders}) AND deleted_at IS NULL`,
       )
-      .all(...claimIds) as Array<{
-      id: string
-      descriptor: string
-      display_name: string
-      network: string
-      status: string
-    }>
+      .all(...claimIds)
   }
 
   private getExchangeSnapshots(accountId: string): Array<{ balance_sats: string; timestamp: string }> {
     return this.db
-      .prepare(
+      .prepare<unknown[], { balance_sats: string; timestamp: string }>(
         'SELECT balance_sats, timestamp FROM exchange_balance_snapshots WHERE account_id = ? ORDER BY timestamp ASC',
       )
-      .all(accountId) as Array<{ balance_sats: string; timestamp: string }>
+      .all(accountId)
   }
 
   private getNextCounter(): number {
-    const result = this.db.prepare('SELECT COALESCE(MAX(counter), 0) + 1 AS next FROM statements').get() as {
-      next: number
+    const result = this.db
+      .prepare<
+        unknown[],
+        {
+          next: number
+        }
+      >('SELECT COALESCE(MAX(counter), 0) + 1 AS next FROM statements')
+      .get()
+    if (!result) {
+      throw new Error('Statement counter query returned no row')
     }
     return result.next
   }
@@ -514,17 +542,22 @@ export class StatementService {
       timezone: row.timezone,
       openingDate: new Date(row.opening_date),
       closingDate: new Date(row.closing_date),
-      status: row.status as 'pending' | 'completed' | 'failed',
+      status: row.status,
       user: { name: row.user_name, email: null },
       integrator: null,
       userId: 'local',
     }
   }
 
-  private deserializeTransactionMap(json: string): Record<string, AggregatedTransaction[]> {
-    const raw = JSON.parse(json) as Record<string, SerializedAggregatedTransaction[]>
-    const result: Record<string, AggregatedTransaction[]> = {}
+  private deserializeTransactionMap(json: string): StatementTransactions {
+    // SAFETY: Database JSON is untrusted until the schema below validates the complete transaction map.
+    const raw = parseUnknown(
+      z.record(z.array(SerializedAggregatedTransactionSchema)),
+      JSON.parse(json) as unknown,
+    ).expect('Stored statement transactions are invalid')
+    const result: StatementTransactions = {}
     for (const [key, txs] of Object.entries(raw)) {
+      // oxlint-disable-next-line oxc/no-map-spread -- Preserve additional stored fields in a new object with restored value types.
       result[key] = txs.map((tx) => ({
         ...tx,
         balanceChange: BigInt(tx.balanceChange),
@@ -535,7 +568,11 @@ export class StatementService {
   }
 
   private deserializeDailyRates(json: string): DailyRates {
-    const raw = JSON.parse(json) as { rates: Record<string, SerializedDailyRate>; source: 'mempool' }
+    // SAFETY: Database JSON is untrusted until the schema below validates the complete daily-rate payload.
+    const raw = parseUnknown(
+      z.object({ rates: z.record(SerializedDailyRateSchema), source: z.literal('mempool') }),
+      JSON.parse(json) as unknown,
+    ).expect('Stored statement rates are invalid')
     const rates: DailyRates['rates'] = {}
     for (const [key, rate] of Object.entries(raw.rates)) {
       rates[key] = {

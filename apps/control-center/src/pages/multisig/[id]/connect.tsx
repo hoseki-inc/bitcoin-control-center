@@ -89,8 +89,12 @@ function ConnectLedgerWallet({ claim }: { claim: ClaimDto }) {
     <>
       {step === 'ledger-device-unlock' && (
         <LedgerConnectionInfo
-          onBack={() => navigate(`/multisig/${claim.id}`)}
-          onContinue={() => setStep('ledger-device-check-xpub')}
+          onBack={() => {
+            void navigate(`/multisig/${claim.id}`)
+          }}
+          onContinue={() => {
+            setStep('ledger-device-check-xpub')
+          }}
         />
       )}
       {step === 'ledger-device-check-xpub' && <ConnectLedgerWalletCheckXpub claim={claim} />}
@@ -140,11 +144,24 @@ function ConnectTrezorWallet({ claim }: { claim: ClaimDto }) {
           <TrezorInfoCopy />
           <WizardFooter
             leftButton={
-              <Button variant="outline" onClick={() => navigate(`/multisig/${claim.id}`)}>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  void navigate(`/multisig/${claim.id}`)
+                }}
+              >
                 Back
               </Button>
             }
-            rightButton={<Button onClick={() => setStep('trezor-device-check-xpub')}>Next</Button>}
+            rightButton={
+              <Button
+                onClick={() => {
+                  setStep('trezor-device-check-xpub')
+                }}
+              >
+                Next
+              </Button>
+            }
           />
         </>
       )}
@@ -167,7 +184,7 @@ function ConnectTrezorWalletCheckXpub({
   setModel: (model: TrezorModel) => void
 }) {
   async function getXpubFromTrezor() {
-    return await getXpubFrom({
+    return getXpubFrom({
       claim,
       getXpubFromDevice: (derivationPath) =>
         trezorService
@@ -185,9 +202,9 @@ function ConnectTrezorWalletCheckXpub({
       return 'One'
     }
 
-    const model = getTrezorModel(featuresRes.unwrap().internal_model) ?? 'One'
-    setModel(model)
-    return model
+    const detectedModel = getTrezorModel(featuresRes.unwrap().internal_model) ?? 'One'
+    setModel(detectedModel)
+    return detectedModel
   }
 
   return (
@@ -230,7 +247,10 @@ function GenericCheckWalletXpub({
   const createChallengeMessage = trpc.portalProve.registry.challengeMessages.create.useMutation()
 
   const containsNonStandardPaths = claim.keystores.some(
-    (keystore) => keystore.derivationPath && !DerivationPath.from(keystore.derivationPath).isStandardAccount(),
+    (keystore) =>
+      keystore.derivationPath != null &&
+      keystore.derivationPath.length > 0 &&
+      !DerivationPath.from(keystore.derivationPath).isStandardAccount(),
   )
 
   const {
@@ -269,17 +289,19 @@ function GenericCheckWalletXpub({
       if (status === 'verified') {
         setMatchedKeystore({ keystore: matchedKeyStore, match: true })
         toast.info('Device already signed', { description: 'Continue with a different device.' })
-        navigate(`/multisig/${claim.id}`)
+        void navigate(`/multisig/${claim.id}`)
         return
       }
 
       const withDeviceModel = { ...matchedKeyStore, model: deviceModel }
       setMatchedKeystore({ keystore: withDeviceModel, match: true })
       return
-    } catch (error) {
-      browserLogger.error(error, 'Error checking xpub')
+    } catch (caughtError) {
+      browserLogger.error(caughtError, 'Error checking xpub')
       setError(
-        error instanceof Error ? error : new Error('Error checking xpub. Was the device unlocked and plugged in?'),
+        caughtError instanceof Error
+          ? caughtError
+          : new Error('Error checking xpub. Was the device unlocked and plugged in?'),
       )
     } finally {
       setIsChecking(false)
@@ -300,7 +322,7 @@ function GenericCheckWalletXpub({
         model: matchedKeystore.keystore.model,
       })
 
-      const signedMessage = claim.latestChallenge?.messages.find((m) => m.keystoreId === matchedKeystore?.keystore?.id)
+      const signedMessage = claim.latestChallenge?.messages.find((m) => m.keystoreId === matchedKeystore.keystore?.id)
 
       if (!signedMessage) {
         await createChallengeMessage.mutateAsync({
@@ -308,14 +330,14 @@ function GenericCheckWalletXpub({
           challengeId: claim.latestChallenge?.id ?? '',
         })
       }
-    } catch (error) {
-      browserLogger.error('### Error: ', error)
-      setError(error instanceof Error ? error : new Error('Error saving keystore'))
+    } catch (caughtError) {
+      browserLogger.error('### Error: ', caughtError)
+      setError(caughtError instanceof Error ? caughtError : new Error('Error saving keystore'))
     } finally {
       setIsSaving(false)
     }
 
-    navigate(`/multisig/${claim.id}/signing/${keystoreMetadata.walletType}/${matchedKeystore.keystore.id}`)
+    void navigate(`/multisig/${claim.id}/signing/${keystoreMetadata.walletType}/${matchedKeystore.keystore.id}`)
   }
 
   if (isChecking) {
@@ -339,7 +361,7 @@ function GenericCheckWalletXpub({
               <Icon as={InfoIcon} color="neutral.900" boxSize="20px" />
               <Box color="neutral.800">
                 <Text textStyle="text/sm" fontWeight="medium">
-                  Seeing an "unusual derivation path" warning?
+                  Seeing an &quot;unusual derivation path&quot; warning?
                 </Text>
                 <Text textStyle="text/sm" fontWeight="regular">
                   Some wallets use custom paths, which can trigger this message. This is normal.
@@ -371,7 +393,13 @@ function GenericCheckWalletXpub({
           <Text textStyle="text/md">This device is part of your multisig setup.</Text>
           <Text textStyle="text/md">Give this device a name—you can update it later at any time.</Text>
 
-          <form onSubmit={handleSubmit(onSubmit)}>
+          <form
+            onSubmit={(event) => {
+              handleSubmit(onSubmit)(event).catch(() => {
+                setError(new Error('Unable to submit the keystore name. Please try again.'))
+              })
+            }}
+          >
             <FormControl isInvalid={Boolean(errors.keystoreName)}>
               <FormLabel htmlFor="keystore-name">Name</FormLabel>
               <Input id="keystore-name" {...register('keystoreName')} placeholder="Multisig keystore name" />
@@ -379,7 +407,12 @@ function GenericCheckWalletXpub({
             </FormControl>
             <WizardFooter
               leftButton={
-                <Button variant="outline" onClick={() => navigate(`/multisig/${claim.id}`)}>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    void navigate(`/multisig/${claim.id}`)
+                  }}
+                >
                   Cancel
                 </Button>
               }
@@ -402,7 +435,12 @@ function GenericCheckWalletXpub({
             Not a match :(
           </Text>
           <Text textStyle="text/md">The xpub returned from your device does not match any of your keystores.</Text>
-          <Button onClick={() => navigate(`/multisig/${claim.id}`)} width="fit-content">
+          <Button
+            onClick={() => {
+              void navigate(`/multisig/${claim.id}`)
+            }}
+            width="fit-content"
+          >
             Try Again
           </Button>
         </Stack>
@@ -423,13 +461,24 @@ function GenericCheckWalletXpub({
 
           <WizardFooter
             leftButton={
-              <Button variant="outline" onClick={() => navigate(`/multisig/${claim.id}`)}>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  void navigate(`/multisig/${claim.id}`)
+                }}
+              >
                 Cancel
               </Button>
             }
             rightButton={
-              <Button onClick={performXpubCheck} width="fit-content" isLoading={isChecking}>
-                {isChecking ? 'Checking...' : 'Check Now'}
+              <Button
+                onClick={() => {
+                  void performXpubCheck()
+                }}
+                width="fit-content"
+                isLoading={isChecking}
+              >
+                Check Now
               </Button>
             }
           />
@@ -474,8 +523,20 @@ function ConnectColdcardWallet({ claim }: { claim: ClaimDto }) {
 
   const isQrFlow = model === 'Q'
 
-  const goBack = () => (wizardStep === 1 ? navigate(`/multisig/${claim.id}`) : setWizardStep((prev) => prev - 1))
-  const goForward = () => (wizardStep === 7 ? navigate(`/multisig/${claim.id}`) : setWizardStep((prev) => prev + 1))
+  const goBack = () => {
+    if (wizardStep === 1) {
+      void navigate(`/multisig/${claim.id}`)
+      return
+    }
+    setWizardStep((prev) => prev - 1)
+  }
+  const goForward = () => {
+    if (wizardStep === 7) {
+      void navigate(`/multisig/${claim.id}`)
+      return
+    }
+    setWizardStep((prev) => prev + 1)
+  }
 
   return (
     <ClaimConnectionWrapper>
@@ -498,7 +559,9 @@ function ConnectColdcardWallet({ claim }: { claim: ClaimDto }) {
             onBack={goBack}
             onNext={goForward}
             coldcardJson={coldcardJson ?? null}
-            setColdcardJson={(json) => setColdcardJson(json)}
+            setColdcardJson={(json) => {
+              setColdcardJson(json)
+            }}
             selectedWallet={null}
             setSelectedWallet={() => {}}
             isStep4Loading={false}
@@ -509,7 +572,7 @@ function ConnectColdcardWallet({ claim }: { claim: ClaimDto }) {
         {/* QR flow step 6: xpub matching (reuses existing component) */}
         {isQrFlow &&
           wizardStep === 6 &&
-          (!model || !coldcardJson ? (
+          (!coldcardJson ? (
             <RequiredDataMissing />
           ) : (
             <ColdcardMultisigStep6 claim={claim} model={model} coldcardJson={coldcardJson} />
@@ -571,7 +634,9 @@ function ConnectKeystoneWallet({ claim }: { claim: ClaimDto }) {
       setWizardStep((prev) => prev - 1)
     }
   }
-  const goForward = (): void => setWizardStep((prev) => prev + 1)
+  const goForward = (): void => {
+    setWizardStep((prev) => prev + 1)
+  }
 
   return (
     <ClaimConnectionWrapper>
@@ -583,7 +648,9 @@ function ConnectKeystoneWallet({ claim }: { claim: ClaimDto }) {
             onBack={goBack}
             onNext={goForward}
             keystoneJson={keystoneJson ?? null}
-            setKeystoneJson={(json) => setKeystoneJson(json)}
+            setKeystoneJson={(json) => {
+              setKeystoneJson(json)
+            }}
             selectedWallet={null}
             setSelectedWallet={() => {}}
             isStep4Loading={false}
@@ -605,7 +672,7 @@ function ConnectKeystoneWallet({ claim }: { claim: ClaimDto }) {
 
 function KeystoneMultisigXpubCheck({ claim, keystoneJson }: { claim: ClaimDto; keystoneJson: KeystoneExportFile }) {
   async function getXpubFromKeystone(): Promise<Result<Xpub, Error>> {
-    return await getXpubFrom({
+    return getXpubFrom({
       claim,
       getXpubFromDevice: asyncFn(async (derivationPath) =>
         getBitcoinXpubFromKeystoneExport(derivationPath, keystoneJson),
@@ -635,7 +702,7 @@ function ColdcardMultisigStep6({
   coldcardJson: ColdcardGenericJsonFile
 }) {
   async function getXpubFromColdcard(): Promise<Result<Xpub, Error>> {
-    return await getXpubFrom({
+    return getXpubFrom({
       claim,
       getXpubFromDevice: asyncFn(async (derivationPath) =>
         getBitcoinXpubFromColdcardExport(derivationPath, coldcardJson),

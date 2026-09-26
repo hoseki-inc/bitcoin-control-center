@@ -49,21 +49,6 @@
         "unused-imports/no-unused-imports": "error",
         "@typescript-eslint/no-empty-function": "off", // Allow no-op functions
         "import/no-relative-packages": "error",
-        "no-restricted-imports": [
-          "error",
-          {
-            "patterns": [
-              {
-                "group": ["../**/packages/*", "./**/packages/*"],
-                "message": "Use absolute import 'packages/*' instead of relative path to packages/"
-              },
-              {
-                "group": ["../**/apps/*", "./**/apps/*"],
-                "message": "Use absolute import 'apps/*' instead of relative path to apps/"
-              }
-            ]
-          }
-        ],
         "@next/next/no-img-element": "off"
       }
     },
@@ -75,6 +60,19 @@
       "rules": {
         "@typescript-eslint/no-non-null-assertion": "off",
         "@typescript-eslint/no-require-imports": "off"
+      }
+    },
+    {
+      // Preserve the upstream v3 snapshot; locally maintained changes follow in #143.
+      "files": ["**/result/lib/core/**/*.ts"],
+      "rules": {
+        "@typescript-eslint/ban-ts-comment": "off",
+        "@typescript-eslint/consistent-type-imports": "off",
+        "@typescript-eslint/explicit-module-boundary-types": "off",
+        "@typescript-eslint/no-explicit-any": "off",
+        "@typescript-eslint/no-non-null-assertion": "off",
+        "@typescript-eslint/no-unsafe-function-type": "off",
+        "unused-imports/no-unused-imports": "off"
       }
     }
   ]

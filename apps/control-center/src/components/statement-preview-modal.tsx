@@ -14,7 +14,7 @@ import {
 } from '@chakra-ui/react'
 import { renderStatementDocument } from '@hoseki/packages/pdf'
 import type { ClaimId } from '@hoseki/packages/schemas'
-import { Animations, ErrorBanner } from '@hoseki/packages/ui/design-system'
+import { Animations } from '@hoseki/packages/ui/design-system'
 import { PDFViewer } from '@react-pdf/renderer'
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
@@ -60,7 +60,7 @@ export function StatementPreviewModal(props: StatementPreviewModalProps): JSX.El
   const exchangeAccountIds = props.exchangeAccountIds ?? []
   const [pdfDocument, setPdfDocument] = useState<React.ReactElement | null>(null)
 
-  const enabled = Boolean(isOpen && (claimIds.length > 0 || exchangeAccountIds.length > 0))
+  const enabled = isOpen && (claimIds.length > 0 || exchangeAccountIds.length > 0)
 
   const input: GenerateStatementPreviewInput = {
     claimIds,
@@ -112,7 +112,9 @@ export function StatementPreviewModal(props: StatementPreviewModalProps): JSX.El
       setPdfDocument(document)
     }
 
-    generatePreview()
+    generatePreview().catch(() => {
+      toast.error('Unable to generate the PDF preview. Reload the page and try again.')
+    })
   }, [statementData])
 
   if (isErrorStatementData) {
@@ -128,7 +130,6 @@ export function StatementPreviewModal(props: StatementPreviewModalProps): JSX.El
         <ModalBody>
           <Box width="100%" height="100%" flex={1} display="flex" justifyContent="center" alignItems="center">
             {isLoadingStatementData && <Spinner size="xl" />}
-            {isErrorStatementData && <ErrorBanner mb={4} message="Failed to generate statement preview" />}
             {!isLoadingStatementData && pdfDocument && (
               <Stack spacing={4} sx={Animations.fadeIn(0.25)} height="100%" width="100%">
                 <Text textStyle="text/sm">{description}</Text>

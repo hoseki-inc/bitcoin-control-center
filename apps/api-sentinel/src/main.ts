@@ -33,8 +33,9 @@ export async function main(): Promise<SentinelServer> {
   const host = appCtx.env.HOST
   const port = appCtx.env.PORT
 
+  const fastifyLogger: FastifyBaseLogger = logger.child({ module: 'fastify' })
   const server = Fastify({
-    loggerInstance: logger.child({ module: 'fastify' }) as FastifyBaseLogger,
+    loggerInstance: fastifyLogger,
     childLoggerFactory: requestLoggerFactory,
     forceCloseConnections: 'idle',
   })
@@ -89,9 +90,7 @@ export async function main(): Promise<SentinelServer> {
     shuttingDown = true
     logger.info('Starting graceful shutdown')
 
-    if (snapshotTimer) {
-      clearInterval(snapshotTimer)
-    }
+    clearInterval(snapshotTimer)
 
     try {
       await server.close()

@@ -18,7 +18,7 @@ export function AppLayout({ header, children, fullWidth }: AppLayoutProps): JSX.
   return (
     <Box>
       {header}
-      <Wrapper maxW={fullWidth ? '100%' : '863px'}>{children}</Wrapper>
+      <Wrapper maxW={fullWidth === true ? '100%' : '863px'}>{children}</Wrapper>
     </Box>
   )
 }

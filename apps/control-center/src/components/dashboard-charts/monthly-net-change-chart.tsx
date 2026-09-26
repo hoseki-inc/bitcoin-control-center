@@ -15,7 +15,7 @@ function BarTooltip({
   active?: boolean
   payload?: Array<{ payload: MonthlyChange }>
 }): JSX.Element | null {
-  if (!active || !payload?.[0]) {
+  if (active !== true || !payload?.[0]) {
     return null
   }
   const { change } = payload[0].payload

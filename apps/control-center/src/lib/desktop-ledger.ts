@@ -1,37 +1,46 @@
+import { parseUnknown } from '@hoseki/packages/result/lib/parse'
+import { z } from 'zod'
 import type { LedgerHidApi } from '../../../../desktop/src/ledger-hid-api'
 
+declare global {
+  interface Window {
+    desktop?: { ledger?: LedgerHidApi }
+  }
+}
+
 export function getDesktopLedger(): LedgerHidApi | undefined {
-  return (window as Window & { desktop?: { ledger?: LedgerHidApi } }).desktop?.ledger
+  return window.desktop?.ledger
 }
 
 type ConnectionMessage = { title: string; detail: string }
 
-export function ledgerConnectionMessage(error: unknown): ConnectionMessage {
-  const details = error as { name?: string; statusText?: string; statusCode?: number } | null
-  if (details?.name === 'LedgerConnectionTimeout') {
+const ledgerErrorDetails = z.object({
+  name: z.string().optional().catch(undefined),
+  statusText: z.string().optional().catch(undefined),
+  statusCode: z.number().optional().catch(undefined),
+})
+
+export function ledgerConnectionMessage(cause: unknown): ConnectionMessage {
+  const details = parseUnknown(ledgerErrorDetails, cause).unwrapOr(null)
+  const name = details?.name
+  const statusText = details?.statusText
+  const statusCode = details?.statusCode
+  if (name === 'LedgerConnectionTimeout') {
     return {
       title: 'Your Ledger didn’t respond',
       detail: 'Reconnect and unlock your Ledger, open the Bitcoin app, then try again.',
     }
   }
-  if (
-    details?.name === 'LockedDeviceError' ||
-    details?.statusText === 'LOCKED_DEVICE' ||
-    details?.statusCode === 21781
-  ) {
+  if (name === 'LockedDeviceError' || statusText === 'LOCKED_DEVICE' || statusCode === 21781) {
     return {
       title: 'Unlock your Ledger',
       detail: 'Enter your PIN on the device, open the Bitcoin app, then try again.',
     }
   }
-  if (
-    details?.name === 'BitcoinAppNotOpen' ||
-    details?.statusText === 'INS_NOT_SUPPORTED' ||
-    details?.statusCode === 27913
-  ) {
+  if (name === 'BitcoinAppNotOpen' || statusText === 'INS_NOT_SUPPORTED' || statusCode === 27913) {
     return { title: 'Open the Bitcoin app', detail: 'Open the Bitcoin app on your Ledger, then try again.' }
   }
-  if (details?.name?.includes('Disconnected')) {
+  if (name?.includes('Disconnected') === true) {
     return {
       title: 'Your Ledger was disconnected',
       detail: 'Reconnect and unlock your Ledger, then open the Bitcoin app to continue.',

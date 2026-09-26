@@ -1,10 +1,10 @@
+import { type AsyncResult, Err, Ok, type Result, asyncFn, tryBlockAsync } from '@hoseki/packages/result'
 import { sha256 } from '@noble/hashes/sha2.js'
-import { type AsyncResult, Err, Ok, type Result, asyncFn, tryBlockAsync } from '@patina/core'
 import type { Logger } from 'pino'
-import { type ElectrumClient, type ScripthashHistoryEntry } from '../../clients/electrum'
+import type { ElectrumClient, ScripthashHistoryEntry } from '../../clients/electrum'
 import { IndexMap, IndexSet } from '../../collection'
 import type { Account } from '../account'
-import { type Address } from '../address'
+import type { Address } from '../address'
 import { bitcoin } from '../lib'
 import type { Network } from '../network'
 import { addressToScripthash } from '../scripthash'
@@ -44,19 +44,21 @@ export class ElectrumProvider extends OnchainBitcoinProvider {
   )
 
   public getBlocksTip(): AsyncResult<Block, Error> {
-    const self = this
-    return tryBlockAsync(async function* () {
-      const header = yield* self.deps.electrum.headersSubscribe().try()
-      return parseBlockHeader(header.height, header.hex)
-    })
+    return tryBlockAsync(
+      async function* (this: ElectrumProvider) {
+        const header = yield* this.deps.electrum.headersSubscribe().try()
+        return parseBlockHeader(header.height, header.hex)
+      }.bind(this),
+    )
   }
 
   public getBlock(height: number): AsyncResult<Block, Error> {
-    const self = this
-    return tryBlockAsync(async function* () {
-      const header = yield* self.deps.electrum.getBlockHeader(height).try()
-      return parseBlockHeader(height, header)
-    })
+    return tryBlockAsync(
+      async function* (this: ElectrumProvider) {
+        const header = yield* this.deps.electrum.getBlockHeader(height).try()
+        return parseBlockHeader(height, header)
+      }.bind(this),
+    )
   }
 
   public areAddressesUsed = asyncFn(async (addresses: IndexSet<Address>): Promise<Result<IndexSet<Address>, Error>> => {

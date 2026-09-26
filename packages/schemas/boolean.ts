@@ -1,8 +1,10 @@
 import { z } from 'zod'
+import { parseUnknown } from '../result/lib/parse'
 
 export const coercedBoolean = z.preprocess((value) => {
-  if (typeof value === 'string') {
-    const lowerValue = value.toLowerCase()
+  const text = parseUnknown(z.string(), value)
+  if (text.isOk()) {
+    const lowerValue = text.value().toLowerCase()
     if (lowerValue === 'true') {
       return true
     }

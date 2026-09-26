@@ -1,39 +1,70 @@
-name: Desktop runtime
+name: Desktop build
 
 on:
-  pull_request:
-    paths:
-      - 'desktop/**'
-      - '.nvmrc'
-      - '.github/workflows/desktop-runtime.yml'
-  push:
-    branches: [main]
-    paths:
-      - 'desktop/**'
-      - '.nvmrc'
-      - '.github/workflows/desktop-runtime.yml'
+  workflow_call:
   workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: desktop-build-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   desktop-runtime:
-    name: Desktop runtime (${{ matrix.os }})
+    name: Desktop build (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-15, windows-2022]
+        include:
+          - os: macos-15
+            target: mac
+            arch: arm64
+            extension: dmg
+          - os: windows-2022
+            target: win
+            arch: x64
+            extension: exe
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 10
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
     steps:
+      - name: Preserve shell script line endings on Windows
+        if: runner.os == 'Windows'
+        run: git config --global core.autocrlf false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version-file: '.nvmrc'
+      - uses: ./.github/actions/setup
       - name: Install locked desktop dependencies without lifecycle scripts
         run: npm ci --prefix desktop --ignore-scripts
       - name: Download the pinned Electron binary with checksum verification
         run: npm --prefix desktop run install:electron
       - name: Test native SQLite and PDF rendering in Electron
         run: npm --prefix desktop run test:runtime
+      - name: Build desktop application
+        run: pnpm build:desktop:app
+      - name: Download and verify pinned Tor bundles
+        run: ./desktop/download-tor.sh
+      - name: Build installer without publishing
+        working-directory: desktop
+        run: npx --no-install electron-builder --${{ matrix.target }} --${{ matrix.arch }} --publish never
+      - name: Verify installer output
+        env:
+          INSTALLER_EXTENSION: ${{ matrix.extension }}
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict'
+          import { readdirSync, statSync } from 'node:fs'
+          import { join } from 'node:path'
+          const directory = 'desktop/release'
+          const installers = readdirSync(directory).filter((name) => name.endsWith(`.${process.env.INSTALLER_EXTENSION}`))
+          assert.ok(installers.length > 0, 'Expected an installer')
+          for (const name of installers) {
+            assert.ok(statSync(join(directory, name)).size > 0, `Empty installer: ${name}`)
+          }
+          NODE
+      # Verification outputs stay on the disposable runner; do not upload them.

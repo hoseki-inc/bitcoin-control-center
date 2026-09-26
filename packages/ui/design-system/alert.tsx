@@ -44,18 +44,28 @@ export function Alert({
         )}
         {variant !== 'toast' && (
           <VStack spacing={0} alignItems="flex-start">
-            {displayTitle && (
+            {Boolean(displayTitle) ? (
               <Flex alignItems="center">
                 <AlertIcon mr={1} />
                 <AlertTitle>{displayTitle}</AlertTitle>
               </Flex>
+            ) : (
+              displayTitle
             )}
-            {children && <AlertDescription>{children}</AlertDescription>}
+            {Boolean(children) ? <AlertDescription>{children}</AlertDescription> : children}
           </VStack>
         )}
       </Flex>
       {onRetry && (
-        <Link onClick={onRetry} cursor="pointer" textDecoration="underline" textStyle="text/sm" fontWeight="medium">
+        <Link
+          as="button"
+          type="button"
+          onClick={onRetry}
+          cursor="pointer"
+          textDecoration="underline"
+          textStyle="text/sm"
+          fontWeight="medium"
+        >
           Retry
         </Link>
       )}

@@ -24,7 +24,13 @@ export const Lazy: Story = () => {
     <Stack>
       <Text>Lazy Spinners are only shown after 200ms of being mounted.</Text>
       {isOpen && <Spinner isLazy />}
-      <Button onClick={() => onToggle()}>Toggle Mounting Spinner</Button>
+      <Button
+        onClick={() => {
+          onToggle()
+        }}
+      >
+        Toggle Mounting Spinner
+      </Button>
     </Stack>
   )
 }

@@ -1,5 +1,5 @@
-import { Err, Ok } from '@patina/core'
-import type { Result } from '@patina/core'
+import { Err, Ok } from '@hoseki/packages/result'
+import type { Result } from '@hoseki/packages/result'
 import type Database from 'better-sqlite3'
 import { nanoid } from 'nanoid'
 import type { Logger } from 'pino'
@@ -67,13 +67,18 @@ export class ManualService {
   }
 
   public listAccounts(): ManualAccountDto[] {
-    const rows = this.db.prepare('SELECT * FROM manual_accounts ORDER BY created_at DESC').all() as Array<{
-      id: string
-      display_name: string
-      balance_sats: string
-      balance_as_of: string | null
-      created_at: string
-    }>
+    const rows = this.db
+      .prepare<
+        unknown[],
+        {
+          id: string
+          display_name: string
+          balance_sats: string
+          balance_as_of: string | null
+          created_at: string
+        }
+      >('SELECT * FROM manual_accounts ORDER BY created_at DESC')
+      .all()
 
     return rows.map((row) => ({
       id: row.id,
@@ -85,15 +90,18 @@ export class ManualService {
   }
 
   public getAccount(id: string): ManualAccountDto | null {
-    const row = this.db.prepare('SELECT * FROM manual_accounts WHERE id = ?').get(id) as
-      | {
+    const row = this.db
+      .prepare<
+        unknown[],
+        {
           id: string
           display_name: string
           balance_sats: string
           balance_as_of: string | null
           created_at: string
         }
-      | undefined
+      >('SELECT * FROM manual_accounts WHERE id = ?')
+      .get(id)
 
     if (!row) {
       return null
@@ -183,7 +191,7 @@ export class ManualService {
     const newNetTotal = netTxTotal + signedAmount
 
     let newBalance = currentBalance
-    if (args.addToBalance) {
+    if (args.addToBalance === true) {
       newBalance = currentBalance + signedAmount
       if (newBalance < 0n) {
         newBalance = 0n
@@ -229,21 +237,24 @@ export class ManualService {
 
   public listTransactions(accountId: string): ManualTransactionDto[] {
     const rows = this.db
-      .prepare('SELECT * FROM manual_transactions WHERE account_id = ? ORDER BY transacted_at DESC')
-      .all(accountId) as Array<{
-      id: string
-      account_id: string
-      type: string
-      amount_sats: string
-      transacted_at: string
-      note: string | null
-      created_at: string
-    }>
+      .prepare<
+        unknown[],
+        {
+          id: string
+          account_id: string
+          type: ManualTransactionType
+          amount_sats: string
+          transacted_at: string
+          note: string | null
+          created_at: string
+        }
+      >('SELECT * FROM manual_transactions WHERE account_id = ? ORDER BY transacted_at DESC')
+      .all(accountId)
 
     return rows.map((row) => ({
       id: row.id,
       accountId: row.account_id,
-      type: row.type as ManualTransactionType,
+      type: row.type,
       amountSats: row.amount_sats,
       transactedAt: row.transacted_at,
       note: row.note,
@@ -253,8 +264,10 @@ export class ManualService {
 
   public deleteTransaction(transactionId: string): Result<void, Error> {
     const row = this.db
-      .prepare('SELECT account_id, type, amount_sats FROM manual_transactions WHERE id = ?')
-      .get(transactionId) as { account_id: string; type: string; amount_sats: string } | undefined
+      .prepare<unknown[], { account_id: string; type: ManualTransactionType; amount_sats: string }>(
+        'SELECT account_id, type, amount_sats FROM manual_transactions WHERE id = ?',
+      )
+      .get(transactionId)
 
     if (!row) {
       return Err(new Error('Transaction not found'))
@@ -266,7 +279,7 @@ export class ManualService {
     }
 
     // Reverse the balance effect
-    const signedAmount = this.getSignedAmount(row.type as ManualTransactionType, BigInt(row.amount_sats))
+    const signedAmount = this.getSignedAmount(row.type, BigInt(row.amount_sats))
     const currentBalance = BigInt(account.balanceSats)
     const newBalance = currentBalance - signedAmount
 
@@ -286,7 +299,7 @@ export class ManualService {
   // ─── Accumulation Chart ─────────────────────────────────────────────────
 
   public getTransactionEntries(accountIds?: string[]): Array<{ timestamp: Date; value: bigint }> {
-    if (accountIds !== undefined && accountIds.length === 0) {
+    if (accountIds?.length === 0) {
       return []
     }
 
@@ -301,15 +314,20 @@ export class ManualService {
 
     query += ' ORDER BY transacted_at ASC'
 
-    const rows = this.db.prepare(query).all(...params) as Array<{
-      type: string
-      amount_sats: string
-      transacted_at: string
-    }>
+    const rows = this.db
+      .prepare<
+        unknown[],
+        {
+          type: ManualTransactionType
+          amount_sats: string
+          transacted_at: string
+        }
+      >(query)
+      .all(...params)
 
     return rows.map((row) => ({
       timestamp: new Date(row.transacted_at),
-      value: this.getSignedAmount(row.type as ManualTransactionType, BigInt(row.amount_sats)),
+      value: this.getSignedAmount(row.type, BigInt(row.amount_sats)),
     }))
   }
 
@@ -317,10 +335,10 @@ export class ManualService {
 
   public getSnapshots(accountId: string): Array<{ balance_sats: string; timestamp: string }> {
     return this.db
-      .prepare(
+      .prepare<unknown[], { balance_sats: string; timestamp: string }>(
         'SELECT balance_sats, timestamp FROM manual_balance_snapshots WHERE account_id = ? ORDER BY timestamp ASC',
       )
-      .all(accountId) as Array<{ balance_sats: string; timestamp: string }>
+      .all(accountId)
   }
 
   public recordSnapshot(accountId: string, balanceSats: string, timestamp: string): void {
@@ -337,12 +355,14 @@ export class ManualService {
 
   public getNetTransactionTotal(accountId: string): bigint {
     const rows = this.db
-      .prepare('SELECT type, amount_sats FROM manual_transactions WHERE account_id = ?')
-      .all(accountId) as Array<{ type: string; amount_sats: string }>
+      .prepare<unknown[], { type: ManualTransactionType; amount_sats: string }>(
+        'SELECT type, amount_sats FROM manual_transactions WHERE account_id = ?',
+      )
+      .all(accountId)
 
     let total = 0n
     for (const row of rows) {
-      total += this.getSignedAmount(row.type as ManualTransactionType, BigInt(row.amount_sats))
+      total += this.getSignedAmount(row.type, BigInt(row.amount_sats))
     }
     return total
   }

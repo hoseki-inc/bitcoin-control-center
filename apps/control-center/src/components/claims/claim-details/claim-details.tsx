@@ -38,7 +38,13 @@ export function ClaimDetails({ claim }: { claim: ClaimDto }): JSX.Element {
       <ClaimTopBar claim={claim} mb={6} />
       <Stack spacing={4}>
         {isRenaming ? (
-          <RenameClaim claimId={claim.id} defaultName={claim.displayName} onCancel={() => setIsRenaming(false)} />
+          <RenameClaim
+            claimId={claim.id}
+            defaultName={claim.displayName}
+            onCancel={() => {
+              setIsRenaming(false)
+            }}
+          />
         ) : (
           <Flex direction={['column', 'column', 'row']} gap={8} py={2}>
             <Box maxWidth={['100%', '100%', '30%']}>
@@ -76,16 +82,22 @@ export function ClaimDetails({ claim }: { claim: ClaimDto }): JSX.Element {
                     return null
                   }
 
-                  return (keystore: IndicatorKeystore) => {
-                    return navigate({
+                  return (selectedKeystore: IndicatorKeystore) => {
+                    void navigate({
                       pathname: `/accounts/${claim.id}`,
-                      search: `?${createSearchParams({ keystoreId: keystore.id })}`,
+                      search: `?${createSearchParams({ keystoreId: selectedKeystore.id })}`,
                     })
                   }
                 }}
               />
             </HStack>
-            <Button variant="outline" onClick={() => setIsRenaming(true)} w="fit-content">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsRenaming(true)
+              }}
+              w="fit-content"
+            >
               Rename
             </Button>
           </Flex>
@@ -121,7 +133,13 @@ function ClaimDetailsBody({
           rightButton={
             <HStack>
               {canAbandon && <AbandonClaimButton claim={claim} />}
-              <Button onClick={() => navigate(`./signing`, { relative: 'path' })}>Continue</Button>
+              <Button
+                onClick={() => {
+                  void navigate(`./signing`, { relative: 'path' })
+                }}
+              >
+                Continue
+              </Button>
             </HStack>
           }
         />
@@ -133,7 +151,7 @@ function ClaimDetailsBody({
     <>
       {!isMultisig ? (
         <KeystoreDetailsSingleSig claim={claim} keystore={claim.keystores[0]} />
-      ) : selectedKeystoreId ? (
+      ) : selectedKeystoreId != null && selectedKeystoreId !== '' ? (
         <KeystoreDetailsMultiSig claim={claim} keystore={claim.keystores.find((k) => k.id === selectedKeystoreId)} />
       ) : (
         <MultisigClaimProperties claim={claim} />
