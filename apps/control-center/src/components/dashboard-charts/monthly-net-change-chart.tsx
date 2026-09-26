@@ -1,6 +1,7 @@
 import { Box, Flex, Text, useToken } from '@chakra-ui/react'
 import { useMemo } from 'react'
-import { Bar, BarChart, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { Bar, BarChart, Cell, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { BitcoinAmount } from '../bitcoin-amount'
 import { type BalanceDataPoint, type MonthlyChange, getMonthlyChanges } from './balance-history'
 
 interface MonthlyNetChangeChartProps {
@@ -18,28 +19,42 @@ function BarTooltip({
   if (active !== true || !payload?.[0]) {
     return null
   }
-  const { change } = payload[0].payload
+  const { change, label } = payload[0].payload
   const isPositive = change >= 0
 
   return (
     <Box bg="neutral.900" borderRadius="8px" px={3} py={2} shadow="lg">
-      <Text textStyle="text/sm" fontWeight="bold" fontFamily="mono" color={isPositive ? 'success.400' : 'error.400'}>
-        {isPositive ? '+' : ''}
-        {change.toFixed(8)} BTC
+      <Text textStyle="text/xs" color="neutral.300" mb={1}>
+        {label}
+      </Text>
+      <Text
+        textStyle="text/sm"
+        fontWeight="medium"
+        fontFamily="body"
+        sx={{ fontVariantNumeric: 'tabular-nums' }}
+        color={change === 0 ? 'shades.0' : isPositive ? 'success.400' : 'error.400'}
+      >
+        {change > 0 ? '+' : ''}
+        <BitcoinAmount btc={change.toFixed(8)} />
       </Text>
     </Box>
   )
 }
 
 export function MonthlyNetChangeChart({ data, timezone }: MonthlyNetChangeChartProps): JSX.Element {
-  const [success500, error500] = useToken('colors', ['success.500', 'error.500'])
+  const [success500, error500, axisColor, baselineColor] = useToken('colors', [
+    'success.500',
+    'error.500',
+    'neutral.600',
+    'neutral.200',
+  ])
 
   const monthlyChanges = useMemo(() => getMonthlyChanges(data, 6, timezone), [data, timezone])
 
   if (monthlyChanges.length === 0) {
     return (
       <Flex h="120px" align="center" justify="center">
-        <Text color="neutral.400" textStyle="text/sm">
+        <Text color="neutral.600" textStyle="text/sm">
           Not enough data yet
         </Text>
       </Flex>
@@ -47,30 +62,41 @@ export function MonthlyNetChangeChart({ data, timezone }: MonthlyNetChangeChartP
   }
 
   return (
-    <Box h="120px" w="100%">
-      <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={monthlyChanges} margin={{ top: 0, right: 4, left: 4, bottom: 0 }}>
-          <XAxis
-            dataKey="label"
-            axisLine={false}
-            tickLine={false}
-            tick={{ fontSize: 11, fill: '#aaa', fontWeight: 500 }}
-            dy={4}
-          />
-          <YAxis hide domain={[0, 'auto']} />
-          <Tooltip content={<BarTooltip />} cursor={false} />
-          <Bar dataKey="absChange" radius={[4, 4, 0, 0]} maxBarSize={36}>
-            {monthlyChanges.map((entry) => (
-              <Cell
-                key={entry.key}
-                fill={entry.change >= 0 ? `${success500}26` : `${error500}1F`}
-                stroke={entry.change >= 0 ? `${success500}66` : `${error500}59`}
-                strokeWidth={1}
-              />
-            ))}
-          </Bar>
-        </BarChart>
-      </ResponsiveContainer>
+    <Box w="100%">
+      {monthlyChanges.every((month) => month.change === 0) && (
+        <Text textStyle="text/sm" color="neutral.600" mb={3}>
+          No net change in this date range.
+        </Text>
+      )}
+      <Box h="120px">
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={monthlyChanges} margin={{ top: 0, right: 4, left: 4, bottom: 0 }}>
+            <XAxis
+              dataKey="label"
+              axisLine={false}
+              tickLine={false}
+              tick={{ fontSize: 12, fill: axisColor, fontWeight: 500 }}
+              dy={4}
+            />
+            <YAxis
+              hide
+              domain={[(minimum: number) => Math.min(0, minimum), (maximum: number) => Math.max(0, maximum)]}
+            />
+            <ReferenceLine y={0} stroke={baselineColor} />
+            <Tooltip content={<BarTooltip />} cursor={false} />
+            <Bar isAnimationActive={false} dataKey="change" radius={[4, 4, 0, 0]} maxBarSize={36}>
+              {monthlyChanges.map((entry) => (
+                <Cell
+                  key={entry.key}
+                  fill={entry.change >= 0 ? success500 : error500}
+                  stroke={entry.change >= 0 ? `${success500}66` : `${error500}59`}
+                  strokeWidth={1}
+                />
+              ))}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </Box>
     </Box>
   )
 }
