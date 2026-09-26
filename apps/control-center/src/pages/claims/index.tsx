@@ -27,6 +27,8 @@ import { toast } from 'sonner'
 import { BitcoinAmount } from '../../components/bitcoin-amount'
 import { DeleteClaimModal } from '../../components/claims/claim-details/delete-claim-modal'
 import { FiatAmountText } from '../../components/fiat-amount-text'
+import { FirstAccountReady } from '../../components/onboarding/getting-started'
+import { SensitiveValue } from '../../components/sensitive-value'
 import { useAutoRefreshExchanges } from '../../hooks/use-auto-refresh-exchanges'
 import { useQueryErrorToast } from '../../hooks/use-query-error-toast'
 import { useGetBalancesPerClaimIds } from '../../lib/balances'
@@ -224,6 +226,12 @@ export function ClaimsPage(): JSX.Element {
   return (
     <>
       <Stack py={8} gap={0}>
+        <FirstAccountReady
+          ready={
+            claims.some((claim) => balancesQuery.data.get(claim.id)?.current != null) ||
+            [...exchangeAccounts, ...manualAccounts, ...etfAccounts].some((account) => account.balance !== null)
+          }
+        />
         {/* Header */}
         <Flex align="flex-start" justify="space-between" pb={6} gap={4} flexWrap="wrap">
           <Box>
@@ -253,19 +261,21 @@ export function ClaimsPage(): JSX.Element {
                   sx={{ fontVariantNumeric: 'tabular-nums' }}
                   overflowWrap="anywhere"
                 >
-                  <>{hasUnknownBalance ? '—' : <BitcoinAmount btc={totalBtc.toFixed(8)} />}</>
+                  <SensitiveValue>
+                    {hasUnknownBalance ? '—' : <BitcoinAmount btc={totalBtc.toFixed(8)} />}
+                  </SensitiveValue>
                 </Text>
                 <FiatAmountText
                   primary
                   color={hasUnknownBalance || btcUsdPrice === null ? 'neutral.600' : 'success.700'}
                 >
-                  <>
+                  <SensitiveValue>
                     {hasUnknownBalance
                       ? 'Some balances are unavailable'
                       : btcUsdPrice === null
                         ? 'USD unavailable'
                         : totalUsd.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
-                  </>
+                  </SensitiveValue>
                 </FiatAmountText>
               </Flex>
               <Flex align="center" gap={3} flexWrap="wrap" aria-label="Account verification status">
@@ -543,16 +553,16 @@ function AccountCardBalance({
   return (
     <Stack gap={1} align="center">
       <Text textStyle="text/xl" fontWeight="medium" color="neutral.900" letterSpacing="-0.02em" overflowWrap="anywhere">
-        <>{btc === null ? '—' : <BitcoinAmount btc={btc.toFixed(8)} />}</>
+        <SensitiveValue>{btc === null ? '—' : <BitcoinAmount btc={btc.toFixed(8)} />}</SensitiveValue>
       </Text>
       <FiatAmountText textAlign="center" color={btc === null || usd === null ? 'neutral.600' : 'success.700'}>
-        <>
+        <SensitiveValue>
           {btc === null
             ? 'Balance unavailable'
             : usd === null
               ? 'USD unavailable'
               : usd.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
-        </>
+        </SensitiveValue>
       </FiatAmountText>
     </Stack>
   )
@@ -806,14 +816,14 @@ function AccountRow({
       </Box>
       <Box textAlign="right" minW={0} sx={{ fontVariantNumeric: 'tabular-nums' }}>
         <Text textStyle="text/lg" fontWeight="medium">
-          <>{btc === null ? '—' : <BitcoinAmount btc={btc.toFixed(8)} />}</>
+          <SensitiveValue>{btc === null ? '—' : <BitcoinAmount btc={btc.toFixed(8)} />}</SensitiveValue>
         </Text>
         <FiatAmountText mt={1} color={btc === null || btcPrice === null ? 'neutral.600' : 'success.700'}>
-          <>
+          <SensitiveValue>
             {btc === null || btcPrice === null
               ? 'USD unavailable'
               : (btc * btcPrice).toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
-          </>
+          </SensitiveValue>
         </FiatAmountText>
       </Box>
     </Flex>

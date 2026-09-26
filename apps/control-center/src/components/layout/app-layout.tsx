@@ -1,11 +1,8 @@
+import { Box } from '@chakra-ui/react'
 import { parseUnknown } from '@hoseki/packages/result/lib/parse'
-import {
-  AppLayout as BaseAppLayout,
-  Logo as BaseLogo,
-  Menu as BaseMenu,
-  Header,
-  getEnvSlug,
-} from '@hoseki/packages/ui/prove-verify-ui'
+import { AppLayout as BaseAppLayout } from '@hoseki/packages/ui/prove-verify-ui/layout'
+import { Menu as BaseMenu, Header } from '@hoseki/packages/ui/prove-verify-ui/layout/header'
+import { Logo as BaseLogo, getEnvSlug } from '@hoseki/packages/ui/prove-verify-ui/logo'
 import { Link, NavLink, Outlet } from 'react-router'
 import { z } from 'zod'
 import { UserInfo } from './user-info'
@@ -33,7 +30,11 @@ export function AppLayout({ fullWidth }: { fullWidth?: boolean }): JSX.Element {
 
   const menu = <BaseMenu items={menuItems} renderLink={(to, children) => <NavLink to={to}>{children}</NavLink>} />
 
-  const header = <Header logo={logo} menu={menu} userInfo={<UserInfo />} />
+  const header = (
+    <Box data-app-navbar>
+      <Header logo={logo} menu={menu} userInfo={<UserInfo />} />
+    </Box>
+  )
 
   return (
     <BaseAppLayout header={header} fullWidth={fullWidth}>
