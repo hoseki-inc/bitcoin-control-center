@@ -9,6 +9,7 @@ export function setupWalletAccess(
   showChooser: (owner: WebContents, name: string, selected: (id: string) => void) => DeviceChooser,
 ): void {
   const session = mainWindow.webContents.session
+  const activeChoosers = new Map<WebContents, DeviceChooser>()
   const allowedUsb = (contents: WebContents, requestingOrigin: string): boolean => {
     return trezorWindows.has(contents) && isTrezorPopup(contents.getURL()) && isAppUrl(requestingOrigin, TREZOR_ORIGIN)
   }
@@ -45,14 +46,22 @@ export function setupWalletAccess(
       callback('')
       return
     }
+    // Electron replaces the previous USB request for this frame. Close its stale
+    // chooser as well, including when its page has not finished loading yet.
+    activeChoosers.get(owner)?.cancel()
     let devices = initial.filter(isTrezorDevice)
     const chooser = showChooser(owner, 'Trezor', (id) => {
+      if (activeChoosers.get(owner) === chooser) {
+        activeChoosers.delete(owner)
+      }
       session.off('usb-device-added', added)
       session.off('usb-device-removed', removed)
       owner.off('destroyed', cancel)
+      owner.off('render-process-gone', cancel)
       owner.off('did-start-navigation', onNavigation)
       callback(id && devices.some((device) => device.deviceId === id) ? id : '')
     })
+    activeChoosers.set(owner, chooser)
     const cancel = (): void => {
       chooser.cancel()
     }
@@ -86,6 +95,7 @@ export function setupWalletAccess(
     session.on('usb-device-added', added)
     session.on('usb-device-removed', removed)
     owner.once('destroyed', cancel)
+    owner.once('render-process-gone', cancel)
     owner.on('did-start-navigation', onNavigation)
     update()
   }

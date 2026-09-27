@@ -9,7 +9,7 @@ import { createQuitHandler } from './shutdown'
 import { TorManager } from './tor'
 import { setupTray } from './tray'
 import { setupWalletAccess } from './wallet-access'
-import { isAppUrl, isExternalUrl, isTrezorPopup } from './window-policy'
+import { setupWindowPolicy } from './window-policy'
 
 interface LocalServer {
   shutdown: () => Promise<void>
@@ -34,11 +34,9 @@ function showMainWindow(): void {
 }
 
 function openExternal(url: string): void {
-  if (isExternalUrl(url)) {
-    void shell.openExternal(url).catch(() => {
-      dialog.showErrorBox('Could not open link', 'Open your browser and try the link again.')
-    })
-  }
+  void shell.openExternal(url).catch(() => {
+    dialog.showErrorBox('Could not open link', 'Open your browser and try the link again.')
+  })
 }
 
 async function start(): Promise<void> {
@@ -83,59 +81,17 @@ async function start(): Promise<void> {
   mainWindow = window
   const trezorWindows = new Set<WebContents>()
   setupWalletAccess(window, origin, trezorWindows, (owner, name, selected) =>
-    showDeviceChooser(BrowserWindow.fromWebContents(owner) ?? window, name, selected),
+    showDeviceChooser(
+      BrowserWindow.fromWebContents(owner) ?? window,
+      name,
+      selected,
+      (options) => new BrowserWindow(options),
+      ipcMain,
+    ),
   )
   setupLedgerHidAccess(window, origin, ipcMain, async (parent, options) => dialog.showMessageBox(parent, options))
 
-  window.webContents.setWindowOpenHandler(({ url }) => {
-    if (isTrezorPopup(url) && isAppUrl(window.webContents.getURL(), origin)) {
-      return {
-        action: 'allow',
-        overrideBrowserWindowOptions: {
-          parent: window,
-          width: 480,
-          height: 720,
-          autoHideMenuBar: true,
-          webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false },
-        },
-      }
-    }
-    openExternal(url)
-    return { action: 'deny' }
-  })
-  window.webContents.on('did-create-window', (popup) => {
-    const contents = popup.webContents
-    trezorWindows.add(contents)
-    popup.on('closed', () => {
-      trezorWindows.delete(contents)
-    })
-    popup.webContents.setWindowOpenHandler(({ url }) => {
-      openExternal(url)
-      return { action: 'deny' }
-    })
-    popup.webContents.on('will-navigate', (event, url) => {
-      if (!isTrezorPopup(url)) {
-        event.preventDefault()
-        openExternal(url)
-      }
-    })
-    popup.webContents.on('will-redirect', (event, url) => {
-      if (!isTrezorPopup(url)) {
-        event.preventDefault()
-      }
-    })
-  })
-  window.webContents.on('will-navigate', (event, url) => {
-    if (!isAppUrl(url, origin)) {
-      event.preventDefault()
-      openExternal(url)
-    }
-  })
-  window.webContents.on('will-redirect', (event, url) => {
-    if (!isAppUrl(url, origin)) {
-      event.preventDefault()
-    }
-  })
+  setupWindowPolicy(window, origin, trezorWindows, openExternal)
   window.on('close', (event) => {
     if (!quitting) {
       event.preventDefault()

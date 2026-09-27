@@ -1,5 +1,5 @@
 import * as path from 'node:path'
-import { BrowserWindow, type IpcMainEvent, ipcMain } from 'electron'
+import type { BrowserWindow, BrowserWindowConstructorOptions, IpcMain, IpcMainEvent } from 'electron'
 
 export interface ChooserDevice {
   deviceId: string
@@ -15,8 +15,14 @@ function isDeviceId(value: unknown): value is string {
   return typeof value === 'string'
 }
 
-export function showDeviceChooser(parent: BrowserWindow, name: string, selected: (id: string) => void): DeviceChooser {
-  const window = new BrowserWindow({
+export function showDeviceChooser(
+  parent: BrowserWindow,
+  name: string,
+  selected: (id: string) => void,
+  createWindow: (options: BrowserWindowConstructorOptions) => BrowserWindow,
+  ipc: Pick<IpcMain, 'on' | 'off'>,
+): DeviceChooser {
+  const window = createWindow({
     parent,
     modal: true,
     width: 440,
@@ -39,7 +45,7 @@ export function showDeviceChooser(parent: BrowserWindow, name: string, selected:
       return
     }
     finished = true
-    ipcMain.off('wallet-chooser:select', onSelection)
+    ipc.off('wallet-chooser:select', onSelection)
     selected(id)
     if (!window.isDestroyed()) {
       window.destroy()
@@ -60,8 +66,11 @@ export function showDeviceChooser(parent: BrowserWindow, name: string, selected:
       window.webContents.send('wallet-chooser:devices', { name, devices })
     }
   }
-  ipcMain.on('wallet-chooser:select', onSelection)
+  ipc.on('wallet-chooser:select', onSelection)
   window.on('closed', () => {
+    finish('')
+  })
+  window.webContents.once('render-process-gone', () => {
     finish('')
   })
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))

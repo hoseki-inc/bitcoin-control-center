@@ -4,6 +4,7 @@ import type { BrowserWindow, Session, WebContents } from 'electron'
 import { describe, expect, it, vi } from 'vitest'
 import { setupWalletAccess } from '../src/wallet-access'
 import { isAppUrl, isExternalUrl, isTrezorPopup } from '../src/window-policy'
+import { createWindowFixture } from './window-fixture'
 
 const origin = 'http://localhost:49172'
 const popupUrl = 'https://connect.trezor.io/9/popup.html?version=9.7.3&env=web'
@@ -47,17 +48,27 @@ function createHarness() {
     selected(id)
   }
   const update = vi.fn<(devices: { deviceId: string; productName: string }[]) => void>()
-  const cancel = vi.fn(() => {
-    select('')
-  })
   const showChooser = vi.fn<Parameters<typeof setupWalletAccess>[3]>((_owner, _name, callback) => {
-    selected = callback
-    return { update, cancel }
+    let finished = false
+    const choose = (id: string): void => {
+      if (!finished) {
+        finished = true
+        callback(id)
+      }
+    }
+    selected = choose
+    return {
+      update,
+      cancel: vi.fn(() => {
+        choose('')
+      }),
+    }
   })
-  setupWalletAccess(window, origin, new Set([popupContents]), showChooser)
+  const registered = new Set([popupContents])
+  setupWalletAccess(window, origin, registered, showChooser)
   assert.ok(check, 'Expected a permission check handler')
   assert.ok(request, 'Expected a permission request handler')
-  return { session, main: mainContents, popup: popupContents, select, update, showChooser, check, request }
+  return { session, main: mainContents, popup: popupContents, select, update, showChooser, check, request, registered }
 }
 
 describe('wallet permissions and chooser lifecycle', () => {
@@ -171,6 +182,7 @@ describe('wallet permissions and chooser lifecycle', () => {
     expect(callback).toHaveBeenCalledExactlyOnceWith('trezor')
     expect(session.listenerCount('usb-device-added')).toBe(0)
     expect(popup.listenerCount('did-start-navigation')).toBe(0)
+    expect(popup.listenerCount('render-process-gone')).toBe(0)
   })
 
   it('cancels and releases listeners when the requesting document navigates away', () => {
@@ -187,6 +199,7 @@ describe('wallet permissions and chooser lifecycle', () => {
     expect(session.listenerCount('usb-device-added')).toBe(0)
     expect(session.listenerCount('usb-device-removed')).toBe(0)
     expect(popup.listenerCount('did-start-navigation')).toBe(0)
+    expect(popup.listenerCount('render-process-gone')).toBe(0)
     expect(popup.listenerCount('destroyed')).toBe(0)
   })
 
@@ -206,6 +219,7 @@ describe('wallet permissions and chooser lifecycle', () => {
     expect(session.listenerCount('usb-device-removed')).toBe(0)
     expect(popup.listenerCount('destroyed')).toBe(0)
     expect(popup.listenerCount('did-start-navigation')).toBe(0)
+    expect(popup.listenerCount('render-process-gone')).toBe(0)
   })
 
   it('cancels Trezor selection when the approval window closes', () => {
@@ -219,6 +233,31 @@ describe('wallet permissions and chooser lifecycle', () => {
     )
     popup.emit('destroyed')
     expect(callback).toHaveBeenCalledExactlyOnceWith('')
+    expect(session.listenerCount('usb-device-added')).toBe(0)
+    expect(session.listenerCount('usb-device-removed')).toBe(0)
+  })
+
+  it('cancels a crashed approval renderer, releases its listeners, and allows a retry', () => {
+    const { session, popup, select } = createHarness()
+    const first = vi.fn<(id: string) => void>()
+    const retry = vi.fn<(id: string) => void>()
+    const details = { frame: popup.mainFrame, deviceList: [trezor] }
+    session.emit('select-usb-device', { preventDefault: vi.fn() }, details, first)
+    popup.emit('render-process-gone', {}, { reason: 'crashed', exitCode: 1 })
+    expect(first).toHaveBeenCalledExactlyOnceWith('')
+    expect(session.listenerCount('usb-device-added')).toBe(0)
+    expect(session.listenerCount('usb-device-removed')).toBe(0)
+    expect(popup.listenerCount('render-process-gone')).toBe(0)
+    expect(popup.listenerCount('did-start-navigation')).toBe(0)
+    expect(popup.listenerCount('destroyed')).toBe(0)
+    select('trezor')
+    expect(first).toHaveBeenCalledTimes(1)
+    session.emit('select-usb-device', { preventDefault: vi.fn() }, details, retry)
+    expect(retry).not.toHaveBeenCalled()
+    expect(popup.listenerCount('render-process-gone')).toBe(1)
+    select('trezor')
+    expect(retry).toHaveBeenCalledExactlyOnceWith('trezor')
+    expect(popup.listenerCount('render-process-gone')).toBe(0)
     expect(session.listenerCount('usb-device-added')).toBe(0)
     expect(session.listenerCount('usb-device-removed')).toBe(0)
   })
@@ -240,6 +279,89 @@ describe('wallet permissions and chooser lifecycle', () => {
     )
     expect(callback.mock.calls).toEqual([[''], ['']])
     expect(showChooser).not.toHaveBeenCalled()
+  })
+
+  it('replaces an unfinished chooser for the same popup and cleans up both requests', () => {
+    const { session, popup, select, showChooser } = createHarness()
+    const first = vi.fn<(id: string) => void>()
+    const second = vi.fn<(id: string) => void>()
+    const details = { frame: popup.mainFrame, deviceList: [trezor] }
+    session.emit('select-usb-device', { preventDefault: vi.fn() }, details, first)
+    session.emit('select-usb-device', { preventDefault: vi.fn() }, details, second)
+    expect(showChooser).toHaveBeenCalledTimes(2)
+    expect(first).toHaveBeenCalledExactlyOnceWith('')
+    expect(second).not.toHaveBeenCalled()
+    expect(session.listenerCount('usb-device-added')).toBe(1)
+    expect(session.listenerCount('usb-device-removed')).toBe(1)
+    expect(popup.listenerCount('did-start-navigation')).toBe(1)
+    expect(popup.listenerCount('render-process-gone')).toBe(1)
+    select('trezor')
+    expect(second).toHaveBeenCalledExactlyOnceWith('trezor')
+    expect(session.listenerCount('usb-device-added')).toBe(0)
+    expect(popup.listenerCount('destroyed')).toBe(0)
+    const retry = vi.fn<(id: string) => void>()
+    session.emit('select-usb-device', { preventDefault: vi.fn() }, details, retry)
+    popup.emit('destroyed')
+    expect(first).toHaveBeenCalledTimes(1)
+    expect(second).toHaveBeenCalledTimes(1)
+    expect(retry).toHaveBeenCalledExactlyOnceWith('')
+    expect(session.listenerCount('usb-device-removed')).toBe(0)
+  })
+
+  it('does not let an unauthorized request cancel a valid chooser', () => {
+    const { session, popup, select } = createHarness()
+    const valid = vi.fn<(id: string) => void>()
+    const invalid = vi.fn<(id: string) => void>()
+    session.emit(
+      'select-usb-device',
+      { preventDefault: vi.fn() },
+      { frame: popup.mainFrame, deviceList: [trezor] },
+      valid,
+    )
+    session.emit('select-usb-device', { preventDefault: vi.fn() }, { frame: null, deviceList: [trezor] }, invalid)
+    expect(invalid).toHaveBeenCalledExactlyOnceWith('')
+    expect(valid).not.toHaveBeenCalled()
+    expect(session.listenerCount('usb-device-added')).toBe(1)
+    select('trezor')
+    expect(valid).toHaveBeenCalledExactlyOnceWith('trezor')
+  })
+
+  it('keeps requests in different registered popups independent', () => {
+    const { session, popup, registered, select } = createHarness()
+    const other = createWindowFixture(popupUrl).contents
+    registered.add(other)
+    const first = vi.fn<(id: string) => void>()
+    const second = vi.fn<(id: string) => void>()
+    const replacement = vi.fn<(id: string) => void>()
+    session.emit(
+      'select-usb-device',
+      { preventDefault: vi.fn() },
+      { frame: popup.mainFrame, deviceList: [trezor] },
+      first,
+    )
+    session.emit(
+      'select-usb-device',
+      { preventDefault: vi.fn() },
+      { frame: other.mainFrame, deviceList: [trezor] },
+      second,
+    )
+    expect(first).not.toHaveBeenCalled()
+    expect(second).not.toHaveBeenCalled()
+    session.emit(
+      'select-usb-device',
+      { preventDefault: vi.fn() },
+      { frame: popup.mainFrame, deviceList: [trezor] },
+      replacement,
+    )
+    expect(first).toHaveBeenCalledExactlyOnceWith('')
+    expect(second).not.toHaveBeenCalled()
+    expect(session.listenerCount('usb-device-added')).toBe(2)
+    other.emit('destroyed')
+    expect(second).toHaveBeenCalledExactlyOnceWith('')
+    expect(session.listenerCount('usb-device-added')).toBe(1)
+    select('trezor')
+    expect(replacement).toHaveBeenCalledExactlyOnceWith('trezor')
+    expect(session.listenerCount('usb-device-added')).toBe(0)
   })
 
   it('grants ordinary permissions only to the local main frame', () => {
