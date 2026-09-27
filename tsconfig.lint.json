@@ -19,6 +19,8 @@
     "packages/**/*.test.ts",
     "packages/**/*.test.tsx",
     "desktop/scripts/**/*",
+    "desktop/tests/**/*.ts",
+    "desktop/vitest.config.mts",
     "start9/scripts/**/*",
     "start9/tests/**/*",
     "start9/vitest.config.mts"
