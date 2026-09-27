@@ -23,10 +23,7 @@ export function isExternalUrl(value: string): boolean {
   return url !== null && ['https:', 'http:', 'mailto:'].includes(url.protocol)
 }
 
-export function isWalletDevice(type: 'hid' | 'usb', device: { vendorId: number; productId: number }): boolean {
-  if (type === 'hid') {
-    return device.vendorId === 0x2c97
-  }
+export function isTrezorDevice(device: { vendorId: number; productId: number }): boolean {
   // The device filters used by the installed Trezor Connect SDK.
   return (
     (device.vendorId === 0x534c && device.productId === 0x0001) ||

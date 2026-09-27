@@ -8,7 +8,7 @@
   "repository": "https://github.com/hoseki-inc/bitcoin-control-center",
   "main": "app/main/index.js",
   "scripts": {
-    "check": "tsc --noEmit && vitest run",
+    "check": "tsc --project tsconfig.check.json && vitest run",
     "dev": "electron app/main/index.js",
     "dist:mac": "electron-builder --mac --universal",
     "dist:win": "electron-builder --win",

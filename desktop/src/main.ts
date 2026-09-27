@@ -82,12 +82,8 @@ async function start(): Promise<void> {
   })
   mainWindow = window
   const trezorWindows = new Set<WebContents>()
-  setupWalletAccess(
-    window,
-    origin,
-    trezorWindows,
-    (owner, name, selected) => showDeviceChooser(BrowserWindow.fromWebContents(owner) ?? window, name, selected),
-    { handleLedgerSelection: false },
+  setupWalletAccess(window, origin, trezorWindows, (owner, name, selected) =>
+    showDeviceChooser(BrowserWindow.fromWebContents(owner) ?? window, name, selected),
   )
   setupLedgerHidAccess(window, origin, ipcMain, async (parent, options) => dialog.showMessageBox(parent, options))
 
@@ -190,7 +186,7 @@ if (!app.requestSingleInstanceLock()) {
       if (!quitting) {
         dialog.showErrorBox(
           'Control Center could not start',
-          'The local service could not open. Check that your data folder is writable, then reopen Control Center.',
+          'The app could not finish starting. Close it and try again.',
         )
         app.quit()
       }

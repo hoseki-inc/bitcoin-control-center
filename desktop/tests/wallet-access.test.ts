@@ -7,25 +7,30 @@ import { isAppUrl, isExternalUrl, isTrezorPopup } from '../src/window-policy'
 
 const origin = 'http://localhost:49172'
 const popupUrl = 'https://connect.trezor.io/9/popup.html?version=9.7.3&env=web'
-const ledger = { deviceId: 'ledger', name: 'Nano', vendorId: 0x2c97, productId: 1 }
 const trezor = { deviceId: 'trezor', productName: 'Trezor', vendorId: 0x1209, productId: 0x53c1 }
 
-function createHarness(handleLedgerSelection = true) {
+function createHarness() {
+  let check: Parameters<Session['setPermissionCheckHandler']>[0] | undefined
+  let request: Parameters<Session['setPermissionRequestHandler']>[0] | undefined
   const session = Object.assign(new EventEmitter(), {
-    setPermissionCheckHandler: vi.fn<Session['setPermissionCheckHandler']>(),
-    setPermissionRequestHandler: vi.fn<Session['setPermissionRequestHandler']>(),
+    setPermissionCheckHandler(handler: Parameters<Session['setPermissionCheckHandler']>[0]): void {
+      check = handler
+    },
+    setPermissionRequestHandler(handler: Parameters<Session['setPermissionRequestHandler']>[0]): void {
+      request = handler
+    },
   })
   const main = Object.assign(new EventEmitter(), {
     session,
     mainFrame: { origin },
-    getURL: () => origin,
-    isDestroyed: () => false,
+    getURL: (): string => origin,
+    isDestroyed: (): boolean => false,
   })
   const popup = Object.assign(new EventEmitter(), {
     session,
     mainFrame: { origin: 'https://connect.trezor.io' },
-    getURL: () => popupUrl,
-    isDestroyed: () => false,
+    getURL: (): string => popupUrl,
+    isDestroyed: (): boolean => false,
   })
   // SAFETY: these test doubles implement every WebContents member used by wallet permissions and selection.
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- Electron supplies the full object in production; the test exercises only these members.
@@ -49,15 +54,15 @@ function createHarness(handleLedgerSelection = true) {
     selected = callback
     return { update, cancel }
   })
-  setupWalletAccess(window, origin, new Set([popupContents]), showChooser, { handleLedgerSelection })
-  const check = session.setPermissionCheckHandler.mock.calls.at(-1)?.[0]
+  setupWalletAccess(window, origin, new Set([popupContents]), showChooser)
   assert.ok(check, 'Expected a permission check handler')
-  return { session, main: mainContents, popup: popupContents, select, update, showChooser, check }
+  assert.ok(request, 'Expected a permission request handler')
+  return { session, main: mainContents, popup: popupContents, select, update, showChooser, check, request }
 }
 
 describe('wallet permissions and chooser lifecycle', () => {
   it('keeps wallet permissions and Trezor selection while the inline Ledger flow owns HID selection', () => {
-    const { session, main, popup, check } = createHarness(false)
+    const { session, main, popup, check } = createHarness()
     expect(session.listenerCount('select-hid-device')).toBe(0)
     expect(session.listenerCount('select-usb-device')).toBe(1)
     expect(check(main, 'hid', origin, { isMainFrame: true, requestingUrl: origin, securityOrigin: origin })).toBe(true)
@@ -113,22 +118,24 @@ describe('wallet permissions and chooser lifecycle', () => {
     ).toBe(false)
   })
 
-  it('filters unrelated devices and updates the Ledger chooser as devices are plugged in or removed', () => {
-    const { session, main, select, update } = createHarness()
+  it('filters unrelated USB devices and tracks Trezor hotplug/removal', () => {
+    const { session, popup, select, update } = createHarness()
     const callback = vi.fn()
     session.emit(
-      'select-hid-device',
+      'select-usb-device',
       { preventDefault: vi.fn() },
-      { frame: main.mainFrame, deviceList: [{ ...ledger, vendorId: 1 }] },
+      { frame: popup.mainFrame, deviceList: [{ ...trezor, vendorId: 1 }] },
       callback,
     )
     expect(update).toHaveBeenLastCalledWith([])
-    session.emit('hid-device-added', {}, { frame: main.mainFrame, device: ledger })
-    expect(update).toHaveBeenLastCalledWith([{ deviceId: 'ledger', productName: 'Nano' }])
-    session.emit('hid-device-removed', {}, { frame: main.mainFrame, device: ledger })
-    select('ledger')
-    expect(callback).toHaveBeenCalledWith('')
-    expect(session.listenerCount('hid-device-added')).toBe(0)
+    session.emit('usb-device-added', {}, { ...trezor, productId: 1 }, popup)
+    expect(update).toHaveBeenLastCalledWith([])
+    session.emit('usb-device-added', {}, trezor, popup)
+    expect(update).toHaveBeenLastCalledWith([{ deviceId: 'trezor', productName: 'Trezor' }])
+    session.emit('usb-device-removed', {}, trezor, popup)
+    select('trezor')
+    expect(callback).toHaveBeenCalledExactlyOnceWith('')
+    expect(session.listenerCount('usb-device-added')).toBe(0)
   })
 
   it('uses Electron USB event arguments and grants only a device still present', () => {
@@ -144,22 +151,47 @@ describe('wallet permissions and chooser lifecycle', () => {
     expect(session.listenerCount('usb-device-added')).toBe(0)
   })
 
-  it('cancels and releases listeners when the requesting page navigates away', () => {
-    const { session, main } = createHarness()
+  it.each([
+    { isMainFrame: true, isSameDocument: true },
+    { isMainFrame: false, isSameDocument: false },
+    { isMainFrame: false, isSameDocument: true },
+  ])('keeps selection open for navigation within the document or a subframe: %j', (event) => {
+    const { session, popup, select } = createHarness()
     const callback = vi.fn()
     session.emit(
-      'select-hid-device',
+      'select-usb-device',
       { preventDefault: vi.fn() },
-      { frame: main.mainFrame, deviceList: [ledger] },
+      { frame: popup.mainFrame, deviceList: [trezor] },
       callback,
     )
-    main.emit('did-start-navigation')
-    expect(callback).toHaveBeenCalledWith('')
-    expect(session.listenerCount('hid-device-removed')).toBe(0)
+    popup.emit('did-start-navigation', event)
+    expect(callback).not.toHaveBeenCalled()
+    expect(session.listenerCount('usb-device-added')).toBe(1)
+    select('trezor')
+    expect(callback).toHaveBeenCalledExactlyOnceWith('trezor')
+    expect(session.listenerCount('usb-device-added')).toBe(0)
+    expect(popup.listenerCount('did-start-navigation')).toBe(0)
+  })
+
+  it('cancels and releases listeners when the requesting document navigates away', () => {
+    const { session, popup } = createHarness()
+    const callback = vi.fn()
+    session.emit(
+      'select-usb-device',
+      { preventDefault: vi.fn() },
+      { frame: popup.mainFrame, deviceList: [trezor] },
+      callback,
+    )
+    popup.emit('did-start-navigation', { isMainFrame: true, isSameDocument: false })
+    expect(callback).toHaveBeenCalledExactlyOnceWith('')
+    expect(session.listenerCount('usb-device-added')).toBe(0)
+    expect(session.listenerCount('usb-device-removed')).toBe(0)
+    expect(popup.listenerCount('did-start-navigation')).toBe(0)
+    expect(popup.listenerCount('destroyed')).toBe(0)
   })
 
   it('rejects a Trezor device removed before selection and releases popup listeners', () => {
-    const { session, popup, select, update } = createHarness(false)
+    const { session, popup, select, update } = createHarness()
     const callback = vi.fn()
     session.emit(
       'select-usb-device',
@@ -177,7 +209,7 @@ describe('wallet permissions and chooser lifecycle', () => {
   })
 
   it('cancels Trezor selection when the approval window closes', () => {
-    const { session, popup } = createHarness(false)
+    const { session, popup } = createHarness()
     const callback = vi.fn()
     session.emit(
       'select-usb-device',
@@ -192,7 +224,7 @@ describe('wallet permissions and chooser lifecycle', () => {
   })
 
   it('denies USB selection from the app or an unregistered Trezor frame', () => {
-    const { session, main, showChooser } = createHarness(false)
+    const { session, main, showChooser } = createHarness()
     const callback = vi.fn()
     session.emit(
       'select-usb-device',
@@ -210,17 +242,17 @@ describe('wallet permissions and chooser lifecycle', () => {
     expect(showChooser).not.toHaveBeenCalled()
   })
 
-  it('denies a request from an unrelated frame without opening a chooser', () => {
-    const { session, showChooser } = createHarness()
-    const callback = vi.fn()
-    session.emit(
-      'select-hid-device',
-      { preventDefault: vi.fn() },
-      { frame: { origin }, deviceList: [ledger] },
-      callback,
-    )
-    expect(callback).toHaveBeenCalledWith('')
-    expect(showChooser).not.toHaveBeenCalled()
+  it('grants ordinary permissions only to the local main frame', () => {
+    const { main, popup, check, request } = createHarness()
+    const callback = vi.fn<(granted: boolean) => void>()
+    const details = { isMainFrame: true, requestingUrl: origin, securityOrigin: origin }
+    expect(check(main, 'media', origin, details)).toBe(true)
+    expect(check(main, 'media', origin, { ...details, isMainFrame: false })).toBe(false)
+    expect(check(popup, 'media', 'https://connect.trezor.io', details)).toBe(false)
+    expect(check(main, 'geolocation', origin, details)).toBe(false)
+    request(main, 'clipboard-sanitized-write', callback, details)
+    request(popup, 'clipboard-sanitized-write', callback, details)
+    expect(callback.mock.calls).toEqual([[true], [false]])
   })
 })
 

@@ -1,36 +1,20 @@
-import type { BrowserWindow, HIDDevice, USBDevice, WebContents, WebFrameMain } from 'electron'
+import type { BrowserWindow, USBDevice, WebContents, WebFrameMain } from 'electron'
 import type { DeviceChooser } from './device-chooser'
-import { TREZOR_ORIGIN, isAppUrl, isTrezorPopup, isWalletDevice } from './window-policy'
-
-interface WalletAccessOptions {
-  handleLedgerSelection?: boolean
-}
+import { TREZOR_ORIGIN, isAppUrl, isTrezorDevice, isTrezorPopup } from './window-policy'
 
 export function setupWalletAccess(
   mainWindow: BrowserWindow,
   origin: string,
   trezorWindows: Set<WebContents>,
   showChooser: (owner: WebContents, name: string, selected: (id: string) => void) => DeviceChooser,
-  options: WalletAccessOptions = {},
 ): void {
   const session = mainWindow.webContents.session
-  const allowed = (contents: WebContents | null, type: string, requestingOrigin: string): boolean => {
-    if (!contents) {
-      return false
-    }
-    if (type === 'hid') {
-      return contents === mainWindow.webContents && isAppUrl(requestingOrigin, origin)
-    }
-    return (
-      type === 'usb' &&
-      trezorWindows.has(contents) &&
-      isTrezorPopup(contents.getURL()) &&
-      isAppUrl(requestingOrigin, TREZOR_ORIGIN)
-    )
+  const allowedUsb = (contents: WebContents, requestingOrigin: string): boolean => {
+    return trezorWindows.has(contents) && isTrezorPopup(contents.getURL()) && isAppUrl(requestingOrigin, TREZOR_ORIGIN)
   }
   session.setPermissionCheckHandler((contents, permission, requestingOrigin, details) => {
     // Chromium also performs device checks with null WebContents and
-    // isMainFrame=false. Enforce the exact requesting frame in the chooser below.
+    // isMainFrame=false. The USB chooser and inline Ledger flow validate the exact frame.
     if (permission === 'hid') {
       return isAppUrl(requestingOrigin, origin) && (!contents || contents === mainWindow.webContents)
     }
@@ -38,7 +22,7 @@ export function setupWalletAccess(
       return (
         isAppUrl(requestingOrigin, TREZOR_ORIGIN) &&
         (contents
-          ? allowed(contents, permission, requestingOrigin)
+          ? allowedUsb(contents, requestingOrigin)
           : [...trezorWindows].some((popup) => !popup.isDestroyed() && isTrezorPopup(popup.getURL())))
       )
     }
@@ -55,91 +39,58 @@ export function setupWalletAccess(
   })
   // Keep Electron's in-memory grants from explicit selection. Do not automatically
   // grant all devices of a vendor through setDevicePermissionHandler.
-  const choose = (
-    type: 'hid' | 'usb',
-    frame: WebFrameMain | null,
-    initial: (HIDDevice | USBDevice)[],
-    callback: (id: string) => void,
-  ): void => {
-    const owner = frame && [mainWindow.webContents, ...trezorWindows].find((contents) => contents.mainFrame === frame)
-    if (!frame || !owner || !allowed(owner, type, frame.origin)) {
+  const choose = (frame: WebFrameMain | null, initial: USBDevice[], callback: (id: string) => void): void => {
+    const owner = frame && [...trezorWindows].find((contents) => contents.mainFrame === frame)
+    if (!frame || !owner || !allowedUsb(owner, frame.origin)) {
       callback('')
       return
     }
-    let devices = initial.filter((device) => isWalletDevice(type, device))
-    const chooser = showChooser(owner, type === 'hid' ? 'Ledger' : 'Trezor', (id) => {
-      if (type === 'hid') {
-        session.off('hid-device-added', added)
-        session.off('hid-device-removed', removed)
-      } else {
-        session.off('usb-device-added', usbAdded)
-        session.off('usb-device-removed', usbRemoved)
-      }
+    let devices = initial.filter(isTrezorDevice)
+    const chooser = showChooser(owner, 'Trezor', (id) => {
+      session.off('usb-device-added', added)
+      session.off('usb-device-removed', removed)
       owner.off('destroyed', cancel)
-      owner.off('did-start-navigation', cancel)
+      owner.off('did-start-navigation', onNavigation)
       callback(id && devices.some((device) => device.deviceId === id) ? id : '')
     })
     const cancel = (): void => {
       chooser.cancel()
     }
+    const onNavigation = (event: Electron.Event<Electron.WebContentsDidStartNavigationEventParams>): void => {
+      if (event.isMainFrame && !event.isSameDocument) {
+        cancel()
+      }
+    }
     const update = (): void => {
       chooser.update(
         devices.map((device) => ({
           deviceId: device.deviceId,
-          productName: ('name' in device ? device.name : device.productName) ?? '',
+          productName: device.productName ?? '',
         })),
       )
     }
-    const added = (
-      _event: Electron.Event,
-      details: { frame: WebFrameMain | null; device: HIDDevice | USBDevice },
-    ): void => {
-      if (details.frame !== frame || !isWalletDevice(type, details.device)) {
+    const added = (_event: Electron.Event, device: USBDevice, contents: WebContents): void => {
+      if (contents !== owner || !isTrezorDevice(device)) {
         return
       }
-      devices = [...devices.filter((device) => device.deviceId !== details.device.deviceId), details.device]
+      devices = [...devices.filter((present) => present.deviceId !== device.deviceId), device]
       update()
     }
-    const removed = (
-      _event: Electron.Event,
-      details: { frame: WebFrameMain | null; device: HIDDevice | USBDevice },
-    ): void => {
-      if (details.frame !== frame) {
+    const removed = (_event: Electron.Event, device: USBDevice, contents: WebContents): void => {
+      if (contents !== owner) {
         return
       }
-      devices = devices.filter((device) => device.deviceId !== details.device.deviceId)
+      devices = devices.filter((present) => present.deviceId !== device.deviceId)
       update()
     }
-    const usbAdded = (event: Electron.Event, device: USBDevice, contents: WebContents): void => {
-      if (contents === owner) {
-        added(event, { device, frame })
-      }
-    }
-    const usbRemoved = (event: Electron.Event, device: USBDevice, contents: WebContents): void => {
-      if (contents === owner) {
-        removed(event, { device, frame })
-      }
-    }
-    if (type === 'hid') {
-      session.on('hid-device-added', added)
-      session.on('hid-device-removed', removed)
-    } else {
-      session.on('usb-device-added', usbAdded)
-      session.on('usb-device-removed', usbRemoved)
-    }
+    session.on('usb-device-added', added)
+    session.on('usb-device-removed', removed)
     owner.once('destroyed', cancel)
-    owner.on('did-start-navigation', cancel)
+    owner.on('did-start-navigation', onNavigation)
     update()
-  }
-  // The inline Ledger connection flow owns HID selection when installed by the shell.
-  if (options.handleLedgerSelection !== false) {
-    session.on('select-hid-device', (event, details, callback) => {
-      event.preventDefault()
-      choose('hid', details.frame, details.deviceList, callback)
-    })
   }
   session.on('select-usb-device', (event, details, callback) => {
     event.preventDefault()
-    choose('usb', details.frame, details.deviceList, callback)
+    choose(details.frame, details.deviceList, callback)
   })
 }
