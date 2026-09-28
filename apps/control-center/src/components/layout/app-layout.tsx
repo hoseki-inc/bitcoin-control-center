@@ -6,7 +6,7 @@ import {
   Header,
   getEnvSlug,
 } from '@hoseki/packages/ui/prove-verify-ui'
-import { Link, Outlet } from 'react-router'
+import { Link, NavLink, Outlet } from 'react-router'
 import { z } from 'zod'
 import { UserInfo } from './user-info'
 
@@ -31,7 +31,7 @@ export function AppLayout({ fullWidth }: { fullWidth?: boolean }): JSX.Element {
     />
   )
 
-  const menu = <BaseMenu items={menuItems} renderLink={(to, children) => <Link to={to}>{children}</Link>} />
+  const menu = <BaseMenu items={menuItems} renderLink={(to, children) => <NavLink to={to}>{children}</NavLink>} />
 
   const header = <Header logo={logo} menu={menu} userInfo={<UserInfo />} />
 
