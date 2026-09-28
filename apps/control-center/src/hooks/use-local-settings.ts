@@ -37,8 +37,10 @@ export function useLocalSetting(key: string): LocalSettingState {
         throw new Error('Failed to save setting')
       }
     },
-    onSuccess: (_data, value) => {
+    onSuccess: async (_data, value) => {
       queryClient.setQueryData(queryKey, value)
+      // Invalidating cancels any read that started before the save, so it can't overwrite the saved value.
+      await queryClient.invalidateQueries({ queryKey })
     },
   })
 
