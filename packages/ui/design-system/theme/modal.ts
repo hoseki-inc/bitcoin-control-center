@@ -75,9 +75,23 @@ const noPaddingVariant = styleHelpers.definePartsStyle((props) => {
   }
 })
 
+const fullSize = styleHelpers.definePartsStyle({
+  ...chakraTheme.components.Modal.sizes?.full,
+  dialog: {
+    ...chakraTheme.components.Modal.sizes?.full.dialog,
+    // Chakra's full size keeps the floating dialog's inset and shadow.
+    mx: 0,
+    boxShadow: 'none',
+  },
+})
+
 export const modalTheme = styleHelpers.defineMultiStyleConfig({
   ...chakraTheme.components.Modal,
   baseStyle: extendedBaseStyle,
+  sizes: {
+    ...chakraTheme.components.Modal.sizes,
+    full: fullSize,
+  },
   variants: {
     ...chakraTheme.components.Modal.variants,
     noPadding: noPaddingVariant,
