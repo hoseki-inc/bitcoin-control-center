@@ -7,6 +7,7 @@ import { sql } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/libsql'
 import { migrate } from 'drizzle-orm/libsql/migrator'
 import type { Logger } from 'pino'
+import { migrationsTable, prepareMigrationJournal } from './migration-journal'
 
 export type SentinelDb = ReturnType<typeof drizzle>
 export type SentinelTx = Parameters<Parameters<SentinelDb['transaction']>[0]>[0]
@@ -30,7 +31,12 @@ export async function openDrizzleDatabase(dataDir: string, logger: Logger): Prom
     const db = drizzle({ client })
     await db.run(sql`PRAGMA foreign_keys = ON`)
     await db.run(sql`PRAGMA journal_mode = WAL`)
-    await migrate(db, { migrationsFolder: migrationsFolder() })
+    const folder = migrationsFolder()
+    const journal = await prepareMigrationJournal(db, folder)
+    if (journal.isErr()) {
+      throw journal.unwrapErr()
+    }
+    await migrate(db, { migrationsFolder: folder, migrationsTable })
 
     // libSQL rejects queries while an interactive transaction owns its only
     // connection. Queue ordinary queries and whole transactions together;

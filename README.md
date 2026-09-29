@@ -255,10 +255,16 @@ The next startup creates a new database and key. Restore the backup only while S
 
 Database migrations run automatically during startup. There is no separate local migration command.
 
-The unreleased migration history has been reset to `initial_sentinel_schema`.
-Existing development profiles from before this baseline must be moved aside using
-the steps above; they are not automatically upgraded. No database files are deleted
-by this reset.
+The original 14 migrations are preserved as SQL files and linked Drizzle snapshots.
+New profiles run this history from scratch. Fully upgraded internal profiles keep
+their data: startup converts only the old `_migrations` journal to Drizzle's format
+and does not replay those migrations. Both paths use the same journal and native
+migrator afterward. Partial or unknown migration histories stop startup without
+resetting the profile; keep the data directory intact and finish legacy upgrades
+with the previous build first.
+
+Historical migrations `003`, `005`, and `010` include comments documenting their
+original data-loss hazards. They are not examples for future migrations.
 
 After changing `apps/api-sentinel/src/db/schema.ts`, generate a descriptively named
 Drizzle migration from the repository root:

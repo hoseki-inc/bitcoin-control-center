@@ -1,4 +1,4 @@
-import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -9,6 +9,7 @@ import { readMigrationFiles } from 'drizzle-orm/migrator'
 import pino from 'pino'
 import { expect, it, onTestFinished } from 'vitest'
 import { type SentinelDb, openDrizzleDatabase } from './drizzle'
+import { migrationsTable } from './migration-journal'
 import {
   accounts,
   balanceSnapshots,
@@ -21,7 +22,7 @@ import {
 
 const logger = pino({ level: 'silent' })
 const migrationFolder = new URL('../../drizzle/', import.meta.url)
-const baselineName = '20260929113903_initial_sentinel_schema'
+const importedMigrations = readMigrationFiles({ migrationsFolder: fileURLToPath(migrationFolder) })
 
 function testDirectory(): string {
   const directory = mkdtempSync(join(tmpdir(), 'sentinel-libsql-'))
@@ -93,20 +94,20 @@ function futureMigrations(migrationSql: string): string {
 }
 
 function rebuildTable(table: string): string {
-  const baseline = readMigrationFiles({ migrationsFolder: fileURLToPath(migrationFolder) })[0]
-  const create = baseline?.sql.find((statement) => statement.trim().startsWith(`CREATE TABLE \`${table}\``))
+  const fixture = readFileSync(new URL('./fixtures/legacy-main.sql', import.meta.url), 'utf8')
+  const create = new RegExp(`CREATE TABLE "?${table}"? \\([\\s\\S]*?\\);`).exec(fixture)?.[0]
   if (create === undefined) {
     throw new Error(`Missing table definition: ${table}`)
   }
   return [
-    create.replaceAll(`\`${table}\``, `\`${table}_new\``).replaceAll(`"${table}"`, `"${table}_new"`),
+    create.replace(new RegExp(`CREATE TABLE "?${table}"?`), `CREATE TABLE ${table}_new`),
     `INSERT INTO ${table}_new SELECT * FROM ${table};`,
     `DROP TABLE ${table};`,
     `ALTER TABLE ${table}_new RENAME TO ${table};`,
   ].join('\n--> statement-breakpoint\n')
 }
 
-it('initializes the named baseline and reopens without changing persisted data or migration history', async () => {
+it('initializes all 14 imported migrations and reopens without changing data or migration history', async () => {
   const directory = testDirectory()
   const first = await openDrizzleDatabase(directory, logger)
   let state: Awaited<ReturnType<typeof databaseState>>
@@ -118,7 +119,9 @@ it('initializes the named baseline and reopens without changing persisted data o
     await expect(
       first.insert(balanceSnapshots).values({ accountId: 'missing', timestamp: '2026-01-01', balanceSats: '1' }),
     ).rejects.toHaveProperty('cause.message', expect.stringContaining('FOREIGN KEY constraint failed'))
-    await expect(first.all(sql`SELECT name FROM __drizzle_migrations`)).resolves.toEqual([{ name: baselineName }])
+    await expect(first.all(sql`SELECT name FROM ${sql.identifier(migrationsTable)} ORDER BY id`)).resolves.toEqual(
+      importedMigrations.map((migration) => ({ name: migration.name })),
+    )
     state = await databaseState(first)
   } finally {
     first.$client.close()
@@ -143,17 +146,17 @@ it('preserves statements and exchange history when Drizzle rebuilds populated ta
     const folder = futureMigrations(
       [rebuildTable('exchange_accounts'), rebuildTable('statements')].join('\n--> statement-breakpoint\n'),
     )
-    await migrate(database, { migrationsFolder: folder })
+    await migrate(database, { migrationsFolder: folder, migrationsTable })
     const after = await databaseState(database)
     // Only the Drizzle journal gains a row; every application table keeps its data.
-    const journalIndex = before.schema.findIndex((row) => row.name === '__drizzle_migrations')
+    const journalIndex = before.schema.findIndex((row) => row.name === migrationsTable)
     expect(after.data.filter((_, index) => index !== journalIndex)).toEqual(
       before.data.filter((_, index) => index !== journalIndex),
     )
-    await expect(database.all(sql`SELECT name FROM __drizzle_migrations`)).resolves.toHaveLength(2)
+    await expect(database.all(sql`SELECT name FROM ${sql.identifier(migrationsTable)}`)).resolves.toHaveLength(15)
     await expect(database.all(sql`PRAGMA foreign_key_check`)).resolves.toEqual([])
     await expect(database.all(sql`PRAGMA foreign_keys`)).resolves.toEqual([{ foreign_keys: 1 }])
-    await migrate(database, { migrationsFolder: folder })
+    await migrate(database, { migrationsFolder: folder, migrationsTable })
     await expect(databaseState(database)).resolves.toEqual(after)
   } finally {
     database.$client.close()
@@ -172,15 +175,15 @@ it('rolls back failed migration data and journal changes, then permits retry', a
         'INSERT INTO missing_table VALUES (1);',
       ].join('\n--> statement-breakpoint\n'),
     )
-    await expect(migrate(database, { migrationsFolder: folder })).rejects.toThrow('no such table')
+    await expect(migrate(database, { migrationsFolder: folder, migrationsTable })).rejects.toThrow('no such table')
     await expect(databaseState(database)).resolves.toEqual(before)
     await expect(database.all(sql`PRAGMA foreign_keys`)).resolves.toEqual([{ foreign_keys: 1 }])
     writeFileSync(
       join(folder, '20260930000000_rebuild_account_and_statement_tables', 'migration.sql'),
       rebuildTable('exchange_accounts'),
     )
-    await migrate(database, { migrationsFolder: folder })
-    await expect(database.all(sql`SELECT name FROM __drizzle_migrations`)).resolves.toHaveLength(2)
+    await migrate(database, { migrationsFolder: folder, migrationsTable })
+    await expect(database.all(sql`SELECT name FROM ${sql.identifier(migrationsTable)}`)).resolves.toHaveLength(15)
     await expect(database.select().from(exchangeBalanceSnapshots)).resolves.toHaveLength(1)
   } finally {
     database.$client.close()

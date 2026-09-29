@@ -2,11 +2,15 @@ import * as crypto from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { Err, Ok, Result, parse } from '@hoseki/packages/result'
+import { eq } from 'drizzle-orm'
 import type { Logger } from 'pino'
 import { z } from 'zod'
+import type { SentinelDb } from '../db/drizzle'
+import { settings } from '../db/schema'
 
 const algorithm = 'aes-256-cbc' as const
 const encoding = 'hex' as const
+const legacySettingsKey = 'encryption_key'
 const keyFileName = 'exchange-credentials.key'
 const restoreMarkerFileName = 'exchange-credentials.restored'
 const hexKeyPattern = /^[a-f0-9]{64}$/i
@@ -67,19 +71,34 @@ function writeSecretFile(path: string, value: string): void {
   }
 }
 
-export function loadCredentialEncryptionKey(deps: { dataDir: string; logger: Logger }): CredentialEncryptionKeyResult {
+export async function loadCredentialEncryptionKey(deps: {
+  dataDir: string
+  db: SentinelDb
+  logger: Logger
+}): Promise<CredentialEncryptionKeyResult> {
   const secretsDir = join(deps.dataDir, 'secrets')
   const keyPath = join(secretsDir, keyFileName)
   const restoreMarkerPath = join(secretsDir, restoreMarkerFileName)
 
   if (existsSync(restoreMarkerPath)) {
     rmSync(keyPath, { force: true })
+    await deps.db.delete(settings).where(eq(settings.key, legacySettingsKey))
     rmSync(restoreMarkerPath, { force: true })
     deps.logger.info('Reset exchange credential encryption key after backup restore')
   }
 
   if (existsSync(keyPath)) {
     const key = normalizeEncryptionKey(readFileSync(keyPath, 'utf8'))
+    await deps.db.delete(settings).where(eq(settings.key, legacySettingsKey))
+    return { key, keyPath }
+  }
+
+  const [legacyKey] = await deps.db.select().from(settings).where(eq(settings.key, legacySettingsKey))
+  if (legacyKey !== undefined && legacyKey.value !== '') {
+    const key = normalizeEncryptionKey(legacyKey.value)
+    writeSecretFile(keyPath, key)
+    await deps.db.delete(settings).where(eq(settings.key, legacySettingsKey))
+    deps.logger.info({ keyPath }, 'Moved exchange credential encryption key out of SQLite')
     return { key, keyPath }
   }
 

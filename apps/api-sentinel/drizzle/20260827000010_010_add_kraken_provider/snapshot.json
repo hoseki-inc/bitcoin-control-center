@@ -1,13 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "b34d4204-ea0f-40c0-b7be-539d30101d2f",
-  "prevIds": ["00000000-0000-0000-0000-000000000000"],
+  "id": "7bade722-bf9d-4fe1-bc2b-42f419dbfdb9",
+  "prevIds": ["c53c1585-93e4-4a73-a7c0-65d4215bb477"],
   "ddl": [
-    {
-      "name": "account_history_syncs",
-      "entityType": "tables"
-    },
     {
       "name": "accounts",
       "entityType": "tables"
@@ -77,86 +73,6 @@
       "entityType": "tables"
     },
     {
-      "type": "integer",
-      "notNull": false,
-      "autoincrement": true,
-      "default": null,
-      "generated": null,
-      "name": "id",
-      "entityType": "columns",
-      "table": "account_history_syncs"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "account_id",
-      "entityType": "columns",
-      "table": "account_history_syncs"
-    },
-    {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "from_block_height",
-      "entityType": "columns",
-      "table": "account_history_syncs"
-    },
-    {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "to_block_height",
-      "entityType": "columns",
-      "table": "account_history_syncs"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "range_start",
-      "entityType": "columns",
-      "table": "account_history_syncs"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "range_end",
-      "entityType": "columns",
-      "table": "account_history_syncs"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": "(datetime('now'))",
-      "generated": null,
-      "name": "synced_at",
-      "entityType": "columns",
-      "table": "account_history_syncs"
-    },
-    {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": "1",
-      "generated": null,
-      "name": "sync_version",
-      "entityType": "columns",
-      "table": "account_history_syncs"
-    },
-    {
       "type": "text",
       "notNull": false,
       "autoincrement": false,
@@ -213,16 +129,6 @@
       "default": "'pending'",
       "generated": null,
       "name": "status",
-      "entityType": "columns",
-      "table": "accounts"
-    },
-    {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "deleted_at",
       "entityType": "columns",
       "table": "accounts"
     },
@@ -563,16 +469,6 @@
       "default": null,
       "generated": null,
       "name": "external_account_id",
-      "entityType": "columns",
-      "table": "exchange_accounts"
-    },
-    {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "credentials_connected_at",
       "entityType": "columns",
       "table": "exchange_accounts"
     },
@@ -1243,17 +1139,6 @@
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
-      "name": "fk_account_history_syncs_account_id_accounts_id_fk",
-      "entityType": "fks",
-      "table": "account_history_syncs"
-    },
-    {
-      "columns": ["account_id"],
-      "tableTo": "accounts",
-      "columnsTo": ["id"],
-      "onUpdate": "NO ACTION",
-      "onDelete": "CASCADE",
-      "nameExplicit": false,
       "name": "fk_balance_snapshots_account_id_accounts_id_fk",
       "entityType": "fks",
       "table": "balance_snapshots"
@@ -1382,13 +1267,6 @@
     {
       "columns": ["id"],
       "nameExplicit": false,
-      "name": "account_history_syncs_pk",
-      "table": "account_history_syncs",
-      "entityType": "pks"
-    },
-    {
-      "columns": ["id"],
-      "nameExplicit": false,
       "name": "accounts_pk",
       "table": "accounts",
       "entityType": "pks"
@@ -1504,35 +1382,6 @@
       "name": "statements_pk",
       "table": "statements",
       "entityType": "pks"
-    },
-    {
-      "columns": [
-        {
-          "value": "account_id",
-          "isExpression": false
-        },
-        {
-          "value": "from_block_height",
-          "isExpression": false
-        },
-        {
-          "value": "to_block_height",
-          "isExpression": false
-        }
-      ],
-      "isUnique": false,
-      "where": null,
-      "origin": "manual",
-      "name": "idx_account_history_syncs_account_blocks",
-      "entityType": "indexes",
-      "table": "account_history_syncs"
-    },
-    {
-      "columns": ["account_id", "from_block_height", "to_block_height"],
-      "nameExplicit": true,
-      "name": "account_history_syncs_account_id_from_block_height_to_block_height_unique",
-      "entityType": "uniques",
-      "table": "account_history_syncs"
     },
     {
       "columns": ["account_id", "timestamp"],
