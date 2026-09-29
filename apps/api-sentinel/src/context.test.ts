@@ -527,6 +527,7 @@ describe('price source settings', () => {
       await expect(caller.settings.priceSource()).resolves.toMatchObject({ selected: 'mempool', fallbacks: true })
       await expect(caller.settings.priceStatus()).resolves.toEqual({
         selected: 'mempool',
+        fallbacks: true,
         price: { source: 'mempool', asOf: asOf.toISOString(), lastKnown: false },
       })
 
@@ -535,13 +536,18 @@ describe('price source settings', () => {
       await expect(caller.settings.priceSource()).resolves.toMatchObject({ selected: 'coinbase', fallbacks: false })
       await expect(caller.settings.priceStatus()).resolves.toMatchObject({
         selected: 'coinbase',
+        fallbacks: false,
         price: { source: 'coinbase', lastKnown: false },
       })
       await expect(caller.settings.get({ key: 'price_source' })).resolves.toBe('coinbase')
 
       answers.delete('api.coinbase.com')
       const withoutCoinbase = appRouter.createCaller({ app: await context() })
-      await expect(withoutCoinbase.settings.priceStatus()).resolves.toEqual({ selected: 'coinbase', price: null })
+      await expect(withoutCoinbase.settings.priceStatus()).resolves.toEqual({
+        selected: 'coinbase',
+        fallbacks: false,
+        price: null,
+      })
     })
   })
 

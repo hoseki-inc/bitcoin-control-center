@@ -2073,8 +2073,10 @@ const settingsRouter = t.router({
     // Look the price up under the current settings, so a status never describes an earlier choice.
     const result = await ctx.app.priceService.getCurrentBtcPrice()
     const price = result.isOk() ? result.unwrap() : null
+    const { selected, fallbacks } = ctx.app.priceService.options()
     return {
-      selected: ctx.app.priceService.options().selected,
+      selected,
+      fallbacks,
       price: price ? { source: price.source, asOf: price.asOf.toISOString(), lastKnown: price.lastKnown } : null,
     }
   }),

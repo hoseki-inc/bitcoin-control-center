@@ -235,7 +235,8 @@ export class PriceService {
     }
   }
 
-  private async lookup(): Promise<Result<BtcPrice, Error>> {
+  /** `deadline` carries a superseded lookup's time limit into the one it hands over to. */
+  private async lookup(deadline?: number): Promise<Result<BtcPrice, Error>> {
     const plan = this.plan()
     const cached = this.cached
     if (cached?.key === plan.key && Date.now() - cached.fetchedAt < CACHE_TTL_MS && isRecent(cached.price)) {
@@ -245,7 +246,10 @@ export class PriceService {
     let pending = this.pending
     if (pending?.key !== plan.key) {
       this.generation += 1
-      const started = { key: plan.key, result: this.refresh(plan, this.generation) }
+      const started = {
+        key: plan.key,
+        result: this.refresh(plan, this.generation, deadline ?? performance.now() + this.lookupTimeoutMs),
+      }
       const clear = (): void => {
         if (this.pending === started) {
           this.pending = null
@@ -263,15 +267,14 @@ export class PriceService {
     return generation === this.generation && this.plan().key === plan.key
   }
 
-  private async refresh(plan: LookupPlan, generation: number): Promise<Result<BtcPrice, Error>> {
+  private async refresh(plan: LookupPlan, generation: number, deadline: number): Promise<Result<BtcPrice, Error>> {
     const errors: string[] = []
-    const deadline = performance.now() + this.lookupTimeoutMs
 
     for (const source of plan.sources) {
       // A superseded lookup hands over to the current one, so it never tries a source that is no
       // longer allowed, reports under old settings, or overwrites a newer price.
       if (!this.isCurrent(plan, generation)) {
-        return this.lookup()
+        return this.lookup(deadline)
       }
       const remaining = deadline - performance.now()
       if (remaining <= 0) {
@@ -285,21 +288,20 @@ export class PriceService {
       }
 
       const result = await this.fetchPrice(source, Math.ceil(Math.min(this.requestTimeoutMs, remaining)))
-      if (result.isErr()) {
-        this.failures.set(source.name, { error: result.unwrapErr(), failedAt: Date.now() })
-        this.logger.warn({ source: source.name, err: result.unwrapErr() }, 'BTC price source failed')
-      } else {
-        this.failures.delete(source.name)
-      }
+      // Checked before touching shared state, so a late answer never clears the wait a newer refusal set.
       if (!this.isCurrent(plan, generation)) {
-        return this.lookup()
+        return this.lookup(deadline)
       }
       if (result.isErr()) {
-        errors.push(result.unwrapErr().message)
+        const error = result.unwrapErr()
+        this.failures.set(source.name, { error, failedAt: Date.now() })
+        this.logger.warn({ source: source.name, err: error }, 'BTC price source failed')
+        errors.push(error.message)
         continue
       }
 
       const price = result.unwrap()
+      this.failures.delete(source.name)
       this.cached = { price, fetchedAt: Date.now(), key: plan.key }
       if (source !== plan.sources[0]) {
         this.logger.info({ source: source.name, selected: plan.sources[0]?.name }, 'Using fallback BTC price source')

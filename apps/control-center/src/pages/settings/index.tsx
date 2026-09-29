@@ -27,7 +27,7 @@ import {
 } from '@chakra-ui/react'
 import { parseUnknown } from '@hoseki/packages/result/lib/parse'
 import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { type QueryState, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { getQueryKey } from '@trpc/react-query'
 import { CircleAlertIcon, CircleCheckIcon } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -164,6 +164,21 @@ const PRICE_QUERY_KEYS = [
   getQueryKey(trpc.portalProve.onchain.bitcoinAccountBalances),
 ]
 
+/**
+ * The price status, only when its last refresh succeeded and it describes the current choice.
+ * React Query keeps the previous data after a failed refresh; that must never read as current.
+ */
+function currentStatus(
+  state: QueryState<PriceStatus> | undefined,
+  options: Pick<PriceSourceOptions, 'selected' | 'fallbacks'> | null,
+): PriceStatus | null {
+  const status = state?.status === 'success' ? state.data : undefined
+  if (!status || !options || status.selected !== options.selected || status.fallbacks !== options.fallbacks) {
+    return null
+  }
+  return status
+}
+
 function PriceSourceSettings(): JSX.Element {
   const queryClient = useQueryClient()
   const query = useQuery({
@@ -181,6 +196,8 @@ function PriceSourceSettings(): JSX.Element {
   })
   const options: PriceSourceOptions | null = query.data ?? null
   const [savedNotice, setSavedNotice] = useFadingNotice()
+  // Covers the whole save, including the refresh, so a second change cannot overlap the first.
+  const [saving, setSaving] = useState(false)
 
   const save = async (
     setting: { key: 'price_source' | 'price_fallbacks_enabled'; value: string },
@@ -188,8 +205,10 @@ function PriceSourceSettings(): JSX.Element {
     failure: string,
   ): Promise<void> => {
     setSavedNotice(null)
-    if (options) {
-      queryClient.setQueryData(PRICE_SOURCE_QUERY_KEY, { ...options, ...update })
+    setSaving(true)
+    const next = options ? { ...options, ...update } : null
+    if (next) {
+      queryClient.setQueryData(PRICE_SOURCE_QUERY_KEY, next)
     }
     let saved = true
     try {
@@ -199,8 +218,10 @@ function PriceSourceSettings(): JSX.Element {
       toast.error(failure)
     }
     await Promise.all(PRICE_QUERY_KEYS.map(async (queryKey) => queryClient.invalidateQueries({ queryKey })))
-    // Confirm only once the chosen source has supplied a price; otherwise the status below explains why not.
-    const status = queryClient.getQueryData<PriceStatus>(PRICE_STATUS_QUERY_KEY)
+    setSaving(false)
+    // Confirm only when a successful refresh shows the saved choice supplying the price; a failed refresh
+    // keeps the previous status, which says nothing about the new choice.
+    const status = currentStatus(queryClient.getQueryState<PriceStatus>(PRICE_STATUS_QUERY_KEY), next)
     if (saved && status?.price && status.price.source === status.selected && !status.price.lastKnown) {
       setSavedNotice('shown')
     }
@@ -209,14 +230,7 @@ function PriceSourceSettings(): JSX.Element {
   const label = (name: string | undefined): string | undefined =>
     options?.sources.find((source) => source.name === name)?.label
   const selectedLabel = label(options?.selected) ?? 'your primary price source'
-  // Show a status only once it describes the current choice, never one from before a change.
-  const status =
-    statusQuery.data &&
-    !statusQuery.isFetching &&
-    !mutation.isLoading &&
-    statusQuery.data.selected === options?.selected
-      ? statusQuery.data
-      : null
+  const status = saving ? null : currentStatus(queryClient.getQueryState<PriceStatus>(PRICE_STATUS_QUERY_KEY), options)
   const fallbackLabel =
     status?.price && !status.price.lastKnown && status.price.source !== status.selected
       ? label(status.price.source)
@@ -232,7 +246,7 @@ function PriceSourceSettings(): JSX.Element {
           Used to show your balances in US dollars. Price requests include no wallet information.
         </Text>
       </Box>
-      <FormControl isDisabled={!options || mutation.isLoading}>
+      <FormControl isDisabled={!options || saving}>
         <FormLabel htmlFor="price-source" textStyle="text/sm" mb={2}>
           Price source
         </FormLabel>
@@ -297,6 +311,11 @@ function PriceSourceSettings(): JSX.Element {
         {query.isError && (
           <Text role="alert" mt={2} textStyle="text/sm" color="error.700">
             Could not load price settings. Refresh to try again.
+          </Text>
+        )}
+        {!saving && statusQuery.isError && (
+          <Text role="alert" mt={2} textStyle="text/sm" color="error.700">
+            Could not check the price source. Refresh to try again.
           </Text>
         )}
         {fallbackLabel !== undefined && (

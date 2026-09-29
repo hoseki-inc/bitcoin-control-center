@@ -444,8 +444,57 @@ describe('current price', () => {
         lookupTimeoutMs: 60,
       })
       const result = await service.getCurrentBtcPrice()
-      expect(result.expectErr('out of time').message).toContain('Coinbase not tried: no price within 0.06 seconds')
-      expect(fetch.hosts()).toEqual([BLOCK, MEMPOOL])
+      // Which source the deadline stops at depends on timer precision; that it stops before Coinbase does not.
+      expect(result.expectErr('out of time').message).toContain('not tried: no price within 0.06 seconds')
+      expect(fetch.hosts()).not.toContain(COINBASE)
+    })
+  })
+
+  it('keeps the time limit when a lookup hands over after a settings change', async () => {
+    await withTestSetup(async () => {
+      stubPrices({
+        [BLOCK]: async () => new Promise<Response>(() => undefined),
+        [COINBASE]: async () => new Promise<Response>(() => undefined),
+      })
+      const current: SavedPriceSettings = { source: undefined, fallbacks: false }
+      const service = new PriceService({
+        logger,
+        mempoolApiUrl: 'https://mempool.space',
+        settings: () => current,
+        requestTimeoutMs: 300,
+        lookupTimeoutMs: 400,
+      })
+      const started = performance.now()
+      const before = service.getCurrentBtcPrice()
+      current.source = 'coinbase'
+      expect((await before).isErr()).toBe(true)
+      // Without the carried deadline, Coinbase would get a full 300 ms after Block's 300 ms.
+      expect(performance.now() - started).toBeLessThan(550)
+    })
+  })
+
+  it('does not let a superseded answer clear the wait a newer refusal set', async () => {
+    await withTestSetup(async () => {
+      const block = heldReplies()
+      const fetch = stubPrices({ [BLOCK]: block.next })
+      const { service, settings } = priceService()
+      const before = service.getCurrentBtcPrice()
+      await vi.waitFor(() => {
+        expect(block.count()).toBe(1)
+      })
+
+      settings.fallbacks = false
+      const after = service.getCurrentBtcPrice()
+      await vi.waitFor(() => {
+        expect(block.count()).toBe(2)
+      })
+      block.releaseAt(1, refused())
+      expect((await after).expectErr('refused').message).toBe(
+        'No BTC price available: Block price error: 429 Too Many Requests',
+      )
+      block.releaseAt(0, prices.block('83000'))
+      expect((await before).isErr()).toBe(true)
+      expect(fetch.hosts()).toEqual([BLOCK, BLOCK])
     })
   })
 
