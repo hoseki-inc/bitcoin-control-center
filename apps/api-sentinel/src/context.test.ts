@@ -508,19 +508,40 @@ describe('Tor connection policy', () => {
 })
 
 describe('price source settings', () => {
-  it('saves the price source and fallbacks and reports them to Settings', async () => {
+  it('saves the price source and fallbacks and reports the price found under them', async () => {
     await withTestSetup(async () => {
+      onTestFinished(() => {
+        vi.unstubAllGlobals()
+      })
+      const seconds = Math.floor(Date.now() / 1000) - 60
+      const asOf = new Date(seconds * 1000)
+      const answers = new Map([
+        ['example.invalid', () => Response.json({ time: seconds, USD: 83000 })],
+        ['api.coinbase.com', () => Response.json({ data: { amount: '83105.04', currency: 'USD' } })],
+      ])
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (url: string) => answers.get(new URL(url).host)?.() ?? new Response(null, { status: 503 })),
+      )
       const caller = appRouter.createCaller({ app: await context() })
       await expect(caller.settings.priceSource()).resolves.toMatchObject({
         selected: 'mempool',
         fallbacks: true,
-        last: null,
+        price: { source: 'mempool', asOf: asOf.toISOString() },
       })
 
       await caller.settings.update({ key: 'price_source', value: 'coinbase' })
       await caller.settings.update({ key: 'price_fallbacks_enabled', value: 'false' })
-      await expect(caller.settings.priceSource()).resolves.toMatchObject({ selected: 'coinbase', fallbacks: false })
+      await expect(caller.settings.priceSource()).resolves.toMatchObject({
+        selected: 'coinbase',
+        fallbacks: false,
+        price: { source: 'coinbase' },
+      })
       await expect(caller.settings.get({ key: 'price_source' })).resolves.toBe('coinbase')
+
+      answers.delete('api.coinbase.com')
+      const withoutCoinbase = appRouter.createCaller({ app: await context() })
+      await expect(withoutCoinbase.settings.priceSource()).resolves.toMatchObject({ selected: 'coinbase', price: null })
     })
   })
 

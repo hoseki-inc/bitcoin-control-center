@@ -87,8 +87,8 @@ export const createAppContext = asyncFn(
 
     // Check SQLite for user-saved Electrum settings (from desktop Settings page).
     // These override the env var defaults so the config persists across restarts.
-    const getSetting = (key: string): string | undefined =>
-      database.db.prepare<unknown[], { value: string }>('SELECT value FROM settings WHERE key = ?').get(key)?.value
+    const readSetting = database.db.prepare<unknown[], { value: string }>('SELECT value FROM settings WHERE key = ?')
+    const getSetting = (key: string): string | undefined => readSetting.get(key)?.value
 
     const electrumHost = getSetting('electrum_host') ?? env.ELECTRUM_HOST
     const electrumPort = Number(getSetting('electrum_port') ?? env.ELECTRUM_PORT)

@@ -32,15 +32,7 @@ const fetchMock = vi.fn<typeof fetch>()
 async function withTestSetup(run: () => Promise<void>): Promise<void> {
   const dom = browser.acquire()
   queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
-  for (const key of [
-    'user_name',
-    'electrum_host',
-    'electrum_port',
-    'electrum_protocol',
-    'tor_enabled',
-    'price_source',
-    'price_fallbacks_enabled',
-  ]) {
+  for (const key of ['user_name', 'electrum_host', 'electrum_port', 'electrum_protocol', 'tor_enabled']) {
     queryClient.setQueryData(['local-settings', key], null)
   }
   vi.spyOn(toast, 'error').mockReturnValue('test-toast')
@@ -206,7 +198,7 @@ const priceOptions: RouterOutput['settings']['priceSource'] = {
     { name: 'coinbase', label: 'Coinbase' },
     { name: 'coingecko', label: 'CoinGecko' },
   ],
-  last: null,
+  price: { source: 'block', asOf: '2026-09-29T17:00:00.000Z' },
 }
 
 /** Serves the price settings and records each saved setting. */
@@ -290,8 +282,53 @@ it('saves the fallback choice', async () => {
 
 it('shows when a fallback source supplied the price', async () => {
   await withTestSetup(async () => {
-    answerPriceSettings({ ...priceOptions, last: { source: 'coinbase', asOf: '2026-09-29T17:00:00.000Z' } })
+    answerPriceSettings({ ...priceOptions, price: { source: 'coinbase', asOf: '2026-09-29T17:00:00.000Z' } })
     await renderPriceSettings()
     expect(container.textContent).toContain('Using Coinbase while Block is unavailable.')
+    expect(container.textContent).not.toContain('No price is available')
+  })
+})
+
+it('shows when no source supplied a price', async () => {
+  await withTestSetup(async () => {
+    answerPriceSettings({ ...priceOptions, fallbacks: false, price: null })
+    await renderPriceSettings()
+    await vi.waitFor(() => {
+      expect(container.textContent).toContain('No price is available right now.')
+    })
+    expect(container.textContent).not.toContain('while Block is unavailable')
+  })
+})
+
+it('does not describe the previous source as a fallback after switching', async () => {
+  await withTestSetup(async () => {
+    let options = priceOptions
+    fetchMock.mockImplementation(async (input) => {
+      const url = parseUnknown(z.string(), input).unwrapOr('')
+      if (url.includes('/settings.priceSource')) {
+        return Response.json({ result: { data: { json: options } } })
+      }
+      if (url.endsWith('/settings.update')) {
+        // The server now looks the price up from Coinbase, the new choice.
+        options = {
+          ...priceOptions,
+          selected: 'coinbase',
+          price: { source: 'coinbase', asOf: '2026-09-29T17:01:00.000Z' },
+        }
+      }
+      return Response.json({ result: { data: { json: null } } })
+    })
+    const select = await renderPriceSettings()
+    await act(async () => {
+      select.value = 'coinbase'
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await vi.waitFor(async () => {
+      await act(async () => {})
+      expect(select.value).toBe('coinbase')
+      expect(queryClient.isFetching()).toBe(0)
+    })
+    expect(container.textContent).not.toContain('unavailable.')
+    expect(container.textContent).not.toContain('No price is available')
   })
 })

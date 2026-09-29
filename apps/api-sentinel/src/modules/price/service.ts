@@ -24,6 +24,11 @@ export interface PriceSourceOptions {
   sources: Array<{ name: PriceSourceName; label: string }>
 }
 
+interface LookupPlan {
+  key: string
+  sources: PriceSource[]
+}
+
 export interface BtcPrice {
   value: Decimal
   /** When the source set this price, or when it was fetched if the source gives no time. */
@@ -46,9 +51,23 @@ interface PriceSource {
 const CACHE_TTL_MS = 60_000 // 60 seconds
 // Retrying a source on every query after a refusal would keep its rate limit tripped.
 const SOURCE_RETRY_MS = 30_000
-// mempool's own price can already be several minutes old when fetched.
-const MAX_STALE_PRICE_MS = 30 * 60_000
+// A stalled source must not stop the fallbacks or hold up every price-dependent response.
+const REQUEST_TIMEOUT_MS = 10_000
+// The oldest price shown. mempool's own price can already be several minutes old when fetched.
+const MAX_PRICE_AGE_MS = 30 * 60_000
 const PUBLIC_MEMPOOL_URL = 'https://mempool.space'
+
+function isPublicMempool(url: string): boolean {
+  if (!URL.canParse(url)) {
+    return false
+  }
+  const { hostname } = new URL(url)
+  return hostname === 'mempool.space' || hostname.endsWith('.mempool.space')
+}
+
+function isRecent(price: BtcPrice): boolean {
+  return Date.now() - price.asOf.getTime() < MAX_PRICE_AGE_MS
+}
 
 const PositiveNumberSchema = z.number().positive().finite()
 const DecimalStringSchema = z.string().regex(/^\d+(\.\d+)?$/)
@@ -127,13 +146,20 @@ export class PriceService {
   private readonly sources: PriceSource[]
   private readonly defaultSource: PriceSource
   private readonly settings: () => SavedPriceSettings
-  private cached: { price: BtcPrice; fetchedAt: number; settings: string } | null = null
+  private readonly requestTimeoutMs: number
+  private cached: { price: BtcPrice; fetchedAt: number; key: string } | null = null
   private readonly failures = new Map<PriceSourceName, { error: Error; failedAt: number }>()
-  private pending: Promise<Result<BtcPrice, Error>> | null = null
+  private pending: { key: string; result: Promise<Result<BtcPrice, Error>> } | null = null
 
-  public constructor(deps: { logger: Logger; mempoolApiUrl: string; settings: () => SavedPriceSettings }) {
+  public constructor(deps: {
+    logger: Logger
+    mempoolApiUrl: string
+    settings: () => SavedPriceSettings
+    requestTimeoutMs?: number
+  }) {
     this.logger = deps.logger.child({ module: 'price-service' })
     this.settings = deps.settings
+    this.requestTimeoutMs = deps.requestTimeoutMs ?? REQUEST_TIMEOUT_MS
     const mempoolApiUrl = deps.mempoolApiUrl.replace(/\/$/, '')
     const block: PriceSource = {
       name: 'block',
@@ -141,15 +167,14 @@ export class PriceService {
       url: 'https://pricing.bitcoin.block.xyz/current-price',
       read: readBlockPrice,
     }
-    const selfHosted: PriceSource | null =
-      mempoolApiUrl === PUBLIC_MEMPOOL_URL
-        ? null
-        : {
-            name: 'mempool',
-            label: `Your mempool server (${URL.canParse(mempoolApiUrl) ? new URL(mempoolApiUrl).host : mempoolApiUrl})`,
-            url: `${mempoolApiUrl}/api/v1/prices`,
-            read: readMempoolPrice,
-          }
+    const selfHosted: PriceSource | null = isPublicMempool(mempoolApiUrl)
+      ? null
+      : {
+          name: 'mempool',
+          label: `Your mempool server (${URL.canParse(mempoolApiUrl) ? new URL(mempoolApiUrl).host : mempoolApiUrl})`,
+          url: `${mempoolApiUrl}/api/v1/prices`,
+          read: readMempoolPrice,
+        }
     this.defaultSource = selfHosted ?? block
     this.sources = [
       ...(selfHosted ? [selfHosted] : []),
@@ -177,46 +202,60 @@ export class PriceService {
 
   /** The sources available here and the one in use, for Settings. */
   public options(): PriceSourceOptions {
-    const { fallbacks } = this.settings()
+    const settings = this.settings()
     return {
-      selected: this.selectedSource().name,
-      fallbacks,
+      selected: this.selectedSource(settings).name,
+      fallbacks: settings.fallbacks,
       sources: this.sources.map(({ name, label }) => ({ name, label })),
     }
   }
 
-  /** The last price fetched, without making a request. */
-  public lastPrice(): BtcPrice | null {
-    return this.cached?.price ?? null
+  public getCurrentBtcPrice = asyncFn(async (): Promise<Result<BtcPrice, Error>> => this.lookup())
+
+  private selectedSource(settings: SavedPriceSettings): PriceSource {
+    // A saved self-hosted choice uses the default if that server is no longer configured.
+    return this.sources.find((source) => source.name === settings.source) ?? this.defaultSource
   }
 
-  public getCurrentBtcPrice = asyncFn(async (): Promise<Result<BtcPrice, Error>> => {
-    const selected = this.selectedSource()
-    const { fallbacks } = this.settings()
-    const key = `${selected.name}:${fallbacks}`
-    // A changed setting takes effect on the next request rather than after the cache expires.
+  private plan(): LookupPlan {
+    const settings = this.settings()
+    const selected = this.selectedSource(settings)
+    return {
+      key: `${selected.name}:${settings.fallbacks}`,
+      sources: settings.fallbacks ? [selected, ...this.sources.filter((source) => source !== selected)] : [selected],
+    }
+  }
+
+  private async lookup(): Promise<Result<BtcPrice, Error>> {
+    const plan = this.plan()
     const cached = this.cached
-    if (cached?.settings === key && Date.now() - cached.fetchedAt < CACHE_TTL_MS) {
+    if (cached?.key === plan.key && Date.now() - cached.fetchedAt < CACHE_TTL_MS && isRecent(cached.price)) {
       return Ok(cached.price)
     }
-    const sources = fallbacks ? [selected, ...this.sources.filter((source) => source !== selected)] : [selected]
-    // The dashboard asks for the price from several queries at once; share one lookup.
-    this.pending ??= this.refresh(sources, key).finally(() => {
-      this.pending = null
-    })
-    return this.pending
-  })
-
-  private selectedSource(): PriceSource {
-    const saved = this.settings().source
-    // A saved self-hosted choice uses the default if that server is no longer configured.
-    return this.sources.find((source) => source.name === saved) ?? this.defaultSource
+    // The dashboard asks for the price from several queries at once; share one lookup per setting.
+    let pending = this.pending
+    if (pending?.key !== plan.key) {
+      const started = { key: plan.key, result: this.refresh(plan) }
+      const clear = (): void => {
+        if (this.pending === started) {
+          this.pending = null
+        }
+      }
+      void started.result.then(clear, clear)
+      this.pending = started
+      pending = started
+    }
+    return pending.result
   }
 
-  private async refresh(sources: PriceSource[], key: string): Promise<Result<BtcPrice, Error>> {
+  private async refresh(plan: LookupPlan): Promise<Result<BtcPrice, Error>> {
     const errors: string[] = []
 
-    for (const source of sources) {
+    for (const source of plan.sources) {
+      // A changed setting starts a new lookup, so an old one never tries a source that is no longer allowed.
+      if (this.plan().key !== plan.key) {
+        return this.lookup()
+      }
       const failure = this.failures.get(source.name)
       if (failure && Date.now() - failure.failedAt < SOURCE_RETRY_MS) {
         errors.push(failure.error.message)
@@ -232,22 +271,22 @@ export class PriceService {
         continue
       }
 
+      // Nor does it overwrite the price found under the new setting.
+      if (this.plan().key !== plan.key) {
+        return this.lookup()
+      }
       const price = result.unwrap()
       this.failures.delete(source.name)
-      this.cached = { price, fetchedAt: Date.now(), settings: key }
-      if (source !== sources[0]) {
-        this.logger.info({ source: source.name, selected: sources[0]?.name }, 'Using fallback BTC price source')
+      this.cached = { price, fetchedAt: Date.now(), key: plan.key }
+      if (source !== plan.sources[0]) {
+        this.logger.info({ source: source.name, selected: plan.sources[0]?.name }, 'Using fallback BTC price source')
       }
       return Ok(price)
     }
 
     // A recent price is better than none while every allowed source is unavailable.
     const last = this.cached?.price
-    if (
-      last !== undefined &&
-      sources.some((source) => source.name === last.source) &&
-      Date.now() - last.asOf.getTime() < MAX_STALE_PRICE_MS
-    ) {
+    if (last !== undefined && plan.sources.some((source) => source.name === last.source) && isRecent(last)) {
       this.logger.warn({ source: last.source }, 'Using last known BTC price')
       return Ok(last)
     }
@@ -255,25 +294,49 @@ export class PriceService {
   }
 
   private async fetchPrice(source: PriceSource): Promise<Result<BtcPrice, Error>> {
-    let response: Response
+    const signal = AbortSignal.timeout(this.requestTimeoutMs)
+    const timedOut = new Promise<never>((_resolve, reject) => {
+      signal.addEventListener(
+        'abort',
+        () => {
+          reject(new Error(`no response within ${this.requestTimeoutMs / 1000} seconds`))
+        },
+        { once: true },
+      )
+    })
     try {
-      response = await fetch(source.url)
+      // The race also bounds reading the body, which a stalled source can hold open after the headers.
+      return await Promise.race([this.request(source, signal), timedOut])
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       return Err(new Error(`${source.label} price request failed: ${message}`))
     }
+  }
+
+  private async request(source: PriceSource, signal: AbortSignal): Promise<Result<BtcPrice, Error>> {
+    const response = await fetch(source.url, { signal })
     if (!response.ok) {
+      // Release the connection instead of leaving an unread body to garbage collection.
+      await response.body?.cancel().catch(() => undefined)
       return Err(new Error(`${source.label} price error: ${response.status} ${response.statusText}`))
     }
 
-    const price = await source.read(response)
-    if (!price) {
+    const read = await source.read(response)
+    if (!read) {
       return Err(new Error(`BTC price not found in ${source.label} response`))
     }
 
     // A source clock ahead of ours must not make a price look newer than it is.
     const fetchedAt = new Date()
-    const asOf = price.asOf && price.asOf < fetchedAt ? price.asOf : fetchedAt
-    return Ok({ value: price.value, asOf, source: source.name })
+    const price: BtcPrice = {
+      value: read.value,
+      asOf: read.asOf && read.asOf < fetchedAt ? read.asOf : fetchedAt,
+      source: source.name,
+    }
+    if (!isRecent(price)) {
+      const minutes = Math.round((fetchedAt.getTime() - price.asOf.getTime()) / 60_000)
+      return Err(new Error(`${source.label} price is ${minutes} minutes old`))
+    }
+    return Ok(price)
   }
 }

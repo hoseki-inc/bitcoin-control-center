@@ -26,14 +26,15 @@ import {
 } from '@chakra-ui/react'
 import { parseUnknown } from '@hoseki/packages/result/lib/parse'
 import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { getQueryKey } from '@trpc/react-query'
 import { CircleAlertIcon, CircleCheckIcon } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { z } from 'zod'
-import { type LocalSettingState, useLocalSetting } from '../../hooks/use-local-settings'
+import { useLocalSetting } from '../../hooks/use-local-settings'
 import { isDesktop } from '../../mode'
-import { type RouterInput, type RouterOutput, baseTrpc } from '../../trpc'
+import { type RouterInput, type RouterOutput, baseTrpc, trpc } from '../../trpc'
 
 type ElectrumStatusState = { status: ElectrumStatus | null; refresh: () => void }
 
@@ -123,6 +124,13 @@ export function SettingsPage({ desktop = isDesktop }: { desktop?: boolean }): JS
 
 type PriceSourceOptions = RouterOutput['settings']['priceSource']
 const PRICE_SOURCE_QUERY_KEY = ['price-source']
+// Queries whose results include the USD price, refreshed when the price settings change.
+const PRICE_QUERY_KEYS = [
+  PRICE_SOURCE_QUERY_KEY,
+  getQueryKey(trpc.portalProve.retrieveBitcoinPrice),
+  getQueryKey(trpc.portalProve.controlCenter.getData),
+  getQueryKey(trpc.portalProve.onchain.bitcoinAccountBalances),
+]
 
 function PriceSourceSettings(): JSX.Element {
   const queryClient = useQueryClient()
@@ -130,35 +138,34 @@ function PriceSourceSettings(): JSX.Element {
     queryKey: PRICE_SOURCE_QUERY_KEY,
     queryFn: async () => baseTrpc.settings.priceSource.query(),
   })
-  const sourceSetting = useLocalSetting('price_source')
-  const fallbacksSetting = useLocalSetting('price_fallbacks_enabled')
-  // Older servers without this endpoint answer null.
+  const mutation = useMutation({
+    mutationFn: async (setting: { key: 'price_source' | 'price_fallbacks_enabled'; value: string }) =>
+      baseTrpc.settings.update.mutate(setting),
+  })
   const options: PriceSourceOptions | null = query.data ?? null
-  const isSaving = sourceSetting.isSaving || fallbacksSetting.isSaving
 
   const save = async (
-    setting: LocalSettingState,
-    value: string,
+    setting: { key: 'price_source' | 'price_fallbacks_enabled'; value: string },
     update: Partial<PriceSourceOptions>,
     failure: string,
   ): Promise<void> => {
     if (options) {
-      queryClient.setQueryData(PRICE_SOURCE_QUERY_KEY, { ...options, ...update })
+      queryClient.setQueryData(PRICE_SOURCE_QUERY_KEY, { ...options, ...update, price: null })
     }
     try {
-      await setting.saveAsync(value)
+      await mutation.mutateAsync(setting)
     } catch {
       toast.error(failure)
     }
-    // Refresh this section and every price shown elsewhere from the saved setting.
-    await queryClient.invalidateQueries()
+    await Promise.all(PRICE_QUERY_KEYS.map(async (queryKey) => queryClient.invalidateQueries({ queryKey })))
   }
 
   const label = (name: string | undefined): string | undefined =>
     options?.sources.find((source) => source.name === name)?.label
   const selectedLabel = label(options?.selected) ?? 'your primary price source'
+  // The server reports the price found under the current settings, so a different source means a fallback.
   const fallbackLabel =
-    options?.last && options.last.source !== options.selected ? label(options.last.source) : undefined
+    options?.price && options.price.source !== options.selected ? label(options.price.source) : undefined
 
   return (
     <SimpleGrid columns={{ base: 1, md: 2 }} spacing={{ base: 5, md: 10 }}>
@@ -170,7 +177,7 @@ function PriceSourceSettings(): JSX.Element {
           Used to show your balances in US dollars. Price requests include no wallet information.
         </Text>
       </Box>
-      <FormControl isDisabled={!options || isSaving}>
+      <FormControl isDisabled={!options || mutation.isLoading}>
         <FormLabel htmlFor="price-source" textStyle="text/sm" mb={2}>
           Price source
         </FormLabel>
@@ -182,8 +189,7 @@ function PriceSourceSettings(): JSX.Element {
             const next = options?.sources.find((source) => source.name === event.target.value)
             if (next) {
               void save(
-                sourceSetting,
-                next.name,
+                { key: 'price_source', value: next.name },
                 { selected: next.name },
                 'Could not save the price source. Please try again.',
               )
@@ -204,8 +210,7 @@ function PriceSourceSettings(): JSX.Element {
           isChecked={options?.fallbacks ?? true}
           onChange={(event) => {
             void save(
-              fallbacksSetting,
-              String(event.target.checked),
+              { key: 'price_fallbacks_enabled', value: String(event.target.checked) },
               { fallbacks: event.target.checked },
               'Could not save the fallback setting. Please try again.',
             )
@@ -224,6 +229,11 @@ function PriceSourceSettings(): JSX.Element {
         {fallbackLabel !== undefined && (
           <Text as="output" display="block" mt={2} textStyle="text/xs" color="neutral.600">
             Using {fallbackLabel} while {selectedLabel} is unavailable.
+          </Text>
+        )}
+        {options && options.price === null && !query.isFetching && !mutation.isLoading && (
+          <Text as="output" display="block" mt={2} textStyle="text/xs" color="error.700">
+            No price is available right now.
           </Text>
         )}
       </FormControl>

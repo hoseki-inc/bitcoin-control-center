@@ -2066,11 +2066,13 @@ const settingsRouter = t.router({
       .run(input.key, value)
   }),
 
-  priceSource: publicProcedure.query(({ ctx }) => {
-    const last = ctx.app.priceService.lastPrice()
+  priceSource: publicProcedure.query(async ({ ctx }) => {
+    // Look the price up under the current settings, so a status never describes an earlier choice.
+    const result = await ctx.app.priceService.getCurrentBtcPrice()
+    const price = result.isOk() ? result.unwrap() : null
     return {
       ...ctx.app.priceService.options(),
-      last: last ? { source: last.source, asOf: last.asOf.toISOString() } : null,
+      price: price ? { source: price.source, asOf: price.asOf.toISOString() } : null,
     }
   }),
 
