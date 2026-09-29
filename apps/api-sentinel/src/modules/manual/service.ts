@@ -101,16 +101,16 @@ export class ManualService {
     accountId: string
     displayName: string
   }): Promise<Result<ManualAccountDto, Error>> {
-    const account = await this.getAccount(args.accountId)
-    if (!account) {
-      return Err(new Error('Manual account not found'))
-    }
-    await this.db
+    const [account] = await this.db
       .update(manualAccounts)
       .set({ displayName: args.displayName })
       .where(eq(manualAccounts.id, args.accountId))
+      .returning()
+    if (!account) {
+      return Err(new Error('Manual account not found'))
+    }
     this.logger.info({ accountId: args.accountId, displayName: args.displayName }, 'Manual account renamed')
-    return Ok({ ...account, displayName: args.displayName })
+    return Ok(account)
   }
 
   public async removeAccount(accountId: string): Promise<Result<void, Error>> {

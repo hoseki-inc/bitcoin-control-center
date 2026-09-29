@@ -92,3 +92,18 @@ it('releases queued work after a transaction rolls back and hides its partial wr
   expect(results[1]).toEqual({ status: 'fulfilled', value: [] })
   expect((await service.listAccounts()).map((account) => account.displayName)).toEqual(['Survives'])
 })
+
+it('returns the renamed row and reports not found when a concurrent deletion wins', async () => {
+  const { service } = await setup()
+  const account = (
+    await service.createAccount({ displayName: 'Wallet', balanceSats: '10', balanceAsOf: '2026-01-01' })
+  ).unwrap()
+  const renamed = await service.renameAccount({ accountId: account.id, displayName: 'Renamed' })
+  expect(renamed.unwrap()).toEqual({ ...account, displayName: 'Renamed' })
+  const [removed, missing] = await Promise.all([
+    service.removeAccount(account.id),
+    service.renameAccount({ accountId: account.id, displayName: 'Too late' }),
+  ])
+  expect(removed.isOk()).toBe(true)
+  expect(missing.unwrapErr().message).toBe('Manual account not found')
+})
