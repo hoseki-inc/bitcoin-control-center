@@ -1488,7 +1488,7 @@ const statementRouter = t.router({
           }
 
           const { transactionMap, dailyRates } = dataResult.unwrap()
-          const txCount = Object.values(transactionMap).reduce((sum, txs) => sum + txs.length, 0)
+          const txCount = Object.values(transactionMap).reduce((sum, account) => sum + account.transactions.length, 0)
           logger.info(
             {
               statementId,

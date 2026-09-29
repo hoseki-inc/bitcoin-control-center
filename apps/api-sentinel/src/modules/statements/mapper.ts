@@ -31,6 +31,11 @@ export interface AggregatedTransaction {
   accountName: string
 }
 
+export interface StatementAccountTransactions {
+  displayName: string
+  transactions: AggregatedTransaction[]
+}
+
 // ─── Completed Statement (in-memory representation) ─────────────────────────
 
 export interface CompletedStatementData {
@@ -42,7 +47,7 @@ export interface CompletedStatementData {
   openingDate: Date
   closingDate: Date
   user: { email: string | null; name: string | null; address: string | null }
-  transactionMap: Record<string, AggregatedTransaction[]>
+  transactionMap: Record<string, StatementAccountTransactions>
   dailyRates: DailyRates
 }
 
@@ -162,7 +167,7 @@ export class StatementMapper {
   private aggregateStatementData(
     openingDate: Date,
     closingDate: Date,
-    transactionMap: Record<string, AggregatedTransaction[]>,
+    transactionMap: Record<string, StatementAccountTransactions>,
     dailyRates: { rates: Record<string, DailyRate>; source: string },
   ): Result<Summary & { statements: StatementEntry[] }, Error> {
     const statementEntries: StatementEntry[] = []
@@ -209,7 +214,7 @@ export class StatementMapper {
       provider: dailyRates.source,
     }
 
-    for (const [accountName, accountTxs] of Object.entries(transactionMap)) {
+    for (const { displayName: accountName, transactions: accountTxs } of Object.values(transactionMap)) {
       let currentBalance = 0n
       let openingBalance = 0n
       let moneyIn: Amount = {
