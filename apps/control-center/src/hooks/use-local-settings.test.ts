@@ -127,5 +127,49 @@ it('refreshes the same cached setting after saving', async () => {
         body: JSON.stringify({ json: { key: 'user_name', value: 'Updated name' } }),
       }),
     )
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect(fetchMock).toHaveBeenNthCalledWith(3, expect.stringContaining('/settings.get'), expect.anything())
+  })
+})
+
+it('keeps the saved setting when an older read finishes after the save', async () => {
+  await withTestSetup(async () => {
+    let resolveStaleRead: ((response: Response) => void) | undefined
+    const staleRead = new Promise<Response>((resolve) => {
+      resolveStaleRead = resolve
+    })
+    fetchMock
+      .mockResolvedValueOnce(Response.json({ result: { data: { json: 'Old name' } } }))
+      .mockReturnValueOnce(staleRead)
+      .mockResolvedValueOnce(Response.json({ result: { data: { json: null } } }))
+      .mockResolvedValueOnce(Response.json({ result: { data: { json: 'Updated name' } } }))
+    await render()
+    await act(async () => {
+      await vi.waitFor(() => {
+        expect(client.getQueryData(queryKey)).toBe('Old name')
+      })
+    })
+    await act(async () => {
+      void client.refetchQueries({ queryKey })
+      await vi.waitFor(() => {
+        expect(fetchMock).toHaveBeenCalledTimes(2)
+      })
+    })
+    await act(async () => {
+      container.querySelector('button')?.click()
+      await vi.waitFor(() => {
+        expect(client.isMutating()).toBe(0)
+        expect(client.getQueryData(queryKey)).toBe('Updated name')
+      })
+    })
+    await act(async () => {
+      resolveStaleRead?.(Response.json({ result: { data: { json: 'Old name' } } }))
+      await staleRead
+    })
+    await vi.waitFor(async () => {
+      await act(async () => {})
+      expect(client.getQueryData(queryKey)).toBe('Updated name')
+      expect(container.textContent).toBe(JSON.stringify('Updated name'))
+    })
   })
 })

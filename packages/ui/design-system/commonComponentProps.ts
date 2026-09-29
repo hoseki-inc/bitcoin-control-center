@@ -2,12 +2,12 @@
 export const inputProps = {
   border: '1px solid',
   borderColor: 'neutral.200',
-  borderRadius: '4px',
+  borderRadius: 'control',
 
-  color: 'neutral.600',
-  fontSize: '1rem',
+  color: 'neutral.900',
+  textStyle: 'text/md',
 
-  px: '2',
+  px: '3',
   py: '2',
 
   outline: 0,
@@ -16,12 +16,14 @@ export const inputProps = {
   _placeholder: {
     textStyle: 'text/md',
     fontWeight: 'normal',
-    color: 'neutral.400',
+    color: 'neutral.500',
   },
   _focus: {
-    borderColor: 'neutral.200',
+    borderColor: 'activeState.80',
     borderWidth: '1px',
-    outlineColor: 'primary.300',
+    outline: '2px solid',
+    outlineOffset: '2px',
+    outlineColor: 'activeState.80',
   },
   _disabled: {
     bgColor: 'neutral.50',

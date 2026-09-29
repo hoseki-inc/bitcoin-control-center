@@ -9,12 +9,16 @@ asarUnpack:
 # libSQL loads platform-specific Node-API addons; the Windows prebuild is
 # installed by build.sh alongside the macOS optional dependency.
 npmRebuild: false
+afterPack: ./after-pack.mjs
 files:
   - app/**/*
 extraResources:
   - from: tor/${os}
     to: tor
 mac:
+  binaries:
+    - Contents/Resources/tor/tor
+    - Contents/Resources/tor/libevent-2.1.7.dylib
   minimumSystemVersion: '13.0.0'
   category: public.app-category.finance
   target:

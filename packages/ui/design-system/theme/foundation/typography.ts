@@ -25,6 +25,19 @@ const paragraphStyles = {
 
 /* New Design System Tokens */
 export const newTextStyles = {
+  // Principal holdings amount.
+  'amount/primary': {
+    fontSize: '2.25rem',
+    lineHeight: '2.75rem',
+    letterSpacing: '-0.03em',
+    fontVariantNumeric: 'tabular-nums',
+  },
+  'amount/compact': {
+    fontSize: '1.75rem',
+    lineHeight: '2.25rem',
+    letterSpacing: '-0.03em',
+    fontVariantNumeric: 'tabular-nums',
+  },
   // Text
   'text/8xl': {
     fontSize: '3.25rem', // 52px

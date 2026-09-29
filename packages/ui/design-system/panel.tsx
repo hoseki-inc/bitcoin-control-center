@@ -39,7 +39,7 @@ export function Panel(props: PanelProps): JSX.Element {
   const { children, colorMode = 'neutral', customHeader, title, icon, ...rest } = props
 
   return (
-    <Box as="section" border="solid 1px" borderColor="neutral.200" borderRadius="4px" {...rest}>
+    <Box as="section" border="solid 1px" borderColor="neutral.200" borderRadius="panel" {...rest}>
       {customHeader ?? <Header icon={icon} title={title ?? ''} colorMode={colorMode} />}
       {children}
     </Box>
@@ -58,7 +58,7 @@ function Header({
   rightContent?: React.ReactNode
 }) {
   return (
-    <HStack as="header" p={4} {...styles[colorMode].header}>
+    <HStack as="header" px={6} py={4} borderTopRadius="panel" {...styles[colorMode].header}>
       {icon}
       <Text as="h1" textStyle="text/md" fontWeight="medium">
         {title}

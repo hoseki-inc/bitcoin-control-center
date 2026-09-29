@@ -68,7 +68,7 @@ Sentinel is the only application backend and owns the frontend API contract. Dis
 Local browser development requires:
 
 - Git
-- Node.js 22.23.2 or newer; `.nvmrc` selects Node 22.23.2
+- Node.js 22.23.3 or newer; `.nvmrc` selects Node 22.23.3
 - Corepack and pnpm 10.17.0
 - Access to an Electrum server whose network matches `BITCOIN_NETWORK`
 - A Chromium-based browser for WebHID hardware-wallet workflows
@@ -157,8 +157,8 @@ Sentinel reads `apps/api-sentinel/.env` during local development. That file is i
 | `MEMPOOL_API_URL`        | No       | `https://mempool.space`   | Base URL for market and transaction data; may point to a self-hosted instance |
 | `APP_DIR`                | No       | Current working directory | Directory containing bundled `public/` and `assets/` folders                  |
 | `SENTINEL_ALLOWED_HOSTS` | No       | Loopback hosts            | Comma-separated additional hostnames accepted by the protected local API      |
-| `SOCKS_PROXY_HOST`       | No       | None                      | SOCKS proxy host; normally managed by the desktop package                     |
-| `SOCKS_PROXY_PORT`       | No       | None                      | SOCKS proxy port; normally managed by the desktop package                     |
+| `SOCKS_PROXY_HOST`       | No       | None                      | External Tor SOCKS host when running Sentinel on its own; desktop ignores it  |
+| `SOCKS_PROXY_PORT`       | No       | None                      | External Tor SOCKS port when running Sentinel on its own; desktop ignores it  |
 
 ### Electrum connection guidance
 
@@ -501,7 +501,7 @@ The explicit Electron download verifies the checksum supplied by the locked pack
 
 ### Node or pnpm version errors
 
-The repository requires Node.js 22.23.2 or newer and pnpm 10.17.0.
+The repository requires Node.js 22.23.3 or newer and pnpm 10.17.0.
 
 ```bash
 nvm install
@@ -529,6 +529,8 @@ Then edit the connection values before restarting `pnpm dev`.
 - Confirm that `BITCOIN_NETWORK` matches the server.
 - If the server is local, verify that it is listening on the configured interface.
 - If DNS or TLS fails only in a sandbox, retry from a normal host terminal.
+
+The desktop launcher includes certificate authorities already trusted by macOS or Windows alongside its bundled public authorities. For a StartOS Electrum interface using **Root CA**, download that authority from your trusted StartOS dashboard and follow [StartOS's certificate installation instructions](https://docs.start9.com/start-os/0.4.0.x/trust-ca.html), then fully quit and reopen the desktop app. Public TLS connections still require a valid certificate matching the configured IP address or hostname. This desktop trust setup does not change StartOS or other node distributions. The app does not install or automatically trust certificates received from a server.
 
 ### Port already in use
 

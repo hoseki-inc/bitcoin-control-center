@@ -35,6 +35,11 @@ export interface ElectrumConnectionConfig {
   requestTimeout?: number
   /** Optional SOCKS proxy for Tor connections. */
   proxy?: SocksProxyConfig
+  /**
+   * Resolve the SOCKS proxy when connecting, for a proxy that picks its port when
+   * it starts. Takes precedence over `proxy`; null means the proxy is not ready.
+   */
+  resolveProxy?: () => SocksProxyConfig | null
   /** Optional TLS behavior for SSL Electrum connections. */
   tls?: ElectrumTlsConfig
 }
@@ -123,8 +128,9 @@ interface PendingRequest {
  * and newline-delimited JSON framing.
  */
 export class ElectrumTransport {
-  private readonly config: Required<Omit<ElectrumConnectionConfig, 'proxy' | 'tls'>> & {
+  private readonly config: Required<Omit<ElectrumConnectionConfig, 'proxy' | 'resolveProxy' | 'tls'>> & {
     proxy?: SocksProxyConfig
+    resolveProxy?: () => SocksProxyConfig | null
     tls?: ElectrumTlsConfig
   }
   private socket: net.Socket | tls.TLSSocket | null = null
@@ -132,6 +138,7 @@ export class ElectrumTransport {
   private nextId = 0
   private readonly pending = new Map<number, PendingRequest>()
   private connected = false
+  private cancelConnect: (() => void) | null = null
 
   public constructor(config: ElectrumConnectionConfig) {
     this.config = {
@@ -152,10 +159,23 @@ export class ElectrumTransport {
 
     return new AsyncResult(
       new Promise<Result<void, Error>>((resolve) => {
+        let settled = false
+        const finish = (result: Result<void, Error>): void => {
+          if (settled) {
+            return
+          }
+          settled = true
+          clearTimeout(timer)
+          this.cancelConnect = null
+          resolve(result)
+        }
         const timer = setTimeout(() => {
+          finish(Err(new Error(`Connection timeout after ${this.config.connectTimeout}ms`)))
           this.cleanup()
-          resolve(Err(new Error(`Connection timeout after ${this.config.connectTimeout}ms`)))
         }, this.config.connectTimeout)
+        this.cancelConnect = () => {
+          finish(Err(new Error('Connection closed')))
+        }
 
         const setupSocket = (socket: net.Socket | tls.TLSSocket): void => {
           socket.setEncoding('utf8')
@@ -163,10 +183,10 @@ export class ElectrumTransport {
             this.onData(data)
           })
           socket.on('error', (err: Error) => {
-            clearTimeout(timer)
             this.onError(err)
             if (!this.connected) {
-              resolve(Err(err))
+              finish(Err(err))
+              this.cleanup()
             }
           })
           socket.on('close', () => {
@@ -176,16 +196,30 @@ export class ElectrumTransport {
         }
 
         const onConnected = (): void => {
-          clearTimeout(timer)
+          if (settled) {
+            return
+          }
           this.connected = true
-          resolve(Ok(undefined))
+          finish(Ok(undefined))
         }
 
         try {
-          if (this.config.proxy) {
+          const proxy = this.config.resolveProxy ? this.config.resolveProxy() : this.config.proxy
+          if (this.config.resolveProxy && !proxy) {
+            // Never fall back to a direct connection when a proxy was requested.
+            finish(Err(new Error('The Tor proxy is not ready')))
+            return
+          }
+          if (proxy) {
             // Connect through SOCKS proxy (for Tor)
-            this.connectViaProxy(this.config.proxy)
+            this.connectViaProxy(proxy)
               .then((proxySocket) => {
+                // A SOCKS handshake can finish after cancellation or timeout.
+                // Never attach its late socket to a disconnected client.
+                if (settled) {
+                  proxySocket.destroy()
+                  return
+                }
                 if (this.config.protocol === 'ssl') {
                   // Upgrade the proxied TCP socket to TLS
                   const tlsSocket = tls.connect(
@@ -202,8 +236,7 @@ export class ElectrumTransport {
                 }
               })
               .catch((cause: unknown) => {
-                clearTimeout(timer)
-                resolve(Err(cause instanceof Error ? cause : new Error(String(cause))))
+                finish(Err(cause instanceof Error ? cause : new Error(String(cause))))
               })
           } else {
             // Direct connection (no proxy)
@@ -228,8 +261,7 @@ export class ElectrumTransport {
             setupSocket(socket)
           }
         } catch (err) {
-          clearTimeout(timer)
-          resolve(Err(err instanceof Error ? err : new Error(String(err))))
+          finish(Err(err instanceof Error ? err : new Error(String(err))))
         }
       }),
     )
@@ -295,6 +327,9 @@ export class ElectrumTransport {
         type: proxy.type ?? 5,
       },
       command: 'connect',
+      // The library's own 30-second default would otherwise cut the handshake
+      // short; Tor needs longer to build a first circuit or reach an onion service.
+      timeout: this.config.connectTimeout,
       destination: {
         host: this.config.host,
         port: this.config.port,
@@ -368,6 +403,7 @@ export class ElectrumTransport {
   }
 
   private onClose(): void {
+    this.cancelConnect?.()
     this.connected = false
     this.socket = null
     // Reject all pending requests
@@ -380,6 +416,7 @@ export class ElectrumTransport {
   }
 
   private cleanup(): void {
+    this.cancelConnect?.()
     this.connected = false
     if (this.socket) {
       this.socket.removeAllListeners()
@@ -388,6 +425,7 @@ export class ElectrumTransport {
     }
     for (const [, pending] of this.pending) {
       clearTimeout(pending.timer)
+      pending.resolve(Err(new Error('Connection closed')))
     }
     this.pending.clear()
     this.buffer = ''
