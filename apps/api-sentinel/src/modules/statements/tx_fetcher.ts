@@ -113,7 +113,7 @@ export const fetchTransactionEntries = asyncFn(
         batch.map(async (txid) => {
           const response = await fetch(`${baseUrl}/api/tx/${txid}`)
           if (!response.ok) {
-            return null
+            return Err(new Error(`Failed to fetch transaction ${txid}: HTTP ${response.status}`))
           }
           return parseUnknown(MempoolTxSchema, await response.json()).mapErr(
             () => new Error(`Invalid transaction data returned from mempool.space for ${txid}`),
@@ -122,11 +122,8 @@ export const fetchTransactionEntries = asyncFn(
       )
 
       for (const [j, result] of results.entries()) {
-        // mempool.space may not know a pending transaction your server has seen, so a lookup it can't
-        // answer is skipped. Statements built from Electrum alone (#204) will remove this source.
-        if (result.status !== 'fulfilled' || !result.value) {
-          logger.warn({ txid: batch[j] }, 'Failed to fetch tx from mempool.space, skipping')
-          continue
+        if (result.status === 'rejected') {
+          return Err(new Error(`Failed to fetch transaction ${batch[j]}`, { cause: result.reason }))
         }
 
         if (result.value.isErr()) {
