@@ -7,6 +7,7 @@ import { type Root, createRoot } from 'react-dom/client'
 import { toast } from 'sonner'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import { z } from 'zod'
+import type { RouterOutput } from '../../trpc'
 import { SettingsPage } from './index'
 
 const browser = await vi.hoisted(async () => {
@@ -31,7 +32,15 @@ const fetchMock = vi.fn<typeof fetch>()
 async function withTestSetup(run: () => Promise<void>): Promise<void> {
   const dom = browser.acquire()
   queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
-  for (const key of ['user_name', 'electrum_host', 'electrum_port', 'electrum_protocol', 'tor_enabled']) {
+  for (const key of [
+    'user_name',
+    'electrum_host',
+    'electrum_port',
+    'electrum_protocol',
+    'tor_enabled',
+    'price_source',
+    'price_fallbacks_enabled',
+  ]) {
     queryClient.setQueryData(['local-settings', key], null)
   }
   vi.spyOn(toast, 'error').mockReturnValue('test-toast')
@@ -88,7 +97,7 @@ it.each([
         ),
       )
     })
-    const preset = container.querySelector('select')
+    const preset = container.querySelector<HTMLSelectElement>('#electrum-preset')
     if (!preset) {
       throw new Error('Missing server preset')
     }
@@ -185,5 +194,104 @@ it.each([
     } else {
       expect(container.textContent).not.toContain('electrum.example')
     }
+  })
+})
+
+const priceOptions: RouterOutput['settings']['priceSource'] = {
+  selected: 'block',
+  fallbacks: true,
+  sources: [
+    { name: 'block', label: 'Block' },
+    { name: 'mempool.space', label: 'mempool.space' },
+    { name: 'coinbase', label: 'Coinbase' },
+    { name: 'coingecko', label: 'CoinGecko' },
+  ],
+  last: null,
+}
+
+/** Serves the price settings and records each saved setting. */
+function answerPriceSettings(options: RouterOutput['settings']['priceSource']) {
+  const saved: unknown[] = []
+  fetchMock.mockImplementation(async (input, init) => {
+    const url = parseUnknown(z.string(), input).unwrapOr('')
+    if (url.includes('/settings.priceSource')) {
+      return Response.json({ result: { data: { json: options } } })
+    }
+    if (url.endsWith('/settings.update')) {
+      saved.push(JSON.parse(parseUnknown(z.string(), init?.body).unwrapOr('null')))
+    }
+    return Response.json({ result: { data: { json: null } } })
+  })
+  return { saved: () => saved }
+}
+
+async function renderPriceSettings(): Promise<HTMLSelectElement> {
+  await act(async () => {
+    root.render(
+      createElement(
+        ChakraProvider,
+        null,
+        createElement(QueryClientProvider, { client: queryClient }, createElement(SettingsPage, { desktop: false })),
+      ),
+    )
+  })
+  const select = container.querySelector<HTMLSelectElement>('#price-source')
+  if (!select) {
+    throw new Error('Missing price source')
+  }
+  await vi.waitFor(async () => {
+    await act(async () => {})
+    expect(Array.from(select.options, (option) => option.textContent)).toEqual([
+      'Block',
+      'mempool.space',
+      'Coinbase',
+      'CoinGecko',
+    ])
+  })
+  return select
+}
+
+it('lists the price sources and saves a new choice', async () => {
+  await withTestSetup(async () => {
+    const server = answerPriceSettings(priceOptions)
+    const select = await renderPriceSettings()
+    expect(select.value).toBe('block')
+    expect(container.textContent).toContain('If your primary price source is unavailable, use the next best source.')
+
+    await act(async () => {
+      select.value = 'coinbase'
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await vi.waitFor(() => {
+      expect(server.saved()).toEqual([{ json: { key: 'price_source', value: 'coinbase' } }])
+    })
+    expect(toast.error).not.toHaveBeenCalled()
+  })
+})
+
+it('saves the fallback choice', async () => {
+  await withTestSetup(async () => {
+    const server = answerPriceSettings(priceOptions)
+    await renderPriceSettings()
+    const checkbox = container.querySelector<HTMLInputElement>('input[type="checkbox"]')
+    if (!checkbox) {
+      throw new Error('Missing fallback checkbox')
+    }
+    expect(checkbox.checked).toBe(true)
+
+    await act(async () => {
+      checkbox.click()
+    })
+    await vi.waitFor(() => {
+      expect(server.saved()).toEqual([{ json: { key: 'price_fallbacks_enabled', value: 'false' } }])
+    })
+  })
+})
+
+it('shows when a fallback source supplied the price', async () => {
+  await withTestSetup(async () => {
+    answerPriceSettings({ ...priceOptions, last: { source: 'coinbase', asOf: '2026-09-29T17:00:00.000Z' } })
+    await renderPriceSettings()
+    expect(container.textContent).toContain('Using Coinbase while Block is unavailable.')
   })
 })

@@ -232,6 +232,9 @@ async function withTestSetup(run: () => Promise<void>): Promise<void> {
           },
         })
       }
+      if (path === 'settings.priceSource') {
+        return Response.json({ result: { data: { json: null } } })
+      }
       if (path === 'settings.startTor') {
         torAttempts += 1
         const started = { state: 'starting', progress: 0, attempt: torAttempts }

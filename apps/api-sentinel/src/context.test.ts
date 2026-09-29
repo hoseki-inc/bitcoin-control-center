@@ -506,3 +506,32 @@ describe('Tor connection policy', () => {
     })
   })
 })
+
+describe('price source settings', () => {
+  it('saves the price source and fallbacks and reports them to Settings', async () => {
+    await withTestSetup(async () => {
+      const caller = appRouter.createCaller({ app: await context() })
+      await expect(caller.settings.priceSource()).resolves.toMatchObject({
+        selected: 'mempool',
+        fallbacks: true,
+        last: null,
+      })
+
+      await caller.settings.update({ key: 'price_source', value: 'coinbase' })
+      await caller.settings.update({ key: 'price_fallbacks_enabled', value: 'false' })
+      await expect(caller.settings.priceSource()).resolves.toMatchObject({ selected: 'coinbase', fallbacks: false })
+      await expect(caller.settings.get({ key: 'price_source' })).resolves.toBe('coinbase')
+    })
+  })
+
+  it.each([
+    ['price_source', 'kraken'],
+    ['price_fallbacks_enabled', 'yes'],
+  ])('rejects %s set to %s', async (key, value) => {
+    await withTestSetup(async () => {
+      const caller = appRouter.createCaller({ app: await context() })
+      await expect(caller.settings.update({ key, value })).rejects.toMatchObject({ code: 'BAD_REQUEST' })
+      await expect(caller.settings.get({ key })).resolves.toBeNull()
+    })
+  })
+})

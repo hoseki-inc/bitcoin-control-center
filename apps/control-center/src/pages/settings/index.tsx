@@ -2,6 +2,7 @@ import {
   Box,
   Button,
   ButtonGroup,
+  Checkbox,
   Circle,
   Divider,
   FormControl,
@@ -25,14 +26,14 @@ import {
 } from '@chakra-ui/react'
 import { parseUnknown } from '@hoseki/packages/result/lib/parse'
 import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { CircleAlertIcon, CircleCheckIcon } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { z } from 'zod'
-import { useLocalSetting } from '../../hooks/use-local-settings'
+import { type LocalSettingState, useLocalSetting } from '../../hooks/use-local-settings'
 import { isDesktop } from '../../mode'
-import type { RouterInput } from '../../trpc'
+import { type RouterInput, type RouterOutput, baseTrpc } from '../../trpc'
 
 type ElectrumStatusState = { status: ElectrumStatus | null; refresh: () => void }
 
@@ -111,9 +112,122 @@ export function SettingsPage({ desktop = isDesktop }: { desktop?: boolean }): JS
             </FormControl>
           </Box>
         </SimpleGrid>
+        <PriceSourceSettings />
         {desktop && <ElectrumSettings />}
       </Stack>
     </Box>
+  )
+}
+
+// ─── Bitcoin price source ────────────────────────────────────────────────────
+
+type PriceSourceOptions = RouterOutput['settings']['priceSource']
+const PRICE_SOURCE_QUERY_KEY = ['price-source']
+
+function PriceSourceSettings(): JSX.Element {
+  const queryClient = useQueryClient()
+  const query = useQuery({
+    queryKey: PRICE_SOURCE_QUERY_KEY,
+    queryFn: async () => baseTrpc.settings.priceSource.query(),
+  })
+  const sourceSetting = useLocalSetting('price_source')
+  const fallbacksSetting = useLocalSetting('price_fallbacks_enabled')
+  // Older servers without this endpoint answer null.
+  const options: PriceSourceOptions | null = query.data ?? null
+  const isSaving = sourceSetting.isSaving || fallbacksSetting.isSaving
+
+  const save = async (
+    setting: LocalSettingState,
+    value: string,
+    update: Partial<PriceSourceOptions>,
+    failure: string,
+  ): Promise<void> => {
+    if (options) {
+      queryClient.setQueryData(PRICE_SOURCE_QUERY_KEY, { ...options, ...update })
+    }
+    try {
+      await setting.saveAsync(value)
+    } catch {
+      toast.error(failure)
+    }
+    // Refresh this section and every price shown elsewhere from the saved setting.
+    await queryClient.invalidateQueries()
+  }
+
+  const label = (name: string | undefined): string | undefined =>
+    options?.sources.find((source) => source.name === name)?.label
+  const selectedLabel = label(options?.selected) ?? 'your primary price source'
+  const fallbackLabel =
+    options?.last && options.last.source !== options.selected ? label(options.last.source) : undefined
+
+  return (
+    <SimpleGrid columns={{ base: 1, md: 2 }} spacing={{ base: 5, md: 10 }}>
+      <Box>
+        <Text as="h2" textStyle="text/md" fontWeight="semibold" color="neutral.900">
+          Bitcoin price
+        </Text>
+        <Text id="price-source-description" mt={2} textStyle="text/sm" color="neutral.600" maxW="36ch">
+          Used to show your balances in US dollars. Price requests include no wallet information.
+        </Text>
+      </Box>
+      <FormControl isDisabled={!options || isSaving}>
+        <FormLabel htmlFor="price-source" textStyle="text/sm" mb={2}>
+          Price source
+        </FormLabel>
+        <Select
+          id="price-source"
+          aria-describedby="price-source-description"
+          value={options?.selected ?? ''}
+          onChange={(event) => {
+            const next = options?.sources.find((source) => source.name === event.target.value)
+            if (next) {
+              void save(
+                sourceSetting,
+                next.name,
+                { selected: next.name },
+                'Could not save the price source. Please try again.',
+              )
+            }
+          }}
+        >
+          {options?.sources.map((source) => (
+            <option key={source.name} value={source.name}>
+              {source.label}
+            </option>
+          ))}
+        </Select>
+        <Checkbox
+          id="price-fallbacks"
+          mt={4}
+          size="sm"
+          colorScheme="orange"
+          isChecked={options?.fallbacks ?? true}
+          onChange={(event) => {
+            void save(
+              fallbacksSetting,
+              String(event.target.checked),
+              { fallbacks: event.target.checked },
+              'Could not save the fallback setting. Please try again.',
+            )
+          }}
+        >
+          <Text textStyle="text/sm">Allow fallbacks</Text>
+        </Checkbox>
+        <Text mt={1} textStyle="text/xs" color="neutral.600">
+          If your primary price source is unavailable, use the next best source.
+        </Text>
+        {query.isError && (
+          <Text role="alert" mt={2} textStyle="text/sm" color="error.700">
+            Could not load price settings. Refresh to try again.
+          </Text>
+        )}
+        {fallbackLabel !== undefined && (
+          <Text as="output" display="block" mt={2} textStyle="text/xs" color="neutral.600">
+            Using {fallbackLabel} while {selectedLabel} is unavailable.
+          </Text>
+        )}
+      </FormControl>
+    </SimpleGrid>
   )
 }
 

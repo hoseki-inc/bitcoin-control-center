@@ -90,7 +90,10 @@ const dataSource: DashboardDataSource = {
     exchangeAccountsQuery: { data: [], isLoading: false },
     manualAccountsQuery: { data: mocks.holdings, isLoading: false },
     etfAccountsQuery: { data: [], isLoading: false },
-    btcPriceQuery: { data: { value: new Decimal(50_000), asOf: new Date('2026-01-01T00:00:00Z') }, isLoading: false },
+    btcPriceQuery: {
+      data: { value: new Decimal(50_000), asOf: new Date('2026-01-01T00:00:00Z'), source: 'block' },
+      isLoading: false,
+    },
   }),
   useHistory: (input, options) => mocks.useQuery(input, options),
   useBalances: () => ({ data: new Map() }),

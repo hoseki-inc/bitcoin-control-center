@@ -12,7 +12,7 @@ import { EtfService } from './modules/etf/service'
 import { ExchangeService } from './modules/exchange/service'
 import { ManualService } from './modules/manual/service'
 import { DailyRatesService } from './modules/price/daily_rates'
-import { PriceService } from './modules/price/service'
+import { PriceService, readPriceSettings } from './modules/price/service'
 import { StatementService } from './modules/statements/service'
 
 /**
@@ -166,7 +166,11 @@ export const createAppContext = asyncFn(
       logger,
     })
 
-    const priceService = new PriceService({ logger, mempoolApiUrl: env.MEMPOOL_API_URL })
+    const priceService = new PriceService({
+      logger,
+      mempoolApiUrl: env.MEMPOOL_API_URL,
+      settings: () => readPriceSettings(getSetting),
+    })
     const dailyRatesService = new DailyRatesService({ logger, mempoolApiUrl: env.MEMPOOL_API_URL })
 
     const controlCenterService = new ControlCenterService({
