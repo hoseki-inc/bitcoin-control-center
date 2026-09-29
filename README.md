@@ -68,7 +68,7 @@ Sentinel is the only application backend and owns the frontend API contract. Dis
 Local browser development requires:
 
 - Git
-- Node.js 22.23.2 or newer; `.nvmrc` selects Node 22.23.2
+- Node.js 22.23.3 or newer; `.nvmrc` selects Node 22.23.3
 - Corepack and pnpm 10.17.0
 - Access to an Electrum server whose network matches `BITCOIN_NETWORK`
 - A Chromium-based browser for WebHID hardware-wallet workflows
@@ -484,7 +484,7 @@ The explicit Electron download verifies the checksum supplied by the locked pack
 
 ### Node or pnpm version errors
 
-The repository requires Node.js 22.23.2 or newer and pnpm 10.17.0.
+The repository requires Node.js 22.23.3 or newer and pnpm 10.17.0.
 
 ```bash
 nvm install
