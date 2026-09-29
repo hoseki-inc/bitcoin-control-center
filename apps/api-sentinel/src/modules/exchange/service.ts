@@ -556,11 +556,8 @@ export class ExchangeService {
   // ─── Remove ────────────────────────────────────────────────────────────
 
   public async removeAccount(accountId: string): Promise<Result<void, Error>> {
-    const removed = await this.db
-      .delete(exchangeAccounts)
-      .where(eq(exchangeAccounts.id, accountId))
-      .returning({ id: exchangeAccounts.id })
-    if (removed.length === 0) {
+    const removed = await this.db.delete(exchangeAccounts).where(eq(exchangeAccounts.id, accountId))
+    if (removed.rowsAffected === 0) {
       return Err(new Error('Exchange account not found'))
     }
     this.logger.info({ accountId }, 'Exchange account removed')
@@ -889,8 +886,7 @@ export class ExchangeService {
             statementMonth: item.statementMonth,
           })
           .onConflictDoNothing({ target: [exchangeStatementTxs.accountId, exchangeStatementTxs.externalId] })
-          .returning({ id: exchangeStatementTxs.id })
-        if (inserted.length > 0) {
+        if (inserted.rowsAffected > 0) {
           imported++
         } else {
           skipped++
@@ -962,13 +958,12 @@ export class ExchangeService {
   }
 
   public async deleteStatementMonth(accountId: string, statementMonth: string): Promise<number> {
-    const rows = await this.db
+    const result = await this.db
       .delete(exchangeStatementTxs)
       .where(
         and(eq(exchangeStatementTxs.accountId, accountId), eq(exchangeStatementTxs.statementMonth, statementMonth)),
       )
-      .returning({ id: exchangeStatementTxs.id })
-    return rows.length
+    return result.rowsAffected
   }
 
   private async getAccount(id: string): Promise<ExchangeAccountDto | null> {

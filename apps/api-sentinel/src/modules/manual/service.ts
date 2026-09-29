@@ -114,11 +114,8 @@ export class ManualService {
   }
 
   public async removeAccount(accountId: string): Promise<Result<void, Error>> {
-    const removed = await this.db
-      .delete(manualAccounts)
-      .where(eq(manualAccounts.id, accountId))
-      .returning({ id: manualAccounts.id })
-    if (removed.length === 0) {
+    const removed = await this.db.delete(manualAccounts).where(eq(manualAccounts.id, accountId))
+    if (removed.rowsAffected === 0) {
       return Err(new Error('Manual account not found'))
     }
     this.logger.info({ accountId }, 'Manual account removed')

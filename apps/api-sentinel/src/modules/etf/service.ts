@@ -84,12 +84,11 @@ export class EtfService {
   }
 
   public async renameAccount(args: { accountId: string; displayName: string }): Promise<Result<void, Error>> {
-    const rows = await this.db
+    const result = await this.db
       .update(etfAccounts)
       .set({ displayName: args.displayName })
       .where(eq(etfAccounts.id, args.accountId))
-      .returning({ id: etfAccounts.id })
-    if (rows.length === 0) {
+    if (result.rowsAffected === 0) {
       return Err(new Error('ETF account not found'))
     }
     this.logger.info({ accountId: args.accountId, displayName: args.displayName }, 'ETF account renamed')
@@ -97,11 +96,8 @@ export class EtfService {
   }
 
   public async removeAccount(accountId: string): Promise<Result<void, Error>> {
-    const rows = await this.db
-      .delete(etfAccounts)
-      .where(eq(etfAccounts.id, accountId))
-      .returning({ id: etfAccounts.id })
-    if (rows.length === 0) {
+    const result = await this.db.delete(etfAccounts).where(eq(etfAccounts.id, accountId))
+    if (result.rowsAffected === 0) {
       return Err(new Error('ETF account not found'))
     }
     this.logger.info({ accountId }, 'ETF account removed')

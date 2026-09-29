@@ -808,20 +808,18 @@ const registryRouter = t.router({
 
       const now = new Date().toISOString()
       await db.transaction(async (tx) => {
-        const accountRows = await tx
+        const updatedAccount = await tx
           .update(accountTable)
           .set({ status: 'verified' })
           .where(and(eq(accountTable.id, challenge.accountId), isNull(accountTable.deletedAt)))
-          .returning({ id: accountTable.id })
-        if (accountRows.length === 0) {
+        if (updatedAccount.rowsAffected === 0) {
           throw new TRPCError({ code: 'BAD_REQUEST', message: 'Archived claims cannot complete verification' })
         }
         const completed = await tx
           .update(challenges)
           .set({ isSatisfied: 1, completedAt: now })
           .where(and(eq(challenges.id, input.challengeId), eq(challenges.isSatisfied, 0)))
-          .returning({ id: challenges.id })
-        if (completed.length === 0) {
+        if (completed.rowsAffected === 0) {
           throw new TRPCError({ code: 'BAD_REQUEST', message: 'Challenge already completed' })
         }
       })
@@ -1820,11 +1818,8 @@ const portalProveRouter = t.router({
       }),
 
     remove: publicProcedure.input(z.object({ id: z.string() })).mutation(async ({ ctx, input }) => {
-      const deleted = await ctx.app.database.db
-        .delete(accountTable)
-        .where(eq(accountTable.id, input.id))
-        .returning({ id: accountTable.id })
-      if (deleted.length === 0) {
+      const deleted = await ctx.app.database.db.delete(accountTable).where(eq(accountTable.id, input.id))
+      if (deleted.rowsAffected === 0) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Account not found' })
       }
     }),

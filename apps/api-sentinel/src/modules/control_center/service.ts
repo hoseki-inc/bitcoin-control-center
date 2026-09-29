@@ -444,8 +444,7 @@ export class ControlCenterService {
         .update(accountTable)
         .set({ deletedAt: archivedAt })
         .where(and(eq(accountTable.id, accountId), isNull(accountTable.deletedAt)))
-        .returning({ id: accountTable.id })
-      if (updated.length === 0) {
+      if (updated.rowsAffected === 0) {
         return false
       }
       await this.upsertAccountSnapshot(tx, accountId, preservedBalance.toString(), archivedAt)
@@ -461,12 +460,11 @@ export class ControlCenterService {
 
   public async restoreAccount(accountId: string): Promise<Result<void, Error>> {
     const restored = await this.db.transaction(async (tx): Promise<boolean> => {
-      const rows = await tx
+      const result = await tx
         .update(accountTable)
         .set({ deletedAt: null })
         .where(and(eq(accountTable.id, accountId), isNotNull(accountTable.deletedAt)))
-        .returning({ id: accountTable.id })
-      if (rows.length === 0) {
+      if (result.rowsAffected === 0) {
         return false
       }
       await tx.delete(accountHistorySyncs).where(eq(accountHistorySyncs.accountId, accountId))
