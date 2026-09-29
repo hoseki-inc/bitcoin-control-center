@@ -32,6 +32,8 @@ export function installBrowserDom(dom: JSDOM): void {
     HTMLInputElement: window.HTMLInputElement,
     HTMLButtonElement: window.HTMLButtonElement,
     HTMLCanvasElement: window.HTMLCanvasElement,
+    // Chakra's modal focus trap checks for iframes.
+    HTMLIFrameElement: window.HTMLIFrameElement,
     Element: window.Element,
     Node: window.Node,
     Event: window.Event,

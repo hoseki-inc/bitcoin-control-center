@@ -1,3 +1,4 @@
+import assert from 'node:assert/strict'
 import { ChakraProvider } from '@chakra-ui/react'
 // @vitest-environment node
 import { parseUnknown } from '@hoseki/packages/result/lib/parse'
@@ -88,6 +89,32 @@ function torSwitch(): HTMLInputElement {
     throw new Error('Missing Tor switch')
   }
   return input
+}
+
+// Chakra renders dialogs in a portal outside the settings container.
+function dialogButton(label: string): HTMLButtonElement | undefined {
+  return Array.from(document.body.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')).find(
+    (item) => item.textContent === label,
+  )
+}
+
+async function click(target: HTMLElement): Promise<void> {
+  await act(async () => {
+    target.click()
+  })
+}
+
+function useStepTimers(): (milliseconds: number) => Promise<void> {
+  // Jump over the status refresh and notice timers instead of waiting for them.
+  vi.useFakeTimers({ shouldAdvanceTime: true })
+  onTestFinished(() => {
+    vi.useRealTimers()
+  })
+  return async (milliseconds) => {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(milliseconds)
+    })
+  }
 }
 
 async function turnTorOn(): Promise<void> {
@@ -336,18 +363,58 @@ describe('desktop connection settings', () => {
     })
   })
 
-  it('turns the switch off after a failed Tor start without saving a direct connection', async () => {
+  it('turns the switch off after a failed Tor start and asks before connecting without Tor', async () => {
     await withTestSetup(async () => {
+      const advance = useStepTimers()
       await render()
       await turnTorOn()
       torStatus = { state: 'failed', message: 'Tor could not connect within two minutes.' }
-      await waitForText('Tor could not connect within two minutes.')
+      await advance(1000)
+      expect(container.textContent).toContain('Tor could not connect within two minutes.')
       expect(torSwitch().checked).toBe(false)
-      expect(requests.filter(({ path }) => path === 'settings.reconnectElectrum')).toEqual([])
+      // Retrying with Save or Test must not quietly connect directly.
+      await click(button('Save & Reconnect'))
+      expect(document.body.textContent).toContain('The server will see your IP address and the addresses you look up.')
+      const cancel = dialogButton('Cancel')
+      assert.ok(cancel, 'Expected the confirmation dialog')
+      await click(cancel)
+      await click(button('Test Connection'))
+      expect(document.body.textContent).toContain('The server will see your IP address.')
+      const cancelTest = dialogButton('Cancel')
+      assert.ok(cancelTest, 'Expected the confirmation dialog')
+      await click(cancelTest)
+      expect(
+        requests.filter(({ path }) => path === 'settings.reconnectElectrum' || path === 'settings.testElectrum'),
+      ).toEqual([])
       expect(saved.get('tor_enabled')).toBe('false')
       await turnTorOn()
       expect(container.textContent).not.toContain('Tor could not connect')
       expect(requests.filter(({ path }) => path === 'settings.startTor')).toHaveLength(2)
+    })
+  })
+
+  it('switches a saved Tor connection to direct only after confirmation', async () => {
+    await withTestSetup(async () => {
+      saved.set('tor_enabled', 'true')
+      torStatus = { state: 'ready' }
+      await render()
+      await vi.waitFor(() => {
+        expect(torSwitch().checked).toBe(true)
+      })
+      await click(torSwitch())
+      await click(button('Save & Reconnect'))
+      expect(requests.filter(({ path }) => path === 'settings.reconnectElectrum')).toEqual([])
+      const confirm = dialogButton('Connect without Tor')
+      assert.ok(confirm, 'Expected the confirmation dialog')
+      await click(confirm)
+      await act(async () => {
+        finishSave(Response.json({ result: { data: null } }))
+      })
+      await waitForToast('success')
+      expect(
+        requests.filter(({ path }) => path === 'settings.reconnectElectrum').map(({ input }) => input?.torEnabled),
+      ).toEqual([false])
+      expect(saved.get('tor_enabled')).toBe('false')
     })
   })
 
@@ -368,10 +435,13 @@ describe('desktop connection settings', () => {
     await withTestSetup(async () => {
       saved.set('tor_enabled', 'true')
       torStatus = { state: 'failed', message: 'Tor stopped unexpectedly.' }
+      connected = false
       await render()
       await waitForText('Tor stopped unexpectedly.')
       expect(torSwitch().checked).toBe(false)
       expect(saved.get('tor_enabled')).toBe('true')
+      expect(container.textContent).toContain('Turn Tor on to try again, or choose a different server below.')
+      expect(container.textContent).not.toContain('then use Save & Reconnect')
       expect(requests.filter(({ path }) => path === 'settings.reconnectElectrum')).toEqual([])
     })
   })

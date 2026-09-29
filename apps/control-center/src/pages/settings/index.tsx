@@ -8,6 +8,12 @@ import {
   FormLabel,
   HStack,
   Input,
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalFooter,
+  ModalHeader,
+  ModalOverlay,
   Select,
   SimpleGrid,
   Stack,
@@ -229,8 +235,14 @@ function ElectrumSettings(): JSX.Element {
   const retryingTor = useRef(false)
   const previousTorState = useRef<string | undefined>(undefined)
   const [torReadyNotice, setTorReadyNotice] = useState<'shown' | 'fading' | null>(null)
+  const [directConfirmation, setDirectConfirmation] = useState<'test' | 'save' | null>(null)
   const torState = electrumStatus?.tor?.state
   const torStarting = torEnabled && torState === 'starting'
+  // Connecting without Tor after the saved connection used it, or right after Tor
+  // failed, would reveal this computer's IP address. Ask before doing that.
+  const leavingTor = !torEnabled && (savedTorEnabled === 'true' || torFailure !== null)
+  const torFailedForSavedConnection =
+    torFailure !== null || (savedTorEnabled === 'true' && torState === 'failed' && !torEnabled)
   const torStartingFade = useTorStartingFade()
 
   // Like Sparrow, a failed Tor start turns the switch off. That only changes the
@@ -428,8 +440,9 @@ function ElectrumSettings(): JSX.Element {
             </Text>
             {!electrumStatus.connected && (
               <Text textStyle="text/sm" color="red.700">
-                Your saved data is still on this device. Check your connection or choose a server below, then use Save
-                &amp; Reconnect.
+                {torFailedForSavedConnection
+                  ? 'Your saved data is still on this device. Turn Tor on to try again, or choose a different server below.'
+                  : 'Your saved data is still on this device. Check your connection or choose a server below, then use Save & Reconnect.'}
               </Text>
             )}
           </VStack>
@@ -556,7 +569,13 @@ function ElectrumSettings(): JSX.Element {
       <ButtonGroup size="sm" gap={2} flexWrap="wrap">
         <Button
           variant="outline"
-          onClick={() => void handleTest()}
+          onClick={() => {
+            if (leavingTor) {
+              setDirectConfirmation('test')
+            } else {
+              void handleTest()
+            }
+          }}
           isLoading={isTesting}
           loadingText="Testing..."
           isDisabled={!host.trim() || !port.trim() || isLoading || isSaving || torStarting}
@@ -565,13 +584,60 @@ function ElectrumSettings(): JSX.Element {
         </Button>
         <Button
           colorScheme="green"
-          onClick={() => void handleSave()}
+          onClick={() => {
+            if (leavingTor) {
+              setDirectConfirmation('save')
+            } else {
+              void handleSave()
+            }
+          }}
           isLoading={isSaving}
           isDisabled={(!isDirty && electrumStatus?.connected !== false) || isLoading || isTesting || torStarting}
         >
           Save & Reconnect
         </Button>
       </ButtonGroup>
+
+      <Modal
+        isOpen={directConfirmation !== null}
+        onClose={() => {
+          setDirectConfirmation(null)
+        }}
+        isCentered
+      >
+        <ModalOverlay />
+        <ModalContent>
+          <ModalHeader>Connect without Tor?</ModalHeader>
+          <ModalBody>
+            <Text textStyle="text/sm" color="neutral.700">
+              {directConfirmation === 'save'
+                ? 'The server will see your IP address and the addresses you look up.'
+                : 'The server will see your IP address.'}
+            </Text>
+          </ModalBody>
+          <ModalFooter gap={2}>
+            <Button
+              variant="outline"
+              flex={1}
+              onClick={() => {
+                setDirectConfirmation(null)
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              flex={1}
+              onClick={() => {
+                const action = directConfirmation
+                setDirectConfirmation(null)
+                void (action === 'save' ? handleSave() : handleTest())
+              }}
+            >
+              Connect without Tor
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
     </VStack>
   )
 }
