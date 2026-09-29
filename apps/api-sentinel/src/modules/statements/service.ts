@@ -37,43 +37,7 @@ export interface StatementDto {
   userId: string
 }
 
-export interface StatementRow {
-  id: string
-  status: StatementDto['status']
-  timezone: string
-  opening_date: string
-  closing_date: string
-  account_ids: string
-  user_name: string | null
-  user_address: string | null
-  transaction_map: string | null
-  daily_rates: string | null
-  counter: number
-  created_at: string
-  updated_at: string
-}
-
-export interface CompletedStatementRow extends StatementRow {
-  status: 'completed'
-  transaction_map: string
-  daily_rates: string
-}
-
-const statementColumns = {
-  id: statements.id,
-  status: statements.status,
-  timezone: statements.timezone,
-  opening_date: statements.openingDate,
-  closing_date: statements.closingDate,
-  account_ids: statements.accountIds,
-  user_name: statements.userName,
-  user_address: statements.userAddress,
-  transaction_map: statements.transactionMap,
-  daily_rates: statements.dailyRates,
-  counter: statements.counter,
-  created_at: statements.createdAt,
-  updated_at: statements.updatedAt,
-}
+type StatementRow = typeof statements.$inferSelect
 
 export interface GenerateStatementInput {
   claimIds: string[]
@@ -228,7 +192,7 @@ export class StatementService {
 
   /** Find a statement by ID and return its DTO. */
   public async findById(id: string): Promise<StatementDto | null> {
-    const [row] = await this.db.select(statementColumns).from(statements).where(eq(statements.id, id))
+    const [row] = await this.db.select().from(statements).where(eq(statements.id, id))
     if (!row) {
       return null
     }
@@ -240,26 +204,26 @@ export class StatementService {
     id: string,
   ): Promise<{ row: StatementRow; transactionMap: StatementTransactions; dailyRates: DailyRates } | null> {
     const [row] = await this.db
-      .select(statementColumns)
+      .select()
       .from(statements)
       .where(and(eq(statements.id, id), eq(statements.status, 'completed')))
     if (!row) {
       return null
     }
 
-    if (row.transaction_map == null || row.daily_rates == null) {
+    if (row.transactionMap == null || row.dailyRates == null) {
       throw new Error('Stored completed statement is missing transaction data')
     }
     return {
       row,
-      transactionMap: this.deserializeTransactionMap(row.transaction_map),
-      dailyRates: this.deserializeDailyRates(row.daily_rates),
+      transactionMap: this.deserializeTransactionMap(row.transactionMap),
+      dailyRates: this.deserializeDailyRates(row.dailyRates),
     }
   }
 
   /** List all statements as DTOs. */
   public async list(): Promise<StatementDto[]> {
-    const rows = await this.db.select(statementColumns).from(statements).orderBy(desc(statements.createdAt))
+    const rows = await this.db.select().from(statements).orderBy(desc(statements.createdAt))
     return rows.map((row) => this.rowToDto(row))
   }
 
@@ -545,14 +509,14 @@ export class StatementService {
   private rowToDto(row: StatementRow): StatementDto {
     return {
       id: row.id,
-      createdAt: new Date(row.created_at),
-      updatedAt: new Date(row.updated_at),
+      createdAt: new Date(row.createdAt),
+      updatedAt: new Date(row.updatedAt),
       counter: row.counter,
       timezone: row.timezone,
-      openingDate: new Date(row.opening_date),
-      closingDate: new Date(row.closing_date),
+      openingDate: new Date(row.openingDate),
+      closingDate: new Date(row.closingDate),
       status: row.status,
-      user: { name: row.user_name, email: null },
+      user: { name: row.userName, email: null },
       integrator: null,
       userId: 'local',
     }

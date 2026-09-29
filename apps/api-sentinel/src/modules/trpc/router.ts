@@ -1466,13 +1466,13 @@ const statementRouter = t.router({
       const pdfResult = mapper.toPdfStatement(
         {
           id: loaded.row.id,
-          createdAt: new Date(loaded.row.created_at),
+          createdAt: new Date(loaded.row.createdAt),
           status: 'completed',
           counter: loaded.row.counter,
           timezone: loaded.row.timezone,
-          openingDate: new Date(loaded.row.opening_date),
-          closingDate: new Date(loaded.row.closing_date),
-          user: { email: null, name: loaded.row.user_name, address: loaded.row.user_address },
+          openingDate: new Date(loaded.row.openingDate),
+          closingDate: new Date(loaded.row.closingDate),
+          user: { email: null, name: loaded.row.userName, address: loaded.row.userAddress },
           transactionMap: loaded.transactionMap,
           dailyRates: loaded.dailyRates,
         },
