@@ -1,6 +1,8 @@
 import { cpSync, rmSync } from 'node:fs'
 import * as esbuild from 'esbuild'
 
+rmSync('dist', { recursive: true, force: true })
+
 const shared: esbuild.BuildOptions = {
   bundle: true,
   platform: 'node',
@@ -35,8 +37,5 @@ await esbuild.build({
   outfile: 'dist/main.js',
 })
 
-// Migration SQL and snapshots are read at startup, including inside
-// the packaged desktop and StartOS server where source files are unavailable.
-// Do not leave an older journal behind when rebuilding in the same dist folder.
-rmSync('dist/drizzle', { recursive: true, force: true })
+// Ship migration files alongside the bundled server for Drizzle's native migrator.
 cpSync('drizzle', 'dist/drizzle', { recursive: true, force: true })
