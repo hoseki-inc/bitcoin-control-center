@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import packageJson from '../package.json' with { type: 'json' }
 
 async function checkRuntime() {
@@ -15,19 +15,19 @@ async function checkRuntime() {
 
   // Exercise the native addon with Electron's Node ABI, using synthetic data.
   const { createClient } = await import('@libsql/client/sqlite3')
-  const temporaryDirectory = mkdtempSync(join(tmpdir(), 'control-center-runtime-'))
+  const temporaryDirectory = process.argv[2]
+  assert.ok(temporaryDirectory !== undefined, 'The launcher must provide the runtime-check directory')
   let database
   try {
     const databasePath = join(temporaryDirectory, 'smoke.sqlite')
-    database = createClient({ url: `file:${databasePath}` })
+    database = createClient({ url: pathToFileURL(databasePath).href })
     await database.execute('CREATE TABLE smoke (value INTEGER NOT NULL)')
     await database.execute({ sql: 'INSERT INTO smoke (value) VALUES (?)', args: [42] })
     database.close()
-    database = createClient({ url: `file:${databasePath}` })
+    database = createClient({ url: pathToFileURL(databasePath).href })
     assert.equal((await database.execute('SELECT value FROM smoke')).rows[0]?.['value'], 42)
   } finally {
     database?.close()
-    rmSync(temporaryDirectory, { recursive: true, force: true })
   }
 
   // These packages are external to Sentinel's bundle and loaded at runtime.
@@ -54,13 +54,20 @@ if (process.versions.electron) {
 } else {
   // Loading the native addon in the host Node process misses Electron ABI issues.
   const { default: electronPath } = await import('electron')
-  const result = spawnSync(electronPath, [fileURLToPath(import.meta.url)], {
-    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
-    stdio: 'inherit',
-    timeout: 60_000,
-  })
-  if (result.error) {
-    console.error(result.error.message)
+  const temporaryDirectory = mkdtempSync(join(tmpdir(), 'control-center-runtime-'))
+  try {
+    const result = spawnSync(electronPath, [fileURLToPath(import.meta.url), temporaryDirectory], {
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+      stdio: 'inherit',
+      timeout: 60_000,
+    })
+    if (result.error) {
+      console.error(result.error.message)
+    }
+    process.exitCode = result.status ?? 1
+  } finally {
+    // libSQL can retain native file handles after close(). Windows cleanup must
+    // wait until the Electron process exits and releases those handles.
+    rmSync(temporaryDirectory, { recursive: true, force: true })
   }
-  process.exitCode = result.status ?? 1
 }
