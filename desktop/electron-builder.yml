@@ -9,12 +9,16 @@ asarUnpack:
 # better-sqlite3 13 ships Node-API prebuilds for every packaged platform.
 # Rebuilding would try to cross-compile Windows native code on the macOS host.
 npmRebuild: false
+afterPack: ./after-pack.mjs
 files:
   - app/**/*
 extraResources:
   - from: tor/${os}
     to: tor
 mac:
+  binaries:
+    - Contents/Resources/tor/tor
+    - Contents/Resources/tor/libevent-2.1.7.dylib
   minimumSystemVersion: '13.0.0'
   category: public.app-category.finance
   target:

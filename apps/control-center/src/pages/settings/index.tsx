@@ -4,17 +4,30 @@ import {
   ButtonGroup,
   Circle,
   Divider,
+  FormControl,
+  FormLabel,
   HStack,
-  Heading,
   Input,
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalFooter,
+  ModalHeader,
+  ModalOverlay,
   Select,
+  SimpleGrid,
   Stack,
   Switch,
   Text,
   VStack,
+  keyframes,
+  useToken,
 } from '@chakra-ui/react'
 import { parseUnknown } from '@hoseki/packages/result/lib/parse'
-import { useCallback, useEffect, useState } from 'react'
+import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
+import { useQueryClient } from '@tanstack/react-query'
+import { CircleAlertIcon, CircleCheckIcon } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { z } from 'zod'
 import { useLocalSetting } from '../../hooks/use-local-settings'
@@ -31,68 +44,75 @@ const ReconnectErrorSchema = z.object({
 })
 
 export function SettingsPage({ desktop = isDesktop }: { desktop?: boolean }): JSX.Element {
-  const { data: savedName, isLoading, save, isSaving } = useLocalSetting('user_name')
+  const { data: savedName, isLoading, saveAsync, isSaving, isError } = useLocalSetting('user_name')
+  const [draftName, setDraftName] = useState<string | null>(null)
+  const name = draftName ?? savedName ?? ''
 
-  const [name, setName] = useState('')
-  const [isDirty, setIsDirty] = useState(false)
-
-  useEffect(() => {
-    if (savedName != null && savedName !== '' && !isDirty) {
-      setName(savedName)
+  const handleSave = async (): Promise<void> => {
+    try {
+      await saveAsync(name.trim())
+      setDraftName(null)
+      toast.success('Name saved')
+    } catch {
+      toast.error('Could not save your name. Please try again.')
     }
-  }, [savedName, isDirty])
-
-  const handleSave = (): void => {
-    save(name.trim())
-    setIsDirty(false)
-    toast.success('Name saved')
   }
 
   return (
-    <Box p={6}>
-      <VStack align="start" gap={8}>
-        <VStack align="start" gap={1}>
-          <Heading size="lg">Settings</Heading>
-          <Text textStyle="text/md" color="neutral.600">
-            App preferences and personal information.
-          </Text>
-        </VStack>
-
-        <Stack gap={2} w="full" maxW="400px">
-          <Text textStyle="label/sm" fontWeight="medium">
-            Your Name
-          </Text>
-          <Text textStyle="text/sm" color="neutral.600">
-            This name will appear on your generated statements.
-          </Text>
-          <Input
-            placeholder="Enter your name"
-            value={name}
-            onChange={(e) => {
-              setName(e.target.value)
-              setIsDirty(true)
+    <Box py={{ base: 6, md: 10 }} maxW="960px">
+      <PageHeading title="Settings" description="App preferences and personal information." />
+      <Stack mt={{ base: 8, md: 10 }} spacing={8} divider={<Divider borderColor="neutral.200" />}>
+        <SimpleGrid columns={{ base: 1, md: 2 }} spacing={{ base: 5, md: 10 }}>
+          <Box>
+            <Text as="h2" textStyle="text/md" fontWeight="semibold" color="neutral.900">
+              Personal information
+            </Text>
+            <Text id="user-name-description" mt={2} textStyle="text/sm" color="neutral.600" maxW="32ch">
+              This name will appear on your generated statements.
+            </Text>
+          </Box>
+          <Box
+            as="form"
+            onSubmit={(event: React.FormEvent) => {
+              event.preventDefault()
+              void handleSave()
             }}
-            isDisabled={isLoading}
-          />
-          <Button
-            size="sm"
-            colorScheme="green"
-            alignSelf="flex-start"
-            onClick={handleSave}
-            isLoading={isSaving}
-            isDisabled={!isDirty || name.trim() === (savedName ?? '')}
           >
-            Save
-          </Button>
-        </Stack>
-
-        {desktop && (
-          <>
-            <Divider />
-            <ElectrumSettings />
-          </>
-        )}
-      </VStack>
+            <FormControl isDisabled={isLoading || isSaving || isError}>
+              <FormLabel htmlFor="user-name" textStyle="text/sm" mb={2}>
+                Your name
+              </FormLabel>
+              <Input
+                id="user-name"
+                autoComplete="name"
+                aria-describedby="user-name-description"
+                maxLength={200}
+                placeholder="Enter your name"
+                value={name}
+                onChange={(event) => {
+                  setDraftName(event.target.value)
+                }}
+              />
+              {isError && (
+                <Text role="alert" textStyle="text/sm" color="error.700" mt={2}>
+                  Could not load your name. Refresh to try again.
+                </Text>
+              )}
+              <Button
+                type="submit"
+                size="sm"
+                mt={4}
+                isLoading={isSaving}
+                loadingText="Saving"
+                isDisabled={isLoading || isError || name.trim() === (savedName ?? '')}
+              >
+                Save name
+              </Button>
+            </FormControl>
+          </Box>
+        </SimpleGrid>
+        {desktop && <ElectrumSettings />}
+      </Stack>
     </Box>
   )
 }
@@ -117,6 +137,14 @@ const ElectrumStatusSchema = z.object({
   host: z.string(),
   port: z.number(),
   protocol: z.string(),
+  tor: z
+    .object({
+      state: z.enum(['stopped', 'starting', 'ready', 'failed', 'unavailable']),
+      message: z.string().optional(),
+      progress: z.number().optional(),
+      attempt: z.number().optional(),
+    })
+    .optional(),
 })
 type ElectrumStatus = z.infer<typeof ElectrumStatusSchema>
 const ElectrumStatusResponseSchema = z.object({
@@ -147,23 +175,66 @@ function useElectrumStatus(): ElectrumStatusState {
       })
   }, [])
 
+  // Follow Tor startup closely; otherwise a slower check is enough.
+  const torStarting = status?.tor?.state === 'starting'
   useEffect(() => {
     refresh()
-    const interval = setInterval(refresh, 10_000)
+    const interval = setInterval(refresh, torStarting ? 1000 : 10_000)
     return (): void => {
       clearInterval(interval)
     }
-  }, [refresh])
+  }, [refresh, torStarting])
 
   return { status, refresh }
 }
 
+// The switch fades between green and light green while Tor starts. The theme
+// already stops animation for people who ask their system to reduce motion.
+function useTorStartingFade(): string {
+  // Resolve theme colors directly; the theme's CSS variable names use a custom prefix.
+  const [green, lightGreen] = useToken('colors', ['green.500', 'green.200'])
+  return useMemo(
+    () => keyframes`
+      0%, 100% { background-color: ${green}; }
+      50% { background-color: ${lightGreen}; }
+    `,
+    [green, lightGreen],
+  )
+}
+// Tor usually finishes well before this; after it, reassure rather than alarm.
+const TOR_SLOW_START_MS = 30_000
+// "Tor ready" stays long enough to read, then fades; the solid switch remains.
+const TOR_READY_VISIBLE_MS = 3000
+const TOR_READY_FADE_MS = 600
+
+const TorStartResponseSchema = z.object({
+  result: z.object({ data: z.object({ json: z.object({ attempt: z.number().optional() }) }) }),
+})
+
+/** Start Tor and return the attempt it began, or null if the request failed. */
+async function requestTorStart(): Promise<number | null> {
+  const baseUrl = import.meta.env.VITE_BACKEND_API_URL ?? ''
+  try {
+    const res = await fetch(`${baseUrl}/settings.startTor`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    })
+    const data: unknown = res.ok ? await res.json() : null
+    return parseUnknown(TorStartResponseSchema, data)
+      .map((response) => response.result.data.json.attempt ?? 0)
+      .unwrapOr(null)
+  } catch {
+    return null
+  }
+}
+
 function ElectrumSettings(): JSX.Element {
+  const queryClient = useQueryClient()
   const { status: electrumStatus, refresh: refreshStatus } = useElectrumStatus()
-  const { data: savedHost, isLoading: hostLoading, save: saveHost } = useLocalSetting('electrum_host')
-  const { data: savedPort, isLoading: portLoading, save: savePort } = useLocalSetting('electrum_port')
-  const { data: savedProtocol, isLoading: protocolLoading, save: saveProtocol } = useLocalSetting('electrum_protocol')
-  const { data: savedTorEnabled, isLoading: torLoading, save: saveTorEnabled } = useLocalSetting('tor_enabled')
+  const { data: savedHost, isLoading: hostLoading } = useLocalSetting('electrum_host')
+  const { data: savedPort, isLoading: portLoading } = useLocalSetting('electrum_port')
+  const { data: savedProtocol, isLoading: protocolLoading } = useLocalSetting('electrum_protocol')
+  const { data: savedTorEnabled, isLoading: torLoading } = useLocalSetting('tor_enabled')
 
   const isLoading = hostLoading || portLoading || protocolLoading || torLoading
 
@@ -175,6 +246,88 @@ function ElectrumSettings(): JSX.Element {
   const [isSaving, setIsSaving] = useState(false)
   const [isTesting, setIsTesting] = useState(false)
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null)
+  const [torFailure, setTorFailure] = useState<string | null>(null)
+  const [torStartedAt, setTorStartedAt] = useState<number | null>(null)
+  // Failures from attempts before this one are stale. Infinity ignores all failures
+  // while a start request is in flight; null means none has been requested.
+  const [torAttemptAwaited, setTorAttemptAwaited] = useState<number | null>(null)
+  const previousTorState = useRef<string | undefined>(undefined)
+  const [torReadyNotice, setTorReadyNotice] = useState<'shown' | 'fading' | null>(null)
+  const [directConfirmation, setDirectConfirmation] = useState<'test' | 'save' | null>(null)
+  const torState = electrumStatus?.tor?.state
+  const torAttempt = electrumStatus?.tor?.attempt ?? 0
+  const torStarting = torEnabled && torState === 'starting'
+  // Connecting without Tor after the saved connection used it, or right after Tor
+  // failed, would reveal this computer's IP address. Ask before doing that.
+  const leavingTor = !torEnabled && (savedTorEnabled === 'true' || torFailure !== null)
+  const torFailedForSavedConnection =
+    torFailure !== null || (savedTorEnabled === 'true' && torState === 'failed' && !torEnabled)
+  const torStartingFade = useTorStartingFade()
+
+  // Like Sparrow, a failed Tor start turns the switch off. That only changes the
+  // form: the saved connection keeps Tor and stays disconnected, never direct.
+  // Compare attempts rather than waiting to observe "starting", which a fast failure skips.
+  useEffect(() => {
+    if (torState === 'failed' && torEnabled && torAttempt >= (torAttemptAwaited ?? 0)) {
+      setTorEnabled(false)
+      setTorFailure(electrumStatus?.tor?.message ?? 'Tor couldn’t start. Turn Tor on to try again.')
+    }
+  }, [torState, torEnabled, torAttempt, torAttemptAwaited, electrumStatus?.tor?.message])
+
+  // A saved Tor connection restarts Tor on its own when data is requested. Once Tor
+  // is ready again, show the switch on unless the form has been edited.
+  useEffect(() => {
+    if (torState === 'ready' && savedTorEnabled === 'true' && !isDirty && !torEnabled) {
+      setTorEnabled(true)
+      setTorFailure(null)
+    }
+  }, [torState, savedTorEnabled, isDirty, torEnabled])
+
+  // Measure every start, including one begun by a saved Tor connection.
+  useEffect(() => {
+    setTorStartedAt(torState === 'starting' ? Date.now() : null)
+  }, [torState, torAttempt])
+
+  // The solid switch shows Tor is on; announce only the moment startup finishes.
+  useEffect(() => {
+    if (torState === 'ready' && previousTorState.current === 'starting' && torEnabled) {
+      setTorReadyNotice('shown')
+    } else if (torState !== 'ready' || !torEnabled) {
+      setTorReadyNotice(null)
+    }
+    previousTorState.current = torState
+  }, [torState, torEnabled])
+
+  // Timers rather than an animation, so the notice stays readable when motion is reduced.
+  useEffect(() => {
+    if (torReadyNotice === null) {
+      return undefined
+    }
+    const timer = setTimeout(
+      () => {
+        setTorReadyNotice(torReadyNotice === 'shown' ? 'fading' : null)
+      },
+      torReadyNotice === 'shown' ? TOR_READY_VISIBLE_MS : TOR_READY_FADE_MS,
+    )
+    return (): void => {
+      clearTimeout(timer)
+    }
+  }, [torReadyNotice])
+
+  const handleTorChange = (enabled: boolean): void => {
+    setTorEnabled(enabled)
+    setIsDirty(true)
+    setTestResult(null)
+    setTorFailure(null)
+    if (enabled) {
+      setTorAttemptAwaited(Number.POSITIVE_INFINITY)
+      void requestTorStart().then((attempt) => {
+        // If the request failed, the existing status is the one to show.
+        setTorAttemptAwaited(attempt ?? 0)
+        refreshStatus()
+      })
+    }
+  }
 
   useEffect(() => {
     if (!isDirty) {
@@ -191,10 +344,7 @@ function ElectrumSettings(): JSX.Element {
       host: host.trim(),
       port: Number(port.trim()),
       protocol,
-    }
-    if (torEnabled) {
-      payload.proxyHost = '127.0.0.1'
-      payload.proxyPort = 9050
+      torEnabled,
     }
     return {
       body: JSON.stringify(superjson.serialize(payload)),
@@ -231,11 +381,6 @@ function ElectrumSettings(): JSX.Element {
   const handleSave = async (): Promise<void> => {
     setIsSaving(true)
     try {
-      saveHost(host.trim())
-      savePort(port.trim())
-      saveProtocol(protocol)
-      saveTorEnabled(String(torEnabled))
-
       const baseUrl = import.meta.env.VITE_BACKEND_API_URL ?? ''
       const { body } = await buildElectrumPayload()
       const res = await fetch(`${baseUrl}/settings.reconnectElectrum`, {
@@ -249,9 +394,16 @@ function ElectrumSettings(): JSX.Element {
         throw new Error(data?.error.json?.message ?? data?.error.message ?? 'Failed to reconnect')
       }
 
+      await Promise.all(
+        ['electrum_host', 'electrum_port', 'electrum_protocol', 'tor_enabled'].map(async (key) =>
+          queryClient.invalidateQueries({ queryKey: ['local-settings', key] }),
+        ),
+      )
       setIsDirty(false)
       setTestResult(null)
-      setTimeout(refreshStatus, 1000)
+      // The saved connection now reflects the user's routing choice.
+      setTorFailure(null)
+      refreshStatus()
       toast.success('Electrum server updated')
     } catch (err) {
       toast.error(`Failed to connect: ${err instanceof Error ? err.message : 'Unknown error'}`)
@@ -263,7 +415,7 @@ function ElectrumSettings(): JSX.Element {
   return (
     <VStack align="start" gap={5} w="full" maxW="480px">
       <VStack align="start" gap={1}>
-        <Text textStyle="label/md" fontWeight="semibold">
+        <Text as="h2" textStyle="text/md" fontWeight="semibold">
           Electrum Server
         </Text>
         <Text textStyle="text/sm" color="neutral.600">
@@ -273,11 +425,12 @@ function ElectrumSettings(): JSX.Element {
 
       {/* Server preset selector */}
       <Stack gap={1} w="full">
-        <Text textStyle="label/sm" fontWeight="medium">
+        <FormLabel htmlFor="electrum-preset" textStyle="text/sm" mb={0}>
           Server Preset
-        </Text>
+        </FormLabel>
         <Select
           size="sm"
+          id="electrum-preset"
           value={SERVER_PRESETS.find((p) => p.host === host && p.port === port) ? host : 'custom'}
           onChange={(e) => {
             const preset = SERVER_PRESETS.find((p) => p.host === e.target.value)
@@ -290,7 +443,7 @@ function ElectrumSettings(): JSX.Element {
               setTestResult(null)
             }
           }}
-          isDisabled={isLoading}
+          isDisabled={isLoading || isSaving || isTesting}
         >
           {SERVER_PRESETS.map((p) => (
             <option key={p.host} value={p.host}>
@@ -313,24 +466,32 @@ function ElectrumSettings(): JSX.Element {
           align="start"
         >
           <Circle size="8px" bg={electrumStatus.connected ? 'green.500' : 'red.500'} flexShrink={0} mt="6px" />
-          <VStack align="start" gap={0}>
+          <VStack align="start" gap={0} minW={0}>
             <Text textStyle="text/sm" fontWeight="medium" color={electrumStatus.connected ? 'green.700' : 'red.700'}>
               {electrumStatus.connected ? 'Connected' : 'Disconnected'}
             </Text>
             <Text textStyle="text/xs" color={electrumStatus.connected ? 'green.600' : 'red.600'} wordBreak="break-all">
               {electrumStatus.host}:{electrumStatus.port} ({electrumStatus.protocol.toUpperCase()})
             </Text>
+            {!electrumStatus.connected && (
+              <Text textStyle="text/sm" color="red.700">
+                {torFailedForSavedConnection
+                  ? 'Your saved data is still on this device. Turn Tor on to try again, or choose a different server below.'
+                  : 'Your saved data is still on this device. Check your connection or choose a server below, then use Save & Reconnect.'}
+              </Text>
+            )}
           </VStack>
         </HStack>
       )}
 
       {/* Host */}
       <Stack gap={1} w="full">
-        <Text textStyle="label/sm" fontWeight="medium">
+        <FormLabel htmlFor="electrum-host" textStyle="text/sm" mb={0}>
           Host
-        </Text>
+        </FormLabel>
         <Input
           size="sm"
+          id="electrum-host"
           placeholder="electrum.blockstream.info"
           value={host}
           onChange={(e) => {
@@ -338,18 +499,20 @@ function ElectrumSettings(): JSX.Element {
             setIsDirty(true)
             setTestResult(null)
           }}
-          isDisabled={isLoading}
+          isDisabled={isLoading || isSaving || isTesting}
         />
       </Stack>
 
       {/* Port + Protocol side by side */}
       <HStack gap={3} w="full">
-        <Stack gap={1} flex={1}>
-          <Text textStyle="label/sm" fontWeight="medium">
+        <Stack gap={1} flex={1} minW={0}>
+          <FormLabel htmlFor="electrum-port" textStyle="text/sm" mb={0}>
             Port
-          </Text>
+          </FormLabel>
           <Input
             size="sm"
+            id="electrum-port"
+            inputMode="numeric"
             placeholder="50002"
             value={port}
             onChange={(e) => {
@@ -357,15 +520,16 @@ function ElectrumSettings(): JSX.Element {
               setIsDirty(true)
               setTestResult(null)
             }}
-            isDisabled={isLoading}
+            isDisabled={isLoading || isSaving || isTesting}
           />
         </Stack>
-        <Stack gap={1} w="120px">
-          <Text textStyle="label/sm" fontWeight="medium">
+        <Stack gap={1} w="120px" flexShrink={0}>
+          <FormLabel htmlFor="electrum-protocol" textStyle="text/sm" mb={0}>
             Protocol
-          </Text>
+          </FormLabel>
           <Select
             size="sm"
+            id="electrum-protocol"
             value={protocol}
             onChange={(e) => {
               const value = e.target.value
@@ -376,7 +540,7 @@ function ElectrumSettings(): JSX.Element {
               setIsDirty(true)
               setTestResult(null)
             }}
-            isDisabled={isLoading}
+            isDisabled={isLoading || isSaving || isTesting}
           >
             <option value="ssl">SSL</option>
             <option value="tcp">TCP</option>
@@ -387,54 +551,184 @@ function ElectrumSettings(): JSX.Element {
       {/* Tor toggle */}
       <HStack w="full" justify="space-between" align="center">
         <VStack align="start" gap={0}>
-          <Text textStyle="label/sm" fontWeight="medium">
+          <FormLabel htmlFor="electrum-tor" textStyle="text/sm" mb={0}>
             Connect via Tor
-          </Text>
+          </FormLabel>
           <Text textStyle="text/xs" color="neutral.600">
-            Route through bundled Tor proxy. Required for .onion addresses.
+            Routes Electrum requests through Tor. Exchange and price requests use your normal connection. Required for
+            .onion addresses.
           </Text>
         </VStack>
         <Switch
+          id="electrum-tor"
+          colorScheme="green"
           isChecked={torEnabled}
           onChange={(e) => {
-            setTorEnabled(e.target.checked)
-            setIsDirty(true)
-            setTestResult(null)
+            handleTorChange(e.target.checked)
           }}
-          isDisabled={isLoading}
+          isDisabled={isLoading || isSaving || isTesting}
+          sx={
+            torStarting
+              ? { '.chakra-switch__track': { animation: `${torStartingFade} 3s ease-in-out infinite` } }
+              : undefined
+          }
         />
       </HStack>
+
+      <TorStatusLine
+        enabled={torEnabled}
+        state={torState}
+        progress={electrumStatus?.tor?.progress}
+        failure={torFailure}
+        readyNotice={torReadyNotice}
+        slow={torStartedAt !== null && Date.now() - torStartedAt > TOR_SLOW_START_MS}
+      />
 
       {/* Test result banner */}
       {testResult && (
         <HStack gap={2} px={3} py={2} w="full" borderRadius="md" bg={testResult.ok ? 'green.50' : 'red.50'}>
           <Circle size="8px" bg={testResult.ok ? 'green.500' : 'red.500'} flexShrink={0} />
-          <Text textStyle="text/sm" color={testResult.ok ? 'green.700' : 'red.700'}>
+          <Text
+            as="output"
+            textStyle="text/sm"
+            overflowWrap="anywhere"
+            minW={0}
+            color={testResult.ok ? 'green.700' : 'red.700'}
+          >
             {testResult.message}
           </Text>
         </HStack>
       )}
 
       {/* Action buttons */}
-      <ButtonGroup size="sm" gap={2}>
+      <ButtonGroup size="sm" gap={2} flexWrap="wrap">
         <Button
           variant="outline"
-          onClick={() => void handleTest()}
+          onClick={() => {
+            if (leavingTor) {
+              setDirectConfirmation('test')
+            } else {
+              void handleTest()
+            }
+          }}
           isLoading={isTesting}
           loadingText="Testing..."
-          isDisabled={!host.trim() || !port.trim() || isLoading}
+          isDisabled={!host.trim() || !port.trim() || isLoading || isSaving || torStarting}
         >
           Test Connection
         </Button>
         <Button
           colorScheme="green"
-          onClick={() => void handleSave()}
+          onClick={() => {
+            if (leavingTor) {
+              setDirectConfirmation('save')
+            } else {
+              void handleSave()
+            }
+          }}
           isLoading={isSaving}
-          isDisabled={!isDirty || isLoading}
+          isDisabled={(!isDirty && electrumStatus?.connected !== false) || isLoading || isTesting || torStarting}
         >
           Save & Reconnect
         </Button>
       </ButtonGroup>
+
+      <Modal
+        isOpen={directConfirmation !== null}
+        onClose={() => {
+          setDirectConfirmation(null)
+        }}
+        isCentered
+      >
+        <ModalOverlay />
+        <ModalContent>
+          <ModalHeader>Connect without Tor?</ModalHeader>
+          <ModalBody>
+            <Text textStyle="text/sm" color="neutral.700">
+              {directConfirmation === 'save'
+                ? 'The server will see your IP address and the addresses you look up.'
+                : 'The server will see your IP address.'}
+            </Text>
+          </ModalBody>
+          <ModalFooter gap={2}>
+            <Button
+              variant="outline"
+              flex={1}
+              onClick={() => {
+                setDirectConfirmation(null)
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              flex={1}
+              onClick={() => {
+                const action = directConfirmation
+                setDirectConfirmation(null)
+                void (action === 'save' ? handleSave() : handleTest())
+              }}
+            >
+              Connect without Tor
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
     </VStack>
   )
+}
+
+function TorStatusLine({
+  enabled,
+  state,
+  progress,
+  failure,
+  readyNotice,
+  slow,
+}: {
+  enabled: boolean
+  state: string | undefined
+  progress: number | undefined
+  failure: string | null
+  readyNotice: 'shown' | 'fading' | null
+  slow: boolean
+}): JSX.Element | null {
+  if (failure !== null) {
+    return (
+      <HStack as="output" gap={2} color="red.600">
+        <CircleAlertIcon size={16} aria-hidden />
+        <Text textStyle="text/sm">{failure}</Text>
+      </HStack>
+    )
+  }
+  if (!enabled) {
+    return null
+  }
+  if (state === 'ready' && readyNotice !== null) {
+    return (
+      <HStack
+        as="output"
+        gap={2}
+        color="green.600"
+        opacity={readyNotice === 'fading' ? 0 : 1}
+        transition={`opacity ${TOR_READY_FADE_MS}ms ease-out`}
+      >
+        <CircleCheckIcon size={16} aria-hidden />
+        <Text textStyle="text/sm">Tor ready</Text>
+      </HStack>
+    )
+  }
+  if (state === 'starting') {
+    const percent = Math.round(progress ?? 0)
+    return (
+      <Stack as="output" gap={2} w="full">
+        <Text textStyle="text/sm" color="neutral.600">
+          {`Starting Tor… ${percent}%${slow ? '. This can take up to two minutes.' : ''}`}
+        </Text>
+        <Box h="3px" w="full" bg="neutral.100" borderRadius="full" overflow="hidden">
+          <Box h="full" w={`${percent}%`} bg="green.500" transition="width 0.3s" />
+        </Box>
+      </Stack>
+    )
+  }
+  return null
 }

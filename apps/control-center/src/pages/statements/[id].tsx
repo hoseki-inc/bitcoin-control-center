@@ -2,7 +2,12 @@ import { Box, Button, Flex, HStack, Icon, Link, Stack, Text } from '@chakra-ui/r
 import { renderStatementDocument } from '@hoseki/packages/pdf'
 import type { StatementDocumentFormat, StatementId } from '@hoseki/packages/schemas'
 import { Animations, ErrorBanner, Spinner } from '@hoseki/packages/ui/design-system'
-import { StatusBadge, getBadgeConfigForStatement, usePdfDownloadMutation } from '@hoseki/packages/ui/prove-verify-ui'
+import {
+  StatusBadge,
+  VIEWPORT_BELOW_HEADER,
+  getBadgeConfigForStatement,
+  usePdfDownloadMutation,
+} from '@hoseki/packages/ui/prove-verify-ui'
 import { PDFViewer, pdf } from '@react-pdf/renderer'
 import { format } from 'date-fns'
 import { DownloadIcon, ShieldCheckIcon } from 'lucide-react'
@@ -46,7 +51,7 @@ function StatementDetailsPageContent({ statementId }: { statementId: StatementId
     <Flex gap={0} flexDirection={['column', 'column', 'row']} align="flex-start">
       <Stack
         gap={6}
-        height={['auto', 'auto', 'calc(100vh - 66px)']}
+        height={['auto', 'auto', VIEWPORT_BELOW_HEADER]}
         flexBasis={['100%', '100%', '40%']}
         maxW={['100%', '100%', '40%']}
         py={6}
@@ -60,7 +65,7 @@ function StatementDetailsPageContent({ statementId }: { statementId: StatementId
         </Stack>
       </Stack>
       <Box
-        height={['auto', 'auto', 'calc(100vh - 66px)']}
+        height={['auto', 'auto', VIEWPORT_BELOW_HEADER]}
         flexBasis={['100%', '100%', '60%']}
         width={['100%', '100%', '60%']}
         bg="#F9F9F9"

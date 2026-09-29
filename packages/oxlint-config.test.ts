@@ -27,7 +27,12 @@ async function withTestSetup(run: () => Promise<void>): Promise<void> {
   for (const scope of scopes) {
     mkdirSync(join(fixture, scope), { recursive: true })
   }
-  for (const name of ['.oxlintrc.json', 'packages/pdf/.oxlintrc.json', 'packages/pdf/preview/.oxlintrc.json']) {
+  for (const name of [
+    '.oxlintrc.json',
+    '.oxlintrc.imports.json',
+    'packages/pdf/.oxlintrc.json',
+    'packages/pdf/preview/.oxlintrc.json',
+  ]) {
     const destination = join(fixture, name)
     mkdirSync(dirname(destination), { recursive: true })
     copyFileSync(join(repository, name), destination)
@@ -119,5 +124,28 @@ it.each([
     expect(result.stdout, result.stderr).toContain('vitest(no-focused-tests)')
     expect(result.stdout, result.stderr).toContain('vitest(no-disabled-tests)')
     expect(result.stdout, result.stderr).toContain('vitest(consistent-each-for)')
+  })
+})
+
+it('sorts named imports after setup without applying unrelated fixes', async () => {
+  await withTestSetup(async () => {
+    const path = join(fixture, 'packages/pdf/preview/probe.ts')
+    const source = [
+      'const setup = true',
+      "import { zebra as last, type Apple as First } from 'example'",
+      'export function probe(): void { if (setup) last() }',
+      '',
+    ].join('\n')
+    writeFileSync(path, source)
+    const result = spawnSync(
+      process.execPath,
+      [resolve(repository, 'node_modules/oxlint/bin/oxlint'), '--config', '.oxlintrc.imports.json', '--fix', path],
+      { cwd: fixture, encoding: 'utf8', timeout: 15000 },
+    )
+    expect(result.error).toBeUndefined()
+    expect(result.status, result.stdout + result.stderr).toBe(0)
+    expect(readFileSync(path, 'utf8')).toBe(
+      source.replace('zebra as last, type Apple as First', 'type Apple as First, zebra as last'),
+    )
   })
 })

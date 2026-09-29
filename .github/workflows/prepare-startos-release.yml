@@ -78,9 +78,11 @@ jobs:
         env:
           STARTOS_ALLOW_RELEASE_NOTES_PLACEHOLDER: '1'
         run: |
-          pnpm exec prettier --write start9/startos/versions
+          pnpm exec oxlint --config .oxlintrc.imports.json --fix start9/startos/versions
+          pnpm exec oxfmt --write start9/startos/versions
           npm --prefix start9 run check
-          pnpm exec prettier --check start9/startos/versions
+          pnpm exec oxlint --config .oxlintrc.imports.json --deny-warnings start9/startos/versions
+          pnpm exec oxfmt --check start9/startos/versions
           git diff --check
 
       - name: Reject version and branch collisions

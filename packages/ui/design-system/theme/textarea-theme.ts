@@ -3,7 +3,7 @@ import { inputProps } from '../../design-system'
 
 const sizes = {
   sm: {
-    textStyle: 'text/sm',
+    textStyle: { base: 'text/md', md: 'text/sm' },
   },
   md: {
     textStyle: 'text/md',

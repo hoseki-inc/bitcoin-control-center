@@ -18,6 +18,7 @@ import {
   useDisclosure,
 } from '@chakra-ui/react'
 import { DateInput as DefaultDateInput, Panel, Spinner } from '@hoseki/packages/ui/design-system'
+import { VIEWPORT_BELOW_HEADER } from '@hoseki/packages/ui/prove-verify-ui'
 import { format, isAfter, isBefore, startOfDay, subDays } from 'date-fns'
 import Decimal from 'decimal.js'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -591,10 +592,10 @@ export function DashboardPage({
     claims.length > 0 || exchangeAccounts.length > 0 || manualAccounts.length > 0 || etfAccounts.length > 0
 
   return (
-    <Flex minH="calc(100vh - 64px)">
+    <Flex minH={VIEWPORT_BELOW_HEADER}>
       {/* Sidebar -- always visible when accounts exist */}
       {hasSidebar && (
-        <Box alignSelf="flex-start" position="sticky" top={0} h="calc(100vh - 57px)" flexShrink={0}>
+        <Box alignSelf="flex-start" position="sticky" top={0} h={VIEWPORT_BELOW_HEADER} flexShrink={0}>
           <AccountsSidebar
             claims={claims}
             exchangeAccounts={exchangeAccounts}

@@ -1,143 +1,160 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
-import { BrowserWindow, app, dialog, ipcMain, shell } from 'electron'
+import { pathToFileURL } from 'node:url'
+import { BrowserWindow, type Tray, type WebContents, app, dialog, ipcMain, shell } from 'electron'
+import { showDeviceChooser } from './device-chooser'
 import { setupLedgerHidAccess } from './ledger-hid'
 import { startServer } from './server'
 import { createQuitHandler } from './shutdown'
+import { configureDesktopTlsTrust } from './tls-trust'
 import { TorManager } from './tor'
 import { setupTray } from './tray'
+import { setupWalletAccess } from './wallet-access'
+import { setupWindowPolicy } from './window-policy'
 
-const DATA_DIR = path.join(app.getPath('userData'), 'data')
-const PORT = 3400
-
-// Prevent multiple instances (SQLite + port conflicts)
-const gotLock = app.requestSingleInstanceLock()
-if (!gotLock) {
-  app.quit()
+interface LocalServer {
+  shutdown: () => Promise<void>
 }
 
 let mainWindow: BrowserWindow | null = null
 let torManager: TorManager | null = null
+let server: LocalServer | null = null
+let tray: Tray | null = null
+let quitting = false
+let startup: Promise<void> | null = null
 
-app
-  .whenReady()
-  .then(async () => {
-    // Ensure data directory exists
-    fs.mkdirSync(DATA_DIR, { recursive: true })
+function showMainWindow(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return
+  }
+  if (mainWindow.isMinimized()) {
+    mainWindow.restore()
+  }
+  mainWindow.show()
+  mainWindow.focus()
+}
 
-    // Start bundled Tor daemon in the background (don't block app startup)
-    torManager = new TorManager(app.getPath('userData'))
-    torManager.start().catch(() => {
-      // Tor failed to start — not critical, .onion connections will fail but clearnet works fine
-    })
+function openExternal(url: string): void {
+  void shell.openExternal(url).catch(() => {
+    dialog.showErrorBox('Could not open link', 'Open your browser and try the link again.')
+  })
+}
 
-    // Set env vars that api-sentinel reads (mirrors start9/docker_entrypoint.sh)
-    const serverDir = path.join(__dirname, '..', 'server')
-    process.env.DATA_DIR = DATA_DIR
-    process.env.APP_DIR = serverDir
-    process.env.HOST = 'localhost'
-    process.env.PORT = String(PORT)
-    process.env.ELECTRUM_HOST = 'electrum.blockstream.info'
-    process.env.ELECTRUM_PORT = '50002'
-    process.env.ELECTRUM_PROTOCOL = 'ssl'
-    process.env.BITCOIN_NETWORK = 'mainnet'
-    process.env.MEMPOOL_API_URL = 'https://mempool.space'
-    process.env.NODE_ENV = 'production'
+async function start(): Promise<void> {
+  // Configure trust before Sentinel creates Electrum or other outbound TLS clients.
+  configureDesktopTlsTrust()
+  const dataDir = path.join(app.getPath('userData'), 'data')
+  fs.mkdirSync(dataDir, { recursive: true })
+  const torPath = app.isPackaged
+    ? path.join(process.resourcesPath, 'tor')
+    : path.join(__dirname, '..', '..', 'tor', process.platform === 'win32' ? 'win' : 'mac')
+  torManager = new TorManager(
+    app.getPath('userData'),
+    path.join(torPath, process.platform === 'win32' ? 'tor.exe' : 'tor'),
+  )
 
-    // Tor SOCKS proxy will be available on port 9050 once bootstrapped
-    process.env.SOCKS_PROXY_HOST = '127.0.0.1'
-    process.env.SOCKS_PROXY_PORT = String(torManager.socksPort)
+  const serverDir = path.join(__dirname, '..', 'server')
+  Object.assign(process.env, {
+    DATA_DIR: dataDir,
+    APP_DIR: serverDir,
+    HOST: 'localhost',
+    PORT: '3400',
+    ELECTRUM_HOST: 'electrum.blockstream.info',
+    ELECTRUM_PORT: '50002',
+    ELECTRUM_PROTOCOL: 'ssl',
+    BITCOIN_NETWORK: 'mainnet',
+    MEMPOOL_API_URL: 'https://mempool.space',
+    NODE_ENV: 'production',
+  })
+  server = await startServer(pathToFileURL(path.join(serverDir, 'main.js')).href, {
+    waitForElectrum: false,
+    tor: torManager,
+  })
+  const origin = 'http://localhost:3400'
+  if (quitting) {
+    return
+  }
 
-    // Start api-sentinel — imports the self-starting bundle
-    const serverMain = path.join(serverDir, 'main.js')
-    const server = await startServer(serverMain)
+  const window = new BrowserWindow({
+    width: 1280,
+    height: 800,
+    minWidth: 900,
+    minHeight: 600,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      sandbox: true,
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  })
+  mainWindow = window
+  const trezorWindows = new Set<WebContents>()
+  setupWalletAccess(window, origin, trezorWindows, (owner, name, selected) =>
+    showDeviceChooser(
+      BrowserWindow.fromWebContents(owner) ?? window,
+      name,
+      selected,
+      (options) => new BrowserWindow(options),
+      ipcMain,
+    ),
+  )
+  setupLedgerHidAccess(window, origin, ipcMain, async (parent, options) => dialog.showMessageBox(parent, options))
 
-    // Create the browser window
-    mainWindow = new BrowserWindow({
-      width: 1280,
-      height: 800,
-      minWidth: 900,
-      minHeight: 600,
-      titleBarStyle: 'hiddenInset',
-      trafficLightPosition: { x: 16, y: 16 },
-      webPreferences: {
-        preload: path.join(__dirname, 'preload.js'),
-      },
-    })
+  setupWindowPolicy(window, origin, trezorWindows, openExternal)
+  window.on('close', (event) => {
+    if (!quitting) {
+      event.preventDefault()
+      window.hide()
+    }
+  })
+  tray = setupTray(window)
+  await window.loadURL(origin)
+}
 
-    const appOrigin = `http://localhost:${PORT}`
-    setupLedgerHidAccess(mainWindow, appOrigin, ipcMain, async (window, options) =>
-      dialog.showMessageBox(window, options),
-    )
-    mainWindow.loadURL(appOrigin).catch(() => {
-      dialog.showErrorBox('Unable to load Bitcoin Control Center', 'Please restart the app to try again.')
-    })
-
-    // Open external links in the system browser
-    mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-      shell.openExternal(url).catch(() => {
-        dialog.showErrorBox('Unable to open the link', 'Please check your default browser and try again.')
-      })
-      return { action: 'deny' }
-    })
-
-    // Setup system tray
-    const tray = setupTray(mainWindow)
-
-    // Close to tray instead of quitting
-    let isQuitting = false
-    app.on('before-quit', () => {
-      isQuitting = true
-    })
-
-    mainWindow.on('close', (event) => {
-      if (!isQuitting) {
-        event.preventDefault()
-        mainWindow?.hide()
+if (!app.requestSingleInstanceLock()) {
+  app.quit()
+} else {
+  app.on('second-instance', showMainWindow)
+  app.on('activate', showMainWindow)
+  const quit = createQuitHandler({
+    shutdownServer: async () => {
+      await startup
+      // Stop Tor before draining requests; the final cleanup also covers forced exit.
+      await torManager?.stop()
+      await server?.shutdown()
+    },
+    stopTor: () => {
+      void torManager?.stop()
+    },
+    destroyTray: () => {
+      tray?.destroy()
+    },
+    reportError: () => {
+      dialog.showErrorBox('Unable to finish shutting down', 'Bitcoin Control Center will now close.')
+    },
+    quit: () => {
+      app.quit()
+    },
+    forceQuit: () => {
+      app.exit(1)
+    },
+  })
+  app.on('before-quit', (event) => {
+    quitting = true
+    quit(event)
+  })
+  void app.whenReady().then(() => {
+    if (quitting) {
+      return
+    }
+    startup = start().catch(() => {
+      if (!quitting) {
+        dialog.showErrorBox(
+          'Control Center could not start',
+          'The app could not finish starting. Close it and try again.',
+        )
+        app.quit()
       }
     })
-
-    // Second instance: show the existing window
-    app.on('second-instance', () => {
-      if (mainWindow) {
-        if (mainWindow.isMinimized()) {
-          mainWindow.restore()
-        }
-        mainWindow.show()
-        mainWindow.focus()
-      }
-    })
-
-    // macOS: re-show window when dock icon is clicked
-    app.on('activate', () => {
-      mainWindow?.show()
-    })
-
-    // Graceful shutdown
-    app.on(
-      'before-quit',
-      createQuitHandler({
-        shutdownServer: async () => server.shutdown(),
-        stopTor: () => {
-          torManager?.stop()
-        },
-        destroyTray: () => {
-          tray.destroy()
-        },
-        reportError: () => {
-          dialog.showErrorBox('Unable to finish shutting down', 'Bitcoin Control Center will now close.')
-        },
-        quit: () => {
-          app.quit()
-        },
-        forceQuit: () => {
-          app.exit(1)
-        },
-      }),
-    )
   })
-  .catch(() => {
-    dialog.showErrorBox('Unable to start Bitcoin Control Center', 'Please restart the app to try again.')
-    torManager?.stop()
-    app.quit()
-  })
+}

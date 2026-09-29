@@ -144,7 +144,6 @@ export function BitcoinInputFormFields({
           placeholder="Give this claim a name"
           isRequired
           maxLength={255}
-          {...monoInputProps}
         />
       </FormControl>
 

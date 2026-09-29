@@ -56,3 +56,29 @@ for (const value of ['null', '{}', '{ shutdown: 1 }']) {
     )
   })
 }
+
+test('forwards desktop offline and managed Tor options to the bundled server', async () => {
+  let starts = 0
+  const server = await startServer(
+    moduleUrl(`
+    export async function main(options) {
+      if (options.waitForElectrum !== false) throw new Error('Offline startup flag missing')
+      if (options.tor.getStatus().state !== 'ready') throw new Error('Tor manager missing')
+      await options.tor.start()
+      return { async shutdown() {} }
+    }
+  `),
+    {
+      waitForElectrum: false,
+      tor: {
+        start: async () => {
+          starts += 1
+          return { state: 'ready' }
+        },
+        getStatus: () => ({ state: 'ready' }),
+      },
+    },
+  )
+  assert.equal(starts, 1)
+  await server.shutdown()
+})

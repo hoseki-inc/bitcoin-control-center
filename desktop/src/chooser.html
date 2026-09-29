@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'" />
+    <title>Connect wallet</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font:
+          14px system-ui,
+          sans-serif;
+      }
+      body {
+        margin: 24px;
+      }
+      h1 {
+        font-size: 20px;
+        margin: 0 0 12px;
+      }
+      p {
+        min-height: 40px;
+      }
+      select {
+        width: 100%;
+        height: 100px;
+        padding: 8px;
+        border-radius: 6px;
+      }
+      footer {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        margin-top: 18px;
+      }
+      button {
+        padding: 8px 16px;
+        border-radius: 6px;
+        cursor: pointer;
+      }
+      button:disabled {
+        cursor: default;
+      }
+    </style>
+  </head>
+  <body>
+    <h1 id="heading">Connect wallet</h1>
+    <p id="hint" aria-live="polite">Looking for available wallets…</p>
+    <select id="devices" size="3" aria-label="Available wallets"></select>
+    <footer><button id="cancel">Cancel</button><button id="connect" disabled>Connect</button></footer>
+  </body>
+</html>

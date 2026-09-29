@@ -7,6 +7,8 @@ export type LocalSettingState = {
   isLoading: boolean
   save: (value: string) => void
   isSaving: boolean
+  isError: boolean
+  saveAsync: (value: string) => Promise<void>
 }
 
 const baseUrl = import.meta.env.VITE_BACKEND_API_URL ?? ''
@@ -20,6 +22,7 @@ export function useLocalSetting(key: string): LocalSettingState {
 
   const query = useQuery({
     queryKey,
+    staleTime: 30_000,
     queryFn: async () => baseTrpc.settings.get.query({ key }),
   })
 
@@ -34,8 +37,10 @@ export function useLocalSetting(key: string): LocalSettingState {
         throw new Error('Failed to save setting')
       }
     },
-    onSuccess: async () => {
-      return queryClient.invalidateQueries({ queryKey })
+    onSuccess: async (_data, value) => {
+      queryClient.setQueryData(queryKey, value)
+      // Invalidating cancels any read that started before the save, so it can't overwrite the saved value.
+      await queryClient.invalidateQueries({ queryKey })
     },
   })
 
@@ -46,5 +51,7 @@ export function useLocalSetting(key: string): LocalSettingState {
       mutation.mutate(value)
     },
     isSaving: mutation.isLoading,
+    isError: query.isError,
+    saveAsync: mutation.mutateAsync,
   }
 }
