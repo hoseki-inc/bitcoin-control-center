@@ -122,25 +122,17 @@ export class StatementService {
   /** Insert a pending statement row. */
   public async create(input: GenerateStatementInput): Promise<string> {
     const id = `st_stmt_${nanoid()}`
-    await this.db.transaction(async (tx) => {
-      const [counterRow] = await tx
-        .select({ next: sql<number>`coalesce(max(${statements.counter}), 0) + 1` })
-        .from(statements)
-      if (!counterRow) {
-        throw new Error('Statement counter query returned no row')
-      }
-      await tx.insert(statements).values({
-        id,
-        status: 'pending',
-        timezone: input.timezone,
-        openingDate: input.openingDate.toISOString(),
-        closingDate: input.closingDate.toISOString(),
-        accountIds: JSON.stringify(input.claimIds),
-        exchangeAccountIds: input.exchangeAccountIds ? JSON.stringify(input.exchangeAccountIds) : null,
-        userName: input.name ?? null,
-        userAddress: input.address ?? null,
-        counter: counterRow.next,
-      })
+    await this.db.insert(statements).values({
+      id,
+      status: 'pending',
+      timezone: input.timezone,
+      openingDate: input.openingDate.toISOString(),
+      closingDate: input.closingDate.toISOString(),
+      accountIds: JSON.stringify(input.claimIds),
+      exchangeAccountIds: input.exchangeAccountIds ? JSON.stringify(input.exchangeAccountIds) : null,
+      userName: input.name ?? null,
+      userAddress: input.address ?? null,
+      counter: sql`(select coalesce(max(${statements.counter}), 0) + 1 from ${statements})`,
     })
 
     return id

@@ -124,6 +124,21 @@ describe('stored statement data', () => {
     })
   }
 
+  it('assigns consecutive counters atomically and continues from the stored maximum', async () => {
+    await withTestSetup(async () => {
+      const statements = service()
+      const date = new Date('2024-01-02T00:00:00Z')
+      const input = { claimIds: [], openingDate: date, closingDate: date, timezone: 'UTC' }
+      await Promise.all([statements.create(input), statements.create(input), statements.create(input)])
+      await expect(
+        database.select({ counter: statementTable.counter }).from(statementTable).orderBy(statementTable.counter),
+      ).resolves.toEqual([{ counter: 1 }, { counter: 2 }, { counter: 3 }])
+      await database.update(statementTable).set({ counter: 10 }).where(eq(statementTable.counter, 3))
+      const next = await statements.create(input)
+      await expect(statements.findById(next)).resolves.toMatchObject({ counter: 11 })
+    })
+  })
+
   it('round-trips transaction amounts, dates, rates and additional stored fields', async () => {
     await withTestSetup(async () => {
       const statements = service()
