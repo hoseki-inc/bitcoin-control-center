@@ -318,6 +318,81 @@ function getRequiredSignatureCount(account: Account): number {
   throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Unsupported account type' })
 }
 
+function validateMultisigKeystores(account: MultiSigAccount, publicKeys: string[]): void {
+  const descriptorKeys = new Set(account.xpubs.map((xpub) => xpub.toString()))
+  const suppliedKeys = new Set<string>()
+  const signingKeys = new Set<string>()
+  for (const publicKey of publicKeys) {
+    const parsed = Xpub.fromString(publicKey)
+    if (parsed.isErr() || !descriptorKeys.has(parsed.unwrap().toString())) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'Keystore key is not in the account descriptor' })
+    }
+    const xpub = parsed.unwrap()
+    suppliedKeys.add(xpub.toString())
+    signingKeys.add(xpub.derive(0).derive(0).publicKey().toString('hex'))
+  }
+  if (
+    publicKeys.length !== descriptorKeys.size ||
+    suppliedKeys.size !== publicKeys.length ||
+    signingKeys.size !== publicKeys.length
+  ) {
+    throw new TRPCError({ code: 'BAD_REQUEST', message: 'Keystores must match each descriptor key exactly once' })
+  }
+}
+
+/** Bind a proof to the account descriptor, not just a database keystore ID. */
+interface SigningIdentity {
+  keystoreId: KeystoreId
+  address: CheckedAddressString
+  legacyAddress: CheckedAddressString
+  publicKey: string
+}
+
+function getSigningIdentity(db: Database.Database, accountId: string, keystoreId: string): SigningIdentity {
+  const row = db
+    .prepare<unknown[], { descriptor: string; network: string }>(
+      'SELECT descriptor, network FROM accounts WHERE id = ?',
+    )
+    .get(accountId)
+  const keystore = db.prepare<unknown[], KeystoreRow>('SELECT * FROM keystores WHERE id = ?').get(keystoreId)
+  if (!row || !keystore) {
+    throw new TRPCError({ code: 'NOT_FOUND', message: 'Account or keystore not found' })
+  }
+  if (keystore.account_id !== accountId) {
+    throw new TRPCError({ code: 'BAD_REQUEST', message: 'Keystore does not belong to this account' })
+  }
+  const parsedAccount = Account.fromDescriptor(row.descriptor)
+  const parsedKey = Xpub.fromString(keystore.xpub)
+  if (parsedAccount.isErr() || parsedKey.isErr()) {
+    throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid account or keystore key' })
+  }
+  const account = parsedAccount.unwrap()
+  const xpub = parsedKey.unwrap()
+  const members = account instanceof MultiSigAccount ? account.xpubs : [account.xpub]
+  if (!members.some((member) => member.equals(xpub))) {
+    throw new TRPCError({ code: 'BAD_REQUEST', message: 'Keystore key is not in the account descriptor' })
+  }
+  const network = row.network === 'testnet' ? Network.Testnet : Network.Mainnet
+  if (xpub.network.kind !== network.kind) {
+    throw new TRPCError({ code: 'BAD_REQUEST', message: 'Keystore network does not match the account' })
+  }
+  const signingKey = xpub.derive(0).derive(0)
+  const legacyAddress = signingKey.address('p2wpkh', network).toString()
+  return {
+    keystoreId: keystore.id,
+    address: account instanceof SingleSigAccount ? account.receiveAddress(0, network).toString() : legacyAddress,
+    // The generic endpoint previously used P2WPKH even for other singlesig script types.
+    legacyAddress,
+    publicKey: signingKey.publicKey().toString('hex'),
+  }
+}
+
+function validateSigningAddress(message: SignedMessageRow, identity: SigningIdentity): void {
+  if (message.address !== identity.address && message.address !== identity.legacyAddress) {
+    throw new TRPCError({ code: 'BAD_REQUEST', message: 'Signing address does not match the account key' })
+  }
+}
+
 // ─── portalProve.controlCenter ──────────────────────────────────────────────
 
 const controlCenterRouter = t.router({
@@ -680,6 +755,11 @@ const registryRouter = t.router({
             throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid multisig account descriptor' })
           }
 
+          validateMultisigKeystores(
+            parsed.unwrap(),
+            input.keystores.map((keystore) => keystore.publicKey),
+          )
+
           const accountId = hosid('re_clmx')
           const now = new Date().toISOString()
 
@@ -839,13 +919,15 @@ const registryRouter = t.router({
         (message): message is SignedMessageRow & { signature: string } => message.signature !== null,
       )
       const requiredSignatures = getRequiredSignatureCount(account.unwrap())
-      const signedKeystoreIds = new Set(completedMessages.map((message) => message.keystore_id))
-      if (signedKeystoreIds.size < requiredSignatures) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Challenge is not satisfied' })
-      }
-
+      const signingKeys = new Set<string>()
       for (const message of completedMessages) {
+        const identity = getSigningIdentity(db, challenge.account_id, message.keystore_id)
+        validateSigningAddress(message, identity)
         verifySignedMessageSignature(message, message.signature)
+        signingKeys.add(identity.publicKey)
+      }
+      if (signingKeys.size < requiredSignatures) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Challenge is not satisfied' })
       }
 
       const now = new Date().toISOString()
@@ -890,6 +972,8 @@ const registryRouter = t.router({
           throw new TRPCError({ code: 'NOT_FOUND', message: 'Challenge not found' })
         }
 
+        const identity = getSigningIdentity(db, challenge.account_id, input.keystoreId)
+
         // Check if a signed message already exists for this keystore+challenge
         const existingSm = db
           .prepare<unknown[], SignedMessageRow>(
@@ -897,6 +981,7 @@ const registryRouter = t.router({
           )
           .get(input.challengeId, input.keystoreId)
         if (existingSm) {
+          validateSigningAddress(existingSm, identity)
           return {
             signedMessage: signedMessageRowToDto(existingSm),
             challengeId: existingSm.challenge_id,
@@ -904,20 +989,7 @@ const registryRouter = t.router({
           }
         }
 
-        const keystore = db
-          .prepare<unknown[], KeystoreRow>('SELECT * FROM keystores WHERE id = ?')
-          .get(input.keystoreId)
-        if (!keystore) {
-          throw new TRPCError({ code: 'NOT_FOUND', message: 'Keystore not found' })
-        }
-
-        // Derive address from keystore xpub for signing (use p2wpkh like singlesig flow)
-        const xpubResult = Xpub.fromString(keystore.xpub)
-        if (xpubResult.isErr()) {
-          throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Failed to parse keystore xpub' })
-        }
-        const singleSig = new SingleSigAccount('p2wpkh', xpubResult.unwrap())
-        const address = singleSig.receiveAddress(0, Network.Mainnet).toString()
+        const address = identity.address
 
         // Build message text
         const identifierRow = db
@@ -945,7 +1017,7 @@ const registryRouter = t.router({
             signature: null,
           },
           challengeId: challenge.id,
-          keystoreId: keystore.id,
+          keystoreId: identity.keystoreId,
         }
       }),
 
@@ -992,6 +1064,13 @@ const registryRouter = t.router({
           throw new TRPCError({ code: 'BAD_REQUEST', message: 'Signed message already completed' })
         }
 
+        const challenge = db
+          .prepare<unknown[], ChallengeRow>('SELECT * FROM challenges WHERE id = ?')
+          .get(sm.challenge_id)
+        if (!challenge) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Challenge not found' })
+        }
+        validateSigningAddress(sm, getSigningIdentity(db, challenge.account_id, sm.keystore_id))
         verifySignedMessageSignature(sm, input.signature)
 
         const now = new Date().toISOString()
@@ -1042,6 +1121,8 @@ const registryRouter = t.router({
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Keystore not found' })
       }
 
+      const identity = getSigningIdentity(db, accountRow.id, keystore.id)
+
       // Check for existing unsigned challenge
       const existingChallenge = db
         .prepare<unknown[], ChallengeRow>(
@@ -1057,6 +1138,7 @@ const registryRouter = t.router({
           .get(existingChallenge.id, keystore.id)
 
         if (existingSm) {
+          validateSigningAddress(existingSm, identity)
           return {
             challenge: {
               id: existingChallenge.id,
@@ -1090,8 +1172,7 @@ const registryRouter = t.router({
       if (parsed.isErr()) {
         throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Failed to parse account descriptor' })
       }
-      const btcNetwork = network === 'testnet' ? Network.Testnet : Network.Mainnet
-      const address = parsed.unwrap().receiveAddress(0, btcNetwork).toString()
+      const address = identity.address
 
       // Create challenge and signed message
       const challengeId = hosid('re_chal')
