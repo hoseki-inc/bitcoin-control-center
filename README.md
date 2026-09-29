@@ -157,8 +157,8 @@ Sentinel reads `apps/api-sentinel/.env` during local development. That file is i
 | `MEMPOOL_API_URL`        | No       | `https://mempool.space`   | Base URL for market and transaction data; may point to a self-hosted instance |
 | `APP_DIR`                | No       | Current working directory | Directory containing bundled `public/` and `assets/` folders                  |
 | `SENTINEL_ALLOWED_HOSTS` | No       | Loopback hosts            | Comma-separated additional hostnames accepted by the protected local API      |
-| `SOCKS_PROXY_HOST`       | No       | None                      | SOCKS proxy host; normally managed by the desktop package                     |
-| `SOCKS_PROXY_PORT`       | No       | None                      | SOCKS proxy port; normally managed by the desktop package                     |
+| `SOCKS_PROXY_HOST`       | No       | None                      | External Tor SOCKS host when running Sentinel on its own; desktop ignores it  |
+| `SOCKS_PROXY_PORT`       | No       | None                      | External Tor SOCKS port when running Sentinel on its own; desktop ignores it  |
 
 ### Electrum connection guidance
 

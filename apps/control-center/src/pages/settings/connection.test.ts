@@ -44,8 +44,12 @@ interface TorStatusFixture {
   state: string
   message?: string
   progress?: number
+  attempt?: number
 }
 let torStatus: TorStatusFixture
+let torAttempts: number
+// Simulates Tor failing before settings can observe "starting", such as a missing binary.
+let torFailsInstantly: string | null
 
 function button(label: string): HTMLButtonElement {
   const found = Array.from(container.querySelectorAll('button')).find((item) => item.textContent === label)
@@ -185,6 +189,8 @@ async function withTestSetup(run: () => Promise<void>): Promise<void> {
   connected = true
   requests = []
   torStatus = { state: 'stopped' }
+  torAttempts = 0
+  torFailsInstantly = null
   vi.spyOn(toast, 'success').mockReturnValue('test-toast')
   vi.spyOn(toast, 'error').mockReturnValue('test-toast')
   saveResponse = new Promise((resolve) => {
@@ -227,8 +233,11 @@ async function withTestSetup(run: () => Promise<void>): Promise<void> {
         })
       }
       if (path === 'settings.startTor') {
-        torStatus = { state: 'starting', progress: 0 }
-        return Response.json({ result: { data: { json: torStatus } } })
+        torAttempts += 1
+        const started = { state: 'starting', progress: 0, attempt: torAttempts }
+        torStatus =
+          torFailsInstantly === null ? started : { state: 'failed', message: torFailsInstantly, attempt: torAttempts }
+        return Response.json({ result: { data: { json: started } } })
       }
       if (path === 'settings.reconnectElectrum') {
         const result = await saveResponse
@@ -368,7 +377,7 @@ describe('desktop connection settings', () => {
       const advance = useStepTimers()
       await render()
       await turnTorOn()
-      torStatus = { state: 'failed', message: 'Tor could not connect within two minutes.' }
+      torStatus = { state: 'failed', message: 'Tor could not connect within two minutes.', attempt: 1 }
       await advance(1000)
       expect(container.textContent).toContain('Tor could not connect within two minutes.')
       expect(torSwitch().checked).toBe(false)
@@ -443,6 +452,57 @@ describe('desktop connection settings', () => {
       expect(container.textContent).toContain('Turn Tor on to try again, or choose a different server below.')
       expect(container.textContent).not.toContain('then use Save & Reconnect')
       expect(requests.filter(({ path }) => path === 'settings.reconnectElectrum')).toEqual([])
+    })
+  })
+
+  it('shows a failure even when a retried Tor start fails before settings sees it starting', async () => {
+    await withTestSetup(async () => {
+      const advance = useStepTimers()
+      await render()
+      torFailsInstantly = 'Bundled Tor is missing. Reinstall the desktop app to use Tor.'
+      await turnTorOn()
+      await advance(0)
+      expect(torSwitch().checked).toBe(false)
+      expect(container.textContent).toContain('Bundled Tor is missing.')
+      // A second fast failure after retrying must show again, not stay hidden.
+      torFailsInstantly = 'Tor could not start. Turn Tor on to try again.'
+      await turnTorOn()
+      await advance(0)
+      expect(torSwitch().checked).toBe(false)
+      expect(container.textContent).toContain('Tor could not start. Turn Tor on to try again.')
+      expect(torAttempts).toBe(2)
+    })
+  })
+
+  it('turns the switch back on when a saved Tor connection recovers by itself', async () => {
+    await withTestSetup(async () => {
+      const advance = useStepTimers()
+      saved.set('tor_enabled', 'true')
+      torStatus = { state: 'failed', message: 'Tor stopped unexpectedly.', attempt: 1 }
+      await render()
+      await advance(0)
+      expect(torSwitch().checked).toBe(false)
+      expect(container.textContent).toContain('Tor stopped unexpectedly.')
+      // A data request restarted Tor for the saved connection.
+      torStatus = { state: 'ready', attempt: 2 }
+      await advance(10_000)
+      expect(torSwitch().checked).toBe(true)
+      expect(container.textContent).not.toContain('Tor stopped unexpectedly.')
+      expect(requests.filter(({ path }) => path === 'settings.startTor')).toEqual([])
+    })
+  })
+
+  it('reassures during a slow Tor start begun by a saved connection', async () => {
+    await withTestSetup(async () => {
+      const advance = useStepTimers()
+      saved.set('tor_enabled', 'true')
+      torStatus = { state: 'starting', progress: 50, attempt: 1 }
+      await render()
+      await advance(0)
+      expect(container.textContent).toContain('Starting Tor… 50%')
+      expect(container.textContent).not.toContain('This can take up to two minutes.')
+      await advance(31_000)
+      expect(container.textContent).toContain('This can take up to two minutes.')
     })
   })
 })

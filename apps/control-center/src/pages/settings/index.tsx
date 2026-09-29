@@ -142,6 +142,7 @@ const ElectrumStatusSchema = z.object({
       state: z.enum(['stopped', 'starting', 'ready', 'failed', 'unavailable']),
       message: z.string().optional(),
       progress: z.number().optional(),
+      attempt: z.number().optional(),
     })
     .optional(),
 })
@@ -206,9 +207,26 @@ const TOR_SLOW_START_MS = 30_000
 const TOR_READY_VISIBLE_MS = 3000
 const TOR_READY_FADE_MS = 600
 
-async function requestTorStart(): Promise<void> {
+const TorStartResponseSchema = z.object({
+  result: z.object({ data: z.object({ json: z.object({ attempt: z.number().optional() }) }) }),
+})
+
+/** Start Tor and return the attempt it began, or null if the request failed. */
+async function requestTorStart(): Promise<number | null> {
   const baseUrl = import.meta.env.VITE_BACKEND_API_URL ?? ''
-  await fetch(`${baseUrl}/settings.startTor`, { method: 'POST', headers: { 'Content-Type': 'application/json' } })
+  try {
+    const res = await fetch(`${baseUrl}/settings.startTor`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    })
+    // oxlint-disable-next-line anti-slop/no-unknown-returns -- the response remains untrusted until parsed below.
+    const data: unknown = res.ok ? await res.json() : null
+    return parseUnknown(TorStartResponseSchema, data)
+      .map((response) => response.result.data.json.attempt ?? 0)
+      .unwrapOr(null)
+  } catch {
+    return null
+  }
 }
 
 function ElectrumSettings(): JSX.Element {
@@ -231,12 +249,14 @@ function ElectrumSettings(): JSX.Element {
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null)
   const [torFailure, setTorFailure] = useState<string | null>(null)
   const [torStartedAt, setTorStartedAt] = useState<number | null>(null)
-  // After the user turns Tor back on, ignore the earlier failure until a new start is reported.
-  const retryingTor = useRef(false)
+  // Failures from attempts before this one are stale. Infinity ignores all failures
+  // while a start request is in flight; null means none has been requested.
+  const [torAttemptAwaited, setTorAttemptAwaited] = useState<number | null>(null)
   const previousTorState = useRef<string | undefined>(undefined)
   const [torReadyNotice, setTorReadyNotice] = useState<'shown' | 'fading' | null>(null)
   const [directConfirmation, setDirectConfirmation] = useState<'test' | 'save' | null>(null)
   const torState = electrumStatus?.tor?.state
+  const torAttempt = electrumStatus?.tor?.attempt ?? 0
   const torStarting = torEnabled && torState === 'starting'
   // Connecting without Tor after the saved connection used it, or right after Tor
   // failed, would reveal this computer's IP address. Ask before doing that.
@@ -247,14 +267,27 @@ function ElectrumSettings(): JSX.Element {
 
   // Like Sparrow, a failed Tor start turns the switch off. That only changes the
   // form: the saved connection keeps Tor and stays disconnected, never direct.
+  // Compare attempts rather than waiting to observe "starting", which a fast failure skips.
   useEffect(() => {
-    if (torState !== 'failed') {
-      retryingTor.current = false
-    } else if (torEnabled && !retryingTor.current) {
+    if (torState === 'failed' && torEnabled && torAttempt >= (torAttemptAwaited ?? 0)) {
       setTorEnabled(false)
       setTorFailure(electrumStatus?.tor?.message ?? 'Tor couldn’t start. Turn Tor on to try again.')
     }
-  }, [torState, torEnabled, electrumStatus?.tor?.message])
+  }, [torState, torEnabled, torAttempt, torAttemptAwaited, electrumStatus?.tor?.message])
+
+  // A saved Tor connection restarts Tor on its own when data is requested. Once Tor
+  // is ready again, show the switch on unless the form has been edited.
+  useEffect(() => {
+    if (torState === 'ready' && savedTorEnabled === 'true' && !isDirty && !torEnabled) {
+      setTorEnabled(true)
+      setTorFailure(null)
+    }
+  }, [torState, savedTorEnabled, isDirty, torEnabled])
+
+  // Measure every start, including one begun by a saved Tor connection.
+  useEffect(() => {
+    setTorStartedAt(torState === 'starting' ? Date.now() : null)
+  }, [torState, torAttempt])
 
   // The solid switch shows Tor is on; announce only the moment startup finishes.
   useEffect(() => {
@@ -288,11 +321,12 @@ function ElectrumSettings(): JSX.Element {
     setTestResult(null)
     setTorFailure(null)
     if (enabled) {
-      retryingTor.current = torState === 'failed'
-      setTorStartedAt(Date.now())
-      void requestTorStart()
-        .catch(() => undefined)
-        .finally(refreshStatus)
+      setTorAttemptAwaited(Number.POSITIVE_INFINITY)
+      void requestTorStart().then((attempt) => {
+        // If the request failed, the existing status is the one to show.
+        setTorAttemptAwaited(attempt ?? 0)
+        refreshStatus()
+      })
     }
   }
 

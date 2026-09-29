@@ -9,6 +9,8 @@ export interface TorStatus {
   message?: string
   /** Tor's own bootstrap percentage while starting. It marks phases, not elapsed time. */
   progress?: number
+  /** Counts start attempts, so callers can tell a new failure from an earlier one. */
+  attempt?: number
 }
 
 export class TorManager {
@@ -18,6 +20,7 @@ export class TorManager {
   private finishStart: (() => void) | null = null
   private stopping: Promise<void> | null = null
   private stopped = false
+  private attempts = 0
 
   // Tor chooses a free loopback port when it starts, so no other program can
   // claim the port between selection and binding.
@@ -44,7 +47,7 @@ export class TorManager {
   }
 
   public getStatus(): TorStatus {
-    return { ...this.status }
+    return { ...this.status, attempt: this.attempts }
   }
 
   /** The SOCKS proxy of a ready Tor process, or null while Tor is not ready. */
@@ -60,6 +63,7 @@ export class TorManager {
       return this.starting
     }
     // Report the start immediately so a caller polling status never sees a stale failure.
+    this.attempts += 1
     this.status = { state: 'starting', progress: 0 }
     this.starting = this.launch().finally(() => {
       this.starting = null

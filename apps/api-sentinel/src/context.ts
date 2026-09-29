@@ -47,6 +47,8 @@ export interface TorStatus {
   message?: string
   /** Tor's bootstrap percentage while starting. It marks phases, not elapsed time. */
   progress?: number
+  /** Counts start attempts, so settings can tell a new failure from an earlier one. */
+  attempt?: number
 }
 
 // A fresh Tor process may need well over the direct-connection limit to build its
@@ -59,7 +61,12 @@ export interface AppContextOptions {
   /** Distribution-owned Tor process; Sentinel owns connection policy. */
   tor?: {
     start: () => Promise<{ state: string; message?: string }>
-    getStatus: () => { state: 'stopped' | 'starting' | 'ready' | 'failed'; message?: string; progress?: number }
+    getStatus: () => {
+      state: 'stopped' | 'starting' | 'ready' | 'failed'
+      message?: string
+      progress?: number
+      attempt?: number
+    }
     /** Tor picks its port when it starts, so resolve the proxy for each connection. */
     getSocksProxy: () => { host: string; port: number } | null
   }
