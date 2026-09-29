@@ -16,10 +16,13 @@ import { IndexMap, IndexSet } from '@hoseki/packages/collection'
 import { parseUnknown } from '@hoseki/packages/result'
 import {
   type ChallengeId,
+  ChallengeIdSchema,
   type ClaimId,
   type ClaimStatus,
   type KeystoreId,
+  KeystoreIdSchema,
   type SignedMessageId,
+  SignedMessageIdSchema,
   TimezoneSchema,
   hosid,
 } from '@hoseki/packages/schemas'
@@ -44,45 +47,10 @@ import { publicProcedure, t } from './init'
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-type AccountRow = {
-  id: ClaimId
-  network: string
-  descriptor: CheckedAccountDescriptor
-  display_name: string
-  status: ClaimStatus
-  created_at: string
-  deleted_at: string | null
-}
-
-type KeystoreRow = {
-  id: KeystoreId
-  account_id: ClaimId
-  label: string
-  wallet: SupportedHardwareWallet | null
-  model: string | null
-  derivation_path: DerivationPathString | null
-  xpub: string
-  created_at: string
-}
-
-type ChallengeRow = {
-  id: ChallengeId
-  account_id: ClaimId
-  is_satisfied: number
-  completed_at: string | null
-  created_at: string
-}
-
-type SignedMessageRow = {
-  id: SignedMessageId
-  challenge_id: ChallengeId
-  keystore_id: KeystoreId
-  address: CheckedAddressString
-  message_text: string
-  signature: string | null
-  signed_at: string | null
-  created_at: string
-}
+type AccountRow = typeof accountTable.$inferSelect
+type KeystoreRow = typeof keystoreTable.$inferSelect
+type ChallengeRow = typeof challenges.$inferSelect
+type SignedMessageRow = typeof signedMessagesTable.$inferSelect
 
 interface KeystoreDto {
   id: KeystoreId
@@ -172,17 +140,19 @@ function claimNetworkToNetwork(claimNetwork: string): string {
 }
 
 function keystoreRowToDto(row: KeystoreRow): KeystoreDto {
-  const now = new Date(row.created_at)
+  const now = new Date(row.createdAt)
   const xpub = Xpub.fromString(row.xpub)
   if (xpub.isErr()) {
     throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Stored keystore xpub is invalid' })
   }
   return {
-    id: row.id,
+    id: parseUnknown(KeystoreIdSchema, row.id).expect('Stored keystore ID is invalid'),
     createdAt: now,
     updatedAt: now,
-    wallet: row.wallet,
-    derivationPath: row.derivation_path,
+    wallet: parseUnknown(supportedHardwareWalletSchema.nullable(), row.wallet).expect('Stored wallet is invalid'),
+    derivationPath: parseUnknown(DerivationPathString.nullable(), row.derivationPath).expect(
+      'Stored derivation path is invalid',
+    ),
     xpub: xpub.unwrap(),
     model: row.model,
     label: row.label,
@@ -217,145 +187,81 @@ function buildClaimDto(
   latestChallenge: ChallengeRow | null,
   signedMessages: SignedMessageRow[],
 ): ClaimDto {
-  const now = new Date(row.created_at)
+  const now = new Date(row.createdAt)
+  const keystoreDtos = keystores.map(keystoreRowToDto)
   return {
-    id: row.id,
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- SAFETY: Control Center accepts nanoids as well as prefixed claim IDs; preserve the existing DTO contract without rewriting IDs.
+    id: row.id as ClaimId,
     createdAt: now,
     updatedAt: now,
     isVerified: row.status === 'verified',
     officialName: '',
-    displayName: row.display_name,
+    displayName: row.displayName,
     network: networkToClaimNetwork(row.network),
-    account: row.descriptor,
+    account: Account.fromDescriptor(row.descriptor).expect('Stored account descriptor is invalid').toString(),
     status: row.status,
-    isArchived: row.deleted_at !== null,
-    keystores: keystores.map(keystoreRowToDto),
+    isArchived: row.deletedAt !== null,
+    keystores: keystoreDtos,
     latestChallenge: latestChallenge
       ? {
-          id: latestChallenge.id,
-          completed: latestChallenge.is_satisfied === 1,
+          id: parseUnknown(ChallengeIdSchema, latestChallenge.id).expect('Stored challenge ID is invalid'),
+          completed: latestChallenge.isSatisfied === 1,
           messages: signedMessages.map((sm) => ({
-            signedMessageId: sm.id,
-            keystoreId: sm.keystore_id,
+            signedMessageId: parseUnknown(SignedMessageIdSchema, sm.id).expect('Stored signed-message ID is invalid'),
+            keystoreId: parseUnknown(KeystoreIdSchema, sm.keystoreId).expect('Stored keystore ID is invalid'),
             signed: sm.signature !== null,
           })),
         }
       : null,
-    metadata: keystores[0]
+    metadata: keystoreDtos[0]
       ? {
           walletInfo: {
-            type: keystores[0].wallet ? hardwareWalletDisplayNames[keystores[0].wallet] : null,
-            model: keystores[0].model,
+            type: keystoreDtos[0].wallet ? hardwareWalletDisplayNames[keystoreDtos[0].wallet] : null,
+            model: keystoreDtos[0].model,
           },
         }
       : null,
   }
 }
 
-// Legacy rows can contain nanoids or descriptors accepted by older flows.
-// Keep their existing DTO brands without imposing new migration-time validation.
-const storedClaimIdSchema = z.custom<ClaimId>((value): value is ClaimId => typeof value === 'string')
-const storedKeystoreIdSchema = z.custom<KeystoreId>((value): value is KeystoreId => typeof value === 'string')
-const storedChallengeIdSchema = z.custom<ChallengeId>((value): value is ChallengeId => typeof value === 'string')
-const storedMessageIdSchema = z.custom<SignedMessageId>((value): value is SignedMessageId => typeof value === 'string')
-const storedDescriptorSchema = z.custom<CheckedAccountDescriptor>(
-  (value): value is CheckedAccountDescriptor => typeof value === 'string',
-)
-const storedPathSchema = z.custom<DerivationPathString>(
-  (value): value is DerivationPathString => typeof value === 'string',
-)
-const storedAddressSchema = z.custom<CheckedAddressString>(
-  (value): value is CheckedAddressString => typeof value === 'string',
-)
-
-function storedString<T extends string>(value: string, schema: z.ZodType<T>): T {
-  return parseUnknown(schema, value).expect('Stored string is invalid')
-}
-
-function toAccountRow(row: typeof accountTable.$inferSelect): AccountRow {
-  return {
-    id: storedString(row.id, storedClaimIdSchema),
-    network: row.network,
-    descriptor: storedString(row.descriptor, storedDescriptorSchema),
-    display_name: row.displayName,
-    status: row.status,
-    created_at: row.createdAt,
-    deleted_at: row.deletedAt,
-  }
-}
-
-function toKeystoreRow(row: typeof keystoreTable.$inferSelect): KeystoreRow {
-  return {
-    id: storedString(row.id, storedKeystoreIdSchema),
-    account_id: storedString(row.accountId, storedClaimIdSchema),
-    label: row.label,
-    wallet: row.wallet === null ? null : storedString(row.wallet, supportedHardwareWalletSchema),
-    model: row.model,
-    derivation_path: row.derivationPath === null ? null : storedString(row.derivationPath, storedPathSchema),
-    xpub: row.xpub,
-    created_at: row.createdAt,
-  }
-}
-
-function toChallengeRow(row: typeof challenges.$inferSelect): ChallengeRow {
-  return {
-    id: storedString(row.id, storedChallengeIdSchema),
-    account_id: storedString(row.accountId, storedClaimIdSchema),
-    is_satisfied: row.isSatisfied,
-    completed_at: row.completedAt,
-    created_at: row.createdAt,
-  }
-}
-
-function toSignedMessageRow(row: typeof signedMessagesTable.$inferSelect): SignedMessageRow {
-  return {
-    id: storedString(row.id, storedMessageIdSchema),
-    challenge_id: storedString(row.challengeId, storedChallengeIdSchema),
-    keystore_id: storedString(row.keystoreId, storedKeystoreIdSchema),
-    address: storedString(row.address, storedAddressSchema),
-    message_text: row.messageText,
-    signature: row.signature,
-    signed_at: row.signedAt,
-    created_at: row.createdAt,
-  }
-}
-
 async function getFullClaimDto(db: SentinelDb, accountId: string): Promise<ClaimDto | null> {
-  const [stored] = await db.select().from(accountTable).where(eq(accountTable.id, accountId))
-  const row = stored ? toAccountRow(stored) : null
+  const [row] = await db.select().from(accountTable).where(eq(accountTable.id, accountId))
   if (!row) {
     return null
   }
 
-  const keystoreRows = (await db.select().from(keystoreTable).where(eq(keystoreTable.accountId, row.id))).map(
-    toKeystoreRow,
-  )
-  const [latestStored] = await db
+  const keystoreRows = await db.select().from(keystoreTable).where(eq(keystoreTable.accountId, row.id))
+  const [latestChallenge] = await db
     .select()
     .from(challenges)
     .where(eq(challenges.accountId, row.id))
     .orderBy(desc(challenges.createdAt))
     .limit(1)
-  const latestChallenge = latestStored ? toChallengeRow(latestStored) : null
   const signedMessages = latestChallenge
-    ? (await db.select().from(signedMessagesTable).where(eq(signedMessagesTable.challengeId, latestChallenge.id))).map(
-        toSignedMessageRow,
-      )
+    ? await db.select().from(signedMessagesTable).where(eq(signedMessagesTable.challengeId, latestChallenge.id))
     : []
 
-  return buildClaimDto(row, keystoreRows, latestChallenge, signedMessages)
+  return buildClaimDto(row, keystoreRows, latestChallenge ?? null, signedMessages)
 }
 
 function signedMessageRowToDto(row: SignedMessageRow): SignedMessageDto {
   return {
     version: 0,
-    id: row.id,
-    createdAt: new Date(row.created_at),
-    updatedAt: new Date(row.signed_at ?? row.created_at),
-    address: row.address,
-    messageTextToSign: getMessageTextToSign(row.id, row.message_text),
-    signedAt: row.signed_at != null && row.signed_at !== '' ? new Date(row.signed_at) : null,
+    id: parseUnknown(SignedMessageIdSchema, row.id).expect('Stored signed-message ID is invalid'),
+    createdAt: new Date(row.createdAt),
+    updatedAt: new Date(row.signedAt ?? row.createdAt),
+    address: Address.fromString(row.address).expect('Stored signing address is invalid').toString(),
+    messageTextToSign: getMessageTextToSign(row.id, row.messageText),
+    signedAt: row.signedAt != null && row.signedAt !== '' ? new Date(row.signedAt) : null,
     signature: row.signature,
+  }
+}
+
+function challengeMessageRowToDto(row: SignedMessageRow): ChallengeMessageDto {
+  return {
+    signedMessage: signedMessageRowToDto(row),
+    challengeId: parseUnknown(ChallengeIdSchema, row.challengeId).expect('Stored challenge ID is invalid'),
+    keystoreId: parseUnknown(KeystoreIdSchema, row.keystoreId).expect('Stored keystore ID is invalid'),
   }
 }
 
@@ -374,7 +280,7 @@ function verifySignedMessageSignature(message: SignedMessageRow, signature: stri
     throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Stored signing address is invalid' })
   }
 
-  const messageTextToSign = getMessageTextToSign(message.id, message.message_text)
+  const messageTextToSign = getMessageTextToSign(message.id, message.messageText)
   let isVerified = false
   try {
     // Match api-armadillo: non-strict mode is required for Ledger-compatible message signatures.
@@ -602,7 +508,7 @@ const registryRouter = t.router({
         if (!ks) {
           throw new TRPCError({ code: 'NOT_FOUND', message: 'Keystore not found' })
         }
-        return keystoreRowToDto(toKeystoreRow(ks))
+        return keystoreRowToDto(ks)
       }),
 
     create: t.router({
@@ -675,13 +581,13 @@ const registryRouter = t.router({
             keystores: [
               keystoreRowToDto({
                 id: keystoreId,
-                account_id: accountId,
+                accountId,
                 label: input.keystore.label,
                 wallet: input.keystore.wallet,
                 model: input.keystore.model,
-                derivation_path: input.keystore.derivationPath,
+                derivationPath: input.keystore.derivationPath,
                 xpub,
-                created_at: now,
+                createdAt: now,
               }),
             ],
           }
@@ -750,13 +656,13 @@ const registryRouter = t.router({
               })
               keystoreRows.push({
                 id: keystoreId,
-                account_id: accountId,
+                accountId,
                 label: ks.label,
                 wallet: ks.wallet,
                 model: ks.model,
-                derivation_path: ks.derivationPath,
+                derivationPath: ks.derivationPath,
                 xpub: ks.publicKey,
-                created_at: now,
+                createdAt: now,
               })
             }
           })
@@ -817,21 +723,20 @@ const registryRouter = t.router({
         }
 
         // Return existing incomplete challenge if one exists
-        const [existingStored] = await db
+        const [existing] = await db
           .select()
           .from(challenges)
           .where(and(eq(challenges.accountId, input.claimId), eq(challenges.isSatisfied, 0)))
           .orderBy(desc(challenges.createdAt))
           .limit(1)
-        const existing = existingStored ? toChallengeRow(existingStored) : null
         if (existing) {
           return {
             id: existing.id,
-            claimId: existing.account_id,
+            claimId: existing.accountId,
             variant: 'signed_message' as const,
             isSatisfied: false,
-            createdAt: new Date(existing.created_at),
-            updatedAt: new Date(existing.created_at),
+            createdAt: new Date(existing.createdAt),
+            updatedAt: new Date(existing.createdAt),
             completedAt: null,
           }
         }
@@ -853,19 +758,18 @@ const registryRouter = t.router({
 
     complete: publicProcedure.input(z.object({ challengeId: z.string() })).mutation(async ({ ctx, input }) => {
       const db = ctx.app.database.db
-      const [storedChallenge] = await db.select().from(challenges).where(eq(challenges.id, input.challengeId))
-      const challenge = storedChallenge ? toChallengeRow(storedChallenge) : null
+      const [challenge] = await db.select().from(challenges).where(eq(challenges.id, input.challengeId))
       if (!challenge) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Challenge not found' })
       }
-      if (challenge.is_satisfied === 1 || challenge.completed_at !== null) {
+      if (challenge.isSatisfied === 1 || challenge.completedAt !== null) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Challenge already completed' })
       }
 
       const [accountRow] = await db
         .select({ descriptor: accountTable.descriptor })
         .from(accountTable)
-        .where(eq(accountTable.id, challenge.account_id))
+        .where(eq(accountTable.id, challenge.accountId))
       if (!accountRow) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Account not found' })
       }
@@ -875,9 +779,10 @@ const registryRouter = t.router({
         throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Failed to parse account descriptor' })
       }
 
-      const signedMessages = (
-        await db.select().from(signedMessagesTable).where(eq(signedMessagesTable.challengeId, input.challengeId))
-      ).map(toSignedMessageRow)
+      const signedMessages = await db
+        .select()
+        .from(signedMessagesTable)
+        .where(eq(signedMessagesTable.challengeId, input.challengeId))
 
       if (signedMessages.length === 0) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'No signed messages found' })
@@ -892,7 +797,7 @@ const registryRouter = t.router({
         (message): message is SignedMessageRow & { signature: string } => message.signature !== null,
       )
       const requiredSignatures = getRequiredSignatureCount(account.unwrap())
-      const signedKeystoreIds = new Set(completedMessages.map((message) => message.keystore_id))
+      const signedKeystoreIds = new Set(completedMessages.map((message) => message.keystoreId))
       if (signedKeystoreIds.size < requiredSignatures) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Challenge is not satisfied' })
       }
@@ -906,7 +811,7 @@ const registryRouter = t.router({
         const accountRows = await tx
           .update(accountTable)
           .set({ status: 'verified' })
-          .where(and(eq(accountTable.id, challenge.account_id), isNull(accountTable.deletedAt)))
+          .where(and(eq(accountTable.id, challenge.accountId), isNull(accountTable.deletedAt)))
           .returning({ id: accountTable.id })
         if (accountRows.length === 0) {
           throw new TRPCError({ code: 'BAD_REQUEST', message: 'Archived claims cannot complete verification' })
@@ -923,10 +828,10 @@ const registryRouter = t.router({
 
       return {
         id: challenge.id,
-        claimId: challenge.account_id,
+        claimId: challenge.accountId,
         variant: 'signed_message' as const,
         isSatisfied: true,
-        createdAt: new Date(challenge.created_at),
+        createdAt: new Date(challenge.createdAt),
         updatedAt: new Date(now),
         completedAt: new Date(now),
       }
@@ -939,14 +844,13 @@ const registryRouter = t.router({
       .mutation(async ({ ctx, input }): Promise<ChallengeMessageDto> => {
         const db = ctx.app.database.db
 
-        const [storedChallenge] = await db.select().from(challenges).where(eq(challenges.id, input.challengeId))
-        const challenge = storedChallenge ? toChallengeRow(storedChallenge) : null
+        const [challenge] = await db.select().from(challenges).where(eq(challenges.id, input.challengeId))
         if (!challenge) {
           throw new TRPCError({ code: 'NOT_FOUND', message: 'Challenge not found' })
         }
 
         // Check if a signed message already exists for this keystore+challenge
-        const [storedSm] = await db
+        const [existingSm] = await db
           .select()
           .from(signedMessagesTable)
           .where(
@@ -956,17 +860,11 @@ const registryRouter = t.router({
             ),
           )
           .limit(1)
-        const existingSm = storedSm ? toSignedMessageRow(storedSm) : null
         if (existingSm) {
-          return {
-            signedMessage: signedMessageRowToDto(existingSm),
-            challengeId: existingSm.challenge_id,
-            keystoreId: existingSm.keystore_id,
-          }
+          return challengeMessageRowToDto(existingSm)
         }
 
-        const [storedKeystore] = await db.select().from(keystoreTable).where(eq(keystoreTable.id, input.keystoreId))
-        const keystore = storedKeystore ? toKeystoreRow(storedKeystore) : null
+        const [keystore] = await db.select().from(keystoreTable).where(eq(keystoreTable.id, input.keystoreId))
         if (!keystore) {
           throw new TRPCError({ code: 'NOT_FOUND', message: 'Keystore not found' })
         }
@@ -999,65 +897,49 @@ const registryRouter = t.router({
           createdAt: now,
         })
 
-        return {
-          signedMessage: {
-            version: 0 as const,
-            id: signedMessageId,
-            createdAt: new Date(now),
-            updatedAt: new Date(now),
-            address,
-            messageTextToSign: getMessageTextToSign(signedMessageId, messageText),
-            signedAt: null,
-            signature: null,
-          },
+        return challengeMessageRowToDto({
+          id: signedMessageId,
+          createdAt: now,
+          address,
+          messageText,
+          signedAt: null,
+          signature: null,
           challengeId: challenge.id,
           keystoreId: keystore.id,
-        }
+        })
       }),
 
     get: publicProcedure
       .input(z.object({ signedMessageId: z.string() }))
       .query(async ({ ctx, input }): Promise<ChallengeMessageDto> => {
-        const [stored] = await ctx.app.database.db
+        const [sm] = await ctx.app.database.db
           .select()
           .from(signedMessagesTable)
           .where(eq(signedMessagesTable.id, input.signedMessageId))
-        const sm = stored ? toSignedMessageRow(stored) : null
         if (!sm) {
           throw new TRPCError({ code: 'NOT_FOUND', message: 'Signed message not found' })
         }
-        return {
-          signedMessage: signedMessageRowToDto(sm),
-          challengeId: sm.challenge_id,
-          keystoreId: sm.keystore_id,
-        }
+        return challengeMessageRowToDto(sm)
       }),
 
     list: publicProcedure
       .input(z.object({ challengeId: z.string() }))
       .query(async ({ ctx, input }): Promise<ChallengeMessageDto[]> => {
-        const messages = (
-          await ctx.app.database.db
-            .select()
-            .from(signedMessagesTable)
-            .where(eq(signedMessagesTable.challengeId, input.challengeId))
-        ).map(toSignedMessageRow)
-        return messages.map((sm) => ({
-          signedMessage: signedMessageRowToDto(sm),
-          challengeId: sm.challenge_id,
-          keystoreId: sm.keystore_id,
-        }))
+        const messages = await ctx.app.database.db
+          .select()
+          .from(signedMessagesTable)
+          .where(eq(signedMessagesTable.challengeId, input.challengeId))
+        return messages.map(challengeMessageRowToDto)
       }),
 
     complete: publicProcedure
       .input(z.object({ signedMessageId: z.string(), signature: z.string().trim().min(1).max(4096) }))
       .mutation(async ({ ctx, input }): Promise<ChallengeMessageDto> => {
         const db = ctx.app.database.db
-        const [stored] = await db
+        const [sm] = await db
           .select()
           .from(signedMessagesTable)
           .where(eq(signedMessagesTable.id, input.signedMessageId))
-        const sm = stored ? toSignedMessageRow(stored) : null
         if (!sm) {
           throw new TRPCError({ code: 'NOT_FOUND', message: 'Signed message not found' })
         }
@@ -1073,20 +955,7 @@ const registryRouter = t.router({
           .set({ signature: input.signature, signedAt: now })
           .where(eq(signedMessagesTable.id, input.signedMessageId))
 
-        return {
-          signedMessage: {
-            version: 0 as const,
-            id: sm.id,
-            createdAt: new Date(sm.created_at),
-            updatedAt: new Date(now),
-            address: sm.address,
-            messageTextToSign: getMessageTextToSign(sm.id, sm.message_text),
-            signedAt: new Date(now),
-            signature: input.signature,
-          },
-          challengeId: sm.challenge_id,
-          keystoreId: sm.keystore_id,
-        }
+        return challengeMessageRowToDto({ ...sm, signedAt: now, signature: input.signature })
       }),
   }),
 
@@ -1106,27 +975,25 @@ const registryRouter = t.router({
       }
 
       // Find or create keystore
-      const [storedKeystore] = await db
+      const [keystore] = await db
         .select()
         .from(keystoreTable)
         .where(eq(keystoreTable.accountId, accountRow.id))
         .limit(1)
-      const keystore = storedKeystore ? toKeystoreRow(storedKeystore) : null
       if (!keystore) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Keystore not found' })
       }
 
       // Check for existing unsigned challenge
-      const [storedChallenge] = await db
+      const [existingChallenge] = await db
         .select()
         .from(challenges)
         .where(and(eq(challenges.accountId, accountRow.id), eq(challenges.isSatisfied, 0)))
         .orderBy(desc(challenges.createdAt))
         .limit(1)
-      const existingChallenge = storedChallenge ? toChallengeRow(storedChallenge) : null
 
       if (existingChallenge) {
-        const [storedSm] = await db
+        const [existingSm] = await db
           .select()
           .from(signedMessagesTable)
           .where(
@@ -1136,33 +1003,19 @@ const registryRouter = t.router({
             ),
           )
           .limit(1)
-        const existingSm = storedSm ? toSignedMessageRow(storedSm) : null
 
         if (existingSm) {
           return {
             challenge: {
               id: existingChallenge.id,
-              claimId: existingChallenge.account_id,
+              claimId: existingChallenge.accountId,
               variant: 'signed_message' as const,
               isSatisfied: false,
-              createdAt: new Date(existingChallenge.created_at),
-              updatedAt: new Date(existingChallenge.created_at),
+              createdAt: new Date(existingChallenge.createdAt),
+              updatedAt: new Date(existingChallenge.createdAt),
               completedAt: null,
             },
-            challengeMessage: {
-              signedMessage: {
-                version: 0 as const,
-                id: existingSm.id,
-                createdAt: new Date(existingSm.created_at),
-                updatedAt: new Date(existingSm.created_at),
-                address: existingSm.address,
-                messageTextToSign: getMessageTextToSign(existingSm.id, existingSm.message_text),
-                signedAt: null,
-                signature: null,
-              },
-              challengeId: existingChallenge.id,
-              keystoreId: keystore.id,
-            },
+            challengeMessage: challengeMessageRowToDto({ ...existingSm, signedAt: null, signature: null }),
           }
         }
       }
@@ -1204,20 +1057,16 @@ const registryRouter = t.router({
           updatedAt: new Date(now),
           completedAt: null,
         },
-        challengeMessage: {
-          signedMessage: {
-            version: 0 as const,
-            id: signedMessageId,
-            createdAt: new Date(now),
-            updatedAt: new Date(now),
-            address,
-            messageTextToSign: getMessageTextToSign(signedMessageId, messageText),
-            signedAt: null,
-            signature: null,
-          },
+        challengeMessage: challengeMessageRowToDto({
+          id: signedMessageId,
+          createdAt: now,
+          address,
+          messageText,
+          signedAt: null,
+          signature: null,
           challengeId,
           keystoreId: keystore.id,
-        },
+        }),
       }
     }),
 })
