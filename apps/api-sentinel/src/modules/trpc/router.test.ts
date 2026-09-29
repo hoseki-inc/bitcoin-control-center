@@ -5,14 +5,17 @@ import { ElectrumClient } from '@hoseki/packages/clients/electrum'
 import { Ok, asyncFn } from '@hoseki/packages/result'
 import { Wallets } from '@hoseki/packages/testing'
 import pino from 'pino'
-import { expect, it, onTestFinished, vi } from 'vitest'
+import { assert, expect, it, onTestFinished, vi } from 'vitest'
 import { createAppContext } from '../../context'
+import { accounts, challenges, keystores, signedMessages } from '../../db/schema'
+import * as env from '../../env'
 import { appRouter } from './router'
 
-it('preserves claim, keystore and signing-message DTOs through database round trips', async () => {
+async function setup() {
   const directory = mkdtempSync(join(tmpdir(), 'sentinel-router-'))
   vi.stubEnv('DATA_DIR', directory)
   vi.stubEnv('ELECTRUM_HOST', 'localhost')
+  vi.spyOn(env, 'loadEnv').mockReturnValue({ ...env.loadEnv(), DATA_DIR: directory })
   vi.spyOn(ElectrumClient.prototype, 'connect').mockImplementation(asyncFn(async () => Ok(['test', '1.4'])))
   onTestFinished(() => {
     vi.restoreAllMocks()
@@ -25,6 +28,18 @@ it('preserves claim, keystore and signing-message DTOs through database round tr
     app.electrumClient.disconnect()
   })
   const caller = appRouter.createCaller({ app }).portalProve.registry
+  return { app, caller }
+}
+
+const singlesigInput = {
+  network: 'bitcoin_mainnet',
+  account: Wallets.singlesigLegacyAccount.toString(),
+  displayName: 'Wallet',
+  keystore: { label: 'Hardware wallet', wallet: 'coldcard' as const, model: 'Mk4', derivationPath: null },
+}
+
+it('preserves claim, keystore and signing-message DTOs through database round trips', async () => {
+  const { app, caller } = await setup()
   const account = Wallets.singlesigLegacyAccount.toString()
   const created = await caller.claims.create.singlesig({
     network: 'bitcoin_mainnet',
@@ -67,4 +82,69 @@ it('preserves claim, keystore and signing-message DTOs through database round tr
     account: basic.descriptor,
     displayName: basic.displayName,
   })
+})
+
+it.each(['singlesig', 'multisig'] as const)('creates only one %s claim under concurrent requests', async (kind) => {
+  const { app, caller } = await setup()
+  const create = async () =>
+    kind === 'singlesig'
+      ? caller.claims.create.singlesig(singlesigInput)
+      : caller.claims.create.multisig({
+          network: 'bitcoin_mainnet',
+          account: Wallets.multisigNativeSegwitAccount.toString(),
+          displayName: 'Multisig',
+          keystores: Wallets.multisigNativeSegwitAccount.xpubs.map((xpub) => ({
+            label: 'Key',
+            wallet: null,
+            model: null,
+            derivationPath: null,
+            publicKey: xpub.toString(),
+          })),
+        })
+  const results = await Promise.allSettled([create(), create()])
+  expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1)
+  expect(results.find((result) => result.status === 'rejected')).toMatchObject({
+    reason: { code: 'CONFLICT', message: 'Account already exists' },
+  })
+  const created = results.find((result) => result.status === 'fulfilled')
+  assert(created?.status === 'fulfilled')
+  expect(created.value.keystores).toEqual(created.value.claim.keystores)
+  await expect(app.database.select().from(accounts)).resolves.toHaveLength(1)
+  await expect(app.database.select().from(keystores)).resolves.toHaveLength(kind === 'singlesig' ? 1 : 3)
+})
+
+it('reuses one challenge and message under concurrent get-or-create requests', async () => {
+  const { app, caller } = await setup()
+  await caller.claims.create.singlesig(singlesigInput)
+  const input = { network: singlesigInput.network, account: singlesigInput.account }
+  const [first, second] = await Promise.all([
+    caller.getOrCreateSinglesigChallengeMessage(input),
+    caller.getOrCreateSinglesigChallengeMessage(input),
+  ])
+  expect(first).toEqual(second)
+  await expect(app.database.select().from(challenges)).resolves.toHaveLength(1)
+  await expect(app.database.select().from(signedMessages)).resolves.toHaveLength(1)
+})
+
+it('serializes separate challenge and message creation with the combined flow', async () => {
+  const { app, caller } = await setup()
+  const created = await caller.claims.create.singlesig(singlesigInput)
+  const [key] = created.keystores
+  assert(key)
+  const [challenge, sameChallenge] = await Promise.all([
+    caller.challenges.create({ claimId: created.claim.id }),
+    caller.challenges.create({ claimId: created.claim.id }),
+  ])
+  expect(sameChallenge).toEqual(challenge)
+  const [combined, message, sameMessage] = await Promise.all([
+    caller.getOrCreateSinglesigChallengeMessage({ network: singlesigInput.network, account: singlesigInput.account }),
+    caller.challengeMessages.create({ challengeId: challenge.id, keystoreId: key.id }),
+    caller.challengeMessages.create({ challengeId: challenge.id, keystoreId: key.id }),
+  ])
+  expect(combined.challenge.id).toBe(challenge.id)
+  expect(combined.challenge.createdAt).toEqual(challenge.createdAt)
+  expect(message).toEqual(sameMessage)
+  expect(combined.challengeMessage).toEqual(message)
+  await expect(app.database.select().from(challenges)).resolves.toHaveLength(1)
+  await expect(app.database.select().from(signedMessages)).resolves.toHaveLength(1)
 })

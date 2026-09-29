@@ -33,7 +33,7 @@ import { Decimal } from 'decimal.js'
 import { and, desc, eq, isNotNull, isNull, lte, ne, sql } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
 import { z } from 'zod'
-import type { SentinelDb } from '../../db/drizzle'
+import type { SentinelDb, SentinelTx } from '../../db/drizzle'
 import {
   accounts as accountTable,
   balanceSnapshots,
@@ -225,7 +225,7 @@ function buildClaimDto(
   }
 }
 
-async function getFullClaimDto(db: SentinelDb, accountId: string): Promise<ClaimDto | null> {
+async function getFullClaimDto(db: SentinelDb | SentinelTx, accountId: string): Promise<ClaimDto | null> {
   const [row] = await db.select().from(accountTable).where(eq(accountTable.id, accountId))
   if (!row) {
     return null
@@ -528,40 +528,39 @@ const registryRouter = t.router({
           }),
         )
         .mutation(async ({ ctx, input }) => {
-          const db = ctx.app.database
-          const network = claimNetworkToNetwork(input.network)
+          return ctx.app.database.transaction(async (db) => {
+            const network = claimNetworkToNetwork(input.network)
 
-          // Check if account already exists
-          const existing = await db
-            .select({ id: accountTable.id })
-            .from(accountTable)
-            .where(and(eq(accountTable.descriptor, input.account), eq(accountTable.network, network)))
-            .limit(1)
-          if (existing.length > 0) {
-            throw new TRPCError({ code: 'CONFLICT', message: 'Account already exists' })
-          }
+            // Check if account already exists
+            const existing = await db
+              .select({ id: accountTable.id })
+              .from(accountTable)
+              .where(and(eq(accountTable.descriptor, input.account), eq(accountTable.network, network)))
+              .limit(1)
+            if (existing.length > 0) {
+              throw new TRPCError({ code: 'CONFLICT', message: 'Account already exists' })
+            }
 
-          // Extract xpub from descriptor
-          const parsed = SingleSigAccount.fromDescriptor(input.account)
-          if (parsed.isErr()) {
-            throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid account descriptor' })
-          }
-          const xpub = parsed.unwrap().xpub.toString()
+            // Extract xpub from descriptor
+            const parsed = SingleSigAccount.fromDescriptor(input.account)
+            if (parsed.isErr()) {
+              throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid account descriptor' })
+            }
+            const xpub = parsed.unwrap().xpub.toString()
 
-          const accountId = hosid('re_clmx')
-          const keystoreId = hosid('re_ks')
-          const now = new Date().toISOString()
+            const accountId = hosid('re_clmx')
+            const keystoreId = hosid('re_ks')
+            const now = new Date().toISOString()
 
-          await db.batch([
-            db.insert(accountTable).values({
+            await db.insert(accountTable).values({
               id: accountId,
               network,
               descriptor: input.account,
               displayName: input.displayName,
               status: 'pending',
               createdAt: now,
-            }),
-            db.insert(keystoreTable).values({
+            })
+            await db.insert(keystoreTable).values({
               id: keystoreId,
               accountId,
               label: input.keystore.label,
@@ -570,28 +569,17 @@ const registryRouter = t.router({
               derivationPath: input.keystore.derivationPath,
               xpub,
               createdAt: now,
-            }),
-          ])
+            })
 
-          const claim = await getFullClaimDto(db, accountId)
-          if (!claim) {
-            throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Claim not found after creation' })
-          }
-          return {
-            claim,
-            keystores: [
-              keystoreRowToDto({
-                id: keystoreId,
-                accountId,
-                label: input.keystore.label,
-                wallet: input.keystore.wallet,
-                model: input.keystore.model,
-                derivationPath: input.keystore.derivationPath,
-                xpub,
-                createdAt: now,
-              }),
-            ],
-          }
+            const claim = await getFullClaimDto(db, accountId)
+            if (!claim) {
+              throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Claim not found after creation' })
+            }
+            return {
+              claim,
+              keystores: claim.keystores,
+            }
+          })
         }),
 
       multisig: publicProcedure
@@ -612,30 +600,27 @@ const registryRouter = t.router({
           }),
         )
         .mutation(async ({ ctx, input }) => {
-          const db = ctx.app.database
-          const network = claimNetworkToNetwork(input.network)
+          return ctx.app.database.transaction(async (db) => {
+            const network = claimNetworkToNetwork(input.network)
 
-          const existing = await db
-            .select({ id: accountTable.id })
-            .from(accountTable)
-            .where(and(eq(accountTable.descriptor, input.account), eq(accountTable.network, network)))
-            .limit(1)
-          if (existing.length > 0) {
-            throw new TRPCError({ code: 'CONFLICT', message: 'Account already exists' })
-          }
+            const existing = await db
+              .select({ id: accountTable.id })
+              .from(accountTable)
+              .where(and(eq(accountTable.descriptor, input.account), eq(accountTable.network, network)))
+              .limit(1)
+            if (existing.length > 0) {
+              throw new TRPCError({ code: 'CONFLICT', message: 'Account already exists' })
+            }
 
-          const parsed = MultiSigAccount.fromDescriptor(input.account)
-          if (parsed.isErr()) {
-            throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid multisig account descriptor' })
-          }
+            const parsed = MultiSigAccount.fromDescriptor(input.account)
+            if (parsed.isErr()) {
+              throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid multisig account descriptor' })
+            }
 
-          const accountId = hosid('re_clmx')
-          const now = new Date().toISOString()
+            const accountId = hosid('re_clmx')
+            const now = new Date().toISOString()
 
-          const keystoreRows: KeystoreRow[] = []
-
-          await db.transaction(async (tx) => {
-            await tx.insert(accountTable).values({
+            await db.insert(accountTable).values({
               id: accountId,
               network,
               descriptor: input.account,
@@ -645,17 +630,7 @@ const registryRouter = t.router({
             })
             for (const ks of input.keystores) {
               const keystoreId = hosid('re_ks')
-              await tx.insert(keystoreTable).values({
-                id: keystoreId,
-                accountId,
-                label: ks.label,
-                wallet: ks.wallet,
-                model: ks.model,
-                derivationPath: ks.derivationPath,
-                xpub: ks.publicKey,
-                createdAt: now,
-              })
-              keystoreRows.push({
+              await db.insert(keystoreTable).values({
                 id: keystoreId,
                 accountId,
                 label: ks.label,
@@ -666,16 +641,16 @@ const registryRouter = t.router({
                 createdAt: now,
               })
             }
-          })
 
-          const claim = await getFullClaimDto(db, accountId)
-          if (!claim) {
-            throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Claim not found after creation' })
-          }
-          return {
-            claim,
-            keystores: keystoreRows.map(keystoreRowToDto),
-          }
+            const claim = await getFullClaimDto(db, accountId)
+            if (!claim) {
+              throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Claim not found after creation' })
+            }
+            return {
+              claim,
+              keystores: claim.keystores,
+            }
+          })
         }),
     }),
 
@@ -712,49 +687,49 @@ const registryRouter = t.router({
     create: publicProcedure
       .input(z.object({ claimId: z.string(), keystoreId: z.string().optional() }))
       .mutation(async ({ ctx, input }) => {
-        const db = ctx.app.database
+        return ctx.app.database.transaction(async (db) => {
+          // Check the account exists
+          const [accountRow] = await db
+            .select({ id: accountTable.id })
+            .from(accountTable)
+            .where(eq(accountTable.id, input.claimId))
+          if (!accountRow) {
+            throw new TRPCError({ code: 'NOT_FOUND', message: 'Account not found' })
+          }
 
-        // Check the account exists
-        const [accountRow] = await db
-          .select({ id: accountTable.id })
-          .from(accountTable)
-          .where(eq(accountTable.id, input.claimId))
-        if (!accountRow) {
-          throw new TRPCError({ code: 'NOT_FOUND', message: 'Account not found' })
-        }
+          // Return existing incomplete challenge if one exists
+          const [existing] = await db
+            .select()
+            .from(challenges)
+            .where(and(eq(challenges.accountId, input.claimId), eq(challenges.isSatisfied, 0)))
+            .orderBy(desc(challenges.createdAt))
+            .limit(1)
+          if (existing) {
+            return {
+              id: existing.id,
+              claimId: existing.accountId,
+              variant: 'signed_message' as const,
+              isSatisfied: false,
+              createdAt: new Date(existing.createdAt),
+              updatedAt: new Date(existing.createdAt),
+              completedAt: null,
+            }
+          }
 
-        // Return existing incomplete challenge if one exists
-        const [existing] = await db
-          .select()
-          .from(challenges)
-          .where(and(eq(challenges.accountId, input.claimId), eq(challenges.isSatisfied, 0)))
-          .orderBy(desc(challenges.createdAt))
-          .limit(1)
-        if (existing) {
+          const challengeId = hosid('re_chal')
+          const now = new Date().toISOString()
+          await db.insert(challenges).values({ id: challengeId, accountId: input.claimId, createdAt: now })
+
           return {
-            id: existing.id,
-            claimId: existing.accountId,
+            id: challengeId,
+            claimId: input.claimId,
             variant: 'signed_message' as const,
             isSatisfied: false,
-            createdAt: new Date(existing.createdAt),
-            updatedAt: new Date(existing.createdAt),
+            createdAt: new Date(now),
+            updatedAt: new Date(now),
             completedAt: null,
           }
-        }
-
-        const challengeId = hosid('re_chal')
-        const now = new Date().toISOString()
-        await db.insert(challenges).values({ id: challengeId, accountId: input.claimId, createdAt: now })
-
-        return {
-          id: challengeId,
-          claimId: input.claimId,
-          variant: 'signed_message' as const,
-          isSatisfied: false,
-          createdAt: new Date(now),
-          updatedAt: new Date(now),
-          completedAt: null,
-        }
+        })
       }),
 
     complete: publicProcedure.input(z.object({ challengeId: z.string() })).mutation(async ({ ctx, input }) => {
@@ -841,70 +816,70 @@ const registryRouter = t.router({
     create: publicProcedure
       .input(z.object({ challengeId: z.string(), keystoreId: z.string() }))
       .mutation(async ({ ctx, input }): Promise<ChallengeMessageDto> => {
-        const db = ctx.app.database
+        return ctx.app.database.transaction(async (db) => {
+          const [challenge] = await db.select().from(challenges).where(eq(challenges.id, input.challengeId))
+          if (!challenge) {
+            throw new TRPCError({ code: 'NOT_FOUND', message: 'Challenge not found' })
+          }
 
-        const [challenge] = await db.select().from(challenges).where(eq(challenges.id, input.challengeId))
-        if (!challenge) {
-          throw new TRPCError({ code: 'NOT_FOUND', message: 'Challenge not found' })
-        }
+          // Check if a signed message already exists for this keystore+challenge
+          const [existingSm] = await db
+            .select()
+            .from(signedMessagesTable)
+            .where(
+              and(
+                eq(signedMessagesTable.challengeId, input.challengeId),
+                eq(signedMessagesTable.keystoreId, input.keystoreId),
+              ),
+            )
+            .limit(1)
+          if (existingSm) {
+            return challengeMessageRowToDto(existingSm)
+          }
 
-        // Check if a signed message already exists for this keystore+challenge
-        const [existingSm] = await db
-          .select()
-          .from(signedMessagesTable)
-          .where(
-            and(
-              eq(signedMessagesTable.challengeId, input.challengeId),
-              eq(signedMessagesTable.keystoreId, input.keystoreId),
-            ),
-          )
-          .limit(1)
-        if (existingSm) {
-          return challengeMessageRowToDto(existingSm)
-        }
+          const [keystore] = await db.select().from(keystoreTable).where(eq(keystoreTable.id, input.keystoreId))
+          if (!keystore) {
+            throw new TRPCError({ code: 'NOT_FOUND', message: 'Keystore not found' })
+          }
 
-        const [keystore] = await db.select().from(keystoreTable).where(eq(keystoreTable.id, input.keystoreId))
-        if (!keystore) {
-          throw new TRPCError({ code: 'NOT_FOUND', message: 'Keystore not found' })
-        }
+          // Derive address from keystore xpub for signing (use p2wpkh like singlesig flow)
+          const xpubResult = Xpub.fromString(keystore.xpub)
+          if (xpubResult.isErr()) {
+            throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Failed to parse keystore xpub' })
+          }
+          const singleSig = new SingleSigAccount('p2wpkh', xpubResult.unwrap())
+          const address = singleSig.receiveAddress(0, Network.Mainnet).toString()
 
-        // Derive address from keystore xpub for signing (use p2wpkh like singlesig flow)
-        const xpubResult = Xpub.fromString(keystore.xpub)
-        if (xpubResult.isErr()) {
-          throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Failed to parse keystore xpub' })
-        }
-        const singleSig = new SingleSigAccount('p2wpkh', xpubResult.unwrap())
-        const address = singleSig.receiveAddress(0, Network.Mainnet).toString()
+          // Build message text
+          const [identifierRow] = await db
+            .select({ value: settings.value })
+            .from(settings)
+            .where(eq(settings.key, 'owner_identifier'))
+          const identifier = identifierRow?.value ?? 'the owner'
+          const messageText = `I, ${identifier}, affirm sole control of this account. No other third-party claims/access permitted. Ownership revocable solely by me.`
 
-        // Build message text
-        const [identifierRow] = await db
-          .select({ value: settings.value })
-          .from(settings)
-          .where(eq(settings.key, 'owner_identifier'))
-        const identifier = identifierRow?.value ?? 'the owner'
-        const messageText = `I, ${identifier}, affirm sole control of this account. No other third-party claims/access permitted. Ownership revocable solely by me.`
+          const signedMessageId = hosid('re_mesg')
+          const now = new Date().toISOString()
 
-        const signedMessageId = hosid('re_mesg')
-        const now = new Date().toISOString()
+          await db.insert(signedMessagesTable).values({
+            id: signedMessageId,
+            challengeId: input.challengeId,
+            keystoreId: input.keystoreId,
+            address,
+            messageText,
+            createdAt: now,
+          })
 
-        await db.insert(signedMessagesTable).values({
-          id: signedMessageId,
-          challengeId: input.challengeId,
-          keystoreId: input.keystoreId,
-          address,
-          messageText,
-          createdAt: now,
-        })
-
-        return challengeMessageRowToDto({
-          id: signedMessageId,
-          createdAt: now,
-          address,
-          messageText,
-          signedAt: null,
-          signature: null,
-          challengeId: challenge.id,
-          keystoreId: keystore.id,
+          return challengeMessageRowToDto({
+            id: signedMessageId,
+            createdAt: now,
+            address,
+            messageText,
+            signedAt: null,
+            signature: null,
+            challengeId: challenge.id,
+            keystoreId: keystore.id,
+          })
         })
       }),
 
@@ -961,112 +936,113 @@ const registryRouter = t.router({
   getOrCreateSinglesigChallengeMessage: publicProcedure
     .input(z.object({ network: z.string(), account: z.string() }))
     .query(async ({ ctx, input }) => {
-      const db = ctx.app.database
-      const network = claimNetworkToNetwork(input.network)
+      return ctx.app.database.transaction(async (db) => {
+        const network = claimNetworkToNetwork(input.network)
 
-      // Find the account
-      const [accountRow] = await db
-        .select({ id: accountTable.id, descriptor: accountTable.descriptor })
-        .from(accountTable)
-        .where(and(eq(accountTable.descriptor, input.account), eq(accountTable.network, network)))
-      if (!accountRow) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Account not found' })
-      }
+        // Find the account
+        const [accountRow] = await db
+          .select({ id: accountTable.id, descriptor: accountTable.descriptor })
+          .from(accountTable)
+          .where(and(eq(accountTable.descriptor, input.account), eq(accountTable.network, network)))
+        if (!accountRow) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Account not found' })
+        }
 
-      // Find or create keystore
-      const [keystore] = await db
-        .select()
-        .from(keystoreTable)
-        .where(eq(keystoreTable.accountId, accountRow.id))
-        .limit(1)
-      if (!keystore) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Keystore not found' })
-      }
-
-      // Check for existing unsigned challenge
-      const [existingChallenge] = await db
-        .select()
-        .from(challenges)
-        .where(and(eq(challenges.accountId, accountRow.id), eq(challenges.isSatisfied, 0)))
-        .orderBy(desc(challenges.createdAt))
-        .limit(1)
-
-      if (existingChallenge) {
-        const [existingSm] = await db
+        // Find or create keystore
+        const [keystore] = await db
           .select()
-          .from(signedMessagesTable)
-          .where(
-            and(
-              eq(signedMessagesTable.challengeId, existingChallenge.id),
-              eq(signedMessagesTable.keystoreId, keystore.id),
-            ),
-          )
+          .from(keystoreTable)
+          .where(eq(keystoreTable.accountId, accountRow.id))
+          .limit(1)
+        if (!keystore) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Keystore not found' })
+        }
+
+        // Check for existing unsigned challenge
+        const [existingChallenge] = await db
+          .select()
+          .from(challenges)
+          .where(and(eq(challenges.accountId, accountRow.id), eq(challenges.isSatisfied, 0)))
+          .orderBy(desc(challenges.createdAt))
           .limit(1)
 
-        if (existingSm) {
-          return {
-            challenge: {
-              id: existingChallenge.id,
-              claimId: existingChallenge.accountId,
-              variant: 'signed_message' as const,
-              isSatisfied: false,
-              createdAt: new Date(existingChallenge.createdAt),
-              updatedAt: new Date(existingChallenge.createdAt),
-              completedAt: null,
-            },
-            challengeMessage: challengeMessageRowToDto({ ...existingSm, signedAt: null, signature: null }),
+        if (existingChallenge) {
+          const [existingSm] = await db
+            .select()
+            .from(signedMessagesTable)
+            .where(
+              and(
+                eq(signedMessagesTable.challengeId, existingChallenge.id),
+                eq(signedMessagesTable.keystoreId, keystore.id),
+              ),
+            )
+            .limit(1)
+
+          if (existingSm) {
+            return {
+              challenge: {
+                id: existingChallenge.id,
+                claimId: existingChallenge.accountId,
+                variant: 'signed_message' as const,
+                isSatisfied: false,
+                createdAt: new Date(existingChallenge.createdAt),
+                updatedAt: new Date(existingChallenge.createdAt),
+                completedAt: null,
+              },
+              challengeMessage: challengeMessageRowToDto({ ...existingSm, signedAt: null, signature: null }),
+            }
           }
         }
-      }
 
-      // Derive address from account for signing
-      const parsed = SingleSigAccount.fromDescriptor(accountRow.descriptor)
-      if (parsed.isErr()) {
-        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Failed to parse account descriptor' })
-      }
-      const btcNetwork = network === 'testnet' ? Network.Testnet : Network.Mainnet
-      const address = parsed.unwrap().receiveAddress(0, btcNetwork).toString()
+        // Derive address from account for signing
+        const parsed = SingleSigAccount.fromDescriptor(accountRow.descriptor)
+        if (parsed.isErr()) {
+          throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Failed to parse account descriptor' })
+        }
+        const btcNetwork = network === 'testnet' ? Network.Testnet : Network.Mainnet
+        const address = parsed.unwrap().receiveAddress(0, btcNetwork).toString()
 
-      // Create challenge and signed message
-      const challengeId = hosid('re_chal')
-      const signedMessageId = hosid('re_mesg')
-      // Keep the established message format, using the configured owner identifier when available.
-      const [identifierRow] = await db
-        .select({ value: settings.value })
-        .from(settings)
-        .where(eq(settings.key, 'owner_identifier'))
-      const identifier = identifierRow?.value ?? 'the owner'
-      const messageText = `I, ${identifier}, affirm sole control of this account. No other third-party claims/access permitted. Ownership revocable solely by me.`
-      const now = new Date().toISOString()
+        // Create challenge and signed message
+        const challengeId = existingChallenge?.id ?? hosid('re_chal')
+        const signedMessageId = hosid('re_mesg')
+        // Keep the established message format, using the configured owner identifier when available.
+        const [identifierRow] = await db
+          .select({ value: settings.value })
+          .from(settings)
+          .where(eq(settings.key, 'owner_identifier'))
+        const identifier = identifierRow?.value ?? 'the owner'
+        const messageText = `I, ${identifier}, affirm sole control of this account. No other third-party claims/access permitted. Ownership revocable solely by me.`
+        const now = new Date().toISOString()
 
-      await db.batch([
-        db.insert(challenges).values({ id: challengeId, accountId: accountRow.id, createdAt: now }),
-        db
+        if (!existingChallenge) {
+          await db.insert(challenges).values({ id: challengeId, accountId: accountRow.id, createdAt: now })
+        }
+        await db
           .insert(signedMessagesTable)
-          .values({ id: signedMessageId, challengeId, keystoreId: keystore.id, address, messageText, createdAt: now }),
-      ])
+          .values({ id: signedMessageId, challengeId, keystoreId: keystore.id, address, messageText, createdAt: now })
 
-      return {
-        challenge: {
-          id: challengeId,
-          claimId: accountRow.id,
-          variant: 'signed_message' as const,
-          isSatisfied: false,
-          createdAt: new Date(now),
-          updatedAt: new Date(now),
-          completedAt: null,
-        },
-        challengeMessage: challengeMessageRowToDto({
-          id: signedMessageId,
-          createdAt: now,
-          address,
-          messageText,
-          signedAt: null,
-          signature: null,
-          challengeId,
-          keystoreId: keystore.id,
-        }),
-      }
+        return {
+          challenge: {
+            id: challengeId,
+            claimId: accountRow.id,
+            variant: 'signed_message' as const,
+            isSatisfied: false,
+            createdAt: new Date(existingChallenge?.createdAt ?? now),
+            updatedAt: new Date(existingChallenge?.createdAt ?? now),
+            completedAt: null,
+          },
+          challengeMessage: challengeMessageRowToDto({
+            id: signedMessageId,
+            createdAt: now,
+            address,
+            messageText,
+            signedAt: null,
+            signature: null,
+            challengeId,
+            keystoreId: keystore.id,
+          }),
+        }
+      })
     }),
 })
 
