@@ -344,7 +344,6 @@ function validateMultisigKeystores(account: MultiSigAccount, publicKeys: string[
 interface SigningIdentity {
   keystoreId: KeystoreId
   address: CheckedAddressString
-  legacyAddress: CheckedAddressString
   publicKey: string
 }
 
@@ -377,18 +376,19 @@ function getSigningIdentity(db: Database.Database, accountId: string, keystoreId
     throw new TRPCError({ code: 'BAD_REQUEST', message: 'Keystore network does not match the account' })
   }
   const signingKey = xpub.derive(0).derive(0)
-  const legacyAddress = signingKey.address('p2wpkh', network).toString()
   return {
     keystoreId: keystore.id,
-    address: account instanceof SingleSigAccount ? account.receiveAddress(0, network).toString() : legacyAddress,
-    // The generic endpoint previously used P2WPKH even for other singlesig script types.
-    legacyAddress,
+    // Multisig uses individual cosigner messages; singlesig proves the descriptor address itself.
+    address:
+      account instanceof SingleSigAccount
+        ? account.receiveAddress(0, network).toString()
+        : signingKey.address('p2wpkh', network).toString(),
     publicKey: signingKey.publicKey().toString('hex'),
   }
 }
 
 function validateSigningAddress(message: SignedMessageRow, identity: SigningIdentity): void {
-  if (message.address !== identity.address && message.address !== identity.legacyAddress) {
+  if (message.address !== identity.address) {
     throw new TRPCError({ code: 'BAD_REQUEST', message: 'Signing address does not match the account key' })
   }
 }

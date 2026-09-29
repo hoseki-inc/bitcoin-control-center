@@ -131,6 +131,51 @@ describe('ownership verification account binding', () => {
         })
       },
     )
+
+    it.each(['p2pkh', 'p2sh-p2wpkh', 'p2wpkh', 'p2tr'] as const)(
+      'rejects a correct key with the wrong address script type for %s',
+      async (scriptType) => {
+        const { registry, db } = setupOwnershipHarness()
+        const created = await createSinglesigClaim(registry, key, scriptType)
+        const messageInput = { network: key.xpub.network.toString(), account: created.claim.account }
+        const { challenge, challengeMessage } = await registry.getOrCreateSinglesigChallengeMessage(messageInput)
+        const message = challengeMessage.signedMessage
+        const wrongScriptType = scriptType === 'p2wpkh' ? 'p2pkh' : 'p2wpkh'
+        const wrongAddress = new SingleSigAccount(wrongScriptType, key.xpub).receiveAddress(0).toString()
+        const signature = Signer.sign(key.wif, wrongAddress, message.messageTextToSign)
+        db.prepare('UPDATE signed_messages SET address = ? WHERE id = ?').run(wrongAddress, message.id)
+
+        await expect(registry.getOrCreateSinglesigChallengeMessage(messageInput)).rejects.toMatchObject({
+          code: 'BAD_REQUEST',
+        })
+        await expect(
+          registry.challengeMessages.create({
+            challengeId: challenge.id,
+            keystoreId: challengeMessage.keystoreId,
+          }),
+        ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
+        await expect(
+          registry.challengeMessages.complete({
+            signedMessageId: message.id,
+            signature,
+          }),
+        ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
+        expect(db.prepare('SELECT signature FROM signed_messages WHERE id = ?').get(message.id)).toEqual({
+          signature: null,
+        })
+
+        // A proof saved before the fix must also fail the final completion check.
+        db.prepare('UPDATE signed_messages SET signature = ?, signed_at = ? WHERE id = ?').run(
+          signature,
+          new Date().toISOString(),
+          message.id,
+        )
+        await expect(registry.challenges.complete({ challengeId: challenge.id })).rejects.toMatchObject({
+          code: 'BAD_REQUEST',
+        })
+        await expect(registry.claims.get.byId({ id: created.claim.id })).resolves.toMatchObject({ status: 'pending' })
+      },
+    )
   })
 
   it.each([
@@ -186,24 +231,5 @@ describe('ownership verification account binding', () => {
         account: owner.account.descriptor(),
       }),
     ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
-  })
-
-  it('accepts a previously issued P2WPKH proof for the same key in a legacy singlesig account', async () => {
-    const { registry, db } = setupOwnershipHarness()
-    const created = await createSinglesigClaim(registry, owner, 'p2pkh')
-    const { challenge, challengeMessage } = await registry.getOrCreateSinglesigChallengeMessage({
-      network: 'bitcoin_mainnet',
-      account: created.claim.account,
-    })
-    const message = challengeMessage.signedMessage
-    const legacyAddress = owner.account.receiveAddress(0).toString()
-    db.prepare('UPDATE signed_messages SET address = ? WHERE id = ?').run(legacyAddress, message.id)
-    await registry.challengeMessages.complete({
-      signedMessageId: message.id,
-      signature: Signer.sign(owner.wif, legacyAddress, message.messageTextToSign),
-    })
-    await expect(registry.challenges.complete({ challengeId: challenge.id })).resolves.toMatchObject({
-      isSatisfied: true,
-    })
   })
 })
