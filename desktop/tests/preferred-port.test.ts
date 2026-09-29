@@ -48,3 +48,26 @@ it('does not retry unrelated startup failures or change the saved port', async (
   expect(start).toHaveBeenCalledOnce()
   expect(readPreferredPort(file)).toBe(51234)
 })
+
+it('falls back from an occupied saved port and remembers the new one', async () => {
+  const file = portFile()
+  writePreferredPort(file, 51234)
+  const occupied = Object.assign(new Error('listen EADDRINUSE'), { code: 'EADDRINUSE' })
+  const start = vi.fn<(port: number) => Promise<{ port: number }>>(async (port) => {
+    if (port === 51234) {
+      throw occupied
+    }
+    return { port: 52345 }
+  })
+  await expect(startOnPreferredPort(file, start)).resolves.toEqual({ port: 52345 })
+  expect(start.mock.calls).toEqual([[51234], [0]])
+  expect(readPreferredPort(file)).toBe(52345)
+})
+
+it('reuses the saved port on the next launch', async () => {
+  const file = portFile()
+  writePreferredPort(file, 51234)
+  const start = vi.fn<(port: number) => Promise<{ port: number }>>(async (port) => ({ port }))
+  await expect(startOnPreferredPort(file, start)).resolves.toEqual({ port: 51234 })
+  expect(start).toHaveBeenCalledExactlyOnceWith(51234)
+})

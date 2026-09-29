@@ -1920,13 +1920,11 @@ const READABLE_SETTINGS = new Set([
   'electrum_port',
   'electrum_protocol',
   'tor_enabled',
-  'sidebar_compact',
-  'statements_banner_dismissed',
 ])
 
 // Connection settings must be validated, connected and saved together through
 // reconnectElectrum; individual writes could make the next launch unusable.
-const WRITABLE_SETTINGS = new Set(['user_name', 'owner_identifier', 'sidebar_compact', 'statements_banner_dismissed'])
+const WRITABLE_SETTINGS = new Set(['user_name', 'owner_identifier'])
 
 function isReadableSetting(key: string): boolean {
   return READABLE_SETTINGS.has(key)
@@ -2022,13 +2020,6 @@ function validateWritableSetting(key: string, value: string): string {
   }
 
   switch (key) {
-    case 'sidebar_compact':
-    case 'statements_banner_dismissed': {
-      if (value !== 'true' && value !== 'false') {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Setting value must be true or false' })
-      }
-      return value
-    }
     case 'user_name':
     case 'owner_identifier': {
       if (value.length > 200) {

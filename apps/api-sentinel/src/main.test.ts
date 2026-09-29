@@ -1,12 +1,8 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { type AddressInfo, type Server, createServer } from 'node:net'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { Err, Ok, asyncFn } from '@hoseki/packages/result'
 import { parseUnknown } from '@hoseki/packages/result/lib/parse'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { z } from 'zod'
-import { readPreferredPort, startOnPreferredPort, writePreferredPort } from '../../../desktop/src/preferred-port'
 import type { AppContext } from './context'
 import { type SentinelServer, main } from './main'
 
@@ -19,7 +15,6 @@ interface FakeContext {
 let running: SentinelServer[]
 let sockets: Server[]
 let queued: AppContext[]
-let portFile: string
 
 // main() takes contexts in order, so each fake answers exactly one start.
 const createContext = asyncFn(async () => {
@@ -85,10 +80,8 @@ async function health(port: number): Promise<z.infer<typeof HealthSchema>> {
   return parseUnknown(HealthSchema, body).expect('health response')
 }
 
-async function startDesktop(
-  start = async (listenPort: number) => main({ waitForElectrum: false, listenPort }, createContext),
-): Promise<SentinelServer> {
-  const server = await startOnPreferredPort(portFile, start)
+async function start(options: Parameters<typeof main>[0] = {}): Promise<SentinelServer> {
+  const server = await main(options, createContext)
   running.push(server)
   return server
 }
@@ -97,7 +90,6 @@ function setup(): void {
   running = []
   sockets = []
   queued = []
-  portFile = join(mkdtempSync(join(tmpdir(), 'desktop-listen-test-')), 'port')
   vi.stubEnv('NODE_ENV', 'production')
   vi.stubEnv('LOG_LEVEL', 'fatal')
   onTestFinished(async () => {
@@ -108,67 +100,51 @@ function setup(): void {
       await closeSocket(socket)
     }
     vi.unstubAllEnvs()
-    rmSync(join(portFile, '..'), { recursive: true, force: true })
   })
 }
 
-describe('desktop and development server coexistence', () => {
-  it('falls back from an occupied saved port, remembers it, and shuts down independently', async () => {
+describe('Sentinel listening port', () => {
+  it('binds an operating-system port when asked for port zero and reports it', async () => {
     setup()
-    const occupiedPort = await reservePort()
-    writePreferredPort(portFile, occupiedPort)
-    const failed = queueContext(occupiedPort)
-    const started = queueContext(occupiedPort)
-    const desktop = await startDesktop()
-
-    expect(desktop.port).toBeGreaterThan(0)
-    expect(desktop.port).not.toBe(occupiedPort)
-    expect(readPreferredPort(portFile)).toBe(desktop.port)
-    expect(failed.closes()).toBe(1)
-    expect(started.closes()).toBe(0)
-    await expect(health(desktop.port)).resolves.toEqual({ status: 'ok' })
-    await desktop.shutdown()
-    expect(sockets[0]?.listening).toBe(true)
-    expect(started.closes()).toBe(1)
+    queueContext(3400)
+    const server = await start({ listenPort: 0 })
+    expect(server.port).toBeGreaterThan(0)
+    expect(server.port).not.toBe(3400)
+    await expect(health(server.port)).resolves.toEqual({ status: 'ok' })
   })
 
-  it.each([undefined, '3400', '4269'])('lets development start after desktop with saved port %s', async (savedPort) => {
+  it('uses the requested port instead of the configured one', async () => {
     setup()
-    if (savedPort !== undefined) {
-      writeFileSync(portFile, savedPort)
-    }
-    const configuredPort = await reservePort()
-    const desktopContext = queueContext(configuredPort)
-    const start = vi.fn(async (listenPort: number) => main({ waitForElectrum: false, listenPort }, createContext))
-    const desktop = await startDesktop(start)
-    expect(start).toHaveBeenCalledExactlyOnceWith(0)
+    const requested = await reservePort()
     const reserved = sockets[0]
     if (reserved) {
       await closeSocket(reserved)
     }
-    queueContext(configuredPort)
-    const development = await main({}, createContext)
-    running.push(development)
+    queueContext(3400)
+    const server = await start({ listenPort: requested })
+    expect(server.port).toBe(requested)
+  })
 
-    expect(development.port).toBe(configuredPort)
-    expect(development.port).not.toBe(desktop.port)
+  it('runs alongside a server on the configured port and shuts down independently', async () => {
+    setup()
+    const configured = await reservePort()
+    const reserved = sockets[0]
+    if (reserved) {
+      await closeSocket(reserved)
+    }
+    const desktopContext = queueContext(configured)
+    const desktop = await start({ listenPort: 0 })
+    queueContext(configured)
+    const development = await start()
+
+    expect(development.port).toBe(configured)
+    expect(desktop.port).not.toBe(configured)
     await development.shutdown()
     await expect(health(desktop.port)).resolves.toEqual({ status: 'ok' })
     expect(desktopContext.closes()).toBe(0)
   })
 
-  it('reuses a saved non-development port when it becomes available again', async () => {
-    setup()
-    queueContext(3400)
-    const initial = await startDesktop()
-    await initial.shutdown()
-    queueContext(3400)
-    const restarted = await startDesktop()
-    expect(restarted.port).toBe(initial.port)
-    await expect(health(restarted.port)).resolves.toEqual({ status: 'ok' })
-  })
-
-  it('cleans up its own resources after a configured-port bind failure', async () => {
+  it('cleans up its own resources after a failed bind', async () => {
     setup()
     const port = await reservePort()
     const failed = queueContext(port)

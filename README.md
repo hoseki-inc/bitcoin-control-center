@@ -205,9 +205,9 @@ The normal development endpoints are:
 | Sentinel health check | `http://localhost:3400/health` |
 | Sentinel tRPC API     | `http://localhost:3400/trpc`   |
 
-Vite may select the next free port if `4269` is already occupied. The development Sentinel will stop with an address-in-use error if `3400` is occupied. Desktop leaves both development ports available: it reuses a saved non-development loopback port when free and otherwise requests an OS-assigned port. Its UI and wallet permissions use the actual bound address, so either environment can start first.
+Vite may select the next free port if `4269` is already occupied. Sentinel will stop with an address-in-use error if `3400` is occupied.
 
-Desktop stores the sidebar layout and dismissed-banner preferences in Sentinel's local database, so a port change does not reset newly saved preferences. Existing browser preferences are imported when available at the current origin. An upgrade moving away from the old desktop port `3400` may require setting those two display preferences once again; accounts remain intact. StartOS keeps display preferences local to each browser.
+The desktop app uses its own port, so it can run alongside local development.
 
 ### Run the services separately
 
@@ -243,11 +243,9 @@ With the example configuration, local state is written under `apps/api-sentinel/
 - `secrets/exchange-credentials.key` encrypts locally stored exchange credentials.
 - SQLite may create `sentinel.db-wal` and `sentinel.db-shm` while Sentinel is running.
 
-The development data directory is ignored by Git. Packaged desktop keeps a separate `data/` directory under Electron's `userData` location: normally `~/Library/Application Support/Bitcoin Control Center/data/` on macOS and `%APPDATA%\Bitcoin Control Center\data\` on Windows. StartOS stores the equivalent state in its `main` volume at `/data`. The changing desktop HTTP port does not change this storage location.
+The entire directory is ignored by Git. Never commit it, upload it to an issue, or include it in a diagnostic archive.
 
-Never commit these directories, upload them to an issue, or include them in a diagnostic archive.
-
-Back up the complete data directory while Sentinel is stopped; fully quit the desktop app for a desktop backup. The database and encryption key must be preserved together; restoring only the database can make saved exchange credentials unreadable. Desktop does not yet provide a backup/restore UI.
+Back up the complete data directory while Sentinel is stopped. The database and encryption key must be preserved together; restoring only the database can make saved exchange credentials unreadable.
 
 To start with a fresh local profile without immediately deleting the old one, stop Sentinel and move the directory aside:
 
@@ -528,7 +526,7 @@ lsof -nP -iTCP:3400 -sTCP:LISTEN
 lsof -nP -iTCP:4269 -sTCP:LISTEN
 ```
 
-Stop the conflicting process or change `PORT` in Sentinel's `.env`. If you change Sentinel's port, update `VITE_BACKEND_API_URL` and `VITE_BACKEND_BASE_URL` in `apps/control-center/.env.sentinel`. Packaged desktop keeps its own port and falls back to a free one when it is taken.
+Stop the conflicting process or change `PORT` in Sentinel's `.env`. If you change Sentinel's port, update `VITE_BACKEND_API_URL` and `VITE_BACKEND_BASE_URL` in `apps/control-center/.env.sentinel` for local frontend development.
 
 ### Hardware wallet is not detected
 

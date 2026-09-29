@@ -1,19 +1,14 @@
-import { isDesktop } from '../mode'
-import { useUiPreference } from './use-ui-preference'
+import { useUiSettings as baseUseUiSettings } from '@hoseki/packages/ui/prove-verify-ui/hooks/use-ui-settings'
+import { z } from 'zod'
 
-export interface UiSettings {
-  isStatementsMadeEasyDismissed: boolean
-  updateUiSettings: (settings: { isStatementsMadeEasyDismissed?: boolean }) => void
-}
+const UiSettingsSchema = z.object({ isStatementsMadeEasyDismissed: z.boolean() })
 
-export function useUiSettings(desktop = isDesktop): UiSettings {
-  const [isStatementsMadeEasyDismissed, save] = useUiPreference('statements_banner_dismissed', desktop)
-  return {
-    isStatementsMadeEasyDismissed,
-    updateUiSettings: (settings) => {
-      if (settings.isStatementsMadeEasyDismissed !== undefined) {
-        save(settings.isStatementsMadeEasyDismissed)
-      }
+export function useUiSettings(): ReturnType<typeof baseUseUiSettings<{ isStatementsMadeEasyDismissed: boolean }>> {
+  return baseUseUiSettings<{ isStatementsMadeEasyDismissed: boolean }>({
+    userId: 'local',
+    schema: UiSettingsSchema,
+    defaultSettings: {
+      isStatementsMadeEasyDismissed: false,
     },
-  }
+  })
 }
