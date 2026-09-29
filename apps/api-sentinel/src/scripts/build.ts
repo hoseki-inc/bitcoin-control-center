@@ -18,7 +18,7 @@ const shared: esbuild.BuildOptions = {
     ].join(' '),
   },
   // Only keep native/complex packages external — bundle everything else
-  external: ['@libsql/client/sqlite3', '@react-pdf/renderer', 'react', 'react-dom', 'yoga-layout'],
+  external: ['@libsql/client', '@react-pdf/renderer', 'react', 'react-dom', 'yoga-layout'],
 }
 
 // cli.ts — self-starting entry point for standalone / Docker / Start9

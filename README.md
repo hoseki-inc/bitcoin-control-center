@@ -255,6 +255,23 @@ The next startup creates a new database and key. Restore the backup only while S
 
 Database migrations run automatically during startup. There is no separate local migration command.
 
+The unreleased migration history has been reset to `initial_sentinel_schema`.
+Existing development profiles from before this baseline must be moved aside using
+the steps above; they are not automatically upgraded. No database files are deleted
+by this reset.
+
+After changing `apps/api-sentinel/src/db/schema.ts`, generate a descriptively named
+Drizzle migration from the repository root:
+
+```bash
+pnpm --filter api-sentinel db:generate --name add_account_labels
+```
+
+Review the generated SQL and commit its snapshot alongside it. Table rebuilds must
+copy existing rows before dropping the original table. Startup uses Drizzle's
+native libSQL migrator, which disables foreign keys before its transaction to
+prevent cascading deletes during those rebuilds.
+
 ## Development commands
 
 Run these commands from the repository root unless noted otherwise.
@@ -319,10 +336,8 @@ pnpm security:audit
 ```
 
 The default `pnpm test` command requires only the root workspace dependencies.
-Sentinel uses an async, local-file libSQL client; `better-sqlite3` is only a
-development fixture for constructing historical databases in migration tests.
-Native install scripts are disabled to avoid unnecessary rebuilds. Sentinel
-tests and desktop runtime checks still exercise SQLite.
+Sentinel uses an async, local-file libSQL client. Sentinel tests and desktop runtime
+checks exercise SQLite using the same native client.
 
 GitHub Actions additionally installs and type-checks the standalone packaging
 workspaces and runs the StartOS tests:

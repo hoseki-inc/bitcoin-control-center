@@ -90,7 +90,6 @@
     "@ladle/react": "5.1.1",
     "@oxlint/plugins": "1.83.0",
     "@tanstack/eslint-plugin-query": "5.103.1",
-    "@types/better-sqlite3": "9.6.0",
     "@types/jsdom": "30.0.0",
     "@types/node": "22.20.1",
     "@types/node-jose": "1.1.13",
@@ -102,7 +101,6 @@
     "@typescript-eslint/parser": "8.70.0",
     "@typescript/native": "npm:typescript@7.0.2",
     "@vitejs/plugin-react": "6.1.1",
-    "better-sqlite3": "13.0.3",
     "drizzle-kit": "1.0.0-rc.4",
     "esbuild": "0.28.2",
     "eslint": "9.15.0",
@@ -201,9 +199,6 @@
       "yaml@>=2.0.0 <2.8.3": "2.8.3",
       "yaml@>=1.0.0 <1.10.3": "1.10.3"
     },
-    "ignoredBuiltDependencies": [
-      "better-sqlite3"
-    ],
     "minimumReleaseAge": 10080,
     "patchedDependencies": {
       "@ladle/react@5.1.1": "patches/@ladle__react@5.1.1.patch"
