@@ -924,10 +924,13 @@ const registryRouter = t.router({
         verifySignedMessageSignature(sm, input.signature)
 
         const now = new Date().toISOString()
-        await db
+        const completed = await db
           .update(signedMessagesTable)
           .set({ signature: input.signature, signedAt: now })
-          .where(eq(signedMessagesTable.id, input.signedMessageId))
+          .where(and(eq(signedMessagesTable.id, input.signedMessageId), isNull(signedMessagesTable.signature)))
+        if (completed.rowsAffected === 0) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'Signed message already completed' })
+        }
 
         return challengeMessageRowToDto({ ...sm, signedAt: now, signature: input.signature })
       }),

@@ -1,9 +1,13 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { ecpair } from '@hoseki/packages/bitcoin/lib/ecpair'
 import { ElectrumClient } from '@hoseki/packages/clients/electrum'
 import { Ok, asyncFn } from '@hoseki/packages/result'
 import { Wallets } from '@hoseki/packages/testing'
+import { Signer } from 'bip322-js'
+import { payments } from 'bitcoinjs-lib'
+import { eq } from 'drizzle-orm'
 import pino from 'pino'
 import { assert, expect, it, onTestFinished, vi } from 'vitest'
 import { createAppContext } from '../../context'
@@ -147,4 +151,49 @@ it('serializes separate challenge and message creation with the combined flow', 
   expect(combined.challengeMessage).toEqual(message)
   await expect(app.database.select().from(challenges)).resolves.toHaveLength(1)
   await expect(app.database.select().from(signedMessages)).resolves.toHaveLength(1)
+})
+
+it('accepts only one concurrent signature submission and preserves the winning signature and timestamp', async () => {
+  const { app, caller } = await setup()
+  await caller.claims.create.singlesig(singlesigInput)
+  const { challengeMessage } = await caller.getOrCreateSinglesigChallengeMessage({
+    network: singlesigInput.network,
+    account: singlesigInput.account,
+  })
+  const message = challengeMessage.signedMessage
+  // Use a synthetic signing key to exercise real signature verification.
+  const key = ecpair.fromPrivateKey(Buffer.alloc(32, 1))
+  const { address } = payments.p2wpkh({ pubkey: key.publicKey })
+  assert(address !== undefined)
+  await app.database.update(signedMessages).set({ address }).where(eq(signedMessages.id, message.id))
+  const signature = Signer.sign(key.toWIF(), address, message.messageTextToSign)
+  await expect(
+    caller.challengeMessages.complete({ signedMessageId: message.id, signature: 'invalid' }),
+  ).rejects.toMatchObject({
+    code: 'BAD_REQUEST',
+    message: 'Invalid signature',
+  })
+  await expect(caller.challengeMessages.get({ signedMessageId: message.id })).resolves.toMatchObject({
+    signedMessage: { signature: null, signedAt: null },
+  })
+
+  const input = { signedMessageId: message.id, signature }
+  const results = await Promise.allSettled([
+    caller.challengeMessages.complete(input),
+    caller.challengeMessages.complete(input),
+  ])
+  expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1)
+  expect(results.find((result) => result.status === 'rejected')).toMatchObject({
+    reason: { code: 'BAD_REQUEST', message: 'Signed message already completed' },
+  })
+  const winner = results.find((result) => result.status === 'fulfilled')
+  assert(winner?.status === 'fulfilled')
+  expect(winner.value.signedMessage.signature).toBe(signature)
+  expect(winner.value.signedMessage.signedAt).toBeInstanceOf(Date)
+  await expect(caller.challengeMessages.get({ signedMessageId: message.id })).resolves.toEqual(winner.value)
+  await expect(caller.challengeMessages.complete(input)).rejects.toMatchObject({
+    code: 'BAD_REQUEST',
+    message: 'Signed message already completed',
+  })
+  await expect(caller.challengeMessages.get({ signedMessageId: message.id })).resolves.toEqual(winner.value)
 })
