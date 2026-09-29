@@ -502,7 +502,6 @@ export class ControlCenterService {
 
   private async getAccountRows(
     filterIds?: string[],
-    includeArchived = false,
   ): Promise<Array<{ id: string; descriptor: string; network: string }>> {
     if (filterIds?.length === 0) {
       return []
@@ -510,12 +509,7 @@ export class ControlCenterService {
     return this.db
       .select({ id: accountTable.id, descriptor: accountTable.descriptor, network: accountTable.network })
       .from(accountTable)
-      .where(
-        and(
-          filterIds ? inArray(accountTable.id, filterIds) : undefined,
-          includeArchived ? undefined : isNull(accountTable.deletedAt),
-        ),
-      )
+      .where(and(filterIds ? inArray(accountTable.id, filterIds) : undefined, isNull(accountTable.deletedAt)))
       .orderBy(desc(accountTable.createdAt))
   }
 

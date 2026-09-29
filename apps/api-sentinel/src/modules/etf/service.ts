@@ -188,14 +188,6 @@ export class EtfService {
     return Ok(row.accountId)
   }
 
-  public async getSnapshots(accountId: string): Promise<Array<{ balance_sats: string; timestamp: string }>> {
-    return this.db
-      .select({ balance_sats: etfBalanceSnapshots.balanceSats, timestamp: etfBalanceSnapshots.timestamp })
-      .from(etfBalanceSnapshots)
-      .where(eq(etfBalanceSnapshots.accountId, accountId))
-      .orderBy(asc(etfBalanceSnapshots.timestamp))
-  }
-
   public async recordSnapshot(accountId: string, balanceSats: string, timestamp: string): Promise<void> {
     await this.insertSnapshot(this.db, accountId, balanceSats, timestamp)
   }

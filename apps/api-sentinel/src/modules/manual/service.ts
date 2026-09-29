@@ -244,15 +244,6 @@ export class ManualService {
     }))
   }
 
-  public async getSnapshots(accountId: string): Promise<Array<{ balance_sats: string; timestamp: string }>> {
-    const rows = await this.db
-      .select({ balance_sats: manualBalanceSnapshots.balanceSats, timestamp: manualBalanceSnapshots.timestamp })
-      .from(manualBalanceSnapshots)
-      .where(eq(manualBalanceSnapshots.accountId, accountId))
-      .orderBy(asc(manualBalanceSnapshots.timestamp))
-    return rows
-  }
-
   public async recordSnapshot(accountId: string, balanceSats: string, timestamp: string): Promise<void> {
     await this.insertSnapshot(this.db, accountId, balanceSats, timestamp)
   }
