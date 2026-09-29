@@ -30,7 +30,7 @@ import * as bip322 from 'bip322-js'
 import { Decimal } from 'decimal.js'
 import { nanoid } from 'nanoid'
 import { z } from 'zod'
-import { PRICE_FALLBACKS_SETTING, PRICE_SOURCE_SETTING, isPriceSourceName } from '../price/service'
+import { PRICE_FALLBACKS_SETTING, PRICE_SOURCES, PRICE_SOURCE_SETTING } from '../price/service'
 import { StatementMapper } from '../statements/mapper'
 import { publicProcedure, t } from './init'
 
@@ -1921,13 +1921,11 @@ const READABLE_SETTINGS = new Set([
   'electrum_port',
   'electrum_protocol',
   'tor_enabled',
-  PRICE_SOURCE_SETTING,
-  PRICE_FALLBACKS_SETTING,
 ])
 
 // Connection settings must be validated, connected and saved together through
 // reconnectElectrum; individual writes could make the next launch unusable.
-const WRITABLE_SETTINGS = new Set(['user_name', 'owner_identifier', PRICE_SOURCE_SETTING, PRICE_FALLBACKS_SETTING])
+const WRITABLE_SETTINGS = new Set(['user_name', 'owner_identifier'])
 
 function isReadableSetting(key: string): boolean {
   return READABLE_SETTINGS.has(key)
@@ -2030,18 +2028,6 @@ function validateWritableSetting(key: string, value: string): string {
       }
       return value
     }
-    case PRICE_SOURCE_SETTING: {
-      if (!isPriceSourceName(value)) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Unknown price source' })
-      }
-      return value
-    }
-    case PRICE_FALLBACKS_SETTING: {
-      if (value !== 'true' && value !== 'false') {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Setting value must be true or false' })
-      }
-      return value
-    }
   }
 
   throw new TRPCError({ code: 'FORBIDDEN', message: 'Setting is not writable' })
@@ -2068,6 +2054,30 @@ const settingsRouter = t.router({
 
   // Answers at once, so Settings can change the source even while every source is down.
   priceSource: publicProcedure.query(({ ctx }) => ctx.app.priceService.options()),
+
+  // Price settings change how Sentinel fetches prices, so they are saved together here and the
+  // price service is told, rather than written through the generic `update`.
+  setPriceSettings: publicProcedure
+    .input(z.object({ source: z.enum(PRICE_SOURCES).optional(), fallbacks: z.boolean().optional() }))
+    .mutation(({ ctx, input }) => {
+      if (input.source !== undefined && !ctx.app.priceService.isAvailable(input.source)) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'That price source is not available' })
+      }
+      const db = ctx.app.database.db
+      const save = db.prepare(
+        'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+      )
+      db.transaction(() => {
+        if (input.source !== undefined) {
+          save.run(PRICE_SOURCE_SETTING, input.source)
+        }
+        if (input.fallbacks !== undefined) {
+          save.run(PRICE_FALLBACKS_SETTING, String(input.fallbacks))
+        }
+      })()
+      ctx.app.priceService.settingsUpdated()
+      return ctx.app.priceService.options()
+    }),
 
   priceStatus: publicProcedure.query(async ({ ctx }) => {
     // Look the price up under the current settings, so a status never describes an earlier choice.

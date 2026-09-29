@@ -195,6 +195,7 @@ it.each([
 
 type PriceSourceOptions = RouterOutput['settings']['priceSource']
 type PriceStatus = RouterOutput['settings']['priceStatus']
+type StatusPrice = PriceStatus['price']
 
 const priceOptions: PriceSourceOptions = {
   selected: 'block',
@@ -206,65 +207,94 @@ const priceOptions: PriceSourceOptions = {
     { name: 'coingecko', label: 'CoinGecko' },
   ],
 }
-const blockStatus: PriceStatus = {
-  selected: 'block',
-  fallbacks: true,
-  price: { source: 'block', asOf: '2026-09-29T17:00:00.000Z', lastKnown: false },
-}
+const price = (source: PriceSourceOptions['selected'], lastKnown = false): StatusPrice => ({
+  source,
+  asOf: '2026-09-29T17:00:00.000Z',
+  lastKnown,
+})
 
-/** A fake Sentinel for the price settings: answers both queries and applies saved settings. */
+const ChangeSchema = z.object({
+  json: z.object({
+    source: z.enum(['mempool', 'block', 'mempool.space', 'coinbase', 'coingecko']).optional(),
+    fallbacks: z.boolean().optional(),
+  }),
+})
+
+/**
+ * A fake Sentinel for the price settings. The status describes the saved settings and the price
+ * found under them; `status` overrides it to serve one that describes another choice.
+ */
 class PriceServer {
   public options: PriceSourceOptions
-  public status: PriceStatus
+  public price: StatusPrice
+  public status: PriceStatus | null = null
   public readonly saved: unknown[] = []
-  /** Status the server reports after each save, keyed by the saved value. */
-  public readonly afterSave = new Map<string, PriceStatus>()
-  /** A status request that never answers, like a lookup waiting on the network. */
-  public holdStatus = false
-  /** A status request that fails. */
-  public failStatus = false
+  public statusRequests = 0
+  /** The price found after saving each value. */
+  public readonly afterSave = new Map<string, StatusPrice>()
+  public statusReply: 'answer' | 'hold' | 'fail' = 'answer'
+  public failSave = false
+  private readonly held: Array<() => void> = []
 
-  public constructor(options: PriceSourceOptions = priceOptions, initialStatus: PriceStatus = blockStatus) {
+  public constructor(options: PriceSourceOptions = priceOptions, initialPrice: StatusPrice = price('block')) {
     this.options = options
-    this.status = initialStatus
+    this.price = initialPrice
     fetchMock.mockImplementation(async (input, init) => {
       const url = parseUnknown(z.string(), input).unwrapOr('')
       if (url.includes('/settings.priceSource')) {
         return Response.json({ result: { data: { json: this.options } } })
       }
       if (url.includes('/settings.priceStatus')) {
-        if (this.holdStatus) {
-          return new Promise<Response>(() => undefined)
-        }
-        if (this.failStatus) {
+        this.statusRequests += 1
+        return this.answerStatus()
+      }
+      if (url.endsWith('/settings.setPriceSettings')) {
+        const change = parseUnknown(ChangeSchema, JSON.parse(parseUnknown(z.string(), init?.body).unwrapOr('null')))
+        this.saved.push(change.expect('saved setting'))
+        if (this.failSave) {
           return Response.json(
-            { error: { json: { message: 'Sentinel is restarting', code: -32603, data: { httpStatus: 500 } } } },
+            { error: { json: { message: 'Sentinel is restarting', code: -32603 } } },
             { status: 500 },
           )
         }
-        return Response.json({ result: { data: { json: this.status } } })
-      }
-      if (url.endsWith('/settings.update')) {
-        const body = parseUnknown(
-          z.object({ json: z.object({ key: z.string(), value: z.string() }) }),
-          JSON.parse(parseUnknown(z.string(), init?.body).unwrapOr('null')),
-        ).expect('saved setting')
-        this.saved.push(body)
-        const { key, value } = body.json
-        if (key === 'price_source') {
-          this.options = { ...this.options, selected: parseUnknown(PriceSourceNameSchema, value).expect('source') }
-        } else {
-          this.options = { ...this.options, fallbacks: value === 'true' }
+        const { source, fallbacks } = change.expect('saved setting').json
+        this.options = {
+          ...this.options,
+          selected: source ?? this.options.selected,
+          fallbacks: fallbacks ?? this.options.fallbacks,
         }
-        this.status = this.afterSave.get(value) ?? { ...this.status, ...this.options }
-        this.status = { ...this.status, selected: this.options.selected, fallbacks: this.options.fallbacks }
+        this.price = this.afterSave.get(String(source ?? fallbacks)) ?? this.price
+        return Response.json({ result: { data: { json: this.options } } })
       }
       return Response.json({ result: { data: { json: null } } })
     })
   }
-}
 
-const PriceSourceNameSchema = z.enum(['mempool', 'block', 'mempool.space', 'coinbase', 'coingecko'])
+  /** Releases held status requests with the current status. */
+  public releaseStatus(): void {
+    this.statusReply = 'answer'
+    for (const release of this.held.splice(0)) {
+      release()
+    }
+  }
+
+  private async answerStatus(): Promise<Response> {
+    if (this.statusReply === 'fail') {
+      return Response.json({ error: { json: { message: 'Sentinel is restarting', code: -32603 } } }, { status: 500 })
+    }
+    if (this.statusReply === 'hold') {
+      await new Promise<void>((resolve) => {
+        this.held.push(resolve)
+      })
+    }
+    const reply = this.status ?? {
+      selected: this.options.selected,
+      fallbacks: this.options.fallbacks,
+      price: this.price,
+    }
+    return Response.json({ result: { data: { json: reply } } })
+  }
+}
 
 async function renderPriceSettings(): Promise<HTMLSelectElement> {
   await act(async () => {
@@ -282,38 +312,45 @@ async function renderPriceSettings(): Promise<HTMLSelectElement> {
   }
   await vi.waitFor(async () => {
     await act(async () => {})
-    expect(Array.from(select.options, (option) => option.textContent)).toEqual([
-      'Block',
-      'mempool.space',
-      'Coinbase',
-      'CoinGecko',
-    ])
+    expect(Array.from(select.options, (option) => option.textContent)).toEqual(priceOptions.sources.map((s) => s.label))
   })
   return select
 }
 
-/** Ends any held status request, so a save finishes before the test tears down the page. */
-async function finishSaves(): Promise<void> {
-  await act(async () => {
-    await queryClient.cancelQueries()
-  })
-  await vi.waitFor(async () => {
-    await act(async () => {})
-    expect(queryClient.isFetching()).toBe(0)
-    expect(container.querySelector<HTMLSelectElement>('#price-source')?.disabled).toBe(false)
-  })
+function fallbackCheckbox(): HTMLInputElement {
+  const checkbox = container.querySelector<HTMLInputElement>('#price-fallbacks')
+  if (!checkbox) {
+    throw new Error('Missing fallback checkbox')
+  }
+  return checkbox
 }
 
-async function choose(select: HTMLSelectElement, value: string): Promise<void> {
+async function pick(select: HTMLSelectElement, value: string): Promise<void> {
   await act(async () => {
     select.value = value
     select.dispatchEvent(new Event('change', { bubbles: true }))
   })
+}
+
+/** Waits until no request is running and the page has rendered the result. */
+async function idle(): Promise<void> {
   await vi.waitFor(async () => {
     await act(async () => {})
-    expect(select.value).toBe(value)
     expect(queryClient.isFetching()).toBe(0)
+    expect(container.querySelector('#price-source')?.closest('[aria-busy="true"]')).toBeNull()
   })
+}
+
+async function choose(select: HTMLSelectElement, value: string): Promise<void> {
+  await pick(select, value)
+  await idle()
+  expect(select.value).toBe(value)
+}
+
+/** Ends any held status request, so a save finishes before the test tears down the page. */
+async function finishSaves(server: PriceServer): Promise<void> {
+  server.releaseStatus()
+  await idle()
 }
 
 it('lists the price sources and saves a new choice', async () => {
@@ -324,25 +361,8 @@ it('lists the price sources and saves a new choice', async () => {
     expect(container.textContent).toContain('If your primary price source is unavailable, use the next best source.')
 
     await choose(select, 'coinbase')
-    expect(server.saved).toEqual([{ json: { key: 'price_source', value: 'coinbase' } }])
+    expect(server.saved).toEqual([{ json: { source: 'coinbase' } }])
     expect(toast.error).not.toHaveBeenCalled()
-  })
-})
-
-it('lets you change the source while the price lookup is still waiting', async () => {
-  await withTestSetup(async () => {
-    const server = new PriceServer()
-    server.holdStatus = true
-    const select = await renderPriceSettings()
-    expect(select.disabled).toBe(false)
-    await act(async () => {
-      select.value = 'coinbase'
-      select.dispatchEvent(new Event('change', { bubbles: true }))
-    })
-    await vi.waitFor(() => {
-      expect(server.saved).toEqual([{ json: { key: 'price_source', value: 'coinbase' } }])
-    })
-    await finishSaves()
   })
 })
 
@@ -350,71 +370,119 @@ it('saves the fallback choice', async () => {
   await withTestSetup(async () => {
     const server = new PriceServer()
     await renderPriceSettings()
-    const checkbox = container.querySelector<HTMLInputElement>('input[type="checkbox"]')
-    if (!checkbox) {
-      throw new Error('Missing fallback checkbox')
-    }
-    expect(checkbox.checked).toBe(true)
-
+    expect(fallbackCheckbox().checked).toBe(true)
     await act(async () => {
-      checkbox.click()
+      fallbackCheckbox().click()
     })
-    await vi.waitFor(() => {
-      expect(server.saved).toEqual([{ json: { key: 'price_fallbacks_enabled', value: 'false' } }])
-    })
-    await finishSaves()
+    await idle()
+    expect(server.saved).toEqual([{ json: { fallbacks: false } }])
+    expect(fallbackCheckbox().checked).toBe(false)
   })
 })
 
-it('shows when a fallback source supplied the price', async () => {
+it('restores the previous choice when saving fails', async () => {
   await withTestSetup(async () => {
-    new PriceServer(priceOptions, {
-      selected: 'block',
-      fallbacks: true,
-      price: { source: 'coinbase', asOf: '2026-09-29T17:00:00.000Z', lastKnown: false },
-    })
+    const server = new PriceServer()
+    server.failSave = true
+    const select = await renderPriceSettings()
+    await pick(select, 'coinbase')
+    await idle()
+    expect(select.value).toBe('block')
+    expect(toast.error).toHaveBeenCalledWith('Could not save the price source. Please try again.')
+    expect(container.textContent).not.toContain('Price settings saved')
+  })
+})
+
+it('shows a status that arrives after the options', async () => {
+  await withTestSetup(async () => {
+    const server = new PriceServer(priceOptions, price('coinbase'))
+    server.statusReply = 'hold'
     await renderPriceSettings()
+    await act(async () => {})
+    expect(container.textContent).not.toContain('Using Coinbase')
+
+    await act(async () => {
+      server.releaseStatus()
+    })
     await vi.waitFor(() => {
       expect(container.textContent).toContain('Using Coinbase while Block is unavailable.')
     })
-    expect(container.textContent).not.toContain('No price')
   })
 })
 
-it('shows when only the last known price is available', async () => {
+it.each([
+  ['a fallback supplied the price', price('coinbase'), 'Using Coinbase while Block is unavailable.'],
+  [
+    'only the last known price is available',
+    price('block', true),
+    'No price source is available right now. Showing the last known price.',
+  ],
+  ['no source supplied a price', null, 'No price is available right now.'],
+] as const)('shows when %s', async (_label, statusPrice, message) => {
   await withTestSetup(async () => {
-    new PriceServer(priceOptions, {
-      selected: 'block',
-      fallbacks: true,
-      price: { source: 'block', asOf: '2026-09-29T16:50:00.000Z', lastKnown: true },
-    })
+    new PriceServer(priceOptions, statusPrice)
     await renderPriceSettings()
     await vi.waitFor(() => {
-      expect(container.textContent).toContain('No price source is available right now. Showing the last known price.')
+      expect(container.textContent).toContain(message)
     })
-    expect(container.textContent).not.toContain('while Block is unavailable')
   })
 })
 
-it('shows when no source supplied a price', async () => {
+it('updates the status when a background refresh changes it', async () => {
   await withTestSetup(async () => {
-    new PriceServer({ ...priceOptions, fallbacks: false }, { selected: 'block', fallbacks: false, price: null })
+    const server = new PriceServer(priceOptions, null)
     await renderPriceSettings()
     await vi.waitFor(() => {
       expect(container.textContent).toContain('No price is available right now.')
     })
-    expect(container.textContent).not.toContain('while Block is unavailable')
+
+    server.price = price('coinbase')
+    await act(async () => {
+      await queryClient.refetchQueries({ queryKey: ['price-status'] })
+    })
+    await vi.waitFor(() => {
+      expect(container.textContent).toContain('Using Coinbase while Block is unavailable.')
+    })
+    expect(container.textContent).not.toContain('No price is available right now.')
+  })
+})
+
+it('keeps showing the status while it refreshes in the background', async () => {
+  await withTestSetup(async () => {
+    const server = new PriceServer(priceOptions, price('block', true))
+    await renderPriceSettings()
+    await vi.waitFor(() => {
+      expect(container.textContent).toContain('Showing the last known price.')
+    })
+    server.statusReply = 'hold'
+    await act(async () => {
+      void queryClient.invalidateQueries({ queryKey: ['price-status'] })
+    })
+    await vi.waitFor(async () => {
+      await act(async () => {})
+      expect(queryClient.isFetching({ queryKey: ['price-status'] })).toBe(1)
+    })
+    expect(container.textContent).toContain('Showing the last known price.')
+    server.releaseStatus()
+  })
+})
+
+it('hides a status that describes a different choice', async () => {
+  await withTestSetup(async () => {
+    const server = new PriceServer()
+    server.status = { selected: 'coinbase', fallbacks: true, price: price('block') }
+    await renderPriceSettings()
+    await act(async () => {})
+    expect(queryClient.getQueryState(['price-status'])?.status).toBe('success')
+    expect(container.textContent).not.toContain('Using Block')
+    expect(container.textContent).not.toContain('No price')
   })
 })
 
 it('confirms a new source once it supplies the price', async () => {
   await withTestSetup(async () => {
     const server = new PriceServer()
-    server.afterSave.set('coinbase', {
-      selected: 'coinbase',
-      fallbacks: true,
-      price: { source: 'coinbase', asOf: '2026-09-29T17:01:00.000Z', lastKnown: false },
-    })
+    server.afterSave.set('coinbase', price('coinbase'))
     const select = await renderPriceSettings()
     await choose(select, 'coinbase')
     expect(container.textContent).not.toContain('unavailable.')
@@ -424,57 +492,16 @@ it('confirms a new source once it supplies the price', async () => {
 })
 
 it.each([
-  [
-    'a fallback supplied the price',
-    {
-      selected: 'coingecko',
-      fallbacks: true,
-      price: { source: 'block', asOf: '2026-09-29T17:00:00.000Z', lastKnown: false },
-    },
-    'Using Block while CoinGecko is unavailable.',
-  ],
-  [
-    'only the last known price is available',
-    {
-      selected: 'coingecko',
-      fallbacks: true,
-      price: { source: 'coingecko', asOf: '2026-09-29T16:50:00.000Z', lastKnown: true },
-    },
-    'Showing the last known price.',
-  ],
-] as const)('does not confirm a new source when %s', async (_label, nextStatus, message) => {
+  ['a fallback supplied the price', price('block'), 'Using Block while CoinGecko is unavailable.'],
+  ['only the last known price is available', price('coingecko', true), 'Showing the last known price.'],
+] as const)('does not confirm a new source when %s', async (_label, afterPrice, message) => {
   await withTestSetup(async () => {
     const server = new PriceServer()
-    server.afterSave.set('coingecko', nextStatus)
+    server.afterSave.set('coingecko', afterPrice)
     const select = await renderPriceSettings()
     await choose(select, 'coingecko')
     expect(container.textContent).toContain(message)
     expect(container.textContent).not.toContain('Price settings saved')
-  })
-})
-
-it('does not show a status from before the source changed', async () => {
-  await withTestSetup(async () => {
-    const server = new PriceServer(priceOptions, {
-      selected: 'block',
-      fallbacks: true,
-      price: { source: 'coinbase', asOf: '2026-09-29T17:00:00.000Z', lastKnown: false },
-    })
-    const select = await renderPriceSettings()
-    await vi.waitFor(() => {
-      expect(container.textContent).toContain('Using Coinbase while Block is unavailable.')
-    })
-    server.holdStatus = true
-    await act(async () => {
-      select.value = 'mempool.space'
-      select.dispatchEvent(new Event('change', { bubbles: true }))
-    })
-    await vi.waitFor(async () => {
-      await act(async () => {})
-      expect(select.value).toBe('mempool.space')
-    })
-    expect(container.textContent).not.toContain('unavailable.')
-    await finishSaves()
   })
 })
 
@@ -485,7 +512,7 @@ it('does not confirm a new source when checking its price fails', async () => {
     await vi.waitFor(() => {
       expect(queryClient.getQueryState(['price-status'])?.status).toBe('success')
     })
-    server.failStatus = true
+    server.statusReply = 'fail'
     await choose(select, 'coinbase')
     expect(container.textContent).not.toContain('Price settings saved')
     expect(container.textContent).toContain('Could not check the price source.')
@@ -494,76 +521,61 @@ it('does not confirm a new source when checking its price fails', async () => {
 
 it('does not keep a fallback message after fallbacks are turned off and the check fails', async () => {
   await withTestSetup(async () => {
-    const server = new PriceServer(priceOptions, {
-      selected: 'block',
-      fallbacks: true,
-      price: { source: 'coinbase', asOf: '2026-09-29T17:00:00.000Z', lastKnown: false },
-    })
+    const server = new PriceServer(priceOptions, price('coinbase'))
     await renderPriceSettings()
     await vi.waitFor(() => {
       expect(container.textContent).toContain('Using Coinbase while Block is unavailable.')
     })
-    server.failStatus = true
-    const checkbox = container.querySelector<HTMLInputElement>('input[type="checkbox"]')
-    if (!checkbox) {
-      throw new Error('Missing fallback checkbox')
-    }
+    server.statusReply = 'fail'
     await act(async () => {
-      checkbox.click()
+      fallbackCheckbox().click()
     })
-    await vi.waitFor(async () => {
-      await act(async () => {})
-      expect(server.saved).toHaveLength(1)
-      expect(queryClient.isFetching()).toBe(0)
-    })
+    await idle()
     expect(container.textContent).not.toContain('Using Coinbase while Block is unavailable.')
     expect(container.textContent).toContain('Could not check the price source.')
   })
 })
 
-it('keeps showing the status while it refreshes in the background', async () => {
-  await withTestSetup(async () => {
-    const server = new PriceServer(priceOptions, {
-      selected: 'block',
-      fallbacks: true,
-      price: { source: 'block', asOf: '2026-09-29T16:50:00.000Z', lastKnown: true },
-    })
-    await renderPriceSettings()
-    await vi.waitFor(() => {
-      expect(container.textContent).toContain('Showing the last known price.')
-    })
-    server.holdStatus = true
-    await act(async () => {
-      void queryClient.invalidateQueries({ queryKey: ['price-status'] })
-    })
-    await vi.waitFor(async () => {
-      await act(async () => {})
-      expect(queryClient.isFetching({ queryKey: ['price-status'] })).toBe(1)
-    })
-    await act(async () => {
-      await new Promise((resolve) => {
-        setTimeout(resolve, 20)
-      })
-    })
-    expect(container.textContent).toContain('Showing the last known price.')
-  })
-})
-
-it('keeps the controls disabled until a save has finished checking the new source', async () => {
+it('checks the new choice with a new request when saved during the first check', async () => {
   await withTestSetup(async () => {
     const server = new PriceServer()
+    server.statusReply = 'hold'
+    server.afterSave.set('coinbase', price('coinbase'))
     const select = await renderPriceSettings()
-    server.holdStatus = true
-    await act(async () => {
-      select.value = 'coinbase'
-      select.dispatchEvent(new Event('change', { bubbles: true }))
+    await vi.waitFor(() => {
+      expect(server.statusRequests).toBe(1)
     })
+
+    await pick(select, 'coinbase')
     await vi.waitFor(() => {
       expect(server.saved).toHaveLength(1)
     })
-    await act(async () => {})
-    expect(select.disabled).toBe(true)
-    expect(container.querySelector<HTMLInputElement>('input[type="checkbox"]')?.disabled).toBe(true)
-    await finishSaves()
+    await finishSaves(server)
+    expect(server.statusRequests).toBe(2)
+    expect(container.textContent).toContain('Price settings saved')
+  })
+})
+
+it('keeps the controls usable and focused, and ignores changes, while a save is checking', async () => {
+  await withTestSetup(async () => {
+    const server = new PriceServer()
+    const select = await renderPriceSettings()
+    server.statusReply = 'hold'
+    select.focus()
+    await pick(select, 'coinbase')
+    await vi.waitFor(() => {
+      expect(server.saved).toHaveLength(1)
+    })
+
+    expect(select.disabled).toBe(false)
+    expect(document.activeElement).toBe(select)
+    expect(container.textContent).toContain('Checking the price source')
+    await pick(select, 'coingecko')
+    await act(async () => {
+      fallbackCheckbox().click()
+    })
+    expect(server.saved).toHaveLength(1)
+    await finishSaves(server)
+    expect(select.value).toBe('coinbase')
   })
 })

@@ -508,13 +508,12 @@ describe('Tor connection policy', () => {
 })
 
 describe('price source settings', () => {
-  it('saves the price source and fallbacks and reports the price found under them', async () => {
+  it('saves the price source and fallbacks together and reports the price found under them', async () => {
     await withTestSetup(async () => {
       onTestFinished(() => {
         vi.unstubAllGlobals()
       })
       const seconds = Math.floor(Date.now() / 1000) - 60
-      const asOf = new Date(seconds * 1000)
       const answers = new Map([
         ['example.invalid', () => Response.json({ time: seconds, USD: 83000 })],
         ['api.coinbase.com', () => Response.json({ data: { amount: '83105.04', currency: 'USD' } })],
@@ -525,21 +524,24 @@ describe('price source settings', () => {
       )
       const caller = appRouter.createCaller({ app: await context() })
       await expect(caller.settings.priceSource()).resolves.toMatchObject({ selected: 'mempool', fallbacks: true })
-      await expect(caller.settings.priceStatus()).resolves.toEqual({
+      const first = await caller.settings.priceStatus()
+      expect(first).toMatchObject({
         selected: 'mempool',
         fallbacks: true,
-        price: { source: 'mempool', asOf: asOf.toISOString(), lastKnown: false },
+        price: { source: 'mempool', lastKnown: false },
       })
+      expect(Math.abs(Date.parse(first.price?.asOf ?? '') - seconds * 1000)).toBeLessThan(1000)
 
-      await caller.settings.update({ key: 'price_source', value: 'coinbase' })
-      await caller.settings.update({ key: 'price_fallbacks_enabled', value: 'false' })
+      await expect(caller.settings.setPriceSettings({ source: 'coinbase', fallbacks: false })).resolves.toMatchObject({
+        selected: 'coinbase',
+        fallbacks: false,
+      })
       await expect(caller.settings.priceSource()).resolves.toMatchObject({ selected: 'coinbase', fallbacks: false })
       await expect(caller.settings.priceStatus()).resolves.toMatchObject({
         selected: 'coinbase',
         fallbacks: false,
         price: { source: 'coinbase', lastKnown: false },
       })
-      await expect(caller.settings.get({ key: 'price_source' })).resolves.toBe('coinbase')
 
       answers.delete('api.coinbase.com')
       const withoutCoinbase = appRouter.createCaller({ app: await context() })
@@ -565,14 +567,25 @@ describe('price source settings', () => {
     })
   })
 
-  it.each([
-    ['price_source', 'kraken'],
-    ['price_fallbacks_enabled', 'yes'],
-  ])('rejects %s set to %s', async (key, value) => {
+  it('rejects a price source that is not available here', async () => {
     await withTestSetup(async () => {
+      env = { ...env, MEMPOOL_API_URL: 'https://mempool.space' }
       const caller = appRouter.createCaller({ app: await context() })
-      await expect(caller.settings.update({ key, value })).rejects.toMatchObject({ code: 'BAD_REQUEST' })
-      await expect(caller.settings.get({ key })).resolves.toBeNull()
+      await expect(caller.settings.setPriceSettings({ source: 'mempool' })).rejects.toMatchObject({
+        code: 'BAD_REQUEST',
+      })
+      await expect(caller.settings.priceSource()).resolves.toMatchObject({ selected: 'block' })
     })
   })
+
+  it.each(['price_source', 'price_fallbacks_enabled'])(
+    'does not read or write %s through the generic settings endpoints',
+    async (key) => {
+      await withTestSetup(async () => {
+        const caller = appRouter.createCaller({ app: await context() })
+        await expect(caller.settings.update({ key, value: 'false' })).rejects.toMatchObject({ code: 'FORBIDDEN' })
+        await expect(caller.settings.get({ key })).rejects.toMatchObject({ code: 'FORBIDDEN' })
+      })
+    },
+  )
 })
