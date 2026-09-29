@@ -110,16 +110,16 @@ export class EtfService {
     shares: string
     datePurchased?: string
   }): Promise<Result<EtfHoldingDto, Error>> {
-    const [account] = await this.db
-      .select({ id: etfAccounts.id })
-      .from(etfAccounts)
-      .where(eq(etfAccounts.id, args.accountId))
-    if (!account) {
-      return Err(new Error('ETF account not found'))
-    }
-    const id = nanoid()
-    const now = new Date().toISOString()
-    await this.db.transaction(async (tx) => {
+    return this.db.transaction(async (tx) => {
+      const [account] = await tx
+        .select({ id: etfAccounts.id })
+        .from(etfAccounts)
+        .where(eq(etfAccounts.id, args.accountId))
+      if (!account) {
+        return Err(new Error('ETF account not found'))
+      }
+      const id = nanoid()
+      const now = new Date().toISOString()
       await tx.insert(etfHoldings).values({
         id,
         accountId: args.accountId,
@@ -130,19 +130,19 @@ export class EtfService {
       })
       const balanceSats = await this.computeBalance(tx, args.accountId)
       await this.insertSnapshot(tx, args.accountId, balanceSats.toString(), now)
-    })
-    const config = ETF_CONFIGS[args.ticker]
-    const asOf = new Date()
-    this.logger.info({ holdingId: id, accountId: args.accountId, ticker: args.ticker }, 'ETF holding added')
-    return Ok({
-      id,
-      accountId: args.accountId,
-      ticker: args.ticker,
-      shares: args.shares,
-      btcPerShare: computeBtcPerShare(config, asOf),
-      btcSats: computeHoldingBtcSats(config, parseFloat(args.shares), asOf).toString(),
-      datePurchased: args.datePurchased ?? null,
-      createdAt: now,
+      const config = ETF_CONFIGS[args.ticker]
+      const asOf = new Date()
+      this.logger.info({ holdingId: id, accountId: args.accountId, ticker: args.ticker }, 'ETF holding added')
+      return Ok({
+        id,
+        accountId: args.accountId,
+        ticker: args.ticker,
+        shares: args.shares,
+        btcPerShare: computeBtcPerShare(config, asOf),
+        btcSats: computeHoldingBtcSats(config, parseFloat(args.shares), asOf).toString(),
+        datePurchased: args.datePurchased ?? null,
+        createdAt: now,
+      })
     })
   }
 
@@ -172,20 +172,19 @@ export class EtfService {
   }
 
   public async removeHolding(holdingId: string): Promise<Result<string, Error>> {
-    const [row] = await this.db
-      .select({ accountId: etfHoldings.accountId })
-      .from(etfHoldings)
-      .where(eq(etfHoldings.id, holdingId))
-    if (!row) {
-      return Err(new Error('ETF holding not found'))
-    }
-    await this.db.transaction(async (tx) => {
-      await tx.delete(etfHoldings).where(eq(etfHoldings.id, holdingId))
+    return this.db.transaction(async (tx) => {
+      const [row] = await tx
+        .delete(etfHoldings)
+        .where(eq(etfHoldings.id, holdingId))
+        .returning({ accountId: etfHoldings.accountId })
+      if (!row) {
+        return Err(new Error('ETF holding not found'))
+      }
       const balanceSats = await this.computeBalance(tx, row.accountId)
       await this.insertSnapshot(tx, row.accountId, balanceSats.toString(), new Date().toISOString())
+      this.logger.info({ holdingId, accountId: row.accountId }, 'ETF holding removed')
+      return Ok(row.accountId)
     })
-    this.logger.info({ holdingId, accountId: row.accountId }, 'ETF holding removed')
-    return Ok(row.accountId)
   }
 
   public async recordSnapshot(accountId: string, balanceSats: string, timestamp: string): Promise<void> {
