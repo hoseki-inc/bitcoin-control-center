@@ -106,62 +106,64 @@ it('initializes the named baseline and reopens without changing persisted data o
   const first = await openDrizzleDatabase(directory, logger)
   let state: Awaited<ReturnType<typeof databaseState>>
   try {
-    await first.db.insert(accounts).values({ id: 'wallet', descriptor: 'test-descriptor', displayName: 'Wallet' })
-    await seedHistory(first.db)
-    expect((await first.client.execute('PRAGMA foreign_keys')).rows[0]?.['foreign_keys']).toBe(1)
-    expect((await first.client.execute('PRAGMA journal_mode')).rows[0]?.['journal_mode']).toBe('wal')
+    await first.insert(accounts).values({ id: 'wallet', descriptor: 'test-descriptor', displayName: 'Wallet' })
+    await seedHistory(first)
+    expect((await first.$client.execute('PRAGMA foreign_keys')).rows[0]?.['foreign_keys']).toBe(1)
+    expect((await first.$client.execute('PRAGMA journal_mode')).rows[0]?.['journal_mode']).toBe('wal')
     await expect(
-      first.client.execute(
+      first.$client.execute(
         "INSERT INTO balance_snapshots (account_id, timestamp, balance_sats) VALUES ('missing', '2026-01-01', '1')",
       ),
     ).rejects.toThrow('FOREIGN KEY constraint failed')
-    expect((await first.client.execute('SELECT name FROM __drizzle_migrations')).rows).toEqual([{ name: baselineName }])
-    state = await databaseState(first.client)
+    expect((await first.$client.execute('SELECT name FROM __drizzle_migrations')).rows).toEqual([
+      { name: baselineName },
+    ])
+    state = await databaseState(first.$client)
   } finally {
-    first.close()
+    first.$client.close()
   }
 
   const second = await openDrizzleDatabase(directory, logger)
   try {
-    await expect(databaseState(second.client)).resolves.toEqual(state)
-    await expect(second.db.select().from(settings).where(eq(settings.key, 'test'))).resolves.toMatchObject([
+    await expect(databaseState(second.$client)).resolves.toEqual(state)
+    await expect(second.select().from(settings).where(eq(settings.key, 'test'))).resolves.toMatchObject([
       { key: 'test', value: 'persisted' },
     ])
   } finally {
-    second.close()
+    second.$client.close()
   }
 })
 
 it('preserves statements and exchange history when Drizzle rebuilds populated tables', async () => {
   const database = await openDrizzleDatabase(testDirectory(), logger)
   try {
-    await seedHistory(database.db)
-    const before = await databaseState(database.client)
+    await seedHistory(database)
+    const before = await databaseState(database.$client)
     const folder = futureMigrations(
       [rebuildTable('exchange_accounts'), rebuildTable('statements')].join('\n--> statement-breakpoint\n'),
     )
-    await migrate(database.db, { migrationsFolder: folder })
-    const after = await databaseState(database.client)
+    await migrate(database, { migrationsFolder: folder })
+    const after = await databaseState(database.$client)
     // Only the Drizzle journal gains a row; every application table keeps its data.
     const journalIndex = before.schema.findIndex((row) => row['name'] === '__drizzle_migrations')
     expect(after.data.filter((_, index) => index !== journalIndex)).toEqual(
       before.data.filter((_, index) => index !== journalIndex),
     )
-    expect((await database.client.execute('SELECT name FROM __drizzle_migrations')).rows).toHaveLength(2)
-    expect((await database.client.execute('PRAGMA foreign_key_check')).rows).toEqual([])
-    expect((await database.client.execute('PRAGMA foreign_keys')).rows[0]?.['foreign_keys']).toBe(1)
-    await migrate(database.db, { migrationsFolder: folder })
-    await expect(databaseState(database.client)).resolves.toEqual(after)
+    expect((await database.$client.execute('SELECT name FROM __drizzle_migrations')).rows).toHaveLength(2)
+    expect((await database.$client.execute('PRAGMA foreign_key_check')).rows).toEqual([])
+    expect((await database.$client.execute('PRAGMA foreign_keys')).rows[0]?.['foreign_keys']).toBe(1)
+    await migrate(database, { migrationsFolder: folder })
+    await expect(databaseState(database.$client)).resolves.toEqual(after)
   } finally {
-    database.close()
+    database.$client.close()
   }
 })
 
 it('rolls back failed migration data and journal changes, then permits retry', async () => {
   const database = await openDrizzleDatabase(testDirectory(), logger)
   try {
-    await seedHistory(database.db)
-    const before = await databaseState(database.client)
+    await seedHistory(database)
+    const before = await databaseState(database.$client)
     const folder = futureMigrations(
       [
         "UPDATE settings SET value = 'changed' WHERE key = 'test';",
@@ -169,17 +171,17 @@ it('rolls back failed migration data and journal changes, then permits retry', a
         'INSERT INTO missing_table VALUES (1);',
       ].join('\n--> statement-breakpoint\n'),
     )
-    await expect(migrate(database.db, { migrationsFolder: folder })).rejects.toThrow('no such table')
-    await expect(databaseState(database.client)).resolves.toEqual(before)
-    expect((await database.client.execute('PRAGMA foreign_keys')).rows[0]?.['foreign_keys']).toBe(1)
+    await expect(migrate(database, { migrationsFolder: folder })).rejects.toThrow('no such table')
+    await expect(databaseState(database.$client)).resolves.toEqual(before)
+    expect((await database.$client.execute('PRAGMA foreign_keys')).rows[0]?.['foreign_keys']).toBe(1)
     writeFileSync(
       join(folder, '20260930000000_rebuild_account_and_statement_tables', 'migration.sql'),
       rebuildTable('exchange_accounts'),
     )
-    await migrate(database.db, { migrationsFolder: folder })
-    expect((await database.client.execute('SELECT name FROM __drizzle_migrations')).rows).toHaveLength(2)
-    expect((await database.client.execute('SELECT * FROM exchange_balance_snapshots')).rows).toHaveLength(1)
+    await migrate(database, { migrationsFolder: folder })
+    expect((await database.$client.execute('SELECT name FROM __drizzle_migrations')).rows).toHaveLength(2)
+    expect((await database.$client.execute('SELECT * FROM exchange_balance_snapshots')).rows).toHaveLength(1)
   } finally {
-    database.close()
+    database.$client.close()
   }
 })

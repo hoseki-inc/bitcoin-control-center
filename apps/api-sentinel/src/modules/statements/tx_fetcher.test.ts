@@ -124,7 +124,7 @@ it('stops statement generation when a known transaction fails validation', async
     const directory = mkdtempSync(join(tmpdir(), 'sentinel-statement-validation-'))
     const database = await openDrizzleDatabase(directory, logger)
     try {
-      await database.db
+      await database
         .insert(accounts)
         .values({ id: 're_clmx_test', descriptor: account.toString(), displayName: 'Test wallet', status: 'verified' })
       const dailyRatesService = new DailyRatesService(deps)
@@ -133,9 +133,9 @@ it('stops statement generation when a known transaction fails validation', async
         .mockImplementation(asyncFn(async () => Ok({ rates: {}, source: 'mempool' as const })))
       const service = new StatementService({
         ...deps,
-        db: database.db,
+        db: database,
         dailyRatesService,
-        exchangeService: new ExchangeService({ db: database.db, logger }),
+        exchangeService: new ExchangeService({ db: database, logger }),
       })
 
       const result = await service.generateStatementData({
@@ -149,7 +149,7 @@ it('stops statement generation when a known transaction fails validation', async
       )
       expect(rates).not.toHaveBeenCalled()
     } finally {
-      database.close()
+      database.$client.close()
       rmSync(directory, { recursive: true, force: true })
     }
   })

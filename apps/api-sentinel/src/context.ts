@@ -5,7 +5,7 @@ import { Err, Ok, asyncFn } from '@hoseki/packages/result'
 import type { Result } from '@hoseki/packages/result'
 import { eq } from 'drizzle-orm'
 import type { Logger } from 'pino'
-import { openDrizzleDatabase } from './db/drizzle'
+import { type SentinelDb, openDrizzleDatabase } from './db/drizzle'
 import { settings } from './db/schema'
 import { type Env, loadEnv } from './env'
 import { initEncryption, loadCredentialEncryptionKey } from './lib/encrypted'
@@ -24,7 +24,7 @@ import { StatementService } from './modules/statements/service'
 export interface AppContext {
   env: Env
   logger: Logger
-  database: Awaited<ReturnType<typeof openDrizzleDatabase>>
+  database: SentinelDb
   electrumClient: ElectrumClient
   electrumConfig: { host: string; port: number; protocol: 'tcp' | 'ssl' }
   onchainProvider: ElectrumProvider
@@ -53,7 +53,7 @@ export const createAppContext = asyncFn(async (logger: Logger): Promise<Result<A
   // Check SQLite for user-saved Electrum settings (from desktop Settings page).
   // These override the env var defaults so the config persists across restarts.
   const getSetting = async (key: string): Promise<string | undefined> => {
-    const [row] = await database.db.select({ value: settings.value }).from(settings).where(eq(settings.key, key))
+    const [row] = await database.select({ value: settings.value }).from(settings).where(eq(settings.key, key))
     return row?.value
   }
 
@@ -83,7 +83,7 @@ export const createAppContext = asyncFn(async (logger: Logger): Promise<Result<A
   )
   const connectResult = await electrumClient.connect()
   if (connectResult.isErr()) {
-    database.close()
+    database.$client.close()
     return Err(connectResult.unwrapErr())
   }
   logger.info({ version: connectResult.unwrap() }, 'Connected to Electrum server')
@@ -94,17 +94,17 @@ export const createAppContext = asyncFn(async (logger: Logger): Promise<Result<A
   })
 
   const exchangeService = new ExchangeService({
-    db: database.db,
+    db: database,
     logger,
   })
 
   const manualService = new ManualService({
-    db: database.db,
+    db: database,
     logger,
   })
 
   const etfService = new EtfService({
-    db: database.db,
+    db: database,
     logger,
   })
 
@@ -112,7 +112,7 @@ export const createAppContext = asyncFn(async (logger: Logger): Promise<Result<A
   const dailyRatesService = new DailyRatesService({ logger, mempoolApiUrl: env.MEMPOOL_API_URL })
 
   const controlCenterService = new ControlCenterService({
-    db: database.db,
+    db: database,
     logger,
     onchainProvider,
     exchangeService,
@@ -122,7 +122,7 @@ export const createAppContext = asyncFn(async (logger: Logger): Promise<Result<A
   })
 
   const statementService = new StatementService({
-    db: database.db,
+    db: database,
     onchainProvider,
     dailyRatesService,
     exchangeService,

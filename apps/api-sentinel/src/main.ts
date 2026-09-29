@@ -99,7 +99,7 @@ export async function main(): Promise<SentinelServer> {
     }
 
     appCtx.electrumClient.disconnect()
-    appCtx.database.close()
+    appCtx.database.$client.close()
 
     logger.info('Shutdown complete')
   }

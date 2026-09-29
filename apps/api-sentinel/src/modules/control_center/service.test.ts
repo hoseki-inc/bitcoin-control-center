@@ -53,8 +53,7 @@ function deferred<T>(): Deferred<T> {
 async function createHarness() {
   const directory = mkdtempSync(join(tmpdir(), 'sentinel-history-test-'))
   const logger = pino({ level: 'silent' })
-  const database = await openDrizzleDatabase(directory, logger)
-  const db = database.db
+  const db = await openDrizzleDatabase(directory, logger)
   await db.insert(accounts).values({ id: accountId, descriptor: account.toString(), displayName: 'Test wallet' })
   const onchainProvider = new ElectrumProvider(Network.Mainnet, {
     logger,
@@ -104,7 +103,7 @@ async function createHarness() {
       .from(accountHistorySyncs)
       .orderBy(asc(accountHistorySyncs.fromBlockHeight))
   const close = (): void => {
-    database.close()
+    db.$client.close()
     rmSync(directory, { recursive: true, force: true })
   }
   return { db, provider, service, history, price, sync, run, rows, coverage, close }

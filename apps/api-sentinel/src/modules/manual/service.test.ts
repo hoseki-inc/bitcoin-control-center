@@ -12,10 +12,10 @@ async function setup() {
   const logger = pino({ level: 'silent' })
   const database = await openDrizzleDatabase(directory, logger)
   onTestFinished(() => {
-    database.close()
+    database.$client.close()
     rmSync(directory, { recursive: true, force: true })
   })
-  return { db: database.db, service: new ManualService({ db: database.db, logger }) }
+  return { db: database, service: new ManualService({ db: database, logger }) }
 }
 
 it('allows concurrent account creation without dropping accounts or snapshots', async () => {

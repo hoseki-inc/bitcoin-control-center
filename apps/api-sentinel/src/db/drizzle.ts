@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import type { Client, InArgs, InStatement } from '@libsql/client'
+import type { InArgs, InStatement } from '@libsql/client'
 import { createClient } from '@libsql/client/sqlite3'
 import { drizzle } from 'drizzle-orm/libsql'
 import { migrate } from 'drizzle-orm/libsql/migrator'
@@ -18,14 +18,7 @@ function migrationsFolder(): string {
   return existsSync(bundledFolder) ? bundledFolder : join(moduleDir, '..', '..', 'drizzle')
 }
 
-export async function openDrizzleDatabase(
-  dataDir: string,
-  logger: Logger,
-): Promise<{
-  db: SentinelDb
-  client: Client
-  close(): void
-}> {
+export async function openDrizzleDatabase(dataDir: string, logger: Logger): Promise<SentinelDb> {
   mkdirSync(dataDir, { recursive: true })
   const dbPath = join(dataDir, 'sentinel.db')
   logger.info({ path: dbPath }, 'Opening local libSQL database')
@@ -57,13 +50,7 @@ export async function openDrizzleDatabase(
       serial(async () => (args.length === 2 ? execute(args[0], args[1]) : execute(args[0])))
     client.batch = async (statements, mode) => serial(async () => batch(statements, mode))
     db.transaction = async (run, config) => serial(async () => transaction(run, config))
-    return {
-      db,
-      client,
-      close: (): void => {
-        client.close()
-      },
-    }
+    return db
   } catch (error) {
     client.close()
     throw error

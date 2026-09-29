@@ -351,7 +351,7 @@ const controlCenterRouter = t.router({
     }),
 
   recordSnapshot: publicProcedure.mutation(async ({ ctx }) => {
-    const rows = await ctx.app.database.db
+    const rows = await ctx.app.database
       .select({ id: accountTable.id, descriptor: accountTable.descriptor })
       .from(accountTable)
       .where(isNull(accountTable.deletedAt))
@@ -394,17 +394,17 @@ const registryRouter = t.router({
       .input(z.object({ excludePending: z.boolean().optional() }).optional())
       .query(async ({ ctx, input }) => {
         const excludePending = input?.excludePending ?? false
-        const rows = await ctx.app.database.db
+        const rows = await ctx.app.database
           .select({ id: accountTable.id })
           .from(accountTable)
           .where(and(isNull(accountTable.deletedAt), excludePending ? ne(accountTable.status, 'pending') : undefined))
           .orderBy(desc(accountTable.createdAt))
-        const claims = await Promise.all(rows.map(async (row) => getFullClaimDto(ctx.app.database.db, row.id)))
+        const claims = await Promise.all(rows.map(async (row) => getFullClaimDto(ctx.app.database, row.id)))
         return claims.filter((claim): claim is ClaimDto => claim !== null)
       }),
 
     deletePending: publicProcedure.input(z.object({ id: z.string() })).mutation(async ({ ctx, input }) => {
-      const db = ctx.app.database.db
+      const db = ctx.app.database
       const [row] = await db
         .select({ status: accountTable.status, deletedAt: accountTable.deletedAt })
         .from(accountTable)
@@ -422,7 +422,7 @@ const registryRouter = t.router({
     }),
 
     delete: publicProcedure.input(z.object({ id: z.string() })).mutation(async ({ ctx, input }) => {
-      const db = ctx.app.database.db
+      const db = ctx.app.database
       const [row] = await db
         .select({ deletedAt: accountTable.deletedAt })
         .from(accountTable)
@@ -455,12 +455,12 @@ const registryRouter = t.router({
     }),
 
     listArchived: publicProcedure.query(async ({ ctx }) => {
-      const rows = await ctx.app.database.db
+      const rows = await ctx.app.database
         .select({ id: accountTable.id })
         .from(accountTable)
         .where(isNotNull(accountTable.deletedAt))
         .orderBy(desc(accountTable.createdAt))
-      const claims = await Promise.all(rows.map(async (row) => getFullClaimDto(ctx.app.database.db, row.id)))
+      const claims = await Promise.all(rows.map(async (row) => getFullClaimDto(ctx.app.database, row.id)))
       return claims.filter((claim): claim is ClaimDto => claim !== null)
     }),
 
@@ -471,7 +471,7 @@ const registryRouter = t.router({
     update: publicProcedure
       .input(z.object({ id: z.string(), displayName: z.string().min(1) }))
       .mutation(async ({ ctx, input }) => {
-        const db = ctx.app.database.db
+        const db = ctx.app.database
         const updated = await db
           .update(accountTable)
           .set({ displayName: input.displayName })
@@ -498,7 +498,7 @@ const registryRouter = t.router({
         }),
       )
       .mutation(async ({ ctx, input }) => {
-        const db = ctx.app.database.db
+        const db = ctx.app.database
         const updated = await db
           .update(keystoreTable)
           .set({ label: input.label, wallet: input.wallet, model: input.model })
@@ -527,7 +527,7 @@ const registryRouter = t.router({
           }),
         )
         .mutation(async ({ ctx, input }) => {
-          const db = ctx.app.database.db
+          const db = ctx.app.database
           const network = claimNetworkToNetwork(input.network)
 
           // Check if account already exists
@@ -611,7 +611,7 @@ const registryRouter = t.router({
           }),
         )
         .mutation(async ({ ctx, input }) => {
-          const db = ctx.app.database.db
+          const db = ctx.app.database
           const network = claimNetworkToNetwork(input.network)
 
           const existing = await db
@@ -680,7 +680,7 @@ const registryRouter = t.router({
 
     get: t.router({
       byId: publicProcedure.input(z.object({ id: z.string() })).query(async ({ ctx, input }) => {
-        const claim = await getFullClaimDto(ctx.app.database.db, input.id)
+        const claim = await getFullClaimDto(ctx.app.database, input.id)
         if (!claim) {
           throw new TRPCError({ code: 'NOT_FOUND', message: 'Claim not found' })
         }
@@ -691,14 +691,14 @@ const registryRouter = t.router({
         .input(z.object({ network: z.string(), account: z.string() }))
         .query(async ({ ctx, input }) => {
           const network = claimNetworkToNetwork(input.network)
-          const [row] = await ctx.app.database.db
+          const [row] = await ctx.app.database
             .select({ id: accountTable.id })
             .from(accountTable)
             .where(and(eq(accountTable.descriptor, input.account), eq(accountTable.network, network)))
           if (!row) {
             throw new TRPCError({ code: 'NOT_FOUND', message: 'Claim not found' })
           }
-          const claim = await getFullClaimDto(ctx.app.database.db, row.id)
+          const claim = await getFullClaimDto(ctx.app.database, row.id)
           if (!claim) {
             throw new TRPCError({ code: 'NOT_FOUND', message: 'Claim not found' })
           }
@@ -711,7 +711,7 @@ const registryRouter = t.router({
     create: publicProcedure
       .input(z.object({ claimId: z.string(), keystoreId: z.string().optional() }))
       .mutation(async ({ ctx, input }) => {
-        const db = ctx.app.database.db
+        const db = ctx.app.database
 
         // Check the account exists
         const [accountRow] = await db
@@ -757,7 +757,7 @@ const registryRouter = t.router({
       }),
 
     complete: publicProcedure.input(z.object({ challengeId: z.string() })).mutation(async ({ ctx, input }) => {
-      const db = ctx.app.database.db
+      const db = ctx.app.database
       const [challenge] = await db.select().from(challenges).where(eq(challenges.id, input.challengeId))
       if (!challenge) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Challenge not found' })
@@ -840,7 +840,7 @@ const registryRouter = t.router({
     create: publicProcedure
       .input(z.object({ challengeId: z.string(), keystoreId: z.string() }))
       .mutation(async ({ ctx, input }): Promise<ChallengeMessageDto> => {
-        const db = ctx.app.database.db
+        const db = ctx.app.database
 
         const [challenge] = await db.select().from(challenges).where(eq(challenges.id, input.challengeId))
         if (!challenge) {
@@ -910,7 +910,7 @@ const registryRouter = t.router({
     get: publicProcedure
       .input(z.object({ signedMessageId: z.string() }))
       .query(async ({ ctx, input }): Promise<ChallengeMessageDto> => {
-        const [sm] = await ctx.app.database.db
+        const [sm] = await ctx.app.database
           .select()
           .from(signedMessagesTable)
           .where(eq(signedMessagesTable.id, input.signedMessageId))
@@ -923,7 +923,7 @@ const registryRouter = t.router({
     list: publicProcedure
       .input(z.object({ challengeId: z.string() }))
       .query(async ({ ctx, input }): Promise<ChallengeMessageDto[]> => {
-        const messages = await ctx.app.database.db
+        const messages = await ctx.app.database
           .select()
           .from(signedMessagesTable)
           .where(eq(signedMessagesTable.challengeId, input.challengeId))
@@ -933,7 +933,7 @@ const registryRouter = t.router({
     complete: publicProcedure
       .input(z.object({ signedMessageId: z.string(), signature: z.string().trim().min(1).max(4096) }))
       .mutation(async ({ ctx, input }): Promise<ChallengeMessageDto> => {
-        const db = ctx.app.database.db
+        const db = ctx.app.database
         const [sm] = await db
           .select()
           .from(signedMessagesTable)
@@ -960,7 +960,7 @@ const registryRouter = t.router({
   getOrCreateSinglesigChallengeMessage: publicProcedure
     .input(z.object({ network: z.string(), account: z.string() }))
     .query(async ({ ctx, input }) => {
-      const db = ctx.app.database.db
+      const db = ctx.app.database
       const network = claimNetworkToNetwork(input.network)
 
       // Find the account
@@ -1256,7 +1256,7 @@ const onchainRouter = t.router({
         if (parsed.isOk()) {
           const na = parsed.unwrap()
           const key = na.toString()
-          const [row] = await ctx.app.database.db
+          const [row] = await ctx.app.database
             .select({ id: accountTable.id, deletedAt: accountTable.deletedAt })
             .from(accountTable)
             .where(
@@ -1269,7 +1269,7 @@ const onchainRouter = t.router({
             .limit(1)
 
           if (row?.deletedAt != null && row.deletedAt !== '') {
-            const [snapshot] = await ctx.app.database.db
+            const [snapshot] = await ctx.app.database
               .select({ balanceSats: balanceSnapshots.balanceSats })
               .from(balanceSnapshots)
               .where(and(eq(balanceSnapshots.accountId, row.id), lte(balanceSnapshots.timestamp, row.deletedAt)))
@@ -1329,7 +1329,7 @@ const onchainRouter = t.router({
 
     // Resolve account IDs to Account objects
     for (const claimId of input.claimIds) {
-      const [row] = await ctx.app.database.db
+      const [row] = await ctx.app.database
         .select({ descriptor: accountTable.descriptor })
         .from(accountTable)
         .where(and(eq(accountTable.id, claimId), isNull(accountTable.deletedAt)))
@@ -1356,7 +1356,7 @@ const onchainRouter = t.router({
 
     const accountBalances = result.unwrap()
     for (const [claimId, account] of idToAccount) {
-      const [activeClaim] = await ctx.app.database.db
+      const [activeClaim] = await ctx.app.database
         .select({ id: accountTable.id })
         .from(accountTable)
         .where(and(eq(accountTable.id, claimId), isNull(accountTable.deletedAt)))
@@ -1799,7 +1799,7 @@ const portalProveRouter = t.router({
         }),
       )
       .mutation(async ({ ctx, input }) => {
-        const db = ctx.app.database.db
+        const db = ctx.app.database
         const [duplicate] = await db
           .select({ id: accountTable.id })
           .from(accountTable)
@@ -1818,7 +1818,7 @@ const portalProveRouter = t.router({
       }),
 
     remove: publicProcedure.input(z.object({ id: z.string() })).mutation(async ({ ctx, input }) => {
-      const deleted = await ctx.app.database.db.delete(accountTable).where(eq(accountTable.id, input.id))
+      const deleted = await ctx.app.database.delete(accountTable).where(eq(accountTable.id, input.id))
       if (deleted.rowsAffected === 0) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Account not found' })
       }
@@ -2016,7 +2016,7 @@ const settingsRouter = t.router({
       throw new TRPCError({ code: 'FORBIDDEN', message: 'Setting is not readable' })
     }
 
-    const [row] = await ctx.app.database.db
+    const [row] = await ctx.app.database
       .select({ value: settings.value })
       .from(settings)
       .where(eq(settings.key, input.key))
@@ -2025,7 +2025,7 @@ const settingsRouter = t.router({
 
   update: publicProcedure.input(z.object({ key: z.string(), value: z.string() })).mutation(async ({ ctx, input }) => {
     const value = validateWritableSetting(input.key, input.value)
-    await ctx.app.database.db
+    await ctx.app.database
       .insert(settings)
       .values({ key: input.key, value })
       .onConflictDoUpdate({ target: settings.key, set: { value } })

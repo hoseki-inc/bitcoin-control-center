@@ -8,7 +8,7 @@ import Decimal from 'decimal.js'
 import { eq } from 'drizzle-orm'
 import pino from 'pino'
 import { describe, expect, it, onTestFinished } from 'vitest'
-import { openDrizzleDatabase } from './db/drizzle'
+import { type SentinelDb, openDrizzleDatabase } from './db/drizzle'
 import { etfHoldings, exchangeAccounts, statements as statementTable } from './db/schema'
 import { Encrypted, initEncryption } from './lib/encrypted'
 import { EtfService } from './modules/etf/service'
@@ -18,12 +18,12 @@ import { StatementService } from './modules/statements/service'
 
 const logger = pino({ level: 'silent' })
 let directory: string
-let database: Awaited<ReturnType<typeof openDrizzleDatabase>>
+let database: SentinelDb
 
 async function withTestSetup(run: () => Promise<void>): Promise<void> {
   // Vitest owns teardown so it has its own timeout and runs once, even after a test timeout.
   onTestFinished(async () => {
-    database.close()
+    database.$client.close()
     rmSync(directory, { recursive: true, force: true })
   })
   directory = mkdtempSync(join(tmpdir(), 'sentinel-persisted-data-'))
@@ -34,7 +34,7 @@ async function withTestSetup(run: () => Promise<void>): Promise<void> {
 }
 
 async function accountWithCredentials(credentials: string) {
-  await database.db.insert(exchangeAccounts).values({
+  await database.insert(exchangeAccounts).values({
     id: 'exchange',
     provider: 'kraken',
     displayName: 'Test account',
@@ -42,7 +42,7 @@ async function accountWithCredentials(credentials: string) {
     balanceSats: '100',
     createdAt: new Date().toISOString(),
   })
-  return new ExchangeService({ db: database.db, logger }).listAccounts()
+  return new ExchangeService({ db: database, logger }).listAccounts()
 }
 
 describe('stored exchange credentials', () => {
@@ -69,13 +69,10 @@ describe('stored exchange credentials', () => {
       await expect(accountWithCredentials(credentials)).resolves.toEqual([
         expect.objectContaining({ connectionStatus: 'needs_reconnect', balanceSats: null, balanceAsOf: null }),
       ])
-      const service = new ExchangeService({ db: database.db, logger })
+      const service = new ExchangeService({ db: database, logger })
       expect((await service.refreshBalance('exchange')).isErr()).toBe(true)
       expect((await service.getKrakenTransactionEntries()).unwrap()).toEqual([])
-      await database.db
-        .update(exchangeAccounts)
-        .set({ provider: 'coinbase' })
-        .where(eq(exchangeAccounts.id, 'exchange'))
+      await database.update(exchangeAccounts).set({ provider: 'coinbase' }).where(eq(exchangeAccounts.id, 'exchange'))
       expect((await service.getCoinbaseTransactionEntries()).unwrap()).toEqual([])
     })
   })
@@ -93,13 +90,13 @@ describe('stored exchange credentials', () => {
 describe('stored ETF tickers', () => {
   it.each(['UNKNOWN', 'toString'])('preserves supported holdings when a stored ticker is %s', async (ticker) => {
     await withTestSetup(async () => {
-      const service = new EtfService({ db: database.db, logger })
+      const service = new EtfService({ db: database, logger })
       const account = (
         await service.createAccount({ displayName: 'Test ETF', holdings: [{ ticker: 'IBIT', shares: '10' }] })
       ).expect('Test ETF account should be created')
       const expectedBalance = await service.computeAccountBalance(account.id)
       expect(expectedBalance).toBeGreaterThan(0n)
-      await database.db
+      await database
         .insert(etfHoldings)
         .values({ id: 'unsupported', accountId: account.id, ticker, shares: '20', datePurchased: '2020-01-01' })
 
@@ -115,7 +112,7 @@ describe('stored ETF tickers', () => {
 describe('stored statement data', () => {
   function service(): StatementService {
     return new StatementService({
-      db: database.db,
+      db: database,
       logger,
       mempoolApiUrl: 'https://example.invalid',
       onchainProvider: new ElectrumProvider(Network.Mainnet, {
@@ -123,7 +120,7 @@ describe('stored statement data', () => {
         electrum: new ElectrumClient({ host: 'localhost', port: 50001, protocol: 'tcp' }),
       }),
       dailyRatesService: new DailyRatesService({ logger, mempoolApiUrl: 'https://example.invalid' }),
-      exchangeService: new ExchangeService({ db: database.db, logger }),
+      exchangeService: new ExchangeService({ db: database, logger }),
     })
   }
 
@@ -165,7 +162,7 @@ describe('stored statement data', () => {
       const date = new Date('2024-01-02T00:00:00Z')
       const id = await statements.create({ claimIds: [], openingDate: date, closingDate: date, timezone: 'UTC' })
       await statements.complete(id, {}, { rates: {}, source: 'mempool' })
-      await database.db
+      await database
         .update(statementTable)
         .set({ transactionMap: '{"wallet":[null]}' })
         .where(eq(statementTable.id, id))

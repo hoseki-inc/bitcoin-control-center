@@ -21,7 +21,7 @@ it('preserves claim, keystore and signing-message DTOs through database round tr
   })
   const app = (await createAppContext(pino({ level: 'silent' }))).unwrap()
   onTestFinished(() => {
-    app.database.close()
+    app.database.$client.close()
     app.electrumClient.disconnect()
   })
   const caller = appRouter.createCaller({ app }).portalProve.registry
