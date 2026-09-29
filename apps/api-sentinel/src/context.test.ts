@@ -127,7 +127,7 @@ async function withTestSetup(run: () => Promise<void>): Promise<void> {
   onTestFinished(async () => {
     vi.restoreAllMocks()
     for (const ctx of contexts) {
-      ctx.disconnectElectrum()
+      ctx.stopElectrum()
       ctx.database.close()
     }
     contexts.clear()
@@ -220,7 +220,7 @@ describe('Electrum connection lifecycle', () => {
         { key: 'electrum_protocol', value: 'tcp' },
         { key: 'tor_enabled', value: 'false' },
       ])
-      ctx.disconnectElectrum()
+      ctx.stopElectrum()
       ctx.database.close()
       contexts.delete(ctx)
       const restarted = await context()
@@ -289,7 +289,7 @@ describe('Electrum connection lifecycle', () => {
       await vi.waitFor(() => {
         expect(next.methods).toContain('server.version')
       })
-      ctx.disconnectElectrum()
+      ctx.stopElectrum()
       expect((await pending).isErr()).toBe(true)
       expect(settings(ctx)).toEqual(before)
       await vi.waitFor(() => {
@@ -360,7 +360,7 @@ describe('Tor connection policy', () => {
     await withTestSetup(async () => {
       const previous = await context()
       previous.database.db.prepare("INSERT INTO settings (key, value) VALUES ('tor_enabled', 'true')").run()
-      previous.disconnectElectrum()
+      previous.stopElectrum()
       previous.database.close()
       contexts.delete(previous)
       const initialCalls = initialFixture().methods.length
@@ -371,7 +371,7 @@ describe('Tor connection policy', () => {
     })
   })
 
-  it('waits for managed Tor before opening SOCKS, and uses the distribution port', async () => {
+  it('waits for managed Tor before opening SOCKS, and uses the port Tor chose', async () => {
     await withTestSetup(async () => {
       const connections: Socket[] = []
       const proxy = createServer((socket) => {
@@ -385,13 +385,20 @@ describe('Tor connection policy', () => {
         proxy.listen(0, '127.0.0.1', resolve)
       })
       try {
+        // A static proxy setting must not override the port managed Tor chose.
         env.SOCKS_PROXY_HOST = '127.0.0.1'
-        env.SOCKS_PROXY_PORT = parseUnknown(z.object({ port: z.number() }), proxy.address()).expect('TCP listener').port
+        env.SOCKS_PROXY_PORT = 1
+        const chosenPort = parseUnknown(z.object({ port: z.number() }), proxy.address()).expect('TCP listener').port
+        let torReady = false
         let ready!: (status: { state: string }) => void
         const bootstrap = new Promise<{ state: string }>((resolve) => {
           ready = resolve
         })
-        const tor = { start: vi.fn(async () => bootstrap), getStatus: () => ({ state: 'starting' as const }) }
+        const tor = {
+          start: vi.fn(async () => bootstrap),
+          getStatus: () => ({ state: 'starting' as const }),
+          getSocksProxy: () => (torReady ? { host: '127.0.0.1', port: chosenPort } : null),
+        }
         const ctx = (await createAppContext(logger, { tor })).unwrap()
         contexts.add(ctx)
         const pending = appRouter
@@ -406,6 +413,7 @@ describe('Tor connection policy', () => {
         })
         expect(connections).toHaveLength(0)
         expect(ctx.getTorStatus().state).toBe('starting')
+        torReady = true
         ready({ state: 'ready' })
         await expect(outcome).resolves.toBe(true)
         expect(connections).toHaveLength(1)
@@ -433,6 +441,20 @@ describe('Tor connection policy', () => {
       expect(ctx.prepareElectrumConfig({ ...config, connectTimeout: 90_000 }, true).unwrap().connectTimeout).toBe(
         90_000,
       )
+      const managed = (
+        await createAppContext(logger, {
+          tor: {
+            start: async () => ({ state: 'ready' }),
+            getStatus: () => ({ state: 'ready' }),
+            getSocksProxy: () => null,
+          },
+        })
+      ).unwrap()
+      contexts.add(managed)
+      const prepared = managed.prepareElectrumConfig(config, true).unwrap()
+      expect(prepared.connectTimeout).toBe(60_000)
+      expect(prepared.proxy).toBeUndefined()
+      expect(prepared.resolveProxy?.()).toBeNull()
     })
   })
 
@@ -442,6 +464,7 @@ describe('Tor connection policy', () => {
       const tor = {
         start: vi.fn(async () => bootstrap),
         getStatus: () => ({ state: 'starting' as const, progress: 25 }),
+        getSocksProxy: () => null,
       }
       const ctx = (await createAppContext(logger, { tor })).unwrap()
       contexts.add(ctx)
@@ -463,13 +486,12 @@ describe('Tor connection policy', () => {
 
   it('preserves the active server and settings when managed Tor fails', async () => {
     await withTestSetup(async () => {
-      env.SOCKS_PROXY_HOST = '127.0.0.1'
-      env.SOCKS_PROXY_PORT = 19451
       const ctx = (
         await createAppContext(logger, {
           tor: {
             start: async () => ({ state: 'failed', message: 'Tor bootstrap failed' }),
             getStatus: () => ({ state: 'failed', message: 'Tor bootstrap failed' }),
+            getSocksProxy: () => null,
           },
         })
       ).unwrap()

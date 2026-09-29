@@ -301,36 +301,40 @@ describe('desktop connection settings', () => {
 
   it('starts Tor when the switch is turned on and blocks testing until Tor is ready', async () => {
     await withTestSetup(async () => {
+      // Jump over the status refresh and the notice timers instead of waiting for them.
+      vi.useFakeTimers({ shouldAdvanceTime: true })
+      onTestFinished(() => {
+        vi.useRealTimers()
+      })
+      const advance = async (milliseconds: number): Promise<void> => {
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(milliseconds)
+        })
+      }
       await render()
       await turnTorOn()
       expect(requests.filter(({ path }) => path === 'settings.startTor')).toHaveLength(1)
       torStatus = { state: 'starting', progress: 45 }
-      await waitForText('Starting Tor… 45%')
+      await advance(1000)
+      expect(container.textContent).toContain('Starting Tor… 45%')
       expect(torSwitch().checked).toBe(true)
       expect(button('Test Connection').disabled).toBe(true)
       expect(button('Save & Reconnect').disabled).toBe(true)
       torStatus = { state: 'ready' }
-      await waitForText('Tor ready')
+      await advance(1000)
+      expect(container.textContent).toContain('Tor ready')
       expect(container.textContent).not.toContain('Starting Tor')
-      expect(torSwitch().checked).toBe(true)
       expect(button('Test Connection').disabled).toBe(false)
       expect(button('Save & Reconnect').disabled).toBe(false)
       // The notice fades away on its own; the solid switch keeps showing Tor is on.
-      await vi.waitFor(
-        async () => {
-          await act(async () => {
-            await new Promise<void>((resolve) => {
-              setTimeout(resolve, 100)
-            })
-          })
-          expect(container.textContent).not.toContain('Tor ready')
-        },
-        { timeout: 6000 },
-      )
+      // Visible period, then the fade; React schedules the fade after re-rendering.
+      await advance(3100)
+      await advance(700)
+      expect(container.textContent).not.toContain('Tor ready')
       expect(torSwitch().checked).toBe(true)
       expect(toast.success).not.toHaveBeenCalled()
     })
-  }, 20_000)
+  })
 
   it('turns the switch off after a failed Tor start without saving a direct connection', async () => {
     await withTestSetup(async () => {

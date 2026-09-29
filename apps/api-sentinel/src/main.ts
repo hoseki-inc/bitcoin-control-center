@@ -77,7 +77,7 @@ export async function main(options: AppContextOptions = {}): Promise<SentinelSer
   try {
     await server.listen({ host, port })
   } catch (error) {
-    appCtx.disconnectElectrum()
+    appCtx.stopElectrum()
     appCtx.database.close()
     await server.close()
     throw error
@@ -107,7 +107,7 @@ export async function main(options: AppContextOptions = {}): Promise<SentinelSer
       logger.error({ err }, 'Error closing Fastify')
     }
 
-    appCtx.disconnectElectrum()
+    appCtx.stopElectrum()
     appCtx.database.close()
 
     logger.info('Shutdown complete')

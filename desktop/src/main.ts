@@ -4,7 +4,6 @@ import { pathToFileURL } from 'node:url'
 import { BrowserWindow, type Tray, type WebContents, app, dialog, ipcMain, shell } from 'electron'
 import { showDeviceChooser } from './device-chooser'
 import { setupLedgerHidAccess } from './ledger-hid'
-import { findAvailablePort } from './ports'
 import { startServer } from './server'
 import { createQuitHandler } from './shutdown'
 import { configureDesktopTlsTrust } from './tls-trust'
@@ -52,7 +51,6 @@ async function start(): Promise<void> {
   torManager = new TorManager(
     app.getPath('userData'),
     path.join(torPath, process.platform === 'win32' ? 'tor.exe' : 'tor'),
-    await findAvailablePort(),
   )
 
   const serverDir = path.join(__dirname, '..', 'server')
@@ -67,8 +65,6 @@ async function start(): Promise<void> {
     BITCOIN_NETWORK: 'mainnet',
     MEMPOOL_API_URL: 'https://mempool.space',
     NODE_ENV: 'production',
-    SOCKS_PROXY_HOST: '127.0.0.1',
-    SOCKS_PROXY_PORT: String(torManager.socksPort),
   })
   server = await startServer(pathToFileURL(path.join(serverDir, 'main.js')).href, {
     waitForElectrum: false,

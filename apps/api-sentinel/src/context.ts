@@ -34,7 +34,8 @@ export interface AppContext {
   statementService: StatementService
   network: Network
   reconnectElectrum: (config: ElectrumClientConfig) => Promise<Result<void, Error>>
-  disconnectElectrum: () => void
+  /** Stop Electrum for shutdown; the context does not reconnect afterwards. */
+  stopElectrum: () => void
   prepareElectrumConfig: (config: ElectrumClientConfig, torEnabled: boolean) => Result<ElectrumClientConfig, Error>
   getTorStatus: () => TorStatus
   /** Start managed Tor without waiting for bootstrap, so settings can show its progress. */
@@ -59,6 +60,8 @@ export interface AppContextOptions {
   tor?: {
     start: () => Promise<{ state: string; message?: string }>
     getStatus: () => { state: 'stopped' | 'starting' | 'ready' | 'failed'; message?: string; progress?: number }
+    /** Tor picks its port when it starts, so resolve the proxy for each connection. */
+    getSocksProxy: () => { host: string; port: number } | null
   }
 }
 
@@ -98,20 +101,24 @@ export const createAppContext = asyncFn(
         }
         return Ok(config)
       }
+      const connectTimeout = Math.max(config.connectTimeout ?? 0, TOR_CONNECT_TIMEOUT_MS)
+      if (tor) {
+        // Desktop manages Tor: wait for it, then use the port it chose.
+        return Ok({
+          ...config,
+          proxy: undefined,
+          resolveProxy: () => tor.getSocksProxy(),
+          connectTimeout,
+          beforeConnect: async (): Promise<Result<void, Error>> => {
+            const status = await tor.start()
+            return status.state === 'ready' ? Ok(undefined) : Err(new Error(status.message ?? 'Tor is unavailable'))
+          },
+        })
+      }
       if (env.SOCKS_PROXY_HOST == null || env.SOCKS_PROXY_HOST === '' || env.SOCKS_PROXY_PORT === undefined) {
         return Err(new Error('Tor is not available in this installation'))
       }
-      return Ok({
-        ...config,
-        proxy: { host: env.SOCKS_PROXY_HOST, port: env.SOCKS_PROXY_PORT },
-        connectTimeout: Math.max(config.connectTimeout ?? 0, TOR_CONNECT_TIMEOUT_MS),
-        beforeConnect: tor
-          ? async (): Promise<Result<void, Error>> => {
-              const status = await tor.start()
-              return status.state === 'ready' ? Ok(undefined) : Err(new Error(status.message ?? 'Tor is unavailable'))
-            }
-          : undefined,
-      })
+      return Ok({ ...config, proxy: { host: env.SOCKS_PROXY_HOST, port: env.SOCKS_PROXY_PORT }, connectTimeout })
     }
     const initialConfig = {
       host: electrumHost,
@@ -235,7 +242,7 @@ export const createAppContext = asyncFn(
               save.run('electrum_host', config.host)
               save.run('electrum_port', String(config.port))
               save.run('electrum_protocol', config.protocol)
-              save.run('tor_enabled', String(config.proxy !== undefined))
+              save.run('tor_enabled', String(config.proxy !== undefined || config.resolveProxy !== undefined))
             })()
           } catch {
             return Err(new Error('Could not save Electrum settings; the previous connection has been kept'))
@@ -255,7 +262,7 @@ export const createAppContext = asyncFn(
           pendingClient = null
         }
       },
-      disconnectElectrum: (): void => {
+      stopElectrum: (): void => {
         stopped = true
         pendingClient?.disconnect()
         ctx.electrumClient.disconnect()
@@ -273,7 +280,7 @@ export const createAppContext = asyncFn(
     } else {
       const result = await connection
       if (result.isErr()) {
-        ctx.disconnectElectrum()
+        ctx.stopElectrum()
         database.close()
         return Err(result.unwrapErr())
       }

@@ -19,28 +19,37 @@ export class TorManager {
   private stopping: Promise<void> | null = null
   private stopped = false
 
+  // Tor chooses a free loopback port when it starts, so no other program can
+  // claim the port between selection and binding.
+  private socksPort: number | null = null
+
   private readonly appDataDir: string
   private readonly binaryPath: string
-  public readonly socksPort: number
   private readonly bootstrapTimeout: number
   private readonly spawnProcess: SpawnTor
+  private readonly ownerPid: number
 
   public constructor(
     appDataDir: string,
     binaryPath: string,
-    socksPort: number,
     bootstrapTimeout = 120_000,
     spawnProcess: SpawnTor = spawn,
+    ownerPid = process.pid,
   ) {
     this.appDataDir = appDataDir
     this.binaryPath = binaryPath
-    this.socksPort = socksPort
     this.bootstrapTimeout = bootstrapTimeout
     this.spawnProcess = spawnProcess
+    this.ownerPid = ownerPid
   }
 
   public getStatus(): TorStatus {
     return { ...this.status }
+  }
+
+  /** The SOCKS proxy of a ready Tor process, or null while Tor is not ready. */
+  public getSocksProxy(): { host: string; port: number } | null {
+    return this.status.state === 'ready' && this.socksPort !== null ? { host: '127.0.0.1', port: this.socksPort } : null
   }
 
   public async start(): Promise<TorStatus> {
@@ -75,7 +84,7 @@ export class TorManager {
         this.binaryPath,
         [
           '--SocksPort',
-          `127.0.0.1:${this.socksPort}`,
+          '127.0.0.1:auto',
           '--DataDirectory',
           dataDir,
           '--GeoIPFile',
@@ -84,11 +93,15 @@ export class TorManager {
           '',
           '--Log',
           'notice stdout',
+          // Exit if the app dies without stopping Tor; an orphaned process would keep
+          // the data directory locked and prevent Tor from starting on relaunch.
+          '__OwningControllerProcess',
+          String(this.ownerPid),
         ],
         { stdio: ['ignore', 'pipe', 'pipe'] },
       )
     } catch {
-      this.status = { state: 'failed', message: 'Tor could not start. Use Test Connection to try again.' }
+      this.status = { state: 'failed', message: 'Tor could not start. Turn Tor on to try again.' }
       return this.getStatus()
     }
     const child = this.child
@@ -113,7 +126,15 @@ export class TorManager {
       }
       const onData = (chunk: Buffer): void => {
         buffer = (buffer + chunk.toString()).slice(-8192)
+        const listener = /Opened Socks listener connection \(ready\) on 127\.0\.0\.1:(\d+)/.exec(buffer)
+        if (listener && this.child === child) {
+          this.socksPort = Number(listener[1])
+        }
         if (/Bootstrapped 100%[^\n]*Done/.test(buffer)) {
+          if (this.socksPort === null) {
+            fail('Tor did not open its local proxy. Turn Tor on to try again.')
+            return
+          }
           this.status = { state: 'ready' }
           finish()
           return
@@ -125,7 +146,7 @@ export class TorManager {
         }
       }
       const timer = setTimeout(() => {
-        fail('Tor could not connect within two minutes. Check your network and use Test Connection to retry.')
+        fail('Tor could not connect within two minutes. Check your network, then turn Tor on to try again.')
       }, this.bootstrapTimeout)
       this.finishStart = finish
       child.stdout?.on('data', onData)
@@ -133,14 +154,15 @@ export class TorManager {
       child.stdout?.resume()
       child.stderr?.resume()
       child.once('error', () => {
-        fail('Tor could not start. Use Test Connection to try again.')
+        fail('Tor could not start. Turn Tor on to try again.')
       })
       child.once('exit', () => {
-        fail('Tor stopped unexpectedly. Use Test Connection to try again.')
+        fail('Tor stopped unexpectedly. Turn Tor on to try again.')
       })
       child.once('close', () => {
         if (this.child === child) {
           this.child = null
+          this.socksPort = null
         }
       })
     })
@@ -178,6 +200,7 @@ export class TorManager {
     })
     if (this.child === child) {
       this.child = null
+      this.socksPort = null
     }
   }
 }

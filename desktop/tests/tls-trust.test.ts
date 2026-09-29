@@ -6,6 +6,10 @@ import * as tls from 'node:tls'
 import { describe, expect, it, onTestFinished } from 'vitest'
 import { configureDesktopTlsTrust } from '../src/tls-trust'
 
+// Synthetic fixtures generated only for these tests; they are not credentials for any
+// real service, and the CA private key is not included. The server certificate is
+// signed by the test CA, covers localhost and 127.0.0.1, and expires in September 2036.
+// Tests supply the CA as a simulated OS-trusted authority. Never install it in a trust store.
 const fixture = (name: string): string => readFileSync(new URL(`./fixtures/tls/${name}`, import.meta.url), 'utf8')
 const ca = fixture('ca.crt')
 

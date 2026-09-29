@@ -35,6 +35,11 @@ export interface ElectrumConnectionConfig {
   requestTimeout?: number
   /** Optional SOCKS proxy for Tor connections. */
   proxy?: SocksProxyConfig
+  /**
+   * Resolve the SOCKS proxy when connecting, for a proxy that picks its port when
+   * it starts. Takes precedence over `proxy`; null means the proxy is not ready.
+   */
+  resolveProxy?: () => SocksProxyConfig | null
   /** Optional TLS behavior for SSL Electrum connections. */
   tls?: ElectrumTlsConfig
 }
@@ -123,8 +128,9 @@ interface PendingRequest {
  * and newline-delimited JSON framing.
  */
 export class ElectrumTransport {
-  private readonly config: Required<Omit<ElectrumConnectionConfig, 'proxy' | 'tls'>> & {
+  private readonly config: Required<Omit<ElectrumConnectionConfig, 'proxy' | 'resolveProxy' | 'tls'>> & {
     proxy?: SocksProxyConfig
+    resolveProxy?: () => SocksProxyConfig | null
     tls?: ElectrumTlsConfig
   }
   private socket: net.Socket | tls.TLSSocket | null = null
@@ -198,9 +204,15 @@ export class ElectrumTransport {
         }
 
         try {
-          if (this.config.proxy) {
+          const proxy = this.config.resolveProxy ? this.config.resolveProxy() : this.config.proxy
+          if (this.config.resolveProxy && !proxy) {
+            // Never fall back to a direct connection when a proxy was requested.
+            finish(Err(new Error('The Tor proxy is not ready')))
+            return
+          }
+          if (proxy) {
             // Connect through SOCKS proxy (for Tor)
-            this.connectViaProxy(this.config.proxy)
+            this.connectViaProxy(proxy)
               .then((proxySocket) => {
                 // A SOCKS handshake can finish after cancellation or timeout.
                 // Never attach its late socket to a disconnected client.
@@ -315,6 +327,9 @@ export class ElectrumTransport {
         type: proxy.type ?? 5,
       },
       command: 'connect',
+      // The library's own 30-second default would otherwise cut the handshake
+      // short; Tor needs longer to build a first circuit or reach an onion service.
+      timeout: this.config.connectTimeout,
       destination: {
         host: this.config.host,
         port: this.config.port,

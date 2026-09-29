@@ -24,7 +24,7 @@ function setup() {
   const spawnProcess = vi
     .fn<(command: string, args: string[], options: SpawnOptions) => ChildProcess>()
     .mockReturnValue(child)
-  const tor = new TorManager(directory, join(directory, 'tor'), 19450, 1000, spawnProcess)
+  const tor = new TorManager(directory, join(directory, 'tor'), 1000, spawnProcess, 4242)
   onTestFinished(async () => {
     await tor.stop()
     vi.restoreAllMocks()
@@ -34,6 +34,9 @@ function setup() {
   return { directory, child, stdout, kill, spawnProcess, tor }
 }
 
+// Tor reports the loopback port it chose before bootstrap completes.
+const LISTENER = 'Opened Socks listener connection (ready) on 127.0.0.1:49321\n'
+
 async function launch(tor: TorManager) {
   const pending = tor.start()
   await vi.advanceTimersByTimeAsync(0)
@@ -41,18 +44,33 @@ async function launch(tor: TorManager) {
 }
 
 describe('bundled Tor lifecycle', () => {
-  it('waits for complete bootstrap output across chunks and binds only its assigned loopback port', async () => {
+  it('waits for complete bootstrap output across chunks and uses the loopback port Tor chose', async () => {
     const { tor, stdout, spawnProcess } = setup()
     const { pending } = await launch(tor)
     const repeated = tor.start()
-    stdout.write('Bootstrapped 80%: Connecting\nBootstrapped 10')
+    stdout.write(`${LISTENER}Bootstrapped 80%: Connecting\nBootstrapped 10`)
     expect(tor.getStatus().state).toBe('starting')
+    expect(tor.getSocksProxy()).toBeNull()
     stdout.write('0% (done): Done\n')
     await expect(pending).resolves.toMatchObject({ state: 'ready' })
     await expect(repeated).resolves.toMatchObject({ state: 'ready' })
+    expect(tor.getSocksProxy()).toEqual({ host: '127.0.0.1', port: 49321 })
     expect(spawnProcess).toHaveBeenCalledTimes(1)
-    expect(spawnProcess.mock.calls[0]?.[1]).toContain('127.0.0.1:19450')
+    const args = spawnProcess.mock.calls[0]?.[1] ?? []
+    expect(args).toContain('127.0.0.1:auto')
+    // Tor exits with the app rather than keeping its data directory locked.
+    expect(
+      args.slice(args.indexOf('__OwningControllerProcess'), args.indexOf('__OwningControllerProcess') + 2),
+    ).toEqual(['__OwningControllerProcess', '4242'])
     expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('fails instead of reporting ready when Tor never opened its proxy', async () => {
+    const { tor, stdout } = setup()
+    const { pending } = await launch(tor)
+    stdout.write('Bootstrapped 100% (done): Done\n')
+    await expect(pending).resolves.toMatchObject({ state: 'failed' })
+    expect(tor.getSocksProxy()).toBeNull()
   })
 
   it('reports the start immediately and follows bootstrap progress without going backwards', async () => {
@@ -60,13 +78,13 @@ describe('bundled Tor lifecycle', () => {
     const pending = tor.start()
     expect(tor.getStatus()).toEqual({ state: 'starting', progress: 0 })
     await vi.advanceTimersByTimeAsync(0)
-    stdout.write('Bootstrapped 10% (conn_done): Connected to a relay\nBootstrapped 5')
+    stdout.write(`${LISTENER}Bootstrapped 10% (conn_done): Connected to a relay\nBootstrapped 5`)
     expect(tor.getStatus()).toEqual({ state: 'starting', progress: 10 })
     stdout.write('0% (loading_descriptors): Loading relay descriptors\n')
     expect(tor.getStatus()).toEqual({ state: 'starting', progress: 50 })
     stdout.write('Bootstrapped 45% (requesting_descriptors): Asking for relay descriptors\n')
     expect(tor.getStatus().progress).toBe(50)
-    stdout.write('Bootstrapped 100% (done): Done\n')
+    stdout.write(`${LISTENER}Bootstrapped 100% (done): Done\n`)
     await expect(pending).resolves.toEqual({ state: 'ready' })
   })
 
@@ -93,7 +111,7 @@ describe('bundled Tor lifecycle', () => {
     await expect(pending).resolves.toMatchObject({ state: 'failed' })
     expect(kill).toHaveBeenCalledWith('SIGTERM')
     const { pending: retry } = await launch(tor)
-    stdout.write('Bootstrapped 100% (done): Done\n')
+    stdout.write(`${LISTENER}Bootstrapped 100% (done): Done\n`)
     await expect(retry).resolves.toMatchObject({ state: 'ready' })
     expect(spawnProcess).toHaveBeenCalledTimes(2)
   })
@@ -101,11 +119,13 @@ describe('bundled Tor lifecycle', () => {
   it('revokes readiness when a running Tor process exits', async () => {
     const { tor, child, stdout } = setup()
     const { pending } = await launch(tor)
-    stdout.write('Bootstrapped 100% (done): Done\n')
+    stdout.write(`${LISTENER}Bootstrapped 100% (done): Done\n`)
     await pending
+    expect(tor.getSocksProxy()).not.toBeNull()
     child.emit('exit', 1)
     child.emit('close', 1)
     expect(tor.getStatus().state).toBe('failed')
+    expect(tor.getSocksProxy()).toBeNull()
   })
 
   it('settles pending startup on quit and never starts another process afterwards', async () => {

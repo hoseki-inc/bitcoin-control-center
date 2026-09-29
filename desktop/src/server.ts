@@ -2,7 +2,7 @@ import type { TorManager } from './tor'
 
 interface ServerOptions {
   waitForElectrum?: boolean
-  tor?: Pick<TorManager, 'start' | 'getStatus'>
+  tor?: Pick<TorManager, 'start' | 'getStatus' | 'getSocksProxy'>
 }
 
 // oxlint-disable-next-line anti-slop/no-unknown-returns -- A dynamically loaded server method can return any runtime value, which is checked by its caller.

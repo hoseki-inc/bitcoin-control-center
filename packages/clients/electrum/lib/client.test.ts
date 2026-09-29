@@ -195,6 +195,52 @@ describe('managed connection prerequisite', () => {
     socket.mockRestore()
   })
 
+  it('gives the SOCKS handshake the full connection limit and the proxy resolved when connecting', async () => {
+    const connect = vi.spyOn(SocksClient, 'createConnection').mockReturnValue(new Promise(() => undefined))
+    let port = 49321
+    const transport = new ElectrumTransport({
+      host: 'example.onion',
+      port: 50001,
+      protocol: 'tcp',
+      connectTimeout: 60_000,
+      proxy: { host: '127.0.0.1', port: 1 },
+      resolveProxy: () => ({ host: '127.0.0.1', port }),
+    })
+    try {
+      port = 49322
+      const pending = transport.connect()
+      expect(connect).toHaveBeenCalledOnce()
+      const options = connect.mock.calls[0]?.[0]
+      expect(options?.timeout).toBe(60_000)
+      expect(options?.proxy.port).toBe(49322)
+      transport.disconnect()
+      expect((await pending).unwrapErr().message).toBe('Connection closed')
+    } finally {
+      transport.disconnect()
+      connect.mockRestore()
+    }
+  })
+
+  it('never falls back to a direct connection when the resolved proxy is not ready', async () => {
+    const server = await startMockServer()
+    const proxy = vi.spyOn(SocksClient, 'createConnection')
+    const client = new ElectrumClient({
+      host: '127.0.0.1',
+      port: server.port,
+      protocol: 'tcp',
+      resolveProxy: () => null,
+    })
+    try {
+      expect((await client.connect()).unwrapErr().message).toBe('The Tor proxy is not ready')
+      expect(proxy).not.toHaveBeenCalled()
+      expect(server.requests).toEqual([])
+    } finally {
+      client.disconnect()
+      proxy.mockRestore()
+      await server.close()
+    }
+  })
+
   it('does not open a direct or SOCKS socket when readiness fails', async () => {
     const { Err } = await import('@hoseki/packages/result')
     const proxy = vi.spyOn(SocksClient, 'createConnection')

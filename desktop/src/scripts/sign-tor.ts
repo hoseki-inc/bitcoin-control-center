@@ -16,3 +16,24 @@ export function signTorBinaries(directory: string): void {
     execFileSync('codesign', ['--verify', '--strict', binary], { stdio: 'inherit' })
   }
 }
+
+/**
+ * electron-builder signs `mac.binaries` with the release identity, so that list
+ * must name every Mach-O file in the Tor bundle. Fail packaging with a clear fix
+ * when a Tor update changes them, such as a new libevent version.
+ * @param {string} directory
+ * @param {readonly string[]} configured
+ * @returns {void}
+ */
+export function checkMacTorBinaries(directory: string, configured: readonly string[]): void {
+  const prefix = 'Contents/Resources/tor/'
+  const bundled = ['tor', ...readdirSync(directory).filter((name) => name.endsWith('.dylib'))]
+    .map((name) => `${prefix}${name}`)
+    .sort((a, b) => a.localeCompare(b))
+  const listed = configured.filter((file) => file.startsWith(prefix)).sort((a, b) => a.localeCompare(b))
+  if (bundled.join('\n') !== listed.join('\n')) {
+    throw new Error(
+      `Update mac.binaries in desktop/electron-builder.yml to match the bundled Tor files: ${bundled.join(', ')}`,
+    )
+  }
+}
