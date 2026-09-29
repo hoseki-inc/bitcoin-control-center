@@ -36,8 +36,21 @@ export interface AppContext {
   reconnectElectrum: (config: ElectrumClientConfig) => Promise<Result<void, Error>>
   disconnectElectrum: () => void
   prepareElectrumConfig: (config: ElectrumClientConfig, torEnabled: boolean) => Result<ElectrumClientConfig, Error>
-  getTorStatus: () => { state: 'stopped' | 'starting' | 'ready' | 'failed' | 'unavailable'; message?: string }
+  getTorStatus: () => TorStatus
+  /** Start managed Tor without waiting for bootstrap, so settings can show its progress. */
+  startTor: () => TorStatus
 }
+
+export interface TorStatus {
+  state: 'stopped' | 'starting' | 'ready' | 'failed' | 'unavailable'
+  message?: string
+  /** Tor's bootstrap percentage while starting. It marks phases, not elapsed time. */
+  progress?: number
+}
+
+// A fresh Tor process may need well over the direct-connection limit to build its
+// first circuit, and longer still to reach an onion service.
+const TOR_CONNECT_TIMEOUT_MS = 60_000
 
 export interface AppContextOptions {
   /** Desktop must keep settings available even when its saved server is offline. */
@@ -45,7 +58,7 @@ export interface AppContextOptions {
   /** Distribution-owned Tor process; Sentinel owns connection policy. */
   tor?: {
     start: () => Promise<{ state: string; message?: string }>
-    getStatus: () => { state: 'stopped' | 'starting' | 'ready' | 'failed'; message?: string }
+    getStatus: () => { state: 'stopped' | 'starting' | 'ready' | 'failed'; message?: string; progress?: number }
   }
 }
 
@@ -91,6 +104,7 @@ export const createAppContext = asyncFn(
       return Ok({
         ...config,
         proxy: { host: env.SOCKS_PROXY_HOST, port: env.SOCKS_PROXY_PORT },
+        connectTimeout: Math.max(config.connectTimeout ?? 0, TOR_CONNECT_TIMEOUT_MS),
         beforeConnect: tor
           ? async (): Promise<Result<void, Error>> => {
               const status = await tor.start()
@@ -180,6 +194,14 @@ export const createAppContext = asyncFn(
       network,
       prepareElectrumConfig,
       getTorStatus: () => options.tor?.getStatus() ?? { state: 'unavailable' },
+      startTor: (): TorStatus => {
+        if (!tor || isStopped()) {
+          return tor?.getStatus() ?? { state: 'unavailable' }
+        }
+        // Failures are reported through status, which settings polls.
+        void tor.start().catch(() => undefined)
+        return tor.getStatus()
+      },
       reconnectElectrum: async (config: ElectrumClientConfig): Promise<Result<void, Error>> => {
         if (isStopped()) {
           return Err(new Error('The application is shutting down'))

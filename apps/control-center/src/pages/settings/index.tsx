@@ -14,11 +14,14 @@ import {
   Switch,
   Text,
   VStack,
+  keyframes,
+  useToken,
 } from '@chakra-ui/react'
 import { parseUnknown } from '@hoseki/packages/result/lib/parse'
 import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
 import { useQueryClient } from '@tanstack/react-query'
-import { useCallback, useEffect, useState } from 'react'
+import { CircleAlertIcon, CircleCheckIcon } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { z } from 'zod'
 import { useLocalSetting } from '../../hooks/use-local-settings'
@@ -132,6 +135,7 @@ const ElectrumStatusSchema = z.object({
     .object({
       state: z.enum(['stopped', 'starting', 'ready', 'failed', 'unavailable']),
       message: z.string().optional(),
+      progress: z.number().optional(),
     })
     .optional(),
 })
@@ -164,15 +168,41 @@ function useElectrumStatus(): ElectrumStatusState {
       })
   }, [])
 
+  // Follow Tor startup closely; otherwise a slower check is enough.
+  const torStarting = status?.tor?.state === 'starting'
   useEffect(() => {
     refresh()
-    const interval = setInterval(refresh, 10_000)
+    const interval = setInterval(refresh, torStarting ? 1000 : 10_000)
     return (): void => {
       clearInterval(interval)
     }
-  }, [refresh])
+  }, [refresh, torStarting])
 
   return { status, refresh }
+}
+
+// The switch fades between green and light green while Tor starts. The theme
+// already stops animation for people who ask their system to reduce motion.
+function useTorStartingFade(): string {
+  // Resolve theme colors directly; the theme's CSS variable names use a custom prefix.
+  const [green, lightGreen] = useToken('colors', ['green.500', 'green.200'])
+  return useMemo(
+    () => keyframes`
+      0%, 100% { background-color: ${green}; }
+      50% { background-color: ${lightGreen}; }
+    `,
+    [green, lightGreen],
+  )
+}
+// Tor usually finishes well before this; after it, reassure rather than alarm.
+const TOR_SLOW_START_MS = 30_000
+// "Tor ready" stays long enough to read, then fades; the solid switch remains.
+const TOR_READY_VISIBLE_MS = 3000
+const TOR_READY_FADE_MS = 600
+
+async function requestTorStart(): Promise<void> {
+  const baseUrl = import.meta.env.VITE_BACKEND_API_URL ?? ''
+  await fetch(`${baseUrl}/settings.startTor`, { method: 'POST', headers: { 'Content-Type': 'application/json' } })
 }
 
 function ElectrumSettings(): JSX.Element {
@@ -193,6 +223,66 @@ function ElectrumSettings(): JSX.Element {
   const [isSaving, setIsSaving] = useState(false)
   const [isTesting, setIsTesting] = useState(false)
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null)
+  const [torFailure, setTorFailure] = useState<string | null>(null)
+  const [torStartedAt, setTorStartedAt] = useState<number | null>(null)
+  // After the user turns Tor back on, ignore the earlier failure until a new start is reported.
+  const retryingTor = useRef(false)
+  const previousTorState = useRef<string | undefined>(undefined)
+  const [torReadyNotice, setTorReadyNotice] = useState<'shown' | 'fading' | null>(null)
+  const torState = electrumStatus?.tor?.state
+  const torStarting = torEnabled && torState === 'starting'
+  const torStartingFade = useTorStartingFade()
+
+  // Like Sparrow, a failed Tor start turns the switch off. That only changes the
+  // form: the saved connection keeps Tor and stays disconnected, never direct.
+  useEffect(() => {
+    if (torState !== 'failed') {
+      retryingTor.current = false
+    } else if (torEnabled && !retryingTor.current) {
+      setTorEnabled(false)
+      setTorFailure(electrumStatus?.tor?.message ?? 'Tor couldn’t start. Turn Tor on to try again.')
+    }
+  }, [torState, torEnabled, electrumStatus?.tor?.message])
+
+  // The solid switch shows Tor is on; announce only the moment startup finishes.
+  useEffect(() => {
+    if (torState === 'ready' && previousTorState.current === 'starting' && torEnabled) {
+      setTorReadyNotice('shown')
+    } else if (torState !== 'ready' || !torEnabled) {
+      setTorReadyNotice(null)
+    }
+    previousTorState.current = torState
+  }, [torState, torEnabled])
+
+  // Timers rather than an animation, so the notice stays readable when motion is reduced.
+  useEffect(() => {
+    if (torReadyNotice === null) {
+      return undefined
+    }
+    const timer = setTimeout(
+      () => {
+        setTorReadyNotice(torReadyNotice === 'shown' ? 'fading' : null)
+      },
+      torReadyNotice === 'shown' ? TOR_READY_VISIBLE_MS : TOR_READY_FADE_MS,
+    )
+    return (): void => {
+      clearTimeout(timer)
+    }
+  }, [torReadyNotice])
+
+  const handleTorChange = (enabled: boolean): void => {
+    setTorEnabled(enabled)
+    setIsDirty(true)
+    setTestResult(null)
+    setTorFailure(null)
+    if (enabled) {
+      retryingTor.current = torState === 'failed'
+      setTorStartedAt(Date.now())
+      void requestTorStart()
+        .catch(() => undefined)
+        .finally(refreshStatus)
+    }
+  }
 
   useEffect(() => {
     if (!isDirty) {
@@ -410,16 +500,6 @@ function ElectrumSettings(): JSX.Element {
         </Stack>
       </HStack>
 
-      {electrumStatus?.tor && (
-        <Text textStyle="text/sm" color={electrumStatus.tor.state === 'failed' ? 'red.500' : 'neutral.600'} as="output">
-          {electrumStatus.tor.state === 'ready'
-            ? 'Tor is ready.'
-            : electrumStatus.tor.state === 'starting'
-              ? 'Tor is connecting. This can take up to two minutes.'
-              : (electrumStatus.tor.message ?? 'Tor starts when you test or save a Tor connection.')}
-        </Text>
-      )}
-
       {/* Tor toggle */}
       <HStack w="full" justify="space-between" align="center">
         <VStack align="start" gap={0}>
@@ -433,15 +513,28 @@ function ElectrumSettings(): JSX.Element {
         </VStack>
         <Switch
           id="electrum-tor"
+          colorScheme="green"
           isChecked={torEnabled}
           onChange={(e) => {
-            setTorEnabled(e.target.checked)
-            setIsDirty(true)
-            setTestResult(null)
+            handleTorChange(e.target.checked)
           }}
           isDisabled={isLoading || isSaving || isTesting}
+          sx={
+            torStarting
+              ? { '.chakra-switch__track': { animation: `${torStartingFade} 3s ease-in-out infinite` } }
+              : undefined
+          }
         />
       </HStack>
+
+      <TorStatusLine
+        enabled={torEnabled}
+        state={torState}
+        progress={electrumStatus?.tor?.progress}
+        failure={torFailure}
+        readyNotice={torReadyNotice}
+        slow={torStartedAt !== null && Date.now() - torStartedAt > TOR_SLOW_START_MS}
+      />
 
       {/* Test result banner */}
       {testResult && (
@@ -466,7 +559,7 @@ function ElectrumSettings(): JSX.Element {
           onClick={() => void handleTest()}
           isLoading={isTesting}
           loadingText="Testing..."
-          isDisabled={!host.trim() || !port.trim() || isLoading || isSaving}
+          isDisabled={!host.trim() || !port.trim() || isLoading || isSaving || torStarting}
         >
           Test Connection
         </Button>
@@ -474,11 +567,67 @@ function ElectrumSettings(): JSX.Element {
           colorScheme="green"
           onClick={() => void handleSave()}
           isLoading={isSaving}
-          isDisabled={(!isDirty && electrumStatus?.connected !== false) || isLoading || isTesting}
+          isDisabled={(!isDirty && electrumStatus?.connected !== false) || isLoading || isTesting || torStarting}
         >
           Save & Reconnect
         </Button>
       </ButtonGroup>
     </VStack>
   )
+}
+
+function TorStatusLine({
+  enabled,
+  state,
+  progress,
+  failure,
+  readyNotice,
+  slow,
+}: {
+  enabled: boolean
+  state: string | undefined
+  progress: number | undefined
+  failure: string | null
+  readyNotice: 'shown' | 'fading' | null
+  slow: boolean
+}): JSX.Element | null {
+  if (failure !== null) {
+    return (
+      <HStack as="output" gap={2} color="red.600">
+        <CircleAlertIcon size={16} aria-hidden />
+        <Text textStyle="text/sm">{failure}</Text>
+      </HStack>
+    )
+  }
+  if (!enabled) {
+    return null
+  }
+  if (state === 'ready' && readyNotice !== null) {
+    return (
+      <HStack
+        as="output"
+        gap={2}
+        color="green.600"
+        opacity={readyNotice === 'fading' ? 0 : 1}
+        transition={`opacity ${TOR_READY_FADE_MS}ms ease-out`}
+      >
+        <CircleCheckIcon size={16} aria-hidden />
+        <Text textStyle="text/sm">Tor ready</Text>
+      </HStack>
+    )
+  }
+  if (state === 'starting') {
+    const percent = Math.round(progress ?? 0)
+    return (
+      <Stack as="output" gap={2} w="full">
+        <Text textStyle="text/sm" color="neutral.600">
+          {`Starting Tor… ${percent}%${slow ? '. This can take up to two minutes.' : ''}`}
+        </Text>
+        <Box h="3px" w="full" bg="neutral.100" borderRadius="full" overflow="hidden">
+          <Box h="full" w={`${percent}%`} bg="green.500" transition="width 0.3s" />
+        </Box>
+      </Stack>
+    )
+  }
+  return null
 }

@@ -2062,6 +2062,8 @@ const settingsRouter = t.router({
     }
   }),
 
+  startTor: publicProcedure.mutation(({ ctx }) => ctx.app.startTor()),
+
   testElectrum: publicProcedure
     .input(
       z.object({

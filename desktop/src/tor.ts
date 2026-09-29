@@ -7,6 +7,8 @@ type SpawnTor = (command: string, args: string[], options: SpawnOptions) => Chil
 export interface TorStatus {
   state: 'stopped' | 'starting' | 'ready' | 'failed'
   message?: string
+  /** Tor's own bootstrap percentage while starting. It marks phases, not elapsed time. */
+  progress?: number
 }
 
 export class TorManager {
@@ -48,6 +50,8 @@ export class TorManager {
     if (this.starting) {
       return this.starting
     }
+    // Report the start immediately so a caller polling status never sees a stale failure.
+    this.status = { state: 'starting', progress: 0 }
     this.starting = this.launch().finally(() => {
       this.starting = null
     })
@@ -59,7 +63,7 @@ export class TorManager {
     if (this.stopped) {
       return this.getStatus()
     }
-    this.status = { state: 'starting' }
+    this.status = { state: 'starting', progress: 0 }
     const dataDir = path.join(this.appDataDir, 'tor-data')
     try {
       fs.mkdirSync(dataDir, { recursive: true })
@@ -112,6 +116,12 @@ export class TorManager {
         if (/Bootstrapped 100%[^\n]*Done/.test(buffer)) {
           this.status = { state: 'ready' }
           finish()
+          return
+        }
+        const reported = [...buffer.matchAll(/Bootstrapped (\d{1,2})%/g)].map((match) => Number(match[1]))
+        const progress = Math.max(this.status.progress ?? 0, ...reported)
+        if (this.status.state === 'starting' && progress !== this.status.progress) {
+          this.status = { state: 'starting', progress }
         }
       }
       const timer = setTimeout(() => {

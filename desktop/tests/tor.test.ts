@@ -55,6 +55,21 @@ describe('bundled Tor lifecycle', () => {
     expect(vi.getTimerCount()).toBe(0)
   })
 
+  it('reports the start immediately and follows bootstrap progress without going backwards', async () => {
+    const { tor, stdout } = setup()
+    const pending = tor.start()
+    expect(tor.getStatus()).toEqual({ state: 'starting', progress: 0 })
+    await vi.advanceTimersByTimeAsync(0)
+    stdout.write('Bootstrapped 10% (conn_done): Connected to a relay\nBootstrapped 5')
+    expect(tor.getStatus()).toEqual({ state: 'starting', progress: 10 })
+    stdout.write('0% (loading_descriptors): Loading relay descriptors\n')
+    expect(tor.getStatus()).toEqual({ state: 'starting', progress: 50 })
+    stdout.write('Bootstrapped 45% (requesting_descriptors): Asking for relay descriptors\n')
+    expect(tor.getStatus().progress).toBe(50)
+    stdout.write('Bootstrapped 100% (done): Done\n')
+    await expect(pending).resolves.toEqual({ state: 'ready' })
+  })
+
   it('reports missing binaries without claiming Tor is ready', async () => {
     const { tor, directory, spawnProcess } = setup()
     rmSync(join(directory, 'tor'))

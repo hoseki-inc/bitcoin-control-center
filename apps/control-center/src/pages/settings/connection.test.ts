@@ -39,6 +39,12 @@ let connected: boolean
 let finishSave: (response: Response) => void
 let saveResponse: Promise<Response>
 let requests: Array<{ path: string; input: z.infer<typeof connectionSchema> | null }>
+interface TorStatusFixture {
+  state: string
+  message?: string
+  progress?: number
+}
+let torStatus: TorStatusFixture
 
 function button(label: string): HTMLButtonElement {
   const found = Array.from(container.querySelectorAll('button')).find((item) => item.textContent === label)
@@ -74,6 +80,35 @@ async function render(): Promise<void> {
     })
     expect(hostInput().value).toBe('server-a.example')
   })
+}
+
+function torSwitch(): HTMLInputElement {
+  const input = container.querySelector<HTMLInputElement>('#electrum-tor')
+  if (!input) {
+    throw new Error('Missing Tor switch')
+  }
+  return input
+}
+
+async function turnTorOn(): Promise<void> {
+  await act(async () => {
+    torSwitch().click()
+  })
+}
+
+async function waitForText(text: string): Promise<void> {
+  // Status refreshes every second while Tor starts.
+  await vi.waitFor(
+    async () => {
+      await act(async () => {
+        await new Promise<void>((resolve) => {
+          setTimeout(resolve, 50)
+        })
+      })
+      expect(container.textContent).toContain(text)
+    },
+    { timeout: 4000 },
+  )
 }
 
 async function changeHost(): Promise<void> {
@@ -122,6 +157,7 @@ async function withTestSetup(run: () => Promise<void>): Promise<void> {
   ])
   connected = true
   requests = []
+  torStatus = { state: 'stopped' }
   vi.spyOn(toast, 'success').mockReturnValue('test-toast')
   vi.spyOn(toast, 'error').mockReturnValue('test-toast')
   saveResponse = new Promise((resolve) => {
@@ -157,10 +193,15 @@ async function withTestSetup(run: () => Promise<void>): Promise<void> {
                 host: saved.get('electrum_host'),
                 port: Number(saved.get('electrum_port')),
                 protocol: saved.get('electrum_protocol'),
+                tor: torStatus,
               },
             },
           },
         })
+      }
+      if (path === 'settings.startTor') {
+        torStatus = { state: 'starting', progress: 0 }
+        return Response.json({ result: { data: { json: torStatus } } })
       }
       if (path === 'settings.reconnectElectrum') {
         const result = await saveResponse
@@ -255,6 +296,79 @@ describe('desktop connection settings', () => {
       })
       await waitForToast('success')
       expect(saved.get('electrum_host')).toBe('server-a.example')
+    })
+  })
+
+  it('starts Tor when the switch is turned on and blocks testing until Tor is ready', async () => {
+    await withTestSetup(async () => {
+      await render()
+      await turnTorOn()
+      expect(requests.filter(({ path }) => path === 'settings.startTor')).toHaveLength(1)
+      torStatus = { state: 'starting', progress: 45 }
+      await waitForText('Starting Tor… 45%')
+      expect(torSwitch().checked).toBe(true)
+      expect(button('Test Connection').disabled).toBe(true)
+      expect(button('Save & Reconnect').disabled).toBe(true)
+      torStatus = { state: 'ready' }
+      await waitForText('Tor ready')
+      expect(container.textContent).not.toContain('Starting Tor')
+      expect(torSwitch().checked).toBe(true)
+      expect(button('Test Connection').disabled).toBe(false)
+      expect(button('Save & Reconnect').disabled).toBe(false)
+      // The notice fades away on its own; the solid switch keeps showing Tor is on.
+      await vi.waitFor(
+        async () => {
+          await act(async () => {
+            await new Promise<void>((resolve) => {
+              setTimeout(resolve, 100)
+            })
+          })
+          expect(container.textContent).not.toContain('Tor ready')
+        },
+        { timeout: 6000 },
+      )
+      expect(torSwitch().checked).toBe(true)
+      expect(toast.success).not.toHaveBeenCalled()
+    })
+  }, 20_000)
+
+  it('turns the switch off after a failed Tor start without saving a direct connection', async () => {
+    await withTestSetup(async () => {
+      await render()
+      await turnTorOn()
+      torStatus = { state: 'failed', message: 'Tor could not connect within two minutes.' }
+      await waitForText('Tor could not connect within two minutes.')
+      expect(torSwitch().checked).toBe(false)
+      expect(requests.filter(({ path }) => path === 'settings.reconnectElectrum')).toEqual([])
+      expect(saved.get('tor_enabled')).toBe('false')
+      await turnTorOn()
+      expect(container.textContent).not.toContain('Tor could not connect')
+      expect(requests.filter(({ path }) => path === 'settings.startTor')).toHaveLength(2)
+    })
+  })
+
+  it('does not announce Tor when it was already running before settings opened', async () => {
+    await withTestSetup(async () => {
+      saved.set('tor_enabled', 'true')
+      torStatus = { state: 'ready' }
+      await render()
+      await vi.waitFor(() => {
+        expect(torSwitch().checked).toBe(true)
+      })
+      expect(toast.success).not.toHaveBeenCalled()
+      expect(container.textContent).not.toContain('Tor ready')
+    })
+  })
+
+  it('turns a saved Tor connection off in the form when Tor has failed, keeping the saved setting', async () => {
+    await withTestSetup(async () => {
+      saved.set('tor_enabled', 'true')
+      torStatus = { state: 'failed', message: 'Tor stopped unexpectedly.' }
+      await render()
+      await waitForText('Tor stopped unexpectedly.')
+      expect(torSwitch().checked).toBe(false)
+      expect(saved.get('tor_enabled')).toBe('true')
+      expect(requests.filter(({ path }) => path === 'settings.reconnectElectrum')).toEqual([])
     })
   })
 })

@@ -422,6 +422,45 @@ describe('Tor connection policy', () => {
     })
   })
 
+  it('gives Tor-routed connections a longer connection limit than direct ones', async () => {
+    await withTestSetup(async () => {
+      env.SOCKS_PROXY_HOST = '127.0.0.1'
+      env.SOCKS_PROXY_PORT = 19452
+      const ctx = await context()
+      const config = { host: 'electrum.example', port: 50002, protocol: 'ssl' as const }
+      expect(ctx.prepareElectrumConfig(config, false).unwrap().connectTimeout).toBeUndefined()
+      expect(ctx.prepareElectrumConfig(config, true).unwrap().connectTimeout).toBe(60_000)
+      expect(ctx.prepareElectrumConfig({ ...config, connectTimeout: 90_000 }, true).unwrap().connectTimeout).toBe(
+        90_000,
+      )
+    })
+  })
+
+  it('starts managed Tor on request without waiting for bootstrap', async () => {
+    await withTestSetup(async () => {
+      const bootstrap = new Promise<{ state: string }>(() => undefined)
+      const tor = {
+        start: vi.fn(async () => bootstrap),
+        getStatus: () => ({ state: 'starting' as const, progress: 25 }),
+      }
+      const ctx = (await createAppContext(logger, { tor })).unwrap()
+      contexts.add(ctx)
+      await expect(appRouter.createCaller({ app: ctx }).settings.startTor()).resolves.toEqual({
+        state: 'starting',
+        progress: 25,
+      })
+      expect(tor.start).toHaveBeenCalledOnce()
+      expect(ctx.startTor()).toEqual({ state: 'starting', progress: 25 })
+    })
+  })
+
+  it('reports Tor as unavailable when the distribution does not manage it', async () => {
+    await withTestSetup(async () => {
+      const ctx = await context()
+      expect(ctx.startTor()).toEqual({ state: 'unavailable' })
+    })
+  })
+
   it('preserves the active server and settings when managed Tor fails', async () => {
     await withTestSetup(async () => {
       env.SOCKS_PROXY_HOST = '127.0.0.1'
