@@ -10,21 +10,19 @@ async function checkRuntime() {
   assert.equal(process.versions.electron, packageJson.devDependencies.electron, 'Run the locked Electron runtime')
 
   // Exercise the native addon with Electron's Node ABI, using synthetic data.
-  const { default: Database } = await import('better-sqlite3')
+  const { createClient } = await import('@libsql/client/sqlite3')
   const temporaryDirectory = mkdtempSync(join(tmpdir(), 'control-center-runtime-'))
   let database
   try {
     const databasePath = join(temporaryDirectory, 'smoke.sqlite')
-    database = new Database(databasePath)
-    database.exec('CREATE TABLE smoke (value INTEGER NOT NULL)')
-    database.prepare('INSERT INTO smoke (value) VALUES (?)').run(42)
+    database = createClient({ url: `file:${databasePath}` })
+    await database.execute('CREATE TABLE smoke (value INTEGER NOT NULL)')
+    await database.execute({ sql: 'INSERT INTO smoke (value) VALUES (?)', args: [42] })
     database.close()
-    database = new Database(databasePath)
-    assert.deepEqual(database.prepare('SELECT value FROM smoke').get(), { value: 42 })
+    database = createClient({ url: `file:${databasePath}` })
+    assert.equal((await database.execute('SELECT value FROM smoke')).rows[0]?.['value'], 42)
   } finally {
-    if (database?.open === true) {
-      database.close()
-    }
+    database?.close()
     rmSync(temporaryDirectory, { recursive: true, force: true })
   }
 

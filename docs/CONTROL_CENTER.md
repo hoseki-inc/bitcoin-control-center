@@ -89,7 +89,7 @@ Use **StartOS 1 - Prepare version** to select a version bump. It opens a version
 ./desktop/build.sh
 ```
 
-The script downloads pinned-platform Tor artifacts when absent, verifies their SHA-256 hashes, builds Sentinel and the desktop frontend, installs Electron dependencies, validates the bundled `better-sqlite3` native prebuilds, and packages macOS and Windows installers under `desktop/release/`.
+The script downloads pinned-platform Tor artifacts when absent, verifies their SHA-256 hashes, builds Sentinel and the desktop frontend, installs Electron dependencies, validates the macOS and Windows libSQL native prebuilds, and packages macOS and Windows installers under `desktop/release/`.
 
 ## Add another distribution
 

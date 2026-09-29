@@ -14,11 +14,17 @@ fi
 echo "==> Installing desktop dependencies..."
 cd "$SCRIPT_DIR"
 npm ci --ignore-scripts
+npm run install:electron
 
-echo "==> Validating native SQLite prebuilds..."
-test -f node_modules/better-sqlite3/prebuilds/darwin-arm64.node
-test -f node_modules/better-sqlite3/prebuilds/win32-x64.node
-node -e "const Database = require('better-sqlite3'); const database = new Database(':memory:'); database.close()"
+echo "==> Installing the Windows libSQL prebuild for cross-platform packaging..."
+LIBSQL_VERSION="$(node -p "require('libsql/package.json').optionalDependencies['@libsql/win32-x64-msvc']")"
+NATIVE_ARCHIVE="$(npm pack "@libsql/win32-x64-msvc@$LIBSQL_VERSION" --silent)"
+mkdir -p node_modules/@libsql/win32-x64-msvc
+tar -xzf "$NATIVE_ARCHIVE" -C node_modules/@libsql/win32-x64-msvc --strip-components=1
+rm "$NATIVE_ARCHIVE"
+test -f node_modules/@libsql/darwin-arm64/index.node
+test -f node_modules/@libsql/win32-x64-msvc/index.node
+npm run test:runtime
 
 echo "==> Building Sentinel, desktop web app, and Electron shell..."
 cd "$REPO_ROOT"

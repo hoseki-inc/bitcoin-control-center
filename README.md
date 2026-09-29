@@ -319,8 +319,9 @@ pnpm security:audit
 ```
 
 The default `pnpm test` command requires only the root workspace dependencies.
-`better-sqlite3` uses its bundled native binaries on supported platforms. Its
-pnpm install scripts are disabled to avoid unnecessary native rebuilds; Sentinel
+Sentinel uses an async, local-file libSQL client; `better-sqlite3` is only a
+development fixture for constructing historical databases in migration tests.
+Native install scripts are disabled to avoid unnecessary rebuilds. Sentinel
 tests and desktop runtime checks still exercise SQLite.
 
 GitHub Actions additionally installs and type-checks the standalone packaging
@@ -465,7 +466,8 @@ The build script:
 2. Verifies the trusted SHA-256 hashes before using them.
 3. Builds Sentinel and the desktop-mode frontend.
 4. Installs Electron's isolated npm dependencies.
-5. Validates the macOS ARM64 and Windows x64 `better-sqlite3` prebuilds.
+5. Installs the Windows x64 libSQL prebuild alongside macOS ARM64, validates both,
+   and checks the native client and PDF renderer in Electron.
 6. Packages installers under `desktop/release/`.
 
 Cross-built installers should still be smoke-tested on each target operating system before release.
