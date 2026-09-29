@@ -11,7 +11,7 @@ import { IndexMap } from '@hoseki/packages/collection'
 import { AsyncResult, Err, Ok, type Result, asyncFn } from '@hoseki/packages/result'
 import { Wallets } from '@hoseki/packages/testing'
 import Decimal from 'decimal.js'
-import { asc, eq } from 'drizzle-orm'
+import { asc, eq, sql } from 'drizzle-orm'
 import pino from 'pino'
 import { assert, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { openDrizzleDatabase } from '../../db/drizzle'
@@ -581,7 +581,7 @@ describe('compacted history coverage', () => {
   it('rolls back the deletion if the replacement record cannot be written', async () => {
     await withTestSetup(async () => {
       await harness.sync(0, 99)
-      await harness.db.$client.execute(`CREATE TEMP TRIGGER fail_sync BEFORE INSERT ON account_history_syncs
+      await harness.db.run(sql`CREATE TEMP TRIGGER fail_sync BEFORE INSERT ON account_history_syncs
       BEGIN SELECT RAISE(ABORT, 'Synthetic write failure'); END`)
       await expect(harness.sync(100, 199)).rejects.toThrow('Failed query: insert into "account_history_syncs"')
       await expect(harness.coverage()).resolves.toEqual([{ from_block_height: 0, to_block_height: 99 }])

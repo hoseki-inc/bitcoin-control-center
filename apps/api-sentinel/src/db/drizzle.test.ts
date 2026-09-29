@@ -2,17 +2,16 @@ import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { parseUnknown } from '@hoseki/packages/result/lib/parse'
-import type { Client, Row } from '@libsql/client'
-import { eq } from 'drizzle-orm'
+import type { Value } from '@libsql/client'
+import { eq, sql } from 'drizzle-orm'
 import { migrate } from 'drizzle-orm/libsql/migrator'
 import { readMigrationFiles } from 'drizzle-orm/migrator'
 import pino from 'pino'
 import { expect, it, onTestFinished } from 'vitest'
-import { z } from 'zod'
 import { type SentinelDb, openDrizzleDatabase } from './drizzle'
 import {
   accounts,
+  balanceSnapshots,
   exchangeAccounts,
   exchangeBalanceSnapshots,
   exchangeStatementTxs,
@@ -32,15 +31,21 @@ function testDirectory(): string {
   return directory
 }
 
-async function databaseState(client: Client): Promise<{ schema: Row[]; data: Row[][] }> {
-  const schema = await client.execute("SELECT name, sql FROM sqlite_master WHERE type = 'table' ORDER BY name")
-  const data = await Promise.all(
-    schema.rows.map(async (row) => {
-      const name = parseUnknown(z.string(), row['name']).expect('Expected a table name')
-      return (await client.execute(`SELECT * FROM "${name.replaceAll('"', '""')}" ORDER BY rowid`)).rows
-    }),
+// Inspect every physical table, including Drizzle's journal, so migration tests
+// detect changes outside the application's current schema too.
+async function databaseState(db: SentinelDb): Promise<{
+  schema: { name: string; sql: string | null }[]
+  data: Record<string, Value>[][]
+}> {
+  const schema = await db.all<{ name: string; sql: string | null }>(
+    sql`SELECT name, sql FROM sqlite_master WHERE type = 'table' ORDER BY name`,
   )
-  return { schema: schema.rows, data }
+  const data = await Promise.all(
+    schema.map(async (row) =>
+      db.all<Record<string, Value>>(sql`SELECT * FROM ${sql.identifier(row.name)} ORDER BY rowid`),
+    ),
+  )
+  return { schema, data }
 }
 
 async function seedHistory(db: SentinelDb): Promise<void> {
@@ -78,12 +83,12 @@ async function seedHistory(db: SentinelDb): Promise<void> {
   })
 }
 
-function futureMigrations(sql: string): string {
+function futureMigrations(migrationSql: string): string {
   const directory = testDirectory()
   cpSync(migrationFolder, directory, { recursive: true })
   const migration = join(directory, '20260930000000_rebuild_account_and_statement_tables')
   mkdirSync(migration)
-  writeFileSync(join(migration, 'migration.sql'), sql)
+  writeFileSync(join(migration, 'migration.sql'), migrationSql)
   return directory
 }
 
@@ -108,24 +113,20 @@ it('initializes the named baseline and reopens without changing persisted data o
   try {
     await first.insert(accounts).values({ id: 'wallet', descriptor: 'test-descriptor', displayName: 'Wallet' })
     await seedHistory(first)
-    expect((await first.$client.execute('PRAGMA foreign_keys')).rows[0]?.['foreign_keys']).toBe(1)
-    expect((await first.$client.execute('PRAGMA journal_mode')).rows[0]?.['journal_mode']).toBe('wal')
+    await expect(first.all(sql`PRAGMA foreign_keys`)).resolves.toEqual([{ foreign_keys: 1 }])
+    await expect(first.all(sql`PRAGMA journal_mode`)).resolves.toEqual([{ journal_mode: 'wal' }])
     await expect(
-      first.$client.execute(
-        "INSERT INTO balance_snapshots (account_id, timestamp, balance_sats) VALUES ('missing', '2026-01-01', '1')",
-      ),
-    ).rejects.toThrow('FOREIGN KEY constraint failed')
-    expect((await first.$client.execute('SELECT name FROM __drizzle_migrations')).rows).toEqual([
-      { name: baselineName },
-    ])
-    state = await databaseState(first.$client)
+      first.insert(balanceSnapshots).values({ accountId: 'missing', timestamp: '2026-01-01', balanceSats: '1' }),
+    ).rejects.toHaveProperty('cause.message', expect.stringContaining('FOREIGN KEY constraint failed'))
+    await expect(first.all(sql`SELECT name FROM __drizzle_migrations`)).resolves.toEqual([{ name: baselineName }])
+    state = await databaseState(first)
   } finally {
     first.$client.close()
   }
 
   const second = await openDrizzleDatabase(directory, logger)
   try {
-    await expect(databaseState(second.$client)).resolves.toEqual(state)
+    await expect(databaseState(second)).resolves.toEqual(state)
     await expect(second.select().from(settings).where(eq(settings.key, 'test'))).resolves.toMatchObject([
       { key: 'test', value: 'persisted' },
     ])
@@ -138,22 +139,22 @@ it('preserves statements and exchange history when Drizzle rebuilds populated ta
   const database = await openDrizzleDatabase(testDirectory(), logger)
   try {
     await seedHistory(database)
-    const before = await databaseState(database.$client)
+    const before = await databaseState(database)
     const folder = futureMigrations(
       [rebuildTable('exchange_accounts'), rebuildTable('statements')].join('\n--> statement-breakpoint\n'),
     )
     await migrate(database, { migrationsFolder: folder })
-    const after = await databaseState(database.$client)
+    const after = await databaseState(database)
     // Only the Drizzle journal gains a row; every application table keeps its data.
-    const journalIndex = before.schema.findIndex((row) => row['name'] === '__drizzle_migrations')
+    const journalIndex = before.schema.findIndex((row) => row.name === '__drizzle_migrations')
     expect(after.data.filter((_, index) => index !== journalIndex)).toEqual(
       before.data.filter((_, index) => index !== journalIndex),
     )
-    expect((await database.$client.execute('SELECT name FROM __drizzle_migrations')).rows).toHaveLength(2)
-    expect((await database.$client.execute('PRAGMA foreign_key_check')).rows).toEqual([])
-    expect((await database.$client.execute('PRAGMA foreign_keys')).rows[0]?.['foreign_keys']).toBe(1)
+    await expect(database.all(sql`SELECT name FROM __drizzle_migrations`)).resolves.toHaveLength(2)
+    await expect(database.all(sql`PRAGMA foreign_key_check`)).resolves.toEqual([])
+    await expect(database.all(sql`PRAGMA foreign_keys`)).resolves.toEqual([{ foreign_keys: 1 }])
     await migrate(database, { migrationsFolder: folder })
-    await expect(databaseState(database.$client)).resolves.toEqual(after)
+    await expect(databaseState(database)).resolves.toEqual(after)
   } finally {
     database.$client.close()
   }
@@ -163,7 +164,7 @@ it('rolls back failed migration data and journal changes, then permits retry', a
   const database = await openDrizzleDatabase(testDirectory(), logger)
   try {
     await seedHistory(database)
-    const before = await databaseState(database.$client)
+    const before = await databaseState(database)
     const folder = futureMigrations(
       [
         "UPDATE settings SET value = 'changed' WHERE key = 'test';",
@@ -172,15 +173,15 @@ it('rolls back failed migration data and journal changes, then permits retry', a
       ].join('\n--> statement-breakpoint\n'),
     )
     await expect(migrate(database, { migrationsFolder: folder })).rejects.toThrow('no such table')
-    await expect(databaseState(database.$client)).resolves.toEqual(before)
-    expect((await database.$client.execute('PRAGMA foreign_keys')).rows[0]?.['foreign_keys']).toBe(1)
+    await expect(databaseState(database)).resolves.toEqual(before)
+    await expect(database.all(sql`PRAGMA foreign_keys`)).resolves.toEqual([{ foreign_keys: 1 }])
     writeFileSync(
       join(folder, '20260930000000_rebuild_account_and_statement_tables', 'migration.sql'),
       rebuildTable('exchange_accounts'),
     )
     await migrate(database, { migrationsFolder: folder })
-    expect((await database.$client.execute('SELECT name FROM __drizzle_migrations')).rows).toHaveLength(2)
-    expect((await database.$client.execute('SELECT * FROM exchange_balance_snapshots')).rows).toHaveLength(1)
+    await expect(database.all(sql`SELECT name FROM __drizzle_migrations`)).resolves.toHaveLength(2)
+    await expect(database.select().from(exchangeBalanceSnapshots)).resolves.toHaveLength(1)
   } finally {
     database.$client.close()
   }

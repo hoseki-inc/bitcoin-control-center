@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import type { InArgs, InStatement } from '@libsql/client'
 import { createClient } from '@libsql/client/sqlite3'
+import { sql } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/libsql'
 import { migrate } from 'drizzle-orm/libsql/migrator'
 import type { Logger } from 'pino'
@@ -26,9 +27,9 @@ export async function openDrizzleDatabase(dataDir: string, logger: Logger): Prom
   // URL, token or replication service.
   const client = createClient({ url: pathToFileURL(dbPath).href, concurrency: 1 })
   try {
-    await client.execute('PRAGMA foreign_keys = ON')
-    await client.execute('PRAGMA journal_mode = WAL')
     const db = drizzle({ client })
+    await db.run(sql`PRAGMA foreign_keys = ON`)
+    await db.run(sql`PRAGMA journal_mode = WAL`)
     await migrate(db, { migrationsFolder: migrationsFolder() })
 
     // libSQL rejects queries while an interactive transaction owns its only

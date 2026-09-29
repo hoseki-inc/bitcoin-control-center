@@ -85,10 +85,10 @@ it('releases queued work after a transaction rolls back and hides its partial wr
       await tx.insert(manualAccounts).values({ id: 'rolled-back', displayName: 'Rollback' })
       throw new Error('Synthetic rollback')
     }),
-    db.$client.execute('SELECT id FROM manual_accounts'),
+    db.select({ id: manualAccounts.id }).from(manualAccounts).execute(),
     service.createAccount({ displayName: 'Survives', balanceSats: '1', balanceAsOf: '2026-01-01' }),
   ])
   expect(results[0]).toMatchObject({ status: 'rejected', reason: new Error('Synthetic rollback') })
-  expect(results[1]).toMatchObject({ status: 'fulfilled', value: { rows: [] } })
+  expect(results[1]).toEqual({ status: 'fulfilled', value: [] })
   expect((await service.listAccounts()).map((account) => account.displayName)).toEqual(['Survives'])
 })
