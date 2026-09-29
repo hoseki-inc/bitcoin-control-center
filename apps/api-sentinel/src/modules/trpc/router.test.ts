@@ -56,4 +56,15 @@ it('preserves claim, keystore and signing-message DTOs through database round tr
     completed: false,
     messages: [{ signedMessageId: message.signedMessage.id, keystoreId: message.keystoreId, signed: false }],
   })
+
+  const basic = await appRouter.createCaller({ app }).portalProve.accounts.add({
+    descriptor: 'synthetic-descriptor',
+    displayName: 'Basic account',
+    network: 'mainnet',
+  })
+  await expect(caller.claims.get.byId({ id: basic.id })).resolves.toMatchObject({
+    id: basic.id,
+    account: basic.descriptor,
+    displayName: basic.displayName,
+  })
 })

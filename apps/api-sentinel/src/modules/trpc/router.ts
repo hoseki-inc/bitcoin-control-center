@@ -198,7 +198,8 @@ function buildClaimDto(
     officialName: '',
     displayName: row.displayName,
     network: networkToClaimNetwork(row.network),
-    account: Account.fromDescriptor(row.descriptor).expect('Stored account descriptor is invalid').toString(),
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- SAFETY: The basic account API stores descriptor text verbatim; this existing DTO brand must not normalize or newly reject that text.
+    account: row.descriptor as CheckedAccountDescriptor,
     status: row.status,
     isArchived: row.deletedAt !== null,
     keystores: keystoreDtos,
