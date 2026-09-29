@@ -219,7 +219,6 @@ async function requestTorStart(): Promise<number | null> {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
     })
-    // oxlint-disable-next-line anti-slop/no-unknown-returns -- the response remains untrusted until parsed below.
     const data: unknown = res.ok ? await res.json() : null
     return parseUnknown(TorStartResponseSchema, data)
       .map((response) => response.result.data.json.attempt ?? 0)
