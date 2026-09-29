@@ -2066,13 +2066,16 @@ const settingsRouter = t.router({
       .run(input.key, value)
   }),
 
-  priceSource: publicProcedure.query(async ({ ctx }) => {
+  // Answers at once, so Settings can change the source even while every source is down.
+  priceSource: publicProcedure.query(({ ctx }) => ctx.app.priceService.options()),
+
+  priceStatus: publicProcedure.query(async ({ ctx }) => {
     // Look the price up under the current settings, so a status never describes an earlier choice.
     const result = await ctx.app.priceService.getCurrentBtcPrice()
     const price = result.isOk() ? result.unwrap() : null
     return {
-      ...ctx.app.priceService.options(),
-      price: price ? { source: price.source, asOf: price.asOf.toISOString() } : null,
+      selected: ctx.app.priceService.options().selected,
+      price: price ? { source: price.source, asOf: price.asOf.toISOString(), lastKnown: price.lastKnown } : null,
     }
   }),
 

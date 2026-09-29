@@ -34,6 +34,8 @@ export interface BtcPrice {
   /** When the source set this price, or when it was fetched if the source gives no time. */
   asOf: Date
   source: PriceSourceName
+  /** True when no allowed source answered and this is the last price found. */
+  lastKnown: boolean
 }
 
 interface Quote {
@@ -53,6 +55,8 @@ const CACHE_TTL_MS = 60_000 // 60 seconds
 const SOURCE_RETRY_MS = 30_000
 // A stalled source must not stop the fallbacks or hold up every price-dependent response.
 const REQUEST_TIMEOUT_MS = 10_000
+// However many sources stall, a lookup ends in time to answer with the last known price.
+const LOOKUP_TIMEOUT_MS = 15_000
 // The oldest price shown. mempool's own price can already be several minutes old when fetched.
 const MAX_PRICE_AGE_MS = 30 * 60_000
 const PUBLIC_MEMPOOL_URL = 'https://mempool.space'
@@ -147,19 +151,24 @@ export class PriceService {
   private readonly defaultSource: PriceSource
   private readonly settings: () => SavedPriceSettings
   private readonly requestTimeoutMs: number
+  private readonly lookupTimeoutMs: number
   private cached: { price: BtcPrice; fetchedAt: number; key: string } | null = null
   private readonly failures = new Map<PriceSourceName, { error: Error; failedAt: number }>()
   private pending: { key: string; result: Promise<Result<BtcPrice, Error>> } | null = null
+  // Only the newest lookup may report a result or update the cache.
+  private generation = 0
 
   public constructor(deps: {
     logger: Logger
     mempoolApiUrl: string
     settings: () => SavedPriceSettings
     requestTimeoutMs?: number
+    lookupTimeoutMs?: number
   }) {
     this.logger = deps.logger.child({ module: 'price-service' })
     this.settings = deps.settings
     this.requestTimeoutMs = deps.requestTimeoutMs ?? REQUEST_TIMEOUT_MS
+    this.lookupTimeoutMs = deps.lookupTimeoutMs ?? LOOKUP_TIMEOUT_MS
     const mempoolApiUrl = deps.mempoolApiUrl.replace(/\/$/, '')
     const block: PriceSource = {
       name: 'block',
@@ -200,7 +209,7 @@ export class PriceService {
     ]
   }
 
-  /** The sources available here and the one in use, for Settings. */
+  /** The sources available here and the one in use, for Settings. Makes no request. */
   public options(): PriceSourceOptions {
     const settings = this.settings()
     return {
@@ -235,7 +244,8 @@ export class PriceService {
     // The dashboard asks for the price from several queries at once; share one lookup per setting.
     let pending = this.pending
     if (pending?.key !== plan.key) {
-      const started = { key: plan.key, result: this.refresh(plan) }
+      this.generation += 1
+      const started = { key: plan.key, result: this.refresh(plan, this.generation) }
       const clear = (): void => {
         if (this.pending === started) {
           this.pending = null
@@ -248,13 +258,25 @@ export class PriceService {
     return pending.result
   }
 
-  private async refresh(plan: LookupPlan): Promise<Result<BtcPrice, Error>> {
+  /** Whether a lookup may still report: it is the newest, and the settings have not changed since it began. */
+  private isCurrent(plan: LookupPlan, generation: number): boolean {
+    return generation === this.generation && this.plan().key === plan.key
+  }
+
+  private async refresh(plan: LookupPlan, generation: number): Promise<Result<BtcPrice, Error>> {
     const errors: string[] = []
+    const deadline = performance.now() + this.lookupTimeoutMs
 
     for (const source of plan.sources) {
-      // A changed setting starts a new lookup, so an old one never tries a source that is no longer allowed.
-      if (this.plan().key !== plan.key) {
+      // A superseded lookup hands over to the current one, so it never tries a source that is no
+      // longer allowed, reports under old settings, or overwrites a newer price.
+      if (!this.isCurrent(plan, generation)) {
         return this.lookup()
+      }
+      const remaining = deadline - performance.now()
+      if (remaining <= 0) {
+        errors.push(`${source.label} not tried: no price within ${this.lookupTimeoutMs / 1000} seconds`)
+        break
       }
       const failure = this.failures.get(source.name)
       if (failure && Date.now() - failure.failedAt < SOURCE_RETRY_MS) {
@@ -262,21 +284,22 @@ export class PriceService {
         continue
       }
 
-      const result = await this.fetchPrice(source)
+      const result = await this.fetchPrice(source, Math.ceil(Math.min(this.requestTimeoutMs, remaining)))
       if (result.isErr()) {
-        const error = result.unwrapErr()
-        this.failures.set(source.name, { error, failedAt: Date.now() })
-        this.logger.warn({ source: source.name, err: error }, 'BTC price source failed')
-        errors.push(error.message)
+        this.failures.set(source.name, { error: result.unwrapErr(), failedAt: Date.now() })
+        this.logger.warn({ source: source.name, err: result.unwrapErr() }, 'BTC price source failed')
+      } else {
+        this.failures.delete(source.name)
+      }
+      if (!this.isCurrent(plan, generation)) {
+        return this.lookup()
+      }
+      if (result.isErr()) {
+        errors.push(result.unwrapErr().message)
         continue
       }
 
-      // Nor does it overwrite the price found under the new setting.
-      if (this.plan().key !== plan.key) {
-        return this.lookup()
-      }
       const price = result.unwrap()
-      this.failures.delete(source.name)
       this.cached = { price, fetchedAt: Date.now(), key: plan.key }
       if (source !== plan.sources[0]) {
         this.logger.info({ source: source.name, selected: plan.sources[0]?.name }, 'Using fallback BTC price source')
@@ -288,18 +311,18 @@ export class PriceService {
     const last = this.cached?.price
     if (last !== undefined && plan.sources.some((source) => source.name === last.source) && isRecent(last)) {
       this.logger.warn({ source: last.source }, 'Using last known BTC price')
-      return Ok(last)
+      return Ok({ ...last, lastKnown: true })
     }
     return Err(new Error(`No BTC price available: ${errors.join('; ')}`))
   }
 
-  private async fetchPrice(source: PriceSource): Promise<Result<BtcPrice, Error>> {
-    const signal = AbortSignal.timeout(this.requestTimeoutMs)
+  private async fetchPrice(source: PriceSource, timeoutMs: number): Promise<Result<BtcPrice, Error>> {
+    const signal = AbortSignal.timeout(timeoutMs)
     const timedOut = new Promise<never>((_resolve, reject) => {
       signal.addEventListener(
         'abort',
         () => {
-          reject(new Error(`no response within ${this.requestTimeoutMs / 1000} seconds`))
+          reject(new Error(`no response within ${timeoutMs / 1000} seconds`))
         },
         { once: true },
       )
@@ -332,6 +355,7 @@ export class PriceService {
       value: read.value,
       asOf: read.asOf && read.asOf < fetchedAt ? read.asOf : fetchedAt,
       source: source.name,
+      lastKnown: false,
     }
     if (!isRecent(price)) {
       const minutes = Math.round((fetchedAt.getTime() - price.asOf.getTime()) / 60_000)

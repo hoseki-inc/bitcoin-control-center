@@ -59,21 +59,35 @@ function priceService(settings: Partial<SavedPriceSettings> = {}, mempoolApiUrl 
   }
 }
 
-/** Replies that stay pending until released, one per request. */
+/** Replies that stay pending until released, one per request in the order they were made. */
 function heldReplies() {
-  const releases: Array<(response: Response) => void> = []
+  const releases: Array<((response: Response) => void) | null> = []
   return {
     next: async (): Promise<Response> =>
       new Promise<Response>((resolve) => {
         releases.push(resolve)
       }),
+    /** Answers every request still waiting. */
     release: (response: () => Response) => {
-      for (const resolve of releases.splice(0)) {
-        resolve(response())
-      }
+      releases.forEach((resolve, index) => {
+        resolve?.(response())
+        releases[index] = null
+      })
+    },
+    /** Answers the request made at `index` (0 is the first). */
+    releaseAt: (index: number, response: Response) => {
+      releases[index]?.(response)
+      releases[index] = null
     },
     count: () => releases.length,
   }
+}
+
+/** Lets pending promise callbacks run, so a released reply reaches the service. */
+async function settle(): Promise<void> {
+  await new Promise((resolve) => {
+    setTimeout(resolve, 0)
+  })
 }
 
 describe('current price', () => {
@@ -160,11 +174,15 @@ describe('current price', () => {
       let available = true
       stubPrices({ [BLOCK]: () => (available ? prices.block('83000', NOW_SECONDS - 600) : refused()) })
       const { service } = priceService()
-      expect((await service.getCurrentBtcPrice()).expect('fresh').value.toString()).toBe('83000')
+      const fresh = (await service.getCurrentBtcPrice()).expect('fresh')
+      expect(fresh.value.toString()).toBe('83000')
+      expect(fresh.lastKnown).toBe(false)
 
       available = false
       vi.advanceTimersByTime(19 * 60_000)
-      expect((await service.getCurrentBtcPrice()).expect('last known').value.toString()).toBe('83000')
+      const last = (await service.getCurrentBtcPrice()).expect('last known')
+      expect(last.value.toString()).toBe('83000')
+      expect(last.lastKnown).toBe(true)
 
       vi.advanceTimersByTime(60_000)
       expect((await service.getCurrentBtcPrice()).expectErr('too old').message).toContain('No BTC price available')
@@ -331,6 +349,103 @@ describe('current price', () => {
       expect((await after).expectErr('no fallback').message).toBe(message)
       expect((await before).expectErr('no fallback').message).toBe(message)
       expect(fetch.hosts()).toEqual([BLOCK, BLOCK])
+    })
+  })
+
+  it.each([
+    ['after the new source answered', true],
+    ['before anything asked the new source', false],
+  ])('hands a lookup over to the new source when the old final source fails %s', async (_label, askedNewSource) => {
+    await withTestSetup(async () => {
+      const block = heldReplies()
+      const fetch = stubPrices({ [BLOCK]: block.next, [COINBASE]: () => prices.coinbase('83105.04') })
+      const { service, settings } = priceService({ fallbacks: false })
+      const before = service.getCurrentBtcPrice()
+      await vi.waitFor(() => {
+        expect(block.count()).toBe(1)
+      })
+
+      settings.source = 'coinbase'
+      if (askedNewSource) {
+        expect((await service.getCurrentBtcPrice()).expect('new source').source).toBe('coinbase')
+      }
+      block.release(refused)
+      const handedOver = (await before).expect('handed over')
+      expect(handedOver.source).toBe('coinbase')
+      expect(fetch.hosts()).toEqual([BLOCK, COINBASE])
+    })
+  })
+
+  it('does not report an old cached price after the source changes and the old request fails', async () => {
+    await withTestSetup(async () => {
+      let blockAnswers = true
+      const block = heldReplies()
+      stubPrices({
+        [BLOCK]: async () => (blockAnswers ? prices.block('83000') : block.next()),
+        [COINBASE]: () => prices.coinbase('83105.04'),
+      })
+      const { service, settings } = priceService({ fallbacks: false })
+      expect((await service.getCurrentBtcPrice()).expect('cached').source).toBe('block')
+
+      blockAnswers = false
+      vi.advanceTimersByTime(61_000)
+      const before = service.getCurrentBtcPrice()
+      await vi.waitFor(() => {
+        expect(block.count()).toBe(1)
+      })
+      settings.source = 'coinbase'
+      block.release(refused)
+      const price = (await before).expect('current source')
+      expect(price.source).toBe('coinbase')
+      expect(price.lastKnown).toBe(false)
+    })
+  })
+
+  it('keeps a newer price when an older lookup for the same source finishes last', async () => {
+    await withTestSetup(async () => {
+      const block = heldReplies()
+      const fetch = stubPrices({ [BLOCK]: block.next, [COINBASE]: () => prices.coinbase('83105.04') })
+      const { service, settings } = priceService({ fallbacks: false })
+      const first = service.getCurrentBtcPrice()
+      await vi.waitFor(() => {
+        expect(block.count()).toBe(1)
+      })
+
+      settings.source = 'coinbase'
+      expect((await service.getCurrentBtcPrice()).expect('coinbase').source).toBe('coinbase')
+      settings.source = 'block'
+      const second = service.getCurrentBtcPrice()
+      await vi.waitFor(() => {
+        expect(block.count()).toBe(2)
+      })
+
+      block.releaseAt(1, prices.block('85000'))
+      expect((await second).expect('newer').value.toString()).toBe('85000')
+      block.releaseAt(0, prices.block('83000'))
+      await settle()
+      expect((await first).expect('handed over').value.toString()).toBe('85000')
+      expect((await service.getCurrentBtcPrice()).expect('cached').value.toString()).toBe('85000')
+      expect(fetch.hosts()).toEqual([BLOCK, COINBASE, BLOCK])
+    })
+  })
+
+  it('stops trying sources once the whole lookup runs out of time', async () => {
+    await withTestSetup(async () => {
+      const fetch = stubPrices({
+        [BLOCK]: async () => new Promise<Response>(() => undefined),
+        [MEMPOOL]: async () => new Promise<Response>(() => undefined),
+        [COINBASE]: () => prices.coinbase('83105.04'),
+      })
+      const service = new PriceService({
+        logger,
+        mempoolApiUrl: 'https://mempool.space',
+        settings: () => ({ source: undefined, fallbacks: true }),
+        requestTimeoutMs: 40,
+        lookupTimeoutMs: 60,
+      })
+      const result = await service.getCurrentBtcPrice()
+      expect(result.expectErr('out of time').message).toContain('Coinbase not tried: no price within 0.06 seconds')
+      expect(fetch.hosts()).toEqual([BLOCK, MEMPOOL])
     })
   })
 

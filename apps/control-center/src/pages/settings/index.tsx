@@ -152,10 +152,13 @@ function useFadingNotice(): [FadingNotice, (notice: 'shown' | null) => void] {
 // ─── Bitcoin price source ────────────────────────────────────────────────────
 
 type PriceSourceOptions = RouterOutput['settings']['priceSource']
+type PriceStatus = RouterOutput['settings']['priceStatus']
 const PRICE_SOURCE_QUERY_KEY = ['price-source']
+const PRICE_STATUS_QUERY_KEY = ['price-status']
 // Queries whose results include the USD price, refreshed when the price settings change.
 const PRICE_QUERY_KEYS = [
   PRICE_SOURCE_QUERY_KEY,
+  PRICE_STATUS_QUERY_KEY,
   getQueryKey(trpc.portalProve.retrieveBitcoinPrice),
   getQueryKey(trpc.portalProve.controlCenter.getData),
   getQueryKey(trpc.portalProve.onchain.bitcoinAccountBalances),
@@ -166,6 +169,11 @@ function PriceSourceSettings(): JSX.Element {
   const query = useQuery({
     queryKey: PRICE_SOURCE_QUERY_KEY,
     queryFn: async () => baseTrpc.settings.priceSource.query(),
+  })
+  // Separate from the options, which must stay usable while a price lookup waits on the network.
+  const statusQuery = useQuery({
+    queryKey: PRICE_STATUS_QUERY_KEY,
+    queryFn: async () => baseTrpc.settings.priceStatus.query(),
   })
   const mutation = useMutation({
     mutationFn: async (setting: { key: 'price_source' | 'price_fallbacks_enabled'; value: string }) =>
@@ -181,7 +189,7 @@ function PriceSourceSettings(): JSX.Element {
   ): Promise<void> => {
     setSavedNotice(null)
     if (options) {
-      queryClient.setQueryData(PRICE_SOURCE_QUERY_KEY, { ...options, ...update, price: null })
+      queryClient.setQueryData(PRICE_SOURCE_QUERY_KEY, { ...options, ...update })
     }
     let saved = true
     try {
@@ -192,8 +200,8 @@ function PriceSourceSettings(): JSX.Element {
     }
     await Promise.all(PRICE_QUERY_KEYS.map(async (queryKey) => queryClient.invalidateQueries({ queryKey })))
     // Confirm only once the chosen source has supplied a price; otherwise the status below explains why not.
-    const current = queryClient.getQueryData<PriceSourceOptions>(PRICE_SOURCE_QUERY_KEY)
-    if (saved && current?.price && current.price.source === current.selected) {
+    const status = queryClient.getQueryData<PriceStatus>(PRICE_STATUS_QUERY_KEY)
+    if (saved && status?.price && status.price.source === status.selected && !status.price.lastKnown) {
       setSavedNotice('shown')
     }
   }
@@ -201,9 +209,18 @@ function PriceSourceSettings(): JSX.Element {
   const label = (name: string | undefined): string | undefined =>
     options?.sources.find((source) => source.name === name)?.label
   const selectedLabel = label(options?.selected) ?? 'your primary price source'
-  // The server reports the price found under the current settings, so a different source means a fallback.
+  // Show a status only once it describes the current choice, never one from before a change.
+  const status =
+    statusQuery.data &&
+    !statusQuery.isFetching &&
+    !mutation.isLoading &&
+    statusQuery.data.selected === options?.selected
+      ? statusQuery.data
+      : null
   const fallbackLabel =
-    options?.price && options.price.source !== options.selected ? label(options.price.source) : undefined
+    status?.price && !status.price.lastKnown && status.price.source !== status.selected
+      ? label(status.price.source)
+      : undefined
 
   return (
     <SimpleGrid columns={{ base: 1, md: 2 }} spacing={{ base: 5, md: 10 }}>
@@ -287,7 +304,12 @@ function PriceSourceSettings(): JSX.Element {
             Using {fallbackLabel} while {selectedLabel} is unavailable.
           </Text>
         )}
-        {options && options.price === null && !query.isFetching && !mutation.isLoading && (
+        {status?.price?.lastKnown === true && (
+          <Text as="output" display="block" mt={2} textStyle="text/xs" color="neutral.600">
+            No price source is available right now. Showing the last known price.
+          </Text>
+        )}
+        {status && status.price === null && (
           <Text as="output" display="block" mt={2} textStyle="text/xs" color="error.700">
             No price is available right now.
           </Text>

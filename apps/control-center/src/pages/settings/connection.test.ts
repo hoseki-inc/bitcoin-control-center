@@ -232,7 +232,7 @@ async function withTestSetup(run: () => Promise<void>): Promise<void> {
           },
         })
       }
-      if (path === 'settings.priceSource') {
+      if (path === 'settings.priceSource' || path === 'settings.priceStatus') {
         return Response.json({ result: { data: { json: null } } })
       }
       if (path === 'settings.startTor') {

@@ -524,24 +524,38 @@ describe('price source settings', () => {
         vi.fn(async (url: string) => answers.get(new URL(url).host)?.() ?? new Response(null, { status: 503 })),
       )
       const caller = appRouter.createCaller({ app: await context() })
-      await expect(caller.settings.priceSource()).resolves.toMatchObject({
+      await expect(caller.settings.priceSource()).resolves.toMatchObject({ selected: 'mempool', fallbacks: true })
+      await expect(caller.settings.priceStatus()).resolves.toEqual({
         selected: 'mempool',
-        fallbacks: true,
-        price: { source: 'mempool', asOf: asOf.toISOString() },
+        price: { source: 'mempool', asOf: asOf.toISOString(), lastKnown: false },
       })
 
       await caller.settings.update({ key: 'price_source', value: 'coinbase' })
       await caller.settings.update({ key: 'price_fallbacks_enabled', value: 'false' })
-      await expect(caller.settings.priceSource()).resolves.toMatchObject({
+      await expect(caller.settings.priceSource()).resolves.toMatchObject({ selected: 'coinbase', fallbacks: false })
+      await expect(caller.settings.priceStatus()).resolves.toMatchObject({
         selected: 'coinbase',
-        fallbacks: false,
-        price: { source: 'coinbase' },
+        price: { source: 'coinbase', lastKnown: false },
       })
       await expect(caller.settings.get({ key: 'price_source' })).resolves.toBe('coinbase')
 
       answers.delete('api.coinbase.com')
       const withoutCoinbase = appRouter.createCaller({ app: await context() })
-      await expect(withoutCoinbase.settings.priceSource()).resolves.toMatchObject({ selected: 'coinbase', price: null })
+      await expect(withoutCoinbase.settings.priceStatus()).resolves.toEqual({ selected: 'coinbase', price: null })
+    })
+  })
+
+  it('lists the price sources without waiting for a price', async () => {
+    await withTestSetup(async () => {
+      onTestFinished(() => {
+        vi.unstubAllGlobals()
+      })
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => new Promise<Response>(() => undefined)),
+      )
+      const caller = appRouter.createCaller({ app: await context() })
+      await expect(caller.settings.priceSource()).resolves.toMatchObject({ selected: 'mempool' })
     })
   })
 

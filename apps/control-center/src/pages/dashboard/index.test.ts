@@ -91,7 +91,7 @@ const dataSource: DashboardDataSource = {
     manualAccountsQuery: { data: mocks.holdings, isLoading: false },
     etfAccountsQuery: { data: [], isLoading: false },
     btcPriceQuery: {
-      data: { value: new Decimal(50_000), asOf: new Date('2026-01-01T00:00:00Z'), source: 'block' },
+      data: { value: new Decimal(50_000), asOf: new Date('2026-01-01T00:00:00Z'), source: 'block', lastKnown: false },
       isLoading: false,
     },
   }),
