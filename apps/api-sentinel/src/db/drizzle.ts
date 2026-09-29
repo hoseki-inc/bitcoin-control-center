@@ -7,7 +7,8 @@ import { drizzle } from 'drizzle-orm/libsql'
 import { migrate } from 'drizzle-orm/libsql/migrator'
 import { readMigrationFiles } from 'drizzle-orm/migrator'
 import type { Logger } from 'pino'
-import * as schema from './schema'
+export type SentinelDb = ReturnType<typeof drizzle>
+export type SentinelTx = Parameters<Parameters<SentinelDb['transaction']>[0]>[0]
 
 const legacyNames = [
   '001_initial',
@@ -31,7 +32,7 @@ const legacyNames = [
 function migrationsFolder(): string {
   const moduleDir = dirname(fileURLToPath(import.meta.url))
   const bundledFolder = join(moduleDir, 'drizzle')
-  return existsSync(join(bundledFolder, 'meta', '_journal.json'))
+  return existsSync(join(bundledFolder, 'legacy', '001_initial.sql'))
     ? bundledFolder
     : join(moduleDir, '..', '..', 'drizzle')
 }
@@ -111,12 +112,12 @@ async function adoptLegacyDatabase(client: Client, folder: string, logger: Logge
   await client.batch(
     [
       {
-        sql: 'CREATE TABLE __drizzle_migrations (id INTEGER PRIMARY KEY AUTOINCREMENT, hash TEXT NOT NULL, created_at NUMERIC)',
+        sql: 'CREATE TABLE __drizzle_migrations (id INTEGER PRIMARY KEY, hash TEXT NOT NULL, created_at NUMERIC, name TEXT, applied_at TEXT)',
         args: [],
       },
       {
-        sql: 'INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)',
-        args: [baseline.hash, baseline.folderMillis],
+        sql: 'INSERT INTO __drizzle_migrations (hash, created_at, name, applied_at) VALUES (?, ?, ?, ?)',
+        args: [baseline.hash, baseline.folderMillis, baseline.name, new Date().toISOString()],
       },
     ],
     'write',
@@ -128,7 +129,7 @@ export async function openDrizzleDatabase(
   dataDir: string,
   logger: Logger,
 ): Promise<{
-  db: ReturnType<typeof drizzle<typeof schema>>
+  db: SentinelDb
   client: Client
   close(): void
 }> {
@@ -142,7 +143,7 @@ export async function openDrizzleDatabase(
     await client.execute('PRAGMA journal_mode = WAL')
     await client.execute('PRAGMA foreign_keys = ON')
     const folder = migrationsFolder()
-    const db = drizzle({ client, schema })
+    const db = drizzle({ client })
     await adoptLegacyDatabase(client, folder, logger)
     await migrate(db, { migrationsFolder: folder })
     await assertForeignKeys(client)
