@@ -45,7 +45,7 @@ export const createAppContext = asyncFn(async (logger: Logger): Promise<Result<A
 
   // Keep the exchange credential key outside SQLite so DB backups do not carry
   // both encrypted credentials and the key needed to decrypt them.
-  const credentialKey = await loadCredentialEncryptionKey({ dataDir: env.DATA_DIR, db: database.db, logger })
+  const credentialKey = loadCredentialEncryptionKey({ dataDir: env.DATA_DIR, logger })
   initEncryption(credentialKey.key)
 
   const network = env.BITCOIN_NETWORK === 'mainnet' ? Network.Mainnet : Network.Testnet
