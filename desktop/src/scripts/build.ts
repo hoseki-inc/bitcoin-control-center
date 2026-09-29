@@ -2,12 +2,19 @@ import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import * as esbuild from 'esbuild'
+import { signTorBinaries } from './sign-tor'
 
 async function main(): Promise<void> {
   const __dirname = path.dirname(fileURLToPath(import.meta.url))
   const DESKTOP_DIR = path.resolve(__dirname, '..', '..')
   const REPO_ROOT = path.resolve(DESKTOP_DIR, '..')
   const appDir = path.join(DESKTOP_DIR, 'app')
+
+  // The development launcher runs the downloaded binaries directly.
+  const torDir = path.join(DESKTOP_DIR, 'tor', 'mac')
+  if (process.platform === 'darwin' && fs.existsSync(path.join(torDir, 'tor'))) {
+    signTorBinaries(torDir)
+  }
 
   // Generated packaging input must not retain files from an older build.
   fs.rmSync(appDir, { recursive: true, force: true })

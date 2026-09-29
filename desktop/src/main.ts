@@ -6,6 +6,7 @@ import { showDeviceChooser } from './device-chooser'
 import { setupLedgerHidAccess } from './ledger-hid'
 import { startServer } from './server'
 import { createQuitHandler } from './shutdown'
+import { configureDesktopTlsTrust } from './tls-trust'
 import { TorManager } from './tor'
 import { setupTray } from './tray'
 import { setupWalletAccess } from './wallet-access'
@@ -40,10 +41,17 @@ function openExternal(url: string): void {
 }
 
 async function start(): Promise<void> {
+  // Configure trust before Sentinel creates Electrum or other outbound TLS clients.
+  configureDesktopTlsTrust()
   const dataDir = path.join(app.getPath('userData'), 'data')
   fs.mkdirSync(dataDir, { recursive: true })
-  torManager = new TorManager(app.getPath('userData'))
-  void torManager.start().catch(() => undefined)
+  const torPath = app.isPackaged
+    ? path.join(process.resourcesPath, 'tor')
+    : path.join(__dirname, '..', '..', 'tor', process.platform === 'win32' ? 'win' : 'mac')
+  torManager = new TorManager(
+    app.getPath('userData'),
+    path.join(torPath, process.platform === 'win32' ? 'tor.exe' : 'tor'),
+  )
 
   const serverDir = path.join(__dirname, '..', 'server')
   Object.assign(process.env, {
@@ -57,10 +65,11 @@ async function start(): Promise<void> {
     BITCOIN_NETWORK: 'mainnet',
     MEMPOOL_API_URL: 'https://mempool.space',
     NODE_ENV: 'production',
-    SOCKS_PROXY_HOST: '127.0.0.1',
-    SOCKS_PROXY_PORT: String(torManager.socksPort),
   })
-  server = await startServer(pathToFileURL(path.join(serverDir, 'main.js')).href)
+  server = await startServer(pathToFileURL(path.join(serverDir, 'main.js')).href, {
+    waitForElectrum: false,
+    tor: torManager,
+  })
   const origin = 'http://localhost:3400'
   if (quitting) {
     return
@@ -111,11 +120,11 @@ if (!app.requestSingleInstanceLock()) {
     shutdownServer: async () => {
       await startup
       // Stop Tor before draining requests; the final cleanup also covers forced exit.
-      torManager?.stop()
+      await torManager?.stop()
       await server?.shutdown()
     },
     stopTor: () => {
-      torManager?.stop()
+      void torManager?.stop()
     },
     destroyTray: () => {
       tray?.destroy()

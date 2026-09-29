@@ -9,6 +9,10 @@ import packageJson from '../package.json' with { type: 'json' }
 async function checkRuntime() {
   assert.equal(process.versions.electron, packageJson.devDependencies.electron, 'Run the locked Electron runtime')
 
+  // Exercise the actual platform's certificate-store APIs in the locked runtime.
+  const { configureDesktopTlsTrust } = await import('../src/tls-trust.ts')
+  configureDesktopTlsTrust()
+
   // Exercise the native addon with Electron's Node ABI, using synthetic data.
   const { default: Database } = await import('better-sqlite3')
   const temporaryDirectory = mkdtempSync(join(tmpdir(), 'control-center-runtime-'))
@@ -39,7 +43,7 @@ async function checkRuntime() {
   const pdf = await renderToBuffer(document)
   assert.equal(pdf.subarray(0, 5).toString(), '%PDF-')
   assert.ok(pdf.length > 1000, 'The PDF renderer must produce a complete document')
-  console.log(`Electron ${process.versions.electron}: SQLite persistence and PDF rendering passed`)
+  console.log(`Electron ${process.versions.electron}: system TLS trust, SQLite persistence, and PDF rendering passed`)
 }
 
 if (process.versions.electron) {
