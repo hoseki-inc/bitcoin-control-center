@@ -166,7 +166,7 @@ export const createAppContext = asyncFn(
       logger,
     })
 
-    const priceService = new PriceService({ logger })
+    const priceService = new PriceService({ logger, mempoolApiUrl: env.MEMPOOL_API_URL })
     const dailyRatesService = new DailyRatesService({ logger, mempoolApiUrl: env.MEMPOOL_API_URL })
 
     const controlCenterService = new ControlCenterService({

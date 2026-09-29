@@ -69,7 +69,7 @@ function createHarness() {
       .spyOn(onchainProvider, 'getConfirmedAccountBalances')
       .mockImplementation(asyncFn(async () => Ok(new IndexMap<Account, bigint>([[account, 100n]])))),
   }
-  const priceService = new PriceService({ logger })
+  const priceService = new PriceService({ logger, mempoolApiUrl: 'https://example.invalid' })
   const price = vi
     .spyOn(priceService, 'getCurrentBtcPrice')
     .mockImplementation(asyncFn(async () => Ok({ value: new Decimal(50_000), asOf: now })))

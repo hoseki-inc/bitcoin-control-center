@@ -14,18 +14,18 @@ async function withTestSetup(run: () => Promise<void>): Promise<void> {
 }
 
 describe('price response validation', () => {
-  it('preserves decimal conversion and caching for a valid current price', async () => {
+  it('reads and caches the current price from the configured mempool instance', async () => {
     await withTestSetup(async () => {
-      const fetch = vi.fn(async () => Response.json({ bitcoin: { usd: 12345.67 }, extra: true }))
+      const fetch = vi.fn(async (_url: string) => Response.json({ time: 1790700907, USD: 12345.67, EUR: 11000 }))
       vi.stubGlobal('fetch', fetch)
-      const service = new PriceService({ logger })
+      const service = new PriceService({ logger, mempoolApiUrl: 'http://mempool.local/' })
       expect((await service.getCurrentBtcPrice()).expect('valid price').value.toString()).toBe('12345.67')
       expect((await service.getCurrentBtcPrice()).expect('valid price').value.toString()).toBe('12345.67')
-      expect(fetch).toHaveBeenCalledTimes(1)
+      expect(fetch.mock.calls).toEqual([['http://mempool.local/api/v1/prices']])
     })
   })
 
-  it.each([null, {}, { bitcoin: null }, { bitcoin: { usd: '12345' } }])(
+  it.each([null, {}, { USD: null }, { USD: '12345' }, { USD: 0 }])(
     'returns an error for an invalid current price: %j',
     async (body) => {
       await withTestSetup(async () => {
@@ -33,11 +33,47 @@ describe('price response validation', () => {
           'fetch',
           vi.fn(async () => Response.json(body)),
         )
-        const result = await new PriceService({ logger }).getCurrentBtcPrice()
-        expect(result.expectErr('invalid response').message).toBe('BTC price not found in CoinGecko response')
+        const result = await new PriceService({ logger, mempoolApiUrl: 'https://example.invalid' }).getCurrentBtcPrice()
+        expect(result.expectErr('invalid response').message).toBe('BTC price not found in mempool.space response')
       })
     },
   )
+
+  it('returns an error when the price request cannot be made', async () => {
+    await withTestSetup(async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => {
+          throw new TypeError('fetch failed')
+        }),
+      )
+      const result = await new PriceService({ logger, mempoolApiUrl: 'https://example.invalid' }).getCurrentBtcPrice()
+      expect(result.expectErr('network failure').message).toBe('mempool.space price request failed: fetch failed')
+    })
+  })
+
+  it('waits before retrying a refused price request', async () => {
+    await withTestSetup(async () => {
+      vi.useFakeTimers({ toFake: ['Date'] })
+      onTestFinished(() => {
+        vi.useRealTimers()
+      })
+      const fetch = vi
+        .fn(async () => Response.json({ USD: 12345 }))
+        .mockResolvedValueOnce(new Response('rate limited', { status: 429, statusText: 'Too Many Requests' }))
+      vi.stubGlobal('fetch', fetch)
+      const service = new PriceService({ logger, mempoolApiUrl: 'https://example.invalid' })
+
+      const refused = 'mempool.space price error: 429 Too Many Requests'
+      expect((await service.getCurrentBtcPrice()).expectErr('refused').message).toBe(refused)
+      expect((await service.getCurrentBtcPrice()).expectErr('still waiting').message).toBe(refused)
+      expect(fetch).toHaveBeenCalledTimes(1)
+
+      vi.advanceTimersByTime(30_000)
+      expect((await service.getCurrentBtcPrice()).expect('recovered').value.toString()).toBe('12345')
+      expect(fetch).toHaveBeenCalledTimes(2)
+    })
+  })
 
   it('restores daily decimal rates from a valid historical response', async () => {
     await withTestSetup(async () => {

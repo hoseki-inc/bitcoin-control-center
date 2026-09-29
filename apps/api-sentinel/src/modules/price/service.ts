@@ -11,13 +11,18 @@ export interface BtcPrice {
 }
 
 const CACHE_TTL_MS = 60_000 // 60 seconds
+// Retrying on every query after a refusal would keep a rate limit tripped.
+const FAILURE_TTL_MS = 30_000
 
 export class PriceService {
   private readonly logger: Logger
+  private readonly mempoolApiUrl: string
   private cached: { price: BtcPrice; fetchedAt: number } | null = null
+  private failed: { error: Error; failedAt: number } | null = null
 
-  public constructor(deps: { logger: Logger }) {
+  public constructor(deps: { logger: Logger; mempoolApiUrl: string }) {
     this.logger = deps.logger.child({ module: 'price-service' })
+    this.mempoolApiUrl = deps.mempoolApiUrl.replace(/\/$/, '')
   }
 
   public getCurrentBtcPrice = asyncFn(async (): Promise<Result<BtcPrice, Error>> => {
@@ -25,26 +30,41 @@ export class PriceService {
     if (this.cached && Date.now() - this.cached.fetchedAt < CACHE_TTL_MS) {
       return Ok(this.cached.price)
     }
-
-    const response = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd')
-
-    if (!response.ok) {
-      return Err(new Error(`CoinGecko API error: ${response.status} ${response.statusText}`))
+    if (this.failed && Date.now() - this.failed.failedAt < FAILURE_TTL_MS) {
+      return Err(this.failed.error)
     }
 
-    const parsed = parseUnknown(z.object({ bitcoin: z.object({ usd: z.number() }) }), await response.json())
-    const usd = parsed.isOk() ? parsed.unwrap().bitcoin.usd : undefined
-    if (usd == null) {
-      return Err(new Error('BTC price not found in CoinGecko response'))
+    const result = await this.fetchPrice()
+    if (result.isErr()) {
+      this.failed = { error: result.unwrapErr(), failedAt: Date.now() }
+      return result
     }
 
-    const price: BtcPrice = {
-      value: new Decimal(usd),
-      asOf: new Date(),
-    }
-
+    const price = result.unwrap()
     this.cached = { price, fetchedAt: Date.now() }
-    this.logger.debug({ usd }, 'Fetched BTC price from CoinGecko')
+    this.failed = null
+    this.logger.debug({ usd: price.value.toString() }, 'Fetched BTC price from mempool.space')
     return Ok(price)
   })
+
+  private async fetchPrice(): Promise<Result<BtcPrice, Error>> {
+    let response: Response
+    try {
+      response = await fetch(`${this.mempoolApiUrl}/api/v1/prices`)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      return Err(new Error(`mempool.space price request failed: ${message}`))
+    }
+    if (!response.ok) {
+      return Err(new Error(`mempool.space price error: ${response.status} ${response.statusText}`))
+    }
+
+    const body: unknown = await response.json().catch(() => null)
+    const parsed = parseUnknown(z.object({ USD: z.number().positive() }), body)
+    if (parsed.isErr()) {
+      return Err(new Error('BTC price not found in mempool.space response'))
+    }
+
+    return Ok({ value: new Decimal(parsed.unwrap().USD), asOf: new Date() })
+  }
 }
