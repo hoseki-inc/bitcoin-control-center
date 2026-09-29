@@ -330,5 +330,34 @@ it('does not describe the previous source as a fallback after switching', async 
     })
     expect(container.textContent).not.toContain('unavailable.')
     expect(container.textContent).not.toContain('No price is available')
+    expect(container.textContent).toContain('Price settings saved')
+  })
+})
+
+it('does not confirm a new source that could not supply the price', async () => {
+  await withTestSetup(async () => {
+    let options = priceOptions
+    fetchMock.mockImplementation(async (input) => {
+      const url = parseUnknown(z.string(), input).unwrapOr('')
+      if (url.includes('/settings.priceSource')) {
+        return Response.json({ result: { data: { json: options } } })
+      }
+      if (url.endsWith('/settings.update')) {
+        // CoinGecko refuses, so the server falls back to Block.
+        options = { ...priceOptions, selected: 'coingecko' }
+      }
+      return Response.json({ result: { data: { json: null } } })
+    })
+    const select = await renderPriceSettings()
+    await act(async () => {
+      select.value = 'coingecko'
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await vi.waitFor(async () => {
+      await act(async () => {})
+      expect(container.textContent).toContain('Using Block while CoinGecko is unavailable.')
+      expect(queryClient.isFetching()).toBe(0)
+    })
+    expect(container.textContent).not.toContain('Price settings saved')
   })
 })

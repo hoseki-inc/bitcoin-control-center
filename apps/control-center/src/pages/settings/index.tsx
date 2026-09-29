@@ -21,6 +21,7 @@ import {
   Switch,
   Text,
   VStack,
+  VisuallyHidden,
   keyframes,
   useToken,
 } from '@chakra-ui/react'
@@ -120,6 +121,34 @@ export function SettingsPage({ desktop = isDesktop }: { desktop?: boolean }): JS
   )
 }
 
+// ─── Confirmations ───────────────────────────────────────────────────────────
+
+type FadingNotice = 'shown' | 'fading' | null
+
+// A confirmation such as "Tor ready" stays long enough to read, then fades.
+const NOTICE_VISIBLE_MS = 3000
+const NOTICE_FADE_MS = 600
+
+function useFadingNotice(): [FadingNotice, (notice: 'shown' | null) => void] {
+  const [notice, setNotice] = useState<FadingNotice>(null)
+  // Timers rather than an animation, so the notice stays readable when motion is reduced.
+  useEffect(() => {
+    if (notice === null) {
+      return undefined
+    }
+    const timer = setTimeout(
+      () => {
+        setNotice(notice === 'shown' ? 'fading' : null)
+      },
+      notice === 'shown' ? NOTICE_VISIBLE_MS : NOTICE_FADE_MS,
+    )
+    return (): void => {
+      clearTimeout(timer)
+    }
+  }, [notice])
+  return [notice, setNotice]
+}
+
 // ─── Bitcoin price source ────────────────────────────────────────────────────
 
 type PriceSourceOptions = RouterOutput['settings']['priceSource']
@@ -143,21 +172,30 @@ function PriceSourceSettings(): JSX.Element {
       baseTrpc.settings.update.mutate(setting),
   })
   const options: PriceSourceOptions | null = query.data ?? null
+  const [savedNotice, setSavedNotice] = useFadingNotice()
 
   const save = async (
     setting: { key: 'price_source' | 'price_fallbacks_enabled'; value: string },
     update: Partial<PriceSourceOptions>,
     failure: string,
   ): Promise<void> => {
+    setSavedNotice(null)
     if (options) {
       queryClient.setQueryData(PRICE_SOURCE_QUERY_KEY, { ...options, ...update, price: null })
     }
+    let saved = true
     try {
       await mutation.mutateAsync(setting)
     } catch {
+      saved = false
       toast.error(failure)
     }
     await Promise.all(PRICE_QUERY_KEYS.map(async (queryKey) => queryClient.invalidateQueries({ queryKey })))
+    // Confirm only once the chosen source has supplied a price; otherwise the status below explains why not.
+    const current = queryClient.getQueryData<PriceSourceOptions>(PRICE_SOURCE_QUERY_KEY)
+    if (saved && current?.price && current.price.source === current.selected) {
+      setSavedNotice('shown')
+    }
   }
 
   const label = (name: string | undefined): string | undefined =>
@@ -181,27 +219,45 @@ function PriceSourceSettings(): JSX.Element {
         <FormLabel htmlFor="price-source" textStyle="text/sm" mb={2}>
           Price source
         </FormLabel>
-        <Select
-          id="price-source"
-          aria-describedby="price-source-description"
-          value={options?.selected ?? ''}
-          onChange={(event) => {
-            const next = options?.sources.find((source) => source.name === event.target.value)
-            if (next) {
-              void save(
-                { key: 'price_source', value: next.name },
-                { selected: next.name },
-                'Could not save the price source. Please try again.',
-              )
-            }
-          }}
-        >
-          {options?.sources.map((source) => (
-            <option key={source.name} value={source.name}>
-              {source.label}
-            </option>
-          ))}
-        </Select>
+        <HStack gap={2}>
+          <Select
+            id="price-source"
+            flex={1}
+            aria-describedby="price-source-description"
+            value={options?.selected ?? ''}
+            onChange={(event) => {
+              const next = options?.sources.find((source) => source.name === event.target.value)
+              if (next) {
+                void save(
+                  { key: 'price_source', value: next.name },
+                  { selected: next.name },
+                  'Could not save the price source. Please try again.',
+                )
+              }
+            }}
+          >
+            {options?.sources.map((source) => (
+              <option key={source.name} value={source.name}>
+                {source.label}
+              </option>
+            ))}
+          </Select>
+          <HStack
+            as="output"
+            w={4}
+            flexShrink={0}
+            color="green.600"
+            opacity={savedNotice === 'shown' ? 1 : 0}
+            transition={`opacity ${NOTICE_FADE_MS}ms ease-out`}
+          >
+            {savedNotice !== null && (
+              <>
+                <CircleCheckIcon size={16} aria-hidden />
+                <VisuallyHidden>Price settings saved</VisuallyHidden>
+              </>
+            )}
+          </HStack>
+        </HStack>
         <Checkbox
           id="price-fallbacks"
           mt={4}
@@ -327,9 +383,6 @@ function useTorStartingFade(): string {
 }
 // Tor usually finishes well before this; after it, reassure rather than alarm.
 const TOR_SLOW_START_MS = 30_000
-// "Tor ready" stays long enough to read, then fades; the solid switch remains.
-const TOR_READY_VISIBLE_MS = 3000
-const TOR_READY_FADE_MS = 600
 
 const TorStartResponseSchema = z.object({
   result: z.object({ data: z.object({ json: z.object({ attempt: z.number().optional() }) }) }),
@@ -376,7 +429,7 @@ function ElectrumSettings(): JSX.Element {
   // while a start request is in flight; null means none has been requested.
   const [torAttemptAwaited, setTorAttemptAwaited] = useState<number | null>(null)
   const previousTorState = useRef<string | undefined>(undefined)
-  const [torReadyNotice, setTorReadyNotice] = useState<'shown' | 'fading' | null>(null)
+  const [torReadyNotice, setTorReadyNotice] = useFadingNotice()
   const [directConfirmation, setDirectConfirmation] = useState<'test' | 'save' | null>(null)
   const torState = electrumStatus?.tor?.state
   const torAttempt = electrumStatus?.tor?.attempt ?? 0
@@ -420,23 +473,7 @@ function ElectrumSettings(): JSX.Element {
       setTorReadyNotice(null)
     }
     previousTorState.current = torState
-  }, [torState, torEnabled])
-
-  // Timers rather than an animation, so the notice stays readable when motion is reduced.
-  useEffect(() => {
-    if (torReadyNotice === null) {
-      return undefined
-    }
-    const timer = setTimeout(
-      () => {
-        setTorReadyNotice(torReadyNotice === 'shown' ? 'fading' : null)
-      },
-      torReadyNotice === 'shown' ? TOR_READY_VISIBLE_MS : TOR_READY_FADE_MS,
-    )
-    return (): void => {
-      clearTimeout(timer)
-    }
-  }, [torReadyNotice])
+  }, [torState, torEnabled, setTorReadyNotice])
 
   const handleTorChange = (enabled: boolean): void => {
     setTorEnabled(enabled)
@@ -813,7 +850,7 @@ function TorStatusLine({
   state: string | undefined
   progress: number | undefined
   failure: string | null
-  readyNotice: 'shown' | 'fading' | null
+  readyNotice: FadingNotice
   slow: boolean
 }): JSX.Element | null {
   if (failure !== null) {
@@ -834,7 +871,7 @@ function TorStatusLine({
         gap={2}
         color="green.600"
         opacity={readyNotice === 'fading' ? 0 : 1}
-        transition={`opacity ${TOR_READY_FADE_MS}ms ease-out`}
+        transition={`opacity ${NOTICE_FADE_MS}ms ease-out`}
       >
         <CircleCheckIcon size={16} aria-hidden />
         <Text textStyle="text/sm">Tor ready</Text>
