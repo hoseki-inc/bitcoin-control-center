@@ -59,10 +59,30 @@ function runMigrations(db: Database.Database, logger: Logger): void {
       continue
     }
     logger.info({ migration: migration.name }, 'Applying migration')
-    db.transaction(() => {
-      db.exec(migration.sql)
-      db.prepare('INSERT INTO _migrations (name) VALUES (?)').run(migration.name)
-    })()
+    // SQLite ignores changes to foreign_keys inside a transaction. These two
+    // migrations rebuild exchange_accounts; dropping it with foreign keys on
+    // cascades into snapshots and imported transactions.
+    const rebuildsExchangeAccounts =
+      migration.name === '005_add_robinhood_provider' || migration.name === '010_add_kraken_provider'
+    if (rebuildsExchangeAccounts) {
+      db.pragma('foreign_keys = OFF')
+    }
+    try {
+      db.transaction(() => {
+        db.exec(migration.sql)
+        if (rebuildsExchangeAccounts) {
+          const violations: unknown = db.pragma('foreign_key_check')
+          if (!Array.isArray(violations) || violations.length > 0) {
+            throw new Error(`Foreign key check failed during ${migration.name}`)
+          }
+        }
+        db.prepare('INSERT INTO _migrations (name) VALUES (?)').run(migration.name)
+      })()
+    } finally {
+      if (rebuildsExchangeAccounts) {
+        db.pragma('foreign_keys = ON')
+      }
+    }
   }
 }
 

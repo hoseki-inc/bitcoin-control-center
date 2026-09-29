@@ -1,3 +1,4 @@
+import { cpSync } from 'node:fs'
 import * as esbuild from 'esbuild'
 
 const shared: esbuild.BuildOptions = {
@@ -17,7 +18,7 @@ const shared: esbuild.BuildOptions = {
     ].join(' '),
   },
   // Only keep native/complex packages external — bundle everything else
-  external: ['better-sqlite3', '@react-pdf/renderer', 'react', 'react-dom', 'yoga-layout'],
+  external: ['better-sqlite3', '@libsql/client/sqlite3', '@react-pdf/renderer', 'react', 'react-dom', 'yoga-layout'],
 }
 
 // cli.ts — self-starting entry point for standalone / Docker / Start9
@@ -33,3 +34,7 @@ await esbuild.build({
   entryPoints: ['src/main.ts'],
   outfile: 'dist/main.js',
 })
+
+// Migration SQL and the Drizzle journal are read at startup, including inside
+// the packaged desktop and StartOS server where source files are unavailable.
+cpSync('drizzle', 'dist/drizzle', { recursive: true, force: true })
