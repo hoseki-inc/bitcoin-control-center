@@ -347,12 +347,6 @@ interface SigningIdentity {
   publicKey: string
 }
 
-const cosignerScriptTypes = {
-  p2sh: 'p2pkh',
-  p2wsh: 'p2wpkh',
-  'p2sh-p2wsh': 'p2sh-p2wpkh',
-} as const satisfies Record<MultiSigAccount['scriptType'], SingleSigAccount['scriptType']>
-
 function getSigningIdentity(db: Database.Database, accountId: string, keystoreId: string): SigningIdentity {
   const row = db
     .prepare<unknown[], { descriptor: string; network: string }>(
@@ -384,11 +378,11 @@ function getSigningIdentity(db: Database.Database, accountId: string, keystoreId
   const signingKey = xpub.derive(0).derive(0)
   return {
     keystoreId: keystore.id,
-    // Multisig uses individual cosigner messages; singlesig proves the descriptor address itself.
+    // Every multisig cosigner proves its individual key using P2PKH, regardless of the multisig script type.
     address:
       account instanceof SingleSigAccount
         ? account.receiveAddress(0, network).toString()
-        : signingKey.address(cosignerScriptTypes[account.scriptType], network).toString(),
+        : signingKey.address('p2pkh', network).toString(),
     publicKey: signingKey.publicKey().toString('hex'),
   }
 }

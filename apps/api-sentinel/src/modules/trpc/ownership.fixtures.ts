@@ -307,7 +307,11 @@ export function setupStoredProof(scenario: StoredProof): StoredOwnershipProof {
     const id = hosid('re_mesg')
     const keystoreId = hosid('re_ks')
     const messageText = 'Synthetic ownership proof'
-    const address = signer.account.receiveAddress(0).toString()
+    const signingAccount =
+      scenario === 'duplicate key' || scenario === 'aliased key'
+        ? new SingleSigAccount('p2pkh', signer.xpub)
+        : signer.account
+    const address = signingAccount.receiveAddress(0).toString()
     const signature = Signer.sign(signer.wif, address, messageText + ` ID=${id.split('_').at(-1)}`)
     const storedSignature = scenario === 'invalid signature' ? 'invalid' : signature
     db.prepare('INSERT INTO keystores (id, account_id, label, xpub) VALUES (?, ?, ?, ?)').run(
