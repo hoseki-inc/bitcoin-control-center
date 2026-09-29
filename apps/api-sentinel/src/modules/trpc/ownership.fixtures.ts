@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { MultiSigAccount, SingleSigAccount } from '@hoseki/packages/bitcoin/account'
-import type { SingleSigAccountScriptType } from '@hoseki/packages/bitcoin/account_props'
+import type { MultiSigAccountScriptType, SingleSigAccountScriptType } from '@hoseki/packages/bitcoin/account_props'
 import { ecc } from '@hoseki/packages/bitcoin/lib/ecc'
 import { Network } from '@hoseki/packages/bitcoin/network'
 import { ElectrumProvider } from '@hoseki/packages/bitcoin/onchain/electrum_provider'
@@ -234,9 +234,10 @@ export async function createMultisigClaim(
   registry: OwnershipRegistry,
   keys: SigningKey[],
   descriptorKeys: SigningKey[] = [owner, secondOwner, thirdOwner],
+  scriptType: MultiSigAccountScriptType = 'p2wsh',
 ): Promise<Awaited<ReturnType<OwnershipRegistry['claims']['create']['multisig']>>> {
   const account = MultiSigAccount.from({
-    scriptType: 'p2wsh',
+    scriptType,
     threshold: 2,
     isSorted: true,
     xpubs: descriptorKeys.map((key) => key.xpub),

@@ -81,29 +81,88 @@ describe('ownership verification account binding', () => {
     await expect(registry.claims.list({ excludePending: false })).resolves.toEqual([])
   })
 
-  it.each([
+  describe.each([
     { network: 'mainnet', keys: [thirdOwner, owner, secondOwner] },
     { network: 'testnet', keys: [testnetThirdOwner, testnetOwner, testnetSecondOwner] },
-  ])('accepts descriptor members in any order on $network', async ({ keys }) => {
-    const registry = setupOwnershipRegistry()
-    const created = await createMultisigClaim(registry, keys, [...keys].reverse())
-    const challenge = await registry.challenges.create({ claimId: created.claim.id })
-    for (const [index, store] of created.keystores.slice(0, 2).entries()) {
-      const key = keys[index]
-      if (key === undefined) {
-        expect.fail('Fixture key must exist')
-      }
-      await signChallengeMessage(registry, challenge.id, store.id, key)
-      if (index === 0) {
+  ])('$network multisig', ({ keys }) => {
+    const scriptTypes = [
+      { accountType: 'p2sh', signerType: 'p2pkh' },
+      { accountType: 'p2wsh', signerType: 'p2wpkh' },
+      { accountType: 'p2sh-p2wsh', signerType: 'p2sh-p2wpkh' },
+    ] as const
+
+    it.each(scriptTypes)(
+      'verifies $accountType with $signerType cosigner addresses',
+      async ({ accountType, signerType }) => {
+        const registry = setupOwnershipRegistry()
+        const created = await createMultisigClaim(registry, keys, [...keys].reverse(), accountType)
+        const challenge = await registry.challenges.create({ claimId: created.claim.id })
+        for (const [index, store] of created.keystores.slice(0, 2).entries()) {
+          const key = keys[index]
+          if (key === undefined) {
+            expect.fail('Fixture key must exist')
+          }
+          const { signedMessage } = await registry.challengeMessages.create({
+            challengeId: challenge.id,
+            keystoreId: store.id,
+          })
+          expect(signedMessage.address).toBe(new SingleSigAccount(signerType, key.xpub).receiveAddress(0).toString())
+          await signChallengeMessage(registry, challenge.id, store.id, key)
+          if (index === 0) {
+            await expect(registry.challenges.complete({ challengeId: challenge.id })).rejects.toMatchObject({
+              code: 'BAD_REQUEST',
+            })
+            await expect(registry.claims.get.byId({ id: created.claim.id })).resolves.toMatchObject({
+              status: 'pending',
+            })
+          }
+        }
+        await expect(registry.challenges.complete({ challengeId: challenge.id })).resolves.toMatchObject({
+          isSatisfied: true,
+        })
+      },
+    )
+
+    it.each(scriptTypes)(
+      'rejects the wrong cosigner address script type for $accountType',
+      async ({ accountType, signerType }) => {
+        const { registry, db } = setupOwnershipHarness()
+        const created = await createMultisigClaim(registry, keys, keys, accountType)
+        const challenge = await registry.challenges.create({ claimId: created.claim.id })
+        const [store, secondStore] = created.keystores
+        const [key, secondKey] = keys
+        if (!store || !secondStore || !key || !secondKey) {
+          expect.fail('Fixture must contain two cosigners')
+        }
+        await signChallengeMessage(registry, challenge.id, secondStore.id, secondKey)
+        const { signedMessage } = await registry.challengeMessages.create({
+          challengeId: challenge.id,
+          keystoreId: store.id,
+        })
+        const wrongScriptType = signerType === 'p2wpkh' ? 'p2pkh' : 'p2wpkh'
+        const wrongAddress = new SingleSigAccount(wrongScriptType, key.xpub).receiveAddress(0).toString()
+        const signature = Signer.sign(key.wif, wrongAddress, signedMessage.messageTextToSign)
+        db.prepare('UPDATE signed_messages SET address = ? WHERE id = ?').run(wrongAddress, signedMessage.id)
+        await expect(
+          registry.challengeMessages.create({ challengeId: challenge.id, keystoreId: store.id }),
+        ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
+        await expect(
+          registry.challengeMessages.complete({ signedMessageId: signedMessage.id, signature }),
+        ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
+        expect(db.prepare('SELECT signature FROM signed_messages WHERE id = ?').get(signedMessage.id)).toEqual({
+          signature: null,
+        })
+        db.prepare('UPDATE signed_messages SET signature = ?, signed_at = ? WHERE id = ?').run(
+          signature,
+          new Date().toISOString(),
+          signedMessage.id,
+        )
         await expect(registry.challenges.complete({ challengeId: challenge.id })).rejects.toMatchObject({
           code: 'BAD_REQUEST',
         })
         await expect(registry.claims.get.byId({ id: created.claim.id })).resolves.toMatchObject({ status: 'pending' })
-      }
-    }
-    await expect(registry.challenges.complete({ challengeId: challenge.id })).resolves.toMatchObject({
-      isSatisfied: true,
-    })
+      },
+    )
   })
 
   describe.each([

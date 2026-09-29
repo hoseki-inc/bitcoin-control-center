@@ -347,6 +347,12 @@ interface SigningIdentity {
   publicKey: string
 }
 
+const cosignerScriptTypes = {
+  p2sh: 'p2pkh',
+  p2wsh: 'p2wpkh',
+  'p2sh-p2wsh': 'p2sh-p2wpkh',
+} as const satisfies Record<MultiSigAccount['scriptType'], SingleSigAccount['scriptType']>
+
 function getSigningIdentity(db: Database.Database, accountId: string, keystoreId: string): SigningIdentity {
   const row = db
     .prepare<unknown[], { descriptor: string; network: string }>(
@@ -382,7 +388,7 @@ function getSigningIdentity(db: Database.Database, accountId: string, keystoreId
     address:
       account instanceof SingleSigAccount
         ? account.receiveAddress(0, network).toString()
-        : signingKey.address('p2wpkh', network).toString(),
+        : signingKey.address(cosignerScriptTypes[account.scriptType], network).toString(),
     publicKey: signingKey.publicKey().toString('hex'),
   }
 }
