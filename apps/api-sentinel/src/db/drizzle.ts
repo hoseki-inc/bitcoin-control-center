@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import type { Client } from '@libsql/client'
+import type { Client, InArgs, InStatement } from '@libsql/client'
 import { createClient } from '@libsql/client/sqlite3'
 import { drizzle } from 'drizzle-orm/libsql'
 import { migrate } from 'drizzle-orm/libsql/migrator'
@@ -37,6 +37,26 @@ export async function openDrizzleDatabase(
     await client.execute('PRAGMA journal_mode = WAL')
     const db = drizzle({ client })
     await migrate(db, { migrationsFolder: migrationsFolder() })
+
+    // libSQL rejects queries while an interactive transaction owns its only
+    // connection. Queue ordinary queries and whole transactions together;
+    // queries on the transaction's own client bypass this queue.
+    let pending = Promise.resolve()
+    async function serial<T>(run: () => Promise<T>): Promise<T> {
+      const result = pending.then(run)
+      pending = result.then(
+        () => {},
+        () => {},
+      )
+      return result
+    }
+    const execute = client.execute.bind(client)
+    const batch = client.batch.bind(client)
+    const transaction = db.transaction.bind(db)
+    client.execute = async (...args: [InStatement] | [string, InArgs?]) =>
+      serial(async () => (args.length === 2 ? execute(args[0], args[1]) : execute(args[0])))
+    client.batch = async (statements, mode) => serial(async () => batch(statements, mode))
+    db.transaction = async (run, config) => serial(async () => transaction(run, config))
     return {
       db,
       client,

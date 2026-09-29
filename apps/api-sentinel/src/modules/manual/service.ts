@@ -42,16 +42,18 @@ export class ManualService {
   }): Promise<Result<ManualAccountDto, Error>> {
     const id = nanoid()
     const now = new Date().toISOString()
-    await this.db.transaction(async (tx) => {
-      await tx.insert(manualAccounts).values({
+    await this.db.batch([
+      this.db.insert(manualAccounts).values({
         id,
         displayName: args.displayName,
         balanceSats: args.balanceSats,
         balanceAsOf: args.balanceAsOf,
         createdAt: now,
-      })
-      await this.insertSnapshot(tx, id, args.balanceSats, args.balanceAsOf)
-    })
+      }),
+      this.db
+        .insert(manualBalanceSnapshots)
+        .values({ accountId: id, balanceSats: args.balanceSats, timestamp: args.balanceAsOf }),
+    ])
     this.logger.info({ id, displayName: args.displayName, balanceSats: args.balanceSats }, 'Manual account created')
     return Ok({
       id,
@@ -66,8 +68,8 @@ export class ManualService {
     return this.db.select().from(manualAccounts).orderBy(desc(manualAccounts.createdAt))
   }
 
-  public async getAccount(id: string): Promise<ManualAccountDto | null> {
-    const [account] = await this.db.select().from(manualAccounts).where(eq(manualAccounts.id, id))
+  public async getAccount(id: string, db: SentinelDb | SentinelTx = this.db): Promise<ManualAccountDto | null> {
+    const [account] = await db.select().from(manualAccounts).where(eq(manualAccounts.id, id))
     return account ?? null
   }
 
@@ -76,23 +78,23 @@ export class ManualService {
     balanceSats: string
     balanceAsOf: string
   }): Promise<Result<ManualAccountDto, Error>> {
-    const account = await this.getAccount(args.accountId)
-    if (!account) {
-      return Err(new Error('Manual account not found'))
-    }
-    const netTxTotal = await this.getNetTransactionTotal(args.accountId)
-    if (BigInt(args.balanceSats) < netTxTotal) {
-      return Err(new Error(`Balance cannot be less than net transaction total (${netTxTotal.toString()} sats)`))
-    }
-    await this.db.transaction(async (tx) => {
+    return this.db.transaction(async (tx) => {
+      const account = await this.getAccount(args.accountId, tx)
+      if (!account) {
+        return Err(new Error('Manual account not found'))
+      }
+      const netTxTotal = await this.getNetTransactionTotal(args.accountId, tx)
+      if (BigInt(args.balanceSats) < netTxTotal) {
+        return Err(new Error(`Balance cannot be less than net transaction total (${netTxTotal.toString()} sats)`))
+      }
       await tx
         .update(manualAccounts)
         .set({ balanceSats: args.balanceSats, balanceAsOf: args.balanceAsOf })
         .where(eq(manualAccounts.id, args.accountId))
       await this.insertSnapshot(tx, args.accountId, args.balanceSats, args.balanceAsOf)
+      this.logger.info({ accountId: args.accountId, balanceSats: args.balanceSats }, 'Manual account balance updated')
+      return Ok({ ...account, balanceSats: args.balanceSats, balanceAsOf: args.balanceAsOf })
     })
-    this.logger.info({ accountId: args.accountId, balanceSats: args.balanceSats }, 'Manual account balance updated')
-    return Ok({ ...account, balanceSats: args.balanceSats, balanceAsOf: args.balanceAsOf })
   }
 
   public async renameAccount(args: {
@@ -131,32 +133,32 @@ export class ManualService {
     note?: string
     addToBalance?: boolean
   }): Promise<Result<ManualTransactionDto, Error>> {
-    const account = await this.getAccount(args.accountId)
-    if (!account) {
-      return Err(new Error('Manual account not found'))
-    }
-    const id = nanoid()
-    const now = new Date().toISOString()
-    const signedAmount = this.getSignedAmount(args.type, BigInt(args.amountSats))
-    const currentBalance = BigInt(account.balanceSats)
-    const netTxTotal = await this.getNetTransactionTotal(args.accountId)
-    const newNetTotal = netTxTotal + signedAmount
-
-    let newBalance = currentBalance
-    if (args.addToBalance === true) {
-      newBalance = currentBalance + signedAmount
-      if (newBalance < 0n) {
-        newBalance = 0n
+    return this.db.transaction(async (tx) => {
+      const account = await this.getAccount(args.accountId, tx)
+      if (!account) {
+        return Err(new Error('Manual account not found'))
       }
-    } else if (newNetTotal > currentBalance) {
-      return Err(
-        new Error(
-          'Transaction total would exceed the current balance. Check "Add this amount to balance" or update the balance first.',
-        ),
-      )
-    }
+      const id = nanoid()
+      const now = new Date().toISOString()
+      const signedAmount = this.getSignedAmount(args.type, BigInt(args.amountSats))
+      const currentBalance = BigInt(account.balanceSats)
+      const netTxTotal = await this.getNetTransactionTotal(args.accountId, tx)
+      const newNetTotal = netTxTotal + signedAmount
 
-    await this.db.transaction(async (tx) => {
+      let newBalance = currentBalance
+      if (args.addToBalance === true) {
+        newBalance = currentBalance + signedAmount
+        if (newBalance < 0n) {
+          newBalance = 0n
+        }
+      } else if (newNetTotal > currentBalance) {
+        return Err(
+          new Error(
+            'Transaction total would exceed the current balance. Check "Add this amount to balance" or update the balance first.',
+          ),
+        )
+      }
+
       if (args.addToBalance === true) {
         await tx
           .update(manualAccounts)
@@ -173,25 +175,25 @@ export class ManualService {
         createdAt: now,
       })
       await this.insertSnapshot(tx, args.accountId, newBalance.toString(), args.transactedAt)
-    })
-    if (args.addToBalance === true) {
+      if (args.addToBalance === true) {
+        this.logger.info(
+          { accountId: args.accountId, oldBalance: currentBalance.toString(), newBalance: newBalance.toString() },
+          'Updated balance per addToBalance flag',
+        )
+      }
       this.logger.info(
-        { accountId: args.accountId, oldBalance: currentBalance.toString(), newBalance: newBalance.toString() },
-        'Updated balance per addToBalance flag',
+        { id, accountId: args.accountId, type: args.type, amountSats: args.amountSats },
+        'Manual transaction added',
       )
-    }
-    this.logger.info(
-      { id, accountId: args.accountId, type: args.type, amountSats: args.amountSats },
-      'Manual transaction added',
-    )
-    return Ok({
-      id,
-      accountId: args.accountId,
-      type: args.type,
-      amountSats: args.amountSats,
-      transactedAt: args.transactedAt,
-      note: args.note ?? null,
-      createdAt: now,
+      return Ok({
+        id,
+        accountId: args.accountId,
+        type: args.type,
+        amountSats: args.amountSats,
+        transactedAt: args.transactedAt,
+        note: args.note ?? null,
+        createdAt: now,
+      })
     })
   }
 
@@ -204,26 +206,26 @@ export class ManualService {
   }
 
   public async deleteTransaction(transactionId: string): Promise<Result<void, Error>> {
-    const [row] = await this.db.select().from(manualTransactions).where(eq(manualTransactions.id, transactionId))
-    if (!row) {
-      return Err(new Error('Transaction not found'))
-    }
-    const account = await this.getAccount(row.accountId)
-    if (!account) {
-      return Err(new Error('Manual account not found'))
-    }
-    const newBalance = BigInt(account.balanceSats) - this.getSignedAmount(row.type, BigInt(row.amountSats))
-    const now = new Date().toISOString()
-    await this.db.transaction(async (tx) => {
+    return this.db.transaction(async (tx) => {
+      const [row] = await tx.select().from(manualTransactions).where(eq(manualTransactions.id, transactionId))
+      if (!row) {
+        return Err(new Error('Transaction not found'))
+      }
+      const account = await this.getAccount(row.accountId, tx)
+      if (!account) {
+        return Err(new Error('Manual account not found'))
+      }
+      const newBalance = BigInt(account.balanceSats) - this.getSignedAmount(row.type, BigInt(row.amountSats))
+      const now = new Date().toISOString()
       await tx.delete(manualTransactions).where(eq(manualTransactions.id, transactionId))
       await tx
         .update(manualAccounts)
         .set({ balanceSats: newBalance.toString() })
         .where(eq(manualAccounts.id, row.accountId))
       await this.insertSnapshot(tx, row.accountId, newBalance.toString(), now)
+      this.logger.info({ transactionId, accountId: row.accountId }, 'Manual transaction deleted')
+      return Ok(undefined)
     })
-    this.logger.info({ transactionId, accountId: row.accountId }, 'Manual transaction deleted')
-    return Ok(undefined)
   }
 
   public async getTransactionEntries(accountIds?: string[]): Promise<Array<{ timestamp: Date; value: bigint }>> {
@@ -273,8 +275,8 @@ export class ManualService {
       })
   }
 
-  public async getNetTransactionTotal(accountId: string): Promise<bigint> {
-    const rows = await this.db
+  public async getNetTransactionTotal(accountId: string, db: SentinelDb | SentinelTx = this.db): Promise<bigint> {
+    const rows = await db
       .select({ type: manualTransactions.type, amountSats: manualTransactions.amountSats })
       .from(manualTransactions)
       .where(eq(manualTransactions.accountId, accountId))

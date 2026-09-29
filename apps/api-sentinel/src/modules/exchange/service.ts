@@ -509,16 +509,16 @@ export class ExchangeService {
     }
 
     const now = new Date().toISOString()
-    await this.db.transaction(async (tx) => {
-      await tx.update(exchangeAccounts).set({ balanceSats, balanceAsOf: now }).where(eq(exchangeAccounts.id, accountId))
-      await tx
+    await this.db.batch([
+      this.db.update(exchangeAccounts).set({ balanceSats, balanceAsOf: now }).where(eq(exchangeAccounts.id, accountId)),
+      this.db
         .insert(exchangeBalanceSnapshots)
         .values({ accountId, balanceSats, timestamp: now })
         .onConflictDoUpdate({
           target: [exchangeBalanceSnapshots.accountId, exchangeBalanceSnapshots.timestamp],
           set: { balanceSats },
-        })
-    })
+        }),
+    ])
 
     this.logger.info({ accountId, balanceSats }, 'Exchange balance refreshed')
     return Ok({

@@ -645,16 +645,16 @@ const registryRouter = t.router({
           const keystoreId = hosid('re_ks')
           const now = new Date().toISOString()
 
-          await db.transaction(async (tx) => {
-            await tx.insert(accountTable).values({
+          await db.batch([
+            db.insert(accountTable).values({
               id: accountId,
               network,
               descriptor: input.account,
               displayName: input.displayName,
               status: 'pending',
               createdAt: now,
-            })
-            await tx.insert(keystoreTable).values({
+            }),
+            db.insert(keystoreTable).values({
               id: keystoreId,
               accountId,
               label: input.keystore.label,
@@ -663,8 +663,8 @@ const registryRouter = t.router({
               derivationPath: input.keystore.derivationPath,
               xpub,
               createdAt: now,
-            })
-          })
+            }),
+          ])
 
           const claim = await getFullClaimDto(db, accountId)
           if (!claim) {
@@ -1187,12 +1187,12 @@ const registryRouter = t.router({
       const messageText = `I, ${identifier}, affirm sole control of this account. No other third-party claims/access permitted. Ownership revocable solely by me.`
       const now = new Date().toISOString()
 
-      await db.transaction(async (tx) => {
-        await tx.insert(challenges).values({ id: challengeId, accountId: accountRow.id, createdAt: now })
-        await tx
+      await db.batch([
+        db.insert(challenges).values({ id: challengeId, accountId: accountRow.id, createdAt: now }),
+        db
           .insert(signedMessagesTable)
-          .values({ id: signedMessageId, challengeId, keystoreId: keystore.id, address, messageText, createdAt: now })
-      })
+          .values({ id: signedMessageId, challengeId, keystoreId: keystore.id, address, messageText, createdAt: now }),
+      ])
 
       return {
         challenge: {
