@@ -5,7 +5,7 @@ const DEVELOPMENT_PORTS = new Set([3400, 4269])
 
 /**
  * Reuse a non-development port when possible; a fresh or legacy profile requests
- * an OS-assigned port. Preferences must not depend on this port staying available.
+ * an OS-assigned port.
  */
 export function readPreferredPort(file: string): number {
   try {

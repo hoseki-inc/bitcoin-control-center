@@ -47,6 +47,8 @@ export async function startServer(
     throw new TypeError('The Sentinel server must provide a shutdown function')
   }
   if (!hasPort(server)) {
+    // The server is already listening; stop it rather than leave it running unused.
+    await Promise.resolve(server.shutdown.call(server)).catch(() => undefined)
     throw new TypeError('The Sentinel server must report the port it bound')
   }
   const shutdown = server.shutdown

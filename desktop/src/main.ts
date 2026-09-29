@@ -13,6 +13,8 @@ import { setupTray } from './tray'
 import { setupWalletAccess } from './wallet-access'
 import { setupWindowPolicy } from './window-policy'
 
+const LOOPBACK_HOST = '127.0.0.1'
+
 interface LocalServer {
   port: number
   shutdown: () => Promise<void>
@@ -59,7 +61,9 @@ async function start(): Promise<void> {
   Object.assign(process.env, {
     DATA_DIR: dataDir,
     APP_DIR: serverDir,
-    HOST: 'localhost',
+    // Bind one explicit loopback address. With "localhost", Fastify ignores a failed
+    // second address, so another service could answer the window on this port.
+    HOST: LOOPBACK_HOST,
     ELECTRUM_HOST: 'electrum.blockstream.info',
     ELECTRUM_PORT: '50002',
     ELECTRUM_PROTOCOL: 'ssl',
@@ -73,7 +77,7 @@ async function start(): Promise<void> {
   server = await startOnPreferredPort(path.join(app.getPath('userData'), 'port'), async (listenPort) =>
     startServer(serverModule, { waitForElectrum: false, tor, listenPort }),
   )
-  const origin = `http://localhost:${server.port}`
+  const origin = `http://${LOOPBACK_HOST}:${server.port}`
   if (quitting) {
     return
   }

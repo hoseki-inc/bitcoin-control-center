@@ -85,15 +85,19 @@ test('forwards desktop offline and managed Tor options to the bundled server', a
   await server.shutdown()
 })
 
-for (const value of [
-  '{ async shutdown() {} }',
-  '{ port: 0, async shutdown() {} }',
-  '{ port: "3400", async shutdown() {} }',
-]) {
-  test(`rejects a server that does not report the port it bound: ${value}`, async () => {
+for (const port of ['', 'port: 0,', 'port: "3400",']) {
+  test(`stops and rejects a server that does not report the port it bound: {${port}}`, async () => {
+    globalThis.serverStopped = false
     await assert.rejects(
-      startServer(moduleUrl(`export async function main() { return ${value} }`)),
+      startServer(
+        moduleUrl(
+          `export async function main() { return { ${port} async shutdown() { globalThis.serverStopped = true } } }`,
+        ),
+      ),
       /must report the port it bound/,
     )
+    // A server that is already listening must not be left running.
+    assert.equal(globalThis.serverStopped, true)
+    delete globalThis.serverStopped
   })
 }

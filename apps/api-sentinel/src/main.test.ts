@@ -153,4 +153,21 @@ describe('Sentinel listening port', () => {
     expect(failed.stops()).toBe(1)
     expect(sockets[0]?.listening).toBe(true)
   })
+
+  it('fails on an occupied loopback address instead of binding only another address', async () => {
+    setup()
+    // With "localhost", Fastify would bind [::1] and ignore this occupied IPv4 address.
+    const occupied = await reservePort()
+    const failed = queueContext(3400)
+    await expect(main({ listenPort: occupied }, createContext)).rejects.toMatchObject({ code: 'EADDRINUSE' })
+    expect(failed.closes()).toBe(1)
+  })
+
+  it('answers only on its configured loopback address', async () => {
+    setup()
+    queueContext(3400)
+    const server = await start({ listenPort: 0 })
+    await expect(health(server.port)).resolves.toEqual({ status: 'ok' })
+    await expect(fetch(`http://[::1]:${server.port}/health`)).rejects.toThrow('fetch failed')
+  })
 })
