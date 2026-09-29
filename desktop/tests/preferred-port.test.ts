@@ -1,17 +1,19 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { expect, it, onTestFinished, vi } from 'vitest'
 import { readPreferredPort, startOnPreferredPort, writePreferredPort } from '../src/preferred-port'
 
-let file: string
-
-beforeEach(() => {
-  file = join(mkdtempSync(join(tmpdir(), 'bcc-port-')), 'port')
-})
-afterEach(() => rmSync(join(file, '..'), { recursive: true, force: true }))
+function portFile(): string {
+  const directory = mkdtempSync(join(tmpdir(), 'bcc-port-'))
+  onTestFinished(() => {
+    rmSync(directory, { recursive: true, force: true })
+  })
+  return join(directory, 'port')
+}
 
 it('requests an OS-assigned port for fresh profiles, invalid files, and saved development ports', () => {
+  const file = portFile()
   expect(readPreferredPort(file)).toBe(0)
   for (const value of ['', 'abc', '80', '70000', '5000.5', '3400', '4269']) {
     writeFileSync(file, value)
@@ -20,21 +22,28 @@ it('requests an OS-assigned port for fresh profiles, invalid files, and saved de
 })
 
 it('round-trips the last bound port', () => {
+  const file = portFile()
   writePreferredPort(file, 51234)
   expect(readFileSync(file, 'utf8')).toBe('51234\n')
   expect(readPreferredPort(file)).toBe(51234)
 })
 
 it('does not prevent startup if the preferred port file cannot be written', async () => {
-  expect(() => writePreferredPort(join(file, 'missing', 'port'), 1)).not.toThrow()
+  const file = portFile()
+  expect(() => {
+    writePreferredPort(join(file, 'missing', 'port'), 1)
+  }).not.toThrow()
   await expect(startOnPreferredPort(join(file, 'missing', 'port'), async () => ({ port: 51234 }))).resolves.toEqual({
     port: 51234,
   })
 })
 
 it('does not retry unrelated startup failures or change the saved port', async () => {
+  const file = portFile()
   writePreferredPort(file, 51234)
-  const start = vi.fn().mockRejectedValue(new Error('Database unavailable'))
+  const start = vi
+    .fn<(port: number) => Promise<{ port: number }>>()
+    .mockRejectedValue(new Error('Database unavailable'))
   await expect(startOnPreferredPort(file, start)).rejects.toThrow('Database unavailable')
   expect(start).toHaveBeenCalledOnce()
   expect(readPreferredPort(file)).toBe(51234)

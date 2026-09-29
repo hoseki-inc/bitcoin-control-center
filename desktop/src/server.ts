@@ -22,8 +22,15 @@ function hasShutdown(value: unknown): value is { shutdown: () => unknown } {
   return value !== null && typeof value === 'object' && 'shutdown' in value && isCallable(value.shutdown)
 }
 
-function hasPort(value: object): value is { port: number } {
-  return 'port' in value && Number.isInteger(value.port) && Number(value.port) > 0
+// oxlint-disable-next-line anti-slop/no-unknown-returns -- Runtime-loaded server values are checked structurally before use.
+function hasPort(value: unknown): value is { port: number } {
+  return (
+    value !== null &&
+    typeof value === 'object' &&
+    'port' in value &&
+    Number.isInteger(value.port) &&
+    Number(value.port) > 0
+  )
 }
 
 export async function startServer(

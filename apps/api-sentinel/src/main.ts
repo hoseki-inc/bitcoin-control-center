@@ -1,5 +1,4 @@
 import { existsSync } from 'node:fs'
-import type { AddressInfo } from 'node:net'
 import { join } from 'node:path'
 import cors from '@fastify/cors'
 import { type FastifyTRPCPluginOptions, fastifyTRPCPlugin } from '@trpc/server/adapters/fastify'
@@ -22,7 +21,11 @@ export interface SentinelServerOptions extends AppContextOptions {
   listenPort?: number
 }
 
-export async function main(options: SentinelServerOptions = {}): Promise<SentinelServer> {
+export async function main(
+  options: SentinelServerOptions = {},
+  // Tests supply a context; the application always uses createAppContext.
+  createContext: typeof createAppContext = createAppContext,
+): Promise<SentinelServer> {
   const isProduction = process.env['NODE_ENV'] === 'production'
   const logger = pino({
     level: process.env['LOG_LEVEL'] ?? 'info',
@@ -30,7 +33,7 @@ export async function main(options: SentinelServerOptions = {}): Promise<Sentine
   })
 
   // Initialize application context (database, Electrum connection, etc.)
-  const ctxResult = await createAppContext(logger, options)
+  const ctxResult = await createContext(logger, options)
   if (ctxResult.isErr()) {
     logger.error({ error: ctxResult.unwrapErr().message }, 'Failed to initialize application context')
     throw new Error(ctxResult.unwrapErr().message)
@@ -84,7 +87,8 @@ export async function main(options: SentinelServerOptions = {}): Promise<Sentine
   let boundPort: number
   try {
     await server.listen({ host, port })
-    boundPort = (server.server.address() as AddressInfo).port
+    // Report the port actually bound, which differs from the request when it is zero.
+    boundPort = server.addresses()[0]?.port ?? port
   } catch (error) {
     appCtx.stopElectrum()
     appCtx.database.close()

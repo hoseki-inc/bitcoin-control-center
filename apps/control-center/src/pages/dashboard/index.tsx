@@ -149,7 +149,9 @@ export function DashboardPage({
   const isSmallScreen = useBreakpointValue({ base: true, xl: false }) ?? true
   const [userCompact, setUserCompact] = useUiPreference('sidebar_compact')
   const compactSidebar = isSmallScreen || userCompact
-  const toggleCompact = (): void => setUserCompact(!userCompact)
+  const toggleCompact = (): void => {
+    setUserCompact(!userCompact)
+  }
 
   const { recordSnapshot, claimsQuery, exchangeAccountsQuery, manualAccountsQuery, etfAccountsQuery, btcPriceQuery } =
     dataSource.useAccounts()

@@ -28,12 +28,16 @@ export async function startOnPreferredPort<T extends { port: number }>(
   file: string,
   start: (port: number) => Promise<T>,
 ): Promise<T> {
-  const server = await start(readPreferredPort(file)).catch((error: unknown) => {
-    if ((error as NodeJS.ErrnoException | null)?.code !== 'EADDRINUSE') {
+  let server: T
+  try {
+    server = await start(readPreferredPort(file))
+  } catch (error) {
+    // Only an occupied port falls back; other failures are real startup errors.
+    if (!(error instanceof Error && 'code' in error && error.code === 'EADDRINUSE')) {
       throw error
     }
-    return start(0)
-  })
+    server = await start(0)
+  }
   writePreferredPort(file, server.port)
   return server
 }

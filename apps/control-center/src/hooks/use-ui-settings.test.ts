@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, createElement } from 'react'
 import { type Root, createRoot } from 'react-dom/client'
 import { expect, it, onTestFinished, vi } from 'vitest'
@@ -9,7 +10,8 @@ let container: HTMLDivElement
 const storageKey = 'ui::settings::local'
 
 function Preferences(): React.ReactElement {
-  const { isStatementsMadeEasyDismissed, updateUiSettings } = useUiSettings()
+  // Browser mode keeps this preference in local storage; desktop stores it in Sentinel.
+  const { isStatementsMadeEasyDismissed, updateUiSettings } = useUiSettings(false)
   return createElement(
     'button',
     {
@@ -58,7 +60,7 @@ it.each([
       localStorage.setItem(storageKey, stored)
     }
     await act(async () => {
-      root.render(createElement(Preferences))
+      root.render(createElement(QueryClientProvider, { client: new QueryClient() }, createElement(Preferences)))
     })
     expect(container.textContent).toBe(String(expected))
     expect(localStorage.getItem(storageKey)).toBe(stored)
@@ -69,7 +71,7 @@ it('persists preference updates after falling back from invalid saved data', asy
   await withTestSetup(async () => {
     localStorage.setItem(storageKey, 'null')
     await act(async () => {
-      root.render(createElement(Preferences))
+      root.render(createElement(QueryClientProvider, { client: new QueryClient() }, createElement(Preferences)))
     })
     const button = container.querySelector('button')
     if (!button) {

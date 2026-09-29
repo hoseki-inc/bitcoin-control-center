@@ -1,10 +1,13 @@
+import { isDesktop } from '../mode'
 import { useUiPreference } from './use-ui-preference'
 
-export function useUiSettings(): {
+export interface UiSettings {
   isStatementsMadeEasyDismissed: boolean
   updateUiSettings: (settings: { isStatementsMadeEasyDismissed?: boolean }) => void
-} {
-  const [isStatementsMadeEasyDismissed, save] = useUiPreference('statements_banner_dismissed')
+}
+
+export function useUiSettings(desktop = isDesktop): UiSettings {
+  const [isStatementsMadeEasyDismissed, save] = useUiPreference('statements_banner_dismissed', desktop)
   return {
     isStatementsMadeEasyDismissed,
     updateUiSettings: (settings) => {
