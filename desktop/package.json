@@ -13,7 +13,6 @@
     "dist:mac": "electron-builder --mac --universal",
     "dist:win": "electron-builder --win",
     "install:electron": "node node_modules/electron/install.js",
-    "rebuild": "npm run test:runtime",
     "test:runtime": "node scripts/check-runtime.mjs"
   },
   "dependencies": {
