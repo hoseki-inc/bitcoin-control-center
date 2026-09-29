@@ -4,11 +4,13 @@ import type { TransactionEntry } from '@hoseki/packages/bitcoin/onchain/types'
 import { parseUnknown } from '@hoseki/packages/result'
 import { Err, Ok, asyncFn } from '@hoseki/packages/result'
 import type { Result } from '@hoseki/packages/result'
-import type Database from 'better-sqlite3'
 import Decimal from 'decimal.js'
+import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
 import type { Logger } from 'pino'
 import { z } from 'zod'
+import type { SentinelDb } from '../../db/drizzle'
+import { accounts, exchangeBalanceSnapshots, statements } from '../../db/schema'
 import type { ExchangeService } from '../exchange/service'
 import type { DailyRates } from '../price/daily_rates'
 import type { DailyRatesService } from '../price/daily_rates'
@@ -55,6 +57,22 @@ export interface CompletedStatementRow extends StatementRow {
   status: 'completed'
   transaction_map: string
   daily_rates: string
+}
+
+const statementColumns = {
+  id: statements.id,
+  status: statements.status,
+  timezone: statements.timezone,
+  opening_date: statements.openingDate,
+  closing_date: statements.closingDate,
+  account_ids: statements.accountIds,
+  user_name: statements.userName,
+  user_address: statements.userAddress,
+  transaction_map: statements.transactionMap,
+  daily_rates: statements.dailyRates,
+  counter: statements.counter,
+  created_at: statements.createdAt,
+  updated_at: statements.updatedAt,
 }
 
 export interface GenerateStatementInput {
@@ -114,7 +132,7 @@ function validateStatementInput(input: GenerateStatementInput): Result<void, Err
 // ─── Service ────────────────────────────────────────────────────────────────
 
 export class StatementService {
-  private readonly db: Database.Database
+  private readonly db: SentinelDb
   private readonly onchainProvider: ElectrumProvider
   private readonly dailyRatesService: DailyRatesService
   private readonly exchangeService: ExchangeService
@@ -122,7 +140,7 @@ export class StatementService {
   private readonly logger: Logger
 
   public constructor(deps: {
-    db: Database.Database
+    db: SentinelDb
     onchainProvider: ElectrumProvider
     dailyRatesService: DailyRatesService
     exchangeService: ExchangeService
@@ -138,32 +156,34 @@ export class StatementService {
   }
 
   /** Insert a pending statement row. */
-  public create(input: GenerateStatementInput): string {
+  public async create(input: GenerateStatementInput): Promise<string> {
     const id = `st_stmt_${nanoid()}`
-    const counter = this.getNextCounter()
-
-    this.db
-      .prepare(
-        `INSERT INTO statements (id, status, timezone, opening_date, closing_date, account_ids, exchange_account_ids, user_name, user_address, counter)
-         VALUES (?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .run(
+    await this.db.transaction(async (tx) => {
+      const [counterRow] = await tx
+        .select({ next: sql<number>`coalesce(max(${statements.counter}), 0) + 1` })
+        .from(statements)
+      if (!counterRow) {
+        throw new Error('Statement counter query returned no row')
+      }
+      await tx.insert(statements).values({
         id,
-        input.timezone,
-        input.openingDate.toISOString(),
-        input.closingDate.toISOString(),
-        JSON.stringify(input.claimIds),
-        input.exchangeAccountIds ? JSON.stringify(input.exchangeAccountIds) : null,
-        input.name ?? null,
-        input.address ?? null,
-        counter,
-      )
+        status: 'pending',
+        timezone: input.timezone,
+        openingDate: input.openingDate.toISOString(),
+        closingDate: input.closingDate.toISOString(),
+        accountIds: JSON.stringify(input.claimIds),
+        exchangeAccountIds: input.exchangeAccountIds ? JSON.stringify(input.exchangeAccountIds) : null,
+        userName: input.name ?? null,
+        userAddress: input.address ?? null,
+        counter: counterRow.next,
+      })
+    })
 
     return id
   }
 
   /** Mark a statement as completed with transaction data. */
-  public complete(id: string, transactionMap: StatementTransactions, dailyRates: DailyRates): void {
+  public async complete(id: string, transactionMap: StatementTransactions, dailyRates: DailyRates): Promise<void> {
     // Serialize bigint values in transactionMap to strings for JSON storage
     const serializedMap: Record<string, SerializedAggregatedTransaction[]> = {}
     for (const [key, txs] of Object.entries(transactionMap)) {
@@ -187,22 +207,28 @@ export class StatementService {
       }
     }
 
-    this.db
-      .prepare(
-        `UPDATE statements SET status = 'completed', transaction_map = ?, daily_rates = ?, updated_at = datetime('now')
-         WHERE id = ?`,
-      )
-      .run(JSON.stringify(serializedMap), JSON.stringify({ rates: serializedRates, source: dailyRates.source }), id)
+    await this.db
+      .update(statements)
+      .set({
+        status: 'completed',
+        transactionMap: JSON.stringify(serializedMap),
+        dailyRates: JSON.stringify({ rates: serializedRates, source: dailyRates.source }),
+        updatedAt: sql`datetime('now')`,
+      })
+      .where(eq(statements.id, id))
   }
 
   /** Mark a statement as failed. */
-  public fail(id: string): void {
-    this.db.prepare(`UPDATE statements SET status = 'failed', updated_at = datetime('now') WHERE id = ?`).run(id)
+  public async fail(id: string): Promise<void> {
+    await this.db
+      .update(statements)
+      .set({ status: 'failed', updatedAt: sql`datetime('now')` })
+      .where(eq(statements.id, id))
   }
 
   /** Find a statement by ID and return its DTO. */
-  public findById(id: string): StatementDto | null {
-    const row = this.db.prepare<unknown[], StatementRow>('SELECT * FROM statements WHERE id = ?').get(id)
+  public async findById(id: string): Promise<StatementDto | null> {
+    const [row] = await this.db.select(statementColumns).from(statements).where(eq(statements.id, id))
     if (!row) {
       return null
     }
@@ -210,16 +236,20 @@ export class StatementService {
   }
 
   /** Load a completed statement with deserialized transaction data. */
-  public loadCompleted(
+  public async loadCompleted(
     id: string,
-  ): { row: StatementRow; transactionMap: StatementTransactions; dailyRates: DailyRates } | null {
-    const row = this.db
-      .prepare<unknown[], CompletedStatementRow>('SELECT * FROM statements WHERE id = ? AND status = ?')
-      .get(id, 'completed')
+  ): Promise<{ row: StatementRow; transactionMap: StatementTransactions; dailyRates: DailyRates } | null> {
+    const [row] = await this.db
+      .select(statementColumns)
+      .from(statements)
+      .where(and(eq(statements.id, id), eq(statements.status, 'completed')))
     if (!row) {
       return null
     }
 
+    if (row.transaction_map == null || row.daily_rates == null) {
+      throw new Error('Stored completed statement is missing transaction data')
+    }
     return {
       row,
       transactionMap: this.deserializeTransactionMap(row.transaction_map),
@@ -228,8 +258,8 @@ export class StatementService {
   }
 
   /** List all statements as DTOs. */
-  public list(): StatementDto[] {
-    const rows = this.db.prepare<unknown[], StatementRow>('SELECT * FROM statements ORDER BY created_at DESC').all()
+  public async list(): Promise<StatementDto[]> {
+    const rows = await this.db.select(statementColumns).from(statements).orderBy(desc(statements.createdAt))
     return rows.map((row) => this.rowToDto(row))
   }
 
@@ -257,7 +287,7 @@ export class StatementService {
 
       // 1. Look up on-chain account descriptors
       const claimIds = [...new Set(input.claimIds)]
-      const accountRows = this.getAccountRows(claimIds)
+      const accountRows = await this.getAccountRows(claimIds)
       const hasOnchainAccounts = accountRows.length > 0
       const hasExchangeAccounts = (input.exchangeAccountIds?.length ?? 0) > 0
 
@@ -291,9 +321,10 @@ export class StatementService {
             continue
           }
 
-          const activeAccount = this.db
-            .prepare('SELECT 1 AS one FROM accounts WHERE id = ? AND deleted_at IS NULL')
-            .get(row.id)
+          const [activeAccount] = await this.db
+            .select({ id: accounts.id })
+            .from(accounts)
+            .where(and(eq(accounts.id, row.id), isNull(accounts.deletedAt)))
           if (activeAccount === undefined) {
             return Err(new Error(`Account "${row.display_name}" was archived while generating the statement`))
           }
@@ -323,7 +354,7 @@ export class StatementService {
       // 3. Fetch exchange account data
       if (hasExchangeAccounts) {
         const exchangeAccountIds = input.exchangeAccountIds ?? []
-        const allExchangeAccounts = this.exchangeService.listAccounts()
+        const allExchangeAccounts = await this.exchangeService.listAccounts()
         const selectedAccounts = allExchangeAccounts.filter((a) => exchangeAccountIds.includes(a.id))
         this.logger.info({ exchangeAccountCount: selectedAccounts.length }, 'Found exchange accounts for statement')
 
@@ -379,7 +410,7 @@ export class StatementService {
           const label = capitalize(account.exchange)
 
           // Check for imported statement transactions — aggregate to daily net in/out
-          const stmtTxs = this.exchangeService.listStatementTransactions(account.id)
+          const stmtTxs = await this.exchangeService.listStatementTransactions(account.id)
           if (stmtTxs.length > 0) {
             const dailyAgg = new Map<string, { netIn: bigint; netOut: bigint; date: Date }>()
             for (const tx of stmtTxs) {
@@ -433,7 +464,7 @@ export class StatementService {
             )
           } else {
             // Fall back to snapshot deltas
-            const snapshots = this.getExchangeSnapshots(account.id)
+            const snapshots = await this.getExchangeSnapshots(account.id)
 
             const dailyBalances = new Map<string, { balance: bigint; date: Date }>()
             for (const snapshot of snapshots) {
@@ -485,52 +516,30 @@ export class StatementService {
 
   // ─── Private helpers ────────────────────────────────────────────────────────
 
-  private getAccountRows(
+  private async getAccountRows(
     claimIds: string[],
-  ): Array<{ id: string; descriptor: string; display_name: string; network: string; status: string }> {
+  ): Promise<Array<{ id: string; descriptor: string; display_name: string; network: string; status: string }>> {
     if (claimIds.length === 0) {
       return []
     }
-    const placeholders = claimIds.map(() => '?').join(', ')
     return this.db
-      .prepare<
-        unknown[],
-        {
-          id: string
-          descriptor: string
-          display_name: string
-          network: string
-          status: string
-        }
-      >(
-        `SELECT id, descriptor, display_name, network, status
-         FROM accounts
-         WHERE id IN (${placeholders}) AND deleted_at IS NULL`,
-      )
-      .all(...claimIds)
+      .select({
+        id: accounts.id,
+        descriptor: accounts.descriptor,
+        display_name: accounts.displayName,
+        network: accounts.network,
+        status: accounts.status,
+      })
+      .from(accounts)
+      .where(and(inArray(accounts.id, claimIds), isNull(accounts.deletedAt)))
   }
 
-  private getExchangeSnapshots(accountId: string): Array<{ balance_sats: string; timestamp: string }> {
+  private async getExchangeSnapshots(accountId: string): Promise<Array<{ balance_sats: string; timestamp: string }>> {
     return this.db
-      .prepare<unknown[], { balance_sats: string; timestamp: string }>(
-        'SELECT balance_sats, timestamp FROM exchange_balance_snapshots WHERE account_id = ? ORDER BY timestamp ASC',
-      )
-      .all(accountId)
-  }
-
-  private getNextCounter(): number {
-    const result = this.db
-      .prepare<
-        unknown[],
-        {
-          next: number
-        }
-      >('SELECT COALESCE(MAX(counter), 0) + 1 AS next FROM statements')
-      .get()
-    if (!result) {
-      throw new Error('Statement counter query returned no row')
-    }
-    return result.next
+      .select({ balance_sats: exchangeBalanceSnapshots.balanceSats, timestamp: exchangeBalanceSnapshots.timestamp })
+      .from(exchangeBalanceSnapshots)
+      .where(eq(exchangeBalanceSnapshots.accountId, accountId))
+      .orderBy(asc(exchangeBalanceSnapshots.timestamp))
   }
 
   private rowToDto(row: StatementRow): StatementDto {

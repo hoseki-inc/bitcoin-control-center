@@ -3,8 +3,10 @@ import { ElectrumProvider } from '@hoseki/packages/bitcoin/onchain/electrum_prov
 import { ElectrumClient, type ElectrumClientConfig } from '@hoseki/packages/clients/electrum'
 import { Err, Ok, asyncFn } from '@hoseki/packages/result'
 import type { Result } from '@hoseki/packages/result'
+import { eq } from 'drizzle-orm'
 import type { Logger } from 'pino'
-import { type SentinelDatabase, initDatabase } from './db'
+import { openDrizzleDatabase } from './db/drizzle'
+import { settings } from './db/schema'
 import { type Env, loadEnv } from './env'
 import { initEncryption, loadCredentialEncryptionKey } from './lib/encrypted'
 import { ControlCenterService } from './modules/control_center/service'
@@ -22,7 +24,7 @@ import { StatementService } from './modules/statements/service'
 export interface AppContext {
   env: Env
   logger: Logger
-  database: SentinelDatabase
+  database: Awaited<ReturnType<typeof openDrizzleDatabase>>
   electrumClient: ElectrumClient
   electrumConfig: { host: string; port: number; protocol: 'tcp' | 'ssl' }
   onchainProvider: ElectrumProvider
@@ -39,25 +41,27 @@ export interface AppContext {
 export const createAppContext = asyncFn(async (logger: Logger): Promise<Result<AppContext, Error>> => {
   const env = loadEnv()
 
-  const database = initDatabase(env.DATA_DIR, logger)
+  const database = await openDrizzleDatabase(env.DATA_DIR, logger)
 
   // Keep the exchange credential key outside SQLite so DB backups do not carry
   // both encrypted credentials and the key needed to decrypt them.
-  const credentialKey = loadCredentialEncryptionKey({ dataDir: env.DATA_DIR, db: database.db, logger })
+  const credentialKey = await loadCredentialEncryptionKey({ dataDir: env.DATA_DIR, db: database.db, logger })
   initEncryption(credentialKey.key)
 
   const network = env.BITCOIN_NETWORK === 'mainnet' ? Network.Mainnet : Network.Testnet
 
   // Check SQLite for user-saved Electrum settings (from desktop Settings page).
   // These override the env var defaults so the config persists across restarts.
-  const getSetting = (key: string): string | undefined =>
-    database.db.prepare<unknown[], { value: string }>('SELECT value FROM settings WHERE key = ?').get(key)?.value
+  const getSetting = async (key: string): Promise<string | undefined> => {
+    const [row] = await database.db.select({ value: settings.value }).from(settings).where(eq(settings.key, key))
+    return row?.value
+  }
 
-  const electrumHost = getSetting('electrum_host') ?? env.ELECTRUM_HOST
-  const electrumPort = Number(getSetting('electrum_port') ?? env.ELECTRUM_PORT)
-  const storedProtocol = getSetting('electrum_protocol')
+  const electrumHost = (await getSetting('electrum_host')) ?? env.ELECTRUM_HOST
+  const electrumPort = Number((await getSetting('electrum_port')) ?? env.ELECTRUM_PORT)
+  const storedProtocol = await getSetting('electrum_protocol')
   const electrumProtocol = storedProtocol === 'tcp' || storedProtocol === 'ssl' ? storedProtocol : env.ELECTRUM_PROTOCOL
-  const torEnabled = getSetting('tor_enabled') === 'true'
+  const torEnabled = (await getSetting('tor_enabled')) === 'true'
 
   // If Tor is enabled and SOCKS proxy env vars are set, include proxy config
   const proxy =
@@ -79,6 +83,7 @@ export const createAppContext = asyncFn(async (logger: Logger): Promise<Result<A
   )
   const connectResult = await electrumClient.connect()
   if (connectResult.isErr()) {
+    database.close()
     return Err(connectResult.unwrapErr())
   }
   logger.info({ version: connectResult.unwrap() }, 'Connected to Electrum server')

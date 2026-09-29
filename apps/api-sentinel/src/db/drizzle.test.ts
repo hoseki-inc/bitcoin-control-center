@@ -5,7 +5,6 @@ import Database from 'better-sqlite3'
 import { eq } from 'drizzle-orm'
 import pino from 'pino'
 import { expect, it, onTestFinished } from 'vitest'
-import { initDatabase } from '../db'
 import { openDrizzleDatabase } from './drizzle'
 import { accounts, exchangeAccounts, settings } from './schema'
 
@@ -159,36 +158,6 @@ it.each([0, 1, 2, 3, 5, 6, 7, 8, 10, 11, 12, 13])('upgrades from legacy version 
   try {
     expect((await database.client.execute('SELECT name FROM _migrations')).rows).toHaveLength(14)
     expect((await database.client.execute('PRAGMA foreign_key_check')).rows).toHaveLength(0)
-  } finally {
-    database.close()
-  }
-})
-
-it.each([4, 9])('preserves exchange history with the current startup migrator at version %i', (version) => {
-  const directory = testDirectory()
-  const raw = legacyDatabase(directory, version)
-  raw
-    .prepare(`INSERT INTO exchange_accounts (id, provider, display_name, encrypted_credentials)
-    VALUES ('exchange', 'coinbase', 'Test', 'synthetic-ciphertext')`)
-    .run()
-  raw
-    .prepare(`INSERT INTO exchange_balance_snapshots (account_id, timestamp, balance_sats)
-    VALUES ('exchange', '2026-01-01', '123')`)
-    .run()
-  if (version >= 9) {
-    raw
-      .prepare(`INSERT INTO exchange_statement_txs
-      (id, account_id, external_id, transacted_at, type, amount_btc, statement_month)
-      VALUES ('tx', 'exchange', 'external', '2026-01-01', 'buy', '1', '2026-01')`)
-      .run()
-  }
-  raw.close()
-
-  const database = initDatabase(directory, logger)
-  try {
-    expect(database.db.prepare('SELECT * FROM exchange_balance_snapshots').all()).toHaveLength(1)
-    expect(database.db.prepare('SELECT * FROM exchange_statement_txs').all()).toHaveLength(version >= 9 ? 1 : 0)
-    expect(database.db.pragma('foreign_key_check')).toHaveLength(0)
   } finally {
     database.close()
   }
