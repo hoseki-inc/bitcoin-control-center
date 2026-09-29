@@ -859,14 +859,17 @@ export class ExchangeService {
       statementMonth: string
     }>
   }): Promise<Result<{ imported: number; skipped: number }, Error>> {
-    const account = await this.getAccount(args.accountId)
-    if (!account) {
-      return Err(new Error('Exchange account not found'))
-    }
+    return this.db.transaction(async (db) => {
+      const [account] = await db
+        .select({ id: exchangeAccounts.id })
+        .from(exchangeAccounts)
+        .where(eq(exchangeAccounts.id, args.accountId))
+      if (!account) {
+        return Err(new Error('Exchange account not found'))
+      }
 
-    let imported = 0
-    let skipped = 0
-    await this.db.transaction(async (db) => {
+      let imported = 0
+      let skipped = 0
       for (const item of args.transactions) {
         const inserted = await db
           .insert(exchangeStatementTxs)
@@ -892,14 +895,13 @@ export class ExchangeService {
           skipped++
         }
       }
+      this.logger.info(
+        { accountId: args.accountId, imported, skipped, total: args.transactions.length },
+        'Imported strike statement transactions',
+      )
+
+      return Ok({ imported, skipped })
     })
-
-    this.logger.info(
-      { accountId: args.accountId, imported, skipped, total: args.transactions.length },
-      'Imported strike statement transactions',
-    )
-
-    return Ok({ imported, skipped })
   }
 
   public async listStatementTransactions(
@@ -964,24 +966,6 @@ export class ExchangeService {
         and(eq(exchangeStatementTxs.accountId, accountId), eq(exchangeStatementTxs.statementMonth, statementMonth)),
       )
     return result.rowsAffected
-  }
-
-  private async getAccount(id: string): Promise<ExchangeAccountDto | null> {
-    const [row] = await this.db.select().from(exchangeAccounts).where(eq(exchangeAccounts.id, id))
-    if (!row) {
-      return null
-    }
-    const connectionStatus = this.getAccountConnectionStatus(row)
-    const isConnected = connectionStatus === 'connected'
-    return {
-      id: row.id,
-      exchange: row.provider,
-      displayName: row.displayName,
-      balanceSats: isConnected ? row.balanceSats : null,
-      balanceAsOf: isConnected ? row.balanceAsOf : null,
-      createdAt: row.createdAt,
-      connectionStatus,
-    }
   }
 
   // ─── Helpers ───────────────────────────────────────────────────────────
