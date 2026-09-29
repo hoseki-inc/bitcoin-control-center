@@ -20,7 +20,7 @@ import type { StatementDto } from '../../trpc/server-types'
 export function StatementDetailsPage(): JSX.Element {
   const statementId = useUrlParameter(UrlParameter.statementId)
 
-  if (!statementId) {
+  if (statementId === null) {
     return (
       <Box p={4}>
         <ErrorBanner mb={4} message="Invalid statement ID provided in URL" />
