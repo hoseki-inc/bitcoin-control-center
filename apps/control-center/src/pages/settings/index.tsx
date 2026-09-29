@@ -402,6 +402,8 @@ function ElectrumSettings(): JSX.Element {
       )
       setIsDirty(false)
       setTestResult(null)
+      // The saved connection now reflects the user's routing choice.
+      setTorFailure(null)
       refreshStatus()
       toast.success('Electrum server updated')
     } catch (err) {

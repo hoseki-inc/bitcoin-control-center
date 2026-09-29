@@ -505,4 +505,27 @@ describe('desktop connection settings', () => {
       expect(container.textContent).toContain('This can take up to two minutes.')
     })
   })
+
+  it('clears the Tor failure once a direct connection is deliberately saved', async () => {
+    await withTestSetup(async () => {
+      const advance = useStepTimers()
+      await render()
+      torFailsInstantly = 'Tor could not start. Turn Tor on to try again.'
+      await turnTorOn()
+      await advance(0)
+      await click(button('Save & Reconnect'))
+      const confirm = dialogButton('Connect without Tor')
+      assert.ok(confirm, 'Expected the confirmation dialog')
+      await click(confirm)
+      await act(async () => {
+        finishSave(Response.json({ result: { data: null } }))
+      })
+      await waitForToast('success')
+      await advance(0)
+      expect(container.textContent).not.toContain('Tor could not start')
+      // The saved connection is direct now, so testing it runs without asking again.
+      await click(button('Test Connection'))
+      expect(requests.filter(({ path }) => path === 'settings.testElectrum')).toHaveLength(1)
+    })
+  })
 })
