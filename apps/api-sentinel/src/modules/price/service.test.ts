@@ -744,3 +744,211 @@ describe('price refresh regressions', () => {
     },
   )
 })
+
+describe('price service rules', () => {
+  it('serves a recovered source from its cache again', async () => {
+    await withTestSetup(async () => {
+      let block: () => Response | Error = () => new TypeError('fetch failed')
+      const fetch = stubPrices({ [BLOCK]: () => block() })
+      const { service } = priceService({ fallbacks: false })
+      expect((await service.getCurrentBtcPrice()).isErr()).toBe(true)
+      block = () => prices.block('83000')
+      expect((await service.getCurrentBtcPrice()).expect('recovered').lastKnown).toBe(false)
+      expect((await service.getCurrentBtcPrice()).expect('cached').value.toString()).toBe('83000')
+      expect(fetch.hosts()).toEqual([BLOCK, BLOCK])
+    })
+  })
+
+  it('falls back to the newest recent price of the allowed sources', async () => {
+    await withTestSetup(async () => {
+      const up = { block: true, mempool: true }
+      stubPrices({
+        [BLOCK]: () => (up.block ? prices.block('83000', NOW_SECONDS - 600) : refused()),
+        [MEMPOOL]: () => (up.mempool ? prices.mempool(84000) : refused()),
+      })
+      const { service } = priceService()
+      expect((await service.getCurrentBtcPrice()).expect('Block').source).toBe('block')
+      up.block = false
+      vi.advanceTimersByTime(61_000)
+      expect((await service.getCurrentBtcPrice()).expect('fallback').source).toBe('mempool.space')
+      up.mempool = false
+      vi.advanceTimersByTime(61_000)
+      expect((await service.getCurrentBtcPrice()).expect('last known')).toMatchObject({
+        source: 'mempool.space',
+        lastKnown: true,
+      })
+    })
+  })
+
+  it('waits for a slow source when there is no recent price to fall back on', async () => {
+    await withTestSetup(async () => {
+      vi.useFakeTimers({ now: NOW })
+      const fetch = stubPrices({
+        [BLOCK]: async () => {
+          await new Promise((resolve) => {
+            setTimeout(resolve, 5000)
+          })
+          return prices.block('83000')
+        },
+        [MEMPOOL]: () => prices.mempool(84000),
+      })
+      const pending = priceService({}, undefined, { requestTimeoutMs: 10_000 }).service.getCurrentBtcPrice()
+      await vi.advanceTimersByTimeAsync(5000)
+      expect((await pending).expect('slow primary').source).toBe('block')
+      expect(fetch.hosts()).toEqual([BLOCK])
+    })
+  })
+
+  it('does not reuse a cached price that has passed its maximum age', async () => {
+    await withTestSetup(async () => {
+      let available = true
+      const fetch = stubPrices({ [BLOCK]: () => (available ? prices.block('83000', NOW_SECONDS - 1770) : refused()) })
+      const { service } = priceService({ fallbacks: false })
+      expect((await service.getCurrentBtcPrice()).expect('29.5 minutes old').lastKnown).toBe(false)
+      available = false
+      vi.advanceTimersByTime(40_000)
+      expect((await service.getCurrentBtcPrice()).isErr()).toBe(true)
+      expect(fetch.hosts()).toEqual([BLOCK, BLOCK])
+    })
+  })
+
+  it('ages a price by the Age a cache reports when the source sends no clock', async () => {
+    await withTestSetup(async () => {
+      let age = '1900'
+      stubPrices({
+        [COINBASE]: () => Response.json({ data: { amount: '83000', currency: 'USD' } }, { headers: { age } }),
+        [MEMPOOL]: () => Response.json({ USD: 84000, time: NOW_SECONDS - 60 }, { headers: { age: '60' } }),
+      })
+      const { service } = priceService({ source: 'coinbase', fallbacks: false })
+      expect((await service.getCurrentBtcPrice()).expectErr('too old').message).toBe(
+        'No BTC price available: Coinbase price is 32 minutes old',
+      )
+      age = '60'
+      vi.advanceTimersByTime(30_000)
+      expectAbout((await service.getCurrentBtcPrice()).expect('cached').asOf, Date.now() - 60_000)
+
+      // A quote's own timestamp already includes the time a cache held it.
+      const quoted = (await priceService({ source: 'mempool.space' }).service.getCurrentBtcPrice()).expect('quote')
+      expectAbout(quoted.asOf, NOW.getTime() - 60_000)
+    })
+  })
+
+  it('aborts a request that does not answer in time', async () => {
+    await withTestSetup(async () => {
+      let signal: AbortSignal | null | undefined
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (_url: string, init?: RequestInit) => {
+          signal = init?.signal
+          return never()
+        }),
+      )
+      const result = await priceService({ fallbacks: false }).service.getCurrentBtcPrice()
+      expect(result.expectErr('timed out').message).toContain('no response within')
+      expect(signal?.aborted).toBe(true)
+    })
+  })
+
+  it.each(['', 'umbrel.local:3006', 'http://alice:pa/ss@mempool.local:99999'])(
+    'does not offer MEMPOOL_API_URL %j, which is not an http(s) URL, as your server',
+    async (url) => {
+      await withTestSetup(async () => {
+        const fetch = stubPrices({ [BLOCK]: refused })
+        const lines: string[] = []
+        const service = new PriceService({
+          logger: pino(
+            { level: 'debug' },
+            {
+              write: (line: string) => {
+                lines.push(line)
+              },
+            },
+          ),
+          mempoolApiUrl: url,
+          settings: () => ({ source: undefined, fallbacks: false }),
+        })
+        expect(service.options().sources.map(({ name }) => name)).toEqual([
+          'block',
+          'mempool.space',
+          'coinbase',
+          'coingecko',
+        ])
+        const error = (await service.getCurrentBtcPrice()).expectErr('refused').message
+        expect(fetch.hosts()).toEqual([BLOCK])
+        expect(lines.join('')).toContain('MEMPOOL_API_URL is not an http(s) URL')
+        // Neither Settings, the returned error nor the log repeats the configured value.
+        for (const text of [JSON.stringify(service.options()), error, ...lines]) {
+          expect(text).not.toContain('pa/ss')
+          expect(text).not.toContain('umbrel.local')
+        }
+      })
+    },
+  )
+
+  it('uses a fallback that answers after the caller has moved on to the next source', async () => {
+    await withTestSetup(async () => {
+      vi.useFakeTimers({ now: NOW })
+      let blockUp = true
+      const after = async (ms: number, reply: () => Response): Promise<Response> => {
+        await new Promise((resolve) => {
+          setTimeout(resolve, ms)
+        })
+        return reply()
+      }
+      stubPrices({
+        [BLOCK]: () => (blockUp ? prices.block('83000') : refused()),
+        // Each fallback is waited on for 3 seconds: mempool.space refuses at 4 s, after the caller has moved
+        // on; Coinbase answers at 7 s, while the caller waits on CoinGecko, which refuses at 8 s.
+        [MEMPOOL]: async () => after(4000, refused),
+        [COINBASE]: async () => after(4000, () => prices.coinbase('85000')),
+        [COINGECKO]: async () => after(2000, refused),
+      })
+      const { service } = priceService({}, undefined, { requestTimeoutMs: 10_000 })
+      await service.getCurrentBtcPrice()
+      blockUp = false
+      await vi.advanceTimersByTimeAsync(61_000)
+      const pending = service.getCurrentBtcPrice({ verifyPrimary: true })
+      await vi.advanceTimersByTimeAsync(8000)
+      expect((await pending).expect('late fallback')).toMatchObject({ source: 'coinbase', lastKnown: false })
+    })
+  })
+
+  it('reports each address of a host that refused the connection', async () => {
+    await withTestSetup(async () => {
+      const cause = new AggregateError([
+        new Error('connect ECONNREFUSED ::1:8999'),
+        new Error('connect ECONNREFUSED 127.0.0.1:8999'),
+      ])
+      stubPrices({ [LOCAL_MEMPOOL]: () => new TypeError('fetch failed', { cause }) })
+      const result = await priceService({ fallbacks: false }, 'http://mempool.local').service.getCurrentBtcPrice()
+      expect(result.expectErr('refused').message).toBe(
+        'No BTC price available: Your mempool server (mempool.local) price request failed: fetch failed: ' +
+          'connect ECONNREFUSED ::1:8999; connect ECONNREFUSED 127.0.0.1:8999',
+      )
+    })
+  })
+
+  it('logs every source it contacted', async () => {
+    await withTestSetup(async () => {
+      stubPrices({ [BLOCK]: refused, [MEMPOOL]: () => prices.mempool(83000) })
+      const lines: string[] = []
+      const service = new PriceService({
+        logger: pino(
+          { level: 'debug' },
+          {
+            write: (line: string) => {
+              lines.push(line)
+            },
+          },
+        ),
+        mempoolApiUrl: 'https://mempool.space',
+        settings: () => ({ source: undefined, fallbacks: true }),
+      })
+      await service.getCurrentBtcPrice()
+      expect(lines).toEqual([
+        expect.stringMatching(/"source":"block".*"msg":"BTC price source failed"/),
+        expect.stringMatching(/"source":"mempool.space".*"msg":"Fetched BTC price"/),
+      ])
+    })
+  })
+})

@@ -2,12 +2,13 @@
 import { ChakraProvider } from '@chakra-ui/react'
 import { parseUnknown } from '@hoseki/packages/result/lib/parse'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { getQueryKey } from '@trpc/react-query'
 import { act, createElement } from 'react'
 import { type Root, createRoot } from 'react-dom/client'
 import { toast } from 'sonner'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import { z } from 'zod'
-import type { RouterOutput } from '../../trpc'
+import { type RouterOutput, trpc } from '../../trpc'
 import { SettingsPage } from './index'
 
 const browser = await vi.hoisted(async () => {
@@ -234,7 +235,10 @@ class PriceServer {
   public readonly afterSave = new Map<string, StatusPrice>()
   public statusReply: 'answer' | 'hold' | 'fail' = 'answer'
   public failSave = false
+  public saveReply: 'answer' | 'hold' = 'answer'
+  public optionsRequests = 0
   private readonly held: Array<() => void> = []
+  private readonly heldSaves: Array<() => void> = []
 
   public constructor(options: PriceSourceOptions = priceOptions, initialPrice: StatusPrice = price('block')) {
     this.options = options
@@ -242,6 +246,7 @@ class PriceServer {
     fetchMock.mockImplementation(async (input, init) => {
       const url = parseUnknown(z.string(), input).unwrapOr('')
       if (url.includes('/settings.priceSource')) {
+        this.optionsRequests += 1
         return Response.json({ result: { data: { json: this.options } } })
       }
       if (url.includes('/settings.priceStatus')) {
@@ -249,6 +254,11 @@ class PriceServer {
         return this.answerStatus()
       }
       if (url.endsWith('/settings.setPriceSettings')) {
+        if (this.saveReply === 'hold') {
+          await new Promise<void>((resolve) => {
+            this.heldSaves.push(resolve)
+          })
+        }
         const change = parseUnknown(ChangeSchema, JSON.parse(parseUnknown(z.string(), init?.body).unwrapOr('null')))
         this.saved.push(change.expect('saved setting'))
         if (this.failSave) {
@@ -268,6 +278,18 @@ class PriceServer {
       }
       return Response.json({ result: { data: { json: null } } })
     })
+  }
+
+  public heldSaveCount(): number {
+    return this.heldSaves.length
+  }
+
+  /** Lets held save requests reach the server. */
+  public releaseSaves(): void {
+    this.saveReply = 'answer'
+    for (const release of this.heldSaves.splice(0)) {
+      release()
+    }
   }
 
   /** Releases held status requests with the current status. */
@@ -338,6 +360,12 @@ async function idle(): Promise<void> {
     await act(async () => {})
     expect(queryClient.isFetching()).toBe(0)
     expect(container.querySelector('#price-source')?.closest('[aria-busy="true"]')).toBeNull()
+  })
+  // React Query tells the page about a finished request on a later task.
+  await act(async () => {
+    await new Promise((resolve) => {
+      setTimeout(resolve, 0)
+    })
   })
 }
 
@@ -467,15 +495,35 @@ it('keeps showing the status while it refreshes in the background', async () => 
   })
 })
 
-it('hides a status that describes a different choice', async () => {
+it.each([
+  ['source', { selected: 'coinbase', fallbacks: true }],
+  ['fallback setting', { selected: 'block', fallbacks: false }],
+] as const)('hides a status that describes a different %s', async (_label, choice) => {
   await withTestSetup(async () => {
     const server = new PriceServer()
-    server.status = { selected: 'coinbase', fallbacks: true, price: price('block') }
+    server.status = { ...choice, price: price('mempool.space') }
     await renderPriceSettings()
     await act(async () => {})
     expect(queryClient.getQueryState(['price-status'])?.status).toBe('success')
-    expect(container.textContent).not.toContain('Using Block')
+    expect(container.textContent).not.toContain('Using mempool.space')
     expect(container.textContent).not.toContain('No price')
+  })
+})
+
+it('hides the status when a background refresh fails', async () => {
+  await withTestSetup(async () => {
+    const server = new PriceServer(priceOptions, price('coinbase'))
+    await renderPriceSettings()
+    await vi.waitFor(() => {
+      expect(container.textContent).toContain('Using Coinbase while Block is unavailable.')
+    })
+    server.statusReply = 'fail'
+    await act(async () => {
+      await queryClient.refetchQueries({ queryKey: ['price-status'] })
+    })
+    await idle()
+    expect(container.textContent).not.toContain('Using Coinbase')
+    expect(container.textContent).toContain('Could not check the price source.')
   })
 })
 
@@ -556,15 +604,17 @@ it('checks the new choice with a new request when saved during the first check',
   })
 })
 
-it('keeps the controls usable and focused, and ignores changes, while a save is checking', async () => {
+it('keeps the controls usable and focused, and saves changes made while a save is checking', async () => {
   await withTestSetup(async () => {
     const server = new PriceServer()
+    server.afterSave.set('coingecko', price('coingecko'))
     const select = await renderPriceSettings()
+    await idle()
     server.statusReply = 'hold'
     select.focus()
     await pick(select, 'coinbase')
     await vi.waitFor(() => {
-      expect(server.saved).toHaveLength(1)
+      expect(server.statusRequests).toBe(2)
     })
 
     expect(select.disabled).toBe(false)
@@ -574,8 +624,125 @@ it('keeps the controls usable and focused, and ignores changes, while a save is 
     await act(async () => {
       fallbackCheckbox().click()
     })
-    expect(server.saved).toHaveLength(1)
+    expect(select.value).toBe('coingecko')
+    expect(fallbackCheckbox().checked).toBe(false)
+    await vi.waitFor(() => {
+      expect(server.options).toMatchObject({ selected: 'coingecko', fallbacks: false })
+      expect(server.statusRequests).toBeGreaterThan(2)
+    })
+    // The superseded check has ended, but the latest one is still running.
+    await act(async () => {})
+    expect(container.textContent).toContain('Checking the price source')
+
     await finishSaves(server)
+    expect(server.saved[0]).toEqual({ json: { source: 'coinbase' } })
+    expect(select.value).toBe('coingecko')
+    expect(fallbackCheckbox().checked).toBe(false)
+    expect(container.textContent).toContain('Price settings saved')
+  })
+})
+
+it('saves only the last of several quick changes, as when choosing with the arrow keys', async () => {
+  await withTestSetup(async () => {
+    const server = new PriceServer()
+    const select = await renderPriceSettings()
+    await idle()
+    await act(async () => {
+      for (const value of ['mempool.space', 'coinbase', 'coingecko']) {
+        select.value = value
+        select.dispatchEvent(new Event('change', { bubbles: true }))
+      }
+    })
+    await idle()
+    expect(server.saved).toEqual([{ json: { source: 'coingecko' } }])
+    expect(select.value).toBe('coingecko')
+  })
+})
+
+it.each([
+  ['a new source', async (select: HTMLSelectElement) => choose(select, 'coinbase')],
+  [
+    'turning fallbacks off',
+    async () => {
+      await act(async () => {
+        fallbackCheckbox().click()
+      })
+      await idle()
+    },
+  ],
+])('refreshes the USD values and forgets the old price after %s', async (_label, makeChange) => {
+  await withTestSetup(async () => {
+    new PriceServer()
+    const refreshed = getQueryKey(trpc.portalProve.controlCenter.getData)
+    // A failed request for the current price must not leave a price from a source no longer allowed.
+    const forgotten = [
+      getQueryKey(trpc.portalProve.retrieveBitcoinPrice),
+      getQueryKey(trpc.portalProve.onchain.bitcoinAccountBalances),
+    ]
+    for (const queryKey of [refreshed, ...forgotten]) {
+      queryClient.setQueryData(queryKey, 'cached')
+    }
+    const select = await renderPriceSettings()
+    await makeChange(select)
+    expect(queryClient.getQueryState(refreshed)?.isInvalidated).toBe(true)
+    for (const queryKey of forgotten) {
+      expect(queryClient.getQueryData(queryKey)).toBeUndefined()
+    }
+  })
+})
+
+it('does not hold up another attempt while a failed save reconciles', async () => {
+  await withTestSetup(async () => {
+    const server = new PriceServer()
+    const select = await renderPriceSettings()
+    await idle()
+    server.failSave = true
+    server.statusReply = 'hold'
+    await pick(select, 'coinbase')
+    await vi.waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith('Could not save the price source. Please try again.')
+      expect(container.querySelector('#price-source')?.closest('[aria-busy="true"]')).toBeNull()
+    })
+    expect(select.value).toBe('block')
+    await finishSaves(server)
+  })
+})
+
+it('does not show an earlier status while a change back to the same choice is checked', async () => {
+  await withTestSetup(async () => {
+    const server = new PriceServer(priceOptions, price('coinbase'))
+    await renderPriceSettings()
+    await vi.waitFor(() => {
+      expect(container.textContent).toContain('Using Coinbase while Block is unavailable.')
+    })
+    server.statusReply = 'hold'
+    await act(async () => {
+      fallbackCheckbox().click()
+    })
+    await act(async () => {
+      fallbackCheckbox().click()
+    })
+    expect(fallbackCheckbox().checked).toBe(true)
+    expect(container.textContent).not.toContain('Using Coinbase while Block is unavailable.')
+    await finishSaves(server)
+    expect(container.textContent).toContain('Using Coinbase while Block is unavailable.')
+  })
+})
+
+it('does not read the settings again while a save is running', async () => {
+  await withTestSetup(async () => {
+    const server = new PriceServer()
+    server.saveReply = 'hold'
+    const select = await renderPriceSettings()
+    await idle()
+    const before = server.optionsRequests
+    await pick(select, 'coinbase')
+    await act(async () => {
+      await queryClient.refetchQueries({ queryKey: ['price-source'] })
+    })
+    expect(server.optionsRequests).toBe(before)
+    server.releaseSaves()
+    await idle()
     expect(select.value).toBe('coinbase')
   })
 })
@@ -644,5 +811,95 @@ it('reconciles a committed setting after its save response is lost', async () =>
     expect(server.options.selected).toBe('coinbase')
     expect(select.value).toBe('coinbase')
     expect(container.textContent).not.toContain('Price settings saved')
+  })
+})
+
+it('shows changes made during a save at once and sends them together when it finishes', async () => {
+  await withTestSetup(async () => {
+    const server = new PriceServer()
+    server.saveReply = 'hold'
+    const select = await renderPriceSettings()
+    await idle()
+    await pick(select, 'coinbase')
+    await vi.waitFor(() => {
+      expect(server.heldSaveCount()).toBe(1)
+    })
+    await pick(select, 'coingecko')
+    await act(async () => {
+      fallbackCheckbox().click()
+    })
+    expect(select.value).toBe('coingecko')
+    expect(fallbackCheckbox().checked).toBe(false)
+    expect(server.heldSaveCount()).toBe(1)
+
+    server.releaseSaves()
+    await idle()
+    expect(server.saved).toEqual([
+      { json: { source: 'coinbase' } },
+      { json: { source: 'coingecko', fallbacks: false } },
+    ])
+    expect(select.value).toBe('coingecko')
+    expect(fallbackCheckbox().checked).toBe(false)
+  })
+})
+
+it('drops changes queued behind a save that fails', async () => {
+  await withTestSetup(async () => {
+    const server = new PriceServer()
+    server.saveReply = 'hold'
+    server.failSave = true
+    const select = await renderPriceSettings()
+    await idle()
+    await pick(select, 'coinbase')
+    await vi.waitFor(() => {
+      expect(server.heldSaveCount()).toBe(1)
+    })
+    await pick(select, 'coingecko')
+    server.releaseSaves()
+    await idle()
+    expect(server.saved).toEqual([{ json: { source: 'coinbase' } }])
+    expect(select.value).toBe('block')
+    expect(toast.error).toHaveBeenCalledTimes(1)
+  })
+})
+
+it('follows the saved settings again after a save', async () => {
+  await withTestSetup(async () => {
+    const server = new PriceServer()
+    const select = await renderPriceSettings()
+    await choose(select, 'coinbase')
+    server.options = { ...server.options, selected: 'coingecko' }
+    await act(async () => {
+      await queryClient.refetchQueries({ queryKey: ['price-source'] })
+    })
+    await idle()
+    expect(select.value).toBe('coingecko')
+  })
+})
+
+it('clears the confirmation when another change is made', async () => {
+  await withTestSetup(async () => {
+    const server = new PriceServer()
+    server.afterSave.set('coinbase', price('coinbase'))
+    const select = await renderPriceSettings()
+    await choose(select, 'coinbase')
+    expect(container.textContent).toContain('Price settings saved')
+    server.statusReply = 'fail'
+    await choose(select, 'coingecko')
+    expect(container.textContent).not.toContain('Price settings saved')
+  })
+})
+
+it('says when the fallback setting could not be saved', async () => {
+  await withTestSetup(async () => {
+    const server = new PriceServer()
+    server.failSave = true
+    await renderPriceSettings()
+    await act(async () => {
+      fallbackCheckbox().click()
+    })
+    await idle()
+    expect(toast.error).toHaveBeenCalledWith('Could not save the fallback setting. Please try again.')
+    expect(fallbackCheckbox().checked).toBe(true)
   })
 })

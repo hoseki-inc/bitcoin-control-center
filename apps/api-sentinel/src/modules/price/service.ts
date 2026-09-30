@@ -79,7 +79,9 @@ interface Failure {
 
 interface PriceRequest {
   startedAt: Moment
-  done: Promise<void>
+  done: Promise<Result<Sample, PriceRequestError>>
+  /** The answer once the request has finished. */
+  answer: () => Result<Sample, PriceRequestError> | undefined
 }
 
 class PriceRequestError extends Error {
@@ -104,12 +106,8 @@ const LAST_KNOWN_WAIT_MS = 3_000
 const MAX_PRICE_AGE_MS = 30 * 60_000
 const PUBLIC_MEMPOOL_URL = 'https://mempool.space'
 
-function isPublicMempool(url: URL | null): boolean {
-  return url !== null && (url.hostname === 'mempool.space' || url.hostname.endsWith('.mempool.space'))
-}
-
-function sourceNames(sources: PriceSource[]): string {
-  return sources.map((source) => source.name).join(',')
+function isPublicMempool(url: URL): boolean {
+  return url.hostname === 'mempool.space' || url.hostname.endsWith('.mempool.space')
 }
 
 function ageOf(sample: Sample): number {
@@ -126,7 +124,14 @@ function isRecent(sample: Sample): boolean {
 
 /** The useful part of a fetch failure: Node reports "fetch failed" and keeps the reason in `cause`. */
 function describeFailure(error: Error): string {
-  return error.cause instanceof Error ? `${error.message}: ${error.cause.message}` : error.message
+  const { cause } = error
+  if (!(cause instanceof Error)) {
+    return error.message
+  }
+  // Refused on every address of a host such as localhost, Node reports an AggregateError with no message.
+  const inner = cause instanceof AggregateError ? cause.errors.filter((item) => item instanceof Error) : []
+  const reason = cause.message || inner.map((item: Error) => item.message).join('; ')
+  return reason === '' ? error.message : `${error.message}: ${reason}`
 }
 
 const PositiveNumberSchema = z.number().positive().finite()
@@ -204,8 +209,19 @@ interface SettingsChange {
 
 /**
  * Current BTC/USD price from the source chosen in Settings, with the others as fallbacks when
- * allowed. Each source keeps its own latest price and failure, and has at most one request in
- * flight, whoever asked; each caller keeps its own time limit. Price requests carry no wallet data.
+ * allowed. Price requests carry no wallet data.
+ *
+ * - Each source keeps its latest price and last failure, and has at most one request in flight,
+ *   whoever asked. A price is reused for 60 seconds after it was fetched.
+ * - A source that refused, stalled or answered badly is skipped for 30 seconds. After a network
+ *   error, the next caller asks it again.
+ * - A caller waits at most 15 seconds in all. With a recent price to fall back on, it waits at most
+ *   3 seconds for each source, counted from when that source's request started, then tries the
+ *   next. A status check in Settings waits fully for the chosen source.
+ * - When no allowed source answers, the newest recent price from an allowed source is returned,
+ *   flagged `lastKnown`. A price is used for at most 30 minutes (65 for a self-hosted mempool,
+ *   which updates hourly), measured by the source's clock where it sends one.
+ * - Saving the settings restarts callers still waiting, under the new settings.
  */
 export class PriceService {
   private readonly logger: Logger
@@ -234,22 +250,25 @@ export class PriceService {
     this.lastKnownWaitMs = deps.lastKnownWaitMs ?? LAST_KNOWN_WAIT_MS
 
     const configured = URL.canParse(deps.mempoolApiUrl) ? new URL(deps.mempoolApiUrl) : null
-    if (configured && (configured.username !== '' || configured.password !== '')) {
+    const isWebUrl = configured?.protocol === 'http:' || configured?.protocol === 'https:'
+    if (!isWebUrl) {
+      // The value is not logged, since it may hold credentials.
+      this.logger.warn('MEMPOOL_API_URL is not an http(s) URL, so it is not offered as a price source')
+    }
+    const selfHosted = isWebUrl && !isPublicMempool(configured) ? configured : null
+    if (selfHosted && (selfHosted.username !== '' || selfHosted.password !== '')) {
       // fetch refuses URLs with credentials, and its error would repeat the password in logs.
-      configured.username = ''
-      configured.password = ''
+      selfHosted.username = ''
+      selfHosted.password = ''
       this.logger.warn('Ignoring credentials in MEMPOOL_API_URL for price requests')
     }
-    const mempoolApiUrl = (configured?.toString() ?? deps.mempoolApiUrl).replace(/\/$/, '')
     const definitions: Record<PriceSourceName, PriceSource | null> = {
-      mempool: isPublicMempool(configured)
-        ? null
-        : {
-            name: 'mempool',
-            label: `Your mempool server (${configured?.host ?? mempoolApiUrl})`,
-            url: `${mempoolApiUrl}/api/v1/prices`,
-            read: readMempoolPrice,
-          },
+      mempool: selfHosted && {
+        name: 'mempool',
+        label: `Your mempool server (${selfHosted.host})`,
+        url: `${selfHosted.toString().replace(/\/$/, '')}/api/v1/prices`,
+        read: readMempoolPrice,
+      },
       block: {
         name: 'block',
         label: 'Block',
@@ -358,12 +377,14 @@ export class PriceService {
     verifyPrimary: boolean,
   ): Promise<Result<BtcPrice, Error> | 'settings changed'> {
     const errors: string[] = []
-    const planned = sourceNames(sources)
     const hasLastKnown = this.lastKnown(sources) !== undefined
+    // Requests this caller stopped waiting for, in order of preference.
+    const late: PriceRequest[] = []
 
     for (const source of sources) {
       const sample = this.latest.get(source.name)
       const failure = this.failures.get(source.name)
+      // A status check in Settings asks the chosen source again rather than trusting its cached price.
       const checkingPrimary = verifyPrimary && source === sources[0]
       if (!checkingPrimary && !failure && sample && sample.fetchedAt.elapsed() < CACHE_TTL_MS && isRecent(sample)) {
         return Ok(this.toPrice(sample, false))
@@ -378,25 +399,19 @@ export class PriceService {
       }
 
       const request = this.request(source)
-      // Share the short wait across callers, but allow Settings to verify the primary fully.
-      const remaining = Math.min(
-        deadline - performance.now(),
-        hasLastKnown && !checkingPrimary ? this.lastKnownWaitMs - request.startedAt.elapsed() : Infinity,
-      )
-      if (remaining <= 0) {
-        errors.push(`${source.label} did not answer in time`)
-        continue
-      }
+      // Counted from the request's start, so a caller joining a stalled request does not wait again.
+      const wait = hasLastKnown && !checkingPrimary ? this.lastKnownWaitMs - request.startedAt.elapsed() : Infinity
       let timer: ReturnType<typeof setTimeout> | undefined
       const outcome = await Promise.race([
-        request.done.then(() =>
-          sourceNames(this.planSources()) === planned ? ('answered' as const) : ('settings changed' as const),
-        ),
+        request.done,
         settingsChanged.then(() => 'settings changed' as const),
         new Promise<'out of time'>((resolve) => {
-          timer = setTimeout(() => {
-            resolve('out of time')
-          }, remaining)
+          timer = setTimeout(
+            () => {
+              resolve('out of time')
+            },
+            Math.min(deadline - performance.now(), wait),
+          )
         }),
       ])
       clearTimeout(timer)
@@ -404,18 +419,24 @@ export class PriceService {
         return outcome
       }
       if (outcome === 'out of time') {
-        // The request carries on and records its answer for the next caller.
+        // The request carries on and records its answer for later callers.
         errors.push(`${source.label} did not answer in time`)
+        late.push(request)
         continue
       }
-
-      const answered = this.latest.get(source.name)
-      if (answered && answered !== sample) {
-        return Ok(this.toPrice(answered, false))
+      if (outcome.isOk()) {
+        return Ok(this.toPrice(outcome.unwrap(), false))
       }
-      errors.push(this.failures.get(source.name)?.error.message ?? `${source.label} gave no price`)
+      errors.push(outcome.unwrapErr().message)
     }
 
+    // A source that answered after this caller moved on still supplies a current price.
+    for (const request of late) {
+      const answer = request.answer()
+      if (answer?.isOk() === true) {
+        return Ok(this.toPrice(answer.unwrap(), false))
+      }
+    }
     // A recent price is better than none while every allowed source is unavailable.
     const last = this.lastKnown(sources)
     if (last) {
@@ -444,18 +465,26 @@ export class PriceService {
       return running
     }
     const startedAt = new Moment()
-    const done = this.fetchSample(source).then((result) => {
-      if (result.isOk()) {
-        this.latest.set(source.name, result.unwrap())
-        this.failures.delete(source.name)
-      } else {
-        const error = result.unwrapErr()
-        this.failures.set(source.name, { error, failedAt: new Moment(), wait: error.wait })
-        this.logger.warn({ source: source.name, err: error }, 'BTC price source failed')
-      }
-      this.inflight.delete(source.name)
-    })
-    const request = { startedAt, done }
+    let answer: Result<Sample, PriceRequestError> | undefined
+    const done = this.fetchSample(source)
+      .then((result) => {
+        answer = result
+        if (result.isOk()) {
+          this.latest.set(source.name, result.unwrap())
+          this.failures.delete(source.name)
+          // Which outside services were contacted stays auditable.
+          this.logger.debug({ source: source.name }, 'Fetched BTC price')
+        } else {
+          const error = result.unwrapErr()
+          this.failures.set(source.name, { error, failedAt: new Moment(), wait: error.wait })
+          this.logger.warn({ source: source.name, err: error }, 'BTC price source failed')
+        }
+        return result
+      })
+      .finally(() => {
+        this.inflight.delete(source.name)
+      })
+    const request = { startedAt, done, answer: () => answer }
     this.inflight.set(source.name, request)
     return request
   }
@@ -490,24 +519,25 @@ export class PriceService {
       return Err(new PriceRequestError(`${source.label} price error: ${response.status} ${response.statusText}`, true))
     }
 
-    // Age the price by the source's own clock where it sends one, so a wrong local clock does not reject it.
+    // Age the price by the source's own clock where it sends one (`Date`, plus `Age` when a cache held the
+    // response), so a wrong local clock does not reject it.
     const fetchedAt = new Moment()
-    const header = Date.parse(response.headers.get('date') ?? '')
-    const ageHeader = response.headers.get('age')?.split(',')[0]?.trim() ?? ''
-    const cacheAge = /^\d+$/.test(ageHeader) ? Number(ageHeader) * 1000 : 0
-    const sourceNow = Number.isNaN(header) ? Date.now() : header
+    const date = Date.parse(response.headers.get('date') ?? '')
+    const age = response.headers.get('age')?.split(',')[0]?.trim() ?? ''
+    const cacheAge = /^\d+$/.test(age) ? Number(age) * 1000 : 0
+    const sourceNow = Number.isNaN(date) ? Date.now() : date + cacheAge
     const quoted = await source.read(response)
     if (!quoted) {
       return Err(new PriceRequestError(`BTC price not found in ${source.label} response`, true))
     }
 
     // A timestamp ahead of the source's clock must not make a price look newer than it is.
-    const quoteAge = Math.max(0, sourceNow - (quoted.asOf?.getTime() ?? sourceNow))
-    const ageAtFetch = Number.isNaN(header) ? Math.max(quoteAge, cacheAge) : quoteAge + cacheAge
-    if (ageAtFetch + fetchedAt.elapsed() >= maxPriceAge(source.name)) {
-      const minutes = Math.round(ageAtFetch / 60_000)
+    const ageAtFetch = quoted.asOf ? Math.max(0, sourceNow - quoted.asOf.getTime()) : cacheAge
+    const sample = { value: quoted.value, source: source.name, ageAtFetch, fetchedAt }
+    if (!isRecent(sample)) {
+      const minutes = Math.round(ageOf(sample) / 60_000)
       return Err(new PriceRequestError(`${source.label} price is ${minutes} minutes old`, true))
     }
-    return Ok({ value: quoted.value, source: source.name, ageAtFetch, fetchedAt })
+    return Ok(sample)
   }
 }

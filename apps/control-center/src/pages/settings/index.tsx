@@ -154,16 +154,20 @@ function useFadingNotice(): [FadingNotice, (notice: 'shown' | null) => void] {
 
 type PriceSourceOptions = RouterOutput['settings']['priceSource']
 type PriceStatus = RouterOutput['settings']['priceStatus']
-type PriceChange = { source: PriceSourceOptions['selected'] } | { fallbacks: boolean }
+interface PriceChange {
+  source?: PriceSourceOptions['selected']
+  fallbacks?: boolean
+}
 const PRICE_SOURCE_QUERY_KEY = ['price-source']
 const PRICE_STATUS_QUERY_KEY = ['price-status']
 // Queries showing USD values from the current price, refreshed after a change.
-const USD_QUERY_KEYS = [
+const USD_QUERY_KEYS = [getQueryKey(trpc.portalProve.controlCenter.getData)]
+// Reset rather than refreshed: a failed price request would otherwise keep showing a price from a source
+// the change no longer allows, and account balances never refetch on mount.
+const RESET_USD_QUERY_KEYS = [
   getQueryKey(trpc.portalProve.retrieveBitcoinPrice),
-  getQueryKey(trpc.portalProve.controlCenter.getData),
+  getQueryKey(trpc.portalProve.onchain.bitcoinAccountBalances),
 ]
-// Account balances never refetch on mount, so they are reset to fetch again the next time they are shown.
-const RESET_USD_QUERY_KEYS = [getQueryKey(trpc.portalProve.onchain.bitcoinAccountBalances)]
 
 interface StatusResult {
   status: 'loading' | 'error' | 'success'
@@ -185,72 +189,113 @@ function currentStatus(
   return status
 }
 
+function withChange(options: PriceSourceOptions, change: PriceChange): PriceSourceOptions {
+  return { ...options, selected: change.source ?? options.selected, fallbacks: change.fallbacks ?? options.fallbacks }
+}
+
 function PriceSourceSettings(): JSX.Element {
   const queryClient = useQueryClient()
-  const [saving, setSaving] = useState(false)
-  const savingRef = useRef(false)
+  // Changes Sentinel has not confirmed yet, shown over the saved settings until their save finishes.
+  const [unsaved, setUnsaved] = useState<PriceChange | null>(null)
+  // From a change until the price has been checked under the saved settings.
+  const [checking, setChecking] = useState(false)
+  // Changes made while a save request runs, sent when it finishes; the latest value of each setting wins.
+  const pending = useRef<PriceChange | null>(null)
+  const sending = useRef(false)
+  // Counts changes, so a check that a later change has superseded never reports.
+  const changeCount = useRef(0)
   const query = useQuery({
     queryKey: PRICE_SOURCE_QUERY_KEY,
     queryFn: async ({ signal }) => baseTrpc.settings.priceSource.query(undefined, { signal }),
-    enabled: !saving,
+    // A refresh started before a save finished could bring back the old settings.
+    enabled: unsaved === null,
   })
   // Separate from the options, which must stay usable while a price lookup waits on the network.
   const statusQuery = useQuery({
     queryKey: PRICE_STATUS_QUERY_KEY,
     queryFn: async ({ signal }) => baseTrpc.settings.priceStatus.query(undefined, { signal }),
   })
-  const options: PriceSourceOptions | null = query.data ?? null
+  const saved: PriceSourceOptions | null = query.data ?? null
+  const options = saved && unsaved ? withChange(saved, unsaved) : saved
   const [savedNotice, setSavedNotice] = useFadingNotice()
-  // A save runs until the new choice has been checked. Changes made meanwhile are ignored rather than
-  // disabling the controls, which would drop keyboard focus.
-  const save = async (change: PriceChange): Promise<void> => {
-    if (!options || savingRef.current) {
+
+  // Every change is kept, including each step of choosing with the keyboard. The controls stay enabled,
+  // since disabling them would drop keyboard focus.
+  const change = (next: PriceChange): void => {
+    if (!saved) {
       return
     }
-    savingRef.current = true
-    setSaving(true)
+    changeCount.current += 1
+    pending.current = { ...pending.current, ...next }
+    setUnsaved((current) => ({ ...current, ...next }))
     setSavedNotice(null)
-    const previous = options
+    setChecking(true)
+    void save()
+  }
+
+  /** Sends the pending changes in order, then checks the price under the saved settings. */
+  const save = async (): Promise<void> => {
+    if (sending.current) {
+      return
+    }
+    sending.current = true
+    const takePending = (): PriceChange | null => {
+      const next = pending.current
+      pending.current = null
+      return next
+    }
+    let result: PriceSourceOptions | null = null
+    let failed: PriceChange | null = null
     try {
-      // Cancel the pre-save snapshot and pause background options reads until saving finishes.
       await queryClient.cancelQueries({ queryKey: PRICE_SOURCE_QUERY_KEY })
-      queryClient.setQueryData(
-        PRICE_SOURCE_QUERY_KEY,
-        'source' in change ? { ...options, selected: change.source } : { ...options, fallbacks: change.fallbacks },
-      )
-      let saved: PriceSourceOptions | null = null
-      try {
-        saved = await baseTrpc.settings.setPriceSettings.mutate(change)
-        queryClient.setQueryData(PRICE_SOURCE_QUERY_KEY, saved)
-      } catch {
-        queryClient.setQueryData(PRICE_SOURCE_QUERY_KEY, previous)
-        toast.error(
-          'source' in change
-            ? 'Could not save the price source. Please try again.'
-            : 'Could not save the fallback setting. Please try again.',
-        )
-      }
-      // A status request that began before the save would describe the old choice, so start a new one.
-      await queryClient.cancelQueries({ queryKey: PRICE_STATUS_QUERY_KEY })
-      const refreshing = Promise.all([
-        queryClient.invalidateQueries({ queryKey: PRICE_STATUS_QUERY_KEY }),
-        ...USD_QUERY_KEYS.map(async (queryKey) => queryClient.invalidateQueries({ queryKey })),
-        ...RESET_USD_QUERY_KEYS.map(async (queryKey) => queryClient.resetQueries({ queryKey })),
-      ])
-      if (!saved) {
-        // A lost reply can follow a committed write. Reconcile without blocking another attempt.
-        void refreshing
-        return
-      }
-      await refreshing
-      const status = currentStatus(queryClient.getQueryState<PriceStatus>(PRICE_STATUS_QUERY_KEY), saved)
-      if (status?.price && status.price.source === status.selected && !status.price.lastKnown) {
-        setSavedNotice('shown')
+      for (let next = takePending(); next !== null; next = takePending()) {
+        try {
+          result = await baseTrpc.settings.setPriceSettings.mutate(next)
+        } catch {
+          // Changes made meanwhile are dropped with it, and the saved settings are shown again.
+          failed = { ...next, ...takePending() }
+        }
       }
     } finally {
-      void queryClient.invalidateQueries({ queryKey: PRICE_SOURCE_QUERY_KEY })
-      savingRef.current = false
-      setSaving(false)
+      sending.current = false
+    }
+
+    const latest = changeCount.current
+    if (result) {
+      queryClient.setQueryData(PRICE_SOURCE_QUERY_KEY, result)
+    }
+    setUnsaved(null)
+    if (failed) {
+      toast.error(
+        failed.source === undefined
+          ? 'Could not save the fallback setting. Please try again.'
+          : 'Could not save the price source. Please try again.',
+      )
+    }
+    // A status request that began before the save would describe the old choice, so start a new one.
+    await queryClient.cancelQueries({ queryKey: PRICE_STATUS_QUERY_KEY })
+    if (latest !== changeCount.current) {
+      return
+    }
+    // Refreshed after a failure too, since a lost reply can follow a committed write.
+    const refreshing = Promise.all([
+      queryClient.invalidateQueries({ queryKey: PRICE_SOURCE_QUERY_KEY }),
+      queryClient.invalidateQueries({ queryKey: PRICE_STATUS_QUERY_KEY }),
+      ...USD_QUERY_KEYS.map(async (queryKey) => queryClient.invalidateQueries({ queryKey })),
+      ...RESET_USD_QUERY_KEYS.map(async (queryKey) => queryClient.resetQueries({ queryKey })),
+    ])
+    // After a failure, the refresh runs in the background so another attempt is not held up.
+    if (!failed) {
+      await refreshing
+    }
+    if (latest !== changeCount.current) {
+      return
+    }
+    setChecking(false)
+    // Confirm only when a successful check shows the saved choice supplying the price.
+    const status = failed ? null : currentStatus(queryClient.getQueryState<PriceStatus>(PRICE_STATUS_QUERY_KEY), result)
+    if (status?.price && status.price.source === status.selected && !status.price.lastKnown) {
+      setSavedNotice('shown')
     }
   }
 
@@ -258,7 +303,7 @@ function PriceSourceSettings(): JSX.Element {
     options?.sources.find((source) => source.name === name)?.label
   const selectedLabel = label(options?.selected) ?? 'your primary price source'
   // Read through the query result, so a status that arrives or changes later renders.
-  const status = saving ? null : currentStatus(statusQuery, options)
+  const status = checking ? null : currentStatus(statusQuery, options)
   const fallbackLabel =
     status?.price && !status.price.lastKnown && status.price.source !== status.selected
       ? label(status.price.source)
@@ -274,7 +319,7 @@ function PriceSourceSettings(): JSX.Element {
           Used to show your balances in US dollars. Price requests include no wallet information.
         </Text>
       </Box>
-      <FormControl isDisabled={!options} aria-busy={saving}>
+      <FormControl isDisabled={!options} aria-busy={checking}>
         <FormLabel htmlFor="price-source" textStyle="text/sm" mb={2}>
           Price source
         </FormLabel>
@@ -287,7 +332,7 @@ function PriceSourceSettings(): JSX.Element {
             onChange={(event) => {
               const next = options?.sources.find((source) => source.name === event.target.value)
               if (next) {
-                void save({ source: next.name })
+                change({ source: next.name })
               }
             }}
           >
@@ -302,10 +347,10 @@ function PriceSourceSettings(): JSX.Element {
             w={4}
             flexShrink={0}
             color="green.600"
-            opacity={saving || savedNotice === 'shown' ? 1 : 0}
+            opacity={checking || savedNotice === 'shown' ? 1 : 0}
             transition={`opacity ${NOTICE_FADE_MS}ms ease-out`}
           >
-            {saving ? (
+            {checking ? (
               <>
                 <Spinner size="xs" color="neutral.500" />
                 <VisuallyHidden>Checking the price source</VisuallyHidden>
@@ -328,7 +373,7 @@ function PriceSourceSettings(): JSX.Element {
           aria-describedby="price-fallbacks-description"
           isChecked={options?.fallbacks ?? true}
           onChange={(event) => {
-            void save({ fallbacks: event.target.checked })
+            change({ fallbacks: event.target.checked })
           }}
         >
           <Text textStyle="text/sm">Allow fallbacks</Text>
@@ -341,7 +386,7 @@ function PriceSourceSettings(): JSX.Element {
             Could not load price settings. Refresh to try again.
           </Text>
         )}
-        {!saving && statusQuery.isError && (
+        {!checking && statusQuery.isError && (
           <Text role="alert" mt={2} textStyle="text/sm" color="error.700">
             Could not check the price source. Refresh to try again.
           </Text>
