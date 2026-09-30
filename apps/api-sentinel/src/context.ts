@@ -12,7 +12,7 @@ import { EtfService } from './modules/etf/service'
 import { ExchangeService } from './modules/exchange/service'
 import { ManualService } from './modules/manual/service'
 import { DailyRatesService } from './modules/price/daily_rates'
-import { PriceService } from './modules/price/service'
+import { PriceService, readPriceSettings } from './modules/price/service'
 import { StatementService } from './modules/statements/service'
 
 /**
@@ -87,8 +87,8 @@ export const createAppContext = asyncFn(
 
     // Check SQLite for user-saved Electrum settings (from desktop Settings page).
     // These override the env var defaults so the config persists across restarts.
-    const getSetting = (key: string): string | undefined =>
-      database.db.prepare<unknown[], { value: string }>('SELECT value FROM settings WHERE key = ?').get(key)?.value
+    const readSetting = database.db.prepare<unknown[], { value: string }>('SELECT value FROM settings WHERE key = ?')
+    const getSetting = (key: string): string | undefined => readSetting.get(key)?.value
 
     const electrumHost = getSetting('electrum_host') ?? env.ELECTRUM_HOST
     const electrumPort = Number(getSetting('electrum_port') ?? env.ELECTRUM_PORT)
@@ -166,7 +166,11 @@ export const createAppContext = asyncFn(
       logger,
     })
 
-    const priceService = new PriceService({ logger })
+    const priceService = new PriceService({
+      logger,
+      mempoolApiUrl: env.MEMPOOL_API_URL,
+      settings: () => readPriceSettings(getSetting),
+    })
     const dailyRatesService = new DailyRatesService({ logger, mempoolApiUrl: env.MEMPOOL_API_URL })
 
     const controlCenterService = new ControlCenterService({
