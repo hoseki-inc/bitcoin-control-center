@@ -75,7 +75,7 @@ async function start(): Promise<void> {
   const tor = torManager
   // Keep the development ports free; reuse this app's own port across launches.
   server = await startOnPreferredPort(path.join(app.getPath('userData'), 'port'), async (listenPort) =>
-    startServer(serverModule, { waitForElectrum: false, tor, listenPort }),
+    startServer(serverModule, { waitForElectrum: false, tor, listenPort, connectionProfiles: true }),
   )
   const origin = `http://${LOOPBACK_HOST}:${server.port}`
   if (quitting) {

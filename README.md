@@ -227,13 +227,11 @@ pnpm --filter control-center dev
 
 ### Preview desktop-only settings in a browser
 
-Run Sentinel normally, then start the frontend in desktop mode:
-
 ```bash
-pnpm --filter control-center dev:desktop
+pnpm dev:desktop
 ```
 
-This exposes desktop-specific settings in the UI, but bundled Tor behavior requires the packaged Electron application.
+This runs Sentinel and the frontend as the desktop app does, including saved Electrum connections. Bundled Tor behavior requires the packaged Electron application. Stop `pnpm dev` first, since both use the development ports.
 
 ## Local data and backups
 

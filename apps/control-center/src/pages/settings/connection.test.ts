@@ -29,17 +29,30 @@ const browser = await vi.hoisted(async () => {
 const connectionSchema = z.object({
   host: z.string(),
   port: z.number(),
-  protocol: z.string(),
+  protocol: z.enum(['tcp', 'ssl']),
   torEnabled: z.boolean().optional(),
 })
+const ConnectRequestSchema = z.object({ id: z.string(), revision: z.number(), connection: connectionSchema })
+const CreateRequestSchema = connectionSchema.extend({ nickname: z.string() })
+const ReferenceSchema = z.object({ id: z.string(), revision: z.number(), nickname: z.string().optional() })
+interface ProfileFixture {
+  id: string
+  nickname: string
+  host: string
+  port: number
+  protocol: 'tcp' | 'ssl'
+  torEnabled: boolean
+  revision: number
+}
 let root: Root
 let container: HTMLDivElement
 let queryClient: QueryClient
-let saved: Map<string, string | null>
+let profiles: ProfileFixture[]
+let activeId: string
 let connected: boolean
 let finishSave: (response: Response) => void
 let saveResponse: Promise<Response>
-let requests: Array<{ path: string; input: z.infer<typeof connectionSchema> | null }>
+let requests: Array<{ path: string; input: unknown }>
 interface TorStatusFixture {
   state: string
   message?: string
@@ -60,11 +73,57 @@ function button(label: string): HTMLButtonElement {
 }
 
 function hostInput(): HTMLInputElement {
-  const input = container.querySelector<HTMLInputElement>('input[placeholder="electrum.blockstream.info"]')
+  const input = container.querySelector<HTMLInputElement>('#electrum-host')
   if (!input) {
     throw new Error('Missing host input')
   }
   return input
+}
+
+function profile(nickname: string, values: Partial<ProfileFixture> = {}): ProfileFixture {
+  return {
+    id: `00000000-0000-4000-8000-00000000000${profiles.length + 1}`,
+    nickname,
+    host: `${nickname.toLowerCase().replaceAll(' ', '-')}.example`,
+    port: 50002,
+    protocol: 'ssl',
+    torEnabled: false,
+    revision: 1,
+    ...values,
+  }
+}
+
+function activeProfile(): ProfileFixture {
+  const found = profiles.find((item) => item.id === activeId)
+  if (!found) {
+    throw new Error('Missing active profile')
+  }
+  return found
+}
+
+function requestsTo(procedure: string): unknown[] {
+  return requests.filter(({ path }) => path === `settings.${procedure}`).map(({ input }) => input)
+}
+
+function connectRequests(): Array<z.infer<typeof ConnectRequestSchema>> {
+  return requestsTo('connectionProfiles.connect').map((input) =>
+    parseUnknown(ConnectRequestSchema, input).expect('connect request'),
+  )
+}
+
+type TrpcValue =
+  | ProfileFixture
+  | { profiles: ProfileFixture[]; activeId: string; limit: number }
+  | { id: string }
+  | { success: boolean; version: string[] }
+  | null
+
+function trpcResult(value: TrpcValue): Response {
+  return Response.json({ result: { data: superjson.serialize(value) } })
+}
+
+function trpcError(message: string, status = 400): Response {
+  return Response.json({ error: { json: { message } } }, { status })
 }
 
 async function render(): Promise<void> {
@@ -142,16 +201,20 @@ async function waitForText(text: string): Promise<void> {
   )
 }
 
-async function changeHost(): Promise<void> {
+async function type(input: HTMLInputElement, value: string): Promise<void> {
   await act(async () => {
     const descriptor = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')
     if (!descriptor?.set) {
       throw new Error('Missing input setter')
     }
-    descriptor.set.call(hostInput(), 'server-b.example')
-    hostInput().dispatchEvent(new Event('input', { bubbles: true }))
-    hostInput().dispatchEvent(new Event('change', { bubbles: true }))
+    descriptor.set.call(input, value)
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    input.dispatchEvent(new Event('change', { bubbles: true }))
   })
+}
+
+async function changeHost(): Promise<void> {
+  await type(hostInput(), 'server-b.example')
 }
 
 async function waitForToast(kind: 'success' | 'error'): Promise<void> {
@@ -179,13 +242,9 @@ async function withTestSetup(run: () => Promise<void>): Promise<void> {
     dom.window.close()
   })
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
-  saved = new Map([
-    ['electrum_host', 'server-a.example'],
-    ['electrum_port', '50002'],
-    ['electrum_protocol', 'ssl'],
-    ['tor_enabled', 'false'],
-    ['user_name', null],
-  ])
+  profiles = []
+  profiles.push(profile('Server A'))
+  activeId = profiles[0]?.id ?? ''
   connected = true
   requests = []
   torStatus = { state: 'stopped' }
@@ -199,38 +258,21 @@ async function withTestSetup(run: () => Promise<void>): Promise<void> {
   vi.stubGlobal(
     'fetch',
     vi.fn<typeof fetch>(async (url, init) => {
-      const parsed = new URL(parseUnknown(z.string(), url).expect('request URL'), 'http://localhost:3400')
+      const parsed = new URL(parseUnknown(z.string(), url).expect('request URL'), 'http://127.0.0.1')
       const path = parsed.pathname.split('/').at(-1) ?? ''
       const body = parseUnknown(z.string(), init?.body).unwrapOr(null)
-      // SAFETY: Serialized request text is validated as a connection payload below.
+      // SAFETY: Serialized request text is validated by each handler's schema before use.
       const input =
         body === null
           ? null
-          : parseUnknown(z.object({ json: connectionSchema }), JSON.parse(body) as unknown).expect('connection payload')
-              .json
+          : parseUnknown(z.object({ json: z.unknown() }), JSON.parse(body) as unknown).expect('request').json
       requests.push({ path, input })
       if (path === 'settings.get') {
-        // SAFETY: The query envelope is validated before its setting key is used.
-        const { key } = parseUnknown(
-          z.object({ json: z.object({ key: z.string() }) }),
-          JSON.parse(parsed.searchParams.get('input') ?? '') as unknown,
-        ).expect('setting query').json
-        return Response.json({ result: { data: superjson.serialize(saved.get(key) ?? null) } })
+        return trpcResult(null)
       }
       if (path === 'settings.electrumStatus') {
-        return Response.json({
-          result: {
-            data: {
-              json: {
-                connected,
-                host: saved.get('electrum_host'),
-                port: Number(saved.get('electrum_port')),
-                protocol: saved.get('electrum_protocol'),
-                tor: torStatus,
-              },
-            },
-          },
-        })
+        const { host, port, protocol } = activeProfile()
+        return Response.json({ result: { data: { json: { connected, host, port, protocol, tor: torStatus } } } })
       }
       if (path === 'settings.priceSource' || path === 'settings.priceStatus') {
         return Response.json({ result: { data: { json: null } } })
@@ -242,16 +284,50 @@ async function withTestSetup(run: () => Promise<void>): Promise<void> {
           torFailsInstantly === null ? started : { state: 'failed', message: torFailsInstantly, attempt: torAttempts }
         return Response.json({ result: { data: { json: started } } })
       }
-      if (path === 'settings.reconnectElectrum') {
-        const result = await saveResponse
-        if (result.ok && input) {
-          saved.set('electrum_host', input.host)
-          saved.set('electrum_port', String(input.port))
-          saved.set('electrum_protocol', input.protocol)
-          saved.set('tor_enabled', String(Boolean(input.torEnabled)))
-          connected = true
+      if (path === 'settings.testElectrum') {
+        return trpcResult({ success: true, version: ['Test Electrum', '1.4'] })
+      }
+      if (path === 'settings.connectionProfiles.list') {
+        return trpcResult({ profiles, activeId, limit: 5 })
+      }
+      if (path === 'settings.connectionProfiles.create') {
+        const created = { ...profile('New'), ...CreateRequestSchema.parse(input), torEnabled: false }
+        profiles.push(created)
+        return trpcResult(created)
+      }
+      if (path === 'settings.connectionProfiles.rename' || path === 'settings.connectionProfiles.delete') {
+        const reference = ReferenceSchema.parse(input)
+        const index = profiles.findIndex((item) => item.id === reference.id)
+        const current = profiles[index]
+        if (!current || current.revision !== reference.revision) {
+          return trpcError('This connection changed in another window. Reload it before trying again.', 409)
         }
-        return result
+        if (path.endsWith('.delete')) {
+          profiles.splice(index, 1)
+          return trpcResult({ id: reference.id })
+        }
+        const renamed = { ...current, nickname: reference.nickname ?? current.nickname, revision: current.revision + 1 }
+        profiles[index] = renamed
+        return trpcResult(renamed)
+      }
+      if (path === 'settings.connectionProfiles.connect') {
+        const request = ConnectRequestSchema.parse(input)
+        const result = await saveResponse
+        const index = profiles.findIndex((item) => item.id === request.id)
+        const current = profiles[index]
+        if (!result.ok || !current) {
+          return result
+        }
+        const updated = {
+          ...current,
+          ...request.connection,
+          torEnabled: request.connection.torEnabled ?? false,
+          revision: current.revision + 1,
+        }
+        profiles[index] = updated
+        activeId = updated.id
+        connected = true
+        return trpcResult(updated)
       }
       throw new Error(`Unexpected request: ${path}`)
     }),
@@ -269,13 +345,13 @@ async function withTestSetup(run: () => Promise<void>): Promise<void> {
 }
 
 describe('desktop connection settings', () => {
-  it('loads local settings even when the computer reports no internet connection', async () => {
+  it('loads saved connections even when the computer reports no internet connection', async () => {
     await withTestSetup(async () => {
       onlineManager.setOnline(false)
       connected = false
       await render()
       expect(hostInput().disabled).toBe(false)
-      expect(button('Save & Reconnect').disabled).toBe(false)
+      expect(button('Reconnect').disabled).toBe(false)
     })
   })
 
@@ -290,12 +366,12 @@ describe('desktop connection settings', () => {
         finishSave(Response.json({ error: { json: { message: 'Server unavailable' } } }, { status: 500 }))
       })
       await waitForToast('error')
-      expect(saved.get('electrum_host')).toBe('server-a.example')
+      expect(activeProfile().host).toBe('server-a.example')
       expect(hostInput().value).toBe('server-b.example')
       expect(button('Save & Reconnect').disabled).toBe(false)
       expect(toast.success).not.toHaveBeenCalled()
-      expect(requests.filter(({ path }) => path === 'settings.update')).toEqual([])
-      expect(requests.filter(({ path }) => path === 'settings.reconnectElectrum')).toHaveLength(1)
+      expect(requestsTo('update')).toEqual([])
+      expect(connectRequests()).toHaveLength(1)
     })
   })
 
@@ -313,11 +389,11 @@ describe('desktop connection settings', () => {
         finishSave(Response.json({ result: { data: null } }))
       })
       await waitForToast('success')
-      expect(saved.get('electrum_host')).toBe('server-b.example')
+      expect(activeProfile().host).toBe('server-b.example')
       expect(hostInput().value).toBe('server-b.example')
       expect(hostInput().disabled).toBe(false)
-      expect(button('Save & Reconnect').disabled).toBe(true)
-      expect(requests.filter(({ path }) => path === 'settings.update')).toEqual([])
+      expect(button('Reconnect').disabled).toBe(true)
+      expect(requestsTo('update')).toEqual([])
     })
   })
 
@@ -326,15 +402,16 @@ describe('desktop connection settings', () => {
       connected = false
       await render()
       expect(container.textContent).toContain('Your saved data is still on this device')
-      expect(button('Save & Reconnect').disabled).toBe(false)
+      expect(button('Reconnect').disabled).toBe(false)
       await act(async () => {
-        button('Save & Reconnect').click()
+        button('Reconnect').click()
       })
       await act(async () => {
         finishSave(Response.json({ result: { data: null } }))
       })
       await waitForToast('success')
-      expect(saved.get('electrum_host')).toBe('server-a.example')
+      expect(activeProfile().host).toBe('server-a.example')
+      expect(connectRequests().map(({ id }) => id)).toEqual([activeId])
     })
   })
 
@@ -395,10 +472,8 @@ describe('desktop connection settings', () => {
       const cancelTest = dialogButton('Cancel')
       assert.ok(cancelTest, 'Expected the confirmation dialog')
       await click(cancelTest)
-      expect(
-        requests.filter(({ path }) => path === 'settings.reconnectElectrum' || path === 'settings.testElectrum'),
-      ).toEqual([])
-      expect(saved.get('tor_enabled')).toBe('false')
+      expect([...connectRequests(), ...requestsTo('testElectrum')]).toEqual([])
+      expect(activeProfile().torEnabled).toBe(false)
       await turnTorOn()
       expect(container.textContent).not.toContain('Tor could not connect')
       expect(requests.filter(({ path }) => path === 'settings.startTor')).toHaveLength(2)
@@ -407,7 +482,7 @@ describe('desktop connection settings', () => {
 
   it('switches a saved Tor connection to direct only after confirmation', async () => {
     await withTestSetup(async () => {
-      saved.set('tor_enabled', 'true')
+      activeProfile().torEnabled = true
       torStatus = { state: 'ready' }
       await render()
       await vi.waitFor(() => {
@@ -415,7 +490,7 @@ describe('desktop connection settings', () => {
       })
       await click(torSwitch())
       await click(button('Save & Reconnect'))
-      expect(requests.filter(({ path }) => path === 'settings.reconnectElectrum')).toEqual([])
+      expect(connectRequests()).toEqual([])
       const confirm = dialogButton('Connect without Tor')
       assert.ok(confirm, 'Expected the confirmation dialog')
       await click(confirm)
@@ -423,16 +498,14 @@ describe('desktop connection settings', () => {
         finishSave(Response.json({ result: { data: null } }))
       })
       await waitForToast('success')
-      expect(
-        requests.filter(({ path }) => path === 'settings.reconnectElectrum').map(({ input }) => input?.torEnabled),
-      ).toEqual([false])
-      expect(saved.get('tor_enabled')).toBe('false')
+      expect(connectRequests().map(({ connection }) => connection.torEnabled)).toEqual([false])
+      expect(activeProfile().torEnabled).toBe(false)
     })
   })
 
   it('does not announce Tor when it was already running before settings opened', async () => {
     await withTestSetup(async () => {
-      saved.set('tor_enabled', 'true')
+      activeProfile().torEnabled = true
       torStatus = { state: 'ready' }
       await render()
       await vi.waitFor(() => {
@@ -445,16 +518,16 @@ describe('desktop connection settings', () => {
 
   it('turns a saved Tor connection off in the form when Tor has failed, keeping the saved setting', async () => {
     await withTestSetup(async () => {
-      saved.set('tor_enabled', 'true')
+      activeProfile().torEnabled = true
       torStatus = { state: 'failed', message: 'Tor stopped unexpectedly.' }
       connected = false
       await render()
       await waitForText('Tor stopped unexpectedly.')
       expect(torSwitch().checked).toBe(false)
-      expect(saved.get('tor_enabled')).toBe('true')
-      expect(container.textContent).toContain('Turn Tor on to try again, or choose a different server below.')
-      expect(container.textContent).not.toContain('then use Save & Reconnect')
-      expect(requests.filter(({ path }) => path === 'settings.reconnectElectrum')).toEqual([])
+      expect(activeProfile().torEnabled).toBe(true)
+      expect(container.textContent).toContain('Turn Tor on to try again, or choose another saved connection.')
+      expect(container.textContent).not.toContain('Check your connection')
+      expect(connectRequests()).toEqual([])
     })
   })
 
@@ -480,7 +553,7 @@ describe('desktop connection settings', () => {
   it('turns the switch back on when a saved Tor connection recovers by itself', async () => {
     await withTestSetup(async () => {
       const advance = useStepTimers()
-      saved.set('tor_enabled', 'true')
+      activeProfile().torEnabled = true
       torStatus = { state: 'failed', message: 'Tor stopped unexpectedly.', attempt: 1 }
       await render()
       await advance(0)
@@ -498,7 +571,7 @@ describe('desktop connection settings', () => {
   it('reassures during a slow Tor start begun by a saved connection', async () => {
     await withTestSetup(async () => {
       const advance = useStepTimers()
-      saved.set('tor_enabled', 'true')
+      activeProfile().torEnabled = true
       torStatus = { state: 'starting', progress: 50, attempt: 1 }
       await render()
       await advance(0)
@@ -529,6 +602,199 @@ describe('desktop connection settings', () => {
       // The saved connection is direct now, so testing it runs without asking again.
       await click(button('Test Connection'))
       expect(requests.filter(({ path }) => path === 'settings.testElectrum')).toHaveLength(1)
+    })
+  })
+})
+
+function field(selector: string): HTMLInputElement {
+  const input = container.querySelector<HTMLInputElement>(selector)
+  if (!input) {
+    throw new Error(`Missing field: ${selector}`)
+  }
+  return input
+}
+
+async function chooseConnection(id: string): Promise<void> {
+  const picker = container.querySelector<HTMLSelectElement>('#saved-connection')
+  if (!picker) {
+    throw new Error('Missing saved connection picker')
+  }
+  await act(async () => {
+    picker.value = id
+    picker.dispatchEvent(new Event('change', { bubbles: true }))
+  })
+}
+
+function optionLabels(): string[] {
+  return Array.from(container.querySelectorAll('#saved-connection option'), (option) => option.textContent)
+}
+
+async function settle(): Promise<void> {
+  await act(async () => {
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 0)
+    })
+  })
+}
+
+describe('saved connections', () => {
+  it('saves a new connection without connecting, then connects when chosen', async () => {
+    await withTestSetup(async () => {
+      await render()
+      await click(button('New connection'))
+      expect(button('Save connection').disabled).toBe(true)
+      await type(field('#connection-nickname'), 'Home node')
+      await type(hostInput(), 'home.example')
+      await click(button('Save connection'))
+      await waitForToast('success')
+      expect(requestsTo('connectionProfiles.create')).toHaveLength(1)
+      expect(connectRequests()).toEqual([])
+      expect(activeProfile().nickname).toBe('Server A')
+      await vi.waitFor(async () => {
+        await settle()
+        expect(button('Connect').disabled).toBe(false)
+      })
+      expect(optionLabels()).toEqual(['Server A (active)', 'Home node'])
+      await click(button('Connect'))
+      await act(async () => {
+        finishSave(Response.json({ result: { data: null } }))
+      })
+      await vi.waitFor(async () => {
+        await settle()
+        expect(activeProfile().nickname).toBe('Home node')
+        expect(container.textContent).toContain('Connected · Home node')
+      })
+      expect(connectRequests().map(({ connection }) => connection.host)).toEqual(['home.example'])
+    })
+  })
+
+  it('keeps each connection’s own Tor setting and uses it when connecting', async () => {
+    await withTestSetup(async () => {
+      const viaTor = profile('Away', { host: 'node.onion', protocol: 'tcp', port: 50001, torEnabled: true })
+      profiles.push(viaTor)
+      torStatus = { state: 'ready' }
+      await render()
+      expect(torSwitch().checked).toBe(false)
+      await chooseConnection(viaTor.id)
+      expect(hostInput().value).toBe('node.onion')
+      expect(torSwitch().checked).toBe(true)
+      await click(button('Connect'))
+      await act(async () => {
+        finishSave(Response.json({ result: { data: null } }))
+      })
+      await waitForToast('success')
+      expect(connectRequests()).toEqual([
+        {
+          id: viaTor.id,
+          revision: 1,
+          connection: { host: 'node.onion', port: 50001, protocol: 'tcp', torEnabled: true },
+        },
+      ])
+    })
+  })
+
+  it('asks before connecting to a direct connection while the active one uses Tor', async () => {
+    await withTestSetup(async () => {
+      activeProfile().torEnabled = true
+      const direct = profile('Public server')
+      profiles.push(direct)
+      torStatus = { state: 'ready' }
+      await render()
+      await chooseConnection(direct.id)
+      await click(button('Connect'))
+      expect(document.body.textContent).toContain('The server will see your IP address and the addresses you look up.')
+      const cancel = dialogButton('Cancel')
+      assert.ok(cancel, 'Expected the confirmation dialog')
+      await click(cancel)
+      expect(connectRequests()).toEqual([])
+    })
+  })
+
+  it('asks before discarding unsaved edits when choosing another connection', async () => {
+    await withTestSetup(async () => {
+      const other = profile('Server C')
+      profiles.push(other)
+      await render()
+      await changeHost()
+      await chooseConnection(other.id)
+      expect(container.textContent).toContain('You have unsaved changes. Discard them?')
+      await click(button('Keep editing'))
+      expect(hostInput().value).toBe('server-b.example')
+      await chooseConnection(other.id)
+      await click(button('Discard changes'))
+      expect(hostInput().value).toBe('server-c.example')
+      expect(connectRequests()).toEqual([])
+    })
+  })
+
+  it('renames a connection without connecting to it', async () => {
+    await withTestSetup(async () => {
+      await render()
+      await click(button('Rename'))
+      await type(field('#connection-nickname'), 'My node')
+      await click(button('Save nickname'))
+      await waitForToast('success')
+      await vi.waitFor(async () => {
+        await settle()
+        expect(optionLabels()).toEqual(['My node (active)'])
+      })
+      expect(connectRequests()).toEqual([])
+      expect(activeProfile().revision).toBe(2)
+    })
+  })
+
+  it('deletes a saved connection only after confirmation, and never the active one', async () => {
+    await withTestSetup(async () => {
+      const other = profile('Old server')
+      profiles.push(other)
+      await render()
+      const deleteButton = (): HTMLButtonElement | null =>
+        container.querySelector<HTMLButtonElement>('button[aria-label^="Delete "]')
+      expect(deleteButton()?.disabled).toBe(true)
+      await chooseConnection(other.id)
+      const remove = deleteButton()
+      assert.ok(remove, 'Expected a delete button')
+      await click(remove)
+      expect(document.body.textContent).toContain('Delete “Old server”?')
+      expect(requestsTo('connectionProfiles.delete')).toEqual([])
+      const confirm = dialogButton('Delete connection')
+      assert.ok(confirm, 'Expected the delete confirmation')
+      await click(confirm)
+      await waitForToast('success')
+      expect(profiles.map(({ nickname }) => nickname)).toEqual(['Server A'])
+      await vi.waitFor(async () => {
+        await settle()
+        expect(optionLabels()).toEqual(['Server A (active)'])
+      })
+      expect(hostInput().value).toBe('server-a.example')
+    })
+  })
+
+  it('stops offering new connections at the limit', async () => {
+    await withTestSetup(async () => {
+      for (const nickname of ['Two', 'Three', 'Four', 'Five']) {
+        profiles.push(profile(nickname))
+      }
+      await render()
+      expect(container.textContent).not.toContain('New connection')
+      expect(container.textContent).toContain('You can save up to 5 connections.')
+    })
+  })
+
+  it('does not overwrite a connection changed in another window', async () => {
+    await withTestSetup(async () => {
+      const advance = useStepTimers()
+      await render()
+      await changeHost()
+      // Another window saves a different server for the same connection.
+      const index = profiles.findIndex(({ id }) => id === activeId)
+      profiles[index] = { ...activeProfile(), host: 'server-z.example', revision: 2 }
+      await advance(10_000)
+      expect(container.textContent).toContain('This connection changed in another window.')
+      expect(button('Save & Reconnect').disabled).toBe(true)
+      await click(button('Reload connection'))
+      expect(hostInput().value).toBe('server-z.example')
+      expect(connectRequests()).toEqual([])
     })
   })
 })

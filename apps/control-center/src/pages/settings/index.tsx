@@ -36,16 +36,22 @@ import { toast } from 'sonner'
 import { z } from 'zod'
 import { useLocalSetting } from '../../hooks/use-local-settings'
 import { isDesktop } from '../../mode'
-import { type RouterInput, type RouterOutput, baseTrpc, trpc } from '../../trpc'
+import { type RouterInput, type RouterOutput, baseTrpc, transformer, trpc } from '../../trpc'
+import {
+  ConnectionPicker,
+  type ConnectionSelection,
+  DeleteConnectionDialog,
+  ErrorResponseSchema,
+  SAVED_CONNECTIONS_QUERY_KEY,
+  type SavedConnection,
+  connectConnection,
+  createConnection,
+  deleteConnection,
+  renameConnection,
+  useSavedConnections,
+} from './saved-connections'
 
 type ElectrumStatusState = { status: ElectrumStatus | null; refresh: () => void }
-
-const ReconnectErrorSchema = z.object({
-  error: z.object({
-    json: z.object({ message: z.string() }).optional().catch(undefined),
-    message: z.string().optional().catch(undefined),
-  }),
-})
 
 export function SettingsPage({ desktop = isDesktop }: { desktop?: boolean }): JSX.Element {
   const { data: savedName, isLoading, saveAsync, isSaving, isError } = useLocalSetting('user_name')
@@ -522,20 +528,35 @@ async function requestTorStart(): Promise<number | null> {
 function ElectrumSettings(): JSX.Element {
   const queryClient = useQueryClient()
   const { status: electrumStatus, refresh: refreshStatus } = useElectrumStatus()
-  const { data: savedHost, isLoading: hostLoading } = useLocalSetting('electrum_host')
-  const { data: savedPort, isLoading: portLoading } = useLocalSetting('electrum_port')
-  const { data: savedProtocol, isLoading: protocolLoading } = useLocalSetting('electrum_protocol')
-  const { data: savedTorEnabled, isLoading: torLoading } = useLocalSetting('tor_enabled')
-
-  const isLoading = hostLoading || portLoading || protocolLoading || torLoading
+  const connections = useSavedConnections()
+  const saved = connections.data
+  const profiles = saved?.profiles ?? []
+  const activeId = saved?.activeId ?? null
+  const active = profiles.find((profile) => profile.id === activeId)
+  // Until another connection is chosen, the form edits the active one.
+  const [chosen, setChosen] = useState<ConnectionSelection | null>(null)
+  const selection: ConnectionSelection | null = chosen ?? (activeId === null ? null : { kind: 'saved', id: activeId })
+  const isNew = selection?.kind === 'new'
+  const selectedId = selection?.kind === 'saved' ? selection.id : null
+  const selected = profiles.find((profile) => profile.id === selectedId)
+  const isActive = selected?.id === activeId
+  const isLoading = saved === undefined
 
   const [host, setHost] = useState('')
   const [port, setPort] = useState('')
   const [protocol, setProtocol] = useState<'tcp' | 'ssl'>('ssl')
   const [torEnabled, setTorEnabled] = useState(false)
+  const [nickname, setNickname] = useState('')
+  const [renaming, setRenaming] = useState(false)
+  // The saved version the form was loaded from, so edits made in another window are not overwritten.
+  const [loadedRevision, setLoadedRevision] = useState<number | null>(null)
+  const [pendingSelection, setPendingSelection] = useState<ConnectionSelection | null>(null)
+  const [deleting, setDeleting] = useState<SavedConnection | null>(null)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
   const [isDirty, setIsDirty] = useState(false)
-  const [isSaving, setIsSaving] = useState(false)
-  const [isTesting, setIsTesting] = useState(false)
+  const [busy, setBusy] = useState<'save' | 'test' | 'rename' | 'delete' | null>(null)
+  const isSaving = busy === 'save'
+  const isTesting = busy === 'test'
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null)
   const [torFailure, setTorFailure] = useState<string | null>(null)
   const [torStartedAt, setTorStartedAt] = useState<number | null>(null)
@@ -545,15 +566,19 @@ function ElectrumSettings(): JSX.Element {
   const previousTorState = useRef<string | undefined>(undefined)
   const [torReadyNotice, setTorReadyNotice] = useFadingNotice()
   const [directConfirmation, setDirectConfirmation] = useState<'test' | 'save' | null>(null)
+  const savedTor = selected?.torEnabled === true
   const torState = electrumStatus?.tor?.state
   const torAttempt = electrumStatus?.tor?.attempt ?? 0
   const torStarting = torEnabled && torState === 'starting'
-  // Connecting without Tor after the saved connection used it, or right after Tor
-  // failed, would reveal this computer's IP address. Ask before doing that.
-  const leavingTor = !torEnabled && (savedTorEnabled === 'true' || torFailure !== null)
-  const torFailedForSavedConnection =
-    torFailure !== null || (savedTorEnabled === 'true' && torState === 'failed' && !torEnabled)
+  // Connecting without Tor after this connection or the active one used it, or right
+  // after Tor failed, would reveal this computer's IP address. Ask before doing that.
+  const leavingTor = !torEnabled && (savedTor || active?.torEnabled === true || torFailure !== null)
+  const torFailedForActiveConnection =
+    torFailure !== null || (active?.torEnabled === true && torState === 'failed' && !torEnabled)
   const torStartingFade = useTorStartingFade()
+  const conflict = isDirty && selected !== undefined && loadedRevision !== null && selected.revision !== loadedRevision
+  const deletedElsewhere = selectedId !== null && saved !== undefined && selected === undefined
+  const formDisabled = isLoading || busy !== null || pendingSelection !== null || deleting !== null
 
   // Like Sparrow, a failed Tor start turns the switch off. That only changes the
   // form: the saved connection keeps Tor and stays disconnected, never direct.
@@ -568,11 +593,11 @@ function ElectrumSettings(): JSX.Element {
   // A saved Tor connection restarts Tor on its own when data is requested. Once Tor
   // is ready again, show the switch on unless the form has been edited.
   useEffect(() => {
-    if (torState === 'ready' && savedTorEnabled === 'true' && !isDirty && !torEnabled) {
+    if (torState === 'ready' && savedTor && !isDirty && !torEnabled) {
       setTorEnabled(true)
       setTorFailure(null)
     }
-  }, [torState, savedTorEnabled, isDirty, torEnabled])
+  }, [torState, savedTor, isDirty, torEnabled])
 
   // Measure every start, including one begun by a saved Tor connection.
   useEffect(() => {
@@ -589,10 +614,68 @@ function ElectrumSettings(): JSX.Element {
     previousTorState.current = torState
   }, [torState, torEnabled, setTorReadyNotice])
 
-  const handleTorChange = (enabled: boolean): void => {
-    setTorEnabled(enabled)
+  // Show the chosen connection's saved values until the form is edited.
+  const selectedHost = selected?.host
+  const selectedPort = selected?.port
+  const selectedProtocol = selected?.protocol
+  const selectedTor = selected?.torEnabled
+  const selectedRevision = selected?.revision
+  useEffect(() => {
+    if (isDirty) {
+      return
+    }
+    if (isNew) {
+      setHost('')
+      setPort('50002')
+      setProtocol('ssl')
+      setTorEnabled(false)
+      setLoadedRevision(null)
+    } else if (
+      selectedHost !== undefined &&
+      selectedPort !== undefined &&
+      selectedProtocol !== undefined &&
+      selectedTor !== undefined &&
+      selectedRevision !== undefined
+    ) {
+      setHost(selectedHost)
+      setPort(String(selectedPort))
+      setProtocol(selectedProtocol)
+      setTorEnabled(selectedTor)
+      setLoadedRevision(selectedRevision)
+    }
+  }, [isDirty, isNew, selectedHost, selectedPort, selectedProtocol, selectedTor, selectedRevision])
+
+  const edit = (): void => {
     setIsDirty(true)
     setTestResult(null)
+  }
+
+  const applySelection = (next: ConnectionSelection | null): void => {
+    setChosen(next)
+    setIsDirty(false)
+    setRenaming(false)
+    setNickname('')
+    setTestResult(null)
+    setTorFailure(null)
+    setPendingSelection(null)
+  }
+
+  // Changing connections would discard unsaved edits, so ask first.
+  const choose = (next: ConnectionSelection | null): void => {
+    if (isDirty) {
+      setPendingSelection(next ?? { kind: 'saved', id: activeId ?? '' })
+    } else {
+      applySelection(next)
+    }
+  }
+
+  const refreshConnections = async (): Promise<void> => {
+    await queryClient.invalidateQueries({ queryKey: SAVED_CONNECTIONS_QUERY_KEY })
+  }
+
+  const handleTorChange = (enabled: boolean): void => {
+    setTorEnabled(enabled)
+    edit()
     setTorFailure(null)
     if (enabled) {
       setTorAttemptAwaited(Number.POSITIVE_INFINITY)
@@ -604,42 +687,26 @@ function ElectrumSettings(): JSX.Element {
     }
   }
 
-  useEffect(() => {
-    if (!isDirty) {
-      setHost(savedHost ?? 'electrum.blockstream.info')
-      setPort(savedPort ?? '50002')
-      setProtocol(savedProtocol === 'tcp' ? 'tcp' : 'ssl')
-      setTorEnabled(savedTorEnabled === 'true')
-    }
-  }, [savedHost, savedPort, savedProtocol, savedTorEnabled, isDirty])
-
-  const buildElectrumPayload = async (): Promise<{ body: string }> => {
-    const superjson = (await import('superjson')).default
-    const payload: RouterInput['settings']['testElectrum'] = {
-      host: host.trim(),
-      port: Number(port.trim()),
-      protocol,
-      torEnabled,
-    }
-    return {
-      body: JSON.stringify(superjson.serialize(payload)),
-    }
-  }
+  const connectionDetails = (): RouterInput['settings']['testElectrum'] => ({
+    host: host.trim(),
+    port: Number(port.trim()),
+    protocol,
+    torEnabled,
+  })
 
   const handleTest = async (): Promise<void> => {
-    setIsTesting(true)
+    setBusy('test')
     setTestResult(null)
     try {
       const baseUrl = import.meta.env.VITE_BACKEND_API_URL ?? ''
-      const { body } = await buildElectrumPayload()
       const res = await fetch(`${baseUrl}/settings.testElectrum`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body,
+        body: JSON.stringify(transformer.serialize(connectionDetails())),
       })
 
       if (!res.ok) {
-        const data = parseUnknown(ReconnectErrorSchema, await res.json().catch(() => null)).unwrapOr(null)
+        const data = parseUnknown(ErrorResponseSchema, await res.json().catch(() => null)).unwrapOr(null)
         const msg = data?.error.json?.message ?? data?.error.message ?? 'Connection failed'
         setTestResult({ ok: false, message: msg })
         return
@@ -649,43 +716,120 @@ function ElectrumSettings(): JSX.Element {
     } catch (err) {
       setTestResult({ ok: false, message: err instanceof Error ? err.message : 'Connection failed' })
     } finally {
-      setIsTesting(false)
+      setBusy(null)
     }
   }
 
   const handleSave = async (): Promise<void> => {
-    setIsSaving(true)
+    setBusy('save')
     try {
-      const baseUrl = import.meta.env.VITE_BACKEND_API_URL ?? ''
-      const { body } = await buildElectrumPayload()
-      const res = await fetch(`${baseUrl}/settings.reconnectElectrum`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body,
-      })
-
-      if (!res.ok) {
-        const data = parseUnknown(ReconnectErrorSchema, await res.json().catch(() => null)).unwrapOr(null)
-        throw new Error(data?.error.json?.message ?? data?.error.message ?? 'Failed to reconnect')
+      if (isNew) {
+        // Saving a new connection never connects to it.
+        const created = await createConnection({ ...connectionDetails(), nickname: nickname.trim() })
+        if (created.isErr()) {
+          toast.error(`Could not save the connection: ${created.unwrapErr().message}`)
+          return
+        }
+        await refreshConnections()
+        applySelection({ kind: 'saved', id: created.unwrap().id })
+        toast.success('Connection saved. Choose Connect when you want to use it.')
+        return
       }
-
-      await Promise.all(
-        ['electrum_host', 'electrum_port', 'electrum_protocol', 'tor_enabled'].map(async (key) =>
-          queryClient.invalidateQueries({ queryKey: ['local-settings', key] }),
-        ),
-      )
+      if (!selected) {
+        return
+      }
+      const connected = await connectConnection({
+        id: selected.id,
+        revision: loadedRevision ?? selected.revision,
+        connection: connectionDetails(),
+      })
+      if (connected.isErr()) {
+        toast.error(`Failed to connect: ${connected.unwrapErr().message}`)
+        return
+      }
+      await refreshConnections()
       setIsDirty(false)
       setTestResult(null)
       // The saved connection now reflects the user's routing choice.
       setTorFailure(null)
       refreshStatus()
-      toast.success('Electrum server updated')
-    } catch (err) {
-      toast.error(`Failed to connect: ${err instanceof Error ? err.message : 'Unknown error'}`)
+      toast.success(`Connected to ${connected.unwrap().nickname}`)
     } finally {
-      setIsSaving(false)
+      setBusy(null)
     }
   }
+
+  const handleRename = async (): Promise<void> => {
+    if (!selected) {
+      return
+    }
+    setBusy('rename')
+    try {
+      const renamed = await renameConnection({
+        id: selected.id,
+        revision: selected.revision,
+        nickname: nickname.trim(),
+      })
+      if (renamed.isErr()) {
+        toast.error(`Could not rename the connection: ${renamed.unwrapErr().message}`)
+        return
+      }
+      // This form's own rename is not an edit made in another window.
+      if (loadedRevision === selected.revision) {
+        setLoadedRevision(renamed.unwrap().revision)
+      }
+      await refreshConnections()
+      setRenaming(false)
+      setNickname('')
+      toast.success('Connection renamed')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const handleDelete = async (): Promise<void> => {
+    if (!deleting) {
+      return
+    }
+    setBusy('delete')
+    setDeleteError(null)
+    try {
+      const deleted = await deleteConnection({ id: deleting.id, revision: deleting.revision })
+      if (deleted.isErr()) {
+        setDeleteError(deleted.unwrapErr().message)
+        // Pick up changes made in another window without discarding this form.
+        void refreshConnections()
+        return
+      }
+      await refreshConnections()
+      if (deleting.id === selectedId) {
+        applySelection(null)
+      }
+      setDeleting(null)
+      toast.success('Connection deleted')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const portNumber = Number(port.trim())
+  const validServer = host.trim() !== '' && Number.isInteger(portNumber) && portNumber >= 1 && portNumber <= 65_535
+  const atLimit = saved !== undefined && profiles.length >= saved.limit
+  const canSave = isNew
+    ? validServer && nickname.trim() !== '' && !atLimit
+    : selected !== undefined &&
+      validServer &&
+      !conflict &&
+      (isDirty || !isActive || electrumStatus?.connected === false)
+  const saveLabel = isNew
+    ? 'Save connection'
+    : isDirty
+      ? isActive
+        ? 'Save & Reconnect'
+        : 'Save & Connect'
+      : isActive
+        ? 'Reconnect'
+        : 'Connect'
 
   return (
     <VStack align="start" gap={5} w="full" maxW="480px">
@@ -697,37 +841,6 @@ function ElectrumSettings(): JSX.Element {
           Configure your Bitcoin Electrum server connection. Use your own server for maximum privacy.
         </Text>
       </VStack>
-
-      {/* Server preset selector */}
-      <Stack gap={1} w="full">
-        <FormLabel htmlFor="electrum-preset" textStyle="text/sm" mb={0}>
-          Server Preset
-        </FormLabel>
-        <Select
-          size="sm"
-          id="electrum-preset"
-          value={SERVER_PRESETS.find((p) => p.host === host && p.port === port) ? host : 'custom'}
-          onChange={(e) => {
-            const preset = SERVER_PRESETS.find((p) => p.host === e.target.value)
-            if (preset) {
-              setHost(preset.host)
-              setPort(preset.port)
-              setProtocol(preset.protocol)
-              setTorEnabled(preset.tor)
-              setIsDirty(true)
-              setTestResult(null)
-            }
-          }}
-          isDisabled={isLoading || isSaving || isTesting}
-        >
-          {SERVER_PRESETS.map((p) => (
-            <option key={p.host} value={p.host}>
-              {p.label}
-            </option>
-          ))}
-          <option value="custom">Custom Server</option>
-        </Select>
-      </Stack>
 
       {/* Connection status banner */}
       {electrumStatus && (
@@ -742,171 +855,336 @@ function ElectrumSettings(): JSX.Element {
         >
           <Circle size="8px" bg={electrumStatus.connected ? 'green.500' : 'red.500'} flexShrink={0} mt="6px" />
           <VStack align="start" gap={0} minW={0}>
-            <Text textStyle="text/sm" fontWeight="medium" color={electrumStatus.connected ? 'green.700' : 'red.700'}>
+            <Text
+              textStyle="text/sm"
+              fontWeight="medium"
+              color={electrumStatus.connected ? 'green.700' : 'red.700'}
+              overflowWrap="anywhere"
+            >
               {electrumStatus.connected ? 'Connected' : 'Disconnected'}
+              {active ? ` · ${active.nickname}` : ''}
             </Text>
             <Text textStyle="text/xs" color={electrumStatus.connected ? 'green.600' : 'red.600'} wordBreak="break-all">
               {electrumStatus.host}:{electrumStatus.port} ({electrumStatus.protocol.toUpperCase()})
             </Text>
             {!electrumStatus.connected && (
               <Text textStyle="text/sm" color="red.700">
-                {torFailedForSavedConnection
-                  ? 'Your saved data is still on this device. Turn Tor on to try again, or choose a different server below.'
-                  : 'Your saved data is still on this device. Check your connection or choose a server below, then use Save & Reconnect.'}
+                {torFailedForActiveConnection
+                  ? 'Your saved data is still on this device. Turn Tor on to try again, or choose another saved connection.'
+                  : 'Your saved data is still on this device. Check your connection, or choose another saved connection.'}
               </Text>
             )}
           </VStack>
         </HStack>
       )}
 
-      {/* Host */}
-      <Stack gap={1} w="full">
-        <FormLabel htmlFor="electrum-host" textStyle="text/sm" mb={0}>
-          Host
-        </FormLabel>
-        <Input
-          size="sm"
-          id="electrum-host"
-          placeholder="electrum.blockstream.info"
-          value={host}
-          onChange={(e) => {
-            setHost(e.target.value)
-            setIsDirty(true)
-            setTestResult(null)
-          }}
-          isDisabled={isLoading || isSaving || isTesting}
-        />
-      </Stack>
-
-      {/* Port + Protocol side by side */}
-      <HStack gap={3} w="full">
-        <Stack gap={1} flex={1} minW={0}>
-          <FormLabel htmlFor="electrum-port" textStyle="text/sm" mb={0}>
-            Port
-          </FormLabel>
-          <Input
-            size="sm"
-            id="electrum-port"
-            inputMode="numeric"
-            placeholder="50002"
-            value={port}
-            onChange={(e) => {
-              setPort(e.target.value)
-              setIsDirty(true)
-              setTestResult(null)
+      {saved === undefined ? (
+        connections.isError ? (
+          <HStack gap={3} w="full" px={3} py={2} borderRadius="md" bg="red.50">
+            <Text role="alert" textStyle="text/sm" color="red.700" flex={1}>
+              Could not load saved connections.
+            </Text>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                void connections.refetch()
+              }}
+            >
+              Retry
+            </Button>
+          </HStack>
+        ) : (
+          <Spinner size="sm" aria-label="Loading saved connections" />
+        )
+      ) : (
+        <>
+          <ConnectionPicker
+            connections={saved}
+            selection={selection}
+            isDisabled={formDisabled || renaming}
+            onSelect={(id) => {
+              choose({ kind: 'saved', id })
             }}
-            isDisabled={isLoading || isSaving || isTesting}
+            onNew={() => {
+              choose({ kind: 'new' })
+            }}
+            onRename={(connection) => {
+              setNickname(connection.nickname)
+              setRenaming(true)
+            }}
+            onDelete={(connection) => {
+              setDeleteError(null)
+              setDeleting(connection)
+            }}
           />
-        </Stack>
-        <Stack gap={1} w="120px" flexShrink={0}>
-          <FormLabel htmlFor="electrum-protocol" textStyle="text/sm" mb={0}>
-            Protocol
-          </FormLabel>
-          <Select
-            size="sm"
-            id="electrum-protocol"
-            value={protocol}
-            onChange={(e) => {
-              const value = e.target.value
-              if (value !== 'tcp' && value !== 'ssl') {
-                return
+
+          {pendingSelection && (
+            <Notice
+              message="You have unsaved changes. Discard them?"
+              actions={[
+                {
+                  label: 'Keep editing',
+                  onClick: () => {
+                    setPendingSelection(null)
+                  },
+                },
+                {
+                  label: 'Discard changes',
+                  onClick: () => {
+                    applySelection(pendingSelection)
+                  },
+                },
+              ]}
+            />
+          )}
+          {conflict && (
+            <Notice
+              message="This connection changed in another window. Reload it before saving."
+              actions={[
+                {
+                  label: 'Reload connection',
+                  onClick: () => {
+                    applySelection({ kind: 'saved', id: selected.id })
+                  },
+                },
+              ]}
+            />
+          )}
+          {deletedElsewhere && (
+            <Notice message="This connection was deleted in another window. Choose another saved connection." />
+          )}
+
+          {(isNew || renaming) && (
+            <Stack gap={1} w="full">
+              <FormLabel htmlFor="connection-nickname" textStyle="text/sm" mb={0}>
+                Nickname
+              </FormLabel>
+              <Input
+                size="sm"
+                id="connection-nickname"
+                maxLength={80}
+                placeholder="e.g. Home node"
+                value={nickname}
+                isDisabled={busy !== null}
+                onChange={(e) => {
+                  setNickname(e.target.value)
+                  if (isNew) {
+                    edit()
+                  }
+                }}
+              />
+              <HStack gap={3} mt={1}>
+                {renaming && (
+                  <Button
+                    size="sm"
+                    colorScheme="green"
+                    isLoading={busy === 'rename'}
+                    isDisabled={nickname.trim() === '' || busy !== null}
+                    onClick={() => {
+                      void handleRename()
+                    }}
+                  >
+                    Save nickname
+                  </Button>
+                )}
+                <Button
+                  variant="link"
+                  size="sm"
+                  isDisabled={busy !== null}
+                  onClick={() => {
+                    if (renaming) {
+                      setRenaming(false)
+                      setNickname('')
+                    } else {
+                      choose(null)
+                    }
+                  }}
+                >
+                  Cancel
+                </Button>
+              </HStack>
+            </Stack>
+          )}
+
+          {/* New connections can start from a public server */}
+          {isNew && (
+            <Stack gap={1} w="full">
+              <FormLabel htmlFor="electrum-preset" textStyle="text/sm" mb={0}>
+                Start with
+              </FormLabel>
+              <Select
+                size="sm"
+                id="electrum-preset"
+                value={SERVER_PRESETS.find((p) => p.host === host && p.port === port) ? host : 'custom'}
+                onChange={(e) => {
+                  const preset = SERVER_PRESETS.find((p) => p.host === e.target.value)
+                  setHost(preset?.host ?? '')
+                  setPort(preset?.port ?? '50002')
+                  setProtocol(preset?.protocol ?? 'ssl')
+                  setTorEnabled(preset?.tor ?? false)
+                  edit()
+                }}
+                isDisabled={formDisabled}
+              >
+                <option value="custom">My own server</option>
+                {SERVER_PRESETS.map((p) => (
+                  <option key={p.host} value={p.host}>
+                    {p.label}
+                  </option>
+                ))}
+              </Select>
+            </Stack>
+          )}
+
+          {/* Host */}
+          <Stack gap={1} w="full">
+            <FormLabel htmlFor="electrum-host" textStyle="text/sm" mb={0}>
+              Host
+            </FormLabel>
+            <Input
+              size="sm"
+              id="electrum-host"
+              placeholder="Your server address"
+              value={host}
+              onChange={(e) => {
+                setHost(e.target.value)
+                edit()
+              }}
+              isDisabled={formDisabled}
+            />
+          </Stack>
+
+          {/* Port + Protocol side by side */}
+          <HStack gap={3} w="full">
+            <Stack gap={1} flex={1} minW={0}>
+              <FormLabel htmlFor="electrum-port" textStyle="text/sm" mb={0}>
+                Port
+              </FormLabel>
+              <Input
+                size="sm"
+                id="electrum-port"
+                inputMode="numeric"
+                placeholder="50002"
+                value={port}
+                onChange={(e) => {
+                  setPort(e.target.value)
+                  edit()
+                }}
+                isDisabled={formDisabled}
+              />
+            </Stack>
+            <Stack gap={1} w="120px" flexShrink={0}>
+              <FormLabel htmlFor="electrum-protocol" textStyle="text/sm" mb={0}>
+                Protocol
+              </FormLabel>
+              <Select
+                size="sm"
+                id="electrum-protocol"
+                value={protocol}
+                onChange={(e) => {
+                  const value = e.target.value
+                  if (value !== 'tcp' && value !== 'ssl') {
+                    return
+                  }
+                  setProtocol(value)
+                  edit()
+                }}
+                isDisabled={formDisabled}
+              >
+                <option value="ssl">SSL</option>
+                <option value="tcp">TCP</option>
+              </Select>
+            </Stack>
+          </HStack>
+
+          {/* Tor toggle */}
+          <HStack w="full" justify="space-between" align="center">
+            <VStack align="start" gap={0}>
+              <FormLabel htmlFor="electrum-tor" textStyle="text/sm" mb={0}>
+                Connect via Tor
+              </FormLabel>
+              <Text textStyle="text/xs" color="neutral.600">
+                Routes Electrum requests through Tor. Exchange and price requests use your normal connection. Required
+                for .onion addresses.
+              </Text>
+            </VStack>
+            <Switch
+              id="electrum-tor"
+              colorScheme="green"
+              isChecked={torEnabled}
+              onChange={(e) => {
+                handleTorChange(e.target.checked)
+              }}
+              isDisabled={formDisabled}
+              sx={
+                torStarting
+                  ? { '.chakra-switch__track': { animation: `${torStartingFade} 3s ease-in-out infinite` } }
+                  : undefined
               }
-              setProtocol(value)
-              setIsDirty(true)
-              setTestResult(null)
-            }}
-            isDisabled={isLoading || isSaving || isTesting}
-          >
-            <option value="ssl">SSL</option>
-            <option value="tcp">TCP</option>
-          </Select>
-        </Stack>
-      </HStack>
+            />
+          </HStack>
 
-      {/* Tor toggle */}
-      <HStack w="full" justify="space-between" align="center">
-        <VStack align="start" gap={0}>
-          <FormLabel htmlFor="electrum-tor" textStyle="text/sm" mb={0}>
-            Connect via Tor
-          </FormLabel>
-          <Text textStyle="text/xs" color="neutral.600">
-            Routes Electrum requests through Tor. Exchange and price requests use your normal connection. Required for
-            .onion addresses.
-          </Text>
-        </VStack>
-        <Switch
-          id="electrum-tor"
-          colorScheme="green"
-          isChecked={torEnabled}
-          onChange={(e) => {
-            handleTorChange(e.target.checked)
-          }}
-          isDisabled={isLoading || isSaving || isTesting}
-          sx={
-            torStarting
-              ? { '.chakra-switch__track': { animation: `${torStartingFade} 3s ease-in-out infinite` } }
-              : undefined
-          }
-        />
-      </HStack>
+          <TorStatusLine
+            enabled={torEnabled}
+            state={torState}
+            progress={electrumStatus?.tor?.progress}
+            failure={torFailure}
+            readyNotice={torReadyNotice}
+            slow={torStartedAt !== null && Date.now() - torStartedAt > TOR_SLOW_START_MS}
+          />
 
-      <TorStatusLine
-        enabled={torEnabled}
-        state={torState}
-        progress={electrumStatus?.tor?.progress}
-        failure={torFailure}
-        readyNotice={torReadyNotice}
-        slow={torStartedAt !== null && Date.now() - torStartedAt > TOR_SLOW_START_MS}
-      />
+          {/* Test result banner */}
+          {testResult && (
+            <HStack gap={2} px={3} py={2} w="full" borderRadius="md" bg={testResult.ok ? 'green.50' : 'red.50'}>
+              <Circle size="8px" bg={testResult.ok ? 'green.500' : 'red.500'} flexShrink={0} />
+              <Text
+                as="output"
+                textStyle="text/sm"
+                overflowWrap="anywhere"
+                minW={0}
+                color={testResult.ok ? 'green.700' : 'red.700'}
+              >
+                {testResult.message}
+              </Text>
+            </HStack>
+          )}
 
-      {/* Test result banner */}
-      {testResult && (
-        <HStack gap={2} px={3} py={2} w="full" borderRadius="md" bg={testResult.ok ? 'green.50' : 'red.50'}>
-          <Circle size="8px" bg={testResult.ok ? 'green.500' : 'red.500'} flexShrink={0} />
-          <Text
-            as="output"
-            textStyle="text/sm"
-            overflowWrap="anywhere"
-            minW={0}
-            color={testResult.ok ? 'green.700' : 'red.700'}
-          >
-            {testResult.message}
-          </Text>
-        </HStack>
+          {/* Action buttons */}
+          <ButtonGroup size="sm" gap={2} flexWrap="wrap">
+            <Button
+              variant="outline"
+              onClick={() => {
+                if (leavingTor) {
+                  setDirectConfirmation('test')
+                } else {
+                  void handleTest()
+                }
+              }}
+              isLoading={isTesting}
+              loadingText="Testing..."
+              isDisabled={!host.trim() || !port.trim() || formDisabled || torStarting}
+            >
+              Test Connection
+            </Button>
+            <Button
+              colorScheme="green"
+              onClick={() => {
+                // Saving a new connection does not connect, so it cannot reveal anything.
+                if (leavingTor && !isNew) {
+                  setDirectConfirmation('save')
+                } else {
+                  void handleSave()
+                }
+              }}
+              isLoading={isSaving}
+              isDisabled={!canSave || formDisabled || renaming || torStarting}
+            >
+              {saveLabel}
+            </Button>
+          </ButtonGroup>
+        </>
       )}
-
-      {/* Action buttons */}
-      <ButtonGroup size="sm" gap={2} flexWrap="wrap">
-        <Button
-          variant="outline"
-          onClick={() => {
-            if (leavingTor) {
-              setDirectConfirmation('test')
-            } else {
-              void handleTest()
-            }
-          }}
-          isLoading={isTesting}
-          loadingText="Testing..."
-          isDisabled={!host.trim() || !port.trim() || isLoading || isSaving || torStarting}
-        >
-          Test Connection
-        </Button>
-        <Button
-          colorScheme="green"
-          onClick={() => {
-            if (leavingTor) {
-              setDirectConfirmation('save')
-            } else {
-              void handleSave()
-            }
-          }}
-          isLoading={isSaving}
-          isDisabled={(!isDirty && electrumStatus?.connected !== false) || isLoading || isTesting || torStarting}
-        >
-          Save & Reconnect
-        </Button>
-      </ButtonGroup>
 
       <Modal
         isOpen={directConfirmation !== null}
@@ -948,7 +1226,46 @@ function ElectrumSettings(): JSX.Element {
           </ModalFooter>
         </ModalContent>
       </Modal>
+
+      <DeleteConnectionDialog
+        connection={deleting}
+        discardsChanges={deleting !== null && deleting.id === selectedId && isDirty}
+        error={deleteError}
+        isDeleting={busy === 'delete'}
+        onCancel={() => {
+          setDeleting(null)
+        }}
+        onConfirm={() => {
+          void handleDelete()
+        }}
+      />
     </VStack>
+  )
+}
+
+/** A warning above the form, with optional actions. */
+function Notice({
+  message,
+  actions = [],
+}: {
+  message: string
+  actions?: Array<{ label: string; onClick: () => void }>
+}): JSX.Element {
+  return (
+    <Stack as="output" gap={2} w="full" px={3} py={2} borderRadius="md" bg="orange.50">
+      <Text textStyle="text/sm" color="orange.800">
+        {message}
+      </Text>
+      {actions.length > 0 && (
+        <HStack gap={2} flexWrap="wrap">
+          {actions.map((action) => (
+            <Button key={action.label} size="sm" variant="outline" onClick={action.onClick}>
+              {action.label}
+            </Button>
+          ))}
+        </HStack>
+      )}
+    </Stack>
   )
 }
 

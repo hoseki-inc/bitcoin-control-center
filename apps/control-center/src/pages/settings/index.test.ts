@@ -59,6 +59,41 @@ async function withTestSetup(run: () => Promise<void>): Promise<void> {
   await run()
 }
 
+const savedConnection = {
+  id: '00000000-0000-4000-8000-000000000001',
+  nickname: 'Home node',
+  host: 'electrum.example',
+  port: 50002,
+  protocol: 'ssl',
+  torEnabled: false,
+  revision: 1,
+}
+
+/** Answers the saved-connection list, which the Electrum form loads before it is shown. */
+function savedConnections(input: RequestInfo | URL): Response | null {
+  return parseUnknown(z.string(), input).unwrapOr('').endsWith('/settings.connectionProfiles.list')
+    ? Response.json({
+        result: { data: { json: { profiles: [savedConnection], activeId: savedConnection.id, limit: 5 } } },
+      })
+    : null
+}
+
+async function renderElectrumForm(): Promise<void> {
+  await act(async () => {
+    root.render(
+      createElement(
+        ChakraProvider,
+        null,
+        createElement(QueryClientProvider, { client: queryClient }, createElement(SettingsPage, { desktop: true })),
+      ),
+    )
+  })
+  await vi.waitFor(async () => {
+    await act(async () => {})
+    expect(container.querySelector<HTMLInputElement>('#electrum-host')?.value).toBe('electrum.example')
+  })
+}
+
 it.each([
   ['SuperJSON error', { error: { json: { message: 'Server unavailable' } } }, 'Server unavailable'],
   ['plain error', { error: { message: 'Connection refused' } }, 'Connection refused'],
@@ -70,33 +105,26 @@ it.each([
   ['missing error', {}, 'Failed to reconnect'],
   ['null response', null, 'Failed to reconnect'],
   ['invalid JSON', '<html>Unavailable</html>', 'Failed to reconnect'],
-])('handles a reconnect response with %s', async (_label, body, message) => {
+])('handles a connect response with %s', async (_label, body, message) => {
   await withTestSetup(async () => {
     fetchMock.mockImplementation(async (input) => {
-      if (parseUnknown(z.string(), input).unwrapOr('').endsWith('/settings.reconnectElectrum')) {
+      if (parseUnknown(z.string(), input).unwrapOr('').endsWith('/settings.connectionProfiles.connect')) {
         return new Response(
           parseUnknown(z.string(), body).unwrapOrElse(() => JSON.stringify(body)),
           { status: 500 },
         )
       }
-      return Response.json({ result: { data: { json: null } } })
+      return savedConnections(input) ?? Response.json({ result: { data: { json: null } } })
     })
-    await act(async () => {
-      root.render(
-        createElement(
-          ChakraProvider,
-          null,
-          createElement(QueryClientProvider, { client: queryClient }, createElement(SettingsPage, { desktop: true })),
-        ),
-      )
-    })
-    const preset = container.querySelector<HTMLSelectElement>('#electrum-preset')
-    if (!preset) {
-      throw new Error('Missing server preset')
+    await renderElectrumForm()
+    const port = container.querySelector<HTMLInputElement>('#electrum-port')
+    const descriptor = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')
+    if (!port || !descriptor?.set) {
+      throw new Error('Missing port input')
     }
     await act(async () => {
-      preset.value = 'electrum.blockstream.info'
-      preset.dispatchEvent(new Event('change', { bubbles: true }))
+      descriptor.set?.call(port, '50001')
+      port.dispatchEvent(new Event('input', { bubbles: true }))
     })
     const saveButton = Array.from(container.querySelectorAll('button')).find(
       (button) => button.textContent === 'Save & Reconnect',
@@ -132,17 +160,9 @@ it.each([
           { status: 500 },
         )
       }
-      return Response.json({ result: { data: { json: null } } })
+      return savedConnections(input) ?? Response.json({ result: { data: { json: null } } })
     })
-    await act(async () => {
-      root.render(
-        createElement(
-          ChakraProvider,
-          null,
-          createElement(QueryClientProvider, { client: queryClient }, createElement(SettingsPage, { desktop: true })),
-        ),
-      )
-    })
+    await renderElectrumForm()
     const button = Array.from(container.querySelectorAll('button')).find(
       (candidate) => candidate.textContent === 'Test Connection',
     )
