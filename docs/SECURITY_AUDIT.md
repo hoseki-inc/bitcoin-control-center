@@ -22,7 +22,7 @@ Run all four audits with:
 pnpm security:audit
 ```
 
-CI fails on new findings of moderate severity or higher. Dependabot covers the root pnpm workspace, the desktop package, the StartOS SDK and runtime packages, GitHub Actions, and the StartOS Dockerfile. Pull requests also run GitHub's dependency review action.
+The audit command fails on findings of moderate severity or higher. Run it before releases and dependency changes; it is intentionally excluded from pull-request CI and `pnpm run ci` so newly published advisories do not block unrelated changes. Dependabot covers the root pnpm workspace, the desktop package, the StartOS SDK and runtime packages, GitHub Actions, and the StartOS Dockerfile. Pull requests also run GitHub's dependency review action.
 
 The 2026-08-27 review upgraded the affected `js-yaml` and `nanoid` release lines to patched versions. It also disabled automatic peer installation and removed an unused React Native/Metro dependency tree that had introduced unpatched `image-size` advisories. Runtime peers used by the application are declared explicitly instead of being supplied incidentally by optional packages.
 
@@ -57,6 +57,7 @@ The production bundle includes Lottie's expression engine because two checked-in
 ## Release security checklist
 
 - Run `pnpm install --frozen-lockfile` and `pnpm run ci` from a clean clone.
+- Run `pnpm security:audit` and review any findings before releasing.
 - Build and inspect both desktop installers and the StartOS package.
 - Run a secret scanner against the clean public snapshot and its Git history.
 - Review licenses for source dependencies, fonts, images, animations, wallet logos, and bundled Tor artifacts.

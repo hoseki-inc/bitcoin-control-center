@@ -70,7 +70,6 @@ jobs:
           npm ci --prefix desktop --ignore-scripts
           npm ci --prefix start9 --ignore-scripts
           npm ci --prefix start9/runtime --ignore-scripts
-      - run: pnpm security:audit
       - run: pnpm format:check
       - run: pnpm lint
       - run: pnpm check

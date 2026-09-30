@@ -273,7 +273,7 @@ Run these commands from the repository root unless noted otherwise.
 | `pnpm build:ci`          | Build web, StartOS, and desktop application bundles              |
 | `pnpm build:desktop:app` | Build Sentinel, the desktop web app, and Electron shell          |
 | `pnpm security:audit`    | Audit root, desktop, and StartOS dependency graphs               |
-| `pnpm run ci`            | Run audits, type checks, tests, and all production bundle builds |
+| `pnpm run ci`            | Run formatting, lint, type checks, tests, and production bundles |
 | `pnpm ladle:serve`       | Run the shared component-workbench development server            |
 | `pnpm ladle:build`       | Build the component workbench                                    |
 
@@ -319,6 +319,10 @@ Run the dependency audit before releases and dependency changes:
 ```bash
 pnpm security:audit
 ```
+
+Dependency audits are not part of pull-request CI or `pnpm run ci`: newly published
+advisories should not block unrelated pull requests with unchanged dependencies.
+Dependabot and pull-request dependency review remain enabled.
 
 The default `pnpm test` command requires only the root workspace dependencies.
 `better-sqlite3` uses its bundled native binaries on supported platforms. Its
