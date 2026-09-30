@@ -2179,8 +2179,11 @@ const settingsRouter = t.router({
 
   electrumStatus: publicProcedure.query(({ ctx }) => {
     const { host, port, protocol } = ctx.app.electrumConfig
+    // Checks run only while a page shows the status; the result appears on its next poll.
+    ctx.app.electrumClient.checkReachable(30_000)
     return {
-      connected: ctx.app.electrumClient.isConnected(),
+      // Reachability, not an open socket: servers close idle sockets between requests.
+      connected: ctx.app.electrumClient.isReachable(),
       host,
       port,
       protocol,
@@ -2206,9 +2209,10 @@ const settingsRouter = t.router({
       }
       const config = prepared.unwrap()
       const { ElectrumClient } = await import('@hoseki/packages/clients/electrum')
+      // Tor connections bring their own longer limit.
       const testClient = new ElectrumClient({
-        ...config,
         requestTimeout: 15_000,
+        ...config,
       })
       const result = await testClient.connect()
       testClient.disconnect()

@@ -9,13 +9,20 @@ import { ElectrumTransport, shouldVerifyElectrumTlsCertificate } from './protoco
 interface MockServer {
   port: number
   requests: string[]
+  /** Close every client socket, as a server does after an idle timeout. */
+  dropClients: () => void
   close: () => Promise<void>
 }
 
 async function startMockServer(): Promise<MockServer> {
   const requests: string[] = []
+  const sockets = new Set<net.Socket>()
 
   const server = net.createServer((socket) => {
+    sockets.add(socket)
+    socket.on('close', () => {
+      sockets.delete(socket)
+    })
     socket.setEncoding('utf8')
     let buffer = ''
     socket.on('data', (chunk: string) => {
@@ -53,6 +60,11 @@ async function startMockServer(): Promise<MockServer> {
   return {
     port,
     requests,
+    dropClients: () => {
+      for (const socket of sockets) {
+        socket.destroy()
+      }
+    },
     close: async () =>
       new Promise<void>((resolve) => {
         server.close(() => {
@@ -120,6 +132,62 @@ describe('ElectrumClient concurrent reconnect', () => {
       expect(versionCalls).toBe(2)
 
       client.disconnect()
+    })
+  })
+
+  it('stays reachable when the server closes an idle socket, and reconnects on the next request', async () => {
+    await withTestSetup(async () => {
+      const client = new ElectrumClient({ host: '127.0.0.1', port: mock.port, protocol: 'tcp' })
+      expect(client.isReachable()).toBe(false)
+      expect((await client.getHistory('a'.repeat(64))).isOk()).toBe(true)
+
+      mock.dropClients()
+      await vi.waitFor(() => {
+        expect(client.isConnected()).toBe(false)
+      })
+      expect(client.isReachable()).toBe(true)
+
+      expect((await client.getHistory('a'.repeat(64))).isOk()).toBe(true)
+      expect(client.isConnected()).toBe(true)
+      client.disconnect()
+      expect(client.isReachable()).toBe(false)
+    })
+  })
+
+  it('pings at most once per interval, reconnecting an idle socket, and notices when the server is gone', async () => {
+    await withTestSetup(async () => {
+      const client = new ElectrumClient({ host: '127.0.0.1', port: mock.port, protocol: 'tcp', connectTimeout: 1000 })
+      const pings = (): number => mock.requests.filter((r) => r.includes('server.ping')).length
+      client.checkReachable(60_000)
+      client.checkReachable(60_000)
+      await vi.waitFor(() => {
+        expect(client.isReachable()).toBe(true)
+      })
+      client.checkReachable(60_000)
+      expect(pings()).toBe(1)
+
+      mock.dropClients()
+      await mock.close()
+      await vi.waitFor(() => {
+        client.checkReachable(0)
+        expect(client.isReachable()).toBe(false)
+      })
+    })
+  })
+
+  it('reports the server unreachable once reconnecting fails', async () => {
+    await withTestSetup(async () => {
+      const client = new ElectrumClient({ host: '127.0.0.1', port: mock.port, protocol: 'tcp', connectTimeout: 1000 })
+      expect((await client.getHistory('a'.repeat(64))).isOk()).toBe(true)
+
+      mock.dropClients()
+      await mock.close()
+      await vi.waitFor(() => {
+        expect(client.isConnected()).toBe(false)
+      })
+      expect(client.isReachable()).toBe(true)
+      expect((await client.getHistory('a'.repeat(64))).isErr()).toBe(true)
+      expect(client.isReachable()).toBe(false)
     })
   })
 })

@@ -39,6 +39,11 @@ export class ElectrumClient {
   private readonly clientName: string
   private readonly protocolVersion: string
   private negotiated = false
+  // Whether the last attempt to reach the server worked. Servers close idle sockets
+  // and the next request reconnects, so a closed socket alone isn't a failure.
+  private reachable = false
+  private lastCheck = 0
+  private checkInFlight = false
   private connectInFlight: AsyncResult<ServerVersion, Error> | null = null
   private generation = 0
   private readonly beforeConnect: ElectrumClientConfig['beforeConnect']
@@ -78,8 +83,15 @@ export class ElectrumClient {
         return Ok(version)
       }.bind(this),
     )
+    const recorded = inner.then<Result<ServerVersion, Error>, never>((result) => {
+      // A later connect or disconnect owns the status once the generation changes.
+      if (generation === this.generation) {
+        this.reachable = result.isOk()
+      }
+      return result
+    })
     const tracked = new AsyncResult(
-      inner.finally(() => {
+      Promise.resolve(recorded).finally(() => {
         this.connectInFlight = null
       }),
     )
@@ -94,10 +106,38 @@ export class ElectrumClient {
     this.generation += 1
     this.transport.disconnect()
     this.negotiated = false
+    this.reachable = false
+    this.lastCheck = 0
   }
 
+  /** Whether a socket is open now. Idle sockets close, so this isn't server health. */
   public isConnected(): boolean {
     return this.transport.isConnected() && this.negotiated
+  }
+
+  /** Whether the server answered the last connection attempt, open socket or not. */
+  public isReachable(): boolean {
+    return this.reachable
+  }
+
+  /**
+   * Ping the server in the background unless a check ran recently, so a status
+   * display notices an outage without holding a socket open when nobody is looking.
+   */
+  public checkReachable(minIntervalMs: number): void {
+    if (this.checkInFlight || Date.now() - this.lastCheck < minIntervalMs) {
+      return
+    }
+    const generation = this.generation
+    this.checkInFlight = true
+    this.lastCheck = Date.now()
+    void this.call('server.ping', [], z.null()).then((result) => {
+      this.checkInFlight = false
+      // A disconnect since the ping started owns the status now.
+      if (generation === this.generation) {
+        this.reachable = result.isOk()
+      }
+    })
   }
 
   // ─── Server Methods ──────────────────────────────────────────────────────

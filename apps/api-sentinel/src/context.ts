@@ -63,6 +63,8 @@ export interface TorStatus {
 // A fresh Tor process may need well over the direct-connection limit to build its
 // first circuit, and longer still to reach an onion service.
 const TOR_CONNECT_TIMEOUT_MS = 60_000
+// Each request crosses several relays (six to an onion service), so allow more than a direct connection.
+const TOR_REQUEST_TIMEOUT_MS = 30_000
 
 export interface AppContextOptions {
   /** Enabled only by desktop launchers, including the desktop development preview. */
@@ -134,6 +136,7 @@ export const createAppContext = asyncFn(
         return Ok(config)
       }
       const connectTimeout = Math.max(config.connectTimeout ?? 0, TOR_CONNECT_TIMEOUT_MS)
+      const requestTimeout = Math.max(config.requestTimeout ?? 0, TOR_REQUEST_TIMEOUT_MS)
       if (tor) {
         // Desktop manages Tor: wait for it, then use the port it chose.
         return Ok({
@@ -141,6 +144,7 @@ export const createAppContext = asyncFn(
           proxy: undefined,
           resolveProxy: () => tor.getSocksProxy(),
           connectTimeout,
+          requestTimeout,
           beforeConnect: async (): Promise<Result<void, Error>> => {
             const status = await tor.start()
             return status.state === 'ready' ? Ok(undefined) : Err(new Error(status.message ?? 'Tor is unavailable'))
@@ -150,7 +154,12 @@ export const createAppContext = asyncFn(
       if (env.SOCKS_PROXY_HOST == null || env.SOCKS_PROXY_HOST === '' || env.SOCKS_PROXY_PORT === undefined) {
         return Err(new Error('Tor is not available in this installation'))
       }
-      return Ok({ ...config, proxy: { host: env.SOCKS_PROXY_HOST, port: env.SOCKS_PROXY_PORT }, connectTimeout })
+      return Ok({
+        ...config,
+        proxy: { host: env.SOCKS_PROXY_HOST, port: env.SOCKS_PROXY_PORT },
+        connectTimeout,
+        requestTimeout,
+      })
     }
     const initialConfig = {
       host: electrumHost,

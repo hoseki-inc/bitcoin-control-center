@@ -453,7 +453,7 @@ describe('Tor connection policy', () => {
     })
   })
 
-  it('gives Tor-routed connections a longer connection limit than direct ones', async () => {
+  it('gives Tor-routed connections longer connection and request limits than direct ones', async () => {
     await withTestSetup(async () => {
       env.SOCKS_PROXY_HOST = '127.0.0.1'
       env.SOCKS_PROXY_PORT = 19452
@@ -461,6 +461,10 @@ describe('Tor connection policy', () => {
       const config = { host: 'electrum.example', port: 50002, protocol: 'ssl' as const }
       expect(ctx.prepareElectrumConfig(config, false).unwrap().connectTimeout).toBeUndefined()
       expect(ctx.prepareElectrumConfig(config, true).unwrap().connectTimeout).toBe(60_000)
+      expect(ctx.prepareElectrumConfig(config, false).unwrap().requestTimeout).toBeUndefined()
+      expect(ctx.prepareElectrumConfig({ ...config, requestTimeout: 10_000 }, true).unwrap().requestTimeout).toBe(
+        30_000,
+      )
       expect(ctx.prepareElectrumConfig({ ...config, connectTimeout: 90_000 }, true).unwrap().connectTimeout).toBe(
         90_000,
       )
@@ -476,6 +480,7 @@ describe('Tor connection policy', () => {
       contexts.add(managed)
       const prepared = managed.prepareElectrumConfig(config, true).unwrap()
       expect(prepared.connectTimeout).toBe(60_000)
+      expect(prepared.requestTimeout).toBe(30_000)
       expect(prepared.proxy).toBeUndefined()
       expect(prepared.resolveProxy?.()).toBeNull()
     })
