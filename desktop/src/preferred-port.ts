@@ -2,6 +2,9 @@ import * as fs from 'node:fs'
 
 // Leave the default Sentinel and Vite development ports available in either startup order.
 const DEVELOPMENT_PORTS = new Set([3400, 4269])
+// Windows refuses ports in ranges reserved by Hyper-V, WSL, or Docker with EACCES,
+// and those reservations can change on every restart.
+const UNAVAILABLE_PORT_CODES = new Set(['EADDRINUSE', 'EACCES'])
 
 /**
  * Reuse a non-development port when possible; a fresh or legacy profile requests
@@ -23,7 +26,7 @@ export function writePreferredPort(file: string, port: number): void {
   } catch {}
 }
 
-/** Bind directly, retry only an occupied port, and remember the port actually in use. */
+/** Bind directly, retry only an unavailable port, and remember the port actually in use. */
 export async function startOnPreferredPort<T extends { port: number }>(
   file: string,
   start: (port: number) => Promise<T>,
@@ -32,8 +35,8 @@ export async function startOnPreferredPort<T extends { port: number }>(
   try {
     server = await start(readPreferredPort(file))
   } catch (error) {
-    // Only an occupied port falls back; other failures are real startup errors.
-    if (!(error instanceof Error && 'code' in error && error.code === 'EADDRINUSE')) {
+    // Only an occupied or refused port falls back; other failures are real startup errors.
+    if (!(error instanceof Error && 'code' in error && UNAVAILABLE_PORT_CODES.has(String(error.code)))) {
       throw error
     }
     server = await start(0)
