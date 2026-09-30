@@ -115,6 +115,11 @@ export class ElectrumClient {
     return this.transport.isConnected() && this.negotiated
   }
 
+  /** Whether a connection attempt is in progress, such as the first one after launch. */
+  public isConnecting(): boolean {
+    return this.connectInFlight !== null
+  }
+
   /** Whether the server answered the last connection attempt, open socket or not. */
   public isReachable(): boolean {
     return this.reachable
@@ -131,7 +136,8 @@ export class ElectrumClient {
     const generation = this.generation
     this.checkInFlight = true
     this.lastCheck = Date.now()
-    void this.call('server.ping', [], z.null()).then((result) => {
+    // The protocol answers null, but any answer shows the server is there.
+    void this.call('server.ping', [], z.unknown()).then((result) => {
       this.checkInFlight = false
       // A disconnect since the ping started owns the status now.
       if (generation === this.generation) {

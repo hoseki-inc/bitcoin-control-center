@@ -116,11 +116,16 @@ export const createAppContext = asyncFn(
     if (connectionProfiles) {
       const initialized = connectionProfiles.initialize(saved)
       const active = connectionProfiles.list().find((profile) => profile.id === connectionProfiles.getActiveId())
-      if (initialized.isErr() || !active) {
-        database.close()
-        return Err(initialized.isErr() ? initialized.unwrapErr() : new Error('The active saved connection is missing'))
+      if (initialized.isOk() && active) {
+        saved = active
+      } else {
+        // Never refuse to start over saved connections: use the last saved server,
+        // and connecting to a saved connection sets a new active one.
+        logger.error(
+          { reason: initialized.isErr() ? initialized.unwrapErr().message : 'The active saved connection is missing' },
+          'Saved connections are unavailable; using the last saved server',
+        )
       }
-      saved = active
     }
     const { host: electrumHost, port: electrumPort, protocol: electrumProtocol, torEnabled } = saved
     const tor = options.tor

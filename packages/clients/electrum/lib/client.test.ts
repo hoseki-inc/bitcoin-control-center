@@ -45,7 +45,10 @@ async function startMockServer(): Promise<MockServer> {
             ? ['MockElectrum 1.0', '1.4']
             : req.method === 'blockchain.scripthash.get_history'
               ? [{ tx_hash: 'a'.repeat(64), height: 800000 }]
-              : null
+              : // Some servers answer ping with something other than the protocol's null.
+                req.method === 'server.ping'
+                ? 'pong'
+                : null
         socket.write(`${JSON.stringify({ jsonrpc: '2.0', id: req.id, result })}\n`)
       }
     })
@@ -172,6 +175,17 @@ describe('ElectrumClient concurrent reconnect', () => {
         client.checkReachable(0)
         expect(client.isReachable()).toBe(false)
       })
+    })
+  })
+
+  it('reports a connection attempt while it is in progress', async () => {
+    await withTestSetup(async () => {
+      const client = new ElectrumClient({ host: '127.0.0.1', port: mock.port, protocol: 'tcp' })
+      const attempt = client.connect()
+      expect(client.isConnecting()).toBe(true)
+      expect((await attempt).isOk()).toBe(true)
+      expect(client.isConnecting()).toBe(false)
+      client.disconnect()
     })
   })
 

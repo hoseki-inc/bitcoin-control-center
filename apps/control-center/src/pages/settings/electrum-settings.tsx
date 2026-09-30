@@ -54,6 +54,17 @@ function emptyDraft(): Draft {
   return { nickname: '', host: '', port: 50002, protocol: 'ssl', torEnabled: false }
 }
 
+function newConnectionChanged(draft: Draft): boolean {
+  const blank = emptyDraft()
+  return (
+    draft.nickname !== blank.nickname ||
+    draft.host !== blank.host ||
+    draft.port !== blank.port ||
+    draft.protocol !== blank.protocol ||
+    draft.torEnabled !== blank.torEnabled
+  )
+}
+
 function connectionChanged(draft: Draft, saved: Profile | undefined): boolean {
   return (
     !saved ||
@@ -68,6 +79,7 @@ function connectionChanged(draft: Draft, saved: Profile | undefined): boolean {
 
 const ElectrumStatusSchema = z.object({
   connected: z.boolean(),
+  connecting: z.boolean().optional(),
   host: z.string(),
   port: z.number(),
   protocol: z.string(),
@@ -209,7 +221,7 @@ export function ElectrumSettings(): JSX.Element {
   const saved = query.data?.profiles.find((item) => item.id === draft?.id)
   const active = query.data?.profiles.find((item) => item.id === query.data.activeId)
   const isNew = draft !== null && draft.id === undefined
-  const dirty = draft !== null && (isNew ? draft.host !== '' || draft.nickname !== '' : connectionChanged(draft, saved))
+  const dirty = draft !== null && (isNew ? newConnectionChanged(draft) : connectionChanged(draft, saved))
   const actionsDisabled = busy !== null || deleting !== null || pendingSelection !== null
   // A test saves nothing, so editing stays open while it runs; its result is dropped if anything changes.
   const controlsDisabled =
@@ -281,15 +293,19 @@ export function ElectrumSettings(): JSX.Element {
     previousTorState.current = torState
   }, [torState, torEnabled, setTorReadyNotice])
 
-  const applySelection = (selection: Selection): void => {
+  // Shows another connection with none of the previous one's form state.
+  const showConnection = (next: Draft | null): void => {
     formVersion.current += 1
     setRenaming(false)
-    setDraft(selection.kind === 'new' ? emptyDraft() : selection.profile)
+    setDraft(next)
     setTestResult(null)
     setTorForcedOff(false)
     setTorFailure(null)
     setTorTurnedOff(false)
     setPendingSelection(null)
+  }
+  const applySelection = (selection: Selection): void => {
+    showConnection(selection.kind === 'new' ? emptyDraft() : selection.profile)
   }
   const select = (selection: Selection): void => {
     if (controlsDisabled) {
@@ -357,9 +373,9 @@ export function ElectrumSettings(): JSX.Element {
       )
       // Removing another row must leave the current form (including new drafts) intact.
       if (draft?.id === deleting.id) {
-        setDraft(remaining?.profiles.find((item) => item.id === remaining.activeId) ?? remaining?.profiles[0] ?? null)
-        setRenaming(false)
-        setTestResult(null)
+        showConnection(
+          remaining?.profiles.find((item) => item.id === remaining.activeId) ?? remaining?.profiles[0] ?? null,
+        )
       }
       setPendingSelection(null)
       setDeleting(null)
@@ -406,7 +422,9 @@ export function ElectrumSettings(): JSX.Element {
         host: draft.host.trim(),
         port: draft.port,
         protocol: draft.protocol,
-        torEnabled,
+        // Saving never connects, so it keeps the Tor setting you chose even while
+        // a Tor failure shows the switch off. Testing and connecting use the switch.
+        torEnabled: operation === 'save' ? draft.torEnabled : torEnabled,
       }
       if (operation === 'test') {
         await baseTrpc.settings.testElectrum.mutate(details)
@@ -484,7 +502,22 @@ export function ElectrumSettings(): JSX.Element {
   const { profiles, activeId, limit } = query.data
   const atLimit = profiles.length >= limit
   const isActive = draft.id !== undefined && draft.id === activeId
-  const connectedNow = status?.connected !== false
+  // No status (not loaded, or the request failed) is unknown, never "Connected".
+  const liveness =
+    status === null
+      ? 'unknown'
+      : status.connected
+        ? 'connected'
+        : status.connecting === true
+          ? 'connecting'
+          : 'disconnected'
+  const livenessLabel = {
+    connected: 'Connected',
+    disconnected: 'Disconnected',
+    connecting: 'Connecting…',
+    unknown: 'Checking…',
+  }[liveness]
+  const livenessColor = { connected: 'green', disconnected: 'red', connecting: 'neutral', unknown: 'neutral' }[liveness]
   const canSubmit =
     (isNew || saved !== undefined) &&
     draft.host.trim() !== '' &&
@@ -493,8 +526,9 @@ export function ElectrumSettings(): JSX.Element {
     draft.port <= 65535 &&
     (!isNew || draft.nickname.trim() !== '') &&
     (!isNew || !atLimit)
-  const canReconnect = dirty || !isActive || !connectedNow
-  const connectLabel = dirty ? 'Save & Reconnect' : isActive ? 'Reconnect' : 'Connect'
+  const canReconnect = dirty || !isActive || (liveness !== 'connected' && liveness !== 'connecting')
+  // #5: only the connection in use reconnects; any other one connects for the first time.
+  const connectLabel = dirty ? (isActive ? 'Save & Reconnect' : 'Save & Connect') : isActive ? 'Reconnect' : 'Connect'
   const onionNeedsTor = onion && !torEnabled
   const submitDisabled = !canSubmit || controlsDisabled || actionsDisabled || torStarting || onionNeedsTor
   const rowButton = {
@@ -611,13 +645,9 @@ export function ElectrumSettings(): JSX.Element {
                   {item.nickname}
                 </Text>
                 <HStack as="span" gap={2} mt={1}>
-                  {live && <Circle size="8px" bg={connectedNow ? 'green.500' : 'red.500'} />}
-                  <Text
-                    as="span"
-                    textStyle="text/xs"
-                    color={live ? (connectedNow ? 'green.700' : 'red.700') : 'neutral.600'}
-                  >
-                    {live ? (connectedNow ? 'Connected' : 'Disconnected') : item.torEnabled ? 'Tor' : 'Direct'}
+                  {live && <Circle size="8px" bg={`${livenessColor}.500`} />}
+                  <Text as="span" textStyle="text/xs" color={live ? `${livenessColor}.700` : 'neutral.600'}>
+                    {live ? livenessLabel : item.torEnabled ? 'Tor' : 'Direct'}
                   </Text>
                 </HStack>
               </Button>
@@ -724,14 +754,14 @@ export function ElectrumSettings(): JSX.Element {
                 <Text
                   as="output"
                   textStyle="text/xs"
-                  color={isActive ? (connectedNow ? 'green.700' : 'red.700') : 'neutral.600'}
+                  color={isActive ? `${livenessColor}.700` : 'neutral.600'}
                   overflowWrap="anywhere"
                 >
                   {!isActive
                     ? 'Not connected'
                     : status
-                      ? `${connectedNow ? 'Connected' : 'Disconnected'} · ${status.host}:${status.port} (${status.protocol.toUpperCase()}${active?.torEnabled === true ? ' · Tor' : ''})`
-                      : 'Connected'}
+                      ? `${livenessLabel} · ${status.host}:${status.port} (${status.protocol.toUpperCase()}${active?.torEnabled === true ? ' · Tor' : ''})`
+                      : livenessLabel}
                 </Text>
               </Stack>
             )}
@@ -753,7 +783,7 @@ export function ElectrumSettings(): JSX.Element {
               </Tooltip>
             )}
           </HStack>
-          {isActive && !connectedNow && (
+          {isActive && liveness === 'disconnected' && (
             <Text textStyle="text/sm" color="red.700">
               {torFailure !== null || (active?.torEnabled === true && torState === 'failed')
                 ? 'Your saved data is still on this device. Turn Tor on to try again, or choose another saved connection.'
@@ -790,11 +820,11 @@ export function ElectrumSettings(): JSX.Element {
                     ['electrum.blockstream.info', 'electrum.mempool.space'].includes(draft.host) ? draft.host : 'custom'
                   }
                   onChange={(event) => {
+                    // Presets change the server only; your Tor choice stays.
                     update({
                       host: event.target.value === 'custom' ? '' : event.target.value,
                       port: 50002,
                       protocol: 'ssl',
-                      torEnabled: false,
                     })
                   }}
                 >

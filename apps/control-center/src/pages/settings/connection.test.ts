@@ -50,6 +50,7 @@ let queryClient: QueryClient
 let profiles: ProfileFixture[]
 let activeId: string
 let connected: boolean
+let connecting: boolean
 let finishSave: (response: Response) => void
 let saveResponse: Promise<Response>
 let requests: Array<{ path: string; input: unknown }>
@@ -253,6 +254,7 @@ async function withTestSetup(run: () => Promise<void>): Promise<void> {
   profiles.push(profile('Server A'))
   activeId = profiles[0]?.id ?? ''
   connected = true
+  connecting = false
   requests = []
   torStatus = { state: 'stopped' }
   torAttempts = 0
@@ -281,7 +283,9 @@ async function withTestSetup(run: () => Promise<void>): Promise<void> {
       }
       if (path === 'settings.electrumStatus') {
         const { host, port, protocol } = activeProfile()
-        return Response.json({ result: { data: { json: { connected, host, port, protocol, tor: torStatus } } } })
+        return Response.json({
+          result: { data: { json: { connected, connecting, host, port, protocol, tor: torStatus } } },
+        })
       }
       if (path === 'settings.priceSource' || path === 'settings.priceStatus') {
         return Response.json({ result: { data: { json: null } } })
@@ -1140,7 +1144,7 @@ describe('desktop saved connections', () => {
       expect(detailsText()).toContain('Away')
       expect(listText()).not.toContain('Away')
       expect(hostInput().value).toBe('unsaved.example')
-      expect(formButton('Save & Reconnect').disabled).toBe(true)
+      expect(formButton('Save & Connect').disabled).toBe(true)
       expect(labelled('Delete Away')).toHaveLength(0)
       await click(row('Home LAN'))
       await click(button('Discard changes'))
@@ -1171,7 +1175,7 @@ describe('desktop saved connections', () => {
       await click(row('Home LAN'))
       expect(torSwitch().checked).toBe(true)
       await click(torSwitch())
-      await click(formButton('Save & Reconnect'))
+      await click(formButton('Save & Connect'))
       expect(document.body.textContent).toContain('The server will be able to see your IP address.')
     })
   })
@@ -1195,6 +1199,97 @@ describe('desktop saved connections', () => {
       await flush()
       expect(container.textContent).not.toContain('Connection successful')
       expect(button('Test Connection').disabled).toBe(false)
+    })
+  })
+
+  it('keeps the Tor setting you chose when saving after a Tor failure', async () => {
+    await withTestSetup(async () => {
+      const advance = useStepTimers()
+      await render()
+      await click(row('New connection'))
+      await type(field('connection-nickname'), 'Remote')
+      await type(hostInput(), 'remote.example')
+      await turnTorOn()
+      torStatus = { state: 'failed', message: 'Tor could not connect within two minutes.', attempt: 1 }
+      await advance(1000)
+      expect(torSwitch().checked).toBe(false)
+      await click(formButton('Save'))
+      await waitForToast('success')
+      expect(profiles.at(-1)?.torEnabled).toBe(true)
+      expect(row('Remote').textContent).toContain('Tor')
+    })
+  })
+
+  it('keeps your Tor choice when a Start with preset changes the server', async () => {
+    await withTestSetup(async () => {
+      await render()
+      await click(row('New connection'))
+      await turnTorOn()
+      await choose('connection-starter', 'electrum.blockstream.info')
+      expect(hostInput().value).toBe('electrum.blockstream.info')
+      expect(torSwitch().checked).toBe(true)
+    })
+  })
+
+  it('says Connecting or Checking rather than guessing, and keeps Reconnect when the status is unknown', async () => {
+    await withTestSetup(async () => {
+      const advance = useStepTimers()
+      connected = false
+      connecting = true
+      await render()
+      await advance(0)
+      expect(row('Server A').textContent).toContain('Connecting…')
+      expect(detailsText()).not.toContain('Disconnected')
+      expect(formButton('Reconnect').disabled).toBe(true)
+
+      connecting = false
+      await advance(10_000)
+      expect(detailsText()).toContain('Disconnected')
+      const working = globalThis.fetch
+      vi.stubGlobal(
+        'fetch',
+        vi.fn<typeof fetch>(async (url, init) => {
+          if (parseUnknown(z.string(), url).unwrapOr('').includes('electrumStatus')) {
+            throw new TypeError('Failed to fetch')
+          }
+          return working(url, init)
+        }),
+      )
+      await advance(10_000)
+      expect(detailsText()).toContain('Checking…')
+      expect(detailsText()).not.toContain('Connected')
+      expect(formButton('Reconnect').disabled).toBe(false)
+    })
+  })
+
+  it('starts the next connection fresh after deleting the selected one', async () => {
+    await withTestSetup(async () => {
+      homeAndAway()
+      connected = false
+      await render()
+      await click(row('Away'))
+      await turnTorOn()
+      await click(torSwitch())
+      await click(firstLabelled('Delete Away'))
+      await click(alertDialogButton('Delete connection'))
+      await waitForToast('success')
+      expect(hostInput().value).toBe('server-a.example')
+      await click(formButton('Reconnect'))
+      expect(document.body.textContent).not.toContain('Connect without Tor?')
+      expect(connectRequests()).toHaveLength(1)
+    })
+  })
+
+  it('warns before discarding a new connection with only its port, protocol, or Tor changed', async () => {
+    await withTestSetup(async () => {
+      homeAndAway()
+      await render()
+      await click(row('New connection'))
+      await choose('connection-protocol', 'tcp')
+      await click(row('Away'))
+      expect(container.textContent).toContain('You have unsaved changes')
+      await click(button('Keep editing'))
+      expect(field('connection-protocol').value).toBe('tcp')
     })
   })
 })

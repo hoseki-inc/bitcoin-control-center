@@ -998,3 +998,21 @@ describe('desktop saved connections', () => {
     })
   })
 })
+
+describe('saved connection startup', () => {
+  it('starts with the last saved server when saved connections cannot be loaded', async () => {
+    await withTestSetup(async () => {
+      const previous = await context(false)
+      // An out-of-range port cannot be saved as the first connection.
+      previous.database.db
+        .prepare(
+          "INSERT INTO settings (key, value) VALUES ('electrum_port', '70000') ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        )
+        .run()
+      const ctx = await restart(previous, false)
+      expect(ctx.electrumConfig.port).toBe(70_000)
+      expect(profileStore(ctx).list()).toEqual([])
+      expect(profileStore(ctx).getActiveId()).toBeUndefined()
+    })
+  })
+})
