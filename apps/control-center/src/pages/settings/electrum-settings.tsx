@@ -25,6 +25,7 @@ import {
   Spinner,
   Stack,
   Switch,
+  type SystemStyleObject,
   Text,
   Tooltip,
   VStack,
@@ -33,7 +34,7 @@ import {
 } from '@chakra-ui/react'
 import { parseUnknown } from '@hoseki/packages/result/lib/parse'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { CircleAlertIcon, CircleCheckIcon, Trash2 } from 'lucide-react'
+import { Check, CircleAlertIcon, CircleCheckIcon, Pencil, Plus, Trash2, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { z } from 'zod'
@@ -43,7 +44,9 @@ import { type FadingNotice, NOTICE_FADE_MS, useFadingNotice } from './fading-not
 type Snapshot = RouterOutput['settings']['connectionProfiles']['list']
 type Profile = Snapshot['profiles'][number]
 type Draft = Omit<Profile, 'id' | 'revision'> & { id?: string; revision?: number }
-type Selection = { kind: 'new' } | { kind: 'saved'; profile: Profile; rename?: boolean; reload?: boolean }
+type Selection = { kind: 'new' } | { kind: 'saved'; profile: Profile; reload?: boolean }
+// Saving a new connection never connects; connecting may save edits first.
+type Operation = 'test' | 'save' | 'connect'
 const queryKey = ['connection-profiles']
 const api = baseTrpc.settings.connectionProfiles
 
@@ -163,7 +166,11 @@ async function requestTorStart(): Promise<number | null> {
 
 // ─── Settings ────────────────────────────────────────────────────────────────
 
-/** One form and one draft remain mounted when the saved selector changes layout. */
+/**
+ * Saved connections on one side and the selected connection's details on the
+ * other. Only the list shows which connection is live, so the details never read
+ * as the current connection.
+ */
 export function ElectrumSettings(): JSX.Element {
   const queryClient = useQueryClient()
   const query = useQuery({
@@ -173,21 +180,24 @@ export function ElectrumSettings(): JSX.Element {
   })
   const { status, refresh: refreshStatus } = useElectrumStatus()
   const [draft, setDraft] = useState<Draft | null>(null)
-  const [busy, setBusy] = useState<'test' | 'save' | 'rename' | 'delete' | null>(null)
+  const [busy, setBusy] = useState<Operation | 'rename' | 'delete' | null>(null)
   const [deleting, setDeleting] = useState<Profile | null>(null)
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const cancelDeleteRef = useRef<HTMLButtonElement>(null)
   const hostRef = useRef<HTMLInputElement>(null)
+  const nicknameRef = useRef<HTMLInputElement>(null)
   const [renaming, setRenaming] = useState(false)
   const [nickname, setNickname] = useState('')
   const [pendingSelection, setPendingSelection] = useState<Selection | null>(null)
-  const [previousId, setPreviousId] = useState<string>()
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null)
-  const [directConfirmation, setDirectConfirmation] = useState<'test' | 'save' | null>(null)
+  const [directConfirmation, setDirectConfirmation] = useState<'test' | 'connect' | null>(null)
   // Like Sparrow, a failed Tor start turns the switch off. That only changes the
   // form, not the draft: the saved connection keeps Tor and is never used directly.
   const [torForcedOff, setTorForcedOff] = useState(false)
   const [torFailure, setTorFailure] = useState<string | null>(null)
+  // Set when Tor is switched off in this form, so connecting asks first, even for a new connection.
+  const [torTurnedOff, setTorTurnedOff] = useState(false)
+  const [onionNotice, setOnionNotice] = useState(false)
   const [torStartedAt, setTorStartedAt] = useState<number | null>(null)
   // Failures from attempts before this one are stale. Infinity ignores all failures
   // while a start request is in flight; null means none has been requested.
@@ -195,19 +205,29 @@ export function ElectrumSettings(): JSX.Element {
   const previousTorState = useRef<string | undefined>(undefined)
   const [torReadyNotice, setTorReadyNotice] = useFadingNotice()
   const torStartingFade = useTorStartingFade()
+  const [selectedEdge, torPendingGreen] = useToken('colors', ['neutral.900', 'green.200'])
   const saved = query.data?.profiles.find((item) => item.id === draft?.id)
   const active = query.data?.profiles.find((item) => item.id === query.data.activeId)
   const isNew = draft !== null && draft.id === undefined
   const dirty = draft !== null && (isNew ? draft.host !== '' || draft.nickname !== '' : connectionChanged(draft, saved))
   const actionsDisabled = busy !== null || deleting !== null || pendingSelection !== null
-  const controlsDisabled = actionsDisabled || renaming
+  // A test saves nothing, so editing stays open while it runs; its result is dropped if anything changes.
+  const controlsDisabled =
+    (busy !== null && busy !== 'test') || deleting !== null || pendingSelection !== null || renaming
+  // Changes whenever the form changes, so a test finishing afterwards can't report on details no longer shown.
+  const formVersion = useRef(0)
   const torEnabled = draft?.torEnabled === true && !torForcedOff
   const torState = status?.tor?.state
   const torAttempt = status?.tor?.attempt ?? 0
   const torStarting = torEnabled && torState === 'starting'
-  // Connecting without Tor after this connection or the active one used it, or right
-  // after Tor failed, would reveal this computer's IP address. Ask before doing that.
-  const leavingTor = !torEnabled && (saved?.torEnabled === true || active?.torEnabled === true || torFailure !== null)
+  // A saved Tor connection shows the switch on before the app starts Tor; only a running Tor is solid green.
+  const torWaiting = torEnabled && torState === 'stopped'
+  // Onion addresses are only reachable through Tor, so they never connect directly.
+  const onion = draft?.host.trim().toLowerCase().endsWith('.onion') === true
+  // Ask only when this connection would go direct without a saved choice: Tor was turned
+  // off here or on a connection saved with it, or Tor failed and turned the switch off.
+  // Switching to a saved direct connection is already a deliberate choice.
+  const leavingTor = !torEnabled && !onion && (saved?.torEnabled === true || torTurnedOff || torFailure !== null)
 
   useEffect(() => {
     if (!query.data || controlsDisabled) {
@@ -218,9 +238,16 @@ export function ElectrumSettings(): JSX.Element {
         query.data.profiles.find((item) => item.id === query.data.activeId) ?? query.data.profiles[0] ?? emptyDraft(),
       )
     } else if (!dirty && saved && saved.revision !== draft.revision) {
+      formVersion.current += 1
       setDraft(saved)
     }
   }, [query.data, draft, saved, dirty, controlsDisabled])
+
+  useEffect(() => {
+    if (renaming) {
+      nicknameRef.current?.select()
+    }
+  }, [renaming])
 
   // Compare attempts rather than waiting to observe "starting", which a fast failure skips.
   useEffect(() => {
@@ -255,29 +282,20 @@ export function ElectrumSettings(): JSX.Element {
   }, [torState, torEnabled, setTorReadyNotice])
 
   const applySelection = (selection: Selection): void => {
-    setRenaming(selection.kind === 'saved' && selection.rename === true)
-    setNickname(selection.kind === 'saved' ? selection.profile.nickname : '')
-    if (selection.kind === 'new') {
-      setPreviousId(draft?.id)
-      setDraft(emptyDraft())
-    } else {
-      setDraft(selection.profile)
-    }
+    formVersion.current += 1
+    setRenaming(false)
+    setDraft(selection.kind === 'new' ? emptyDraft() : selection.profile)
     setTestResult(null)
     setTorForcedOff(false)
     setTorFailure(null)
+    setTorTurnedOff(false)
     setPendingSelection(null)
   }
   const select = (selection: Selection): void => {
     if (controlsDisabled) {
       return
     }
-    if (
-      selection.kind === 'saved' &&
-      selection.profile.id === draft?.id &&
-      selection.rename !== true &&
-      selection.reload !== true
-    ) {
+    if (selection.kind === 'new' ? isNew : selection.profile.id === draft?.id && selection.reload !== true) {
       return
     }
     if (dirty) {
@@ -287,20 +305,29 @@ export function ElectrumSettings(): JSX.Element {
     }
   }
   const update = (value: Partial<Draft>): void => {
+    formVersion.current += 1
     setDraft((current) => (current ? { ...current, ...value } : current))
     setTestResult(null)
   }
+  const startTor = (): void => {
+    setTorAttemptAwaited(Number.POSITIVE_INFINITY)
+    void requestTorStart().then((attempt) => {
+      // If the request failed, the existing status is the one to show.
+      setTorAttemptAwaited(attempt ?? 0)
+      refreshStatus()
+    })
+  }
   const handleTorChange = (enabled: boolean): void => {
+    if (!enabled && onion) {
+      setOnionNotice(true)
+      return
+    }
     update({ torEnabled: enabled })
     setTorForcedOff(false)
     setTorFailure(null)
+    setTorTurnedOff(!enabled)
     if (enabled) {
-      setTorAttemptAwaited(Number.POSITIVE_INFINITY)
-      void requestTorStart().then((attempt) => {
-        // If the request failed, the existing status is the one to show.
-        setTorAttemptAwaited(attempt ?? 0)
-        refreshStatus()
-      })
+      startTor()
     }
   }
   const remember = async (profile: Profile, connected = false): Promise<void> => {
@@ -331,6 +358,7 @@ export function ElectrumSettings(): JSX.Element {
       // Removing another row must leave the current form (including new drafts) intact.
       if (draft?.id === deleting.id) {
         setDraft(remaining?.profiles.find((item) => item.id === remaining.activeId) ?? remaining?.profiles[0] ?? null)
+        setRenaming(false)
         setTestResult(null)
       }
       setPendingSelection(null)
@@ -345,12 +373,34 @@ export function ElectrumSettings(): JSX.Element {
       setBusy(null)
     }
   }
-  const run = async (operation: 'test' | 'save' | 'rename'): Promise<void> => {
+  const rename = async (): Promise<void> => {
+    if (draft?.id === undefined || draft.revision === undefined || actionsDisabled) {
+      return
+    }
+    setBusy('rename')
+    try {
+      const renamed = await api.rename.mutate({ id: draft.id, revision: draft.revision, nickname: nickname.trim() })
+      setDraft({ ...draft, nickname: renamed.nickname, revision: renamed.revision })
+      setRenaming(false)
+      await remember(renamed)
+      toast.success('Connection renamed')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Could not rename the connection')
+    } finally {
+      setBusy(null)
+    }
+  }
+  const run = async (operation: Operation): Promise<void> => {
     if (!draft || actionsDisabled) {
       return
     }
     setBusy(operation)
     setTestResult(null)
+    const version = formVersion.current
+    // Sentinel starts Tor for this request anyway; starting it here lets the switch follow it.
+    if (torEnabled && torState === 'stopped' && operation !== 'save') {
+      startTor()
+    }
     try {
       const details = {
         host: draft.host.trim(),
@@ -360,31 +410,42 @@ export function ElectrumSettings(): JSX.Element {
       }
       if (operation === 'test') {
         await baseTrpc.settings.testElectrum.mutate(details)
-        setTestResult({ ok: true, message: 'Connection successful' })
-      } else if (operation === 'rename' && draft.id !== undefined && draft.revision !== undefined) {
-        const renamed = await api.rename.mutate({ id: draft.id, revision: draft.revision, nickname: nickname.trim() })
-        setDraft({ ...draft, nickname: renamed.nickname, revision: renamed.revision })
-        setRenaming(false)
-        await remember(renamed)
-        toast.success('Connection renamed')
-      } else if (draft.id === undefined) {
-        const created = await api.create.mutate({ ...details, nickname: draft.nickname.trim() })
-        setDraft(created)
-        await remember(created)
-        toast.success('Connection saved. Select Connect when you want to use it.')
-      } else if (draft.revision !== undefined) {
-        const connected = await api.connect.mutate({ id: draft.id, revision: draft.revision, connection: details })
+        if (version === formVersion.current) {
+          setTestResult({ ok: true, message: 'Connection successful' })
+        }
+        return
+      }
+      let target = saved
+      if (draft.id === undefined) {
+        target = await api.create.mutate({ ...details, nickname: draft.nickname.trim() })
+        setDraft(target)
+        await remember(target)
+        if (operation === 'save') {
+          toast.success('Connection saved. Select Connect when you want to use it.')
+          return
+        }
+      }
+      if (target) {
+        // A connection saved just now connects with the details it was saved with.
+        const connected = await api.connect.mutate(
+          draft.id === undefined
+            ? { id: target.id, revision: target.revision }
+            : { id: target.id, revision: draft.revision ?? target.revision, connection: details },
+        )
         setDraft(connected)
         setTorForcedOff(false)
         // The saved connection now reflects the user's routing choice.
         setTorFailure(null)
+        setTorTurnedOff(false)
         await remember(connected, true)
         refreshStatus()
-        toast.success('Connection updated')
+        toast.success(draft.id === undefined ? 'Connection saved' : 'Connection updated')
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Could not update the connection'
-      setTestResult({ ok: false, message })
+      if (version === formVersion.current) {
+        setTestResult({ ok: false, message })
+      }
       if (operation !== 'test') {
         toast.error(message)
       }
@@ -393,8 +454,8 @@ export function ElectrumSettings(): JSX.Element {
     }
   }
   // Connecting without Tor, including a test, asks first; saving a new connection never connects.
-  const confirmRouting = (operation: 'test' | 'save'): void => {
-    if (leavingTor && (operation === 'test' || !isNew)) {
+  const confirmRouting = (operation: Operation): void => {
+    if (leavingTor && operation !== 'save') {
       setDirectConfirmation(operation)
     } else {
       void run(operation)
@@ -422,6 +483,8 @@ export function ElectrumSettings(): JSX.Element {
   }
   const { profiles, activeId, limit } = query.data
   const atLimit = profiles.length >= limit
+  const isActive = draft.id !== undefined && draft.id === activeId
+  const connectedNow = status?.connected !== false
   const canSubmit =
     (isNew || saved !== undefined) &&
     draft.host.trim() !== '' &&
@@ -430,64 +493,30 @@ export function ElectrumSettings(): JSX.Element {
     draft.port <= 65535 &&
     (!isNew || draft.nickname.trim() !== '') &&
     (!isNew || !atLimit)
-  const canReconnect = dirty || draft.id !== activeId || status?.connected === false
-  const saveLabel = isNew
-    ? 'Save connection'
-    : dirty
-      ? 'Save & Reconnect'
-      : draft.id !== activeId
-        ? 'Connect'
-        : 'Reconnect'
-  const newButton = (
-    <Button
-      variant="link"
-      size="sm"
-      onClick={() => {
-        select({ kind: 'new' })
-      }}
-      isDisabled={atLimit || controlsDisabled || isNew}
-    >
-      + New connection
-    </Button>
-  )
-  const startRename = (profile: Profile): void => {
-    if (controlsDisabled) {
-      return
-    }
-    // Switching to another profile first uses the same unsaved-edit guard as selection.
-    if (profile.id !== draft.id) {
-      select({ kind: 'saved', profile, rename: true })
-      return
-    }
-    setNickname(profile.nickname)
-    setRenaming(true)
-    setTestResult(null)
+  const canReconnect = dirty || !isActive || !connectedNow
+  const connectLabel = dirty ? 'Save & Reconnect' : isActive ? 'Reconnect' : 'Connect'
+  const onionNeedsTor = onion && !torEnabled
+  const submitDisabled = !canSubmit || controlsDisabled || actionsDisabled || torStarting || onionNeedsTor
+  const rowButton = {
+    variant: 'unstyled',
+    h: 'auto',
+    w: 'full',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+    py: 3,
+    px: 3,
+    borderRadius: 0,
+    textAlign: 'left',
+    whiteSpace: 'normal',
+  } as const
+  // Rows stay readable while an action runs; the theme's grey disabled fill is for buttons.
+  const rowDisabled = (selected: boolean): SystemStyleObject => {
+    const style = { bgColor: selected ? 'neutral.50' : 'transparent', color: 'inherit', opacity: 0.6 }
+    return { ...style, _hover: style }
   }
-  const deleteButton = (profile: Profile): JSX.Element => (
-    <Tooltip
-      label={
-        profile.id === activeId ? 'Connect to another profile before deleting this connection' : 'Delete connection'
-      }
-      shouldWrapChildren
-    >
-      <IconButton
-        aria-label={`Delete ${profile.nickname}`}
-        icon={<Trash2 size={16} aria-hidden="true" />}
-        variant="ghost"
-        size="sm"
-        minW={8}
-        w={8}
-        h={8}
-        color="neutral.600"
-        _hover={{ color: 'error.600', bg: 'error.50' }}
-        isDisabled={controlsDisabled || profile.id === activeId}
-        onClick={() => {
-          setDeleteError(null)
-          setDeleting(profile)
-        }}
-      />
-    </Tooltip>
-  )
+  const selectedShadow = `inset 2px 0 0 ${selectedEdge}`
 
   return (
     <Box w="full" sx={{ containerType: 'inline-size', containerName: 'electrum-settings' }}>
@@ -546,187 +575,235 @@ export function ElectrumSettings(): JSX.Element {
         sx={{
           display: 'grid',
           gridTemplateColumns: 'minmax(0, 1fr)',
-          gap: 8,
-          '.connection-list': { display: 'none' },
-          '@container electrum-settings (min-width: 760px)': {
-            gridTemplateColumns: '480px minmax(0, 1fr)',
-            gap: 10,
-            '.connection-list': { display: 'block' },
-            '.connection-picker': { display: 'none' },
+          gap: 6,
+          '@container electrum-settings (min-width: 720px)': {
+            gridTemplateColumns: 'minmax(200px, 280px) minmax(0, 480px)',
+            gap: 0,
+            '.connection-list': { borderRightWidth: '1px', pr: 0 },
+            '.connection-details': { pl: 8 },
           },
         }}
       >
-        <Stack gap={5} w="full" maxW="480px" minW={0}>
-          <Stack className="connection-picker" gap={1}>
-            <HStack justify="space-between" flexWrap="wrap" gap={2}>
-              <FormLabel htmlFor="saved-connection" m={0} textStyle="label/sm">
-                Saved connection · {profiles.length} of {limit}
-              </FormLabel>
-              {newButton}
-            </HStack>
-            <HStack gap={3}>
-              <Select
-                id="saved-connection"
-                size="sm"
-                minW={0}
-                value={draft.id ?? 'new'}
+        <Box as="nav" className="connection-list" aria-label="Saved connections" minW={0}>
+          <HStack justify="space-between" px={3} pb={2} borderBottomWidth="1px" flexWrap="wrap">
+            <Text textStyle="label/sm">Saved connections</Text>
+            <Text textStyle="text/xs" color="neutral.600">
+              {profiles.length} of {limit}
+            </Text>
+          </HStack>
+          {profiles.map((item) => {
+            const live = item.id === activeId
+            return (
+              <Button
+                key={item.id}
+                {...rowButton}
+                bg={draft.id === item.id ? 'neutral.50' : undefined}
+                boxShadow={draft.id === item.id ? selectedShadow : undefined}
+                _disabled={rowDisabled(draft.id === item.id)}
+                borderBottomWidth="1px"
+                aria-current={draft.id === item.id ? 'true' : undefined}
                 isDisabled={controlsDisabled}
-                onChange={(event) => {
-                  const item = profiles.find((profile) => profile.id === event.target.value)
-                  if (item) {
-                    select({ kind: 'saved', profile: item })
-                  }
+                onClick={() => {
+                  select({ kind: 'saved', profile: item })
                 }}
               >
-                {isNew && <option value="new">New connection</option>}
-                {draft.id !== undefined && !saved && (
-                  <option value={draft.id} disabled>
-                    {draft.nickname} — Deleted
-                  </option>
-                )}
-                {profiles.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.nickname}
-                    {item.id === activeId ? ' — Active' : ''}
-                  </option>
-                ))}
-              </Select>
-              {saved && (
-                <>
-                  <Button
-                    variant="link"
-                    size="sm"
-                    isDisabled={controlsDisabled}
-                    onClick={() => {
-                      startRename(saved)
-                    }}
+                <Text as="span" textStyle="label/sm" overflowWrap="anywhere">
+                  {item.nickname}
+                </Text>
+                <HStack as="span" gap={2} mt={1}>
+                  {live && <Circle size="8px" bg={connectedNow ? 'green.500' : 'red.500'} />}
+                  <Text
+                    as="span"
+                    textStyle="text/xs"
+                    color={live ? (connectedNow ? 'green.700' : 'red.700') : 'neutral.600'}
                   >
-                    Rename
-                  </Button>
-                  {deleteButton(saved)}
-                </>
-              )}
+                    {live ? (connectedNow ? 'Connected' : 'Disconnected') : item.torEnabled ? 'Tor' : 'Direct'}
+                  </Text>
+                </HStack>
+              </Button>
+            )
+          })}
+          <Button
+            {...rowButton}
+            bg={isNew ? 'neutral.50' : undefined}
+            boxShadow={isNew ? selectedShadow : undefined}
+            _disabled={rowDisabled(isNew)}
+            aria-current={isNew ? 'true' : undefined}
+            isDisabled={controlsDisabled || (atLimit && !isNew)}
+            onClick={() => {
+              select({ kind: 'new' })
+            }}
+          >
+            <HStack as="span" gap={2}>
+              <Plus size={14} aria-hidden="true" />
+              <Text as="span" textStyle="label/sm">
+                New connection
+              </Text>
             </HStack>
-            {atLimit && (
-              <Text textStyle="text/xs" color="neutral.600">
-                Maximum reached.
+            {atLimit && !isNew && (
+              <Text as="span" textStyle="text/xs" color="neutral.600" mt={1}>
+                Limit reached. Delete one to add another.
               </Text>
             )}
-          </Stack>
+          </Button>
+        </Box>
 
-          {(isNew || renaming) && (
-            <FormControl>
-              <FormLabel htmlFor="connection-nickname" textStyle="label/sm">
-                Connection nickname
-              </FormLabel>
-              <Input
-                id="connection-nickname"
-                size="sm"
-                maxLength={80}
-                placeholder="e.g. Home LAN"
-                value={renaming ? nickname : draft.nickname}
-                isDisabled={actionsDisabled}
-                onChange={(event) => {
-                  if (renaming) {
-                    setNickname(event.target.value)
-                  } else {
-                    update({ nickname: event.target.value })
-                  }
-                }}
-              />
-              <HStack mt={2} gap={3}>
-                {renaming && (
-                  <Button
-                    size="sm"
-                    colorScheme="green"
-                    isLoading={busy === 'rename'}
-                    isDisabled={nickname.trim() === '' || actionsDisabled}
-                    onClick={() => void run('rename')}
-                  >
-                    Save name
-                  </Button>
-                )}
-                <Button
-                  variant="link"
+        <Stack as="section" className="connection-details" aria-label="Connection details" gap={5} minW={0}>
+          <HStack justify="space-between" align="start" gap={3} pb={3} borderBottomWidth="1px">
+            {isNew ? (
+              <Stack gap={0}>
+                <Text textStyle="label/md" fontWeight="semibold">
+                  New connection
+                </Text>
+                <Text textStyle="text/xs" color="neutral.600">
+                  {profiles.length} of {limit} saved
+                </Text>
+              </Stack>
+            ) : renaming ? (
+              <HStack gap={2} flex={1} minW={0}>
+                <Input
+                  ref={nicknameRef}
+                  aria-label="Connection name"
                   size="sm"
+                  maxLength={80}
+                  value={nickname}
                   isDisabled={actionsDisabled}
-                  onClick={() => {
-                    if (renaming) {
+                  onChange={(event) => {
+                    setNickname(event.target.value)
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' && nickname.trim() !== '') {
+                      void rename()
+                    } else if (event.key === 'Escape') {
                       setRenaming(false)
-                    } else {
-                      const previous = profiles.find((item) => item.id === previousId) ?? active ?? profiles[0]
-                      if (previous) {
-                        select({ kind: 'saved', profile: previous })
-                      }
                     }
                   }}
-                >
-                  Cancel
-                </Button>
+                />
+                <IconButton
+                  aria-label="Save connection name"
+                  icon={<Check size={16} aria-hidden="true" />}
+                  size="sm"
+                  variant="ghost"
+                  isLoading={busy === 'rename'}
+                  isDisabled={nickname.trim() === '' || actionsDisabled}
+                  onClick={() => void rename()}
+                />
+                <IconButton
+                  aria-label="Cancel renaming"
+                  icon={<X size={16} aria-hidden="true" />}
+                  size="sm"
+                  variant="ghost"
+                  isDisabled={actionsDisabled}
+                  onClick={() => {
+                    setRenaming(false)
+                  }}
+                />
               </HStack>
-            </FormControl>
-          )}
-          {isNew && (
-            <FormControl>
-              <FormLabel htmlFor="connection-starter" textStyle="label/sm">
-                Start with
-              </FormLabel>
-              <Select
-                id="connection-starter"
-                size="sm"
-                isDisabled={controlsDisabled}
-                value={
-                  ['electrum.blockstream.info', 'electrum.mempool.space'].includes(draft.host) ? draft.host : 'custom'
-                }
-                onChange={(event) => {
-                  update({
-                    host: event.target.value === 'custom' ? '' : event.target.value,
-                    port: 50002,
-                    protocol: 'ssl',
-                    torEnabled: false,
-                  })
-                }}
-              >
-                <option value="custom">My own server</option>
-                <option value="electrum.blockstream.info">Blockstream (Public)</option>
-                <option value="electrum.mempool.space">Mempool.space (Public)</option>
-              </Select>
-            </FormControl>
-          )}
-          {status && (
-            <HStack
-              as="output"
-              px={3}
-              py={2}
-              borderRadius="md"
-              bg={status.connected ? 'green.50' : 'red.50'}
-              align="start"
-              gap={2}
-            >
-              <Circle size="8px" mt="6px" flexShrink={0} bg={status.connected ? 'green.500' : 'red.500'} />
+            ) : (
               <Stack gap={0} minW={0}>
+                <HStack gap={1}>
+                  <Text textStyle="label/md" fontWeight="semibold" overflowWrap="anywhere">
+                    {draft.nickname}
+                  </Text>
+                  {saved && (
+                    <IconButton
+                      aria-label={`Rename ${draft.nickname}`}
+                      icon={<Pencil size={14} aria-hidden="true" />}
+                      size="xs"
+                      variant="ghost"
+                      color="neutral.500"
+                      isDisabled={actionsDisabled || renaming}
+                      onClick={() => {
+                        setNickname(draft.nickname)
+                        setRenaming(true)
+                        setTestResult(null)
+                      }}
+                    />
+                  )}
+                </HStack>
                 <Text
-                  textStyle="text/sm"
-                  color={status.connected ? 'green.700' : 'red.700'}
-                  fontWeight="medium"
+                  as="output"
+                  textStyle="text/xs"
+                  color={isActive ? (connectedNow ? 'green.700' : 'red.700') : 'neutral.600'}
                   overflowWrap="anywhere"
                 >
-                  {status.connected ? 'Connected' : 'Disconnected'}
-                  {active ? ` · ${active.nickname}` : ''}
+                  {!isActive
+                    ? 'Not connected'
+                    : status
+                      ? `${connectedNow ? 'Connected' : 'Disconnected'} · ${status.host}:${status.port} (${status.protocol.toUpperCase()}${active?.torEnabled === true ? ' · Tor' : ''})`
+                      : 'Connected'}
                 </Text>
-                <Text textStyle="text/xs" color={status.connected ? 'green.600' : 'red.600'} overflowWrap="anywhere">
-                  {status.host}:{status.port} ({status.protocol.toUpperCase()}
-                  {active?.torEnabled === true ? ' · Tor' : ''})
-                </Text>
-                {!status.connected && (
-                  <Text textStyle="text/sm" color="red.700">
-                    {torFailure !== null || (active?.torEnabled === true && torState === 'failed')
-                      ? 'Your saved data is still on this device. Turn Tor on to try again, or choose another saved connection.'
-                      : 'Your saved data is still on this device. Retry this connection or choose another saved connection.'}
-                  </Text>
-                )}
               </Stack>
-            </HStack>
+            )}
+            {saved && !renaming && (
+              <Tooltip label="Delete connection" shouldWrapChildren>
+                <IconButton
+                  aria-label={`Delete ${saved.nickname}`}
+                  icon={<Trash2 size={16} aria-hidden="true" />}
+                  variant="ghost"
+                  size="sm"
+                  color="neutral.600"
+                  _hover={{ color: 'error.600', bg: 'error.50' }}
+                  isDisabled={actionsDisabled || renaming}
+                  onClick={() => {
+                    setDeleteError(null)
+                    setDeleting(saved)
+                  }}
+                />
+              </Tooltip>
+            )}
+          </HStack>
+          {isActive && !connectedNow && (
+            <Text textStyle="text/sm" color="red.700">
+              {torFailure !== null || (active?.torEnabled === true && torState === 'failed')
+                ? 'Your saved data is still on this device. Turn Tor on to try again, or choose another saved connection.'
+                : 'Your saved data is still on this device. Retry this connection or choose another saved connection.'}
+            </Text>
+          )}
+          {isNew && (
+            <>
+              <FormControl>
+                <FormLabel htmlFor="connection-nickname" textStyle="label/sm">
+                  Name
+                </FormLabel>
+                <Input
+                  id="connection-nickname"
+                  size="sm"
+                  maxLength={80}
+                  placeholder="e.g. Home node"
+                  value={draft.nickname}
+                  isDisabled={controlsDisabled}
+                  onChange={(event) => {
+                    update({ nickname: event.target.value })
+                  }}
+                />
+              </FormControl>
+              <FormControl>
+                <FormLabel htmlFor="connection-starter" textStyle="label/sm">
+                  Start with
+                </FormLabel>
+                <Select
+                  id="connection-starter"
+                  size="sm"
+                  isDisabled={controlsDisabled}
+                  value={
+                    ['electrum.blockstream.info', 'electrum.mempool.space'].includes(draft.host) ? draft.host : 'custom'
+                  }
+                  onChange={(event) => {
+                    update({
+                      host: event.target.value === 'custom' ? '' : event.target.value,
+                      port: 50002,
+                      protocol: 'ssl',
+                      torEnabled: false,
+                    })
+                  }}
+                >
+                  <option value="custom">My own server</option>
+                  <option value="electrum.blockstream.info">Blockstream (Public)</option>
+                  <option value="electrum.mempool.space">Mempool.space (Public)</option>
+                </Select>
+              </FormControl>
+            </>
           )}
           <FormControl>
             <FormLabel htmlFor="connection-host" textStyle="label/sm">
@@ -804,10 +881,17 @@ export function ElectrumSettings(): JSX.Element {
               sx={
                 torStarting
                   ? { '.chakra-switch__track': { animation: `${torStartingFade} 3s ease-in-out infinite` } }
-                  : undefined
+                  : torWaiting
+                    ? { '.chakra-switch__track[data-checked]': { bg: torPendingGreen } }
+                    : undefined
               }
             />
           </HStack>
+          {onionNeedsTor && torFailure === null && (
+            <Text as="output" textStyle="text/sm" color="neutral.600">
+              Onion addresses need Tor. Turn Tor on to connect.
+            </Text>
+          )}
           <TorStatusLine
             enabled={torEnabled}
             state={torState}
@@ -829,81 +913,64 @@ export function ElectrumSettings(): JSX.Element {
                 confirmRouting('test')
               }}
               isLoading={busy === 'test'}
-              isDisabled={draft.host.trim() === '' || controlsDisabled || torStarting}
+              isDisabled={draft.host.trim() === '' || actionsDisabled || renaming || torStarting || onionNeedsTor}
             >
               Test Connection
             </Button>
+            {isNew && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  confirmRouting('save')
+                }}
+                isLoading={busy === 'save'}
+                isDisabled={submitDisabled}
+              >
+                Save
+              </Button>
+            )}
             <Button
               size="sm"
               colorScheme="green"
               onClick={() => {
-                confirmRouting('save')
+                confirmRouting('connect')
               }}
-              isLoading={busy === 'save'}
-              isDisabled={!canSubmit || (!isNew && !canReconnect) || controlsDisabled || torStarting}
+              isLoading={busy === 'connect'}
+              isDisabled={submitDisabled || (!isNew && !canReconnect)}
             >
-              {saveLabel}
+              {isNew ? 'Save & Connect' : connectLabel}
             </Button>
           </HStack>
         </Stack>
-        <Box className="connection-list" as="aside" aria-label="Saved connections" minW={0}>
-          <HStack justify="space-between" mb={2} flexWrap="wrap">
-            <Text textStyle="label/sm">Saved connections</Text>
-            <Text textStyle="text/xs" color="neutral.600">
-              {profiles.length} of {limit}
-            </Text>
-          </HStack>
-          {profiles.map((item) => (
-            <HStack key={item.id} gap={1} borderBottomWidth="1px" bg={draft.id === item.id ? 'neutral.50' : undefined}>
-              <Button
-                variant="unstyled"
-                h="auto"
-                flex={1}
-                minW={0}
-                display="flex"
-                flexDirection="column"
-                alignItems="flex-start"
-                justifyContent="center"
-                py={3}
-                px={2}
-                textAlign="left"
-                whiteSpace="normal"
-                aria-pressed={draft.id === item.id}
-                isDisabled={controlsDisabled}
-                onClick={() => {
-                  select({ kind: 'saved', profile: item })
-                }}
-              >
-                <Text as="span" textStyle="label/sm" overflowWrap="anywhere">
-                  {item.nickname}
-                </Text>
-                <Text as="span" textStyle="text/xs" color={item.id === activeId ? 'green.700' : 'neutral.600'} mt={1}>
-                  {item.id === activeId ? '✓ Active' : item.torEnabled ? 'Tor' : 'Direct'}
-                </Text>
-              </Button>
-              <Button
-                variant="link"
-                size="xs"
-                px={1}
-                isDisabled={controlsDisabled}
-                onClick={() => {
-                  startRename(item)
-                }}
-                aria-label={`Rename ${item.nickname}`}
-              >
-                Rename
-              </Button>
-              {deleteButton(item)}
-            </HStack>
-          ))}
-          <Box mt={3}>{newButton}</Box>
-          {atLimit && (
-            <Text textStyle="text/xs" mt={2} color="neutral.600">
-              Maximum reached.
-            </Text>
-          )}
-        </Box>
       </Box>
+      <Modal
+        isOpen={onionNotice}
+        onClose={() => {
+          setOnionNotice(false)
+        }}
+        isCentered
+      >
+        <ModalOverlay />
+        <ModalContent>
+          <ModalHeader>This connection needs Tor</ModalHeader>
+          <ModalBody>
+            <Text textStyle="text/sm" color="neutral.700">
+              This is an onion address, so it can only be reached through Tor.
+            </Text>
+          </ModalBody>
+          <ModalFooter>
+            <Button
+              flex={1}
+              onClick={() => {
+                setOnionNotice(false)
+              }}
+            >
+              Keep Tor on
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
       <Modal
         isOpen={directConfirmation !== null}
         onClose={() => {
@@ -916,9 +983,7 @@ export function ElectrumSettings(): JSX.Element {
           <ModalHeader>Connect without Tor?</ModalHeader>
           <ModalBody>
             <Text textStyle="text/sm" color="neutral.700">
-              {directConfirmation === 'save'
-                ? 'The server will see your IP address and the addresses you look up.'
-                : 'The server will see your IP address.'}
+              The server will be able to see your IP address.
             </Text>
           </ModalBody>
           <ModalFooter gap={2}>
@@ -967,15 +1032,18 @@ export function ElectrumSettings(): JSX.Element {
             </Text>
           </AlertDialogHeader>
           <AlertDialogBody>
-            <Text textStyle="text/sm">This removes the saved connection. Your accounts and wallet data are kept.</Text>
-            {deleting?.id === draft.id && dirty && (
-              <Text textStyle="text/sm" mt={3}>
-                Your unsaved changes to this connection will also be discarded.
+            {deleting?.id === activeId ? (
+              <Text textStyle="text/sm">
+                You’re connected to this server. Connect to another saved connection before deleting this one.
+              </Text>
+            ) : (
+              <Text textStyle="text/sm">
+                This removes the saved connection. Your accounts and wallet data are kept.
               </Text>
             )}
-            {deleting?.id === activeId && (
+            {deleting?.id === draft.id && dirty && deleting?.id !== activeId && (
               <Text textStyle="text/sm" mt={3}>
-                Connect to another profile before deleting the active connection.
+                Your unsaved changes to this connection will also be discarded.
               </Text>
             )}
             {deleteError !== null && (

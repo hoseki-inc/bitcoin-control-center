@@ -32,7 +32,7 @@ const connectionSchema = z.object({
   protocol: z.enum(['tcp', 'ssl']),
   torEnabled: z.boolean().optional(),
 })
-const ConnectRequestSchema = z.object({ id: z.string(), revision: z.number(), connection: connectionSchema })
+const ConnectRequestSchema = z.object({ id: z.string(), revision: z.number(), connection: connectionSchema.optional() })
 const CreateRequestSchema = connectionSchema.extend({ nickname: z.string() })
 const ReferenceSchema = z.object({ id: z.string(), revision: z.number(), nickname: z.string().optional() })
 interface ProfileFixture {
@@ -55,6 +55,8 @@ let saveResponse: Promise<Response>
 let requests: Array<{ path: string; input: unknown }>
 // A test that sets this decides when, and how, deletions answer.
 let deleteResponse: Promise<Response> | null
+// A test that sets this decides when connection tests answer.
+let testResponse: Promise<Response> | null
 interface TorStatusFixture {
   state: string
   message?: string
@@ -261,6 +263,7 @@ async function withTestSetup(run: () => Promise<void>): Promise<void> {
     finishSave = resolve
   })
   deleteResponse = null
+  testResponse = null
   vi.stubGlobal(
     'fetch',
     vi.fn<typeof fetch>(async (url, init) => {
@@ -291,6 +294,9 @@ async function withTestSetup(run: () => Promise<void>): Promise<void> {
         return Response.json({ result: { data: { json: started } } })
       }
       if (path === 'settings.testElectrum') {
+        if (testResponse) {
+          return testResponse
+        }
         return trpcResult({ success: true, version: ['Test Electrum', '1.4'] })
       }
       if (path === 'settings.connectionProfiles.list') {
@@ -332,7 +338,8 @@ async function withTestSetup(run: () => Promise<void>): Promise<void> {
         const updated = {
           ...current,
           ...request.connection,
-          torEnabled: request.connection.torEnabled ?? false,
+          // Without new details, the connection connects as it was saved.
+          torEnabled: request.connection ? (request.connection.torEnabled ?? false) : current.torEnabled,
           revision: current.revision + 1,
         }
         profiles[index] = updated
@@ -474,12 +481,12 @@ describe('desktop connection settings', () => {
       expect(torSwitch().checked).toBe(false)
       // Retrying with Save or Test must not quietly connect directly.
       await click(button('Save & Reconnect'))
-      expect(document.body.textContent).toContain('The server will see your IP address and the addresses you look up.')
+      expect(document.body.textContent).toContain('The server will be able to see your IP address.')
       const cancel = dialogButton('Cancel')
       assert.ok(cancel, 'Expected the confirmation dialog')
       await click(cancel)
       await click(button('Test Connection'))
-      expect(document.body.textContent).toContain('The server will see your IP address.')
+      expect(document.body.textContent).toContain('The server will be able to see your IP address.')
       const cancelTest = dialogButton('Cancel')
       assert.ok(cancelTest, 'Expected the confirmation dialog')
       await click(cancelTest)
@@ -509,7 +516,7 @@ describe('desktop connection settings', () => {
         finishSave(Response.json({ result: { data: null } }))
       })
       await waitForToast('success')
-      expect(connectRequests().map(({ connection }) => connection.torEnabled)).toEqual([false])
+      expect(connectRequests().map(({ connection }) => connection?.torEnabled)).toEqual([false])
       expect(activeProfile().torEnabled).toBe(false)
     })
   })
@@ -615,6 +622,40 @@ describe('desktop connection settings', () => {
       expect(requests.filter(({ path }) => path === 'settings.testElectrum')).toHaveLength(1)
     })
   })
+
+  it('keeps Tor on for onion addresses, and says why an onion address cannot connect without it', async () => {
+    await withTestSetup(async () => {
+      await render()
+      await type(hostInput(), 'example1234.onion')
+      expect(container.textContent).toContain('Onion addresses need Tor. Turn Tor on to connect.')
+      expect(button('Test Connection').disabled).toBe(true)
+
+      await turnTorOn()
+      expect(container.textContent).not.toContain('Onion addresses need Tor.')
+      await click(torSwitch())
+      expect(document.body.textContent).toContain('This is an onion address, so it can only be reached through Tor.')
+      expect(torSwitch().checked).toBe(true)
+      const keep = dialogButton('Keep Tor on')
+      assert.ok(keep, 'Expected the onion notice')
+      await click(keep)
+      expect(torSwitch().checked).toBe(true)
+      expect(requests.filter(({ path }) => path === 'settings.testElectrum')).toEqual([])
+    })
+  })
+
+  it('asks before testing a new connection after Tor is switched off in the form', async () => {
+    await withTestSetup(async () => {
+      await render()
+      await click(button('New connection'))
+      await type(hostInput(), 'server-new.example')
+      await turnTorOn()
+      await click(torSwitch())
+      expect(torSwitch().checked).toBe(false)
+      await click(button('Test Connection'))
+      expect(document.body.textContent).toContain('The server will be able to see your IP address.')
+      expect(requests.filter(({ path }) => path === 'settings.testElectrum')).toEqual([])
+    })
+  })
 })
 
 // ─── Saved connections ───────────────────────────────────────────────────────
@@ -716,60 +757,96 @@ function holdDeletes(): (response: Response) => void {
   return finish
 }
 
-function pickerOption(): string | null | undefined {
-  return container.querySelector<HTMLSelectElement>('#saved-connection')?.selectedOptions[0]?.textContent
+function row(nickname: string): HTMLButtonElement {
+  const found = Array.from(
+    container.querySelectorAll<HTMLButtonElement>('nav[aria-label="Saved connections"] button'),
+  ).find((item) => item.querySelector('span')?.textContent === nickname)
+  if (!found) {
+    throw new Error(`Missing row: ${nickname}`)
+  }
+  return found
+}
+
+function listText(): string {
+  return container.querySelector('nav[aria-label="Saved connections"]')?.textContent ?? ''
+}
+
+function detailsText(): string {
+  return container.querySelector('.connection-details')?.textContent ?? ''
+}
+
+function nameInput(): HTMLInputElement {
+  const input = container.querySelector<HTMLInputElement>('input[aria-label="Connection name"]')
+  if (!input) {
+    throw new Error('Missing connection name input')
+  }
+  return input
+}
+
+async function renameTo(nickname: string, current: string): Promise<void> {
+  await click(firstLabelled(`Rename ${current}`))
+  expect(nameInput().value).toBe(current)
+  await type(nameInput(), nickname)
+  await click(firstLabelled('Save connection name'))
+  await waitForToast('success')
 }
 
 describe('desktop saved connections', () => {
-  it('uses one connection form for both selectors, and selection never opens a connection', async () => {
+  it('shows a selected connection’s details without connecting, and only the active one as connected', async () => {
     await withTestSetup(async () => {
-      const { home, away } = homeAndAway()
+      homeAndAway()
       await render()
       expect(container.querySelectorAll('#connection-host')).toHaveLength(1)
-      await choose('saved-connection', away.id)
+      expect(row('Home LAN').textContent).toContain('Connected')
+      expect(detailsText()).toContain('Connected · server-a.example')
+      await click(row('Away'))
       expect(hostInput().value).toBe('server-b.example')
-      expect(container.textContent).toContain('Connected · Home LAN')
-      expect(button('Connect').disabled).toBe(false)
+      expect(detailsText()).toContain('Not connected')
+      expect(row('Away').getAttribute('aria-current')).toBe('true')
+      expect(row('Home LAN').textContent).toContain('Connected')
+      expect(formButton('Connect').disabled).toBe(false)
       expect(connectRequests()).toEqual([])
-      const homeRow = container.querySelector<HTMLButtonElement>('aside button[aria-pressed="false"]')
-      assert.ok(homeRow, 'Expected the Home LAN row')
-      await click(homeRow)
+      await click(row('Home LAN'))
       expect(hostInput().value).toBe('server-a.example')
-      expect(container.querySelector<HTMLSelectElement>('#saved-connection')?.value).toBe(home.id)
     })
   })
 
   it('updates the active connection only after a successful switch', async () => {
     await withTestSetup(async () => {
-      const { away } = homeAndAway()
+      homeAndAway()
       await render()
-      await choose('saved-connection', away.id)
-      await click(button('Connect'))
-      expect(container.textContent).toContain('Connected · Home LAN')
+      await click(row('Away'))
+      await click(formButton('Connect'))
+      expect(row('Away').textContent).not.toContain('Connected')
       expect(toast.success).not.toHaveBeenCalled()
       await act(async () => {
         finishSave(Response.json({ result: { data: null } }))
       })
       await waitForToast('success')
-      await waitForText('Connected · Away')
+      await vi.waitFor(async () => {
+        await flush()
+        expect(row('Away').textContent).toContain('Connected')
+      })
+      expect(row('Home LAN').textContent).not.toContain('Connected')
       expect(hostInput().value).toBe('server-b.example')
-      expect(button('Reconnect').disabled).toBe(true)
+      expect(formButton('Reconnect').disabled).toBe(true)
     })
   })
 
-  it('keeps public shortcuts in creation only, and saves a new nickname without connecting', async () => {
+  it('keeps public shortcuts in creation only, and saves a new connection without connecting', async () => {
     await withTestSetup(async () => {
       homeAndAway()
       await render()
       expect(container.querySelector('#connection-starter')).toBeNull()
-      await click(formButton('+ New connection'))
+      await click(row('New connection'))
+      expect(detailsText()).toContain('2 of 5 saved')
       await type(field('connection-nickname'), 'Travel')
       await choose('connection-starter', 'electrum.blockstream.info')
       expect(hostInput().value).toBe('electrum.blockstream.info')
       await choose('connection-starter', 'custom')
       expect(hostInput().value).toBe('')
       await type(hostInput(), 'travel.example')
-      await click(button('Save connection'))
+      await click(formButton('Save'))
       await waitForToast('success')
       expect(profiles.map(({ nickname }) => nickname)).toEqual(['Home LAN', 'Away', 'Travel'])
       expect(activeProfile().host).toBe('server-a.example')
@@ -778,50 +855,77 @@ describe('desktop saved connections', () => {
     })
   })
 
-  it('renames another profile with one action and updates both selectors without connecting', async () => {
+  it('saves and connects a new connection with the details it was saved with', async () => {
+    await withTestSetup(async () => {
+      await render()
+      await click(row('New connection'))
+      await type(field('connection-nickname'), 'Travel')
+      await type(hostInput(), 'travel.example')
+      await click(formButton('Save & Connect'))
+      await act(async () => {
+        finishSave(Response.json({ result: { data: null } }))
+      })
+      await waitForToast('success')
+      await vi.waitFor(async () => {
+        await flush()
+        expect(row('Travel').textContent).toContain('Connected')
+      })
+      expect(activeProfile().host).toBe('travel.example')
+      expect(connectRequests().map(({ connection }) => connection)).toEqual([undefined])
+    })
+  })
+
+  it('renames the selected connection in place without connecting', async () => {
     await withTestSetup(async () => {
       homeAndAway()
       await render()
-      await click(firstLabelled('Rename Away'))
-      expect(field('connection-nickname').value).toBe('Away')
-      await type(field('connection-nickname'), 'Remote Tor')
-      await click(formButton('Save name'))
-      await waitForToast('success')
+      await click(row('Away'))
+      await renameTo('Remote Tor', 'Away')
       expect(profiles.map(({ nickname }) => nickname)).toEqual(['Home LAN', 'Remote Tor'])
       await vi.waitFor(async () => {
         await flush()
-        expect(container.querySelector('#saved-connection')?.textContent).toContain('Remote Tor')
-        expect(container.querySelector('aside')?.textContent).toContain('Remote Tor')
+        expect(listText()).toContain('Remote Tor')
+        expect(detailsText()).toContain('Remote Tor')
       })
+      expect(container.querySelector('input[aria-label="Connection name"]')).toBeNull()
       expect(connectRequests()).toEqual([])
     })
   })
 
-  it('prevents a sixth connection in both layouts', async () => {
+  it('cancels renaming with Escape and keeps the saved name', async () => {
     await withTestSetup(async () => {
-      fillTo(5)
       await render()
-      const addButtons = Array.from(container.querySelectorAll('button')).filter(
-        (item) => item.textContent === '+ New connection',
-      )
-      expect(addButtons.map((item) => item.disabled)).toEqual([true, true])
-      expect(container.textContent).toContain('Maximum reached')
+      await click(firstLabelled('Rename Server A'))
+      await type(nameInput(), 'Something else')
+      await act(async () => {
+        // The test environment has no KeyboardEvent; React reads only the key.
+        nameInput().dispatchEvent(Object.assign(new Event('keydown', { bubbles: true }), { key: 'Escape' }))
+      })
+      expect(container.querySelector('input[aria-label="Connection name"]')).toBeNull()
+      expect(detailsText()).toContain('Server A')
+      expect(requestsTo('connectionProfiles.rename')).toEqual([])
     })
   })
 
-  it('preserves unsaved connection edits when renaming the selected profile', async () => {
+  it('prevents a sixth connection and says why', async () => {
+    await withTestSetup(async () => {
+      fillTo(5)
+      await render()
+      expect(row('New connection').disabled).toBe(true)
+      expect(listText()).toContain('Limit reached. Delete one to add another.')
+    })
+  })
+
+  it('preserves unsaved connection edits when renaming the selected connection', async () => {
     await withTestSetup(async () => {
       const { home } = homeAndAway()
       await render()
       await type(hostInput(), 'unsaved.example')
-      await click(firstLabelled('Rename Home LAN'))
-      await type(field('connection-nickname'), 'My node')
-      await click(formButton('Save name'))
-      await waitForToast('success')
+      await renameTo('My node', 'Home LAN')
       expect(hostInput().value).toBe('unsaved.example')
       expect(profiles.find(({ id }) => id === home.id)?.nickname).toBe('My node')
       expect(activeProfile().host).toBe('server-a.example')
-      expect(button('Save & Reconnect').disabled).toBe(false)
+      expect(formButton('Save & Reconnect').disabled).toBe(false)
       expect(connectRequests()).toEqual([])
     })
   })
@@ -848,63 +952,60 @@ describe('desktop saved connections', () => {
 
   it('requires an explicit discard before replacing an edited form', async () => {
     await withTestSetup(async () => {
-      const { away } = homeAndAway()
+      homeAndAway()
       await render()
       await type(hostInput(), 'unsaved.example')
-      await choose('saved-connection', away.id)
+      await click(row('Away'))
       expect(hostInput().value).toBe('unsaved.example')
       await click(button('Keep editing'))
       expect(hostInput().value).toBe('unsaved.example')
-      await choose('saved-connection', away.id)
+      await click(row('Away'))
       await click(button('Discard changes'))
       expect(hostInput().value).toBe('server-b.example')
     })
   })
 
-  it('blocks rename and reconnect until the pending discard is resolved', async () => {
+  it('blocks rename, delete, and reconnect until the pending discard is resolved', async () => {
     await withTestSetup(async () => {
-      const { away } = homeAndAway()
+      homeAndAway()
       await render()
       await type(hostInput(), 'unsaved.example')
-      await choose('saved-connection', away.id)
+      await click(row('Away'))
       const rename = firstLabelled('Rename Home LAN')
+      const remove = firstLabelled('Delete Home LAN')
       expect(rename.disabled).toBe(true)
-      expect(button('Save & Reconnect').disabled).toBe(true)
-      expect(button('Test Connection').disabled).toBe(true)
+      expect(remove.disabled).toBe(true)
+      expect(formButton('Save & Reconnect').disabled).toBe(true)
+      expect(formButton('Test Connection').disabled).toBe(true)
       expect(hostInput().disabled).toBe(true)
       await click(rename)
-      await click(button('Save & Reconnect'))
-      await click(firstLabelled('Delete Away', 'aside'))
-      expect(container.querySelector('#connection-nickname')).toBeNull()
+      await click(remove)
+      await click(formButton('Save & Reconnect'))
+      expect(container.querySelector('input[aria-label="Connection name"]')).toBeNull()
       expect(alertDialog()).toBeNull()
       expect([...connectRequests(), ...requestsTo('connectionProfiles.rename')]).toEqual([])
       await click(button('Discard changes'))
       expect(hostInput().value).toBe('server-b.example')
-      expect(container.querySelector('#connection-nickname')).toBeNull()
-      await click(formButton('Rename'))
-      await type(field('connection-nickname'), 'Remote')
-      await click(formButton('Save name'))
-      await waitForToast('success')
+      await renameTo('Remote', 'Away')
       expect(profiles.map(({ nickname }) => nickname)).toEqual(['Home LAN', 'Remote'])
     })
   })
 
-  it('locks a new nickname while discarding, and unlocks it when keeping edits', async () => {
+  it('locks a new connection’s name while discarding, and unlocks it when keeping edits', async () => {
     await withTestSetup(async () => {
-      const { away } = homeAndAway()
+      homeAndAway()
       await render()
-      await click(formButton('+ New connection'))
+      await click(row('New connection'))
       await type(field('connection-nickname'), 'Travel')
       await type(hostInput(), 'travel.example')
-      await choose('saved-connection', away.id)
+      await click(row('Away'))
       expect(field('connection-nickname').disabled).toBe(true)
-      expect(formButton('Cancel').disabled).toBe(true)
-      expect(button('Save connection').disabled).toBe(true)
+      expect(formButton('Save').disabled).toBe(true)
       await click(button('Keep editing'))
       expect(field('connection-nickname').value).toBe('Travel')
       expect(field('connection-nickname').disabled).toBe(false)
-      expect(button('Save connection').disabled).toBe(false)
-      await click(button('Save connection'))
+      expect(formButton('Save').disabled).toBe(false)
+      await click(formButton('Save'))
       await waitForToast('success')
       expect(profiles.at(-1)?.nickname).toBe('Travel')
     })
@@ -923,28 +1024,30 @@ describe('desktop saved connections', () => {
     })
   })
 
-  it('protects the active connection from deletion in both layouts', async () => {
+  it('explains why the active connection cannot be deleted', async () => {
     await withTestSetup(async () => {
       homeAndAway()
       await render()
-      expect(labelled('Delete Home LAN').map((icon) => icon.disabled)).toEqual([true, true])
-      await click(firstLabelled('Delete Home LAN', 'aside'))
-      expect(alertDialog()).toBeNull()
+      await click(firstLabelled('Delete Home LAN'))
+      expect(alertDialog()?.textContent).toContain('You’re connected to this server')
+      expect(alertDialogButton('Delete connection').disabled).toBe(true)
+      await click(alertDialogButton('Cancel'))
       expect(requestsTo('connectionProfiles.delete')).toEqual([])
     })
   })
 
-  it('confirms deletion from the list without selecting or connecting to that profile', async () => {
+  it('confirms deletion of the selected connection and returns to the active one', async () => {
     await withTestSetup(async () => {
       homeAndAway()
       const finishDelete = holdDeletes()
       await render()
-      await click(firstLabelled('Delete Away', 'aside'))
+      await click(row('Away'))
+      await click(firstLabelled('Delete Away'))
       expect(alertDialog()?.textContent).toContain('Delete “Away”?')
       expect(requestsTo('connectionProfiles.delete')).toEqual([])
       await click(alertDialogButton('Cancel'))
-      expect(hostInput().value).toBe('server-a.example')
-      await click(firstLabelled('Delete Away', 'aside'))
+      expect(hostInput().value).toBe('server-b.example')
+      await click(firstLabelled('Delete Away'))
       await click(alertDialogButton('Delete connection'))
       expect(alertDialogButton('Cancel').disabled).toBe(true)
       await act(async () => {
@@ -953,66 +1056,46 @@ describe('desktop saved connections', () => {
       await waitForToast('success')
       await vi.waitFor(async () => {
         await flush()
-        expect(container.querySelector('aside')?.textContent).not.toContain('Away')
+        expect(listText()).not.toContain('Away')
       })
-      expect(container.querySelector('#saved-connection')?.textContent).not.toContain('Away')
       expect(hostInput().value).toBe('server-a.example')
-      expect(container.textContent).toContain('Connected · Home LAN')
+      expect(row('Home LAN').textContent).toContain('Connected')
       expect([...connectRequests(), ...requestsTo('testElectrum')]).toEqual([])
     })
   })
 
-  it('deletes the selected profile from the compact picker, discards its edits, and frees a slot', async () => {
+  it('discards the deleted connection’s edits and frees a slot', async () => {
     await withTestSetup(async () => {
-      const { home, away } = homeAndAway()
+      homeAndAway()
       fillTo(5)
       await render()
-      await choose('saved-connection', away.id)
+      expect(row('New connection').disabled).toBe(true)
+      await click(row('Away'))
       await type(hostInput(), 'unsaved.example')
-      await click(firstLabelled('Delete Away', '.connection-picker'))
+      await click(firstLabelled('Delete Away'))
       expect(alertDialog()?.textContent).toContain('unsaved changes')
       await click(alertDialogButton('Cancel'))
       expect(hostInput().value).toBe('unsaved.example')
-      await click(firstLabelled('Delete Away', '.connection-picker'))
+      await click(firstLabelled('Delete Away'))
       await click(alertDialogButton('Delete connection'))
       await waitForToast('success')
       expect(hostInput().value).toBe('server-a.example')
-      expect(container.querySelector<HTMLSelectElement>('#saved-connection')?.value).toBe(home.id)
       await vi.waitFor(async () => {
         await flush()
-        const addButtons = Array.from(container.querySelectorAll('button')).filter(
-          (item) => item.textContent === '+ New connection',
-        )
-        expect(addButtons.map((item) => item.disabled)).toEqual([false, false])
+        expect(row('New connection').disabled).toBe(false)
       })
       expect(profiles).toHaveLength(4)
     })
   })
 
-  it('preserves a new draft when deleting another profile', async () => {
+  it('keeps the connection and draft when deletion fails and shows the error in the dialog', async () => {
     await withTestSetup(async () => {
       homeAndAway()
-      await render()
-      await click(formButton('+ New connection'))
-      await type(field('connection-nickname'), 'New draft')
-      await type(hostInput(), 'new.example')
-      await click(firstLabelled('Delete Away', 'aside'))
-      await click(alertDialogButton('Delete connection'))
-      await waitForToast('success')
-      expect(field('connection-nickname').value).toBe('New draft')
-      expect(hostInput().value).toBe('new.example')
-      expect(button('Save connection').disabled).toBe(false)
-    })
-  })
-
-  it('keeps the profile and draft when deletion fails and shows the error in the dialog', async () => {
-    await withTestSetup(async () => {
-      const { away } = homeAndAway()
       const finishDelete = holdDeletes()
       await render()
-      await choose('saved-connection', away.id)
+      await click(row('Away'))
       await type(hostInput(), 'unsaved.example')
-      await click(firstLabelled('Delete Away', 'aside'))
+      await click(firstLabelled('Delete Away'))
       await click(alertDialogButton('Delete connection'))
       await act(async () => {
         finishDelete(trpcError('Connection changed in another window', 409))
@@ -1028,57 +1111,90 @@ describe('desktop saved connections', () => {
     })
   })
 
-  it('disables deletion if the target becomes active in another window while confirming', async () => {
+  it('disables deletion if the connection becomes active in another window while confirming', async () => {
     await withTestSetup(async () => {
       const { away } = homeAndAway()
       await render()
-      await click(firstLabelled('Delete Away', 'aside'))
+      await click(row('Away'))
+      await click(firstLabelled('Delete Away'))
       activeId = away.id
       await refetchConnections()
       await vi.waitFor(async () => {
         await flush()
         expect(alertDialogButton('Delete connection').disabled).toBe(true)
       })
-      expect(alertDialog()?.textContent).toContain('Connect to another profile')
+      expect(alertDialog()?.textContent).toContain('You’re connected to this server')
       expect(requestsTo('connectionProfiles.delete')).toEqual([])
     })
   })
 
-  it('keeps an externally deleted draft visible without mislabeling it as another saved connection', async () => {
+  it('keeps an externally deleted draft visible without offering to save or delete it', async () => {
     await withTestSetup(async () => {
-      const { home, away } = homeAndAway()
+      const { home } = homeAndAway()
       await render()
-      await choose('saved-connection', away.id)
+      await click(row('Away'))
       await type(hostInput(), 'unsaved.example')
       profiles = [home]
       await refetchConnections()
       await waitForText('This connection was deleted in another window')
-      expect(pickerOption()).toBe('Away — Deleted')
+      expect(detailsText()).toContain('Away')
+      expect(listText()).not.toContain('Away')
       expect(hostInput().value).toBe('unsaved.example')
-      expect(button('Save & Reconnect').disabled).toBe(true)
-      await choose('saved-connection', home.id)
+      expect(formButton('Save & Reconnect').disabled).toBe(true)
+      expect(labelled('Delete Away')).toHaveLength(0)
+      await click(row('Home LAN'))
       await click(button('Discard changes'))
       expect(hostInput().value).toBe('server-a.example')
     })
   })
 
-  it('keeps each connection’s own Tor setting and asks before leaving Tor for a direct one', async () => {
+  it('keeps each connection’s own Tor setting, and switches to a saved direct one without asking', async () => {
     await withTestSetup(async () => {
-      const { away } = homeAndAway()
+      homeAndAway()
       activeProfile().torEnabled = true
       torStatus = { state: 'ready' }
       await render()
       await vi.waitFor(() => {
         expect(torSwitch().checked).toBe(true)
       })
-      await choose('saved-connection', away.id)
+      await click(row('Away'))
       expect(torSwitch().checked).toBe(false)
-      await click(button('Connect'))
-      expect(document.body.textContent).toContain('The server will see your IP address and the addresses you look up.')
-      const cancel = dialogButton('Cancel')
-      assert.ok(cancel, 'Expected the confirmation dialog')
-      await click(cancel)
-      expect(connectRequests()).toEqual([])
+      await click(formButton('Connect'))
+      expect(document.body.textContent).not.toContain('Connect without Tor?')
+      await act(async () => {
+        finishSave(Response.json({ result: { data: null } }))
+      })
+      await waitForToast('success')
+      expect(connectRequests().map(({ connection }) => connection?.torEnabled)).toEqual([false])
+
+      // Turning Tor off on the connection saved with it still asks.
+      await click(row('Home LAN'))
+      expect(torSwitch().checked).toBe(true)
+      await click(torSwitch())
+      await click(formButton('Save & Reconnect'))
+      expect(document.body.textContent).toContain('The server will be able to see your IP address.')
+    })
+  })
+
+  it('keeps the form editable while testing, and drops a result for details no longer shown', async () => {
+    await withTestSetup(async () => {
+      let finishTest: (response: Response) => void = () => undefined
+      testResponse = new Promise((resolve) => {
+        finishTest = resolve
+      })
+      await render()
+      await click(button('Test Connection'))
+      expect(hostInput().disabled).toBe(false)
+      expect(field('connection-tor').disabled).toBe(false)
+      expect(formButton('Reconnect').disabled).toBe(true)
+
+      await type(hostInput(), 'edited.example')
+      await act(async () => {
+        finishTest(trpcResult({ success: true, version: ['Test Electrum', '1.4'] }))
+      })
+      await flush()
+      expect(container.textContent).not.toContain('Connection successful')
+      expect(button('Test Connection').disabled).toBe(false)
     })
   })
 })
