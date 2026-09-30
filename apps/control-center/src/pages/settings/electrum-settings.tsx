@@ -816,9 +816,7 @@ export function ElectrumSettings(): JSX.Element {
                   id="connection-starter"
                   size="sm"
                   isDisabled={controlsDisabled}
-                  value={
-                    ['electrum.blockstream.info', 'electrum.mempool.space'].includes(draft.host) ? draft.host : 'custom'
-                  }
+                  value={draft.host === 'electrum.blockstream.info' ? draft.host : 'custom'}
                   onChange={(event) => {
                     // Presets change the server only; your Tor choice stays.
                     update({
@@ -830,7 +828,6 @@ export function ElectrumSettings(): JSX.Element {
                 >
                   <option value="custom">My own server</option>
                   <option value="electrum.blockstream.info">Blockstream (Public)</option>
-                  <option value="electrum.mempool.space">Mempool.space (Public)</option>
                 </Select>
               </FormControl>
             </>
