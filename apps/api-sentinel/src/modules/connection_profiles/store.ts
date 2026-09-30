@@ -79,16 +79,18 @@ export class ConnectionProfileStore {
   /**
    * Saves the current connection as the active profile when none is active, so upgrades keep
    * their server and Tor setting. A saved profile only becomes active by connecting to it, so an
-   * existing one is never adopted here; with no room left, nothing becomes active.
+   * existing one is never adopted here; with no room left, nothing becomes active. Returns the
+   * active profile, if there is one.
    */
-  public initialize(initial: ConnectionDetails): Result<void, Error> {
+  public initialize(initial: ConnectionDetails): Result<ConnectionProfile | undefined, Error> {
     return this.write(() => {
-      if (this.getActiveId() !== undefined || this.list().length >= MAX_CONNECTION_PROFILES) {
-        return Ok(undefined)
+      if (this.getActiveId() === undefined && this.list().length < MAX_CONNECTION_PROFILES) {
+        const profile = this.insert({ ...initial, nickname: 'Current connection' })
+        this.saveSetting(ACTIVE_KEY, profile.id)
       }
-      const profile = this.insert({ ...initial, nickname: 'Current connection' })
-      this.saveSetting(ACTIVE_KEY, profile.id)
-      return Ok(undefined)
+      // Read here too, so an unreadable table is reported as an error rather than thrown.
+      const activeId = this.getActiveId()
+      return Ok(this.list().find((profile) => profile.id === activeId))
     })
   }
 

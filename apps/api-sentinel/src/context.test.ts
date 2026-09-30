@@ -1024,3 +1024,114 @@ describe('saved connection startup', () => {
     })
   })
 })
+
+describe('saved connection safeguards', () => {
+  it('starts with the last saved server when the saved-connections table cannot be read', async () => {
+    await withTestSetup(async () => {
+      const previous = await context(false, true)
+      previous.database.db.exec('ALTER TABLE desktop_connection_profiles RENAME TO unreadable_profiles')
+      const ctx = await restart(previous, false)
+      expect(ctx.connectionProfiles).toBeDefined()
+    })
+  })
+
+  it('launches an active Tor connection only through managed Tor', async () => {
+    await withTestSetup(async () => {
+      const connections: Socket[] = []
+      // A SOCKS proxy that refuses every request stands in for Tor.
+      const proxy = createServer((socket) => {
+        connections.push(socket)
+        socket.on('error', () => undefined)
+        socket.once('data', () => {
+          socket.end(Buffer.from([5, 255]))
+        })
+      })
+      await new Promise<void>((resolve) => {
+        proxy.listen(0, '127.0.0.1', resolve)
+      })
+      onTestFinished(async () => {
+        for (const socket of connections) {
+          socket.destroy()
+        }
+        await new Promise<void>((resolve) => {
+          proxy.close(() => {
+            resolve()
+          })
+        })
+      })
+      const port = parseUnknown(z.object({ port: z.number() }), proxy.address()).expect('TCP listener').port
+      const tor = {
+        start: vi.fn(async () => ({ state: 'ready' })),
+        getStatus: () => ({ state: 'ready' as const }),
+        getSocksProxy: () => ({ host: '127.0.0.1', port }),
+      }
+      const first = (await createAppContext(logger, { tor, connectionProfiles: true, waitForElectrum: false })).unwrap()
+      contexts.add(first)
+      const remote = await startElectrum(200)
+      const viaTor = profileStore(first)
+        .create({ ...remote.config, torEnabled: true, nickname: 'Via Tor' })
+        .unwrap()
+      profileStore(first)
+        .activate(viaTor, { ...remote.config, torEnabled: true })
+        .unwrap()
+      first.stopElectrum()
+      first.database.close()
+      contexts.delete(first)
+
+      const before = connections.length
+      const launched = (
+        await createAppContext(logger, { tor, connectionProfiles: true, waitForElectrum: false })
+      ).unwrap()
+      contexts.add(launched)
+      await vi.waitFor(() => {
+        expect(connections.length).toBeGreaterThan(before)
+      })
+      expect(launched.electrumConfig.host).toBe(remote.config.host)
+      expect(remote.methods).toEqual([])
+    })
+  })
+
+  it('keeps the settings older versions read in step with the active connection', async () => {
+    await withTestSetup(async () => {
+      const ctx = await context(true, true)
+      const api = appRouter.createCaller({ app: ctx }).settings.connectionProfiles
+      const next = await startElectrum(200)
+      const direct = await api.create({ ...next.config, nickname: 'Direct' })
+      await api.connect({ id: direct.id, revision: direct.revision })
+      expect(settings(ctx)).toEqual([
+        { key: 'electrum_host', value: next.config.host },
+        { key: 'electrum_port', value: String(next.config.port) },
+        { key: 'electrum_protocol', value: 'tcp' },
+        { key: 'tor_enabled', value: 'false' },
+      ])
+      const viaTor = profileStore(ctx)
+        .create({ ...next.config, torEnabled: true, nickname: 'Via Tor' })
+        .unwrap()
+      profileStore(ctx)
+        .activate(viaTor, { ...next.config, torEnabled: true })
+        .unwrap()
+      expect(settings(ctx)).toContainEqual({ key: 'tor_enabled', value: 'true' })
+    })
+  })
+
+  it('refuses a connection change that leaves out the Tor setting', async () => {
+    await withTestSetup(async () => {
+      const ctx = await context(true, true)
+      const api = appRouter.createCaller({ app: ctx }).settings.connectionProfiles
+      const next = await startElectrum(200)
+      const viaTor = profileStore(ctx)
+        .create({ ...next.config, torEnabled: true, nickname: 'Via Tor' })
+        .unwrap()
+      const withoutTor = { host: next.config.host, port: next.config.port, protocol: next.config.protocol }
+      await expect(
+        // @ts-expect-error -- a caller that leaves out the Tor setting must be refused, never treated as direct
+        api.connect({ id: viaTor.id, revision: viaTor.revision, connection: withoutTor }),
+      ).rejects.toThrow('torEnabled')
+      expect(
+        profileStore(ctx)
+          .list()
+          .find((profile) => profile.id === viaTor.id)?.torEnabled,
+      ).toBe(true)
+    })
+  })
+})

@@ -231,7 +231,7 @@ pnpm --filter control-center dev
 pnpm dev:desktop
 ```
 
-This runs Sentinel and the frontend as the desktop app does, including saved Electrum connections. Bundled Tor behavior requires the packaged Electron application. Stop `pnpm dev` first, since both use the development ports.
+This runs Sentinel and the frontend as the desktop app does, including saved Electrum connections. Bundled Tor behavior requires the packaged Electron application. Stop `pnpm dev` first, since both use the development ports. Both also share the development database, where the active saved connection takes priority.
 
 ## Local data and backups
 

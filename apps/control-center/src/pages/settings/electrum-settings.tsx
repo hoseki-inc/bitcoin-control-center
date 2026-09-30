@@ -99,11 +99,14 @@ const ElectrumStatusResponseSchema = z.object({
 
 interface ElectrumStatusState {
   status: ElectrumStatus | null
+  /** Tor's last known state, kept through a failed status response. */
+  tor: ElectrumStatus['tor']
   refresh: () => void
 }
 
 function useElectrumStatus(): ElectrumStatusState {
   const [status, setStatus] = useState<ElectrumStatus | null>(null)
+  const [tor, setTor] = useState<ElectrumStatus['tor']>(undefined)
 
   const refresh = useCallback((): void => {
     const baseUrl = import.meta.env.VITE_BACKEND_API_URL ?? ''
@@ -117,8 +120,13 @@ function useElectrumStatus(): ElectrumStatusState {
         const envelope = parseUnknown(z.object({ json: z.unknown() }), wrapped).unwrapOr(null)
         const payload = envelope?.json ?? wrapped
         const parsed = parseUnknown(ElectrumStatusSchema, payload).unwrapOr(null)
-        // An error or unreadable answer means the status is unknown, not the last one seen.
-        setStatus(parsed?.host != null && parsed.host !== '' ? parsed : null)
+        // An error or unreadable answer means the connection status is unknown, not the last one
+        // seen. Tor keeps its last known state, so a start in progress still shows its progress.
+        const readable = parsed?.host != null && parsed.host !== '' ? parsed : null
+        setStatus(readable)
+        if (readable) {
+          setTor(readable.tor)
+        }
       })
       .catch(() => {
         setStatus(null)
@@ -126,7 +134,7 @@ function useElectrumStatus(): ElectrumStatusState {
   }, [])
 
   // Follow Tor startup closely; otherwise a slower check is enough.
-  const torStarting = status?.tor?.state === 'starting'
+  const torStarting = tor?.state === 'starting'
   useEffect(() => {
     refresh()
     const interval = setInterval(refresh, torStarting ? 1000 : 10_000)
@@ -135,7 +143,7 @@ function useElectrumStatus(): ElectrumStatusState {
     }
   }, [refresh, torStarting])
 
-  return { status, refresh }
+  return { status, tor, refresh }
 }
 
 // The switch fades between green and light green while Tor starts. The theme
@@ -189,7 +197,7 @@ export function ElectrumSettings(): JSX.Element {
     queryFn: async ({ signal }) => api.list.query(undefined, { signal }),
     refetchInterval: 10_000,
   })
-  const { status, refresh: refreshStatus } = useElectrumStatus()
+  const { status, tor, refresh: refreshStatus } = useElectrumStatus()
   const [draft, setDraft] = useState<Draft | null>(null)
   const [busy, setBusy] = useState<Operation | 'rename' | 'delete' | null>(null)
   const [deleting, setDeleting] = useState<Profile | null>(null)
@@ -204,11 +212,10 @@ export function ElectrumSettings(): JSX.Element {
   const [pendingSelection, setPendingSelection] = useState<Selection | null>(null)
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null)
   const [directConfirmation, setDirectConfirmation] = useState<'test' | 'connect' | null>(null)
-  // Like Sparrow, a failed Tor start turns the switch off. That only changes the
-  // form, not the draft: the saved connection keeps Tor and is never used directly.
-  const [torForcedOff, setTorForcedOff] = useState(false)
+  // A failed Tor start turns the switch red but leaves it on: Tor is still your choice, and
+  // Test or Connect tries Tor again. A connection only goes direct if you switch Tor off.
   const [torFailure, setTorFailure] = useState<string | null>(null)
-  // Set when Tor is switched off in this form, so connecting asks first, even for a new connection.
+  // Set when Tor is switched off in a new connection, so connecting asks first.
   const [torTurnedOff, setTorTurnedOff] = useState(false)
   const [onionNotice, setOnionNotice] = useState(false)
   const [torStartedAt, setTorStartedAt] = useState<number | null>(null)
@@ -218,7 +225,7 @@ export function ElectrumSettings(): JSX.Element {
   const previousTorState = useRef<string | undefined>(undefined)
   const [torReadyNotice, setTorReadyNotice] = useFadingNotice()
   const torStartingFade = useTorStartingFade()
-  const [selectedEdge, torPendingGreen] = useToken('colors', ['neutral.900', 'green.200'])
+  const [selectedEdge, torPendingGreen, torFailedRed] = useToken('colors', ['neutral.900', 'green.200', 'red.500'])
   const saved = query.data?.profiles.find((item) => item.id === draft?.id)
   const active = query.data?.profiles.find((item) => item.id === query.data.activeId)
   const isNew = draft !== null && draft.id === undefined
@@ -229,18 +236,18 @@ export function ElectrumSettings(): JSX.Element {
     (busy !== null && busy !== 'test') || deleting !== null || pendingSelection !== null || renaming
   // Changes whenever the form changes, so a test finishing afterwards can't report on details no longer shown.
   const formVersion = useRef(0)
-  const torEnabled = draft?.torEnabled === true && !torForcedOff
-  const torState = status?.tor?.state
-  const torAttempt = status?.tor?.attempt ?? 0
+  const torEnabled = draft?.torEnabled === true
+  const torFailed = torEnabled && torFailure !== null
+  const torState = tor?.state
+  const torAttempt = tor?.attempt ?? 0
   const torStarting = torEnabled && torState === 'starting'
   // A saved Tor connection shows the switch on before the app starts Tor; only a running Tor is solid green.
   const torWaiting = torEnabled && torState === 'stopped'
   // Onion addresses are only reachable through Tor, so they never connect directly.
-  const onion = draft?.host.trim().toLowerCase().endsWith('.onion') === true
-  // Ask only when this connection would go direct without a saved choice: Tor was turned
-  // off here or on a connection saved with it, or Tor failed and turned the switch off.
-  // Switching to a saved direct connection is already a deliberate choice.
-  const leavingTor = !torEnabled && !onion && (saved?.torEnabled === true || torTurnedOff || torFailure !== null)
+  const onion = draft?.host.trim().toLowerCase().replace(/\.$/, '').endsWith('.onion') === true
+  // Ask only when a connection saved with Tor, or a new one you turned Tor on for, would go direct.
+  // A saved direct connection stays direct without asking, even after flipping Tor on and off.
+  const leavingTor = !torEnabled && !onion && (saved?.torEnabled === true || (isNew && torTurnedOff))
 
   useEffect(() => {
     if (!query.data || controlsDisabled) {
@@ -277,24 +284,17 @@ export function ElectrumSettings(): JSX.Element {
   // Compare attempts rather than waiting to observe "starting", which a fast failure skips.
   useEffect(() => {
     if (torState === 'failed' && torEnabled && torAttempt >= (torAttemptAwaited ?? 0)) {
-      setTorForcedOff(true)
-      setTorFailure(status?.tor?.message ?? 'Tor couldn’t start. Turn Tor on to try again.')
-      // A test result describes the route shown when it started; the switch just changed.
-      formVersion.current += 1
-      setTestResult(null)
+      setTorFailure(tor?.message ?? 'Tor couldn’t start.')
     }
-  }, [torState, torEnabled, torAttempt, torAttemptAwaited, status?.tor?.message])
+  }, [torState, torEnabled, torAttempt, torAttemptAwaited, tor?.message])
 
-  // A saved Tor connection restarts Tor on its own when data is requested. Once Tor
-  // is ready again, show the switch on unless the form has been edited.
+  // Tor retries on its own when the active connection needs it, and on Test or Connect.
+  // A new attempt clears the red failure, so the switch fades again while Tor starts.
   useEffect(() => {
-    if (torState === 'ready' && torForcedOff && !dirty) {
-      setTorForcedOff(false)
+    if ((torState === 'starting' || torState === 'ready') && torFailure !== null) {
       setTorFailure(null)
-      formVersion.current += 1
-      setTestResult(null)
     }
-  }, [torState, torForcedOff, dirty])
+  }, [torState, torFailure])
 
   // Measure every start, including one begun by a saved Tor connection.
   useEffect(() => {
@@ -317,7 +317,6 @@ export function ElectrumSettings(): JSX.Element {
     setRenaming(false)
     setDraft(next)
     setTestResult(null)
-    setTorForcedOff(false)
     setTorFailure(null)
     setTorTurnedOff(false)
     setPendingSelection(null)
@@ -357,7 +356,6 @@ export function ElectrumSettings(): JSX.Element {
       return
     }
     update({ torEnabled: enabled })
-    setTorForcedOff(false)
     setTorFailure(null)
     setTorTurnedOff(!enabled)
     if (enabled) {
@@ -431,8 +429,9 @@ export function ElectrumSettings(): JSX.Element {
     setBusy(operation)
     setTestResult(null)
     const version = formVersion.current
-    // Sentinel starts Tor for this request anyway; starting it here lets the switch follow it.
-    if (torEnabled && torState === 'stopped' && operation !== 'save') {
+    // Sentinel starts Tor for this request anyway, including after a failure; starting it here
+    // lets the switch follow it.
+    if (torEnabled && (torState === 'stopped' || torState === 'failed') && operation !== 'save') {
       startTor()
     }
     try {
@@ -469,7 +468,6 @@ export function ElectrumSettings(): JSX.Element {
           connection: details,
         })
         setDraft(connected)
-        setTorForcedOff(false)
         // The saved connection now reflects the user's routing choice.
         setTorFailure(null)
         setTorTurnedOff(false)
@@ -807,7 +805,7 @@ export function ElectrumSettings(): JSX.Element {
           {isActive && liveness === 'disconnected' && (
             <Text textStyle="text/sm" color="red.700">
               {torFailure !== null || (active?.torEnabled === true && torState === 'failed')
-                ? 'Your saved data is still on this device. Turn Tor on to try again, or choose another saved connection.'
+                ? 'Your saved data is still on this device. Reconnect to try Tor again, or choose another saved connection.'
                 : 'Your saved data is still on this device. Retry this connection or choose another saved connection.'}
             </Text>
           )}
@@ -929,9 +927,11 @@ export function ElectrumSettings(): JSX.Element {
               sx={
                 torStarting
                   ? { '.chakra-switch__track': { animation: `${torStartingFade} 3s ease-in-out infinite` } }
-                  : torWaiting
-                    ? { '.chakra-switch__track[data-checked]': { bg: torPendingGreen } }
-                    : undefined
+                  : torFailed
+                    ? { '.chakra-switch__track[data-checked]': { bg: torFailedRed } }
+                    : torWaiting
+                      ? { '.chakra-switch__track[data-checked]': { bg: torPendingGreen } }
+                      : undefined
               }
             />
           </HStack>
@@ -943,7 +943,7 @@ export function ElectrumSettings(): JSX.Element {
           <TorStatusLine
             enabled={torEnabled}
             state={torState}
-            progress={status?.tor?.progress}
+            progress={tor?.progress}
             failure={torFailure}
             readyNotice={torReadyNotice}
             slow={torStartedAt !== null && Date.now() - torStartedAt > TOR_SLOW_START_MS}
@@ -1005,6 +1005,7 @@ export function ElectrumSettings(): JSX.Element {
           <ModalBody>
             <Text textStyle="text/sm" color="neutral.700">
               This is an onion address, so it can only be reached through Tor.
+              {torFailed ? ' Tor is currently down; Test or Connect tries it again.' : ''}
             </Text>
           </ModalBody>
           <ModalFooter>
@@ -1145,10 +1146,15 @@ function TorStatusLine({
 }): JSX.Element | null {
   if (failure !== null) {
     return (
-      <HStack as="output" gap={2} color="red.600">
-        <CircleAlertIcon size={16} aria-hidden />
-        <Text textStyle="text/sm">{failure}</Text>
-      </HStack>
+      <Stack as="output" gap={1}>
+        <HStack gap={2} color="red.600">
+          <CircleAlertIcon size={16} aria-hidden />
+          <Text textStyle="text/sm">{failure}</Text>
+        </HStack>
+        <Text textStyle="text/xs" color="neutral.600">
+          Test or Connect tries Tor again. This connection never goes direct unless you turn Tor off.
+        </Text>
+      </Stack>
     )
   }
   if (!enabled) {

@@ -115,8 +115,8 @@ export const createAppContext = asyncFn(
     const connectionProfiles = options.connectionProfiles === true ? new ConnectionProfileStore(database.db) : undefined
     if (connectionProfiles) {
       const initialized = connectionProfiles.initialize(saved)
-      const active = connectionProfiles.list().find((profile) => profile.id === connectionProfiles.getActiveId())
-      if (initialized.isOk() && active) {
+      const active = initialized.unwrapOr(undefined)
+      if (active) {
         saved = active
       } else {
         // Never refuse to start over saved connections: use the last saved server,

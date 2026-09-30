@@ -2101,7 +2101,12 @@ const connectionProfilesRouter = t.router({
   }),
 
   connect: desktopConnectionProcedure
-    .input(profileReferenceInput.extend({ connection: connectionDetailsInput.optional() }))
+    // A missing Tor setting must never default to direct for a connection that is about to be saved.
+    .input(
+      profileReferenceInput.extend({
+        connection: connectionDetailsInput.extend({ torEnabled: z.boolean() }).optional(),
+      }),
+    )
     .mutation(async ({ ctx, input }) => {
       const result = await ctx.app.connectProfile(
         input,

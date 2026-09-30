@@ -339,6 +339,10 @@ async function withTestSetup(run: () => Promise<void>): Promise<void> {
         if (!result.ok || !current) {
           return result
         }
+        // Like Sentinel, refuse a connection edited from a stale copy.
+        if (current.revision !== request.revision) {
+          return trpcError('This connection changed in another window. Reload it before trying again.', 409)
+        }
         const updated = {
           ...current,
           ...request.connection,
@@ -474,7 +478,7 @@ describe('desktop connection settings', () => {
     })
   })
 
-  it('turns the switch off after a failed Tor start and asks before connecting without Tor', async () => {
+  it('keeps the switch on and red after a failed Tor start, and retries Tor instead of going direct', async () => {
     await withTestSetup(async () => {
       const advance = useStepTimers()
       await render()
@@ -482,23 +486,13 @@ describe('desktop connection settings', () => {
       torStatus = { state: 'failed', message: 'Tor could not connect within two minutes.', attempt: 1 }
       await advance(1000)
       expect(container.textContent).toContain('Tor could not connect within two minutes.')
-      expect(torSwitch().checked).toBe(false)
-      // Retrying with Save or Test must not quietly connect directly.
-      await click(button('Save & Reconnect'))
-      expect(document.body.textContent).toContain('The server will be able to see your IP address.')
-      const cancel = dialogButton('Cancel')
-      assert.ok(cancel, 'Expected the confirmation dialog')
-      await click(cancel)
+      expect(container.textContent).toContain('Test or Connect tries Tor again.')
+      expect(torSwitch().checked).toBe(true)
+      // Retrying never offers a direct connection: it starts Tor again and stays on Tor.
       await click(button('Test Connection'))
-      expect(document.body.textContent).toContain('The server will be able to see your IP address.')
-      const cancelTest = dialogButton('Cancel')
-      assert.ok(cancelTest, 'Expected the confirmation dialog')
-      await click(cancelTest)
-      expect([...connectRequests(), ...requestsTo('testElectrum')]).toEqual([])
-      expect(activeProfile().torEnabled).toBe(false)
-      await turnTorOn()
-      expect(container.textContent).not.toContain('Tor could not connect')
+      expect(document.body.textContent).not.toContain('Connect without Tor?')
       expect(requests.filter(({ path }) => path === 'settings.startTor')).toHaveLength(2)
+      expect(requestsTo('testElectrum')).toEqual([expect.objectContaining({ torEnabled: true })])
     })
   })
 
@@ -538,16 +532,16 @@ describe('desktop connection settings', () => {
     })
   })
 
-  it('turns a saved Tor connection off in the form when Tor has failed, keeping the saved setting', async () => {
+  it('shows a failed saved Tor connection in red, keeping Tor on and the saved setting', async () => {
     await withTestSetup(async () => {
       activeProfile().torEnabled = true
       torStatus = { state: 'failed', message: 'Tor stopped unexpectedly.' }
       connected = false
       await render()
       await waitForText('Tor stopped unexpectedly.')
-      expect(torSwitch().checked).toBe(false)
+      expect(torSwitch().checked).toBe(true)
       expect(activeProfile().torEnabled).toBe(true)
-      expect(container.textContent).toContain('Turn Tor on to try again, or choose another saved connection.')
+      expect(container.textContent).toContain('Reconnect to try Tor again, or choose another saved connection.')
       expect(container.textContent).not.toContain('Check your connection')
       expect(connectRequests()).toEqual([])
     })
@@ -560,26 +554,25 @@ describe('desktop connection settings', () => {
       torFailsInstantly = 'Bundled Tor is missing. Reinstall the desktop app to use Tor.'
       await turnTorOn()
       await advance(0)
-      expect(torSwitch().checked).toBe(false)
+      expect(torSwitch().checked).toBe(true)
       expect(container.textContent).toContain('Bundled Tor is missing.')
-      // A second fast failure after retrying must show again, not stay hidden.
-      torFailsInstantly = 'Tor could not start. Turn Tor on to try again.'
-      await turnTorOn()
+      // A second fast failure after retrying must show, not stay hidden.
+      torFailsInstantly = 'Tor could not start.'
+      await click(button('Test Connection'))
       await advance(0)
-      expect(torSwitch().checked).toBe(false)
-      expect(container.textContent).toContain('Tor could not start. Turn Tor on to try again.')
+      expect(container.textContent).toContain('Tor could not start.')
       expect(torAttempts).toBe(2)
     })
   })
 
-  it('turns the switch back on when a saved Tor connection recovers by itself', async () => {
+  it('clears the red failure when a saved Tor connection recovers by itself', async () => {
     await withTestSetup(async () => {
       const advance = useStepTimers()
       activeProfile().torEnabled = true
       torStatus = { state: 'failed', message: 'Tor stopped unexpectedly.', attempt: 1 }
       await render()
       await advance(0)
-      expect(torSwitch().checked).toBe(false)
+      expect(torSwitch().checked).toBe(true)
       expect(container.textContent).toContain('Tor stopped unexpectedly.')
       // A data request restarted Tor for the saved connection.
       torStatus = { state: 'ready', attempt: 2 }
@@ -604,26 +597,22 @@ describe('desktop connection settings', () => {
     })
   })
 
-  it('clears the Tor failure once a direct connection is deliberately saved', async () => {
+  it('turns Tor back off on a saved direct connection without asking, even after a failure', async () => {
     await withTestSetup(async () => {
       const advance = useStepTimers()
       await render()
-      torFailsInstantly = 'Tor could not start. Turn Tor on to try again.'
+      torFailsInstantly = 'Tor could not start.'
       await turnTorOn()
       await advance(0)
-      await click(button('Save & Reconnect'))
-      const confirm = dialogButton('Connect without Tor')
-      assert.ok(confirm, 'Expected the confirmation dialog')
-      await click(confirm)
-      await act(async () => {
-        finishSave(Response.json({ result: { data: null } }))
-      })
-      await waitForToast('success')
-      await advance(0)
+      expect(container.textContent).toContain('Tor could not start.')
+      await click(torSwitch())
+      expect(torSwitch().checked).toBe(false)
       expect(container.textContent).not.toContain('Tor could not start')
-      // The saved connection is direct now, so testing it runs without asking again.
+      // Back to the saved direct connection: nothing to save, and testing runs without asking.
+      expect(formButton('Reconnect').disabled).toBe(true)
       await click(button('Test Connection'))
-      expect(requests.filter(({ path }) => path === 'settings.testElectrum')).toHaveLength(1)
+      expect(document.body.textContent).not.toContain('Connect without Tor?')
+      expect(requestsTo('testElectrum')).toEqual([expect.objectContaining({ torEnabled: false })])
     })
   })
 
@@ -1214,7 +1203,7 @@ describe('desktop saved connections', () => {
       await turnTorOn()
       torStatus = { state: 'failed', message: 'Tor could not connect within two minutes.', attempt: 1 }
       await advance(1000)
-      expect(torSwitch().checked).toBe(false)
+      expect(torSwitch().checked).toBe(true)
       await click(formButton('Save'))
       await waitForToast('success')
       expect(profiles.at(-1)?.torEnabled).toBe(true)
@@ -1295,7 +1284,7 @@ describe('desktop saved connections', () => {
     })
   })
 
-  it('keeps a new connection’s Tor setting when a confirmed direct attempt fails', async () => {
+  it('never offers a direct connection for a new Tor connection after a failure', async () => {
     await withTestSetup(async () => {
       const advance = useStepTimers()
       await render()
@@ -1306,46 +1295,18 @@ describe('desktop saved connections', () => {
       torStatus = { state: 'failed', message: 'Tor could not connect within two minutes.', attempt: 1 }
       await advance(1000)
       await click(formButton('Save & Connect'))
-      const confirm = dialogButton('Connect without Tor')
-      assert.ok(confirm, 'Expected the confirmation dialog')
-      await click(confirm)
+      expect(document.body.textContent).not.toContain('Connect without Tor?')
       await act(async () => {
-        finishSave(trpcError('Could not reach the server'))
+        finishSave(trpcError('Tor is unavailable'))
       })
       await waitForToast('error')
+      expect(requestsTo('connectionProfiles.create')).toEqual([expect.objectContaining({ torEnabled: true })])
+      expect(connectRequests().map(({ connection }) => connection?.torEnabled)).toEqual([true])
       expect(profiles.at(-1)?.torEnabled).toBe(true)
-      expect(connectRequests().map(({ connection }) => connection?.torEnabled)).toEqual([false])
     })
   })
 
-  it('drops a test result when a Tor failure or recovery changes the switch', async () => {
-    await withTestSetup(async () => {
-      const advance = useStepTimers()
-      activeProfile().torEnabled = true
-      let finishTest: (response: Response) => void = () => undefined
-      testResponse = new Promise((resolve) => {
-        finishTest = resolve
-      })
-      torStatus = { state: 'failed', message: 'Tor could not connect within two minutes.', attempt: 1 }
-      await render()
-      await advance(0)
-      expect(torSwitch().checked).toBe(false)
-      await click(button('Test Connection'))
-      const confirm = dialogButton('Connect without Tor')
-      assert.ok(confirm, 'Expected the confirmation dialog')
-      await click(confirm)
-      torStatus = { state: 'ready', attempt: 2 }
-      await advance(10_000)
-      expect(torSwitch().checked).toBe(true)
-      await act(async () => {
-        finishTest(trpcResult({ success: true, version: ['Test Electrum', '1.4'] }))
-      })
-      await flush()
-      expect(container.textContent).not.toContain('Connection successful')
-    })
-  })
-
-  it('saves a new onion connection while Tor is failing, keeping Tor', async () => {
+  it('saves a new onion connection while Tor is failing, keeping Tor, and says Tor is down', async () => {
     await withTestSetup(async () => {
       const advance = useStepTimers()
       await render()
@@ -1356,7 +1317,12 @@ describe('desktop saved connections', () => {
       await turnTorOn()
       torStatus = { state: 'failed', message: 'Tor could not connect within two minutes.', attempt: 1 }
       await advance(1000)
-      expect(formButton('Save & Connect').disabled).toBe(true)
+      await click(torSwitch())
+      expect(document.body.textContent).toContain('Tor is currently down')
+      expect(torSwitch().checked).toBe(true)
+      const keep = dialogButton('Keep Tor on')
+      assert.ok(keep, 'Expected the onion notice')
+      await click(keep)
       await click(formButton('Save'))
       await waitForToast('success')
       expect(profiles.at(-1)).toMatchObject({ host: 'example1234.onion', torEnabled: true })
@@ -1398,4 +1364,62 @@ describe('desktop saved connections', () => {
       })
     })
   }
+
+  it('keeps showing Tor starting through a failed status response', async () => {
+    await withTestSetup(async () => {
+      const advance = useStepTimers()
+      homeAndAway()
+      const away = profiles[1]
+      assert.ok(away, 'Expected the Away connection')
+      away.torEnabled = true
+      torStatus = { state: 'starting', progress: 40, attempt: 1 }
+      await render()
+      await click(row('Away'))
+      await advance(0)
+      expect(container.textContent).toContain('Starting Tor… 40%')
+      const working = globalThis.fetch
+      vi.stubGlobal(
+        'fetch',
+        vi.fn<typeof fetch>(async (url, init) =>
+          parseUnknown(z.string(), url).unwrapOr('').includes('electrumStatus')
+            ? new Response('Internal error', { status: 500 })
+            : working(url, init),
+        ),
+      )
+      await advance(1000)
+      expect(container.textContent).toContain('Starting Tor… 40%')
+      expect(formButton('Connect').disabled).toBe(true)
+    })
+  })
+
+  it('treats an onion address with a trailing dot as an onion address', async () => {
+    await withTestSetup(async () => {
+      await render()
+      await type(hostInput(), 'example1234.onion.')
+      expect(container.textContent).toContain('Onion addresses need Tor')
+      expect(button('Test Connection').disabled).toBe(true)
+      await turnTorOn()
+      await click(torSwitch())
+      expect(document.body.textContent).toContain('This connection needs Tor')
+      expect(torSwitch().checked).toBe(true)
+    })
+  })
+
+  it('refuses to connect from a copy another window has changed', async () => {
+    await withTestSetup(async () => {
+      const { home } = homeAndAway()
+      await render()
+      await type(hostInput(), 'unsaved.example')
+      profiles[0] = { ...home, host: 'changed-elsewhere.example', revision: 2 }
+      await refetchConnections()
+      await waitForText('This connection changed in another window')
+      await click(formButton('Save & Reconnect'))
+      await act(async () => {
+        finishSave(Response.json({ result: { data: null } }))
+      })
+      await waitForToast('error')
+      expect(connectRequests().map(({ revision }) => revision)).toEqual([1])
+      expect(activeProfile().host).toBe('changed-elsewhere.example')
+    })
+  })
 })

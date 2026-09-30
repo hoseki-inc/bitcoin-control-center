@@ -217,9 +217,12 @@ describe('ElectrumClient concurrent reconnect', () => {
         expect(attempts).toBe(2)
       })
       expect(client.isConnecting()).toBe(false)
-      await new Promise((resolve) => {
-        setTimeout(resolve, 50)
+      // The attempt took a while: move the clock on, so timing from its start would allow another.
+      vi.useFakeTimers({ toFake: ['Date'] })
+      onTestFinished(() => {
+        vi.useRealTimers()
       })
+      vi.setSystemTime(Date.now() + 50)
       finishAttempt()
       await new Promise((resolve) => {
         setTimeout(resolve, 0)
@@ -379,5 +382,59 @@ describe('managed connection prerequisite', () => {
     expect(proxy).not.toHaveBeenCalled()
     client.disconnect()
     proxy.mockRestore()
+  })
+})
+
+describe('status checks on a connection that goes silent', () => {
+  it('drops a connection that stops answering, so the next check reconnects and uses the answer', async () => {
+    const sockets: net.Socket[] = []
+    const server = net.createServer((socket) => {
+      sockets.push(socket)
+      // The first connection goes silent after the handshake, like a laptop that slept; new ones work.
+      const silent = sockets.length === 1
+      socket.setEncoding('utf8')
+      socket.on('data', (chunk: string) => {
+        for (const line of chunk.split('\n').filter(Boolean)) {
+          // SAFETY: Socket input is arbitrary text; the request schema validates its shape.
+          const req = parseUnknown(
+            z.object({ id: z.number(), method: z.string() }),
+            JSON.parse(line) as unknown,
+          ).expect('valid JSON-RPC test request')
+          if (silent && req.method !== 'server.version') {
+            continue
+          }
+          const result = req.method === 'server.version' ? ['MockElectrum 1.0', '1.4'] : null
+          socket.write(`${JSON.stringify({ jsonrpc: '2.0', id: req.id, result })}\n`)
+        }
+      })
+    })
+    await new Promise<void>((resolve) => {
+      server.listen(0, '127.0.0.1', resolve)
+    })
+    onTestFinished(async () => {
+      for (const socket of sockets) {
+        socket.destroy()
+      }
+      await new Promise<void>((resolve) => {
+        server.close(() => {
+          resolve()
+        })
+      })
+    })
+    const port = parseUnknown(z.object({ port: z.number() }), server.address()).expect('TCP listener').port
+    const client = new ElectrumClient({ host: '127.0.0.1', port, protocol: 'tcp', requestTimeout: 200 })
+    expect((await client.connect()).isOk()).toBe(true)
+    expect(client.isReachable()).toBe(true)
+
+    client.checkReachable(0)
+    await vi.waitFor(() => {
+      expect(client.isReachable()).toBe(false)
+    })
+    client.checkReachable(0)
+    await vi.waitFor(() => {
+      expect(client.isReachable()).toBe(true)
+    })
+    expect(sockets).toHaveLength(2)
+    client.disconnect()
   })
 })

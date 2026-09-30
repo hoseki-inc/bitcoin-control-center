@@ -149,6 +149,12 @@ export class ElectrumClient {
       // A disconnect since the ping started owns the status now.
       if (generation === this.generation) {
         this.reachable = result.isOk()
+        if (result.isErr()) {
+          // A connection that went silent (after sleep or a network change) never closes by
+          // itself; drop it so the next check or request opens a fresh one.
+          this.transport.disconnect()
+          this.negotiated = false
+        }
       }
     })
   }
