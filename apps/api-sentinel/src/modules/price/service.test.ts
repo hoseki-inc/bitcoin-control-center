@@ -952,3 +952,75 @@ describe('price service rules', () => {
     })
   })
 })
+
+describe('price age limits', () => {
+  const after = async (ms: number, reply: () => Response): Promise<Response> => {
+    await new Promise((resolve) => {
+      setTimeout(resolve, ms)
+    })
+    return reply()
+  }
+
+  it('treats a cached response as at least as old as its Age, even when the quote is timestamped later', async () => {
+    await withTestSetup(async () => {
+      stubPrices({
+        [BLOCK]: () =>
+          prices.block('70000', NOW_SECONDS - 29 * 60, {
+            date: new Date(NOW.getTime() - 31 * 60_000).toUTCString(),
+            age: '1860',
+          }),
+        [MEMPOOL]: () => prices.mempool(83000),
+      })
+      const price = (await priceService({ source: 'block' }).service.getCurrentBtcPrice()).expect('fallback')
+      expect({ source: price.source, value: price.value.toString() }).toEqual({
+        source: 'mempool.space',
+        value: '83000',
+      })
+    })
+  })
+
+  it('does not return a late answer that expired while later sources were tried', async () => {
+    await withTestSetup(async () => {
+      vi.useFakeTimers({ now: NOW })
+      let seeding = true
+      stubPrices({
+        [BLOCK]: () => (seeding ? prices.block('83000', Math.floor(Date.now() / 1000)) : refused()),
+        [MEMPOOL]: async () => after(4000, () => prices.mempool(70000, Math.floor(Date.now() / 1000) - 1799)),
+        [COINBASE]: never,
+        [COINGECKO]: async () => after(2000, refused),
+      })
+      const { service } = priceService({ source: 'block' }, undefined, { requestTimeoutMs: 10_000 })
+      await service.getCurrentBtcPrice()
+      seeding = false
+      await vi.advanceTimersByTimeAsync(61_000)
+      const pending = service.getCurrentBtcPrice()
+      await vi.advanceTimersByTimeAsync(8000)
+      expect((await pending).expect('last known')).toMatchObject({ source: 'block', lastKnown: true })
+      await vi.advanceTimersByTimeAsync(10_000)
+    })
+  })
+
+  it('does not return a late answer that aged out while the computer slept', async () => {
+    await withTestSetup(async () => {
+      vi.useFakeTimers({ now: NOW })
+      let seeding = true
+      stubPrices({
+        [BLOCK]: () => (seeding ? prices.block('83000') : refused()),
+        [MEMPOOL]: async () => after(4000, () => prices.mempool(70000, Math.floor(Date.now() / 1000))),
+        [COINBASE]: never,
+        [COINGECKO]: async () => after(2000, refused),
+      })
+      const { service } = priceService({ source: 'block' }, undefined, { requestTimeoutMs: 10_000 })
+      await service.getCurrentBtcPrice()
+      seeding = false
+      await vi.advanceTimersByTimeAsync(61_000)
+      const pending = service.getCurrentBtcPrice()
+      await vi.advanceTimersByTimeAsync(4000)
+      // The wall clock keeps running during sleep while the monotonic clock can pause.
+      vi.setSystemTime(new Date(Date.now() + 2 * 60 * 60_000))
+      await vi.advanceTimersByTimeAsync(4000)
+      expect((await pending).isErr()).toBe(true)
+      await vi.advanceTimersByTimeAsync(10_000)
+    })
+  })
+})

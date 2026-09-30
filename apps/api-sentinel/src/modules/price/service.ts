@@ -433,7 +433,8 @@ export class PriceService {
     // A source that answered after this caller moved on still supplies a current price.
     for (const request of late) {
       const answer = request.answer()
-      if (answer?.isOk() === true) {
+      // It may have aged past its limit while later sources were tried.
+      if (answer?.isOk() === true && isRecent(answer.unwrap())) {
         return Ok(this.toPrice(answer.unwrap(), false))
       }
     }
@@ -531,8 +532,9 @@ export class PriceService {
       return Err(new PriceRequestError(`BTC price not found in ${source.label} response`, true))
     }
 
-    // A timestamp ahead of the source's clock must not make a price look newer than it is.
-    const ageAtFetch = quoted.asOf ? Math.max(0, sourceNow - quoted.asOf.getTime()) : cacheAge
+    // A price is at least as old as the cached response carrying it, and a timestamp ahead of the source's
+    // clock must not make it look newer than that.
+    const ageAtFetch = quoted.asOf ? Math.max(cacheAge, sourceNow - quoted.asOf.getTime()) : cacheAge
     const sample = { value: quoted.value, source: source.name, ageAtFetch, fetchedAt }
     if (!isRecent(sample)) {
       const minutes = Math.round(ageOf(sample) / 60_000)
