@@ -31,12 +31,23 @@ export async function startOnPreferredPort<T extends { port: number }>(
   file: string,
   start: (port: number) => Promise<T>,
 ): Promise<T> {
+  const preferred = readPreferredPort(file)
   let server: T
   try {
-    server = await start(readPreferredPort(file))
+    server = await start(preferred)
   } catch (error) {
-    // Only an occupied or refused port falls back; other failures are real startup errors.
-    if (!(error instanceof Error && 'code' in error && UNAVAILABLE_PORT_CODES.has(String(error.code)))) {
+    // Fall back only when binding the saved port failed. Other failures, including
+    // file errors with the same codes, are real startup errors. Node reports the
+    // port only when it is nonzero, so a failed OS-assigned port is not retried.
+    const unavailable =
+      error instanceof Error &&
+      'code' in error &&
+      UNAVAILABLE_PORT_CODES.has(String(error.code)) &&
+      'syscall' in error &&
+      error.syscall === 'listen' &&
+      'port' in error &&
+      error.port === preferred
+    if (!unavailable) {
       throw error
     }
     server = await start(0)

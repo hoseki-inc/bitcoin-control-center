@@ -38,13 +38,18 @@ it('does not prevent startup if the preferred port file cannot be written', asyn
   })
 })
 
-it('does not retry unrelated startup failures or change the saved port', async () => {
+it.each([
+  ['a database failure', new Error('Database unavailable')],
+  // An unreadable UI file reports EACCES too, but it is not a port that another attempt can avoid.
+  [
+    'an unreadable file',
+    Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES', syscall: 'open', path: 'index.html' }),
+  ],
+])('does not retry %s or change the saved port', async (_name, failure) => {
   const file = portFile()
   writePreferredPort(file, 51234)
-  const start = vi
-    .fn<(port: number) => Promise<{ port: number }>>()
-    .mockRejectedValue(new Error('Database unavailable'))
-  await expect(startOnPreferredPort(file, start)).rejects.toThrow('Database unavailable')
+  const start = vi.fn<(port: number) => Promise<{ port: number }>>().mockRejectedValue(failure)
+  await expect(startOnPreferredPort(file, start)).rejects.toBe(failure)
   expect(start).toHaveBeenCalledOnce()
   expect(readPreferredPort(file)).toBe(51234)
 })
@@ -55,7 +60,13 @@ it.each(['EADDRINUSE', 'EACCES'])(
   async (code) => {
     const file = portFile()
     writePreferredPort(file, 51234)
-    const unavailable = Object.assign(new Error(`listen ${code}`), { code })
+    // Node reports a failed bind as a listen error on the requested port.
+    const unavailable = Object.assign(new Error(`listen ${code}: 127.0.0.1:51234`), {
+      code,
+      syscall: 'listen',
+      address: '127.0.0.1',
+      port: 51234,
+    })
     const start = vi.fn<(port: number) => Promise<{ port: number }>>(async (port) => {
       if (port === 51234) {
         throw unavailable

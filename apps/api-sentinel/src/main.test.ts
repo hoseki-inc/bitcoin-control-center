@@ -159,7 +159,12 @@ describe('Sentinel listening port', () => {
     // With "localhost", Fastify would bind [::1] and ignore this occupied IPv4 address.
     const occupied = await reservePort()
     const failed = queueContext(3400)
-    await expect(main({ listenPort: occupied }, createContext)).rejects.toMatchObject({ code: 'EADDRINUSE' })
+    // Desktop falls back to a new port only for a listen error that names the requested port.
+    await expect(main({ listenPort: occupied }, createContext)).rejects.toMatchObject({
+      code: 'EADDRINUSE',
+      syscall: 'listen',
+      port: occupied,
+    })
     expect(failed.closes()).toBe(1)
   })
 
