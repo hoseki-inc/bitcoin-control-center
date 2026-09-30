@@ -3,6 +3,8 @@ import type { TorManager } from './tor'
 interface ServerOptions {
   waitForElectrum?: boolean
   tor?: Pick<TorManager, 'start' | 'getStatus' | 'getSocksProxy'>
+  /** Port to bind; zero lets the operating system choose a free port. */
+  listenPort?: number
 }
 
 // oxlint-disable-next-line anti-slop/no-unknown-returns -- A dynamically loaded server method can return any runtime value, which is checked by its caller.
@@ -20,10 +22,21 @@ function hasShutdown(value: unknown): value is { shutdown: () => unknown } {
   return value !== null && typeof value === 'object' && 'shutdown' in value && isCallable(value.shutdown)
 }
 
+// oxlint-disable-next-line anti-slop/no-unknown-returns -- Runtime-loaded server values are checked structurally before use.
+function hasPort(value: unknown): value is { port: number } {
+  return (
+    value !== null &&
+    typeof value === 'object' &&
+    'port' in value &&
+    Number.isInteger(value.port) &&
+    Number(value.port) > 0
+  )
+}
+
 export async function startServer(
   serverMain: string,
   options?: ServerOptions,
-): Promise<{ shutdown: () => Promise<void> }> {
+): Promise<{ port: number; shutdown: () => Promise<void> }> {
   const module: unknown = await import(serverMain)
   if (!isServerModule(module)) {
     throw new TypeError('The bundled Sentinel server must export a main function')
@@ -33,8 +46,14 @@ export async function startServer(
   if (!hasShutdown(server)) {
     throw new TypeError('The Sentinel server must provide a shutdown function')
   }
+  if (!hasPort(server)) {
+    // The server is already listening; stop it rather than leave it running unused.
+    await Promise.resolve(server.shutdown.call(server)).catch(() => undefined)
+    throw new TypeError('The Sentinel server must report the port it bound')
+  }
   const shutdown = server.shutdown
   return {
+    port: server.port,
     shutdown: async (): Promise<void> => {
       await shutdown.call(server)
     },

@@ -207,6 +207,8 @@ The normal development endpoints are:
 
 Vite may select the next free port if `4269` is already occupied. Sentinel will stop with an address-in-use error if `3400` is occupied.
 
+The desktop app uses its own port, so it can run alongside local development.
+
 ### Run the services separately
 
 Use two terminals when you want to inspect logs independently.
