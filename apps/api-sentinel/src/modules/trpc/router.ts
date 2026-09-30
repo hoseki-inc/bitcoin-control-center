@@ -2184,7 +2184,8 @@ const settingsRouter = t.router({
     return {
       // Reachability, not an open socket: servers close idle sockets between requests.
       connected: ctx.app.electrumClient.isReachable(),
-      // Lets the page say "Connecting…" rather than "Disconnected" while the first attempt runs.
+      // Lets the page say "Connecting…" rather than "Disconnected" while the first attempt runs;
+      // background retries during an outage don't count.
       connecting: ctx.app.electrumClient.isConnecting(),
       host,
       port,

@@ -76,13 +76,17 @@ export class ConnectionProfileStore {
     return Ok(profile)
   }
 
-  /** Saves the current connection as the first profile, once, so upgrades keep their server and Tor setting. */
+  /**
+   * Saves the current connection as the active profile when none is active, so upgrades keep
+   * their server and Tor setting. A saved profile only becomes active by connecting to it, so an
+   * existing one is never adopted here; with no room left, nothing becomes active.
+   */
   public initialize(initial: ConnectionDetails): Result<void, Error> {
     return this.write(() => {
-      if (this.getActiveId() !== undefined) {
+      if (this.getActiveId() !== undefined || this.list().length >= MAX_CONNECTION_PROFILES) {
         return Ok(undefined)
       }
-      const profile = this.list()[0] ?? this.insert({ ...initial, nickname: 'Current connection' })
+      const profile = this.insert({ ...initial, nickname: 'Current connection' })
       this.saveSetting(ACTIVE_KEY, profile.id)
       return Ok(undefined)
     })

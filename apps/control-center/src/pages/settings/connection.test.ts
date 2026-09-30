@@ -859,7 +859,7 @@ describe('desktop saved connections', () => {
     })
   })
 
-  it('saves and connects a new connection with the details it was saved with', async () => {
+  it('saves and connects a new connection', async () => {
     await withTestSetup(async () => {
       await render()
       await click(row('New connection'))
@@ -875,7 +875,9 @@ describe('desktop saved connections', () => {
         expect(row('Travel').textContent).toContain('Connected')
       })
       expect(activeProfile().host).toBe('travel.example')
-      expect(connectRequests().map(({ connection }) => connection)).toEqual([undefined])
+      expect(connectRequests().map(({ connection }) => connection)).toEqual([
+        { host: 'travel.example', port: 50002, protocol: 'ssl', torEnabled: false },
+      ])
     })
   })
 
@@ -1292,4 +1294,108 @@ describe('desktop saved connections', () => {
       expect(field('connection-protocol').value).toBe('tcp')
     })
   })
+
+  it('keeps a new connection’s Tor setting when a confirmed direct attempt fails', async () => {
+    await withTestSetup(async () => {
+      const advance = useStepTimers()
+      await render()
+      await click(row('New connection'))
+      await type(field('connection-nickname'), 'Remote')
+      await type(hostInput(), 'remote.example')
+      await turnTorOn()
+      torStatus = { state: 'failed', message: 'Tor could not connect within two minutes.', attempt: 1 }
+      await advance(1000)
+      await click(formButton('Save & Connect'))
+      const confirm = dialogButton('Connect without Tor')
+      assert.ok(confirm, 'Expected the confirmation dialog')
+      await click(confirm)
+      await act(async () => {
+        finishSave(trpcError('Could not reach the server'))
+      })
+      await waitForToast('error')
+      expect(profiles.at(-1)?.torEnabled).toBe(true)
+      expect(connectRequests().map(({ connection }) => connection?.torEnabled)).toEqual([false])
+    })
+  })
+
+  it('drops a test result when a Tor failure or recovery changes the switch', async () => {
+    await withTestSetup(async () => {
+      const advance = useStepTimers()
+      activeProfile().torEnabled = true
+      let finishTest: (response: Response) => void = () => undefined
+      testResponse = new Promise((resolve) => {
+        finishTest = resolve
+      })
+      torStatus = { state: 'failed', message: 'Tor could not connect within two minutes.', attempt: 1 }
+      await render()
+      await advance(0)
+      expect(torSwitch().checked).toBe(false)
+      await click(button('Test Connection'))
+      const confirm = dialogButton('Connect without Tor')
+      assert.ok(confirm, 'Expected the confirmation dialog')
+      await click(confirm)
+      torStatus = { state: 'ready', attempt: 2 }
+      await advance(10_000)
+      expect(torSwitch().checked).toBe(true)
+      await act(async () => {
+        finishTest(trpcResult({ success: true, version: ['Test Electrum', '1.4'] }))
+      })
+      await flush()
+      expect(container.textContent).not.toContain('Connection successful')
+    })
+  })
+
+  it('saves a new onion connection while Tor is failing, keeping Tor', async () => {
+    await withTestSetup(async () => {
+      const advance = useStepTimers()
+      await render()
+      await click(row('New connection'))
+      await type(field('connection-nickname'), 'Home Tor')
+      await type(hostInput(), 'example1234.onion')
+      expect(formButton('Save').disabled).toBe(true)
+      await turnTorOn()
+      torStatus = { state: 'failed', message: 'Tor could not connect within two minutes.', attempt: 1 }
+      await advance(1000)
+      expect(formButton('Save & Connect').disabled).toBe(true)
+      await click(formButton('Save'))
+      await waitForToast('success')
+      expect(profiles.at(-1)).toMatchObject({ host: 'example1234.onion', torEnabled: true })
+    })
+  })
+
+  it('moves focus to the discard prompt, and back to the form once it is answered', async () => {
+    await withTestSetup(async () => {
+      homeAndAway()
+      await render()
+      await type(hostInput(), 'unsaved.example')
+      await click(row('Away'))
+      expect(document.activeElement?.textContent).toBe('Keep editing')
+      await click(button('Keep editing'))
+      expect(document.activeElement).toBe(hostInput())
+    })
+  })
+
+  for (const [label, answer] of [
+    ['an HTTP error', (): Response => new Response('Internal error', { status: 500 })],
+    ['an unreadable answer', (): Response => Response.json({ result: { data: { json: { nonsense: true } } } })],
+  ] as const) {
+    it(`shows Checking and keeps Reconnect after ${label} from the status check`, async () => {
+      await withTestSetup(async () => {
+        const advance = useStepTimers()
+        await render()
+        await advance(0)
+        expect(detailsText()).toContain('Connected ·')
+        const working = globalThis.fetch
+        vi.stubGlobal(
+          'fetch',
+          vi.fn<typeof fetch>(async (url, init) =>
+            parseUnknown(z.string(), url).unwrapOr('').includes('electrumStatus') ? answer() : working(url, init),
+          ),
+        )
+        await advance(10_000)
+        expect(detailsText()).toContain('Checking…')
+        expect(formButton('Reconnect').disabled).toBe(false)
+      })
+    })
+  }
 })

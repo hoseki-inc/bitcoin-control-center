@@ -42,6 +42,8 @@ export class ElectrumClient {
   // Whether the last attempt to reach the server worked. Servers close idle sockets
   // and the next request reconnects, so a closed socket alone isn't a failure.
   private reachable = false
+  // Set once any attempt has finished, so later background retries don't read as a first connection.
+  private settled = false
   private lastCheck = 0
   private checkInFlight = false
   private connectInFlight: AsyncResult<ServerVersion, Error> | null = null
@@ -87,6 +89,7 @@ export class ElectrumClient {
       // A later connect or disconnect owns the status once the generation changes.
       if (generation === this.generation) {
         this.reachable = result.isOk()
+        this.settled = true
       }
       return result
     })
@@ -115,9 +118,12 @@ export class ElectrumClient {
     return this.transport.isConnected() && this.negotiated
   }
 
-  /** Whether a connection attempt is in progress, such as the first one after launch. */
+  /**
+   * Whether the first connection attempt is still running, such as after launch.
+   * Background retries during an outage don't count, so the outage still shows.
+   */
   public isConnecting(): boolean {
-    return this.connectInFlight !== null
+    return this.connectInFlight !== null && !this.settled
   }
 
   /** Whether the server answered the last connection attempt, open socket or not. */
@@ -135,10 +141,11 @@ export class ElectrumClient {
     }
     const generation = this.generation
     this.checkInFlight = true
-    this.lastCheck = Date.now()
     // The protocol answers null, but any answer shows the server is there.
     void this.call('server.ping', [], z.unknown()).then((result) => {
       this.checkInFlight = false
+      // Timed from the end, so a slow attempt (such as Tor starting) isn't followed straight away by another.
+      this.lastCheck = Date.now()
       // A disconnect since the ping started owns the status now.
       if (generation === this.generation) {
         this.reachable = result.isOk()

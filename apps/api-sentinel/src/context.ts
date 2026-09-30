@@ -248,8 +248,9 @@ export const createAppContext = asyncFn(
         return Err(new Error('An Electrum connection change is already in progress'))
       }
 
+      // Never log the server: a home node's address or onion address identifies the user.
       logger.info(
-        { host: config.host, port: config.port, protocol: config.protocol },
+        { protocol: config.protocol, tor: config.proxy !== undefined || config.resolveProxy !== undefined },
         'Reconnecting to Electrum server',
       )
       const newClient = new ElectrumClient({ requestTimeout: 10_000, ...config })

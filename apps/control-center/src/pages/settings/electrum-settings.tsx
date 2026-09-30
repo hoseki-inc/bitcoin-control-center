@@ -117,9 +117,8 @@ function useElectrumStatus(): ElectrumStatusState {
         const envelope = parseUnknown(z.object({ json: z.unknown() }), wrapped).unwrapOr(null)
         const payload = envelope?.json ?? wrapped
         const parsed = parseUnknown(ElectrumStatusSchema, payload).unwrapOr(null)
-        if (parsed?.host != null && parsed.host !== '') {
-          setStatus(parsed)
-        }
+        // An error or unreadable answer means the status is unknown, not the last one seen.
+        setStatus(parsed?.host != null && parsed.host !== '' ? parsed : null)
       })
       .catch(() => {
         setStatus(null)
@@ -196,6 +195,8 @@ export function ElectrumSettings(): JSX.Element {
   const [deleting, setDeleting] = useState<Profile | null>(null)
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const cancelDeleteRef = useRef<HTMLButtonElement>(null)
+  const keepEditingRef = useRef<HTMLButtonElement>(null)
+  const promptWasOpen = useRef(false)
   const hostRef = useRef<HTMLInputElement>(null)
   const nicknameRef = useRef<HTMLInputElement>(null)
   const [renaming, setRenaming] = useState(false)
@@ -255,6 +256,18 @@ export function ElectrumSettings(): JSX.Element {
     }
   }, [query.data, draft, saved, dirty, controlsDisabled])
 
+  // The row that opened the discard prompt is disabled, so move focus to the prompt,
+  // then back to the form once it's answered.
+  const promptOpen = pendingSelection !== null
+  useEffect(() => {
+    if (promptOpen) {
+      keepEditingRef.current?.focus()
+    } else if (promptWasOpen.current) {
+      hostRef.current?.focus()
+    }
+    promptWasOpen.current = promptOpen
+  }, [promptOpen])
+
   useEffect(() => {
     if (renaming) {
       nicknameRef.current?.select()
@@ -266,6 +279,9 @@ export function ElectrumSettings(): JSX.Element {
     if (torState === 'failed' && torEnabled && torAttempt >= (torAttemptAwaited ?? 0)) {
       setTorForcedOff(true)
       setTorFailure(status?.tor?.message ?? 'Tor couldn’t start. Turn Tor on to try again.')
+      // A test result describes the route shown when it started; the switch just changed.
+      formVersion.current += 1
+      setTestResult(null)
     }
   }, [torState, torEnabled, torAttempt, torAttemptAwaited, status?.tor?.message])
 
@@ -275,6 +291,8 @@ export function ElectrumSettings(): JSX.Element {
     if (torState === 'ready' && torForcedOff && !dirty) {
       setTorForcedOff(false)
       setTorFailure(null)
+      formVersion.current += 1
+      setTestResult(null)
     }
   }, [torState, torForcedOff, dirty])
 
@@ -422,9 +440,8 @@ export function ElectrumSettings(): JSX.Element {
         host: draft.host.trim(),
         port: draft.port,
         protocol: draft.protocol,
-        // Saving never connects, so it keeps the Tor setting you chose even while
-        // a Tor failure shows the switch off. Testing and connecting use the switch.
-        torEnabled: operation === 'save' ? draft.torEnabled : torEnabled,
+        // Testing and connecting use the switch, which a Tor failure turns off.
+        torEnabled,
       }
       if (operation === 'test') {
         await baseTrpc.settings.testElectrum.mutate(details)
@@ -435,7 +452,9 @@ export function ElectrumSettings(): JSX.Element {
       }
       let target = saved
       if (draft.id === undefined) {
-        target = await api.create.mutate({ ...details, nickname: draft.nickname.trim() })
+        // A new connection is saved with the Tor setting you chose, even while a Tor failure
+        // shows the switch off; only a successful direct connection below saves it as direct.
+        target = await api.create.mutate({ ...details, torEnabled: draft.torEnabled, nickname: draft.nickname.trim() })
         setDraft(target)
         await remember(target)
         if (operation === 'save') {
@@ -444,12 +463,11 @@ export function ElectrumSettings(): JSX.Element {
         }
       }
       if (target) {
-        // A connection saved just now connects with the details it was saved with.
-        const connected = await api.connect.mutate(
-          draft.id === undefined
-            ? { id: target.id, revision: target.revision }
-            : { id: target.id, revision: draft.revision ?? target.revision, connection: details },
-        )
+        const connected = await api.connect.mutate({
+          id: target.id,
+          revision: draft.id === undefined ? target.revision : (draft.revision ?? target.revision),
+          connection: details,
+        })
         setDraft(connected)
         setTorForcedOff(false)
         // The saved connection now reflects the user's routing choice.
@@ -531,6 +549,8 @@ export function ElectrumSettings(): JSX.Element {
   const connectLabel = dirty ? (isActive ? 'Save & Reconnect' : 'Save & Connect') : isActive ? 'Reconnect' : 'Connect'
   const onionNeedsTor = onion && !torEnabled
   const submitDisabled = !canSubmit || controlsDisabled || actionsDisabled || torStarting || onionNeedsTor
+  // Saving never connects: it needs valid details and, for an onion address, Tor chosen, not Tor working.
+  const saveDisabled = !canSubmit || controlsDisabled || actionsDisabled || (onion && !draft.torEnabled)
   const rowButton = {
     variant: 'unstyled',
     h: 'auto',
@@ -566,6 +586,7 @@ export function ElectrumSettings(): JSX.Element {
         <Alert status="warning" mb={4} maxW="480px" flexWrap="wrap" gap={3}>
           <AlertDescription>You have unsaved changes. Discard them to continue?</AlertDescription>
           <Button
+            ref={keepEditingRef}
             size="sm"
             onClick={() => {
               setPendingSelection(null)
@@ -952,7 +973,7 @@ export function ElectrumSettings(): JSX.Element {
                   confirmRouting('save')
                 }}
                 isLoading={busy === 'save'}
-                isDisabled={submitDisabled}
+                isDisabled={saveDisabled}
               >
                 Save
               </Button>

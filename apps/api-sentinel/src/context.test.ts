@@ -1013,6 +1013,14 @@ describe('saved connection startup', () => {
       expect(ctx.electrumConfig.port).toBe(70_000)
       expect(profileStore(ctx).list()).toEqual([])
       expect(profileStore(ctx).getActiveId()).toBeUndefined()
+
+      // A connection saved there but never connected to must not become active on the next launch.
+      profileStore(ctx)
+        .create({ nickname: 'Untested', host: 'untested.example', port: 50002, protocol: 'ssl', torEnabled: false })
+        .unwrap()
+      const next = await restart(ctx, false)
+      expect(profileStore(next).getActiveId()).toBeUndefined()
+      expect(next.electrumConfig.host).not.toBe('untested.example')
     })
   })
 })

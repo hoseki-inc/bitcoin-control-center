@@ -2,7 +2,7 @@ import * as net from 'node:net'
 import { SocksClient } from 'socks'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { z } from 'zod'
-import { parseUnknown } from '../../../result'
+import { Err, parseUnknown } from '../../../result'
 import { ElectrumClient } from './client'
 import { ElectrumTransport, shouldVerifyElectrumTlsCertificate } from './protocol'
 
@@ -189,6 +189,49 @@ describe('ElectrumClient concurrent reconnect', () => {
     })
   })
 
+  it('reports only the first attempt as connecting, and times checks from when they finish', async () => {
+    await withTestSetup(async () => {
+      let attempts = 0
+      let finishAttempt: () => void = () => undefined
+      const client = new ElectrumClient({
+        host: '127.0.0.1',
+        port: mock.port,
+        protocol: 'tcp',
+        // Stands in for a Tor start that takes a while and then fails.
+        beforeConnect: async () => {
+          attempts += 1
+          await new Promise<void>((resolve) => {
+            finishAttempt = resolve
+          })
+          return Err(new Error('Tor is unavailable'))
+        },
+      })
+      const first = client.connect()
+      expect(client.isConnecting()).toBe(true)
+      finishAttempt()
+      expect((await first).isErr()).toBe(true)
+
+      // A background retry during the outage is not a first connection.
+      client.checkReachable(0)
+      await vi.waitFor(() => {
+        expect(attempts).toBe(2)
+      })
+      expect(client.isConnecting()).toBe(false)
+      await new Promise((resolve) => {
+        setTimeout(resolve, 50)
+      })
+      finishAttempt()
+      await new Promise((resolve) => {
+        setTimeout(resolve, 0)
+      })
+      // The slow check ended just now, so another one waits for the full interval.
+      client.checkReachable(40)
+      expect(attempts).toBe(2)
+      expect(client.isReachable()).toBe(false)
+      client.disconnect()
+    })
+  })
+
   it('reports the server unreachable once reconnecting fails', async () => {
     await withTestSetup(async () => {
       const client = new ElectrumClient({ host: '127.0.0.1', port: mock.port, protocol: 'tcp', connectTimeout: 1000 })
@@ -324,7 +367,6 @@ describe('managed connection prerequisite', () => {
   })
 
   it('does not open a direct or SOCKS socket when readiness fails', async () => {
-    const { Err } = await import('@hoseki/packages/result')
     const proxy = vi.spyOn(SocksClient, 'createConnection')
     const client = new ElectrumClient({
       host: 'example.onion',
