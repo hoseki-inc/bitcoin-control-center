@@ -544,3 +544,126 @@ describe('Tor connection policy', () => {
     })
   })
 })
+
+describe('price source settings', () => {
+  it('saves the price source and fallbacks together and reports the price found under them', async () => {
+    await withTestSetup(async () => {
+      onTestFinished(() => {
+        vi.unstubAllGlobals()
+      })
+      const seconds = Math.floor(Date.now() / 1000) - 60
+      const answers = new Map([
+        ['example.invalid', () => Response.json({ time: seconds, USD: 83000 })],
+        ['api.coinbase.com', () => Response.json({ data: { amount: '83105.04', currency: 'USD' } })],
+      ])
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (url: string) => answers.get(new URL(url).host)?.() ?? new Response(null, { status: 503 })),
+      )
+      const caller = appRouter.createCaller({ app: await context() })
+      await expect(caller.settings.priceSource()).resolves.toMatchObject({ selected: 'mempool', fallbacks: true })
+      const first = await caller.settings.priceStatus()
+      expect(first).toMatchObject({
+        selected: 'mempool',
+        fallbacks: true,
+        price: { source: 'mempool', lastKnown: false },
+      })
+      expect(Math.abs(Date.parse(first.price?.asOf ?? '') - seconds * 1000)).toBeLessThan(1000)
+
+      await expect(caller.settings.setPriceSettings({ source: 'coinbase', fallbacks: false })).resolves.toMatchObject({
+        selected: 'coinbase',
+        fallbacks: false,
+      })
+      await expect(caller.settings.priceSource()).resolves.toMatchObject({ selected: 'coinbase', fallbacks: false })
+      await expect(caller.settings.priceStatus()).resolves.toMatchObject({
+        selected: 'coinbase',
+        fallbacks: false,
+        price: { source: 'coinbase', lastKnown: false },
+      })
+
+      answers.delete('api.coinbase.com')
+      const withoutCoinbase = appRouter.createCaller({ app: await context() })
+      await expect(withoutCoinbase.settings.priceStatus()).resolves.toEqual({
+        selected: 'coinbase',
+        fallbacks: false,
+        price: null,
+      })
+    })
+  })
+
+  it('lists the price sources without waiting for a price', async () => {
+    await withTestSetup(async () => {
+      onTestFinished(() => {
+        vi.unstubAllGlobals()
+      })
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => new Promise<Response>(() => undefined)),
+      )
+      const caller = appRouter.createCaller({ app: await context() })
+      await expect(caller.settings.priceSource()).resolves.toMatchObject({ selected: 'mempool' })
+    })
+  })
+
+  it('rolls back both price settings and does not notify the service when saving fails', async () => {
+    await withTestSetup(async () => {
+      const ctx = await context()
+      const caller = appRouter.createCaller({ app: ctx })
+      await caller.settings.setPriceSettings({ source: 'block', fallbacks: true })
+      const updated = vi.spyOn(ctx.priceService, 'settingsUpdated')
+      await ctx.database.run(
+        sql`CREATE TRIGGER reject_price_save BEFORE INSERT ON settings WHEN NEW.key = 'price_fallbacks_enabled' BEGIN SELECT RAISE(FAIL, 'test write failure'); END`,
+      )
+      await expect(caller.settings.setPriceSettings({ source: 'coinbase', fallbacks: false })).rejects.toThrow(
+        /Failed query/,
+      )
+      expect(updated).not.toHaveBeenCalled()
+      await expect(caller.settings.priceSource()).resolves.toMatchObject({ selected: 'block', fallbacks: true })
+    })
+  })
+
+  it('rejects a price source that is not available here', async () => {
+    await withTestSetup(async () => {
+      env = { ...env, MEMPOOL_API_URL: 'https://mempool.space' }
+      const caller = appRouter.createCaller({ app: await context() })
+      await expect(caller.settings.setPriceSettings({ source: 'mempool' })).rejects.toMatchObject({
+        code: 'BAD_REQUEST',
+      })
+      await expect(caller.settings.priceSource()).resolves.toMatchObject({ selected: 'block' })
+    })
+  })
+
+  it.each(['price_source', 'price_fallbacks_enabled'])(
+    'does not read or write %s through the generic settings endpoints',
+    async (key) => {
+      await withTestSetup(async () => {
+        const caller = appRouter.createCaller({ app: await context() })
+        await expect(caller.settings.update({ key, value: 'false' })).rejects.toMatchObject({ code: 'FORBIDDEN' })
+        await expect(caller.settings.get({ key })).rejects.toMatchObject({ code: 'FORBIDDEN' })
+      })
+    },
+  )
+})
+
+it('checks the primary again for status and skips malformed timestamps without failing the endpoint', async () => {
+  await withTestSetup(async () => {
+    onTestFinished(() => {
+      vi.unstubAllGlobals()
+    })
+    let time = Math.floor(Date.now() / 1000)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) =>
+        new URL(url).host === 'example.invalid'
+          ? Response.json({ USD: 83000, time })
+          : Response.json({ amount: '84000', base: 'BTC', currency: 'USD' }),
+      ),
+    )
+    const caller = appRouter.createCaller({ app: await context() })
+    expect((await caller.settings.priceStatus()).price?.source).toBe('mempool')
+    time = 9e12
+    const status = await caller.settings.priceStatus()
+    expect(status.price).toMatchObject({ source: 'block', lastKnown: false })
+    expect(Number.isFinite(Date.parse(status.price?.asOf ?? ''))).toBe(true)
+  })
+})

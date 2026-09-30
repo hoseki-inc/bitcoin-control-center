@@ -42,6 +42,7 @@ import {
   settings,
   signedMessages as signedMessagesTable,
 } from '../../db/schema'
+import { PRICE_FALLBACKS_SETTING, PRICE_SOURCES, PRICE_SOURCE_SETTING } from '../price/service'
 import { StatementMapper } from '../statements/mapper'
 import { publicProcedure, t } from './init'
 
@@ -1959,6 +1960,48 @@ const settingsRouter = t.router({
       .insert(settings)
       .values({ key: input.key, value })
       .onConflictDoUpdate({ target: settings.key, set: { value } })
+  }),
+
+  // Answers at once, so Settings can change the source even while every source is down.
+  priceSource: publicProcedure.query(async ({ ctx }) => ctx.app.priceService.options()),
+
+  // Price settings change how Sentinel fetches prices, so they are saved together here and the
+  // price service is told, rather than written through the generic `update`.
+  setPriceSettings: publicProcedure
+    .input(z.object({ source: z.enum(PRICE_SOURCES).optional(), fallbacks: z.boolean().optional() }))
+    .mutation(async ({ ctx, input }) => {
+      if (input.source !== undefined && !ctx.app.priceService.isAvailable(input.source)) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'That price source is not available' })
+      }
+      await ctx.app.database.transaction(async (tx) => {
+        if (input.source !== undefined) {
+          await tx
+            .insert(settings)
+            .values({ key: PRICE_SOURCE_SETTING, value: input.source })
+            .onConflictDoUpdate({ target: settings.key, set: { value: input.source } })
+        }
+        if (input.fallbacks !== undefined) {
+          const value = String(input.fallbacks)
+          await tx
+            .insert(settings)
+            .values({ key: PRICE_FALLBACKS_SETTING, value })
+            .onConflictDoUpdate({ target: settings.key, set: { value } })
+        }
+      })
+      ctx.app.priceService.settingsUpdated()
+      return ctx.app.priceService.options()
+    }),
+
+  priceStatus: publicProcedure.query(async ({ ctx }) => {
+    // Look the price up under the current settings, so a status never describes an earlier choice.
+    const result = await ctx.app.priceService.getCurrentBtcPrice({ verifyPrimary: true })
+    const price = result.isOk() ? result.unwrap() : null
+    const { selected, fallbacks } = await ctx.app.priceService.options()
+    return {
+      selected,
+      fallbacks,
+      price: price ? { source: price.source, asOf: price.asOf.toISOString(), lastKnown: price.lastKnown } : null,
+    }
   }),
 
   electrumStatus: publicProcedure.query(({ ctx }) => {
