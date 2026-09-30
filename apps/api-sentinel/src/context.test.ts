@@ -589,3 +589,26 @@ describe('price source settings', () => {
     },
   )
 })
+
+it('checks the primary again for status and skips malformed timestamps without failing the endpoint', async () => {
+  await withTestSetup(async () => {
+    onTestFinished(() => {
+      vi.unstubAllGlobals()
+    })
+    let time = Math.floor(Date.now() / 1000)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) =>
+        new URL(url).host === 'example.invalid'
+          ? Response.json({ USD: 83000, time })
+          : Response.json({ amount: '84000', base: 'BTC', currency: 'USD' }),
+      ),
+    )
+    const caller = appRouter.createCaller({ app: await context() })
+    expect((await caller.settings.priceStatus()).price?.source).toBe('mempool')
+    time = 9e12
+    const status = await caller.settings.priceStatus()
+    expect(status.price).toMatchObject({ source: 'block', lastKnown: false })
+    expect(Number.isFinite(Date.parse(status.price?.asOf ?? ''))).toBe(true)
+  })
+})

@@ -187,22 +187,22 @@ function currentStatus(
 
 function PriceSourceSettings(): JSX.Element {
   const queryClient = useQueryClient()
+  const [saving, setSaving] = useState(false)
+  const savingRef = useRef(false)
   const query = useQuery({
     queryKey: PRICE_SOURCE_QUERY_KEY,
-    queryFn: async () => baseTrpc.settings.priceSource.query(),
+    queryFn: async ({ signal }) => baseTrpc.settings.priceSource.query(undefined, { signal }),
+    enabled: !saving,
   })
   // Separate from the options, which must stay usable while a price lookup waits on the network.
   const statusQuery = useQuery({
     queryKey: PRICE_STATUS_QUERY_KEY,
-    queryFn: async () => baseTrpc.settings.priceStatus.query(),
+    queryFn: async ({ signal }) => baseTrpc.settings.priceStatus.query(undefined, { signal }),
   })
   const options: PriceSourceOptions | null = query.data ?? null
   const [savedNotice, setSavedNotice] = useFadingNotice()
   // A save runs until the new choice has been checked. Changes made meanwhile are ignored rather than
   // disabling the controls, which would drop keyboard focus.
-  const [saving, setSaving] = useState(false)
-  const savingRef = useRef(false)
-
   const save = async (change: PriceChange): Promise<void> => {
     if (!options || savingRef.current) {
       return
@@ -211,35 +211,46 @@ function PriceSourceSettings(): JSX.Element {
     setSaving(true)
     setSavedNotice(null)
     const previous = options
-    queryClient.setQueryData(
-      PRICE_SOURCE_QUERY_KEY,
-      'source' in change ? { ...options, selected: change.source } : { ...options, fallbacks: change.fallbacks },
-    )
-    let saved: PriceSourceOptions | null = null
     try {
-      saved = await baseTrpc.settings.setPriceSettings.mutate(change)
-      queryClient.setQueryData(PRICE_SOURCE_QUERY_KEY, saved)
-    } catch {
-      queryClient.setQueryData(PRICE_SOURCE_QUERY_KEY, previous)
-      toast.error(
-        'source' in change
-          ? 'Could not save the price source. Please try again.'
-          : 'Could not save the fallback setting. Please try again.',
+      // Cancel the pre-save snapshot and pause background options reads until saving finishes.
+      await queryClient.cancelQueries({ queryKey: PRICE_SOURCE_QUERY_KEY })
+      queryClient.setQueryData(
+        PRICE_SOURCE_QUERY_KEY,
+        'source' in change ? { ...options, selected: change.source } : { ...options, fallbacks: change.fallbacks },
       )
-    }
-    // A status request that began before the save would describe the old choice, so start a new one.
-    await queryClient.cancelQueries({ queryKey: PRICE_STATUS_QUERY_KEY })
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: PRICE_STATUS_QUERY_KEY }),
-      ...USD_QUERY_KEYS.map(async (queryKey) => queryClient.invalidateQueries({ queryKey })),
-      ...RESET_USD_QUERY_KEYS.map(async (queryKey) => queryClient.resetQueries({ queryKey })),
-    ])
-    savingRef.current = false
-    setSaving(false)
-    // Confirm only when a successful check shows the saved choice supplying the price.
-    const status = currentStatus(queryClient.getQueryState<PriceStatus>(PRICE_STATUS_QUERY_KEY), saved)
-    if (status?.price && status.price.source === status.selected && !status.price.lastKnown) {
-      setSavedNotice('shown')
+      let saved: PriceSourceOptions | null = null
+      try {
+        saved = await baseTrpc.settings.setPriceSettings.mutate(change)
+        queryClient.setQueryData(PRICE_SOURCE_QUERY_KEY, saved)
+      } catch {
+        queryClient.setQueryData(PRICE_SOURCE_QUERY_KEY, previous)
+        toast.error(
+          'source' in change
+            ? 'Could not save the price source. Please try again.'
+            : 'Could not save the fallback setting. Please try again.',
+        )
+      }
+      // A status request that began before the save would describe the old choice, so start a new one.
+      await queryClient.cancelQueries({ queryKey: PRICE_STATUS_QUERY_KEY })
+      const refreshing = Promise.all([
+        queryClient.invalidateQueries({ queryKey: PRICE_STATUS_QUERY_KEY }),
+        ...USD_QUERY_KEYS.map(async (queryKey) => queryClient.invalidateQueries({ queryKey })),
+        ...RESET_USD_QUERY_KEYS.map(async (queryKey) => queryClient.resetQueries({ queryKey })),
+      ])
+      if (!saved) {
+        // A lost reply can follow a committed write. Reconcile without blocking another attempt.
+        void refreshing
+        return
+      }
+      await refreshing
+      const status = currentStatus(queryClient.getQueryState<PriceStatus>(PRICE_STATUS_QUERY_KEY), saved)
+      if (status?.price && status.price.source === status.selected && !status.price.lastKnown) {
+        setSavedNotice('shown')
+      }
+    } finally {
+      void queryClient.invalidateQueries({ queryKey: PRICE_SOURCE_QUERY_KEY })
+      savingRef.current = false
+      setSaving(false)
     }
   }
 

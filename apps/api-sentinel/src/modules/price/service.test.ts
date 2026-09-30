@@ -212,7 +212,7 @@ describe('current price', () => {
     })
   })
 
-  it('serves the recent price of a source at once while it refreshes', async () => {
+  it('waits for a fresh quote after cache expiry and shares it across callers', async () => {
     await withTestSetup(async () => {
       const block = heldReplies()
       let answer = true
@@ -222,13 +222,15 @@ describe('current price', () => {
 
       answer = false
       vi.advanceTimersByTime(61_000)
-      const stale = (await service.getCurrentBtcPrice()).expect('while refreshing')
-      expect(stale.value.toString()).toBe('83000')
-      expect(stale.lastKnown).toBe(false)
+      const first = service.getCurrentBtcPrice()
+      const second = service.getCurrentBtcPrice()
       expect(block.count()).toBe(1)
-
       block.release(() => prices.block('84000', NOW_SECONDS + 61))
-      await settle()
+      for (const pending of [first, second]) {
+        const fresh = (await pending).expect('refreshed')
+        expect(fresh.value.toString()).toBe('84000')
+        expect(fresh.lastKnown).toBe(false)
+      }
       expect((await service.getCurrentBtcPrice()).expect('refreshed').value.toString()).toBe('84000')
       expect(fetch.hosts()).toEqual([BLOCK, BLOCK])
     })
@@ -243,9 +245,6 @@ describe('current price', () => {
 
       available = false
       vi.advanceTimersByTime(61_000)
-      // The first call after the cache expires still serves the price while Block is asked again.
-      expect((await service.getCurrentBtcPrice()).expect('refreshing').lastKnown).toBe(false)
-      await settle()
       const last = (await service.getCurrentBtcPrice()).expect('last known')
       expect(last.value.toString()).toBe('83000')
       expect(last.lastKnown).toBe(true)
@@ -274,10 +273,10 @@ describe('current price', () => {
     })
   })
 
-  it('rejects a price older than 30 minutes and tries the next source', async () => {
+  it('rejects an expired self-hosted quote and tries the next source', async () => {
     await withTestSetup(async () => {
       const fetch = stubPrices({
-        [LOCAL_MEMPOOL]: () => prices.mempool(70000, NOW_SECONDS - 3600),
+        [LOCAL_MEMPOOL]: () => prices.mempool(70000, NOW_SECONDS - 2 * 3600),
         [BLOCK]: () => prices.block('83086.98'),
       })
       const price = (await priceService({}, 'http://mempool.local').service.getCurrentBtcPrice()).expect('fresh')
@@ -286,7 +285,7 @@ describe('current price', () => {
 
       const result = await priceService({ fallbacks: false }, 'http://mempool.local').service.getCurrentBtcPrice()
       expect(result.expectErr('too old').message).toBe(
-        'No BTC price available: Your mempool server (mempool.local) price is 60 minutes old',
+        'No BTC price available: Your mempool server (mempool.local) price is 120 minutes old',
       )
     })
   })
@@ -593,4 +592,155 @@ describe('daily price response validation', () => {
       expect(result.expectErr('invalid response').message).toContain('No price data returned')
     })
   })
+})
+
+describe('price refresh regressions', () => {
+  it('accepts hourly self-hosted prices throughout their update cycle, but expires them after a missed update', async () => {
+    await withTestSetup(async () => {
+      stubPrices({ [LOCAL_MEMPOOL]: () => prices.mempool(83000) })
+      const { service } = priceService({ fallbacks: false }, 'http://mempool.local')
+      for (const minutes of [0, 29, 30, 45, 59, 64]) {
+        vi.setSystemTime(NOW.getTime() + minutes * 60_000)
+        expect((await service.getCurrentBtcPrice()).expect(`minute ${minutes}`).value.toString()).toBe('83000')
+      }
+      vi.setSystemTime(NOW.getTime() + 65 * 60_000)
+      expect((await service.getCurrentBtcPrice()).isErr()).toBe(true)
+    })
+  })
+
+  it('includes HTTP cache age without depending on the local wall clock', async () => {
+    await withTestSetup(async () => {
+      vi.setSystemTime(NOW.getTime() + 45 * 60_000)
+      const fetch = stubPrices({
+        [BLOCK]: () =>
+          prices.block('70000', NOW_SECONDS - 31 * 60, {
+            date: new Date(NOW.getTime() - 2 * 60_000).toUTCString(),
+            age: '120',
+          }),
+        [MEMPOOL]: () => Response.json({ USD: 83000, time: NOW_SECONDS }, { headers: { date: NOW.toUTCString() } }),
+      })
+      expect((await priceService().service.getCurrentBtcPrice()).expect('fresh fallback').source).toBe('mempool.space')
+      expect(fetch.hosts()).toEqual([BLOCK, MEMPOOL])
+    })
+  })
+
+  it('refreshes a healthy fallback on every cache expiry despite a slow failing primary', async () => {
+    await withTestSetup(async () => {
+      vi.useFakeTimers({ now: NOW })
+      let calls = 0
+      let fallbackPrice = 83000
+      const fetch = stubPrices({
+        [BLOCK]: async () => {
+          if (calls++ > 0) {
+            await new Promise((resolve) => {
+              setTimeout(resolve, 4000)
+            })
+          }
+          return refused()
+        },
+        [MEMPOOL]: () => prices.mempool(fallbackPrice, Date.now() / 1000),
+      })
+      const { service } = priceService({}, undefined, { requestTimeoutMs: 10_000 })
+      await service.getCurrentBtcPrice()
+      for (let minute = 1; minute <= 29; minute++) {
+        await vi.advanceTimersByTimeAsync(minute * 60_000 - performance.now())
+        fallbackPrice++
+        const pending = service.getCurrentBtcPrice()
+        await vi.advanceTimersByTimeAsync(3000)
+        const price = (await pending).expect('refreshed fallback')
+        expect(price.value.toNumber()).toBe(fallbackPrice)
+        expect(price.lastKnown).toBe(false)
+      }
+      expect(fetch.hosts().filter((host) => host === MEMPOOL)).toHaveLength(30)
+      await vi.advanceTimersByTimeAsync(1000)
+    })
+  })
+
+  it('shares the short wait with later callers and still waits fully when verifying a new primary', async () => {
+    await withTestSetup(async () => {
+      vi.useFakeTimers({ now: NOW })
+      const fetch = stubPrices({
+        [BLOCK]: () => prices.block('83000'),
+        [COINBASE]: async () => {
+          await new Promise((resolve) => {
+            setTimeout(resolve, 4000)
+          })
+          return prices.coinbase('85000')
+        },
+      })
+      const { service, settings } = priceService({}, undefined, { requestTimeoutMs: 10_000 })
+      await service.getCurrentBtcPrice()
+      settings.source = 'coinbase'
+      service.settingsUpdated()
+      const first = service.getCurrentBtcPrice()
+      const checked = service.getCurrentBtcPrice({ verifyPrimary: true })
+      await vi.advanceTimersByTimeAsync(2000)
+      const second = service.getCurrentBtcPrice()
+      await vi.advanceTimersByTimeAsync(1000)
+      for (const pending of [first, second]) {
+        const fallback = (await pending).expect('fresh cached fallback')
+        expect(fallback.source).toBe('block')
+        expect(fallback.lastKnown).toBe(false)
+      }
+      await vi.advanceTimersByTimeAsync(1000)
+      expect((await checked).expect('verified primary').source).toBe('coinbase')
+      expect(fetch.hosts()).toEqual([BLOCK, COINBASE])
+    })
+  })
+
+  it('does not verify a now-failing source from its cache, or mark that cache current afterward', async () => {
+    await withTestSetup(async () => {
+      let available = true
+      const fetch = stubPrices({ [BLOCK]: () => (available ? prices.block('83000') : refused()) })
+      const { service } = priceService({ fallbacks: false })
+      await service.getCurrentBtcPrice()
+      available = false
+      expect((await service.getCurrentBtcPrice({ verifyPrimary: true })).expect('last known').lastKnown).toBe(true)
+      expect((await service.getCurrentBtcPrice()).expect('still last known').lastKnown).toBe(true)
+      expect(fetch.hosts()).toEqual([BLOCK, BLOCK])
+    })
+  })
+
+  it('does not start another source after the caller deadline', async () => {
+    await withTestSetup(async () => {
+      vi.useFakeTimers({ now: NOW })
+      const fetch = stubPrices({ [BLOCK]: never })
+      const { service } = priceService({}, undefined, { requestTimeoutMs: 100, lookupTimeoutMs: 10 })
+      const pending = service.getCurrentBtcPrice()
+      await vi.advanceTimersByTimeAsync(10)
+      expect((await pending).isErr()).toBe(true)
+      expect(fetch.hosts()).toEqual([BLOCK])
+      await vi.advanceTimersByTimeAsync(90)
+    })
+  })
+
+  it.each([
+    ['block', BLOCK, () => prices.block('83000', 9e12)],
+    ['mempool.space', MEMPOOL, () => prices.mempool(83000, 9e12)],
+    ['mempool.space', MEMPOOL, () => new Response('{"USD":1e400}')],
+    ['coingecko', COINGECKO, () => new Response('{"bitcoin":{"usd":1e400}}')],
+    ['block', BLOCK, () => prices.block('abc')],
+    ['block', BLOCK, () => prices.block('')],
+    ['block', BLOCK, () => prices.block('9'.repeat(400))],
+    ['block', BLOCK, () => prices.block(`0.${'0'.repeat(400)}1`)],
+    ['coinbase', COINBASE, () => prices.coinbase('abc')],
+  ] as const)(
+    'rejects malformed %s data, tries a fallback, and observes the failure cooldown',
+    async (source, host, reply) => {
+      await withTestSetup(async () => {
+        const fetch = stubPrices({
+          [LOCAL_MEMPOOL]: () => prices.mempool(84000),
+          [host]: reply,
+        })
+        const { service } = priceService({ source }, 'http://mempool.local')
+        for (let call = 0; call < 2; call++) {
+          const price = (await service.getCurrentBtcPrice()).expect('valid fallback')
+          expect(price.source).toBe('mempool')
+          expect(price.value.isFinite()).toBe(true)
+          expect(Number.isFinite(price.asOf.getTime())).toBe(true)
+        }
+        expect(fetch.hosts()).toEqual([host, LOCAL_MEMPOOL])
+      })
+    },
+  )
 })

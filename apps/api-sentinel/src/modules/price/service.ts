@@ -1,6 +1,6 @@
-import { parseUnknown } from '@hoseki/packages/result'
 import { Err, Ok, asyncFn } from '@hoseki/packages/result'
 import type { Result } from '@hoseki/packages/result'
+import { parseUnknown } from '@hoseki/packages/result/lib/parse'
 import { Decimal } from 'decimal.js'
 import type { Logger } from 'pino'
 import { z } from 'zod'
@@ -77,6 +77,11 @@ interface Failure {
   wait: boolean
 }
 
+interface PriceRequest {
+  startedAt: Moment
+  done: Promise<void>
+}
+
 class PriceRequestError extends Error {
   public readonly wait: boolean
 
@@ -93,9 +98,9 @@ const SOURCE_RETRY_MS = 30_000
 const REQUEST_TIMEOUT_MS = 10_000
 // However many sources stall, a caller gets an answer (the last known price or none) within this.
 const LOOKUP_TIMEOUT_MS = 15_000
-// With a recent price to fall back on, a caller waits only this long for a fresher one.
+// With a usable cached price, wait this long per source request before trying the next source.
 const LAST_KNOWN_WAIT_MS = 3_000
-// The oldest price shown. mempool's own price can already be several minutes old when fetched.
+// Public quotes expire after 30 minutes; a self-hosted mempool normally updates only hourly.
 const MAX_PRICE_AGE_MS = 30 * 60_000
 const PUBLIC_MEMPOOL_URL = 'https://mempool.space'
 
@@ -111,8 +116,12 @@ function ageOf(sample: Sample): number {
   return sample.ageAtFetch + sample.fetchedAt.elapsed()
 }
 
+function maxPriceAge(source: PriceSourceName): number {
+  return source === 'mempool' ? 65 * 60_000 : MAX_PRICE_AGE_MS
+}
+
 function isRecent(sample: Sample): boolean {
-  return ageOf(sample) < MAX_PRICE_AGE_MS
+  return ageOf(sample) < maxPriceAge(sample.source)
 }
 
 /** The useful part of a fetch failure: Node reports "fetch failed" and keeps the reason in `cause`. */
@@ -120,15 +129,15 @@ function describeFailure(error: Error): string {
   return error.cause instanceof Error ? `${error.message}: ${error.cause.message}` : error.message
 }
 
-const PositiveNumberSchema = z.number().positive()
-const PositiveDecimalStringSchema = z
+const PositiveNumberSchema = z.number().positive().finite()
+const DecimalStringSchema = z
   .string()
+  .trim()
   .regex(/^\d+(\.\d+)?$/)
-  .refine((amount) => new Decimal(amount).gt(0))
 const EpochSecondsSchema = z.number().int().positive()
 const MempoolPriceSchema = z.object({ USD: PositiveNumberSchema, time: EpochSecondsSchema.optional() })
 const BlockPriceSchema = z.object({
-  amount: PositiveDecimalStringSchema,
+  amount: DecimalStringSchema,
   base: z.literal('BTC'),
   currency: z.literal('USD'),
   last_updated_at_in_utc_epoch_seconds: z
@@ -138,14 +147,20 @@ const BlockPriceSchema = z.object({
     .optional(),
 })
 const CoinbasePriceSchema = z.object({
-  data: z.object({ amount: PositiveDecimalStringSchema, currency: z.literal('USD') }),
+  data: z.object({ amount: DecimalStringSchema, currency: z.literal('USD') }),
 })
 const CoinGeckoPriceSchema = z.object({
   bitcoin: z.object({ usd: PositiveNumberSchema, last_updated_at: EpochSecondsSchema.optional() }),
 })
 
-function quote(value: Decimal.Value, seconds: number | undefined): Quote {
-  return { value: new Decimal(value), asOf: seconds === undefined ? undefined : new Date(seconds * 1000) }
+function quote(value: Decimal.Value, seconds: number | undefined): Quote | null {
+  const amount = new Decimal(value)
+  const number = amount.toNumber()
+  const asOf = seconds === undefined ? undefined : new Date(seconds * 1000)
+  if (number <= 0 || !Number.isFinite(number) || (asOf && !Number.isFinite(asOf.getTime()))) {
+    return null
+  }
+  return { value: amount, asOf }
 }
 
 async function readMempoolPrice(response: Response): Promise<Quote | null> {
@@ -201,7 +216,7 @@ export class PriceService {
   private readonly lastKnownWaitMs: number
   private readonly latest = new Map<PriceSourceName, Sample>()
   private readonly failures = new Map<PriceSourceName, Failure>()
-  private readonly inflight = new Map<PriceSourceName, Promise<void>>()
+  private readonly inflight = new Map<PriceSourceName, PriceRequest>()
   private readonly settingsListeners = new Set<() => void>()
 
   public constructor(deps: {
@@ -285,8 +300,9 @@ export class PriceService {
     this.settingsListeners.clear()
   }
 
-  public getCurrentBtcPrice = asyncFn(async (): Promise<Result<BtcPrice, Error>> =>
-    this.lookup(performance.now() + this.lookupTimeoutMs),
+  public getCurrentBtcPrice = asyncFn(
+    async ({ verifyPrimary = false }: { verifyPrimary?: boolean } = {}): Promise<Result<BtcPrice, Error>> =>
+      this.lookup(performance.now() + this.lookupTimeoutMs, verifyPrimary),
   )
 
   private selectedSource(settings: SavedPriceSettings): PriceSource {
@@ -319,12 +335,12 @@ export class PriceService {
     }
   }
 
-  private async lookup(deadline: number): Promise<Result<BtcPrice, Error>> {
+  private async lookup(deadline: number, verifyPrimary: boolean): Promise<Result<BtcPrice, Error>> {
     for (;;) {
       const sources = this.planSources()
       const change = this.watchSettings()
       try {
-        const outcome = await this.walk(sources, deadline, change.changed)
+        const outcome = await this.walk(sources, deadline, change.changed, verifyPrimary)
         if (outcome !== 'settings changed') {
           return outcome
         }
@@ -339,39 +355,41 @@ export class PriceService {
     sources: PriceSource[],
     deadline: number,
     settingsChanged: Promise<void>,
+    verifyPrimary: boolean,
   ): Promise<Result<BtcPrice, Error> | 'settings changed'> {
     const errors: string[] = []
     const planned = sourceNames(sources)
-    const limit =
-      this.lastKnown(sources) === undefined ? deadline : Math.min(deadline, performance.now() + this.lastKnownWaitMs)
+    const hasLastKnown = this.lastKnown(sources) !== undefined
 
     for (const source of sources) {
       const sample = this.latest.get(source.name)
-      if (sample && sample.fetchedAt.elapsed() < CACHE_TTL_MS && isRecent(sample)) {
+      const failure = this.failures.get(source.name)
+      const checkingPrimary = verifyPrimary && source === sources[0]
+      if (!checkingPrimary && !failure && sample && sample.fetchedAt.elapsed() < CACHE_TTL_MS && isRecent(sample)) {
         return Ok(this.toPrice(sample, false))
       }
-      const failure = this.failures.get(source.name)
-      const failedSinceSample =
-        failure !== undefined && (sample === undefined || failure.failedAt.elapsed() < sample.fetchedAt.elapsed())
       if (failure?.wait === true && failure.failedAt.elapsed() < SOURCE_RETRY_MS) {
         errors.push(failure.error.message)
         continue
       }
-
-      const request = this.request(source)
-      // Serve the source's own recent price while it refreshes, rather than making the caller wait.
-      if (sample && isRecent(sample) && !failedSinceSample) {
-        return Ok(this.toPrice(sample, false))
-      }
-
-      const remaining = limit - performance.now()
-      if (remaining <= 0) {
+      if (performance.now() >= deadline) {
         errors.push(`${source.label} not tried in time`)
         break
       }
+
+      const request = this.request(source)
+      // Share the short wait across callers, but allow Settings to verify the primary fully.
+      const remaining = Math.min(
+        deadline - performance.now(),
+        hasLastKnown && !checkingPrimary ? this.lastKnownWaitMs - request.startedAt.elapsed() : Infinity,
+      )
+      if (remaining <= 0) {
+        errors.push(`${source.label} did not answer in time`)
+        continue
+      }
       let timer: ReturnType<typeof setTimeout> | undefined
       const outcome = await Promise.race([
-        request.then(() =>
+        request.done.then(() =>
           sourceNames(this.planSources()) === planned ? ('answered' as const) : ('settings changed' as const),
         ),
         settingsChanged.then(() => 'settings changed' as const),
@@ -388,7 +406,7 @@ export class PriceService {
       if (outcome === 'out of time') {
         // The request carries on and records its answer for the next caller.
         errors.push(`${source.label} did not answer in time`)
-        break
+        continue
       }
 
       const answered = this.latest.get(source.name)
@@ -420,12 +438,13 @@ export class PriceService {
   }
 
   /** At most one request per source is in flight; its answer is recorded whoever is still waiting. */
-  private async request(source: PriceSource): Promise<void> {
+  private request(source: PriceSource): PriceRequest {
     const running = this.inflight.get(source.name)
     if (running) {
       return running
     }
-    const started = this.fetchSample(source).then((result) => {
+    const startedAt = new Moment()
+    const done = this.fetchSample(source).then((result) => {
       if (result.isOk()) {
         this.latest.set(source.name, result.unwrap())
         this.failures.delete(source.name)
@@ -436,29 +455,30 @@ export class PriceService {
       }
       this.inflight.delete(source.name)
     })
-    this.inflight.set(source.name, started)
-    return started
+    const request = { startedAt, done }
+    this.inflight.set(source.name, request)
+    return request
   }
 
   private async fetchSample(source: PriceSource): Promise<Result<Sample, PriceRequestError>> {
-    const signal = AbortSignal.timeout(this.requestTimeoutMs)
+    const controller = new AbortController()
+    let timer: ReturnType<typeof setTimeout> | undefined
     const timedOut = new Promise<never>((_resolve, reject) => {
-      signal.addEventListener(
-        'abort',
-        () => {
-          reject(new PriceRequestError(`no response within ${this.requestTimeoutMs / 1000} seconds`, true))
-        },
-        { once: true },
-      )
+      timer = setTimeout(() => {
+        controller.abort()
+        reject(new PriceRequestError(`no response within ${this.requestTimeoutMs / 1000} seconds`, true))
+      }, this.requestTimeoutMs)
     })
     try {
       // The signal also aborts a stalled body, but a reader's `.catch(() => null)` would then report it as
       // a malformed answer; the race reports it as a timeout.
-      return await Promise.race([this.read(source, signal), timedOut])
+      return await Promise.race([this.read(source, controller.signal), timedOut])
     } catch (error) {
       const wait = error instanceof PriceRequestError && error.wait
       const reason = error instanceof Error ? describeFailure(error) : String(error)
       return Err(new PriceRequestError(`${source.label} price request failed: ${reason}`, wait))
+    } finally {
+      clearTimeout(timer)
     }
   }
 
@@ -471,7 +491,10 @@ export class PriceService {
     }
 
     // Age the price by the source's own clock where it sends one, so a wrong local clock does not reject it.
+    const fetchedAt = new Moment()
     const header = Date.parse(response.headers.get('date') ?? '')
+    const ageHeader = response.headers.get('age')?.split(',')[0]?.trim() ?? ''
+    const cacheAge = /^\d+$/.test(ageHeader) ? Number(ageHeader) * 1000 : 0
     const sourceNow = Number.isNaN(header) ? Date.now() : header
     const quoted = await source.read(response)
     if (!quoted) {
@@ -479,11 +502,12 @@ export class PriceService {
     }
 
     // A timestamp ahead of the source's clock must not make a price look newer than it is.
-    const ageAtFetch = Math.max(0, sourceNow - (quoted.asOf?.getTime() ?? sourceNow))
-    if (ageAtFetch >= MAX_PRICE_AGE_MS) {
+    const quoteAge = Math.max(0, sourceNow - (quoted.asOf?.getTime() ?? sourceNow))
+    const ageAtFetch = Number.isNaN(header) ? Math.max(quoteAge, cacheAge) : quoteAge + cacheAge
+    if (ageAtFetch + fetchedAt.elapsed() >= maxPriceAge(source.name)) {
       const minutes = Math.round(ageAtFetch / 60_000)
       return Err(new PriceRequestError(`${source.label} price is ${minutes} minutes old`, true))
     }
-    return Ok({ value: quoted.value, source: source.name, ageAtFetch, fetchedAt: new Moment() })
+    return Ok({ value: quoted.value, source: source.name, ageAtFetch, fetchedAt })
   }
 }

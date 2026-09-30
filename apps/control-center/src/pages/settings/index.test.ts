@@ -579,3 +579,70 @@ it('keeps the controls usable and focused, and ignores changes, while a save is 
     expect(select.value).toBe('coinbase')
   })
 })
+
+it('keeps a successful save when an older options refresh finishes afterward', async () => {
+  await withTestSetup(async () => {
+    const server = new PriceServer()
+    server.afterSave.set('coinbase', price('coinbase'))
+    const select = await renderPriceSettings()
+    await idle()
+    const implementation = fetchMock.getMockImplementation()
+    if (!implementation) {
+      throw new Error('Missing price server')
+    }
+    let release = (): void => undefined
+    let captured = false
+    fetchMock.mockImplementation(async (input, init) => {
+      const response = await implementation(input, init)
+      if (parseUnknown(z.string(), input).unwrapOr('').includes('/settings.priceSource') && !captured) {
+        captured = true
+        await new Promise<void>((resolve) => {
+          release = resolve
+        })
+      }
+      return response
+    })
+    await act(async () => {
+      void queryClient.refetchQueries({ queryKey: ['price-source'] })
+    })
+    await vi.waitFor(() => {
+      expect(captured).toBe(true)
+    })
+    await choose(select, 'coinbase')
+    await act(async () => {
+      release()
+      await new Promise((resolve) => {
+        setTimeout(resolve, 20)
+      })
+    })
+    expect(select.value).toBe('coinbase')
+    expect(server.options.selected).toBe('coinbase')
+    expect(container.textContent).toContain('Price settings saved')
+  })
+})
+
+it('reconciles a committed setting after its save response is lost', async () => {
+  await withTestSetup(async () => {
+    const server = new PriceServer()
+    server.afterSave.set('coinbase', price('coinbase'))
+    const select = await renderPriceSettings()
+    await idle()
+    const implementation = fetchMock.getMockImplementation()
+    if (!implementation) {
+      throw new Error('Missing price server')
+    }
+    fetchMock.mockImplementation(async (input, init) => {
+      const response = await implementation(input, init)
+      if (parseUnknown(z.string(), input).unwrapOr('').endsWith('/settings.setPriceSettings')) {
+        throw new TypeError('Save response lost')
+      }
+      return response
+    })
+    await pick(select, 'coinbase')
+    await idle()
+    expect(toast.error).toHaveBeenCalledWith('Could not save the price source. Please try again.')
+    expect(server.options.selected).toBe('coinbase')
+    expect(select.value).toBe('coinbase')
+    expect(container.textContent).not.toContain('Price settings saved')
+  })
+})
