@@ -552,7 +552,8 @@ Bitcoin Control Center is local-first, but it still communicates with infrastruc
 
 - The Electrum server receives blockchain queries related to tracked accounts.
 - Exchange integrations send requests to the selected exchange's API.
-- Market and transaction data use `MEMPOOL_API_URL`, which defaults to the public mempool.space instance.
+- The current BTC/USD price comes from the source chosen in Settings: by default a self-hosted mempool at `MEMPOOL_API_URL` when one is configured, otherwise Block (`pricing.bitcoin.block.xyz`). Unless fallbacks are turned off, the other sources are tried in the order Block, mempool.space, Coinbase and CoinGecko while it is unavailable.
+- Statement prices and transaction data use `MEMPOOL_API_URL`, which defaults to the public mempool.space instance.
 - Desktop and StartOS distributions may route supported connections through their packaged networking configuration.
 
 Additional safeguards:
