@@ -429,6 +429,11 @@ export function ElectrumSettings(): JSX.Element {
     if (!draft || actionsDisabled) {
       return
     }
+    // Another window may have deleted the connection while a confirmation was open.
+    if (draft.id !== undefined && query.data?.profiles.some((item) => item.id === draft.id) !== true) {
+      toast.error('This connection was deleted in another window.')
+      return
+    }
     setBusy(operation)
     setTestResult(null)
     const version = formVersion.current
@@ -930,7 +935,14 @@ export function ElectrumSettings(): JSX.Element {
               }}
               sx={
                 torStarting
-                  ? { '.chakra-switch__track': { animation: `${torStartingFade} 3s ease-in-out infinite` } }
+                  ? {
+                      // The pale resting color keeps "starting" distinct from "ready" when the system
+                      // asks for reduced motion and the fade doesn't run.
+                      '.chakra-switch__track[data-checked]': {
+                        bg: torPendingGreen,
+                        animation: `${torStartingFade} 3s ease-in-out infinite`,
+                      },
+                    }
                   : torFailed
                     ? { '.chakra-switch__track[data-checked]': { bg: torFailedRed } }
                     : torWaiting

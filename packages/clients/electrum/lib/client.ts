@@ -2,7 +2,7 @@ import { parseUnknown } from '@hoseki/packages/result'
 import { AsyncResult, Err, Ok, type Result, tryBlockAsync } from '@hoseki/packages/result'
 // Re-import z for the raw string overload
 import { z } from 'zod'
-import { type ElectrumConnectionConfig, ElectrumServerError, ElectrumTransport } from './protocol'
+import { type ElectrumConnectionConfig, ElectrumServerError, ElectrumTimeoutError, ElectrumTransport } from './protocol'
 import {
   BlockHeaderHexSchema,
   type ElectrumVerboseTransaction,
@@ -81,9 +81,16 @@ export class ElectrumClient {
           return Err(new Error('Connection closed'))
         }
         yield* this.transport.connect().try()
-        const version = yield* this.serverVersion().try()
+        const handshake = await this.serverVersion()
+        if (handshake.isErr()) {
+          // The server refused the handshake or never answered it. Close the half-open connection,
+          // and report a failed connection rather than a server answer, so a status check never
+          // counts a refused handshake as the server being reachable.
+          this.dropConnection()
+          return Err(new Error(`Electrum handshake failed: ${handshake.unwrapErr().message}`))
+        }
         this.negotiated = true
-        return Ok(version)
+        return Ok(handshake.unwrap())
       }.bind(this),
     )
     const recorded = inner.then<Result<ServerVersion, Error>, never>((result) => {
@@ -229,10 +236,17 @@ export class ElectrumClient {
     const answered = (result: Result<unknown, Error>): boolean =>
       result.isOk() || result.unwrapErr() instanceof ElectrumServerError
     const wasOpen = this.transport.isConnected()
-    if (answered(await this.call('server.ping', [], z.unknown()))) {
+    const receivedBefore = this.transport.dataReceived
+    const first = await this.call('server.ping', [], z.unknown())
+    if (answered(first)) {
       return true
     }
-    if (!wasOpen || generation !== this.generation) {
+    // A ping that timed out while other answers kept arriving means a busy server, not a missing one.
+    if (first.unwrapErr() instanceof ElectrumTimeoutError && this.transport.dataReceived !== receivedBefore) {
+      return true
+    }
+    // Retry only when the first attempt dropped a connection that had gone silent.
+    if (!wasOpen || this.transport.isConnected() || generation !== this.generation) {
       return false
     }
     return answered(await this.call('server.ping', [], z.unknown()))
@@ -255,21 +269,25 @@ export class ElectrumClient {
           yield* this.connect().try()
         }
         const connection = this.transport.connectionNumber
+        const receivedBefore = this.transport.dataReceived
         const requested = await this.transport.request(method, params)
         if (requested.isErr()) {
-          // A timeout or failure on the wire means the connection is unusable (often a silent one
-          // after sleep or a network change, which never closes by itself). Drop it so the next
-          // request reconnects, unless a newer connection has already replaced it. A server's
-          // error answer leaves the connection alone, and so do requests failing because it already
-          // closed, so they can't cancel a fresh connection another request has started opening.
-          if (
-            !(requested.unwrapErr() instanceof ElectrumServerError) &&
-            this.transport.isConnected() &&
-            this.transport.connectionNumber === connection
-          ) {
+          const error = requested.unwrapErr()
+          // Drop a connection only when it has gone silent (often after sleep or a network change,
+          // when it never closes by itself), so the next request reconnects:
+          // - a timeout counts only if nothing at all arrived since this request was sent; a busy
+          //   server that is still answering other requests keeps its connection and their requests;
+          // - a socket or write error counts straight away;
+          // - a server's error answer, or a connection that already closed, leaves things alone, so
+          //   a late failure can't cancel a fresh connection another request has started opening.
+          const silent =
+            error instanceof ElectrumTimeoutError
+              ? this.transport.dataReceived === receivedBefore
+              : !(error instanceof ElectrumServerError)
+          if (silent && this.transport.isConnected() && this.transport.connectionNumber === connection) {
             this.dropConnection()
           }
-          return Err(requested.unwrapErr())
+          return Err(error)
         }
         const raw = requested.unwrap()
         const parsed = yield* parseUnknown(schema, raw)

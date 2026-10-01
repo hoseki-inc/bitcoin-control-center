@@ -17,7 +17,7 @@ let env: Env
 const logger = pino({ level: 'silent' })
 const contexts = new Set<AppContext>()
 interface ElectrumFixture {
-  config: { host: string; port: number; protocol: 'tcp' }
+  config: { host: string; port: number; protocol: 'tcp'; torEnabled: boolean }
   methods: string[]
   sockets: Set<Socket>
   holdHeaders: () => void
@@ -82,6 +82,7 @@ async function startElectrum(height: number, holdVersion = false, rejectVersion 
     host: '127.0.0.1',
     port: parseUnknown(z.object({ port: z.number() }), server.address()).expect('TCP listener').port,
     protocol: 'tcp' as const,
+    torEnabled: false,
   }
   const fixture: ElectrumFixture = {
     config,
@@ -374,7 +375,7 @@ describe('Tor connection policy', () => {
       await expect(
         appRouter
           .createCaller({ app: ctx })
-          .settings.testElectrum({ host: 'example.onion', port: 50001, protocol: 'tcp' }),
+          .settings.testElectrum({ host: 'example.onion', port: 50001, protocol: 'tcp', torEnabled: false }),
       ).rejects.toThrow('Onion addresses require Tor')
     })
   })
@@ -726,7 +727,7 @@ describe('desktop saved connections', () => {
     await withTestSetup(async () => {
       const ctx = await context(true, true)
       const api = appRouter.createCaller({ app: ctx }).settings.connectionProfiles
-      const connection = { host: 'unused.example', port: 50002, protocol: 'ssl' as const }
+      const connection = { host: 'unused.example', port: 50002, protocol: 'ssl' as const, torEnabled: false }
       const results = await Promise.allSettled(
         Array.from({ length: 8 }, async (_, index) => api.create({ ...connection, nickname: `Connection ${index}` })),
       )
@@ -744,10 +745,16 @@ describe('desktop saved connections', () => {
       await expect(api.create({ ...config, nickname: '   ' })).rejects.toThrow('nickname')
       await expect(api.create({ ...config, nickname: 'x'.repeat(81) })).rejects.toThrow('80')
       await expect(
-        api.create({ host: 'ssl://node.example:50002', port: 50002, protocol: 'ssl', nickname: 'Invalid' }),
+        api.create({
+          host: 'ssl://node.example:50002',
+          port: 50002,
+          protocol: 'ssl',
+          torEnabled: false,
+          nickname: 'Invalid',
+        }),
       ).rejects.toThrow('host')
       await expect(
-        api.create({ host: 'node.onion', port: 50001, protocol: 'tcp', nickname: 'Invalid route' }),
+        api.create({ host: 'node.onion', port: 50001, protocol: 'tcp', torEnabled: false, nickname: 'Invalid route' }),
       ).rejects.toThrow('require Tor')
       const saved = await api.create({
         host: ' NODE.ONION. ',
@@ -1070,6 +1077,9 @@ describe('saved connection safeguards', () => {
       previous.database.db.exec('ALTER TABLE desktop_connection_profiles RENAME TO unreadable_profiles')
       const ctx = await restart(previous, false)
       expect(ctx.connectionProfiles).toBeDefined()
+      expect(ctx.electrumConfig).toEqual(
+        expect.objectContaining({ host: initialFixture().config.host, port: initialFixture().config.port }),
+      )
     })
   })
 
@@ -1143,6 +1153,14 @@ describe('saved connection safeguards', () => {
           .list()
           .find((profile) => profile.id === viaTor.id)?.torEnabled,
       ).toBe(true)
+      await expect(
+        // @ts-expect-error -- a new connection without a Tor setting must be refused, never saved as direct
+        api.create({ ...withoutTor, nickname: 'No Tor setting' }),
+      ).rejects.toThrow('torEnabled')
+      await expect(
+        // @ts-expect-error -- a test without a Tor setting must be refused, never run direct
+        appRouter.createCaller({ app: ctx }).settings.testElectrum(withoutTor),
+      ).rejects.toThrow('torEnabled')
     })
   })
 
@@ -1219,6 +1237,42 @@ describe('saved connection safeguards', () => {
       const logged = JSON.stringify(info.mock.calls)
       expect(logged).not.toContain(next.config.host)
       expect(logged).not.toContain(String(next.config.port))
+    })
+  })
+
+  it('routes a connection by the Tor setting sent with it, and saves that setting only after success', async () => {
+    await withTestSetup(async () => {
+      const { tor, connections } = await refusingTor()
+      const ctx = (await createAppContext(logger, { tor, connectionProfiles: true })).unwrap()
+      contexts.add(ctx)
+      const api = appRouter.createCaller({ app: ctx }).settings.connectionProfiles
+      const active = (await api.list()).activeId
+      const remote = await startElectrum(200)
+
+      // Tor switched on for a saved direct connection: only Tor is used, and a failure changes nothing.
+      const direct = await api.create({ ...remote.config, nickname: 'Direct' })
+      await expect(
+        api.connect({ id: direct.id, revision: direct.revision, connection: { ...remote.config, torEnabled: true } }),
+      ).rejects.toThrow('Socks5')
+      expect(connections.length).toBeGreaterThan(0)
+      expect(remote.methods).toEqual([])
+      const afterTor = await api.list()
+      expect(afterTor.activeId).toBe(active)
+      expect(afterTor.profiles.find((profile) => profile.id === direct.id)?.torEnabled).toBe(false)
+
+      // Tor switched off for a saved Tor connection: it connects directly and is saved as direct.
+      const viaTor = await api.create({ ...remote.config, torEnabled: true, nickname: 'Via Tor' })
+      const before = connections.length
+      await api.connect({
+        id: viaTor.id,
+        revision: viaTor.revision,
+        connection: { ...remote.config, torEnabled: false },
+      })
+      expect(connections).toHaveLength(before)
+      expect(remote.methods).toContain('server.version')
+      const afterDirect = await api.list()
+      expect(afterDirect.activeId).toBe(viaTor.id)
+      expect(afterDirect.profiles.find((profile) => profile.id === viaTor.id)?.torEnabled).toBe(false)
     })
   })
 })

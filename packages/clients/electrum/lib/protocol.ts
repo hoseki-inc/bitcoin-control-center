@@ -121,15 +121,22 @@ interface PendingRequest {
   timer: ReturnType<typeof setTimeout>
 }
 
+/** An error the server answered with, which still shows the server is reachable. */
+export class ElectrumServerError extends Error {
+  public override readonly name = 'ElectrumServerError'
+}
+
+/** A request the server didn't answer in time. */
+export class ElectrumTimeoutError extends Error {
+  public override readonly name = 'ElectrumTimeoutError'
+}
+
 /**
  * Low-level Electrum JSON-RPC transport over TCP or SSL.
  *
  * Handles connection management, request/response correlation via JSON-RPC IDs,
  * and newline-delimited JSON framing.
  */
-/** An error the server answered with, which still shows the server is reachable. */
-export class ElectrumServerError extends Error {}
-
 export class ElectrumTransport {
   private readonly config: Required<Omit<ElectrumConnectionConfig, 'proxy' | 'resolveProxy' | 'tls'>> & {
     proxy?: SocksProxyConfig
@@ -143,6 +150,8 @@ export class ElectrumTransport {
   private connected = false
   // Counts connections, so a failure on an old connection never drops a newer one.
   private connectionCount = 0
+  // Counts incoming data, so a timeout can tell a silent connection from a busy one.
+  private receivedCount = 0
   private cancelConnect: (() => void) | null = null
 
   public constructor(config: ElectrumConnectionConfig) {
@@ -160,6 +169,11 @@ export class ElectrumTransport {
   /** Identifies the current connection; it changes every time a new one opens. */
   public get connectionNumber(): number {
     return this.connectionCount
+  }
+
+  /** Changes whenever data arrives, so callers can tell whether a connection has gone silent. */
+  public get dataReceived(): number {
+    return this.receivedCount
   }
 
   public connect(): AsyncResult<void, Error> {
@@ -314,7 +328,7 @@ export class ElectrumTransport {
       new Promise<Result<unknown, Error>>((resolve) => {
         const timer = setTimeout(() => {
           this.pending.delete(id)
-          resolve(Err(new Error(`Request timeout after ${this.config.requestTimeout}ms for ${method}`)))
+          resolve(Err(new ElectrumTimeoutError(`Request timeout after ${this.config.requestTimeout}ms for ${method}`)))
         }, this.config.requestTimeout)
 
         this.pending.set(id, { resolve, timer })
@@ -350,6 +364,7 @@ export class ElectrumTransport {
   }
 
   private onData(data: string): void {
+    this.receivedCount += 1
     this.buffer += data
     if (this.buffer.length > MAX_ELECTRUM_RESPONSE_BYTES) {
       const err = new Error(`Electrum response exceeded ${MAX_ELECTRUM_RESPONSE_BYTES} bytes`)

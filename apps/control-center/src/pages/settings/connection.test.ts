@@ -1501,4 +1501,25 @@ describe('desktop saved connections', () => {
       expect(button('Test Connection').disabled).toBe(true)
     })
   })
+
+  it('stops a confirmed direct test for a connection another window deleted meanwhile', async () => {
+    await withTestSetup(async () => {
+      const { home } = homeAndAway()
+      const away = profiles[1]
+      assert.ok(away, 'Expected Away')
+      away.torEnabled = true
+      await render()
+      await click(row('Away'))
+      await click(torSwitch())
+      await click(button('Test Connection'))
+      const confirm = dialogButton('Connect without Tor')
+      assert.ok(confirm, 'Expected the confirmation dialog')
+      profiles = [home]
+      await refetchConnections()
+      await waitForText('This connection was deleted in another window')
+      await click(confirm)
+      await waitForToast('error')
+      expect(requestsTo('testElectrum')).toEqual([])
+    })
+  })
 })

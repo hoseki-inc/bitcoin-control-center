@@ -2040,7 +2040,8 @@ const connectionDetailsInput = z.object({
   host: z.string(),
   port: z.number().int().min(1).max(65_535),
   protocol: z.enum(['tcp', 'ssl']),
-  torEnabled: z.boolean().default(false),
+  // Required: a missing Tor setting must never default to direct for a saved connection.
+  torEnabled: z.boolean(),
 })
 const profileReferenceInput = z.object({ id: z.string().uuid(), revision: z.number().int().positive() })
 const nicknameInput = z
@@ -2101,12 +2102,7 @@ const connectionProfilesRouter = t.router({
   }),
 
   connect: desktopConnectionProcedure
-    // A missing Tor setting must never default to direct for a connection that is about to be saved.
-    .input(
-      profileReferenceInput.extend({
-        connection: connectionDetailsInput.extend({ torEnabled: z.boolean() }).optional(),
-      }),
-    )
+    .input(profileReferenceInput.extend({ connection: connectionDetailsInput.optional() }))
     .mutation(async ({ ctx, input }) => {
       const result = await ctx.app.connectProfile(
         input,
@@ -2207,7 +2203,8 @@ const settingsRouter = t.router({
         host: z.string(),
         port: z.number().int().min(1).max(65_535),
         protocol: z.enum(['tcp', 'ssl']),
-        torEnabled: z.boolean().default(false),
+        // Required, so a test never runs direct just because the Tor setting was left out.
+        torEnabled: z.boolean(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
