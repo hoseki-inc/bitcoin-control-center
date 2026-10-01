@@ -10,7 +10,7 @@ permissions:
 cache-mode: none
 
 concurrency:
-  group: startos-draft-release
+  group: release-3-create-draft-release
   cancel-in-progress: false
 
 jobs:

@@ -10,7 +10,7 @@ permissions:
 cache-mode: none
 
 concurrency:
-  group: startos-candidate-${{ github.ref }}
+  group: release-2-build-candidates-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

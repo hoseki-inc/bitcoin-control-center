@@ -435,11 +435,11 @@ See the [StartOS package reference](start9/README.md) for service configuration.
 
 GitHub Actions handles version preparation, builds, verification, checksums, and draft-release assembly:
 
-| Workflow                                                                        | Result                                                                                                                       |
-| ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| [Release 1 - Prepare version](.github/workflows/prepare-startos-release.yml)    | Choose a release type; opens a version PR with a required release-notes placeholder.                                         |
-| [Release 2 - Build candidates](.github/workflows/startos-candidate.yml)         | Builds StartOS, Mac ARM64, and Windows x64 test packages from one commit; retains Actions artifacts for 14 days.             |
-| [Release 3 - Create draft release](.github/workflows/startos-draft-release.yml) | Verifies and builds all three platforms, then creates a draft GitHub Release with installers, build metadata, and checksums. |
+| Workflow                                                                                 | Result                                                                                                                       |
+| ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| [Release 1 - Prepare version](.github/workflows/release-1-prepare-version.yml)           | Choose a release type; opens a version PR with a required release-notes placeholder.                                         |
+| [Release 2 - Build candidates](.github/workflows/release-2-build-candidates.yml)         | Builds StartOS, Mac ARM64, and Windows x64 test packages from one commit; retains Actions artifacts for 14 days.             |
+| [Release 3 - Create draft release](.github/workflows/release-3-create-draft-release.yml) | Verifies and builds all three platforms, then creates a draft GitHub Release with installers, build metadata, and checksums. |
 
 Version preparation and draft creation run from the default branch. Replace the generated release notes before merging the version PR, and review the draft before publishing. Nothing publishes to a StartOS registry. Without the `STARTOS_DEV_KEY` secret, StartOS packages are signed with a temporary key suitable only for clean-install testing.
 

@@ -19,7 +19,7 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: prepare-startos-release
+  group: release-1-prepare-version
   cancel-in-progress: false
 
 jobs:
