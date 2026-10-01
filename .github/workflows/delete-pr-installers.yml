@@ -1,0 +1,37 @@
+name: Delete pull request installers
+
+# Desktop installers built for a pull request are only for reviewing it, so they're deleted
+# once it closes, merged or not. Builds from main keep their 14-day retention.
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  actions: write
+
+jobs:
+  delete:
+    name: Delete this pull request's desktop installers
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Delete desktop installer artifacts from this branch's pull request runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          # Branch names are untrusted text, so they reach the shell only through the environment.
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          deleted=0
+          runs="$(gh api --method GET --paginate "repos/$REPOSITORY/actions/runs" \
+            -f event=pull_request -f branch="$BRANCH" -f per_page=100 --jq '.workflow_runs[].id')"
+          for run in $runs; do
+            artifacts="$(gh api --method GET --paginate "repos/$REPOSITORY/actions/runs/$run/artifacts" \
+              -f per_page=100 --jq '.artifacts[] | select(.name | startswith("desktop-")) | .id')"
+            for artifact in $artifacts; do
+              gh api --method DELETE "repos/$REPOSITORY/actions/artifacts/$artifact"
+              deleted=$((deleted + 1))
+            done
+          done
+          echo "Deleted $deleted desktop installer artifacts."

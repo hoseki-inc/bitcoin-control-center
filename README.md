@@ -476,7 +476,7 @@ The build script:
 
 Installers are named `Bitcoin-Control-Center-<release-tag>-<platform>-<arch>` and carry the shared release version and source commit in their metadata; `desktop/package.json` keeps the placeholder `0.0.0-dev`, which the build overrides without editing, so development runs and unofficial builds never look like a release. Builds from uncommitted changes are marked dirty, and CI rejects them.
 
-The [desktop build workflow](.github/workflows/desktop-runtime.yml) builds both installers on pull requests and pushes to `main`, then smoke-tests the packaged runtime (SQLite, backend startup, frontend assets, saved connections, and the bundled Tor binary). It does not replace installing the DMG/EXE, exercising hardware wallets, or testing upgrades with real data.
+The [desktop build workflow](.github/workflows/desktop-runtime.yml) builds both installers on pull requests and pushes to `main`, then smoke-tests the packaged runtime (SQLite, backend startup, frontend assets, saved connections, and the bundled Tor binary). Pull request installers are downloadable from the workflow run and are deleted when the pull request closes; builds from `main` are kept for 14 days. The workflow does not replace installing the DMG/EXE, exercising hardware wallets, or testing upgrades with real data.
 
 These are review installers: macOS is ad-hoc signed without notarization, and Windows has no publisher signature. Developer ID/notarization, Windows signing, and automatic updates are separate release work.
 
