@@ -218,11 +218,11 @@ describe('ElectrumClient concurrent reconnect', () => {
       })
       expect(client.isConnecting()).toBe(false)
       // The attempt took a while: move the clock on, so timing from its start would allow another.
-      vi.useFakeTimers({ toFake: ['Date'] })
+      const started = performance.now()
+      const clock = vi.spyOn(performance, 'now').mockReturnValue(started + 50)
       onTestFinished(() => {
-        vi.useRealTimers()
+        clock.mockRestore()
       })
-      vi.setSystemTime(Date.now() + 50)
       finishAttempt()
       await new Promise((resolve) => {
         setTimeout(resolve, 0)
@@ -385,13 +385,13 @@ describe('managed connection prerequisite', () => {
   })
 })
 
-describe('status checks on a connection that goes silent', () => {
-  it('drops a connection that stops answering, so the next check reconnects and uses the answer', async () => {
+describe('connections that go silent or answer with errors', () => {
+  type Mode = 'answer' | 'silent' | 'error'
+  async function serverWith(mode: (method: string, connection: number) => Mode): Promise<net.Socket[]> {
     const sockets: net.Socket[] = []
     const server = net.createServer((socket) => {
       sockets.push(socket)
-      // The first connection goes silent after the handshake, like a laptop that slept; new ones work.
-      const silent = sockets.length === 1
+      const connection = sockets.length - 1
       socket.setEncoding('utf8')
       socket.on('data', (chunk: string) => {
         for (const line of chunk.split('\n').filter(Boolean)) {
@@ -400,11 +400,19 @@ describe('status checks on a connection that goes silent', () => {
             z.object({ id: z.number(), method: z.string() }),
             JSON.parse(line) as unknown,
           ).expect('valid JSON-RPC test request')
-          if (silent && req.method !== 'server.version') {
+          const answer = req.method === 'server.version' ? 'answer' : mode(req.method, connection)
+          if (answer === 'silent') {
             continue
           }
-          const result = req.method === 'server.version' ? ['MockElectrum 1.0', '1.4'] : null
-          socket.write(`${JSON.stringify({ jsonrpc: '2.0', id: req.id, result })}\n`)
+          const body =
+            answer === 'error'
+              ? { jsonrpc: '2.0', id: req.id, error: { code: -32601, message: 'unknown method' } }
+              : {
+                  jsonrpc: '2.0',
+                  id: req.id,
+                  result: req.method === 'server.version' ? ['MockElectrum 1.0', '1.4'] : [],
+                }
+          socket.write(`${JSON.stringify(body)}\n`)
         }
       })
     })
@@ -421,20 +429,80 @@ describe('status checks on a connection that goes silent', () => {
         })
       })
     })
-    const port = parseUnknown(z.object({ port: z.number() }), server.address()).expect('TCP listener').port
-    const client = new ElectrumClient({ host: '127.0.0.1', port, protocol: 'tcp', requestTimeout: 200 })
-    expect((await client.connect()).isOk()).toBe(true)
-    expect(client.isReachable()).toBe(true)
+    serverPort = parseUnknown(z.object({ port: z.number() }), server.address()).expect('TCP listener').port
+    return sockets
+  }
+  let serverPort = 0
+  // The first connection goes silent after the handshake, like a laptop that slept; new ones work.
+  const firstGoesSilent = (_method: string, connection: number): Mode => (connection === 0 ? 'silent' : 'answer')
 
+  it('retries a status check on a fresh connection when the open one has gone silent', async () => {
+    const sockets = await serverWith(firstGoesSilent)
+    const client = new ElectrumClient({ host: '127.0.0.1', port: serverPort, protocol: 'tcp', requestTimeout: 200 })
+    expect((await client.connect()).isOk()).toBe(true)
+    client.checkReachable(0)
+    await vi.waitFor(() => {
+      expect(sockets).toHaveLength(2)
+    })
+    await vi.waitFor(() => {
+      expect(client.isReachable()).toBe(true)
+    })
+    client.disconnect()
+  })
+
+  it('reports a server that stops answering as unreachable', async () => {
+    const sockets = await serverWith(() => 'silent')
+    const client = new ElectrumClient({ host: '127.0.0.1', port: serverPort, protocol: 'tcp', requestTimeout: 200 })
+    expect((await client.connect()).isOk()).toBe(true)
     client.checkReachable(0)
     await vi.waitFor(() => {
       expect(client.isReachable()).toBe(false)
     })
-    client.checkReachable(0)
-    await vi.waitFor(() => {
-      expect(client.isReachable()).toBe(true)
-    })
+    expect(sockets.length).toBeGreaterThan(1)
+    client.disconnect()
+  })
+
+  it('replaces a silent connection after a data request times out', async () => {
+    const sockets = await serverWith(firstGoesSilent)
+    const client = new ElectrumClient({ host: '127.0.0.1', port: serverPort, protocol: 'tcp', requestTimeout: 150 })
+    expect((await client.connect()).isOk()).toBe(true)
+    expect((await client.getHistory('a'.repeat(64))).isErr()).toBe(true)
+    expect((await client.getHistory('a'.repeat(64))).isOk()).toBe(true)
     expect(sockets).toHaveLength(2)
+    client.disconnect()
+  })
+
+  it('treats an error answer as a reachable server and keeps the connection', async () => {
+    const sockets = await serverWith((method) => (method === 'server.ping' ? 'error' : 'answer'))
+    const client = new ElectrumClient({ host: '127.0.0.1', port: serverPort, protocol: 'tcp' })
+    expect((await client.connect()).isOk()).toBe(true)
+    client.checkReachable(0)
+    await new Promise((resolve) => {
+      setTimeout(resolve, 100)
+    })
+    expect(client.isReachable()).toBe(true)
+    expect((await client.getHistory('a'.repeat(64))).isOk()).toBe(true)
+    expect(sockets).toHaveLength(1)
+    client.disconnect()
+  })
+
+  it('keeps checking after the system clock moves backwards', async () => {
+    const sockets = await serverWith(() => 'answer')
+    const client = new ElectrumClient({ host: '127.0.0.1', port: serverPort, protocol: 'tcp' })
+    expect((await client.connect()).isOk()).toBe(true)
+    vi.useFakeTimers({ toFake: ['Date'] })
+    onTestFinished(() => {
+      vi.useRealTimers()
+    })
+    vi.setSystemTime(Date.now() - 60 * 60 * 1000)
+    sockets[0]?.destroy()
+    await vi.waitFor(() => {
+      expect(client.isConnected()).toBe(false)
+    })
+    client.checkReachable(30_000)
+    await vi.waitFor(() => {
+      expect(sockets).toHaveLength(2)
+    })
     client.disconnect()
   })
 })

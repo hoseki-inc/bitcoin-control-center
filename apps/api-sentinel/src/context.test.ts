@@ -6,7 +6,7 @@ import { parseUnknown } from '@hoseki/packages/result'
 import pino from 'pino'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { z } from 'zod'
-import { type AppContext, createAppContext } from './context'
+import { type AppContext, type AppContextOptions, createAppContext } from './context'
 import * as environment from './env'
 import type { Env } from './env'
 import type { ConnectionProfileStore } from './modules/connection_profiles/store'
@@ -1025,6 +1025,44 @@ describe('saved connection startup', () => {
   })
 })
 
+interface RefusingTor {
+  tor: NonNullable<AppContextOptions['tor']>
+  /** Every connection made to the proxy, so a test can tell Tor was used. */
+  connections: Socket[]
+}
+
+/** Managed Tor whose SOCKS proxy refuses every request, so nothing reaches a server through it. */
+async function refusingTor(): Promise<RefusingTor> {
+  const connections: Socket[] = []
+  const proxy = createServer((socket) => {
+    connections.push(socket)
+    socket.on('error', () => undefined)
+    socket.once('data', () => {
+      socket.end(Buffer.from([5, 255]))
+    })
+  })
+  await new Promise<void>((resolve) => {
+    proxy.listen(0, '127.0.0.1', resolve)
+  })
+  onTestFinished(async () => {
+    for (const socket of connections) {
+      socket.destroy()
+    }
+    await new Promise<void>((resolve) => {
+      proxy.close(() => {
+        resolve()
+      })
+    })
+  })
+  const port = parseUnknown(z.object({ port: z.number() }), proxy.address()).expect('TCP listener').port
+  const tor: RefusingTor['tor'] = {
+    start: async () => ({ state: 'ready' }),
+    getStatus: () => ({ state: 'ready' }),
+    getSocksProxy: () => ({ host: '127.0.0.1', port }),
+  }
+  return { tor, connections }
+}
+
 describe('saved connection safeguards', () => {
   it('starts with the last saved server when the saved-connections table cannot be read', async () => {
     await withTestSetup(async () => {
@@ -1037,34 +1075,7 @@ describe('saved connection safeguards', () => {
 
   it('launches an active Tor connection only through managed Tor', async () => {
     await withTestSetup(async () => {
-      const connections: Socket[] = []
-      // A SOCKS proxy that refuses every request stands in for Tor.
-      const proxy = createServer((socket) => {
-        connections.push(socket)
-        socket.on('error', () => undefined)
-        socket.once('data', () => {
-          socket.end(Buffer.from([5, 255]))
-        })
-      })
-      await new Promise<void>((resolve) => {
-        proxy.listen(0, '127.0.0.1', resolve)
-      })
-      onTestFinished(async () => {
-        for (const socket of connections) {
-          socket.destroy()
-        }
-        await new Promise<void>((resolve) => {
-          proxy.close(() => {
-            resolve()
-          })
-        })
-      })
-      const port = parseUnknown(z.object({ port: z.number() }), proxy.address()).expect('TCP listener').port
-      const tor = {
-        start: vi.fn(async () => ({ state: 'ready' })),
-        getStatus: () => ({ state: 'ready' as const }),
-        getSocksProxy: () => ({ host: '127.0.0.1', port }),
-      }
+      const { tor, connections } = await refusingTor()
       const first = (await createAppContext(logger, { tor, connectionProfiles: true, waitForElectrum: false })).unwrap()
       contexts.add(first)
       const remote = await startElectrum(200)
@@ -1132,6 +1143,82 @@ describe('saved connection safeguards', () => {
           .list()
           .find((profile) => profile.id === viaTor.id)?.torEnabled,
       ).toBe(true)
+    })
+  })
+
+  it('keeps Tor when saved connections cannot be read at launch', async () => {
+    await withTestSetup(async () => {
+      const { tor, connections } = await refusingTor()
+      const first = (await createAppContext(logger, { tor, connectionProfiles: true, waitForElectrum: false })).unwrap()
+      contexts.add(first)
+      const remote = await startElectrum(200)
+      const viaTor = profileStore(first)
+        .create({ ...remote.config, torEnabled: true, nickname: 'Via Tor' })
+        .unwrap()
+      profileStore(first)
+        .activate(viaTor, { ...remote.config, torEnabled: true })
+        .unwrap()
+      first.database.db.exec('ALTER TABLE desktop_connection_profiles RENAME TO unreadable_profiles')
+      first.stopElectrum()
+      first.database.close()
+      contexts.delete(first)
+
+      const before = connections.length
+      const launched = (
+        await createAppContext(logger, { tor, connectionProfiles: true, waitForElectrum: false })
+      ).unwrap()
+      contexts.add(launched)
+      await vi.waitFor(() => {
+        expect(connections.length).toBeGreaterThan(before)
+      })
+      expect(launched.electrumConfig.host).toBe(remote.config.host)
+      expect(remote.methods).toEqual([])
+    })
+  })
+
+  it('reports reachability rather than an open socket, and notices when the server stops answering', async () => {
+    await withTestSetup(async () => {
+      const ctx = await context(true, true)
+      const settingsApi = appRouter.createCaller({ app: ctx }).settings
+      await vi.waitFor(async () => {
+        expect((await settingsApi.electrumStatus()).connected).toBe(true)
+      })
+      // A closed socket alone is not an outage: the status reports whether the server answered.
+      const socketClosed = vi.spyOn(ctx.electrumClient, 'isConnected').mockReturnValue(false)
+      const check = vi.spyOn(ctx.electrumClient, 'checkReachable')
+      expect((await settingsApi.electrumStatus()).connected).toBe(true)
+      expect(check).toHaveBeenCalledWith(30_000)
+      socketClosed.mockRestore()
+      check.mockRestore()
+
+      // Once the server is gone, the next check (30 seconds later) reports it.
+      await initialFixture().close()
+      const later = performance.now() + 60_000
+      const clock = vi.spyOn(performance, 'now').mockReturnValue(later)
+      onTestFinished(() => {
+        clock.mockRestore()
+      })
+      await vi.waitFor(async () => {
+        expect((await settingsApi.electrumStatus()).connected).toBe(false)
+      })
+    })
+  })
+
+  it('never logs the server address when connecting', async () => {
+    await withTestSetup(async () => {
+      const info = vi.spyOn(logger, 'info')
+      onTestFinished(() => {
+        info.mockRestore()
+      })
+      const ctx = await context(true, true)
+      const api = appRouter.createCaller({ app: ctx }).settings.connectionProfiles
+      const next = await startElectrum(200)
+      const direct = await api.create({ ...next.config, nickname: 'Direct' })
+      await api.connect({ id: direct.id, revision: direct.revision })
+      expect(info).toHaveBeenCalledWith(expect.anything(), 'Reconnecting to Electrum server')
+      const logged = JSON.stringify(info.mock.calls)
+      expect(logged).not.toContain(next.config.host)
+      expect(logged).not.toContain(String(next.config.port))
     })
   })
 })

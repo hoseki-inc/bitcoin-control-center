@@ -1422,4 +1422,83 @@ describe('desktop saved connections', () => {
       expect(activeProfile().host).toBe('changed-elsewhere.example')
     })
   })
+
+  it('shows Tor as failed on every Tor connection while Tor is down, and as ready only once it is', async () => {
+    await withTestSetup(async () => {
+      const advance = useStepTimers()
+      const switchState = (): string | null | undefined =>
+        container.querySelector('[data-tor]')?.getAttribute('data-tor')
+      homeAndAway()
+      const away = profiles[1]
+      assert.ok(away, 'Expected Away')
+      away.torEnabled = true
+      profiles.push(profile('Other', { torEnabled: true }))
+      torStatus = { state: 'failed', message: 'Tor could not start.', attempt: 1 }
+      await render()
+      expect(switchState()).toBe('off')
+      await click(row('Away'))
+      await advance(0)
+      expect(switchState()).toBe('failed')
+      await click(row('Other'))
+      expect(switchState()).toBe('failed')
+      expect(container.textContent).toContain('Test or Connect tries Tor again.')
+      torStatus = { state: 'unavailable' }
+      await advance(10_000)
+      expect(switchState()).toBe('waiting')
+      torStatus = { state: 'ready', attempt: 2 }
+      await advance(10_000)
+      expect(switchState()).toBe('ready')
+    })
+  })
+
+  it('hides a Tor test error once the red line covers it, and once Tor recovers', async () => {
+    await withTestSetup(async () => {
+      const advance = useStepTimers()
+      activeProfile().torEnabled = true
+      torStatus = { state: 'ready', attempt: 1 }
+      testResponse = Promise.resolve(trpcError('Tor could not connect within two minutes.'))
+      await render()
+      await advance(0)
+      await click(button('Test Connection'))
+      await flush()
+      expect(container.textContent).toContain('Tor could not connect within two minutes.')
+      torStatus = { state: 'failed', message: 'Tor could not start.', attempt: 1 }
+      await advance(10_000)
+      expect(container.textContent).not.toContain('Tor could not connect within two minutes.')
+      torStatus = { state: 'ready', attempt: 2 }
+      await advance(10_000)
+      expect(container.textContent).not.toContain('Tor could not connect within two minutes.')
+    })
+  })
+
+  it('offers the direct retry hint once Tor is switched off on a disconnected Tor connection', async () => {
+    await withTestSetup(async () => {
+      const advance = useStepTimers()
+      activeProfile().torEnabled = true
+      connected = false
+      torStatus = { state: 'failed', message: 'Tor could not start.', attempt: 1 }
+      await render()
+      await advance(0)
+      expect(container.textContent).toContain('Reconnect to try Tor again')
+      await click(torSwitch())
+      expect(container.textContent).not.toContain('Reconnect to try Tor again')
+      expect(container.textContent).toContain('Retry this connection or choose another saved connection.')
+    })
+  })
+
+  it('does not test a connection another window deleted', async () => {
+    await withTestSetup(async () => {
+      const { home } = homeAndAway()
+      const away = profiles[1]
+      assert.ok(away, 'Expected Away')
+      away.torEnabled = true
+      await render()
+      await click(row('Away'))
+      await click(torSwitch())
+      profiles = [home]
+      await refetchConnections()
+      await waitForText('This connection was deleted in another window')
+      expect(button('Test Connection').disabled).toBe(true)
+    })
+  })
 })

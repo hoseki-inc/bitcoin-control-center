@@ -2,7 +2,7 @@ import { parseUnknown } from '@hoseki/packages/result'
 import { AsyncResult, Err, Ok, type Result, tryBlockAsync } from '@hoseki/packages/result'
 // Re-import z for the raw string overload
 import { z } from 'zod'
-import { type ElectrumConnectionConfig, ElectrumTransport } from './protocol'
+import { type ElectrumConnectionConfig, ElectrumServerError, ElectrumTransport } from './protocol'
 import {
   BlockHeaderHexSchema,
   type ElectrumVerboseTransaction,
@@ -44,7 +44,8 @@ export class ElectrumClient {
   private reachable = false
   // Set once any attempt has finished, so later background retries don't read as a first connection.
   private settled = false
-  private lastCheck = 0
+  // A monotonic clock, so moving the system clock back can't stop the checks.
+  private lastCheck = Number.NEGATIVE_INFINITY
   private checkInFlight = false
   private connectInFlight: AsyncResult<ServerVersion, Error> | null = null
   private generation = 0
@@ -110,7 +111,7 @@ export class ElectrumClient {
     this.transport.disconnect()
     this.negotiated = false
     this.reachable = false
-    this.lastCheck = 0
+    this.lastCheck = Number.NEGATIVE_INFINITY
   }
 
   /** Whether a socket is open now. Idle sockets close, so this isn't server health. */
@@ -136,25 +137,18 @@ export class ElectrumClient {
    * display notices an outage without holding a socket open when nobody is looking.
    */
   public checkReachable(minIntervalMs: number): void {
-    if (this.checkInFlight || Date.now() - this.lastCheck < minIntervalMs) {
+    if (this.checkInFlight || performance.now() - this.lastCheck < minIntervalMs) {
       return
     }
     const generation = this.generation
     this.checkInFlight = true
-    // The protocol answers null, but any answer shows the server is there.
-    void this.call('server.ping', [], z.unknown()).then((result) => {
+    void this.ping(generation).then((reachable) => {
       this.checkInFlight = false
       // Timed from the end, so a slow attempt (such as Tor starting) isn't followed straight away by another.
-      this.lastCheck = Date.now()
+      this.lastCheck = performance.now()
       // A disconnect since the ping started owns the status now.
       if (generation === this.generation) {
-        this.reachable = result.isOk()
-        if (result.isErr()) {
-          // A connection that went silent (after sleep or a network change) never closes by
-          // itself; drop it so the next check or request opens a fresh one.
-          this.transport.disconnect()
-          this.negotiated = false
-        }
+        this.reachable = reachable
       }
     })
   }
@@ -226,6 +220,30 @@ export class ElectrumClient {
 
   // ─── Private ─────────────────────────────────────────────────────────────
 
+  /**
+   * Any answer, even an error, shows the server is there. A connection that was already open
+   * may have gone silent (after sleep or a network change), so a failure on it gets one retry
+   * on a fresh connection; call() has already dropped the silent one.
+   */
+  private async ping(generation: number): Promise<boolean> {
+    const answered = (result: Result<unknown, Error>): boolean =>
+      result.isOk() || result.unwrapErr() instanceof ElectrumServerError
+    const wasOpen = this.transport.isConnected()
+    if (answered(await this.call('server.ping', [], z.unknown()))) {
+      return true
+    }
+    if (!wasOpen || generation !== this.generation) {
+      return false
+    }
+    return answered(await this.call('server.ping', [], z.unknown()))
+  }
+
+  /** Drops the transport so the next request opens a fresh connection. */
+  private dropConnection(): void {
+    this.transport.disconnect()
+    this.negotiated = false
+  }
+
   private call<T>(method: string, params: unknown[], schema: z.ZodType<T>): AsyncResult<T, Error> {
     return tryBlockAsync(
       async function* (this: ElectrumClient) {
@@ -236,7 +254,24 @@ export class ElectrumClient {
         if (!this.transport.isConnected()) {
           yield* this.connect().try()
         }
-        const raw = yield* this.transport.request(method, params).try()
+        const connection = this.transport.connectionNumber
+        const requested = await this.transport.request(method, params)
+        if (requested.isErr()) {
+          // A timeout or failure on the wire means the connection is unusable (often a silent one
+          // after sleep or a network change, which never closes by itself). Drop it so the next
+          // request reconnects, unless a newer connection has already replaced it. A server's
+          // error answer leaves the connection alone, and so do requests failing because it already
+          // closed, so they can't cancel a fresh connection another request has started opening.
+          if (
+            !(requested.unwrapErr() instanceof ElectrumServerError) &&
+            this.transport.isConnected() &&
+            this.transport.connectionNumber === connection
+          ) {
+            this.dropConnection()
+          }
+          return Err(requested.unwrapErr())
+        }
+        const raw = requested.unwrap()
         const parsed = yield* parseUnknown(schema, raw)
           .mapErr((err) => new Error(`Failed to parse response for ${method}: ${err.message}`, { cause: err }))
           .try()

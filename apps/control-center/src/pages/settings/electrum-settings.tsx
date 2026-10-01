@@ -210,11 +210,9 @@ export function ElectrumSettings(): JSX.Element {
   const [renaming, setRenaming] = useState(false)
   const [nickname, setNickname] = useState('')
   const [pendingSelection, setPendingSelection] = useState<Selection | null>(null)
-  const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null)
+  // A result that went through Tor records Tor's attempt, so it hides once Tor fails or starts again.
+  const [testResult, setTestResult] = useState<{ ok: boolean; message: string; torAttempt?: number } | null>(null)
   const [directConfirmation, setDirectConfirmation] = useState<'test' | 'connect' | null>(null)
-  // A failed Tor start turns the switch red but leaves it on: Tor is still your choice, and
-  // Test or Connect tries Tor again. A connection only goes direct if you switch Tor off.
-  const [torFailure, setTorFailure] = useState<string | null>(null)
   // Set when Tor is switched off in a new connection, so connecting asks first.
   const [torTurnedOff, setTorTurnedOff] = useState(false)
   const [onionNotice, setOnionNotice] = useState(false)
@@ -237,12 +235,30 @@ export function ElectrumSettings(): JSX.Element {
   // Changes whenever the form changes, so a test finishing afterwards can't report on details no longer shown.
   const formVersion = useRef(0)
   const torEnabled = draft?.torEnabled === true
-  const torFailed = torEnabled && torFailure !== null
   const torState = tor?.state
   const torAttempt = tor?.attempt ?? 0
   const torStarting = torEnabled && torState === 'starting'
-  // A saved Tor connection shows the switch on before the app starts Tor; only a running Tor is solid green.
-  const torWaiting = torEnabled && torState === 'stopped'
+  // A failed Tor start turns the switch red but leaves it on: Tor is still your choice, and Test or
+  // Connect tries Tor again. A connection only goes direct if you switch Tor off. Worked out from
+  // Tor's status on every render, so it follows Tor across connections. Failures from attempts before
+  // the one this form started are stale.
+  const torFailure =
+    torEnabled && torState === 'failed' && torAttempt >= (torAttemptAwaited ?? 0)
+      ? (tor?.message ?? 'Tor couldn’t start.')
+      : null
+  const torFailed = torFailure !== null
+  // Solid green only once Tor is ready; until then the switch is pale.
+  const torWaiting = torEnabled && !torStarting && !torFailed && torState !== 'ready'
+  const torSwitchState = !torEnabled
+    ? 'off'
+    : torStarting
+      ? 'starting'
+      : torFailed
+        ? 'failed'
+        : torWaiting
+          ? 'waiting'
+          : 'ready'
+  const latestTorAttempt = useRef(0)
   // Onion addresses are only reachable through Tor, so they never connect directly.
   const onion = draft?.host.trim().toLowerCase().replace(/\.$/, '').endsWith('.onion') === true
   // Ask only when a connection saved with Tor, or a new one you turned Tor on for, would go direct.
@@ -281,20 +297,9 @@ export function ElectrumSettings(): JSX.Element {
     }
   }, [renaming])
 
-  // Compare attempts rather than waiting to observe "starting", which a fast failure skips.
   useEffect(() => {
-    if (torState === 'failed' && torEnabled && torAttempt >= (torAttemptAwaited ?? 0)) {
-      setTorFailure(tor?.message ?? 'Tor couldn’t start.')
-    }
-  }, [torState, torEnabled, torAttempt, torAttemptAwaited, tor?.message])
-
-  // Tor retries on its own when the active connection needs it, and on Test or Connect.
-  // A new attempt clears the red failure, so the switch fades again while Tor starts.
-  useEffect(() => {
-    if ((torState === 'starting' || torState === 'ready') && torFailure !== null) {
-      setTorFailure(null)
-    }
-  }, [torState, torFailure])
+    latestTorAttempt.current = torAttempt
+  }, [torAttempt])
 
   // Measure every start, including one begun by a saved Tor connection.
   useEffect(() => {
@@ -317,7 +322,6 @@ export function ElectrumSettings(): JSX.Element {
     setRenaming(false)
     setDraft(next)
     setTestResult(null)
-    setTorFailure(null)
     setTorTurnedOff(false)
     setPendingSelection(null)
   }
@@ -356,7 +360,6 @@ export function ElectrumSettings(): JSX.Element {
       return
     }
     update({ torEnabled: enabled })
-    setTorFailure(null)
     setTorTurnedOff(!enabled)
     if (enabled) {
       startTor()
@@ -439,21 +442,23 @@ export function ElectrumSettings(): JSX.Element {
         host: draft.host.trim(),
         port: draft.port,
         protocol: draft.protocol,
-        // Testing and connecting use the switch, which a Tor failure turns off.
+        // Tor stays on through a Tor failure; only switching it off connects directly.
         torEnabled,
       }
       if (operation === 'test') {
         await baseTrpc.settings.testElectrum.mutate(details)
         if (version === formVersion.current) {
-          setTestResult({ ok: true, message: 'Connection successful' })
+          setTestResult({
+            ok: true,
+            message: 'Connection successful',
+            torAttempt: torEnabled ? latestTorAttempt.current : undefined,
+          })
         }
         return
       }
       let target = saved
       if (draft.id === undefined) {
-        // A new connection is saved with the Tor setting you chose, even while a Tor failure
-        // shows the switch off; only a successful direct connection below saves it as direct.
-        target = await api.create.mutate({ ...details, torEnabled: draft.torEnabled, nickname: draft.nickname.trim() })
+        target = await api.create.mutate({ ...details, nickname: draft.nickname.trim() })
         setDraft(target)
         await remember(target)
         if (operation === 'save') {
@@ -468,8 +473,6 @@ export function ElectrumSettings(): JSX.Element {
           connection: details,
         })
         setDraft(connected)
-        // The saved connection now reflects the user's routing choice.
-        setTorFailure(null)
         setTorTurnedOff(false)
         await remember(connected, true)
         refreshStatus()
@@ -478,7 +481,7 @@ export function ElectrumSettings(): JSX.Element {
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Could not update the connection'
       if (version === formVersion.current) {
-        setTestResult({ ok: false, message })
+        setTestResult({ ok: false, message, torAttempt: torEnabled ? latestTorAttempt.current : undefined })
       }
       if (operation !== 'test') {
         toast.error(message)
@@ -804,7 +807,7 @@ export function ElectrumSettings(): JSX.Element {
           </HStack>
           {isActive && liveness === 'disconnected' && (
             <Text textStyle="text/sm" color="red.700">
-              {torFailure !== null || (active?.torEnabled === true && torState === 'failed')
+              {torFailed
                 ? 'Your saved data is still on this device. Reconnect to try Tor again, or choose another saved connection.'
                 : 'Your saved data is still on this device. Retry this connection or choose another saved connection.'}
             </Text>
@@ -921,6 +924,7 @@ export function ElectrumSettings(): JSX.Element {
               colorScheme="green"
               isChecked={torEnabled}
               isDisabled={controlsDisabled}
+              data-tor={torSwitchState}
               onChange={(event) => {
                 handleTorChange(event.target.checked)
               }}
@@ -948,11 +952,13 @@ export function ElectrumSettings(): JSX.Element {
             readyNotice={torReadyNotice}
             slow={torStartedAt !== null && Date.now() - torStartedAt > TOR_SLOW_START_MS}
           />
-          {testResult && (
-            <Alert status={testResult.ok ? 'success' : 'error'}>
-              <AlertDescription>{testResult.message}</AlertDescription>
-            </Alert>
-          )}
+          {/* A result through Tor hides once Tor fails or starts again: the Tor line describes that instead. */}
+          {testResult &&
+            (testResult.torAttempt === undefined || (!torFailed && testResult.torAttempt === torAttempt)) && (
+              <Alert status={testResult.ok ? 'success' : 'error'}>
+                <AlertDescription>{testResult.message}</AlertDescription>
+              </Alert>
+            )}
           <HStack gap={3} flexWrap="wrap">
             <Button
               size="sm"
@@ -961,7 +967,15 @@ export function ElectrumSettings(): JSX.Element {
                 confirmRouting('test')
               }}
               isLoading={busy === 'test'}
-              isDisabled={draft.host.trim() === '' || actionsDisabled || renaming || torStarting || onionNeedsTor}
+              isDisabled={
+                draft.host.trim() === '' ||
+                actionsDisabled ||
+                renaming ||
+                torStarting ||
+                onionNeedsTor ||
+                // Deleted in another window: its saved Tor setting is unknown, so don't test it.
+                (draft.id !== undefined && !saved)
+              }
             >
               Test Connection
             </Button>

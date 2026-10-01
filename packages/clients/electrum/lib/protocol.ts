@@ -127,6 +127,9 @@ interface PendingRequest {
  * Handles connection management, request/response correlation via JSON-RPC IDs,
  * and newline-delimited JSON framing.
  */
+/** An error the server answered with, which still shows the server is reachable. */
+export class ElectrumServerError extends Error {}
+
 export class ElectrumTransport {
   private readonly config: Required<Omit<ElectrumConnectionConfig, 'proxy' | 'resolveProxy' | 'tls'>> & {
     proxy?: SocksProxyConfig
@@ -138,6 +141,8 @@ export class ElectrumTransport {
   private nextId = 0
   private readonly pending = new Map<number, PendingRequest>()
   private connected = false
+  // Counts connections, so a failure on an old connection never drops a newer one.
+  private connectionCount = 0
   private cancelConnect: (() => void) | null = null
 
   public constructor(config: ElectrumConnectionConfig) {
@@ -150,6 +155,11 @@ export class ElectrumTransport {
 
   public isConnected(): boolean {
     return this.connected
+  }
+
+  /** Identifies the current connection; it changes every time a new one opens. */
+  public get connectionNumber(): number {
+    return this.connectionCount
   }
 
   public connect(): AsyncResult<void, Error> {
@@ -200,6 +210,7 @@ export class ElectrumTransport {
             return
           }
           this.connected = true
+          this.connectionCount += 1
           finish(Ok(undefined))
         }
 
@@ -386,7 +397,9 @@ export class ElectrumTransport {
       this.pending.delete(response.id)
 
       if (response.error) {
-        pendingReq.resolve(Err(new Error(`Electrum error [${response.error.code}]: ${response.error.message}`)))
+        pendingReq.resolve(
+          Err(new ElectrumServerError(`Electrum error [${response.error.code}]: ${response.error.message}`)),
+        )
       } else {
         pendingReq.resolve(Ok(response.result))
       }
