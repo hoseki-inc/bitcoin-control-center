@@ -457,22 +457,28 @@ The desktop package embeds Sentinel, the web application, and pinned Tor binarie
 - `curl`, `tar`, and either `shasum` or `sha256sum`
 - The native build and signing prerequisites required by Electron Builder for your host platform
 
-Build macOS and Windows installers with:
+Build for the current native platform (Apple Silicon macOS or Windows x64 with Git Bash):
 
 ```bash
 ./desktop/build.sh
 ```
 
+Use `./desktop/build.sh --mac` or `./desktop/build.sh --win` to select a target. On macOS, `./desktop/build.sh --all` also cross-builds Windows. Intel Mac packages are not supported by the bundled ARM64 Tor distribution.
+
 The build script:
 
 1. Downloads pinned macOS and Windows Tor artifacts when absent.
-2. Verifies the trusted SHA-256 hashes before using them.
+2. Verifies downloaded archives against pinned SHA-256 hashes before extraction; existing bundles are reused on later builds.
 3. Builds Sentinel and the desktop-mode frontend.
 4. Installs Electron's isolated npm dependencies.
-5. Validates the macOS ARM64 and Windows x64 `better-sqlite3` prebuilds.
-6. Packages installers under `desktop/release/`.
+5. Validates that the host can load the bundled `better-sqlite3` native prebuild.
+6. Packages installers and stages them with build metadata and checksums under `desktop/release/artifacts/mac/` and `desktop/release/artifacts/win/`.
 
-Cross-built installers should still be smoke-tested on each target operating system before release.
+Installers are named `Bitcoin-Control-Center-<release-tag>-<platform>-<arch>` and carry the shared release version and source commit in their metadata; `desktop/package.json` keeps the placeholder `0.0.0-dev`, which the build overrides without editing, so development runs and unofficial builds never look like a release. Builds from uncommitted changes are marked dirty, and CI rejects them.
+
+The [desktop build workflow](.github/workflows/desktop-runtime.yml) builds both installers on pull requests and pushes to `main`, then smoke-tests the packaged runtime (SQLite, backend startup, frontend assets, saved connections, and the bundled Tor binary). Pull request installers are downloadable from the workflow run and are deleted when the pull request closes; builds from `main` are kept for 14 days. The workflow does not replace installing the DMG/EXE, exercising hardware wallets, or testing upgrades with real data.
+
+These are review installers: macOS is ad-hoc signed without notarization, and Windows has no publisher signature. Developer ID/notarization, Windows signing, and automatic updates are separate release work.
 
 Run the isolated dependency checks in Electron's bundled Node runtime with:
 
