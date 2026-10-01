@@ -527,6 +527,46 @@ describe('connections that go silent, are busy, or answer with errors', () => {
     client.disconnect()
   })
 
+  it('does not count the reconnect handshake as an answer when the ping goes unanswered', async () => {
+    const server = await serverWith((method) => (method === 'server.version' ? now : 'silent'))
+    const client = new ElectrumClient({ host: '127.0.0.1', port: server.port, protocol: 'tcp', requestTimeout: 200 })
+    expect((await client.connect()).isOk()).toBe(true)
+    // The server closes the idle connection, so the check reconnects and the handshake is answered.
+    server.sockets[0]?.destroy()
+    await vi.waitFor(() => {
+      expect(client.isConnected()).toBe(false)
+    })
+    client.checkReachable(0)
+    await vi.waitFor(() => {
+      expect(server.received[1]).toContain('server.ping')
+    })
+    await new Promise((resolve) => {
+      setTimeout(resolve, 400)
+    })
+    expect(client.isReachable()).toBe(false)
+    client.disconnect()
+  })
+
+  it('treats a retried ping that times out while other answers arrive as a busy, reachable server', async () => {
+    // The first connection goes silent; on the fresh one, pings go unanswered but wallet requests work.
+    const server = await serverWith((method, connection) =>
+      method === 'server.version' || (connection > 0 && method !== 'server.ping') ? now : 'silent',
+    )
+    const client = new ElectrumClient({ host: '127.0.0.1', port: server.port, protocol: 'tcp', requestTimeout: 300 })
+    expect((await client.connect()).isOk()).toBe(true)
+    client.checkReachable(0)
+    await vi.waitFor(() => {
+      expect(server.received[1]).toContain('server.ping')
+    })
+    expect((await client.getHistory('a'.repeat(64))).isOk()).toBe(true)
+    await new Promise((resolve) => {
+      setTimeout(resolve, 400)
+    })
+    expect(client.isReachable()).toBe(true)
+    expect(server.sockets).toHaveLength(2)
+    client.disconnect()
+  })
+
   it('does not reopen a connection when the client is disconnected during a check', async () => {
     const server = await serverWith(firstGoesSilent)
     const client = new ElectrumClient({ host: '127.0.0.1', port: server.port, protocol: 'tcp', requestTimeout: 200 })

@@ -902,6 +902,18 @@ describe('desktop saved connections', () => {
     })
   })
 
+  it('returns focus to the rename button when renaming ends, and adds no extra tab stop for delete', async () => {
+    await withTestSetup(async () => {
+      await render()
+      await click(firstLabelled('Rename Server A'))
+      await act(async () => {
+        nameInput().dispatchEvent(Object.assign(new Event('keydown', { bubbles: true }), { key: 'Escape' }))
+      })
+      expect(container.ownerDocument.activeElement).toBe(firstLabelled('Rename Server A'))
+      expect(firstLabelled('Delete Server A').parentElement?.getAttribute('tabindex')).toBeNull()
+    })
+  })
+
   it('prevents a sixth connection and says why', async () => {
     await withTestSetup(async () => {
       fillTo(5)
@@ -1190,6 +1202,43 @@ describe('desktop saved connections', () => {
       await flush()
       expect(container.textContent).not.toContain('Connection successful')
       expect(button('Test Connection').disabled).toBe(false)
+    })
+  })
+
+  it('cancels a test when you switch connections, so the next one is ready straight away', async () => {
+    await withTestSetup(async () => {
+      homeAndAway()
+      testResponse = new Promise(() => undefined)
+      await render()
+      await click(button('Test Connection'))
+      expect(formButton('Reconnect').disabled).toBe(true)
+      await click(row('Away'))
+      await flush()
+      expect(button('Test Connection').textContent).toBe('Test Connection')
+      expect(button('Test Connection').disabled).toBe(false)
+      expect(formButton('Connect').disabled).toBe(false)
+      expect(container.textContent).not.toContain('Connection successful')
+    })
+  })
+
+  it('does not test a port that cannot exist', async () => {
+    await withTestSetup(async () => {
+      await render()
+      await type(field('connection-port'), '70000')
+      expect(button('Test Connection').disabled).toBe(true)
+      await type(field('connection-port'), '50001')
+      expect(button('Test Connection').disabled).toBe(false)
+    })
+  })
+
+  it('shows a plain message rather than raw text when a response is unreadable', async () => {
+    await withTestSetup(async () => {
+      testResponse = Promise.resolve(new Response('<html>Bad gateway</html>', { status: 502 }))
+      await render()
+      await click(button('Test Connection'))
+      await waitForText('Connection failed')
+      expect(container.textContent).not.toContain('<html>')
+      expect(container.textContent).not.toContain('JSON')
     })
   })
 

@@ -34,12 +34,23 @@ import {
 } from '@chakra-ui/react'
 import { parseUnknown } from '@hoseki/packages/result/lib/parse'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { TRPCClientError } from '@trpc/client'
 import { Check, CircleAlertIcon, CircleCheckIcon, Pencil, Plus, Trash2, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { z } from 'zod'
 import { type RouterOutput, baseTrpc } from '../../trpc'
 import { type FadingNotice, NOTICE_FADE_MS, useFadingNotice } from './fading-notice'
+
+/** Shows Sentinel's own error message; anything else, such as an unreadable response, gets a plain one. */
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- Caught errors are untrusted and narrowed here.
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof TRPCClientError && error.shape != null ? error.message : fallback
+}
+
+function isValidPort(port: number): boolean {
+  return Number.isInteger(port) && port > 0 && port <= 65535
+}
 
 type Snapshot = RouterOutput['settings']['connectionProfiles']['list']
 type Profile = Snapshot['profiles'][number]
@@ -207,6 +218,11 @@ export function ElectrumSettings(): JSX.Element {
   const promptWasOpen = useRef(false)
   const hostRef = useRef<HTMLInputElement>(null)
   const nicknameRef = useRef<HTMLInputElement>(null)
+  const renameButtonRef = useRef<HTMLButtonElement>(null)
+  // Set when a rename finishes or is cancelled, so focus goes back to the pencil rather than the page.
+  const refocusRename = useRef(false)
+  // The test in progress, cancelled once the form changes, since its result would no longer apply.
+  const runningTest = useRef<AbortController | null>(null)
   const [renaming, setRenaming] = useState(false)
   const [nickname, setNickname] = useState('')
   const [pendingSelection, setPendingSelection] = useState<Selection | null>(null)
@@ -234,6 +250,10 @@ export function ElectrumSettings(): JSX.Element {
     (busy !== null && busy !== 'test') || deleting !== null || pendingSelection !== null || renaming
   // Changes whenever the form changes, so a test finishing afterwards can't report on details no longer shown.
   const formVersion = useRef(0)
+  const changeForm = (): void => {
+    formVersion.current += 1
+    runningTest.current?.abort()
+  }
   const torEnabled = draft?.torEnabled === true
   const torState = tor?.state
   const torAttempt = tor?.attempt ?? 0
@@ -274,7 +294,7 @@ export function ElectrumSettings(): JSX.Element {
         query.data.profiles.find((item) => item.id === query.data.activeId) ?? query.data.profiles[0] ?? emptyDraft(),
       )
     } else if (!dirty && saved && saved.revision !== draft.revision) {
-      formVersion.current += 1
+      changeForm()
       setDraft(saved)
     }
   }, [query.data, draft, saved, dirty, controlsDisabled])
@@ -294,6 +314,9 @@ export function ElectrumSettings(): JSX.Element {
   useEffect(() => {
     if (renaming) {
       nicknameRef.current?.select()
+    } else if (refocusRename.current) {
+      refocusRename.current = false
+      renameButtonRef.current?.focus()
     }
   }, [renaming])
 
@@ -318,7 +341,7 @@ export function ElectrumSettings(): JSX.Element {
 
   // Shows another connection with none of the previous one's form state.
   const showConnection = (next: Draft | null): void => {
-    formVersion.current += 1
+    changeForm()
     setRenaming(false)
     setDraft(next)
     setTestResult(null)
@@ -342,7 +365,7 @@ export function ElectrumSettings(): JSX.Element {
     }
   }
   const update = (value: Partial<Draft>): void => {
-    formVersion.current += 1
+    changeForm()
     setDraft((current) => (current ? { ...current, ...value } : current))
     setTestResult(null)
   }
@@ -401,7 +424,7 @@ export function ElectrumSettings(): JSX.Element {
       toast.success('Connection deleted')
       void queryClient.invalidateQueries({ queryKey })
     } catch (error) {
-      setDeleteError(error instanceof Error ? error.message : 'Could not delete the connection')
+      setDeleteError(errorMessage(error, 'Could not delete the connection'))
       // Refresh active/revision changes from another window without discarding this draft.
       void queryClient.invalidateQueries({ queryKey })
     } finally {
@@ -416,11 +439,12 @@ export function ElectrumSettings(): JSX.Element {
     try {
       const renamed = await api.rename.mutate({ id: draft.id, revision: draft.revision, nickname: nickname.trim() })
       setDraft({ ...draft, nickname: renamed.nickname, revision: renamed.revision })
+      refocusRename.current = true
       setRenaming(false)
       await remember(renamed)
       toast.success('Connection renamed')
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Could not rename the connection')
+      toast.error(errorMessage(error, 'Could not rename the connection'))
     } finally {
       setBusy(null)
     }
@@ -451,7 +475,15 @@ export function ElectrumSettings(): JSX.Element {
         torEnabled,
       }
       if (operation === 'test') {
-        await baseTrpc.settings.testElectrum.mutate(details)
+        const test = new AbortController()
+        runningTest.current = test
+        try {
+          await baseTrpc.settings.testElectrum.mutate(details, { signal: test.signal })
+        } finally {
+          if (runningTest.current === test) {
+            runningTest.current = null
+          }
+        }
         if (version === formVersion.current) {
           setTestResult({
             ok: true,
@@ -484,7 +516,10 @@ export function ElectrumSettings(): JSX.Element {
         toast.success(draft.id === undefined ? 'Connection saved' : 'Connection updated')
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Could not update the connection'
+      const message = errorMessage(
+        error,
+        operation === 'test' ? 'Connection failed' : 'Could not update the connection',
+      )
       if (version === formVersion.current) {
         setTestResult({ ok: false, message, torAttempt: torEnabled ? latestTorAttempt.current : undefined })
       }
@@ -545,9 +580,7 @@ export function ElectrumSettings(): JSX.Element {
   const canSubmit =
     (isNew || saved !== undefined) &&
     draft.host.trim() !== '' &&
-    Number.isInteger(draft.port) &&
-    draft.port > 0 &&
-    draft.port <= 65535 &&
+    isValidPort(draft.port) &&
     (!isNew || draft.nickname.trim() !== '') &&
     (!isNew || !atLimit)
   const canReconnect = dirty || !isActive || (liveness !== 'connected' && liveness !== 'connecting')
@@ -732,6 +765,7 @@ export function ElectrumSettings(): JSX.Element {
                     if (event.key === 'Enter' && nickname.trim() !== '') {
                       void rename()
                     } else if (event.key === 'Escape') {
+                      refocusRename.current = true
                       setRenaming(false)
                     }
                   }}
@@ -752,6 +786,7 @@ export function ElectrumSettings(): JSX.Element {
                   variant="ghost"
                   isDisabled={actionsDisabled}
                   onClick={() => {
+                    refocusRename.current = true
                     setRenaming(false)
                   }}
                 />
@@ -764,6 +799,7 @@ export function ElectrumSettings(): JSX.Element {
                   </Text>
                   {saved && (
                     <IconButton
+                      ref={renameButtonRef}
                       aria-label={`Rename ${draft.nickname}`}
                       icon={<Pencil size={14} aria-hidden="true" />}
                       size="xs"
@@ -793,7 +829,7 @@ export function ElectrumSettings(): JSX.Element {
               </Stack>
             )}
             {saved && !renaming && (
-              <Tooltip label="Delete connection" shouldWrapChildren>
+              <Tooltip label="Delete connection">
                 <IconButton
                   aria-label={`Delete ${saved.nickname}`}
                   icon={<Trash2 size={16} aria-hidden="true" />}
@@ -981,6 +1017,7 @@ export function ElectrumSettings(): JSX.Element {
               isLoading={busy === 'test'}
               isDisabled={
                 draft.host.trim() === '' ||
+                !isValidPort(draft.port) ||
                 actionsDisabled ||
                 renaming ||
                 torStarting ||

@@ -129,6 +129,16 @@ export class ElectrumServerError extends Error {
 /** A request the server didn't answer in time. */
 export class ElectrumTimeoutError extends Error {
   public override readonly name = 'ElectrumTimeoutError'
+  /**
+   * Whether nothing at all arrived on the connection while waiting, so it has gone silent;
+   * otherwise the server is busy but still answering other requests.
+   */
+  public readonly silent: boolean
+
+  public constructor(message: string, silent: boolean) {
+    super(message)
+    this.silent = silent
+  }
 }
 
 /**
@@ -169,11 +179,6 @@ export class ElectrumTransport {
   /** Identifies the current connection; it changes every time a new one opens. */
   public get connectionNumber(): number {
     return this.connectionCount
-  }
-
-  /** Changes whenever data arrives, so callers can tell whether a connection has gone silent. */
-  public get dataReceived(): number {
-    return this.receivedCount
   }
 
   public connect(): AsyncResult<void, Error> {
@@ -324,11 +329,19 @@ export class ElectrumTransport {
       id,
     })
 
+    const receivedAtSend = this.receivedCount
     return new AsyncResult(
       new Promise<Result<unknown, Error>>((resolve) => {
         const timer = setTimeout(() => {
           this.pending.delete(id)
-          resolve(Err(new ElectrumTimeoutError(`Request timeout after ${this.config.requestTimeout}ms for ${method}`)))
+          resolve(
+            Err(
+              new ElectrumTimeoutError(
+                `Request timeout after ${this.config.requestTimeout}ms for ${method}`,
+                this.receivedCount === receivedAtSend,
+              ),
+            ),
+          )
         }, this.config.requestTimeout)
 
         this.pending.set(id, { resolve, timer })

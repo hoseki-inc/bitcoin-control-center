@@ -149,15 +149,18 @@ export class ElectrumClient {
     }
     const generation = this.generation
     this.checkInFlight = true
-    void this.ping(generation).then((reachable) => {
-      this.checkInFlight = false
-      // Timed from the end, so a slow attempt (such as Tor starting) isn't followed straight away by another.
-      this.lastCheck = performance.now()
-      // A disconnect since the ping started owns the status now.
-      if (generation === this.generation) {
-        this.reachable = reachable
-      }
-    })
+    void this.ping(generation)
+      // An unexpected failure counts as unreachable, and never stops later checks.
+      .catch(() => false)
+      .then((reachable) => {
+        this.checkInFlight = false
+        // Timed from the end, so a slow attempt (such as Tor starting) isn't followed straight away by another.
+        this.lastCheck = performance.now()
+        // A disconnect since the ping started owns the status now.
+        if (generation === this.generation) {
+          this.reachable = reachable
+        }
+      })
   }
 
   // ─── Server Methods ──────────────────────────────────────────────────────
@@ -228,28 +231,29 @@ export class ElectrumClient {
   // ─── Private ─────────────────────────────────────────────────────────────
 
   /**
-   * Any answer, even an error, shows the server is there. A connection that was already open
-   * may have gone silent (after sleep or a network change), so a failure on it gets one retry
+   * Any answer, even an error, shows the server is there, and so does a ping that timed out while
+   * other answers kept arriving on its connection (a busy server). A connection that was already
+   * open may have gone silent (after sleep or a network change), so a failure on it gets one retry
    * on a fresh connection; call() has already dropped the silent one.
    */
   private async ping(generation: number): Promise<boolean> {
-    const answered = (result: Result<unknown, Error>): boolean =>
-      result.isOk() || result.unwrapErr() instanceof ElectrumServerError
-    const wasOpen = this.transport.isConnected()
-    const receivedBefore = this.transport.dataReceived
-    const first = await this.call('server.ping', [], z.unknown())
-    if (answered(first)) {
-      return true
+    const attempt = async (): Promise<boolean> => {
+      const result = await this.call('server.ping', [], z.unknown())
+      if (result.isOk()) {
+        return true
+      }
+      const error = result.unwrapErr()
+      return error instanceof ElectrumServerError || (error instanceof ElectrumTimeoutError && !error.silent)
     }
-    // A ping that timed out while other answers kept arriving means a busy server, not a missing one.
-    if (first.unwrapErr() instanceof ElectrumTimeoutError && this.transport.dataReceived !== receivedBefore) {
+    const wasOpen = this.transport.isConnected()
+    if (await attempt()) {
       return true
     }
     // Retry only when the first attempt dropped a connection that had gone silent.
     if (!wasOpen || this.transport.isConnected() || generation !== this.generation) {
       return false
     }
-    return answered(await this.call('server.ping', [], z.unknown()))
+    return attempt()
   }
 
   /** Drops the transport so the next request opens a fresh connection. */
@@ -269,7 +273,6 @@ export class ElectrumClient {
           yield* this.connect().try()
         }
         const connection = this.transport.connectionNumber
-        const receivedBefore = this.transport.dataReceived
         const requested = await this.transport.request(method, params)
         if (requested.isErr()) {
           const error = requested.unwrapErr()
@@ -280,10 +283,7 @@ export class ElectrumClient {
           // - a socket or write error counts straight away;
           // - a server's error answer, or a connection that already closed, leaves things alone, so
           //   a late failure can't cancel a fresh connection another request has started opening.
-          const silent =
-            error instanceof ElectrumTimeoutError
-              ? this.transport.dataReceived === receivedBefore
-              : !(error instanceof ElectrumServerError)
+          const silent = error instanceof ElectrumTimeoutError ? error.silent : !(error instanceof ElectrumServerError)
           if (silent && this.transport.isConnected() && this.transport.connectionNumber === connection) {
             this.dropConnection()
           }
