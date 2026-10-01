@@ -2,6 +2,7 @@ import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { BrowserWindow, type Tray, type WebContents, app, dialog, ipcMain, shell } from 'electron'
+import { APP_DISPLAY_NAME, userDataPath } from './app-identity'
 import { showDeviceChooser } from './device-chooser'
 import { setupLedgerHidAccess } from './ledger-hid'
 import { startOnPreferredPort } from './preferred-port'
@@ -117,6 +118,11 @@ async function start(): Promise<void> {
   tray = setupTray(window)
   await window.loadURL(origin)
 }
+
+// Before anything reads the data folder (the single-instance lock does): keep it where it has
+// always been, then give the menus the product's name.
+app.setPath('userData', userDataPath(app.getPath('appData')))
+app.setName(APP_DISPLAY_NAME)
 
 if (!app.requestSingleInstanceLock()) {
   app.quit()
