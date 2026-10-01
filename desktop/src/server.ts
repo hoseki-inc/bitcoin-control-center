@@ -1,6 +1,8 @@
 import type { TorManager } from './tor'
 
 interface ServerOptions {
+  /** Saved Electrum connections, which only the desktop app offers. */
+  connectionProfiles?: boolean
   waitForElectrum?: boolean
   tor?: Pick<TorManager, 'start' | 'getStatus' | 'getSocksProxy'>
   /** Port to bind; zero lets the operating system choose a free port. */

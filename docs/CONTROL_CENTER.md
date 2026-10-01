@@ -30,10 +30,10 @@ The default ports are:
 - Sentinel: `3400`
 - Electrum: configured through `ELECTRUM_HOST`, `ELECTRUM_PORT`, and `ELECTRUM_PROTOCOL`
 
-To expose desktop-only settings while developing the browser UI:
+To run Sentinel and the browser UI as the desktop app does, including saved Electrum connections:
 
 ```bash
-pnpm --filter control-center dev:desktop
+pnpm dev:desktop
 ```
 
 Desktop Tor behavior is only complete in a packaged Electron build because the Tor executable is bundled during packaging.

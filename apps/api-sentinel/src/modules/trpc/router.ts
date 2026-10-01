@@ -30,6 +30,7 @@ import * as bip322 from 'bip322-js'
 import { Decimal } from 'decimal.js'
 import { nanoid } from 'nanoid'
 import { z } from 'zod'
+import { type ConnectionDetails, MAX_CONNECTION_PROFILES } from '../connection_profiles/store'
 import { PRICE_FALLBACKS_SETTING, PRICE_SOURCES, PRICE_SOURCE_SETTING } from '../price/service'
 import { StatementMapper } from '../statements/mapper'
 import { publicProcedure, t } from './init'
@@ -2033,7 +2034,93 @@ function validateWritableSetting(key: string, value: string): string {
   throw new TRPCError({ code: 'FORBIDDEN', message: 'Setting is not writable' })
 }
 
+// ─── Desktop saved connections ──────────────────────────────────────────────
+
+const connectionDetailsInput = z.object({
+  host: z.string(),
+  port: z.number().int().min(1).max(65_535),
+  protocol: z.enum(['tcp', 'ssl']),
+  // Required: a missing Tor setting must never default to direct for a saved connection.
+  torEnabled: z.boolean(),
+})
+const profileReferenceInput = z.object({ id: z.string().uuid(), revision: z.number().int().positive() })
+const nicknameInput = z
+  .string()
+  .trim()
+  .min(1, 'Enter a nickname')
+  .max(80, 'Use 80 characters or fewer for the nickname')
+
+function profileDetails(input: z.infer<typeof connectionDetailsInput>): ConnectionDetails {
+  const connection = validateElectrumConnection(input)
+  if (connection.host.endsWith('.onion') && !input.torEnabled) {
+    throw new TRPCError({ code: 'BAD_REQUEST', message: 'Onion addresses require Tor' })
+  }
+  return { ...connection, torEnabled: input.torEnabled }
+}
+
+const desktopConnectionProcedure = publicProcedure.use(async ({ ctx, next }) => {
+  if (!ctx.app.connectionProfiles) {
+    throw new TRPCError({ code: 'FORBIDDEN', message: 'Saved connections are only available in the desktop app' })
+  }
+  return next({ ctx: { ...ctx, profiles: ctx.app.connectionProfiles } })
+})
+
+const connectionProfilesRouter = t.router({
+  list: desktopConnectionProcedure.query(({ ctx }) => ({
+    profiles: ctx.profiles.list(),
+    activeId: ctx.profiles.getActiveId() ?? null,
+    limit: MAX_CONNECTION_PROFILES,
+  })),
+
+  // Saving, renaming, and deleting never connect; only connect changes the active server.
+  create: desktopConnectionProcedure
+    .input(connectionDetailsInput.extend({ nickname: nicknameInput }))
+    .mutation(({ ctx, input }) => {
+      const result = ctx.profiles.create({ ...profileDetails(input), nickname: input.nickname })
+      if (result.isErr()) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: result.unwrapErr().message })
+      }
+      return result.unwrap()
+    }),
+
+  rename: desktopConnectionProcedure
+    .input(profileReferenceInput.extend({ nickname: nicknameInput }))
+    .mutation(({ ctx, input }) => {
+      const result = ctx.profiles.rename(input, input.nickname)
+      if (result.isErr()) {
+        throw new TRPCError({ code: 'CONFLICT', message: result.unwrapErr().message })
+      }
+      return result.unwrap()
+    }),
+
+  delete: desktopConnectionProcedure.input(profileReferenceInput).mutation(({ ctx, input }) => {
+    const result = ctx.profiles.delete(input)
+    if (result.isErr()) {
+      throw new TRPCError({ code: 'CONFLICT', message: result.unwrapErr().message })
+    }
+    return { id: input.id }
+  }),
+
+  connect: desktopConnectionProcedure
+    .input(profileReferenceInput.extend({ connection: connectionDetailsInput.optional() }))
+    .mutation(async ({ ctx, input }) => {
+      const result = await ctx.app.connectProfile(
+        input,
+        input.connection ? profileDetails(input.connection) : undefined,
+      )
+      if (result.isErr()) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: result.unwrapErr().message })
+      }
+      const connected = ctx.profiles.list().find((profile) => profile.id === input.id)
+      if (!connected) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'This saved connection no longer exists' })
+      }
+      return connected
+    }),
+})
+
 const settingsRouter = t.router({
+  connectionProfiles: connectionProfilesRouter,
   get: publicProcedure.input(z.object({ key: z.string() })).query(({ ctx, input }) => {
     if (!isReadableSetting(input.key)) {
       throw new TRPCError({ code: 'FORBIDDEN', message: 'Setting is not readable' })
@@ -2093,8 +2180,14 @@ const settingsRouter = t.router({
 
   electrumStatus: publicProcedure.query(({ ctx }) => {
     const { host, port, protocol } = ctx.app.electrumConfig
+    // Checks run only while a page shows the status; the result appears on its next poll.
+    ctx.app.electrumClient.checkReachable(30_000)
     return {
-      connected: ctx.app.electrumClient.isConnected(),
+      // Reachability, not an open socket: servers close idle sockets between requests.
+      connected: ctx.app.electrumClient.isReachable(),
+      // Lets the page say "Connecting…" rather than "Disconnected" while the first attempt runs;
+      // background retries during an outage don't count.
+      connecting: ctx.app.electrumClient.isConnecting(),
       host,
       port,
       protocol,
@@ -2110,7 +2203,8 @@ const settingsRouter = t.router({
         host: z.string(),
         port: z.number().int().min(1).max(65_535),
         protocol: z.enum(['tcp', 'ssl']),
-        torEnabled: z.boolean().default(false),
+        // Required, so a test never runs direct just because the Tor setting was left out.
+        torEnabled: z.boolean(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -2120,9 +2214,10 @@ const settingsRouter = t.router({
       }
       const config = prepared.unwrap()
       const { ElectrumClient } = await import('@hoseki/packages/clients/electrum')
+      // Tor connections bring their own longer limit.
       const testClient = new ElectrumClient({
-        ...config,
         requestTimeout: 15_000,
+        ...config,
       })
       const result = await testClient.connect()
       testClient.disconnect()

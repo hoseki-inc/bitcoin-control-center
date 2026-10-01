@@ -36,6 +36,10 @@
     "dev:databases": {
       "cache": false
     },
+    "dev:desktop": {
+      "cache": false,
+      "persistent": true
+    },
     "dev:standalone": {
       "cache": false,
       "persistent": true
