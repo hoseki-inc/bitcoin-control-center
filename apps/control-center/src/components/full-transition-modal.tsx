@@ -16,6 +16,7 @@ import {
 import { Spinner } from '@hoseki/packages/ui/design-system'
 import { greenCheckCircle } from '@hoseki/packages/ui/prove-verify-ui'
 import type { LottieRefCurrentProps } from 'lottie-react'
+// Lottie runs animation expressions with eval: only render bundled animations.
 import Lottie from 'lottie-react'
 import { useEffect, useRef, useState } from 'react'
 import { type TransitionState, useTransitionState } from 'react-transition-state'

@@ -80,7 +80,7 @@ jobs:
         run: git diff --exit-code
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: desktop-${{ matrix.target }}-${{ matrix.arch }}
+          name: Bitcoin-Control-Center-${{ matrix.target }}-${{ matrix.arch }}
           path: desktop/release/artifacts/${{ matrix.target }}/
           if-no-files-found: error
           compression-level: 0

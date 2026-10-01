@@ -1,6 +1,8 @@
 # Bitcoin Control Center
 
-Bitcoin Control Center is a local-first Bitcoin portfolio tracker and proof-of-reserves statement generator. It connects directly to an Electrum server, stores portfolio data in a local SQLite database, and runs without a Hoseki cloud account or hosted application backend.
+Bitcoin Control Center is a local-first Bitcoin savings app. Our mission is to help you **understand, grow, protect, and eventually use your Bitcoin savings**.
+
+Today, it brings together portfolio tracking and proof-of-reserves statements. It connects directly to an Electrum server, stores portfolio data in a local SQLite database, and runs without a Hoseki cloud account or hosted application backend.
 
 The same React application and Sentinel backend can run in a browser during development, as a StartOS service, or as an Electron desktop application for macOS and Windows.
 
@@ -33,7 +35,7 @@ This repository intentionally excludes Hoseki Services, Armadillo, hosted authen
 - [Testing and CI](#testing-and-ci)
 - [Production builds](#production-builds)
 - [StartOS packaging](#startos-packaging)
-- [StartOS release candidates](#startos-release-candidates)
+- [Releases](#releases)
 - [Desktop packaging](#desktop-packaging)
 - [Troubleshooting](#troubleshooting)
 - [Security and privacy](#security-and-privacy)
@@ -58,7 +60,7 @@ flowchart LR
 | `packages/`            | Shared Bitcoin, wallet, UI, parsing, and utility code          |
 | `start9/`              | StartOS SDK integration and multi-architecture package build   |
 | `desktop/`             | Electron shell and bundled Tor integration                     |
-| `docs/`                | Developer, security-audit, migration, and test documentation   |
+| `docs/`                | Hardware-wallet signing test notes                             |
 | `test/`                | Shared public test fixtures                                    |
 
 Sentinel is the only application backend and owns the frontend API contract. Distribution-specific behavior belongs in `start9/` or `desktop/`; the product does not use a hosted compatibility API.
@@ -262,8 +264,9 @@ Run these commands from the repository root unless noted otherwise.
 | Command                  | Purpose                                                          |
 | ------------------------ | ---------------------------------------------------------------- |
 | `pnpm dev`               | Run Sentinel and Control Center in watch mode                    |
+| `pnpm dev:desktop`       | Run both as the desktop app does, including saved connections    |
 | `pnpm check`             | Run native TypeScript project-reference checks                   |
-| `pnpm test`              | Run application and shared-library tests through Turbo           |
+| `pnpm test`              | Run application, shared-library, and release-assembly tests      |
 | `pnpm lint`              | Run Oxlint and ESLint with zero warnings allowed                 |
 | `pnpm format:check`      | Verify Oxfmt formatting                                          |
 | `pnpm format`            | Apply Oxfmt formatting                                           |
@@ -312,15 +315,16 @@ pnpm test
 pnpm build
 ```
 
-Run the dependency audit before releases and dependency changes:
+Run the dependency audit after changing dependencies:
 
 ```bash
 pnpm security:audit
 ```
 
-Dependency audits are not part of pull-request CI or `pnpm run ci`: newly published
-advisories should not block unrelated pull requests with unchanged dependencies.
-Dependabot and pull-request dependency review remain enabled.
+Pull-request CI and `pnpm run ci` skip it, so newly published advisories don't
+block unrelated pull requests; Dependabot and pull-request dependency review stay
+enabled. **Release 3** runs it and won't create a draft release while a moderate
+or worse finding remains.
 
 The default `pnpm test` command requires only the root workspace dependencies.
 `better-sqlite3` uses its bundled native binaries on supported platforms. Its
@@ -343,8 +347,7 @@ The complete `pnpm run ci` command requires those packaging dependencies to be
 installed first. It includes `pnpm build:ci`, which builds Sentinel, the web app in
 both Sentinel and desktop modes, the StartOS package definition, and the Electron
 main and preload scripts. Normal pull-request CI and the local command use the
-same build checks. StartOS candidate and draft-release workflows also run this
-complete verification command.
+same build checks. Release 2 and 3 also run it.
 
 CI calls the **Desktop build** and **StartOS build** workflows to build full
 installable packages when a pull request or push to `main` changes application
@@ -361,10 +364,10 @@ Documentation-only changes can skip the package jobs while still completing
 
 These package checks use no release credentials: desktop publishing and signing
 identity discovery are disabled, and StartOS uses a temporary signing key.
-Generated installers remain on the disposable GitHub runners and are not
-uploaded or retained. Candidate and release workflows keep their existing
-artifact and signing behavior. Local `pnpm build:ci` leaves its generated bundles
-in the normal ignored build directories and does not create installers.
+Desktop installers are uploaded for review and deleted when the pull request
+closes; StartOS packages stay on the disposable runners. Local `pnpm build:ci`
+leaves its generated bundles in the normal ignored build directories and does not
+create installers.
 
 Dependabot checks for updates on Mondays at 02:00 Eastern. CodeQL scans pull requests targeting `main`, pushes to `main`, and `main` weekly on Mondays at 03:00 Eastern, one hour after Dependabot's scheduled checks. Both schedules use `America/New_York` and follow daylight saving time. Manual CodeQL scans are available in GitHub Actions.
 
@@ -411,15 +414,7 @@ Build without changing the package version:
 
 The script builds Sentinel and the same-origin web application, compiles the StartOS SDK code, creates x86_64 and aarch64 images, and packs `start9/hoseki-sentinel.s9pk`.
 
-StartOS versions use `major.minor.patch:revision`:
-
-| Command                                             | Use                                                             |
-| --------------------------------------------------- | --------------------------------------------------------------- |
-| `./start9/build.sh --bump patch --notes "..."`      | Incremental feature, fix, or maintenance release                |
-| `./start9/build.sh --bump minor --notes "..."`      | Substantial feature release; resets patch and revision to `0`   |
-| `./start9/build.sh --bump major --notes "..."`      | Breaking or major release; resets other components to `0`       |
-| `./start9/build.sh --bump revision --notes "..."`   | Packaging-only rebuild without changing the application version |
-| `./start9/build.sh --version 0.2.0:0 --notes "..."` | Set an explicit version greater than the current version        |
+The checked-in graph under `start9/startos/versions/` supplies the shared release version. Use the [release workflows](#releases) to prepare version changes.
 
 Inspect the current version without building:
 
@@ -429,22 +424,20 @@ node start9/scripts/version.mjs get
 node start9/scripts/version.mjs tag
 ```
 
-The manifest version `0.2.1:0` maps to the official StartOS Git tag `v0.2.1_0`. Version-bump commands update the checked-in StartOS version graph before building. Review and commit those generated source changes with the release.
-
 > [!WARNING]
 > The internal StartOS package ID is `hoseki-sentinel`, and its persistent volume is `main`. Existing installations rely on both identifiers. Do not rename them without an explicit data-migration and upgrade-compatibility plan.
 
-See [docs/CONTROL_CENTER.md](docs/CONTROL_CENTER.md) for more packaging and distribution guidance.
+See the [StartOS package reference](start9/README.md) for service configuration.
 
-## StartOS release candidates
+## Releases
 
-The manually triggered **StartOS 2 - Build candidate** GitHub Actions workflow builds a private universal `.s9pk` artifact from a selected branch or commit. It runs the full verification suite and validates the checked-in version, package ID, architectures, and clean Git hash. It does not bump a version, create a tag, publish a GitHub Release, or submit anything to a StartOS registry.
+| Workflow                                                                                 | Result                                                                                                                       |
+| ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| [Release 1 - Prepare version](.github/workflows/release-1-prepare-version.yml)           | Choose a release type; opens a version PR with a required release-notes placeholder.                                         |
+| [Release 2 - Build candidates](.github/workflows/release-2-build-candidates.yml)         | Builds StartOS, Mac ARM64, and Windows x64 test packages from one commit; retains Actions artifacts for 14 days.             |
+| [Release 3 - Create draft release](.github/workflows/release-3-create-draft-release.yml) | Verifies and builds all three platforms, then creates a draft GitHub Release with installers, build metadata, and checksums. |
 
-The artifact uses the StartOS tag form plus the source commit so similarly versioned test builds remain distinguishable. GitHub retains it for 14 days.
-
-Use the separate **StartOS 1 - Prepare version** workflow to choose `patch`, `minor`, `major`, or `revision` from a dropdown and enter release notes. It calculates the next version and exact tag and opens a protected pull request. After that pull request is merged and tested, **StartOS 3 - Create draft release** derives the tag without manual entry, rebuilds the package, and creates a draft GitHub Release. It uses the permanent signing key when configured or a temporary clean-install key otherwise. Registry publication is intentionally not part of either workflow.
-
-See [docs/STARTOS_RELEASES.md](docs/STARTOS_RELEASES.md) for the version rules, candidate signing behavior, workflow instructions, and the intentionally separate registry-publication design.
+Version preparation and draft creation run from the default branch. Replace the generated release notes before merging the version PR, and review the draft before publishing. Nothing publishes to a StartOS registry. Without the `STARTOS_DEV_KEY` secret, StartOS packages are signed with a temporary key suitable only for clean-install testing. Set it to the project's permanent developer key, and never replace it once installs rely on it: upgrades need the same signer.
 
 ## Desktop packaging
 
@@ -576,7 +569,7 @@ Additional safeguards:
 
 Do not log wallet descriptors, exchange credentials, encryption keys, seed phrases, or full third-party API responses containing secrets.
 
-Report suspected vulnerabilities privately as described in [SECURITY.md](SECURITY.md). Review [docs/SECURITY_AUDIT.md](docs/SECURITY_AUDIT.md) for the dependency-audit model and accepted residual risks.
+Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
 
 ## Contributing
 
@@ -595,10 +588,12 @@ Issues and pull requests are welcome. Keep changes within the product's local-fi
 
 Useful project documentation:
 
-- [Developer and release guide](docs/CONTROL_CENTER.md)
-- [Security audit](docs/SECURITY_AUDIT.md)
-- [Repository extraction checklist](docs/REPOSITORY_SPLIT.md)
+- [Release workflows](#releases)
+- [Security policy](SECURITY.md)
+- [StartOS package reference](start9/README.md)
 - [Multisig device signing tests](docs/Multisig%20Keystore%20Device%20Signing%20Tests.md)
+
+Dependency compatibility: React currently uses React 18 type definitions because Chakra UI 2 depends on the older global JSX model. Review that bridge when upgrading the UI system. Upgrade React Query and tRPC together when their compatibility requirements change.
 
 ## License
 

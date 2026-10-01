@@ -1,4 +1,5 @@
 import { Flex, Stack, Text } from '@chakra-ui/react'
+// Lottie runs animation expressions with eval: only render bundled animations.
 import Lottie from 'lottie-react'
 import type { ReactNode } from 'react'
 import { type HardwareWallet, HardwareWalletCard, TimedoutRetry } from '../'
