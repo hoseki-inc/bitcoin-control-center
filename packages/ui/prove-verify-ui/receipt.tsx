@@ -1,4 +1,5 @@
 import { Box, Button, Flex, Stack, type StackProps, chakra } from '@chakra-ui/react'
+// Lottie evaluates expressions in animation data with eval: render only bundled assets, never user-supplied JSON.
 import Lottie from 'lottie-react'
 import { XIcon } from 'lucide-react'
 import { Spinner } from '../design-system'

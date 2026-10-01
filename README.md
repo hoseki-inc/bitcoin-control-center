@@ -315,15 +315,16 @@ pnpm test
 pnpm build
 ```
 
-Run the dependency audit before releases and dependency changes:
+Run the dependency audit after changing dependencies:
 
 ```bash
 pnpm security:audit
 ```
 
-Dependency audits are not part of pull-request CI or `pnpm run ci`: newly published
-advisories should not block unrelated pull requests with unchanged dependencies.
-Dependabot and pull-request dependency review remain enabled.
+Pull-request CI and `pnpm run ci` skip it, so newly published advisories don't
+block unrelated pull requests; Dependabot and pull-request dependency review stay
+enabled. **Release 3** runs it and won't create a draft release while a moderate
+or worse finding remains.
 
 The default `pnpm test` command requires only the root workspace dependencies.
 `better-sqlite3` uses its bundled native binaries on supported platforms. Its
@@ -572,7 +573,7 @@ Additional safeguards:
 
 Do not log wallet descriptors, exchange credentials, encryption keys, seed phrases, or full third-party API responses containing secrets.
 
-See [SECURITY.md](SECURITY.md) for private vulnerability reporting, dependency checks, and Electrum TLS trust limitations.
+Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
 
 ## Contributing
 
