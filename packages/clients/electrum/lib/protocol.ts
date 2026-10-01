@@ -19,9 +19,7 @@ export interface ElectrumTlsConfig {
    *
    * Defaults to verifying public SSL hosts and allowing self-signed certs only
    * for local/private hosts, where self-hosted Electrum servers are common.
-   * So an SSL connection to a private host encrypts traffic but doesn't prove
-   * the server's identity, and plain TCP isn't encrypted at all. Keep StartOS's
-   * internal service connection working if this policy changes.
+   * Private hosts are encrypted but not verified; plain TCP isn't encrypted.
    */
   rejectUnauthorized?: boolean
   /** Optional SNI/certificate hostname override. Defaults to host for public DNS names. */

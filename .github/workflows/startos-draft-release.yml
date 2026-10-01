@@ -81,7 +81,7 @@ jobs:
       - name: Run repository verification
         run: pnpm run ci
 
-      # Pull requests skip the audit so new advisories don't block unrelated work; releases always run it.
+      # Pull requests skip the audit; releases must pass it.
       - name: Refuse to release with known moderate or worse vulnerabilities
         run: pnpm security:audit
 
