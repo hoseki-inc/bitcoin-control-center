@@ -13,6 +13,7 @@
     "check": "tsc --build tsconfig.check.json",
     "ci": "pnpm format:check && pnpm lint && pnpm check && npm --prefix desktop run check && npm --prefix start9 run check && pnpm test && npm --prefix start9 test && pnpm build:ci",
     "dev": "turbo run dev:standalone --filter=api-sentinel --filter=control-center",
+    "dev:desktop": "turbo run dev:desktop --filter=api-sentinel --filter=control-center",
     "format": "oxlint --config .oxlintrc.imports.json --fix . && oxfmt --write .",
     "format:check": "oxlint --config .oxlintrc.imports.json --deny-warnings . && oxfmt --check .",
     "ladle:build": "ladle build",
