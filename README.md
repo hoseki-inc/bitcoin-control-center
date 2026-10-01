@@ -470,7 +470,7 @@ The build script:
 5. Validates that the host can load the bundled `better-sqlite3` native prebuild.
 6. Packages installers and stages them with build metadata and checksums under `desktop/release/artifacts/mac/` and `desktop/release/artifacts/win/`.
 
-Installers are named `Bitcoin-Control-Center-<release-tag>-<platform>-<arch>` and carry the shared release version and source commit in their metadata; the placeholder version in `desktop/package.json` is overridden, not edited. Builds from uncommitted changes are marked dirty, and CI rejects them.
+Installers are named `Bitcoin-Control-Center-<release-tag>-<platform>-<arch>` and carry the shared release version and source commit in their metadata; `desktop/package.json` keeps the placeholder `0.0.0-dev`, which the build overrides without editing, so development runs and unofficial builds never look like a release. Builds from uncommitted changes are marked dirty, and CI rejects them.
 
 The [desktop build workflow](.github/workflows/desktop-runtime.yml) builds both installers on pull requests and pushes to `main`, then smoke-tests the packaged runtime (SQLite, backend startup, frontend assets, saved connections, and the bundled Tor binary). It does not replace installing the DMG/EXE, exercising hardware wallets, or testing upgrades with real data.
 

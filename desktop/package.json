@@ -1,6 +1,6 @@
 {
   "name": "desktop",
-  "version": "0.1.0",
+  "version": "0.0.0-dev",
   "private": true,
   "description": "Local-first Bitcoin portfolio tracking and proof-of-reserves statements",
   "license": "Apache-2.0",
