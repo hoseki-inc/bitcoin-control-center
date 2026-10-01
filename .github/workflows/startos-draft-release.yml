@@ -188,7 +188,7 @@ jobs:
       - name: Download verified desktop builds
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
-          pattern: desktop-*
+          pattern: Bitcoin-Control-Center-*
           path: desktop-artifacts
 
       - name: Verify desktop identities and assemble release assets

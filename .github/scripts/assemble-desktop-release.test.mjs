@@ -24,7 +24,7 @@ const sourceCommit = 'a'.repeat(40)
  * @returns {Build}
  */
 function build(downloads, platform, arch, ext) {
-  const directory = join(downloads, `desktop-${platform}-${arch}`)
+  const directory = join(downloads, `Bitcoin-Control-Center-${platform}-${arch}`)
   mkdirSync(directory, { recursive: true })
   const file = `Bitcoin-Control-Center-v0.2.3_1-${platform}-${arch}.${ext}`
   const bytes = Buffer.from(`synthetic ${platform} installer`)

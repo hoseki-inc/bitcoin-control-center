@@ -30,7 +30,7 @@ function sha256(bytes) {
 
 /**
  * Validates both native builds before adding them to the staged StartOS release.
- * @param {string} downloads Directory holding the downloaded desktop-<platform>-<arch> artifacts.
+ * @param {string} downloads Directory holding the downloaded Bitcoin-Control-Center-<platform>-<arch> artifacts.
  * @param {string} output Release staging directory, already holding the StartOS SHA256SUMS.
  * @param {string} version Release version, such as 0.2.6:0.
  * @param {string} sourceCommit Full source commit the release is built from.
@@ -43,7 +43,7 @@ export function assembleDesktopRelease(downloads, output, version, sourceCommit)
   const tag = `v${version.replace(':', '_')}`
   // Every build is checked before anything is copied, so a mismatch never leaves half a release.
   const builds = BUILDS.map(({ platform, arch, ext }) => {
-    const directory = join(downloads, `desktop-${platform}-${arch}`)
+    const directory = join(downloads, `Bitcoin-Control-Center-${platform}-${arch}`)
     /** @type {unknown} */
     const report = JSON.parse(readFileSync(join(directory, `${platform}.json`), 'utf8'))
     const file = `Bitcoin-Control-Center-${tag}-${platform}-${arch}.${ext}`

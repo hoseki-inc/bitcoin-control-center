@@ -26,9 +26,10 @@ jobs:
           deleted=0
           runs="$(gh api --method GET --paginate "repos/$REPOSITORY/actions/runs" \
             -f event=pull_request -f branch="$BRANCH" -f per_page=100 --jq '.workflow_runs[].id')"
+          # Builds made before the installers were renamed were called desktop-<platform>-<arch>.
           for run in $runs; do
             artifacts="$(gh api --method GET --paginate "repos/$REPOSITORY/actions/runs/$run/artifacts" \
-              -f per_page=100 --jq '.artifacts[] | select(.name | startswith("desktop-")) | .id')"
+              -f per_page=100 --jq '.artifacts[] | select(.name | startswith("Bitcoin-Control-Center-") or startswith("desktop-")) | .id')"
             for artifact in $artifacts; do
               gh api --method DELETE "repos/$REPOSITORY/actions/artifacts/$artifact"
               deleted=$((deleted + 1))
