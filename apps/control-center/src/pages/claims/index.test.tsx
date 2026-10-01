@@ -81,7 +81,7 @@ function seedQueries(client: QueryClient): void {
   client.setQueryData<Output['etf']['list']>(getQueryKey(trpc.portalProve.etf.list, undefined, 'query'), [])
   client.setQueryData<Output['retrieveBitcoinPrice']>(
     getQueryKey(trpc.portalProve.retrieveBitcoinPrice, undefined, 'query'),
-    { value: new Decimal(50_000), asOf: new Date('2026-09-01T00:00:00Z') },
+    { value: new Decimal(50_000), asOf: new Date('2026-09-01T00:00:00Z'), source: 'block', lastKnown: false },
   )
 }
 
