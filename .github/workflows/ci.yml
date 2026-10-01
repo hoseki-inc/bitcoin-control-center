@@ -45,6 +45,11 @@ jobs:
                   desktop=true
                   startos=true
                   ;;
+                # Desktop installers take their release version and name from the StartOS version files.
+                start9/scripts/version.mjs|start9/startos/versions/*)
+                  desktop=true
+                  startos=true
+                  ;;
                 desktop/*|.github/workflows/desktop-runtime.yml)
                   desktop=true
                   ;;

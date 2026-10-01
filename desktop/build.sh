@@ -57,6 +57,9 @@ COMMON=(
   "-c.buildVersion=$APP_VERSION"
 )
 
+# The staging step copies the installer by name, so never leave one from an earlier build to pick up.
+rm -f release/Bitcoin-Control-Center-*.dmg release/Bitcoin-Control-Center-*.exe
+
 if [[ "$TARGET" == --mac || "$TARGET" == --all ]]; then
   # Ad-hoc review signatures cannot satisfy hardened-runtime Team ID validation
   # for Electron's framework. Enable hardened runtime with Developer ID signing.

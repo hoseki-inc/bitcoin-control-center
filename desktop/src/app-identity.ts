@@ -10,6 +10,9 @@ export const APP_DISPLAY_NAME = 'Bitcoin Control Center'
  */
 export const DATA_FOLDER_NAME = 'desktop'
 
-export function userDataPath(appDataPath: string): string {
-  return path.join(appDataPath, DATA_FOLDER_NAME)
+/** Running Electron from source gets its own folder, so it never opens the installed app's wallets. */
+export const DEVELOPMENT_DATA_FOLDER_NAME = 'desktop-dev'
+
+export function userDataPath(appDataPath: string, packaged: boolean): string {
+  return path.join(appDataPath, packaged ? DATA_FOLDER_NAME : DEVELOPMENT_DATA_FOLDER_NAME)
 }

@@ -138,4 +138,6 @@ try {
   })
   rmSync(data, { recursive: true, force: true })
   clearTimeout(deadline)
+  // Exit even if a failed start left handles open, rather than waiting for the CI time limit.
+  process.exit(process.exitCode ?? 0)
 }

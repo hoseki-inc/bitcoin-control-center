@@ -56,19 +56,25 @@ jobs:
         env:
           DESKTOP_TARGET: ${{ matrix.target }}
         run: bash desktop/build.sh "--${DESKTOP_TARGET}"
+      # Each smoke test runs a copy outside the checkout, so the packaged app can't borrow a
+      # dependency it is missing from the repository's node_modules.
       - name: Smoke-test the packaged Mac runtime
         if: matrix.target == 'mac'
         run: |
-          APP="desktop/release/mac-arm64/Bitcoin Control Center.app"
-          codesign --verify --deep --strict "$APP"
+          codesign --verify --deep --strict "desktop/release/mac-arm64/Bitcoin Control Center.app"
+          APP="$RUNNER_TEMP/smoke/Bitcoin Control Center.app"
+          mkdir -p "$RUNNER_TEMP/smoke"
+          ditto "desktop/release/mac-arm64/Bitcoin Control Center.app" "$APP"
           ELECTRON_RUN_AS_NODE=1 "$APP/Contents/MacOS/Bitcoin Control Center" \
             desktop/scripts/smoke.mjs "$APP/Contents/Resources"
       - name: Smoke-test the packaged Windows runtime
         if: matrix.target == 'win'
         shell: pwsh
         run: |
+          $app = Join-Path $env:RUNNER_TEMP 'smoke-win'
+          Copy-Item -Recurse 'desktop/release/win-unpacked' $app
           $env:ELECTRON_RUN_AS_NODE = '1'
-          & 'desktop/release/win-unpacked/Bitcoin Control Center.exe' desktop/scripts/smoke.mjs desktop/release/win-unpacked/resources
+          & (Join-Path $app 'Bitcoin Control Center.exe') desktop/scripts/smoke.mjs (Join-Path $app 'resources')
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Confirm packaging did not edit source files
         run: git diff --exit-code

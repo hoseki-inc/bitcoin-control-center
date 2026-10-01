@@ -120,8 +120,11 @@ async function start(): Promise<void> {
 }
 
 // Before anything reads the data folder (the single-instance lock does): keep it where it has
-// always been, then give the menus the product's name.
-app.setPath('userData', userDataPath(app.getPath('appData')))
+// always been, then give the menus the product's name. Electron documents setPath as failing for
+// a folder that doesn't exist yet, as on a fresh install, so create it first.
+const userData = userDataPath(app.getPath('appData'), app.isPackaged)
+fs.mkdirSync(userData, { recursive: true })
+app.setPath('userData', userData)
 app.setName(APP_DISPLAY_NAME)
 
 if (!app.requestSingleInstanceLock()) {
