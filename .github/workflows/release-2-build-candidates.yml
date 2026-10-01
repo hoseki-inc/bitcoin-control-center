@@ -21,6 +21,9 @@ jobs:
     name: Build private StartOS candidate
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      artifact_name: ${{ steps.version.outputs.artifact_name }}
 
     steps:
       - name: Check out selected revision
@@ -149,3 +152,33 @@ jobs:
           if-no-files-found: error
           compression-level: 0
           retention-days: 14
+
+  # Runs Release 3's assembly and checksum verification on these candidates, without creating a release.
+  assemble:
+    name: Rehearse release assembly
+    needs: [desktop, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify the workflow commit before executing repository code
+        run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+      - name: Download the desktop candidates
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          pattern: Bitcoin-Control-Center-*
+          path: desktop-artifacts
+      - name: Download the StartOS candidate
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: ${{ needs.build.outputs.artifact_name }}
+          path: artifacts
+      - name: Assemble and verify every asset as Release 3 does
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          node .github/scripts/assemble-desktop-release.mjs desktop-artifacts artifacts "$VERSION" "$GITHUB_SHA"
+          (cd artifacts && sha256sum -c SHA256SUMS)

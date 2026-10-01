@@ -347,8 +347,7 @@ The complete `pnpm run ci` command requires those packaging dependencies to be
 installed first. It includes `pnpm build:ci`, which builds Sentinel, the web app in
 both Sentinel and desktop modes, the StartOS package definition, and the Electron
 main and preload scripts. Normal pull-request CI and the local command use the
-same build checks. StartOS candidate and draft-release workflows also run this
-complete verification command.
+same build checks. Release 2 and 3 also run it.
 
 CI calls the **Desktop build** and **StartOS build** workflows to build full
 installable packages when a pull request or push to `main` changes application
@@ -366,10 +365,9 @@ Documentation-only changes can skip the package jobs while still completing
 These package checks use no release credentials: desktop publishing and signing
 identity discovery are disabled, and StartOS uses a temporary signing key.
 Desktop installers are uploaded for review and deleted when the pull request
-closes; StartOS packages stay on the disposable runners. The candidate and
-draft-release workflows build StartOS and both desktop installers from the same
-commit (see [Releases](#releases)). Local `pnpm build:ci` leaves its generated
-bundles in the normal ignored build directories and does not create installers.
+closes; StartOS packages stay on the disposable runners. Local `pnpm build:ci`
+leaves its generated bundles in the normal ignored build directories and does not
+create installers.
 
 Dependabot checks for updates on Mondays at 02:00 Eastern. CodeQL scans pull requests targeting `main`, pushes to `main`, and `main` weekly on Mondays at 03:00 Eastern, one hour after Dependabot's scheduled checks. Both schedules use `America/New_York` and follow daylight saving time. Manual CodeQL scans are available in GitHub Actions.
 
@@ -433,15 +431,13 @@ See the [StartOS package reference](start9/README.md) for service configuration.
 
 ## Releases
 
-GitHub Actions handles version preparation, builds, verification, checksums, and draft-release assembly:
-
 | Workflow                                                                                 | Result                                                                                                                       |
 | ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | [Release 1 - Prepare version](.github/workflows/release-1-prepare-version.yml)           | Choose a release type; opens a version PR with a required release-notes placeholder.                                         |
 | [Release 2 - Build candidates](.github/workflows/release-2-build-candidates.yml)         | Builds StartOS, Mac ARM64, and Windows x64 test packages from one commit; retains Actions artifacts for 14 days.             |
 | [Release 3 - Create draft release](.github/workflows/release-3-create-draft-release.yml) | Verifies and builds all three platforms, then creates a draft GitHub Release with installers, build metadata, and checksums. |
 
-Version preparation and draft creation run from the default branch. Replace the generated release notes before merging the version PR, and review the draft before publishing. Nothing publishes to a StartOS registry. Without the `STARTOS_DEV_KEY` secret, StartOS packages are signed with a temporary key suitable only for clean-install testing.
+Version preparation and draft creation run from the default branch. Replace the generated release notes before merging the version PR, and review the draft before publishing. Nothing publishes to a StartOS registry. Without the `STARTOS_DEV_KEY` secret, StartOS packages are signed with a temporary key suitable only for clean-install testing. Set it to the project's permanent developer key, and never replace it once installs rely on it: upgrades need the same signer.
 
 ## Desktop packaging
 

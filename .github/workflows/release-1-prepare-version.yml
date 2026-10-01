@@ -34,7 +34,7 @@ jobs:
         env:
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
-          if [[ "$GITHUB_REF_NAME" != "$DEFAULT_BRANCH" ]]; then
+          if [[ "$GITHUB_REF" != "refs/heads/$DEFAULT_BRANCH" ]]; then
             echo "::error::Run this workflow from ${DEFAULT_BRANCH}, not ${GITHUB_REF_NAME}."
             exit 1
           fi
@@ -157,7 +157,7 @@ jobs:
             echo "- Let all protected checks pass."
             echo "- Run Release 2 - Build candidates from this branch to test StartOS and both desktop installers."
             echo ""
-            echo "The tag is intentionally not created by this pull request."
+            echo "The tag is intentionally not created by this pull request. After merging, run Release 3 - Create draft release from main."
           } > "$RUNNER_TEMP/startos-release-pr.md"
 
           PR_URL="$(gh pr create \

@@ -27,7 +27,7 @@ jobs:
         env:
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
-          if [[ "$GITHUB_REF_NAME" != "$DEFAULT_BRANCH" ]]; then
+          if [[ "$GITHUB_REF" != "refs/heads/$DEFAULT_BRANCH" ]]; then
             echo "::error::Run this workflow from ${DEFAULT_BRANCH}, not ${GITHUB_REF_NAME}."
             exit 1
           fi
@@ -202,6 +202,7 @@ jobs:
           SOURCE_SHA: ${{ steps.version.outputs.source_sha }}
         run: |
           node .github/scripts/assemble-desktop-release.mjs desktop-artifacts artifacts "$VERSION" "$SOURCE_SHA"
+          (cd artifacts && sha256sum -c SHA256SUMS)
           {
             echo ""
             echo "### Desktop installers"
@@ -234,6 +235,20 @@ jobs:
             --title "Bitcoin Control Center ${VERSION}" \
             --notes-file artifacts/GITHUB_RELEASE_NOTES.md)"
           echo "url=${RELEASE_URL}" >> "$GITHUB_OUTPUT"
+
+      # A failed upload can leave a partial draft that blocks a re-run. Drafts have no tag yet, and the
+      # collision check proved none existed before this run.
+      - name: Remove a partial draft after a failed upload
+        if: failure() && steps.release.outcome == 'failure'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          if [[ "$(gh release view "$TAG" --json isDraft --jq .isDraft 2>/dev/null)" == "true" ]]; then
+            gh release delete "$TAG" --yes
+            echo "::warning::Removed the partial draft for ${TAG}. Re-run the release job."
+          fi
 
       - name: Add release summary
         shell: bash

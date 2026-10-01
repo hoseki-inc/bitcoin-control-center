@@ -60,7 +60,7 @@ function fixture() {
   const run = () => {
     assembleDesktopRelease(downloads, output, version, sourceCommit)
   }
-  return { output, mac, win, run }
+  return { downloads, output, mac, win, run }
 }
 
 test('assembles both matching native builds and retains the StartOS checksum', () => {
@@ -93,6 +93,31 @@ test('rejects dirty sources and filenames outside the expected artifact path', (
     writeFileSync(f.mac.manifest, JSON.stringify({ ...f.mac.report, ...changes }))
     assert.throws(f.run, /identity/)
   }
+})
+
+test.each([
+  { platform: 'linux' },
+  { arch: 'x64' },
+  { tag: 'v0.2.3_0' },
+  { desktopVersion: '0.2.4' },
+  { sourceDirty: 'false' },
+  { sourceDirty: undefined },
+])('rejects a build whose identity field differs: %j', (changes) => {
+  const f = fixture()
+  writeFileSync(f.mac.manifest, JSON.stringify({ ...f.mac.report, ...changes }))
+  assert.throws(f.run, /identity|missing/)
+  assert.equal(existsSync(join(f.output, f.mac.report.file)), false)
+})
+
+test.each([
+  { version: '0.2.3', commit: sourceCommit },
+  { version: 'v0.2.3:1', commit: sourceCommit },
+  { version, commit: 'a'.repeat(12) },
+])('rejects a malformed release version or source commit: $version $commit', ({ version: badVersion, commit }) => {
+  const f = fixture()
+  assert.throws(() => {
+    assembleDesktopRelease(f.downloads, f.output, badVersion, commit)
+  }, /protected release version/)
 })
 
 test('rejects altered or missing installer bytes', () => {

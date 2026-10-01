@@ -1,7 +1,7 @@
 // Adds both verified desktop installers to a staged StartOS release, after checking each one
 // was built for this exact release version and source commit.
 import { createHash } from 'node:crypto'
-import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { copyFileSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
@@ -69,7 +69,6 @@ export function assembleDesktopRelease(downloads, output, version, sourceCommit)
 
   // Keep the already-verified StartOS package checksum alongside the desktop assets.
   const checksums = readFileSync(join(output, 'SHA256SUMS'), 'utf8').trimEnd().split('\n')
-  mkdirSync(output, { recursive: true })
   for (const { source, file, checksum } of builds) {
     copyFileSync(source, join(output, file))
     checksums.push(`${checksum}  ${file}`)
