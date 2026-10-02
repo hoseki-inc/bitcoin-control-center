@@ -1,4 +1,5 @@
 import { Box, type BoxProps, chakra } from '@chakra-ui/react'
+// Lottie runs animation expressions with eval: only render bundled animations.
 import Lottie from 'lottie-react'
 import coldcardWhatYouNeed_M3 from './assets/lottie-animations/coldcard/M3/01.json'
 import coldcardExportWallet_M3 from './assets/lottie-animations/coldcard/M3/02.json'

@@ -124,8 +124,10 @@ synchronization additionally requires a healthy, synchronized Electrs service.
 Bitcoin Control Center also makes outbound requests when the corresponding
 feature is used:
 
-- BTC/USD price and transaction enrichment use `https://mempool.space` in the
-  current StartOS build;
+- the current BTC/USD price comes from the source chosen in Settings: Block
+  (`https://pricing.bitcoin.block.xyz`) by default, with mempool.space, Coinbase
+  and CoinGecko as fallbacks unless they are turned off;
+- statement prices and transaction enrichment use `https://mempool.space`;
 - connected exchange accounts contact their selected exchange provider.
 
 These are application data sources, not StartOS package dependencies.
@@ -137,9 +139,9 @@ These are application data sources, not StartOS package dependencies.
    are not available in the StartOS web interface.
 3. Direct USB hardware-wallet support depends on browser capabilities and
    permissions. File and QR workflows remain device-specific alternatives.
-4. The StartOS package currently uses the public mempool.space API for price and
-   transaction enrichment; that endpoint is not configurable through the
-   StartOS action.
+4. The StartOS package uses the public mempool.space API for statement prices
+   and transaction enrichment; that endpoint is not configurable through the
+   StartOS action. The current BTC/USD price source is chosen in Settings.
 5. Bitcoin Control Center is watch-only software. It must never receive or store
    a wallet seed or private key.
 
@@ -160,9 +162,8 @@ Run the package build from the upstream repository root:
 ```
 
 The checked-in version graph under `start9/startos/versions/` is the package
-version source of truth. See
-[`docs/STARTOS_RELEASES.md`](../docs/STARTOS_RELEASES.md) for candidate and
-release workflow details.
+version source of truth. The [release workflows](../README.md#releases) automate
+version preparation, candidate builds, and draft releases for StartOS and desktop.
 
 ## Quick reference
 

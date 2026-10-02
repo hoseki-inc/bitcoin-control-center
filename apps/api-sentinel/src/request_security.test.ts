@@ -110,6 +110,53 @@ describe('Sentinel interface access', () => {
     })
   })
 
+  it('protects tRPC routes reached through an encoded path', async () => {
+    await withTestSetup(async () => {
+      const server = createServer('')
+      // Like the tRPC plugin: one route per procedure under a /trpc prefix.
+      await server.register(
+        async (trpc) => {
+          trpc.post('/:procedure', async () => ({ ok: true }))
+        },
+        { prefix: '/trpc' },
+      )
+      const read = await server.inject({
+        url: '/%74rpc/data',
+        headers: { host: 'evil.example', 'sec-fetch-site': 'cross-site' },
+      })
+      // A cross-site form post: text/plain needs no preflight, so the page never asks first.
+      const write = await server.inject({
+        method: 'POST',
+        url: '/%74rpc/settings.update',
+        headers: { host: '127.0.0.1:3400', origin: 'https://evil.example', 'content-type': 'text/plain' },
+        payload: '{}',
+      })
+      expect(read.statusCode).toBe(403)
+      expect(write.statusCode).toBe(403)
+      expect(write.json()).toMatchObject({ code: 'forbidden_origin' })
+    })
+  })
+
+  it.each([undefined, ''])(
+    'ignores a forwarded host a page sends itself when no proxy is configured: %j',
+    async (configuredHosts) => {
+      await withTestSetup(async () => {
+        // createServer() would swap undefined for the StartOS hosts.
+        const server = Fastify()
+        servers.push(server)
+        registerRequestSecurity(server, configuredHosts, true)
+        server.get('/trpc/data', async () => ({ ok: true }))
+        // After DNS rebinding, a page reads from its own origin, so the browser sends no Origin.
+        const response = await server.inject({
+          url: '/trpc/data',
+          headers: { host: 'rebind.attacker.example:3400', 'x-forwarded-host': 'localhost:3400' },
+        })
+        expect(response.statusCode).toBe(403)
+        expect(response.json()).toMatchObject({ code: 'forbidden_host' })
+      })
+    },
+  )
+
   it('keeps missing interface addresses loopback-only and leaves health checks available', async () => {
     await withTestSetup(async () => {
       const server = createServer('')

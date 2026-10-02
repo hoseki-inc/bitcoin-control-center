@@ -69,10 +69,16 @@ function createHarness() {
       .spyOn(onchainProvider, 'getConfirmedAccountBalances')
       .mockImplementation(asyncFn(async () => Ok(new IndexMap<Account, bigint>([[account, 100n]])))),
   }
-  const priceService = new PriceService({ logger })
+  const priceService = new PriceService({
+    logger,
+    mempoolApiUrl: 'https://example.invalid',
+    settings: () => ({ source: undefined, fallbacks: false }),
+  })
   const price = vi
     .spyOn(priceService, 'getCurrentBtcPrice')
-    .mockImplementation(asyncFn(async () => Ok({ value: new Decimal(50_000), asOf: now })))
+    .mockImplementation(
+      asyncFn(async () => Ok({ value: new Decimal(50_000), asOf: now, source: 'block' as const, lastKnown: false })),
+    )
   const service = new ControlCenterService({
     db,
     logger,
@@ -187,7 +193,7 @@ describe('portfolio history completion', () => {
       await vi.waitFor(() => {
         expect(harness.coverage()).toHaveLength(1)
       })
-      pendingPrice.resolve(Ok({ value: new Decimal(50_000), asOf: now }))
+      pendingPrice.resolve(Ok({ value: new Decimal(50_000), asOf: now, source: 'block' as const, lastKnown: false }))
       const data = (await resultPromise).unwrap()
       expect(data.historySyncingAccountIds).toEqual([])
       expect(data.historySyncedAccountIds).toEqual([accountId])

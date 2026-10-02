@@ -13,6 +13,7 @@
     "*.js",
     "*.mjs",
     "*.cjs",
+    ".github/scripts/**/*",
     ".ladle/**/*",
     "apps/api-sentinel/**/*.test.ts",
     "apps/api-sentinel/**/*.test.tsx",

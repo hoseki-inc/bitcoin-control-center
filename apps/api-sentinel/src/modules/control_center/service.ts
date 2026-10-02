@@ -258,6 +258,7 @@ export class ControlCenterService {
           firstSnapshotTimestamp != null && firstSnapshotTimestamp !== '' ? new Date(firstSnapshotTimestamp) : null
 
         // Use imported transactions for the period before our first snapshot
+        let previousBalance = 0n
         const stmtTxs = this.exchangeService.listStatementTransactions(account.id)
         if (stmtTxs.length > 0 && firstSnapshotTime) {
           for (const tx of stmtTxs) {
@@ -268,6 +269,7 @@ export class ControlCenterService {
             const sats = BigInt(Math.round(parseFloat(tx.amountBtc) * 1e8))
             if (sats !== 0n) {
               exchangeEntries.push({ timestamp: txTime, value: sats })
+              previousBalance += sats
             }
           }
         } else if (stmtTxs.length > 0 && !firstSnapshotTime) {
@@ -280,8 +282,8 @@ export class ControlCenterService {
           }
         }
 
-        // Snapshots are the source of truth from the first snapshot onward
-        let previousBalance = 0n
+        // Reconcile the first snapshot against imported history; later snapshots
+        // continue from the preceding snapshot's balance.
         for (const snapshot of snapshots) {
           const balance = BigInt(snapshot.balance_sats)
           const delta = balance - previousBalance

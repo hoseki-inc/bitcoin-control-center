@@ -1,4 +1,5 @@
 import { Box } from '@chakra-ui/react'
+// Lottie runs animation expressions with eval: only render bundled animations.
 import Lottie from 'lottie-react'
 import multisigAnimation2 from '../../assets/lottie-animations/multisig-2.json'
 import multisigAnimation1 from '../../assets/lottie-animations/multisig.json'
