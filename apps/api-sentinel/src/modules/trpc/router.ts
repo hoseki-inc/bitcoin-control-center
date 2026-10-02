@@ -259,6 +259,9 @@ function getFullClaimDto(db: Database.Database, accountId: string): ClaimDto | n
   const latestChallenge = db
     .prepare<unknown[], ChallengeRow>('SELECT * FROM challenges WHERE account_id = ? ORDER BY created_at DESC LIMIT 1')
     .get(row.id)
+  if (latestChallenge) {
+    discardUnverifiableMessages(db, latestChallenge)
+  }
   const signedMessages = latestChallenge
     ? db
         .prepare<unknown[], SignedMessageRow>('SELECT * FROM signed_messages WHERE challenge_id = ?')
@@ -393,6 +396,41 @@ function validateSigningAddress(message: SignedMessageRow, identity: SigningIden
   if (message.address !== identity.address) {
     throw new TRPCError({ code: 'BAD_REQUEST', message: 'Signing address does not match the account key' })
   }
+}
+
+function hasCurrentSigningAddress(db: Database.Database, accountId: string, message: SignedMessageRow): boolean {
+  try {
+    return getSigningIdentity(db, accountId, message.keystore_id).address === message.address
+  } catch (error) {
+    if (error instanceof TRPCError) {
+      return false
+    }
+    throw error
+  }
+}
+
+/**
+ * Remove an unfinished challenge's messages that can never verify, such as cosigner messages created with the
+ * P2WPKH address used before cosigners signed with P2PKH. Their keys can then sign again instead of the
+ * challenge failing at completion with no way forward.
+ */
+function discardUnverifiableMessages(db: Database.Database, challenge: ChallengeRow): void {
+  if (challenge.is_satisfied === 1) {
+    return
+  }
+  const unverifiable = db
+    .prepare<unknown[], SignedMessageRow>('SELECT * FROM signed_messages WHERE challenge_id = ?')
+    .all(challenge.id)
+    .filter((message) => !hasCurrentSigningAddress(db, challenge.account_id, message))
+  if (unverifiable.length === 0) {
+    return
+  }
+  const deleteMessage = db.prepare('DELETE FROM signed_messages WHERE id = ?')
+  db.transaction(() => {
+    for (const message of unverifiable) {
+      deleteMessage.run(message.id)
+    }
+  })()
 }
 
 // ─── portalProve.controlCenter ──────────────────────────────────────────────
@@ -850,6 +888,7 @@ const registryRouter = t.router({
           )
           .get(input.claimId)
         if (existing) {
+          discardUnverifiableMessages(db, existing)
           return {
             id: existing.id,
             claimId: existing.account_id,

@@ -271,6 +271,40 @@ describe('ownership verification account binding', () => {
     },
   )
 
+  it('finishes a multisig verification started with the earlier P2WPKH cosigner addresses', async () => {
+    const { registry, db } = setupOwnershipHarness()
+    const created = await createMultisigClaim(registry, [owner, secondOwner, thirdOwner])
+    const challenge = await registry.challenges.create({ claimId: created.claim.id })
+    const [store, secondStore] = created.keystores
+    if (!store || !secondStore) {
+      expect.fail('Fixture must contain two cosigners')
+    }
+    // Earlier releases stored each cosigner's P2WPKH address; one cosigner had already signed.
+    for (const [keystoreId, key, signed] of [
+      [store.id, owner, true],
+      [secondStore.id, secondOwner, false],
+    ] as const) {
+      const { signedMessage } = await registry.challengeMessages.create({ challengeId: challenge.id, keystoreId })
+      const legacyAddress = new SingleSigAccount('p2wpkh', key.xpub).receiveAddress(0).toString()
+      const signature = signed ? Signer.sign(key.wif, legacyAddress, signedMessage.messageTextToSign) : null
+      db.prepare('UPDATE signed_messages SET address = ?, signature = ?, signed_at = ? WHERE id = ?').run(
+        legacyAddress,
+        signature,
+        signed ? new Date().toISOString() : null,
+        signedMessage.id,
+      )
+    }
+
+    await expect(registry.claims.get.byId({ id: created.claim.id })).resolves.toMatchObject({
+      latestChallenge: { id: challenge.id, messages: [] },
+    })
+    await signChallengeMessage(registry, challenge.id, store.id, owner)
+    await signChallengeMessage(registry, challenge.id, secondStore.id, secondOwner)
+    await expect(registry.challenges.complete({ challengeId: challenge.id })).resolves.toMatchObject({
+      isSatisfied: true,
+    })
+  })
+
   it('rejects a substituted signing address through the singlesig get-or-create endpoint', async () => {
     const { registry } = setupStoredProof('wrong address')
     await expect(
