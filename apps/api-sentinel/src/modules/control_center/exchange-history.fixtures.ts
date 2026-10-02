@@ -29,14 +29,19 @@ function seedExchange(db: DatabaseFixture['db'], provider: 'strike' | 'robinhood
     VALUES ('exchange', ?, 'Savings', ?, ?, ?)`).run(provider, credentials, balance, new Date().toISOString())
 }
 
-function seedImportedHistory(db: DatabaseFixture['db'], amounts: string[]): void {
-  for (const [index, amount] of amounts.entries()) {
+function seedImportedHistory(db: DatabaseFixture['db'], amounts: string[], lateAmounts: string[]): void {
+  const imports = [
+    ...amounts.map((amount, index) => ({ amount, transactedAt: `2024-01-0${index + 1}T12:00:00.000Z` })),
+    // After both snapshots, where snapshots are the source of truth
+    ...lateAmounts.map((amount) => ({ amount, transactedAt: '2024-01-04T18:00:00.000Z' })),
+  ]
+  for (const [index, { amount, transactedAt }] of imports.entries()) {
     db.prepare(`INSERT INTO exchange_statement_txs
       (id, account_id, external_id, transacted_at, type, amount_btc, statement_month)
       VALUES (?, 'exchange', ?, ?, ?, ?, '2024-01')`).run(
       `import-${index}`,
       `external-${index}`,
-      `2024-01-0${index + 1}T12:00:00.000Z`,
+      transactedAt,
       amount.startsWith('-') ? 'withdrawal' : 'buy',
       amount,
     )
@@ -59,9 +64,15 @@ function createPortfolioService({ db, logger }: DatabaseFixture): ControlCenterS
   const exchangeService = new ExchangeService({ db, logger })
   expect(exchangeService.listAccounts()[0]?.connectionStatus, 'Exchange fixture must be connected').toBe('connected')
 
-  const priceService = new PriceService({ logger })
+  const priceService = new PriceService({
+    logger,
+    mempoolApiUrl: 'https://example.invalid',
+    settings: () => ({ source: undefined, fallbacks: false }),
+  })
   vi.spyOn(priceService, 'getCurrentBtcPrice').mockImplementation(
-    asyncFn(async () => Ok({ value: new Decimal(40_000), asOf: new Date() })),
+    asyncFn(async () =>
+      Ok({ value: new Decimal(40_000), asOf: new Date(), source: 'block' as const, lastKnown: false }),
+    ),
   )
 
   return new ControlCenterService({
@@ -79,10 +90,11 @@ export function setupExchangeHistory(
   provider: 'strike' | 'robinhood',
   importedAmounts: string[],
   firstSnapshotBalance: string,
+  lateImportedAmounts: string[] = [],
 ): ExchangeHistoryScenario {
   const database = setupServiceDatabase()
   seedExchange(database.db, provider, '150000000')
-  seedImportedHistory(database.db, importedAmounts)
+  seedImportedHistory(database.db, importedAmounts, lateImportedAmounts)
   seedSnapshots(database.db, firstSnapshotBalance)
 
   return {
