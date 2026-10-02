@@ -12,13 +12,13 @@ import { z } from 'zod'
 import type { ExchangeService } from '../exchange/service'
 import type { DailyRates } from '../price/daily_rates'
 import type { DailyRatesService } from '../price/daily_rates'
-import type { AggregatedTransaction } from './mapper'
+import type { AggregatedTransaction, StatementAccountTransactions } from './mapper'
 import { fetchTransactionEntries } from './tx_fetcher'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 export interface StatementTransactions {
-  [accountId: string]: AggregatedTransaction[]
+  [accountId: string]: StatementAccountTransactions
 }
 
 export interface StatementDto {
@@ -165,14 +165,17 @@ export class StatementService {
   /** Mark a statement as completed with transaction data. */
   public complete(id: string, transactionMap: StatementTransactions, dailyRates: DailyRates): void {
     // Serialize bigint values in transactionMap to strings for JSON storage
-    const serializedMap: Record<string, SerializedAggregatedTransaction[]> = {}
-    for (const [key, txs] of Object.entries(transactionMap)) {
-      // oxlint-disable-next-line oxc/no-map-spread -- Preserve caller-owned transactions while converting values for storage.
-      serializedMap[key] = txs.map((tx) => ({
-        ...tx,
-        balanceChange: tx.balanceChange.toString(),
-        transactedAt: tx.transactedAt.toISOString(),
-      }))
+    const serializedMap: Record<string, { displayName: string; transactions: SerializedAggregatedTransaction[] }> = {}
+    for (const [key, account] of Object.entries(transactionMap)) {
+      serializedMap[key] = {
+        displayName: account.displayName,
+        // oxlint-disable-next-line oxc/no-map-spread -- Preserve caller-owned transactions while converting values for storage.
+        transactions: account.transactions.map((tx) => ({
+          ...tx,
+          balanceChange: tx.balanceChange.toString(),
+          transactedAt: tx.transactedAt.toISOString(),
+        })),
+      }
     }
 
     // Serialize Decimal values in dailyRates
@@ -312,7 +315,7 @@ export class StatementService {
           const entries = txResult.unwrap()
           const aggregated = calculateAccountTransactions(entries, row.display_name)
           const sorted = sortTxs(aggregated)
-          transactionMap[row.display_name] = sorted
+          transactionMap[row.id] = { displayName: row.display_name, transactions: sorted }
           this.logger.info(
             { account: row.display_name, rawEntries: entries.length, aggregated: aggregated.length },
             'Account transactions fetched',
@@ -340,31 +343,22 @@ export class StatementService {
 
         // Coinbase: fetch real transaction history
         const coinbaseAccounts = selectedAccounts.filter((a) => a.exchange === 'coinbase')
-        if (coinbaseAccounts.length > 0) {
-          const coinbaseIds = coinbaseAccounts.map((a) => a.id)
-          const coinbaseEntries = await this.exchangeService.getCoinbaseTransactionEntries(coinbaseIds)
+        for (const account of coinbaseAccounts) {
+          const coinbaseEntries = await this.exchangeService.getCoinbaseTransactionEntries([account.id])
           if (coinbaseEntries.isOk()) {
-            for (const account of coinbaseAccounts) {
-              // Filter entries for this account — getCoinbaseTransactionEntries returns all entries for all IDs
-              // Since we can't distinguish per-account from the combined result, group all under each account
-              // For single Coinbase account (most common case), this works perfectly
-              const entries = coinbaseEntries.unwrap()
-              const label = capitalize(account.exchange)
-              const aggregated: AggregatedTransaction[] = entries.map((entry, idx) => ({
-                address: '',
-                hash: `coinbase_${account.id}_${idx}`,
-                balanceChange: entry.value,
-                block: null,
-                transactedAt: entry.timestamp,
-                confirmed: true,
-                accountName: label,
-              }))
-              transactionMap[label] = sortTxs(aggregated)
-              this.logger.info(
-                { account: label, entries: aggregated.length },
-                'Coinbase transactions added to statement',
-              )
-            }
+            const entries = coinbaseEntries.unwrap()
+            const label = exchangeStatementName(account)
+            const aggregated: AggregatedTransaction[] = entries.map((entry, idx) => ({
+              address: '',
+              hash: `coinbase_${account.id}_${idx}`,
+              balanceChange: entry.value,
+              block: null,
+              transactedAt: entry.timestamp,
+              confirmed: true,
+              accountName: label,
+            }))
+            transactionMap[account.id] = { displayName: label, transactions: sortTxs(aggregated) }
+            this.logger.info({ account: label, entries: aggregated.length }, 'Coinbase transactions added to statement')
           } else {
             this.logger.warn(
               { err: coinbaseEntries.unwrapErr() },
@@ -376,7 +370,7 @@ export class StatementService {
         // Non-Coinbase exchanges: prefer imported statement transactions, fall back to snapshot deltas
         const snapshotAccounts = selectedAccounts.filter((a) => a.exchange !== 'coinbase')
         for (const account of snapshotAccounts) {
-          const label = capitalize(account.exchange)
+          const label = exchangeStatementName(account)
 
           // Check for imported statement transactions — aggregate to daily net in/out
           const stmtTxs = this.exchangeService.listStatementTransactions(account.id)
@@ -426,7 +420,7 @@ export class StatementService {
                 idx++
               }
             }
-            transactionMap[label] = sortTxs(aggregated)
+            transactionMap[account.id] = { displayName: label, transactions: sortTxs(aggregated) }
             this.logger.info(
               { account: label, rawTxCount: stmtTxs.length, dailyEntries: aggregated.length },
               'Daily-aggregated statement transactions added to statement',
@@ -461,7 +455,7 @@ export class StatementService {
               }
               previousBalance = balance
             }
-            transactionMap[label] = sortTxs(aggregated)
+            transactionMap[account.id] = { displayName: label, transactions: sortTxs(aggregated) }
             this.logger.info(
               { account: label, snapshots: snapshots.length, dailyEntries: aggregated.length },
               'Snapshot-based exchange transactions added to statement',
@@ -552,17 +546,28 @@ export class StatementService {
   private deserializeTransactionMap(json: string): StatementTransactions {
     // SAFETY: Database JSON is untrusted until the schema below validates the complete transaction map.
     const raw = parseUnknown(
-      z.record(z.array(SerializedAggregatedTransactionSchema)),
+      z.record(
+        z.union([
+          z.array(SerializedAggregatedTransactionSchema),
+          z.object({ displayName: z.string(), transactions: z.array(SerializedAggregatedTransactionSchema) }),
+        ]),
+      ),
       JSON.parse(json) as unknown,
     ).expect('Stored statement transactions are invalid')
     const result: StatementTransactions = {}
-    for (const [key, txs] of Object.entries(raw)) {
-      // oxlint-disable-next-line oxc/no-map-spread -- Preserve additional stored fields in a new object with restored value types.
-      result[key] = txs.map((tx) => ({
-        ...tx,
-        balanceChange: BigInt(tx.balanceChange),
-        transactedAt: new Date(tx.transactedAt),
-      }))
+    for (const [key, value] of Object.entries(raw)) {
+      // Older completed statements used the display name as the key.
+      const displayName = Array.isArray(value) ? key : value.displayName
+      const txs = Array.isArray(value) ? value : value.transactions
+      result[key] = {
+        displayName,
+        // oxlint-disable-next-line oxc/no-map-spread -- Preserve additional stored fields in a new object with restored value types.
+        transactions: txs.map((tx) => ({
+          ...tx,
+          balanceChange: BigInt(tx.balanceChange),
+          transactedAt: new Date(tx.transactedAt),
+        })),
+      }
     }
     return result
   }
@@ -650,4 +655,10 @@ function sortTxs<T extends { hash: string; transactedAt: Date }>(txs: T[]): T[] 
 
 function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1)
+}
+
+/** Names an exchange account in a statement by the name its owner gave it. */
+function exchangeStatementName(account: { exchange: string; displayName: string }): string {
+  const name = account.displayName.trim()
+  return name === '' ? capitalize(account.exchange) : name
 }
