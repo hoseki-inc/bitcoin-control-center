@@ -11,7 +11,7 @@ test('starts the bundled server and preserves the shutdown receiver', async () =
   const server = await startServer(
     moduleUrl(`
     export async function main() {
-      return { token: 'server', async shutdown() {
+      return { token: 'server', port: 51234, async shutdown() {
         if (this.token !== 'server') throw new Error('Lost the server receiver')
       } }
     }
@@ -23,7 +23,7 @@ test('starts the bundled server and preserves the shutdown receiver', async () =
 test('awaits asynchronous shutdown and propagates its failure', async () => {
   const server = await startServer(
     moduleUrl(`
-    export async function main() { return { async shutdown() {
+    export async function main() { return { port: 51234, async shutdown() {
       await new Promise(resolve => setTimeout(resolve, 0))
       throw new Error('Shutdown failed')
     } } }
@@ -65,11 +65,12 @@ test('forwards desktop offline and managed Tor options to the bundled server', a
       if (options.waitForElectrum !== false) throw new Error('Offline startup flag missing')
       if (options.tor.getStatus().state !== 'ready') throw new Error('Tor manager missing')
       await options.tor.start()
-      return { async shutdown() {} }
+      return { port: options.listenPort, async shutdown() {} }
     }
   `),
     {
       waitForElectrum: false,
+      listenPort: 51235,
       tor: {
         start: async () => {
           starts += 1
@@ -80,5 +81,23 @@ test('forwards desktop offline and managed Tor options to the bundled server', a
     },
   )
   assert.equal(starts, 1)
+  assert.equal(server.port, 51235)
   await server.shutdown()
 })
+
+for (const port of ['', 'port: 0,', 'port: "3400",']) {
+  test(`stops and rejects a server that does not report the port it bound: {${port}}`, async () => {
+    globalThis.serverStopped = false
+    await assert.rejects(
+      startServer(
+        moduleUrl(
+          `export async function main() { return { ${port} async shutdown() { globalThis.serverStopped = true } } }`,
+        ),
+      ),
+      /must report the port it bound/,
+    )
+    // A server that is already listening must not be left running.
+    assert.equal(globalThis.serverStopped, true)
+    delete globalThis.serverStopped
+  })
+}

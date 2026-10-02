@@ -405,4 +405,19 @@ const MIGRATIONS: Migration[] = [
       ALTER TABLE accounts ADD COLUMN deleted_at TEXT;
     `,
   },
+  {
+    name: '015_desktop_connection_profiles',
+    sql: `
+      -- Named Electrum connections saved by the desktop app, each with its own Tor setting.
+      CREATE TABLE desktop_connection_profiles (
+        id TEXT PRIMARY KEY,
+        nickname TEXT NOT NULL,
+        host TEXT NOT NULL,
+        port INTEGER NOT NULL CHECK(port BETWEEN 1 AND 65535),
+        protocol TEXT NOT NULL CHECK(protocol IN ('tcp', 'ssl')),
+        tor_enabled INTEGER NOT NULL CHECK(tor_enabled IN (0, 1)),
+        revision INTEGER NOT NULL DEFAULT 1
+      );
+    `,
+  },
 ]
