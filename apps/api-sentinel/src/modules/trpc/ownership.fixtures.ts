@@ -115,8 +115,12 @@ export function setupOwnershipHarness(): OwnershipHarness {
   const exchangeService = new ExchangeService(deps)
   const manualService = new ManualService(deps)
   const etfService = new EtfService(deps)
-  const priceService = new PriceService({ logger })
   const mempoolApiUrl = env.MEMPOOL_API_URL
+  const priceService = new PriceService({
+    logger,
+    mempoolApiUrl,
+    settings: () => ({ source: undefined, fallbacks: false }),
+  })
 
   const app: AppContext = {
     env,
@@ -152,6 +156,8 @@ export function setupOwnershipHarness(): OwnershipHarness {
     prepareElectrumConfig: (config) => Ok(config),
     getTorStatus: () => ({ state: 'unavailable' }),
     startTor: () => ({ state: 'unavailable' }),
+    connectionProfiles: undefined,
+    connectProfile: async () => Ok(undefined),
   }
 
   return { registry: appRouter.createCaller({ app }).portalProve.registry, db: database.db }
