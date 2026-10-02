@@ -90,7 +90,10 @@ const dataSource: DashboardDataSource = {
     exchangeAccountsQuery: { data: [], isLoading: false },
     manualAccountsQuery: { data: mocks.holdings, isLoading: false },
     etfAccountsQuery: { data: [], isLoading: false },
-    btcPriceQuery: { data: { value: new Decimal(50_000), asOf: new Date('2026-01-01T00:00:00Z') }, isLoading: false },
+    btcPriceQuery: {
+      data: { value: new Decimal(50_000), asOf: new Date('2026-01-01T00:00:00Z'), source: 'block', lastKnown: false },
+      isLoading: false,
+    },
   }),
   useHistory: (input, options) => mocks.useQuery(input, options),
   useBalances: () => ({ data: new Map() }),
@@ -815,5 +818,22 @@ describe('custom portfolio range UI', () => {
       })
       expect(mocks.refetch).toHaveBeenCalledWith({ cancelRefetch: false })
     })
+  })
+})
+
+it('uses the same current price for the headline and sidebar when history has an older price', async () => {
+  await withTestSetup(async () => {
+    const previousPrice = mocks.base.currentBtcPrice
+    onTestFinished(() => {
+      mocks.base.currentBtcPrice = previousPrice
+    })
+    mocks.base.currentBtcPrice = '83000'
+    const [holding] = mocks.holdings
+    assert.exists(holding)
+    holding.balance = '100000000'
+    await render()
+    expect(container.textContent).toContain('$50,000.00')
+    expect(container.textContent).not.toContain('$83,000.00')
+    expect(mocks.sidebar.mock.lastCall?.[0].totalUsd).toBe(50000)
   })
 })

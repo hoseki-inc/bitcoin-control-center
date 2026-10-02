@@ -133,11 +133,11 @@ export class Client {
     this.credentials = credentials
   }
 
-  private makeRequest(path: string, postData: string): AsyncResult<SafeResponse, ApiError> {
+  private makeRequest(path: string, nonce: string, postData: string): AsyncResult<SafeResponse, ApiError> {
     return tryBlockAsync(
       async function* (this: Client) {
         // Generate authentication headers
-        const authHeaders = yield* getKrakenHeaders(path, Date.now().toString(), postData, this.credentials)
+        const authHeaders = yield* getKrakenHeaders(path, nonce, postData, this.credentials)
           .mapErr((err) => {
             return new ApiError(
               ApiErrorKind.InvalidCredentials(err.message),
@@ -203,7 +203,7 @@ export class Client {
         const nonce = Date.now().toString()
         const postData = `nonce=${nonce}`
 
-        const response = yield* this.makeRequest('/0/private/Balance', postData).try()
+        const response = yield* this.makeRequest('/0/private/Balance', nonce, postData).try()
 
         const { data, response: originalResponse } = yield* parseBalanceResponse(response).try()
 
@@ -256,7 +256,7 @@ export class Client {
           postData = `nonce=${nonce}`
         }
 
-        const response = yield* this.makeRequest('/0/private/Ledgers', postData).try()
+        const response = yield* this.makeRequest('/0/private/Ledgers', nonce, postData).try()
         const { data, response: originalResponse } = yield* parseLedgersResponse(response).try()
 
         // Check for Kraken API errors in the response

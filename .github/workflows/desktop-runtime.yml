@@ -21,13 +21,11 @@ jobs:
           - os: macos-15
             target: mac
             arch: arm64
-            extension: dmg
           - os: windows-2022
             target: win
             arch: x64
-            extension: exe
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    timeout-minutes: 40
     defaults:
       run:
         shell: bash
@@ -38,33 +36,52 @@ jobs:
         if: runner.os == 'Windows'
         run: git config --global core.autocrlf false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Reusable workflows inherit the caller's exact event commit.
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify the workflow commit before executing repository code
+        run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+      # Installers are built from fresh outputs and never read or write the shared build cache.
       - uses: ./.github/actions/setup
+        with:
+          cache: 'false'
       - name: Install locked desktop dependencies without lifecycle scripts
         run: npm ci --prefix desktop --ignore-scripts
       - name: Download the pinned Electron binary with checksum verification
         run: npm --prefix desktop run install:electron
       - name: Test native SQLite and PDF rendering in Electron
         run: npm --prefix desktop run test:runtime
-      - name: Build desktop application
-        run: pnpm build:desktop:app
-      - name: Download and verify pinned Tor bundles
-        run: ./desktop/download-tor.sh
-      - name: Build installer without publishing
-        working-directory: desktop
-        run: npx --no-install electron-builder --${{ matrix.target }} --${{ matrix.arch }} --publish never
-      - name: Verify installer output
+      - name: Build, sign (ad hoc on Mac), and stage the installer with its metadata and checksum
         env:
-          INSTALLER_EXTENSION: ${{ matrix.extension }}
+          DESKTOP_TARGET: ${{ matrix.target }}
+        run: bash desktop/build.sh "--${DESKTOP_TARGET}"
+      # Each smoke test runs a copy outside the checkout, so the packaged app can't borrow a
+      # dependency it is missing from the repository's node_modules.
+      - name: Smoke-test the packaged Mac runtime
+        if: matrix.target == 'mac'
         run: |
-          node --input-type=module <<'NODE'
-          import assert from 'node:assert/strict'
-          import { readdirSync, statSync } from 'node:fs'
-          import { join } from 'node:path'
-          const directory = 'desktop/release'
-          const installers = readdirSync(directory).filter((name) => name.endsWith(`.${process.env.INSTALLER_EXTENSION}`))
-          assert.ok(installers.length > 0, 'Expected an installer')
-          for (const name of installers) {
-            assert.ok(statSync(join(directory, name)).size > 0, `Empty installer: ${name}`)
-          }
-          NODE
-      # Verification outputs stay on the disposable runner; do not upload them.
+          codesign --verify --deep --strict "desktop/release/mac-arm64/Bitcoin Control Center.app"
+          APP="$RUNNER_TEMP/smoke/Bitcoin Control Center.app"
+          mkdir -p "$RUNNER_TEMP/smoke"
+          ditto "desktop/release/mac-arm64/Bitcoin Control Center.app" "$APP"
+          ELECTRON_RUN_AS_NODE=1 "$APP/Contents/MacOS/Bitcoin Control Center" \
+            desktop/scripts/smoke.mjs "$APP/Contents/Resources"
+      - name: Smoke-test the packaged Windows runtime
+        if: matrix.target == 'win'
+        shell: pwsh
+        run: |
+          $app = Join-Path $env:RUNNER_TEMP 'smoke-win'
+          Copy-Item -Recurse 'desktop/release/win-unpacked' $app
+          $env:ELECTRON_RUN_AS_NODE = '1'
+          & (Join-Path $app 'Bitcoin Control Center.exe') desktop/scripts/smoke.mjs (Join-Path $app 'resources')
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Confirm packaging did not edit source files
+        run: git diff --exit-code
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: Bitcoin-Control-Center-${{ matrix.target }}-${{ matrix.arch }}
+          path: desktop/release/artifacts/${{ matrix.target }}/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
