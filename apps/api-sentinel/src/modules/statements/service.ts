@@ -657,13 +657,8 @@ function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1)
 }
 
-/** Names an exchange account so accounts at the same exchange stay distinguishable in a statement. */
+/** Names an exchange account in a statement by the name its owner gave it. */
 function exchangeStatementName(account: { exchange: string; displayName: string }): string {
-  const exchange = capitalize(account.exchange)
   const name = account.displayName.trim()
-  // Default account names repeat the exchange, e.g. a Strike account named "Strike".
-  if (name === '' || name.toLowerCase() === exchange.toLowerCase()) {
-    return exchange
-  }
-  return `${exchange} – ${name}`
+  return name === '' ? capitalize(account.exchange) : name
 }

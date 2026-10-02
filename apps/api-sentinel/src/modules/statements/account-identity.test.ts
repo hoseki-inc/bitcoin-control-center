@@ -21,12 +21,12 @@ describe('statement account identity', () => {
     {
       scenario: 'two accounts at the same exchange',
       setup: setupTwoExchangeAccounts,
-      names: ['Strike – Savings', 'Strike – Trading'],
+      names: ['Savings', 'Trading'],
     },
     {
       scenario: 'two Coinbase accounts',
       setup: setupTwoCoinbaseAccounts,
-      names: ['Coinbase – Savings', 'Coinbase – Trading'],
+      names: ['Savings', 'Trading'],
     },
   ])('retains both accounts and their 3 BTC combined balance: $scenario', async ({ setup, names }) => {
     const statement = await generateStatementPdf(setup())
