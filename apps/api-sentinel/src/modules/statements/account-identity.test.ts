@@ -18,8 +18,16 @@ describe('statement account identity', () => {
       setup: setupWalletAndExchangeWithSameName,
       names: ['Strike', 'Strike'],
     },
-    { scenario: 'two accounts at the same exchange', setup: setupTwoExchangeAccounts, names: ['Strike', 'Strike'] },
-    { scenario: 'two Coinbase accounts', setup: setupTwoCoinbaseAccounts, names: ['Coinbase', 'Coinbase'] },
+    {
+      scenario: 'two accounts at the same exchange',
+      setup: setupTwoExchangeAccounts,
+      names: ['Strike – Savings', 'Strike – Trading'],
+    },
+    {
+      scenario: 'two Coinbase accounts',
+      setup: setupTwoCoinbaseAccounts,
+      names: ['Coinbase – Savings', 'Coinbase – Trading'],
+    },
   ])('retains both accounts and their 3 BTC combined balance: $scenario', async ({ setup, names }) => {
     const statement = await generateStatementPdf(setup())
 

@@ -158,14 +158,20 @@ function seedWallet(db: Database.Database, wallet: WalletFixture, displayName: s
   return wallet.id
 }
 
-function seedExchange(db: Database.Database, id: string, balance: string, provider = 'strike'): string {
+function seedExchange(
+  db: Database.Database,
+  id: string,
+  balance: string,
+  displayName: string,
+  provider = 'strike',
+): string {
   initEncryption('11'.repeat(32))
   const blob = Encrypted.encrypt('synthetic-test-key').expect('Synthetic credential must encrypt').blob
   const credentials = JSON.stringify({ type: 'apiKey', data: { key: { blob } } })
 
   db.prepare(
     'INSERT INTO exchange_accounts (id, provider, display_name, encrypted_credentials) VALUES (?, ?, ?, ?)',
-  ).run(id, provider, `Exchange ${id}`, credentials)
+  ).run(id, provider, displayName, credentials)
 
   db.prepare('INSERT INTO exchange_balance_snapshots (account_id, timestamp, balance_sats) VALUES (?, ?, ?)').run(
     id,
@@ -201,14 +207,17 @@ export function setupEmptyNamedWallet(): StatementScenario {
 export function setupWalletAndExchangeWithSameName(): StatementScenario {
   const { service, db } = createStatementHarness()
   const claimIds = [seedWallet(db, savingsWallet, 'Strike')]
-  const exchangeAccountIds = [seedExchange(db, 'exchange-a', '200000000')]
+  const exchangeAccountIds = [seedExchange(db, 'exchange-a', '200000000', 'Strike')]
 
   return { service, input: { ...period, claimIds, exchangeAccountIds } }
 }
 
 export function setupTwoExchangeAccounts(): StatementScenario {
   const { service, db } = createStatementHarness()
-  const exchangeAccountIds = [seedExchange(db, 'exchange-a', '100000000'), seedExchange(db, 'exchange-b', '200000000')]
+  const exchangeAccountIds = [
+    seedExchange(db, 'exchange-a', '100000000', 'Savings'),
+    seedExchange(db, 'exchange-b', '200000000', 'Trading'),
+  ]
 
   return { service, input: { ...period, claimIds: [], exchangeAccountIds } }
 }
@@ -216,8 +225,8 @@ export function setupTwoExchangeAccounts(): StatementScenario {
 export function setupTwoCoinbaseAccounts(): StatementScenario {
   const { service, db, exchangeService } = createStatementHarness()
   const exchangeAccountIds = [
-    seedExchange(db, 'coinbase-a', '100000000', 'coinbase'),
-    seedExchange(db, 'coinbase-b', '200000000', 'coinbase'),
+    seedExchange(db, 'coinbase-a', '100000000', 'Savings', 'coinbase'),
+    seedExchange(db, 'coinbase-b', '200000000', 'Trading', 'coinbase'),
   ]
   vi.spyOn(exchangeService, 'getCoinbaseTransactionEntries').mockImplementation(
     asyncFn(async (ids) => {

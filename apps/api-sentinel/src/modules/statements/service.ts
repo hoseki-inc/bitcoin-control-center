@@ -347,7 +347,7 @@ export class StatementService {
           const coinbaseEntries = await this.exchangeService.getCoinbaseTransactionEntries([account.id])
           if (coinbaseEntries.isOk()) {
             const entries = coinbaseEntries.unwrap()
-            const label = capitalize(account.exchange)
+            const label = exchangeStatementName(account)
             const aggregated: AggregatedTransaction[] = entries.map((entry, idx) => ({
               address: '',
               hash: `coinbase_${account.id}_${idx}`,
@@ -370,7 +370,7 @@ export class StatementService {
         // Non-Coinbase exchanges: prefer imported statement transactions, fall back to snapshot deltas
         const snapshotAccounts = selectedAccounts.filter((a) => a.exchange !== 'coinbase')
         for (const account of snapshotAccounts) {
-          const label = capitalize(account.exchange)
+          const label = exchangeStatementName(account)
 
           // Check for imported statement transactions — aggregate to daily net in/out
           const stmtTxs = this.exchangeService.listStatementTransactions(account.id)
@@ -655,4 +655,15 @@ function sortTxs<T extends { hash: string; transactedAt: Date }>(txs: T[]): T[] 
 
 function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1)
+}
+
+/** Names an exchange account so accounts at the same exchange stay distinguishable in a statement. */
+function exchangeStatementName(account: { exchange: string; displayName: string }): string {
+  const exchange = capitalize(account.exchange)
+  const name = account.displayName.trim()
+  // Default account names repeat the exchange, e.g. a Strike account named "Strike".
+  if (name === '' || name.toLowerCase() === exchange.toLowerCase()) {
+    return exchange
+  }
+  return `${exchange} – ${name}`
 }
