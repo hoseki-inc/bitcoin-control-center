@@ -17,7 +17,7 @@ describe('statement generation with incomplete transaction history', () => {
     ])
   })
 
-  it.each(['HTTP 503', 'network rejection'] as const)(
+  it.each(['HTTP 404', 'HTTP 503', 'network rejection', 'invalid JSON'] as const)(
     'rejects partial statement data when a withdrawal fetch fails with %s',
     async (failure) => {
       const { service, input, getDailyRates } = setupDepositAndWithdrawal(failure)
@@ -26,7 +26,13 @@ describe('statement generation with incomplete transaction history', () => {
       expect(result.isErr(), 'A missing withdrawal must fail generation, not leave a successful 1 BTC balance').toBe(
         true,
       )
-      expect(result.expectErr('Missing withdrawal must fail').message).toContain(missingTransactionId)
+      const error = result.expectErr('Missing withdrawal must fail')
+      expect(error.message).toContain(missingTransactionId)
+      if (failure.startsWith('HTTP')) {
+        expect(error.message).toContain(failure)
+      } else {
+        expect(error.cause).toBeInstanceOf(Error)
+      }
       expect(getDailyRates).not.toHaveBeenCalled()
     },
   )

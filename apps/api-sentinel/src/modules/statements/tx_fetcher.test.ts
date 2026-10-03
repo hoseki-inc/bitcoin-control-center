@@ -117,6 +117,44 @@ it('rejects partial history when a later batch contains a malformed transaction'
   })
 })
 
+it.each(['HTTP 404', 'HTTP 503', 'network rejection'] as const)(
+  'rejects partial history when a later batch fails with %s',
+  async (failure) => {
+    await withTestSetup(async () => {
+      const transactionIds = Array.from({ length: 21 }, (_, index) => (index + 1).toString(16).padStart(64, '0'))
+      const failedId = transactionIds[10]
+      assert(failedId != null && failedId !== '')
+      const deps = setup(null, transactionIds)
+      const connectionError = new Error('Synthetic connection reset')
+      vi.mocked(fetch).mockImplementation(async (input) => {
+        const id = new Request(input).url.split('/').at(-1)
+        if (id === failedId) {
+          if (failure === 'network rejection') {
+            throw connectionError
+          }
+          return new Response('Unavailable', { status: failure === 'HTTP 404' ? 404 : 503 })
+        }
+        return Response.json({
+          txid: id,
+          vin: [],
+          vout: [],
+          status: { confirmed: true, block_height: 800000, block_time: timestamp },
+        })
+      })
+
+      const result = await fetchTransactionEntries(deps)
+      const error = result.expectErr('a failed fetch after a successful batch must discard partial history')
+      expect(error.message).toContain(failedId)
+      if (failure === 'network rejection') {
+        expect(error.cause).toBe(connectionError)
+      } else {
+        expect(error.message).toContain(failure)
+      }
+      expect(fetch).toHaveBeenCalledTimes(20)
+    })
+  },
+)
+
 it('fails rather than skipping an address whose history lookup fails', async () => {
   await withTestSetup(async () => {
     const deps = setup(null)

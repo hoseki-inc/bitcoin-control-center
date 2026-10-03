@@ -5,9 +5,9 @@ import type { TransactionEntry } from '@hoseki/packages/bitcoin/onchain/types'
 import { isConfirmed } from '@hoseki/packages/bitcoin/onchain/types'
 import { addressToScripthash } from '@hoseki/packages/bitcoin/scripthash'
 import { Txid } from '@hoseki/packages/bitcoin/txid'
-import { parseUnknown } from '@hoseki/packages/result'
 import { Err, Ok, asyncFn } from '@hoseki/packages/result'
 import type { Result } from '@hoseki/packages/result'
+import { parseUnknown } from '@hoseki/packages/result/lib/parse'
 import type { Logger } from 'pino'
 import { z } from 'zod'
 
@@ -122,6 +122,7 @@ export const fetchTransactionEntries = asyncFn(
       )
 
       for (const [j, result] of results.entries()) {
+        // Even a transaction unknown to mempool.space must not silently disappear from a statement.
         if (result.status === 'rejected') {
           return Err(new Error(`Failed to fetch transaction ${batch[j]}`, { cause: result.reason }))
         }

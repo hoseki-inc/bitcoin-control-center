@@ -27,7 +27,7 @@ const transactionStatus = { confirmed: true, block_height: 800000, block_time: t
 const withdrawalId = 'f'.repeat(64)
 export const missingTransactionId = withdrawalId
 
-type WithdrawalOutcome = 'success' | 'HTTP 503' | 'network rejection'
+type WithdrawalOutcome = 'success' | 'HTTP 404' | 'HTTP 503' | 'network rejection' | 'invalid JSON'
 
 interface StatementScenario {
   service: StatementService
@@ -97,10 +97,14 @@ function createStatementHarness(outcome: WithdrawalOutcome) {
       const url = new Request(input).url
       if (url.endsWith(withdrawalId)) {
         switch (outcome) {
+          case 'HTTP 404':
+            return new Response('Transaction not found', { status: 404 })
           case 'HTTP 503':
             return new Response('Unavailable', { status: 503 })
           case 'network rejection':
             throw new Error('Synthetic connection reset')
+          case 'invalid JSON':
+            return new Response('{')
           case 'success':
             return Response.json({
               txid: withdrawalId,
