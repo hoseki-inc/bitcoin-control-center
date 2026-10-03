@@ -339,7 +339,7 @@ export function StrikeAccountDetailsPage(): JSX.Element {
 
           <HStack spacing={0} gap={4} mb={4} w="100%" alignItems="flex-start" flexWrap="wrap">
             {/* Amount */}
-            <Box w={{ base: 'full', sm: 'calc(50% - 8px)' }} minW={0} overflowWrap="anywhere">
+            <Box w={{ base: 'full', sm: 'calc(50% - 8px)', md: 'calc(25% - 12px)' }} minW={0} overflowWrap="anywhere">
               <Text textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={1}>
                 Amount
               </Text>
@@ -357,7 +357,7 @@ export function StrikeAccountDetailsPage(): JSX.Element {
             </Box>
 
             {/* Status */}
-            <Box w={{ base: 'full', sm: 'calc(50% - 8px)' }} minW={0} overflowWrap="anywhere">
+            <Box w={{ base: 'full', sm: 'calc(50% - 8px)', md: 'calc(25% - 12px)' }} minW={0} overflowWrap="anywhere">
               <Text textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={1}>
                 Status
               </Text>
@@ -369,7 +369,7 @@ export function StrikeAccountDetailsPage(): JSX.Element {
             </Box>
 
             {/* Account Type */}
-            <Box w={{ base: 'full', sm: 'calc(50% - 8px)' }} minW={0} overflowWrap="anywhere">
+            <Box w={{ base: 'full', sm: 'calc(50% - 8px)', md: 'calc(25% - 12px)' }} minW={0} overflowWrap="anywhere">
               <Text textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={1}>
                 Account Type
               </Text>
@@ -380,7 +380,7 @@ export function StrikeAccountDetailsPage(): JSX.Element {
 
             {/* Date Added */}
             <Box
-              w={{ base: 'full', sm: 'calc(50% - 8px)' }}
+              w={{ base: 'full', sm: 'calc(50% - 8px)', md: 'calc(25% - 12px)' }}
               minW={0}
               overflowWrap="anywhere"
               textAlign={{ base: 'left', sm: 'right' }}
