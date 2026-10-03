@@ -19,6 +19,7 @@ export interface ElectrumTlsConfig {
    *
    * Defaults to verifying public SSL hosts and allowing self-signed certs only
    * for local/private hosts, where self-hosted Electrum servers are common.
+   * Private hosts are encrypted but not verified; plain TCP isn't encrypted.
    */
   rejectUnauthorized?: boolean
   /** Optional SNI/certificate hostname override. Defaults to host for public DNS names. */
@@ -121,6 +122,26 @@ interface PendingRequest {
   timer: ReturnType<typeof setTimeout>
 }
 
+/** An error the server answered with, which still shows the server is reachable. */
+export class ElectrumServerError extends Error {
+  public override readonly name = 'ElectrumServerError'
+}
+
+/** A request the server didn't answer in time. */
+export class ElectrumTimeoutError extends Error {
+  public override readonly name = 'ElectrumTimeoutError'
+  /**
+   * Whether nothing at all arrived on the connection while waiting, so it has gone silent;
+   * otherwise the server is busy but still answering other requests.
+   */
+  public readonly silent: boolean
+
+  public constructor(message: string, silent: boolean) {
+    super(message)
+    this.silent = silent
+  }
+}
+
 /**
  * Low-level Electrum JSON-RPC transport over TCP or SSL.
  *
@@ -138,6 +159,10 @@ export class ElectrumTransport {
   private nextId = 0
   private readonly pending = new Map<number, PendingRequest>()
   private connected = false
+  // Counts connections, so a failure on an old connection never drops a newer one.
+  private connectionCount = 0
+  // Counts incoming data, so a timeout can tell a silent connection from a busy one.
+  private receivedCount = 0
   private cancelConnect: (() => void) | null = null
 
   public constructor(config: ElectrumConnectionConfig) {
@@ -150,6 +175,11 @@ export class ElectrumTransport {
 
   public isConnected(): boolean {
     return this.connected
+  }
+
+  /** Identifies the current connection; it changes every time a new one opens. */
+  public get connectionNumber(): number {
+    return this.connectionCount
   }
 
   public connect(): AsyncResult<void, Error> {
@@ -200,6 +230,7 @@ export class ElectrumTransport {
             return
           }
           this.connected = true
+          this.connectionCount += 1
           finish(Ok(undefined))
         }
 
@@ -299,11 +330,19 @@ export class ElectrumTransport {
       id,
     })
 
+    const receivedAtSend = this.receivedCount
     return new AsyncResult(
       new Promise<Result<unknown, Error>>((resolve) => {
         const timer = setTimeout(() => {
           this.pending.delete(id)
-          resolve(Err(new Error(`Request timeout after ${this.config.requestTimeout}ms for ${method}`)))
+          resolve(
+            Err(
+              new ElectrumTimeoutError(
+                `Request timeout after ${this.config.requestTimeout}ms for ${method}`,
+                this.receivedCount === receivedAtSend,
+              ),
+            ),
+          )
         }, this.config.requestTimeout)
 
         this.pending.set(id, { resolve, timer })
@@ -339,6 +378,7 @@ export class ElectrumTransport {
   }
 
   private onData(data: string): void {
+    this.receivedCount += 1
     this.buffer += data
     if (this.buffer.length > MAX_ELECTRUM_RESPONSE_BYTES) {
       const err = new Error(`Electrum response exceeded ${MAX_ELECTRUM_RESPONSE_BYTES} bytes`)
@@ -386,7 +426,9 @@ export class ElectrumTransport {
       this.pending.delete(response.id)
 
       if (response.error) {
-        pendingReq.resolve(Err(new Error(`Electrum error [${response.error.code}]: ${response.error.message}`)))
+        pendingReq.resolve(
+          Err(new ElectrumServerError(`Electrum error [${response.error.code}]: ${response.error.message}`)),
+        )
       } else {
         pendingReq.resolve(Ok(response.result))
       }

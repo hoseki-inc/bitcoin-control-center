@@ -87,7 +87,7 @@ async function seedHistory(db: SentinelDb): Promise<void> {
 function futureMigrations(migrationSql: string): string {
   const directory = testDirectory()
   cpSync(migrationFolder, directory, { recursive: true })
-  const migration = join(directory, '20260930000000_rebuild_account_and_statement_tables')
+  const migration = join(directory, '20270101000000_rebuild_account_and_statement_tables')
   mkdirSync(migration)
   writeFileSync(join(migration, 'migration.sql'), migrationSql)
   return directory
@@ -153,7 +153,7 @@ it('preserves statements and exchange history when Drizzle rebuilds populated ta
     expect(after.data.filter((_, index) => index !== journalIndex)).toEqual(
       before.data.filter((_, index) => index !== journalIndex),
     )
-    await expect(database.all(sql`SELECT name FROM ${sql.identifier(migrationsTable)}`)).resolves.toHaveLength(15)
+    await expect(database.all(sql`SELECT name FROM ${sql.identifier(migrationsTable)}`)).resolves.toHaveLength(16)
     await expect(database.all(sql`PRAGMA foreign_key_check`)).resolves.toEqual([])
     await expect(database.all(sql`PRAGMA foreign_keys`)).resolves.toEqual([{ foreign_keys: 1 }])
     await migrate(database, { migrationsFolder: folder, migrationsTable })
@@ -179,11 +179,11 @@ it('rolls back failed migration data and journal changes, then permits retry', a
     await expect(databaseState(database)).resolves.toEqual(before)
     await expect(database.all(sql`PRAGMA foreign_keys`)).resolves.toEqual([{ foreign_keys: 1 }])
     writeFileSync(
-      join(folder, '20260930000000_rebuild_account_and_statement_tables', 'migration.sql'),
+      join(folder, '20270101000000_rebuild_account_and_statement_tables', 'migration.sql'),
       rebuildTable('exchange_accounts'),
     )
     await migrate(database, { migrationsFolder: folder, migrationsTable })
-    await expect(database.all(sql`SELECT name FROM ${sql.identifier(migrationsTable)}`)).resolves.toHaveLength(15)
+    await expect(database.all(sql`SELECT name FROM ${sql.identifier(migrationsTable)}`)).resolves.toHaveLength(16)
     await expect(database.select().from(exchangeBalanceSnapshots)).resolves.toHaveLength(1)
   } finally {
     database.$client.close()

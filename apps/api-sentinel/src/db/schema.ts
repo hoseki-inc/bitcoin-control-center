@@ -96,6 +96,24 @@ export const settings = sqliteTable('settings', {
   value: text('value').notNull(),
 })
 
+export const desktopConnectionProfiles = sqliteTable(
+  'desktop_connection_profiles',
+  {
+    id: text('id').primaryKey(),
+    nickname: text('nickname').notNull(),
+    host: text('host').notNull(),
+    port: integer('port').notNull(),
+    protocol: text('protocol', { enum: ['tcp', 'ssl'] }).notNull(),
+    torEnabled: integer('tor_enabled').notNull(),
+    revision: integer('revision').notNull().default(1),
+  },
+  (table) => [
+    check('desktop_connection_profiles_port_check', sql`${table.port} BETWEEN 1 AND 65535`),
+    check('desktop_connection_profiles_protocol_check', sql`${table.protocol} IN ('tcp', 'ssl')`),
+    check('desktop_connection_profiles_tor_enabled_check', sql`${table.torEnabled} IN (0, 1)`),
+  ],
+)
+
 export const keystores = sqliteTable('keystores', {
   id: text('id').primaryKey(),
   accountId: text('account_id')

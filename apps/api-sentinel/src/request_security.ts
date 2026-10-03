@@ -118,8 +118,10 @@ function isUnsafeMethod(method: string): boolean {
   return method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS'
 }
 
-function isProtectedRoute(url: string): boolean {
-  return url.startsWith('/trpc')
+// Routing decodes the path, so an encoded request such as /%74rpc/... still reaches tRPC:
+// check the route that will run as well as the raw URL.
+function isProtectedRoute(route: string | undefined, url: string): boolean {
+  return route?.startsWith('/trpc') === true || url.startsWith('/trpc')
 }
 
 export function registerRequestSecurity(
@@ -128,9 +130,13 @@ export function registerRequestSecurity(
   isProduction: boolean,
 ): void {
   const allowedHostPatterns = getAllowedHostPatterns(configuredHosts)
+  // Only StartOS configures hosts, because its proxy connects through an internal host and passes the
+  // address you used in X-Forwarded-Host. Elsewhere nothing sets that header except the client itself,
+  // so a web page (after DNS rebinding, say) could use it to pass as localhost: there, Host must match too.
+  const trustForwardedHost = (configuredHosts ?? '').trim() !== ''
 
   server.addHook('onRequest', async (request, reply) => {
-    if (!isProtectedRoute(request.url)) {
+    if (!isProtectedRoute(request.routeOptions.url, request.url)) {
       return
     }
 
@@ -140,8 +146,12 @@ export function registerRequestSecurity(
     }
 
     const forwardedHost = getHeaderValue(request.headers['x-forwarded-host'])
-    const requestHost = forwardedHost ?? getHeaderValue(request.headers.host)
-    if (!isAllowedHost(requestHost, allowedHostPatterns)) {
+    const host = getHeaderValue(request.headers.host)
+    const hostAllowed = trustForwardedHost
+      ? isAllowedHost(forwardedHost ?? host, allowedHostPatterns)
+      : isAllowedHost(host, allowedHostPatterns) &&
+        (forwardedHost === undefined || isAllowedHost(forwardedHost, allowedHostPatterns))
+    if (!hostAllowed) {
       return reply.status(403).send({ code: 'forbidden_host', message: 'Host is not allowed' })
     }
 

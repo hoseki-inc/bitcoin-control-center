@@ -59,106 +59,24 @@ async function withTestSetup(run: () => Promise<void>): Promise<void> {
   await run()
 }
 
-it.each([
-  ['SuperJSON error', { error: { json: { message: 'Server unavailable' } } }, 'Server unavailable'],
-  ['plain error', { error: { message: 'Connection refused' } }, 'Connection refused'],
-  ['both formats', { error: { json: { message: 'Preferred' }, message: 'Other' } }, 'Preferred'],
-  ['empty message', { error: { json: { message: '' } } }, ''],
-  ['invalid nested message', { error: { json: { message: 123 }, message: 'Plain fallback' } }, 'Plain fallback'],
-  ['invalid nested error', { error: { json: null, message: 'Plain fallback' } }, 'Plain fallback'],
-  ['non-string messages', { error: { json: { message: {} }, message: false } }, 'Failed to reconnect'],
-  ['missing error', {}, 'Failed to reconnect'],
-  ['null response', null, 'Failed to reconnect'],
-  ['invalid JSON', '<html>Unavailable</html>', 'Failed to reconnect'],
-])('handles a reconnect response with %s', async (_label, body, message) => {
-  await withTestSetup(async () => {
-    fetchMock.mockImplementation(async (input) => {
-      if (parseUnknown(z.string(), input).unwrapOr('').endsWith('/settings.reconnectElectrum')) {
-        return new Response(
-          parseUnknown(z.string(), body).unwrapOrElse(() => JSON.stringify(body)),
-          { status: 500 },
-        )
-      }
-      return Response.json({ result: { data: { json: null } } })
-    })
-    await act(async () => {
-      root.render(
-        createElement(
-          ChakraProvider,
-          null,
-          createElement(QueryClientProvider, { client: queryClient }, createElement(SettingsPage, { desktop: true })),
-        ),
-      )
-    })
-    const preset = container.querySelector<HTMLSelectElement>('#electrum-preset')
-    if (!preset) {
-      throw new Error('Missing server preset')
-    }
-    await act(async () => {
-      preset.value = 'electrum.blockstream.info'
-      preset.dispatchEvent(new Event('change', { bubbles: true }))
-    })
-    const saveButton = Array.from(container.querySelectorAll('button')).find(
-      (button) => button.textContent === 'Save & Reconnect',
-    )
-    if (!saveButton) {
-      throw new Error('Missing reconnect button')
-    }
-    expect(saveButton.disabled).toBe(false)
-    await act(async () => {
-      saveButton.click()
-      await vi.waitFor(() => {
-        expect(toast.error).toHaveBeenCalledWith(`Failed to connect: ${message}`)
-      })
-    })
-    expect(toast.success).not.toHaveBeenCalled()
-    expect(saveButton.disabled).toBe(false)
-  })
-})
+const savedConnection = {
+  id: '00000000-0000-4000-8000-000000000001',
+  nickname: 'Home node',
+  host: 'electrum.example',
+  port: 50002,
+  protocol: 'ssl',
+  torEnabled: false,
+  revision: 1,
+}
 
-it.each([
-  ['SuperJSON error', { error: { json: { message: 'Server unavailable' } } }, 'Server unavailable'],
-  ['plain error', { error: { message: 'Connection refused' } }, 'Connection refused'],
-  ['invalid nested error', { error: { json: null, message: 'Plain fallback' } }, 'Plain fallback'],
-  ['non-string message', { error: { message: {} } }, 'Connection failed'],
-  ['null response', null, 'Connection failed'],
-  ['invalid JSON', '<html>Unavailable</html>', 'Connection failed'],
-])('handles a connection-test response with %s', async (_label, body, message) => {
-  await withTestSetup(async () => {
-    fetchMock.mockImplementation(async (input) => {
-      if (parseUnknown(z.string(), input).unwrapOr('').endsWith('/settings.testElectrum')) {
-        return new Response(
-          parseUnknown(z.string(), body).unwrapOrElse(() => JSON.stringify(body)),
-          { status: 500 },
-        )
-      }
-      return Response.json({ result: { data: { json: null } } })
-    })
-    await act(async () => {
-      root.render(
-        createElement(
-          ChakraProvider,
-          null,
-          createElement(QueryClientProvider, { client: queryClient }, createElement(SettingsPage, { desktop: true })),
-        ),
-      )
-    })
-    const button = Array.from(container.querySelectorAll('button')).find(
-      (candidate) => candidate.textContent === 'Test Connection',
-    )
-    if (!button) {
-      throw new Error('Missing connection test button')
-    }
-    await act(async () => {
-      button.click()
-    })
-    await vi.waitFor(async () => {
-      await act(async () => {})
-      expect(container.textContent).toContain(message)
-    })
-    expect(button.disabled).toBe(false)
-  })
-})
+/** Answers the saved-connection list, which the Electrum form loads before it is shown. */
+function savedConnections(input: RequestInfo | URL): Response | null {
+  return parseUnknown(z.string(), input).unwrapOr('').includes('/settings.connectionProfiles.list')
+    ? Response.json({
+        result: { data: { json: { profiles: [savedConnection], activeId: savedConnection.id, limit: 5 } } },
+      })
+    : null
+}
 
 const status = { connected: true, host: 'electrum.example', port: 50002, protocol: 'ssl' }
 it.each([
@@ -174,7 +92,7 @@ it.each([
     fetchMock.mockImplementation(async (input) =>
       parseUnknown(z.string(), input).unwrapOr('').endsWith('/settings.electrumStatus')
         ? Response.json(body)
-        : Response.json({ result: { data: { json: null } } }),
+        : (savedConnections(input) ?? Response.json({ result: { data: { json: null } } })),
     )
     await act(async () => {
       root.render(
@@ -184,6 +102,11 @@ it.each([
           createElement(QueryClientProvider, { client: queryClient }, createElement(SettingsPage, { desktop: true })),
         ),
       )
+    })
+    // The form appears once the saved connections load.
+    await vi.waitFor(async () => {
+      await act(async () => {})
+      expect(container.querySelector('#connection-host')).not.toBeNull()
     })
     if (visible) {
       expect(container.textContent).toContain('electrum.example:50002 (SSL)')

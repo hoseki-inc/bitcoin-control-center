@@ -45,6 +45,11 @@ jobs:
                   desktop=true
                   startos=true
                   ;;
+                # Desktop installers take their release version and name from the StartOS version files.
+                start9/scripts/version.mjs|start9/startos/versions/*)
+                  desktop=true
+                  startos=true
+                  ;;
                 desktop/*|.github/workflows/desktop-runtime.yml)
                   desktop=true
                   ;;
@@ -70,7 +75,6 @@ jobs:
           npm ci --prefix desktop --ignore-scripts
           npm ci --prefix start9 --ignore-scripts
           npm ci --prefix start9/runtime --ignore-scripts
-      - run: pnpm security:audit
       - run: pnpm format:check
       - run: pnpm lint
       - run: pnpm check

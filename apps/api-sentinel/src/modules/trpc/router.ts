@@ -30,7 +30,7 @@ import type { SupportedHardwareWallet, SupportedHardwareWalletDisplayName } from
 import { TRPCError } from '@trpc/server'
 import * as bip322 from 'bip322-js'
 import { Decimal } from 'decimal.js'
-import { and, desc, eq, isNotNull, isNull, lte, ne, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNotNull, isNull, lte, ne, sql } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
 import { z } from 'zod'
 import type { SentinelDb, SentinelTx } from '../../db/drizzle'
@@ -42,6 +42,7 @@ import {
   settings,
   signedMessages as signedMessagesTable,
 } from '../../db/schema'
+import { type ConnectionDetails, MAX_CONNECTION_PROFILES } from '../connection_profiles/store'
 import { PRICE_FALLBACKS_SETTING, PRICE_SOURCES, PRICE_SOURCE_SETTING } from '../price/service'
 import { StatementMapper } from '../statements/mapper'
 import { publicProcedure, t } from './init'
@@ -239,6 +240,9 @@ async function getFullClaimDto(db: SentinelDb | SentinelTx, accountId: string): 
     .where(eq(challenges.accountId, row.id))
     .orderBy(desc(challenges.createdAt))
     .limit(1)
+  if (latestChallenge) {
+    await discardUnverifiableMessages(db, latestChallenge)
+  }
   const signedMessages = latestChallenge
     ? await db.select().from(signedMessagesTable).where(eq(signedMessagesTable.challengeId, latestChallenge.id))
     : []
@@ -304,6 +308,121 @@ function getRequiredSignatureCount(account: Account): number {
     return 1
   }
   throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Unsupported account type' })
+}
+
+function validateMultisigKeystores(account: MultiSigAccount, publicKeys: string[]): void {
+  const descriptorKeys = new Set(account.xpubs.map((xpub) => xpub.toString()))
+  const suppliedKeys = new Set<string>()
+  const signingKeys = new Set<string>()
+  for (const publicKey of publicKeys) {
+    const parsed = Xpub.fromString(publicKey)
+    if (parsed.isErr() || !descriptorKeys.has(parsed.unwrap().toString())) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'Keystore key is not in the account descriptor' })
+    }
+    const xpub = parsed.unwrap()
+    suppliedKeys.add(xpub.toString())
+    signingKeys.add(xpub.derive(0).derive(0).publicKey().toString('hex'))
+  }
+  if (
+    publicKeys.length !== descriptorKeys.size ||
+    suppliedKeys.size !== publicKeys.length ||
+    signingKeys.size !== publicKeys.length
+  ) {
+    throw new TRPCError({ code: 'BAD_REQUEST', message: 'Keystores must match each descriptor key exactly once' })
+  }
+}
+
+/** Bind a proof to the account descriptor, not just a database keystore ID. */
+interface SigningIdentity {
+  keystoreId: KeystoreId
+  address: CheckedAddressString
+  publicKey: string
+}
+
+async function getSigningIdentity(
+  db: SentinelDb | SentinelTx,
+  accountId: string,
+  keystoreId: string,
+): Promise<SigningIdentity> {
+  const [row] = await db
+    .select({ descriptor: accountTable.descriptor, network: accountTable.network })
+    .from(accountTable)
+    .where(eq(accountTable.id, accountId))
+  const [keystore] = await db.select().from(keystoreTable).where(eq(keystoreTable.id, keystoreId))
+  if (!row || !keystore) {
+    throw new TRPCError({ code: 'NOT_FOUND', message: 'Account or keystore not found' })
+  }
+  if (keystore.accountId !== accountId) {
+    throw new TRPCError({ code: 'BAD_REQUEST', message: 'Keystore does not belong to this account' })
+  }
+  const parsedAccount = Account.fromDescriptor(row.descriptor)
+  const parsedKey = Xpub.fromString(keystore.xpub)
+  if (parsedAccount.isErr() || parsedKey.isErr()) {
+    throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid account or keystore key' })
+  }
+  const account = parsedAccount.unwrap()
+  const xpub = parsedKey.unwrap()
+  const members = account instanceof MultiSigAccount ? account.xpubs : [account.xpub]
+  if (!members.some((member) => member.equals(xpub))) {
+    throw new TRPCError({ code: 'BAD_REQUEST', message: 'Keystore key is not in the account descriptor' })
+  }
+  const network = row.network === 'testnet' ? Network.Testnet : Network.Mainnet
+  if (xpub.network.kind !== network.kind) {
+    throw new TRPCError({ code: 'BAD_REQUEST', message: 'Keystore network does not match the account' })
+  }
+  const signingKey = xpub.derive(0).derive(0)
+  return {
+    keystoreId: parseUnknown(KeystoreIdSchema, keystore.id).expect('Stored keystore ID is invalid'),
+    // Every multisig cosigner proves its individual key using P2PKH, regardless of the multisig script type.
+    address:
+      account instanceof SingleSigAccount
+        ? account.receiveAddress(0, network).toString()
+        : signingKey.address('p2pkh', network).toString(),
+    publicKey: signingKey.publicKey().toString('hex'),
+  }
+}
+
+function validateSigningAddress(message: SignedMessageRow, identity: SigningIdentity): void {
+  if (message.address !== identity.address) {
+    throw new TRPCError({ code: 'BAD_REQUEST', message: 'Signing address does not match the account key' })
+  }
+}
+
+async function hasCurrentSigningAddress(
+  db: SentinelDb | SentinelTx,
+  accountId: string,
+  message: SignedMessageRow,
+): Promise<boolean> {
+  try {
+    return (await getSigningIdentity(db, accountId, message.keystoreId)).address === message.address
+  } catch (error) {
+    if (error instanceof TRPCError) {
+      return false
+    }
+    throw error
+  }
+}
+
+/**
+ * Remove an unfinished challenge's messages that can never verify, such as cosigner messages created with the
+ * P2WPKH address used before cosigners signed with P2PKH. Their keys can then sign again instead of the
+ * challenge failing at completion with no way forward.
+ */
+async function discardUnverifiableMessages(db: SentinelDb | SentinelTx, challenge: ChallengeRow): Promise<void> {
+  if (challenge.isSatisfied === 1) {
+    return
+  }
+  const messages = await db.select().from(signedMessagesTable).where(eq(signedMessagesTable.challengeId, challenge.id))
+  const unverifiable: string[] = []
+  for (const message of messages) {
+    if (!(await hasCurrentSigningAddress(db, challenge.accountId, message))) {
+      unverifiable.push(message.id)
+    }
+  }
+  if (unverifiable.length === 0) {
+    return
+  }
+  await db.delete(signedMessagesTable).where(inArray(signedMessagesTable.id, unverifiable))
 }
 
 // ─── portalProve.controlCenter ──────────────────────────────────────────────
@@ -618,6 +737,10 @@ const registryRouter = t.router({
               throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid multisig account descriptor' })
             }
 
+            validateMultisigKeystores(
+              parsed.unwrap(),
+              input.keystores.map((keystore) => keystore.publicKey),
+            )
             const accountId = hosid('re_clmx')
             const now = new Date().toISOString()
 
@@ -706,6 +829,7 @@ const registryRouter = t.router({
             .orderBy(desc(challenges.createdAt))
             .limit(1)
           if (existing) {
+            await discardUnverifiableMessages(db, existing)
             return {
               id: existing.id,
               claimId: existing.accountId,
@@ -774,13 +898,15 @@ const registryRouter = t.router({
         (message): message is SignedMessageRow & { signature: string } => message.signature !== null,
       )
       const requiredSignatures = getRequiredSignatureCount(account.unwrap())
-      const signedKeystoreIds = new Set(completedMessages.map((message) => message.keystoreId))
-      if (signedKeystoreIds.size < requiredSignatures) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Challenge is not satisfied' })
-      }
-
+      const signingKeys = new Set<string>()
       for (const message of completedMessages) {
+        const identity = await getSigningIdentity(db, challenge.accountId, message.keystoreId)
+        validateSigningAddress(message, identity)
         verifySignedMessageSignature(message, message.signature)
+        signingKeys.add(identity.publicKey)
+      }
+      if (signingKeys.size < requiredSignatures) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Challenge is not satisfied' })
       }
 
       const now = new Date().toISOString()
@@ -823,6 +949,7 @@ const registryRouter = t.router({
             throw new TRPCError({ code: 'NOT_FOUND', message: 'Challenge not found' })
           }
 
+          const identity = await getSigningIdentity(db, challenge.accountId, input.keystoreId)
           // Check if a signed message already exists for this keystore+challenge
           const [existingSm] = await db
             .select()
@@ -835,21 +962,11 @@ const registryRouter = t.router({
             )
             .limit(1)
           if (existingSm) {
+            validateSigningAddress(existingSm, identity)
             return challengeMessageRowToDto(existingSm)
           }
 
-          const [keystore] = await db.select().from(keystoreTable).where(eq(keystoreTable.id, input.keystoreId))
-          if (!keystore) {
-            throw new TRPCError({ code: 'NOT_FOUND', message: 'Keystore not found' })
-          }
-
-          // Derive address from keystore xpub for signing (use p2wpkh like singlesig flow)
-          const xpubResult = Xpub.fromString(keystore.xpub)
-          if (xpubResult.isErr()) {
-            throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Failed to parse keystore xpub' })
-          }
-          const singleSig = new SingleSigAccount('p2wpkh', xpubResult.unwrap())
-          const address = singleSig.receiveAddress(0, Network.Mainnet).toString()
+          const address = identity.address
 
           // Build message text
           const [identifierRow] = await db
@@ -879,7 +996,7 @@ const registryRouter = t.router({
             signedAt: null,
             signature: null,
             challengeId: challenge.id,
-            keystoreId: keystore.id,
+            keystoreId: identity.keystoreId,
           })
         })
       }),
@@ -922,6 +1039,11 @@ const registryRouter = t.router({
           throw new TRPCError({ code: 'BAD_REQUEST', message: 'Signed message already completed' })
         }
 
+        const [challenge] = await db.select().from(challenges).where(eq(challenges.id, sm.challengeId))
+        if (!challenge) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Challenge not found' })
+        }
+        validateSigningAddress(sm, await getSigningIdentity(db, challenge.accountId, sm.keystoreId))
         verifySignedMessageSignature(sm, input.signature)
 
         const now = new Date().toISOString()
@@ -962,6 +1084,7 @@ const registryRouter = t.router({
           throw new TRPCError({ code: 'NOT_FOUND', message: 'Keystore not found' })
         }
 
+        const identity = await getSigningIdentity(db, accountRow.id, keystore.id)
         // Check for existing unsigned challenge
         const [existingChallenge] = await db
           .select()
@@ -983,6 +1106,7 @@ const registryRouter = t.router({
             .limit(1)
 
           if (existingSm) {
+            validateSigningAddress(existingSm, identity)
             return {
               challenge: {
                 id: existingChallenge.id,
@@ -1003,8 +1127,7 @@ const registryRouter = t.router({
         if (parsed.isErr()) {
           throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Failed to parse account descriptor' })
         }
-        const btcNetwork = network === 'testnet' ? Network.Testnet : Network.Mainnet
-        const address = parsed.unwrap().receiveAddress(0, btcNetwork).toString()
+        const address = identity.address
 
         // Create challenge and signed message
         const challengeId = existingChallenge?.id ?? hosid('re_chal')
@@ -1394,7 +1517,7 @@ const statementRouter = t.router({
           }
 
           const { transactionMap, dailyRates } = dataResult.unwrap()
-          const txCount = Object.values(transactionMap).reduce((sum, txs) => sum + txs.length, 0)
+          const txCount = Object.values(transactionMap).reduce((sum, account) => sum + account.transactions.length, 0)
           logger.info(
             {
               statementId,
@@ -1941,7 +2064,93 @@ function validateWritableSetting(key: string, value: string): string {
   throw new TRPCError({ code: 'FORBIDDEN', message: 'Setting is not writable' })
 }
 
+// ─── Desktop saved connections ──────────────────────────────────────────────
+
+const connectionDetailsInput = z.object({
+  host: z.string(),
+  port: z.number().int().min(1).max(65_535),
+  protocol: z.enum(['tcp', 'ssl']),
+  // Required: a missing Tor setting must never default to direct for a saved connection.
+  torEnabled: z.boolean(),
+})
+const profileReferenceInput = z.object({ id: z.string().uuid(), revision: z.number().int().positive() })
+const nicknameInput = z
+  .string()
+  .trim()
+  .min(1, 'Enter a nickname')
+  .max(80, 'Use 80 characters or fewer for the nickname')
+
+function profileDetails(input: z.infer<typeof connectionDetailsInput>): ConnectionDetails {
+  const connection = validateElectrumConnection(input)
+  if (connection.host.endsWith('.onion') && !input.torEnabled) {
+    throw new TRPCError({ code: 'BAD_REQUEST', message: 'Onion addresses require Tor' })
+  }
+  return { ...connection, torEnabled: input.torEnabled }
+}
+
+const desktopConnectionProcedure = publicProcedure.use(async ({ ctx, next }) => {
+  if (!ctx.app.connectionProfiles) {
+    throw new TRPCError({ code: 'FORBIDDEN', message: 'Saved connections are only available in the desktop app' })
+  }
+  return next({ ctx: { ...ctx, profiles: ctx.app.connectionProfiles } })
+})
+
+const connectionProfilesRouter = t.router({
+  list: desktopConnectionProcedure.query(async ({ ctx }) => ({
+    profiles: await ctx.profiles.list(),
+    activeId: (await ctx.profiles.getActiveId()) ?? null,
+    limit: MAX_CONNECTION_PROFILES,
+  })),
+
+  // Saving, renaming, and deleting never connect; only connect changes the active server.
+  create: desktopConnectionProcedure
+    .input(connectionDetailsInput.extend({ nickname: nicknameInput }))
+    .mutation(async ({ ctx, input }) => {
+      const result = await ctx.profiles.create({ ...profileDetails(input), nickname: input.nickname })
+      if (result.isErr()) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: result.unwrapErr().message })
+      }
+      return result.unwrap()
+    }),
+
+  rename: desktopConnectionProcedure
+    .input(profileReferenceInput.extend({ nickname: nicknameInput }))
+    .mutation(async ({ ctx, input }) => {
+      const result = await ctx.profiles.rename(input, input.nickname)
+      if (result.isErr()) {
+        throw new TRPCError({ code: 'CONFLICT', message: result.unwrapErr().message })
+      }
+      return result.unwrap()
+    }),
+
+  delete: desktopConnectionProcedure.input(profileReferenceInput).mutation(async ({ ctx, input }) => {
+    const result = await ctx.profiles.delete(input)
+    if (result.isErr()) {
+      throw new TRPCError({ code: 'CONFLICT', message: result.unwrapErr().message })
+    }
+    return { id: input.id }
+  }),
+
+  connect: desktopConnectionProcedure
+    .input(profileReferenceInput.extend({ connection: connectionDetailsInput.optional() }))
+    .mutation(async ({ ctx, input }) => {
+      const result = await ctx.app.connectProfile(
+        input,
+        input.connection ? profileDetails(input.connection) : undefined,
+      )
+      if (result.isErr()) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: result.unwrapErr().message })
+      }
+      const connected = (await ctx.profiles.list()).find((profile) => profile.id === input.id)
+      if (!connected) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'This saved connection no longer exists' })
+      }
+      return connected
+    }),
+})
+
 const settingsRouter = t.router({
+  connectionProfiles: connectionProfilesRouter,
   get: publicProcedure.input(z.object({ key: z.string() })).query(async ({ ctx, input }) => {
     if (!isReadableSetting(input.key)) {
       throw new TRPCError({ code: 'FORBIDDEN', message: 'Setting is not readable' })
@@ -2006,8 +2215,14 @@ const settingsRouter = t.router({
 
   electrumStatus: publicProcedure.query(({ ctx }) => {
     const { host, port, protocol } = ctx.app.electrumConfig
+    // Checks run only while a page shows the status; the result appears on its next poll.
+    ctx.app.electrumClient.checkReachable(30_000)
     return {
-      connected: ctx.app.electrumClient.isConnected(),
+      // Reachability, not an open socket: servers close idle sockets between requests.
+      connected: ctx.app.electrumClient.isReachable(),
+      // Lets the page say "Connecting…" rather than "Disconnected" while the first attempt runs;
+      // background retries during an outage don't count.
+      connecting: ctx.app.electrumClient.isConnecting(),
       host,
       port,
       protocol,
@@ -2023,7 +2238,8 @@ const settingsRouter = t.router({
         host: z.string(),
         port: z.number().int().min(1).max(65_535),
         protocol: z.enum(['tcp', 'ssl']),
-        torEnabled: z.boolean().default(false),
+        // Required, so a test never runs direct just because the Tor setting was left out.
+        torEnabled: z.boolean(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -2033,9 +2249,10 @@ const settingsRouter = t.router({
       }
       const config = prepared.unwrap()
       const { ElectrumClient } = await import('@hoseki/packages/clients/electrum')
+      // Tor connections bring their own longer limit.
       const testClient = new ElectrumClient({
-        ...config,
         requestTimeout: 15_000,
+        ...config,
       })
       const result = await testClient.connect()
       testClient.disconnect()

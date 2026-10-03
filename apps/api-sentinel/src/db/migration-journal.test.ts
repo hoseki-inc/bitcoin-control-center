@@ -21,6 +21,10 @@ const logger = pino({ level: 'silent' })
 const folder = fileURLToPath(new URL('../../drizzle/', import.meta.url))
 const migrations = readMigrationFiles({ migrationsFolder: folder })
 const fixture = readFileSync(new URL('./fixtures/legacy-main.sql', import.meta.url), 'utf8')
+const profilesFixture = readFileSync(
+  new URL('./fixtures/legacy-desktop-connection-profiles.sql', import.meta.url),
+  'utf8',
+)
 
 function testDirectory(): string {
   const directory = mkdtempSync(join(tmpdir(), 'sentinel-journal-'))
@@ -38,10 +42,13 @@ function rawDatabase(directory: string): SentinelDb {
   return db
 }
 
-async function legacyDatabase(directory: string): Promise<SentinelDb> {
+async function legacyDatabase(directory: string, withProfiles = true): Promise<SentinelDb> {
   const db = rawDatabase(directory)
   await db.run(sql`PRAGMA foreign_keys = ON`)
   await db.$client.executeMultiple(fixture)
+  if (withProfiles) {
+    await db.$client.executeMultiple(profilesFixture)
+  }
   return db
 }
 
@@ -96,7 +103,7 @@ it.each(['file', 'database'] as const)(
     }
     const before = await databaseState(legacy)
     const applicationTables = before.data.filter((table) => table.table !== 'sqlite_sequence')
-    expect(applicationTables).toHaveLength(18)
+    expect(applicationTables).toHaveLength(19)
     expect(applicationTables.every((table) => table.rows.length > 0)).toBe(true)
     const oldJournal = await legacy.all<{ id: number; applied_at: string }>(
       sql`SELECT id, applied_at FROM _migrations ORDER BY id`,
@@ -151,6 +158,45 @@ it.each(['file', 'database'] as const)(
   },
 )
 
+it.each(['legacy', 'drizzle'] as const)(
+  'upgrades an earlier 14-migration %s profile without replaying historical SQL',
+  async (history) => {
+    const directory = testDirectory()
+    const earlier = await legacyDatabase(directory, false)
+    if (history === 'drizzle') {
+      expect((await prepareMigrationJournal(earlier, folder)).isOk()).toBe(true)
+      const oldFolder = join(testDirectory(), 'drizzle')
+      mkdirSync(oldFolder)
+      for (const migration of migrations.slice(0, 14)) {
+        cpSync(join(folder, migration.name), join(oldFolder, migration.name), { recursive: true })
+      }
+      await migrate(earlier, { migrationsFolder: oldFolder, migrationsTable })
+    }
+    const before = await databaseState(earlier)
+    earlier.$client.close()
+    const upgraded = await openDrizzleDatabase(directory, logger)
+    try {
+      const after = await databaseState(upgraded)
+      expect({
+        schema: after.schema.filter((row) => row.tbl_name !== 'desktop_connection_profiles'),
+        data: after.data.filter((row) => row.table !== 'desktop_connection_profiles'),
+      }).toEqual(before)
+      await expect(upgraded.all(sql`SELECT * FROM desktop_connection_profiles`)).resolves.toEqual([])
+      await expect(upgraded.all(sql`SELECT name FROM _migrations`)).resolves.toHaveLength(15)
+      const completed = await databaseState(upgraded, true)
+      upgraded.$client.close()
+      const reopened = await openDrizzleDatabase(directory, logger)
+      try {
+        await expect(databaseState(reopened, true)).resolves.toEqual(completed)
+      } finally {
+        reopened.$client.close()
+      }
+    } finally {
+      upgraded.$client.close()
+    }
+  },
+)
+
 it('creates the same application schema from scratch as the fully upgraded main fixture', async () => {
   const legacy = await legacyDatabase(testDirectory())
   const fresh = await openDrizzleDatabase(testDirectory(), logger)
@@ -174,7 +220,7 @@ it('creates the same application schema from scratch as the fully upgraded main 
         await expect(fresh.all(query)).resolves.toEqual(expected)
       }
     }
-    await expect(fresh.all(sql`SELECT name FROM _migrations`)).resolves.toHaveLength(14)
+    await expect(fresh.all(sql`SELECT name FROM _migrations`)).resolves.toHaveLength(15)
     await expect(fresh.all(sql`PRAGMA foreign_key_check`)).resolves.toEqual([])
     // CHECK constraints are not exposed by a SQLite PRAGMA.
     await expect(
@@ -264,7 +310,7 @@ it('retries a failed fresh initialization without treating its empty Drizzle jou
   failed.$client.close()
   const retried = await openDrizzleDatabase(directory, logger)
   try {
-    await expect(retried.all(sql`SELECT name FROM _migrations`)).resolves.toHaveLength(14)
+    await expect(retried.all(sql`SELECT name FROM _migrations`)).resolves.toHaveLength(15)
     await expect(retried.all(sql`PRAGMA foreign_key_check`)).resolves.toEqual([])
   } finally {
     retried.$client.close()
@@ -277,7 +323,7 @@ it.each(['fresh', 'legacy'] as const)(
     const directory = testDirectory()
     const migrationFolder = join(directory, 'drizzle')
     cpSync(folder, migrationFolder, { recursive: true })
-    const next = join(migrationFolder, '20260930000000_add_account_upgrade_marker')
+    const next = join(migrationFolder, '20270101000000_add_account_upgrade_marker')
     mkdirSync(next)
     const db = profile === 'legacy' ? await legacyDatabase(directory) : rawDatabase(directory)
     expect((await prepareMigrationJournal(db, folder)).isOk()).toBe(true)
@@ -301,7 +347,7 @@ it.each(['fresh', 'legacy'] as const)(
         }))
         .filter((table) => table.table !== migrationsTable),
     ).toEqual(before.data.filter((table) => table.table !== migrationsTable))
-    await expect(db.all(sql`SELECT name FROM _migrations`)).resolves.toHaveLength(15)
+    await expect(db.all(sql`SELECT name FROM _migrations`)).resolves.toHaveLength(16)
     expect((await prepareMigrationJournal(db, migrationFolder)).isOk()).toBe(true)
     await migrate(db, { migrationsFolder: migrationFolder, migrationsTable })
     await expect(databaseState(db, true)).resolves.toEqual(after)

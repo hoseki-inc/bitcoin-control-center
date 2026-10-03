@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { Network } from '@hoseki/packages/bitcoin/network'
 import { ElectrumProvider } from '@hoseki/packages/bitcoin/onchain/electrum_provider'
 import { ElectrumClient } from '@hoseki/packages/clients/electrum'
-import { Ok, asyncFn } from '@hoseki/packages/result'
+import { Err, Ok, asyncFn } from '@hoseki/packages/result'
 import { Wallets } from '@hoseki/packages/testing'
 import pino from 'pino'
 import { assert, expect, it, onTestFinished, vi } from 'vitest'
@@ -114,6 +114,17 @@ it('rejects partial history when a later batch contains a malformed transaction'
     expect(fetch).toHaveBeenCalledTimes(11)
     expect(result.expectErr('partial history must fail').message).toBe(
       `Invalid transaction data returned from mempool.space for ${invalidId}`,
+    )
+  })
+})
+
+it('fails rather than skipping an address whose history lookup fails', async () => {
+  await withTestSetup(async () => {
+    const deps = setup(null)
+    vi.spyOn(deps.onchainProvider.deps.electrum, 'getHistory').mockResolvedValue(Err(new Error('Connection closed')))
+    const result = await fetchTransactionEntries(deps)
+    expect(result.expectErr('a missing history must fail').message).toBe(
+      'Could not fetch transaction history: Connection closed',
     )
   })
 })

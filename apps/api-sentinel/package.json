@@ -5,6 +5,7 @@
     "build": "tsx src/scripts/build.ts",
     "db:generate": "drizzle-kit generate",
     "dev": "tsx watch --env-file=.env src/cli.ts",
+    "dev:desktop": "tsx watch --env-file=.env src/cli.ts --desktop",
     "dev:standalone": "tsx watch --env-file=.env src/cli.ts",
     "lint": "ESLINT_USE_FLAT_CONFIG=false eslint . --ignore-path ../../.eslintignore",
     "start": "node --enable-source-maps dist/cli.js",

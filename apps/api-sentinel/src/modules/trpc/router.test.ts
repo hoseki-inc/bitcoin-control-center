@@ -1,18 +1,16 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { ecpair } from '@hoseki/packages/bitcoin/lib/ecpair'
 import { ElectrumClient } from '@hoseki/packages/clients/electrum'
 import { Ok, asyncFn } from '@hoseki/packages/result'
 import { Wallets } from '@hoseki/packages/testing'
 import { Signer } from 'bip322-js'
-import { payments } from 'bitcoinjs-lib'
-import { eq } from 'drizzle-orm'
 import pino from 'pino'
 import { assert, expect, it, onTestFinished, vi } from 'vitest'
 import { createAppContext } from '../../context'
 import { accounts, challenges, keystores, signedMessages } from '../../db/schema'
 import * as env from '../../env'
+import { createSinglesigClaim, owner } from './ownership.fixtures'
 import { appRouter } from './router'
 
 async function setup() {
@@ -154,19 +152,15 @@ it('serializes separate challenge and message creation with the combined flow', 
 })
 
 it('accepts only one concurrent signature submission and preserves the winning signature and timestamp', async () => {
-  const { app, caller } = await setup()
-  await caller.claims.create.singlesig(singlesigInput)
+  const { caller } = await setup()
+  const created = await createSinglesigClaim(caller, owner)
   const { challengeMessage } = await caller.getOrCreateSinglesigChallengeMessage({
-    network: singlesigInput.network,
-    account: singlesigInput.account,
+    network: owner.xpub.network.toString(),
+    account: created.claim.account,
   })
   const message = challengeMessage.signedMessage
-  // Use a synthetic signing key to exercise real signature verification.
-  const key = ecpair.fromPrivateKey(Buffer.alloc(32, 1))
-  const { address } = payments.p2wpkh({ pubkey: key.publicKey })
-  assert(address !== undefined)
-  await app.database.update(signedMessages).set({ address }).where(eq(signedMessages.id, message.id))
-  const signature = Signer.sign(key.toWIF(), address, message.messageTextToSign)
+  // Sign with the deterministic fixture key bound to this account's descriptor.
+  const signature = Signer.sign(owner.wif, message.address, message.messageTextToSign)
   await expect(
     caller.challengeMessages.complete({ signedMessageId: message.id, signature: 'invalid' }),
   ).rejects.toMatchObject({
