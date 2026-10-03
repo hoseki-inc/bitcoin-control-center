@@ -1,7 +1,6 @@
 import {
   Box,
   Button,
-  Flex,
   FormControl,
   FormErrorMessage,
   FormLabel,
@@ -147,12 +146,12 @@ export function ConnectStrike(): JSX.Element {
         >
           <Stack gap={6} minW={0}>
             {/* Header */}
-            <Flex align="center" gap={3}>
+            <Stack gap={3} align="flex-start">
               <img src="/images/exchanges/strike-icon.svg" alt="Strike" style={{ height: '32px' }} />
               <Text as="h1" textStyle="text/2xl" fontWeight="medium" color="neutral.900">
                 {isReconnect ? 'Reconnect Strike Account' : 'Connect Strike Account'}
               </Text>
-            </Flex>
+            </Stack>
             <Text textStyle="text/md" color="neutral.600">
               Enter your Strike API key to import your Bitcoin balance. Only read-only access is required.
             </Text>

@@ -1,7 +1,6 @@
 import {
   Box,
   Button,
-  Flex,
   FormControl,
   FormErrorMessage,
   FormLabel,
@@ -148,12 +147,12 @@ export function ConnectRobinhood(): JSX.Element {
         >
           <Stack gap={6} minW={0}>
             {/* Header */}
-            <Flex align="center" gap={3}>
+            <Stack gap={3} align="flex-start">
               <img src="/images/exchanges/robinhood-icon.svg" alt="Robinhood" style={{ height: '32px' }} />
               <Text as="h1" textStyle="text/2xl" fontWeight="medium" color="neutral.900">
                 {isReconnect ? 'Reconnect Robinhood Account' : 'Connect Robinhood Account'}
               </Text>
-            </Flex>
+            </Stack>
             <Text textStyle="text/md" color="neutral.600">
               Enter your Robinhood Crypto API credentials to import your Bitcoin balance and order history. Only
               read-only access is required.

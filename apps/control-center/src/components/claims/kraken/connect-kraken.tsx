@@ -1,7 +1,6 @@
 import {
   Box,
   Button,
-  Flex,
   FormControl,
   FormErrorMessage,
   FormLabel,
@@ -146,12 +145,12 @@ export function ConnectKraken(): JSX.Element {
         >
           <Stack gap={6} minW={0}>
             {/* Header */}
-            <Flex align="center" gap={3}>
+            <Stack gap={3} align="flex-start">
               <img src="/images/exchanges/kraken.svg" alt="Kraken" style={{ height: '32px' }} />
               <Text as="h1" textStyle="text/2xl" fontWeight="medium" color="neutral.900">
                 {isReconnect ? 'Reconnect Kraken Account' : 'Connect Kraken Account'}
               </Text>
-            </Flex>
+            </Stack>
             <Text textStyle="text/md" color="neutral.600">
               Enter your Kraken API credentials to import your Bitcoin balance. Only read-only access is required.
             </Text>
