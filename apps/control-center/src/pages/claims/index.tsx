@@ -181,7 +181,7 @@ export function ClaimsPage(): JSX.Element {
         {/* Header */}
         <Flex align="flex-start" justify="space-between" pb={9}>
           <Box>
-            <Heading textStyle="text/3xl" fontWeight="bold" color="neutral.900">
+            <Heading textStyle={{ base: 'text/3xl', md: 'text/5xl' }} fontWeight="bold" color="neutral.900">
               My Holdings
             </Heading>
             {hasClaims && (
