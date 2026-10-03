@@ -604,9 +604,9 @@ function EmptyHoldings({ onAdd }: { onAdd: () => void }): JSX.Element {
   return (
     <Stack align="center" textAlign="center" py={16} gap={4}>
       <Box w={16} h={16} borderRadius="full" bg="neutral.50" />
-      <Heading as="h2" textStyle="text/lg" fontWeight="semibold" color="neutral.900">
+      <Text as="h2" textStyle="text/lg" fontWeight="semibold" color="neutral.900">
         No accounts connected yet
-      </Heading>
+      </Text>
       <Text color="neutral.400" maxW="md">
         Connect a wallet or exchange to see your Bitcoin balance and start verifying your ownership.
       </Text>

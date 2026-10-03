@@ -7,7 +7,6 @@ import {
   FormLabel,
   Grid,
   HStack,
-  Heading,
   Input,
   Stack,
   Text,
@@ -150,9 +149,9 @@ export function ConnectStrike(): JSX.Element {
             {/* Header */}
             <Flex align="center" gap={3}>
               <img src="/images/exchanges/strike-icon.svg" alt="Strike" style={{ height: '32px' }} />
-              <Heading as="h1" textStyle="text/2xl" fontWeight="bold" color="neutral.900">
+              <Text as="h1" textStyle="text/2xl" fontWeight="medium" color="neutral.900">
                 {isReconnect ? 'Reconnect Strike Account' : 'Connect Strike Account'}
-              </Heading>
+              </Text>
             </Flex>
             <Text textStyle="text/md" color="neutral.600">
               Enter your Strike API key to import your Bitcoin balance. Only read-only access is required.

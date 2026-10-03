@@ -7,7 +7,6 @@ import {
   FormLabel,
   Grid,
   HStack,
-  Heading,
   Input,
   Stack,
   Text,
@@ -149,9 +148,9 @@ export function ConnectKraken(): JSX.Element {
             {/* Header */}
             <Flex align="center" gap={3}>
               <img src="/images/exchanges/kraken.svg" alt="Kraken" style={{ height: '32px' }} />
-              <Heading as="h1" textStyle="text/2xl" fontWeight="bold" color="neutral.900">
+              <Text as="h1" textStyle="text/2xl" fontWeight="medium" color="neutral.900">
                 {isReconnect ? 'Reconnect Kraken Account' : 'Connect Kraken Account'}
-              </Heading>
+              </Text>
             </Flex>
             <Text textStyle="text/md" color="neutral.600">
               Enter your Kraken API credentials to import your Bitcoin balance. Only read-only access is required.

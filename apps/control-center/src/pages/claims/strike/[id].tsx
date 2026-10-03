@@ -3,7 +3,6 @@ import {
   Button,
   Flex,
   HStack,
-  Heading,
   Icon,
   Spinner,
   Stack,
@@ -420,9 +419,9 @@ export function StrikeAccountDetailsPage(): JSX.Element {
 
         {/* Statement Import Section */}
         <Box maxW="640px" mx="auto" w="100%">
-          <Heading textStyle="text/lg" fontWeight="semibold" mb={1}>
+          <Text as="h2" textStyle="text/lg" fontWeight="medium" color="neutral.900" mb={1}>
             Account Statements
-          </Heading>
+          </Text>
           <Text textStyle="text/xs" color="neutral.500" mb={4}>
             Import your monthly Strike account statements (CSV) to add transaction detail. Any data imported here will
             appear on your Bitcoin Control Center statements.

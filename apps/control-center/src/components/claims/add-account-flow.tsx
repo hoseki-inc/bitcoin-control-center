@@ -1,4 +1,4 @@
-import { Box, Button, Grid, Heading, Icon, Text } from '@chakra-ui/react'
+import { Box, Button, Grid, Icon, Text } from '@chakra-ui/react'
 import { ConnectManualBitcoinAccordion } from '@hoseki/packages/ui/design-system'
 import { KeystoreAvatar } from '@hoseki/packages/ui/prove-verify-ui/claims/keystore-avatar'
 import { keyIcon } from '@hoseki/packages/ui/prove-verify-ui/claims/keystores-status-indicator'
@@ -26,9 +26,9 @@ export function AddAccountFlow({ onClose, linkState }: AddAccountFlowProps): JSX
       >
         Back to Accounts
       </Button>
-      <Heading as="h1" textStyle="text/3xl" fontWeight="bold" color="neutral.900" mb={2}>
+      <Text as="h1" textStyle="text/2xl" fontWeight="medium" color="neutral.900" mb={2}>
         Connect New Account
-      </Heading>
+      </Text>
       <Text textStyle="text/md" color="neutral.600" mb={10}>
         Connect your hardware wallet to securely link your Bitcoin holdings. Your private keys never leave your device.
       </Text>
