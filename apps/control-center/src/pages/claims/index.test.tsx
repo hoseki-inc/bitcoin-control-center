@@ -6,7 +6,7 @@ import Decimal from 'decimal.js'
 import { act } from 'react'
 import { type Root, createRoot } from 'react-dom/client'
 import { MemoryRouter } from 'react-router'
-import { assert, expect, it, onTestFinished, vi } from 'vitest'
+import { expect, it, onTestFinished, vi } from 'vitest'
 import { TestTrpcProvider, createTestTrpcClient } from '../../testing/trpc'
 import { type RouterOutput, trpc } from '../../trpc'
 import { ClaimsPage } from './index'
@@ -122,31 +122,19 @@ async function withTestSetup(run: () => Promise<void>): Promise<void> {
   await run()
 }
 
-function verifyLinks(): void {
-  expect(container.querySelector('[aria-label="Add account"]')?.getAttribute('href')).toBe('/accounts/add')
-  expect(container.querySelector('a[href="/accounts/strike/strike"]')?.textContent).not.toContain('987.65')
-  expect(container.textContent).not.toContain('987.65')
-  expect(container.textContent).toContain('Some balances are unavailable')
-}
-
-it('defaults to cards, remembers view across remounts, and offers add/reconnect links in both views', async () => {
+it('keeps the Holdings layout, hides stale exchange balances, and shows 8-decimal amounts', async () => {
   await withTestSetup(async () => {
     await mount()
-    expect(container.querySelector('[aria-label="Card view"]')?.getAttribute('aria-pressed')).toBe('true')
-    verifyLinks()
-    const listViewButton = container.querySelector<HTMLButtonElement>('[aria-label="List view"]')
-    assert.exists(listViewButton, 'Missing list view button')
-    await act(async () => {
-      listViewButton.click()
-    })
-    verifyLinks()
-    expect(container.querySelector('a[href="/accounts/strike/strike"]')?.textContent).toContain('Reconnect needed')
-    await act(async () => {
-      root.unmount()
-    })
-    root = createRoot(container)
-    await mount()
-    expect(container.querySelector('[aria-label="List view"]')?.getAttribute('aria-pressed')).toBe('true')
-    verifyLinks()
+    expect(container.querySelector('h1')?.textContent).toBe('My Holdings')
+    expect(container.querySelector('[aria-label="Add account"]')).not.toBeNull()
+    expect(container.textContent).toContain('+ Add Account')
+
+    const strikeCard = container.querySelector('a[href="/accounts/strike/strike"]')
+    expect(strikeCard?.textContent).toContain('Reconnect needed')
+    expect(strikeCard?.textContent).not.toContain('987.65')
+    expect(container.textContent).not.toContain('987.65')
+    expect(container.textContent).toContain('Some balances are unavailable')
+
+    expect(container.querySelector('a[href="/accounts/manual/manual"]')?.textContent).toContain('1.00000000 BTC')
   })
 })

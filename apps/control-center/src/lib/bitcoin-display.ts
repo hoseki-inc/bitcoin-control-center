@@ -1,9 +1,8 @@
 import { Decimal } from 'decimal.js'
 
-/** Format a BTC balance without changing its stored denomination. */
+/** Format a BTC balance with all 8 decimal places so amounts line up in columns. */
 export function formatBitcoin(value: Decimal.Value): string {
-  const amount = new Decimal(value).toFixed(8).replace(/\.?0+$/, '')
-  const [integer = '0', fraction] = amount.split('.')
+  const [integer = '0', fraction = '00000000'] = new Decimal(value).toFixed(8).split('.')
   const grouped = integer.replace(/\B(?=(\d{3})+(?!\d))/g, ',')
-  return `${grouped}${fraction !== undefined && fraction !== '' ? `.${fraction}` : ''} BTC`
+  return `${grouped}.${fraction} BTC`
 }
