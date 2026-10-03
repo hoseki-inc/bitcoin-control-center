@@ -1067,21 +1067,26 @@ function StatCard({ label, data, mode, timezone, available, btcPrice }: StatCard
 
 function EmptyState(): JSX.Element {
   return (
-    <Stack py={{ base: 6, md: 8 }} gap={6}>
-      <PageHeading title="Portfolio" description="Choose accounts and a date range to see changes in your holdings." />
-      <EmptyView
-        border="1px solid"
-        borderColor="neutral.200"
-        borderRadius="panel"
-        bgGradient="linear(to-b, neutral.50, white)"
-        title="Watch your Bitcoin grow"
-        description="Add your first account to see your total Bitcoin and track your holdings over time."
-        action={
-          <Button as={Link} to="/accounts/add">
-            Add Your First Account
-          </Button>
-        }
-      />
-    </Stack>
+    <Wrapper maxW="928px" w="full" py={{ base: 6, md: 8 }}>
+      <Stack gap={6}>
+        <PageHeading
+          title="Portfolio"
+          description="Choose accounts and a date range to see changes in your holdings."
+        />
+        <EmptyView
+          border="1px solid"
+          borderColor="neutral.200"
+          borderRadius="panel"
+          bgGradient="linear(to-b, neutral.50, white)"
+          title="Watch your Bitcoin grow"
+          description="Add your first account to see your total Bitcoin and track your holdings over time."
+          action={
+            <Button as={Link} to="/accounts/add">
+              Add Your First Account
+            </Button>
+          }
+        />
+      </Stack>
+    </Wrapper>
   )
 }
