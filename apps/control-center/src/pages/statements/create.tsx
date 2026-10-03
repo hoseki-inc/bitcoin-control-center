@@ -21,18 +21,18 @@ import {
 import type { ClaimId } from '@hoseki/packages/schemas'
 import { DateInput, Panel } from '@hoseki/packages/ui/design-system'
 import { useMutation } from '@tanstack/react-query'
-import { addDays, endOfDay, isAfter, min, startOfDay, subMonths } from 'date-fns'
+import { addDays, endOfDay, format, isAfter, isBefore, min, startOfDay, subMonths } from 'date-fns'
 import { FileCheckIcon } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link, useLocation } from 'react-router'
 import { toast } from 'sonner'
-import { ClaimSelection } from '../../components/claims/claim-selection'
-import { FullTransitionModal, getContent } from '../../components/full-transition-modal'
-import { StatementPreviewModal } from '../../components/statement-preview-modal'
-import { useLocalSetting } from '../../hooks/use-local-settings'
+import { ClaimSelection as DefaultClaimSelection } from '../../components/claims/claim-selection'
+import { FullTransitionModal as DefaultFullTransitionModal, getContent } from '../../components/full-transition-modal'
+import { StatementPreviewModal as DefaultStatementPreviewModal } from '../../components/statement-preview-modal'
+import { type LocalSettingState, useLocalSetting } from '../../hooks/use-local-settings'
 import { parseNavigationState } from '../../lib/navigation-state'
 import { useStatementPolling } from '../../providers/statement-polling-provider'
-import { trpc } from '../../trpc'
+import { type RouterInput, type RouterOutput, trpc } from '../../trpc'
 import type { StatementDto } from '../../trpc/server-types'
 import { isExchangeConnected } from '../../utils/exchange-connection-status'
 
@@ -40,7 +40,47 @@ import { isExchangeConnected } from '../../utils/exchange-connection-status'
 const MIN_MEMPOOL_PRICE_DATE = new Date('2023-04-01')
 const MIN_STATEMENT_DATE = MIN_MEMPOOL_PRICE_DATE
 
-export function StatementCreatePage(): JSX.Element {
+type InitiateGenerationInput = RouterInput['portalProve']['statement']['initiateGeneration']
+
+/** The data required by the statement creation page, independent of its transport. */
+export interface StatementCreateDataSource {
+  useClaims: () => { data?: RouterOutput['portalProve']['registry']['claims']['list'] }
+  useExchangeAccounts: () => { data?: RouterOutput['portalProve']['exchange']['list'] }
+  useInitiateGeneration: () => {
+    mutateAsync: (input: InitiateGenerationInput) => Promise<Pick<StatementDto, 'id'>>
+  }
+  useSavedUserName: () => Pick<LocalSettingState, 'data'>
+  useStatementPolling: () => Pick<ReturnType<typeof useStatementPolling>, 'startPolling' | 'statement'>
+}
+
+export const statementCreateDataSource: StatementCreateDataSource = {
+  useClaims: () => trpc.portalProve.registry.claims.list.useQuery({ excludePending: true }),
+  useExchangeAccounts: () => trpc.portalProve.exchange.list.useQuery(),
+  useInitiateGeneration: () => trpc.portalProve.statement.initiateGeneration.useMutation(),
+  useSavedUserName: () => useLocalSetting('user_name'),
+  useStatementPolling,
+}
+
+export interface StatementCreateViews {
+  ClaimSelection: typeof DefaultClaimSelection
+  StatementPreviewModal: typeof DefaultStatementPreviewModal
+  FullTransitionModal: typeof DefaultFullTransitionModal
+}
+
+const statementCreateViews: StatementCreateViews = {
+  ClaimSelection: DefaultClaimSelection,
+  StatementPreviewModal: DefaultStatementPreviewModal,
+  FullTransitionModal: DefaultFullTransitionModal,
+}
+
+export function StatementCreatePage({
+  dataSource = statementCreateDataSource,
+  views = statementCreateViews,
+}: {
+  dataSource?: StatementCreateDataSource
+  views?: StatementCreateViews
+}): JSX.Element {
+  const { ClaimSelection, StatementPreviewModal } = views
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false)
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState<boolean>(false)
   const location = useLocation()
@@ -52,8 +92,8 @@ export function StatementCreatePage(): JSX.Element {
   const [selectedExchangeAccountIds, setSelectedExchangeAccountIds] = useState<Set<string>>(new Set())
   const [hasAppliedPreSelection, setHasAppliedPreSelection] = useState(false)
   const [hasAppliedExchangePreSelection, setHasAppliedExchangePreSelection] = useState(false)
-  const claimsQuery = trpc.portalProve.registry.claims.list.useQuery({ excludePending: true })
-  const exchangeAccountsQuery = trpc.portalProve.exchange.list.useQuery()
+  const claimsQuery = dataSource.useClaims()
+  const exchangeAccountsQuery = dataSource.useExchangeAccounts()
 
   useEffect(() => {
     if (hasAppliedPreSelection || !claimsQuery.data) {
@@ -92,7 +132,7 @@ export function StatementCreatePage(): JSX.Element {
   const [openingDate, setOpeningDate] = useState<Date>(() => startOfDay(subMonths(new Date(), 3)))
 
   // name and address — pre-populate from saved settings in local mode
-  const { data: savedUserName } = useLocalSetting('user_name')
+  const { data: savedUserName } = dataSource.useSavedUserName()
   const [name, setName] = useState<string>('')
   const [nameInitialized, setNameInitialized] = useState(false)
   const [address, setAddress] = useState<string>('')
@@ -107,16 +147,16 @@ export function StatementCreatePage(): JSX.Element {
   // polling:
   // statement `status` starts as 'pending' when startPolling() is called,
   // then it is updated to a 'completed' or 'failed' statement.
-  const { startPolling, statement } = useStatementPolling()
+  const { startPolling, statement } = dataSource.useStatementPolling()
 
   const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone
 
   // generate
-  const initiateStatementGenerationMutation = trpc.portalProve.statement.initiateGeneration.useMutation()
+  const initiateStatementGenerationMutation = dataSource.useInitiateGeneration()
   const initiateMutationWithArgs = useMutation({
     mutationFn: async () => {
-      if (isAfter(openingDate, closingDate)) {
-        toast.error('Start date must be after end date')
+      if (dateError) {
+        toast.error(dateError)
         return
       }
 
@@ -142,6 +182,14 @@ export function StatementCreatePage(): JSX.Element {
   })
 
   const LEFT_COLUMN_WIDTH = '35%'
+  const dateError = isBefore(openingDate, startOfDay(addDays(MIN_STATEMENT_DATE, 1)))
+    ? 'Start date must be after April 1, 2023.'
+    : isAfter(openingDate, closingDate)
+      ? 'Start date must be on or before end date.'
+      : isAfter(closingDate, new Date())
+        ? 'End date cannot be in the future.'
+        : null
+  const invalidDateRange = dateError !== null
 
   const hasAccounts = (claimsQuery.data?.length ?? 0) > 0 || (exchangeAccountsQuery.data?.length ?? 0) > 0
   const hasAnySelected = selectedClaimIds.size > 0 || selectedExchangeAccountIds.size > 0
@@ -178,12 +226,19 @@ export function StatementCreatePage(): JSX.Element {
                     </FormLabel>
                     <DateInput
                       id="opening-date"
+                      aria-invalid={invalidDateRange}
+                      aria-describedby={invalidDateRange ? 'date-range-error' : undefined}
                       max={new Date()}
                       min={addDays(MIN_STATEMENT_DATE, 1)}
                       value={openingDate}
                       onChange={(date) => {
                         if (date) {
                           setOpeningDate(startOfDay(date))
+                        }
+                      }}
+                      onBlur={(event) => {
+                        if (!event.currentTarget.value) {
+                          event.currentTarget.value = format(openingDate, 'yyyy-MM-dd')
                         }
                       }}
                       size="md"
@@ -196,20 +251,29 @@ export function StatementCreatePage(): JSX.Element {
                     </FormLabel>
                     <DateInput
                       id="closing-date"
+                      aria-invalid={invalidDateRange}
+                      aria-describedby={invalidDateRange ? 'date-range-error' : undefined}
                       max={new Date()}
                       value={closingDate}
                       onChange={(date) => {
                         if (date) {
-                          setClosingDate(
-                            // Make sure the closing date is not greater than NOW
-                            min([endOfDay(date), new Date()]),
-                          )
+                          setClosingDate(min([endOfDay(date), new Date()]))
+                        }
+                      }}
+                      onBlur={(event) => {
+                        if (!event.currentTarget.value) {
+                          event.currentTarget.value = format(closingDate, 'yyyy-MM-dd')
                         }
                       }}
                       size="md"
                     />
                   </FormControl>
                 </HStack>
+                {invalidDateRange && (
+                  <Text id="date-range-error" role="alert" textStyle="text/sm" color="error.700">
+                    {dateError}
+                  </Text>
+                )}
               </Stack>
             ) : (
               <StatementExampleAsEmptyState />
@@ -331,7 +395,7 @@ export function StatementCreatePage(): JSX.Element {
                 </Button>
                 <HStack>
                   <Button
-                    isDisabled={!hasAnySelected}
+                    isDisabled={!hasAnySelected || invalidDateRange}
                     variant="outline"
                     onClick={() => {
                       setIsPreviewModalOpen(true)
@@ -340,7 +404,7 @@ export function StatementCreatePage(): JSX.Element {
                     Preview Statement
                   </Button>
                   <Button
-                    isDisabled={!hasAnySelected || initiateMutationWithArgs.isLoading}
+                    isDisabled={!hasAnySelected || invalidDateRange || initiateMutationWithArgs.isLoading}
                     isLoading={initiateMutationWithArgs.isLoading}
                     onClick={() => {
                       initiateMutationWithArgs.mutate()
@@ -356,6 +420,7 @@ export function StatementCreatePage(): JSX.Element {
       </Panel>
 
       <StatementGenerationModal
+        FullTransitionModal={views.FullTransitionModal}
         isOpen={isModalOpen}
         onClose={() => {
           setIsModalOpen(false)
@@ -363,28 +428,34 @@ export function StatementCreatePage(): JSX.Element {
         statement={statement ?? null}
       />
 
-      <StatementPreviewModal
-        isOpen={isPreviewModalOpen}
-        onClose={() => {
-          setIsPreviewModalOpen(false)
-        }}
-        claimIds={Array.from(selectedClaimIds)}
-        exchangeAccountIds={Array.from(selectedExchangeAccountIds)}
-        openingDate={openingDate}
-        closingDate={closingDate}
-        timezone={userTimezone}
-        name={name || null}
-        address={address || null}
-        context="self_generated"
-      />
+      {!invalidDateRange && (
+        <StatementPreviewModal
+          isOpen={isPreviewModalOpen}
+          onClose={() => {
+            setIsPreviewModalOpen(false)
+          }}
+          claimIds={Array.from(selectedClaimIds)}
+          exchangeAccountIds={Array.from(selectedExchangeAccountIds)}
+          openingDate={openingDate}
+          closingDate={closingDate}
+          timezone={userTimezone}
+          name={name || null}
+          address={address || null}
+          context="self_generated"
+        />
+      )}
     </Stack>
   )
 }
 
 function StatementGenerationModal({
+  FullTransitionModal,
   statement,
   ...props
-}: { statement: StatementDto | null } & Omit<ModalProps, 'children'>) {
+}: {
+  FullTransitionModal: StatementCreateViews['FullTransitionModal']
+  statement: StatementDto | null
+} & Omit<ModalProps, 'children'>) {
   const completedContent = (
     <HStack>
       <Button as={Link} to="/portfolio" variant="outline">
