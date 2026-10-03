@@ -5,6 +5,7 @@ import {
   FormControl,
   FormErrorMessage,
   FormLabel,
+  Grid,
   HStack,
   Heading,
   Input,
@@ -129,7 +130,7 @@ export function ConnectKraken(): JSX.Element {
   }
 
   return (
-    <ClaimConnectionWrapper>
+    <ClaimConnectionWrapper maxW="928px">
       <form
         onSubmit={(event) => {
           handleSubmit(onSubmit)(event).catch(() => {
@@ -137,85 +138,95 @@ export function ConnectKraken(): JSX.Element {
           })
         }}
       >
-        <Stack gap={6} pt={8} pb={WizardFooter.padding}>
-          {/* Header */}
-          <Flex align="center" gap={3}>
-            <img src="/images/exchanges/kraken.svg" alt="Kraken" style={{ height: '32px' }} />
-            <Heading as="h1" textStyle="text/2xl" fontWeight="bold" color="neutral.900">
-              {isReconnect ? 'Reconnect Kraken Account' : 'Connect Kraken Account'}
-            </Heading>
-          </Flex>
-          <Text textStyle="text/md" color="neutral.600">
-            Enter your Kraken API credentials to import your Bitcoin balance. Only read-only access is required.
-          </Text>
+        <Grid
+          templateColumns={{ base: 'minmax(0, 1fr)', lg: 'repeat(2, minmax(0, 1fr))' }}
+          columnGap={10}
+          rowGap={6}
+          pt={8}
+          alignItems="start"
+        >
+          <Stack gap={6} minW={0}>
+            {/* Header */}
+            <Flex align="center" gap={3}>
+              <img src="/images/exchanges/kraken.svg" alt="Kraken" style={{ height: '32px' }} />
+              <Heading as="h1" textStyle="text/2xl" fontWeight="bold" color="neutral.900">
+                {isReconnect ? 'Reconnect Kraken Account' : 'Connect Kraken Account'}
+              </Heading>
+            </Flex>
+            <Text textStyle="text/md" color="neutral.600">
+              Enter your Kraken API credentials to import your Bitcoin balance. Only read-only access is required.
+            </Text>
 
-          {/* Form fields */}
-          <Stack gap={4}>
-            <FormControl isInvalid={!!errors.apiKey}>
-              <FormLabel textStyle="text/sm" color="neutral.600">
-                API Key
-              </FormLabel>
-              <Input {...register('apiKey')} placeholder="Your Kraken API key" fontFamily="mono" fontSize="sm" />
-              <FormErrorMessage>{errors.apiKey?.message}</FormErrorMessage>
-            </FormControl>
+            {/* Form fields */}
+            <Stack gap={4}>
+              <FormControl isInvalid={!!errors.apiKey}>
+                <FormLabel textStyle="text/sm" color="neutral.600">
+                  API Key
+                </FormLabel>
+                <Input {...register('apiKey')} placeholder="Your Kraken API key" fontFamily="mono" fontSize="sm" />
+                <FormErrorMessage>{errors.apiKey?.message}</FormErrorMessage>
+              </FormControl>
 
-            <FormControl isInvalid={!!errors.secretKey}>
-              <FormLabel textStyle="text/sm" color="neutral.600">
-                Secret Key
-              </FormLabel>
-              <Input
-                {...register('secretKey')}
-                type="password"
-                placeholder="Your Kraken secret key (base64)"
-                fontFamily="mono"
-                fontSize="sm"
-              />
-              <FormErrorMessage>{errors.secretKey?.message}</FormErrorMessage>
-            </FormControl>
+              <FormControl isInvalid={!!errors.secretKey}>
+                <FormLabel textStyle="text/sm" color="neutral.600">
+                  Secret Key
+                </FormLabel>
+                <Input
+                  {...register('secretKey')}
+                  type="password"
+                  placeholder="Your Kraken secret key (base64)"
+                  fontFamily="mono"
+                  fontSize="sm"
+                />
+                <FormErrorMessage>{errors.secretKey?.message}</FormErrorMessage>
+              </FormControl>
+            </Stack>
           </Stack>
 
-          {/* Instructions */}
-          <Box bg="neutral.50" borderRadius="md" p={4}>
-            <Text textStyle="text/sm" fontWeight="semibold" color="neutral.900" mb={2}>
-              How to create a Kraken API key
-            </Text>
-            <Stack gap={2} as="ol" listStyleType="decimal" pl={4}>
-              <Text as="li" textStyle="text/sm" color="neutral.700">
-                Go to{' '}
-                <Text
-                  as="a"
-                  href="https://www.kraken.com/c/account-settings/api"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  color="neutral.900"
-                  textDecoration="underline"
-                >
-                  Kraken API Settings
+          <Stack gap={6} minW={0}>
+            {/* Instructions */}
+            <Box bg="neutral.50" borderRadius="md" p={4}>
+              <Text textStyle="text/sm" fontWeight="semibold" color="neutral.900" mb={2}>
+                How to create a Kraken API key
+              </Text>
+              <Stack gap={2} as="ol" listStyleType="decimal" pl={4}>
+                <Text as="li" textStyle="text/sm" color="neutral.700">
+                  Go to{' '}
+                  <Text
+                    as="a"
+                    href="https://www.kraken.com/c/account-settings/api"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    color="neutral.900"
+                    textDecoration="underline"
+                  >
+                    Kraken API Settings
+                  </Text>
+                  , sign in, and click &ldquo;Create API Key&rdquo;.
                 </Text>
-                , sign in, and click &ldquo;Create API Key&rdquo;.
-              </Text>
-              <Text as="li" textStyle="text/sm" color="neutral.700">
-                Under Permissions, check &ldquo;Query Funds&rdquo; and &ldquo;Query Ledger Entries&rdquo;. Leave all
-                other permissions unchecked.
-              </Text>
-              <Text as="li" textStyle="text/sm" color="neutral.700">
-                Click &ldquo;Generate Key&rdquo;. Copy both the API Key and the Private Key (base64 string), then paste
-                them above.
-              </Text>
-            </Stack>
-          </Box>
+                <Text as="li" textStyle="text/sm" color="neutral.700">
+                  Under Permissions, check &ldquo;Query Funds&rdquo; and &ldquo;Query Ledger Entries&rdquo;. Leave all
+                  other permissions unchecked.
+                </Text>
+                <Text as="li" textStyle="text/sm" color="neutral.700">
+                  Click &ldquo;Generate Key&rdquo;. Copy both the API Key and the Private Key (base64 string), then
+                  paste them into the form.
+                </Text>
+              </Stack>
+            </Box>
 
-          {/* Info box */}
-          <Box border="1px solid" borderColor="neutral.200" borderRadius="md" p={4} bg="shades.0">
-            <Text textStyle="text/sm" fontWeight="semibold" color="neutral.900" mb={1}>
-              What is being accessed?
-            </Text>
-            <Text textStyle="text/sm" color="neutral.600">
-              Only your Bitcoin balance and transaction history are read. No trading or withdrawal permissions are
-              required or granted.
-            </Text>
-          </Box>
-        </Stack>
+            {/* Info box */}
+            <Box border="1px solid" borderColor="neutral.200" borderRadius="md" p={4} bg="shades.0">
+              <Text textStyle="text/sm" fontWeight="semibold" color="neutral.900" mb={1}>
+                What is being accessed?
+              </Text>
+              <Text textStyle="text/sm" color="neutral.600">
+                Only your Bitcoin balance and transaction history are read. No trading or withdrawal permissions are
+                required or granted.
+              </Text>
+            </Box>
+          </Stack>
+        </Grid>
 
         <WizardFooter
           leftButton={

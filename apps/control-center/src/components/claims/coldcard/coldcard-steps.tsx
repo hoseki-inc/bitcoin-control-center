@@ -171,10 +171,7 @@ function Step1({ onNext, onBack, ...rest }: { onNext: () => void; onBack: () => 
 
       <Text textStyle="text/md" color="neutral.900">
         To verify ownership with your COLDCARD, you&apos;ll securely prove control of your keys by signing a message
-        offline—a 100% air-gapped process that keeps your private keys safe.
-      </Text>
-      <Text textStyle="text/md" color="neutral.900">
-        We&apos;ll guide you through each step—just follow the on-screen instructions.
+        offline—a 100% air-gapped process that keeps your private keys safe. We&apos;ll guide you through each step.
       </Text>
       <Box>
         <Text textStyle="text/md" color="neutral.900" fontWeight={500}>

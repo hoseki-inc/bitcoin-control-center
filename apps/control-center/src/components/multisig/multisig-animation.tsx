@@ -10,7 +10,15 @@ export function MultisigAnimation({ animation }: { animation: '1' | '2' }): JSX.
     return <></>
   }
   return (
-    <Box mt={-4} mb={4}>
+    <Box
+      mt={-4}
+      mb={4}
+      // Laptop-height windows keep the whole step, including its footer, on screen.
+      sx={{
+        '@media (max-height: 820px)': { '& > div': { width: '60% !important' } },
+        '@media (max-height: 740px)': { '& > div': { width: '48% !important' } },
+      }}
+    >
       <Lottie
         animationData={animation === '1' ? multisigAnimation1 : multisigAnimation2}
         loop={true}

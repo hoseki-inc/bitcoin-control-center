@@ -146,16 +146,26 @@ export type WalletAnimationType = keyof typeof allAnimations
 
 export function WalletAnimation({ animation }: { animation: WalletAnimationType }): JSX.Element {
   return (
-    <Lottie
-      animationData={allAnimations[animation]}
-      loop={true}
-      autoplay={true}
-      style={{
-        width: '320px',
-        height: '240px',
-        margin: '0 auto -20px auto',
+    <Box
+      w="320px"
+      maxW="full"
+      h="240px"
+      mx="auto"
+      mb="-20px"
+      flexShrink={0}
+      // Laptop-height windows keep the whole first step, including its footer, on screen.
+      sx={{
+        '@media (max-height: 820px)': { width: '240px', height: '180px' },
+        '@media (max-height: 740px)': { width: '200px', height: '150px', marginBottom: '-12px' },
       }}
-    />
+    >
+      <Lottie
+        animationData={allAnimations[animation]}
+        loop={true}
+        autoplay={true}
+        style={{ width: '100%', height: '100%' }}
+      />
+    </Box>
   )
 }
 

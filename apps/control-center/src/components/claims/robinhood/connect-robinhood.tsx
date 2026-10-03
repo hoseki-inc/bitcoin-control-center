@@ -5,6 +5,7 @@ import {
   FormControl,
   FormErrorMessage,
   FormLabel,
+  Grid,
   HStack,
   Heading,
   Input,
@@ -131,7 +132,7 @@ export function ConnectRobinhood(): JSX.Element {
   }
 
   return (
-    <ClaimConnectionWrapper>
+    <ClaimConnectionWrapper maxW="928px">
       <form
         onSubmit={(event) => {
           handleSubmit(onSubmit)(event).catch(() => {
@@ -139,107 +140,117 @@ export function ConnectRobinhood(): JSX.Element {
           })
         }}
       >
-        <Stack gap={6} pt={8} pb={WizardFooter.padding}>
-          {/* Header */}
-          <Flex align="center" gap={3}>
-            <img src="/images/exchanges/robinhood-icon.svg" alt="Robinhood" style={{ height: '32px' }} />
-            <Heading as="h1" textStyle="text/2xl" fontWeight="bold" color="neutral.900">
-              {isReconnect ? 'Reconnect Robinhood Account' : 'Connect Robinhood Account'}
-            </Heading>
-          </Flex>
-          <Text textStyle="text/md" color="neutral.600">
-            Enter your Robinhood Crypto API credentials to import your Bitcoin balance and order history. Only read-only
-            access is required.
-          </Text>
+        <Grid
+          templateColumns={{ base: 'minmax(0, 1fr)', lg: 'repeat(2, minmax(0, 1fr))' }}
+          columnGap={10}
+          rowGap={6}
+          pt={8}
+          alignItems="start"
+        >
+          <Stack gap={6} minW={0}>
+            {/* Header */}
+            <Flex align="center" gap={3}>
+              <img src="/images/exchanges/robinhood-icon.svg" alt="Robinhood" style={{ height: '32px' }} />
+              <Heading as="h1" textStyle="text/2xl" fontWeight="bold" color="neutral.900">
+                {isReconnect ? 'Reconnect Robinhood Account' : 'Connect Robinhood Account'}
+              </Heading>
+            </Flex>
+            <Text textStyle="text/md" color="neutral.600">
+              Enter your Robinhood Crypto API credentials to import your Bitcoin balance and order history. Only
+              read-only access is required.
+            </Text>
 
-          {/* Form fields */}
-          <Stack gap={4}>
-            <FormControl isInvalid={!!errors.displayName}>
-              <FormLabel textStyle="text/sm" color="neutral.600">
-                Account Name
-              </FormLabel>
-              <Input {...register('displayName')} placeholder="e.g. My Robinhood Account" />
-              <FormErrorMessage>{errors.displayName?.message}</FormErrorMessage>
-            </FormControl>
+            {/* Form fields */}
+            <Stack gap={4}>
+              <FormControl isInvalid={!!errors.displayName}>
+                <FormLabel textStyle="text/sm" color="neutral.600">
+                  Account Name
+                </FormLabel>
+                <Input {...register('displayName')} placeholder="e.g. My Robinhood Account" />
+                <FormErrorMessage>{errors.displayName?.message}</FormErrorMessage>
+              </FormControl>
 
-            <FormControl isInvalid={!!errors.apiKey}>
-              <FormLabel textStyle="text/sm" color="neutral.600">
-                API Key
-              </FormLabel>
-              <Input
-                {...register('apiKey')}
-                placeholder="e.g. rh-api-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                fontFamily="mono"
-              />
-              <FormErrorMessage>{errors.apiKey?.message}</FormErrorMessage>
-            </FormControl>
+              <FormControl isInvalid={!!errors.apiKey}>
+                <FormLabel textStyle="text/sm" color="neutral.600">
+                  API Key
+                </FormLabel>
+                <Input
+                  {...register('apiKey')}
+                  placeholder="e.g. rh-api-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                  fontFamily="mono"
+                />
+                <FormErrorMessage>{errors.apiKey?.message}</FormErrorMessage>
+              </FormControl>
 
-            <FormControl isInvalid={!!errors.privateKey}>
-              <FormLabel textStyle="text/sm" color="neutral.600">
-                Private Key (Base64)
-              </FormLabel>
-              <Input
-                {...register('privateKey')}
-                placeholder="Paste your base64-encoded private key"
-                fontFamily="mono"
-                type="password"
-              />
-              <FormErrorMessage>{errors.privateKey?.message}</FormErrorMessage>
-            </FormControl>
+              <FormControl isInvalid={!!errors.privateKey}>
+                <FormLabel textStyle="text/sm" color="neutral.600">
+                  Private Key (Base64)
+                </FormLabel>
+                <Input
+                  {...register('privateKey')}
+                  placeholder="Paste your base64-encoded private key"
+                  fontFamily="mono"
+                  type="password"
+                />
+                <FormErrorMessage>{errors.privateKey?.message}</FormErrorMessage>
+              </FormControl>
+            </Stack>
           </Stack>
 
-          {/* Instructions */}
-          <Box bg="neutral.50" borderRadius="md" p={4}>
-            <Text textStyle="text/sm" fontWeight="semibold" color="neutral.900" mb={2}>
-              How to set up Robinhood Crypto API credentials
-            </Text>
-            <Stack gap={2} as="ol" listStyleType="decimal" pl={4}>
-              <Text as="li" textStyle="text/sm" color="neutral.700">
-                Generate an Ed25519 key pair using the script in{' '}
-                <Text
-                  as="a"
-                  href="https://docs.robinhood.com/crypto/trading/#section/Authentication"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  color="neutral.900"
-                  textDecoration="underline"
-                >
-                  Robinhood&apos;s API docs
+          <Stack gap={6} minW={0}>
+            {/* Instructions */}
+            <Box bg="neutral.50" borderRadius="md" p={4}>
+              <Text textStyle="text/sm" fontWeight="semibold" color="neutral.900" mb={2}>
+                How to set up Robinhood Crypto API credentials
+              </Text>
+              <Stack gap={2} as="ol" listStyleType="decimal" pl={4}>
+                <Text as="li" textStyle="text/sm" color="neutral.700">
+                  Generate an Ed25519 key pair using the script in{' '}
+                  <Text
+                    as="a"
+                    href="https://docs.robinhood.com/crypto/trading/#section/Authentication"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    color="neutral.900"
+                    textDecoration="underline"
+                  >
+                    Robinhood&apos;s API docs
+                  </Text>
+                  . Save both the private key (base64) and public key (base64).
                 </Text>
-                . Save both the private key (base64) and public key (base64).
-              </Text>
-              <Text as="li" textStyle="text/sm" color="neutral.700">
-                Open{' '}
-                <Text
-                  as="a"
-                  href="https://robinhood.com/account/crypto"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  color="neutral.900"
-                  textDecoration="underline"
-                >
-                  Robinhood Crypto Account Settings
-                </Text>{' '}
-                and create an API credential using your public key.
-              </Text>
-              <Text as="li" textStyle="text/sm" color="neutral.700">
-                Copy the API key (e.g. rh-api-...) and your base64 private key, then paste them above. Both will be
-                encrypted and stored securely.
-              </Text>
-            </Stack>
-          </Box>
+                <Text as="li" textStyle="text/sm" color="neutral.700">
+                  Open{' '}
+                  <Text
+                    as="a"
+                    href="https://robinhood.com/account/crypto"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    color="neutral.900"
+                    textDecoration="underline"
+                  >
+                    Robinhood Crypto Account Settings
+                  </Text>{' '}
+                  and create an API credential using your public key.
+                </Text>
+                <Text as="li" textStyle="text/sm" color="neutral.700">
+                  Copy the API key (e.g. rh-api-...) and your base64 private key, then paste them into the form. Both
+                  will be encrypted and stored securely.
+                </Text>
+              </Stack>
+            </Box>
 
-          {/* Info box */}
-          <Box border="1px solid" borderColor="neutral.200" borderRadius="md" p={4} bg="shades.0">
-            <Text textStyle="text/sm" fontWeight="semibold" color="neutral.900" mb={1}>
-              What is being accessed?
-            </Text>
-            <Text textStyle="text/sm" color="neutral.600">
-              Only your Bitcoin holdings and order history are read. No trading or withdrawal permissions are required
-              or granted.
-            </Text>
-          </Box>
-        </Stack>
+            {/* Info box */}
+            <Box border="1px solid" borderColor="neutral.200" borderRadius="md" p={4} bg="shades.0">
+              <Text textStyle="text/sm" fontWeight="semibold" color="neutral.900" mb={1}>
+                What is being accessed?
+              </Text>
+              <Text textStyle="text/sm" color="neutral.600">
+                Only your Bitcoin holdings and order history are read. No trading or withdrawal permissions are required
+                or granted.
+              </Text>
+            </Box>
+          </Stack>
+        </Grid>
 
         <WizardFooter
           leftButton={
