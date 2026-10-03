@@ -14,6 +14,7 @@ import {
 import { zodResolver } from '@hookform/resolvers/zod'
 import { PageTransition } from '@hoseki/packages/ui/design-system'
 import { Receipt } from '@hoseki/packages/ui/prove-verify-ui'
+import { monoInputProps } from '@hoseki/packages/ui/utils/bitcoin'
 import { ClaimConnectionWrapper, WizardFooter } from '@hoseki/packages/ui/wallet-ui'
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
@@ -175,7 +176,7 @@ export function ConnectRobinhood(): JSX.Element {
                 <Input
                   {...register('apiKey')}
                   placeholder="e.g. rh-api-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                  fontFamily="mono"
+                  {...monoInputProps}
                 />
                 <FormErrorMessage>{errors.apiKey?.message}</FormErrorMessage>
               </FormControl>
@@ -187,7 +188,7 @@ export function ConnectRobinhood(): JSX.Element {
                 <Input
                   {...register('privateKey')}
                   placeholder="Paste your base64-encoded private key"
-                  fontFamily="mono"
+                  {...monoInputProps}
                   type="password"
                 />
                 <FormErrorMessage>{errors.privateKey?.message}</FormErrorMessage>

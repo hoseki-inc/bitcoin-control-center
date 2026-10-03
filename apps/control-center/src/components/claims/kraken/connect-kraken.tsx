@@ -14,6 +14,7 @@ import {
 import { zodResolver } from '@hookform/resolvers/zod'
 import { PageTransition } from '@hoseki/packages/ui/design-system'
 import { Receipt } from '@hoseki/packages/ui/prove-verify-ui'
+import { monoInputProps } from '@hoseki/packages/ui/utils/bitcoin'
 import { ClaimConnectionWrapper, WizardFooter } from '@hoseki/packages/ui/wallet-ui'
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
@@ -161,7 +162,7 @@ export function ConnectKraken(): JSX.Element {
                 <FormLabel textStyle="text/sm" color="neutral.600">
                   API Key
                 </FormLabel>
-                <Input {...register('apiKey')} placeholder="Your Kraken API key" fontFamily="mono" fontSize="sm" />
+                <Input {...register('apiKey')} placeholder="Your Kraken API key" {...monoInputProps} />
                 <FormErrorMessage>{errors.apiKey?.message}</FormErrorMessage>
               </FormControl>
 
@@ -173,8 +174,7 @@ export function ConnectKraken(): JSX.Element {
                   {...register('secretKey')}
                   type="password"
                   placeholder="Your Kraken secret key (base64)"
-                  fontFamily="mono"
-                  fontSize="sm"
+                  {...monoInputProps}
                 />
                 <FormErrorMessage>{errors.secretKey?.message}</FormErrorMessage>
               </FormControl>

@@ -15,6 +15,7 @@ import {
 import { zodResolver } from '@hookform/resolvers/zod'
 import { PageTransition } from '@hoseki/packages/ui/design-system'
 import { Receipt } from '@hoseki/packages/ui/prove-verify-ui'
+import { monoInputProps } from '@hoseki/packages/ui/utils/bitcoin'
 import { ClaimConnectionWrapper, WizardFooter } from '@hoseki/packages/ui/wallet-ui'
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
@@ -163,7 +164,11 @@ export function ConnectCoinbase(): JSX.Element {
                 <FormLabel textStyle="text/sm" color="neutral.600">
                   API Key Name
                 </FormLabel>
-                <Input {...register('apiKey')} placeholder="e.g. organizations/abc123/apiKeys/xyz" />
+                <Input
+                  {...register('apiKey')}
+                  placeholder="e.g. organizations/abc123/apiKeys/xyz"
+                  {...monoInputProps}
+                />
                 <FormErrorMessage>{errors.apiKey?.message}</FormErrorMessage>
               </FormControl>
 
@@ -175,8 +180,7 @@ export function ConnectCoinbase(): JSX.Element {
                   {...register('secretKey')}
                   placeholder="-----BEGIN EC PRIVATE KEY-----&#10;...&#10;-----END EC PRIVATE KEY-----"
                   rows={6}
-                  fontFamily="mono"
-                  fontSize="sm"
+                  {...monoInputProps}
                 />
                 <FormErrorMessage>{errors.secretKey?.message}</FormErrorMessage>
               </FormControl>
