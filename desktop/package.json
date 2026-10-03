@@ -1,6 +1,6 @@
 {
   "name": "desktop",
-  "version": "0.1.0",
+  "version": "0.0.0-dev",
   "private": true,
   "description": "Local-first Bitcoin portfolio tracking and proof-of-reserves statements",
   "license": "Apache-2.0",
@@ -10,8 +10,8 @@
   "scripts": {
     "check": "tsc --project tsconfig.check.json && vitest run",
     "dev": "electron app/main/index.js",
-    "dist:mac": "electron-builder --mac --universal",
-    "dist:win": "electron-builder --win",
+    "dist:mac": "bash ./build.sh --mac",
+    "dist:win": "bash ./build.sh --win",
     "install:electron": "node node_modules/electron/install.js",
     "rebuild": "node -e \"const Database = require('better-sqlite3'); const database = new Database(':memory:'); database.close()\"",
     "test:runtime": "node scripts/check-runtime.mjs"

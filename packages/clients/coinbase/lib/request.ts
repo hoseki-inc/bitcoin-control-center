@@ -1,8 +1,7 @@
+import * as crypto from 'node:crypto'
 import { Err, Ok, Result, asyncFn, parseUnknown } from '@hoseki/packages/result'
 import { SafeHttpErrorKind, type SafeResponse, safeHttp } from '@hoseki/packages/safe-http'
-import * as crypto from 'crypto'
-import jose from 'node-jose'
-import { z } from 'zod'
+import type { z } from 'zod'
 import type { Credentials } from './credentials'
 import { ApiError, ErrorKind } from './errors'
 import { type JsonRecord, recordToHeaders, recordToSearchParams } from './util'
@@ -48,18 +47,8 @@ function extractPemKey(string: string): Result<string, Error> {
   return Ok(normalized)
 }
 
-/**
- * Copied from Coinbase SDK, I'm not sure using random numbers is the best way to generate a nonce.
- *
- * See https://github.com/coinbase/coinbase-sdk-nodejs/blob/ffdd6962c4236878d324cd709f22d35faf90f50a/src/coinbase/authenticator.ts#L121-L130
- */
-function generateNonce() {
-  const range = '0123456789'
-  let nonce = ''
-  for (let i = 0; i < 16; i++) {
-    nonce += range.charAt(Math.floor(Math.random() * range.length))
-  }
-  return nonce
+function generateNonce(): string {
+  return crypto.randomBytes(16).toString('hex')
 }
 
 /**
@@ -68,7 +57,13 @@ function generateNonce() {
  * But I tried the official authenticator, and that does not work either: https://github.com/coinbase/coinbase-sdk-nodejs/blob/master/src/coinbase/authenticator.ts
  */
 const signCdp = asyncFn(
-  async (args: { name: string; secret: string; method: 'GET' | 'POST'; url: string; path: string }) => {
+  async (args: {
+    name: string
+    secret: string
+    method: 'GET' | 'POST'
+    url: string
+    path: string
+  }): Promise<Result<string, Error>> => {
     const pemPrivateKey = extractPemKey(args.secret)
     if (pemPrivateKey.isErr()) {
       return Err(pemPrivateKey.error())
@@ -77,8 +72,10 @@ const signCdp = asyncFn(
     const pemKey = pemPrivateKey.value()
 
     // Parse as PEM format (the normalization handles escaped newlines and whitespace)
-    const privateKeyRes = await Result.fromPromise(jose.JWK.asKey(pemKey, 'pem')).andThen((key) =>
-      key.kty === 'EC' ? Ok(key) : Err(new Error('Invalid key type: expected EC key')),
+    const privateKeyRes = Result.fromThrowable(() => crypto.createPrivateKey(pemKey)).andThen((key) =>
+      key.asymmetricKeyType === 'ec' && key.asymmetricKeyDetails?.namedCurve === 'prime256v1'
+        ? Ok(key)
+        : Err(new Error('Invalid key: expected a P-256 EC private key')),
     )
 
     if (privateKeyRes.isErr()) {
@@ -109,15 +106,17 @@ const signCdp = asyncFn(
       uris: [uri],
     }
 
-    async function createSign() {
-      const payload = Buffer.from(JSON.stringify(claims)).toString('utf8')
-      return jose.JWS.createSign({ format: 'compact', fields }, privateKey).update(payload).final()
-    }
-
-    // node-jose's declared result includes formats other than the requested compact JWT.
-    return Result.fromPromise(createSign()).andThen((signed) =>
-      parseUnknown(z.string(), signed).mapErr(() => new Error('Invalid signature')),
-    )
+    return Result.fromThrowable(() => {
+      const header = Buffer.from(JSON.stringify(fields)).toString('base64url')
+      const payload = Buffer.from(JSON.stringify(claims)).toString('base64url')
+      const signingInput = `${header}.${payload}`
+      // ES256 JWTs encode the 32-byte r and s values directly, rather than using DER.
+      const signature = crypto.sign('sha256', Buffer.from(signingInput), {
+        key: privateKey,
+        dsaEncoding: 'ieee-p1363',
+      })
+      return `${signingInput}.${signature.toString('base64url')}`
+    })
   },
 )
 

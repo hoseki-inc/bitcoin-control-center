@@ -125,18 +125,21 @@ describe('stored statement data', () => {
       const date = new Date('2024-01-02T00:00:00Z')
       const id = statements.create({ claimIds: [], openingDate: date, closingDate: date, timezone: 'UTC' })
       const transactions = {
-        wallet: [
-          {
-            address: 'synthetic-address',
-            hash: 'synthetic-hash',
-            balanceChange: -9007199254740993n,
-            block: null,
-            transactedAt: date,
-            confirmed: false,
-            accountName: 'Test wallet',
-            extra: 'preserved',
-          },
-        ],
+        wallet: {
+          displayName: 'Test wallet',
+          transactions: [
+            {
+              address: 'synthetic-address',
+              hash: 'synthetic-hash',
+              balanceChange: -9007199254740993n,
+              block: null,
+              transactedAt: date,
+              confirmed: false,
+              accountName: 'Test wallet',
+              extra: 'preserved',
+            },
+          ],
+        },
       }
       const price = new Decimal('42000.12345678')
       const dailyRates = {
@@ -148,6 +151,48 @@ describe('stored statement data', () => {
       expect(loaded?.transactionMap).toEqual(transactions)
       expect(loaded?.dailyRates).toEqual(dailyRates)
       expect(statements.findById(id)?.status).toBe('completed')
+    })
+  })
+
+  it('loads completed statements stored with display names as keys', async () => {
+    await withTestSetup(async () => {
+      const statements = service()
+      const date = new Date('2024-01-02T00:00:00Z')
+      const id = statements.create({ claimIds: [], openingDate: date, closingDate: date, timezone: 'UTC' })
+      statements.complete(id, {}, { rates: {}, source: 'mempool' })
+      database.db.prepare('UPDATE statements SET transaction_map = ? WHERE id = ?').run(
+        JSON.stringify({
+          Savings: [
+            {
+              address: 'synthetic-address',
+              hash: 'synthetic-hash',
+              balanceChange: '100000000',
+              block: null,
+              transactedAt: date.toISOString(),
+              confirmed: true,
+              accountName: 'Savings',
+            },
+          ],
+        }),
+        id,
+      )
+
+      expect(statements.loadCompleted(id)?.transactionMap).toEqual({
+        Savings: {
+          displayName: 'Savings',
+          transactions: [
+            {
+              address: 'synthetic-address',
+              hash: 'synthetic-hash',
+              balanceChange: 100000000n,
+              block: null,
+              transactedAt: date,
+              confirmed: true,
+              accountName: 'Savings',
+            },
+          ],
+        },
+      })
     })
   })
 

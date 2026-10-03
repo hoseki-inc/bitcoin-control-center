@@ -42,8 +42,10 @@ Use **Home** for the current portfolio summary and recent statements. Use
 account is still synchronizing, allow it to finish before treating charts or
 historical totals as complete.
 
-Exchange accounts contact the selected provider when they refresh. BTC/USD price
-and transaction enrichment in the StartOS package currently use mempool.space.
+Exchange accounts contact the selected provider when they refresh. The current
+BTC/USD price comes from the source chosen in **Settings → Bitcoin price**: Block
+by default, with mempool.space, Coinbase and CoinGecko as fallbacks unless you
+turn them off. Statement prices and transaction enrichment use mempool.space.
 
 ## Generate a statement
 

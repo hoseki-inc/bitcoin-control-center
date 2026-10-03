@@ -105,7 +105,7 @@ export class TorManager {
         { stdio: ['ignore', 'pipe', 'pipe'] },
       )
     } catch {
-      this.status = { state: 'failed', message: 'Tor could not start. Turn Tor on to try again.' }
+      this.status = { state: 'failed', message: 'Tor could not start.' }
       return this.getStatus()
     }
     const child = this.child
@@ -136,7 +136,7 @@ export class TorManager {
         }
         if (/Bootstrapped 100%[^\n]*Done/.test(buffer)) {
           if (this.socksPort === null) {
-            fail('Tor did not open its local proxy. Turn Tor on to try again.')
+            fail('Tor did not open its local proxy.')
             return
           }
           this.status = { state: 'ready' }
@@ -150,7 +150,7 @@ export class TorManager {
         }
       }
       const timer = setTimeout(() => {
-        fail('Tor could not connect within two minutes. Check your network, then turn Tor on to try again.')
+        fail('Tor could not connect within two minutes. Check your network.')
       }, this.bootstrapTimeout)
       this.finishStart = finish
       child.stdout?.on('data', onData)
@@ -158,10 +158,10 @@ export class TorManager {
       child.stdout?.resume()
       child.stderr?.resume()
       child.once('error', () => {
-        fail('Tor could not start. Turn Tor on to try again.')
+        fail('Tor could not start.')
       })
       child.once('exit', () => {
-        fail('Tor stopped unexpectedly. Turn Tor on to try again.')
+        fail('Tor stopped unexpectedly.')
       })
       child.once('close', () => {
         if (this.child === child) {

@@ -72,16 +72,15 @@ export const fetchTransactionEntries = asyncFn(
     const txHashToAddresses = new Map<string, Set<Address>>()
 
     for (const address of addresses) {
+      // A statement missing an address's transactions would look complete, so any failure stops it.
       const scripthashRes = addressToScripthash(address)
       if (scripthashRes.isErr()) {
-        logger.warn({ address, err: scripthashRes.unwrapErr() }, 'Failed to compute scripthash, skipping')
-        continue
+        return Err(scripthashRes.unwrapErr())
       }
 
       const historyRes = await onchainProvider.deps.electrum.getHistory(scripthashRes.unwrap())
       if (historyRes.isErr()) {
-        logger.warn({ address, err: historyRes.unwrapErr() }, 'Failed to fetch history, skipping address')
-        continue
+        return Err(new Error(`Could not fetch transaction history: ${historyRes.unwrapErr().message}`))
       }
 
       for (const entry of historyRes.unwrap()) {
@@ -123,9 +122,10 @@ export const fetchTransactionEntries = asyncFn(
       )
 
       for (const [j, result] of results.entries()) {
+        // mempool.space may not know a pending transaction your server has seen, so a lookup it can't
+        // answer is skipped. Statements built from Electrum alone (#204) will remove this source.
         if (result.status !== 'fulfilled' || !result.value) {
-          const txid = batch[j]
-          logger.warn({ txid }, 'Failed to fetch tx from mempool.space, skipping')
+          logger.warn({ txid: batch[j] }, 'Failed to fetch tx from mempool.space, skipping')
           continue
         }
 
