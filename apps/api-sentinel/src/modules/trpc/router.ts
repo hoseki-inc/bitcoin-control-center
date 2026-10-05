@@ -33,6 +33,7 @@ import { z } from 'zod'
 import { type ConnectionDetails, MAX_CONNECTION_PROFILES } from '../connection_profiles/store'
 import { PRICE_FALLBACKS_SETTING, PRICE_SOURCES, PRICE_SOURCE_SETTING } from '../price/service'
 import { StatementMapper } from '../statements/mapper'
+import { validateStatementInput } from '../statements/service'
 import { publicProcedure, t } from './init'
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -1595,6 +1596,12 @@ const statementRouter = t.router({
         'Starting statement generation',
       )
 
+      // Reject invalid dates before saving a statement that could only fail.
+      const validation = validateStatementInput(input)
+      if (validation.isErr()) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: validation.unwrapErr().message })
+      }
+
       const statementId = ctx.app.statementService.create(input)
       logger.info({ statementId }, 'Created pending statement')
 
@@ -1695,7 +1702,7 @@ const statementRouter = t.router({
       }),
     )
     .query(async ({ ctx, input }) => {
-      const dataResult = await ctx.app.statementService.generateStatementData({
+      const statementInput = {
         claimIds: input.claimIds,
         exchangeAccountIds: input.exchangeAccountIds,
         openingDate: input.openingDate,
@@ -1703,7 +1710,14 @@ const statementRouter = t.router({
         timezone: input.timezone,
         name: input.name,
         address: input.address,
-      })
+      }
+      // A date outside the allowed range is the caller's mistake, not a server failure.
+      const validation = validateStatementInput(statementInput)
+      if (validation.isErr()) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: validation.unwrapErr().message })
+      }
+
+      const dataResult = await ctx.app.statementService.generateStatementData(statementInput)
 
       if (dataResult.isErr()) {
         throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: dataResult.unwrapErr().message })

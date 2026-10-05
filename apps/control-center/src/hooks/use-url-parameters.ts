@@ -1,3 +1,4 @@
+import { parseUnknown } from '@hoseki/packages/result/lib/parse'
 import { ClaimIdSchema, StatementIdSchema } from '@hoseki/packages/schemas/prove'
 import { useParams } from 'react-router'
 import type { z } from 'zod'
@@ -12,8 +13,8 @@ const SCHEMA_MAP = {
   [UrlParameter.statementId]: StatementIdSchema,
 }
 
-export function useUrlParameter<K extends UrlParameter>(urlParameter: K): z.infer<(typeof SCHEMA_MAP)[K]> {
+export function useUrlParameter<K extends UrlParameter>(urlParameter: K): z.infer<(typeof SCHEMA_MAP)[K]> | null {
   const params = useParams()
   const schema = SCHEMA_MAP[urlParameter]
-  return schema.parse(params[urlParameter])
+  return parseUnknown(schema, params[urlParameter]).unwrapOr(null)
 }

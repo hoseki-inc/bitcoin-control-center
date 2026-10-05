@@ -1,6 +1,7 @@
 import { Account } from '@hoseki/packages/bitcoin/account'
 import type { ElectrumProvider } from '@hoseki/packages/bitcoin/onchain/electrum_provider'
 import type { TransactionEntry } from '@hoseki/packages/bitcoin/onchain/types'
+import { STATEMENT_CLOSING_DELAY_DAYS, getLatestStatementClosingDate } from '@hoseki/packages/lib/statement-dates'
 import { parseUnknown } from '@hoseki/packages/result'
 import { Err, Ok, asyncFn } from '@hoseki/packages/result'
 import type { Result } from '@hoseki/packages/result'
@@ -93,7 +94,7 @@ const MAX_STATEMENT_RANGE_YEARS = 2
 const MAX_STATEMENT_RANGE_DAYS = MAX_STATEMENT_RANGE_YEARS * 366
 const MS_PER_DAY = 24 * 60 * 60 * 1000
 
-function validateStatementInput(input: GenerateStatementInput): Result<void, Error> {
+export function validateStatementInput(input: GenerateStatementInput, now = new Date()): Result<void, Error> {
   const { openingDate, closingDate } = input
   if (Number.isNaN(openingDate.getTime()) || Number.isNaN(closingDate.getTime())) {
     return Err(new Error('Statement dates must be valid'))
@@ -101,6 +102,18 @@ function validateStatementInput(input: GenerateStatementInput): Result<void, Err
 
   if (openingDate > closingDate) {
     return Err(new Error('Statement opening date must be before closing date'))
+  }
+
+  const latestClosingDate = getLatestStatementClosingDate(now, input.timezone)
+  if (latestClosingDate.isErr()) {
+    return Err(latestClosingDate.unwrapErr())
+  }
+  if (closingDate > latestClosingDate.unwrap()) {
+    return Err(
+      new Error(
+        `Statements must end at least ${STATEMENT_CLOSING_DELAY_DAYS} days ago, so recent transactions have time to confirm`,
+      ),
+    )
   }
 
   const rangeDays = Math.ceil((closingDate.getTime() - openingDate.getTime()) / MS_PER_DAY) + 1
