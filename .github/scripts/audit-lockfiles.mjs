@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
 
@@ -59,9 +59,10 @@ function field(value, key) {
 /**
  * @param {string} stdout
  * @param {number | null} exitStatus
- * @returns {{status: string, counts?: Record<string, number>, reason?: string}}
+ * @param {boolean} pnpmJson
+ * @returns {{status: string, counts?: Record<string, number>, blocking?: boolean, reason?: string}}
  */
-function classify(stdout, exitStatus) {
+function classify(stdout, exitStatus, pnpmJson) {
   try {
     /** @type {unknown} */
     const report = JSON.parse(stdout)
@@ -82,14 +83,16 @@ function classify(stdout, exitStatus) {
       }),
     )
     const aboveThreshold = levels.slice(levels.indexOf(auditLevel)).some((level) => counts[level] > 0)
-    if (exitStatus !== (aboveThreshold ? 1 : 0)) {
+    const hasFindings = Object.values(counts).some((count) => count > 0)
+    // pnpm 10 returns 1 for any finding in JSON mode, even below --audit-level.
+    const expectedExit = (pnpmJson ? hasFindings : aboveThreshold) ? 1 : 0
+    if (exitStatus !== expectedExit) {
       throw new Error('Unexpected exit status or summary/exit mismatch')
     }
     return {
-      status: Object.values(counts).some((count) => count > 0)
-        ? 'completed with findings'
-        : 'completed with no known findings',
+      status: hasFindings ? 'completed with findings' : 'completed with no known findings',
       counts,
+      blocking: aboveThreshold,
     }
   } catch (error) {
     return { status: 'incomplete/error', reason: error instanceof Error ? error.message : 'Invalid audit output' }
@@ -115,7 +118,7 @@ for (const graph of graphs) {
   writeFileSync(join(output, `${graph.name}.exit.txt`), `${result.status ?? 'unavailable'}\n`)
   const classification = result.error
     ? { status: 'incomplete/error', reason: result.error.message }
-    : classify(stdout, result.status)
+    : classify(stdout, result.status, graph.name === 'root')
   const scan = {
     ...graph,
     args,
@@ -130,9 +133,25 @@ for (const graph of graphs) {
   console.log(`${graph.lockfile}: ${scan.status} (exit ${scan.exitStatus ?? 'unavailable'})`)
   if (classification.status === 'incomplete/error') {
     exitCode = 2
-  } else if (result.status === 1 && exitCode === 0) {
+  } else if (classification.blocking === true && exitCode === 0) {
     exitCode = 1
   }
 }
-writeFileSync(join(output, 'summary.json'), `${JSON.stringify({ auditLevel, exitCode, scans }, null, 2)}\n`)
+/** @type {unknown} */
+let auditConfig
+try {
+  /** @type {unknown} */
+  const manifest = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../package.json'), 'utf8'))
+  auditConfig = field(field(manifest, 'pnpm'), 'auditConfig')
+  if (auditConfig !== undefined) {
+    console.log('Configured audit exclusions are recorded in summary.json; severity counts include ignored advisories.')
+  }
+} catch (error) {
+  auditConfig = { inspectionError: error instanceof Error ? error.message : 'Cannot read audit configuration' }
+  exitCode = 2
+}
+writeFileSync(
+  join(output, 'summary.json'),
+  `${JSON.stringify({ auditLevel, auditConfig, exitCode, scans }, null, 2)}\n`,
+)
 process.exitCode = exitCode

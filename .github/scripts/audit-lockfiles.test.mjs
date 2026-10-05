@@ -22,9 +22,11 @@ if (name === 'root' && mode === 'invalid-json') {
 }
 const counts = {info: 0, low: 0, moderate: 0, high: 0, critical: 0}
 if (name === 'root' && mode === 'low') counts.low = 1
+if (name === 'desktop' && mode === 'npm-low') counts.low = 1
 if ((name === 'root' && mode === 'findings') || (name === 'desktop' && mode === 'network')) counts.high = 1
 console.log(JSON.stringify({vulnerabilities: {}, metadata: {vulnerabilities: counts}}))
 if (name === 'root' && mode === 'bad-exit') process.exit(7)
+if (name === 'root') process.exit(Object.values(counts).some(count => count > 0) ? 1 : 0)
 process.exit(counts.high || (counts.low && args.includes('--audit-level=low')) ? 1 : 0)
 `
 
@@ -90,6 +92,8 @@ test.each([
   ['bad-exit', '--audit-level=moderate', 2, 'incomplete/error'],
   ['low', '--audit-level=moderate', 0, 'completed with findings'],
   ['low', '--audit-level=low', 1, 'completed with findings'],
+  ['npm-low', '--audit-level=moderate', 0, 'completed with no known findings'],
+  ['npm-low', '--audit-level=low', 1, 'completed with no known findings'],
   ['clean', '--audit-level=low', 0, 'completed with no known findings'],
 ])('runs every graph and reports %s at %s', (scenario, level, expectedExit, expectedStatus) => {
   const { result, output } = fixture(scenario, level)
