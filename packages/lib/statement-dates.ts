@@ -3,8 +3,9 @@ import { Err, Ok, type Result } from '@hoseki/packages/result'
 import { endOfDay, subDays } from 'date-fns'
 
 /**
- * Statements end at least this many days before today, so every transaction in them
- * has had time to confirm and none can still be pending.
+ * Statements end at least this many days before today, so recent transactions have had
+ * time to confirm. Transactions that are still pending are dated when they are fetched,
+ * so they fall after the end date rather than inside the statement.
  */
 export const STATEMENT_CLOSING_DELAY_DAYS = 2
 

@@ -211,8 +211,8 @@ export function StatementCreatePage(): JSX.Element {
                       size="md"
                     />
                     <FormHelperText>
-                      The latest end date is {STATEMENT_CLOSING_DELAY_DAYS} days ago, so every transaction has time to
-                      confirm.
+                      The latest end date is {STATEMENT_CLOSING_DELAY_DAYS} days ago, so recent transactions have time
+                      to confirm.
                     </FormHelperText>
                   </FormControl>
                 </HStack>

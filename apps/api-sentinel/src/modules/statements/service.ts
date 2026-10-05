@@ -111,7 +111,7 @@ export function validateStatementInput(input: GenerateStatementInput, now = new 
   if (closingDate > latestClosingDate.unwrap()) {
     return Err(
       new Error(
-        `Statements must end at least ${STATEMENT_CLOSING_DELAY_DAYS} days ago, so every transaction in them has time to confirm`,
+        `Statements must end at least ${STATEMENT_CLOSING_DELAY_DAYS} days ago, so recent transactions have time to confirm`,
       ),
     )
   }
