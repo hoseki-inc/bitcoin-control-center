@@ -133,6 +133,7 @@ export class StatementService {
   private readonly exchangeService: ExchangeService
   private readonly mempoolApiUrl: string
   private readonly logger: Logger
+  private readonly sleep: ((ms: number) => Promise<void>) | undefined
 
   public constructor(deps: {
     db: Database.Database
@@ -141,6 +142,8 @@ export class StatementService {
     exchangeService: ExchangeService
     mempoolApiUrl: string
     logger: Logger
+    /** Waits between transaction lookup retries; tests replace it to avoid real delays. */
+    sleep?: (ms: number) => Promise<void>
   }) {
     this.db = deps.db
     this.onchainProvider = deps.onchainProvider
@@ -148,6 +151,7 @@ export class StatementService {
     this.exchangeService = deps.exchangeService
     this.mempoolApiUrl = deps.mempoolApiUrl
     this.logger = deps.logger.child({ module: 'statement-service' })
+    this.sleep = deps.sleep
   }
 
   /** Insert a pending statement row. */
@@ -319,6 +323,7 @@ export class StatementService {
             onchainProvider: this.onchainProvider,
             mempoolApiUrl: this.mempoolApiUrl,
             logger: this.logger,
+            sleep: this.sleep,
           })
           if (txResult.isErr()) {
             this.logger.error({ accountId: row.id, err: txResult.unwrapErr() }, 'Failed to fetch transactions')

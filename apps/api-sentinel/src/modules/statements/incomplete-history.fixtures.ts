@@ -147,6 +147,8 @@ function createStatementHarness(outcome: WithdrawalOutcome) {
     mempoolApiUrl: 'https://example.invalid',
     dailyRatesService,
     exchangeService: new ExchangeService({ db: database.db, logger }),
+    // Retries happen without real waits.
+    sleep: async () => {},
   })
 
   return { service, db: database.db, history, getDailyRates }
