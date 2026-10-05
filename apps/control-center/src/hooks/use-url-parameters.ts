@@ -1,4 +1,4 @@
-import { parseUnknown } from '@hoseki/packages/result'
+import { parseUnknown } from '@hoseki/packages/result/lib/parse'
 import { ClaimIdSchema, StatementIdSchema } from '@hoseki/packages/schemas/prove'
 import { useParams } from 'react-router'
 import type { z } from 'zod'
