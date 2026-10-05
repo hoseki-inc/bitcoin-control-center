@@ -54,8 +54,8 @@ function KeystoreReceiptContent({ claimId }: { claimId: ClaimId }): JSX.Element 
     return <KeystoreReceipt shouldSetTimeout={false} keystore={null} claim={null} />
   }
 
-  const keystore = claim?.keystores.find((k) => k.id === keystoreId)
-  if (!claim || !keystore) {
+  const keystore = claim.keystores.find((k) => k.id === keystoreId)
+  if (!keystore) {
     return (
       <AppLayout header={<div />}>
         <ErrorBanner mt={8} mb={4} message="Failed to get keystore" />
