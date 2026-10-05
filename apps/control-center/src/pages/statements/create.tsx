@@ -176,7 +176,7 @@ export function StatementCreatePage(): JSX.Element {
                     Select a date range for the transaction history shown in your statement.
                   </Text>
                 </Stack>
-                <HStack spacing={5}>
+                <HStack spacing={5} alignItems="flex-start">
                   <FormControl>
                     <FormLabel textStyle="label/md" fontWeight="medium" color="neutral.900" htmlFor="opening-date">
                       Start Date
