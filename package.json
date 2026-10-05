@@ -21,7 +21,7 @@
     "lint": "oxlint --deny-warnings . && turbo run lint -- --max-warnings=0",
     "lint:oxlint": "oxlint --deny-warnings .",
     "prepare": "husky install",
-    "security:audit": "pnpm audit --audit-level=moderate && npm --prefix desktop audit --audit-level=moderate && npm --prefix start9 audit --audit-level=moderate && npm --prefix start9/runtime audit --audit-level=moderate",
+    "security:audit": "node .github/scripts/audit-lockfiles.mjs",
     "test": "turbo run test && vitest run --root .github/scripts"
   },
   "dependencies": {
