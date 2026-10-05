@@ -39,7 +39,7 @@ export function KeystoreReceiptPage(): JSX.Element {
 
 function KeystoreReceiptContent({ claimId }: { claimId: ClaimId }): JSX.Element {
   const { keystoreId } = useParams()
-  const { data: claim, isError } = trpc.portalProve.registry.claims.get.byId.useQuery({ id: claimId })
+  const { data: claim, isLoading, isError } = trpc.portalProve.registry.claims.get.byId.useQuery({ id: claimId })
 
   if (isError) {
     return (
@@ -49,8 +49,13 @@ function KeystoreReceiptContent({ claimId }: { claimId: ClaimId }): JSX.Element 
     )
   }
 
+  // Keep showing the pending receipt until the claim loads, rather than reporting a missing keystore.
+  if (isLoading) {
+    return <KeystoreReceipt shouldSetTimeout={false} keystore={null} claim={null} />
+  }
+
   const keystore = claim?.keystores.find((k) => k.id === keystoreId)
-  if (!keystore) {
+  if (!claim || !keystore) {
     return (
       <AppLayout header={<div />}>
         <ErrorBanner mt={8} mb={4} message="Failed to get keystore" />
@@ -58,11 +63,7 @@ function KeystoreReceiptContent({ claimId }: { claimId: ClaimId }): JSX.Element 
     )
   }
 
-  const props = claim
-    ? ({ shouldSetTimeout: true, keystore, claim } as const)
-    : ({ shouldSetTimeout: false, keystore: null, claim: null } as const)
-
-  return <KeystoreReceipt {...props} />
+  return <KeystoreReceipt shouldSetTimeout keystore={keystore} claim={claim} />
 }
 
 export function KeystoreReceipt({ shouldSetTimeout, keystore, claim }: KeystoreReceiptProps): JSX.Element {

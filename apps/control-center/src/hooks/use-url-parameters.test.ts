@@ -43,3 +43,21 @@ describe('well-formed details URLs for missing records', () => {
     expect(container.textContent).toContain('Home page')
   })
 })
+
+describe('multisig key receipt', () => {
+  it('shows the pending receipt while the account is loading', async () => {
+    const { container, open, requests } = await setupDetailsRoute(
+      '/multisig/verify/receipt/re_clmx_loading/re_ks_key',
+      'direct',
+      'pending',
+    )
+
+    await open()
+
+    await vi.waitFor(() => {
+      expect(requests).toHaveLength(1)
+    })
+    expect(container.textContent).toContain('Validating key')
+    expect(container.textContent).not.toContain('Failed to get keystore')
+  })
+})

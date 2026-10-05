@@ -47,15 +47,20 @@ async function clickLink(container: HTMLElement, label: string): Promise<void> {
   })
 }
 
-function createMissingRecordClient(requests: Operation[]) {
+type ServerResponse = 'missing' | 'pending'
+
+function createRecordClient(requests: Operation[], response: ServerResponse) {
   return createTestTrpcClient(async (operation) => {
     requests.push(operation)
 
+    if (response === 'pending') {
+      return new Promise<never>(() => {})
+    }
     throw new Error('Not found')
   })
 }
 
-function setupRouteRenderer(path: string) {
+function setupRouteRenderer(path: string, response: ServerResponse) {
   const dom = browser.acquire()
   vi.stubGlobal(
     'ResizeObserver',
@@ -69,7 +74,7 @@ function setupRouteRenderer(path: string) {
   const root = createRoot(container)
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const requests: Operation[] = []
-  const rpc = createMissingRecordClient(requests)
+  const rpc = createRecordClient(requests, response)
 
   notifyManager.setNotifyFunction((callback) => {
     act(callback)
@@ -123,8 +128,12 @@ function setupRouteRenderer(path: string) {
   return { container, render, requests }
 }
 
-export async function setupDetailsRoute(path: string, entry: 'direct' | 'navigation'): Promise<DetailsRouteScenario> {
-  const { container, render, requests } = setupRouteRenderer(path)
+export async function setupDetailsRoute(
+  path: string,
+  entry: 'direct' | 'navigation',
+  response: ServerResponse = 'missing',
+): Promise<DetailsRouteScenario> {
+  const { container, render, requests } = setupRouteRenderer(path, response)
 
   if (entry === 'navigation') {
     await render('/home')
