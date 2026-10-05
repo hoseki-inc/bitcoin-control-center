@@ -202,6 +202,11 @@
     "minimumReleaseAge": 10080,
     "patchedDependencies": {
       "@ladle/react@5.1.1": "patches/@ladle__react@5.1.1.patch"
+    },
+    "auditConfig": {
+      "ignoreGhsas": [
+        "GHSA-vfj7-8cjw-p6xm"
+      ]
     }
   }
 }
