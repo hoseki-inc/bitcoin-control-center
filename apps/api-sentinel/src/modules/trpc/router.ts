@@ -33,6 +33,7 @@ import { z } from 'zod'
 import { type ConnectionDetails, MAX_CONNECTION_PROFILES } from '../connection_profiles/store'
 import { PRICE_FALLBACKS_SETTING, PRICE_SOURCES, PRICE_SOURCE_SETTING } from '../price/service'
 import { StatementMapper } from '../statements/mapper'
+import { validateStatementInput } from '../statements/service'
 import { publicProcedure, t } from './init'
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -1594,6 +1595,12 @@ const statementRouter = t.router({
         { claimIds: input.claimIds, openingDate: input.openingDate, closingDate: input.closingDate },
         'Starting statement generation',
       )
+
+      // Reject invalid dates before saving a statement that could only fail.
+      const validation = validateStatementInput(input)
+      if (validation.isErr()) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: validation.unwrapErr().message })
+      }
 
       const statementId = ctx.app.statementService.create(input)
       logger.info({ statementId }, 'Created pending statement')
