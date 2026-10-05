@@ -18,7 +18,7 @@ import {
   Textarea,
   chakra,
 } from '@chakra-ui/react'
-import { STATEMENT_CLOSING_DELAY_DAYS, getLatestStatementClosingDate } from '@hoseki/packages/lib/statement-dates'
+import { getLatestStatementClosingDate } from '@hoseki/packages/lib/statement-dates'
 import type { ClaimId } from '@hoseki/packages/schemas'
 import { DateInput, Panel } from '@hoseki/packages/ui/design-system'
 import { useMutation } from '@tanstack/react-query'
@@ -210,10 +210,6 @@ export function StatementCreatePage(): JSX.Element {
                       }}
                       size="md"
                     />
-                    <FormHelperText>
-                      The latest end date is {STATEMENT_CLOSING_DELAY_DAYS} days ago, so recent transactions have time
-                      to confirm.
-                    </FormHelperText>
                   </FormControl>
                 </HStack>
               </Stack>
