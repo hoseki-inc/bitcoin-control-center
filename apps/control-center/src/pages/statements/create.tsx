@@ -22,7 +22,7 @@ import { STATEMENT_CLOSING_DELAY_DAYS, getLatestStatementClosingDate } from '@ho
 import type { ClaimId } from '@hoseki/packages/schemas'
 import { DateInput, Panel } from '@hoseki/packages/ui/design-system'
 import { useMutation } from '@tanstack/react-query'
-import { addDays, endOfDay, isAfter, min, startOfDay, subDays, subMonths } from 'date-fns'
+import { addDays, endOfDay, isAfter, min, startOfDay, subMonths } from 'date-fns'
 import { FileCheckIcon } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link, useLocation } from 'react-router'
@@ -90,8 +90,10 @@ export function StatementCreatePage(): JSX.Element {
 
   // dates
   const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone
-  const latestClosingDate = getLatestStatementClosingDate(new Date(), userTimezone).unwrapOr(
-    endOfDay(subDays(new Date(), STATEMENT_CLOSING_DELAY_DAYS)),
+  const now = new Date()
+  // The browser's own timezone is always recognized; UTC only guards against an unexpected runtime.
+  const latestClosingDate = getLatestStatementClosingDate(now, userTimezone).unwrapOrElse(() =>
+    getLatestStatementClosingDate(now, 'UTC').expect('UTC is always a recognized timezone'),
   )
   const [closingDate, setClosingDate] = useState<Date>(() => latestClosingDate)
   const [openingDate, setOpeningDate] = useState<Date>(() => startOfDay(subMonths(new Date(), 3)))
@@ -208,12 +210,12 @@ export function StatementCreatePage(): JSX.Element {
                       }}
                       size="md"
                     />
+                    <FormHelperText>
+                      The latest end date is {STATEMENT_CLOSING_DELAY_DAYS} days ago, so every transaction has time to
+                      confirm.
+                    </FormHelperText>
                   </FormControl>
                 </HStack>
-                <Text textStyle="text/sm" color="neutral.600">
-                  Statements end at least {STATEMENT_CLOSING_DELAY_DAYS} days ago, so every transaction in them has time
-                  to confirm.
-                </Text>
               </Stack>
             ) : (
               <StatementExampleAsEmptyState />

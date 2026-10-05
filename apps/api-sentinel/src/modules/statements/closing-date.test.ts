@@ -57,4 +57,35 @@ describe('statement closing date limit', () => {
     await expect(attempt).rejects.toThrow('at least 2 days ago')
     expect(db.prepare('SELECT COUNT(*) AS count FROM statements').get()).toEqual({ count: 0 })
   })
+
+  it('saves and starts a statement ending the day before yesterday', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(now)
+    onTestFinished(() => {
+      vi.useRealTimers()
+    })
+    const { caller, db } = setupAppCaller()
+
+    const statement = await caller.portalProve.statement.initiateGeneration(statementEnding('2026-10-03T23:59:59.999Z'))
+
+    expect(statement.status).toBe('pending')
+    // Generation runs past the date check and stops only because the request selects no accounts.
+    await vi.waitFor(() => {
+      expect(db.prepare('SELECT status FROM statements WHERE id = ?').get(statement.id)).toEqual({ status: 'failed' })
+    })
+  })
+
+  it('rejects a preview ending yesterday as a bad request', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(now)
+    onTestFinished(() => {
+      vi.useRealTimers()
+    })
+    const { caller } = setupAppCaller()
+
+    const attempt = caller.portalProve.statement.generatePreview(statementEnding('2026-10-04T12:00:00.000Z'))
+
+    await expect(attempt).rejects.toMatchObject({ code: 'BAD_REQUEST' })
+    await expect(attempt).rejects.toThrow('at least 2 days ago')
+  })
 })

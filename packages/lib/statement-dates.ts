@@ -4,7 +4,7 @@ import { endOfDay, subDays } from 'date-fns'
 
 /**
  * Statements end at least this many days before today, so every transaction in them
- * has had time to confirm and a statement shows the same history whenever it is generated.
+ * has had time to confirm and none can still be pending.
  */
 export const STATEMENT_CLOSING_DELAY_DAYS = 2
 
