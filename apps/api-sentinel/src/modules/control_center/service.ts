@@ -1205,16 +1205,40 @@ export class ControlCenterService {
   }
 
   /**
-   * Record balance snapshots for ALL accounts (on-chain + exchange).
+   * Collect snapshots independently for on-chain, exchange, manual and ETF accounts.
+   * Keep successful writes and log failures without aborting other accounts/sources.
    * Called on startup and periodically to build chart data.
    */
   public recordAllSnapshots = asyncFn(async (): Promise<Result<void, Error>> => {
     const now = new Date().toISOString()
+    const collectSource = async (source: string, collect: () => Promise<void>): Promise<void> => {
+      try {
+        await collect()
+      } catch {
+        // Provider exceptions can contain descriptors or credentials; log context only.
+        this.logger.warn({ source }, 'Failed to collect balance snapshots for source')
+      }
+    }
+    const collectAccount = async (
+      source: string,
+      accountId: string,
+      collect: () => Promise<boolean>,
+    ): Promise<boolean> => {
+      try {
+        return await collect()
+      } catch {
+        this.logger.warn({ source, accountId }, 'Failed to collect balance snapshot')
+        return false
+      }
+    }
 
     // ─── On-chain accounts ─────────────────────────────────────
-    const accountRows = await this.getAccountRows()
+    await collectSource('on-chain', async () => {
+      const accountRows = await this.getAccountRows()
 
-    if (accountRows.length > 0) {
+      if (accountRows.length === 0) {
+        return
+      }
       const accounts = new IndexSet<Account>()
       const idMap = new Map<string, string>()
 
@@ -1229,56 +1253,91 @@ export class ControlCenterService {
       if (accounts.size > 0) {
         const balancesResult = await this.onchainProvider.getConfirmedAccountBalances(accounts)
         if (balancesResult.isErr()) {
-          this.logger.warn({ err: balancesResult.unwrapErr() }, 'Failed to record on-chain snapshots')
+          this.logger.warn({ source: 'on-chain' }, 'Failed to record on-chain snapshots')
         } else {
+          let recorded = 0
           for (const [account, balance] of balancesResult.unwrap()) {
             const accountId = idMap.get(account.toString())
             if (accountId != null && accountId !== '') {
-              await this.recordAccountSnapshot(accountId, balance.toString(), now)
+              if (
+                await collectAccount('on-chain', accountId, async () => {
+                  await this.recordAccountSnapshot(accountId, balance.toString(), now)
+                  return true
+                })
+              ) {
+                recorded++
+              }
             }
           }
-          this.logger.info({ count: accounts.size }, 'Recorded on-chain balance snapshots')
+          this.logger.info({ count: recorded }, 'Recorded on-chain balance snapshots')
         }
       }
-    }
+    })
 
     // ─── Exchange accounts (Strike, Robinhood, etc.) ───────────
-    const exchangeAccounts = await this.exchangeService.listAccounts()
-    if (exchangeAccounts.length > 0) {
-      let recorded = 0
-      for (const account of exchangeAccounts) {
-        const result = await this.exchangeService.refreshBalance(account.id)
-        if (result.isErr()) {
-          this.logger.warn(
-            { accountId: account.id, exchange: account.exchange, err: result.unwrapErr() },
-            'Failed to refresh exchange balance for snapshot',
-          )
-          continue
+    await collectSource('exchange', async () => {
+      const exchangeAccounts = await this.exchangeService.listAccounts()
+      if (exchangeAccounts.length > 0) {
+        let recorded = 0
+        for (const account of exchangeAccounts) {
+          const collected = await collectAccount('exchange', account.id, async () => {
+            const result = await this.exchangeService.refreshBalance(account.id)
+            if (result.isErr()) {
+              this.logger.warn(
+                { accountId: account.id, exchange: account.exchange },
+                'Failed to refresh exchange balance for snapshot',
+              )
+              return false
+            }
+            const refreshed = result.unwrap()
+            await this.recordExchangeSnapshot(account.id, refreshed.balanceSats ?? '0', now)
+            return true
+          })
+          if (collected) {
+            recorded++
+          }
         }
-        const refreshed = result.unwrap()
-        await this.recordExchangeSnapshot(account.id, refreshed.balanceSats ?? '0', now)
-        recorded++
+        this.logger.info({ count: recorded }, 'Recorded exchange balance snapshots')
       }
-      this.logger.info({ count: recorded }, 'Recorded exchange balance snapshots')
-    }
+    })
 
     // ─── Manual accounts (no refresh — just persist stored balance) ─
-    const manualAccounts = await this.manualService.listAccounts()
-    for (const account of manualAccounts) {
-      await this.manualService.recordSnapshot(account.id, account.balanceSats, now)
-    }
-    if (manualAccounts.length > 0) {
-      this.logger.info({ count: manualAccounts.length }, 'Recorded manual account balance snapshots')
-    }
+    await collectSource('manual', async () => {
+      const manualAccounts = await this.manualService.listAccounts()
+      let recorded = 0
+      for (const account of manualAccounts) {
+        if (
+          await collectAccount('manual', account.id, async () => {
+            await this.manualService.recordSnapshot(account.id, account.balanceSats, now)
+            return true
+          })
+        ) {
+          recorded++
+        }
+      }
+      if (manualAccounts.length > 0) {
+        this.logger.info({ count: recorded }, 'Recorded manual account balance snapshots')
+      }
+    })
 
     // ─── ETF accounts (recompute balance — expense decay changes daily) ─
-    const etfAccounts = await this.etfService.listAccounts()
-    for (const account of etfAccounts) {
-      await this.etfService.recordSnapshot(account.id, account.balanceSats, now)
-    }
-    if (etfAccounts.length > 0) {
-      this.logger.info({ count: etfAccounts.length }, 'Recorded ETF account balance snapshots')
-    }
+    await collectSource('ETF', async () => {
+      const etfAccounts = await this.etfService.listAccounts()
+      let recorded = 0
+      for (const account of etfAccounts) {
+        if (
+          await collectAccount('ETF', account.id, async () => {
+            await this.etfService.recordSnapshot(account.id, account.balanceSats, now)
+            return true
+          })
+        ) {
+          recorded++
+        }
+      }
+      if (etfAccounts.length > 0) {
+        this.logger.info({ count: recorded }, 'Recorded ETF account balance snapshots')
+      }
+    })
 
     return Ok(undefined)
   })
