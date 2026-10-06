@@ -320,7 +320,7 @@ describe('statement API currency contract', () => {
       api: statementCaller(service),
     }
   }
-  it.each<StatementQuoteCurrency>(['USD'])(
+  it.each<StatementQuoteCurrency>(['USD', 'CAD', 'GBP', 'EUR'])(
     'previews, generates, and retrieves %s through the API',
     async (quoteCurrency) => {
       setup()
