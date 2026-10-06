@@ -34,6 +34,7 @@ export const MIN_MEMPOOL_PRICE_DATE = new Date('2023-04-01T00:00:00Z')
 export const MAX_QUOTE_DISTANCE_DAYS = 4
 const PUBLIC_MEMPOOL_URL = 'https://mempool.space'
 const DAY_SECONDS = 86_400
+const HOUR_SECONDS = 3_600
 const HOUR_MS = 3_600_000
 const MAX_REQUEST_DAYS = 2 * 366
 /** Rate-limited requests back off 0.5, 1, then 2 seconds before the source cools down. */
@@ -57,6 +58,7 @@ const priceSchema = z.number().finite().positive()
 export class DailyRatesService {
   private readonly publicFallback: DailyRatesService | undefined
   private readonly allowPublicFallback: () => boolean
+  private readonly allowRequests: () => boolean
   private readonly cache: QuoteCache
   private readonly mempoolApiUrl: string
   private readonly providerUrl: string
@@ -69,8 +71,10 @@ export class DailyRatesService {
     db: Database.Database
     logger: Logger
     mempoolApiUrl: string
-    /** Read on each fallback, so the Settings switch applies to statements in progress. */
+    /** Read before each public request, so the Settings switch applies to statements in progress. */
     allowPublicFallback?: () => boolean
+    /** Read before each request to this source; the public fallback is bound to the switch above. */
+    allowRequests?: () => boolean
   }) {
     this.logger = deps.logger.child({ module: 'daily-rates-service' })
     this.mempoolApiUrl = deps.mempoolApiUrl.replace(/\/$/, '')
@@ -80,11 +84,18 @@ export class DailyRatesService {
     provider.search = ''
     provider.hash = ''
     this.providerUrl = provider.toString().replace(/\/$/, '')
-    this.allowPublicFallback = deps.allowPublicFallback ?? (() => true)
+    const allowPublicFallback = deps.allowPublicFallback ?? (() => true)
+    this.allowPublicFallback = allowPublicFallback
+    this.allowRequests = deps.allowRequests ?? (() => true)
     this.publicFallback =
       this.providerUrl === PUBLIC_MEMPOOL_URL
         ? undefined
-        : new DailyRatesService({ db: deps.db, logger: deps.logger, mempoolApiUrl: PUBLIC_MEMPOOL_URL })
+        : new DailyRatesService({
+            db: deps.db,
+            logger: deps.logger,
+            mempoolApiUrl: PUBLIC_MEMPOOL_URL,
+            allowRequests: allowPublicFallback,
+          })
     // Identify request receipts without storing credentials; all sources share price rows.
     this.cache = new QuoteCache(
       deps.db,
@@ -204,15 +215,17 @@ export class DailyRatesService {
         lookups.push(target + offset * DAY_SECONDS)
       }
     }
+    // Mempool records prices hourly. When the window reaches today, also probe the latest
+    // hour, since observations after today's midnight are otherwise never requested.
+    const latestHour = Math.floor(newest / HOUR_SECONDS) * HOUR_SECONDS
+    if (newest < target + MAX_QUOTE_DISTANCE_DAYS * DAY_SECONDS && !lookups.includes(latestHour)) {
+      lookups.push(latestHour)
+    }
     const cached = this.cache.find(currency, target, oldest, newest)
-    if (
-      cached &&
-      (cached.timestamp === target
-        ? this.cache.hasFreshLookup(target, now)
-        : lookups.every((lookup) => this.cache.hasFreshLookup(lookup, now)))
-    ) {
+    if (cached?.timestamp === target && this.cache.hasFreshLookup(target, now)) {
       return Ok(cached)
     }
+    // Lookups this source already made are not repeated, so a completed search reuses the cache.
     for (const lookup of lookups) {
       if (!this.cache.isFresh(lookup, now)) {
         const fetched = await this.fetchDay(lookup)
@@ -230,8 +243,10 @@ export class DailyRatesService {
         return Ok(available)
       }
     }
+    // This source answered only if it supplied a nearby observation itself. An older quote cached
+    // from another source must not stop the fallback from searching.
     const closest = this.cache.find(currency, target, oldest, newest)
-    if (closest) {
+    if (closest && this.cache.hasOwnQuote(currency, oldest, newest)) {
       return Ok(closest)
     }
     return Err(
@@ -245,6 +260,9 @@ export class DailyRatesService {
     const running = this.inFlight.get(target)
     if (running) {
       return running
+    }
+    if (!this.allowRequests()) {
+      return Err(new Error('Requests to this price source are turned off'))
     }
     if (Date.now() < this.unavailableUntil) {
       return Err(new Error('Mempool price source temporarily unavailable'))
@@ -260,6 +278,13 @@ export class DailyRatesService {
 
   private async requestDay(target: number): Promise<Result<void, Error>> {
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      if (attempt > 0 && !this.allowRequests()) {
+        return Err(new Error('Requests to this price source are turned off'))
+      }
+      // Stop retrying once a concurrent request has put the source in cooldown.
+      if (attempt > 0 && Date.now() < this.unavailableUntil) {
+        return Err(new Error('Mempool price source temporarily unavailable'))
+      }
       try {
         const response = await fetch(`${this.mempoolApiUrl}/api/v1/historical-price?timestamp=${target}`, {
           signal: AbortSignal.timeout(10_000),
@@ -281,8 +306,11 @@ export class DailyRatesService {
             })
             continue
           }
-          this.unavailableUntil =
-            Date.now() + Math.max(30_000, Number.isFinite(retryMs) ? Math.min(Math.max(0, retryMs), HOUR_MS) : 0)
+          // Concurrent failures keep the longest cooldown any of them asked for.
+          this.unavailableUntil = Math.max(
+            this.unavailableUntil,
+            Date.now() + Math.max(30_000, Number.isFinite(retryMs) ? Math.min(Math.max(0, retryMs), HOUR_MS) : 0),
+          )
           this.logger.warn({ status: response.status }, 'Configured mempool price source unavailable')
           return Err(new Error('Mempool historical pricing request failed'))
         }
@@ -314,7 +342,7 @@ export class DailyRatesService {
         if (attempt === 0) {
           continue
         }
-        this.unavailableUntil = Date.now() + 30_000
+        this.unavailableUntil = Math.max(this.unavailableUntil, Date.now() + 30_000)
         return Err(new Error('Unable to reach the configured mempool price source'))
       }
     }

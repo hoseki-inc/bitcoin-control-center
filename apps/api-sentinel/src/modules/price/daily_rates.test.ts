@@ -181,8 +181,55 @@ describe('historical statement quotes', () => {
     const result = (await service().getDailyRates(recent, recent, 'CAD')).unwrap()
     expect(result.rates['2026-09-07']?.timestamp.getTime()).toBe(today * 1000)
     const lookups = fetcher.mock.calls.map(([input]) => Number(new URL(input).searchParams.get('timestamp')))
-    expect(lookups.length).toBeLessThanOrEqual(6)
-    expect(Math.max(...lookups)).toBe(today)
+    expect(lookups.length).toBeLessThanOrEqual(7)
+    // The latest lookup is the current hour, never a time that has not happened.
+    expect(Math.max(...lookups)).toBe(today + 12 * 3600)
+  })
+
+  it('finds an observation recorded earlier today', async () => {
+    setup()
+    const recent = new Date('2026-09-06T00:00:00Z')
+    const morning = new Date('2026-09-08T06:00:00Z').getTime() / 1000
+    const observations = [target, morning]
+    fetcher.mockImplementation(async (input) => {
+      const lookup = Number(new URL(input).searchParams.get('timestamp'))
+      return body(observations.filter((time) => time <= lookup).at(-1))
+    })
+    const result = (await service().getDailyRates(recent, recent)).unwrap()
+    expect(result.rates['2026-09-06']?.timestamp.getTime()).toBe(morning * 1000)
+  })
+
+  it('stops concurrent retries once the source asks for a long wait', async () => {
+    setup()
+    fetcher.mockImplementation(async (input) =>
+      Number(new URL(input).searchParams.get('timestamp')) === target
+        ? new Response('', { status: 429, headers: { 'retry-after': '120' } })
+        : new Response('', { status: 429 }),
+    )
+    const end = new Date(day.getTime() + 3 * 86400000)
+    expect((await service().getDailyRates(day, end)).isErr()).toBe(true)
+    expect(fetcher).toHaveBeenCalledTimes(4)
+  })
+
+  it('keeps the longest cooldown when concurrent requests fail', async () => {
+    setup()
+    const next = target + 86400
+    fetcher.mockImplementation(async (input) => {
+      const lookup = Number(new URL(input).searchParams.get('timestamp'))
+      if (lookup === target) {
+        return new Response('', { status: 429, headers: { 'retry-after': '120' } })
+      }
+      await new Promise((resolve) => {
+        setTimeout(resolve, 10)
+      })
+      throw new Error('offline')
+    })
+    const rates = service()
+    expect((await rates.getDailyRates(day, new Date(next * 1000))).isErr()).toBe(true)
+    fetcher.mockClear()
+    vi.setSystemTime(new Date('2026-09-08T12:00:31Z'))
+    expect((await rates.getDailyRates(day, day)).isErr()).toBe(true)
+    expect(fetcher).not.toHaveBeenCalled()
   })
 
   it('refreshes current-day lookups after one hour and reuses cached prices while offline', async () => {
@@ -270,6 +317,38 @@ describe('local mempool with public fallback', () => {
     expect(fetcher.mock.calls.every(([input]) => new URL(input).origin === local)).toBe(true)
     fallbacks = true
     expect((await rates.getDailyRates(day, day, 'CAD')).unwrap().rates['2026-08-01']?.providerUrl).toBe(publicUrl)
+  })
+  it('stops public requests as soon as fallbacks are turned off', async () => {
+    setup()
+    let fallbacks = true
+    const rates = new DailyRatesService({
+      db: database.db,
+      logger,
+      mempoolApiUrl: local,
+      allowPublicFallback: () => fallbacks,
+    })
+    fetcher.mockImplementation(async (input) => {
+      if (new URL(input).origin === local) {
+        return Response.json({ prices: [] })
+      }
+      fallbacks = false
+      return body(target - 10 * 86400)
+    })
+    expect((await rates.getDailyRates(day, day)).isErr()).toBe(true)
+    expect(fetcher.mock.calls.filter(([input]) => new URL(input).origin === publicUrl)).toHaveLength(1)
+  })
+  it('asks public when the configured source has no prices, despite an older public quote in the cache', async () => {
+    setup()
+    const earlier = new Date(day.getTime() - 3 * 86400000)
+    fetcher.mockImplementation(async (input) =>
+      new URL(input).origin === local
+        ? Response.json({ prices: [] })
+        : body(Number(new URL(input).searchParams.get('timestamp'))),
+    )
+    await localFirst().getDailyRates(earlier, earlier)
+    const result = (await localFirst().getDailyRates(day, day)).unwrap()
+    expect(result.rates['2026-08-01']?.providerUrl).toBe(publicUrl)
+    expect(result.rates['2026-08-01']?.timestamp).toEqual(day)
   })
   it('fills a missing local currency from public and reuses the public cache after reopening', async () => {
     setup()

@@ -36,7 +36,21 @@ export class QuoteCache {
       .get(currency, oldest, newest, target)
   }
 
-  /** Successful lookup metadata lets another instance reuse the same cached prices. */
+  /** Whether this source supplied an observation in the window, so its search produced an answer. */
+  public hasOwnQuote(currency: StatementQuoteCurrency, oldest: number, newest: number): boolean {
+    return (
+      this.db
+        .prepare(
+          `
+      SELECT 1 FROM btc_quote_cache
+      WHERE quote_currency = ? AND provider_url = ? AND timestamp >= ? AND timestamp <= ? LIMIT 1
+    `,
+        )
+        .get(currency, this.providerUrl, oldest, newest) !== undefined
+    )
+  }
+
+  /** A recent lookup by any source lets every instance reuse an exact cached observation. */
   public hasFreshLookup(target: number, now: number): boolean {
     return (
       this.db
