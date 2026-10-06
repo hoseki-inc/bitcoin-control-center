@@ -39,7 +39,6 @@ import { parseNavigationState } from '../../lib/navigation-state'
 import { useStatementPolling } from '../../providers/statement-polling-provider'
 import { trpc } from '../../trpc'
 import type { StatementDto } from '../../trpc/server-types'
-import { isExchangeConnected } from '../../utils/exchange-connection-status'
 
 /** Existing product limit for statement dates. */
 const MIN_MEMPOOL_PRICE_DATE = new Date('2023-04-01')
@@ -52,13 +51,10 @@ export function StatementCreatePage(): JSX.Element {
   const navState = parseNavigationState(location.state)
   const cancelPath = navState?.returnTo ?? '/home'
 
-  // claims and exchange accounts
+  // claims
   const [selectedClaimIds, setSelectedClaimIds] = useState<Set<ClaimId>>(new Set())
-  const [selectedExchangeAccountIds, setSelectedExchangeAccountIds] = useState<Set<string>>(new Set())
   const [hasAppliedPreSelection, setHasAppliedPreSelection] = useState(false)
-  const [hasAppliedExchangePreSelection, setHasAppliedExchangePreSelection] = useState(false)
   const claimsQuery = trpc.portalProve.registry.claims.list.useQuery({ excludePending: true })
-  const exchangeAccountsQuery = trpc.portalProve.exchange.list.useQuery()
 
   useEffect(() => {
     if (hasAppliedPreSelection || !claimsQuery.data) {
@@ -80,17 +76,6 @@ export function StatementCreatePage(): JSX.Element {
       setSelectedClaimIds(new Set(claimsQuery.data.map((c) => c.id)))
     }
   }, [claimsQuery.data, navState, hasAppliedPreSelection])
-
-  // Select all exchange accounts by default once loaded
-  useEffect(() => {
-    if (hasAppliedExchangePreSelection || !exchangeAccountsQuery.data) {
-      return
-    }
-    setHasAppliedExchangePreSelection(true)
-    setSelectedExchangeAccountIds(
-      new Set(exchangeAccountsQuery.data.filter(isExchangeConnected).map((account) => account.id)),
-    )
-  }, [exchangeAccountsQuery.data, hasAppliedExchangePreSelection])
 
   const [quoteCurrency, setQuoteCurrency] = useState<StatementQuoteCurrency>('USD')
 
@@ -133,7 +118,6 @@ export function StatementCreatePage(): JSX.Element {
 
       const generatedStatement = await initiateStatementGenerationMutation.mutateAsync({
         claimIds: Array.from(selectedClaimIds),
-        exchangeAccountIds: Array.from(selectedExchangeAccountIds),
         timezone: userTimezone,
         quoteCurrency,
         openingDate,
@@ -155,8 +139,9 @@ export function StatementCreatePage(): JSX.Element {
 
   const LEFT_COLUMN_WIDTH = '35%'
 
-  const hasAccounts = (claimsQuery.data?.length ?? 0) > 0 || (exchangeAccountsQuery.data?.length ?? 0) > 0
-  const hasAnySelected = selectedClaimIds.size > 0 || selectedExchangeAccountIds.size > 0
+  // Ask the user to connect a wallet only once we know they have none.
+  const hasAccounts = !claimsQuery.isSuccess || claimsQuery.data.length > 0
+  const hasAnySelected = selectedClaimIds.size > 0
 
   return (
     <Stack py={8} spacing={8}>
@@ -341,7 +326,7 @@ export function StatementCreatePage(): JSX.Element {
               </Text>
               <Text textStyle="text/sm" color="neutral.600">
                 {hasAccounts
-                  ? 'Accounts where you’ve proven ownership.'
+                  ? 'Self-custody accounts where you’ve proven ownership. For custodial accounts, your custodian can provide statements.'
                   : 'Before you can generate a bitcoin ownership statement, you’ll need to connect a wallet and verify control.'}
               </Text>
               {!hasAccounts && (
@@ -355,8 +340,6 @@ export function StatementCreatePage(): JSX.Element {
               flexGrow="1"
               selectedClaimIds={selectedClaimIds}
               setSelectedClaimIds={setSelectedClaimIds}
-              selectedExchangeAccountIds={selectedExchangeAccountIds}
-              setSelectedExchangeAccountIds={setSelectedExchangeAccountIds}
             />
           </HStack>
 
@@ -406,7 +389,6 @@ export function StatementCreatePage(): JSX.Element {
           setIsPreviewModalOpen(false)
         }}
         claimIds={Array.from(selectedClaimIds)}
-        exchangeAccountIds={Array.from(selectedExchangeAccountIds)}
         openingDate={openingDate}
         closingDate={closingDate}
         timezone={userTimezone}

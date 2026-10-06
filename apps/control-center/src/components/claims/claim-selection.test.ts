@@ -67,7 +67,6 @@ async function withTestSetup(run: () => Promise<void>): Promise<void> {
     getQueryKey(trpc.portalProve.registry.claims.list, { excludePending: true }, 'query'),
     [claimFixture(claimId, 'Savings wallet')],
   )
-  queryClient.setQueryData(getQueryKey(trpc.portalProve.exchange.list, undefined, 'query'), [])
   queryClient.setQueryData(getQueryKey(trpc.portalProve.retrieveBitcoinPrice, undefined, 'query'), null)
   queryClient.setQueryData(
     getQueryKey(trpc.portalProve.onchain.claimBalances, { claimIds: [claimId] }, 'query'),
@@ -122,8 +121,6 @@ it.each([
                 disabledClaims: disabled === undefined ? undefined : new Set(disabled ? [claimId] : []),
                 selectedClaimIds: new Set(selected ? [claimId] : []),
                 setSelectedClaimIds: vi.fn<() => void>(),
-                selectedExchangeAccountIds: new Set<string>(),
-                setSelectedExchangeAccountIds: vi.fn<() => void>(),
               }),
             ),
           ),
