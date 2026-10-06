@@ -25,6 +25,7 @@ const profilesFixture = readFileSync(
   new URL('./fixtures/legacy-desktop-connection-profiles.sql', import.meta.url),
   'utf8',
 )
+const quotesFixture = readFileSync(new URL('./fixtures/legacy-statement-quotes.sql', import.meta.url), 'utf8')
 
 function testDirectory(): string {
   const directory = mkdtempSync(join(tmpdir(), 'sentinel-journal-'))
@@ -42,12 +43,15 @@ function rawDatabase(directory: string): SentinelDb {
   return db
 }
 
-async function legacyDatabase(directory: string, withProfiles = true): Promise<SentinelDb> {
+async function legacyDatabase(directory: string, withProfiles = true, withQuotes = withProfiles): Promise<SentinelDb> {
   const db = rawDatabase(directory)
   await db.run(sql`PRAGMA foreign_keys = ON`)
   await db.$client.executeMultiple(fixture)
   if (withProfiles) {
     await db.$client.executeMultiple(profilesFixture)
+  }
+  if (withQuotes) {
+    await db.$client.executeMultiple(quotesFixture)
   }
   return db
 }
@@ -103,7 +107,7 @@ it.each(['file', 'database'] as const)(
     }
     const before = await databaseState(legacy)
     const applicationTables = before.data.filter((table) => table.table !== 'sqlite_sequence')
-    expect(applicationTables).toHaveLength(19)
+    expect(applicationTables).toHaveLength(21)
     expect(applicationTables.every((table) => table.rows.length > 0)).toBe(true)
     const oldJournal = await legacy.all<{ id: number; applied_at: string }>(
       sql`SELECT id, applied_at FROM _migrations ORDER BY id`,
@@ -177,12 +181,27 @@ it.each(['legacy', 'drizzle'] as const)(
     const upgraded = await openDrizzleDatabase(directory, logger)
     try {
       const after = await databaseState(upgraded)
+      const addedTables = new Set(['desktop_connection_profiles', 'btc_quote_cache', 'btc_quote_lookups'])
       expect({
-        schema: after.schema.filter((row) => row.tbl_name !== 'desktop_connection_profiles'),
-        data: after.data.filter((row) => row.table !== 'desktop_connection_profiles'),
+        schema: after.schema
+          .filter((row) => !addedTables.has(row.tbl_name))
+          .map((row) => (row.name === 'statements' ? before.schema.find((old) => old.name === 'statements') : row)),
+        data: after.data
+          .filter((row) => !addedTables.has(row.table))
+          .map((table) => ({
+            table: table.table,
+            rows:
+              table.table === 'statements'
+                ? table.rows.map(({ quote_currency, error_message, ...row }) => {
+                    expect(quote_currency).toBe('USD')
+                    expect(error_message).toBeNull()
+                    return row
+                  })
+                : table.rows,
+          })),
       }).toEqual(before)
       await expect(upgraded.all(sql`SELECT * FROM desktop_connection_profiles`)).resolves.toEqual([])
-      await expect(upgraded.all(sql`SELECT name FROM _migrations`)).resolves.toHaveLength(15)
+      await expect(upgraded.all(sql`SELECT name FROM _migrations`)).resolves.toHaveLength(migrations.length)
       const completed = await databaseState(upgraded, true)
       upgraded.$client.close()
       const reopened = await openDrizzleDatabase(directory, logger)
@@ -196,6 +215,33 @@ it.each(['legacy', 'drizzle'] as const)(
     }
   },
 )
+
+it.each([false, true])('upgrades a legacy profile with desktop connections and quote cache %s', async (withCache) => {
+  const directory = testDirectory()
+  const legacy = await legacyDatabase(directory, true, false)
+  if (withCache) {
+    await legacy.$client.executeMultiple(quotesFixture.split('ALTER TABLE statements')[0] ?? '')
+    await legacy.run(sql`INSERT INTO _migrations (name) VALUES ('015_btc_quote_cache')`)
+    await legacy.run(sql`INSERT INTO btc_quote_cache (provider_url, quote_currency, timestamp, price)
+      VALUES ('https://example.invalid', 'CAD', 1785542400, '81000')`)
+  }
+  const before = await legacy.all(sql`SELECT id, daily_rates, transaction_map FROM statements`)
+  legacy.$client.close()
+  const upgraded = await openDrizzleDatabase(directory, logger)
+  try {
+    await expect(upgraded.all(sql`SELECT id, daily_rates, transaction_map FROM statements`)).resolves.toEqual(before)
+    await expect(upgraded.all(sql`SELECT quote_currency, error_message FROM statements`)).resolves.toEqual([
+      { quote_currency: 'USD', error_message: null },
+    ])
+    await expect(upgraded.all(sql`SELECT quote_currency, price FROM btc_quote_cache`)).resolves.toEqual(
+      withCache ? [{ quote_currency: 'CAD', price: '81000' }] : [],
+    )
+    await expect(upgraded.all(sql`SELECT name FROM _migrations`)).resolves.toHaveLength(migrations.length)
+    await expect(upgraded.all(sql`PRAGMA foreign_key_check`)).resolves.toEqual([])
+  } finally {
+    upgraded.$client.close()
+  }
+})
 
 it('creates the same application schema from scratch as the fully upgraded main fixture', async () => {
   const legacy = await legacyDatabase(testDirectory())
@@ -220,7 +266,7 @@ it('creates the same application schema from scratch as the fully upgraded main 
         await expect(fresh.all(query)).resolves.toEqual(expected)
       }
     }
-    await expect(fresh.all(sql`SELECT name FROM _migrations`)).resolves.toHaveLength(15)
+    await expect(fresh.all(sql`SELECT name FROM _migrations`)).resolves.toHaveLength(migrations.length)
     await expect(fresh.all(sql`PRAGMA foreign_key_check`)).resolves.toEqual([])
     // CHECK constraints are not exposed by a SQLite PRAGMA.
     await expect(
@@ -310,7 +356,7 @@ it('retries a failed fresh initialization without treating its empty Drizzle jou
   failed.$client.close()
   const retried = await openDrizzleDatabase(directory, logger)
   try {
-    await expect(retried.all(sql`SELECT name FROM _migrations`)).resolves.toHaveLength(15)
+    await expect(retried.all(sql`SELECT name FROM _migrations`)).resolves.toHaveLength(migrations.length)
     await expect(retried.all(sql`PRAGMA foreign_key_check`)).resolves.toEqual([])
   } finally {
     retried.$client.close()
@@ -347,7 +393,7 @@ it.each(['fresh', 'legacy'] as const)(
         }))
         .filter((table) => table.table !== migrationsTable),
     ).toEqual(before.data.filter((table) => table.table !== migrationsTable))
-    await expect(db.all(sql`SELECT name FROM _migrations`)).resolves.toHaveLength(16)
+    await expect(db.all(sql`SELECT name FROM _migrations`)).resolves.toHaveLength(migrations.length + 1)
     expect((await prepareMigrationJournal(db, migrationFolder)).isOk()).toBe(true)
     await migrate(db, { migrationsFolder: migrationFolder, migrationsTable })
     await expect(databaseState(db, true)).resolves.toEqual(after)

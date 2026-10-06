@@ -1,3 +1,4 @@
+import type { ClaimId } from '@hoseki/packages/schemas/prove'
 import { Alert, Spinner } from '@hoseki/packages/ui/design-system'
 import { ClaimConnectionWrapper } from '@hoseki/packages/ui/wallet-ui'
 import { Navigate, useNavigate } from 'react-router'
@@ -18,11 +19,19 @@ export function SinglesigSigningPage(): JSX.Element {
   )
 }
 
-function SinglesigSigning() {
+function SinglesigSigning(): JSX.Element {
   const claimId = useUrlParameter(UrlParameter.claimId)
+  if (claimId === null) {
+    return <Alert status="error">Invalid claim ID in URL</Alert>
+  }
+
+  return <SinglesigSigningContent claimId={claimId} />
+}
+
+function SinglesigSigningContent({ claimId }: { claimId: ClaimId }): JSX.Element {
   const navigate = useNavigate()
 
-  const claimQuery = trpc.portalProve.registry.claims.get.byId.useQuery({ id: claimId }, { enabled: Boolean(claimId) })
+  const claimQuery = trpc.portalProve.registry.claims.get.byId.useQuery({ id: claimId })
   const claim = claimQuery.data
   const messageQuery = trpc.portalProve.registry.getOrCreateSinglesigChallengeMessage.useQuery(
     {

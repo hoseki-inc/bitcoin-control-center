@@ -1,5 +1,9 @@
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import pino from 'pino'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
+import { openDrizzleDatabase } from '../../db/drizzle'
 import { DailyRatesService } from './daily_rates'
 import { PriceService, type SavedPriceSettings, readPriceSettings } from './service'
 
@@ -585,6 +589,20 @@ describe('current price', () => {
 })
 
 describe('daily price response validation', () => {
+  async function dailyRates(): Promise<DailyRatesService> {
+    const directory = mkdtempSync(join(tmpdir(), 'sentinel-daily-validation-'))
+    const database = await openDrizzleDatabase(directory, logger)
+    onTestFinished(() => {
+      database.$client.close()
+      rmSync(directory, { recursive: true, force: true })
+    })
+    return new DailyRatesService({
+      db: database,
+      logger,
+      mempoolApiUrl: 'https://example.invalid',
+      allowPublicFallback: () => false,
+    })
+  }
   it('restores daily decimal rates from a valid historical response', async () => {
     await withTestSetup(async () => {
       const date = new Date('2024-01-02T00:00:00Z')
@@ -592,10 +610,7 @@ describe('daily price response validation', () => {
         'fetch',
         vi.fn(async () => Response.json({ prices: [{ time: date.getTime() / 1000, USD: 42000.25 }], extra: true })),
       )
-      const result = await new DailyRatesService({ logger, mempoolApiUrl: 'https://example.invalid' }).getDailyRates(
-        date,
-        date,
-      )
+      const result = await (await dailyRates()).getDailyRates(date, date)
       expect(result.expect('valid rates').rates['2024-01-02']?.close.toString()).toBe('42000.25')
     })
   })
@@ -612,11 +627,8 @@ describe('daily price response validation', () => {
         vi.fn(async () => Response.json(body)),
       )
       const date = new Date('2024-01-02T00:00:00Z')
-      const result = await new DailyRatesService({ logger, mempoolApiUrl: 'https://example.invalid' }).getDailyRates(
-        date,
-        date,
-      )
-      expect(result.expectErr('invalid response').message).toContain('No price data returned')
+      const result = await (await dailyRates()).getDailyRates(date, date)
+      expect(result.expectErr('invalid response').message).toMatch(/No (usable )?USD (quote|price)/)
     })
   })
 })

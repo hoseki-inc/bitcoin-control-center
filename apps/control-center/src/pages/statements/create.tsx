@@ -18,6 +18,7 @@ import {
   Textarea,
   chakra,
 } from '@chakra-ui/react'
+import { getLatestStatementClosingDate } from '@hoseki/packages/lib/statement-dates'
 import type { ClaimId } from '@hoseki/packages/schemas'
 import { DateInput, Panel } from '@hoseki/packages/ui/design-system'
 import { useMutation } from '@tanstack/react-query'
@@ -88,7 +89,13 @@ export function StatementCreatePage(): JSX.Element {
   }, [exchangeAccountsQuery.data, hasAppliedExchangePreSelection])
 
   // dates
-  const [closingDate, setClosingDate] = useState<Date>(() => new Date())
+  const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone
+  const now = new Date()
+  // The browser's own timezone is always recognized; UTC only guards against an unexpected runtime.
+  const latestClosingDate = getLatestStatementClosingDate(now, userTimezone).unwrapOrElse(() =>
+    getLatestStatementClosingDate(now, 'UTC').expect('UTC is always a recognized timezone'),
+  )
+  const [closingDate, setClosingDate] = useState<Date>(() => latestClosingDate)
   const [openingDate, setOpeningDate] = useState<Date>(() => startOfDay(subMonths(new Date(), 3)))
 
   // name and address — pre-populate from saved settings in local mode
@@ -108,8 +115,6 @@ export function StatementCreatePage(): JSX.Element {
   // statement `status` starts as 'pending' when startPolling() is called,
   // then it is updated to a 'completed' or 'failed' statement.
   const { startPolling, statement } = useStatementPolling()
-
-  const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone
 
   // generate
   const initiateStatementGenerationMutation = trpc.portalProve.statement.initiateGeneration.useMutation()
@@ -171,14 +176,14 @@ export function StatementCreatePage(): JSX.Element {
                     Select a date range for the transaction history shown in your statement.
                   </Text>
                 </Stack>
-                <HStack spacing={5}>
+                <HStack spacing={5} alignItems="flex-start">
                   <FormControl>
                     <FormLabel textStyle="label/md" fontWeight="medium" color="neutral.900" htmlFor="opening-date">
                       Start Date
                     </FormLabel>
                     <DateInput
                       id="opening-date"
-                      max={new Date()}
+                      max={latestClosingDate}
                       min={addDays(MIN_STATEMENT_DATE, 1)}
                       value={openingDate}
                       onChange={(date) => {
@@ -196,14 +201,11 @@ export function StatementCreatePage(): JSX.Element {
                     </FormLabel>
                     <DateInput
                       id="closing-date"
-                      max={new Date()}
+                      max={latestClosingDate}
                       value={closingDate}
                       onChange={(date) => {
                         if (date) {
-                          setClosingDate(
-                            // Make sure the closing date is not greater than NOW
-                            min([endOfDay(date), new Date()]),
-                          )
+                          setClosingDate(min([endOfDay(date), latestClosingDate]))
                         }
                       }}
                       size="md"

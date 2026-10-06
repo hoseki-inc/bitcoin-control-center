@@ -1,4 +1,5 @@
 import { Button, Stack } from '@chakra-ui/react'
+import type { ClaimId } from '@hoseki/packages/schemas/prove'
 import { ErrorBanner, Spinner } from '@hoseki/packages/ui/design-system'
 import type { Keystore as IndicatorKeystore } from '@hoseki/packages/ui/prove-verify-ui/claims/keystores-status-indicator'
 import { Navigate, Outlet, useOutletContext, useParams, useSearchParams } from 'react-router'
@@ -19,6 +20,14 @@ type ContextType = {
 
 export function MultisigPageWrapper(): JSX.Element {
   const claimId = useUrlParameter(UrlParameter.claimId)
+  if (claimId === null) {
+    return <ErrorBanner mt={8} mb={4} message="Invalid wallet ID" />
+  }
+
+  return <MultisigPageContent claimId={claimId} />
+}
+
+function MultisigPageContent({ claimId }: { claimId: ClaimId }): JSX.Element {
   const { keystoreId } = useParams<{ keystoreId: string }>()
   const [searchParams] = useSearchParams()
 
@@ -28,11 +37,8 @@ export function MultisigPageWrapper(): JSX.Element {
     refetch,
     error,
     data: claim,
-  } = trpc.portalProve.registry.claims.get.byId.useQuery({ id: claimId }, { enabled: Boolean(claimId) })
+  } = trpc.portalProve.registry.claims.get.byId.useQuery({ id: claimId })
 
-  if (!claimId) {
-    return <ErrorBanner mt={8} mb={4} message="Invalid wallet ID" />
-  }
   if (isLoading) {
     return <Spinner fullPage />
   }

@@ -114,8 +114,8 @@ function mockTransactionRequests(): void {
   )
 }
 
-function mockDailyRates(logger: Logger): DailyRatesService {
-  const service = new DailyRatesService({ logger, mempoolApiUrl })
+function mockDailyRates(db: SentinelDb, logger: Logger): DailyRatesService {
+  const service = new DailyRatesService({ db, logger, mempoolApiUrl })
   const rate = new Decimal(40_000)
   const rates = Object.fromEntries(
     [openingDate, transactionDate, closingDate].map((date) => [
@@ -124,7 +124,9 @@ function mockDailyRates(logger: Logger): DailyRatesService {
     ]),
   )
 
-  vi.spyOn(service, 'getDailyRates').mockImplementation(asyncFn(async () => Ok({ source: 'mempool' as const, rates })))
+  vi.spyOn(service, 'getDailyRates').mockImplementation(
+    asyncFn(async () => Ok({ source: 'mempool' as const, quoteCurrency: 'USD' as const, rates })),
+  )
 
   return service
 }
@@ -140,7 +142,7 @@ async function createStatementHarness(emptySavingsHistory = false) {
     logger,
     onchainProvider,
     mempoolApiUrl,
-    dailyRatesService: mockDailyRates(logger),
+    dailyRatesService: mockDailyRates(db, logger),
     exchangeService,
   })
 

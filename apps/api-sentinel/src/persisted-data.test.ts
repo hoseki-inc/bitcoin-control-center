@@ -119,7 +119,7 @@ describe('stored statement data', () => {
         logger,
         electrum: new ElectrumClient({ host: 'localhost', port: 50001, protocol: 'tcp' }),
       }),
-      dailyRatesService: new DailyRatesService({ logger, mempoolApiUrl: 'https://example.invalid' }),
+      dailyRatesService: new DailyRatesService({ db: database, logger, mempoolApiUrl: 'https://example.invalid' }),
       exchangeService: new ExchangeService({ db: database, logger }),
     })
   }
@@ -134,7 +134,7 @@ describe('stored statement data', () => {
         database.select({ counter: statementTable.counter }).from(statementTable).orderBy(statementTable.counter),
       ).resolves.toEqual([{ counter: 1 }, { counter: 2 }, { counter: 3 }])
       await database.update(statementTable).set({ counter: 10 }).where(eq(statementTable.counter, 3))
-      const next = await statements.create(input)
+      const next = (await statements.create(input)).expect('pending statement')
       await expect(statements.findById(next)).resolves.toMatchObject({ counter: 11 })
     })
   })
@@ -143,7 +143,9 @@ describe('stored statement data', () => {
     await withTestSetup(async () => {
       const statements = service()
       const date = new Date('2024-01-02T00:00:00Z')
-      const id = await statements.create({ claimIds: [], openingDate: date, closingDate: date, timezone: 'UTC' })
+      const id = (
+        await statements.create({ claimIds: [], openingDate: date, closingDate: date, timezone: 'UTC' })
+      ).expect('pending statement')
       const transactions = {
         wallet: {
           displayName: 'Test wallet',
@@ -164,9 +166,10 @@ describe('stored statement data', () => {
       const price = new Decimal('42000.12345678')
       const dailyRates = {
         source: 'mempool' as const,
+        quoteCurrency: 'USD' as const,
         rates: { '2024-01-02': { timestamp: date, open: price, high: price, low: price, close: price } },
       }
-      await statements.complete(id, transactions, dailyRates)
+      expect((await statements.complete(id, transactions, dailyRates)).isOk()).toBe(true)
       const loaded = await statements.loadCompleted(id)
       expect(loaded?.transactionMap).toEqual(transactions)
       expect(loaded?.dailyRates).toEqual(dailyRates)
@@ -178,11 +181,14 @@ describe('stored statement data', () => {
     await withTestSetup(async () => {
       const statements = service()
       const date = new Date('2024-01-02T00:00:00Z')
-      const id = await statements.create({ claimIds: [], openingDate: date, closingDate: date, timezone: 'UTC' })
-      await statements.complete(id, {}, { rates: {}, source: 'mempool' })
+      const id = (
+        await statements.create({ claimIds: [], openingDate: date, closingDate: date, timezone: 'UTC' })
+      ).expect('pending statement')
       await database
         .update(statementTable)
         .set({
+          status: 'completed',
+          dailyRates: JSON.stringify({ rates: {}, source: 'mempool' }),
           transactionMap: JSON.stringify({
             Savings: [
               {
@@ -222,11 +228,16 @@ describe('stored statement data', () => {
     await withTestSetup(async () => {
       const statements = service()
       const date = new Date('2024-01-02T00:00:00Z')
-      const id = await statements.create({ claimIds: [], openingDate: date, closingDate: date, timezone: 'UTC' })
-      await statements.complete(id, {}, { rates: {}, source: 'mempool' })
+      const id = (
+        await statements.create({ claimIds: [], openingDate: date, closingDate: date, timezone: 'UTC' })
+      ).expect('pending statement')
       await database
         .update(statementTable)
-        .set({ transactionMap: '{"wallet":[null]}' })
+        .set({
+          status: 'completed',
+          dailyRates: JSON.stringify({ rates: {}, source: 'mempool' }),
+          transactionMap: '{"wallet":[null]}',
+        })
         .where(eq(statementTable.id, id))
       await expect(statements.loadCompleted(id)).rejects.toThrow('Stored statement transactions are invalid')
     })

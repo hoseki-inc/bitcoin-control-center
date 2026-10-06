@@ -214,7 +214,12 @@ export const createAppContext = asyncFn(
       mempoolApiUrl: env.MEMPOOL_API_URL,
       settings: async () => readPriceSettings(getSetting),
     })
-    const dailyRatesService = new DailyRatesService({ logger, mempoolApiUrl: env.MEMPOOL_API_URL })
+    const dailyRatesService = new DailyRatesService({
+      db: database,
+      logger,
+      mempoolApiUrl: env.MEMPOOL_API_URL,
+      allowPublicFallback: async () => (await readPriceSettings(getSetting)).fallbacks,
+    })
 
     const controlCenterService = new ControlCenterService({
       db: database,

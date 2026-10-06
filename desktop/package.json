@@ -27,5 +27,8 @@
     "electron": "44.4.5",
     "electron-builder": "26.15.3",
     "typescript": "7.0.2"
+  },
+  "overrides": {
+    "http-cache-semantics": "4.3.0"
   }
 }

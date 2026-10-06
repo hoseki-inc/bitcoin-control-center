@@ -101,6 +101,12 @@ function rebuildTable(table: string): string {
   }
   return [
     create.replace(new RegExp(`CREATE TABLE "?${table}"?`), `CREATE TABLE ${table}_new`),
+    ...(table === 'statements'
+      ? [
+          `ALTER TABLE ${table}_new ADD COLUMN quote_currency TEXT NOT NULL DEFAULT 'USD' CHECK(quote_currency IN ('USD', 'CAD', 'GBP', 'EUR'));`,
+          `ALTER TABLE ${table}_new ADD COLUMN error_message TEXT;`,
+        ]
+      : []),
     `INSERT INTO ${table}_new SELECT * FROM ${table};`,
     `DROP TABLE ${table};`,
     `ALTER TABLE ${table}_new RENAME TO ${table};`,
@@ -153,7 +159,9 @@ it('preserves statements and exchange history when Drizzle rebuilds populated ta
     expect(after.data.filter((_, index) => index !== journalIndex)).toEqual(
       before.data.filter((_, index) => index !== journalIndex),
     )
-    await expect(database.all(sql`SELECT name FROM ${sql.identifier(migrationsTable)}`)).resolves.toHaveLength(16)
+    await expect(database.all(sql`SELECT name FROM ${sql.identifier(migrationsTable)}`)).resolves.toHaveLength(
+      importedMigrations.length + 1,
+    )
     await expect(database.all(sql`PRAGMA foreign_key_check`)).resolves.toEqual([])
     await expect(database.all(sql`PRAGMA foreign_keys`)).resolves.toEqual([{ foreign_keys: 1 }])
     await migrate(database, { migrationsFolder: folder, migrationsTable })
@@ -183,7 +191,9 @@ it('rolls back failed migration data and journal changes, then permits retry', a
       rebuildTable('exchange_accounts'),
     )
     await migrate(database, { migrationsFolder: folder, migrationsTable })
-    await expect(database.all(sql`SELECT name FROM ${sql.identifier(migrationsTable)}`)).resolves.toHaveLength(16)
+    await expect(database.all(sql`SELECT name FROM ${sql.identifier(migrationsTable)}`)).resolves.toHaveLength(
+      importedMigrations.length + 1,
+    )
     await expect(database.select().from(exchangeBalanceSnapshots)).resolves.toHaveLength(1)
   } finally {
     database.$client.close()

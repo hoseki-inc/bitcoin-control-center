@@ -22,6 +22,8 @@ const legacyNames = [
   '014_archive_accounts',
 ]
 const profilesLegacyName = '015_desktop_connection_profiles'
+const quotesLegacyName = '015_btc_quote_cache'
+const currencyLegacyName = '016_statement_quote_currency'
 
 function unsupportedHistory(): Result<void, Error> {
   return Err(
@@ -45,6 +47,16 @@ export async function prepareMigrationJournal(db: SentinelDb, folder: string): P
   if (profilesMigration === undefined) {
     return Err(new Error('The Sentinel package is missing the desktop connection profiles migration'))
   }
+  const quotesMigration = migrations.find((migration) => migration.name.endsWith('_btc_quote_cache'))
+  const currencyMigration = migrations.find((migration) => migration.name.endsWith('_statement_quote_currency'))
+  if (quotesMigration === undefined || currencyMigration === undefined) {
+    return Err(new Error('The Sentinel package is missing statement quote migrations'))
+  }
+  const optionalMigrations = new Map([
+    [profilesLegacyName, profilesMigration],
+    [quotesLegacyName, quotesMigration],
+    [currencyLegacyName, currencyMigration],
+  ])
 
   const tables = await db.all<{ name: string }>(sql`SELECT name FROM sqlite_master WHERE type = 'table'`)
   const applicationTables = tables.filter((table) => !table.name.startsWith('sqlite_'))
@@ -76,16 +88,18 @@ export async function prepareMigrationJournal(db: SentinelDb, folder: string): P
   }
   if (
     names !== 'applied_at,id,name' ||
-    (applied.length !== legacyNames.length && applied.length !== legacyNames.length + 1) ||
+    applied.length < legacyNames.length ||
+    applied.length > legacyNames.length + optionalMigrations.size ||
     !legacyNames.every((name) => applied.some((row) => row.name === name)) ||
-    applied.some((row) => !legacyNames.includes(row.name) && row.name !== profilesLegacyName) ||
+    applied.some((row) => !legacyNames.includes(row.name) && !optionalMigrations.has(row.name)) ||
+    (applied.some((row) => row.name === currencyLegacyName) && !applied.some((row) => row.name === quotesLegacyName)) ||
     new Set(applied.map((row) => row.name)).size !== applied.length
   ) {
     return unsupportedHistory()
   }
 
   // Existing profiles have all 14 original migrations, optionally followed by
-  // main's desktop connections migration. Preserve their journal IDs and applied
+  // main's desktop connections and statement quote migrations. Preserve their journal IDs and applied
   // times, and never replay application SQL during adoption.
   await db.transaction(async (tx) => {
     await tx.run(sql`CREATE TABLE _migrations_drizzle (
@@ -96,7 +110,7 @@ export async function prepareMigrationJournal(db: SentinelDb, folder: string): P
       applied_at TEXT
     )`)
     for (const row of applied) {
-      const migration = row.name === profilesLegacyName ? profilesMigration : imported[legacyNames.indexOf(row.name)]
+      const migration = optionalMigrations.get(row.name) ?? imported[legacyNames.indexOf(row.name)]
       if (migration === undefined) {
         throw new Error('Missing imported migration')
       }

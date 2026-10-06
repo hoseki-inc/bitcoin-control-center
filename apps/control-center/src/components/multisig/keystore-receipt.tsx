@@ -1,4 +1,5 @@
 import { Button, Text, VStack } from '@chakra-ui/react'
+import type { ClaimId } from '@hoseki/packages/schemas/prove'
 import { ErrorBanner, PageTransition } from '@hoseki/packages/ui/design-system'
 import { AppLayout, CheckCircleFilledIcon, Receipt, StatusBadge } from '@hoseki/packages/ui/prove-verify-ui'
 import { convertToOrdinalWords } from '@hoseki/packages/ui/utils'
@@ -24,15 +25,23 @@ type KeystoreReceiptProps =
     }
 
 export function KeystoreReceiptPage(): JSX.Element {
-  const { keystoreId } = useParams()
   const claimId = useUrlParameter(UrlParameter.claimId)
+  if (claimId === null) {
+    return (
+      <AppLayout header={<div />}>
+        <ErrorBanner mt={8} mb={4} message="Invalid claim ID in URL" />
+      </AppLayout>
+    )
+  }
 
-  const { data: claim, isError } = trpc.portalProve.registry.claims.get.byId.useQuery(
-    { id: claimId },
-    { enabled: Boolean(claimId) },
-  )
+  return <KeystoreReceiptContent claimId={claimId} />
+}
 
-  if (!claimId || isError) {
+function KeystoreReceiptContent({ claimId }: { claimId: ClaimId }): JSX.Element {
+  const { keystoreId } = useParams()
+  const { data: claim, isLoading, isError } = trpc.portalProve.registry.claims.get.byId.useQuery({ id: claimId })
+
+  if (isError) {
     return (
       <AppLayout header={<div />}>
         <ErrorBanner mt={8} mb={4} message="Failed to get claim" />
@@ -40,7 +49,12 @@ export function KeystoreReceiptPage(): JSX.Element {
     )
   }
 
-  const keystore = claim?.keystores.find((k) => k.id === keystoreId)
+  // Keep showing the pending receipt until the claim loads, rather than reporting a missing keystore.
+  if (isLoading) {
+    return <KeystoreReceipt shouldSetTimeout={false} keystore={null} claim={null} />
+  }
+
+  const keystore = claim.keystores.find((k) => k.id === keystoreId)
   if (!keystore) {
     return (
       <AppLayout header={<div />}>
@@ -49,11 +63,7 @@ export function KeystoreReceiptPage(): JSX.Element {
     )
   }
 
-  const props = claim
-    ? ({ shouldSetTimeout: true, keystore, claim } as const)
-    : ({ shouldSetTimeout: false, keystore: null, claim: null } as const)
-
-  return <KeystoreReceipt {...props} />
+  return <KeystoreReceipt shouldSetTimeout keystore={keystore} claim={claim} />
 }
 
 export function KeystoreReceipt({ shouldSetTimeout, keystore, claim }: KeystoreReceiptProps): JSX.Element {

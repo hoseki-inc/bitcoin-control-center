@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm'
-import { check, index, integer, sqliteTable, text, unique } from 'drizzle-orm/sqlite-core'
+import { check, index, integer, primaryKey, sqliteTable, text, unique } from 'drizzle-orm/sqlite-core'
 
 const now = sql`(datetime('now'))`
 
@@ -87,8 +87,42 @@ export const statements = sqliteTable(
     createdAt: text('created_at').notNull().default(now),
     updatedAt: text('updated_at').notNull().default(now),
     exchangeAccountIds: text('exchange_account_ids'),
+    quoteCurrency: text('quote_currency', { enum: ['USD', 'CAD', 'GBP', 'EUR'] })
+      .notNull()
+      .default('USD'),
+    errorMessage: text('error_message'),
   },
-  (table) => [check('statements_status_check', sql`${table.status} IN ('pending', 'completed', 'failed')`)],
+  (table) => [
+    check('statements_status_check', sql`${table.status} IN ('pending', 'completed', 'failed')`),
+    check('statements_quote_currency_check', sql`${table.quoteCurrency} IN ('USD', 'CAD', 'GBP', 'EUR')`),
+  ],
+)
+
+export const btcQuoteCache = sqliteTable(
+  'btc_quote_cache',
+  {
+    providerUrl: text('provider_url').notNull(),
+    quoteCurrency: text('quote_currency', { enum: ['USD', 'CAD', 'GBP', 'EUR'] }).notNull(),
+    timestamp: integer('timestamp').notNull(),
+    price: text('price').notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.quoteCurrency, table.timestamp] }),
+    check('btc_quote_cache_quote_currency_check', sql`${table.quoteCurrency} IN ('USD', 'CAD', 'GBP', 'EUR')`),
+  ],
+)
+
+export const btcQuoteLookups = sqliteTable(
+  'btc_quote_lookups',
+  {
+    provider: text('provider').notNull(),
+    requestedAt: integer('requested_at').notNull(),
+    expiresAt: integer('expires_at').notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.provider, table.requestedAt] }),
+    index('btc_quote_lookup_date').on(table.requestedAt, table.expiresAt),
+  ],
 )
 
 export const settings = sqliteTable('settings', {

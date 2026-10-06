@@ -1,9 +1,11 @@
 import { Account } from '@hoseki/packages/bitcoin/account'
 import type { ElectrumProvider } from '@hoseki/packages/bitcoin/onchain/electrum_provider'
 import type { TransactionEntry } from '@hoseki/packages/bitcoin/onchain/types'
+import { STATEMENT_CLOSING_DELAY_DAYS, getLatestStatementClosingDate } from '@hoseki/packages/lib/statement-dates'
 import { parseUnknown } from '@hoseki/packages/result'
 import { Err, Ok, asyncFn } from '@hoseki/packages/result'
 import type { Result } from '@hoseki/packages/result'
+import { type StatementQuoteCurrency, StatementQuoteCurrencySchema } from '@hoseki/packages/schemas/statement-quote'
 import Decimal from 'decimal.js'
 import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
@@ -15,6 +17,7 @@ import type { ExchangeService } from '../exchange/service'
 import type { DailyRates } from '../price/daily_rates'
 import type { DailyRatesService } from '../price/daily_rates'
 import type { AggregatedTransaction, StatementAccountTransactions } from './mapper'
+import { getRequiredRateDates, validateStatementRates } from './rate_dates'
 import { fetchTransactionEntries } from './tx_fetcher'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -35,11 +38,14 @@ export interface StatementDto {
   user: { name: string | null; email: string | null }
   integrator: { name: string } | null
   userId: string
+  quoteCurrency: StatementQuoteCurrency
+  errorMessage: string | null
 }
 
 type StatementRow = typeof statements.$inferSelect
 
 export interface GenerateStatementInput {
+  quoteCurrency?: StatementQuoteCurrency
   claimIds: string[]
   exchangeAccountIds?: string[]
   openingDate: Date
@@ -64,6 +70,7 @@ type SerializedAggregatedTransaction = z.infer<typeof SerializedAggregatedTransa
 
 const SerializedDailyRateSchema = z.object({
   timestamp: z.string(),
+  providerUrl: z.string().optional(),
   open: z.string(),
   high: z.string(),
   low: z.string(),
@@ -75,14 +82,49 @@ const MAX_STATEMENT_RANGE_YEARS = 2
 const MAX_STATEMENT_RANGE_DAYS = MAX_STATEMENT_RANGE_YEARS * 366
 const MS_PER_DAY = 24 * 60 * 60 * 1000
 
-function validateStatementInput(input: GenerateStatementInput): Result<void, Error> {
+/**
+ * Accepts any zone the runtime can format: aliases such as Asia/Kolkata, fixed offsets such as
+ * Etc/GMT+8 or +05:30, and names in any letter case. Browsers report some of these, but
+ * Intl.supportedValuesOf omits them.
+ */
+function isUsableTimezone(timezone: string): boolean {
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: timezone })
+    return true
+  } catch {
+    return false
+  }
+}
+
+export function validateStatementInput(input: GenerateStatementInput, now = new Date()): Result<void, Error> {
   const { openingDate, closingDate } = input
+  if (parseUnknown(StatementQuoteCurrencySchema, input.quoteCurrency ?? 'USD').isErr()) {
+    return Err(new Error('Unsupported statement quote currency.'))
+  }
+  if (!isUsableTimezone(input.timezone)) {
+    return Err(new Error('Invalid statement timezone.'))
+  }
   if (Number.isNaN(openingDate.getTime()) || Number.isNaN(closingDate.getTime())) {
     return Err(new Error('Statement dates must be valid'))
   }
 
   if (openingDate > closingDate) {
     return Err(new Error('Statement opening date must be before closing date'))
+  }
+
+  const latestClosingDate = getLatestStatementClosingDate(now, input.timezone)
+  if (latestClosingDate.isErr()) {
+    return Err(latestClosingDate.unwrapErr())
+  }
+  if (closingDate > latestClosingDate.unwrap()) {
+    return Err(
+      new Error(
+        `Statements must end at least ${STATEMENT_CLOSING_DELAY_DAYS} days ago, so recent transactions have time to confirm`,
+      ),
+    )
+  }
+  if (closingDate > now) {
+    return Err(new Error('Statement dates cannot be in the future.'))
   }
 
   const rangeDays = Math.ceil((closingDate.getTime() - openingDate.getTime()) / MS_PER_DAY) + 1
@@ -102,6 +144,7 @@ export class StatementService {
   private readonly exchangeService: ExchangeService
   private readonly mempoolApiUrl: string
   private readonly logger: Logger
+  private readonly sleep: ((ms: number) => Promise<void>) | undefined
 
   public constructor(deps: {
     db: SentinelDb
@@ -110,6 +153,8 @@ export class StatementService {
     exchangeService: ExchangeService
     mempoolApiUrl: string
     logger: Logger
+    /** Waits between transaction lookup retries; tests replace it to avoid real delays. */
+    sleep?: (ms: number) => Promise<void>
   }) {
     this.db = deps.db
     this.onchainProvider = deps.onchainProvider
@@ -117,10 +162,15 @@ export class StatementService {
     this.exchangeService = deps.exchangeService
     this.mempoolApiUrl = deps.mempoolApiUrl
     this.logger = deps.logger.child({ module: 'statement-service' })
+    this.sleep = deps.sleep
   }
 
   /** Insert a pending statement row. */
-  public async create(input: GenerateStatementInput): Promise<string> {
+  public async create(input: GenerateStatementInput): Promise<Result<string, Error>> {
+    const valid = validateStatementInput(input)
+    if (valid.isErr()) {
+      return Err(valid.unwrapErr())
+    }
     const id = `st_stmt_${nanoid()}`
     await this.db.insert(statements).values({
       id,
@@ -132,14 +182,36 @@ export class StatementService {
       exchangeAccountIds: input.exchangeAccountIds ? JSON.stringify(input.exchangeAccountIds) : null,
       userName: input.name ?? null,
       userAddress: input.address ?? null,
+      quoteCurrency: input.quoteCurrency ?? 'USD',
       counter: sql`(select coalesce(max(${statements.counter}), 0) + 1 from ${statements})`,
     })
 
-    return id
+    return Ok(id)
   }
 
   /** Mark a statement as completed with transaction data. */
-  public async complete(id: string, transactionMap: StatementTransactions, dailyRates: DailyRates): Promise<void> {
+  public async complete(
+    id: string,
+    transactionMap: StatementTransactions,
+    dailyRates: DailyRates,
+  ): Promise<Result<void, Error>> {
+    const [row] = await this.db.select().from(statements).where(eq(statements.id, id))
+    if (row?.status !== 'pending') {
+      return Err(new Error('Statement is not pending.'))
+    }
+    if (row.quoteCurrency !== dailyRates.quoteCurrency) {
+      return Err(new Error('Statement quote currency does not match its saved rates.'))
+    }
+    const dates = getRequiredRateDates(
+      new Date(row.openingDate),
+      new Date(row.closingDate),
+      row.timezone,
+      transactionMap,
+    )
+    const valid = validateStatementRates(dates, dailyRates)
+    if (valid.isErr()) {
+      return Err(valid.unwrapErr())
+    }
     // Serialize bigint values in transactionMap to strings for JSON storage
     const serializedMap: Record<string, { displayName: string; transactions: SerializedAggregatedTransaction[] }> = {}
     for (const [key, account] of Object.entries(transactionMap)) {
@@ -159,6 +231,7 @@ export class StatementService {
     for (const [key, rate] of Object.entries(dailyRates.rates)) {
       serializedRates[key] = {
         timestamp: rate.timestamp.toISOString(),
+        providerUrl: rate.providerUrl,
         open: rate.open.toString(),
         high: rate.high.toString(),
         low: rate.low.toString(),
@@ -166,23 +239,34 @@ export class StatementService {
       }
     }
 
-    await this.db
+    const [completed] = await this.db
       .update(statements)
       .set({
         status: 'completed',
         transactionMap: JSON.stringify(serializedMap),
-        dailyRates: JSON.stringify({ rates: serializedRates, source: dailyRates.source }),
+        dailyRates: JSON.stringify({
+          rates: serializedRates,
+          source: dailyRates.source,
+          quoteCurrency: dailyRates.quoteCurrency,
+          providerUrl: dailyRates.providerUrl,
+          providerUrls: dailyRates.providerUrls,
+        }),
         updatedAt: sql`datetime('now')`,
       })
-      .where(eq(statements.id, id))
+      .where(and(eq(statements.id, id), eq(statements.status, 'pending')))
+      .returning({ id: statements.id })
+    if (completed === undefined) {
+      return Err(new Error('Statement is not pending.'))
+    }
+    return Ok(undefined)
   }
 
   /** Mark a statement as failed. */
-  public async fail(id: string): Promise<void> {
+  public async fail(id: string, message = 'Statement generation failed. Please retry.'): Promise<void> {
     await this.db
       .update(statements)
-      .set({ status: 'failed', updatedAt: sql`datetime('now')` })
-      .where(eq(statements.id, id))
+      .set({ status: 'failed', errorMessage: message, updatedAt: sql`datetime('now')` })
+      .where(and(eq(statements.id, id), eq(statements.status, 'pending')))
   }
 
   /** Find a statement by ID and return its DTO. */
@@ -273,10 +357,7 @@ export class StatementService {
           )
           const accountResult = Account.fromDescriptor(row.descriptor)
           if (accountResult.isErr()) {
-            this.logger.warn(
-              { descriptor: row.descriptor, err: accountResult.unwrapErr() },
-              'Failed to parse descriptor',
-            )
+            this.logger.warn({ accountId: row.id }, 'Failed to parse descriptor')
             continue
           }
 
@@ -293,6 +374,7 @@ export class StatementService {
             onchainProvider: this.onchainProvider,
             mempoolApiUrl: this.mempoolApiUrl,
             logger: this.logger,
+            sleep: this.sleep,
           })
           if (txResult.isErr()) {
             this.logger.error({ accountId: row.id, err: txResult.unwrapErr() }, 'Failed to fetch transactions')
@@ -453,10 +535,20 @@ export class StatementService {
 
       // 4. Fetch daily rates for the date range
       this.logger.info('Fetching daily rates from mempool.space')
-      const ratesResult = await this.dailyRatesService.getDailyRates(input.openingDate, input.closingDate)
+      const requiredDates = getRequiredRateDates(input.openingDate, input.closingDate, input.timezone, transactionMap)
+      const ratesResult = await this.dailyRatesService.getDailyRates(
+        input.openingDate,
+        input.closingDate,
+        input.quoteCurrency ?? 'USD',
+        requiredDates,
+      )
       if (ratesResult.isErr()) {
         this.logger.error({ err: ratesResult.unwrapErr().message }, 'Failed to fetch daily rates')
         return Err(ratesResult.unwrapErr())
+      }
+      const coverage = validateStatementRates(requiredDates, ratesResult.unwrap())
+      if (coverage.isErr()) {
+        return Err(coverage.unwrapErr())
       }
       this.logger.info('Statement data generation complete')
 
@@ -505,6 +597,8 @@ export class StatementService {
       user: { name: row.userName, email: null },
       integrator: null,
       userId: 'local',
+      quoteCurrency: row.quoteCurrency,
+      errorMessage: row.errorMessage,
     }
   }
 
@@ -540,20 +634,33 @@ export class StatementService {
   private deserializeDailyRates(json: string): DailyRates {
     // SAFETY: Database JSON is untrusted until the schema below validates the complete daily-rate payload.
     const raw = parseUnknown(
-      z.object({ rates: z.record(SerializedDailyRateSchema), source: z.literal('mempool') }),
+      z.object({
+        rates: z.record(SerializedDailyRateSchema),
+        source: z.literal('mempool'),
+        quoteCurrency: StatementQuoteCurrencySchema.optional(),
+        providerUrl: z.string().optional(),
+        providerUrls: z.array(z.string()).optional(),
+      }),
       JSON.parse(json) as unknown,
     ).expect('Stored statement rates are invalid')
     const rates: DailyRates['rates'] = {}
     for (const [key, rate] of Object.entries(raw.rates)) {
       rates[key] = {
         timestamp: new Date(rate.timestamp),
+        providerUrl: rate.providerUrl,
         open: new Decimal(rate.open),
         high: new Decimal(rate.high),
         low: new Decimal(rate.low),
         close: new Decimal(rate.close),
       }
     }
-    return { rates, source: raw.source }
+    return {
+      rates,
+      source: raw.source,
+      quoteCurrency: raw.quoteCurrency ?? 'USD',
+      providerUrl: raw.providerUrl,
+      providerUrls: raw.providerUrls,
+    }
   }
 }
 
