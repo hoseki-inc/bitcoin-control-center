@@ -413,12 +413,13 @@ export class ControlCenterService {
    * Record a balance snapshot for an on-chain account.
    * Should be called periodically (e.g., daily) to build historical chart data.
    */
-  public async recordAccountSnapshot(accountId: string, balanceSats: string, timestamp: string): Promise<void> {
-    await this.db.transaction(async (tx) => {
+  public async recordAccountSnapshot(accountId: string, balanceSats: string, timestamp: string): Promise<boolean> {
+    return this.db.transaction(async (tx) => {
       if (!(await this.isAccountActive(accountId, tx))) {
-        return
+        return false
       }
       await this.upsertAccountSnapshot(tx, accountId, balanceSats, timestamp)
+      return true
     })
   }
 
@@ -1260,10 +1261,9 @@ export class ControlCenterService {
             const accountId = idMap.get(account.toString())
             if (accountId != null && accountId !== '') {
               if (
-                await collectAccount('on-chain', accountId, async () => {
-                  await this.recordAccountSnapshot(accountId, balance.toString(), now)
-                  return true
-                })
+                await collectAccount('on-chain', accountId, async () =>
+                  this.recordAccountSnapshot(accountId, balance.toString(), now),
+                )
               ) {
                 recorded++
               }

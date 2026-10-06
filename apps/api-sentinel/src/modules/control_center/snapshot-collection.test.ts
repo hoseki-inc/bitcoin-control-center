@@ -188,7 +188,7 @@ it('collects every source with the same timestamp and preserves legitimate zero 
 })
 
 it.each(['archive', 'delete'] as const)('skips an account that is %sd while fetching balances', async (action) => {
-  const { db, service, balances, rows } = await setupCollection()
+  const { db, service, balances, rows, info } = await setupCollection()
   const original = balances.getMockImplementation()
   assert(original)
   balances.mockImplementationOnce(
@@ -204,6 +204,7 @@ it.each(['archive', 'delete'] as const)('skips an account that is %sd while fetc
 
   expect((await service.recordAllSnapshots()).isOk()).toBe(true)
   expect((await rows('on-chain')).map((row) => row.accountId)).toEqual(['on-chain-1', 'on-chain-3'])
+  expect(info).toHaveBeenCalledWith({ count: 2 }, 'Recorded on-chain balance snapshots')
   for (const source of sources.slice(1)) {
     await expect(rows(source)).resolves.toHaveLength(3)
   }
