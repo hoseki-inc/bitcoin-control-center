@@ -1,9 +1,19 @@
-import { Box, Button, Grid, Icon, Text } from '@chakra-ui/react'
+import { Box, Button, Grid, Icon, Text, keyframes } from '@chakra-ui/react'
 import { ConnectManualBitcoinAccordion } from '@hoseki/packages/ui/design-system'
+import { Wrapper } from '@hoseki/packages/ui/prove-verify-ui'
 import { KeystoreAvatar } from '@hoseki/packages/ui/prove-verify-ui/claims/keystore-avatar'
 import { keyIcon } from '@hoseki/packages/ui/prove-verify-ui/claims/keystores-status-indicator'
 import { ChevronLeft } from 'lucide-react'
 import { ConnectionType } from './claims-landing/connection-type'
+
+const fadeIn = keyframes`
+  from { opacity: 0; }
+  to { opacity: 1; }
+`
+
+// The app's page column, which the header also sits on. The back button lands where the logo was,
+// and the tiles keep the size and alignment they have on the Accounts page.
+const PAGE_WIDTH = '928px'
 
 interface AddAccountFlowProps {
   onClose: () => void
@@ -11,21 +21,51 @@ interface AddAccountFlowProps {
   linkState?: { returnTo?: string }
 }
 
+// Covers the whole window, app header included, so adding an account reads as one focused step with
+// only a way back.
 export function AddAccountFlow({ onClose, linkState }: AddAccountFlowProps): JSX.Element {
   return (
-    <Box w="full" py={{ base: 6, md: 8 }}>
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={onClose}
-        color="neutral.900"
-        fontWeight="medium"
-        mb={6}
-        pl={0}
-        leftIcon={<Icon as={ChevronLeft} boxSize={4} />}
-      >
-        Back to Accounts
-      </Button>
+    <Box
+      position="fixed"
+      inset={0}
+      zIndex={200}
+      display="flex"
+      flexDirection="column"
+      bg="shades.0"
+      pl="env(safe-area-inset-left)"
+      pr="env(safe-area-inset-right)"
+      pb="env(safe-area-inset-bottom)"
+      animation={`${fadeIn} 0.2s ease`}
+      sx={{ '@media (prefers-reduced-motion: reduce)': { animation: 'none' } }}
+    >
+      <Box flexShrink={0} borderBottom="1px solid" borderColor="neutral.200">
+        <Wrapper maxW={PAGE_WIDTH} py={5}>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onClose}
+            color="neutral.900"
+            fontWeight="medium"
+            pl={0}
+            leftIcon={<Icon as={ChevronLeft} boxSize={4} />}
+          >
+            Back to Accounts
+          </Button>
+        </Wrapper>
+      </Box>
+
+      <Box flex={1} overflowY="auto">
+        <Wrapper maxW={PAGE_WIDTH} pt={{ base: 6, md: 8 }} pb={{ base: 14, md: 20 }}>
+          <AddAccountOptions linkState={linkState} />
+        </Wrapper>
+      </Box>
+    </Box>
+  )
+}
+
+function AddAccountOptions({ linkState }: Pick<AddAccountFlowProps, 'linkState'>): JSX.Element {
+  return (
+    <>
       <Text as="h1" textStyle="text/2xl" fontWeight="medium" color="neutral.900" mb={2}>
         Connect New Account
       </Text>
@@ -109,7 +149,7 @@ export function AddAccountFlow({ onClose, linkState }: AddAccountFlowProps): JSX
         />
       </Grid>
       <ConnectManualBitcoinAccordion to="/accounts/verify/advanced" state={linkState} />
-    </Box>
+    </>
   )
 }
 
