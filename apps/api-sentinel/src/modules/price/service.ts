@@ -106,14 +106,6 @@ const LAST_KNOWN_WAIT_MS = 3_000
 const MAX_PRICE_AGE_MS = 30 * 60_000
 const PUBLIC_MEMPOOL_URL = 'https://mempool.space'
 
-const historySchema = z.object({
-  prices: z.array(z.tuple([z.number().finite().nonnegative(), z.number().finite().positive()])).min(2),
-})
-
-export type BitcoinPriceHistoryDays = 1 | 7 | 30 | 180 | 365
-
-export type BitcoinPricePoint = { time: number; value: number }
-
 function isPublicMempool(url: URL): boolean {
   return url.hostname === 'mempool.space' || url.hostname.endsWith('.mempool.space')
 }
@@ -232,39 +224,6 @@ interface SettingsChange {
  * - Saving the settings restarts callers still waiting, under the new settings.
  */
 export class PriceService {
-  private readonly historyCache = new Map<BitcoinPriceHistoryDays, { points: BitcoinPricePoint[]; fetchedAt: number }>()
-
-  public getBitcoinPriceHistory = asyncFn(
-    async (days: BitcoinPriceHistoryDays = 7): Promise<Result<BitcoinPricePoint[], Error>> => {
-      const cached = this.historyCache.get(days)
-      if (cached && Date.now() - cached.fetchedAt < 300_000) {
-        return Ok(cached.points)
-      }
-      let response: Response
-      try {
-        response = await fetch(
-          `https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=usd&days=${days}`,
-          { signal: AbortSignal.timeout(8_000) },
-        )
-      } catch {
-        return Err(new Error('Bitcoin price history is unavailable'))
-      }
-      if (!response.ok) {
-        return Err(new Error('Bitcoin price history is unavailable'))
-      }
-      const parsed = parseUnknown(historySchema, await response.json())
-      if (parsed.isErr()) {
-        return Err(new Error('Invalid Bitcoin price history'))
-      }
-      const points = parsed
-        .unwrap()
-        .prices.map(([time, value]) => ({ time: time / 1000, value }))
-        .sort((a, b) => a.time - b.time)
-      this.historyCache.set(days, { points, fetchedAt: Date.now() })
-      return Ok(points)
-    },
-  )
-
   private readonly logger: Logger
   private readonly sources: PriceSource[]
   private readonly settings: () => SavedPriceSettings

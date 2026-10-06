@@ -27,15 +27,20 @@ const browser = await vi.hoisted(async () => {
 
 const prices = [
   { time: 1000, value: 100 },
-  { time: 2000, value: 110 },
+  { time: 2000, value: 105 },
 ]
+const latest = { time: 2500, value: 110, source: 'mempool', sourceLabel: 'Your mempool server (node.local)' }
 const requests: unknown[] = []
+let unavailable = false
 const rpc = createTestTrpcClient(async ({ path, input }: Operation) => {
   if (path !== 'portalProve.retrieveBitcoinPriceHistory') {
     throw new Error(`Unexpected request: ${path}`)
   }
   requests.push(input)
-  return prices
+  if (unavailable) {
+    throw new Error('Price history for this range is not available from your allowed price sources.')
+  }
+  return { quoteCurrency: 'USD', points: prices, historySources: ['node.local'], latest }
 })
 
 const chart = vi.fn<(props: HistoryLineChartProps) => void>()
@@ -82,6 +87,7 @@ async function withTestSetup(reducedMotion: boolean, run: () => Promise<void>): 
     })
     container.remove()
     queryClient.clear()
+    unavailable = false
     vi.unstubAllGlobals()
     dom.window.close()
   })
@@ -105,12 +111,15 @@ it.each([false, true])(
   async (reducedMotion) => {
     await withTestSetup(reducedMotion, async () => {
       await waitForText('10.00% · 7d')
-      expect(requests).toEqual([{ days: 7 }])
+      expect(requests).toEqual([{ days: 7, quoteCurrency: 'USD' }])
+      expect(container.textContent).toContain('$110')
+      expect(container.textContent).toContain(
+        'Daily prices from node.local · Latest from Your mempool server (node.local)',
+      )
       expect(container.querySelector('h2')?.textContent).toBe('Bitcoin Price')
       expect(container.querySelector('[aria-pressed="true"]')?.getAttribute('aria-label')).toBe('Last 7 days')
       expect(container.querySelector('[data-chart="history"]')).not.toBeNull()
       for (const [label, days] of [
-        ['24H', 1],
         ['7D', 7],
         ['30D', 30],
         ['6M', 180],
@@ -124,10 +133,21 @@ it.each([false, true])(
         expect(button.getAttribute('aria-pressed')).toBe('true')
         expect(container.querySelectorAll('[aria-pressed="true"]')).toHaveLength(1)
         await waitForText(`10.00% · ${label.toLowerCase()}`)
-        expect(requests).toContainEqual({ days })
-        expect(chart.mock.lastCall?.[0].data).toEqual(prices)
+        expect(requests).toContainEqual({ days, quoteCurrency: 'USD' })
+        expect(chart.mock.lastCall?.[0].data).toEqual([...prices, { time: latest.time, value: latest.value }])
       }
-      expect(requests).toHaveLength(5)
+      expect(requests).toHaveLength(4)
     })
   },
 )
+
+it('shows when a range is not available from the allowed price sources', async () => {
+  unavailable = true
+  await withTestSetup(false, async () => {
+    await waitForText('Price sources and fallbacks are set in Settings.')
+    expect(chart.mock.lastCall?.[0]).toMatchObject({
+      data: [],
+      emptyMessage: 'Price history for this range is not available from your allowed price sources.',
+    })
+  })
+})
