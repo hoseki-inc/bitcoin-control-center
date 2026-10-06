@@ -12,7 +12,11 @@ export async function resolveMempoolUrl(effects: T.Effects, override?: string | 
     .get(
       effects,
       { packageId: 'mempool', id: 'webui' },
-      (service) => service?.addressInfo?.filter({ kind: 'bridge' }).format()[0] ?? null,
+      // Plain HTTP over the internal bridge; the TLS address uses a certificate Sentinel does not trust.
+      (service) =>
+        service?.addressInfo
+          ?.filter({ kind: 'bridge', predicate: (hostname) => !hostname.ssl && hostname.metadata.kind === 'ipv4' })
+          .format()[0] ?? null,
     )
     .const()
   return localUrl ?? 'https://mempool.space'

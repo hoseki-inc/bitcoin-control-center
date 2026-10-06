@@ -33,7 +33,7 @@ export function useRenderedStatement(data: PdfStatement | undefined, enabled = t
       })
       .catch(() => {
         if (current) {
-          setRendered({ data, attempt, document: null, error: 'Unable to render this statement. Please retry.' })
+          setRendered({ data, attempt, document: null, error: 'Failed to render statement preview' })
         }
       })
     return () => {

@@ -45,16 +45,16 @@ historical totals as complete.
 Exchange accounts contact the selected provider when they refresh. Choose the
 current BTC/USD source and its fallback setting in **Settings → Bitcoin price**.
 By default, it uses the configured mempool when available, otherwise Block.
-Statement prices and transaction enrichment use the mempool URL selected in
-**Configure**. Unless fallbacks are turned off, historical statement quotes fall
-back to public mempool.space when no valid quote is available within four days
-before or after the requested date.
+Statement prices and transaction details use your mempool service when it is
+installed, so it must be running to generate statements. Missing prices use
+public mempool.space unless fallbacks are turned off.
 
 ## Generate a statement
 
 1. Select **Generate Statement** from Home, or open **Statements** and create a
    statement.
-2. Select the accounts, date range, and USD, CAD, GBP, or EUR for approximate fiat values.
+2. Select the accounts, date range, and USD, CAD, GBP, or EUR for approximate
+   fiat values.
    Bitcoin amounts remain in BTC. The exact rates are saved with the statement.
 3. Complete any requested proof-of-control signatures on the relevant hardware
    wallets.
@@ -68,11 +68,9 @@ complete first.
 
 The optional mempool service is discovered automatically. If it is absent,
 Control Center uses public mempool.space. Use **Configure → Mempool URL Override**
-to choose an explicit HTTP(S) endpoint. Restart Control Center after
-changing the URL. The same action changes the log level. **Info** is the
-normal setting. Use **Debug** or **Trace** only while diagnosing a problem, then
-restart the service. Return to **Info** when finished to reduce unnecessary log
-detail.
+to choose an explicit HTTP(S) endpoint. The same action changes the log level.
+**Info** is the normal setting. Use **Debug** or **Trace** only while diagnosing
+a problem, then return to **Info**.
 
 Before sharing logs, remove descriptors, extended public keys, exchange account
 details, credentials, and other identifying information.

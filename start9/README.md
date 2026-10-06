@@ -60,13 +60,10 @@ public-key retrieval and signing workflows.
 ## Configuration management
 
 The StartOS **Configure** action sets the mempool URL and application log level.
-Leave the URL override blank to discover an installed mempool service automatically.
-If it is absent, public `https://mempool.space` is used. An explicit HTTP(S) URL
-overrides discovery. Mempool is an optional dependency. Restart
-Control Center after changing the URL. Unless fallbacks are turned off in
-Settings, missing statement quotes fall back to public mempool.space after
-checking four days before and after the valuation date.
-Quotes share a persistent local cache with their source recorded.
+Leave the URL blank to use an installed mempool service, or public
+`https://mempool.space` when none is installed; an HTTP(S) URL overrides both.
+Statements need that mempool to be running. Missing statement prices use public
+mempool.space only while fallbacks are on in Settings.
 
 Available log levels:
 
@@ -76,8 +73,7 @@ Available log levels:
 - Debug
 - Trace
 
-The action writes `/data/start9/config.yaml`. The container reads it on startup,
-so restart the service after changing the log level if it is already running.
+The action writes `/data/start9/config.yaml`, and the service restarts to apply it.
 
 The StartOS build is fixed to Bitcoin mainnet and its required internal
 `electrs` dependency. Desktop-only Electrum and Tor controls are intentionally
@@ -126,10 +122,10 @@ synchronization additionally requires a healthy, synchronized Electrs service.
 
 ## Dependencies
 
-| Dependency | Required | Purpose                                                        |
-| ---------- | -------- | -------------------------------------------------------------- |
-| `electrs`  | Yes      | On-chain address balances and transaction history              |
-| `mempool`  | No       | Optional local prices and transaction details; public fallback |
+| Dependency | Required | Purpose                                           |
+| ---------- | -------- | ------------------------------------------------- |
+| `electrs`  | Yes      | On-chain address balances and transaction history |
+| `mempool`  | No       | Optional local prices and transaction details     |
 
 Bitcoin Control Center also makes outbound requests when the corresponding
 feature is used:
@@ -138,12 +134,11 @@ feature is used:
   configured mempool by default when available, otherwise Block
   (`https://pricing.bitcoin.block.xyz`), with public fallbacks unless turned off;
 - statement prices and transaction enrichment use the configured mempool URL
-  (public `https://mempool.space` by default); historical statement quotes fall
-  back to public mempool.space when no quote is available within four days
-  before or after the valuation date, unless fallbacks are turned off;
+  (public `https://mempool.space` by default); only missing prices fall back to
+  public mempool.space, unless fallbacks are turned off;
 - connected exchange accounts contact their selected exchange provider.
 
-These are application data sources, not StartOS package dependencies.
+Apart from mempool, these are not StartOS package dependencies.
 
 ## Limitations and differences
 
@@ -152,16 +147,7 @@ These are application data sources, not StartOS package dependencies.
    are not available in the StartOS web interface.
 3. Direct USB hardware-wallet support depends on browser capabilities and
    permissions. File and QR workflows remain device-specific alternatives.
-
-- the current BTC/USD price comes from the source chosen in Settings: the
-  configured mempool by default when available, otherwise Block
-  (`https://pricing.bitcoin.block.xyz`), with public fallbacks unless turned off;
-- statement prices and transaction enrichment use the configured mempool URL
-  (public `https://mempool.space` by default); historical statement quotes fall
-  back to public mempool.space when no quote is available within four days
-  before or after the valuation date, unless fallbacks are turned off;
-
-5. Bitcoin Control Center is watch-only software. It must never receive or store
+4. Bitcoin Control Center is watch-only software. It must never receive or store
    a wallet seed or private key.
 
 ## What is unchanged from upstream

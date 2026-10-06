@@ -263,20 +263,24 @@ function StatementPreview({
         {statement.status !== 'completed' ? (
           <PreviewUnavailable />
         ) : previewError != null ? (
-          <Stack>
-            <ErrorBanner message={previewError} />
-            <Button
-              onClick={() => {
-                if (queryError) {
-                  void refetch()
-                } else {
-                  rendered.retry()
-                }
-              }}
-            >
-              Retry Preview
-            </Button>
-          </Stack>
+          <ErrorBanner
+            message={previewError}
+            rightContent={
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  if (queryError) {
+                    void refetch()
+                  } else {
+                    rendered.retry()
+                  }
+                }}
+              >
+                Retry
+              </Button>
+            }
+          />
         ) : isLoading || !rendered.document ? (
           <Spinner centered />
         ) : (

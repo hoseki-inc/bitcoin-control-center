@@ -113,10 +113,14 @@ export function StatementPreviewModal(props: StatementPreviewModalProps): JSX.El
           <Box width="100%" height="100%" flex={1} display="flex" justifyContent="center" alignItems="center">
             {isLoading && <Spinner size="xl" />}
             {errorMessage !== null && (
-              <Stack>
-                <ErrorBanner mb={4} message={errorMessage} />
-                <Button onClick={retry}>Retry Preview</Button>
-              </Stack>
+              <ErrorBanner
+                message={errorMessage}
+                rightContent={
+                  <Button size="sm" variant="outline" onClick={retry}>
+                    Retry
+                  </Button>
+                }
+              />
             )}
             {!isLoading && errorMessage === null && rendered.document && (
               <Stack spacing={4} sx={Animations.fadeIn(0.25)} height="100%" width="100%">

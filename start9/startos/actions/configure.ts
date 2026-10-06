@@ -5,10 +5,15 @@ const inputSpec = sdk.InputSpec.of({
   'mempool-url': sdk.Value.text({
     name: 'Mempool URL Override',
     description:
-      'Leave blank to use the installed mempool service automatically, or public mempool.space when it is absent. Enter an HTTP(S) URL to override this. Missing historical quotes fall back to public mempool.space. Restart Control Center after changing this setting.',
+      'Leave blank to use the installed mempool service, or public mempool.space when it is not installed. Enter an HTTP(S) URL to use another instance. Statements need it to be running; missing prices use public mempool.space only while "Allow fallbacks" is on in Settings.',
     required: false,
     default: null,
-    patterns: [{ regex: '^https?://[^\\s]+$', description: 'Enter an HTTP or HTTPS URL.' }],
+    patterns: [
+      {
+        regex: '^https?://[^\\s@?#]+$',
+        description: 'Enter an HTTP or HTTPS URL without credentials, a query or a fragment.',
+      },
+    ],
   }),
   'log-level': sdk.Value.select({
     name: 'Log Level',

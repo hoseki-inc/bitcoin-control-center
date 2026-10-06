@@ -36,7 +36,7 @@ export const manifest = setupManifest({
   dependencies: {
     mempool: {
       description:
-        'Optional local source for prices and transaction details. Public mempool.space is used when unavailable.',
+        'Optional local source for prices and transaction details. Without it, public mempool.space is used.',
       optional: true,
       s9pk: null,
     },

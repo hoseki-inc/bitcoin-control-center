@@ -175,9 +175,12 @@ export function StatementCreatePage(): JSX.Element {
 
             {hasAccounts ? (
               <Stack gap={5} flexGrow="1" minW={0} w="full" sx={{ containerType: 'inline-size' }}>
-                <Text as="h2" textStyle="text/md" fontWeight="medium">
-                  Statement details
-                </Text>
+                <Stack gap={1}>
+                  <Text as="h2" textStyle="text/md" fontWeight="medium">
+                    Customize Your Statement
+                  </Text>
+                  <Text textStyle="text/sm">Select the date range and currency shown in your statement.</Text>
+                </Stack>
                 <Grid
                   templateColumns="minmax(0, 1fr) minmax(0, 1fr) 96px"
                   gap={3.5}
@@ -188,8 +191,8 @@ export function StatementCreatePage(): JSX.Element {
                   }}
                 >
                   <FormControl minW={0}>
-                    <FormLabel textStyle="label/md" fontWeight="normal" color="neutral.900" htmlFor="opening-date">
-                      Start date
+                    <FormLabel textStyle="label/md" fontWeight="medium" color="neutral.900" htmlFor="opening-date">
+                      Start Date
                     </FormLabel>
                     <DateInput
                       id="opening-date"
@@ -206,8 +209,8 @@ export function StatementCreatePage(): JSX.Element {
                   </FormControl>
 
                   <FormControl minW={0}>
-                    <FormLabel textStyle="label/md" fontWeight="normal" color="neutral.900" htmlFor="closing-date">
-                      End date
+                    <FormLabel textStyle="label/md" fontWeight="medium" color="neutral.900" htmlFor="closing-date">
+                      End Date
                     </FormLabel>
                     <DateInput
                       id="closing-date"
@@ -223,12 +226,11 @@ export function StatementCreatePage(): JSX.Element {
                   </FormControl>
 
                   <FormControl w="96px">
-                    <FormLabel textStyle="label/md" fontWeight="normal" color="neutral.900" htmlFor="quote-currency">
+                    <FormLabel textStyle="label/md" fontWeight="medium" color="neutral.900" htmlFor="quote-currency">
                       Currency
                     </FormLabel>
                     <Select
                       id="quote-currency"
-                      aria-label="Statement currency"
                       value={quoteCurrency}
                       onChange={(event) => {
                         const parsed = parseUnknown(StatementQuoteCurrencySchema, event.target.value)
@@ -237,18 +239,11 @@ export function StatementCreatePage(): JSX.Element {
                         }
                       }}
                     >
-                      <option value="USD" aria-label="USD — US Dollar">
-                        USD
-                      </option>
-                      <option value="CAD" aria-label="CAD — Canadian Dollar">
-                        CAD
-                      </option>
-                      <option value="GBP" aria-label="GBP — British Pound">
-                        GBP
-                      </option>
-                      <option value="EUR" aria-label="EUR — Euro">
-                        EUR
-                      </option>
+                      {StatementQuoteCurrencySchema.options.map((currency) => (
+                        <option key={currency} value={currency}>
+                          {currency}
+                        </option>
+                      ))}
                     </Select>
                   </FormControl>
                 </Grid>

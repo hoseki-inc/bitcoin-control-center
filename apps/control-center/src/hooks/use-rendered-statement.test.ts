@@ -101,7 +101,7 @@ describe('statement preview updates', () => {
       .mockRejectedValueOnce(new Error('renderer failed'))
       .mockResolvedValueOnce(createElement('span', {}, 'CAD PDF'))
     await show(cad)
-    expect(container.textContent).toContain('Unable to render')
+    expect(container.textContent).toContain('Failed to render statement preview')
     expect(container.querySelector('button')?.disabled).toBe(true)
     await act(async () => {
       const retry = container.querySelectorAll('button')[1]
@@ -122,7 +122,7 @@ describe('statement preview updates', () => {
     await act(async () => {
       pending.reject(new Error('late failure'))
     })
-    expect(container.textContent).not.toContain('Unable to render')
+    expect(container.textContent).not.toContain('Failed to render statement preview')
     expect(container.querySelector('button')?.disabled).toBe(true)
   })
 })
