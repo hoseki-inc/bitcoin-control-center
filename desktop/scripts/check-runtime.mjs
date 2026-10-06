@@ -20,12 +20,63 @@ async function checkRuntime() {
   let database
   try {
     const databasePath = join(temporaryDirectory, 'smoke.sqlite')
-    database = createClient({ url: pathToFileURL(databasePath).href })
-    await database.execute('CREATE TABLE smoke (value INTEGER NOT NULL)')
+    const config = { url: pathToFileURL(databasePath).href, concurrency: 1, timeout: 5000 }
+    database = createClient(config)
+    // Set WAL once; replacement connections must retain it without reconfiguration.
+    await database.execute('PRAGMA journal_mode = WAL')
+    await database.execute('CREATE TABLE smoke (value INTEGER PRIMARY KEY NOT NULL)')
+    await database.execute(
+      'CREATE TABLE smoke_child (value INTEGER NOT NULL REFERENCES smoke(value) ON DELETE CASCADE)',
+    )
     await database.execute({ sql: 'INSERT INTO smoke (value) VALUES (?)', args: [42] })
-    database.close()
-    database = createClient({ url: pathToFileURL(databasePath).href })
-    assert.equal((await database.execute('SELECT value FROM smoke')).rows[0]?.['value'], 42)
+    await database.execute('INSERT INTO smoke_child (value) VALUES (42)')
+    for (const phase of ['startup', 'reopen', 'reconnect']) {
+      if (phase === 'reopen') {
+        database.close()
+        database = createClient(config)
+      } else if (phase === 'reconnect') {
+        // A fresh connection must use the native default, not inherit the old setting.
+        await database.execute('PRAGMA foreign_keys = OFF')
+        assert.equal((await database.execute('PRAGMA foreign_keys')).rows[0]?.['foreign_keys'], 0)
+        database.reconnect()
+      }
+      assert.equal(
+        (await database.execute('PRAGMA foreign_keys')).rows[0]?.['foreign_keys'],
+        1,
+        `${phase}: foreign keys`,
+      )
+      assert.equal((await database.execute('PRAGMA journal_mode')).rows[0]?.['journal_mode'], 'wal', `${phase}: WAL`)
+      assert.equal((await database.execute('PRAGMA busy_timeout')).rows[0]?.['timeout'], 5000, `${phase}: busy timeout`)
+      assert.equal(
+        (await database.execute('SELECT value FROM smoke')).rows[0]?.['value'],
+        42,
+        `${phase}: parent persistence`,
+      )
+      assert.equal(
+        (await database.execute('SELECT value FROM smoke_child')).rows[0]?.['value'],
+        42,
+        `${phase}: child persistence`,
+      )
+      await assert.rejects(
+        database.execute('INSERT INTO smoke_child (value) VALUES (99)'),
+        /FOREIGN KEY constraint failed/,
+        `${phase}: orphan rejection`,
+      )
+      await database.execute('DELETE FROM smoke WHERE value = 42')
+      assert.equal(
+        (await database.execute('SELECT value FROM smoke_child')).rows.length,
+        0,
+        `${phase}: cascade deletion`,
+      )
+      assert.equal(
+        (await database.execute('PRAGMA foreign_key_check')).rows.length,
+        0,
+        `${phase}: foreign-key integrity`,
+      )
+      // Leave a related pair to verify persistence and cascading on the next connection.
+      await database.execute('INSERT INTO smoke (value) VALUES (42)')
+      await database.execute('INSERT INTO smoke_child (value) VALUES (42)')
+    }
   } finally {
     database?.close()
   }
@@ -41,7 +92,9 @@ async function checkRuntime() {
   const pdf = await renderToBuffer(document)
   assert.equal(pdf.subarray(0, 5).toString(), '%PDF-')
   assert.ok(pdf.length > 1000, 'The PDF renderer must produce a complete document')
-  console.log(`Electron ${process.versions.electron}: system TLS trust, SQLite persistence, and PDF rendering passed`)
+  console.log(
+    `Electron ${process.versions.electron}: system TLS trust, SQLite persistence, foreign keys/cascades, WAL, busy timeout across reconnects, and PDF rendering passed`,
+  )
 }
 
 if (process.versions.electron) {
