@@ -540,7 +540,12 @@ const registryRouter = t.router({
       if (row.deletedAt !== null) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Archived claims must be permanently deleted' })
       }
-      await db.delete(accountTable).where(eq(accountTable.id, input.id))
+      const deleted = await db
+        .delete(accountTable)
+        .where(and(eq(accountTable.id, input.id), eq(accountTable.status, 'pending'), isNull(accountTable.deletedAt)))
+      if (deleted.rowsAffected === 0) {
+        throw new TRPCError({ code: 'CONFLICT', message: 'Claim changed before it could be deleted' })
+      }
     }),
 
     delete: publicProcedure.input(z.object({ id: z.string() })).mutation(async ({ ctx, input }) => {
@@ -555,7 +560,12 @@ const registryRouter = t.router({
       if (row.deletedAt === null) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Only archived claims can be permanently deleted' })
       }
-      await db.delete(accountTable).where(eq(accountTable.id, input.id))
+      const deleted = await db
+        .delete(accountTable)
+        .where(and(eq(accountTable.id, input.id), isNotNull(accountTable.deletedAt)))
+      if (deleted.rowsAffected === 0) {
+        throw new TRPCError({ code: 'CONFLICT', message: 'Claim changed before it could be deleted' })
+      }
     }),
 
     archive: publicProcedure.input(z.object({ id: z.string() })).mutation(async ({ ctx, input }) => {
