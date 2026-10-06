@@ -6,7 +6,6 @@ import { parseUnknown } from '@hoseki/packages/result'
 import { Err, Ok, asyncFn } from '@hoseki/packages/result'
 import type { Result } from '@hoseki/packages/result'
 import { type StatementQuoteCurrency, StatementQuoteCurrencySchema } from '@hoseki/packages/schemas/statement-quote'
-import { TimezoneSchema } from '@hoseki/packages/schemas/timezone'
 import type Database from 'better-sqlite3'
 import Decimal from 'decimal.js'
 import { nanoid } from 'nanoid'
@@ -103,12 +102,26 @@ const MAX_STATEMENT_RANGE_YEARS = 2
 const MAX_STATEMENT_RANGE_DAYS = MAX_STATEMENT_RANGE_YEARS * 366
 const MS_PER_DAY = 24 * 60 * 60 * 1000
 
+/**
+ * Accepts any zone the runtime can format: aliases such as Asia/Kolkata, fixed offsets such as
+ * Etc/GMT+8 or +05:30, and names in any letter case. Browsers report some of these, but
+ * Intl.supportedValuesOf omits them.
+ */
+function isUsableTimezone(timezone: string): boolean {
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: timezone })
+    return true
+  } catch {
+    return false
+  }
+}
+
 export function validateStatementInput(input: GenerateStatementInput, now = new Date()): Result<void, Error> {
   const { openingDate, closingDate } = input
   if (parseUnknown(StatementQuoteCurrencySchema, input.quoteCurrency ?? 'USD').isErr()) {
     return Err(new Error('Unsupported statement quote currency.'))
   }
-  if (parseUnknown(TimezoneSchema, input.timezone).isErr()) {
+  if (!isUsableTimezone(input.timezone)) {
     return Err(new Error('Invalid statement timezone.'))
   }
   if (Number.isNaN(openingDate.getTime()) || Number.isNaN(closingDate.getTime())) {
@@ -130,7 +143,7 @@ export function validateStatementInput(input: GenerateStatementInput, now = new 
       ),
     )
   }
-  if (closingDate.getTime() > Date.now()) {
+  if (closingDate > now) {
     return Err(new Error('Statement dates cannot be in the future.'))
   }
 

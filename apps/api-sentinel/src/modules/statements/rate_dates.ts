@@ -46,7 +46,7 @@ export function validateStatementRates(dates: Date[], dailyRates: DailyRates): R
   for (const date of dates) {
     const key = toDateKey(date)
     const rate = dailyRates.rates[key]
-    if (!rate || !rate.close.isFinite() || !rate.close.isPositive()) {
+    if (!rate || !rate.close.isFinite() || !rate.close.gt(0)) {
       return Err(new Error(`No usable ${dailyRates.quoteCurrency} quote for ${key}.`))
     }
     const distance = Math.abs(date.getTime() - rate.timestamp.getTime())

@@ -13,7 +13,7 @@ import { DailyRatesService } from '../price/daily_rates'
 import type { AggregatedTransaction } from './mapper'
 import { StatementMapper } from './mapper'
 import { getRequiredRateDates, getStatementPeriods } from './rate_dates'
-import { type GenerateStatementInput, StatementService } from './service'
+import { type GenerateStatementInput, StatementService, validateStatementInput } from './service'
 
 const logger = pino({ level: 'silent' })
 const opening = new Date('2026-08-01T00:00:00Z')
@@ -214,5 +214,22 @@ describe('statement currency persistence', () => {
     expect(new StatementMapper().toPdfStatement(data, 'custom').isOk()).toBe(true)
     expect(new StatementMapper().toPdfStatement(data, 'monthly').isOk()).toBe(true)
     expect(fetch).toHaveBeenCalledTimes(5)
+  })
+})
+
+describe('statement timezone validation', () => {
+  const now = new Date('2026-09-08T12:00:00Z')
+  // Browsers can report aliases and fixed offsets that Intl.supportedValuesOf omits.
+  it.each(['UTC', 'Asia/Kolkata', 'Asia/Calcutta', 'Europe/Kyiv', 'America/Nuuk', 'Etc/UTC', 'Etc/GMT+8'])(
+    'accepts the runtime timezone %s',
+    (timezone) => {
+      expect(validateStatementInput({ ...input, timezone }, now).isOk()).toBe(true)
+    },
+  )
+
+  it('rejects an unknown timezone', () => {
+    expect(validateStatementInput({ ...input, timezone: 'Not/AZone' }, now).unwrapErr().message).toBe(
+      'Invalid statement timezone.',
+    )
   })
 })

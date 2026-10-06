@@ -46,6 +46,14 @@ describe('statement quote observation window', () => {
     expect(validateStatementRates([today], rates).isErr()).toBe(true)
   })
 
+  it.each(['0', '-1'])('rejects a quote of %s', (price) => {
+    setup()
+    const value = new Decimal(price)
+    const rates = quotes(day, day)
+    rates.rates[toDateKey(day)] = { timestamp: day, open: value, high: value, low: value, close: value }
+    expect(validateStatementRates([day], rates).isErr()).toBe(true)
+  })
+
   it('rejects an invalid observation timestamp', () => {
     setup()
     expect(validateStatementRates([day], quotes(day, new Date(Number.NaN))).isErr()).toBe(true)
