@@ -369,7 +369,27 @@ closes; StartOS packages stay on the disposable runners. Local `pnpm build:ci`
 leaves its generated bundles in the normal ignored build directories and does not
 create installers.
 
-Dependabot checks for updates on Mondays at 02:00 Eastern. CodeQL scans pull requests targeting `main`, pushes to `main`, and `main` weekly on Mondays at 03:00 Eastern, one hour after Dependabot's scheduled checks. Both schedules use `America/New_York` and follow daylight saving time. Manual CodeQL scans are available in GitHub Actions.
+Dependabot checks for updates on Mondays at 02:00 Eastern using `America/New_York`
+and follows daylight saving time. Keep dependency graph, Dependabot alerts, and
+Dependabot security updates enabled in the repository settings.
+
+Dependency review checks dependency changes in pull requests and rejects known
+vulnerabilities with moderate or higher severity. Keep dependency graph enabled
+and `dependency-review` required in branch protection. This feature requires
+GitHub Code Security while the repository is private and is free once public.
+
+The unused CodeQL workflow is not included. Keep automatic CodeQL scanning
+disabled in the repository settings without disabling Code Security while
+dependency review needs it. Removing workflow files alone does not stop license
+charges. Keep the required `verify` and `dependency-review` checks, and remove the
+obsolete `Analyze (javascript-typescript)` and `CodeQL` checks from branch
+protection or rulesets before merging the workflow removal. Remove any other
+required CodeQL language checks if configured.
+
+Secret scanning and push protection are managed separately in the repository
+settings and need no checked-in workflow. Keeping them enabled on a private
+repository requires paid GitHub Secret Protection; standard secret scanning and
+push protection are free once the repository is public.
 
 Tests that open temporary localhost listeners may require normal host networking in restricted container or agent environments.
 
@@ -556,7 +576,7 @@ Bitcoin Control Center is local-first, but it still communicates with infrastruc
 - The Electrum server receives blockchain queries related to tracked accounts.
 - Exchange integrations send requests to the selected exchange's API.
 - The current BTC/USD price comes from the source chosen in Settings: by default a self-hosted mempool at `MEMPOOL_API_URL` when one is configured, otherwise Block (`pricing.bitcoin.block.xyz`). Unless fallbacks are turned off, the other sources are tried in the order Block, mempool.space, Coinbase and CoinGecko while it is unavailable.
-- Statement prices and transaction data use `MEMPOOL_API_URL`, which defaults to the public mempool.space instance.
+- Statement prices and transaction data use `MEMPOOL_API_URL`, which defaults to the public mempool.space instance. When it points to a self-hosted instance, statement prices fall back to mempool.space unless fallbacks are turned off.
 - Desktop and StartOS distributions may route supported connections through their packaged networking configuration.
 
 Additional safeguards:

@@ -1,5 +1,4 @@
-import { TZDate } from '@date-fns/tz'
-import { convertBtcToUsd } from '@hoseki/packages/currency'
+import { convertBtcToQuote } from '@hoseki/packages/currency'
 import { Err, Ok, type Result } from '@hoseki/packages/result'
 import type {
   Amount,
@@ -9,15 +8,16 @@ import type {
   StatementEntry,
   StatementId,
   StatementPeriodData,
+  StatementQuoteCurrency,
   StatementTransaction,
   Summary,
   SummaryEntry,
   Timezone,
 } from '@hoseki/packages/schemas'
-import { eachMonthOfInterval, endOfMonth } from 'date-fns'
 import Decimal from 'decimal.js'
 import type { DailyRate, DailyRates } from '../price/daily_rates'
 import { toDateKey } from '../price/daily_rates'
+import { getStatementPeriods } from './rate_dates'
 
 // ─── AggregatedTransaction ──────────────────────────────────────────────────
 
@@ -58,6 +58,9 @@ function createPdfStatement(
     id: string
     createdAt: Date
     status: 'completed'
+    quoteCurrency: StatementQuoteCurrency
+    quoteProviderUrl?: string
+    quoteProviderUrls?: string[]
     counter: number
     timezone: string
     user: { email: string | null; name: string | null; address: string | null }
@@ -71,6 +74,9 @@ function createPdfStatement(
     id: args.id as StatementId,
     createdAt: args.createdAt,
     status: args.status,
+    quoteCurrency: args.quoteCurrency,
+    quoteProviderUrl: args.quoteProviderUrl,
+    quoteProviderUrls: args.quoteProviderUrls,
     counter: args.counter,
     timezone: args.timezone,
     currency: 'BTC' as const,
@@ -127,6 +133,9 @@ export class StatementMapper {
         id: statement.id,
         createdAt: statement.createdAt,
         status: statement.status,
+        quoteCurrency: statement.dailyRates.quoteCurrency,
+        quoteProviderUrl: statement.dailyRates.providerUrl,
+        quoteProviderUrls: statement.dailyRates.providerUrls,
         counter: statement.counter,
         timezone: statement.timezone,
         user: statement.user,
@@ -156,6 +165,9 @@ export class StatementMapper {
         id: statement.id,
         createdAt: statement.createdAt,
         status: statement.status,
+        quoteCurrency: statement.dailyRates.quoteCurrency,
+        quoteProviderUrl: statement.dailyRates.providerUrl,
+        quoteProviderUrls: statement.dailyRates.providerUrls,
         counter: statement.counter,
         timezone: statement.timezone,
         user: statement.user,
@@ -168,7 +180,7 @@ export class StatementMapper {
     openingDate: Date,
     closingDate: Date,
     transactionMap: Record<string, StatementAccountTransactions>,
-    dailyRates: { rates: Record<string, DailyRate>; source: string },
+    dailyRates: { rates: Record<string, DailyRate>; source: string; providerUrl?: string },
   ): Result<Summary & { statements: StatementEntry[] }, Error> {
     const statementEntries: StatementEntry[] = []
     const summaryEntries: SummaryEntry[] = []
@@ -187,30 +199,34 @@ export class StatementMapper {
 
     let totalOpeningBalance: Amount = {
       sats: 0n,
-      usdValue: new Decimal(0),
+      quoteValue: new Decimal(0),
       rate: openingRate.close,
       timestamp: openingRate.timestamp,
+      providerUrl: openingRate.providerUrl ?? dailyRates.providerUrl,
       provider: dailyRates.source,
     }
     let totalClosingBalance: Amount = {
       sats: 0n,
-      usdValue: new Decimal(0),
+      quoteValue: new Decimal(0),
       rate: closingRate.close,
       timestamp: closingRate.timestamp,
+      providerUrl: closingRate.providerUrl ?? dailyRates.providerUrl,
       provider: dailyRates.source,
     }
     let totalMoneyIn: Amount = {
       sats: 0n,
-      usdValue: new Decimal(0),
+      quoteValue: new Decimal(0),
       rate: openingRate.close,
       timestamp: openingRate.timestamp,
+      providerUrl: openingRate.providerUrl ?? dailyRates.providerUrl,
       provider: dailyRates.source,
     }
     let totalMoneyOut: Amount = {
       sats: 0n,
-      usdValue: new Decimal(0),
+      quoteValue: new Decimal(0),
       rate: openingRate.close,
       timestamp: openingRate.timestamp,
+      providerUrl: openingRate.providerUrl ?? dailyRates.providerUrl,
       provider: dailyRates.source,
     }
 
@@ -219,16 +235,18 @@ export class StatementMapper {
       let openingBalance = 0n
       let moneyIn: Amount = {
         sats: 0n,
-        usdValue: new Decimal(0),
+        quoteValue: new Decimal(0),
         rate: openingRate.close,
         timestamp: openingRate.timestamp,
+        providerUrl: openingRate.providerUrl ?? dailyRates.providerUrl,
         provider: dailyRates.source,
       }
       let moneyOut: Amount = {
         sats: 0n,
-        usdValue: new Decimal(0),
+        quoteValue: new Decimal(0),
         rate: openingRate.close,
         timestamp: openingRate.timestamp,
+        providerUrl: openingRate.providerUrl ?? dailyRates.providerUrl,
         provider: dailyRates.source,
       }
       const statementTxs: StatementTransaction[] = []
@@ -250,16 +268,16 @@ export class StatementMapper {
             return Err(new Error(`No daily rate for transaction date ${txDate}`))
           }
 
-          const changeUsd = convertBtcToUsd(tx.balanceChange, dailyRate.close)
-          const balanceUsd = convertBtcToUsd(currentBalance, dailyRate.close)
+          const changeUsd = convertBtcToQuote(tx.balanceChange, dailyRate.close)
+          const balanceUsd = convertBtcToQuote(currentBalance, dailyRate.close)
 
           if (tx.balanceChange > 0n) {
             moneyIn.sats += tx.balanceChange
-            moneyIn.usdValue = moneyIn.usdValue.plus(changeUsd)
+            moneyIn.quoteValue = moneyIn.quoteValue.plus(changeUsd)
             totalMoneyIn.sats += tx.balanceChange
           } else {
             moneyOut.sats += tx.balanceChange
-            moneyOut.usdValue = moneyOut.usdValue.plus(changeUsd)
+            moneyOut.quoteValue = moneyOut.quoteValue.plus(changeUsd)
             totalMoneyOut.sats += tx.balanceChange
           }
 
@@ -268,17 +286,19 @@ export class StatementMapper {
             blockHeight: tx.block,
             amount: {
               sats: tx.balanceChange,
-              usdValue: changeUsd,
+              quoteValue: changeUsd,
               rate: dailyRate.close,
               timestamp: dailyRate.timestamp,
+              providerUrl: dailyRate.providerUrl ?? dailyRates.providerUrl,
               provider: dailyRates.source,
             },
             confirmed: tx.confirmed,
             balance: {
               sats: currentBalance,
-              usdValue: balanceUsd,
+              quoteValue: balanceUsd,
               rate: dailyRate.close,
               timestamp: dailyRate.timestamp,
+              providerUrl: dailyRate.providerUrl ?? dailyRates.providerUrl,
               provider: dailyRates.source,
             },
           })
@@ -289,30 +309,34 @@ export class StatementMapper {
         displayName: accountName,
         openingBalance: {
           sats: openingBalance,
-          usdValue: convertBtcToUsd(openingBalance, openingRate.close),
+          quoteValue: convertBtcToQuote(openingBalance, openingRate.close),
           rate: openingRate.close,
           timestamp: openingRate.timestamp,
+          providerUrl: openingRate.providerUrl ?? dailyRates.providerUrl,
           provider: dailyRates.source,
         },
         closingBalance: {
           sats: currentBalance,
-          usdValue: convertBtcToUsd(currentBalance, closingRate.close),
+          quoteValue: convertBtcToQuote(currentBalance, closingRate.close),
           rate: closingRate.close,
           timestamp: closingRate.timestamp,
+          providerUrl: closingRate.providerUrl ?? dailyRates.providerUrl,
           provider: dailyRates.source,
         },
         moneyIn: {
           sats: moneyIn.sats,
-          usdValue: moneyIn.usdValue,
+          quoteValue: moneyIn.quoteValue,
           rate: openingRate.close,
           timestamp: openingRate.timestamp,
+          providerUrl: openingRate.providerUrl ?? dailyRates.providerUrl,
           provider: dailyRates.source,
         },
         moneyOut: {
           sats: moneyOut.sats,
-          usdValue: moneyOut.usdValue,
+          quoteValue: moneyOut.quoteValue,
           rate: openingRate.close,
           timestamp: openingRate.timestamp,
+          providerUrl: openingRate.providerUrl ?? dailyRates.providerUrl,
           provider: dailyRates.source,
         },
       }
@@ -324,12 +348,12 @@ export class StatementMapper {
       })
 
       totalClosingBalance.sats += currentBalance
-      totalMoneyIn.usdValue = totalMoneyIn.usdValue.plus(balanceEntry.moneyIn.usdValue)
-      totalMoneyOut.usdValue = totalMoneyOut.usdValue.plus(balanceEntry.moneyOut.usdValue)
+      totalMoneyIn.quoteValue = totalMoneyIn.quoteValue.plus(balanceEntry.moneyIn.quoteValue)
+      totalMoneyOut.quoteValue = totalMoneyOut.quoteValue.plus(balanceEntry.moneyOut.quoteValue)
     }
 
-    totalOpeningBalance.usdValue = convertBtcToUsd(totalOpeningBalance.sats, openingRate.close)
-    totalClosingBalance.usdValue = convertBtcToUsd(totalClosingBalance.sats, closingRate.close)
+    totalOpeningBalance.quoteValue = convertBtcToQuote(totalOpeningBalance.sats, openingRate.close)
+    totalClosingBalance.quoteValue = convertBtcToQuote(totalClosingBalance.sats, closingRate.close)
 
     return Ok({
       openingDate,
@@ -338,24 +362,28 @@ export class StatementMapper {
         ...totalOpeningBalance,
         rate: openingRate.close,
         timestamp: openingRate.timestamp,
+        providerUrl: openingRate.providerUrl ?? dailyRates.providerUrl,
         provider: dailyRates.source,
       },
       closingBalance: {
         ...totalClosingBalance,
         rate: closingRate.close,
         timestamp: closingRate.timestamp,
+        providerUrl: closingRate.providerUrl ?? dailyRates.providerUrl,
         provider: dailyRates.source,
       },
       moneyIn: {
         ...totalMoneyIn,
         rate: openingRate.close,
         timestamp: openingRate.timestamp,
+        providerUrl: openingRate.providerUrl ?? dailyRates.providerUrl,
         provider: dailyRates.source,
       },
       moneyOut: {
         ...totalMoneyOut,
         rate: openingRate.close,
         timestamp: openingRate.timestamp,
+        providerUrl: openingRate.providerUrl ?? dailyRates.providerUrl,
         provider: dailyRates.source,
       },
       entries: summaryEntries,
@@ -367,18 +395,11 @@ export class StatementMapper {
     statement: CompletedStatementData,
     timezone: Timezone,
   ): Result<StatementPeriodData[], Error> {
-    const tzOpeningDate = new TZDate(statement.openingDate, timezone)
-    const tzClosingDate = new TZDate(statement.closingDate, timezone)
-    const startOfEachMonth = eachMonthOfInterval({ start: tzOpeningDate, end: tzClosingDate })
+    const periods = getStatementPeriods(statement.openingDate, statement.closingDate, timezone)
 
     const months: StatementPeriodData[] = []
 
-    for (const [index, startOfMonth] of startOfEachMonth.entries()) {
-      const isFirstMonth = index === 0
-      const isLastMonth = index === startOfEachMonth.length - 1
-      const monthOpeningDate = isFirstMonth ? tzOpeningDate : startOfMonth
-      const monthClosingDate = isLastMonth ? tzClosingDate : endOfMonth(startOfMonth)
-
+    for (const { openingDate: monthOpeningDate, closingDate: monthClosingDate } of periods) {
       const aggregatedMonthRes = this.aggregateStatementData(
         monthOpeningDate.withTimeZone('UTC'),
         monthClosingDate.withTimeZone('UTC'),

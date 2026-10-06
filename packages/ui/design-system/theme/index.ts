@@ -15,6 +15,9 @@ import { textareaTheme } from './textarea-theme'
 import { tooltipTheme } from './tooltip'
 
 const { Drawer, FormError, Select } = chakraTheme.components
+// Chakra defaults Heading to size="xl", whose responsive fontSize overrides textStyle. Drop the default so
+// textStyle sets heading size; an explicit size prop still works.
+const { defaultProps: _headingDefaultProps, ...chakraHeading } = chakraTheme.components.Heading
 
 export const theme = extendBaseTheme({
   styles: {
@@ -59,8 +62,8 @@ export const theme = extendBaseTheme({
     Alert: alertTheme,
     Button: buttonTheme,
     Heading: {
-      ...chakraTheme.components.Heading,
-      baseStyle: { ...chakraTheme.components.Heading.baseStyle, fontWeight: 'medium', color: 'neutral.900' },
+      ...chakraHeading,
+      baseStyle: { ...chakraHeading.baseStyle, fontWeight: 'medium', color: 'neutral.900' },
     },
     Drawer,
     FormError,
