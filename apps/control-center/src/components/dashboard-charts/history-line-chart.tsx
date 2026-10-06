@@ -10,6 +10,8 @@ interface HistoryLineChartProps {
   formatValue: (value: number) => string
   formatTime: (time: number) => string
   loading?: boolean
+  /** Shown when there is no data to draw. */
+  emptyMessage?: string
   /** Fixed chart size; omit to fill the parent through Recharts' ResponsiveContainer. */
   size?: { width: number; height: number }
 }
@@ -20,6 +22,7 @@ export function HistoryLineChart({
   formatValue,
   formatTime,
   loading = false,
+  emptyMessage = 'Price history is temporarily unavailable',
   size,
 }: HistoryLineChartProps): JSX.Element {
   const [axisColor, lineColor] = useToken('colors', ['neutral.600', 'warning.600'])
@@ -27,7 +30,7 @@ export function HistoryLineChart({
     return (
       <Flex h="full" align="center" justify="center" px={5}>
         <Text as="output" textStyle="text/sm" color="neutral.600">
-          {loading ? 'Loading history…' : 'Price history is temporarily unavailable'}
+          {loading ? 'Loading history…' : emptyMessage}
         </Text>
       </Flex>
     )

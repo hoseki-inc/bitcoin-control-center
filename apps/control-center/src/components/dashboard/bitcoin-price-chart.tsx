@@ -2,15 +2,19 @@ import { Box, Button, Flex, Text } from '@chakra-ui/react'
 import { useState } from 'react'
 import { trpc } from '../../trpc'
 import { HistoryLineChart as DefaultHistoryLineChart } from '../dashboard-charts/history-line-chart'
-import { DashboardAmount, DashboardCardTitle } from './dashboard-typography'
 
-const usd = (value: number): string =>
-  value.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
+// Home values balances in USD, so the chart matches the current price shown there.
+const QUOTE_CURRENCY = 'USD'
+
+const formatPrice = (value: number): string =>
+  value.toLocaleString('en-US', { style: 'currency', currency: QUOTE_CURRENCY, maximumFractionDigits: 0 })
+const dayLabel = (time: number): string =>
+  new Date(time * 1000).toLocaleDateString([], { month: 'short', day: 'numeric', timeZone: 'UTC' })
 const timeLabel = (time: number): string =>
-  new Date(time * 1000).toLocaleDateString([], { month: 'short', day: 'numeric' })
+  new Date(time * 1000).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
 
+// Daily quotes come from the mempool historical price API used by statements.
 const PRICE_RANGES = [
-  { label: '24H', days: 1, description: 'Last 24 hours' },
   { label: '7D', days: 7, description: 'Last 7 days' },
   { label: '30D', days: 30, description: 'Last 30 days' },
   { label: '6M', days: 180, description: 'Last 6 months' },
@@ -29,27 +33,42 @@ const bitcoinPriceChartViews: BitcoinPriceChartViews = {
 
 export function BitcoinPriceChart({ views = bitcoinPriceChartViews }: { views?: BitcoinPriceChartViews }): JSX.Element {
   const { HistoryLineChart } = views
-  const [range, setRange] = useState<PriceRange>(PRICE_RANGES[1])
+  const [range, setRange] = useState<PriceRange>(PRICE_RANGES[0])
   const query = trpc.portalProve.retrieveBitcoinPriceHistory.useQuery(
-    { days: range.days },
+    { days: range.days, quoteCurrency: QUOTE_CURRENCY },
     {
       staleTime: 300_000,
       refetchInterval: 300_000,
       retry: false,
     },
   )
-  const points = query.data ?? []
-  const latest = points[points.length - 1]
+  const history = query.data
+  const daily = history?.points ?? []
+  const latest = history?.latest
+  const points = latest ? [...daily, { time: latest.time, value: latest.value }] : daily
+  const last = points[points.length - 1]
   const first = points[0]
-  const change = latest && first ? ((latest.value - first.value) / first.value) * 100 : null
+  const change = last && first ? ((last.value - first.value) / first.value) * 100 : null
+  const unavailable = query.isError ? query.error.message : 'Price history is temporarily unavailable'
 
   return (
     <Box border="1px solid" borderColor="neutral.200" borderRadius="panel" pt={{ base: 5, md: 6 }} overflow="hidden">
       <Flex px={{ base: 5, md: 6 }} justify="space-between" align="start" gap={4} flexWrap="wrap">
         <Box>
-          <DashboardCardTitle>Bitcoin Price</DashboardCardTitle>
+          <Text as="h2" textStyle="text/md" fontWeight="medium" color="neutral.900">
+            Bitcoin Price
+          </Text>
           <Flex align="baseline" gap={3} mt={1} flexWrap="wrap">
-            <DashboardAmount>{latest ? usd(latest.value) : '—'}</DashboardAmount>
+            <Text
+              textStyle="text/2xl"
+              overflowWrap="anywhere"
+              minW={0}
+              fontWeight="medium"
+              color="neutral.900"
+              sx={{ fontVariantNumeric: 'tabular-nums' }}
+            >
+              {last ? formatPrice(last.value) : '—'}
+            </Text>
             {change !== null && (
               <Text textStyle="text/sm" color={change >= 0 ? 'success.700' : 'error.700'}>
                 {change >= 0 ? '+' : ''}
@@ -92,22 +111,19 @@ export function BitcoinPriceChart({ views = bitcoinPriceChartViews }: { views?: 
         mt={4}
         as="figure"
         aria-label={
-          latest && first
-            ? `Bitcoin market price, ${range.description.toLowerCase()}, from ${usd(first.value)} to ${usd(latest.value)}.`
+          last && first
+            ? `Bitcoin market price, ${range.description.toLowerCase()}, from ${formatPrice(first.value)} to ${formatPrice(last.value)}.`
             : query.isLoading
               ? 'Loading Bitcoin price history'
-              : 'Bitcoin price history unavailable'
+              : unavailable
         }
       >
         <HistoryLineChart
           data={points}
           loading={query.isLoading}
-          formatValue={usd}
-          formatTime={(time) =>
-            range.days === 1
-              ? new Date(time * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
-              : timeLabel(time)
-          }
+          emptyMessage={unavailable}
+          formatValue={formatPrice}
+          formatTime={(time) => (time === latest?.time ? timeLabel(time) : dayLabel(time))}
         />
       </Box>
       <Flex
@@ -121,11 +137,16 @@ export function BitcoinPriceChart({ views = bitcoinPriceChartViews }: { views?: 
         flexWrap="wrap"
       >
         <Text as="output" textStyle="text/xs" color="neutral.600">
-          {latest
-            ? `${range.days === 1 ? 'Intraday' : range.days <= 30 ? 'Hourly' : 'Daily'} prices from CoinGecko · Updated ${new Date(latest.time * 1000).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`
+          {history && last
+            ? [
+                `Daily prices from ${history.historySources.join(', ')}`,
+                latest ? `Latest from ${latest.sourceLabel} · ${timeLabel(latest.time)}` : null,
+              ]
+                .filter((part) => part !== null)
+                .join(' · ')
             : query.isLoading
               ? 'Loading Bitcoin prices…'
-              : 'Could not load market data.'}
+              : 'Price sources and fallbacks are set in Settings.'}
         </Text>
         {query.isError && (
           <Button size="sm" variant="ghost" onClick={() => void query.refetch()} isLoading={query.isFetching}>

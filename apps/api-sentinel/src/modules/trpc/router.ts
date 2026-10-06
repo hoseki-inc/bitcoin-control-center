@@ -1999,14 +1999,18 @@ const portalProveRouter = t.router({
   statement: statementRouter,
   retrieveBitcoinPriceHistory: publicProcedure
     .input(
-      z
-        .object({ days: z.union([z.literal(1), z.literal(7), z.literal(30), z.literal(180), z.literal(365)]) })
-        .optional(),
+      z.object({
+        days: z.union([z.literal(7), z.literal(30), z.literal(180), z.literal(365)]),
+        quoteCurrency: StatementQuoteCurrencySchema.default('USD'),
+      }),
     )
     .query(async ({ ctx, input }) => {
-      const result = await ctx.app.priceService.getBitcoinPriceHistory(input?.days)
+      const result = await ctx.app.priceHistoryService.getHistory(input.days, input.quoteCurrency)
       if (result.isErr()) {
-        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Bitcoin price history is unavailable' })
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Price history for this range is not available from your allowed price sources.',
+        })
       }
       return result.unwrap()
     }),
