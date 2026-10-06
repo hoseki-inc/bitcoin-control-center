@@ -12,12 +12,10 @@ import {
   Stack,
   Text,
 } from '@chakra-ui/react'
-import { renderStatementDocument } from '@hoseki/packages/pdf'
-import type { ClaimId } from '@hoseki/packages/schemas'
-import { Animations } from '@hoseki/packages/ui/design-system'
+import type { ClaimId, StatementQuoteCurrency } from '@hoseki/packages/schemas'
+import { Animations, ErrorBanner } from '@hoseki/packages/ui/design-system'
 import { PDFViewer } from '@react-pdf/renderer'
-import { useEffect, useState } from 'react'
-import { toast } from 'sonner'
+import { useRenderedStatement } from '../hooks/use-rendered-statement'
 import { trpc } from '../trpc'
 import type { GenerateStatementPreviewInput } from '../trpc/server-types'
 
@@ -25,7 +23,6 @@ interface BaseStatementPreviewModalProps {
   isOpen: boolean
   onClose: () => void
   claimIds: ClaimId[]
-  exchangeAccountIds?: string[]
   title?: string
   description?: string
   showActionButton?: boolean
@@ -38,6 +35,7 @@ interface SelfGeneratedStatementPreviewModalProps extends BaseStatementPreviewMo
   openingDate: Date
   closingDate: Date
   timezone: string
+  quoteCurrency: StatementQuoteCurrency
   name?: string | null
   address?: string | null
 }
@@ -57,17 +55,14 @@ export function StatementPreviewModal(props: StatementPreviewModalProps): JSX.El
     onActionClick,
   } = props
 
-  const exchangeAccountIds = props.exchangeAccountIds ?? []
-  const [pdfDocument, setPdfDocument] = useState<React.ReactElement | null>(null)
-
-  const enabled = isOpen && (claimIds.length > 0 || exchangeAccountIds.length > 0)
+  const enabled = isOpen && claimIds.length > 0
 
   const input: GenerateStatementPreviewInput = {
     claimIds,
-    exchangeAccountIds,
     openingDate: props.openingDate,
     closingDate: props.closingDate,
     timezone: props.timezone,
+    quoteCurrency: props.quoteCurrency,
     name: props.name ?? null,
     address: props.address ?? null,
     format: 'custom',
@@ -77,12 +72,13 @@ export function StatementPreviewModal(props: StatementPreviewModalProps): JSX.El
   const {
     data: statementData,
     isLoading: isLoadingStatementData,
-    isError: isErrorStatementData,
+    error: queryError,
+    refetch,
   } = trpc.portalProve.statement.generatePreview.useQuery(input, {
     enabled,
     staleTime: 4 * 60 * 1000, // 4 minutes
-    retry(_failureCount, error) {
-      return error.data?.code === 'TOO_MANY_REQUESTS'
+    retry(failureCount, error) {
+      return failureCount < 2 && error.data?.code === 'TOO_MANY_REQUESTS'
     },
     retryDelay(_failureCount, error) {
       if (error.data && 'retryAfterSeconds' in error.data) {
@@ -90,35 +86,17 @@ export function StatementPreviewModal(props: StatementPreviewModalProps): JSX.El
       }
       return 10000 // 10 seconds
     },
-    onError: (error) => {
-      toast.error('Error generating statement preview', {
-        description: error.message || 'Failed to generate statement preview',
-      })
-      // Close the modal when there's an error
-      onClose()
-    },
   })
 
-  useEffect(() => {
-    async function generatePreview() {
-      if (!statementData) {
-        return
-      }
-
-      const document = await renderStatementDocument({
-        watermarkText: 'Statement Preview',
-        statement: statementData,
-      })
-      setPdfDocument(document)
+  const rendered = useRenderedStatement(statementData, enabled)
+  const errorMessage = queryError?.message ?? rendered.error
+  const isLoading = errorMessage === null && (isLoadingStatementData || rendered.isRendering || !rendered.document)
+  const retry = () => {
+    if (queryError) {
+      void refetch()
+    } else {
+      rendered.retry()
     }
-
-    generatePreview().catch(() => {
-      toast.error('Unable to generate the PDF preview. Reload the page and try again.')
-    })
-  }, [statementData])
-
-  if (isErrorStatementData) {
-    return null
   }
 
   return (
@@ -129,8 +107,18 @@ export function StatementPreviewModal(props: StatementPreviewModalProps): JSX.El
         <ModalCloseButton />
         <ModalBody>
           <Box width="100%" height="100%" flex={1} display="flex" justifyContent="center" alignItems="center">
-            {isLoadingStatementData && <Spinner size="xl" />}
-            {!isLoadingStatementData && pdfDocument && (
+            {isLoading && <Spinner size="xl" />}
+            {errorMessage !== null && (
+              <ErrorBanner
+                message={errorMessage}
+                rightContent={
+                  <Button size="sm" variant="outline" onClick={retry}>
+                    Retry
+                  </Button>
+                }
+              />
+            )}
+            {!isLoading && errorMessage === null && rendered.document && (
               <Stack spacing={4} sx={Animations.fadeIn(0.25)} height="100%" width="100%">
                 <Text textStyle="text/sm">{description}</Text>
                 <PDFViewer
@@ -139,7 +127,7 @@ export function StatementPreviewModal(props: StatementPreviewModalProps): JSX.El
                   showToolbar={false}
                   style={{ border: 'none', backgroundColor: 'white' }}
                 >
-                  {pdfDocument}
+                  {rendered.document}
                 </PDFViewer>
               </Stack>
             )}
@@ -150,7 +138,7 @@ export function StatementPreviewModal(props: StatementPreviewModalProps): JSX.El
             Close
           </Button>
           {showActionButton && (
-            <Button onClick={onActionClick} isDisabled={isLoadingStatementData}>
+            <Button onClick={onActionClick} isDisabled={isLoading || errorMessage !== null || !rendered.document}>
               {actionButtonText}
             </Button>
           )}

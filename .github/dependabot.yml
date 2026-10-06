@@ -81,11 +81,6 @@ updates:
       timezone: America/New_York
     cooldown:
       default-days: 7
-    groups:
-      codeql:
-        applies-to: version-updates
-        patterns:
-          - 'github/codeql-action/*'
 
   - package-ecosystem: docker
     directory: /start9

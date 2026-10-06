@@ -26,7 +26,7 @@ export ELECTRUM_PORT
 export ELECTRUM_PROTOCOL
 export BITCOIN_NETWORK=mainnet
 export DATA_DIR=/data
-export MEMPOOL_API_URL="https://mempool.space"
+export MEMPOOL_API_URL="${MEMPOOL_API_URL:-$(read_cfg '."mempool-url"' 'https://mempool.space')}"
 export NODE_ENV=production
 export LOG_LEVEL="$LOG_LVL"
 # StartOS supplies its enabled interface addresses. Preserve an explicitly empty
