@@ -373,14 +373,18 @@ Dependabot checks for updates on Mondays at 02:00 Eastern using `America/New_Yor
 and follows daylight saving time. Keep dependency graph, Dependabot alerts, and
 Dependabot security updates enabled in the repository settings.
 
-CodeQL and dependency-review workflows are not included while this repository is
-private because they require paid GitHub Code Security. Disabling Code Security
-and automatic CodeQL scanning in the repository settings stops those features;
-removing workflow files alone does not stop license charges. Keep the required
-`verify` check, and remove the obsolete `dependency-review`,
-`Analyze (javascript-typescript)`, and `CodeQL` checks from branch protection or
-rulesets before merging the workflow removal. Remove any other required CodeQL
-language checks if configured.
+Dependency review checks dependency changes in pull requests and rejects known
+vulnerabilities with moderate or higher severity. Keep dependency graph enabled
+and `dependency-review` required in branch protection. This feature requires
+GitHub Code Security while the repository is private and is free once public.
+
+The unused CodeQL workflow is not included. Keep automatic CodeQL scanning
+disabled in the repository settings without disabling Code Security while
+dependency review needs it. Removing workflow files alone does not stop license
+charges. Keep the required `verify` and `dependency-review` checks, and remove the
+obsolete `Analyze (javascript-typescript)` and `CodeQL` checks from branch
+protection or rulesets before merging the workflow removal. Remove any other
+required CodeQL language checks if configured.
 
 Secret scanning and push protection are managed separately in the repository
 settings and need no checked-in workflow. Keeping them enabled on a private
