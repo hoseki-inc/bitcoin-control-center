@@ -139,7 +139,8 @@ export function StatementCreatePage(): JSX.Element {
 
   const LEFT_COLUMN_WIDTH = '35%'
 
-  const hasAccounts = (claimsQuery.data?.length ?? 0) > 0
+  // Ask the user to connect a wallet only once we know they have none.
+  const hasAccounts = !claimsQuery.isSuccess || claimsQuery.data.length > 0
   const hasAnySelected = selectedClaimIds.size > 0
 
   return (
