@@ -1933,22 +1933,23 @@ const portalProveRouter = t.router({
         }),
       )
       .mutation(async ({ ctx, input }) => {
-        const db = ctx.app.database
-        const [duplicate] = await db
-          .select({ id: accountTable.id })
-          .from(accountTable)
-          .where(and(eq(accountTable.descriptor, input.descriptor), eq(accountTable.network, input.network)))
-          .limit(1)
-        if (duplicate) {
-          throw new TRPCError({ code: 'CONFLICT', message: 'An account with this descriptor already exists' })
-        }
+        return ctx.app.database.transaction(async (db) => {
+          const [duplicate] = await db
+            .select({ id: accountTable.id })
+            .from(accountTable)
+            .where(and(eq(accountTable.descriptor, input.descriptor), eq(accountTable.network, input.network)))
+            .limit(1)
+          if (duplicate) {
+            throw new TRPCError({ code: 'CONFLICT', message: 'An account with this descriptor already exists' })
+          }
 
-        const id = nanoid()
-        await db
-          .insert(accountTable)
-          .values({ id, network: input.network, descriptor: input.descriptor, displayName: input.displayName })
+          const id = nanoid()
+          await db
+            .insert(accountTable)
+            .values({ id, network: input.network, descriptor: input.descriptor, displayName: input.displayName })
 
-        return { id, network: input.network, descriptor: input.descriptor, displayName: input.displayName }
+          return { id, network: input.network, descriptor: input.descriptor, displayName: input.displayName }
+        })
       }),
 
     remove: publicProcedure.input(z.object({ id: z.string() })).mutation(async ({ ctx, input }) => {
