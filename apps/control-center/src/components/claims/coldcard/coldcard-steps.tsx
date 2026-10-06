@@ -23,7 +23,6 @@ import {
   HowDoesThisWork,
   LabelWithTooltip,
 } from '@hoseki/packages/ui/design-system'
-import { greenCheckCircle } from '@hoseki/packages/ui/prove-verify-ui'
 import {
   AccountsList,
   type ColdcardGenericJsonFile,
@@ -45,8 +44,7 @@ import {
   parseSignatureFile,
 } from '@hoseki/packages/ui/wallet-ui'
 import { coldcardModelKeys } from '@hoseki/packages/ui/wallet-ui/coldcard/coldcard-utils'
-// Lottie runs animation expressions with eval: only render bundled animations.
-import Lottie from 'lottie-react'
+import { CheckCircle2 } from 'lucide-react'
 import { CircleXIcon, CopyIcon, InfoIcon, MoveRightIcon, TriangleAlertIcon, UsbIcon, WifiOffIcon } from 'lucide-react'
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
@@ -173,10 +171,7 @@ function Step1({ onNext, onBack, ...rest }: { onNext: () => void; onBack: () => 
 
       <Text textStyle="text/md" color="neutral.900">
         To verify ownership with your COLDCARD, you&apos;ll securely prove control of your keys by signing a message
-        offline—a 100% air-gapped process that keeps your private keys safe.
-      </Text>
-      <Text textStyle="text/md" color="neutral.900">
-        We&apos;ll guide you through each step—just follow the on-screen instructions.
+        offline—a 100% air-gapped process that keeps your private keys safe. We&apos;ll guide you through each step.
       </Text>
       <Box>
         <Text textStyle="text/md" color="neutral.900" fontWeight={500}>
@@ -430,9 +425,7 @@ export function Step4({
   )
 }
 
-export const validIcon = (
-  <Lottie animationData={greenCheckCircle} loop={false} autoplay={true} style={{ height: '32px', width: '32px' }} />
-)
+export const validIcon = <CheckCircle2 size={32} aria-hidden="true" />
 
 export function Step5({
   model,

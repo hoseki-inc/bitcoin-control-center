@@ -12,7 +12,7 @@ export type TopBarProps = FlexProps & {
 
 export function TopBar({ children, ...props }: TopBarProps): JSX.Element {
   return (
-    <Flex justifyContent="space-between" textStyle="text/xs" {...props}>
+    <Flex justifyContent="space-between" align="center" flexWrap="wrap" gap={2} textStyle="text/sm" {...props}>
       {children}
     </Flex>
   )
@@ -23,7 +23,15 @@ TopBar.Item = forwardRef<ChakraLinkProps & { children: React.ReactNode }, 'div'>
   ref,
 ) {
   return (
-    <ChakraLink ref={ref} fontWeight="medium" {...props}>
+    <ChakraLink
+      ref={ref}
+      display="inline-flex"
+      alignItems="center"
+      minH="44px"
+      textUnderlineOffset="3px"
+      fontWeight="medium"
+      {...props}
+    >
       {children}
     </ChakraLink>
   )

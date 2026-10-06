@@ -1,6 +1,8 @@
+import { Button, Stack } from '@chakra-ui/react'
 import type { ClaimId } from '@hoseki/packages/schemas/prove'
 import { ErrorBanner } from '@hoseki/packages/ui/design-system'
 import { AppLayout } from '@hoseki/packages/ui/prove-verify-ui'
+import { Link } from 'react-router'
 import { ClaimVerificationReceipt } from '../../components/claims/claim-verification-receipt'
 import { ConnectColdcard } from '../../components/claims/coldcard/connect-coldcard'
 import { ConnectKeystone } from '../../components/claims/keystone/connect-keystone'
@@ -35,7 +37,12 @@ export function ClaimVerificationReceiptPage(): JSX.Element {
   if (claimId === null) {
     return (
       <AppLayout header={<div />}>
-        <ErrorBanner mt={8} mb={4} message="Invalid claim ID in URL" />
+        <Stack mt={8} gap={4} align="start">
+          <ErrorBanner message="Invalid claim ID in URL" />
+          <Button as={Link} to="/accounts" variant="outline">
+            Back to Accounts
+          </Button>
+        </Stack>
       </AppLayout>
     )
   }
@@ -49,7 +56,12 @@ function ClaimVerificationReceiptContent({ claimId }: { claimId: ClaimId }): JSX
   if (isError) {
     return (
       <AppLayout header={<div />}>
-        <ErrorBanner mt={8} mb={4} message="Failed to get claim" />
+        <Stack mt={8} gap={4} align="start">
+          <ErrorBanner message="This account verification could not be loaded." />
+          <Button as={Link} to="/accounts" variant="outline">
+            Back to Accounts
+          </Button>
+        </Stack>
       </AppLayout>
     )
   }

@@ -6,6 +6,7 @@ import { format } from 'date-fns'
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { toast } from 'sonner'
+import { BitcoinAmount } from '../../../components/bitcoin-amount'
 import { trpc } from '../../../trpc'
 import { needsExchangeReconnect } from '../../../utils/exchange-connection-status'
 
@@ -99,10 +100,10 @@ export function CoinbaseAccountDetailsPage(): JSX.Element {
       <Stack spacing={4}>
         {/* Account name + status row */}
         <Box>
-          <Text textStyle="text/md" fontWeight="medium">
+          <Text textStyle="text/md" fontWeight="medium" overflowWrap="anywhere">
             {account.displayName}
           </Text>
-          <HStack spacing={1}>
+          <HStack spacing={1} flexWrap="wrap">
             <Box w={2} h={2} bg="success.600" borderRadius="full" />
             <Text textStyle="text/xs" color="neutral.600">
               First Connected
@@ -115,21 +116,9 @@ export function CoinbaseAccountDetailsPage(): JSX.Element {
 
         <hr />
 
-        {/* Floating logo + metadata */}
-        <Stack align="center" justify="center" w="640px" mx="auto" mt={-4}>
-          <Box
-            mx="auto"
-            pt={10}
-            pb={6}
-            sx={{
-              animation: 'float 4s ease-in-out infinite',
-              '@keyframes float': {
-                '0%': { transform: 'translateY(0)' },
-                '50%': { transform: 'translateY(-6px)' },
-                '100%': { transform: 'translateY(0)' },
-              },
-            }}
-          >
+        {/* Logo + metadata */}
+        <Stack align="center" justify="center" w="full" maxW="640px" minW={0} mx="auto" mt={-4}>
+          <Box mx="auto" pt={10} pb={6}>
             <chakra.img
               src="/images/exchanges/coinbase.svg"
               alt="Coinbase"
@@ -140,9 +129,9 @@ export function CoinbaseAccountDetailsPage(): JSX.Element {
             />
           </Box>
 
-          <HStack spacing={4} mb={4} w="100%" alignItems="flex-start">
+          <HStack spacing={0} gap={4} mb={4} w="100%" alignItems="flex-start" flexWrap="wrap">
             {/* Amount */}
-            <Box w={['100%', '50%', '25%']}>
+            <Box w={{ base: 'full', sm: 'calc(50% - 8px)', md: 'calc(25% - 12px)' }} minW={0} overflowWrap="anywhere">
               <Text textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={1}>
                 Amount
               </Text>
@@ -152,13 +141,15 @@ export function CoinbaseAccountDetailsPage(): JSX.Element {
                 </Text>
               ) : (
                 <Text textStyle="label/sm" color="neutral.900" fontWeight="medium">
-                  {btcAmount} BTC
+                  <>
+                    <BitcoinAmount btc={btcAmount} />
+                  </>
                 </Text>
               )}
             </Box>
 
             {/* Status */}
-            <Box w={['100%', '50%', '25%']}>
+            <Box w={{ base: 'full', sm: 'calc(50% - 8px)', md: 'calc(25% - 12px)' }} minW={0} overflowWrap="anywhere">
               <Text textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={1}>
                 Status
               </Text>
@@ -170,7 +161,7 @@ export function CoinbaseAccountDetailsPage(): JSX.Element {
             </Box>
 
             {/* Account Type */}
-            <Box w={['100%', '50%', '25%']}>
+            <Box w={{ base: 'full', sm: 'calc(50% - 8px)', md: 'calc(25% - 12px)' }} minW={0} overflowWrap="anywhere">
               <Text textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={1}>
                 Account Type
               </Text>
@@ -180,7 +171,12 @@ export function CoinbaseAccountDetailsPage(): JSX.Element {
             </Box>
 
             {/* Date Added */}
-            <Box w={['100%', '50%', '25%']} textAlign="right">
+            <Box
+              w={{ base: 'full', sm: 'calc(50% - 8px)', md: 'calc(25% - 12px)' }}
+              minW={0}
+              overflowWrap="anywhere"
+              textAlign={{ base: 'left', sm: 'right' }}
+            >
               <Text textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={1}>
                 Date Added
               </Text>

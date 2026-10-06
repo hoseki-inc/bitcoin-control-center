@@ -1,13 +1,12 @@
-import { Button, HStack, Text, VStack } from '@chakra-ui/react'
+import { Button, Stack, Text, VStack } from '@chakra-ui/react'
 import { PageTransition } from '@hoseki/packages/ui/design-system'
 import { ClaimCard, Receipt } from '@hoseki/packages/ui/prove-verify-ui'
-import { useEffect, useState } from 'react'
-import Fireworks from 'react-canvas-confetti/dist/presets/fireworks'
 import { useNavigate } from 'react-router'
 import { useGetClaimBalance } from '../../lib/balances'
 import { clearFlowSource, getFlowSource } from '../../lib/flow-tracker'
 import type { ClaimDto } from '../../trpc/server-types'
 import { mapClaimToClaimCardProps, withStatusBalance } from '../../utils/claim-utils'
+import { SuccessConfetti } from '../success-confetti'
 
 type ClaimVerificationReceiptProps =
   | {
@@ -20,7 +19,6 @@ type ClaimVerificationReceiptProps =
     }
 
 export function ClaimVerificationReceipt({ shouldSetTimeout, claim }: ClaimVerificationReceiptProps): JSX.Element {
-  const [isPending, setIsPending] = useState(true)
   const navigate = useNavigate()
 
   const balanceQuery = useGetClaimBalance(claim?.id ?? null, { enabled: claim?.id != null && claim.id.length > 0 })
@@ -28,56 +26,47 @@ export function ClaimVerificationReceipt({ shouldSetTimeout, claim }: ClaimVerif
   const flowSource = getFlowSource()
   const isStatementFlow = flowSource?.type === 'statement'
 
-  useEffect(() => {
-    if (shouldSetTimeout) {
-      setTimeout(() => {
-        setIsPending(false)
-      }, 1700)
-    }
-  }, [shouldSetTimeout])
-
   const handleNavigation = (path: string) => {
     clearFlowSource()
     void navigate(path)
   }
 
-  if (isPending) {
+  if (!shouldSetTimeout) {
     return (
       <PageTransition>
-        <Receipt title="Validating Ownership..." state="loading" />
+        <Receipt title="Loading verification…" state="loading" />
       </PageTransition>
     )
   }
 
   return (
     <PageTransition>
-      <Fireworks autorun={{ speed: 2, duration: 5_000, delay: 500 }} />
+      <SuccessConfetti />
       <Receipt
-        title="Claim Verified!"
+        title="Account verified"
         state="success"
         onClose={() => {
-          handleNavigation('/home')
+          handleNavigation('/portfolio')
         }}
-        closeTitle="Back to Home"
+        closeTitle="Back to Portfolio"
         content={
           <VStack spacing={8}>
-            {claim && (
-              <ClaimCard
-                {...mapClaimToClaimCardProps(claim)}
-                balance={withStatusBalance({
-                  ...balanceQuery,
-                  balance: balanceQuery.data,
-                })}
-                pointerEvents="none"
-                minWidth="300px"
-                maxWidth="364px"
-              />
-            )}
-            <Text textStyle="text/2xl" color="neutral.900" textAlign="center">
-              Your {claim?.displayName != null && claim.displayName !== '' ? `"${claim.displayName}" claim` : `claim`}{' '}
-              is now verified and ready to include in ownership statements.
+            <ClaimCard
+              {...mapClaimToClaimCardProps(claim)}
+              balance={withStatusBalance({
+                ...balanceQuery,
+                balance: balanceQuery.data,
+              })}
+              pointerEvents="none"
+              minWidth={0}
+              w="full"
+              maxWidth="364px"
+            />
+            <Text textStyle="text/md" color="neutral.900" textAlign="center">
+              Your {claim.displayName ? `"${claim.displayName}" account` : `account`} is now verified and ready to
+              include in ownership statements.
             </Text>
-            <HStack spacing={4}>
+            <Stack direction={{ base: 'column', sm: 'row' }} justify="center" spacing={3} w="full">
               <Button
                 variant="outline"
                 onClick={() => {
@@ -88,12 +77,12 @@ export function ClaimVerificationReceipt({ shouldSetTimeout, claim }: ClaimVerif
               </Button>
               <Button
                 onClick={() => {
-                  handleNavigation('/statements/create')
+                  handleNavigation(isStatementFlow ? '/statements/create' : '/portfolio')
                 }}
               >
-                {isStatementFlow ? 'Complete Statement' : 'Generate Statement'}
+                {isStatementFlow ? 'Complete Statement' : 'View Portfolio'}
               </Button>
-            </HStack>
+            </Stack>
           </VStack>
         }
       />

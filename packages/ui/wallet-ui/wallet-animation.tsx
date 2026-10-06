@@ -1,4 +1,4 @@
-import { Box, type BoxProps, chakra } from '@chakra-ui/react'
+import { Box, type BoxProps, chakra, keyframes } from '@chakra-ui/react'
 // Lottie runs animation expressions with eval: only render bundled animations.
 import Lottie from 'lottie-react'
 import coldcardWhatYouNeed_M3 from './assets/lottie-animations/coldcard/M3/01.json'
@@ -146,18 +146,30 @@ export type WalletAnimationType = keyof typeof allAnimations
 
 export function WalletAnimation({ animation }: { animation: WalletAnimationType }): JSX.Element {
   return (
-    <Lottie
-      animationData={allAnimations[animation]}
-      loop={true}
-      autoplay={true}
-      style={{
-        width: '320px',
-        height: '240px',
-        margin: '0 auto -20px auto',
+    <Box
+      w="320px"
+      maxW="full"
+      h="240px"
+      mx="auto"
+      mb="-20px"
+      flexShrink={0}
+      // Laptop-height windows keep the whole first step, including its footer, on screen.
+      sx={{
+        '@media (max-height: 820px)': { width: '240px', height: '180px' },
+        '@media (max-height: 740px)': { width: '200px', height: '150px', marginBottom: '-12px' },
       }}
-    />
+    >
+      <Lottie
+        animationData={allAnimations[animation]}
+        loop={true}
+        autoplay={true}
+        style={{ width: '100%', height: '100%' }}
+      />
+    </Box>
   )
 }
+
+const walletFloat = keyframes`0%, 100% { transform: translateY(0); } 50% { transform: translateY(-8px); }`
 
 export interface WalletImage {
   href: string
@@ -166,31 +178,14 @@ export interface WalletImage {
 
 export function WalletFloatingImage({ href, alt, ...rest }: WalletImage & BoxProps): JSX.Element {
   return (
-    <Box
-      mx="auto"
-      pt={10}
-      pb={6}
-      sx={{
-        animation: 'float 4s ease-in-out infinite',
-        '@keyframes float': {
-          '0%': {
-            transform: 'translateY(0)',
-          },
-          '50%': {
-            transform: 'translateY(-6px)',
-          },
-          '100%': {
-            transform: 'translateY(0)',
-          },
-        },
-      }}
-      {...rest}
-    >
+    <Box mx="auto" pt={10} pb={6} {...rest}>
       <chakra.img
         src={href}
         alt={alt}
         h="200px"
         display="block"
+        animation={`${walletFloat} 4s cubic-bezier(0.77, 0, 0.175, 1) infinite`}
+        sx={{ '@media (prefers-reduced-motion: reduce)': { animation: 'none' } }}
         filter="drop-shadow(-8px 10px 15px rgba(0, 0, 0, 0.5))"
       />
     </Box>

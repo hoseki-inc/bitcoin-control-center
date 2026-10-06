@@ -1,8 +1,9 @@
-import { Box, Button, Flex, Grid, Heading, Icon, Text, keyframes } from '@chakra-ui/react'
-import { HOSEKI_ASSETS_CDN_URL } from '@hoseki/packages/constants'
+import { Box, Button, Grid, Icon, Text, keyframes } from '@chakra-ui/react'
 import { ConnectManualBitcoinAccordion } from '@hoseki/packages/ui/design-system'
-import { KeystoreAvatar } from '@hoseki/packages/ui/prove-verify-ui'
+import { Wrapper } from '@hoseki/packages/ui/prove-verify-ui'
+import { KeystoreAvatar } from '@hoseki/packages/ui/prove-verify-ui/claims/keystore-avatar'
 import { keyIcon } from '@hoseki/packages/ui/prove-verify-ui/claims/keystores-status-indicator'
+import { ChevronLeft } from 'lucide-react'
 import { ConnectionType } from './claims-landing/connection-type'
 
 const fadeIn = keyframes`
@@ -10,19 +11,9 @@ const fadeIn = keyframes`
   to { opacity: 1; }
 `
 
-const commonProps = { icon: keyIcon, alt: 'Multisig keystore' }
-const MultisigImage = (
-  <KeystoreAvatar.Group>
-    <KeystoreAvatar {...commonProps} />
-    <KeystoreAvatar {...commonProps} />
-    <KeystoreAvatar {...commonProps} />
-  </KeystoreAvatar.Group>
-)
-
-const CoinbaseMedia = <img src="/images/exchanges/coinbase-wordmark.svg" alt="Coinbase" style={{ height: '20px' }} />
-const KrakenMedia = <img src="/images/exchanges/kraken-wordmark.svg" alt="Kraken" style={{ height: '20px' }} />
-const RobinhoodMedia = <img src="/images/exchanges/robinhood-lockup.png" alt="Robinhood" style={{ height: '20px' }} />
-const StrikeMedia = <img src="/images/exchanges/strike-logo.svg" alt="Strike" style={{ height: '20px' }} />
+// The app's page column, which the header also sits on. The back button lands where the logo was,
+// and the tiles keep the size and alignment they have on the Accounts page.
+const PAGE_WIDTH = '928px'
 
 interface AddAccountFlowProps {
   onClose: () => void
@@ -30,103 +21,135 @@ interface AddAccountFlowProps {
   linkState?: { returnTo?: string }
 }
 
+// Covers the whole window, app header included, so adding an account reads as one focused step with
+// only a way back.
 export function AddAccountFlow({ onClose, linkState }: AddAccountFlowProps): JSX.Element {
   return (
     <Box
       position="fixed"
       inset={0}
-      bg="shades.0"
       zIndex={200}
       display="flex"
       flexDirection="column"
+      bg="shades.0"
+      pl="env(safe-area-inset-left)"
+      pr="env(safe-area-inset-right)"
+      pb="env(safe-area-inset-bottom)"
       animation={`${fadeIn} 0.2s ease`}
+      sx={{ '@media (prefers-reduced-motion: reduce)': { animation: 'none' } }}
     >
-      {/* Top bar */}
-      <Flex
-        align="center"
-        justify="space-between"
-        px={{ base: 6, md: 12 }}
-        py={5}
-        borderBottom="1px solid"
-        borderColor="neutral.200"
-        flexShrink={0}
-      >
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onClose}
-          color="neutral.900"
-          fontWeight="medium"
-          leftIcon={<BackArrowIcon />}
-        >
-          Back to My Holdings
-        </Button>
-      </Flex>
+      <Box flexShrink={0} borderBottom="1px solid" borderColor="neutral.200">
+        <Wrapper maxW={PAGE_WIDTH} py={5}>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onClose}
+            color="neutral.900"
+            fontWeight="medium"
+            pl={0}
+            leftIcon={<Icon as={ChevronLeft} boxSize={4} />}
+          >
+            Back to Accounts
+          </Button>
+        </Wrapper>
+      </Box>
 
-      {/* Content */}
-      <Box flex={1} overflow="auto" display="flex" justifyContent="center" px={{ base: 6, md: 12 }} pt={12} pb={20}>
-        <Box w="100%" maxW="680px">
-          <Heading textStyle="text/3xl" fontWeight="bold" color="neutral.900" mb={2}>
-            Connect New Account
-          </Heading>
-          <Text textStyle="text/md" color="neutral.400" mb={10} maxW="480px">
-            Connect your hardware wallet to securely link your Bitcoin holdings. Your private keys never leave your
-            device.
-          </Text>
-
-          {/* Hardware wallets -- same tiles as the original claims page */}
-          <Grid templateColumns="repeat(3, 1fr)" gap={4} mb={8}>
-            <ConnectionType
-              title="Trezor"
-              imagePath={`${HOSEKI_ASSETS_CDN_URL}/hardware-wallets/trezor.svg`}
-              imageAltText="Connect your Trezor"
-              to="/accounts/verify/trezor"
-              state={linkState}
-            />
-            <ConnectionType
-              title="COLDCARD"
-              imagePath={`${HOSEKI_ASSETS_CDN_URL}/hardware-wallets/coldcard.svg`}
-              imageAltText="Connect your Coldcard"
-              to="/accounts/verify/coldcard"
-              state={linkState}
-            />
-            <ConnectionType
-              title="Ledger"
-              imagePath={`${HOSEKI_ASSETS_CDN_URL}/hardware-wallets/ledger.svg`}
-              imageAltText="Connect your Ledger"
-              to="/accounts/verify/ledger"
-              state={linkState}
-            />
-            <ConnectionType
-              title="Keystone"
-              imagePath="/images/hardware-wallets/keystone-logo.svg"
-              imageAltText="Connect your Keystone"
-              to="/accounts/verify/keystone"
-              state={linkState}
-            />
-            <ConnectionType title="Multisig" media={MultisigImage} to="/multisig/create" />
-            <ConnectionType title="Coinbase" media={CoinbaseMedia} to="/accounts/verify/coinbase" state={linkState} />
-            <ConnectionType title="Kraken" media={KrakenMedia} to="/accounts/verify/kraken" state={linkState} />
-            <ConnectionType
-              title="Robinhood"
-              media={RobinhoodMedia}
-              to="/accounts/verify/robinhood"
-              state={linkState}
-            />
-            <ConnectionType title="Strike" media={StrikeMedia} to="/accounts/verify/strike" state={linkState} />
-            <ConnectionType
-              title="Manual Entry"
-              media={<ManualEntryIcon />}
-              to="/accounts/verify/manual-type"
-              state={linkState}
-            />
-          </Grid>
-
-          {/* Advanced / manual signing */}
-          <ConnectManualBitcoinAccordion to="/accounts/verify/advanced" state={linkState} />
-        </Box>
+      <Box flex={1} overflowY="auto">
+        <Wrapper maxW={PAGE_WIDTH} pt={{ base: 6, md: 8 }} pb={{ base: 14, md: 20 }}>
+          <AddAccountOptions linkState={linkState} />
+        </Wrapper>
       </Box>
     </Box>
+  )
+}
+
+function AddAccountOptions({ linkState }: Pick<AddAccountFlowProps, 'linkState'>): JSX.Element {
+  return (
+    <>
+      <Text as="h1" textStyle="text/2xl" fontWeight="medium" color="neutral.900" mb={2}>
+        Connect New Account
+      </Text>
+      <Text textStyle="text/md" color="neutral.600" mb={10}>
+        Connect your hardware wallet to securely link your Bitcoin holdings. Your private keys never leave your device.
+      </Text>
+      <Grid templateColumns={{ base: 'repeat(2, minmax(0, 1fr))', md: 'repeat(3, minmax(0, 1fr))' }} gap={4} mb={8}>
+        <ConnectionType
+          title="Trezor"
+          imagePath="/images/hardware-wallets/trezor.svg"
+          imageAltText="Trezor"
+          to="/accounts/verify/trezor"
+          state={linkState}
+        />
+        <ConnectionType
+          title="COLDCARD"
+          imagePath="/images/hardware-wallets/coldcard.svg"
+          imageAltText="COLDCARD"
+          to="/accounts/verify/coldcard"
+          state={linkState}
+        />
+        <ConnectionType
+          title="Ledger"
+          imagePath="/images/hardware-wallets/ledger.svg"
+          imageAltText="Ledger"
+          to="/accounts/verify/ledger"
+          state={linkState}
+        />
+        <ConnectionType
+          title="Keystone"
+          imagePath="/images/hardware-wallets/keystone-logo.svg"
+          imageAltText="Keystone"
+          to="/accounts/verify/keystone"
+          state={linkState}
+        />
+        <ConnectionType
+          title="Multisig"
+          media={
+            <KeystoreAvatar.Group>
+              <KeystoreAvatar icon={keyIcon} alt="Multisig keystore" />
+              <KeystoreAvatar icon={keyIcon} alt="Multisig keystore" />
+              <KeystoreAvatar icon={keyIcon} alt="Multisig keystore" />
+            </KeystoreAvatar.Group>
+          }
+          to="/multisig/create"
+          state={linkState}
+        />
+        <ConnectionType
+          title="Coinbase"
+          imagePath="/images/exchanges/coinbase-wordmark.svg"
+          imageAltText="Coinbase"
+          to="/accounts/verify/coinbase"
+          state={linkState}
+        />
+        <ConnectionType
+          title="Kraken"
+          imagePath="/images/exchanges/kraken-wordmark.svg"
+          imageAltText="Kraken"
+          to="/accounts/verify/kraken"
+          state={linkState}
+        />
+        <ConnectionType
+          title="Robinhood"
+          imagePath="/images/exchanges/robinhood-lockup.png"
+          imageAltText="Robinhood"
+          to="/accounts/verify/robinhood"
+          state={linkState}
+        />
+        <ConnectionType
+          title="Strike"
+          imagePath="/images/exchanges/strike-logo.svg"
+          imageAltText="Strike"
+          to="/accounts/verify/strike"
+          state={linkState}
+        />
+        <ConnectionType
+          title="Manual Entry"
+          media={<ManualEntryIcon />}
+          to="/accounts/verify/manual-type"
+          state={linkState}
+        />
+      </Grid>
+      <ConnectManualBitcoinAccordion to="/accounts/verify/advanced" state={linkState} />
+    </>
   )
 }
 
@@ -153,21 +176,6 @@ function ManualEntryIcon(): JSX.Element {
       <line x1="16" y1="17" x2="8" y2="17" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
       <polyline
         points="10 9 9 9 8 9"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        fill="none"
-      />
-    </Icon>
-  )
-}
-
-function BackArrowIcon(): JSX.Element {
-  return (
-    <Icon viewBox="0 0 16 16" w={4} h={4}>
-      <path
-        d="M10 4L6 8L10 12"
         stroke="currentColor"
         strokeWidth="1.5"
         strokeLinecap="round"
