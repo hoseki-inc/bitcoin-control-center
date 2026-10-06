@@ -99,6 +99,8 @@ const statement: StatementDto = {
   counter: 1,
   timezone: 'UTC',
   status: 'completed',
+  quoteCurrency: 'USD',
+  errorMessage: null,
   user: { name: null, email: null },
   integrator: { name: 'Test partner' },
   userId: 'test-user',

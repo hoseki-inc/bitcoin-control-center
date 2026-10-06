@@ -1,4 +1,5 @@
 import { Button, Text, VStack } from '@chakra-ui/react'
+import type { ClaimId } from '@hoseki/packages/schemas/prove'
 import { ErrorBanner, PageTransition } from '@hoseki/packages/ui/design-system'
 import { AppLayout, CheckCircleFilledIcon, Receipt, StatusBadge } from '@hoseki/packages/ui/prove-verify-ui'
 import { convertToOrdinalWords } from '@hoseki/packages/ui/utils'
@@ -23,16 +24,28 @@ type KeystoreReceiptProps =
     }
 
 export function KeystoreReceiptPage(): JSX.Element {
-  const { keystoreId } = useParams()
   const claimId = useUrlParameter(UrlParameter.claimId)
+  if (claimId === null) {
+    return (
+      <AppLayout header={<div />}>
+        <VStack mt={8} gap={4}>
+          <ErrorBanner message="Invalid claim ID in URL" />
+          <Button as={Link} to="/accounts" variant="outline">
+            Back to Accounts
+          </Button>
+        </VStack>
+      </AppLayout>
+    )
+  }
 
-  const {
-    data: claim,
-    isError,
-    isLoading,
-  } = trpc.portalProve.registry.claims.get.byId.useQuery({ id: claimId }, { enabled: Boolean(claimId) })
+  return <KeystoreReceiptContent claimId={claimId} />
+}
 
-  if (!claimId || isError) {
+function KeystoreReceiptContent({ claimId }: { claimId: ClaimId }): JSX.Element {
+  const { keystoreId } = useParams()
+  const { data: claim, isLoading, isError } = trpc.portalProve.registry.claims.get.byId.useQuery({ id: claimId })
+
+  if (isError) {
     return (
       <AppLayout header={<div />}>
         <VStack mt={8} gap={4}>
@@ -45,8 +58,9 @@ export function KeystoreReceiptPage(): JSX.Element {
     )
   }
 
+  // Keep showing the pending receipt until the claim loads, rather than reporting a missing keystore.
   if (isLoading) {
-    return <Receipt title="Loading key verification…" state="loading" />
+    return <KeystoreReceipt shouldSetTimeout={false} keystore={null} claim={null} />
   }
 
   const keystore = claim.keystores.find((k) => k.id === keystoreId)
