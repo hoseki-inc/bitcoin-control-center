@@ -67,6 +67,7 @@ async function withTestSetup(run: () => Promise<void>): Promise<void> {
     getQueryKey(trpc.portalProve.registry.claims.list, { excludePending: true }, 'query'),
     [claimFixture(claimId, 'Savings wallet')],
   )
+  queryClient.setQueryData(getQueryKey(trpc.portalProve.retrieveBitcoinPrice, undefined, 'query'), null)
   queryClient.setQueryData(
     getQueryKey(trpc.portalProve.onchain.claimBalances, { claimIds: [claimId] }, 'query'),
     new Map(),
