@@ -199,6 +199,27 @@ describe('historical statement quotes', () => {
     expect(result.rates['2026-09-06']?.timestamp.getTime()).toBe(morning * 1000)
   })
 
+  it.each([true, false])(
+    'uses a neighboring quote for a failed day whichever response arrives first (failure first: %s)',
+    async (failureFirst) => {
+      setup()
+      fetcher.mockImplementation(async (input) => {
+        const lookup = Number(new URL(input).searchParams.get('timestamp'))
+        const failing = lookup === target
+        if (failing !== failureFirst) {
+          await new Promise((resolve) => {
+            setTimeout(resolve, 20)
+          })
+        }
+        return failing ? new Response('', { status: 429, headers: { 'retry-after': '120' } }) : body(lookup)
+      })
+      const end = new Date(day.getTime() + 3 * 86400000)
+      const result = (await service().getDailyRates(day, end)).unwrap()
+      expect(result.rates['2026-08-01']?.timestamp.getTime()).toBe((target + 86400) * 1000)
+      expect(Object.keys(result.rates)).toHaveLength(4)
+    },
+  )
+
   it('stops concurrent retries once the source asks for a long wait', async () => {
     setup()
     fetcher.mockImplementation(async (input) =>
@@ -318,6 +339,31 @@ describe('local mempool with public fallback', () => {
     fallbacks = true
     expect((await rates.getDailyRates(day, day, 'CAD')).unwrap().rates['2026-08-01']?.providerUrl).toBe(publicUrl)
   })
+  it.each([true, false])(
+    'chooses the same nearby quote whichever source answers first (local first: %s)',
+    async (localAnswersFirst) => {
+      setup()
+      const july28 = target - 4 * 86400
+      fetcher.mockImplementation(async (input) => {
+        const url = new URL(input)
+        if ((url.origin === local) !== localAnswersFirst) {
+          await new Promise((resolve) => {
+            setTimeout(resolve, 20)
+          })
+        }
+        const lookup = Number(url.searchParams.get('timestamp'))
+        if (url.origin !== local) {
+          return body(lookup)
+        }
+        return lookup >= july28 ? body(july28) : Response.json({ prices: [] })
+      })
+      const end = new Date(day.getTime() + 3 * 86400000)
+      const result = (await localFirst().getDailyRates(day, end)).unwrap()
+      expect(result.rates['2026-08-01']?.timestamp.getTime()).toBe((target + 86400) * 1000)
+      expect(result.rates['2026-08-01']?.providerUrl).toBe(publicUrl)
+      expect(Object.keys(result.rates)).toEqual(['2026-08-01', '2026-08-02', '2026-08-03', '2026-08-04'])
+    },
+  )
   it('stops public requests as soon as fallbacks are turned off', async () => {
     setup()
     let fallbacks = true

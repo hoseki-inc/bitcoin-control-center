@@ -136,27 +136,32 @@ export class DailyRatesService {
         return Err(new Error('Required quote dates must be within the statement range.'))
       }
       const days = [...new Set(requested.map(utcDay))].sort((a, b) => a - b)
-      const rates: Record<string, DailyRate> = {}
+      const chosen = new Map<number, CachedQuote>()
       for (let i = 0; i < days.length; i += DailyRatesService.CONCURRENCY) {
         const batch = days.slice(i, i + DailyRatesService.CONCURRENCY)
         const results = await Promise.all(
           batch.map(async (target) => ({ target, result: await this.getQuoteWithFallback(target, quoteCurrency) })),
         )
+        // Choose each day's quote only once the whole batch has finished, from everything now
+        // cached, so the choice depends on which requests succeeded rather than on when their
+        // responses arrived. A day whose sources all failed can use a neighbour's nearby quote.
+        const now = Date.now()
         for (const { target, result } of results) {
-          if (result.isErr()) {
+          const { oldest, newest } = quoteWindow(target, now)
+          const quote = this.cache.find(quoteCurrency, target, oldest, newest)
+          if (quote) {
+            chosen.set(target, quote)
+          } else if (result.isOk()) {
+            chosen.set(target, result.unwrap())
+          } else {
             return Err(result.unwrapErr())
           }
-          const quote = result.unwrap()
-          const value = new Decimal(quote.price)
-          rates[toDateKey(new Date(target * 1000))] = {
-            timestamp: new Date(quote.timestamp * 1000),
-            providerUrl: quote.providerUrl,
-            open: value,
-            high: value,
-            low: value,
-            close: value,
-          }
         }
+      }
+      // Days are chosen in date order, so the rates keep that order.
+      const rates: Record<string, DailyRate> = {}
+      for (const [target, quote] of chosen) {
+        rates[toDateKey(new Date(target * 1000))] = toDailyRate(quote)
       }
       const providerUrls = [
         ...new Set(Object.values(rates).flatMap((rate) => (rate.providerUrl !== undefined ? [rate.providerUrl] : []))),
@@ -186,12 +191,6 @@ export class DailyRatesService {
       if (fallback.isOk()) {
         return fallback
       }
-    }
-    // Settle for a farther cached observation only after every allowed source has been tried.
-    const { oldest, newest } = quoteWindow(target, Date.now())
-    const cached = this.cache.find(currency, target, oldest, newest)
-    if (cached) {
-      return Ok(cached)
     }
     if (!publicFallback) {
       return Err(primary.unwrapErr())
@@ -347,6 +346,18 @@ export class DailyRatesService {
       }
     }
     return Err(new Error('Mempool price source unavailable'))
+  }
+}
+
+function toDailyRate(quote: CachedQuote): DailyRate {
+  const value = new Decimal(quote.price)
+  return {
+    timestamp: new Date(quote.timestamp * 1000),
+    providerUrl: quote.providerUrl,
+    open: value,
+    high: value,
+    low: value,
+    close: value,
   }
 }
 
