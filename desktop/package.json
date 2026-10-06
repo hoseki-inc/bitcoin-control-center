@@ -19,7 +19,6 @@
   "dependencies": {
     "@react-pdf/renderer": "4.9.0",
     "better-sqlite3": "13.0.3",
-    "electron-updater": "6.8.9",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "yoga-layout": "3.2.1"
