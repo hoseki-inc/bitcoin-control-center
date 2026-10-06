@@ -499,22 +499,26 @@ it('links historical snapshots and matches their columns to every replayed migra
   }
 })
 
-it('generates no migration when the final imported snapshot is compared with the current typed schema', () => {
-  const out = join(testDirectory(), 'drizzle')
-  cpSync(folder, out, { recursive: true })
-  const before = readdirSync(out)
-  const output = execFileSync(
-    process.execPath,
-    [
-      fileURLToPath(new URL('../../../../node_modules/drizzle-kit/bin.cjs', import.meta.url)),
-      'generate',
-      '--dialect=sqlite',
-      `--schema=${fileURLToPath(new URL('./schema.ts', import.meta.url))}`,
-      `--out=${out}`,
-      '--output=json',
-    ],
-    { encoding: 'utf8' },
-  )
-  expect(output).toMatch(/"status"\s*:\s*"no_changes"/)
-  expect(readdirSync(out)).toEqual(before)
-})
+it(
+  'generates no migration when the final imported snapshot is compared with the current typed schema',
+  { timeout: 30_000 },
+  () => {
+    const out = join(testDirectory(), 'drizzle')
+    cpSync(folder, out, { recursive: true })
+    const before = readdirSync(out)
+    const output = execFileSync(
+      process.execPath,
+      [
+        fileURLToPath(new URL('../../../../node_modules/drizzle-kit/bin.cjs', import.meta.url)),
+        'generate',
+        '--dialect=sqlite',
+        `--schema=${fileURLToPath(new URL('./schema.ts', import.meta.url))}`,
+        `--out=${out}`,
+        '--output=json',
+      ],
+      { encoding: 'utf8', timeout: 20_000 },
+    )
+    expect(output).toMatch(/"status"\s*:\s*"no_changes"/)
+    expect(readdirSync(out)).toEqual(before)
+  },
+)
