@@ -573,7 +573,7 @@ describe('daily price response validation', () => {
       db: database.db,
       logger,
       mempoolApiUrl: 'https://example.invalid',
-      allowPublicFallback: false,
+      allowPublicFallback: () => false,
     })
   }
   it('restores daily decimal rates from a valid historical response', async () => {

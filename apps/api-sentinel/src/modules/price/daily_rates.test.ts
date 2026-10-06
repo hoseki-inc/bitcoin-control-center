@@ -19,7 +19,7 @@ let directory: string
 let database: SentinelDatabase
 let fetcher: ReturnType<typeof vi.fn<(url: string, init?: RequestInit) => Promise<Response>>>
 const service = (url = 'https://mempool.test'): DailyRatesService =>
-  new DailyRatesService({ db: database.db, logger, mempoolApiUrl: url, allowPublicFallback: false })
+  new DailyRatesService({ db: database.db, logger, mempoolApiUrl: url, allowPublicFallback: () => false })
 
 function setup(): void {
   onTestFinished(() => {
@@ -208,6 +208,34 @@ describe('historical statement quotes', () => {
     expect((await rates.getDailyRates(day, day)).isErr()).toBe(true)
     expect(fetcher).toHaveBeenCalledTimes(1)
   })
+
+  it('backs off through a brief rate limit without failing a multi-day statement', async () => {
+    setup()
+    const limited = target + 10 * 86400
+    let rejections = 2
+    fetcher.mockImplementation(async (input) => {
+      const lookup = Number(new URL(input).searchParams.get('timestamp'))
+      if (lookup === limited && rejections > 0) {
+        rejections--
+        return new Response('', { status: 429 })
+      }
+      return body(lookup)
+    })
+    const end = new Date('2026-08-30T00:00:00Z')
+    const result = (await service().getDailyRates(day, end)).unwrap()
+    expect(Object.keys(result.rates)).toHaveLength(30)
+    expect(result.rates['2026-08-11']?.timestamp.getTime()).toBe(limited * 1000)
+  })
+
+  it('looks again after an hour when history before the valuation date was missing', async () => {
+    setup()
+    fetcher.mockImplementation(async () => body(target - 10 * 86400))
+    expect((await service().getDailyRates(day, day, 'CAD')).isErr()).toBe(true)
+    fetcher.mockImplementation(async (input) => body(Number(new URL(input).searchParams.get('timestamp'))))
+    vi.setSystemTime(new Date('2026-09-08T13:01:00Z'))
+    const result = (await service().getDailyRates(day, day, 'CAD')).unwrap()
+    expect(result.rates['2026-08-01']?.timestamp).toEqual(day)
+  })
 })
 
 describe('local mempool with public fallback', () => {
@@ -223,6 +251,25 @@ describe('local mempool with public fallback', () => {
     const result = (await localFirst().getDailyRates(day, day, 'CAD')).unwrap()
     expect(result.rates['2026-08-01']?.providerUrl).toBe(local)
     expect(fetcher.mock.calls.length).toBeLessThanOrEqual(9)
+  })
+  it('never asks public while fallbacks are turned off in Settings', async () => {
+    setup()
+    let fallbacks = false
+    const rates = new DailyRatesService({
+      db: database.db,
+      logger,
+      mempoolApiUrl: local,
+      allowPublicFallback: () => fallbacks,
+    })
+    fetcher.mockImplementation(async (input) => {
+      const url = new URL(input),
+        timestamp = Number(url.searchParams.get('timestamp'))
+      return body(timestamp, url.origin === local ? { ...quotes, CAD: -1 } : quotes)
+    })
+    expect((await rates.getDailyRates(day, day, 'CAD')).isErr()).toBe(true)
+    expect(fetcher.mock.calls.every(([input]) => new URL(input).origin === local)).toBe(true)
+    fallbacks = true
+    expect((await rates.getDailyRates(day, day, 'CAD')).unwrap().rates['2026-08-01']?.providerUrl).toBe(publicUrl)
   })
   it('fills a missing local currency from public and reuses the public cache after reopening', async () => {
     setup()
@@ -253,6 +300,30 @@ describe('local mempool with public fallback', () => {
     expect(result.rates['2026-08-01']?.providerUrl).toBe(publicUrl)
     expect(result.rates['2026-08-01']?.timestamp.getTime()).toBe(day.getTime() - 3600000)
     expect(fetcher.mock.calls.length).toBeLessThanOrEqual(10)
+  })
+  it('asks public before settling for a farther cached quote during a local outage', async () => {
+    setup()
+    const earlier = new Date(day.getTime() - 3 * 86400000)
+    fetcher.mockImplementation(async (input) => body(Number(new URL(input).searchParams.get('timestamp'))))
+    await localFirst().getDailyRates(earlier, earlier)
+    fetcher.mockImplementation(async (input) =>
+      new URL(input).origin === local
+        ? new Response('', { status: 503, headers: { 'retry-after': '120' } })
+        : body(Number(new URL(input).searchParams.get('timestamp'))),
+    )
+    const result = (await localFirst().getDailyRates(day, day)).unwrap()
+    expect(result.rates['2026-08-01']?.providerUrl).toBe(publicUrl)
+    expect(result.rates['2026-08-01']?.timestamp).toEqual(day)
+  })
+  it('uses the closest cached quote when every source is unavailable', async () => {
+    setup()
+    const earlier = new Date(day.getTime() - 3 * 86400000)
+    fetcher.mockImplementation(async (input) => body(Number(new URL(input).searchParams.get('timestamp'))))
+    await localFirst().getDailyRates(earlier, earlier)
+    fetcher.mockRejectedValue(new Error('offline'))
+    const result = (await localFirst().getDailyRates(day, day)).unwrap()
+    expect(result.rates['2026-08-01']?.providerUrl).toBe(local)
+    expect(result.rates['2026-08-01']?.timestamp).toEqual(earlier)
   })
   it('records separate provenance for a statement using both instances', async () => {
     setup()

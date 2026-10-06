@@ -36,6 +36,9 @@ const PUBLIC_MEMPOOL_URL = 'https://mempool.space'
 const DAY_SECONDS = 86_400
 const HOUR_MS = 3_600_000
 const MAX_REQUEST_DAYS = 2 * 366
+/** Rate-limited requests back off 0.5, 1, then 2 seconds before the source cools down. */
+const MAX_ATTEMPTS = 4
+const RETRY_BASE_MS = 500
 const responseSchema = z.object({
   prices: z
     .array(
@@ -53,6 +56,7 @@ const priceSchema = z.number().finite().positive()
 
 export class DailyRatesService {
   private readonly publicFallback: DailyRatesService | undefined
+  private readonly allowPublicFallback: () => boolean
   private readonly cache: QuoteCache
   private readonly mempoolApiUrl: string
   private readonly providerUrl: string
@@ -65,7 +69,8 @@ export class DailyRatesService {
     db: Database.Database
     logger: Logger
     mempoolApiUrl: string
-    allowPublicFallback?: boolean
+    /** Read on each fallback, so the Settings switch applies to statements in progress. */
+    allowPublicFallback?: () => boolean
   }) {
     this.logger = deps.logger.child({ module: 'daily-rates-service' })
     this.mempoolApiUrl = deps.mempoolApiUrl.replace(/\/$/, '')
@@ -75,10 +80,11 @@ export class DailyRatesService {
     provider.search = ''
     provider.hash = ''
     this.providerUrl = provider.toString().replace(/\/$/, '')
+    this.allowPublicFallback = deps.allowPublicFallback ?? (() => true)
     this.publicFallback =
-      this.providerUrl !== PUBLIC_MEMPOOL_URL && deps.allowPublicFallback !== false
-        ? new DailyRatesService({ ...deps, mempoolApiUrl: PUBLIC_MEMPOOL_URL, allowPublicFallback: false })
-        : undefined
+      this.providerUrl === PUBLIC_MEMPOOL_URL
+        ? undefined
+        : new DailyRatesService({ db: deps.db, logger: deps.logger, mempoolApiUrl: PUBLIC_MEMPOOL_URL })
     // Identify request receipts without storing credentials; all sources share price rows.
     this.cache = new QuoteCache(
       deps.db,
@@ -162,12 +168,22 @@ export class DailyRatesService {
     if (primary.isOk()) {
       return primary
     }
-    if (!this.publicFallback) {
-      return Err(primary.unwrapErr())
+    // Respect the Settings switch that keeps price requests to the chosen source.
+    const publicFallback = this.allowPublicFallback() ? this.publicFallback : undefined
+    if (publicFallback) {
+      const fallback = await publicFallback.getQuote(target, currency)
+      if (fallback.isOk()) {
+        return fallback
+      }
     }
-    const fallback = await this.publicFallback.getQuote(target, currency)
-    if (fallback.isOk()) {
-      return fallback
+    // Settle for a farther cached observation only after every allowed source has been tried.
+    const { oldest, newest } = quoteWindow(target, Date.now())
+    const cached = this.cache.find(currency, target, oldest, newest)
+    if (cached) {
+      return Ok(cached)
+    }
+    if (!publicFallback) {
+      return Err(primary.unwrapErr())
     }
     return Err(
       new Error(
@@ -178,8 +194,7 @@ export class DailyRatesService {
 
   private async getQuote(target: number, currency: StatementQuoteCurrency): Promise<Result<CachedQuote, Error>> {
     const now = Date.now()
-    const oldest = target - MAX_QUOTE_DISTANCE_DAYS * DAY_SECONDS
-    const newest = Math.min(target + MAX_QUOTE_DISTANCE_DAYS * DAY_SECONDS, Math.floor(now / 1000))
+    const { oldest, newest } = quoteWindow(target, now)
     // Mempool returns the observation at or before each requested timestamp.
     // Probe both sides before choosing, since the first usable quote may be farther away.
     const lookups = [target]
@@ -202,13 +217,9 @@ export class DailyRatesService {
       if (!this.cache.isFresh(lookup, now)) {
         const fetched = await this.fetchDay(lookup)
         if (fetched.isErr()) {
-          const available = this.cache.find(currency, target, oldest, newest)
-          if (available) {
-            return Ok(available)
-          }
           return Err(
             new Error(
-              `No usable ${currency} quote for ${toDateKey(new Date(target * 1000))}. The configured mempool source is unavailable; retry when it is reachable and has historical pricing.`,
+              `No usable ${currency} quote for ${toDateKey(new Date(target * 1000))}. The mempool price source is unavailable; please retry later.`,
             ),
           )
         }
@@ -248,7 +259,7 @@ export class DailyRatesService {
   }
 
   private async requestDay(target: number): Promise<Result<void, Error>> {
-    for (let attempt = 0; attempt < 2; attempt++) {
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
       try {
         const response = await fetch(`${this.mempoolApiUrl}/api/v1/historical-price?timestamp=${target}`, {
           signal: AbortSignal.timeout(10_000),
@@ -257,9 +268,14 @@ export class DailyRatesService {
           const retryable = response.status === 429 || response.status >= 500
           const header = response.headers.get('retry-after')
           const retryMs =
-            header === null ? 500 : /^\d+$/.test(header) ? Number(header) * 1000 : Date.parse(header) - Date.now()
+            header === null
+              ? RETRY_BASE_MS * 2 ** attempt
+              : /^\d+$/.test(header)
+                ? Number(header) * 1000
+                : Date.parse(header) - Date.now()
+          // Back off through brief rate limits, since one failed day fails the statement.
           // Respect long Retry-After windows without keeping a statement request asleep.
-          if (retryable && attempt === 0 && Number.isFinite(retryMs) && retryMs >= 0 && retryMs <= 2_000) {
+          if (retryable && attempt < MAX_ATTEMPTS - 1 && Number.isFinite(retryMs) && retryMs >= 0 && retryMs <= 2_000) {
             await new Promise((resolve) => {
               setTimeout(resolve, retryMs)
             })
@@ -289,12 +305,10 @@ export class DailyRatesService {
         }
         const complete = Object.keys(quotes).length === StatementQuoteCurrencySchema.options.length
         const historical = target < utcDay(new Date())
-        this.cache.save(
-          target,
-          point?.time ?? null,
-          quotes,
-          complete && historical ? Number.MAX_SAFE_INTEGER : Date.now() + HOUR_MS,
-        )
+        // Only a complete observation at the lookup time is final. An older one may
+        // improve once the source fills gaps in its history.
+        const settled = complete && historical && point?.time === target
+        this.cache.save(target, point?.time ?? null, quotes, settled ? Number.MAX_SAFE_INTEGER : Date.now() + HOUR_MS)
         return Ok(undefined)
       } catch {
         if (attempt === 0) {
@@ -305,6 +319,13 @@ export class DailyRatesService {
       }
     }
     return Err(new Error('Mempool price source unavailable'))
+  }
+}
+
+function quoteWindow(target: number, now: number) {
+  return {
+    oldest: target - MAX_QUOTE_DISTANCE_DAYS * DAY_SECONDS,
+    newest: Math.min(target + MAX_QUOTE_DISTANCE_DAYS * DAY_SECONDS, Math.floor(now / 1000)),
   }
 }
 
