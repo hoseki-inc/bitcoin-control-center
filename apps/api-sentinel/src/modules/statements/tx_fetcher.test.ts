@@ -287,10 +287,12 @@ it('stops statement generation when a known transaction fails validation', async
       database.db
         .prepare('INSERT INTO accounts (id, descriptor, display_name, status) VALUES (?, ?, ?, ?)')
         .run('re_clmx_test', account.toString(), 'Test wallet', 'verified')
-      const dailyRatesService = new DailyRatesService(deps)
+      const dailyRatesService = new DailyRatesService({ ...deps, db: database.db })
       const rates = vi
         .spyOn(dailyRatesService, 'getDailyRates')
-        .mockImplementation(asyncFn(async () => Ok({ rates: {}, source: 'mempool' as const })))
+        .mockImplementation(
+          asyncFn(async () => Ok({ rates: {}, source: 'mempool' as const, quoteCurrency: 'USD' as const })),
+        )
       const service = new StatementService({
         ...deps,
         db: database.db,

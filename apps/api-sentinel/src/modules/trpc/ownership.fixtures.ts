@@ -158,7 +158,7 @@ export function setupAppCaller(): AppCallerHarness {
       onchainProvider,
       exchangeService,
       mempoolApiUrl,
-      dailyRatesService: new DailyRatesService({ logger, mempoolApiUrl }),
+      dailyRatesService: new DailyRatesService({ db: database.db, logger, mempoolApiUrl }),
     }),
     reconnectElectrum: async () => Ok(undefined),
     stopElectrum: () => {
