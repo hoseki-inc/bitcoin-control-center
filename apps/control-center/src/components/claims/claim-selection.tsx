@@ -28,32 +28,21 @@ import { useGetBalancesPerClaimIds } from '../../lib/balances'
 import { setIsInGenerateStatementFlow } from '../../lib/flow-tracker'
 import { trpc } from '../../trpc'
 import { withStatusBalance } from '../../utils/claim-utils'
-import { isExchangeConnected, needsExchangeReconnect } from '../../utils/exchange-connection-status'
 
 interface ClaimSelectionProps extends StackProps {
   disabledClaims?: Set<string>
   selectedClaimIds: Set<ClaimId>
   setSelectedClaimIds: Dispatch<SetStateAction<Set<ClaimId>>>
-  selectedExchangeAccountIds: Set<string>
-  setSelectedExchangeAccountIds: Dispatch<SetStateAction<Set<string>>>
 }
 export function ClaimSelection({
   disabledClaims,
   selectedClaimIds,
   setSelectedClaimIds,
-  selectedExchangeAccountIds,
-  setSelectedExchangeAccountIds,
   ...props
 }: ClaimSelectionProps): JSX.Element {
-  const showExchanges = true
   const claimsQuery = trpc.portalProve.registry.claims.list.useQuery({ excludePending: true })
   const claimIds = claimsQuery.data?.map((claim) => claim.id) ?? []
   const claimUsdBalancesQuery = useGetBalancesPerClaimIds({ claimIds, enabled: claimIds.length > 0 })
-  const exchangeAccountsQuery = trpc.portalProve.exchange.list.useQuery(undefined, { enabled: showExchanges })
-  const btcPriceQuery = trpc.portalProve.retrieveBitcoinPrice.useQuery(undefined, { enabled: showExchanges })
-
-  const exchangeAccounts = exchangeAccountsQuery.data ?? []
-  const btcUsdPrice = btcPriceQuery.data?.value ? Number(btcPriceQuery.data.value) : null
 
   const handleClaimToggle = (claimId: ClaimId) => {
     setSelectedClaimIds((prev) => {
@@ -62,18 +51,6 @@ export function ClaimSelection({
         newSet.delete(claimId)
       } else {
         newSet.add(claimId)
-      }
-      return newSet
-    })
-  }
-
-  const handleExchangeToggle = (accountId: string) => {
-    setSelectedExchangeAccountIds((prev) => {
-      const newSet = new Set(prev)
-      if (newSet.has(accountId)) {
-        newSet.delete(accountId)
-      } else {
-        newSet.add(accountId)
       }
       return newSet
     })
@@ -113,22 +90,10 @@ export function ClaimSelection({
       totalUsdSelected = totalUsdSelected.plus(balance.usd)
     }
   }
-  for (const account of exchangeAccounts) {
-    if (
-      isExchangeConnected(account) &&
-      selectedExchangeAccountIds.has(account.id) &&
-      account.balance != null &&
-      account.balance !== '' &&
-      btcUsdPrice !== null
-    ) {
-      const btcAmount = Number(account.balance) / 100_000_000
-      totalUsdSelected = totalUsdSelected.plus(new Decimal(btcAmount).mul(btcUsdPrice))
-    }
-  }
 
   const claims = claimsQuery.data
 
-  if (!claims.length && exchangeAccounts.length === 0) {
+  if (!claims.length) {
     return (
       <Box {...props}>
         <Image
@@ -202,57 +167,6 @@ export function ClaimSelection({
                 </Td>
                 <Td px={0} isNumeric>
                   {renderUsdAmount(balanceWithStatus)}
-                </Td>
-              </Tr>
-            )
-          })}
-          {exchangeAccounts.map((account) => {
-            const needsReconnect = needsExchangeReconnect(account)
-            const btcSats = account.balance != null && account.balance !== '' ? Number(account.balance) : 0
-            const btcAmount = btcSats / 100_000_000
-            const usdAmount = btcUsdPrice !== null ? btcAmount * btcUsdPrice : null
-
-            return (
-              <Tr key={account.id}>
-                <Td px={0} maxW={0} w="55%">
-                  <HStack>
-                    <Checkbox
-                      id={`exchange_${account.id}`}
-                      isChecked={!needsReconnect && selectedExchangeAccountIds.has(account.id)}
-                      isDisabled={needsReconnect}
-                      onChange={() => {
-                        handleExchangeToggle(account.id)
-                      }}
-                    />
-                    <Stack gap={0} overflow="hidden" minW={0} flex={1}>
-                      <Text
-                        as="label"
-                        htmlFor={`exchange_${account.id}`}
-                        textStyle="text/sm"
-                        fontWeight="medium"
-                        noOfLines={1}
-                        isTruncated
-                        color="neutral.600"
-                      >
-                        {account.exchange.charAt(0).toUpperCase() + account.exchange.slice(1)}
-                      </Text>
-                      {needsReconnect && (
-                        <Text textStyle="text/xs" color="warning.600">
-                          Reconnect
-                        </Text>
-                      )}
-                    </Stack>
-                  </HStack>
-                </Td>
-                <Td px={0} isNumeric>
-                  <Text textStyle="text/sm" fontWeight="medium" whiteSpace="nowrap">
-                    {needsReconnect ? '—' : toBitcoinAmountDisplayValue(btcSats.toString())}
-                  </Text>
-                </Td>
-                <Td px={0} isNumeric>
-                  <Text textStyle="text/sm" fontWeight="medium" color="success.600" whiteSpace="nowrap">
-                    {!needsReconnect && usdAmount !== null ? formatUsd(usdAmount.toFixed(2)) : '—'}
-                  </Text>
                 </Td>
               </Tr>
             )

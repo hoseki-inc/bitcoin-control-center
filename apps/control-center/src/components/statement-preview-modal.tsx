@@ -23,7 +23,6 @@ interface BaseStatementPreviewModalProps {
   isOpen: boolean
   onClose: () => void
   claimIds: ClaimId[]
-  exchangeAccountIds?: string[]
   title?: string
   description?: string
   showActionButton?: boolean
@@ -56,13 +55,10 @@ export function StatementPreviewModal(props: StatementPreviewModalProps): JSX.El
     onActionClick,
   } = props
 
-  const exchangeAccountIds = props.exchangeAccountIds ?? []
-
-  const enabled = isOpen && (claimIds.length > 0 || exchangeAccountIds.length > 0)
+  const enabled = isOpen && claimIds.length > 0
 
   const input: GenerateStatementPreviewInput = {
     claimIds,
-    exchangeAccountIds,
     openingDate: props.openingDate,
     closingDate: props.closingDate,
     timezone: props.timezone,
