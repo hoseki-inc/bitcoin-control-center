@@ -23,6 +23,7 @@ import { toast } from 'sonner'
 import { z } from 'zod'
 import { parseNavigationState } from '../../../lib/navigation-state'
 import { type RouterOutput, trpc } from '../../../trpc'
+import { SuccessConfetti } from '../../success-confetti'
 
 type ConnectedAccount = RouterOutput['portalProve']['exchange']['kraken']['connect']
 
@@ -88,6 +89,7 @@ export function ConnectKraken(): JSX.Element {
   if (step === 'success' && connectedAccount) {
     return (
       <PageTransition>
+        <SuccessConfetti />
         <Receipt
           title={isReconnect ? 'Kraken Reconnected!' : 'Kraken Connected!'}
           state="success"

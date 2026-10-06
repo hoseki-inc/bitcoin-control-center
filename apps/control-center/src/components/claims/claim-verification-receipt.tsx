@@ -6,6 +6,7 @@ import { useGetClaimBalance } from '../../lib/balances'
 import { clearFlowSource, getFlowSource } from '../../lib/flow-tracker'
 import type { ClaimDto } from '../../trpc/server-types'
 import { mapClaimToClaimCardProps, withStatusBalance } from '../../utils/claim-utils'
+import { SuccessConfetti } from '../success-confetti'
 
 type ClaimVerificationReceiptProps =
   | {
@@ -40,6 +41,7 @@ export function ClaimVerificationReceipt({ shouldSetTimeout, claim }: ClaimVerif
 
   return (
     <PageTransition>
+      <SuccessConfetti />
       <Receipt
         title="Account verified"
         state="success"

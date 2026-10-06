@@ -23,6 +23,7 @@ import { toast } from 'sonner'
 import { z } from 'zod'
 import { parseNavigationState } from '../../../lib/navigation-state'
 import { type RouterOutput, trpc } from '../../../trpc'
+import { SuccessConfetti } from '../../success-confetti'
 
 type ConnectedAccount = RouterOutput['portalProve']['exchange']['strike']['connect']
 
@@ -89,6 +90,7 @@ export function ConnectStrike(): JSX.Element {
   if (step === 'success' && connectedAccount) {
     return (
       <PageTransition>
+        <SuccessConfetti />
         <Receipt
           title={isReconnect ? 'Strike Reconnected!' : 'Strike Connected!'}
           state="success"

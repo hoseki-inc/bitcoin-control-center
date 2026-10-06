@@ -8,6 +8,7 @@ import { trpc } from '../../trpc'
 import type { ClaimDto, KeystoreDto } from '../../trpc/server-types'
 import { getNumberOfMissingSignatures, getNumberOfSignedMessages } from '../../utils/multisig-utils'
 import { WalletImageFromKnownModel } from '../claims/wallet-image-from-known-model'
+import { SuccessConfetti } from '../success-confetti'
 
 type KeystoreReceiptProps =
   | {
@@ -93,6 +94,7 @@ export function KeystoreReceipt({ shouldSetTimeout, keystore, claim }: KeystoreR
 
   return (
     <PageTransition>
+      <SuccessConfetti />
       <Receipt
         title={`${convertToOrdinalWords(getNumberOfSignedMessages(claim))} Key Verified!`}
         state="success"
