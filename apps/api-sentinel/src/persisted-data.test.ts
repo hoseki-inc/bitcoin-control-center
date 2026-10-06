@@ -123,7 +123,9 @@ describe('stored statement data', () => {
     await withTestSetup(async () => {
       const statements = service()
       const date = new Date('2024-01-02T00:00:00Z')
-      const id = statements.create({ claimIds: [], openingDate: date, closingDate: date, timezone: 'UTC' })
+      const id = statements
+        .create({ claimIds: [], openingDate: date, closingDate: date, timezone: 'UTC' })
+        .expect('pending statement')
       const transactions = {
         wallet: {
           displayName: 'Test wallet',
@@ -147,7 +149,7 @@ describe('stored statement data', () => {
         quoteCurrency: 'USD' as const,
         rates: { '2024-01-02': { timestamp: date, open: price, high: price, low: price, close: price } },
       }
-      statements.complete(id, transactions, dailyRates)
+      expect(statements.complete(id, transactions, dailyRates).isOk()).toBe(true)
       const loaded = statements.loadCompleted(id)
       expect(loaded?.transactionMap).toEqual(transactions)
       expect(loaded?.dailyRates).toEqual(dailyRates)
@@ -159,8 +161,12 @@ describe('stored statement data', () => {
     await withTestSetup(async () => {
       const statements = service()
       const date = new Date('2024-01-02T00:00:00Z')
-      const id = statements.create({ claimIds: [], openingDate: date, closingDate: date, timezone: 'UTC' })
-      statements.complete(id, {}, { rates: {}, source: 'mempool', quoteCurrency: 'USD' })
+      const id = statements
+        .create({ claimIds: [], openingDate: date, closingDate: date, timezone: 'UTC' })
+        .expect('pending statement')
+      database.db
+        .prepare("UPDATE statements SET status = 'completed', daily_rates = ?, transaction_map = '{}' WHERE id = ?")
+        .run(JSON.stringify({ rates: {}, source: 'mempool' }), id)
       database.db.prepare('UPDATE statements SET transaction_map = ? WHERE id = ?').run(
         JSON.stringify({
           Savings: [
@@ -201,8 +207,12 @@ describe('stored statement data', () => {
     await withTestSetup(async () => {
       const statements = service()
       const date = new Date('2024-01-02T00:00:00Z')
-      const id = statements.create({ claimIds: [], openingDate: date, closingDate: date, timezone: 'UTC' })
-      statements.complete(id, {}, { rates: {}, source: 'mempool', quoteCurrency: 'USD' })
+      const id = statements
+        .create({ claimIds: [], openingDate: date, closingDate: date, timezone: 'UTC' })
+        .expect('pending statement')
+      database.db
+        .prepare("UPDATE statements SET status = 'completed', daily_rates = ?, transaction_map = '{}' WHERE id = ?")
+        .run(JSON.stringify({ rates: {}, source: 'mempool' }), id)
       database.db.prepare('UPDATE statements SET transaction_map = ? WHERE id = ?').run('{"wallet":[null]}', id)
       expect(() => statements.loadCompleted(id)).toThrow('Stored statement transactions are invalid')
     })

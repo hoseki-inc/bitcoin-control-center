@@ -1582,6 +1582,7 @@ const statementRouter = t.router({
       z.object({
         claimIds: z.array(z.string()),
         exchangeAccountIds: z.array(z.string()).optional(),
+        quoteCurrency: z.literal('USD').default('USD'),
         openingDate: z.date(),
         closingDate: z.date(),
         timezone: z.string(),
@@ -1597,12 +1598,11 @@ const statementRouter = t.router({
       )
 
       // Reject invalid dates before saving a statement that could only fail.
-      const validation = validateStatementInput(input)
-      if (validation.isErr()) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: validation.unwrapErr().message })
+      const created = ctx.app.statementService.create(input)
+      if (created.isErr()) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: created.unwrapErr().message })
       }
-
-      const statementId = ctx.app.statementService.create(input)
+      const statementId = created.unwrap()
       logger.info({ statementId }, 'Created pending statement')
 
       // Fire-and-forget: generate data in background so the client gets the pending DTO immediately
@@ -1612,7 +1612,7 @@ const statementRouter = t.router({
           if (dataResult.isErr()) {
             const errMsg = dataResult.unwrapErr().message
             logger.error({ statementId, error: errMsg }, 'Statement data generation failed')
-            ctx.app.statementService.fail(statementId)
+            ctx.app.statementService.fail(statementId, errMsg)
             return
           }
 
@@ -1628,7 +1628,11 @@ const statementRouter = t.router({
             'Statement data generated, completing',
           )
 
-          ctx.app.statementService.complete(statementId, transactionMap, dailyRates)
+          const completed = ctx.app.statementService.complete(statementId, transactionMap, dailyRates)
+          if (completed.isErr()) {
+            ctx.app.statementService.fail(statementId, completed.unwrapErr().message)
+            return
+          }
           logger.info({ statementId }, 'Statement generation completed')
         } catch (err) {
           ctx.app.statementService.fail(statementId)
@@ -1692,6 +1696,7 @@ const statementRouter = t.router({
       z.object({
         claimIds: z.array(z.string()),
         exchangeAccountIds: z.array(z.string()).optional(),
+        quoteCurrency: z.literal('USD').default('USD'),
         openingDate: z.date(),
         closingDate: z.date(),
         timezone: z.string(),
@@ -1705,6 +1710,7 @@ const statementRouter = t.router({
       const statementInput = {
         claimIds: input.claimIds,
         exchangeAccountIds: input.exchangeAccountIds,
+        quoteCurrency: input.quoteCurrency,
         openingDate: input.openingDate,
         closingDate: input.closingDate,
         timezone: input.timezone,
