@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import type { Account } from '@hoseki/packages/bitcoin/account'
 import { Network } from '@hoseki/packages/bitcoin/network'
 import type { Block, TransactionEntry } from '@hoseki/packages/bitcoin/onchain'
@@ -10,8 +11,10 @@ import { ElectrumClient } from '@hoseki/packages/clients/electrum'
 import { IndexMap } from '@hoseki/packages/collection'
 import { AsyncResult, Err, Ok, type Result, asyncFn } from '@hoseki/packages/result'
 import { Wallets } from '@hoseki/packages/testing'
+import { createClient } from '@libsql/client/sqlite3'
 import Decimal from 'decimal.js'
 import { asc, eq, sql } from 'drizzle-orm'
+import { drizzle } from 'drizzle-orm/libsql'
 import pino from 'pino'
 import { assert, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { openDrizzleDatabase } from '../../db/drizzle'
@@ -112,7 +115,7 @@ async function createHarness() {
     db.$client.close()
     rmSync(directory, { recursive: true, force: true })
   }
-  return { db, provider, service, history, price, sync, run, rows, coverage, close }
+  return { directory, db, provider, service, history, price, sync, run, rows, coverage, close }
 }
 
 let harness: Awaited<ReturnType<typeof createHarness>>
@@ -593,6 +596,212 @@ describe('compacted history coverage', () => {
       await expect(harness.coverage()).resolves.toEqual([{ from_block_height: 0, to_block_height: 99 }])
     })
   })
+})
+
+describe('atomic history persistence', () => {
+  it.each(['archive', 'delete', 'invalidate'] as const)(
+    'rejects a completed scan if %s wins immediately before persistence',
+    async (action) => {
+      await withTestSetup(async () => {
+        const { db, service, provider } = harness
+        await service.recordAccountSnapshot(accountId, '999', '2020-01-01T00:00:00.000Z')
+        const before = await harness.rows()
+        const canContinue = service['canContinueAccountHistoryBackfill'].bind(service)
+        let changed = false
+        service['canContinueAccountHistoryBackfill'] = vi.fn(canContinue).mockImplementation(async (...args) => {
+          const allowed = await canContinue(...args)
+          if (!changed && provider.getBlocksTip.mock.calls.length === 2) {
+            changed = true
+            if (action === 'archive') {
+              await db.update(accounts).set({ deletedAt: now.toISOString() }).where(eq(accounts.id, accountId))
+            } else if (action === 'delete') {
+              await db.delete(accounts).where(eq(accounts.id, accountId))
+            } else {
+              service['invalidateAccountHistoryBackfill'](accountId)
+            }
+          }
+          return allowed
+        })
+
+        await expect(harness.run()).resolves.toBeNull()
+        expect(changed).toBe(true)
+        await expect(harness.rows()).resolves.toEqual(action === 'delete' ? [] : before)
+        await expect(harness.coverage()).resolves.toEqual([])
+      })
+    },
+  )
+
+  it.each(['snapshot', 'reconciliation', 'coverage'] as const)(
+    'rolls back all backfill changes if the %s write fails',
+    async (failure) => {
+      await withTestSetup(async () => {
+        const { db, service } = harness
+        await service.recordAccountSnapshot(accountId, '999', '2020-01-01T00:00:00.000Z')
+        await harness.sync()
+        await db.update(accountHistorySyncs).set({ syncVersion: 4 })
+        const beforeSnapshots = await db.select().from(balanceSnapshots)
+        const beforeSyncs = await db.select().from(accountHistorySyncs)
+        if (failure === 'snapshot') {
+          await db.run(sql`CREATE TEMP TRIGGER fail_backfill BEFORE INSERT ON balance_snapshots
+            WHEN NEW.timestamp = '2020-01-02T12:00:00.000Z'
+            BEGIN SELECT RAISE(ABORT, 'Synthetic snapshot failure'); END`)
+        } else if (failure === 'reconciliation') {
+          await db.run(sql`CREATE TEMP TRIGGER fail_backfill BEFORE UPDATE ON balance_snapshots
+            WHEN OLD.timestamp = '2020-01-01T00:00:00.000Z'
+            BEGIN SELECT RAISE(ABORT, 'Synthetic reconciliation failure'); END`)
+        } else {
+          await db.run(sql`CREATE TEMP TRIGGER fail_backfill BEFORE INSERT ON account_history_syncs
+            BEGIN SELECT RAISE(ABORT, 'Synthetic coverage failure'); END`)
+        }
+
+        await expect(harness.run()).rejects.toThrow('Failed query: insert into')
+        await expect(db.select().from(balanceSnapshots)).resolves.toEqual(beforeSnapshots)
+        await expect(db.select().from(accountHistorySyncs)).resolves.toEqual(beforeSyncs)
+        await db.run(sql`DROP TRIGGER fail_backfill`)
+        await expect(harness.run()).resolves.toBe(100n)
+        await expect(harness.coverage()).resolves.toEqual([{ from_block_height: 0, to_block_height: tip.height }])
+      })
+    },
+  )
+
+  it('exposes the entire backfill together to a separate connection and queued readers', async () => {
+    await withTestSetup(async () => {
+      const { service } = harness
+      await service.recordAccountSnapshot(accountId, '999', '2020-01-01T00:00:00.000Z')
+      const before = await harness.rows()
+      const observer = drizzle({
+        client: createClient({ url: pathToFileURL(join(harness.directory, 'sentinel.db')).href, concurrency: 1 }),
+      })
+      const reached = deferred<undefined>()
+      const proceed = deferred<undefined>()
+      const upsert = service['upsertAccountSnapshot'].bind(service)
+      service['upsertAccountSnapshot'] = vi.fn(upsert).mockImplementationOnce(async (...args) => {
+        await upsert(...args)
+        reached.resolve(undefined)
+        await proceed.promise
+      })
+      const run = harness.run()
+      try {
+        await reached.promise
+        const queuedRead = harness.rows()
+        await expect(
+          observer
+            .select({ timestamp: balanceSnapshots.timestamp, balance_sats: balanceSnapshots.balanceSats })
+            .from(balanceSnapshots)
+            .orderBy(asc(balanceSnapshots.timestamp)),
+        ).resolves.toEqual(before)
+        await expect(observer.select().from(accountHistorySyncs)).resolves.toEqual([])
+        proceed.resolve(undefined)
+        await expect(run).resolves.toBe(100n)
+        const complete = await harness.rows()
+        expect(complete).toHaveLength(4)
+        expect(complete.find((snapshot) => snapshot.timestamp === '2020-01-01T00:00:00.000Z')?.balance_sats).toBe('0')
+        await expect(queuedRead).resolves.toEqual(complete)
+        await expect(observer.select().from(balanceSnapshots)).resolves.toHaveLength(4)
+        await expect(observer.select().from(accountHistorySyncs)).resolves.toHaveLength(1)
+      } finally {
+        proceed.resolve(undefined)
+        try {
+          await run
+        } finally {
+          observer.$client.close()
+        }
+      }
+    })
+  })
+
+  it('rolls back earlier coverage ranges when a later range fails in the same backfill', async () => {
+    await withTestSetup(async () => {
+      const { db, service } = harness
+      await service.recordAccountSnapshot(accountId, '999', '2020-01-01T00:00:00.000Z')
+      await harness.sync(100, 199)
+      const beforeSnapshots = await db.select().from(balanceSnapshots)
+      const beforeSyncs = await db.select().from(accountHistorySyncs)
+      await db.run(sql`CREATE TEMP TRIGGER fail_later_range BEFORE INSERT ON account_history_syncs
+        WHEN NEW.to_block_height > 199
+        BEGIN SELECT RAISE(ABORT, 'Synthetic later-range failure'); END`)
+
+      await expect(harness.run()).rejects.toThrow('Failed query: insert into "account_history_syncs"')
+      await expect(db.select().from(accountHistorySyncs)).resolves.toEqual(beforeSyncs)
+      await expect(db.select().from(balanceSnapshots)).resolves.toEqual(beforeSnapshots)
+      await db.run(sql`DROP TRIGGER fail_later_range`)
+      await expect(harness.run()).resolves.toBe(100n)
+      await expect(harness.coverage()).resolves.toEqual([{ from_block_height: 0, to_block_height: tip.height }])
+    })
+  })
+
+  it.each([
+    ['snapshot', 'archive'],
+    ['snapshot', 'delete'],
+    ['coverage', 'archive'],
+    ['coverage', 'delete'],
+  ] as const)(
+    'keeps the standalone %s check and write together when %s is queued after the check',
+    async (kind, action) => {
+      await withTestSetup(async () => {
+        const { db, service } = harness
+        const isActive = service['isAccountActive'].bind(service)
+        let change: Promise<void> | undefined
+        let rowsAtArchive: Awaited<ReturnType<typeof harness.rows>> = []
+        let coverageAtArchive: Awaited<ReturnType<typeof harness.coverage>> = []
+        service['isAccountActive'] = vi.fn(isActive).mockImplementationOnce(async (...args) => {
+          const active = await isActive(...args)
+          change = db.transaction(async (tx) => {
+            if (action === 'archive') {
+              await tx.update(accounts).set({ deletedAt: now.toISOString() }).where(eq(accounts.id, accountId))
+              rowsAtArchive = await tx
+                .select({ timestamp: balanceSnapshots.timestamp, balance_sats: balanceSnapshots.balanceSats })
+                .from(balanceSnapshots)
+                .orderBy(asc(balanceSnapshots.timestamp))
+              coverageAtArchive = await tx
+                .select({
+                  from_block_height: accountHistorySyncs.fromBlockHeight,
+                  to_block_height: accountHistorySyncs.toBlockHeight,
+                })
+                .from(accountHistorySyncs)
+                .orderBy(asc(accountHistorySyncs.fromBlockHeight))
+            } else {
+              await tx.delete(accounts).where(eq(accounts.id, accountId))
+            }
+          })
+          return active
+        })
+
+        const write =
+          kind === 'snapshot' ? service.recordAccountSnapshot(accountId, '100', now.toISOString()) : harness.sync()
+        const result = await Promise.allSettled([write])
+        assert(change)
+        await change
+        expect(result[0]).toMatchObject({ status: 'fulfilled' })
+        if (action === 'archive') {
+          expect(kind === 'snapshot' ? rowsAtArchive : coverageAtArchive).toHaveLength(1)
+          await expect(harness.rows()).resolves.toEqual(rowsAtArchive)
+          await expect(harness.coverage()).resolves.toEqual(coverageAtArchive)
+        } else {
+          await expect(harness.rows()).resolves.toEqual([])
+          await expect(harness.coverage()).resolves.toEqual([])
+        }
+      })
+    },
+  )
+
+  it.each(['archive', 'delete'] as const)(
+    'skips standalone writes when %s already made the account inactive',
+    async (action) => {
+      await withTestSetup(async () => {
+        const { db, service } = harness
+        if (action === 'archive') {
+          await db.update(accounts).set({ deletedAt: now.toISOString() }).where(eq(accounts.id, accountId))
+        } else {
+          await db.delete(accounts).where(eq(accounts.id, accountId))
+        }
+        await service.recordAccountSnapshot(accountId, '100', now.toISOString())
+        await harness.sync()
+        await expect(harness.rows()).resolves.toEqual([])
+        await expect(harness.coverage()).resolves.toEqual([])
+      })
+    },
+  )
 })
 
 describe('history retry coordination', () => {

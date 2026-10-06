@@ -414,10 +414,12 @@ export class ControlCenterService {
    * Should be called periodically (e.g., daily) to build historical chart data.
    */
   public async recordAccountSnapshot(accountId: string, balanceSats: string, timestamp: string): Promise<void> {
-    if (!(await this.isAccountActive(accountId))) {
-      return
-    }
-    await this.upsertAccountSnapshot(this.db, accountId, balanceSats, timestamp)
+    await this.db.transaction(async (tx) => {
+      if (!(await this.isAccountActive(accountId, tx))) {
+        return
+      }
+      await this.upsertAccountSnapshot(tx, accountId, balanceSats, timestamp)
+    })
   }
 
   public archiveAccount = asyncFn(async (accountId: string): Promise<Result<void, Error>> => {
@@ -483,19 +485,19 @@ export class ControlCenterService {
   // ─── Private Helpers ───────────────────────────────────────────────────
 
   private async upsertAccountSnapshot(
-    db: SentinelDb | SentinelTx,
+    tx: SentinelTx,
     accountId: string,
     balanceSats: string,
     timestamp: string,
   ): Promise<void> {
-    await db
+    await tx
       .insert(balanceSnapshots)
       .values({ accountId, timestamp, balanceSats })
       .onConflictDoUpdate({ target: [balanceSnapshots.accountId, balanceSnapshots.timestamp], set: { balanceSats } })
   }
 
-  private async isAccountActive(accountId: string): Promise<boolean> {
-    const rows = await this.db
+  private async isAccountActive(accountId: string, db: SentinelDb | SentinelTx = this.db): Promise<boolean> {
+    const rows = await db
       .select({ id: accountTable.id })
       .from(accountTable)
       .where(and(eq(accountTable.id, accountId), isNull(accountTable.deletedAt)))
@@ -694,8 +696,14 @@ export class ControlCenterService {
     return this.accountHistoryBackfillGenerations.get(accountId) ?? 0
   }
 
-  private async canContinueAccountHistoryBackfill(accountId: string, generation: number): Promise<boolean> {
-    return this.getAccountHistoryBackfillGeneration(accountId) === generation && (await this.isAccountActive(accountId))
+  private async canContinueAccountHistoryBackfill(
+    accountId: string,
+    generation: number,
+    db: SentinelDb | SentinelTx = this.db,
+  ): Promise<boolean> {
+    return (
+      (await this.isAccountActive(accountId, db)) && this.getAccountHistoryBackfillGeneration(accountId) === generation
+    )
   }
 
   private clearAccountHistoryBackfillRetry(accountId: string): void {
@@ -915,26 +923,39 @@ export class ControlCenterService {
     const rangeStartTime =
       backfillFromBlockHeight === 0 ? new Date(0) : estimateTimestampForBlockHeight(backfillFromBlockHeight, tip)
     const currentSnapshotTime = new Date()
-    let runningBalance = startBalance
-
-    await this.recordAccountSnapshot(accountId, startBalance.toString(), rangeStartTime.toISOString())
-
-    for (const delta of deltas) {
-      runningBalance += delta.value
-      await this.recordAccountSnapshot(accountId, runningBalance.toString(), delta.timestamp.toISOString())
-    }
-
-    await this.recordAccountSnapshot(accountId, reconstructionBalance.toString(), currentSnapshotTime.toISOString())
-    const reconciledSnapshotCount = await this.reconcileAccountSnapshots(
-      accountId,
-      rangeStartTime,
-      currentSnapshotTime,
-      startBalance,
-      deltas,
-    )
-
-    for (const missingRange of missingRanges) {
-      await this.recordAccountHistorySync(accountId, missingRange, tip)
+    // Fetch and verify Electrum history before taking the transaction. Publish
+    // snapshots, corrections and certified coverage together, or not at all.
+    const reconciledSnapshotCount = await this.db.transaction(async (tx): Promise<number | null> => {
+      if (!(await this.canContinueAccountHistoryBackfill(accountId, generation, tx))) {
+        return null
+      }
+      let runningBalance = startBalance
+      await this.upsertAccountSnapshot(tx, accountId, startBalance.toString(), rangeStartTime.toISOString())
+      for (const delta of deltas) {
+        runningBalance += delta.value
+        await this.upsertAccountSnapshot(tx, accountId, runningBalance.toString(), delta.timestamp.toISOString())
+      }
+      await this.upsertAccountSnapshot(
+        tx,
+        accountId,
+        reconstructionBalance.toString(),
+        currentSnapshotTime.toISOString(),
+      )
+      const reconciledCount = await this.reconcileAccountSnapshots(
+        tx,
+        accountId,
+        rangeStartTime,
+        currentSnapshotTime,
+        startBalance,
+        deltas,
+      )
+      for (const missingRange of missingRanges) {
+        await this.recordAccountHistorySync(accountId, missingRange, tip, tx)
+      }
+      return reconciledCount
+    })
+    if (reconciledSnapshotCount === null) {
+      return null
     }
 
     this.logger.info(
@@ -986,13 +1007,14 @@ export class ControlCenterService {
   }
 
   private async reconcileAccountSnapshots(
+    tx: SentinelTx,
     accountId: string,
     rangeStart: Date,
     rangeEnd: Date,
     startBalance: bigint,
     deltas: BalanceEntry[],
   ): Promise<number> {
-    const snapshots = await this.db
+    const snapshots = await tx
       .select({ balance_sats: balanceSnapshots.balanceSats, timestamp: balanceSnapshots.timestamp })
       .from(balanceSnapshots)
       .where(
@@ -1024,7 +1046,7 @@ export class ControlCenterService {
         continue
       }
 
-      await this.recordAccountSnapshot(accountId, runningBalance.toString(), snapshot.timestamp)
+      await this.upsertAccountSnapshot(tx, accountId, runningBalance.toString(), snapshot.timestamp)
       updatedCount++
     }
 
@@ -1094,11 +1116,16 @@ export class ControlCenterService {
     return missingRanges
   }
 
-  private async recordAccountHistorySync(accountId: string, range: BlockRange, tip: Block): Promise<void> {
-    if (!(await this.isAccountActive(accountId))) {
-      return
-    }
-    await this.db.transaction(async (tx) => {
+  private async recordAccountHistorySync(
+    accountId: string,
+    range: BlockRange,
+    tip: Block,
+    transaction?: SentinelTx,
+  ): Promise<void> {
+    const record = async (tx: SentinelTx): Promise<void> => {
+      if (!(await this.isAccountActive(accountId, tx))) {
+        return
+      }
       // Coalesce only equally certified coverage. Never bridge an unscanned
       // block or promote an older version's range without actually scanning it.
       const rows = await tx
@@ -1169,7 +1196,12 @@ export class ControlCenterService {
           ],
           set: { rangeStart, rangeEnd, syncVersion: CURRENT_ACCOUNT_HISTORY_SYNC_VERSION, syncedAt },
         })
-    })
+    }
+    if (transaction === undefined) {
+      await this.db.transaction(record)
+    } else {
+      await record(transaction)
+    }
   }
 
   /**
