@@ -6,6 +6,7 @@ export default defineConfig(
   ({ mode }) =>
     ({
       root: import.meta.dirname,
+      oxc: { jsx: { runtime: 'automatic' } },
       cacheDir: '../node_modules/.vite/packages',
       plugins: [react()],
 
