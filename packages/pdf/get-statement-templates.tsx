@@ -23,6 +23,20 @@ import { formatDateRange } from '../ui/utils/date-and-time'
  * This value determines how many table rows can fit on a single page.
  */
 const MAX_ROWS_PER_PAGE = 8
+const PUBLIC_MEMPOOL_URL = 'https://mempool.space'
+const MONO_GLYPH_WIDTH_EM = 0.6
+/** Space reserved between amounts in neighbouring columns. */
+const AMOUNT_COLUMN_GAP = 12
+
+/**
+ * Shrinks only text too long for its column, such as CAD 12,345,678.90, so neighbouring amounts
+ * never run together. GeistMono glyphs are all 0.6 em wide, so the text width is exact. The
+ * layout narrows columns slightly to fit the page, so the remaining gap is a little under the
+ * reserve.
+ */
+function fitFontSize(text: string, fontSize: number, columnWidth: number): number {
+  return Math.min(fontSize, (columnWidth - AMOUNT_COLUMN_GAP) / (text.length * MONO_GLYPH_WIDTH_EM))
+}
 
 export type DocumentInput = {
   watermarkText: string
@@ -979,6 +993,8 @@ export function getStatementDocumentTemplates(
     quoteCurrency: StatementQuoteCurrency
     currency: CurrencyCode
     isEmphasized?: boolean
+    /** Nominal width of the amount's column. */
+    columnWidth: number
   }
 
   const AmountDisplay: React.FC<AmountDisplayProps> = ({
@@ -987,16 +1003,34 @@ export function getStatementDocumentTemplates(
     currency,
     quoteCurrency,
     isEmphasized = false,
-  }) => (
-    <View style={amountStyles.container}>
-      <Text style={{ ...amountStyles.btcAmount, fontWeight: isEmphasized ? 'semibold' : 'normal' }}>
-        {formatMinorToMajor(minorUnits, currency)}
-      </Text>
-      <Text style={{ ...amountStyles.quoteAmount, fontWeight: isEmphasized ? 'semibold' : 'normal' }}>
-        {formatQuote(quoteAmount, quoteCurrency)}
-      </Text>
-    </View>
-  )
+    columnWidth,
+  }) => {
+    const fontWeight = isEmphasized ? 'semibold' : 'normal'
+    const btc = formatMinorToMajor(minorUnits, currency)
+    const quote = formatQuote(quoteAmount, quoteCurrency)
+    return (
+      <View style={amountStyles.container}>
+        <Text
+          style={{
+            ...amountStyles.btcAmount,
+            fontSize: fitFontSize(btc, amountStyles.btcAmount.fontSize, columnWidth),
+            fontWeight,
+          }}
+        >
+          {btc}
+        </Text>
+        <Text
+          style={{
+            ...amountStyles.quoteAmount,
+            fontSize: fitFontSize(quote, amountStyles.quoteAmount.fontSize, columnWidth),
+            fontWeight,
+          }}
+        >
+          {quote}
+        </Text>
+      </View>
+    )
+  }
 
   interface HosekiHeaderProps {
     proofNumber: number
@@ -1118,61 +1152,67 @@ export function getStatementDocumentTemplates(
     provider,
     providerUrl,
     providerUrls,
-  }) => (
-    <View style={footerStyles.container} fixed>
-      <View style={footerStyles.innerContainer}>
-        <View style={footerStyles.row}>
-          {/* Left Column */}
-          <View style={footerStyles.leftColumn}>
-            <LogoWithoutRectangle />
-            <View style={footerStyles.subtitle}>
-              <Text>Proving Ownership{'\n'}for Digital Assets</Text>
+  }) => {
+    // Only the public instance is linked; every self-hosted address, which can reveal a home
+    // network or onion service, collapses into one plain label.
+    const sources = [
+      ...new Set(
+        (providerUrls ?? (providerUrl !== undefined ? [providerUrl] : [])).map((url) =>
+          url === PUBLIC_MEMPOOL_URL ? url : provider === 'mempool' ? 'configured mempool' : provider,
+        ),
+      ),
+    ]
+    return (
+      <View style={footerStyles.container} fixed>
+        <View style={footerStyles.innerContainer}>
+          <View style={footerStyles.row}>
+            {/* Left Column */}
+            <View style={footerStyles.leftColumn}>
+              <LogoWithoutRectangle />
+              <View style={footerStyles.subtitle}>
+                <Text>Proving Ownership{'\n'}for Digital Assets</Text>
+              </View>
             </View>
-          </View>
 
-          {/* Center Column */}
-          <View style={footerStyles.centerColumn}>
-            <Text style={footerStyles.instructionsTitle}>About This Statement</Text>
-            <View style={footerStyles.instructionsTextBlock}>
-              <Text style={footerStyles.instructionsText}>
-                This statement provides detailed information on your Bitcoin holdings in self-custody for the specified
-                period. All data is sourced directly from the Bitcoin network and self-custody ownership is validated by
-                Bitcoin Control Center&apos;s open-source verification process. {quoteCurrency} values are approximate,
-                using saved Bitcoin-to-{quoteCurrency} rates from{' '}
-                {(providerUrls ?? (providerUrl !== undefined ? [providerUrl] : [])).length > 0
-                  ? (providerUrls ?? (providerUrl !== undefined ? [providerUrl] : [])).map((url, index) => (
-                      <React.Fragment key={url}>
-                        {index > 0 && ' and '}
-                        <Link src={url}>
-                          {url === 'https://mempool.space'
-                            ? 'mempool.space'
-                            : provider === 'mempool'
-                              ? 'configured mempool'
-                              : provider}
-                        </Link>
-                      </React.Fragment>
-                    ))
-                  : provider}
-                .
-                {provider === 'mempool' && ' The saved historical price may be from before or after the valuation day.'}{' '}
-                For questions or discrepancies, please contact support@hoseki.app.
-              </Text>
+            {/* Center Column */}
+            <View style={footerStyles.centerColumn}>
+              <Text style={footerStyles.instructionsTitle}>About This Statement</Text>
+              <View style={footerStyles.instructionsTextBlock}>
+                <Text style={footerStyles.instructionsText}>
+                  This statement provides detailed information on your Bitcoin holdings in self-custody for the
+                  specified period. All data is sourced directly from the Bitcoin network and self-custody ownership is
+                  validated by Bitcoin Control Center&apos;s open-source verification process. {quoteCurrency} values
+                  are approximate, using saved Bitcoin-to-{quoteCurrency} rates from{' '}
+                  {sources.length > 0
+                    ? sources.map((source, index) => (
+                        <React.Fragment key={source}>
+                          {index > 0 && ' and '}
+                          {source === PUBLIC_MEMPOOL_URL ? <Link src={source}>mempool.space</Link> : source}
+                        </React.Fragment>
+                      ))
+                    : provider}
+                  .
+                  {provider === 'mempool' &&
+                    ' The saved historical price may be from before or after the valuation day.'}{' '}
+                  For questions or discrepancies, please contact support@hoseki.app.
+                </Text>
+              </View>
             </View>
-          </View>
 
-          {/* Right Column */}
-          <View style={footerStyles.rightColumn}>
-            <RightColumnContent qrCodeSrc={qrCodeSrc} />
+            {/* Right Column */}
+            <View style={footerStyles.rightColumn}>
+              <RightColumnContent qrCodeSrc={qrCodeSrc} />
+            </View>
           </View>
         </View>
-      </View>
 
-      <Text
-        style={footerStyles.pageNumber}
-        render={({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}`}
-      />
-    </View>
-  )
+        <Text
+          style={footerStyles.pageNumber}
+          render={({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}`}
+        />
+      </View>
+    )
+  }
 
   type SummaryRowDisplayData = Omit<StatementEntry, 'transactions'>
 
@@ -1197,6 +1237,7 @@ export function getStatementDocumentTemplates(
       </Cell>
       <Cell columnName={SummaryColumn.OpeningBalance} columnWidths={SUMMARY_COLUMN_WIDTHS}>
         <AmountDisplay
+          columnWidth={SUMMARY_COLUMN_WIDTHS[SummaryColumn.OpeningBalance]}
           minorUnits={tableRow.openingBalance.sats}
           quoteAmount={tableRow.openingBalance.quoteValue}
           currency={currency}
@@ -1206,6 +1247,7 @@ export function getStatementDocumentTemplates(
       </Cell>
       <Cell columnName={SummaryColumn.MoneyOut} columnWidths={SUMMARY_COLUMN_WIDTHS}>
         <AmountDisplay
+          columnWidth={SUMMARY_COLUMN_WIDTHS[SummaryColumn.MoneyOut]}
           minorUnits={tableRow.moneyOut.sats}
           quoteAmount={tableRow.moneyOut.quoteValue}
           currency={currency}
@@ -1215,6 +1257,7 @@ export function getStatementDocumentTemplates(
       </Cell>
       <Cell columnName={SummaryColumn.MoneyIn} columnWidths={SUMMARY_COLUMN_WIDTHS}>
         <AmountDisplay
+          columnWidth={SUMMARY_COLUMN_WIDTHS[SummaryColumn.MoneyIn]}
           minorUnits={tableRow.moneyIn.sats}
           quoteAmount={tableRow.moneyIn.quoteValue}
           currency={currency}
@@ -1224,6 +1267,7 @@ export function getStatementDocumentTemplates(
       </Cell>
       <Cell columnName={SummaryColumn.ClosingBalance} columnWidths={SUMMARY_COLUMN_WIDTHS}>
         <AmountDisplay
+          columnWidth={SUMMARY_COLUMN_WIDTHS[SummaryColumn.ClosingBalance]}
           minorUnits={tableRow.closingBalance.sats}
           quoteAmount={tableRow.closingBalance.quoteValue}
           currency={currency}
@@ -1445,6 +1489,7 @@ export function getStatementDocumentTemplates(
         <Cell columnName={TransactionColumn.MoneyOut} columnWidths={TRANSACTION_COLUMN_WIDTHS}>
           {transaction.amount.sats < 0n && (
             <AmountDisplay
+              columnWidth={TRANSACTION_COLUMN_WIDTHS[TransactionColumn.MoneyOut]}
               minorUnits={transaction.amount.sats}
               quoteAmount={transaction.amount.quoteValue}
               currency={currency}
@@ -1455,6 +1500,7 @@ export function getStatementDocumentTemplates(
         <Cell columnName={TransactionColumn.MoneyIn} columnWidths={TRANSACTION_COLUMN_WIDTHS}>
           {transaction.amount.sats > 0n && (
             <AmountDisplay
+              columnWidth={TRANSACTION_COLUMN_WIDTHS[TransactionColumn.MoneyIn]}
               minorUnits={transaction.amount.sats}
               quoteAmount={transaction.amount.quoteValue}
               currency={currency}
@@ -1464,6 +1510,7 @@ export function getStatementDocumentTemplates(
         </Cell>
         <Cell columnName={TransactionColumn.ClosingBalance} columnWidths={TRANSACTION_COLUMN_WIDTHS}>
           <AmountDisplay
+            columnWidth={TRANSACTION_COLUMN_WIDTHS[TransactionColumn.ClosingBalance]}
             minorUnits={transaction.balance.sats}
             quoteAmount={transaction.balance.quoteValue}
             currency={currency}
