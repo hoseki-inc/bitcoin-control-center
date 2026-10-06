@@ -1,9 +1,0 @@
-import { Tag } from '@chakra-ui/react'
-
-export function AddressStatusPill({ verified }: { verified: boolean }): JSX.Element {
-  return (
-    <Tag bgColor={verified ? 'success.500' : 'warning.500'} color="white" borderRadius={16} px={2} py={1} fontSize="sm">
-      {verified ? 'Verified' : 'Unverified'}
-    </Tag>
-  )
-}
