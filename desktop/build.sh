@@ -53,7 +53,7 @@ COMMON=(
 if [[ "$TARGET" == --win || "$TARGET" == --all ]]; then
   if [[ ! -f node_modules/@libsql/win32-x64-msvc/index.node ]]; then
     echo "==> Installing the Windows libSQL prebuild for cross-platform packaging..."
-    LIBSQL_VERSION="$(node -p "require('libsql/package.json').optionalDependencies['@libsql/win32-x64-msvc']")"
+    LIBSQL_VERSION="$(node -p "require('./node_modules/libsql/package.json').optionalDependencies['@libsql/win32-x64-msvc']")"
     NATIVE_ARCHIVE="$(npm pack "@libsql/win32-x64-msvc@$LIBSQL_VERSION" --silent)"
     mkdir -p node_modules/@libsql/win32-x64-msvc
     tar -xzf "$NATIVE_ARCHIVE" -C node_modules/@libsql/win32-x64-msvc --strip-components=1
