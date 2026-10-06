@@ -26,7 +26,7 @@ export async function openDrizzleDatabase(dataDir: string, logger: Logger): Prom
   logger.info({ path: dbPath }, 'Opening local libSQL database')
   // A single connection keeps PRAGMA settings consistent. There is no remote
   // URL, token or replication service.
-  const client = createClient({ url: pathToFileURL(dbPath).href, concurrency: 1 })
+  const client = createClient({ url: pathToFileURL(dbPath).href, concurrency: 1, timeout: 5000 })
   try {
     const db = drizzle({ client })
     await db.run(sql`PRAGMA foreign_keys = ON`)

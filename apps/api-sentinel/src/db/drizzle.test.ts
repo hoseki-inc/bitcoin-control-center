@@ -1,7 +1,9 @@
+import { once } from 'node:events'
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+import { Worker } from 'node:worker_threads'
 import type { Value } from '@libsql/client'
 import { eq, sql } from 'drizzle-orm'
 import { migrate } from 'drizzle-orm/libsql/migrator'
@@ -141,6 +143,64 @@ it('initializes all 14 imported migrations and reopens without changing data or 
     ])
   } finally {
     second.$client.close()
+  }
+})
+
+it('preserves the five-second busy timeout after reconnecting', async () => {
+  const database = await openDrizzleDatabase(testDirectory(), logger)
+  try {
+    await expect(database.all(sql`PRAGMA busy_timeout`)).resolves.toEqual([{ timeout: 5000 }])
+    database.$client.reconnect()
+    await expect(database.all(sql`PRAGMA busy_timeout`)).resolves.toEqual([{ timeout: 5000 }])
+  } finally {
+    database.$client.close()
+  }
+})
+
+it('waits for an independently held write lock to be released', async () => {
+  const directory = testDirectory()
+  const database = await openDrizzleDatabase(directory, logger)
+  // Native SQLite waits block this thread's event loop. The lock holder must
+  // release from a separate thread, not a timer on the thread doing the write.
+  const holder = new Worker(
+    `
+      const { parentPort, workerData } = require('node:worker_threads')
+      const { createClient } = require('@libsql/client/sqlite3')
+      async function holdLock() {
+        const client = createClient({ url: workerData, concurrency: 1 })
+        try {
+          const tx = await client.transaction('write')
+          await tx.execute("INSERT INTO settings (key, value) VALUES ('holder', 'committed')")
+          parentPort.once('message', () => {
+            setTimeout(async () => {
+              await tx.commit()
+              client.close()
+              parentPort.postMessage('released')
+              parentPort.close()
+            }, 200)
+          })
+          parentPort.postMessage('locked')
+        } catch (error) {
+          client.close()
+          throw error
+        }
+      }
+      void holdLock()
+    `,
+    { eval: true, workerData: pathToFileURL(join(directory, 'sentinel.db')).href },
+  )
+  try {
+    await expect(once(holder, 'message')).resolves.toEqual(['locked'])
+    const released = once(holder, 'message')
+    holder.postMessage('release')
+    await Promise.all([database.insert(settings).values({ key: 'waiting', value: 'committed' }), released])
+    await expect(database.select().from(settings).orderBy(settings.key)).resolves.toEqual([
+      { key: 'holder', value: 'committed' },
+      { key: 'waiting', value: 'committed' },
+    ])
+  } finally {
+    await holder.terminate()
+    database.$client.close()
   }
 })
 
