@@ -24,18 +24,20 @@ export async function openDrizzleDatabase(dataDir: string, logger: Logger): Prom
   mkdirSync(dataDir, { recursive: true })
   const dbPath = join(dataDir, 'sentinel.db')
   logger.info({ path: dbPath }, 'Opening local libSQL database')
-  // A single connection keeps PRAGMA settings consistent. There is no remote
-  // URL, token or replication service.
+  // One local connection; the configured busy timeout applies to replacements too.
+  // There is no remote URL, token or replication service.
   const client = createClient({ url: pathToFileURL(dbPath).href, concurrency: 1, timeout: 5000 })
   try {
     const db = drizzle({ client })
-    await db.run(sql`PRAGMA foreign_keys = ON`)
+    // WAL persists in the file; initialize it here for new databases.
     await db.run(sql`PRAGMA journal_mode = WAL`)
     const folder = migrationsFolder()
     const journal = await prepareMigrationJournal(db, folder)
     if (journal.isErr()) {
       throw journal.unwrapErr()
     }
+    // The pinned native libSQL build enables foreign keys by default, including
+    // on reconnect. Its migration runner also restores enforcement after batches.
     await migrate(db, { migrationsFolder: folder, migrationsTable })
 
     // libSQL rejects queries while an interactive transaction owns its only

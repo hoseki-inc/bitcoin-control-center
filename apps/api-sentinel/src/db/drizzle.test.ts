@@ -146,12 +146,47 @@ it('initializes all 14 imported migrations and reopens without changing data or 
   }
 })
 
-it('preserves the five-second busy timeout after reconnecting', async () => {
+it.each(['startup', 'reconnect'] as const)(
+  'enforces foreign keys, WAL and the busy timeout after %s',
+  async (phase) => {
+    const database = await openDrizzleDatabase(testDirectory(), logger)
+    try {
+      await database.insert(accounts).values({ id: 'wallet', descriptor: 'test-descriptor', displayName: 'Wallet' })
+      await database.insert(balanceSnapshots).values({ accountId: 'wallet', timestamp: '2026-01-01', balanceSats: '1' })
+      if (phase === 'reconnect') {
+        // Prove that enforcement comes from a fresh connection, not our old PRAGMA.
+        await database.run(sql`PRAGMA foreign_keys = OFF`)
+        await expect(database.all(sql`PRAGMA foreign_keys`)).resolves.toEqual([{ foreign_keys: 0 }])
+        database.$client.reconnect()
+      }
+      await expect(database.all(sql`PRAGMA foreign_keys`)).resolves.toEqual([{ foreign_keys: 1 }])
+      await expect(database.all(sql`PRAGMA journal_mode`)).resolves.toEqual([{ journal_mode: 'wal' }])
+      await expect(database.all(sql`PRAGMA busy_timeout`)).resolves.toEqual([{ timeout: 5000 }])
+      await expect(
+        database.insert(balanceSnapshots).values({ accountId: 'missing', timestamp: '2026-01-01', balanceSats: '1' }),
+      ).rejects.toHaveProperty('cause.message', expect.stringContaining('FOREIGN KEY constraint failed'))
+      await database.insert(balanceSnapshots).values({ accountId: 'wallet', timestamp: '2026-01-02', balanceSats: '2' })
+      await expect(database.select().from(balanceSnapshots)).resolves.toHaveLength(2)
+      await database.delete(accounts).where(eq(accounts.id, 'wallet'))
+      await expect(database.select().from(balanceSnapshots)).resolves.toEqual([])
+      await expect(database.all(sql`PRAGMA foreign_key_check`)).resolves.toEqual([])
+    } finally {
+      database.$client.close()
+    }
+  },
+)
+
+it('restores foreign-key enforcement even when no migrations are pending', async () => {
   const database = await openDrizzleDatabase(testDirectory(), logger)
   try {
-    await expect(database.all(sql`PRAGMA busy_timeout`)).resolves.toEqual([{ timeout: 5000 }])
-    database.$client.reconnect()
-    await expect(database.all(sql`PRAGMA busy_timeout`)).resolves.toEqual([{ timeout: 5000 }])
+    const before = await databaseState(database)
+    await database.run(sql`PRAGMA foreign_keys = OFF`)
+    await expect(database.all(sql`PRAGMA foreign_keys`)).resolves.toEqual([{ foreign_keys: 0 }])
+
+    await migrate(database, { migrationsFolder: fileURLToPath(migrationFolder), migrationsTable })
+
+    await expect(database.all(sql`PRAGMA foreign_keys`)).resolves.toEqual([{ foreign_keys: 1 }])
+    await expect(databaseState(database)).resolves.toEqual(before)
   } finally {
     database.$client.close()
   }
