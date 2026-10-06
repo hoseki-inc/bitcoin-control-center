@@ -2,9 +2,11 @@ import { Box, Button, Flex, Grid, Stack, Text } from '@chakra-ui/react'
 import { Spinner } from '@hoseki/packages/ui/design-system'
 import Decimal from 'decimal.js'
 import { Link } from 'react-router'
+import { BitcoinAmount } from '../components/bitcoin-amount'
 import { AccumulationChart } from '../components/dashboard-charts/accumulation-chart'
 import { Banner } from '../components/dashboard/banner'
 import { RecentStatements } from '../components/dashboard/recent-statements'
+import { SensitiveValue } from '../components/sensitive-value'
 import { useUiSettings } from '../hooks/use-ui-settings'
 import { trpc } from '../trpc'
 import type { StatementDto } from '../trpc/server-types'
@@ -72,13 +74,12 @@ function PortfolioSummary(): JSX.Element | null {
       <Flex align="flex-start" justify="space-between" mb={4}>
         <Box>
           <Text fontFamily="mono" textStyle="text/3xl" fontWeight="bold" color="neutral.900" letterSpacing="-0.03em">
-            {totalBtc.toFixed(8)}
+            <BitcoinAmount btc={totalBtc} />
           </Text>
           <Text textStyle="text/sm" color="neutral.400" mt={0.5}>
-            <Text as="span" color="neutral.300">
-              BTC
-            </Text>
-            {'  ·  '}${totalUsd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            <SensitiveValue>
+              ${totalUsd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </SensitiveValue>
           </Text>
         </Box>
         <Button
@@ -100,7 +101,9 @@ function PortfolioSummary(): JSX.Element | null {
           Last 30 Days
         </Text>
         <Box position="relative" overflow="hidden">
-          <AccumulationChart data={historicalData} hasActivity={hasBalance} isUp={isUp} timezone={userTimezone} />
+          <SensitiveValue>
+            <AccumulationChart data={historicalData} hasActivity={hasBalance} isUp={isUp} timezone={userTimezone} />
+          </SensitiveValue>
           {isChartFetching && (
             <Box
               position="absolute"
@@ -158,13 +161,17 @@ function StatMini({
             fontWeight="bold"
             color={isPositive ? 'success.600' : 'error.500'}
           >
-            {isPositive ? '+' : ''}
-            {value.toFixed(8)} BTC
+            <SensitiveValue>
+              {isPositive ? '+' : ''}
+              <BitcoinAmount btc={value} />
+            </SensitiveValue>
           </Text>
           {usdValue !== null && (
             <Text textStyle="text/xs" color="neutral.400">
-              {usdValue >= 0 ? '+' : '−'}$
-              {Math.abs(usdValue).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              <SensitiveValue>
+                {usdValue >= 0 ? '+' : '−'}$
+                {Math.abs(usdValue).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </SensitiveValue>
             </Text>
           )}
         </Flex>

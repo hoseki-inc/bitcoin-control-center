@@ -8,12 +8,7 @@ import {
   XCircleFilledIcon,
   getBadgeConfigForKeystore,
 } from '@hoseki/packages/ui/prove-verify-ui'
-import {
-  encodingsToLabels,
-  formatUsd,
-  toBitcoinAmountDisplayValue,
-  toXpubDisplayValue,
-} from '@hoseki/packages/ui/utils'
+import { encodingsToLabels, formatUsd, toXpubDisplayValue } from '@hoseki/packages/ui/utils'
 import { format } from 'date-fns'
 import { EyeIcon, EyeOffIcon } from 'lucide-react'
 import { useState } from 'react'
@@ -21,6 +16,8 @@ import { useGetClaimBalance } from '../../../lib/balances'
 import { getKeystoreStatus } from '../../../lib/multisig/keystore'
 import type { ClaimDto } from '../../../trpc/server-types'
 import { ensureClaimStatusNotExpired } from '../../../utils/claim-utils'
+import { BitcoinAmount } from '../../bitcoin-amount'
+import { SensitiveValue } from '../../sensitive-value'
 import { WalletImageFromKnownModel } from '../wallet-image-from-known-model'
 import { RenameKeystore } from './rename-keystore'
 
@@ -55,11 +52,11 @@ export function KeystoreDetailsSingleSig({
           ) : (
             <>
               <Text textStyle="label/sm" color="neutral.900" fontWeight="medium">
-                {balance?.current ? toBitcoinAmountDisplayValue(balance.current.toString()) : 'n/a'}
+                {balance?.current ? <BitcoinAmount btc={balance.current.div(100_000_000)} /> : 'n/a'}
               </Text>
               {balance?.usd && (
                 <Text textStyle="label/sm" color="success.600" fontWeight="medium">
-                  {formatUsd(balance.usd.toFixed(2))}
+                  <SensitiveValue>{formatUsd(balance.usd.toFixed(2))}</SensitiveValue>
                 </Text>
               )}
             </>

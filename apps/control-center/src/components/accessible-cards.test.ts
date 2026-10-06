@@ -2,6 +2,7 @@
 import { Box } from '@chakra-ui/react'
 import { TestChakraProvider as ChakraProvider } from '@hoseki/packages/testing/chakra-provider'
 import type { SupportedHardwareWallet } from '@hoseki/packages/wallet/hardware-wallet'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { type FormEvent, type ReactNode, act, createElement } from 'react'
 import { type Root, createRoot } from 'react-dom/client'
 import { MemoryRouter } from 'react-router'
@@ -81,8 +82,17 @@ async function withTestSetup(run: () => Promise<void>): Promise<void> {
 }
 
 async function render(child: ReactNode): Promise<void> {
+  // Seed the stored display preference the same way a loaded settings query would.
+  const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity, retry: false } } })
+  queryClient.setQueryData(['local-settings', 'bitcoin_display_unit'], 'btc')
   await act(async () => {
-    root.render(createElement(ChakraProvider, null, createElement(MemoryRouter, null, child)))
+    root.render(
+      createElement(
+        QueryClientProvider,
+        { client: queryClient },
+        createElement(ChakraProvider, null, createElement(MemoryRouter, null, child)),
+      ),
+    )
   })
 }
 function button(text: string): HTMLButtonElement {
