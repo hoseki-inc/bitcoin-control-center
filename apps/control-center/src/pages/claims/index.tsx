@@ -277,6 +277,7 @@ export function ClaimsPage(): JSX.Element {
         {hasClaims ? (
           <Grid
             templateColumns={{ base: '1fr', sm: 'repeat(2, minmax(0, 1fr))', md: 'repeat(3, minmax(0, 1fr))' }}
+            autoRows="1fr"
             gap={4}
           >
             {claims.map((claim) => (
