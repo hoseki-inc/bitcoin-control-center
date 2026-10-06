@@ -13,9 +13,11 @@ import { assert, expect, it, onTestFinished, vi } from 'vitest'
 import { StatementPollingProvider } from '../../providers/statement-polling-provider'
 import { claimFixture } from '../../testing/claims'
 import { TestTrpcProvider, createTestTrpcClient } from '../../testing/trpc'
-import { trpc } from '../../trpc'
+import { type RouterOutput, trpc } from '../../trpc'
 import type { StatementDto } from '../../trpc/server-types'
 import { StatementCreatePage } from './create'
+
+type ExchangeAccountDto = RouterOutput['portalProve']['exchange']['list'][number]
 
 const browser = await vi.hoisted(async () => {
   const { createBrowserDom, installBrowserDom } = await import('@hoseki/packages/testing/browser-dom')
@@ -32,7 +34,7 @@ const browser = await vi.hoisted(async () => {
 })
 
 it.each(StatementQuoteCurrencySchema.options)(
-  'sends selected %s consistently to preview and generation',
+  'sends selected %s and only self-custody accounts to preview and generation',
   async (currency) => {
     const dom = browser.acquire()
     const requests: Operation[] = []
@@ -69,7 +71,19 @@ it.each(StatementQuoteCurrencySchema.options)(
     client.setQueryData(getQueryKey(trpc.portalProve.registry.claims.list, { excludePending: true }, 'query'), [
       claimFixture(claimId, 'Savings wallet'),
     ])
-    client.setQueryData(getQueryKey(trpc.portalProve.exchange.list, undefined, 'query'), [])
+    // A connected exchange must stay off the page and out of statement requests.
+    client.setQueryData<ExchangeAccountDto[]>(getQueryKey(trpc.portalProve.exchange.list, undefined, 'query'), [
+      {
+        id: 'exchange-account',
+        exchange: 'coinbase',
+        displayName: 'Coinbase savings',
+        currency: 'BTC',
+        balance: '100000000',
+        balanceAsOf: null,
+        createdAt: '2026-08-01T00:00:00.000Z',
+        connectionStatus: 'connected',
+      },
+    ])
     client.setQueryData(getQueryKey(trpc.portalProve.retrieveBitcoinPrice, undefined, 'query'), null)
     client.setQueryData(
       getQueryKey(trpc.portalProve.onchain.claimBalances, { claimIds: [claimId] }, 'query'),
@@ -110,6 +124,7 @@ it.each(StatementQuoteCurrencySchema.options)(
         ),
       )
     })
+    expect(container.textContent).not.toMatch(/coinbase/i)
     const select = container.querySelector('#quote-currency')
     assert.instanceOf(select, dom.window.HTMLSelectElement)
     expect(select.value).toBe('USD')
@@ -125,9 +140,9 @@ it.each(StatementQuoteCurrencySchema.options)(
       preview.click()
     })
     await vi.waitFor(() => {
-      expect(requests.find((request) => request.path === 'portalProve.statement.generatePreview')?.input).toEqual(
-        expect.objectContaining({ quoteCurrency: currency, claimIds: [claimId] }),
-      )
+      const input = requests.find((request) => request.path === 'portalProve.statement.generatePreview')?.input
+      expect(input).toEqual(expect.objectContaining({ quoteCurrency: currency, claimIds: [claimId] }))
+      expect(input).not.toHaveProperty('exchangeAccountIds')
     })
     const close = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Close')
     assert.exists(close)
@@ -143,9 +158,9 @@ it.each(StatementQuoteCurrencySchema.options)(
       generate.click()
     })
     await vi.waitFor(() => {
-      expect(requests.find((request) => request.path === 'portalProve.statement.initiateGeneration')?.input).toEqual(
-        expect.objectContaining({ quoteCurrency: currency, claimIds: [claimId] }),
-      )
+      const input = requests.find((request) => request.path === 'portalProve.statement.initiateGeneration')?.input
+      expect(input).toEqual(expect.objectContaining({ quoteCurrency: currency, claimIds: [claimId] }))
+      expect(input).not.toHaveProperty('exchangeAccountIds')
     })
   },
 )
