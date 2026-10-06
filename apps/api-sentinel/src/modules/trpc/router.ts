@@ -20,6 +20,7 @@ import {
   type ClaimStatus,
   type KeystoreId,
   type SignedMessageId,
+  StatementQuoteCurrencySchema,
   TimezoneSchema,
   hosid,
 } from '@hoseki/packages/schemas'
@@ -33,6 +34,7 @@ import { z } from 'zod'
 import { type ConnectionDetails, MAX_CONNECTION_PROFILES } from '../connection_profiles/store'
 import { PRICE_FALLBACKS_SETTING, PRICE_SOURCES, PRICE_SOURCE_SETTING } from '../price/service'
 import { StatementMapper } from '../statements/mapper'
+import { validateStatementInput } from '../statements/service'
 import { publicProcedure, t } from './init'
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -1581,6 +1583,7 @@ const statementRouter = t.router({
       z.object({
         claimIds: z.array(z.string()),
         exchangeAccountIds: z.array(z.string()).optional(),
+        quoteCurrency: StatementQuoteCurrencySchema.default('USD'),
         openingDate: z.date(),
         closingDate: z.date(),
         timezone: z.string(),
@@ -1595,7 +1598,12 @@ const statementRouter = t.router({
         'Starting statement generation',
       )
 
-      const statementId = ctx.app.statementService.create(input)
+      // Reject invalid dates before saving a statement that could only fail.
+      const created = ctx.app.statementService.create(input)
+      if (created.isErr()) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: created.unwrapErr().message })
+      }
+      const statementId = created.unwrap()
       logger.info({ statementId }, 'Created pending statement')
 
       // Fire-and-forget: generate data in background so the client gets the pending DTO immediately
@@ -1605,7 +1613,7 @@ const statementRouter = t.router({
           if (dataResult.isErr()) {
             const errMsg = dataResult.unwrapErr().message
             logger.error({ statementId, error: errMsg }, 'Statement data generation failed')
-            ctx.app.statementService.fail(statementId)
+            ctx.app.statementService.fail(statementId, errMsg)
             return
           }
 
@@ -1621,7 +1629,11 @@ const statementRouter = t.router({
             'Statement data generated, completing',
           )
 
-          ctx.app.statementService.complete(statementId, transactionMap, dailyRates)
+          const completed = ctx.app.statementService.complete(statementId, transactionMap, dailyRates)
+          if (completed.isErr()) {
+            ctx.app.statementService.fail(statementId, completed.unwrapErr().message)
+            return
+          }
           logger.info({ statementId }, 'Statement generation completed')
         } catch (err) {
           ctx.app.statementService.fail(statementId)
@@ -1685,6 +1697,7 @@ const statementRouter = t.router({
       z.object({
         claimIds: z.array(z.string()),
         exchangeAccountIds: z.array(z.string()).optional(),
+        quoteCurrency: StatementQuoteCurrencySchema.default('USD'),
         openingDate: z.date(),
         closingDate: z.date(),
         timezone: z.string(),
@@ -1695,15 +1708,23 @@ const statementRouter = t.router({
       }),
     )
     .query(async ({ ctx, input }) => {
-      const dataResult = await ctx.app.statementService.generateStatementData({
+      const statementInput = {
         claimIds: input.claimIds,
         exchangeAccountIds: input.exchangeAccountIds,
+        quoteCurrency: input.quoteCurrency,
         openingDate: input.openingDate,
         closingDate: input.closingDate,
         timezone: input.timezone,
         name: input.name,
         address: input.address,
-      })
+      }
+      // A date outside the allowed range is the caller's mistake, not a server failure.
+      const validation = validateStatementInput(statementInput)
+      if (validation.isErr()) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: validation.unwrapErr().message })
+      }
+
+      const dataResult = await ctx.app.statementService.generateStatementData(statementInput)
 
       if (dataResult.isErr()) {
         throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: dataResult.unwrapErr().message })

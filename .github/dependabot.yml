@@ -1,6 +1,7 @@
 version: 2
 # Group routine version updates only. Security fixes stay independent, and
-# unmatched major updates remain visible as separate migration PRs.
+# unmatched major updates remain visible as separate migration PRs. The
+# cooldown matches pnpm's minimumReleaseAge so proposed versions can install.
 updates:
   - package-ecosystem: npm
     directory: /
@@ -9,6 +10,8 @@ updates:
       day: monday
       time: '02:00'
       timezone: America/New_York
+    cooldown:
+      default-days: 7
     groups:
       production-dependencies:
         applies-to: version-updates
@@ -26,6 +29,8 @@ updates:
       day: monday
       time: '02:00'
       timezone: America/New_York
+    cooldown:
+      default-days: 7
     groups:
       desktop-dependencies:
         applies-to: version-updates
@@ -42,6 +47,8 @@ updates:
       day: monday
       time: '02:00'
       timezone: America/New_York
+    cooldown:
+      default-days: 7
     groups:
       startos-dependencies:
         applies-to: version-updates
@@ -56,6 +63,8 @@ updates:
       day: monday
       time: '02:00'
       timezone: America/New_York
+    cooldown:
+      default-days: 7
     groups:
       startos-runtime-dependencies:
         applies-to: version-updates
@@ -70,11 +79,8 @@ updates:
       day: monday
       time: '02:00'
       timezone: America/New_York
-    groups:
-      codeql:
-        applies-to: version-updates
-        patterns:
-          - 'github/codeql-action/*'
+    cooldown:
+      default-days: 7
 
   - package-ecosystem: docker
     directory: /start9
@@ -83,3 +89,5 @@ updates:
       day: monday
       time: '02:00'
       timezone: America/New_York
+    cooldown:
+      default-days: 7

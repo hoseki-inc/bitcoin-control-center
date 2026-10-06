@@ -420,4 +420,31 @@ const MIGRATIONS: Migration[] = [
       );
     `,
   },
+  {
+    name: '015_btc_quote_cache',
+    sql: `
+      CREATE TABLE btc_quote_cache (
+        provider_url TEXT NOT NULL,
+        quote_currency TEXT NOT NULL CHECK(quote_currency IN ('USD', 'CAD', 'GBP', 'EUR')),
+        timestamp INTEGER NOT NULL,
+        price TEXT NOT NULL,
+        PRIMARY KEY(quote_currency, timestamp)
+      );
+      CREATE TABLE btc_quote_lookups (
+        provider TEXT NOT NULL,
+        requested_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL,
+        PRIMARY KEY(provider, requested_at)
+      );
+      CREATE INDEX btc_quote_lookup_date ON btc_quote_lookups(requested_at, expires_at);
+    `,
+  },
+  {
+    name: '016_statement_quote_currency',
+    sql: `
+      ALTER TABLE statements ADD COLUMN quote_currency TEXT NOT NULL DEFAULT 'USD'
+        CHECK(quote_currency IN ('USD', 'CAD', 'GBP', 'EUR'));
+      ALTER TABLE statements ADD COLUMN error_message TEXT;
+    `,
+  },
 ]

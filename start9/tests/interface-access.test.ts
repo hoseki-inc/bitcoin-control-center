@@ -5,7 +5,9 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { daemons } from '@start9labs/start-sdk'
 import { assert, describe, expect, it, onTestFinished, vi } from 'vitest'
+import { configFile } from '../startos/fileModels/configFile'
 import { main } from '../startos/main'
+import * as mempool from '../startos/mempool'
 import { sdk } from '../startos/sdk'
 
 type InterfaceFixture = {
@@ -13,6 +15,7 @@ type InterfaceFixture = {
   addresses: { available: Hostname[]; enabled: string[]; disabled: [string, number][] }
   retry: ReturnType<typeof vi.fn>
   changed: () => void
+  mempoolUrl: () => string
   allowedHosts: () => string
   setPresent: (present: boolean) => void
 }
@@ -62,6 +65,11 @@ function setupInterface(available: Hostname[], enabled: string[] = []): Interfac
       return { bindings: { 3400: { addresses } } }
     }),
   }
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- SAFETY: main reads only const from the file helper; the test does not access disk.
+  vi.spyOn(configFile, 'read').mockReturnValue({ const: async () => ({ 'mempool-url': null }) } as ReturnType<
+    typeof configFile.read
+  >)
+  vi.spyOn(mempool, 'resolveMempoolUrl').mockResolvedValue('https://mempool.space')
   const addDaemon = vi.fn<(id: string, options: { exec: daemons.ExecCommandOptions }) => void>()
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- SAFETY: The mocked builder exposes only addDaemon, the sole method exercised by this integration test; no daemon starts.
   vi.spyOn(sdk.Daemons, 'of').mockReturnValue({ addDaemon } as ReturnType<typeof sdk.Daemons.of>)
@@ -90,6 +98,13 @@ function setupInterface(available: Hostname[], enabled: string[] = []): Interfac
       assert.exists(hosts, 'Expected an explicit Sentinel host allowlist')
       return hosts
     },
+    mempoolUrl: () => {
+      const call = addDaemon.mock.lastCall
+      assert.exists(call, 'Expected the Sentinel daemon to be registered')
+      const url = call[1].exec.env?.['MEMPOOL_API_URL']
+      assert.exists(url, 'Expected an explicit mempool URL')
+      return url
+    },
     setPresent: (value) => {
       present = value
     },
@@ -109,6 +124,23 @@ async function withTestSetup(run: () => Promise<void>): Promise<void> {
 }
 
 describe('StartOS enabled interface addresses', () => {
+  it('passes the selected mempool URL alongside the enabled host allowlist', async () => {
+    await withTestSetup(async () => {
+      const state = setupInterface([publicAddress], [`${publicIp}:50399`])
+      const mempoolUrl = 'http://mempool.local:8080'
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- SAFETY: main reads only const from this fixture; no real file helper methods run.
+      const configuration = { const: async () => ({ 'mempool-url': mempoolUrl }) } as ReturnType<typeof configFile.read>
+      vi.spyOn(configFile, 'read').mockReturnValue(configuration)
+      vi.mocked(mempool.resolveMempoolUrl).mockResolvedValue(mempoolUrl)
+
+      await main(state.options)
+
+      expect(mempool.resolveMempoolUrl).toHaveBeenCalledWith(state.options.effects, mempoolUrl)
+      expect(state.mempoolUrl()).toBe(mempoolUrl)
+      expect(state.allowedHosts()).toBe(publicIp)
+    })
+  })
+
   it('passes only SDK-enabled IPs and hostnames to Sentinel', async () => {
     await withTestSetup(async () => {
       const state = setupInterface(

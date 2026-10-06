@@ -104,6 +104,17 @@ interface OwnershipHarness {
 }
 
 export function setupOwnershipHarness(): OwnershipHarness {
+  const { caller, db } = setupAppCaller()
+  return { registry: caller.portalProve.registry, db }
+}
+
+interface AppCallerHarness {
+  caller: ReturnType<typeof appRouter.createCaller>
+  db: Database.Database
+}
+
+/** Build the tRPC router against a fresh database with external services stubbed. */
+export function setupAppCaller(): AppCallerHarness {
   const { directory, logger, database } = createOwnershipDatabase()
   const env = createTestEnvironment(directory)
 
@@ -147,7 +158,7 @@ export function setupOwnershipHarness(): OwnershipHarness {
       onchainProvider,
       exchangeService,
       mempoolApiUrl,
-      dailyRatesService: new DailyRatesService({ logger, mempoolApiUrl }),
+      dailyRatesService: new DailyRatesService({ db: database.db, logger, mempoolApiUrl }),
     }),
     reconnectElectrum: async () => Ok(undefined),
     stopElectrum: () => {
@@ -160,7 +171,7 @@ export function setupOwnershipHarness(): OwnershipHarness {
     connectProfile: async () => Ok(undefined),
   }
 
-  return { registry: appRouter.createCaller({ app }).portalProve.registry, db: database.db }
+  return { caller: appRouter.createCaller({ app }), db: database.db }
 }
 
 export async function createSinglesigClaim(
