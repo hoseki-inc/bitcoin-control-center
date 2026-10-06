@@ -42,14 +42,20 @@ Use **Home** for the current portfolio summary and recent statements. Use
 account is still synchronizing, allow it to finish before treating charts or
 historical totals as complete.
 
-Exchange accounts contact the selected provider when they refresh. BTC/USD price
-and transaction enrichment in the StartOS package currently use mempool.space.
+Exchange accounts contact the selected provider when they refresh. Choose the
+current BTC/USD source and its fallback setting in **Settings → Bitcoin price**.
+By default, it uses the configured mempool when available, otherwise Block.
+Statement prices and transaction details use your mempool service when it is
+installed, so it must be running to generate statements. Missing prices use
+public mempool.space unless fallbacks are turned off.
 
 ## Generate a statement
 
 1. Select **Generate Statement** from Home, or open **Statements** and create a
    statement.
-2. Select the accounts and statement options you want to include.
+2. Select the accounts, date range, and USD, CAD, GBP, or EUR for approximate
+   fiat values.
+   Bitcoin amounts remain in BTC. The exact rates are saved with the statement.
 3. Complete any requested proof-of-control signatures on the relevant hardware
    wallets.
 4. Wait for generation to finish, then review and download the statement.
@@ -58,12 +64,13 @@ A generated statement reflects the selected accounts and the data available at
 generation time. Confirm that account synchronization and exchange refreshes are
 complete first.
 
-## Configure logging
+## Configure mempool and logging
 
-Use the StartOS **Configure** action to change the log level. **Info** is the
-normal setting. Use **Debug** or **Trace** only while diagnosing a problem, then
-restart the service. Return to **Info** when finished to reduce unnecessary log
-detail.
+The optional mempool service is discovered automatically. If it is absent,
+Control Center uses public mempool.space. Use **Configure → Mempool URL Override**
+to choose an explicit HTTP(S) endpoint. The same action changes the log level.
+**Info** is the normal setting. Use **Debug** or **Trace** only while diagnosing
+a problem, then return to **Info**.
 
 Before sharing logs, remove descriptors, extended public keys, exchange account
 details, credentials, and other identifying information.

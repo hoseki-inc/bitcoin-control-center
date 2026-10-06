@@ -9,16 +9,21 @@ import {
   FormControl,
   FormHelperText,
   FormLabel,
+  Grid,
   HStack,
   Image,
   Input,
   type ModalProps,
+  Select,
   Stack,
   Text,
   Textarea,
   chakra,
 } from '@chakra-ui/react'
+import { getLatestStatementClosingDate } from '@hoseki/packages/lib/statement-dates'
+import { parseUnknown } from '@hoseki/packages/result/lib/parse'
 import type { ClaimId } from '@hoseki/packages/schemas'
+import { type StatementQuoteCurrency, StatementQuoteCurrencySchema } from '@hoseki/packages/schemas/statement-quote'
 import { DateInput, Panel } from '@hoseki/packages/ui/design-system'
 import { useMutation } from '@tanstack/react-query'
 import { addDays, endOfDay, isAfter, min, startOfDay, subMonths } from 'date-fns'
@@ -36,7 +41,7 @@ import { trpc } from '../../trpc'
 import type { StatementDto } from '../../trpc/server-types'
 import { isExchangeConnected } from '../../utils/exchange-connection-status'
 
-/** mempool.space historical price data available from April 2023. */
+/** Existing product limit for statement dates. */
 const MIN_MEMPOOL_PRICE_DATE = new Date('2023-04-01')
 const MIN_STATEMENT_DATE = MIN_MEMPOOL_PRICE_DATE
 
@@ -87,8 +92,16 @@ export function StatementCreatePage(): JSX.Element {
     )
   }, [exchangeAccountsQuery.data, hasAppliedExchangePreSelection])
 
+  const [quoteCurrency, setQuoteCurrency] = useState<StatementQuoteCurrency>('USD')
+
   // dates
-  const [closingDate, setClosingDate] = useState<Date>(() => new Date())
+  const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone
+  const now = new Date()
+  // The browser's own timezone is always recognized; UTC only guards against an unexpected runtime.
+  const latestClosingDate = getLatestStatementClosingDate(now, userTimezone).unwrapOrElse(() =>
+    getLatestStatementClosingDate(now, 'UTC').expect('UTC is always a recognized timezone'),
+  )
+  const [closingDate, setClosingDate] = useState<Date>(() => latestClosingDate)
   const [openingDate, setOpeningDate] = useState<Date>(() => startOfDay(subMonths(new Date(), 3)))
 
   // name and address — pre-populate from saved settings in local mode
@@ -109,14 +122,12 @@ export function StatementCreatePage(): JSX.Element {
   // then it is updated to a 'completed' or 'failed' statement.
   const { startPolling, statement } = useStatementPolling()
 
-  const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone
-
   // generate
   const initiateStatementGenerationMutation = trpc.portalProve.statement.initiateGeneration.useMutation()
   const initiateMutationWithArgs = useMutation({
     mutationFn: async () => {
       if (isAfter(openingDate, closingDate)) {
-        toast.error('Start date must be after end date')
+        toast.error('Start date must be before end date')
         return
       }
 
@@ -124,6 +135,7 @@ export function StatementCreatePage(): JSX.Element {
         claimIds: Array.from(selectedClaimIds),
         exchangeAccountIds: Array.from(selectedExchangeAccountIds),
         timezone: userTimezone,
+        quoteCurrency,
         openingDate,
         closingDate,
         name: name || null,
@@ -150,8 +162,8 @@ export function StatementCreatePage(): JSX.Element {
     <Stack py={8} spacing={8}>
       <Panel icon={<FileCheckIcon />} title="Generate Statement">
         <Box pt={8} pb={hasAccounts ? 0 : 8} px={4}>
-          <HStack alignItems="flex-start" gap={8}>
-            <Stack gap={1} flexBasis={LEFT_COLUMN_WIDTH} flexShrink={0}>
+          <Stack direction={{ base: 'column', md: 'row' }} alignItems="flex-start" gap={8}>
+            <Stack gap={1} flexBasis={{ base: 'auto', md: LEFT_COLUMN_WIDTH }} flexShrink={0}>
               <Text as="h2" textStyle="text/md" fontWeight="medium">
                 What is a Bitcoin Control Center statement?
               </Text>
@@ -162,23 +174,29 @@ export function StatementCreatePage(): JSX.Element {
             </Stack>
 
             {hasAccounts ? (
-              <Stack gap={4} flexGrow="1">
+              <Stack gap={5} flexGrow="1" minW={0} w="full" sx={{ containerType: 'inline-size' }}>
                 <Stack gap={1}>
                   <Text as="h2" textStyle="text/md" fontWeight="medium">
-                    Customize Your Date Range
+                    Customize Your Statement
                   </Text>
-                  <Text textStyle="text/sm">
-                    Select a date range for the transaction history shown in your statement.
-                  </Text>
+                  <Text textStyle="text/sm">Select the date range and currency shown in your statement.</Text>
                 </Stack>
-                <HStack spacing={5}>
-                  <FormControl>
+                <Grid
+                  templateColumns="minmax(0, 1fr) minmax(0, 1fr) 96px"
+                  gap={3.5}
+                  alignItems="end"
+                  sx={{
+                    '@container (max-width: 440px)': { gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' },
+                    '@container (max-width: 320px)': { gridTemplateColumns: 'minmax(0, 1fr)' },
+                  }}
+                >
+                  <FormControl minW={0}>
                     <FormLabel textStyle="label/md" fontWeight="medium" color="neutral.900" htmlFor="opening-date">
                       Start Date
                     </FormLabel>
                     <DateInput
                       id="opening-date"
-                      max={new Date()}
+                      max={latestClosingDate}
                       min={addDays(MIN_STATEMENT_DATE, 1)}
                       value={openingDate}
                       onChange={(date) => {
@@ -190,31 +208,50 @@ export function StatementCreatePage(): JSX.Element {
                     />
                   </FormControl>
 
-                  <FormControl>
+                  <FormControl minW={0}>
                     <FormLabel textStyle="label/md" fontWeight="medium" color="neutral.900" htmlFor="closing-date">
                       End Date
                     </FormLabel>
                     <DateInput
                       id="closing-date"
-                      max={new Date()}
+                      max={latestClosingDate}
                       value={closingDate}
                       onChange={(date) => {
                         if (date) {
-                          setClosingDate(
-                            // Make sure the closing date is not greater than NOW
-                            min([endOfDay(date), new Date()]),
-                          )
+                          setClosingDate(min([endOfDay(date), latestClosingDate]))
                         }
                       }}
                       size="md"
                     />
                   </FormControl>
-                </HStack>
+
+                  <FormControl w="96px">
+                    <FormLabel textStyle="label/md" fontWeight="medium" color="neutral.900" htmlFor="quote-currency">
+                      Currency
+                    </FormLabel>
+                    <Select
+                      id="quote-currency"
+                      value={quoteCurrency}
+                      onChange={(event) => {
+                        const parsed = parseUnknown(StatementQuoteCurrencySchema, event.target.value)
+                        if (parsed.isOk()) {
+                          setQuoteCurrency(parsed.unwrap())
+                        }
+                      }}
+                    >
+                      {StatementQuoteCurrencySchema.options.map((currency) => (
+                        <option key={currency} value={currency}>
+                          {currency}
+                        </option>
+                      ))}
+                    </Select>
+                  </FormControl>
+                </Grid>
               </Stack>
             ) : (
               <StatementExampleAsEmptyState />
             )}
-          </HStack>
+          </Stack>
 
           {hasAccounts && (
             <>
@@ -373,6 +410,7 @@ export function StatementCreatePage(): JSX.Element {
         openingDate={openingDate}
         closingDate={closingDate}
         timezone={userTimezone}
+        quoteCurrency={quoteCurrency}
         name={name || null}
         address={address || null}
         context="self_generated"

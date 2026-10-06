@@ -1,4 +1,4 @@
-name: StartOS 3 - Create draft release
+name: Release 3 - Create draft release
 
 on:
   workflow_dispatch:
@@ -6,23 +6,28 @@ on:
 permissions:
   contents: write
 
+# Release jobs and their reusable workflows cannot consume or publish shared caches.
+cache-mode: none
+
 concurrency:
-  group: startos-draft-release
+  group: release-3-create-draft-release
   cancel-in-progress: false
 
 jobs:
-  release:
-    name: Build signed draft release
+  source:
+    name: Select the release commit
     runs-on: ubuntu-latest
-    timeout-minutes: 90
-
+    permissions:
+      contents: read
+    outputs:
+      sha: ${{ steps.source.outputs.sha }}
     steps:
       - name: Require the default branch
         shell: bash
         env:
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
-          if [[ "$GITHUB_REF_NAME" != "$DEFAULT_BRANCH" ]]; then
+          if [[ "$GITHUB_REF" != "refs/heads/$DEFAULT_BRANCH" ]]; then
             echo "::error::Run this workflow from ${DEFAULT_BRANCH}, not ${GITHUB_REF_NAME}."
             exit 1
           fi
@@ -30,11 +35,42 @@ jobs:
       - name: Check out the protected release commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.repository.default_branch }}
+          ref: ${{ github.sha }}
+      - name: Record the exact source commit
+        id: source
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          echo "sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+
+  desktop:
+    needs: source
+    permissions:
+      contents: read
+    uses: ./.github/workflows/desktop-runtime.yml
+
+  release:
+    name: Build StartOS and assemble complete draft release
+    needs: [source, desktop]
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Check out the same protected release commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
           fetch-depth: 0
+
+      - name: Verify the protected commit before executing repository code
+        env:
+          RELEASE_SHA: ${{ needs.source.outputs.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$GITHUB_SHA" = "$RELEASE_SHA"
 
       - name: Set up Node workspace
         uses: ./.github/actions/setup
+        with:
+          cache: 'false'
 
       - name: Install packaging dependencies
         run: |
@@ -44,6 +80,10 @@ jobs:
 
       - name: Run repository verification
         run: pnpm run ci
+
+      # Pull requests skip the audit; releases must pass it.
+      - name: Refuse to release with known moderate or worse vulnerabilities
+        run: pnpm security:audit
 
       - name: Read protected release identity
         id: version
@@ -149,6 +189,31 @@ jobs:
           )
           echo "package_git_hash=${PACKAGE_GIT_HASH}" >> "$GITHUB_OUTPUT"
 
+      - name: Download verified desktop builds
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: Bitcoin-Control-Center-*
+          path: desktop-artifacts
+
+      - name: Verify desktop identities and assemble release assets
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          SOURCE_SHA: ${{ steps.version.outputs.source_sha }}
+        run: |
+          node .github/scripts/assemble-desktop-release.mjs desktop-artifacts artifacts "$VERSION" "$SOURCE_SHA"
+          (cd artifacts && sha256sum -c SHA256SUMS)
+          {
+            echo ""
+            echo "### Desktop installers"
+            echo ""
+            echo "Includes macOS Apple Silicon (ARM64) and Windows x64 installers built from the same source commit as StartOS."
+            echo ""
+            echo "These are review installers: macOS uses an ad-hoc signature without notarization; Windows has no publisher signature. Operating-system installation warnings are expected."
+            echo ""
+            echo "DESKTOP_BUILDS.json records each installer version, source commit, and checksum. SHA256SUMS covers all three installers and that metadata."
+          } >> artifacts/GITHUB_RELEASE_NOTES.md
+
       - name: Create draft GitHub Release and exact tag
         id: release
         shell: bash
@@ -160,6 +225,9 @@ jobs:
         run: |
           RELEASE_URL="$(gh release create "$TAG" \
             "artifacts/hoseki-sentinel-${TAG}.s9pk" \
+            artifacts/*.dmg \
+            artifacts/*.exe \
+            artifacts/DESKTOP_BUILDS.json \
             artifacts/SHA256SUMS \
             --draft \
             --latest=false \
@@ -167,6 +235,20 @@ jobs:
             --title "Bitcoin Control Center ${VERSION}" \
             --notes-file artifacts/GITHUB_RELEASE_NOTES.md)"
           echo "url=${RELEASE_URL}" >> "$GITHUB_OUTPUT"
+
+      # A failed upload can leave a partial draft that blocks a re-run. Drafts have no tag yet, and the
+      # collision check proved none existed before this run.
+      - name: Remove a partial draft after a failed upload
+        if: failure() && steps.release.outcome == 'failure'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          if [[ "$(gh release view "$TAG" --json isDraft --jq .isDraft 2>/dev/null)" == "true" ]]; then
+            gh release delete "$TAG" --yes
+            echo "::warning::Removed the partial draft for ${TAG}. Re-run the release job."
+          fi
 
       - name: Add release summary
         shell: bash
@@ -178,13 +260,15 @@ jobs:
           SIGNING_MODE: ${{ steps.signing.outputs.mode }}
         run: |
           {
-            echo "## StartOS draft release created"
+            echo "## Complete draft release created"
             echo ""
             echo "- Version: \`${VERSION}\`"
             echo "- Exact tag: \`${TAG}\`"
             echo "- Source commit: \`${SHORT_SHA}\`"
-            echo "- Architectures: \`x86_64\`, \`aarch64\`"
-            echo "- Signing: ${SIGNING_MODE}"
+            echo "- StartOS: universal \`x86_64\` / \`aarch64\` package"
+            echo "- StartOS signing: ${SIGNING_MODE}"
+            echo "- Desktop: macOS ARM64 DMG and Windows x64 EXE, with native packaged-runtime smoke tests"
+            echo "- Desktop signing: macOS ad-hoc (not notarized); Windows without publisher signature"
             echo "- Registry publication: no"
             echo "- Draft release: ${RELEASE_URL}"
             echo ""

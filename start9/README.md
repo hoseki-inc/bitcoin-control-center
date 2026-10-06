@@ -59,7 +59,13 @@ public-key retrieval and signing workflows.
 
 ## Configuration management
 
-The StartOS **Configure** action controls the application log level:
+The StartOS **Configure** action sets the mempool URL and application log level.
+Leave the URL blank to use an installed mempool service, or public
+`https://mempool.space` when none is installed; an HTTP(S) URL overrides both.
+Statements need that mempool to be running. Missing statement prices use public
+mempool.space only while fallbacks are on in Settings.
+
+Available log levels:
 
 - Error
 - Warning
@@ -67,8 +73,7 @@ The StartOS **Configure** action controls the application log level:
 - Debug
 - Trace
 
-The action writes `/data/start9/config.yaml`. The container reads it on startup,
-so restart the service after changing the log level if it is already running.
+The action writes `/data/start9/config.yaml`, and the service restarts to apply it.
 
 The StartOS build is fixed to Bitcoin mainnet and its required internal
 `electrs` dependency. Desktop-only Electrum and Tor controls are intentionally
@@ -93,9 +98,9 @@ until StartOS supplies an enabled address. Host and origin checks remain enabled
 
 ## Actions
 
-| Action    | Availability       | Purpose                          |
-| --------- | ------------------ | -------------------------------- |
-| Configure | Any service status | Change the application log level |
+| Action    | Availability       | Purpose                           |
+| --------- | ------------------ | --------------------------------- |
+| Configure | Any service status | Set the mempool URL and log level |
 
 ## Backups and restore
 
@@ -120,15 +125,20 @@ synchronization additionally requires a healthy, synchronized Electrs service.
 | Dependency | Required | Purpose                                           |
 | ---------- | -------- | ------------------------------------------------- |
 | `electrs`  | Yes      | On-chain address balances and transaction history |
+| `mempool`  | No       | Optional local prices and transaction details     |
 
 Bitcoin Control Center also makes outbound requests when the corresponding
 feature is used:
 
-- BTC/USD price and transaction enrichment use `https://mempool.space` in the
-  current StartOS build;
+- the current BTC/USD price comes from the source chosen in Settings: the
+  configured mempool by default when available, otherwise Block
+  (`https://pricing.bitcoin.block.xyz`), with public fallbacks unless turned off;
+- statement prices and transaction enrichment use the configured mempool URL
+  (public `https://mempool.space` by default); only missing prices fall back to
+  public mempool.space, unless fallbacks are turned off;
 - connected exchange accounts contact their selected exchange provider.
 
-These are application data sources, not StartOS package dependencies.
+Apart from mempool, these are not StartOS package dependencies.
 
 ## Limitations and differences
 
@@ -137,10 +147,7 @@ These are application data sources, not StartOS package dependencies.
    are not available in the StartOS web interface.
 3. Direct USB hardware-wallet support depends on browser capabilities and
    permissions. File and QR workflows remain device-specific alternatives.
-4. The StartOS package currently uses the public mempool.space API for price and
-   transaction enrichment; that endpoint is not configurable through the
-   StartOS action.
-5. Bitcoin Control Center is watch-only software. It must never receive or store
+4. Bitcoin Control Center is watch-only software. It must never receive or store
    a wallet seed or private key.
 
 ## What is unchanged from upstream
@@ -160,9 +167,8 @@ Run the package build from the upstream repository root:
 ```
 
 The checked-in version graph under `start9/startos/versions/` is the package
-version source of truth. See
-[`docs/STARTOS_RELEASES.md`](../docs/STARTOS_RELEASES.md) for candidate and
-release workflow details.
+version source of truth. The [release workflows](../README.md#releases) automate
+version preparation, candidate builds, and draft releases for StartOS and desktop.
 
 ## Quick reference
 

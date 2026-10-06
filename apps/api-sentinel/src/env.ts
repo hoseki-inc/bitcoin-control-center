@@ -22,7 +22,7 @@ const EnvSchema = z.object({
   /** Directory containing bundled public assets. Defaults to the process working directory. */
   APP_DIR: z.string().default(process.cwd()),
 
-  /** mempool.space API URL. Defaults to public instance. Set to your own for self-hosted. */
+  /** Primary mempool URL; statement quotes can fall back to public mempool.space. */
   MEMPOOL_API_URL: z.string().default('https://mempool.space'),
 
   /** Log level. Defaults to 'info'. */

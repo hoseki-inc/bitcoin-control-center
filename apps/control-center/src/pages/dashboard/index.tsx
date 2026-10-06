@@ -562,12 +562,7 @@ export function DashboardPage({
     etfAccounts.length > 0
   const hasHistoricalData = (allData?.historicalData.length ?? 0) > 0 || (activeData?.historicalData.length ?? 0) > 0
   const totalBtcDisplay = formatBtc(displayBalanceSats.toString())
-  const btcPrice =
-    data?.currentBtcPrice != null && data.currentBtcPrice !== ''
-      ? Number(data.currentBtcPrice)
-      : allData?.currentBtcPrice != null && allData.currentBtcPrice !== ''
-        ? Number(allData.currentBtcPrice)
-        : 0
+  const btcPrice = btcUsdPrice ?? 0
   const currentBtcFloat = displayBalanceSats / 100_000_000
   const hasBalance = displayBalanceSats > 0
 

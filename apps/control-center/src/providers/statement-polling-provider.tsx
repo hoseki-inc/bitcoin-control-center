@@ -47,7 +47,7 @@ export function StatementPollingProvider({ children }: { children: React.ReactNo
 
       if (retrievedStatement.status === 'failed') {
         toast.error('Failed to generate statement', {
-          description: 'We are working to resolve this issue.',
+          description: retrievedStatement.errorMessage ?? 'We are working to resolve this issue.',
         })
       }
 

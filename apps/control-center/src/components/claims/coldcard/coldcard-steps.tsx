@@ -45,6 +45,7 @@ import {
   parseSignatureFile,
 } from '@hoseki/packages/ui/wallet-ui'
 import { coldcardModelKeys } from '@hoseki/packages/ui/wallet-ui/coldcard/coldcard-utils'
+// Lottie runs animation expressions with eval: only render bundled animations.
 import Lottie from 'lottie-react'
 import { CircleXIcon, CopyIcon, InfoIcon, MoveRightIcon, TriangleAlertIcon, UsbIcon, WifiOffIcon } from 'lucide-react'
 import { type ReactNode, useEffect, useRef, useState } from 'react'

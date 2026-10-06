@@ -1,6 +1,7 @@
 import { Button, Stack, Text } from '@chakra-ui/react'
 import { SingleSigAccount } from '@hoseki/packages/bitcoin'
 import { Alert } from '@hoseki/packages/ui/design-system'
+// Lottie runs animation expressions with eval: only render bundled animations.
 import Lottie from 'lottie-react'
 import type { Dispatch, SetStateAction } from 'react'
 import { AnimatedPopInSingleBox } from '../../design-system'

@@ -405,4 +405,46 @@ const MIGRATIONS: Migration[] = [
       ALTER TABLE accounts ADD COLUMN deleted_at TEXT;
     `,
   },
+  {
+    name: '015_desktop_connection_profiles',
+    sql: `
+      -- Named Electrum connections saved by the desktop app, each with its own Tor setting.
+      CREATE TABLE desktop_connection_profiles (
+        id TEXT PRIMARY KEY,
+        nickname TEXT NOT NULL,
+        host TEXT NOT NULL,
+        port INTEGER NOT NULL CHECK(port BETWEEN 1 AND 65535),
+        protocol TEXT NOT NULL CHECK(protocol IN ('tcp', 'ssl')),
+        tor_enabled INTEGER NOT NULL CHECK(tor_enabled IN (0, 1)),
+        revision INTEGER NOT NULL DEFAULT 1
+      );
+    `,
+  },
+  {
+    name: '015_btc_quote_cache',
+    sql: `
+      CREATE TABLE btc_quote_cache (
+        provider_url TEXT NOT NULL,
+        quote_currency TEXT NOT NULL CHECK(quote_currency IN ('USD', 'CAD', 'GBP', 'EUR')),
+        timestamp INTEGER NOT NULL,
+        price TEXT NOT NULL,
+        PRIMARY KEY(quote_currency, timestamp)
+      );
+      CREATE TABLE btc_quote_lookups (
+        provider TEXT NOT NULL,
+        requested_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL,
+        PRIMARY KEY(provider, requested_at)
+      );
+      CREATE INDEX btc_quote_lookup_date ON btc_quote_lookups(requested_at, expires_at);
+    `,
+  },
+  {
+    name: '016_statement_quote_currency',
+    sql: `
+      ALTER TABLE statements ADD COLUMN quote_currency TEXT NOT NULL DEFAULT 'USD'
+        CHECK(quote_currency IN ('USD', 'CAD', 'GBP', 'EUR'));
+      ALTER TABLE statements ADD COLUMN error_message TEXT;
+    `,
+  },
 ]

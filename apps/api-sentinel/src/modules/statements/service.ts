@@ -1,9 +1,11 @@
 import { Account } from '@hoseki/packages/bitcoin/account'
 import type { ElectrumProvider } from '@hoseki/packages/bitcoin/onchain/electrum_provider'
 import type { TransactionEntry } from '@hoseki/packages/bitcoin/onchain/types'
+import { STATEMENT_CLOSING_DELAY_DAYS, getLatestStatementClosingDate } from '@hoseki/packages/lib/statement-dates'
 import { parseUnknown } from '@hoseki/packages/result'
 import { Err, Ok, asyncFn } from '@hoseki/packages/result'
 import type { Result } from '@hoseki/packages/result'
+import { type StatementQuoteCurrency, StatementQuoteCurrencySchema } from '@hoseki/packages/schemas/statement-quote'
 import type Database from 'better-sqlite3'
 import Decimal from 'decimal.js'
 import { nanoid } from 'nanoid'
@@ -12,13 +14,14 @@ import { z } from 'zod'
 import type { ExchangeService } from '../exchange/service'
 import type { DailyRates } from '../price/daily_rates'
 import type { DailyRatesService } from '../price/daily_rates'
-import type { AggregatedTransaction } from './mapper'
+import type { AggregatedTransaction, StatementAccountTransactions } from './mapper'
+import { getRequiredRateDates, validateStatementRates } from './rate_dates'
 import { fetchTransactionEntries } from './tx_fetcher'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 export interface StatementTransactions {
-  [accountId: string]: AggregatedTransaction[]
+  [accountId: string]: StatementAccountTransactions
 }
 
 export interface StatementDto {
@@ -33,6 +36,8 @@ export interface StatementDto {
   user: { name: string | null; email: string | null }
   integrator: { name: string } | null
   userId: string
+  quoteCurrency: StatementQuoteCurrency
+  errorMessage: string | null
 }
 
 export interface StatementRow {
@@ -46,6 +51,8 @@ export interface StatementRow {
   user_address: string | null
   transaction_map: string | null
   daily_rates: string | null
+  quote_currency: StatementQuoteCurrency
+  error_message: string | null
   counter: number
   created_at: string
   updated_at: string
@@ -58,6 +65,7 @@ export interface CompletedStatementRow extends StatementRow {
 }
 
 export interface GenerateStatementInput {
+  quoteCurrency?: StatementQuoteCurrency
   claimIds: string[]
   exchangeAccountIds?: string[]
   openingDate: Date
@@ -82,6 +90,7 @@ type SerializedAggregatedTransaction = z.infer<typeof SerializedAggregatedTransa
 
 const SerializedDailyRateSchema = z.object({
   timestamp: z.string(),
+  providerUrl: z.string().optional(),
   open: z.string(),
   high: z.string(),
   low: z.string(),
@@ -93,14 +102,49 @@ const MAX_STATEMENT_RANGE_YEARS = 2
 const MAX_STATEMENT_RANGE_DAYS = MAX_STATEMENT_RANGE_YEARS * 366
 const MS_PER_DAY = 24 * 60 * 60 * 1000
 
-function validateStatementInput(input: GenerateStatementInput): Result<void, Error> {
+/**
+ * Accepts any zone the runtime can format: aliases such as Asia/Kolkata, fixed offsets such as
+ * Etc/GMT+8 or +05:30, and names in any letter case. Browsers report some of these, but
+ * Intl.supportedValuesOf omits them.
+ */
+function isUsableTimezone(timezone: string): boolean {
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: timezone })
+    return true
+  } catch {
+    return false
+  }
+}
+
+export function validateStatementInput(input: GenerateStatementInput, now = new Date()): Result<void, Error> {
   const { openingDate, closingDate } = input
+  if (parseUnknown(StatementQuoteCurrencySchema, input.quoteCurrency ?? 'USD').isErr()) {
+    return Err(new Error('Unsupported statement quote currency.'))
+  }
+  if (!isUsableTimezone(input.timezone)) {
+    return Err(new Error('Invalid statement timezone.'))
+  }
   if (Number.isNaN(openingDate.getTime()) || Number.isNaN(closingDate.getTime())) {
     return Err(new Error('Statement dates must be valid'))
   }
 
   if (openingDate > closingDate) {
     return Err(new Error('Statement opening date must be before closing date'))
+  }
+
+  const latestClosingDate = getLatestStatementClosingDate(now, input.timezone)
+  if (latestClosingDate.isErr()) {
+    return Err(latestClosingDate.unwrapErr())
+  }
+  if (closingDate > latestClosingDate.unwrap()) {
+    return Err(
+      new Error(
+        `Statements must end at least ${STATEMENT_CLOSING_DELAY_DAYS} days ago, so recent transactions have time to confirm`,
+      ),
+    )
+  }
+  if (closingDate > now) {
+    return Err(new Error('Statement dates cannot be in the future.'))
   }
 
   const rangeDays = Math.ceil((closingDate.getTime() - openingDate.getTime()) / MS_PER_DAY) + 1
@@ -120,6 +164,7 @@ export class StatementService {
   private readonly exchangeService: ExchangeService
   private readonly mempoolApiUrl: string
   private readonly logger: Logger
+  private readonly sleep: ((ms: number) => Promise<void>) | undefined
 
   public constructor(deps: {
     db: Database.Database
@@ -128,6 +173,8 @@ export class StatementService {
     exchangeService: ExchangeService
     mempoolApiUrl: string
     logger: Logger
+    /** Waits between transaction lookup retries; tests replace it to avoid real delays. */
+    sleep?: (ms: number) => Promise<void>
   }) {
     this.db = deps.db
     this.onchainProvider = deps.onchainProvider
@@ -135,17 +182,22 @@ export class StatementService {
     this.exchangeService = deps.exchangeService
     this.mempoolApiUrl = deps.mempoolApiUrl
     this.logger = deps.logger.child({ module: 'statement-service' })
+    this.sleep = deps.sleep
   }
 
   /** Insert a pending statement row. */
-  public create(input: GenerateStatementInput): string {
+  public create(input: GenerateStatementInput): Result<string, Error> {
+    const valid = validateStatementInput(input)
+    if (valid.isErr()) {
+      return Err(valid.unwrapErr())
+    }
     const id = `st_stmt_${nanoid()}`
     const counter = this.getNextCounter()
 
     this.db
       .prepare(
-        `INSERT INTO statements (id, status, timezone, opening_date, closing_date, account_ids, exchange_account_ids, user_name, user_address, counter)
-         VALUES (?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO statements (id, status, timezone, opening_date, closing_date, account_ids, exchange_account_ids, user_name, user_address, counter, quote_currency)
+         VALUES (?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
@@ -157,22 +209,43 @@ export class StatementService {
         input.name ?? null,
         input.address ?? null,
         counter,
+        input.quoteCurrency ?? 'USD',
       )
 
-    return id
+    return Ok(id)
   }
 
   /** Mark a statement as completed with transaction data. */
-  public complete(id: string, transactionMap: StatementTransactions, dailyRates: DailyRates): void {
+  public complete(id: string, transactionMap: StatementTransactions, dailyRates: DailyRates): Result<void, Error> {
+    const row = this.db.prepare<unknown[], StatementRow>('SELECT * FROM statements WHERE id = ?').get(id)
+    if (row?.status !== 'pending') {
+      return Err(new Error('Statement is not pending.'))
+    }
+    if (row.quote_currency !== dailyRates.quoteCurrency) {
+      return Err(new Error('Statement quote currency does not match its saved rates.'))
+    }
+    const dates = getRequiredRateDates(
+      new Date(row.opening_date),
+      new Date(row.closing_date),
+      row.timezone,
+      transactionMap,
+    )
+    const valid = validateStatementRates(dates, dailyRates)
+    if (valid.isErr()) {
+      return Err(valid.unwrapErr())
+    }
     // Serialize bigint values in transactionMap to strings for JSON storage
-    const serializedMap: Record<string, SerializedAggregatedTransaction[]> = {}
-    for (const [key, txs] of Object.entries(transactionMap)) {
-      // oxlint-disable-next-line oxc/no-map-spread -- Preserve caller-owned transactions while converting values for storage.
-      serializedMap[key] = txs.map((tx) => ({
-        ...tx,
-        balanceChange: tx.balanceChange.toString(),
-        transactedAt: tx.transactedAt.toISOString(),
-      }))
+    const serializedMap: Record<string, { displayName: string; transactions: SerializedAggregatedTransaction[] }> = {}
+    for (const [key, account] of Object.entries(transactionMap)) {
+      serializedMap[key] = {
+        displayName: account.displayName,
+        // oxlint-disable-next-line oxc/no-map-spread -- Preserve caller-owned transactions while converting values for storage.
+        transactions: account.transactions.map((tx) => ({
+          ...tx,
+          balanceChange: tx.balanceChange.toString(),
+          transactedAt: tx.transactedAt.toISOString(),
+        })),
+      }
     }
 
     // Serialize Decimal values in dailyRates
@@ -180,6 +253,7 @@ export class StatementService {
     for (const [key, rate] of Object.entries(dailyRates.rates)) {
       serializedRates[key] = {
         timestamp: rate.timestamp.toISOString(),
+        providerUrl: rate.providerUrl,
         open: rate.open.toString(),
         high: rate.high.toString(),
         low: rate.low.toString(),
@@ -192,12 +266,27 @@ export class StatementService {
         `UPDATE statements SET status = 'completed', transaction_map = ?, daily_rates = ?, updated_at = datetime('now')
          WHERE id = ?`,
       )
-      .run(JSON.stringify(serializedMap), JSON.stringify({ rates: serializedRates, source: dailyRates.source }), id)
+      .run(
+        JSON.stringify(serializedMap),
+        JSON.stringify({
+          rates: serializedRates,
+          source: dailyRates.source,
+          quoteCurrency: dailyRates.quoteCurrency,
+          providerUrl: dailyRates.providerUrl,
+          providerUrls: dailyRates.providerUrls,
+        }),
+        id,
+      )
+    return Ok(undefined)
   }
 
   /** Mark a statement as failed. */
-  public fail(id: string): void {
-    this.db.prepare(`UPDATE statements SET status = 'failed', updated_at = datetime('now') WHERE id = ?`).run(id)
+  public fail(id: string, message = 'Statement generation failed. Please retry.'): void {
+    this.db
+      .prepare(
+        `UPDATE statements SET status = 'failed', error_message = ?, updated_at = datetime('now') WHERE id = ? AND status = 'pending'`,
+      )
+      .run(message, id)
   }
 
   /** Find a statement by ID and return its DTO. */
@@ -284,10 +373,7 @@ export class StatementService {
           )
           const accountResult = Account.fromDescriptor(row.descriptor)
           if (accountResult.isErr()) {
-            this.logger.warn(
-              { descriptor: row.descriptor, err: accountResult.unwrapErr() },
-              'Failed to parse descriptor',
-            )
+            this.logger.warn({ accountId: row.id }, 'Failed to parse descriptor')
             continue
           }
 
@@ -303,6 +389,7 @@ export class StatementService {
             onchainProvider: this.onchainProvider,
             mempoolApiUrl: this.mempoolApiUrl,
             logger: this.logger,
+            sleep: this.sleep,
           })
           if (txResult.isErr()) {
             this.logger.error({ accountId: row.id, err: txResult.unwrapErr() }, 'Failed to fetch transactions')
@@ -312,7 +399,7 @@ export class StatementService {
           const entries = txResult.unwrap()
           const aggregated = calculateAccountTransactions(entries, row.display_name)
           const sorted = sortTxs(aggregated)
-          transactionMap[row.display_name] = sorted
+          transactionMap[row.id] = { displayName: row.display_name, transactions: sorted }
           this.logger.info(
             { account: row.display_name, rawEntries: entries.length, aggregated: aggregated.length },
             'Account transactions fetched',
@@ -340,31 +427,22 @@ export class StatementService {
 
         // Coinbase: fetch real transaction history
         const coinbaseAccounts = selectedAccounts.filter((a) => a.exchange === 'coinbase')
-        if (coinbaseAccounts.length > 0) {
-          const coinbaseIds = coinbaseAccounts.map((a) => a.id)
-          const coinbaseEntries = await this.exchangeService.getCoinbaseTransactionEntries(coinbaseIds)
+        for (const account of coinbaseAccounts) {
+          const coinbaseEntries = await this.exchangeService.getCoinbaseTransactionEntries([account.id])
           if (coinbaseEntries.isOk()) {
-            for (const account of coinbaseAccounts) {
-              // Filter entries for this account — getCoinbaseTransactionEntries returns all entries for all IDs
-              // Since we can't distinguish per-account from the combined result, group all under each account
-              // For single Coinbase account (most common case), this works perfectly
-              const entries = coinbaseEntries.unwrap()
-              const label = capitalize(account.exchange)
-              const aggregated: AggregatedTransaction[] = entries.map((entry, idx) => ({
-                address: '',
-                hash: `coinbase_${account.id}_${idx}`,
-                balanceChange: entry.value,
-                block: null,
-                transactedAt: entry.timestamp,
-                confirmed: true,
-                accountName: label,
-              }))
-              transactionMap[label] = sortTxs(aggregated)
-              this.logger.info(
-                { account: label, entries: aggregated.length },
-                'Coinbase transactions added to statement',
-              )
-            }
+            const entries = coinbaseEntries.unwrap()
+            const label = exchangeStatementName(account)
+            const aggregated: AggregatedTransaction[] = entries.map((entry, idx) => ({
+              address: '',
+              hash: `coinbase_${account.id}_${idx}`,
+              balanceChange: entry.value,
+              block: null,
+              transactedAt: entry.timestamp,
+              confirmed: true,
+              accountName: label,
+            }))
+            transactionMap[account.id] = { displayName: label, transactions: sortTxs(aggregated) }
+            this.logger.info({ account: label, entries: aggregated.length }, 'Coinbase transactions added to statement')
           } else {
             this.logger.warn(
               { err: coinbaseEntries.unwrapErr() },
@@ -376,7 +454,7 @@ export class StatementService {
         // Non-Coinbase exchanges: prefer imported statement transactions, fall back to snapshot deltas
         const snapshotAccounts = selectedAccounts.filter((a) => a.exchange !== 'coinbase')
         for (const account of snapshotAccounts) {
-          const label = capitalize(account.exchange)
+          const label = exchangeStatementName(account)
 
           // Check for imported statement transactions — aggregate to daily net in/out
           const stmtTxs = this.exchangeService.listStatementTransactions(account.id)
@@ -426,7 +504,7 @@ export class StatementService {
                 idx++
               }
             }
-            transactionMap[label] = sortTxs(aggregated)
+            transactionMap[account.id] = { displayName: label, transactions: sortTxs(aggregated) }
             this.logger.info(
               { account: label, rawTxCount: stmtTxs.length, dailyEntries: aggregated.length },
               'Daily-aggregated statement transactions added to statement',
@@ -461,7 +539,7 @@ export class StatementService {
               }
               previousBalance = balance
             }
-            transactionMap[label] = sortTxs(aggregated)
+            transactionMap[account.id] = { displayName: label, transactions: sortTxs(aggregated) }
             this.logger.info(
               { account: label, snapshots: snapshots.length, dailyEntries: aggregated.length },
               'Snapshot-based exchange transactions added to statement',
@@ -472,10 +550,20 @@ export class StatementService {
 
       // 4. Fetch daily rates for the date range
       this.logger.info('Fetching daily rates from mempool.space')
-      const ratesResult = await this.dailyRatesService.getDailyRates(input.openingDate, input.closingDate)
+      const requiredDates = getRequiredRateDates(input.openingDate, input.closingDate, input.timezone, transactionMap)
+      const ratesResult = await this.dailyRatesService.getDailyRates(
+        input.openingDate,
+        input.closingDate,
+        input.quoteCurrency ?? 'USD',
+        requiredDates,
+      )
       if (ratesResult.isErr()) {
         this.logger.error({ err: ratesResult.unwrapErr().message }, 'Failed to fetch daily rates')
         return Err(ratesResult.unwrapErr())
+      }
+      const coverage = validateStatementRates(requiredDates, ratesResult.unwrap())
+      if (coverage.isErr()) {
+        return Err(coverage.unwrapErr())
       }
       this.logger.info('Statement data generation complete')
 
@@ -546,23 +634,36 @@ export class StatementService {
       user: { name: row.user_name, email: null },
       integrator: null,
       userId: 'local',
+      quoteCurrency: row.quote_currency,
+      errorMessage: row.error_message,
     }
   }
 
   private deserializeTransactionMap(json: string): StatementTransactions {
     // SAFETY: Database JSON is untrusted until the schema below validates the complete transaction map.
     const raw = parseUnknown(
-      z.record(z.array(SerializedAggregatedTransactionSchema)),
+      z.record(
+        z.union([
+          z.array(SerializedAggregatedTransactionSchema),
+          z.object({ displayName: z.string(), transactions: z.array(SerializedAggregatedTransactionSchema) }),
+        ]),
+      ),
       JSON.parse(json) as unknown,
     ).expect('Stored statement transactions are invalid')
     const result: StatementTransactions = {}
-    for (const [key, txs] of Object.entries(raw)) {
-      // oxlint-disable-next-line oxc/no-map-spread -- Preserve additional stored fields in a new object with restored value types.
-      result[key] = txs.map((tx) => ({
-        ...tx,
-        balanceChange: BigInt(tx.balanceChange),
-        transactedAt: new Date(tx.transactedAt),
-      }))
+    for (const [key, value] of Object.entries(raw)) {
+      // Older completed statements used the display name as the key.
+      const displayName = Array.isArray(value) ? key : value.displayName
+      const txs = Array.isArray(value) ? value : value.transactions
+      result[key] = {
+        displayName,
+        // oxlint-disable-next-line oxc/no-map-spread -- Preserve additional stored fields in a new object with restored value types.
+        transactions: txs.map((tx) => ({
+          ...tx,
+          balanceChange: BigInt(tx.balanceChange),
+          transactedAt: new Date(tx.transactedAt),
+        })),
+      }
     }
     return result
   }
@@ -570,20 +671,33 @@ export class StatementService {
   private deserializeDailyRates(json: string): DailyRates {
     // SAFETY: Database JSON is untrusted until the schema below validates the complete daily-rate payload.
     const raw = parseUnknown(
-      z.object({ rates: z.record(SerializedDailyRateSchema), source: z.literal('mempool') }),
+      z.object({
+        rates: z.record(SerializedDailyRateSchema),
+        source: z.literal('mempool'),
+        quoteCurrency: StatementQuoteCurrencySchema.optional(),
+        providerUrl: z.string().optional(),
+        providerUrls: z.array(z.string()).optional(),
+      }),
       JSON.parse(json) as unknown,
     ).expect('Stored statement rates are invalid')
     const rates: DailyRates['rates'] = {}
     for (const [key, rate] of Object.entries(raw.rates)) {
       rates[key] = {
         timestamp: new Date(rate.timestamp),
+        providerUrl: rate.providerUrl,
         open: new Decimal(rate.open),
         high: new Decimal(rate.high),
         low: new Decimal(rate.low),
         close: new Decimal(rate.close),
       }
     }
-    return { rates, source: raw.source }
+    return {
+      rates,
+      source: raw.source,
+      quoteCurrency: raw.quoteCurrency ?? 'USD',
+      providerUrl: raw.providerUrl,
+      providerUrls: raw.providerUrls,
+    }
   }
 }
 
@@ -650,4 +764,10 @@ function sortTxs<T extends { hash: string; transactedAt: Date }>(txs: T[]): T[] 
 
 function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1)
+}
+
+/** Names an exchange account in a statement by the name its owner gave it. */
+function exchangeStatementName(account: { exchange: string; displayName: string }): string {
+  const name = account.displayName.trim()
+  return name === '' ? capitalize(account.exchange) : name
 }
