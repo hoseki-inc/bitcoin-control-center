@@ -1,0 +1,14 @@
+# name	ref	data
+# ref is "main" or a pull request number. data is "demo" (the sample portfolio) or "empty" (a fresh install).
+# Each target gets the next port after PREVIEW_BASE_PORT (3500 by default), in this order.
+main	main	demo
+main-empty	main	empty
+pr154	154	demo
+pr155	155	demo
+pr169	169	demo
+pr49	49	demo
+pr50	50	demo
+pr51	51	empty
+pr52	52	demo
+pr45	45	demo
+pr213	213	demo
