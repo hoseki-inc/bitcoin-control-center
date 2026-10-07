@@ -1,13 +1,12 @@
 import { Box, Button, Flex, Grid, Stack, Text } from '@chakra-ui/react'
 import { EmptyView } from '@hoseki/packages/ui/design-system'
-import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
 import Decimal from 'decimal.js'
 import { Link } from 'react-router'
 import { BitcoinAmount } from '../components/bitcoin-amount'
 import { AccumulationChart as DefaultAccumulationChart } from '../components/dashboard-charts/accumulation-chart'
 import { BitcoinPriceChart as DefaultBitcoinPriceChart } from '../components/dashboard/bitcoin-price-chart'
 import { DashboardPreview } from '../components/dashboard/dashboard-preview'
-import { DashboardAmount, DashboardCardTitle } from '../components/dashboard/dashboard-typography'
+import { DashboardAmount } from '../components/dashboard/dashboard-typography'
 import { RecentStatements } from '../components/dashboard/recent-statements'
 import { FiatAmountText } from '../components/fiat-amount-text'
 import { StatementsEmptyState } from '../components/statements/statements-empty-state'
@@ -43,7 +42,6 @@ export function HomePage({
 
   return (
     <Stack py={{ base: 6, md: 8 }} gap={8}>
-      <PageHeading title="Home" description="Your holdings at a glance." />
       {hasError && (
         <Flex
           role="alert"
@@ -143,14 +141,11 @@ function PortfolioSummary({
       {/* Top row: balance + generate button */}
       <Flex align="flex-start" justify="space-between" mb={6} gap={4} flexWrap="wrap">
         <Box>
-          <DashboardCardTitle>Total Bitcoin</DashboardCardTitle>
-          <Box mt={1}>
-            <DashboardAmount primary>
-              <>
-                <BitcoinAmount btc={totalBtc} />
-              </>
-            </DashboardAmount>
-          </Box>
+          <DashboardAmount primary>
+            <>
+              <BitcoinAmount btc={totalBtc} />
+            </>
+          </DashboardAmount>
           <FiatAmountText primary mt={1}>
             <>
               {totalUsd === null

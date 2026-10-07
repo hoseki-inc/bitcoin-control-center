@@ -52,7 +52,7 @@ function Header({ showGenerateButton }: { showGenerateButton: boolean }): JSX.El
           Recent Statements
         </Text>
         <Text textStyle="text/sm" color="neutral.600" mt={2}>
-          Your latest Bitcoin statements, ready to view or download.
+          Your latest self-custody statements, ready to view or download.
         </Text>
       </Box>
       {showGenerateButton && (

@@ -2,7 +2,7 @@ import { Box, Button, Flex, Grid, Stack, Text } from '@chakra-ui/react'
 import { Link } from 'react-router'
 import { formatBitcoin } from '../../lib/bitcoin-display'
 import { FiatAmountText } from '../fiat-amount-text'
-import { DashboardAmount, DashboardCardTitle } from './dashboard-typography'
+import { DashboardAmount } from './dashboard-typography'
 
 export function DashboardPreview({
   loading = false,
@@ -39,12 +39,9 @@ export function DashboardPreview({
         </Flex>
       )}
       <Box border="1px solid" borderColor="neutral.200" borderRadius="panel" p={{ base: 5, md: 6 }} aria-busy={loading}>
-        <DashboardCardTitle>Total Bitcoin</DashboardCardTitle>
-        <Box mt={1}>
-          <DashboardAmount primary>
-            <>{unresolved ? '—' : zeroBalance}</>
-          </DashboardAmount>
-        </Box>
+        <DashboardAmount primary>
+          <>{unresolved ? '—' : zeroBalance}</>
+        </DashboardAmount>
         <FiatAmountText as="output" display="block" primary mt={2}>
           <>{loading ? 'Loading your holdings…' : unavailable ? 'Holdings unavailable' : '$0.00 USD'}</>
         </FiatAmountText>
