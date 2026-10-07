@@ -87,7 +87,8 @@ export function HomePage({
         />
       )}
       <views.BitcoinPriceChart />
-      {statementsError ? (
+      {/* A failed refresh keeps the statements already shown; the message is only for having none. */}
+      {statementsError && statements.length === 0 ? (
         <Flex justify="space-between" gap={4} align="center" flexWrap="wrap">
           <Text as="output" textStyle="text/sm" color="neutral.600">
             Recent statements could not be loaded.
@@ -137,10 +138,10 @@ function PortfolioSummary({
       {/* Top row: balance + portfolio link */}
       <Flex align="flex-start" justify="space-between" mb={6} gap={4} flexWrap="wrap">
         <Box>
-          <DashboardAmount primary>
+          <DashboardAmount>
             <BitcoinAmount btc={totalBtc} />
           </DashboardAmount>
-          <FiatAmountText primary mt={1}>
+          <FiatAmountText mt={1}>
             {totalUsd === null
               ? 'USD value unavailable'
               : totalUsd.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
@@ -233,7 +234,6 @@ interface HomeQuery<T> {
   data?: T
   isLoading: boolean
   isError: boolean
-  error?: { message: string } | null
   refetch: () => Promise<{ isError: boolean }>
 }
 
@@ -249,7 +249,7 @@ export interface HomeDataSource {
   useEtfs: () => HomeQuery<AccountList>
 }
 
-export const homeDataSource: HomeDataSource = {
+const homeDataSource: HomeDataSource = {
   useStatements: () => trpc.portalProve.statement.list.useQuery(),
   usePortfolio: (input) => trpc.portalProve.controlCenter.getData.useQuery(input),
   useClaims: () => trpc.portalProve.registry.claims.list.useQuery({ excludePending: false }),

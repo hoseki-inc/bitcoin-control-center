@@ -4,6 +4,7 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter } from 'react-router'
 import { describe, expect, it, vi } from 'vitest'
+import type { StatementDto } from '../trpc/server-types'
 import { type HomeDataSource, HomePage, type HomeViews } from './index'
 
 type PortfolioData = NonNullable<ReturnType<HomeDataSource['usePortfolio']>['data']>
@@ -14,6 +15,9 @@ interface HomeState {
   history: PortfolioData['historicalData']
   isLoading: boolean
   isError: boolean
+  portfolioLoading: boolean
+  portfolioError: boolean
+  statements: StatementDto[]
   statementsError: boolean
   btcPrice: string
 }
@@ -45,8 +49,12 @@ function fakeDataSource(state: HomeState): HomeDataSource {
     historyFailedAccountIds: [],
   }
   return {
-    useStatements: () => query([], { isError: state.statementsError }),
-    usePortfolio: () => query(portfolio),
+    useStatements: () => query(state.statements, { isError: state.statementsError }),
+    usePortfolio: () =>
+      query(state.portfolioLoading || state.portfolioError ? undefined : portfolio, {
+        isLoading: state.portfolioLoading,
+        isError: state.portfolioError,
+      }),
     useClaims: accounts('claims'),
     useExchanges: accounts('exchange'),
     useManual: accounts('manual'),
@@ -66,6 +74,9 @@ function renderHome(overrides: Partial<HomeState> = {}): string {
     history: [],
     isLoading: false,
     isError: false,
+    portfolioLoading: false,
+    portfolioError: false,
+    statements: [],
     statementsError: false,
     btcPrice: '50000',
     ...overrides,
@@ -86,6 +97,22 @@ function renderText(overrides: Partial<HomeState> = {}): string {
     .replace(/<[^>]+>/g, '')
 }
 
+const statement: StatementDto = {
+  id: 'statement',
+  createdAt: new Date('2026-09-01T12:00:00Z'),
+  updatedAt: new Date('2026-09-01T12:00:00Z'),
+  openingDate: new Date('2026-08-01T00:00:00Z'),
+  closingDate: new Date('2026-08-31T23:59:59Z'),
+  counter: 1,
+  timezone: 'UTC',
+  status: 'completed',
+  quoteCurrency: 'USD',
+  errorMessage: null,
+  user: { name: null, email: null },
+  integrator: null,
+  userId: 'user',
+}
+
 const zeroBalanceHistory = [{ timestamp: '2026-09-01T00:00:00.000Z', totalBalance: '0' }]
 
 describe('Home overview states', () => {
@@ -99,9 +126,6 @@ describe('Home overview states', () => {
     expect(html).toContain('Generate Statement')
     expect(html).toContain('href="/statements/create"')
     expect(html).toContain('/statements/satoshi-statement.jpg')
-    expect(html).not.toContain('Sample chart')
-    expect(html).not.toContain('$98,820')
-    expect(html).not.toContain('Statement introduction')
   })
 
   it.each(['claims', 'exchange', 'manual', 'etf'] as const)(
@@ -129,7 +153,6 @@ describe('Home overview states', () => {
     expect(html).not.toContain('0 BTC')
     expect(html).toContain('Try Again')
     expect(html).toContain('Bitcoin Price')
-    expect(html).not.toContain('Dashboard preview')
     expect(html).not.toContain('href="/accounts/add"')
   }, 20_000)
 
@@ -166,6 +189,28 @@ describe('Home overview states', () => {
     expect(text).toContain('−0.50000000 BTC')
     expect(text).toContain('−$25,000.00')
     expect(text).not.toContain('-0.5')
+  })
+
+  it.each([
+    ['loads', { portfolioLoading: true }, 'Loading your holdings'],
+    ['fails', { portfolioError: true }, 'Holdings unavailable'],
+  ] as const)('does not offer account setup while the balance overview %s', (_label, overrides, text) => {
+    const html = renderHome(overrides)
+    expect(html).toContain(text)
+    expect(html).not.toContain('href="/accounts/add"')
+  })
+
+  it('shows recent statements instead of the statements introduction', () => {
+    const text = renderText({ statements: [statement], history: zeroBalanceHistory })
+    expect(text).toContain('Recent Statements')
+    expect(text).toContain('Period:')
+    expect(text).not.toContain('Your holdings, on record')
+  })
+
+  it('keeps recent statements on screen when refreshing them fails', () => {
+    const text = renderText({ statements: [statement], statementsError: true, history: zeroBalanceHistory })
+    expect(text).toContain('Recent Statements')
+    expect(text).not.toContain('Recent statements could not be loaded')
   })
 
   it('does not turn a missing market price into a zero fiat valuation', () => {
