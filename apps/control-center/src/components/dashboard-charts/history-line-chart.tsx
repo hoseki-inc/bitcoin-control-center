@@ -51,6 +51,8 @@ export function HistoryLineChart({
         axisLine={false}
         tickLine={false}
         minTickGap={48}
+        // Keep the last date label clear of the price labels on the right.
+        padding={{ right: 28 }}
         tick={{ fill: axisColor }}
       />
       <YAxis

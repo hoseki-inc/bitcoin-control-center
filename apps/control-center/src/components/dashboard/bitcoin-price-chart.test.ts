@@ -113,9 +113,7 @@ it.each([false, true])(
       await waitForText('10.00% · 7d')
       expect(requests).toEqual([{ days: 7, quoteCurrency: 'USD' }])
       expect(container.textContent).toContain('$110')
-      expect(container.textContent).toContain(
-        'Daily prices from node.local · Latest from Your mempool server (node.local)',
-      )
+      expect(container.textContent).toContain('Source: node.local')
       expect(container.querySelector('h2')?.textContent).toBe('Bitcoin Price')
       expect(container.querySelector('[aria-pressed="true"]')?.getAttribute('aria-label')).toBe('Last 7 days')
       expect(container.querySelector('[data-chart="history"]')).not.toBeNull()

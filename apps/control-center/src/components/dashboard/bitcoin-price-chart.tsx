@@ -8,10 +8,11 @@ const QUOTE_CURRENCY = 'USD'
 
 const formatPrice = (value: number): string =>
   value.toLocaleString('en-US', { style: 'currency', currency: QUOTE_CURRENCY, maximumFractionDigits: 0 })
+// Daily quotes are UTC days; the latest price is a moment, so it takes the viewer's own date.
 const dayLabel = (time: number): string =>
   new Date(time * 1000).toLocaleDateString([], { month: 'short', day: 'numeric', timeZone: 'UTC' })
-const timeLabel = (time: number): string =>
-  new Date(time * 1000).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+const localDayLabel = (time: number): string =>
+  new Date(time * 1000).toLocaleDateString([], { month: 'short', day: 'numeric' })
 
 // Daily quotes come from the mempool historical price API used by statements.
 const PRICE_RANGES = [
@@ -123,7 +124,7 @@ export function BitcoinPriceChart({ views = bitcoinPriceChartViews }: { views?: 
           loading={query.isLoading}
           emptyMessage={unavailable}
           formatValue={formatPrice}
-          formatTime={(time) => (time === latest?.time ? timeLabel(time) : dayLabel(time))}
+          formatTime={(time) => (time === latest?.time ? localDayLabel(time) : dayLabel(time))}
         />
       </Box>
       <Flex
@@ -138,12 +139,7 @@ export function BitcoinPriceChart({ views = bitcoinPriceChartViews }: { views?: 
       >
         <Text as="output" textStyle="text/xs" color="neutral.600">
           {history && last
-            ? [
-                `Daily prices from ${history.historySources.join(', ')}`,
-                latest ? `Latest from ${latest.sourceLabel} · ${timeLabel(latest.time)}` : null,
-              ]
-                .filter((part) => part !== null)
-                .join(' · ')
+            ? `Source: ${history.historySources.join(', ')}`
             : query.isLoading
               ? 'Loading Bitcoin prices…'
               : 'Price sources and fallbacks are set in Settings.'}
