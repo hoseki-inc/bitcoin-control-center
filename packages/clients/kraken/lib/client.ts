@@ -191,13 +191,13 @@ export class Client {
    * @see https://docs.kraken.com/api/docs/rest-api/get-account-balance
    */
   public getBalance(): AsyncResult<ParsedData<BalanceResult>, ApiError> {
-    const makeRequest = (path: string, nonce: string, postData: string) => this.makeRequest(path, nonce, postData)
+    const self = this
     return tryBlock(async function* () {
       // Generate nonce
       const nonce = Date.now().toString()
       const postData = `nonce=${nonce}`
 
-      const response = yield* makeRequest('/0/private/Balance', nonce, postData)
+      const response = yield* self.makeRequest('/0/private/Balance', nonce, postData)
 
       const { data, response: originalResponse } = yield* parseBalanceResponse(response)
 
@@ -223,7 +223,7 @@ export class Client {
    * @see https://docs.kraken.com/api/docs/rest-api/get-ledgers-info
    */
   public getLedgers(payload: LedgersPayload = {}): AsyncResult<ParsedData<LedgersResult>, ApiError> {
-    const makeRequest = (path: string, nonce: string, postData: string) => this.makeRequest(path, nonce, postData)
+    const self = this
     return tryBlock(async function* () {
       // Validate payload
       const ledgersPayload = yield* parseUnknown(LedgersPayloadSchema, payload).mapErr((err) => {
@@ -247,7 +247,7 @@ export class Client {
         postData = `nonce=${nonce}`
       }
 
-      const response = yield* makeRequest('/0/private/Ledgers', nonce, postData)
+      const response = yield* self.makeRequest('/0/private/Ledgers', nonce, postData)
       const { data, response: originalResponse } = yield* parseLedgersResponse(response)
 
       // Check for Kraken API errors in the response

@@ -83,10 +83,7 @@ export class ExchangeService {
     replaceAccountId?: string
   }): AsyncResult<ExchangeAccountDto, Error> => {
     const { logger } = this
-    const saveConnectedAccount = async (connectionArgs: Parameters<typeof this.saveConnectedAccount>[0]) =>
-      this.saveConnectedAccount(connectionArgs)
-    const recordSnapshot = async (accountId: string, balanceSats: string, timestamp: string) =>
-      this.recordSnapshot(accountId, balanceSats, timestamp)
+    const self = this
     return tryBlock(async function* () {
       const { apiKey, secretKey } = args
       logger.info('Connecting Coinbase account via API key')
@@ -144,7 +141,7 @@ export class ExchangeService {
 
       const displayName = btcAccount.name || 'Coinbase BTC'
       const now = new Date().toISOString()
-      const saved = await saveConnectedAccount({
+      const saved = await self.saveConnectedAccount({
         provider: 'coinbase',
         replaceAccountId: args.replaceAccountId,
         displayName,
@@ -160,7 +157,7 @@ export class ExchangeService {
       const { id, createdAt } = saved.unwrap()
 
       // Record initial snapshot
-      await recordSnapshot(id, balanceSats, now)
+      await self.recordSnapshot(id, balanceSats, now)
 
       logger.info({ id, displayName, balanceSats }, 'Coinbase account connected')
       return Ok<ExchangeAccountDto>({
@@ -183,10 +180,7 @@ export class ExchangeService {
     replaceAccountId?: string
   }): AsyncResult<ExchangeAccountDto, Error> => {
     const { logger } = this
-    const saveConnectedAccount = async (connectionArgs: Parameters<typeof this.saveConnectedAccount>[0]) =>
-      this.saveConnectedAccount(connectionArgs)
-    const recordSnapshot = async (accountId: string, balanceSats: string, timestamp: string) =>
-      this.recordSnapshot(accountId, balanceSats, timestamp)
+    const self = this
     return tryBlock(async function* () {
       const { apiKey, displayName: inputName } = args
       logger.info('Connecting Strike account via API key')
@@ -213,7 +207,7 @@ export class ExchangeService {
 
       const displayName = inputName ?? 'Strike'
       const now = new Date().toISOString()
-      const saved = await saveConnectedAccount({
+      const saved = await self.saveConnectedAccount({
         provider: 'strike',
         replaceAccountId: args.replaceAccountId,
         displayName,
@@ -227,7 +221,7 @@ export class ExchangeService {
       }
       const { id, createdAt } = saved.unwrap()
 
-      await recordSnapshot(id, balanceSats, now)
+      await self.recordSnapshot(id, balanceSats, now)
 
       logger.info({ id, displayName, balanceSats }, 'Strike account connected')
       return Ok<ExchangeAccountDto>({
@@ -251,10 +245,7 @@ export class ExchangeService {
     replaceAccountId?: string
   }): AsyncResult<ExchangeAccountDto, Error> => {
     const { logger } = this
-    const saveConnectedAccount = async (connectionArgs: Parameters<typeof this.saveConnectedAccount>[0]) =>
-      this.saveConnectedAccount(connectionArgs)
-    const recordSnapshot = async (accountId: string, balanceSats: string, timestamp: string) =>
-      this.recordSnapshot(accountId, balanceSats, timestamp)
+    const self = this
     return tryBlock(async function* () {
       const { apiKey, privateKeyBase64, displayName: inputName } = args
       logger.info('Connecting Robinhood account via API key')
@@ -288,7 +279,7 @@ export class ExchangeService {
 
       const displayName = inputName ?? 'Robinhood'
       const now = new Date().toISOString()
-      const saved = await saveConnectedAccount({
+      const saved = await self.saveConnectedAccount({
         provider: 'robinhood',
         replaceAccountId: args.replaceAccountId,
         displayName,
@@ -302,7 +293,7 @@ export class ExchangeService {
       }
       const { id, createdAt } = saved.unwrap()
 
-      await recordSnapshot(id, balanceSats, now)
+      await self.recordSnapshot(id, balanceSats, now)
 
       logger.info({ id, displayName, balanceSats }, 'Robinhood account connected')
       return Ok<ExchangeAccountDto>({
@@ -325,10 +316,7 @@ export class ExchangeService {
     replaceAccountId?: string
   }): AsyncResult<ExchangeAccountDto, Error> => {
     const { logger } = this
-    const saveConnectedAccount = async (connectionArgs: Parameters<typeof this.saveConnectedAccount>[0]) =>
-      this.saveConnectedAccount(connectionArgs)
-    const recordSnapshot = async (accountId: string, balanceSats: string, timestamp: string) =>
-      this.recordSnapshot(accountId, balanceSats, timestamp)
+    const self = this
     return tryBlock(async function* () {
       const { apiKey, secretKey } = args
       logger.info('Connecting Kraken account via API key')
@@ -366,7 +354,7 @@ export class ExchangeService {
 
       const displayName = 'Kraken'
       const now = new Date().toISOString()
-      const saved = await saveConnectedAccount({
+      const saved = await self.saveConnectedAccount({
         provider: 'kraken',
         replaceAccountId: args.replaceAccountId,
         displayName,
@@ -380,7 +368,7 @@ export class ExchangeService {
       }
       const { id, createdAt } = saved.unwrap()
 
-      await recordSnapshot(id, balanceSats, now)
+      await self.recordSnapshot(id, balanceSats, now)
 
       logger.info({ id, displayName, balanceSats }, 'Kraken account connected')
       return Ok<ExchangeAccountDto>({
@@ -399,15 +387,14 @@ export class ExchangeService {
 
   public refreshBalance = (accountId: string): AsyncResult<ExchangeAccountDto, Error> => {
     const { db, logger } = this
-    const getAccountConnectionStatus = (row: Parameters<typeof this.getAccountConnectionStatus>[0]) =>
-      this.getAccountConnectionStatus(row)
+    const self = this
     return tryBlock(async function* () {
       const [row] = await db.select().from(exchangeAccounts).where(eq(exchangeAccounts.id, accountId))
 
       if (!row) {
         return Err(new Error('Exchange account not found'))
       }
-      if (getAccountConnectionStatus(row) === 'needs_reconnect') {
+      if (self.getAccountConnectionStatus(row) === 'needs_reconnect') {
         return Err(new Error('Exchange credentials are unavailable or expired. Reconnect this exchange account.'))
       }
 
@@ -561,14 +548,14 @@ export class ExchangeService {
   // ─── Refresh All Balances ─────────────────────────────────────────────
 
   public refreshAllBalances = (): AsyncResult<void, Error> => {
-    const { logger, refreshBalance } = this
-    const listAccounts = async () => this.listAccounts()
+    const { logger } = this
+    const self = this
     return tryBlock(async function* () {
-      const accounts = (await listAccounts()).filter((account) => account.connectionStatus === 'connected')
+      const accounts = (await self.listAccounts()).filter((account) => account.connectionStatus === 'connected')
       const errors: string[] = []
 
       for (const account of accounts) {
-        const result = await refreshBalance(account.id)
+        const result = await self.refreshBalance(account.id)
         if (result.isErr()) {
           logger.warn({ accountId: account.id, error: result.unwrapErr().message }, 'Failed to refresh balance')
           errors.push(`${account.displayName}: ${result.unwrapErr().message}`)

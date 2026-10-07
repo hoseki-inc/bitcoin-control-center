@@ -147,15 +147,14 @@ export class ElectrumProvider extends OnchainBitcoinProvider {
   ): AsyncResult<Array<{ value: bigint; height: number; estimatedTimestamp: Date }>, Error> => {
     const { logger, electrum } = this.deps
     const { network } = this
-    const discoverAccount = () => this.discoverAccount(account)
-    const getBlocksTip = () => this.getBlocksTip()
+    const self = this
     return tryBlock(async function* () {
       logger.debug({ account }, 'Getting UTXO accumulation entries')
 
-      const { lastUsedReceiveIndex, lastUsedChangeIndex } = yield* discoverAccount()
+      const { lastUsedReceiveIndex, lastUsedChangeIndex } = yield* self.discoverAccount(account)
 
       // Get current block tip for timestamp estimation
-      const tip = yield* getBlocksTip()
+      const tip = yield* self.getBlocksTip()
 
       const entries: Array<{ value: bigint; height: number; estimatedTimestamp: Date }> = []
       const seenTxids = new Set<string>()

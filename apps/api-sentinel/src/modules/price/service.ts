@@ -327,9 +327,9 @@ export class PriceService {
     Error
   > => {
     const { lookupTimeoutMs } = this
-    const lookup = async () => this.lookup(performance.now() + lookupTimeoutMs, verifyPrimary)
+    const self = this
     return tryBlock(async function* () {
-      return lookup()
+      return self.lookup(performance.now() + lookupTimeoutMs, verifyPrimary)
     })
   }
 

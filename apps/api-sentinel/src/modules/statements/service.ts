@@ -311,8 +311,7 @@ export class StatementService {
     input: GenerateStatementInput,
   ): AsyncResult<{ transactionMap: StatementTransactions; dailyRates: DailyRates }, Error> => {
     const { db, logger, onchainProvider, mempoolApiUrl, sleep, exchangeService, dailyRatesService } = this
-    const getAccountRows = async (claimIds: string[]) => this.getAccountRows(claimIds)
-    const getExchangeSnapshots = async (accountId: string) => this.getExchangeSnapshots(accountId)
+    const self = this
     return tryBlock(async function* () {
       const validation = validateStatementInput(input)
       if (validation.isErr()) {
@@ -333,7 +332,7 @@ export class StatementService {
 
       // 1. Look up on-chain account descriptors
       const claimIds = [...new Set(input.claimIds)]
-      const accountRows = await getAccountRows(claimIds)
+      const accountRows = await self.getAccountRows(claimIds)
       const hasOnchainAccounts = accountRows.length > 0
       const hasExchangeAccounts = (input.exchangeAccountIds?.length ?? 0) > 0
 
@@ -496,7 +495,7 @@ export class StatementService {
             )
           } else {
             // Fall back to snapshot deltas
-            const snapshots = await getExchangeSnapshots(account.id)
+            const snapshots = await self.getExchangeSnapshots(account.id)
 
             const dailyBalances = new Map<string, { balance: bigint; date: Date }>()
             for (const snapshot of snapshots) {

@@ -54,8 +54,7 @@ export abstract class OnchainBitcoinProvider {
   public getConfirmedAccountBalances = (accounts: IndexSet<Account>): AsyncResult<IndexMap<Account, bigint>, Error> => {
     const { logger } = this.deps
     const { network } = this
-    const discoverAccount = (account: Account) => this.discoverAccount(account)
-    const getConfirmedAddressBalances = (addresses: IndexSet<Address>) => this.getConfirmedAddressBalances(addresses)
+    const self = this
     return tryBlock(async function* () {
       logger.debug({ accounts }, 'Getting confirmed account balances')
       const addressesToAccounts = new IndexMap<Address, Account>()
@@ -65,7 +64,7 @@ export abstract class OnchainBitcoinProvider {
         AsyncResult<{ account: Account; lastUsedReceiveIndex: number; lastUsedChangeIndex: number }, Error>
       > = []
       for (const account of accounts) {
-        const result = discoverAccount(account).map(({ lastUsedReceiveIndex, lastUsedChangeIndex }) => ({
+        const result = self.discoverAccount(account).map(({ lastUsedReceiveIndex, lastUsedChangeIndex }) => ({
           account,
           lastUsedReceiveIndex,
           lastUsedChangeIndex,
@@ -91,7 +90,8 @@ export abstract class OnchainBitcoinProvider {
         }
       }
 
-      return getConfirmedAddressBalances(new IndexSet(addressesToAccounts.keys()))
+      return self
+        .getConfirmedAddressBalances(new IndexSet(addressesToAccounts.keys()))
         .map((addressBalances) => {
           const map = new IndexMap<Account, bigint>()
           for (const [address, account] of addressesToAccounts.entries()) {
@@ -121,12 +121,13 @@ export abstract class OnchainBitcoinProvider {
   ): AsyncResult<{ lastUsedReceiveIndex: number; lastUsedChangeIndex: number }, Error> {
     const { logger } = this.deps
     const { network } = this
-    const getLastKnownIndexes = () => this.getLastKnownIndexes(account)
-    const areAddressesUsed = (addresses: IndexSet<Address>) => this.areAddressesUsed(addresses)
+    const self = this
     return tryBlock(async function* () {
-      const { lastUsedReceiveIndex, lastUsedChangeIndex } = yield* getLastKnownIndexes().inspectErr((err) => {
-        logger.error({ err }, 'Error getting last known indexes')
-      })
+      const { lastUsedReceiveIndex, lastUsedChangeIndex } = yield* self
+        .getLastKnownIndexes(account)
+        .inspectErr((err) => {
+          logger.error({ err }, 'Error getting last known indexes')
+        })
 
       logger.debug({ account, lastUsedReceiveIndex, lastUsedChangeIndex }, 'Discovering account')
 
@@ -160,9 +161,11 @@ export abstract class OnchainBitcoinProvider {
         }
 
         logger.debug({ addresses }, 'Checking if addresses are used')
-        const usedMap = yield* areAddressesUsed(new IndexSet(addresses.map((a) => a.address))).inspectErr((err) => {
-          logger.error({ err }, 'Error checking if addresses are used')
-        })
+        const usedMap = yield* self
+          .areAddressesUsed(new IndexSet(addresses.map((a) => a.address)))
+          .inspectErr((err) => {
+            logger.error({ err }, 'Error checking if addresses are used')
+          })
 
         for (const address of addresses) {
           if (usedMap.has(address.address)) {
@@ -229,11 +232,11 @@ export abstract class OnchainBitcoinProvider {
 
   public getTransactionEntriesByAddress = (address: Address): AsyncResult<TransactionEntry[], Error> => {
     const { logger } = this.deps
-    const getTransactionEntries = (addresses: IndexMap<Address, number | null>) => this.getTransactionEntries(addresses)
+    const self = this
     return tryBlock(async function* () {
       logger.debug({ address }, 'Getting transaction entries for address')
       const entries: TransactionEntry[] = []
-      const gen = getTransactionEntries(new IndexMap([[address, null]]))
+      const gen = self.getTransactionEntries(new IndexMap([[address, null]]))
       for await (const entry of gen) {
         entries.push(
           yield* entry.inspectErr((err) => {

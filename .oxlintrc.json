@@ -88,7 +88,7 @@
     "typescript/no-redundant-type-constituents": "error",
     "typescript/no-restricted-types": "error",
     "typescript/no-require-imports": "error",
-    "typescript/no-this-alias": "error",
+    "typescript/no-this-alias": ["error", { "allowedNames": ["self"] }],
     "typescript/no-unnecessary-boolean-literal-compare": "error",
     "typescript/no-unnecessary-condition": "error",
     "typescript/no-unnecessary-template-expression": "error",

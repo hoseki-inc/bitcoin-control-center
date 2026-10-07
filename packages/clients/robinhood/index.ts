@@ -248,9 +248,9 @@ export class RobinhoodClient {
    * Fetch BTC balance in satoshis.
    */
   public getBtcBalance = (): AsyncResult<bigint, Error> => {
-    const getHoldings = async () => this.getHoldings()
+    const self = this
     return tryBlock(async function* () {
-      const holdings = yield* await getHoldings()
+      const holdings = yield* await self.getHoldings()
       const btcHolding = holdings.find((h) => h.asset_code === 'BTC')
       if (!btcHolding) {
         return Ok(0n)

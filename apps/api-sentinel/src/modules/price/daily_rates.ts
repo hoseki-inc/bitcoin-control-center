@@ -112,8 +112,7 @@ export class DailyRatesService {
     requiredDates?: Date[],
   ): AsyncResult<DailyRates, Error> => {
     const { cache } = this
-    const getQuoteWithFallback = async (target: number, currency: StatementQuoteCurrency) =>
-      this.getQuoteWithFallback(target, currency)
+    const self = this
     return tryBlock(async function* () {
       if (
         !Number.isFinite(openingDate.getTime()) ||
@@ -144,7 +143,7 @@ export class DailyRatesService {
       for (let i = 0; i < days.length; i += DailyRatesService.CONCURRENCY) {
         const batch = days.slice(i, i + DailyRatesService.CONCURRENCY)
         const results = await Promise.all(
-          batch.map(async (target) => ({ target, result: await getQuoteWithFallback(target, quoteCurrency) })),
+          batch.map(async (target) => ({ target, result: await self.getQuoteWithFallback(target, quoteCurrency) })),
         )
         // Choose each day's quote only once the whole batch has finished, from everything now
         // cached, so the choice depends on which requests succeeded rather than on when their

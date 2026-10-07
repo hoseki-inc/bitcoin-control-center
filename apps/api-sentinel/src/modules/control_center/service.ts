@@ -109,16 +109,7 @@ export class ControlCenterService {
     customDateRange?: CustomDateRange
   }): AsyncResult<ControlCenterData, Error> => {
     const { logger, onchainProvider, exchangeService, manualService, etfService, priceService } = this
-    const getAccountRows = async (filterIds?: string[]) => this.getAccountRows(filterIds)
-    const getLatestAccountSnapshotBalance = async (accountId: string) => this.getLatestAccountSnapshotBalance(accountId)
-    const queueAccountHistoryBackfill = async (...backfillArgs: Parameters<typeof this.queueAccountHistoryBackfill>) =>
-      this.queueAccountHistoryBackfill(...backfillArgs)
-    const getExchangeSnapshots = async (accountId: string) => this.getExchangeSnapshots(accountId)
-    const getAccountHistoryStatus = async (...historyArgs: Parameters<typeof this.getAccountHistoryStatus>) =>
-      this.getAccountHistoryStatus(...historyArgs)
-    const isAccountActive = async (accountId: string) => this.isAccountActive(accountId)
-    const getAccountSnapshotEntries = async (accountId: string) => this.getAccountSnapshotEntries(accountId)
-    const getArchivedAccountSnapshotEntries = async () => this.getArchivedAccountSnapshotEntries()
+    const self = this
     return tryBlock(async function* () {
       const timeRange = args.timeRange ?? '30d'
       const timezone = args.timezone ?? DEFAULT_TIMEZONE
@@ -128,7 +119,7 @@ export class ControlCenterService {
       logger.info({ timeRange, customDateRange: args.customDateRange, timezone }, 'Getting control center data')
 
       // ─── Fetch on-chain accounts ────────────────────────────────
-      let accountRows = await getAccountRows(args.accountIds)
+      let accountRows = await self.getAccountRows(args.accountIds)
       const initiallySelectedAccountIds = new Set(accountRows.map(({ id }) => id))
       const accounts = new IndexSet<Account>()
 
@@ -149,17 +140,19 @@ export class ControlCenterService {
         // only if the same chain tip still holds after scanning history.
         const balanceTipResult = await onchainProvider.getBlocksTip()
         const balancesResult = await onchainProvider.getConfirmedAccountBalances(accounts)
-        accountRows = (await getAccountRows(args.accountIds)).filter(({ id }) => initiallySelectedAccountIds.has(id))
+        accountRows = (await self.getAccountRows(args.accountIds)).filter(({ id }) =>
+          initiallySelectedAccountIds.has(id),
+        )
         if (balancesResult.isErr()) {
           logger.warn({ err: balancesResult.unwrapErr() }, 'Failed to fetch on-chain balances')
           for (const row of accountRows) {
-            const latestSnapshotBalance = (await getLatestAccountSnapshotBalance(row.id)) ?? 0n
+            const latestSnapshotBalance = (await self.getLatestAccountSnapshotBalance(row.id)) ?? 0n
             balancesByAccountId.set(row.id, latestSnapshotBalance)
 
             if (shouldSyncFullHistory) {
               const accountResult = Account.fromDescriptor(row.descriptor)
               if (accountResult.isOk()) {
-                await queueAccountHistoryBackfill(
+                await self.queueAccountHistoryBackfill(
                   row.id,
                   accountResult.unwrap(),
                   latestSnapshotBalance,
@@ -186,7 +179,7 @@ export class ControlCenterService {
             const account = accountResult.unwrap()
             const accountBalance = accountBalances.get(account.toString()) ?? 0n
             balancesByAccountId.set(row.id, accountBalance)
-            await queueAccountHistoryBackfill(
+            await self.queueAccountHistoryBackfill(
               row.id,
               account,
               accountBalance,
@@ -259,7 +252,7 @@ export class ControlCenterService {
         (a) => a.exchange !== 'coinbase' && a.exchange !== 'kraken',
       )
       for (const account of snapshotOnlyAccounts) {
-        const snapshots = await getExchangeSnapshots(account.id)
+        const snapshots = await self.getExchangeSnapshots(account.id)
         const firstSnapshotTimestamp = snapshots[0]?.timestamp
         const firstSnapshotTime =
           firstSnapshotTimestamp != null && firstSnapshotTimestamp !== '' ? new Date(firstSnapshotTimestamp) : null
@@ -350,15 +343,15 @@ export class ControlCenterService {
       // Inspect completion before reading snapshots. There must be no await
       // between the final snapshot reads and response construction: a backfill
       // must never be reported complete alongside history read before it finished.
-      const historyStatus = await getAccountHistoryStatus(accountRows, historyRange.start, shouldSyncFullHistory)
+      const historyStatus = await self.getAccountHistoryStatus(accountRows, historyRange.start, shouldSyncFullHistory)
       accountRows = (
-        await Promise.all(accountRows.map(async (row) => ((await isAccountActive(row.id)) ? row : null)))
+        await Promise.all(accountRows.map(async (row) => ((await self.isAccountActive(row.id)) ? row : null)))
       ).filter((row): row is NonNullable<typeof row> => row !== null)
       const onchainEntries = (
-        await Promise.all(accountRows.map(async ({ id }) => getAccountSnapshotEntries(id)))
+        await Promise.all(accountRows.map(async ({ id }) => self.getAccountSnapshotEntries(id)))
       ).flat()
       if (!args.accountIds) {
-        onchainEntries.push(...(await getArchivedAccountSnapshotEntries()))
+        onchainEntries.push(...(await self.getArchivedAccountSnapshotEntries()))
       }
       const onchainBalance = accountRows.reduce((sum, { id }) => sum + (balancesByAccountId.get(id) ?? 0n), 0n)
 
@@ -429,13 +422,7 @@ export class ControlCenterService {
 
   public archiveAccount = (accountId: string): AsyncResult<void, Error> => {
     const { db } = this
-    const ensureAccountHistorySnapshots = async (...args: Parameters<typeof this.ensureAccountHistorySnapshots>) =>
-      this.ensureAccountHistorySnapshots(...args)
-    const upsertAccountSnapshot = async (tx: SentinelTx, balanceSats: string, timestamp: string) =>
-      this.upsertAccountSnapshot(tx, accountId, balanceSats, timestamp)
-    const invalidateAccountHistoryBackfill = () => {
-      this.invalidateAccountHistoryBackfill(accountId)
-    }
+    const self = this
     return tryBlock(async function* () {
       const [row] = await db
         .select({ descriptor: accountTable.descriptor })
@@ -451,7 +438,13 @@ export class ControlCenterService {
       }
 
       const account = accountResult.unwrap()
-      const preservedBalance = await ensureAccountHistorySnapshots(accountId, account, undefined, new Date(0), true)
+      const preservedBalance = await self.ensureAccountHistorySnapshots(
+        accountId,
+        account,
+        undefined,
+        new Date(0),
+        true,
+      )
       if (preservedBalance === null) {
         return Err(new Error('Failed to preserve full account history'))
       }
@@ -465,14 +458,14 @@ export class ControlCenterService {
         if (updated.rowsAffected === 0) {
           return false
         }
-        await upsertAccountSnapshot(tx, preservedBalance.toString(), archivedAt)
+        await self.upsertAccountSnapshot(tx, accountId, preservedBalance.toString(), archivedAt)
         return true
       })
 
       if (!archived) {
         return Err(new Error('Claim not found or already archived'))
       }
-      invalidateAccountHistoryBackfill()
+      self.invalidateAccountHistoryBackfill(accountId)
       return Ok(undefined)
     })
   }
@@ -1226,11 +1219,7 @@ export class ControlCenterService {
    */
   public recordAllSnapshots = (): AsyncResult<void, Error> => {
     const { logger, onchainProvider, exchangeService, manualService, etfService } = this
-    const getAccountRows = async () => this.getAccountRows()
-    const recordAccountSnapshot = async (accountId: string, balanceSats: string, timestamp: string) =>
-      this.recordAccountSnapshot(accountId, balanceSats, timestamp)
-    const recordExchangeSnapshot = async (accountId: string, balanceSats: string, timestamp: string) =>
-      this.recordExchangeSnapshot(accountId, balanceSats, timestamp)
+    const self = this
     return tryBlock(async function* () {
       const now = new Date().toISOString()
       const collectSource = async (source: string, collect: () => Promise<void>): Promise<void> => {
@@ -1256,7 +1245,7 @@ export class ControlCenterService {
 
       // ─── On-chain accounts ─────────────────────────────────────
       await collectSource('on-chain', async () => {
-        const accountRows = await getAccountRows()
+        const accountRows = await self.getAccountRows()
 
         if (accountRows.length === 0) {
           return
@@ -1283,7 +1272,7 @@ export class ControlCenterService {
               if (accountId != null && accountId !== '') {
                 if (
                   await collectAccount('on-chain', accountId, async () =>
-                    recordAccountSnapshot(accountId, balance.toString(), now),
+                    self.recordAccountSnapshot(accountId, balance.toString(), now),
                   )
                 ) {
                   recorded++
@@ -1311,7 +1300,7 @@ export class ControlCenterService {
                 return false
               }
               const refreshed = result.unwrap()
-              await recordExchangeSnapshot(account.id, refreshed.balanceSats ?? '0', now)
+              await self.recordExchangeSnapshot(account.id, refreshed.balanceSats ?? '0', now)
               return true
             })
             if (collected) {
