@@ -51,58 +51,61 @@ export abstract class OnchainBitcoinProvider {
   /**
    * Returns confirmed balances for the given accounts. Uses the associated provider's max account depth.
    */
-  public getConfirmedAccountBalances = (accounts: IndexSet<Account>): AsyncResult<IndexMap<Account, bigint>, Error> =>
-    tryBlock(
-      async function* (this: OnchainBitcoinProvider) {
-        this.deps.logger.debug({ accounts }, 'Getting confirmed account balances')
-        const addressesToAccounts = new IndexMap<Address, Account>()
+  public getConfirmedAccountBalances = (accounts: IndexSet<Account>): AsyncResult<IndexMap<Account, bigint>, Error> => {
+    const { logger } = this.deps
+    const { network } = this
+    const discoverAccount = (account: Account) => this.discoverAccount(account)
+    const getConfirmedAddressBalances = (addresses: IndexSet<Address>) => this.getConfirmedAddressBalances(addresses)
+    return tryBlock(async function* () {
+      logger.debug({ accounts }, 'Getting confirmed account balances')
+      const addressesToAccounts = new IndexMap<Address, Account>()
 
-        // Collect all the accounts that we need to discover
-        const results: Array<
-          AsyncResult<{ account: Account; lastUsedReceiveIndex: number; lastUsedChangeIndex: number }, Error>
-        > = []
-        for (const account of accounts) {
-          const result = this.discoverAccount(account).map(({ lastUsedReceiveIndex, lastUsedChangeIndex }) => ({
-            account,
-            lastUsedReceiveIndex,
-            lastUsedChangeIndex,
-          }))
-          results.push(result)
+      // Collect all the accounts that we need to discover
+      const results: Array<
+        AsyncResult<{ account: Account; lastUsedReceiveIndex: number; lastUsedChangeIndex: number }, Error>
+      > = []
+      for (const account of accounts) {
+        const result = discoverAccount(account).map(({ lastUsedReceiveIndex, lastUsedChangeIndex }) => ({
+          account,
+          lastUsedReceiveIndex,
+          lastUsedChangeIndex,
+        }))
+        results.push(result)
+      }
+
+      // Run discovery in parallel
+      const discoveredAccounts = yield* asyncResultAll(results).inspectErr((err) => {
+        logger.error({ err }, 'Error getting confirmed account balances')
+      })
+      logger.debug({ discoveredAccounts }, 'Discovered accounts')
+
+      // Collect all the addresses that we need to check
+      for (const { account, lastUsedReceiveIndex, lastUsedChangeIndex } of discoveredAccounts) {
+        const receiveAddresses = account.receiveAddresses(0, lastUsedReceiveIndex + 1, network)
+        for (const address of receiveAddresses) {
+          addressesToAccounts.set(address, account)
         }
+        const changeAddresses = account.changeAddresses(0, lastUsedChangeIndex + 1, network)
+        for (const address of changeAddresses) {
+          addressesToAccounts.set(address, account)
+        }
+      }
 
-        // Run discovery in parallel
-        const discoveredAccounts = yield* asyncResultAll(results).inspectErr((err) => {
-          this.deps.logger.error({ err }, 'Error getting confirmed account balances')
+      return getConfirmedAddressBalances(new IndexSet(addressesToAccounts.keys()))
+        .map((addressBalances) => {
+          const map = new IndexMap<Account, bigint>()
+          for (const [address, account] of addressesToAccounts.entries()) {
+            const currentBalance = map.get(account) ?? 0n
+            const addressBalance = addressBalances.get(address) ?? 0n
+            map.set(account, currentBalance + addressBalance)
+          }
+          return map
         })
-        this.deps.logger.debug({ discoveredAccounts }, 'Discovered accounts')
-
-        // Collect all the addresses that we need to check
-        for (const { account, lastUsedReceiveIndex, lastUsedChangeIndex } of discoveredAccounts) {
-          const receiveAddresses = account.receiveAddresses(0, lastUsedReceiveIndex + 1, this.network)
-          for (const address of receiveAddresses) {
-            addressesToAccounts.set(address, account)
-          }
-          const changeAddresses = account.changeAddresses(0, lastUsedChangeIndex + 1, this.network)
-          for (const address of changeAddresses) {
-            addressesToAccounts.set(address, account)
-          }
-        }
-
-        return this.getConfirmedAddressBalances(new IndexSet(addressesToAccounts.keys()))
-          .map((addressBalances) => {
-            const map = new IndexMap<Account, bigint>()
-            for (const [address, account] of addressesToAccounts.entries()) {
-              const currentBalance = map.get(account) ?? 0n
-              const addressBalance = addressBalances.get(address) ?? 0n
-              map.set(account, currentBalance + addressBalance)
-            }
-            return map
-          })
-          .inspectErr((err) => {
-            this.deps.logger.error({ err }, 'Error getting confirmed account balances')
-          })
-      }.bind(this),
-    )
+        .inspectErr((err) => {
+          logger.error({ err }, 'Error getting confirmed account balances')
+        })
+    })
+  }
 
   protected abstract getLastKnownIndexes(
     account: Account,
@@ -116,83 +119,81 @@ export abstract class OnchainBitcoinProvider {
   public discoverAccount(
     account: Account,
   ): AsyncResult<{ lastUsedReceiveIndex: number; lastUsedChangeIndex: number }, Error> {
-    return tryBlock(
-      async function* (this: OnchainBitcoinProvider) {
-        const { lastUsedReceiveIndex, lastUsedChangeIndex } = yield* this.getLastKnownIndexes(account).inspectErr(
-          (err) => {
-            this.deps.logger.error({ err }, 'Error getting last known indexes')
-          },
-        )
+    const { logger } = this.deps
+    const { network } = this
+    const getLastKnownIndexes = () => this.getLastKnownIndexes(account)
+    const areAddressesUsed = (addresses: IndexSet<Address>) => this.areAddressesUsed(addresses)
+    return tryBlock(async function* () {
+      const { lastUsedReceiveIndex, lastUsedChangeIndex } = yield* getLastKnownIndexes().inspectErr((err) => {
+        logger.error({ err }, 'Error getting last known indexes')
+      })
 
-        this.deps.logger.debug({ account, lastUsedReceiveIndex, lastUsedChangeIndex }, 'Discovering account')
+      logger.debug({ account, lastUsedReceiveIndex, lastUsedChangeIndex }, 'Discovering account')
 
-        let newLastUsedReceiveIndex = 0
-        let newLastUsedChangeIndex = 0
+      let newLastUsedReceiveIndex = 0
+      let newLastUsedChangeIndex = 0
 
-        let receiveUnusedCount = 0
-        let changeUnusedCount = 0
+      let receiveUnusedCount = 0
+      let changeUnusedCount = 0
 
-        let receiveCheckFrom = 0
-        let receiveCheckUpTo = lastUsedReceiveIndex + CONFIG.GAP_LIMIT
+      let receiveCheckFrom = 0
+      let receiveCheckUpTo = lastUsedReceiveIndex + CONFIG.GAP_LIMIT
 
-        let changeCheckFrom = 0
-        let changeCheckUpTo = lastUsedChangeIndex + CONFIG.GAP_LIMIT
+      let changeCheckFrom = 0
+      let changeCheckUpTo = lastUsedChangeIndex + CONFIG.GAP_LIMIT
 
-        while (receiveUnusedCount < CONFIG.GAP_LIMIT || changeUnusedCount < CONFIG.GAP_LIMIT) {
-          const addresses: Array<{ address: Address; change: boolean; index: number }> = []
+      while (receiveUnusedCount < CONFIG.GAP_LIMIT || changeUnusedCount < CONFIG.GAP_LIMIT) {
+        const addresses: Array<{ address: Address; change: boolean; index: number }> = []
 
-          if (receiveUnusedCount < CONFIG.GAP_LIMIT) {
-            for (let i = receiveCheckFrom; i < receiveCheckUpTo; i++) {
-              const address = account.receiveAddress(i, this.network)
-              addresses.push({ address, change: false, index: i })
-            }
+        if (receiveUnusedCount < CONFIG.GAP_LIMIT) {
+          for (let i = receiveCheckFrom; i < receiveCheckUpTo; i++) {
+            const address = account.receiveAddress(i, network)
+            addresses.push({ address, change: false, index: i })
           }
-
-          if (changeUnusedCount < CONFIG.GAP_LIMIT) {
-            for (let i = changeCheckFrom; i < changeCheckUpTo; i++) {
-              const address = account.changeAddress(i, this.network)
-              addresses.push({ address, change: true, index: i })
-            }
-          }
-
-          this.deps.logger.debug({ addresses }, 'Checking if addresses are used')
-          const usedMap = yield* this.areAddressesUsed(new IndexSet(addresses.map((a) => a.address))).inspectErr(
-            (err) => {
-              this.deps.logger.error({ err }, 'Error checking if addresses are used')
-            },
-          )
-
-          for (const address of addresses) {
-            if (usedMap.has(address.address)) {
-              if (address.change) {
-                newLastUsedChangeIndex = address.index
-                changeUnusedCount = 0
-              } else {
-                newLastUsedReceiveIndex = address.index
-                receiveUnusedCount = 0
-              }
-            } else {
-              if (address.change) {
-                changeUnusedCount += 1
-              } else {
-                receiveUnusedCount += 1
-              }
-            }
-          }
-
-          receiveCheckFrom = receiveCheckUpTo
-          receiveCheckUpTo = receiveCheckFrom + (CONFIG.GAP_LIMIT - receiveUnusedCount)
-
-          changeCheckFrom = changeCheckUpTo
-          changeCheckUpTo = changeCheckFrom + (CONFIG.GAP_LIMIT - changeUnusedCount)
         }
 
-        return Ok({
-          lastUsedReceiveIndex: newLastUsedReceiveIndex,
-          lastUsedChangeIndex: newLastUsedChangeIndex,
+        if (changeUnusedCount < CONFIG.GAP_LIMIT) {
+          for (let i = changeCheckFrom; i < changeCheckUpTo; i++) {
+            const address = account.changeAddress(i, network)
+            addresses.push({ address, change: true, index: i })
+          }
+        }
+
+        logger.debug({ addresses }, 'Checking if addresses are used')
+        const usedMap = yield* areAddressesUsed(new IndexSet(addresses.map((a) => a.address))).inspectErr((err) => {
+          logger.error({ err }, 'Error checking if addresses are used')
         })
-      }.bind(this),
-    )
+
+        for (const address of addresses) {
+          if (usedMap.has(address.address)) {
+            if (address.change) {
+              newLastUsedChangeIndex = address.index
+              changeUnusedCount = 0
+            } else {
+              newLastUsedReceiveIndex = address.index
+              receiveUnusedCount = 0
+            }
+          } else {
+            if (address.change) {
+              changeUnusedCount += 1
+            } else {
+              receiveUnusedCount += 1
+            }
+          }
+        }
+
+        receiveCheckFrom = receiveCheckUpTo
+        receiveCheckUpTo = receiveCheckFrom + (CONFIG.GAP_LIMIT - receiveUnusedCount)
+
+        changeCheckFrom = changeCheckUpTo
+        changeCheckUpTo = changeCheckFrom + (CONFIG.GAP_LIMIT - changeUnusedCount)
+      }
+
+      return Ok({
+        lastUsedReceiveIndex: newLastUsedReceiveIndex,
+        lastUsedChangeIndex: newLastUsedChangeIndex,
+      })
+    })
   }
 
   public getTransactionEntriesByAccount(account: Account): AsyncResult<TransactionEntry[], Error> {
@@ -226,20 +227,21 @@ export abstract class OnchainBitcoinProvider {
       })
   }
 
-  public getTransactionEntriesByAddress = (address: Address): AsyncResult<TransactionEntry[], Error> =>
-    tryBlock(
-      async function* (this: OnchainBitcoinProvider) {
-        this.deps.logger.debug({ address }, 'Getting transaction entries for address')
-        const entries: TransactionEntry[] = []
-        const gen = this.getTransactionEntries(new IndexMap([[address, null]]))
-        for await (const entry of gen) {
-          entries.push(
-            yield* entry.inspectErr((err) => {
-              this.deps.logger.error({ err }, 'Error getting transaction entries for address')
-            }),
-          )
-        }
-        return Ok(entries)
-      }.bind(this),
-    )
+  public getTransactionEntriesByAddress = (address: Address): AsyncResult<TransactionEntry[], Error> => {
+    const { logger } = this.deps
+    const getTransactionEntries = (addresses: IndexMap<Address, number | null>) => this.getTransactionEntries(addresses)
+    return tryBlock(async function* () {
+      logger.debug({ address }, 'Getting transaction entries for address')
+      const entries: TransactionEntry[] = []
+      const gen = getTransactionEntries(new IndexMap([[address, null]]))
+      for await (const entry of gen) {
+        entries.push(
+          yield* entry.inspectErr((err) => {
+            logger.error({ err }, 'Error getting transaction entries for address')
+          }),
+        )
+      }
+      return Ok(entries)
+    })
+  }
 }

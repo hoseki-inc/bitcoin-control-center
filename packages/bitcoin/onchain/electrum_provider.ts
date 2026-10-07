@@ -42,100 +42,100 @@ export class ElectrumProvider extends OnchainBitcoinProvider {
   > => AsyncOk({ lastUsedReceiveIndex: 0, lastUsedChangeIndex: 0 })
 
   public getBlocksTip(): AsyncResult<Block, Error> {
-    return tryBlock(
-      async function* (this: ElectrumProvider) {
-        const header = yield* this.deps.electrum.headersSubscribe()
-        return parseBlockHeader(header.height, header.hex)
-      }.bind(this),
-    )
+    const { electrum } = this.deps
+    return tryBlock(async function* () {
+      const header = yield* electrum.headersSubscribe()
+      return parseBlockHeader(header.height, header.hex)
+    })
   }
 
   public getBlock(height: number): AsyncResult<Block, Error> {
-    return tryBlock(
-      async function* (this: ElectrumProvider) {
-        const header = yield* this.deps.electrum.getBlockHeader(height)
-        return parseBlockHeader(height, header)
-      }.bind(this),
-    )
+    const { electrum } = this.deps
+    return tryBlock(async function* () {
+      const header = yield* electrum.getBlockHeader(height)
+      return parseBlockHeader(height, header)
+    })
   }
 
-  public areAddressesUsed = (addresses: IndexSet<Address>): AsyncResult<IndexSet<Address>, Error> =>
-    tryBlock(
-      async function* (this: ElectrumProvider) {
-        this.deps.logger.debug({ total: addresses.size }, 'Checking if addresses are used via Electrum')
+  public areAddressesUsed = (addresses: IndexSet<Address>): AsyncResult<IndexSet<Address>, Error> => {
+    const { logger, electrum } = this.deps
+    return tryBlock(async function* () {
+      logger.debug({ total: addresses.size }, 'Checking if addresses are used via Electrum')
 
-        const used = new IndexSet<Address>()
-        const addressArray = [...addresses]
+      const used = new IndexSet<Address>()
+      const addressArray = [...addresses]
 
-        // Batch parallel requests to avoid overwhelming the server
-        for (let i = 0; i < addressArray.length; i += BATCH_SIZE) {
-          const batch = addressArray.slice(i, i + BATCH_SIZE)
-          const results = await Promise.all(
-            batch.map(async (address) => {
-              const scripthash = addressToScripthash(address)
-              if (scripthash.isErr()) {
-                return { address, err: scripthash.unwrapErr() } as const
-              }
-              const history = await this.deps.electrum.getHistory(scripthash.unwrap())
-              if (history.isErr()) {
-                return { address, err: history.unwrapErr() } as const
-              }
-              return { address, used: history.unwrap().length > 0 } as const
-            }),
-          )
-          for (const r of results) {
-            if ('err' in r) {
-              return Err(r.err ?? new Error('Electrum history request failed'))
+      // Batch parallel requests to avoid overwhelming the server
+      for (let i = 0; i < addressArray.length; i += BATCH_SIZE) {
+        const batch = addressArray.slice(i, i + BATCH_SIZE)
+        const results = await Promise.all(
+          batch.map(async (address) => {
+            const scripthash = addressToScripthash(address)
+            if (scripthash.isErr()) {
+              return { address, err: scripthash.unwrapErr() } as const
             }
-            if (r.used) {
-              used.add(r.address)
+            const history = await electrum.getHistory(scripthash.unwrap())
+            if (history.isErr()) {
+              return { address, err: history.unwrapErr() } as const
             }
-          }
-        }
-
-        this.deps.logger.info({ total: addresses.size, used: used.size }, 'Completed used address check via Electrum')
-        return Ok(used)
-      }.bind(this),
-    )
-
-  public getConfirmedAddressBalances = (addresses: IndexSet<Address>): AsyncResult<IndexMap<Address, bigint>, Error> =>
-    tryBlock(
-      async function* (this: ElectrumProvider) {
-        this.deps.logger.debug({ total: addresses.size }, 'Getting confirmed address balances via Electrum')
-
-        const balances = new IndexMap<Address, bigint>()
-        const addressArray = [...addresses]
-
-        for (let i = 0; i < addressArray.length; i += BATCH_SIZE) {
-          const batch = addressArray.slice(i, i + BATCH_SIZE)
-          const results = await Promise.all(
-            batch.map(async (address) => {
-              const scripthash = addressToScripthash(address)
-              if (scripthash.isErr()) {
-                return { address, err: scripthash.unwrapErr() } as const
-              }
-              const balanceRes = await this.deps.electrum.getBalance(scripthash.unwrap())
-              if (balanceRes.isErr()) {
-                return { address, err: balanceRes.unwrapErr() } as const
-              }
-              return { address, balance: BigInt(balanceRes.unwrap().confirmed) } as const
-            }),
-          )
-          for (const r of results) {
-            if ('err' in r) {
-              return Err(r.err ?? new Error('Electrum balance request failed'))
-            }
-            balances.set(r.address, r.balance)
-          }
-        }
-
-        this.deps.logger.info(
-          { total: addresses.size, withBalance: balances.size },
-          'Completed getting confirmed address balances via Electrum',
+            return { address, used: history.unwrap().length > 0 } as const
+          }),
         )
-        return Ok(balances)
-      }.bind(this),
-    )
+        for (const r of results) {
+          if ('err' in r) {
+            return Err(r.err ?? new Error('Electrum history request failed'))
+          }
+          if (r.used) {
+            used.add(r.address)
+          }
+        }
+      }
+
+      logger.info({ total: addresses.size, used: used.size }, 'Completed used address check via Electrum')
+      return Ok(used)
+    })
+  }
+
+  public getConfirmedAddressBalances = (
+    addresses: IndexSet<Address>,
+  ): AsyncResult<IndexMap<Address, bigint>, Error> => {
+    const { logger, electrum } = this.deps
+    return tryBlock(async function* () {
+      logger.debug({ total: addresses.size }, 'Getting confirmed address balances via Electrum')
+
+      const balances = new IndexMap<Address, bigint>()
+      const addressArray = [...addresses]
+
+      for (let i = 0; i < addressArray.length; i += BATCH_SIZE) {
+        const batch = addressArray.slice(i, i + BATCH_SIZE)
+        const results = await Promise.all(
+          batch.map(async (address) => {
+            const scripthash = addressToScripthash(address)
+            if (scripthash.isErr()) {
+              return { address, err: scripthash.unwrapErr() } as const
+            }
+            const balanceRes = await electrum.getBalance(scripthash.unwrap())
+            if (balanceRes.isErr()) {
+              return { address, err: balanceRes.unwrapErr() } as const
+            }
+            return { address, balance: BigInt(balanceRes.unwrap().confirmed) } as const
+          }),
+        )
+        for (const r of results) {
+          if ('err' in r) {
+            return Err(r.err ?? new Error('Electrum balance request failed'))
+          }
+          balances.set(r.address, r.balance)
+        }
+      }
+
+      logger.info(
+        { total: addresses.size, withBalance: balances.size },
+        'Completed getting confirmed address balances via Electrum',
+      )
+      return Ok(balances)
+    })
+  }
 
   /**
    * Get balance accumulation entries by using UTXOs (listunspent) instead of verbose transactions.
@@ -144,72 +144,75 @@ export class ElectrumProvider extends OnchainBitcoinProvider {
    */
   public getUtxoAccumulationEntries = (
     account: Account,
-  ): AsyncResult<Array<{ value: bigint; height: number; estimatedTimestamp: Date }>, Error> =>
-    tryBlock(
-      async function* (this: ElectrumProvider) {
-        this.deps.logger.debug({ account }, 'Getting UTXO accumulation entries')
+  ): AsyncResult<Array<{ value: bigint; height: number; estimatedTimestamp: Date }>, Error> => {
+    const { logger, electrum } = this.deps
+    const { network } = this
+    const discoverAccount = () => this.discoverAccount(account)
+    const getBlocksTip = () => this.getBlocksTip()
+    return tryBlock(async function* () {
+      logger.debug({ account }, 'Getting UTXO accumulation entries')
 
-        const { lastUsedReceiveIndex, lastUsedChangeIndex } = yield* this.discoverAccount(account)
+      const { lastUsedReceiveIndex, lastUsedChangeIndex } = yield* discoverAccount()
 
-        // Get current block tip for timestamp estimation
-        const tip = yield* this.getBlocksTip()
+      // Get current block tip for timestamp estimation
+      const tip = yield* getBlocksTip()
 
-        const entries: Array<{ value: bigint; height: number; estimatedTimestamp: Date }> = []
-        const seenTxids = new Set<string>()
+      const entries: Array<{ value: bigint; height: number; estimatedTimestamp: Date }> = []
+      const seenTxids = new Set<string>()
 
-        // Collect all discovered addresses
-        const allAddresses = [
-          ...account.receiveAddresses(0, lastUsedReceiveIndex + 1, this.network),
-          ...account.changeAddresses(0, lastUsedChangeIndex + 1, this.network),
-        ]
+      // Collect all discovered addresses
+      const allAddresses = [
+        ...account.receiveAddresses(0, lastUsedReceiveIndex + 1, network),
+        ...account.changeAddresses(0, lastUsedChangeIndex + 1, network),
+      ]
 
-        for (let i = 0; i < allAddresses.length; i += BATCH_SIZE) {
-          const batch = allAddresses.slice(i, i + BATCH_SIZE)
-          const results = await Promise.all(
-            batch.map(async (address) => {
-              const scripthashRes = addressToScripthash(address)
-              if (scripthashRes.isErr()) {
-                return []
-              }
-              const unspentRes = await this.deps.electrum.listUnspent(scripthashRes.unwrap())
-              if (unspentRes.isErr()) {
-                this.deps.logger.warn({ address, err: unspentRes.unwrapErr() }, 'Failed to list unspent, skipping')
-                return []
-              }
-              return unspentRes.unwrap()
-            }),
-          )
-
-          for (const utxos of results) {
-            for (const utxo of utxos) {
-              const key = `${utxo.tx_hash}:${utxo.tx_pos}`
-              if (seenTxids.has(key)) {
-                continue
-              }
-              seenTxids.add(key)
-
-              if (utxo.height <= 0) {
-                continue
-              } // skip unconfirmed
-
-              // Estimate timestamp: ~10 minutes per block from tip
-              const blocksBehind = tip.height - utxo.height
-              const estimatedTimestamp = new Date(tip.timestamp.getTime() - blocksBehind * 10 * 60 * 1000)
-
-              entries.push({
-                value: BigInt(utxo.value),
-                height: utxo.height,
-                estimatedTimestamp,
-              })
+      for (let i = 0; i < allAddresses.length; i += BATCH_SIZE) {
+        const batch = allAddresses.slice(i, i + BATCH_SIZE)
+        const results = await Promise.all(
+          batch.map(async (address) => {
+            const scripthashRes = addressToScripthash(address)
+            if (scripthashRes.isErr()) {
+              return []
             }
+            const unspentRes = await electrum.listUnspent(scripthashRes.unwrap())
+            if (unspentRes.isErr()) {
+              logger.warn({ address, err: unspentRes.unwrapErr() }, 'Failed to list unspent, skipping')
+              return []
+            }
+            return unspentRes.unwrap()
+          }),
+        )
+
+        for (const utxos of results) {
+          for (const utxo of utxos) {
+            const key = `${utxo.tx_hash}:${utxo.tx_pos}`
+            if (seenTxids.has(key)) {
+              continue
+            }
+            seenTxids.add(key)
+
+            if (utxo.height <= 0) {
+              continue
+            } // skip unconfirmed
+
+            // Estimate timestamp: ~10 minutes per block from tip
+            const blocksBehind = tip.height - utxo.height
+            const estimatedTimestamp = new Date(tip.timestamp.getTime() - blocksBehind * 10 * 60 * 1000)
+
+            entries.push({
+              value: BigInt(utxo.value),
+              height: utxo.height,
+              estimatedTimestamp,
+            })
           }
         }
+      }
 
-        entries.sort((a, b) => a.height - b.height)
-        this.deps.logger.info({ count: entries.length }, 'Got UTXO accumulation entries')
-        return Ok(entries)
-      }.bind(this),
-    )
+      entries.sort((a, b) => a.height - b.height)
+      logger.info({ count: entries.length }, 'Got UTXO accumulation entries')
+      return Ok(entries)
+    })
+  }
 
   public async *getTransactionEntries(
     addresses: IndexMap<Address, number | null>,

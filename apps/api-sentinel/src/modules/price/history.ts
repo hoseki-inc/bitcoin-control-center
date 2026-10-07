@@ -71,44 +71,44 @@ export class PriceHistoryService {
   public getHistory = (
     days: BitcoinPriceHistoryDays,
     quoteCurrency: StatementQuoteCurrency = 'USD',
-  ): AsyncResult<BitcoinPriceHistory, Error> =>
-    tryBlock(
-      async function* (this: PriceHistoryService) {
-        const now = new Date()
-        const dates = priceHistoryDates(days, now)
-        const [opening] = dates
-        const closing = dates.at(-1)
-        if (!opening || !closing || dates.length < 2) {
-          return Err(new Error('Bitcoin price history is not available for this range'))
+  ): AsyncResult<BitcoinPriceHistory, Error> => {
+    const { dailyRatesService, priceService } = this
+    return tryBlock(async function* () {
+      const now = new Date()
+      const dates = priceHistoryDates(days, now)
+      const [opening] = dates
+      const closing = dates.at(-1)
+      if (!opening || !closing || dates.length < 2) {
+        return Err(new Error('Bitcoin price history is not available for this range'))
+      }
+      // The current price source quotes USD only, so other currencies end at today's daily quote.
+      const [rates, current] = await Promise.all([
+        dailyRatesService.getDailyRates(opening, closing, quoteCurrency, dates),
+        quoteCurrency === 'USD' ? priceService.getCurrentBtcPrice() : undefined,
+      ])
+      if (rates.isErr()) {
+        return Err(rates.unwrapErr())
+      }
+      const { rates: daily, providerUrls } = rates.unwrap()
+      // A day without its own quote may use a nearby one; plot each quote once, when it was observed.
+      const observed = new Map<number, number>()
+      for (const rate of Object.values(daily)) {
+        observed.set(rate.timestamp.getTime() / 1000, rate.close.toNumber())
+      }
+      const points = [...observed].map(([time, value]) => ({ time, value })).sort((a, b) => a.time - b.time)
+      const history: BitcoinPriceHistory = {
+        quoteCurrency,
+        points,
+        historySources: [...new Set((providerUrls ?? []).map((url) => historySourceName(new URL(url))))],
+      }
+      // A last known price counts too: it is at most about an hour old.
+      if (current?.isOk() === true) {
+        const price = current.unwrap()
+        if (price.asOf.getTime() / 1000 > (points.at(-1)?.time ?? 0)) {
+          history.latest = { time: Math.floor(price.asOf.getTime() / 1000), value: price.value.toNumber() }
         }
-        // The current price source quotes USD only, so other currencies end at today's daily quote.
-        const [rates, current] = await Promise.all([
-          this.dailyRatesService.getDailyRates(opening, closing, quoteCurrency, dates),
-          quoteCurrency === 'USD' ? this.priceService.getCurrentBtcPrice() : undefined,
-        ])
-        if (rates.isErr()) {
-          return Err(rates.unwrapErr())
-        }
-        const { rates: daily, providerUrls } = rates.unwrap()
-        // A day without its own quote may use a nearby one; plot each quote once, when it was observed.
-        const observed = new Map<number, number>()
-        for (const rate of Object.values(daily)) {
-          observed.set(rate.timestamp.getTime() / 1000, rate.close.toNumber())
-        }
-        const points = [...observed].map(([time, value]) => ({ time, value })).sort((a, b) => a.time - b.time)
-        const history: BitcoinPriceHistory = {
-          quoteCurrency,
-          points,
-          historySources: [...new Set((providerUrls ?? []).map((url) => historySourceName(new URL(url))))],
-        }
-        // A last known price counts too: it is at most about an hour old.
-        if (current?.isOk() === true) {
-          const price = current.unwrap()
-          if (price.asOf.getTime() / 1000 > (points.at(-1)?.time ?? 0)) {
-            history.latest = { time: Math.floor(price.asOf.getTime() / 1000), value: price.value.toNumber() }
-          }
-        }
-        return Ok(history)
-      }.bind(this),
-    )
+      }
+      return Ok(history)
+    })
+  }
 }

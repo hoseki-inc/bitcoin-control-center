@@ -107,305 +107,309 @@ export class ControlCenterService {
     etfAccountIds?: string[]
     timezone?: Timezone
     customDateRange?: CustomDateRange
-  }): AsyncResult<ControlCenterData, Error> =>
-    tryBlock(
-      async function* (this: ControlCenterService) {
-        const timeRange = args.timeRange ?? '30d'
-        const timezone = args.timezone ?? DEFAULT_TIMEZONE
-        const now = new Date()
-        const historyRange = yield* resolveHistoryRange(timeRange, args.customDateRange, timezone, now)
-        const shouldSyncFullHistory = args.customDateRange !== undefined || timeRange === 'all'
-        this.logger.info({ timeRange, customDateRange: args.customDateRange, timezone }, 'Getting control center data')
+  }): AsyncResult<ControlCenterData, Error> => {
+    const { logger, onchainProvider, exchangeService, manualService, etfService, priceService } = this
+    const getAccountRows = async (filterIds?: string[]) => this.getAccountRows(filterIds)
+    const getLatestAccountSnapshotBalance = async (accountId: string) => this.getLatestAccountSnapshotBalance(accountId)
+    const queueAccountHistoryBackfill = async (...backfillArgs: Parameters<typeof this.queueAccountHistoryBackfill>) =>
+      this.queueAccountHistoryBackfill(...backfillArgs)
+    const getExchangeSnapshots = async (accountId: string) => this.getExchangeSnapshots(accountId)
+    const getAccountHistoryStatus = async (...historyArgs: Parameters<typeof this.getAccountHistoryStatus>) =>
+      this.getAccountHistoryStatus(...historyArgs)
+    const isAccountActive = async (accountId: string) => this.isAccountActive(accountId)
+    const getAccountSnapshotEntries = async (accountId: string) => this.getAccountSnapshotEntries(accountId)
+    const getArchivedAccountSnapshotEntries = async () => this.getArchivedAccountSnapshotEntries()
+    return tryBlock(async function* () {
+      const timeRange = args.timeRange ?? '30d'
+      const timezone = args.timezone ?? DEFAULT_TIMEZONE
+      const now = new Date()
+      const historyRange = yield* resolveHistoryRange(timeRange, args.customDateRange, timezone, now)
+      const shouldSyncFullHistory = args.customDateRange !== undefined || timeRange === 'all'
+      logger.info({ timeRange, customDateRange: args.customDateRange, timezone }, 'Getting control center data')
 
-        // ─── Fetch on-chain accounts ────────────────────────────────
-        let accountRows = await this.getAccountRows(args.accountIds)
-        const initiallySelectedAccountIds = new Set(accountRows.map(({ id }) => id))
-        const accounts = new IndexSet<Account>()
+      // ─── Fetch on-chain accounts ────────────────────────────────
+      let accountRows = await getAccountRows(args.accountIds)
+      const initiallySelectedAccountIds = new Set(accountRows.map(({ id }) => id))
+      const accounts = new IndexSet<Account>()
 
-        for (const row of accountRows) {
-          const accountResult = Account.fromDescriptor(row.descriptor)
-          if (accountResult.isErr()) {
-            this.logger.warn({ accountId: row.id }, 'Skipping invalid descriptor')
-            continue
-          }
-          accounts.add(accountResult.unwrap())
+      for (const row of accountRows) {
+        const accountResult = Account.fromDescriptor(row.descriptor)
+        if (accountResult.isErr()) {
+          logger.warn({ accountId: row.id }, 'Skipping invalid descriptor')
+          continue
         }
+        accounts.add(accountResult.unwrap())
+      }
 
-        // ─── Fetch on-chain balances ────────────────────────────────
-        const balancesByAccountId = new Map<string, bigint>()
+      // ─── Fetch on-chain balances ────────────────────────────────
+      const balancesByAccountId = new Map<string, bigint>()
 
-        if (accounts.size > 0) {
-          // Anchor before balance discovery so a backfill can reuse this result
-          // only if the same chain tip still holds after scanning history.
-          const balanceTipResult = await this.onchainProvider.getBlocksTip()
-          const balancesResult = await this.onchainProvider.getConfirmedAccountBalances(accounts)
-          accountRows = (await this.getAccountRows(args.accountIds)).filter(({ id }) =>
-            initiallySelectedAccountIds.has(id),
-          )
-          if (balancesResult.isErr()) {
-            this.logger.warn({ err: balancesResult.unwrapErr() }, 'Failed to fetch on-chain balances')
-            for (const row of accountRows) {
-              const latestSnapshotBalance = (await this.getLatestAccountSnapshotBalance(row.id)) ?? 0n
-              balancesByAccountId.set(row.id, latestSnapshotBalance)
+      if (accounts.size > 0) {
+        // Anchor before balance discovery so a backfill can reuse this result
+        // only if the same chain tip still holds after scanning history.
+        const balanceTipResult = await onchainProvider.getBlocksTip()
+        const balancesResult = await onchainProvider.getConfirmedAccountBalances(accounts)
+        accountRows = (await getAccountRows(args.accountIds)).filter(({ id }) => initiallySelectedAccountIds.has(id))
+        if (balancesResult.isErr()) {
+          logger.warn({ err: balancesResult.unwrapErr() }, 'Failed to fetch on-chain balances')
+          for (const row of accountRows) {
+            const latestSnapshotBalance = (await getLatestAccountSnapshotBalance(row.id)) ?? 0n
+            balancesByAccountId.set(row.id, latestSnapshotBalance)
 
-              if (shouldSyncFullHistory) {
-                const accountResult = Account.fromDescriptor(row.descriptor)
-                if (accountResult.isOk()) {
-                  await this.queueAccountHistoryBackfill(
-                    row.id,
-                    accountResult.unwrap(),
-                    latestSnapshotBalance,
-                    historyRange.start,
-                    true,
-                  )
-                }
-              }
-            }
-          } else {
-            const accountBalances = new Map<string, bigint>()
-            for (const [account, balance] of balancesResult.unwrap()) {
-              accountBalances.set(account.toString(), balance)
-            }
-
-            // Self-custody charts read snapshots first. Electrum transaction history
-            // is only used to lazily backfill missing snapshot ranges.
-            for (const row of accountRows) {
+            if (shouldSyncFullHistory) {
               const accountResult = Account.fromDescriptor(row.descriptor)
-              if (accountResult.isErr()) {
-                continue
-              }
-
-              const account = accountResult.unwrap()
-              const accountBalance = accountBalances.get(account.toString()) ?? 0n
-              balancesByAccountId.set(row.id, accountBalance)
-              await this.queueAccountHistoryBackfill(
-                row.id,
-                account,
-                accountBalance,
-                historyRange.start,
-                shouldSyncFullHistory,
-                balanceTipResult.isOk() ? balanceTipResult.unwrap() : undefined,
-              )
-            }
-          }
-        }
-
-        // ─── Fetch exchange data ────────────────────────────────────
-        let exchangeBalance = 0n
-        const exchangeEntries: BalanceEntry[] = []
-
-        const exchangeAccounts = await this.exchangeService.listAccounts()
-        const exchangeAccountIds = args.exchangeAccountIds
-        const filteredExchangeAccounts = exchangeAccountIds
-          ? exchangeAccounts.filter((a) => exchangeAccountIds.includes(a.id))
-          : exchangeAccounts
-        const connectedExchangeAccounts = filteredExchangeAccounts.filter((a) => a.connectionStatus === 'connected')
-
-        this.logger.info(
-          {
-            totalExchangeAccounts: exchangeAccounts.length,
-            filteredCount: filteredExchangeAccounts.length,
-            connectedCount: connectedExchangeAccounts.length,
-            accounts: connectedExchangeAccounts.map((a) => ({
-              id: a.id,
-              exchange: a.exchange,
-              balanceSats: a.balanceSats,
-            })),
-          },
-          'Exchange accounts for control center',
-        )
-
-        for (const account of connectedExchangeAccounts) {
-          if (account.balanceSats != null && account.balanceSats !== '') {
-            exchangeBalance += BigInt(account.balanceSats)
-          }
-        }
-
-        // Coinbase: use real transaction history from the Coinbase API
-        const coinbaseAccounts = connectedExchangeAccounts.filter((a) => a.exchange === 'coinbase')
-        if (coinbaseAccounts.length > 0) {
-          const coinbaseIds = coinbaseAccounts.map((a) => a.id)
-          const coinbaseEntries = await this.exchangeService.getCoinbaseTransactionEntries(coinbaseIds)
-          if (coinbaseEntries.isOk()) {
-            exchangeEntries.push(...coinbaseEntries.unwrap())
-          } else {
-            this.logger.warn({ err: coinbaseEntries.unwrapErr() }, 'Failed to fetch Coinbase transactions')
-          }
-        }
-
-        // Kraken: use real transaction history from the Kraken Ledgers API
-        const krakenAccounts = connectedExchangeAccounts.filter((a) => a.exchange === 'kraken')
-        if (krakenAccounts.length > 0) {
-          const krakenIds = krakenAccounts.map((a) => a.id)
-          const krakenEntries = await this.exchangeService.getKrakenTransactionEntries(krakenIds)
-          if (krakenEntries.isOk()) {
-            exchangeEntries.push(...krakenEntries.unwrap())
-          } else {
-            this.logger.warn({ err: krakenEntries.unwrapErr() }, 'Failed to fetch Kraken transactions')
-          }
-        }
-
-        // Non-transaction exchanges (Strike, Robinhood): use imported statement transactions
-        // for history before the first snapshot, then snapshots as source of truth after.
-        const snapshotOnlyAccounts = connectedExchangeAccounts.filter(
-          (a) => a.exchange !== 'coinbase' && a.exchange !== 'kraken',
-        )
-        for (const account of snapshotOnlyAccounts) {
-          const snapshots = await this.getExchangeSnapshots(account.id)
-          const firstSnapshotTimestamp = snapshots[0]?.timestamp
-          const firstSnapshotTime =
-            firstSnapshotTimestamp != null && firstSnapshotTimestamp !== '' ? new Date(firstSnapshotTimestamp) : null
-
-          // Use imported transactions for the period before our first snapshot
-          let previousBalance = 0n
-          const stmtTxs = await this.exchangeService.listStatementTransactions(account.id)
-          if (stmtTxs.length > 0 && firstSnapshotTime) {
-            for (const tx of stmtTxs) {
-              const txTime = new Date(tx.transactedAt)
-              if (txTime >= firstSnapshotTime) {
-                break
-              } // snapshots take over from here
-              const sats = BigInt(Math.round(parseFloat(tx.amountBtc) * 1e8))
-              if (sats !== 0n) {
-                exchangeEntries.push({ timestamp: txTime, value: sats })
-                previousBalance += sats
-              }
-            }
-          } else if (stmtTxs.length > 0 && !firstSnapshotTime) {
-            // No snapshots at all — use all imported transactions
-            for (const tx of stmtTxs) {
-              const sats = BigInt(Math.round(parseFloat(tx.amountBtc) * 1e8))
-              if (sats !== 0n) {
-                exchangeEntries.push({ timestamp: new Date(tx.transactedAt), value: sats })
+              if (accountResult.isOk()) {
+                await queueAccountHistoryBackfill(
+                  row.id,
+                  accountResult.unwrap(),
+                  latestSnapshotBalance,
+                  historyRange.start,
+                  true,
+                )
               }
             }
           }
-
-          // Reconcile the first snapshot against imported history; later snapshots
-          // continue from the preceding snapshot's balance.
-          for (const snapshot of snapshots) {
-            const balance = BigInt(snapshot.balance_sats)
-            const delta = balance - previousBalance
-            if (delta !== 0n) {
-              exchangeEntries.push({
-                timestamp: new Date(snapshot.timestamp),
-                value: delta,
-              })
-            }
-            previousBalance = balance
-          }
-        }
-
-        // ─── Fetch manual holdings data ─────────────────────────────
-        let manualBalance = 0n
-        const manualEntries: BalanceEntry[] = []
-
-        const manualAccounts = await this.manualService.listAccounts()
-        const manualAccountIds = args.manualAccountIds
-        const filteredManualAccounts = manualAccountIds
-          ? manualAccounts.filter((a) => manualAccountIds.includes(a.id))
-          : manualAccounts
-
-        for (const account of filteredManualAccounts) {
-          manualBalance += BigInt(account.balanceSats)
-        }
-
-        // Get transaction entries for accumulation chart
-        const manualTxEntries = await this.manualService.getTransactionEntries(filteredManualAccounts.map((a) => a.id))
-        manualEntries.push(...manualTxEntries)
-
-        // ─── Fetch ETF holdings data ──────────────────────────────
-        let etfBalance = 0n
-        const etfEntries: BalanceEntry[] = []
-
-        const etfAccounts = await this.etfService.listAccounts()
-        const etfAccountIds = args.etfAccountIds
-        const filteredEtfAccounts = etfAccountIds
-          ? etfAccounts.filter((a) => etfAccountIds.includes(a.id))
-          : etfAccounts
-
-        for (const account of filteredEtfAccounts) {
-          etfBalance += BigInt(account.balanceSats)
-        }
-
-        // Use holdings' purchase dates for accumulation chart entries
-        const etfAccumulationEntries = await this.etfService.getAccumulationEntries(
-          filteredEtfAccounts.map((a) => a.id),
-        )
-        etfEntries.push(...etfAccumulationEntries)
-
-        // ─── Fetch BTC price ───────────────────────────────────────
-        let currentBtcPrice = '0'
-        const priceResult = await this.priceService.getCurrentBtcPrice()
-        if (priceResult.isOk()) {
-          currentBtcPrice = priceResult.unwrap().value.toString()
         } else {
-          this.logger.warn({ err: priceResult.unwrapErr() }, 'Failed to fetch BTC price')
+          const accountBalances = new Map<string, bigint>()
+          for (const [account, balance] of balancesResult.unwrap()) {
+            accountBalances.set(account.toString(), balance)
+          }
+
+          // Self-custody charts read snapshots first. Electrum transaction history
+          // is only used to lazily backfill missing snapshot ranges.
+          for (const row of accountRows) {
+            const accountResult = Account.fromDescriptor(row.descriptor)
+            if (accountResult.isErr()) {
+              continue
+            }
+
+            const account = accountResult.unwrap()
+            const accountBalance = accountBalances.get(account.toString()) ?? 0n
+            balancesByAccountId.set(row.id, accountBalance)
+            await queueAccountHistoryBackfill(
+              row.id,
+              account,
+              accountBalance,
+              historyRange.start,
+              shouldSyncFullHistory,
+              balanceTipResult.isOk() ? balanceTipResult.unwrap() : undefined,
+            )
+          }
+        }
+      }
+
+      // ─── Fetch exchange data ────────────────────────────────────
+      let exchangeBalance = 0n
+      const exchangeEntries: BalanceEntry[] = []
+
+      const exchangeAccounts = await exchangeService.listAccounts()
+      const exchangeAccountIds = args.exchangeAccountIds
+      const filteredExchangeAccounts = exchangeAccountIds
+        ? exchangeAccounts.filter((a) => exchangeAccountIds.includes(a.id))
+        : exchangeAccounts
+      const connectedExchangeAccounts = filteredExchangeAccounts.filter((a) => a.connectionStatus === 'connected')
+
+      logger.info(
+        {
+          totalExchangeAccounts: exchangeAccounts.length,
+          filteredCount: filteredExchangeAccounts.length,
+          connectedCount: connectedExchangeAccounts.length,
+          accounts: connectedExchangeAccounts.map((a) => ({
+            id: a.id,
+            exchange: a.exchange,
+            balanceSats: a.balanceSats,
+          })),
+        },
+        'Exchange accounts for control center',
+      )
+
+      for (const account of connectedExchangeAccounts) {
+        if (account.balanceSats != null && account.balanceSats !== '') {
+          exchangeBalance += BigInt(account.balanceSats)
+        }
+      }
+
+      // Coinbase: use real transaction history from the Coinbase API
+      const coinbaseAccounts = connectedExchangeAccounts.filter((a) => a.exchange === 'coinbase')
+      if (coinbaseAccounts.length > 0) {
+        const coinbaseIds = coinbaseAccounts.map((a) => a.id)
+        const coinbaseEntries = await exchangeService.getCoinbaseTransactionEntries(coinbaseIds)
+        if (coinbaseEntries.isOk()) {
+          exchangeEntries.push(...coinbaseEntries.unwrap())
+        } else {
+          logger.warn({ err: coinbaseEntries.unwrapErr() }, 'Failed to fetch Coinbase transactions')
+        }
+      }
+
+      // Kraken: use real transaction history from the Kraken Ledgers API
+      const krakenAccounts = connectedExchangeAccounts.filter((a) => a.exchange === 'kraken')
+      if (krakenAccounts.length > 0) {
+        const krakenIds = krakenAccounts.map((a) => a.id)
+        const krakenEntries = await exchangeService.getKrakenTransactionEntries(krakenIds)
+        if (krakenEntries.isOk()) {
+          exchangeEntries.push(...krakenEntries.unwrap())
+        } else {
+          logger.warn({ err: krakenEntries.unwrapErr() }, 'Failed to fetch Kraken transactions')
+        }
+      }
+
+      // Non-transaction exchanges (Strike, Robinhood): use imported statement transactions
+      // for history before the first snapshot, then snapshots as source of truth after.
+      const snapshotOnlyAccounts = connectedExchangeAccounts.filter(
+        (a) => a.exchange !== 'coinbase' && a.exchange !== 'kraken',
+      )
+      for (const account of snapshotOnlyAccounts) {
+        const snapshots = await getExchangeSnapshots(account.id)
+        const firstSnapshotTimestamp = snapshots[0]?.timestamp
+        const firstSnapshotTime =
+          firstSnapshotTimestamp != null && firstSnapshotTimestamp !== '' ? new Date(firstSnapshotTimestamp) : null
+
+        // Use imported transactions for the period before our first snapshot
+        let previousBalance = 0n
+        const stmtTxs = await exchangeService.listStatementTransactions(account.id)
+        if (stmtTxs.length > 0 && firstSnapshotTime) {
+          for (const tx of stmtTxs) {
+            const txTime = new Date(tx.transactedAt)
+            if (txTime >= firstSnapshotTime) {
+              break
+            } // snapshots take over from here
+            const sats = BigInt(Math.round(parseFloat(tx.amountBtc) * 1e8))
+            if (sats !== 0n) {
+              exchangeEntries.push({ timestamp: txTime, value: sats })
+              previousBalance += sats
+            }
+          }
+        } else if (stmtTxs.length > 0 && !firstSnapshotTime) {
+          // No snapshots at all — use all imported transactions
+          for (const tx of stmtTxs) {
+            const sats = BigInt(Math.round(parseFloat(tx.amountBtc) * 1e8))
+            if (sats !== 0n) {
+              exchangeEntries.push({ timestamp: new Date(tx.transactedAt), value: sats })
+            }
+          }
         }
 
-        // Inspect completion before reading snapshots. There must be no await
-        // between the final snapshot reads and response construction: a backfill
-        // must never be reported complete alongside history read before it finished.
-        const historyStatus = await this.getAccountHistoryStatus(accountRows, historyRange.start, shouldSyncFullHistory)
-        accountRows = (
-          await Promise.all(accountRows.map(async (row) => ((await this.isAccountActive(row.id)) ? row : null)))
-        ).filter((row): row is NonNullable<typeof row> => row !== null)
-        const onchainEntries = (
-          await Promise.all(accountRows.map(async ({ id }) => this.getAccountSnapshotEntries(id)))
-        ).flat()
-        if (!args.accountIds) {
-          onchainEntries.push(...(await this.getArchivedAccountSnapshotEntries()))
+        // Reconcile the first snapshot against imported history; later snapshots
+        // continue from the preceding snapshot's balance.
+        for (const snapshot of snapshots) {
+          const balance = BigInt(snapshot.balance_sats)
+          const delta = balance - previousBalance
+          if (delta !== 0n) {
+            exchangeEntries.push({
+              timestamp: new Date(snapshot.timestamp),
+              value: delta,
+            })
+          }
+          previousBalance = balance
         }
-        const onchainBalance = accountRows.reduce((sum, { id }) => sum + (balancesByAccountId.get(id) ?? 0n), 0n)
+      }
 
-        // ─── Compute totals ─────────────────────────────────────────
-        const currentTotalBalance = onchainBalance + exchangeBalance + manualBalance + etfBalance
-        this.logger.info(
-          {
-            onchainBalance: onchainBalance.toString(),
-            exchangeBalance: exchangeBalance.toString(),
-            manualBalance: manualBalance.toString(),
-            etfBalance: etfBalance.toString(),
-            currentTotalBalance: currentTotalBalance.toString(),
-          },
-          'Control center totals',
-        )
+      // ─── Fetch manual holdings data ─────────────────────────────
+      let manualBalance = 0n
+      const manualEntries: BalanceEntry[] = []
 
-        // ─── Build historical data ──────────────────────────────────
-        const allEntries = [...onchainEntries, ...exchangeEntries, ...manualEntries, ...etfEntries].sort(
-          (a, b) => a.timestamp.getTime() - b.timestamp.getTime(),
-        )
+      const manualAccounts = await manualService.listAccounts()
+      const manualAccountIds = args.manualAccountIds
+      const filteredManualAccounts = manualAccountIds
+        ? manualAccounts.filter((a) => manualAccountIds.includes(a.id))
+        : manualAccounts
 
-        this.logger.info(
-          {
-            onchainEntryCount: onchainEntries.length,
-            exchangeEntryCount: exchangeEntries.length,
-            manualEntryCount: manualEntries.length,
-            etfEntryCount: etfEntries.length,
-            totalEntryCount: allEntries.length,
-          },
-          'Building historical data',
-        )
+      for (const account of filteredManualAccounts) {
+        manualBalance += BigInt(account.balanceSats)
+      }
 
-        const historicalData = buildHistoricalData(allEntries, currentTotalBalance, historyRange, timezone)
+      // Get transaction entries for accumulation chart
+      const manualTxEntries = await manualService.getTransactionEntries(filteredManualAccounts.map((a) => a.id))
+      manualEntries.push(...manualTxEntries)
 
-        this.logger.info({ historicalDataPoints: historicalData.length }, 'Historical data built')
+      // ─── Fetch ETF holdings data ──────────────────────────────
+      let etfBalance = 0n
+      const etfEntries: BalanceEntry[] = []
 
-        return Ok({
+      const etfAccounts = await etfService.listAccounts()
+      const etfAccountIds = args.etfAccountIds
+      const filteredEtfAccounts = etfAccountIds ? etfAccounts.filter((a) => etfAccountIds.includes(a.id)) : etfAccounts
+
+      for (const account of filteredEtfAccounts) {
+        etfBalance += BigInt(account.balanceSats)
+      }
+
+      // Use holdings' purchase dates for accumulation chart entries
+      const etfAccumulationEntries = await etfService.getAccumulationEntries(filteredEtfAccounts.map((a) => a.id))
+      etfEntries.push(...etfAccumulationEntries)
+
+      // ─── Fetch BTC price ───────────────────────────────────────
+      let currentBtcPrice = '0'
+      const priceResult = await priceService.getCurrentBtcPrice()
+      if (priceResult.isOk()) {
+        currentBtcPrice = priceResult.unwrap().value.toString()
+      } else {
+        logger.warn({ err: priceResult.unwrapErr() }, 'Failed to fetch BTC price')
+      }
+
+      // Inspect completion before reading snapshots. There must be no await
+      // between the final snapshot reads and response construction: a backfill
+      // must never be reported complete alongside history read before it finished.
+      const historyStatus = await getAccountHistoryStatus(accountRows, historyRange.start, shouldSyncFullHistory)
+      accountRows = (
+        await Promise.all(accountRows.map(async (row) => ((await isAccountActive(row.id)) ? row : null)))
+      ).filter((row): row is NonNullable<typeof row> => row !== null)
+      const onchainEntries = (
+        await Promise.all(accountRows.map(async ({ id }) => getAccountSnapshotEntries(id)))
+      ).flat()
+      if (!args.accountIds) {
+        onchainEntries.push(...(await getArchivedAccountSnapshotEntries()))
+      }
+      const onchainBalance = accountRows.reduce((sum, { id }) => sum + (balancesByAccountId.get(id) ?? 0n), 0n)
+
+      // ─── Compute totals ─────────────────────────────────────────
+      const currentTotalBalance = onchainBalance + exchangeBalance + manualBalance + etfBalance
+      logger.info(
+        {
+          onchainBalance: onchainBalance.toString(),
+          exchangeBalance: exchangeBalance.toString(),
+          manualBalance: manualBalance.toString(),
+          etfBalance: etfBalance.toString(),
           currentTotalBalance: currentTotalBalance.toString(),
-          currentBtcPrice,
-          historicalData,
-          verifiedClaimsCount: accountRows.length,
-          exchangeAccountCount: connectedExchangeAccounts.length,
-          manualAccountCount: filteredManualAccounts.length,
-          etfAccountCount: filteredEtfAccounts.length,
-          historySyncingAccountIds: historyStatus.historySyncingAccountIds,
-          historySyncedAccountIds: historyStatus.historySyncedAccountIds,
-          historyRefreshingAccountIds: historyStatus.historyRefreshingAccountIds,
-          historyFailedAccountIds: historyStatus.historyFailedAccountIds,
-        })
-      }.bind(this),
-    )
+        },
+        'Control center totals',
+      )
+
+      // ─── Build historical data ──────────────────────────────────
+      const allEntries = [...onchainEntries, ...exchangeEntries, ...manualEntries, ...etfEntries].sort(
+        (a, b) => a.timestamp.getTime() - b.timestamp.getTime(),
+      )
+
+      logger.info(
+        {
+          onchainEntryCount: onchainEntries.length,
+          exchangeEntryCount: exchangeEntries.length,
+          manualEntryCount: manualEntries.length,
+          etfEntryCount: etfEntries.length,
+          totalEntryCount: allEntries.length,
+        },
+        'Building historical data',
+      )
+
+      const historicalData = buildHistoricalData(allEntries, currentTotalBalance, historyRange, timezone)
+
+      logger.info({ historicalDataPoints: historicalData.length }, 'Historical data built')
+
+      return Ok({
+        currentTotalBalance: currentTotalBalance.toString(),
+        currentBtcPrice,
+        historicalData,
+        verifiedClaimsCount: accountRows.length,
+        exchangeAccountCount: connectedExchangeAccounts.length,
+        manualAccountCount: filteredManualAccounts.length,
+        etfAccountCount: filteredEtfAccounts.length,
+        historySyncingAccountIds: historyStatus.historySyncingAccountIds,
+        historySyncedAccountIds: historyStatus.historySyncedAccountIds,
+        historyRefreshingAccountIds: historyStatus.historyRefreshingAccountIds,
+        historyFailedAccountIds: historyStatus.historyFailedAccountIds,
+      })
+    })
+  }
 
   // ─── Snapshot Recording ────────────────────────────────────────────────
 
@@ -423,54 +427,55 @@ export class ControlCenterService {
     })
   }
 
-  public archiveAccount = (accountId: string): AsyncResult<void, Error> =>
-    tryBlock(
-      async function* (this: ControlCenterService) {
-        const [row] = await this.db
-          .select({ descriptor: accountTable.descriptor })
-          .from(accountTable)
+  public archiveAccount = (accountId: string): AsyncResult<void, Error> => {
+    const { db } = this
+    const ensureAccountHistorySnapshots = async (...args: Parameters<typeof this.ensureAccountHistorySnapshots>) =>
+      this.ensureAccountHistorySnapshots(...args)
+    const upsertAccountSnapshot = async (tx: SentinelTx, balanceSats: string, timestamp: string) =>
+      this.upsertAccountSnapshot(tx, accountId, balanceSats, timestamp)
+    const invalidateAccountHistoryBackfill = () => {
+      this.invalidateAccountHistoryBackfill(accountId)
+    }
+    return tryBlock(async function* () {
+      const [row] = await db
+        .select({ descriptor: accountTable.descriptor })
+        .from(accountTable)
+        .where(and(eq(accountTable.id, accountId), isNull(accountTable.deletedAt)))
+      if (!row) {
+        return Err(new Error('Claim not found or already archived'))
+      }
+
+      const accountResult = Account.fromDescriptor(row.descriptor)
+      if (accountResult.isErr()) {
+        return Err(new Error('Failed to preserve account history: invalid descriptor'))
+      }
+
+      const account = accountResult.unwrap()
+      const preservedBalance = await ensureAccountHistorySnapshots(accountId, account, undefined, new Date(0), true)
+      if (preservedBalance === null) {
+        return Err(new Error('Failed to preserve full account history'))
+      }
+
+      const archivedAt = new Date().toISOString()
+      const archived = await db.transaction(async (tx): Promise<boolean> => {
+        const updated = await tx
+          .update(accountTable)
+          .set({ deletedAt: archivedAt })
           .where(and(eq(accountTable.id, accountId), isNull(accountTable.deletedAt)))
-        if (!row) {
-          return Err(new Error('Claim not found or already archived'))
+        if (updated.rowsAffected === 0) {
+          return false
         }
+        await upsertAccountSnapshot(tx, preservedBalance.toString(), archivedAt)
+        return true
+      })
 
-        const accountResult = Account.fromDescriptor(row.descriptor)
-        if (accountResult.isErr()) {
-          return Err(new Error('Failed to preserve account history: invalid descriptor'))
-        }
-
-        const account = accountResult.unwrap()
-        const preservedBalance = await this.ensureAccountHistorySnapshots(
-          accountId,
-          account,
-          undefined,
-          new Date(0),
-          true,
-        )
-        if (preservedBalance === null) {
-          return Err(new Error('Failed to preserve full account history'))
-        }
-
-        const archivedAt = new Date().toISOString()
-        const archived = await this.db.transaction(async (tx): Promise<boolean> => {
-          const updated = await tx
-            .update(accountTable)
-            .set({ deletedAt: archivedAt })
-            .where(and(eq(accountTable.id, accountId), isNull(accountTable.deletedAt)))
-          if (updated.rowsAffected === 0) {
-            return false
-          }
-          await this.upsertAccountSnapshot(tx, accountId, preservedBalance.toString(), archivedAt)
-          return true
-        })
-
-        if (!archived) {
-          return Err(new Error('Claim not found or already archived'))
-        }
-        this.invalidateAccountHistoryBackfill(accountId)
-        return Ok(undefined)
-      }.bind(this),
-    )
+      if (!archived) {
+        return Err(new Error('Claim not found or already archived'))
+      }
+      invalidateAccountHistoryBackfill()
+      return Ok(undefined)
+    })
+  }
 
   public async restoreAccount(accountId: string): Promise<Result<void, Error>> {
     const restored = await this.db.transaction(async (tx): Promise<boolean> => {
@@ -1219,140 +1224,145 @@ export class ControlCenterService {
    * Keep successful writes and log failures without aborting other accounts/sources.
    * Called on startup and periodically to build chart data.
    */
-  public recordAllSnapshots = (): AsyncResult<void, Error> =>
-    tryBlock(
-      async function* (this: ControlCenterService) {
-        const now = new Date().toISOString()
-        const collectSource = async (source: string, collect: () => Promise<void>): Promise<void> => {
-          try {
-            await collect()
-          } catch {
-            // Provider exceptions can contain descriptors or credentials; log context only.
-            this.logger.warn({ source }, 'Failed to collect balance snapshots for source')
+  public recordAllSnapshots = (): AsyncResult<void, Error> => {
+    const { logger, onchainProvider, exchangeService, manualService, etfService } = this
+    const getAccountRows = async () => this.getAccountRows()
+    const recordAccountSnapshot = async (accountId: string, balanceSats: string, timestamp: string) =>
+      this.recordAccountSnapshot(accountId, balanceSats, timestamp)
+    const recordExchangeSnapshot = async (accountId: string, balanceSats: string, timestamp: string) =>
+      this.recordExchangeSnapshot(accountId, balanceSats, timestamp)
+    return tryBlock(async function* () {
+      const now = new Date().toISOString()
+      const collectSource = async (source: string, collect: () => Promise<void>): Promise<void> => {
+        try {
+          await collect()
+        } catch {
+          // Provider exceptions can contain descriptors or credentials; log context only.
+          logger.warn({ source }, 'Failed to collect balance snapshots for source')
+        }
+      }
+      const collectAccount = async (
+        source: string,
+        accountId: string,
+        collect: () => Promise<boolean>,
+      ): Promise<boolean> => {
+        try {
+          return await collect()
+        } catch {
+          logger.warn({ source, accountId }, 'Failed to collect balance snapshot')
+          return false
+        }
+      }
+
+      // ─── On-chain accounts ─────────────────────────────────────
+      await collectSource('on-chain', async () => {
+        const accountRows = await getAccountRows()
+
+        if (accountRows.length === 0) {
+          return
+        }
+        const accounts = new IndexSet<Account>()
+        const idMap = new Map<string, string>()
+
+        for (const row of accountRows) {
+          const parsed = Account.fromDescriptor(row.descriptor)
+          if (parsed.isOk()) {
+            accounts.add(parsed.unwrap())
+            idMap.set(row.descriptor, row.id)
           }
         }
-        const collectAccount = async (
-          source: string,
-          accountId: string,
-          collect: () => Promise<boolean>,
-        ): Promise<boolean> => {
-          try {
-            return await collect()
-          } catch {
-            this.logger.warn({ source, accountId }, 'Failed to collect balance snapshot')
-            return false
-          }
-        }
 
-        // ─── On-chain accounts ─────────────────────────────────────
-        await collectSource('on-chain', async () => {
-          const accountRows = await this.getAccountRows()
-
-          if (accountRows.length === 0) {
-            return
-          }
-          const accounts = new IndexSet<Account>()
-          const idMap = new Map<string, string>()
-
-          for (const row of accountRows) {
-            const parsed = Account.fromDescriptor(row.descriptor)
-            if (parsed.isOk()) {
-              accounts.add(parsed.unwrap())
-              idMap.set(row.descriptor, row.id)
-            }
-          }
-
-          if (accounts.size > 0) {
-            const balancesResult = await this.onchainProvider.getConfirmedAccountBalances(accounts)
-            if (balancesResult.isErr()) {
-              this.logger.warn({ source: 'on-chain' }, 'Failed to record on-chain snapshots')
-            } else {
-              let recorded = 0
-              for (const [account, balance] of balancesResult.unwrap()) {
-                const accountId = idMap.get(account.toString())
-                if (accountId != null && accountId !== '') {
-                  if (
-                    await collectAccount('on-chain', accountId, async () =>
-                      this.recordAccountSnapshot(accountId, balance.toString(), now),
-                    )
-                  ) {
-                    recorded++
-                  }
-                }
-              }
-              this.logger.info({ count: recorded }, 'Recorded on-chain balance snapshots')
-            }
-          }
-        })
-
-        // ─── Exchange accounts (Strike, Robinhood, etc.) ───────────
-        await collectSource('exchange', async () => {
-          const exchangeAccounts = await this.exchangeService.listAccounts()
-          if (exchangeAccounts.length > 0) {
+        if (accounts.size > 0) {
+          const balancesResult = await onchainProvider.getConfirmedAccountBalances(accounts)
+          if (balancesResult.isErr()) {
+            logger.warn({ source: 'on-chain' }, 'Failed to record on-chain snapshots')
+          } else {
             let recorded = 0
-            for (const account of exchangeAccounts) {
-              const collected = await collectAccount('exchange', account.id, async () => {
-                const result = await this.exchangeService.refreshBalance(account.id)
-                if (result.isErr()) {
-                  this.logger.warn(
-                    { accountId: account.id, exchange: account.exchange },
-                    'Failed to refresh exchange balance for snapshot',
+            for (const [account, balance] of balancesResult.unwrap()) {
+              const accountId = idMap.get(account.toString())
+              if (accountId != null && accountId !== '') {
+                if (
+                  await collectAccount('on-chain', accountId, async () =>
+                    recordAccountSnapshot(accountId, balance.toString(), now),
                   )
-                  return false
+                ) {
+                  recorded++
                 }
-                const refreshed = result.unwrap()
-                await this.recordExchangeSnapshot(account.id, refreshed.balanceSats ?? '0', now)
-                return true
-              })
-              if (collected) {
-                recorded++
               }
             }
-            this.logger.info({ count: recorded }, 'Recorded exchange balance snapshots')
+            logger.info({ count: recorded }, 'Recorded on-chain balance snapshots')
           }
-        })
+        }
+      })
 
-        // ─── Manual accounts (no refresh — just persist stored balance) ─
-        await collectSource('manual', async () => {
-          const manualAccounts = await this.manualService.listAccounts()
+      // ─── Exchange accounts (Strike, Robinhood, etc.) ───────────
+      await collectSource('exchange', async () => {
+        const exchangeAccounts = await exchangeService.listAccounts()
+        if (exchangeAccounts.length > 0) {
           let recorded = 0
-          for (const account of manualAccounts) {
-            if (
-              await collectAccount('manual', account.id, async () => {
-                await this.manualService.recordSnapshot(account.id, account.balanceSats, now)
-                return true
-              })
-            ) {
+          for (const account of exchangeAccounts) {
+            const collected = await collectAccount('exchange', account.id, async () => {
+              const result = await exchangeService.refreshBalance(account.id)
+              if (result.isErr()) {
+                logger.warn(
+                  { accountId: account.id, exchange: account.exchange },
+                  'Failed to refresh exchange balance for snapshot',
+                )
+                return false
+              }
+              const refreshed = result.unwrap()
+              await recordExchangeSnapshot(account.id, refreshed.balanceSats ?? '0', now)
+              return true
+            })
+            if (collected) {
               recorded++
             }
           }
-          if (manualAccounts.length > 0) {
-            this.logger.info({ count: recorded }, 'Recorded manual account balance snapshots')
-          }
-        })
+          logger.info({ count: recorded }, 'Recorded exchange balance snapshots')
+        }
+      })
 
-        // ─── ETF accounts (recompute balance — expense decay changes daily) ─
-        await collectSource('ETF', async () => {
-          const etfAccounts = await this.etfService.listAccounts()
-          let recorded = 0
-          for (const account of etfAccounts) {
-            if (
-              await collectAccount('ETF', account.id, async () => {
-                await this.etfService.recordSnapshot(account.id, account.balanceSats, now)
-                return true
-              })
-            ) {
-              recorded++
-            }
+      // ─── Manual accounts (no refresh — just persist stored balance) ─
+      await collectSource('manual', async () => {
+        const manualAccounts = await manualService.listAccounts()
+        let recorded = 0
+        for (const account of manualAccounts) {
+          if (
+            await collectAccount('manual', account.id, async () => {
+              await manualService.recordSnapshot(account.id, account.balanceSats, now)
+              return true
+            })
+          ) {
+            recorded++
           }
-          if (etfAccounts.length > 0) {
-            this.logger.info({ count: recorded }, 'Recorded ETF account balance snapshots')
-          }
-        })
+        }
+        if (manualAccounts.length > 0) {
+          logger.info({ count: recorded }, 'Recorded manual account balance snapshots')
+        }
+      })
 
-        return Ok(undefined)
-      }.bind(this),
-    )
+      // ─── ETF accounts (recompute balance — expense decay changes daily) ─
+      await collectSource('ETF', async () => {
+        const etfAccounts = await etfService.listAccounts()
+        let recorded = 0
+        for (const account of etfAccounts) {
+          if (
+            await collectAccount('ETF', account.id, async () => {
+              await etfService.recordSnapshot(account.id, account.balanceSats, now)
+              return true
+            })
+          ) {
+            recorded++
+          }
+        }
+        if (etfAccounts.length > 0) {
+          logger.info({ count: recorded }, 'Recorded ETF account balance snapshots')
+        }
+      })
+
+      return Ok(undefined)
+    })
+  }
 }
 
 function accountDescriptorNetworkKey(descriptor: string, network: string): string {

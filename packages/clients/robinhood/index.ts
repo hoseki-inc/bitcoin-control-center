@@ -247,19 +247,19 @@ export class RobinhoodClient {
   /**
    * Fetch BTC balance in satoshis.
    */
-  public getBtcBalance = (): AsyncResult<bigint, Error> =>
-    tryBlock(
-      async function* (this: RobinhoodClient) {
-        const holdings = yield* await this.getHoldings()
-        const btcHolding = holdings.find((h) => h.asset_code === 'BTC')
-        if (!btcHolding) {
-          return Ok(0n)
-        }
+  public getBtcBalance = (): AsyncResult<bigint, Error> => {
+    const getHoldings = async () => this.getHoldings()
+    return tryBlock(async function* () {
+      const holdings = yield* await getHoldings()
+      const btcHolding = holdings.find((h) => h.asset_code === 'BTC')
+      if (!btcHolding) {
+        return Ok(0n)
+      }
 
-        const sats = BigInt(Math.round(Number(btcHolding.total_quantity) * 1e8))
-        return Ok(sats)
-      }.bind(this),
-    )
+      const sats = BigInt(Math.round(Number(btcHolding.total_quantity) * 1e8))
+      return Ok(sats)
+    })
+  }
 
   /**
    * Fetch orders with optional filtering.

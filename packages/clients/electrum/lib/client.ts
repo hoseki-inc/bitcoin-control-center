@@ -73,42 +73,53 @@ export class ElectrumClient {
       return this.connectInFlight
     }
     const generation = this.generation
-    const inner = tryBlock(
-      async function* (this: ElectrumClient) {
-        if (this.beforeConnect) {
-          yield* await this.beforeConnect()
-        }
-        if (generation !== this.generation) {
-          return Err(new Error('Connection closed'))
-        }
-        yield* this.transport.connect()
-        const handshake = await this.serverVersion()
-        if (handshake.isErr()) {
-          // The server refused the handshake or never answered it. Close the half-open connection,
-          // and report a failed connection rather than a server answer, so a status check never
-          // counts a refused handshake as the server being reachable.
-          this.dropConnection()
-          return Err(new Error(`Electrum handshake failed: ${handshake.unwrapErr().message}`))
-        }
-        this.negotiated = true
-        return Ok(handshake.unwrap())
-      }.bind(this),
-    )
-    const tracked = tryBlock(
-      async function* (this: ElectrumClient) {
-        try {
-          const result = await inner
-          // A later connect or disconnect owns the status once the generation changes.
-          if (generation === this.generation) {
-            this.reachable = result.isOk()
-            this.settled = true
-          }
-          return result
-        } finally {
-          this.connectInFlight = null
-        }
-      }.bind(this),
-    )
+    const { beforeConnect, transport } = this
+    const isCurrentGeneration = () => generation === this.generation
+    const serverVersion = () => this.serverVersion()
+    const dropConnection = () => {
+      this.dropConnection()
+    }
+    const markNegotiated = () => {
+      this.negotiated = true
+    }
+    const recordConnectionResult = (result: Result<ServerVersion, Error>) => {
+      // A later connect or disconnect owns the status once the generation changes.
+      if (isCurrentGeneration()) {
+        this.reachable = result.isOk()
+        this.settled = true
+      }
+    }
+    const clearConnectInFlight = () => {
+      this.connectInFlight = null
+    }
+    const inner = tryBlock(async function* () {
+      if (beforeConnect) {
+        yield* await beforeConnect()
+      }
+      if (!isCurrentGeneration()) {
+        return Err(new Error('Connection closed'))
+      }
+      yield* transport.connect()
+      const handshake = await serverVersion()
+      if (handshake.isErr()) {
+        // The server refused the handshake or never answered it. Close the half-open connection,
+        // and report a failed connection rather than a server answer, so a status check never
+        // counts a refused handshake as the server being reachable.
+        dropConnection()
+        return Err(new Error(`Electrum handshake failed: ${handshake.unwrapErr().message}`))
+      }
+      markNegotiated()
+      return Ok(handshake.unwrap())
+    })
+    const tracked = tryBlock(async function* () {
+      try {
+        const result = await inner
+        recordConnectionResult(result)
+        return result
+      } finally {
+        clearConnectInFlight()
+      }
+    })
     this.connectInFlight = tracked
     return tracked
   }
@@ -266,39 +277,42 @@ export class ElectrumClient {
   }
 
   private call<T>(method: string, params: unknown[], schema: z.ZodType<T>): AsyncResult<T, Error> {
-    return tryBlock(
-      async function* (this: ElectrumClient) {
-        // Reconnect if the underlying socket is down. connect() dedupes concurrent
-        // reconnects via connectInFlight. Checking transport state (rather than
-        // isConnected(), which also requires negotiated=true) lets the recursive
-        // serverVersion() call from inside connect() proceed without deadlocking.
-        if (!this.transport.isConnected()) {
-          yield* this.connect()
+    const { transport } = this
+    const connect = () => this.connect()
+    const dropConnection = () => {
+      this.dropConnection()
+    }
+    return tryBlock(async function* () {
+      // Reconnect if the underlying socket is down. connect() dedupes concurrent
+      // reconnects via connectInFlight. Checking transport state (rather than
+      // isConnected(), which also requires negotiated=true) lets the recursive
+      // serverVersion() call from inside connect() proceed without deadlocking.
+      if (!transport.isConnected()) {
+        yield* connect()
+      }
+      const connection = transport.connectionNumber
+      const requested = await transport.request(method, params)
+      if (requested.isErr()) {
+        const error = requested.unwrapErr()
+        // Drop a connection only when it has gone silent (often after sleep or a network change,
+        // when it never closes by itself), so the next request reconnects:
+        // - a timeout counts only if nothing at all arrived since this request was sent; a busy
+        //   server that is still answering other requests keeps its connection and their requests;
+        // - a socket or write error counts straight away;
+        // - a server's error answer, or a connection that already closed, leaves things alone, so
+        //   a late failure can't cancel a fresh connection another request has started opening.
+        const silent = error instanceof ElectrumTimeoutError ? error.silent : !(error instanceof ElectrumServerError)
+        if (silent && transport.isConnected() && transport.connectionNumber === connection) {
+          dropConnection()
         }
-        const connection = this.transport.connectionNumber
-        const requested = await this.transport.request(method, params)
-        if (requested.isErr()) {
-          const error = requested.unwrapErr()
-          // Drop a connection only when it has gone silent (often after sleep or a network change,
-          // when it never closes by itself), so the next request reconnects:
-          // - a timeout counts only if nothing at all arrived since this request was sent; a busy
-          //   server that is still answering other requests keeps its connection and their requests;
-          // - a socket or write error counts straight away;
-          // - a server's error answer, or a connection that already closed, leaves things alone, so
-          //   a late failure can't cancel a fresh connection another request has started opening.
-          const silent = error instanceof ElectrumTimeoutError ? error.silent : !(error instanceof ElectrumServerError)
-          if (silent && this.transport.isConnected() && this.transport.connectionNumber === connection) {
-            this.dropConnection()
-          }
-          return Err(error)
-        }
-        const raw = requested.unwrap()
-        const parsed = yield* parseUnknown(schema, raw).mapErr(
-          (err) => new Error(`Failed to parse response for ${method}: ${err.message}`, { cause: err }),
-        )
+        return Err(error)
+      }
+      const raw = requested.unwrap()
+      const parsed = yield* parseUnknown(schema, raw).mapErr(
+        (err) => new Error(`Failed to parse response for ${method}: ${err.message}`, { cause: err }),
+      )
 
-        return Ok(parsed)
-      }.bind(this),
-    )
+      return Ok(parsed)
+    })
   }
 }

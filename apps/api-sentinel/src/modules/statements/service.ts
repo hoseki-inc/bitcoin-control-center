@@ -309,256 +309,252 @@ export class StatementService {
   /** Orchestrate the full statement data pipeline: fetch transactions + daily rates. */
   public generateStatementData = (
     input: GenerateStatementInput,
-  ): AsyncResult<{ transactionMap: StatementTransactions; dailyRates: DailyRates }, Error> =>
-    tryBlock(
-      async function* (this: StatementService) {
-        const validation = validateStatementInput(input)
-        if (validation.isErr()) {
-          return Err(validation.unwrapErr())
-        }
+  ): AsyncResult<{ transactionMap: StatementTransactions; dailyRates: DailyRates }, Error> => {
+    const { db, logger, onchainProvider, mempoolApiUrl, sleep, exchangeService, dailyRatesService } = this
+    const getAccountRows = async (claimIds: string[]) => this.getAccountRows(claimIds)
+    const getExchangeSnapshots = async (accountId: string) => this.getExchangeSnapshots(accountId)
+    return tryBlock(async function* () {
+      const validation = validateStatementInput(input)
+      if (validation.isErr()) {
+        return Err(validation.unwrapErr())
+      }
 
-        this.logger.info(
-          {
-            claimIds: input.claimIds,
-            exchangeAccountIds: input.exchangeAccountIds,
-            openingDate: input.openingDate,
-            closingDate: input.closingDate,
-          },
-          'Generating statement data',
-        )
+      logger.info(
+        {
+          claimIds: input.claimIds,
+          exchangeAccountIds: input.exchangeAccountIds,
+          openingDate: input.openingDate,
+          closingDate: input.closingDate,
+        },
+        'Generating statement data',
+      )
 
-        const transactionMap: StatementTransactions = {}
+      const transactionMap: StatementTransactions = {}
 
-        // 1. Look up on-chain account descriptors
-        const claimIds = [...new Set(input.claimIds)]
-        const accountRows = await this.getAccountRows(claimIds)
-        const hasOnchainAccounts = accountRows.length > 0
-        const hasExchangeAccounts = (input.exchangeAccountIds?.length ?? 0) > 0
+      // 1. Look up on-chain account descriptors
+      const claimIds = [...new Set(input.claimIds)]
+      const accountRows = await getAccountRows(claimIds)
+      const hasOnchainAccounts = accountRows.length > 0
+      const hasExchangeAccounts = (input.exchangeAccountIds?.length ?? 0) > 0
 
-        if (accountRows.length !== claimIds.length) {
-          return Err(new Error('One or more selected accounts were not found'))
-        }
+      if (accountRows.length !== claimIds.length) {
+        return Err(new Error('One or more selected accounts were not found'))
+      }
 
-        const unverified = accountRows.find((row) => row.status !== 'verified')
-        if (unverified) {
-          return Err(new Error(`Account "${unverified.display_name}" must be verified before generating a statement`))
-        }
+      const unverified = accountRows.find((row) => row.status !== 'verified')
+      if (unverified) {
+        return Err(new Error(`Account "${unverified.display_name}" must be verified before generating a statement`))
+      }
 
-        if (!hasOnchainAccounts && !hasExchangeAccounts) {
-          return Err(new Error('No accounts found for the provided IDs'))
-        }
+      if (!hasOnchainAccounts && !hasExchangeAccounts) {
+        return Err(new Error('No accounts found for the provided IDs'))
+      }
 
-        // 2. Fetch on-chain transactions for each account
-        if (hasOnchainAccounts) {
-          this.logger.info({ accountCount: accountRows.length }, 'Found on-chain accounts for statement')
-          for (const [i, row] of accountRows.entries()) {
-            this.logger.info(
-              { account: row.display_name, index: i + 1, total: accountRows.length },
-              'Fetching transactions for account',
-            )
-            const accountResult = Account.fromDescriptor(row.descriptor)
-            if (accountResult.isErr()) {
-              this.logger.warn({ accountId: row.id }, 'Failed to parse descriptor')
-              continue
-            }
-
-            const [activeAccount] = await this.db
-              .select({ id: accounts.id })
-              .from(accounts)
-              .where(and(eq(accounts.id, row.id), isNull(accounts.deletedAt)))
-            if (activeAccount === undefined) {
-              return Err(new Error(`Account "${row.display_name}" was archived while generating the statement`))
-            }
-
-            const txResult = await fetchTransactionEntries({
-              account: accountResult.unwrap(),
-              onchainProvider: this.onchainProvider,
-              mempoolApiUrl: this.mempoolApiUrl,
-              logger: this.logger,
-              sleep: this.sleep,
-            })
-            if (txResult.isErr()) {
-              this.logger.error({ accountId: row.id, err: txResult.unwrapErr() }, 'Failed to fetch transactions')
-              return Err(txResult.unwrapErr())
-            }
-
-            const entries = txResult.unwrap()
-            const aggregated = calculateAccountTransactions(entries, row.display_name)
-            const sorted = sortTxs(aggregated)
-            transactionMap[row.id] = { displayName: row.display_name, transactions: sorted }
-            this.logger.info(
-              { account: row.display_name, rawEntries: entries.length, aggregated: aggregated.length },
-              'Account transactions fetched',
-            )
-          }
-        }
-
-        // 3. Fetch exchange account data
-        if (hasExchangeAccounts) {
-          const exchangeAccountIds = input.exchangeAccountIds ?? []
-          const allExchangeAccounts = await this.exchangeService.listAccounts()
-          const selectedAccounts = allExchangeAccounts.filter((a) => exchangeAccountIds.includes(a.id))
-          this.logger.info({ exchangeAccountCount: selectedAccounts.length }, 'Found exchange accounts for statement')
-
-          const disconnectedAccounts = selectedAccounts.filter((a) => a.connectionStatus === 'needs_reconnect')
-          if (disconnectedAccounts.length > 0) {
-            return Err(
-              new Error(
-                `Reconnect exchange accounts before generating a statement: ${disconnectedAccounts
-                  .map((account) => account.displayName)
-                  .join(', ')}`,
-              ),
-            )
+      // 2. Fetch on-chain transactions for each account
+      if (hasOnchainAccounts) {
+        logger.info({ accountCount: accountRows.length }, 'Found on-chain accounts for statement')
+        for (const [i, row] of accountRows.entries()) {
+          logger.info(
+            { account: row.display_name, index: i + 1, total: accountRows.length },
+            'Fetching transactions for account',
+          )
+          const accountResult = Account.fromDescriptor(row.descriptor)
+          if (accountResult.isErr()) {
+            logger.warn({ accountId: row.id }, 'Failed to parse descriptor')
+            continue
           }
 
-          // Coinbase: fetch real transaction history
-          const coinbaseAccounts = selectedAccounts.filter((a) => a.exchange === 'coinbase')
-          for (const account of coinbaseAccounts) {
-            const coinbaseEntries = await this.exchangeService.getCoinbaseTransactionEntries([account.id])
-            if (coinbaseEntries.isOk()) {
-              const entries = coinbaseEntries.unwrap()
-              const label = exchangeStatementName(account)
-              const aggregated: AggregatedTransaction[] = entries.map((entry, idx) => ({
-                address: '',
-                hash: `coinbase_${account.id}_${idx}`,
-                balanceChange: entry.value,
-                block: null,
-                transactedAt: entry.timestamp,
-                confirmed: true,
-                accountName: label,
-              }))
-              transactionMap[account.id] = { displayName: label, transactions: sortTxs(aggregated) }
-              this.logger.info(
-                { account: label, entries: aggregated.length },
-                'Coinbase transactions added to statement',
-              )
-            } else {
-              this.logger.warn(
-                { err: coinbaseEntries.unwrapErr() },
-                'Failed to fetch Coinbase transactions for statement',
-              )
-            }
+          const [activeAccount] = await db
+            .select({ id: accounts.id })
+            .from(accounts)
+            .where(and(eq(accounts.id, row.id), isNull(accounts.deletedAt)))
+          if (activeAccount === undefined) {
+            return Err(new Error(`Account "${row.display_name}" was archived while generating the statement`))
           }
 
-          // Non-Coinbase exchanges: prefer imported statement transactions, fall back to snapshot deltas
-          const snapshotAccounts = selectedAccounts.filter((a) => a.exchange !== 'coinbase')
-          for (const account of snapshotAccounts) {
+          const txResult = await fetchTransactionEntries({
+            account: accountResult.unwrap(),
+            onchainProvider,
+            mempoolApiUrl,
+            logger,
+            sleep,
+          })
+          if (txResult.isErr()) {
+            logger.error({ accountId: row.id, err: txResult.unwrapErr() }, 'Failed to fetch transactions')
+            return Err(txResult.unwrapErr())
+          }
+
+          const entries = txResult.unwrap()
+          const aggregated = calculateAccountTransactions(entries, row.display_name)
+          const sorted = sortTxs(aggregated)
+          transactionMap[row.id] = { displayName: row.display_name, transactions: sorted }
+          logger.info(
+            { account: row.display_name, rawEntries: entries.length, aggregated: aggregated.length },
+            'Account transactions fetched',
+          )
+        }
+      }
+
+      // 3. Fetch exchange account data
+      if (hasExchangeAccounts) {
+        const exchangeAccountIds = input.exchangeAccountIds ?? []
+        const allExchangeAccounts = await exchangeService.listAccounts()
+        const selectedAccounts = allExchangeAccounts.filter((a) => exchangeAccountIds.includes(a.id))
+        logger.info({ exchangeAccountCount: selectedAccounts.length }, 'Found exchange accounts for statement')
+
+        const disconnectedAccounts = selectedAccounts.filter((a) => a.connectionStatus === 'needs_reconnect')
+        if (disconnectedAccounts.length > 0) {
+          return Err(
+            new Error(
+              `Reconnect exchange accounts before generating a statement: ${disconnectedAccounts
+                .map((account) => account.displayName)
+                .join(', ')}`,
+            ),
+          )
+        }
+
+        // Coinbase: fetch real transaction history
+        const coinbaseAccounts = selectedAccounts.filter((a) => a.exchange === 'coinbase')
+        for (const account of coinbaseAccounts) {
+          const coinbaseEntries = await exchangeService.getCoinbaseTransactionEntries([account.id])
+          if (coinbaseEntries.isOk()) {
+            const entries = coinbaseEntries.unwrap()
             const label = exchangeStatementName(account)
-
-            // Check for imported statement transactions — aggregate to daily net in/out
-            const stmtTxs = await this.exchangeService.listStatementTransactions(account.id)
-            if (stmtTxs.length > 0) {
-              const dailyAgg = new Map<string, { netIn: bigint; netOut: bigint; date: Date }>()
-              for (const tx of stmtTxs) {
-                const txDate = new Date(tx.transactedAt)
-                const dayKey = txDate.toISOString().slice(0, 10)
-                // Use noon UTC so the date displays correctly in any timezone
-                const noonUtc = new Date(dayKey + 'T12:00:00.000Z')
-                const existing = dailyAgg.get(dayKey) ?? { netIn: 0n, netOut: 0n, date: noonUtc }
-                const sats = BigInt(Math.round(parseFloat(tx.amountBtc) * 1e8))
-                if (sats > 0n) {
-                  existing.netIn += sats
-                } else if (sats < 0n) {
-                  existing.netOut += sats
-                }
-                dailyAgg.set(dayKey, existing)
-              }
-
-              const aggregated: AggregatedTransaction[] = []
-              let idx = 0
-              for (const [, { netIn, netOut, date }] of dailyAgg) {
-                // Money in and money out are separate rows (PDF has separate columns)
-                if (netIn > 0n) {
-                  aggregated.push({
-                    address: '',
-                    hash: `stmt_in_${account.id}_${idx}`,
-                    balanceChange: netIn,
-                    block: null,
-                    transactedAt: date,
-                    confirmed: true,
-                    accountName: label,
-                  })
-                  idx++
-                }
-                if (netOut < 0n) {
-                  aggregated.push({
-                    address: '',
-                    hash: `stmt_out_${account.id}_${idx}`,
-                    balanceChange: netOut,
-                    block: null,
-                    transactedAt: date,
-                    confirmed: true,
-                    accountName: label,
-                  })
-                  idx++
-                }
-              }
-              transactionMap[account.id] = { displayName: label, transactions: sortTxs(aggregated) }
-              this.logger.info(
-                { account: label, rawTxCount: stmtTxs.length, dailyEntries: aggregated.length },
-                'Daily-aggregated statement transactions added to statement',
-              )
-            } else {
-              // Fall back to snapshot deltas
-              const snapshots = await this.getExchangeSnapshots(account.id)
-
-              const dailyBalances = new Map<string, { balance: bigint; date: Date }>()
-              for (const snapshot of snapshots) {
-                const date = new Date(snapshot.timestamp)
-                const dayKey = date.toISOString().slice(0, 10)
-                dailyBalances.set(dayKey, { balance: BigInt(snapshot.balance_sats), date })
-              }
-
-              const aggregated: AggregatedTransaction[] = []
-              let previousBalance = 0n
-              let idx = 0
-              for (const [, { balance, date }] of dailyBalances) {
-                const delta = balance - previousBalance
-                if (delta !== 0n) {
-                  aggregated.push({
-                    address: '',
-                    hash: `snapshot_${account.id}_${idx}`,
-                    balanceChange: delta,
-                    block: null,
-                    transactedAt: date,
-                    confirmed: true,
-                    accountName: label,
-                  })
-                  idx++
-                }
-                previousBalance = balance
-              }
-              transactionMap[account.id] = { displayName: label, transactions: sortTxs(aggregated) }
-              this.logger.info(
-                { account: label, snapshots: snapshots.length, dailyEntries: aggregated.length },
-                'Snapshot-based exchange transactions added to statement',
-              )
-            }
+            const aggregated: AggregatedTransaction[] = entries.map((entry, idx) => ({
+              address: '',
+              hash: `coinbase_${account.id}_${idx}`,
+              balanceChange: entry.value,
+              block: null,
+              transactedAt: entry.timestamp,
+              confirmed: true,
+              accountName: label,
+            }))
+            transactionMap[account.id] = { displayName: label, transactions: sortTxs(aggregated) }
+            logger.info({ account: label, entries: aggregated.length }, 'Coinbase transactions added to statement')
+          } else {
+            logger.warn({ err: coinbaseEntries.unwrapErr() }, 'Failed to fetch Coinbase transactions for statement')
           }
         }
 
-        // 4. Fetch daily rates for the date range
-        this.logger.info('Fetching daily rates from mempool.space')
-        const requiredDates = getRequiredRateDates(input.openingDate, input.closingDate, input.timezone, transactionMap)
-        const ratesResult = await this.dailyRatesService.getDailyRates(
-          input.openingDate,
-          input.closingDate,
-          input.quoteCurrency ?? 'USD',
-          requiredDates,
-        )
-        if (ratesResult.isErr()) {
-          this.logger.error({ err: ratesResult.unwrapErr().message }, 'Failed to fetch daily rates')
-          return Err(ratesResult.unwrapErr())
-        }
-        const coverage = validateStatementRates(requiredDates, ratesResult.unwrap())
-        if (coverage.isErr()) {
-          return Err(coverage.unwrapErr())
-        }
-        this.logger.info('Statement data generation complete')
+        // Non-Coinbase exchanges: prefer imported statement transactions, fall back to snapshot deltas
+        const snapshotAccounts = selectedAccounts.filter((a) => a.exchange !== 'coinbase')
+        for (const account of snapshotAccounts) {
+          const label = exchangeStatementName(account)
 
-        return Ok({ transactionMap, dailyRates: ratesResult.unwrap() })
-      }.bind(this),
-    )
+          // Check for imported statement transactions — aggregate to daily net in/out
+          const stmtTxs = await exchangeService.listStatementTransactions(account.id)
+          if (stmtTxs.length > 0) {
+            const dailyAgg = new Map<string, { netIn: bigint; netOut: bigint; date: Date }>()
+            for (const tx of stmtTxs) {
+              const txDate = new Date(tx.transactedAt)
+              const dayKey = txDate.toISOString().slice(0, 10)
+              // Use noon UTC so the date displays correctly in any timezone
+              const noonUtc = new Date(dayKey + 'T12:00:00.000Z')
+              const existing = dailyAgg.get(dayKey) ?? { netIn: 0n, netOut: 0n, date: noonUtc }
+              const sats = BigInt(Math.round(parseFloat(tx.amountBtc) * 1e8))
+              if (sats > 0n) {
+                existing.netIn += sats
+              } else if (sats < 0n) {
+                existing.netOut += sats
+              }
+              dailyAgg.set(dayKey, existing)
+            }
+
+            const aggregated: AggregatedTransaction[] = []
+            let idx = 0
+            for (const [, { netIn, netOut, date }] of dailyAgg) {
+              // Money in and money out are separate rows (PDF has separate columns)
+              if (netIn > 0n) {
+                aggregated.push({
+                  address: '',
+                  hash: `stmt_in_${account.id}_${idx}`,
+                  balanceChange: netIn,
+                  block: null,
+                  transactedAt: date,
+                  confirmed: true,
+                  accountName: label,
+                })
+                idx++
+              }
+              if (netOut < 0n) {
+                aggregated.push({
+                  address: '',
+                  hash: `stmt_out_${account.id}_${idx}`,
+                  balanceChange: netOut,
+                  block: null,
+                  transactedAt: date,
+                  confirmed: true,
+                  accountName: label,
+                })
+                idx++
+              }
+            }
+            transactionMap[account.id] = { displayName: label, transactions: sortTxs(aggregated) }
+            logger.info(
+              { account: label, rawTxCount: stmtTxs.length, dailyEntries: aggregated.length },
+              'Daily-aggregated statement transactions added to statement',
+            )
+          } else {
+            // Fall back to snapshot deltas
+            const snapshots = await getExchangeSnapshots(account.id)
+
+            const dailyBalances = new Map<string, { balance: bigint; date: Date }>()
+            for (const snapshot of snapshots) {
+              const date = new Date(snapshot.timestamp)
+              const dayKey = date.toISOString().slice(0, 10)
+              dailyBalances.set(dayKey, { balance: BigInt(snapshot.balance_sats), date })
+            }
+
+            const aggregated: AggregatedTransaction[] = []
+            let previousBalance = 0n
+            let idx = 0
+            for (const [, { balance, date }] of dailyBalances) {
+              const delta = balance - previousBalance
+              if (delta !== 0n) {
+                aggregated.push({
+                  address: '',
+                  hash: `snapshot_${account.id}_${idx}`,
+                  balanceChange: delta,
+                  block: null,
+                  transactedAt: date,
+                  confirmed: true,
+                  accountName: label,
+                })
+                idx++
+              }
+              previousBalance = balance
+            }
+            transactionMap[account.id] = { displayName: label, transactions: sortTxs(aggregated) }
+            logger.info(
+              { account: label, snapshots: snapshots.length, dailyEntries: aggregated.length },
+              'Snapshot-based exchange transactions added to statement',
+            )
+          }
+        }
+      }
+
+      // 4. Fetch daily rates for the date range
+      logger.info('Fetching daily rates from mempool.space')
+      const requiredDates = getRequiredRateDates(input.openingDate, input.closingDate, input.timezone, transactionMap)
+      const ratesResult = await dailyRatesService.getDailyRates(
+        input.openingDate,
+        input.closingDate,
+        input.quoteCurrency ?? 'USD',
+        requiredDates,
+      )
+      if (ratesResult.isErr()) {
+        logger.error({ err: ratesResult.unwrapErr().message }, 'Failed to fetch daily rates')
+        return Err(ratesResult.unwrapErr())
+      }
+      const coverage = validateStatementRates(requiredDates, ratesResult.unwrap())
+      if (coverage.isErr()) {
+        return Err(coverage.unwrapErr())
+      }
+      logger.info('Statement data generation complete')
+
+      return Ok({ transactionMap, dailyRates: ratesResult.unwrap() })
+    })
+  }
 
   // ─── Private helpers ────────────────────────────────────────────────────────
 
