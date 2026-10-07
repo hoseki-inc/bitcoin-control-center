@@ -41,6 +41,54 @@ describe('registerStaticAssets', () => {
     })
   })
 
+  it.each([
+    ['br, gzip', 'br', 'brotli copy'],
+    ['gzip', 'gzip', 'gzip copy'],
+    ['identity', undefined, 'console.log("app")'],
+  ])('serves a precompressed asset to a browser accepting %s', async (acceptEncoding, encoding, body) => {
+    await withTestSetup(async () => {
+      const server = Fastify()
+      const publicDir = await createPublicDirectory()
+      await writeFile(join(publicDir, 'app.js'), 'console.log("app")')
+      await writeFile(join(publicDir, 'app.js.br'), 'brotli copy')
+      await writeFile(join(publicDir, 'app.js.gz'), 'gzip copy')
+      await registerStaticAssets(server, publicDir)
+
+      const response = await server.inject({
+        method: 'GET',
+        url: '/app.js',
+        headers: { 'accept-encoding': acceptEncoding },
+      })
+
+      expect(response.statusCode).toBe(200)
+      expect(response.headers['content-type']).toContain('javascript')
+      expect(response.headers['content-encoding']).toBe(encoding)
+      expect(response.body).toBe(body)
+      await server.close()
+    })
+  })
+
+  it('serves a file without compressed copies to a browser accepting compression', async () => {
+    await withTestSetup(async () => {
+      const server = Fastify()
+      const publicDir = await createPublicDirectory()
+      await writeFile(join(publicDir, 'logo.svg'), '<svg></svg>')
+      await registerStaticAssets(server, publicDir)
+
+      const response = await server.inject({
+        method: 'GET',
+        url: '/logo.svg',
+        headers: { 'accept-encoding': 'br, gzip' },
+      })
+
+      expect(response.statusCode).toBe(200)
+      expect(response.headers['content-type']).toContain('image/svg+xml')
+      expect(response.headers['content-encoding']).toBeUndefined()
+      expect(response.body).toBe('<svg></svg>')
+      await server.close()
+    })
+  })
+
   it('preserves JSON 404 responses for unknown API routes', async () => {
     await withTestSetup(async () => {
       const server = Fastify()
