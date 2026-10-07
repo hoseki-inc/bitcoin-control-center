@@ -3,18 +3,12 @@ import { StatusBadge, Th, getBadgeConfigForStatement } from '@hoseki/packages/ui
 import { format } from 'date-fns'
 import { Link as RouterLink } from 'react-router'
 import type { StatementDto } from '../../trpc/server-types'
+import { viewStatementLabel } from '../dashboard/statement-card'
 
 export function StatementsTable({ statements }: { statements: StatementDto[] }): JSX.Element {
   return (
-    <Box
-      as="section"
-      overflowX="auto"
-      aria-label="Statements table"
-      border="1px solid"
-      borderColor="neutral.200"
-      borderRadius="panel"
-    >
-      <Table variant="data">
+    <Box overflowX="auto" border="1px solid" borderColor="neutral.200" borderRadius="panel">
+      <Table variant="data" aria-label="Statements">
         <Thead>
           <Tr>
             <Th>Generation Date</Th>
@@ -28,7 +22,7 @@ export function StatementsTable({ statements }: { statements: StatementDto[] }):
             <Tr key={statement.id}>
               <Td>
                 <Text color="neutral.900" fontWeight="medium">
-                  {format(statement.createdAt, 'dd/MM/yyyy')}
+                  {format(statement.createdAt, 'dd MMM yyyy')}
                 </Text>
                 <Text color="neutral.600">{format(statement.createdAt, 'h:mm a')}</Text>
               </Td>
@@ -55,7 +49,7 @@ export function StatementsTable({ statements }: { statements: StatementDto[] }):
                   as={RouterLink}
                   variant="outline"
                   size="md"
-                  aria-label={`View statement from ${format(statement.createdAt, 'MMMM d, yyyy h:mm a')}`}
+                  aria-label={viewStatementLabel(statement)}
                   to={`/statements/${statement.id}`}
                 >
                   View

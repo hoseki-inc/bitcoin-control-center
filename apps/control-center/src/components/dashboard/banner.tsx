@@ -4,7 +4,6 @@ import { Link } from 'react-router'
 export function Banner(): JSX.Element {
   return (
     <Flex
-      position="relative"
       direction={{ base: 'column', md: 'row' }}
       align="center"
       gap={{ base: 8, md: 10 }}
@@ -33,9 +32,7 @@ export function Banner(): JSX.Element {
       </Stack>
       <Box
         aria-hidden="true"
-        position="relative"
         flexShrink={0}
-        alignSelf="stretch"
         w={{ base: '100%', md: '36%' }}
         h={{ base: '260px', md: '320px' }}
         overflow="hidden"

@@ -11,7 +11,7 @@ import { trpc } from '../../trpc'
 
 export function StatementListPage(): JSX.Element {
   const [viewType, setViewType] = useState<'grid' | 'table'>('grid')
-  const { data: statements, isLoading, error, refetch, isFetching } = trpc.portalProve.statement.list.useQuery()
+  const { data: statements, isLoading, error, refetch } = trpc.portalProve.statement.list.useQuery()
 
   if (isLoading) {
     return (
@@ -32,7 +32,7 @@ export function StatementListPage(): JSX.Element {
           mb={4}
           message={`Error fetching your statements: ${error.message}`}
           rightContent={
-            <Button variant="outline" flexShrink={0} onClick={() => void refetch()} isLoading={isFetching}>
+            <Button variant="outline" flexShrink={0} onClick={() => void refetch()}>
               Try Again
             </Button>
           }

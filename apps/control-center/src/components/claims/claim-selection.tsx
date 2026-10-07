@@ -85,14 +85,10 @@ export function ClaimSelection({
     )
   }
 
-  let totalUsdSelected = new Decimal(0)
-  for (const [claimId, balance] of claimUsdBalancesQuery.data.entries()) {
-    if (balance?.usd && selectedClaimIds.has(claimId)) {
-      totalUsdSelected = totalUsdSelected.plus(balance.usd)
-    }
-  }
-
   const claims = claimsQuery.data
+  const selectedBalances = claims
+    .filter((claim) => selectedClaimIds.has(claim.id))
+    .map((claim) => withStatusBalance({ ...claimUsdBalancesQuery, balance: claimUsdBalancesQuery.data.get(claim.id) }))
 
   if (!claims.length) {
     return (
@@ -193,9 +189,7 @@ export function ClaimSelection({
               </Text>
             </Th>
             <Th px={0} isNumeric colSpan={2}>
-              <Text textStyle="text/md" fontWeight="medium" color="success.600">
-                {formatUsd(totalUsdSelected.toFixed(2))}
-              </Text>
+              {renderTotalUsd(selectedBalances)}
             </Th>
           </Tr>
         </Tfoot>
@@ -212,6 +206,29 @@ function renderBalance(balance: BalanceWithStatus) {
     return 'n/a'
   }
   return <BitcoinAmount btc={new Decimal(balance.value.current).div(100_000_000)} />
+}
+
+/** The total of the amounts shown in the rows, once every selected row has one. */
+function renderTotalUsd(balances: BalanceWithStatus[]) {
+  if (balances.some((balance) => balance.status === 'loading')) {
+    return <LoadingTextSkeleton width="5em" />
+  }
+  let total = new Decimal(0)
+  for (const balance of balances) {
+    if (balance.status !== 'success' || balance.value.usd === null) {
+      return (
+        <Text textStyle="text/md" fontWeight="medium">
+          n/a
+        </Text>
+      )
+    }
+    total = total.plus(balance.value.usd.toFixed(2))
+  }
+  return (
+    <Text textStyle="text/md" fontWeight="medium" color="success.600">
+      {formatUsd(total.toFixed(2))}
+    </Text>
+  )
 }
 
 function renderUsdAmount(balance: BalanceWithStatus) {

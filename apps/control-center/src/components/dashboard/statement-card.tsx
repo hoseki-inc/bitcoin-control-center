@@ -4,6 +4,11 @@ import { formatDateRange } from '@hoseki/packages/ui/utils'
 import { format } from 'date-fns'
 import type { StatementDto } from '../../trpc/server-types'
 
+/** The View action's accessible name, shared by statement cards and the statements table. */
+export function viewStatementLabel(statement: StatementDto): string {
+  return `View statement created ${format(statement.createdAt, 'dd MMM yyyy h:mm a')}`
+}
+
 export function StatementCard({ statement, onView }: { statement: StatementDto; onView: () => void }): JSX.Element {
   return (
     <Box
@@ -11,7 +16,6 @@ export function StatementCard({ statement, onView }: { statement: StatementDto; 
       borderWidth="1px"
       borderColor="neutral.200"
       bg="neutral.50"
-      p={0}
       overflow="hidden"
       position="relative"
       minWidth={0}
@@ -43,7 +47,6 @@ export function StatementCard({ statement, onView }: { statement: StatementDto; 
         </Box>
       )}
       <Box
-        as="span"
         position="relative"
         p={6}
         pb={0}
@@ -53,17 +56,14 @@ export function StatementCard({ statement, onView }: { statement: StatementDto; 
         justifyContent="center"
       >
         <Box
-          as="span"
-          display="block"
           maxH="150px"
           w="150px"
           overflow="hidden"
           boxShadow="6px 0 12px 0 rgba(0, 0, 0, 0.07), -6px 0 12px 0 rgba(0, 0, 0, 0.07), 0 -6px 12px 0 rgba(0, 0, 0, 0.07)"
         >
-          <Image src="/statements/satoshi-statement.jpg" alt="Statement Preview" w="150px" />
+          <Image src="/statements/satoshi-statement.jpg" alt="" w="150px" />
         </Box>
         <LinearGradient
-          as="span"
           gradientDirection="from-bottom"
           baseColor="rgba(0, 0, 0, 0.20)"
           gradientSize={60}
@@ -72,26 +72,21 @@ export function StatementCard({ statement, onView }: { statement: StatementDto; 
           pointerEvents="auto"
           pb={4}
         >
-          <Button
-            onClick={onView}
-            size="sm"
-            variant="outline"
-            aria-label={`View statement created ${format(new Date(statement.createdAt), 'dd MMM yyyy h:mm a')}`}
-          >
+          <Button onClick={onView} size="sm" variant="outline" aria-label={viewStatementLabel(statement)}>
             View
           </Button>
         </LinearGradient>
       </Box>
-      <HStack as="span" bg="white" borderTopWidth="1px" borderColor="neutral.200">
-        <Stack as="span" py={2} px={4} spacing={0} flexGrow="1">
-          <Text as="span" display="block" textStyle="text/sm" fontWeight="medium" color="neutral.900">
+      <HStack bg="white" borderTopWidth="1px" borderColor="neutral.200">
+        <Stack py={2} px={4} spacing={0} flexGrow="1">
+          <Text textStyle="text/sm" fontWeight="medium" color="neutral.900">
             Statement
           </Text>
-          <Text as="span" display="block" textStyle="text/xs" color="neutral.600">
+          <Text textStyle="text/xs" color="neutral.600">
             Period: {formatDateRange(statement.openingDate, statement.closingDate)}
           </Text>
-          <Text as="span" display="block" textStyle="text/xs" color="neutral.600">
-            Created: {format(new Date(statement.createdAt), 'dd MMM yyyy h:mm a')}
+          <Text textStyle="text/xs" color="neutral.600">
+            Created: {format(statement.createdAt, 'dd MMM yyyy h:mm a')}
           </Text>
         </Stack>
       </HStack>

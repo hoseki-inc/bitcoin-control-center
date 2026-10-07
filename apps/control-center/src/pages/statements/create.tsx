@@ -44,6 +44,8 @@ import type { StatementDto } from '../../trpc/server-types'
 const MIN_MEMPOOL_PRICE_DATE = new Date('2023-04-01')
 const MIN_STATEMENT_DATE = MIN_MEMPOOL_PRICE_DATE
 
+const LEFT_COLUMN_WIDTH = { base: 'auto', md: '35%' }
+
 export function StatementCreatePage(): JSX.Element {
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false)
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState<boolean>(false)
@@ -136,8 +138,6 @@ export function StatementCreatePage(): JSX.Element {
       toast.error(error.message)
     },
   })
-
-  const LEFT_COLUMN_WIDTH = { base: 'auto', md: '35%' }
 
   // Ask the user to connect a wallet only once we know they have none.
   const hasAccounts = !claimsQuery.isSuccess || claimsQuery.data.length > 0
@@ -345,12 +345,14 @@ export function StatementCreatePage(): JSX.Element {
 
           {hasAccounts && (
             <Box py={4} px={0}>
-              <Stack direction={{ base: 'column-reverse', md: 'row' }} justifyContent="space-between">
+              {/* Stacked in reading order on small screens, so the focus order matches what's shown. */}
+              <Stack direction={{ base: 'column', md: 'row' }} justifyContent="space-between">
                 <Button as={Link} to={cancelPath} variant="outline">
                   Cancel
                 </Button>
                 <Stack direction={{ base: 'column', sm: 'row' }}>
                   <Button
+                    flex={{ sm: 1, md: 'initial' }}
                     isDisabled={!hasAnySelected}
                     variant="outline"
                     onClick={() => {
@@ -360,6 +362,7 @@ export function StatementCreatePage(): JSX.Element {
                     Preview Statement
                   </Button>
                   <Button
+                    flex={{ sm: 1, md: 'initial' }}
                     isDisabled={!hasAnySelected || initiateMutationWithArgs.isLoading}
                     isLoading={initiateMutationWithArgs.isLoading}
                     onClick={() => {

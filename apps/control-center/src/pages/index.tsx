@@ -8,6 +8,7 @@ import { BitcoinPriceChart as DefaultBitcoinPriceChart } from '../components/das
 import { DashboardPreview } from '../components/dashboard/dashboard-preview'
 import { DashboardAmount } from '../components/dashboard/dashboard-typography'
 import { RecentStatements } from '../components/dashboard/recent-statements'
+import { StatMini } from '../components/dashboard/stat-mini'
 import { FiatAmountText } from '../components/fiat-amount-text'
 import { StatementsEmptyState } from '../components/statements/statements-empty-state'
 import { type RouterOutput, trpc } from '../trpc'
@@ -65,7 +66,7 @@ export function HomePage({
         </Flex>
       )}
       {hasHistory && portfolio ? (
-        <PortfolioSummary data={portfolio} accountCount={hasError || isLoading ? null : accountCount} views={views} />
+        <PortfolioSummary data={portfolio} accountCount={accountCount} views={views} />
       ) : isLoading ? (
         <DashboardPreview loading />
       ) : hasError ? (
@@ -87,8 +88,7 @@ export function HomePage({
         />
       )}
       <views.BitcoinPriceChart />
-      {/* A failed refresh keeps the statements already shown; the message is only for having none. */}
-      {statementsError && statements.length === 0 ? (
+      {statementsError ? (
         <Flex justify="space-between" gap={4} align="center" flexWrap="wrap">
           <Text as="output" textStyle="text/sm" color="neutral.600">
             Recent statements could not be loaded.
@@ -122,7 +122,8 @@ function PortfolioSummary({
   const userTimezone = getBrowserTimezone()
 
   const currentSats = data.currentTotalBalance
-  const btcPrice = data.currentBtcPrice && Number(data.currentBtcPrice) > 0 ? Number(data.currentBtcPrice) : null
+  const price = Number(data.currentBtcPrice)
+  const btcPrice = price > 0 ? price : null
   const totalBtc = new Decimal(currentSats).div(100_000_000)
   const totalUsd = btcPrice === null ? null : totalBtc.toNumber() * btcPrice
 
@@ -157,7 +158,7 @@ function PortfolioSummary({
         <Text textStyle="text/sm" fontWeight="medium" color="neutral.600" mb={2}>
           Last 30 Days
         </Text>
-        <Box overflow="hidden">
+        <Box as="figure" aria-label="Bitcoin balance, last 30 days">
           <AccumulationChart data={historicalData} hasActivity={hasBalance} isUp={isUp} timezone={userTimezone} />
         </Box>
       </Box>
@@ -174,62 +175,6 @@ function PortfolioSummary({
         <StatMini label="30d Change" value={change30dBtc} btcPrice={btcPrice} />
         <StatMini label="Accounts" count={accountCount} />
       </Grid>
-    </Box>
-  )
-}
-
-const statValueProps = {
-  fontFamily: 'body',
-  textStyle: 'text/xl',
-  fontWeight: 'normal',
-  sx: { fontVariantNumeric: 'tabular-nums' },
-} as const
-
-function StatMini({
-  label,
-  value,
-  btcPrice,
-  count,
-}: {
-  label: string
-  value?: Decimal
-  btcPrice?: number | null
-  count?: number | null
-}): JSX.Element {
-  const isPositive = value ? value.gte(0) : true
-  const usdValue = value && btcPrice != null ? value.toNumber() * btcPrice : null
-  // A change too small to show in cents has no sign.
-  const usdCents = usdValue === null ? 0 : Math.round(usdValue * 100)
-
-  return (
-    <Box minW={0}>
-      <Text textStyle="text/md" color="neutral.900" fontWeight="medium" mb={2}>
-        {label}
-      </Text>
-      {value !== undefined ? (
-        <Flex align="baseline" gap={2} flexWrap="wrap">
-          <Text {...statValueProps} color={value.isZero() ? 'neutral.900' : isPositive ? 'success.700' : 'error.700'}>
-            {isPositive ? '+' : '−'}
-            <BitcoinAmount btc={value.abs().toFixed(8)} />
-          </Text>
-          {usdValue !== null && (
-            <Text {...statValueProps} color="neutral.600">
-              {usdCents > 0 ? '+' : usdCents < 0 ? '−' : ''}$
-              {(Math.abs(usdCents) / 100).toLocaleString('en-US', {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
-              })}
-            </Text>
-          )}
-        </Flex>
-      ) : (
-        <Text {...statValueProps} color="neutral.900">
-          {count === null ? '—' : count}{' '}
-          <Text as="span" textStyle="text/sm" color="neutral.600">
-            tracked
-          </Text>
-        </Text>
-      )}
     </Box>
   )
 }
@@ -276,7 +221,8 @@ interface HomeData {
   statements: StatementDto[]
   portfolio: PortfolioData | undefined
   hasAccounts: boolean
-  accountCount: number
+  /** Null until every account list has loaded without an error. */
+  accountCount: number | null
   statementsLoading: boolean
   statementsError: boolean
   isLoading: boolean
@@ -294,23 +240,27 @@ function useDashboardData(dataSource: HomeDataSource): HomeData {
   const exchanges = dataSource.useExchanges()
   const manual = dataSource.useManual()
   const etfs = dataSource.useEtfs()
-  const queries = [portfolio, claims, exchanges, manual, etfs]
+  const accountLists = [claims, exchanges, manual, etfs]
+  const queries = [portfolio, ...accountLists]
+  const totalAccounts = accountLists.reduce((count, list) => count + (list.data?.length ?? 0), 0)
+  const listsReady = accountLists.every((list) => list.data !== undefined && !list.isError)
 
   return {
     statements: statements.data ?? [],
     statementsLoading: statements.isLoading,
-    statementsError: statements.isError,
-    accountCount: [claims.data, exchanges.data, manual.data, etfs.data].reduce(
-      (count, accounts) => count + (accounts?.length ?? 0),
-      0,
-    ),
+    // A failed refresh keeps the statements already loaded; this is only for having none to show.
+    statementsError: statements.isError && statements.data === undefined,
+    accountCount: listsReady ? totalAccounts : null,
     portfolio: portfolio.data,
-    hasAccounts: [claims.data, exchanges.data, manual.data, etfs.data].some((accounts) => (accounts?.length ?? 0) > 0),
+    hasAccounts: totalAccounts > 0,
     isLoading: queries.some((query) => query.isLoading),
     hasError: queries.some((query) => query.isError),
     retry: () => {
       for (const query of queries) {
         void query.refetch()
+      }
+      if (statements.isError) {
+        void statements.refetch()
       }
     },
   }

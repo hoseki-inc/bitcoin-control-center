@@ -1,8 +1,10 @@
 import { Box, Button, Flex, Grid, Stack, Text } from '@chakra-ui/react'
+import Decimal from 'decimal.js'
 import { Link } from 'react-router'
 import { formatBitcoin } from '../../lib/bitcoin-display'
 import { FiatAmountText } from '../fiat-amount-text'
 import { DashboardAmount } from './dashboard-typography'
+import { StatMini } from './stat-mini'
 
 export function DashboardPreview({
   loading = false,
@@ -38,32 +40,22 @@ export function DashboardPreview({
           </Button>
         </Flex>
       )}
-      <Box border="1px solid" borderColor="neutral.200" borderRadius="panel" p={{ base: 5, md: 6 }} aria-busy={loading}>
+      {/* Laid out like the loaded overview on Home, so nothing moves when holdings arrive. */}
+      <Box border="1px solid" borderColor="neutral.200" borderRadius="panel" p={{ base: 4, md: 6 }} aria-busy={loading}>
         <DashboardAmount>{unresolved ? '—' : zeroBalance}</DashboardAmount>
-        <FiatAmountText as="output" display="block" mt={2}>
-          {loading ? 'Loading your holdings…' : unavailable ? 'Holdings unavailable' : '$0.00 USD'}
+        <FiatAmountText as="output" display="block" mt={1}>
+          {loading ? 'Loading your holdings…' : unavailable ? 'Holdings unavailable' : '$0.00'}
         </FiatAmountText>
         <Grid
-          templateColumns={{ base: '1fr', sm: 'repeat(2, minmax(0, 1fr))' }}
-          gap={4}
+          templateColumns={{ base: '1fr', sm: '1fr 1fr' }}
+          gap={6}
           mt={6}
           pt={5}
           borderTop="1px solid"
           borderColor="neutral.200"
         >
-          {[
-            ['30d Change', zeroBalance],
-            ['Accounts', '0'],
-          ].map(([label, value]) => (
-            <Box key={label} minW={0}>
-              <Text textStyle="text/sm" color="neutral.600" mb={1}>
-                {label}
-              </Text>
-              <Text textStyle="text/md" fontWeight="medium" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                {unresolved ? '—' : value}
-              </Text>
-            </Box>
-          ))}
+          <StatMini label="30d Change" value={unresolved ? null : new Decimal(0)} />
+          <StatMini label="Accounts" count={unresolved ? null : 0} />
         </Grid>
       </Box>
     </Stack>

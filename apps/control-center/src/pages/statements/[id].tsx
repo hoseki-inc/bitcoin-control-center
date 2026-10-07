@@ -288,9 +288,18 @@ function StatementPreview({
           <Spinner centered />
         ) : (
           <Stack width="100%" height="100%">
-            <HStack justifyContent="center" alignItems="center" gap={4} py={4} flexWrap="wrap">
+            <HStack
+              as="fieldset"
+              aria-label="Statement format"
+              justifyContent="center"
+              alignItems="center"
+              gap={4}
+              py={4}
+              flexWrap="wrap"
+            >
               <Button
                 variant={statementFormat === 'custom' ? 'primary' : 'outline'}
+                aria-pressed={statementFormat === 'custom'}
                 size="sm"
                 onClick={() => {
                   if (statementFormat === 'custom') {
@@ -303,6 +312,7 @@ function StatementPreview({
               </Button>
               <Button
                 variant={statementFormat === 'monthly' ? 'primary' : 'outline'}
+                aria-pressed={statementFormat === 'monthly'}
                 size="sm"
                 onClick={() => {
                   if (statementFormat === 'monthly') {

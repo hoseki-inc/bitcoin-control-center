@@ -3,6 +3,7 @@ import { Box } from '@chakra-ui/react'
 import { TestChakraProvider as ChakraProvider } from '@hoseki/packages/testing/chakra-provider'
 import { QueryClient } from '@tanstack/react-query'
 import { getQueryKey } from '@trpc/react-query'
+import { Decimal } from 'decimal.js'
 import { act, createElement } from 'react'
 import { type Root, createRoot } from 'react-dom/client'
 import { MemoryRouter } from 'react-router'
@@ -54,24 +55,39 @@ const { claimId, acquireDom } = await vi.hoisted(async () => {
 })
 
 let queryClient: QueryClient
+// Requests to these paths never answer, so their queries stay loading.
+const pendingPaths = new Set<string>()
 const rpc = createTestTrpcClient(async ({ path }) => {
+  if (pendingPaths.has(path)) {
+    return new Promise<never>(() => undefined)
+  }
   throw new Error(`Unexpected request: ${path}`)
 })
 let root: Root
 let container: HTMLDivElement
 
-async function withTestSetup(run: () => Promise<void>): Promise<void> {
+async function withTestSetup(
+  run: () => Promise<void>,
+  { price = null, balances = new Map() }: { price?: Decimal | null; balances?: Map<string, Decimal> | 'loading' } = {},
+): Promise<void> {
   const domGlobals = acquireDom()
   queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   queryClient.setQueryData<ClaimDto[]>(
     getQueryKey(trpc.portalProve.registry.claims.list, { excludePending: true }, 'query'),
     [claimFixture(claimId, 'Savings wallet')],
   )
-  queryClient.setQueryData(getQueryKey(trpc.portalProve.retrieveBitcoinPrice, undefined, 'query'), null)
   queryClient.setQueryData(
-    getQueryKey(trpc.portalProve.onchain.claimBalances, { claimIds: [claimId] }, 'query'),
-    new Map(),
+    getQueryKey(trpc.portalProve.retrieveBitcoinPrice, undefined, 'query'),
+    price === null ? null : { value: price, asOf: new Date(), source: 'mempool', lastKnown: false },
   )
+  if (balances === 'loading') {
+    pendingPaths.add('portalProve.onchain.claimBalances')
+  } else {
+    queryClient.setQueryData(
+      getQueryKey(trpc.portalProve.onchain.claimBalances, { claimIds: [claimId] }, 'query'),
+      balances,
+    )
+  }
 
   // Vitest owns teardown so it has its own timeout and runs once, even after a test timeout.
   onTestFinished(async () => {
@@ -81,6 +97,7 @@ async function withTestSetup(run: () => Promise<void>): Promise<void> {
       })
       container.remove()
       queryClient.clear()
+      pendingPaths.clear()
     } finally {
       vi.unstubAllGlobals()
       domGlobals.window.close()
@@ -162,4 +179,66 @@ it.each([1, 2])('preserves Chakra visibility styles across test documents (%s)',
     })
     expect(getComputedStyle(probe).display).toBe('flex')
   })
+})
+
+async function renderSelectedAccount(): Promise<string> {
+  await act(async () => {
+    root.render(
+      createElement(
+        ChakraProvider,
+        null,
+        createElement(
+          TestTrpcProvider,
+          { client: queryClient, rpc },
+          createElement(
+            MemoryRouter,
+            null,
+            createElement(ClaimSelection, {
+              selectedClaimIds: new Set([claimId]),
+              setSelectedClaimIds: vi.fn<() => void>(),
+            }),
+          ),
+        ),
+      ),
+    )
+  })
+  return container.textContent
+}
+
+it('shows an account in Bitcoin and dollars, with a total matching the rows', async () => {
+  await withTestSetup(
+    async () => {
+      const text = await renderSelectedAccount()
+      expect(text).toContain('0.12345678 BTC')
+      const dollars = text.match(/\$[\d,]+\.\d\d/g)
+      expect(dollars).toHaveLength(2)
+      expect(dollars?.[0]).toMatch(/^\$6,172\.8\d$/)
+      expect(dollars?.[1]).toBe(dollars?.[0])
+    },
+    { price: new Decimal(50_000), balances: new Map([[claimId, new Decimal(12_345_678)]]) },
+  )
+})
+
+it('shows n/a rather than a $0.00 total when there is no price', async () => {
+  await withTestSetup(
+    async () => {
+      const text = await renderSelectedAccount()
+      expect(text).toContain('0.12345678 BTC')
+      expect(text.match(/n\/a/g)).toHaveLength(2)
+      expect(text).not.toContain("'n/a'")
+      expect(text).not.toContain('$0.00')
+    },
+    { balances: new Map([[claimId, new Decimal(12_345_678)]]) },
+  )
+})
+
+it('waits for balances before showing a total', async () => {
+  await withTestSetup(
+    async () => {
+      const text = await renderSelectedAccount()
+      expect(text).not.toContain('$')
+      expect(text).not.toContain('n/a')
+    },
+    { balances: 'loading' },
+  )
 })

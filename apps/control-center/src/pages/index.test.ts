@@ -10,33 +10,47 @@ import { type HomeDataSource, HomePage, type HomeViews } from './index'
 type PortfolioData = NonNullable<ReturnType<HomeDataSource['usePortfolio']>['data']>
 type AccountKind = 'claims' | 'exchange' | 'manual' | 'etf'
 
+interface QueryFlags {
+  isLoading?: boolean
+  isError?: boolean
+}
+
 interface HomeState {
   accounts: Record<AccountKind, { id: string; status: string; balance: string }[]>
+  /** Applies to every account list; `accountStates` sets one list. */
+  accountsLoading: boolean
+  accountsError: boolean
+  accountStates: Partial<Record<AccountKind, QueryFlags>>
+  currentSats: string
   history: PortfolioData['historicalData']
-  isLoading: boolean
-  isError: boolean
   portfolioLoading: boolean
   portfolioError: boolean
-  statements: StatementDto[]
+  /** Undefined when the statements never loaded. */
+  statements: StatementDto[] | undefined
   statementsLoading: boolean
   statementsError: boolean
   btcPrice: string
 }
 
-function query<T>(data: T, state: { isLoading?: boolean; isError?: boolean } = {}) {
+/** A query as React Query reports it: no data while loading for the first time. */
+function query<T>(data: T | undefined, flags: QueryFlags = {}) {
+  const isLoading = flags.isLoading ?? false
   return {
-    data,
-    isLoading: state.isLoading ?? false,
-    isError: state.isError ?? false,
+    data: isLoading ? undefined : data,
+    isLoading,
+    isError: flags.isError ?? false,
     refetch: vi.fn(async () => Promise.resolve({ isError: false })),
   }
 }
 
 function fakeDataSource(state: HomeState): HomeDataSource {
-  const accounts = (kind: AccountKind) => () =>
-    query(state.accounts[kind], { isLoading: state.isLoading, isError: state.isError })
+  const accounts = (kind: AccountKind) => () => {
+    const isLoading = state.accountsLoading || state.accountStates[kind]?.isLoading === true
+    const isError = state.accountsError || state.accountStates[kind]?.isError === true
+    return query(isError ? undefined : state.accounts[kind], { isLoading, isError })
+  }
   const portfolio: PortfolioData = {
-    currentTotalBalance: '0',
+    currentTotalBalance: state.currentSats,
     currentBtcPrice: state.btcPrice,
     verifiedClaimsCount: 0,
     exchangeAccountCount: 0,
@@ -50,12 +64,13 @@ function fakeDataSource(state: HomeState): HomeDataSource {
   }
   return {
     useStatements: () =>
-      query(state.statementsLoading ? undefined : state.statements, {
+      query(state.statements, {
         isLoading: state.statementsLoading,
         isError: state.statementsError,
       }),
     usePortfolio: () =>
-      query(state.portfolioLoading || state.portfolioError ? undefined : portfolio, {
+      // A failed refresh keeps a loaded history; a first load that fails has nothing.
+      query(state.portfolioError && state.history.length === 0 ? undefined : portfolio, {
         isLoading: state.portfolioLoading,
         isError: state.portfolioError,
       }),
@@ -75,9 +90,11 @@ const views: HomeViews = {
 function renderHome(overrides: Partial<HomeState> = {}): string {
   const state: HomeState = {
     accounts: { claims: [], exchange: [], manual: [], etf: [] },
+    accountsLoading: false,
+    accountsError: false,
+    accountStates: {},
+    currentSats: '0',
     history: [],
-    isLoading: false,
-    isError: false,
     portfolioLoading: false,
     portfolioError: false,
     statements: [],
@@ -125,9 +142,10 @@ describe('Home overview states', () => {
     const html = renderHome()
     expect(html).toContain('Your Bitcoin, in one place')
     expect(html.match(/href="\/accounts\/add"/g)).toHaveLength(1)
-    for (const text of ['0.00000000 BTC', '$0.00 USD', '30d Change', 'Bitcoin Price', 'Your holdings, on record']) {
+    for (const text of ['0.00000000 BTC', '$0.00', '30d Change', 'Bitcoin Price', 'Your holdings, on record']) {
       expect(html).toContain(text)
     }
+    expect(html).not.toContain('$0.00 USD')
     expect(html).toContain('Generate Statement')
     expect(html).toContain('href="/statements/create"')
     expect(html).toContain('/statements/satoshi-statement.jpg')
@@ -151,10 +169,12 @@ describe('Home overview states', () => {
   })
 
   it('does not present failed account queries as an empty portfolio', () => {
-    const html = renderHome({ isError: true })
+    const html = renderHome({ accountsError: true })
     expect(html).toContain('role="alert"')
+    expect(html).toContain('Your balances could not be confirmed')
+    expect(html).not.toContain('Showing the last available overview')
     expect(html).toContain('Holdings unavailable')
-    expect(html).not.toContain('$0.00 USD')
+    expect(html).not.toContain('$0.00')
     expect(html).not.toContain('0 BTC')
     expect(html).toContain('Try Again')
     expect(html).toContain('Bitcoin Price')
@@ -162,21 +182,23 @@ describe('Home overview states', () => {
   }, 20_000)
 
   it('waits for account queries before offering account setup', () => {
-    const html = renderHome({ isLoading: true })
+    const html = renderHome({ accountsLoading: true })
     expect(html).toContain('Loading your holdings')
     expect(html).toContain('Bitcoin Price')
     expect(html).not.toContain('0.00000000')
     expect(html).not.toContain('href="/accounts/add"')
   })
+
   it('keeps holdings visible when statements fail independently', () => {
-    const html = renderHome({ statementsError: true, history: zeroBalanceHistory })
+    const html = renderHome({ statements: undefined, statementsError: true, history: zeroBalanceHistory })
+    expect(html).toContain('href="/statements"')
     expect(html).toContain('Balance chart')
     expect(html).toContain('Recent statements could not be loaded')
     expect(html).not.toContain('Holdings unavailable')
   })
 
   it('retains the last overview with a persistent warning when account refresh fails', () => {
-    const html = renderHome({ isError: true, history: zeroBalanceHistory })
+    const html = renderHome({ accountsError: true, history: zeroBalanceHistory })
     expect(html).toContain('Balance chart')
     expect(html).toContain('Showing the last available overview')
     expect(html).not.toContain('href="/accounts/add"')
@@ -185,7 +207,10 @@ describe('Home overview states', () => {
   it('does not count accounts until every account list has loaded', () => {
     const accounts: HomeState['accounts'] = { claims: [], exchange: [], manual: [], etf: [] }
     accounts.claims = [{ id: 'wallet', status: 'verified', balance: '0' }]
-    expect(renderText({ accounts, history: zeroBalanceHistory, isLoading: true })).toContain('— tracked')
+    expect(renderText({ accounts, history: zeroBalanceHistory, accountsLoading: true })).toContain('— tracked')
+    expect(
+      renderText({ accounts, history: zeroBalanceHistory, accountStates: { etf: { isLoading: true } } }),
+    ).toContain('— tracked')
     expect(renderText({ accounts, history: zeroBalanceHistory })).toContain('1 tracked')
   })
 
@@ -214,7 +239,9 @@ describe('Home overview states', () => {
   it('does not count accounts while some holdings data is unavailable', () => {
     const accounts: HomeState['accounts'] = { claims: [], exchange: [], manual: [], etf: [] }
     accounts.claims = [{ id: 'wallet', status: 'verified', balance: '0' }]
-    expect(renderText({ accounts, history: zeroBalanceHistory, isError: true })).toContain('— tracked')
+    expect(renderText({ accounts, history: zeroBalanceHistory, accountsError: true })).toContain('— tracked')
+    // The count comes from the account lists alone, so a failed overview refresh keeps it.
+    expect(renderText({ accounts, history: zeroBalanceHistory, portfolioError: true })).not.toContain('— tracked')
   })
 
   it('lists the preview stats in the same order as the loaded overview', () => {
@@ -236,6 +263,7 @@ describe('Home overview states', () => {
     const text = renderText({ statements: [statement], history: zeroBalanceHistory })
     expect(text).toContain('Recent Statements')
     expect(text).toContain('Period:')
+    expect(text).not.toContain('View All')
     expect(text).not.toContain('Your holdings, on record')
   })
 
@@ -251,5 +279,61 @@ describe('Home overview states', () => {
       history: [{ timestamp: '2026-09-01T00:00:00.000Z', totalBalance: '100000000' }],
     })
     expect(html).toContain('USD value unavailable')
+    expect(html).not.toContain('$')
+  })
+
+  it('shows the balance in Bitcoin and dollars', () => {
+    // An unchanged balance, so the only dollar amount is the balance itself.
+    const text = renderText({
+      currentSats: '123456789',
+      history: [{ timestamp: '2026-09-01T00:00:00.000Z', totalBalance: '123456789' }],
+    })
+    expect(text).toContain('1.23456789 BTC')
+    expect(text).toContain('$61,728.39')
+  })
+
+  it('measures the 30-day change from the first day of the history', () => {
+    const text = renderText({
+      btcPrice: '61234.56',
+      currentSats: '150000000',
+      history: [
+        { timestamp: '2026-09-01T00:00:00.000Z', totalBalance: '100000000' },
+        { timestamp: '2026-09-15T00:00:00.000Z', totalBalance: '120000000' },
+      ],
+    })
+    expect(text).toContain('+0.50000000 BTC')
+    expect(text).toContain('+$30,617.28')
+  })
+
+  it('counts every kind of account', () => {
+    const account = { id: 'account', status: 'verified', balance: '0' }
+    const accounts = { claims: [account], exchange: [account], manual: [account], etf: [account] }
+    expect(renderText({ accounts, history: zeroBalanceHistory })).toContain('4 tracked')
+  })
+
+  it.each(['claims', 'exchange', 'manual', 'etf'] as const)(
+    'waits for the %s list before choosing between account setup and history',
+    (kind) => {
+      const account = { id: 'account', status: 'verified', balance: '0' }
+      const text = renderText({
+        accounts: { claims: [account], exchange: [], manual: [], etf: [] },
+        accountStates: { [kind]: { isLoading: true } },
+      })
+      expect(text).toContain('Loading your holdings')
+      expect(text).not.toContain('Your history will appear here')
+    },
+  )
+
+  it('shows three recent statements and links to the rest', () => {
+    const statements = ['a', 'b', 'c', 'd'].map((id) => Object.assign({}, statement, { id }))
+    const html = renderHome({ statements, history: zeroBalanceHistory })
+    expect(html.match(/Period:/g)).toHaveLength(3)
+    expect(html).toMatch(/href="\/statements"[^>]*>View All</)
+  })
+
+  it('keeps the statements introduction when refreshing an empty list fails', () => {
+    const text = renderText({ statements: [], statementsError: true, history: zeroBalanceHistory })
+    expect(text).toContain('Your holdings, on record')
+    expect(text).not.toContain('Recent statements could not be loaded')
   })
 })
