@@ -7,7 +7,8 @@
 
 ## Before you begin
 
-Bitcoin Control Center requires Electrs for balances and transaction history.
+Bitcoin Control Center requires Electrs for balances and transaction history,
+and mempool for statement prices and transaction details.
 Wait until Electrs is running and fully synchronized before relying on portfolio
 data.
 
@@ -66,7 +67,7 @@ complete first.
 
 ## Configure mempool and logging
 
-The optional mempool service is discovered automatically. If it is absent,
+The mempool service is discovered automatically. If it is unavailable,
 Control Center uses public mempool.space. Use **Configure → Mempool URL Override**
 to choose an explicit HTTP(S) endpoint. The same action changes the log level.
 **Info** is the normal setting. Use **Debug** or **Trace** only while diagnosing

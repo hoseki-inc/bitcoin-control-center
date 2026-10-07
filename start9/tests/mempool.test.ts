@@ -65,8 +65,8 @@ function effectsForMempool(installed: boolean, tlsFirst = false): T.Effects {
   return effects as T.Effects
 }
 
-it('mempool is optional while Electrs remains required', () => {
-  expect(manifest.dependencies.mempool.optional).toBe(true)
+it('requires both mempool and Electrs', () => {
+  expect(manifest.dependencies.mempool.optional).toBe(false)
   expect(manifest.dependencies.electrs.optional).toBe(false)
 })
 it('uses the installed mempool bridge endpoint without hardcoding its address', async () => {
@@ -75,7 +75,7 @@ it('uses the installed mempool bridge endpoint without hardcoding its address', 
 it('prefers the plain HTTP bridge address even when a TLS address is listed first', async () => {
   await expect(resolveMempoolUrl(effectsForMempool(true, true))).resolves.toBe('http://172.18.0.4:8080')
 })
-it('uses public mempool when the optional service is absent', async () => {
+it('uses public mempool when the service is absent', async () => {
   await expect(resolveMempoolUrl(effectsForMempool(false))).resolves.toBe('https://mempool.space')
 })
 it('an explicit URL overrides discovery', async () => {
