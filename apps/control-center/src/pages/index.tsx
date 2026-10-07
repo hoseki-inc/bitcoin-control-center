@@ -134,20 +134,16 @@ function PortfolioSummary({
 
   return (
     <Box bg="shades.0" border="1px solid" borderColor="neutral.200" borderRadius="panel" p={{ base: 4, md: 6 }}>
-      {/* Top row: balance + generate button */}
+      {/* Top row: balance + portfolio link */}
       <Flex align="flex-start" justify="space-between" mb={6} gap={4} flexWrap="wrap">
         <Box>
           <DashboardAmount primary>
-            <>
-              <BitcoinAmount btc={totalBtc} />
-            </>
+            <BitcoinAmount btc={totalBtc} />
           </DashboardAmount>
           <FiatAmountText primary mt={1}>
-            <>
-              {totalUsd === null
-                ? 'USD value unavailable'
-                : totalUsd.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
-            </>
+            {totalUsd === null
+              ? 'USD value unavailable'
+              : totalUsd.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
           </FiatAmountText>
         </Box>
         <Button as={Link} to="/portfolio" variant="outline" size="md" px={6} py={3} borderRadius="control">
@@ -160,10 +156,8 @@ function PortfolioSummary({
         <Text textStyle="text/sm" fontWeight="medium" color="neutral.600" mb={2}>
           Last 30 Days
         </Text>
-        <Box position="relative" overflow="hidden">
-          <>
-            <AccumulationChart data={historicalData} hasActivity={hasBalance} isUp={isUp} timezone={userTimezone} />
-          </>
+        <Box overflow="hidden">
+          <AccumulationChart data={historicalData} hasActivity={hasBalance} isUp={isUp} timezone={userTimezone} />
         </Box>
       </Box>
 
@@ -213,17 +207,13 @@ function StatMini({
       {value !== undefined ? (
         <Flex align="baseline" gap={2} flexWrap="wrap">
           <Text {...statValueProps} color={value.isZero() ? 'neutral.900' : isPositive ? 'success.700' : 'error.700'}>
-            <>
-              {isPositive ? '+' : '−'}
-              <BitcoinAmount btc={value.abs().toFixed(8)} />
-            </>
+            {isPositive ? '+' : '−'}
+            <BitcoinAmount btc={value.abs().toFixed(8)} />
           </Text>
           {usdValue !== null && (
             <Text {...statValueProps} color="neutral.600">
-              <>
-                {usdValue >= 0 ? '+' : '−'}$
-                {Math.abs(usdValue).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </>
+              {usdValue >= 0 ? '+' : '−'}$
+              {Math.abs(usdValue).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </Text>
           )}
         </Flex>

@@ -39,11 +39,9 @@ export function DashboardPreview({
         </Flex>
       )}
       <Box border="1px solid" borderColor="neutral.200" borderRadius="panel" p={{ base: 5, md: 6 }} aria-busy={loading}>
-        <DashboardAmount primary>
-          <>{unresolved ? '—' : zeroBalance}</>
-        </DashboardAmount>
+        <DashboardAmount primary>{unresolved ? '—' : zeroBalance}</DashboardAmount>
         <FiatAmountText as="output" display="block" primary mt={2}>
-          <>{loading ? 'Loading your holdings…' : unavailable ? 'Holdings unavailable' : '$0.00 USD'}</>
+          {loading ? 'Loading your holdings…' : unavailable ? 'Holdings unavailable' : '$0.00 USD'}
         </FiatAmountText>
         <Grid
           templateColumns="repeat(2, minmax(0, 1fr))"
@@ -62,7 +60,7 @@ export function DashboardPreview({
                 {label}
               </Text>
               <Text textStyle="text/md" fontWeight="medium" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                <>{unresolved ? '—' : value}</>
+                {unresolved ? '—' : value}
               </Text>
             </Box>
           ))}

@@ -7,7 +7,6 @@ import type { StatementDto } from '../../trpc/server-types'
 export function StatementCard({ statement, onView }: { statement: StatementDto; onView: () => void }): JSX.Element {
   return (
     <Box
-      data-group=""
       borderRadius="panel"
       borderWidth="1px"
       borderColor="neutral.200"
@@ -68,8 +67,6 @@ export function StatementCard({ statement, onView }: { statement: StatementDto; 
           gradientDirection="from-bottom"
           baseColor="rgba(0, 0, 0, 0.20)"
           gradientSize={60}
-          opacity={1}
-          transition="opacity 0.4s"
           justify="center"
           alignItems="flex-end"
           pointerEvents="auto"

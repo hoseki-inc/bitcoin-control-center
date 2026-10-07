@@ -120,7 +120,7 @@ export function ClaimSelection({
                 Bitcoin
               </Text>
             </Th>
-            <Th px={0} isNumeric>
+            <Th pl={4} pr={0} isNumeric>
               <Text textStyle="overline/sm" fontWeight={600} color="neutral.600">
                 USD
               </Text>
@@ -162,14 +162,12 @@ export function ClaimSelection({
                   </HStack>
                 </Td>
                 <Td px={0} isNumeric>
-                  <>
-                    <Text textStyle="text/sm" fontWeight="medium" whiteSpace="nowrap">
-                      {renderBalance(balanceWithStatus)}
-                    </Text>
-                  </>
+                  <Text textStyle="text/sm" fontWeight="medium" whiteSpace="nowrap">
+                    {renderBalance(balanceWithStatus)}
+                  </Text>
                 </Td>
-                <Td px={0} isNumeric>
-                  <>{renderUsdAmount(balanceWithStatus)}</>
+                <Td pl={4} pr={0} isNumeric>
+                  {renderUsdAmount(balanceWithStatus)}
                 </Td>
               </Tr>
             )
@@ -196,7 +194,7 @@ export function ClaimSelection({
             </Th>
             <Th px={0} isNumeric colSpan={2}>
               <Text textStyle="text/md" fontWeight="medium" color="success.600">
-                <>{formatUsd(totalUsdSelected.toFixed(2))}</>
+                {formatUsd(totalUsdSelected.toFixed(2))}
               </Text>
             </Th>
           </Tr>
@@ -227,13 +225,13 @@ function renderUsdAmount(balance: BalanceWithStatus) {
   if (balance.status === 'fail' || balance.value.usd === null) {
     return (
       <Text textStyle="text/sm" fontWeight="medium">
-        &apos;n/a&apos;
+        n/a
       </Text>
     )
   }
   return (
     <Text textStyle="text/sm" fontWeight="medium" color="success.600" whiteSpace="nowrap">
-      <>{formatUsd(balance.value.usd.toFixed(2))}</>
+      {formatUsd(balance.value.usd.toFixed(2))}
     </Text>
   )
 }

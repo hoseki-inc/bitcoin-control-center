@@ -49,15 +49,15 @@ function StatementDetailsPageContent({ statementId }: { statementId: StatementId
   }
 
   return (
-    <Flex gap={0} flexDirection={{ base: 'column', xl: 'row' }} align="flex-start">
+    <Flex gap={0} flexDirection={{ base: 'column', lg: 'row' }} align="flex-start">
       <Stack
         gap={6}
-        height={{ base: 'auto', xl: VIEWPORT_BELOW_HEADER }}
-        flexBasis={{ base: 'auto', xl: '40%' }}
+        height={{ base: 'auto', lg: VIEWPORT_BELOW_HEADER }}
+        flexBasis={{ base: 'auto', lg: '40%' }}
         minW={0}
         w="full"
         overflowY="auto"
-        maxW={{ base: 'full', xl: '40%' }}
+        maxW={{ base: 'full', lg: '40%' }}
         py={6}
         px={{ base: 4, md: 8 }}
       >
@@ -69,10 +69,10 @@ function StatementDetailsPageContent({ statementId }: { statementId: StatementId
         </Stack>
       </Stack>
       <Box
-        height={{ base: 'auto', xl: VIEWPORT_BELOW_HEADER }}
-        flexBasis={{ base: 'auto', xl: '60%' }}
+        height={{ base: 'auto', lg: VIEWPORT_BELOW_HEADER }}
+        flexBasis={{ base: 'auto', lg: '60%' }}
         minW={0}
-        width={{ base: 'full', xl: '60%' }}
+        width={{ base: 'full', lg: '60%' }}
         bg="#F9F9F9"
       >
         <StatementPreview
@@ -195,7 +195,7 @@ function BackLink() {
   return (
     <Link
       as={RouterLink}
-      to="/portfolio"
+      to="/home"
       display="inline-flex"
       alignItems="center"
       color="neutral.900"
@@ -254,7 +254,7 @@ function StatementPreview({
   const previewError = queryError?.message ?? rendered.error
 
   return (
-    <Box height={{ base: '600px', xl: '100%' }} width="100%" display="flex" justifyContent="center" alignItems="center">
+    <Box height={{ base: '600px', lg: '100%' }} width="100%" display="flex" justifyContent="center" alignItems="center">
       <Flex
         justifyContent="center"
         alignItems="center"
