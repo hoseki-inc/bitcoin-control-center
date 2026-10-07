@@ -1,7 +1,7 @@
 import { Err, Ok, type Result, asyncFn } from '@hoseki/packages/result'
 import type { StatementQuoteCurrency } from '@hoseki/packages/schemas/statement-quote'
 import { type DailyRatesService, MIN_MEMPOOL_PRICE_DATE } from './daily_rates'
-import type { PriceService, PriceSourceName } from './service'
+import { type PriceService, type PriceSourceName, isPublicMempool } from './service'
 
 export type BitcoinPriceHistoryDays = 7 | 30 | 180 | 365
 
@@ -15,13 +15,19 @@ export interface BitcoinPriceHistory {
   quoteCurrency: StatementQuoteCurrency
   /** Daily quotes from the statement price source, oldest first. */
   points: BitcoinPricePoint[]
-  /** Hosts that supplied the daily quotes, without credentials or paths. */
+  /** Names of the sources that supplied the daily quotes: the public host, or "Your mempool server". */
   historySources: string[]
   /** The current price from the source chosen in Settings, when it is in this currency and available. */
   latest?: BitcoinPricePoint & { source: PriceSourceName; sourceLabel: string }
 }
 
 const DAY_SECONDS = 86_400
+
+// A self-hosted mempool is often reached at an internal address, such as StartOS's bridge IP, which
+// means nothing to the person reading it; name it the way Settings does instead.
+function historySourceName(url: URL): string {
+  return isPublicMempool(url) ? url.host : 'Your mempool server'
+}
 
 /** Longer ranges sample fewer days, which bounds the requests a first load makes for uncached days. */
 function stepDays(days: BitcoinPriceHistoryDays): number {
@@ -89,7 +95,7 @@ export class PriceHistoryService {
       const history: BitcoinPriceHistory = {
         quoteCurrency,
         points,
-        historySources: [...new Set((providerUrls ?? []).map((url) => new URL(url).host))],
+        historySources: [...new Set((providerUrls ?? []).map((url) => historySourceName(new URL(url))))],
       }
       if (current?.isOk() === true) {
         const price = current.unwrap()

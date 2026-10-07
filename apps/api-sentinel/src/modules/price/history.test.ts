@@ -87,7 +87,7 @@ describe('Bitcoin price history', () => {
       time: nowSeconds - 43_200 - 7 * 86_400,
       value: 50000 + (nowSeconds - 43_200) / 86_400 - 7,
     })
-    expect(history.historySources).toEqual(['mempool.test'])
+    expect(history.historySources).toEqual(['Your mempool server'])
     expect(history.latest).toMatchObject({ value: 61000, source: 'mempool' })
     expect(history.latest?.time).toBeGreaterThanOrEqual(nowSeconds - 61)
     expect(requestedHosts()).toEqual(['mempool.test'])
