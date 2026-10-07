@@ -1,5 +1,6 @@
 import type { T } from '@start9labs/start-sdk'
 import { expect, it, onTestFinished, vi } from 'vitest'
+import { setDependencies } from '../startos/dependencies'
 import { configSchema } from '../startos/fileModels/configFile'
 import { manifest } from '../startos/manifest'
 import { resolveMempoolUrl } from '../startos/mempool'
@@ -68,6 +69,18 @@ function effectsForMempool(installed: boolean, tlsFirst = false): T.Effects {
 it('requires both mempool and Electrs', () => {
   expect(manifest.dependencies.mempool.optional).toBe(false)
   expect(manifest.dependencies.electrs.optional).toBe(false)
+})
+it('registers Electrs and mempool as running dependencies', async () => {
+  const set = vi.fn<T.Effects['setDependencies']>(async () => null)
+  const effects: Pick<T.Effects, 'setDependencies'> = { setDependencies: set }
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- SAFETY: setupDependencies calls only setDependencies.
+  await setDependencies(effects as T.Effects)
+  expect(set).toHaveBeenCalledWith({
+    dependencies: [
+      { id: 'electrs', kind: 'running', versionRange: '*', healthChecks: [] },
+      { id: 'mempool', kind: 'running', versionRange: '*', healthChecks: [] },
+    ],
+  })
 })
 it('uses the installed mempool bridge endpoint without hardcoding its address', async () => {
   await expect(resolveMempoolUrl(effectsForMempool(true))).resolves.toBe('http://172.18.0.4:8080')
