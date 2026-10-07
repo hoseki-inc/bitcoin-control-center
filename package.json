@@ -190,9 +190,6 @@
       "yaml@>=1.0.0 <1.10.3": "1.10.3"
     },
     "minimumReleaseAge": 10080,
-    "minimumReleaseAgeExclude": [
-      "source-map-js@1.2.2"
-    ],
     "patchedDependencies": {
       "@ladle/react@5.1.1": "patches/@ladle__react@5.1.1.patch"
     },
