@@ -1,8 +1,11 @@
+import { dirname } from 'node:path'
 import { SingleSigAccount } from '@hoseki/packages/bitcoin/account'
 import { Signer } from 'bip322-js'
-import { eq } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
+import pino from 'pino'
 import { describe, expect, it } from 'vitest'
-import { challenges, signedMessages } from '../../db/schema'
+import { type SentinelDb, openDrizzleDatabase } from '../../db/drizzle'
+import { accounts, challenges, signedMessages } from '../../db/schema'
 import {
   createMultisigClaim,
   createSinglesigClaim,
@@ -23,6 +26,17 @@ import {
   thirdOwner,
   verifyTwoOfThreeAccount,
 } from './ownership.fixtures'
+
+/** Simulate the last database version before the reset, then run the real startup migration. */
+async function rerunChallengeMessageReset(db: SentinelDb): Promise<void> {
+  await db.run(sql`DELETE FROM _migrations WHERE name LIKE '%_reset_unfinished_challenge_messages'`)
+  const [main] = await db.all<{ file: string }>(sql`PRAGMA database_list`)
+  if (!main) {
+    expect.fail('The test database must have a file')
+  }
+  const reopened = await openDrizzleDatabase(dirname(main.file), pino({ level: 'silent' }))
+  reopened.$client.close()
+}
 
 describe('ownership verification account binding', () => {
   it('allows a matching singlesig key to verify its account', async () => {
@@ -281,7 +295,7 @@ describe('ownership verification account binding', () => {
     },
   )
 
-  it('finishes a multisig verification started with the earlier P2WPKH cosigner addresses', async () => {
+  it('migrates legacy P2WPKH messages and finishes the same challenge with fresh P2PKH proofs', async () => {
     const { registry, db } = await setupOwnershipHarness()
     const created = await createMultisigClaim(registry, [owner, secondOwner, thirdOwner])
     const challenge = await registry.challenges.create({ claimId: created.claim.id })
@@ -303,15 +317,44 @@ describe('ownership verification account binding', () => {
         .where(eq(signedMessages.id, signedMessage.id))
     }
 
+    await rerunChallengeMessageReset(db)
+
     await expect(registry.claims.get.byId({ id: created.claim.id })).resolves.toMatchObject({
       latestChallenge: { id: challenge.id, messages: [] },
     })
+    await expect(registry.challenges.create({ claimId: created.claim.id })).resolves.toMatchObject({ id: challenge.id })
     await signChallengeMessage(registry, challenge.id, store.id, owner)
     await signChallengeMessage(registry, challenge.id, secondStore.id, secondOwner)
     await expect(registry.challenges.complete({ challengeId: challenge.id })).resolves.toMatchObject({
       isSatisfied: true,
     })
   })
+
+  it.each(['wrong address', 'cross-account', 'unrelated key'] as const)(
+    'keeps stored %s messages intact through repeated claim reads and challenge reuse',
+    async (scenario) => {
+      const { registry, db, claimId, challengeId } = await setupStoredProof(scenario)
+      const stored = async () => ({
+        messages: await db.select().from(signedMessages).orderBy(signedMessages.id),
+        challenges: await db.select().from(challenges).orderBy(challenges.id),
+      })
+      const before = await stored()
+      for (const archived of [false, true]) {
+        await db
+          .update(accounts)
+          .set({ deletedAt: archived ? new Date().toISOString() : null })
+          .where(eq(accounts.id, claimId))
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const claim = await registry.claims.get.byId({ id: claimId })
+          await registry.claims.get.byAccount({ network: claim.network, account: claim.account })
+          const claims = archived ? await registry.claims.listArchived() : await registry.claims.list()
+          expect(claims.some((item) => item.id === claimId)).toBe(true)
+          await expect(registry.challenges.create({ claimId })).resolves.toMatchObject({ id: challengeId })
+        }
+        await expect(stored()).resolves.toEqual(before)
+      }
+    },
+  )
 
   it('rejects a substituted signing address through the singlesig get-or-create endpoint', async () => {
     const { registry } = await setupStoredProof('wrong address')

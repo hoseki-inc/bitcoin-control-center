@@ -117,13 +117,25 @@ it.each(['file', 'database'] as const)(
     const upgraded = await openDrizzleDatabase(directory, logger)
     try {
       await expect(databaseState(upgraded)).resolves.toEqual(before)
-      await expect(upgraded.all(sql`SELECT * FROM _migrations ORDER BY id`)).resolves.toEqual(
-        migrations.map((migration, index) => ({
-          ...oldJournal[index],
+      const journal = await upgraded.all<{ id: number; hash: string; created_at: number; name: string }>(
+        sql`SELECT * FROM _migrations ORDER BY id`,
+      )
+      // Adopted entries keep their IDs and applied times; later migrations are applied normally.
+      expect(journal.slice(0, oldJournal.length)).toEqual(
+        migrations.slice(0, oldJournal.length).map((migration, index) => ({
+          id: oldJournal[index]?.id,
+          applied_at: oldJournal[index]?.applied_at,
           hash: migration.hash,
           created_at: migration.folderMillis,
           name: migration.name,
         })),
+      )
+      expect(
+        journal.slice(oldJournal.length).map(({ hash, created_at, name }) => ({ hash, created_at, name })),
+      ).toEqual(
+        migrations
+          .slice(oldJournal.length)
+          .map((migration) => ({ hash: migration.hash, created_at: migration.folderMillis, name: migration.name })),
       )
       await expect(
         upgraded.all(

@@ -31,7 +31,7 @@ import type { SupportedHardwareWallet, SupportedHardwareWalletDisplayName } from
 import { TRPCError } from '@trpc/server'
 import * as bip322 from 'bip322-js'
 import { Decimal } from 'decimal.js'
-import { and, desc, eq, inArray, isNotNull, isNull, lte, ne, sql } from 'drizzle-orm'
+import { and, desc, eq, isNotNull, isNull, lte, ne, sql } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
 import { z } from 'zod'
 import type { SentinelDb, SentinelTx } from '../../db/drizzle'
@@ -242,9 +242,6 @@ async function getFullClaimDto(db: SentinelDb | SentinelTx, accountId: string): 
     .where(eq(challenges.accountId, row.id))
     .orderBy(desc(challenges.createdAt))
     .limit(1)
-  if (latestChallenge) {
-    await discardUnverifiableMessages(db, latestChallenge)
-  }
   const signedMessages = latestChallenge
     ? await db.select().from(signedMessagesTable).where(eq(signedMessagesTable.challengeId, latestChallenge.id))
     : []
@@ -388,43 +385,6 @@ function validateSigningAddress(message: SignedMessageRow, identity: SigningIden
   if (message.address !== identity.address) {
     throw new TRPCError({ code: 'BAD_REQUEST', message: 'Signing address does not match the account key' })
   }
-}
-
-async function hasCurrentSigningAddress(
-  db: SentinelDb | SentinelTx,
-  accountId: string,
-  message: SignedMessageRow,
-): Promise<boolean> {
-  try {
-    return (await getSigningIdentity(db, accountId, message.keystoreId)).address === message.address
-  } catch (error) {
-    if (error instanceof TRPCError) {
-      return false
-    }
-    throw error
-  }
-}
-
-/**
- * Remove an unfinished challenge's messages that can never verify, such as cosigner messages created with the
- * P2WPKH address used before cosigners signed with P2PKH. Their keys can then sign again instead of the
- * challenge failing at completion with no way forward.
- */
-async function discardUnverifiableMessages(db: SentinelDb | SentinelTx, challenge: ChallengeRow): Promise<void> {
-  if (challenge.isSatisfied === 1) {
-    return
-  }
-  const messages = await db.select().from(signedMessagesTable).where(eq(signedMessagesTable.challengeId, challenge.id))
-  const unverifiable: string[] = []
-  for (const message of messages) {
-    if (!(await hasCurrentSigningAddress(db, challenge.accountId, message))) {
-      unverifiable.push(message.id)
-    }
-  }
-  if (unverifiable.length === 0) {
-    return
-  }
-  await db.delete(signedMessagesTable).where(inArray(signedMessagesTable.id, unverifiable))
 }
 
 // ─── portalProve.controlCenter ──────────────────────────────────────────────
@@ -841,7 +801,6 @@ const registryRouter = t.router({
             .orderBy(desc(challenges.createdAt))
             .limit(1)
           if (existing) {
-            await discardUnverifiableMessages(db, existing)
             return {
               id: existing.id,
               claimId: existing.accountId,

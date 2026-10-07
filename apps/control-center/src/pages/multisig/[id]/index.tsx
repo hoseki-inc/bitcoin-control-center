@@ -109,7 +109,12 @@ function ConnectWallets({
                 {canAbandon && <AbandonClaimButton claim={claim} />}
                 <Button
                   onClick={() => {
-                    void navigate(`/multisig/${claim.id}/signing/${expandedKeystore.wallet}/${expandedKeystore.id}`)
+                    // An identified key may need a fresh message after a verification reset.
+                    const hasMessage = claim.latestChallenge?.messages.some(
+                      (message) => message.keystoreId === expandedKeystore.id,
+                    )
+                    const step = hasMessage === true ? 'signing' : 'connect'
+                    void navigate(`/multisig/${claim.id}/${step}/${expandedKeystore.wallet}/${expandedKeystore.id}`)
                   }}
                 >
                   Continue
