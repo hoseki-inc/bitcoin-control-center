@@ -6,10 +6,12 @@ import { ElectrumProvider } from '@hoseki/packages/bitcoin/onchain/electrum_prov
 import { ElectrumClient } from '@hoseki/packages/clients/electrum'
 import { Ok, asyncFn } from '@hoseki/packages/result'
 import type { StatementQuoteCurrency } from '@hoseki/packages/schemas/statement-quote'
+import { eq, sql } from 'drizzle-orm'
 import pino from 'pino'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import type { AppContext } from '../../context'
-import { type SentinelDatabase, initDatabase } from '../../db'
+import { type SentinelDb, openDrizzleDatabase } from '../../db/drizzle'
+import { statements } from '../../db/schema'
 import { ControlCenterService } from '../control_center/service'
 import { EtfService } from '../etf/service'
 import { ExchangeService } from '../exchange/service'
@@ -43,13 +45,13 @@ const transactions = {
   },
 }
 let directory: string
-let database: SentinelDatabase
+let database: SentinelDb
 function harness() {
-  const quotes = new DailyRatesService({ db: database.db, logger, mempoolApiUrl: 'http://local-mempool.test' })
+  const quotes = new DailyRatesService({ db: database, logger, mempoolApiUrl: 'http://local-mempool.test' })
   return {
     quotes,
     service: new StatementService({
-      db: database.db,
+      db: database,
       logger,
       dailyRatesService: quotes,
       mempoolApiUrl: 'http://local-mempool.test',
@@ -57,13 +59,13 @@ function harness() {
         logger,
         electrum: new ElectrumClient({ host: 'localhost', port: 50001, protocol: 'tcp' }),
       }),
-      exchangeService: new ExchangeService({ db: database.db, logger }),
+      exchangeService: new ExchangeService({ db: database, logger }),
     }),
   }
 }
-function setup(): void {
+async function setup(): Promise<void> {
   onTestFinished(() => {
-    database.close()
+    database.$client.close()
     rmSync(directory, { recursive: true, force: true })
     vi.unstubAllGlobals()
     vi.useRealTimers()
@@ -71,7 +73,7 @@ function setup(): void {
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(new Date('2026-09-08T12:00:00Z'))
   directory = mkdtempSync(join(tmpdir(), 'sentinel-statements-'))
-  database = initDatabase(directory, logger)
+  database = await openDrizzleDatabase(directory, logger)
   vi.stubGlobal(
     'fetch',
     vi.fn().mockImplementation(async (url: string) =>
@@ -94,9 +96,9 @@ describe('statement currency persistence', () => {
   it.each<StatementQuoteCurrency>(['USD', 'CAD', 'GBP', 'EUR'])(
     'retains %s and its exact rates after reopening, without a network',
     async (currency) => {
-      setup()
+      await setup()
       let { service, quotes } = harness()
-      const id = service.create({ ...input, quoteCurrency: currency }).unwrap()
+      const id = (await service.create({ ...input, quoteCurrency: currency })).unwrap()
       const dates = getRequiredRateDates(opening, closing, input.timezone, transactions)
       const rates = (await quotes.getDailyRates(opening, closing, currency, dates)).unwrap()
       // Both sides of the centered window survive completion and reload unchanged.
@@ -107,15 +109,15 @@ describe('statement currency persistence', () => {
       }
       first.timestamp = new Date('2026-07-28T00:00:00Z')
       last.timestamp = new Date('2026-09-04T00:00:00Z')
-      expect(service.complete(id, transactions, rates).isOk()).toBe(true)
-      const saved = service.loadCompleted(id)
-      database.close()
-      database = initDatabase(directory, logger)
+      expect((await service.complete(id, transactions, rates)).isOk()).toBe(true)
+      const saved = await service.loadCompleted(id)
+      database.$client.close()
+      database = await openDrizzleDatabase(directory, logger)
       service = harness().service
       vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')))
-      const reloaded = service.loadCompleted(id)
+      const reloaded = await service.loadCompleted(id)
       expect(reloaded).toEqual(saved)
-      expect(service.findById(id)?.quoteCurrency).toBe(currency)
+      expect((await service.findById(id))?.quoteCurrency).toBe(currency)
       expect(reloaded?.dailyRates.providerUrl).toBe('http://local-mempool.test')
       expect(reloaded?.dailyRates.quoteCurrency).toBe(currency)
       expect(reloaded?.transactionMap['Wallet']?.transactions[1]?.balanceChange).toBe(-10000000n)
@@ -123,10 +125,10 @@ describe('statement currency persistence', () => {
     },
   )
 
-  it('migrates a legacy statement to USD without rewriting its stored quote values', () => {
-    setup()
+  it('migrates a legacy statement to USD without rewriting its stored quote values', async () => {
+    await setup()
     const { service } = harness()
-    const id = service.create(input).unwrap()
+    const id = (await service.create(input)).unwrap()
     const raw = JSON.stringify({
       rates: {
         '2026-08-01': {
@@ -139,38 +141,74 @@ describe('statement currency persistence', () => {
       },
       source: 'mempool',
     })
-    database.db
-      .prepare("UPDATE statements SET status = 'completed', transaction_map = '{}', daily_rates = ? WHERE id = ?")
-      .run(raw, id)
-    database.db.exec(
-      "ALTER TABLE statements DROP COLUMN quote_currency; ALTER TABLE statements DROP COLUMN error_message; DELETE FROM _migrations WHERE name = '016_statement_quote_currency'",
-    )
-    database.close()
-    database = initDatabase(directory, logger)
-    const reloaded = harness().service.loadCompleted(id)
-    expect(reloaded?.row.quote_currency).toBe('USD')
+    await database
+      .update(statements)
+      .set({ status: 'completed', transactionMap: '{}', dailyRates: raw })
+      .where(eq(statements.id, id))
+    await database.run(sql`ALTER TABLE statements DROP COLUMN quote_currency`)
+    await database.run(sql`ALTER TABLE statements DROP COLUMN error_message`)
+    await database.run(sql`DELETE FROM _migrations WHERE name LIKE '%_statement_quote_currency'`)
+    database.$client.close()
+    database = await openDrizzleDatabase(directory, logger)
+    const reloaded = await harness().service.loadCompleted(id)
+    expect(reloaded?.row.quoteCurrency).toBe('USD')
     expect(reloaded?.dailyRates.quoteCurrency).toBe('USD')
     expect(reloaded?.dailyRates.providerUrl).toBeUndefined()
     expect(reloaded?.dailyRates.rates['2026-08-01']?.close.toString()).toBe('45678.12345')
-    expect(database.db.prepare('SELECT daily_rates FROM statements WHERE id = ?').get(id)).toEqual({ daily_rates: raw })
+    await expect(
+      database.select({ dailyRates: statements.dailyRates }).from(statements).where(eq(statements.id, id)),
+    ).resolves.toEqual([{ dailyRates: raw }])
   })
 
   it('refuses completion for missing required rates or a different quote currency', async () => {
-    setup()
+    await setup()
     const { service, quotes } = harness()
-    const id = service.create({ ...input, quoteCurrency: 'CAD' }).unwrap()
+    const id = (await service.create({ ...input, quoteCurrency: 'CAD' })).unwrap()
     const dates = getRequiredRateDates(opening, closing, 'UTC', transactions)
     const rates = (await quotes.getDailyRates(opening, closing, 'CAD', dates)).unwrap()
-    expect(service.complete(id, transactions, { ...rates, quoteCurrency: 'USD' }).isErr()).toBe(true)
+    expect((await service.complete(id, transactions, { ...rates, quoteCurrency: 'USD' })).isErr()).toBe(true)
     delete rates.rates['2026-08-15']
-    expect(service.complete(id, transactions, rates).isErr()).toBe(true)
-    expect(service.findById(id)?.status).toBe('pending')
-    service.fail(id, 'No usable CAD quote for 2026-08-15.')
-    expect(service.findById(id)?.errorMessage).toContain('CAD')
+    expect((await service.complete(id, transactions, rates)).isErr()).toBe(true)
+    expect((await service.findById(id))?.status).toBe('pending')
+    await service.fail(id, 'No usable CAD quote for 2026-08-15.')
+    expect((await service.findById(id))?.errorMessage).toContain('CAD')
   })
 
-  it('collects only transaction and custom/monthly boundary days across DST', () => {
-    setup()
+  it('completes a statement only once under concurrent requests', async () => {
+    await setup()
+    const { service, quotes } = harness()
+    const id = (await service.create(input)).unwrap()
+    const dates = getRequiredRateDates(opening, closing, 'UTC', transactions)
+    const rates = (await quotes.getDailyRates(opening, closing, 'USD', dates)).unwrap()
+    const results = await Promise.all([
+      service.complete(id, transactions, rates),
+      service.complete(id, transactions, rates),
+    ])
+    expect(results.filter((result) => result.isOk())).toHaveLength(1)
+    expect(results.filter((result) => result.isErr())).toHaveLength(1)
+    expect((await service.findById(id))?.status).toBe('completed')
+  })
+
+  it('does not complete a statement that failed while completion was being validated', async () => {
+    await setup()
+    const { service, quotes } = harness()
+    const id = (await service.create(input)).unwrap()
+    const dates = getRequiredRateDates(opening, closing, 'UTC', transactions)
+    const rates = (await quotes.getDailyRates(opening, closing, 'USD', dates)).unwrap()
+    const [completed] = await Promise.all([
+      service.complete(id, transactions, rates),
+      service.fail(id, 'Concurrent generation failure'),
+    ])
+    expect(completed.isErr()).toBe(true)
+    await expect(service.findById(id)).resolves.toMatchObject({
+      status: 'failed',
+      errorMessage: 'Concurrent generation failure',
+    })
+    await expect(service.loadCompleted(id)).resolves.toBeNull()
+  })
+
+  it('collects only transaction and custom/monthly boundary days across DST', async () => {
+    await setup()
     const start = new Date('2026-01-15T05:00:00Z')
     const end = new Date('2026-03-15T04:00:00Z')
     const txs = {
@@ -192,7 +230,7 @@ describe('statement currency persistence', () => {
   })
 
   it('all collected rates suffice for both custom and monthly documents', async () => {
-    setup()
+    await setup()
     const { quotes } = harness()
     const start = new Date('2026-01-15T05:00:00Z')
     const end = new Date('2026-03-15T04:00:00Z')
@@ -246,7 +284,7 @@ function statementCaller(service: StatementService) {
   const electrumConfig = { host: 'example.invalid', port: 50001, protocol: 'tcp' as const }
   const electrumClient = new ElectrumClient(electrumConfig)
   const onchainProvider = new ElectrumProvider(Network.Mainnet, { logger, electrum: electrumClient })
-  const deps = { db: database.db, logger }
+  const deps = { db: database, logger }
   const exchangeService = new ExchangeService(deps)
   const manualService = new ManualService(deps)
   const etfService = new EtfService(deps)
@@ -278,7 +316,7 @@ function statementCaller(service: StatementService) {
     etfService,
     priceService,
     priceHistoryService: new PriceHistoryService({
-      dailyRatesService: new DailyRatesService({ db: database.db, logger, mempoolApiUrl: 'https://example.invalid' }),
+      dailyRatesService: new DailyRatesService({ db: database, logger, mempoolApiUrl: 'https://example.invalid' }),
       priceService,
     }),
     network: Network.Mainnet,
@@ -328,14 +366,14 @@ describe('statement API currency contract', () => {
   it.each<StatementQuoteCurrency>(['USD', 'CAD', 'GBP', 'EUR'])(
     'previews, generates, and retrieves %s through the API',
     async (quoteCurrency) => {
-      setup()
+      await setup()
       const { service, api } = caller()
       const args = { ...input, quoteCurrency }
       const preview = await api.generatePreview(args)
       expect(preview.quoteCurrency).toBe(quoteCurrency)
       const created = await api.initiateGeneration(args)
-      await vi.waitFor(() => {
-        expect(service.findById(created.id)?.status).toBe('completed')
+      await vi.waitFor(async () => {
+        await expect(service.findById(created.id)).resolves.toMatchObject({ status: 'completed' })
       })
       vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')))
       for (const format of ['custom', 'monthly'] as const) {
@@ -353,7 +391,7 @@ describe('statement API currency contract', () => {
     },
   )
   it('defaults omitted currency to USD and rejects unsupported codes before creating a row', async () => {
-    setup()
+    await setup()
     const { service, api } = caller()
     expect((await api.generatePreview(input)).quoteCurrency).toBe('USD')
     const invalid = { ...input, quoteCurrency: 'JPY' }
@@ -361,12 +399,12 @@ describe('statement API currency contract', () => {
     await expect(api.generatePreview(invalid)).rejects.toMatchObject({ code: 'BAD_REQUEST' })
     // @ts-expect-error Deliberately send an unsupported currency to exercise API input validation.
     await expect(api.initiateGeneration(invalid)).rejects.toMatchObject({ code: 'BAD_REQUEST' })
-    expect(service.list()).toHaveLength(0)
+    await expect(service.list()).resolves.toHaveLength(0)
   })
 })
 
 it('persists mixed provider attribution and exposes it in both PDF formats after reopening', async () => {
-  setup()
+  await setup()
   let { service, quotes } = harness()
   vi.stubGlobal(
     'fetch',
@@ -386,16 +424,16 @@ it('persists mixed provider attribution and exposes it in both PDF formats after
       })
     }),
   )
-  const id = service.create({ ...input, quoteCurrency: 'CAD' }).unwrap()
+  const id = (await service.create({ ...input, quoteCurrency: 'CAD' })).unwrap()
   const dailyRates = (
     await quotes.getDailyRates(opening, closing, 'CAD', getRequiredRateDates(opening, closing, 'UTC', transactions))
   ).unwrap()
-  expect(service.complete(id, transactions, dailyRates).isOk()).toBe(true)
-  database.close()
-  database = initDatabase(directory, logger)
+  expect((await service.complete(id, transactions, dailyRates)).isOk()).toBe(true)
+  database.$client.close()
+  database = await openDrizzleDatabase(directory, logger)
   service = harness().service
   vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')))
-  const loaded = service.loadCompleted(id)
+  const loaded = await service.loadCompleted(id)
   if (!loaded) {
     expect.fail('Expected a completed statement')
   }

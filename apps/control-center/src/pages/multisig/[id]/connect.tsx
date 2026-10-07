@@ -330,14 +330,14 @@ function GenericCheckWalletXpub({
           challengeId: claim.latestChallenge?.id ?? '',
         })
       }
+      // Signing needs the saved message, so stay here with the error if saving failed.
+      void navigate(`/multisig/${claim.id}/signing/${keystoreMetadata.walletType}/${matchedKeystore.keystore.id}`)
     } catch (caughtError) {
       browserLogger.error('### Error: ', caughtError)
       setError(caughtError instanceof Error ? caughtError : new Error('Error saving keystore'))
     } finally {
       setIsSaving(false)
     }
-
-    void navigate(`/multisig/${claim.id}/signing/${keystoreMetadata.walletType}/${matchedKeystore.keystore.id}`)
   }
 
   if (isChecking) {

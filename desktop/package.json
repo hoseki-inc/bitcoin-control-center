@@ -13,12 +13,11 @@
     "dist:mac": "bash ./build.sh --mac",
     "dist:win": "bash ./build.sh --win",
     "install:electron": "node node_modules/electron/install.js",
-    "rebuild": "node -e \"const Database = require('better-sqlite3'); const database = new Database(':memory:'); database.close()\"",
     "test:runtime": "node scripts/check-runtime.mjs"
   },
   "dependencies": {
+    "@libsql/client": "0.18.0",
     "@react-pdf/renderer": "4.9.0",
-    "better-sqlite3": "13.0.3",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "yoga-layout": "3.2.1"

@@ -1,4 +1,7 @@
+import { cpSync, rmSync } from 'node:fs'
 import * as esbuild from 'esbuild'
+
+rmSync('dist', { recursive: true, force: true })
 
 const shared: esbuild.BuildOptions = {
   bundle: true,
@@ -17,7 +20,7 @@ const shared: esbuild.BuildOptions = {
     ].join(' '),
   },
   // Only keep native/complex packages external — bundle everything else
-  external: ['better-sqlite3', '@react-pdf/renderer', 'react', 'react-dom', 'yoga-layout'],
+  external: ['@libsql/client', '@react-pdf/renderer', 'react', 'react-dom', 'yoga-layout'],
 }
 
 // cli.ts — self-starting entry point for standalone / Docker / Start9
@@ -33,3 +36,6 @@ await esbuild.build({
   entryPoints: ['src/main.ts'],
   outfile: 'dist/main.js',
 })
+
+// Ship migration files alongside the bundled server for Drizzle's native migrator.
+cpSync('drizzle', 'dist/drizzle', { recursive: true, force: true })

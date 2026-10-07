@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import pino from 'pino'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
-import { type SentinelDatabase, initDatabase } from '../../db'
+import { type SentinelDb, openDrizzleDatabase } from '../../db/drizzle'
 import { DailyRatesService } from './daily_rates'
 import { PriceHistoryService, priceHistoryDates } from './history'
 import { PriceService } from './service'
@@ -15,7 +15,7 @@ const mempoolUrl = 'https://mempool.test'
 const quotes = { USD: 60000, CAD: 81000, GBP: 47000, EUR: 55000 }
 
 let directory: string
-let database: SentinelDatabase
+let database: SentinelDb
 let fetcher: ReturnType<typeof vi.fn<(url: string, init?: RequestInit) => Promise<Response>>>
 
 /** A mempool server that knows every hour, and quotes each day at a different USD price. */
@@ -28,9 +28,9 @@ async function mempool(url: string): Promise<Response> {
   return Response.json({ prices: [{ time: timestamp, ...quotes, USD: 50000 + timestamp / 86_400 }] })
 }
 
-function setup({ fallbacks = false }: { fallbacks?: boolean } = {}): PriceHistoryService {
+async function setup({ fallbacks = false }: { fallbacks?: boolean } = {}): Promise<PriceHistoryService> {
   onTestFinished(() => {
-    database.close()
+    database.$client.close()
     rmSync(directory, { recursive: true, force: true })
     vi.unstubAllGlobals()
     vi.useRealTimers()
@@ -38,13 +38,13 @@ function setup({ fallbacks = false }: { fallbacks?: boolean } = {}): PriceHistor
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(now)
   directory = mkdtempSync(join(tmpdir(), 'sentinel-price-history-'))
-  database = initDatabase(directory, logger)
+  database = await openDrizzleDatabase(directory, logger)
   fetcher = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>().mockImplementation(mempool)
   vi.stubGlobal('fetch', fetcher)
   const settings = () => ({ source: 'mempool' as const, fallbacks })
   return new PriceHistoryService({
     dailyRatesService: new DailyRatesService({
-      db: database.db,
+      db: database,
       logger,
       mempoolApiUrl: mempoolUrl,
       allowPublicFallback: () => fallbacks,
@@ -95,7 +95,7 @@ describe('price history dates', () => {
 
 describe('Bitcoin price history', () => {
   it('uses the configured mempool for daily quotes and the chosen source for the latest price', async () => {
-    const service = setup()
+    const service = await setup()
     const history = (await service.getHistory(7)).expect('history')
     expect(history.quoteCurrency).toBe('USD')
     expect(history.points).toHaveLength(8)
@@ -110,7 +110,7 @@ describe('Bitcoin price history', () => {
   })
 
   it('plots a nearby quote used for a missing day once, at the time it was observed', async () => {
-    const service = setup()
+    const service = await setup()
     const observed = nowSeconds - 43_200 - 3 * 86_400
     fetcher.mockImplementation(async (url) => {
       const parsed = new URL(url)
@@ -129,7 +129,7 @@ describe('Bitcoin price history', () => {
   })
 
   it('keeps a last known current price when the price source stops answering', async () => {
-    const service = setup()
+    const service = await setup()
     await service.getHistory(7)
     vi.setSystemTime(now.getTime() + 2 * 60_000)
     fetcher.mockImplementation(async (url) =>
@@ -139,7 +139,7 @@ describe('Bitcoin price history', () => {
   })
 
   it('reuses locally cached quotes on the next load', async () => {
-    const service = setup()
+    const service = await setup()
     await service.getHistory(30)
     const historical = fetcher.mock.calls.filter(([url]) => url.includes('historical-price')).length
     await service.getHistory(30)
@@ -148,7 +148,7 @@ describe('Bitcoin price history', () => {
   })
 
   it('quotes other currencies from the daily rates without the USD-only current price', async () => {
-    const service = setup()
+    const service = await setup()
     const history = (await service.getHistory(7, 'EUR')).expect('history')
     expect(history.quoteCurrency).toBe('EUR')
     expect(history.points.every((point) => point.value === quotes.EUR)).toBe(true)
@@ -157,14 +157,14 @@ describe('Bitcoin price history', () => {
   })
 
   it('reports an unavailable range rather than contacting another provider when fallbacks are off', async () => {
-    const service = setup()
+    const service = await setup()
     fetcher.mockImplementation(async () => unavailable())
     expect((await service.getHistory(7)).isErr()).toBe(true)
     expect(requestedHosts()).toEqual(['mempool.test'])
   })
 
   it('falls back only to public mempool.space when fallbacks are allowed', async () => {
-    const service = setup({ fallbacks: true })
+    const service = await setup({ fallbacks: true })
     fetcher.mockImplementation(async (url) =>
       new URL(url).host === 'mempool.space' && url.includes('historical-price') ? mempool(url) : unavailable(),
     )

@@ -26,6 +26,7 @@ import type { SigningFlowProps } from '../../../lib/claim-flow'
 import { TestTrpcProvider, createTestTrpcClient } from '../../../testing/trpc'
 import { type RouterOutput, trpc } from '../../../trpc'
 import type { ChallengeMessageDto, ClaimDto } from '../../../trpc/server-types'
+import { MultisigDetailsPage } from './index'
 import { MultisigSigningPage } from './signing'
 
 const mocks = await vi.hoisted(async () => {
@@ -38,6 +39,7 @@ const mocks = await vi.hoisted(async () => {
       pretendToBeVisual: true,
     })
     installAnimationPlaceholder(window.HTMLCanvasElement)
+    const imageConstructor: unknown = window['Image']
     const domGlobals = {
       window,
       document: window.document,
@@ -48,6 +50,7 @@ const mocks = await vi.hoisted(async () => {
       Node: window.Node,
       Event: window.Event,
       FileReader: window.FileReader,
+      Image: imageConstructor,
       MouseEvent: window.MouseEvent,
       getComputedStyle: window.getComputedStyle.bind(window),
       requestAnimationFrame: window.requestAnimationFrame.bind(window),
@@ -259,8 +262,15 @@ async function render(page?: ReactElement): Promise<void> {
   })
 }
 
-async function renderSigningRoute(withWrapper = false): Promise<ReturnType<typeof createMemoryRouter>> {
-  queryClient.setQueryData(claimQueryKey, mocks.claim)
+async function renderSigningRoute(
+  withWrapper = false,
+  cachedClaim?: ClaimDto,
+): Promise<ReturnType<typeof createMemoryRouter>> {
+  queryClient.setQueryData(claimQueryKey, cachedClaim ?? mocks.claim)
+  if (cachedClaim) {
+    // Like the app's default stale time: the page refetches this claim when it opens.
+    queryClient.getQueryCache().find(claimQueryKey)?.invalidate()
+  }
   queryClient.setQueryData(
     getQueryKey(trpc.portalProve.registry.challengeMessages.get, { signedMessageId: 're_mesg_message1' }, 'query'),
     challengeMessage(),
@@ -272,7 +282,12 @@ async function renderSigningRoute(withWrapper = false): Promise<ReturnType<typeo
       {
         element: withWrapper ? createElement(MultisigPageWrapper) : createElement(SigningOutlet),
         children: [
+          { path: '/multisig/:claimId', element: createElement(MultisigDetailsPage) },
           { path: '/multisig/:claimId/signing/:walletType/:keystoreId', element: createElement(MultisigSigningPage) },
+          {
+            path: '/multisig/:claimId/connect/:walletType/:keystoreId',
+            element: createElement('div', null, 'Connect device'),
+          },
         ],
       },
       { path: '/multisig/verify/receipt/:claimId/:keystoreId', element: createElement('div', null, 'Key receipt') },
@@ -412,6 +427,72 @@ async function withTestSetup(run: () => Promise<void>, setup?: () => Promise<voi
   }
   await run()
 }
+
+it.each([false, true])('resumes an identified wallet with a saved message: %s', async (hasMessage) => {
+  await withTestSetup(async () => {
+    const challenge = mocks.claim.latestChallenge
+    const keystore = mocks.claim.keystores[0]
+    assert.exists(challenge)
+    assert.exists(keystore)
+    keystore.isIdentified = true
+    keystore.wallet = 'ledger'
+    keystore.model = 'nanoX'
+    if (!hasMessage) {
+      challenge.messages = []
+    }
+    expect(getIndicatorKeystores(mocks.claim)[0]?.status).toBe('identified')
+    const signingRouter = await renderSigningRoute(true)
+    await act(async () => {
+      await signingRouter.navigate('/multisig/re_clmx_claim1?keystoreId=re_ks_ledger')
+    })
+    await waitForText('Continue')
+    await clickButton('Continue')
+    await vi.waitFor(() => {
+      const step = hasMessage ? 'signing' : 'connect'
+      expect(signingRouter.state.location.pathname).toBe(`/multisig/re_clmx_claim1/${step}/ledger/re_ks_ledger`)
+    })
+    expect(mocks.completeMessage).not.toHaveBeenCalled()
+    expect(mocks.completeChallenge).not.toHaveBeenCalled()
+  })
+})
+
+function identifyLedgerKeystore(): void {
+  const keystore = mocks.claim.keystores[0]
+  assert.exists(keystore)
+  keystore.isIdentified = true
+  keystore.wallet = 'ledger'
+  keystore.model = 'nanoX'
+}
+
+it('sends a directly opened signing page without a saved message to the connect step', async () => {
+  await withTestSetup(async () => {
+    identifyLedgerKeystore()
+    assert.exists(mocks.claim.latestChallenge)
+    mocks.claim.latestChallenge.messages = []
+    const signingRouter = await renderSigningRoute(true)
+    await vi.waitFor(() => {
+      expect(signingRouter.state.location.pathname).toBe('/multisig/re_clmx_claim1/connect/ledger/re_ks_ledger')
+    })
+    await waitForText('Connect device')
+    expect(mocks.completeMessage).not.toHaveBeenCalled()
+  })
+})
+
+it('waits for the refreshed claim before deciding a signing message is missing', async () => {
+  await withTestSetup(async () => {
+    identifyLedgerKeystore()
+    const challenge = mocks.claim.latestChallenge
+    assert.exists(challenge)
+    const staleClaim = { ...mocks.claim, latestChallenge: { ...challenge, messages: [] } }
+    const signingRouter = await renderSigningRoute(true, staleClaim)
+    await vi.waitFor(() => {
+      expect(mocks.fetchClaim).toHaveBeenCalled()
+      expect(container.querySelector('svg.lucide-arrow-right')).not.toBeNull()
+    })
+    expect(signingRouter.state.location.pathname).toBe('/multisig/re_clmx_claim1/signing/ledger/re_ks_ledger')
+    expect(container.textContent).not.toContain('Connect device')
+  })
+})
 
 describe('Ledger multisig signing screen', () => {
   async function setupLedgerSigning(): Promise<void> {

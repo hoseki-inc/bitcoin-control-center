@@ -193,17 +193,20 @@ export function isPriceSourceName(value: string | undefined): value is PriceSour
 }
 
 /** Reads the saved price settings; fallbacks are allowed unless turned off. */
-export function readPriceSettings(getSetting: (key: string) => string | undefined): SavedPriceSettings {
-  const source = getSetting(PRICE_SOURCE_SETTING)
+export async function readPriceSettings(
+  getSetting: (key: string) => string | undefined | Promise<string | undefined>,
+): Promise<SavedPriceSettings> {
+  const source = await getSetting(PRICE_SOURCE_SETTING)
   return {
     source: isPriceSourceName(source) ? source : undefined,
-    fallbacks: getSetting(PRICE_FALLBACKS_SETTING) !== 'false',
+    fallbacks: (await getSetting(PRICE_FALLBACKS_SETTING)) !== 'false',
   }
 }
 
 /** Resolves when the price settings change; `stop` releases the listener. */
 interface SettingsChange {
   changed: Promise<void>
+  hasChanged: () => boolean
   stop: () => void
 }
 
@@ -226,7 +229,7 @@ interface SettingsChange {
 export class PriceService {
   private readonly logger: Logger
   private readonly sources: PriceSource[]
-  private readonly settings: () => SavedPriceSettings
+  private readonly settings: () => SavedPriceSettings | Promise<SavedPriceSettings>
   private readonly requestTimeoutMs: number
   private readonly lookupTimeoutMs: number
   private readonly lastKnownWaitMs: number
@@ -238,7 +241,7 @@ export class PriceService {
   public constructor(deps: {
     logger: Logger
     mempoolApiUrl: string
-    settings: () => SavedPriceSettings
+    settings: () => SavedPriceSettings | Promise<SavedPriceSettings>
     requestTimeoutMs?: number
     lookupTimeoutMs?: number
     lastKnownWaitMs?: number
@@ -298,8 +301,8 @@ export class PriceService {
   }
 
   /** The sources available here and the one in use, for Settings. Makes no request. */
-  public options(): PriceSourceOptions {
-    const settings = this.settings()
+  public async options(): Promise<PriceSourceOptions> {
+    const settings = await this.settings()
     return {
       selected: this.selectedSource(settings).name,
       fallbacks: settings.fallbacks,
@@ -334,20 +337,25 @@ export class PriceService {
     return selected
   }
 
-  private planSources(): PriceSource[] {
-    const settings = this.settings()
+  private async planSources(): Promise<PriceSource[]> {
+    const settings = await this.settings()
     const selected = this.selectedSource(settings)
     return settings.fallbacks ? [selected, ...this.sources.filter((source) => source !== selected)] : [selected]
   }
 
   private watchSettings(): SettingsChange {
+    let hasChanged = false
     let notify = (): void => undefined
     const changed = new Promise<void>((resolve) => {
-      notify = resolve
+      notify = (): void => {
+        hasChanged = true
+        resolve()
+      }
     })
     this.settingsListeners.add(notify)
     return {
       changed,
+      hasChanged: () => hasChanged,
       stop: () => {
         this.settingsListeners.delete(notify)
       },
@@ -356,11 +364,14 @@ export class PriceService {
 
   private async lookup(deadline: number, verifyPrimary: boolean): Promise<Result<BtcPrice, Error>> {
     for (;;) {
-      const sources = this.planSources()
       const change = this.watchSettings()
       try {
-        const outcome = await this.walk(sources, deadline, change.changed, verifyPrimary)
-        if (outcome !== 'settings changed') {
+        const sources = await this.planSources()
+        if (change.hasChanged()) {
+          continue
+        }
+        const outcome = await this.walk(sources, deadline, change, verifyPrimary)
+        if (outcome !== 'settings changed' && !change.hasChanged()) {
           return outcome
         }
       } finally {
@@ -373,7 +384,7 @@ export class PriceService {
   private async walk(
     sources: PriceSource[],
     deadline: number,
-    settingsChanged: Promise<void>,
+    settingsChange: SettingsChange,
     verifyPrimary: boolean,
   ): Promise<Result<BtcPrice, Error> | 'settings changed'> {
     const errors: string[] = []
@@ -382,6 +393,9 @@ export class PriceService {
     const late: PriceRequest[] = []
 
     for (const source of sources) {
+      if (settingsChange.hasChanged()) {
+        return 'settings changed'
+      }
       const sample = this.latest.get(source.name)
       const failure = this.failures.get(source.name)
       // A status check in Settings asks the chosen source again rather than trusting its cached price.
@@ -404,7 +418,7 @@ export class PriceService {
       let timer: ReturnType<typeof setTimeout> | undefined
       const outcome = await Promise.race([
         request.done,
-        settingsChanged.then(() => 'settings changed' as const),
+        settingsChange.changed.then(() => 'settings changed' as const),
         new Promise<'out of time'>((resolve) => {
           timer = setTimeout(
             () => {
@@ -415,8 +429,8 @@ export class PriceService {
         }),
       ])
       clearTimeout(timer)
-      if (outcome === 'settings changed') {
-        return outcome
+      if (outcome === 'settings changed' || settingsChange.hasChanged()) {
+        return 'settings changed'
       }
       if (outcome === 'out of time') {
         // The request carries on and records its answer for later callers.

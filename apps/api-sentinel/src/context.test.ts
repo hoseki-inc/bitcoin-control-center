@@ -3,10 +3,12 @@ import { type Socket, createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parseUnknown } from '@hoseki/packages/result'
+import { eq, like, or, sql } from 'drizzle-orm'
 import pino from 'pino'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { z } from 'zod'
 import { type AppContext, type AppContextOptions, createAppContext } from './context'
+import { desktopConnectionProfiles, settings as settingsTable } from './db/schema'
 import * as environment from './env'
 import type { Env } from './env'
 import type { ConnectionProfileStore } from './modules/connection_profiles/store'
@@ -119,7 +121,7 @@ async function context(waitForElectrum = true, connectionProfiles = false): Prom
 
 async function restart(ctx: AppContext, waitForElectrum = true): Promise<AppContext> {
   ctx.stopElectrum()
-  ctx.database.close()
+  ctx.database.$client.close()
   contexts.delete(ctx)
   return context(waitForElectrum, true)
 }
@@ -139,12 +141,12 @@ function itemAt<T>(items: T[], index: number): T {
   return item
 }
 
-function settings(ctx: AppContext): Array<{ key: string; value: string }> {
-  return ctx.database.db
-    .prepare<[], { key: string; value: string }>(
-      "SELECT key, value FROM settings WHERE key LIKE 'electrum_%' OR key = 'tor_enabled' ORDER BY key",
-    )
-    .all()
+async function settings(ctx: AppContext): Promise<Array<{ key: string; value: string }>> {
+  return ctx.database
+    .select()
+    .from(settingsTable)
+    .where(or(like(settingsTable.key, 'electrum_%'), eq(settingsTable.key, 'tor_enabled')))
+    .orderBy(settingsTable.key)
 }
 
 async function withTestSetup(run: () => Promise<void>): Promise<void> {
@@ -152,7 +154,7 @@ async function withTestSetup(run: () => Promise<void>): Promise<void> {
     vi.restoreAllMocks()
     for (const ctx of contexts) {
       ctx.stopElectrum()
-      ctx.database.close()
+      ctx.database.$client.close()
     }
     contexts.clear()
     for (const fixture of fixtures.splice(0)) {
@@ -238,14 +240,14 @@ describe('Electrum connection lifecycle', () => {
       expect((await portfolio.getBlocksTip()).unwrap().height).toBe(200)
       expect((await statements.getBlocksTip()).unwrap().height).toBe(200)
       expect((await ctx.onchainProvider.getBlocksTip()).unwrap().height).toBe(200)
-      expect(settings(ctx)).toEqual([
+      await expect(settings(ctx)).resolves.toEqual([
         { key: 'electrum_host', value: next.config.host },
         { key: 'electrum_port', value: String(next.config.port) },
         { key: 'electrum_protocol', value: 'tcp' },
         { key: 'tor_enabled', value: 'false' },
       ])
       ctx.stopElectrum()
-      ctx.database.close()
+      ctx.database.$client.close()
       contexts.delete(ctx)
       const restarted = await context()
       expect(restarted.electrumConfig.port).toBe(next.config.port)
@@ -257,10 +259,10 @@ describe('Electrum connection lifecycle', () => {
     await withTestSetup(async () => {
       const ctx = await context()
       await ctx.reconnectElectrum(initialFixture().config)
-      const before = settings(ctx)
+      const before = await settings(ctx)
       const failed = await startElectrum(200, false, true)
       expect((await ctx.reconnectElectrum(failed.config)).isErr()).toBe(true)
-      expect(settings(ctx)).toEqual(before)
+      await expect(settings(ctx)).resolves.toEqual(before)
       expect(ctx.electrumClient.isConnected()).toBe(true)
       expect((await ctx.controlCenterService['onchainProvider'].getBlocksTip()).unwrap().height).toBe(100)
       await vi.waitFor(() => {
@@ -273,13 +275,13 @@ describe('Electrum connection lifecycle', () => {
     await withTestSetup(async () => {
       const ctx = await context()
       await ctx.reconnectElectrum(initialFixture().config)
-      const before = settings(ctx)
-      ctx.database.db.exec(
-        "CREATE TRIGGER reject_connection_save BEFORE INSERT ON settings WHEN NEW.key = 'electrum_port' BEGIN SELECT RAISE(FAIL, 'test write failure'); END",
+      const before = await settings(ctx)
+      await ctx.database.run(
+        sql`CREATE TRIGGER reject_connection_save BEFORE INSERT ON settings WHEN NEW.key = 'electrum_port' BEGIN SELECT RAISE(FAIL, 'test write failure'); END`,
       )
       const next = await startElectrum(200)
       expect((await ctx.reconnectElectrum(next.config)).unwrapErr().message).toContain('Could not save')
-      expect(settings(ctx)).toEqual(before)
+      await expect(settings(ctx)).resolves.toEqual(before)
       expect((await ctx.statementService['onchainProvider'].getBlocksTip()).unwrap().height).toBe(100)
       await vi.waitFor(() => {
         expect(next.sockets.size).toBe(0)
@@ -307,7 +309,7 @@ describe('Electrum connection lifecycle', () => {
   it('cancels a pending change on shutdown without saving it', async () => {
     await withTestSetup(async () => {
       const ctx = await context()
-      const before = settings(ctx)
+      const before = await settings(ctx)
       const next = await startElectrum(200, true)
       const pending = ctx.reconnectElectrum(next.config)
       await vi.waitFor(() => {
@@ -315,7 +317,7 @@ describe('Electrum connection lifecycle', () => {
       })
       ctx.stopElectrum()
       expect((await pending).isErr()).toBe(true)
-      expect(settings(ctx)).toEqual(before)
+      await expect(settings(ctx)).resolves.toEqual(before)
       await vi.waitFor(() => {
         expect(next.sockets.size).toBe(0)
       })
@@ -337,6 +339,42 @@ describe('Electrum connection lifecycle', () => {
     })
   })
 
+  it.each(['before writes', 'after commit'] as const)(
+    'does not install a replacement client when shutdown occurs during an async save (%s)',
+    async (phase) => {
+      await withTestSetup(async () => {
+        const ctx = await context()
+        await ctx.reconnectElectrum(initialFixture().config)
+        const previousClient = ctx.electrumClient
+        const before = await settings(ctx)
+        const next = await startElectrum(200)
+        const transaction = ctx.database.transaction.bind(ctx.database)
+        vi.spyOn(ctx.database, 'transaction').mockImplementationOnce(async (run, config) => {
+          const result = await transaction(async (tx) => {
+            if (phase === 'before writes') {
+              ctx.stopElectrum()
+            }
+            return run(tx)
+          }, config)
+          if (phase === 'after commit') {
+            ctx.stopElectrum()
+          }
+          return result
+        })
+        expect((await ctx.reconnectElectrum(next.config)).isErr()).toBe(true)
+        expect(ctx.electrumClient).toBe(previousClient)
+        expect(ctx.electrumClient.isConnected()).toBe(false)
+        expect(ctx.electrumConfig.port).toBe(initialFixture().config.port)
+        if (phase === 'before writes') {
+          await expect(settings(ctx)).resolves.toEqual(before)
+        }
+        await vi.waitFor(() => {
+          expect(next.sockets.size).toBe(0)
+        })
+      })
+    },
+  )
+
   it.each(['electrum_host', 'electrum_port', 'electrum_protocol', 'tor_enabled'])(
     'rejects partial writes to %s through the generic settings endpoint',
     async (key) => {
@@ -345,7 +383,7 @@ describe('Electrum connection lifecycle', () => {
         await expect(
           appRouter.createCaller({ app: ctx }).settings.update({ key, value: 'invalid' }),
         ).rejects.toMatchObject({ code: 'FORBIDDEN' })
-        expect(settings(ctx)).toEqual([])
+        await expect(settings(ctx)).resolves.toEqual([])
       })
     },
   )
@@ -365,7 +403,7 @@ describe('Tor connection policy', () => {
       )
       expect(next.methods).toEqual([])
       expect(ctx.electrumConfig.port).toBe(initialFixture().config.port)
-      expect(settings(ctx)).toEqual([])
+      await expect(settings(ctx)).resolves.toEqual([])
     })
   })
 
@@ -383,9 +421,9 @@ describe('Tor connection policy', () => {
   it('keeps a saved Tor configuration offline when the proxy is missing on restart', async () => {
     await withTestSetup(async () => {
       const previous = await context()
-      previous.database.db.prepare("INSERT INTO settings (key, value) VALUES ('tor_enabled', 'true')").run()
+      await previous.database.insert(settingsTable).values({ key: 'tor_enabled', value: 'true' })
       previous.stopElectrum()
-      previous.database.close()
+      previous.database.$client.close()
       contexts.delete(previous)
       const initialCalls = initialFixture().methods.length
       const ctx = await context(false)
@@ -530,7 +568,7 @@ describe('Tor connection policy', () => {
         appRouter.createCaller({ app: ctx }).settings.reconnectElectrum({ ...next.config, torEnabled: true }),
       ).rejects.toThrow('Tor bootstrap failed')
       expect(next.methods).toEqual([])
-      expect(settings(ctx)).toEqual([])
+      await expect(settings(ctx)).resolves.toEqual([])
       expect(ctx.electrumClient.isConnected()).toBe(true)
     })
   })
@@ -596,6 +634,23 @@ describe('price source settings', () => {
     })
   })
 
+  it('rolls back both price settings and does not notify the service when saving fails', async () => {
+    await withTestSetup(async () => {
+      const ctx = await context()
+      const caller = appRouter.createCaller({ app: ctx })
+      await caller.settings.setPriceSettings({ source: 'block', fallbacks: true })
+      const updated = vi.spyOn(ctx.priceService, 'settingsUpdated')
+      await ctx.database.run(
+        sql`CREATE TRIGGER reject_price_save BEFORE INSERT ON settings WHEN NEW.key = 'price_fallbacks_enabled' BEGIN SELECT RAISE(FAIL, 'test write failure'); END`,
+      )
+      await expect(caller.settings.setPriceSettings({ source: 'coinbase', fallbacks: false })).rejects.toThrow(
+        /Failed query/,
+      )
+      expect(updated).not.toHaveBeenCalled()
+      await expect(caller.settings.priceSource()).resolves.toMatchObject({ selected: 'block', fallbacks: true })
+    })
+  })
+
   it('rejects a price source that is not available here', async () => {
     await withTestSetup(async () => {
       env = { ...env, MEMPOOL_API_URL: 'https://mempool.space' }
@@ -651,7 +706,7 @@ describe('desktop saved connections', () => {
       await expect(
         caller.settings.connectionProfiles.delete({ id: '00000000-0000-4000-8000-000000000001', revision: 1 }),
       ).rejects.toMatchObject({ code: 'FORBIDDEN' })
-      expect(ctx.database.db.prepare('SELECT * FROM desktop_connection_profiles').all()).toEqual([])
+      await expect(ctx.database.select().from(desktopConnectionProfiles)).resolves.toEqual([])
     })
   })
 
@@ -663,18 +718,19 @@ describe('desktop saved connections', () => {
         'Choose a saved connection',
       )
       expect(next.methods).toEqual([])
-      expect(settings(ctx)).toEqual([])
+      await expect(settings(ctx)).resolves.toEqual([])
     })
   })
 
   it('saves the existing Tor connection as the first profile without connecting directly', async () => {
     await withTestSetup(async () => {
       const previous = await context()
-      const save = previous.database.db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)')
-      save.run('electrum_host', 'my-node.onion')
-      save.run('electrum_port', '50001')
-      save.run('electrum_protocol', 'tcp')
-      save.run('tor_enabled', 'true')
+      await previous.database.insert(settingsTable).values([
+        { key: 'electrum_host', value: 'my-node.onion' },
+        { key: 'electrum_port', value: '50001' },
+        { key: 'electrum_protocol', value: 'tcp' },
+        { key: 'tor_enabled', value: 'true' },
+      ])
       const ctx = await restart(previous, false)
       const snapshot = await appRouter.createCaller({ app: ctx }).settings.connectionProfiles.list()
       expect(snapshot.profiles).toEqual([
@@ -689,7 +745,7 @@ describe('desktop saved connections', () => {
       expect(snapshot.activeId).toBe(itemAt(snapshot.profiles, 0).id)
       expect((await ctx.electrumClient.connect()).isErr()).toBe(true)
       const restarted = await restart(ctx, false)
-      expect(profileStore(restarted).list()).toEqual(snapshot.profiles)
+      await expect(profileStore(restarted).list()).resolves.toEqual(snapshot.profiles)
     })
   })
 
@@ -719,7 +775,7 @@ describe('desktop saved connections', () => {
       await expect(api.rename({ ...saved, nickname: 'Stale edit' })).rejects.toThrow('another window')
       expect(itemAt((await api.list()).profiles, 1).nickname).toBe('My node')
       const restarted = await restart(ctx)
-      expect(itemAt(profileStore(restarted).list(), 1)).toEqual(renamed)
+      expect(itemAt(await profileStore(restarted).list(), 1)).toEqual(renamed)
     })
   })
 
@@ -831,22 +887,18 @@ describe('desktop saved connections', () => {
         await api.create({ ...next.config, nickname: `Keep ${index}` })
       }
       expect((await api.list()).profiles).toHaveLength(5)
-      const beforeSettings = settings(ctx)
+      const beforeSettings = await settings(ctx)
       await api.delete(removed)
       expect((await api.list()).profiles).toHaveLength(4)
       await api.create({ ...next.config, nickname: 'Replacement slot' })
       expect((await api.list()).profiles).toHaveLength(5)
       expect((await api.list()).activeId).toBe(active)
-      expect(settings(ctx)).toEqual(beforeSettings)
+      await expect(settings(ctx)).resolves.toEqual(beforeSettings)
       expect(next.methods).toEqual([])
       const restarted = await restart(ctx)
-      expect(profileStore(restarted).list()).toHaveLength(5)
-      expect(
-        profileStore(restarted)
-          .list()
-          .some((profile) => profile.id === removed.id),
-      ).toBe(false)
-      expect(profileStore(restarted).getActiveId()).toBe(active)
+      await expect(profileStore(restarted).list()).resolves.toHaveLength(5)
+      expect((await profileStore(restarted).list()).some((profile) => profile.id === removed.id)).toBe(false)
+      await expect(profileStore(restarted).getActiveId()).resolves.toBe(active)
     })
   })
 
@@ -888,8 +940,8 @@ describe('desktop saved connections', () => {
       const api = appRouter.createCaller({ app: ctx }).settings.connectionProfiles
       const saved = await api.create({ ...initialFixture().config, nickname: 'Keep after failure' })
       const before = await api.list()
-      ctx.database.db.exec(
-        "CREATE TRIGGER reject_profile_delete BEFORE DELETE ON desktop_connection_profiles BEGIN SELECT RAISE(FAIL, 'test deletion failure'); END",
+      await ctx.database.run(
+        sql`CREATE TRIGGER reject_profile_delete BEFORE DELETE ON desktop_connection_profiles BEGIN SELECT RAISE(FAIL, 'test deletion failure'); END`,
       )
       await expect(api.delete(saved)).rejects.toThrow('Could not save connection settings')
       await expect(api.list()).resolves.toEqual(before)
@@ -914,7 +966,7 @@ describe('desktop saved connections', () => {
       expect((await ctx.controlCenterService['onchainProvider'].getBlocksTip()).unwrap().height).toBe(200)
       expect((await ctx.statementService['onchainProvider'].getBlocksTip()).unwrap().height).toBe(200)
       const restarted = await restart(ctx)
-      expect(profileStore(restarted).getActiveId()).toBe(saved.id)
+      await expect(profileStore(restarted).getActiveId()).resolves.toBe(saved.id)
       expect(restarted.electrumConfig.port).toBe(next.config.port)
     })
   })
@@ -931,12 +983,12 @@ describe('desktop saved connections', () => {
         'Test server unavailable',
       )
       await expect(api.list()).resolves.toEqual(before)
-      ctx.database.db.exec(
-        "CREATE TRIGGER reject_profile_save BEFORE INSERT ON settings WHEN NEW.key = 'electrum_port' BEGIN SELECT RAISE(FAIL, 'test write failure'); END",
+      await ctx.database.run(
+        sql`CREATE TRIGGER reject_profile_save BEFORE INSERT ON settings WHEN NEW.key = 'electrum_port' BEGIN SELECT RAISE(FAIL, 'test write failure'); END`,
       )
       await expect(api.connect(saved)).rejects.toThrow('Could not save')
       await expect(api.list()).resolves.toEqual(before)
-      expect(settings(ctx)).toEqual([])
+      await expect(settings(ctx)).resolves.toEqual([])
       expect((await ctx.statementService['onchainProvider'].getBlocksTip()).unwrap().height).toBe(100)
       await vi.waitFor(() => {
         expect(next.sockets.size).toBe(0)
@@ -992,41 +1044,86 @@ describe('desktop saved connections', () => {
       const api = appRouter.createCaller({ app: ctx }).settings.connectionProfiles
       const next = await startElectrum(200, true)
       const saved = await api.create({ ...next.config, nickname: 'Next' })
-      const before = profileStore(ctx).list()
-      const active = profileStore(ctx).getActiveId()
+      const before = await profileStore(ctx).list()
+      const active = await profileStore(ctx).getActiveId()
       const pending = api.connect(saved)
       await vi.waitFor(() => {
         expect(next.methods).toContain('server.version')
       })
       ctx.stopElectrum()
       await expect(pending).rejects.toThrow('shutting down')
-      expect(profileStore(ctx).list()).toEqual(before)
-      expect(profileStore(ctx).getActiveId()).toBe(active)
+      await expect(profileStore(ctx).list()).resolves.toEqual(before)
+      await expect(profileStore(ctx).getActiveId()).resolves.toBe(active)
     })
   })
 })
+
+it.each(['before writes', 'after commit'] as const)(
+  'keeps the previous client when shutdown occurs during an async profile activation (%s)',
+  async (phase) => {
+    await withTestSetup(async () => {
+      const ctx = await context(true, true)
+      const store = profileStore(ctx)
+      const next = await startElectrum(200)
+      const saved = (await store.create({ ...next.config, nickname: 'Next' })).unwrap()
+      const previousClient = ctx.electrumClient
+      const beforeProfiles = await store.list()
+      const beforeActive = await store.getActiveId()
+      const beforeSettings = await settings(ctx)
+      const transaction = ctx.database.transaction.bind(ctx.database)
+      vi.spyOn(ctx.database, 'transaction').mockImplementationOnce(async (run, config) => {
+        const result = await transaction(async (tx) => {
+          if (phase === 'before writes') {
+            ctx.stopElectrum()
+          }
+          return run(tx)
+        }, config)
+        if (phase === 'after commit') {
+          ctx.stopElectrum()
+        }
+        return result
+      })
+      expect((await ctx.connectProfile(saved)).isErr()).toBe(true)
+      expect(ctx.electrumClient).toBe(previousClient)
+      expect(ctx.electrumClient.isConnected()).toBe(false)
+      expect(ctx.electrumConfig.port).toBe(initialFixture().config.port)
+      if (phase === 'before writes') {
+        await expect(store.list()).resolves.toEqual(beforeProfiles)
+        await expect(store.getActiveId()).resolves.toBe(beforeActive)
+        await expect(settings(ctx)).resolves.toEqual(beforeSettings)
+      }
+      await vi.waitFor(() => {
+        expect(next.sockets.size).toBe(0)
+      })
+    })
+  },
+)
 
 describe('saved connection startup', () => {
   it('starts with the last saved server when saved connections cannot be loaded', async () => {
     await withTestSetup(async () => {
       const previous = await context(false)
       // An out-of-range port cannot be saved as the first connection.
-      previous.database.db
-        .prepare(
-          "INSERT INTO settings (key, value) VALUES ('electrum_port', '70000') ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-        )
-        .run()
+      await previous.database
+        .insert(settingsTable)
+        .values({ key: 'electrum_port', value: '70000' })
+        .onConflictDoUpdate({ target: settingsTable.key, set: { value: '70000' } })
       const ctx = await restart(previous, false)
       expect(ctx.electrumConfig.port).toBe(70_000)
-      expect(profileStore(ctx).list()).toEqual([])
-      expect(profileStore(ctx).getActiveId()).toBeUndefined()
+      await expect(profileStore(ctx).list()).resolves.toEqual([])
+      await expect(profileStore(ctx).getActiveId()).resolves.toBeUndefined()
 
       // A connection saved there but never connected to must not become active on the next launch.
-      profileStore(ctx)
-        .create({ nickname: 'Untested', host: 'untested.example', port: 50002, protocol: 'ssl', torEnabled: false })
-        .unwrap()
+      const saved = await profileStore(ctx).create({
+        nickname: 'Untested',
+        host: 'untested.example',
+        port: 50002,
+        protocol: 'ssl',
+        torEnabled: false,
+      })
+      saved.unwrap()
       const next = await restart(ctx, false)
-      expect(profileStore(next).getActiveId()).toBeUndefined()
+      await expect(profileStore(next).getActiveId()).resolves.toBeUndefined()
       expect(next.electrumConfig.host).not.toBe('untested.example')
     })
   })
@@ -1074,7 +1171,7 @@ describe('saved connection safeguards', () => {
   it('starts with the last saved server when the saved-connections table cannot be read', async () => {
     await withTestSetup(async () => {
       const previous = await context(false, true)
-      previous.database.db.exec('ALTER TABLE desktop_connection_profiles RENAME TO unreadable_profiles')
+      await previous.database.run(sql`ALTER TABLE desktop_connection_profiles RENAME TO unreadable_profiles`)
       const ctx = await restart(previous, false)
       expect(ctx.connectionProfiles).toBeDefined()
       expect(ctx.electrumConfig).toEqual(
@@ -1089,14 +1186,13 @@ describe('saved connection safeguards', () => {
       const first = (await createAppContext(logger, { tor, connectionProfiles: true, waitForElectrum: false })).unwrap()
       contexts.add(first)
       const remote = await startElectrum(200)
-      const viaTor = profileStore(first)
-        .create({ ...remote.config, torEnabled: true, nickname: 'Via Tor' })
-        .unwrap()
-      profileStore(first)
-        .activate(viaTor, { ...remote.config, torEnabled: true })
-        .unwrap()
+      const viaTor = (
+        await profileStore(first).create({ ...remote.config, torEnabled: true, nickname: 'Via Tor' })
+      ).unwrap()
+      const activated = await profileStore(first).activate(viaTor, { ...remote.config, torEnabled: true })
+      activated.unwrap()
       first.stopElectrum()
-      first.database.close()
+      first.database.$client.close()
       contexts.delete(first)
 
       const before = connections.length
@@ -1119,19 +1215,18 @@ describe('saved connection safeguards', () => {
       const next = await startElectrum(200)
       const direct = await api.create({ ...next.config, nickname: 'Direct' })
       await api.connect({ id: direct.id, revision: direct.revision })
-      expect(settings(ctx)).toEqual([
+      await expect(settings(ctx)).resolves.toEqual([
         { key: 'electrum_host', value: next.config.host },
         { key: 'electrum_port', value: String(next.config.port) },
         { key: 'electrum_protocol', value: 'tcp' },
         { key: 'tor_enabled', value: 'false' },
       ])
-      const viaTor = profileStore(ctx)
-        .create({ ...next.config, torEnabled: true, nickname: 'Via Tor' })
-        .unwrap()
-      profileStore(ctx)
-        .activate(viaTor, { ...next.config, torEnabled: true })
-        .unwrap()
-      expect(settings(ctx)).toContainEqual({ key: 'tor_enabled', value: 'true' })
+      const viaTor = (
+        await profileStore(ctx).create({ ...next.config, torEnabled: true, nickname: 'Via Tor' })
+      ).unwrap()
+      const activated = await profileStore(ctx).activate(viaTor, { ...next.config, torEnabled: true })
+      activated.unwrap()
+      await expect(settings(ctx)).resolves.toContainEqual({ key: 'tor_enabled', value: 'true' })
     })
   })
 
@@ -1140,19 +1235,15 @@ describe('saved connection safeguards', () => {
       const ctx = await context(true, true)
       const api = appRouter.createCaller({ app: ctx }).settings.connectionProfiles
       const next = await startElectrum(200)
-      const viaTor = profileStore(ctx)
-        .create({ ...next.config, torEnabled: true, nickname: 'Via Tor' })
-        .unwrap()
+      const viaTor = (
+        await profileStore(ctx).create({ ...next.config, torEnabled: true, nickname: 'Via Tor' })
+      ).unwrap()
       const withoutTor = { host: next.config.host, port: next.config.port, protocol: next.config.protocol }
       await expect(
         // @ts-expect-error -- a caller that leaves out the Tor setting must be refused, never treated as direct
         api.connect({ id: viaTor.id, revision: viaTor.revision, connection: withoutTor }),
       ).rejects.toThrow('torEnabled')
-      expect(
-        profileStore(ctx)
-          .list()
-          .find((profile) => profile.id === viaTor.id)?.torEnabled,
-      ).toBe(true)
+      expect((await profileStore(ctx).list()).find((profile) => profile.id === viaTor.id)?.torEnabled).toBe(true)
       await expect(
         // @ts-expect-error -- a new connection without a Tor setting must be refused, never saved as direct
         api.create({ ...withoutTor, nickname: 'No Tor setting' }),
@@ -1170,15 +1261,14 @@ describe('saved connection safeguards', () => {
       const first = (await createAppContext(logger, { tor, connectionProfiles: true, waitForElectrum: false })).unwrap()
       contexts.add(first)
       const remote = await startElectrum(200)
-      const viaTor = profileStore(first)
-        .create({ ...remote.config, torEnabled: true, nickname: 'Via Tor' })
-        .unwrap()
-      profileStore(first)
-        .activate(viaTor, { ...remote.config, torEnabled: true })
-        .unwrap()
-      first.database.db.exec('ALTER TABLE desktop_connection_profiles RENAME TO unreadable_profiles')
+      const viaTor = (
+        await profileStore(first).create({ ...remote.config, torEnabled: true, nickname: 'Via Tor' })
+      ).unwrap()
+      const activated = await profileStore(first).activate(viaTor, { ...remote.config, torEnabled: true })
+      activated.unwrap()
+      await first.database.run(sql`ALTER TABLE desktop_connection_profiles RENAME TO unreadable_profiles`)
       first.stopElectrum()
-      first.database.close()
+      first.database.$client.close()
       contexts.delete(first)
 
       const before = connections.length
