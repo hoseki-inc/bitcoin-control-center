@@ -6,7 +6,7 @@ import { type FormEvent, type ReactNode, act, createElement } from 'react'
 import { type Root, createRoot } from 'react-dom/client'
 import { MemoryRouter } from 'react-router'
 import { assert, expect, it, onTestFinished, vi } from 'vitest'
-import type { StatementDto } from '../trpc/server-types'
+import { statementFixture } from '../testing/statements'
 import { AccountsSidebar } from './dashboard-charts/accounts-sidebar'
 import { StatementCard } from './dashboard/statement-card'
 import { SelectWalletType } from './multisig/multisig-select-wallet-type'
@@ -90,21 +90,7 @@ function button(text: string): HTMLButtonElement {
   assert(match instanceof HTMLButtonElement)
   return match
 }
-const statement: StatementDto = {
-  id: 'test-statement',
-  createdAt: new Date('2026-09-01'),
-  updatedAt: new Date('2026-09-01'),
-  openingDate: new Date('2026-08-01'),
-  closingDate: new Date('2026-08-31'),
-  counter: 1,
-  timezone: 'UTC',
-  status: 'completed',
-  quoteCurrency: 'USD',
-  errorMessage: null,
-  user: { name: null, email: null },
-  integrator: { name: 'Test partner' },
-  userId: 'test-user',
-}
+const statement = statementFixture({ id: 'test-statement', integrator: { name: 'Test partner' } })
 it('activates a statement once from View without nesting controls or submitting a form', async () => {
   await withTestSetup(async () => {
     const onView = vi.fn<() => void>()
@@ -113,11 +99,10 @@ it('activates a statement once from View without nesting controls or submitting 
     })
     await render(createElement('form', { onSubmit }, createElement(StatementCard, { statement, onView })))
     expect(host.querySelectorAll('button')).toHaveLength(1)
-    const card = button('Statement')
-    expect(card.type).toBe('button')
-    expect(card.querySelector('button, a, input, div, p')).toBeNull()
-    const view = Array.from(card.querySelectorAll('span')).find((element) => element.textContent === 'View')
-    assert(view instanceof HTMLElement)
+    const view = button('View')
+    expect(view.type).toBe('button')
+    expect(view.getAttribute('aria-label')).toBe('View statement created 01 Sep 2026 12:00 PM')
+    expect(view.querySelector('button, a, input, div, p')).toBeNull()
     await act(async () => {
       view.click()
     })

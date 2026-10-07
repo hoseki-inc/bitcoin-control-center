@@ -52,8 +52,7 @@ public mempool.space unless fallbacks are turned off.
 
 ## Generate a statement
 
-1. Select **Generate Statement** from Home, or open **Statements** and create a
-   statement.
+1. Open **Statements** and select **Generate Statement**.
 2. Select the accounts, date range, and USD, CAD, GBP, or EUR for approximate
    fiat values.
    Bitcoin amounts remain in BTC. The exact rates are saved with the statement.
