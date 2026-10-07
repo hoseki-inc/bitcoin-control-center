@@ -2007,6 +2007,7 @@ const portalProveRouter = t.router({
     .query(async ({ ctx, input }) => {
       const result = await ctx.app.priceHistoryService.getHistory(input.days, input.quoteCurrency)
       if (result.isErr()) {
+        ctx.app.logger.warn({ err: result.unwrapErr(), days: input.days }, 'Bitcoin price history unavailable')
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
           message: 'Price history for this range is not available from your allowed price sources.',

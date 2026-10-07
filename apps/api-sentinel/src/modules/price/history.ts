@@ -1,7 +1,7 @@
 import { Err, Ok, type Result, asyncFn } from '@hoseki/packages/result'
 import type { StatementQuoteCurrency } from '@hoseki/packages/schemas/statement-quote'
 import { type DailyRatesService, MIN_MEMPOOL_PRICE_DATE } from './daily_rates'
-import { type PriceService, type PriceSourceName, isPublicMempool } from './service'
+import { type PriceService, isPublicMempool } from './service'
 
 export type BitcoinPriceHistoryDays = 7 | 30 | 180 | 365
 
@@ -13,12 +13,12 @@ export interface BitcoinPricePoint {
 
 export interface BitcoinPriceHistory {
   quoteCurrency: StatementQuoteCurrency
-  /** Daily quotes from the statement price source, oldest first. */
+  /** Daily quotes from the statement price source, at the time each was observed, oldest first. */
   points: BitcoinPricePoint[]
   /** Names of the sources that supplied the daily quotes: the public host, or "Your mempool server". */
   historySources: string[]
   /** The current price from the source chosen in Settings, when it is in this currency and available. */
-  latest?: BitcoinPricePoint & { source: PriceSourceName; sourceLabel: string }
+  latest?: BitcoinPricePoint
 }
 
 const DAY_SECONDS = 86_400
@@ -37,20 +37,20 @@ function stepDays(days: BitcoinPriceHistoryDays): number {
   return days <= 180 ? 3 : 7
 }
 
-/** The UTC days to quote for a range, ending today. */
+/**
+ * The UTC days to quote for a range, ending today. Sampled days fall on fixed calendar steps, so
+ * the next day reuses the cached days and adds one.
+ */
 export function priceHistoryDates(days: BitcoinPriceHistoryDays, now: Date): Date[] {
-  const today = Math.floor(now.getTime() / (DAY_SECONDS * 1000)) * DAY_SECONDS
-  const earliest = Math.ceil(MIN_MEMPOOL_PRICE_DATE.getTime() / 1000)
+  const today = Math.floor(now.getTime() / (DAY_SECONDS * 1000))
+  const first = Math.max(today - days, Math.ceil(MIN_MEMPOOL_PRICE_DATE.getTime() / (DAY_SECONDS * 1000)))
   const step = stepDays(days)
   const dates: Date[] = []
-  for (let offset = 0; offset <= days; offset += step) {
-    const day = today - offset * DAY_SECONDS
-    if (day < earliest) {
-      break
-    }
-    dates.push(new Date(day * 1000))
+  for (let day = Math.ceil(first / step) * step; day < today; day += step) {
+    dates.push(new Date(day * DAY_SECONDS * 1000))
   }
-  return dates.reverse()
+  dates.push(new Date(today * DAY_SECONDS * 1000))
+  return dates
 }
 
 /**
@@ -88,26 +88,22 @@ export class PriceHistoryService {
         return Err(rates.unwrapErr())
       }
       const { rates: daily, providerUrls } = rates.unwrap()
-      const points = dates.flatMap((date) => {
-        const rate = daily[date.toISOString().slice(0, 10)]
-        return rate ? [{ time: date.getTime() / 1000, value: rate.close.toNumber() }] : []
-      })
+      // A day without its own quote may use a nearby one; plot each quote once, when it was observed.
+      const observed = new Map<number, number>()
+      for (const rate of Object.values(daily)) {
+        observed.set(rate.timestamp.getTime() / 1000, rate.close.toNumber())
+      }
+      const points = [...observed].map(([time, value]) => ({ time, value })).sort((a, b) => a.time - b.time)
       const history: BitcoinPriceHistory = {
         quoteCurrency,
         points,
         historySources: [...new Set((providerUrls ?? []).map((url) => historySourceName(new URL(url))))],
       }
+      // A last known price counts too: it is at most about an hour old.
       if (current?.isOk() === true) {
         const price = current.unwrap()
-        const latestDay = points.at(-1)?.time ?? 0
-        if (!price.lastKnown && price.asOf.getTime() / 1000 > latestDay) {
-          const source = this.priceService.options().sources.find(({ name }) => name === price.source)
-          history.latest = {
-            time: Math.floor(price.asOf.getTime() / 1000),
-            value: price.value.toNumber(),
-            source: price.source,
-            sourceLabel: source?.label ?? price.source,
-          }
+        if (price.asOf.getTime() / 1000 > (points.at(-1)?.time ?? 0)) {
+          history.latest = { time: Math.floor(price.asOf.getTime() / 1000), value: price.value.toNumber() }
         }
       }
       return Ok(history)

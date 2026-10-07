@@ -29,7 +29,7 @@ const prices = [
   { time: 1000, value: 100 },
   { time: 2000, value: 105 },
 ]
-const latest = { time: 2500, value: 110, source: 'mempool', sourceLabel: 'Your mempool server (node.local)' }
+const latest = { time: 2500, value: 110 }
 const requests: unknown[] = []
 let unavailable = false
 const rpc = createTestTrpcClient(async ({ path, input }: Operation) => {
@@ -115,7 +115,7 @@ it.each([false, true])(
       expect(container.textContent).toContain('$110')
       expect(container.textContent).toContain('Source: node.local')
       expect(container.querySelector('h2')?.textContent).toBe('Bitcoin Price')
-      expect(container.querySelector('[aria-pressed="true"]')?.getAttribute('aria-label')).toBe('Last 7 days')
+      expect(container.querySelector('[aria-pressed="true"]')?.textContent).toBe('7D')
       expect(container.querySelector('[data-chart="history"]')).not.toBeNull()
       for (const [label, days] of [
         ['7D', 7],

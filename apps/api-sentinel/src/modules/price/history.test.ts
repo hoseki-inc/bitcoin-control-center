@@ -53,6 +53,11 @@ function setup({ fallbacks = false }: { fallbacks?: boolean } = {}): PriceHistor
   })
 }
 
+/** A long Retry-After skips the retry back-off and puts the source in cooldown at once. */
+function unavailable(): Response {
+  return new Response(null, { status: 503, headers: { 'retry-after': '3600' } })
+}
+
 function requestedHosts(): string[] {
   return [...new Set(fetcher.mock.calls.map(([url]) => new URL(url).host))]
 }
@@ -63,13 +68,24 @@ describe('price history dates', () => {
     [30, 31, 1],
     [180, 61, 3],
     [365, 53, 7],
-  ] as const)('samples the %i-day range as %i UTC days, %i apart, ending today', (days, count, step) => {
+  ] as const)('samples the %i-day range as %i UTC days on fixed %i-day steps, ending today', (days, count, step) => {
     const dates = priceHistoryDates(days, now)
     expect(dates).toHaveLength(count)
     expect(dates.at(-1)).toEqual(new Date('2026-09-08T00:00:00Z'))
-    expect(
-      dates.every((date, i) => i === 0 || date.getTime() - (dates[i - 1]?.getTime() ?? 0) === step * 86_400_000),
-    ).toBe(true)
+    const dayNumbers = dates.map((date) => date.getTime() / 86_400_000)
+    expect(dayNumbers.slice(0, -1).every((day) => day % step === 0)).toBe(true)
+    expect(dayNumbers.every((day, i) => i === 0 || day - (dayNumbers[i - 1] ?? 0) <= step)).toBe(true)
+  })
+
+  it.each([7, 30, 180, 365] as const)('adds one new day to the %i-day range each day', (days) => {
+    const sampled = new Set(priceHistoryDates(days, now).map((date) => date.getTime()))
+    for (let next = 1; next <= 7; next++) {
+      const dates = priceHistoryDates(days, new Date(now.getTime() + next * 86_400_000))
+      expect(dates.filter((date) => !sampled.has(date.getTime()))).toHaveLength(1)
+      for (const date of dates) {
+        sampled.add(date.getTime())
+      }
+    }
   })
 
   it('does not reach before the earliest supported price date', () => {
@@ -88,9 +104,38 @@ describe('Bitcoin price history', () => {
       value: 50000 + (nowSeconds - 43_200) / 86_400 - 7,
     })
     expect(history.historySources).toEqual(['Your mempool server'])
-    expect(history.latest).toMatchObject({ value: 61000, source: 'mempool' })
+    expect(history.latest?.value).toBe(61000)
     expect(history.latest?.time).toBeGreaterThanOrEqual(nowSeconds - 61)
     expect(requestedHosts()).toEqual(['mempool.test'])
+  })
+
+  it('plots a nearby quote used for a missing day once, at the time it was observed', async () => {
+    const service = setup()
+    const observed = nowSeconds - 43_200 - 3 * 86_400
+    fetcher.mockImplementation(async (url) => {
+      const parsed = new URL(url)
+      if (parsed.pathname === '/api/v1/prices') {
+        return Response.json({ USD: 61000, time: nowSeconds - 60 })
+      }
+      const timestamp = Number(parsed.searchParams.get('timestamp'))
+      // The server has no prices after the observation, so later days fall back to it.
+      const time = Math.min(timestamp, observed)
+      return Response.json({ prices: [{ time, ...quotes, USD: 50000 + time / 86_400 }] })
+    })
+    const history = (await service.getHistory(7)).expect('history')
+    // Seven days ago through the observation, and nothing after it.
+    expect(history.points.map(({ time }) => time)).toEqual([4, 3, 2, 1, 0].map((day) => observed - day * 86_400))
+    expect(history.latest?.value).toBe(61000)
+  })
+
+  it('keeps a last known current price when the price source stops answering', async () => {
+    const service = setup()
+    await service.getHistory(7)
+    vi.setSystemTime(now.getTime() + 2 * 60_000)
+    fetcher.mockImplementation(async (url) =>
+      url.endsWith('/api/v1/prices') ? new Response(null, { status: 503 }) : mempool(url),
+    )
+    expect((await service.getHistory(7)).expect('history').latest?.value).toBe(61000)
   })
 
   it('reuses locally cached quotes on the next load', async () => {
@@ -113,7 +158,7 @@ describe('Bitcoin price history', () => {
 
   it('reports an unavailable range rather than contacting another provider when fallbacks are off', async () => {
     const service = setup()
-    fetcher.mockImplementation(async () => new Response(null, { status: 503 }))
+    fetcher.mockImplementation(async () => unavailable())
     expect((await service.getHistory(7)).isErr()).toBe(true)
     expect(requestedHosts()).toEqual(['mempool.test'])
   })
@@ -121,9 +166,7 @@ describe('Bitcoin price history', () => {
   it('falls back only to public mempool.space when fallbacks are allowed', async () => {
     const service = setup({ fallbacks: true })
     fetcher.mockImplementation(async (url) =>
-      new URL(url).host === 'mempool.space' && url.includes('historical-price')
-        ? mempool(url)
-        : new Response(null, { status: 503 }),
+      new URL(url).host === 'mempool.space' && url.includes('historical-price') ? mempool(url) : unavailable(),
     )
     const history = (await service.getHistory(7)).expect('history')
     expect(history.historySources).toEqual(['mempool.space'])

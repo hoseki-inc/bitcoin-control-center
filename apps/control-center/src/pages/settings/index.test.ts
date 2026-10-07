@@ -600,6 +600,7 @@ it.each([
     // A failed request for the current price must not leave a price from a source no longer allowed.
     const forgotten = [
       getQueryKey(trpc.portalProve.retrieveBitcoinPrice),
+      getQueryKey(trpc.portalProve.retrieveBitcoinPriceHistory),
       getQueryKey(trpc.portalProve.onchain.bitcoinAccountBalances),
     ]
     for (const queryKey of [refreshed, ...forgotten]) {

@@ -8,10 +8,8 @@ const QUOTE_CURRENCY = 'USD'
 
 const formatPrice = (value: number): string =>
   value.toLocaleString('en-US', { style: 'currency', currency: QUOTE_CURRENCY, maximumFractionDigits: 0 })
-// Daily quotes are UTC days; the latest price is a moment, so it takes the viewer's own date.
+// Every point, including the latest, is labeled with the viewer's own date, so dates never run backward.
 const dayLabel = (time: number): string =>
-  new Date(time * 1000).toLocaleDateString([], { month: 'short', day: 'numeric', timeZone: 'UTC' })
-const localDayLabel = (time: number): string =>
   new Date(time * 1000).toLocaleDateString([], { month: 'short', day: 'numeric' })
 
 // Daily quotes come from the mempool historical price API used by statements.
@@ -94,7 +92,6 @@ export function BitcoinPriceChart({ views = bitcoinPriceChartViews }: { views?: 
               variant="ghost"
               minH="44px"
               px={3}
-              aria-label={option.description}
               aria-pressed={range.days === option.days}
               bg={range.days === option.days ? 'neutral.200' : 'transparent'}
               color={range.days === option.days ? 'neutral.900' : 'neutral.600'}
@@ -124,7 +121,7 @@ export function BitcoinPriceChart({ views = bitcoinPriceChartViews }: { views?: 
           loading={query.isLoading}
           emptyMessage={unavailable}
           formatValue={formatPrice}
-          formatTime={(time) => (time === latest?.time ? localDayLabel(time) : dayLabel(time))}
+          formatTime={dayLabel}
         />
       </Box>
       <Flex

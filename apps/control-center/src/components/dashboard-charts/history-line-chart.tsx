@@ -16,7 +16,7 @@ interface HistoryLineChartProps {
   size?: { width: number; height: number }
 }
 
-/** Static history with pointer and keyboard inspection, shared by price history and the sample portfolio. */
+/** Static history with pointer and keyboard inspection. */
 export function HistoryLineChart({
   data,
   formatValue,
