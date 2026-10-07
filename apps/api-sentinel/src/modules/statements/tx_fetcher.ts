@@ -127,11 +127,7 @@ export const fetchTransactionEntries = (deps: {
     const network = onchainProvider.network
 
     // 1. Discover account (find used address indices via Electrum history checks)
-    const discoveryResult = await onchainProvider.discoverAccount(account)
-    if (discoveryResult.isErr()) {
-      return Err(discoveryResult.unwrapErr())
-    }
-    const { lastUsedReceiveIndex, lastUsedChangeIndex } = discoveryResult.unwrap()
+    const { lastUsedReceiveIndex, lastUsedChangeIndex } = yield* onchainProvider.discoverAccount(account)
 
     // 2. Generate all used addresses
     const addresses: Address[] = [
@@ -148,17 +144,12 @@ export const fetchTransactionEntries = (deps: {
 
     for (const address of addresses) {
       // A statement missing an address's transactions would look complete, so any failure stops it.
-      const scripthashRes = addressToScripthash(address)
-      if (scripthashRes.isErr()) {
-        return Err(scripthashRes.unwrapErr())
-      }
+      const scripthash = yield* addressToScripthash(address)
+      const history = yield* onchainProvider.deps.electrum
+        .getHistory(scripthash)
+        .mapErr((error) => new Error(`Could not fetch transaction history: ${error.message}`))
 
-      const historyRes = await onchainProvider.deps.electrum.getHistory(scripthashRes.unwrap())
-      if (historyRes.isErr()) {
-        return Err(new Error(`Could not fetch transaction history: ${historyRes.unwrapErr().message}`))
-      }
-
-      for (const entry of historyRes.unwrap()) {
+      for (const entry of history) {
         // Electrum reports unconfirmed transactions at height 0 or -1. Statements end at least two days
         // ago and pending transactions are dated when fetched, so they can't fall inside a statement.
         // Skipping them means a transaction the mempool server hasn't seen can't fail the statement.
@@ -178,11 +169,7 @@ export const fetchTransactionEntries = (deps: {
     )
 
     // 4. Get current tip for confirmation status
-    const tipRes = await onchainProvider.getBlocksTip()
-    if (tipRes.isErr()) {
-      return Err(tipRes.unwrapErr())
-    }
-    const tip = tipRes.unwrap()
+    const tip = yield* onchainProvider.getBlocksTip()
 
     // 5. Fetch transaction details from mempool.space in batches
     const allEntries: TransactionEntry[] = []
@@ -200,10 +187,7 @@ export const fetchTransactionEntries = (deps: {
           return Err(new Error(`Failed to fetch transaction ${batch[j]}`, { cause: result.reason }))
         }
 
-        if (result.value.isErr()) {
-          return Err(result.value.unwrapErr())
-        }
-        const mempoolTx = result.value.unwrap()
+        const mempoolTx = yield* result.value
         const relatedAddresses = txHashToAddresses.get(mempoolTx.txid) ?? new Set()
 
         // Parse into TransactionEntry for each related address

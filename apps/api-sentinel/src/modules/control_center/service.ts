@@ -432,12 +432,9 @@ export class ControlCenterService {
         return Err(new Error('Claim not found or already archived'))
       }
 
-      const accountResult = Account.fromDescriptor(row.descriptor)
-      if (accountResult.isErr()) {
-        return Err(new Error('Failed to preserve account history: invalid descriptor'))
-      }
-
-      const account = accountResult.unwrap()
+      const account = yield* Account.fromDescriptor(row.descriptor).mapErr(
+        () => new Error('Failed to preserve account history: invalid descriptor'),
+      )
       const preservedBalance = await self.ensureAccountHistorySnapshots(
         accountId,
         account,

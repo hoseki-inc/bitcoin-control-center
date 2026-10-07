@@ -102,46 +102,36 @@ export class ExchangeService {
         return Err(new Error(`Failed to create Coinbase client: ${err instanceof Error ? err.message : String(err)}`))
       }
 
-      const accountsResult = await client.advancedTrade.accounts.list()
-      if (accountsResult.isErr()) {
-        return Err(new Error(`Failed to list Coinbase accounts: ${accountsResult.unwrapErr().message}`))
-      }
-      const accounts = accountsResult.unwrap()
+      const accounts = yield* client.advancedTrade.accounts
+        .list()
+        .mapErr((error) => new Error(`Failed to list Coinbase accounts: ${error.message}`))
       const btcAccount = accounts.data.accounts.find((a) => a.currency === 'BTC')
       if (!btcAccount) {
         return Err(new Error('No BTC account found in Coinbase'))
       }
 
       // Fetch balance
-      const balanceResult = await client.advancedTrade.accounts.get({ accountUuid: btcAccount.uuid })
-      if (balanceResult.isErr()) {
-        return Err(new Error(`Failed to fetch Coinbase balance: ${balanceResult.unwrapErr().message}`))
-      }
-      const balanceData = balanceResult.unwrap()
+      const balanceData = yield* client.advancedTrade.accounts
+        .get({ accountUuid: btcAccount.uuid })
+        .mapErr((error) => new Error(`Failed to fetch Coinbase balance: ${error.message}`))
       const btcValue = balanceData.data.account.available_balance.value
       const balanceSats = new Decimal(btcValue).mul(1e8).toFixed(0)
 
       // Encrypt credentials
-      const encApiKey = Encrypted.encrypt(apiKey)
-      if (encApiKey.isErr()) {
-        return Err(encApiKey.unwrapErr())
-      }
-      const encSecret = Encrypted.encrypt(secretKey)
-      if (encSecret.isErr()) {
-        return Err(encSecret.unwrapErr())
-      }
+      const encApiKey = yield* Encrypted.encrypt(apiKey)
+      const encSecret = yield* Encrypted.encrypt(secretKey)
 
       const credentialData: CredentialData = {
         type: 'apiKey',
         data: {
-          apiKey: { blob: encApiKey.unwrap().blob },
-          secretKey: { blob: encSecret.unwrap().blob },
+          apiKey: { blob: encApiKey.blob },
+          secretKey: { blob: encSecret.blob },
         },
       }
 
       const displayName = btcAccount.name || 'Coinbase BTC'
       const now = new Date().toISOString()
-      const saved = await self.saveConnectedAccount({
+      const { id, createdAt } = yield* await self.saveConnectedAccount({
         provider: 'coinbase',
         replaceAccountId: args.replaceAccountId,
         displayName,
@@ -151,10 +141,6 @@ export class ExchangeService {
         credentialsConnectedAt: now,
         externalAccountId: btcAccount.uuid,
       })
-      if (saved.isErr()) {
-        return Err(saved.unwrapErr())
-      }
-      const { id, createdAt } = saved.unwrap()
 
       // Record initial snapshot
       await self.recordSnapshot(id, balanceSats, now)
@@ -186,28 +172,21 @@ export class ExchangeService {
       logger.info('Connecting Strike account via API key')
 
       // Validate key and get balance
-      const balancesRes = await validateStrikeApiKey(apiKey, logger)
-      if (balancesRes.isErr()) {
-        return Err(balancesRes.unwrapErr())
-      }
-
-      const btcBalance = balancesRes.unwrap().find((b) => b.currency === 'BTC')
+      const balances = yield* validateStrikeApiKey(apiKey, logger)
+      const btcBalance = balances.find((b) => b.currency === 'BTC')
       const balanceSats = btcBalance ? new Decimal(btcBalance.total).mul(1e8).toFixed(0) : '0'
 
       // Encrypt API key
-      const encApiKey = Encrypted.encrypt(apiKey)
-      if (encApiKey.isErr()) {
-        return Err(encApiKey.unwrapErr())
-      }
+      const encApiKey = yield* Encrypted.encrypt(apiKey)
 
       const credentialData: CredentialData = {
         type: 'apiKey',
-        data: { apiKey: { blob: encApiKey.unwrap().blob } },
+        data: { apiKey: { blob: encApiKey.blob } },
       }
 
       const displayName = inputName ?? 'Strike'
       const now = new Date().toISOString()
-      const saved = await self.saveConnectedAccount({
+      const { id, createdAt } = yield* await self.saveConnectedAccount({
         provider: 'strike',
         replaceAccountId: args.replaceAccountId,
         displayName,
@@ -216,10 +195,6 @@ export class ExchangeService {
         balanceAsOf: now,
         credentialsConnectedAt: now,
       })
-      if (saved.isErr()) {
-        return Err(saved.unwrapErr())
-      }
-      const { id, createdAt } = saved.unwrap()
 
       await self.recordSnapshot(id, balanceSats, now)
 
@@ -253,33 +228,24 @@ export class ExchangeService {
       const client = new RobinhoodClient({ apiKey, privateKeyBase64 })
 
       // Validate key and get balance
-      const balanceResult = await client.getBtcBalance()
-      if (balanceResult.isErr()) {
-        return Err(balanceResult.unwrapErr())
-      }
-      const balanceSats = balanceResult.unwrap().toString()
+      const balance = yield* client.getBtcBalance()
+      const balanceSats = balance.toString()
 
       // Encrypt credentials
-      const encApiKey = Encrypted.encrypt(apiKey)
-      if (encApiKey.isErr()) {
-        return Err(encApiKey.unwrapErr())
-      }
-      const encPrivateKey = Encrypted.encrypt(privateKeyBase64)
-      if (encPrivateKey.isErr()) {
-        return Err(encPrivateKey.unwrapErr())
-      }
+      const encApiKey = yield* Encrypted.encrypt(apiKey)
+      const encPrivateKey = yield* Encrypted.encrypt(privateKeyBase64)
 
       const credentialData: CredentialData = {
         type: 'apiKey',
         data: {
-          apiKey: { blob: encApiKey.unwrap().blob },
-          privateKey: { blob: encPrivateKey.unwrap().blob },
+          apiKey: { blob: encApiKey.blob },
+          privateKey: { blob: encPrivateKey.blob },
         },
       }
 
       const displayName = inputName ?? 'Robinhood'
       const now = new Date().toISOString()
-      const saved = await self.saveConnectedAccount({
+      const { id, createdAt } = yield* await self.saveConnectedAccount({
         provider: 'robinhood',
         replaceAccountId: args.replaceAccountId,
         displayName,
@@ -288,10 +254,6 @@ export class ExchangeService {
         balanceAsOf: now,
         credentialsConnectedAt: now,
       })
-      if (saved.isErr()) {
-        return Err(saved.unwrapErr())
-      }
-      const { id, createdAt } = saved.unwrap()
 
       await self.recordSnapshot(id, balanceSats, now)
 
@@ -324,37 +286,29 @@ export class ExchangeService {
       const client = new Kraken.Client({ apiKey, secretKey })
 
       // Validate by fetching balance
-      const balanceResult = await client.getBalance()
-      if (balanceResult.isErr()) {
-        return Err(new Error(`Failed to fetch Kraken balance: ${balanceResult.unwrapErr().message}`))
-      }
-
-      const balances = balanceResult.unwrap().data
+      const balanceData = yield* client
+        .getBalance()
+        .mapErr((error) => new Error(`Failed to fetch Kraken balance: ${error.message}`))
+      const balances = balanceData.data
       // Kraken uses XXBT or XBT for Bitcoin
       const btcValue = balances['XXBT'] ?? balances['XBT'] ?? '0'
       const balanceSats = new Decimal(btcValue).mul(1e8).toFixed(0)
 
       // Encrypt credentials
-      const encApiKey = Encrypted.encrypt(apiKey)
-      if (encApiKey.isErr()) {
-        return Err(encApiKey.unwrapErr())
-      }
-      const encSecret = Encrypted.encrypt(secretKey)
-      if (encSecret.isErr()) {
-        return Err(encSecret.unwrapErr())
-      }
+      const encApiKey = yield* Encrypted.encrypt(apiKey)
+      const encSecret = yield* Encrypted.encrypt(secretKey)
 
       const credentialData: CredentialData = {
         type: 'apiKey',
         data: {
-          apiKey: { blob: encApiKey.unwrap().blob },
-          secretKey: { blob: encSecret.unwrap().blob },
+          apiKey: { blob: encApiKey.blob },
+          secretKey: { blob: encSecret.blob },
         },
       }
 
       const displayName = 'Kraken'
       const now = new Date().toISOString()
-      const saved = await self.saveConnectedAccount({
+      const { id, createdAt } = yield* await self.saveConnectedAccount({
         provider: 'kraken',
         replaceAccountId: args.replaceAccountId,
         displayName,
@@ -363,10 +317,6 @@ export class ExchangeService {
         balanceAsOf: now,
         credentialsConnectedAt: now,
       })
-      if (saved.isErr()) {
-        return Err(saved.unwrapErr())
-      }
-      const { id, createdAt } = saved.unwrap()
 
       await self.recordSnapshot(id, balanceSats, now)
 
@@ -398,108 +348,54 @@ export class ExchangeService {
         return Err(new Error('Exchange credentials are unavailable or expired. Reconnect this exchange account.'))
       }
 
-      const parsedCredentials = parseCredentials(row.encryptedCredentials)
-      if (parsedCredentials.isErr()) {
-        return Err(parsedCredentials.unwrapErr())
-      }
-      const credData = parsedCredentials.unwrap()
+      const credData = yield* parseCredentials(row.encryptedCredentials)
       const provider = row.provider
 
-      const apiKeyEnc = Encrypted.fromString(credData.data['apiKey']?.blob ?? '')
-      if (apiKeyEnc.isErr()) {
-        return Err(apiKeyEnc.unwrapErr())
-      }
+      const apiKeyEnc = yield* Encrypted.fromString(credData.data['apiKey']?.blob ?? '')
 
       let balanceSats: string
 
       if (provider === 'strike') {
-        const apiKey = apiKeyEnc.unwrap().decrypt()
-        if (apiKey.isErr()) {
-          return Err(apiKey.unwrapErr())
-        }
-
-        const result = await getStrikeBtcBalance(apiKey.unwrap(), logger)
-        if (result.isErr()) {
-          return Err(result.unwrapErr())
-        }
-        balanceSats = result.unwrap().toString()
+        const apiKey = yield* apiKeyEnc.decrypt()
+        const balance = yield* getStrikeBtcBalance(apiKey, logger)
+        balanceSats = balance.toString()
       } else if (provider === 'robinhood') {
-        const apiKey = apiKeyEnc.unwrap().decrypt()
-        if (apiKey.isErr()) {
-          return Err(apiKey.unwrapErr())
-        }
+        const apiKey = yield* apiKeyEnc.decrypt()
+        const privateKeyEnc = yield* Encrypted.fromString(credData.data['privateKey']?.blob ?? '')
+        const privateKey = yield* privateKeyEnc.decrypt()
 
-        const privateKeyEnc = Encrypted.fromString(credData.data['privateKey']?.blob ?? '')
-        if (privateKeyEnc.isErr()) {
-          return Err(privateKeyEnc.unwrapErr())
-        }
-        const privateKey = privateKeyEnc.unwrap().decrypt()
-        if (privateKey.isErr()) {
-          return Err(privateKey.unwrapErr())
-        }
-
-        const client = new RobinhoodClient({ apiKey: apiKey.unwrap(), privateKeyBase64: privateKey.unwrap() })
-        const result = await client.getBtcBalance()
-        if (result.isErr()) {
-          return Err(result.unwrapErr())
-        }
-        balanceSats = result.unwrap().toString()
+        const client = new RobinhoodClient({ apiKey, privateKeyBase64: privateKey })
+        const balance = yield* client.getBtcBalance()
+        balanceSats = balance.toString()
       } else if (provider === 'kraken') {
-        const secretEnc = Encrypted.fromString(credData.data['secretKey']?.blob ?? '')
-        if (secretEnc.isErr()) {
-          return Err(secretEnc.unwrapErr())
-        }
+        const secretEnc = yield* Encrypted.fromString(credData.data['secretKey']?.blob ?? '')
+        const apiKey = yield* apiKeyEnc.decrypt()
+        const secret = yield* secretEnc.decrypt()
 
-        const apiKey = apiKeyEnc.unwrap().decrypt()
-        if (apiKey.isErr()) {
-          return Err(apiKey.unwrapErr())
-        }
-        const secret = secretEnc.unwrap().decrypt()
-        if (secret.isErr()) {
-          return Err(secret.unwrapErr())
-        }
-
-        const client = new Kraken.Client({ apiKey: apiKey.unwrap(), secretKey: secret.unwrap() })
-        const result = await client.getBalance()
-        if (result.isErr()) {
-          return Err(new Error(`Kraken error: ${result.unwrapErr().message}`))
-        }
-
-        const balances = result.unwrap().data
+        const client = new Kraken.Client({ apiKey, secretKey: secret })
+        const balanceData = yield* client.getBalance().mapErr((error) => new Error(`Kraken error: ${error.message}`))
+        const balances = balanceData.data
         const btcValue = balances['XXBT'] ?? balances['XBT'] ?? '0'
         balanceSats = new Decimal(btcValue).mul(1e8).toFixed(0)
       } else {
         // Coinbase
-        const secretEnc = Encrypted.fromString(credData.data['secretKey']?.blob ?? '')
-        if (secretEnc.isErr()) {
-          return Err(secretEnc.unwrapErr())
-        }
-
-        const apiKey = apiKeyEnc.unwrap().decrypt()
-        if (apiKey.isErr()) {
-          return Err(apiKey.unwrapErr())
-        }
-        const secret = secretEnc.unwrap().decrypt()
-        if (secret.isErr()) {
-          return Err(secret.unwrapErr())
-        }
-
-        const secretStr = secret.unwrap()
+        const secretEnc = yield* Encrypted.fromString(credData.data['secretKey']?.blob ?? '')
+        const apiKey = yield* apiKeyEnc.decrypt()
+        const secretStr = yield* secretEnc.decrypt()
         const isPem = secretStr.trim().startsWith('-----BEGIN')
         const credentials = isPem
-          ? { variant: 'CdpKey' as const, name: apiKey.unwrap(), secret: secretStr }
-          : { variant: 'ApiKey' as const, key: apiKey.unwrap(), secret: secretStr }
+          ? { variant: 'CdpKey' as const, name: apiKey, secret: secretStr }
+          : { variant: 'ApiKey' as const, key: apiKey, secret: secretStr }
 
         const client = Coinbase.Client({ credentials })
 
         // Use stored account UUID if available, otherwise discover it
         let accountUuid = row.externalAccountId
         if (accountUuid == null || accountUuid === '') {
-          const accountsRes = await client.advancedTrade.accounts.list()
-          if (accountsRes.isErr()) {
-            return Err(new Error(`Coinbase error: ${accountsRes.unwrapErr().message}`))
-          }
-          const btcAccount = accountsRes.unwrap().data.accounts.find((a) => a.currency === 'BTC')
+          const accounts = yield* client.advancedTrade.accounts
+            .list()
+            .mapErr((error) => new Error(`Coinbase error: ${error.message}`))
+          const btcAccount = accounts.data.accounts.find((a) => a.currency === 'BTC')
           if (!btcAccount) {
             return Err(new Error('No BTC account found'))
           }
@@ -511,12 +407,10 @@ export class ExchangeService {
             .where(eq(exchangeAccounts.id, accountId))
         }
 
-        const balanceRes = await client.advancedTrade.accounts.get({ accountUuid })
-        if (balanceRes.isErr()) {
-          return Err(new Error(`Coinbase error: ${balanceRes.unwrapErr().message}`))
-        }
-
-        const btcValue = balanceRes.unwrap().data.account.available_balance.value
+        const balanceData = yield* client.advancedTrade.accounts
+          .get({ accountUuid })
+          .mapErr((error) => new Error(`Coinbase error: ${error.message}`))
+        const btcValue = balanceData.data.account.available_balance.value
         balanceSats = new Decimal(btcValue).mul(1e8).toFixed(0)
       }
 

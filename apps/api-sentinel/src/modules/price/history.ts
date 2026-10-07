@@ -86,10 +86,7 @@ export class PriceHistoryService {
         dailyRatesService.getDailyRates(opening, closing, quoteCurrency, dates),
         quoteCurrency === 'USD' ? priceService.getCurrentBtcPrice() : undefined,
       ])
-      if (rates.isErr()) {
-        return Err(rates.unwrapErr())
-      }
-      const { rates: daily, providerUrls } = rates.unwrap()
+      const { rates: daily, providerUrls } = yield* rates
       // A day without its own quote may use a nearby one; plot each quote once, when it was observed.
       const observed = new Map<number, number>()
       for (const rate of Object.values(daily)) {

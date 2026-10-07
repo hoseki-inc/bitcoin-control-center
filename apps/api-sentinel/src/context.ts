@@ -389,12 +389,10 @@ export const createAppContext = (logger: Logger, options: AppContextOptions = {}
         }
       })
     } else {
-      const result = await connection
-      if (result.isErr()) {
+      yield* connection.inspectErr(() => {
         ctx.stopElectrum()
         database.$client.close()
-        return Err(result.unwrapErr())
-      }
+      })
     }
 
     return Ok(ctx)

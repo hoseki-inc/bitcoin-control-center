@@ -190,17 +190,14 @@ export const request = <ST extends z.ZodTypeAny, SE extends z.ZodTypeAny>(
         headers['CB-ACCESS-TIMESTAMP'] = timestamp
         headers['CB-ACCESS-KEY'] = args.credentials.key
       } else {
-        const token = await signCdp({
+        const token = yield* signCdp({
           path,
           url: args.url,
           name: args.credentials.name,
           secret: args.credentials.secret,
           method: args.method,
-        })
-        if (token.isErr()) {
-          return Err(new ApiError(ErrorKind.UnexpectedFailure({ error: token.unwrapErr() }), 'Failed to sign request'))
-        }
-        headers.Authorization = `Bearer ${token.unwrap()}`
+        }).mapErr((error) => new ApiError(ErrorKind.UnexpectedFailure({ error }), 'Failed to sign request'))
+        headers.Authorization = `Bearer ${token}`
       }
     }
 

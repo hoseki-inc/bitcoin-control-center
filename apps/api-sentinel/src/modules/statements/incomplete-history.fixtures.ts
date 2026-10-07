@@ -6,7 +6,7 @@ import { Network } from '@hoseki/packages/bitcoin/network'
 import { ElectrumProvider } from '@hoseki/packages/bitcoin/onchain/electrum_provider'
 import { addressToScripthash } from '@hoseki/packages/bitcoin/scripthash'
 import { ElectrumClient } from '@hoseki/packages/clients/electrum'
-import { AsyncOk, Err, Ok, tryBlock } from '@hoseki/packages/result'
+import { AsyncErr, AsyncOk, Ok, tryBlock } from '@hoseki/packages/result'
 import type { CustomPdfStatement } from '@hoseki/packages/schemas'
 import { Wallets } from '@hoseki/packages/testing'
 import Decimal from 'decimal.js'
@@ -158,8 +158,8 @@ export async function setupDepositAndWithdrawal(outcome: WithdrawalOutcome): Pro
 > {
   const { service, db, history, getDailyRates } = await createStatementHarness(outcome)
   const claimId = await seedWallet(db, savingsWallet, 'Savings')
-  history.mockResolvedValueOnce(
-    Ok([
+  history.mockReturnValueOnce(
+    AsyncOk([
       { tx_hash: savingsWallet.txid, height: 800000 },
       { tx_hash: withdrawalId, height: 800000 },
     ]),
@@ -175,8 +175,8 @@ export async function setupHistoryFailure(): Promise<
   const { service, db, history, getDailyRates } = await createStatementHarness('success')
   const claimIds = [await seedWallet(db, savingsWallet, 'Savings'), await seedWallet(db, spendingWallet, 'Spending')]
   history
-    .mockResolvedValueOnce(Ok([{ tx_hash: savingsWallet.txid, height: 800000 }]))
-    .mockResolvedValueOnce(Err(new Error('Synthetic Electrum history failure')))
+    .mockReturnValueOnce(AsyncOk([{ tx_hash: savingsWallet.txid, height: 800000 }]))
+    .mockReturnValueOnce(AsyncErr(new Error('Synthetic Electrum history failure')))
   return { service, input: { ...period, claimIds }, getDailyRates }
 }
 

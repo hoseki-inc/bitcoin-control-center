@@ -70,8 +70,7 @@ export const probeLedger = (
         if (isCancelled()) {
           return cancelled()
         }
-        if (dataRes.isErr()) {
-          const xpubErr = dataRes.unwrapErr()
+        const data = yield* dataRes.inspectErr((xpubErr) => {
           if (xpubErr instanceof HardwareDeviceError) {
             captureHardwareWalletError(
               xpubErr,
@@ -80,27 +79,21 @@ export const probeLedger = (
               { scriptType, account },
             )
           }
-          return Err(xpubErr)
-        }
-        const data = dataRes.unwrap()
+        })
 
         browserLogger.debug('found xpub for', { scriptType, account, data: dataRes })
 
-        const xpub = Slip132.getXpubFromString(data.xpub)
-        if (xpub.isErr()) {
-          browserLogger.error({ error: xpub.unwrapErr() }, 'Failed to parse xpub')
-          return Err(new Error(`Failed to parse xpub: ${xpub.unwrapErr().message}`, { cause: xpub.unwrapErr() }))
-        }
+        const xpub = yield* Slip132.getXpubFromString(data.xpub)
+          .inspectErr((error) => {
+            browserLogger.error({ error }, 'Failed to parse xpub')
+          })
+          .mapErr((error) => new Error(`Failed to parse xpub: ${error.message}`, { cause: error }))
 
-        const derivationPath = DerivationPath.fromString(data.path)
-        if (derivationPath.isErr()) {
-          browserLogger.error({ error: derivationPath.unwrapErr() }, 'Failed to parse derivation path')
-          return Err(
-            new Error(`Failed to parse derivation path: ${derivationPath.unwrapErr().message}`, {
-              cause: derivationPath.unwrapErr(),
-            }),
-          )
-        }
+        const derivationPath = yield* DerivationPath.fromString(data.path)
+          .inspectErr((error) => {
+            browserLogger.error({ error }, 'Failed to parse derivation path')
+          })
+          .mapErr((error) => new Error(`Failed to parse derivation path: ${error.message}`, { cause: error }))
 
         const count = account + 1
 
@@ -108,7 +101,7 @@ export const probeLedger = (
           account,
           derivationPath,
           rawInput: data.xpub,
-          networkAccount: new NetworkAccount(Network.Mainnet, new SingleSigAccount(scriptType, xpub.unwrap())), // Ledger only supports mainnet
+          networkAccount: new NetworkAccount(Network.Mainnet, new SingleSigAccount(scriptType, xpub)), // Ledger only supports mainnet
           label: `Bitcoin ${count}`,
 
           // This is trying to match how it would look like in the Ledger Live app
@@ -151,7 +144,7 @@ export const probeLedger = (
               rawInput: wallet.rawInput,
               displayName: wallet.displayName,
               account: wallet.networkAccount.account,
-              derivationPath: wallet.derivationPath.unwrap(),
+              derivationPath: wallet.derivationPath,
               accountIndex: wallet.account,
               label: wallet.label,
               btcBalance: balance.current,

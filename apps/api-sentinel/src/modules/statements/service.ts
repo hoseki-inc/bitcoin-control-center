@@ -313,10 +313,7 @@ export class StatementService {
     const { db, logger, onchainProvider, mempoolApiUrl, sleep, exchangeService, dailyRatesService } = this
     const self = this
     return tryBlock(async function* () {
-      const validation = validateStatementInput(input)
-      if (validation.isErr()) {
-        return Err(validation.unwrapErr())
-      }
+      yield* validateStatementInput(input)
 
       logger.info(
         {
@@ -371,19 +368,15 @@ export class StatementService {
             return Err(new Error(`Account "${row.display_name}" was archived while generating the statement`))
           }
 
-          const txResult = await fetchTransactionEntries({
+          const entries = yield* fetchTransactionEntries({
             account: accountResult.unwrap(),
             onchainProvider,
             mempoolApiUrl,
             logger,
             sleep,
+          }).inspectErr((err) => {
+            logger.error({ accountId: row.id, err }, 'Failed to fetch transactions')
           })
-          if (txResult.isErr()) {
-            logger.error({ accountId: row.id, err: txResult.unwrapErr() }, 'Failed to fetch transactions')
-            return Err(txResult.unwrapErr())
-          }
-
-          const entries = txResult.unwrap()
           const aggregated = calculateAccountTransactions(entries, row.display_name)
           const sorted = sortTxs(aggregated)
           transactionMap[row.id] = { displayName: row.display_name, transactions: sorted }
@@ -535,23 +528,15 @@ export class StatementService {
       // 4. Fetch daily rates for the date range
       logger.info('Fetching daily rates from mempool.space')
       const requiredDates = getRequiredRateDates(input.openingDate, input.closingDate, input.timezone, transactionMap)
-      const ratesResult = await dailyRatesService.getDailyRates(
-        input.openingDate,
-        input.closingDate,
-        input.quoteCurrency ?? 'USD',
-        requiredDates,
-      )
-      if (ratesResult.isErr()) {
-        logger.error({ err: ratesResult.unwrapErr().message }, 'Failed to fetch daily rates')
-        return Err(ratesResult.unwrapErr())
-      }
-      const coverage = validateStatementRates(requiredDates, ratesResult.unwrap())
-      if (coverage.isErr()) {
-        return Err(coverage.unwrapErr())
-      }
+      const dailyRates = yield* dailyRatesService
+        .getDailyRates(input.openingDate, input.closingDate, input.quoteCurrency ?? 'USD', requiredDates)
+        .inspectErr((err) => {
+          logger.error({ err: err.message }, 'Failed to fetch daily rates')
+        })
+      yield* validateStatementRates(requiredDates, dailyRates)
       logger.info('Statement data generation complete')
 
-      return Ok({ transactionMap, dailyRates: ratesResult.unwrap() })
+      return Ok({ transactionMap, dailyRates })
     })
   }
 

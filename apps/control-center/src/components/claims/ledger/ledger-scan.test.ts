@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { getBuiltinModule } from 'node:process'
 import { bip32 } from '@hoseki/packages/bitcoin'
+import { AsyncErr, AsyncOk } from '@hoseki/packages/result'
 import type { LedgerScanUI } from '@hoseki/packages/ui/wallet-ui'
 import { type LedgerBitcoinApp, createLedgerStore } from '@hoseki/packages/ui/wallet-ui/ledger/device-store'
 import Transport from '@ledgerhq/hw-transport'
@@ -256,5 +257,54 @@ it('discovery also stops on a changed connection even without an abort signal', 
     expect(result.isErr()).toBe(true)
     expect(result.expectErr('Expected failed result')).toMatchObject({ name: 'AbortError' })
     expect(mocks.getXpub).toHaveBeenCalledTimes(4)
+  })
+})
+
+it.each([
+  { name: 'xpub', data: { xpub: 'invalid', path: "m/84'/0'/0'" }, message: 'Failed to parse xpub:' },
+  { name: 'derivation path', data: { xpub, path: 'invalid' }, message: 'Failed to parse derivation path:' },
+])('discovery propagates an invalid $name without requesting balances', async ({ data, message }) => {
+  await withTestSetup(async () => {
+    const getBitcoinXpub = vi.fn(() => AsyncOk(data))
+    const error = await probeLedger(balanceApi, { getBitcoinXpub, isCurrentConnection: () => true }).expectErr(
+      'Expected parsing failure',
+    )
+
+    expect(error.message).toContain(message)
+    expect(error.cause).toBeInstanceOf(Error)
+    expect(getBitcoinXpub).toHaveBeenCalledOnce()
+    expect(mocks.fetch).not.toHaveBeenCalled()
+  })
+})
+
+it('discovery propagates the original device error without requesting balances', async () => {
+  await withTestSetup(async () => {
+    const error = new Error('Synthetic device failure')
+    const getBitcoinXpub = vi.fn(() => AsyncErr(error))
+
+    await expect(
+      probeLedger(balanceApi, { getBitcoinXpub, isCurrentConnection: () => true }).expectErr('Expected device failure'),
+    ).resolves.toBe(error)
+    expect(getBitcoinXpub).toHaveBeenCalledOnce()
+    expect(mocks.fetch).not.toHaveBeenCalled()
+  })
+})
+
+it('discovery gives cancellation priority over a device error', async () => {
+  await withTestSetup(async () => {
+    const controller = new AbortController()
+    const getBitcoinXpub = vi.fn(() => {
+      controller.abort()
+      return AsyncErr(new Error('Synthetic device failure'))
+    })
+    const error = await probeLedger(balanceApi, {
+      getBitcoinXpub,
+      signal: controller.signal,
+      isCurrentConnection: () => true,
+    }).expectErr('Expected cancellation')
+
+    expect(error.name).toBe('AbortError')
+    expect(getBitcoinXpub).toHaveBeenCalledOnce()
+    expect(mocks.fetch).not.toHaveBeenCalled()
   })
 })

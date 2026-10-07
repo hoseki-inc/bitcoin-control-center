@@ -621,6 +621,9 @@ describe('connections that go silent, are busy, or answer with errors', () => {
       const first = await client.connect()
       expect(first.isErr()).toBe(true)
       expect(first.expectErr('Expected failed result')).not.toBeInstanceOf(ElectrumServerError)
+      expect(first.expectErr('Expected failed result').message).toBe(
+        'Electrum handshake failed: Electrum error [-32601]: refused',
+      )
       client.checkReachable(0)
       await vi.waitFor(() => {
         expect(server.received.flat().filter((method) => method === 'server.version').length).toBeGreaterThan(1)

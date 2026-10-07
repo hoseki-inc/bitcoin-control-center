@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { Network } from '@hoseki/packages/bitcoin/network'
 import { ElectrumProvider } from '@hoseki/packages/bitcoin/onchain/electrum_provider'
 import { ElectrumClient } from '@hoseki/packages/clients/electrum'
-import { AsyncOk, Err, Ok } from '@hoseki/packages/result'
+import { AsyncErr, AsyncOk } from '@hoseki/packages/result'
 import { Wallets } from '@hoseki/packages/testing'
 import pino from 'pino'
 import { assert, expect, it, onTestFinished, vi } from 'vitest'
@@ -38,8 +38,8 @@ function setup(body: JsonValue, transactionIds = [txid], pendingIds: { id: strin
     vi.fn(async () => Response.json(body)),
   )
   const electrum = new ElectrumClient({ host: 'localhost', port: 50001, protocol: 'tcp' })
-  vi.spyOn(electrum, 'getHistory').mockResolvedValue(
-    Ok([
+  vi.spyOn(electrum, 'getHistory').mockReturnValue(
+    AsyncOk([
       ...transactionIds.map((id) => ({ tx_hash: id, height: 800000 })),
       ...pendingIds.map(({ id, height }) => ({ tx_hash: id, height })),
     ]),
@@ -271,7 +271,7 @@ it('gives each lookup a timeout and releases failed responses', async () => {
 it('fails rather than skipping an address whose history lookup fails', async () => {
   await withTestSetup(async () => {
     const deps = setup(null)
-    vi.spyOn(deps.onchainProvider.deps.electrum, 'getHistory').mockResolvedValue(Err(new Error('Connection closed')))
+    vi.spyOn(deps.onchainProvider.deps.electrum, 'getHistory').mockReturnValue(AsyncErr(new Error('Connection closed')))
     const result = await fetchTransactionEntries(deps)
     expect(result.expectErr('a missing history must fail').message).toBe(
       'Could not fetch transaction history: Connection closed',

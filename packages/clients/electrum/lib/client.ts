@@ -83,16 +83,17 @@ export class ElectrumClient {
         return Err(new Error('Connection closed'))
       }
       yield* transport.connect()
-      const handshake = await self.serverVersion()
-      if (handshake.isErr()) {
-        // The server refused the handshake or never answered it. Close the half-open connection,
-        // and report a failed connection rather than a server answer, so a status check never
-        // counts a refused handshake as the server being reachable.
-        self.dropConnection()
-        return Err(new Error(`Electrum handshake failed: ${handshake.unwrapErr().message}`))
-      }
+      const version = yield* self
+        .serverVersion()
+        .inspectErr(() => {
+          // The server refused the handshake or never answered it. Close the half-open connection,
+          // and report a failed connection rather than a server answer, so a status check never
+          // counts a refused handshake as the server being reachable.
+          self.dropConnection()
+        })
+        .mapErr((error) => new Error(`Electrum handshake failed: ${error.message}`))
       self.negotiated = true
-      return Ok(handshake.unwrap())
+      return Ok(version)
     })
     const tracked = tryBlock(async function* () {
       try {
@@ -275,9 +276,7 @@ export class ElectrumClient {
         yield* self.connect()
       }
       const connection = transport.connectionNumber
-      const requested = await transport.request(method, params)
-      if (requested.isErr()) {
-        const error = requested.unwrapErr()
+      const raw = yield* transport.request(method, params).inspectErr((error) => {
         // Drop a connection only when it has gone silent (often after sleep or a network change,
         // when it never closes by itself), so the next request reconnects:
         // - a timeout counts only if nothing at all arrived since this request was sent; a busy
@@ -289,9 +288,7 @@ export class ElectrumClient {
         if (silent && transport.isConnected() && transport.connectionNumber === connection) {
           self.dropConnection()
         }
-        return Err(error)
-      }
-      const raw = requested.unwrap()
+      })
       const parsed = yield* parseUnknown(schema, raw).mapErr(
         (err) => new Error(`Failed to parse response for ${method}: ${err.message}`, { cause: err }),
       )
