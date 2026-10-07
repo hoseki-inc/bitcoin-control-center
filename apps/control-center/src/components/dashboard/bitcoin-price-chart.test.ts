@@ -32,6 +32,7 @@ const prices = [
 const latest = { time: 2500, value: 110 }
 const requests: unknown[] = []
 let unavailable = false
+let singlePrice = false
 const rpc = createTestTrpcClient(async ({ path, input }: Operation) => {
   if (path !== 'portalProve.retrieveBitcoinPriceHistory') {
     throw new Error(`Unexpected request: ${path}`)
@@ -39,6 +40,9 @@ const rpc = createTestTrpcClient(async ({ path, input }: Operation) => {
   requests.push(input)
   if (unavailable) {
     throw new Error('Price history for this range is not available from your allowed price sources.')
+  }
+  if (singlePrice) {
+    return { quoteCurrency: 'USD', points: prices.slice(0, 1), historySources: ['node.local'] }
   }
   return { quoteCurrency: 'USD', points: prices, historySources: ['node.local'], latest }
 })
@@ -88,6 +92,7 @@ async function withTestSetup(reducedMotion: boolean, run: () => Promise<void>): 
     container.remove()
     queryClient.clear()
     unavailable = false
+    singlePrice = false
     vi.unstubAllGlobals()
     dom.window.close()
   })
@@ -146,6 +151,18 @@ it('shows when a range is not available from the allowed price sources', async (
     expect(chart.mock.lastCall?.[0]).toMatchObject({
       data: [],
       emptyMessage: 'Price history for this range is not available from your allowed price sources.',
+    })
+  })
+})
+
+it('shows no change when only one price is available', async () => {
+  singlePrice = true
+  await withTestSetup(false, async () => {
+    await waitForText('Price sources and fallbacks are set in Settings.')
+    expect(container.textContent).not.toContain('%')
+    expect(chart.mock.lastCall?.[0]).toMatchObject({
+      data: [],
+      emptyMessage: 'Price history is temporarily unavailable',
     })
   })
 })

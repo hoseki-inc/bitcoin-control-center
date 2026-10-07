@@ -44,7 +44,9 @@ export function BitcoinPriceChart({ views = bitcoinPriceChartViews }: { views?: 
   const history = query.data
   const daily = history?.points ?? []
   const latest = history?.latest
-  const points = latest ? [...daily, { time: latest.time, value: latest.value }] : daily
+  const prices = latest ? [...daily, { time: latest.time, value: latest.value }] : daily
+  // A single price shows neither a line nor a change.
+  const points = prices.length >= 2 ? prices : []
   const last = points[points.length - 1]
   const first = points[0]
   const change = last && first ? ((last.value - first.value) / first.value) * 100 : null
