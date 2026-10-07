@@ -4,8 +4,9 @@ import { QueryClient } from '@tanstack/react-query'
 import { getQueryKey } from '@trpc/react-query'
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
-import { MemoryRouter } from 'react-router'
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router'
 import { assert, expect, it, onTestFinished, vi } from 'vitest'
+import { parseNavigationState } from '../../lib/navigation-state'
 import { statementFixture } from '../../testing/statements'
 import { TestTrpcProvider, createTestTrpcClient } from '../../testing/trpc'
 import { trpc } from '../../trpc'
@@ -29,6 +30,11 @@ const browser = await vi.hoisted(async () => {
     },
   }
 })
+
+/** Stands in for the create page, showing where its Cancel would return to. */
+function CreateRoute(): JSX.Element {
+  return <p>Create page, returning to {parseNavigationState(useLocation().state)?.returnTo ?? 'Home'}</p>
+}
 
 type ListService = () => Promise<StatementDto[]>
 
@@ -67,8 +73,11 @@ async function renderStatementsPage({ cached, list = failing }: { cached?: State
     root.render(
       <TestTrpcProvider client={client} rpc={rpc}>
         <ChakraProvider>
-          <MemoryRouter>
-            <StatementListPage />
+          <MemoryRouter initialEntries={['/statements']}>
+            <Routes>
+              <Route path="/statements" element={<StatementListPage />} />
+              <Route path="/statements/create" element={<CreateRoute />} />
+            </Routes>
           </MemoryRouter>
         </ChakraProvider>
       </TestTrpcProvider>,
@@ -143,4 +152,26 @@ it('switches to a table of statements with their requester and View links', asyn
   const view = table.querySelector('a[href="/statements/statement"]')
   expect(view?.textContent).toBe('View')
   expect(view?.getAttribute('aria-label')).toMatch(/^View statement created 01 Sep 2026 /)
+})
+
+it('returns to Statements when a statement started here is cancelled', async () => {
+  const { container, settle } = await renderStatementsPage({ list: async () => [statement] })
+  await settle('success')
+  const generate = container.querySelector<HTMLAnchorElement>('a[href="/statements/create"]')
+  assert(generate !== null, 'Expected the Generate Statement link')
+  await act(async () => {
+    generate.click()
+  })
+  expect(container.textContent).toContain('Create page, returning to /statements')
+})
+
+it('returns to Statements from the introduction when there are no statements', async () => {
+  const { container, settle } = await renderStatementsPage({ list: async () => [] })
+  await settle('success')
+  const generate = container.querySelector<HTMLAnchorElement>('a[href="/statements/create"]')
+  assert(generate !== null, 'Expected the Generate Statement link')
+  await act(async () => {
+    generate.click()
+  })
+  expect(container.textContent).toContain('Create page, returning to /statements')
 })
