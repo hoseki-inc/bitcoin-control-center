@@ -26,7 +26,9 @@ it('should return Ok when parsing is successful', () => {
 it('should return Err when parsing is unsuccessful', () => {
   const result = parseUnknown(z.string(), 123)
   expect(result.isErr()).toBe(true)
-  const error = result.expectErr('invalid input should fail parsing')
-  expect(error).toBeInstanceOf(ParseError)
+  const error = result.expectErr('Expected Err')
+  if (!(error instanceof ParseError)) {
+    throw new Error('Expected ParseError')
+  }
   expect(error.cause).toBeInstanceOf(z.ZodError)
 })

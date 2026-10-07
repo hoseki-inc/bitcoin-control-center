@@ -114,7 +114,9 @@ async function startElectrum(height: number, holdVersion = false, rejectVersion 
 }
 
 async function context(waitForElectrum = true, connectionProfiles = false): Promise<AppContext> {
-  const ctx = (await createAppContext(logger, { waitForElectrum, connectionProfiles })).unwrap()
+  const ctx = (await createAppContext(logger, { waitForElectrum, connectionProfiles })).expect(
+    'Expected successful result',
+  )
   contexts.add(ctx)
   return ctx
 }
@@ -237,9 +239,9 @@ describe('Electrum connection lifecycle', () => {
       const statements = ctx.statementService['onchainProvider']
       const next = await startElectrum(200)
       await appRouter.createCaller({ app: ctx }).settings.reconnectElectrum(next.config)
-      expect((await portfolio.getBlocksTip()).unwrap().height).toBe(200)
-      expect((await statements.getBlocksTip()).unwrap().height).toBe(200)
-      expect((await ctx.onchainProvider.getBlocksTip()).unwrap().height).toBe(200)
+      expect((await portfolio.getBlocksTip()).expect('Expected successful result').height).toBe(200)
+      expect((await statements.getBlocksTip()).expect('Expected successful result').height).toBe(200)
+      expect((await ctx.onchainProvider.getBlocksTip()).expect('Expected successful result').height).toBe(200)
       await expect(settings(ctx)).resolves.toEqual([
         { key: 'electrum_host', value: next.config.host },
         { key: 'electrum_port', value: String(next.config.port) },
@@ -251,7 +253,7 @@ describe('Electrum connection lifecycle', () => {
       contexts.delete(ctx)
       const restarted = await context()
       expect(restarted.electrumConfig.port).toBe(next.config.port)
-      expect((await restarted.onchainProvider.getBlocksTip()).unwrap().height).toBe(200)
+      expect((await restarted.onchainProvider.getBlocksTip()).expect('Expected successful result').height).toBe(200)
     })
   })
 
@@ -264,7 +266,9 @@ describe('Electrum connection lifecycle', () => {
       expect((await ctx.reconnectElectrum(failed.config)).isErr()).toBe(true)
       await expect(settings(ctx)).resolves.toEqual(before)
       expect(ctx.electrumClient.isConnected()).toBe(true)
-      expect((await ctx.controlCenterService['onchainProvider'].getBlocksTip()).unwrap().height).toBe(100)
+      expect(
+        (await ctx.controlCenterService['onchainProvider'].getBlocksTip()).expect('Expected successful result').height,
+      ).toBe(100)
       await vi.waitFor(() => {
         expect(failed.sockets.size).toBe(0)
       })
@@ -280,9 +284,13 @@ describe('Electrum connection lifecycle', () => {
         sql`CREATE TRIGGER reject_connection_save BEFORE INSERT ON settings WHEN NEW.key = 'electrum_port' BEGIN SELECT RAISE(FAIL, 'test write failure'); END`,
       )
       const next = await startElectrum(200)
-      expect((await ctx.reconnectElectrum(next.config)).unwrapErr().message).toContain('Could not save')
+      expect((await ctx.reconnectElectrum(next.config)).expectErr('Expected failed result').message).toContain(
+        'Could not save',
+      )
       await expect(settings(ctx)).resolves.toEqual(before)
-      expect((await ctx.statementService['onchainProvider'].getBlocksTip()).unwrap().height).toBe(100)
+      expect(
+        (await ctx.statementService['onchainProvider'].getBlocksTip()).expect('Expected successful result').height,
+      ).toBe(100)
       await vi.waitFor(() => {
         expect(next.sockets.size).toBe(0)
       })
@@ -297,9 +305,9 @@ describe('Electrum connection lifecycle', () => {
       await vi.waitFor(() => {
         expect(next.methods).toContain('server.version')
       })
-      expect((await ctx.reconnectElectrum(initialFixture().config)).unwrapErr().message).toContain(
-        'already in progress',
-      )
+      expect(
+        (await ctx.reconnectElectrum(initialFixture().config)).expectErr('Expected failed result').message,
+      ).toContain('already in progress')
       next.releaseVersion()
       expect((await pending).isOk()).toBe(true)
       expect(ctx.electrumConfig.port).toBe(next.config.port)
@@ -335,7 +343,9 @@ describe('Electrum connection lifecycle', () => {
       const next = await startElectrum(200)
       expect((await ctx.reconnectElectrum(next.config)).isOk()).toBe(true)
       expect((await previousRequest).isErr()).toBe(true)
-      expect((await ctx.controlCenterService['onchainProvider'].getBlocksTip()).unwrap().height).toBe(200)
+      expect(
+        (await ctx.controlCenterService['onchainProvider'].getBlocksTip()).expect('Expected successful result').height,
+      ).toBe(200)
     })
   })
 
@@ -461,7 +471,7 @@ describe('Tor connection policy', () => {
           getStatus: () => ({ state: 'starting' as const }),
           getSocksProxy: () => (torReady ? { host: '127.0.0.1', port: chosenPort } : null),
         }
-        const ctx = (await createAppContext(logger, { tor })).unwrap()
+        const ctx = (await createAppContext(logger, { tor })).expect('Expected successful result')
         contexts.add(ctx)
         const pending = appRouter
           .createCaller({ app: ctx })
@@ -498,15 +508,21 @@ describe('Tor connection policy', () => {
       env.SOCKS_PROXY_PORT = 19452
       const ctx = await context()
       const config = { host: 'electrum.example', port: 50002, protocol: 'ssl' as const }
-      expect(ctx.prepareElectrumConfig(config, false).unwrap().connectTimeout).toBeUndefined()
-      expect(ctx.prepareElectrumConfig(config, true).unwrap().connectTimeout).toBe(60_000)
-      expect(ctx.prepareElectrumConfig(config, false).unwrap().requestTimeout).toBeUndefined()
-      expect(ctx.prepareElectrumConfig({ ...config, requestTimeout: 10_000 }, true).unwrap().requestTimeout).toBe(
-        30_000,
-      )
-      expect(ctx.prepareElectrumConfig({ ...config, connectTimeout: 90_000 }, true).unwrap().connectTimeout).toBe(
-        90_000,
-      )
+      expect(
+        ctx.prepareElectrumConfig(config, false).expect('Expected successful result').connectTimeout,
+      ).toBeUndefined()
+      expect(ctx.prepareElectrumConfig(config, true).expect('Expected successful result').connectTimeout).toBe(60_000)
+      expect(
+        ctx.prepareElectrumConfig(config, false).expect('Expected successful result').requestTimeout,
+      ).toBeUndefined()
+      expect(
+        ctx.prepareElectrumConfig({ ...config, requestTimeout: 10_000 }, true).expect('Expected successful result')
+          .requestTimeout,
+      ).toBe(30_000)
+      expect(
+        ctx.prepareElectrumConfig({ ...config, connectTimeout: 90_000 }, true).expect('Expected successful result')
+          .connectTimeout,
+      ).toBe(90_000)
       const managed = (
         await createAppContext(logger, {
           tor: {
@@ -515,9 +531,9 @@ describe('Tor connection policy', () => {
             getSocksProxy: () => null,
           },
         })
-      ).unwrap()
+      ).expect('Expected successful result')
       contexts.add(managed)
-      const prepared = managed.prepareElectrumConfig(config, true).unwrap()
+      const prepared = managed.prepareElectrumConfig(config, true).expect('Expected successful result')
       expect(prepared.connectTimeout).toBe(60_000)
       expect(prepared.requestTimeout).toBe(30_000)
       expect(prepared.proxy).toBeUndefined()
@@ -533,7 +549,7 @@ describe('Tor connection policy', () => {
         getStatus: () => ({ state: 'starting' as const, progress: 25 }),
         getSocksProxy: () => null,
       }
-      const ctx = (await createAppContext(logger, { tor })).unwrap()
+      const ctx = (await createAppContext(logger, { tor })).expect('Expected successful result')
       contexts.add(ctx)
       await expect(appRouter.createCaller({ app: ctx }).settings.startTor()).resolves.toEqual({
         state: 'starting',
@@ -561,7 +577,7 @@ describe('Tor connection policy', () => {
             getSocksProxy: () => null,
           },
         })
-      ).unwrap()
+      ).expect('Expected successful result')
       contexts.add(ctx)
       const next = await startElectrum(200)
       await expect(
@@ -756,7 +772,7 @@ describe('desktop saved connections', () => {
       env.ELECTRUM_PORT = (await startElectrum(200)).config.port
       const restarted = await restart(ctx)
       expect(restarted.electrumConfig.port).toBe(initial)
-      expect((await restarted.onchainProvider.getBlocksTip()).unwrap().height).toBe(100)
+      expect((await restarted.onchainProvider.getBlocksTip()).expect('Expected successful result').height).toBe(100)
     })
   })
 
@@ -856,7 +872,9 @@ describe('desktop saved connections', () => {
         getStatus: () => ({ state: 'ready' as const }),
         getSocksProxy: () => ({ host: '127.0.0.1', port }),
       }
-      const ctx = (await createAppContext(logger, { tor, connectionProfiles: true })).unwrap()
+      const ctx = (await createAppContext(logger, { tor, connectionProfiles: true })).expect(
+        'Expected successful result',
+      )
       contexts.add(ctx)
       const api = appRouter.createCaller({ app: ctx }).settings.connectionProfiles
       const active = (await api.list()).activeId
@@ -916,7 +934,7 @@ describe('desktop saved connections', () => {
       await api.delete(initial)
       expect((await api.list()).profiles).toEqual([connected])
       expect((await api.list()).activeId).toBe(next.id)
-      expect((await ctx.onchainProvider.getBlocksTip()).unwrap().height).toBe(200)
+      expect((await ctx.onchainProvider.getBlocksTip()).expect('Expected successful result').height).toBe(200)
     })
   })
 
@@ -945,7 +963,7 @@ describe('desktop saved connections', () => {
       )
       await expect(api.delete(saved)).rejects.toThrow('Could not save connection settings')
       await expect(api.list()).resolves.toEqual(before)
-      expect((await ctx.onchainProvider.getBlocksTip()).unwrap().height).toBe(100)
+      expect((await ctx.onchainProvider.getBlocksTip()).expect('Expected successful result').height).toBe(100)
     })
   })
 
@@ -963,8 +981,12 @@ describe('desktop saved connections', () => {
       const connected = await api.connect(saved)
       expect(connected.revision).toBe(saved.revision + 1)
       expect((await api.list()).activeId).toBe(saved.id)
-      expect((await ctx.controlCenterService['onchainProvider'].getBlocksTip()).unwrap().height).toBe(200)
-      expect((await ctx.statementService['onchainProvider'].getBlocksTip()).unwrap().height).toBe(200)
+      expect(
+        (await ctx.controlCenterService['onchainProvider'].getBlocksTip()).expect('Expected successful result').height,
+      ).toBe(200)
+      expect(
+        (await ctx.statementService['onchainProvider'].getBlocksTip()).expect('Expected successful result').height,
+      ).toBe(200)
       const restarted = await restart(ctx)
       await expect(profileStore(restarted).getActiveId()).resolves.toBe(saved.id)
       expect(restarted.electrumConfig.port).toBe(next.config.port)
@@ -989,7 +1011,9 @@ describe('desktop saved connections', () => {
       await expect(api.connect(saved)).rejects.toThrow('Could not save')
       await expect(api.list()).resolves.toEqual(before)
       await expect(settings(ctx)).resolves.toEqual([])
-      expect((await ctx.statementService['onchainProvider'].getBlocksTip()).unwrap().height).toBe(100)
+      expect(
+        (await ctx.statementService['onchainProvider'].getBlocksTip()).expect('Expected successful result').height,
+      ).toBe(100)
       await vi.waitFor(() => {
         expect(next.sockets.size).toBe(0)
       })
@@ -1012,7 +1036,7 @@ describe('desktop saved connections', () => {
       await expect(pending).rejects.toThrow('no longer exists')
       expect((await api.list()).activeId).toBe(active)
       expect((await api.list()).profiles).toHaveLength(1)
-      expect((await ctx.onchainProvider.getBlocksTip()).unwrap().height).toBe(100)
+      expect((await ctx.onchainProvider.getBlocksTip()).expect('Expected successful result').height).toBe(100)
       await vi.waitFor(() => {
         expect(next.sockets.size).toBe(0)
       })
@@ -1034,7 +1058,7 @@ describe('desktop saved connections', () => {
       next.releaseVersion()
       await expect(pending).rejects.toThrow('another window')
       expect((await api.list()).activeId).not.toBe(saved.id)
-      expect((await ctx.onchainProvider.getBlocksTip()).unwrap().height).toBe(100)
+      expect((await ctx.onchainProvider.getBlocksTip()).expect('Expected successful result').height).toBe(100)
     })
   })
 
@@ -1065,7 +1089,7 @@ it.each(['before writes', 'after commit'] as const)(
       const ctx = await context(true, true)
       const store = profileStore(ctx)
       const next = await startElectrum(200)
-      const saved = (await store.create({ ...next.config, nickname: 'Next' })).unwrap()
+      const saved = (await store.create({ ...next.config, nickname: 'Next' })).expect('Expected successful result')
       const previousClient = ctx.electrumClient
       const beforeProfiles = await store.list()
       const beforeActive = await store.getActiveId()
@@ -1121,7 +1145,7 @@ describe('saved connection startup', () => {
         protocol: 'ssl',
         torEnabled: false,
       })
-      saved.unwrap()
+      saved.expect('Expected successful result')
       const next = await restart(ctx, false)
       await expect(profileStore(next).getActiveId()).resolves.toBeUndefined()
       expect(next.electrumConfig.host).not.toBe('untested.example')
@@ -1183,14 +1207,16 @@ describe('saved connection safeguards', () => {
   it('launches an active Tor connection only through managed Tor', async () => {
     await withTestSetup(async () => {
       const { tor, connections } = await refusingTor()
-      const first = (await createAppContext(logger, { tor, connectionProfiles: true, waitForElectrum: false })).unwrap()
+      const first = (await createAppContext(logger, { tor, connectionProfiles: true, waitForElectrum: false })).expect(
+        'Expected successful result',
+      )
       contexts.add(first)
       const remote = await startElectrum(200)
       const viaTor = (
         await profileStore(first).create({ ...remote.config, torEnabled: true, nickname: 'Via Tor' })
-      ).unwrap()
+      ).expect('Expected successful result')
       const activated = await profileStore(first).activate(viaTor, { ...remote.config, torEnabled: true })
-      activated.unwrap()
+      activated.expect('Expected successful result')
       first.stopElectrum()
       first.database.$client.close()
       contexts.delete(first)
@@ -1198,7 +1224,7 @@ describe('saved connection safeguards', () => {
       const before = connections.length
       const launched = (
         await createAppContext(logger, { tor, connectionProfiles: true, waitForElectrum: false })
-      ).unwrap()
+      ).expect('Expected successful result')
       contexts.add(launched)
       await vi.waitFor(() => {
         expect(connections.length).toBeGreaterThan(before)
@@ -1221,11 +1247,11 @@ describe('saved connection safeguards', () => {
         { key: 'electrum_protocol', value: 'tcp' },
         { key: 'tor_enabled', value: 'false' },
       ])
-      const viaTor = (
-        await profileStore(ctx).create({ ...next.config, torEnabled: true, nickname: 'Via Tor' })
-      ).unwrap()
+      const viaTor = (await profileStore(ctx).create({ ...next.config, torEnabled: true, nickname: 'Via Tor' })).expect(
+        'Expected successful result',
+      )
       const activated = await profileStore(ctx).activate(viaTor, { ...next.config, torEnabled: true })
-      activated.unwrap()
+      activated.expect('Expected successful result')
       await expect(settings(ctx)).resolves.toContainEqual({ key: 'tor_enabled', value: 'true' })
     })
   })
@@ -1235,9 +1261,9 @@ describe('saved connection safeguards', () => {
       const ctx = await context(true, true)
       const api = appRouter.createCaller({ app: ctx }).settings.connectionProfiles
       const next = await startElectrum(200)
-      const viaTor = (
-        await profileStore(ctx).create({ ...next.config, torEnabled: true, nickname: 'Via Tor' })
-      ).unwrap()
+      const viaTor = (await profileStore(ctx).create({ ...next.config, torEnabled: true, nickname: 'Via Tor' })).expect(
+        'Expected successful result',
+      )
       const withoutTor = { host: next.config.host, port: next.config.port, protocol: next.config.protocol }
       await expect(
         // @ts-expect-error -- a caller that leaves out the Tor setting must be refused, never treated as direct
@@ -1258,14 +1284,16 @@ describe('saved connection safeguards', () => {
   it('keeps Tor when saved connections cannot be read at launch', async () => {
     await withTestSetup(async () => {
       const { tor, connections } = await refusingTor()
-      const first = (await createAppContext(logger, { tor, connectionProfiles: true, waitForElectrum: false })).unwrap()
+      const first = (await createAppContext(logger, { tor, connectionProfiles: true, waitForElectrum: false })).expect(
+        'Expected successful result',
+      )
       contexts.add(first)
       const remote = await startElectrum(200)
       const viaTor = (
         await profileStore(first).create({ ...remote.config, torEnabled: true, nickname: 'Via Tor' })
-      ).unwrap()
+      ).expect('Expected successful result')
       const activated = await profileStore(first).activate(viaTor, { ...remote.config, torEnabled: true })
-      activated.unwrap()
+      activated.expect('Expected successful result')
       await first.database.run(sql`ALTER TABLE desktop_connection_profiles RENAME TO unreadable_profiles`)
       first.stopElectrum()
       first.database.$client.close()
@@ -1274,7 +1302,7 @@ describe('saved connection safeguards', () => {
       const before = connections.length
       const launched = (
         await createAppContext(logger, { tor, connectionProfiles: true, waitForElectrum: false })
-      ).unwrap()
+      ).expect('Expected successful result')
       contexts.add(launched)
       await vi.waitFor(() => {
         expect(connections.length).toBeGreaterThan(before)
@@ -1333,7 +1361,9 @@ describe('saved connection safeguards', () => {
   it('routes a connection by the Tor setting sent with it, and saves that setting only after success', async () => {
     await withTestSetup(async () => {
       const { tor, connections } = await refusingTor()
-      const ctx = (await createAppContext(logger, { tor, connectionProfiles: true })).unwrap()
+      const ctx = (await createAppContext(logger, { tor, connectionProfiles: true })).expect(
+        'Expected successful result',
+      )
       contexts.add(ctx)
       const api = appRouter.createCaller({ app: ctx }).settings.connectionProfiles
       const active = (await api.list()).activeId

@@ -28,7 +28,9 @@ describe('getLatestStatementClosingDate', () => {
       latest: '2026-10-03T14:59:59.999Z',
     },
   ])('returns $scenario', ({ now, timezone, latest }) => {
-    expect(getLatestStatementClosingDate(new Date(now), timezone).unwrap().toISOString()).toBe(latest)
+    expect(
+      getLatestStatementClosingDate(new Date(now), timezone).expect('Expected successful result').toISOString(),
+    ).toBe(latest)
   })
 
   it('rejects an unrecognized timezone', () => {

@@ -1,5 +1,5 @@
 import { DerivationPath, Network, type SingleSigAccountScriptType } from '@hoseki/packages/bitcoin'
-import { type AsyncResult, Err, Ok, Result, asyncFn } from '@hoseki/packages/result'
+import { AsyncResult, Err, Ok, Result } from '@hoseki/packages/result'
 import { HardwareDeviceError } from '@hoseki/packages/wallet'
 import { SCRIPT_TYPE_TO_DERIVATION_PATH } from '@hoseki/packages/wallet/script-type-utils'
 import LedgerBtcApp from '@ledgerhq/hw-app-btc'
@@ -183,23 +183,32 @@ export function createLedgerStore(
         browserLogger.debug({ newState: store.getInitialState() }, 'Ledger was reset')
       },
 
-      getBitcoinXpub: asyncFn(async (scriptType: SingleSigAccountScriptType, account: number) => {
-        const path = `${SCRIPT_TYPE_TO_DERIVATION_PATH[scriptType]}/0'/${account}'`
-        return getBitcoinXpubFromPath_INTERNAL(path)
-      }),
+      getBitcoinXpub: (scriptType: SingleSigAccountScriptType, account: number) =>
+        new AsyncResult(
+          (async () => {
+            const path = `${SCRIPT_TYPE_TO_DERIVATION_PATH[scriptType]}/0'/${account}'`
+            return getBitcoinXpubFromPath_INTERNAL(path)
+          })(),
+        ),
 
-      getBitcoinXpubFromPath: asyncFn(async (path: string) => {
-        return getBitcoinXpubFromPath_INTERNAL(path)
-      }),
+      getBitcoinXpubFromPath: (path: string) =>
+        new AsyncResult(
+          (async () => {
+            return getBitcoinXpubFromPath_INTERNAL(path)
+          })(),
+        ),
 
-      signMessage: asyncFn(async (path: string, message: string) => {
-        const { isInitialized, btc } = get()
-        if (!isInitialized) {
-          return notInitializedError()
-        }
+      signMessage: (path: string, message: string) =>
+        new AsyncResult(
+          (async () => {
+            const { isInitialized, btc } = get()
+            if (!isInitialized) {
+              return notInitializedError()
+            }
 
-        return handleLedgerSdkCall(btc.signMessage(path, Buffer.from(message).toString('hex')), { path })
-      }),
+            return handleLedgerSdkCall(btc.signMessage(path, Buffer.from(message).toString('hex')), { path })
+          })(),
+        ),
     }
   })
 }

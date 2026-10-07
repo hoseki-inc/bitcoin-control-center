@@ -17,6 +17,7 @@ export default defineConfig(
       },
 
       test: {
+        setupFiles: [resolve(import.meta.dirname, 'result/test-equality.setup.ts')],
         globals: true,
         environment: 'node',
         include: ['./**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],

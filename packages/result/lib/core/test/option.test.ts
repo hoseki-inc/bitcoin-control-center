@@ -1,362 +1,343 @@
-import { describe, expect, expectTypeOf, it, vi } from 'vitest'
-import { Err, None, Ok, Option, Panic, Some } from '../index'
+import { type AsyncOption, None, Option, Panic, Some } from '@hoseki/packages/result'
+import { describe, expect, expectTypeOf, it } from 'vitest'
 
-function TestSome<T>(value: T): Option<T> {
-  return Some(value) as Option<T>
+function testSome<T>(value: T): Option<T> {
+  return Some(value)
 }
 
-function TestNone<T>(): Option<T> {
-  return None as Option<T>
+function testNone<T>(): Option<T> {
+  return None
+}
+
+function stringOrNumberOrNull(): string | number | null {
+  return 'hello'
 }
 
 describe('core', () => {
-  it('returns a Some option', () => {
+  it('requires narrowing before unwrapping, including after await', () => {
+    // Checked by pnpm check; keep forbidden calls out of runtime execution.
+    const check = async (option: Option<number>, pending: AsyncOption<number>): Promise<void> => {
+      // @ts-expect-error An unnarrowed Option has no unwrap method.
+      void option.unwrap
+      // @ts-expect-error None has no unwrap method.
+      void None.unwrap
+      // @ts-expect-error AsyncOption must be awaited and narrowed first.
+      void pending.unwrap
+      const resolved = await pending
+      // @ts-expect-error Awaiting alone does not narrow an Option.
+      void resolved.unwrap
+      if (resolved.isSome()) {
+        expectTypeOf(resolved.unwrap()).toEqualTypeOf<number>()
+      } else {
+        // @ts-expect-error Narrowing to None excludes unwrap.
+        void resolved.unwrap
+      }
+    }
+    expectTypeOf(check).toBeFunction()
+  })
+
+  it.each([undefined, null])('preserves nullish Some payload %s', (value) => {
+    expect(Some(value).unwrap()).toBe(value)
+  })
+
+  it('creates a Some option', () => {
     const option = Some(42)
-    expect(option.isSome()).toEqual(true)
-    expect(option.isNone()).toEqual(false)
-    expect(option.value()).toEqual(42)
-    expectTypeOf(option.value).toEqualTypeOf<() => number>()
-    expectTypeOf(option.unwrap).toEqualTypeOf<() => number>()
+
+    expect(option.isSome()).toBe(true)
+    expect(option.isNone()).toBe(false)
+    expect(option.unwrap()).toBe(42)
+    expectTypeOf<typeof option.unwrap>().toEqualTypeOf<() => number>()
   })
 
-  it('returns a None option', () => {
+  it('creates a None option', () => {
     const option = None
-    expect(option.isSome()).toEqual(false)
-    expect(option.isNone()).toEqual(true)
-    expectTypeOf(option.value).toEqualTypeOf<() => undefined>()
-    expectTypeOf(option.unwrap).toEqualTypeOf<() => undefined>()
-    expectTypeOf(option.expect).toEqualTypeOf<(msg: string) => never>()
+
+    expect(option.isSome()).toBe(false)
+    expect(option.isNone()).toBe(true)
+    expectTypeOf<'unwrap'>().exclude<keyof typeof option>().toEqualTypeOf<'unwrap'>()
+    expectTypeOf<typeof option.expect>().toEqualTypeOf<(message: string) => never>()
   })
 
-  it('works with discriminated union', () => {
-    const option = TestSome(42)
-    expectTypeOf(option.value()).toEqualTypeOf<number | undefined>()
+  it('narrows an Option discriminated union', () => {
+    const option = testSome(42)
+
+    expectTypeOf<'unwrap'>().exclude<keyof typeof option>().toEqualTypeOf<'unwrap'>()
     if (option.isSome()) {
-      expectTypeOf(option.value).toEqualTypeOf<() => number>()
-      expectTypeOf(option.unwrap).toEqualTypeOf<() => number>()
-      expectTypeOf(option.expect).toEqualTypeOf<(msg: string) => number>()
+      expectTypeOf<typeof option.unwrap>().toEqualTypeOf<() => number>()
+      expectTypeOf<typeof option.expect>().toEqualTypeOf<(message: string) => number>()
     } else {
-      expectTypeOf(option.value).toEqualTypeOf<() => undefined>()
-      expectTypeOf(option.unwrap).toEqualTypeOf<() => undefined>()
-      expectTypeOf(option.expect).toEqualTypeOf<(msg: string) => never>()
+      expectTypeOf<'unwrap'>().exclude<keyof typeof option>().toEqualTypeOf<'unwrap'>()
+      expectTypeOf<typeof option.expect>().toEqualTypeOf<(message: string) => never>()
     }
 
     if (option.isNone()) {
-      expectTypeOf(option.value).toEqualTypeOf<() => undefined>()
-      expectTypeOf(option.unwrap).toEqualTypeOf<() => undefined>()
-      expectTypeOf(option.expect).toEqualTypeOf<(msg: string) => never>()
+      expectTypeOf<'unwrap'>().exclude<keyof typeof option>().toEqualTypeOf<'unwrap'>()
+      expectTypeOf<typeof option.expect>().toEqualTypeOf<(message: string) => never>()
     } else {
-      expectTypeOf(option.value).toEqualTypeOf<() => number>()
-      expectTypeOf(option.unwrap).toEqualTypeOf<() => number>()
-      expectTypeOf(option.expect).toEqualTypeOf<(msg: string) => number>()
+      expectTypeOf<typeof option.unwrap>().toEqualTypeOf<() => number>()
+      expectTypeOf<typeof option.expect>().toEqualTypeOf<(message: string) => number>()
     }
   })
 })
 
 describe('okOr', () => {
-  it('returns the value when called on a Some option', () => {
-    const option = TestSome(42)
-    expect(option.okOr('error').unwrap()).toEqual(42)
+  it('returns the value for Some', () => {
+    expect(testSome(42).okOr('error').expect('Expected value')).toBe(42)
   })
 
-  it('returns the error value when called on a None option', () => {
-    const option = TestNone<string>()
-    expect(option.okOr('error').unwrapErr()).toEqual('error')
+  it('returns the error for None', () => {
+    expect(testNone<string>().okOr('error').expectErr('Expected Err')).toBe('error')
   })
 })
 
 describe('okOrElse', () => {
-  it('returns the value when called on a Some option', () => {
-    const option = TestSome(42)
-    expect(option.okOrElse(() => 'error').unwrap()).toEqual(42)
+  it('returns the value for Some', () => {
+    expect(
+      testSome(42)
+        .okOrElse(() => 'error')
+        .expect('Expected value'),
+    ).toBe(42)
   })
 
-  it('returns the error value when called on a None option', () => {
-    const option = TestNone<string>()
-    expect(option.okOrElse(() => 'error').unwrapErr()).toEqual('error')
-  })
-})
-
-describe('and', () => {
-  it('returns the other option when Some and None', () => {
-    const a = TestSome(2)
-    const b = TestNone<string>()
-    expect(a.and(b)).toEqual(b)
-  })
-
-  it('returns the other option when Some and Some', () => {
-    const a = TestSome(2)
-    const b = TestSome('str')
-    expect(a.and(b)).toEqual(b)
-  })
-
-  it('returns None when None and Some', () => {
-    const a = TestNone<string>()
-    const b = TestSome('foo')
-    expect(a.and(b)).toEqual(a)
-  })
-
-  it('returns None when None and None', () => {
-    const a = TestNone<string>()
-    const b = TestNone<string>()
-    expect(a.and(b)).toEqual(a)
+  it('returns the computed error for None', () => {
+    expect(
+      testNone<string>()
+        .okOrElse(() => 'error')
+        .expectErr('Expected Err'),
+    ).toBe('error')
   })
 })
 
 describe('andThen', () => {
-  it('returns the mapped value for a Some option', () => {
-    const a = TestSome(0)
-    expect(a.andThen((value) => TestSome(value + 1))).toEqual(Some(1))
+  it('returns the mapped Some value', () => {
+    expect(testSome(0).andThen((value) => testSome(value + 1))).toEqual(Some(1))
   })
 
-  it('returns None for a None option', () => {
-    const a = TestNone<string>()
-    expect(a.andThen((value) => Some(value + 1))).toEqual(a)
+  it('returns None without calling the mapper', () => {
+    const option = testNone<string>()
+
+    expect(option.andThen((value) => Some(value + 1))).toEqual(option)
   })
 })
 
 describe('expect', () => {
-  it('returns the value when called on a Some option', () => {
-    const option = TestSome(42)
-    expect(option.expect('error')).toEqual(42)
+  it('returns the value for Some', () => {
+    expect(testSome(42).expect('error')).toBe(42)
   })
 
-  it('throws when called on a None option', () => {
-    const option = TestNone<string>()
+  it('throws Panic for None', () => {
+    const option = testNone<string>()
+
     expect(() => option.expect('error')).toThrow(Panic)
     expect(() => option.expect('error')).toThrow('error')
   })
 })
 
 describe('filter', () => {
-  it('returns the option when the predicate returns true', () => {
+  it('retains Some when the predicate passes', () => {
     const option = Some(42)
-    expect(option.filter((value) => value === 42)).toEqual(option)
+
+    expect(option.filter((value) => value === 42)).toBe(option)
   })
 
-  it('returns None when the predicate returns false', () => {
-    const option = TestSome(42)
-    expect(option.filter((value) => value !== 42)).toEqual(None)
+  it('returns None when the predicate fails', () => {
+    expect(testSome(42).filter((value) => value !== 42)).toEqual(None)
   })
 
-  it('returns None when called on a None option', () => {
-    const option = TestNone<string>()
+  it('returns None without evaluating its predicate', () => {
+    const option = testNone<string>()
+
     expect(option.filter((value) => value === 'hello')).toEqual(option)
   })
 })
 
 describe('flatten', () => {
-  it('returns the inner option when called on a Some option', () => {
-    const inner = TestSome(42)
-    const option = TestSome(inner)
-    expect(option.flatten()).toEqual(inner)
+  it('returns the inner option for Some', () => {
+    const inner = testSome(42)
+
+    expect(testSome(inner).flatten()).toEqual(inner)
   })
 
-  it('returns None when called on a None option', () => {
-    const option = TestNone<Option<string>>()
+  it('returns None for None', () => {
+    const option = testNone<Option<string>>()
+
     expect(option.flatten()).toEqual(option)
   })
 })
 
 describe('inspect', () => {
-  it('calls the function with the value when called on a Some option', () => {
-    const option = TestSome(42)
-    const callback = vi.fn()
-    expect(option.inspect(callback)).toEqual(option)
-    expect(callback).toHaveBeenCalledWith(42)
+  it('calls the callback for Some and returns itself', () => {
+    const option = testSome(42)
+    let inspected: number | undefined
+
+    const result = option.inspect((value) => {
+      inspected = value
+    })
+
+    expect(result).toBe(option)
+    expect(inspected).toBe(42)
   })
 
-  it('does not call the function when called on a None option', () => {
-    const option = TestNone<string>()
-    const callback = vi.fn()
-    expect(option.inspect(callback)).toEqual(option)
-    expect(callback).not.toHaveBeenCalled()
+  it('does not call the callback for None', () => {
+    const option = testNone<string>()
+    let calls = 0
+
+    const result = option.inspect(() => {
+      calls += 1
+    })
+
+    expect(result).toBe(option)
+    expect(calls).toBe(0)
   })
 })
 
 describe('map', () => {
-  it('returns the mapped value for a Some option', () => {
-    const option = TestSome(42)
-    expect(option.map((value) => value + 1)).toEqual(Some(43))
+  it('maps a Some value', () => {
+    expect(testSome(42).map((value) => value + 1)).toEqual(Some(43))
   })
 
-  it('returns None for a None option', () => {
-    const option = TestNone<string>()
+  it('returns None unchanged', () => {
+    const option = testNone<string>()
+
     expect(option.map((value) => value + 1)).toEqual(option)
   })
 })
 
 describe('mapOr', () => {
-  it('returns the mapped value for a Some option', () => {
-    const option = TestSome(42)
-    expect(option.mapOr('default', (value) => value + 1)).toEqual(43)
+  it('maps a Some value', () => {
+    expect(testSome(42).mapOr('default', (value) => value + 1)).toBe(43)
   })
 
-  it('returns the default value for a None option', () => {
-    const option = TestNone<string>()
-    expect(option.mapOr('default', (value) => value + 1)).toEqual('default')
+  it('returns the default for None', () => {
+    expect(testNone<string>().mapOr('default', (value) => value + 1)).toBe('default')
   })
 })
 
 describe('mapOrElse', () => {
-  it('returns the mapped value for a Some option', () => {
-    const option = TestSome(42)
+  it('maps a Some value', () => {
     expect(
-      option.mapOrElse(
+      testSome(42).mapOrElse(
         () => 'default',
         (value) => value + 1,
       ),
-    ).toEqual(43)
+    ).toBe(43)
   })
 
-  it('returns the default value for a None option', () => {
-    const option = TestNone<string>()
+  it('computes the default for None', () => {
     expect(
-      option.mapOrElse(
+      testNone<string>().mapOrElse(
         () => 'default',
         (value) => value + 1,
       ),
-    ).toEqual('default')
-  })
-})
-
-describe('or', () => {
-  it('returns the original option when Some and None', () => {
-    const a = TestSome(2)
-    const b = TestNone<string>()
-    expect(a.or(b)).toEqual(a)
-  })
-
-  it('returns the original option when Some and Some', () => {
-    const a = TestSome(2)
-    const b = TestSome('str')
-    expect(a.or(b)).toEqual(a)
-  })
-
-  it('returns the other option when None and Some', () => {
-    const a = TestNone<string>()
-    const b = TestSome('foo')
-    expect(a.or(b)).toEqual(b)
-  })
-
-  it('returns None when None and None', () => {
-    const a = TestNone<string>()
-    const b = TestNone<string>()
-    expect(a.or(b)).toEqual(a)
+    ).toBe('default')
   })
 })
 
 describe('orElse', () => {
-  it('returns the original option for a Some option', () => {
-    const a = TestSome(0)
-    expect(a.orElse(() => Some(1))).toEqual(a)
+  it('returns the first Some without calling the fallback', () => {
+    const option = testSome(0)
+
+    expect(option.orElse(() => Some(1))).toEqual(option)
   })
 
-  it('returns the result of the function for a None option', () => {
-    const a = TestNone<string>()
-    expect(a.orElse(() => Some(1))).toEqual(Some(1))
+  it('returns the fallback result for None', () => {
+    expect(testNone<string>().orElse(() => Some(1))).toEqual(Some(1))
   })
 })
 
 describe('unwrap', () => {
-  it('returns the value when called on a Some option', () => {
-    const option = TestSome(42)
-    expect(option.unwrap()).toEqual(42)
+  it('returns the Some value', () => {
+    expect(Some(42).unwrap()).toBe(42)
   })
 
-  it('returns undefined when called on a None option', () => {
-    const option = TestNone<string>()
-    expect(option.unwrap()).toEqual(undefined)
+  it('does not exist on None', () => {
+    expect('unwrap' in None).toBe(false)
   })
 })
 
 describe('unwrapOr', () => {
-  it('returns the value when called on a Some option', () => {
-    const option = TestSome(42)
-    expect(option.unwrapOr('default')).toEqual(42)
+  it('returns the Some value', () => {
+    expect(testSome(42).unwrapOr('default')).toBe(42)
   })
 
-  it('returns the default value when called on a None option', () => {
-    const option = TestNone<string>()
-    expect(option.unwrapOr('default')).toEqual('default')
+  it('returns the default for None', () => {
+    expect(testNone<string>().unwrapOr('default')).toBe('default')
   })
 })
 
 describe('unwrapOrElse', () => {
-  it('returns the value when called on a Some option', () => {
-    const option = TestSome(42)
-    expect(option.unwrapOrElse(() => 'default')).toEqual(42)
+  it('returns the Some value', () => {
+    expect(testSome(42).unwrapOrElse(() => 'default')).toBe(42)
   })
 
-  it('returns the default value when called on a None option', () => {
-    const option = TestNone<string>()
-    expect(option.unwrapOrElse(() => 'default')).toEqual('default')
+  it('computes the default for None', () => {
+    expect(testNone<string>().unwrapOrElse(() => 'default')).toBe('default')
   })
 })
 
 describe('xor', () => {
-  it('returns Some when Some and None', () => {
-    const a = TestSome(2)
-    const b = TestNone<string>()
-    expect(a.xor(b)).toEqual(a)
+  it('returns Some for Some and None', () => {
+    const first = testSome(2)
+    const second = testNone<string>()
+
+    expect(first.xor(second)).toEqual(first)
   })
 
-  it('returns Some when None and Some', () => {
-    const a = TestNone<string>()
-    const b = TestSome('foo')
-    expect(a.xor(b)).toEqual(b)
+  it('returns Some for None and Some', () => {
+    const first = testNone<string>()
+    const second = testSome('foo')
+
+    expect(first.xor(second)).toEqual(second)
   })
 
-  it('returns None when None and None', () => {
-    const a = TestNone<string>()
-    const b = TestNone<string>()
-    expect(a.xor(b)).toEqual(a)
+  it('returns None for None and None', () => {
+    const first = testNone<string>()
+    const second = testNone<string>()
+
+    expect(first.xor(second)).toEqual(first)
   })
 
-  it('returns None when Some and Some', () => {
-    const a = TestSome(2)
-    const b = TestSome('str')
-    expect(a.xor(b)).toEqual(None)
+  it('returns None for Some and Some', () => {
+    expect(testSome(2).xor(testSome('str'))).toEqual(None)
   })
 })
 
 describe('match', () => {
-  it('returns the result of the some callback when called on a Some option', () => {
-    const option = TestSome(42)
+  it('calls the Some matcher', () => {
     expect(
-      option.match({
+      testSome(42).match({
         Some: (value) => value + 1,
         None: () => 'default',
       }),
-    ).toEqual(43)
+    ).toBe(43)
   })
 
-  it('returns the result of the none callback when called on a None option', () => {
-    const option = TestNone<string>()
+  it('calls the None matcher', () => {
     expect(
-      option.match({
+      testNone<string>().match({
         Some: (value) => value + 1,
         None: () => 'default',
       }),
-    ).toEqual('default')
+    ).toBe('default')
   })
 })
 
 describe('Option.fromNullish', () => {
-  it('returns Some when the value is not null or undefined', () => {
-    const value = 'hello' as string | number | null
+  it('returns Some for non-nullish values', () => {
+    const value = stringOrNumberOrNull()
     const option = Option.fromNullish(value)
+
     expectTypeOf(option).toEqualTypeOf<Option<string | number>>()
     expect(option).toEqual(Some(value))
   })
 
-  it('returns Some when the value is falsy', () => {
+  it('returns Some for falsy values', () => {
     expect(Option.fromNullish(false)).toEqual(Some(false))
     expect(Option.fromNullish(0)).toEqual(Some(0))
     expect(Option.fromNullish('')).toEqual(Some(''))
   })
 
-  it('returns None when the value is null or undefined', () => {
+  it('returns None for nullish values', () => {
     expect(Option.fromNullish(null)).toEqual(None)
     expect(Option.fromNullish(undefined)).toEqual(None)
   })

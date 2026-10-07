@@ -1,4 +1,4 @@
-import { type AsyncResult, Err, Ok, Result, parseUnknown, tryBlock, tryBlockAsync } from '@hoseki/packages/result'
+import { type AsyncResult, Err, Ok, Result, parseUnknown, tryBlock } from '@hoseki/packages/result'
 import { SafeHttpErrorKind, type SafeResponse, safeHttp } from '@hoseki/packages/safe-http'
 import { createHash, createHmac } from 'crypto'
 import { ApiError, ApiErrorKind } from './errors'
@@ -67,7 +67,7 @@ function getKrakenHeaders(
     const sha256Hash = createHash('sha256').update(sha256Input).digest()
 
     // Step 2: HMAC-SHA512(API-Secret, URI path + SHA256(nonce + POST data))
-    const decodedSecretBuffer = yield* Result.fromThrowable(() => Buffer.from(credentials.secretKey, 'base64')).try()
+    const decodedSecretBuffer = yield* Result.fromThrowable(() => Buffer.from(credentials.secretKey, 'base64'))
     const decodedSecret = new Uint8Array(decodedSecretBuffer)
 
     const apiPathUint8 = new Uint8Array(Buffer.from(requestPath))
@@ -134,17 +134,12 @@ export class Client {
   }
 
   private makeRequest(path: string, nonce: string, postData: string): AsyncResult<SafeResponse, ApiError> {
-    return tryBlockAsync(
+    return tryBlock(
       async function* (this: Client) {
         // Generate authentication headers
-        const authHeaders = yield* getKrakenHeaders(path, nonce, postData, this.credentials)
-          .mapErr((err) => {
-            return new ApiError(
-              ApiErrorKind.InvalidCredentials(err.message),
-              'Failed to generate authentication headers',
-            )
-          })
-          .try()
+        const authHeaders = yield* getKrakenHeaders(path, nonce, postData, this.credentials).mapErr((err) => {
+          return new ApiError(ApiErrorKind.InvalidCredentials(err.message), 'Failed to generate authentication headers')
+        })
 
         const headers = {
           ...authHeaders,
@@ -197,15 +192,15 @@ export class Client {
    * @see https://docs.kraken.com/api/docs/rest-api/get-account-balance
    */
   public getBalance(): AsyncResult<ParsedData<BalanceResult>, ApiError> {
-    return tryBlockAsync(
+    return tryBlock(
       async function* (this: Client) {
         // Generate nonce
         const nonce = Date.now().toString()
         const postData = `nonce=${nonce}`
 
-        const response = yield* this.makeRequest('/0/private/Balance', nonce, postData).try()
+        const response = yield* this.makeRequest('/0/private/Balance', nonce, postData)
 
-        const { data, response: originalResponse } = yield* parseBalanceResponse(response).try()
+        const { data, response: originalResponse } = yield* parseBalanceResponse(response)
 
         // Check for Kraken API errors in the response
         if (data.error.length > 0) {
@@ -230,14 +225,12 @@ export class Client {
    * @see https://docs.kraken.com/api/docs/rest-api/get-ledgers-info
    */
   public getLedgers(payload: LedgersPayload = {}): AsyncResult<ParsedData<LedgersResult>, ApiError> {
-    return tryBlockAsync(
+    return tryBlock(
       async function* (this: Client) {
         // Validate payload
-        const ledgersPayload = yield* parseUnknown(LedgersPayloadSchema, payload)
-          .mapErr((err) => {
-            return new ApiError(ApiErrorKind.ValidationError(err), `Invalid payload: ${err.message}`)
-          })
-          .try()
+        const ledgersPayload = yield* parseUnknown(LedgersPayloadSchema, payload).mapErr((err) => {
+          return new ApiError(ApiErrorKind.ValidationError(err), `Invalid payload: ${err.message}`)
+        })
 
         // Generate nonce and serialize payload
         const nonce = Date.now().toString()
@@ -256,8 +249,8 @@ export class Client {
           postData = `nonce=${nonce}`
         }
 
-        const response = yield* this.makeRequest('/0/private/Ledgers', nonce, postData).try()
-        const { data, response: originalResponse } = yield* parseLedgersResponse(response).try()
+        const response = yield* this.makeRequest('/0/private/Ledgers', nonce, postData)
+        const { data, response: originalResponse } = yield* parseLedgersResponse(response)
 
         // Check for Kraken API errors in the response
         if (data.error.length > 0) {

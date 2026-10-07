@@ -1,5 +1,5 @@
 import { type AddressInfo, type Server, createServer } from 'node:net'
-import { Err, Ok, asyncFn } from '@hoseki/packages/result'
+import { AsyncResult, Err, Ok } from '@hoseki/packages/result'
 import { parseUnknown } from '@hoseki/packages/result/lib/parse'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { z } from 'zod'
@@ -17,10 +17,13 @@ let sockets: Server[]
 let queued: AppContext[]
 
 // main() takes contexts in order, so each fake answers exactly one start.
-const createContext = asyncFn(async () => {
-  const next = queued.shift()
-  return next ? Ok(next) : Err(new Error('No test context queued'))
-})
+const createContext = () =>
+  new AsyncResult(
+    (async () => {
+      const next = queued.shift()
+      return next ? Ok(next) : Err(new Error('No test context queued'))
+    })(),
+  )
 
 function queueContext(port: number): FakeContext {
   let closes = 0

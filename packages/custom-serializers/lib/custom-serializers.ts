@@ -34,7 +34,7 @@ function registerOption(sj: typeof superjson) {
       isApplicable: (v): v is Option<unknown> => isOption(v),
       serialize: (v) => ({
         variant: v.isSome() ? 'Some' : 'None',
-        value: sj.stringify(v.value()),
+        value: sj.stringify(v.unwrapOr(undefined)),
       }),
       deserialize: (v) => {
         const parsed = sj.parse(v.value)
@@ -53,7 +53,7 @@ function registerResult(sj: typeof superjson) {
         const ok = v.isOk()
         const serialized = {
           variant: ok ? 'Ok' : 'Err',
-          value: sj.stringify(ok ? v.value() : v.error()),
+          value: sj.stringify(ok ? v.unwrap() : v.unwrapErr()),
         } as const
         return serialized
       },

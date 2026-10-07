@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { Err, Ok, type Result, asyncFn } from '@hoseki/packages/result'
+import { AsyncResult, Err, Ok, type Result } from '@hoseki/packages/result'
 import { parseUnknown } from '@hoseki/packages/result/lib/parse'
 import { type StatementQuoteCurrency, StatementQuoteCurrencySchema } from '@hoseki/packages/schemas/statement-quote'
 import { Decimal } from 'decimal.js'
@@ -104,77 +104,80 @@ export class DailyRatesService {
     )
   }
 
-  public getDailyRates = asyncFn(
-    async (
-      openingDate: Date,
-      closingDate: Date,
-      quoteCurrency: StatementQuoteCurrency = 'USD',
-      requiredDates?: Date[],
-    ): Promise<Result<DailyRates, Error>> => {
-      if (
-        !Number.isFinite(openingDate.getTime()) ||
-        !Number.isFinite(closingDate.getTime()) ||
-        openingDate > closingDate
-      ) {
-        return Err(new Error('Statement dates must be valid and ordered'))
-      }
-      if (openingDate < MIN_MEMPOOL_PRICE_DATE) {
-        return Err(new Error('Statements must start on or after April 1, 2023.'))
-      }
-      if (closingDate.getTime() > Date.now()) {
-        return Err(new Error('Statement dates cannot be in the future.'))
-      }
-      const start = utcDay(openingDate)
-      const end = utcDay(closingDate)
-      if ((end - start) / DAY_SECONDS + 1 > MAX_REQUEST_DAYS) {
-        return Err(new Error('Statement date range cannot exceed two years.'))
-      }
-      const requested =
-        requiredDates ??
-        Array.from({ length: (end - start) / DAY_SECONDS + 1 }, (_, i) => new Date((start + i * DAY_SECONDS) * 1000))
-      if (requested.some((date) => !Number.isFinite(date.getTime()) || utcDay(date) < start || utcDay(date) > end)) {
-        return Err(new Error('Required quote dates must be within the statement range.'))
-      }
-      const days = [...new Set(requested.map(utcDay))].sort((a, b) => a - b)
-      const chosen = new Map<number, CachedQuote>()
-      for (let i = 0; i < days.length; i += DailyRatesService.CONCURRENCY) {
-        const batch = days.slice(i, i + DailyRatesService.CONCURRENCY)
-        const results = await Promise.all(
-          batch.map(async (target) => ({ target, result: await this.getQuoteWithFallback(target, quoteCurrency) })),
-        )
-        // Choose each day's quote only once the whole batch has finished, from everything now
-        // cached, so the choice depends on which requests succeeded rather than on when their
-        // responses arrived. A day whose sources all failed can use a neighbour's nearby quote.
-        const now = Date.now()
-        for (const { target, result } of results) {
-          const { oldest, newest } = quoteWindow(target, now)
-          const quote = await this.cache.find(quoteCurrency, target, oldest, newest)
-          if (quote) {
-            chosen.set(target, quote)
-          } else if (result.isOk()) {
-            chosen.set(target, result.unwrap())
-          } else {
-            return Err(result.unwrapErr())
+  public getDailyRates = (
+    openingDate: Date,
+    closingDate: Date,
+    quoteCurrency: StatementQuoteCurrency = 'USD',
+    requiredDates?: Date[],
+  ): AsyncResult<DailyRates, Error> =>
+    new AsyncResult(
+      (async () => {
+        if (
+          !Number.isFinite(openingDate.getTime()) ||
+          !Number.isFinite(closingDate.getTime()) ||
+          openingDate > closingDate
+        ) {
+          return Err(new Error('Statement dates must be valid and ordered'))
+        }
+        if (openingDate < MIN_MEMPOOL_PRICE_DATE) {
+          return Err(new Error('Statements must start on or after April 1, 2023.'))
+        }
+        if (closingDate.getTime() > Date.now()) {
+          return Err(new Error('Statement dates cannot be in the future.'))
+        }
+        const start = utcDay(openingDate)
+        const end = utcDay(closingDate)
+        if ((end - start) / DAY_SECONDS + 1 > MAX_REQUEST_DAYS) {
+          return Err(new Error('Statement date range cannot exceed two years.'))
+        }
+        const requested =
+          requiredDates ??
+          Array.from({ length: (end - start) / DAY_SECONDS + 1 }, (_, i) => new Date((start + i * DAY_SECONDS) * 1000))
+        if (requested.some((date) => !Number.isFinite(date.getTime()) || utcDay(date) < start || utcDay(date) > end)) {
+          return Err(new Error('Required quote dates must be within the statement range.'))
+        }
+        const days = [...new Set(requested.map(utcDay))].sort((a, b) => a - b)
+        const chosen = new Map<number, CachedQuote>()
+        for (let i = 0; i < days.length; i += DailyRatesService.CONCURRENCY) {
+          const batch = days.slice(i, i + DailyRatesService.CONCURRENCY)
+          const results = await Promise.all(
+            batch.map(async (target) => ({ target, result: await this.getQuoteWithFallback(target, quoteCurrency) })),
+          )
+          // Choose each day's quote only once the whole batch has finished, from everything now
+          // cached, so the choice depends on which requests succeeded rather than on when their
+          // responses arrived. A day whose sources all failed can use a neighbour's nearby quote.
+          const now = Date.now()
+          for (const { target, result } of results) {
+            const { oldest, newest } = quoteWindow(target, now)
+            const quote = await this.cache.find(quoteCurrency, target, oldest, newest)
+            if (quote) {
+              chosen.set(target, quote)
+            } else if (result.isOk()) {
+              chosen.set(target, result.unwrap())
+            } else {
+              return Err(result.unwrapErr())
+            }
           }
         }
-      }
-      // Days are chosen in date order, so the rates keep that order.
-      const rates: Record<string, DailyRate> = {}
-      for (const [target, quote] of chosen) {
-        rates[toDateKey(new Date(target * 1000))] = toDailyRate(quote)
-      }
-      const providerUrls = [
-        ...new Set(Object.values(rates).flatMap((rate) => (rate.providerUrl !== undefined ? [rate.providerUrl] : []))),
-      ].sort()
-      return Ok({
-        rates,
-        source: 'mempool',
-        quoteCurrency,
-        providerUrls,
-        providerUrl: providerUrls.length === 1 ? providerUrls[0] : undefined,
-      })
-    },
-  )
+        // Days are chosen in date order, so the rates keep that order.
+        const rates: Record<string, DailyRate> = {}
+        for (const [target, quote] of chosen) {
+          rates[toDateKey(new Date(target * 1000))] = toDailyRate(quote)
+        }
+        const providerUrls = [
+          ...new Set(
+            Object.values(rates).flatMap((rate) => (rate.providerUrl !== undefined ? [rate.providerUrl] : [])),
+          ),
+        ].sort()
+        return Ok({
+          rates,
+          source: 'mempool',
+          quoteCurrency,
+          providerUrls,
+          providerUrl: providerUrls.length === 1 ? providerUrls[0] : undefined,
+        })
+      })(),
+    )
 
   private async getQuoteWithFallback(
     target: number,

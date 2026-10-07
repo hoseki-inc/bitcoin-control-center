@@ -13,7 +13,7 @@ it('returns parsed json', async () => {
   const body = new SafeBody(Response.json(json))
   const result = await body.json((responseJson) => parseUnknown(schema, responseJson))
   expectTypeOf<Result<{ id: number }, SafeBodyError>>(result)
-  expect(result.unwrap()).toEqual(json)
+  expect(result.expect('Expected successful result')).toEqual(json)
 })
 
 it('returns error if body is unreadable', async () => {

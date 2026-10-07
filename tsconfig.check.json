@@ -1,4 +1,9 @@
 {
   "files": [],
-  "references": [{ "path": "./apps/api-sentinel" }, { "path": "./apps/control-center" }, { "path": "./packages" }]
+  "references": [
+    { "path": "./apps/api-sentinel" },
+    { "path": "./apps/control-center" },
+    { "path": "./packages" },
+    { "path": "./packages/result" }
+  ]
 }

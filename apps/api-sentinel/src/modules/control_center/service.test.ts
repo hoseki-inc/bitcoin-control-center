@@ -9,7 +9,7 @@ import { ElectrumProvider } from '@hoseki/packages/bitcoin/onchain/electrum_prov
 import { Txid } from '@hoseki/packages/bitcoin/txid'
 import { ElectrumClient } from '@hoseki/packages/clients/electrum'
 import { IndexMap } from '@hoseki/packages/collection'
-import { AsyncResult, Err, Ok, type Result, asyncFn } from '@hoseki/packages/result'
+import { AsyncResult, Err, Ok, type Result } from '@hoseki/packages/result'
 import { Wallets } from '@hoseki/packages/testing'
 import { createClient } from '@libsql/client/sqlite3'
 import Decimal from 'decimal.js'
@@ -36,7 +36,7 @@ const customRange = { startDate: '2020-01-01', endDate: '2020-01-03' }
 
 function entry(value: bigint, timestamp: string, blockHeight = 600_000): TransactionEntry {
   return {
-    txid: Txid.fromString('1'.repeat(64)).unwrap(),
+    txid: Txid.fromString('1'.repeat(64)).expect('Expected successful result'),
     address: Wallets.segwitAddress,
     value,
     timestamp: new Date(timestamp),
@@ -63,11 +63,13 @@ async function createHarness() {
     electrum: new ElectrumClient({ host: 'localhost', port: 50001, protocol: 'tcp' }),
   })
   const provider = {
-    getBlocksTip: vi.spyOn(onchainProvider, 'getBlocksTip').mockImplementation(asyncFn(async () => Ok(tip))),
-    getBlock: vi.spyOn(onchainProvider, 'getBlock').mockImplementation(asyncFn(async () => Ok(tip))),
+    getBlocksTip: vi
+      .spyOn(onchainProvider, 'getBlocksTip')
+      .mockImplementation(() => new AsyncResult((async () => Ok(tip))())),
+    getBlock: vi.spyOn(onchainProvider, 'getBlock').mockImplementation(() => new AsyncResult((async () => Ok(tip))())),
     getConfirmedAccountBalances: vi
       .spyOn(onchainProvider, 'getConfirmedAccountBalances')
-      .mockImplementation(asyncFn(async () => Ok(new IndexMap<Account, bigint>([[account, 100n]])))),
+      .mockImplementation(() => new AsyncResult((async () => Ok(new IndexMap<Account, bigint>([[account, 100n]])))())),
   }
   const priceService = new PriceService({
     logger,
@@ -77,7 +79,10 @@ async function createHarness() {
   const price = vi
     .spyOn(priceService, 'getCurrentBtcPrice')
     .mockImplementation(
-      asyncFn(async () => Ok({ value: new Decimal(50_000), asOf: now, source: 'block' as const, lastKnown: false })),
+      () =>
+        new AsyncResult(
+          (async () => Ok({ value: new Decimal(50_000), asOf: now, source: 'block' as const, lastKnown: false }))(),
+        ),
     )
   const service = new ControlCenterService({
     db,
@@ -152,7 +157,7 @@ describe('portfolio history completion', () => {
       await service.recordAccountSnapshot(archivedId, '50', '2018-06-05T12:00:00.000Z')
       await db.update(accounts).set({ deletedAt: '2019-01-01T12:00:00.000Z' }).where(eq(accounts.id, archivedId))
 
-      const all = (await service.getData({ timeRange: 'all' })).unwrap()
+      const all = (await service.getData({ timeRange: 'all' })).expect('Expected successful result')
       expect(all.historicalData[0]?.timestamp).toBe('2018-06-05T00:00:00.000Z')
       expect(all.historicalData[1]?.totalBalance).toBe('50')
       expect(all.historicalData.find(({ timestamp }) => timestamp === '2019-01-01T23:59:59.999Z')?.totalBalance).toBe(
@@ -161,11 +166,13 @@ describe('portfolio history completion', () => {
       expect(all.historicalData.at(-1)?.totalBalance).toBe('100')
       expect(all.historySyncingAccountIds).toEqual([])
 
-      const selected = (await service.getData({ timeRange: 'all', accountIds: [accountId] })).unwrap()
+      const selected = (await service.getData({ timeRange: 'all', accountIds: [accountId] })).expect(
+        'Expected successful result',
+      )
       expect(selected.historicalData[0]?.timestamp).toBe('2020-01-02T00:00:00.000Z')
 
       await db.update(accounts).set({ deletedAt: '2021-01-01T12:00:00.000Z' }).where(eq(accounts.id, accountId))
-      const archivedOnly = (await service.getData({ timeRange: 'all' })).unwrap()
+      const archivedOnly = (await service.getData({ timeRange: 'all' })).expect('Expected successful result')
       expect(archivedOnly.historicalData[0]?.timestamp).toBe('2018-06-05T00:00:00.000Z')
       expect(archivedOnly.historicalData.at(-1)?.totalBalance).toBe('0')
     })
@@ -187,7 +194,7 @@ describe('portfolio history completion', () => {
         await expect(harness.coverage()).resolves.toHaveLength(1)
       })
       pendingPrice.resolve(Ok({ value: new Decimal(50_000), asOf: now, source: 'block' as const, lastKnown: false }))
-      const data = (await resultPromise).unwrap()
+      const data = (await resultPromise).expect('Expected successful result')
       expect(data.historySyncingAccountIds).toEqual([])
       expect(data.historySyncedAccountIds).toEqual([accountId])
       expect(data.historicalData.map(({ totalBalance }) => totalBalance)).toEqual(['0', '0', '100', '100'])
@@ -198,7 +205,9 @@ describe('portfolio history completion', () => {
     await withTestSetup(async () => {
       const pending = deferred<Result<TransactionEntry[], Error>>()
       harness.history.mockReturnValueOnce(pending.promise)
-      const data = (await harness.service.getData({ customDateRange: customRange })).unwrap()
+      const data = (await harness.service.getData({ customDateRange: customRange })).expect(
+        'Expected successful result',
+      )
       expect(data.historySyncingAccountIds).toEqual([accountId])
       expect(data.historySyncedAccountIds).toEqual([])
       expect(data.historyRefreshingAccountIds).toEqual([])
@@ -217,7 +226,7 @@ describe('portfolio history completion', () => {
       harness.provider.getBlocksTip.mockResolvedValue(Ok(nextTip))
       const pending = deferred<Result<TransactionEntry[], Error>>()
       harness.history.mockReturnValueOnce(pending.promise)
-      const data = (await harness.service.getData({ timeRange: 'all' })).unwrap()
+      const data = (await harness.service.getData({ timeRange: 'all' })).expect('Expected successful result')
       expect(data.historySyncingAccountIds).toEqual([accountId])
       expect(data.historyRefreshingAccountIds).toEqual([accountId])
       expect(data.historySyncedAccountIds).toEqual([])
@@ -262,7 +271,9 @@ describe('portfolio history completion', () => {
           await harness.sync()
         }
         harness.provider.getBlocksTip.mockResolvedValue(Err(new Error('Connection unavailable')))
-        const data = (await harness.service.getData({ customDateRange: customRange })).unwrap()
+        const data = (await harness.service.getData({ customDateRange: customRange })).expect(
+          'Expected successful result',
+        )
         expect(data.historySyncingAccountIds).toEqual([accountId])
         expect(data.historySyncedAccountIds).toEqual([])
         expect(data.historyFailedAccountIds).toEqual([accountId])
@@ -814,7 +825,7 @@ describe('history retry coordination', () => {
         await vi.waitFor(async () => {
           expect(service['accountHistoryBackfillsInFlight'].has(accountId)).toBe(false)
         })
-        const data = (await service.getData({ customDateRange: customRange })).unwrap()
+        const data = (await service.getData({ customDateRange: customRange })).expect('Expected successful result')
         expect(data.historyFailedAccountIds).toEqual([accountId])
         expect(data.historySyncingAccountIds).toEqual([accountId])
         expect(data.historyRefreshingAccountIds).toEqual([])
@@ -829,7 +840,7 @@ describe('history retry coordination', () => {
       await vi.waitFor(async () => {
         expect(service['accountHistoryBackfillsInFlight'].has(accountId)).toBe(false)
       })
-      const recovered = (await service.getData({ customDateRange: customRange })).unwrap()
+      const recovered = (await service.getData({ customDateRange: customRange })).expect('Expected successful result')
       expect(recovered.historyFailedAccountIds).toEqual([])
       expect(recovered.historySyncingAccountIds).toEqual([])
       expect(recovered.historySyncedAccountIds).toEqual([accountId])

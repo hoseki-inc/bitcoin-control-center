@@ -49,8 +49,8 @@ test('Result', () => {
   serialized = SuperJSON.stringify(err)
   const deserializedError = SuperJSON.parse<typeof err>(serialized)
   expect(deserializedError.isErr()).toBe(true)
-  expect(deserializedError.error()).toBeInstanceOf(Error)
-  expect(deserializedError.error()).toMatchObject({ name: 'Error', message: 'error' })
+  expect(deserializedError.unwrapErr()).toBeInstanceOf(Error)
+  expect(deserializedError.unwrapErr()).toMatchObject({ name: 'Error', message: 'error' })
 })
 
 test('IndexMap preserves object identifiers and bigint values after serialization', () => {

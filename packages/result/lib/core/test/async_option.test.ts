@@ -1,296 +1,340 @@
-import { describe, expect, it, vi } from 'vitest'
-import { AsyncOption, Err, None, Ok, Panic, Some } from '../index'
+import { AsyncNone, AsyncOption, AsyncSome, None, type Option, Panic, Some } from '@hoseki/packages/result'
+import { describe, expect, expectTypeOf, it } from 'vitest'
 
-function promiseSome<T>(value: T) {
-  return new AsyncOption<T>(Promise.resolve(Some<T>(value)))
-}
-
-function promiseNone() {
-  return new AsyncOption<any>(Promise.resolve(None))
-}
-
-describe('okOr', () => {
-  it('returns the option when Some', async () => {
-    const option = promiseSome(42)
-    const err = 'error'
-    await expect(option.okOr(err).unwrap()).resolves.toEqual(42)
+describe('AsyncOption.fromNullish', () => {
+  it.each([null, undefined])('converts %s to None, directly or through a promise', async (value) => {
+    await expect(AsyncOption.fromNullish(value)).resolves.toBe(None)
+    await expect(AsyncOption.fromNullish(Promise.resolve(value))).resolves.toBe(None)
   })
 
-  it('returns the error when None', async () => {
-    const option = promiseNone()
-    const err = 'error'
-    await expect(option.okOr(err).unwrapErr()).resolves.toEqual(err)
+  it.each([0, false, ''])('preserves the non-nullish value %s', async (value) => {
+    await expect(AsyncOption.fromNullish(value)).resolves.toEqual(Some(value))
+    await expect(AsyncOption.fromNullish(Promise.resolve(value))).resolves.toEqual(Some(value))
+  })
+
+  it('accepts PromiseLike values and removes nullish types before chaining', async () => {
+    const value: PromiseLike<string | null | undefined> = Promise.resolve('Ada')
+    const option = AsyncOption.fromNullish({ then: value.then.bind(value) })
+    const explicit = AsyncOption.fromNullish<string | null | undefined>(value)
+    const missing = AsyncOption.fromNullish<string>(null)
+
+    expectTypeOf(option).toEqualTypeOf<AsyncOption<string>>()
+    expectTypeOf(explicit).toEqualTypeOf<AsyncOption<string>>()
+    expectTypeOf(missing).toEqualTypeOf<AsyncOption<string>>()
+    await expect(option.map((name) => name.length)).resolves.toEqual(Some(3))
+    await expect(missing).resolves.toBe(None)
+  })
+
+  it('preserves rejection rather than treating it as absence', async () => {
+    const rejection = new Error('lookup failed')
+
+    await expect(AsyncOption.fromNullish(Promise.reject(rejection))).rejects.toBe(rejection)
+  })
+})
+
+describe('catch', () => {
+  it('passes fulfilled Options through without handling None', async () => {
+    const expected: Option<number> = None
+    const pending = new AsyncOption(Promise.resolve(expected))
+    let calls = 0
+
+    const caught = pending.catch<string>(() => {
+      calls += 1
+      return 'recovered'
+    })
+
+    expectTypeOf(caught).toEqualTypeOf<PromiseLike<Option<number> | string>>()
+    await expect(caught).resolves.toBe(expected)
+    expect(calls).toBe(0)
+  })
+
+  it('handles rejected promises', async () => {
+    const rejection = new Error('rejected')
+    const pending = new AsyncOption<number>(Promise.reject(rejection))
+
+    await expect(
+      pending.catch((cause) => {
+        expect(cause).toBe(rejection)
+        return 'recovered'
+      }),
+    ).resolves.toBe('recovered')
+  })
+})
+
+describe('finally', () => {
+  it('awaits cleanup before preserving a fulfilled Option', async () => {
+    const expected: Option<number> = Some(42)
+    let startCleanup = (): void => {
+      throw new Error('Cleanup did not start')
+    }
+    let finishCleanup = (): void => {
+      throw new Error('Cleanup did not finish')
+    }
+    const cleanupStarted = new Promise<void>((resolve) => {
+      startCleanup = resolve
+    })
+    const cleanupFinished = new Promise<void>((resolve) => {
+      finishCleanup = resolve
+    })
+    const finalized = new AsyncOption(Promise.resolve(expected)).finally(async () => {
+      startCleanup()
+      await cleanupFinished
+    })
+    let settled = false
+    void finalized.then(() => {
+      settled = true
+    })
+
+    await cleanupStarted
+    expect(settled).toBe(false)
+    finishCleanup()
+    await expect(finalized).resolves.toBe(expected)
+  })
+
+  it('preserves the original rejection after cleanup', async () => {
+    const rejection = new Error('rejected')
+    const pending = new AsyncOption<number>(Promise.reject(rejection))
+
+    await expect(pending.finally(async () => Promise.resolve())).rejects.toBe(rejection)
+  })
+
+  it('rejects with a cleanup failure instead of the original settlement', async () => {
+    const rejection = new Error('rejected')
+    const cleanupFailure = new Error('cleanup failed')
+    const rejected = new AsyncOption<number>(Promise.reject(rejection))
+    const failCleanup = async (): Promise<void> => Promise.reject(cleanupFailure)
+
+    await expect(AsyncSome(42).finally(failCleanup)).rejects.toBe(cleanupFailure)
+    await expect(rejected.finally(failCleanup)).rejects.toBe(cleanupFailure)
+  })
+})
+
+describe('okOr', () => {
+  it('returns the value for Some', async () => {
+    await expect(AsyncSome(42).okOr('error').expect('Expected value')).resolves.toBe(42)
+  })
+
+  it('returns the error for None', async () => {
+    await expect(AsyncNone<number>().okOr('error').expectErr('Expected Err')).resolves.toBe('error')
   })
 })
 
 describe('okOrElse', () => {
-  it('returns the option when Some', async () => {
-    const option = promiseSome(42)
-    const err = 'error'
-    await expect(option.okOrElse(() => err).unwrap()).resolves.toEqual(42)
+  it('returns the value for Some', async () => {
+    await expect(
+      AsyncSome(42)
+        .okOrElse(() => 'error')
+        .expect('Expected value'),
+    ).resolves.toBe(42)
   })
 
-  it('returns the error when None', async () => {
-    const option = promiseNone()
-    const err = 'error'
-    await expect(option.okOrElse(() => err).unwrapErr()).resolves.toEqual(err)
-  })
-})
-
-describe('and', () => {
-  it('returns the other option when Some and None', async () => {
-    const a = promiseSome(2)
-    const b = promiseNone()
-    await expect(a.and(b).unwrapOr(0)).resolves.toEqual(0)
-  })
-
-  it('returns the other option when Some and Some', async () => {
-    const a = promiseSome(2)
-    const b = promiseSome('str')
-    await expect(a.and(b).unwrap()).resolves.toEqual('str')
-  })
-
-  it('returns None when None and Some', async () => {
-    const a = promiseNone()
-    const b = promiseSome('foo')
-    await expect(a.and(b).unwrapOr(0)).resolves.toEqual(0)
-  })
-
-  it('returns None when None and None', async () => {
-    const a = promiseNone()
-    const b = promiseNone()
-    await expect(a.and(b).unwrapOr(0)).resolves.toEqual(0)
+  it('computes the error for None', async () => {
+    await expect(
+      AsyncNone<number>()
+        .okOrElse(() => 'error')
+        .expectErr('Expected Err'),
+    ).resolves.toBe('error')
   })
 })
 
 describe('andThen', () => {
-  it('returns the mapped value for a Some option', async () => {
-    const a = promiseSome(0)
-    await expect(a.andThen((value) => Some(value + 1)).unwrap()).resolves.toEqual(1)
+  it('maps a Some value', async () => {
+    await expect(
+      AsyncSome(0)
+        .andThen((value) => Some(value + 1))
+        .expect('Expected value'),
+    ).resolves.toBe(1)
   })
 
-  it('returns None for a None option', async () => {
-    const a = promiseNone()
-    await expect(a.andThen((value) => Some(value + 1)).unwrapOr(0)).resolves.toEqual(0)
+  it('returns None for None', async () => {
+    await expect(AsyncNone<number>().andThen((value) => Some(value + 1))).resolves.toEqual(None)
   })
 })
 
 describe('expect', () => {
-  it('returns the value when called on a Some option', async () => {
-    const option = promiseSome(42)
-    await expect(option.expect('error')).resolves.toEqual(42)
+  it('returns the Some value', async () => {
+    await expect(AsyncSome(42).expect('error')).resolves.toBe(42)
   })
 
-  it('throws Panic when called on a None option', async () => {
-    const option = promiseNone()
-    await expect(option.expect('msg')).rejects.toEqual(new Panic('msg'))
+  it('rejects with Panic for None', async () => {
+    await expect(AsyncNone<number>().expect('msg')).rejects.toThrow(Panic)
+    await expect(AsyncNone<number>().expect('msg')).rejects.toThrow('msg')
   })
 })
 
 describe('filter', () => {
-  it('returns the option when the predicate returns true', async () => {
-    const option = promiseSome(42)
-    await expect(option.filter((value) => value === 42).unwrap()).resolves.toEqual(42)
+  it('retains Some when the predicate passes', async () => {
+    await expect(
+      AsyncSome(42)
+        .filter((value) => value === 42)
+        .expect('Expected value'),
+    ).resolves.toBe(42)
   })
 
-  it('returns None when the predicate returns false', async () => {
-    const option = promiseSome(42)
-    await expect(option.filter((value) => value !== 42)).resolves.toEqual(None)
+  it('returns None when the predicate fails', async () => {
+    await expect(AsyncSome(42).filter((value) => value !== 42)).resolves.toEqual(None)
   })
 })
 
 describe('flatten', () => {
-  it('returns the inner option for a Some option', async () => {
-    const option = promiseSome(Some(42))
-    await expect(option.flatten()).resolves.toEqual(Some(42))
+  it('returns the inner option for Some', async () => {
+    await expect(AsyncSome(Some(42)).flatten()).resolves.toEqual(Some(42))
   })
 
-  it('returns None for a None option', async () => {
-    const option = promiseNone()
-    await expect(option.flatten()).resolves.toEqual(None)
+  it('returns None for None', async () => {
+    await expect(AsyncNone<Option<number>>().flatten()).resolves.toEqual(None)
   })
 })
 
 describe('inspect', () => {
-  it('calls the function when called on a Some option', async () => {
-    const option = promiseSome(42)
-    const fn = vi.fn()
-    await option.inspect(fn)
-    expect(fn).toHaveBeenCalledWith(42)
+  it('calls the callback for Some', async () => {
+    let inspected: number | undefined
+
+    await AsyncSome(42).inspect((value) => {
+      inspected = value
+    })
+
+    expect(inspected).toBe(42)
   })
 
-  it('does not call the function when called on a None option', async () => {
-    const option = promiseNone()
-    const fn = vi.fn()
-    await option.inspect(fn)
-    expect(fn).not.toHaveBeenCalled()
+  it('does not call the callback for None', async () => {
+    let calls = 0
+
+    await AsyncNone<number>().inspect(() => {
+      calls += 1
+    })
+
+    expect(calls).toBe(0)
   })
 })
 
 describe('map', () => {
-  it('returns the mapped value for a Some option', async () => {
-    const option = promiseSome(42)
-    await expect(option.map((value) => value + 1)).resolves.toEqual(Some(43))
+  it('maps a Some value', async () => {
+    await expect(AsyncSome(42).map((value) => value + 1)).resolves.toEqual(Some(43))
   })
 
-  it('returns None for a None option', async () => {
-    const option = promiseNone()
-    await expect(option.map((value) => value + 1)).resolves.toEqual(None)
+  it('returns None for None', async () => {
+    await expect(AsyncNone<number>().map((value) => value + 1)).resolves.toEqual(None)
   })
 })
 
 describe('mapOr', () => {
-  it('returns the mapped value for a Some option', async () => {
-    const option = promiseSome(42)
-    await expect(option.mapOr('default', (value) => value + 1)).resolves.toEqual(43)
+  it('maps a Some value', async () => {
+    await expect(AsyncSome(42).mapOr('default', (value) => value + 1)).resolves.toBe(43)
   })
 
-  it('returns the default value for a None option', async () => {
-    const option = promiseNone()
-    await expect(option.mapOr('default', (value) => value + 1)).resolves.toEqual('default')
+  it('returns the default for None', async () => {
+    await expect(AsyncNone<number>().mapOr('default', (value) => value + 1)).resolves.toBe('default')
   })
 })
 
 describe('mapOrElse', () => {
-  it('returns the mapped value for a Some option', async () => {
-    const option = promiseSome(42)
+  it('maps a Some value', async () => {
     await expect(
-      option.mapOrElse(
+      AsyncSome(42).mapOrElse(
         () => 'default',
         (value) => value + 1,
       ),
-    ).resolves.toEqual(43)
+    ).resolves.toBe(43)
   })
 
-  it('returns the default value for a None option', async () => {
-    const option = promiseNone()
+  it('computes the default for None', async () => {
     await expect(
-      option.mapOrElse(
+      AsyncNone<number>().mapOrElse(
         () => 'default',
         (value) => value + 1,
       ),
-    ).resolves.toEqual('default')
-  })
-})
-
-describe('or', () => {
-  it('returns the option when Some and None', () => {
-    const a = promiseSome(2)
-    const b = promiseNone()
-    expect(a.or(b)).toEqual(a)
-  })
-
-  it('returns the option when Some and Some', () => {
-    const a = promiseSome(2)
-    const b = promiseSome('str')
-    expect(a.or(b)).toEqual(a)
-  })
-
-  it('returns None when None and Some', () => {
-    const a = promiseNone()
-    const b = promiseSome('foo')
-    expect(a.or(b)).toEqual(b)
-  })
-
-  it('returns None when None and None', () => {
-    const a = promiseNone()
-    const b = promiseNone()
-    expect(a.or(b)).toEqual(a)
+    ).resolves.toBe('default')
   })
 })
 
 describe('orElse', () => {
-  it('returns the result for a Some option', () => {
-    const a = promiseSome(1)
-    expect(a.orElse(() => Some(1))).toEqual(a)
+  it('resolves to the first Some', async () => {
+    await expect(AsyncSome(1).orElse(() => Some(2))).resolves.toEqual(Some(1))
   })
 
-  it('returns the mapped value for a None option', () => {
-    const a = promiseNone()
-    expect(a.orElse(() => Some(1))).toEqual(promiseNone())
+  it('resolves to the fallback for None', async () => {
+    await expect(AsyncNone<number>().orElse(() => Some(1))).resolves.toEqual(Some(1))
   })
 })
 
 describe('unwrap', () => {
-  it('returns the value when called on a Some option', async () => {
-    const option = promiseSome(42)
-    await expect(option.unwrap()).resolves.toEqual(42)
+  it('returns the Some value', async () => {
+    await expect(AsyncSome(42).expect('Expected value')).resolves.toBe(42)
   })
 
-  it('returns undefined when called on a None option', async () => {
-    const option = promiseNone()
-    await expect(option.unwrap()).resolves.toEqual(undefined)
+  it('requires a default before awaiting and narrowing', async () => {
+    expect('unwrap' in AsyncNone<number>()).toBe(false)
+    await expect(AsyncNone<number>().unwrapOr(undefined)).resolves.toBeUndefined()
   })
 })
 
 describe('unwrapOr', () => {
-  it('returns the value when called on a Some option', async () => {
-    const option = promiseSome(42)
-    await expect(option.unwrapOr('default')).resolves.toEqual(42)
+  it('returns the Some value', async () => {
+    await expect(AsyncSome(42).unwrapOr('default')).resolves.toBe(42)
   })
 
-  it('returns the default value when called on a None option', async () => {
-    const option = promiseNone()
-    await expect(option.unwrapOr('default')).resolves.toEqual('default')
+  it('returns the default for None', async () => {
+    await expect(AsyncNone<number>().unwrapOr('default')).resolves.toBe('default')
   })
 })
 
 describe('unwrapOrElse', () => {
-  it('returns the value when called on a Some option', async () => {
-    const option = promiseSome(42)
-    await expect(option.unwrapOrElse(() => 'default')).resolves.toEqual(42)
+  it('returns the Some value', async () => {
+    await expect(AsyncSome(42).unwrapOrElse(() => 'default')).resolves.toBe(42)
   })
 
-  it('returns the default value when called on a None option', async () => {
-    const option = promiseNone()
-    await expect(option.unwrapOrElse(() => 'default')).resolves.toEqual('default')
+  it('computes the default for None', async () => {
+    await expect(AsyncNone<number>().unwrapOrElse(() => 'default')).resolves.toBe('default')
   })
 })
 
 describe('xor', () => {
-  it('returns Some when Some and None', async () => {
-    const a = promiseSome(2)
-    const b = promiseNone()
-    expect(a.xor(b)).toEqual(a)
+  it('resolves to Some for Some and None', async () => {
+    const first = AsyncSome(2)
+    const second = AsyncNone<string>()
+
+    await expect(first.xor(second)).resolves.toEqual(Some(2))
   })
 
-  it('returns Some when None and Some', async () => {
-    const a = promiseNone()
-    const b = promiseSome('foo')
-    expect(a.xor(b)).toEqual(b)
+  it('resolves to Some for None and Some', async () => {
+    const first = AsyncNone<number>()
+    const second = AsyncSome('foo')
+
+    await expect(first.xor(second)).resolves.toEqual(Some('foo'))
   })
 
-  it('returns None when None and None', async () => {
-    const a = promiseNone()
-    const b = promiseNone()
-    expect(a.xor(b)).toEqual(a)
+  it('resolves to None for None and None', async () => {
+    const first = AsyncNone<number>()
+    const second = AsyncNone<string>()
+
+    await expect(first.xor(second)).resolves.toEqual(None)
   })
 
-  it('returns None when Some and Some', async () => {
-    const a = promiseSome(2)
-    const b = promiseSome('str')
-    expect(a.xor(b)).toEqual(a)
+  it('resolves to None for Some and Some', async () => {
+    const first = AsyncSome(2)
+    const second = AsyncSome('str')
+
+    await expect(first.xor(second)).resolves.toEqual(None)
   })
 })
 
 describe('match', () => {
-  it('returns the mapped value for a Some option', async () => {
-    const option = promiseSome(42)
+  it('calls the Some matcher', async () => {
     await expect(
-      option.match({
+      AsyncSome(42).match({
         Some: (value) => value + 1,
         None: () => 'none',
       }),
-    ).resolves.toEqual(43)
+    ).resolves.toBe(43)
   })
 
-  it('returns the mapped value for a None option', async () => {
-    const option = promiseNone()
+  it('calls the None matcher', async () => {
     await expect(
-      option.match({
+      AsyncNone<number>().match({
         Some: (value) => value + 1,
         None: () => 'none',
       }),
-    ).resolves.toEqual('none')
+    ).resolves.toBe('none')
   })
 })

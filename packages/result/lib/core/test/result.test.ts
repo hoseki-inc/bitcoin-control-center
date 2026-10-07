@@ -1,520 +1,590 @@
-import { describe, expect, expectTypeOf, it, vi } from 'vitest'
-import { Err, ErrorWithTag, None, Ok, Panic, Result, Some } from '../index'
+import { type AsyncResult, Err, ErrorWithTag, None, Ok, Panic, Result, Some } from '@hoseki/packages/result'
+import { describe, expect, expectTypeOf, it } from 'vitest'
 
-export function TestOk<T, E>(value: T): Result<T, E> {
+function testOk<T, E>(value: T): Result<T, E> {
   return Ok(value)
 }
 
-export function TestErr<T, E>(value: E): Result<T, E> {
-  return Err(value)
+function testErr<T, E>(error: E): Result<T, E> {
+  return Err(error)
 }
 
 describe('core', () => {
-  it('returns an Ok result', () => {
-    const r = Ok(42)
-
-    expect(r.isOk()).toEqual(true)
-    expect(r.isErr()).toEqual(false)
-
-    expect(r.value()).toEqual(42)
-    expectTypeOf(r.value).toEqualTypeOf<() => number>()
-    expectTypeOf(r.error).toEqualTypeOf<() => undefined>()
-
-    expectTypeOf(r.unwrap).toEqualTypeOf<() => number>()
-    expectTypeOf(r.unwrapErr).toEqualTypeOf<() => undefined>()
-
-    expectTypeOf(r.expect).toEqualTypeOf<(msg: string) => number>()
-    expectTypeOf(r.expectErr).toEqualTypeOf<(msg: string) => never>()
+  it('requires narrowing before unwrapping, including after await', () => {
+    // Checked by pnpm check; keep forbidden calls out of runtime execution.
+    const check = async (result: Result<number, string>, pending: AsyncResult<number, string>): Promise<void> => {
+      // @ts-expect-error An unnarrowed Result has no unwrap method.
+      void result.unwrap
+      // @ts-expect-error An unnarrowed Result has no unwrapErr method.
+      void result.unwrapErr
+      // @ts-expect-error Err has no unwrap method.
+      void Err('error').unwrap
+      // @ts-expect-error Ok has no unwrapErr method.
+      void Ok(42).unwrapErr
+      // @ts-expect-error AsyncResult must be awaited and narrowed first.
+      void pending.unwrap
+      // @ts-expect-error AsyncResult must be awaited and narrowed first.
+      void pending.unwrapErr
+      const resolved = await pending
+      // @ts-expect-error Awaiting alone does not narrow a Result.
+      void resolved.unwrap
+      // @ts-expect-error Awaiting alone does not narrow a Result.
+      void resolved.unwrapErr
+      if (resolved.isOk()) {
+        expectTypeOf(resolved.unwrap()).toEqualTypeOf<number>()
+        // @ts-expect-error Narrowing to Ok excludes unwrapErr.
+        void resolved.unwrapErr
+      } else {
+        expectTypeOf(resolved.unwrapErr()).toEqualTypeOf<string>()
+        // @ts-expect-error Narrowing to Err excludes unwrap.
+        void resolved.unwrap
+      }
+    }
+    expectTypeOf(check).toBeFunction()
   })
 
-  it('returns an Err result', () => {
-    const r = Err('error')
-
-    expect(r.isOk()).toEqual(false)
-    expect(r.isErr()).toEqual(true)
-
-    expectTypeOf(r.value).toEqualTypeOf<() => undefined>()
-    expect(r.error()).toEqual('error')
-    expectTypeOf(r.error).toEqualTypeOf<() => string>()
-
-    expectTypeOf(r.unwrap).toEqualTypeOf<() => undefined>()
-    expectTypeOf(r.unwrapErr).toEqualTypeOf<() => string>()
-
-    expectTypeOf(r.expect).toEqualTypeOf<(msg: string) => never>()
-    expectTypeOf(r.expectErr).toEqualTypeOf<(msg: string) => string>()
+  it.each([undefined, null])('preserves nullish payload %s on the matching variant', (value) => {
+    expect(Ok(value).unwrap()).toBe(value)
+    expect(Err(value).unwrapErr()).toBe(value)
   })
 
-  it('works as discriminated union', () => {
-    const r = TestOk<number, string>(42)
-    expectTypeOf(r.value()).toEqualTypeOf<number | undefined>()
-    expectTypeOf(r.error()).toEqualTypeOf<string | undefined>()
-    if (r.isOk()) {
-      expectTypeOf(r.value).toEqualTypeOf<() => number>()
-      expectTypeOf(r.error).toEqualTypeOf<() => undefined>()
+  it('preserves short-circuited variant identity across combinators', async () => {
+    const ok = Ok({ id: 1 })
+    const err = Err({ message: 'failed' })
+    expect(err.andThen(() => ok)).toBe(err)
+    await expect(err.andThenAsync(async () => ok)).resolves.toBe(err)
+    expect(ok.orElse(() => err)).toBe(ok)
+    await expect(ok.orElseAsync(async () => err)).resolves.toBe(ok)
+  })
 
-      expectTypeOf(r.unwrap).toEqualTypeOf<() => number>()
-      expectTypeOf(r.unwrapErr).toEqualTypeOf<() => undefined>()
+  it('creates an Ok result', () => {
+    const result = Ok(42)
 
-      expectTypeOf(r.expect).toEqualTypeOf<(msg: string) => number>()
-      expectTypeOf(r.expectErr).toEqualTypeOf<(msg: string) => never>()
+    expect(result.isOk()).toBe(true)
+    expect(result.isErr()).toBe(false)
+    expect(result.unwrap()).toBe(42)
+    expectTypeOf<typeof result.unwrap>().toEqualTypeOf<() => number>()
+    expectTypeOf<'unwrapErr'>().exclude<keyof typeof result>().toEqualTypeOf<'unwrapErr'>()
+    expectTypeOf<typeof result.expect>().toEqualTypeOf<(message: string) => number>()
+    expectTypeOf<typeof result.expectErr>().toEqualTypeOf<(message: string) => never>()
+  })
+
+  it('creates an Err result', () => {
+    const result = Err('error')
+
+    expect(result.isOk()).toBe(false)
+    expect(result.isErr()).toBe(true)
+    expectTypeOf<'unwrap'>().exclude<keyof typeof result>().toEqualTypeOf<'unwrap'>()
+    expect(result.unwrapErr()).toBe('error')
+    expectTypeOf<typeof result.unwrapErr>().toEqualTypeOf<() => string>()
+    expectTypeOf<'unwrap'>().exclude<keyof typeof result>().toEqualTypeOf<'unwrap'>()
+    expectTypeOf<typeof result.expect>().toEqualTypeOf<(message: string) => never>()
+    expectTypeOf<typeof result.expectErr>().toEqualTypeOf<(message: string) => string>()
+  })
+
+  it('narrows a Result discriminated union', () => {
+    const result = testOk<number, string>(42)
+
+    expectTypeOf<'unwrap' | 'unwrapErr'>().exclude<keyof typeof result>().toEqualTypeOf<'unwrap' | 'unwrapErr'>()
+    expectTypeOf(result.unwrapOr(undefined)).toEqualTypeOf<number | undefined>()
+    if (result.isOk()) {
+      expectTypeOf<typeof result.unwrap>().toEqualTypeOf<() => number>()
+      expectTypeOf<'unwrapErr'>().exclude<keyof typeof result>().toEqualTypeOf<'unwrapErr'>()
+      expectTypeOf<typeof result.expect>().toEqualTypeOf<(message: string) => number>()
+      expectTypeOf<typeof result.expectErr>().toEqualTypeOf<(message: string) => never>()
     } else {
-      expectTypeOf(r.value).toEqualTypeOf<() => undefined>()
-      expectTypeOf(r.error).toEqualTypeOf<() => string>()
-
-      expectTypeOf(r.unwrap).toEqualTypeOf<() => undefined>()
-      expectTypeOf(r.unwrapErr).toEqualTypeOf<() => string>()
-
-      expectTypeOf(r.expect).toEqualTypeOf<(msg: string) => never>()
-      expectTypeOf(r.expectErr).toEqualTypeOf<(msg: string) => string>()
+      expectTypeOf<'unwrap'>().exclude<keyof typeof result>().toEqualTypeOf<'unwrap'>()
+      expectTypeOf<typeof result.unwrapErr>().toEqualTypeOf<() => string>()
+      expectTypeOf<typeof result.expect>().toEqualTypeOf<(message: string) => never>()
+      expectTypeOf<typeof result.expectErr>().toEqualTypeOf<(message: string) => string>()
     }
 
-    if (r.isErr()) {
-      expectTypeOf(r.value).toEqualTypeOf<() => undefined>()
-      expectTypeOf(r.error).toEqualTypeOf<() => string>()
-
-      expectTypeOf(r.unwrap).toEqualTypeOf<() => undefined>()
-      expectTypeOf(r.unwrapErr).toEqualTypeOf<() => string>()
-
-      expectTypeOf(r.expect).toEqualTypeOf<(msg: string) => never>()
-      expectTypeOf(r.expectErr).toEqualTypeOf<(msg: string) => string>()
+    if (result.isErr()) {
+      expectTypeOf<'unwrap'>().exclude<keyof typeof result>().toEqualTypeOf<'unwrap'>()
+      expectTypeOf<typeof result.unwrapErr>().toEqualTypeOf<() => string>()
+      expectTypeOf<typeof result.expect>().toEqualTypeOf<(message: string) => never>()
+      expectTypeOf<typeof result.expectErr>().toEqualTypeOf<(message: string) => string>()
     } else {
-      expectTypeOf(r.value).toEqualTypeOf<() => number>()
-      expectTypeOf(r.error).toEqualTypeOf<() => undefined>()
-
-      expectTypeOf(r.unwrap).toEqualTypeOf<() => number>()
-      expectTypeOf(r.unwrapErr).toEqualTypeOf<() => undefined>()
-
-      expectTypeOf(r.expect).toEqualTypeOf<(msg: string) => number>()
-      expectTypeOf(r.expectErr).toEqualTypeOf<(msg: string) => never>()
+      expectTypeOf<typeof result.unwrap>().toEqualTypeOf<() => number>()
+      expectTypeOf<'unwrapErr'>().exclude<keyof typeof result>().toEqualTypeOf<'unwrapErr'>()
+      expectTypeOf<typeof result.expect>().toEqualTypeOf<(message: string) => number>()
+      expectTypeOf<typeof result.expectErr>().toEqualTypeOf<(message: string) => never>()
     }
   })
 })
 
 describe('ok', () => {
-  it('returns the value when Ok', () => {
-    const result = TestOk<number, string>(42)
-    expect(result.ok()).toEqual(Some(42))
+  it('returns Some for Ok', () => {
+    expect(testOk<number, string>(42).ok()).toEqual(Some(42))
   })
 
-  it('returns None when Err', () => {
-    const result = TestErr<number, string>('error')
-    expect(result.ok()).toEqual(None)
+  it('returns None for Err', () => {
+    expect(testErr<number, string>('error').ok()).toEqual(None)
   })
 })
 
 describe('err', () => {
-  it('returns None when Ok', () => {
-    const result = TestOk<number, string>(42)
-    expect(result.err()).toEqual(None)
+  it('returns None for Ok', () => {
+    expect(testOk<number, string>(42).err()).toEqual(None)
   })
 
-  it('returns the error when Err', () => {
-    const result = TestErr<number, string>('error')
-    expect(result.err()).toEqual(Some('error'))
-  })
-})
-
-describe('and', () => {
-  it('returns the error when Ok and Err', () => {
-    const a = TestOk<string, string>('a')
-    const b = TestErr<string, string>('b')
-    expect(a.and(b).unwrapErr()).toEqual('b')
-  })
-
-  it('returns the late value when Ok and Ok', () => {
-    const a = TestOk<string, string>('a')
-    const b = TestOk<string, string>('b')
-    expect(a.and(b).unwrap()).toEqual('b')
-  })
-
-  it('returns the error when Err and Ok', () => {
-    const a = TestErr<string, string>('a')
-    const b = TestOk<string, string>('b')
-    expect(a.and(b).unwrapErr()).toEqual('a')
-  })
-
-  it('returns the early error when Err and Err', () => {
-    const a = TestErr<number, string>('a')
-    const b = TestErr<number, string>('b')
-    expect(a.and(b).unwrapErr()).toEqual('a')
+  it('returns Some for Err', () => {
+    expect(testErr<number, string>('error').err()).toEqual(Some('error'))
   })
 })
 
 describe('andThen', () => {
-  it('returns the mapped value for an Ok result', () => {
-    const a = TestOk<number, string>(0)
-    expect(a.andThen((value) => Ok(value + 1)).unwrap()).toEqual(1)
+  it('maps an Ok result', () => {
+    expect(
+      testOk<number, string>(0)
+        .andThen((value) => Ok(value + 1))
+        .expect('Expected value'),
+    ).toBe(1)
   })
 
-  it('returns the result for an Err result', () => {
-    const a = TestErr<number, string>('early error')
-    expect(a.andThen((value) => Ok(value + 1)).unwrapErr()).toEqual(a.unwrapErr())
+  it('returns an Err result unchanged', () => {
+    const result = testErr<number, string>('early error')
+
+    expect(result.andThen((value) => Ok(value + 1)).expectErr('Expected Err')).toBe(result.expectErr('Expected Err'))
   })
 })
 
 describe('andThenAsync', () => {
-  it('returns the mapped value for an Ok result', async () => {
-    const a = TestOk<number, string>(0)
-    await expect(a.andThenAsync(async (value) => Ok(value + 1)).unwrap()).resolves.toEqual(1)
+  it('maps an Ok result', async () => {
+    const result = testOk<number, string>(0).andThenAsync(async (value) => Ok(value + 1))
+
+    await expect(result.expect('Expected value')).resolves.toBe(1)
   })
 
-  it('returns the result for an Err result', async () => {
-    const a = TestErr<number, string>('early error')
-    await expect(a.andThenAsync(async (value) => Ok(value + 1)).unwrapErr()).resolves.toEqual(a.unwrapErr())
+  it('returns an Err result unchanged', async () => {
+    const original = testErr<number, string>('early error')
+    const result = original.andThenAsync(async (value) => Ok(value + 1))
+
+    await expect(result.expectErr('Expected Err')).resolves.toBe(original.expectErr('Expected Err'))
   })
 })
 
 describe('expect', () => {
-  it('returns the value when called on an Ok result', () => {
-    const result = TestOk<number, string>(42)
-    const value = result.expect('Panic message')
-    expect(value).toEqual(42)
+  it('returns the Ok value', () => {
+    expect(testOk<number, string>(42).expect('Panic message')).toBe(42)
   })
 
-  it('throws a Panic with the provided message when called on an Err result', () => {
-    const result = TestErr<number, string>('error')
-    const panicMsg = 'Panic message'
-    expect(() => result.expect(panicMsg)).toThrow(Panic)
-    expect(() => result.expect(panicMsg)).toThrow(panicMsg)
+  it('throws Panic for Err', () => {
+    const result = testErr<number, string>('error')
+
+    expect(() => result.expect('Panic message')).toThrow(Panic)
+    expect(() => result.expect('Panic message')).toThrow('Panic message')
   })
 })
 
 describe('expectErr', () => {
-  it('returns the value when called on an Err result', () => {
-    const err = TestErr<number, string>('error')
-    expect(err.expectErr('panic message')).toEqual('error')
+  it('returns the Err value', () => {
+    expect(testErr<number, string>('error').expectErr('panic message')).toBe('error')
   })
 
-  it('throws a Panic with the provided message when called on an Ok result', () => {
-    const ok = TestOk<number, string>(0)
-    const panicMsg = 'Panic message'
-    expect(() => ok.expectErr(panicMsg)).toThrow(Panic)
-    expect(() => ok.expectErr(panicMsg)).toThrow(panicMsg)
+  it('throws Panic for Ok', () => {
+    const result = testOk<number, string>(0)
+
+    expect(() => result.expectErr('Panic message')).toThrow(Panic)
+    expect(() => result.expectErr('Panic message')).toThrow('Panic message')
   })
 })
 
 describe('flatten', () => {
-  it('works with an Ok<Ok> result', () => {
-    const inner = TestOk<number, string>(42)
-    const flattened = TestOk<Result<number, string>, boolean>(inner).flatten()
+  it('flattens Ok containing Ok', () => {
+    const inner = testOk<number, string>(42)
+    const flattened = testOk<Result<number, string>, boolean>(inner).flatten()
+
     expectTypeOf(flattened).toEqualTypeOf<Result<number, string | boolean>>()
-    expect(flattened.unwrap()).toEqual(inner.unwrap())
+    expect(flattened.expect('Expected value')).toBe(inner.expect('Expected value'))
   })
 
-  it('works with an Ok<Err> result', () => {
-    const inner = TestErr<number, string>('error')
-    const flattened = TestOk<Result<number, string>, boolean>(inner).flatten()
+  it('flattens Ok containing Err', () => {
+    const inner = testErr<number, string>('error')
+    const flattened = testOk<Result<number, string>, boolean>(inner).flatten()
+
     expectTypeOf(flattened).toEqualTypeOf<Result<number, string | boolean>>()
-    expect(flattened.unwrapErr()).toEqual(inner.unwrapErr())
+    expect(flattened.expectErr('Expected Err')).toBe(inner.expectErr('Expected Err'))
   })
 
-  it('works with an Err result', () => {
-    const flattened = TestErr<Result<number, string>, boolean>(true).flatten()
+  it('preserves an outer Err', () => {
+    const flattened = testErr<Result<number, string>, boolean>(true).flatten()
+
     expectTypeOf(flattened).toEqualTypeOf<Result<number, string | boolean>>()
-    expect(flattened.unwrapErr()).toEqual(true)
+    expect(flattened.expectErr('Expected Err')).toBe(true)
   })
 
-  it('works with non-primitive value or error', () => {
+  it('preserves non-primitive values and errors', () => {
     class Foo extends ErrorWithTag {
-      readonly tag = 'foo'
+      public readonly tag = 'foo'
     }
 
     class Bar extends ErrorWithTag {
-      readonly tag = 'bar'
+      public readonly tag = 'bar'
     }
 
-    const foo = TestOk<
-      | {
-          id: string
-        }
-      | undefined,
-      Foo
-    >({
-      id: '1',
-    })
-    const bar = foo.map((value) => (value === undefined ? Err(new Bar()) : Ok(value))).flatten()
-    expectTypeOf(bar).toEqualTypeOf<Result<{ id: string }, Foo | Bar>>()
+    const result = testOk<{ id: string } | undefined, Foo>({ id: '1' })
+    const flattened = result.map((value) => (value === undefined ? Err(new Bar()) : Ok(value))).flatten()
+
+    expectTypeOf(flattened).toEqualTypeOf<Result<{ id: string }, Foo | Bar>>()
   })
 })
 
 describe('inspect', () => {
-  it('calls closure on Ok result', () => {
-    const f = vi.fn()
-    TestOk<number, string>(42).inspect(f)
-    expect(f).toHaveBeenCalled()
+  it('calls the callback for Ok', () => {
+    let calls = 0
+
+    testOk<number, string>(42).inspect(() => {
+      calls += 1
+    })
+
+    expect(calls).toBe(1)
   })
 
-  it('does not call closure on Err result', () => {
-    const f = vi.fn()
-    TestErr<number, string>('').inspect(f)
-    expect(f).not.toHaveBeenCalled()
+  it('does not call the callback for Err', () => {
+    let calls = 0
+
+    testErr<number, string>('').inspect(() => {
+      calls += 1
+    })
+
+    expect(calls).toBe(0)
   })
 })
 
 describe('inspectAsync', () => {
-  it('calls closure on Ok result', async () => {
-    const f = vi.fn().mockResolvedValue('mocked value')
-    await TestOk<number, string>(42).inspectAsync(f)
-    expect(f).toHaveBeenCalled()
+  it('calls the callback for Ok', async () => {
+    let calls = 0
+    const result = testOk<number, string>(42).inspectAsync(async () => {
+      calls += 1
+    })
+
+    await result
+    expect(calls).toBe(1)
   })
 
-  it('does not call closure on Err result', async () => {
-    const f = vi.fn().mockResolvedValue('mocked value')
-    await TestErr<number, string>('').inspectAsync(f)
-    expect(f).not.toHaveBeenCalled()
+  it('does not call the callback for Err', async () => {
+    let calls = 0
+    const result = testErr<number, string>('').inspectAsync(async () => {
+      calls += 1
+    })
+
+    await result
+    expect(calls).toBe(0)
   })
 })
 
 describe('inspectErr', () => {
-  it('does not call closure on Ok result', () => {
-    const f = vi.fn()
-    TestOk<number, string>(42).inspectErr(f)
-    expect(f).not.toHaveBeenCalled()
+  it('does not call the callback for Ok', () => {
+    let calls = 0
+
+    testOk<number, string>(42).inspectErr(() => {
+      calls += 1
+    })
+
+    expect(calls).toBe(0)
   })
 
-  it('returns this and calls closure on Err result', () => {
-    const f = vi.fn()
-    TestErr<number, string>('').inspectErr(f)
-    expect(f).toHaveBeenCalled()
+  it('calls the callback for Err', () => {
+    let calls = 0
+
+    testErr<number, string>('').inspectErr(() => {
+      calls += 1
+    })
+
+    expect(calls).toBe(1)
   })
 })
 
 describe('inspectErrAsync', () => {
-  it('calls closure on Err result', async () => {
-    const f = vi.fn().mockResolvedValue('mocked value')
-    await TestOk<number, string>(42).inspectErrAsync(f)
-    expect(f).not.toHaveBeenCalled()
+  it('does not call the callback for Ok', async () => {
+    let calls = 0
+    const result = testOk<number, string>(42).inspectErrAsync(async () => {
+      calls += 1
+    })
+
+    await result
+    expect(calls).toBe(0)
   })
 
-  it('does not call closure on Ok result', async () => {
-    const f = vi.fn().mockResolvedValue('mocked value')
-    await TestErr<number, string>('').inspectErrAsync(f)
-    expect(f).toHaveBeenCalled()
+  it('calls the callback for Err', async () => {
+    let calls = 0
+    const result = testErr<number, string>('').inspectErrAsync(async () => {
+      calls += 1
+    })
+
+    await result
+    expect(calls).toBe(1)
   })
 })
 
 describe('map', () => {
-  it('returns the mapped value for an Ok result', () => {
-    const result = TestOk<number, string>(42)
-    const result2 = result.map((value) => value * 2)
-    expect(result2.unwrap()).toEqual(84)
+  it('maps an Ok value', () => {
+    const result = testOk<number, string>(42).map((value) => value * 2)
+
+    expect(result.expect('Expected value')).toBe(84)
   })
 
-  it('returns the original Err for an Err result', () => {
-    const result = TestErr<number, string>('error')
-    const result2 = result.map((value) => value * 2)
-    expect(result2.unwrapErr()).toEqual(result.unwrapErr())
+  it('preserves an Err value', () => {
+    const original = testErr<number, string>('error')
+    const result = original.map((value) => value * 2)
+
+    expect(result.expectErr('Expected Err')).toBe(original.expectErr('Expected Err'))
   })
 })
 
 describe('mapAsync', () => {
-  it('returns the mapped value for an Ok result', async () => {
-    const a = TestOk<number, string>(42)
-    const b = a.mapAsync(async (value) => value * 2)
-    await expect(b.unwrap()).resolves.toEqual(84)
+  it('maps an Ok value', async () => {
+    const result = testOk<number, string>(42).mapAsync(async (value) => value * 2)
+
+    await expect(result.expect('Expected value')).resolves.toBe(84)
   })
 
-  it('returns the original Err for an Err result', async () => {
-    const a = TestErr<number, string>('error')
-    const b = a.mapAsync(async (value) => value * 2)
-    await expect(b.unwrapErr()).resolves.toEqual(a.unwrapErr())
+  it('preserves an Err value', async () => {
+    const original = testErr<number, string>('error')
+    const result = original.mapAsync(async (value) => value * 2)
+
+    await expect(result.expectErr('Expected Err')).resolves.toBe(original.expectErr('Expected Err'))
   })
 })
 
 describe('mapErr', () => {
-  it('returns the mapped error for an Err result', () => {
-    const a = TestErr<number, string>('error')
-    const b = a.mapErr(() => 'new error')
-    expect(b.unwrapErr()).toEqual('new error')
+  it('maps an Err value', () => {
+    const result = testErr<number, string>('error').mapErr(() => 'new error')
+
+    expect(result.expectErr('Expected Err')).toBe('new error')
   })
 
-  it('returns the original Ok for an Err result', () => {
-    const a = TestOk<number, string>(0)
-    const b = a.mapErr(() => 'new error')
-    expect(b.unwrap()).toEqual(0)
+  it('preserves an Ok value', () => {
+    const result = testOk<number, string>(0).mapErr(() => 'new error')
+
+    expect(result.expect('Expected value')).toBe(0)
   })
 })
 
 describe('mapErrAsync', () => {
-  it('returns the mapped error for an Err result', async () => {
-    const a = TestErr<number, string>('error')
-    const b = a.mapErrAsync(async () => 'new error')
-    await expect(b.unwrapErr()).resolves.toEqual('new error')
+  it('maps an Err value', async () => {
+    const result = testErr<number, string>('error').mapErrAsync(async () => 'new error')
+
+    await expect(result.expectErr('Expected Err')).resolves.toBe('new error')
   })
 
-  it('returns the original Ok for an Err result', async () => {
-    const a = TestOk<number, string>(0)
-    const b = a.mapErrAsync(async () => 'new error')
-    await expect(b.unwrap()).resolves.toEqual(a.unwrap())
+  it('preserves an Ok value', async () => {
+    const original = testOk<number, string>(0)
+    const result = original.mapErrAsync(async () => 'new error')
+
+    await expect(result.expect('Expected value')).resolves.toBe(original.expect('Expected value'))
   })
 })
 
 describe('mapOr', () => {
-  it('returns the mapped value for an Ok result', () => {
-    const result = TestOk<number, string>(42)
-    const value = result.mapOr(0, (value) => value * 2)
-    expect(value).toEqual(84)
+  it('maps an Ok value', () => {
+    expect(testOk<number, string>(42).mapOr(0, (value) => value * 2)).toBe(84)
   })
 
-  it('returns the default value for an Err result', () => {
-    const result = TestErr<number, string>('error')
-    const value = result.mapOr(0, (value) => value * 2)
-    expect(value).toEqual(0)
+  it('returns the default for Err', () => {
+    expect(testErr<number, string>('error').mapOr(0, (value) => value * 2)).toBe(0)
   })
 })
 
 describe('mapOrElse', () => {
-  it('returns the mapped value for an Ok result', () => {
-    const result = TestOk<number, string>(42)
-    const value = result.mapOrElse(
-      () => 0,
-      (value) => value * 2,
-    )
-    expect(value).toEqual(84)
+  it('maps an Ok value', () => {
+    expect(
+      testOk<number, string>(42).mapOrElse(
+        () => 0,
+        (value) => value * 2,
+      ),
+    ).toBe(84)
   })
 
-  it('returns the default value from a function for an Err result', () => {
-    const result = TestErr<number, string>('error')
-    const value = result.mapOrElse(
-      () => 0,
-      (value) => value * 2,
-    )
-    expect(value).toEqual(0)
-  })
-})
-
-describe('or', () => {
-  it('returns the value when Ok or Err', () => {
-    const a = TestOk<string, string>('a')
-    const b = TestErr<string, string>('b')
-    expect(a.or(b).unwrap()).toEqual('a')
-  })
-
-  it('returns the early value when Ok or Ok', () => {
-    const a = TestOk<string, string>('a')
-    const b = TestOk<string, string>('b')
-    expect(a.or(b).unwrap()).toEqual('a')
-  })
-
-  it('returns the late value when Err or Ok', () => {
-    const a = TestErr<string, string>('a')
-    const b = TestOk<string, string>('b')
-    expect(a.or(b).unwrap()).toEqual('b')
-  })
-
-  it('returns the late error when Err and Err', () => {
-    const a = TestErr<string, string>('a')
-    const b = TestErr<string, string>('b')
-    expect(a.or(b).unwrapErr()).toEqual('b')
+  it('computes the default for Err', () => {
+    expect(
+      testErr<number, string>('error').mapOrElse(
+        () => 0,
+        (value) => value * 2,
+      ),
+    ).toBe(0)
   })
 })
 
 describe('orElse', () => {
-  it('returns the result for an Ok result', () => {
-    const a = TestOk<number, string>(0)
-    expect(a.orElse(() => Ok(1)).unwrap()).toEqual(a.unwrap())
+  it('returns an Ok result unchanged', () => {
+    const result = testOk<number, string>(0)
+
+    expect(result.orElse(() => Ok(1)).expect('Expected value')).toBe(result.expect('Expected value'))
   })
 
-  it('returns the mapped value for an Err result', () => {
-    const a = TestErr<number, string>('early error')
-    expect(a.orElse(() => Ok(1)).unwrap()).toEqual(1)
-    expect(a.orElse(() => Err(1)).unwrapErr()).toEqual(1)
+  it('maps an Err result', () => {
+    const result = testErr<number, string>('early error')
+
+    expect(result.orElse(() => Ok(1)).expect('Expected value')).toBe(1)
+    expect(result.orElse(() => Err(1)).expectErr('Expected Err')).toBe(1)
   })
 })
 
 describe('orElseAsync', () => {
-  it('returns the result for an Ok result', async () => {
-    const a = TestOk<number, string>(0)
-    await expect(a.orElseAsync(async () => Ok(1)).unwrap()).resolves.toEqual(0)
+  it('returns an Ok result unchanged', async () => {
+    const result = testOk<number, string>(0).orElseAsync(async () => Ok(1))
+
+    await expect(result.expect('Expected value')).resolves.toBe(0)
   })
 
-  it('returns the mapped value for an Err result', async () => {
-    const a = TestErr<number, string>('early error')
-    await expect(a.orElseAsync(async () => Ok(1)).unwrap()).resolves.toEqual(1)
-    await expect(a.orElseAsync(async () => Err(1)).unwrapErr()).resolves.toEqual(1)
+  it('maps an Err result', async () => {
+    const result = testErr<number, string>('early error')
+
+    await expect(result.orElseAsync(async () => Ok(1)).expect('Expected value')).resolves.toBe(1)
+    await expect(result.orElseAsync(async () => Err(1)).expectErr('Expected Err')).resolves.toBe(1)
   })
 })
 
 describe('unwrap', () => {
-  it('returns the value for an Ok result', () => {
-    const result = TestOk<number, string>(42)
-    expect(result.unwrap()).toEqual(42)
+  it('returns the Ok value', () => {
+    expect(Ok(42).unwrap()).toBe(42)
   })
 
-  it('returns undefined for an Err result', () => {
-    const result = TestErr<number, string>('error')
-    expect(result.unwrap()).toEqual(undefined)
+  it('does not exist on Err', () => {
+    expect('unwrap' in Err('error')).toBe(false)
   })
 })
 
 describe('unwrapErr', () => {
-  it('returns the error for an Err result', () => {
-    const result = TestErr<number, string>('error')
-    expect(result.unwrapErr()).toEqual('error')
+  it('returns the Err value', () => {
+    expect(Err('error').unwrapErr()).toBe('error')
   })
 
-  it('returns undefined for an Ok result', () => {
-    const result = TestOk<number, string>(42)
-    expect(result.unwrapErr()).toEqual(undefined)
+  it('does not exist on Ok', () => {
+    expect('unwrapErr' in Ok(42)).toBe(false)
   })
 })
 
 describe('unwrapOr', () => {
-  it('returns the value for an Ok result', () => {
-    const result = TestOk<number, string>(42)
-    expect(result.unwrapOr(0)).toEqual(42)
+  it('returns the Ok value', () => {
+    expect(testOk<number, string>(42).unwrapOr(0)).toBe(42)
   })
 
-  it('returns the default value for an Err result', () => {
-    const result = TestErr<number, string>('error')
-    expect(result.unwrapOr(42)).toEqual(42)
+  it('returns the default for Err', () => {
+    expect(testErr<number, string>('error').unwrapOr(42)).toBe(42)
   })
 })
 
 describe('unwrapOrElse', () => {
-  it('returns the value for an Ok result', () => {
-    const result = TestOk<number, string>(42)
-    expect(result.unwrapOrElse(() => 0)).toEqual(42)
+  it('returns the Ok value', () => {
+    expect(testOk<number, string>(42).unwrapOrElse(() => 0)).toBe(42)
   })
 
-  it('returns the default value from a function for an Err result', () => {
-    const result = TestErr<number, string>('error')
-    const unwrapped = result.unwrapOrElse(() => 42)
-    expect(unwrapped).toEqual(42)
+  it('computes the default for Err', () => {
+    expect(testErr<number, string>('error').unwrapOrElse(() => 42)).toBe(42)
   })
 })
 
 describe('match', () => {
-  it('calls the ok function for an Ok result', () => {
-    const result = TestOk<number, string>(42)
-    const output = result.match({
-      Ok: (value) => value * 2,
-      Err: () => 0,
-    })
-    expect(output).toEqual(84)
+  it('calls the Ok matcher', () => {
+    expect(
+      testOk<number, string>(42).match({
+        Ok: (value) => value * 2,
+        Err: () => 0,
+      }),
+    ).toBe(84)
   })
 
-  it('calls the err function for an Err result', () => {
-    const result = TestErr<number, string>('error')
-    const output = result.match({
-      Ok: (value) => value * 2,
-      Err: () => 0,
-    })
-    expect(output).toEqual(0)
+  it('calls the Err matcher', () => {
+    expect(
+      testErr<number, string>('error').match({
+        Ok: (value) => value * 2,
+        Err: () => 0,
+      }),
+    ).toBe(0)
   })
 })
 
-describe('iterator', () => {
-  it('works with regular yield', () => {
-    function* gen() {
-      yield Ok(1)
-      yield Err('error')
-      return Ok(2)
-    }
+describe('Result.fromThrowable', () => {
+  it('wraps a successful function call', () => {
+    const result = Result.fromThrowable(() => 42)
 
-    const result = gen()
-    expect(result.next().value.unwrap()).toEqual(1)
-    expect(result.next().value.unwrapErr()).toEqual('error')
-    expect(result.next().value.unwrap()).toEqual(2)
+    expect(result.expect('Expected value')).toBe(42)
+  })
+
+  it('wraps a thrown error', () => {
+    const error = new Error('Test error')
+    const result = Result.fromThrowable(() => {
+      throw error
+    })
+
+    expect(result.expectErr('Expected Err')).toBe(error)
+  })
+})
+
+describe('Result.from', () => {
+  it('wraps a successful function call', () => {
+    const result = Result.fromThrowable(() => 42)
+
+    expect(result.expect('Expected value')).toBe(42)
+  })
+
+  it('wraps a thrown error', () => {
+    const error = new Error('Test error')
+    const result = Result.fromThrowable(() => {
+      throw error
+    })
+
+    expect(result.expectErr('Expected Err')).toBe(error)
+  })
+})
+
+describe('Result.fromPromise', () => {
+  it('settles a fulfilled Promise to Ok', async () => {
+    const result = await Result.fromPromise(Promise.resolve(42))
+
+    expect(result.expect('Expected value')).toBe(42)
+  })
+
+  it('settles a rejected Promise to Err', async () => {
+    const error = new Error('Test error')
+    const result = await Result.fromPromise(Promise.reject(error))
+
+    expect(result.expectErr('Expected Err')).toBe(error)
+  })
+})
+
+describe('Result iterator', () => {
+  it('completes with Ok values and yields Err values', () => {
+    const okIterator = Ok(1)[Symbol.iterator]()
+    const errIterator = Err('error')[Symbol.iterator]()
+
+    expect(okIterator.next()).toEqual({ done: true, value: 1 })
+    const failure = errIterator.next()
+    expect(failure.done).toBe(false)
+    if (failure.done === true) {
+      expect.fail('Expected the iterator to yield an error')
+    }
+    expect(failure.value.expectErr('Expected yielded error')).toBe('error')
+    expect(() => errIterator.next()).toThrow(Panic)
+  })
+})
+
+describe('Vitest Result equality', () => {
+  it('compares variants and payloads without consuming control-flow iterators', () => {
+    expect(Ok({ id: 1 })).toEqual(Ok({ id: 1 }))
+    expect(Ok({ id: 1 })).not.toEqual(Ok({ id: 2 }))
+    expect(Err(new Error('failure'))).toEqual(Err(new Error('failure')))
+    expect(Err('first')).not.toEqual(Err('second'))
+    expect(Ok(undefined)).not.toEqual(Err(undefined))
+    expect(Err(undefined)).not.toEqual(Ok(undefined))
+    expect(Ok(null)).not.toEqual(Ok(undefined))
+    expect(Err(null)).not.toEqual(Err(undefined))
+    expect(Ok(1)).not.toBe(1)
+    expect(1).not.toEqual(Ok(1))
+  })
+
+  it('uses Vitest equality for nested Results and asymmetric payload matchers', () => {
+    expect({ results: [Ok(Err({ code: 'missing' }))] }).toEqual({
+      results: [Ok(Err({ code: 'missing' }))],
+    })
+    expect(Ok(Err('first'))).not.toEqual(Ok(Err('second')))
+    expect(Ok({ id: 1, name: 'Alice' })).toEqual(Ok(expect.objectContaining({ id: 1 })))
+    expect(Ok(1)).toEqual(Ok(expect.any(Number)))
+    expect(Err(new Error('failure'))).toEqual(Err(expect.any(Error)))
+    expect({ values: [1, 2] }).toEqual({ values: [1, 2] })
+    expect(new Set([1, 2])).toEqual(new Set([2, 1]))
   })
 })

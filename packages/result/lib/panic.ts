@@ -1,4 +1,5 @@
-import { AsyncResult, Err, Ok, type Result } from '@hoseki/packages/result'
+import { AsyncResult } from './core/async_result'
+import { Err, Ok, type Result } from './core/result'
 
 function getErrorMessage(cause: unknown): string {
   return cause instanceof Error ? cause.message : 'Unexpected thrown value'
@@ -28,8 +29,9 @@ export function catchUnwindAsync<T>(fn: () => Promise<T>): AsyncResult<T, Error>
       .then((value) => {
         return Ok(value)
       })
-      .catch((cause: unknown) => {
-        return Err(unknownToError(cause))
+      // oxlint-disable-next-line anti-slop/no-unknown-parameters -- Promise rejection values are converted to Error at this boundary.
+      .catch((e: unknown) => {
+        return Err(unknownToError(e))
       }),
   )
 }

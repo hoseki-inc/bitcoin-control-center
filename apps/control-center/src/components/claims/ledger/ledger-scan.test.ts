@@ -254,7 +254,7 @@ it('discovery also stops on a changed connection even without an abort signal', 
     oldBalances.resolve(balances(mocks.fetch.mock.calls[0]?.[0].accounts ?? [], true))
     const result = await discovery
     expect(result.isErr()).toBe(true)
-    expect(result.unwrapErr()).toMatchObject({ name: 'AbortError' })
+    expect(result.expectErr('Expected failed result')).toMatchObject({ name: 'AbortError' })
     expect(mocks.getXpub).toHaveBeenCalledTimes(4)
   })
 })

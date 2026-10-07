@@ -1,5 +1,5 @@
 import { parseUnknown } from '@hoseki/packages/result'
-import { AsyncResult, Err, Ok, type Result, tryBlockAsync } from '@hoseki/packages/result'
+import { AsyncResult, Err, Ok, type Result, tryBlock } from '@hoseki/packages/result'
 // Re-import z for the raw string overload
 import { z } from 'zod'
 import { type ElectrumConnectionConfig, ElectrumServerError, ElectrumTimeoutError, ElectrumTransport } from './protocol'
@@ -72,15 +72,15 @@ export class ElectrumClient {
       return this.connectInFlight
     }
     const generation = this.generation
-    const inner = tryBlockAsync(
+    const inner = tryBlock(
       async function* (this: ElectrumClient) {
         if (this.beforeConnect) {
-          yield* (await this.beforeConnect()).try()
+          yield* await this.beforeConnect()
         }
         if (generation !== this.generation) {
           return Err(new Error('Connection closed'))
         }
-        yield* this.transport.connect().try()
+        yield* this.transport.connect()
         const handshake = await this.serverVersion()
         if (handshake.isErr()) {
           // The server refused the handshake or never answered it. Close the half-open connection,
@@ -263,14 +263,14 @@ export class ElectrumClient {
   }
 
   private call<T>(method: string, params: unknown[], schema: z.ZodType<T>): AsyncResult<T, Error> {
-    return tryBlockAsync(
+    return tryBlock(
       async function* (this: ElectrumClient) {
         // Reconnect if the underlying socket is down. connect() dedupes concurrent
         // reconnects via connectInFlight. Checking transport state (rather than
         // isConnected(), which also requires negotiated=true) lets the recursive
         // serverVersion() call from inside connect() proceed without deadlocking.
         if (!this.transport.isConnected()) {
-          yield* this.connect().try()
+          yield* this.connect()
         }
         const connection = this.transport.connectionNumber
         const requested = await this.transport.request(method, params)
@@ -290,9 +290,10 @@ export class ElectrumClient {
           return Err(error)
         }
         const raw = requested.unwrap()
-        const parsed = yield* parseUnknown(schema, raw)
-          .mapErr((err) => new Error(`Failed to parse response for ${method}: ${err.message}`, { cause: err }))
-          .try()
+        const parsed = yield* parseUnknown(schema, raw).mapErr(
+          (err) => new Error(`Failed to parse response for ${method}: ${err.message}`, { cause: err }),
+        )
+
         return Ok(parsed)
       }.bind(this),
     )

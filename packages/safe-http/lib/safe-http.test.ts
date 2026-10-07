@@ -20,7 +20,7 @@ describe('SafeHttp', () => {
     await withTestSetup(async () => {
       global.fetch = vi.fn().mockResolvedValue(new Response())
       const response = await safeHttp.get(url)
-      expect(response.unwrap()).toBeInstanceOf(SafeResponse)
+      expect(response.expect('Expected successful result')).toBeInstanceOf(SafeResponse)
     })
   })
 

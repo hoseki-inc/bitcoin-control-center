@@ -39,7 +39,7 @@ export class Mapping<V extends Mappable> {
   }
 
   public get(key: string): Option<V> {
-    return Option.from(this.map.get(key))
+    return Option.fromNullish(this.map.get(key))
   }
 
   public has(key: string): boolean {

@@ -52,7 +52,7 @@ export function toSatoshisString(value: unknown): string {
   }
   const scalar = parseUnknown(scalarBalance, value)
   if (scalar.isOk()) {
-    return scalar.value()
+    return scalar.unwrap()
   }
   if (isBalanceObject(value) && 'toString' in value) {
     // oxlint-disable-next-line typescript/unbound-method -- The call below explicitly supplies the original object as `this`.

@@ -1,4 +1,4 @@
-import { type AsyncResult, Err, Ok, type Result, asyncFn, tryBlockAsync } from '@hoseki/packages/result'
+import { AsyncResult, Err, Ok, type Result, tryBlock } from '@hoseki/packages/result'
 import type { Logger } from 'pino'
 import { IndexMap, IndexSet } from '../../collection'
 import { asyncResultAll } from '../../result'
@@ -50,60 +50,61 @@ export abstract class OnchainBitcoinProvider {
   /**
    * Returns confirmed balances for the given accounts. Uses the associated provider's max account depth.
    */
-  public getConfirmedAccountBalances = asyncFn(
-    async (accounts: IndexSet<Account>): Promise<Result<IndexMap<Account, bigint>, Error>> => {
-      this.deps.logger.debug({ accounts }, 'Getting confirmed account balances')
-      const addressesToAccounts = new IndexMap<Address, Account>()
+  public getConfirmedAccountBalances = (accounts: IndexSet<Account>): AsyncResult<IndexMap<Account, bigint>, Error> =>
+    new AsyncResult(
+      (async () => {
+        this.deps.logger.debug({ accounts }, 'Getting confirmed account balances')
+        const addressesToAccounts = new IndexMap<Address, Account>()
 
-      // Collect all the accounts that we need to discover
-      const results: Array<
-        AsyncResult<{ account: Account; lastUsedReceiveIndex: number; lastUsedChangeIndex: number }, Error>
-      > = []
-      for (const account of accounts) {
-        const result = this.discoverAccount(account).map(({ lastUsedReceiveIndex, lastUsedChangeIndex }) => ({
-          account,
-          lastUsedReceiveIndex,
-          lastUsedChangeIndex,
-        }))
-        results.push(result)
-      }
-
-      // Run discovery in parallel
-      const combined = await asyncResultAll(results)
-      if (combined.isErr()) {
-        this.deps.logger.error({ err: combined.unwrapErr() }, 'Error getting confirmed account balances')
-        return Err(combined.unwrapErr())
-      }
-      const discoveredAccounts = combined.unwrap()
-      this.deps.logger.debug({ discoveredAccounts }, 'Discovered accounts')
-
-      // Collect all the addresses that we need to check
-      for (const { account, lastUsedReceiveIndex, lastUsedChangeIndex } of discoveredAccounts) {
-        const receiveAddresses = account.receiveAddresses(0, lastUsedReceiveIndex + 1, this.network)
-        for (const address of receiveAddresses) {
-          addressesToAccounts.set(address, account)
+        // Collect all the accounts that we need to discover
+        const results: Array<
+          AsyncResult<{ account: Account; lastUsedReceiveIndex: number; lastUsedChangeIndex: number }, Error>
+        > = []
+        for (const account of accounts) {
+          const result = this.discoverAccount(account).map(({ lastUsedReceiveIndex, lastUsedChangeIndex }) => ({
+            account,
+            lastUsedReceiveIndex,
+            lastUsedChangeIndex,
+          }))
+          results.push(result)
         }
-        const changeAddresses = account.changeAddresses(0, lastUsedChangeIndex + 1, this.network)
-        for (const address of changeAddresses) {
-          addressesToAccounts.set(address, account)
-        }
-      }
 
-      return this.getConfirmedAddressBalances(new IndexSet(addressesToAccounts.keys()))
-        .map((addressBalances) => {
-          const map = new IndexMap<Account, bigint>()
-          for (const [address, account] of addressesToAccounts.entries()) {
-            const currentBalance = map.get(account) ?? 0n
-            const addressBalance = addressBalances.get(address) ?? 0n
-            map.set(account, currentBalance + addressBalance)
+        // Run discovery in parallel
+        const combined = await asyncResultAll(results)
+        if (combined.isErr()) {
+          this.deps.logger.error({ err: combined.unwrapErr() }, 'Error getting confirmed account balances')
+          return Err(combined.unwrapErr())
+        }
+        const discoveredAccounts = combined.unwrap()
+        this.deps.logger.debug({ discoveredAccounts }, 'Discovered accounts')
+
+        // Collect all the addresses that we need to check
+        for (const { account, lastUsedReceiveIndex, lastUsedChangeIndex } of discoveredAccounts) {
+          const receiveAddresses = account.receiveAddresses(0, lastUsedReceiveIndex + 1, this.network)
+          for (const address of receiveAddresses) {
+            addressesToAccounts.set(address, account)
           }
-          return map
-        })
-        .inspectErr((err) => {
-          this.deps.logger.error({ err }, 'Error getting confirmed account balances')
-        })
-    },
-  )
+          const changeAddresses = account.changeAddresses(0, lastUsedChangeIndex + 1, this.network)
+          for (const address of changeAddresses) {
+            addressesToAccounts.set(address, account)
+          }
+        }
+
+        return this.getConfirmedAddressBalances(new IndexSet(addressesToAccounts.keys()))
+          .map((addressBalances) => {
+            const map = new IndexMap<Account, bigint>()
+            for (const [address, account] of addressesToAccounts.entries()) {
+              const currentBalance = map.get(account) ?? 0n
+              const addressBalance = addressBalances.get(address) ?? 0n
+              map.set(account, currentBalance + addressBalance)
+            }
+            return map
+          })
+          .inspectErr((err) => {
+            this.deps.logger.error({ err }, 'Error getting confirmed account balances')
+          })
+      })(),
+    )
 
   protected abstract getLastKnownIndexes(
     account: Account,
@@ -117,13 +118,13 @@ export abstract class OnchainBitcoinProvider {
   public discoverAccount(
     account: Account,
   ): AsyncResult<{ lastUsedReceiveIndex: number; lastUsedChangeIndex: number }, Error> {
-    return tryBlockAsync(
+    return tryBlock(
       async function* (this: OnchainBitcoinProvider) {
-        const { lastUsedReceiveIndex, lastUsedChangeIndex } = yield* this.getLastKnownIndexes(account)
-          .inspectErr((err) => {
+        const { lastUsedReceiveIndex, lastUsedChangeIndex } = yield* this.getLastKnownIndexes(account).inspectErr(
+          (err) => {
             this.deps.logger.error({ err }, 'Error getting last known indexes')
-          })
-          .try()
+          },
+        )
 
         this.deps.logger.debug({ account, lastUsedReceiveIndex, lastUsedChangeIndex }, 'Discovering account')
 
@@ -157,11 +158,11 @@ export abstract class OnchainBitcoinProvider {
           }
 
           this.deps.logger.debug({ addresses }, 'Checking if addresses are used')
-          const usedMap = yield* this.areAddressesUsed(new IndexSet(addresses.map((a) => a.address)))
-            .inspectErr((err) => {
+          const usedMap = yield* this.areAddressesUsed(new IndexSet(addresses.map((a) => a.address))).inspectErr(
+            (err) => {
               this.deps.logger.error({ err }, 'Error checking if addresses are used')
-            })
-            .try()
+            },
+          )
 
           for (const address of addresses) {
             if (usedMap.has(address.address)) {
@@ -227,19 +228,20 @@ export abstract class OnchainBitcoinProvider {
       })
   }
 
-  public getTransactionEntriesByAddress = asyncFn(
-    async (address: Address): Promise<Result<TransactionEntry[], Error>> => {
-      this.deps.logger.debug({ address }, 'Getting transaction entries for address')
-      const entries: TransactionEntry[] = []
-      const gen = this.getTransactionEntries(new IndexMap([[address, null]]))
-      for await (const entry of gen) {
-        if (entry.isErr()) {
-          this.deps.logger.error({ err: entry.unwrapErr() }, 'Error getting transaction entries for address')
-          return Err(entry.unwrapErr())
+  public getTransactionEntriesByAddress = (address: Address): AsyncResult<TransactionEntry[], Error> =>
+    new AsyncResult(
+      (async () => {
+        this.deps.logger.debug({ address }, 'Getting transaction entries for address')
+        const entries: TransactionEntry[] = []
+        const gen = this.getTransactionEntries(new IndexMap([[address, null]]))
+        for await (const entry of gen) {
+          if (entry.isErr()) {
+            this.deps.logger.error({ err: entry.unwrapErr() }, 'Error getting transaction entries for address')
+            return Err(entry.unwrapErr())
+          }
+          entries.push(entry.unwrap())
         }
-        entries.push(entry.unwrap())
-      }
-      return Ok(entries)
-    },
-  )
+        return Ok(entries)
+      })(),
+    )
 }

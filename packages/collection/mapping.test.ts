@@ -51,7 +51,7 @@ test('set', () => {
   const map = new Mapping([value(), value(), value()])
   map.set(toSet)
   expect(map.size()).toBe(4)
-  expect(map.get(toSet.key()).unwrap()).toBe(toSet)
+  expect(map.get(toSet.key()).expect('Expected successful result')).toBe(toSet)
 })
 
 test('keys', () => {
@@ -103,7 +103,7 @@ test('toString shows stored keys without coercing values or reevaluating keys', 
   const map = new Mapping<Mappable>([first, { key: 'second' }])
   expect(map.toString()).toBe('Mapping(first, second)')
   expect(keyCalls).toBe(1)
-  expect(map.get('first').unwrap()).toBe(first)
+  expect(map.get('first').expect('Expected successful result')).toBe(first)
 })
 
 test('toString handles an empty Mapping', () => {

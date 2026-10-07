@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { Network } from '@hoseki/packages/bitcoin/network'
 import { ElectrumProvider } from '@hoseki/packages/bitcoin/onchain/electrum_provider'
 import { ElectrumClient } from '@hoseki/packages/clients/electrum'
-import { Err, Ok, asyncFn } from '@hoseki/packages/result'
+import { AsyncResult, Err, Ok } from '@hoseki/packages/result'
 import { Wallets } from '@hoseki/packages/testing'
 import pino from 'pino'
 import { assert, expect, it, onTestFinished, vi } from 'vitest'
@@ -46,10 +46,10 @@ function setup(body: JsonValue, transactionIds = [txid], pendingIds: { id: strin
   )
   const onchainProvider = new ElectrumProvider(Network.Mainnet, { logger, electrum })
   vi.spyOn(onchainProvider, 'discoverAccount').mockImplementation(
-    asyncFn(async () => Ok({ lastUsedReceiveIndex: 0, lastUsedChangeIndex: -1 })),
+    () => new AsyncResult((async () => Ok({ lastUsedReceiveIndex: 0, lastUsedChangeIndex: -1 }))()),
   )
   vi.spyOn(onchainProvider, 'getBlocksTip').mockImplementation(
-    asyncFn(async () => Ok({ height: 900000, hash: 'tip', timestamp: new Date() })),
+    () => new AsyncResult((async () => Ok({ height: 900000, hash: 'tip', timestamp: new Date() }))()),
   )
   // Retries happen without real waits; tests can inspect the requested delays.
   const sleep = vi.fn(async (_ms: number) => {})
@@ -72,7 +72,7 @@ it('accepts coinbase inputs and addressless outputs without changing balance cal
         extra: true,
       }),
     )
-    expect(result.unwrap()).toEqual([
+    expect(result.expect('Expected successful result')).toEqual([
       expect.objectContaining({
         value: 75n,
         blockHeight: 800000,
@@ -292,7 +292,10 @@ it('stops statement generation when a known transaction fails validation', async
       const rates = vi
         .spyOn(dailyRatesService, 'getDailyRates')
         .mockImplementation(
-          asyncFn(async () => Ok({ rates: {}, source: 'mempool' as const, quoteCurrency: 'USD' as const })),
+          () =>
+            new AsyncResult(
+              (async () => Ok({ rates: {}, source: 'mempool' as const, quoteCurrency: 'USD' as const }))(),
+            ),
         )
       const service = new StatementService({
         ...deps,
@@ -336,6 +339,8 @@ it.each([
         status: { confirmed: true, block_height: 800000, block_time: blockTime },
       }),
     )
-    expect(result.unwrap()).toEqual([expect.objectContaining({ timestamp: new Date(expected) })])
+    expect(result.expect('Expected successful result')).toEqual([
+      expect.objectContaining({ timestamp: new Date(expected) }),
+    ])
   })
 })

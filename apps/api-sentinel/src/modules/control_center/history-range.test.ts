@@ -11,7 +11,7 @@ describe('preset portfolio history ranges', () => {
   const now = new Date('2026-09-05T12:00:00.000Z')
 
   it.each(presets)('keeps $preset calendar boundaries and current-balance endpoint', ({ preset, days, start }) => {
-    const range = resolveHistoryRange(preset, undefined, 'UTC', now).unwrap()
+    const range = resolveHistoryRange(preset, undefined, 'UTC', now).expect('Expected successful result')
     expect(range.start.toISOString()).toBe(`${start}T00:00:00.000Z`)
     expect(range.end).toEqual(now)
     expect(range.dayStarts).toHaveLength(days + 1)
@@ -34,7 +34,7 @@ describe('preset portfolio history ranges', () => {
   })
 
   it.each(presets)('preserves the $preset fallback when only a current balance is known', ({ preset, days }) => {
-    const range = resolveHistoryRange(preset, undefined, 'UTC', now).unwrap()
+    const range = resolveHistoryRange(preset, undefined, 'UTC', now).expect('Expected successful result')
     const data = buildHistoricalData([], 100n, range, 'UTC')
     expect(data).toHaveLength(days + 1)
     expect(data.map((point) => point.timestamp)).toEqual(range.dayStarts.map((date) => date.toISOString()))
@@ -44,7 +44,9 @@ describe('preset portfolio history ranges', () => {
 
   it('uses local calendar dates, not UTC dates, for a preset crossing daylight saving', () => {
     const daylightSavingNow = new Date('2026-03-09T02:30:00.000Z')
-    const range = resolveHistoryRange('7d', undefined, 'America/New_York', daylightSavingNow).unwrap()
+    const range = resolveHistoryRange('7d', undefined, 'America/New_York', daylightSavingNow).expect(
+      'Expected successful result',
+    )
     expect(range.start.toISOString()).toBe('2026-03-01T05:00:00.000Z')
     expect(range.dayStarts.at(-1)?.toISOString()).toBe('2026-03-08T05:00:00.000Z')
     const data = buildHistoricalData(
@@ -83,7 +85,9 @@ describe('reused local-day boundaries', () => {
       end: '2026-09-07T02:59:59.999Z',
     },
   ] as const)('keeps exact daily balances at $zone transitions on $day', ({ zone, day, next, start, end }) => {
-    const range = resolveHistoryRange('30d', { startDate: day, endDate: next }, zone, new Date('2027-01-01')).unwrap()
+    const range = resolveHistoryRange('30d', { startDate: day, endDate: next }, zone, new Date('2027-01-01')).expect(
+      'Expected successful result',
+    )
     const data = buildHistoricalData(
       [
         { timestamp: new Date(start), value: 100n },
@@ -105,7 +109,7 @@ describe('reused local-day boundaries', () => {
       { startDate: '2011-12-29', endDate: '2011-12-31' },
       'Pacific/Apia',
       new Date('2012-01-05'),
-    ).unwrap()
+    ).expect('Expected successful result')
     expect(range.dayStarts[1]).toEqual(range.dayStarts[2])
     const data = buildHistoricalData(
       [
@@ -145,7 +149,7 @@ describe('custom portfolio history ranges', () => {
       { startDate: '2026-03-07', endDate: '2026-03-09' },
       'America/New_York',
       new Date('2026-03-15T16:00:00.000Z'),
-    ).unwrap()
+    ).expect('Expected successful result')
 
     expect(range.start.toISOString()).toBe('2026-03-07T05:00:00.000Z')
     expect(range.end.toISOString()).toBe('2026-03-10T03:59:59.999Z')
@@ -162,7 +166,7 @@ describe('custom portfolio history ranges', () => {
       { startDate: '2026-01-02', endDate: '2026-01-03' },
       'UTC',
       new Date('2026-01-10T12:00:00.000Z'),
-    ).unwrap()
+    ).expect('Expected successful result')
 
     const data = buildHistoricalData(
       [
@@ -189,7 +193,7 @@ describe('custom portfolio history ranges', () => {
       { startDate: '2026-01-02', endDate: '2026-01-02' },
       'UTC',
       new Date('2026-01-10T12:00:00.000Z'),
-    ).unwrap()
+    ).expect('Expected successful result')
 
     expect(
       buildHistoricalData(
@@ -213,7 +217,7 @@ describe('custom portfolio history ranges', () => {
       { startDate: '2026-01-02', endDate: '2026-01-03' },
       'UTC',
       new Date('2026-01-10T12:00:00.000Z'),
-    ).unwrap()
+    ).expect('Expected successful result')
 
     expect(buildHistoricalData([], 100n, range, 'UTC')).toEqual([])
   })
@@ -228,7 +232,7 @@ describe('custom portfolio history ranges', () => {
         { startDate: '2026-04-04', endDate: '2026-04-06' },
         'America/Santiago',
         new Date('2026-04-10T12:00:00.000Z'),
-      ).unwrap()
+      ).expect('Expected successful result')
 
       expect(range.dayStarts.map((date) => date.toISOString())).toEqual([
         '2026-04-04T03:00:00.000Z',
@@ -251,7 +255,7 @@ describe('custom portfolio history ranges', () => {
       { startDate: '2009-01-03', endDate: '2035-01-03' },
       'UTC',
       now,
-    ).unwrap()
+    ).expect('Expected successful result')
 
     expect(customRange.start.toISOString()).toBe('2009-01-03T00:00:00.000Z')
   })
@@ -260,7 +264,7 @@ describe('custom portfolio history ranges', () => {
 describe('all portfolio history', () => {
   it('starts on the first day of activity, ignoring earlier zero-balance snapshots', () => {
     const now = new Date('2026-01-04T12:00:00.000Z')
-    const range = resolveHistoryRange('all', undefined, 'UTC', now).unwrap()
+    const range = resolveHistoryRange('all', undefined, 'UTC', now).expect('Expected successful result')
     expect(range.dayStarts).toEqual([])
 
     expect(
@@ -284,7 +288,7 @@ describe('all portfolio history', () => {
 
   it('uses the first activity day in the requested timezone', () => {
     const now = new Date('2026-01-03T12:00:00.000Z')
-    const range = resolveHistoryRange('all', undefined, 'America/New_York', now).unwrap()
+    const range = resolveHistoryRange('all', undefined, 'America/New_York', now).expect('Expected successful result')
     const history = buildHistoricalData(
       [{ timestamp: new Date('2026-01-02T01:00:00.000Z'), value: 100n }],
       100n,
@@ -299,7 +303,7 @@ describe('all portfolio history', () => {
 
   it('retains the first activity day even when all Bitcoin was spent that day', () => {
     const now = new Date('2026-01-04T12:00:00.000Z')
-    const range = resolveHistoryRange('all', undefined, 'UTC', now).unwrap()
+    const range = resolveHistoryRange('all', undefined, 'UTC', now).expect('Expected successful result')
     const history = buildHistoricalData(
       [
         { timestamp: new Date('2026-01-02T12:00:00.000Z'), value: 100n },
@@ -315,7 +319,7 @@ describe('all portfolio history', () => {
 
   it('does not invent historical dates when no activity is known', () => {
     const now = new Date('2026-01-04T12:00:00.000Z')
-    const range = resolveHistoryRange('all', undefined, 'UTC', now).unwrap()
+    const range = resolveHistoryRange('all', undefined, 'UTC', now).expect('Expected successful result')
     expect(buildHistoricalData([], 100n, range, 'UTC')).toEqual([])
     expect(
       buildHistoricalData(
@@ -332,7 +336,9 @@ describe('all portfolio history', () => {
 
   it('keeps explicit custom dates even when the timeRange parameter is all', () => {
     const now = new Date('2026-01-04T12:00:00.000Z')
-    const range = resolveHistoryRange('all', { startDate: '2026-01-01', endDate: '2026-01-03' }, 'UTC', now).unwrap()
+    const range = resolveHistoryRange('all', { startDate: '2026-01-01', endDate: '2026-01-03' }, 'UTC', now).expect(
+      'Expected successful result',
+    )
     const history = buildHistoricalData(
       [{ timestamp: new Date('2026-01-02T12:00:00.000Z'), value: 100n }],
       100n,

@@ -71,9 +71,9 @@ describe('stored exchange credentials', () => {
       ])
       const service = new ExchangeService({ db: database, logger })
       expect((await service.refreshBalance('exchange')).isErr()).toBe(true)
-      expect((await service.getKrakenTransactionEntries()).unwrap()).toEqual([])
+      expect((await service.getKrakenTransactionEntries()).expect('Expected successful result')).toEqual([])
       await database.update(exchangeAccounts).set({ provider: 'coinbase' }).where(eq(exchangeAccounts.id, 'exchange'))
-      expect((await service.getCoinbaseTransactionEntries()).unwrap()).toEqual([])
+      expect((await service.getCoinbaseTransactionEntries()).expect('Expected successful result')).toEqual([])
     })
   })
 

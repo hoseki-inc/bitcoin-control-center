@@ -39,7 +39,7 @@ it('completes an import atomically before a concurrent account deletion', async 
     service.importStatementTransactions({ accountId: 'exchange', transactions: [transaction] }),
     service.removeAccount('exchange'),
   ])
-  expect(imported.unwrap()).toEqual({ imported: 1, skipped: 0 })
+  expect(imported.expect('Expected successful result')).toEqual({ imported: 1, skipped: 0 })
   expect(removed.isOk()).toBe(true)
   await expect(service.listStatementTransactions('exchange')).resolves.toEqual([])
 })
@@ -53,8 +53,8 @@ it('returns not found if deletion is queued before the import, including empty i
     service.importStatementTransactions({ accountId: 'exchange', transactions: [] }),
   ])
   await removal
-  expect(missing.unwrapErr().message).toBe('Exchange account not found')
-  expect(empty.unwrapErr().message).toBe('Exchange account not found')
+  expect(missing.expectErr('Expected failed result').message).toBe('Exchange account not found')
+  expect(empty.expectErr('Expected failed result').message).toBe('Exchange account not found')
   await expect(service.listStatementTransactions('exchange')).resolves.toEqual([])
 })
 
@@ -65,8 +65,8 @@ it('deduplicates concurrent imports and rolls back earlier rows if a later inser
     service.importStatementTransactions(input),
     service.importStatementTransactions(input),
   ])
-  expect(first.unwrap()).toEqual({ imported: 1, skipped: 0 })
-  expect(second.unwrap()).toEqual({ imported: 0, skipped: 1 })
+  expect(first.expect('Expected successful result')).toEqual({ imported: 1, skipped: 0 })
+  expect(second.expect('Expected successful result')).toEqual({ imported: 0, skipped: 1 })
   const before = await service.listStatementTransactions('exchange')
   await db.run(sql`CREATE TEMP TRIGGER fail_import BEFORE INSERT ON exchange_statement_txs
     WHEN NEW.external_id = 'fail'

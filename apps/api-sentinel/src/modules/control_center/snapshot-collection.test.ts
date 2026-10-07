@@ -3,7 +3,7 @@ import { Network } from '@hoseki/packages/bitcoin/network'
 import { ElectrumProvider } from '@hoseki/packages/bitcoin/onchain/electrum_provider'
 import { ElectrumClient } from '@hoseki/packages/clients/electrum'
 import { IndexMap } from '@hoseki/packages/collection'
-import { Err, Ok, asyncFn } from '@hoseki/packages/result'
+import { AsyncResult, Err, Ok } from '@hoseki/packages/result'
 import { Wallets } from '@hoseki/packages/testing'
 import { eq, sql } from 'drizzle-orm'
 import { assert, expect, it, vi } from 'vitest'
@@ -63,20 +63,24 @@ async function setupCollection() {
   })
   const balances = vi
     .spyOn(onchainProvider, 'getConfirmedAccountBalances')
-    .mockImplementation(asyncFn(async () => Ok(new IndexMap<Account, bigint>(wallets.map((wallet) => [wallet, 100n])))))
+    .mockImplementation(
+      () => new AsyncResult((async () => Ok(new IndexMap<Account, bigint>(wallets.map((wallet) => [wallet, 100n]))))()),
+    )
   const exchangeService = new ExchangeService({ db, logger })
   const refresh = vi.spyOn(exchangeService, 'refreshBalance').mockImplementation(
-    asyncFn(async (id) =>
-      Ok({
-        id,
-        exchange: 'coinbase' as const,
-        displayName: 'Exchange',
-        balanceSats: '200',
-        balanceAsOf: new Date().toISOString(),
-        createdAt: new Date().toISOString(),
-        connectionStatus: 'connected' as const,
-      }),
-    ),
+    (id) =>
+      new AsyncResult(
+        (async () =>
+          Ok({
+            id,
+            exchange: 'coinbase' as const,
+            displayName: 'Exchange',
+            balanceSats: '200',
+            balanceAsOf: new Date().toISOString(),
+            createdAt: new Date().toISOString(),
+            connectionStatus: 'connected' as const,
+          }))(),
+      ),
   )
   const manualService = new ManualService({ db, logger })
   const etfService = new EtfService({ db, logger })
@@ -153,12 +157,17 @@ it.each(['returned', 'thrown'] as const)(
   async (failure) => {
     const { service, balances, rows } = await setupCollection()
     if (failure === 'returned') {
-      balances.mockImplementationOnce(asyncFn(async () => Err(new Error('Synthetic provider failure'))))
+      balances.mockImplementationOnce(
+        () => new AsyncResult((async () => Err(new Error('Synthetic provider failure')))()),
+      )
     } else {
       balances.mockImplementationOnce(
-        asyncFn(async () => {
-          throw new Error('Synthetic provider failure')
-        }),
+        () =>
+          new AsyncResult(
+            (async () => {
+              throw new Error('Synthetic provider failure')
+            })(),
+          ),
       )
     }
 
@@ -192,14 +201,17 @@ it.each(['archive', 'delete'] as const)('skips an account that is %sd while fetc
   const original = balances.getMockImplementation()
   assert(original)
   balances.mockImplementationOnce(
-    asyncFn(async (...args) => {
-      if (action === 'archive') {
-        await db.update(accounts).set({ deletedAt: new Date().toISOString() }).where(eq(accounts.id, 'on-chain-2'))
-      } else {
-        await db.delete(accounts).where(eq(accounts.id, 'on-chain-2'))
-      }
-      return original(...args)
-    }),
+    (...args) =>
+      new AsyncResult(
+        (async () => {
+          if (action === 'archive') {
+            await db.update(accounts).set({ deletedAt: new Date().toISOString() }).where(eq(accounts.id, 'on-chain-2'))
+          } else {
+            await db.delete(accounts).where(eq(accounts.id, 'on-chain-2'))
+          }
+          return original(...args)
+        })(),
+      ),
   )
 
   expect((await service.recordAllSnapshots()).isOk()).toBe(true)
@@ -213,9 +225,12 @@ it.each(['archive', 'delete'] as const)('skips an account that is %sd while fetc
 it('logs failure context without leaking raw provider exception details', async () => {
   const { service, refresh, warn } = await setupCollection()
   refresh.mockImplementationOnce(
-    asyncFn(async () => {
-      throw new Error('synthetic-sensitive-provider-response')
-    }),
+    () =>
+      new AsyncResult(
+        (async () => {
+          throw new Error('synthetic-sensitive-provider-response')
+        })(),
+      ),
   )
 
   expect((await service.recordAllSnapshots()).isOk()).toBe(true)
@@ -231,15 +246,18 @@ it.each(['returned', 'thrown'] as const)(
     const original = refresh.getMockImplementation()
     assert(original)
     refresh.mockImplementation(
-      asyncFn(async (id) => {
-        if (id === 'exchange-2') {
-          if (failure === 'thrown') {
-            throw new Error('Synthetic refresh failure')
-          }
-          return Err(new Error('Synthetic refresh failure'))
-        }
-        return original(id)
-      }),
+      (id) =>
+        new AsyncResult(
+          (async () => {
+            if (id === 'exchange-2') {
+              if (failure === 'thrown') {
+                throw new Error('Synthetic refresh failure')
+              }
+              return Err(new Error('Synthetic refresh failure'))
+            }
+            return original(id)
+          })(),
+        ),
     )
 
     expect((await service.recordAllSnapshots()).isOk()).toBe(true)

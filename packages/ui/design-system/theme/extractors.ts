@@ -40,7 +40,7 @@ export function getColor(colorPath: string): string {
   // Ensure we ended up with a string (the actual color value)
   const color = parseUnknown(z.string(), current)
   if (color.isOk()) {
-    return color.value()
+    return color.unwrap()
   } else {
     throw new Error(`Color path "${colorPath}" does not resolve to a color value`)
   }

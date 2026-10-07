@@ -13,553 +13,831 @@ export type ResultMatchAsync<T, E, A, B> = {
   Err: (error: E) => Promise<B>
 }
 
-export class ResultImpl<T, E> {
+export abstract class ResultImpl<T, E> {
   private readonly kind?: true
-  private readonly wrapped: T | E;
+  protected readonly wrapped: T | E
 
-  [Symbol.toStringTag] = 'Result'
+  public [Symbol.toStringTag] = 'Result'
 
-  constructor(k: boolean, v: T | E) {
+  public constructor(k: boolean, v: T | E) {
     if (k) {
       this.kind = true
     }
     this.wrapped = v
   }
 
-  public try(): Generator<Err<E, never>, T> {
-    const wrapped = this.wrapped
-    if (this.kind) {
-      return (function* () {
-        return wrapped as T
-      })()
-    }
-    return (function* () {
-      yield Err(wrapped as E)
-      throw new Panic('Do not use this generator outside of a try block')
-    })()
-  }
+  /**
+   * Unwraps successes or propagates errors through `yield*` inside a try block.
+   *
+   * @example
+   *
+   * ```ts
+   * const result = tryBlock(function* () {
+   *   const value = yield* Ok(2);
+   *   return Ok(value * 2);
+   * }); // Ok(4)
+   * ```
+   */
+  public abstract [Symbol.iterator](): Generator<Err<E, never>, T>
+
+  protected abstract variant(): Ok<T> | Err<E>
 
   private unwrapFailed(message: string): never {
     throw new Panic(message, { cause: this.wrapped })
   }
 
   /**
-   * Matches the result with two functions.
+   * Calls the matching `Ok` or `Err` callback and returns its value.
    *
-   * **Examples**
+   * Prefer {@link map} to transform a success, {@link andThen} to chain fallible
+   * operations, or {@link unwrapOrElse} to supply a fallback. Use `yield*` inside
+   * `tryBlock` for several dependent operations that propagate errors. For
+   * branching with multiple statements or early returns, narrow the result with
+   * {@link isOk} or {@link isErr} and use ordinary control flow.
    *
-   * ```
-   * const x: Result<number, string> = Ok(2)
-   * assert.strictEqual(x.match({
-   * 	Ok: (v) => v * 2,
-   * 	Err: (e) => e.length,
-   * }), 4)
+   * @param pattern - Callbacks for the `Ok` and `Err` variants.
+   * @returns The value returned by the matching callback.
    *
-   * const y: Result<number, string> = Err("error")
-   * assert.strictEqual(y.match({
-   * 	Ok: (v) => v * 2,
-   * 	Err: (e) => e.length,
-   * }), 5)
+   * @example
+   *
+   * ```ts
+   * const x: Result<number, string> = Ok(2);
+   * const success = x.match({
+   *   Ok: (value) => value * 2,
+   *   Err: (error) => error.length,
+   * });
+   * assert.equal(success, 4);
+   *
+   * const y: Result<number, string> = Err("error");
+   * const failure = y.match({
+   *   Ok: (value) => value * 2,
+   *   Err: (error) => error.length,
+   * });
+   * assert.equal(failure, 5);
    * ```
    */
-  match<A, B>(pattern: ResultMatch<T, E, A, B>): A | B {
-    return this.kind ? pattern.Ok(this.wrapped as T) : pattern.Err(this.wrapped as E)
-  }
-
-  matchAsync<A, B>(pattern: ResultMatchAsync<T, E, A, B>): Promise<A | B> {
-    return this.kind ? pattern.Ok(this.wrapped as T) : pattern.Err(this.wrapped as E)
+  public match<A, B>(pattern: ResultMatch<T, E, A, B>): A | B {
+    const result = this.variant()
+    return result.isOk() ? pattern.Ok(result.unwrap()) : pattern.Err(result.unwrapErr())
   }
 
   /**
-   * Returns the contained value, if it exists.
+   * Matches `Ok` or `Err` with an asynchronous callback and awaits its value.
    *
-   * @deprecated Use `unwrap()` instead.
-   */
-  value(): T | undefined {
-    return this.kind ? (this.wrapped as T) : undefined
-  }
-
-  /**
-   * Returns the contained error, if it exists.
+   * Only the callback for the current variant runs.
    *
-   * @deprecated Use `unwrapErr()` instead.
+   * Prefer {@link mapAsync} to transform a success, {@link andThenAsync} to
+   * chain fallible operations, or {@link orElseAsync} to recover from an error.
+   * For multiple steps, use `yield*` inside an async `tryBlock`, or narrow with
+   * {@link isOk} or {@link isErr} before awaiting branch work.
+   *
+   * @example
+   *
+   * ```ts
+   * await Err("missing").matchAsync({
+   *   Ok: async () => 1,
+   *   Err: async (error) => error.length,
+   * }); // 7
+   * ```
    */
-  error(): E | undefined {
-    return this.kind ? undefined : (this.wrapped as E)
+  public async matchAsync<A, B>(pattern: ResultMatchAsync<T, E, A, B>): Promise<A | B> {
+    const result = this.variant()
+    return result.isOk() ? pattern.Ok(result.unwrap()) : pattern.Err(result.unwrapErr())
   }
 
   /**
    * Returns `true` if the result is `Ok`.
+   *
+   * Narrows the result to `Ok` so `unwrap()` is available in the true branch.
+   *
+   * @example
+   *
+   * ```ts
+   * const x: Result<number, string> = Ok(-3);
+   * assert.equal(x.isOk(), true);
+   *
+   * const y: Result<number, string> = Err("Some error message");
+   * assert.equal(y.isOk(), false);
+   * ```
    */
-  isOk(): this is Ok<T, E> {
+  public isOk(): this is Ok<T, E> {
     return this.kind === true
   }
 
   /**
-   * Returns `true` if the result is `Ok` and the value satisfies the predicate.
-   *
-   * Maybe not as useful as using `result.isOk() && f(result.value)`, because it doesn't narrow the type, but it's here for completeness.
-   */
-  isOkAnd(f: (value: T) => boolean): this is Ok<T, E> {
-    return this.kind === true && f(this.wrapped as T)
-  }
-
-  /**
    * Returns `true` if the result is `Err`.
-   */
-  isErr(): this is Err<E, T> {
-    return this.kind === undefined
-  }
-
-  /**
-   * Returns `true` if the result is `Err` and the error satisfies the predicate.
    *
-   * Maybe not as useful as using `result.isErr() && f(result.error)`, because it doesn't narrow the type, but it's here for completeness.
+   * Narrows the result to `Err` so `unwrapErr()` is available in the true branch.
+   *
+   * @example
+   *
+   * ```ts
+   * const x: Result<number, string> = Ok(-3);
+   * assert.equal(x.isErr(), false);
+   *
+   * const y: Result<number, string> = Err("Some error message");
+   * assert.equal(y.isErr(), true);
+   * ```
    */
-  isErrAnd(f: (error: E) => boolean): this is Err<E, T> {
-    return this.kind === undefined && f(this.wrapped as E)
+  public isErr(): this is Err<E, T> {
+    return this.kind === undefined
   }
 
   /**
    * Converts from `Result<T, E>` to `Option<T>`.
    *
-   * **Examples**
+   * Converts `Ok(value)` into `Some(value)`, discarding the error, if any.
+   * An `Err` becomes `None`.
    *
-   * ```
-   * const x: Result<number, string> = Ok(2)
-   * assert.strictDeepEqual(x.ok(), Some(2))
+   * @example
    *
-   * const y: Result<number, string> = Err("Nothing here")
-   * assert.strictDeepEqual(y.ok(), None)
+   * ```ts
+   * const x: Result<number, string> = Ok(2);
+   * assert.deepEqual(x.ok(), Some(2));
+   *
+   * const y: Result<number, string> = Err("Nothing here");
+   * assert.deepEqual(y.ok(), None);
    * ```
    */
-  ok(): Option<T> {
-    return this.kind ? Some(this.wrapped as T) : None
+  public ok(): Option<T> {
+    return this.isOk() ? Some(this.unwrap()) : None
   }
 
   /**
    * Converts from `Result<T, E>` to `Option<E>`.
    *
-   * **Examples**
+   * Converts `Err(error)` into `Some(error)`, discarding the success value, if any.
+   * An `Ok` becomes `None`.
    *
-   * ```
-   * const x: Result<number, string> = Ok(2)
-   * assert.strictDeepEqual(x.err(), None)
+   * @example
    *
-   * const y: Result<number, string> = Err("Nothing here")
-   * assert.strictDeepEqual(y.err(), Some("Nothing here"))
+   * ```ts
+   * const x: Result<number, string> = Ok(2);
+   * assert.deepEqual(x.err(), None);
+   *
+   * const y: Result<number, string> = Err("Nothing here");
+   * assert.deepEqual(y.err(), Some("Nothing here"));
    * ```
    */
-  err(): Option<E> {
-    return this.kind ? None : Some(this.wrapped as E)
+  public err(): Option<E> {
+    return this.isErr() ? Some(this.unwrapErr()) : None
   }
 
   /**
-   * Maps a `Result<T, E>` to `Result<U, E>` by applying a function to a contained `Ok` value, leaving an `Err` value untouched.
+   * Maps a `Result<T, E>` to `Result<U, E>` by applying a function to a
+   * contained `Ok` value, leaving an `Err` value untouched.
    *
-   * **Examples**
+   * This function can be used to compose the results of two functions.
    *
-   * ```
-   * const x = Ok(10)
-   * const mapped = x.map((n) => `number ${n}`)
-   * assert.strictEqual(mapped.unwrap(), "number 10")
+   * @example
+   * Print the numbers on each line of a string multiplied by two.
+   *
+   * ```ts
+   * function parseNumber(line: string): Result<number, string> {
+   *   const value = Number(line);
+   *   return Number.isNaN(value) ? Err(`invalid number: ${line}`) : Ok(value);
+   * }
+   *
+   * const lines = "1\n2\n3\n4\n";
+   * for (const line of lines.trimEnd().split("\n")) {
+   *   const doubled = parseNumber(line).map((value) => value * 2);
+   *   if (doubled.isOk()) {
+   *     console.log(doubled.unwrap()); // 2, 4, 6, 8
+   *   }
+   * }
    * ```
    */
-  map<U>(f: (value: T) => U): Result<U, E> {
-    return this.kind ? Ok(f(this.wrapped as T)) : Err(this.wrapped as E)
+  public map<U>(f: (value: T) => U): Result<U, E> {
+    const result = this.variant()
+    return result.isOk() ? Ok(f(result.unwrap())) : Err(result.unwrapErr())
   }
 
   /**
-   * Maps a `Result<T, E>` to `AsyncResult<U, E>` by applying an async function to a contained `Ok` value, leaving an `Err` value untouched.
+   * Maps a `Result<T, E>` to `AsyncResult<U, E>` by applying an async function
+   * to a contained `Ok` value, leaving an `Err` value untouched.
    *
-   * **Examples**
+   * This function can be used to compose the results of two functions.
+   * The returned `AsyncResult` awaits the mapped value.
    *
-   * ```
-   * const x = Ok(10)
-   * const mapped = x.mapAsync((n) => Promise.resolve(`number ${n}`))
-   * assert.strictEqual(await mapped.unwrap(), "number 10")
+   * @example
+   * Print the numbers on each line of a string multiplied by two.
+   *
+   * ```ts
+   * function parseNumber(line: string): Result<number, string> {
+   *   const value = Number(line);
+   *   return Number.isNaN(value) ? Err(`invalid number: ${line}`) : Ok(value);
+   * }
+   *
+   * const lines = "1\n2\n3\n4\n";
+   * for (const line of lines.trimEnd().split("\n")) {
+   *   const doubled = await parseNumber(line).mapAsync(async (value) => value * 2);
+   *   if (doubled.isOk()) {
+   *     console.log(doubled.unwrap()); // 2, 4, 6, 8
+   *   }
+   * }
    * ```
    */
-  mapAsync<U>(f: (value: T) => Promise<U>): AsyncResult<U, E> {
+  public mapAsync<U>(f: (value: T) => Promise<U>): AsyncResult<U, E> {
+    const result = this.variant()
     return new AsyncResult(
-      this.kind ? f(this.wrapped as T).then((v) => Ok(v)) : Promise.resolve(Err(this.wrapped as E)),
+      result.isOk() ? f(result.unwrap()).then((v) => Ok(v)) : Promise.resolve(Err(result.unwrapErr())),
     )
   }
 
   /**
    * Returns the provided default (if `Err`), or applies a function to the contained value (if `Ok`).
    *
-   * **Examples**
+   * Arguments passed to `mapOr` are eagerly evaluated. If you are passing the
+   * result of a function call, use {@link mapOrElse}, which is lazily evaluated.
    *
-   * ```
+   * @example
+   *
+   * ```ts
    * const x: Result<string, string> = Ok("foo");
-   * assert.strictEqual(x.mapOr(42, (v) => v.length), 3);
+   * assert.equal(x.mapOr(42, (v) => v.length), 3);
    *
    * const y: Result<string, string> = Err("bar");
-   * assert.strictEqual(y.mapOr(42, (v) => v.length), 42);
+   * assert.equal(y.mapOr(42, (v) => v.length), 42);
    * ```
    */
-  mapOr<A, B>(defaultValue: A, f: (value: T) => B): A | B {
-    return this.kind ? f(this.wrapped as T) : defaultValue
-  }
-
-  mapOrAsync<A, B>(defaultValue: A, f: (value: T) => Promise<B>): Promise<A | B> {
-    return this.kind ? f(this.wrapped as T) : Promise.resolve(defaultValue)
+  public mapOr<A, B>(defaultValue: A, f: (value: T) => B): A | B {
+    return this.isOk() ? f(this.unwrap()) : defaultValue
   }
 
   /**
-   * Maps a `Result<T, E>` to `A | B` by applying fallback function `defaultValue` to a contained `Err` value, or function `f` to a contained `Ok` value.
+   * Awaits the mapping function for `Ok`, or resolves to the provided default for `Err`.
    *
-   * **Examples**
+   * Arguments passed to `mapOrAsync` are eagerly evaluated. If you are passing the
+   * result of a function call, use {@link mapOrElseAsync}, which is lazily evaluated.
    *
-   * ```
-   * const k = 21
+   * @example
    *
-   * let x: Result<string, string> = Ok("foo")
-   * assert.strictEqual(x.mapOrElse(() => k * 2, (v) => v.length), 3)
+   * ```ts
+   * const x: Result<string, string> = Ok("foo");
+   * assert.equal(await x.mapOrAsync(42, async (v) => v.length), 3);
    *
-   * x = Err("bar")
-   * assert.strictEqual(x.mapOrElse(() => k * 2, (v) => v.length), 42)
+   * const y: Result<string, string> = Err("bar");
+   * assert.equal(await y.mapOrAsync(42, async (v) => v.length), 42);
    * ```
    */
-  mapOrElse<A, B>(defaultValue: (error: E) => A, f: (value: T) => B): A | B {
-    return this.kind ? f(this.wrapped as T) : defaultValue(this.wrapped as E)
-  }
-
-  mapOrElseAsync<A, B>(defaultValue: (error: E) => Promise<A>, f: (value: T) => Promise<B>): Promise<A | B> {
-    return this.kind ? f(this.wrapped as T) : defaultValue(this.wrapped as E)
+  public async mapOrAsync<A, B>(defaultValue: A, f: (value: T) => Promise<B>): Promise<A | B> {
+    return this.isOk() ? f(this.unwrap()) : Promise.resolve(defaultValue)
   }
 
   /**
-   * Maps a `Result<T, E>` to `Result<T, F>` by applying a function to a contained `Err` value, leaving an `Ok` value untouched.
+   * Maps a `Result<T, E>` to `A | B` by applying fallback function `defaultValue`
+   * to a contained `Err` value, or function `f` to a contained `Ok` value.
    *
-   * **Examples**
+   * This function can be used to unpack a successful result while handling an error.
+   * Only the function for the current variant runs.
    *
-   * ```
-   * const x = Err("error")
-   * const mapped = x.mapErr((s) => s.length)
-   * assert.strictEqual(mapped.unwrapErr(), 5)
+   * @example
+   *
+   * ```ts
+   * const k = 21;
+   * const x: Result<string, string> = Ok("foo");
+   * assert.equal(x.mapOrElse(() => k * 2, (v) => v.length), 3);
+   *
+   * const y: Result<string, string> = Err("bar");
+   * assert.equal(y.mapOrElse(() => k * 2, (v) => v.length), 42);
    * ```
    */
-  mapErr<F>(f: (error: E) => F): Result<T, F> {
-    return this.kind ? Ok(this.wrapped as T) : Err(f(this.wrapped as E))
+  public mapOrElse<A, B>(defaultValue: (error: E) => A, f: (value: T) => B): A | B {
+    const result = this.variant()
+    return result.isOk() ? f(result.unwrap()) : defaultValue(result.unwrapErr())
   }
 
   /**
-   * Maps a `Result<T, E>` to `AsyncResult<T, F>` by applying an async function to a contained `Err` value, leaving an `Ok` value untouched.
+   * Awaits the `Ok` mapping function or the `Err` fallback function.
    *
-   * **Examples**
+   * This function can be used to unpack a successful result while handling an error.
+   * Only the function for the current variant runs; the fallback receives the error.
    *
-   * ```
-   * const x = Err("error")
-   * const mapped = x.mapErrAsync((s) => Promise.resolve(s.length))
-   * assert.strictEqual(await mapped.unwrapErr(), 5)
+   * @example
+   *
+   * ```ts
+   * const k = 21;
+   * const x: Result<string, string> = Ok("foo");
+   * assert.equal(await x.mapOrElseAsync(async () => k * 2, async (v) => v.length), 3);
+   *
+   * const y: Result<string, string> = Err("bar");
+   * assert.equal(await y.mapOrElseAsync(async () => k * 2, async (v) => v.length), 42);
    * ```
    */
-  mapErrAsync<F>(f: (error: E) => Promise<F>): AsyncResult<T, F> {
+  public async mapOrElseAsync<A, B>(
+    defaultValue: (error: E) => Promise<A>,
+    f: (value: T) => Promise<B>,
+  ): Promise<A | B> {
+    const result = this.variant()
+    return result.isOk() ? f(result.unwrap()) : defaultValue(result.unwrapErr())
+  }
+
+  /**
+   * Maps a `Result<T, E>` to `Result<T, F>` by applying a function to a
+   * contained `Err` value, leaving an `Ok` value untouched.
+   *
+   * This function can be used to pass through a successful result while handling an error.
+   *
+   * @example
+   *
+   * ```ts
+   * function stringify(x: number): string {
+   *   return `error code: ${x}`;
+   * }
+   *
+   * const x: Result<number, number> = Ok(2);
+   * assert.deepEqual(x.mapErr(stringify), Ok(2));
+   *
+   * const y: Result<number, number> = Err(13);
+   * assert.deepEqual(y.mapErr(stringify), Err("error code: 13"));
+   * ```
+   */
+  public mapErr<F>(f: (error: E) => F): Result<T, F> {
+    const result = this.variant()
+    return result.isOk() ? Ok(result.unwrap()) : Err(f(result.unwrapErr()))
+  }
+
+  /**
+   * Maps a `Result<T, E>` to `AsyncResult<T, F>` by applying an async function
+   * to a contained `Err` value, leaving an `Ok` value untouched.
+   *
+   * This function can be used to pass through a successful result while handling an error.
+   * The returned `AsyncResult` awaits the mapped error.
+   *
+   * @example
+   *
+   * ```ts
+   * async function stringify(x: number): Promise<string> {
+   *   return `error code: ${x}`;
+   * }
+   *
+   * const x: Result<number, number> = Ok(2);
+   * assert.deepEqual(await x.mapErrAsync(stringify), Ok(2));
+   *
+   * const y: Result<number, number> = Err(13);
+   * assert.deepEqual(await y.mapErrAsync(stringify), Err("error code: 13"));
+   * ```
+   */
+  public mapErrAsync<F>(f: (error: E) => Promise<F>): AsyncResult<T, F> {
+    const result = this.variant()
     return new AsyncResult(
-      this.kind ? Promise.resolve(Ok(this.wrapped as T)) : f(this.wrapped as E).then((v) => Err(v)),
+      result.isOk() ? Promise.resolve(Ok(result.unwrap())) : f(result.unwrapErr()).then((v) => Err(v)),
     )
   }
 
   /**
-   * Calls the provided function with the contained value (if `Ok`).
+   * Calls a function with the contained value if `Ok`.
    *
-   * **Examples**
+   * Returns the original result.
    *
-   * ```
-   * const x = Ok(2)
-   * x.inspect((v) => console.log(v))
+   * @param f - Runs with the `Ok` value; not called for `Err`.
+   * @returns The original result, including its variant and value.
+   *
+   * @example
+   *
+   * ```ts
+   * function parseNumber(text: string): Result<number, string> {
+   *   const value = Number(text);
+   *   return Number.isNaN(value) ? Err("not a number") : Ok(value);
+   * }
+   *
+   * const cubed = parseNumber("4")
+   *   .inspect((value) => console.log(`original: ${value}`))
+   *   .map((value) => value ** 3)
+   *   .expect("input should be a number");
+   * // Logs "original: 4"; cubed is 64.
+   *
+   * parseNumber("bad").inspect((value) => console.log(value));
+   * // Does not log anything; returns the original Err.
    * ```
    */
-  inspect(f: (value: T) => void): this {
-    if (this.kind) {
-      f(this.wrapped as T)
+  public inspect(f: (value: T) => void): this {
+    if (this.isOk()) {
+      f(this.unwrap())
     }
     return this
   }
 
   /**
-   * Calls the provided async function with the contained value (if `Ok`).
+   * Calls an async function with the contained value if `Ok`.
    *
-   * **Examples**
+   * Resolves to a result with the original variant and value after the callback completes.
    *
-   * ```
-   * const x = Ok(2)
-   * x.inspectAsync((v) => Promise.resolve(console.log(v)))
+   * @param f - Runs with the `Ok` value; not called for `Err`.
+   * @returns An `AsyncResult` that resolves after the callback finishes.
+   *
+   * @example
+   *
+   * ```ts
+   * function parseNumber(text: string): Result<number, string> {
+   *   const value = Number(text);
+   *   return Number.isNaN(value) ? Err("not a number") : Ok(value);
+   * }
+   *
+   * const cubed = await parseNumber("4")
+   *   .inspectAsync(async (value) => console.log(`original: ${value}`))
+   *   .map((value) => value ** 3)
+   *   .expect("input should be a number");
+   * // Logs "original: 4"; cubed is 64 after inspection completes.
    * ```
    */
-  inspectAsync(f: (value: T) => Promise<void>): AsyncResult<T, E> {
+  public inspectAsync(f: (value: T) => Promise<void>): AsyncResult<T, E> {
     return new AsyncResult(
       this.matchAsync({
-        Ok: (t) => f(t).then(() => Ok(t)),
-        Err: (e) => Promise.resolve(Err(e)),
+        Ok: async (t) => f(t).then(() => Ok(t)),
+        Err: async (e) => Promise.resolve(Err(e)),
       }),
     )
   }
 
   /**
-   * Calls the provided function with the contained error (if `Err`).
+   * Calls a function with the contained error if `Err`.
    *
-   * **Examples**
+   * Returns the original result.
    *
-   * ```
-   * const x = Err("error")
-   * x.inspectErr((e) => console.error(e))
+   * @param f - Runs with the `Err` value; not called for `Ok`.
+   * @returns The original result, including its variant and value.
+   *
+   * @example
+   *
+   * ```ts
+   * function read(): Result<string, Error> {
+   *   return Result.fromThrowable(() => readFileSync("address.txt", "utf8"))
+   *     .inspectErr((error) => console.error(`failed to read file: ${error.message}`));
+   * }
    * ```
    */
-  inspectErr(f: (error: E) => void): this {
-    if (!this.kind) {
-      f(this.wrapped as E)
+  public inspectErr(f: (error: E) => void): this {
+    if (this.isErr()) {
+      f(this.unwrapErr())
     }
     return this
   }
 
   /**
-   * Calls the provided async function with the contained error (if `Err`).
+   * Calls an async function with the contained error if `Err`.
    *
-   * **Examples**
+   * Resolves to a result with the original variant and value after the callback completes.
    *
-   * ```
-   * const x = Err("error")
-   * x.inspectErrAsync((e) => Promise.resolve(console.error(e)))
+   * @param f - Runs with the `Err` value; not called for `Ok`.
+   * @returns An `AsyncResult` that resolves after the callback finishes.
+   *
+   * @example
+   *
+   * ```ts
+   * function read(): AsyncResult<string, Error> {
+   *   return Result.fromThrowable(() => readFileSync("address.txt", "utf8"))
+   *     .inspectErrAsync(async (error) => console.error(`failed to read file: ${error.message}`));
+   * }
    * ```
    */
-  inspectErrAsync(f: (error: E) => Promise<void>): AsyncResult<T, E> {
+  public inspectErrAsync(f: (error: E) => Promise<void>): AsyncResult<T, E> {
+    const result = this.variant()
     return new AsyncResult(
-      this.kind ? Promise.resolve(Ok(this.wrapped as T)) : f(this.wrapped as E).then(() => Err(this.wrapped as E)),
+      result.isOk() ? Promise.resolve(Ok(result.unwrap())) : f(result.unwrapErr()).then(() => Err(result.unwrapErr())),
     )
   }
 
   /**
    * Returns the contained `Ok` value.
    *
-   * Throws `Panic` if the value is an `Err`, with a message containing `message` and content of the `Err` as `cause`.
+   * Because this function may panic, prefer to match and handle the `Err` case
+   * explicitly, or call {@link unwrapOr} or {@link unwrapOrElse}.
+   * Use this mainly in tests and rare, explained assertions in app code.
    *
-   * **Examples**
+   * Recommended message style: explain the reason you expect the result should
+   * be `Ok`. Focus on "should", as in "the environment variable should be set
+   * by the wrapper script".
    *
+   * @param message - Why the result should be `Ok`.
+   * @returns The `Ok` value.
+   *
+   * @throws {Panic} When the result is `Err`. The error is attached as `cause`.
+   * The `Panic` message is the supplied `message`; it does not include the error text.
+   *
+   * @example
+   *
+   * ```ts
+   * const x: Result<number, string> = Err("emergency failure");
+   * x.expect("Testing expect"); // Throws Panic("Testing expect"), cause: "emergency failure".
    * ```
-   * const x = Err("emergency failure")
-   * x.expect("Testing expect") // throws Panic: Testing expect
+   *
+   * @example
+   *
+   * ```ts
+   * const path = Option.fromNullish(process.env["IMPORTANT_PATH"])
+   *   .okOr("IMPORTANT_PATH is missing")
+   *   .expect("env variable IMPORTANT_PATH should be set by wrapper_script.sh");
    * ```
    */
-  expect(message: string): T {
-    return this.kind ? (this.wrapped as T) : this.unwrapFailed(message)
-  }
-
-  /**
-   * Returns the contained `Ok` value or `undefined`.
-   */
-  unwrap(): T | undefined {
-    return this.kind ? (this.wrapped as T) : undefined
+  public expect(message: string): T {
+    return this.isOk() ? this.unwrap() : this.unwrapFailed(message)
   }
 
   /**
    * Returns the contained `Err` value.
    *
-   * Throws `Panic` if the value is an `Ok`, with a message containing `message` and content of the `Ok` as `cause`.
+   * Use this mainly in tests or rare, explained assertions. The message should explain
+   * why the result should be `Err`.
    *
-   * **Examples**
+   * @param message - Why the result should be `Err`.
+   * @returns The `Err` value.
    *
-   * ```
-   * const x = Ok(2)
-   * x.expectErr("Testing expectErr") // throws Panic: Testing expectErr
+   * @throws {Panic} When the result is `Ok`. The value is attached as `cause`.
+   * The `Panic` message is the supplied `message`; it does not include the value text.
+   *
+   * @example
+   *
+   * ```ts
+   * const x: Result<number, string> = Ok(10);
+   * x.expectErr("Testing expectErr"); // Throws Panic("Testing expectErr"), cause: 10.
    * ```
    */
-  expectErr(message: string): E {
-    return this.kind ? this.unwrapFailed(message) : (this.wrapped as E)
+  public expectErr(message: string): E {
+    return this.isErr() ? this.unwrapErr() : this.unwrapFailed(message)
   }
 
   /**
-   * Returns the contained `Err` value or `undefined`
+   * Calls `f` if the result is `Ok`, otherwise returns the original `Err`.
+   *
+   * This function can be used for control flow based on `Result` values.
+   * The returned error type includes errors from both operations: `E | F`.
+   *
+   * @returns The callback's result for `Ok`, or the original `Err`.
+   *
+   * @example
+   * ```ts
+   * function squareThenToString(x: number): Result<string, string> {
+   *   // Use None if the square overflows the unsigned 32-bit range.
+   *   const square: Option<number> =
+   *     Number.isInteger(x) && x >= 0 && x * x <= 0xffff_ffff ? Some(x * x) : None;
+   *   return square.map((value) => value.toString()).okOr("overflowed");
+   * }
+   *
+   * assert.deepEqual(Ok(2).andThen(squareThenToString), Ok("4"));
+   * assert.deepEqual(Ok(1_000_000).andThen(squareThenToString), Err("overflowed"));
+   * assert.deepEqual(Err("not a number").andThen(squareThenToString), Err("not a number"));
+   * ```
+   *
+   * @example
+   * Often used to chain fallible operations that may return `Err`.
+   * Node's file metadata already contains the modification time.
+   *
+   * ```ts
+   * const rootModifiedTime = Result.fromThrowable(() => statSync("/"))
+   *   .andThen((metadata) => Ok(metadata.mtime));
+   * assert.equal(rootModifiedTime.isOk(), true);
+   *
+   * const shouldFail = Result.fromThrowable(() => statSync("/bad/path"))
+   *   .andThen((metadata) => Ok(metadata.mtime));
+   * assert.equal(shouldFail.isErr(), true);
+   * const error = shouldFail.expectErr("the nonexistent path should fail");
+   * assert.equal("code" in error && error.code, "ENOENT");
+   * ```
    */
-  unwrapErr(): E | undefined {
-    return this.kind ? undefined : (this.wrapped as E)
+  public andThen<U, F>(f: (value: T) => Result<U, F>): Result<U, E | F> {
+    const result = this.variant()
+    return result.isOk() ? f(result.unwrap()) : result
   }
 
   /**
-   * Returns `other` if the result is `Ok`, otherwise returns `this` (as `Err`).
+   * Calls `f` if the result is `Ok`, otherwise resolves to the original `Err`.
    *
-   * **Examples**
+   * This function can be used for control flow based on `Result` values.
+   * The callback may return an `AsyncResult` or a promise of a `Result`.
+   * The returned error type includes errors from both operations: `E | F`.
    *
+   * @returns An `AsyncResult` that awaits the callback's result for `Ok`.
+   *
+   * @example
+   * ```ts
+   * async function squareThenToString(x: number): Promise<Result<string, string>> {
+   *   // Use None if the square overflows the unsigned 32-bit range.
+   *   const square: Option<number> =
+   *     Number.isInteger(x) && x >= 0 && x * x <= 0xffff_ffff ? Some(x * x) : None;
+   *   return square.map((value) => value.toString()).okOr("overflowed");
+   * }
+   *
+   * assert.deepEqual(await Ok(2).andThenAsync(squareThenToString), Ok("4"));
+   * assert.deepEqual(await Ok(1_000_000).andThenAsync(squareThenToString), Err("overflowed"));
+   * assert.deepEqual(await Err("not a number").andThenAsync(squareThenToString), Err("not a number"));
    * ```
-   * let x: Result<number, string> = Ok(2)
-   * let y: Result<string, string> = Err("late error")
-   * assert.deepStrictEqual(x.and(y), Err("late error"))
    *
-   * x = Err("early error")
-   * y = Ok("foo")
-   * assert.deepStrictEqual(x.and(y), Err("early error"))
+   * @example
+   * Chain a successful path lookup with an asynchronous metadata read.
    *
-   * x = Err("not a 2")
-   * y = Err("late error")
-   * assert.deepStrictEqual(x.and(y), Err("not a 2"))
+   * ```ts
+   * const rootModifiedTime = await Ok("/").andThenAsync((path) =>
+   *   AsyncResult.fromPromise(stat(path)).map((metadata) => metadata.mtime),
+   * );
+   * assert.equal(rootModifiedTime.isOk(), true);
    *
-   * x = Ok(2)
-   * y = Ok("different result type")
-   * assert.deepStrictEqual(x.and(y), Ok("different result type"))
+   * const shouldFail = await Ok("/bad/path").andThenAsync((path) =>
+   *   AsyncResult.fromPromise(stat(path)).map((metadata) => metadata.mtime),
+   * );
+   * const error = shouldFail.expectErr("the nonexistent path should fail");
+   * assert.equal("code" in error && error.code, "ENOENT");
    * ```
    */
-  and<U, F>(other: Result<U, F>): Result<U, E | F> {
-    return (this.kind ? other : this) as Result<U, E | F>
+  public andThenAsync<U, F>(f: (value: T) => AsyncResult<U, F> | Promise<Result<U, F>>): AsyncResult<U, E | F> {
+    const result = this.variant()
+    return new AsyncResult<U, E | F>(result.isOk() ? f(result.unwrap()) : Promise.resolve(result))
   }
 
   /**
-   * Calls `f` if the result is `Ok`, otherwise returns `this` (as `Err`).
+   * Calls `f` if the result is `Err`, otherwise returns the original `Ok`.
    *
-   * **Examples**
+   * This function can be used for control flow based on result values.
+   * The callback may recover with `Ok` or return a new `Err`.
    *
-   * ```
-   * let x: Result<number, string> = Ok(2)
-   * assert.deepStrictEqual(x.andThen((n) => Ok(n * 2)), Ok(4))
+   * @returns The original `Ok`, or the callback's result for `Err`.
    *
-   * let y: Result<string, string> = Err("late error")
-   * assert.deepStrictEqual(y.andThen((n) => Ok(n * 2)), Err("late error"))
+   * @example
+   * ```ts
+   * function square(x: number): Result<number, number> {
+   *   return Ok(x * x);
+   * }
+   *
+   * function error(x: number): Result<number, number> {
+   *   return Err(x);
+   * }
+   *
+   * assert.deepEqual(Ok(2).orElse(square).orElse(square), Ok(2));
+   * assert.deepEqual(Ok(2).orElse(error).orElse(square), Ok(2));
+   * assert.deepEqual(Err(3).orElse(square).orElse(error), Ok(9));
+   * assert.deepEqual(Err(3).orElse(error).orElse(error), Err(3));
    * ```
    */
-  andThen<U, F>(f: (value: T) => Result<U, F>): Result<U, E | F> {
-    return (this.kind ? f(this.wrapped as T) : this) as Result<U, E | F>
+  public orElse<U, F>(f: (error: E) => Result<U, F>): Result<T | U, F> {
+    const result = this.variant()
+    return result.isOk() ? result : f(result.unwrapErr())
   }
 
   /**
-   * Calls `f` if the result is `Ok`, otherwise returns `this` (as `Err`).
+   * Calls `f` if the result is `Err`, otherwise resolves to the original `Ok`.
    *
-   * **Examples**
+   * This function can be used for control flow based on result values.
+   * The callback may return an `AsyncResult` or a promise of a `Result`.
    *
-   * ```
-   * let x: Result<number, string> = Ok(2)
-   * assert.deepStrictEqual(x.andThenAsync((n) => Promise.resolve(Ok(n * 2))), Ok(4))
+   * @returns An `AsyncResult` that awaits recovery for `Err` and preserves `Ok`.
    *
-   * let y: Result<string, string> = Err("late error")
-   * assert.deepStrictEqual(y.andThenAsync((n) => Promise.resolve(Ok(n * 2))), Err("late error"))
-   * ```
-   */
-  andThenAsync<U, F>(f: (value: T) => AsyncResult<U, F> | Promise<Result<U, F>>): AsyncResult<U, E | F> {
-    return new AsyncResult(
-      (this.kind ? f(this.wrapped as T) : Promise.resolve(this as unknown as Err<E, T>)) as Promise<Result<U, E | F>>,
-    )
-  }
-
-  /**
-   * Returns `other` if the result is `Err`, otherwise returns `this` (as `Ok`).
+   * @example
+   * ```ts
+   * async function square(x: number): Promise<Result<number, number>> {
+   *   return Ok(x * x);
+   * }
    *
-   * **Examples**
+   * async function error(x: number): Promise<Result<number, number>> {
+   *   return Err(x);
+   * }
    *
-   * ```
-   * let x: Result<number, string> = Ok(2)
-   * let y: Result<number, string> = Err("late error")
-   * assert.deepStrictEqual(x.or(y), Ok(2))
-   * assert.deepStrictEqual(y.or(x), Ok(2))
+   * assert.deepEqual(await Ok(2).orElseAsync(square).orElseAsync(square), Ok(2));
+   * assert.deepEqual(await Ok(2).orElseAsync(error).orElseAsync(square), Ok(2));
+   * assert.deepEqual(await Err(3).orElseAsync(square).orElseAsync(error), Ok(9));
+   * assert.deepEqual(await Err(3).orElseAsync(error).orElseAsync(error), Err(3));
    * ```
    */
-  or<U, F>(other: Result<U, F>): Result<T | U, F> {
-    return (this.kind ? this : other) as Result<T | U, F>
-  }
-
-  /**
-   * Calls `f` if the result is `Err`, otherwise returns `this` (as `Ok`).
-   *
-   * **Examples**
-   *
-   * ```
-   * let x: Result<number, string> = Ok(2)
-   * assert.deepStrictEqual(x.orElse((e) => Err(e + "bar")), Ok(2))
-   *
-   * let y: Result<number, string> = Err("foo")
-   * assert.deepStrictEqual(y.orElse((e) => Err(e + "bar")), Err("foobar"))
-   * ```
-   */
-  orElse<U, F>(f: (error: E) => Result<U, F>): Result<T | U, F> {
-    return (this.kind ? this : f(this.wrapped as E)) as Result<T | U, F>
-  }
-
-  /**
-   * Calls `f` if the result is `Err`, otherwise returns `this` (as `Ok`).
-   *
-   * **Examples**
-   *
-   * ```
-   * let x: Result<number, string> = Ok(2)
-   * assert.deepStrictEqual(x.orElseAsync((e) => Promise.resolve(Err(e + "bar"))), Ok(2))
-   *
-   * let y: Result<number, string> = Err("foo")
-   * assert.deepStrictEqual(y.orElseAsync((e) => Promise.resolve(Err(e + "bar"))), Err("foobar"))
-   * ```
-   */
-  orElseAsync<U, F>(f: (error: E) => AsyncResult<U, F> | Promise<Result<U, F>>): AsyncResult<T | U, F> {
-    return new AsyncResult(
-      (this.kind ? Promise.resolve(this as unknown as Ok<T, E>) : f(this.wrapped as E)) as Promise<Result<T | U, F>>,
-    )
+  public orElseAsync<U, F>(f: (error: E) => AsyncResult<U, F> | Promise<Result<U, F>>): AsyncResult<T | U, F> {
+    const result = this.variant()
+    return new AsyncResult<T | U, F>(result.isOk() ? Promise.resolve(result) : f(result.unwrapErr()))
   }
 
   /**
    * Returns the contained `Ok` value or a provided default.
    *
-   * **Examples**
+   * Arguments passed to `unwrapOr` are eagerly evaluated. If you are passing
+   * the result of a function call, use {@link unwrapOrElse}, which is lazily evaluated.
    *
-   * ```
-   * const x: Result<number, string> = Ok(2)
-   * assert.strictEqual(x.unwrapOr(0), 2)
+   * @example
    *
-   * const y: Result<number, string> = Err("error")
-   * assert.strictEqual(y.unwrapOr(0), 0)
+   * ```ts
+   * const defaultValue = 2;
+   * const x: Result<number, string> = Ok(9);
+   * assert.equal(x.unwrapOr(defaultValue), 9);
+   *
+   * const y: Result<number, string> = Err("error");
+   * assert.equal(y.unwrapOr(defaultValue), defaultValue);
    * ```
    */
-  unwrapOr<U>(defaultValue: U): T | U {
-    return this.kind ? (this.wrapped as T) : defaultValue
+  public unwrapOr<U>(defaultValue: U): T | U {
+    return this.isOk() ? this.unwrap() : defaultValue
   }
 
   /**
    * Returns the contained `Ok` value or computes it from `defaultValue`.
    *
-   * **Examples**
+   * The fallback runs only for `Err` and receives the error.
    *
-   * ```
-   * const x: Result<number, string> = Ok(2)
-   * assert.strictEqual(x.unwrapOrElse(() => 0), 2)
+   * @example
    *
-   * const y: Result<number, string> = Err("error")
-   * assert.strictEqual(y.unwrapOrElse(() => 0), 0)
+   * ```ts
+   * function count(x: string): number {
+   *   return x.length;
+   * }
+   *
+   * assert.equal(Ok(2).unwrapOrElse(count), 2);
+   * assert.equal(Err("foo").unwrapOrElse(count), 3);
    * ```
    */
-  unwrapOrElse<U>(defaultValue: (error: E) => U): T | U {
-    return this.kind ? (this.wrapped as T) : defaultValue(this.wrapped as E)
+  public unwrapOrElse<U>(defaultValue: (error: E) => U): T | U {
+    const result = this.variant()
+    return result.isOk() ? result.unwrap() : defaultValue(result.unwrapErr())
   }
 
-  unwrapOrElseAsync<U>(defaultValue: (error: E) => Promise<U>): Promise<T | U> {
-    return this.kind ? Promise.resolve(this.wrapped as T) : defaultValue(this.wrapped as E)
+  /**
+   * Resolves to the `Ok` value or awaits a fallback computed from the `Err` value.
+   *
+   * The fallback runs only for `Err`.
+   *
+   * @example
+   *
+   * ```ts
+   * async function count(x: string): Promise<number> {
+   *   return x.length;
+   * }
+   *
+   * assert.equal(await Ok(2).unwrapOrElseAsync(count), 2);
+   * assert.equal(await Err("foo").unwrapOrElseAsync(count), 3);
+   * ```
+   */
+  public async unwrapOrElseAsync<U>(defaultValue: (error: E) => Promise<U>): Promise<T | U> {
+    const result = this.variant()
+    return result.isOk() ? Promise.resolve(result.unwrap()) : defaultValue(result.unwrapErr())
   }
 
   /**
    * Converts from `Result<Result<U, F>, E>` to `Result<U, E | F>`.
    *
-   * **Examples**
+   * Either outer or inner `Err` remains an `Err`; an outer `Ok(Ok(value))` becomes `Ok(value)`.
    *
+   * @example
+   *
+   * ```ts
+   * const x: Result<Result<string, number>, number> = Ok(Ok("hello"));
+   * assert.deepEqual(x.flatten(), Ok("hello"));
+   *
+   * const y: Result<Result<string, number>, number> = Ok(Err(6));
+   * assert.deepEqual(y.flatten(), Err(6));
+   *
+   * const z: Result<Result<string, number>, number> = Err(6);
+   * assert.deepEqual(z.flatten(), Err(6));
    * ```
-   * const x: Result<Result<number, string>, string> = Ok(Ok(2))
-   * assert.deepStrictEqual(x.flatten(), Ok(2))
    *
-   * const y: Result<Result<number, string>, string> = Ok(Err("late error"))
-   * assert.deepStrictEqual(y.flatten(), Err("late error"))
+   * @example
+   * Flattening only removes one level of nesting at a time.
    *
-   * const z: Result<Result<number, string>, string> = Err("early error")
-   * assert.deepStrictEqual(z.flatten(), Err("early error"))
+   * ```ts
+   * const x = Ok(Ok(Ok("hello")));
+   * assert.deepEqual(x.flatten(), Ok(Ok("hello")));
+   * assert.deepEqual(x.flatten().flatten(), Ok("hello"));
    * ```
    */
-  flatten<U, F>(this: Result<ResultImpl<U, F>, E>): Result<U, E | F> {
-    return this.kind ? (this.wrapped as Result<U, F>) : Err(this.wrapped as E)
+  public flatten<U, F>(this: Result<Result<U, F>, E>): Result<U, E | F> {
+    return this.isOk() ? this.unwrap() : Err(this.unwrapErr())
   }
 
-  toObject(): { isOk: true; value: T } | { isOk: false; error: E } {
-    return this.kind ? { isOk: true, value: this.wrapped as T } : { isOk: false, error: this.wrapped as E }
+  /**
+   * Returns a plain discriminated object for the current variant.
+   * `Ok(value)` becomes `{ isOk: true, value }`; `Err(error)` becomes
+   * `{ isOk: false, error }`.
+   *
+   * @example
+   *
+   * ```ts
+   * Ok(2).toObject(); // { isOk: true, value: 2 }
+   * Err("missing").toObject(); // { isOk: false, error: "missing" }
+   * ```
+   */
+  public toObject(): { isOk: true; value: T } | { isOk: false; error: E } {
+    const result = this.variant()
+    return result.isOk() ? { isOk: true, value: result.unwrap() } : { isOk: false, error: result.unwrapErr() }
   }
 
-  toString(): `Ok(${string})` | `Err(${string})` {
+  /**
+   * Returns `Ok(value)` or `Err(error)` using JavaScript's `String` conversion.
+   *
+   * @example
+   *
+   * ```ts
+   * Ok(2).toString(); // "Ok(2)"
+   * Err("missing").toString(); // "Err(missing)"
+   * ```
+   */
+  public toString(): `Ok(${string})` | `Err(${string})` {
     const str = String(this.wrapped)
     return this.kind ? `Ok(${str})` : `Err(${str})`
   }
 
-  [symbols.inspect](): ReturnType<ResultImpl<T, E>['toString']> {
+  /**
+   * Uses the same representation as `toString()` when inspected.
+   *
+   * @example
+   *
+   * ```ts
+   * inspect(Ok(2)); // "Ok(2)"
+   * ```
+   */
+  public [symbols.inspect](): ReturnType<ResultImpl<T, E>['toString']> {
     return this.toString()
   }
 }
@@ -567,70 +845,208 @@ export class ResultImpl<T, E> {
 export interface Ok<T = undefined, E = never> extends ResultImpl<T, E> {
   [symbols.tag]: 'Ok'
   /**
-   * Returns the contained value, if it exists.
+   * Returns the contained `Ok` value.
    *
-   * @deprecated Use `unwrap()` instead.
-   */
-  value(): T
-  /**
-   * Returns the contained error, if it exists.
+   * Available on `Ok`, including a `Result` narrowed with `isOk()`.
    *
-   * @deprecated Use `unwrapErr()` instead.
+   * @returns The success value without a panic path.
+   *
+   * @example
+   * ```ts
+   * const x: Result<number, string> = Ok(2);
+   * if (x.isOk()) {
+   *   assert.equal(x.unwrap(), 2);
+   * }
+   * ```
    */
-  error(): undefined
   unwrap(): T
-  unwrapErr(): undefined
+  /**
+   * Returns the contained `Ok` value.
+   *
+   * Use mainly in tests or rare, explained assertions. The message explains
+   * why the result should be `Ok` if its variant later changes.
+   *
+   * @param message - Why the result should be `Ok`.
+   * @see ResultImpl.expect
+   *
+   * @example
+   * ```ts
+   * assert.equal(Ok(2).expect("the computation should succeed"), 2);
+   * ```
+   */
   expect(message: string): T
+  /**
+   * Panics because this result contains an `Ok` value.
+   *
+   * @param message - Why the result was expected to be `Err`.
+   * @throws {Panic} With the supplied message and the success value as `cause`.
+   * @see ResultImpl.expectErr
+   *
+   * @example
+   * ```ts
+   * assert.throws(() => Ok(10).expectErr("the computation should fail"), Panic);
+   * ```
+   */
   expectErr(message: string): never
 }
 
 /**
  * Contains the success value.
+ *
+ * @example
+ *
+ * ```ts
+ * Ok(2).isOk(); // true
+ * Ok().toObject(); // { isOk: true, value: undefined }
+ * ```
  */
 export function Ok(): Ok
 export function Ok<T>(value: T): Ok<T>
-export function Ok<T>(value?: T): Ok<T> {
-  return new ResultImpl<T, never>(true, value as T) as Ok<T>
+export function Ok<T>(value?: T): Ok<T | undefined> {
+  return new OkImpl(value)
+}
+
+class OkImpl<T> extends ResultImpl<T, never> {
+  public readonly [symbols.tag] = 'Ok'
+
+  public constructor(value: T) {
+    super(true, value)
+  }
+
+  protected variant(): Ok<T> {
+    return this
+  }
+
+  public *[Symbol.iterator](): Generator<Err<never, never>, T> {
+    return this.wrapped
+  }
+
+  /**
+   * Returns the contained `Ok` value after narrowing.
+   *
+   * This method is only available on an `Ok` variant and has no panic path.
+   *
+   * @example
+   *
+   * ```ts
+   * const result: Result<number, string> = Ok(2);
+   * if (result.isOk()) {
+   *   result.unwrap(); // 2
+   * }
+   * ```
+   */
+  public unwrap(): T {
+    return this.wrapped
+  }
 }
 
 export interface Err<E = undefined, T = never> extends ResultImpl<T, E> {
   [symbols.tag]: 'Err'
   /**
-   * Returns the contained value, if it exists.
+   * Returns the contained `Err` value.
    *
-   * @deprecated Use `unwrap()` instead.
-   */
-  value(): undefined
-  /**
-   * Returns the contained value, if it exists.
+   * Available on `Err`, including a `Result` narrowed with `isErr()`.
    *
-   * @deprecated Use `unwrapErr()` instead.
+   * @returns The error value without a panic path.
+   *
+   * @example
+   * ```ts
+   * const x: Result<number, string> = Err("emergency failure");
+   * if (x.isErr()) {
+   *   assert.equal(x.unwrapErr(), "emergency failure");
+   * }
+   * ```
    */
-  error(): E
-  unwrap(): undefined
   unwrapErr(): E
+  /**
+   * Panics because this result contains an `Err` value.
+   *
+   * @param message - Why the result was expected to be `Ok`.
+   * @throws {Panic} With the supplied message and the error as `cause`.
+   * @see ResultImpl.expect
+   *
+   * @example
+   * ```ts
+   * assert.throws(() => Err("emergency failure").expect("the computation should succeed"), Panic);
+   * ```
+   */
   expect(message: string): never
+  /**
+   * Returns the contained `Err` value.
+   *
+   * Use mainly in tests or rare, explained assertions.
+   *
+   * @param message - Why the result should be `Err`.
+   * @see ResultImpl.expectErr
+   *
+   * @example
+   * ```ts
+   * assert.equal(Err("emergency failure").expectErr("the computation should fail"), "emergency failure");
+   * ```
+   */
   expectErr(message: string): E
 }
 
 /**
  * Contains the error value.
+ *
+ * @example
+ *
+ * ```ts
+ * Err("missing").isErr(); // true
+ * Err().toObject(); // { isOk: false, error: undefined }
+ * ```
  */
 export function Err(): Err
 export function Err<E>(error: E): Err<E>
-export function Err<E>(error?: E): Err<E> {
-  return new ResultImpl<never, E>(false, error as E) as Err<E>
+export function Err<E>(error?: E): Err<E | undefined> {
+  return new ErrImpl(error)
 }
 
-function handlePanic(error: unknown) {
-  if (error instanceof Panic) {
-    throw error
+class ErrImpl<E> extends ResultImpl<never, E> {
+  public readonly [symbols.tag] = 'Err'
+
+  public constructor(error: E) {
+    super(false, error)
   }
-  return error
+
+  protected variant(): Err<E> {
+    return this
+  }
+
+  public *[Symbol.iterator](): Generator<Err<E, never>, never> {
+    yield this
+    throw new Panic('Do not use this generator outside of a try block')
+  }
+
+  /**
+   * Returns the contained `Err` value after narrowing.
+   *
+   * This method is only available on an `Err` variant and has no panic path.
+   *
+   * @example
+   *
+   * ```ts
+   * const result: Result<number, string> = Err("missing");
+   * if (result.isErr()) {
+   *   result.unwrapErr(); // "missing"
+   * }
+   * ```
+   */
+  public unwrapErr(): E {
+    return this.wrapped
+  }
 }
 
-function handleCaughtError(error: unknown) {
-  return parseError(handlePanic(error))
+function handlePanic(cause: unknown) {
+  if (cause instanceof Panic) {
+    throw cause
+  }
+  return cause
+}
+
+function handleCaughtError(cause: unknown) {
+  return parseError(handlePanic(cause))
 }
 
 /**
@@ -646,17 +1062,22 @@ export namespace Result {
   /**
    * Tries to execute a function and returns the result as a `Result`.
    *
-   * **Examples**
+   * Returns `Ok(value)` on success or `Err(Error)` if the function throws.
+   * A thrown `Panic` is rethrown rather than converted to `Err`.
    *
-   * ```
+   * @throws {Panic} Rethrows a `Panic` from the callback.
+   *
+   * @example
+   *
+   * ```ts
    * // const result: Result<number, Error>
-   * const result = Result.fromThrowable(() => {
-   *   if (Math.random() > 0.5) {
-   *		return 42
-   *	  } else {
-   *		throw new Error("random error")
-   *	  }
-   * })
+   * const result = Result.fromThrowable(() => 42);
+   * assert.deepEqual(result, Ok(42));
+   *
+   * const failed = Result.fromThrowable(() => {
+   *   throw new Error("read failed");
+   * });
+   * assert.equal(failed.isErr(), true);
    * ```
    */
   export function fromThrowable<T>(f: () => T): Result<T, Error> {
@@ -668,25 +1089,25 @@ export namespace Result {
   }
 
   /**
-   * @deprecated Use `Result.fromThrowable()` instead.
-   */
-  export const from = fromThrowable
-
-  /**
    * Tries to resolve a promise and returns the result as a `AsyncResult`.
    *
-   * **Examples**
+   * Resolves to `Ok(value)` on fulfillment or `Err(Error)` on rejection.
+   * A rejected `Panic` remains a rejection rather than becoming an `Err`.
    *
-   * ```
+   * @example
+   *
+   * ```ts
    * // const result: AsyncResult<number, Error>
-   * const result = Result.fromPromise(Promise.resolve(42))
+   * const result = Result.fromPromise(Promise.resolve(42));
+   * assert.deepEqual(await result, Ok(42));
    * ```
    */
   export function fromPromise<T>(promise: Promise<T>): AsyncResult<T, Error> {
     return new AsyncResult(
       promise.then(
         (value) => Ok(value),
-        (error) => Err(handleCaughtError(error)),
+        // oxlint-disable-next-line anti-slop/no-unknown-parameters -- Promise rejection values are converted to Error at this boundary.
+        (error: unknown) => Err(handleCaughtError(error)),
       ),
     )
   }
