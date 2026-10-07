@@ -19,6 +19,7 @@ import { EtfService } from './modules/etf/service'
 import { ExchangeService } from './modules/exchange/service'
 import { ManualService } from './modules/manual/service'
 import { DailyRatesService } from './modules/price/daily_rates'
+import { PriceHistoryService } from './modules/price/history'
 import { PriceService, readPriceSettings } from './modules/price/service'
 import { StatementService } from './modules/statements/service'
 
@@ -38,6 +39,7 @@ export interface AppContext {
   etfService: EtfService
   controlCenterService: ControlCenterService
   priceService: PriceService
+  priceHistoryService: PriceHistoryService
   statementService: StatementService
   network: Network
   reconnectElectrum: (config: ElectrumClientConfig) => Promise<Result<void, Error>>
@@ -220,6 +222,7 @@ export const createAppContext = asyncFn(
       mempoolApiUrl: env.MEMPOOL_API_URL,
       allowPublicFallback: async () => (await readPriceSettings(getSetting)).fallbacks,
     })
+    const priceHistoryService = new PriceHistoryService({ dailyRatesService, priceService })
 
     const controlCenterService = new ControlCenterService({
       db: database,
@@ -307,6 +310,7 @@ export const createAppContext = asyncFn(
       etfService,
       controlCenterService,
       priceService,
+      priceHistoryService,
       statementService,
       network,
       prepareElectrumConfig,

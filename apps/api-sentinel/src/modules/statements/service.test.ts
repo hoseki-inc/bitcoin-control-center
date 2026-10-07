@@ -17,6 +17,7 @@ import { EtfService } from '../etf/service'
 import { ExchangeService } from '../exchange/service'
 import { ManualService } from '../manual/service'
 import { DailyRatesService } from '../price/daily_rates'
+import { PriceHistoryService } from '../price/history'
 import { PriceService } from '../price/service'
 import { appRouter } from '../trpc/router'
 import type { AggregatedTransaction } from './mapper'
@@ -314,6 +315,10 @@ function statementCaller(service: StatementService) {
     manualService,
     etfService,
     priceService,
+    priceHistoryService: new PriceHistoryService({
+      dailyRatesService: new DailyRatesService({ db: database, logger, mempoolApiUrl: 'https://example.invalid' }),
+      priceService,
+    }),
     network: Network.Mainnet,
     controlCenterService: new ControlCenterService({
       ...deps,

@@ -106,7 +106,7 @@ const LAST_KNOWN_WAIT_MS = 3_000
 const MAX_PRICE_AGE_MS = 30 * 60_000
 const PUBLIC_MEMPOOL_URL = 'https://mempool.space'
 
-function isPublicMempool(url: URL): boolean {
+export function isPublicMempool(url: URL): boolean {
   return url.hostname === 'mempool.space' || url.hostname.endsWith('.mempool.space')
 }
 

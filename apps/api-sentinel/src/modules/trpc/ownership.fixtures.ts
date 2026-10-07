@@ -23,6 +23,7 @@ import { EtfService } from '../etf/service'
 import { ExchangeService } from '../exchange/service'
 import { ManualService } from '../manual/service'
 import { DailyRatesService } from '../price/daily_rates'
+import { PriceHistoryService } from '../price/history'
 import { PriceService } from '../price/service'
 import { StatementService } from '../statements/service'
 import { appRouter } from './router'
@@ -132,6 +133,7 @@ export async function setupAppCaller(): Promise<AppCallerHarness> {
     mempoolApiUrl,
     settings: () => ({ source: undefined, fallbacks: false }),
   })
+  const dailyRatesService = new DailyRatesService({ db: database, logger, mempoolApiUrl })
 
   const app: AppContext = {
     env,
@@ -144,6 +146,7 @@ export async function setupAppCaller(): Promise<AppCallerHarness> {
     manualService,
     etfService,
     priceService,
+    priceHistoryService: new PriceHistoryService({ dailyRatesService, priceService }),
     network: Network.Mainnet,
     controlCenterService: new ControlCenterService({
       ...deps,
@@ -158,7 +161,7 @@ export async function setupAppCaller(): Promise<AppCallerHarness> {
       onchainProvider,
       exchangeService,
       mempoolApiUrl,
-      dailyRatesService: new DailyRatesService({ db: database, logger, mempoolApiUrl }),
+      dailyRatesService,
     }),
     reconnectElectrum: async () => Ok(undefined),
     stopElectrum: () => {

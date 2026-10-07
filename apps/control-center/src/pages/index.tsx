@@ -4,6 +4,7 @@ import Decimal from 'decimal.js'
 import { Link } from 'react-router'
 import { AccumulationChart } from '../components/dashboard-charts/accumulation-chart'
 import { Banner } from '../components/dashboard/banner'
+import { BitcoinPriceChart } from '../components/dashboard/bitcoin-price-chart'
 import { RecentStatements } from '../components/dashboard/recent-statements'
 import { useUiSettings } from '../hooks/use-ui-settings'
 import { trpc } from '../trpc'
@@ -26,6 +27,7 @@ export function HomePage(): JSX.Element {
       ) : (
         <>
           <PortfolioSummary />
+          <BitcoinPriceChart />
           {!isStatementsMadeEasyDismissed && (
             <Banner
               mode={statements.length > 0 ? 'compact' : 'large-with-cta'}
