@@ -22,7 +22,8 @@ export function StatementListPage(): JSX.Element {
     )
   }
 
-  if (error) {
+  // A failed refresh keeps the statements already shown; the error is only for having none.
+  if (error && statements === undefined) {
     return (
       <Box mt={8}>
         <Header showGenerateButton={true} />

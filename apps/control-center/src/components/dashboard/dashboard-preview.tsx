@@ -44,7 +44,7 @@ export function DashboardPreview({
           {loading ? 'Loading your holdings…' : unavailable ? 'Holdings unavailable' : '$0.00 USD'}
         </FiatAmountText>
         <Grid
-          templateColumns="repeat(2, minmax(0, 1fr))"
+          templateColumns={{ base: '1fr', sm: 'repeat(2, minmax(0, 1fr))' }}
           gap={4}
           mt={6}
           pt={5}
@@ -52,8 +52,8 @@ export function DashboardPreview({
           borderColor="neutral.200"
         >
           {[
-            ['Accounts', '0'],
             ['30d Change', zeroBalance],
+            ['Accounts', '0'],
           ].map(([label, value]) => (
             <Box key={label} minW={0}>
               <Text textStyle="text/sm" color="neutral.600" mb={1}>

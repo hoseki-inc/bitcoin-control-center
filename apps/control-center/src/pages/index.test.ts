@@ -18,6 +18,7 @@ interface HomeState {
   portfolioLoading: boolean
   portfolioError: boolean
   statements: StatementDto[]
+  statementsLoading: boolean
   statementsError: boolean
   btcPrice: string
 }
@@ -27,7 +28,6 @@ function query<T>(data: T, state: { isLoading?: boolean; isError?: boolean } = {
     data,
     isLoading: state.isLoading ?? false,
     isError: state.isError ?? false,
-    error: null,
     refetch: vi.fn(async () => Promise.resolve({ isError: false })),
   }
 }
@@ -49,7 +49,11 @@ function fakeDataSource(state: HomeState): HomeDataSource {
     historyFailedAccountIds: [],
   }
   return {
-    useStatements: () => query(state.statements, { isError: state.statementsError }),
+    useStatements: () =>
+      query(state.statementsLoading ? undefined : state.statements, {
+        isLoading: state.statementsLoading,
+        isError: state.statementsError,
+      }),
     usePortfolio: () =>
       query(state.portfolioLoading || state.portfolioError ? undefined : portfolio, {
         isLoading: state.portfolioLoading,
@@ -77,6 +81,7 @@ function renderHome(overrides: Partial<HomeState> = {}): string {
     portfolioLoading: false,
     portfolioError: false,
     statements: [],
+    statementsLoading: false,
     statementsError: false,
     btcPrice: '50000',
     ...overrides,
@@ -198,6 +203,33 @@ describe('Home overview states', () => {
     const html = renderHome(overrides)
     expect(html).toContain(text)
     expect(html).not.toContain('href="/accounts/add"')
+  })
+
+  it('shows loading recent statements, not the statements introduction, until they arrive', () => {
+    const text = renderText({ statementsLoading: true, history: zeroBalanceHistory })
+    expect(text).toContain('Loading recent statements…')
+    expect(text).not.toContain('Your holdings, on record')
+  })
+
+  it('does not count accounts while some holdings data is unavailable', () => {
+    const accounts: HomeState['accounts'] = { claims: [], exchange: [], manual: [], etf: [] }
+    accounts.claims = [{ id: 'wallet', status: 'verified', balance: '0' }]
+    expect(renderText({ accounts, history: zeroBalanceHistory, isError: true })).toContain('— tracked')
+  })
+
+  it('lists the preview stats in the same order as the loaded overview', () => {
+    for (const text of [renderText(), renderText({ history: zeroBalanceHistory })]) {
+      expect(text.indexOf('30d Change')).toBeGreaterThan(-1)
+      expect(text.indexOf('30d Change')).toBeLessThan(text.indexOf('Accounts'))
+    }
+  })
+
+  it('shows no sign on a dollar change that rounds to zero', () => {
+    const text = renderText({ history: [{ timestamp: '2026-09-01T00:00:00.000Z', totalBalance: '1' }] })
+    expect(text).toContain('−0.00000001 BTC')
+    expect(text).toContain('$0.00')
+    expect(text).not.toContain('−$0.00')
+    expect(text).not.toContain('+$0.00')
   })
 
   it('shows recent statements instead of the statements introduction', () => {

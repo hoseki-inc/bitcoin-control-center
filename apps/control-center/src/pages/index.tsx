@@ -127,7 +127,7 @@ function PortfolioSummary({
   const totalUsd = btcPrice === null ? null : totalBtc.toNumber() * btcPrice
 
   const historicalData = data.historicalData
-  const startSats = historicalData.length > 0 ? (historicalData[0]?.totalBalance ?? '0') : '0'
+  const startSats = historicalData[0]?.totalBalance ?? '0'
   const change30d = new Decimal(currentSats).minus(new Decimal(startSats))
   const change30dBtc = change30d.div(100_000_000)
   const isUp = change30d.gte(0)
@@ -197,8 +197,9 @@ function StatMini({
   count?: number | null
 }): JSX.Element {
   const isPositive = value ? value.gte(0) : true
-  const usdValue =
-    value && btcPrice != null && btcPrice !== 0 && !Number.isNaN(btcPrice) ? value.toNumber() * btcPrice : null
+  const usdValue = value && btcPrice != null ? value.toNumber() * btcPrice : null
+  // A change too small to show in cents has no sign.
+  const usdCents = usdValue === null ? 0 : Math.round(usdValue * 100)
 
   return (
     <Box minW={0}>
@@ -213,8 +214,11 @@ function StatMini({
           </Text>
           {usdValue !== null && (
             <Text {...statValueProps} color="neutral.600">
-              {usdValue >= 0 ? '+' : '−'}$
-              {Math.abs(usdValue).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              {usdCents > 0 ? '+' : usdCents < 0 ? '−' : ''}$
+              {(Math.abs(usdCents) / 100).toLocaleString('en-US', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })}
             </Text>
           )}
         </Flex>
