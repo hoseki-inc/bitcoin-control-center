@@ -5,6 +5,7 @@ import Decimal from 'decimal.js'
 import { Link } from 'react-router'
 import { BitcoinAmount } from '../components/bitcoin-amount'
 import { AccumulationChart as DefaultAccumulationChart } from '../components/dashboard-charts/accumulation-chart'
+import { BitcoinPriceChart as DefaultBitcoinPriceChart } from '../components/dashboard/bitcoin-price-chart'
 import { DashboardPreview } from '../components/dashboard/dashboard-preview'
 import { DashboardAmount, DashboardCardTitle } from '../components/dashboard/dashboard-typography'
 import { RecentStatements } from '../components/dashboard/recent-statements'
@@ -91,6 +92,7 @@ export function HomePage({
           }
         />
       )}
+      <views.BitcoinPriceChart />
       {statementsError ? (
         <Flex justify="space-between" gap={4} align="center" flexWrap="wrap">
           <Text as="output" textStyle="text/sm" color="neutral.600">
@@ -277,9 +279,13 @@ export const homeDataSource: HomeDataSource = {
 
 export interface HomeViews {
   AccumulationChart: typeof DefaultAccumulationChart
+  BitcoinPriceChart: typeof DefaultBitcoinPriceChart
 }
 
-const homeViews: HomeViews = { AccumulationChart: DefaultAccumulationChart }
+const homeViews: HomeViews = {
+  AccumulationChart: DefaultAccumulationChart,
+  BitcoinPriceChart: DefaultBitcoinPriceChart,
+}
 
 interface HomeData {
   statements: StatementDto[]

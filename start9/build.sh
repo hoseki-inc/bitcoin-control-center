@@ -67,6 +67,7 @@ corepack pnpm --filter api-sentinel build
 
 echo "==> Building Control Center web app..."
 corepack pnpm --filter control-center build
+node "$SCRIPT_DIR/scripts/compress-web-assets.mjs" "$REPO_ROOT/apps/control-center/dist"
 
 echo "==> Packing s9pk (multi-arch)..."
 cd "$SCRIPT_DIR"
