@@ -26,7 +26,12 @@ export function initDatabase(dataDir: string, logger: Logger): SentinelDatabase 
   db.pragma('journal_mode = WAL')
   db.pragma('foreign_keys = ON')
 
-  runMigrations(db, logger)
+  try {
+    runMigrations(db, logger)
+  } catch (error) {
+    db.close()
+    throw error
+  }
 
   return {
     db,
@@ -445,6 +450,19 @@ const MIGRATIONS: Migration[] = [
       ALTER TABLE statements ADD COLUMN quote_currency TEXT NOT NULL DEFAULT 'USD'
         CHECK(quote_currency IN ('USD', 'CAD', 'GBP', 'EUR'));
       ALTER TABLE statements ADD COLUMN error_message TEXT;
+    `,
+  },
+  {
+    name: '017_reset_unfinished_challenge_messages',
+    sql: `
+      -- One-time pre-release reset: unfinished proofs must be signed again using
+      -- current signing addresses. Keep challenges so existing flows can resume.
+      -- Preserve either completion marker, including inconsistent historical rows.
+      DELETE FROM signed_messages
+      WHERE challenge_id IN (
+        SELECT id FROM challenges
+        WHERE is_satisfied = 0 AND completed_at IS NULL
+      );
     `,
   },
 ]

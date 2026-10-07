@@ -1,6 +1,9 @@
+import { dirname } from 'node:path'
 import { SingleSigAccount } from '@hoseki/packages/bitcoin/account'
 import { Signer } from 'bip322-js'
+import pino from 'pino'
 import { describe, expect, it } from 'vitest'
+import { initDatabase } from '../../db'
 import {
   createMultisigClaim,
   createSinglesigClaim,
@@ -271,7 +274,7 @@ describe('ownership verification account binding', () => {
     },
   )
 
-  it('finishes a multisig verification started with the earlier P2WPKH cosigner addresses', async () => {
+  it('migrates legacy P2WPKH messages and finishes the same challenge with fresh P2PKH proofs', async () => {
     const { registry, db } = setupOwnershipHarness()
     const created = await createMultisigClaim(registry, [owner, secondOwner, thirdOwner])
     const challenge = await registry.challenges.create({ claimId: created.claim.id })
@@ -295,15 +298,46 @@ describe('ownership verification account binding', () => {
       )
     }
 
+    // Simulate the last pre-reset database version, then run the real startup migration.
+    db.prepare('DELETE FROM _migrations WHERE name = ?').run('017_reset_unfinished_challenge_messages')
+    initDatabase(dirname(db.name), pino({ level: 'silent' })).close()
+
     await expect(registry.claims.get.byId({ id: created.claim.id })).resolves.toMatchObject({
       latestChallenge: { id: challenge.id, messages: [] },
     })
+    await expect(registry.challenges.create({ claimId: created.claim.id })).resolves.toMatchObject({ id: challenge.id })
     await signChallengeMessage(registry, challenge.id, store.id, owner)
     await signChallengeMessage(registry, challenge.id, secondStore.id, secondOwner)
     await expect(registry.challenges.complete({ challengeId: challenge.id })).resolves.toMatchObject({
       isSatisfied: true,
     })
   })
+
+  it.each(['wrong address', 'cross-account', 'unrelated key'] as const)(
+    'keeps stored %s messages intact through repeated claim reads and challenge reuse',
+    async (scenario) => {
+      const { registry, db, claimId, challengeId } = setupStoredProof(scenario)
+      const messages = db.prepare('SELECT * FROM signed_messages ORDER BY id').all()
+      const challenges = db.prepare('SELECT * FROM challenges ORDER BY id').all()
+      for (const archived of [false, true]) {
+        db.prepare('UPDATE accounts SET deleted_at = ? WHERE id = ?').run(
+          archived ? new Date().toISOString() : null,
+          claimId,
+        )
+        const changes = db.prepare('SELECT total_changes() AS changes').get()
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const claim = await registry.claims.get.byId({ id: claimId })
+          await registry.claims.get.byAccount({ network: claim.network, account: claim.account })
+          const claims = archived ? await registry.claims.listArchived() : await registry.claims.list()
+          expect(claims.some((item) => item.id === claimId)).toBe(true)
+          await expect(registry.challenges.create({ claimId })).resolves.toMatchObject({ id: challengeId })
+        }
+        expect(db.prepare('SELECT total_changes() AS changes').get()).toEqual(changes)
+        expect(db.prepare('SELECT * FROM signed_messages ORDER BY id').all()).toEqual(messages)
+        expect(db.prepare('SELECT * FROM challenges ORDER BY id').all()).toEqual(challenges)
+      }
+    },
+  )
 
   it('rejects a substituted signing address through the singlesig get-or-create endpoint', async () => {
     const { registry } = setupStoredProof('wrong address')
