@@ -1,4 +1,4 @@
-// Writes Brotli and gzip copies of the web app's text files, which Sentinel serves to browsers
+// Writes Brotli and gzip copies of the web app's compressible files, which Sentinel serves to browsers
 // that accept them. The main bundle is over 13 MB, slow to load over Tor without compression.
 import { readFile, readdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'

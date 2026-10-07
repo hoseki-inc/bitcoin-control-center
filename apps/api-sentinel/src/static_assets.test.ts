@@ -68,6 +68,27 @@ describe('registerStaticAssets', () => {
     })
   })
 
+  it('serves a file without compressed copies to a browser accepting compression', async () => {
+    await withTestSetup(async () => {
+      const server = Fastify()
+      const publicDir = await createPublicDirectory()
+      await writeFile(join(publicDir, 'logo.svg'), '<svg></svg>')
+      await registerStaticAssets(server, publicDir)
+
+      const response = await server.inject({
+        method: 'GET',
+        url: '/logo.svg',
+        headers: { 'accept-encoding': 'br, gzip' },
+      })
+
+      expect(response.statusCode).toBe(200)
+      expect(response.headers['content-type']).toContain('image/svg+xml')
+      expect(response.headers['content-encoding']).toBeUndefined()
+      expect(response.body).toBe('<svg></svg>')
+      await server.close()
+    })
+  })
+
   it('preserves JSON 404 responses for unknown API routes', async () => {
     await withTestSetup(async () => {
       const server = Fastify()
