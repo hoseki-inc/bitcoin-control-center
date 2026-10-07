@@ -6,11 +6,13 @@ import { parseUnknown } from '@hoseki/packages/result'
 import { Err, Ok, asyncFn } from '@hoseki/packages/result'
 import type { Result } from '@hoseki/packages/result'
 import { type StatementQuoteCurrency, StatementQuoteCurrencySchema } from '@hoseki/packages/schemas/statement-quote'
-import type Database from 'better-sqlite3'
 import Decimal from 'decimal.js'
+import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
 import type { Logger } from 'pino'
 import { z } from 'zod'
+import type { SentinelDb } from '../../db/drizzle'
+import { accounts, exchangeBalanceSnapshots, statements } from '../../db/schema'
 import type { ExchangeService } from '../exchange/service'
 import type { DailyRates } from '../price/daily_rates'
 import type { DailyRatesService } from '../price/daily_rates'
@@ -40,29 +42,7 @@ export interface StatementDto {
   errorMessage: string | null
 }
 
-export interface StatementRow {
-  id: string
-  status: StatementDto['status']
-  timezone: string
-  opening_date: string
-  closing_date: string
-  account_ids: string
-  user_name: string | null
-  user_address: string | null
-  transaction_map: string | null
-  daily_rates: string | null
-  quote_currency: StatementQuoteCurrency
-  error_message: string | null
-  counter: number
-  created_at: string
-  updated_at: string
-}
-
-export interface CompletedStatementRow extends StatementRow {
-  status: 'completed'
-  transaction_map: string
-  daily_rates: string
-}
+type StatementRow = typeof statements.$inferSelect
 
 export interface GenerateStatementInput {
   quoteCurrency?: StatementQuoteCurrency
@@ -158,7 +138,7 @@ export function validateStatementInput(input: GenerateStatementInput, now = new 
 // ─── Service ────────────────────────────────────────────────────────────────
 
 export class StatementService {
-  private readonly db: Database.Database
+  private readonly db: SentinelDb
   private readonly onchainProvider: ElectrumProvider
   private readonly dailyRatesService: DailyRatesService
   private readonly exchangeService: ExchangeService
@@ -167,7 +147,7 @@ export class StatementService {
   private readonly sleep: ((ms: number) => Promise<void>) | undefined
 
   public constructor(deps: {
-    db: Database.Database
+    db: SentinelDb
     onchainProvider: ElectrumProvider
     dailyRatesService: DailyRatesService
     exchangeService: ExchangeService
@@ -186,47 +166,45 @@ export class StatementService {
   }
 
   /** Insert a pending statement row. */
-  public create(input: GenerateStatementInput): Result<string, Error> {
+  public async create(input: GenerateStatementInput): Promise<Result<string, Error>> {
     const valid = validateStatementInput(input)
     if (valid.isErr()) {
       return Err(valid.unwrapErr())
     }
     const id = `st_stmt_${nanoid()}`
-    const counter = this.getNextCounter()
-
-    this.db
-      .prepare(
-        `INSERT INTO statements (id, status, timezone, opening_date, closing_date, account_ids, exchange_account_ids, user_name, user_address, counter, quote_currency)
-         VALUES (?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .run(
-        id,
-        input.timezone,
-        input.openingDate.toISOString(),
-        input.closingDate.toISOString(),
-        JSON.stringify(input.claimIds),
-        input.exchangeAccountIds ? JSON.stringify(input.exchangeAccountIds) : null,
-        input.name ?? null,
-        input.address ?? null,
-        counter,
-        input.quoteCurrency ?? 'USD',
-      )
+    await this.db.insert(statements).values({
+      id,
+      status: 'pending',
+      timezone: input.timezone,
+      openingDate: input.openingDate.toISOString(),
+      closingDate: input.closingDate.toISOString(),
+      accountIds: JSON.stringify(input.claimIds),
+      exchangeAccountIds: input.exchangeAccountIds ? JSON.stringify(input.exchangeAccountIds) : null,
+      userName: input.name ?? null,
+      userAddress: input.address ?? null,
+      quoteCurrency: input.quoteCurrency ?? 'USD',
+      counter: sql`(select coalesce(max(${statements.counter}), 0) + 1 from ${statements})`,
+    })
 
     return Ok(id)
   }
 
   /** Mark a statement as completed with transaction data. */
-  public complete(id: string, transactionMap: StatementTransactions, dailyRates: DailyRates): Result<void, Error> {
-    const row = this.db.prepare<unknown[], StatementRow>('SELECT * FROM statements WHERE id = ?').get(id)
+  public async complete(
+    id: string,
+    transactionMap: StatementTransactions,
+    dailyRates: DailyRates,
+  ): Promise<Result<void, Error>> {
+    const [row] = await this.db.select().from(statements).where(eq(statements.id, id))
     if (row?.status !== 'pending') {
       return Err(new Error('Statement is not pending.'))
     }
-    if (row.quote_currency !== dailyRates.quoteCurrency) {
+    if (row.quoteCurrency !== dailyRates.quoteCurrency) {
       return Err(new Error('Statement quote currency does not match its saved rates.'))
     }
     const dates = getRequiredRateDates(
-      new Date(row.opening_date),
-      new Date(row.closing_date),
+      new Date(row.openingDate),
+      new Date(row.closingDate),
       row.timezone,
       transactionMap,
     )
@@ -261,37 +239,39 @@ export class StatementService {
       }
     }
 
-    this.db
-      .prepare(
-        `UPDATE statements SET status = 'completed', transaction_map = ?, daily_rates = ?, updated_at = datetime('now')
-         WHERE id = ?`,
-      )
-      .run(
-        JSON.stringify(serializedMap),
-        JSON.stringify({
+    const [completed] = await this.db
+      .update(statements)
+      .set({
+        status: 'completed',
+        transactionMap: JSON.stringify(serializedMap),
+        dailyRates: JSON.stringify({
           rates: serializedRates,
           source: dailyRates.source,
           quoteCurrency: dailyRates.quoteCurrency,
           providerUrl: dailyRates.providerUrl,
           providerUrls: dailyRates.providerUrls,
         }),
-        id,
-      )
+        updatedAt: sql`datetime('now')`,
+      })
+      .where(and(eq(statements.id, id), eq(statements.status, 'pending')))
+      .returning({ id: statements.id })
+    if (completed === undefined) {
+      return Err(new Error('Statement is not pending.'))
+    }
     return Ok(undefined)
   }
 
   /** Mark a statement as failed. */
-  public fail(id: string, message = 'Statement generation failed. Please retry.'): void {
-    this.db
-      .prepare(
-        `UPDATE statements SET status = 'failed', error_message = ?, updated_at = datetime('now') WHERE id = ? AND status = 'pending'`,
-      )
-      .run(message, id)
+  public async fail(id: string, message = 'Statement generation failed. Please retry.'): Promise<void> {
+    await this.db
+      .update(statements)
+      .set({ status: 'failed', errorMessage: message, updatedAt: sql`datetime('now')` })
+      .where(and(eq(statements.id, id), eq(statements.status, 'pending')))
   }
 
   /** Find a statement by ID and return its DTO. */
-  public findById(id: string): StatementDto | null {
-    const row = this.db.prepare<unknown[], StatementRow>('SELECT * FROM statements WHERE id = ?').get(id)
+  public async findById(id: string): Promise<StatementDto | null> {
+    const [row] = await this.db.select().from(statements).where(eq(statements.id, id))
     if (!row) {
       return null
     }
@@ -299,26 +279,30 @@ export class StatementService {
   }
 
   /** Load a completed statement with deserialized transaction data. */
-  public loadCompleted(
+  public async loadCompleted(
     id: string,
-  ): { row: StatementRow; transactionMap: StatementTransactions; dailyRates: DailyRates } | null {
-    const row = this.db
-      .prepare<unknown[], CompletedStatementRow>('SELECT * FROM statements WHERE id = ? AND status = ?')
-      .get(id, 'completed')
+  ): Promise<{ row: StatementRow; transactionMap: StatementTransactions; dailyRates: DailyRates } | null> {
+    const [row] = await this.db
+      .select()
+      .from(statements)
+      .where(and(eq(statements.id, id), eq(statements.status, 'completed')))
     if (!row) {
       return null
     }
 
+    if (row.transactionMap == null || row.dailyRates == null) {
+      throw new Error('Stored completed statement is missing transaction data')
+    }
     return {
       row,
-      transactionMap: this.deserializeTransactionMap(row.transaction_map),
-      dailyRates: this.deserializeDailyRates(row.daily_rates),
+      transactionMap: this.deserializeTransactionMap(row.transactionMap),
+      dailyRates: this.deserializeDailyRates(row.dailyRates),
     }
   }
 
   /** List all statements as DTOs. */
-  public list(): StatementDto[] {
-    const rows = this.db.prepare<unknown[], StatementRow>('SELECT * FROM statements ORDER BY created_at DESC').all()
+  public async list(): Promise<StatementDto[]> {
+    const rows = await this.db.select().from(statements).orderBy(desc(statements.createdAt))
     return rows.map((row) => this.rowToDto(row))
   }
 
@@ -346,7 +330,7 @@ export class StatementService {
 
       // 1. Look up on-chain account descriptors
       const claimIds = [...new Set(input.claimIds)]
-      const accountRows = this.getAccountRows(claimIds)
+      const accountRows = await this.getAccountRows(claimIds)
       const hasOnchainAccounts = accountRows.length > 0
       const hasExchangeAccounts = (input.exchangeAccountIds?.length ?? 0) > 0
 
@@ -377,9 +361,10 @@ export class StatementService {
             continue
           }
 
-          const activeAccount = this.db
-            .prepare('SELECT 1 AS one FROM accounts WHERE id = ? AND deleted_at IS NULL')
-            .get(row.id)
+          const [activeAccount] = await this.db
+            .select({ id: accounts.id })
+            .from(accounts)
+            .where(and(eq(accounts.id, row.id), isNull(accounts.deletedAt)))
           if (activeAccount === undefined) {
             return Err(new Error(`Account "${row.display_name}" was archived while generating the statement`))
           }
@@ -410,7 +395,7 @@ export class StatementService {
       // 3. Fetch exchange account data
       if (hasExchangeAccounts) {
         const exchangeAccountIds = input.exchangeAccountIds ?? []
-        const allExchangeAccounts = this.exchangeService.listAccounts()
+        const allExchangeAccounts = await this.exchangeService.listAccounts()
         const selectedAccounts = allExchangeAccounts.filter((a) => exchangeAccountIds.includes(a.id))
         this.logger.info({ exchangeAccountCount: selectedAccounts.length }, 'Found exchange accounts for statement')
 
@@ -457,7 +442,7 @@ export class StatementService {
           const label = exchangeStatementName(account)
 
           // Check for imported statement transactions — aggregate to daily net in/out
-          const stmtTxs = this.exchangeService.listStatementTransactions(account.id)
+          const stmtTxs = await this.exchangeService.listStatementTransactions(account.id)
           if (stmtTxs.length > 0) {
             const dailyAgg = new Map<string, { netIn: bigint; netOut: bigint; date: Date }>()
             for (const tx of stmtTxs) {
@@ -511,7 +496,7 @@ export class StatementService {
             )
           } else {
             // Fall back to snapshot deltas
-            const snapshots = this.getExchangeSnapshots(account.id)
+            const snapshots = await this.getExchangeSnapshots(account.id)
 
             const dailyBalances = new Map<string, { balance: bigint; date: Date }>()
             for (const snapshot of snapshots) {
@@ -573,69 +558,47 @@ export class StatementService {
 
   // ─── Private helpers ────────────────────────────────────────────────────────
 
-  private getAccountRows(
+  private async getAccountRows(
     claimIds: string[],
-  ): Array<{ id: string; descriptor: string; display_name: string; network: string; status: string }> {
+  ): Promise<Array<{ id: string; descriptor: string; display_name: string; network: string; status: string }>> {
     if (claimIds.length === 0) {
       return []
     }
-    const placeholders = claimIds.map(() => '?').join(', ')
     return this.db
-      .prepare<
-        unknown[],
-        {
-          id: string
-          descriptor: string
-          display_name: string
-          network: string
-          status: string
-        }
-      >(
-        `SELECT id, descriptor, display_name, network, status
-         FROM accounts
-         WHERE id IN (${placeholders}) AND deleted_at IS NULL`,
-      )
-      .all(...claimIds)
+      .select({
+        id: accounts.id,
+        descriptor: accounts.descriptor,
+        display_name: accounts.displayName,
+        network: accounts.network,
+        status: accounts.status,
+      })
+      .from(accounts)
+      .where(and(inArray(accounts.id, claimIds), isNull(accounts.deletedAt)))
   }
 
-  private getExchangeSnapshots(accountId: string): Array<{ balance_sats: string; timestamp: string }> {
+  private async getExchangeSnapshots(accountId: string): Promise<Array<{ balance_sats: string; timestamp: string }>> {
     return this.db
-      .prepare<unknown[], { balance_sats: string; timestamp: string }>(
-        'SELECT balance_sats, timestamp FROM exchange_balance_snapshots WHERE account_id = ? ORDER BY timestamp ASC',
-      )
-      .all(accountId)
-  }
-
-  private getNextCounter(): number {
-    const result = this.db
-      .prepare<
-        unknown[],
-        {
-          next: number
-        }
-      >('SELECT COALESCE(MAX(counter), 0) + 1 AS next FROM statements')
-      .get()
-    if (!result) {
-      throw new Error('Statement counter query returned no row')
-    }
-    return result.next
+      .select({ balance_sats: exchangeBalanceSnapshots.balanceSats, timestamp: exchangeBalanceSnapshots.timestamp })
+      .from(exchangeBalanceSnapshots)
+      .where(eq(exchangeBalanceSnapshots.accountId, accountId))
+      .orderBy(asc(exchangeBalanceSnapshots.timestamp))
   }
 
   private rowToDto(row: StatementRow): StatementDto {
     return {
       id: row.id,
-      createdAt: new Date(row.created_at),
-      updatedAt: new Date(row.updated_at),
+      createdAt: new Date(row.createdAt),
+      updatedAt: new Date(row.updatedAt),
       counter: row.counter,
       timezone: row.timezone,
-      openingDate: new Date(row.opening_date),
-      closingDate: new Date(row.closing_date),
+      openingDate: new Date(row.openingDate),
+      closingDate: new Date(row.closingDate),
       status: row.status,
-      user: { name: row.user_name, email: null },
+      user: { name: row.userName, email: null },
       integrator: null,
       userId: 'local',
-      quoteCurrency: row.quote_currency,
-      errorMessage: row.error_message,
+      quoteCurrency: row.quoteCurrency,
+      errorMessage: row.errorMessage,
     }
   }
 

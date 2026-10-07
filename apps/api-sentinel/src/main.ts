@@ -91,7 +91,7 @@ export async function main(
     boundPort = server.addresses()[0]?.port ?? port
   } catch (error) {
     appCtx.stopElectrum()
-    appCtx.database.close()
+    appCtx.database.$client.close()
     await server.close()
     throw error
   }
@@ -121,7 +121,7 @@ export async function main(
     }
 
     appCtx.stopElectrum()
-    appCtx.database.close()
+    appCtx.database.$client.close()
 
     logger.info('Shutdown complete')
   }

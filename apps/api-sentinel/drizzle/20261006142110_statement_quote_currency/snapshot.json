@@ -1,0 +1,1833 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "id": "6f282b12-7c66-4c1c-8364-02748ca1ee02",
+  "prevIds": ["db56e1ff-ebbb-4062-8cdf-b72dc7eea11f"],
+  "ddl": [
+    {
+      "name": "account_history_syncs",
+      "entityType": "tables"
+    },
+    {
+      "name": "accounts",
+      "entityType": "tables"
+    },
+    {
+      "name": "balance_snapshots",
+      "entityType": "tables"
+    },
+    {
+      "name": "btc_quote_cache",
+      "entityType": "tables"
+    },
+    {
+      "name": "btc_quote_lookups",
+      "entityType": "tables"
+    },
+    {
+      "name": "challenges",
+      "entityType": "tables"
+    },
+    {
+      "name": "desktop_connection_profiles",
+      "entityType": "tables"
+    },
+    {
+      "name": "discovery_cache",
+      "entityType": "tables"
+    },
+    {
+      "name": "etf_accounts",
+      "entityType": "tables"
+    },
+    {
+      "name": "etf_balance_snapshots",
+      "entityType": "tables"
+    },
+    {
+      "name": "etf_holdings",
+      "entityType": "tables"
+    },
+    {
+      "name": "exchange_accounts",
+      "entityType": "tables"
+    },
+    {
+      "name": "exchange_balance_snapshots",
+      "entityType": "tables"
+    },
+    {
+      "name": "exchange_statement_txs",
+      "entityType": "tables"
+    },
+    {
+      "name": "keystores",
+      "entityType": "tables"
+    },
+    {
+      "name": "manual_accounts",
+      "entityType": "tables"
+    },
+    {
+      "name": "manual_balance_snapshots",
+      "entityType": "tables"
+    },
+    {
+      "name": "manual_transactions",
+      "entityType": "tables"
+    },
+    {
+      "name": "settings",
+      "entityType": "tables"
+    },
+    {
+      "name": "signed_messages",
+      "entityType": "tables"
+    },
+    {
+      "name": "statements",
+      "entityType": "tables"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": true,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "account_history_syncs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "account_id",
+      "entityType": "columns",
+      "table": "account_history_syncs"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "from_block_height",
+      "entityType": "columns",
+      "table": "account_history_syncs"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "to_block_height",
+      "entityType": "columns",
+      "table": "account_history_syncs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "range_start",
+      "entityType": "columns",
+      "table": "account_history_syncs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "range_end",
+      "entityType": "columns",
+      "table": "account_history_syncs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "(datetime('now'))",
+      "generated": null,
+      "name": "synced_at",
+      "entityType": "columns",
+      "table": "account_history_syncs"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "1",
+      "generated": null,
+      "name": "sync_version",
+      "entityType": "columns",
+      "table": "account_history_syncs"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "accounts"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'mainnet'",
+      "generated": null,
+      "name": "network",
+      "entityType": "columns",
+      "table": "accounts"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "descriptor",
+      "entityType": "columns",
+      "table": "accounts"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "display_name",
+      "entityType": "columns",
+      "table": "accounts"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "(datetime('now'))",
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "accounts"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'pending'",
+      "generated": null,
+      "name": "status",
+      "entityType": "columns",
+      "table": "accounts"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "deleted_at",
+      "entityType": "columns",
+      "table": "accounts"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": true,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "balance_snapshots"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "account_id",
+      "entityType": "columns",
+      "table": "balance_snapshots"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "timestamp",
+      "entityType": "columns",
+      "table": "balance_snapshots"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "balance_sats",
+      "entityType": "columns",
+      "table": "balance_snapshots"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "provider_url",
+      "entityType": "columns",
+      "table": "btc_quote_cache"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "quote_currency",
+      "entityType": "columns",
+      "table": "btc_quote_cache"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "timestamp",
+      "entityType": "columns",
+      "table": "btc_quote_cache"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "price",
+      "entityType": "columns",
+      "table": "btc_quote_cache"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "provider",
+      "entityType": "columns",
+      "table": "btc_quote_lookups"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "requested_at",
+      "entityType": "columns",
+      "table": "btc_quote_lookups"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "expires_at",
+      "entityType": "columns",
+      "table": "btc_quote_lookups"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "challenges"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "account_id",
+      "entityType": "columns",
+      "table": "challenges"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "is_satisfied",
+      "entityType": "columns",
+      "table": "challenges"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "completed_at",
+      "entityType": "columns",
+      "table": "challenges"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "(datetime('now'))",
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "challenges"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "desktop_connection_profiles"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "nickname",
+      "entityType": "columns",
+      "table": "desktop_connection_profiles"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "host",
+      "entityType": "columns",
+      "table": "desktop_connection_profiles"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "port",
+      "entityType": "columns",
+      "table": "desktop_connection_profiles"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "protocol",
+      "entityType": "columns",
+      "table": "desktop_connection_profiles"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "tor_enabled",
+      "entityType": "columns",
+      "table": "desktop_connection_profiles"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "1",
+      "generated": null,
+      "name": "revision",
+      "entityType": "columns",
+      "table": "desktop_connection_profiles"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "account_id",
+      "entityType": "columns",
+      "table": "discovery_cache"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "last_used_receive_index",
+      "entityType": "columns",
+      "table": "discovery_cache"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "last_used_change_index",
+      "entityType": "columns",
+      "table": "discovery_cache"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "(datetime('now'))",
+      "generated": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "table": "discovery_cache"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "etf_accounts"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "display_name",
+      "entityType": "columns",
+      "table": "etf_accounts"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "(datetime('now'))",
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "etf_accounts"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": true,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "etf_balance_snapshots"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "account_id",
+      "entityType": "columns",
+      "table": "etf_balance_snapshots"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "timestamp",
+      "entityType": "columns",
+      "table": "etf_balance_snapshots"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "balance_sats",
+      "entityType": "columns",
+      "table": "etf_balance_snapshots"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "etf_holdings"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "account_id",
+      "entityType": "columns",
+      "table": "etf_holdings"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "ticker",
+      "entityType": "columns",
+      "table": "etf_holdings"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "shares",
+      "entityType": "columns",
+      "table": "etf_holdings"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "date_purchased",
+      "entityType": "columns",
+      "table": "etf_holdings"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "(datetime('now'))",
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "etf_holdings"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "exchange_accounts"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "provider",
+      "entityType": "columns",
+      "table": "exchange_accounts"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "display_name",
+      "entityType": "columns",
+      "table": "exchange_accounts"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "encrypted_credentials",
+      "entityType": "columns",
+      "table": "exchange_accounts"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "balance_sats",
+      "entityType": "columns",
+      "table": "exchange_accounts"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "balance_as_of",
+      "entityType": "columns",
+      "table": "exchange_accounts"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "(datetime('now'))",
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "exchange_accounts"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "external_account_id",
+      "entityType": "columns",
+      "table": "exchange_accounts"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "credentials_connected_at",
+      "entityType": "columns",
+      "table": "exchange_accounts"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": true,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "exchange_balance_snapshots"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "account_id",
+      "entityType": "columns",
+      "table": "exchange_balance_snapshots"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "timestamp",
+      "entityType": "columns",
+      "table": "exchange_balance_snapshots"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "balance_sats",
+      "entityType": "columns",
+      "table": "exchange_balance_snapshots"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "exchange_statement_txs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "account_id",
+      "entityType": "columns",
+      "table": "exchange_statement_txs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "external_id",
+      "entityType": "columns",
+      "table": "exchange_statement_txs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "transacted_at",
+      "entityType": "columns",
+      "table": "exchange_statement_txs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "type",
+      "entityType": "columns",
+      "table": "exchange_statement_txs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "amount_btc",
+      "entityType": "columns",
+      "table": "exchange_statement_txs"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "amount_usd",
+      "entityType": "columns",
+      "table": "exchange_statement_txs"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "fee_usd",
+      "entityType": "columns",
+      "table": "exchange_statement_txs"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "fee_btc",
+      "entityType": "columns",
+      "table": "exchange_statement_txs"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "exchange_rate",
+      "entityType": "columns",
+      "table": "exchange_statement_txs"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "description",
+      "entityType": "columns",
+      "table": "exchange_statement_txs"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "tx_hash",
+      "entityType": "columns",
+      "table": "exchange_statement_txs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "statement_month",
+      "entityType": "columns",
+      "table": "exchange_statement_txs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "(datetime('now'))",
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "exchange_statement_txs"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "keystores"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "account_id",
+      "entityType": "columns",
+      "table": "keystores"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "label",
+      "entityType": "columns",
+      "table": "keystores"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "wallet",
+      "entityType": "columns",
+      "table": "keystores"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "model",
+      "entityType": "columns",
+      "table": "keystores"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "derivation_path",
+      "entityType": "columns",
+      "table": "keystores"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "xpub",
+      "entityType": "columns",
+      "table": "keystores"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "(datetime('now'))",
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "keystores"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "manual_accounts"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "display_name",
+      "entityType": "columns",
+      "table": "manual_accounts"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'0'",
+      "generated": null,
+      "name": "balance_sats",
+      "entityType": "columns",
+      "table": "manual_accounts"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "balance_as_of",
+      "entityType": "columns",
+      "table": "manual_accounts"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "(datetime('now'))",
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "manual_accounts"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": true,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "manual_balance_snapshots"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "account_id",
+      "entityType": "columns",
+      "table": "manual_balance_snapshots"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "timestamp",
+      "entityType": "columns",
+      "table": "manual_balance_snapshots"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "balance_sats",
+      "entityType": "columns",
+      "table": "manual_balance_snapshots"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "manual_transactions"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "account_id",
+      "entityType": "columns",
+      "table": "manual_transactions"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "type",
+      "entityType": "columns",
+      "table": "manual_transactions"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "amount_sats",
+      "entityType": "columns",
+      "table": "manual_transactions"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "transacted_at",
+      "entityType": "columns",
+      "table": "manual_transactions"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "note",
+      "entityType": "columns",
+      "table": "manual_transactions"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "(datetime('now'))",
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "manual_transactions"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "key",
+      "entityType": "columns",
+      "table": "settings"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "value",
+      "entityType": "columns",
+      "table": "settings"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "signed_messages"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "challenge_id",
+      "entityType": "columns",
+      "table": "signed_messages"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "keystore_id",
+      "entityType": "columns",
+      "table": "signed_messages"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "address",
+      "entityType": "columns",
+      "table": "signed_messages"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "message_text",
+      "entityType": "columns",
+      "table": "signed_messages"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "signature",
+      "entityType": "columns",
+      "table": "signed_messages"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "signed_at",
+      "entityType": "columns",
+      "table": "signed_messages"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "(datetime('now'))",
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "signed_messages"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "statements"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'pending'",
+      "generated": null,
+      "name": "status",
+      "entityType": "columns",
+      "table": "statements"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'UTC'",
+      "generated": null,
+      "name": "timezone",
+      "entityType": "columns",
+      "table": "statements"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "opening_date",
+      "entityType": "columns",
+      "table": "statements"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "closing_date",
+      "entityType": "columns",
+      "table": "statements"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "account_ids",
+      "entityType": "columns",
+      "table": "statements"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "user_name",
+      "entityType": "columns",
+      "table": "statements"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "user_address",
+      "entityType": "columns",
+      "table": "statements"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "transaction_map",
+      "entityType": "columns",
+      "table": "statements"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "daily_rates",
+      "entityType": "columns",
+      "table": "statements"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "1",
+      "generated": null,
+      "name": "counter",
+      "entityType": "columns",
+      "table": "statements"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "(datetime('now'))",
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "statements"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "(datetime('now'))",
+      "generated": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "table": "statements"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "exchange_account_ids",
+      "entityType": "columns",
+      "table": "statements"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'USD'",
+      "generated": null,
+      "name": "quote_currency",
+      "entityType": "columns",
+      "table": "statements"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "error_message",
+      "entityType": "columns",
+      "table": "statements"
+    },
+    {
+      "columns": ["account_id"],
+      "tableTo": "accounts",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "name": "fk_account_history_syncs_account_id_accounts_id_fk",
+      "entityType": "fks",
+      "table": "account_history_syncs"
+    },
+    {
+      "columns": ["account_id"],
+      "tableTo": "accounts",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "name": "fk_balance_snapshots_account_id_accounts_id_fk",
+      "entityType": "fks",
+      "table": "balance_snapshots"
+    },
+    {
+      "columns": ["account_id"],
+      "tableTo": "accounts",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "name": "fk_challenges_account_id_accounts_id_fk",
+      "entityType": "fks",
+      "table": "challenges"
+    },
+    {
+      "columns": ["account_id"],
+      "tableTo": "accounts",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "name": "fk_discovery_cache_account_id_accounts_id_fk",
+      "entityType": "fks",
+      "table": "discovery_cache"
+    },
+    {
+      "columns": ["account_id"],
+      "tableTo": "etf_accounts",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "name": "fk_etf_balance_snapshots_account_id_etf_accounts_id_fk",
+      "entityType": "fks",
+      "table": "etf_balance_snapshots"
+    },
+    {
+      "columns": ["account_id"],
+      "tableTo": "etf_accounts",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "name": "fk_etf_holdings_account_id_etf_accounts_id_fk",
+      "entityType": "fks",
+      "table": "etf_holdings"
+    },
+    {
+      "columns": ["account_id"],
+      "tableTo": "exchange_accounts",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "name": "fk_exchange_balance_snapshots_account_id_exchange_accounts_id_fk",
+      "entityType": "fks",
+      "table": "exchange_balance_snapshots"
+    },
+    {
+      "columns": ["account_id"],
+      "tableTo": "exchange_accounts",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "name": "fk_exchange_statement_txs_account_id_exchange_accounts_id_fk",
+      "entityType": "fks",
+      "table": "exchange_statement_txs"
+    },
+    {
+      "columns": ["account_id"],
+      "tableTo": "accounts",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "name": "fk_keystores_account_id_accounts_id_fk",
+      "entityType": "fks",
+      "table": "keystores"
+    },
+    {
+      "columns": ["account_id"],
+      "tableTo": "manual_accounts",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "name": "fk_manual_balance_snapshots_account_id_manual_accounts_id_fk",
+      "entityType": "fks",
+      "table": "manual_balance_snapshots"
+    },
+    {
+      "columns": ["account_id"],
+      "tableTo": "manual_accounts",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "name": "fk_manual_transactions_account_id_manual_accounts_id_fk",
+      "entityType": "fks",
+      "table": "manual_transactions"
+    },
+    {
+      "columns": ["challenge_id"],
+      "tableTo": "challenges",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "name": "fk_signed_messages_challenge_id_challenges_id_fk",
+      "entityType": "fks",
+      "table": "signed_messages"
+    },
+    {
+      "columns": ["keystore_id"],
+      "tableTo": "keystores",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "name": "fk_signed_messages_keystore_id_keystores_id_fk",
+      "entityType": "fks",
+      "table": "signed_messages"
+    },
+    {
+      "columns": ["quote_currency", "timestamp"],
+      "nameExplicit": false,
+      "name": "btc_quote_cache_pk",
+      "entityType": "pks",
+      "table": "btc_quote_cache"
+    },
+    {
+      "columns": ["provider", "requested_at"],
+      "nameExplicit": false,
+      "name": "btc_quote_lookups_pk",
+      "entityType": "pks",
+      "table": "btc_quote_lookups"
+    },
+    {
+      "columns": ["id"],
+      "nameExplicit": false,
+      "name": "account_history_syncs_pk",
+      "table": "account_history_syncs",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["id"],
+      "nameExplicit": false,
+      "name": "accounts_pk",
+      "table": "accounts",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["id"],
+      "nameExplicit": false,
+      "name": "balance_snapshots_pk",
+      "table": "balance_snapshots",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["id"],
+      "nameExplicit": false,
+      "name": "challenges_pk",
+      "table": "challenges",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["id"],
+      "nameExplicit": false,
+      "name": "desktop_connection_profiles_pk",
+      "table": "desktop_connection_profiles",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["account_id"],
+      "nameExplicit": false,
+      "name": "discovery_cache_pk",
+      "table": "discovery_cache",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["id"],
+      "nameExplicit": false,
+      "name": "etf_accounts_pk",
+      "table": "etf_accounts",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["id"],
+      "nameExplicit": false,
+      "name": "etf_balance_snapshots_pk",
+      "table": "etf_balance_snapshots",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["id"],
+      "nameExplicit": false,
+      "name": "etf_holdings_pk",
+      "table": "etf_holdings",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["id"],
+      "nameExplicit": false,
+      "name": "exchange_accounts_pk",
+      "table": "exchange_accounts",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["id"],
+      "nameExplicit": false,
+      "name": "exchange_balance_snapshots_pk",
+      "table": "exchange_balance_snapshots",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["id"],
+      "nameExplicit": false,
+      "name": "exchange_statement_txs_pk",
+      "table": "exchange_statement_txs",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["id"],
+      "nameExplicit": false,
+      "name": "keystores_pk",
+      "table": "keystores",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["id"],
+      "nameExplicit": false,
+      "name": "manual_accounts_pk",
+      "table": "manual_accounts",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["id"],
+      "nameExplicit": false,
+      "name": "manual_balance_snapshots_pk",
+      "table": "manual_balance_snapshots",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["id"],
+      "nameExplicit": false,
+      "name": "manual_transactions_pk",
+      "table": "manual_transactions",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["key"],
+      "nameExplicit": false,
+      "name": "settings_pk",
+      "table": "settings",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["id"],
+      "nameExplicit": false,
+      "name": "signed_messages_pk",
+      "table": "signed_messages",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["id"],
+      "nameExplicit": false,
+      "name": "statements_pk",
+      "table": "statements",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        {
+          "value": "account_id",
+          "isExpression": false
+        },
+        {
+          "value": "from_block_height",
+          "isExpression": false
+        },
+        {
+          "value": "to_block_height",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "idx_account_history_syncs_account_blocks",
+      "entityType": "indexes",
+      "table": "account_history_syncs"
+    },
+    {
+      "columns": [
+        {
+          "value": "requested_at",
+          "isExpression": false
+        },
+        {
+          "value": "expires_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "btc_quote_lookup_date",
+      "entityType": "indexes",
+      "table": "btc_quote_lookups"
+    },
+    {
+      "columns": ["account_id", "from_block_height", "to_block_height"],
+      "nameExplicit": true,
+      "name": "account_history_syncs_account_id_from_block_height_to_block_height_unique",
+      "entityType": "uniques",
+      "table": "account_history_syncs"
+    },
+    {
+      "columns": ["account_id", "timestamp"],
+      "nameExplicit": true,
+      "name": "balance_snapshots_account_id_timestamp_unique",
+      "entityType": "uniques",
+      "table": "balance_snapshots"
+    },
+    {
+      "columns": ["account_id", "timestamp"],
+      "nameExplicit": true,
+      "name": "etf_balance_snapshots_account_id_timestamp_unique",
+      "entityType": "uniques",
+      "table": "etf_balance_snapshots"
+    },
+    {
+      "columns": ["account_id", "timestamp"],
+      "nameExplicit": true,
+      "name": "exchange_balance_snapshots_account_id_timestamp_unique",
+      "entityType": "uniques",
+      "table": "exchange_balance_snapshots"
+    },
+    {
+      "columns": ["account_id", "external_id"],
+      "nameExplicit": true,
+      "name": "exchange_statement_txs_account_id_external_id_unique",
+      "entityType": "uniques",
+      "table": "exchange_statement_txs"
+    },
+    {
+      "columns": ["account_id", "timestamp"],
+      "nameExplicit": true,
+      "name": "manual_balance_snapshots_account_id_timestamp_unique",
+      "entityType": "uniques",
+      "table": "manual_balance_snapshots"
+    },
+    {
+      "value": "\"quote_currency\" IN ('USD', 'CAD', 'GBP', 'EUR')",
+      "name": "btc_quote_cache_quote_currency_check",
+      "entityType": "checks",
+      "table": "btc_quote_cache"
+    },
+    {
+      "value": "\"port\" BETWEEN 1 AND 65535",
+      "name": "desktop_connection_profiles_port_check",
+      "entityType": "checks",
+      "table": "desktop_connection_profiles"
+    },
+    {
+      "value": "\"protocol\" IN ('tcp', 'ssl')",
+      "name": "desktop_connection_profiles_protocol_check",
+      "entityType": "checks",
+      "table": "desktop_connection_profiles"
+    },
+    {
+      "value": "\"tor_enabled\" IN (0, 1)",
+      "name": "desktop_connection_profiles_tor_enabled_check",
+      "entityType": "checks",
+      "table": "desktop_connection_profiles"
+    },
+    {
+      "value": "\"provider\" IN ('coinbase', 'strike', 'robinhood', 'kraken')",
+      "name": "exchange_accounts_provider_check",
+      "entityType": "checks",
+      "table": "exchange_accounts"
+    },
+    {
+      "value": "\"type\" IN ('buy', 'sell', 'transfer_in', 'transfer_out')",
+      "name": "manual_transactions_type_check",
+      "entityType": "checks",
+      "table": "manual_transactions"
+    },
+    {
+      "value": "\"status\" IN ('pending', 'completed', 'failed')",
+      "name": "statements_status_check",
+      "entityType": "checks",
+      "table": "statements"
+    },
+    {
+      "value": "\"quote_currency\" IN ('USD', 'CAD', 'GBP', 'EUR')",
+      "name": "statements_quote_currency_check",
+      "entityType": "checks",
+      "table": "statements"
+    }
+  ],
+  "renames": []
+}

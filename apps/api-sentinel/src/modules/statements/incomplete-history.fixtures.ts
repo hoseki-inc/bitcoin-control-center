@@ -9,11 +9,11 @@ import { ElectrumClient } from '@hoseki/packages/clients/electrum'
 import { Err, Ok, asyncFn } from '@hoseki/packages/result'
 import type { CustomPdfStatement } from '@hoseki/packages/schemas'
 import { Wallets } from '@hoseki/packages/testing'
-import type Database from 'better-sqlite3'
 import Decimal from 'decimal.js'
 import pino from 'pino'
 import { expect, onTestFinished, vi } from 'vitest'
-import { initDatabase } from '../../db'
+import { type SentinelDb, openDrizzleDatabase } from '../../db/drizzle'
+import { accounts } from '../../db/schema'
 import { ExchangeService } from '../exchange/service'
 import { DailyRatesService } from '../price/daily_rates'
 import { StatementMapper } from './mapper'
@@ -48,23 +48,20 @@ const savingsWallet = createWallet(Wallets.singlesigNativeSegwitAccount, 0)
 const spendingWallet = createWallet(Wallets.singlesigNestedSegwitAccount, 1)
 const wallets = [savingsWallet, spendingWallet]
 
-function seedWallet(db: Database.Database, wallet: (typeof wallets)[number], name: string): string {
-  db.prepare('INSERT INTO accounts (id, descriptor, display_name, status) VALUES (?, ?, ?, ?)').run(
-    wallet.id,
-    wallet.account.toString(),
-    name,
-    'verified',
-  )
+async function seedWallet(db: SentinelDb, wallet: (typeof wallets)[number], name: string): Promise<string> {
+  await db
+    .insert(accounts)
+    .values({ id: wallet.id, descriptor: wallet.account.toString(), displayName: name, status: 'verified' })
   return wallet.id
 }
 
-function createStatementHarness(outcome: WithdrawalOutcome) {
+async function createStatementHarness(outcome: WithdrawalOutcome) {
   const directory = mkdtempSync(join(tmpdir(), 'sentinel-statement-history-'))
   const logger = pino({ level: 'silent' })
-  const database = initDatabase(directory, logger)
+  const database = await openDrizzleDatabase(directory, logger)
 
   onTestFinished(() => {
-    database.close()
+    database.$client.close()
     rmSync(directory, { recursive: true, force: true })
     vi.unstubAllGlobals()
     vi.restoreAllMocks()
@@ -128,7 +125,7 @@ function createStatementHarness(outcome: WithdrawalOutcome) {
     }),
   )
 
-  const dailyRatesService = new DailyRatesService({ db: database.db, logger, mempoolApiUrl: 'https://example.invalid' })
+  const dailyRatesService = new DailyRatesService({ db: database, logger, mempoolApiUrl: 'https://example.invalid' })
   const rate = new Decimal(40_000)
   const rates = Object.fromEntries(
     [openingDate, transactionDate, closingDate].map((date) => [
@@ -141,24 +138,26 @@ function createStatementHarness(outcome: WithdrawalOutcome) {
     .mockImplementation(asyncFn(async () => Ok({ source: 'mempool' as const, quoteCurrency: 'USD' as const, rates })))
 
   const service = new StatementService({
-    db: database.db,
+    db: database,
     logger,
     onchainProvider,
     mempoolApiUrl: 'https://example.invalid',
     dailyRatesService,
-    exchangeService: new ExchangeService({ db: database.db, logger }),
+    exchangeService: new ExchangeService({ db: database, logger }),
     // Retries happen without real waits.
     sleep: async () => {},
   })
 
-  return { service, db: database.db, history, getDailyRates }
+  return { service, db: database, history, getDailyRates }
 }
 
-export function setupDepositAndWithdrawal(outcome: WithdrawalOutcome): StatementScenario & {
-  getDailyRates: ReturnType<typeof createStatementHarness>['getDailyRates']
-} {
-  const { service, db, history, getDailyRates } = createStatementHarness(outcome)
-  const claimId = seedWallet(db, savingsWallet, 'Savings')
+export async function setupDepositAndWithdrawal(outcome: WithdrawalOutcome): Promise<
+  StatementScenario & {
+    getDailyRates: Awaited<ReturnType<typeof createStatementHarness>>['getDailyRates']
+  }
+> {
+  const { service, db, history, getDailyRates } = await createStatementHarness(outcome)
+  const claimId = await seedWallet(db, savingsWallet, 'Savings')
   history.mockResolvedValueOnce(
     Ok([
       { tx_hash: savingsWallet.txid, height: 800000 },
@@ -168,11 +167,13 @@ export function setupDepositAndWithdrawal(outcome: WithdrawalOutcome): Statement
   return { service, input: { ...period, claimIds: [claimId] }, getDailyRates }
 }
 
-export function setupHistoryFailure(): StatementScenario & {
-  getDailyRates: ReturnType<typeof createStatementHarness>['getDailyRates']
-} {
-  const { service, db, history, getDailyRates } = createStatementHarness('success')
-  const claimIds = [seedWallet(db, savingsWallet, 'Savings'), seedWallet(db, spendingWallet, 'Spending')]
+export async function setupHistoryFailure(): Promise<
+  StatementScenario & {
+    getDailyRates: Awaited<ReturnType<typeof createStatementHarness>>['getDailyRates']
+  }
+> {
+  const { service, db, history, getDailyRates } = await createStatementHarness('success')
+  const claimIds = [await seedWallet(db, savingsWallet, 'Savings'), await seedWallet(db, spendingWallet, 'Spending')]
   history
     .mockResolvedValueOnce(Ok([{ tx_hash: savingsWallet.txid, height: 800000 }]))
     .mockResolvedValueOnce(Err(new Error('Synthetic Electrum history failure')))

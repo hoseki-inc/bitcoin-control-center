@@ -257,6 +257,33 @@ The next startup creates a new database and key. Restore the backup only while S
 
 Database migrations run automatically during startup. There is no separate local migration command.
 
+The original 14 migrations are preserved as SQL files and linked Drizzle snapshots.
+New profiles run this history from scratch. Fully upgraded internal profiles keep
+their data: startup converts only the old `_migrations` journal to Drizzle's format
+and does not replay those migrations. Both paths use the same journal and native
+migrator afterward. Partial or unknown migration histories stop startup without
+resetting the profile; keep the data directory intact and finish legacy upgrades
+with the previous build first.
+
+Profiles that already applied legacy migration `015_desktop_connection_profiles`
+keep their saved connections and active selection without rebuilding the table.
+Earlier 14-migration profiles get that table through the new Drizzle migration.
+
+Historical migrations `003`, `005`, and `010` include comments documenting their
+original data-loss hazards. They are not examples for future migrations.
+
+After changing `apps/api-sentinel/src/db/schema.ts`, generate a descriptively named
+Drizzle migration from the repository root:
+
+```bash
+pnpm --filter api-sentinel db:generate --name add_account_labels
+```
+
+Review the generated SQL and commit its snapshot alongside it. Table rebuilds must
+copy existing rows before dropping the original table. Startup uses Drizzle's
+native libSQL migrator, which disables foreign keys before its transaction to
+prevent cascading deletes during those rebuilds.
+
 ## Development commands
 
 Run these commands from the repository root unless noted otherwise.
@@ -327,9 +354,8 @@ enabled. **Release 3** runs it and won't create a draft release while a moderate
 or worse finding remains.
 
 The default `pnpm test` command requires only the root workspace dependencies.
-`better-sqlite3` uses its bundled native binaries on supported platforms. Its
-pnpm install scripts are disabled to avoid unnecessary native rebuilds; Sentinel
-tests and desktop runtime checks still exercise SQLite.
+Sentinel uses an async, local-file libSQL client. Sentinel tests and desktop runtime
+checks exercise SQLite using the same native client.
 
 GitHub Actions additionally installs and type-checks the standalone packaging
 workspaces and runs the StartOS tests:
@@ -484,7 +510,8 @@ The build script:
 2. Verifies downloaded archives against pinned SHA-256 hashes before extraction; existing bundles are reused on later builds.
 3. Builds Sentinel and the desktop-mode frontend.
 4. Installs Electron's isolated npm dependencies.
-5. Validates that the host can load the bundled `better-sqlite3` native prebuild.
+5. Installs the Windows x64 libSQL prebuild alongside macOS ARM64, validates both,
+   and checks the native client and PDF renderer in Electron.
 6. Packages installers and stages them with build metadata and checksums under `desktop/release/artifacts/mac/` and `desktop/release/artifacts/win/`.
 
 Installers are named `Bitcoin-Control-Center-<release-tag>-<platform>-<arch>` and carry the shared release version and source commit in their metadata; `desktop/package.json` keeps the placeholder `0.0.0-dev`, which the build overrides without editing, so development runs and unofficial builds never look like a release. Builds from uncommitted changes are marked dirty, and CI rejects them.

@@ -1,4 +1,6 @@
+import { count, eq } from 'drizzle-orm'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
+import { statements } from '../../db/schema'
 import { setupAppCaller } from '../trpc/ownership.fixtures'
 import { type GenerateStatementInput, validateStatementInput } from './service'
 
@@ -49,13 +51,13 @@ describe('statement closing date limit', () => {
     onTestFinished(() => {
       vi.useRealTimers()
     })
-    const { caller, db } = setupAppCaller()
+    const { caller, db } = await setupAppCaller()
 
     const attempt = caller.portalProve.statement.initiateGeneration(statementEnding('2026-10-04T12:00:00.000Z'))
 
     await expect(attempt).rejects.toMatchObject({ code: 'BAD_REQUEST' })
     await expect(attempt).rejects.toThrow('at least 2 days ago')
-    expect(db.prepare('SELECT COUNT(*) AS count FROM statements').get()).toEqual({ count: 0 })
+    await expect(db.select({ count: count() }).from(statements)).resolves.toEqual([{ count: 0 }])
   })
 
   it('saves and starts a statement ending the day before yesterday', async () => {
@@ -64,14 +66,16 @@ describe('statement closing date limit', () => {
     onTestFinished(() => {
       vi.useRealTimers()
     })
-    const { caller, db } = setupAppCaller()
+    const { caller, db } = await setupAppCaller()
 
     const statement = await caller.portalProve.statement.initiateGeneration(statementEnding('2026-10-03T23:59:59.999Z'))
 
     expect(statement.status).toBe('pending')
     // Let background generation finish before the test database closes.
-    await vi.waitFor(() => {
-      expect(db.prepare('SELECT status FROM statements WHERE id = ?').get(statement.id)).toEqual({ status: 'failed' })
+    await vi.waitFor(async () => {
+      await expect(
+        db.select({ status: statements.status }).from(statements).where(eq(statements.id, statement.id)),
+      ).resolves.toEqual([{ status: 'failed' }])
     })
   })
 
@@ -81,7 +85,7 @@ describe('statement closing date limit', () => {
     onTestFinished(() => {
       vi.useRealTimers()
     })
-    const { caller } = setupAppCaller()
+    const { caller } = await setupAppCaller()
 
     // Generation stops only because the request selects no accounts, not because of its end date.
     await expect(
@@ -95,7 +99,7 @@ describe('statement closing date limit', () => {
     onTestFinished(() => {
       vi.useRealTimers()
     })
-    const { caller } = setupAppCaller()
+    const { caller } = await setupAppCaller()
 
     const attempt = caller.portalProve.statement.generatePreview(statementEnding('2026-10-04T12:00:00.000Z'))
 

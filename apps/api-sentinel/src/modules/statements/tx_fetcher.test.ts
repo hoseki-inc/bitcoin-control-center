@@ -8,7 +8,8 @@ import { Err, Ok, asyncFn } from '@hoseki/packages/result'
 import { Wallets } from '@hoseki/packages/testing'
 import pino from 'pino'
 import { assert, expect, it, onTestFinished, vi } from 'vitest'
-import { initDatabase } from '../../db'
+import { openDrizzleDatabase } from '../../db/drizzle'
+import { accounts } from '../../db/schema'
 import { ExchangeService } from '../exchange/service'
 import { DailyRatesService } from '../price/daily_rates'
 import { StatementService } from './service'
@@ -282,12 +283,12 @@ it('stops statement generation when a known transaction fails validation', async
   await withTestSetup(async () => {
     const deps = setup({ txid, vin: [], status: { confirmed: true } })
     const directory = mkdtempSync(join(tmpdir(), 'sentinel-statement-validation-'))
-    const database = initDatabase(directory, logger)
+    const database = await openDrizzleDatabase(directory, logger)
     try {
-      database.db
-        .prepare('INSERT INTO accounts (id, descriptor, display_name, status) VALUES (?, ?, ?, ?)')
-        .run('re_clmx_test', account.toString(), 'Test wallet', 'verified')
-      const dailyRatesService = new DailyRatesService({ ...deps, db: database.db })
+      await database
+        .insert(accounts)
+        .values({ id: 're_clmx_test', descriptor: account.toString(), displayName: 'Test wallet', status: 'verified' })
+      const dailyRatesService = new DailyRatesService({ ...deps, db: database })
       const rates = vi
         .spyOn(dailyRatesService, 'getDailyRates')
         .mockImplementation(
@@ -295,9 +296,9 @@ it('stops statement generation when a known transaction fails validation', async
         )
       const service = new StatementService({
         ...deps,
-        db: database.db,
+        db: database,
         dailyRatesService,
-        exchangeService: new ExchangeService({ db: database.db, logger }),
+        exchangeService: new ExchangeService({ db: database, logger }),
       })
 
       const result = await service.generateStatementData({
@@ -311,7 +312,7 @@ it('stops statement generation when a known transaction fails validation', async
       )
       expect(rates).not.toHaveBeenCalled()
     } finally {
-      database.close()
+      database.$client.close()
       rmSync(directory, { recursive: true, force: true })
     }
   })

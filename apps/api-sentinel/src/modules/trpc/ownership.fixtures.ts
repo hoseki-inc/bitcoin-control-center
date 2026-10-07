@@ -10,13 +10,13 @@ import { Xpub } from '@hoseki/packages/bitcoin/xpub'
 import { ElectrumClient } from '@hoseki/packages/clients/electrum'
 import { Ok } from '@hoseki/packages/result'
 import { hosid } from '@hoseki/packages/schemas'
-import type Database from 'better-sqlite3'
 import { BIP32Factory } from 'bip32'
 import { Signer, Verifier } from 'bip322-js'
 import pino from 'pino'
 import { expect, onTestFinished } from 'vitest'
 import type { AppContext } from '../../context'
-import { initDatabase } from '../../db'
+import { type SentinelDb, openDrizzleDatabase } from '../../db/drizzle'
+import { accounts, challenges, keystores, signedMessages } from '../../db/schema'
 import type { Env } from '../../env'
 import { ControlCenterService } from '../control_center/service'
 import { EtfService } from '../etf/service'
@@ -67,13 +67,13 @@ const multisig = MultiSigAccount.from({
 }).expect('Synthetic 2-of-3 descriptor must be valid')
 const keystore = { label: 'Test key', wallet: null, model: null, derivationPath: null }
 
-function createOwnershipDatabase() {
+async function createOwnershipDatabase() {
   const directory = mkdtempSync(join(tmpdir(), 'sentinel-ownership-'))
   const logger = pino({ level: 'silent' })
-  const database = initDatabase(directory, logger)
+  const database = await openDrizzleDatabase(directory, logger)
 
   onTestFinished(() => {
-    database.close()
+    database.$client.close()
     rmSync(directory, { recursive: true, force: true })
   })
 
@@ -95,35 +95,35 @@ function createTestEnvironment(directory: string): Env {
   }
 }
 
-export function setupOwnershipRegistry(): OwnershipRegistry {
-  return setupOwnershipHarness().registry
+export async function setupOwnershipRegistry(): Promise<OwnershipRegistry> {
+  return (await setupOwnershipHarness()).registry
 }
 
 interface OwnershipHarness {
   registry: OwnershipRegistry
-  db: Database.Database
+  db: SentinelDb
 }
 
-export function setupOwnershipHarness(): OwnershipHarness {
-  const { caller, db } = setupAppCaller()
+export async function setupOwnershipHarness(): Promise<OwnershipHarness> {
+  const { caller, db } = await setupAppCaller()
   return { registry: caller.portalProve.registry, db }
 }
 
 interface AppCallerHarness {
   caller: ReturnType<typeof appRouter.createCaller>
-  db: Database.Database
+  db: SentinelDb
 }
 
 /** Build the tRPC router against a fresh database with external services stubbed. */
-export function setupAppCaller(): AppCallerHarness {
-  const { directory, logger, database } = createOwnershipDatabase()
+export async function setupAppCaller(): Promise<AppCallerHarness> {
+  const { directory, logger, database } = await createOwnershipDatabase()
   const env = createTestEnvironment(directory)
 
   const electrumConfig = { host: 'example.invalid', port: 50001, protocol: 'tcp' as const }
   const electrumClient = new ElectrumClient(electrumConfig)
   const onchainProvider = new ElectrumProvider(Network.Mainnet, { logger, electrum: electrumClient })
 
-  const deps = { db: database.db, logger }
+  const deps = { db: database, logger }
   const exchangeService = new ExchangeService(deps)
   const manualService = new ManualService(deps)
   const etfService = new EtfService(deps)
@@ -133,7 +133,7 @@ export function setupAppCaller(): AppCallerHarness {
     mempoolApiUrl,
     settings: () => ({ source: undefined, fallbacks: false }),
   })
-  const dailyRatesService = new DailyRatesService({ db: database.db, logger, mempoolApiUrl })
+  const dailyRatesService = new DailyRatesService({ db: database, logger, mempoolApiUrl })
 
   const app: AppContext = {
     env,
@@ -174,7 +174,7 @@ export function setupAppCaller(): AppCallerHarness {
     connectProfile: async () => Ok(undefined),
   }
 
-  return { caller: appRouter.createCaller({ app }), db: database.db }
+  return { caller: appRouter.createCaller({ app }), db: database }
 }
 
 export async function createSinglesigClaim(
@@ -211,7 +211,7 @@ interface SinglesigProof {
 }
 
 export async function setupSinglesigProof(accountOwner: SigningKey, signer: SigningKey): Promise<SinglesigProof> {
-  const registry = setupOwnershipRegistry()
+  const registry = await setupOwnershipRegistry()
   const target = await createSinglesigClaim(registry, accountOwner)
   const signingClaim = signer === accountOwner ? target : await createSinglesigClaim(registry, signer)
   const store = signingClaim.keystores[0]
@@ -285,8 +285,8 @@ interface StoredOwnershipProof extends OwnershipHarness {
   messages: Array<{ id: string; keystoreId: string; signature: string }>
 }
 
-export function setupStoredProof(scenario: StoredProof): StoredOwnershipProof {
-  const { registry, db } = setupOwnershipHarness()
+export async function setupStoredProof(scenario: StoredProof): Promise<StoredOwnershipProof> {
+  const { registry, db } = await setupOwnershipHarness()
   const claimId = hosid('re_clmx')
   const challengeId = hosid('re_chal')
   const aliasedAccount = MultiSigAccount.from({
@@ -301,24 +301,20 @@ export function setupStoredProof(scenario: StoredProof): StoredOwnershipProof {
       : scenario === 'aliased key'
         ? aliasedAccount.descriptor()
         : owner.account.descriptor()
-  db.prepare('INSERT INTO accounts (id, descriptor, display_name, status) VALUES (?, ?, ?, ?)').run(
-    claimId,
-    descriptor,
-    'Stored wallet',
-    'pending',
-  )
-  db.prepare('INSERT INTO challenges (id, account_id) VALUES (?, ?)').run(challengeId, claimId)
+  await db.insert(accounts).values({ id: claimId, descriptor, displayName: 'Stored wallet', status: 'pending' })
+  await db.insert(challenges).values({ id: challengeId, accountId: claimId })
 
   let keystoreAccountId = claimId
   if (scenario === 'cross-account' || scenario === 'cross-account matching key') {
     keystoreAccountId = hosid('re_clmx')
-    db.prepare('INSERT INTO accounts (id, descriptor, display_name) VALUES (?, ?, ?)').run(
-      keystoreAccountId,
-      scenario === 'cross-account matching key'
-        ? new SingleSigAccount('p2pkh', owner.xpub).descriptor()
-        : outsider.account.descriptor(),
-      'Other wallet',
-    )
+    await db.insert(accounts).values({
+      id: keystoreAccountId,
+      descriptor:
+        scenario === 'cross-account matching key'
+          ? new SingleSigAccount('p2pkh', owner.xpub).descriptor()
+          : outsider.account.descriptor(),
+      displayName: 'Other wallet',
+    })
   }
   const key = scenario === 'cross-account' || scenario === 'unrelated key' ? outsider : owner
   const signer = scenario === 'wrong address' ? outsider : key
@@ -334,23 +330,21 @@ export function setupStoredProof(scenario: StoredProof): StoredOwnershipProof {
     const address = signingAccount.receiveAddress(0).toString()
     const signature = Signer.sign(signer.wif, address, messageText + ` ID=${id.split('_').at(-1)}`)
     const storedSignature = scenario === 'invalid signature' ? 'invalid' : signature
-    db.prepare('INSERT INTO keystores (id, account_id, label, xpub) VALUES (?, ?, ?, ?)').run(
-      keystoreId,
-      keystoreAccountId,
-      'Stored key',
-      scenario === 'aliased key' && index === 1 ? ownerAlias.xpub.toString() : key.xpub.toString(),
-    )
-    db.prepare(`INSERT INTO signed_messages
-      (id, challenge_id, keystore_id, address, message_text, signature, signed_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)`).run(
+    await db.insert(keystores).values({
+      id: keystoreId,
+      accountId: keystoreAccountId,
+      label: 'Stored key',
+      xpub: scenario === 'aliased key' && index === 1 ? ownerAlias.xpub.toString() : key.xpub.toString(),
+    })
+    await db.insert(signedMessages).values({
       id,
       challengeId,
       keystoreId,
       address,
       messageText,
-      storedSignature,
-      new Date().toISOString(),
-    )
+      signature: storedSignature,
+      signedAt: new Date().toISOString(),
+    })
     messages.push({ id, keystoreId, signature: storedSignature })
   }
   return { registry, db, claimId, challengeId, messages }

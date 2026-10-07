@@ -6,8 +6,15 @@ import { IndexMap, IndexSet } from '@hoseki/packages/collection'
 import { Err, Ok, asyncFn } from '@hoseki/packages/result'
 import type { Result } from '@hoseki/packages/result'
 import type { Timezone } from '@hoseki/packages/schemas'
-import type Database from 'better-sqlite3'
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lte } from 'drizzle-orm'
 import type { Logger } from 'pino'
+import type { SentinelDb, SentinelTx } from '../../db/drizzle'
+import {
+  accountHistorySyncs,
+  accounts as accountTable,
+  balanceSnapshots,
+  exchangeBalanceSnapshots,
+} from '../../db/schema'
 import type { EtfService } from '../etf/service'
 import type { ExchangeService } from '../exchange/service'
 import type { ManualService } from '../manual/service'
@@ -47,12 +54,6 @@ interface BalanceSnapshotRow {
   timestamp: string
 }
 
-interface AccountHistorySyncRow {
-  from_block_height: number
-  to_block_height: number
-  sync_version: number
-}
-
 interface BlockRange {
   fromBlockHeight: number
   toBlockHeight: number
@@ -68,7 +69,7 @@ interface AccountHistoryStatus {
 // ─── Service ────────────────────────────────────────────────────────────────
 
 export class ControlCenterService {
-  private readonly db: Database.Database
+  private readonly db: SentinelDb
   private readonly logger: Logger
   private readonly onchainProvider: ElectrumProvider
   private readonly exchangeService: ExchangeService
@@ -81,7 +82,7 @@ export class ControlCenterService {
   private readonly accountHistoryBackfillGenerations = new Map<string, number>()
 
   public constructor(deps: {
-    db: Database.Database
+    db: SentinelDb
     logger: Logger
     onchainProvider: ElectrumProvider
     exchangeService: ExchangeService
@@ -121,7 +122,7 @@ export class ControlCenterService {
       this.logger.info({ timeRange, customDateRange: args.customDateRange, timezone }, 'Getting control center data')
 
       // ─── Fetch on-chain accounts ────────────────────────────────
-      let accountRows = this.getAccountRows(args.accountIds)
+      let accountRows = await this.getAccountRows(args.accountIds)
       const initiallySelectedAccountIds = new Set(accountRows.map(({ id }) => id))
       const accounts = new IndexSet<Account>()
 
@@ -142,17 +143,19 @@ export class ControlCenterService {
         // only if the same chain tip still holds after scanning history.
         const balanceTipResult = await this.onchainProvider.getBlocksTip()
         const balancesResult = await this.onchainProvider.getConfirmedAccountBalances(accounts)
-        accountRows = this.getAccountRows(args.accountIds).filter(({ id }) => initiallySelectedAccountIds.has(id))
+        accountRows = (await this.getAccountRows(args.accountIds)).filter(({ id }) =>
+          initiallySelectedAccountIds.has(id),
+        )
         if (balancesResult.isErr()) {
           this.logger.warn({ err: balancesResult.unwrapErr() }, 'Failed to fetch on-chain balances')
           for (const row of accountRows) {
-            const latestSnapshotBalance = this.getLatestAccountSnapshotBalance(row.id) ?? 0n
+            const latestSnapshotBalance = (await this.getLatestAccountSnapshotBalance(row.id)) ?? 0n
             balancesByAccountId.set(row.id, latestSnapshotBalance)
 
             if (shouldSyncFullHistory) {
               const accountResult = Account.fromDescriptor(row.descriptor)
               if (accountResult.isOk()) {
-                this.queueAccountHistoryBackfill(
+                await this.queueAccountHistoryBackfill(
                   row.id,
                   accountResult.unwrap(),
                   latestSnapshotBalance,
@@ -179,7 +182,7 @@ export class ControlCenterService {
             const account = accountResult.unwrap()
             const accountBalance = accountBalances.get(account.toString()) ?? 0n
             balancesByAccountId.set(row.id, accountBalance)
-            this.queueAccountHistoryBackfill(
+            await this.queueAccountHistoryBackfill(
               row.id,
               account,
               accountBalance,
@@ -195,7 +198,7 @@ export class ControlCenterService {
       let exchangeBalance = 0n
       const exchangeEntries: BalanceEntry[] = []
 
-      const exchangeAccounts = this.exchangeService.listAccounts()
+      const exchangeAccounts = await this.exchangeService.listAccounts()
       const exchangeAccountIds = args.exchangeAccountIds
       const filteredExchangeAccounts = exchangeAccountIds
         ? exchangeAccounts.filter((a) => exchangeAccountIds.includes(a.id))
@@ -252,14 +255,14 @@ export class ControlCenterService {
         (a) => a.exchange !== 'coinbase' && a.exchange !== 'kraken',
       )
       for (const account of snapshotOnlyAccounts) {
-        const snapshots = this.getExchangeSnapshots(account.id)
+        const snapshots = await this.getExchangeSnapshots(account.id)
         const firstSnapshotTimestamp = snapshots[0]?.timestamp
         const firstSnapshotTime =
           firstSnapshotTimestamp != null && firstSnapshotTimestamp !== '' ? new Date(firstSnapshotTimestamp) : null
 
         // Use imported transactions for the period before our first snapshot
         let previousBalance = 0n
-        const stmtTxs = this.exchangeService.listStatementTransactions(account.id)
+        const stmtTxs = await this.exchangeService.listStatementTransactions(account.id)
         if (stmtTxs.length > 0 && firstSnapshotTime) {
           for (const tx of stmtTxs) {
             const txTime = new Date(tx.transactedAt)
@@ -301,7 +304,7 @@ export class ControlCenterService {
       let manualBalance = 0n
       const manualEntries: BalanceEntry[] = []
 
-      const manualAccounts = this.manualService.listAccounts()
+      const manualAccounts = await this.manualService.listAccounts()
       const manualAccountIds = args.manualAccountIds
       const filteredManualAccounts = manualAccountIds
         ? manualAccounts.filter((a) => manualAccountIds.includes(a.id))
@@ -312,14 +315,14 @@ export class ControlCenterService {
       }
 
       // Get transaction entries for accumulation chart
-      const manualTxEntries = this.manualService.getTransactionEntries(filteredManualAccounts.map((a) => a.id))
+      const manualTxEntries = await this.manualService.getTransactionEntries(filteredManualAccounts.map((a) => a.id))
       manualEntries.push(...manualTxEntries)
 
       // ─── Fetch ETF holdings data ──────────────────────────────
       let etfBalance = 0n
       const etfEntries: BalanceEntry[] = []
 
-      const etfAccounts = this.etfService.listAccounts()
+      const etfAccounts = await this.etfService.listAccounts()
       const etfAccountIds = args.etfAccountIds
       const filteredEtfAccounts = etfAccountIds ? etfAccounts.filter((a) => etfAccountIds.includes(a.id)) : etfAccounts
 
@@ -328,7 +331,7 @@ export class ControlCenterService {
       }
 
       // Use holdings' purchase dates for accumulation chart entries
-      const etfAccumulationEntries = this.etfService.getAccumulationEntries(filteredEtfAccounts.map((a) => a.id))
+      const etfAccumulationEntries = await this.etfService.getAccumulationEntries(filteredEtfAccounts.map((a) => a.id))
       etfEntries.push(...etfAccumulationEntries)
 
       // ─── Fetch BTC price ───────────────────────────────────────
@@ -344,10 +347,14 @@ export class ControlCenterService {
       // between the final snapshot reads and response construction: a backfill
       // must never be reported complete alongside history read before it finished.
       const historyStatus = await this.getAccountHistoryStatus(accountRows, historyRange.start, shouldSyncFullHistory)
-      accountRows = accountRows.filter(({ id }) => this.isAccountActive(id))
-      const onchainEntries = accountRows.flatMap(({ id }) => this.getAccountSnapshotEntries(id))
+      accountRows = (
+        await Promise.all(accountRows.map(async (row) => ((await this.isAccountActive(row.id)) ? row : null)))
+      ).filter((row): row is NonNullable<typeof row> => row !== null)
+      const onchainEntries = (
+        await Promise.all(accountRows.map(async ({ id }) => this.getAccountSnapshotEntries(id)))
+      ).flat()
       if (!args.accountIds) {
-        onchainEntries.push(...this.getArchivedAccountSnapshotEntries())
+        onchainEntries.push(...(await this.getArchivedAccountSnapshotEntries()))
       }
       const onchainBalance = accountRows.reduce((sum, { id }) => sum + (balancesByAccountId.get(id) ?? 0n), 0n)
 
@@ -406,17 +413,21 @@ export class ControlCenterService {
    * Record a balance snapshot for an on-chain account.
    * Should be called periodically (e.g., daily) to build historical chart data.
    */
-  public recordAccountSnapshot(accountId: string, balanceSats: string, timestamp: string): void {
-    if (!this.isAccountActive(accountId)) {
-      return
-    }
-    this.upsertAccountSnapshot(accountId, balanceSats, timestamp)
+  public async recordAccountSnapshot(accountId: string, balanceSats: string, timestamp: string): Promise<boolean> {
+    return this.db.transaction(async (tx) => {
+      if (!(await this.isAccountActive(accountId, tx))) {
+        return false
+      }
+      await this.upsertAccountSnapshot(tx, accountId, balanceSats, timestamp)
+      return true
+    })
   }
 
   public archiveAccount = asyncFn(async (accountId: string): Promise<Result<void, Error>> => {
-    const row = this.db
-      .prepare<unknown[], { descriptor: string }>('SELECT descriptor FROM accounts WHERE id = ? AND deleted_at IS NULL')
-      .get(accountId)
+    const [row] = await this.db
+      .select({ descriptor: accountTable.descriptor })
+      .from(accountTable)
+      .where(and(eq(accountTable.id, accountId), isNull(accountTable.deletedAt)))
     if (!row) {
       return Err(new Error('Claim not found or already archived'))
     }
@@ -433,18 +444,17 @@ export class ControlCenterService {
     }
 
     const archivedAt = new Date().toISOString()
-    const archived = this.db.transaction((): boolean => {
-      if (!this.isAccountActive(accountId)) {
+    const archived = await this.db.transaction(async (tx): Promise<boolean> => {
+      const updated = await tx
+        .update(accountTable)
+        .set({ deletedAt: archivedAt })
+        .where(and(eq(accountTable.id, accountId), isNull(accountTable.deletedAt)))
+      if (updated.rowsAffected === 0) {
         return false
       }
-
-      this.upsertAccountSnapshot(accountId, preservedBalance.toString(), archivedAt)
-      return (
-        this.db
-          .prepare('UPDATE accounts SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL')
-          .run(archivedAt, accountId).changes === 1
-      )
-    })()
+      await this.upsertAccountSnapshot(tx, accountId, preservedBalance.toString(), archivedAt)
+      return true
+    })
 
     if (!archived) {
       return Err(new Error('Claim not found or already archived'))
@@ -453,18 +463,18 @@ export class ControlCenterService {
     return Ok(undefined)
   })
 
-  public restoreAccount(accountId: string): Result<void, Error> {
-    const restored = this.db.transaction((): boolean => {
-      const result = this.db
-        .prepare('UPDATE accounts SET deleted_at = NULL WHERE id = ? AND deleted_at IS NOT NULL')
-        .run(accountId)
-      if (result.changes === 0) {
+  public async restoreAccount(accountId: string): Promise<Result<void, Error>> {
+    const restored = await this.db.transaction(async (tx): Promise<boolean> => {
+      const result = await tx
+        .update(accountTable)
+        .set({ deletedAt: null })
+        .where(and(eq(accountTable.id, accountId), isNotNull(accountTable.deletedAt)))
+      if (result.rowsAffected === 0) {
         return false
       }
-
-      this.db.prepare('DELETE FROM account_history_syncs WHERE account_id = ?').run(accountId)
+      await tx.delete(accountHistorySyncs).where(eq(accountHistorySyncs.accountId, accountId))
       return true
-    })()
+    })
 
     if (!restored) {
       return Err(new Error('Claim not found or not archived'))
@@ -475,70 +485,59 @@ export class ControlCenterService {
 
   // ─── Private Helpers ───────────────────────────────────────────────────
 
-  private upsertAccountSnapshot(accountId: string, balanceSats: string, timestamp: string): void {
-    this.db
-      .prepare(
-        `INSERT INTO balance_snapshots (account_id, timestamp, balance_sats)
-         VALUES (?, ?, ?)
-         ON CONFLICT(account_id, timestamp) DO UPDATE SET balance_sats = excluded.balance_sats`,
-      )
-      .run(accountId, timestamp, balanceSats)
+  private async upsertAccountSnapshot(
+    tx: SentinelTx,
+    accountId: string,
+    balanceSats: string,
+    timestamp: string,
+  ): Promise<void> {
+    await tx
+      .insert(balanceSnapshots)
+      .values({ accountId, timestamp, balanceSats })
+      .onConflictDoUpdate({ target: [balanceSnapshots.accountId, balanceSnapshots.timestamp], set: { balanceSats } })
   }
 
-  private isAccountActive(accountId: string): boolean {
-    return (
-      this.db.prepare('SELECT 1 AS one FROM accounts WHERE id = ? AND deleted_at IS NULL').get(accountId) !== undefined
-    )
+  private async isAccountActive(accountId: string, db: SentinelDb | SentinelTx = this.db): Promise<boolean> {
+    const rows = await db
+      .select({ id: accountTable.id })
+      .from(accountTable)
+      .where(and(eq(accountTable.id, accountId), isNull(accountTable.deletedAt)))
+    return rows.length > 0
   }
 
-  private getAccountRows(
+  private async getAccountRows(
     filterIds?: string[],
-    includeArchived = false,
-  ): Array<{ id: string; descriptor: string; network: string }> {
-    const archivedClause = includeArchived ? '' : 'WHERE deleted_at IS NULL'
-    if (filterIds !== undefined) {
-      if (filterIds.length === 0) {
-        return []
-      }
-      const placeholders = filterIds.map(() => '?').join(', ')
-      return this.db
-        .prepare<unknown[], { id: string; descriptor: string; network: string }>(
-          `SELECT id, descriptor, network FROM accounts WHERE id IN (${placeholders})${includeArchived ? '' : ' AND deleted_at IS NULL'} ORDER BY created_at DESC`,
-        )
-        .all(...filterIds)
+  ): Promise<Array<{ id: string; descriptor: string; network: string }>> {
+    if (filterIds?.length === 0) {
+      return []
     }
     return this.db
-      .prepare<
-        unknown[],
-        {
-          id: string
-          descriptor: string
-          network: string
-        }
-      >(`SELECT id, descriptor, network FROM accounts ${archivedClause} ORDER BY created_at DESC`)
-      .all()
+      .select({ id: accountTable.id, descriptor: accountTable.descriptor, network: accountTable.network })
+      .from(accountTable)
+      .where(and(filterIds ? inArray(accountTable.id, filterIds) : undefined, isNull(accountTable.deletedAt)))
+      .orderBy(desc(accountTable.createdAt))
   }
 
-  private recordExchangeSnapshot(accountId: string, balanceSats: string, timestamp: string): void {
-    this.db
-      .prepare(
-        `INSERT INTO exchange_balance_snapshots (account_id, timestamp, balance_sats)
-         VALUES (?, ?, ?)
-         ON CONFLICT(account_id, timestamp) DO UPDATE SET balance_sats = excluded.balance_sats`,
-      )
-      .run(accountId, timestamp, balanceSats)
+  private async recordExchangeSnapshot(accountId: string, balanceSats: string, timestamp: string): Promise<void> {
+    await this.db
+      .insert(exchangeBalanceSnapshots)
+      .values({ accountId, timestamp, balanceSats })
+      .onConflictDoUpdate({
+        target: [exchangeBalanceSnapshots.accountId, exchangeBalanceSnapshots.timestamp],
+        set: { balanceSats },
+      })
   }
 
-  private getExchangeSnapshots(accountId: string): Array<{ balance_sats: string; timestamp: string }> {
+  private async getExchangeSnapshots(accountId: string): Promise<Array<{ balance_sats: string; timestamp: string }>> {
     return this.db
-      .prepare<unknown[], { balance_sats: string; timestamp: string }>(
-        'SELECT balance_sats, timestamp FROM exchange_balance_snapshots WHERE account_id = ? ORDER BY timestamp ASC',
-      )
-      .all(accountId)
+      .select({ balance_sats: exchangeBalanceSnapshots.balanceSats, timestamp: exchangeBalanceSnapshots.timestamp })
+      .from(exchangeBalanceSnapshots)
+      .where(eq(exchangeBalanceSnapshots.accountId, accountId))
+      .orderBy(asc(exchangeBalanceSnapshots.timestamp))
   }
 
-  private getAccountSnapshotEntries(accountId: string, throughTimestamp?: string): BalanceEntry[] {
-    const snapshots = this.getAccountSnapshots(accountId, throughTimestamp)
+  private async getAccountSnapshotEntries(accountId: string, throughTimestamp?: string): Promise<BalanceEntry[]> {
+    const snapshots = await this.getAccountSnapshots(accountId, throughTimestamp)
     const entries: BalanceEntry[] = []
     let previousBalance = 0n
 
@@ -557,25 +556,22 @@ export class ControlCenterService {
     return entries
   }
 
-  private getArchivedAccountSnapshotEntries(): BalanceEntry[] {
-    const activeAccounts = new Set(
-      this.db
-        .prepare<
-          unknown[],
-          {
-            descriptor: string
-            network: string
-          }
-        >('SELECT descriptor, network FROM accounts WHERE deleted_at IS NULL')
-        .all()
-        .map((row) => accountDescriptorNetworkKey(row.descriptor, row.network)),
-    )
-
-    const archivedRows = this.db
-      .prepare<unknown[], { id: string; descriptor: string; network: string; deleted_at: string }>(
-        'SELECT id, descriptor, network, deleted_at FROM accounts WHERE deleted_at IS NOT NULL ORDER BY created_at DESC',
-      )
-      .all()
+  private async getArchivedAccountSnapshotEntries(): Promise<BalanceEntry[]> {
+    const activeRows = await this.db
+      .select({ descriptor: accountTable.descriptor, network: accountTable.network })
+      .from(accountTable)
+      .where(isNull(accountTable.deletedAt))
+    const activeAccounts = new Set(activeRows.map((row) => accountDescriptorNetworkKey(row.descriptor, row.network)))
+    const archivedRows = await this.db
+      .select({
+        id: accountTable.id,
+        descriptor: accountTable.descriptor,
+        network: accountTable.network,
+        deleted_at: accountTable.deletedAt,
+      })
+      .from(accountTable)
+      .where(isNotNull(accountTable.deletedAt))
+      .orderBy(desc(accountTable.createdAt))
 
     const allEntries: BalanceEntry[] = []
 
@@ -584,7 +580,10 @@ export class ControlCenterService {
         continue
       }
 
-      const entries = this.getAccountSnapshotEntries(row.id, row.deleted_at)
+      if (row.deleted_at === null) {
+        continue
+      }
+      const entries = await this.getAccountSnapshotEntries(row.id, row.deleted_at)
       allEntries.push(...entries)
 
       const finalBalance = entries.reduce((sum, e) => sum + e.value, 0n)
@@ -599,41 +598,39 @@ export class ControlCenterService {
     return allEntries
   }
 
-  private getAccountSnapshots(accountId: string, throughTimestamp?: string): BalanceSnapshotRow[] {
-    if (throughTimestamp !== undefined) {
-      return this.db
-        .prepare<unknown[], BalanceSnapshotRow>(
-          'SELECT balance_sats, timestamp FROM balance_snapshots WHERE account_id = ? AND timestamp <= ? ORDER BY timestamp ASC',
-        )
-        .all(accountId, throughTimestamp)
-    }
-
+  private async getAccountSnapshots(accountId: string, throughTimestamp?: string): Promise<BalanceSnapshotRow[]> {
     return this.db
-      .prepare<unknown[], BalanceSnapshotRow>(
-        'SELECT balance_sats, timestamp FROM balance_snapshots WHERE account_id = ? ORDER BY timestamp ASC',
+      .select({ balance_sats: balanceSnapshots.balanceSats, timestamp: balanceSnapshots.timestamp })
+      .from(balanceSnapshots)
+      .where(
+        and(
+          eq(balanceSnapshots.accountId, accountId),
+          throughTimestamp !== undefined ? lte(balanceSnapshots.timestamp, throughTimestamp) : undefined,
+        ),
       )
-      .all(accountId)
+      .orderBy(asc(balanceSnapshots.timestamp))
   }
 
-  private getLatestAccountSnapshotBalance(accountId: string): bigint | null {
-    const row = this.db
-      .prepare<unknown[], { balance_sats: string }>(
-        'SELECT balance_sats FROM balance_snapshots WHERE account_id = ? ORDER BY timestamp DESC LIMIT 1',
-      )
-      .get(accountId)
+  private async getLatestAccountSnapshotBalance(accountId: string): Promise<bigint | null> {
+    const [row] = await this.db
+      .select({ balance_sats: balanceSnapshots.balanceSats })
+      .from(balanceSnapshots)
+      .where(eq(balanceSnapshots.accountId, accountId))
+      .orderBy(desc(balanceSnapshots.timestamp))
+      .limit(1)
 
     return row ? BigInt(row.balance_sats) : null
   }
 
-  private queueAccountHistoryBackfill(
+  private async queueAccountHistoryBackfill(
     accountId: string,
     account: Account,
     currentBalance: bigint,
     rangeStart: Date,
     fullHistory: boolean,
     balanceTip?: Block,
-  ): void {
-    if (!this.isAccountActive(accountId)) {
+  ): Promise<void> {
+    if (!(await this.isAccountActive(accountId))) {
       return
     }
     const generation = this.getAccountHistoryBackfillGeneration(accountId)
@@ -659,8 +656,8 @@ export class ControlCenterService {
       generation,
       balanceTip,
     )
-      .then((preservedBalance) => {
-        if (!this.canContinueAccountHistoryBackfill(accountId, generation)) {
+      .then(async (preservedBalance) => {
+        if (!(await this.canContinueAccountHistoryBackfill(accountId, generation))) {
           return
         }
         if (preservedBalance !== null) {
@@ -671,8 +668,8 @@ export class ControlCenterService {
         const retryDelayMs = this.scheduleAccountHistoryBackfillRetry(accountId)
         this.logger.warn({ accountId, retryDelayMs }, 'Self-custody history backfill retry scheduled')
       })
-      .catch((cause: unknown) => {
-        if (!this.canContinueAccountHistoryBackfill(accountId, generation)) {
+      .catch(async (cause: unknown) => {
+        if (!(await this.canContinueAccountHistoryBackfill(accountId, generation))) {
           return
         }
         const retryDelayMs = this.scheduleAccountHistoryBackfillRetry(accountId)
@@ -700,8 +697,14 @@ export class ControlCenterService {
     return this.accountHistoryBackfillGenerations.get(accountId) ?? 0
   }
 
-  private canContinueAccountHistoryBackfill(accountId: string, generation: number): boolean {
-    return this.getAccountHistoryBackfillGeneration(accountId) === generation && this.isAccountActive(accountId)
+  private async canContinueAccountHistoryBackfill(
+    accountId: string,
+    generation: number,
+    db: SentinelDb | SentinelTx = this.db,
+  ): Promise<boolean> {
+    return (
+      (await this.isAccountActive(accountId, db)) && this.getAccountHistoryBackfillGeneration(accountId) === generation
+    )
   }
 
   private clearAccountHistoryBackfillRetry(accountId: string): void {
@@ -736,14 +739,20 @@ export class ControlCenterService {
     const tipResult = await this.onchainProvider.getBlocksTip()
     if (tipResult.isErr()) {
       this.logger.warn({ err: tipResult.unwrapErr() }, 'Failed to inspect chain tip for history completion status')
-      const activeIds = accountRows.filter((row) => this.isAccountActive(row.id)).map((row) => row.id)
+      const activeIds = (
+        await Promise.all(accountRows.map(async (row) => ((await this.isAccountActive(row.id)) ? row.id : null)))
+      ).filter((id): id is string => id !== null)
       return {
         // Keep polling after a connection failure, but never certify an unknown tip.
         historySyncingAccountIds: activeIds,
         historySyncedAccountIds: [],
-        historyRefreshingAccountIds: activeIds.filter((id) =>
-          this.hasCurrentVersionAccountHistorySync(id, fullHistory),
-        ),
+        historyRefreshingAccountIds: (
+          await Promise.all(
+            activeIds.map(async (id) =>
+              (await this.hasCurrentVersionAccountHistorySync(id, fullHistory)) ? id : null,
+            ),
+          )
+        ).filter((id): id is string => id !== null),
         historyFailedAccountIds: activeIds,
       }
     }
@@ -758,10 +767,10 @@ export class ControlCenterService {
     const historyFailedAccountIds: string[] = []
 
     for (const row of accountRows) {
-      if (!this.isAccountActive(row.id)) {
+      if (!(await this.isAccountActive(row.id))) {
         continue
       }
-      const missingRanges = this.getMissingAccountHistorySyncRanges(row.id, requestedRange)
+      const missingRanges = await this.getMissingAccountHistorySyncRanges(row.id, requestedRange)
       if (missingRanges.length === 0) {
         // Completion of a narrower request says nothing about a wider job's
         // retry state. Only the job itself may clear its cooldown and failures.
@@ -798,7 +807,7 @@ export class ControlCenterService {
     generation = this.getAccountHistoryBackfillGeneration(accountId),
     balanceTip?: Block,
   ): Promise<bigint | null> {
-    if (!this.canContinueAccountHistoryBackfill(accountId, generation)) {
+    if (!(await this.canContinueAccountHistoryBackfill(accountId, generation))) {
       return null
     }
     const tipResult = await this.onchainProvider.getBlocksTip()
@@ -806,7 +815,7 @@ export class ControlCenterService {
       this.logger.warn({ accountId, err: tipResult.unwrapErr() }, 'Failed to inspect chain tip for history backfill')
       return null
     }
-    if (!this.canContinueAccountHistoryBackfill(accountId, generation)) {
+    if (!(await this.canContinueAccountHistoryBackfill(accountId, generation))) {
       return null
     }
 
@@ -814,7 +823,7 @@ export class ControlCenterService {
     const requestedRange = fullHistory
       ? { fromBlockHeight: 0, toBlockHeight: tip.height }
       : historySyncRangeForStartDate(rangeStart, tip)
-    let missingRanges = this.getMissingAccountHistorySyncRanges(accountId, requestedRange)
+    let missingRanges = await this.getMissingAccountHistorySyncRanges(accountId, requestedRange)
     // The dashboard already fetched this balance. Only archival (which passes
     // no balance) needs to validate it when the requested history is cached.
     if (missingRanges.length === 0 && currentBalance !== undefined) {
@@ -834,7 +843,7 @@ export class ControlCenterService {
         )
         return null
       }
-      if (!this.canContinueAccountHistoryBackfill(accountId, generation)) {
+      if (!(await this.canContinueAccountHistoryBackfill(accountId, generation))) {
         return null
       }
       transactionEntries = entriesResult.unwrap()
@@ -855,7 +864,7 @@ export class ControlCenterService {
         }
         boundaryBalance = balanceResult.unwrap().get(account) ?? 0n
       }
-      if (!this.canContinueAccountHistoryBackfill(accountId, generation)) {
+      if (!(await this.canContinueAccountHistoryBackfill(accountId, generation))) {
         return null
       }
 
@@ -864,7 +873,7 @@ export class ControlCenterService {
         this.logger.warn({ accountId, err: verifiedTipResult.unwrapErr() }, 'Failed to verify history chain tip')
         return null
       }
-      if (!this.canContinueAccountHistoryBackfill(accountId, generation)) {
+      if (!(await this.canContinueAccountHistoryBackfill(accountId, generation))) {
         return null
       }
 
@@ -884,7 +893,7 @@ export class ControlCenterService {
       if (anchorResult.isErr() || anchorResult.unwrap().hash !== tip.hash) {
         return null
       }
-      if (!this.canContinueAccountHistoryBackfill(accountId, generation)) {
+      if (!(await this.canContinueAccountHistoryBackfill(accountId, generation))) {
         return null
       }
 
@@ -892,7 +901,7 @@ export class ControlCenterService {
       if (tailResult.isErr()) {
         return null
       }
-      if (!this.canContinueAccountHistoryBackfill(accountId, generation)) {
+      if (!(await this.canContinueAccountHistoryBackfill(accountId, generation))) {
         return null
       }
       transactionEntries = [
@@ -901,7 +910,7 @@ export class ControlCenterService {
       ]
       tip = verifiedTip
       requestedRange.toBlockHeight = tip.height
-      missingRanges = this.getMissingAccountHistorySyncRanges(accountId, requestedRange)
+      missingRanges = await this.getMissingAccountHistorySyncRanges(accountId, requestedRange)
     }
 
     if (missingRanges.length === 0) {
@@ -915,26 +924,39 @@ export class ControlCenterService {
     const rangeStartTime =
       backfillFromBlockHeight === 0 ? new Date(0) : estimateTimestampForBlockHeight(backfillFromBlockHeight, tip)
     const currentSnapshotTime = new Date()
-    let runningBalance = startBalance
-
-    this.recordAccountSnapshot(accountId, startBalance.toString(), rangeStartTime.toISOString())
-
-    for (const delta of deltas) {
-      runningBalance += delta.value
-      this.recordAccountSnapshot(accountId, runningBalance.toString(), delta.timestamp.toISOString())
-    }
-
-    this.recordAccountSnapshot(accountId, reconstructionBalance.toString(), currentSnapshotTime.toISOString())
-    const reconciledSnapshotCount = this.reconcileAccountSnapshots(
-      accountId,
-      rangeStartTime,
-      currentSnapshotTime,
-      startBalance,
-      deltas,
-    )
-
-    for (const missingRange of missingRanges) {
-      this.recordAccountHistorySync(accountId, missingRange, tip)
+    // Fetch and verify Electrum history before taking the transaction. Publish
+    // snapshots, corrections and certified coverage together, or not at all.
+    const reconciledSnapshotCount = await this.db.transaction(async (tx): Promise<number | null> => {
+      if (!(await this.canContinueAccountHistoryBackfill(accountId, generation, tx))) {
+        return null
+      }
+      let runningBalance = startBalance
+      await this.upsertAccountSnapshot(tx, accountId, startBalance.toString(), rangeStartTime.toISOString())
+      for (const delta of deltas) {
+        runningBalance += delta.value
+        await this.upsertAccountSnapshot(tx, accountId, runningBalance.toString(), delta.timestamp.toISOString())
+      }
+      await this.upsertAccountSnapshot(
+        tx,
+        accountId,
+        reconstructionBalance.toString(),
+        currentSnapshotTime.toISOString(),
+      )
+      const reconciledCount = await this.reconcileAccountSnapshots(
+        tx,
+        accountId,
+        rangeStartTime,
+        currentSnapshotTime,
+        startBalance,
+        deltas,
+      )
+      for (const missingRange of missingRanges) {
+        await this.recordAccountHistorySync(accountId, missingRange, tip, tx)
+      }
+      return reconciledCount
+    })
+    if (reconciledSnapshotCount === null) {
+      return null
     }
 
     this.logger.info(
@@ -985,21 +1007,25 @@ export class ControlCenterService {
     return Ok(entries)
   }
 
-  private reconcileAccountSnapshots(
+  private async reconcileAccountSnapshots(
+    tx: SentinelTx,
     accountId: string,
     rangeStart: Date,
     rangeEnd: Date,
     startBalance: bigint,
     deltas: BalanceEntry[],
-  ): number {
-    const snapshots = this.db
-      .prepare<unknown[], BalanceSnapshotRow>(
-        `SELECT balance_sats, timestamp
-         FROM balance_snapshots
-         WHERE account_id = ? AND timestamp >= ? AND timestamp <= ?
-         ORDER BY timestamp ASC`,
+  ): Promise<number> {
+    const snapshots = await tx
+      .select({ balance_sats: balanceSnapshots.balanceSats, timestamp: balanceSnapshots.timestamp })
+      .from(balanceSnapshots)
+      .where(
+        and(
+          eq(balanceSnapshots.accountId, accountId),
+          gte(balanceSnapshots.timestamp, rangeStart.toISOString()),
+          lte(balanceSnapshots.timestamp, rangeEnd.toISOString()),
+        ),
       )
-      .all(accountId, rangeStart.toISOString(), rangeEnd.toISOString())
+      .orderBy(asc(balanceSnapshots.timestamp))
 
     let runningBalance = startBalance
     let deltaIndex = 0
@@ -1021,44 +1047,48 @@ export class ControlCenterService {
         continue
       }
 
-      this.recordAccountSnapshot(accountId, runningBalance.toString(), snapshot.timestamp)
+      await this.upsertAccountSnapshot(tx, accountId, runningBalance.toString(), snapshot.timestamp)
       updatedCount++
     }
 
     return updatedCount
   }
 
-  private hasCurrentVersionAccountHistorySync(accountId: string, fromGenesis = false): boolean {
-    const row = this.db
-      .prepare<unknown[], { one: number }>(
-        `SELECT 1 AS one
-         FROM account_history_syncs
-         WHERE account_id = ? AND sync_version >= ?
-           AND (? = 0 OR from_block_height = 0)
-         LIMIT 1`,
+  private async hasCurrentVersionAccountHistorySync(accountId: string, fromGenesis = false): Promise<boolean> {
+    const rows = await this.db
+      .select({ id: accountHistorySyncs.id })
+      .from(accountHistorySyncs)
+      .where(
+        and(
+          eq(accountHistorySyncs.accountId, accountId),
+          gte(accountHistorySyncs.syncVersion, CURRENT_ACCOUNT_HISTORY_SYNC_VERSION),
+          fromGenesis ? eq(accountHistorySyncs.fromBlockHeight, 0) : undefined,
+        ),
       )
-      .get(accountId, CURRENT_ACCOUNT_HISTORY_SYNC_VERSION, Number(fromGenesis))
-
-    return row !== undefined
+      .limit(1)
+    return rows.length > 0
   }
 
-  private getMissingAccountHistorySyncRanges(accountId: string, requestedRange: BlockRange): BlockRange[] {
-    const rows = this.db
-      .prepare<unknown[], AccountHistorySyncRow>(
-        `SELECT from_block_height, to_block_height, sync_version
-         FROM account_history_syncs
-         WHERE account_id = ?
-           AND sync_version >= ?
-           AND to_block_height >= ?
-           AND from_block_height <= ?
-         ORDER BY from_block_height ASC`,
+  private async getMissingAccountHistorySyncRanges(
+    accountId: string,
+    requestedRange: BlockRange,
+  ): Promise<BlockRange[]> {
+    const rows = await this.db
+      .select({
+        from_block_height: accountHistorySyncs.fromBlockHeight,
+        to_block_height: accountHistorySyncs.toBlockHeight,
+        sync_version: accountHistorySyncs.syncVersion,
+      })
+      .from(accountHistorySyncs)
+      .where(
+        and(
+          eq(accountHistorySyncs.accountId, accountId),
+          gte(accountHistorySyncs.syncVersion, CURRENT_ACCOUNT_HISTORY_SYNC_VERSION),
+          gte(accountHistorySyncs.toBlockHeight, requestedRange.fromBlockHeight),
+          lte(accountHistorySyncs.fromBlockHeight, requestedRange.toBlockHeight),
+        ),
       )
-      .all(
-        accountId,
-        CURRENT_ACCOUNT_HISTORY_SYNC_VERSION,
-        requestedRange.fromBlockHeight,
-        requestedRange.toBlockHeight,
-      )
+      .orderBy(asc(accountHistorySyncs.fromBlockHeight))
 
     const missingRanges: BlockRange[] = []
     let cursor = requestedRange.fromBlockHeight
@@ -1087,19 +1117,31 @@ export class ControlCenterService {
     return missingRanges
   }
 
-  private recordAccountHistorySync(accountId: string, range: BlockRange, tip: Block): void {
-    if (!this.isAccountActive(accountId)) {
-      return
-    }
-    this.db.transaction(() => {
+  private async recordAccountHistorySync(
+    accountId: string,
+    range: BlockRange,
+    tip: Block,
+    transaction?: SentinelTx,
+  ): Promise<void> {
+    const record = async (tx: SentinelTx): Promise<void> => {
+      if (!(await this.isAccountActive(accountId, tx))) {
+        return
+      }
       // Coalesce only equally certified coverage. Never bridge an unscanned
       // block or promote an older version's range without actually scanning it.
-      const rows = this.db
-        .prepare<unknown[], AccountHistorySyncRow>(
-          `SELECT from_block_height, to_block_height, sync_version FROM account_history_syncs
-           WHERE account_id = ? AND sync_version = ?`,
+      const rows = await tx
+        .select({
+          from_block_height: accountHistorySyncs.fromBlockHeight,
+          to_block_height: accountHistorySyncs.toBlockHeight,
+          sync_version: accountHistorySyncs.syncVersion,
+        })
+        .from(accountHistorySyncs)
+        .where(
+          and(
+            eq(accountHistorySyncs.accountId, accountId),
+            eq(accountHistorySyncs.syncVersion, CURRENT_ACCOUNT_HISTORY_SYNC_VERSION),
+          ),
         )
-        .all(accountId, CURRENT_ACCOUNT_HISTORY_SYNC_VERSION)
       const ranges = [
         range,
         ...rows.map((row) => ({ fromBlockHeight: row.from_block_height, toBlockHeight: row.to_block_height })),
@@ -1123,54 +1165,81 @@ export class ControlCenterService {
 
       // Replace just the connected range containing this successful scan.
       // Deletion and insertion must roll back together if either write fails.
-      this.db
-        .prepare(
-          `DELETE FROM account_history_syncs WHERE account_id = ? AND sync_version = ?
-           AND from_block_height >= ? AND to_block_height <= ?`,
+      await tx
+        .delete(accountHistorySyncs)
+        .where(
+          and(
+            eq(accountHistorySyncs.accountId, accountId),
+            eq(accountHistorySyncs.syncVersion, CURRENT_ACCOUNT_HISTORY_SYNC_VERSION),
+            gte(accountHistorySyncs.fromBlockHeight, mergedRange.fromBlockHeight),
+            lte(accountHistorySyncs.toBlockHeight, mergedRange.toBlockHeight),
+          ),
         )
-        .run(accountId, CURRENT_ACCOUNT_HISTORY_SYNC_VERSION, mergedRange.fromBlockHeight, mergedRange.toBlockHeight)
-      this.db
-        .prepare(
-          `INSERT INTO account_history_syncs (
-           account_id,
-           from_block_height,
-           to_block_height,
-           range_start,
-           range_end,
-           sync_version,
-           synced_at
-         )
-         VALUES (?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(account_id, from_block_height, to_block_height)
-         DO UPDATE SET
-           range_start = excluded.range_start,
-           range_end = excluded.range_end,
-           sync_version = excluded.sync_version,
-           synced_at = excluded.synced_at`,
-        )
-        .run(
+      const rangeStart = estimateTimestampForBlockHeight(mergedRange.fromBlockHeight, tip).toISOString()
+      const rangeEnd = estimateTimestampForBlockHeight(mergedRange.toBlockHeight, tip).toISOString()
+      const syncedAt = new Date().toISOString()
+      await tx
+        .insert(accountHistorySyncs)
+        .values({
           accountId,
-          mergedRange.fromBlockHeight,
-          mergedRange.toBlockHeight,
-          estimateTimestampForBlockHeight(mergedRange.fromBlockHeight, tip).toISOString(),
-          estimateTimestampForBlockHeight(mergedRange.toBlockHeight, tip).toISOString(),
-          CURRENT_ACCOUNT_HISTORY_SYNC_VERSION,
-          new Date().toISOString(),
-        )
-    })()
+          fromBlockHeight: mergedRange.fromBlockHeight,
+          toBlockHeight: mergedRange.toBlockHeight,
+          rangeStart,
+          rangeEnd,
+          syncVersion: CURRENT_ACCOUNT_HISTORY_SYNC_VERSION,
+          syncedAt,
+        })
+        .onConflictDoUpdate({
+          target: [
+            accountHistorySyncs.accountId,
+            accountHistorySyncs.fromBlockHeight,
+            accountHistorySyncs.toBlockHeight,
+          ],
+          set: { rangeStart, rangeEnd, syncVersion: CURRENT_ACCOUNT_HISTORY_SYNC_VERSION, syncedAt },
+        })
+    }
+    if (transaction === undefined) {
+      await this.db.transaction(record)
+    } else {
+      await record(transaction)
+    }
   }
 
   /**
-   * Record balance snapshots for ALL accounts (on-chain + exchange).
+   * Collect snapshots independently for on-chain, exchange, manual and ETF accounts.
+   * Keep successful writes and log failures without aborting other accounts/sources.
    * Called on startup and periodically to build chart data.
    */
   public recordAllSnapshots = asyncFn(async (): Promise<Result<void, Error>> => {
     const now = new Date().toISOString()
+    const collectSource = async (source: string, collect: () => Promise<void>): Promise<void> => {
+      try {
+        await collect()
+      } catch {
+        // Provider exceptions can contain descriptors or credentials; log context only.
+        this.logger.warn({ source }, 'Failed to collect balance snapshots for source')
+      }
+    }
+    const collectAccount = async (
+      source: string,
+      accountId: string,
+      collect: () => Promise<boolean>,
+    ): Promise<boolean> => {
+      try {
+        return await collect()
+      } catch {
+        this.logger.warn({ source, accountId }, 'Failed to collect balance snapshot')
+        return false
+      }
+    }
 
     // ─── On-chain accounts ─────────────────────────────────────
-    const accountRows = this.getAccountRows()
+    await collectSource('on-chain', async () => {
+      const accountRows = await this.getAccountRows()
 
-    if (accountRows.length > 0) {
+      if (accountRows.length === 0) {
+        return
+      }
       const accounts = new IndexSet<Account>()
       const idMap = new Map<string, string>()
 
@@ -1185,56 +1254,90 @@ export class ControlCenterService {
       if (accounts.size > 0) {
         const balancesResult = await this.onchainProvider.getConfirmedAccountBalances(accounts)
         if (balancesResult.isErr()) {
-          this.logger.warn({ err: balancesResult.unwrapErr() }, 'Failed to record on-chain snapshots')
+          this.logger.warn({ source: 'on-chain' }, 'Failed to record on-chain snapshots')
         } else {
+          let recorded = 0
           for (const [account, balance] of balancesResult.unwrap()) {
             const accountId = idMap.get(account.toString())
             if (accountId != null && accountId !== '') {
-              this.recordAccountSnapshot(accountId, balance.toString(), now)
+              if (
+                await collectAccount('on-chain', accountId, async () =>
+                  this.recordAccountSnapshot(accountId, balance.toString(), now),
+                )
+              ) {
+                recorded++
+              }
             }
           }
-          this.logger.info({ count: accounts.size }, 'Recorded on-chain balance snapshots')
+          this.logger.info({ count: recorded }, 'Recorded on-chain balance snapshots')
         }
       }
-    }
+    })
 
     // ─── Exchange accounts (Strike, Robinhood, etc.) ───────────
-    const exchangeAccounts = this.exchangeService.listAccounts()
-    if (exchangeAccounts.length > 0) {
-      let recorded = 0
-      for (const account of exchangeAccounts) {
-        const result = await this.exchangeService.refreshBalance(account.id)
-        if (result.isErr()) {
-          this.logger.warn(
-            { accountId: account.id, exchange: account.exchange, err: result.unwrapErr() },
-            'Failed to refresh exchange balance for snapshot',
-          )
-          continue
+    await collectSource('exchange', async () => {
+      const exchangeAccounts = await this.exchangeService.listAccounts()
+      if (exchangeAccounts.length > 0) {
+        let recorded = 0
+        for (const account of exchangeAccounts) {
+          const collected = await collectAccount('exchange', account.id, async () => {
+            const result = await this.exchangeService.refreshBalance(account.id)
+            if (result.isErr()) {
+              this.logger.warn(
+                { accountId: account.id, exchange: account.exchange },
+                'Failed to refresh exchange balance for snapshot',
+              )
+              return false
+            }
+            const refreshed = result.unwrap()
+            await this.recordExchangeSnapshot(account.id, refreshed.balanceSats ?? '0', now)
+            return true
+          })
+          if (collected) {
+            recorded++
+          }
         }
-        const refreshed = result.unwrap()
-        this.recordExchangeSnapshot(account.id, refreshed.balanceSats ?? '0', now)
-        recorded++
+        this.logger.info({ count: recorded }, 'Recorded exchange balance snapshots')
       }
-      this.logger.info({ count: recorded }, 'Recorded exchange balance snapshots')
-    }
+    })
 
     // ─── Manual accounts (no refresh — just persist stored balance) ─
-    const manualAccounts = this.manualService.listAccounts()
-    for (const account of manualAccounts) {
-      this.manualService.recordSnapshot(account.id, account.balanceSats, now)
-    }
-    if (manualAccounts.length > 0) {
-      this.logger.info({ count: manualAccounts.length }, 'Recorded manual account balance snapshots')
-    }
+    await collectSource('manual', async () => {
+      const manualAccounts = await this.manualService.listAccounts()
+      let recorded = 0
+      for (const account of manualAccounts) {
+        if (
+          await collectAccount('manual', account.id, async () => {
+            await this.manualService.recordSnapshot(account.id, account.balanceSats, now)
+            return true
+          })
+        ) {
+          recorded++
+        }
+      }
+      if (manualAccounts.length > 0) {
+        this.logger.info({ count: recorded }, 'Recorded manual account balance snapshots')
+      }
+    })
 
     // ─── ETF accounts (recompute balance — expense decay changes daily) ─
-    const etfAccounts = this.etfService.listAccounts()
-    for (const account of etfAccounts) {
-      this.etfService.recordSnapshot(account.id, account.balanceSats, now)
-    }
-    if (etfAccounts.length > 0) {
-      this.logger.info({ count: etfAccounts.length }, 'Recorded ETF account balance snapshots')
-    }
+    await collectSource('ETF', async () => {
+      const etfAccounts = await this.etfService.listAccounts()
+      let recorded = 0
+      for (const account of etfAccounts) {
+        if (
+          await collectAccount('ETF', account.id, async () => {
+            await this.etfService.recordSnapshot(account.id, account.balanceSats, now)
+            return true
+          })
+        ) {
+          recorded++
+        }
+      }
+      if (etfAccounts.length > 0) {
+        this.logger.info({ count: recorded }, 'Recorded ETF account balance snapshots')
+      }
+    })
 
     return Ok(undefined)
   })

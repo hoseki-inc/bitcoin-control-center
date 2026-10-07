@@ -2,10 +2,10 @@ import { createHash } from 'node:crypto'
 import { Err, Ok, type Result, asyncFn } from '@hoseki/packages/result'
 import { parseUnknown } from '@hoseki/packages/result/lib/parse'
 import { type StatementQuoteCurrency, StatementQuoteCurrencySchema } from '@hoseki/packages/schemas/statement-quote'
-import type Database from 'better-sqlite3'
 import { Decimal } from 'decimal.js'
 import type { Logger } from 'pino'
 import { z } from 'zod'
+import type { SentinelDb } from '../../db/drizzle'
 import { type CachedQuote, QuoteCache } from './quote_cache'
 
 export interface DailyRate {
@@ -57,8 +57,8 @@ const priceSchema = z.number().finite().positive()
 
 export class DailyRatesService {
   private readonly publicFallback: DailyRatesService | undefined
-  private readonly allowPublicFallback: () => boolean
-  private readonly allowRequests: () => boolean
+  private readonly allowPublicFallback: () => boolean | Promise<boolean>
+  private readonly allowRequests: () => boolean | Promise<boolean>
   private readonly cache: QuoteCache
   private readonly mempoolApiUrl: string
   private readonly providerUrl: string
@@ -68,13 +68,13 @@ export class DailyRatesService {
   private static readonly CONCURRENCY = 4
 
   public constructor(deps: {
-    db: Database.Database
+    db: SentinelDb
     logger: Logger
     mempoolApiUrl: string
     /** Read before each public request, so the Settings switch applies to statements in progress. */
-    allowPublicFallback?: () => boolean
+    allowPublicFallback?: () => boolean | Promise<boolean>
     /** Read before each request to this source; the public fallback is bound to the switch above. */
-    allowRequests?: () => boolean
+    allowRequests?: () => boolean | Promise<boolean>
   }) {
     this.logger = deps.logger.child({ module: 'daily-rates-service' })
     this.mempoolApiUrl = deps.mempoolApiUrl.replace(/\/$/, '')
@@ -148,7 +148,7 @@ export class DailyRatesService {
         const now = Date.now()
         for (const { target, result } of results) {
           const { oldest, newest } = quoteWindow(target, now)
-          const quote = this.cache.find(quoteCurrency, target, oldest, newest)
+          const quote = await this.cache.find(quoteCurrency, target, oldest, newest)
           if (quote) {
             chosen.set(target, quote)
           } else if (result.isOk()) {
@@ -185,7 +185,7 @@ export class DailyRatesService {
       return primary
     }
     // Respect the Settings switch that keeps price requests to the chosen source.
-    const publicFallback = this.allowPublicFallback() ? this.publicFallback : undefined
+    const publicFallback = (await this.allowPublicFallback()) ? this.publicFallback : undefined
     if (publicFallback) {
       const fallback = await publicFallback.getQuote(target, currency)
       if (fallback.isOk()) {
@@ -204,6 +204,9 @@ export class DailyRatesService {
 
   private async getQuote(target: number, currency: StatementQuoteCurrency): Promise<Result<CachedQuote, Error>> {
     const now = Date.now()
+    // Cache reads are asynchronous. Admit the first lookup before awaiting them,
+    // so one immediate failure cannot cancel the other already-started days.
+    const sourceAvailable = now >= this.unavailableUntil
     const { oldest, newest } = quoteWindow(target, now)
     // Mempool returns the observation at or before each requested timestamp.
     // Probe both sides before choosing, since the first usable quote may be farther away.
@@ -220,14 +223,14 @@ export class DailyRatesService {
     if (newest < target + MAX_QUOTE_DISTANCE_DAYS * DAY_SECONDS && !lookups.includes(latestHour)) {
       lookups.push(latestHour)
     }
-    const cached = this.cache.find(currency, target, oldest, newest)
-    if (cached?.timestamp === target && this.cache.hasFreshLookup(target, now)) {
+    const cached = await this.cache.find(currency, target, oldest, newest)
+    if (cached?.timestamp === target && (await this.cache.hasFreshLookup(target, now))) {
       return Ok(cached)
     }
     // Lookups this source already made are not repeated, so a completed search reuses the cache.
     for (const lookup of lookups) {
-      if (!this.cache.isFresh(lookup, now)) {
-        const fetched = await this.fetchDay(lookup)
+      if (!(await this.cache.isFresh(lookup, now))) {
+        const fetched = await this.fetchDay(lookup, lookup !== target || !sourceAvailable)
         if (fetched.isErr()) {
           return Err(
             new Error(
@@ -236,7 +239,7 @@ export class DailyRatesService {
           )
         }
       }
-      const available = this.cache.find(currency, target, oldest, newest)
+      const available = await this.cache.find(currency, target, oldest, newest)
       // An exact match cannot be improved by looking farther away.
       if (available?.timestamp === target) {
         return Ok(available)
@@ -244,8 +247,8 @@ export class DailyRatesService {
     }
     // This source answered only if it supplied a nearby observation itself. An older quote cached
     // from another source must not stop the fallback from searching.
-    const closest = this.cache.find(currency, target, oldest, newest)
-    if (closest && this.cache.hasOwnQuote(currency, oldest, newest)) {
+    const closest = await this.cache.find(currency, target, oldest, newest)
+    if (closest && (await this.cache.hasOwnQuote(currency, oldest, newest))) {
       return Ok(closest)
     }
     return Err(
@@ -255,15 +258,20 @@ export class DailyRatesService {
     )
   }
 
-  private async fetchDay(target: number): Promise<Result<void, Error>> {
+  private async fetchDay(target: number, checkCooldown = true): Promise<Result<void, Error>> {
     const running = this.inFlight.get(target)
     if (running) {
       return running
     }
-    if (!this.allowRequests()) {
+    if (!(await this.allowRequests())) {
       return Err(new Error('Requests to this price source are turned off'))
     }
-    if (Date.now() < this.unavailableUntil) {
+    // Another caller may have started this lookup while settings were loading.
+    const admitted = this.inFlight.get(target)
+    if (admitted) {
+      return admitted
+    }
+    if (checkCooldown && Date.now() < this.unavailableUntil) {
       return Err(new Error('Mempool price source temporarily unavailable'))
     }
     const request = this.requestDay(target)
@@ -277,7 +285,7 @@ export class DailyRatesService {
 
   private async requestDay(target: number): Promise<Result<void, Error>> {
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-      if (attempt > 0 && !this.allowRequests()) {
+      if (attempt > 0 && !(await this.allowRequests())) {
         return Err(new Error('Requests to this price source are turned off'))
       }
       // Stop retrying once a concurrent request has put the source in cooldown.
@@ -335,7 +343,12 @@ export class DailyRatesService {
         // Only a complete observation at the lookup time is final. An older one may
         // improve once the source fills gaps in its history.
         const settled = complete && historical && point?.time === target
-        this.cache.save(target, point?.time ?? null, quotes, settled ? Number.MAX_SAFE_INTEGER : Date.now() + HOUR_MS)
+        await this.cache.save(
+          target,
+          point?.time ?? null,
+          quotes,
+          settled ? Number.MAX_SAFE_INTEGER : Date.now() + HOUR_MS,
+        )
         return Ok(undefined)
       } catch {
         if (attempt === 0) {

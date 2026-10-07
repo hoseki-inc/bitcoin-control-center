@@ -2,9 +2,11 @@ import * as crypto from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { Err, Ok, Result, parse } from '@hoseki/packages/result'
-import type Database from 'better-sqlite3'
+import { eq } from 'drizzle-orm'
 import type { Logger } from 'pino'
 import { z } from 'zod'
+import type { SentinelDb } from '../db/drizzle'
+import { settings } from '../db/schema'
 
 const algorithm = 'aes-256-cbc' as const
 const encoding = 'hex' as const
@@ -69,44 +71,33 @@ function writeSecretFile(path: string, value: string): void {
   }
 }
 
-function readLegacyDatabaseKey(db: Database.Database): string | null {
-  const row = db
-    .prepare<unknown[], { value: string }>('SELECT value FROM settings WHERE key = ?')
-    .get(legacySettingsKey)
-  return row?.value ?? null
-}
-
-function deleteLegacyDatabaseKey(db: Database.Database): void {
-  db.prepare('DELETE FROM settings WHERE key = ?').run(legacySettingsKey)
-}
-
-export function loadCredentialEncryptionKey(deps: {
+export async function loadCredentialEncryptionKey(deps: {
   dataDir: string
-  db: Database.Database
+  db: SentinelDb
   logger: Logger
-}): CredentialEncryptionKeyResult {
+}): Promise<CredentialEncryptionKeyResult> {
   const secretsDir = join(deps.dataDir, 'secrets')
   const keyPath = join(secretsDir, keyFileName)
   const restoreMarkerPath = join(secretsDir, restoreMarkerFileName)
 
   if (existsSync(restoreMarkerPath)) {
     rmSync(keyPath, { force: true })
-    deleteLegacyDatabaseKey(deps.db)
+    await deps.db.delete(settings).where(eq(settings.key, legacySettingsKey))
     rmSync(restoreMarkerPath, { force: true })
     deps.logger.info('Reset exchange credential encryption key after backup restore')
   }
 
   if (existsSync(keyPath)) {
     const key = normalizeEncryptionKey(readFileSync(keyPath, 'utf8'))
-    deleteLegacyDatabaseKey(deps.db)
+    await deps.db.delete(settings).where(eq(settings.key, legacySettingsKey))
     return { key, keyPath }
   }
 
-  const legacyKey = readLegacyDatabaseKey(deps.db)
-  if (legacyKey != null && legacyKey !== '') {
-    const key = normalizeEncryptionKey(legacyKey)
+  const [legacyKey] = await deps.db.select().from(settings).where(eq(settings.key, legacySettingsKey))
+  if (legacyKey !== undefined && legacyKey.value !== '') {
+    const key = normalizeEncryptionKey(legacyKey.value)
     writeSecretFile(keyPath, key)
-    deleteLegacyDatabaseKey(deps.db)
+    await deps.db.delete(settings).where(eq(settings.key, legacySettingsKey))
     deps.logger.info({ keyPath }, 'Moved exchange credential encryption key out of SQLite')
     return { key, keyPath }
   }
@@ -129,11 +120,11 @@ export class Encrypted {
   }
 
   public static fromString(string: string): Result<Encrypted, Error> {
-    const parsed = CiphertextBlob.safeParse(string)
-    if (!parsed.success) {
-      return Err(new Error(parsed.error.message))
+    const parsed = parse(CiphertextBlob, string)
+    if (parsed.isErr()) {
+      return Err(parsed.unwrapErr())
     }
-    return Ok(Encrypted.from(parsed.data))
+    return Ok(Encrypted.from(parsed.unwrap()))
   }
 
   public static encrypt(plaintext: string): Result<Encrypted, Error> {

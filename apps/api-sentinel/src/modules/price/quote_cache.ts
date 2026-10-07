@@ -1,5 +1,7 @@
-import type { StatementQuoteCurrency } from '@hoseki/packages/schemas/statement-quote'
-import type Database from 'better-sqlite3'
+import { type StatementQuoteCurrency, StatementQuoteCurrencySchema } from '@hoseki/packages/schemas/statement-quote'
+import { and, asc, eq, gt, gte, lte, sql } from 'drizzle-orm'
+import type { SentinelDb } from '../../db/drizzle'
+import { btcQuoteCache, btcQuoteLookups } from '../../db/schema'
 
 export interface CachedQuote {
   timestamp: number
@@ -9,93 +11,103 @@ export interface CachedQuote {
 
 /** One shared price cache. Source is provenance, never a price-cache partition. */
 export class QuoteCache {
-  private readonly db: Database.Database
+  private readonly db: SentinelDb
   private readonly provider: string
   private readonly providerUrl: string
 
-  public constructor(db: Database.Database, provider: string, providerUrl: string) {
+  public constructor(db: SentinelDb, provider: string, providerUrl: string) {
     this.db = db
     this.provider = provider
     this.providerUrl = providerUrl
   }
 
-  public find(
+  public async find(
     currency: StatementQuoteCurrency,
     target: number,
     oldest: number,
     newest: number,
-  ): CachedQuote | undefined {
-    return this.db
-      .prepare<unknown[], CachedQuote>(
-        `
-      SELECT timestamp, price, provider_url AS providerUrl FROM btc_quote_cache
-      WHERE quote_currency = ? AND timestamp >= ? AND timestamp <= ?
-      ORDER BY ABS(timestamp - ?) ASC, timestamp ASC LIMIT 1
-    `,
+  ): Promise<CachedQuote | undefined> {
+    const [row] = await this.db
+      .select({
+        timestamp: btcQuoteCache.timestamp,
+        price: btcQuoteCache.price,
+        providerUrl: btcQuoteCache.providerUrl,
+      })
+      .from(btcQuoteCache)
+      .where(
+        and(
+          eq(btcQuoteCache.quoteCurrency, currency),
+          gte(btcQuoteCache.timestamp, oldest),
+          lte(btcQuoteCache.timestamp, newest),
+        ),
       )
-      .get(currency, oldest, newest, target)
+      .orderBy(sql`abs(${btcQuoteCache.timestamp} - ${target})`, asc(btcQuoteCache.timestamp))
+      .limit(1)
+    return row
   }
 
   /** Whether this source supplied an observation in the window, so its search produced an answer. */
-  public hasOwnQuote(currency: StatementQuoteCurrency, oldest: number, newest: number): boolean {
-    return (
-      this.db
-        .prepare(
-          `
-      SELECT 1 FROM btc_quote_cache
-      WHERE quote_currency = ? AND provider_url = ? AND timestamp >= ? AND timestamp <= ? LIMIT 1
-    `,
-        )
-        .get(currency, this.providerUrl, oldest, newest) !== undefined
-    )
+  public async hasOwnQuote(currency: StatementQuoteCurrency, oldest: number, newest: number): Promise<boolean> {
+    const [row] = await this.db
+      .select({ timestamp: btcQuoteCache.timestamp })
+      .from(btcQuoteCache)
+      .where(
+        and(
+          eq(btcQuoteCache.quoteCurrency, currency),
+          eq(btcQuoteCache.providerUrl, this.providerUrl),
+          gte(btcQuoteCache.timestamp, oldest),
+          lte(btcQuoteCache.timestamp, newest),
+        ),
+      )
+      .limit(1)
+    return row !== undefined
   }
 
   /** A recent lookup by any source lets every instance reuse an exact cached observation. */
-  public hasFreshLookup(target: number, now: number): boolean {
-    return (
-      this.db
-        .prepare('SELECT 1 FROM btc_quote_lookups WHERE requested_at = ? AND expires_at > ? LIMIT 1')
-        .get(target, now) !== undefined
-    )
+  public async hasFreshLookup(target: number, now: number): Promise<boolean> {
+    const [row] = await this.db
+      .select({ requestedAt: btcQuoteLookups.requestedAt })
+      .from(btcQuoteLookups)
+      .where(and(eq(btcQuoteLookups.requestedAt, target), gt(btcQuoteLookups.expiresAt, now)))
+      .limit(1)
+    return row !== undefined
   }
 
   // Request receipts are tracked per source so a negative local response never
   // suppresses the first public request. The actual price rows remain shared.
-  public isFresh(target: number, now: number): boolean {
-    const row = this.db
-      .prepare<unknown[], { expires_at: number }>(
-        `
-      SELECT expires_at FROM btc_quote_lookups WHERE provider = ? AND requested_at = ?
-    `,
-      )
-      .get(this.provider, target)
-    return row !== undefined && row.expires_at > now
+  public async isFresh(target: number, now: number): Promise<boolean> {
+    const [row] = await this.db
+      .select({ expiresAt: btcQuoteLookups.expiresAt })
+      .from(btcQuoteLookups)
+      .where(and(eq(btcQuoteLookups.provider, this.provider), eq(btcQuoteLookups.requestedAt, target)))
+    return row !== undefined && row.expiresAt > now
   }
 
-  public save(
+  public async save(
     target: number,
     timestamp: number | null,
     quotes: Partial<Record<StatementQuoteCurrency, string>>,
     expiresAt: number,
-  ): void {
-    this.db.transaction(() => {
+  ): Promise<void> {
+    await this.db.transaction(async (tx) => {
       if (timestamp !== null) {
-        const insert = this.db.prepare(`
-          INSERT INTO btc_quote_cache(provider_url, quote_currency, timestamp, price) VALUES (?, ?, ?, ?)
-          ON CONFLICT(quote_currency, timestamp) DO UPDATE SET price = excluded.price, provider_url = excluded.provider_url
-        `)
-        for (const [currency, price] of Object.entries(quotes)) {
-          insert.run(this.providerUrl, currency, timestamp, price)
+        for (const currency of StatementQuoteCurrencySchema.options) {
+          const price = quotes[currency]
+          if (price !== undefined) {
+            await tx
+              .insert(btcQuoteCache)
+              .values({ providerUrl: this.providerUrl, quoteCurrency: currency, timestamp, price })
+              .onConflictDoUpdate({
+                target: [btcQuoteCache.quoteCurrency, btcQuoteCache.timestamp],
+                set: { price, providerUrl: this.providerUrl },
+              })
+          }
         }
       }
-      this.db
-        .prepare(
-          `
-        INSERT INTO btc_quote_lookups(provider, requested_at, expires_at) VALUES (?, ?, ?)
-        ON CONFLICT(provider, requested_at) DO UPDATE SET expires_at = excluded.expires_at
-      `,
-        )
-        .run(this.provider, target, expiresAt)
-    })()
+      await tx
+        .insert(btcQuoteLookups)
+        .values({ provider: this.provider, requestedAt: target, expiresAt })
+        .onConflictDoUpdate({ target: [btcQuoteLookups.provider, btcQuoteLookups.requestedAt], set: { expiresAt } })
+    })
   }
 }

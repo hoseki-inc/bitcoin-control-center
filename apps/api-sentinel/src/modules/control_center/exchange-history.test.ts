@@ -36,7 +36,7 @@ describe.each(['strike', 'robinhood'] as const)('%s portfolio history', (provide
     },
     { scenario: 'snapshots without imported history', amounts: [], importedBalance: '0', snapshot: '100000000' },
   ])('reconciles $scenario across the snapshot transition', async ({ amounts, late, importedBalance, snapshot }) => {
-    const { service, input } = setupExchangeHistory(provider, amounts, snapshot, late)
+    const { service, input } = await setupExchangeHistory(provider, amounts, snapshot, late)
 
     const data = (await service.getData(input)).expect('Portfolio history must load')
 

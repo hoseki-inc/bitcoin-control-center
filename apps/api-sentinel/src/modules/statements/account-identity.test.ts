@@ -29,7 +29,7 @@ describe('statement account identity', () => {
       names: ['Savings', 'Trading'],
     },
   ])('retains both accounts and their 3 BTC combined balance: $scenario', async ({ setup, names }) => {
-    const statement = await generateStatementPdf(setup())
+    const statement = await generateStatementPdf(await setup())
 
     expect.soft(statement.summary.closingBalance.sats).toBe(300_000_000n)
     expect.soft(statement.summary.entries).toHaveLength(2)
@@ -40,7 +40,7 @@ describe('statement account identity', () => {
   })
 
   it('keeps the name of an account with no transactions', async () => {
-    const statement = await generateStatementPdf(setupEmptyNamedWallet())
+    const statement = await generateStatementPdf(await setupEmptyNamedWallet())
 
     expect(statement.summary.entries.map((account) => account.displayName)).toEqual(['Savings', 'Savings'])
     expect(statement.summary.entries.map((account) => account.closingBalance.sats)).toEqual([0n, 200_000_000n])

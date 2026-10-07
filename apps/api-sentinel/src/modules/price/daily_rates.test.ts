@@ -2,9 +2,11 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { type StatementQuoteCurrency, StatementQuoteCurrencySchema } from '@hoseki/packages/schemas/statement-quote'
+import { count } from 'drizzle-orm'
 import pino from 'pino'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
-import { type SentinelDatabase, initDatabase } from '../../db'
+import { type SentinelDb, openDrizzleDatabase } from '../../db/drizzle'
+import { btcQuoteCache } from '../../db/schema'
 import { DailyRatesService } from './daily_rates'
 
 const logger = pino({ level: 'silent' })
@@ -16,14 +18,14 @@ const body = (
   values: Partial<Record<StatementQuoteCurrency, number | string | null>> = quotes,
 ): Response => Response.json({ prices: [{ time, ...values }] })
 let directory: string
-let database: SentinelDatabase
+let database: SentinelDb
 let fetcher: ReturnType<typeof vi.fn<(url: string, init?: RequestInit) => Promise<Response>>>
 const service = (url = 'https://mempool.test'): DailyRatesService =>
-  new DailyRatesService({ db: database.db, logger, mempoolApiUrl: url, allowPublicFallback: () => false })
+  new DailyRatesService({ db: database, logger, mempoolApiUrl: url, allowPublicFallback: () => false })
 
-function setup(): void {
+async function setup(): Promise<void> {
   onTestFinished(() => {
-    database.close()
+    database.$client.close()
     rmSync(directory, { recursive: true, force: true })
     vi.unstubAllGlobals()
     vi.useRealTimers()
@@ -31,7 +33,7 @@ function setup(): void {
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(new Date('2026-09-08T12:00:00Z'))
   directory = mkdtempSync(join(tmpdir(), 'sentinel-quotes-'))
-  database = initDatabase(directory, logger)
+  database = await openDrizzleDatabase(directory, logger)
   fetcher = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>().mockImplementation(async () => body())
   vi.stubGlobal('fetch', fetcher)
 }
@@ -40,7 +42,7 @@ describe('historical statement quotes', () => {
   it.each<StatementQuoteCurrency>(['USD', 'CAD', 'GBP', 'EUR'])(
     'selects historical %s, without using latest FX rates',
     async (currency) => {
-      setup()
+      await setup()
       fetcher.mockResolvedValueOnce(
         Response.json({ prices: [{ time: target, ...quotes }], exchangeRates: { USDCAD: 999 } }),
       )
@@ -52,14 +54,14 @@ describe('historical statement quotes', () => {
   )
 
   it('fetches only required days and reuses persisted currencies across provider changes with original sources', async () => {
-    setup()
+    await setup()
     fetcher.mockImplementation(async (input) => body(Number(new URL(input).searchParams.get('timestamp'))))
     const end = new Date('2026-08-31T00:00:00Z')
     const required = [day, end, day]
     expect((await service().getDailyRates(day, end, 'USD', required)).isOk()).toBe(true)
     expect(fetcher).toHaveBeenCalledTimes(2)
-    database.close()
-    database = initDatabase(directory, logger)
+    database.$client.close()
+    database = await openDrizzleDatabase(directory, logger)
     fetcher.mockClear()
     fetcher.mockRejectedValue(new Error('offline'))
     const result = (await service('http://local-mempool.test').getDailyRates(day, end, 'CAD', required)).unwrap()
@@ -68,11 +70,11 @@ describe('historical statement quotes', () => {
       expect(result.rates[date]?.providerUrl).toBe('https://mempool.test')
     }
     expect(fetcher).not.toHaveBeenCalled()
-    expect(database.db.prepare('SELECT COUNT(*) AS count FROM btc_quote_cache').get()).toEqual({ count: 8 })
+    await expect(database.select({ count: count() }).from(btcQuoteCache)).resolves.toEqual([{ count: 8 }])
   })
 
   it('de-duplicates simultaneous currency lookups', async () => {
-    setup()
+    await setup()
     const rates = service()
     const results = await Promise.all(
       StatementQuoteCurrencySchema.options.map(async (currency) => rates.getDailyRates(day, day, currency)),
@@ -81,10 +83,32 @@ describe('historical statement quotes', () => {
     expect(fetcher).toHaveBeenCalledTimes(1)
   })
 
+  it('de-duplicates lookups while asynchronous request settings are loading', async () => {
+    await setup()
+    let release = (): void => {}
+    const permission = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const allowRequests = vi.fn(async () => {
+      await permission
+      return true
+    })
+    const rates = new DailyRatesService({ db: database, logger, mempoolApiUrl: 'https://mempool.test', allowRequests })
+    const results = Promise.all(
+      StatementQuoteCurrencySchema.options.map(async (currency) => rates.getDailyRates(day, day, currency)),
+    )
+    await vi.waitFor(() => {
+      expect(allowRequests).toHaveBeenCalledTimes(4)
+    })
+    release()
+    expect((await results).every((result) => result.isOk())).toBe(true)
+    expect(fetcher).toHaveBeenCalledTimes(1)
+  })
+
   it.each([-4, 4])(
     'accepts a quote exactly %s days from the valuation without rewriting its timestamp',
     async (offset) => {
-      setup()
+      await setup()
       const observation = target + offset * 86400
       fetcher.mockImplementation(async (input) => {
         const lookup = Number(new URL(input).searchParams.get('timestamp'))
@@ -97,7 +121,7 @@ describe('historical statement quotes', () => {
   )
 
   it('finds nearby CAD when missing on the valuation date, keeping exact-date EUR valid', async () => {
-    setup()
+    await setup()
     fetcher.mockImplementation(async (input) => {
       const timestamp = Number(new URL(input).searchParams.get('timestamp'))
       return body(timestamp, { ...quotes, CAD: timestamp === target ? -1 : quotes.CAD })
@@ -110,13 +134,13 @@ describe('historical statement quotes', () => {
   })
 
   it.each([0, -1, null, '60000'])('rejects invalid selected-currency quote %s', async (price) => {
-    setup()
+    await setup()
     fetcher.mockImplementation(async () => body(target - 4 * 86400, { ...quotes, USD: price }))
     expect((await service().getDailyRates(day, day)).isErr()).toBe(true)
   })
 
   it('rejects observations after the lookup timestamp and malformed responses', async () => {
-    setup()
+    await setup()
     fetcher.mockResolvedValueOnce(body(target + 1))
     expect((await service().getDailyRates(day, day)).isErr()).toBe(true)
     fetcher.mockResolvedValueOnce(Response.json({ prices: 'invalid' }))
@@ -130,7 +154,7 @@ describe('historical statement quotes', () => {
   ])(
     'chooses the closest timestamp and prefers earlier on ties: $before / $after',
     async ({ before, after, selected }) => {
-      setup()
+      await setup()
       fetcher.mockImplementation(async (input) => {
         const lookup = Number(new URL(input).searchParams.get('timestamp'))
         const observations = [target - 5 * 86400, target + before * 86400, target + after * 86400]
@@ -144,7 +168,7 @@ describe('historical statement quotes', () => {
   )
 
   it('does not let a cached older quote hide a closer later observation', async () => {
-    setup()
+    await setup()
     const earlier = new Date(day.getTime() - 3 * 86400000)
     fetcher.mockResolvedValueOnce(body(target - 3 * 86400))
     await service().getDailyRates(earlier, earlier, 'CAD')
@@ -157,7 +181,7 @@ describe('historical statement quotes', () => {
   })
 
   it('rejects out-of-window fetched and cached observations with a bounded search', async () => {
-    setup()
+    await setup()
     fetcher.mockImplementation(async (input) => body(Number(new URL(input).searchParams.get('timestamp'))))
     for (const offset of [-5, 5]) {
       const outside = new Date(day.getTime() + offset * 86400000)
@@ -171,7 +195,7 @@ describe('historical statement quotes', () => {
   })
 
   it('caps recent searches at today instead of requesting dates that have not happened', async () => {
-    setup()
+    await setup()
     const recent = new Date('2026-09-07T00:00:00Z')
     const today = new Date('2026-09-08T00:00:00Z').getTime() / 1000
     fetcher.mockImplementation(async (input) => {
@@ -187,7 +211,7 @@ describe('historical statement quotes', () => {
   })
 
   it('finds an observation recorded earlier today', async () => {
-    setup()
+    await setup()
     const recent = new Date('2026-09-06T00:00:00Z')
     const morning = new Date('2026-09-08T06:00:00Z').getTime() / 1000
     const observations = [target, morning]
@@ -202,7 +226,7 @@ describe('historical statement quotes', () => {
   it.each([true, false])(
     'uses a neighboring quote for a failed day whichever response arrives first (failure first: %s)',
     async (failureFirst) => {
-      setup()
+      await setup()
       fetcher.mockImplementation(async (input) => {
         const lookup = Number(new URL(input).searchParams.get('timestamp'))
         const failing = lookup === target
@@ -221,7 +245,7 @@ describe('historical statement quotes', () => {
   )
 
   it('stops concurrent retries once the source asks for a long wait', async () => {
-    setup()
+    await setup()
     fetcher.mockImplementation(async (input) =>
       Number(new URL(input).searchParams.get('timestamp')) === target
         ? new Response('', { status: 429, headers: { 'retry-after': '120' } })
@@ -233,7 +257,7 @@ describe('historical statement quotes', () => {
   })
 
   it('keeps the longest cooldown when concurrent requests fail', async () => {
-    setup()
+    await setup()
     const next = target + 86400
     fetcher.mockImplementation(async (input) => {
       const lookup = Number(new URL(input).searchParams.get('timestamp'))
@@ -254,7 +278,7 @@ describe('historical statement quotes', () => {
   })
 
   it('refreshes current-day lookups after one hour and reuses cached prices while offline', async () => {
-    setup()
+    await setup()
     const today = new Date('2026-09-08T00:00:00Z')
     const now = today.getTime() / 1000
     fetcher.mockResolvedValue(body(now))
@@ -269,7 +293,7 @@ describe('historical statement quotes', () => {
   })
 
   it('honors a long Retry-After without repeated requests or waiting inside generation', async () => {
-    setup()
+    await setup()
     fetcher.mockResolvedValue(new Response('', { status: 429, headers: { 'retry-after': '120' } }))
     const rates = service()
     expect((await rates.getDailyRates(day, day)).isErr()).toBe(true)
@@ -278,7 +302,7 @@ describe('historical statement quotes', () => {
   })
 
   it('backs off through a brief rate limit without failing a multi-day statement', async () => {
-    setup()
+    await setup()
     const limited = target + 10 * 86400
     let rejections = 2
     fetcher.mockImplementation(async (input) => {
@@ -296,7 +320,7 @@ describe('historical statement quotes', () => {
   })
 
   it('looks again after an hour when history before the valuation date was missing', async () => {
-    setup()
+    await setup()
     fetcher.mockImplementation(async () => body(target - 10 * 86400))
     expect((await service().getDailyRates(day, day, 'CAD')).isErr()).toBe(true)
     fetcher.mockImplementation(async (input) => body(Number(new URL(input).searchParams.get('timestamp'))))
@@ -309,9 +333,9 @@ describe('historical statement quotes', () => {
 describe('local mempool with public fallback', () => {
   const local = 'https://local-mempool.test'
   const publicUrl = 'https://mempool.space'
-  const localFirst = () => new DailyRatesService({ db: database.db, logger, mempoolApiUrl: local })
+  const localFirst = () => new DailyRatesService({ db: database, logger, mempoolApiUrl: local })
   it('uses a reasonable local quote without querying public', async () => {
-    setup()
+    await setup()
     fetcher.mockImplementation(async (input) => {
       expect(new URL(input).origin).toBe(local)
       return body(Math.min(Number(new URL(input).searchParams.get('timestamp')), target - 3 * 86400))
@@ -321,10 +345,10 @@ describe('local mempool with public fallback', () => {
     expect(fetcher.mock.calls.length).toBeLessThanOrEqual(9)
   })
   it('never asks public while fallbacks are turned off in Settings', async () => {
-    setup()
+    await setup()
     let fallbacks = false
     const rates = new DailyRatesService({
-      db: database.db,
+      db: database,
       logger,
       mempoolApiUrl: local,
       allowPublicFallback: () => fallbacks,
@@ -342,7 +366,7 @@ describe('local mempool with public fallback', () => {
   it.each([true, false])(
     'chooses the same nearby quote whichever source answers first (local first: %s)',
     async (localAnswersFirst) => {
-      setup()
+      await setup()
       const july28 = target - 4 * 86400
       fetcher.mockImplementation(async (input) => {
         const url = new URL(input)
@@ -365,10 +389,10 @@ describe('local mempool with public fallback', () => {
     },
   )
   it('stops public requests as soon as fallbacks are turned off', async () => {
-    setup()
+    await setup()
     let fallbacks = true
     const rates = new DailyRatesService({
-      db: database.db,
+      db: database,
       logger,
       mempoolApiUrl: local,
       allowPublicFallback: () => fallbacks,
@@ -384,7 +408,7 @@ describe('local mempool with public fallback', () => {
     expect(fetcher.mock.calls.filter(([input]) => new URL(input).origin === publicUrl)).toHaveLength(1)
   })
   it('asks public when the configured source has no prices, despite an older public quote in the cache', async () => {
-    setup()
+    await setup()
     const earlier = new Date(day.getTime() - 3 * 86400000)
     fetcher.mockImplementation(async (input) =>
       new URL(input).origin === local
@@ -397,7 +421,7 @@ describe('local mempool with public fallback', () => {
     expect(result.rates['2026-08-01']?.timestamp).toEqual(day)
   })
   it('fills a missing local currency from public and reuses the public cache after reopening', async () => {
-    setup()
+    await setup()
     fetcher.mockImplementation(async (input) => {
       const url = new URL(input),
         timestamp = Number(url.searchParams.get('timestamp'))
@@ -407,15 +431,15 @@ describe('local mempool with public fallback', () => {
     expect(result.rates['2026-08-01']?.providerUrl).toBe(publicUrl)
     expect(result.providerUrls).toEqual([publicUrl])
     expect(fetcher.mock.calls.length).toBeLessThanOrEqual(10)
-    database.close()
-    database = initDatabase(directory, logger)
+    database.$client.close()
+    database = await openDrizzleDatabase(directory, logger)
     fetcher.mockClear()
     fetcher.mockRejectedValue(new Error('offline'))
     expect((await localFirst().getDailyRates(day, day, 'CAD')).unwrap()).toEqual(result)
     expect(fetcher).not.toHaveBeenCalled()
   })
   it('uses public on a local outage and preserves its original timestamp', async () => {
-    setup()
+    await setup()
     fetcher.mockImplementation(async (input) =>
       new URL(input).origin === local
         ? new Response('', { status: 503, headers: { 'retry-after': '120' } })
@@ -427,7 +451,7 @@ describe('local mempool with public fallback', () => {
     expect(fetcher.mock.calls.length).toBeLessThanOrEqual(10)
   })
   it('asks public before settling for a farther cached quote during a local outage', async () => {
-    setup()
+    await setup()
     const earlier = new Date(day.getTime() - 3 * 86400000)
     fetcher.mockImplementation(async (input) => body(Number(new URL(input).searchParams.get('timestamp'))))
     await localFirst().getDailyRates(earlier, earlier)
@@ -441,7 +465,7 @@ describe('local mempool with public fallback', () => {
     expect(result.rates['2026-08-01']?.timestamp).toEqual(day)
   })
   it('uses the closest cached quote when every source is unavailable', async () => {
-    setup()
+    await setup()
     const earlier = new Date(day.getTime() - 3 * 86400000)
     fetcher.mockImplementation(async (input) => body(Number(new URL(input).searchParams.get('timestamp'))))
     await localFirst().getDailyRates(earlier, earlier)
@@ -451,7 +475,7 @@ describe('local mempool with public fallback', () => {
     expect(result.rates['2026-08-01']?.timestamp).toEqual(earlier)
   })
   it('records separate provenance for a statement using both instances', async () => {
-    setup()
+    await setup()
     const end = new Date('2026-08-20T00:00:00Z')
     fetcher.mockImplementation(async (input) => {
       const url = new URL(input),
@@ -465,7 +489,7 @@ describe('local mempool with public fallback', () => {
     expect(result.providerUrl).toBeUndefined()
   })
   it('fails clearly when both sources lack usable history', async () => {
-    setup()
+    await setup()
     fetcher.mockImplementation(async () => body(target - 5 * 86400))
     const result = await localFirst().getDailyRates(day, day, 'CAD')
     expect(result.unwrapErr().message).toContain('either the configured mempool or public mempool.space')
@@ -473,8 +497,8 @@ describe('local mempool with public fallback', () => {
     expect(fetcher.mock.calls.length).toBeLessThanOrEqual(18)
   })
   it('queries public directly without recursively retrying the same public provider', async () => {
-    setup()
-    const direct = new DailyRatesService({ db: database.db, logger, mempoolApiUrl: publicUrl })
+    await setup()
+    const direct = new DailyRatesService({ db: database, logger, mempoolApiUrl: publicUrl })
     fetcher.mockResolvedValue(new Response('', { status: 404 }))
     expect((await direct.getDailyRates(day, day)).isErr()).toBe(true)
     expect(fetcher).toHaveBeenCalledTimes(1)
