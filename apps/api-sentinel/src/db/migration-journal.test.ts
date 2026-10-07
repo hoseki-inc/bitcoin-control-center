@@ -117,13 +117,25 @@ it.each(['file', 'database'] as const)(
     const upgraded = await openDrizzleDatabase(directory, logger)
     try {
       await expect(databaseState(upgraded)).resolves.toEqual(before)
-      await expect(upgraded.all(sql`SELECT * FROM _migrations ORDER BY id`)).resolves.toEqual(
-        migrations.map((migration, index) => ({
-          ...oldJournal[index],
+      const journal = await upgraded.all<{ id: number; hash: string; created_at: number; name: string }>(
+        sql`SELECT * FROM _migrations ORDER BY id`,
+      )
+      // Adopted entries keep their IDs and applied times; later migrations are applied normally.
+      expect(journal.slice(0, oldJournal.length)).toEqual(
+        migrations.slice(0, oldJournal.length).map((migration, index) => ({
+          id: oldJournal[index]?.id,
+          applied_at: oldJournal[index]?.applied_at,
           hash: migration.hash,
           created_at: migration.folderMillis,
           name: migration.name,
         })),
+      )
+      expect(
+        journal.slice(oldJournal.length).map(({ hash, created_at, name }) => ({ hash, created_at, name })),
+      ).toEqual(
+        migrations
+          .slice(oldJournal.length)
+          .map((migration) => ({ hash: migration.hash, created_at: migration.folderMillis, name: migration.name })),
       )
       await expect(
         upgraded.all(
@@ -242,6 +254,39 @@ it.each([false, true])('upgrades a legacy profile with desktop connections and q
     upgraded.$client.close()
   }
 })
+
+it.each([
+  [14, false, false],
+  [15, true, false],
+  [17, true, true],
+] as const)(
+  'converts a %i-migration profile, then clears only messages for unfinished verifications',
+  async (count, withProfiles, withQuotes) => {
+    const directory = testDirectory()
+    const legacy = await legacyDatabase(directory, withProfiles, withQuotes)
+    await expect(legacy.all(sql`SELECT name FROM _migrations`)).resolves.toHaveLength(count)
+    await legacy.run(sql`INSERT INTO challenges (id, account_id, is_satisfied, completed_at, created_at)
+      VALUES ('unfinished', 'wallet', 0, NULL, '2026-08-02T00:00:00Z')`)
+    await legacy.run(sql`INSERT INTO signed_messages
+      (id, challenge_id, keystore_id, address, message_text, signature, signed_at, created_at)
+      VALUES ('unfinished-message', 'unfinished', 'keystore', 'synthetic-address', 'Unfinished proof',
+        'synthetic-signature', '2026-08-02T00:00:00Z', '2026-08-02T00:00:00Z')`)
+    legacy.$client.close()
+
+    const upgraded = await openDrizzleDatabase(directory, logger)
+    try {
+      await expect(upgraded.all(sql`SELECT id FROM signed_messages ORDER BY id`)).resolves.toEqual([{ id: 'message' }])
+      await expect(upgraded.all(sql`SELECT id FROM challenges ORDER BY id`)).resolves.toEqual([
+        { id: 'challenge' },
+        { id: 'unfinished' },
+      ])
+      const journal = await upgraded.all<{ name: string }>(sql`SELECT name FROM _migrations ORDER BY id`)
+      expect(journal.map(({ name }) => name)).toEqual(migrations.map((migration) => migration.name))
+    } finally {
+      upgraded.$client.close()
+    }
+  },
+)
 
 it('creates the same application schema from scratch as the fully upgraded main fixture', async () => {
   const legacy = await legacyDatabase(testDirectory())
