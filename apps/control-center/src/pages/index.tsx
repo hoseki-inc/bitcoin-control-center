@@ -6,6 +6,8 @@ import { AccumulationChart } from '../components/dashboard-charts/accumulation-c
 import { Banner } from '../components/dashboard/banner'
 import { BitcoinPriceChart } from '../components/dashboard/bitcoin-price-chart'
 import { RecentStatements } from '../components/dashboard/recent-statements'
+import { GettingStarted, ONBOARDING_KEY } from '../components/onboarding/getting-started'
+import { useLocalSetting } from '../hooks/use-local-settings'
 import { useUiSettings } from '../hooks/use-ui-settings'
 import { trpc } from '../trpc'
 import type { StatementDto } from '../trpc/server-types'
@@ -19,6 +21,21 @@ type DashboardData = {
 export function HomePage(): JSX.Element {
   const { statements, isLoading } = useDashboardData()
   const { isStatementsMadeEasyDismissed, updateUiSettings } = useUiSettings()
+  const accounts = useAccountPresence()
+  const onboarding = useLocalSetting(ONBOARDING_KEY)
+
+  // Only a confirmed empty installation without a saved onboarding choice gets the introduction.
+  if (
+    !isLoading &&
+    !accounts.isLoading &&
+    !accounts.isError &&
+    !accounts.hasAccounts &&
+    !onboarding.isLoading &&
+    !onboarding.isError &&
+    onboarding.data === null
+  ) {
+    return <GettingStarted />
+  }
 
   return (
     <Stack py={8} gap={8}>
@@ -177,6 +194,26 @@ function StatMini({
       )}
     </Box>
   )
+}
+
+interface AccountPresence {
+  hasAccounts: boolean
+  isLoading: boolean
+  isError: boolean
+}
+
+function useAccountPresence(): AccountPresence {
+  const queries = [
+    trpc.portalProve.registry.claims.list.useQuery({ excludePending: false }),
+    trpc.portalProve.exchange.list.useQuery(),
+    trpc.portalProve.manual.list.useQuery(),
+    trpc.portalProve.etf.list.useQuery(),
+  ]
+  return {
+    hasAccounts: queries.some((query) => (query.data?.length ?? 0) > 0),
+    isLoading: queries.some((query) => query.isLoading),
+    isError: queries.some((query) => query.isError),
+  }
 }
 
 function useDashboardData(): DashboardData {

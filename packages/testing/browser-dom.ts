@@ -2,6 +2,13 @@ import { JSDOM } from 'jsdom'
 import { vi } from 'vitest'
 import { installAnimationPlaceholder } from './animation-dom'
 
+/** jsdom has no layout, so observed elements never resize. */
+class ResizeObserverPlaceholder implements ResizeObserver {
+  public observe(): void {}
+  public unobserve(): void {}
+  public disconnect(): void {}
+}
+
 export function createBrowserDom(): JSDOM {
   const dom = new JSDOM('<!doctype html><html><body></body></html>', {
     url: 'http://localhost',
@@ -44,6 +51,7 @@ export function installBrowserDom(dom: JSDOM): void {
     getComputedStyle: window.getComputedStyle.bind(window),
     requestAnimationFrame: window.requestAnimationFrame.bind(window),
     cancelAnimationFrame: window.cancelAnimationFrame.bind(window),
+    ResizeObserver: ResizeObserverPlaceholder,
     IS_REACT_ACT_ENVIRONMENT: true,
   }
   for (const [name, value] of Object.entries(globals)) {
