@@ -84,7 +84,7 @@ describe('Home overview states', () => {
     const html = renderHome()
     expect(html).toContain('Your Bitcoin, in one place')
     expect(html.match(/href="\/accounts\/add"/g)).toHaveLength(1)
-    for (const text of ['0 BTC', '$0.00 USD', '30d Change', 'Your holdings, on record']) {
+    for (const text of ['0.00000000 BTC', '$0.00 USD', '30d Change', 'Your holdings, on record']) {
       expect(html).toContain(text)
     }
     expect(html).toContain('Generate Statement')
