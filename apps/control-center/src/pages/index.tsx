@@ -10,10 +10,8 @@ import { DashboardAmount } from '../components/dashboard/dashboard-typography'
 import { RecentStatements } from '../components/dashboard/recent-statements'
 import { FiatAmountText } from '../components/fiat-amount-text'
 import { StatementsEmptyState } from '../components/statements/statements-empty-state'
-import { useQueryErrorToast } from '../hooks/use-query-error-toast'
 import { type RouterOutput, trpc } from '../trpc'
 import type { StatementDto } from '../trpc/server-types'
-import { queryErrorMessage } from '../utils/query-error-message'
 import { getBrowserTimezone } from '../utils/timezone'
 
 type PortfolioData = RouterOutput['portalProve']['controlCenter']['getData']
@@ -32,12 +30,10 @@ export function HomePage({
     accountCount,
     isLoading,
     hasError,
-    errorMessage,
     retry,
     statementsLoading,
     statementsError,
   } = useDashboardData(dataSource)
-  useQueryErrorToast(hasError ? errorMessage : null, retry)
   const hasHistory = (portfolio?.historicalData.length ?? 0) > 0
 
   return (
@@ -69,7 +65,7 @@ export function HomePage({
         </Flex>
       )}
       {hasHistory && portfolio ? (
-        <PortfolioSummary data={portfolio} accountCount={hasError ? null : accountCount} views={views} />
+        <PortfolioSummary data={portfolio} accountCount={hasError || isLoading ? null : accountCount} views={views} />
       ) : isLoading ? (
         <DashboardPreview loading />
       ) : hasError ? (
@@ -218,8 +214,8 @@ function StatMini({
         <Flex align="baseline" gap={2} flexWrap="wrap">
           <Text {...statValueProps} color={value.isZero() ? 'neutral.900' : isPositive ? 'success.700' : 'error.700'}>
             <>
-              {isPositive ? '+' : ''}
-              <BitcoinAmount btc={value.toFixed(8)} />
+              {isPositive ? '+' : '−'}
+              <BitcoinAmount btc={value.abs().toFixed(8)} />
             </>
           </Text>
           {usdValue !== null && (
@@ -291,7 +287,6 @@ interface HomeData {
   statementsError: boolean
   isLoading: boolean
   hasError: boolean
-  errorMessage: string
   retry: () => void
 }
 
@@ -319,10 +314,6 @@ function useDashboardData(dataSource: HomeDataSource): HomeData {
     hasAccounts: [claims.data, exchanges.data, manual.data, etfs.data].some((accounts) => (accounts?.length ?? 0) > 0),
     isLoading: queries.some((query) => query.isLoading),
     hasError: queries.some((query) => query.isError),
-    errorMessage: queryErrorMessage(
-      queries.find((query) => query.isError)?.error,
-      "Your overview couldn't be loaded. Try again to see your holdings and statements.",
-    ),
     retry: () => {
       for (const query of queries) {
         void query.refetch()

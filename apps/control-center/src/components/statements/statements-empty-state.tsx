@@ -1,5 +1,5 @@
-import { BannerContent } from '../dashboard/banner'
+import { Banner } from '../dashboard/banner'
 
 export function StatementsEmptyState(): JSX.Element {
-  return <BannerContent mode="large-with-cta" />
+  return <Banner />
 }

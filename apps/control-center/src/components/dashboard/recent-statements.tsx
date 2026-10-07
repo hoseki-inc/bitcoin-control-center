@@ -1,15 +1,9 @@
-import { Box, Button, Flex, SimpleGrid, Text } from '@chakra-ui/react'
+import { Box, Button, SimpleGrid, Text } from '@chakra-ui/react'
 import { Link as RouterLink, useNavigate } from 'react-router'
 import type { StatementDto } from '../../trpc/server-types'
 import { StatementCard } from './statement-card'
 
-export function RecentStatements({
-  statements,
-  showGenerateButton = false,
-}: {
-  statements: StatementDto[]
-  showGenerateButton?: boolean
-}): JSX.Element | null {
+export function RecentStatements({ statements }: { statements: StatementDto[] }): JSX.Element | null {
   const navigate = useNavigate()
 
   if (statements.length === 0) {
@@ -21,7 +15,7 @@ export function RecentStatements({
 
   return (
     <Box>
-      <Header showGenerateButton={showGenerateButton} />
+      <Header />
       <SimpleGrid columns={{ base: 1, md: 3 }} spacing={4}>
         {visibleStatements.map((statement: StatementDto) => (
           <StatementCard
@@ -44,22 +38,15 @@ export function RecentStatements({
   )
 }
 
-function Header({ showGenerateButton }: { showGenerateButton: boolean }): JSX.Element {
+function Header(): JSX.Element {
   return (
-    <Flex justifyContent="space-between" mb={6} gap={4} flexWrap="wrap">
-      <Box flexGrow={1}>
-        <Text as="h2" textStyle="text/xl" color="neutral.900" fontWeight="medium">
-          Recent Statements
-        </Text>
-        <Text textStyle="text/sm" color="neutral.600" mt={2}>
-          Your latest self-custody statements, ready to view or download.
-        </Text>
-      </Box>
-      {showGenerateButton && (
-        <Button as={RouterLink} to="/statements/create" w="fit-content">
-          Generate Statement
-        </Button>
-      )}
-    </Flex>
+    <Box mb={6}>
+      <Text as="h2" textStyle="text/xl" color="neutral.900" fontWeight="medium">
+        Recent Statements
+      </Text>
+      <Text textStyle="text/sm" color="neutral.600" mt={2}>
+        Your latest self-custody statements, ready to view or download.
+      </Text>
+    </Box>
   )
 }

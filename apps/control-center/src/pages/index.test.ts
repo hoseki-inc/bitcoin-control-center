@@ -79,6 +79,13 @@ function renderHome(overrides: Partial<HomeState> = {}): string {
   )
 }
 
+/** The page's visible text, without Chakra's injected styles or markup. */
+function renderText(overrides: Partial<HomeState> = {}): string {
+  return renderHome(overrides)
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/g, '')
+    .replace(/<[^>]+>/g, '')
+}
+
 const zeroBalanceHistory = [{ timestamp: '2026-09-01T00:00:00.000Z', totalBalance: '0' }]
 
 describe('Home overview states', () => {
@@ -145,6 +152,20 @@ describe('Home overview states', () => {
     expect(html).toContain('Balance chart')
     expect(html).toContain('Showing the last available overview')
     expect(html).not.toContain('href="/accounts/add"')
+  })
+
+  it('does not count accounts until every account list has loaded', () => {
+    const accounts: HomeState['accounts'] = { claims: [], exchange: [], manual: [], etf: [] }
+    accounts.claims = [{ id: 'wallet', status: 'verified', balance: '0' }]
+    expect(renderText({ accounts, history: zeroBalanceHistory, isLoading: true })).toContain('— tracked')
+    expect(renderText({ accounts, history: zeroBalanceHistory })).toContain('1 tracked')
+  })
+
+  it('shows a fall in the same minus sign for Bitcoin and dollars', () => {
+    const text = renderText({ history: [{ timestamp: '2026-09-01T00:00:00.000Z', totalBalance: '50000000' }] })
+    expect(text).toContain('−0.50000000 BTC')
+    expect(text).toContain('−$25,000.00')
+    expect(text).not.toContain('-0.5')
   })
 
   it('does not turn a missing market price into a zero fiat valuation', () => {

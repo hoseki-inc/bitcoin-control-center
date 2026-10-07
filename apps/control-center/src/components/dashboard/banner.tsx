@@ -1,26 +1,7 @@
-import { Box, Button, Flex, IconButton, Image, Stack, Text } from '@chakra-ui/react'
-import { XIcon } from 'lucide-react'
+import { Box, Button, Flex, Image, Stack, Text } from '@chakra-ui/react'
 import { Link } from 'react-router'
 
-export function Banner({
-  mode,
-  onDismissClick,
-}: {
-  mode: 'large-with-cta' | 'large-without-cta' | 'compact'
-  onDismissClick?: () => void
-}): JSX.Element {
-  return <BannerContent mode={mode} onDismissClick={onDismissClick} />
-}
-
-export function BannerContent({
-  mode,
-  onDismissClick,
-}: {
-  mode: 'large-with-cta' | 'large-without-cta' | 'compact'
-  onDismissClick?: () => void
-}): JSX.Element {
-  const compact = mode === 'compact'
-
+export function Banner(): JSX.Element {
   return (
     <Flex
       position="relative"
@@ -30,36 +11,24 @@ export function BannerContent({
       bg="neutral.50"
       borderRadius="panel"
       overflow="hidden"
-      p={{ base: 6, md: compact ? 6 : 8 }}
+      p={{ base: 6, md: 8 }}
       pb={{ base: 0, md: 8 }}
     >
-      {onDismissClick && (
-        <IconButton
-          aria-label="Dismiss statement introduction"
-          icon={<XIcon size={18} />}
-          onClick={onDismissClick}
-          variant="ghost"
-          position="absolute"
-          top={2}
-          right={2}
-          zIndex={1}
-        />
-      )}
       <Stack flex={1} align="flex-start" gap={4} minW={0} py={{ base: 2, md: 4 }}>
         <Text
           as="h2"
-          textStyle={compact ? 'text/2xl' : { base: 'text/4xl', lg: 'text/6xl' }}
+          textStyle={{ base: 'text/4xl', lg: 'text/6xl' }}
           fontWeight="semibold"
           maxW="14ch"
           sx={{ textWrap: 'balance' }}
         >
           Your holdings, on record
         </Text>
-        <Text textStyle={compact ? 'text/sm' : 'text/md'} color="neutral.600" maxW="34ch">
+        <Text textStyle="text/md" color="neutral.600" maxW="34ch">
           Download a statement of your holdings for a selected period.
         </Text>
         <Button as={Link} to="/statements/create" mt={2}>
-          {mode === 'large-without-cta' ? 'Generate Your Own Statement' : 'Generate Statement'}
+          Generate Statement
         </Button>
       </Stack>
       <Box
@@ -67,8 +36,8 @@ export function BannerContent({
         position="relative"
         flexShrink={0}
         alignSelf="stretch"
-        w={{ base: '100%', md: compact ? '220px' : '36%' }}
-        h={{ base: compact ? '180px' : '260px', md: compact ? '220px' : '320px' }}
+        w={{ base: '100%', md: '36%' }}
+        h={{ base: '260px', md: '320px' }}
         overflow="hidden"
         sx={{ maskImage: 'linear-gradient(to bottom, black 88%, transparent 100%)' }}
       >
