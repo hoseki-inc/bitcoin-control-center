@@ -1,5 +1,6 @@
 import * as crypto from 'node:crypto'
-import { AsyncResult, Err, Ok, Result, parseUnknown } from '@hoseki/packages/result'
+import type { AsyncResult } from '@hoseki/packages/result'
+import { Err, Ok, Result, parseUnknown, tryBlock } from '@hoseki/packages/result'
 import { SafeHttpErrorKind, type SafeResponse, safeHttp } from '@hoseki/packages/safe-http'
 import type { z } from 'zod'
 import type { Credentials } from './credentials'
@@ -63,63 +64,51 @@ const signCdp = (args: {
   url: string
   path: string
 }): AsyncResult<string, Error> =>
-  new AsyncResult(
-    (async () => {
-      const pemPrivateKey = extractPemKey(args.secret)
-      if (pemPrivateKey.isErr()) {
-        return Err(pemPrivateKey.unwrapErr())
-      }
+  tryBlock(async function* () {
+    const pemKey = yield* extractPemKey(args.secret)
 
-      const pemKey = pemPrivateKey.unwrap()
+    // Parse as PEM format (the normalization handles escaped newlines and whitespace)
+    const privateKey = yield* Result.fromThrowable(() => crypto.createPrivateKey(pemKey)).andThen((key) =>
+      key.asymmetricKeyType === 'ec' && key.asymmetricKeyDetails?.namedCurve === 'prime256v1'
+        ? Ok(key)
+        : Err(new Error('Invalid key: expected a P-256 EC private key')),
+    )
 
-      // Parse as PEM format (the normalization handles escaped newlines and whitespace)
-      const privateKeyRes = Result.fromThrowable(() => crypto.createPrivateKey(pemKey)).andThen((key) =>
-        key.asymmetricKeyType === 'ec' && key.asymmetricKeyDetails?.namedCurve === 'prime256v1'
-          ? Ok(key)
-          : Err(new Error('Invalid key: expected a P-256 EC private key')),
-      )
+    const nonce = generateNonce()
 
-      if (privateKeyRes.isErr()) {
-        return Err(privateKeyRes.unwrapErr())
-      }
+    const fields = {
+      alg: 'ES256',
+      kid: args.name, // API key name/ID used as key identifier in JWT header
+      typ: 'JWT',
+      nonce,
+    }
 
-      const privateKey = privateKeyRes.unwrap()
-      const nonce = generateNonce()
+    const url = new URL(args.url + args.path)
+    const uri = `${args.method} ${url.host}${url.pathname}`
 
-      const fields = {
-        alg: 'ES256',
-        kid: args.name, // API key name/ID used as key identifier in JWT header
-        typ: 'JWT',
-        nonce,
-      }
+    const now = Math.floor(Date.now() / 1000)
 
-      const url = new URL(args.url + args.path)
-      const uri = `${args.method} ${url.host}${url.pathname}`
+    const claims = {
+      sub: args.name,
+      iss: 'cdp',
+      aud: ['cdp_service'],
+      nbf: now,
+      exp: now + 60, // +1 minute
+      uris: [uri],
+    }
 
-      const now = Math.floor(Date.now() / 1000)
-
-      const claims = {
-        sub: args.name,
-        iss: 'cdp',
-        aud: ['cdp_service'],
-        nbf: now,
-        exp: now + 60, // +1 minute
-        uris: [uri],
-      }
-
-      return Result.fromThrowable(() => {
-        const header = Buffer.from(JSON.stringify(fields)).toString('base64url')
-        const payload = Buffer.from(JSON.stringify(claims)).toString('base64url')
-        const signingInput = `${header}.${payload}`
-        // ES256 JWTs encode the 32-byte r and s values directly, rather than using DER.
-        const signature = crypto.sign('sha256', Buffer.from(signingInput), {
-          key: privateKey,
-          dsaEncoding: 'ieee-p1363',
-        })
-        return `${signingInput}.${signature.toString('base64url')}`
+    return Result.fromThrowable(() => {
+      const header = Buffer.from(JSON.stringify(fields)).toString('base64url')
+      const payload = Buffer.from(JSON.stringify(claims)).toString('base64url')
+      const signingInput = `${header}.${payload}`
+      // ES256 JWTs encode the 32-byte r and s values directly, rather than using DER.
+      const signature = crypto.sign('sha256', Buffer.from(signingInput), {
+        key: privateKey,
+        dsaEncoding: 'ieee-p1363',
       })
-    })(),
-  )
+      return `${signingInput}.${signature.toString('base64url')}`
+    })
+  })
 
 function parseData<S extends z.ZodTypeAny>(response: SafeResponse, schema: S) {
   const clone = response.clone()
@@ -162,86 +151,82 @@ export interface RequestArgs<T extends z.ZodTypeAny, E extends z.ZodTypeAny> {
 export const request = <ST extends z.ZodTypeAny, SE extends z.ZodTypeAny>(
   args: RequestArgs<ST, SE>,
 ): AsyncResult<{ data: z.infer<ST>; response: SafeResponse }, ApiError> =>
-  new AsyncResult(
-    (async () => {
-      const headers: CoinbaseRequestHeaders = {
-        'CB-VERSION': args.version,
-        Accept: 'application/json',
-        'Content-Type': 'application/json',
-      }
+  tryBlock(async function* () {
+    const headers: CoinbaseRequestHeaders = {
+      'CB-VERSION': args.version,
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+    }
 
-      let body: string | undefined
-      if (args.params) {
-        // Override the default content type
-        headers['Content-Type'] = 'application/x-www-form-urlencoded'
-        body = recordToSearchParams(args.params).toString()
-      }
-      if (args.json) {
-        body = JSON.stringify(args.json)
-      }
+    let body: string | undefined
+    if (args.params) {
+      // Override the default content type
+      headers['Content-Type'] = 'application/x-www-form-urlencoded'
+      body = recordToSearchParams(args.params).toString()
+    }
+    if (args.json) {
+      body = JSON.stringify(args.json)
+    }
 
-      let path = args.path
-      if (args.query) {
-        path += '?' + recordToSearchParams(args.query).toString()
-      }
+    let path = args.path
+    if (args.query) {
+      path += '?' + recordToSearchParams(args.query).toString()
+    }
 
-      if (args.credentials) {
-        if (args.credentials.variant === 'AccessToken') {
-          headers.Authorization = `Bearer ${args.credentials.accessToken}`
-        } else if (args.credentials.variant === 'ApiKey') {
-          const bodyForSign = body ?? ''
-          const timestamp = Math.floor(Date.now() / 1000).toString()
-          const signature = sign({
-            body: bodyForSign,
-            path,
-            method: args.method,
-            secret: args.credentials.secret,
-            timestamp,
-          })
-          headers['CB-ACCESS-SIGN'] = signature
-          headers['CB-ACCESS-TIMESTAMP'] = timestamp
-          headers['CB-ACCESS-KEY'] = args.credentials.key
-        } else {
-          const token = await signCdp({
-            path,
-            url: args.url,
-            name: args.credentials.name,
-            secret: args.credentials.secret,
-            method: args.method,
-          })
-          if (token.isErr()) {
-            return Err(
-              new ApiError(ErrorKind.UnexpectedFailure({ error: token.unwrapErr() }), 'Failed to sign request'),
-            )
-          }
-          headers.Authorization = `Bearer ${token.unwrap()}`
-        }
-      }
-
-      let input = args.url + path
-
-      return safeHttp
-        .request(input, {
+    if (args.credentials) {
+      if (args.credentials.variant === 'AccessToken') {
+        headers.Authorization = `Bearer ${args.credentials.accessToken}`
+      } else if (args.credentials.variant === 'ApiKey') {
+        const bodyForSign = body ?? ''
+        const timestamp = Math.floor(Date.now() / 1000).toString()
+        const signature = sign({
+          body: bodyForSign,
+          path,
           method: args.method,
-          headers: recordToHeaders(headers),
-          body,
+          secret: args.credentials.secret,
+          timestamp,
         })
-        .mapErrAsync(async (error) => {
-          if (error.kind.value === SafeHttpErrorKind.NetworkUnreachable) {
-            return new ApiError(ErrorKind.NetworkUnreachable(error.kind.cause), 'Network unreachable')
-          }
-
-          // If a request is unauthorized, Coinbase will not return a structured error response,
-          // so `parseErrorData` will always fail. We need to handle this case separately.
-          if (
-            error.kind.value === SafeHttpErrorKind.ErrorResponse &&
-            (error.kind.cause.status === 401 || error.kind.cause.status === 403)
-          ) {
-            return new ApiError(ErrorKind.Unauthorized(error.kind.cause), error.kind.cause.statusText)
-          }
-
-          return parseErrorData(error.kind.cause, args.errorSchema)
+        headers['CB-ACCESS-SIGN'] = signature
+        headers['CB-ACCESS-TIMESTAMP'] = timestamp
+        headers['CB-ACCESS-KEY'] = args.credentials.key
+      } else {
+        const token = await signCdp({
+          path,
+          url: args.url,
+          name: args.credentials.name,
+          secret: args.credentials.secret,
+          method: args.method,
         })
-        .andThenAsync(async (response) => parseData<ST>(response, args.schema))
-    })(),
-  )
+        if (token.isErr()) {
+          return Err(new ApiError(ErrorKind.UnexpectedFailure({ error: token.unwrapErr() }), 'Failed to sign request'))
+        }
+        headers.Authorization = `Bearer ${token.unwrap()}`
+      }
+    }
+
+    let input = args.url + path
+
+    return safeHttp
+      .request(input, {
+        method: args.method,
+        headers: recordToHeaders(headers),
+        body,
+      })
+      .mapErrAsync(async (error) => {
+        if (error.kind.value === SafeHttpErrorKind.NetworkUnreachable) {
+          return new ApiError(ErrorKind.NetworkUnreachable(error.kind.cause), 'Network unreachable')
+        }
+
+        // If a request is unauthorized, Coinbase will not return a structured error response,
+        // so `parseErrorData` will always fail. We need to handle this case separately.
+        if (
+          error.kind.value === SafeHttpErrorKind.ErrorResponse &&
+          (error.kind.cause.status === 401 || error.kind.cause.status === 403)
+        ) {
+          return new ApiError(ErrorKind.Unauthorized(error.kind.cause), error.kind.cause.statusText)
+        }
+
+        return parseErrorData(error.kind.cause, args.errorSchema)
+      })
+      .andThenAsync(async (response) => parseData<ST>(response, args.schema))
+  })

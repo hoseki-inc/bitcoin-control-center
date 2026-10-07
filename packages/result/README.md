@@ -41,7 +41,9 @@ Errors preserve the original `Err` instance and close the generator, running
 - Replace `yield* result.try()` with `yield* result`, and `tryBlockAsync` with
   `tryBlock`. Native `Promise<Result>` values need `yield* await`.
 - Replace `fn` / `asyncFn` with ordinary functions returning `Result` /
-  `AsyncResult` (or a `tryBlock`).
+  `AsyncResult` through method chains or `tryBlock` scopes, not direct
+  `new AsyncResult` wrappers around async callbacks. Use `yield*` to propagate
+  typed failures; convert expected native promise failures with `Result.fromPromise`.
 - Replace eager `and` / `or` with lazy `andThen` / `orElse`, and combined
   predicates with explicit variant checks.
 - Use `AsyncOk`, `AsyncErr`, `AsyncSome`, and `AsyncNone` for async variants.

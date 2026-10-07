@@ -2,9 +2,9 @@ import { Account } from '@hoseki/packages/bitcoin/account'
 import type { ElectrumProvider } from '@hoseki/packages/bitcoin/onchain/electrum_provider'
 import type { TransactionEntry } from '@hoseki/packages/bitcoin/onchain/types'
 import { STATEMENT_CLOSING_DELAY_DAYS, getLatestStatementClosingDate } from '@hoseki/packages/lib/statement-dates'
-import { parseUnknown } from '@hoseki/packages/result'
-import { AsyncResult, Err, Ok } from '@hoseki/packages/result'
-import type { Result } from '@hoseki/packages/result'
+import { parseUnknown, tryBlock } from '@hoseki/packages/result'
+import { Err, Ok } from '@hoseki/packages/result'
+import type { AsyncResult, Result } from '@hoseki/packages/result'
 import { type StatementQuoteCurrency, StatementQuoteCurrencySchema } from '@hoseki/packages/schemas/statement-quote'
 import Decimal from 'decimal.js'
 import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
@@ -310,8 +310,8 @@ export class StatementService {
   public generateStatementData = (
     input: GenerateStatementInput,
   ): AsyncResult<{ transactionMap: StatementTransactions; dailyRates: DailyRates }, Error> =>
-    new AsyncResult(
-      (async () => {
+    tryBlock(
+      async function* (this: StatementService) {
         const validation = validateStatementInput(input)
         if (validation.isErr()) {
           return Err(validation.unwrapErr())
@@ -557,7 +557,7 @@ export class StatementService {
         this.logger.info('Statement data generation complete')
 
         return Ok({ transactionMap, dailyRates: ratesResult.unwrap() })
-      })(),
+      }.bind(this),
     )
 
   // ─── Private helpers ────────────────────────────────────────────────────────

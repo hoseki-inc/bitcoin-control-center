@@ -2,7 +2,7 @@
 import { Box } from '@chakra-ui/react'
 import { Address, DerivationPath, MultiSigAccount } from '@hoseki/packages/bitcoin'
 import { hasKey } from '@hoseki/packages/lib/util'
-import { AsyncResult, Err, Ok, parseUnknown } from '@hoseki/packages/result'
+import { AsyncOk, Err, Ok, parseUnknown } from '@hoseki/packages/result'
 import { TestChakraProvider as ChakraProvider } from '@hoseki/packages/testing/chakra-provider'
 import { TrezorInfo } from '@hoseki/packages/ui/wallet-ui/trezor/trezor-info'
 import { HardwareDeviceError, Slip132 } from '@hoseki/packages/wallet'
@@ -395,10 +395,10 @@ async function withTestSetup(run: () => Promise<void>, setup?: () => Promise<voi
     init: mocks.ledger.init,
     reset: mocks.ledger.reset,
     signMessage: (path: string, message: string) =>
-      new AsyncResult((async () => mocks.ledger.signMessage(path, message))()),
+      AsyncOk(path).andThenAsync(async (signingPath) => mocks.ledger.signMessage(signingPath, message)),
   })
-  vi.spyOn(trezorService, 'signCustomMessage').mockImplementation(
-    (path: string, message: string) => new AsyncResult((async () => mocks.trezorSign(path, message))()),
+  vi.spyOn(trezorService, 'signCustomMessage').mockImplementation((path: string, message: string) =>
+    AsyncOk(path).andThenAsync(async (signingPath) => mocks.trezorSign(signingPath, message)),
   )
   vi.spyOn(toast, 'error').mockImplementation((...args) => {
     mocks.toastError(...args)

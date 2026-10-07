@@ -18,7 +18,7 @@ import {
 } from '@chakra-ui/react'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { DerivationPath, type Xpub } from '@hoseki/packages/bitcoin'
-import { AsyncResult, type Result } from '@hoseki/packages/result'
+import { type Result, tryBlock } from '@hoseki/packages/result'
 import { Alert, Badge, Spinner } from '@hoseki/packages/ui/design-system'
 import { GreenCheckIcon } from '@hoseki/packages/ui/prove-verify-ui'
 import {
@@ -675,7 +675,9 @@ function KeystoneMultisigXpubCheck({ claim, keystoneJson }: { claim: ClaimDto; k
     return getXpubFrom({
       claim,
       getXpubFromDevice: (derivationPath) =>
-        new AsyncResult((async () => getBitcoinXpubFromKeystoneExport(derivationPath, keystoneJson))()),
+        tryBlock(async function* () {
+          return getBitcoinXpubFromKeystoneExport(derivationPath, keystoneJson)
+        }),
       deviceType: 'keystone',
     })
   }
@@ -704,7 +706,9 @@ function ColdcardMultisigStep6({
     return getXpubFrom({
       claim,
       getXpubFromDevice: (derivationPath) =>
-        new AsyncResult((async () => getBitcoinXpubFromColdcardExport(derivationPath, coldcardJson))()),
+        tryBlock(async function* () {
+          return getBitcoinXpubFromColdcardExport(derivationPath, coldcardJson)
+        }),
       deviceType: 'coldcard',
     })
   }

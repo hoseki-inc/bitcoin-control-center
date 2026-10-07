@@ -6,7 +6,7 @@ import { Network } from '@hoseki/packages/bitcoin/network'
 import { ElectrumProvider } from '@hoseki/packages/bitcoin/onchain/electrum_provider'
 import { addressToScripthash } from '@hoseki/packages/bitcoin/scripthash'
 import { ElectrumClient } from '@hoseki/packages/clients/electrum'
-import { AsyncResult, Ok } from '@hoseki/packages/result'
+import { AsyncOk, Ok, tryBlock } from '@hoseki/packages/result'
 import type { CustomPdfStatement } from '@hoseki/packages/schemas'
 import { Wallets } from '@hoseki/packages/testing'
 import Decimal from 'decimal.js'
@@ -66,30 +66,27 @@ async function createStatementDatabase() {
 
 function mockOnchainProvider(logger: Logger, emptySavingsHistory = false) {
   const electrum = new ElectrumClient({ host: 'example.invalid', port: 50001, protocol: 'tcp' })
-  vi.spyOn(electrum, 'getHistory').mockImplementation(
-    (scripthash: string) =>
-      new AsyncResult(
-        (async () => {
-          const wallet = wallets.find(
-            (item) => addressToScripthash(item.address).expect('Fixture address must be valid') === scripthash,
-          )
-          if (wallet === undefined) {
-            expect.fail('History request must target a fixture wallet')
-          }
-          if (emptySavingsHistory && wallet.id === savingsWallet.id) {
-            return Ok([])
-          }
-          return Ok([{ tx_hash: wallet.txid, height: 800000 }])
-        })(),
-      ),
+  vi.spyOn(electrum, 'getHistory').mockImplementation((scripthash: string) =>
+    tryBlock(async function* () {
+      const wallet = wallets.find(
+        (item) => addressToScripthash(item.address).expect('Fixture address must be valid') === scripthash,
+      )
+      if (wallet === undefined) {
+        expect.fail('History request must target a fixture wallet')
+      }
+      if (emptySavingsHistory && wallet.id === savingsWallet.id) {
+        return Ok([])
+      }
+      return Ok([{ tx_hash: wallet.txid, height: 800000 }])
+    }),
   )
 
   const onchainProvider = new ElectrumProvider(Network.Mainnet, { logger, electrum })
-  vi.spyOn(onchainProvider, 'discoverAccount').mockImplementation(
-    () => new AsyncResult((async () => Ok({ lastUsedReceiveIndex: 0, lastUsedChangeIndex: -1 }))()),
+  vi.spyOn(onchainProvider, 'discoverAccount').mockImplementation(() =>
+    AsyncOk({ lastUsedReceiveIndex: 0, lastUsedChangeIndex: -1 }),
   )
-  vi.spyOn(onchainProvider, 'getBlocksTip').mockImplementation(
-    () => new AsyncResult((async () => Ok({ height: 900000, hash: 'tip', timestamp: closingDate }))()),
+  vi.spyOn(onchainProvider, 'getBlocksTip').mockImplementation(() =>
+    AsyncOk({ height: 900000, hash: 'tip', timestamp: closingDate }),
   )
 
   return onchainProvider
@@ -127,8 +124,8 @@ function mockDailyRates(db: SentinelDb, logger: Logger): DailyRatesService {
     ]),
   )
 
-  vi.spyOn(service, 'getDailyRates').mockImplementation(
-    () => new AsyncResult((async () => Ok({ source: 'mempool' as const, quoteCurrency: 'USD' as const, rates }))()),
+  vi.spyOn(service, 'getDailyRates').mockImplementation(() =>
+    AsyncOk({ source: 'mempool' as const, quoteCurrency: 'USD' as const, rates }),
   )
 
   return service
@@ -225,16 +222,13 @@ export async function setupTwoCoinbaseAccounts(): Promise<StatementScenario> {
     await seedExchange(db, 'coinbase-a', '100000000', 'Savings', 'coinbase'),
     await seedExchange(db, 'coinbase-b', '200000000', 'Trading', 'coinbase'),
   ]
-  vi.spyOn(exchangeService, 'getCoinbaseTransactionEntries').mockImplementation(
-    (ids) =>
-      new AsyncResult(
-        (async () => {
-          if (ids?.length !== 1) {
-            expect.fail('Coinbase history must be fetched separately for each account')
-          }
-          return Ok([{ timestamp: transactionDate, value: ids[0] === 'coinbase-a' ? 100_000_000n : 200_000_000n }])
-        })(),
-      ),
+  vi.spyOn(exchangeService, 'getCoinbaseTransactionEntries').mockImplementation((ids) =>
+    tryBlock(async function* () {
+      if (ids?.length !== 1) {
+        expect.fail('Coinbase history must be fetched separately for each account')
+      }
+      return Ok([{ timestamp: transactionDate, value: ids[0] === 'coinbase-a' ? 100_000_000n : 200_000_000n }])
+    }),
   )
 
   return { service, input: { ...period, claimIds: [], exchangeAccountIds } }

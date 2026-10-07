@@ -9,7 +9,7 @@ import { ElectrumProvider } from '@hoseki/packages/bitcoin/onchain/electrum_prov
 import { Txid } from '@hoseki/packages/bitcoin/txid'
 import { ElectrumClient } from '@hoseki/packages/clients/electrum'
 import { IndexMap } from '@hoseki/packages/collection'
-import { AsyncResult, Err, Ok, type Result } from '@hoseki/packages/result'
+import { AsyncOk, Err, Ok, type Result, tryBlock } from '@hoseki/packages/result'
 import { Wallets } from '@hoseki/packages/testing'
 import { createClient } from '@libsql/client/sqlite3'
 import Decimal from 'decimal.js'
@@ -63,13 +63,11 @@ async function createHarness() {
     electrum: new ElectrumClient({ host: 'localhost', port: 50001, protocol: 'tcp' }),
   })
   const provider = {
-    getBlocksTip: vi
-      .spyOn(onchainProvider, 'getBlocksTip')
-      .mockImplementation(() => new AsyncResult((async () => Ok(tip))())),
-    getBlock: vi.spyOn(onchainProvider, 'getBlock').mockImplementation(() => new AsyncResult((async () => Ok(tip))())),
+    getBlocksTip: vi.spyOn(onchainProvider, 'getBlocksTip').mockImplementation(() => AsyncOk(tip)),
+    getBlock: vi.spyOn(onchainProvider, 'getBlock').mockImplementation(() => AsyncOk(tip)),
     getConfirmedAccountBalances: vi
       .spyOn(onchainProvider, 'getConfirmedAccountBalances')
-      .mockImplementation(() => new AsyncResult((async () => Ok(new IndexMap<Account, bigint>([[account, 100n]])))())),
+      .mockImplementation(() => AsyncOk(new IndexMap<Account, bigint>([[account, 100n]]))),
   }
   const priceService = new PriceService({
     logger,
@@ -78,11 +76,8 @@ async function createHarness() {
   })
   const price = vi
     .spyOn(priceService, 'getCurrentBtcPrice')
-    .mockImplementation(
-      () =>
-        new AsyncResult(
-          (async () => Ok({ value: new Decimal(50_000), asOf: now, source: 'block' as const, lastKnown: false }))(),
-        ),
+    .mockImplementation(() =>
+      AsyncOk({ value: new Decimal(50_000), asOf: now, source: 'block' as const, lastKnown: false }),
     )
   const service = new ControlCenterService({
     db,
@@ -184,7 +179,12 @@ describe('portfolio history completion', () => {
       const pendingHistory = deferred<Result<TransactionEntry[], Error>>()
       const pendingPrice = deferred<ReturnType<typeof Ok<{ value: Decimal; asOf: Date }>>>()
       history.mockReturnValueOnce(pendingHistory.promise)
-      price.mockReturnValueOnce(new AsyncResult(pendingPrice.promise))
+      price.mockReturnValueOnce(
+        tryBlock(async function* () {
+          const value = yield* await pendingPrice.promise
+          return Ok(value)
+        }),
+      )
       const resultPromise = service.getData({ customDateRange: customRange })
       await vi.waitFor(async () => {
         expect(history).toHaveBeenCalledTimes(1)

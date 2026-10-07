@@ -3,8 +3,8 @@ import type { Address } from '@hoseki/packages/bitcoin/address'
 import type { Block, TransactionEntry } from '@hoseki/packages/bitcoin/onchain'
 import type { ElectrumProvider } from '@hoseki/packages/bitcoin/onchain/electrum_provider'
 import { IndexMap, IndexSet } from '@hoseki/packages/collection'
-import { AsyncResult, Err, Ok } from '@hoseki/packages/result'
-import type { Result } from '@hoseki/packages/result'
+import { Err, Ok, tryBlock } from '@hoseki/packages/result'
+import type { AsyncResult, Result } from '@hoseki/packages/result'
 import type { Timezone } from '@hoseki/packages/schemas'
 import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lte } from 'drizzle-orm'
 import type { Logger } from 'pino'
@@ -108,17 +108,12 @@ export class ControlCenterService {
     timezone?: Timezone
     customDateRange?: CustomDateRange
   }): AsyncResult<ControlCenterData, Error> =>
-    new AsyncResult(
-      (async () => {
+    tryBlock(
+      async function* (this: ControlCenterService) {
         const timeRange = args.timeRange ?? '30d'
         const timezone = args.timezone ?? DEFAULT_TIMEZONE
         const now = new Date()
-        const historyRangeResult = resolveHistoryRange(timeRange, args.customDateRange, timezone, now)
-        if (historyRangeResult.isErr()) {
-          return Err(historyRangeResult.unwrapErr())
-        }
-
-        const historyRange = historyRangeResult.unwrap()
+        const historyRange = yield* resolveHistoryRange(timeRange, args.customDateRange, timezone, now)
         const shouldSyncFullHistory = args.customDateRange !== undefined || timeRange === 'all'
         this.logger.info({ timeRange, customDateRange: args.customDateRange, timezone }, 'Getting control center data')
 
@@ -409,7 +404,7 @@ export class ControlCenterService {
           historyRefreshingAccountIds: historyStatus.historyRefreshingAccountIds,
           historyFailedAccountIds: historyStatus.historyFailedAccountIds,
         })
-      })(),
+      }.bind(this),
     )
 
   // ─── Snapshot Recording ────────────────────────────────────────────────
@@ -429,8 +424,8 @@ export class ControlCenterService {
   }
 
   public archiveAccount = (accountId: string): AsyncResult<void, Error> =>
-    new AsyncResult(
-      (async () => {
+    tryBlock(
+      async function* (this: ControlCenterService) {
         const [row] = await this.db
           .select({ descriptor: accountTable.descriptor })
           .from(accountTable)
@@ -474,7 +469,7 @@ export class ControlCenterService {
         }
         this.invalidateAccountHistoryBackfill(accountId)
         return Ok(undefined)
-      })(),
+      }.bind(this),
     )
 
   public async restoreAccount(accountId: string): Promise<Result<void, Error>> {
@@ -1225,8 +1220,8 @@ export class ControlCenterService {
    * Called on startup and periodically to build chart data.
    */
   public recordAllSnapshots = (): AsyncResult<void, Error> =>
-    new AsyncResult(
-      (async () => {
+    tryBlock(
+      async function* (this: ControlCenterService) {
         const now = new Date().toISOString()
         const collectSource = async (source: string, collect: () => Promise<void>): Promise<void> => {
           try {
@@ -1356,7 +1351,7 @@ export class ControlCenterService {
         })
 
         return Ok(undefined)
-      })(),
+      }.bind(this),
     )
 }
 

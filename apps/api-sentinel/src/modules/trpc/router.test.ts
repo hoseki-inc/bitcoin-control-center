@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ElectrumClient } from '@hoseki/packages/clients/electrum'
-import { AsyncResult, Ok } from '@hoseki/packages/result'
+import { AsyncOk } from '@hoseki/packages/result'
 import { Wallets } from '@hoseki/packages/testing'
 import { Signer } from 'bip322-js'
 import pino from 'pino'
@@ -18,9 +18,7 @@ async function setup() {
   vi.stubEnv('DATA_DIR', directory)
   vi.stubEnv('ELECTRUM_HOST', 'localhost')
   vi.spyOn(env, 'loadEnv').mockReturnValue({ ...env.loadEnv(), DATA_DIR: directory })
-  vi.spyOn(ElectrumClient.prototype, 'connect').mockImplementation(
-    () => new AsyncResult((async () => Ok(['test', '1.4']))()),
-  )
+  vi.spyOn(ElectrumClient.prototype, 'connect').mockImplementation(() => AsyncOk(['test', '1.4']))
   onTestFinished(() => {
     vi.restoreAllMocks()
     vi.unstubAllEnvs()

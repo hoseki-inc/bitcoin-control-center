@@ -1,5 +1,5 @@
-import { AsyncResult, Err, Ok } from '@hoseki/packages/result'
-import type { Result } from '@hoseki/packages/result'
+import { Err, Ok, tryBlock } from '@hoseki/packages/result'
+import type { AsyncResult, Result } from '@hoseki/packages/result'
 import { parseUnknown } from '@hoseki/packages/result/lib/parse'
 import { Decimal } from 'decimal.js'
 import type { Logger } from 'pino'
@@ -325,7 +325,12 @@ export class PriceService {
   public getCurrentBtcPrice = ({ verifyPrimary = false }: { verifyPrimary?: boolean } = {}): AsyncResult<
     BtcPrice,
     Error
-  > => new AsyncResult((async () => this.lookup(performance.now() + this.lookupTimeoutMs, verifyPrimary))())
+  > =>
+    tryBlock(
+      async function* (this: PriceService) {
+        return this.lookup(performance.now() + this.lookupTimeoutMs, verifyPrimary)
+      }.bind(this),
+    )
 
   private selectedSource(settings: SavedPriceSettings): PriceSource {
     // A saved self-hosted choice uses the default if that server is no longer configured.

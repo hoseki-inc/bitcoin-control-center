@@ -1,4 +1,5 @@
-import { AsyncResult, Err, Ok, Result } from '@hoseki/packages/result'
+import type { AsyncResult } from '@hoseki/packages/result'
+import { Err, Ok, Result } from '@hoseki/packages/result'
 import TrezorConnectModule, {
   type AccountInfo,
   type Features,
@@ -83,17 +84,10 @@ export class TrezorService {
   }
 
   private readonly handleTrezorSdkCall = <T>(sdkCall: Response<T>): AsyncResult<T, HardwareDeviceError> =>
-    new AsyncResult(
-      (async () => {
-        const sdkResult = await Result.fromPromise(sdkCall)
-
-        // An unexpected error was thrown by the Trezor SDK.
-        if (sdkResult.isErr()) {
-          return Err(this.unexpectedTrezorError(sdkResult.unwrapErr()))
-        }
-
-        const sdkResponse = sdkResult.unwrap()
-
+    // An unexpected error was thrown by the Trezor SDK.
+    Result.fromPromise(sdkCall)
+      .mapErr((error) => this.unexpectedTrezorError(error))
+      .andThen((sdkResponse) => {
         // Trezor SDK failed gracefully with an error message
         if (!sdkResponse.success) {
           return Err(this.expectedTrezorError(sdkResponse))
@@ -105,8 +99,7 @@ export class TrezorService {
         }
 
         return Ok(sdkResponse.payload)
-      })(),
-    )
+      })
 }
 
 // Trezor error example: { error: 'Action cancelled by user', code: 'Failure_ActionCancelled' }

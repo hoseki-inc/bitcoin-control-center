@@ -1,8 +1,9 @@
 import { Coinbase } from '@hoseki/packages/clients/coinbase'
 import { Kraken } from '@hoseki/packages/clients/kraken'
 import { RobinhoodClient } from '@hoseki/packages/clients/robinhood'
-import { parseUnknown } from '@hoseki/packages/result'
-import { AsyncResult, Err, Ok, Result } from '@hoseki/packages/result'
+import { parseUnknown, tryBlock } from '@hoseki/packages/result'
+import type { AsyncResult } from '@hoseki/packages/result'
+import { Err, Ok, Result } from '@hoseki/packages/result'
 import Decimal from 'decimal.js'
 import { and, asc, desc, eq, inArray } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
@@ -81,8 +82,8 @@ export class ExchangeService {
     secretKey: string
     replaceAccountId?: string
   }): AsyncResult<ExchangeAccountDto, Error> =>
-    new AsyncResult(
-      (async () => {
+    tryBlock(
+      async function* (this: ExchangeService) {
         const { apiKey, secretKey } = args
         this.logger.info('Connecting Coinbase account via API key')
 
@@ -158,7 +159,7 @@ export class ExchangeService {
         await this.recordSnapshot(id, balanceSats, now)
 
         this.logger.info({ id, displayName, balanceSats }, 'Coinbase account connected')
-        return Ok({
+        return Ok<ExchangeAccountDto>({
           id,
           exchange: 'coinbase',
           displayName,
@@ -167,7 +168,7 @@ export class ExchangeService {
           createdAt,
           connectionStatus: 'connected',
         })
-      })(),
+      }.bind(this),
     )
 
   // ─── Connect Strike ────────────────────────────────────────────────────
@@ -177,8 +178,8 @@ export class ExchangeService {
     displayName?: string
     replaceAccountId?: string
   }): AsyncResult<ExchangeAccountDto, Error> =>
-    new AsyncResult(
-      (async () => {
+    tryBlock(
+      async function* (this: ExchangeService) {
         const { apiKey, displayName: inputName } = args
         this.logger.info('Connecting Strike account via API key')
 
@@ -221,7 +222,7 @@ export class ExchangeService {
         await this.recordSnapshot(id, balanceSats, now)
 
         this.logger.info({ id, displayName, balanceSats }, 'Strike account connected')
-        return Ok({
+        return Ok<ExchangeAccountDto>({
           id,
           exchange: 'strike',
           displayName,
@@ -230,7 +231,7 @@ export class ExchangeService {
           createdAt,
           connectionStatus: 'connected',
         })
-      })(),
+      }.bind(this),
     )
 
   // ─── Connect Robinhood ─────────────────────────────────────────────────
@@ -241,8 +242,8 @@ export class ExchangeService {
     displayName?: string
     replaceAccountId?: string
   }): AsyncResult<ExchangeAccountDto, Error> =>
-    new AsyncResult(
-      (async () => {
+    tryBlock(
+      async function* (this: ExchangeService) {
         const { apiKey, privateKeyBase64, displayName: inputName } = args
         this.logger.info('Connecting Robinhood account via API key')
 
@@ -292,7 +293,7 @@ export class ExchangeService {
         await this.recordSnapshot(id, balanceSats, now)
 
         this.logger.info({ id, displayName, balanceSats }, 'Robinhood account connected')
-        return Ok({
+        return Ok<ExchangeAccountDto>({
           id,
           exchange: 'robinhood',
           displayName,
@@ -301,7 +302,7 @@ export class ExchangeService {
           createdAt,
           connectionStatus: 'connected',
         })
-      })(),
+      }.bind(this),
     )
 
   // ─── Connect Kraken ──────────────────────────────────────────────────
@@ -311,8 +312,8 @@ export class ExchangeService {
     secretKey: string
     replaceAccountId?: string
   }): AsyncResult<ExchangeAccountDto, Error> =>
-    new AsyncResult(
-      (async () => {
+    tryBlock(
+      async function* (this: ExchangeService) {
         const { apiKey, secretKey } = args
         this.logger.info('Connecting Kraken account via API key')
 
@@ -366,7 +367,7 @@ export class ExchangeService {
         await this.recordSnapshot(id, balanceSats, now)
 
         this.logger.info({ id, displayName, balanceSats }, 'Kraken account connected')
-        return Ok({
+        return Ok<ExchangeAccountDto>({
           id,
           exchange: 'kraken',
           displayName,
@@ -375,14 +376,14 @@ export class ExchangeService {
           createdAt,
           connectionStatus: 'connected',
         })
-      })(),
+      }.bind(this),
     )
 
   // ─── Refresh Balance ───────────────────────────────────────────────────
 
   public refreshBalance = (accountId: string): AsyncResult<ExchangeAccountDto, Error> =>
-    new AsyncResult(
-      (async () => {
+    tryBlock(
+      async function* (this: ExchangeService) {
         const [row] = await this.db.select().from(exchangeAccounts).where(eq(exchangeAccounts.id, accountId))
 
         if (!row) {
@@ -530,7 +531,7 @@ export class ExchangeService {
         ])
 
         this.logger.info({ accountId, balanceSats }, 'Exchange balance refreshed')
-        return Ok({
+        return Ok<ExchangeAccountDto>({
           id: row.id,
           exchange: provider,
           displayName: row.displayName,
@@ -539,14 +540,14 @@ export class ExchangeService {
           createdAt: row.createdAt,
           connectionStatus: 'connected',
         })
-      })(),
+      }.bind(this),
     )
 
   // ─── Refresh All Balances ─────────────────────────────────────────────
 
   public refreshAllBalances = (): AsyncResult<void, Error> =>
-    new AsyncResult(
-      (async () => {
+    tryBlock(
+      async function* (this: ExchangeService) {
         const accounts = (await this.listAccounts()).filter((account) => account.connectionStatus === 'connected')
         const errors: string[] = []
 
@@ -563,7 +564,7 @@ export class ExchangeService {
         }
 
         return Ok(undefined)
-      })(),
+      }.bind(this),
     )
 
   // ─── Remove ────────────────────────────────────────────────────────────
@@ -587,8 +588,8 @@ export class ExchangeService {
   public getCoinbaseTransactionEntries = (
     filterAccountIds?: string[],
   ): AsyncResult<{ timestamp: Date; value: bigint }[], Error> =>
-    new AsyncResult(
-      (async () => {
+    tryBlock(
+      async function* (this: ExchangeService) {
         const rows = await this.db
           .select({
             id: exchangeAccounts.id,
@@ -747,7 +748,7 @@ export class ExchangeService {
         this.logger.info({ totalEntries: allEntries.length }, 'getCoinbaseTransactionEntries: complete')
 
         return Ok(allEntries)
-      })(),
+      }.bind(this),
     )
 
   // ─── Kraken Transaction History ───────────────────────────────────────
@@ -759,8 +760,8 @@ export class ExchangeService {
   public getKrakenTransactionEntries = (
     filterAccountIds?: string[],
   ): AsyncResult<{ timestamp: Date; value: bigint }[], Error> =>
-    new AsyncResult(
-      (async () => {
+    tryBlock(
+      async function* (this: ExchangeService) {
         const rows = await this.db
           .select({ id: exchangeAccounts.id, encryptedCredentials: exchangeAccounts.encryptedCredentials })
           .from(exchangeAccounts)
@@ -857,7 +858,7 @@ export class ExchangeService {
         this.logger.info({ totalEntries: allEntries.length }, 'getKrakenTransactionEntries: complete')
 
         return Ok(allEntries)
-      })(),
+      }.bind(this),
     )
 
   // ─── Statement Transactions ──────────────────────────────────────────

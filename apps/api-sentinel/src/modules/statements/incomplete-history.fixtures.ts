@@ -6,7 +6,7 @@ import { Network } from '@hoseki/packages/bitcoin/network'
 import { ElectrumProvider } from '@hoseki/packages/bitcoin/onchain/electrum_provider'
 import { addressToScripthash } from '@hoseki/packages/bitcoin/scripthash'
 import { ElectrumClient } from '@hoseki/packages/clients/electrum'
-import { AsyncResult, Err, Ok } from '@hoseki/packages/result'
+import { AsyncOk, Err, Ok, tryBlock } from '@hoseki/packages/result'
 import type { CustomPdfStatement } from '@hoseki/packages/schemas'
 import { Wallets } from '@hoseki/packages/testing'
 import Decimal from 'decimal.js'
@@ -68,27 +68,24 @@ async function createStatementHarness(outcome: WithdrawalOutcome) {
   })
 
   const electrum = new ElectrumClient({ host: 'example.invalid', port: 50001, protocol: 'tcp' })
-  const history = vi.spyOn(electrum, 'getHistory').mockImplementation(
-    (scripthash: string) =>
-      new AsyncResult(
-        (async () => {
-          const wallet = wallets.find(
-            (item) => addressToScripthash(item.address).expect('Fixture address must be valid') === scripthash,
-          )
-          if (wallet === undefined) {
-            expect.fail('History request must target a fixture wallet')
-          }
-          return Ok([{ tx_hash: wallet.txid, height: 800000 }])
-        })(),
-      ),
+  const history = vi.spyOn(electrum, 'getHistory').mockImplementation((scripthash: string) =>
+    tryBlock(async function* () {
+      const wallet = wallets.find(
+        (item) => addressToScripthash(item.address).expect('Fixture address must be valid') === scripthash,
+      )
+      if (wallet === undefined) {
+        expect.fail('History request must target a fixture wallet')
+      }
+      return Ok([{ tx_hash: wallet.txid, height: 800000 }])
+    }),
   )
 
   const onchainProvider = new ElectrumProvider(Network.Mainnet, { logger, electrum })
-  vi.spyOn(onchainProvider, 'discoverAccount').mockImplementation(
-    () => new AsyncResult((async () => Ok({ lastUsedReceiveIndex: 0, lastUsedChangeIndex: -1 }))()),
+  vi.spyOn(onchainProvider, 'discoverAccount').mockImplementation(() =>
+    AsyncOk({ lastUsedReceiveIndex: 0, lastUsedChangeIndex: -1 }),
   )
-  vi.spyOn(onchainProvider, 'getBlocksTip').mockImplementation(
-    () => new AsyncResult((async () => Ok({ height: 900000, hash: 'tip', timestamp: closingDate }))()),
+  vi.spyOn(onchainProvider, 'getBlocksTip').mockImplementation(() =>
+    AsyncOk({ height: 900000, hash: 'tip', timestamp: closingDate }),
   )
 
   vi.stubGlobal(
@@ -138,9 +135,7 @@ async function createStatementHarness(outcome: WithdrawalOutcome) {
   )
   const getDailyRates = vi
     .spyOn(dailyRatesService, 'getDailyRates')
-    .mockImplementation(
-      () => new AsyncResult((async () => Ok({ source: 'mempool' as const, quoteCurrency: 'USD' as const, rates }))()),
-    )
+    .mockImplementation(() => AsyncOk({ source: 'mempool' as const, quoteCurrency: 'USD' as const, rates }))
 
   const service = new StatementService({
     db: database,

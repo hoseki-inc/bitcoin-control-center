@@ -1,5 +1,6 @@
 import { parseUnknown } from '@hoseki/packages/result'
-import { AsyncResult, Err, Ok, type Result, tryBlock } from '@hoseki/packages/result'
+import type { AsyncResult } from '@hoseki/packages/result'
+import { Err, Ok, type Result, tryBlock } from '@hoseki/packages/result'
 // Re-import z for the raw string overload
 import { z } from 'zod'
 import { type ElectrumConnectionConfig, ElectrumServerError, ElectrumTimeoutError, ElectrumTransport } from './protocol'
@@ -93,18 +94,20 @@ export class ElectrumClient {
         return Ok(handshake.unwrap())
       }.bind(this),
     )
-    const recorded = inner.then<Result<ServerVersion, Error>, never>((result) => {
-      // A later connect or disconnect owns the status once the generation changes.
-      if (generation === this.generation) {
-        this.reachable = result.isOk()
-        this.settled = true
-      }
-      return result
-    })
-    const tracked = new AsyncResult(
-      Promise.resolve(recorded).finally(() => {
-        this.connectInFlight = null
-      }),
+    const tracked = tryBlock(
+      async function* (this: ElectrumClient) {
+        try {
+          const result = await inner
+          // A later connect or disconnect owns the status once the generation changes.
+          if (generation === this.generation) {
+            this.reachable = result.isOk()
+            this.settled = true
+          }
+          return result
+        } finally {
+          this.connectInFlight = null
+        }
+      }.bind(this),
     )
     this.connectInFlight = tracked
     return tracked

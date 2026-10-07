@@ -1,4 +1,5 @@
-import { AsyncResult, Err, Ok, type Result, tryBlock } from '@hoseki/packages/result'
+import type { AsyncResult } from '@hoseki/packages/result'
+import { Err, Ok, type Result, tryBlock } from '@hoseki/packages/result'
 import type { Logger } from 'pino'
 import { IndexMap, IndexSet } from '../../collection'
 import { asyncResultAll } from '../../result'
@@ -51,8 +52,8 @@ export abstract class OnchainBitcoinProvider {
    * Returns confirmed balances for the given accounts. Uses the associated provider's max account depth.
    */
   public getConfirmedAccountBalances = (accounts: IndexSet<Account>): AsyncResult<IndexMap<Account, bigint>, Error> =>
-    new AsyncResult(
-      (async () => {
+    tryBlock(
+      async function* (this: OnchainBitcoinProvider) {
         this.deps.logger.debug({ accounts }, 'Getting confirmed account balances')
         const addressesToAccounts = new IndexMap<Address, Account>()
 
@@ -70,12 +71,9 @@ export abstract class OnchainBitcoinProvider {
         }
 
         // Run discovery in parallel
-        const combined = await asyncResultAll(results)
-        if (combined.isErr()) {
-          this.deps.logger.error({ err: combined.unwrapErr() }, 'Error getting confirmed account balances')
-          return Err(combined.unwrapErr())
-        }
-        const discoveredAccounts = combined.unwrap()
+        const discoveredAccounts = yield* asyncResultAll(results).inspectErr((err) => {
+          this.deps.logger.error({ err }, 'Error getting confirmed account balances')
+        })
         this.deps.logger.debug({ discoveredAccounts }, 'Discovered accounts')
 
         // Collect all the addresses that we need to check
@@ -103,7 +101,7 @@ export abstract class OnchainBitcoinProvider {
           .inspectErr((err) => {
             this.deps.logger.error({ err }, 'Error getting confirmed account balances')
           })
-      })(),
+      }.bind(this),
     )
 
   protected abstract getLastKnownIndexes(
@@ -229,19 +227,19 @@ export abstract class OnchainBitcoinProvider {
   }
 
   public getTransactionEntriesByAddress = (address: Address): AsyncResult<TransactionEntry[], Error> =>
-    new AsyncResult(
-      (async () => {
+    tryBlock(
+      async function* (this: OnchainBitcoinProvider) {
         this.deps.logger.debug({ address }, 'Getting transaction entries for address')
         const entries: TransactionEntry[] = []
         const gen = this.getTransactionEntries(new IndexMap([[address, null]]))
         for await (const entry of gen) {
-          if (entry.isErr()) {
-            this.deps.logger.error({ err: entry.unwrapErr() }, 'Error getting transaction entries for address')
-            return Err(entry.unwrapErr())
-          }
-          entries.push(entry.unwrap())
+          entries.push(
+            yield* entry.inspectErr((err) => {
+              this.deps.logger.error({ err }, 'Error getting transaction entries for address')
+            }),
+          )
         }
         return Ok(entries)
-      })(),
+      }.bind(this),
     )
 }

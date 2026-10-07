@@ -5,8 +5,8 @@ import type { TransactionEntry } from '@hoseki/packages/bitcoin/onchain/types'
 import { isConfirmed } from '@hoseki/packages/bitcoin/onchain/types'
 import { addressToScripthash } from '@hoseki/packages/bitcoin/scripthash'
 import { Txid } from '@hoseki/packages/bitcoin/txid'
-import { AsyncResult, Err, Ok } from '@hoseki/packages/result'
-import type { Result } from '@hoseki/packages/result'
+import { Err, Ok, tryBlock } from '@hoseki/packages/result'
+import type { AsyncResult, Result } from '@hoseki/packages/result'
 import { parseUnknown } from '@hoseki/packages/result/lib/parse'
 import type { Logger } from 'pino'
 import { z } from 'zod'
@@ -122,105 +122,103 @@ export const fetchTransactionEntries = (deps: {
   /** Waits between lookup retries; tests replace it to avoid real delays. */
   sleep?: Sleep
 }): AsyncResult<TransactionEntry[], Error> =>
-  new AsyncResult(
-    (async () => {
-      const { account, onchainProvider, mempoolApiUrl, logger, sleep = defaultSleep } = deps
-      const network = onchainProvider.network
+  tryBlock(async function* () {
+    const { account, onchainProvider, mempoolApiUrl, logger, sleep = defaultSleep } = deps
+    const network = onchainProvider.network
 
-      // 1. Discover account (find used address indices via Electrum history checks)
-      const discoveryResult = await onchainProvider.discoverAccount(account)
-      if (discoveryResult.isErr()) {
-        return Err(discoveryResult.unwrapErr())
-      }
-      const { lastUsedReceiveIndex, lastUsedChangeIndex } = discoveryResult.unwrap()
+    // 1. Discover account (find used address indices via Electrum history checks)
+    const discoveryResult = await onchainProvider.discoverAccount(account)
+    if (discoveryResult.isErr()) {
+      return Err(discoveryResult.unwrapErr())
+    }
+    const { lastUsedReceiveIndex, lastUsedChangeIndex } = discoveryResult.unwrap()
 
-      // 2. Generate all used addresses
-      const addresses: Address[] = [
-        ...account.receiveAddresses(0, lastUsedReceiveIndex + 1, network),
-        ...account.changeAddresses(0, lastUsedChangeIndex + 1, network),
-      ]
+    // 2. Generate all used addresses
+    const addresses: Address[] = [
+      ...account.receiveAddresses(0, lastUsedReceiveIndex + 1, network),
+      ...account.changeAddresses(0, lastUsedChangeIndex + 1, network),
+    ]
 
-      if (addresses.length === 0) {
-        return Ok([])
-      }
+    if (addresses.length === 0) {
+      return Ok([])
+    }
 
-      // 3. Get transaction history for all addresses via Electrum (lightweight)
-      const txHashToAddresses = new Map<string, Set<Address>>()
+    // 3. Get transaction history for all addresses via Electrum (lightweight)
+    const txHashToAddresses = new Map<string, Set<Address>>()
 
-      for (const address of addresses) {
-        // A statement missing an address's transactions would look complete, so any failure stops it.
-        const scripthashRes = addressToScripthash(address)
-        if (scripthashRes.isErr()) {
-          return Err(scripthashRes.unwrapErr())
-        }
-
-        const historyRes = await onchainProvider.deps.electrum.getHistory(scripthashRes.unwrap())
-        if (historyRes.isErr()) {
-          return Err(new Error(`Could not fetch transaction history: ${historyRes.unwrapErr().message}`))
-        }
-
-        for (const entry of historyRes.unwrap()) {
-          // Electrum reports unconfirmed transactions at height 0 or -1. Statements end at least two days
-          // ago and pending transactions are dated when fetched, so they can't fall inside a statement.
-          // Skipping them means a transaction the mempool server hasn't seen can't fail the statement.
-          if (entry.height <= 0) {
-            continue
-          }
-          const addrSet = txHashToAddresses.get(entry.tx_hash) ?? new Set()
-          addrSet.add(address)
-          txHashToAddresses.set(entry.tx_hash, addrSet)
-        }
+    for (const address of addresses) {
+      // A statement missing an address's transactions would look complete, so any failure stops it.
+      const scripthashRes = addressToScripthash(address)
+      if (scripthashRes.isErr()) {
+        return Err(scripthashRes.unwrapErr())
       }
 
-      const uniqueTxIds = Array.from(txHashToAddresses.keys())
-      logger.info(
-        { addressCount: addresses.length, uniqueTxCount: uniqueTxIds.length },
-        'Fetching tx details from mempool.space',
+      const historyRes = await onchainProvider.deps.electrum.getHistory(scripthashRes.unwrap())
+      if (historyRes.isErr()) {
+        return Err(new Error(`Could not fetch transaction history: ${historyRes.unwrapErr().message}`))
+      }
+
+      for (const entry of historyRes.unwrap()) {
+        // Electrum reports unconfirmed transactions at height 0 or -1. Statements end at least two days
+        // ago and pending transactions are dated when fetched, so they can't fall inside a statement.
+        // Skipping them means a transaction the mempool server hasn't seen can't fail the statement.
+        if (entry.height <= 0) {
+          continue
+        }
+        const addrSet = txHashToAddresses.get(entry.tx_hash) ?? new Set()
+        addrSet.add(address)
+        txHashToAddresses.set(entry.tx_hash, addrSet)
+      }
+    }
+
+    const uniqueTxIds = Array.from(txHashToAddresses.keys())
+    logger.info(
+      { addressCount: addresses.length, uniqueTxCount: uniqueTxIds.length },
+      'Fetching tx details from mempool.space',
+    )
+
+    // 4. Get current tip for confirmation status
+    const tipRes = await onchainProvider.getBlocksTip()
+    if (tipRes.isErr()) {
+      return Err(tipRes.unwrapErr())
+    }
+    const tip = tipRes.unwrap()
+
+    // 5. Fetch transaction details from mempool.space in batches
+    const allEntries: TransactionEntry[] = []
+    const baseUrl = mempoolApiUrl.replace(/\/$/, '')
+
+    for (let i = 0; i < uniqueTxIds.length; i += TX_CONCURRENCY) {
+      const batch = uniqueTxIds.slice(i, i + TX_CONCURRENCY)
+      const results = await Promise.allSettled(
+        batch.map(async (txid) => fetchMempoolTx(`${baseUrl}/api/tx/${txid}`, txid, sleep)),
       )
 
-      // 4. Get current tip for confirmation status
-      const tipRes = await onchainProvider.getBlocksTip()
-      if (tipRes.isErr()) {
-        return Err(tipRes.unwrapErr())
-      }
-      const tip = tipRes.unwrap()
+      for (const [j, result] of results.entries()) {
+        // Even a transaction unknown to mempool.space must not silently disappear from a statement.
+        if (result.status === 'rejected') {
+          return Err(new Error(`Failed to fetch transaction ${batch[j]}`, { cause: result.reason }))
+        }
 
-      // 5. Fetch transaction details from mempool.space in batches
-      const allEntries: TransactionEntry[] = []
-      const baseUrl = mempoolApiUrl.replace(/\/$/, '')
+        if (result.value.isErr()) {
+          return Err(result.value.unwrapErr())
+        }
+        const mempoolTx = result.value.unwrap()
+        const relatedAddresses = txHashToAddresses.get(mempoolTx.txid) ?? new Set()
 
-      for (let i = 0; i < uniqueTxIds.length; i += TX_CONCURRENCY) {
-        const batch = uniqueTxIds.slice(i, i + TX_CONCURRENCY)
-        const results = await Promise.allSettled(
-          batch.map(async (txid) => fetchMempoolTx(`${baseUrl}/api/tx/${txid}`, txid, sleep)),
-        )
-
-        for (const [j, result] of results.entries()) {
-          // Even a transaction unknown to mempool.space must not silently disappear from a statement.
-          if (result.status === 'rejected') {
-            return Err(new Error(`Failed to fetch transaction ${batch[j]}`, { cause: result.reason }))
-          }
-
-          if (result.value.isErr()) {
-            return Err(result.value.unwrapErr())
-          }
-          const mempoolTx = result.value.unwrap()
-          const relatedAddresses = txHashToAddresses.get(mempoolTx.txid) ?? new Set()
-
-          // Parse into TransactionEntry for each related address
-          for (const address of relatedAddresses) {
-            const entry = parseMempoolTxEntry(mempoolTx, address, tip.height)
-            if (entry) {
-              allEntries.push(entry)
-            }
+        // Parse into TransactionEntry for each related address
+        for (const address of relatedAddresses) {
+          const entry = parseMempoolTxEntry(mempoolTx, address, tip.height)
+          if (entry) {
+            allEntries.push(entry)
           }
         }
       }
+    }
 
-      logger.info({ entries: allEntries.length }, 'Transaction entries fetched via mempool.space')
-      return Ok(allEntries)
-    })(),
-  )
+    logger.info({ entries: allEntries.length }, 'Transaction entries fetched via mempool.space')
+    return Ok(allEntries)
+  })
 
 /**
  * Parse a mempool.space transaction into a TransactionEntry for a specific address.

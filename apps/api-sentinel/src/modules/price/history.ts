@@ -1,4 +1,5 @@
-import { AsyncResult, Err, Ok } from '@hoseki/packages/result'
+import type { AsyncResult } from '@hoseki/packages/result'
+import { Err, Ok, tryBlock } from '@hoseki/packages/result'
 import type { StatementQuoteCurrency } from '@hoseki/packages/schemas/statement-quote'
 import { type DailyRatesService, MIN_MEMPOOL_PRICE_DATE } from './daily_rates'
 import { type PriceService, isPublicMempool } from './service'
@@ -71,8 +72,8 @@ export class PriceHistoryService {
     days: BitcoinPriceHistoryDays,
     quoteCurrency: StatementQuoteCurrency = 'USD',
   ): AsyncResult<BitcoinPriceHistory, Error> =>
-    new AsyncResult(
-      (async () => {
+    tryBlock(
+      async function* (this: PriceHistoryService) {
         const now = new Date()
         const dates = priceHistoryDates(days, now)
         const [opening] = dates
@@ -108,6 +109,6 @@ export class PriceHistoryService {
           }
         }
         return Ok(history)
-      })(),
+      }.bind(this),
     )
 }

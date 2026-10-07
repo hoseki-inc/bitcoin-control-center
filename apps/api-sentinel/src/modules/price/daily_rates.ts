@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
-import { AsyncResult, Err, Ok, type Result } from '@hoseki/packages/result'
+import type { AsyncResult } from '@hoseki/packages/result'
+import { Err, Ok, type Result, tryBlock } from '@hoseki/packages/result'
 import { parseUnknown } from '@hoseki/packages/result/lib/parse'
 import { type StatementQuoteCurrency, StatementQuoteCurrencySchema } from '@hoseki/packages/schemas/statement-quote'
 import { Decimal } from 'decimal.js'
@@ -110,8 +111,8 @@ export class DailyRatesService {
     quoteCurrency: StatementQuoteCurrency = 'USD',
     requiredDates?: Date[],
   ): AsyncResult<DailyRates, Error> =>
-    new AsyncResult(
-      (async () => {
+    tryBlock(
+      async function* (this: DailyRatesService) {
         if (
           !Number.isFinite(openingDate.getTime()) ||
           !Number.isFinite(closingDate.getTime()) ||
@@ -169,14 +170,14 @@ export class DailyRatesService {
             Object.values(rates).flatMap((rate) => (rate.providerUrl !== undefined ? [rate.providerUrl] : [])),
           ),
         ].sort()
-        return Ok({
+        return Ok<DailyRates>({
           rates,
           source: 'mempool',
           quoteCurrency,
           providerUrls,
           providerUrl: providerUrls.length === 1 ? providerUrls[0] : undefined,
         })
-      })(),
+      }.bind(this),
     )
 
   private async getQuoteWithFallback(

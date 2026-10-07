@@ -1,4 +1,5 @@
-import { AsyncResult, Err, Ok, type Result, tryBlock } from '@hoseki/packages/result'
+import type { AsyncResult } from '@hoseki/packages/result'
+import { AsyncOk, Err, Ok, type Result, tryBlock } from '@hoseki/packages/result'
 import { sha256 } from '@noble/hashes/sha2.js'
 import type { Logger } from 'pino'
 import type { ElectrumClient, ScripthashHistoryEntry } from '../../clients/electrum'
@@ -38,14 +39,7 @@ export class ElectrumProvider extends OnchainBitcoinProvider {
   protected getLastKnownIndexes = (): AsyncResult<
     { lastUsedReceiveIndex: number; lastUsedChangeIndex: number },
     Error
-  > =>
-    new AsyncResult(
-      (async () => {
-        // No persistent cache for the Electrum provider - start from 0 each time.
-        // This is acceptable because local Electrum servers are fast and there's no rate limiting.
-        return Ok({ lastUsedReceiveIndex: 0, lastUsedChangeIndex: 0 })
-      })(),
-    )
+  > => AsyncOk({ lastUsedReceiveIndex: 0, lastUsedChangeIndex: 0 })
 
   public getBlocksTip(): AsyncResult<Block, Error> {
     return tryBlock(
@@ -66,8 +60,8 @@ export class ElectrumProvider extends OnchainBitcoinProvider {
   }
 
   public areAddressesUsed = (addresses: IndexSet<Address>): AsyncResult<IndexSet<Address>, Error> =>
-    new AsyncResult(
-      (async () => {
+    tryBlock(
+      async function* (this: ElectrumProvider) {
         this.deps.logger.debug({ total: addresses.size }, 'Checking if addresses are used via Electrum')
 
         const used = new IndexSet<Address>()
@@ -101,12 +95,12 @@ export class ElectrumProvider extends OnchainBitcoinProvider {
 
         this.deps.logger.info({ total: addresses.size, used: used.size }, 'Completed used address check via Electrum')
         return Ok(used)
-      })(),
+      }.bind(this),
     )
 
   public getConfirmedAddressBalances = (addresses: IndexSet<Address>): AsyncResult<IndexMap<Address, bigint>, Error> =>
-    new AsyncResult(
-      (async () => {
+    tryBlock(
+      async function* (this: ElectrumProvider) {
         this.deps.logger.debug({ total: addresses.size }, 'Getting confirmed address balances via Electrum')
 
         const balances = new IndexMap<Address, bigint>()
@@ -140,7 +134,7 @@ export class ElectrumProvider extends OnchainBitcoinProvider {
           'Completed getting confirmed address balances via Electrum',
         )
         return Ok(balances)
-      })(),
+      }.bind(this),
     )
 
   /**
@@ -151,22 +145,14 @@ export class ElectrumProvider extends OnchainBitcoinProvider {
   public getUtxoAccumulationEntries = (
     account: Account,
   ): AsyncResult<Array<{ value: bigint; height: number; estimatedTimestamp: Date }>, Error> =>
-    new AsyncResult(
-      (async () => {
+    tryBlock(
+      async function* (this: ElectrumProvider) {
         this.deps.logger.debug({ account }, 'Getting UTXO accumulation entries')
 
-        const discoveryResult = await this.discoverAccount(account)
-        if (discoveryResult.isErr()) {
-          return Err(discoveryResult.unwrapErr())
-        }
-        const { lastUsedReceiveIndex, lastUsedChangeIndex } = discoveryResult.unwrap()
+        const { lastUsedReceiveIndex, lastUsedChangeIndex } = yield* this.discoverAccount(account)
 
         // Get current block tip for timestamp estimation
-        const blocksTipRes = await this.getBlocksTip()
-        if (blocksTipRes.isErr()) {
-          return Err(blocksTipRes.unwrapErr())
-        }
-        const tip = blocksTipRes.unwrap()
+        const tip = yield* this.getBlocksTip()
 
         const entries: Array<{ value: bigint; height: number; estimatedTimestamp: Date }> = []
         const seenTxids = new Set<string>()
@@ -222,7 +208,7 @@ export class ElectrumProvider extends OnchainBitcoinProvider {
         entries.sort((a, b) => a.height - b.height)
         this.deps.logger.info({ count: entries.length }, 'Got UTXO accumulation entries')
         return Ok(entries)
-      })(),
+      }.bind(this),
     )
 
   public async *getTransactionEntries(

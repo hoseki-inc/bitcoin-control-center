@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { Network } from '@hoseki/packages/bitcoin/network'
 import { ElectrumProvider } from '@hoseki/packages/bitcoin/onchain/electrum_provider'
 import { ElectrumClient } from '@hoseki/packages/clients/electrum'
-import { AsyncResult, Ok } from '@hoseki/packages/result'
+import { Ok, tryBlock } from '@hoseki/packages/result'
 import type { StatementQuoteCurrency } from '@hoseki/packages/schemas/statement-quote'
 import { eq, sql } from 'drizzle-orm'
 import pino from 'pino'
@@ -345,21 +345,18 @@ function statementCaller(service: StatementService) {
 describe('statement API currency contract', () => {
   function caller() {
     const { service, quotes } = harness()
-    vi.spyOn(service, 'generateStatementData').mockImplementation(
-      (args) =>
-        new AsyncResult(
-          (async () => {
-            const dailyRates = (
-              await quotes.getDailyRates(
-                args.openingDate,
-                args.closingDate,
-                args.quoteCurrency,
-                getRequiredRateDates(args.openingDate, args.closingDate, args.timezone, transactions),
-              )
-            ).expect('Expected successful result')
-            return Ok({ transactionMap: transactions, dailyRates })
-          })(),
-        ),
+    vi.spyOn(service, 'generateStatementData').mockImplementation((args) =>
+      tryBlock(async function* () {
+        const dailyRates = (
+          await quotes.getDailyRates(
+            args.openingDate,
+            args.closingDate,
+            args.quoteCurrency,
+            getRequiredRateDates(args.openingDate, args.closingDate, args.timezone, transactions),
+          )
+        ).expect('Expected successful result')
+        return Ok({ transactionMap: transactions, dailyRates })
+      }),
     )
     return {
       service,
