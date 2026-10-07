@@ -41,8 +41,8 @@ publish either one as diagnostic data.
 
 ## Installation and first-run flow
 
-`electrs` is a required StartOS dependency and should be fully synchronized
-before Bitcoin Control Center is used. No separate initialization task is
+`electrs` and `mempool` are required StartOS dependencies. Electrs should be
+fully synchronized before Bitcoin Control Center is used. No separate initialization task is
 required.
 
 After the service starts:
@@ -125,7 +125,7 @@ synchronization additionally requires a healthy, synchronized Electrs service.
 | Dependency | Required | Purpose                                           |
 | ---------- | -------- | ------------------------------------------------- |
 | `electrs`  | Yes      | On-chain address balances and transaction history |
-| `mempool`  | No       | Optional local prices and transaction details     |
+| `mempool`  | Yes      | Statement prices and transaction details          |
 
 Bitcoin Control Center also makes outbound requests when the corresponding
 feature is used:
@@ -179,7 +179,7 @@ volumes:
   main: /data
 ports:
   ui: 3400
-dependencies: [electrs]
+dependencies: [electrs, mempool]
 actions: [configure]
 bitcoin_network: mainnet
 ```
