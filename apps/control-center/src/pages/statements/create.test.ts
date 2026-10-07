@@ -13,9 +13,11 @@ import { assert, expect, it, onTestFinished, vi } from 'vitest'
 import { StatementPollingProvider } from '../../providers/statement-polling-provider'
 import { claimFixture } from '../../testing/claims'
 import { TestTrpcProvider, createTestTrpcClient } from '../../testing/trpc'
-import { trpc } from '../../trpc'
+import { type RouterOutput, trpc } from '../../trpc'
 import type { StatementDto } from '../../trpc/server-types'
 import { StatementCreatePage } from './create'
+
+type ExchangeAccountDto = RouterOutput['portalProve']['exchange']['list'][number]
 
 const browser = await vi.hoisted(async () => {
   const { createBrowserDom, installBrowserDom } = await import('@hoseki/packages/testing/browser-dom')
@@ -32,9 +34,8 @@ const browser = await vi.hoisted(async () => {
 })
 
 it.each(StatementQuoteCurrencySchema.options)(
-  'sends selected %s consistently to preview and generation',
+  'sends selected %s and only self-custody accounts to preview and generation',
   async (currency) => {
-    const dom = browser.acquire()
     const requests: Operation[] = []
     const claimId = 're_clmx_wallet'
     const statement: StatementDto = {
@@ -69,7 +70,19 @@ it.each(StatementQuoteCurrencySchema.options)(
     client.setQueryData(getQueryKey(trpc.portalProve.registry.claims.list, { excludePending: true }, 'query'), [
       claimFixture(claimId, 'Savings wallet'),
     ])
-    client.setQueryData(getQueryKey(trpc.portalProve.exchange.list, undefined, 'query'), [])
+    // A connected exchange must stay off the page and out of statement requests.
+    client.setQueryData<ExchangeAccountDto[]>(getQueryKey(trpc.portalProve.exchange.list, undefined, 'query'), [
+      {
+        id: 'exchange-account',
+        exchange: 'coinbase',
+        displayName: 'Coinbase savings',
+        currency: 'BTC',
+        balance: '100000000',
+        balanceAsOf: null,
+        createdAt: '2026-08-01T00:00:00.000Z',
+        connectionStatus: 'connected',
+      },
+    ])
     client.setQueryData(getQueryKey(trpc.portalProve.retrieveBitcoinPrice, undefined, 'query'), null)
     client.setQueryData(
       getQueryKey(trpc.portalProve.onchain.claimBalances, { claimIds: [claimId] }, 'query'),
@@ -80,38 +93,10 @@ it.each(StatementQuoteCurrencySchema.options)(
     vi.spyOn(pdfRenderer, 'renderStatementDocument').mockImplementation(
       async () => new Promise<ReactElement>(() => undefined),
     )
-    const container = document.createElement('div')
-    document.body.append(container)
-    const root = createRoot(container)
-    onTestFinished(async () => {
-      await act(async () => {
-        root.unmount()
-      })
-      client.clear()
-      container.remove()
-      vi.restoreAllMocks()
-      vi.unstubAllGlobals()
-      dom.window.close()
-    })
-    await act(async () => {
-      root.render(
-        createElement(
-          TestTrpcProvider,
-          { client, rpc },
-          createElement(
-            TestChakraProvider,
-            null,
-            createElement(
-              MemoryRouter,
-              null,
-              createElement(StatementPollingProvider, null, createElement(StatementCreatePage)),
-            ),
-          ),
-        ),
-      )
-    })
+    const container = await renderCreatePage(client, rpc)
+    expect(container.textContent).not.toMatch(/coinbase/i)
     const select = container.querySelector('#quote-currency')
-    assert.instanceOf(select, dom.window.HTMLSelectElement)
+    assert.instanceOf(select, window.HTMLSelectElement)
     expect(select.value).toBe('USD')
     await act(async () => {
       select.value = currency
@@ -125,9 +110,9 @@ it.each(StatementQuoteCurrencySchema.options)(
       preview.click()
     })
     await vi.waitFor(() => {
-      expect(requests.find((request) => request.path === 'portalProve.statement.generatePreview')?.input).toEqual(
-        expect.objectContaining({ quoteCurrency: currency, claimIds: [claimId] }),
-      )
+      const input = requests.find((request) => request.path === 'portalProve.statement.generatePreview')?.input
+      expect(input).toEqual(expect.objectContaining({ quoteCurrency: currency, claimIds: [claimId] }))
+      expect(input).not.toHaveProperty('exchangeAccountIds')
     })
     const close = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Close')
     assert.exists(close)
@@ -143,9 +128,81 @@ it.each(StatementQuoteCurrencySchema.options)(
       generate.click()
     })
     await vi.waitFor(() => {
-      expect(requests.find((request) => request.path === 'portalProve.statement.initiateGeneration')?.input).toEqual(
-        expect.objectContaining({ quoteCurrency: currency, claimIds: [claimId] }),
-      )
+      const input = requests.find((request) => request.path === 'portalProve.statement.initiateGeneration')?.input
+      expect(input).toEqual(expect.objectContaining({ quoteCurrency: currency, claimIds: [claimId] }))
+      expect(input).not.toHaveProperty('exchangeAccountIds')
     })
   },
 )
+
+/** Renders the statement page and removes it when the test ends. */
+async function renderCreatePage(
+  client: QueryClient,
+  rpc: ReturnType<typeof createTestTrpcClient>,
+): Promise<HTMLDivElement> {
+  const dom = browser.acquire()
+  const container = document.createElement('div')
+  document.body.append(container)
+  const root = createRoot(container)
+  onTestFinished(async () => {
+    await act(async () => {
+      root.unmount()
+    })
+    client.clear()
+    container.remove()
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+    dom.window.close()
+  })
+  await act(async () => {
+    root.render(
+      createElement(
+        TestTrpcProvider,
+        { client, rpc },
+        createElement(
+          TestChakraProvider,
+          null,
+          createElement(
+            MemoryRouter,
+            null,
+            createElement(StatementPollingProvider, null, createElement(StatementCreatePage)),
+          ),
+        ),
+      ),
+    )
+  })
+  return container
+}
+
+it.each([
+  {
+    state: 'loading',
+    status: 'loading',
+    heading: 'Select Accounts',
+    loadClaims: async () => new Promise<never>(() => undefined),
+  },
+  {
+    state: 'unavailable',
+    status: 'error',
+    heading: 'Select Accounts',
+    loadClaims: async () => Promise.reject(new Error('Accounts unavailable')),
+  },
+  { state: 'empty', status: 'success', heading: 'First, Connect an Account.', loadClaims: async () => [] },
+])('shows "$heading" while accounts are $state', async ({ status, heading, loadClaims }) => {
+  const rpc = createTestTrpcClient(async (operation) => {
+    if (operation.path === 'portalProve.registry.claims.list') {
+      return loadClaims()
+    }
+    throw new Error(`Unexpected request: ${operation.path}`)
+  })
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+  client.setQueryData(['local-settings', 'user_name'], null)
+  // The failed accounts request is expected.
+  vi.spyOn(console, 'error').mockImplementation(() => undefined)
+  const container = await renderCreatePage(client, rpc)
+  await vi.waitFor(() => {
+    const claimsKey = getQueryKey(trpc.portalProve.registry.claims.list, { excludePending: true }, 'query')
+    expect(client.getQueryState(claimsKey)?.status).toBe(status)
+    expect(container.textContent).toContain(heading)
+  })
+})
