@@ -4,6 +4,7 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter } from 'react-router'
 import { describe, expect, it, vi } from 'vitest'
+import { statementFixture } from '../testing/statements'
 import type { StatementDto } from '../trpc/server-types'
 import { type HomeDataSource, HomePage, type HomeViews } from './index'
 
@@ -13,6 +14,8 @@ type AccountKind = 'claims' | 'exchange' | 'manual' | 'etf'
 interface QueryFlags {
   isLoading?: boolean
   isError?: boolean
+  /** A failed refresh that keeps the data it loaded before. */
+  keepData?: boolean
 }
 
 interface HomeState {
@@ -47,7 +50,8 @@ function fakeDataSource(state: HomeState): HomeDataSource {
   const accounts = (kind: AccountKind) => () => {
     const isLoading = state.accountsLoading || state.accountStates[kind]?.isLoading === true
     const isError = state.accountsError || state.accountStates[kind]?.isError === true
-    return query(isError ? undefined : state.accounts[kind], { isLoading, isError })
+    const keepData = state.accountStates[kind]?.keepData === true
+    return query(isError && !keepData ? undefined : state.accounts[kind], { isLoading, isError })
   }
   const portfolio: PortfolioData = {
     currentTotalBalance: state.currentSats,
@@ -119,26 +123,12 @@ function renderText(overrides: Partial<HomeState> = {}): string {
     .replace(/<[^>]+>/g, '')
 }
 
-const statement: StatementDto = {
-  id: 'statement',
-  createdAt: new Date('2026-09-01T12:00:00Z'),
-  updatedAt: new Date('2026-09-01T12:00:00Z'),
-  openingDate: new Date('2026-08-01T00:00:00Z'),
-  closingDate: new Date('2026-08-31T23:59:59Z'),
-  counter: 1,
-  timezone: 'UTC',
-  status: 'completed',
-  quoteCurrency: 'USD',
-  errorMessage: null,
-  user: { name: null, email: null },
-  integrator: null,
-  userId: 'user',
-}
+const statement = statementFixture()
 
 const zeroBalanceHistory = [{ timestamp: '2026-09-01T00:00:00.000Z', totalBalance: '0' }]
 
 describe('Home overview states', () => {
-  it('previews zero balances and a labeled market chart with one account action', () => {
+  it('previews zero balances, the price chart and one account action', () => {
     const html = renderHome()
     expect(html).toContain('Your Bitcoin, in one place')
     expect(html.match(/href="\/accounts\/add"/g)).toHaveLength(1)
@@ -179,7 +169,7 @@ describe('Home overview states', () => {
     expect(html).toContain('Try Again')
     expect(html).toContain('Bitcoin Price')
     expect(html).not.toContain('href="/accounts/add"')
-  }, 20_000)
+  })
 
   it('waits for account queries before offering account setup', () => {
     const html = renderHome({ accountsLoading: true })
@@ -240,7 +230,16 @@ describe('Home overview states', () => {
     const accounts: HomeState['accounts'] = { claims: [], exchange: [], manual: [], etf: [] }
     accounts.claims = [{ id: 'wallet', status: 'verified', balance: '0' }]
     expect(renderText({ accounts, history: zeroBalanceHistory, accountsError: true })).toContain('— tracked')
+    // A list whose refresh failed may be out of date, even with its old data.
+    expect(
+      renderText({
+        accounts,
+        history: zeroBalanceHistory,
+        accountStates: { claims: { isError: true, keepData: true } },
+      }),
+    ).toContain('— tracked')
     // The count comes from the account lists alone, so a failed overview refresh keeps it.
+    expect(renderText({ accountsLoading: true })).toContain('— tracked')
     expect(renderText({ accounts, history: zeroBalanceHistory, portfolioError: true })).not.toContain('— tracked')
   })
 
@@ -257,10 +256,13 @@ describe('Home overview states', () => {
     expect(text).toContain('$0.00')
     expect(text).not.toContain('−$0.00')
     expect(text).not.toContain('+$0.00')
+    expect(text).not.toContain('$0.01')
   })
 
   it('shows recent statements instead of the statements introduction', () => {
-    const text = renderText({ statements: [statement], history: zeroBalanceHistory })
+    const statements = ['a', 'b', 'c'].map((id) => statementFixture({ id }))
+    const text = renderText({ statements, history: zeroBalanceHistory })
+    expect(text.match(/Period:/g)).toHaveLength(3)
     expect(text).toContain('Recent Statements')
     expect(text).toContain('Period:')
     expect(text).not.toContain('View All')
@@ -290,6 +292,7 @@ describe('Home overview states', () => {
     })
     expect(text).toContain('1.23456789 BTC')
     expect(text).toContain('$61,728.39')
+    expect(text).toContain('+0.00000000 BTC')
   })
 
   it('measures the 30-day change from the first day of the history', () => {
@@ -325,7 +328,7 @@ describe('Home overview states', () => {
   )
 
   it('shows three recent statements and links to the rest', () => {
-    const statements = ['a', 'b', 'c', 'd'].map((id) => Object.assign({}, statement, { id }))
+    const statements = ['a', 'b', 'c', 'd'].map((id) => statementFixture({ id }))
     const html = renderHome({ statements, history: zeroBalanceHistory })
     expect(html.match(/Period:/g)).toHaveLength(3)
     expect(html).toMatch(/href="\/statements"[^>]*>View All</)

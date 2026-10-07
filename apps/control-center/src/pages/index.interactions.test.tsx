@@ -4,6 +4,7 @@ import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { MemoryRouter, Route, Routes, useParams } from 'react-router'
 import { assert, expect, it, onTestFinished, vi } from 'vitest'
+import { statementFixture } from '../testing/statements'
 import type { StatementDto } from '../trpc/server-types'
 import { type HomeDataSource, HomePage, type HomeViews } from './index'
 
@@ -22,21 +23,7 @@ const browser = await vi.hoisted(async () => {
   }
 })
 
-const statement: StatementDto = {
-  id: 'statement',
-  createdAt: new Date('2026-09-01T12:00:00Z'),
-  updatedAt: new Date('2026-09-01T12:00:00Z'),
-  openingDate: new Date('2026-08-01T00:00:00Z'),
-  closingDate: new Date('2026-08-31T23:59:59Z'),
-  counter: 1,
-  timezone: 'UTC',
-  status: 'completed',
-  quoteCurrency: 'USD',
-  errorMessage: null,
-  user: { name: null, email: null },
-  integrator: null,
-  userId: 'user',
-}
+const statement = statementFixture()
 
 const views: HomeViews = {
   AccumulationChart: () => createElement('div', null, 'Balance chart'),

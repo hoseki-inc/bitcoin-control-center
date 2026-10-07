@@ -40,8 +40,8 @@ export function DashboardPreview({
           </Button>
         </Flex>
       )}
-      {/* Laid out like the loaded overview on Home, so nothing moves when holdings arrive. */}
-      <Box border="1px solid" borderColor="neutral.200" borderRadius="panel" p={{ base: 4, md: 6 }} aria-busy={loading}>
+      {/* Styled like the loaded overview on Home: the same padding, amounts and stats. */}
+      <Box border="1px solid" borderColor="neutral.200" borderRadius="panel" p={{ base: 5, md: 6 }} aria-busy={loading}>
         <DashboardAmount>{unresolved ? '—' : zeroBalance}</DashboardAmount>
         <FiatAmountText as="output" display="block" mt={1}>
           {loading ? 'Loading your holdings…' : unavailable ? 'Holdings unavailable' : '$0.00'}
@@ -54,7 +54,7 @@ export function DashboardPreview({
           borderTop="1px solid"
           borderColor="neutral.200"
         >
-          <StatMini label="30d Change" value={unresolved ? null : new Decimal(0)} />
+          <StatMini label="30d Change" value={unresolved ? null : new Decimal(0)} btcPrice={0} />
           <StatMini label="Accounts" count={unresolved ? null : 0} />
         </Grid>
       </Box>

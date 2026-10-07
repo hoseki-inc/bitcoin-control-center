@@ -4,9 +4,11 @@ import { formatDateRange } from '@hoseki/packages/ui/utils'
 import { format } from 'date-fns'
 import type { StatementDto } from '../../trpc/server-types'
 
+const CREATED_FORMAT = 'dd MMM yyyy h:mm a'
+
 /** The View action's accessible name, shared by statement cards and the statements table. */
 export function viewStatementLabel(statement: StatementDto): string {
-  return `View statement created ${format(statement.createdAt, 'dd MMM yyyy h:mm a')}`
+  return `View statement created ${format(statement.createdAt, CREATED_FORMAT)}`
 }
 
 export function StatementCard({ statement, onView }: { statement: StatementDto; onView: () => void }): JSX.Element {
@@ -86,7 +88,7 @@ export function StatementCard({ statement, onView }: { statement: StatementDto; 
             Period: {formatDateRange(statement.openingDate, statement.closingDate)}
           </Text>
           <Text textStyle="text/xs" color="neutral.600">
-            Created: {format(statement.createdAt, 'dd MMM yyyy h:mm a')}
+            Created: {format(statement.createdAt, CREATED_FORMAT)}
           </Text>
         </Stack>
       </HStack>

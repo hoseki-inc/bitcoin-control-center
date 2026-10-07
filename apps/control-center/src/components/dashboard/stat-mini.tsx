@@ -6,6 +6,7 @@ const statValueProps = {
   fontFamily: 'body',
   textStyle: 'text/xl',
   fontWeight: 'normal',
+  overflowWrap: 'anywhere',
   sx: { fontVariantNumeric: 'tabular-nums' },
 } as const
 

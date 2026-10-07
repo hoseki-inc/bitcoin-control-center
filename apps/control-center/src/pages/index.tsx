@@ -34,11 +34,11 @@ export function HomePage({
     retry,
     statementsLoading,
     statementsError,
-  } = useDashboardData(dataSource)
+  } = useHomeData(dataSource)
   const hasHistory = (portfolio?.historicalData.length ?? 0) > 0
 
   return (
-    <Stack py={{ base: 6, md: 8 }} gap={8}>
+    <Stack py={8} gap={8}>
       {hasError && (
         <Flex
           role="alert"
@@ -135,7 +135,7 @@ function PortfolioSummary({
   const hasBalance = totalBtc.gt(0)
 
   return (
-    <Box bg="shades.0" border="1px solid" borderColor="neutral.200" borderRadius="panel" p={{ base: 4, md: 6 }}>
+    <Box bg="shades.0" border="1px solid" borderColor="neutral.200" borderRadius="panel" p={{ base: 5, md: 6 }}>
       {/* Top row: balance + portfolio link */}
       <Flex align="flex-start" justify="space-between" mb={6} gap={4} flexWrap="wrap">
         <Box>
@@ -230,7 +230,7 @@ interface HomeData {
   retry: () => void
 }
 
-function useDashboardData(dataSource: HomeDataSource): HomeData {
+function useHomeData(dataSource: HomeDataSource): HomeData {
   const statements = dataSource.useStatements()
   const portfolio = dataSource.usePortfolio({
     timeRange: '30d',

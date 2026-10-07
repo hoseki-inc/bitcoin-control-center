@@ -104,7 +104,7 @@ function Header({
       >
         <PageHeading title="Statements" description={description} flexGrow={1} />
         {showGenerateButton && (
-          <Button as={RouterLink} to="/statements/create" w="fit-content">
+          <Button as={RouterLink} to="/statements/create" state={{ returnTo: '/statements' }} w="fit-content">
             Generate Statement
           </Button>
         )}

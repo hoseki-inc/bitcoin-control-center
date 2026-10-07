@@ -6,26 +6,13 @@ import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { MemoryRouter } from 'react-router'
 import { assert, expect, it, onTestFinished, vi } from 'vitest'
+import { statementFixture } from '../../testing/statements'
 import { TestTrpcProvider, createTestTrpcClient } from '../../testing/trpc'
 import { trpc } from '../../trpc'
 import type { StatementDto } from '../../trpc/server-types'
 import { StatementListPage } from './index'
 
-const statement: StatementDto = {
-  id: 'statement',
-  createdAt: new Date('2026-09-01T12:00:00Z'),
-  updatedAt: new Date('2026-09-01T12:00:00Z'),
-  openingDate: new Date('2026-08-01T00:00:00Z'),
-  closingDate: new Date('2026-08-31T23:59:59Z'),
-  counter: 1,
-  timezone: 'UTC',
-  status: 'completed',
-  quoteCurrency: 'USD',
-  errorMessage: null,
-  user: { name: null, email: null },
-  integrator: null,
-  userId: 'user',
-}
+const statement = statementFixture()
 const listKey = getQueryKey(trpc.portalProve.statement.list, undefined, 'query')
 
 // Browser APIs that keep Node's byte arrays, which the wallet libraries imported by the page check.
@@ -148,6 +135,7 @@ it('switches to a table of statements with their requester and View links', asyn
   })
   expect(button('List view').getAttribute('aria-pressed')).toBe('true')
   expect(button('Card view').getAttribute('aria-pressed')).toBe('false')
+  expect(container.querySelector('a[href="/statements/create"]')?.textContent).toBe('Generate Statement')
   const table = container.querySelector('table[aria-label="Statements"]')
   assert(table !== null, 'Expected the statements table')
   expect(table.textContent).toContain('01 Sep 2026')

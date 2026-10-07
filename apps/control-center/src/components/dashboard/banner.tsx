@@ -1,7 +1,8 @@
 import { Box, Button, Flex, Image, Stack, Text } from '@chakra-ui/react'
-import { Link } from 'react-router'
+import { Link, useLocation } from 'react-router'
 
 export function Banner(): JSX.Element {
+  const { pathname } = useLocation()
   return (
     <Flex
       direction={{ base: 'column', md: 'row' }}
@@ -26,7 +27,7 @@ export function Banner(): JSX.Element {
         <Text textStyle="text/md" color="neutral.600" maxW="34ch">
           Download a statement of your holdings for a selected period.
         </Text>
-        <Button as={Link} to="/statements/create" mt={2}>
+        <Button as={Link} to="/statements/create" state={{ returnTo: pathname }} mt={2}>
           Generate Statement
         </Button>
       </Stack>

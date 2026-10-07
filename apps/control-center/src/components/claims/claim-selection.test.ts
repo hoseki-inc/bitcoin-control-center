@@ -68,13 +68,17 @@ let container: HTMLDivElement
 
 async function withTestSetup(
   run: () => Promise<void>,
-  { price = null, balances = new Map() }: { price?: Decimal | null; balances?: Map<string, Decimal> | 'loading' } = {},
+  {
+    claims = [claimFixture(claimId, 'Savings wallet')],
+    price = null,
+    balances = new Map(),
+  }: { claims?: ClaimDto[]; price?: Decimal | null; balances?: Map<string, Decimal> | 'loading' } = {},
 ): Promise<void> {
   const domGlobals = acquireDom()
   queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   queryClient.setQueryData<ClaimDto[]>(
     getQueryKey(trpc.portalProve.registry.claims.list, { excludePending: true }, 'query'),
-    [claimFixture(claimId, 'Savings wallet')],
+    claims,
   )
   queryClient.setQueryData(
     getQueryKey(trpc.portalProve.retrieveBitcoinPrice, undefined, 'query'),
@@ -84,7 +88,7 @@ async function withTestSetup(
     pendingPaths.add('portalProve.onchain.claimBalances')
   } else {
     queryClient.setQueryData(
-      getQueryKey(trpc.portalProve.onchain.claimBalances, { claimIds: [claimId] }, 'query'),
+      getQueryKey(trpc.portalProve.onchain.claimBalances, { claimIds: claims.map((claim) => claim.id) }, 'query'),
       balances,
     )
   }
@@ -181,7 +185,7 @@ it.each([1, 2])('preserves Chakra visibility styles across test documents (%s)',
   })
 })
 
-async function renderSelectedAccount(): Promise<string> {
+async function renderSelectedAccount(selected: ClaimDto['id'][] = [claimId]): Promise<string> {
   await act(async () => {
     root.render(
       createElement(
@@ -194,7 +198,7 @@ async function renderSelectedAccount(): Promise<string> {
             MemoryRouter,
             null,
             createElement(ClaimSelection, {
-              selectedClaimIds: new Set([claimId]),
+              selectedClaimIds: new Set(selected),
               setSelectedClaimIds: vi.fn<() => void>(),
             }),
           ),
@@ -210,10 +214,8 @@ it('shows an account in Bitcoin and dollars, with a total matching the rows', as
     async () => {
       const text = await renderSelectedAccount()
       expect(text).toContain('0.12345678 BTC')
-      const dollars = text.match(/\$[\d,]+\.\d\d/g)
-      expect(dollars).toHaveLength(2)
-      expect(dollars?.[0]).toMatch(/^\$6,172\.8\d$/)
-      expect(dollars?.[1]).toBe(dollars?.[0])
+      // The row rounds down, and the total adds up what the rows show.
+      expect(text.match(/\$[\d,]+\.\d\d/g)).toEqual(['$6,172.83', '$6,172.83'])
     },
     { price: new Decimal(50_000), balances: new Map([[claimId, new Decimal(12_345_678)]]) },
   )
@@ -240,5 +242,28 @@ it('waits for balances before showing a total', async () => {
       expect(text).not.toContain('n/a')
     },
     { balances: 'loading' },
+  )
+})
+
+it('totals only the selected accounts', async () => {
+  const claims = [
+    claimFixture(claimId, 'Savings wallet'),
+    claimFixture('re_clmx_spending', 'Spending wallet'),
+    claimFixture('re_clmx_cold', 'Cold storage'),
+  ]
+  await withTestSetup(
+    async () => {
+      await renderSelectedAccount([claimId, 're_clmx_spending'])
+      expect(container.querySelector('tfoot')?.textContent).toBe('Total$6,172.83')
+    },
+    {
+      claims,
+      price: new Decimal(50_000),
+      balances: new Map([
+        [claimId, new Decimal(12_345_678)],
+        ['re_clmx_spending', new Decimal(18)],
+        ['re_clmx_cold', new Decimal(100_000_000)],
+      ]),
+    },
   )
 })
