@@ -139,11 +139,11 @@ it.each([false, true])('keeps account reset and view mode controls operable (com
     expect(onSelectionChange).toHaveBeenCalledExactlyOnceWith(new Set())
     const mode = host.querySelector(`button[aria-label="${compact ? 'Detailed view' : 'Compact view'}"]`)
     assert(mode instanceof HTMLButtonElement)
-    expect(mode.getAttribute('aria-pressed')).toBe('false')
+    expect(mode.type).toBe('button')
     await act(async () => {
       mode.click()
     })
-    expect(mode.getAttribute('aria-pressed')).toBe('true')
+    expect(mode.getAttribute('aria-label')).toBe(compact ? 'Compact view' : 'Detailed view')
     expect(localStorage.getItem('hoseki:sidebar-compact')).toBe(String(!compact))
   })
 })

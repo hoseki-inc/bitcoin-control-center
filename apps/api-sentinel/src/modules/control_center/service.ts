@@ -47,6 +47,12 @@ export interface ControlCenterData {
   historySyncedAccountIds: string[]
   historyRefreshingAccountIds: string[]
   historyFailedAccountIds: string[]
+  /**
+   * Set when self-custody balances couldn't be fetched live and come from stored
+   * snapshots instead: the time of the oldest one, which is when they last synced.
+   * Null if any wallet has never synced, as its balance is then unknown.
+   */
+  walletBalancesAsOf: string | null
 }
 
 interface BalanceSnapshotRow {
@@ -137,6 +143,8 @@ export class ControlCenterService {
 
       // ─── Fetch on-chain balances ────────────────────────────────
       const balancesByAccountId = new Map<string, bigint>()
+      let walletBalancesAsOf: string | null = null
+      let hasUnsyncedWallet = false
 
       if (accounts.size > 0) {
         // Anchor before balance discovery so a backfill can reuse this result
@@ -149,8 +157,17 @@ export class ControlCenterService {
         if (balancesResult.isErr()) {
           this.logger.warn({ err: balancesResult.unwrapErr() }, 'Failed to fetch on-chain balances')
           for (const row of accountRows) {
-            const latestSnapshotBalance = (await this.getLatestAccountSnapshotBalance(row.id)) ?? 0n
+            const latestSnapshot = await this.getLatestAccountSnapshot(row.id)
+            const latestSnapshotBalance = latestSnapshot?.balanceSats ?? 0n
             balancesByAccountId.set(row.id, latestSnapshotBalance)
+            if (latestSnapshot === null) {
+              hasUnsyncedWallet = true
+            } else if (
+              walletBalancesAsOf === null ||
+              Date.parse(latestSnapshot.timestamp) < Date.parse(walletBalancesAsOf)
+            ) {
+              walletBalancesAsOf = latestSnapshot.timestamp
+            }
 
             if (shouldSyncFullHistory) {
               const accountResult = Account.fromDescriptor(row.descriptor)
@@ -403,6 +420,7 @@ export class ControlCenterService {
         historySyncedAccountIds: historyStatus.historySyncedAccountIds,
         historyRefreshingAccountIds: historyStatus.historyRefreshingAccountIds,
         historyFailedAccountIds: historyStatus.historyFailedAccountIds,
+        walletBalancesAsOf: hasUnsyncedWallet ? null : walletBalancesAsOf,
       })
     },
   )
@@ -611,15 +629,17 @@ export class ControlCenterService {
       .orderBy(asc(balanceSnapshots.timestamp))
   }
 
-  private async getLatestAccountSnapshotBalance(accountId: string): Promise<bigint | null> {
+  private async getLatestAccountSnapshot(
+    accountId: string,
+  ): Promise<{ balanceSats: bigint; timestamp: string } | null> {
     const [row] = await this.db
-      .select({ balance_sats: balanceSnapshots.balanceSats })
+      .select({ balance_sats: balanceSnapshots.balanceSats, timestamp: balanceSnapshots.timestamp })
       .from(balanceSnapshots)
       .where(eq(balanceSnapshots.accountId, accountId))
       .orderBy(desc(balanceSnapshots.timestamp))
       .limit(1)
 
-    return row ? BigInt(row.balance_sats) : null
+    return row ? { balanceSats: BigInt(row.balance_sats), timestamp: row.timestamp } : null
   }
 
   private async queueAccountHistoryBackfill(

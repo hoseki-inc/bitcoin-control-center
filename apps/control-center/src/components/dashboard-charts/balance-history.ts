@@ -1,5 +1,6 @@
 import { TZDate } from '@date-fns/tz'
 import { parseUnknown } from '@hoseki/packages/result/lib/parse'
+import { format } from 'date-fns'
 import Decimal from 'decimal.js'
 import { z } from 'zod'
 import { getBrowserTimezone } from '../../utils/timezone'
@@ -11,9 +12,11 @@ export interface BalanceDataPoint {
 }
 
 export interface MonthlyChange {
+  /** "Oct" */
   label: string
+  /** "Oct 2025" */
+  labelWithYear: string
   change: number
-  absChange: number
   key: string
 }
 
@@ -135,13 +138,89 @@ export function getMonthlyChanges(
     const change = Number(end.balanceSats.minus(baseline.balanceSats).div(100_000_000).toFixed(8))
     changes.push({
       label: monthStart.toLocaleDateString('en-US', { month: 'short' }),
+      labelWithYear: monthStart.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
       change,
-      absChange: Math.abs(change),
       key,
     })
   }
 
   return changes
+}
+
+export interface FlowTotals {
+  inBtc: Decimal
+  outBtc: Decimal
+}
+
+/**
+ * Approximate BTC in and out over a range from consecutive balances: rises count
+ * as in and drops as out. Changes within one interval net together, so this is
+ * an estimate rather than a transaction total. In minus out equals the net change.
+ */
+export function getFlowTotals(data: BalanceDataPoint[]): FlowTotals {
+  const points = parseBalancePoints(data)
+  let inSats = new Decimal(0)
+  let outSats = new Decimal(0)
+  for (let index = 1; index < points.length; index++) {
+    const previous = points[index - 1]
+    const current = points[index]
+    if (!previous || !current) {
+      continue
+    }
+    const delta = current.balanceSats.minus(previous.balanceSats)
+    if (delta.gt(0)) {
+      inSats = inSats.plus(delta)
+    } else {
+      outSats = outSats.plus(delta.abs())
+    }
+  }
+  return { inBtc: inSats.div(100_000_000), outBtc: outSats.div(100_000_000) }
+}
+
+/**
+ * The label under a month's bar, or null to leave it blank. Up to a year shows
+ * every month; longer ranges label every third, sixth or twelfth month, counting
+ * back from the latest, so the labels never crowd. January carries its year, as
+ * does the first label of each later year and every label a year apart.
+ */
+export function getMonthTickLabel(months: MonthlyChange[], index: number): string | null {
+  const step = months.length <= 12 ? 1 : ([3, 6, 12].find((every) => months.length / every <= 16) ?? 24)
+  const month = months[index]
+  if (!month || (months.length - 1 - index) % step !== 0) {
+    return null
+  }
+  const year = month.key.slice(0, 4)
+  const previous = months[index - step]
+  const showsYear =
+    step >= 12 || month.key.endsWith('-01') || (previous !== undefined && previous.key.slice(0, 4) !== year)
+  return showsYear ? `${month.label} \u2019${year.slice(-2)}` : month.label
+}
+
+/** Edge dates for the balance chart: the year appears only when it isn't the current one. */
+export function formatAxisDate(ms: number, timezone: string, style: 'day' | 'month', now: Date = new Date()): string {
+  const date = new TZDate(new Date(ms), timezone)
+  if (style === 'month') {
+    return format(date, 'MMM yyyy')
+  }
+  const sameYear = format(date, 'yyyy') === format(new TZDate(now, timezone), 'yyyy')
+  return format(date, sameYear ? 'MMM d' : 'MMM d, yyyy')
+}
+
+/**
+ * Axis labels stay short (two decimals from 1 BTC, otherwise four) but gain
+ * decimals until the ticks read differently. The tooltip shows the exact balance.
+ */
+export function getAxisDecimals(ticks: number[]): number {
+  for (let decimals = Math.max(...ticks) >= 1 ? 2 : 4; decimals < 8; decimals++) {
+    if (new Set(ticks.map((tick) => tick.toFixed(decimals))).size === ticks.length) {
+      return decimals
+    }
+  }
+  return 8
+}
+
+export function formatAxisBtc(btc: number, decimals: number): string {
+  return btc.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
 }
 
 function parseBalancePoints(data: BalanceDataPoint[]): ParsedBalancePoint[] {

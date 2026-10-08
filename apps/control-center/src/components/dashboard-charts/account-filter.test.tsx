@@ -1,9 +1,12 @@
 // @vitest-environment node
+import type { BalanceValue } from '@hoseki/packages/lib/balance'
 import { TestChakraProvider as ChakraProvider } from '@hoseki/packages/testing/chakra-provider'
+import Decimal from 'decimal.js'
 import { act, useState } from 'react'
 import { type Root, createRoot } from 'react-dom/client'
 import { MemoryRouter } from 'react-router'
 import { assert, expect, it, onTestFinished, vi } from 'vitest'
+import { claimFixture } from '../../testing/claims'
 import { AccountFilter } from './account-filter'
 
 type AccountFilterProps = React.ComponentProps<typeof AccountFilter>
@@ -130,11 +133,12 @@ async function render(
   })
 }
 
+/** An icon button by its label, or a text button (such as an account) by the text it starts with. */
 function button(label: string): HTMLButtonElement {
-  const target = Array.from(document.querySelectorAll('button')).find(
-    (element) =>
-      element.getAttribute('aria-label') === label ||
-      (!element.hasAttribute('aria-label') && element.textContent === label),
+  const target = Array.from(document.querySelectorAll('button')).find((element) =>
+    element.hasAttribute('aria-label')
+      ? element.getAttribute('aria-label') === label
+      : element.textContent.startsWith(label),
   )
   assert.exists(target, `Missing button: ${label}`)
   return target
@@ -148,6 +152,10 @@ async function click(label: string): Promise<void> {
 }
 
 async function search(value: string): Promise<void> {
+  // The box opens from the magnifying glass and stays open until closed.
+  if (button('Search accounts').getAttribute('aria-pressed') !== 'true') {
+    await click('Search accounts')
+  }
   const input = document.querySelector<HTMLInputElement>('input[aria-label="Search accounts"]')
   assert.exists(input, 'Expected the account search input')
   await act(async () => {
@@ -167,15 +175,15 @@ it.each(['sidebar', 'dropdown'] as const)(
         await click('Filter accounts: All accounts')
       }
       expect(button('All accounts').getAttribute('aria-pressed')).toBe('true')
-      expect(button('Include Paper Wallet').getAttribute('aria-pressed')).toBe('false')
-      await click('Include Paper Wallet')
+      expect(button('Paper Wallet').getAttribute('aria-pressed')).toBe('false')
+      await click('Paper Wallet')
       expect(onSelectionChange).toHaveBeenLastCalledWith(new Set(['paper']))
-      expect(button('Include Paper Wallet').getAttribute('aria-pressed')).toBe('true')
-      await click('Include Cold Storage')
+      expect(button('Paper Wallet').getAttribute('aria-pressed')).toBe('true')
+      await click('Cold Storage')
       expect(onSelectionChange).toHaveBeenLastCalledWith(new Set(['paper', 'cold']))
-      await click('Include Paper Wallet')
+      await click('Paper Wallet')
       expect(onSelectionChange).toHaveBeenLastCalledWith(new Set(['cold']))
-      await click('Include Cold Storage')
+      await click('Cold Storage')
       expect(onSelectionChange).toHaveBeenLastCalledWith(new Set())
       expect(button('All accounts').getAttribute('aria-pressed')).toBe('true')
       expect(document.body.textContent).not.toContain('Apply')
@@ -193,8 +201,8 @@ it.each(['sidebar', 'dropdown'] as const)(
         await click('Filter accounts: Paper Wallet')
       }
       await search('cold')
-      expect(document.querySelectorAll('button[aria-label^="Include"]')).toHaveLength(1)
-      await click('Include Cold Storage')
+      expect(accountOrder()).toEqual(['Cold Storage'])
+      await click('Cold Storage')
       expect(onSelectionChange).toHaveBeenLastCalledWith(new Set(['paper', 'cold']))
       await search('missing')
       expect(document.body.textContent).toContain('No accounts match your search.')
@@ -208,11 +216,11 @@ it('retains immediate popover changes after closing and reopening', async () => 
   await withTestSetup(async () => {
     await render()
     await click('Filter accounts: All accounts')
-    await click('Include Paper Wallet')
+    await click('Paper Wallet')
     await click('Done')
     await click('Filter accounts: Paper Wallet')
-    expect(button('Include Paper Wallet').getAttribute('aria-pressed')).toBe('true')
-    expect(button('Include Cold Storage').getAttribute('aria-pressed')).toBe('false')
+    expect(button('Paper Wallet').getAttribute('aria-pressed')).toBe('true')
+    expect(button('Cold Storage').getAttribute('aria-pressed')).toBe('false')
   })
 })
 
@@ -224,11 +232,11 @@ it.each(['dropdown', 'sidebar'] as const)(
       if (presentation === 'dropdown') {
         await click('Filter accounts: All accounts')
       }
-      const reconnect = document.querySelector('[aria-label="Reconnect Offline Strike"]')
+      const reconnect = document.querySelector('a[href="/accounts/strike/strike"]')
       assert.exists(reconnect, 'Expected the reconnect link')
-      expect(reconnect.getAttribute('href')).toBe('/accounts/strike/strike')
+      expect(reconnect.textContent).toBe('Offline StrikeReconnect needed')
       expect(document.body.textContent).not.toContain('99.999')
-      expect(document.querySelector('[aria-label="Include Offline Strike"]')).toBeNull()
+      expect(accountOrder()).not.toContain('Offline Strike')
       await click('All accounts')
       expect(onSelectionChange).toHaveBeenLastCalledWith(new Set())
     })
@@ -241,14 +249,15 @@ it('keeps the rail visible and its width stable across persisted density changes
     const rail = container.querySelector<HTMLElement>('[aria-label="Portfolio accounts"]')
     assert.exists(rail, 'Expected the accounts rail')
     expect(getComputedStyle(rail).width).toBe('280px')
-    expect(container.querySelector('[aria-label="Collapse accounts"]')).toBeNull()
     await click('Detailed view')
     expect(getComputedStyle(rail).width).toBe('280px')
-    expect(button('Include Paper Wallet').getAttribute('aria-pressed')).toBe('true')
+    expect(button('Compact view').hasAttribute('aria-pressed')).toBe(false)
+    expect(button('Paper Wallet').getAttribute('aria-pressed')).toBe('true')
     expect(localStorage.getItem('hoseki:sidebar-compact')).toBe('false')
     expect(document.body.textContent).toContain('$312,500.00 USD')
     await render(new Set(['paper']), 'sidebar')
-    expect(button('Detailed view').getAttribute('aria-pressed')).toBe('true')
+    // The toggle names the view it switches to, so a remembered detailed view offers Compact.
+    expect(container.querySelector('[aria-label="Detailed view"]')).toBeNull()
     await click('Compact view')
     expect(localStorage.getItem('hoseki:sidebar-compact')).toBe('true')
     expect(onSelectionChange).not.toHaveBeenCalled()
@@ -263,7 +272,7 @@ it.each(['sidebar', 'dropdown'] as const)(
       if (presentation === 'dropdown') {
         await click('Filter accounts: All accounts')
       }
-      const row = button('Include Paper Wallet')
+      const row = button('Paper Wallet')
       expect(row.type).toBe('button')
       expect(row.tabIndex).toBe(0)
       const name = Array.from(row.querySelectorAll('span')).find((element) => element.textContent === 'Paper Wallet')
@@ -282,3 +291,175 @@ it.each(['sidebar', 'dropdown'] as const)(
     })
   },
 )
+
+const connectedStrike: AccountFilterProps['exchangeAccounts'][number] = {
+  id: 'strike-live',
+  displayName: 'Spending',
+  exchange: 'strike',
+  currency: 'BTC',
+  balance: '400000000',
+  balanceAsOf: null,
+  createdAt: '2026-01-01T00:00:00.000Z',
+  connectionStatus: 'connected',
+}
+
+async function renderAccounts({
+  claims = [],
+  balances = new Map(),
+  manualAccounts = accounts,
+  exchangeAccounts = [],
+}: {
+  claims?: AccountFilterProps['claims']
+  balances?: AccountFilterProps['balances']
+  manualAccounts?: AccountFilterProps['manualAccounts']
+  exchangeAccounts?: AccountFilterProps['exchangeAccounts']
+}): Promise<void> {
+  await act(async () => {
+    root.render(
+      <ChakraProvider>
+        <MemoryRouter>
+          <AccountFilter
+            presentation="sidebar"
+            claims={claims}
+            exchangeAccounts={exchangeAccounts}
+            manualAccounts={manualAccounts}
+            etfAccounts={[]}
+            balances={balances}
+            btcPrice={50_000}
+            selected={new Set()}
+            onSelectionChange={onSelectionChange}
+            historySyncingAccountIds={[]}
+            recentlySyncedAccountIds={[]}
+          />
+        </MemoryRouter>
+      </ChakraProvider>,
+    )
+  })
+}
+
+/** Account names in list order; each row is a toggle named by its content. */
+function accountOrder(): string[] {
+  return Array.from(document.querySelectorAll('button[aria-pressed]:not([aria-label])'))
+    .filter((row) => !row.textContent.startsWith('All accounts'))
+    .map(
+      (row) =>
+        Array.from(row.querySelectorAll('span')).find((span) => span.childElementCount === 0 && span.textContent !== '')
+          ?.textContent ?? '',
+    )
+}
+
+it('lists accounts largest first, whatever their type or the order they arrive in', async () => {
+  await withTestSetup(async () => {
+    await renderAccounts({ manualAccounts: [...accounts].reverse(), exchangeAccounts: [connectedStrike] })
+    expect(accountOrder()).toEqual(['Paper Wallet', 'Spending', 'Cold Storage'])
+  })
+})
+
+it('totals every account on All accounts and badges manually added ones', async () => {
+  await withTestSetup(async () => {
+    await renderAccounts({ exchangeAccounts: [connectedStrike] })
+    expect(button('All accounts').textContent).toContain('12.85000000 BTC')
+    const badges = Array.from(document.querySelectorAll('span')).filter((span) => span.textContent === 'Manually added')
+    expect(badges).toHaveLength(2)
+    await click('Detailed view')
+    // Exchanges read as their proper names, not internal identifiers.
+    expect(button('Spending').textContent).toContain('Strike')
+    expect(button('Spending').textContent).not.toContain('strike')
+    expect(button('All accounts').textContent).toContain('$642,500.00 USD')
+  })
+})
+
+it('searches account names only and closes with Escape', async () => {
+  await withTestSetup(async () => {
+    await renderAccounts({ exchangeAccounts: [connectedStrike] })
+    await search('manually')
+    expect(document.body.textContent).toContain('No accounts match your search.')
+    await search('strike')
+    expect(document.body.textContent).toContain('No accounts match your search.')
+    await search('spend')
+    expect(accountOrder()).toEqual(['Spending'])
+    const input = document.querySelector<HTMLInputElement>('input[aria-label="Search accounts"]')
+    assert.exists(input, 'Expected the account search input')
+    const view = input.ownerDocument.defaultView
+    assert.exists(view, 'Expected the input window')
+    await act(async () => {
+      input.dispatchEvent(new view.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    })
+    expect(button('Search accounts').getAttribute('aria-pressed')).toBe('false')
+    expect(input.value).toBe('')
+    expect(accountOrder()).toHaveLength(3)
+  })
+})
+
+it.each(['sidebar', 'dropdown'] as const)(
+  'returns focus to the search button when Escape closes search in %s',
+  async (presentation) => {
+    await withTestSetup(async () => {
+      await render(new Set(), presentation)
+      if (presentation === 'dropdown') {
+        await click('Filter accounts: All accounts')
+        // Opening moves focus into the panel rather than leaving it behind on the trigger.
+        await vi.waitFor(() => {
+          expect(document.activeElement).toBe(button('All accounts'))
+        })
+        expect(document.querySelector('[role="dialog"]')?.getAttribute('aria-label')).toBe('Accounts')
+      }
+      await search('cold')
+      const input = document.querySelector<HTMLInputElement>('input[aria-label="Search accounts"]')
+      assert.exists(input, 'Expected the account search input')
+      expect(document.activeElement).toBe(input)
+      const view = input.ownerDocument.defaultView
+      assert.exists(view, 'Expected the input window')
+      await act(async () => {
+        input.dispatchEvent(new view.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+      })
+      expect(document.activeElement).toBe(button('Search accounts'))
+      // Escape closes only the search; a dropdown stays open with every account.
+      expect(accountOrder()).toContain('Paper Wallet')
+      expect(accountOrder()).toContain('Cold Storage')
+    })
+  },
+)
+
+it('shows a dash rather than zero for a wallet whose balance is unavailable', async () => {
+  await withTestSetup(async () => {
+    // Wallet avatars load their images through the window's Image.
+    vi.stubGlobal('Image', document.defaultView?.Image)
+    const balance: BalanceValue = { current: new Decimal(100_000_000), usd: null }
+    await renderAccounts({
+      claims: [claimFixture('re_clmx_live', 'Live wallet'), claimFixture('re_clmx_down', 'Offline wallet')],
+      balances: new Map([
+        ['re_clmx_live', balance],
+        ['re_clmx_down', null],
+      ]),
+    })
+    expect(button('Live wallet').textContent).toContain('1.00000000 BTC')
+    expect(button('Offline wallet').textContent).toContain('\u2014')
+    expect(button('Offline wallet').textContent).not.toContain('0.00000000')
+    // An unknown balance would understate the total, so none is shown.
+    expect(button('All accounts').textContent).toContain('\u2014')
+    // Statuses are part of each account's button, so they're read with it.
+    expect(button('Paper Wallet').textContent).toContain('Manually added')
+  })
+})
+
+it.each(['sidebar', 'dropdown'] as const)('clears a selection from beside the count in %s', async (presentation) => {
+  await withTestSetup(async () => {
+    await render(new Set(), presentation)
+    if (presentation === 'dropdown') {
+      await click('Filter accounts: All accounts')
+    }
+    expect(Array.from(document.querySelectorAll('button')).some((element) => element.textContent === 'Clear')).toBe(
+      false,
+    )
+    await click('Paper Wallet')
+    await click('Cold Storage')
+    expect(document.body.textContent).toContain('2 of 2')
+    await click('Clear')
+    expect(onSelectionChange).toHaveBeenLastCalledWith(new Set())
+    expect(button('All accounts').getAttribute('aria-pressed')).toBe('true')
+    expect(Array.from(document.querySelectorAll('button')).some((element) => element.textContent === 'Clear')).toBe(
+      false,
+    )
+  })
+})

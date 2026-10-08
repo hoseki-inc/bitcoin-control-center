@@ -38,7 +38,7 @@ export interface DashboardDataSource {
   ) => PortfolioQuery
   useBalances: (
     ...args: Parameters<typeof useGetBalancesPerClaimIds>
-  ) => Pick<ReturnType<typeof useGetBalancesPerClaimIds>, 'data'>
+  ) => Pick<ReturnType<typeof useGetBalancesPerClaimIds>, 'data' | 'balancesFailed'>
   useAutoRefresh: () => void
   getTimezone: () => string
 }

@@ -1,26 +1,31 @@
-import { Box, Flex, Text, useToken } from '@chakra-ui/react'
+import { Box, Flex, Text, usePrefersReducedMotion, useToken } from '@chakra-ui/react'
 import { TZDate } from '@date-fns/tz'
 import { parseUnknown } from '@hoseki/packages/result'
 import { format } from 'date-fns'
 import Decimal from 'decimal.js'
 import { useMemo } from 'react'
-import { Area, AreaChart, ResponsiveContainer, Tooltip, type TooltipContentProps, XAxis, YAxis } from 'recharts'
+import {
+  Area,
+  AreaChart,
+  ResponsiveContainer,
+  Tooltip,
+  type TooltipContentProps,
+  XAxis,
+  type XAxisTickContentProps,
+  YAxis,
+} from 'recharts'
 import { z } from 'zod'
-import { formatBitcoin } from '../../lib/bitcoin-display'
 import { getBrowserTimezone } from '../../utils/timezone'
 import { BitcoinAmount } from '../bitcoin-amount'
-
-interface BalanceDataPoint {
-  timestamp: string
-  totalBalance: string
-  btcPrice?: string
-}
+import { type BalanceDataPoint, formatAxisBtc, formatAxisDate, getAxisDecimals } from './balance-history'
 
 interface AccumulationChartProps {
   data: BalanceDataPoint[]
   hasActivity?: boolean
   isUp?: boolean
   timezone?: string
+  /** "month" shows the first date as a month and year, as for all-time history. */
+  startLabel?: 'day' | 'month'
 }
 
 function formatUsd(btcAmount: number, btcPrice: number): string {
@@ -91,7 +96,10 @@ export function AccumulationChart({
   hasActivity = true,
   isUp = true,
   timezone = getBrowserTimezone(),
+  startLabel = 'day',
 }: AccumulationChartProps): JSX.Element {
+  // Ease into new values when the range or selection changes.
+  const animate = !usePrefersReducedMotion({ ssr: false })
   const [axisColor] = useToken('colors', ['neutral.600'])
   const [success500, error500, neutral400] = useToken('colors', ['success.500', 'error.500', 'neutral.400'])
 
@@ -129,21 +137,34 @@ export function AccumulationChart({
   const yMax = Math.max(...values)
   const yPad = yMax === yMin ? Math.max(Math.abs(yMax) * 0.1, 0.00000001) : (yMax - yMin) * 0.15
 
-  const ticks = Array.from(
-    new Set([
-      Math.max(0, Math.floor((yMin - yPad) * 1e8)),
-      Math.round((yMin + yMax) * 0.5 * 1e8),
-      Math.ceil((yMax + yPad) * 1e8),
-    ]),
-  ).map((sats) => sats / 1e8)
+  // A history that is zero throughout needs only the zero line.
+  const ticks =
+    yMax === 0
+      ? [0]
+      : Array.from(
+          new Set([
+            Math.max(0, Math.floor((yMin - yPad) * 1e8)),
+            Math.round((yMin + yMax) * 0.5 * 1e8),
+            Math.ceil((yMax + yPad) * 1e8),
+          ]),
+        ).map((sats) => sats / 1e8)
+  const axisDecimals = getAxisDecimals(ticks)
+
+  const firstMs = chartData[0]?.timestampMs ?? 0
+  const lastMs = chartData[chartData.length - 1]?.timestampMs ?? firstMs
+  const edgeTicks = firstMs === lastMs ? [firstMs] : [firstMs, lastMs]
 
   const strokeColor = !hasActivity ? neutral400 : isUp ? success500 : error500
   const gradientId = isUp ? 'accGradientUp' : 'accGradientDown'
 
   return (
-    <Box h="220px" w="100%" aria-label="Bitcoin balance history">
+    <Box h="220px" w="100%">
       <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={chartData} margin={{ top: 16, right: 12, left: 12, bottom: 4 }}>
+        <AreaChart
+          title="Bitcoin balance history"
+          data={chartData}
+          margin={{ top: 16, right: 12, left: 12, bottom: 4 }}
+        >
           <defs>
             <linearGradient id="accGradientUp" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor={success500} stopOpacity={0.15} />
@@ -161,10 +182,28 @@ export function AccumulationChart({
             domain={['dataMin', 'dataMax']}
             axisLine={false}
             tickLine={false}
-            tick={{ fontSize: 12, fill: axisColor, fontWeight: 500 }}
-            tickFormatter={(value: number) => format(new TZDate(new Date(value), timezone), 'MMM d')}
-            minTickGap={42}
-            dy={8}
+            // Only the first and last dates, anchored inside the chart edges.
+            ticks={edgeTicks}
+            interval={0}
+            tick={({ x, y, payload }: XAxisTickContentProps) => (
+              <text
+                x={x}
+                y={y}
+                dy={16}
+                fontSize={12}
+                fontWeight={500}
+                fill={axisColor}
+                textAnchor={
+                  edgeTicks.length === 1 ? 'middle' : Number(payload.value) === edgeTicks[0] ? 'start' : 'end'
+                }
+              >
+                {formatAxisDate(
+                  Number(payload.value),
+                  timezone,
+                  Number(payload.value) === edgeTicks[0] ? startLabel : 'day',
+                )}
+              </text>
+            )}
           />
           <YAxis
             domain={[Math.max(0, yMin - yPad), yMax + yPad]}
@@ -172,15 +211,16 @@ export function AccumulationChart({
             axisLine={false}
             tickLine={false}
             tick={{ fontSize: 12, fill: axisColor, fontWeight: 500 }}
-            tickFormatter={(v: number) => formatBitcoin(v).replace(/ /g, '\u00a0')}
+            tickFormatter={(btc: number) => formatAxisBtc(btc, axisDecimals)}
             width="auto"
           />
           <Tooltip
+            isAnimationActive={animate}
             content={(tooltipProps) => <ChartTooltip {...tooltipProps} timezone={timezone} />}
             cursor={{ stroke: 'rgba(0,0,0,0.08)', strokeWidth: 1, strokeDasharray: '4 4' }}
           />
           <Area
-            isAnimationActive={false}
+            isAnimationActive={animate}
             type="monotone"
             dataKey="btcBalance"
             stroke={strokeColor}

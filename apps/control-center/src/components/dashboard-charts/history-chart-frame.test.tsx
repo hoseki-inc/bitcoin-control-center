@@ -73,7 +73,8 @@ it.each([false, true])('retains chart nodes while disabling stale inspection, re
     expect(frame.hasAttribute('inert')).toBe(true)
     expect(frame.getAttribute('aria-hidden')).toBe('true')
     expect(container.querySelector('[aria-busy="true"]')).not.toBeNull()
-    expect(container.textContent).toContain('Updating view')
+    // The retained chart and the sweep across it are both hidden from assistive technology.
+    expect(container.querySelectorAll('[aria-hidden="true"]')).toHaveLength(2)
     await render('account-b', false)
     expect(container.querySelector('button')).toBe(inspection)
     expect(frame.hasAttribute('inert')).toBe(false)
@@ -89,7 +90,24 @@ it.each([false, true])('retains chart nodes while disabling stale inspection, re
         </ChakraProvider>,
       )
     })
-    expect(container.querySelector('output')?.getAttribute('aria-label')).toBe('Preparing history for this date range')
+    expect(container.textContent).toBe('Preparing history for this date range')
     expect(container.querySelector('button')).toBeNull()
+  })
+})
+
+it('marks a background refresh busy without sweeping over the current chart', async () => {
+  await withTestSetup(async (root, container) => {
+    await act(async () => {
+      root.render(
+        <ChakraProvider>
+          <HistoryChartFrame height="220px" viewKey="all" loading={false} updating={false} refreshing>
+            <button>Inspect chart</button>
+          </HistoryChartFrame>
+        </ChakraProvider>,
+      )
+    })
+    expect(container.querySelector('[aria-busy="true"]')).not.toBeNull()
+    expect(container.querySelectorAll('[aria-hidden="true"]')).toHaveLength(0)
+    expect(container.querySelector('[inert]')).toBeNull()
   })
 })

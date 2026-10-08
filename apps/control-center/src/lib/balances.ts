@@ -15,6 +15,8 @@ function getBalanceValue(balance: Decimal | bigint, price: Decimal | null): Bala
 }
 
 export type UseGetBalancesPerClaimIdOutput = {
+  /** The latest balance fetch failed; `data` may still hold older balances. */
+  balancesFailed: boolean
   isLoading: boolean
   isSuccess: boolean
   isError: boolean
@@ -49,6 +51,7 @@ export function useGetBalancesPerClaimIds({
   }
 
   return {
+    balancesFailed: btcClaimBalancesQuery.isError,
     isLoading: queries.some((q) => q.isLoading),
     isError: queries.some((q) => q.isError),
     isSuccess: queries.every((q) => q.isSuccess),

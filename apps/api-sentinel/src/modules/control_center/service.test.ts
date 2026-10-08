@@ -210,6 +210,30 @@ describe('portfolio history completion', () => {
     })
   })
 
+  it('reports when stored wallet balances last synced, only while live balances are unavailable', async () => {
+    await withTestSetup(async () => {
+      await harness.service.recordAccountSnapshot(accountId, '90', '2020-01-01T00:00:00.000Z')
+      await harness.service.recordAccountSnapshot(accountId, '150', '2020-01-03T09:00:00.000Z')
+      harness.provider.getConfirmedAccountBalances.mockResolvedValueOnce(Err(new Error('Balance unavailable')))
+      const offline = (await harness.service.getData({ timeRange: '90d' })).unwrap()
+      expect(offline.currentTotalBalance).toBe('150')
+      expect(offline.walletBalancesAsOf).toBe('2020-01-03T09:00:00.000Z')
+      harness.provider.getConfirmedAccountBalances.mockResolvedValueOnce(Ok(new IndexMap([[account, 160n]])))
+      const live = (await harness.service.getData({ timeRange: '90d' })).unwrap()
+      expect(live.currentTotalBalance).toBe('160')
+      expect(live.walletBalancesAsOf).toBeNull()
+    })
+  })
+
+  it('reports no last-synced time while a wallet with no stored balance is offline', async () => {
+    await withTestSetup(async () => {
+      harness.provider.getConfirmedAccountBalances.mockResolvedValueOnce(Err(new Error('Balance unavailable')))
+      const offline = (await harness.service.getData({ timeRange: '90d' })).unwrap()
+      expect(offline.currentTotalBalance).toBe('0')
+      expect(offline.walletBalancesAsOf).toBeNull()
+    })
+  })
+
   it('keeps a certified history prefix available while a new block is fetched', async () => {
     await withTestSetup(async () => {
       await harness.sync()

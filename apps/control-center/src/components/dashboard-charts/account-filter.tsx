@@ -2,26 +2,27 @@ import {
   Box,
   Button,
   Flex,
+  Icon,
   Input,
   Popover,
-  PopoverBody,
   PopoverContent,
-  PopoverFooter,
-  PopoverHeader,
   PopoverTrigger,
   Portal,
   Stack,
   Text,
   Tooltip,
   VisuallyHidden,
+  chakra,
   useDisclosure,
-  useToken,
 } from '@chakra-ui/react'
+import { getRecordValue } from '@hoseki/packages/lib'
 import type { BalanceValue } from '@hoseki/packages/lib/balance'
 import type { ClaimId } from '@hoseki/packages/schemas'
+import { KeystoreAvatar } from '@hoseki/packages/ui/prove-verify-ui'
 import { VIEWPORT_BELOW_HEADER } from '@hoseki/packages/ui/prove-verify-ui/layout'
-import { Check, ChevronDown } from 'lucide-react'
-import { useRef, useState } from 'react'
+import { type SupportedHardwareWallet, getSupportedHardwareWalletLogoPath } from '@hoseki/packages/wallet'
+import { Check, ChevronDown, KeyRound, Search } from 'lucide-react'
+import { type ReactNode, useEffect, useId, useRef, useState } from 'react'
 import { Link } from 'react-router'
 import type { RouterOutput } from '../../trpc'
 import type { ClaimDto } from '../../trpc/server-types'
@@ -30,6 +31,20 @@ import { needsExchangeReconnect } from '../../utils/exchange-connection-status'
 import { BitcoinAmount } from '../bitcoin-amount'
 import { UsdEquivalent } from '../usd-equivalent'
 import { HistorySyncStatus } from './history-sync-status'
+
+const exchangeConfig = {
+  coinbase: { label: 'Coinbase', logo: '/images/exchanges/coinbase.svg' },
+  kraken: { label: 'Kraken', logo: '/images/exchanges/kraken.svg' },
+  robinhood: { label: 'Robinhood', logo: '/images/exchanges/robinhood-icon.svg' },
+  strike: { label: 'Strike', logo: '/images/exchanges/strike-icon.svg' },
+} satisfies Record<string, { label: string; logo: string }>
+
+type AccountLogo =
+  | { kind: 'wallet'; wallets: (SupportedHardwareWallet | null)[] }
+  | { kind: 'image'; src: string }
+  | { kind: 'manual' }
+
+const PlainButton = chakra('button')
 
 const popoverModifiers = [{ name: 'preventOverflow', options: { altAxis: true, tether: false, padding: 16 } }]
 
@@ -70,38 +85,69 @@ export function AccountFilter({
   const { isOpen, onOpen, onClose } = useDisclosure()
   const [search, setSearch] = useState('')
   const searchRef = useRef<HTMLInputElement>(null)
-  const accounts = [
-    ...claims.map((claim) => ({
-      id: claim.id,
-      name: claim.displayName,
-      detail: ensureClaimStatusNotExpired(claim) === 'pending' ? 'Self-custody · Pending' : 'Self-custody',
-      reconnectTo: null,
-      sats: Number(balances.get(claim.id)?.current ?? 0),
-    })),
-    ...exchangeAccounts.map((account) => ({
+  const allAccountsRef = useRef<HTMLButtonElement>(null)
+  // An id rather than a ref: Tooltip would read the ref from its child, which React 19 warns about.
+  const searchToggleId = useId()
+  const [isSearching, setIsSearching] = useState(false)
+  useEffect(() => {
+    // Focus once the box is interactive again; it stays mounted while hidden.
+    if (isSearching) {
+      searchRef.current?.focus({ preventScroll: true })
+    }
+  }, [isSearching])
+  const accounts: {
+    id: string
+    name: string
+    detail: string
+    /** Shown in the warning color. */
+    status: string | null
+    logo: AccountLogo
+    reconnectTo: string | null
+    /** Null while a wallet's live balance is loading or unavailable. */
+    sats: number | null
+  }[] = [
+    ...claims.map((claim) => {
+      const isMultisig = claim.keystores.length > 1
+      return {
+        id: claim.id,
+        name: claim.displayName,
+        detail: isMultisig ? 'Multisig' : formatWalletName(claim.keystores[0]?.wallet),
+        status: ensureClaimStatusNotExpired(claim) === 'pending' ? 'Pending' : null,
+        logo: {
+          kind: 'wallet' as const,
+          wallets: claim.keystores.slice(0, 3).map((keystore) => keystore.wallet ?? null),
+        },
+        reconnectTo: null,
+        sats: toSatsOrNull(balances.get(claim.id)),
+      }
+    }),
+    ...exchangeAccounts.map((account) => {
+      const config = getRecordValue(exchangeConfig, account.exchange)
+      return {
+        id: account.id,
+        name: account.displayName,
+        detail: config?.label ?? account.exchange,
+        status: null,
+        logo: config ? { kind: 'image' as const, src: config.logo } : { kind: 'manual' as const },
+        reconnectTo: needsExchangeReconnect(account) ? `/accounts/${account.exchange}/${account.id}` : null,
+        sats: needsExchangeReconnect(account) ? 0 : Number(account.balance ?? 0),
+      }
+    }),
+    ...[...manualAccounts, ...etfAccounts].map((account) => ({
       id: account.id,
       name: account.displayName,
-      detail: needsExchangeReconnect(account) ? `${account.exchange} · Reconnect needed` : account.exchange,
-      reconnectTo: needsExchangeReconnect(account) ? `/accounts/${account.exchange}/${account.id}` : null,
-      sats: needsExchangeReconnect(account) ? 0 : Number(account.balance ?? 0),
-    })),
-    ...manualAccounts.map((account) => ({
-      id: account.id,
-      name: account.displayName,
-      detail: 'Manual account',
+      detail: '',
+      status: 'Manually added',
+      logo: { kind: 'manual' as const },
       reconnectTo: null,
       sats: Number(account.balance),
     })),
-    ...etfAccounts.map((account) => ({
-      id: account.id,
-      name: account.displayName,
-      detail: 'ETF',
-      reconnectTo: null,
-      sats: Number(account.balance),
-    })),
-  ]
+  ].sort((a, b) => (b.sats ?? -1) - (a.sats ?? -1))
   const selectable = accounts.filter((account) => account.reconnectTo === null)
-  const totalSats = accounts.reduce((total, account) => total + account.sats, 0)
+  // A missing wallet balance would understate the total and every share.
+  const totalSats = accounts.some((account) => account.sats === null)
+    ? null
+    : accounts.reduce((total, account) => total + (account.sats ?? 0), 0)
   const included = selectable.filter((account) => selected.size === 0 || selected.has(account.id))
   const isAll = selected.size === 0
   const label = isAll
@@ -109,9 +155,19 @@ export function AccountFilter({
     : included.length === 1
       ? (included[0]?.name ?? 'Account')
       : `${included.length} accounts`
-  const matching = accounts.filter((account) =>
-    `${account.name} ${account.detail}`.toLowerCase().includes(search.trim().toLowerCase()),
-  )
+  const matching = accounts.filter((account) => account.name.toLowerCase().includes(search.trim().toLowerCase()))
+  const closeSearch = (): void => {
+    setIsSearching(false)
+    setSearch('')
+  }
+  const setDensity = (isCompact: boolean): void => {
+    setCompact(isCompact)
+    try {
+      localStorage.setItem('hoseki:sidebar-compact', String(isCompact))
+    } catch {
+      /* Keep session preference. */
+    }
+  }
 
   const toggleAccount = (id: string): void => {
     const next = new Set(selected)
@@ -123,7 +179,8 @@ export function AccountFilter({
     onSelectionChange(next)
   }
   const rows = (
-    <Stack spacing={2}>
+    // Extra spacing leaves room for status badges on the cards' top edges.
+    <Stack spacing={3}>
       {matching.map((account) =>
         account.reconnectTo !== null ? (
           <Flex
@@ -137,11 +194,13 @@ export function AccountFilter({
             border="1px solid"
             borderColor="neutral.200"
             _hover={{ bg: 'neutral.50' }}
-            aria-label={`Reconnect ${account.name}`}
           >
-            <Text textStyle="text/sm" fontWeight="medium" overflowWrap="anywhere">
-              {account.name}
-            </Text>
+            <Flex align="center" gap={2}>
+              <AccountLogoMark logo={account.logo} compact={compact} muted />
+              <Text textStyle="text/sm" fontWeight="medium" overflowWrap="anywhere">
+                {account.name}
+              </Text>
+            </Flex>
             <Text textStyle="text/xs" color="warning.700">
               Reconnect needed
             </Text>
@@ -153,7 +212,6 @@ export function AccountFilter({
               type="button"
               w="full"
               textAlign="left"
-              aria-label={`Include ${account.name}`}
               aria-pressed={selected.has(account.id)}
               onClick={() => {
                 toggleAccount(account.id)
@@ -162,7 +220,9 @@ export function AccountFilter({
               position="relative"
               borderRadius="control"
               border="1px solid"
-              borderColor={selected.has(account.id) ? 'neutral.700' : 'neutral.200'}
+              borderColor={
+                selected.has(account.id) ? 'neutral.700' : account.status !== null ? 'warning.300' : 'neutral.200'
+              }
               bg={selected.has(account.id) ? 'neutral.50' : 'shades.0'}
               cursor="pointer"
               _hover={{ bg: 'neutral.50', borderColor: 'neutral.600' }}
@@ -170,7 +230,8 @@ export function AccountFilter({
               transition="background-color 120ms ease, border-color 120ms ease"
               sx={{ '@media (prefers-reduced-motion: reduce)': { transition: 'none' } }}
             >
-              <Flex align="flex-start" gap={2}>
+              <Flex as="span" align="center" gap={2}>
+                <AccountLogoMark logo={account.logo} compact={compact} />
                 <Text
                   as="span"
                   flex="1"
@@ -182,7 +243,7 @@ export function AccountFilter({
                 >
                   {account.name}
                 </Text>
-                <Box as="span" pt={0.5}>
+                <Box as="span">
                   <HistorySyncStatus
                     syncing={historySyncingAccountIds.includes(account.id)}
                     synced={recentlySyncedAccountIds.includes(account.id)}
@@ -191,7 +252,6 @@ export function AccountFilter({
                 </Box>
                 <Box
                   as="span"
-                  pt={0.5}
                   flexShrink={0}
                   color="neutral.900"
                   aria-hidden="true"
@@ -200,7 +260,7 @@ export function AccountFilter({
                   <Check size={14} strokeWidth={2} />
                 </Box>
               </Flex>
-              {!compact && (
+              {!compact && account.detail && (
                 <Text as="span" display="block" textStyle="text/xs" color="neutral.600" mt={1}>
                   {account.detail}
                 </Text>
@@ -209,32 +269,32 @@ export function AccountFilter({
                 as="span"
                 display="block"
                 mt={compact ? 1 : 3}
+                pr={compact ? 7 : 0}
                 textStyle={compact ? 'text/xs' : 'text/sm'}
                 color="neutral.600"
                 sx={{ fontVariantNumeric: 'tabular-nums' }}
                 overflowWrap="anywhere"
               >
-                <>
-                  <BitcoinAmount btc={account.sats / 100_000_000} />
-                </>
+                {account.sats === null ? '\u2014' : <BitcoinAmount btc={account.sats / 100_000_000} />}
               </Text>
               {!compact && (
-                <Flex mt={1} pr={8} minH="20px" align="center" color="neutral.600">
+                <Flex as="span" mt={1} pr={8} minH="20px" align="center" color="neutral.600">
                   <Text as="span" textStyle="text/xs" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                    <>
+                    {account.sats === null ? (
+                      '\u2014'
+                    ) : (
                       <UsdEquivalent btc={account.sats / 100_000_000} btcPrice={btcPrice} />
-                    </>
+                    )}
                   </Text>
                 </Flex>
               )}
+              {account.sats !== null && totalSats !== null && (
+                <Box as="span" position="absolute" bottom={3} right={3}>
+                  <AccountSharePie sats={account.sats} totalSats={totalSats} compact={compact} />
+                </Box>
+              )}
+              {account.status !== null && <StatusBadge label={account.status} />}
             </Box>
-            {!compact && (
-              <Box position="absolute" bottom={3} right={3}>
-                <>
-                  <AccountSharePie sats={account.sats} totalSats={totalSats} name={account.name} />
-                </>
-              </Box>
-            )}
           </Box>
         ),
       )}
@@ -246,72 +306,137 @@ export function AccountFilter({
     </Stack>
   )
   const allAccounts = (
-    <Button
+    <PlainButton
+      ref={allAccountsRef}
+      type="button"
       w="full"
-      justifyContent="space-between"
-      size="sm"
-      minH="44px"
-      variant="outline"
+      textAlign="left"
+      p={3}
       aria-pressed={isAll}
+      borderRadius="control"
+      border="1px solid"
       borderColor={isAll ? 'neutral.700' : 'neutral.200'}
       bg={isAll ? 'neutral.50' : 'shades.0'}
+      _hover={{ bg: 'neutral.50', borderColor: 'neutral.600' }}
+      _focusVisible={{ outline: '2px solid', outlineColor: 'activeState.80', outlineOffset: '2px' }}
       onClick={() => {
         onSelectionChange(new Set())
       }}
     >
-      All accounts
-      <Box as="span" opacity={isAll ? 1 : 0} aria-hidden="true">
-        <Check size={14} />
-      </Box>
-    </Button>
+      <Flex as="span" align="center" justify="space-between" gap={2}>
+        <Text as="span" textStyle="text/sm" fontWeight="medium" color="neutral.900">
+          All accounts
+        </Text>
+        <Box as="span" opacity={isAll ? 1 : 0} aria-hidden="true">
+          <Check size={14} />
+        </Box>
+      </Flex>
+      <Text
+        as="span"
+        display="block"
+        mt={1}
+        textStyle={compact ? 'text/xs' : 'text/sm'}
+        color="neutral.600"
+        sx={{ fontVariantNumeric: 'tabular-nums' }}
+      >
+        {totalSats === null ? '\u2014' : <BitcoinAmount btc={totalSats / 100_000_000} />}
+      </Text>
+      {!compact && (
+        <Text as="span" display="block" mt={1} textStyle="text/xs" color="neutral.600">
+          {totalSats === null ? '\u2014' : <UsdEquivalent btc={totalSats / 100_000_000} btcPrice={btcPrice} />}
+        </Text>
+      )}
+    </PlainButton>
   )
-  const densityControl = (
-    <Flex as="fieldset" aria-label="Account detail level" gap={1} p={1} bg="neutral.50" borderRadius="control">
-      {([true, false] as const).map((isCompact) => (
-        <Button
-          key={String(isCompact)}
-          flex="1"
-          size="sm"
-          minH="40px"
-          variant="ghost"
+  const headerControls = (
+    <Flex align="center" justify="flex-end" gap={1.5}>
+      {/* Always mounted so it can fade and grow in and out smoothly. */}
+      <Box
+        flex={isSearching ? '1' : '0'}
+        minW={0}
+        maxW={isSearching ? '240px' : '0px'}
+        opacity={isSearching ? 1 : 0}
+        transition="max-width 320ms cubic-bezier(0.22, 1, 0.36, 1), opacity 260ms ease, flex-grow 320ms cubic-bezier(0.22, 1, 0.36, 1)"
+        sx={{ '@media (prefers-reduced-motion: reduce)': { transition: 'none' } }}
+        aria-hidden={!isSearching || undefined}
+        {...(isSearching ? {} : { inert: true })}
+      >
+        <Input
+          ref={searchRef}
+          w="full"
+          h="28px"
+          px={3}
+          borderRadius="full"
           border="none"
-          aria-label={isCompact ? 'Compact view' : 'Detailed view'}
-          aria-pressed={compact === isCompact}
-          bg={compact === isCompact ? 'neutral.200' : 'transparent'}
-          color={compact === isCompact ? 'neutral.900' : 'neutral.600'}
-          textStyle="text/xs"
-          fontWeight="medium"
-          onClick={() => {
-            setCompact(isCompact)
-            try {
-              localStorage.setItem('hoseki:sidebar-compact', String(isCompact))
-            } catch {
-              /* Keep session preference. */
+          bg="neutral.100"
+          textStyle="text/sm"
+          _placeholder={{ color: 'neutral.600' }}
+          _focusVisible={{ bg: 'neutral.50', boxShadow: '0 0 0 2px var(--chakra-colors-neutral-300)' }}
+          aria-label="Search accounts"
+          placeholder="Search"
+          tabIndex={isSearching ? undefined : -1}
+          value={search}
+          onChange={(event) => {
+            setSearch(event.target.value)
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') {
+              event.stopPropagation()
+              // Move focus out before the box becomes inert, or it falls to the page.
+              document.getElementById(searchToggleId)?.focus()
+              closeSearch()
             }
           }}
-        >
-          {isCompact ? 'Compact' : 'Detailed'}
-        </Button>
-      ))}
+        />
+      </Box>
+      <HeaderIconButton
+        id={searchToggleId}
+        label="Search accounts"
+        isActive={isSearching}
+        onClick={() => {
+          if (isSearching) {
+            closeSearch()
+          } else {
+            setIsSearching(true)
+          }
+        }}
+      >
+        <Search size={13} strokeWidth={2} />
+      </HeaderIconButton>
+      <HeaderIconButton
+        label={compact ? 'Detailed view' : 'Compact view'}
+        onClick={() => {
+          setDensity(!compact)
+        }}
+      >
+        <DensityIcon compact={compact} />
+      </HeaderIconButton>
     </Flex>
   )
-  const searchInput = (
-    <Input
-      ref={searchRef}
-      size="sm"
-      h="40px"
-      aria-label="Search accounts"
-      placeholder="Search accounts"
-      value={search}
-      onChange={(event) => {
-        setSearch(event.target.value)
-      }}
-    />
-  )
+  // Clear sits left of the count, so the count never moves when it appears.
   const count = (
-    <Text textStyle="text/xs" color="neutral.600" aria-live="polite">
-      {included.length} of {selectable.length}
-    </Text>
+    <Flex align="center" gap={2}>
+      {!isAll && (
+        <PlainButton
+          type="button"
+          onClick={() => {
+            onSelectionChange(new Set())
+          }}
+          px={1.5}
+          borderRadius="4px"
+          textStyle="text/xs"
+          fontWeight="medium"
+          color="neutral.700"
+          _hover={{ color: 'neutral.900', bg: 'neutral.100' }}
+          _focusVisible={{ outline: '2px solid', outlineColor: 'activeState.80', outlineOffset: '2px' }}
+        >
+          Clear
+        </PlainButton>
+      )}
+      <Text textStyle="text/xs" color="neutral.600">
+        {included.length} of {selectable.length}
+      </Text>
+    </Flex>
   )
 
   if (presentation === 'sidebar') {
@@ -334,14 +459,13 @@ export function AccountFilter({
         sx={{ scrollbarGutter: 'stable', overscrollBehavior: 'contain' }}
       >
         <Stack spacing={3}>
+          {headerControls}
           <Flex align="center" justify="space-between" gap={2}>
-            <Text textStyle="text/md" fontWeight="medium">
+            <Text as="h2" textStyle="text/md" fontWeight="medium">
               Accounts
             </Text>
             {count}
           </Flex>
-          {densityControl}
-          {searchInput}
           {allAccounts}
           {rows}
           <Button as={Link} to="/accounts" variant="ghost" size="sm" minH="44px" justifyContent="flex-start">
@@ -355,11 +479,12 @@ export function AccountFilter({
     <Popover
       isOpen={isOpen}
       onOpen={() => {
-        setSearch('')
+        closeSearch()
         onOpen()
       }}
       onClose={onClose}
-      initialFocusRef={searchRef}
+      // The search box is hidden until opened, and focusing an icon button would pop its tooltip.
+      initialFocusRef={allAccountsRef}
       placement="bottom-start"
       strategy="fixed"
       modifiers={popoverModifiers}
@@ -378,29 +503,31 @@ export function AccountFilter({
         </Button>
       </PopoverTrigger>
       <Portal>
+        {/* Plain sections rather than Popover parts, which would name the dialog with the whole header and list. */}
         <PopoverContent
+          aria-label="Accounts"
           w="360px"
           maxW="calc(100vw - 32px)"
           maxH="min(600px, calc(100dvh - 32px))"
           borderRadius="panel"
           overflow="hidden"
         >
-          <PopoverHeader p={4} borderColor="neutral.200" flexShrink={0}>
+          <Box p={4} borderBottom="1px solid" borderColor="neutral.200" flexShrink={0}>
             <Stack spacing={3}>
-              <Flex justify="space-between" align="center">
+              {headerControls}
+              <Flex justify="space-between" align="center" gap={2}>
                 <Text textStyle="text/md" fontWeight="medium">
                   Accounts
                 </Text>
                 {count}
               </Flex>
-              {searchInput}
               {allAccounts}
             </Stack>
-          </PopoverHeader>
-          <PopoverBody p={3} overflowY="auto" minH={0}>
+          </Box>
+          <Box p={3} overflowY="auto" minH={0}>
             {rows}
-          </PopoverBody>
-          <PopoverFooter p={3} borderColor="neutral.200" flexShrink={0}>
+          </Box>
+          <Box p={3} borderTop="1px solid" borderColor="neutral.200" flexShrink={0}>
             <Flex justify="space-between">
               <Button as={Link} to="/accounts" variant="ghost" size="sm">
                 Manage accounts
@@ -409,7 +536,7 @@ export function AccountFilter({
                 Done
               </Button>
             </Flex>
-          </PopoverFooter>
+          </Box>
         </PopoverContent>
       </Portal>
     </Popover>
@@ -421,21 +548,258 @@ function formatShare(sats: number, totalSats: number): string {
   return percentage > 0 && percentage < 0.1 ? '<0.1' : percentage.toFixed(1)
 }
 
-function AccountSharePie({ sats, totalSats, name }: { sats: number; totalSats: number; name: string }): JSX.Element {
+function AccountSharePie({
+  sats,
+  totalSats,
+  compact,
+}: {
+  sats: number
+  totalSats: number
+  compact: boolean
+}): JSX.Element {
   const percentage = totalSats > 0 ? Math.min(100, Math.max(0, (sats / totalSats) * 100)) : 0
-  const [fill, track] = useToken('colors', ['neutral.500', 'neutral.100'])
+  const size = compact ? 16 : 20
+  const strokeWidth = 3
+  const radius = (size - strokeWidth) / 2
+  const circumference = 2 * Math.PI * radius
+  // A sliver stays visible for tiny accounts so the ring never looks empty.
+  const filled = (Math.max(percentage, 0.5) / 100) * circumference
   const label = `${formatShare(sats, totalSats)}% of your portfolio`
   return (
     <Tooltip label={label} placement="top" hasArrow>
-      <Box
-        as="span"
-        display="block"
-        boxSize="20px"
-        borderRadius="full"
-        background={`conic-gradient(${fill} ${percentage}%, ${track} 0)`}
-      >
-        <VisuallyHidden>{`${name}: ${label}`}</VisuallyHidden>
+      <Box as="span" display="block" boxSize={`${size}px`} color="neutral.900">
+        <svg
+          width={size}
+          height={size}
+          viewBox={`0 0 ${size} ${size}`}
+          aria-hidden="true"
+          style={{ transform: 'rotate(-90deg)' }}
+        >
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={strokeWidth}
+            opacity={0.1}
+          />
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={strokeWidth}
+            strokeDasharray={`${filled} ${circumference - filled}`}
+            strokeLinecap="round"
+            opacity={0.4}
+          />
+        </svg>
+        <VisuallyHidden>{label}</VisuallyHidden>
       </Box>
     </Tooltip>
+  )
+}
+
+function toSatsOrNull(balance: BalanceValue | null | undefined): number | null {
+  return balance === null || balance === undefined ? null : Number(balance.current)
+}
+
+function formatWalletName(wallet: string | null | undefined): string {
+  return wallet === null || wallet === undefined || wallet === ''
+    ? 'Self-custody'
+    : `${wallet.charAt(0).toUpperCase()}${wallet.slice(1)}`
+}
+
+function AccountLogoMark({
+  logo,
+  compact,
+  muted = false,
+}: {
+  logo: AccountLogo
+  compact: boolean
+  muted?: boolean
+}): JSX.Element {
+  const size = compact ? '20px' : '28px'
+  const style = muted ? { opacity: 0.55, filter: 'grayscale(1)' } : undefined
+  if (logo.kind === 'image') {
+    return (
+      <Box as="span" display="block" boxSize={size} flexShrink={0} borderRadius="6px" overflow="hidden" sx={style}>
+        <img src={logo.src} alt="" width="100%" height="100%" />
+      </Box>
+    )
+  }
+  if (logo.kind === 'manual') {
+    return (
+      <Flex as="span" boxSize={size} flexShrink={0} borderRadius="6px" bg="warning.50" align="center" justify="center">
+        <ManualNoteIcon boxSize={compact ? '12px' : '16px'} />
+      </Flex>
+    )
+  }
+  if (logo.wallets.length > 1) {
+    const mini = compact ? '12px' : '16px'
+    const positions = [
+      { top: 0, left: '50%', transform: 'translateX(-50%)' },
+      { bottom: 0, left: 0 },
+      { bottom: 0, right: 0 },
+    ]
+    return (
+      <Box as="span" display="block" position="relative" boxSize={size} flexShrink={0}>
+        {logo.wallets.map((wallet, index) => (
+          <Box as="span" key={index} display="block" position="absolute" {...positions[index]}>
+            {wallet === null ? (
+              // An unknown signing device gets a neutral key rather than a Bitcoin coin.
+              <Flex
+                as="span"
+                boxSize={mini}
+                borderRadius="full"
+                bg="neutral.100"
+                border="1px solid"
+                borderColor="shades.0"
+                align="center"
+                justify="center"
+                color="neutral.500"
+              >
+                <KeyRound size={compact ? 7 : 9} strokeWidth={2.5} />
+              </Flex>
+            ) : (
+              <KeystoreAvatar size={mini} src={getSupportedHardwareWalletLogoPath(wallet)} alt="" />
+            )}
+          </Box>
+        ))}
+      </Box>
+    )
+  }
+  return (
+    <KeystoreAvatar
+      variant="contained"
+      size={size}
+      src={getSupportedHardwareWalletLogoPath(logo.wallets[0] ?? null)}
+      alt=""
+      flexShrink={0}
+    />
+  )
+}
+
+function HeaderIconButton({
+  id,
+  label,
+  isActive,
+  onClick,
+  children,
+}: {
+  id?: string
+  label: string
+  /** A pressed state, for buttons that toggle on and off under one name. */
+  isActive?: boolean
+  onClick: () => void
+  children: ReactNode
+}): JSX.Element {
+  return (
+    <Tooltip label={label} openDelay={300} hasArrow>
+      <PlainButton
+        id={id}
+        type="button"
+        aria-label={label}
+        aria-pressed={isActive}
+        onClick={onClick}
+        display="flex"
+        alignItems="center"
+        justifyContent="center"
+        boxSize="28px"
+        borderRadius="6px"
+        border="1px solid"
+        borderColor={isActive === true ? 'neutral.500' : 'neutral.200'}
+        color={isActive === true ? 'neutral.900' : 'neutral.600'}
+        bg="shades.0"
+        _hover={{ bg: 'neutral.50', borderColor: 'neutral.300', color: 'neutral.900' }}
+        _focusVisible={{ outline: '2px solid', outlineColor: 'activeState.80', outlineOffset: '2px' }}
+      >
+        {children}
+      </PlainButton>
+    </Tooltip>
+  )
+}
+
+/** Two tall rows switch to detailed; three short rows switch to compact. */
+function DensityIcon({ compact }: { compact: boolean }): JSX.Element {
+  const rows = compact
+    ? [
+        { y: 1, height: 5 },
+        { y: 10, height: 5 },
+      ]
+    : [
+        { y: 2, height: 2.5 },
+        { y: 6.75, height: 2.5 },
+        { y: 11.5, height: 2.5 },
+      ]
+  return (
+    <Icon viewBox="0 0 16 16" boxSize="14px" aria-hidden="true">
+      {rows.map((row) => (
+        <rect
+          key={row.y}
+          x="1"
+          y={row.y}
+          width="14"
+          height={row.height}
+          rx="1"
+          stroke="currentColor"
+          strokeWidth="1.2"
+          fill="none"
+        />
+      ))}
+    </Icon>
+  )
+}
+
+function ManualNoteIcon({ boxSize }: { boxSize: string }): JSX.Element {
+  return (
+    <Icon viewBox="0 0 24 24" color="warning.500" boxSize={boxSize} aria-hidden="true">
+      <path
+        d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        fill="none"
+      />
+      <polyline
+        points="14 2 14 8 20 8"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        fill="none"
+      />
+      <line x1="16" y1="13" x2="8" y2="13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <line x1="16" y1="17" x2="8" y2="17" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </Icon>
+  )
+}
+
+function StatusBadge({ label }: { label: string }): JSX.Element {
+  return (
+    <Text
+      as="span"
+      position="absolute"
+      top="-9px"
+      left="50%"
+      transform="translateX(-50%)"
+      px={2}
+      py={0.5}
+      bg="warning.50"
+      border="1px solid"
+      borderColor="warning.300"
+      borderRadius="full"
+      whiteSpace="nowrap"
+      textStyle="label/xs"
+      fontWeight="semibold"
+      color="warning.700"
+      lineHeight="1"
+      pointerEvents="none"
+    >
+      {label}
+    </Text>
   )
 }
