@@ -1,4 +1,4 @@
-import { Err, Ok } from '@hoseki/packages/result'
+import { AsyncOk, Err, Ok } from '@hoseki/packages/result'
 import pino from 'pino'
 import { describe, expect, it, vi } from 'vitest'
 import { ElectrumClient } from '../../clients/electrum'
@@ -148,6 +148,29 @@ describe('ElectrumProvider', () => {
   })
 
   describe('areAddressesUsed', () => {
+    it('uses the replacement client for later address batches', async () => {
+      const getHistory = vi.fn<ElectrumClient['getHistory']>().mockReturnValue(AsyncOk([]))
+      const client = mockElectrumClient({ getHistory })
+      const replacementHistory = vi
+        .fn<ElectrumClient['getHistory']>()
+        .mockReturnValue(AsyncOk([{ tx_hash: '1'.repeat(64), height: 100 }]))
+      const replacement = mockElectrumClient({ getHistory: replacementHistory })
+      const provider = new ElectrumProvider(Network.Mainnet, { logger: mockLogger, electrum: client })
+      const account = Wallets.singlesigNativeSegwitAccount
+      const addresses = new IndexSet(account.receiveAddresses(0, 11, Network.Mainnet))
+
+      const pending = provider.areAddressesUsed(addresses)
+      expect(getHistory).toHaveBeenCalledTimes(10)
+      provider.deps.electrum = replacement
+      client.disconnect()
+      const used = (await pending).expect('Expected discovery to continue after switching clients')
+
+      expect(getHistory).toHaveBeenCalledTimes(10)
+      expect(replacementHistory).toHaveBeenCalledOnce()
+      expect(used.size).toBe(1)
+      expect(used.has(account.receiveAddress(10, Network.Mainnet))).toBe(true)
+    })
+
     it('should return addresses that have transaction history', async () => {
       const usedAddress = Wallets.legacyAddress
       const unusedAddress = Wallets.segwitAddress
@@ -188,6 +211,31 @@ describe('ElectrumProvider', () => {
   })
 
   describe('getConfirmedAddressBalances', () => {
+    it('uses the replacement client for later balance batches', async () => {
+      const getBalance = vi
+        .fn<ElectrumClient['getBalance']>()
+        .mockReturnValue(AsyncOk({ confirmed: 0, unconfirmed: 0 }))
+      const client = mockElectrumClient({ getBalance })
+      const replacementBalance = vi
+        .fn<ElectrumClient['getBalance']>()
+        .mockReturnValue(AsyncOk({ confirmed: 150_000, unconfirmed: 10_000 }))
+      const replacement = mockElectrumClient({ getBalance: replacementBalance })
+      const provider = new ElectrumProvider(Network.Mainnet, { logger: mockLogger, electrum: client })
+      const account = Wallets.singlesigNativeSegwitAccount
+      const addresses = new IndexSet(account.receiveAddresses(0, 11, Network.Mainnet))
+
+      const pending = provider.getConfirmedAddressBalances(addresses)
+      expect(getBalance).toHaveBeenCalledTimes(10)
+      provider.deps.electrum = replacement
+      client.disconnect()
+      const balances = (await pending).expect('Expected balances to continue after switching clients')
+
+      expect(getBalance).toHaveBeenCalledTimes(10)
+      expect(replacementBalance).toHaveBeenCalledOnce()
+      expect(balances.size).toBe(11)
+      expect(balances.get(account.receiveAddress(10, Network.Mainnet))).toBe(150_000n)
+    })
+
     it('should return balances for addresses', async () => {
       const address = Wallets.segwitAddress
 
@@ -218,6 +266,37 @@ describe('ElectrumProvider', () => {
 
       expect(result.isOk()).toBe(true)
       expect(result.expect('Expected successful result').get(address)).toBe(0n)
+    })
+  })
+
+  describe('getUtxoAccumulationEntries', () => {
+    it('uses the replacement client when the connection changes during discovery', async () => {
+      const listUnspent = vi.fn<ElectrumClient['listUnspent']>().mockReturnValue(AsyncOk([]))
+      const client = mockElectrumClient({ listUnspent })
+      const replacementUnspent = vi
+        .fn<ElectrumClient['listUnspent']>()
+        .mockReturnValue(AsyncOk([{ tx_hash: '1'.repeat(64), tx_pos: 0, height: 100, value: 150_000 }]))
+      const replacement = mockElectrumClient({
+        listUnspent: replacementUnspent,
+        headersSubscribe: vi
+          .fn<ElectrumClient['headersSubscribe']>()
+          .mockReturnValue(AsyncOk({ height: 100, hex: TX_BLOCK_HEADER_HEX })),
+      })
+      const provider = new ElectrumProvider(Network.Mainnet, { logger: mockLogger, electrum: client })
+      const discovery = vi
+        .spyOn(provider, 'discoverAccount')
+        .mockReturnValue(AsyncOk({ lastUsedReceiveIndex: 0, lastUsedChangeIndex: -1 }))
+      const account = Wallets.singlesigNativeSegwitAccount
+
+      const pending = provider.getUtxoAccumulationEntries(account)
+      expect(discovery).toHaveBeenCalledOnce()
+      provider.deps.electrum = replacement
+      client.disconnect()
+      const entries = (await pending).expect('Expected UTXOs from the replacement client')
+
+      expect(listUnspent).not.toHaveBeenCalled()
+      expect(replacementUnspent).toHaveBeenCalledOnce()
+      expect(entries).toEqual([{ value: 150_000n, height: 100, estimatedTimestamp: new Date(TX_BLOCK_TIME * 1000) }])
     })
   })
 

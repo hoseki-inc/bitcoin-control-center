@@ -58,7 +58,8 @@ export class ElectrumProvider extends OnchainBitcoinProvider {
   }
 
   public areAddressesUsed = (addresses: IndexSet<Address>): AsyncResult<IndexSet<Address>, Error> => {
-    const { logger, electrum } = this.deps
+    const { deps } = this
+    const { logger } = deps
     return tryBlock(async function* () {
       logger.debug({ total: addresses.size }, 'Checking if addresses are used via Electrum')
 
@@ -74,7 +75,7 @@ export class ElectrumProvider extends OnchainBitcoinProvider {
             if (scripthash.isErr()) {
               return { address, err: scripthash.unwrapErr() } as const
             }
-            const history = await electrum.getHistory(scripthash.unwrap())
+            const history = await deps.electrum.getHistory(scripthash.unwrap())
             if (history.isErr()) {
               return { address, err: history.unwrapErr() } as const
             }
@@ -99,7 +100,8 @@ export class ElectrumProvider extends OnchainBitcoinProvider {
   public getConfirmedAddressBalances = (
     addresses: IndexSet<Address>,
   ): AsyncResult<IndexMap<Address, bigint>, Error> => {
-    const { logger, electrum } = this.deps
+    const { deps } = this
+    const { logger } = deps
     return tryBlock(async function* () {
       logger.debug({ total: addresses.size }, 'Getting confirmed address balances via Electrum')
 
@@ -114,7 +116,7 @@ export class ElectrumProvider extends OnchainBitcoinProvider {
             if (scripthash.isErr()) {
               return { address, err: scripthash.unwrapErr() } as const
             }
-            const balanceRes = await electrum.getBalance(scripthash.unwrap())
+            const balanceRes = await deps.electrum.getBalance(scripthash.unwrap())
             if (balanceRes.isErr()) {
               return { address, err: balanceRes.unwrapErr() } as const
             }
@@ -145,8 +147,8 @@ export class ElectrumProvider extends OnchainBitcoinProvider {
   public getUtxoAccumulationEntries = (
     account: Account,
   ): AsyncResult<Array<{ value: bigint; height: number; estimatedTimestamp: Date }>, Error> => {
-    const { logger, electrum } = this.deps
-    const { network } = this
+    const { deps, network } = this
+    const { logger } = deps
     const self = this
     return tryBlock(async function* () {
       logger.debug({ account }, 'Getting UTXO accumulation entries')
@@ -173,7 +175,7 @@ export class ElectrumProvider extends OnchainBitcoinProvider {
             if (scripthashRes.isErr()) {
               return []
             }
-            const unspentRes = await electrum.listUnspent(scripthashRes.unwrap())
+            const unspentRes = await deps.electrum.listUnspent(scripthashRes.unwrap())
             if (unspentRes.isErr()) {
               logger.warn({ address, err: unspentRes.unwrapErr() }, 'Failed to list unspent, skipping')
               return []
