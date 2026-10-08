@@ -1,6 +1,6 @@
-import { Box, Button, Stack } from '@chakra-ui/react'
+import { Box, Button, Flex, IconButton, Stack, chakra } from '@chakra-ui/react'
 import { ErrorBanner, Spinner } from '@hoseki/packages/ui/design-system'
-import { SectionTitle } from '@hoseki/packages/ui/prove-verify-ui'
+import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
 import { Grid2X2Icon, ListIcon } from 'lucide-react'
 import { useState } from 'react'
 import { Link as RouterLink } from 'react-router'
@@ -11,7 +11,7 @@ import { trpc } from '../../trpc'
 
 export function StatementListPage(): JSX.Element {
   const [viewType, setViewType] = useState<'grid' | 'table'>('grid')
-  const { data: statements, isLoading, error } = trpc.portalProve.statement.list.useQuery()
+  const { data: statements, isLoading, error, refetch } = trpc.portalProve.statement.list.useQuery()
 
   if (isLoading) {
     return (
@@ -22,11 +22,21 @@ export function StatementListPage(): JSX.Element {
     )
   }
 
-  if (error) {
+  // A failed refresh keeps the statements already shown; the error is only for having none.
+  if (error && statements === undefined) {
     return (
       <Box mt={8}>
         <Header showGenerateButton={true} />
-        <ErrorBanner mt={8} mb={4} message={`Error fetching your statements: ${error.message}`} />
+        <ErrorBanner
+          mt={8}
+          mb={4}
+          message={`Error fetching your statements: ${error.message}`}
+          rightContent={
+            <Button variant="outline" flexShrink={0} onClick={() => void refetch()}>
+              Try Again
+            </Button>
+          }
+        />
       </Box>
     )
   }
@@ -44,21 +54,26 @@ export function StatementListPage(): JSX.Element {
     <Box mt={8}>
       <Header showGenerateButton={true} />
       <Stack gap={2}>
-        <Box textAlign="right">
-          <Button
-            variant="ghost"
-            size="xs"
-            px={2}
-            py={2}
-            fontSize="xs"
+        <Flex as="fieldset" justify="flex-end" gap={1} aria-label="Statement view">
+          <IconButton
+            variant={viewType === 'table' ? 'outline' : 'ghost'}
+            aria-label="List view"
+            aria-pressed={viewType === 'table'}
+            icon={<ListIcon size={18} />}
             onClick={() => {
-              setViewType(viewType === 'grid' ? 'table' : 'grid')
+              setViewType('table')
             }}
-            _focus={{ boxShadow: 'none' }}
-          >
-            {viewType === 'grid' ? <ListIcon size={16} /> : <Grid2X2Icon size={16} />}
-          </Button>
-        </Box>
+          />
+          <IconButton
+            variant={viewType === 'grid' ? 'outline' : 'ghost'}
+            aria-label="Card view"
+            aria-pressed={viewType === 'grid'}
+            icon={<Grid2X2Icon size={18} />}
+            onClick={() => {
+              setViewType('grid')
+            }}
+          />
+        </Flex>
         {viewType === 'grid' ? <StatementsGrid statements={statements} /> : <StatementsTable statements={statements} />}
       </Stack>
     </Box>
@@ -73,24 +88,28 @@ function Header({
   showGenerateButton: boolean
   hideDivider?: boolean
   descriptionVersion?: 'default' | 'empty-state'
-}) {
+}): JSX.Element {
   const description =
     descriptionVersion === 'empty-state'
-      ? 'Once you generate a statement, your statement will appear here. Generate your first statement below to get started.'
-      : 'Includes your statement activity plus partner-generated requests through secure API connections.'
+      ? 'A clear record of your Bitcoin holdings.'
+      : 'View and download your saved Bitcoin statements.'
 
   return (
-    <SectionTitle
-      title="Statements"
-      description={description}
-      rightContent={
-        showGenerateButton ? (
-          <Button as={RouterLink} to="/statements/create" w="fit-content">
+    <Stack gap={6} mb={6}>
+      <Flex
+        justifyContent="space-between"
+        align={{ base: 'stretch', sm: 'center' }}
+        direction={{ base: 'column', sm: 'row' }}
+        gap={4}
+      >
+        <PageHeading title="Statements" description={description} flexGrow={1} />
+        {showGenerateButton && (
+          <Button as={RouterLink} to="/statements/create" state={{ returnTo: '/statements' }} w="fit-content">
             Generate Statement
           </Button>
-        ) : undefined
-      }
-      hideDivider={hideDivider}
-    />
+        )}
+      </Flex>
+      {!hideDivider && <chakra.hr />}
+    </Stack>
   )
 }

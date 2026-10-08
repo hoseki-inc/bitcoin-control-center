@@ -1,99 +1,57 @@
-import { Box, Button, HStack, Stack, Text } from '@chakra-ui/react'
-import { DismissButton, LinearGradient } from '@hoseki/packages/ui/design-system'
-import { Link } from 'react-router'
+import { Box, Button, Flex, Image, Stack, Text } from '@chakra-ui/react'
+import { Link, useLocation } from 'react-router'
 
-export function Banner({
-  mode,
-  onDismissClick,
-}: {
-  mode: 'large-with-cta' | 'large-without-cta' | 'compact'
-  onDismissClick: () => void
-}): JSX.Element {
-  return <BannerContent mode={mode} onDismissClick={onDismissClick} />
-}
-
-export function BannerContent({
-  mode,
-  onDismissClick,
-}: {
-  mode: 'large-with-cta' | 'large-without-cta' | 'compact'
-  onDismissClick: () => void
-}): JSX.Element {
-  if (mode === 'compact') {
-    return (
-      <HStack bgColor="neutral.50" p={6} pb={0}>
-        <Stack alignItems="left" gap={4} pb={6}>
-          <DismissButton onDismissClick={onDismissClick} />
-          <Box>
-            <Text as="h2" textStyle="text/md" fontWeight="medium">
-              The Standard for Bitcoin Verification
-            </Text>
-            <Text textStyle="text/sm">
-              Verify ownership of your wallet and download a PDF statement of your Bitcoin holdings.
-            </Text>
-          </Box>
-          <Button as={Link} to="/statements/create" w="fit-content">
-            Generate Statement
-          </Button>
-        </Stack>
-        <Box
-          bgImage="url('/statements/satoshi-statement.jpg')"
-          bgPosition="top"
-          bgRepeat="no-repeat"
-          bgSize="cover"
-          w="300px"
-          h="200px"
-        />
-      </HStack>
-    )
-  }
-
+export function Banner(): JSX.Element {
+  const { pathname } = useLocation()
   return (
-    <>
-      <Stack position="relative" bgColor="neutral.50" py={4} px={6}>
-        <Text as="h2" textStyle="text/2xl" fontWeight="medium">
-          The Standard for Bitcoin Verification
-        </Text>
-        <Text textStyle="text/md">
-          Bridge the gap with clear, secure ownership proofs for self-custodied Bitcoin—built for both sides of the
-          table.
-        </Text>
-        <HStack justifyContent="space-between">
-          {mode === 'large-without-cta' && (
-            <Button as={Link} to="/statements/create" w="fit-content" variant="link" p={0}>
-              Generate Your Own Statement
-            </Button>
-          )}
-        </HStack>
-        <Box position="relative" h="470px">
-          <Box
-            position="absolute"
-            top="0"
-            left="0"
-            right="0"
-            bottom="0"
-            bgImage="url('/statements/satoshi-statement.jpg')"
-            bgPosition="top"
-            bgRepeat="no-repeat"
-            bgSize="contain"
-          />
-        </Box>
-
-        <LinearGradient
-          gradientDirection="from-bottom"
-          pointerEvents="auto"
-          justify="center"
-          alignItems="center"
-          gradientSize={60}
-          gradientPercentage={70}
+    <Flex
+      direction={{ base: 'column', md: 'row' }}
+      align="center"
+      gap={{ base: 8, md: 10 }}
+      bg="neutral.50"
+      borderRadius="panel"
+      overflow="hidden"
+      p={{ base: 6, md: 8 }}
+      pb={{ base: 0, md: 8 }}
+    >
+      <Stack flex={1} align="flex-start" gap={4} minW={0} py={{ base: 2, md: 4 }}>
+        <Text
+          as="h2"
+          textStyle={{ base: 'text/4xl', lg: 'text/6xl' }}
+          fontWeight="semibold"
+          maxW="14ch"
+          sx={{ textWrap: 'balance' }}
         >
-          {mode === 'large-with-cta' && (
-            <Button as={Link} to="/statements/create" w="fit-content" position="relative" zIndex={1}>
-              Generate Statement
-            </Button>
-          )}
-        </LinearGradient>
+          Your holdings, on record
+        </Text>
+        <Text textStyle="text/md" color="neutral.600" maxW="34ch">
+          Download a statement of your holdings for a selected period.
+        </Text>
+        <Button as={Link} to="/statements/create" state={{ returnTo: pathname }} mt={2}>
+          Generate Statement
+        </Button>
       </Stack>
-    </>
+      <Box
+        aria-hidden="true"
+        flexShrink={0}
+        w={{ base: '100%', md: '36%' }}
+        h={{ base: '260px', md: '320px' }}
+        overflow="hidden"
+        sx={{ maskImage: 'linear-gradient(to bottom, black 88%, transparent 100%)' }}
+      >
+        <Image
+          src="/statements/satoshi-statement.jpg"
+          alt=""
+          w="full"
+          maxW="340px"
+          mx="auto"
+          mt={3}
+          border="1px solid"
+          borderColor="neutral.200"
+          borderRadius="control"
+          boxShadow="0 8px 24px rgba(16, 24, 40, 0.08)"
+        />
+      </Box>
+    </Flex>
   )
 }
