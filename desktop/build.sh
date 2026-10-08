@@ -37,14 +37,7 @@ if [[ ! -f "$SCRIPT_DIR/tor/mac/tor" || ! -f "$SCRIPT_DIR/tor/win/tor.exe" ]]; t
 fi
 
 npm ci --prefix "$SCRIPT_DIR" --ignore-scripts
-# Each installer ships the prebuilt SQLite binary for its platform; the host must also load its own.
-if [[ "$TARGET" == --mac || "$TARGET" == --all ]]; then
-  test -f "$SCRIPT_DIR/node_modules/better-sqlite3/prebuilds/darwin-arm64.node"
-fi
-if [[ "$TARGET" == --win || "$TARGET" == --all ]]; then
-  test -f "$SCRIPT_DIR/node_modules/better-sqlite3/prebuilds/win32-x64.node"
-fi
-node -e "const Database = require('./desktop/node_modules/better-sqlite3'); const db = new Database(':memory:'); db.close()"
+npm run install:electron --prefix "$SCRIPT_DIR"
 corepack pnpm build:desktop:app
 
 cd "$SCRIPT_DIR"
@@ -57,6 +50,21 @@ COMMON=(
   "-c.buildVersion=$APP_VERSION"
 )
 
+if [[ "$TARGET" == --win || "$TARGET" == --all ]]; then
+  if [[ ! -f node_modules/@libsql/win32-x64-msvc/index.node ]]; then
+    echo "==> Installing the Windows libSQL prebuild for cross-platform packaging..."
+    LIBSQL_VERSION="$(node -p "require('./node_modules/libsql/package.json').optionalDependencies['@libsql/win32-x64-msvc']")"
+    NATIVE_ARCHIVE="$(npm pack "@libsql/win32-x64-msvc@$LIBSQL_VERSION" --silent)"
+    mkdir -p node_modules/@libsql/win32-x64-msvc
+    tar -xzf "$NATIVE_ARCHIVE" -C node_modules/@libsql/win32-x64-msvc --strip-components=1
+    rm "$NATIVE_ARCHIVE"
+  fi
+  test -f node_modules/@libsql/win32-x64-msvc/index.node
+fi
+if [[ "$TARGET" == --mac || "$TARGET" == --all ]]; then
+  test -f node_modules/@libsql/darwin-arm64/index.node
+fi
+npm run test:runtime
 # The staging step copies the installer by name, so never leave one from an earlier build to pick up.
 rm -f release/Bitcoin-Control-Center-*.dmg release/Bitcoin-Control-Center-*.exe
 

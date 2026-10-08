@@ -16,66 +16,45 @@ import { IndexMap, IndexSet } from '@hoseki/packages/collection'
 import { parseUnknown } from '@hoseki/packages/result'
 import {
   type ChallengeId,
+  ChallengeIdSchema,
   type ClaimId,
   type ClaimStatus,
   type KeystoreId,
+  KeystoreIdSchema,
   type SignedMessageId,
+  SignedMessageIdSchema,
+  StatementQuoteCurrencySchema,
   TimezoneSchema,
   hosid,
 } from '@hoseki/packages/schemas'
 import type { SupportedHardwareWallet, SupportedHardwareWalletDisplayName } from '@hoseki/packages/wallet'
 import { TRPCError } from '@trpc/server'
-import type Database from 'better-sqlite3'
 import * as bip322 from 'bip322-js'
 import { Decimal } from 'decimal.js'
+import { and, desc, eq, isNotNull, isNull, lte, ne, sql } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
 import { z } from 'zod'
+import type { SentinelDb, SentinelTx } from '../../db/drizzle'
+import {
+  accounts as accountTable,
+  balanceSnapshots,
+  challenges,
+  keystores as keystoreTable,
+  settings,
+  signedMessages as signedMessagesTable,
+} from '../../db/schema'
 import { type ConnectionDetails, MAX_CONNECTION_PROFILES } from '../connection_profiles/store'
 import { PRICE_FALLBACKS_SETTING, PRICE_SOURCES, PRICE_SOURCE_SETTING } from '../price/service'
 import { StatementMapper } from '../statements/mapper'
+import { validateStatementInput } from '../statements/service'
 import { publicProcedure, t } from './init'
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-type AccountRow = {
-  id: ClaimId
-  network: string
-  descriptor: CheckedAccountDescriptor
-  display_name: string
-  status: ClaimStatus
-  created_at: string
-  deleted_at: string | null
-}
-
-type KeystoreRow = {
-  id: KeystoreId
-  account_id: ClaimId
-  label: string
-  wallet: SupportedHardwareWallet | null
-  model: string | null
-  derivation_path: DerivationPathString | null
-  xpub: string
-  created_at: string
-}
-
-type ChallengeRow = {
-  id: ChallengeId
-  account_id: ClaimId
-  is_satisfied: number
-  completed_at: string | null
-  created_at: string
-}
-
-type SignedMessageRow = {
-  id: SignedMessageId
-  challenge_id: ChallengeId
-  keystore_id: KeystoreId
-  address: CheckedAddressString
-  message_text: string
-  signature: string | null
-  signed_at: string | null
-  created_at: string
-}
+type AccountRow = typeof accountTable.$inferSelect
+type KeystoreRow = typeof keystoreTable.$inferSelect
+type ChallengeRow = typeof challenges.$inferSelect
+type SignedMessageRow = typeof signedMessagesTable.$inferSelect
 
 interface KeystoreDto {
   id: KeystoreId
@@ -165,17 +144,19 @@ function claimNetworkToNetwork(claimNetwork: string): string {
 }
 
 function keystoreRowToDto(row: KeystoreRow): KeystoreDto {
-  const now = new Date(row.created_at)
+  const now = new Date(row.createdAt)
   const xpub = Xpub.fromString(row.xpub)
   if (xpub.isErr()) {
     throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Stored keystore xpub is invalid' })
   }
   return {
-    id: row.id,
+    id: parseUnknown(KeystoreIdSchema, row.id).expect('Stored keystore ID is invalid'),
     createdAt: now,
     updatedAt: now,
-    wallet: row.wallet,
-    derivationPath: row.derivation_path,
+    wallet: parseUnknown(supportedHardwareWalletSchema.nullable(), row.wallet).expect('Stored wallet is invalid'),
+    derivationPath: parseUnknown(DerivationPathString.nullable(), row.derivationPath).expect(
+      'Stored derivation path is invalid',
+    ),
     xpub: xpub.unwrap(),
     model: row.model,
     label: row.label,
@@ -210,77 +191,82 @@ function buildClaimDto(
   latestChallenge: ChallengeRow | null,
   signedMessages: SignedMessageRow[],
 ): ClaimDto {
-  const now = new Date(row.created_at)
+  const now = new Date(row.createdAt)
+  const keystoreDtos = keystores.map(keystoreRowToDto)
   return {
-    id: row.id,
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- SAFETY: Control Center accepts nanoids as well as prefixed claim IDs; preserve the existing DTO contract without rewriting IDs.
+    id: row.id as ClaimId,
     createdAt: now,
     updatedAt: now,
     isVerified: row.status === 'verified',
     officialName: '',
-    displayName: row.display_name,
+    displayName: row.displayName,
     network: networkToClaimNetwork(row.network),
-    account: row.descriptor,
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- SAFETY: The basic account API stores descriptor text verbatim; this existing DTO brand must not normalize or newly reject that text.
+    account: row.descriptor as CheckedAccountDescriptor,
     status: row.status,
-    isArchived: row.deleted_at !== null,
-    keystores: keystores.map(keystoreRowToDto),
+    isArchived: row.deletedAt !== null,
+    keystores: keystoreDtos,
     latestChallenge: latestChallenge
       ? {
-          id: latestChallenge.id,
-          completed: latestChallenge.is_satisfied === 1,
+          id: parseUnknown(ChallengeIdSchema, latestChallenge.id).expect('Stored challenge ID is invalid'),
+          completed: latestChallenge.isSatisfied === 1,
           messages: signedMessages.map((sm) => ({
-            signedMessageId: sm.id,
-            keystoreId: sm.keystore_id,
+            signedMessageId: parseUnknown(SignedMessageIdSchema, sm.id).expect('Stored signed-message ID is invalid'),
+            keystoreId: parseUnknown(KeystoreIdSchema, sm.keystoreId).expect('Stored keystore ID is invalid'),
             signed: sm.signature !== null,
           })),
         }
       : null,
-    metadata: keystores[0]
+    metadata: keystoreDtos[0]
       ? {
           walletInfo: {
-            type: keystores[0].wallet ? hardwareWalletDisplayNames[keystores[0].wallet] : null,
-            model: keystores[0].model,
+            type: keystoreDtos[0].wallet ? hardwareWalletDisplayNames[keystoreDtos[0].wallet] : null,
+            model: keystoreDtos[0].model,
           },
         }
       : null,
   }
 }
 
-function getFullClaimDto(db: Database.Database, accountId: string): ClaimDto | null {
-  const row = db
-    .prepare<unknown[], AccountRow>(
-      'SELECT id, network, descriptor, display_name, status, created_at, deleted_at FROM accounts WHERE id = ?',
-    )
-    .get(accountId)
+async function getFullClaimDto(db: SentinelDb | SentinelTx, accountId: string): Promise<ClaimDto | null> {
+  const [row] = await db.select().from(accountTable).where(eq(accountTable.id, accountId))
   if (!row) {
     return null
   }
 
-  const keystores = db.prepare<unknown[], KeystoreRow>('SELECT * FROM keystores WHERE account_id = ?').all(row.id)
-  const latestChallenge = db
-    .prepare<unknown[], ChallengeRow>('SELECT * FROM challenges WHERE account_id = ? ORDER BY created_at DESC LIMIT 1')
-    .get(row.id)
-  if (latestChallenge) {
-    discardUnverifiableMessages(db, latestChallenge)
-  }
+  const keystoreRows = await db.select().from(keystoreTable).where(eq(keystoreTable.accountId, row.id))
+  const [latestChallenge] = await db
+    .select()
+    .from(challenges)
+    .where(eq(challenges.accountId, row.id))
+    .orderBy(desc(challenges.createdAt))
+    .limit(1)
   const signedMessages = latestChallenge
-    ? db
-        .prepare<unknown[], SignedMessageRow>('SELECT * FROM signed_messages WHERE challenge_id = ?')
-        .all(latestChallenge.id)
+    ? await db.select().from(signedMessagesTable).where(eq(signedMessagesTable.challengeId, latestChallenge.id))
     : []
 
-  return buildClaimDto(row, keystores, latestChallenge ?? null, signedMessages)
+  return buildClaimDto(row, keystoreRows, latestChallenge ?? null, signedMessages)
 }
 
 function signedMessageRowToDto(row: SignedMessageRow): SignedMessageDto {
   return {
     version: 0,
-    id: row.id,
-    createdAt: new Date(row.created_at),
-    updatedAt: new Date(row.signed_at ?? row.created_at),
-    address: row.address,
-    messageTextToSign: getMessageTextToSign(row.id, row.message_text),
-    signedAt: row.signed_at != null && row.signed_at !== '' ? new Date(row.signed_at) : null,
+    id: parseUnknown(SignedMessageIdSchema, row.id).expect('Stored signed-message ID is invalid'),
+    createdAt: new Date(row.createdAt),
+    updatedAt: new Date(row.signedAt ?? row.createdAt),
+    address: Address.fromString(row.address).expect('Stored signing address is invalid').toString(),
+    messageTextToSign: getMessageTextToSign(row.id, row.messageText),
+    signedAt: row.signedAt != null && row.signedAt !== '' ? new Date(row.signedAt) : null,
     signature: row.signature,
+  }
+}
+
+function challengeMessageRowToDto(row: SignedMessageRow): ChallengeMessageDto {
+  return {
+    signedMessage: signedMessageRowToDto(row),
+    challengeId: parseUnknown(ChallengeIdSchema, row.challengeId).expect('Stored challenge ID is invalid'),
+    keystoreId: parseUnknown(KeystoreIdSchema, row.keystoreId).expect('Stored keystore ID is invalid'),
   }
 }
 
@@ -299,7 +285,7 @@ function verifySignedMessageSignature(message: SignedMessageRow, signature: stri
     throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Stored signing address is invalid' })
   }
 
-  const messageTextToSign = getMessageTextToSign(message.id, message.message_text)
+  const messageTextToSign = getMessageTextToSign(message.id, message.messageText)
   let isVerified = false
   try {
     // Match api-armadillo: non-strict mode is required for Ledger-compatible message signatures.
@@ -352,17 +338,20 @@ interface SigningIdentity {
   publicKey: string
 }
 
-function getSigningIdentity(db: Database.Database, accountId: string, keystoreId: string): SigningIdentity {
-  const row = db
-    .prepare<unknown[], { descriptor: string; network: string }>(
-      'SELECT descriptor, network FROM accounts WHERE id = ?',
-    )
-    .get(accountId)
-  const keystore = db.prepare<unknown[], KeystoreRow>('SELECT * FROM keystores WHERE id = ?').get(keystoreId)
+async function getSigningIdentity(
+  db: SentinelDb | SentinelTx,
+  accountId: string,
+  keystoreId: string,
+): Promise<SigningIdentity> {
+  const [row] = await db
+    .select({ descriptor: accountTable.descriptor, network: accountTable.network })
+    .from(accountTable)
+    .where(eq(accountTable.id, accountId))
+  const [keystore] = await db.select().from(keystoreTable).where(eq(keystoreTable.id, keystoreId))
   if (!row || !keystore) {
     throw new TRPCError({ code: 'NOT_FOUND', message: 'Account or keystore not found' })
   }
-  if (keystore.account_id !== accountId) {
+  if (keystore.accountId !== accountId) {
     throw new TRPCError({ code: 'BAD_REQUEST', message: 'Keystore does not belong to this account' })
   }
   const parsedAccount = Account.fromDescriptor(row.descriptor)
@@ -382,7 +371,7 @@ function getSigningIdentity(db: Database.Database, accountId: string, keystoreId
   }
   const signingKey = xpub.derive(0).derive(0)
   return {
-    keystoreId: keystore.id,
+    keystoreId: parseUnknown(KeystoreIdSchema, keystore.id).expect('Stored keystore ID is invalid'),
     // Every multisig cosigner proves its individual key using P2PKH, regardless of the multisig script type.
     address:
       account instanceof SingleSigAccount
@@ -396,41 +385,6 @@ function validateSigningAddress(message: SignedMessageRow, identity: SigningIden
   if (message.address !== identity.address) {
     throw new TRPCError({ code: 'BAD_REQUEST', message: 'Signing address does not match the account key' })
   }
-}
-
-function hasCurrentSigningAddress(db: Database.Database, accountId: string, message: SignedMessageRow): boolean {
-  try {
-    return getSigningIdentity(db, accountId, message.keystore_id).address === message.address
-  } catch (error) {
-    if (error instanceof TRPCError) {
-      return false
-    }
-    throw error
-  }
-}
-
-/**
- * Remove an unfinished challenge's messages that can never verify, such as cosigner messages created with the
- * P2WPKH address used before cosigners signed with P2PKH. Their keys can then sign again instead of the
- * challenge failing at completion with no way forward.
- */
-function discardUnverifiableMessages(db: Database.Database, challenge: ChallengeRow): void {
-  if (challenge.is_satisfied === 1) {
-    return
-  }
-  const unverifiable = db
-    .prepare<unknown[], SignedMessageRow>('SELECT * FROM signed_messages WHERE challenge_id = ?')
-    .all(challenge.id)
-    .filter((message) => !hasCurrentSigningAddress(db, challenge.account_id, message))
-  if (unverifiable.length === 0) {
-    return
-  }
-  const deleteMessage = db.prepare('DELETE FROM signed_messages WHERE id = ?')
-  db.transaction(() => {
-    for (const message of unverifiable) {
-      deleteMessage.run(message.id)
-    }
-  })()
 }
 
 // ─── portalProve.controlCenter ──────────────────────────────────────────────
@@ -480,32 +434,27 @@ const controlCenterRouter = t.router({
     }),
 
   recordSnapshot: publicProcedure.mutation(async ({ ctx }) => {
-    const rows = ctx.app.database.db
-      .prepare<
-        unknown[],
-        {
-          id: string
-          descriptor: string
-        }
-      >('SELECT id, descriptor FROM accounts WHERE deleted_at IS NULL')
-      .all()
+    const rows = await ctx.app.database
+      .select({ id: accountTable.id, descriptor: accountTable.descriptor })
+      .from(accountTable)
+      .where(isNull(accountTable.deletedAt))
 
-    const accounts = new IndexSet<Account>()
+    const accountSet = new IndexSet<Account>()
     const idMap = new Map<string, string>() // descriptor → account id
 
     for (const row of rows) {
       const parsed = Account.fromDescriptor(row.descriptor)
       if (parsed.isOk()) {
-        accounts.add(parsed.unwrap())
+        accountSet.add(parsed.unwrap())
         idMap.set(row.descriptor, row.id)
       }
     }
 
-    if (accounts.size === 0) {
+    if (accountSet.size === 0) {
       return
     }
 
-    const balancesResult = await ctx.app.onchainProvider.getConfirmedAccountBalances(accounts)
+    const balancesResult = await ctx.app.onchainProvider.getConfirmedAccountBalances(accountSet)
     if (balancesResult.isErr()) {
       return
     }
@@ -514,7 +463,7 @@ const controlCenterRouter = t.router({
     for (const [account, balance] of balancesResult.unwrap()) {
       const accountId = idMap.get(account.toString())
       if (accountId != null && accountId !== '') {
-        ctx.app.controlCenterService.recordAccountSnapshot(accountId, balance.toString(), now)
+        await ctx.app.controlCenterService.recordAccountSnapshot(accountId, balance.toString(), now)
       }
     }
   }),
@@ -526,64 +475,58 @@ const registryRouter = t.router({
   claims: t.router({
     list: publicProcedure
       .input(z.object({ excludePending: z.boolean().optional() }).optional())
-      .query(({ ctx, input }) => {
+      .query(async ({ ctx, input }) => {
         const excludePending = input?.excludePending ?? false
-        const sql = excludePending
-          ? 'SELECT id, network, descriptor, display_name, status, created_at, deleted_at FROM accounts WHERE status != ? AND deleted_at IS NULL ORDER BY created_at DESC'
-          : 'SELECT id, network, descriptor, display_name, status, created_at, deleted_at FROM accounts WHERE deleted_at IS NULL ORDER BY created_at DESC'
-        const rows = excludePending
-          ? ctx.app.database.db.prepare<unknown[], AccountRow>(sql).all('pending')
-          : ctx.app.database.db.prepare<unknown[], AccountRow>(sql).all()
-
-        return rows.map((row) => {
-          const keystores = ctx.app.database.db
-            .prepare<unknown[], KeystoreRow>('SELECT * FROM keystores WHERE account_id = ?')
-            .all(row.id)
-          const latestChallenge = ctx.app.database.db
-            .prepare<unknown[], ChallengeRow>(
-              'SELECT * FROM challenges WHERE account_id = ? ORDER BY created_at DESC LIMIT 1',
-            )
-            .get(row.id)
-          const signedMessages = latestChallenge
-            ? ctx.app.database.db
-                .prepare<unknown[], SignedMessageRow>('SELECT * FROM signed_messages WHERE challenge_id = ?')
-                .all(latestChallenge.id)
-            : []
-          return buildClaimDto(row, keystores, latestChallenge ?? null, signedMessages)
-        })
+        const rows = await ctx.app.database
+          .select({ id: accountTable.id })
+          .from(accountTable)
+          .where(and(isNull(accountTable.deletedAt), excludePending ? ne(accountTable.status, 'pending') : undefined))
+          .orderBy(desc(accountTable.createdAt))
+        const claims = await Promise.all(rows.map(async (row) => getFullClaimDto(ctx.app.database, row.id)))
+        return claims.filter((claim): claim is ClaimDto => claim !== null)
       }),
 
-    deletePending: publicProcedure.input(z.object({ id: z.string() })).mutation(({ ctx, input }) => {
-      const db = ctx.app.database.db
-      const row = db
-        .prepare<unknown[], { status: string; deleted_at: string | null }>(
-          'SELECT status, deleted_at FROM accounts WHERE id = ?',
-        )
-        .get(input.id)
+    deletePending: publicProcedure.input(z.object({ id: z.string() })).mutation(async ({ ctx, input }) => {
+      const db = ctx.app.database
+      const [row] = await db
+        .select({ status: accountTable.status, deletedAt: accountTable.deletedAt })
+        .from(accountTable)
+        .where(eq(accountTable.id, input.id))
       if (!row) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Claim not found' })
       }
       if (row.status !== 'pending') {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Claim is not pending' })
       }
-      if (row.deleted_at !== null) {
+      if (row.deletedAt !== null) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Archived claims must be permanently deleted' })
       }
-      db.prepare('DELETE FROM accounts WHERE id = ?').run(input.id)
+      const deleted = await db
+        .delete(accountTable)
+        .where(and(eq(accountTable.id, input.id), eq(accountTable.status, 'pending'), isNull(accountTable.deletedAt)))
+      if (deleted.rowsAffected === 0) {
+        throw new TRPCError({ code: 'CONFLICT', message: 'Claim changed before it could be deleted' })
+      }
     }),
 
-    delete: publicProcedure.input(z.object({ id: z.string() })).mutation(({ ctx, input }) => {
-      const db = ctx.app.database.db
-      const row = db
-        .prepare<unknown[], { deleted_at: string | null }>('SELECT deleted_at FROM accounts WHERE id = ?')
-        .get(input.id)
+    delete: publicProcedure.input(z.object({ id: z.string() })).mutation(async ({ ctx, input }) => {
+      const db = ctx.app.database
+      const [row] = await db
+        .select({ deletedAt: accountTable.deletedAt })
+        .from(accountTable)
+        .where(eq(accountTable.id, input.id))
       if (!row) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Claim not found' })
       }
-      if (row.deleted_at === null) {
+      if (row.deletedAt === null) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Only archived claims can be permanently deleted' })
       }
-      db.prepare('DELETE FROM accounts WHERE id = ?').run(input.id)
+      const deleted = await db
+        .delete(accountTable)
+        .where(and(eq(accountTable.id, input.id), isNotNull(accountTable.deletedAt)))
+      if (deleted.rowsAffected === 0) {
+        throw new TRPCError({ code: 'CONFLICT', message: 'Claim changed before it could be deleted' })
+      }
     }),
 
     archive: publicProcedure.input(z.object({ id: z.string() })).mutation(async ({ ctx, input }) => {
@@ -597,36 +540,21 @@ const registryRouter = t.router({
       }
     }),
 
-    restore: publicProcedure.input(z.object({ id: z.string() })).mutation(({ ctx, input }) => {
-      const result = ctx.app.controlCenterService.restoreAccount(input.id)
+    restore: publicProcedure.input(z.object({ id: z.string() })).mutation(async ({ ctx, input }) => {
+      const result = await ctx.app.controlCenterService.restoreAccount(input.id)
       if (result.isErr()) {
         throw new TRPCError({ code: 'NOT_FOUND', message: result.unwrapErr().message })
       }
     }),
 
-    listArchived: publicProcedure.query(({ ctx }) => {
-      const rows = ctx.app.database.db
-        .prepare<unknown[], AccountRow>(
-          'SELECT id, network, descriptor, display_name, status, created_at, deleted_at FROM accounts WHERE deleted_at IS NOT NULL ORDER BY created_at DESC',
-        )
-        .all()
-
-      return rows.map((row) => {
-        const keystores = ctx.app.database.db
-          .prepare<unknown[], KeystoreRow>('SELECT * FROM keystores WHERE account_id = ?')
-          .all(row.id)
-        const latestChallenge = ctx.app.database.db
-          .prepare<unknown[], ChallengeRow>(
-            'SELECT * FROM challenges WHERE account_id = ? ORDER BY created_at DESC LIMIT 1',
-          )
-          .get(row.id)
-        const signedMessages = latestChallenge
-          ? ctx.app.database.db
-              .prepare<unknown[], SignedMessageRow>('SELECT * FROM signed_messages WHERE challenge_id = ?')
-              .all(latestChallenge.id)
-          : []
-        return buildClaimDto(row, keystores, latestChallenge ?? null, signedMessages)
-      })
+    listArchived: publicProcedure.query(async ({ ctx }) => {
+      const rows = await ctx.app.database
+        .select({ id: accountTable.id })
+        .from(accountTable)
+        .where(isNotNull(accountTable.deletedAt))
+        .orderBy(desc(accountTable.createdAt))
+      const claims = await Promise.all(rows.map(async (row) => getFullClaimDto(ctx.app.database, row.id)))
+      return claims.filter((claim): claim is ClaimDto => claim !== null)
     }),
 
     getCountLimit: publicProcedure.query(() => {
@@ -635,23 +563,20 @@ const registryRouter = t.router({
 
     update: publicProcedure
       .input(z.object({ id: z.string(), displayName: z.string().min(1) }))
-      .mutation(({ ctx, input }) => {
-        const db = ctx.app.database.db
-        const result = db.prepare('UPDATE accounts SET display_name = ? WHERE id = ?').run(input.displayName, input.id)
-        if (result.changes === 0) {
-          throw new TRPCError({ code: 'NOT_FOUND', message: 'Claim not found' })
-        }
-        const row = db
-          .prepare<unknown[], AccountRow>(
-            'SELECT id, network, descriptor, display_name, status, created_at, deleted_at FROM accounts WHERE id = ?',
-          )
-          .get(input.id)
+      .mutation(async ({ ctx, input }) => {
+        const db = ctx.app.database
+        const updated = await db
+          .update(accountTable)
+          .set({ displayName: input.displayName })
+          .where(eq(accountTable.id, input.id))
+          .returning({ id: accountTable.id, status: accountTable.status })
+        const row = updated[0]
         if (!row) {
           throw new TRPCError({ code: 'NOT_FOUND', message: 'Claim not found' })
         }
         return {
           id: row.id,
-          displayName: row.display_name,
+          displayName: input.displayName,
           status: row.status,
         }
       }),
@@ -665,19 +590,14 @@ const registryRouter = t.router({
           model: z.string().nullable().optional(),
         }),
       )
-      .mutation(({ ctx, input }) => {
-        const db = ctx.app.database.db
-        const result = db.prepare('UPDATE keystores SET label = ? WHERE id = ?').run(input.label, input.id)
-        if (result.changes === 0) {
-          throw new TRPCError({ code: 'NOT_FOUND', message: 'Keystore not found' })
-        }
-        if (input.wallet !== undefined) {
-          db.prepare('UPDATE keystores SET wallet = ? WHERE id = ?').run(input.wallet, input.id)
-        }
-        if (input.model !== undefined) {
-          db.prepare('UPDATE keystores SET model = ? WHERE id = ?').run(input.model, input.id)
-        }
-        const ks = db.prepare<unknown[], KeystoreRow>('SELECT * FROM keystores WHERE id = ?').get(input.id)
+      .mutation(async ({ ctx, input }) => {
+        const db = ctx.app.database
+        const updated = await db
+          .update(keystoreTable)
+          .set({ label: input.label, wallet: input.wallet, model: input.model })
+          .where(eq(keystoreTable.id, input.id))
+          .returning()
+        const ks = updated[0]
         if (!ks) {
           throw new TRPCError({ code: 'NOT_FOUND', message: 'Keystore not found' })
         }
@@ -699,67 +619,59 @@ const registryRouter = t.router({
             }),
           }),
         )
-        .mutation(({ ctx, input }) => {
-          const db = ctx.app.database.db
-          const network = claimNetworkToNetwork(input.network)
+        .mutation(async ({ ctx, input }) => {
+          return ctx.app.database.transaction(async (db) => {
+            const network = claimNetworkToNetwork(input.network)
 
-          // Check if account already exists
-          const existing = db
-            .prepare<unknown[], { id: string }>('SELECT id FROM accounts WHERE descriptor = ? AND network = ?')
-            .get(input.account, network)
-          if (existing) {
-            throw new TRPCError({ code: 'CONFLICT', message: 'Account already exists' })
-          }
+            // Check if account already exists
+            const existing = await db
+              .select({ id: accountTable.id })
+              .from(accountTable)
+              .where(and(eq(accountTable.descriptor, input.account), eq(accountTable.network, network)))
+              .limit(1)
+            if (existing.length > 0) {
+              throw new TRPCError({ code: 'CONFLICT', message: 'Account already exists' })
+            }
 
-          // Extract xpub from descriptor
-          const parsed = SingleSigAccount.fromDescriptor(input.account)
-          if (parsed.isErr()) {
-            throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid account descriptor' })
-          }
-          const xpub = parsed.unwrap().xpub.toString()
+            // Extract xpub from descriptor
+            const parsed = SingleSigAccount.fromDescriptor(input.account)
+            if (parsed.isErr()) {
+              throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid account descriptor' })
+            }
+            const xpub = parsed.unwrap().xpub.toString()
 
-          const accountId = hosid('re_clmx')
-          const keystoreId = hosid('re_ks')
-          const now = new Date().toISOString()
+            const accountId = hosid('re_clmx')
+            const keystoreId = hosid('re_ks')
+            const now = new Date().toISOString()
 
-          db.transaction(() => {
-            db.prepare(
-              'INSERT INTO accounts (id, network, descriptor, display_name, status, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-            ).run(accountId, network, input.account, input.displayName, 'pending', now)
-
-            db.prepare(
-              'INSERT INTO keystores (id, account_id, label, wallet, model, derivation_path, xpub, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-            ).run(
-              keystoreId,
+            await db.insert(accountTable).values({
+              id: accountId,
+              network,
+              descriptor: input.account,
+              displayName: input.displayName,
+              status: 'pending',
+              createdAt: now,
+            })
+            await db.insert(keystoreTable).values({
+              id: keystoreId,
               accountId,
-              input.keystore.label,
-              input.keystore.wallet,
-              input.keystore.model,
-              input.keystore.derivationPath,
+              label: input.keystore.label,
+              wallet: input.keystore.wallet,
+              model: input.keystore.model,
+              derivationPath: input.keystore.derivationPath,
               xpub,
-              now,
-            )
-          })()
+              createdAt: now,
+            })
 
-          const claim = getFullClaimDto(db, accountId)
-          if (!claim) {
-            throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Claim not found after creation' })
-          }
-          return {
-            claim,
-            keystores: [
-              keystoreRowToDto({
-                id: keystoreId,
-                account_id: accountId,
-                label: input.keystore.label,
-                wallet: input.keystore.wallet,
-                model: input.keystore.model,
-                derivation_path: input.keystore.derivationPath,
-                xpub,
-                created_at: now,
-              }),
-            ],
-          }
+            const claim = await getFullClaimDto(db, accountId)
+            if (!claim) {
+              throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Claim not found after creation' })
+            }
+            return {
+              claim,
+              keystores: claim.keystores,
+            }
+          })
         }),
 
       multisig: publicProcedure
@@ -779,69 +691,68 @@ const registryRouter = t.router({
             ),
           }),
         )
-        .mutation(({ ctx, input }) => {
-          const db = ctx.app.database.db
-          const network = claimNetworkToNetwork(input.network)
+        .mutation(async ({ ctx, input }) => {
+          return ctx.app.database.transaction(async (db) => {
+            const network = claimNetworkToNetwork(input.network)
 
-          const existing = db
-            .prepare<unknown[], { id: string }>('SELECT id FROM accounts WHERE descriptor = ? AND network = ?')
-            .get(input.account, network)
-          if (existing) {
-            throw new TRPCError({ code: 'CONFLICT', message: 'Account already exists' })
-          }
+            const existing = await db
+              .select({ id: accountTable.id })
+              .from(accountTable)
+              .where(and(eq(accountTable.descriptor, input.account), eq(accountTable.network, network)))
+              .limit(1)
+            if (existing.length > 0) {
+              throw new TRPCError({ code: 'CONFLICT', message: 'Account already exists' })
+            }
 
-          const parsed = MultiSigAccount.fromDescriptor(input.account)
-          if (parsed.isErr()) {
-            throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid multisig account descriptor' })
-          }
+            const parsed = MultiSigAccount.fromDescriptor(input.account)
+            if (parsed.isErr()) {
+              throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid multisig account descriptor' })
+            }
 
-          validateMultisigKeystores(
-            parsed.unwrap(),
-            input.keystores.map((keystore) => keystore.publicKey),
-          )
+            validateMultisigKeystores(
+              parsed.unwrap(),
+              input.keystores.map((keystore) => keystore.publicKey),
+            )
+            const accountId = hosid('re_clmx')
+            const now = new Date().toISOString()
 
-          const accountId = hosid('re_clmx')
-          const now = new Date().toISOString()
-
-          const keystoreRows: KeystoreRow[] = []
-
-          db.transaction(() => {
-            db.prepare(
-              'INSERT INTO accounts (id, network, descriptor, display_name, status, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-            ).run(accountId, network, input.account, input.displayName, 'pending', now)
-
+            await db.insert(accountTable).values({
+              id: accountId,
+              network,
+              descriptor: input.account,
+              displayName: input.displayName,
+              status: 'pending',
+              createdAt: now,
+            })
             for (const ks of input.keystores) {
               const keystoreId = hosid('re_ks')
-              db.prepare(
-                'INSERT INTO keystores (id, account_id, label, wallet, model, derivation_path, xpub, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-              ).run(keystoreId, accountId, ks.label, ks.wallet, ks.model, ks.derivationPath, ks.publicKey, now)
-              keystoreRows.push({
+              await db.insert(keystoreTable).values({
                 id: keystoreId,
-                account_id: accountId,
+                accountId,
                 label: ks.label,
                 wallet: ks.wallet,
                 model: ks.model,
-                derivation_path: ks.derivationPath,
+                derivationPath: ks.derivationPath,
                 xpub: ks.publicKey,
-                created_at: now,
+                createdAt: now,
               })
             }
-          })()
 
-          const claim = getFullClaimDto(db, accountId)
-          if (!claim) {
-            throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Claim not found after creation' })
-          }
-          return {
-            claim,
-            keystores: keystoreRows.map(keystoreRowToDto),
-          }
+            const claim = await getFullClaimDto(db, accountId)
+            if (!claim) {
+              throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Claim not found after creation' })
+            }
+            return {
+              claim,
+              keystores: claim.keystores,
+            }
+          })
         }),
     }),
 
     get: t.router({
-      byId: publicProcedure.input(z.object({ id: z.string() })).query(({ ctx, input }) => {
-        const claim = getFullClaimDto(ctx.app.database.db, input.id)
+      byId: publicProcedure.input(z.object({ id: z.string() })).query(async ({ ctx, input }) => {
+        const claim = await getFullClaimDto(ctx.app.database, input.id)
         if (!claim) {
           throw new TRPCError({ code: 'NOT_FOUND', message: 'Claim not found' })
         }
@@ -850,15 +761,16 @@ const registryRouter = t.router({
 
       byAccount: publicProcedure
         .input(z.object({ network: z.string(), account: z.string() }))
-        .query(({ ctx, input }) => {
+        .query(async ({ ctx, input }) => {
           const network = claimNetworkToNetwork(input.network)
-          const row = ctx.app.database.db
-            .prepare<unknown[], { id: string }>('SELECT id FROM accounts WHERE descriptor = ? AND network = ?')
-            .get(input.account, network)
+          const [row] = await ctx.app.database
+            .select({ id: accountTable.id })
+            .from(accountTable)
+            .where(and(eq(accountTable.descriptor, input.account), eq(accountTable.network, network)))
           if (!row) {
             throw new TRPCError({ code: 'NOT_FOUND', message: 'Claim not found' })
           }
-          const claim = getFullClaimDto(ctx.app.database.db, row.id)
+          const claim = await getFullClaimDto(ctx.app.database, row.id)
           if (!claim) {
             throw new TRPCError({ code: 'NOT_FOUND', message: 'Claim not found' })
           }
@@ -870,70 +782,66 @@ const registryRouter = t.router({
   challenges: t.router({
     create: publicProcedure
       .input(z.object({ claimId: z.string(), keystoreId: z.string().optional() }))
-      .mutation(({ ctx, input }) => {
-        const db = ctx.app.database.db
+      .mutation(async ({ ctx, input }) => {
+        return ctx.app.database.transaction(async (db) => {
+          // Check the account exists
+          const [accountRow] = await db
+            .select({ id: accountTable.id })
+            .from(accountTable)
+            .where(eq(accountTable.id, input.claimId))
+          if (!accountRow) {
+            throw new TRPCError({ code: 'NOT_FOUND', message: 'Account not found' })
+          }
 
-        // Check the account exists
-        const accountRow = db
-          .prepare<unknown[], { id: string }>('SELECT id FROM accounts WHERE id = ?')
-          .get(input.claimId)
-        if (!accountRow) {
-          throw new TRPCError({ code: 'NOT_FOUND', message: 'Account not found' })
-        }
+          // Return existing incomplete challenge if one exists
+          const [existing] = await db
+            .select()
+            .from(challenges)
+            .where(and(eq(challenges.accountId, input.claimId), eq(challenges.isSatisfied, 0)))
+            .orderBy(desc(challenges.createdAt))
+            .limit(1)
+          if (existing) {
+            return {
+              id: existing.id,
+              claimId: existing.accountId,
+              variant: 'signed_message' as const,
+              isSatisfied: false,
+              createdAt: new Date(existing.createdAt),
+              updatedAt: new Date(existing.createdAt),
+              completedAt: null,
+            }
+          }
 
-        // Return existing incomplete challenge if one exists
-        const existing = db
-          .prepare<unknown[], ChallengeRow>(
-            'SELECT * FROM challenges WHERE account_id = ? AND is_satisfied = 0 ORDER BY created_at DESC LIMIT 1',
-          )
-          .get(input.claimId)
-        if (existing) {
-          discardUnverifiableMessages(db, existing)
+          const challengeId = hosid('re_chal')
+          const now = new Date().toISOString()
+          await db.insert(challenges).values({ id: challengeId, accountId: input.claimId, createdAt: now })
+
           return {
-            id: existing.id,
-            claimId: existing.account_id,
+            id: challengeId,
+            claimId: input.claimId,
             variant: 'signed_message' as const,
             isSatisfied: false,
-            createdAt: new Date(existing.created_at),
-            updatedAt: new Date(existing.created_at),
+            createdAt: new Date(now),
+            updatedAt: new Date(now),
             completedAt: null,
           }
-        }
-
-        const challengeId = hosid('re_chal')
-        const now = new Date().toISOString()
-        db.prepare('INSERT INTO challenges (id, account_id, created_at) VALUES (?, ?, ?)').run(
-          challengeId,
-          input.claimId,
-          now,
-        )
-
-        return {
-          id: challengeId,
-          claimId: input.claimId,
-          variant: 'signed_message' as const,
-          isSatisfied: false,
-          createdAt: new Date(now),
-          updatedAt: new Date(now),
-          completedAt: null,
-        }
+        })
       }),
 
-    complete: publicProcedure.input(z.object({ challengeId: z.string() })).mutation(({ ctx, input }) => {
-      const db = ctx.app.database.db
-      const challenge = db
-        .prepare<unknown[], ChallengeRow>('SELECT * FROM challenges WHERE id = ?')
-        .get(input.challengeId)
+    complete: publicProcedure.input(z.object({ challengeId: z.string() })).mutation(async ({ ctx, input }) => {
+      const db = ctx.app.database
+      const [challenge] = await db.select().from(challenges).where(eq(challenges.id, input.challengeId))
       if (!challenge) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Challenge not found' })
       }
-      if (challenge.is_satisfied === 1 || challenge.completed_at !== null) {
+      if (challenge.isSatisfied === 1 || challenge.completedAt !== null) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Challenge already completed' })
       }
 
-      const accountRow = db
-        .prepare<unknown[], { descriptor: string }>('SELECT descriptor FROM accounts WHERE id = ?')
-        .get(challenge.account_id)
+      const [accountRow] = await db
+        .select({ descriptor: accountTable.descriptor })
+        .from(accountTable)
+        .where(eq(accountTable.id, challenge.accountId))
       if (!accountRow) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Account not found' })
       }
@@ -943,9 +851,10 @@ const registryRouter = t.router({
         throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Failed to parse account descriptor' })
       }
 
-      const signedMessages = db
-        .prepare<unknown[], SignedMessageRow>('SELECT * FROM signed_messages WHERE challenge_id = ?')
-        .all(input.challengeId)
+      const signedMessages = await db
+        .select()
+        .from(signedMessagesTable)
+        .where(eq(signedMessagesTable.challengeId, input.challengeId))
 
       if (signedMessages.length === 0) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'No signed messages found' })
@@ -962,7 +871,7 @@ const registryRouter = t.router({
       const requiredSignatures = getRequiredSignatureCount(account.unwrap())
       const signingKeys = new Set<string>()
       for (const message of completedMessages) {
-        const identity = getSigningIdentity(db, challenge.account_id, message.keystore_id)
+        const identity = await getSigningIdentity(db, challenge.accountId, message.keystoreId)
         validateSigningAddress(message, identity)
         verifySignedMessageSignature(message, message.signature)
         signingKeys.add(identity.publicKey)
@@ -972,28 +881,29 @@ const registryRouter = t.router({
       }
 
       const now = new Date().toISOString()
-      db.transaction(() => {
-        const accountResult = db
-          .prepare('UPDATE accounts SET status = ? WHERE id = ? AND deleted_at IS NULL')
-          .run('verified', challenge.account_id)
-        if (accountResult.changes === 0) {
+      await db.transaction(async (tx) => {
+        const updatedAccount = await tx
+          .update(accountTable)
+          .set({ status: 'verified' })
+          .where(and(eq(accountTable.id, challenge.accountId), isNull(accountTable.deletedAt)))
+        if (updatedAccount.rowsAffected === 0) {
           throw new TRPCError({ code: 'BAD_REQUEST', message: 'Archived claims cannot complete verification' })
         }
-
-        const challengeResult = db
-          .prepare('UPDATE challenges SET is_satisfied = 1, completed_at = ? WHERE id = ? AND is_satisfied = 0')
-          .run(now, input.challengeId)
-        if (challengeResult.changes === 0) {
+        const completed = await tx
+          .update(challenges)
+          .set({ isSatisfied: 1, completedAt: now })
+          .where(and(eq(challenges.id, input.challengeId), eq(challenges.isSatisfied, 0)))
+        if (completed.rowsAffected === 0) {
           throw new TRPCError({ code: 'BAD_REQUEST', message: 'Challenge already completed' })
         }
-      })()
+      })
 
       return {
         id: challenge.id,
-        claimId: challenge.account_id,
+        claimId: challenge.accountId,
         variant: 'signed_message' as const,
         isSatisfied: true,
-        createdAt: new Date(challenge.created_at),
+        createdAt: new Date(challenge.createdAt),
         updatedAt: new Date(now),
         completedAt: new Date(now),
       }
@@ -1003,101 +913,96 @@ const registryRouter = t.router({
   challengeMessages: t.router({
     create: publicProcedure
       .input(z.object({ challengeId: z.string(), keystoreId: z.string() }))
-      .mutation(({ ctx, input }): ChallengeMessageDto => {
-        const db = ctx.app.database.db
-
-        const challenge = db
-          .prepare<unknown[], ChallengeRow>('SELECT * FROM challenges WHERE id = ?')
-          .get(input.challengeId)
-        if (!challenge) {
-          throw new TRPCError({ code: 'NOT_FOUND', message: 'Challenge not found' })
-        }
-
-        const identity = getSigningIdentity(db, challenge.account_id, input.keystoreId)
-
-        // Check if a signed message already exists for this keystore+challenge
-        const existingSm = db
-          .prepare<unknown[], SignedMessageRow>(
-            'SELECT * FROM signed_messages WHERE challenge_id = ? AND keystore_id = ? LIMIT 1',
-          )
-          .get(input.challengeId, input.keystoreId)
-        if (existingSm) {
-          validateSigningAddress(existingSm, identity)
-          return {
-            signedMessage: signedMessageRowToDto(existingSm),
-            challengeId: existingSm.challenge_id,
-            keystoreId: existingSm.keystore_id,
+      .mutation(async ({ ctx, input }): Promise<ChallengeMessageDto> => {
+        return ctx.app.database.transaction(async (db) => {
+          const [challenge] = await db.select().from(challenges).where(eq(challenges.id, input.challengeId))
+          if (!challenge) {
+            throw new TRPCError({ code: 'NOT_FOUND', message: 'Challenge not found' })
           }
-        }
 
-        const address = identity.address
+          const identity = await getSigningIdentity(db, challenge.accountId, input.keystoreId)
+          // Check if a signed message already exists for this keystore+challenge
+          const [existingSm] = await db
+            .select()
+            .from(signedMessagesTable)
+            .where(
+              and(
+                eq(signedMessagesTable.challengeId, input.challengeId),
+                eq(signedMessagesTable.keystoreId, input.keystoreId),
+              ),
+            )
+            .limit(1)
+          if (existingSm) {
+            validateSigningAddress(existingSm, identity)
+            return challengeMessageRowToDto(existingSm)
+          }
 
-        // Build message text
-        const identifierRow = db
-          .prepare<unknown[], { value: string }>("SELECT value FROM settings WHERE key = 'owner_identifier'")
-          .get()
-        const identifier = identifierRow?.value ?? 'the owner'
-        const messageText = `I, ${identifier}, affirm sole control of this account. No other third-party claims/access permitted. Ownership revocable solely by me.`
+          const address = identity.address
 
-        const signedMessageId = hosid('re_mesg')
-        const now = new Date().toISOString()
+          // Build message text
+          const [identifierRow] = await db
+            .select({ value: settings.value })
+            .from(settings)
+            .where(eq(settings.key, 'owner_identifier'))
+          const identifier = identifierRow?.value ?? 'the owner'
+          const messageText = `I, ${identifier}, affirm sole control of this account. No other third-party claims/access permitted. Ownership revocable solely by me.`
 
-        db.prepare(
-          'INSERT INTO signed_messages (id, challenge_id, keystore_id, address, message_text, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-        ).run(signedMessageId, input.challengeId, input.keystoreId, address, messageText, now)
+          const signedMessageId = hosid('re_mesg')
+          const now = new Date().toISOString()
 
-        return {
-          signedMessage: {
-            version: 0 as const,
+          await db.insert(signedMessagesTable).values({
             id: signedMessageId,
-            createdAt: new Date(now),
-            updatedAt: new Date(now),
+            challengeId: input.challengeId,
+            keystoreId: input.keystoreId,
             address,
-            messageTextToSign: getMessageTextToSign(signedMessageId, messageText),
+            messageText,
+            createdAt: now,
+          })
+
+          return challengeMessageRowToDto({
+            id: signedMessageId,
+            createdAt: now,
+            address,
+            messageText,
             signedAt: null,
             signature: null,
-          },
-          challengeId: challenge.id,
-          keystoreId: identity.keystoreId,
-        }
+            challengeId: challenge.id,
+            keystoreId: identity.keystoreId,
+          })
+        })
       }),
 
     get: publicProcedure
       .input(z.object({ signedMessageId: z.string() }))
-      .query(({ ctx, input }): ChallengeMessageDto => {
-        const sm = ctx.app.database.db
-          .prepare<unknown[], SignedMessageRow>('SELECT * FROM signed_messages WHERE id = ?')
-          .get(input.signedMessageId)
+      .query(async ({ ctx, input }): Promise<ChallengeMessageDto> => {
+        const [sm] = await ctx.app.database
+          .select()
+          .from(signedMessagesTable)
+          .where(eq(signedMessagesTable.id, input.signedMessageId))
         if (!sm) {
           throw new TRPCError({ code: 'NOT_FOUND', message: 'Signed message not found' })
         }
-        return {
-          signedMessage: signedMessageRowToDto(sm),
-          challengeId: sm.challenge_id,
-          keystoreId: sm.keystore_id,
-        }
+        return challengeMessageRowToDto(sm)
       }),
 
     list: publicProcedure
       .input(z.object({ challengeId: z.string() }))
-      .query(({ ctx, input }): ChallengeMessageDto[] => {
-        const messages = ctx.app.database.db
-          .prepare<unknown[], SignedMessageRow>('SELECT * FROM signed_messages WHERE challenge_id = ?')
-          .all(input.challengeId)
-        return messages.map((sm) => ({
-          signedMessage: signedMessageRowToDto(sm),
-          challengeId: sm.challenge_id,
-          keystoreId: sm.keystore_id,
-        }))
+      .query(async ({ ctx, input }): Promise<ChallengeMessageDto[]> => {
+        const messages = await ctx.app.database
+          .select()
+          .from(signedMessagesTable)
+          .where(eq(signedMessagesTable.challengeId, input.challengeId))
+        return messages.map(challengeMessageRowToDto)
       }),
 
     complete: publicProcedure
       .input(z.object({ signedMessageId: z.string(), signature: z.string().trim().min(1).max(4096) }))
-      .mutation(({ ctx, input }): ChallengeMessageDto => {
-        const db = ctx.app.database.db
-        const sm = db
-          .prepare<unknown[], SignedMessageRow>('SELECT * FROM signed_messages WHERE id = ?')
-          .get(input.signedMessageId)
+      .mutation(async ({ ctx, input }): Promise<ChallengeMessageDto> => {
+        const db = ctx.app.database
+        const [sm] = await db
+          .select()
+          .from(signedMessagesTable)
+          .where(eq(signedMessagesTable.id, input.signedMessageId))
         if (!sm) {
           throw new TRPCError({ code: 'NOT_FOUND', message: 'Signed message not found' })
         }
@@ -1105,171 +1010,145 @@ const registryRouter = t.router({
           throw new TRPCError({ code: 'BAD_REQUEST', message: 'Signed message already completed' })
         }
 
-        const challenge = db
-          .prepare<unknown[], ChallengeRow>('SELECT * FROM challenges WHERE id = ?')
-          .get(sm.challenge_id)
+        const [challenge] = await db.select().from(challenges).where(eq(challenges.id, sm.challengeId))
         if (!challenge) {
           throw new TRPCError({ code: 'NOT_FOUND', message: 'Challenge not found' })
         }
-        validateSigningAddress(sm, getSigningIdentity(db, challenge.account_id, sm.keystore_id))
+        validateSigningAddress(sm, await getSigningIdentity(db, challenge.accountId, sm.keystoreId))
         verifySignedMessageSignature(sm, input.signature)
 
         const now = new Date().toISOString()
-        db.prepare('UPDATE signed_messages SET signature = ?, signed_at = ? WHERE id = ?').run(
-          input.signature,
-          now,
-          input.signedMessageId,
-        )
-
-        return {
-          signedMessage: {
-            version: 0 as const,
-            id: sm.id,
-            createdAt: new Date(sm.created_at),
-            updatedAt: new Date(now),
-            address: sm.address,
-            messageTextToSign: getMessageTextToSign(sm.id, sm.message_text),
-            signedAt: new Date(now),
-            signature: input.signature,
-          },
-          challengeId: sm.challenge_id,
-          keystoreId: sm.keystore_id,
+        const completed = await db
+          .update(signedMessagesTable)
+          .set({ signature: input.signature, signedAt: now })
+          .where(and(eq(signedMessagesTable.id, input.signedMessageId), isNull(signedMessagesTable.signature)))
+        if (completed.rowsAffected === 0) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'Signed message already completed' })
         }
+
+        return challengeMessageRowToDto({ ...sm, signedAt: now, signature: input.signature })
       }),
   }),
 
   getOrCreateSinglesigChallengeMessage: publicProcedure
     .input(z.object({ network: z.string(), account: z.string() }))
-    .query(({ ctx, input }) => {
-      const db = ctx.app.database.db
-      const network = claimNetworkToNetwork(input.network)
+    .query(async ({ ctx, input }) => {
+      return ctx.app.database.transaction(async (db) => {
+        const network = claimNetworkToNetwork(input.network)
 
-      // Find the account
-      const accountRow = db
-        .prepare<unknown[], { id: string; descriptor: string }>(
-          'SELECT id, descriptor FROM accounts WHERE descriptor = ? AND network = ?',
-        )
-        .get(input.account, network)
-      if (!accountRow) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Account not found' })
-      }
+        // Find the account
+        const [accountRow] = await db
+          .select({ id: accountTable.id, descriptor: accountTable.descriptor })
+          .from(accountTable)
+          .where(and(eq(accountTable.descriptor, input.account), eq(accountTable.network, network)))
+        if (!accountRow) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Account not found' })
+        }
 
-      // Find or create keystore
-      const keystore = db
-        .prepare<unknown[], KeystoreRow>('SELECT * FROM keystores WHERE account_id = ? LIMIT 1')
-        .get(accountRow.id)
-      if (!keystore) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Keystore not found' })
-      }
+        // Find or create keystore
+        const [keystore] = await db
+          .select()
+          .from(keystoreTable)
+          .where(eq(keystoreTable.accountId, accountRow.id))
+          .limit(1)
+        if (!keystore) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Keystore not found' })
+        }
 
-      const identity = getSigningIdentity(db, accountRow.id, keystore.id)
+        const identity = await getSigningIdentity(db, accountRow.id, keystore.id)
+        // Check for existing unsigned challenge
+        const [existingChallenge] = await db
+          .select()
+          .from(challenges)
+          .where(and(eq(challenges.accountId, accountRow.id), eq(challenges.isSatisfied, 0)))
+          .orderBy(desc(challenges.createdAt))
+          .limit(1)
 
-      // Check for existing unsigned challenge
-      const existingChallenge = db
-        .prepare<unknown[], ChallengeRow>(
-          'SELECT * FROM challenges WHERE account_id = ? AND is_satisfied = 0 ORDER BY created_at DESC LIMIT 1',
-        )
-        .get(accountRow.id)
+        if (existingChallenge) {
+          const [existingSm] = await db
+            .select()
+            .from(signedMessagesTable)
+            .where(
+              and(
+                eq(signedMessagesTable.challengeId, existingChallenge.id),
+                eq(signedMessagesTable.keystoreId, keystore.id),
+              ),
+            )
+            .limit(1)
 
-      if (existingChallenge) {
-        const existingSm = db
-          .prepare<unknown[], SignedMessageRow>(
-            'SELECT * FROM signed_messages WHERE challenge_id = ? AND keystore_id = ? LIMIT 1',
-          )
-          .get(existingChallenge.id, keystore.id)
-
-        if (existingSm) {
-          validateSigningAddress(existingSm, identity)
-          return {
-            challenge: {
-              id: existingChallenge.id,
-              claimId: existingChallenge.account_id,
-              variant: 'signed_message' as const,
-              isSatisfied: false,
-              createdAt: new Date(existingChallenge.created_at),
-              updatedAt: new Date(existingChallenge.created_at),
-              completedAt: null,
-            },
-            challengeMessage: {
-              signedMessage: {
-                version: 0 as const,
-                id: existingSm.id,
-                createdAt: new Date(existingSm.created_at),
-                updatedAt: new Date(existingSm.created_at),
-                address: existingSm.address,
-                messageTextToSign: getMessageTextToSign(existingSm.id, existingSm.message_text),
-                signedAt: null,
-                signature: null,
+          if (existingSm) {
+            validateSigningAddress(existingSm, identity)
+            return {
+              challenge: {
+                id: existingChallenge.id,
+                claimId: existingChallenge.accountId,
+                variant: 'signed_message' as const,
+                isSatisfied: false,
+                createdAt: new Date(existingChallenge.createdAt),
+                updatedAt: new Date(existingChallenge.createdAt),
+                completedAt: null,
               },
-              challengeId: existingChallenge.id,
-              keystoreId: keystore.id,
-            },
+              challengeMessage: challengeMessageRowToDto({ ...existingSm, signedAt: null, signature: null }),
+            }
           }
         }
-      }
 
-      // Derive address from account for signing
-      const parsed = SingleSigAccount.fromDescriptor(accountRow.descriptor)
-      if (parsed.isErr()) {
-        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Failed to parse account descriptor' })
-      }
-      const address = identity.address
+        // Derive address from account for signing
+        const parsed = SingleSigAccount.fromDescriptor(accountRow.descriptor)
+        if (parsed.isErr()) {
+          throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Failed to parse account descriptor' })
+        }
+        const address = identity.address
 
-      // Create challenge and signed message
-      const challengeId = hosid('re_chal')
-      const signedMessageId = hosid('re_mesg')
-      // Keep the established message format, using the configured owner identifier when available.
-      const identifierRow = db
-        .prepare<unknown[], { value: string }>("SELECT value FROM settings WHERE key = 'owner_identifier'")
-        .get()
-      const identifier = identifierRow?.value ?? 'the owner'
-      const messageText = `I, ${identifier}, affirm sole control of this account. No other third-party claims/access permitted. Ownership revocable solely by me.`
-      const now = new Date().toISOString()
+        // Create challenge and signed message
+        const challengeId = existingChallenge?.id ?? hosid('re_chal')
+        const signedMessageId = hosid('re_mesg')
+        // Keep the established message format, using the configured owner identifier when available.
+        const [identifierRow] = await db
+          .select({ value: settings.value })
+          .from(settings)
+          .where(eq(settings.key, 'owner_identifier'))
+        const identifier = identifierRow?.value ?? 'the owner'
+        const messageText = `I, ${identifier}, affirm sole control of this account. No other third-party claims/access permitted. Ownership revocable solely by me.`
+        const now = new Date().toISOString()
 
-      db.transaction(() => {
-        db.prepare('INSERT INTO challenges (id, account_id, created_at) VALUES (?, ?, ?)').run(
-          challengeId,
-          accountRow.id,
-          now,
-        )
-        db.prepare(
-          'INSERT INTO signed_messages (id, challenge_id, keystore_id, address, message_text, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-        ).run(signedMessageId, challengeId, keystore.id, address, messageText, now)
-      })()
+        if (!existingChallenge) {
+          await db.insert(challenges).values({ id: challengeId, accountId: accountRow.id, createdAt: now })
+        }
+        await db
+          .insert(signedMessagesTable)
+          .values({ id: signedMessageId, challengeId, keystoreId: keystore.id, address, messageText, createdAt: now })
 
-      return {
-        challenge: {
-          id: challengeId,
-          claimId: accountRow.id,
-          variant: 'signed_message' as const,
-          isSatisfied: false,
-          createdAt: new Date(now),
-          updatedAt: new Date(now),
-          completedAt: null,
-        },
-        challengeMessage: {
-          signedMessage: {
-            version: 0 as const,
+        return {
+          challenge: {
+            id: challengeId,
+            claimId: accountRow.id,
+            variant: 'signed_message' as const,
+            isSatisfied: false,
+            createdAt: new Date(existingChallenge?.createdAt ?? now),
+            updatedAt: new Date(existingChallenge?.createdAt ?? now),
+            completedAt: null,
+          },
+          challengeMessage: challengeMessageRowToDto({
             id: signedMessageId,
-            createdAt: new Date(now),
-            updatedAt: new Date(now),
+            createdAt: now,
             address,
-            messageTextToSign: getMessageTextToSign(signedMessageId, messageText),
+            messageText,
             signedAt: null,
             signature: null,
-          },
-          challengeId,
-          keystoreId: keystore.id,
-        },
-      }
+            challengeId,
+            keystoreId: keystore.id,
+          }),
+        }
+      })
     }),
 })
 
 // ─── portalProve.exchange ───────────────────────────────────────────────────
 
 const proveExchangeRouter = t.router({
-  list: publicProcedure.query(({ ctx }) => {
-    const accounts = ctx.app.exchangeService.listAccounts()
+  list: publicProcedure.query(async ({ ctx }) => {
+    const accounts = await ctx.app.exchangeService.listAccounts()
     return accounts.map(exchangeAccountToDto)
   }),
 
@@ -1288,8 +1167,8 @@ const proveExchangeRouter = t.router({
     }
   }),
 
-  delete: publicProcedure.input(z.object({ accountId: z.string() })).mutation(({ ctx, input }) => {
-    const result = ctx.app.exchangeService.removeAccount(input.accountId)
+  delete: publicProcedure.input(z.object({ accountId: z.string() })).mutation(async ({ ctx, input }) => {
+    const result = await ctx.app.exchangeService.removeAccount(input.accountId)
     if (result.isErr()) {
       throw new TRPCError({ code: 'NOT_FOUND', message: result.unwrapErr().message })
     }
@@ -1312,8 +1191,8 @@ const proveExchangeRouter = t.router({
         return result.unwrap()
       }),
 
-    list: publicProcedure.query(({ ctx }) => {
-      const accounts = ctx.app.exchangeService.listAccounts('coinbase')
+    list: publicProcedure.query(async ({ ctx }) => {
+      const accounts = await ctx.app.exchangeService.listAccounts('coinbase')
       return accounts.map(exchangeAccountToDto)
     }),
   }),
@@ -1335,8 +1214,8 @@ const proveExchangeRouter = t.router({
         return result.unwrap()
       }),
 
-    list: publicProcedure.query(({ ctx }) => {
-      const accounts = ctx.app.exchangeService.listAccounts('strike')
+    list: publicProcedure.query(async ({ ctx }) => {
+      const accounts = await ctx.app.exchangeService.listAccounts('strike')
       return accounts.map(exchangeAccountToDto)
     }),
 
@@ -1361,8 +1240,8 @@ const proveExchangeRouter = t.router({
           ),
         }),
       )
-      .mutation(({ ctx, input }) => {
-        const result = ctx.app.exchangeService.importStatementTransactions(input)
+      .mutation(async ({ ctx, input }) => {
+        const result = await ctx.app.exchangeService.importStatementTransactions(input)
         if (result.isErr()) {
           throw new TRPCError({ code: 'BAD_REQUEST', message: result.unwrapErr().message })
         }
@@ -1371,18 +1250,18 @@ const proveExchangeRouter = t.router({
 
     listStatementTransactions: publicProcedure
       .input(z.object({ accountId: z.string(), statementMonth: z.string().optional() }))
-      .query(({ ctx, input }) => {
+      .query(async ({ ctx, input }) => {
         return ctx.app.exchangeService.listStatementTransactions(input.accountId, input.statementMonth)
       }),
 
-    listStatementMonths: publicProcedure.input(z.object({ accountId: z.string() })).query(({ ctx, input }) => {
+    listStatementMonths: publicProcedure.input(z.object({ accountId: z.string() })).query(async ({ ctx, input }) => {
       return ctx.app.exchangeService.listStatementMonths(input.accountId)
     }),
 
     deleteStatementMonth: publicProcedure
       .input(z.object({ accountId: z.string(), statementMonth: z.string() }))
-      .mutation(({ ctx, input }) => {
-        const deleted = ctx.app.exchangeService.deleteStatementMonth(input.accountId, input.statementMonth)
+      .mutation(async ({ ctx, input }) => {
+        const deleted = await ctx.app.exchangeService.deleteStatementMonth(input.accountId, input.statementMonth)
         return { deleted }
       }),
   }),
@@ -1405,8 +1284,8 @@ const proveExchangeRouter = t.router({
         return result.unwrap()
       }),
 
-    list: publicProcedure.query(({ ctx }) => {
-      const accounts = ctx.app.exchangeService.listAccounts('robinhood')
+    list: publicProcedure.query(async ({ ctx }) => {
+      const accounts = await ctx.app.exchangeService.listAccounts('robinhood')
       return accounts.map(exchangeAccountToDto)
     }),
   }),
@@ -1428,8 +1307,8 @@ const proveExchangeRouter = t.router({
         return result.unwrap()
       }),
 
-    list: publicProcedure.query(({ ctx }) => {
-      const accounts = ctx.app.exchangeService.listAccounts('kraken')
+    list: publicProcedure.query(async ({ ctx }) => {
+      const accounts = await ctx.app.exchangeService.listAccounts('kraken')
       return accounts.map(exchangeAccountToDto)
     }),
   }),
@@ -1452,28 +1331,27 @@ const onchainRouter = t.router({
         if (parsed.isOk()) {
           const na = parsed.unwrap()
           const key = na.toString()
-          const row = ctx.app.database.db
-            .prepare<unknown[], { id: string; deleted_at: string | null }>(
-              `SELECT id, deleted_at
-               FROM accounts
-               WHERE descriptor = ? AND network = ?
-               ORDER BY deleted_at IS NULL DESC, created_at DESC
-               LIMIT 1`,
+          const [row] = await ctx.app.database
+            .select({ id: accountTable.id, deletedAt: accountTable.deletedAt })
+            .from(accountTable)
+            .where(
+              and(
+                eq(accountTable.descriptor, na.account.toString()),
+                eq(accountTable.network, claimNetworkToNetwork(na.network.toString())),
+              ),
             )
-            .get(na.account.toString(), claimNetworkToNetwork(na.network.toString()))
+            .orderBy(desc(sql`${accountTable.deletedAt} IS NULL`), desc(accountTable.createdAt))
+            .limit(1)
 
-          if (row?.deleted_at != null && row.deleted_at !== '') {
-            const snapshot = ctx.app.database.db
-              .prepare<unknown[], { balance_sats: string }>(
-                `SELECT balance_sats
-                 FROM balance_snapshots
-                 WHERE account_id = ? AND timestamp <= ?
-                 ORDER BY timestamp DESC
-                 LIMIT 1`,
-              )
-              .get(row.id, row.deleted_at)
+          if (row?.deletedAt != null && row.deletedAt !== '') {
+            const [snapshot] = await ctx.app.database
+              .select({ balanceSats: balanceSnapshots.balanceSats })
+              .from(balanceSnapshots)
+              .where(and(eq(balanceSnapshots.accountId, row.id), lte(balanceSnapshots.timestamp, row.deletedAt)))
+              .orderBy(desc(balanceSnapshots.timestamp))
+              .limit(1)
             archivedAccounts.add(key)
-            archivedBalances.set(key, BigInt(snapshot?.balance_sats ?? '0'))
+            archivedBalances.set(key, BigInt(snapshot?.balanceSats ?? '0'))
             continue
           }
 
@@ -1521,16 +1399,15 @@ const onchainRouter = t.router({
   claimBalances: publicProcedure.input(z.object({ claimIds: z.array(z.string()) })).query(async ({ ctx, input }) => {
     const balanceMap = new Map<string, Decimal>()
 
-    const accounts = new IndexSet<Account>()
+    const accountSet = new IndexSet<Account>()
     const idToAccount = new Map<string, Account>()
 
     // Resolve account IDs to Account objects
     for (const claimId of input.claimIds) {
-      const row = ctx.app.database.db
-        .prepare<unknown[], { descriptor: string }>(
-          'SELECT descriptor FROM accounts WHERE id = ? AND deleted_at IS NULL',
-        )
-        .get(claimId)
+      const [row] = await ctx.app.database
+        .select({ descriptor: accountTable.descriptor })
+        .from(accountTable)
+        .where(and(eq(accountTable.id, claimId), isNull(accountTable.deletedAt)))
       if (!row) {
         continue
       }
@@ -1538,25 +1415,26 @@ const onchainRouter = t.router({
       const parsed = Account.fromDescriptor(row.descriptor)
       if (parsed.isOk()) {
         const account = parsed.unwrap()
-        accounts.add(account)
+        accountSet.add(account)
         idToAccount.set(claimId, account)
       }
     }
 
-    if (accounts.size === 0) {
+    if (accountSet.size === 0) {
       return balanceMap
     }
 
-    const result = await ctx.app.onchainProvider.getConfirmedAccountBalances(accounts)
+    const result = await ctx.app.onchainProvider.getConfirmedAccountBalances(accountSet)
     if (result.isErr()) {
       throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: result.unwrapErr().message })
     }
 
     const accountBalances = result.unwrap()
     for (const [claimId, account] of idToAccount) {
-      const activeClaim = ctx.app.database.db
-        .prepare('SELECT 1 AS one FROM accounts WHERE id = ? AND deleted_at IS NULL')
-        .get(claimId)
+      const [activeClaim] = await ctx.app.database
+        .select({ id: accountTable.id })
+        .from(accountTable)
+        .where(and(eq(accountTable.id, claimId), isNull(accountTable.deletedAt)))
       if (activeClaim === undefined) {
         continue
       }
@@ -1572,7 +1450,7 @@ const onchainRouter = t.router({
 // ─── portalProve.statement ───────────────────────────────────────────────────
 
 const statementRouter = t.router({
-  list: publicProcedure.query(({ ctx }) => {
+  list: publicProcedure.query(async ({ ctx }) => {
     return ctx.app.statementService.list()
   }),
 
@@ -1581,6 +1459,7 @@ const statementRouter = t.router({
       z.object({
         claimIds: z.array(z.string()),
         exchangeAccountIds: z.array(z.string()).optional(),
+        quoteCurrency: StatementQuoteCurrencySchema.default('USD'),
         openingDate: z.date(),
         closingDate: z.date(),
         timezone: z.string(),
@@ -1588,14 +1467,19 @@ const statementRouter = t.router({
         address: z.string().nullable().optional(),
       }),
     )
-    .mutation(({ ctx, input }) => {
+    .mutation(async ({ ctx, input }) => {
       const logger = ctx.app.logger.child({ module: 'statement-generation' })
       logger.info(
         { claimIds: input.claimIds, openingDate: input.openingDate, closingDate: input.closingDate },
         'Starting statement generation',
       )
 
-      const statementId = ctx.app.statementService.create(input)
+      // Reject invalid dates before saving a statement that could only fail.
+      const created = await ctx.app.statementService.create(input)
+      if (created.isErr()) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: created.unwrapErr().message })
+      }
+      const statementId = created.unwrap()
       logger.info({ statementId }, 'Created pending statement')
 
       // Fire-and-forget: generate data in background so the client gets the pending DTO immediately
@@ -1605,7 +1489,7 @@ const statementRouter = t.router({
           if (dataResult.isErr()) {
             const errMsg = dataResult.unwrapErr().message
             logger.error({ statementId, error: errMsg }, 'Statement data generation failed')
-            ctx.app.statementService.fail(statementId)
+            await ctx.app.statementService.fail(statementId, errMsg)
             return
           }
 
@@ -1621,10 +1505,14 @@ const statementRouter = t.router({
             'Statement data generated, completing',
           )
 
-          ctx.app.statementService.complete(statementId, transactionMap, dailyRates)
+          const completed = await ctx.app.statementService.complete(statementId, transactionMap, dailyRates)
+          if (completed.isErr()) {
+            await ctx.app.statementService.fail(statementId, completed.unwrapErr().message)
+            return
+          }
           logger.info({ statementId }, 'Statement generation completed')
         } catch (err) {
-          ctx.app.statementService.fail(statementId)
+          await ctx.app.statementService.fail(statementId)
           const message = err instanceof Error ? err.message : 'Statement generation failed'
           logger.error(
             { statementId, error: message, stack: err instanceof Error ? err.stack : undefined },
@@ -1634,15 +1522,15 @@ const statementRouter = t.router({
       })()
 
       // Return the pending statement immediately
-      const dto = ctx.app.statementService.findById(statementId)
+      const dto = await ctx.app.statementService.findById(statementId)
       if (!dto) {
         throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Statement not found after creation' })
       }
       return dto
     }),
 
-  retrieve: publicProcedure.input(z.string()).query(({ ctx, input: statementId }) => {
-    const dto = ctx.app.statementService.findById(statementId)
+  retrieve: publicProcedure.input(z.string()).query(async ({ ctx, input: statementId }) => {
+    const dto = await ctx.app.statementService.findById(statementId)
     if (!dto) {
       throw new TRPCError({ code: 'NOT_FOUND', message: 'Statement not found' })
     }
@@ -1651,8 +1539,8 @@ const statementRouter = t.router({
 
   retrieveDocumentData: publicProcedure
     .input(z.object({ statementId: z.string(), format: z.enum(['custom', 'monthly']) }))
-    .query(({ ctx, input }) => {
-      const loaded = ctx.app.statementService.loadCompleted(input.statementId)
+    .query(async ({ ctx, input }) => {
+      const loaded = await ctx.app.statementService.loadCompleted(input.statementId)
       if (!loaded) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Completed statement not found' })
       }
@@ -1661,13 +1549,13 @@ const statementRouter = t.router({
       const pdfResult = mapper.toPdfStatement(
         {
           id: loaded.row.id,
-          createdAt: new Date(loaded.row.created_at),
+          createdAt: new Date(loaded.row.createdAt),
           status: 'completed',
           counter: loaded.row.counter,
           timezone: loaded.row.timezone,
-          openingDate: new Date(loaded.row.opening_date),
-          closingDate: new Date(loaded.row.closing_date),
-          user: { email: null, name: loaded.row.user_name, address: loaded.row.user_address },
+          openingDate: new Date(loaded.row.openingDate),
+          closingDate: new Date(loaded.row.closingDate),
+          user: { email: null, name: loaded.row.userName, address: loaded.row.userAddress },
           transactionMap: loaded.transactionMap,
           dailyRates: loaded.dailyRates,
         },
@@ -1685,6 +1573,7 @@ const statementRouter = t.router({
       z.object({
         claimIds: z.array(z.string()),
         exchangeAccountIds: z.array(z.string()).optional(),
+        quoteCurrency: StatementQuoteCurrencySchema.default('USD'),
         openingDate: z.date(),
         closingDate: z.date(),
         timezone: z.string(),
@@ -1695,15 +1584,23 @@ const statementRouter = t.router({
       }),
     )
     .query(async ({ ctx, input }) => {
-      const dataResult = await ctx.app.statementService.generateStatementData({
+      const statementInput = {
         claimIds: input.claimIds,
         exchangeAccountIds: input.exchangeAccountIds,
+        quoteCurrency: input.quoteCurrency,
         openingDate: input.openingDate,
         closingDate: input.closingDate,
         timezone: input.timezone,
         name: input.name,
         address: input.address,
-      })
+      }
+      // A date outside the allowed range is the caller's mistake, not a server failure.
+      const validation = validateStatementInput(statementInput)
+      if (validation.isErr()) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: validation.unwrapErr().message })
+      }
+
+      const dataResult = await ctx.app.statementService.generateStatementData(statementInput)
 
       if (dataResult.isErr()) {
         throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: dataResult.unwrapErr().message })
@@ -1740,8 +1637,8 @@ const statementRouter = t.router({
 // ─── portalProve.manual ─────────────────────────────────────────────────────
 
 const manualRouter = t.router({
-  list: publicProcedure.query(({ ctx }) => {
-    return ctx.app.manualService.listAccounts().map((a) => ({
+  list: publicProcedure.query(async ({ ctx }) => {
+    return (await ctx.app.manualService.listAccounts()).map((a) => ({
       id: a.id,
       displayName: a.displayName,
       currency: 'BTC' as const,
@@ -1751,8 +1648,8 @@ const manualRouter = t.router({
     }))
   }),
 
-  get: publicProcedure.input(z.object({ accountId: z.string() })).query(({ ctx, input }) => {
-    const account = ctx.app.manualService.getAccount(input.accountId)
+  get: publicProcedure.input(z.object({ accountId: z.string() })).query(async ({ ctx, input }) => {
+    const account = await ctx.app.manualService.getAccount(input.accountId)
     if (!account) {
       throw new TRPCError({ code: 'NOT_FOUND', message: 'Manual account not found' })
     }
@@ -1774,8 +1671,8 @@ const manualRouter = t.router({
         balanceAsOf: z.string(),
       }),
     )
-    .mutation(({ ctx, input }) => {
-      const result = ctx.app.manualService.createAccount(input)
+    .mutation(async ({ ctx, input }) => {
+      const result = await ctx.app.manualService.createAccount(input)
       if (result.isErr()) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: result.unwrapErr().message })
       }
@@ -1798,8 +1695,8 @@ const manualRouter = t.router({
         balanceAsOf: z.string(),
       }),
     )
-    .mutation(({ ctx, input }) => {
-      const result = ctx.app.manualService.updateBalance(input)
+    .mutation(async ({ ctx, input }) => {
+      const result = await ctx.app.manualService.updateBalance(input)
       if (result.isErr()) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: result.unwrapErr().message })
       }
@@ -1816,22 +1713,22 @@ const manualRouter = t.router({
 
   rename: publicProcedure
     .input(z.object({ accountId: z.string(), displayName: z.string().min(1) }))
-    .mutation(({ ctx, input }) => {
-      const result = ctx.app.manualService.renameAccount(input)
+    .mutation(async ({ ctx, input }) => {
+      const result = await ctx.app.manualService.renameAccount(input)
       if (result.isErr()) {
         throw new TRPCError({ code: 'NOT_FOUND', message: result.unwrapErr().message })
       }
     }),
 
-  delete: publicProcedure.input(z.object({ accountId: z.string() })).mutation(({ ctx, input }) => {
-    const result = ctx.app.manualService.removeAccount(input.accountId)
+  delete: publicProcedure.input(z.object({ accountId: z.string() })).mutation(async ({ ctx, input }) => {
+    const result = await ctx.app.manualService.removeAccount(input.accountId)
     if (result.isErr()) {
       throw new TRPCError({ code: 'NOT_FOUND', message: result.unwrapErr().message })
     }
   }),
 
   transactions: t.router({
-    list: publicProcedure.input(z.object({ accountId: z.string() })).query(({ ctx, input }) => {
+    list: publicProcedure.input(z.object({ accountId: z.string() })).query(async ({ ctx, input }) => {
       return ctx.app.manualService.listTransactions(input.accountId)
     }),
 
@@ -1846,16 +1743,16 @@ const manualRouter = t.router({
           addToBalance: z.boolean().optional(),
         }),
       )
-      .mutation(({ ctx, input }) => {
-        const result = ctx.app.manualService.addTransaction(input)
+      .mutation(async ({ ctx, input }) => {
+        const result = await ctx.app.manualService.addTransaction(input)
         if (result.isErr()) {
           throw new TRPCError({ code: 'BAD_REQUEST', message: result.unwrapErr().message })
         }
         return result.unwrap()
       }),
 
-    delete: publicProcedure.input(z.object({ transactionId: z.string() })).mutation(({ ctx, input }) => {
-      const result = ctx.app.manualService.deleteTransaction(input.transactionId)
+    delete: publicProcedure.input(z.object({ transactionId: z.string() })).mutation(async ({ ctx, input }) => {
+      const result = await ctx.app.manualService.deleteTransaction(input.transactionId)
       if (result.isErr()) {
         throw new TRPCError({ code: 'NOT_FOUND', message: result.unwrapErr().message })
       }
@@ -1866,8 +1763,8 @@ const manualRouter = t.router({
 // ─── portalProve.etf ────────────────────────────────────────────────────────
 
 const etfRouter = t.router({
-  list: publicProcedure.query(({ ctx }) => {
-    return ctx.app.etfService.listAccounts().map((a) => ({
+  list: publicProcedure.query(async ({ ctx }) => {
+    return (await ctx.app.etfService.listAccounts()).map((a) => ({
       id: a.id,
       displayName: a.displayName,
       currency: 'BTC' as const,
@@ -1876,8 +1773,8 @@ const etfRouter = t.router({
     }))
   }),
 
-  get: publicProcedure.input(z.object({ accountId: z.string() })).query(({ ctx, input }) => {
-    const account = ctx.app.etfService.getAccount(input.accountId)
+  get: publicProcedure.input(z.object({ accountId: z.string() })).query(async ({ ctx, input }) => {
+    const account = await ctx.app.etfService.getAccount(input.accountId)
     if (!account) {
       throw new TRPCError({ code: 'NOT_FOUND', message: 'ETF account not found' })
     }
@@ -1903,8 +1800,8 @@ const etfRouter = t.router({
         ),
       }),
     )
-    .mutation(({ ctx, input }) => {
-      const result = ctx.app.etfService.createAccount({
+    .mutation(async ({ ctx, input }) => {
+      const result = await ctx.app.etfService.createAccount({
         displayName: input.displayName,
         holdings: input.holdings,
       })
@@ -1923,22 +1820,22 @@ const etfRouter = t.router({
 
   rename: publicProcedure
     .input(z.object({ accountId: z.string(), displayName: z.string().min(1) }))
-    .mutation(({ ctx, input }) => {
-      const result = ctx.app.etfService.renameAccount(input)
+    .mutation(async ({ ctx, input }) => {
+      const result = await ctx.app.etfService.renameAccount(input)
       if (result.isErr()) {
         throw new TRPCError({ code: 'NOT_FOUND', message: result.unwrapErr().message })
       }
     }),
 
-  delete: publicProcedure.input(z.object({ accountId: z.string() })).mutation(({ ctx, input }) => {
-    const result = ctx.app.etfService.removeAccount(input.accountId)
+  delete: publicProcedure.input(z.object({ accountId: z.string() })).mutation(async ({ ctx, input }) => {
+    const result = await ctx.app.etfService.removeAccount(input.accountId)
     if (result.isErr()) {
       throw new TRPCError({ code: 'NOT_FOUND', message: result.unwrapErr().message })
     }
   }),
 
   holdings: t.router({
-    list: publicProcedure.input(z.object({ accountId: z.string() })).query(({ ctx, input }) => {
+    list: publicProcedure.input(z.object({ accountId: z.string() })).query(async ({ ctx, input }) => {
       return ctx.app.etfService.listHoldings(input.accountId)
     }),
 
@@ -1951,16 +1848,16 @@ const etfRouter = t.router({
           datePurchased: z.string().optional(),
         }),
       )
-      .mutation(({ ctx, input }) => {
-        const result = ctx.app.etfService.addHolding(input)
+      .mutation(async ({ ctx, input }) => {
+        const result = await ctx.app.etfService.addHolding(input)
         if (result.isErr()) {
           throw new TRPCError({ code: 'BAD_REQUEST', message: result.unwrapErr().message })
         }
         return result.unwrap()
       }),
 
-    remove: publicProcedure.input(z.object({ holdingId: z.string() })).mutation(({ ctx, input }) => {
-      const result = ctx.app.etfService.removeHolding(input.holdingId)
+    remove: publicProcedure.input(z.object({ holdingId: z.string() })).mutation(async ({ ctx, input }) => {
+      const result = await ctx.app.etfService.removeHolding(input.holdingId)
       if (result.isErr()) {
         throw new TRPCError({ code: 'NOT_FOUND', message: result.unwrapErr().message })
       }
@@ -1976,6 +1873,24 @@ const portalProveRouter = t.router({
   etf: etfRouter,
   onchain: onchainRouter,
   statement: statementRouter,
+  retrieveBitcoinPriceHistory: publicProcedure
+    .input(
+      z.object({
+        days: z.union([z.literal(7), z.literal(30), z.literal(180), z.literal(365)]),
+        quoteCurrency: StatementQuoteCurrencySchema.default('USD'),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const result = await ctx.app.priceHistoryService.getHistory(input.days, input.quoteCurrency)
+      if (result.isErr()) {
+        ctx.app.logger.warn({ err: result.unwrapErr(), days: input.days }, 'Bitcoin price history unavailable')
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Price history for this range is not available from your allowed price sources.',
+        })
+      }
+      return result.unwrap()
+    }),
   retrieveBitcoinPrice: publicProcedure.query(async ({ ctx }) => {
     const result = await ctx.app.priceService.getCurrentBtcPrice()
     if (result.isErr()) {
@@ -1995,25 +1910,29 @@ const portalProveRouter = t.router({
           network: z.enum(['mainnet', 'testnet']).default('mainnet'),
         }),
       )
-      .mutation(({ ctx, input }) => {
-        const duplicate = ctx.app.database.db
-          .prepare('SELECT 1 AS one FROM accounts WHERE descriptor = ? AND network = ? LIMIT 1')
-          .get(input.descriptor, input.network)
-        if (duplicate !== undefined) {
-          throw new TRPCError({ code: 'CONFLICT', message: 'An account with this descriptor already exists' })
-        }
+      .mutation(async ({ ctx, input }) => {
+        return ctx.app.database.transaction(async (db) => {
+          const [duplicate] = await db
+            .select({ id: accountTable.id })
+            .from(accountTable)
+            .where(and(eq(accountTable.descriptor, input.descriptor), eq(accountTable.network, input.network)))
+            .limit(1)
+          if (duplicate) {
+            throw new TRPCError({ code: 'CONFLICT', message: 'An account with this descriptor already exists' })
+          }
 
-        const id = nanoid()
-        ctx.app.database.db
-          .prepare('INSERT INTO accounts (id, network, descriptor, display_name) VALUES (?, ?, ?, ?)')
-          .run(id, input.network, input.descriptor, input.displayName)
+          const id = nanoid()
+          await db
+            .insert(accountTable)
+            .values({ id, network: input.network, descriptor: input.descriptor, displayName: input.displayName })
 
-        return { id, network: input.network, descriptor: input.descriptor, displayName: input.displayName }
+          return { id, network: input.network, descriptor: input.descriptor, displayName: input.displayName }
+        })
       }),
 
-    remove: publicProcedure.input(z.object({ id: z.string() })).mutation(({ ctx, input }) => {
-      const result = ctx.app.database.db.prepare('DELETE FROM accounts WHERE id = ?').run(input.id)
-      if (result.changes === 0) {
+    remove: publicProcedure.input(z.object({ id: z.string() })).mutation(async ({ ctx, input }) => {
+      const deleted = await ctx.app.database.delete(accountTable).where(eq(accountTable.id, input.id))
+      if (deleted.rowsAffected === 0) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Account not found' })
       }
     }),
@@ -2186,17 +2105,17 @@ const desktopConnectionProcedure = publicProcedure.use(async ({ ctx, next }) => 
 })
 
 const connectionProfilesRouter = t.router({
-  list: desktopConnectionProcedure.query(({ ctx }) => ({
-    profiles: ctx.profiles.list(),
-    activeId: ctx.profiles.getActiveId() ?? null,
+  list: desktopConnectionProcedure.query(async ({ ctx }) => ({
+    profiles: await ctx.profiles.list(),
+    activeId: (await ctx.profiles.getActiveId()) ?? null,
     limit: MAX_CONNECTION_PROFILES,
   })),
 
   // Saving, renaming, and deleting never connect; only connect changes the active server.
   create: desktopConnectionProcedure
     .input(connectionDetailsInput.extend({ nickname: nicknameInput }))
-    .mutation(({ ctx, input }) => {
-      const result = ctx.profiles.create({ ...profileDetails(input), nickname: input.nickname })
+    .mutation(async ({ ctx, input }) => {
+      const result = await ctx.profiles.create({ ...profileDetails(input), nickname: input.nickname })
       if (result.isErr()) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: result.unwrapErr().message })
       }
@@ -2205,16 +2124,16 @@ const connectionProfilesRouter = t.router({
 
   rename: desktopConnectionProcedure
     .input(profileReferenceInput.extend({ nickname: nicknameInput }))
-    .mutation(({ ctx, input }) => {
-      const result = ctx.profiles.rename(input, input.nickname)
+    .mutation(async ({ ctx, input }) => {
+      const result = await ctx.profiles.rename(input, input.nickname)
       if (result.isErr()) {
         throw new TRPCError({ code: 'CONFLICT', message: result.unwrapErr().message })
       }
       return result.unwrap()
     }),
 
-  delete: desktopConnectionProcedure.input(profileReferenceInput).mutation(({ ctx, input }) => {
-    const result = ctx.profiles.delete(input)
+  delete: desktopConnectionProcedure.input(profileReferenceInput).mutation(async ({ ctx, input }) => {
+    const result = await ctx.profiles.delete(input)
     if (result.isErr()) {
       throw new TRPCError({ code: 'CONFLICT', message: result.unwrapErr().message })
     }
@@ -2231,7 +2150,7 @@ const connectionProfilesRouter = t.router({
       if (result.isErr()) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: result.unwrapErr().message })
       }
-      const connected = ctx.profiles.list().find((profile) => profile.id === input.id)
+      const connected = (await ctx.profiles.list()).find((profile) => profile.id === input.id)
       if (!connected) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'This saved connection no longer exists' })
       }
@@ -2241,47 +2160,52 @@ const connectionProfilesRouter = t.router({
 
 const settingsRouter = t.router({
   connectionProfiles: connectionProfilesRouter,
-  get: publicProcedure.input(z.object({ key: z.string() })).query(({ ctx, input }) => {
+  get: publicProcedure.input(z.object({ key: z.string() })).query(async ({ ctx, input }) => {
     if (!isReadableSetting(input.key)) {
       throw new TRPCError({ code: 'FORBIDDEN', message: 'Setting is not readable' })
     }
 
-    const row = ctx.app.database.db
-      .prepare<unknown[], { value: string }>('SELECT value FROM settings WHERE key = ?')
-      .get(input.key)
+    const [row] = await ctx.app.database
+      .select({ value: settings.value })
+      .from(settings)
+      .where(eq(settings.key, input.key))
     return row?.value ?? null
   }),
 
-  update: publicProcedure.input(z.object({ key: z.string(), value: z.string() })).mutation(({ ctx, input }) => {
+  update: publicProcedure.input(z.object({ key: z.string(), value: z.string() })).mutation(async ({ ctx, input }) => {
     const value = validateWritableSetting(input.key, input.value)
-    ctx.app.database.db
-      .prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
-      .run(input.key, value)
+    await ctx.app.database
+      .insert(settings)
+      .values({ key: input.key, value })
+      .onConflictDoUpdate({ target: settings.key, set: { value } })
   }),
 
   // Answers at once, so Settings can change the source even while every source is down.
-  priceSource: publicProcedure.query(({ ctx }) => ctx.app.priceService.options()),
+  priceSource: publicProcedure.query(async ({ ctx }) => ctx.app.priceService.options()),
 
   // Price settings change how Sentinel fetches prices, so they are saved together here and the
   // price service is told, rather than written through the generic `update`.
   setPriceSettings: publicProcedure
     .input(z.object({ source: z.enum(PRICE_SOURCES).optional(), fallbacks: z.boolean().optional() }))
-    .mutation(({ ctx, input }) => {
+    .mutation(async ({ ctx, input }) => {
       if (input.source !== undefined && !ctx.app.priceService.isAvailable(input.source)) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'That price source is not available' })
       }
-      const db = ctx.app.database.db
-      const save = db.prepare(
-        'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
-      )
-      db.transaction(() => {
+      await ctx.app.database.transaction(async (tx) => {
         if (input.source !== undefined) {
-          save.run(PRICE_SOURCE_SETTING, input.source)
+          await tx
+            .insert(settings)
+            .values({ key: PRICE_SOURCE_SETTING, value: input.source })
+            .onConflictDoUpdate({ target: settings.key, set: { value: input.source } })
         }
         if (input.fallbacks !== undefined) {
-          save.run(PRICE_FALLBACKS_SETTING, String(input.fallbacks))
+          const value = String(input.fallbacks)
+          await tx
+            .insert(settings)
+            .values({ key: PRICE_FALLBACKS_SETTING, value })
+            .onConflictDoUpdate({ target: settings.key, set: { value } })
         }
-      })()
+      })
       ctx.app.priceService.settingsUpdated()
       return ctx.app.priceService.options()
     }),
@@ -2290,7 +2214,7 @@ const settingsRouter = t.router({
     // Look the price up under the current settings, so a status never describes an earlier choice.
     const result = await ctx.app.priceService.getCurrentBtcPrice({ verifyPrimary: true })
     const price = result.isOk() ? result.unwrap() : null
-    const { selected, fallbacks } = ctx.app.priceService.options()
+    const { selected, fallbacks } = await ctx.app.priceService.options()
     return {
       selected,
       fallbacks,

@@ -4,8 +4,8 @@
   "private": true,
   "license": "Apache-2.0",
   "dependencies": {
+    "@libsql/client": "0.18.0",
     "@react-pdf/renderer": "4.9.0",
-    "better-sqlite3": "13.0.3",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "yoga-layout": "3.2.1"

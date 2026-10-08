@@ -3,8 +3,10 @@ import { ElectrumProvider } from '@hoseki/packages/bitcoin/onchain/electrum_prov
 import { ElectrumClient, type ElectrumClientConfig } from '@hoseki/packages/clients/electrum'
 import { Err, Ok, asyncFn } from '@hoseki/packages/result'
 import type { Result } from '@hoseki/packages/result'
+import { eq } from 'drizzle-orm'
 import type { Logger } from 'pino'
-import { type SentinelDatabase, initDatabase } from './db'
+import { type SentinelDb, openDrizzleDatabase } from './db/drizzle'
+import { settings } from './db/schema'
 import { type Env, loadEnv } from './env'
 import { initEncryption, loadCredentialEncryptionKey } from './lib/encrypted'
 import {
@@ -17,6 +19,7 @@ import { EtfService } from './modules/etf/service'
 import { ExchangeService } from './modules/exchange/service'
 import { ManualService } from './modules/manual/service'
 import { DailyRatesService } from './modules/price/daily_rates'
+import { PriceHistoryService } from './modules/price/history'
 import { PriceService, readPriceSettings } from './modules/price/service'
 import { StatementService } from './modules/statements/service'
 
@@ -27,7 +30,7 @@ import { StatementService } from './modules/statements/service'
 export interface AppContext {
   env: Env
   logger: Logger
-  database: SentinelDatabase
+  database: SentinelDb
   electrumClient: ElectrumClient
   electrumConfig: { host: string; port: number; protocol: 'tcp' | 'ssl' }
   onchainProvider: ElectrumProvider
@@ -36,6 +39,7 @@ export interface AppContext {
   etfService: EtfService
   controlCenterService: ControlCenterService
   priceService: PriceService
+  priceHistoryService: PriceHistoryService
   statementService: StatementService
   network: Network
   reconnectElectrum: (config: ElectrumClientConfig) => Promise<Result<void, Error>>
@@ -89,32 +93,34 @@ export const createAppContext = asyncFn(
   async (logger: Logger, options: AppContextOptions = {}): Promise<Result<AppContext, Error>> => {
     const env = loadEnv()
 
-    const database = initDatabase(env.DATA_DIR, logger)
+    const database = await openDrizzleDatabase(env.DATA_DIR, logger)
 
     // Keep the exchange credential key outside SQLite so DB backups do not carry
     // both encrypted credentials and the key needed to decrypt them.
-    const credentialKey = loadCredentialEncryptionKey({ dataDir: env.DATA_DIR, db: database.db, logger })
+    const credentialKey = await loadCredentialEncryptionKey({ dataDir: env.DATA_DIR, db: database, logger })
     initEncryption(credentialKey.key)
 
     const network = env.BITCOIN_NETWORK === 'mainnet' ? Network.Mainnet : Network.Testnet
 
     // Check SQLite for user-saved Electrum settings (from desktop Settings page).
     // These override the env var defaults so the config persists across restarts.
-    const readSetting = database.db.prepare<unknown[], { value: string }>('SELECT value FROM settings WHERE key = ?')
-    const getSetting = (key: string): string | undefined => readSetting.get(key)?.value
+    const getSetting = async (key: string): Promise<string | undefined> => {
+      const [row] = await database.select({ value: settings.value }).from(settings).where(eq(settings.key, key))
+      return row?.value
+    }
 
-    const storedProtocol = getSetting('electrum_protocol')
+    const storedProtocol = await getSetting('electrum_protocol')
     let saved: ConnectionDetails = {
-      host: getSetting('electrum_host') ?? env.ELECTRUM_HOST,
-      port: Number(getSetting('electrum_port') ?? env.ELECTRUM_PORT),
+      host: (await getSetting('electrum_host')) ?? env.ELECTRUM_HOST,
+      port: Number((await getSetting('electrum_port')) ?? env.ELECTRUM_PORT),
       protocol: storedProtocol === 'tcp' || storedProtocol === 'ssl' ? storedProtocol : env.ELECTRUM_PROTOCOL,
-      torEnabled: getSetting('tor_enabled') === 'true',
+      torEnabled: (await getSetting('tor_enabled')) === 'true',
     }
     // Desktop starts with its active saved connection. The first launch saves the
     // current connection as that profile, keeping its server and Tor setting.
-    const connectionProfiles = options.connectionProfiles === true ? new ConnectionProfileStore(database.db) : undefined
+    const connectionProfiles = options.connectionProfiles === true ? new ConnectionProfileStore(database) : undefined
     if (connectionProfiles) {
-      const initialized = connectionProfiles.initialize(saved)
+      const initialized = await connectionProfiles.initialize(saved)
       const active = initialized.unwrapOr(undefined)
       if (active) {
         saved = active
@@ -191,29 +197,35 @@ export const createAppContext = asyncFn(
     })
 
     const exchangeService = new ExchangeService({
-      db: database.db,
+      db: database,
       logger,
     })
 
     const manualService = new ManualService({
-      db: database.db,
+      db: database,
       logger,
     })
 
     const etfService = new EtfService({
-      db: database.db,
+      db: database,
       logger,
     })
 
     const priceService = new PriceService({
       logger,
       mempoolApiUrl: env.MEMPOOL_API_URL,
-      settings: () => readPriceSettings(getSetting),
+      settings: async () => readPriceSettings(getSetting),
     })
-    const dailyRatesService = new DailyRatesService({ logger, mempoolApiUrl: env.MEMPOOL_API_URL })
+    const dailyRatesService = new DailyRatesService({
+      db: database,
+      logger,
+      mempoolApiUrl: env.MEMPOOL_API_URL,
+      allowPublicFallback: async () => (await readPriceSettings(getSetting)).fallbacks,
+    })
+    const priceHistoryService = new PriceHistoryService({ dailyRatesService, priceService })
 
     const controlCenterService = new ControlCenterService({
-      db: database.db,
+      db: database,
       logger,
       onchainProvider,
       exchangeService,
@@ -223,7 +235,7 @@ export const createAppContext = asyncFn(
     })
 
     const statementService = new StatementService({
-      db: database.db,
+      db: database,
       onchainProvider,
       dailyRatesService,
       exchangeService,
@@ -239,7 +251,7 @@ export const createAppContext = asyncFn(
     // or save leaves the previous client and saved settings intact.
     const replaceConnection = async (
       config: ElectrumClientConfig,
-      save: () => Result<void, Error>,
+      save: () => Promise<Result<void, Error>>,
     ): Promise<Result<void, Error>> => {
       if (isStopped()) {
         return Err(new Error('The application is shutting down'))
@@ -263,9 +275,12 @@ export const createAppContext = asyncFn(
         if (result.isErr()) {
           return Err(result.unwrapErr())
         }
-        const persisted = save()
+        const persisted = await save()
         if (persisted.isErr()) {
           return Err(persisted.unwrapErr())
+        }
+        if (isStopped()) {
+          return Err(new Error('The application is shutting down'))
         }
 
         const previousClient = ctx.electrumClient
@@ -295,6 +310,7 @@ export const createAppContext = asyncFn(
       etfService,
       controlCenterService,
       priceService,
+      priceHistoryService,
       statementService,
       network,
       prepareElectrumConfig,
@@ -312,7 +328,7 @@ export const createAppContext = asyncFn(
         if (!connectionProfiles) {
           return Err(new Error('Saved connections are only available in the desktop app'))
         }
-        const profile = connectionProfiles.get(reference)
+        const profile = await connectionProfiles.get(reference)
         if (profile.isErr()) {
           return Err(profile.unwrapErr())
         }
@@ -323,23 +339,32 @@ export const createAppContext = asyncFn(
         }
         // Activation checks the revision again, so a profile edited or deleted
         // during the handshake is never activated or recreated.
-        return replaceConnection(config.unwrap(), () => connectionProfiles.activate(reference, details))
+        return replaceConnection(config.unwrap(), async () =>
+          connectionProfiles.activate(reference, details, isStopped),
+        )
       },
       reconnectElectrum: async (config: ElectrumClientConfig): Promise<Result<void, Error>> => {
         if (connectionProfiles) {
           return Err(new Error('Choose a saved connection to connect in the desktop app'))
         }
-        return replaceConnection(config, () => {
+        return replaceConnection(config, async () => {
           try {
-            database.db.transaction(() => {
-              const save = database.db.prepare(
-                'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
-              )
-              save.run('electrum_host', config.host)
-              save.run('electrum_port', String(config.port))
-              save.run('electrum_protocol', config.protocol)
-              save.run('tor_enabled', String(config.proxy !== undefined || config.resolveProxy !== undefined))
-            })()
+            await database.transaction(async (tx) => {
+              for (const [key, value] of [
+                ['electrum_host', config.host],
+                ['electrum_port', String(config.port)],
+                ['electrum_protocol', config.protocol],
+                ['tor_enabled', String(config.proxy !== undefined || config.resolveProxy !== undefined)],
+              ] as const) {
+                await tx
+                  .insert(settings)
+                  .values({ key, value })
+                  .onConflictDoUpdate({ target: settings.key, set: { value } })
+              }
+              if (isStopped()) {
+                throw new Error('The application is shutting down')
+              }
+            })
             return Ok(undefined)
           } catch {
             return Err(new Error('Could not save Electrum settings; the previous connection has been kept'))
@@ -365,7 +390,7 @@ export const createAppContext = asyncFn(
       const result = await connection
       if (result.isErr()) {
         ctx.stopElectrum()
-        database.close()
+        database.$client.close()
         return Err(result.unwrapErr())
       }
     }

@@ -5,9 +5,9 @@ directories:
   buildResources: resources
 asar: true
 asarUnpack:
-  - app/node_modules/better-sqlite3/prebuilds/*.node
-# better-sqlite3 13 ships Node-API prebuilds for every packaged platform.
-# Rebuilding would try to cross-compile Windows native code on the macOS host.
+  - '**/node_modules/@libsql/**/*.node'
+# libSQL loads platform-specific Node-API addons; the Windows prebuild is
+# installed by build.sh alongside the macOS optional dependency.
 npmRebuild: false
 afterPack: ./after-pack.mjs
 files:

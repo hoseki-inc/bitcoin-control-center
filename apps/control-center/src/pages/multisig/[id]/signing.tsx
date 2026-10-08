@@ -31,6 +31,8 @@ import { getNumberOfMissingSignatures } from '../../../utils/multisig-utils'
 export function MultisigSigningPage(): JSX.Element {
   const { keystoreId, walletType } = useParams<{ keystoreId: string; walletType: string }>()
   const { claim } = useMultisigPageWrapperContext()
+  // Opening this page refreshes the claim, so a message created on the previous step is not missed.
+  const claimQuery = trpc.portalProve.registry.claims.get.byId.useQuery({ id: claim.id })
 
   if (claim.latestChallenge?.completed === true) {
     return <Navigate to={`/accounts/verify/receipt/${claim.id}`} replace />
@@ -53,6 +55,14 @@ export function MultisigSigningPage(): JSX.Element {
     ) : (
       <Navigate to={`/multisig/verify/receipt/${claim.id}/${keystore.id}`} replace />
     )
+  }
+
+  // A verification reset can remove this key's message. Create a new one on the connect step.
+  if (claim.latestChallenge?.messages.some((message) => message.keystoreId === keystore.id) !== true) {
+    if (claimQuery.isFetching) {
+      return <Spinner fullPage size="xl" />
+    }
+    return <Navigate to={`/multisig/${claim.id}/connect/${walletType ?? ''}/${keystore.id}`} replace />
   }
 
   return (

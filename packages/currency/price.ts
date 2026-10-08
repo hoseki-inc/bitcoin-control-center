@@ -10,5 +10,10 @@ import { BTC, type Source } from '../currency'
  * @returns The USD value of the BTC amount.
  */
 export function convertBtcToUsd(btc: Source, price: Decimal.Value): Decimal {
+  return convertBtcToQuote(btc, price)
+}
+
+/** Convert satoshis using a price denominated in the selected quote currency. */
+export function convertBtcToQuote(btc: Source, price: Decimal.Value): Decimal {
   return new Decimal(price).mul(BTC.fromSats(btc).toMajorAmount())
 }

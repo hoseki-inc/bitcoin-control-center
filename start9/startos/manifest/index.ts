@@ -34,6 +34,11 @@ export const manifest = setupManifest({
     stop: null,
   },
   dependencies: {
+    mempool: {
+      description: 'Required for Bitcoin prices and transaction details in statements.',
+      optional: false,
+      s9pk: null,
+    },
     electrs: {
       description: 'Required for on-chain Bitcoin data (address balances, transaction history).',
       optional: false,

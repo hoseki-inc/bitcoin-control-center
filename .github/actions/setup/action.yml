@@ -31,8 +31,8 @@ runs:
       shell: bash
       run: pnpm install --frozen-lockfile
 
-    # SQLite 13 includes Node-API binaries; pnpm's implicit node-gyp rebuild is
-    # disabled in package.json. Verify the shipped host binary after installation.
+    # Verify the local libSQL native client after installation.
     - name: Verify SQLite native runtime
       shell: bash
-      run: node -e "const Database = require('better-sqlite3'); const db = new Database(':memory:'); db.close()"
+      run: |
+        node --input-type=module -e "import { createClient } from '@libsql/client/sqlite3'; const db = createClient({ url: 'file::memory:' }); await db.execute('SELECT 1'); db.close()"

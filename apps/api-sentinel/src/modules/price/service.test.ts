@@ -1,5 +1,9 @@
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import pino from 'pino'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
+import { openDrizzleDatabase } from '../../db/drizzle'
 import { DailyRatesService } from './daily_rates'
 import { PriceService, type SavedPriceSettings, readPriceSettings } from './service'
 
@@ -224,6 +228,7 @@ describe('current price', () => {
       vi.advanceTimersByTime(61_000)
       const first = service.getCurrentBtcPrice()
       const second = service.getCurrentBtcPrice()
+      await settle()
       expect(block.count()).toBe(1)
       block.release(() => prices.block('84000', NOW_SECONDS + 61))
       for (const pending of [first, second]) {
@@ -436,15 +441,40 @@ describe('current price', () => {
     })
   })
 
+  it('restarts when settings change during an asynchronous settings read', async () => {
+    await withTestSetup(async () => {
+      const fetch = stubPrices({ [COINBASE]: () => prices.coinbase('83105.04') })
+      const saved: SavedPriceSettings = { source: 'block', fallbacks: false }
+      let release = (): void => undefined
+      const firstRead = new Promise<SavedPriceSettings>((resolve) => {
+        release = (): void => {
+          resolve({ source: 'block', fallbacks: true })
+        }
+      })
+      let reads = 0
+      const service = new PriceService({
+        logger,
+        mempoolApiUrl: 'https://mempool.space',
+        settings: async () => (reads++ === 0 ? firstRead : saved),
+      })
+      const pending = service.getCurrentBtcPrice()
+      await settle()
+      saved.source = 'coinbase'
+      service.settingsUpdated()
+      release()
+      expect((await pending).expect('new source').source).toBe('coinbase')
+      expect(fetch.hosts()).toEqual([COINBASE])
+    })
+  })
+
   it('records a refusal that arrives after the settings changed, so the source is not asked again at once', async () => {
     await withTestSetup(async () => {
       const block = heldReplies()
       const fetch = stubPrices({ [BLOCK]: block.next, [MEMPOOL]: () => prices.mempool(83000) })
       const { service, settings } = priceService()
       const before = service.getCurrentBtcPrice()
-      await vi.waitFor(() => {
-        expect(block.count()).toBe(1)
-      })
+      await settle()
+      expect(block.count()).toBe(1)
 
       settings.fallbacks = false
       service.settingsUpdated()
@@ -460,7 +490,7 @@ describe('current price', () => {
     await withTestSetup(async () => {
       const fetch = stubPrices({})
       const { service } = priceService({ fallbacks: false }, 'http://alice:s3cret@mempool.local:8999')
-      expect(service.options().sources[0]).toEqual({
+      expect((await service.options()).sources[0]).toEqual({
         name: 'mempool',
         label: 'Your mempool server (mempool.local:8999)',
       })
@@ -493,7 +523,7 @@ describe('current price', () => {
     'treats %s as public mempool.space rather than your own server',
     async (url) => {
       await withTestSetup(async () => {
-        const options = priceService({}, url).service.options()
+        const options = await priceService({}, url).service.options()
         expect(options.selected).toBe('block')
         expect(options.sources.map(({ name }) => name)).toEqual(['block', 'mempool.space', 'coinbase', 'coingecko'])
       })
@@ -503,7 +533,7 @@ describe('current price', () => {
   it('lists the available sources in fallback order for Settings', async () => {
     await withTestSetup(async () => {
       const { service } = priceService({ fallbacks: false }, 'http://mempool.local')
-      expect(service.options()).toEqual({
+      await expect(service.options()).resolves.toEqual({
         selected: 'mempool',
         fallbacks: false,
         sources: [
@@ -551,13 +581,28 @@ describe('current price', () => {
       { price_source: 'kraken', price_fallbacks_enabled: 'no' },
       { source: undefined, fallbacks: true },
     ],
-  ])('reads saved price settings %j', (saved, expected) => {
+  ])('reads saved price settings %j', async (saved, expected) => {
     const values = new Map(Object.entries(saved))
-    expect(readPriceSettings((key) => values.get(key))).toEqual(expected)
+    await expect(readPriceSettings((key) => values.get(key))).resolves.toEqual(expected)
+    await expect(readPriceSettings(async (key) => values.get(key))).resolves.toEqual(expected)
   })
 })
 
 describe('daily price response validation', () => {
+  async function dailyRates(): Promise<DailyRatesService> {
+    const directory = mkdtempSync(join(tmpdir(), 'sentinel-daily-validation-'))
+    const database = await openDrizzleDatabase(directory, logger)
+    onTestFinished(() => {
+      database.$client.close()
+      rmSync(directory, { recursive: true, force: true })
+    })
+    return new DailyRatesService({
+      db: database,
+      logger,
+      mempoolApiUrl: 'https://example.invalid',
+      allowPublicFallback: () => false,
+    })
+  }
   it('restores daily decimal rates from a valid historical response', async () => {
     await withTestSetup(async () => {
       const date = new Date('2024-01-02T00:00:00Z')
@@ -565,10 +610,7 @@ describe('daily price response validation', () => {
         'fetch',
         vi.fn(async () => Response.json({ prices: [{ time: date.getTime() / 1000, USD: 42000.25 }], extra: true })),
       )
-      const result = await new DailyRatesService({ logger, mempoolApiUrl: 'https://example.invalid' }).getDailyRates(
-        date,
-        date,
-      )
+      const result = await (await dailyRates()).getDailyRates(date, date)
       expect(result.expect('valid rates').rates['2024-01-02']?.close.toString()).toBe('42000.25')
     })
   })
@@ -585,11 +627,8 @@ describe('daily price response validation', () => {
         vi.fn(async () => Response.json(body)),
       )
       const date = new Date('2024-01-02T00:00:00Z')
-      const result = await new DailyRatesService({ logger, mempoolApiUrl: 'https://example.invalid' }).getDailyRates(
-        date,
-        date,
-      )
-      expect(result.expectErr('invalid response').message).toContain('No price data returned')
+      const result = await (await dailyRates()).getDailyRates(date, date)
+      expect(result.expectErr('invalid response').message).toMatch(/No (usable )?USD (quote|price)/)
     })
   })
 })
@@ -867,7 +906,7 @@ describe('price service rules', () => {
           mempoolApiUrl: url,
           settings: () => ({ source: undefined, fallbacks: false }),
         })
-        expect(service.options().sources.map(({ name }) => name)).toEqual([
+        expect((await service.options()).sources.map(({ name }) => name)).toEqual([
           'block',
           'mempool.space',
           'coinbase',
@@ -877,7 +916,7 @@ describe('price service rules', () => {
         expect(fetch.hosts()).toEqual([BLOCK])
         expect(lines.join('')).toContain('MEMPOOL_API_URL is not an http(s) URL')
         // Neither Settings, the returned error nor the log repeats the configured value.
-        for (const text of [JSON.stringify(service.options()), error, ...lines]) {
+        for (const text of [JSON.stringify(await service.options()), error, ...lines]) {
           expect(text).not.toContain('pa/ss')
           expect(text).not.toContain('umbrel.local')
         }

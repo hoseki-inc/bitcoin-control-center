@@ -10,6 +10,8 @@ export async function registerStaticAssets(server: FastifyInstance, publicDir: s
     root: publicDir,
     prefix: '/',
     decorateReply: false,
+    // Serve the .br or .gz copy a StartOS build writes next to each asset, when the browser accepts it.
+    preCompressed: true,
   })
 
   // Serve the cached SPA shell for browser routes so direct navigation and

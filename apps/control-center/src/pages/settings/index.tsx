@@ -117,6 +117,7 @@ const USD_QUERY_KEYS = [getQueryKey(trpc.portalProve.controlCenter.getData)]
 // the change no longer allows, and account balances never refetch on mount.
 const RESET_USD_QUERY_KEYS = [
   getQueryKey(trpc.portalProve.retrieveBitcoinPrice),
+  getQueryKey(trpc.portalProve.retrieveBitcoinPriceHistory),
   getQueryKey(trpc.portalProve.onchain.bitcoinAccountBalances),
 ]
 

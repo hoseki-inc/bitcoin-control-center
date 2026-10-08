@@ -32,8 +32,10 @@ function queueContext(port: number): FakeContext {
       stops += 1
     },
     database: {
-      close: (): void => {
-        closes += 1
+      $client: {
+        close: (): void => {
+          closes += 1
+        },
       },
     },
   }

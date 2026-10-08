@@ -3,11 +3,13 @@ import { Kraken } from '@hoseki/packages/clients/kraken'
 import { RobinhoodClient } from '@hoseki/packages/clients/robinhood'
 import { parseUnknown } from '@hoseki/packages/result'
 import { Err, Ok, Result, asyncFn } from '@hoseki/packages/result'
-import type Database from 'better-sqlite3'
 import Decimal from 'decimal.js'
+import { and, asc, desc, eq, inArray } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
 import type { Logger } from 'pino'
 import { z } from 'zod'
+import type { SentinelDb } from '../../db/drizzle'
+import { exchangeAccounts, exchangeBalanceSnapshots, exchangeStatementTxs } from '../../db/schema'
 import { Encrypted } from '../../lib/encrypted'
 import { getStrikeBtcBalance, validateStrikeApiKey } from './strike'
 
@@ -40,52 +42,22 @@ function parseCredentials(json: string): Result<CredentialData, Error> {
 }
 
 export class ExchangeService {
-  private readonly db: Database.Database
+  private readonly db: SentinelDb
   private readonly logger: Logger
 
-  public constructor(deps: { db: Database.Database; logger: Logger }) {
+  public constructor(deps: { db: SentinelDb; logger: Logger }) {
     this.db = deps.db
     this.logger = deps.logger.child({ module: 'exchange-service' })
   }
 
   // ─── List ──────────────────────────────────────────────────────────────
 
-  public listAccounts(exchange?: SupportedExchange): ExchangeAccountDto[] {
-    const query = exchange
-      ? 'SELECT * FROM exchange_accounts WHERE provider = ? ORDER BY created_at DESC'
-      : 'SELECT * FROM exchange_accounts ORDER BY created_at DESC'
-
-    const rows = exchange
-      ? this.db
-          .prepare<
-            unknown[],
-            {
-              id: string
-              provider: SupportedExchange
-              display_name: string
-              encrypted_credentials: string
-              balance_sats: string | null
-              balance_as_of: string | null
-              created_at: string
-              credentials_connected_at: string | null
-            }
-          >(query)
-          .all(exchange)
-      : this.db
-          .prepare<
-            unknown[],
-            {
-              id: string
-              provider: SupportedExchange
-              display_name: string
-              encrypted_credentials: string
-              balance_sats: string | null
-              balance_as_of: string | null
-              created_at: string
-              credentials_connected_at: string | null
-            }
-          >(query)
-          .all()
+  public async listAccounts(exchange?: SupportedExchange): Promise<ExchangeAccountDto[]> {
+    const rows = await this.db
+      .select()
+      .from(exchangeAccounts)
+      .where(exchange ? eq(exchangeAccounts.provider, exchange) : undefined)
+      .orderBy(desc(exchangeAccounts.createdAt))
 
     return rows.map((row) => {
       const connectionStatus = this.getAccountConnectionStatus(row)
@@ -93,10 +65,10 @@ export class ExchangeService {
       return {
         id: row.id,
         exchange: row.provider,
-        displayName: row.display_name,
-        balanceSats: isConnected ? row.balance_sats : null,
-        balanceAsOf: isConnected ? row.balance_as_of : null,
-        createdAt: row.created_at,
+        displayName: row.displayName,
+        balanceSats: isConnected ? row.balanceSats : null,
+        balanceAsOf: isConnected ? row.balanceAsOf : null,
+        createdAt: row.createdAt,
         connectionStatus,
       }
     })
@@ -166,7 +138,7 @@ export class ExchangeService {
 
       const displayName = btcAccount.name || 'Coinbase BTC'
       const now = new Date().toISOString()
-      const saved = this.saveConnectedAccount({
+      const saved = await this.saveConnectedAccount({
         provider: 'coinbase',
         replaceAccountId: args.replaceAccountId,
         displayName,
@@ -182,7 +154,7 @@ export class ExchangeService {
       const { id, createdAt } = saved.unwrap()
 
       // Record initial snapshot
-      this.recordSnapshot(id, balanceSats, now)
+      await this.recordSnapshot(id, balanceSats, now)
 
       this.logger.info({ id, displayName, balanceSats }, 'Coinbase account connected')
       return Ok({
@@ -230,7 +202,7 @@ export class ExchangeService {
 
       const displayName = inputName ?? 'Strike'
       const now = new Date().toISOString()
-      const saved = this.saveConnectedAccount({
+      const saved = await this.saveConnectedAccount({
         provider: 'strike',
         replaceAccountId: args.replaceAccountId,
         displayName,
@@ -244,7 +216,7 @@ export class ExchangeService {
       }
       const { id, createdAt } = saved.unwrap()
 
-      this.recordSnapshot(id, balanceSats, now)
+      await this.recordSnapshot(id, balanceSats, now)
 
       this.logger.info({ id, displayName, balanceSats }, 'Strike account connected')
       return Ok({
@@ -300,7 +272,7 @@ export class ExchangeService {
 
       const displayName = inputName ?? 'Robinhood'
       const now = new Date().toISOString()
-      const saved = this.saveConnectedAccount({
+      const saved = await this.saveConnectedAccount({
         provider: 'robinhood',
         replaceAccountId: args.replaceAccountId,
         displayName,
@@ -314,7 +286,7 @@ export class ExchangeService {
       }
       const { id, createdAt } = saved.unwrap()
 
-      this.recordSnapshot(id, balanceSats, now)
+      await this.recordSnapshot(id, balanceSats, now)
 
       this.logger.info({ id, displayName, balanceSats }, 'Robinhood account connected')
       return Ok({
@@ -373,7 +345,7 @@ export class ExchangeService {
 
       const displayName = 'Kraken'
       const now = new Date().toISOString()
-      const saved = this.saveConnectedAccount({
+      const saved = await this.saveConnectedAccount({
         provider: 'kraken',
         replaceAccountId: args.replaceAccountId,
         displayName,
@@ -387,7 +359,7 @@ export class ExchangeService {
       }
       const { id, createdAt } = saved.unwrap()
 
-      this.recordSnapshot(id, balanceSats, now)
+      await this.recordSnapshot(id, balanceSats, now)
 
       this.logger.info({ id, displayName, balanceSats }, 'Kraken account connected')
       return Ok({
@@ -405,20 +377,7 @@ export class ExchangeService {
   // ─── Refresh Balance ───────────────────────────────────────────────────
 
   public refreshBalance = asyncFn(async (accountId: string): Promise<Result<ExchangeAccountDto, Error>> => {
-    const row = this.db
-      .prepare<
-        unknown[],
-        {
-          id: string
-          provider: SupportedExchange
-          display_name: string
-          encrypted_credentials: string
-          external_account_id: string | null
-          created_at: string
-          credentials_connected_at: string | null
-        }
-      >('SELECT * FROM exchange_accounts WHERE id = ?')
-      .get(accountId)
+    const [row] = await this.db.select().from(exchangeAccounts).where(eq(exchangeAccounts.id, accountId))
 
     if (!row) {
       return Err(new Error('Exchange account not found'))
@@ -427,7 +386,7 @@ export class ExchangeService {
       return Err(new Error('Exchange credentials are unavailable or expired. Reconnect this exchange account.'))
     }
 
-    const parsedCredentials = parseCredentials(row.encrypted_credentials)
+    const parsedCredentials = parseCredentials(row.encryptedCredentials)
     if (parsedCredentials.isErr()) {
       return Err(parsedCredentials.unwrapErr())
     }
@@ -522,7 +481,7 @@ export class ExchangeService {
       const client = Coinbase.Client({ credentials })
 
       // Use stored account UUID if available, otherwise discover it
-      let accountUuid = row.external_account_id
+      let accountUuid = row.externalAccountId
       if (accountUuid == null || accountUuid === '') {
         const accountsRes = await client.advancedTrade.accounts.list()
         if (accountsRes.isErr()) {
@@ -534,7 +493,10 @@ export class ExchangeService {
         }
         accountUuid = btcAccount.uuid
         // Backfill the stored UUID for future calls
-        this.db.prepare('UPDATE exchange_accounts SET external_account_id = ? WHERE id = ?').run(accountUuid, accountId)
+        await this.db
+          .update(exchangeAccounts)
+          .set({ externalAccountId: accountUuid })
+          .where(eq(exchangeAccounts.id, accountId))
       }
 
       const balanceRes = await client.advancedTrade.accounts.get({ accountUuid })
@@ -547,20 +509,25 @@ export class ExchangeService {
     }
 
     const now = new Date().toISOString()
-    this.db
-      .prepare('UPDATE exchange_accounts SET balance_sats = ?, balance_as_of = ? WHERE id = ?')
-      .run(balanceSats, now, accountId)
-
-    this.recordSnapshot(accountId, balanceSats, now)
+    await this.db.batch([
+      this.db.update(exchangeAccounts).set({ balanceSats, balanceAsOf: now }).where(eq(exchangeAccounts.id, accountId)),
+      this.db
+        .insert(exchangeBalanceSnapshots)
+        .values({ accountId, balanceSats, timestamp: now })
+        .onConflictDoUpdate({
+          target: [exchangeBalanceSnapshots.accountId, exchangeBalanceSnapshots.timestamp],
+          set: { balanceSats },
+        }),
+    ])
 
     this.logger.info({ accountId, balanceSats }, 'Exchange balance refreshed')
     return Ok({
       id: row.id,
       exchange: provider,
-      displayName: row.display_name,
+      displayName: row.displayName,
       balanceSats,
       balanceAsOf: now,
-      createdAt: row.created_at,
+      createdAt: row.createdAt,
       connectionStatus: 'connected',
     })
   })
@@ -568,7 +535,7 @@ export class ExchangeService {
   // ─── Refresh All Balances ─────────────────────────────────────────────
 
   public refreshAllBalances = asyncFn(async (): Promise<Result<void, Error>> => {
-    const accounts = this.listAccounts().filter((account) => account.connectionStatus === 'connected')
+    const accounts = (await this.listAccounts()).filter((account) => account.connectionStatus === 'connected')
     const errors: string[] = []
 
     for (const account of accounts) {
@@ -588,9 +555,9 @@ export class ExchangeService {
 
   // ─── Remove ────────────────────────────────────────────────────────────
 
-  public removeAccount(accountId: string): Result<void, Error> {
-    const result = this.db.prepare('DELETE FROM exchange_accounts WHERE id = ?').run(accountId)
-    if (result.changes === 0) {
+  public async removeAccount(accountId: string): Promise<Result<void, Error>> {
+    const removed = await this.db.delete(exchangeAccounts).where(eq(exchangeAccounts.id, accountId))
+    if (removed.rowsAffected === 0) {
       return Err(new Error('Exchange account not found'))
     }
     this.logger.info({ accountId }, 'Exchange account removed')
@@ -606,25 +573,21 @@ export class ExchangeService {
    */
   public getCoinbaseTransactionEntries = asyncFn(
     async (filterAccountIds?: string[]): Promise<Result<{ timestamp: Date; value: bigint }[], Error>> => {
-      let query = 'SELECT id, encrypted_credentials, external_account_id FROM exchange_accounts WHERE provider = ?'
-      const params: string[] = ['coinbase']
-
-      if (filterAccountIds && filterAccountIds.length > 0) {
-        const placeholders = filterAccountIds.map(() => '?').join(', ')
-        query += ` AND id IN (${placeholders})`
-        params.push(...filterAccountIds)
-      }
-
-      const rows = this.db
-        .prepare<
-          unknown[],
-          {
-            id: string
-            encrypted_credentials: string
-            external_account_id: string | null
-          }
-        >(query)
-        .all(...params)
+      const rows = await this.db
+        .select({
+          id: exchangeAccounts.id,
+          encryptedCredentials: exchangeAccounts.encryptedCredentials,
+          externalAccountId: exchangeAccounts.externalAccountId,
+        })
+        .from(exchangeAccounts)
+        .where(
+          and(
+            eq(exchangeAccounts.provider, 'coinbase'),
+            filterAccountIds !== undefined && filterAccountIds.length > 0
+              ? inArray(exchangeAccounts.id, filterAccountIds)
+              : undefined,
+          ),
+        )
 
       this.logger.info(
         { rowCount: rows.length, filterAccountIds },
@@ -634,7 +597,7 @@ export class ExchangeService {
       const allEntries: { timestamp: Date; value: bigint }[] = []
 
       for (const row of rows) {
-        const parsedCredentials = parseCredentials(row.encrypted_credentials)
+        const parsedCredentials = parseCredentials(row.encryptedCredentials)
         if (parsedCredentials.isErr()) {
           this.logger.warn({ accountId: row.id }, 'Invalid stored credentials — skipping')
           continue
@@ -682,7 +645,7 @@ export class ExchangeService {
         }
 
         // Discover and backfill external_account_id if missing (pre-migration accounts)
-        let accountUuid = row.external_account_id
+        let accountUuid = row.externalAccountId
         if (accountUuid == null || accountUuid === '') {
           this.logger.info({ accountId: row.id }, 'Discovering Coinbase BTC account UUID')
           const accountsRes = await client.advancedTrade.accounts.list()
@@ -699,7 +662,10 @@ export class ExchangeService {
             continue
           }
           accountUuid = btcAccount.uuid
-          this.db.prepare('UPDATE exchange_accounts SET external_account_id = ? WHERE id = ?').run(accountUuid, row.id)
+          await this.db
+            .update(exchangeAccounts)
+            .set({ externalAccountId: accountUuid })
+            .where(eq(exchangeAccounts.id, row.id))
           this.logger.info({ accountId: row.id, accountUuid }, 'Backfilled external_account_id')
         }
 
@@ -776,24 +742,17 @@ export class ExchangeService {
    */
   public getKrakenTransactionEntries = asyncFn(
     async (filterAccountIds?: string[]): Promise<Result<{ timestamp: Date; value: bigint }[], Error>> => {
-      let query = 'SELECT id, encrypted_credentials FROM exchange_accounts WHERE provider = ?'
-      const params: string[] = ['kraken']
-
-      if (filterAccountIds && filterAccountIds.length > 0) {
-        const placeholders = filterAccountIds.map(() => '?').join(', ')
-        query += ` AND id IN (${placeholders})`
-        params.push(...filterAccountIds)
-      }
-
-      const rows = this.db
-        .prepare<
-          unknown[],
-          {
-            id: string
-            encrypted_credentials: string
-          }
-        >(query)
-        .all(...params)
+      const rows = await this.db
+        .select({ id: exchangeAccounts.id, encryptedCredentials: exchangeAccounts.encryptedCredentials })
+        .from(exchangeAccounts)
+        .where(
+          and(
+            eq(exchangeAccounts.provider, 'kraken'),
+            filterAccountIds !== undefined && filterAccountIds.length > 0
+              ? inArray(exchangeAccounts.id, filterAccountIds)
+              : undefined,
+          ),
+        )
 
       this.logger.info(
         { rowCount: rows.length, filterAccountIds },
@@ -803,7 +762,7 @@ export class ExchangeService {
       const allEntries: { timestamp: Date; value: bigint }[] = []
 
       for (const row of rows) {
-        const parsedCredentials = parseCredentials(row.encrypted_credentials)
+        const parsedCredentials = parseCredentials(row.encryptedCredentials)
         if (parsedCredentials.isErr()) {
           this.logger.warn({ accountId: row.id }, 'Invalid stored credentials — skipping')
           continue
@@ -884,7 +843,7 @@ export class ExchangeService {
 
   // ─── Statement Transactions ──────────────────────────────────────────
 
-  public importStatementTransactions(args: {
+  public async importStatementTransactions(args: {
     accountId: string
     transactions: Array<{
       externalId: string
@@ -899,182 +858,119 @@ export class ExchangeService {
       txHash?: string
       statementMonth: string
     }>
-  }): Result<{ imported: number; skipped: number }, Error> {
-    const account = this.getAccount(args.accountId)
-    if (!account) {
-      return Err(new Error('Exchange account not found'))
-    }
+  }): Promise<Result<{ imported: number; skipped: number }, Error>> {
+    return this.db.transaction(async (db) => {
+      const [account] = await db
+        .select({ id: exchangeAccounts.id })
+        .from(exchangeAccounts)
+        .where(eq(exchangeAccounts.id, args.accountId))
+      if (!account) {
+        return Err(new Error('Exchange account not found'))
+      }
 
-    const stmt = this.db.prepare(
-      `INSERT INTO exchange_statement_txs (id, account_id, external_id, transacted_at, type, amount_btc, amount_usd, fee_usd, fee_btc, exchange_rate, description, tx_hash, statement_month)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT(account_id, external_id) DO NOTHING`,
-    )
-
-    let imported = 0
-    let skipped = 0
-
-    const runAll = this.db.transaction(() => {
-      for (const tx of args.transactions) {
-        const result = stmt.run(
-          nanoid(),
-          args.accountId,
-          tx.externalId,
-          tx.transactedAt,
-          tx.type,
-          tx.amountBtc,
-          tx.amountUsd ?? null,
-          tx.feeUsd ?? null,
-          tx.feeBtc ?? null,
-          tx.exchangeRate ?? null,
-          tx.description ?? null,
-          tx.txHash ?? null,
-          tx.statementMonth,
-        )
-        if (result.changes > 0) {
+      let imported = 0
+      let skipped = 0
+      for (const item of args.transactions) {
+        const inserted = await db
+          .insert(exchangeStatementTxs)
+          .values({
+            id: nanoid(),
+            accountId: args.accountId,
+            externalId: item.externalId,
+            transactedAt: item.transactedAt,
+            type: item.type,
+            amountBtc: item.amountBtc,
+            amountUsd: item.amountUsd ?? null,
+            feeUsd: item.feeUsd ?? null,
+            feeBtc: item.feeBtc ?? null,
+            exchangeRate: item.exchangeRate ?? null,
+            description: item.description ?? null,
+            txHash: item.txHash ?? null,
+            statementMonth: item.statementMonth,
+          })
+          .onConflictDoNothing({ target: [exchangeStatementTxs.accountId, exchangeStatementTxs.externalId] })
+        if (inserted.rowsAffected > 0) {
           imported++
         } else {
           skipped++
         }
       }
+      this.logger.info(
+        { accountId: args.accountId, imported, skipped, total: args.transactions.length },
+        'Imported strike statement transactions',
+      )
+
+      return Ok({ imported, skipped })
     })
-    runAll()
-
-    this.logger.info(
-      { accountId: args.accountId, imported, skipped, total: args.transactions.length },
-      'Imported strike statement transactions',
-    )
-
-    return Ok({ imported, skipped })
   }
 
-  public listStatementTransactions(
+  public async listStatementTransactions(
     accountId: string,
     statementMonth?: string,
-  ): Array<{
-    id: string
-    externalId: string
-    transactedAt: string
-    type: string
-    amountBtc: string
-    amountUsd: string | null
-    feeUsd: string | null
-    feeBtc: string | null
-    exchangeRate: string | null
-    description: string | null
-    txHash: string | null
-    statementMonth: string
-  }> {
-    const rows =
-      statementMonth != null && statementMonth !== ''
-        ? this.db
-            .prepare<
-              unknown[],
-              {
-                id: string
-                external_id: string
-                transacted_at: string
-                type: string
-                amount_btc: string
-                amount_usd: string | null
-                fee_usd: string | null
-                fee_btc: string | null
-                exchange_rate: string | null
-                description: string | null
-                tx_hash: string | null
-                statement_month: string
-              }
-            >(
-              'SELECT * FROM exchange_statement_txs WHERE account_id = ? AND statement_month = ? ORDER BY transacted_at ASC',
-            )
-            .all(accountId, statementMonth)
-        : this.db
-            .prepare<
-              unknown[],
-              {
-                id: string
-                external_id: string
-                transacted_at: string
-                type: string
-                amount_btc: string
-                amount_usd: string | null
-                fee_usd: string | null
-                fee_btc: string | null
-                exchange_rate: string | null
-                description: string | null
-                tx_hash: string | null
-                statement_month: string
-              }
-            >('SELECT * FROM exchange_statement_txs WHERE account_id = ? ORDER BY transacted_at ASC')
-            .all(accountId)
-
-    return rows.map((r) => ({
-      id: r.id,
-      externalId: r.external_id,
-      transactedAt: r.transacted_at,
-      type: r.type,
-      amountBtc: r.amount_btc,
-      amountUsd: r.amount_usd,
-      feeUsd: r.fee_usd,
-      feeBtc: r.fee_btc,
-      exchangeRate: r.exchange_rate,
-      description: r.description,
-      txHash: r.tx_hash,
-      statementMonth: r.statement_month,
-    }))
-  }
-
-  public listStatementMonths(accountId: string): string[] {
-    const rows = this.db
-      .prepare<unknown[], { statement_month: string }>(
-        'SELECT DISTINCT statement_month FROM exchange_statement_txs WHERE account_id = ? ORDER BY statement_month DESC',
+  ): Promise<
+    Array<{
+      id: string
+      externalId: string
+      transactedAt: string
+      type: string
+      amountBtc: string
+      amountUsd: string | null
+      feeUsd: string | null
+      feeBtc: string | null
+      exchangeRate: string | null
+      description: string | null
+      txHash: string | null
+      statementMonth: string
+    }>
+  > {
+    return this.db
+      .select({
+        id: exchangeStatementTxs.id,
+        externalId: exchangeStatementTxs.externalId,
+        transactedAt: exchangeStatementTxs.transactedAt,
+        type: exchangeStatementTxs.type,
+        amountBtc: exchangeStatementTxs.amountBtc,
+        amountUsd: exchangeStatementTxs.amountUsd,
+        feeUsd: exchangeStatementTxs.feeUsd,
+        feeBtc: exchangeStatementTxs.feeBtc,
+        exchangeRate: exchangeStatementTxs.exchangeRate,
+        description: exchangeStatementTxs.description,
+        txHash: exchangeStatementTxs.txHash,
+        statementMonth: exchangeStatementTxs.statementMonth,
+      })
+      .from(exchangeStatementTxs)
+      .where(
+        and(
+          eq(exchangeStatementTxs.accountId, accountId),
+          statementMonth !== undefined && statementMonth !== ''
+            ? eq(exchangeStatementTxs.statementMonth, statementMonth)
+            : undefined,
+        ),
       )
-      .all(accountId)
-    return rows.map((r) => r.statement_month)
+      .orderBy(asc(exchangeStatementTxs.transactedAt))
   }
 
-  public deleteStatementMonth(accountId: string, statementMonth: string): number {
-    const result = this.db
-      .prepare('DELETE FROM exchange_statement_txs WHERE account_id = ? AND statement_month = ?')
-      .run(accountId, statementMonth)
-    return result.changes
+  public async listStatementMonths(accountId: string): Promise<string[]> {
+    const rows = await this.db
+      .selectDistinct({ month: exchangeStatementTxs.statementMonth })
+      .from(exchangeStatementTxs)
+      .where(eq(exchangeStatementTxs.accountId, accountId))
+      .orderBy(desc(exchangeStatementTxs.statementMonth))
+    return rows.map((r) => r.month)
   }
 
-  private getAccount(id: string): ExchangeAccountDto | null {
-    const row = this.db
-      .prepare<
-        unknown[],
-        {
-          id: string
-          provider: SupportedExchange
-          display_name: string
-          encrypted_credentials: string
-          balance_sats: string | null
-          balance_as_of: string | null
-          created_at: string
-          credentials_connected_at: string | null
-        }
-      >('SELECT * FROM exchange_accounts WHERE id = ?')
-      .get(id)
-    if (!row) {
-      return null
-    }
-    const connectionStatus = this.getAccountConnectionStatus(row)
-    const isConnected = connectionStatus === 'connected'
-    return {
-      id: row.id,
-      exchange: row.provider,
-      displayName: row.display_name,
-      balanceSats: isConnected ? (row.balance_sats ?? null) : null,
-      balanceAsOf: isConnected ? (row.balance_as_of ?? null) : null,
-      createdAt: row.created_at,
-      connectionStatus,
-    }
+  public async deleteStatementMonth(accountId: string, statementMonth: string): Promise<number> {
+    const result = await this.db
+      .delete(exchangeStatementTxs)
+      .where(
+        and(eq(exchangeStatementTxs.accountId, accountId), eq(exchangeStatementTxs.statementMonth, statementMonth)),
+      )
+    return result.rowsAffected
   }
 
   // ─── Helpers ───────────────────────────────────────────────────────────
 
-  private saveConnectedAccount(args: {
+  private async saveConnectedAccount(args: {
     provider: SupportedExchange
     replaceAccountId?: string
     displayName: string
@@ -1083,16 +979,15 @@ export class ExchangeService {
     balanceAsOf: string
     credentialsConnectedAt: string
     externalAccountId?: string
-  }): Result<{ id: string; createdAt: string }, Error> {
+  }): Promise<Result<{ id: string; createdAt: string }, Error>> {
     if (args.replaceAccountId != null && args.replaceAccountId !== '') {
       // Reconnect must preserve the internal account id. Balance snapshots,
       // imported statements, and generated statement references are keyed to
       // this id, so never delete/reinsert during a credential replacement.
-      const existing = this.db
-        .prepare<unknown[], { provider: SupportedExchange; created_at: string }>(
-          'SELECT provider, created_at FROM exchange_accounts WHERE id = ?',
-        )
-        .get(args.replaceAccountId)
+      const [existing] = await this.db
+        .select({ provider: exchangeAccounts.provider, createdAt: exchangeAccounts.createdAt })
+        .from(exchangeAccounts)
+        .where(eq(exchangeAccounts.id, args.replaceAccountId))
 
       if (!existing) {
         return Err(new Error('Exchange account not found'))
@@ -1101,68 +996,45 @@ export class ExchangeService {
         return Err(new Error(`Cannot reconnect ${args.provider} credentials to a ${existing.provider} account`))
       }
 
-      this.db
-        .prepare(
-          `UPDATE exchange_accounts
-           SET display_name = ?,
-               encrypted_credentials = ?,
-               balance_sats = ?,
-               balance_as_of = ?,
-               credentials_connected_at = ?,
-               external_account_id = ?
-           WHERE id = ?`,
-        )
-        .run(
-          args.displayName,
-          JSON.stringify(args.credentialData),
-          args.balanceSats,
-          args.balanceAsOf,
-          args.credentialsConnectedAt,
-          args.externalAccountId ?? null,
-          args.replaceAccountId,
-        )
+      await this.db
+        .update(exchangeAccounts)
+        .set({
+          displayName: args.displayName,
+          encryptedCredentials: JSON.stringify(args.credentialData),
+          balanceSats: args.balanceSats,
+          balanceAsOf: args.balanceAsOf,
+          credentialsConnectedAt: args.credentialsConnectedAt,
+          externalAccountId: args.externalAccountId ?? null,
+        })
+        .where(eq(exchangeAccounts.id, args.replaceAccountId))
 
-      return Ok({ id: args.replaceAccountId, createdAt: existing.created_at })
+      return Ok({ id: args.replaceAccountId, createdAt: existing.createdAt })
     }
 
     const id = nanoid()
-    this.db
-      .prepare(
-        `INSERT INTO exchange_accounts (
-           id,
-           provider,
-           display_name,
-           encrypted_credentials,
-           balance_sats,
-           balance_as_of,
-           credentials_connected_at,
-           external_account_id
-         )
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .run(
-        id,
-        args.provider,
-        args.displayName,
-        JSON.stringify(args.credentialData),
-        args.balanceSats,
-        args.balanceAsOf,
-        args.credentialsConnectedAt,
-        args.externalAccountId ?? null,
-      )
+    await this.db.insert(exchangeAccounts).values({
+      id,
+      provider: args.provider,
+      displayName: args.displayName,
+      encryptedCredentials: JSON.stringify(args.credentialData),
+      balanceSats: args.balanceSats,
+      balanceAsOf: args.balanceAsOf,
+      credentialsConnectedAt: args.credentialsConnectedAt,
+      externalAccountId: args.externalAccountId ?? null,
+    })
 
     return Ok({ id, createdAt: args.balanceAsOf })
   }
 
   private getAccountConnectionStatus(row: {
-    encrypted_credentials: string
-    created_at?: string | null
-    credentials_connected_at?: string | null
+    encryptedCredentials: string
+    createdAt?: string | null
+    credentialsConnectedAt?: string | null
   }): ExchangeConnectionStatus {
-    if (this.areCredentialsExpired(row.credentials_connected_at ?? row.created_at ?? null)) {
+    if (this.areCredentialsExpired(row.credentialsConnectedAt ?? row.createdAt ?? null)) {
       return 'needs_reconnect'
     }
-    return this.getCredentialConnectionStatus(row.encrypted_credentials)
+    return this.getCredentialConnectionStatus(row.encryptedCredentials)
   }
 
   private areCredentialsExpired(connectedAt: string | null): boolean {
@@ -1211,13 +1083,13 @@ export class ExchangeService {
     }
   }
 
-  private recordSnapshot(accountId: string, balanceSats: string, timestamp: string): void {
-    this.db
-      .prepare(
-        `INSERT INTO exchange_balance_snapshots (account_id, timestamp, balance_sats)
-         VALUES (?, ?, ?)
-         ON CONFLICT(account_id, timestamp) DO UPDATE SET balance_sats = excluded.balance_sats`,
-      )
-      .run(accountId, timestamp, balanceSats)
+  private async recordSnapshot(accountId: string, balanceSats: string, timestamp: string): Promise<void> {
+    await this.db
+      .insert(exchangeBalanceSnapshots)
+      .values({ accountId, timestamp, balanceSats })
+      .onConflictDoUpdate({
+        target: [exchangeBalanceSnapshots.accountId, exchangeBalanceSnapshots.timestamp],
+        set: { balanceSats },
+      })
   }
 }

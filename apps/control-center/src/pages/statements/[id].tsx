@@ -1,4 +1,4 @@
-import { Box, Button, Flex, HStack, Icon, Link, Stack, Text } from '@chakra-ui/react'
+import { Box, Button, Flex, HStack, Link, Stack, Text } from '@chakra-ui/react'
 import { renderStatementDocument } from '@hoseki/packages/pdf'
 import type { StatementDocumentFormat, StatementId } from '@hoseki/packages/schemas'
 import { Animations, ErrorBanner, Spinner } from '@hoseki/packages/ui/design-system'
@@ -10,9 +10,10 @@ import {
 } from '@hoseki/packages/ui/prove-verify-ui'
 import { PDFViewer, pdf } from '@react-pdf/renderer'
 import { format } from 'date-fns'
-import { DownloadIcon, ShieldCheckIcon } from 'lucide-react'
-import { type ReactElement, useEffect, useState } from 'react'
+import { ShieldCheckIcon } from 'lucide-react'
+import { useState } from 'react'
 import { Link as RouterLink } from 'react-router'
+import { useRenderedStatement } from '../../hooks/use-rendered-statement'
 import { UrlParameter, useUrlParameter } from '../../hooks/use-url-parameters'
 import { baseTrpc, trpc } from '../../trpc'
 import type { StatementDto } from '../../trpc/server-types'
@@ -20,7 +21,7 @@ import type { StatementDto } from '../../trpc/server-types'
 export function StatementDetailsPage(): JSX.Element {
   const statementId = useUrlParameter(UrlParameter.statementId)
 
-  if (!statementId) {
+  if (statementId === null) {
     return (
       <Box p={4}>
         <ErrorBanner mb={4} message="Invalid statement ID provided in URL" />
@@ -48,14 +49,17 @@ function StatementDetailsPageContent({ statementId }: { statementId: StatementId
   }
 
   return (
-    <Flex gap={0} flexDirection={['column', 'column', 'row']} align="flex-start">
+    <Flex gap={0} flexDirection={{ base: 'column', lg: 'row' }} align="flex-start">
       <Stack
         gap={6}
-        height={['auto', 'auto', VIEWPORT_BELOW_HEADER]}
-        flexBasis={['100%', '100%', '40%']}
-        maxW={['100%', '100%', '40%']}
+        height={{ base: 'auto', lg: VIEWPORT_BELOW_HEADER }}
+        flexBasis={{ base: 'auto', lg: '40%' }}
+        minW={0}
+        w="full"
+        overflowY="auto"
+        maxW={{ base: 'full', lg: '40%' }}
         py={6}
-        px={8}
+        px={{ base: 4, md: 8 }}
       >
         <BackLink />
         <Stack gap={12}>
@@ -65,9 +69,10 @@ function StatementDetailsPageContent({ statementId }: { statementId: StatementId
         </Stack>
       </Stack>
       <Box
-        height={['auto', 'auto', VIEWPORT_BELOW_HEADER]}
-        flexBasis={['100%', '100%', '60%']}
-        width={['100%', '100%', '60%']}
+        height={{ base: 'auto', lg: VIEWPORT_BELOW_HEADER }}
+        flexBasis={{ base: 'auto', lg: '60%' }}
+        minW={0}
+        width={{ base: 'full', lg: '60%' }}
         bg="#F9F9F9"
       >
         <StatementPreview
@@ -88,8 +93,8 @@ function StatementSummary({ statement }: { statement: StatementDto }) {
           Statement Details
         </Text>
         <Flex flexDirection="column" gap={4}>
-          <HStack justifyContent="space-between">
-            {statement.user.name != null && statement.user.name !== '' && (
+          <HStack justifyContent="space-between" align="start" flexWrap="wrap" gap={4} overflowWrap="anywhere">
+            {statement.user.name !== null && statement.user.name !== '' && (
               <Box>
                 <Text textStyle="text/sm" fontWeight="medium">
                   Name
@@ -112,10 +117,14 @@ function StatementSummary({ statement }: { statement: StatementDto }) {
           </HStack>
         </Flex>
       </Stack>
+      {statement.status === 'failed' && statement.errorMessage !== null && (
+        <ErrorBanner message={statement.errorMessage} />
+      )}
       <Stack gap={2}>
         <Text as="h2" textStyle="text/lg" fontWeight="medium">
           Statement Attributes
         </Text>
+        <Text textStyle="text/sm">Currency: {statement.quoteCurrency}</Text>
         <Text textStyle="text/sm">
           Period: {format(statement.openingDate, 'd MMMM yyyy')} - {format(statement.closingDate, 'd MMMM yyyy')}
         </Text>
@@ -175,7 +184,6 @@ function ActionButtons({
           isLoading={isDownloadingPdf}
           isDisabled={statement.status !== 'completed'}
         >
-          <Icon as={DownloadIcon} mr={2} />
           Download
         </Button>
       </HStack>
@@ -187,7 +195,7 @@ function BackLink() {
   return (
     <Link
       as={RouterLink}
-      to="/portfolio"
+      to="/home"
       display="inline-flex"
       alignItems="center"
       color="neutral.900"
@@ -226,9 +234,12 @@ function StatementPreview({
   statementFormat: StatementDocumentFormat
   onStatementFormatChange: (format: StatementDocumentFormat) => void
 }) {
-  const [pdfDocument, setPdfDocument] = useState<ReactElement | null>(null)
-
-  const { data: statementData, isLoading } = trpc.portalProve.statement.retrieveDocumentData.useQuery(
+  const {
+    data: statementData,
+    isLoading,
+    error: queryError,
+    refetch,
+  } = trpc.portalProve.statement.retrieveDocumentData.useQuery(
     {
       statementId: statement.id,
       format: statementFormat,
@@ -239,28 +250,11 @@ function StatementPreview({
     },
   )
 
-  useEffect(() => {
-    async function loadPdf() {
-      try {
-        if (!statementData) {
-          return
-        }
-
-        const document = await renderStatementDocument({
-          watermarkText: 'Statement Preview',
-          statement: statementData,
-        })
-        setPdfDocument(document)
-      } catch (error) {
-        console.error('Error rendering PDF:', error)
-      }
-    }
-
-    void loadPdf()
-  }, [statementData])
+  const rendered = useRenderedStatement(statementData, statement.status === 'completed')
+  const previewError = queryError?.message ?? rendered.error
 
   return (
-    <Box height={['600px', '600px', '100%']} width="100%" display="flex" justifyContent="center" alignItems="center">
+    <Box height={{ base: '600px', lg: '100%' }} width="100%" display="flex" justifyContent="center" alignItems="center">
       <Flex
         justifyContent="center"
         alignItems="center"
@@ -271,41 +265,68 @@ function StatementPreview({
       >
         {statement.status !== 'completed' ? (
           <PreviewUnavailable />
-        ) : isLoading || !pdfDocument ? (
+        ) : previewError != null ? (
+          <ErrorBanner
+            message={previewError}
+            rightContent={
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  if (queryError) {
+                    void refetch()
+                  } else {
+                    rendered.retry()
+                  }
+                }}
+              >
+                Retry
+              </Button>
+            }
+          />
+        ) : isLoading || !rendered.document ? (
           <Spinner centered />
         ) : (
           <Stack width="100%" height="100%">
-            <HStack justifyContent="center" alignItems="center" gap={4} py={4}>
+            <HStack
+              as="fieldset"
+              aria-label="Statement format"
+              justifyContent="center"
+              alignItems="center"
+              gap={4}
+              py={4}
+              flexWrap="wrap"
+            >
               <Button
                 variant={statementFormat === 'custom' ? 'primary' : 'outline'}
+                aria-pressed={statementFormat === 'custom'}
                 size="sm"
                 onClick={() => {
                   if (statementFormat === 'custom') {
                     return
                   }
                   onStatementFormatChange('custom')
-                  setPdfDocument(null)
                 }}
               >
                 Full Period
               </Button>
               <Button
                 variant={statementFormat === 'monthly' ? 'primary' : 'outline'}
+                aria-pressed={statementFormat === 'monthly'}
                 size="sm"
                 onClick={() => {
                   if (statementFormat === 'monthly') {
                     return
                   }
                   onStatementFormatChange('monthly')
-                  setPdfDocument(null)
                 }}
               >
                 Monthly
               </Button>
             </HStack>
-            <Box sx={Animations.fadeIn(0.25)} width="100%" height="100%">
+            <Box sx={Animations.fadeIn(0.25)} width="100%" flex={1} minH={0}>
               <PDFViewer width="100%" height="100%" style={{ border: 'none' }} showToolbar={false}>
-                {pdfDocument}
+                {rendered.document}
               </PDFViewer>
             </Box>
           </Stack>

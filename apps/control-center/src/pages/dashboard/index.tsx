@@ -592,7 +592,7 @@ export function DashboardPage({
                     <BitcoinAmount btc={new Decimal(displayBalanceSats).div(100_000_000)} />
                   </>
                 </Text>
-                <FiatAmountText primary>
+                <FiatAmountText>
                   <>{btcPrice === null ? 'USD unavailable' : `$${formatUsd(currentBtcFloat, btcPrice)}`}</>
                 </FiatAmountText>
               </Flex>

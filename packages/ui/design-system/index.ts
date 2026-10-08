@@ -17,7 +17,6 @@ export * from './panel'
 export * from './spinner'
 
 export * from './feedback/advanced-feature-alert'
-export * from './feedback/dismiss-button'
 export * from './feedback/tip-alert'
 
 export { theme } from './theme'

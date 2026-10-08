@@ -9,11 +9,11 @@ import { ElectrumClient } from '@hoseki/packages/clients/electrum'
 import { Ok, asyncFn } from '@hoseki/packages/result'
 import type { CustomPdfStatement } from '@hoseki/packages/schemas'
 import { Wallets } from '@hoseki/packages/testing'
-import type Database from 'better-sqlite3'
 import Decimal from 'decimal.js'
 import pino, { type Logger } from 'pino'
 import { expect, onTestFinished, vi } from 'vitest'
-import { initDatabase } from '../../db'
+import { type SentinelDb, openDrizzleDatabase } from '../../db/drizzle'
+import { accounts, exchangeAccounts, exchangeBalanceSnapshots } from '../../db/schema'
 import { Encrypted, initEncryption } from '../../lib/encrypted'
 import { ExchangeService } from '../exchange/service'
 import { DailyRatesService } from '../price/daily_rates'
@@ -48,20 +48,20 @@ const savingsWallet = createWallet(Wallets.singlesigNativeSegwitAccount, 0)
 const spendingWallet = createWallet(Wallets.singlesigNestedSegwitAccount, 1)
 const wallets = [savingsWallet, spendingWallet]
 
-function createStatementDatabase() {
+async function createStatementDatabase() {
   const directory = mkdtempSync(join(tmpdir(), 'sentinel-statement-regression-'))
   const logger = pino({ level: 'silent' })
-  const database = initDatabase(directory, logger)
+  const database = await openDrizzleDatabase(directory, logger)
 
   onTestFinished(() => {
-    database.close()
+    database.$client.close()
     rmSync(directory, { recursive: true, force: true })
 
     vi.unstubAllGlobals()
     vi.restoreAllMocks()
   })
 
-  return { db: database.db, logger }
+  return { db: database, logger }
 }
 
 function mockOnchainProvider(logger: Logger, emptySavingsHistory = false) {
@@ -114,8 +114,8 @@ function mockTransactionRequests(): void {
   )
 }
 
-function mockDailyRates(logger: Logger): DailyRatesService {
-  const service = new DailyRatesService({ logger, mempoolApiUrl })
+function mockDailyRates(db: SentinelDb, logger: Logger): DailyRatesService {
+  const service = new DailyRatesService({ db, logger, mempoolApiUrl })
   const rate = new Decimal(40_000)
   const rates = Object.fromEntries(
     [openingDate, transactionDate, closingDate].map((date) => [
@@ -124,13 +124,15 @@ function mockDailyRates(logger: Logger): DailyRatesService {
     ]),
   )
 
-  vi.spyOn(service, 'getDailyRates').mockImplementation(asyncFn(async () => Ok({ source: 'mempool' as const, rates })))
+  vi.spyOn(service, 'getDailyRates').mockImplementation(
+    asyncFn(async () => Ok({ source: 'mempool' as const, quoteCurrency: 'USD' as const, rates })),
+  )
 
   return service
 }
 
-function createStatementHarness(emptySavingsHistory = false) {
-  const { db, logger } = createStatementDatabase()
+async function createStatementHarness(emptySavingsHistory = false) {
+  const { db, logger } = await createStatementDatabase()
   const onchainProvider = mockOnchainProvider(logger, emptySavingsHistory)
   mockTransactionRequests()
 
@@ -140,93 +142,85 @@ function createStatementHarness(emptySavingsHistory = false) {
     logger,
     onchainProvider,
     mempoolApiUrl,
-    dailyRatesService: mockDailyRates(logger),
+    dailyRatesService: mockDailyRates(db, logger),
     exchangeService,
   })
 
   return { service, db, exchangeService }
 }
 
-function seedWallet(db: Database.Database, wallet: WalletFixture, displayName: string): string {
-  db.prepare('INSERT INTO accounts (id, descriptor, display_name, status) VALUES (?, ?, ?, ?)').run(
-    wallet.id,
-    wallet.account.toString(),
-    displayName,
-    'verified',
-  )
+async function seedWallet(db: SentinelDb, wallet: WalletFixture, displayName: string): Promise<string> {
+  await db
+    .insert(accounts)
+    .values({ id: wallet.id, descriptor: wallet.account.toString(), displayName, status: 'verified' })
 
   return wallet.id
 }
 
-function seedExchange(
-  db: Database.Database,
+async function seedExchange(
+  db: SentinelDb,
   id: string,
   balance: string,
   displayName: string,
-  provider = 'strike',
-): string {
+  provider: 'strike' | 'coinbase' = 'strike',
+): Promise<string> {
   initEncryption('11'.repeat(32))
   const blob = Encrypted.encrypt('synthetic-test-key').expect('Synthetic credential must encrypt').blob
   const credentials = JSON.stringify({ type: 'apiKey', data: { key: { blob } } })
 
-  db.prepare(
-    'INSERT INTO exchange_accounts (id, provider, display_name, encrypted_credentials) VALUES (?, ?, ?, ?)',
-  ).run(id, provider, displayName, credentials)
-
-  db.prepare('INSERT INTO exchange_balance_snapshots (account_id, timestamp, balance_sats) VALUES (?, ?, ?)').run(
-    id,
-    transactionDate.toISOString(),
-    balance,
-  )
+  await db.insert(exchangeAccounts).values({ id, provider, displayName, encryptedCredentials: credentials })
+  await db
+    .insert(exchangeBalanceSnapshots)
+    .values({ accountId: id, timestamp: transactionDate.toISOString(), balanceSats: balance })
 
   return id
 }
 
-function setupNamedWallets(firstName: string, secondName: string): StatementScenario {
-  const { service, db } = createStatementHarness()
-  const claimIds = [seedWallet(db, savingsWallet, firstName), seedWallet(db, spendingWallet, secondName)]
+async function setupNamedWallets(firstName: string, secondName: string): Promise<StatementScenario> {
+  const { service, db } = await createStatementHarness()
+  const claimIds = [await seedWallet(db, savingsWallet, firstName), await seedWallet(db, spendingWallet, secondName)]
 
   return { service, input: { ...period, claimIds } }
 }
 
-export function setupDistinctWalletNames(): StatementScenario {
+export async function setupDistinctWalletNames(): Promise<StatementScenario> {
   return setupNamedWallets('Savings', 'Spending')
 }
 
-export function setupDuplicateWalletNames(): StatementScenario {
+export async function setupDuplicateWalletNames(): Promise<StatementScenario> {
   return setupNamedWallets('Savings', 'Savings')
 }
 
-export function setupEmptyNamedWallet(): StatementScenario {
-  const { service, db } = createStatementHarness(true)
-  const claimIds = [seedWallet(db, savingsWallet, 'Savings'), seedWallet(db, spendingWallet, 'Savings')]
+export async function setupEmptyNamedWallet(): Promise<StatementScenario> {
+  const { service, db } = await createStatementHarness(true)
+  const claimIds = [await seedWallet(db, savingsWallet, 'Savings'), await seedWallet(db, spendingWallet, 'Savings')]
 
   return { service, input: { ...period, claimIds } }
 }
 
-export function setupWalletAndExchangeWithSameName(): StatementScenario {
-  const { service, db } = createStatementHarness()
-  const claimIds = [seedWallet(db, savingsWallet, 'Strike')]
-  const exchangeAccountIds = [seedExchange(db, 'exchange-a', '200000000', 'Strike')]
+export async function setupWalletAndExchangeWithSameName(): Promise<StatementScenario> {
+  const { service, db } = await createStatementHarness()
+  const claimIds = [await seedWallet(db, savingsWallet, 'Strike')]
+  const exchangeAccountIds = [await seedExchange(db, 'exchange-a', '200000000', 'Strike')]
 
   return { service, input: { ...period, claimIds, exchangeAccountIds } }
 }
 
-export function setupTwoExchangeAccounts(): StatementScenario {
-  const { service, db } = createStatementHarness()
+export async function setupTwoExchangeAccounts(): Promise<StatementScenario> {
+  const { service, db } = await createStatementHarness()
   const exchangeAccountIds = [
-    seedExchange(db, 'exchange-a', '100000000', 'Savings'),
-    seedExchange(db, 'exchange-b', '200000000', 'Trading'),
+    await seedExchange(db, 'exchange-a', '100000000', 'Savings'),
+    await seedExchange(db, 'exchange-b', '200000000', 'Trading'),
   ]
 
   return { service, input: { ...period, claimIds: [], exchangeAccountIds } }
 }
 
-export function setupTwoCoinbaseAccounts(): StatementScenario {
-  const { service, db, exchangeService } = createStatementHarness()
+export async function setupTwoCoinbaseAccounts(): Promise<StatementScenario> {
+  const { service, db, exchangeService } = await createStatementHarness()
   const exchangeAccountIds = [
-    seedExchange(db, 'coinbase-a', '100000000', 'Savings', 'coinbase'),
-    seedExchange(db, 'coinbase-b', '200000000', 'Trading', 'coinbase'),
+    await seedExchange(db, 'coinbase-a', '100000000', 'Savings', 'coinbase'),
+    await seedExchange(db, 'coinbase-b', '200000000', 'Trading', 'coinbase'),
   ]
   vi.spyOn(exchangeService, 'getCoinbaseTransactionEntries').mockImplementation(
     asyncFn(async (ids) => {

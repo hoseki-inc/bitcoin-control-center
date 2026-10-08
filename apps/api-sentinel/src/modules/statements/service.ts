@@ -1,18 +1,23 @@
 import { Account } from '@hoseki/packages/bitcoin/account'
 import type { ElectrumProvider } from '@hoseki/packages/bitcoin/onchain/electrum_provider'
 import type { TransactionEntry } from '@hoseki/packages/bitcoin/onchain/types'
+import { STATEMENT_CLOSING_DELAY_DAYS, getLatestStatementClosingDate } from '@hoseki/packages/lib/statement-dates'
 import { parseUnknown } from '@hoseki/packages/result'
 import { Err, Ok, asyncFn } from '@hoseki/packages/result'
 import type { Result } from '@hoseki/packages/result'
-import type Database from 'better-sqlite3'
+import { type StatementQuoteCurrency, StatementQuoteCurrencySchema } from '@hoseki/packages/schemas/statement-quote'
 import Decimal from 'decimal.js'
+import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
 import type { Logger } from 'pino'
 import { z } from 'zod'
+import type { SentinelDb } from '../../db/drizzle'
+import { accounts, exchangeBalanceSnapshots, statements } from '../../db/schema'
 import type { ExchangeService } from '../exchange/service'
 import type { DailyRates } from '../price/daily_rates'
 import type { DailyRatesService } from '../price/daily_rates'
 import type { AggregatedTransaction, StatementAccountTransactions } from './mapper'
+import { getRequiredRateDates, validateStatementRates } from './rate_dates'
 import { fetchTransactionEntries } from './tx_fetcher'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -33,31 +38,14 @@ export interface StatementDto {
   user: { name: string | null; email: string | null }
   integrator: { name: string } | null
   userId: string
+  quoteCurrency: StatementQuoteCurrency
+  errorMessage: string | null
 }
 
-export interface StatementRow {
-  id: string
-  status: StatementDto['status']
-  timezone: string
-  opening_date: string
-  closing_date: string
-  account_ids: string
-  user_name: string | null
-  user_address: string | null
-  transaction_map: string | null
-  daily_rates: string | null
-  counter: number
-  created_at: string
-  updated_at: string
-}
-
-export interface CompletedStatementRow extends StatementRow {
-  status: 'completed'
-  transaction_map: string
-  daily_rates: string
-}
+type StatementRow = typeof statements.$inferSelect
 
 export interface GenerateStatementInput {
+  quoteCurrency?: StatementQuoteCurrency
   claimIds: string[]
   exchangeAccountIds?: string[]
   openingDate: Date
@@ -82,6 +70,7 @@ type SerializedAggregatedTransaction = z.infer<typeof SerializedAggregatedTransa
 
 const SerializedDailyRateSchema = z.object({
   timestamp: z.string(),
+  providerUrl: z.string().optional(),
   open: z.string(),
   high: z.string(),
   low: z.string(),
@@ -93,14 +82,49 @@ const MAX_STATEMENT_RANGE_YEARS = 2
 const MAX_STATEMENT_RANGE_DAYS = MAX_STATEMENT_RANGE_YEARS * 366
 const MS_PER_DAY = 24 * 60 * 60 * 1000
 
-function validateStatementInput(input: GenerateStatementInput): Result<void, Error> {
+/**
+ * Accepts any zone the runtime can format: aliases such as Asia/Kolkata, fixed offsets such as
+ * Etc/GMT+8 or +05:30, and names in any letter case. Browsers report some of these, but
+ * Intl.supportedValuesOf omits them.
+ */
+function isUsableTimezone(timezone: string): boolean {
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: timezone })
+    return true
+  } catch {
+    return false
+  }
+}
+
+export function validateStatementInput(input: GenerateStatementInput, now = new Date()): Result<void, Error> {
   const { openingDate, closingDate } = input
+  if (parseUnknown(StatementQuoteCurrencySchema, input.quoteCurrency ?? 'USD').isErr()) {
+    return Err(new Error('Unsupported statement quote currency.'))
+  }
+  if (!isUsableTimezone(input.timezone)) {
+    return Err(new Error('Invalid statement timezone.'))
+  }
   if (Number.isNaN(openingDate.getTime()) || Number.isNaN(closingDate.getTime())) {
     return Err(new Error('Statement dates must be valid'))
   }
 
   if (openingDate > closingDate) {
     return Err(new Error('Statement opening date must be before closing date'))
+  }
+
+  const latestClosingDate = getLatestStatementClosingDate(now, input.timezone)
+  if (latestClosingDate.isErr()) {
+    return Err(latestClosingDate.unwrapErr())
+  }
+  if (closingDate > latestClosingDate.unwrap()) {
+    return Err(
+      new Error(
+        `Statements must end at least ${STATEMENT_CLOSING_DELAY_DAYS} days ago, so recent transactions have time to confirm`,
+      ),
+    )
+  }
+  if (closingDate > now) {
+    return Err(new Error('Statement dates cannot be in the future.'))
   }
 
   const rangeDays = Math.ceil((closingDate.getTime() - openingDate.getTime()) / MS_PER_DAY) + 1
@@ -114,20 +138,23 @@ function validateStatementInput(input: GenerateStatementInput): Result<void, Err
 // ─── Service ────────────────────────────────────────────────────────────────
 
 export class StatementService {
-  private readonly db: Database.Database
+  private readonly db: SentinelDb
   private readonly onchainProvider: ElectrumProvider
   private readonly dailyRatesService: DailyRatesService
   private readonly exchangeService: ExchangeService
   private readonly mempoolApiUrl: string
   private readonly logger: Logger
+  private readonly sleep: ((ms: number) => Promise<void>) | undefined
 
   public constructor(deps: {
-    db: Database.Database
+    db: SentinelDb
     onchainProvider: ElectrumProvider
     dailyRatesService: DailyRatesService
     exchangeService: ExchangeService
     mempoolApiUrl: string
     logger: Logger
+    /** Waits between transaction lookup retries; tests replace it to avoid real delays. */
+    sleep?: (ms: number) => Promise<void>
   }) {
     this.db = deps.db
     this.onchainProvider = deps.onchainProvider
@@ -135,35 +162,56 @@ export class StatementService {
     this.exchangeService = deps.exchangeService
     this.mempoolApiUrl = deps.mempoolApiUrl
     this.logger = deps.logger.child({ module: 'statement-service' })
+    this.sleep = deps.sleep
   }
 
   /** Insert a pending statement row. */
-  public create(input: GenerateStatementInput): string {
+  public async create(input: GenerateStatementInput): Promise<Result<string, Error>> {
+    const valid = validateStatementInput(input)
+    if (valid.isErr()) {
+      return Err(valid.unwrapErr())
+    }
     const id = `st_stmt_${nanoid()}`
-    const counter = this.getNextCounter()
+    await this.db.insert(statements).values({
+      id,
+      status: 'pending',
+      timezone: input.timezone,
+      openingDate: input.openingDate.toISOString(),
+      closingDate: input.closingDate.toISOString(),
+      accountIds: JSON.stringify(input.claimIds),
+      exchangeAccountIds: input.exchangeAccountIds ? JSON.stringify(input.exchangeAccountIds) : null,
+      userName: input.name ?? null,
+      userAddress: input.address ?? null,
+      quoteCurrency: input.quoteCurrency ?? 'USD',
+      counter: sql`(select coalesce(max(${statements.counter}), 0) + 1 from ${statements})`,
+    })
 
-    this.db
-      .prepare(
-        `INSERT INTO statements (id, status, timezone, opening_date, closing_date, account_ids, exchange_account_ids, user_name, user_address, counter)
-         VALUES (?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .run(
-        id,
-        input.timezone,
-        input.openingDate.toISOString(),
-        input.closingDate.toISOString(),
-        JSON.stringify(input.claimIds),
-        input.exchangeAccountIds ? JSON.stringify(input.exchangeAccountIds) : null,
-        input.name ?? null,
-        input.address ?? null,
-        counter,
-      )
-
-    return id
+    return Ok(id)
   }
 
   /** Mark a statement as completed with transaction data. */
-  public complete(id: string, transactionMap: StatementTransactions, dailyRates: DailyRates): void {
+  public async complete(
+    id: string,
+    transactionMap: StatementTransactions,
+    dailyRates: DailyRates,
+  ): Promise<Result<void, Error>> {
+    const [row] = await this.db.select().from(statements).where(eq(statements.id, id))
+    if (row?.status !== 'pending') {
+      return Err(new Error('Statement is not pending.'))
+    }
+    if (row.quoteCurrency !== dailyRates.quoteCurrency) {
+      return Err(new Error('Statement quote currency does not match its saved rates.'))
+    }
+    const dates = getRequiredRateDates(
+      new Date(row.openingDate),
+      new Date(row.closingDate),
+      row.timezone,
+      transactionMap,
+    )
+    const valid = validateStatementRates(dates, dailyRates)
+    if (valid.isErr()) {
+      return Err(valid.unwrapErr())
+    }
     // Serialize bigint values in transactionMap to strings for JSON storage
     const serializedMap: Record<string, { displayName: string; transactions: SerializedAggregatedTransaction[] }> = {}
     for (const [key, account] of Object.entries(transactionMap)) {
@@ -183,6 +231,7 @@ export class StatementService {
     for (const [key, rate] of Object.entries(dailyRates.rates)) {
       serializedRates[key] = {
         timestamp: rate.timestamp.toISOString(),
+        providerUrl: rate.providerUrl,
         open: rate.open.toString(),
         high: rate.high.toString(),
         low: rate.low.toString(),
@@ -190,22 +239,39 @@ export class StatementService {
       }
     }
 
-    this.db
-      .prepare(
-        `UPDATE statements SET status = 'completed', transaction_map = ?, daily_rates = ?, updated_at = datetime('now')
-         WHERE id = ?`,
-      )
-      .run(JSON.stringify(serializedMap), JSON.stringify({ rates: serializedRates, source: dailyRates.source }), id)
+    const [completed] = await this.db
+      .update(statements)
+      .set({
+        status: 'completed',
+        transactionMap: JSON.stringify(serializedMap),
+        dailyRates: JSON.stringify({
+          rates: serializedRates,
+          source: dailyRates.source,
+          quoteCurrency: dailyRates.quoteCurrency,
+          providerUrl: dailyRates.providerUrl,
+          providerUrls: dailyRates.providerUrls,
+        }),
+        updatedAt: sql`datetime('now')`,
+      })
+      .where(and(eq(statements.id, id), eq(statements.status, 'pending')))
+      .returning({ id: statements.id })
+    if (completed === undefined) {
+      return Err(new Error('Statement is not pending.'))
+    }
+    return Ok(undefined)
   }
 
   /** Mark a statement as failed. */
-  public fail(id: string): void {
-    this.db.prepare(`UPDATE statements SET status = 'failed', updated_at = datetime('now') WHERE id = ?`).run(id)
+  public async fail(id: string, message = 'Statement generation failed. Please retry.'): Promise<void> {
+    await this.db
+      .update(statements)
+      .set({ status: 'failed', errorMessage: message, updatedAt: sql`datetime('now')` })
+      .where(and(eq(statements.id, id), eq(statements.status, 'pending')))
   }
 
   /** Find a statement by ID and return its DTO. */
-  public findById(id: string): StatementDto | null {
-    const row = this.db.prepare<unknown[], StatementRow>('SELECT * FROM statements WHERE id = ?').get(id)
+  public async findById(id: string): Promise<StatementDto | null> {
+    const [row] = await this.db.select().from(statements).where(eq(statements.id, id))
     if (!row) {
       return null
     }
@@ -213,26 +279,30 @@ export class StatementService {
   }
 
   /** Load a completed statement with deserialized transaction data. */
-  public loadCompleted(
+  public async loadCompleted(
     id: string,
-  ): { row: StatementRow; transactionMap: StatementTransactions; dailyRates: DailyRates } | null {
-    const row = this.db
-      .prepare<unknown[], CompletedStatementRow>('SELECT * FROM statements WHERE id = ? AND status = ?')
-      .get(id, 'completed')
+  ): Promise<{ row: StatementRow; transactionMap: StatementTransactions; dailyRates: DailyRates } | null> {
+    const [row] = await this.db
+      .select()
+      .from(statements)
+      .where(and(eq(statements.id, id), eq(statements.status, 'completed')))
     if (!row) {
       return null
     }
 
+    if (row.transactionMap == null || row.dailyRates == null) {
+      throw new Error('Stored completed statement is missing transaction data')
+    }
     return {
       row,
-      transactionMap: this.deserializeTransactionMap(row.transaction_map),
-      dailyRates: this.deserializeDailyRates(row.daily_rates),
+      transactionMap: this.deserializeTransactionMap(row.transactionMap),
+      dailyRates: this.deserializeDailyRates(row.dailyRates),
     }
   }
 
   /** List all statements as DTOs. */
-  public list(): StatementDto[] {
-    const rows = this.db.prepare<unknown[], StatementRow>('SELECT * FROM statements ORDER BY created_at DESC').all()
+  public async list(): Promise<StatementDto[]> {
+    const rows = await this.db.select().from(statements).orderBy(desc(statements.createdAt))
     return rows.map((row) => this.rowToDto(row))
   }
 
@@ -260,7 +330,7 @@ export class StatementService {
 
       // 1. Look up on-chain account descriptors
       const claimIds = [...new Set(input.claimIds)]
-      const accountRows = this.getAccountRows(claimIds)
+      const accountRows = await this.getAccountRows(claimIds)
       const hasOnchainAccounts = accountRows.length > 0
       const hasExchangeAccounts = (input.exchangeAccountIds?.length ?? 0) > 0
 
@@ -287,16 +357,14 @@ export class StatementService {
           )
           const accountResult = Account.fromDescriptor(row.descriptor)
           if (accountResult.isErr()) {
-            this.logger.warn(
-              { descriptor: row.descriptor, err: accountResult.unwrapErr() },
-              'Failed to parse descriptor',
-            )
+            this.logger.warn({ accountId: row.id }, 'Failed to parse descriptor')
             continue
           }
 
-          const activeAccount = this.db
-            .prepare('SELECT 1 AS one FROM accounts WHERE id = ? AND deleted_at IS NULL')
-            .get(row.id)
+          const [activeAccount] = await this.db
+            .select({ id: accounts.id })
+            .from(accounts)
+            .where(and(eq(accounts.id, row.id), isNull(accounts.deletedAt)))
           if (activeAccount === undefined) {
             return Err(new Error(`Account "${row.display_name}" was archived while generating the statement`))
           }
@@ -306,6 +374,7 @@ export class StatementService {
             onchainProvider: this.onchainProvider,
             mempoolApiUrl: this.mempoolApiUrl,
             logger: this.logger,
+            sleep: this.sleep,
           })
           if (txResult.isErr()) {
             this.logger.error({ accountId: row.id, err: txResult.unwrapErr() }, 'Failed to fetch transactions')
@@ -326,7 +395,7 @@ export class StatementService {
       // 3. Fetch exchange account data
       if (hasExchangeAccounts) {
         const exchangeAccountIds = input.exchangeAccountIds ?? []
-        const allExchangeAccounts = this.exchangeService.listAccounts()
+        const allExchangeAccounts = await this.exchangeService.listAccounts()
         const selectedAccounts = allExchangeAccounts.filter((a) => exchangeAccountIds.includes(a.id))
         this.logger.info({ exchangeAccountCount: selectedAccounts.length }, 'Found exchange accounts for statement')
 
@@ -373,7 +442,7 @@ export class StatementService {
           const label = exchangeStatementName(account)
 
           // Check for imported statement transactions — aggregate to daily net in/out
-          const stmtTxs = this.exchangeService.listStatementTransactions(account.id)
+          const stmtTxs = await this.exchangeService.listStatementTransactions(account.id)
           if (stmtTxs.length > 0) {
             const dailyAgg = new Map<string, { netIn: bigint; netOut: bigint; date: Date }>()
             for (const tx of stmtTxs) {
@@ -427,7 +496,7 @@ export class StatementService {
             )
           } else {
             // Fall back to snapshot deltas
-            const snapshots = this.getExchangeSnapshots(account.id)
+            const snapshots = await this.getExchangeSnapshots(account.id)
 
             const dailyBalances = new Map<string, { balance: bigint; date: Date }>()
             for (const snapshot of snapshots) {
@@ -466,10 +535,20 @@ export class StatementService {
 
       // 4. Fetch daily rates for the date range
       this.logger.info('Fetching daily rates from mempool.space')
-      const ratesResult = await this.dailyRatesService.getDailyRates(input.openingDate, input.closingDate)
+      const requiredDates = getRequiredRateDates(input.openingDate, input.closingDate, input.timezone, transactionMap)
+      const ratesResult = await this.dailyRatesService.getDailyRates(
+        input.openingDate,
+        input.closingDate,
+        input.quoteCurrency ?? 'USD',
+        requiredDates,
+      )
       if (ratesResult.isErr()) {
         this.logger.error({ err: ratesResult.unwrapErr().message }, 'Failed to fetch daily rates')
         return Err(ratesResult.unwrapErr())
+      }
+      const coverage = validateStatementRates(requiredDates, ratesResult.unwrap())
+      if (coverage.isErr()) {
+        return Err(coverage.unwrapErr())
       }
       this.logger.info('Statement data generation complete')
 
@@ -479,67 +558,47 @@ export class StatementService {
 
   // ─── Private helpers ────────────────────────────────────────────────────────
 
-  private getAccountRows(
+  private async getAccountRows(
     claimIds: string[],
-  ): Array<{ id: string; descriptor: string; display_name: string; network: string; status: string }> {
+  ): Promise<Array<{ id: string; descriptor: string; display_name: string; network: string; status: string }>> {
     if (claimIds.length === 0) {
       return []
     }
-    const placeholders = claimIds.map(() => '?').join(', ')
     return this.db
-      .prepare<
-        unknown[],
-        {
-          id: string
-          descriptor: string
-          display_name: string
-          network: string
-          status: string
-        }
-      >(
-        `SELECT id, descriptor, display_name, network, status
-         FROM accounts
-         WHERE id IN (${placeholders}) AND deleted_at IS NULL`,
-      )
-      .all(...claimIds)
+      .select({
+        id: accounts.id,
+        descriptor: accounts.descriptor,
+        display_name: accounts.displayName,
+        network: accounts.network,
+        status: accounts.status,
+      })
+      .from(accounts)
+      .where(and(inArray(accounts.id, claimIds), isNull(accounts.deletedAt)))
   }
 
-  private getExchangeSnapshots(accountId: string): Array<{ balance_sats: string; timestamp: string }> {
+  private async getExchangeSnapshots(accountId: string): Promise<Array<{ balance_sats: string; timestamp: string }>> {
     return this.db
-      .prepare<unknown[], { balance_sats: string; timestamp: string }>(
-        'SELECT balance_sats, timestamp FROM exchange_balance_snapshots WHERE account_id = ? ORDER BY timestamp ASC',
-      )
-      .all(accountId)
-  }
-
-  private getNextCounter(): number {
-    const result = this.db
-      .prepare<
-        unknown[],
-        {
-          next: number
-        }
-      >('SELECT COALESCE(MAX(counter), 0) + 1 AS next FROM statements')
-      .get()
-    if (!result) {
-      throw new Error('Statement counter query returned no row')
-    }
-    return result.next
+      .select({ balance_sats: exchangeBalanceSnapshots.balanceSats, timestamp: exchangeBalanceSnapshots.timestamp })
+      .from(exchangeBalanceSnapshots)
+      .where(eq(exchangeBalanceSnapshots.accountId, accountId))
+      .orderBy(asc(exchangeBalanceSnapshots.timestamp))
   }
 
   private rowToDto(row: StatementRow): StatementDto {
     return {
       id: row.id,
-      createdAt: new Date(row.created_at),
-      updatedAt: new Date(row.updated_at),
+      createdAt: new Date(row.createdAt),
+      updatedAt: new Date(row.updatedAt),
       counter: row.counter,
       timezone: row.timezone,
-      openingDate: new Date(row.opening_date),
-      closingDate: new Date(row.closing_date),
+      openingDate: new Date(row.openingDate),
+      closingDate: new Date(row.closingDate),
       status: row.status,
-      user: { name: row.user_name, email: null },
+      user: { name: row.userName, email: null },
       integrator: null,
       userId: 'local',
+      quoteCurrency: row.quoteCurrency,
+      errorMessage: row.errorMessage,
     }
   }
 
@@ -575,20 +634,33 @@ export class StatementService {
   private deserializeDailyRates(json: string): DailyRates {
     // SAFETY: Database JSON is untrusted until the schema below validates the complete daily-rate payload.
     const raw = parseUnknown(
-      z.object({ rates: z.record(SerializedDailyRateSchema), source: z.literal('mempool') }),
+      z.object({
+        rates: z.record(SerializedDailyRateSchema),
+        source: z.literal('mempool'),
+        quoteCurrency: StatementQuoteCurrencySchema.optional(),
+        providerUrl: z.string().optional(),
+        providerUrls: z.array(z.string()).optional(),
+      }),
       JSON.parse(json) as unknown,
     ).expect('Stored statement rates are invalid')
     const rates: DailyRates['rates'] = {}
     for (const [key, rate] of Object.entries(raw.rates)) {
       rates[key] = {
         timestamp: new Date(rate.timestamp),
+        providerUrl: rate.providerUrl,
         open: new Decimal(rate.open),
         high: new Decimal(rate.high),
         low: new Decimal(rate.low),
         close: new Decimal(rate.close),
       }
     }
-    return { rates, source: raw.source }
+    return {
+      rates,
+      source: raw.source,
+      quoteCurrency: raw.quoteCurrency ?? 'USD',
+      providerUrl: raw.providerUrl,
+      providerUrls: raw.providerUrls,
+    }
   }
 }
 
