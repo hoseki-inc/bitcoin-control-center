@@ -290,6 +290,45 @@ it('discovery propagates the original device error without requesting balances',
   })
 })
 
+it('the scan displays the original balance lookup error', async () => {
+  await withTestSetup(async () => {
+    const failure = new Error('Could not fetch transaction history: Connection closed')
+    mocks.fetch.mockRejectedValue(failure)
+    await useLedgerStore.getState().init(async () => fakeTransport())
+    await mountScan()
+    await waitForScan()
+
+    expect(mocks.scan.mock.lastCall?.[0].walletsQuery).toMatchObject({
+      isLoading: false,
+      isError: true,
+      error: failure,
+    })
+    expect(mocks.scan.mock.lastCall?.[0].walletsQuery.error).toBe(failure)
+    expect(mocks.fetch).toHaveBeenCalledOnce()
+    expect(mocks.getXpub).toHaveBeenCalledTimes(4)
+  })
+})
+
+it('discovery gives cancellation priority over a balance lookup error', async () => {
+  await withTestSetup(async () => {
+    const controller = new AbortController()
+    mocks.fetch.mockImplementation(async () => {
+      controller.abort()
+      throw new Error('Balance lookup failed after cancellation')
+    })
+    await useLedgerStore.getState().init(async () => fakeTransport())
+    const error = await probeLedger(balanceApi, {
+      getBitcoinXpub: useLedgerStore.getState().getBitcoinXpub,
+      signal: controller.signal,
+      isCurrentConnection: () => true,
+    }).expectErr('Expected cancellation')
+
+    expect(error.name).toBe('AbortError')
+    expect(mocks.fetch).toHaveBeenCalledOnce()
+    expect(mocks.getXpub).toHaveBeenCalledTimes(4)
+  })
+})
+
 it('discovery gives cancellation priority over a device error', async () => {
   await withTestSetup(async () => {
     const controller = new AbortController()
@@ -306,5 +345,67 @@ it('discovery gives cancellation priority over a device error', async () => {
     expect(error.name).toBe('AbortError')
     expect(getBitcoinXpub).toHaveBeenCalledOnce()
     expect(mocks.fetch).not.toHaveBeenCalled()
+  })
+})
+
+it.each(['abort', 'disconnect'])('discovery starts no more requests after %s at any continuation', async (reason) => {
+  await withTestSetup(async () => {
+    const violations: { boundary: number; request: string }[] = []
+    // Sweep the continuations through device reads, parsing, and the balance lookup.
+    // This covers cancellation between synchronous Results delegated by an async generator.
+    for (let boundary = 0; boundary < 120; boundary++) {
+      const controller = new AbortController()
+      let connected = true
+      const isCancelled = (): boolean => controller.signal.aborted || !connected
+      mocks.fetch.mockImplementation(async ({ accounts }) => {
+        if (isCancelled()) {
+          violations.push({ boundary, request: 'balances' })
+        }
+        return balances(accounts)
+      })
+      const pending = probeLedger(balanceApi, {
+        getBitcoinXpub: () => {
+          if (isCancelled()) {
+            violations.push({ boundary, request: 'xpub' })
+          }
+          return AsyncOk({ xpub, path: "m/84'/0'/0'" })
+        },
+        signal: controller.signal,
+        isCurrentConnection: () => connected,
+      })
+      for (let tick = 0; tick < boundary; tick++) {
+        await Promise.resolve()
+      }
+      if (reason === 'abort') {
+        controller.abort()
+      } else {
+        connected = false
+      }
+      await pending
+    }
+    expect(violations).toEqual([])
+  })
+})
+
+it('an xpub read never starts after its transport has been closed', async () => {
+  await withTestSetup(async () => {
+    const transport = fakeTransport()
+    let closed = false
+    let readAfterClose = false
+    mocks.getXpub.mockImplementation(async () => {
+      readAfterClose ||= closed
+      return xpub
+    })
+    await useLedgerStore.getState().init(async () => transport)
+    const pending = useLedgerStore.getState().getBitcoinXpub('p2wpkh', 0)
+    await useLedgerStore.getState().reset(async () => {
+      closed = true
+    })
+    expect((await pending).expect('Expected the already-started read to complete')).toEqual({
+      xpub,
+      path: "m/84'/0'/0'",
+    })
+    expect(mocks.getXpub).toHaveBeenCalledOnce()
+    expect(readAfterClose).toBe(false)
   })
 })

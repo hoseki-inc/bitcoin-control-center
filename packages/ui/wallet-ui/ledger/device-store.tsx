@@ -1,6 +1,6 @@
 import { DerivationPath, Network, type SingleSigAccountScriptType } from '@hoseki/packages/bitcoin'
 import type { AsyncResult } from '@hoseki/packages/result'
-import { Err, Ok, Result, tryBlock } from '@hoseki/packages/result'
+import { Err, Result, tryBlock } from '@hoseki/packages/result'
 import { HardwareDeviceError } from '@hoseki/packages/wallet'
 import { SCRIPT_TYPE_TO_DERIVATION_PATH } from '@hoseki/packages/wallet/script-type-utils'
 import LedgerBtcApp from '@ledgerhq/hw-app-btc'
@@ -73,23 +73,30 @@ export function createLedgerStore(
           return notInitializedError()
         }
 
-        const derivationPath = yield* DerivationPath.fromString(path).mapErr(
-          (error) =>
-            new HardwareDeviceError(error.message, 'ledger', `The derivation path ${path} is invalid.`, { path }),
-        )
+        // Start the SDK call in the same turn as reading the connection state.
+        // Async yield* here would let reset() close the captured transport first.
+        return DerivationPath.fromString(path)
+          .mapErr(
+            (error) =>
+              new HardwareDeviceError(error.message, 'ledger', `The derivation path ${path} is invalid.`, { path }),
+          )
+          .andThenAsync(async (derivationPath) => {
+            let xpubRes: Result<string, HardwareDeviceError>
+            if (!derivationPath.isStandardAccount()) {
+              const appClient = new AppClient(transport)
+              xpubRes = await handleLedgerSdkCall(appClient.getExtendedPubkey(true, pathStringToArray(path)))
+              browserLogger.debug('Non-standard path - using legacy appClient.getExtendedPubkey', { path })
+            } else {
+              xpubRes = await handleLedgerSdkCall(
+                btc.getWalletXpub({ path, xpubVersion: Network.Mainnet.bip32.public }),
+                {
+                  path,
+                },
+              )
+            }
 
-        let xpubRes: Result<string, HardwareDeviceError>
-        if (!derivationPath.isStandardAccount()) {
-          const appClient = new AppClient(transport)
-          xpubRes = await handleLedgerSdkCall(appClient.getExtendedPubkey(true, pathStringToArray(path)))
-          browserLogger.debug('Non-standard path - using legacy appClient.getExtendedPubkey', { path })
-        } else {
-          xpubRes = await handleLedgerSdkCall(btc.getWalletXpub({ path, xpubVersion: Network.Mainnet.bip32.public }), {
-            path,
+            return xpubRes.map((xpub) => ({ xpub, path }))
           })
-        }
-
-        return Ok({ xpub: yield* xpubRes, path })
       })
     }
 

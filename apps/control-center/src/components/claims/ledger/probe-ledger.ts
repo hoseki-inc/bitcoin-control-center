@@ -114,16 +114,20 @@ export const probeLedger = (
 
       const accounts = batch.map(({ networkAccount }) => networkAccount.toString())
 
+      // Delegating parsed Results above can suspend the async generator.
+      if (isCancelled()) {
+        return cancelled()
+      }
       const balancesRes = await Result.fromPromise(
         trpcUtils.portalProve.onchain.bitcoinAccountBalances.fetch({ accounts }),
       )
       if (isCancelled()) {
         return cancelled()
       }
-      if (balancesRes.isErr()) {
-        throw balancesRes.unwrapErr()
+      const balances = yield* balancesRes
+      if (isCancelled()) {
+        return cancelled()
       }
-      const balances = balancesRes.unwrap()
 
       for (const [acc, balance] of balances.accounts) {
         const wallet = batch.find(({ networkAccount }) => networkAccount.toString() === acc)
