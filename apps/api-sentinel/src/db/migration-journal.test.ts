@@ -96,7 +96,7 @@ it.each(['file', 'database'] as const)(
     const key = '01'.repeat(32)
     const plaintext = '{"synthetic":"exchange-credentials"}'
     initEncryption(key)
-    const ciphertext = Encrypted.encrypt(plaintext).unwrap().blob
+    const ciphertext = Encrypted.encrypt(plaintext).expect('Expected successful result').blob
     await legacy.run(sql`UPDATE exchange_accounts SET encrypted_credentials = ${ciphertext}`)
     const keyPath = join(directory, 'secrets', 'exchange-credentials.key')
     if (keyLocation === 'file') {
@@ -154,9 +154,9 @@ it.each(['file', 'database'] as const)(
       expect(stored?.encrypted_credentials).toBe(ciphertext)
       expect(
         Encrypted.fromString(stored?.encrypted_credentials ?? '')
-          .unwrap()
+          .expect('Expected successful result')
           .decrypt()
-          .unwrap(),
+          .expect('Expected successful result'),
       ).toBe(plaintext)
       const after = await databaseState(upgraded, true)
       upgraded.$client.close()

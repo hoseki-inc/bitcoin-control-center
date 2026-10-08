@@ -1,7 +1,7 @@
 import { Network } from '@hoseki/packages/bitcoin/network'
 import { ElectrumProvider } from '@hoseki/packages/bitcoin/onchain/electrum_provider'
 import { ElectrumClient } from '@hoseki/packages/clients/electrum'
-import { Ok, asyncFn } from '@hoseki/packages/result'
+import { AsyncOk } from '@hoseki/packages/result'
 import Decimal from 'decimal.js'
 import { expect, vi } from 'vitest'
 import { exchangeAccounts, exchangeBalanceSnapshots, exchangeStatementTxs } from '../../db/schema'
@@ -80,10 +80,8 @@ async function createPortfolioService({ db, logger }: DatabaseFixture): Promise<
     mempoolApiUrl: 'https://example.invalid',
     settings: () => ({ source: undefined, fallbacks: false }),
   })
-  vi.spyOn(priceService, 'getCurrentBtcPrice').mockImplementation(
-    asyncFn(async () =>
-      Ok({ value: new Decimal(40_000), asOf: new Date(), source: 'block' as const, lastKnown: false }),
-    ),
+  vi.spyOn(priceService, 'getCurrentBtcPrice').mockImplementation(() =>
+    AsyncOk({ value: new Decimal(40_000), asOf: new Date(), source: 'block' as const, lastKnown: false }),
   )
 
   return new ControlCenterService({

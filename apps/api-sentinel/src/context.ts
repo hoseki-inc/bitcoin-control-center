@@ -1,8 +1,8 @@
 import { Network } from '@hoseki/packages/bitcoin/network'
 import { ElectrumProvider } from '@hoseki/packages/bitcoin/onchain/electrum_provider'
 import { ElectrumClient, type ElectrumClientConfig } from '@hoseki/packages/clients/electrum'
-import { Err, Ok, asyncFn } from '@hoseki/packages/result'
-import type { Result } from '@hoseki/packages/result'
+import { Err, Ok, tryBlock } from '@hoseki/packages/result'
+import type { AsyncResult, Result } from '@hoseki/packages/result'
 import { eq } from 'drizzle-orm'
 import type { Logger } from 'pino'
 import { type SentinelDb, openDrizzleDatabase } from './db/drizzle'
@@ -89,8 +89,8 @@ export interface AppContextOptions {
   }
 }
 
-export const createAppContext = asyncFn(
-  async (logger: Logger, options: AppContextOptions = {}): Promise<Result<AppContext, Error>> => {
+export const createAppContext = (logger: Logger, options: AppContextOptions = {}): AsyncResult<AppContext, Error> =>
+  tryBlock(async function* () {
     const env = loadEnv()
 
     const database = await openDrizzleDatabase(env.DATA_DIR, logger)
@@ -128,7 +128,9 @@ export const createAppContext = asyncFn(
         // Never refuse to start over saved connections: use the last saved server,
         // and connecting to a saved connection sets a new active one.
         logger.error(
-          { reason: initialized.isErr() ? initialized.unwrapErr().message : 'The active saved connection is missing' },
+          {
+            reason: initialized.isErr() ? initialized.unwrapErr().message : 'The active saved connection is missing',
+          },
           'Saved connections are unavailable; using the last saved server',
         )
       }
@@ -387,14 +389,11 @@ export const createAppContext = asyncFn(
         }
       })
     } else {
-      const result = await connection
-      if (result.isErr()) {
+      yield* connection.inspectErr(() => {
         ctx.stopElectrum()
         database.$client.close()
-        return Err(result.unwrapErr())
-      }
+      })
     }
 
     return Ok(ctx)
-  },
-)
+  })

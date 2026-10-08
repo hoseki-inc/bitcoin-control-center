@@ -91,7 +91,6 @@ export function TrezorConfirm({
 }
 
 function isTaprootAccount(trezorRawInput: string): boolean {
-  return SingleSigAccount.fromDescriptor(trezorRawInput).isOkAnd(
-    (singleSigAccount) => singleSigAccount.scriptType === 'p2tr',
-  )
+  const account = SingleSigAccount.fromDescriptor(trezorRawInput)
+  return account.isOk() && account.unwrap().scriptType === 'p2tr'
 }

@@ -1,4 +1,5 @@
-import { type AsyncResult, Err, Ok, type Result, asyncFn, tryBlockAsync } from '@hoseki/packages/result'
+import type { AsyncResult } from '@hoseki/packages/result'
+import { AsyncOk, Err, Ok, type Result, tryBlock } from '@hoseki/packages/result'
 import { sha256 } from '@noble/hashes/sha2.js'
 import type { Logger } from 'pino'
 import type { ElectrumClient, ScripthashHistoryEntry } from '../../clients/electrum'
@@ -35,71 +36,74 @@ export class ElectrumProvider extends OnchainBitcoinProvider {
     this.deps = deps
   }
 
-  protected getLastKnownIndexes = asyncFn(
-    async (): Promise<Result<{ lastUsedReceiveIndex: number; lastUsedChangeIndex: number }, Error>> => {
-      // No persistent cache for the Electrum provider - start from 0 each time.
-      // This is acceptable because local Electrum servers are fast and there's no rate limiting.
-      return Ok({ lastUsedReceiveIndex: 0, lastUsedChangeIndex: 0 })
-    },
-  )
+  protected getLastKnownIndexes = (): AsyncResult<
+    { lastUsedReceiveIndex: number; lastUsedChangeIndex: number },
+    Error
+  > => AsyncOk({ lastUsedReceiveIndex: 0, lastUsedChangeIndex: 0 })
 
   public getBlocksTip(): AsyncResult<Block, Error> {
-    return tryBlockAsync(
-      async function* (this: ElectrumProvider) {
-        const header = yield* this.deps.electrum.headersSubscribe().try()
-        return parseBlockHeader(header.height, header.hex)
-      }.bind(this),
-    )
+    const { electrum } = this.deps
+    return tryBlock(async function* () {
+      const header = yield* electrum.headersSubscribe()
+      return parseBlockHeader(header.height, header.hex)
+    })
   }
 
   public getBlock(height: number): AsyncResult<Block, Error> {
-    return tryBlockAsync(
-      async function* (this: ElectrumProvider) {
-        const header = yield* this.deps.electrum.getBlockHeader(height).try()
-        return parseBlockHeader(height, header)
-      }.bind(this),
-    )
+    const { electrum } = this.deps
+    return tryBlock(async function* () {
+      const header = yield* electrum.getBlockHeader(height)
+      return parseBlockHeader(height, header)
+    })
   }
 
-  public areAddressesUsed = asyncFn(async (addresses: IndexSet<Address>): Promise<Result<IndexSet<Address>, Error>> => {
-    this.deps.logger.debug({ total: addresses.size }, 'Checking if addresses are used via Electrum')
+  public areAddressesUsed = (addresses: IndexSet<Address>): AsyncResult<IndexSet<Address>, Error> => {
+    const { deps } = this
+    const { logger } = deps
+    return tryBlock(async function* () {
+      logger.debug({ total: addresses.size }, 'Checking if addresses are used via Electrum')
 
-    const used = new IndexSet<Address>()
-    const addressArray = [...addresses]
+      const used = new IndexSet<Address>()
+      const addressArray = [...addresses]
 
-    // Batch parallel requests to avoid overwhelming the server
-    for (let i = 0; i < addressArray.length; i += BATCH_SIZE) {
-      const batch = addressArray.slice(i, i + BATCH_SIZE)
-      const results = await Promise.all(
-        batch.map(async (address) => {
-          const scripthash = addressToScripthash(address)
-          if (scripthash.isErr()) {
-            return { address, err: scripthash.unwrapErr() } as const
+      // Batch parallel requests to avoid overwhelming the server
+      for (let i = 0; i < addressArray.length; i += BATCH_SIZE) {
+        const batch = addressArray.slice(i, i + BATCH_SIZE)
+        const results = await Promise.all(
+          batch.map(async (address) => {
+            const scripthash = addressToScripthash(address)
+            if (scripthash.isErr()) {
+              return { address, err: scripthash.unwrapErr() } as const
+            }
+            const history = await deps.electrum.getHistory(scripthash.unwrap())
+            if (history.isErr()) {
+              return { address, err: history.unwrapErr() } as const
+            }
+            return { address, used: history.unwrap().length > 0 } as const
+          }),
+        )
+        for (const r of results) {
+          if ('err' in r) {
+            return Err(r.err ?? new Error('Electrum history request failed'))
           }
-          const history = await this.deps.electrum.getHistory(scripthash.unwrap())
-          if (history.isErr()) {
-            return { address, err: history.unwrapErr() } as const
+          if (r.used) {
+            used.add(r.address)
           }
-          return { address, used: history.unwrap().length > 0 } as const
-        }),
-      )
-      for (const r of results) {
-        if ('err' in r) {
-          return Err(r.err ?? new Error('Electrum history request failed'))
-        }
-        if (r.used) {
-          used.add(r.address)
         }
       }
-    }
 
-    this.deps.logger.info({ total: addresses.size, used: used.size }, 'Completed used address check via Electrum')
-    return Ok(used)
-  })
+      logger.info({ total: addresses.size, used: used.size }, 'Completed used address check via Electrum')
+      return Ok(used)
+    })
+  }
 
-  public getConfirmedAddressBalances = asyncFn(
-    async (addresses: IndexSet<Address>): Promise<Result<IndexMap<Address, bigint>, Error>> => {
-      this.deps.logger.debug({ total: addresses.size }, 'Getting confirmed address balances via Electrum')
+  public getConfirmedAddressBalances = (
+    addresses: IndexSet<Address>,
+  ): AsyncResult<IndexMap<Address, bigint>, Error> => {
+    const { deps } = this
+    const { logger } = deps
+    return tryBlock(async function* () {
+      logger.debug({ total: addresses.size }, 'Getting confirmed address balances via Electrum')
 
       const balances = new IndexMap<Address, bigint>()
       const addressArray = [...addresses]
@@ -112,7 +116,7 @@ export class ElectrumProvider extends OnchainBitcoinProvider {
             if (scripthash.isErr()) {
               return { address, err: scripthash.unwrapErr() } as const
             }
-            const balanceRes = await this.deps.electrum.getBalance(scripthash.unwrap())
+            const balanceRes = await deps.electrum.getBalance(scripthash.unwrap())
             if (balanceRes.isErr()) {
               return { address, err: balanceRes.unwrapErr() } as const
             }
@@ -127,45 +131,40 @@ export class ElectrumProvider extends OnchainBitcoinProvider {
         }
       }
 
-      this.deps.logger.info(
+      logger.info(
         { total: addresses.size, withBalance: balances.size },
         'Completed getting confirmed address balances via Electrum',
       )
       return Ok(balances)
-    },
-  )
+    })
+  }
 
   /**
    * Get balance accumulation entries by using UTXOs (listunspent) instead of verbose transactions.
    * This avoids the slow/unsupported verbose tx endpoint on public Electrs servers.
    * Each UTXO provides: value (sats) and block height. Timestamps are estimated from block heights.
    */
-  public getUtxoAccumulationEntries = asyncFn(
-    async (
-      account: Account,
-    ): Promise<Result<Array<{ value: bigint; height: number; estimatedTimestamp: Date }>, Error>> => {
-      this.deps.logger.debug({ account }, 'Getting UTXO accumulation entries')
+  public getUtxoAccumulationEntries = (
+    account: Account,
+  ): AsyncResult<Array<{ value: bigint; height: number; estimatedTimestamp: Date }>, Error> => {
+    const { deps, network } = this
+    const { logger } = deps
+    const self = this
+    return tryBlock(async function* () {
+      logger.debug({ account }, 'Getting UTXO accumulation entries')
 
-      const discoveryResult = await this.discoverAccount(account)
-      if (discoveryResult.isErr()) {
-        return Err(discoveryResult.unwrapErr())
-      }
-      const { lastUsedReceiveIndex, lastUsedChangeIndex } = discoveryResult.unwrap()
+      const { lastUsedReceiveIndex, lastUsedChangeIndex } = yield* self.discoverAccount(account)
 
       // Get current block tip for timestamp estimation
-      const blocksTipRes = await this.getBlocksTip()
-      if (blocksTipRes.isErr()) {
-        return Err(blocksTipRes.unwrapErr())
-      }
-      const tip = blocksTipRes.unwrap()
+      const tip = yield* self.getBlocksTip()
 
       const entries: Array<{ value: bigint; height: number; estimatedTimestamp: Date }> = []
       const seenTxids = new Set<string>()
 
       // Collect all discovered addresses
       const allAddresses = [
-        ...account.receiveAddresses(0, lastUsedReceiveIndex + 1, this.network),
-        ...account.changeAddresses(0, lastUsedChangeIndex + 1, this.network),
+        ...account.receiveAddresses(0, lastUsedReceiveIndex + 1, network),
+        ...account.changeAddresses(0, lastUsedChangeIndex + 1, network),
       ]
 
       for (let i = 0; i < allAddresses.length; i += BATCH_SIZE) {
@@ -176,9 +175,9 @@ export class ElectrumProvider extends OnchainBitcoinProvider {
             if (scripthashRes.isErr()) {
               return []
             }
-            const unspentRes = await this.deps.electrum.listUnspent(scripthashRes.unwrap())
+            const unspentRes = await deps.electrum.listUnspent(scripthashRes.unwrap())
             if (unspentRes.isErr()) {
-              this.deps.logger.warn({ address, err: unspentRes.unwrapErr() }, 'Failed to list unspent, skipping')
+              logger.warn({ address, err: unspentRes.unwrapErr() }, 'Failed to list unspent, skipping')
               return []
             }
             return unspentRes.unwrap()
@@ -211,10 +210,10 @@ export class ElectrumProvider extends OnchainBitcoinProvider {
       }
 
       entries.sort((a, b) => a.height - b.height)
-      this.deps.logger.info({ count: entries.length }, 'Got UTXO accumulation entries')
+      logger.info({ count: entries.length }, 'Got UTXO accumulation entries')
       return Ok(entries)
-    },
-  )
+    })
+  }
 
   public async *getTransactionEntries(
     addresses: IndexMap<Address, number | null>,

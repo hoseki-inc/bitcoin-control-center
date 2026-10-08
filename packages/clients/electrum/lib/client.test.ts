@@ -128,7 +128,7 @@ describe('ElectrumClient concurrent reconnect', () => {
       client.disconnect()
 
       const results = await Promise.all(Array.from({ length: 10 }, () => client.getHistory(scripthash)))
-      const errors = results.filter((r) => r.isErr()).map((r) => r.unwrapErr().message)
+      const errors = results.filter((r) => r.isErr()).map((r) => r.expectErr('Expected failed result').message)
       expect(errors).toEqual([])
 
       const versionCalls = mock.requests.filter((r) => r.includes('server.version')).length
@@ -287,7 +287,7 @@ it('cancels an unfinished SOCKS connection and closes a socket delivered after c
   try {
     const pending = transport.connect()
     transport.disconnect()
-    expect((await pending).unwrapErr().message).toBe('Connection closed')
+    expect((await pending).expectErr('Expected failed result').message).toBe('Connection closed')
     completeProxy({ socket: lateSocket })
     await vi.waitFor(() => {
       expect(lateSocket.destroyed).toBe(true)
@@ -318,7 +318,7 @@ describe('managed connection prerequisite', () => {
     const pending = client.connect()
     client.disconnect()
     ready(Ok(undefined))
-    expect((await pending).unwrapErr().message).toBe('Connection closed')
+    expect((await pending).expectErr('Expected failed result').message).toBe('Connection closed')
     expect(socket).not.toHaveBeenCalled()
     socket.mockRestore()
   })
@@ -342,7 +342,7 @@ describe('managed connection prerequisite', () => {
       expect(options?.timeout).toBe(60_000)
       expect(options?.proxy.port).toBe(49322)
       transport.disconnect()
-      expect((await pending).unwrapErr().message).toBe('Connection closed')
+      expect((await pending).expectErr('Expected failed result').message).toBe('Connection closed')
     } finally {
       transport.disconnect()
       connect.mockRestore()
@@ -359,7 +359,7 @@ describe('managed connection prerequisite', () => {
       resolveProxy: () => null,
     })
     try {
-      expect((await client.connect()).unwrapErr().message).toBe('The Tor proxy is not ready')
+      expect((await client.connect()).expectErr('Expected failed result').message).toBe('The Tor proxy is not ready')
       expect(proxy).not.toHaveBeenCalled()
       expect(server.requests).toEqual([])
     } finally {
@@ -378,7 +378,7 @@ describe('managed connection prerequisite', () => {
       proxy: { host: '127.0.0.1', port: 19450 },
       beforeConnect: async () => Err(new Error('Tor is unavailable')),
     })
-    expect((await client.connect()).unwrapErr().message).toBe('Tor is unavailable')
+    expect((await client.connect()).expectErr('Expected failed result').message).toBe('Tor is unavailable')
     expect(proxy).not.toHaveBeenCalled()
     client.disconnect()
     proxy.mockRestore()
@@ -620,7 +620,10 @@ describe('connections that go silent, are busy, or answer with errors', () => {
       const client = new ElectrumClient({ host: '127.0.0.1', port: server.port, protocol: 'tcp' })
       const first = await client.connect()
       expect(first.isErr()).toBe(true)
-      expect(first.unwrapErr()).not.toBeInstanceOf(ElectrumServerError)
+      expect(first.expectErr('Expected failed result')).not.toBeInstanceOf(ElectrumServerError)
+      expect(first.expectErr('Expected failed result').message).toBe(
+        'Electrum handshake failed: Electrum error [-32601]: refused',
+      )
       client.checkReachable(0)
       await vi.waitFor(() => {
         expect(server.received.flat().filter((method) => method === 'server.version').length).toBeGreaterThan(1)

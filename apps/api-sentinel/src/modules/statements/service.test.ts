@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { Network } from '@hoseki/packages/bitcoin/network'
 import { ElectrumProvider } from '@hoseki/packages/bitcoin/onchain/electrum_provider'
 import { ElectrumClient } from '@hoseki/packages/clients/electrum'
-import { Ok, asyncFn } from '@hoseki/packages/result'
+import { Ok, tryBlock } from '@hoseki/packages/result'
 import type { StatementQuoteCurrency } from '@hoseki/packages/schemas/statement-quote'
 import { eq, sql } from 'drizzle-orm'
 import pino from 'pino'
@@ -98,9 +98,9 @@ describe('statement currency persistence', () => {
     async (currency) => {
       await setup()
       let { service, quotes } = harness()
-      const id = (await service.create({ ...input, quoteCurrency: currency })).unwrap()
+      const id = (await service.create({ ...input, quoteCurrency: currency })).expect('Expected successful result')
       const dates = getRequiredRateDates(opening, closing, input.timezone, transactions)
-      const rates = (await quotes.getDailyRates(opening, closing, currency, dates)).unwrap()
+      const rates = (await quotes.getDailyRates(opening, closing, currency, dates)).expect('Expected successful result')
       // Both sides of the centered window survive completion and reload unchanged.
       const first = rates.rates['2026-08-01']
       const last = rates.rates['2026-08-31']
@@ -128,7 +128,7 @@ describe('statement currency persistence', () => {
   it('migrates a legacy statement to USD without rewriting its stored quote values', async () => {
     await setup()
     const { service } = harness()
-    const id = (await service.create(input)).unwrap()
+    const id = (await service.create(input)).expect('Expected successful result')
     const raw = JSON.stringify({
       rates: {
         '2026-08-01': {
@@ -163,9 +163,9 @@ describe('statement currency persistence', () => {
   it('refuses completion for missing required rates or a different quote currency', async () => {
     await setup()
     const { service, quotes } = harness()
-    const id = (await service.create({ ...input, quoteCurrency: 'CAD' })).unwrap()
+    const id = (await service.create({ ...input, quoteCurrency: 'CAD' })).expect('Expected successful result')
     const dates = getRequiredRateDates(opening, closing, 'UTC', transactions)
-    const rates = (await quotes.getDailyRates(opening, closing, 'CAD', dates)).unwrap()
+    const rates = (await quotes.getDailyRates(opening, closing, 'CAD', dates)).expect('Expected successful result')
     expect((await service.complete(id, transactions, { ...rates, quoteCurrency: 'USD' })).isErr()).toBe(true)
     delete rates.rates['2026-08-15']
     expect((await service.complete(id, transactions, rates)).isErr()).toBe(true)
@@ -177,9 +177,9 @@ describe('statement currency persistence', () => {
   it('completes a statement only once under concurrent requests', async () => {
     await setup()
     const { service, quotes } = harness()
-    const id = (await service.create(input)).unwrap()
+    const id = (await service.create(input)).expect('Expected successful result')
     const dates = getRequiredRateDates(opening, closing, 'UTC', transactions)
-    const rates = (await quotes.getDailyRates(opening, closing, 'USD', dates)).unwrap()
+    const rates = (await quotes.getDailyRates(opening, closing, 'USD', dates)).expect('Expected successful result')
     const results = await Promise.all([
       service.complete(id, transactions, rates),
       service.complete(id, transactions, rates),
@@ -192,9 +192,9 @@ describe('statement currency persistence', () => {
   it('does not complete a statement that failed while completion was being validated', async () => {
     await setup()
     const { service, quotes } = harness()
-    const id = (await service.create(input)).unwrap()
+    const id = (await service.create(input)).expect('Expected successful result')
     const dates = getRequiredRateDates(opening, closing, 'UTC', transactions)
-    const rates = (await quotes.getDailyRates(opening, closing, 'USD', dates)).unwrap()
+    const rates = (await quotes.getDailyRates(opening, closing, 'USD', dates)).expect('Expected successful result')
     const [completed] = await Promise.all([
       service.complete(id, transactions, rates),
       service.fail(id, 'Concurrent generation failure'),
@@ -244,7 +244,7 @@ describe('statement currency persistence', () => {
       },
     }
     const dates = getRequiredRateDates(start, end, 'America/New_York', txs)
-    const dailyRates = (await quotes.getDailyRates(start, end, 'CAD', dates)).unwrap()
+    const dailyRates = (await quotes.getDailyRates(start, end, 'CAD', dates)).expect('Expected successful result')
     const data = {
       id: 'test',
       createdAt: new Date(),
@@ -274,9 +274,9 @@ describe('statement timezone validation', () => {
   )
 
   it('rejects an unknown timezone', () => {
-    expect(validateStatementInput({ ...input, timezone: 'Not/AZone' }, now).unwrapErr().message).toBe(
-      'Invalid statement timezone.',
-    )
+    expect(
+      validateStatementInput({ ...input, timezone: 'Not/AZone' }, now).expectErr('Expected failed result').message,
+    ).toBe('Invalid statement timezone.')
   })
 })
 
@@ -345,8 +345,8 @@ function statementCaller(service: StatementService) {
 describe('statement API currency contract', () => {
   function caller() {
     const { service, quotes } = harness()
-    vi.spyOn(service, 'generateStatementData').mockImplementation(
-      asyncFn(async (args) => {
+    vi.spyOn(service, 'generateStatementData').mockImplementation((args) =>
+      tryBlock(async function* () {
         const dailyRates = (
           await quotes.getDailyRates(
             args.openingDate,
@@ -354,7 +354,7 @@ describe('statement API currency contract', () => {
             args.quoteCurrency,
             getRequiredRateDates(args.openingDate, args.closingDate, args.timezone, transactions),
           )
-        ).unwrap()
+        ).expect('Expected successful result')
         return Ok({ transactionMap: transactions, dailyRates })
       }),
     )
@@ -424,10 +424,10 @@ it('persists mixed provider attribution and exposes it in both PDF formats after
       })
     }),
   )
-  const id = (await service.create({ ...input, quoteCurrency: 'CAD' })).unwrap()
+  const id = (await service.create({ ...input, quoteCurrency: 'CAD' })).expect('Expected successful result')
   const dailyRates = (
     await quotes.getDailyRates(opening, closing, 'CAD', getRequiredRateDates(opening, closing, 'UTC', transactions))
-  ).unwrap()
+  ).expect('Expected successful result')
   expect((await service.complete(id, transactions, dailyRates)).isOk()).toBe(true)
   database.$client.close()
   database = await openDrizzleDatabase(directory, logger)

@@ -34,7 +34,7 @@ it('serializes balance reads and writes with concurrent queries and native batch
   const { db, service } = await setup()
   const account = (
     await service.createAccount({ displayName: 'Wallet', balanceSats: '0', balanceAsOf: '2026-01-01' })
-  ).unwrap()
+  ).expect('Expected successful result')
   const results = await Promise.all([
     service.addTransaction({
       accountId: account.id,
@@ -63,7 +63,7 @@ it('does not let concurrent transactions exceed the stored balance', async () =>
   const { service } = await setup()
   const account = (
     await service.createAccount({ displayName: 'Wallet', balanceSats: '10', balanceAsOf: '2026-01-01' })
-  ).unwrap()
+  ).expect('Expected successful result')
   const results = await Promise.all(
     [1, 2].map(async () =>
       service.addTransaction({
@@ -97,13 +97,13 @@ it('returns the renamed row and reports not found when a concurrent deletion win
   const { service } = await setup()
   const account = (
     await service.createAccount({ displayName: 'Wallet', balanceSats: '10', balanceAsOf: '2026-01-01' })
-  ).unwrap()
+  ).expect('Expected successful result')
   const renamed = await service.renameAccount({ accountId: account.id, displayName: 'Renamed' })
-  expect(renamed.unwrap()).toEqual({ ...account, displayName: 'Renamed' })
+  expect(renamed.expect('Expected successful result')).toEqual({ ...account, displayName: 'Renamed' })
   const [removed, missing] = await Promise.all([
     service.removeAccount(account.id),
     service.renameAccount({ accountId: account.id, displayName: 'Too late' }),
   ])
   expect(removed.isOk()).toBe(true)
-  expect(missing.unwrapErr().message).toBe('Manual account not found')
+  expect(missing.expectErr('Expected failed result').message).toBe('Manual account not found')
 })

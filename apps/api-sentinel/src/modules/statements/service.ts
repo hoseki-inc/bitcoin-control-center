@@ -2,9 +2,9 @@ import { Account } from '@hoseki/packages/bitcoin/account'
 import type { ElectrumProvider } from '@hoseki/packages/bitcoin/onchain/electrum_provider'
 import type { TransactionEntry } from '@hoseki/packages/bitcoin/onchain/types'
 import { STATEMENT_CLOSING_DELAY_DAYS, getLatestStatementClosingDate } from '@hoseki/packages/lib/statement-dates'
-import { parseUnknown } from '@hoseki/packages/result'
-import { Err, Ok, asyncFn } from '@hoseki/packages/result'
-import type { Result } from '@hoseki/packages/result'
+import { parseUnknown, tryBlock } from '@hoseki/packages/result'
+import { Err, Ok } from '@hoseki/packages/result'
+import type { AsyncResult, Result } from '@hoseki/packages/result'
 import { type StatementQuoteCurrency, StatementQuoteCurrencySchema } from '@hoseki/packages/schemas/statement-quote'
 import Decimal from 'decimal.js'
 import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
@@ -307,16 +307,15 @@ export class StatementService {
   }
 
   /** Orchestrate the full statement data pipeline: fetch transactions + daily rates. */
-  public generateStatementData = asyncFn(
-    async (
-      input: GenerateStatementInput,
-    ): Promise<Result<{ transactionMap: StatementTransactions; dailyRates: DailyRates }, Error>> => {
-      const validation = validateStatementInput(input)
-      if (validation.isErr()) {
-        return Err(validation.unwrapErr())
-      }
+  public generateStatementData = (
+    input: GenerateStatementInput,
+  ): AsyncResult<{ transactionMap: StatementTransactions; dailyRates: DailyRates }, Error> => {
+    const { db, logger, onchainProvider, mempoolApiUrl, sleep, exchangeService, dailyRatesService } = this
+    const self = this
+    return tryBlock(async function* () {
+      yield* validateStatementInput(input)
 
-      this.logger.info(
+      logger.info(
         {
           claimIds: input.claimIds,
           exchangeAccountIds: input.exchangeAccountIds,
@@ -330,7 +329,7 @@ export class StatementService {
 
       // 1. Look up on-chain account descriptors
       const claimIds = [...new Set(input.claimIds)]
-      const accountRows = await this.getAccountRows(claimIds)
+      const accountRows = await self.getAccountRows(claimIds)
       const hasOnchainAccounts = accountRows.length > 0
       const hasExchangeAccounts = (input.exchangeAccountIds?.length ?? 0) > 0
 
@@ -349,19 +348,19 @@ export class StatementService {
 
       // 2. Fetch on-chain transactions for each account
       if (hasOnchainAccounts) {
-        this.logger.info({ accountCount: accountRows.length }, 'Found on-chain accounts for statement')
+        logger.info({ accountCount: accountRows.length }, 'Found on-chain accounts for statement')
         for (const [i, row] of accountRows.entries()) {
-          this.logger.info(
+          logger.info(
             { account: row.display_name, index: i + 1, total: accountRows.length },
             'Fetching transactions for account',
           )
           const accountResult = Account.fromDescriptor(row.descriptor)
           if (accountResult.isErr()) {
-            this.logger.warn({ accountId: row.id }, 'Failed to parse descriptor')
+            logger.warn({ accountId: row.id }, 'Failed to parse descriptor')
             continue
           }
 
-          const [activeAccount] = await this.db
+          const [activeAccount] = await db
             .select({ id: accounts.id })
             .from(accounts)
             .where(and(eq(accounts.id, row.id), isNull(accounts.deletedAt)))
@@ -369,23 +368,19 @@ export class StatementService {
             return Err(new Error(`Account "${row.display_name}" was archived while generating the statement`))
           }
 
-          const txResult = await fetchTransactionEntries({
+          const entries = yield* fetchTransactionEntries({
             account: accountResult.unwrap(),
-            onchainProvider: this.onchainProvider,
-            mempoolApiUrl: this.mempoolApiUrl,
-            logger: this.logger,
-            sleep: this.sleep,
+            onchainProvider,
+            mempoolApiUrl,
+            logger,
+            sleep,
+          }).inspectErr((err) => {
+            logger.error({ accountId: row.id, err }, 'Failed to fetch transactions')
           })
-          if (txResult.isErr()) {
-            this.logger.error({ accountId: row.id, err: txResult.unwrapErr() }, 'Failed to fetch transactions')
-            return Err(txResult.unwrapErr())
-          }
-
-          const entries = txResult.unwrap()
           const aggregated = calculateAccountTransactions(entries, row.display_name)
           const sorted = sortTxs(aggregated)
           transactionMap[row.id] = { displayName: row.display_name, transactions: sorted }
-          this.logger.info(
+          logger.info(
             { account: row.display_name, rawEntries: entries.length, aggregated: aggregated.length },
             'Account transactions fetched',
           )
@@ -395,9 +390,9 @@ export class StatementService {
       // 3. Fetch exchange account data
       if (hasExchangeAccounts) {
         const exchangeAccountIds = input.exchangeAccountIds ?? []
-        const allExchangeAccounts = await this.exchangeService.listAccounts()
+        const allExchangeAccounts = await exchangeService.listAccounts()
         const selectedAccounts = allExchangeAccounts.filter((a) => exchangeAccountIds.includes(a.id))
-        this.logger.info({ exchangeAccountCount: selectedAccounts.length }, 'Found exchange accounts for statement')
+        logger.info({ exchangeAccountCount: selectedAccounts.length }, 'Found exchange accounts for statement')
 
         const disconnectedAccounts = selectedAccounts.filter((a) => a.connectionStatus === 'needs_reconnect')
         if (disconnectedAccounts.length > 0) {
@@ -413,7 +408,7 @@ export class StatementService {
         // Coinbase: fetch real transaction history
         const coinbaseAccounts = selectedAccounts.filter((a) => a.exchange === 'coinbase')
         for (const account of coinbaseAccounts) {
-          const coinbaseEntries = await this.exchangeService.getCoinbaseTransactionEntries([account.id])
+          const coinbaseEntries = await exchangeService.getCoinbaseTransactionEntries([account.id])
           if (coinbaseEntries.isOk()) {
             const entries = coinbaseEntries.unwrap()
             const label = exchangeStatementName(account)
@@ -427,12 +422,9 @@ export class StatementService {
               accountName: label,
             }))
             transactionMap[account.id] = { displayName: label, transactions: sortTxs(aggregated) }
-            this.logger.info({ account: label, entries: aggregated.length }, 'Coinbase transactions added to statement')
+            logger.info({ account: label, entries: aggregated.length }, 'Coinbase transactions added to statement')
           } else {
-            this.logger.warn(
-              { err: coinbaseEntries.unwrapErr() },
-              'Failed to fetch Coinbase transactions for statement',
-            )
+            logger.warn({ err: coinbaseEntries.unwrapErr() }, 'Failed to fetch Coinbase transactions for statement')
           }
         }
 
@@ -442,7 +434,7 @@ export class StatementService {
           const label = exchangeStatementName(account)
 
           // Check for imported statement transactions — aggregate to daily net in/out
-          const stmtTxs = await this.exchangeService.listStatementTransactions(account.id)
+          const stmtTxs = await exchangeService.listStatementTransactions(account.id)
           if (stmtTxs.length > 0) {
             const dailyAgg = new Map<string, { netIn: bigint; netOut: bigint; date: Date }>()
             for (const tx of stmtTxs) {
@@ -490,13 +482,13 @@ export class StatementService {
               }
             }
             transactionMap[account.id] = { displayName: label, transactions: sortTxs(aggregated) }
-            this.logger.info(
+            logger.info(
               { account: label, rawTxCount: stmtTxs.length, dailyEntries: aggregated.length },
               'Daily-aggregated statement transactions added to statement',
             )
           } else {
             // Fall back to snapshot deltas
-            const snapshots = await this.getExchangeSnapshots(account.id)
+            const snapshots = await self.getExchangeSnapshots(account.id)
 
             const dailyBalances = new Map<string, { balance: bigint; date: Date }>()
             for (const snapshot of snapshots) {
@@ -525,7 +517,7 @@ export class StatementService {
               previousBalance = balance
             }
             transactionMap[account.id] = { displayName: label, transactions: sortTxs(aggregated) }
-            this.logger.info(
+            logger.info(
               { account: label, snapshots: snapshots.length, dailyEntries: aggregated.length },
               'Snapshot-based exchange transactions added to statement',
             )
@@ -534,27 +526,19 @@ export class StatementService {
       }
 
       // 4. Fetch daily rates for the date range
-      this.logger.info('Fetching daily rates from mempool.space')
+      logger.info('Fetching daily rates from mempool.space')
       const requiredDates = getRequiredRateDates(input.openingDate, input.closingDate, input.timezone, transactionMap)
-      const ratesResult = await this.dailyRatesService.getDailyRates(
-        input.openingDate,
-        input.closingDate,
-        input.quoteCurrency ?? 'USD',
-        requiredDates,
-      )
-      if (ratesResult.isErr()) {
-        this.logger.error({ err: ratesResult.unwrapErr().message }, 'Failed to fetch daily rates')
-        return Err(ratesResult.unwrapErr())
-      }
-      const coverage = validateStatementRates(requiredDates, ratesResult.unwrap())
-      if (coverage.isErr()) {
-        return Err(coverage.unwrapErr())
-      }
-      this.logger.info('Statement data generation complete')
+      const dailyRates = yield* dailyRatesService
+        .getDailyRates(input.openingDate, input.closingDate, input.quoteCurrency ?? 'USD', requiredDates)
+        .inspectErr((err) => {
+          logger.error({ err: err.message }, 'Failed to fetch daily rates')
+        })
+      yield* validateStatementRates(requiredDates, dailyRates)
+      logger.info('Statement data generation complete')
 
-      return Ok({ transactionMap, dailyRates: ratesResult.unwrap() })
-    },
-  )
+      return Ok({ transactionMap, dailyRates })
+    })
+  }
 
   // ─── Private helpers ────────────────────────────────────────────────────────
 

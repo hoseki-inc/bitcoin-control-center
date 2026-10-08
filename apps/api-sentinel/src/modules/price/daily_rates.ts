@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
-import { Err, Ok, type Result, asyncFn } from '@hoseki/packages/result'
+import type { AsyncResult } from '@hoseki/packages/result'
+import { Err, Ok, type Result, tryBlock } from '@hoseki/packages/result'
 import { parseUnknown } from '@hoseki/packages/result/lib/parse'
 import { type StatementQuoteCurrency, StatementQuoteCurrencySchema } from '@hoseki/packages/schemas/statement-quote'
 import { Decimal } from 'decimal.js'
@@ -104,13 +105,15 @@ export class DailyRatesService {
     )
   }
 
-  public getDailyRates = asyncFn(
-    async (
-      openingDate: Date,
-      closingDate: Date,
-      quoteCurrency: StatementQuoteCurrency = 'USD',
-      requiredDates?: Date[],
-    ): Promise<Result<DailyRates, Error>> => {
+  public getDailyRates = (
+    openingDate: Date,
+    closingDate: Date,
+    quoteCurrency: StatementQuoteCurrency = 'USD',
+    requiredDates?: Date[],
+  ): AsyncResult<DailyRates, Error> => {
+    const { cache } = this
+    const self = this
+    return tryBlock(async function* () {
       if (
         !Number.isFinite(openingDate.getTime()) ||
         !Number.isFinite(closingDate.getTime()) ||
@@ -140,7 +143,7 @@ export class DailyRatesService {
       for (let i = 0; i < days.length; i += DailyRatesService.CONCURRENCY) {
         const batch = days.slice(i, i + DailyRatesService.CONCURRENCY)
         const results = await Promise.all(
-          batch.map(async (target) => ({ target, result: await this.getQuoteWithFallback(target, quoteCurrency) })),
+          batch.map(async (target) => ({ target, result: await self.getQuoteWithFallback(target, quoteCurrency) })),
         )
         // Choose each day's quote only once the whole batch has finished, from everything now
         // cached, so the choice depends on which requests succeeded rather than on when their
@@ -148,7 +151,7 @@ export class DailyRatesService {
         const now = Date.now()
         for (const { target, result } of results) {
           const { oldest, newest } = quoteWindow(target, now)
-          const quote = await this.cache.find(quoteCurrency, target, oldest, newest)
+          const quote = await cache.find(quoteCurrency, target, oldest, newest)
           if (quote) {
             chosen.set(target, quote)
           } else if (result.isOk()) {
@@ -166,15 +169,15 @@ export class DailyRatesService {
       const providerUrls = [
         ...new Set(Object.values(rates).flatMap((rate) => (rate.providerUrl !== undefined ? [rate.providerUrl] : []))),
       ].sort()
-      return Ok({
+      return Ok<DailyRates>({
         rates,
         source: 'mempool',
         quoteCurrency,
         providerUrls,
         providerUrl: providerUrls.length === 1 ? providerUrls[0] : undefined,
       })
-    },
-  )
+    })
+  }
 
   private async getQuoteWithFallback(
     target: number,

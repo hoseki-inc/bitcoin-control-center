@@ -1,4 +1,4 @@
-// Export the vendored Patina v3 core alongside Control Center's Result utilities.
+// Export the locally maintained Patina-derived core alongside Control Center's Result utilities.
 export * from './lib/core/index.ts'
 // Custom utilities
 export * from './lib/async.ts'

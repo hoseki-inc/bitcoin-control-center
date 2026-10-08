@@ -1,4 +1,4 @@
-import { Err, Ok } from '@hoseki/packages/result'
+import { AsyncOk, Err, Ok } from '@hoseki/packages/result'
 import pino from 'pino'
 import { describe, expect, it, vi } from 'vitest'
 import { ElectrumClient } from '../../clients/electrum'
@@ -77,7 +77,7 @@ describe('addressToScripthash', () => {
     const address = Wallets.satoshiAddress
     const result = addressToScripthash(address)
     expect(result.isOk()).toBe(true)
-    const scripthash = result.unwrap()
+    const scripthash = result.expect('Expected successful result')
     // Known scripthash for this address
     expect(scripthash).toMatch(/^[a-f0-9]{64}$/)
     expect(scripthash).toHaveLength(64)
@@ -87,7 +87,7 @@ describe('addressToScripthash', () => {
     for (const address of Wallets.allAddressTypes) {
       const result = addressToScripthash(address)
       expect(result.isOk()).toBe(true)
-      const scripthash = result.unwrap()
+      const scripthash = result.expect('Expected successful result')
       expect(scripthash).toMatch(/^[a-f0-9]{64}$/)
     }
   })
@@ -97,7 +97,7 @@ describe('addressToScripthash', () => {
     for (const address of Wallets.allAddressTypes) {
       const result = addressToScripthash(address)
       expect(result.isOk()).toBe(true)
-      hashes.add(result.unwrap())
+      hashes.add(result.expect('Expected successful result'))
     }
     expect(hashes.size).toBe(Wallets.allAddressTypes.length)
   })
@@ -111,7 +111,7 @@ describe('ElectrumProvider', () => {
       const getBlockHeader = vi.fn().mockReturnValue(Ok(GENESIS_HEADER_HEX))
       const client = mockElectrumClient({ getBlockHeader })
       const provider = new ElectrumProvider(Network.Mainnet, { logger: mockLogger, electrum: client })
-      const block = (await provider.getBlock(0)).unwrap()
+      const block = (await provider.getBlock(0)).expect('Expected successful result')
       expect(getBlockHeader).toHaveBeenCalledWith(0)
       expect(block.height).toBe(0)
       expect(block.hash).toBe('000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f')
@@ -121,7 +121,7 @@ describe('ElectrumProvider', () => {
       const failure = new Error('Header unavailable')
       const client = mockElectrumClient({ getBlockHeader: vi.fn().mockReturnValue(Err(failure)) })
       const provider = new ElectrumProvider(Network.Mainnet, { logger: mockLogger, electrum: client })
-      expect((await provider.getBlock(0)).unwrapErr()).toBe(failure)
+      expect((await provider.getBlock(0)).expectErr('Expected failed result')).toBe(failure)
     })
 
     it('should parse block header and return tip info', async () => {
@@ -138,7 +138,7 @@ describe('ElectrumProvider', () => {
       const result = await provider.getBlocksTip()
 
       expect(result.isOk()).toBe(true)
-      const block = result.unwrap()
+      const block = result.expect('Expected successful result')
       expect(block.height).toBe(0)
       expect(block.hash).toMatch(/^[a-f0-9]{64}$/)
       // Genesis block hash
@@ -148,13 +148,36 @@ describe('ElectrumProvider', () => {
   })
 
   describe('areAddressesUsed', () => {
+    it('uses the replacement client for later address batches', async () => {
+      const getHistory = vi.fn<ElectrumClient['getHistory']>().mockReturnValue(AsyncOk([]))
+      const client = mockElectrumClient({ getHistory })
+      const replacementHistory = vi
+        .fn<ElectrumClient['getHistory']>()
+        .mockReturnValue(AsyncOk([{ tx_hash: '1'.repeat(64), height: 100 }]))
+      const replacement = mockElectrumClient({ getHistory: replacementHistory })
+      const provider = new ElectrumProvider(Network.Mainnet, { logger: mockLogger, electrum: client })
+      const account = Wallets.singlesigNativeSegwitAccount
+      const addresses = new IndexSet(account.receiveAddresses(0, 11, Network.Mainnet))
+
+      const pending = provider.areAddressesUsed(addresses)
+      expect(getHistory).toHaveBeenCalledTimes(10)
+      provider.deps.electrum = replacement
+      client.disconnect()
+      const used = (await pending).expect('Expected discovery to continue after switching clients')
+
+      expect(getHistory).toHaveBeenCalledTimes(10)
+      expect(replacementHistory).toHaveBeenCalledOnce()
+      expect(used.size).toBe(1)
+      expect(used.has(account.receiveAddress(10, Network.Mainnet))).toBe(true)
+    })
+
     it('should return addresses that have transaction history', async () => {
       const usedAddress = Wallets.legacyAddress
       const unusedAddress = Wallets.segwitAddress
 
       const client = mockElectrumClient({
         getHistory: vi.fn().mockImplementation((scripthash: string) => {
-          const usedScripthash = addressToScripthash(usedAddress).unwrap()
+          const usedScripthash = addressToScripthash(usedAddress).expect('Expected successful result')
           if (scripthash === usedScripthash) {
             return Ok([{ tx_hash: 'abc'.padEnd(64, '0'), height: 100 }] satisfies ScripthashHistoryEntry[])
           }
@@ -167,7 +190,7 @@ describe('ElectrumProvider', () => {
       const result = await provider.areAddressesUsed(addresses)
 
       expect(result.isOk()).toBe(true)
-      const used = result.unwrap()
+      const used = result.expect('Expected successful result')
       expect(used.size).toBe(1)
       expect(used.has(usedAddress)).toBe(true)
       expect(used.has(unusedAddress)).toBe(false)
@@ -183,11 +206,36 @@ describe('ElectrumProvider', () => {
       const result = await provider.areAddressesUsed(addresses)
 
       expect(result.isOk()).toBe(true)
-      expect(result.unwrap().size).toBe(0)
+      expect(result.expect('Expected successful result').size).toBe(0)
     })
   })
 
   describe('getConfirmedAddressBalances', () => {
+    it('uses the replacement client for later balance batches', async () => {
+      const getBalance = vi
+        .fn<ElectrumClient['getBalance']>()
+        .mockReturnValue(AsyncOk({ confirmed: 0, unconfirmed: 0 }))
+      const client = mockElectrumClient({ getBalance })
+      const replacementBalance = vi
+        .fn<ElectrumClient['getBalance']>()
+        .mockReturnValue(AsyncOk({ confirmed: 150_000, unconfirmed: 10_000 }))
+      const replacement = mockElectrumClient({ getBalance: replacementBalance })
+      const provider = new ElectrumProvider(Network.Mainnet, { logger: mockLogger, electrum: client })
+      const account = Wallets.singlesigNativeSegwitAccount
+      const addresses = new IndexSet(account.receiveAddresses(0, 11, Network.Mainnet))
+
+      const pending = provider.getConfirmedAddressBalances(addresses)
+      expect(getBalance).toHaveBeenCalledTimes(10)
+      provider.deps.electrum = replacement
+      client.disconnect()
+      const balances = (await pending).expect('Expected balances to continue after switching clients')
+
+      expect(getBalance).toHaveBeenCalledTimes(10)
+      expect(replacementBalance).toHaveBeenCalledOnce()
+      expect(balances.size).toBe(11)
+      expect(balances.get(account.receiveAddress(10, Network.Mainnet))).toBe(150_000n)
+    })
+
     it('should return balances for addresses', async () => {
       const address = Wallets.segwitAddress
 
@@ -202,7 +250,7 @@ describe('ElectrumProvider', () => {
       const result = await provider.getConfirmedAddressBalances(addresses)
 
       expect(result.isOk()).toBe(true)
-      const balances = result.unwrap()
+      const balances = result.expect('Expected successful result')
       expect(balances.get(address)).toBe(150_000n) // Only confirmed, not unconfirmed
     })
 
@@ -217,7 +265,38 @@ describe('ElectrumProvider', () => {
       const result = await provider.getConfirmedAddressBalances(new IndexSet([address]))
 
       expect(result.isOk()).toBe(true)
-      expect(result.unwrap().get(address)).toBe(0n)
+      expect(result.expect('Expected successful result').get(address)).toBe(0n)
+    })
+  })
+
+  describe('getUtxoAccumulationEntries', () => {
+    it('uses the replacement client when the connection changes during discovery', async () => {
+      const listUnspent = vi.fn<ElectrumClient['listUnspent']>().mockReturnValue(AsyncOk([]))
+      const client = mockElectrumClient({ listUnspent })
+      const replacementUnspent = vi
+        .fn<ElectrumClient['listUnspent']>()
+        .mockReturnValue(AsyncOk([{ tx_hash: '1'.repeat(64), tx_pos: 0, height: 100, value: 150_000 }]))
+      const replacement = mockElectrumClient({
+        listUnspent: replacementUnspent,
+        headersSubscribe: vi
+          .fn<ElectrumClient['headersSubscribe']>()
+          .mockReturnValue(AsyncOk({ height: 100, hex: TX_BLOCK_HEADER_HEX })),
+      })
+      const provider = new ElectrumProvider(Network.Mainnet, { logger: mockLogger, electrum: client })
+      const discovery = vi
+        .spyOn(provider, 'discoverAccount')
+        .mockReturnValue(AsyncOk({ lastUsedReceiveIndex: 0, lastUsedChangeIndex: -1 }))
+      const account = Wallets.singlesigNativeSegwitAccount
+
+      const pending = provider.getUtxoAccumulationEntries(account)
+      expect(discovery).toHaveBeenCalledOnce()
+      provider.deps.electrum = replacement
+      client.disconnect()
+      const entries = (await pending).expect('Expected UTXOs from the replacement client')
+
+      expect(listUnspent).not.toHaveBeenCalled()
+      expect(replacementUnspent).toHaveBeenCalledOnce()
+      expect(entries).toEqual([{ value: 150_000n, height: 100, estimatedTimestamp: new Date(TX_BLOCK_TIME * 1000) }])
     })
   })
 
@@ -244,7 +323,7 @@ describe('ElectrumProvider', () => {
         results.push(result)
       }
       expect(results).toHaveLength(1)
-      expect(results[0]?.unwrapErr()).toBe(failure)
+      expect(results[0]?.expectErr('Expected failed result')).toBe(failure)
       expect(getTransaction).not.toHaveBeenCalled()
     })
 
@@ -282,7 +361,7 @@ describe('ElectrumProvider', () => {
 
       for await (const entry of provider.getTransactionEntries(addresses)) {
         expect(entry.isOk()).toBe(true)
-        entries.push(entry.unwrap())
+        entries.push(entry.expect('Expected successful result'))
       }
 
       expect(entries).toHaveLength(1)
@@ -326,7 +405,7 @@ describe('ElectrumProvider', () => {
       const entries: TransactionEntry[] = []
 
       for await (const entry of provider.getTransactionEntries(addresses)) {
-        entries.push(entry.unwrap())
+        entries.push(entry.expect('Expected successful result'))
       }
 
       expect(entries).toHaveLength(1)
@@ -346,8 +425,8 @@ describe('ElectrumProvider', () => {
         ],
       })
 
-      const receiveScripthash = addressToScripthash(receiveAddress).unwrap()
-      const changeScripthash = addressToScripthash(changeAddress).unwrap()
+      const receiveScripthash = addressToScripthash(receiveAddress).expect('Expected successful result')
+      const changeScripthash = addressToScripthash(changeAddress).expect('Expected successful result')
       const headerNotification: HeaderNotification = { height: 800_000, hex: GENESIS_HEADER_HEX }
 
       const getTransaction = vi.fn().mockImplementation((txHash: string) => {
@@ -379,7 +458,7 @@ describe('ElectrumProvider', () => {
       const entries: TransactionEntry[] = []
 
       for await (const entry of provider.getTransactionEntries(addresses)) {
-        entries.push(entry.unwrap())
+        entries.push(entry.expect('Expected successful result'))
       }
 
       expect(getTransaction).toHaveBeenCalledTimes(2)

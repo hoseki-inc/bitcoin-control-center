@@ -1,5 +1,6 @@
 import * as crypto from 'node:crypto'
-import { Err, Ok, Result, asyncFn, parseUnknown } from '@hoseki/packages/result'
+import type { AsyncResult } from '@hoseki/packages/result'
+import { Err, Ok, Result, parseUnknown, tryBlock } from '@hoseki/packages/result'
 import { SafeHttpErrorKind, type SafeResponse, safeHttp } from '@hoseki/packages/safe-http'
 import type { z } from 'zod'
 import type { Credentials } from './credentials'
@@ -56,33 +57,23 @@ function generateNonce(): string {
  *
  * But I tried the official authenticator, and that does not work either: https://github.com/coinbase/coinbase-sdk-nodejs/blob/master/src/coinbase/authenticator.ts
  */
-const signCdp = asyncFn(
-  async (args: {
-    name: string
-    secret: string
-    method: 'GET' | 'POST'
-    url: string
-    path: string
-  }): Promise<Result<string, Error>> => {
-    const pemPrivateKey = extractPemKey(args.secret)
-    if (pemPrivateKey.isErr()) {
-      return Err(pemPrivateKey.error())
-    }
-
-    const pemKey = pemPrivateKey.value()
+const signCdp = (args: {
+  name: string
+  secret: string
+  method: 'GET' | 'POST'
+  url: string
+  path: string
+}): AsyncResult<string, Error> =>
+  tryBlock(async function* () {
+    const pemKey = yield* extractPemKey(args.secret)
 
     // Parse as PEM format (the normalization handles escaped newlines and whitespace)
-    const privateKeyRes = Result.fromThrowable(() => crypto.createPrivateKey(pemKey)).andThen((key) =>
+    const privateKey = yield* Result.fromThrowable(() => crypto.createPrivateKey(pemKey)).andThen((key) =>
       key.asymmetricKeyType === 'ec' && key.asymmetricKeyDetails?.namedCurve === 'prime256v1'
         ? Ok(key)
         : Err(new Error('Invalid key: expected a P-256 EC private key')),
     )
 
-    if (privateKeyRes.isErr()) {
-      return Err(privateKeyRes.error())
-    }
-
-    const privateKey = privateKeyRes.value()
     const nonce = generateNonce()
 
     const fields = {
@@ -117,8 +108,7 @@ const signCdp = asyncFn(
       })
       return `${signingInput}.${signature.toString('base64url')}`
     })
-  },
-)
+  })
 
 function parseData<S extends z.ZodTypeAny>(response: SafeResponse, schema: S) {
   const clone = response.clone()
@@ -158,10 +148,10 @@ export interface RequestArgs<T extends z.ZodTypeAny, E extends z.ZodTypeAny> {
   json?: JsonRecord
 }
 
-export const request = asyncFn(
-  async <ST extends z.ZodTypeAny, SE extends z.ZodTypeAny>(
-    args: RequestArgs<ST, SE>,
-  ): Promise<Result<{ data: z.infer<ST>; response: SafeResponse }, ApiError>> => {
+export const request = <ST extends z.ZodTypeAny, SE extends z.ZodTypeAny>(
+  args: RequestArgs<ST, SE>,
+): AsyncResult<{ data: z.infer<ST>; response: SafeResponse }, ApiError> =>
+  tryBlock(async function* () {
     const headers: CoinbaseRequestHeaders = {
       'CB-VERSION': args.version,
       Accept: 'application/json',
@@ -200,17 +190,14 @@ export const request = asyncFn(
         headers['CB-ACCESS-TIMESTAMP'] = timestamp
         headers['CB-ACCESS-KEY'] = args.credentials.key
       } else {
-        const token = await signCdp({
+        const token = yield* signCdp({
           path,
           url: args.url,
           name: args.credentials.name,
           secret: args.credentials.secret,
           method: args.method,
-        })
-        if (token.isErr()) {
-          return Err(new ApiError(ErrorKind.UnexpectedFailure({ error: token.error() }), 'Failed to sign request'))
-        }
-        headers.Authorization = `Bearer ${token.value()}`
+        }).mapErr((error) => new ApiError(ErrorKind.UnexpectedFailure({ error }), 'Failed to sign request'))
+        headers.Authorization = `Bearer ${token}`
       }
     }
 
@@ -239,5 +226,4 @@ export const request = asyncFn(
         return parseErrorData(error.kind.cause, args.errorSchema)
       })
       .andThenAsync(async (response) => parseData<ST>(response, args.schema))
-  },
-)
+  })

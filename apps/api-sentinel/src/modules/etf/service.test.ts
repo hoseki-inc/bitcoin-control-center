@@ -19,7 +19,7 @@ async function setup() {
   const service = new EtfService({ db, logger })
   const account = (
     await service.createAccount({ displayName: 'ETF', holdings: [{ ticker: 'IBIT', shares: '1' }] })
-  ).unwrap()
+  ).expect('Expected successful result')
   return { db, service, account }
 }
 
@@ -28,8 +28,8 @@ it('only removes a holding once under concurrent requests', async () => {
   const [holding] = await service.listHoldings(account.id)
   assert(holding)
   const [first, second] = await Promise.all([service.removeHolding(holding.id), service.removeHolding(holding.id)])
-  expect(first.unwrap()).toBe(account.id)
-  expect(second.unwrapErr().message).toBe('ETF holding not found')
+  expect(first.expect('Expected successful result')).toBe(account.id)
+  expect(second.expectErr('Expected failed result').message).toBe('ETF holding not found')
   await expect(db.select().from(etfHoldings)).resolves.toHaveLength(0)
   await expect(service.computeAccountBalance(account.id)).resolves.toBe(0n)
 })
@@ -49,7 +49,7 @@ it('returns not found when the account was deleted before adding a holding', asy
   const { service, account } = await setup()
   await service.removeAccount(account.id)
   const added = await service.addHolding({ accountId: account.id, ticker: 'IBIT', shares: '2' })
-  expect(added.unwrapErr().message).toBe('ETF account not found')
+  expect(added.expectErr('Expected failed result').message).toBe('ETF account not found')
 })
 
 it('rolls back holding deletion when its balance snapshot cannot be written', async () => {

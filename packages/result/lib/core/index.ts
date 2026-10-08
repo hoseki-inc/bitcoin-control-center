@@ -1,4 +1,3 @@
-export * from './fn'
 export * from './async_option'
 export * from './option'
 export * from './error'

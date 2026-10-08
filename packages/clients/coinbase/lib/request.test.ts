@@ -73,10 +73,14 @@ describe.each([
     expect(result.isOk()).toBe(true)
     const outgoing = outgoingRequest(fetchMock)
     const { header, payload, signature } = tokenParts(outgoing)
-    const fields = parseUnknown(HeaderSchema, JSON.parse(Buffer.from(header, 'base64url').toString())).unwrap()
+    const fields = parseUnknown(HeaderSchema, JSON.parse(Buffer.from(header, 'base64url').toString())).expect(
+      'Expected successful result',
+    )
     expect(fields).toEqual({ alg: 'ES256', kid: keyName, typ: 'JWT', nonce: fields.nonce })
     expect(fields.nonce).toMatch(/^[0-9a-f]{32}$/)
-    const claims = parseUnknown(ClaimsSchema, JSON.parse(Buffer.from(payload, 'base64url').toString())).unwrap()
+    const claims = parseUnknown(ClaimsSchema, JSON.parse(Buffer.from(payload, 'base64url').toString())).expect(
+      'Expected successful result',
+    )
     expect(claims).toEqual({
       sub: keyName,
       iss: 'cdp',
@@ -122,8 +126,12 @@ it('generates a fresh nonce for each CDP request', async () => {
   }
   const first = tokenParts(outgoingRequest(fetchMock)).header
   const second = tokenParts(outgoingRequest(fetchMock, 1)).header
-  const firstNonce = parseUnknown(HeaderSchema, JSON.parse(Buffer.from(first, 'base64url').toString())).unwrap().nonce
-  const secondNonce = parseUnknown(HeaderSchema, JSON.parse(Buffer.from(second, 'base64url').toString())).unwrap().nonce
+  const firstNonce = parseUnknown(HeaderSchema, JSON.parse(Buffer.from(first, 'base64url').toString())).expect(
+    'Expected successful result',
+  ).nonce
+  const secondNonce = parseUnknown(HeaderSchema, JSON.parse(Buffer.from(second, 'base64url').toString())).expect(
+    'Expected successful result',
+  ).nonce
   expect(firstNonce).not.toBe(secondNonce)
 })
 
@@ -160,7 +168,7 @@ it.each([
     errorSchema: z.object({ message: z.string() }),
   })
   expect(result.isErr()).toBe(true)
-  expect(result.unwrapErr().message).toBe('Failed to sign request')
+  expect(result.expectErr('Expected failed result').message).toBe('Failed to sign request')
   expect(fetchMock).not.toHaveBeenCalled()
 })
 

@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { Network } from '@hoseki/packages/bitcoin/network'
 import { ElectrumProvider } from '@hoseki/packages/bitcoin/onchain/electrum_provider'
 import { ElectrumClient } from '@hoseki/packages/clients/electrum'
-import { Err, Ok, asyncFn } from '@hoseki/packages/result'
+import { AsyncErr, AsyncOk } from '@hoseki/packages/result'
 import { Wallets } from '@hoseki/packages/testing'
 import pino from 'pino'
 import { assert, expect, it, onTestFinished, vi } from 'vitest'
@@ -38,18 +38,18 @@ function setup(body: JsonValue, transactionIds = [txid], pendingIds: { id: strin
     vi.fn(async () => Response.json(body)),
   )
   const electrum = new ElectrumClient({ host: 'localhost', port: 50001, protocol: 'tcp' })
-  vi.spyOn(electrum, 'getHistory').mockResolvedValue(
-    Ok([
+  vi.spyOn(electrum, 'getHistory').mockReturnValue(
+    AsyncOk([
       ...transactionIds.map((id) => ({ tx_hash: id, height: 800000 })),
       ...pendingIds.map(({ id, height }) => ({ tx_hash: id, height })),
     ]),
   )
   const onchainProvider = new ElectrumProvider(Network.Mainnet, { logger, electrum })
-  vi.spyOn(onchainProvider, 'discoverAccount').mockImplementation(
-    asyncFn(async () => Ok({ lastUsedReceiveIndex: 0, lastUsedChangeIndex: -1 })),
+  vi.spyOn(onchainProvider, 'discoverAccount').mockImplementation(() =>
+    AsyncOk({ lastUsedReceiveIndex: 0, lastUsedChangeIndex: -1 }),
   )
-  vi.spyOn(onchainProvider, 'getBlocksTip').mockImplementation(
-    asyncFn(async () => Ok({ height: 900000, hash: 'tip', timestamp: new Date() })),
+  vi.spyOn(onchainProvider, 'getBlocksTip').mockImplementation(() =>
+    AsyncOk({ height: 900000, hash: 'tip', timestamp: new Date() }),
   )
   // Retries happen without real waits; tests can inspect the requested delays.
   const sleep = vi.fn(async (_ms: number) => {})
@@ -72,7 +72,7 @@ it('accepts coinbase inputs and addressless outputs without changing balance cal
         extra: true,
       }),
     )
-    expect(result.unwrap()).toEqual([
+    expect(result.expect('Expected successful result')).toEqual([
       expect.objectContaining({
         value: 75n,
         blockHeight: 800000,
@@ -271,7 +271,7 @@ it('gives each lookup a timeout and releases failed responses', async () => {
 it('fails rather than skipping an address whose history lookup fails', async () => {
   await withTestSetup(async () => {
     const deps = setup(null)
-    vi.spyOn(deps.onchainProvider.deps.electrum, 'getHistory').mockResolvedValue(Err(new Error('Connection closed')))
+    vi.spyOn(deps.onchainProvider.deps.electrum, 'getHistory').mockReturnValue(AsyncErr(new Error('Connection closed')))
     const result = await fetchTransactionEntries(deps)
     expect(result.expectErr('a missing history must fail').message).toBe(
       'Could not fetch transaction history: Connection closed',
@@ -291,9 +291,7 @@ it('stops statement generation when a known transaction fails validation', async
       const dailyRatesService = new DailyRatesService({ ...deps, db: database })
       const rates = vi
         .spyOn(dailyRatesService, 'getDailyRates')
-        .mockImplementation(
-          asyncFn(async () => Ok({ rates: {}, source: 'mempool' as const, quoteCurrency: 'USD' as const })),
-        )
+        .mockImplementation(() => AsyncOk({ rates: {}, source: 'mempool' as const, quoteCurrency: 'USD' as const }))
       const service = new StatementService({
         ...deps,
         db: database,
@@ -336,6 +334,8 @@ it.each([
         status: { confirmed: true, block_height: 800000, block_time: blockTime },
       }),
     )
-    expect(result.unwrap()).toEqual([expect.objectContaining({ timestamp: new Date(expected) })])
+    expect(result.expect('Expected successful result')).toEqual([
+      expect.objectContaining({ timestamp: new Date(expected) }),
+    ])
   })
 })

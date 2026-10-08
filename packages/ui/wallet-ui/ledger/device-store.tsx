@@ -1,5 +1,6 @@
 import { DerivationPath, Network, type SingleSigAccountScriptType } from '@hoseki/packages/bitcoin'
-import { type AsyncResult, Err, Ok, Result, asyncFn } from '@hoseki/packages/result'
+import type { AsyncResult } from '@hoseki/packages/result'
+import { Err, Result, tryBlock } from '@hoseki/packages/result'
 import { HardwareDeviceError } from '@hoseki/packages/wallet'
 import { SCRIPT_TYPE_TO_DERIVATION_PATH } from '@hoseki/packages/wallet/script-type-utils'
 import LedgerBtcApp from '@ledgerhq/hw-app-btc'
@@ -65,63 +66,58 @@ export function createLedgerStore(
       set({ isConnected: false })
     }
 
-    async function getBitcoinXpubFromPath_INTERNAL(path: string): Promise<Result<XpubWithPath, HardwareDeviceError>> {
-      const { isInitialized, btc, transport } = get()
-      if (!isInitialized) {
-        return notInitializedError()
-      }
+    function getBitcoinXpubFromPath_INTERNAL(path: string): AsyncResult<XpubWithPath, HardwareDeviceError> {
+      return tryBlock(async function* () {
+        const { isInitialized, btc, transport } = get()
+        if (!isInitialized) {
+          return notInitializedError()
+        }
 
-      const derivationPath = DerivationPath.fromString(path)
-      if (derivationPath.isErr()) {
-        return Err(
-          new HardwareDeviceError(
-            derivationPath.unwrapErr().message,
-            'ledger',
-            `The derivation path ${path} is invalid.`,
-            { path },
-          ),
-        )
-      }
+        // Start the SDK call in the same turn as reading the connection state.
+        // Async yield* here would let reset() close the captured transport first.
+        return DerivationPath.fromString(path)
+          .mapErr(
+            (error) =>
+              new HardwareDeviceError(error.message, 'ledger', `The derivation path ${path} is invalid.`, { path }),
+          )
+          .andThenAsync(async (derivationPath) => {
+            let xpubRes: Result<string, HardwareDeviceError>
+            if (!derivationPath.isStandardAccount()) {
+              const appClient = new AppClient(transport)
+              xpubRes = await handleLedgerSdkCall(appClient.getExtendedPubkey(true, pathStringToArray(path)))
+              browserLogger.debug('Non-standard path - using legacy appClient.getExtendedPubkey', { path })
+            } else {
+              xpubRes = await handleLedgerSdkCall(
+                btc.getWalletXpub({ path, xpubVersion: Network.Mainnet.bip32.public }),
+                {
+                  path,
+                },
+              )
+            }
 
-      let xpubRes: Result<string, HardwareDeviceError>
-      if (!derivationPath.unwrap().isStandardAccount()) {
-        const appClient = new AppClient(transport)
-        xpubRes = await handleLedgerSdkCall(appClient.getExtendedPubkey(true, pathStringToArray(path)))
-        browserLogger.debug('Non-standard path - using legacy appClient.getExtendedPubkey', { path })
-      } else {
-        xpubRes = await handleLedgerSdkCall(btc.getWalletXpub({ path, xpubVersion: Network.Mainnet.bip32.public }), {
-          path,
-        })
-      }
-
-      if (xpubRes.isErr()) {
-        return Err(xpubRes.unwrapErr())
-      }
-      return Ok({ xpub: xpubRes.unwrap(), path })
+            return xpubRes.map((xpub) => ({ xpub, path }))
+          })
+      })
     }
 
     type LedgerCallContext = { path?: string }
 
-    async function handleLedgerSdkCall<T>(
+    function handleLedgerSdkCall<T>(
       sdkCall: Promise<T>,
       extraContext: LedgerCallContext = {},
-    ): Promise<Result<T, HardwareDeviceError>> {
-      const sdkResult = await Result.fromPromise(sdkCall)
-      if (sdkResult.isErr()) {
+    ): AsyncResult<T, HardwareDeviceError> {
+      return Result.fromPromise(sdkCall).mapErr((error) => {
         // SAFETY: fromPromise normalizes rejections to Error; Ledger status fields are optional metadata handled below.
-        const err = sdkResult.unwrapErr() as LedgerError
+        const err = error as LedgerError
         browserLogger.error(err, `Ledger error: ${err.message}`)
-        return Err(
-          new HardwareDeviceError(err.message, 'ledger', LedgerErrors.getErrorMessage(err), {
-            statusText: err.statusText,
-            statusCode: err.statusCode,
-            name: err.name,
-            message: err.message,
-            ...extraContext,
-          }),
-        )
-      }
-      return Ok(sdkResult.unwrap())
+        return new HardwareDeviceError(err.message, 'ledger', LedgerErrors.getErrorMessage(err), {
+          statusText: err.statusText,
+          statusCode: err.statusCode,
+          name: err.name,
+          message: err.message,
+          ...extraContext,
+        })
+      })
     }
 
     return {
@@ -183,23 +179,20 @@ export function createLedgerStore(
         browserLogger.debug({ newState: store.getInitialState() }, 'Ledger was reset')
       },
 
-      getBitcoinXpub: asyncFn(async (scriptType: SingleSigAccountScriptType, account: number) => {
-        const path = `${SCRIPT_TYPE_TO_DERIVATION_PATH[scriptType]}/0'/${account}'`
-        return getBitcoinXpubFromPath_INTERNAL(path)
-      }),
+      getBitcoinXpub: (scriptType: SingleSigAccountScriptType, account: number) =>
+        getBitcoinXpubFromPath_INTERNAL(`${SCRIPT_TYPE_TO_DERIVATION_PATH[scriptType]}/0'/${account}'`),
 
-      getBitcoinXpubFromPath: asyncFn(async (path: string) => {
-        return getBitcoinXpubFromPath_INTERNAL(path)
-      }),
+      getBitcoinXpubFromPath: getBitcoinXpubFromPath_INTERNAL,
 
-      signMessage: asyncFn(async (path: string, message: string) => {
-        const { isInitialized, btc } = get()
-        if (!isInitialized) {
-          return notInitializedError()
-        }
+      signMessage: (path: string, message: string) =>
+        tryBlock(async function* () {
+          const { isInitialized, btc } = get()
+          if (!isInitialized) {
+            return notInitializedError()
+          }
 
-        return handleLedgerSdkCall(btc.signMessage(path, Buffer.from(message).toString('hex')), { path })
-      }),
+          return handleLedgerSdkCall(btc.signMessage(path, Buffer.from(message).toString('hex')), { path })
+        }),
     }
   })
 }

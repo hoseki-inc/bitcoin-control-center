@@ -140,10 +140,10 @@ describe('statement PDF currencies', () => {
     const { quoteValue, ...amount } = sampleCustomStatement.summary.closingBalance
     const legacy = parseUnknown(AmountSchema, { ...amount, usdValue: quoteValue })
     expect(legacy.isOk()).toBe(true)
-    expect(legacy.unwrap().quoteValue.equals(quoteValue)).toBe(true)
+    expect(legacy.expect('Expected successful result').quoteValue.equals(quoteValue)).toBe(true)
     const { quoteCurrency: _, ...statement } = sampleCustomStatement
     const parsed = parseUnknown(PdfStatementSchema, statement)
-    expect(parsed.unwrap().quoteCurrency).toBe('USD')
+    expect(parsed.expect('Expected successful result').quoteCurrency).toBe('USD')
   })
 
   for (const quoteCurrency of StatementQuoteCurrencySchema.options) {

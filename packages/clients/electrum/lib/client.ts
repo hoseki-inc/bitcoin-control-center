@@ -1,5 +1,6 @@
 import { parseUnknown } from '@hoseki/packages/result'
-import { AsyncResult, Err, Ok, type Result, tryBlockAsync } from '@hoseki/packages/result'
+import type { AsyncResult } from '@hoseki/packages/result'
+import { Err, Ok, type Result, tryBlock } from '@hoseki/packages/result'
 // Re-import z for the raw string overload
 import { z } from 'zod'
 import { type ElectrumConnectionConfig, ElectrumServerError, ElectrumTimeoutError, ElectrumTransport } from './protocol'
@@ -72,40 +73,41 @@ export class ElectrumClient {
       return this.connectInFlight
     }
     const generation = this.generation
-    const inner = tryBlockAsync(
-      async function* (this: ElectrumClient) {
-        if (this.beforeConnect) {
-          yield* (await this.beforeConnect()).try()
-        }
-        if (generation !== this.generation) {
-          return Err(new Error('Connection closed'))
-        }
-        yield* this.transport.connect().try()
-        const handshake = await this.serverVersion()
-        if (handshake.isErr()) {
+    const { beforeConnect, transport } = this
+    const self = this
+    const inner = tryBlock(async function* () {
+      if (beforeConnect) {
+        yield* await beforeConnect()
+      }
+      if (generation !== self.generation) {
+        return Err(new Error('Connection closed'))
+      }
+      yield* transport.connect()
+      const version = yield* self
+        .serverVersion()
+        .inspectErr(() => {
           // The server refused the handshake or never answered it. Close the half-open connection,
           // and report a failed connection rather than a server answer, so a status check never
           // counts a refused handshake as the server being reachable.
-          this.dropConnection()
-          return Err(new Error(`Electrum handshake failed: ${handshake.unwrapErr().message}`))
-        }
-        this.negotiated = true
-        return Ok(handshake.unwrap())
-      }.bind(this),
-    )
-    const recorded = inner.then<Result<ServerVersion, Error>, never>((result) => {
-      // A later connect or disconnect owns the status once the generation changes.
-      if (generation === this.generation) {
-        this.reachable = result.isOk()
-        this.settled = true
-      }
-      return result
+          self.dropConnection()
+        })
+        .mapErr((error) => new Error(`Electrum handshake failed: ${error.message}`))
+      self.negotiated = true
+      return Ok(version)
     })
-    const tracked = new AsyncResult(
-      Promise.resolve(recorded).finally(() => {
-        this.connectInFlight = null
-      }),
-    )
+    const tracked = tryBlock(async function* () {
+      try {
+        const result = await inner
+        // A later connect or disconnect owns the status once the generation changes.
+        if (generation === self.generation) {
+          self.reachable = result.isOk()
+          self.settled = true
+        }
+        return result
+      } finally {
+        self.connectInFlight = null
+      }
+    })
     this.connectInFlight = tracked
     return tracked
   }
@@ -263,38 +265,35 @@ export class ElectrumClient {
   }
 
   private call<T>(method: string, params: unknown[], schema: z.ZodType<T>): AsyncResult<T, Error> {
-    return tryBlockAsync(
-      async function* (this: ElectrumClient) {
-        // Reconnect if the underlying socket is down. connect() dedupes concurrent
-        // reconnects via connectInFlight. Checking transport state (rather than
-        // isConnected(), which also requires negotiated=true) lets the recursive
-        // serverVersion() call from inside connect() proceed without deadlocking.
-        if (!this.transport.isConnected()) {
-          yield* this.connect().try()
+    const { transport } = this
+    const self = this
+    return tryBlock(async function* () {
+      // Reconnect if the underlying socket is down. connect() dedupes concurrent
+      // reconnects via connectInFlight. Checking transport state (rather than
+      // isConnected(), which also requires negotiated=true) lets the recursive
+      // serverVersion() call from inside connect() proceed without deadlocking.
+      if (!transport.isConnected()) {
+        yield* self.connect()
+      }
+      const connection = transport.connectionNumber
+      const raw = yield* transport.request(method, params).inspectErr((error) => {
+        // Drop a connection only when it has gone silent (often after sleep or a network change,
+        // when it never closes by itself), so the next request reconnects:
+        // - a timeout counts only if nothing at all arrived since this request was sent; a busy
+        //   server that is still answering other requests keeps its connection and their requests;
+        // - a socket or write error counts straight away;
+        // - a server's error answer, or a connection that already closed, leaves things alone, so
+        //   a late failure can't cancel a fresh connection another request has started opening.
+        const silent = error instanceof ElectrumTimeoutError ? error.silent : !(error instanceof ElectrumServerError)
+        if (silent && transport.isConnected() && transport.connectionNumber === connection) {
+          self.dropConnection()
         }
-        const connection = this.transport.connectionNumber
-        const requested = await this.transport.request(method, params)
-        if (requested.isErr()) {
-          const error = requested.unwrapErr()
-          // Drop a connection only when it has gone silent (often after sleep or a network change,
-          // when it never closes by itself), so the next request reconnects:
-          // - a timeout counts only if nothing at all arrived since this request was sent; a busy
-          //   server that is still answering other requests keeps its connection and their requests;
-          // - a socket or write error counts straight away;
-          // - a server's error answer, or a connection that already closed, leaves things alone, so
-          //   a late failure can't cancel a fresh connection another request has started opening.
-          const silent = error instanceof ElectrumTimeoutError ? error.silent : !(error instanceof ElectrumServerError)
-          if (silent && this.transport.isConnected() && this.transport.connectionNumber === connection) {
-            this.dropConnection()
-          }
-          return Err(error)
-        }
-        const raw = requested.unwrap()
-        const parsed = yield* parseUnknown(schema, raw)
-          .mapErr((err) => new Error(`Failed to parse response for ${method}: ${err.message}`, { cause: err }))
-          .try()
-        return Ok(parsed)
-      }.bind(this),
-    )
+      })
+      const parsed = yield* parseUnknown(schema, raw).mapErr(
+        (err) => new Error(`Failed to parse response for ${method}: ${err.message}`, { cause: err }),
+      )
+
+      return Ok(parsed)
+    })
   }
 }

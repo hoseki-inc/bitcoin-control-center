@@ -1,4 +1,5 @@
-import { type AsyncResult, Err, Ok, Result, asyncFn } from '@hoseki/packages/result'
+import type { AsyncResult } from '@hoseki/packages/result'
+import { Err, Ok, Result } from '@hoseki/packages/result'
 import TrezorConnectModule, {
   type AccountInfo,
   type Features,
@@ -82,30 +83,23 @@ export class TrezorService {
     return new HardwareDeviceError(payload.error, 'trezor', `Trezor error: ${payload.error}`, payload)
   }
 
-  private readonly handleTrezorSdkCall = asyncFn(
-    async <T>(sdkCall: Response<T>): Promise<Result<T, HardwareDeviceError>> => {
-      const sdkResult = await Result.fromPromise(sdkCall)
+  private readonly handleTrezorSdkCall = <T>(sdkCall: Response<T>): AsyncResult<T, HardwareDeviceError> =>
+    // An unexpected error was thrown by the Trezor SDK.
+    Result.fromPromise(sdkCall)
+      .mapErr((error) => this.unexpectedTrezorError(error))
+      .andThen((sdkResponse) => {
+        // Trezor SDK failed gracefully with an error message
+        if (!sdkResponse.success) {
+          return Err(this.expectedTrezorError(sdkResponse))
+        }
 
-      // An unexpected error was thrown by the Trezor SDK.
-      if (sdkResult.isErr()) {
-        return Err(this.unexpectedTrezorError(sdkResult.unwrapErr()))
-      }
+        // Despite Trezor's types disallowing it, a success response can contain an error in the payload
+        if (isPayloadWithError(sdkResponse.payload)) {
+          return Err(this.payloadContainsError(sdkResponse.payload))
+        }
 
-      const sdkResponse = sdkResult.unwrap()
-
-      // Trezor SDK failed gracefully with an error message
-      if (!sdkResponse.success) {
-        return Err(this.expectedTrezorError(sdkResponse))
-      }
-
-      // Despite Trezor's types disallowing it, a success response can contain an error in the payload
-      if (isPayloadWithError(sdkResponse.payload)) {
-        return Err(this.payloadContainsError(sdkResponse.payload))
-      }
-
-      return Ok(sdkResponse.payload)
-    },
-  )
+        return Ok(sdkResponse.payload)
+      })
 }
 
 // Trezor error example: { error: 'Action cancelled by user', code: 'Failure_ActionCancelled' }

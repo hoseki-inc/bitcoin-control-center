@@ -1,7 +1,7 @@
 import { createPrivateKey, sign } from 'node:crypto'
 import https from 'node:https'
-import { Err, Ok, asyncFn } from '@hoseki/packages/result'
-import type { Result } from '@hoseki/packages/result'
+import { Err, Ok, tryBlock } from '@hoseki/packages/result'
+import type { AsyncResult, Result } from '@hoseki/packages/result'
 import { z } from 'zod'
 
 const BASE_HOST = 'trading.robinhood.com'
@@ -247,21 +247,19 @@ export class RobinhoodClient {
   /**
    * Fetch BTC balance in satoshis.
    */
-  public getBtcBalance = asyncFn(async (): Promise<Result<bigint, Error>> => {
-    const holdingsResult = await this.getHoldings()
-    if (holdingsResult.isErr()) {
-      return Err(holdingsResult.unwrapErr())
-    }
+  public getBtcBalance = (): AsyncResult<bigint, Error> => {
+    const self = this
+    return tryBlock(async function* () {
+      const holdings = yield* await self.getHoldings()
+      const btcHolding = holdings.find((h) => h.asset_code === 'BTC')
+      if (!btcHolding) {
+        return Ok(0n)
+      }
 
-    const holdings = holdingsResult.unwrap()
-    const btcHolding = holdings.find((h) => h.asset_code === 'BTC')
-    if (!btcHolding) {
-      return Ok(0n)
-    }
-
-    const sats = BigInt(Math.round(Number(btcHolding.total_quantity) * 1e8))
-    return Ok(sats)
-  })
+      const sats = BigInt(Math.round(Number(btcHolding.total_quantity) * 1e8))
+      return Ok(sats)
+    })
+  }
 
   /**
    * Fetch orders with optional filtering.

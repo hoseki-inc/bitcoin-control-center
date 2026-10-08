@@ -1,5 +1,6 @@
-import { Err, ErrorWithCause, Ok, type Result } from '@hoseki/packages/result'
 import type { z } from 'zod'
+import { ErrorWithCause } from '../core/error'
+import { Err, Ok, type Result } from '../core/result'
 
 export class ParseError<E extends Error = Error> extends ErrorWithCause<E> {
   public readonly tag = 'ParseError'
@@ -33,7 +34,7 @@ export function parseInput<S extends z.ZodTypeAny>(
 
 export function parseUnknown<S extends z.ZodTypeAny, O extends z.infer<S>>(
   schema: S,
-  // oxlint-disable-next-line anti-slop/no-unknown-parameters -- Accept arbitrary runtime values so the supplied schema can validate them.
+  // oxlint-disable-next-line anti-slop/no-unknown-parameters -- This parser validates unknown input at the I/O boundary.
   input: unknown,
 ): Result<O, ParseError> {
   return parse(schema, input)

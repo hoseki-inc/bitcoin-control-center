@@ -55,7 +55,7 @@ describe('getXpubFrom', () => {
     })
 
     expect(result.isOk()).toBe(true)
-    expect(result.unwrap()?.toString()).toBe(xpub1.toString())
+    expect(result.expect('Expected successful result').toString()).toBe(xpub1.toString())
     expect(getXpubFromDevice).toHaveBeenCalledTimes(1)
     // Should be called with hardened-only path (which is the same as derivationPath1 since it's all hardened)
     expect(getXpubFromDevice).toHaveBeenCalledWith(derivationPath1)
@@ -74,7 +74,7 @@ describe('getXpubFrom', () => {
     })
 
     expect(result.isOk()).toBe(true)
-    expect(result.unwrap()?.toString()).toBe(xpub2.toString())
+    expect(result.expect('Expected successful result').toString()).toBe(xpub2.toString())
     expect(getXpubFromDevice).toHaveBeenCalledTimes(2)
     expect(getXpubFromDevice).toHaveBeenNthCalledWith(1, derivationPath1)
     expect(getXpubFromDevice).toHaveBeenNthCalledWith(2, derivationPath2)
@@ -90,7 +90,9 @@ describe('getXpubFrom', () => {
     })
 
     expect(result.isErr()).toBe(true)
-    expect(result.unwrapErr()?.message).toBe('No coldcard account found matching any keystore xpub')
+    expect(result.expectErr('Expected failed result').message).toBe(
+      'No coldcard account found matching any keystore xpub',
+    )
     expect(getXpubFromDevice).toHaveBeenCalledTimes(2)
   })
 
@@ -113,7 +115,7 @@ describe('getXpubFrom', () => {
     })
 
     expect(result.isOk()).toBe(true)
-    expect(result.unwrap()?.toString()).toBe(xpub2.toString())
+    expect(result.expect('Expected successful result').toString()).toBe(xpub2.toString())
     expect(getXpubFromDevice).toHaveBeenCalledTimes(1) // Only called once, skipped first keystore
     expect(getXpubFromDevice).toHaveBeenCalledWith(derivationPath2)
   })
@@ -135,7 +137,9 @@ describe('getXpubFrom', () => {
     })
 
     expect(result.isErr()).toBe(true)
-    expect(result.unwrapErr()?.message).toBe('No coldcard account found matching any keystore xpub')
+    expect(result.expectErr('Expected failed result').message).toBe(
+      'No coldcard account found matching any keystore xpub',
+    )
     expect(getXpubFromDevice).not.toHaveBeenCalled()
   })
 
@@ -168,7 +172,7 @@ describe('getXpubFrom', () => {
     })
 
     expect(result.isOk()).toBe(true)
-    expect(result.unwrap()?.toString()).toBe(xpub1.toString())
+    expect(result.expect('Expected successful result').toString()).toBe(xpub1.toString())
     expect(getXpubFromDevice).toHaveBeenCalledTimes(1) // Should return on first match
   })
 
@@ -186,7 +190,9 @@ describe('getXpubFrom', () => {
     })
 
     expect(result.isErr()).toBe(true)
-    expect(result.unwrapErr()?.message).toBe('No ledger account found matching any keystore xpub')
+    expect(result.expectErr('Expected failed result').message).toBe(
+      'No ledger account found matching any keystore xpub',
+    )
     expect(getXpubFromDevice).not.toHaveBeenCalled()
   })
 
@@ -212,7 +218,9 @@ describe('getXpubFrom', () => {
     })
 
     expect(result.isErr()).toBe(true)
-    expect(result.unwrapErr()?.message).toBe('No ledger account found matching any keystore xpub')
+    expect(result.expectErr('Expected failed result').message).toBe(
+      'No ledger account found matching any keystore xpub',
+    )
     expect(getXpubFromDevice).toHaveBeenCalledTimes(1)
   })
 })

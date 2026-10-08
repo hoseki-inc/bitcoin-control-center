@@ -55,6 +55,7 @@ export default defineConfig(({ mode }) => {
     },
 
     test: {
+      setupFiles: [resolve(import.meta.dirname, '../../packages/result/test-equality.setup.ts')],
       globals: true,
       environment: 'node',
       env: loadEnv(mode, process.cwd(), ''),

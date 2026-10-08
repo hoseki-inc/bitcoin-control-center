@@ -1,4 +1,5 @@
-import { Err, Ok, type Result, asyncFn } from '@hoseki/packages/result'
+import type { AsyncResult } from '@hoseki/packages/result'
+import { Err, Ok, tryBlock } from '@hoseki/packages/result'
 import type { StatementQuoteCurrency } from '@hoseki/packages/schemas/statement-quote'
 import { type DailyRatesService, MIN_MEMPOOL_PRICE_DATE } from './daily_rates'
 import { type PriceService, isPublicMempool } from './service'
@@ -67,11 +68,12 @@ export class PriceHistoryService {
     this.priceService = deps.priceService
   }
 
-  public getHistory = asyncFn(
-    async (
-      days: BitcoinPriceHistoryDays,
-      quoteCurrency: StatementQuoteCurrency = 'USD',
-    ): Promise<Result<BitcoinPriceHistory, Error>> => {
+  public getHistory = (
+    days: BitcoinPriceHistoryDays,
+    quoteCurrency: StatementQuoteCurrency = 'USD',
+  ): AsyncResult<BitcoinPriceHistory, Error> => {
+    const { dailyRatesService, priceService } = this
+    return tryBlock(async function* () {
       const now = new Date()
       const dates = priceHistoryDates(days, now)
       const [opening] = dates
@@ -81,13 +83,10 @@ export class PriceHistoryService {
       }
       // The current price source quotes USD only, so other currencies end at today's daily quote.
       const [rates, current] = await Promise.all([
-        this.dailyRatesService.getDailyRates(opening, closing, quoteCurrency, dates),
-        quoteCurrency === 'USD' ? this.priceService.getCurrentBtcPrice() : undefined,
+        dailyRatesService.getDailyRates(opening, closing, quoteCurrency, dates),
+        quoteCurrency === 'USD' ? priceService.getCurrentBtcPrice() : undefined,
       ])
-      if (rates.isErr()) {
-        return Err(rates.unwrapErr())
-      }
-      const { rates: daily, providerUrls } = rates.unwrap()
+      const { rates: daily, providerUrls } = yield* rates
       // A day without its own quote may use a nearby one; plot each quote once, when it was observed.
       const observed = new Map<number, number>()
       for (const rate of Object.values(daily)) {
@@ -107,6 +106,6 @@ export class PriceHistoryService {
         }
       }
       return Ok(history)
-    },
-  )
+    })
+  }
 }

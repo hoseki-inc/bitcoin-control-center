@@ -46,7 +46,7 @@ describe('historical statement quotes', () => {
       fetcher.mockResolvedValueOnce(
         Response.json({ prices: [{ time: target, ...quotes }], exchangeRates: { USDCAD: 999 } }),
       )
-      const result = (await service().getDailyRates(day, day, currency)).unwrap()
+      const result = (await service().getDailyRates(day, day, currency)).expect('Expected successful result')
       expect(result.quoteCurrency).toBe(currency)
       expect(result.rates['2026-08-01']?.close.toString()).toBe(String(quotes[currency]))
       expect(result.rates['2026-08-01']?.timestamp).toEqual(day)
@@ -64,7 +64,9 @@ describe('historical statement quotes', () => {
     database = await openDrizzleDatabase(directory, logger)
     fetcher.mockClear()
     fetcher.mockRejectedValue(new Error('offline'))
-    const result = (await service('http://local-mempool.test').getDailyRates(day, end, 'CAD', required)).unwrap()
+    const result = (await service('http://local-mempool.test').getDailyRates(day, end, 'CAD', required)).expect(
+      'Expected successful result',
+    )
     for (const date of ['2026-08-01', '2026-08-31']) {
       expect(result.rates[date]?.close.toString()).toBe(String(quotes.CAD))
       expect(result.rates[date]?.providerUrl).toBe('https://mempool.test')
@@ -114,7 +116,7 @@ describe('historical statement quotes', () => {
         const lookup = Number(new URL(input).searchParams.get('timestamp'))
         return lookup >= observation ? body(observation) : Response.json({ prices: [] })
       })
-      const result = (await service().getDailyRates(day, day, 'EUR')).unwrap()
+      const result = (await service().getDailyRates(day, day, 'EUR')).expect('Expected successful result')
       expect(result.rates['2026-08-01']?.timestamp.getTime()).toBe(observation * 1000)
       expect(fetcher.mock.calls.length).toBeLessThanOrEqual(9)
     },
@@ -127,9 +129,11 @@ describe('historical statement quotes', () => {
       return body(timestamp, { ...quotes, CAD: timestamp === target ? -1 : quotes.CAD })
     })
     const rates = service()
-    const cad = (await rates.getDailyRates(day, day, 'CAD')).unwrap()
+    const cad = (await rates.getDailyRates(day, day, 'CAD')).expect('Expected successful result')
     expect(cad.rates['2026-08-01']?.timestamp.getTime()).toBe(day.getTime() - 86400000)
-    expect((await rates.getDailyRates(day, day, 'EUR')).unwrap().rates['2026-08-01']?.timestamp).toEqual(day)
+    expect(
+      (await rates.getDailyRates(day, day, 'EUR')).expect('Expected successful result').rates['2026-08-01']?.timestamp,
+    ).toEqual(day)
     expect(fetcher.mock.calls.length).toBeLessThanOrEqual(9)
   })
 
@@ -162,7 +166,7 @@ describe('historical statement quotes', () => {
         expect(timestamp).toBeDefined()
         return body(timestamp)
       })
-      const result = (await service().getDailyRates(day, day, 'CAD')).unwrap()
+      const result = (await service().getDailyRates(day, day, 'CAD')).expect('Expected successful result')
       expect(result.rates['2026-08-01']?.timestamp.getTime()).toBe((target + selected * 86400) * 1000)
     },
   )
@@ -176,7 +180,7 @@ describe('historical statement quotes', () => {
       const lookup = Number(new URL(input).searchParams.get('timestamp'))
       return body(lookup >= target + 86400 ? target + 86400 : Math.min(lookup, target - 3 * 86400))
     })
-    const result = (await service().getDailyRates(day, day, 'CAD')).unwrap()
+    const result = (await service().getDailyRates(day, day, 'CAD')).expect('Expected successful result')
     expect(result.rates['2026-08-01']?.timestamp.getTime()).toBe(day.getTime() + 86400000)
   })
 
@@ -202,7 +206,7 @@ describe('historical statement quotes', () => {
       const lookup = Number(new URL(input).searchParams.get('timestamp'))
       return body(lookup === today ? today : today - 6 * 86400)
     })
-    const result = (await service().getDailyRates(recent, recent, 'CAD')).unwrap()
+    const result = (await service().getDailyRates(recent, recent, 'CAD')).expect('Expected successful result')
     expect(result.rates['2026-09-07']?.timestamp.getTime()).toBe(today * 1000)
     const lookups = fetcher.mock.calls.map(([input]) => Number(new URL(input).searchParams.get('timestamp')))
     expect(lookups.length).toBeLessThanOrEqual(7)
@@ -219,7 +223,7 @@ describe('historical statement quotes', () => {
       const lookup = Number(new URL(input).searchParams.get('timestamp'))
       return body(observations.filter((time) => time <= lookup).at(-1))
     })
-    const result = (await service().getDailyRates(recent, recent)).unwrap()
+    const result = (await service().getDailyRates(recent, recent)).expect('Expected successful result')
     expect(result.rates['2026-09-06']?.timestamp.getTime()).toBe(morning * 1000)
   })
 
@@ -238,7 +242,7 @@ describe('historical statement quotes', () => {
         return failing ? new Response('', { status: 429, headers: { 'retry-after': '120' } }) : body(lookup)
       })
       const end = new Date(day.getTime() + 3 * 86400000)
-      const result = (await service().getDailyRates(day, end)).unwrap()
+      const result = (await service().getDailyRates(day, end)).expect('Expected successful result')
       expect(result.rates['2026-08-01']?.timestamp.getTime()).toBe((target + 86400) * 1000)
       expect(Object.keys(result.rates)).toHaveLength(4)
     },
@@ -314,7 +318,7 @@ describe('historical statement quotes', () => {
       return body(lookup)
     })
     const end = new Date('2026-08-30T00:00:00Z')
-    const result = (await service().getDailyRates(day, end)).unwrap()
+    const result = (await service().getDailyRates(day, end)).expect('Expected successful result')
     expect(Object.keys(result.rates)).toHaveLength(30)
     expect(result.rates['2026-08-11']?.timestamp.getTime()).toBe(limited * 1000)
   })
@@ -325,7 +329,7 @@ describe('historical statement quotes', () => {
     expect((await service().getDailyRates(day, day, 'CAD')).isErr()).toBe(true)
     fetcher.mockImplementation(async (input) => body(Number(new URL(input).searchParams.get('timestamp'))))
     vi.setSystemTime(new Date('2026-09-08T13:01:00Z'))
-    const result = (await service().getDailyRates(day, day, 'CAD')).unwrap()
+    const result = (await service().getDailyRates(day, day, 'CAD')).expect('Expected successful result')
     expect(result.rates['2026-08-01']?.timestamp).toEqual(day)
   })
 })
@@ -340,7 +344,7 @@ describe('local mempool with public fallback', () => {
       expect(new URL(input).origin).toBe(local)
       return body(Math.min(Number(new URL(input).searchParams.get('timestamp')), target - 3 * 86400))
     })
-    const result = (await localFirst().getDailyRates(day, day, 'CAD')).unwrap()
+    const result = (await localFirst().getDailyRates(day, day, 'CAD')).expect('Expected successful result')
     expect(result.rates['2026-08-01']?.providerUrl).toBe(local)
     expect(fetcher.mock.calls.length).toBeLessThanOrEqual(9)
   })
@@ -361,7 +365,10 @@ describe('local mempool with public fallback', () => {
     expect((await rates.getDailyRates(day, day, 'CAD')).isErr()).toBe(true)
     expect(fetcher.mock.calls.every(([input]) => new URL(input).origin === local)).toBe(true)
     fallbacks = true
-    expect((await rates.getDailyRates(day, day, 'CAD')).unwrap().rates['2026-08-01']?.providerUrl).toBe(publicUrl)
+    expect(
+      (await rates.getDailyRates(day, day, 'CAD')).expect('Expected successful result').rates['2026-08-01']
+        ?.providerUrl,
+    ).toBe(publicUrl)
   })
   it.each([true, false])(
     'chooses the same nearby quote whichever source answers first (local first: %s)',
@@ -382,7 +389,7 @@ describe('local mempool with public fallback', () => {
         return lookup >= july28 ? body(july28) : Response.json({ prices: [] })
       })
       const end = new Date(day.getTime() + 3 * 86400000)
-      const result = (await localFirst().getDailyRates(day, end)).unwrap()
+      const result = (await localFirst().getDailyRates(day, end)).expect('Expected successful result')
       expect(result.rates['2026-08-01']?.timestamp.getTime()).toBe((target + 86400) * 1000)
       expect(result.rates['2026-08-01']?.providerUrl).toBe(publicUrl)
       expect(Object.keys(result.rates)).toEqual(['2026-08-01', '2026-08-02', '2026-08-03', '2026-08-04'])
@@ -416,7 +423,7 @@ describe('local mempool with public fallback', () => {
         : body(Number(new URL(input).searchParams.get('timestamp'))),
     )
     await localFirst().getDailyRates(earlier, earlier)
-    const result = (await localFirst().getDailyRates(day, day)).unwrap()
+    const result = (await localFirst().getDailyRates(day, day)).expect('Expected successful result')
     expect(result.rates['2026-08-01']?.providerUrl).toBe(publicUrl)
     expect(result.rates['2026-08-01']?.timestamp).toEqual(day)
   })
@@ -427,7 +434,7 @@ describe('local mempool with public fallback', () => {
         timestamp = Number(url.searchParams.get('timestamp'))
       return body(timestamp, url.origin === local ? { ...quotes, CAD: -1 } : quotes)
     })
-    const result = (await localFirst().getDailyRates(day, day, 'CAD')).unwrap()
+    const result = (await localFirst().getDailyRates(day, day, 'CAD')).expect('Expected successful result')
     expect(result.rates['2026-08-01']?.providerUrl).toBe(publicUrl)
     expect(result.providerUrls).toEqual([publicUrl])
     expect(fetcher.mock.calls.length).toBeLessThanOrEqual(10)
@@ -435,7 +442,7 @@ describe('local mempool with public fallback', () => {
     database = await openDrizzleDatabase(directory, logger)
     fetcher.mockClear()
     fetcher.mockRejectedValue(new Error('offline'))
-    expect((await localFirst().getDailyRates(day, day, 'CAD')).unwrap()).toEqual(result)
+    expect((await localFirst().getDailyRates(day, day, 'CAD')).expect('Expected successful result')).toEqual(result)
     expect(fetcher).not.toHaveBeenCalled()
   })
   it('uses public on a local outage and preserves its original timestamp', async () => {
@@ -445,7 +452,7 @@ describe('local mempool with public fallback', () => {
         ? new Response('', { status: 503, headers: { 'retry-after': '120' } })
         : body(Math.min(Number(new URL(input).searchParams.get('timestamp')), target - 3600)),
     )
-    const result = (await localFirst().getDailyRates(day, day, 'EUR')).unwrap()
+    const result = (await localFirst().getDailyRates(day, day, 'EUR')).expect('Expected successful result')
     expect(result.rates['2026-08-01']?.providerUrl).toBe(publicUrl)
     expect(result.rates['2026-08-01']?.timestamp.getTime()).toBe(day.getTime() - 3600000)
     expect(fetcher.mock.calls.length).toBeLessThanOrEqual(10)
@@ -460,7 +467,7 @@ describe('local mempool with public fallback', () => {
         ? new Response('', { status: 503, headers: { 'retry-after': '120' } })
         : body(Number(new URL(input).searchParams.get('timestamp'))),
     )
-    const result = (await localFirst().getDailyRates(day, day)).unwrap()
+    const result = (await localFirst().getDailyRates(day, day)).expect('Expected successful result')
     expect(result.rates['2026-08-01']?.providerUrl).toBe(publicUrl)
     expect(result.rates['2026-08-01']?.timestamp).toEqual(day)
   })
@@ -470,7 +477,7 @@ describe('local mempool with public fallback', () => {
     fetcher.mockImplementation(async (input) => body(Number(new URL(input).searchParams.get('timestamp'))))
     await localFirst().getDailyRates(earlier, earlier)
     fetcher.mockRejectedValue(new Error('offline'))
-    const result = (await localFirst().getDailyRates(day, day)).unwrap()
+    const result = (await localFirst().getDailyRates(day, day)).expect('Expected successful result')
     expect(result.rates['2026-08-01']?.providerUrl).toBe(local)
     expect(result.rates['2026-08-01']?.timestamp).toEqual(earlier)
   })
@@ -482,7 +489,7 @@ describe('local mempool with public fallback', () => {
         timestamp = Number(url.searchParams.get('timestamp'))
       return body(timestamp, url.origin === local && timestamp > target ? { ...quotes, CAD: -1 } : quotes)
     })
-    const result = (await localFirst().getDailyRates(day, end, 'CAD', [day, end])).unwrap()
+    const result = (await localFirst().getDailyRates(day, end, 'CAD', [day, end])).expect('Expected successful result')
     expect(result.rates['2026-08-01']?.providerUrl).toBe(local)
     expect(result.rates['2026-08-20']?.providerUrl).toBe(publicUrl)
     expect(result.providerUrls).toEqual([local, publicUrl].sort())
@@ -492,7 +499,9 @@ describe('local mempool with public fallback', () => {
     await setup()
     fetcher.mockImplementation(async () => body(target - 5 * 86400))
     const result = await localFirst().getDailyRates(day, day, 'CAD')
-    expect(result.unwrapErr().message).toContain('either the configured mempool or public mempool.space')
+    expect(result.expectErr('Expected failed result').message).toContain(
+      'either the configured mempool or public mempool.space',
+    )
     expect([...new Set(fetcher.mock.calls.map(([input]) => new URL(input).origin))]).toEqual([local, publicUrl])
     expect(fetcher.mock.calls.length).toBeLessThanOrEqual(18)
   })

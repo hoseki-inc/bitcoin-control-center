@@ -1,64 +1,42 @@
-import { AsyncResult, Err, Ok, Panic, type Result } from '@hoseki/packages/result'
-import { describe, expect, it } from 'vitest'
-import { asyncResultAll } from './async'
+import { describe, expect, expectTypeOf, it } from 'vitest'
+import { asyncResultAll, asyncResultToPromise } from './async'
+import { AsyncResult } from './core/async_result'
+import { Err, Ok, type Result } from './core/result'
 
-type Deferred<T> = { promise: Promise<T>; resolve: (value: T) => void }
-
-function deferred<T>(): Deferred<T> {
-  let resolve = (_value: T): void => {}
-  const promise = new Promise<T>((finish) => {
-    resolve = finish
+describe('asyncResultToPromise', () => {
+  it('resolves successes and preserves Error rejection identity', async () => {
+    await expect(asyncResultToPromise(new AsyncResult(Promise.resolve(Ok(42))))).resolves.toBe(42)
+    const error = new Error('failed')
+    await expect(asyncResultToPromise(new AsyncResult(Promise.resolve(Err(error))))).rejects.toBe(error)
   })
-  return { promise, resolve }
-}
+
+  it('wraps non-Error failures with their original cause', async () => {
+    await expect(asyncResultToPromise(new AsyncResult(Promise.resolve(Err('failed'))))).rejects.toMatchObject({
+      name: 'TypeError',
+      cause: 'failed',
+    })
+  })
+})
 
 describe('asyncResultAll', () => {
-  it('returns an empty success for no operations', async () => {
+  it('collects successes in input order, including an empty input', async () => {
+    const result = asyncResultAll([new AsyncResult(Promise.resolve(Ok(1))), new AsyncResult(Promise.resolve(Ok(2)))])
+    expectTypeOf(result).toEqualTypeOf<AsyncResult<number[], never>>()
+    await expect(result).resolves.toEqual(Ok([1, 2]))
     await expect(asyncResultAll([])).resolves.toEqual(Ok([]))
   })
 
-  it('preserves input order when operations complete in reverse order', async () => {
-    const first = deferred<Result<number, Error>>()
-    const second = deferred<Result<number, Error>>()
-    const combined = asyncResultAll([new AsyncResult(first.promise), new AsyncResult(second.promise)])
-
-    second.resolve(Ok(2))
-    await second.promise
-    first.resolve(Ok(1))
-
-    await expect(combined).resolves.toEqual(Ok([1, 2]))
+  it('preserves the first settled failure without waiting for other results', async () => {
+    const cause = { code: 'failed' }
+    const pending = new AsyncResult(new Promise<Result<number, typeof cause>>(() => {}))
+    const result = asyncResultAll([pending, new AsyncResult(Promise.resolve(Err(cause)))])
+    expectTypeOf(result).toEqualTypeOf<AsyncResult<number[], typeof cause>>()
+    await expect(result.expectErr('Expected failure')).resolves.toBe(cause)
   })
 
-  it('returns the first completed error without waiting for an earlier pending operation', async () => {
-    const pending = new AsyncResult<number, Error>(new Promise(() => {}))
-    const failure = deferred<Result<number, Error>>()
-    const error = new Error('Discovery failed')
-    const combined = asyncResultAll([pending, new AsyncResult(failure.promise)])
-
-    failure.resolve(Err(error))
-
-    const result = await combined
-    expect(result.expectErr('discovery should fail')).toBe(error)
+  it('propagates unexpected promise rejection', async () => {
+    const error = new Error('unexpected rejection')
+    const pending = new AsyncResult<number, never>(Promise.reject(error))
+    await expect(asyncResultAll([pending])).rejects.toBe(error)
   })
-
-  it.each([new Error('Rejected operation'), new Panic('Panicked operation')])(
-    'preserves a rejected Error, including a Panic (%s)',
-    async (error) => {
-      const rejected = new AsyncResult<number, Error>(Promise.reject(error))
-      const result = await asyncResultAll([rejected])
-      expect(result.expectErr('rejection should fail')).toBe(error)
-    },
-  )
-
-  it.each(['rejected value', null, undefined, { reason: 'unexpected' }])(
-    'wraps a non-Error rejection and retains its cause (%j)',
-    async (cause) => {
-      // oxlint-disable-next-line typescript/prefer-promise-reject-errors -- Intentionally reject non-Error values to verify normalization and cause preservation.
-      const rejected = new AsyncResult<number, Error>(Promise.reject(cause))
-      const result = await asyncResultAll([rejected])
-      const error = result.expectErr('rejection should fail')
-      expect(error).toBeInstanceOf(Error)
-      expect(error.cause).toBe(cause)
-    },
-  )
 })

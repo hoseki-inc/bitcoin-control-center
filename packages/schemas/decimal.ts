@@ -61,7 +61,7 @@ export function decimal(config?: Decimal.Config): z.ZodEffects<DecimalSchemaUnio
       : isDecimalObject(value)
         ? decimalObjectToDecimalInstance(value)
         : value.toString()
-    const result = Result.from(() => new constructor(from))
+    const result = Result.fromThrowable(() => new constructor(from))
 
     if (result.isErr()) {
       ctx.addIssue({
@@ -71,7 +71,7 @@ export function decimal(config?: Decimal.Config): z.ZodEffects<DecimalSchemaUnio
       return z.NEVER
     }
 
-    if (result.value().isNaN()) {
+    if (result.unwrap().isNaN()) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: `${formatDecimalInput(value)} is not a valid decimal number`,
@@ -79,7 +79,7 @@ export function decimal(config?: Decimal.Config): z.ZodEffects<DecimalSchemaUnio
       return z.NEVER
     }
 
-    return result.value()
+    return result.unwrap()
   })
 }
 
