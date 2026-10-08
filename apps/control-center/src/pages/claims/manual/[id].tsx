@@ -9,6 +9,7 @@ import {
   Icon,
   Input,
   Select,
+  SimpleGrid,
   Spinner,
   Stack,
   Table,
@@ -161,7 +162,7 @@ export function ManualAccountDetailsPage(): JSX.Element {
   }
 
   return (
-    <Box py={6}>
+    <Box py={6} maxW="640px" mx="auto" w="100%">
       <TopBar mb={6}>
         <TopBar.Item as={Link} to="/accounts">
           Back to Accounts
@@ -207,44 +208,42 @@ export function ManualAccountDetailsPage(): JSX.Element {
         <hr />
 
         {/* Balance display */}
-        <Stack align="center" maxW="640px" mx="auto" w="100%">
-          <HStack spacing={4} mb={4} w="100%" alignItems="flex-start">
-            <Box w={['100%', '50%', '33%']}>
+        <SimpleGrid columns={{ base: 1, sm: 3 }} spacing={4} alignItems="flex-start">
+          <Box>
+            <Text textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={1}>
+              Balance
+            </Text>
+            <Text textStyle="label/sm" color="neutral.900" fontWeight="medium">
+              {btcAmount} BTC
+            </Text>
+          </Box>
+          <Box>
+            <Text textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={1}>
+              Status
+            </Text>
+            <HStack spacing={1}>
+              <Box w={2} h={2} bg="warning.500" borderRadius="full" />
+              <Text textStyle="text/xs" color="warning.600" fontWeight="medium">
+                Manually Added
+              </Text>
+            </HStack>
+          </Box>
+          {account.balanceAsOf != null && account.balanceAsOf !== '' && (
+            <Box textAlign={{ base: 'left', sm: 'right' }}>
               <Text textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={1}>
-                Balance
+                Balance As Of
               </Text>
               <Text textStyle="label/sm" color="neutral.900" fontWeight="medium">
-                {btcAmount} BTC
+                {format(new Date(account.balanceAsOf), 'MMMM do, yyyy')}
               </Text>
             </Box>
-            <Box w={['100%', '50%', '33%']}>
-              <Text textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={1}>
-                Status
-              </Text>
-              <HStack spacing={1}>
-                <Box w={2} h={2} bg="warning.500" borderRadius="full" />
-                <Text textStyle="text/xs" color="warning.600" fontWeight="medium">
-                  Manually Added
-                </Text>
-              </HStack>
-            </Box>
-            {account.balanceAsOf != null && account.balanceAsOf !== '' && (
-              <Box w={['100%', '50%', '33%']} textAlign="right">
-                <Text textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={1}>
-                  Balance As Of
-                </Text>
-                <Text textStyle="label/sm" color="neutral.900" fontWeight="medium">
-                  {format(new Date(account.balanceAsOf), 'MMMM do, yyyy')}
-                </Text>
-              </Box>
-            )}
-          </HStack>
-        </Stack>
+          )}
+        </SimpleGrid>
 
         <hr />
 
         {/* Update Balance */}
-        <Box maxW="640px" mx="auto" w="100%">
+        <Box>
           <Heading textStyle="text/lg" fontWeight="semibold" mb={3}>
             Update Balance
           </Heading>
@@ -295,7 +294,7 @@ export function ManualAccountDetailsPage(): JSX.Element {
         <hr />
 
         {/* Add Transaction */}
-        <Box maxW="640px" mx="auto" w="100%">
+        <Box>
           <Heading textStyle="text/lg" fontWeight="semibold" mb={3}>
             Add Transaction
           </Heading>
@@ -394,7 +393,7 @@ export function ManualAccountDetailsPage(): JSX.Element {
 
         {/* Transaction History */}
         {txQuery.data && txQuery.data.length > 0 && (
-          <Box maxW="640px" mx="auto" w="100%">
+          <Box>
             <Heading textStyle="text/lg" fontWeight="semibold" mb={3}>
               Transactions
             </Heading>
