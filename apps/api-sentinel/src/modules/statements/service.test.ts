@@ -383,13 +383,11 @@ describe('statement API currency contract', () => {
     }
   }
   it.each<StatementQuoteCurrency>(['USD', 'CAD', 'GBP', 'EUR'])(
-    'previews, generates, and retrieves %s through the API',
+    'generates and retrieves %s through the API',
     async (quoteCurrency) => {
       await setup()
       const { service, api } = caller()
       const args = { ...input, quoteCurrency }
-      const preview = await api.generatePreview(args)
-      expect(preview.quoteCurrency).toBe(quoteCurrency)
       const created = await api.initiateGeneration(args)
       await vi.waitFor(async () => {
         await expect(service.findById(created.id)).resolves.toMatchObject({ status: 'completed' })
@@ -412,13 +410,15 @@ describe('statement API currency contract', () => {
   it('defaults omitted currency to USD and rejects unsupported codes before creating a row', async () => {
     await setup()
     const { service, api } = caller()
-    expect((await api.generatePreview(input)).quoteCurrency).toBe('USD')
     const invalid = { ...input, quoteCurrency: 'JPY' }
-    // @ts-expect-error Deliberately send an unsupported currency to exercise API input validation.
-    await expect(api.generatePreview(invalid)).rejects.toMatchObject({ code: 'BAD_REQUEST' })
     // @ts-expect-error Deliberately send an unsupported currency to exercise API input validation.
     await expect(api.initiateGeneration(invalid)).rejects.toMatchObject({ code: 'BAD_REQUEST' })
     await expect(service.list()).resolves.toHaveLength(0)
+    const created = await api.initiateGeneration(input)
+    expect(created.quoteCurrency).toBe('USD')
+    await vi.waitFor(async () => {
+      await expect(service.findById(created.id)).resolves.toMatchObject({ status: 'completed' })
+    })
   })
 })
 

@@ -11,7 +11,15 @@ import { trpc } from '../../trpc'
 
 export function StatementListPage(): JSX.Element {
   const [viewType, setViewType] = useState<'grid' | 'table'>('grid')
-  const { data: statements, isLoading, error, refetch } = trpc.portalProve.statement.list.useQuery()
+  const {
+    data: statements,
+    isLoading,
+    error,
+    refetch,
+  } = trpc.portalProve.statement.list.useQuery(undefined, {
+    // Keep a generating statement's status current after leaving its page.
+    refetchInterval: (data) => (data?.some((statement) => statement.status === 'pending') === true ? 2000 : false),
+  })
 
   if (isLoading) {
     return (

@@ -71,39 +71,14 @@ describe('statement closing date limit', () => {
     const statement = await caller.portalProve.statement.initiateGeneration(statementEnding('2026-10-03T23:59:59.999Z'))
 
     expect(statement.status).toBe('pending')
-    // Let background generation finish before the test database closes.
-    await vi.waitFor(async () => {
-      await expect(
-        db.select({ status: statements.status }).from(statements).where(eq(statements.id, statement.id)),
-      ).resolves.toEqual([{ status: 'failed' }])
-    })
-  })
-
-  it('generates past the date check for a statement ending the day before yesterday', async () => {
-    vi.useFakeTimers({ toFake: ['Date'] })
-    vi.setSystemTime(now)
-    onTestFinished(() => {
-      vi.useRealTimers()
-    })
-    const { caller } = await setupAppCaller()
-
     // Generation stops only because the request selects no accounts, not because of its end date.
-    await expect(
-      caller.portalProve.statement.generatePreview(statementEnding('2026-10-03T23:59:59.999Z')),
-    ).rejects.toThrow('No accounts found for the provided IDs')
-  })
-
-  it('rejects a preview ending yesterday as a bad request', async () => {
-    vi.useFakeTimers({ toFake: ['Date'] })
-    vi.setSystemTime(now)
-    onTestFinished(() => {
-      vi.useRealTimers()
+    await vi.waitFor(async () => {
+      const [row] = await db
+        .select({ status: statements.status, errorMessage: statements.errorMessage })
+        .from(statements)
+        .where(eq(statements.id, statement.id))
+      expect(row?.status).toBe('failed')
+      expect(row?.errorMessage).toContain('No accounts found')
     })
-    const { caller } = await setupAppCaller()
-
-    const attempt = caller.portalProve.statement.generatePreview(statementEnding('2026-10-04T12:00:00.000Z'))
-
-    await expect(attempt).rejects.toMatchObject({ code: 'BAD_REQUEST' })
-    await expect(attempt).rejects.toThrow('at least 2 days ago')
   })
 })

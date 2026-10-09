@@ -70,7 +70,7 @@ function createPdfStatement(
   ),
 ): PdfStatement {
   const common = {
-    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- SAFETY: Preview IDs intentionally use the same branded shape without persistence; they are never written to the statement table.
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- SAFETY: Only saved statements reach the mapper, and StatementService.create gives every row a st_stmt ID.
     id: args.id as StatementId,
     createdAt: args.createdAt,
     status: args.status,

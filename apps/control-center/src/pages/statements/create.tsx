@@ -13,7 +13,6 @@ import {
   HStack,
   Image,
   Input,
-  type ModalProps,
   Select,
   Stack,
   Text,
@@ -29,16 +28,12 @@ import { useMutation } from '@tanstack/react-query'
 import { addDays, endOfDay, isAfter, min, startOfDay, subMonths } from 'date-fns'
 import { FileCheckIcon } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { Link, useLocation } from 'react-router'
+import { Link, useLocation, useNavigate } from 'react-router'
 import { toast } from 'sonner'
 import { ClaimSelection } from '../../components/claims/claim-selection'
-import { FullTransitionModal, getContent } from '../../components/full-transition-modal'
-import { StatementPreviewModal } from '../../components/statement-preview-modal'
 import { useLocalSetting } from '../../hooks/use-local-settings'
 import { parseNavigationState } from '../../lib/navigation-state'
-import { useStatementPolling } from '../../providers/statement-polling-provider'
 import { trpc } from '../../trpc'
-import type { StatementDto } from '../../trpc/server-types'
 
 /** Existing product limit for statement dates. */
 const MIN_MEMPOOL_PRICE_DATE = new Date('2023-04-01')
@@ -47,8 +42,7 @@ const MIN_STATEMENT_DATE = MIN_MEMPOOL_PRICE_DATE
 const LEFT_COLUMN_WIDTH = { base: 'auto', md: '35%' }
 
 export function StatementCreatePage(): JSX.Element {
-  const [isModalOpen, setIsModalOpen] = useState<boolean>(false)
-  const [isPreviewModalOpen, setIsPreviewModalOpen] = useState<boolean>(false)
+  const navigate = useNavigate()
   const location = useLocation()
   const navState = parseNavigationState(location.state)
   const cancelPath = navState?.returnTo ?? '/home'
@@ -104,12 +98,8 @@ export function StatementCreatePage(): JSX.Element {
     }
   }, [savedUserName, nameInitialized])
 
-  // polling:
-  // statement `status` starts as 'pending' when startPolling() is called,
-  // then it is updated to a 'completed' or 'failed' statement.
-  const { startPolling, statement } = useStatementPolling()
-
-  // generate
+  // generate, then follow progress on the statement page
+  const trpcUtils = trpc.useUtils()
   const initiateStatementGenerationMutation = trpc.portalProve.statement.initiateGeneration.useMutation()
   const initiateMutationWithArgs = useMutation({
     mutationFn: async () => {
@@ -128,11 +118,8 @@ export function StatementCreatePage(): JSX.Element {
         address: address || null,
       })
 
-      // keeping them at the end of the fn to make sure we're overwriting
-      // provider state via `startPolling(statement)` before opening the modal,
-      // so that the modal doesn't show the old completed/failed statement screen
-      startPolling(generatedStatement.id)
-      setIsModalOpen(true)
+      void trpcUtils.portalProve.statement.list.invalidate()
+      void navigate(`/statements/${generatedStatement.id}`)
     },
     onError: (error: { message: string }) => {
       toast.error(error.message)
@@ -350,84 +337,21 @@ export function StatementCreatePage(): JSX.Element {
                 <Button as={Link} to={cancelPath} variant="outline">
                   Cancel
                 </Button>
-                <Stack direction={{ base: 'column', sm: 'row' }}>
-                  <Button
-                    flex={{ sm: 1, md: 'initial' }}
-                    isDisabled={!hasAnySelected}
-                    variant="outline"
-                    onClick={() => {
-                      setIsPreviewModalOpen(true)
-                    }}
-                  >
-                    Preview Statement
-                  </Button>
-                  <Button
-                    flex={{ sm: 1, md: 'initial' }}
-                    isDisabled={!hasAnySelected || initiateMutationWithArgs.isLoading}
-                    isLoading={initiateMutationWithArgs.isLoading}
-                    onClick={() => {
-                      initiateMutationWithArgs.mutate()
-                    }}
-                  >
-                    Generate Statement
-                  </Button>
-                </Stack>
+                <Button
+                  isDisabled={!hasAnySelected || initiateMutationWithArgs.isLoading}
+                  isLoading={initiateMutationWithArgs.isLoading}
+                  onClick={() => {
+                    initiateMutationWithArgs.mutate()
+                  }}
+                >
+                  Generate Statement
+                </Button>
               </Stack>
             </Box>
           )}
         </Box>
       </Panel>
-
-      <StatementGenerationModal
-        isOpen={isModalOpen}
-        onClose={() => {
-          setIsModalOpen(false)
-        }}
-        statement={statement ?? null}
-      />
-
-      <StatementPreviewModal
-        isOpen={isPreviewModalOpen}
-        onClose={() => {
-          setIsPreviewModalOpen(false)
-        }}
-        claimIds={Array.from(selectedClaimIds)}
-        openingDate={openingDate}
-        closingDate={closingDate}
-        timezone={userTimezone}
-        quoteCurrency={quoteCurrency}
-        name={name || null}
-        address={address || null}
-        context="self_generated"
-      />
     </Stack>
-  )
-}
-
-function StatementGenerationModal({
-  statement,
-  ...props
-}: { statement: StatementDto | null } & Omit<ModalProps, 'children'>) {
-  const completedContent = (
-    <Stack direction={{ base: 'column', sm: 'row' }}>
-      <Button as={Link} to="/home" variant="outline">
-        Back to Home
-      </Button>
-      {statement && (
-        <Button as={Link} to={`/statements/${statement.id}`}>
-          View Statement
-        </Button>
-      )}
-    </Stack>
-  )
-
-  return (
-    <FullTransitionModal
-      content={getContent()}
-      status={statement?.status ?? 'pending'}
-      additionalCompletedContent={completedContent}
-      {...props}
-    />
   )
 }
 

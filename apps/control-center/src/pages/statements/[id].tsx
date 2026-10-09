@@ -11,13 +11,16 @@ import {
 import { PDFViewer, pdf } from '@react-pdf/renderer'
 import { format } from 'date-fns'
 import { ShieldCheckIcon } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link as RouterLink, useNavigate } from 'react-router'
 import { DeleteStatementButton } from '../../components/statements/delete-statement-button'
+import { StatementGenerationModal } from '../../components/statements/statement-generation-modal'
 import { useRenderedStatement } from '../../hooks/use-rendered-statement'
 import { UrlParameter, useUrlParameter } from '../../hooks/use-url-parameters'
 import { baseTrpc, trpc } from '../../trpc'
 import type { StatementDto } from '../../trpc/server-types'
+
+const GENERATION_POLL_MS = 1000
 
 export function StatementDetailsPage(): JSX.Element {
   const statementId = useUrlParameter(UrlParameter.statementId)
@@ -34,8 +37,26 @@ export function StatementDetailsPage(): JSX.Element {
 }
 
 function StatementDetailsPageContent({ statementId }: { statementId: StatementId }) {
-  const { data: statement, isLoading, error } = trpc.portalProve.statement.retrieve.useQuery(statementId)
+  const navigate = useNavigate()
+  const {
+    data: statement,
+    isLoading,
+    isFetchedAfterMount,
+    error,
+  } = trpc.portalProve.statement.retrieve.useQuery(statementId, {
+    refetchInterval: (data) => (data?.status === 'pending' ? GENERATION_POLL_MS : false),
+  })
   const [statementFormat, setStatementFormat] = useState<StatementDocumentFormat>('custom')
+  // Generation stays open after the statement is done until its closing animation ends,
+  // then stays mounted so the screen can fade out.
+  const [generation, setGeneration] = useState<'hidden' | 'showing' | 'finished'>('hidden')
+  // A status cached from an earlier visit may be stale; only open generation for a current one.
+  const isGenerating = isFetchedAfterMount && statement?.status === 'pending'
+  useEffect(() => {
+    if (isGenerating) {
+      setGeneration((current) => (current === 'hidden' ? 'showing' : current))
+    }
+  }, [isGenerating])
 
   if (error) {
     return (
@@ -51,6 +72,18 @@ function StatementDetailsPageContent({ statementId }: { statementId: StatementId
 
   return (
     <Flex gap={0} flexDirection={{ base: 'column', lg: 'row' }} align="flex-start">
+      {generation !== 'hidden' && (
+        <StatementGenerationModal
+          isOpen={generation === 'showing'}
+          status={statement.status}
+          onFinished={() => {
+            setGeneration('finished')
+          }}
+          onClose={() => {
+            void navigate('/statements')
+          }}
+        />
+      )}
       <Stack
         gap={6}
         height={{ base: 'auto', lg: VIEWPORT_BELOW_HEADER }}
@@ -135,13 +168,13 @@ function StatementSummary({ statement }: { statement: StatementDto }) {
 }
 
 async function triggerPdfDownload(args: { statement: StatementDto; format: StatementDocumentFormat }): Promise<void> {
-  // Fetch the PdfStatement data via tRPC (same data the preview uses)
+  // Fetch the PdfStatement data via tRPC (same data the viewer uses)
   const statementData = await baseTrpc.portalProve.statement.retrieveDocumentData.query({
     statementId: args.statement.id,
     format: args.format,
   })
 
-  // Render the PDF document client-side (same pipeline as the preview)
+  // Render the PDF document client-side (same pipeline as the viewer)
   const document = await renderStatementDocument({
     watermarkText: '',
     statement: statementData,
@@ -273,9 +306,7 @@ function StatementPreview({
         borderColor="neutral.200"
         borderWidth="1px"
       >
-        {statement.status !== 'completed' ? (
-          <PreviewUnavailable />
-        ) : previewError != null ? (
+        {statement.status !== 'completed' ? null : previewError != null ? (
           <ErrorBanner
             message={previewError}
             rightContent={
@@ -342,19 +373,6 @@ function StatementPreview({
           </Stack>
         )}
       </Flex>
-    </Box>
-  )
-}
-
-function PreviewUnavailable() {
-  return (
-    <Box textAlign="center">
-      <Text fontSize="lg" fontWeight="medium" color="neutral.700">
-        Preview Unavailable
-      </Text>
-      <Text color="neutral.600" mt={2}>
-        Only requests that have been accepted can be previewed.
-      </Text>
     </Box>
   )
 }

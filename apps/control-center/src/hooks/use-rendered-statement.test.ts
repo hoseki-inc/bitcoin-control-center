@@ -65,7 +65,7 @@ function setup(): void {
     dom.window.close()
   })
 }
-describe('statement preview updates', () => {
+describe('rendered statement updates', () => {
   it('disables generation while rendering and ignores an older currency that finishes last', async () => {
     setup()
     const old = deferred(),
@@ -85,7 +85,7 @@ describe('statement preview updates', () => {
     expect(container.textContent).toContain('CAD PDF')
     expect(container.textContent).not.toContain('USD PDF')
   })
-  it('immediately hides a completed preview when inputs change', async () => {
+  it('immediately hides a completed render when inputs change', async () => {
     setup()
     render.mockResolvedValueOnce(createElement('span', {}, 'USD PDF')).mockReturnValueOnce(deferred().promise)
     await show(usd)
@@ -101,7 +101,7 @@ describe('statement preview updates', () => {
       .mockRejectedValueOnce(new Error('renderer failed'))
       .mockResolvedValueOnce(createElement('span', {}, 'CAD PDF'))
     await show(cad)
-    expect(container.textContent).toContain('Failed to render statement preview')
+    expect(container.textContent).toContain('Failed to render statement')
     expect(container.querySelector('button')?.disabled).toBe(true)
     await act(async () => {
       const retry = container.querySelectorAll('button')[1]
@@ -113,7 +113,7 @@ describe('statement preview updates', () => {
     expect(container.textContent).toContain('CAD PDF')
     expect(container.querySelector('button')?.disabled).toBe(false)
   })
-  it('ignores a late failure after closing the preview', async () => {
+  it('ignores a late failure after the viewer closes', async () => {
     setup()
     const pending = deferred()
     render.mockReturnValue(pending.promise)
@@ -122,7 +122,7 @@ describe('statement preview updates', () => {
     await act(async () => {
       pending.reject(new Error('late failure'))
     })
-    expect(container.textContent).not.toContain('Failed to render statement preview')
+    expect(container.textContent).not.toContain('Failed to render statement')
     expect(container.querySelector('button')?.disabled).toBe(true)
   })
 })

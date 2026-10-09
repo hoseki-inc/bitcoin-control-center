@@ -6,7 +6,6 @@ import { MotionConfig } from 'framer-motion'
 import type { ReactNode } from 'react'
 import { BrowserRouter } from 'react-router'
 import { Toaster } from 'sonner'
-import { StatementPollingProvider } from './providers/statement-polling-provider'
 import { queryClient, reactTrpcClient, trpc } from './trpc'
 
 export function Providers({ children }: { children: ReactNode }): JSX.Element {
@@ -17,7 +16,7 @@ export function Providers({ children }: { children: ReactNode }): JSX.Element {
           <ChakraProvider theme={theme}>
             <MotionConfig reducedMotion="user">
               <Toaster position="top-right" richColors />
-              <StatementPollingProvider>{children}</StatementPollingProvider>
+              {children}
             </MotionConfig>
           </ChakraProvider>
         </BrowserRouter>

@@ -46,7 +46,6 @@ import {
 import { type ConnectionDetails, MAX_CONNECTION_PROFILES } from '../connection_profiles/store'
 import { PRICE_FALLBACKS_SETTING, PRICE_SOURCES, PRICE_SOURCE_SETTING } from '../price/service'
 import { StatementMapper } from '../statements/mapper'
-import { validateStatementInput } from '../statements/service'
 import { publicProcedure, t } from './init'
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -1574,69 +1573,6 @@ const statementRouter = t.router({
           user: { email: null, name: loaded.row.userName, address: loaded.row.userAddress },
           transactionMap: loaded.transactionMap,
           dailyRates: loaded.dailyRates,
-        },
-        input.format,
-      )
-
-      if (pdfResult.isErr()) {
-        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: pdfResult.unwrapErr().message })
-      }
-      return pdfResult.unwrap()
-    }),
-
-  generatePreview: publicProcedure
-    .input(
-      z.object({
-        claimIds: z.array(z.string()),
-        exchangeAccountIds: z.array(z.string()).optional(),
-        quoteCurrency: StatementQuoteCurrencySchema.default('USD'),
-        openingDate: z.date(),
-        closingDate: z.date(),
-        timezone: z.string(),
-        name: z.string().nullable().optional(),
-        address: z.string().nullable().optional(),
-        format: z.enum(['custom', 'monthly']).default('custom'),
-        context: z.enum(['self_generated', 'access_request']).default('self_generated'),
-      }),
-    )
-    .query(async ({ ctx, input }) => {
-      const statementInput = {
-        claimIds: input.claimIds,
-        exchangeAccountIds: input.exchangeAccountIds,
-        quoteCurrency: input.quoteCurrency,
-        openingDate: input.openingDate,
-        closingDate: input.closingDate,
-        timezone: input.timezone,
-        name: input.name,
-        address: input.address,
-      }
-      // A date outside the allowed range is the caller's mistake, not a server failure.
-      const validation = validateStatementInput(statementInput)
-      if (validation.isErr()) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: validation.unwrapErr().message })
-      }
-
-      const dataResult = await ctx.app.statementService.generateStatementData(statementInput)
-
-      if (dataResult.isErr()) {
-        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: dataResult.unwrapErr().message })
-      }
-
-      const { transactionMap, dailyRates } = dataResult.unwrap()
-
-      const mapper = new StatementMapper()
-      const pdfResult = mapper.toPdfStatement(
-        {
-          id: `preview_${nanoid()}`,
-          createdAt: new Date(),
-          status: 'completed',
-          counter: 0,
-          timezone: input.timezone,
-          openingDate: input.openingDate,
-          closingDate: input.closingDate,
-          user: { email: null, name: input.name ?? null, address: input.address ?? null },
-          transactionMap,
-          dailyRates,
         },
         input.format,
       )
