@@ -25,6 +25,13 @@ const paragraphStyles = {
 
 /* New Design System Tokens */
 export const newTextStyles = {
+  // Portfolio balance headline.
+  'amount/hero': {
+    fontSize: '4rem',
+    lineHeight: '4.5rem',
+    letterSpacing: '-0.03em',
+    fontVariantNumeric: 'tabular-nums',
+  },
   // Principal holdings amount.
   'amount/primary': {
     fontSize: '2.25rem',
