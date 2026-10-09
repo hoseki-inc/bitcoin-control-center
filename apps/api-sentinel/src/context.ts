@@ -242,6 +242,10 @@ export const createAppContext = asyncFn(
       mempoolApiUrl: env.MEMPOOL_API_URL,
       logger,
     })
+    const interrupted = await statementService.failInterrupted()
+    if (interrupted > 0) {
+      logger.warn({ count: interrupted }, 'Marked interrupted statements as failed')
+    }
 
     let pendingClient: ElectrumClient | null = null
     let stopped = false

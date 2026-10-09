@@ -189,6 +189,25 @@ describe('statement currency persistence', () => {
     expect((await service.findById(id))?.status).toBe('completed')
   })
 
+  it('fails statements left generating by a previous run and leaves finished ones alone', async () => {
+    await setup()
+    const { service } = harness()
+    const interrupted = (await service.create(input)).unwrap()
+    const failed = (await service.create(input)).unwrap()
+    await service.fail(failed, 'Original failure')
+
+    await expect(service.failInterrupted()).resolves.toBe(1)
+
+    await expect(service.findById(interrupted)).resolves.toMatchObject({
+      status: 'failed',
+      errorMessage: 'Generation was interrupted. Delete this statement and try again.',
+    })
+    await expect(service.findById(failed)).resolves.toMatchObject({
+      status: 'failed',
+      errorMessage: 'Original failure',
+    })
+  })
+
   it('does not complete a statement that failed while completion was being validated', async () => {
     await setup()
     const { service, quotes } = harness()

@@ -44,6 +44,8 @@ export interface StatementDto {
 
 type StatementRow = typeof statements.$inferSelect
 
+const INTERRUPTED_MESSAGE = 'Generation was interrupted. Delete this statement and try again.'
+
 export interface GenerateStatementInput {
   quoteCurrency?: StatementQuoteCurrency
   claimIds: string[]
@@ -197,6 +199,19 @@ export class StatementService {
     })
 
     return Ok(id)
+  }
+
+  /**
+   * Fail statements left pending by a previous run. Generation runs in this
+   * process, so nothing will finish them after a restart.
+   */
+  public async failInterrupted(): Promise<number> {
+    const failed = await this.db
+      .update(statements)
+      .set({ status: 'failed', errorMessage: INTERRUPTED_MESSAGE, updatedAt: sql`datetime('now')` })
+      .where(eq(statements.status, 'pending'))
+      .returning({ id: statements.id })
+    return failed.length
   }
 
   /** Mark a statement as completed with transaction data. */
