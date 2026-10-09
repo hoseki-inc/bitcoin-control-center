@@ -131,6 +131,16 @@ it('does not show generation for a statement that finished since it was last ope
   expect(generationShown()).toBe(false)
 })
 
+it('closes to the statements list', async () => {
+  const { container } = await renderStatementPage('completed')
+  const close = container.querySelector<HTMLAnchorElement>('a[aria-label="Back to statements"]')
+  assert(close !== null, 'Expected the close link')
+  await act(async () => {
+    close.click()
+  })
+  expect(container.textContent).toBe('Statements list')
+})
+
 it('goes to the statements list when generation is closed', async () => {
   const { container, click } = await renderStatementPage('pending')
   await click('Close')

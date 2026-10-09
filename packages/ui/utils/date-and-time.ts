@@ -11,6 +11,8 @@ import type { Timezone } from '../../schemas/timezone'
  *
  * @param {Date} openingDate - The start date of the range
  * @param {Date} closingDate - The end date of the range
+ * @param {Timezone} timezone - The timezone the dates are shown in
+ * @param {{ shortMonths?: boolean }} options - `shortMonths` abbreviates the end month too, e.g. "Jan 1 - Feb 28, 2025"
  * @returns {string} A formatted date range string
  *
  * @example
@@ -34,8 +36,14 @@ import type { Timezone } from '../../schemas/timezone'
  * // Returns: "Jan 1, 2024 - February 28, 2025"
  *
  */
-export function formatDateRange(start: Date, end: Date, timezone?: Timezone): string {
+export function formatDateRange(
+  start: Date,
+  end: Date,
+  timezone?: Timezone,
+  { shortMonths = false }: { shortMonths?: boolean } = {},
+): string {
   const separator = '-'
+  const endMonth = shortMonths ? 'MMM' : 'MMMM'
 
   const tzStart = new TZDate(start, timezone)
   const tzEnd = new TZDate(end, timezone)
@@ -51,11 +59,11 @@ export function formatDateRange(start: Date, end: Date, timezone?: Timezone): st
       return `${format(tzStart, 'MMM d')} ${separator} ${format(tzEnd, 'd, yyyy')}`
     } else {
       // Different months, same year: "Jan 1 - February 31, 2025"
-      return `${format(tzStart, 'MMM d')} ${separator} ${format(tzEnd, 'MMMM d, yyyy')}`
+      return `${format(tzStart, 'MMM d')} ${separator} ${format(tzEnd, `${endMonth} d, yyyy`)}`
     }
   } else {
     // Different years: "Jan 1, 2024 - February 31, 2025"
-    return `${format(tzStart, 'MMM d, yyyy')} ${separator} ${format(tzEnd, 'MMMM d, yyyy')}`
+    return `${format(tzStart, 'MMM d, yyyy')} ${separator} ${format(tzEnd, `${endMonth} d, yyyy`)}`
   }
 }
 

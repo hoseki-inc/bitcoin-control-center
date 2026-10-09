@@ -1,4 +1,4 @@
-import { Box, Button, Flex, HStack, Link, Stack, Text } from '@chakra-ui/react'
+import { Box, Button, Flex, HStack, IconButton, Link, Stack, Text } from '@chakra-ui/react'
 import { renderStatementDocument } from '@hoseki/packages/pdf'
 import type { StatementDocumentFormat, StatementId } from '@hoseki/packages/schemas'
 import { Animations, ErrorBanner, Spinner } from '@hoseki/packages/ui/design-system'
@@ -10,7 +10,7 @@ import {
 } from '@hoseki/packages/ui/prove-verify-ui'
 import { PDFViewer, pdf } from '@react-pdf/renderer'
 import { format } from 'date-fns'
-import { ShieldCheckIcon } from 'lucide-react'
+import { ShieldCheckIcon, XIcon } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link as RouterLink, useNavigate } from 'react-router'
 import { DeleteStatementButton } from '../../components/statements/delete-statement-button'
@@ -95,7 +95,7 @@ function StatementDetailsPageContent({ statementId }: { statementId: StatementId
         py={6}
         px={{ base: 4, md: 8 }}
       >
-        <BackLink />
+        <CloseLink />
         <Stack gap={12}>
           <StatementSummary statement={statement} />
           <ActionButtons statement={statement} statementFormat={statementFormat} />
@@ -234,19 +234,17 @@ function ActionButtons({
   )
 }
 
-function BackLink() {
+function CloseLink() {
   return (
-    <Link
+    <IconButton
       as={RouterLink}
-      to="/home"
-      display="inline-flex"
-      alignItems="center"
-      color="neutral.900"
-      fontWeight="medium"
-      _hover={{ textDecoration: 'none', color: 'neutral.500' }}
-    >
-      Back to Home
-    </Link>
+      to="/statements"
+      aria-label="Back to statements"
+      icon={<XIcon size={24} aria-hidden="true" />}
+      variant="ghost"
+      alignSelf="flex-start"
+      ml={-2}
+    />
   )
 }
 

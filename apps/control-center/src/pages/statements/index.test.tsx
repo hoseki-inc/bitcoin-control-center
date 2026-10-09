@@ -148,11 +148,11 @@ it('switches to a table of statements with their requester and View links', asyn
   expect(container.querySelector('a[href="/statements/create"]')?.textContent).toBe('Generate Statement')
   const table = container.querySelector('table[aria-label="Statements"]')
   assert(table !== null, 'Expected the statements table')
-  expect(table.textContent).toContain('01 Sep 2026')
+  expect(table.textContent).toContain('Sep 1, 2026')
   expect(table.textContent).toContain('Test partner')
   const view = table.querySelector('a[href="/statements/statement"]')
   expect(view?.textContent).toBe('View')
-  expect(view?.getAttribute('aria-label')).toMatch(/^View statement created 01 Sep 2026 /)
+  expect(view?.getAttribute('aria-label')).toMatch(/^View statement created Sep 1, 2026 /)
 })
 
 it('returns to Statements when a statement started here is cancelled', async () => {
@@ -186,7 +186,7 @@ it('offers Delete only for statements that are no longer generating', async () =
   const { container, requests, settle, button } = await renderStatementsPage({ list: async () => statements })
   await settle('success')
   const deleteButtons = (): number =>
-    container.querySelectorAll('button[aria-label^="Delete statement created 01 Sep 2026 "]').length
+    container.querySelectorAll('button[aria-label^="Delete statement created Sep 1, 2026 "]').length
   // Cards are the default view.
   expect(deleteButtons()).toBe(2)
   await act(async () => {
@@ -195,7 +195,7 @@ it('offers Delete only for statements that are no longer generating', async () =
   expect(deleteButtons()).toBe(2)
   const rows = Array.from(container.querySelectorAll('table[aria-label="Statements"] tbody tr'))
   const labels = rows.map((row) => row.querySelector('button')?.getAttribute('aria-label') ?? null)
-  expect(labels.map((label) => label?.startsWith('Delete statement created 01 Sep 2026 ') ?? null)).toEqual([
+  expect(labels.map((label) => label?.startsWith('Delete statement created Sep 1, 2026 ') ?? null)).toEqual([
     true,
     true,
     null,

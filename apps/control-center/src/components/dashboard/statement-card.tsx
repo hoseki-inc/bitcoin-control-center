@@ -5,7 +5,7 @@ import { format } from 'date-fns'
 import type { ReactNode } from 'react'
 import type { StatementDto } from '../../trpc/server-types'
 
-const CREATED_FORMAT = 'dd MMM yyyy h:mm a'
+const CREATED_FORMAT = 'MMM d, yyyy h:mm a'
 
 /** The View action's accessible name, shared by statement cards and the statements table. */
 export function viewStatementLabel(statement: StatementDto): string {
@@ -102,7 +102,7 @@ export function StatementCard({
             Statement
           </Text>
           <Text textStyle="text/xs" color="neutral.600">
-            Period: {formatDateRange(statement.openingDate, statement.closingDate)}
+            Period: {formatDateRange(statement.openingDate, statement.closingDate, undefined, { shortMonths: true })}
           </Text>
           <Text textStyle="text/xs" color="neutral.600">
             Created: {format(statement.createdAt, CREATED_FORMAT)}

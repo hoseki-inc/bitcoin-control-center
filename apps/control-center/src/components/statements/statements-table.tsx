@@ -23,7 +23,7 @@ export function StatementsTable({ statements }: { statements: StatementDto[] }):
             <Tr key={statement.id}>
               <Td>
                 <Text color="neutral.900" fontWeight="medium">
-                  {format(statement.createdAt, 'dd MMM yyyy')}
+                  {format(statement.createdAt, 'MMM d, yyyy')}
                 </Text>
                 <Text color="neutral.600">{format(statement.createdAt, 'h:mm a')}</Text>
               </Td>
