@@ -116,7 +116,13 @@ it.each(['file', 'database'] as const)(
 
     const upgraded = await openDrizzleDatabase(directory, logger)
     try {
-      await expect(databaseState(upgraded)).resolves.toEqual(before)
+      // Upgrading only adds the statement counter, which starts from the highest existing number.
+      const upgradedState = await databaseState(upgraded)
+      expect({
+        schema: upgradedState.schema.filter((row) => row.tbl_name !== 'statement_counter'),
+        data: upgradedState.data.filter((table) => table.table !== 'statement_counter'),
+      }).toEqual(before)
+      await expect(upgraded.all(sql`SELECT * FROM statement_counter`)).resolves.toEqual([{ id: 1, last_counter: 123 }])
       const journal = await upgraded.all<{ id: number; hash: string; created_at: number; name: string }>(
         sql`SELECT * FROM _migrations ORDER BY id`,
       )
@@ -193,7 +199,12 @@ it.each(['legacy', 'drizzle'] as const)(
     const upgraded = await openDrizzleDatabase(directory, logger)
     try {
       const after = await databaseState(upgraded)
-      const addedTables = new Set(['desktop_connection_profiles', 'btc_quote_cache', 'btc_quote_lookups'])
+      const addedTables = new Set([
+        'desktop_connection_profiles',
+        'btc_quote_cache',
+        'btc_quote_lookups',
+        'statement_counter',
+      ])
       expect({
         schema: after.schema
           .filter((row) => !addedTables.has(row.tbl_name))
@@ -213,6 +224,7 @@ it.each(['legacy', 'drizzle'] as const)(
           })),
       }).toEqual(before)
       await expect(upgraded.all(sql`SELECT * FROM desktop_connection_profiles`)).resolves.toEqual([])
+      await expect(upgraded.all(sql`SELECT * FROM statement_counter`)).resolves.toEqual([{ id: 1, last_counter: 123 }])
       await expect(upgraded.all(sql`SELECT name FROM _migrations`)).resolves.toHaveLength(migrations.length)
       const completed = await databaseState(upgraded, true)
       upgraded.$client.close()

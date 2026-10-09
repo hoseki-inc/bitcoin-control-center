@@ -12,7 +12,7 @@ import { nanoid } from 'nanoid'
 import type { Logger } from 'pino'
 import { z } from 'zod'
 import type { SentinelDb } from '../../db/drizzle'
-import { accounts, exchangeBalanceSnapshots, statements } from '../../db/schema'
+import { accounts, exchangeBalanceSnapshots, statementCounter, statements } from '../../db/schema'
 import type { ExchangeService } from '../exchange/service'
 import type { DailyRates } from '../price/daily_rates'
 import type { DailyRatesService } from '../price/daily_rates'
@@ -172,18 +172,28 @@ export class StatementService {
       return Err(valid.unwrapErr())
     }
     const id = `st_stmt_${nanoid()}`
-    await this.db.insert(statements).values({
-      id,
-      status: 'pending',
-      timezone: input.timezone,
-      openingDate: input.openingDate.toISOString(),
-      closingDate: input.closingDate.toISOString(),
-      accountIds: JSON.stringify(input.claimIds),
-      exchangeAccountIds: input.exchangeAccountIds ? JSON.stringify(input.exchangeAccountIds) : null,
-      userName: input.name ?? null,
-      userAddress: input.address ?? null,
-      quoteCurrency: input.quoteCurrency ?? 'USD',
-      counter: sql`(select coalesce(max(${statements.counter}), 0) + 1 from ${statements})`,
+    await this.db.transaction(async (tx) => {
+      const [next] = await tx
+        .update(statementCounter)
+        .set({ lastCounter: sql`${statementCounter.lastCounter} + 1` })
+        .where(eq(statementCounter.id, 1))
+        .returning({ counter: statementCounter.lastCounter })
+      if (next === undefined) {
+        throw new Error('Statement counter is missing')
+      }
+      await tx.insert(statements).values({
+        id,
+        status: 'pending',
+        timezone: input.timezone,
+        openingDate: input.openingDate.toISOString(),
+        closingDate: input.closingDate.toISOString(),
+        accountIds: JSON.stringify(input.claimIds),
+        exchangeAccountIds: input.exchangeAccountIds ? JSON.stringify(input.exchangeAccountIds) : null,
+        userName: input.name ?? null,
+        userAddress: input.address ?? null,
+        quoteCurrency: input.quoteCurrency ?? 'USD',
+        counter: next.counter,
+      })
     })
 
     return Ok(id)
