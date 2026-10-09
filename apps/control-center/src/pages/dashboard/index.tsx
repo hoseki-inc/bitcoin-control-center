@@ -731,7 +731,7 @@ export function DashboardPage({
                   <Text
                     fontFamily="body"
                     sx={{ fontVariantNumeric: 'tabular-nums' }}
-                    textStyle={{ base: 'text/3xl', md: 'text/5xl' }}
+                    textStyle={{ base: 'text/7xl', md: 'amount/hero' }}
                     letterSpacing="-0.03em"
                     fontWeight="semibold"
                     color="neutral.900"
@@ -741,7 +741,7 @@ export function DashboardPage({
                       ? '\u2014'
                       : formatBitcoinNumber(new Decimal(displayBalanceSats).div(100_000_000))}
                   </Text>
-                  <Text textStyle={{ base: 'text/md', md: 'text/lg' }} fontWeight="medium" color="neutral.500">
+                  <Text textStyle={{ base: 'text/xl', md: 'text/3xl' }} fontWeight="medium" color="neutral.500">
                     BTC
                   </Text>
                 </Flex>
@@ -760,7 +760,7 @@ export function DashboardPage({
                   opacity={isViewUpdating ? 0.35 : 1}
                   transition="opacity 0.2s ease"
                 >
-                  <FiatAmountText fontWeight="normal">
+                  <FiatAmountText textStyle={{ base: 'text/lg', md: 'text/xl' }} fontWeight="normal">
                     <>
                       {btcPrice === null
                         ? 'USD unavailable'
@@ -781,7 +781,7 @@ export function DashboardPage({
                     <>
                       <Flex align="center" gap={2.5} flexWrap="wrap">
                         <Text
-                          textStyle="text/lg"
+                          textStyle={{ base: 'text/xl', md: 'text/3xl' }}
                           fontWeight="semibold"
                           color={changeColor}
                           sx={{ fontVariantNumeric: 'tabular-nums' }}
@@ -1061,7 +1061,7 @@ function NetAccumulatedSummary({
             <>
               <Flex align="baseline" columnGap={2.5} flexWrap="wrap" mt={1}>
                 <Text
-                  textStyle="text/lg"
+                  textStyle="amount/compact"
                   letterSpacing="-0.02em"
                   fontWeight="semibold"
                   color={net.lt(0) ? 'error.700' : 'success.700'}
