@@ -73,7 +73,11 @@ it.each([false, true])('retains chart nodes while disabling stale inspection, re
     expect(frame.hasAttribute('inert')).toBe(true)
     expect(frame.getAttribute('aria-hidden')).toBe('true')
     expect(container.querySelector('[aria-busy="true"]')).not.toBeNull()
-    expect(container.textContent).toContain('Updating view')
+    // The sweep laid across the retained chart is hidden from assistive technology too.
+    const sweep = frame.nextElementSibling
+    assert.exists(sweep, 'Expected the sweep across the retained chart')
+    expect(sweep.getAttribute('aria-hidden')).toBe('true')
+    expect(getComputedStyle(sweep).pointerEvents).toBe('none')
     await render('account-b', false)
     expect(container.querySelector('button')).toBe(inspection)
     expect(frame.hasAttribute('inert')).toBe(false)
@@ -89,7 +93,27 @@ it.each([false, true])('retains chart nodes while disabling stale inspection, re
         </ChakraProvider>,
       )
     })
-    expect(container.querySelector('output')?.getAttribute('aria-label')).toBe('Preparing history for this date range')
+    expect(container.textContent).toBe('Preparing history for this date range')
     expect(container.querySelector('button')).toBeNull()
+  })
+})
+
+it('marks a background refresh busy without sweeping over the current chart', async () => {
+  await withTestSetup(async (root, container) => {
+    await act(async () => {
+      root.render(
+        <ChakraProvider>
+          <HistoryChartFrame height="220px" viewKey="all" loading={false} updating={false} refreshing>
+            <button>Inspect chart</button>
+          </HistoryChartFrame>
+        </ChakraProvider>,
+      )
+    })
+    expect(container.querySelector('[aria-busy="true"]')).not.toBeNull()
+    const frame = container.querySelector('button')?.parentElement
+    assert.exists(frame, 'Expected the chart frame')
+    expect(frame.hasAttribute('aria-hidden')).toBe(false)
+    expect(frame.nextElementSibling).toBeNull()
+    expect(container.querySelector('[inert]')).toBeNull()
   })
 })

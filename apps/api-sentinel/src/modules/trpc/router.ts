@@ -433,6 +433,10 @@ const controlCenterRouter = t.router({
       return result.unwrap()
     }),
 
+  storedWalletBalances: publicProcedure
+    .input(z.object({ claimIds: z.array(z.string()) }))
+    .query(async ({ ctx, input }) => ctx.app.controlCenterService.getStoredWalletBalances(input.claimIds)),
+
   recordSnapshot: publicProcedure.mutation(async ({ ctx }) => {
     const rows = await ctx.app.database
       .select({ id: accountTable.id, descriptor: accountTable.descriptor })

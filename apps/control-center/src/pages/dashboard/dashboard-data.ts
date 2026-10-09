@@ -6,6 +6,7 @@ import { getBrowserTimezone } from '../../utils/timezone'
 
 type PortfolioInput = Exclude<RouterInput['portalProve']['controlCenter']['getData'], void>
 type PortfolioData = RouterOutput['portalProve']['controlCenter']['getData']
+export type StoredWalletBalance = RouterOutput['portalProve']['controlCenter']['storedWalletBalances'][number]
 type ListQuery<T> = { data?: T[]; isLoading: boolean }
 
 export interface PortfolioQuery {
@@ -38,7 +39,9 @@ export interface DashboardDataSource {
   ) => PortfolioQuery
   useBalances: (
     ...args: Parameters<typeof useGetBalancesPerClaimIds>
-  ) => Pick<ReturnType<typeof useGetBalancesPerClaimIds>, 'data'>
+  ) => Pick<ReturnType<typeof useGetBalancesPerClaimIds>, 'data' | 'balancesFailed' | 'updatedAt'>
+  /** Each wallet's last recorded balance, shown while live balances load or can't be fetched. */
+  useStoredBalances: (input: { claimIds: string[] }, options: { enabled: boolean }) => { data?: StoredWalletBalance[] }
   useAutoRefresh: () => void
   getTimezone: () => string
 }
@@ -54,6 +57,7 @@ export const dashboardDataSource: DashboardDataSource = {
   }),
   useHistory: (input, options) => trpc.portalProve.controlCenter.getData.useQuery(input, options),
   useBalances: useGetBalancesPerClaimIds,
+  useStoredBalances: (input, options) => trpc.portalProve.controlCenter.storedWalletBalances.useQuery(input, options),
   useAutoRefresh: useAutoRefreshExchanges,
   getTimezone: getBrowserTimezone,
 }

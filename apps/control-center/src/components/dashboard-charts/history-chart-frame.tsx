@@ -31,7 +31,7 @@ export function HistoryChartFrame({
   useEffect(() => {
     controls.stop()
     if (reduceMotion || !ready) {
-      controls.set({ opacity: updating ? 0.55 : 1 })
+      controls.set({ opacity: 1 })
     } else {
       void controls.start({
         opacity: [0.65, 1],
@@ -44,7 +44,15 @@ export function HistoryChartFrame({
   }, [controls, ready, reduceMotion, updating, viewKey])
 
   return (
-    <Box bg="shades.0" pt={2} position="relative" overflow="hidden" aria-busy={loading || updating || refreshing}>
+    <Box
+      bg="shades.0"
+      pt={2}
+      position="relative"
+      overflow="hidden"
+      aria-busy={loading || updating || refreshing}
+      // The frame clips overflow, so draw the chart's keyboard focus ring inside it.
+      sx={{ '& .recharts-surface:focus-visible': { outlineOffset: '-2px' } }}
+    >
       <MotionBox
         minH={height}
         initial={false}
@@ -57,31 +65,25 @@ export function HistoryChartFrame({
       >
         {children}
       </MotionBox>
-      {(updating || refreshing) && (
-        <Box position="absolute" insetX={0} top={0} pointerEvents="none">
-          <Skeleton
-            h="3px"
-            startColor="neutral.100"
-            endColor="neutral.300"
-            sx={{ '@media (prefers-reduced-motion: reduce)': { animation: 'none' } }}
-          />
-          {updating && (
-            <Text
-              as="output"
-              display="block"
-              textStyle="text/xs"
-              color="neutral.600"
-              bg="shades.0"
-              px={2}
-              py={1}
-              position="absolute"
-              right={0}
-              top={2}
-            >
-              Updating view…
-            </Text>
-          )}
-        </Box>
+      {updating && (
+        // A light sweep across the retained chart while the new view loads.
+        <Box
+          position="absolute"
+          inset={0}
+          pointerEvents="none"
+          aria-hidden="true"
+          sx={{
+            background:
+              'linear-gradient(90deg, rgba(240,242,245,0) 0%, rgba(240,242,245,0.85) 50%, rgba(240,242,245,0) 100%)',
+            backgroundSize: '200% 100%',
+            animation: 'historyShimmer 1.4s ease-in-out infinite',
+            '@keyframes historyShimmer': {
+              '0%': { backgroundPosition: '-200% 0' },
+              '100%': { backgroundPosition: '200% 0' },
+            },
+            '@media (prefers-reduced-motion: reduce)': { animation: 'none' },
+          }}
+        />
       )}
     </Box>
   )
@@ -89,15 +91,7 @@ export function HistoryChartFrame({
 
 export function HistoryRangeLoading({ height }: { height: string }): JSX.Element {
   return (
-    <Flex
-      h={height}
-      direction="column"
-      justify="center"
-      px={{ base: 4, md: 8 }}
-      gap={4}
-      as="output"
-      aria-label="Preparing history for this date range"
-    >
+    <Flex h={height} direction="column" justify="center" px={{ base: 4, md: 8 }} gap={4}>
       <Stack spacing={3} aria-hidden="true">
         {['88%', '64%', '76%'].map((width) => (
           <Skeleton

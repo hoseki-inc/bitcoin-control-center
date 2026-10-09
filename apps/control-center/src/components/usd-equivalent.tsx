@@ -1,27 +1,11 @@
 import Decimal from 'decimal.js'
+import { isUsableBtcPrice } from '../lib/bitcoin-display'
 
-export function UsdEquivalent({
-  btc,
-  btcPrice,
-  showSign = false,
-}: {
-  btc: Decimal.Value
-  btcPrice: number | null
-  showSign?: boolean
-}): JSX.Element {
-  if (btcPrice === null || !Number.isFinite(btcPrice) || btcPrice <= 0) {
+export function UsdEquivalent({ btc, btcPrice }: { btc: Decimal.Value; btcPrice: number | null }): JSX.Element {
+  if (!isUsableBtcPrice(btcPrice)) {
     return <>USD unavailable</>
   }
 
   const value = new Decimal(btc).times(btcPrice).toNumber()
-  return (
-    <>
-      {value.toLocaleString('en-US', {
-        style: 'currency',
-        currency: 'USD',
-        signDisplay: showSign ? 'exceptZero' : 'auto',
-      })}{' '}
-      USD
-    </>
-  )
+  return <>{value.toLocaleString('en-US', { style: 'currency', currency: 'USD' })} USD</>
 }

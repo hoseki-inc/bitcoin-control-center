@@ -47,23 +47,41 @@ it('preserves one status slot across completion, dismissal and a restarted sync'
   }
 
   await render(true, false)
-  const slot = container.querySelector('output')
-  assert.exists(slot, 'Expected the history status slot')
+  const slot = container.firstElementChild
+  assert(slot instanceof HTMLElement, 'Expected the history status slot')
+  const [spinner, check] = Array.from(slot.children)
+  assert.exists(spinner, 'Expected the spinner layer')
+  assert.exists(check, 'Expected the check layer')
+  const shown = () => ({
+    spinner: getComputedStyle(spinner).opacity,
+    check: getComputedStyle(check).opacity,
+    text: slot.textContent,
+  })
   const size = getComputedStyle(slot).width
-  expect(slot.getAttribute('aria-label')).toBe('Updating history')
+  expect(shown()).toEqual({ spinner: '1', check: '0', text: 'Updating history' })
 
   await render(false, true)
-  expect(container.querySelector('output')).toBe(slot)
-  expect(slot.getAttribute('aria-label')).toBe('History updated')
+  expect(container.firstElementChild).toBe(slot)
+  expect(shown()).toEqual({ spinner: '0', check: '1', text: 'History updated' })
   expect(getComputedStyle(slot).width).toBe(size)
 
   await render(false, false)
-  expect(container.querySelector('output')).toBe(slot)
-  expect(slot.hasAttribute('aria-label')).toBe(false)
+  expect(container.firstElementChild).toBe(slot)
+  expect(shown()).toEqual({ spinner: '0', check: '0', text: '' })
   expect(getComputedStyle(slot).width).toBe(size)
 
   // A new sync takes precedence even if the previous completion is still recorded.
   await render(true, true)
-  expect(slot.getAttribute('aria-label')).toBe('Updating history')
-  expect(container.querySelectorAll('output')).toHaveLength(1)
+  expect(shown()).toEqual({ spinner: '1', check: '0', text: 'Updating history' })
+
+  // The production rows use the compact size.
+  await act(async () => {
+    root.render(
+      <ChakraProvider>
+        <HistorySyncStatus syncing synced={false} compact />
+      </ChakraProvider>,
+    )
+  })
+  expect(container.firstElementChild).toBe(slot)
+  expect(getComputedStyle(slot).width).toBe('12px')
 })
