@@ -4,38 +4,57 @@ import {
   Flex,
   FormControl,
   FormLabel,
-  Grid,
-  Heading,
   Popover,
   PopoverArrow,
-  PopoverBody,
   PopoverContent,
   PopoverTrigger,
   Portal,
   Stack,
   Text,
+  VisuallyHidden,
   useBreakpointValue,
   useDisclosure,
 } from '@chakra-ui/react'
-import { DateInput as DefaultDateInput, Panel, Spinner } from '@hoseki/packages/ui/design-system'
-import { VIEWPORT_BELOW_HEADER } from '@hoseki/packages/ui/prove-verify-ui'
-import { format, isAfter, isBefore, startOfDay, subDays } from 'date-fns'
+import { TZDate } from '@date-fns/tz'
+import type { BalanceValue } from '@hoseki/packages/lib/balance'
+import type { ClaimId } from '@hoseki/packages/schemas'
+import { DateInput as DefaultDateInput, EmptyView, Spinner } from '@hoseki/packages/ui/design-system'
+import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
+import { VIEWPORT_BELOW_HEADER, Wrapper } from '@hoseki/packages/ui/prove-verify-ui/layout'
+import { formatUsd } from '@hoseki/packages/ui/utils/format'
+import { format, formatDistanceToNowStrict, isAfter, isBefore, startOfDay, subDays } from 'date-fns'
 import Decimal from 'decimal.js'
+import { X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
-import { AccountsSidebar as DefaultAccountsSidebar } from '../../components/dashboard-charts/accounts-sidebar'
+import { AccountFilter as DefaultAccountFilter } from '../../components/dashboard-charts/account-filter'
 import { AccumulationChart as DefaultAccumulationChart } from '../../components/dashboard-charts/accumulation-chart'
 import {
-  getMonthKey,
+  getFlowTotals,
   getMonthlyChanges,
   toSatoshisString,
   withCurrentBalancePoint,
 } from '../../components/dashboard-charts/balance-history'
+import { chartColors } from '../../components/dashboard-charts/chart-colors'
+import { HistoryChartFrame, HistoryRangeLoading } from '../../components/dashboard-charts/history-chart-frame'
 import { MonthlyNetChangeChart as DefaultMonthlyNetChangeChart } from '../../components/dashboard-charts/monthly-net-change-chart'
+import { FiatAmountText } from '../../components/fiat-amount-text'
+import {
+  formatBitcoinNumber,
+  formatSignedBitcoinNumber,
+  formatSignedUsd,
+  isUsableBtcPrice,
+} from '../../lib/bitcoin-display'
+import { isExchangeConnected } from '../../utils/exchange-connection-status'
 import { type DashboardDataSource, dashboardDataSource } from './dashboard-data'
 
 type PresetTimeRange = '7d' | '30d' | '90d' | '1y' | 'all'
 type TimeRange = PresetTimeRange | 'custom'
+/**
+ * Whether the wallet balances in view are live, still loading, or older ones kept while
+ * Electrum is unreachable, or whether a missing account list leaves the total unknown.
+ */
+type WalletBalanceState = 'current' | 'loading' | 'stale' | 'unknown'
 
 interface CustomDateRangeDraft {
   startDate: Date | null
@@ -78,42 +97,52 @@ function toCustomDateRangeInput(range: CustomDateRangeDraft): CustomDateRangeInp
   return { startDate: format(range.startDate, 'yyyy-MM-dd'), endDate: format(range.endDate, 'yyyy-MM-dd') }
 }
 
+/** Matches `formatPeriodDates`, so the caption keeps its form once the range's figures load. */
 function formatCustomDateRangeLabel(range: CustomDateRangeDraft): string {
   if (range.startDate === null || range.endDate === null) {
     return 'custom'
   }
-  if (format(range.startDate, 'yyyy') === format(range.endDate, 'yyyy')) {
-    return `${format(range.startDate, 'MMM d')} – ${format(range.endDate, 'MMM d, yyyy')}`
-  }
-  return `${format(range.startDate, 'PP')} – ${format(range.endDate, 'PP')}`
+  return `${format(range.startDate, 'MMM d, yyyy')} – ${format(range.endDate, 'MMM d, yyyy')}`
 }
 
-function formatBtc(satoshis: string | Decimal): string {
-  try {
-    const btc = new Decimal(satoshis).div(100_000_000)
-    const formatted = btc.toFixed(8)
-    return formatted === '' || formatted === 'NaN' ? '0.00000000' : formatted
-  } catch {
-    return '0.00000000'
+/** The first and last dates the chart actually shows, such as "Oct 1, 2025 – Sep 30, 2026". */
+function formatPeriodDates(points: { timestamp: string }[], timezone: string): string | null {
+  const first = points[0]
+  const last = points[points.length - 1]
+  if (first === undefined || last === undefined) {
+    return null
   }
+  const toDate = (timestamp: string): string => format(new TZDate(new Date(timestamp), timezone), 'MMM d, yyyy')
+  return `${toDate(first.timestamp)} – ${toDate(last.timestamp)}`
 }
 
-function formatUsd(btcAmount: number, btcPrice: number): string {
-  return (btcAmount * btcPrice).toLocaleString('en-US', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })
+/** A smaller, lighter "BTC" after a large amount, scaled to it. */
+function BtcUnit(): JSX.Element {
+  return (
+    <Text as="span" ml="0.3em" fontSize="0.6em" fontWeight="medium" color="neutral.500" letterSpacing="0">
+      BTC
+    </Text>
+  )
+}
+
+/** "+12.3%", or "+<0.1%" for a change too small to show at one decimal. */
+function formatPercentChange(change: Decimal, start: Decimal): string {
+  const percent = change.abs().div(start).mul(100)
+  const shown = percent.lt(0.05)
+    ? '<0.1'
+    : percent.toNumber().toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+  return `${change.lt(0) ? '\u2212' : '+'}${shown}%`
 }
 
 export interface DashboardViews {
-  AccountsSidebar: typeof DefaultAccountsSidebar
+  AccountFilter: typeof DefaultAccountFilter
   AccumulationChart: typeof DefaultAccumulationChart
   MonthlyNetChangeChart: typeof DefaultMonthlyNetChangeChart
   DateInput: typeof DefaultDateInput
 }
 
 const dashboardViews: DashboardViews = {
-  AccountsSidebar: DefaultAccountsSidebar,
+  AccountFilter: DefaultAccountFilter,
   AccumulationChart: DefaultAccumulationChart,
   MonthlyNetChangeChart: DefaultMonthlyNetChangeChart,
   DateInput: DefaultDateInput,
@@ -126,44 +155,28 @@ export function DashboardPage({
   dataSource?: DashboardDataSource
   views?: DashboardViews
 }): JSX.Element {
-  const { AccountsSidebar, AccumulationChart, MonthlyNetChangeChart, DateInput } = views
+  const { AccountFilter, AccumulationChart, MonthlyNetChangeChart, DateInput } = views
   dataSource.useAutoRefresh()
+  // Read the width on the first render so cached data never flashes the phone layout.
+  const hasDesktopSidebar = useBreakpointValue({ base: false, lg: true }, { ssr: false }) ?? false
   const [timeRange, setTimeRange] = useState<TimeRange>('90d')
   const [customDateRange, setCustomDateRange] = useState<CustomDateRangeDraft>({
     startDate: null,
     endDate: null,
   })
-  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [selection, setSelected] = useState<Set<string>>(new Set())
   const [recentlySyncedAccountIds, setRecentlySyncedAccountIds] = useState<Set<string>>(new Set())
+  const displayedHistory = useRef<ReturnType<typeof withCurrentBalancePoint> | null>(null)
   const hasRecordedSnapshot = useRef(false)
   const previousHistorySync = useRef({ viewKey: '', syncingIds: new Set<string>() })
   const completedHistory = useRef<{ viewKey: string; points: ReturnType<typeof withCurrentBalancePoint> } | null>(null)
   const recentlySyncedTimeouts = useRef<Map<string, number>>(new Map())
   const shownRecentlySyncedAccountIds = useRef<Set<string>>(new Set())
+  const activeLabelRef = useRef<HTMLParagraphElement>(null)
 
   const navigate = useNavigate()
   const userTimezone = useMemo(() => dataSource.getTimezone(), [dataSource])
   const today = new Date()
-  const isShowingAll = selected.size === 0
-  const isSmallScreen = useBreakpointValue({ base: true, xl: false }) ?? true
-  const [userCompact, setUserCompact] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem('hoseki:sidebar-compact') === 'true'
-    } catch {
-      return false
-    }
-  })
-  const compactSidebar = isSmallScreen || userCompact
-  const toggleCompact = useCallback(() => {
-    setUserCompact((prev) => {
-      const next = !prev
-      try {
-        localStorage.setItem('hoseki:sidebar-compact', String(next))
-      } catch {}
-      return next
-    })
-  }, [])
-
   const { recordSnapshot, claimsQuery, exchangeAccountsQuery, manualAccountsQuery, etfAccountsQuery, btcPriceQuery } =
     dataSource.useAccounts()
 
@@ -172,12 +185,28 @@ export function DashboardPage({
   const manualAccounts = useMemo(() => manualAccountsQuery.data ?? [], [manualAccountsQuery.data])
   const etfAccounts = useMemo(() => etfAccountsQuery.data ?? [], [etfAccountsQuery.data])
   const claimIds = useMemo(() => claims.map((claim) => claim.id), [claims])
+  // Drop selected accounts that were removed or now need reconnecting; with none left, show all.
+  const selected = useMemo(() => {
+    const selectable = new Set<string>([
+      ...claimIds,
+      ...exchangeAccounts.filter(isExchangeConnected).map((account) => account.id),
+      ...manualAccounts.map((account) => account.id),
+      ...etfAccounts.map((account) => account.id),
+    ])
+    const valid = new Set([...selection].filter((id) => selectable.has(id)))
+    return valid.size === selection.size ? selection : valid
+  }, [selection, claimIds, exchangeAccounts, manualAccounts, etfAccounts])
+  const isShowingAll = selected.size === 0
 
   // Separate selected IDs into claim IDs and exchange account IDs.
   // Filter from typed source arrays so the return types are preserved correctly.
   const selectedClaimIds = useMemo(() => claimIds.filter((id) => selected.has(id)), [claimIds, selected])
   const selectedExchangeIds = useMemo(
-    () => exchangeAccounts.map((a) => a.id).filter((id) => selected.has(id)),
+    () =>
+      exchangeAccounts
+        .filter(isExchangeConnected)
+        .map((a) => a.id)
+        .filter((id) => selected.has(id)),
     [exchangeAccounts, selected],
   )
   const selectedManualIds = useMemo(
@@ -226,15 +255,12 @@ export function DashboardPage({
     { enabled: !isShowingAll, staleTime: 5 * 60 * 1000, keepPreviousData: true },
   )
 
-  // Keep showing previous data while filtered query loads to avoid chart flash
-  const data = isShowingAll ? (allData ?? filteredData) : (filteredData ?? allData)
   const activeData = isShowingAll ? allData : filteredData
   const activeLoading = isShowingAll ? allLoading : filteredLoading
   const activeFetching = isShowingAll ? allFetching : filteredFetching
   const activeIsPreviousData = isShowingAll ? allIsPreviousData : filteredIsPreviousData
   const activeError = isShowingAll ? allError : filteredError
   const hasCurrentRangeData = activeData !== undefined && !activeIsPreviousData
-  const isChartFetching = activeFetching && (activeIsPreviousData || activeData === undefined)
   const allHistorySyncingAccountIds = allData?.historySyncingAccountIds ?? []
   const filteredHistorySyncingAccountIds = filteredData?.historySyncingAccountIds ?? []
   const historySyncingAccountIds = isShowingAll ? allHistorySyncingAccountIds : filteredHistorySyncingAccountIds
@@ -255,7 +281,8 @@ export function DashboardPage({
     historySyncingAccountIds.every((id) => historyRefreshingAccountIds.includes(id))
   const historyNeedsInitialLoad = historySyncingAccountIds.length > 0 && !isHistoryRefreshing
   const recentlySyncedAccountIdList = useMemo(() => Array.from(recentlySyncedAccountIds), [recentlySyncedAccountIds])
-  const balancesQuery = dataSource.useBalances({ claimIds, enabled: claimIds.length > 0 })
+  const balancesQuery = dataSource.useBalances({ claimIds, enabled: claimIds.length > 0, retryFailedEveryMs: 10_000 })
+  const storedBalancesQuery = dataSource.useStoredBalances({ claimIds }, { enabled: claimIds.length > 0 })
 
   useEffect(() => {
     if (historySyncingAccountIds.length === 0) {
@@ -335,7 +362,7 @@ export function DashboardPage({
           next.delete(id)
           return next
         })
-      }, 5_000)
+      }, 3_000)
 
       recentlySyncedTimeouts.current.set(id, timeoutId)
     }
@@ -365,113 +392,82 @@ export function DashboardPage({
     }
   }, [allData?.verifiedClaimsCount, recordSnapshot])
 
-  const toggleAccount = useCallback((id: string) => {
-    setSelected((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) {
-        next.delete(id)
-      } else {
-        next.add(id)
-      }
-      return next
-    })
-  }, [])
+  const quotedBtcPrice = btcPriceQuery.data?.value ? Number(btcPriceQuery.data.value) : null
+  const btcPrice = isUsableBtcPrice(quotedBtcPrice) ? quotedBtcPrice : null
 
-  const clearAll = useCallback(() => {
-    setSelected(new Set())
-  }, [])
-
-  const claimTotalBtcSats = Array.from(balancesQuery.data.values()).reduce((sum, b) => {
-    if (!b) {
-      return sum
+  const storedWalletBalances = useMemo(
+    () => new Map((storedBalancesQuery.data ?? []).map((stored) => [stored.accountId, stored])),
+    [storedBalancesQuery.data],
+  )
+  // Each wallet's live balance or, while that loads, the last one Sentinel recorded. While
+  // Electrum is unreachable, the newer of the balance fetched before the failure and the
+  // recorded one. The sidebar rows and the total share these.
+  const walletBalances = new Map<ClaimId, BalanceValue | null>()
+  // While Electrum is unreachable, when each wallet's shown balance was current.
+  const walletBalanceTimes = new Map<ClaimId, number>()
+  for (const id of claimIds) {
+    const live = balancesQuery.data.get(id) ?? null
+    const stored = storedWalletBalances.get(id)
+    const storedBalance = stored === undefined ? null : { current: new Decimal(stored.balanceSats), usd: null }
+    if (!balancesQuery.balancesFailed) {
+      walletBalances.set(id, live ?? storedBalance)
+      continue
     }
-    return sum + Number(b.current)
-  }, 0)
-
-  const exchangeTotalBtcSats = exchangeAccounts.reduce((sum, a) => {
-    if (a.balance == null || a.balance === '') {
-      return sum
+    const storedAtMs = stored === undefined ? Number.NaN : Date.parse(stored.timestamp)
+    if (live !== null && !(storedAtMs > balancesQuery.updatedAt)) {
+      walletBalances.set(id, live)
+      walletBalanceTimes.set(id, balancesQuery.updatedAt)
+    } else if (storedBalance !== null) {
+      walletBalances.set(id, storedBalance)
+      walletBalanceTimes.set(id, storedAtMs)
+    } else {
+      // A wallet that has never synced counts as empty until Electrum answers, once the
+      // recorded balances have loaded to show it has none.
+      walletBalances.set(id, storedBalancesQuery.data === undefined ? null : { current: new Decimal(0), usd: null })
     }
-    return sum + Number(a.balance)
-  }, 0)
+  }
 
-  const manualTotalBtcSats = manualAccounts.reduce((sum, a) => {
-    if (!a.balance) {
-      return sum
-    }
-    return sum + Number(a.balance)
-  }, 0)
-
-  const etfTotalBtcSats = etfAccounts.reduce((sum, a) => {
-    if (!a.balance) {
-      return sum
-    }
-    return sum + Number(a.balance)
-  }, 0)
-
-  const totalBtcSats = claimTotalBtcSats + exchangeTotalBtcSats + manualTotalBtcSats + etfTotalBtcSats
-
-  const btcUsdPrice = btcPriceQuery.data?.value ? Number(btcPriceQuery.data.value) : null
-
-  const claimsTotalUsd = Array.from(balancesQuery.data.values()).reduce((sum, b) => {
-    if (!b?.usd) {
-      return sum
-    }
-    return sum + Number(b.usd)
-  }, 0)
-
-  const exchangeTotalUsd =
-    btcUsdPrice !== null
-      ? exchangeAccounts.reduce((sum, a) => {
-          if (a.balance == null || a.balance === '') {
-            return sum
-          }
-          return sum + (Number(a.balance) / 100_000_000) * btcUsdPrice
-        }, 0)
-      : 0
-
-  const manualTotalUsd =
-    btcUsdPrice !== null
-      ? manualAccounts.reduce((sum, a) => {
-          if (!a.balance) {
-            return sum
-          }
-          return sum + (Number(a.balance) / 100_000_000) * btcUsdPrice
-        }, 0)
-      : 0
-
-  const etfTotalUsd =
-    btcUsdPrice !== null
-      ? etfAccounts.reduce((sum, a) => {
-          if (!a.balance) {
-            return sum
-          }
-          return sum + (Number(a.balance) / 100_000_000) * btcUsdPrice
-        }, 0)
-      : 0
-
-  const totalUsd = claimsTotalUsd + exchangeTotalUsd + manualTotalUsd + etfTotalUsd
-
-  // Compute display balance from individual sources (claims + exchange) so the
-  // hero number is always consistent with the sidebar total.
-  const displayBalanceSats = isShowingAll
-    ? totalBtcSats
-    : selectedClaimIds.reduce((sum, id) => {
-        const b = balancesQuery.data.get(id)
-        return sum + (b ? Number(b.current) : 0)
-      }, 0) +
-      selectedExchangeIds.reduce((sum, id) => {
-        const acc = exchangeAccounts.find((a) => a.id === id)
-        return sum + (acc?.balance != null && acc.balance !== '' ? Number(acc.balance) : 0)
-      }, 0) +
-      selectedManualIds.reduce((sum, id) => {
-        const acc = manualAccounts.find((a) => a.id === id)
-        return sum + (acc?.balance != null && acc.balance !== '' ? Number(acc.balance) : 0)
-      }, 0) +
-      selectedEtfIds.reduce((sum, id) => {
-        const acc = etfAccounts.find((a) => a.id === id)
-        return sum + (acc?.balance != null && acc.balance !== '' ? Number(acc.balance) : 0)
-      }, 0)
+  // The current balance of the accounts in this view. It doesn't depend on the date range.
+  const viewClaimIds = isShowingAll ? claimIds : selectedClaimIds
+  const viewWalletSats = viewClaimIds.map((id) => walletBalances.get(id)?.current ?? null)
+  const viewOtherSats = [...exchangeAccounts.filter(isExchangeConnected), ...manualAccounts, ...etfAccounts].flatMap(
+    (account) =>
+      (isShowingAll || selected.has(account.id)) && account.balance != null && account.balance !== ''
+        ? [Number(account.balance)]
+        : [],
+  )
+  // An account list that failed to load, or a wallet balance still loading with none
+  // recorded, leaves the balance unknown; counting either as zero would show a false drop.
+  // A selection only holds accounts from lists that loaded.
+  const hasAccountLists = [claimsQuery, exchangeAccountsQuery, manualAccountsQuery, etfAccountsQuery].every(
+    (query) => query.data !== undefined,
+  )
+  const displayBalanceSats =
+    (isShowingAll && !hasAccountLists) || viewWalletSats.some((sats) => sats === null)
+      ? null
+      : viewWalletSats.reduce((sum, sats) => sum + Number(sats), 0) + viewOtherSats.reduce((sum, sats) => sum + sats, 0)
+  const walletBalanceState: WalletBalanceState =
+    isShowingAll && !hasAccountLists
+      ? 'unknown'
+      : viewClaimIds.length === 0
+        ? 'current'
+        : balancesQuery.balancesFailed
+          ? 'stale'
+          : balancesQuery.updatedAt === 0
+            ? 'loading'
+            : 'current'
+  // The chart ends on the balance shown above it, unless that is still loading or incomplete.
+  const chartCurrentBalanceSats =
+    walletBalanceState === 'stale' ||
+    (walletBalanceState === 'current' && viewClaimIds.every((id) => (balancesQuery.data.get(id) ?? null) !== null))
+      ? displayBalanceSats
+      : null
+  // While Electrum is unreachable, the oldest time a shown wallet balance was current.
+  const viewBalanceTimes = viewClaimIds.flatMap((id) => {
+    const time = walletBalanceTimes.get(id)
+    return time !== undefined && Number.isFinite(time) && time > 0 ? [time] : []
+  })
+  const walletBalancesAsOf = viewBalanceTimes.length > 0 ? new Date(Math.min(...viewBalanceTimes)) : null
 
   const isFullHistoryRange = timeRange === 'custom' || timeRange === 'all'
   const historyRangeError =
@@ -487,9 +483,14 @@ export function DashboardPage({
     (!hasCurrentRangeData || historyNeedsInitialLoad)
   const customEndsToday = timeRange === 'custom' && customDateRangeInput?.endDate === format(new Date(), 'yyyy-MM-dd')
   const historicalData = useMemo(() => {
-    const history = data?.historicalData ?? []
+    const history = activeData?.historicalData ?? []
     if (historyRangeError !== null || isFullHistoryPending || historyBackfillBlocked) {
       return []
+    }
+    // Keep the prior chart intact while another selection loads. Never mix its
+    // history with the newly selected account balance.
+    if (!hasCurrentRangeData) {
+      return displayedHistory.current ?? []
     }
     if (isFullHistoryRange && isHistoryRefreshing) {
       return cachedHistory
@@ -497,14 +498,21 @@ export function DashboardPage({
     if (isFullHistoryRange && history.length === 0) {
       return []
     }
-    if (timeRange === 'custom') {
-      return customEndsToday ? withCurrentBalancePoint(history, displayBalanceSats, new Date(), userTimezone) : history
+    // Without a known current balance, the server's latest point is the best one.
+    if (chartCurrentBalanceSats === null) {
+      return history
     }
-    return withCurrentBalancePoint(history, displayBalanceSats, new Date(), userTimezone)
+    if (timeRange === 'custom') {
+      return customEndsToday
+        ? withCurrentBalancePoint(history, chartCurrentBalanceSats, new Date(), userTimezone)
+        : history
+    }
+    return withCurrentBalancePoint(history, chartCurrentBalanceSats, new Date(), userTimezone)
   }, [
     customEndsToday,
-    data?.historicalData,
-    displayBalanceSats,
+    activeData?.historicalData,
+    hasCurrentRangeData,
+    chartCurrentBalanceSats,
     historyRangeError,
     isFullHistoryPending,
     historyBackfillBlocked,
@@ -528,6 +536,12 @@ export function DashboardPage({
     historicalData,
   ])
 
+  useEffect(() => {
+    if (hasCurrentRangeData && !activeError && !isFullHistoryPending && !historyBackfillBlocked) {
+      displayedHistory.current = historicalData
+    }
+  }, [hasCurrentRangeData, activeError, isFullHistoryPending, historyBackfillBlocked, historicalData])
+
   const periodChange = useMemo(() => {
     if (!historicalData.length) {
       return null
@@ -536,6 +550,13 @@ export function DashboardPage({
     const startSats = new Decimal(toSatoshisString(historicalData[0]?.totalBalance))
     return currentSats.minus(startSats)
   }, [historicalData])
+  const flowTotals = useMemo(() => getFlowTotals(historicalData), [historicalData])
+  const monthsInRange = useMemo(
+    () => getMonthlyChanges(historicalData, Number.POSITIVE_INFINITY, userTimezone).length,
+    [historicalData, userTimezone],
+  )
+  // A range that starts at zero has no meaningful percentage change.
+  const periodStartSats = new Decimal(toSatoshisString(historicalData[0]?.totalBalance))
 
   const handleGenerateStatement = useCallback((): void => {
     const preSelectedIds = isShowingAll ? claimIds : selectedClaimIds
@@ -561,20 +582,30 @@ export function DashboardPage({
     manualAccounts.length > 0 ||
     etfAccounts.length > 0
   const hasHistoricalData = (allData?.historicalData.length ?? 0) > 0 || (activeData?.historicalData.length ?? 0) > 0
-  const totalBtcDisplay = formatBtc(displayBalanceSats.toString())
-  const btcPrice = btcUsdPrice ?? 0
-  const currentBtcFloat = displayBalanceSats / 100_000_000
-  const hasBalance = displayBalanceSats > 0
+  const periodLabel =
+    timeRange === 'custom'
+      ? formatCustomDateRangeLabel(customDateRange)
+      : timeRange === 'all'
+        ? 'All time'
+        : { '7d': 'Last 7 days', '30d': 'Last 30 days', '90d': 'Last 90 days', '1y': 'Last year' }[timeRange]
+  // An unknown balance keeps the chart's gain and loss colors.
+  const hasBalance = displayBalanceSats === null || displayBalanceSats > 0
 
+  // Presets read as a plain period; only a custom range spells out its dates.
+  const rangeCaption =
+    timeRange === 'custom' ? (formatPeriodDates(historicalData, userTimezone) ?? periodLabel) : periodLabel
+  const retryHistory = (): void => {
+    void (isShowingAll ? refetchAllData : refetchFilteredData)({ cancelRefetch: false })
+  }
   const isUp = periodChange === null || periodChange.gte(0)
-  const changeColor = periodChange === null || periodChange.eq(0) ? 'neutral.400' : isUp ? 'success.600' : 'error.500'
+  const changeColor = periodChange === null || periodChange.eq(0) ? 'neutral.600' : isUp ? 'success.700' : 'error.700'
   // A failed range request cannot establish that the portfolio is empty.
   if (!hasVerifiedClaims && !hasHistoricalData && hasCurrentRangeData && !activeError && !historyBackfillFailed) {
     return <EmptyState />
   }
 
   const activeLabel = isShowingAll
-    ? 'Total Stack'
+    ? 'All accounts'
     : selected.size === 1
       ? (claims.find((c) => selected.has(c.id))?.displayName ??
         exchangeAccounts.find((a) => selected.has(a.id))?.displayName ??
@@ -583,296 +614,337 @@ export function DashboardPage({
         'Account')
       : `${selected.size} accounts`
 
-  const hasSidebar =
+  const hasAccounts =
     claims.length > 0 || exchangeAccounts.length > 0 || manualAccounts.length > 0 || etfAccounts.length > 0
 
-  return (
-    <Flex minH={VIEWPORT_BELOW_HEADER}>
-      {/* Sidebar -- always visible when accounts exist */}
-      {hasSidebar && (
-        <Box alignSelf="flex-start" position="sticky" top={0} h={VIEWPORT_BELOW_HEADER} flexShrink={0}>
-          <AccountsSidebar
-            claims={claims}
-            exchangeAccounts={exchangeAccounts}
-            manualAccounts={manualAccounts}
-            etfAccounts={etfAccounts}
-            balances={balancesQuery.data}
-            selected={selected}
-            onToggle={toggleAccount}
-            onClearAll={clearAll}
-            totalBtcSats={totalBtcSats}
-            totalUsd={totalUsd}
-            compact={compactSidebar}
-            onToggleCompact={isSmallScreen ? undefined : toggleCompact}
-            historySyncingAccountIds={activeIsPreviousData ? [] : historySyncingAccountIds}
-            recentlySyncedAccountIds={recentlySyncedAccountIdList}
-          />
-        </Box>
-      )}
+  const accountFilter = hasAccounts ? (
+    <AccountFilter
+      presentation={hasDesktopSidebar ? 'sidebar' : 'dropdown'}
+      claims={claims}
+      exchangeAccounts={exchangeAccounts}
+      manualAccounts={manualAccounts}
+      etfAccounts={etfAccounts}
+      balances={walletBalances}
+      isMissingAccounts={!hasAccountLists}
+      btcPrice={btcPrice}
+      selected={selected}
+      onSelectionChange={setSelected}
+      historySyncingAccountIds={activeIsPreviousData ? [] : historySyncingAccountIds}
+      recentlySyncedAccountIds={recentlySyncedAccountIdList}
+    />
+  ) : null
+  const isViewUpdating = !hasCurrentRangeData && !activeError && !isFullHistoryPending
+  const showsHistoryError = !!activeError || historyBackfillFailed
+  const isViewRefreshing = hasCurrentRangeData && !activeError && !isFullHistoryPending && activeFetching
 
-      {/* Main content */}
-      <Box flex={1} minW={0} display="flex" justifyContent="center">
-        <Box w="100%" maxW="863px" py={8} px={[4, 4, 6, 0]}>
-          {/* Header row */}
-          <Flex align="flex-start" justify="space-between" mb={8} gap={4} flexWrap="wrap">
-            <Box>
-              <Heading textStyle="text/3xl" fontWeight="bold" color="neutral.900">
-                Portfolio
-              </Heading>
-              <Flex align="center" gap={2} mt={1.5}>
-                <Text textStyle="text/sm" color="neutral.400">
+  return (
+    <Flex minH={VIEWPORT_BELOW_HEADER} align="stretch">
+      <VisuallyHidden as="h1">Portfolio</VisuallyHidden>
+      {hasDesktopSidebar && accountFilter}
+      <Box flex="1" minW={0}>
+        <Wrapper maxW="928px" w="full" py={{ base: 6, md: 8 }}>
+          {!hasDesktopSidebar && <Box mb={6}>{accountFilter}</Box>}
+          <Box minW={0}>
+            {/* Above the balance, as the figures below may be stale or incomplete. */}
+            {hasCurrentRangeData && activeError && historyRangeError === null && (
+              <Box role="alert" mb={4}>
+                <Text textStyle="text/sm" color="error.700">
+                  Couldn&apos;t refresh this date range. Showing previously loaded data.
+                </Text>
+                <Button mt={2} size="sm" variant="outline" onClick={retryHistory}>
+                  Try again
+                </Button>
+              </Box>
+            )}
+            {historyBackfillFailed && !historyBackfillBlocked && !activeError && (
+              <Box mb={4}>
+                <HistoryBackfillError />
+              </Box>
+            )}
+            {/* Portfolio balance and period context */}
+            <Box mb={6} minW={0}>
+              <Flex align="center" gap={2} minW={0} flexWrap="wrap">
+                <Text
+                  ref={activeLabelRef}
+                  // Takes focus after the filter is cleared, as the clear button goes away.
+                  tabIndex={-1}
+                  textStyle="text/sm"
+                  fontWeight="medium"
+                  color="neutral.700"
+                  overflowWrap="anywhere"
+                >
                   {activeLabel}
                 </Text>
                 {!isShowingAll && (
-                  <Text
-                    textStyle="label/xs"
-                    color="neutral.300"
-                    cursor="pointer"
+                  <Box
                     as="button"
                     type="button"
                     aria-label="Clear account filter"
-                    onClick={clearAll}
-                    _hover={{ color: 'neutral.500' }}
+                    onClick={() => {
+                      setSelected(new Set())
+                      activeLabelRef.current?.focus()
+                    }}
+                    display="inline-flex"
+                    alignItems="center"
+                    justifyContent="center"
+                    boxSize="18px"
+                    ml={-1}
+                    borderRadius="full"
+                    color="neutral.500"
+                    _hover={{ color: 'neutral.900', bg: 'neutral.100' }}
+                    _focusVisible={{ outline: '2px solid', outlineColor: 'activeState.80', outlineOffset: '2px' }}
                   >
-                    ✕
+                    <X size={12} strokeWidth={2.25} />
+                  </Box>
+                )}
+                <Box as="span" boxSize="3px" borderRadius="full" bg="neutral.300" aria-hidden="true" />
+                {/* Announces sync and loading changes. Errors have their own alerts, so it stays quiet for them. */}
+                <Box as="output" aria-live={showsHistoryError && walletBalancesAsOf === null ? 'off' : undefined}>
+                  <SyncIndicator
+                    walletBalanceState={walletBalanceState}
+                    walletBalancesAsOf={walletBalancesAsOf}
+                    historySyncingCount={historySyncingAccountIds.length}
+                    isPending={!hasCurrentRangeData}
+                    hasError={showsHistoryError}
+                  />
+                </Box>
+              </Flex>
+              {/* The button centers on the balance line; on phones it wraps below. The USD
+                  line comes first in the code so it's read right after the balance. */}
+              <Flex
+                align="center"
+                justify="space-between"
+                columnGap={4}
+                rowGap={{ base: 3, sm: 1 }}
+                flexWrap="wrap"
+                mt={1}
+              >
+                <Flex align="baseline" columnGap={3} flexWrap="wrap" minW={0}>
+                  <Text
+                    fontFamily="body"
+                    sx={{ fontVariantNumeric: 'tabular-nums' }}
+                    textStyle={{ base: 'text/7xl', md: 'amount/hero' }}
+                    letterSpacing="-0.03em"
+                    fontWeight="semibold"
+                    color="neutral.900"
+                    overflowWrap="anywhere"
+                  >
+                    {displayBalanceSats === null
+                      ? '\u2014'
+                      : formatBitcoinNumber(new Decimal(displayBalanceSats).div(100_000_000))}
+                  </Text>
+                  <Text textStyle={{ base: 'text/xl', md: 'text/3xl' }} fontWeight="medium" color="neutral.500">
+                    BTC
+                  </Text>
+                </Flex>
+                <Box flexBasis="100%" order={{ base: 0, sm: 1 }}>
+                  <FiatAmountText textStyle={{ base: 'text/lg', md: 'text/xl' }} fontWeight="normal">
+                    <>
+                      {btcPrice === null
+                        ? 'USD unavailable'
+                        : displayBalanceSats === null
+                          ? '\u2014'
+                          : formatUsd((displayBalanceSats / 100_000_000) * btcPrice)}
+                    </>
+                  </FiatAmountText>
+                </Box>
+                <Button
+                  size="md"
+                  variant="outline"
+                  flexShrink={0}
+                  order={{ base: 1, sm: 0 }}
+                  onClick={handleGenerateStatement}
+                >
+                  Generate Statement
+                </Button>
+              </Flex>
+            </Box>
+
+            {/* Accumulation chart */}
+            <Box mb={6} border="1px solid" borderColor="neutral.200" borderRadius="panel" p={{ base: 4, md: 6 }}>
+              <VisuallyHidden as="h2">Balance history</VisuallyHidden>
+              <Flex align="flex-start" justify="space-between" mb={5} gap={3} flexWrap="wrap">
+                <Box minW={0} minH="56px" opacity={isViewUpdating ? 0.35 : 1} transition="opacity 0.2s ease">
+                  {periodChange !== null && hasCurrentRangeData && (
+                    <>
+                      <Flex align="center" gap={2.5} flexWrap="wrap">
+                        <Text
+                          textStyle={{ base: 'text/xl', md: 'text/3xl' }}
+                          fontWeight="semibold"
+                          color={changeColor}
+                          sx={{ fontVariantNumeric: 'tabular-nums' }}
+                        >
+                          {formatSignedBitcoinNumber(periodChange.div(100_000_000))}
+                          <BtcUnit />
+                        </Text>
+                        {!periodChange.eq(0) && periodStartSats.gt(0) && (
+                          <Text
+                            as="span"
+                            px={2}
+                            py={0.5}
+                            borderRadius="full"
+                            bg={isUp ? 'success.50' : 'error.50'}
+                            color={changeColor}
+                            textStyle="text/xs"
+                            fontWeight="semibold"
+                            sx={{ fontVariantNumeric: 'tabular-nums' }}
+                          >
+                            {formatPercentChange(periodChange, periodStartSats)}
+                          </Text>
+                        )}
+                        {activeFetching && <Spinner size="xs" color="neutral.300" />}
+                      </Flex>
+                      <Text textStyle="text/sm" color="neutral.500" mt={1}>
+                        {rangeCaption}
+                      </Text>
+                    </>
+                  )}
+                  {/* Until a custom range has figures, still say which dates it covers. */}
+                  {!(periodChange !== null && hasCurrentRangeData) && timeRange === 'custom' && (
+                    <Text textStyle="text/sm" color="neutral.500">
+                      {periodLabel}
+                    </Text>
+                  )}
+                </Box>
+                <TimeRangeSelector
+                  DateInput={DateInput}
+                  value={timeRange}
+                  customDateRange={customDateRange}
+                  today={today}
+                  onPresetChange={setTimeRange}
+                  onCustomApply={(range) => {
+                    setCustomDateRange(range)
+                    setTimeRange('custom')
+                  }}
+                />
+              </Flex>
+
+              <HistoryPanel
+                height="220px"
+                viewKey={historyViewKey}
+                error={historyRangeError}
+                announcesErrors
+                isBackfillBlocked={historyBackfillBlocked}
+                isPending={isFullHistoryPending}
+                isUpdating={isViewUpdating}
+                isRefreshing={isViewRefreshing}
+                onRetry={retryHistory}
+              >
+                <AccumulationChart
+                  data={historicalData}
+                  hasActivity={hasBalance}
+                  isUp={isUp}
+                  timezone={userTimezone}
+                  startLabel={timeRange === 'all' ? 'month' : 'day'}
+                />
+              </HistoryPanel>
+            </Box>
+
+            {/* Net accumulated over the selected range */}
+            <Box mb={6} border="1px solid" borderColor="neutral.200" borderRadius="panel" p={{ base: 4, md: 6 }}>
+              <NetAccumulatedSummary
+                ready={periodChange !== null && hasCurrentRangeData}
+                inBtc={flowTotals.inBtc}
+                outBtc={flowTotals.outBtc}
+                monthsInRange={monthsInRange}
+                btcPrice={btcPrice}
+                caption={rangeCaption}
+                isUpdating={isViewUpdating}
+                isFetching={activeFetching}
+              />
+              <HistoryPanel
+                height="200px"
+                viewKey={historyViewKey}
+                error={historyRangeError}
+                announcesErrors={false}
+                isBackfillBlocked={historyBackfillBlocked}
+                isPending={isFullHistoryPending}
+                isUpdating={isViewUpdating}
+                isRefreshing={isViewRefreshing}
+                onRetry={retryHistory}
+              >
+                <MonthlyNetChangeChart data={historicalData} timezone={userTimezone} btcPrice={btcPrice} />
+              </HistoryPanel>
+              <Box minH="16px" mt={4}>
+                {periodChange !== null && btcPrice !== null && (
+                  <Text textStyle="label/sm" color="neutral.500" textAlign="right">
+                    USD at today&apos;s Bitcoin price
                   </Text>
                 )}
-                <SyncIndicator
-                  historySyncingCount={historySyncingAccountIds.length}
-                  isPending={!hasCurrentRangeData}
-                  hasError={!!activeError || historyBackfillFailed}
-                />
-              </Flex>
-            </Box>
-            <Button size="md" px={6} py={3} borderRadius="8px" onClick={handleGenerateStatement}>
-              Generate Statement
-            </Button>
-          </Flex>
-
-          {hasCurrentRangeData && activeError && historyRangeError === null && (
-            <Box role="alert" mb={4}>
-              <Text textStyle="text/sm" color="error.500">
-                Couldn&apos;t refresh this date range. Showing previously loaded data.
-              </Text>
-              <Button
-                mt={2}
-                size="sm"
-                variant="outline"
-                onClick={() => void (isShowingAll ? refetchAllData : refetchFilteredData)({ cancelRefetch: false })}
-              >
-                Try again
-              </Button>
-            </Box>
-          )}
-          {historyBackfillFailed && !historyBackfillBlocked && !activeError && (
-            <Box mb={4}>
-              <HistoryBackfillError />
-            </Box>
-          )}
-
-          {/* Balance hero */}
-          <Box mb={2} opacity={isChartFetching ? 0.35 : 1} transition="opacity 0.2s ease">
-            <Text
-              fontFamily="mono"
-              textStyle={{ base: 'text/3xl', md: 'text/5xl' }}
-              fontWeight="bold"
-              color="neutral.900"
-              letterSpacing="-0.04em"
-            >
-              {totalBtcDisplay}
-            </Text>
-            <Text textStyle="text/sm" color="neutral.400" fontWeight="medium" mt={1}>
-              <Text as="span" color="neutral.300">
-                BTC
-              </Text>
-              {'  ·  '}${formatUsd(currentBtcFloat, btcPrice)}
-            </Text>
-          </Box>
-
-          {/* Change pill */}
-          {periodChange !== null && (
-            <Box
-              display="inline-flex"
-              alignItems="center"
-              mt={2}
-              mb={8}
-              px={2.5}
-              py={1}
-              borderRadius="lg"
-              bg={isUp ? 'success.50' : 'error.50'}
-              w="fit-content"
-              opacity={isChartFetching ? 0.35 : 1}
-              transition="opacity 0.2s ease"
-            >
-              <Text textStyle="text/sm" fontWeight="semibold" color={changeColor} fontFamily="mono">
-                {isUp ? '↑' : '↓'} {formatBtc(periodChange.abs().toString())} BTC ({isUp ? '+' : ''}
-                {periodChange.eq(0)
-                  ? '0.0'
-                  : periodChange
-                      .div(new Decimal(toSatoshisString(historicalData[0]?.totalBalance)).abs().plus(1))
-                      .mul(100)
-                      .toFixed(1)}
-                %)
-              </Text>
-            </Box>
-          )}
-
-          {/* Accumulation chart */}
-          <Box mb={8}>
-            <Flex align="center" justify="space-between" mb={4} gap={3} flexWrap="wrap">
-              <Flex align="center" gap={2}>
-                <Text textStyle="overline/sm" fontWeight="bold" color="neutral.400">
-                  Accumulation
-                </Text>
-                {activeFetching && <Spinner size="xs" color="neutral.300" />}
-              </Flex>
-              <TimeRangeSelector
-                DateInput={DateInput}
-                value={timeRange}
-                customDateRange={customDateRange}
-                today={today}
-                onPresetChange={setTimeRange}
-                onCustomApply={(range) => {
-                  setCustomDateRange(range)
-                  setTimeRange('custom')
-                }}
-              />
-            </Flex>
-
-            <Box
-              bg="shades.0"
-              border="1px solid"
-              borderColor="neutral.200"
-              borderRadius="12px"
-              p={5}
-              pr={2}
-              position="relative"
-              overflow="hidden"
-            >
-              {historyRangeError !== null ? (
-                <HistoryRangeError
-                  height="220px"
-                  message={historyRangeError.message}
-                  onRetry={() => void (isShowingAll ? refetchAllData : refetchFilteredData)({ cancelRefetch: false })}
-                />
-              ) : historyBackfillBlocked ? (
-                <Flex h="220px" align="center" justify="center" px={4} textAlign="center">
-                  <HistoryBackfillError />
-                </Flex>
-              ) : isFullHistoryPending ? (
-                <HistoryRangeLoading height="220px" />
-              ) : (
-                <AccumulationChart data={historicalData} hasActivity={hasBalance} isUp={isUp} timezone={userTimezone} />
-              )}
-              {isChartFetching && !isFullHistoryPending && (
-                <Box
-                  position="absolute"
-                  inset={0}
-                  borderRadius="12px"
-                  pointerEvents="none"
-                  sx={{
-                    background:
-                      'linear-gradient(90deg, rgba(240,242,245,0) 0%, rgba(240,242,245,0.85) 50%, rgba(240,242,245,0) 100%)',
-                    backgroundSize: '200% 100%',
-                    animation: 'shimmer 1.4s ease-in-out infinite',
-                    '@keyframes shimmer': {
-                      '0%': { backgroundPosition: '-200% 0' },
-                      '100%': { backgroundPosition: '200% 0' },
-                    },
-                  }}
-                />
-              )}
+              </Box>
             </Box>
           </Box>
-
-          {/* Monthly net change */}
-          <Box mb={8}>
-            <Flex align="center" gap={2} mb={3}>
-              <Text textStyle="overline/sm" fontWeight="bold" color="neutral.400">
-                Monthly Net Change
-              </Text>
-              {activeFetching && <Spinner size="xs" color="neutral.300" />}
-            </Flex>
-            <Box
-              bg="shades.0"
-              border="1px solid"
-              borderColor="neutral.200"
-              borderRadius="12px"
-              px={3}
-              pt={4}
-              pb={2}
-              position="relative"
-              overflow="hidden"
-            >
-              {historyRangeError !== null ? (
-                <HistoryRangeError
-                  height="120px"
-                  message={historyRangeError.message}
-                  onRetry={() => void (isShowingAll ? refetchAllData : refetchFilteredData)({ cancelRefetch: false })}
-                />
-              ) : historyBackfillBlocked ? (
-                <Flex h="120px" align="center" justify="center" px={4} textAlign="center">
-                  <HistoryBackfillError />
-                </Flex>
-              ) : isFullHistoryPending ? (
-                <HistoryRangeLoading height="120px" />
-              ) : (
-                <MonthlyNetChangeChart data={historicalData} timezone={userTimezone} />
-              )}
-              {isChartFetching && !isFullHistoryPending && (
-                <Box
-                  position="absolute"
-                  inset={0}
-                  borderRadius="12px"
-                  pointerEvents="none"
-                  sx={{
-                    background:
-                      'linear-gradient(90deg, rgba(240,242,245,0) 0%, rgba(240,242,245,0.85) 50%, rgba(240,242,245,0) 100%)',
-                    backgroundSize: '200% 100%',
-                    animation: 'shimmer 1.4s ease-in-out infinite',
-                  }}
-                />
-              )}
-            </Box>
-          </Box>
-
-          {/* Stats row */}
-          <Grid templateColumns={{ base: '1fr', sm: '1fr 1fr' }} gap={3} mb={8}>
-            <StatCard label="This Month" data={historicalData} mode="current" timezone={userTimezone} />
-            <StatCard label="Monthly Avg (6mo)" data={historicalData} mode="average" timezone={userTimezone} />
-          </Grid>
-        </Box>
+        </Wrapper>
       </Box>
     </Flex>
   )
 }
 
-function HistoryRangeLoading({ height }: { height: string }): JSX.Element {
+/** A chart, or the error or loading state that replaces it, in the shared frame. */
+function HistoryPanel({
+  height,
+  viewKey,
+  error,
+  announcesErrors,
+  isBackfillBlocked,
+  isPending,
+  isUpdating,
+  isRefreshing,
+  onRetry,
+  children,
+}: {
+  height: string
+  viewKey: string
+  error: Pick<Error, 'message'> | null
+  /** Both panels show the same error; only one should announce it. */
+  announcesErrors: boolean
+  isBackfillBlocked: boolean
+  isPending: boolean
+  isUpdating: boolean
+  isRefreshing: boolean
+  onRetry: () => void
+  children: JSX.Element
+}): JSX.Element {
   return (
-    <Flex h={height} align="center" justify="center" direction="column" gap={2}>
-      <Spinner size="sm" color="neutral.400" />
-      <Text textStyle="text/sm" color="neutral.500">
-        Preparing history for this date range
-      </Text>
-    </Flex>
+    <HistoryChartFrame
+      height={height}
+      viewKey={viewKey}
+      loading={isPending}
+      updating={isUpdating}
+      refreshing={isRefreshing}
+    >
+      {error !== null ? (
+        <HistoryRangeError height={height} message={error.message} announce={announcesErrors} onRetry={onRetry} />
+      ) : isBackfillBlocked ? (
+        <Flex h={height} align="center" justify="center" px={4} textAlign="center">
+          <HistoryBackfillError announce={announcesErrors} />
+        </Flex>
+      ) : isPending ? (
+        <HistoryRangeLoading height={height} />
+      ) : (
+        children
+      )}
+    </HistoryChartFrame>
   )
 }
 
 function HistoryRangeError({
   height,
   message,
+  announce,
   onRetry,
 }: {
   height: string
   message: string
+  announce: boolean
   onRetry: () => void
 }): JSX.Element {
   return (
     <Flex h={height} align="center" justify="center" direction="column" gap={3} px={4} textAlign="center">
-      <Text textStyle="text/sm" color="error.500">
+      <Text role={announce ? 'alert' : undefined} textStyle="text/sm" color="error.700">
         Couldn&apos;t load this date range: {message}
       </Text>
-      <Text textStyle="label/xs" color="neutral.500">
+      <Text textStyle="text/xs" color="neutral.500">
         Try again, or choose another range.
       </Text>
       <Button size="sm" variant="outline" onClick={onRetry}>
@@ -882,58 +954,243 @@ function HistoryRangeError({
   )
 }
 
-function HistoryBackfillError(): JSX.Element {
+function HistoryBackfillError({ announce = true }: { announce?: boolean }): JSX.Element {
   return (
-    <Text role="alert" textStyle="text/sm" color="error.500">
+    <Text role={announce ? 'alert' : undefined} textStyle="text/sm" color="error.700">
       Wallet history couldn&apos;t be loaded. Retrying automatically. Check your Electrum connection if this continues.
     </Text>
   )
 }
 
 function SyncIndicator({
+  walletBalanceState,
+  walletBalancesAsOf,
   historySyncingCount,
   isPending,
   hasError,
 }: {
+  walletBalanceState: WalletBalanceState
+  /** While Electrum is unreachable, when the oldest wallet balance shown was current. */
+  walletBalancesAsOf: Date | null
   historySyncingCount: number
   isPending: boolean
   hasError: boolean
-}): JSX.Element {
-  if (hasError) {
-    return (
-      <Text textStyle="label/xs" color="error.500">
-        History unavailable
-      </Text>
-    )
-  }
-  if (isPending || historySyncingCount > 0) {
+}): JSX.Element | null {
+  const [, setClockTick] = useState(0)
+  // A range that loads quickly neither flashes nor announces "Updating history": "Synced",
+  // or no status, stays until the load has taken a moment. Any other status gives way at once.
+  const [showsPending, setShowsPending] = useState(isPending)
+  const wasSettled = useRef(!isPending)
+  useEffect(() => {
+    if (!isPending) {
+      return
+    }
+    const timeoutId = window.setTimeout(() => {
+      setShowsPending(true)
+    }, 400)
+    return () => {
+      window.clearTimeout(timeoutId)
+      setShowsPending(false)
+    }
+  }, [isPending])
+  const asOfMs = walletBalancesAsOf?.getTime() ?? null
+  // A clock behind the server's must not read as a sync in the future. Fixed once per
+  // sync time, so the time read to screen readers doesn't change.
+  const shownAsOfMs = useMemo(() => (asOfMs === null ? null : Math.min(asOfMs, Date.now())), [asOfMs])
+  useEffect(() => {
+    if (asOfMs === null) {
+      return
+    }
+    // Keep "X ago" current between data updates.
+    const intervalId = window.setInterval(() => {
+      setClockTick((tick) => tick + 1)
+    }, 30_000)
+    return () => {
+      window.clearInterval(intervalId)
+    }
+  }, [asOfMs])
+
+  const isUpdating =
+    walletBalanceState === 'loading' || historySyncingCount > 0 || (isPending && (showsPending || !wasSettled.current))
+  const isSettled = shownAsOfMs === null && !hasError && !isUpdating
+  useEffect(() => {
+    wasSettled.current = isSettled
+  })
+
+  // First, as it qualifies the balance itself; an alert covers any history error.
+  if (shownAsOfMs !== null) {
     return (
       <Flex align="center" gap={1.5}>
-        <Spinner size="xs" color="neutral.400" />
-        <Text textStyle="label/xs" fontWeight="semibold" color="neutral.500">
-          Updating history
+        <Box w="6px" h="6px" borderRadius="full" bg="warning.400" aria-hidden="true" />
+        <Text textStyle="text/sm" color="warning.700">
+          Last synced {/* The relative time keeps changing; a fixed time is read instead, so it isn't re-announced. */}
+          <span aria-hidden="true">{formatDistanceToNowStrict(shownAsOfMs, { addSuffix: true })}</span>
+          <VisuallyHidden>{format(shownAsOfMs, 'PPp')}</VisuallyHidden>
         </Text>
       </Flex>
     )
   }
+  if (hasError) {
+    return (
+      <Text textStyle="text/sm" color="error.700">
+        History unavailable
+      </Text>
+    )
+  }
+  if (isUpdating) {
+    return (
+      <Flex align="center" gap={1.5}>
+        <Spinner label="" size="xs" color="neutral.400" />
+        <Text textStyle="text/sm" color="neutral.500">
+          {walletBalanceState === 'loading' ? 'Updating balances' : 'Updating history'}
+        </Text>
+      </Flex>
+    )
+  }
+  // Balances that are unknown or can't be fetched are never "Synced", even with no time to show.
+  if (walletBalanceState !== 'current') {
+    return null
+  }
 
   return (
     <Flex align="center" gap={1.5}>
-      <Box w="6px" h="6px" borderRadius="full" bg="success.500" sx={{ animation: 'pulse 2s ease infinite' }} />
-      <Text textStyle="label/xs" fontWeight="semibold" color="success.600">
-        All synced
+      <Box w="6px" h="6px" borderRadius="full" bg="success.500" aria-hidden="true" />
+      <Text textStyle="text/sm" color="neutral.500">
+        Synced
       </Text>
     </Flex>
   )
 }
 
+/** Net, average and approximate in/out for the selected range. */
+function NetAccumulatedSummary({
+  ready,
+  inBtc,
+  outBtc,
+  monthsInRange,
+  btcPrice,
+  caption,
+  isUpdating,
+  isFetching,
+}: {
+  ready: boolean
+  inBtc: Decimal
+  outBtc: Decimal
+  monthsInRange: number
+  btcPrice: number | null
+  caption: string
+  isUpdating: boolean
+  isFetching: boolean
+}): JSX.Element {
+  const net = inBtc.minus(outBtc)
+  // Over every month the range touches, matching the bars below.
+  const average = net.div(Math.max(1, monthsInRange))
+  const total = inBtc.plus(outBtc)
+  const inShare = total.gt(0) ? inBtc.div(total).mul(100).toNumber() : 100
+  return (
+    <Box opacity={isUpdating ? 0.35 : 1} transition="opacity 0.2s ease" minH="72px" mb={6}>
+      <Flex align="flex-start" justify="space-between" gap={4} flexWrap="wrap">
+        <Box minW={0}>
+          <Flex align="center" gap={2}>
+            <Text as="h2" textStyle="overline/sm" fontWeight="semibold" color="neutral.500">
+              Net accumulated
+            </Text>
+            {isFetching && <Spinner size="xs" color="neutral.300" />}
+          </Flex>
+          {ready && (
+            <>
+              <Flex align="baseline" columnGap={2.5} flexWrap="wrap" mt={1}>
+                <Text
+                  textStyle="amount/compact"
+                  letterSpacing="-0.02em"
+                  fontWeight="semibold"
+                  color={net.isZero() ? 'neutral.900' : net.lt(0) ? 'error.700' : 'success.700'}
+                >
+                  {formatSignedBitcoinNumber(net)}
+                  <BtcUnit />
+                </Text>
+                <Text textStyle="text/xs" color="neutral.500" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                  {formatSignedUsd(net, btcPrice)}
+                </Text>
+              </Flex>
+              <Text textStyle="text/sm" color="neutral.500" mt={0.5}>
+                {caption}
+              </Text>
+            </>
+          )}
+        </Box>
+        {ready && (
+          <Box textAlign="right">
+            <Text textStyle="text/xs" color="neutral.500">
+              Avg / month
+            </Text>
+            <Text
+              textStyle="text/lg"
+              fontWeight="semibold"
+              color="neutral.900"
+              sx={{ fontVariantNumeric: 'tabular-nums' }}
+            >
+              {formatSignedBitcoinNumber(average)}
+            </Text>
+            <Text textStyle="label/sm" color="neutral.500" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+              {formatSignedUsd(average, btcPrice)}
+            </Text>
+          </Box>
+        )}
+      </Flex>
+      {ready && outBtc.gt(0) && (
+        <Box mt={5}>
+          <Flex h="6px" gap="2px" aria-hidden="true">
+            <Box
+              w={`${inShare}%`}
+              bg={chartColors.gain}
+              borderRadius="full"
+              transition="width 0.4s ease"
+              sx={{ '@media (prefers-reduced-motion: reduce)': { transition: 'none' } }}
+            />
+            <Box flex="1" bg={chartColors.loss} borderRadius="full" />
+          </Flex>
+          <Flex justify="space-between" mt={2} gap={4}>
+            <Box>
+              <Text
+                textStyle="text/md"
+                fontWeight="medium"
+                color={inBtc.isZero() ? 'neutral.900' : 'success.700'}
+                sx={{ fontVariantNumeric: 'tabular-nums' }}
+              >
+                {formatSignedBitcoinNumber(inBtc)} in
+              </Text>
+              <Text textStyle="label/xs" color="neutral.500" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                {formatSignedUsd(inBtc, btcPrice)}
+              </Text>
+            </Box>
+            <Box textAlign="right">
+              <Text
+                textStyle="text/md"
+                fontWeight="medium"
+                color="error.700"
+                sx={{ fontVariantNumeric: 'tabular-nums' }}
+              >
+                −{formatBitcoinNumber(outBtc)} out
+              </Text>
+              <Text textStyle="label/xs" color="neutral.500" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                {formatSignedUsd(outBtc.neg(), btcPrice)}
+              </Text>
+            </Box>
+          </Flex>
+        </Box>
+      )}
+    </Box>
+  )
+}
+
 interface TimeRangeSelectorProps {
-  DateInput: typeof DefaultDateInput
   value: TimeRange
   customDateRange: CustomDateRangeDraft
   today: Date
   onPresetChange: (value: PresetTimeRange) => void
   onCustomApply: (range: CustomDateRangeDraft) => void
+  DateInput: typeof DefaultDateInput
 }
 
 function TimeRangeSelector({
@@ -970,25 +1227,38 @@ function TimeRangeSelector({
 
   return (
     <Stack align="flex-end" gap={1}>
-      <Flex bg="neutral.50" borderRadius="8px" p="3px" gap="2px" flexWrap="wrap">
+      <Flex
+        as="fieldset"
+        aria-label="Portfolio time range"
+        bg="neutral.100"
+        borderRadius="control"
+        p={1}
+        gap={0.5}
+        flexWrap="wrap"
+      >
         {options.map((option) => (
           <Button
             key={option.value}
+            aria-pressed={value === option.value}
             onClick={() => {
               onClose()
               onPresetChange(option.value)
             }}
-            size="xs"
+            size="sm"
             px={3}
-            py={1}
-            borderRadius="6px"
-            border="none"
-            bg={value === option.value ? 'neutral.900' : 'transparent'}
-            color={value === option.value ? 'shades.0' : 'neutral.400'}
-            textStyle="label/xs"
-            fontWeight="semibold"
+            minH="40px"
+            variant="ghost"
+            borderRadius="control"
+            // A light outline and heavier label set the selected range apart from the track.
+            border="1px solid"
+            borderColor={value === option.value ? 'neutral.300' : 'transparent'}
+            bg={value === option.value ? 'shades.0' : 'transparent'}
+            boxShadow={value === option.value ? 'sm' : 'none'}
+            color={value === option.value ? 'neutral.900' : 'neutral.600'}
+            textStyle="text/xs"
+            fontWeight={value === option.value ? 'semibold' : 'medium'}
             _hover={{
-              bg: value === option.value ? 'neutral.900' : 'neutral.100',
+              bg: value === option.value ? 'shades.0' : 'neutral.200',
             }}
           >
             {option.label}
@@ -999,37 +1269,43 @@ function TimeRangeSelector({
           <PopoverTrigger>
             <Button
               onClick={handleCustomClick}
-              size="xs"
+              size="sm"
               px={3}
-              py={1}
-              borderRadius="6px"
-              border="none"
-              bg={value === 'custom' ? 'neutral.900' : 'transparent'}
-              color={value === 'custom' ? 'shades.0' : 'neutral.400'}
-              textStyle="label/xs"
-              fontWeight="semibold"
-              _hover={{ bg: value === 'custom' ? 'neutral.900' : 'neutral.100' }}
+              minH="40px"
+              variant="ghost"
+              aria-pressed={value === 'custom'}
+              borderRadius="control"
+              border="1px solid"
+              borderColor={value === 'custom' ? 'neutral.300' : 'transparent'}
+              bg={value === 'custom' ? 'shades.0' : 'transparent'}
+              boxShadow={value === 'custom' ? 'sm' : 'none'}
+              color={value === 'custom' ? 'neutral.900' : 'neutral.600'}
+              textStyle="text/xs"
+              fontWeight={value === 'custom' ? 'semibold' : 'medium'}
+              _hover={{ bg: value === 'custom' ? 'shades.0' : 'neutral.200' }}
             >
               Custom
             </Button>
           </PopoverTrigger>
           <Portal>
+            {/* A plain body rather than PopoverBody, which would read the whole form as the dialog's description. */}
             <PopoverContent
+              aria-label="Choose a date range"
               w="min(360px, calc(100vw - 32px))"
               bg="shades.0"
               borderColor="neutral.200"
-              borderRadius="12px"
+              borderRadius="panel"
               boxShadow="xl"
             >
               <PopoverArrow bg="shades.0" />
-              <PopoverBody p={4}>
+              <Box p={4}>
                 <Stack gap={4}>
-                  <Text textStyle="text/sm" fontWeight="semibold" color="neutral.900">
+                  <Text textStyle="text/sm" fontWeight="medium" color="neutral.900">
                     Choose a date range
                   </Text>
                   <Stack direction={{ base: 'column', sm: 'row' }} gap={3}>
                     <FormControl isInvalid={draftError !== null}>
-                      <FormLabel htmlFor="portfolio-range-start" textStyle="label/xs" color="neutral.600" mb={1.5}>
+                      <FormLabel htmlFor="portfolio-range-start" textStyle="text/xs" color="neutral.600" mb={1.5}>
                         Start date
                       </FormLabel>
                       <DateInput
@@ -1044,7 +1320,7 @@ function TimeRangeSelector({
                       />
                     </FormControl>
                     <FormControl isInvalid={draftError !== null}>
-                      <FormLabel htmlFor="portfolio-range-end" textStyle="label/xs" color="neutral.600" mb={1.5}>
+                      <FormLabel htmlFor="portfolio-range-end" textStyle="text/xs" color="neutral.600" mb={1.5}>
                         End date
                       </FormLabel>
                       <DateInput
@@ -1059,7 +1335,7 @@ function TimeRangeSelector({
                       />
                     </FormControl>
                   </Stack>
-                  <Text textStyle="label/xs" color={draftError === null ? 'neutral.500' : 'error.500'}>
+                  <Text textStyle="text/xs" color={draftError === null ? 'neutral.500' : 'error.700'}>
                     {draftError ?? 'Older self-custody history may take longer to prepare.'}
                   </Text>
                   <Flex justify="flex-end" gap={2}>
@@ -1071,90 +1347,37 @@ function TimeRangeSelector({
                     </Button>
                   </Flex>
                 </Stack>
-              </PopoverBody>
+              </Box>
             </PopoverContent>
           </Portal>
         </Popover>
       </Flex>
-      {value === 'custom' && customDateRange.startDate !== null && customDateRange.endDate !== null && (
-        <Text textStyle="label/xs" color="neutral.400" pr={1}>
-          {formatCustomDateRangeLabel(customDateRange)}
-        </Text>
-      )}
     </Stack>
-  )
-}
-
-interface StatCardProps {
-  label: string
-  data: Array<{ timestamp: string; totalBalance: string }>
-  mode: 'current' | 'average'
-  timezone: string
-}
-
-function StatCard({ label, data, mode, timezone }: StatCardProps): JSX.Element {
-  const value = useMemo(() => {
-    const monthlyChanges = getMonthlyChanges(data, 6, timezone)
-    if (monthlyChanges.length === 0) {
-      return new Decimal(0)
-    }
-
-    if (mode === 'current') {
-      const currentMonthKey = getMonthKey(new Date(), timezone)
-      const currentMonth = monthlyChanges.find((change) => change.key === currentMonthKey)
-      return new Decimal(currentMonth?.change ?? 0)
-    }
-
-    const total = monthlyChanges.reduce((sum, change) => sum.plus(change.change), new Decimal(0))
-    return total.div(monthlyChanges.length)
-  }, [data, mode, timezone])
-
-  const isPositive = value.gte(0)
-
-  return (
-    <Box bg="shades.0" border="1px solid" borderColor="neutral.200" borderRadius="12px" px={4} py={4}>
-      <Text textStyle="label/xs" color="neutral.400" fontWeight="semibold" mb={2}>
-        {label}
-      </Text>
-      <Text
-        fontFamily="mono"
-        textStyle="text/lg"
-        fontWeight="bold"
-        color={isPositive ? 'success.600' : 'error.500'}
-        letterSpacing="-0.02em"
-      >
-        {isPositive ? '+' : ''}
-        {value.toFixed(8)}
-      </Text>
-      <Text textStyle="label/xs" color="neutral.300" mt={0.5}>
-        BTC
-      </Text>
-    </Box>
   )
 }
 
 function EmptyState(): JSX.Element {
   return (
-    <Stack py={8} gap={8}>
-      <Flex align="center" justify="space-between">
-        <Heading textStyle="text/xl" fontWeight="bold" color="neutral.900">
-          Portfolio
-        </Heading>
-      </Flex>
-      <Panel title="No verified claims" p={8}>
-        <Stack align="center" textAlign="center" gap={4}>
-          <Box w={16} h={16} borderRadius="full" bg="dataVizPrimary.100" />
-          <Heading size="md" color="neutral.900">
-            No verified claims yet
-          </Heading>
-          <Text color="neutral.400" maxW="md">
-            To see your total Bitcoin and accumulation over time, verify at least one Bitcoin claim first.
-          </Text>
-          <Button as={Link} to="/accounts" colorScheme="primary" mt={2}>
-            Add Your First Claim
-          </Button>
-        </Stack>
-      </Panel>
-    </Stack>
+    <Wrapper maxW="928px" w="full" py={{ base: 6, md: 8 }}>
+      <Stack gap={6}>
+        <PageHeading
+          title="Portfolio"
+          description="Choose accounts and a date range to see changes in your holdings."
+        />
+        <EmptyView
+          border="1px solid"
+          borderColor="neutral.200"
+          borderRadius="panel"
+          bgGradient="linear(to-b, neutral.50, shades.0)"
+          title="Watch your Bitcoin grow"
+          description="Add your first account to see your total Bitcoin and track your holdings over time."
+          action={
+            <Button as={Link} to="/accounts/add">
+              Add Your First Account
+            </Button>
+          }
+        />
+      </Stack>
+    </Wrapper>
   )
 }

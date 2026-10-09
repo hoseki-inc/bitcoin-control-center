@@ -49,6 +49,13 @@ export interface ControlCenterData {
   historyFailedAccountIds: string[]
 }
 
+/** A wallet's last recorded balance, and when it was recorded. */
+export interface StoredWalletBalance {
+  accountId: string
+  balanceSats: string
+  timestamp: string
+}
+
 interface BalanceSnapshotRow {
   balance_sats: string
   timestamp: string
@@ -149,7 +156,7 @@ export class ControlCenterService {
         if (balancesResult.isErr()) {
           this.logger.warn({ err: balancesResult.unwrapErr() }, 'Failed to fetch on-chain balances')
           for (const row of accountRows) {
-            const latestSnapshotBalance = (await this.getLatestAccountSnapshotBalance(row.id)) ?? 0n
+            const latestSnapshotBalance = (await this.getLatestAccountSnapshot(row.id))?.balanceSats ?? 0n
             balancesByAccountId.set(row.id, latestSnapshotBalance)
 
             if (shouldSyncFullHistory) {
@@ -423,6 +430,25 @@ export class ControlCenterService {
     })
   }
 
+  /**
+   * Each active wallet's last recorded balance, which stands in for its live balance
+   * while Electrum is unreachable. Wallets that have never synced are left out.
+   */
+  public async getStoredWalletBalances(accountIds: string[]): Promise<StoredWalletBalance[]> {
+    const balances: StoredWalletBalance[] = []
+    for (const row of await this.getAccountRows(accountIds)) {
+      const snapshot = await this.getLatestAccountSnapshot(row.id)
+      if (snapshot !== null) {
+        balances.push({
+          accountId: row.id,
+          balanceSats: snapshot.balanceSats.toString(),
+          timestamp: snapshot.timestamp,
+        })
+      }
+    }
+    return balances
+  }
+
   public archiveAccount = asyncFn(async (accountId: string): Promise<Result<void, Error>> => {
     const [row] = await this.db
       .select({ descriptor: accountTable.descriptor })
@@ -611,15 +637,17 @@ export class ControlCenterService {
       .orderBy(asc(balanceSnapshots.timestamp))
   }
 
-  private async getLatestAccountSnapshotBalance(accountId: string): Promise<bigint | null> {
+  private async getLatestAccountSnapshot(
+    accountId: string,
+  ): Promise<{ balanceSats: bigint; timestamp: string } | null> {
     const [row] = await this.db
-      .select({ balance_sats: balanceSnapshots.balanceSats })
+      .select({ balance_sats: balanceSnapshots.balanceSats, timestamp: balanceSnapshots.timestamp })
       .from(balanceSnapshots)
       .where(eq(balanceSnapshots.accountId, accountId))
       .orderBy(desc(balanceSnapshots.timestamp))
       .limit(1)
 
-    return row ? BigInt(row.balance_sats) : null
+    return row ? { balanceSats: BigInt(row.balance_sats), timestamp: row.timestamp } : null
   }
 
   private async queueAccountHistoryBackfill(
