@@ -1,9 +1,10 @@
-import { Box, Button, Table, Tbody, Td, Text, Thead, Tr } from '@chakra-ui/react'
+import { Box, Button, HStack, Table, Tbody, Td, Text, Thead, Tr } from '@chakra-ui/react'
 import { StatusBadge, Th, getBadgeConfigForStatement } from '@hoseki/packages/ui/prove-verify-ui'
 import { format } from 'date-fns'
 import { Link as RouterLink } from 'react-router'
 import type { StatementDto } from '../../trpc/server-types'
-import { viewStatementLabel } from '../dashboard/statement-card'
+import { deleteStatementLabel, viewStatementLabel } from '../dashboard/statement-card'
+import { DeleteStatementButton } from './delete-statement-button'
 
 export function StatementsTable({ statements }: { statements: StatementDto[] }): JSX.Element {
   return (
@@ -44,16 +45,21 @@ export function StatementsTable({ statements }: { statements: StatementDto[] }):
                   <StatusBadge {...getBadgeConfigForStatement(statement.status)} />
                 </Box>
               </Td>
-              <Td textAlign="right">
-                <Button
-                  as={RouterLink}
-                  variant="outline"
-                  size="md"
-                  aria-label={viewStatementLabel(statement)}
-                  to={`/statements/${statement.id}`}
-                >
-                  View
-                </Button>
+              <Td>
+                <HStack justifyContent="flex-end">
+                  <Button
+                    as={RouterLink}
+                    variant="outline"
+                    size="md"
+                    aria-label={viewStatementLabel(statement)}
+                    to={`/statements/${statement.id}`}
+                  >
+                    View
+                  </Button>
+                  {statement.status !== 'pending' && (
+                    <DeleteStatementButton statementId={statement.id} iconLabel={deleteStatementLabel(statement)} />
+                  )}
+                </HStack>
               </Td>
             </Tr>
           ))}

@@ -12,7 +12,8 @@ import { PDFViewer, pdf } from '@react-pdf/renderer'
 import { format } from 'date-fns'
 import { ShieldCheckIcon } from 'lucide-react'
 import { useState } from 'react'
-import { Link as RouterLink } from 'react-router'
+import { Link as RouterLink, useNavigate } from 'react-router'
+import { DeleteStatementButton } from '../../components/statements/delete-statement-button'
 import { useRenderedStatement } from '../../hooks/use-rendered-statement'
 import { UrlParameter, useUrlParameter } from '../../hooks/use-url-parameters'
 import { baseTrpc, trpc } from '../../trpc'
@@ -165,6 +166,7 @@ function ActionButtons({
   statement: StatementDto
   statementFormat: StatementDocumentFormat
 }) {
+  const navigate = useNavigate()
   const { mutate: downloadPdf, isLoading: isDownloadingPdf } = usePdfDownloadMutation({
     mutationFn: triggerPdfDownload,
   })
@@ -186,6 +188,14 @@ function ActionButtons({
         >
           Download
         </Button>
+        {statement.status !== 'pending' && (
+          <DeleteStatementButton
+            statementId={statement.id}
+            onDeleted={() => {
+              void navigate('/statements')
+            }}
+          />
+        )}
       </HStack>
     </Box>
   )

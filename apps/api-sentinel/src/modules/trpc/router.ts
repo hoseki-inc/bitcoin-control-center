@@ -1541,6 +1541,18 @@ const statementRouter = t.router({
     return dto
   }),
 
+  delete: publicProcedure.input(z.string()).mutation(async ({ ctx, input: statementId }) => {
+    const deleted = await ctx.app.statementService.delete(statementId)
+    if (deleted.isErr()) {
+      switch (deleted.unwrapErr()) {
+        case 'not_found':
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Statement not found' })
+        case 'pending':
+          throw new TRPCError({ code: 'CONFLICT', message: 'Statement is still generating' })
+      }
+    }
+  }),
+
   retrieveDocumentData: publicProcedure
     .input(z.object({ statementId: z.string(), format: z.enum(['custom', 'monthly']) }))
     .query(async ({ ctx, input }) => {

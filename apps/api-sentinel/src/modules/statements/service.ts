@@ -7,7 +7,7 @@ import { Err, Ok, asyncFn } from '@hoseki/packages/result'
 import type { Result } from '@hoseki/packages/result'
 import { type StatementQuoteCurrency, StatementQuoteCurrencySchema } from '@hoseki/packages/schemas/statement-quote'
 import Decimal from 'decimal.js'
-import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
 import type { Logger } from 'pino'
 import { z } from 'zod'
@@ -43,6 +43,8 @@ export interface StatementDto {
 }
 
 type StatementRow = typeof statements.$inferSelect
+
+export type StatementDeleteError = 'not_found' | 'pending'
 
 const INTERRUPTED_MESSAGE = 'Generation was interrupted. Delete this statement and try again.'
 
@@ -199,6 +201,19 @@ export class StatementService {
     })
 
     return Ok(id)
+  }
+
+  /** Delete a completed or failed statement. Its number is never reused. */
+  public async delete(id: string): Promise<Result<void, StatementDeleteError>> {
+    const [deleted] = await this.db
+      .delete(statements)
+      .where(and(eq(statements.id, id), ne(statements.status, 'pending')))
+      .returning({ id: statements.id })
+    if (deleted !== undefined) {
+      return Ok(undefined)
+    }
+    const [existing] = await this.db.select({ id: statements.id }).from(statements).where(eq(statements.id, id))
+    return Err(existing === undefined ? 'not_found' : 'pending')
   }
 
   /**

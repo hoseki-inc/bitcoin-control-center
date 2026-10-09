@@ -74,7 +74,11 @@ export function StatementListPage(): JSX.Element {
             }}
           />
         </Flex>
-        {viewType === 'grid' ? <StatementsGrid statements={statements} /> : <StatementsTable statements={statements} />}
+        {viewType === 'grid' ? (
+          <StatementsGrid statements={statements} canDelete />
+        ) : (
+          <StatementsTable statements={statements} />
+        )}
       </Stack>
     </Box>
   )

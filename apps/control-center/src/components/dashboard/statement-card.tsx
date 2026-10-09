@@ -2,6 +2,7 @@ import { Box, Button, HStack, Image, Stack, Text } from '@chakra-ui/react'
 import { LinearGradient } from '@hoseki/packages/ui/design-system'
 import { formatDateRange } from '@hoseki/packages/ui/utils'
 import { format } from 'date-fns'
+import type { ReactNode } from 'react'
 import type { StatementDto } from '../../trpc/server-types'
 
 const CREATED_FORMAT = 'dd MMM yyyy h:mm a'
@@ -11,7 +12,20 @@ export function viewStatementLabel(statement: StatementDto): string {
   return `View statement created ${format(statement.createdAt, CREATED_FORMAT)}`
 }
 
-export function StatementCard({ statement, onView }: { statement: StatementDto; onView: () => void }): JSX.Element {
+export function deleteStatementLabel(statement: StatementDto): string {
+  return `Delete statement created ${format(statement.createdAt, CREATED_FORMAT)}`
+}
+
+export function StatementCard({
+  statement,
+  onView,
+  footerAction,
+}: {
+  statement: StatementDto
+  onView: () => void
+  /** Shown at the right of the card's footer. */
+  footerAction?: ReactNode
+}): JSX.Element {
   return (
     <Box
       borderRadius="panel"
@@ -21,6 +35,8 @@ export function StatementCard({ statement, onView }: { statement: StatementDto; 
       overflow="hidden"
       position="relative"
       minWidth={0}
+      display="flex"
+      flexDirection="column"
     >
       {/* Integrator Ribbon */}
       {statement.integrator && (
@@ -79,8 +95,9 @@ export function StatementCard({ statement, onView }: { statement: StatementDto; 
           </Button>
         </LinearGradient>
       </Box>
-      <HStack bg="white" borderTopWidth="1px" borderColor="neutral.200">
-        <Stack py={2} px={4} spacing={0} flexGrow="1">
+      {/* Fills the card so cards stretched to a taller neighbour stay white to the bottom. */}
+      <HStack bg="white" borderTopWidth="1px" borderColor="neutral.200" flexGrow={1} alignItems="center">
+        <Stack py={2} px={4} spacing={0} flexGrow="1" minW={0}>
           <Text textStyle="text/sm" fontWeight="medium" color="neutral.900">
             Statement
           </Text>
@@ -91,6 +108,7 @@ export function StatementCard({ statement, onView }: { statement: StatementDto; 
             Created: {format(statement.createdAt, CREATED_FORMAT)}
           </Text>
         </Stack>
+        {footerAction !== undefined && <Box pr={2}>{footerAction}</Box>}
       </HStack>
     </Box>
   )
