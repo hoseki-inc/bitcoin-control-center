@@ -130,13 +130,32 @@ async function withTestSetup(
   await run(queryClient)
 }
 
-it('reports a failed refresh while keeping the balances loaded before it', async () => {
+it('reports no failure while the first balances load', async () => {
+  const answer = holdBalances()
+  await withTestSetup(10_000, async () => {
+    expect(balanceRequests).toBe(1)
+    expect(current().balancesFailed).toBe(false)
+    expect(current().updatedAt).toBe(0)
+    await act(async () => {
+      answer()
+    })
+    await waitForBalances((balances) => {
+      expect(balances.data.get(claimId)?.current.toString()).toBe('100000000')
+    })
+    expect(current().balancesFailed).toBe(false)
+    expect(current().updatedAt).toBeGreaterThan(0)
+  })
+})
+
+it('reports a failed refresh while keeping the balances loaded before it, and when they loaded', async () => {
   await withTestSetup(undefined, async (queryClient) => {
     await waitForBalances((balances) => {
       expect(balances.data.get(claimId)?.current.toString()).toBe('100000000')
     })
     expect(current().balancesFailed).toBe(false)
+    const loadedAt = current().updatedAt
     answerBalances = unreachable
+    await advance(60_000)
     await act(async () => {
       await queryClient.refetchQueries()
     })
@@ -146,6 +165,7 @@ it('reports a failed refresh while keeping the balances loaded before it', async
     const balance = current().data.get(claimId)
     expect(balance?.current.toString()).toBe('100000000')
     expect(balance?.usd?.toString()).toBe('50000')
+    expect(current().updatedAt).toBe(loadedAt)
   })
 })
 

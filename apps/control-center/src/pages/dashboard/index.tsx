@@ -50,6 +50,11 @@ import { type DashboardDataSource, dashboardDataSource } from './dashboard-data'
 
 type PresetTimeRange = '7d' | '30d' | '90d' | '1y' | 'all'
 type TimeRange = PresetTimeRange | 'custom'
+/**
+ * Whether the wallet balances in view are live, still loading, or older ones kept while
+ * Electrum is unreachable, or whether a missing account list leaves the total unknown.
+ */
+type WalletBalanceState = 'current' | 'loading' | 'stale' | 'unknown'
 
 interface CustomDateRangeDraft {
   startDate: Date | null
@@ -394,18 +399,32 @@ export function DashboardPage({
     () => new Map((storedBalancesQuery.data ?? []).map((stored) => [stored.accountId, stored])),
     [storedBalancesQuery.data],
   )
-  // Balances kept from before a failed fetch are no longer live.
-  const liveWalletBalances = balancesQuery.balancesFailed ? null : balancesQuery.data
-  // Each wallet's live balance or, while that loads or Electrum is unreachable, the last one
-  // Sentinel recorded. The sidebar rows and the total share these.
+  // Each wallet's live balance or, while that loads, the last one Sentinel recorded. While
+  // Electrum is unreachable, the newer of the balance fetched before the failure and the
+  // recorded one. The sidebar rows and the total share these.
   const walletBalances = new Map<ClaimId, BalanceValue | null>()
+  // While Electrum is unreachable, when each wallet's shown balance was current.
+  const walletBalanceTimes = new Map<ClaimId, number>()
   for (const id of claimIds) {
+    const live = balancesQuery.data.get(id) ?? null
     const stored = storedWalletBalances.get(id)
-    walletBalances.set(
-      id,
-      liveWalletBalances?.get(id) ??
-        (stored === undefined ? null : { current: new Decimal(stored.balanceSats), usd: null }),
-    )
+    const storedBalance = stored === undefined ? null : { current: new Decimal(stored.balanceSats), usd: null }
+    if (!balancesQuery.balancesFailed) {
+      walletBalances.set(id, live ?? storedBalance)
+      continue
+    }
+    const storedAtMs = stored === undefined ? Number.NaN : Date.parse(stored.timestamp)
+    if (live !== null && !(storedAtMs > balancesQuery.updatedAt)) {
+      walletBalances.set(id, live)
+      walletBalanceTimes.set(id, balancesQuery.updatedAt)
+    } else if (storedBalance !== null) {
+      walletBalances.set(id, storedBalance)
+      walletBalanceTimes.set(id, storedAtMs)
+    } else {
+      // A wallet that has never synced counts as empty until Electrum answers, once the
+      // recorded balances have loaded to show it has none.
+      walletBalances.set(id, storedBalancesQuery.data === undefined ? null : { current: new Decimal(0), usd: null })
+    }
   }
 
   // The current balance of the accounts in this view. It doesn't depend on the date range.
@@ -417,9 +436,9 @@ export function DashboardPage({
         ? [Number(account.balance)]
         : [],
   )
-  // An account list that failed to load, or a wallet that has never synced, leaves the
-  // balance unknown; counting either as zero would show a false drop. A selection only
-  // holds accounts from lists that loaded.
+  // An account list that failed to load, or a wallet balance still loading with none
+  // recorded, leaves the balance unknown; counting either as zero would show a false drop.
+  // A selection only holds accounts from lists that loaded.
   const hasAccountLists = [claimsQuery, exchangeAccountsQuery, manualAccountsQuery, etfAccountsQuery].every(
     (query) => query.data !== undefined,
   )
@@ -427,14 +446,28 @@ export function DashboardPage({
     (isShowingAll && !hasAccountLists) || viewWalletSats.some((sats) => sats === null)
       ? null
       : viewWalletSats.reduce((sum, sats) => sum + Number(sats), 0) + viewOtherSats.reduce((sum, sats) => sum + sats, 0)
-  const hasLiveWalletBalances =
-    liveWalletBalances !== null && viewClaimIds.every((id) => (liveWalletBalances.get(id) ?? null) !== null)
-  // While Electrum is unreachable, when the oldest stored balance in view was recorded.
-  const storedBalancesAsOfMs =
-    balancesQuery.balancesFailed && displayBalanceSats !== null
-      ? Math.min(...viewClaimIds.map((id) => Date.parse(storedWalletBalances.get(id)?.timestamp ?? '')))
-      : Number.NaN
-  const walletBalancesAsOf = Number.isFinite(storedBalancesAsOfMs) ? new Date(storedBalancesAsOfMs) : null
+  const walletBalanceState: WalletBalanceState =
+    isShowingAll && !hasAccountLists
+      ? 'unknown'
+      : viewClaimIds.length === 0
+        ? 'current'
+        : balancesQuery.balancesFailed
+          ? 'stale'
+          : balancesQuery.updatedAt === 0
+            ? 'loading'
+            : 'current'
+  // The chart ends on the balance shown above it, unless that is still loading or incomplete.
+  const chartCurrentBalanceSats =
+    walletBalanceState === 'stale' ||
+    (walletBalanceState === 'current' && viewClaimIds.every((id) => (balancesQuery.data.get(id) ?? null) !== null))
+      ? displayBalanceSats
+      : null
+  // While Electrum is unreachable, the oldest time a shown wallet balance was current.
+  const viewBalanceTimes = viewClaimIds.flatMap((id) => {
+    const time = walletBalanceTimes.get(id)
+    return time !== undefined && Number.isFinite(time) && time > 0 ? [time] : []
+  })
+  const walletBalancesAsOf = viewBalanceTimes.length > 0 ? new Date(Math.min(...viewBalanceTimes)) : null
 
   const isFullHistoryRange = timeRange === 'custom' || timeRange === 'all'
   const historyRangeError =
@@ -465,20 +498,21 @@ export function DashboardPage({
     if (isFullHistoryRange && history.length === 0) {
       return []
     }
-    // Without live wallet balances, the server's latest point is the best current balance.
-    if (!hasLiveWalletBalances || displayBalanceSats === null) {
+    // Without a known current balance, the server's latest point is the best one.
+    if (chartCurrentBalanceSats === null) {
       return history
     }
     if (timeRange === 'custom') {
-      return customEndsToday ? withCurrentBalancePoint(history, displayBalanceSats, new Date(), userTimezone) : history
+      return customEndsToday
+        ? withCurrentBalancePoint(history, chartCurrentBalanceSats, new Date(), userTimezone)
+        : history
     }
-    return withCurrentBalancePoint(history, displayBalanceSats, new Date(), userTimezone)
+    return withCurrentBalancePoint(history, chartCurrentBalanceSats, new Date(), userTimezone)
   }, [
     customEndsToday,
     activeData?.historicalData,
     hasCurrentRangeData,
-    hasLiveWalletBalances,
-    displayBalanceSats,
+    chartCurrentBalanceSats,
     historyRangeError,
     isFullHistoryPending,
     historyBackfillBlocked,
@@ -667,6 +701,7 @@ export function DashboardPage({
                 {/* Announces sync and loading changes. Errors have their own alerts, so it stays quiet for them. */}
                 <Box as="output" aria-live={showsHistoryError && walletBalancesAsOf === null ? 'off' : undefined}>
                   <SyncIndicator
+                    walletBalanceState={walletBalanceState}
                     walletBalancesAsOf={walletBalancesAsOf}
                     historySyncingCount={historySyncingAccountIds.length}
                     isPending={!hasCurrentRangeData}
@@ -928,18 +963,36 @@ function HistoryBackfillError({ announce = true }: { announce?: boolean }): JSX.
 }
 
 function SyncIndicator({
+  walletBalanceState,
   walletBalancesAsOf,
   historySyncingCount,
   isPending,
   hasError,
 }: {
-  /** Set when the balance shown is the wallets' last stored one. */
+  walletBalanceState: WalletBalanceState
+  /** While Electrum is unreachable, when the oldest wallet balance shown was current. */
   walletBalancesAsOf: Date | null
   historySyncingCount: number
   isPending: boolean
   hasError: boolean
-}): JSX.Element {
+}): JSX.Element | null {
   const [, setClockTick] = useState(0)
+  // A range that loads quickly neither flashes nor announces "Updating history": "Synced",
+  // or no status, stays until the load has taken a moment. Any other status gives way at once.
+  const [showsPending, setShowsPending] = useState(isPending)
+  const wasSettled = useRef(!isPending)
+  useEffect(() => {
+    if (!isPending) {
+      return
+    }
+    const timeoutId = window.setTimeout(() => {
+      setShowsPending(true)
+    }, 400)
+    return () => {
+      window.clearTimeout(timeoutId)
+      setShowsPending(false)
+    }
+  }, [isPending])
   const asOfMs = walletBalancesAsOf?.getTime() ?? null
   // A clock behind the server's must not read as a sync in the future. Fixed once per
   // sync time, so the time read to screen readers doesn't change.
@@ -956,6 +1009,13 @@ function SyncIndicator({
       window.clearInterval(intervalId)
     }
   }, [asOfMs])
+
+  const isUpdating =
+    walletBalanceState === 'loading' || historySyncingCount > 0 || (isPending && (showsPending || !wasSettled.current))
+  const isSettled = shownAsOfMs === null && !hasError && !isUpdating
+  useEffect(() => {
+    wasSettled.current = isSettled
+  })
 
   // First, as it qualifies the balance itself; an alert covers any history error.
   if (shownAsOfMs !== null) {
@@ -977,15 +1037,19 @@ function SyncIndicator({
       </Text>
     )
   }
-  if (isPending || historySyncingCount > 0) {
+  if (isUpdating) {
     return (
       <Flex align="center" gap={1.5}>
         <Spinner label="" size="xs" color="neutral.400" />
         <Text textStyle="text/sm" color="neutral.500">
-          Updating history
+          {walletBalanceState === 'loading' ? 'Updating balances' : 'Updating history'}
         </Text>
       </Flex>
     )
+  }
+  // Balances that are unknown or can't be fetched are never "Synced", even with no time to show.
+  if (walletBalanceState !== 'current') {
+    return null
   }
 
   return (

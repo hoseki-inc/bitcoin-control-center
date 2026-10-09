@@ -1,7 +1,6 @@
 import { Box, Flex, Text, usePrefersReducedMotion, useToken } from '@chakra-ui/react'
 import { TZDate } from '@date-fns/tz'
 import { parseUnknown } from '@hoseki/packages/result'
-import { formatUsd } from '@hoseki/packages/ui/utils/format'
 import { format } from 'date-fns'
 import Decimal from 'decimal.js'
 import { useMemo } from 'react'
@@ -48,8 +47,6 @@ function ChartTooltip({
     z.object({
       timestamp: z.string(),
       totalBalance: z.string(),
-      btcPrice: z.string().optional(),
-      btcBalance: z.number(),
     }),
     payload[0]?.payload,
   )
@@ -57,8 +54,6 @@ function ChartTooltip({
     return null
   }
   const data = parsed.unwrap()
-
-  const btcPrice = data.btcPrice != null && data.btcPrice !== '' ? Number(data.btcPrice) : 0
 
   return (
     <Box bg="neutral.900" borderRadius="10px" px={3.5} py={2.5} shadow="lg">
@@ -76,17 +71,6 @@ function ChartTooltip({
           <BitcoinAmount btc={new Decimal(data.totalBalance).div(100_000_000)} />
         </>
       </Text>
-      {btcPrice > 0 && (
-        <Text
-          textStyle="text/xs"
-          color="neutral.300"
-          mt={0.5}
-          fontFamily="body"
-          sx={{ fontVariantNumeric: 'tabular-nums' }}
-        >
-          {formatUsd(data.btcBalance * btcPrice)}
-        </Text>
-      )}
     </Box>
   )
 }

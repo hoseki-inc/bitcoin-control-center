@@ -231,6 +231,16 @@ describe('portfolio history completion', () => {
     })
   })
 
+  it("counts each wallet's latest stored balance while live balances are unavailable", async () => {
+    await withTestSetup(async () => {
+      await harness.service.recordAccountSnapshot(accountId, '90', '2020-01-01T00:00:00.000Z')
+      await harness.service.recordAccountSnapshot(accountId, '150', '2020-01-03T09:00:00.000Z')
+      harness.provider.getConfirmedAccountBalances.mockResolvedValueOnce(Err(new Error('Balance unavailable')))
+      const offline = (await harness.service.getData({ timeRange: '90d' })).unwrap()
+      expect(offline.currentTotalBalance).toBe('150')
+    })
+  })
+
   it('keeps a certified history prefix available while a new block is fetched', async () => {
     await withTestSetup(async () => {
       await harness.sync()

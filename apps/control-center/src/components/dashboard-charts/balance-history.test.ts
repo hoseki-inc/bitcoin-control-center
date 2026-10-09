@@ -180,6 +180,23 @@ describe('month labels under the bars', () => {
     ])
   })
 
+  it('gives January its year when a range of up to a year starts there', () => {
+    // This year to date, as in October.
+    const yearToDate = months(10, 2026, 1)
+    expect(yearToDate.map((_, index) => getMonthTickLabel(yearToDate, index))).toEqual([
+      'Jan \u201926',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+    ])
+  })
+
   it('labels every third month beyond a year, counting back from the latest', () => {
     const twoYears = months(24, 2024, 11)
     const labels = twoYears.map((_, index) => getMonthTickLabel(twoYears, index))
@@ -209,7 +226,11 @@ describe('month labels under the bars', () => {
     // Four years still fit every third month; longer histories thin out so labels never overlap.
     [48, 3, 16],
     [60, 6, 10],
+    [96, 6, 16],
     [121, 12, 11],
+    [144, 12, 12],
+    // Labels a year apart all carry their year, so more than twelve of them would crowd.
+    [145, 24, 7],
     [400, 24, 17],
   ] as const)('labels %i months every %i, %i labels in all', (count, step, labelCount) => {
     const range = months(count, 2000, 1)

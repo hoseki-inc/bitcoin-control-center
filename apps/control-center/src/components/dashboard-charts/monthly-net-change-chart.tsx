@@ -114,7 +114,8 @@ export function MonthlyNetChangeChart({ data, timezone, btcPrice = null }: Month
           <BarChart
             aria-label="Monthly net change"
             data={monthlyChanges}
-            margin={{ top: 4, right: 16, left: 16, bottom: 0 }}
+            // Wider sides when dense, as a label can be wider than the bar under it.
+            margin={{ top: 4, right: isDense ? 24 : 16, left: isDense ? 24 : 16, bottom: 0 }}
             // The gap applies on both sides: bars fill half a column up to a year, then about 62%.
             barCategoryGap={isDense ? '19%' : '25%'}
           >

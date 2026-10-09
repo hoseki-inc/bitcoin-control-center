@@ -39,7 +39,7 @@ export interface DashboardDataSource {
   ) => PortfolioQuery
   useBalances: (
     ...args: Parameters<typeof useGetBalancesPerClaimIds>
-  ) => Pick<ReturnType<typeof useGetBalancesPerClaimIds>, 'data' | 'balancesFailed'>
+  ) => Pick<ReturnType<typeof useGetBalancesPerClaimIds>, 'data' | 'balancesFailed' | 'updatedAt'>
   /** Each wallet's last recorded balance, shown while live balances load or can't be fetched. */
   useStoredBalances: (input: { claimIds: string[] }, options: { enabled: boolean }) => { data?: StoredWalletBalance[] }
   useAutoRefresh: () => void

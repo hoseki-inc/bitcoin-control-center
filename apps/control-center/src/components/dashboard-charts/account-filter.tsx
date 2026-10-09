@@ -414,12 +414,13 @@ export function AccountFilter({
         <Search size={13} strokeWidth={2} />
       </HeaderIconButton>
       <HeaderIconButton
-        label={compact ? 'Detailed view' : 'Compact view'}
+        label="Detailed view"
+        isActive={!compact}
         onClick={() => {
           setDensity(!compact)
         }}
       >
-        <DensityIcon compact={compact} />
+        <DensityIcon />
       </HeaderIconButton>
     </Flex>
   )
@@ -575,8 +576,8 @@ function AccountSharePie({
   const strokeWidth = 3
   const radius = (size - strokeWidth) / 2
   const circumference = 2 * Math.PI * radius
-  // A sliver stays visible for tiny accounts so the ring never looks empty.
-  const filled = (Math.max(percentage, 0.5) / 100) * circumference
+  // A sliver stays visible for tiny accounts, so only an empty one has an empty ring.
+  const filled = sats > 0 && totalSats > 0 ? (Math.max(percentage, 0.5) / 100) * circumference : 0
   const label = `${formatShare(sats, totalSats)}% of your portfolio`
   return (
     <Tooltip label={label} placement="top" hasArrow>
@@ -597,17 +598,19 @@ function AccountSharePie({
             strokeWidth={strokeWidth}
             opacity={0.1}
           />
-          <circle
-            cx={size / 2}
-            cy={size / 2}
-            r={radius}
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={strokeWidth}
-            strokeDasharray={`${filled} ${circumference - filled}`}
-            strokeLinecap="round"
-            opacity={0.4}
-          />
+          {filled > 0 && (
+            <circle
+              cx={size / 2}
+              cy={size / 2}
+              r={radius}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={strokeWidth}
+              strokeDasharray={`${filled} ${circumference - filled}`}
+              strokeLinecap="round"
+              opacity={0.4}
+            />
+          )}
         </svg>
         <VisuallyHidden>{label}</VisuallyHidden>
       </Box>
@@ -753,18 +756,12 @@ function HeaderIconButton({
   )
 }
 
-/** Two tall rows switch to detailed; three short rows switch to compact. */
-function DensityIcon({ compact }: { compact: boolean }): JSX.Element {
-  const rows = compact
-    ? [
-        { y: 1, height: 5 },
-        { y: 10, height: 5 },
-      ]
-    : [
-        { y: 2, height: 2.5 },
-        { y: 6.75, height: 2.5 },
-        { y: 11.5, height: 2.5 },
-      ]
+/** Two tall rows: the detailed view, which the toggle shows pressed while it's on. */
+function DensityIcon(): JSX.Element {
+  const rows = [
+    { y: 1, height: 5 },
+    { y: 10, height: 5 },
+  ]
   return (
     <Icon viewBox="0 0 16 16" boxSize="14px" aria-hidden="true">
       {rows.map((row) => (
@@ -818,7 +815,6 @@ function StatusBadge({ label }: { label: string }): JSX.Element {
       left="50%"
       transform="translateX(-50%)"
       px={2}
-      py={0.5}
       bg="warning.50"
       border="1px solid"
       borderColor="warning.300"
@@ -827,7 +823,6 @@ function StatusBadge({ label }: { label: string }): JSX.Element {
       textStyle="label/xs"
       fontWeight="semibold"
       color="warning.700"
-      lineHeight="1"
       pointerEvents="none"
     >
       {label}

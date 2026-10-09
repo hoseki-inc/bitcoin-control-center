@@ -179,13 +179,14 @@ export function getFlowTotals(data: BalanceDataPoint[]): FlowTotals {
 
 /**
  * The label under a month's bar, or null to leave it blank. Up to twelve months
- * shows every month; longer ranges label every third, sixth or twelfth month,
+ * shows every month; longer ranges label every third, sixth, twelfth or 24th month,
  * counting back from the latest, so the labels never crowd. January carries its
  * year, as do the first label of a longer range, the first label of each later
- * year, and every label a year apart.
+ * year, and every label a year or more apart, so those wider labels get more room.
  */
 export function getMonthTickLabel(months: MonthlyChange[], index: number): string | null {
-  const step = months.length <= 12 ? 1 : ([3, 6, 12].find((every) => months.length / every <= 16) ?? 24)
+  const step =
+    months.length <= 12 ? 1 : ([3, 6, 12].find((every) => months.length / every <= (every < 12 ? 16 : 12)) ?? 24)
   const month = months[index]
   if (!month || (months.length - 1 - index) % step !== 0) {
     return null
@@ -319,7 +320,7 @@ function firstPointBefore(points: ParsedBalancePoint[], timestampMs: number): Pa
   return null
 }
 
-export function getMonthKey(date: Date, timezone: string = getBrowserTimezone()): string {
+function getMonthKey(date: Date, timezone: string = getBrowserTimezone()): string {
   const zonedDate = new TZDate(date, timezone)
   return `${zonedDate.getFullYear()}-${String(zonedDate.getMonth() + 1).padStart(2, '0')}`
 }

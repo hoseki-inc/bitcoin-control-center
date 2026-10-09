@@ -249,16 +249,18 @@ it('keeps the rail visible and its width stable across persisted density changes
     const rail = container.querySelector<HTMLElement>('[aria-label="Portfolio accounts"]')
     assert.exists(rail, 'Expected the accounts rail')
     expect(getComputedStyle(rail).width).toBe('280px')
+    expect(button('Detailed view').getAttribute('aria-pressed')).toBe('false')
     await click('Detailed view')
     expect(getComputedStyle(rail).width).toBe('280px')
-    expect(button('Compact view').hasAttribute('aria-pressed')).toBe(false)
+    expect(button('Detailed view').getAttribute('aria-pressed')).toBe('true')
     expect(button('Paper Wallet').getAttribute('aria-pressed')).toBe('true')
     expect(localStorage.getItem('hoseki:sidebar-compact')).toBe('false')
     expect(document.body.textContent).toContain('$312,500.00 USD')
     await render(new Set(['paper']), 'sidebar')
-    // The toggle names the view it switches to, so a remembered detailed view offers Compact.
-    expect(container.querySelector('[aria-label="Detailed view"]')).toBeNull()
-    await click('Compact view')
+    // A remembered detailed view shows the toggle pressed.
+    expect(button('Detailed view').getAttribute('aria-pressed')).toBe('true')
+    await click('Detailed view')
+    expect(button('Detailed view').getAttribute('aria-pressed')).toBe('false')
     expect(localStorage.getItem('hoseki:sidebar-compact')).toBe('true')
     expect(onSelectionChange).not.toHaveBeenCalled()
   })
@@ -308,13 +310,19 @@ async function renderAccounts({
   balances = new Map(),
   manualAccounts = accounts,
   exchangeAccounts = [],
+  etfAccounts = [],
   isMissingAccounts = false,
+  historySyncingAccountIds = [],
+  recentlySyncedAccountIds = [],
 }: {
   claims?: AccountFilterProps['claims']
   balances?: AccountFilterProps['balances']
   manualAccounts?: AccountFilterProps['manualAccounts']
   exchangeAccounts?: AccountFilterProps['exchangeAccounts']
+  etfAccounts?: AccountFilterProps['etfAccounts']
   isMissingAccounts?: boolean
+  historySyncingAccountIds?: string[]
+  recentlySyncedAccountIds?: string[]
 }): Promise<void> {
   await act(async () => {
     root.render(
@@ -325,14 +333,14 @@ async function renderAccounts({
             claims={claims}
             exchangeAccounts={exchangeAccounts}
             manualAccounts={manualAccounts}
-            etfAccounts={[]}
+            etfAccounts={etfAccounts}
             balances={balances}
             isMissingAccounts={isMissingAccounts}
             btcPrice={50_000}
             selected={new Set()}
             onSelectionChange={onSelectionChange}
-            historySyncingAccountIds={[]}
-            recentlySyncedAccountIds={[]}
+            historySyncingAccountIds={historySyncingAccountIds}
+            recentlySyncedAccountIds={recentlySyncedAccountIds}
           />
         </MemoryRouter>
       </ChakraProvider>,
@@ -534,6 +542,94 @@ it('shows no portfolio shares while a wallet balance is unknown, yet still count
     expect(document.body.textContent).not.toContain('% of your portfolio')
     expect(button('All accounts').getAttribute('aria-pressed')).toBe('true')
     expect(document.body.textContent).toContain('2 of 2')
+  })
+})
+
+it('fills no part of the share ring for an empty account, and a sliver for a tiny one', async () => {
+  await withTestSetup(async () => {
+    vi.stubGlobal('Image', document.defaultView?.Image)
+    await renderAccounts({
+      claims: [
+        claimFixture('re_clmx_big', 'Big wallet'),
+        claimFixture('re_clmx_tiny', 'Tiny wallet'),
+        claimFixture('re_clmx_empty', 'Empty wallet'),
+      ],
+      manualAccounts: [],
+      balances: new Map([
+        ['re_clmx_big', { current: new Decimal(1_000_000_000), usd: null }],
+        ['re_clmx_tiny', { current: new Decimal(1_000), usd: null }],
+        ['re_clmx_empty', { current: new Decimal(0), usd: null }],
+      ]),
+    })
+    // The grey track, plus the filled share when there is one.
+    expect(button('Empty wallet').querySelectorAll('circle')).toHaveLength(1)
+    const [track, share] = button('Tiny wallet').querySelectorAll('circle')
+    assert.exists(track)
+    assert.exists(share)
+    // Half a percent of the ring, though the wallet holds far less.
+    const circumference = 2 * Math.PI * Number(track.getAttribute('r'))
+    expect(Number(share.getAttribute('stroke-dasharray')?.split(' ')[0])).toBeCloseTo(circumference * 0.005)
+    expect(button('Empty wallet').textContent).toContain('0.0% of your portfolio')
+  })
+})
+
+it('leaves an exchange that needs reconnecting out of the total, the count and the shares', async () => {
+  await withTestSetup(async () => {
+    await renderAccounts({ exchangeAccounts: disconnectedExchangeAccounts })
+    // Its saved 99.999 BTC would otherwise dwarf the two manual accounts.
+    expect(button('All accounts').textContent).toContain('8.85000000 BTC')
+    expect(button('Paper Wallet').textContent).toContain('70.6% of your portfolio')
+    expect(document.body.textContent).toContain('2 of 2')
+    expect(document.querySelector('a[href="/accounts/strike/strike"]')?.textContent).toContain('Reconnect needed')
+  })
+})
+
+it('lists ETF holdings with the manually added accounts and counts them', async () => {
+  await withTestSetup(async () => {
+    await renderAccounts({
+      etfAccounts: [
+        {
+          id: 'etf',
+          displayName: 'Brokerage ETF',
+          currency: 'BTC',
+          balance: '115000000',
+          createdAt: '2026-01-01T00:00:00.000Z',
+        },
+      ],
+    })
+    expect(accountOrder()).toEqual(['Paper Wallet', 'Cold Storage', 'Brokerage ETF'])
+    expect(button('Brokerage ETF').textContent).toContain('Manually added')
+    expect(button('All accounts').textContent).toContain('10.00000000 BTC')
+    expect(document.body.textContent).toContain('3 of 3')
+  })
+})
+
+it("shows each account's history sync in its row", async () => {
+  await withTestSetup(async () => {
+    vi.stubGlobal('Image', document.defaultView?.Image)
+    const claims = [claimFixture('re_clmx_syncing', 'Syncing wallet'), claimFixture('re_clmx_done', 'Done wallet')]
+    await renderAccounts({
+      claims,
+      historySyncingAccountIds: ['re_clmx_syncing'],
+      recentlySyncedAccountIds: ['re_clmx_done'],
+    })
+    expect(button('Syncing wallet').textContent).toContain('Updating history')
+    expect(button('Done wallet').textContent).toContain('History updated')
+    expect(button('Paper Wallet').textContent).not.toContain('History')
+  })
+})
+
+it('keeps the closed search box out of reach and titles the sidebar', async () => {
+  await withTestSetup(async () => {
+    await renderAccounts({})
+    expect(document.querySelector('h2')?.textContent).toBe('Accounts')
+    expect(searchInput().closest('[inert]')).not.toBeNull()
+    expect(searchInput().closest('[aria-hidden="true"]')).not.toBeNull()
+    expect(searchInput().tabIndex).toBe(-1)
+    await click('Search accounts')
+    expect(searchInput().closest('[inert]')).toBeNull()
+    expect(searchInput().closest('[aria-hidden="true"]')).toBeNull()
+    expect(searchInput().tabIndex).toBe(0)
   })
 })
 

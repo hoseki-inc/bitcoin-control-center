@@ -22,6 +22,8 @@ function hasFailedSinceLoading(query: { errorUpdatedAt: number; dataUpdatedAt: n
 export type UseGetBalancesPerClaimIdOutput = {
   /** The latest balance fetch failed, even while a retry runs; `data` may still hold older balances. */
   balancesFailed: boolean
+  /** When the balances in `data` were fetched, or 0 before the first fetch succeeds. */
+  updatedAt: number
   isLoading: boolean
   isSuccess: boolean
   isError: boolean
@@ -70,6 +72,7 @@ export function useGetBalancesPerClaimIds({
 
   return {
     balancesFailed: hasFailedSinceLoading(btcClaimBalancesQuery),
+    updatedAt: btcClaimBalancesQuery.dataUpdatedAt,
     isLoading: queries.some((q) => q.isLoading),
     isError: queries.some((q) => q.isError),
     isSuccess: queries.every((q) => q.isSuccess),

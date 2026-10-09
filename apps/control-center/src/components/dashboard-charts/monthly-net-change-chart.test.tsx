@@ -100,6 +100,25 @@ function bars(): SVGPathElement[] {
   return Array.from(container.querySelectorAll<SVGPathElement>('.recharts-bar-rectangle path'))
 }
 
+/** The y of each rounded corner's end point along a bar's outline. */
+function cornerEnds(bar: SVGPathElement): number[] {
+  return Array.from((bar.getAttribute('d') ?? '').matchAll(/A\s*(?:-?[\d.]+,\s*){5}-?[\d.]+,\s*(-?[\d.]+)/g), (arc) =>
+    Number(arc[1]),
+  )
+}
+
+/** Each label under the bars, in month order. */
+function monthLabels(): (string | null)[] {
+  return Array.from(container.querySelectorAll('.recharts-xAxis-tick-labels text'), (label) => label.textContent)
+}
+
+it('names the chart for assistive technology', async () => {
+  await withTestSetup(async () => {
+    await render(monthEnds(1.5, 1.7, 1.4))
+    expect(container.querySelector('svg[role="application"]')?.getAttribute('aria-label')).toBe('Monthly net change')
+  })
+})
+
 it('fills gains and losses with their own colors', async () => {
   await withTestSetup(async () => {
     await render(monthEnds(1.5, 1.7, 1.4))
@@ -127,6 +146,28 @@ it.each([
       expect(Math.abs(height)).toBeGreaterThan(0)
       expect(Number(bar.getAttribute('y')) + height).toBeCloseTo(Number(zero.getAttribute('y1')))
     }
+  })
+})
+
+it('rounds a losing bar at its bottom, away from the zero line', async () => {
+  await withTestSetup(async () => {
+    await render(monthEnds(1.5, 1.7, 1.4))
+    const loss = bars()[2]
+    assert.exists(loss, 'Expected the losing bar')
+    const y = Number(loss.getAttribute('y'))
+    const bottom = Math.max(y, y + Number(loss.getAttribute('height')))
+    // Each 3px corner runs from the bottom edge to 3px up its side, so none reaches the zero line.
+    const distancesFromBottom = cornerEnds(loss).map((end) => Number((bottom - end).toFixed(4)))
+    expect(distancesFromBottom.sort((a, b) => a - b)).toEqual([0, 3])
+  })
+})
+
+it('labels every third month beyond a year, counting back from the latest', async () => {
+  await withTestSetup(async () => {
+    // August 2025 through July 2027.
+    await render(monthEnds(...Array.from({ length: 24 }, (_, index) => 1.1 + index / 10)))
+    expect(bars()).toHaveLength(24)
+    expect(monthLabels()).toEqual(['Oct \u201925', 'Jan \u201926', 'Apr', 'Jul', 'Oct', 'Jan \u201927', 'Apr', 'Jul'])
   })
 })
 
