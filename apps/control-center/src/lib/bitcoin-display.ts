@@ -14,11 +14,12 @@ export function formatBitcoinNumber(value: Decimal.Value): string {
 
 /**
  * A signed BTC amount without its unit ("+0.21543450", "−0.01000000"). The sign
- * follows the amount as shown, so anything under half a satoshi reads as +0.
+ * follows the amount as shown, so anything under half a satoshi reads as an unsigned 0.
  */
 export function formatSignedBitcoinNumber(value: Decimal.Value): string {
   const shown = new Decimal(value).toDecimalPlaces(8, Decimal.ROUND_HALF_UP)
-  return `${shown.isNegative() && !shown.isZero() ? '\u2212' : '+'}${formatBitcoinNumber(shown.abs())}`
+  const sign = shown.isZero() ? '' : shown.isNegative() ? '\u2212' : '+'
+  return `${sign}${formatBitcoinNumber(shown.abs())}`
 }
 
 /** Whether a price can convert BTC to USD. */

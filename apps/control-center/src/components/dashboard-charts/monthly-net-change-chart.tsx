@@ -112,7 +112,7 @@ export function MonthlyNetChangeChart({ data, timezone, btcPrice = null }: Month
       <Box h="200px">
         <ResponsiveContainer width="100%" height="100%">
           <BarChart
-            title="Monthly net change"
+            aria-label="Monthly net change"
             data={monthlyChanges}
             margin={{ top: 4, right: 16, left: 16, bottom: 0 }}
             // The gap applies on both sides: bars fill half a column up to a year, then about 62%.

@@ -308,11 +308,13 @@ async function renderAccounts({
   balances = new Map(),
   manualAccounts = accounts,
   exchangeAccounts = [],
+  isMissingAccounts = false,
 }: {
   claims?: AccountFilterProps['claims']
   balances?: AccountFilterProps['balances']
   manualAccounts?: AccountFilterProps['manualAccounts']
   exchangeAccounts?: AccountFilterProps['exchangeAccounts']
+  isMissingAccounts?: boolean
 }): Promise<void> {
   await act(async () => {
     root.render(
@@ -325,6 +327,7 @@ async function renderAccounts({
             manualAccounts={manualAccounts}
             etfAccounts={[]}
             balances={balances}
+            isMissingAccounts={isMissingAccounts}
             btcPrice={50_000}
             selected={new Set()}
             onSelectionChange={onSelectionChange}
@@ -455,11 +458,106 @@ it.each(['sidebar', 'dropdown'] as const)('clears a selection from beside the co
     await click('Paper Wallet')
     await click('Cold Storage')
     expect(document.body.textContent).toContain('2 of 2')
-    await click('Clear')
+    await click('Clear account filter')
     expect(onSelectionChange).toHaveBeenLastCalledWith(new Set())
     expect(button('All accounts').getAttribute('aria-pressed')).toBe('true')
+    // The button goes away, so focus moves to the choice it made rather than the page.
+    expect(document.activeElement).toBe(button('All accounts'))
     expect(Array.from(document.querySelectorAll('button')).some((element) => element.textContent === 'Clear')).toBe(
       false,
     )
+  })
+})
+
+function searchInput(): HTMLInputElement {
+  const input = document.querySelector<HTMLInputElement>('input[aria-label="Search accounts"]')
+  assert.exists(input, 'Expected the account search input')
+  return input
+}
+
+it.each(['sidebar', 'dropdown'] as const)(
+  'clears the search when the magnifying glass closes it in %s',
+  async (presentation) => {
+    await withTestSetup(async () => {
+      await render(new Set(), presentation)
+      if (presentation === 'dropdown') {
+        await click('Filter accounts: All accounts')
+      }
+      await search('cold')
+      expect(accountOrder()).toEqual(['Cold Storage'])
+      await click('Search accounts')
+      expect(button('Search accounts').getAttribute('aria-pressed')).toBe('false')
+      expect(searchInput().value).toBe('')
+      expect(accountOrder()).toEqual(['Paper Wallet', 'Cold Storage'])
+    })
+  },
+)
+
+it('reopens the dropdown with search closed and every account listed', async () => {
+  await withTestSetup(async () => {
+    await render()
+    await click('Filter accounts: All accounts')
+    await search('cold')
+    expect(accountOrder()).toEqual(['Cold Storage'])
+    await click('Done')
+    await click('Filter accounts: All accounts')
+    expect(button('Search accounts').getAttribute('aria-pressed')).toBe('false')
+    expect(searchInput().value).toBe('')
+    expect(accountOrder()).toEqual(['Paper Wallet', 'Cold Storage'])
+  })
+})
+
+it('shows no portfolio shares while a wallet balance is unknown, yet still counts the wallet', async () => {
+  await withTestSetup(async () => {
+    // Wallet avatars load their images through the window's Image.
+    vi.stubGlobal('Image', document.defaultView?.Image)
+    const balance: BalanceValue = { current: new Decimal(100_000_000), usd: null }
+    const claims = [claimFixture('re_clmx_live', 'Live wallet'), claimFixture('re_clmx_down', 'Offline wallet')]
+    await renderAccounts({
+      claims,
+      manualAccounts: [],
+      balances: new Map([
+        ['re_clmx_live', balance],
+        ['re_clmx_down', balance],
+      ]),
+    })
+    // Once every balance is known, each row shows its share.
+    expect(button('Live wallet').textContent).toContain('50.0% of your portfolio')
+    await renderAccounts({
+      claims,
+      manualAccounts: [],
+      balances: new Map([
+        ['re_clmx_live', balance],
+        ['re_clmx_down', null],
+      ]),
+    })
+    expect(document.body.textContent).not.toContain('% of your portfolio')
+    expect(button('All accounts').getAttribute('aria-pressed')).toBe('true')
+    expect(document.body.textContent).toContain('2 of 2')
+  })
+})
+
+it('shows no total or shares when an account list failed to load', async () => {
+  await withTestSetup(async () => {
+    await renderAccounts({ isMissingAccounts: true })
+    expect(button('All accounts').textContent).toContain('\u2014')
+    expect(document.body.textContent).not.toContain('% of your portfolio')
+    // The accounts that did load still show their own balances.
+    expect(button('Paper Wallet').textContent).toContain('6.25000000')
+  })
+})
+
+it('badges a pending wallet inside its button', async () => {
+  await withTestSetup(async () => {
+    vi.stubGlobal('Image', document.defaultView?.Image)
+    await renderAccounts({
+      claims: [
+        { ...claimFixture('re_clmx_pending', 'New wallet'), status: 'pending' },
+        claimFixture('re_clmx_live', 'Live wallet'),
+      ],
+      manualAccounts: [],
+    })
+    expect(button('New wallet').textContent).toContain('Pending')
+    expect(button('Live wallet').textContent).not.toContain('Pending')
   })
 })

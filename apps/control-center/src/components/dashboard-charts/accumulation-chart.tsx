@@ -1,6 +1,7 @@
 import { Box, Flex, Text, usePrefersReducedMotion, useToken } from '@chakra-ui/react'
 import { TZDate } from '@date-fns/tz'
 import { parseUnknown } from '@hoseki/packages/result'
+import { formatUsd } from '@hoseki/packages/ui/utils/format'
 import { format } from 'date-fns'
 import Decimal from 'decimal.js'
 import { useMemo } from 'react'
@@ -17,7 +18,13 @@ import {
 import { z } from 'zod'
 import { getBrowserTimezone } from '../../utils/timezone'
 import { BitcoinAmount } from '../bitcoin-amount'
-import { type BalanceDataPoint, formatAxisBtc, formatAxisDate, getAxisDecimals } from './balance-history'
+import {
+  type BalanceDataPoint,
+  formatAxisBtc,
+  formatAxisDate,
+  getAxisDecimals,
+  getBalanceAxis,
+} from './balance-history'
 
 interface AccumulationChartProps {
   data: BalanceDataPoint[]
@@ -26,13 +33,6 @@ interface AccumulationChartProps {
   timezone?: string
   /** "month" shows the first date as a month and year, as for all-time history. */
   startLabel?: 'day' | 'month'
-}
-
-function formatUsd(btcAmount: number, btcPrice: number): string {
-  return (btcAmount * btcPrice).toLocaleString('en-US', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })
 }
 
 function ChartTooltip({
@@ -84,7 +84,7 @@ function ChartTooltip({
           fontFamily="body"
           sx={{ fontVariantNumeric: 'tabular-nums' }}
         >
-          <>${formatUsd(data.btcBalance, btcPrice)}</>
+          {formatUsd(data.btcBalance * btcPrice)}
         </Text>
       )}
     </Box>
@@ -132,22 +132,7 @@ export function AccumulationChart({
     )
   }
 
-  const values = chartData.map((d) => d.btcBalance)
-  const yMin = Math.min(...values)
-  const yMax = Math.max(...values)
-  const yPad = yMax === yMin ? Math.max(Math.abs(yMax) * 0.1, 0.00000001) : (yMax - yMin) * 0.15
-
-  // A history that is zero throughout needs only the zero line.
-  const ticks =
-    yMax === 0
-      ? [0]
-      : Array.from(
-          new Set([
-            Math.max(0, Math.floor((yMin - yPad) * 1e8)),
-            Math.round((yMin + yMax) * 0.5 * 1e8),
-            Math.ceil((yMax + yPad) * 1e8),
-          ]),
-        ).map((sats) => sats / 1e8)
+  const { ticks, domain } = getBalanceAxis(chartData.map((d) => d.btcBalance))
   const axisDecimals = getAxisDecimals(ticks)
 
   const firstMs = chartData[0]?.timestampMs ?? 0
@@ -161,7 +146,7 @@ export function AccumulationChart({
     <Box h="220px" w="100%">
       <ResponsiveContainer width="100%" height="100%">
         <AreaChart
-          title="Bitcoin balance history"
+          aria-label="Bitcoin balance history"
           data={chartData}
           margin={{ top: 16, right: 12, left: 12, bottom: 4 }}
         >
@@ -206,7 +191,7 @@ export function AccumulationChart({
             )}
           />
           <YAxis
-            domain={[Math.max(0, yMin - yPad), yMax + yPad]}
+            domain={domain}
             ticks={ticks}
             axisLine={false}
             tickLine={false}

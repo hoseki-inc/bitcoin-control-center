@@ -6,7 +6,6 @@ import {
   FormLabel,
   Popover,
   PopoverArrow,
-  PopoverBody,
   PopoverContent,
   PopoverTrigger,
   Portal,
@@ -17,9 +16,12 @@ import {
   useDisclosure,
 } from '@chakra-ui/react'
 import { TZDate } from '@date-fns/tz'
+import type { BalanceValue } from '@hoseki/packages/lib/balance'
+import type { ClaimId } from '@hoseki/packages/schemas'
 import { DateInput as DefaultDateInput, EmptyView, Spinner } from '@hoseki/packages/ui/design-system'
 import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
 import { VIEWPORT_BELOW_HEADER, Wrapper } from '@hoseki/packages/ui/prove-verify-ui/layout'
+import { formatUsd } from '@hoseki/packages/ui/utils/format'
 import { format, formatDistanceToNowStrict, isAfter, isBefore, startOfDay, subDays } from 'date-fns'
 import Decimal from 'decimal.js'
 import { X } from 'lucide-react'
@@ -127,13 +129,6 @@ function formatPercentChange(change: Decimal, start: Decimal): string {
   return `${change.lt(0) ? '\u2212' : '+'}${shown}%`
 }
 
-function formatUsd(btcAmount: number, btcPrice: number): string {
-  return (btcAmount * btcPrice).toLocaleString('en-US', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })
-}
-
 export interface DashboardViews {
   AccountFilter: typeof DefaultAccountFilter
   AccumulationChart: typeof DefaultAccumulationChart
@@ -172,7 +167,6 @@ export function DashboardPage({
   const completedHistory = useRef<{ viewKey: string; points: ReturnType<typeof withCurrentBalancePoint> } | null>(null)
   const recentlySyncedTimeouts = useRef<Map<string, number>>(new Map())
   const shownRecentlySyncedAccountIds = useRef<Set<string>>(new Set())
-  const knownServerBalances = useRef<Map<string, number>>(new Map())
   const activeLabelRef = useRef<HTMLParagraphElement>(null)
 
   const navigate = useNavigate()
@@ -224,7 +218,6 @@ export function DashboardPage({
     timeRange === 'custom'
       ? { timeRange: '1y' as const, customDateRange: customDateRangeInput ?? undefined }
       : { timeRange }
-  const selectionKey = [...selected].sort().join('|')
   const historyViewKey = JSON.stringify([timeRange, customDateRangeInput, [...selected].sort()])
 
   const {
@@ -283,7 +276,8 @@ export function DashboardPage({
     historySyncingAccountIds.every((id) => historyRefreshingAccountIds.includes(id))
   const historyNeedsInitialLoad = historySyncingAccountIds.length > 0 && !isHistoryRefreshing
   const recentlySyncedAccountIdList = useMemo(() => Array.from(recentlySyncedAccountIds), [recentlySyncedAccountIds])
-  const balancesQuery = dataSource.useBalances({ claimIds, enabled: claimIds.length > 0 })
+  const balancesQuery = dataSource.useBalances({ claimIds, enabled: claimIds.length > 0, retryFailedEveryMs: 10_000 })
+  const storedBalancesQuery = dataSource.useStoredBalances({ claimIds }, { enabled: claimIds.length > 0 })
 
   useEffect(() => {
     if (historySyncingAccountIds.length === 0) {
@@ -393,81 +387,54 @@ export function DashboardPage({
     }
   }, [allData?.verifiedClaimsCount, recordSnapshot])
 
-  const claimTotalBtcSats = Array.from(balancesQuery.data.values()).reduce((sum, b) => {
-    if (!b) {
-      return sum
-    }
-    return sum + Number(b.current)
-  }, 0)
-
-  const exchangeTotalBtcSats = exchangeAccounts.filter(isExchangeConnected).reduce((sum, a) => {
-    if (a.balance == null || a.balance === '') {
-      return sum
-    }
-    return sum + Number(a.balance)
-  }, 0)
-
-  const manualTotalBtcSats = manualAccounts.reduce((sum, a) => {
-    if (!a.balance) {
-      return sum
-    }
-    return sum + Number(a.balance)
-  }, 0)
-
-  const etfTotalBtcSats = etfAccounts.reduce((sum, a) => {
-    if (!a.balance) {
-      return sum
-    }
-    return sum + Number(a.balance)
-  }, 0)
-
-  const totalBtcSats = claimTotalBtcSats + exchangeTotalBtcSats + manualTotalBtcSats + etfTotalBtcSats
-
   const quotedBtcPrice = btcPriceQuery.data?.value ? Number(btcPriceQuery.data.value) : null
   const btcPrice = isUsableBtcPrice(quotedBtcPrice) ? quotedBtcPrice : null
 
-  // Keep the current balance consistent with the accounts included in this view.
-  const liveBalanceSats = isShowingAll
-    ? totalBtcSats
-    : selectedClaimIds.reduce((sum, id) => {
-        const b = balancesQuery.data.get(id)
-        return sum + (b ? Number(b.current) : 0)
-      }, 0) +
-      selectedExchangeIds.reduce((sum, id) => {
-        const acc = exchangeAccounts.find((a) => a.id === id)
-        return sum + (acc?.balance != null && acc.balance !== '' ? Number(acc.balance) : 0)
-      }, 0) +
-      selectedManualIds.reduce((sum, id) => {
-        const acc = manualAccounts.find((a) => a.id === id)
-        return sum + (acc?.balance != null && acc.balance !== '' ? Number(acc.balance) : 0)
-      }, 0) +
-      selectedEtfIds.reduce((sum, id) => {
-        const acc = etfAccounts.find((a) => a.id === id)
-        return sum + (acc?.balance != null && acc.balance !== '' ? Number(acc.balance) : 0)
-      }, 0)
-  // Wallet balances are missing while they load or when Electrum is unreachable.
-  // Counting them as zero would show a false drop, so use the server's total,
-  // which falls back to each wallet's last stored balance.
+  const storedWalletBalances = useMemo(
+    () => new Map((storedBalancesQuery.data ?? []).map((stored) => [stored.accountId, stored])),
+    [storedBalancesQuery.data],
+  )
   // Balances kept from before a failed fetch are no longer live.
+  const liveWalletBalances = balancesQuery.balancesFailed ? null : balancesQuery.data
+  // Each wallet's live balance or, while that loads or Electrum is unreachable, the last one
+  // Sentinel recorded. The sidebar rows and the total share these.
+  const walletBalances = new Map<ClaimId, BalanceValue | null>()
+  for (const id of claimIds) {
+    const stored = storedWalletBalances.get(id)
+    walletBalances.set(
+      id,
+      liveWalletBalances?.get(id) ??
+        (stored === undefined ? null : { current: new Decimal(stored.balanceSats), usd: null }),
+    )
+  }
+
+  // The current balance of the accounts in this view. It doesn't depend on the date range.
   const viewClaimIds = isShowingAll ? claimIds : selectedClaimIds
-  const hasLiveClaimBalances =
-    (viewClaimIds.length === 0 || !balancesQuery.balancesFailed) &&
-    viewClaimIds.every((id) => (balancesQuery.data.get(id) ?? null) !== null)
-  // The current total doesn't depend on the date range, so all accounts can keep
-  // the previous range's total; another selection's total never applies.
-  const serverData = activeData !== undefined && !activeIsPreviousData ? activeData : isShowingAll ? allData : undefined
-  const currentServerBalanceSats = serverData === undefined ? null : Number(serverData.currentTotalBalance)
-  // Null until the server reports a total for a selection without live balances.
-  const displayBalanceSats = hasLiveClaimBalances
-    ? liveBalanceSats
-    : (currentServerBalanceSats ?? knownServerBalances.current.get(selectionKey) ?? null)
-  // When the balance comes from stored wallet balances, the time they last synced.
-  // A clock behind the server's must not read as a sync in the future.
-  const storedBalancesAsOfMs = Date.parse(serverData?.walletBalancesAsOf ?? '')
-  const walletBalancesAsOf =
-    !hasLiveClaimBalances && Number.isFinite(storedBalancesAsOfMs)
-      ? new Date(Math.min(storedBalancesAsOfMs, Date.now()))
-      : null
+  const viewWalletSats = viewClaimIds.map((id) => walletBalances.get(id)?.current ?? null)
+  const viewOtherSats = [...exchangeAccounts.filter(isExchangeConnected), ...manualAccounts, ...etfAccounts].flatMap(
+    (account) =>
+      (isShowingAll || selected.has(account.id)) && account.balance != null && account.balance !== ''
+        ? [Number(account.balance)]
+        : [],
+  )
+  // An account list that failed to load, or a wallet that has never synced, leaves the
+  // balance unknown; counting either as zero would show a false drop. A selection only
+  // holds accounts from lists that loaded.
+  const hasAccountLists = [claimsQuery, exchangeAccountsQuery, manualAccountsQuery, etfAccountsQuery].every(
+    (query) => query.data !== undefined,
+  )
+  const displayBalanceSats =
+    (isShowingAll && !hasAccountLists) || viewWalletSats.some((sats) => sats === null)
+      ? null
+      : viewWalletSats.reduce((sum, sats) => sum + Number(sats), 0) + viewOtherSats.reduce((sum, sats) => sum + sats, 0)
+  const hasLiveWalletBalances =
+    liveWalletBalances !== null && viewClaimIds.every((id) => (liveWalletBalances.get(id) ?? null) !== null)
+  // While Electrum is unreachable, when the oldest stored balance in view was recorded.
+  const storedBalancesAsOfMs =
+    balancesQuery.balancesFailed && displayBalanceSats !== null
+      ? Math.min(...viewClaimIds.map((id) => Date.parse(storedWalletBalances.get(id)?.timestamp ?? '')))
+      : Number.NaN
+  const walletBalancesAsOf = Number.isFinite(storedBalancesAsOfMs) ? new Date(storedBalancesAsOfMs) : null
 
   const isFullHistoryRange = timeRange === 'custom' || timeRange === 'all'
   const historyRangeError =
@@ -499,19 +466,19 @@ export function DashboardPage({
       return []
     }
     // Without live wallet balances, the server's latest point is the best current balance.
-    if (!hasLiveClaimBalances) {
+    if (!hasLiveWalletBalances || displayBalanceSats === null) {
       return history
     }
     if (timeRange === 'custom') {
-      return customEndsToday ? withCurrentBalancePoint(history, liveBalanceSats, new Date(), userTimezone) : history
+      return customEndsToday ? withCurrentBalancePoint(history, displayBalanceSats, new Date(), userTimezone) : history
     }
-    return withCurrentBalancePoint(history, liveBalanceSats, new Date(), userTimezone)
+    return withCurrentBalancePoint(history, displayBalanceSats, new Date(), userTimezone)
   }, [
     customEndsToday,
     activeData?.historicalData,
     hasCurrentRangeData,
-    hasLiveClaimBalances,
-    liveBalanceSats,
+    hasLiveWalletBalances,
+    displayBalanceSats,
     historyRangeError,
     isFullHistoryPending,
     historyBackfillBlocked,
@@ -534,12 +501,6 @@ export function DashboardPage({
     historyViewKey,
     historicalData,
   ])
-
-  useEffect(() => {
-    if (currentServerBalanceSats !== null) {
-      knownServerBalances.current.set(selectionKey, currentServerBalanceSats)
-    }
-  }, [selectionKey, currentServerBalanceSats])
 
   useEffect(() => {
     if (hasCurrentRangeData && !activeError && !isFullHistoryPending && !historyBackfillBlocked) {
@@ -603,7 +564,7 @@ export function DashboardPage({
     void (isShowingAll ? refetchAllData : refetchFilteredData)({ cancelRefetch: false })
   }
   const isUp = periodChange === null || periodChange.gte(0)
-  const changeColor = isUp ? 'success.700' : 'error.700'
+  const changeColor = periodChange === null || periodChange.eq(0) ? 'neutral.600' : isUp ? 'success.700' : 'error.700'
   // A failed range request cannot establish that the portfolio is empty.
   if (!hasVerifiedClaims && !hasHistoricalData && hasCurrentRangeData && !activeError && !historyBackfillFailed) {
     return <EmptyState />
@@ -629,7 +590,8 @@ export function DashboardPage({
       exchangeAccounts={exchangeAccounts}
       manualAccounts={manualAccounts}
       etfAccounts={etfAccounts}
-      balances={balancesQuery.data}
+      balances={walletBalances}
+      isMissingAccounts={!hasAccountLists}
       btcPrice={btcPrice}
       selected={selected}
       onSelectionChange={setSelected}
@@ -638,20 +600,21 @@ export function DashboardPage({
     />
   ) : null
   const isViewUpdating = !hasCurrentRangeData && !activeError && !isFullHistoryPending
+  const showsHistoryError = !!activeError || historyBackfillFailed
   const isViewRefreshing = hasCurrentRangeData && !activeError && !isFullHistoryPending && activeFetching
 
   return (
     <Flex minH={VIEWPORT_BELOW_HEADER} align="stretch">
+      <VisuallyHidden as="h1">Portfolio</VisuallyHidden>
       {hasDesktopSidebar && accountFilter}
       <Box flex="1" minW={0}>
         <Wrapper maxW="928px" w="full" py={{ base: 6, md: 8 }}>
           {!hasDesktopSidebar && <Box mb={6}>{accountFilter}</Box>}
           <Box minW={0}>
-            <VisuallyHidden as="h1">Portfolio</VisuallyHidden>
             {/* Above the balance, as the figures below may be stale or incomplete. */}
             {hasCurrentRangeData && activeError && historyRangeError === null && (
               <Box role="alert" mb={4}>
-                <Text textStyle="text/sm" color="error.500">
+                <Text textStyle="text/sm" color="error.700">
                   Couldn&apos;t refresh this date range. Showing previously loaded data.
                 </Text>
                 <Button mt={2} size="sm" variant="outline" onClick={retryHistory}>
@@ -701,17 +664,18 @@ export function DashboardPage({
                   </Box>
                 )}
                 <Box as="span" boxSize="3px" borderRadius="full" bg="neutral.300" aria-hidden="true" />
-                {/* The one place sync and loading changes are announced. */}
-                <Box as="output">
+                {/* Announces sync and loading changes. Errors have their own alerts, so it stays quiet for them. */}
+                <Box as="output" aria-live={showsHistoryError && walletBalancesAsOf === null ? 'off' : undefined}>
                   <SyncIndicator
                     walletBalancesAsOf={walletBalancesAsOf}
                     historySyncingCount={historySyncingAccountIds.length}
                     isPending={!hasCurrentRangeData}
-                    hasError={!!activeError || historyBackfillFailed}
+                    hasError={showsHistoryError}
                   />
                 </Box>
               </Flex>
-              {/* The button centers on the balance line; on phones it wraps below. */}
+              {/* The button centers on the balance line; on phones it wraps below. The USD
+                  line comes first in the code so it's read right after the balance. */}
               <Flex
                 align="center"
                 justify="space-between"
@@ -720,14 +684,7 @@ export function DashboardPage({
                 flexWrap="wrap"
                 mt={1}
               >
-                <Flex
-                  align="baseline"
-                  columnGap={3}
-                  flexWrap="wrap"
-                  minW={0}
-                  opacity={isViewUpdating ? 0.35 : 1}
-                  transition="opacity 0.2s ease"
-                >
+                <Flex align="baseline" columnGap={3} flexWrap="wrap" minW={0}>
                   <Text
                     fontFamily="body"
                     sx={{ fontVariantNumeric: 'tabular-nums' }}
@@ -745,6 +702,17 @@ export function DashboardPage({
                     BTC
                   </Text>
                 </Flex>
+                <Box flexBasis="100%" order={{ base: 0, sm: 1 }}>
+                  <FiatAmountText textStyle={{ base: 'text/lg', md: 'text/xl' }} fontWeight="normal">
+                    <>
+                      {btcPrice === null
+                        ? 'USD unavailable'
+                        : displayBalanceSats === null
+                          ? '\u2014'
+                          : formatUsd((displayBalanceSats / 100_000_000) * btcPrice)}
+                    </>
+                  </FiatAmountText>
+                </Box>
                 <Button
                   size="md"
                   variant="outline"
@@ -754,27 +722,12 @@ export function DashboardPage({
                 >
                   Generate Statement
                 </Button>
-                <Box
-                  flexBasis="100%"
-                  order={{ base: 0, sm: 1 }}
-                  opacity={isViewUpdating ? 0.35 : 1}
-                  transition="opacity 0.2s ease"
-                >
-                  <FiatAmountText textStyle={{ base: 'text/lg', md: 'text/xl' }} fontWeight="normal">
-                    <>
-                      {btcPrice === null
-                        ? 'USD unavailable'
-                        : displayBalanceSats === null
-                          ? '\u2014'
-                          : `$${formatUsd(displayBalanceSats / 100_000_000, btcPrice)}`}
-                    </>
-                  </FiatAmountText>
-                </Box>
               </Flex>
             </Box>
 
             {/* Accumulation chart */}
             <Box mb={6} border="1px solid" borderColor="neutral.200" borderRadius="panel" p={{ base: 4, md: 6 }}>
+              <VisuallyHidden as="h2">Balance history</VisuallyHidden>
               <Flex align="flex-start" justify="space-between" mb={5} gap={3} flexWrap="wrap">
                 <Box minW={0} minH="56px" opacity={isViewUpdating ? 0.35 : 1} transition="opacity 0.2s ease">
                   {periodChange !== null && hasCurrentRangeData && (
@@ -786,7 +739,6 @@ export function DashboardPage({
                           color={changeColor}
                           sx={{ fontVariantNumeric: 'tabular-nums' }}
                         >
-                          {/* Zero reads as +0.00000000 BTC, matching Net accumulated below. */}
                           {formatSignedBitcoinNumber(periodChange.div(100_000_000))}
                           <BtcUnit />
                         </Text>
@@ -836,6 +788,7 @@ export function DashboardPage({
                 height="220px"
                 viewKey={historyViewKey}
                 error={historyRangeError}
+                announcesErrors
                 isBackfillBlocked={historyBackfillBlocked}
                 isPending={isFullHistoryPending}
                 isUpdating={isViewUpdating}
@@ -868,6 +821,7 @@ export function DashboardPage({
                 height="200px"
                 viewKey={historyViewKey}
                 error={historyRangeError}
+                announcesErrors={false}
                 isBackfillBlocked={historyBackfillBlocked}
                 isPending={isFullHistoryPending}
                 isUpdating={isViewUpdating}
@@ -896,6 +850,7 @@ function HistoryPanel({
   height,
   viewKey,
   error,
+  announcesErrors,
   isBackfillBlocked,
   isPending,
   isUpdating,
@@ -906,6 +861,8 @@ function HistoryPanel({
   height: string
   viewKey: string
   error: Pick<Error, 'message'> | null
+  /** Both panels show the same error; only one should announce it. */
+  announcesErrors: boolean
   isBackfillBlocked: boolean
   isPending: boolean
   isUpdating: boolean
@@ -922,10 +879,10 @@ function HistoryPanel({
       refreshing={isRefreshing}
     >
       {error !== null ? (
-        <HistoryRangeError height={height} message={error.message} onRetry={onRetry} />
+        <HistoryRangeError height={height} message={error.message} announce={announcesErrors} onRetry={onRetry} />
       ) : isBackfillBlocked ? (
         <Flex h={height} align="center" justify="center" px={4} textAlign="center">
-          <HistoryBackfillError />
+          <HistoryBackfillError announce={announcesErrors} />
         </Flex>
       ) : isPending ? (
         <HistoryRangeLoading height={height} />
@@ -939,15 +896,17 @@ function HistoryPanel({
 function HistoryRangeError({
   height,
   message,
+  announce,
   onRetry,
 }: {
   height: string
   message: string
+  announce: boolean
   onRetry: () => void
 }): JSX.Element {
   return (
     <Flex h={height} align="center" justify="center" direction="column" gap={3} px={4} textAlign="center">
-      <Text textStyle="text/sm" color="error.500">
+      <Text role={announce ? 'alert' : undefined} textStyle="text/sm" color="error.700">
         Couldn&apos;t load this date range: {message}
       </Text>
       <Text textStyle="text/xs" color="neutral.500">
@@ -960,9 +919,9 @@ function HistoryRangeError({
   )
 }
 
-function HistoryBackfillError(): JSX.Element {
+function HistoryBackfillError({ announce = true }: { announce?: boolean }): JSX.Element {
   return (
-    <Text role="alert" textStyle="text/sm" color="error.500">
+    <Text role={announce ? 'alert' : undefined} textStyle="text/sm" color="error.700">
       Wallet history couldn&apos;t be loaded. Retrying automatically. Check your Electrum connection if this continues.
     </Text>
   )
@@ -980,23 +939,40 @@ function SyncIndicator({
   isPending: boolean
   hasError: boolean
 }): JSX.Element {
-  // First, as it qualifies the balance itself; an alert above covers any history error.
-  if (walletBalancesAsOf !== null) {
+  const [, setClockTick] = useState(0)
+  const asOfMs = walletBalancesAsOf?.getTime() ?? null
+  // A clock behind the server's must not read as a sync in the future. Fixed once per
+  // sync time, so the time read to screen readers doesn't change.
+  const shownAsOfMs = useMemo(() => (asOfMs === null ? null : Math.min(asOfMs, Date.now())), [asOfMs])
+  useEffect(() => {
+    if (asOfMs === null) {
+      return
+    }
+    // Keep "X ago" current between data updates.
+    const intervalId = window.setInterval(() => {
+      setClockTick((tick) => tick + 1)
+    }, 30_000)
+    return () => {
+      window.clearInterval(intervalId)
+    }
+  }, [asOfMs])
+
+  // First, as it qualifies the balance itself; an alert covers any history error.
+  if (shownAsOfMs !== null) {
     return (
       <Flex align="center" gap={1.5}>
         <Box w="6px" h="6px" borderRadius="full" bg="warning.400" aria-hidden="true" />
         <Text textStyle="text/sm" color="warning.700">
-          Last synced{' '}
-          {/* The relative time changes every minute; a fixed time is read instead, so it isn't re-announced. */}
-          <span aria-hidden="true">{formatDistanceToNowStrict(walletBalancesAsOf, { addSuffix: true })}</span>
-          <VisuallyHidden>{format(walletBalancesAsOf, 'PPp')}</VisuallyHidden>
+          Last synced {/* The relative time keeps changing; a fixed time is read instead, so it isn't re-announced. */}
+          <span aria-hidden="true">{formatDistanceToNowStrict(shownAsOfMs, { addSuffix: true })}</span>
+          <VisuallyHidden>{format(shownAsOfMs, 'PPp')}</VisuallyHidden>
         </Text>
       </Flex>
     )
   }
   if (hasError) {
     return (
-      <Text textStyle="text/sm" color="error.500">
+      <Text textStyle="text/sm" color="error.700">
         History unavailable
       </Text>
     )
@@ -1064,7 +1040,7 @@ function NetAccumulatedSummary({
                   textStyle="amount/compact"
                   letterSpacing="-0.02em"
                   fontWeight="semibold"
-                  color={net.lt(0) ? 'error.700' : 'success.700'}
+                  color={net.isZero() ? 'neutral.900' : net.lt(0) ? 'error.700' : 'success.700'}
                 >
                   {formatSignedBitcoinNumber(net)}
                   <BtcUnit />
@@ -1115,10 +1091,10 @@ function NetAccumulatedSummary({
               <Text
                 textStyle="text/md"
                 fontWeight="medium"
-                color="success.700"
+                color={inBtc.isZero() ? 'neutral.900' : 'success.700'}
                 sx={{ fontVariantNumeric: 'tabular-nums' }}
               >
-                +{formatBitcoinNumber(inBtc)} in
+                {formatSignedBitcoinNumber(inBtc)} in
               </Text>
               <Text textStyle="label/xs" color="neutral.500" sx={{ fontVariantNumeric: 'tabular-nums' }}>
                 {formatSignedUsd(inBtc, btcPrice)}
@@ -1209,12 +1185,14 @@ function TimeRangeSelector({
             minH="40px"
             variant="ghost"
             borderRadius="control"
-            border="none"
+            // A light outline and heavier label set the selected range apart from the track.
+            border="1px solid"
+            borderColor={value === option.value ? 'neutral.300' : 'transparent'}
             bg={value === option.value ? 'shades.0' : 'transparent'}
             boxShadow={value === option.value ? 'sm' : 'none'}
             color={value === option.value ? 'neutral.900' : 'neutral.600'}
             textStyle="text/xs"
-            fontWeight="medium"
+            fontWeight={value === option.value ? 'semibold' : 'medium'}
             _hover={{
               bg: value === option.value ? 'shades.0' : 'neutral.200',
             }}
@@ -1233,19 +1211,22 @@ function TimeRangeSelector({
               variant="ghost"
               aria-pressed={value === 'custom'}
               borderRadius="control"
-              border="none"
+              border="1px solid"
+              borderColor={value === 'custom' ? 'neutral.300' : 'transparent'}
               bg={value === 'custom' ? 'shades.0' : 'transparent'}
               boxShadow={value === 'custom' ? 'sm' : 'none'}
               color={value === 'custom' ? 'neutral.900' : 'neutral.600'}
               textStyle="text/xs"
-              fontWeight="medium"
+              fontWeight={value === 'custom' ? 'semibold' : 'medium'}
               _hover={{ bg: value === 'custom' ? 'shades.0' : 'neutral.200' }}
             >
               Custom
             </Button>
           </PopoverTrigger>
           <Portal>
+            {/* A plain body rather than PopoverBody, which would read the whole form as the dialog's description. */}
             <PopoverContent
+              aria-label="Choose a date range"
               w="min(360px, calc(100vw - 32px))"
               bg="shades.0"
               borderColor="neutral.200"
@@ -1253,7 +1234,7 @@ function TimeRangeSelector({
               boxShadow="xl"
             >
               <PopoverArrow bg="shades.0" />
-              <PopoverBody p={4}>
+              <Box p={4}>
                 <Stack gap={4}>
                   <Text textStyle="text/sm" fontWeight="medium" color="neutral.900">
                     Choose a date range
@@ -1290,7 +1271,7 @@ function TimeRangeSelector({
                       />
                     </FormControl>
                   </Stack>
-                  <Text textStyle="text/xs" color={draftError === null ? 'neutral.500' : 'error.500'}>
+                  <Text textStyle="text/xs" color={draftError === null ? 'neutral.500' : 'error.700'}>
                     {draftError ?? 'Older self-custody history may take longer to prepare.'}
                   </Text>
                   <Flex justify="flex-end" gap={2}>
@@ -1302,7 +1283,7 @@ function TimeRangeSelector({
                     </Button>
                   </Flex>
                 </Stack>
-              </PopoverBody>
+              </Box>
             </PopoverContent>
           </Portal>
         </Popover>

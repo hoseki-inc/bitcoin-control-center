@@ -73,8 +73,11 @@ it.each([false, true])('retains chart nodes while disabling stale inspection, re
     expect(frame.hasAttribute('inert')).toBe(true)
     expect(frame.getAttribute('aria-hidden')).toBe('true')
     expect(container.querySelector('[aria-busy="true"]')).not.toBeNull()
-    // The retained chart and the sweep across it are both hidden from assistive technology.
-    expect(container.querySelectorAll('[aria-hidden="true"]')).toHaveLength(2)
+    // The sweep laid across the retained chart is hidden from assistive technology too.
+    const sweep = frame.nextElementSibling
+    assert.exists(sweep, 'Expected the sweep across the retained chart')
+    expect(sweep.getAttribute('aria-hidden')).toBe('true')
+    expect(getComputedStyle(sweep).pointerEvents).toBe('none')
     await render('account-b', false)
     expect(container.querySelector('button')).toBe(inspection)
     expect(frame.hasAttribute('inert')).toBe(false)
@@ -107,7 +110,10 @@ it('marks a background refresh busy without sweeping over the current chart', as
       )
     })
     expect(container.querySelector('[aria-busy="true"]')).not.toBeNull()
-    expect(container.querySelectorAll('[aria-hidden="true"]')).toHaveLength(0)
+    const frame = container.querySelector('button')?.parentElement
+    assert.exists(frame, 'Expected the chart frame')
+    expect(frame.hasAttribute('aria-hidden')).toBe(false)
+    expect(frame.nextElementSibling).toBeNull()
     expect(container.querySelector('[inert]')).toBeNull()
   })
 })

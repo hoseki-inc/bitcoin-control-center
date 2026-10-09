@@ -6,6 +6,7 @@ import {
   formatAxisBtc,
   formatAxisDate,
   getAxisDecimals,
+  getBalanceAxis,
   getFlowTotals,
   getMonthTickLabel,
   getMonthlyChanges,
@@ -196,10 +197,10 @@ describe('month labels under the bars', () => {
   })
 
   it.each([
-    ['November', 11, ['Nov', 'Feb \u201926', 'May', 'Aug', 'Nov']],
-    ['December', 12, ['Dec', 'Mar \u201926', 'Jun', 'Sep', 'Dec']],
+    ['November', 11, ['Nov \u201925', 'Feb \u201926', 'May', 'Aug', 'Nov']],
+    ['December', 12, ['Dec \u201925', 'Mar \u201926', 'Jun', 'Sep', 'Dec']],
   ] as const)('marks each year when a range of over a year ends in %s', (_name, lastMonth, expected) => {
-    // Thirteen months, as the one-year range shows, so January itself is unlabeled.
+    // Thirteen months, as the one-year range shows, so January itself is unlabeled; the first label gives the year.
     const range = months(13, 2025, lastMonth)
     expect(range.map((_, index) => getMonthTickLabel(range, index)).filter((label) => label !== null)).toEqual(expected)
   })
@@ -252,6 +253,13 @@ describe('balance chart edge dates', () => {
     const newYearUtc = new Date('2027-01-01T03:00:00.000Z')
     expect(formatAxisDate(Date.parse('2026-12-15T12:00:00.000Z'), 'America/Chicago', 'day', newYearUtc)).toBe('Dec 15')
   })
+
+  it('compares years in a time zone ahead of UTC', () => {
+    // Already January 1, 2027 in Tokyo, though still 2026 in UTC. With the case
+    // above, one fails whatever the machine's own zone if its year is compared.
+    const newYearTokyo = new Date('2026-12-31T20:00:00.000Z')
+    expect(formatAxisDate(Date.parse('2027-01-05T12:00:00.000Z'), 'Asia/Tokyo', 'day', newYearTokyo)).toBe('Jan 5')
+  })
 })
 
 describe('balance axis labels', () => {
@@ -267,12 +275,63 @@ describe('balance axis labels', () => {
     expect(labels([0.00000014, 0.00000016, 0.00000018])).toEqual(['0.00000014', '0.00000016', '0.00000018'])
   })
 
+  it('gives ticks a few satoshis apart every decimal they need, compared as drawn', () => {
+    // At seven decimals toFixed reads these apart, but the drawn labels repeat 0.0500001.
+    expect(labels([0.05000005, 0.05000011, 0.05000016])).toEqual(['0.05000005', '0.05000011', '0.05000016'])
+  })
+
   it('uses one precision across 1 BTC and groups thousands', () => {
-    expect(labels([0.987, 1, 1.013])).toEqual(['0.99', '1.00', '1.01'])
+    expect(labels([0.987, 1, 1.013])).toEqual(['0.987', '1.000', '1.013'])
     expect(labels([1200, 1500])).toEqual(['1,200.00', '1,500.00'])
+  })
+
+  it('adds decimals until even gridlines read as even steps', () => {
+    // At four decimals a flat 123,456 sats reads 0.0011, 0.0012, 0.0014.
+    expect(labels(getBalanceAxis([0.00123456]).ticks)).toEqual(['0.00111', '0.00123', '0.00136'])
+    // At four decimals an 8,367-sat move reads 0.5118, 0.5119, 0.5120: twice the axis's real span.
+    expect(labels(getBalanceAxis([0.51186167, 0.51194534]).ticks)).toEqual(['0.51185', '0.51190', '0.51196'])
+  })
+
+  it('allows a label up to a tenth of a step from its tick', () => {
+    // 0.0018 is 9.5% of a step from 0.00184.
+    expect(labels([0.001, 0.00142, 0.00184])).toEqual(['0.0010', '0.0014', '0.0018'])
+    // 0.0013 is 11.8% of a step from 0.00134.
+    expect(labels([0.001, 0.00134, 0.00168])).toEqual(['0.00100', '0.00134', '0.00168'])
   })
 
   it('labels a lone zero tick', () => {
     expect(labels([0])).toEqual(['0.0000'])
+  })
+})
+
+describe('balance axis ticks', () => {
+  it('clamps the bottom tick to zero and keeps the middle tick midway, to the satoshi', () => {
+    // The padded bottom would be below zero; the midpoint of 0 and 14,047,531 sats rounds up.
+    expect(getBalanceAxis([0.01, 0.12345679])).toEqual({
+      ticks: [0, 0.07023766, 0.14047531],
+      domain: [0, 0.14047531],
+    })
+  })
+
+  it.each([
+    ['a rising balance', [0.01, 0.12345679]],
+    ['a balance well above zero', [0.1, 0.2]],
+    ['a flat balance', [0.5, 0.5, 0.5]],
+    ['a flat single satoshi', [0.00000001, 0.00000001]],
+  ])('draws three ticks, none below zero, spanning exactly the domain for %s', (_label, values) => {
+    const { ticks, domain } = getBalanceAxis(values)
+    expect(new Set(ticks).size).toBe(3)
+    expect(ticks.every((tick) => tick >= 0)).toBe(true)
+    expect(ticks[0]).toBeLessThanOrEqual(Math.min(...values))
+    expect(ticks.at(-1)).toBeGreaterThanOrEqual(Math.max(...values))
+    expect(domain).toEqual([ticks[0], ticks.at(-1)])
+  })
+
+  it('draws only the zero line for a balance that is zero throughout', () => {
+    const { ticks, domain } = getBalanceAxis([0, 0])
+    expect(ticks).toEqual([0])
+    // Still a positive height, so the chart can place the line.
+    expect(domain[0]).toBe(0)
+    expect(domain[1]).toBeGreaterThan(0)
   })
 })

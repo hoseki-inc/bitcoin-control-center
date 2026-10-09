@@ -20,6 +20,7 @@ import type { BalanceValue } from '@hoseki/packages/lib/balance'
 import type { ClaimId } from '@hoseki/packages/schemas'
 import { KeystoreAvatar } from '@hoseki/packages/ui/prove-verify-ui'
 import { VIEWPORT_BELOW_HEADER } from '@hoseki/packages/ui/prove-verify-ui/layout'
+import { capitalize } from '@hoseki/packages/ui/utils/ui-copy'
 import { type SupportedHardwareWallet, getSupportedHardwareWalletLogoPath } from '@hoseki/packages/wallet'
 import { Check, ChevronDown, KeyRound, Search } from 'lucide-react'
 import { type ReactNode, useEffect, useId, useRef, useState } from 'react'
@@ -55,6 +56,8 @@ interface AccountFilterProps {
   manualAccounts: RouterOutput['portalProve']['manual']['list']
   etfAccounts: RouterOutput['portalProve']['etf']['list']
   balances: Map<ClaimId, BalanceValue | null>
+  /** An account list failed to load, so a total would leave accounts out. */
+  isMissingAccounts?: boolean
   btcPrice: number | null
   selected: Set<string>
   onSelectionChange: (ids: Set<string>) => void
@@ -69,6 +72,7 @@ export function AccountFilter({
   manualAccounts,
   etfAccounts,
   balances,
+  isMissingAccounts = false,
   btcPrice,
   selected,
   onSelectionChange,
@@ -103,7 +107,7 @@ export function AccountFilter({
     status: string | null
     logo: AccountLogo
     reconnectTo: string | null
-    /** Null while a wallet's live balance is loading or unavailable. */
+    /** Null for a wallet with neither a live nor a stored balance. */
     sats: number | null
   }[] = [
     ...claims.map((claim) => {
@@ -144,10 +148,11 @@ export function AccountFilter({
     })),
   ].sort((a, b) => (b.sats ?? -1) - (a.sats ?? -1))
   const selectable = accounts.filter((account) => account.reconnectTo === null)
-  // A missing wallet balance would understate the total and every share.
-  const totalSats = accounts.some((account) => account.sats === null)
-    ? null
-    : accounts.reduce((total, account) => total + (account.sats ?? 0), 0)
+  // A missing account or wallet balance would understate the total and every share.
+  const totalSats =
+    isMissingAccounts || accounts.some((account) => account.sats === null)
+      ? null
+      : accounts.reduce((total, account) => total + (account.sats ?? 0), 0)
   const included = selectable.filter((account) => selected.size === 0 || selected.has(account.id))
   const isAll = selected.size === 0
   const label = isAll
@@ -371,7 +376,12 @@ export function AccountFilter({
           bg="neutral.100"
           textStyle="text/sm"
           _placeholder={{ color: 'neutral.600' }}
-          _focusVisible={{ bg: 'neutral.50', boxShadow: '0 0 0 2px var(--chakra-colors-neutral-300)' }}
+          _focusVisible={{
+            bg: 'neutral.50',
+            outline: '2px solid',
+            outlineColor: 'activeState.80',
+            outlineOffset: '2px',
+          }}
           aria-label="Search accounts"
           placeholder="Search"
           tabIndex={isSearching ? undefined : -1}
@@ -419,8 +429,11 @@ export function AccountFilter({
       {!isAll && (
         <PlainButton
           type="button"
+          aria-label="Clear account filter"
           onClick={() => {
             onSelectionChange(new Set())
+            // This button goes away, so keep focus on the choice it made.
+            allAccountsRef.current?.focus()
           }}
           px={1.5}
           borderRadius="4px"
@@ -607,11 +620,10 @@ function toSatsOrNull(balance: BalanceValue | null | undefined): number | null {
 }
 
 function formatWalletName(wallet: string | null | undefined): string {
-  return wallet === null || wallet === undefined || wallet === ''
-    ? 'Self-custody'
-    : `${wallet.charAt(0).toUpperCase()}${wallet.slice(1)}`
+  return wallet === null || wallet === undefined || wallet === '' ? 'Self-custody' : capitalize(wallet)
 }
 
+/** Decorative, as the account's name sits beside it. */
 function AccountLogoMark({
   logo,
   compact,
@@ -625,14 +637,32 @@ function AccountLogoMark({
   const style = muted ? { opacity: 0.55, filter: 'grayscale(1)' } : undefined
   if (logo.kind === 'image') {
     return (
-      <Box as="span" display="block" boxSize={size} flexShrink={0} borderRadius="6px" overflow="hidden" sx={style}>
+      <Box
+        as="span"
+        display="block"
+        boxSize={size}
+        flexShrink={0}
+        borderRadius="6px"
+        overflow="hidden"
+        sx={style}
+        aria-hidden="true"
+      >
         <img src={logo.src} alt="" width="100%" height="100%" />
       </Box>
     )
   }
   if (logo.kind === 'manual') {
     return (
-      <Flex as="span" boxSize={size} flexShrink={0} borderRadius="6px" bg="warning.50" align="center" justify="center">
+      <Flex
+        as="span"
+        boxSize={size}
+        flexShrink={0}
+        borderRadius="6px"
+        bg="warning.50"
+        align="center"
+        justify="center"
+        aria-hidden="true"
+      >
         <ManualNoteIcon boxSize={compact ? '12px' : '16px'} />
       </Flex>
     )
@@ -645,7 +675,7 @@ function AccountLogoMark({
       { bottom: 0, right: 0 },
     ]
     return (
-      <Box as="span" display="block" position="relative" boxSize={size} flexShrink={0}>
+      <Box as="span" display="block" position="relative" boxSize={size} flexShrink={0} aria-hidden="true">
         {logo.wallets.map((wallet, index) => (
           <Box as="span" key={index} display="block" position="absolute" {...positions[index]}>
             {wallet === null ? (
@@ -678,6 +708,7 @@ function AccountLogoMark({
       src={getSupportedHardwareWalletLogoPath(logo.wallets[0] ?? null)}
       alt=""
       flexShrink={0}
+      aria-hidden="true"
     />
   )
 }

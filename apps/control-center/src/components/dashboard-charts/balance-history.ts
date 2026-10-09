@@ -178,10 +178,11 @@ export function getFlowTotals(data: BalanceDataPoint[]): FlowTotals {
 }
 
 /**
- * The label under a month's bar, or null to leave it blank. Up to a year shows
- * every month; longer ranges label every third, sixth or twelfth month, counting
- * back from the latest, so the labels never crowd. January carries its year, as
- * does the first label of each later year and every label a year apart.
+ * The label under a month's bar, or null to leave it blank. Up to twelve months
+ * shows every month; longer ranges label every third, sixth or twelfth month,
+ * counting back from the latest, so the labels never crowd. January carries its
+ * year, as do the first label of a longer range, the first label of each later
+ * year, and every label a year apart.
  */
 export function getMonthTickLabel(months: MonthlyChange[], index: number): string | null {
   const step = months.length <= 12 ? 1 : ([3, 6, 12].find((every) => months.length / every <= 16) ?? 24)
@@ -192,7 +193,7 @@ export function getMonthTickLabel(months: MonthlyChange[], index: number): strin
   const year = month.key.slice(0, 4)
   const previous = months[index - step]
   const showsYear =
-    step >= 12 || month.key.endsWith('-01') || (previous !== undefined && previous.key.slice(0, 4) !== year)
+    step >= 12 || month.key.endsWith('-01') || (previous === undefined ? step > 1 : previous.key.slice(0, 4) !== year)
   return showsYear ? `${month.label} \u2019${year.slice(-2)}` : month.label
 }
 
@@ -208,15 +209,50 @@ export function formatAxisDate(ms: number, timezone: string, style: 'day' | 'mon
 
 /**
  * Axis labels stay short (two decimals from 1 BTC, otherwise four) but gain
- * decimals until the ticks read differently. The tooltip shows the exact balance.
+ * decimals until the ticks read differently and each label is close enough to
+ * its tick that evenly spaced gridlines read as even steps. The tooltip shows
+ * the exact balance.
  */
 export function getAxisDecimals(ticks: number[]): number {
+  const step = ticks.length > 1 ? (Math.max(...ticks) - Math.min(...ticks)) / (ticks.length - 1) : 0
   for (let decimals = Math.max(...ticks) >= 1 ? 2 : 4; decimals < 8; decimals++) {
-    if (new Set(ticks.map((tick) => tick.toFixed(decimals))).size === ticks.length) {
+    // Compared as drawn, since rounding there can differ from a plain toFixed. Labels this
+    // close to evenly spaced ticks also always read differently.
+    const isClose = ticks.every(
+      (tick) => Math.abs(Number(formatAxisBtc(tick, decimals).replaceAll(',', '')) - tick) <= step * 0.1,
+    )
+    if (isClose) {
       return decimals
     }
   }
   return 8
+}
+
+export interface BalanceAxis {
+  ticks: number[]
+  domain: [number, number]
+}
+
+/**
+ * Y-axis ticks for a BTC balance: the padded bottom and top, rounded out to whole
+ * satoshis and never below zero, and one midway between them. The domain spans
+ * exactly the ticks, so none is drawn outside the plot.
+ */
+export function getBalanceAxis(values: number[]): BalanceAxis {
+  const yMin = Math.min(...values)
+  const yMax = Math.max(...values)
+  const yPad = yMax === yMin ? Math.max(Math.abs(yMax) * 0.1, 0.00000001) : (yMax - yMin) * 0.15
+  // A history that is zero throughout needs only the zero line.
+  if (yMax === 0) {
+    return { ticks: [0], domain: [0, yPad] }
+  }
+  const bottomSats = Math.max(0, Math.floor((yMin - yPad) * 100_000_000))
+  const topSats = Math.ceil((yMax + yPad) * 100_000_000)
+  const tickSats = new Set([bottomSats, Math.round((bottomSats + topSats) / 2), topSats])
+  return {
+    ticks: Array.from(tickSats, (sats) => sats / 100_000_000),
+    domain: [bottomSats / 100_000_000, topSats / 100_000_000],
+  }
 }
 
 export function formatAxisBtc(btc: number, decimals: number): string {

@@ -65,7 +65,6 @@ function fakeDataSource(state: HomeState): HomeDataSource {
     historySyncedAccountIds: [],
     historyRefreshingAccountIds: [],
     historyFailedAccountIds: [],
-    walletBalancesAsOf: null,
   }
   return {
     useStatements: () =>

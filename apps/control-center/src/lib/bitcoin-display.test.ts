@@ -17,8 +17,8 @@ describe('signed BTC without a unit', () => {
   it.each([
     ['a gain', '0.21543450', '+0.21543450'],
     ['a loss', '-0.01', '\u22120.01000000'],
-    ['no change', '0', '+0.00000000'],
-    ['a loss under half a satoshi', '-0.000000003', '+0.00000000'],
+    ['no change', '0', '0.00000000'],
+    ['a loss under half a satoshi', '-0.000000003', '0.00000000'],
     ['a loss of half a satoshi', '-0.000000005', '\u22120.00000001'],
   ] as const)('formats %s', (_label, btc, expected) => {
     expect(formatSignedBitcoinNumber(btc)).toBe(expected)

@@ -210,27 +210,24 @@ describe('portfolio history completion', () => {
     })
   })
 
-  it('reports when stored wallet balances last synced, only while live balances are unavailable', async () => {
+  it("returns each active wallet's latest stored balance, leaving out wallets that never synced", async () => {
     await withTestSetup(async () => {
-      await harness.service.recordAccountSnapshot(accountId, '90', '2020-01-01T00:00:00.000Z')
-      await harness.service.recordAccountSnapshot(accountId, '150', '2020-01-03T09:00:00.000Z')
-      harness.provider.getConfirmedAccountBalances.mockResolvedValueOnce(Err(new Error('Balance unavailable')))
-      const offline = (await harness.service.getData({ timeRange: '90d' })).unwrap()
-      expect(offline.currentTotalBalance).toBe('150')
-      expect(offline.walletBalancesAsOf).toBe('2020-01-03T09:00:00.000Z')
-      harness.provider.getConfirmedAccountBalances.mockResolvedValueOnce(Ok(new IndexMap([[account, 160n]])))
-      const live = (await harness.service.getData({ timeRange: '90d' })).unwrap()
-      expect(live.currentTotalBalance).toBe('160')
-      expect(live.walletBalancesAsOf).toBeNull()
-    })
-  })
+      const { db, service } = harness
+      await service.recordAccountSnapshot(accountId, '90', '2020-01-01T00:00:00.000Z')
+      await service.recordAccountSnapshot(accountId, '150', '2020-01-03T09:00:00.000Z')
+      const unsyncedId = 'unsynced-wallet'
+      const archivedId = 'archived-wallet'
+      await db.insert(accounts).values([
+        { id: unsyncedId, descriptor: Wallets.singlesigLegacyAccount.toString(), displayName: 'Unsynced wallet' },
+        { id: archivedId, descriptor: Wallets.singlesigNestedSegwitAccount.toString(), displayName: 'Archived wallet' },
+      ])
+      await service.recordAccountSnapshot(archivedId, '50', '2020-01-02T00:00:00.000Z')
+      await db.update(accounts).set({ deletedAt: '2020-01-04T00:00:00.000Z' }).where(eq(accounts.id, archivedId))
 
-  it('reports no last-synced time while a wallet with no stored balance is offline', async () => {
-    await withTestSetup(async () => {
-      harness.provider.getConfirmedAccountBalances.mockResolvedValueOnce(Err(new Error('Balance unavailable')))
-      const offline = (await harness.service.getData({ timeRange: '90d' })).unwrap()
-      expect(offline.currentTotalBalance).toBe('0')
-      expect(offline.walletBalancesAsOf).toBeNull()
+      await expect(service.getStoredWalletBalances([accountId, unsyncedId, archivedId])).resolves.toEqual([
+        { accountId, balanceSats: '150', timestamp: '2020-01-03T09:00:00.000Z' },
+      ])
+      await expect(service.getStoredWalletBalances([])).resolves.toEqual([])
     })
   })
 
