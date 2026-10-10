@@ -231,3 +231,46 @@ it('shows a status on cards only for statements that are generating or failed', 
   expect(text).toMatch(/pending/i)
   expect(text).not.toMatch(/completed/i)
 })
+
+it('keeps a generating statement current on its own until it is done', async () => {
+  let status: StatementDto['status'] = 'pending'
+  const { container, settle } = await renderStatementsPage({
+    list: async () => [statementFixture({ id: 'generating', status })],
+  })
+  await settle('success')
+  expect(container.textContent).toMatch(/pending/i)
+  status = 'completed'
+  await vi.waitFor(
+    () => {
+      expect(container.textContent).not.toMatch(/pending/i)
+    },
+    { timeout: 4000 },
+  )
+})
+
+it('removes a deleted statement from the list', async () => {
+  let rows = [statementFixture({ id: 'kept' }), statementFixture({ id: 'deleted' })]
+  const { container, settle } = await renderStatementsPage({
+    list: async (operation) => {
+      if (operation.path === 'portalProve.statement.delete') {
+        rows = rows.filter((row) => row.id !== operation.input)
+      }
+      return rows
+    },
+  })
+  await settle('success')
+  const trashButtons = (): HTMLButtonElement[] =>
+    Array.from(container.querySelectorAll<HTMLButtonElement>('button[aria-label^="Delete statement created"]'))
+  expect(trashButtons()).toHaveLength(2)
+  await act(async () => {
+    trashButtons()[1]?.click()
+  })
+  const confirm = Array.from(document.querySelectorAll('footer button')).find((item) => item.textContent === 'Delete')
+  assert(confirm instanceof window.HTMLButtonElement, 'Expected the confirm button')
+  await act(async () => {
+    confirm.click()
+  })
+  await vi.waitFor(() => {
+    expect(trashButtons()).toHaveLength(1)
+  })
+})

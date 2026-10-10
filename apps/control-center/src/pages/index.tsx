@@ -11,6 +11,7 @@ import { RecentStatements } from '../components/dashboard/recent-statements'
 import { StatMini } from '../components/dashboard/stat-mini'
 import { FiatAmountText } from '../components/fiat-amount-text'
 import { StatementsEmptyState } from '../components/statements/statements-empty-state'
+import { refetchWhileGenerating } from '../lib/statement-polling'
 import { type RouterOutput, trpc } from '../trpc'
 import type { StatementDto } from '../trpc/server-types'
 import { getBrowserTimezone } from '../utils/timezone'
@@ -199,7 +200,7 @@ export interface HomeDataSource {
 }
 
 const homeDataSource: HomeDataSource = {
-  useStatements: () => trpc.portalProve.statement.list.useQuery(),
+  useStatements: () => trpc.portalProve.statement.list.useQuery(undefined, { refetchInterval: refetchWhileGenerating }),
   usePortfolio: (input) => trpc.portalProve.controlCenter.getData.useQuery(input),
   useClaims: () => trpc.portalProve.registry.claims.list.useQuery({ excludePending: false }),
   useExchanges: () => trpc.portalProve.exchange.list.useQuery(),

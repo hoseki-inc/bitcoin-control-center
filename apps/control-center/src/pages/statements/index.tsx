@@ -7,6 +7,7 @@ import { Link as RouterLink } from 'react-router'
 import { StatementsEmptyState } from '../../components/statements/statements-empty-state'
 import { StatementsGrid } from '../../components/statements/statements-grid'
 import { StatementsTable } from '../../components/statements/statements-table'
+import { refetchWhileGenerating } from '../../lib/statement-polling'
 import { trpc } from '../../trpc'
 
 export function StatementListPage(): JSX.Element {
@@ -16,10 +17,7 @@ export function StatementListPage(): JSX.Element {
     isLoading,
     error,
     refetch,
-  } = trpc.portalProve.statement.list.useQuery(undefined, {
-    // Keep a generating statement's status current after leaving its page.
-    refetchInterval: (data) => (data?.some((statement) => statement.status === 'pending') === true ? 2000 : false),
-  })
+  } = trpc.portalProve.statement.list.useQuery(undefined, { refetchInterval: refetchWhileGenerating })
 
   if (isLoading) {
     return (

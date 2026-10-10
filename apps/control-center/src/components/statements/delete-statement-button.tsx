@@ -35,15 +35,18 @@ export function DeleteStatementButton({
   const { isOpen, onOpen, onClose } = useDisclosure()
   const trpcUtils = trpc.useUtils()
   const deleteMutation = trpc.portalProve.statement.delete.useMutation({
-    onSuccess: async () => {
+    onSuccess: () => {
       onClose()
       onDeleted?.()
       toast.success('Statement deleted')
-      await trpcUtils.portalProve.statement.list.invalidate()
     },
     onError: (err) => {
       browserLogger.error({ err }, 'Failed to delete statement')
       toast.error("Couldn't delete statement", { description: err.message })
+    },
+    // Refresh even when it failed: "not found" means another tab already deleted it.
+    onSettled: async () => {
+      await trpcUtils.portalProve.statement.list.invalidate()
     },
   })
 
