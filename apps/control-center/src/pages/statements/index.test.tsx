@@ -217,3 +217,17 @@ it('offers Delete only for statements that are no longer generating', async () =
     ).toBe('failed')
   })
 })
+
+it('shows a status on cards only for statements that are generating or failed', async () => {
+  const statements = [
+    statementFixture({ id: 'completed', status: 'completed' }),
+    statementFixture({ id: 'failed', status: 'failed' }),
+    statementFixture({ id: 'pending', status: 'pending' }),
+  ]
+  const { container, settle } = await renderStatementsPage({ list: async () => statements })
+  await settle('success')
+  const text = container.textContent
+  expect(text).toMatch(/failed/i)
+  expect(text).toMatch(/pending/i)
+  expect(text).not.toMatch(/completed/i)
+})

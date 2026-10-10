@@ -1,5 +1,6 @@
 import { Box, Button, HStack, Image, Stack, Text } from '@chakra-ui/react'
 import { LinearGradient } from '@hoseki/packages/ui/design-system'
+import { StatusBadge, getBadgeConfigForStatement } from '@hoseki/packages/ui/prove-verify-ui'
 import { formatDateRange } from '@hoseki/packages/ui/utils'
 import { format } from 'date-fns'
 import type { ReactNode } from 'react'
@@ -62,6 +63,12 @@ export function StatementCard({
           zIndex={1}
         >
           {statement.integrator.name}
+        </Box>
+      )}
+      {/* Only statements that need attention get a status; completed ones look as before. */}
+      {statement.status !== 'completed' && (
+        <Box position="absolute" top={3} right={3} zIndex={1}>
+          <StatusBadge {...getBadgeConfigForStatement(statement.status)} />
         </Box>
       )}
       <Box
