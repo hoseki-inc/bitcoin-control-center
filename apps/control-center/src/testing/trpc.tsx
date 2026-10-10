@@ -42,6 +42,11 @@ export function createTestTrpcClient<TResult>(handle: (operation: Operation) => 
   })
 }
 
+/** The error Sentinel returns for a record that doesn't exist, such as a deleted statement. */
+export function notFound(message: string): TRPCClientError<never> {
+  return TRPCClientError.from({ error: { message, code: -32004, data: { code: 'NOT_FOUND', httpStatus: 404 } } })
+}
+
 export function TestTrpcProvider({
   client,
   rpc,

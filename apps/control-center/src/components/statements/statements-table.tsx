@@ -1,9 +1,10 @@
-import { Box, Button, Table, Tbody, Td, Text, Thead, Tr } from '@chakra-ui/react'
+import { Box, Button, HStack, Table, Tbody, Td, Text, Thead, Tr } from '@chakra-ui/react'
 import { StatusBadge, Th, getBadgeConfigForStatement } from '@hoseki/packages/ui/prove-verify-ui'
 import { format } from 'date-fns'
 import { Link as RouterLink } from 'react-router'
 import type { StatementDto } from '../../trpc/server-types'
 import { viewStatementLabel } from '../dashboard/statement-card'
+import { DeleteStatementButton } from './delete-statement-button'
 
 export function StatementsTable({ statements }: { statements: StatementDto[] }): JSX.Element {
   return (
@@ -14,7 +15,7 @@ export function StatementsTable({ statements }: { statements: StatementDto[] }):
             <Th>Generation Date</Th>
             <Th>Requester</Th>
             <Th>Status</Th>
-            <Th textAlign="right">Action</Th>
+            <Th textAlign="right">Actions</Th>
           </Tr>
         </Thead>
         <Tbody>
@@ -22,7 +23,7 @@ export function StatementsTable({ statements }: { statements: StatementDto[] }):
             <Tr key={statement.id}>
               <Td>
                 <Text color="neutral.900" fontWeight="medium">
-                  {format(statement.createdAt, 'dd MMM yyyy')}
+                  {format(statement.createdAt, 'MMM d, yyyy')}
                 </Text>
                 <Text color="neutral.600">{format(statement.createdAt, 'h:mm a')}</Text>
               </Td>
@@ -44,16 +45,19 @@ export function StatementsTable({ statements }: { statements: StatementDto[] }):
                   <StatusBadge {...getBadgeConfigForStatement(statement.status)} />
                 </Box>
               </Td>
-              <Td textAlign="right">
-                <Button
-                  as={RouterLink}
-                  variant="outline"
-                  size="md"
-                  aria-label={viewStatementLabel(statement)}
-                  to={`/statements/${statement.id}`}
-                >
-                  View
-                </Button>
+              <Td>
+                <HStack justifyContent="flex-end">
+                  <Button
+                    as={RouterLink}
+                    variant="outline"
+                    size="md"
+                    aria-label={viewStatementLabel(statement)}
+                    to={`/statements/${statement.id}`}
+                  >
+                    View
+                  </Button>
+                  <DeleteStatementButton statement={statement} variant="icon" />
+                </HStack>
               </Td>
             </Tr>
           ))}

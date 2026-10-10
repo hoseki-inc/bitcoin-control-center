@@ -9,7 +9,7 @@ interface RenderedStatement {
   error: string | null
 }
 
-interface StatementPreview {
+interface StatementView {
   document: ReactElement | null
   error: string | null
   isRendering: boolean
@@ -17,7 +17,7 @@ interface StatementPreview {
 }
 
 /** A completed render belongs only to the input that started it. */
-export function useRenderedStatement(data: PdfStatement | undefined, enabled = true): StatementPreview {
+export function useRenderedStatement(data: PdfStatement | undefined, enabled = true): StatementView {
   const [rendered, setRendered] = useState<RenderedStatement | null>(null)
   const [attempt, setAttempt] = useState(0)
   useEffect(() => {
@@ -25,7 +25,7 @@ export function useRenderedStatement(data: PdfStatement | undefined, enabled = t
       return
     }
     let current = true
-    void renderStatementDocument({ statement: data, watermarkText: 'Statement Preview' })
+    void renderStatementDocument({ statement: data, watermarkText: '' })
       .then((document) => {
         if (current) {
           setRendered({ data, attempt, document, error: null })
@@ -33,7 +33,7 @@ export function useRenderedStatement(data: PdfStatement | undefined, enabled = t
       })
       .catch(() => {
         if (current) {
-          setRendered({ data, attempt, document: null, error: 'Failed to render statement preview' })
+          setRendered({ data, attempt, document: null, error: 'Failed to render statement' })
         }
       })
     return () => {

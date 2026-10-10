@@ -55,6 +55,18 @@ describe('formatDateRange', () => {
     })
   })
 
+  describe('short months', () => {
+    test('abbreviates the end month across months and years', () => {
+      const options = { shortMonths: true }
+      expect(
+        formatDateRange(new Date('2025-06-08T12:00:00Z'), new Date('2025-09-09T12:00:00Z'), undefined, options),
+      ).toBe('Jun 8 - Sep 9, 2025')
+      expect(
+        formatDateRange(new Date('2024-12-25T12:00:00Z'), new Date('2025-01-05T12:00:00Z'), undefined, options),
+      ).toBe('Dec 25, 2024 - Jan 5, 2025')
+    })
+  })
+
   describe('different years', () => {
     test('includes year for both dates with full end month name', () => {
       const start = new Date('2024-01-01T12:00:00Z')

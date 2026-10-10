@@ -1,16 +1,13 @@
 // @vitest-environment node
-import * as pdfRenderer from '@hoseki/packages/pdf'
-import { sampleCustomStatement } from '@hoseki/packages/pdf/preview/presets'
 import { StatementQuoteCurrencySchema } from '@hoseki/packages/schemas/statement-quote'
 import { TestChakraProvider } from '@hoseki/packages/testing/chakra-provider'
 import { QueryClient } from '@tanstack/react-query'
 import type { Operation } from '@trpc/client'
 import { getQueryKey } from '@trpc/react-query'
-import { type ReactElement, act, createElement } from 'react'
+import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
-import { MemoryRouter } from 'react-router'
+import { MemoryRouter, Route, Routes, useParams } from 'react-router'
 import { assert, expect, it, onTestFinished, vi } from 'vitest'
-import { StatementPollingProvider } from '../../providers/statement-polling-provider'
 import { claimFixture } from '../../testing/claims'
 import { TestTrpcProvider, createTestTrpcClient } from '../../testing/trpc'
 import { type RouterOutput, trpc } from '../../trpc'
@@ -34,7 +31,7 @@ const browser = await vi.hoisted(async () => {
 })
 
 it.each(StatementQuoteCurrencySchema.options)(
-  'sends selected %s and only self-custody accounts to preview and generation',
+  'sends selected %s and only self-custody accounts to generation, then opens the statement',
   async (currency) => {
     const requests: Operation[] = []
     const claimId = 're_clmx_wallet'
@@ -55,13 +52,7 @@ it.each(StatementQuoteCurrencySchema.options)(
     }
     const rpc = createTestTrpcClient(async (operation) => {
       requests.push(operation)
-      if (operation.path === 'portalProve.statement.generatePreview') {
-        return { ...sampleCustomStatement, quoteCurrency: currency }
-      }
-      if (
-        operation.path === 'portalProve.statement.initiateGeneration' ||
-        operation.path === 'portalProve.statement.retrieve'
-      ) {
+      if (operation.path === 'portalProve.statement.initiateGeneration') {
         return statement
       }
       throw new Error(`Unexpected request: ${operation.path}`)
@@ -89,10 +80,9 @@ it.each(StatementQuoteCurrencySchema.options)(
       new Map(),
     )
     client.setQueryData(['local-settings', 'user_name'], null)
-    // Keep rendering pending: this test checks request inputs; the hook and PDF tests cover rendering.
-    vi.spyOn(pdfRenderer, 'renderStatementDocument').mockImplementation(
-      async () => new Promise<ReactElement>(() => undefined),
-    )
+    // The statements list a visit to Statements left behind.
+    const listKey = getQueryKey(trpc.portalProve.statement.list, undefined, 'query')
+    client.setQueryData(listKey, [])
     const container = await renderCreatePage(client, rpc)
     expect(container.textContent).not.toMatch(/coinbase/i)
     const select = container.querySelector('#quote-currency')
@@ -101,23 +91,6 @@ it.each(StatementQuoteCurrencySchema.options)(
     await act(async () => {
       select.value = currency
       select.dispatchEvent(new Event('change', { bubbles: true }))
-    })
-    const preview = Array.from(container.querySelectorAll('button')).find(
-      (button) => button.textContent === 'Preview Statement',
-    )
-    assert.exists(preview)
-    await act(async () => {
-      preview.click()
-    })
-    await vi.waitFor(() => {
-      const input = requests.find((request) => request.path === 'portalProve.statement.generatePreview')?.input
-      expect(input).toEqual(expect.objectContaining({ quoteCurrency: currency, claimIds: [claimId] }))
-      expect(input).not.toHaveProperty('exchangeAccountIds')
-    })
-    const close = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Close')
-    assert.exists(close)
-    await act(async () => {
-      close.click()
     })
     const generate = Array.from(container.querySelectorAll('button')).find(
       (button) => button.textContent === 'Generate Statement',
@@ -131,9 +104,17 @@ it.each(StatementQuoteCurrencySchema.options)(
       const input = requests.find((request) => request.path === 'portalProve.statement.initiateGeneration')?.input
       expect(input).toEqual(expect.objectContaining({ quoteCurrency: currency, claimIds: [claimId] }))
       expect(input).not.toHaveProperty('exchangeAccountIds')
+      expect(container.textContent).toBe('Statement new-statement')
     })
+    // So Statements shows it as generating straight away.
+    expect(client.getQueryData(listKey)).toEqual([statement])
   },
 )
+
+/** Stands in for the statement page, which shows generation progress. */
+function StatementRoute(): JSX.Element {
+  return createElement('p', null, `Statement ${useParams()['statementId'] ?? ''}`)
+}
 
 /** Renders the statement page and removes it when the test ends. */
 async function renderCreatePage(
@@ -164,8 +145,13 @@ async function renderCreatePage(
           null,
           createElement(
             MemoryRouter,
-            null,
-            createElement(StatementPollingProvider, null, createElement(StatementCreatePage)),
+            { initialEntries: ['/statements/create'] },
+            createElement(
+              Routes,
+              null,
+              createElement(Route, { path: '/statements/create', element: createElement(StatementCreatePage) }),
+              createElement(Route, { path: '/statements/:statementId', element: createElement(StatementRoute) }),
+            ),
           ),
         ),
       ),

@@ -189,6 +189,38 @@ describe('statement currency persistence', () => {
     expect((await service.findById(id))?.status).toBe('completed')
   })
 
+  it('tells people to delete a failed statement and generate a new one when there is no specific reason', async () => {
+    await setup()
+    const { service } = harness()
+    const id = (await service.create(input)).unwrap()
+
+    await service.fail(id)
+
+    await expect(service.findById(id)).resolves.toMatchObject({
+      status: 'failed',
+      errorMessage: 'Statement generation failed. Delete this statement and generate a new one.',
+    })
+  })
+
+  it('fails statements left generating by a previous run and leaves finished ones alone', async () => {
+    await setup()
+    const { service } = harness()
+    const interrupted = (await service.create(input)).unwrap()
+    const failed = (await service.create(input)).unwrap()
+    await service.fail(failed, 'Original failure')
+
+    await expect(service.failInterrupted()).resolves.toBe(1)
+
+    await expect(service.findById(interrupted)).resolves.toMatchObject({
+      status: 'failed',
+      errorMessage: 'Generation was interrupted. Delete this statement and try again.',
+    })
+    await expect(service.findById(failed)).resolves.toMatchObject({
+      status: 'failed',
+      errorMessage: 'Original failure',
+    })
+  })
+
   it('does not complete a statement that failed while completion was being validated', async () => {
     await setup()
     const { service, quotes } = harness()
@@ -364,13 +396,11 @@ describe('statement API currency contract', () => {
     }
   }
   it.each<StatementQuoteCurrency>(['USD', 'CAD', 'GBP', 'EUR'])(
-    'previews, generates, and retrieves %s through the API',
+    'generates and retrieves %s through the API',
     async (quoteCurrency) => {
       await setup()
       const { service, api } = caller()
       const args = { ...input, quoteCurrency }
-      const preview = await api.generatePreview(args)
-      expect(preview.quoteCurrency).toBe(quoteCurrency)
       const created = await api.initiateGeneration(args)
       await vi.waitFor(async () => {
         await expect(service.findById(created.id)).resolves.toMatchObject({ status: 'completed' })
@@ -393,13 +423,15 @@ describe('statement API currency contract', () => {
   it('defaults omitted currency to USD and rejects unsupported codes before creating a row', async () => {
     await setup()
     const { service, api } = caller()
-    expect((await api.generatePreview(input)).quoteCurrency).toBe('USD')
     const invalid = { ...input, quoteCurrency: 'JPY' }
-    // @ts-expect-error Deliberately send an unsupported currency to exercise API input validation.
-    await expect(api.generatePreview(invalid)).rejects.toMatchObject({ code: 'BAD_REQUEST' })
     // @ts-expect-error Deliberately send an unsupported currency to exercise API input validation.
     await expect(api.initiateGeneration(invalid)).rejects.toMatchObject({ code: 'BAD_REQUEST' })
     await expect(service.list()).resolves.toHaveLength(0)
+    const created = await api.initiateGeneration(input)
+    expect(created.quoteCurrency).toBe('USD')
+    await vi.waitFor(async () => {
+      await expect(service.findById(created.id)).resolves.toMatchObject({ status: 'completed' })
+    })
   })
 })
 

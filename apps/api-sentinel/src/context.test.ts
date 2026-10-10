@@ -8,7 +8,7 @@ import pino from 'pino'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { z } from 'zod'
 import { type AppContext, type AppContextOptions, createAppContext } from './context'
-import { desktopConnectionProfiles, settings as settingsTable } from './db/schema'
+import { desktopConnectionProfiles, settings as settingsTable, statements as statementsTable } from './db/schema'
 import * as environment from './env'
 import type { Env } from './env'
 import type { ConnectionProfileStore } from './modules/connection_profiles/store'
@@ -387,6 +387,49 @@ describe('Electrum connection lifecycle', () => {
       })
     },
   )
+})
+
+describe('statements interrupted by a restart', () => {
+  it('marks statements still generating as failed when Sentinel starts and leaves finished ones alone', async () => {
+    await withTestSetup(async () => {
+      const ctx = await context()
+      const pending = (
+        await ctx.statementService.create({
+          claimIds: [],
+          openingDate: new Date('2024-01-01T00:00:00.000Z'),
+          closingDate: new Date('2024-01-31T23:59:59.999Z'),
+          timezone: 'UTC',
+        })
+      ).unwrap()
+      await ctx.database.insert(statementsTable).values({
+        id: 'st_stmt_done',
+        status: 'completed',
+        openingDate: '2024-01-01',
+        closingDate: '2024-01-31',
+        accountIds: '[]',
+      })
+
+      const restarted = await restart(ctx)
+
+      await expect(
+        restarted.database
+          .select({
+            id: statementsTable.id,
+            status: statementsTable.status,
+            errorMessage: statementsTable.errorMessage,
+          })
+          .from(statementsTable)
+          .orderBy(statementsTable.status),
+      ).resolves.toEqual([
+        { id: 'st_stmt_done', status: 'completed', errorMessage: null },
+        {
+          id: pending,
+          status: 'failed',
+          errorMessage: 'Generation was interrupted. Delete this statement and try again.',
+        },
+      ])
+    })
+  })
 })
 
 describe('Tor connection policy', () => {

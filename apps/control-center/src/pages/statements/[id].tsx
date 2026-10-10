@@ -1,4 +1,4 @@
-import { Box, Button, Flex, HStack, Link, Stack, Text } from '@chakra-ui/react'
+import { Box, Button, Flex, HStack, IconButton, Link, Stack, Text } from '@chakra-ui/react'
 import { renderStatementDocument } from '@hoseki/packages/pdf'
 import type { StatementDocumentFormat, StatementId } from '@hoseki/packages/schemas'
 import { Animations, ErrorBanner, Spinner } from '@hoseki/packages/ui/design-system'
@@ -8,15 +8,19 @@ import {
   getBadgeConfigForStatement,
   usePdfDownloadMutation,
 } from '@hoseki/packages/ui/prove-verify-ui'
+import { formatDateRange } from '@hoseki/packages/ui/utils'
 import { PDFViewer, pdf } from '@react-pdf/renderer'
-import { format } from 'date-fns'
-import { ShieldCheckIcon } from 'lucide-react'
-import { useState } from 'react'
-import { Link as RouterLink } from 'react-router'
+import { ShieldCheckIcon, XIcon } from 'lucide-react'
+import { type RefObject, useRef, useState } from 'react'
+import { Link as RouterLink, useNavigate } from 'react-router'
+import { DeleteStatementButton } from '../../components/statements/delete-statement-button'
+import { StatementGenerationModal } from '../../components/statements/statement-generation-modal'
 import { useRenderedStatement } from '../../hooks/use-rendered-statement'
 import { UrlParameter, useUrlParameter } from '../../hooks/use-url-parameters'
 import { baseTrpc, trpc } from '../../trpc'
 import type { StatementDto } from '../../trpc/server-types'
+
+const GENERATION_POLL_MS = 1000
 
 export function StatementDetailsPage(): JSX.Element {
   const statementId = useUrlParameter(UrlParameter.statementId)
@@ -29,14 +33,38 @@ export function StatementDetailsPage(): JSX.Element {
     )
   }
 
-  return <StatementDetailsPageContent statementId={statementId} />
+  // Going back or forward between statements reuses this route; start each statement fresh.
+  return <StatementDetailsPageContent key={statementId} statementId={statementId} />
 }
 
 function StatementDetailsPageContent({ statementId }: { statementId: StatementId }) {
-  const { data: statement, isLoading, error } = trpc.portalProve.statement.retrieve.useQuery(statementId)
+  const navigate = useNavigate()
+  const {
+    data: statement,
+    isLoading,
+    isFetchedAfterMount,
+    error,
+  } = trpc.portalProve.statement.retrieve.useQuery(statementId, {
+    // Check until it's done, unless it turned out to be deleted.
+    refetchInterval: (data, query) =>
+      data?.status === 'pending' && query.state.error?.data?.code !== 'NOT_FOUND' ? GENERATION_POLL_MS : false,
+    // Retry as usual, except for a deleted statement: it won't come back, so say so straight away.
+    retry: (failureCount, retryError) => failureCount < 3 && retryError.data?.code !== 'NOT_FOUND',
+  })
   const [statementFormat, setStatementFormat] = useState<StatementDocumentFormat>('custom')
+  // Generation stays open after the statement is done until its closing animation ends,
+  // then stays mounted so the screen can fade out.
+  const [generation, setGeneration] = useState<'hidden' | 'showing' | 'finished'>('hidden')
+  // A status cached from an earlier visit may be stale; only open generation for a current one.
+  const isConfirmedPending = isFetchedAfterMount && error === null && statement?.status === 'pending'
+  // Open on the same render the status arrives, so the page never shows through first.
+  if (generation === 'hidden' && isConfirmedPending) {
+    setGeneration('showing')
+  }
+  const headingRef = useRef<HTMLHeadingElement>(null)
 
-  if (error) {
+  // A failed status check keeps the statement already shown, unless the statement is gone.
+  if (error && (statement === undefined || error.data?.code === 'NOT_FOUND')) {
     return (
       <Box p={4}>
         <ErrorBanner mb={4} message={`Error: ${error.message}`} />
@@ -44,12 +72,31 @@ function StatementDetailsPageContent({ statementId }: { statementId: StatementId
     )
   }
 
-  if (isLoading) {
+  // Wait to confirm a cached "generating" status too, rather than show the page before generation opens.
+  if (isLoading || (statement.status === 'pending' && !isFetchedAfterMount)) {
     return <Spinner fullPage size="xl" />
   }
 
   return (
     <Flex gap={0} flexDirection={{ base: 'column', lg: 'row' }} align="flex-start">
+      {generation !== 'hidden' && (
+        <StatementGenerationModal
+          isOpen={generation === 'showing'}
+          status={statement.status}
+          onFinished={() => {
+            setGeneration('finished')
+          }}
+          onClose={() => {
+            // Once the statement is ready, closing reveals it; while generating, go back to the list.
+            if (statement.status === 'pending') {
+              void navigate('/statements')
+            } else {
+              setGeneration('finished')
+            }
+          }}
+          finalFocusRef={headingRef}
+        />
+      )}
       <Stack
         gap={6}
         height={{ base: 'auto', lg: VIEWPORT_BELOW_HEADER }}
@@ -61,9 +108,9 @@ function StatementDetailsPageContent({ statementId }: { statementId: StatementId
         py={6}
         px={{ base: 4, md: 8 }}
       >
-        <BackLink />
+        <CloseLink />
         <Stack gap={12}>
-          <StatementSummary statement={statement} />
+          <StatementSummary statement={statement} headingRef={headingRef} />
           <ActionButtons statement={statement} statementFormat={statementFormat} />
           <LearnMore />
         </Stack>
@@ -75,7 +122,7 @@ function StatementDetailsPageContent({ statementId }: { statementId: StatementId
         width={{ base: 'full', lg: '60%' }}
         bg="#F9F9F9"
       >
-        <StatementPreview
+        <StatementViewer
           statement={statement}
           statementFormat={statementFormat}
           onStatementFormatChange={setStatementFormat}
@@ -85,11 +132,17 @@ function StatementDetailsPageContent({ statementId }: { statementId: StatementId
   )
 }
 
-function StatementSummary({ statement }: { statement: StatementDto }) {
+function StatementSummary({
+  statement,
+  headingRef,
+}: {
+  statement: StatementDto
+  headingRef: RefObject<HTMLHeadingElement>
+}) {
   return (
     <Stack spacing={8}>
       <Stack gap={2}>
-        <Text as="h1" textStyle="text/lg" fontWeight="medium">
+        <Text as="h1" ref={headingRef} tabIndex={-1} textStyle="text/lg" fontWeight="medium">
           Statement Details
         </Text>
         <Flex flexDirection="column" gap={4}>
@@ -126,7 +179,7 @@ function StatementSummary({ statement }: { statement: StatementDto }) {
         </Text>
         <Text textStyle="text/sm">Currency: {statement.quoteCurrency}</Text>
         <Text textStyle="text/sm">
-          Period: {format(statement.openingDate, 'd MMMM yyyy')} - {format(statement.closingDate, 'd MMMM yyyy')}
+          Period: {formatDateRange(statement.openingDate, statement.closingDate, undefined, { shortMonths: true })}
         </Text>
       </Stack>
     </Stack>
@@ -134,13 +187,13 @@ function StatementSummary({ statement }: { statement: StatementDto }) {
 }
 
 async function triggerPdfDownload(args: { statement: StatementDto; format: StatementDocumentFormat }): Promise<void> {
-  // Fetch the PdfStatement data via tRPC (same data the preview uses)
+  // Fetch the PdfStatement data via tRPC (same data the viewer uses)
   const statementData = await baseTrpc.portalProve.statement.retrieveDocumentData.query({
     statementId: args.statement.id,
     format: args.format,
   })
 
-  // Render the PDF document client-side (same pipeline as the preview)
+  // Render the PDF document client-side (same pipeline as the viewer)
   const document = await renderStatementDocument({
     watermarkText: '',
     statement: statementData,
@@ -165,6 +218,7 @@ function ActionButtons({
   statement: StatementDto
   statementFormat: StatementDocumentFormat
 }) {
+  const navigate = useNavigate()
   const { mutate: downloadPdf, isLoading: isDownloadingPdf } = usePdfDownloadMutation({
     mutationFn: triggerPdfDownload,
   })
@@ -186,24 +240,28 @@ function ActionButtons({
         >
           Download
         </Button>
+        <DeleteStatementButton
+          statement={statement}
+          onDeleted={() => {
+            void navigate('/statements')
+          }}
+        />
       </HStack>
     </Box>
   )
 }
 
-function BackLink() {
+function CloseLink() {
   return (
-    <Link
+    <IconButton
       as={RouterLink}
-      to="/home"
-      display="inline-flex"
-      alignItems="center"
-      color="neutral.900"
-      fontWeight="medium"
-      _hover={{ textDecoration: 'none', color: 'neutral.500' }}
-    >
-      Back to Home
-    </Link>
+      to="/statements"
+      aria-label="Back to statements"
+      icon={<XIcon size={24} aria-hidden="true" />}
+      variant="ghost"
+      alignSelf="flex-start"
+      ml={-2}
+    />
   )
 }
 
@@ -225,7 +283,7 @@ function LearnMore() {
   )
 }
 
-function StatementPreview({
+function StatementViewer({
   statement,
   statementFormat,
   onStatementFormatChange,
@@ -251,7 +309,7 @@ function StatementPreview({
   )
 
   const rendered = useRenderedStatement(statementData, statement.status === 'completed')
-  const previewError = queryError?.message ?? rendered.error
+  const viewerError = queryError?.message ?? rendered.error
 
   return (
     <Box height={{ base: '600px', lg: '100%' }} width="100%" display="flex" justifyContent="center" alignItems="center">
@@ -263,11 +321,9 @@ function StatementPreview({
         borderColor="neutral.200"
         borderWidth="1px"
       >
-        {statement.status !== 'completed' ? (
-          <PreviewUnavailable />
-        ) : previewError != null ? (
+        {statement.status !== 'completed' ? null : viewerError != null ? (
           <ErrorBanner
-            message={previewError}
+            message={viewerError}
             rightContent={
               <Button
                 size="sm"
@@ -332,19 +388,6 @@ function StatementPreview({
           </Stack>
         )}
       </Flex>
-    </Box>
-  )
-}
-
-function PreviewUnavailable() {
-  return (
-    <Box textAlign="center">
-      <Text fontSize="lg" fontWeight="medium" color="neutral.700">
-        Preview Unavailable
-      </Text>
-      <Text color="neutral.600" mt={2}>
-        Only requests that have been accepted can be previewed.
-      </Text>
     </Box>
   )
 }

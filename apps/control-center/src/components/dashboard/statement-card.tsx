@@ -1,17 +1,33 @@
 import { Box, Button, HStack, Image, Stack, Text } from '@chakra-ui/react'
 import { LinearGradient } from '@hoseki/packages/ui/design-system'
+import { StatusBadge, getBadgeConfigForStatement } from '@hoseki/packages/ui/prove-verify-ui'
 import { formatDateRange } from '@hoseki/packages/ui/utils'
 import { format } from 'date-fns'
+import type { ReactNode } from 'react'
 import type { StatementDto } from '../../trpc/server-types'
 
-const CREATED_FORMAT = 'dd MMM yyyy h:mm a'
+const CREATED_FORMAT = 'MMM d, yyyy h:mm a'
 
 /** The View action's accessible name, shared by statement cards and the statements table. */
 export function viewStatementLabel(statement: StatementDto): string {
   return `View statement created ${format(statement.createdAt, CREATED_FORMAT)}`
 }
 
-export function StatementCard({ statement, onView }: { statement: StatementDto; onView: () => void }): JSX.Element {
+/** The Delete action's accessible name. */
+export function deleteStatementLabel(statement: StatementDto): string {
+  return `Delete statement created ${format(statement.createdAt, CREATED_FORMAT)}`
+}
+
+export function StatementCard({
+  statement,
+  onView,
+  footerAction,
+}: {
+  statement: StatementDto
+  onView: () => void
+  /** Shown at the right of the card's footer. */
+  footerAction?: ReactNode
+}): JSX.Element {
   return (
     <Box
       borderRadius="panel"
@@ -21,6 +37,8 @@ export function StatementCard({ statement, onView }: { statement: StatementDto; 
       overflow="hidden"
       position="relative"
       minWidth={0}
+      display="flex"
+      flexDirection="column"
     >
       {/* Integrator Ribbon */}
       {statement.integrator && (
@@ -46,6 +64,12 @@ export function StatementCard({ statement, onView }: { statement: StatementDto; 
           zIndex={1}
         >
           {statement.integrator.name}
+        </Box>
+      )}
+      {/* Only statements that need attention get a status. */}
+      {statement.status !== 'completed' && (
+        <Box position="absolute" top={3} right={3} zIndex={1}>
+          <StatusBadge {...getBadgeConfigForStatement(statement.status)} />
         </Box>
       )}
       <Box
@@ -79,18 +103,20 @@ export function StatementCard({ statement, onView }: { statement: StatementDto; 
           </Button>
         </LinearGradient>
       </Box>
-      <HStack bg="white" borderTopWidth="1px" borderColor="neutral.200">
-        <Stack py={2} px={4} spacing={0} flexGrow="1">
+      {/* Fills the card so cards stretched to a taller neighbour stay white to the bottom. */}
+      <HStack bg="white" borderTopWidth="1px" borderColor="neutral.200" flexGrow={1} alignItems="center" pr={2}>
+        <Stack py={2} px={4} spacing={0} flexGrow="1" minW={0}>
           <Text textStyle="text/sm" fontWeight="medium" color="neutral.900">
             Statement
           </Text>
           <Text textStyle="text/xs" color="neutral.600">
-            Period: {formatDateRange(statement.openingDate, statement.closingDate)}
+            Period: {formatDateRange(statement.openingDate, statement.closingDate, undefined, { shortMonths: true })}
           </Text>
           <Text textStyle="text/xs" color="neutral.600">
             Created: {format(statement.createdAt, CREATED_FORMAT)}
           </Text>
         </Stack>
+        {footerAction}
       </HStack>
     </Box>
   )

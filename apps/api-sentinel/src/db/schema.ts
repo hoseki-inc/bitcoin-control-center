@@ -98,6 +98,16 @@ export const statements = sqliteTable(
   ],
 )
 
+/** Highest statement number ever assigned, so deleting a statement never frees its number. */
+export const statementCounter = sqliteTable(
+  'statement_counter',
+  {
+    id: integer('id').primaryKey(),
+    lastCounter: integer('last_counter').notNull(),
+  },
+  (table) => [check('statement_counter_single_row_check', sql`${table.id} = 1`)],
+)
+
 export const btcQuoteCache = sqliteTable(
   'btc_quote_cache',
   {

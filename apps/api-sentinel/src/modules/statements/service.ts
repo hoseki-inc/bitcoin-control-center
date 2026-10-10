@@ -7,12 +7,12 @@ import { Err, Ok, asyncFn } from '@hoseki/packages/result'
 import type { Result } from '@hoseki/packages/result'
 import { type StatementQuoteCurrency, StatementQuoteCurrencySchema } from '@hoseki/packages/schemas/statement-quote'
 import Decimal from 'decimal.js'
-import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
 import type { Logger } from 'pino'
 import { z } from 'zod'
 import type { SentinelDb } from '../../db/drizzle'
-import { accounts, exchangeBalanceSnapshots, statements } from '../../db/schema'
+import { accounts, exchangeBalanceSnapshots, statementCounter, statements } from '../../db/schema'
 import type { ExchangeService } from '../exchange/service'
 import type { DailyRates } from '../price/daily_rates'
 import type { DailyRatesService } from '../price/daily_rates'
@@ -43,6 +43,26 @@ export interface StatementDto {
 }
 
 type StatementRow = typeof statements.$inferSelect
+
+/** The columns a StatementDto needs; leaves out the large transaction and rate JSON. */
+const statementDtoColumns = {
+  id: statements.id,
+  createdAt: statements.createdAt,
+  updatedAt: statements.updatedAt,
+  counter: statements.counter,
+  timezone: statements.timezone,
+  openingDate: statements.openingDate,
+  closingDate: statements.closingDate,
+  status: statements.status,
+  userName: statements.userName,
+  quoteCurrency: statements.quoteCurrency,
+  errorMessage: statements.errorMessage,
+}
+type StatementDtoRow = Pick<StatementRow, keyof typeof statementDtoColumns>
+
+export type StatementDeleteError = 'not_found' | 'pending'
+
+const INTERRUPTED_MESSAGE = 'Generation was interrupted. Delete this statement and try again.'
 
 export interface GenerateStatementInput {
   quoteCurrency?: StatementQuoteCurrency
@@ -172,21 +192,57 @@ export class StatementService {
       return Err(valid.unwrapErr())
     }
     const id = `st_stmt_${nanoid()}`
-    await this.db.insert(statements).values({
-      id,
-      status: 'pending',
-      timezone: input.timezone,
-      openingDate: input.openingDate.toISOString(),
-      closingDate: input.closingDate.toISOString(),
-      accountIds: JSON.stringify(input.claimIds),
-      exchangeAccountIds: input.exchangeAccountIds ? JSON.stringify(input.exchangeAccountIds) : null,
-      userName: input.name ?? null,
-      userAddress: input.address ?? null,
-      quoteCurrency: input.quoteCurrency ?? 'USD',
-      counter: sql`(select coalesce(max(${statements.counter}), 0) + 1 from ${statements})`,
+    await this.db.transaction(async (tx) => {
+      const [next] = await tx
+        .update(statementCounter)
+        .set({ lastCounter: sql`${statementCounter.lastCounter} + 1` })
+        .where(eq(statementCounter.id, 1))
+        .returning({ counter: statementCounter.lastCounter })
+      if (next === undefined) {
+        throw new Error('Statement counter is missing')
+      }
+      await tx.insert(statements).values({
+        id,
+        status: 'pending',
+        timezone: input.timezone,
+        openingDate: input.openingDate.toISOString(),
+        closingDate: input.closingDate.toISOString(),
+        accountIds: JSON.stringify(input.claimIds),
+        exchangeAccountIds: input.exchangeAccountIds ? JSON.stringify(input.exchangeAccountIds) : null,
+        userName: input.name ?? null,
+        userAddress: input.address ?? null,
+        quoteCurrency: input.quoteCurrency ?? 'USD',
+        counter: next.counter,
+      })
     })
 
     return Ok(id)
+  }
+
+  /** Delete a completed or failed statement. Its number is never reused. */
+  public async delete(id: string): Promise<Result<void, StatementDeleteError>> {
+    const [deleted] = await this.db
+      .delete(statements)
+      .where(and(eq(statements.id, id), ne(statements.status, 'pending')))
+      .returning({ id: statements.id })
+    if (deleted !== undefined) {
+      return Ok(undefined)
+    }
+    const [existing] = await this.db.select({ id: statements.id }).from(statements).where(eq(statements.id, id))
+    return Err(existing === undefined ? 'not_found' : 'pending')
+  }
+
+  /**
+   * Fail statements left pending by a previous run. Generation runs in this
+   * process, so nothing will finish them after a restart.
+   */
+  public async failInterrupted(): Promise<number> {
+    const failed = await this.db
+      .update(statements)
+      .set({ status: 'failed', errorMessage: INTERRUPTED_MESSAGE, updatedAt: sql`datetime('now')` })
+      .where(eq(statements.status, 'pending'))
+      .returning({ id: statements.id })
+    return failed.length
   }
 
   /** Mark a statement as completed with transaction data. */
@@ -262,7 +318,10 @@ export class StatementService {
   }
 
   /** Mark a statement as failed. */
-  public async fail(id: string, message = 'Statement generation failed. Please retry.'): Promise<void> {
+  public async fail(
+    id: string,
+    message = 'Statement generation failed. Delete this statement and generate a new one.',
+  ): Promise<void> {
     await this.db
       .update(statements)
       .set({ status: 'failed', errorMessage: message, updatedAt: sql`datetime('now')` })
@@ -271,7 +330,7 @@ export class StatementService {
 
   /** Find a statement by ID and return its DTO. */
   public async findById(id: string): Promise<StatementDto | null> {
-    const [row] = await this.db.select().from(statements).where(eq(statements.id, id))
+    const [row] = await this.db.select(statementDtoColumns).from(statements).where(eq(statements.id, id))
     if (!row) {
       return null
     }
@@ -302,7 +361,7 @@ export class StatementService {
 
   /** List all statements as DTOs. */
   public async list(): Promise<StatementDto[]> {
-    const rows = await this.db.select().from(statements).orderBy(desc(statements.createdAt))
+    const rows = await this.db.select(statementDtoColumns).from(statements).orderBy(desc(statements.createdAt))
     return rows.map((row) => this.rowToDto(row))
   }
 
@@ -584,7 +643,7 @@ export class StatementService {
       .orderBy(asc(exchangeBalanceSnapshots.timestamp))
   }
 
-  private rowToDto(row: StatementRow): StatementDto {
+  private rowToDto(row: StatementDtoRow): StatementDto {
     return {
       id: row.id,
       createdAt: new Date(row.createdAt),

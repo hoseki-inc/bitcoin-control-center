@@ -7,11 +7,17 @@ import { Link as RouterLink } from 'react-router'
 import { StatementsEmptyState } from '../../components/statements/statements-empty-state'
 import { StatementsGrid } from '../../components/statements/statements-grid'
 import { StatementsTable } from '../../components/statements/statements-table'
+import { refetchWhileGenerating } from '../../lib/statement-polling'
 import { trpc } from '../../trpc'
 
 export function StatementListPage(): JSX.Element {
   const [viewType, setViewType] = useState<'grid' | 'table'>('grid')
-  const { data: statements, isLoading, error, refetch } = trpc.portalProve.statement.list.useQuery()
+  const {
+    data: statements,
+    isLoading,
+    error,
+    refetch,
+  } = trpc.portalProve.statement.list.useQuery(undefined, { refetchInterval: refetchWhileGenerating })
 
   if (isLoading) {
     return (
@@ -74,7 +80,11 @@ export function StatementListPage(): JSX.Element {
             }}
           />
         </Flex>
-        {viewType === 'grid' ? <StatementsGrid statements={statements} /> : <StatementsTable statements={statements} />}
+        {viewType === 'grid' ? (
+          <StatementsGrid statements={statements} canDelete />
+        ) : (
+          <StatementsTable statements={statements} />
+        )}
       </Stack>
     </Box>
   )

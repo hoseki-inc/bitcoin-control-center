@@ -11,7 +11,7 @@ import { ClaimDetailsPage } from '../pages/claims/[id]'
 import { SinglesigSigningPage } from '../pages/claims/[id]/signing'
 import { ClaimVerificationReceiptPage } from '../pages/claims/verify'
 import { StatementDetailsPage } from '../pages/statements/[id]'
-import { TestTrpcProvider, createTestTrpcClient } from './trpc'
+import { TestTrpcProvider, createTestTrpcClient, notFound } from './trpc'
 
 const browser = await vi.hoisted(async () => {
   const { createBrowserDom, installBrowserDom } = await import('@hoseki/packages/testing/browser-dom')
@@ -56,7 +56,7 @@ function createRecordClient(requests: Operation[], response: ServerResponse) {
     if (response === 'pending') {
       return new Promise<never>(() => {})
     }
-    throw new Error('Not found')
+    throw notFound('Not found')
   })
 }
 

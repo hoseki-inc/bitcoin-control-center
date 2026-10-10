@@ -101,7 +101,7 @@ it('activates a statement once from View without nesting controls or submitting 
     expect(host.querySelectorAll('button')).toHaveLength(1)
     const view = button('View')
     expect(view.type).toBe('button')
-    expect(view.getAttribute('aria-label')).toBe('View statement created 01 Sep 2026 12:00 PM')
+    expect(view.getAttribute('aria-label')).toBe('View statement created Sep 1, 2026 12:00 PM')
     expect(view.querySelector('button, a, input, div, p')).toBeNull()
     await act(async () => {
       view.click()
