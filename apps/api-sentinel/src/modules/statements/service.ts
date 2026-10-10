@@ -318,7 +318,10 @@ export class StatementService {
   }
 
   /** Mark a statement as failed. */
-  public async fail(id: string, message = 'Statement generation failed. Please retry.'): Promise<void> {
+  public async fail(
+    id: string,
+    message = 'Statement generation failed. Delete this statement and generate a new one.',
+  ): Promise<void> {
     await this.db
       .update(statements)
       .set({ status: 'failed', errorMessage: message, updatedAt: sql`datetime('now')` })

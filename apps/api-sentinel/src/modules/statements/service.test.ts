@@ -189,6 +189,19 @@ describe('statement currency persistence', () => {
     expect((await service.findById(id))?.status).toBe('completed')
   })
 
+  it('tells people to delete a failed statement and generate a new one when there is no specific reason', async () => {
+    await setup()
+    const { service } = harness()
+    const id = (await service.create(input)).unwrap()
+
+    await service.fail(id)
+
+    await expect(service.findById(id)).resolves.toMatchObject({
+      status: 'failed',
+      errorMessage: 'Statement generation failed. Delete this statement and generate a new one.',
+    })
+  })
+
   it('fails statements left generating by a previous run and leaves finished ones alone', async () => {
     await setup()
     const { service } = harness()
