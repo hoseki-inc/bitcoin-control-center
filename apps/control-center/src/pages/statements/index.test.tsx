@@ -274,3 +274,31 @@ it('removes a deleted statement from the list', async () => {
     expect(trashButtons()).toHaveLength(1)
   })
 })
+
+it('refreshes the list when a delete fails because the statement is already gone', async () => {
+  let rows = [statementFixture({ id: 'kept' }), statementFixture({ id: 'deleted-elsewhere' })]
+  const { container, settle } = await renderStatementsPage({
+    list: async (operation) => {
+      if (operation.path === 'portalProve.statement.delete') {
+        // Another tab deleted it first.
+        rows = rows.filter((row) => row.id !== operation.input)
+        throw new Error('Statement not found')
+      }
+      return rows
+    },
+  })
+  await settle('success')
+  const trashButtons = (): HTMLButtonElement[] =>
+    Array.from(container.querySelectorAll<HTMLButtonElement>('button[aria-label^="Delete statement created"]'))
+  await act(async () => {
+    trashButtons()[1]?.click()
+  })
+  const confirm = Array.from(document.querySelectorAll('footer button')).find((item) => item.textContent === 'Delete')
+  assert(confirm instanceof window.HTMLButtonElement, 'Expected the confirm button')
+  await act(async () => {
+    confirm.click()
+  })
+  await vi.waitFor(() => {
+    expect(trashButtons()).toHaveLength(1)
+  })
+})
