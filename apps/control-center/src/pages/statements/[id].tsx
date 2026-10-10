@@ -9,6 +9,7 @@ import {
   usePdfDownloadMutation,
 } from '@hoseki/packages/ui/prove-verify-ui'
 import { PDFViewer, pdf } from '@react-pdf/renderer'
+import { useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
 import { ShieldCheckIcon, XIcon } from 'lucide-react'
 import { type RefObject, useEffect, useRef, useState } from 'react'
@@ -39,6 +40,7 @@ export function StatementDetailsPage(): JSX.Element {
 
 function StatementDetailsPageContent({ statementId }: { statementId: StatementId }) {
   const navigate = useNavigate()
+  const retriesDisabled = useQueryClient().getDefaultOptions().queries?.retry === false
   const {
     data: statement,
     isLoading,
@@ -46,18 +48,22 @@ function StatementDetailsPageContent({ statementId }: { statementId: StatementId
     error,
   } = trpc.portalProve.statement.retrieve.useQuery(statementId, {
     refetchInterval: (data) => (data?.status === 'pending' ? GENERATION_POLL_MS : false),
+    // Retry as usual, except for a deleted statement: it won't come back, so say so straight away.
+    retry: (failureCount, retryError) => !retriesDisabled && failureCount < 3 && retryError.data?.code !== 'NOT_FOUND',
   })
   const [statementFormat, setStatementFormat] = useState<StatementDocumentFormat>('custom')
   // Generation stays open after the statement is done until its closing animation ends,
   // then stays mounted so the screen can fade out.
   const [generation, setGeneration] = useState<'hidden' | 'showing' | 'finished'>('hidden')
   // A status cached from an earlier visit may be stale; only open generation for a current one.
-  const isGenerating = isFetchedAfterMount && statement?.status === 'pending'
+  const isGenerating = isFetchedAfterMount && error === null && statement?.status === 'pending'
   useEffect(() => {
     if (isGenerating) {
       setGeneration((current) => (current === 'hidden' ? 'showing' : current))
     }
   }, [isGenerating])
+  // Open on the same render the status arrives, so the page never shows through first.
+  const isShowingGeneration = generation === 'showing' || (generation === 'hidden' && isGenerating)
   // Once generation ends here, the cached statements list still shows it as generating.
   const trpcUtils = trpc.useUtils()
   const hasGenerationEnded = generation !== 'hidden' && statement !== undefined && statement.status !== 'pending'
@@ -68,8 +74,8 @@ function StatementDetailsPageContent({ statementId }: { statementId: StatementId
   }, [hasGenerationEnded, trpcUtils])
   const headingRef = useRef<HTMLHeadingElement>(null)
 
-  // A failed status check keeps the statement already shown; the error is only for having none.
-  if (error && statement === undefined) {
+  // A failed status check keeps the statement already shown, unless the statement is gone.
+  if (error && (statement === undefined || error.data?.code === 'NOT_FOUND')) {
     return (
       <Box p={4}>
         <ErrorBanner mb={4} message={`Error: ${error.message}`} />
@@ -83,15 +89,20 @@ function StatementDetailsPageContent({ statementId }: { statementId: StatementId
 
   return (
     <Flex gap={0} flexDirection={{ base: 'column', lg: 'row' }} align="flex-start">
-      {generation !== 'hidden' && (
+      {(generation !== 'hidden' || isShowingGeneration) && (
         <StatementGenerationModal
-          isOpen={generation === 'showing'}
+          isOpen={isShowingGeneration}
           status={statement.status}
           onFinished={() => {
             setGeneration('finished')
           }}
           onClose={() => {
-            void navigate('/statements')
+            // Once the statement is ready, closing reveals it; while generating, go back to the list.
+            if (statement.status === 'pending') {
+              void navigate('/statements')
+            } else {
+              setGeneration('finished')
+            }
           }}
           finalFocusRef={headingRef}
         />

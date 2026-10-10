@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { TestChakraProvider as ChakraProvider } from '@hoseki/packages/testing/chakra-provider'
 import { QueryClient } from '@tanstack/react-query'
-import type { Operation } from '@trpc/client'
+import { type Operation, TRPCClientError } from '@trpc/client'
 import { getQueryKey } from '@trpc/react-query'
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -33,16 +33,28 @@ const id = 'st_stmt_test'
 interface FakeSentinel {
   statement: StatementDto
   isDown: boolean
+  isDeleted: boolean
+}
+
+/** The error Sentinel returns for a statement that no longer exists. */
+function notFound(): TRPCClientError<never> {
+  return TRPCClientError.from({
+    error: { message: 'Statement not found', code: -32004, data: { code: 'NOT_FOUND', httpStatus: 404 } },
+  })
 }
 
 /**
  * Render the statement page; `server.statement` is what the next retrieve returns.
  * `cached` is the status a previous visit left in the query cache.
  */
-async function renderStatementPage(initial: StatementDto['status'], cached?: StatementDto['status']) {
+async function renderStatementPage(
+  initial: StatementDto['status'],
+  cached?: StatementDto['status'],
+  { isDown = false, retries = false }: { isDown?: boolean; retries?: boolean } = {},
+) {
   const dom = browser.acquire()
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
-  const server: FakeSentinel = { statement: statementFixture({ id, status: initial }), isDown: false }
+  const server: FakeSentinel = { statement: statementFixture({ id, status: initial }), isDown, isDeleted: false }
   const requests: Operation[] = []
   const rpc = createTestTrpcClient(async (operation) => {
     requests.push(operation)
@@ -51,9 +63,13 @@ async function renderStatementPage(initial: StatementDto['status'], cached?: Sta
         if (server.isDown) {
           throw new Error('Sentinel is restarting')
         }
+        if (server.isDeleted && operation.input === id) {
+          throw notFound()
+        }
         // Any other statement opened during the test has already finished.
         return operation.input === id ? server.statement : statementFixture({ id: String(operation.input) })
       case 'portalProve.statement.delete':
+        server.isDeleted = true
         return undefined
       case 'portalProve.statement.list':
         return []
@@ -63,7 +79,8 @@ async function renderStatementPage(initial: StatementDto['status'], cached?: Sta
     }
   })
   const client = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
+    // `retries` keeps React Query's default retries, as in the app.
+    defaultOptions: { queries: retries ? {} : { retry: false } },
     // Failed status checks are part of these tests; keep them out of the output.
     logger: { log: console.log, warn: console.warn, error: () => undefined },
   })
@@ -94,7 +111,7 @@ async function renderStatementPage(initial: StatementDto['status'], cached?: Sta
     root.render(
       <TestTrpcProvider client={client} rpc={rpc}>
         <ChakraProvider>
-          <MemoryRouter initialEntries={[`/statements/${id}`]}>
+          <MemoryRouter initialEntries={['/statements', `/statements/${id}`]} initialIndex={1}>
             <Navigator />
             <Routes>
               <Route path="/statements" element={<p>Statements list</p>} />
@@ -123,9 +140,9 @@ async function renderStatementPage(initial: StatementDto['status'], cached?: Sta
       await client.invalidateQueries()
     })
   }
-  const open = async (path: string): Promise<void> => {
+  const open = async (path: string | -1): Promise<void> => {
     await act(async () => {
-      await navigate?.(path)
+      await (path === -1 ? navigate?.(-1) : navigate?.(path))
     })
   }
   return { container, server, requests, click, refresh, client, open }
@@ -236,3 +253,77 @@ it.each(['completed', 'failed'] as const)(
     expect(requests.find((request) => request.path === 'portalProve.statement.delete')?.input).toBe(id)
   },
 )
+
+it('checks a generating statement again on its own until it is done', async () => {
+  const { container, server } = await renderStatementPage('pending')
+  server.statement = { ...server.statement, status: 'completed' }
+  await vi.waitFor(
+    () => {
+      expect(container.textContent).toContain('Statuscompleted')
+    },
+    { timeout: 3000 },
+  )
+})
+
+it('reveals the statement instead of leaving it when the finished screen is closed', async () => {
+  const { container, server, refresh, click } = await renderStatementPage('pending')
+  server.statement = { ...server.statement, status: 'completed' }
+  await refresh()
+  await vi.waitFor(() => {
+    expect(container.textContent).toContain('Statuscompleted')
+  })
+  await click('Close')
+  // Closing fades the screen out over the statement; jsdom never finishes the fade, so check where we are.
+  await new Promise((resolve) => {
+    setTimeout(resolve, 100)
+  })
+  expect(container.textContent).toContain('Statement Details')
+  expect(container.textContent).not.toContain('Statements list')
+})
+
+it('does not open generation for a cached status that could not be confirmed', async () => {
+  const { container, server, client } = await renderStatementPage('pending', 'pending', { isDown: true })
+  const retrieveKey = getQueryKey(trpc.portalProve.statement.retrieve, id, 'query')
+  await act(async () => {
+    await vi.waitFor(() => {
+      expect(client.getQueryState(retrieveKey)?.status).toBe('error')
+    })
+    await new Promise((resolve) => {
+      setTimeout(resolve, 0)
+    })
+  })
+  expect(server.isDown).toBe(true)
+  expect(container.textContent).toContain('Statement Details')
+  expect(generationShown()).toBe(false)
+})
+
+it('shows that a statement deleted elsewhere is gone, even though it was on screen', async () => {
+  // With the app's usual retries on, so this also checks "not found" isn't retried for seconds.
+  const { container, server, refresh } = await renderStatementPage('completed', undefined, { retries: true })
+  server.isDeleted = true
+  await refresh()
+  await vi.waitFor(() => {
+    expect(container.textContent).toContain('Statement not found')
+  })
+  expect(container.textContent).not.toContain('Statuscompleted')
+})
+
+it('does not bring a deleted statement back when going Back to it', async () => {
+  const { container, click, open } = await renderStatementPage('completed')
+  await click('Delete')
+  const confirm = Array.from(document.querySelectorAll('footer button')).find(
+    (button) => button.textContent === 'Delete',
+  )
+  assert(confirm instanceof window.HTMLButtonElement, 'Expected the confirm button')
+  await act(async () => {
+    confirm.click()
+  })
+  await vi.waitFor(() => {
+    expect(container.textContent).toBe('Statements list')
+  })
+  await open(-1)
+  await vi.waitFor(() => {
+    expect(container.textContent).toContain('Statement not found')
+  })
+  expect(container.textContent).not.toContain('Statuscompleted')
+})
