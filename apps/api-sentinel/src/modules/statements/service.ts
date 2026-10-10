@@ -44,6 +44,22 @@ export interface StatementDto {
 
 type StatementRow = typeof statements.$inferSelect
 
+/** The columns a StatementDto needs; leaves out the large transaction and rate JSON. */
+const statementDtoColumns = {
+  id: statements.id,
+  createdAt: statements.createdAt,
+  updatedAt: statements.updatedAt,
+  counter: statements.counter,
+  timezone: statements.timezone,
+  openingDate: statements.openingDate,
+  closingDate: statements.closingDate,
+  status: statements.status,
+  userName: statements.userName,
+  quoteCurrency: statements.quoteCurrency,
+  errorMessage: statements.errorMessage,
+}
+type StatementDtoRow = Pick<StatementRow, keyof typeof statementDtoColumns>
+
 export type StatementDeleteError = 'not_found' | 'pending'
 
 const INTERRUPTED_MESSAGE = 'Generation was interrupted. Delete this statement and try again.'
@@ -311,7 +327,7 @@ export class StatementService {
 
   /** Find a statement by ID and return its DTO. */
   public async findById(id: string): Promise<StatementDto | null> {
-    const [row] = await this.db.select().from(statements).where(eq(statements.id, id))
+    const [row] = await this.db.select(statementDtoColumns).from(statements).where(eq(statements.id, id))
     if (!row) {
       return null
     }
@@ -342,7 +358,7 @@ export class StatementService {
 
   /** List all statements as DTOs. */
   public async list(): Promise<StatementDto[]> {
-    const rows = await this.db.select().from(statements).orderBy(desc(statements.createdAt))
+    const rows = await this.db.select(statementDtoColumns).from(statements).orderBy(desc(statements.createdAt))
     return rows.map((row) => this.rowToDto(row))
   }
 
@@ -624,7 +640,7 @@ export class StatementService {
       .orderBy(asc(exchangeBalanceSnapshots.timestamp))
   }
 
-  private rowToDto(row: StatementRow): StatementDto {
+  private rowToDto(row: StatementDtoRow): StatementDto {
     return {
       id: row.id,
       createdAt: new Date(row.createdAt),
