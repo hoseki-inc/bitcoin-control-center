@@ -30,16 +30,14 @@ export const SHEET_PAUSE_MS = 2500
 const CROSS_FADE = 'opacity 400ms ease-in-out'
 
 /** Opens quickly, then fades out gently so the statement appears from behind it. */
-function fade(exitSeconds: number): HTMLMotionProps<'div'> & HTMLMotionProps<'section'> {
-  return {
-    initial: 'exit',
-    animate: 'enter',
-    exit: 'exit',
-    variants: {
-      enter: { opacity: 1, transition: { duration: 0.25, ease: 'easeOut' } },
-      exit: { opacity: 0, transition: { duration: exitSeconds, ease: 'easeInOut' } },
-    },
-  }
+const FADE: HTMLMotionProps<'div'> & HTMLMotionProps<'section'> = {
+  initial: 'exit',
+  animate: 'enter',
+  exit: 'exit',
+  variants: {
+    enter: { opacity: 1, transition: { duration: 0.25, ease: 'easeOut' } },
+    exit: { opacity: 0, transition: { duration: 1, ease: 'easeInOut' } },
+  },
 }
 
 /**
@@ -72,8 +70,8 @@ export function StatementGenerationModal({
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} scrollBehavior="inside" size="full" finalFocusRef={finalFocusRef}>
-      <ModalOverlay motionProps={fade(1)} />
-      <ModalContent motionProps={fade(1)}>
+      <ModalOverlay motionProps={FADE} />
+      <ModalContent motionProps={FADE}>
         <ModalCloseButton right="auto" left={4} top={4} size="3xl" p={4} />
         <ModalBody display="flex" p={0} overflow="hidden">
           <Container display="flex" maxW="container.lg" pt={28} flexDirection="column" alignItems="center">

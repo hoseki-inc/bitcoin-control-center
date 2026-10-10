@@ -99,7 +99,6 @@ export function StatementCreatePage(): JSX.Element {
   }, [savedUserName, nameInitialized])
 
   // generate, then follow progress on the statement page
-  const trpcUtils = trpc.useUtils()
   const initiateStatementGenerationMutation = trpc.portalProve.statement.initiateGeneration.useMutation()
   const initiateMutationWithArgs = useMutation({
     mutationFn: async () => {
@@ -118,7 +117,6 @@ export function StatementCreatePage(): JSX.Element {
         address: address || null,
       })
 
-      void trpcUtils.portalProve.statement.list.invalidate()
       void navigate(`/statements/${generatedStatement.id}`)
     },
     onError: (error: { message: string }) => {

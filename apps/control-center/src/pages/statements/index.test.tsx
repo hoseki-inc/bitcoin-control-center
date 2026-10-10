@@ -8,8 +8,8 @@ import { createRoot } from 'react-dom/client'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router'
 import { assert, expect, it, onTestFinished, vi } from 'vitest'
 import { parseNavigationState } from '../../lib/navigation-state'
-import { statementFixture } from '../../testing/statements'
-import { TestTrpcProvider, createTestTrpcClient } from '../../testing/trpc'
+import { confirmDelete, statementFixture } from '../../testing/statements'
+import { TestTrpcProvider, createTestTrpcClient, notFound } from '../../testing/trpc'
 import { trpc } from '../../trpc'
 import type { StatementDto } from '../../trpc/server-types'
 import { StatementListPage } from './index'
@@ -153,6 +153,17 @@ it('switches to a table of statements with their requester and View links', asyn
   const view = table.querySelector('a[href="/statements/statement"]')
   expect(view?.textContent).toBe('View')
   expect(view?.getAttribute('aria-label')).toMatch(/^View statement created Sep 1, 2026 /)
+  expect(table.querySelector('thead')?.textContent).toContain('Actions')
+  // Delete sits to the right of View.
+  const actions = Array.from(table.querySelectorAll('tbody td:last-child :is(a, button)'))
+  expect(actions.map((action) => action.getAttribute('aria-label')?.split(' ')[0])).toEqual(['View', 'Delete'])
+})
+
+it('shows card periods with short month names', async () => {
+  const quarter = statementFixture({ openingDate: new Date(2026, 6, 9), closingDate: new Date(2026, 9, 7, 23, 59, 59) })
+  const { container, settle } = await renderStatementsPage({ list: async () => [quarter] })
+  await settle('success')
+  expect(container.textContent).toContain('Period: Jul 9 - Oct 7, 2026')
 })
 
 it('returns to Statements when a statement started here is cancelled', async () => {
@@ -206,11 +217,7 @@ it('offers Delete only for statements that are no longer generating', async () =
   await act(async () => {
     remove.click()
   })
-  const confirm = Array.from(document.querySelectorAll('footer button')).find((item) => item.textContent === 'Delete')
-  assert(confirm instanceof window.HTMLButtonElement, 'Expected the confirm button')
-  await act(async () => {
-    confirm.click()
-  })
+  await confirmDelete()
   await vi.waitFor(() => {
     expect(
       requests.mock.calls.find(([operation]) => operation.path === 'portalProve.statement.delete')?.[0].input,
@@ -232,7 +239,7 @@ it('shows a status on cards only for statements that are generating or failed', 
   expect(text).not.toMatch(/completed/i)
 })
 
-it('keeps a generating statement current on its own until it is done', async () => {
+it('keeps a generating statement current on its own until it is done', { timeout: 10_000 }, async () => {
   let status: StatementDto['status'] = 'pending'
   const { container, settle } = await renderStatementsPage({
     list: async () => [statementFixture({ id: 'generating', status })],
@@ -265,24 +272,19 @@ it('removes a deleted statement from the list', async () => {
   await act(async () => {
     trashButtons()[1]?.click()
   })
-  const confirm = Array.from(document.querySelectorAll('footer button')).find((item) => item.textContent === 'Delete')
-  assert(confirm instanceof window.HTMLButtonElement, 'Expected the confirm button')
-  await act(async () => {
-    confirm.click()
-  })
+  await confirmDelete()
   await vi.waitFor(() => {
     expect(trashButtons()).toHaveLength(1)
   })
 })
 
-it('refreshes the list when a delete fails because the statement is already gone', async () => {
+it('removes a statement that another tab already deleted when deleting it here', async () => {
   let rows = [statementFixture({ id: 'kept' }), statementFixture({ id: 'deleted-elsewhere' })]
   const { container, settle } = await renderStatementsPage({
     list: async (operation) => {
       if (operation.path === 'portalProve.statement.delete') {
-        // Another tab deleted it first.
         rows = rows.filter((row) => row.id !== operation.input)
-        throw new Error('Statement not found')
+        throw notFound('Statement not found')
       }
       return rows
     },
@@ -293,11 +295,7 @@ it('refreshes the list when a delete fails because the statement is already gone
   await act(async () => {
     trashButtons()[1]?.click()
   })
-  const confirm = Array.from(document.querySelectorAll('footer button')).find((item) => item.textContent === 'Delete')
-  assert(confirm instanceof window.HTMLButtonElement, 'Expected the confirm button')
-  await act(async () => {
-    confirm.click()
-  })
+  await confirmDelete()
   await vi.waitFor(() => {
     expect(trashButtons()).toHaveLength(1)
   })

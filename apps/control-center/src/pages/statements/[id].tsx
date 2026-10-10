@@ -8,11 +8,10 @@ import {
   getBadgeConfigForStatement,
   usePdfDownloadMutation,
 } from '@hoseki/packages/ui/prove-verify-ui'
+import { formatDateRange } from '@hoseki/packages/ui/utils'
 import { PDFViewer, pdf } from '@react-pdf/renderer'
-import { useQueryClient } from '@tanstack/react-query'
-import { format } from 'date-fns'
 import { ShieldCheckIcon, XIcon } from 'lucide-react'
-import { type RefObject, useEffect, useRef, useState } from 'react'
+import { type RefObject, useRef, useState } from 'react'
 import { Link as RouterLink, useNavigate } from 'react-router'
 import { DeleteStatementButton } from '../../components/statements/delete-statement-button'
 import { StatementGenerationModal } from '../../components/statements/statement-generation-modal'
@@ -40,7 +39,6 @@ export function StatementDetailsPage(): JSX.Element {
 
 function StatementDetailsPageContent({ statementId }: { statementId: StatementId }) {
   const navigate = useNavigate()
-  const retriesDisabled = useQueryClient().getDefaultOptions().queries?.retry === false
   const {
     data: statement,
     isLoading,
@@ -51,29 +49,18 @@ function StatementDetailsPageContent({ statementId }: { statementId: StatementId
     refetchInterval: (data, query) =>
       data?.status === 'pending' && query.state.error?.data?.code !== 'NOT_FOUND' ? GENERATION_POLL_MS : false,
     // Retry as usual, except for a deleted statement: it won't come back, so say so straight away.
-    retry: (failureCount, retryError) => !retriesDisabled && failureCount < 3 && retryError.data?.code !== 'NOT_FOUND',
+    retry: (failureCount, retryError) => failureCount < 3 && retryError.data?.code !== 'NOT_FOUND',
   })
   const [statementFormat, setStatementFormat] = useState<StatementDocumentFormat>('custom')
   // Generation stays open after the statement is done until its closing animation ends,
   // then stays mounted so the screen can fade out.
   const [generation, setGeneration] = useState<'hidden' | 'showing' | 'finished'>('hidden')
   // A status cached from an earlier visit may be stale; only open generation for a current one.
-  const isGenerating = isFetchedAfterMount && error === null && statement?.status === 'pending'
-  useEffect(() => {
-    if (isGenerating) {
-      setGeneration((current) => (current === 'hidden' ? 'showing' : current))
-    }
-  }, [isGenerating])
+  const isConfirmedPending = isFetchedAfterMount && error === null && statement?.status === 'pending'
   // Open on the same render the status arrives, so the page never shows through first.
-  const isShowingGeneration = generation === 'showing' || (generation === 'hidden' && isGenerating)
-  // Once generation ends here, the cached statements list still shows it as generating.
-  const trpcUtils = trpc.useUtils()
-  const hasGenerationEnded = generation !== 'hidden' && statement !== undefined && statement.status !== 'pending'
-  useEffect(() => {
-    if (hasGenerationEnded) {
-      void trpcUtils.portalProve.statement.list.invalidate()
-    }
-  }, [hasGenerationEnded, trpcUtils])
+  if (generation === 'hidden' && isConfirmedPending) {
+    setGeneration('showing')
+  }
   const headingRef = useRef<HTMLHeadingElement>(null)
 
   // A failed status check keeps the statement already shown, unless the statement is gone.
@@ -85,15 +72,16 @@ function StatementDetailsPageContent({ statementId }: { statementId: StatementId
     )
   }
 
-  if (isLoading) {
+  // Wait to confirm a cached "generating" status too, rather than show the page before generation opens.
+  if (isLoading || (statement.status === 'pending' && !isFetchedAfterMount && error === null)) {
     return <Spinner fullPage size="xl" />
   }
 
   return (
     <Flex gap={0} flexDirection={{ base: 'column', lg: 'row' }} align="flex-start">
-      {(generation !== 'hidden' || isShowingGeneration) && (
+      {generation !== 'hidden' && (
         <StatementGenerationModal
-          isOpen={isShowingGeneration}
+          isOpen={generation === 'showing'}
           status={statement.status}
           onFinished={() => {
             setGeneration('finished')
@@ -134,7 +122,7 @@ function StatementDetailsPageContent({ statementId }: { statementId: StatementId
         width={{ base: 'full', lg: '60%' }}
         bg="#F9F9F9"
       >
-        <StatementPreview
+        <StatementViewer
           statement={statement}
           statementFormat={statementFormat}
           onStatementFormatChange={setStatementFormat}
@@ -191,7 +179,7 @@ function StatementSummary({
         </Text>
         <Text textStyle="text/sm">Currency: {statement.quoteCurrency}</Text>
         <Text textStyle="text/sm">
-          Period: {format(statement.openingDate, 'd MMMM yyyy')} - {format(statement.closingDate, 'd MMMM yyyy')}
+          Period: {formatDateRange(statement.openingDate, statement.closingDate, undefined, { shortMonths: true })}
         </Text>
       </Stack>
     </Stack>
@@ -252,14 +240,12 @@ function ActionButtons({
         >
           Download
         </Button>
-        {statement.status !== 'pending' && (
-          <DeleteStatementButton
-            statementId={statement.id}
-            onDeleted={() => {
-              void navigate('/statements')
-            }}
-          />
-        )}
+        <DeleteStatementButton
+          statement={statement}
+          onDeleted={() => {
+            void navigate('/statements')
+          }}
+        />
       </HStack>
     </Box>
   )
@@ -297,7 +283,7 @@ function LearnMore() {
   )
 }
 
-function StatementPreview({
+function StatementViewer({
   statement,
   statementFormat,
   onStatementFormatChange,
@@ -323,7 +309,7 @@ function StatementPreview({
   )
 
   const rendered = useRenderedStatement(statementData, statement.status === 'completed')
-  const previewError = queryError?.message ?? rendered.error
+  const viewerError = queryError?.message ?? rendered.error
 
   return (
     <Box height={{ base: '600px', lg: '100%' }} width="100%" display="flex" justifyContent="center" alignItems="center">
@@ -335,9 +321,9 @@ function StatementPreview({
         borderColor="neutral.200"
         borderWidth="1px"
       >
-        {statement.status !== 'completed' ? null : previewError != null ? (
+        {statement.status !== 'completed' ? null : viewerError != null ? (
           <ErrorBanner
-            message={previewError}
+            message={viewerError}
             rightContent={
               <Button
                 size="sm"

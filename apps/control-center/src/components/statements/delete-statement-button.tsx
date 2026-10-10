@@ -11,54 +11,67 @@ import {
   Text,
   useDisclosure,
 } from '@chakra-ui/react'
+import { useQueryClient } from '@tanstack/react-query'
+import { getQueryKey } from '@trpc/react-query'
 import { Trash2Icon } from 'lucide-react'
 import { toast } from 'sonner'
 import { browserLogger } from '../../logger'
 import { trpc } from '../../trpc'
 import type { StatementDto } from '../../trpc/server-types'
+import { deleteStatementLabel } from '../dashboard/statement-card'
 
 /**
- * Delete button with a confirmation dialog. Only offer it for completed or failed statements.
- * With `iconLabel`, it shows a trash icon labelled for screen readers instead of text.
+ * Delete button with a confirmation dialog, shown for completed or failed statements.
+ * The icon variant shows a trash icon labelled for screen readers instead of text.
  */
 export function DeleteStatementButton({
-  statementId,
+  statement,
   onDeleted,
-  iconLabel,
+  variant = 'text',
   iconSize = 'md',
 }: {
-  statementId: StatementDto['id']
+  statement: StatementDto
   onDeleted?: () => void
-  iconLabel?: string
+  variant?: 'text' | 'icon'
   iconSize?: 'sm' | 'md'
-}): JSX.Element {
+}): JSX.Element | null {
   const { isOpen, onOpen, onClose } = useDisclosure()
+  const queryClient = useQueryClient()
   const trpcUtils = trpc.useUtils()
+  const deleted = async (): Promise<void> => {
+    onClose()
+    // Forget it, so going Back to its page says it's gone instead of showing it again.
+    queryClient.removeQueries({ queryKey: getQueryKey(trpc.portalProve.statement.retrieve, statement.id, 'query') })
+    onDeleted?.()
+    toast.success('Statement deleted')
+    await trpcUtils.portalProve.statement.list.invalidate()
+  }
   const deleteMutation = trpc.portalProve.statement.delete.useMutation({
-    onSuccess: () => {
-      onClose()
-      onDeleted?.()
-      toast.success('Statement deleted')
-    },
-    onError: (err) => {
+    onSuccess: deleted,
+    onError: async (err) => {
+      // Another tab or device deleted it first.
+      if (err.data?.code === 'NOT_FOUND') {
+        await deleted()
+        return
+      }
       browserLogger.error({ err }, 'Failed to delete statement')
       toast.error("Couldn't delete statement", { description: err.message })
     },
-    // Refresh even when it failed: "not found" means another tab already deleted it.
-    onSettled: async () => {
-      await trpcUtils.portalProve.statement.list.invalidate()
-    },
   })
+
+  if (statement.status === 'pending') {
+    return null
+  }
 
   return (
     <>
-      {iconLabel === undefined ? (
+      {variant === 'text' ? (
         <Button variant="outline" size="md" onClick={onOpen}>
           Delete
         </Button>
       ) : (
         <IconButton
-          aria-label={iconLabel}
+          aria-label={deleteStatementLabel(statement)}
           icon={<Trash2Icon size={iconSize === 'sm' ? 16 : 18} aria-hidden="true" />}
           variant="ghost"
           size={iconSize}
@@ -91,7 +104,7 @@ export function DeleteStatementButton({
               flex={1}
               isLoading={deleteMutation.isLoading}
               onClick={() => {
-                deleteMutation.mutate(statementId)
+                deleteMutation.mutate(statement.id)
               }}
             >
               Delete

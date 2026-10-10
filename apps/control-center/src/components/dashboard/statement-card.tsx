@@ -13,6 +13,7 @@ export function viewStatementLabel(statement: StatementDto): string {
   return `View statement created ${format(statement.createdAt, CREATED_FORMAT)}`
 }
 
+/** The Delete action's accessible name. */
 export function deleteStatementLabel(statement: StatementDto): string {
   return `Delete statement created ${format(statement.createdAt, CREATED_FORMAT)}`
 }
@@ -65,7 +66,7 @@ export function StatementCard({
           {statement.integrator.name}
         </Box>
       )}
-      {/* Only statements that need attention get a status; completed ones look as before. */}
+      {/* Only statements that need attention get a status. */}
       {statement.status !== 'completed' && (
         <Box position="absolute" top={3} right={3} zIndex={1}>
           <StatusBadge {...getBadgeConfigForStatement(statement.status)} />
@@ -103,7 +104,7 @@ export function StatementCard({
         </LinearGradient>
       </Box>
       {/* Fills the card so cards stretched to a taller neighbour stay white to the bottom. */}
-      <HStack bg="white" borderTopWidth="1px" borderColor="neutral.200" flexGrow={1} alignItems="center">
+      <HStack bg="white" borderTopWidth="1px" borderColor="neutral.200" flexGrow={1} alignItems="center" pr={2}>
         <Stack py={2} px={4} spacing={0} flexGrow="1" minW={0}>
           <Text textStyle="text/sm" fontWeight="medium" color="neutral.900">
             Statement
@@ -115,7 +116,7 @@ export function StatementCard({
             Created: {format(statement.createdAt, CREATED_FORMAT)}
           </Text>
         </Stack>
-        {footerAction !== undefined && <Box pr={2}>{footerAction}</Box>}
+        {footerAction}
       </HStack>
     </Box>
   )

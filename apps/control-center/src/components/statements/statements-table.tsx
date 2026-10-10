@@ -3,7 +3,7 @@ import { StatusBadge, Th, getBadgeConfigForStatement } from '@hoseki/packages/ui
 import { format } from 'date-fns'
 import { Link as RouterLink } from 'react-router'
 import type { StatementDto } from '../../trpc/server-types'
-import { deleteStatementLabel, viewStatementLabel } from '../dashboard/statement-card'
+import { viewStatementLabel } from '../dashboard/statement-card'
 import { DeleteStatementButton } from './delete-statement-button'
 
 export function StatementsTable({ statements }: { statements: StatementDto[] }): JSX.Element {
@@ -15,7 +15,7 @@ export function StatementsTable({ statements }: { statements: StatementDto[] }):
             <Th>Generation Date</Th>
             <Th>Requester</Th>
             <Th>Status</Th>
-            <Th textAlign="right">Action</Th>
+            <Th textAlign="right">Actions</Th>
           </Tr>
         </Thead>
         <Tbody>
@@ -56,9 +56,7 @@ export function StatementsTable({ statements }: { statements: StatementDto[] }):
                   >
                     View
                   </Button>
-                  {statement.status !== 'pending' && (
-                    <DeleteStatementButton statementId={statement.id} iconLabel={deleteStatementLabel(statement)} />
-                  )}
+                  <DeleteStatementButton statement={statement} variant="icon" />
                 </HStack>
               </Td>
             </Tr>

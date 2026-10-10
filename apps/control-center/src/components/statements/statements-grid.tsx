@@ -1,7 +1,7 @@
 import { SimpleGrid } from '@chakra-ui/react'
 import { useNavigate } from 'react-router'
 import type { StatementDto } from '../../trpc/server-types'
-import { StatementCard, deleteStatementLabel } from '../dashboard/statement-card'
+import { StatementCard } from '../dashboard/statement-card'
 import { DeleteStatementButton } from './delete-statement-button'
 
 /** With `canDelete`, finished statements get a trash button; Home's recent statements leave it off. */
@@ -24,13 +24,7 @@ export function StatementsGrid({
             void navigate(`/statements/${statement.id}`)
           }}
           footerAction={
-            !canDelete || statement.status === 'pending' ? undefined : (
-              <DeleteStatementButton
-                statementId={statement.id}
-                iconLabel={deleteStatementLabel(statement)}
-                iconSize="sm"
-              />
-            )
+            canDelete ? <DeleteStatementButton statement={statement} variant="icon" iconSize="sm" /> : undefined
           }
         />
       ))}

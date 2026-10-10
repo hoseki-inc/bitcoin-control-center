@@ -55,9 +55,6 @@ it.each(StatementQuoteCurrencySchema.options)(
       if (operation.path === 'portalProve.statement.initiateGeneration') {
         return statement
       }
-      if (operation.path === 'portalProve.statement.list') {
-        return [statement]
-      }
       throw new Error(`Unexpected request: ${operation.path}`)
     })
     const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
