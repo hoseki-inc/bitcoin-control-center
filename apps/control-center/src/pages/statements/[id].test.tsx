@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { TestChakraProvider as ChakraProvider } from '@hoseki/packages/testing/chakra-provider'
-import { QueryClient } from '@tanstack/react-query'
+import { QueryClient, notifyManager } from '@tanstack/react-query'
 import type { Operation } from '@trpc/client'
 import { getQueryKey } from '@trpc/react-query'
 import { MotionGlobalConfig } from 'framer-motion'
@@ -65,6 +65,10 @@ async function renderStatementPage(
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
   // Finish opening and closing animations at once, so a closed screen leaves the page.
   MotionGlobalConfig.skipAnimations = true
+  // React Query tells the page about results on a timer; let React see those updates as test steps.
+  notifyManager.setNotifyFunction((callback) => {
+    act(callback)
+  })
   const server: FakeSentinel = {
     statement: statementFixture({ id, status: initial }),
     isDown,
@@ -122,6 +126,9 @@ async function renderStatementPage(
     container.remove()
     client.clear()
     MotionGlobalConfig.skipAnimations = false
+    notifyManager.setNotifyFunction((callback) => {
+      callback()
+    })
     vi.unstubAllGlobals()
     dom.window.close()
   })
@@ -175,20 +182,25 @@ async function renderStatementPage(
 
 const generationShown = (): boolean => document.body.textContent.includes('Generating Your Statement')
 
-it('keeps showing generation after the statement finishes, until its closing sequence ends', async () => {
-  const { container, server, refresh } = await renderStatementPage('pending')
-  expect(generationShown()).toBe(true)
-  expect(container.textContent).not.toContain('Delete')
+// The first test also pays for the first render of the generation screen.
+it(
+  'keeps showing generation after the statement finishes, until its closing sequence ends',
+  { timeout: 10_000 },
+  async () => {
+    const { container, server, refresh } = await renderStatementPage('pending')
+    expect(generationShown()).toBe(true)
+    expect(container.textContent).not.toContain('Delete')
 
-  server.statement = { ...server.statement, status: 'completed' }
-  await refresh()
-  await vi.waitFor(() => {
-    expect(container.textContent).toContain('Statuscompleted')
-  })
-  // The sheet never plays here, so the sequence never ends; useGenerationSequence's tests cover the close.
-  expect(generationShown()).toBe(true)
-  expect(container.textContent).toContain('Delete')
-})
+    server.statement = { ...server.statement, status: 'completed' }
+    await refresh()
+    await vi.waitFor(() => {
+      expect(container.textContent).toContain('Statuscompleted')
+    })
+    // The sheet never plays here, so the sequence never ends; useGenerationSequence's tests cover the close.
+    expect(generationShown()).toBe(true)
+    expect(container.textContent).toContain('Delete')
+  },
+)
 
 it('keeps showing generation when a status check fails', async () => {
   const { container, server, refresh, client } = await renderStatementPage('pending')
