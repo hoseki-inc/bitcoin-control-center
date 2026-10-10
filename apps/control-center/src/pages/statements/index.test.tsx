@@ -300,3 +300,29 @@ it('removes a statement that another tab already deleted when deleting it here',
     expect(trashButtons()).toHaveLength(1)
   })
 })
+
+it('takes a deleted statement off the list at once, before the list refreshes', async () => {
+  let isDeleted = false
+  const { container, settle } = await renderStatementsPage({
+    list: async (operation) => {
+      if (operation.path === 'portalProve.statement.delete') {
+        isDeleted = true
+        return []
+      }
+      // The refresh after the delete never answers, as on a slow connection.
+      return isDeleted
+        ? new Promise<StatementDto[]>(() => undefined)
+        : [statementFixture({ id: 'kept' }), statementFixture({ id: 'deleted' })]
+    },
+  })
+  await settle('success')
+  const trashButtons = (): HTMLButtonElement[] =>
+    Array.from(container.querySelectorAll<HTMLButtonElement>('button[aria-label^="Delete statement created"]'))
+  await act(async () => {
+    trashButtons()[1]?.click()
+  })
+  await confirmDelete()
+  await vi.waitFor(() => {
+    expect(trashButtons()).toHaveLength(1)
+  })
+})

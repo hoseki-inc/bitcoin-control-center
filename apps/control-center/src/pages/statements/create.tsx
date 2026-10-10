@@ -99,6 +99,7 @@ export function StatementCreatePage(): JSX.Element {
   }, [savedUserName, nameInitialized])
 
   // generate, then follow progress on the statement page
+  const trpcUtils = trpc.useUtils()
   const initiateStatementGenerationMutation = trpc.portalProve.statement.initiateGeneration.useMutation()
   const initiateMutationWithArgs = useMutation({
     mutationFn: async () => {
@@ -117,6 +118,11 @@ export function StatementCreatePage(): JSX.Element {
         address: address || null,
       })
 
+      // Statement lists show it straight away, rather than once they refresh.
+      trpcUtils.portalProve.statement.list.setData(
+        undefined,
+        (statements) => statements && [generatedStatement, ...statements],
+      )
       void navigate(`/statements/${generatedStatement.id}`)
     },
     onError: (error: { message: string }) => {

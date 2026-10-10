@@ -40,8 +40,12 @@ export function DeleteStatementButton({
   const trpcUtils = trpc.useUtils()
   const deleted = async (): Promise<void> => {
     onClose()
-    // Forget it, so going Back to its page says it's gone instead of showing it again.
+    // Forget it, so going Back to its page says it's gone instead of showing it again,
+    // and so statement lists don't show it while they refresh.
     queryClient.removeQueries({ queryKey: getQueryKey(trpc.portalProve.statement.retrieve, statement.id, 'query') })
+    trpcUtils.portalProve.statement.list.setData(undefined, (statements) =>
+      statements?.filter((item) => item.id !== statement.id),
+    )
     onDeleted?.()
     toast.success('Statement deleted')
     await trpcUtils.portalProve.statement.list.invalidate()

@@ -73,7 +73,7 @@ function StatementDetailsPageContent({ statementId }: { statementId: StatementId
   }
 
   // Wait to confirm a cached "generating" status too, rather than show the page before generation opens.
-  if (isLoading || (statement.status === 'pending' && !isFetchedAfterMount && error === null)) {
+  if (isLoading || (statement.status === 'pending' && !isFetchedAfterMount)) {
     return <Spinner fullPage size="xl" />
   }
 

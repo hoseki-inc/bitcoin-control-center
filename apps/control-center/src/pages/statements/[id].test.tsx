@@ -28,9 +28,6 @@ const browser = await vi.hoisted(async () => {
   }
 })
 
-// Finish opening and closing animations at once, so a closed screen leaves the page.
-MotionGlobalConfig.skipAnimations = true
-
 const id = 'st_stmt_test'
 
 /** What the next status check returns, or whether it fails. */
@@ -66,6 +63,8 @@ async function renderStatementPage(
 ) {
   const dom = browser.acquire()
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+  // Finish opening and closing animations at once, so a closed screen leaves the page.
+  MotionGlobalConfig.skipAnimations = true
   const server: FakeSentinel = {
     statement: statementFixture({ id, status: initial }),
     isDown,
@@ -88,6 +87,9 @@ async function renderStatementPage(
         // Any other statement opened during the test has already finished.
         return operation.input === id ? server.statement : statementFixture({ id: String(operation.input) })
       case 'portalProve.statement.delete':
+        if (server.isDown) {
+          throw new Error('Sentinel is restarting')
+        }
         if (server.isDeleted) {
           throw notFound('Statement not found')
         }
@@ -119,6 +121,7 @@ async function renderStatementPage(
     })
     container.remove()
     client.clear()
+    MotionGlobalConfig.skipAnimations = false
     vi.unstubAllGlobals()
     dom.window.close()
   })
@@ -224,9 +227,18 @@ it('does not show generation for a statement that finished since it was last ope
   expect(generationShown()).toBe(false)
 })
 
-it('shows the period month first', async () => {
-  const { container } = await renderStatementPage('completed')
-  expect(container.textContent).toContain('Period: Aug 1 - 31, 2026')
+it('shows the period month first, with short months', async () => {
+  // Failed, so the PDF viewer, which never loads here, stays out of the refresh.
+  const { container, server, refresh } = await renderStatementPage('failed')
+  server.statement = {
+    ...server.statement,
+    openingDate: new Date(2026, 6, 9),
+    closingDate: new Date(2026, 9, 7, 23, 59, 59),
+  }
+  await refresh()
+  await vi.waitFor(() => {
+    expect(container.textContent).toContain('Period: Jul 9 - Oct 7, 2026')
+  })
 })
 
 it('closes to the statements list', async () => {
@@ -345,6 +357,38 @@ it('confirms a cached generating status before showing anything', async () => {
   const { container, release } = await renderStatementPage('pending', 'pending', { held: true })
   expect(container.textContent).not.toContain('Statement Details')
   expect(generationShown()).toBe(false)
+  await release()
+  await vi.waitFor(() => {
+    expect(generationShown()).toBe(true)
+  })
+})
+
+it('keeps the statement when a delete fails for another reason', async () => {
+  const { container, server, requests, click } = await renderStatementPage('completed')
+  server.isDown = true
+  await click('Delete')
+  await confirmDelete()
+  await vi.waitFor(() => {
+    expect(requests.some((request) => request.path === 'portalProve.statement.delete')).toBe(true)
+    expect(document.querySelector('footer button[data-loading]')).toBeNull()
+  })
+  expect(container.textContent).toContain('Statement Details')
+  expect(document.body.textContent).toContain('Delete statement?')
+})
+
+it('confirms a generating status again on return, even after an earlier check failed', async () => {
+  const { container, server, refresh, client, open } = await renderStatementPage('pending')
+  server.isDown = true
+  await refresh()
+  const retrieveKey = getQueryKey(trpc.portalProve.statement.retrieve, id, 'query')
+  await vi.waitFor(() => {
+    expect(client.getQueryState(retrieveKey)?.status).toBe('error')
+  })
+  await open('/statements')
+  server.isDown = false
+  const release = hold(server)
+  await open(`/statements/${id}`)
+  expect(container.textContent).not.toContain('Statement Details')
   await release()
   await vi.waitFor(() => {
     expect(generationShown()).toBe(true)

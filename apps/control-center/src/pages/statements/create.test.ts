@@ -80,6 +80,9 @@ it.each(StatementQuoteCurrencySchema.options)(
       new Map(),
     )
     client.setQueryData(['local-settings', 'user_name'], null)
+    // The statements list a visit to Statements left behind.
+    const listKey = getQueryKey(trpc.portalProve.statement.list, undefined, 'query')
+    client.setQueryData(listKey, [])
     const container = await renderCreatePage(client, rpc)
     expect(container.textContent).not.toMatch(/coinbase/i)
     const select = container.querySelector('#quote-currency')
@@ -103,6 +106,8 @@ it.each(StatementQuoteCurrencySchema.options)(
       expect(input).not.toHaveProperty('exchangeAccountIds')
       expect(container.textContent).toBe('Statement new-statement')
     })
+    // So Statements shows it as generating straight away.
+    expect(client.getQueryData(listKey)).toEqual([statement])
   },
 )
 
