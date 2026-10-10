@@ -11,7 +11,7 @@ import {
 import { PDFViewer, pdf } from '@react-pdf/renderer'
 import { format } from 'date-fns'
 import { ShieldCheckIcon, XIcon } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { type RefObject, useEffect, useRef, useState } from 'react'
 import { Link as RouterLink, useNavigate } from 'react-router'
 import { DeleteStatementButton } from '../../components/statements/delete-statement-button'
 import { StatementGenerationModal } from '../../components/statements/statement-generation-modal'
@@ -33,7 +33,8 @@ export function StatementDetailsPage(): JSX.Element {
     )
   }
 
-  return <StatementDetailsPageContent statementId={statementId} />
+  // Going back or forward between statements reuses this route; start each statement fresh.
+  return <StatementDetailsPageContent key={statementId} statementId={statementId} />
 }
 
 function StatementDetailsPageContent({ statementId }: { statementId: StatementId }) {
@@ -57,8 +58,18 @@ function StatementDetailsPageContent({ statementId }: { statementId: StatementId
       setGeneration((current) => (current === 'hidden' ? 'showing' : current))
     }
   }, [isGenerating])
+  // Once generation ends here, the cached statements list still shows it as generating.
+  const trpcUtils = trpc.useUtils()
+  const hasGenerationEnded = generation !== 'hidden' && statement !== undefined && statement.status !== 'pending'
+  useEffect(() => {
+    if (hasGenerationEnded) {
+      void trpcUtils.portalProve.statement.list.invalidate()
+    }
+  }, [hasGenerationEnded, trpcUtils])
+  const headingRef = useRef<HTMLHeadingElement>(null)
 
-  if (error) {
+  // A failed status check keeps the statement already shown; the error is only for having none.
+  if (error && statement === undefined) {
     return (
       <Box p={4}>
         <ErrorBanner mb={4} message={`Error: ${error.message}`} />
@@ -82,6 +93,7 @@ function StatementDetailsPageContent({ statementId }: { statementId: StatementId
           onClose={() => {
             void navigate('/statements')
           }}
+          finalFocusRef={headingRef}
         />
       )}
       <Stack
@@ -97,7 +109,7 @@ function StatementDetailsPageContent({ statementId }: { statementId: StatementId
       >
         <CloseLink />
         <Stack gap={12}>
-          <StatementSummary statement={statement} />
+          <StatementSummary statement={statement} headingRef={headingRef} />
           <ActionButtons statement={statement} statementFormat={statementFormat} />
           <LearnMore />
         </Stack>
@@ -119,11 +131,17 @@ function StatementDetailsPageContent({ statementId }: { statementId: StatementId
   )
 }
 
-function StatementSummary({ statement }: { statement: StatementDto }) {
+function StatementSummary({
+  statement,
+  headingRef,
+}: {
+  statement: StatementDto
+  headingRef: RefObject<HTMLHeadingElement>
+}) {
   return (
     <Stack spacing={8}>
       <Stack gap={2}>
-        <Text as="h1" textStyle="text/lg" fontWeight="medium">
+        <Text as="h1" ref={headingRef} tabIndex={-1} textStyle="text/lg" fontWeight="medium">
           Statement Details
         </Text>
         <Flex flexDirection="column" gap={4}>

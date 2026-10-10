@@ -5,7 +5,7 @@ import type { Operation } from '@trpc/client'
 import { getQueryKey } from '@trpc/react-query'
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
-import { MemoryRouter, Route, Routes } from 'react-router'
+import { MemoryRouter, type NavigateFunction, Route, Routes, useNavigate } from 'react-router'
 import { assert, expect, it, onTestFinished, vi } from 'vitest'
 import { statementFixture } from '../../testing/statements'
 import { TestTrpcProvider, createTestTrpcClient } from '../../testing/trpc'
@@ -29,6 +29,12 @@ const browser = await vi.hoisted(async () => {
 
 const id = 'st_stmt_test'
 
+/** What the next status check returns, or whether it fails. */
+interface FakeSentinel {
+  statement: StatementDto
+  isDown: boolean
+}
+
 /**
  * Render the statement page; `server.statement` is what the next retrieve returns.
  * `cached` is the status a previous visit left in the query cache.
@@ -36,13 +42,17 @@ const id = 'st_stmt_test'
 async function renderStatementPage(initial: StatementDto['status'], cached?: StatementDto['status']) {
   const dom = browser.acquire()
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
-  const server = { statement: statementFixture({ id, status: initial }) }
+  const server: FakeSentinel = { statement: statementFixture({ id, status: initial }), isDown: false }
   const requests: Operation[] = []
   const rpc = createTestTrpcClient(async (operation) => {
     requests.push(operation)
     switch (operation.path) {
       case 'portalProve.statement.retrieve':
-        return server.statement
+        if (server.isDown) {
+          throw new Error('Sentinel is restarting')
+        }
+        // Any other statement opened during the test has already finished.
+        return operation.input === id ? server.statement : statementFixture({ id: String(operation.input) })
       case 'portalProve.statement.delete':
         return undefined
       case 'portalProve.statement.list':
@@ -52,7 +62,11 @@ async function renderStatementPage(initial: StatementDto['status'], cached?: Sta
         return new Promise<never>(() => undefined)
     }
   })
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+    // Failed status checks are part of these tests; keep them out of the output.
+    logger: { log: console.log, warn: console.warn, error: () => undefined },
+  })
   if (cached !== undefined) {
     client.setQueryData(getQueryKey(trpc.portalProve.statement.retrieve, id, 'query'), {
       ...server.statement,
@@ -71,11 +85,17 @@ async function renderStatementPage(initial: StatementDto['status'], cached?: Sta
     vi.unstubAllGlobals()
     dom.window.close()
   })
+  let navigate: NavigateFunction | undefined
+  function Navigator(): null {
+    navigate = useNavigate()
+    return null
+  }
   await act(async () => {
     root.render(
       <TestTrpcProvider client={client} rpc={rpc}>
         <ChakraProvider>
           <MemoryRouter initialEntries={[`/statements/${id}`]}>
+            <Navigator />
             <Routes>
               <Route path="/statements" element={<p>Statements list</p>} />
               <Route path="/statements/:statementId" element={<StatementDetailsPage />} />
@@ -103,7 +123,12 @@ async function renderStatementPage(initial: StatementDto['status'], cached?: Sta
       await client.invalidateQueries()
     })
   }
-  return { container, server, requests, click, refresh }
+  const open = async (path: string): Promise<void> => {
+    await act(async () => {
+      await navigate?.(path)
+    })
+  }
+  return { container, server, requests, click, refresh, client, open }
 }
 
 const generationShown = (): boolean => document.body.textContent.includes('Generating Your Statement')
@@ -118,9 +143,52 @@ it('keeps showing generation when the statement finishes, until the animation fi
   await vi.waitFor(() => {
     expect(container.textContent).toContain('Statuscompleted')
   })
-  // The animation never plays here, so it never finishes; useSheetCycle's tests cover the close.
+  // The animation never plays here, so it never finishes; useGenerationSequence's tests cover the close.
   expect(generationShown()).toBe(true)
   expect(container.textContent).toContain('Delete')
+})
+
+it('keeps showing generation when a status check fails', async () => {
+  const { container, server, refresh, client } = await renderStatementPage('pending')
+  server.isDown = true
+  await refresh()
+  const retrieveKey = getQueryKey(trpc.portalProve.statement.retrieve, id, 'query')
+  await act(async () => {
+    await vi.waitFor(() => {
+      expect(client.getQueryState(retrieveKey)?.status).toBe('error')
+    })
+    // React Query tells the page on a timer; let it render the failure.
+    await new Promise((resolve) => {
+      setTimeout(resolve, 0)
+    })
+  })
+  expect(container.textContent).not.toContain('Sentinel is restarting')
+  expect(generationShown()).toBe(true)
+})
+
+it('marks the cached statements list stale once generation ends', async () => {
+  const { server, client } = await renderStatementPage('pending')
+  const listKey = getQueryKey(trpc.portalProve.statement.list, undefined, 'query')
+  client.setQueryData(listKey, [server.statement])
+  expect(client.getQueryState(listKey)?.isInvalidated).toBe(false)
+  server.statement = { ...server.statement, status: 'failed' }
+  await act(async () => {
+    await client.invalidateQueries(getQueryKey(trpc.portalProve.statement.retrieve, id, 'query'))
+  })
+  await vi.waitFor(() => {
+    expect(client.getQueryState(listKey)?.isInvalidated).toBe(true)
+  })
+})
+
+it('starts fresh when another statement opens on the same page', async () => {
+  const { container, open } = await renderStatementPage('pending')
+  expect(generationShown()).toBe(true)
+  // Going back or forward between statements keeps this page mounted.
+  await open('/statements/st_stmt_other')
+  await vi.waitFor(() => {
+    expect(container.textContent).toContain('Statuscompleted')
+  })
+  expect(generationShown()).toBe(false)
 })
 
 it('does not show generation for a statement that finished since it was last opened', async () => {

@@ -9,6 +9,7 @@ import {
   ModalOverlay,
   Text,
   keyframes,
+  usePrefersReducedMotion,
 } from '@chakra-ui/react'
 import { Spinner } from '@hoseki/packages/ui/design-system'
 import { greenCheckCircle } from '@hoseki/packages/ui/prove-verify-ui'
@@ -16,12 +17,12 @@ import type { HTMLMotionProps } from 'framer-motion'
 import type { LottieRefCurrentProps } from 'lottie-react'
 // Lottie runs animation expressions with eval: only render bundled animations.
 import Lottie from 'lottie-react'
-import { useEffect, useRef, useState } from 'react'
+import { type RefObject, useEffect, useRef, useState } from 'react'
 import statementSheetAnimation from '../../assets/lottie-animations/statement-entrance-animation.json'
 import type { StatementDto } from '../../trpc/server-types'
 
 /** How long "Statement Completed" stays up, including the check animation, before the screen fades out. */
-const COMPLETED_HOLD_MS = 1800
+export const COMPLETED_HOLD_MS = 1800
 
 /** How long the sheet rests on its last frame before playing again while generation continues. */
 export const SHEET_PAUSE_MS = 2500
@@ -42,55 +43,35 @@ function fade(exitSeconds: number): HTMLMotionProps<'div'> & HTMLMotionProps<'se
 }
 
 /**
- * Full-screen screen shown while a statement generates. The sheet animation
- * plays, rests on its last frame, and plays again until generation ends. Once
- * the sheet has finished playing, a completed statement turns the spinner into
- * a green check before `onFinished` is called; a failed one calls it straight away.
+ * Full-screen screen shown while a statement generates. See `useGenerationSequence`
+ * for how the sheet animation, the green check and `onFinished` are timed.
  */
 export function StatementGenerationModal({
   isOpen,
   status,
   onFinished,
   onClose,
+  finalFocusRef,
 }: {
   isOpen: boolean
   status: StatementDto['status']
   onFinished: () => void
   onClose: () => void
+  /** Receives focus when the screen closes. */
+  finalFocusRef: RefObject<HTMLElement>
 }): JSX.Element {
   const lottieRef = useRef<LottieRefCurrentProps | null>(null)
-  const [isCompleted, setIsCompleted] = useState(false)
-  const onSheetEnd = useSheetCycle({
+  const { onSheetEnd, isCompleted } = useGenerationSequence({
     status,
+    replaySheet: !usePrefersReducedMotion(),
     replay: () => {
       lottieRef.current?.goToAndPlay(0, true)
     },
-    onGenerationEnd: (finalStatus) => {
-      if (finalStatus === 'completed') {
-        setIsCompleted(true)
-      } else {
-        onFinished()
-      }
-    },
+    onFinished,
   })
-  const onFinishedRef = useRef(onFinished)
-  useEffect(() => {
-    onFinishedRef.current = onFinished
-  }, [onFinished])
-  useEffect(() => {
-    if (!isCompleted) {
-      return
-    }
-    const timer = window.setTimeout(() => {
-      onFinishedRef.current()
-    }, COMPLETED_HOLD_MS)
-    return () => {
-      window.clearTimeout(timer)
-    }
-  }, [isCompleted])
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} scrollBehavior="inside" size="full">
+    <Modal isOpen={isOpen} onClose={onClose} scrollBehavior="inside" size="full" finalFocusRef={finalFocusRef}>
       <ModalOverlay motionProps={fade(1)} />
       <ModalContent motionProps={fade(1)}>
         <ModalCloseButton right="auto" left={4} top={4} size="3xl" p={4} />
@@ -160,33 +141,51 @@ function CrossFade({ isVisible, children }: { isVisible: boolean; children: Reac
   )
 }
 
+interface GenerationSequence {
+  /** Call when the sheet animation reaches its last frame. */
+  onSheetEnd: () => void
+  /** Whether to show "Statement Completed" and the green check. */
+  isCompleted: boolean
+}
+
 /**
- * Returns the handler for the sheet animation reaching its last frame. While the
- * statement is generating, the sheet rests for `SHEET_PAUSE_MS` and then `replay`
- * is called. Once generation has ended and the sheet is at rest, `onGenerationEnd`
- * is called, straight away if it ends during a rest.
+ * Times the end of generation. While the statement is generating, the sheet
+ * rests on its last frame for `SHEET_PAUSE_MS` and then `replay` is called
+ * (unless `replaySheet` is off, for reduced motion). Once the sheet is at rest
+ * and generation has ended, a failed statement calls `onFinished` straight away;
+ * a completed one sets `isCompleted` for `COMPLETED_HOLD_MS` first.
  */
-export function useSheetCycle({
+export function useGenerationSequence({
   status,
+  replaySheet,
   replay,
-  onGenerationEnd,
+  onFinished,
 }: {
   status: StatementDto['status']
+  replaySheet: boolean
   replay: () => void
-  onGenerationEnd: (status: Exclude<StatementDto['status'], 'pending'>) => void
-}): () => void {
+  onFinished: () => void
+}): GenerationSequence {
   const [isAtRest, setIsAtRest] = useState(false)
+  const [isCompleted, setIsCompleted] = useState(false)
   // Call the latest callbacks, not the ones from when the sheet started playing.
-  const latest = useRef({ replay, onGenerationEnd })
+  const latest = useRef({ replay, onFinished })
   useEffect(() => {
-    latest.current = { replay, onGenerationEnd }
-  }, [replay, onGenerationEnd])
+    latest.current = { replay, onFinished }
+  }, [replay, onFinished])
   useEffect(() => {
     if (!isAtRest) {
       return
     }
-    if (status !== 'pending') {
-      latest.current.onGenerationEnd(status)
+    if (status === 'completed') {
+      setIsCompleted(true)
+      return
+    }
+    if (status === 'failed') {
+      latest.current.onFinished()
+      return
+    }
+    if (!replaySheet) {
       return
     }
     const timer = window.setTimeout(() => {
@@ -196,9 +195,23 @@ export function useSheetCycle({
     return () => {
       window.clearTimeout(timer)
     }
-  }, [isAtRest, status])
-  return () => {
-    setIsAtRest(true)
+  }, [isAtRest, status, replaySheet])
+  useEffect(() => {
+    if (!isCompleted) {
+      return
+    }
+    const timer = window.setTimeout(() => {
+      latest.current.onFinished()
+    }, COMPLETED_HOLD_MS)
+    return () => {
+      window.clearTimeout(timer)
+    }
+  }, [isCompleted])
+  return {
+    onSheetEnd: () => {
+      setIsAtRest(true)
+    },
+    isCompleted,
   }
 }
 

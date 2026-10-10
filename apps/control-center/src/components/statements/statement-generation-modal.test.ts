@@ -3,7 +3,7 @@ import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import type { StatementDto } from '../../trpc/server-types'
-import { SHEET_PAUSE_MS, useSheetCycle } from './statement-generation-modal'
+import { COMPLETED_HOLD_MS, SHEET_PAUSE_MS, useGenerationSequence } from './statement-generation-modal'
 
 const browser = await vi.hoisted(async () => {
   const { createBrowserDom, installBrowserDom } = await import('@hoseki/packages/testing/browser-dom')
@@ -19,15 +19,15 @@ const browser = await vi.hoisted(async () => {
   }
 })
 
-async function renderSheet() {
+async function renderSequence({ replaySheet = true }: { replaySheet?: boolean } = {}) {
   const dom = browser.acquire()
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
   vi.useFakeTimers()
   const replay = vi.fn<() => void>()
-  const onGenerationEnd = vi.fn<(status: string) => void>()
-  let endSheet = (): void => undefined
-  function Sheet({ status }: { status: StatementDto['status'] }): null {
-    endSheet = useSheetCycle({ status, replay, onGenerationEnd })
+  const onFinished = vi.fn<() => void>()
+  let sequence: ReturnType<typeof useGenerationSequence> | undefined
+  function Sequence({ status }: { status: StatementDto['status'] }): null {
+    sequence = useGenerationSequence({ status, replaySheet, replay, onFinished })
     return null
   }
   const root = createRoot(document.createElement('div'))
@@ -41,12 +41,12 @@ async function renderSheet() {
   })
   const render = async (status: StatementDto['status']): Promise<void> => {
     await act(async () => {
-      root.render(createElement(Sheet, { status }))
+      root.render(createElement(Sequence, { status }))
     })
   }
-  const end = async (): Promise<void> => {
+  const endSheet = async (): Promise<void> => {
     await act(async () => {
-      endSheet()
+      sequence?.onSheetEnd()
     })
   }
   const wait = async (ms: number): Promise<void> => {
@@ -54,33 +54,52 @@ async function renderSheet() {
       vi.advanceTimersByTime(ms)
     })
   }
+  const isCompleted = (): boolean => sequence?.isCompleted ?? false
   await render('pending')
-  return { render, end, wait, replay, onGenerationEnd }
+  return { render, endSheet, wait, isCompleted, replay, onFinished }
 }
 
 it('rests on the last frame before replaying while the statement generates', async () => {
-  const { end, wait, replay, onGenerationEnd } = await renderSheet()
-  await end()
+  const { endSheet, wait, replay, onFinished } = await renderSequence()
+  await endSheet()
   await wait(SHEET_PAUSE_MS - 1)
   expect(replay).not.toHaveBeenCalled()
   await wait(1)
   expect(replay).toHaveBeenCalledOnce()
-  expect(onGenerationEnd).not.toHaveBeenCalled()
+  expect(onFinished).not.toHaveBeenCalled()
 })
 
-it('ends straight away when generation finishes during a rest', async () => {
-  const { render, end, wait, replay, onGenerationEnd } = await renderSheet()
-  await end()
+it('rests without replaying when reduced motion is preferred', async () => {
+  const { endSheet, wait, replay } = await renderSequence({ replaySheet: false })
+  await endSheet()
+  await wait(SHEET_PAUSE_MS * 3)
+  expect(replay).not.toHaveBeenCalled()
+})
+
+it('shows the check as soon as a completed statement finishes during a rest, then finishes after the hold', async () => {
+  const { render, endSheet, wait, isCompleted, replay, onFinished } = await renderSequence()
+  await endSheet()
   await render('completed')
-  expect(onGenerationEnd).toHaveBeenCalledExactlyOnceWith('completed')
-  await wait(SHEET_PAUSE_MS)
+  expect(isCompleted()).toBe(true)
+  await wait(COMPLETED_HOLD_MS - 1)
+  expect(onFinished).not.toHaveBeenCalled()
+  await wait(1)
+  expect(onFinished).toHaveBeenCalledOnce()
   expect(replay).not.toHaveBeenCalled()
 })
 
 it('lets the sheet finish playing when generation ends mid-play', async () => {
-  const { render, end, onGenerationEnd } = await renderSheet()
+  const { render, endSheet, isCompleted } = await renderSequence()
+  await render('completed')
+  expect(isCompleted()).toBe(false)
+  await endSheet()
+  expect(isCompleted()).toBe(true)
+})
+
+it('finishes straight away, without the check, when generation fails', async () => {
+  const { render, endSheet, isCompleted, onFinished } = await renderSequence()
   await render('failed')
-  expect(onGenerationEnd).not.toHaveBeenCalled()
-  await end()
-  expect(onGenerationEnd).toHaveBeenCalledExactlyOnceWith('failed')
+  await endSheet()
+  expect(isCompleted()).toBe(false)
+  expect(onFinished).toHaveBeenCalledOnce()
 })
