@@ -47,7 +47,9 @@ function StatementDetailsPageContent({ statementId }: { statementId: StatementId
     isFetchedAfterMount,
     error,
   } = trpc.portalProve.statement.retrieve.useQuery(statementId, {
-    refetchInterval: (data) => (data?.status === 'pending' ? GENERATION_POLL_MS : false),
+    // Check until it's done, unless it turned out to be deleted.
+    refetchInterval: (data, query) =>
+      data?.status === 'pending' && query.state.error?.data?.code !== 'NOT_FOUND' ? GENERATION_POLL_MS : false,
     // Retry as usual, except for a deleted statement: it won't come back, so say so straight away.
     retry: (failureCount, retryError) => !retriesDisabled && failureCount < 3 && retryError.data?.code !== 'NOT_FOUND',
   })
