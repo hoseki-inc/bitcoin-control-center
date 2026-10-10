@@ -119,9 +119,11 @@ export function StatementCreatePage(): JSX.Element {
       })
 
       // Statement lists show it straight away, rather than once they refresh.
+      void trpcUtils.portalProve.statement.list.cancel()
       trpcUtils.portalProve.statement.list.setData(
         undefined,
-        (statements) => statements && [generatedStatement, ...statements],
+        (statements) =>
+          statements && [generatedStatement, ...statements.filter((item) => item.id !== generatedStatement.id)],
       )
       void navigate(`/statements/${generatedStatement.id}`)
     },

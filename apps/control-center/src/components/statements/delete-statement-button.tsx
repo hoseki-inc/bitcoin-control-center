@@ -43,6 +43,8 @@ export function DeleteStatementButton({
     // Forget it, so going Back to its page says it's gone instead of showing it again,
     // and so statement lists don't show it while they refresh.
     queryClient.removeQueries({ queryKey: getQueryKey(trpc.portalProve.statement.retrieve, statement.id, 'query') })
+    // A list check already under way could answer with the statement still in it.
+    void trpcUtils.portalProve.statement.list.cancel()
     trpcUtils.portalProve.statement.list.setData(undefined, (statements) =>
       statements?.filter((item) => item.id !== statement.id),
     )
