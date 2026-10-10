@@ -59,13 +59,16 @@ async function renderSequence({ replaySheet = true }: { replaySheet?: boolean } 
   return { render, endSheet, wait, isCompleted, replay, onFinished }
 }
 
-it('rests on the last frame before replaying while the statement generates', async () => {
+it('rests on the last frame before each replay while the statement generates', async () => {
   const { endSheet, wait, replay, onFinished } = await renderSequence()
   await endSheet()
   await wait(SHEET_PAUSE_MS - 1)
   expect(replay).not.toHaveBeenCalled()
   await wait(1)
   expect(replay).toHaveBeenCalledOnce()
+  await endSheet()
+  await wait(SHEET_PAUSE_MS)
+  expect(replay).toHaveBeenCalledTimes(2)
   expect(onFinished).not.toHaveBeenCalled()
 })
 
@@ -85,6 +88,8 @@ it('shows the check as soon as a completed statement finishes during a rest, the
   expect(onFinished).not.toHaveBeenCalled()
   await wait(1)
   expect(onFinished).toHaveBeenCalledOnce()
+  // The rest that was under way when it completed doesn't replay the sheet.
+  await wait(SHEET_PAUSE_MS)
   expect(replay).not.toHaveBeenCalled()
 })
 

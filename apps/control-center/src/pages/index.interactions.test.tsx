@@ -1,10 +1,12 @@
 // @vitest-environment node
 import { TestChakraProvider as ChakraProvider } from '@hoseki/packages/testing/chakra-provider'
+import { QueryClient } from '@tanstack/react-query'
 import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { MemoryRouter, Route, Routes, useParams } from 'react-router'
 import { assert, expect, it, onTestFinished, vi } from 'vitest'
 import { statementFixture } from '../testing/statements'
+import { TestTrpcProvider, createTestTrpcClient } from '../testing/trpc'
 import type { StatementDto } from '../trpc/server-types'
 import { type HomeDataSource, HomePage, type HomeViews } from './index'
 
@@ -38,9 +40,14 @@ function StatementRoute(): JSX.Element {
   return createElement('p', null, `Statement page ${useParams()['id'] ?? ''}`)
 }
 
-async function renderHome(dataSource: HomeDataSource): Promise<HTMLDivElement> {
+/** Render Home with fake queries, or with its real ones against `rpc` when `dataSource` is left out. */
+async function renderHome(
+  dataSource: HomeDataSource | undefined,
+  rpc = createTestTrpcClient(async () => new Promise<never>(() => undefined)),
+): Promise<HTMLDivElement> {
   const dom = browser.acquire()
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const container = document.createElement('div')
   document.body.append(container)
   const root = createRoot(container)
@@ -50,22 +57,27 @@ async function renderHome(dataSource: HomeDataSource): Promise<HTMLDivElement> {
       root.unmount()
     })
     container.remove()
+    client.clear()
     vi.unstubAllGlobals()
     dom.window.close()
   })
   await act(async () => {
     root.render(
       createElement(
-        ChakraProvider,
-        null,
+        TestTrpcProvider,
+        { client, rpc },
         createElement(
-          MemoryRouter,
+          ChakraProvider,
           null,
           createElement(
-            Routes,
+            MemoryRouter,
             null,
-            createElement(Route, { path: '/', element: createElement(HomePage, { dataSource, views }) }),
-            createElement(Route, { path: '/statements/:id', element: createElement(StatementRoute) }),
+            createElement(
+              Routes,
+              null,
+              createElement(Route, { path: '/', element: createElement(HomePage, { dataSource, views }) }),
+              createElement(Route, { path: '/statements/:id', element: createElement(StatementRoute) }),
+            ),
           ),
         ),
       ),
@@ -118,4 +130,31 @@ it('opens a recent statement from its View button', async () => {
     button(container, 'View').click()
   })
   expect(container.textContent).toContain('Statement page statement')
+})
+
+it('keeps a generating recent statement current on its own until it is done', { timeout: 10_000 }, async () => {
+  let status: StatementDto['status'] = 'pending'
+  const container = await renderHome(
+    undefined,
+    createTestTrpcClient(async (operation) => {
+      switch (operation.path) {
+        case 'portalProve.statement.list':
+          return [statementFixture({ id: 'generating', status })]
+        case 'portalProve.controlCenter.getData':
+          return new Promise<never>(() => undefined)
+        default:
+          return []
+      }
+    }),
+  )
+  await vi.waitFor(() => {
+    expect(container.textContent).toMatch(/pending/i)
+  })
+  status = 'completed'
+  await vi.waitFor(
+    () => {
+      expect(container.textContent).not.toMatch(/pending/i)
+    },
+    { timeout: 4000 },
+  )
 })
