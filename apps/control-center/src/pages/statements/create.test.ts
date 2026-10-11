@@ -46,6 +46,8 @@ it.each(StatementQuoteCurrencySchema.options)(
       status: 'pending',
       quoteCurrency: currency,
       errorMessage: null,
+      txSource: 'public_mempool',
+      progress: 0,
       user: { name: null, email: null },
       integrator: null,
       userId: 'local',

@@ -52,7 +52,8 @@ export function shouldVerifyElectrumTlsCertificate(host: string, override?: bool
   return !isLocalOrPrivateHost(host)
 }
 
-function isLocalOrPrivateHost(host: string): boolean {
+/** Hosts on this machine or a private network, such as a node's own services. */
+export function isLocalOrPrivateHost(host: string): boolean {
   const normalized = host.trim().toLowerCase().replace(/^\[/, '').replace(/\]$/, '').replace(/\.$/, '')
   if (normalized.length === 0) {
     return false

@@ -116,11 +116,33 @@ it.each(['file', 'database'] as const)(
 
     const upgraded = await openDrizzleDatabase(directory, logger)
     try {
-      // Upgrading only adds the statement counter, which starts from the highest existing number.
+      // Upgrading adds the statement counter, which starts from the highest existing number, and a
+      // transaction source on statements, unknown for those made before it.
       const upgradedState = await databaseState(upgraded)
+      const statementsSql = (state: typeof before): string | null | undefined =>
+        state.schema.find((row) => row.name === 'statements')?.sql
+      expect(statementsSql(upgradedState)).toBe(
+        statementsSql(before)?.replace(
+          /\)$/,
+          `, \`tx_source\` text CONSTRAINT "statements_tx_source_check" CHECK("tx_source" IN ('electrum', 'node_mempool', 'public_mempool')))`,
+        ),
+      )
       expect({
-        schema: upgradedState.schema.filter((row) => row.tbl_name !== 'statement_counter'),
-        data: upgradedState.data.filter((table) => table.table !== 'statement_counter'),
+        schema: upgradedState.schema
+          .filter((row) => row.tbl_name !== 'statement_counter')
+          .map((row) => (row.name === 'statements' ? before.schema.find((old) => old.name === 'statements') : row)),
+        data: upgradedState.data
+          .filter((table) => table.table !== 'statement_counter')
+          .map((table) => ({
+            table: table.table,
+            rows:
+              table.table === 'statements'
+                ? table.rows.map(({ tx_source, ...row }) => {
+                    expect(tx_source).toBeNull()
+                    return row
+                  })
+                : table.rows,
+          })),
       }).toEqual(before)
       await expect(upgraded.all(sql`SELECT * FROM statement_counter`)).resolves.toEqual([{ id: 1, last_counter: 123 }])
       const journal = await upgraded.all<{ id: number; hash: string; created_at: number; name: string }>(
@@ -215,9 +237,10 @@ it.each(['legacy', 'drizzle'] as const)(
             table: table.table,
             rows:
               table.table === 'statements'
-                ? table.rows.map(({ quote_currency, error_message, ...row }) => {
+                ? table.rows.map(({ quote_currency, error_message, tx_source, ...row }) => {
                     expect(quote_currency).toBe('USD')
                     expect(error_message).toBeNull()
+                    expect(tx_source).toBeNull()
                     return row
                   })
                 : table.rows,
@@ -300,8 +323,10 @@ it.each([
   },
 )
 
-it('creates the same application schema from scratch as the fully upgraded main fixture', async () => {
-  const legacy = await legacyDatabase(testDirectory())
+it('creates the same application schema from scratch as an upgraded main fixture', async () => {
+  const legacyDirectory = testDirectory()
+  ;(await legacyDatabase(legacyDirectory)).$client.close()
+  const legacy = await openDrizzleDatabase(legacyDirectory, logger)
   const fresh = await openDrizzleDatabase(testDirectory(), logger)
   try {
     const tables = await legacy.all<{ name: string }>(
@@ -336,7 +361,15 @@ it('creates the same application schema from scratch as the fully upgraded main 
         sql`INSERT INTO statements (id, status, opening_date, closing_date, account_ids) VALUES ('invalid', 'unknown', '2026-01-01', '2026-01-31', '[]')`,
       ),
     ).rejects.toHaveProperty('cause.message', expect.stringContaining('CHECK constraint failed'))
+    for (const db of [fresh, legacy]) {
+      await expect(
+        db.run(
+          sql`INSERT INTO statements (id, opening_date, closing_date, account_ids, tx_source) VALUES ('invalid', '2026-01-01', '2026-01-31', '[]', 'unknown')`,
+        ),
+      ).rejects.toHaveProperty('cause.message', expect.stringContaining('CHECK constraint failed'))
+    }
   } finally {
+    legacy.$client.close()
     fresh.$client.close()
   }
 })

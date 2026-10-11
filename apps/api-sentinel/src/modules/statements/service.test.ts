@@ -4,10 +4,10 @@ import { join } from 'node:path'
 import { Network } from '@hoseki/packages/bitcoin/network'
 import { ElectrumProvider } from '@hoseki/packages/bitcoin/onchain/electrum_provider'
 import { ElectrumClient } from '@hoseki/packages/clients/electrum'
-import { Ok, asyncFn } from '@hoseki/packages/result'
+import { Err, Ok, asyncFn } from '@hoseki/packages/result'
 import type { StatementQuoteCurrency } from '@hoseki/packages/schemas/statement-quote'
 import { eq, sql } from 'drizzle-orm'
-import pino from 'pino'
+import pino, { type Logger } from 'pino'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import type { AppContext } from '../../context'
 import { type SentinelDb, openDrizzleDatabase } from '../../db/drizzle'
@@ -24,6 +24,7 @@ import type { AggregatedTransaction } from './mapper'
 import { StatementMapper } from './mapper'
 import { getRequiredRateDates, getStatementPeriods } from './rate_dates'
 import { type GenerateStatementInput, StatementService, validateStatementInput } from './service'
+import { TransactionLoadError } from './sources/types'
 
 const logger = pino({ level: 'silent' })
 const opening = new Date('2026-08-01T00:00:00Z')
@@ -189,7 +190,7 @@ describe('statement currency persistence', () => {
     expect((await service.findById(id))?.status).toBe('completed')
   })
 
-  it('tells people to delete a failed statement and generate a new one when there is no specific reason', async () => {
+  it('gives a failed statement a short message when there is no specific reason', async () => {
     await setup()
     const { service } = harness()
     const id = (await service.create(input)).unwrap()
@@ -198,7 +199,7 @@ describe('statement currency persistence', () => {
 
     await expect(service.findById(id)).resolves.toMatchObject({
       status: 'failed',
-      errorMessage: 'Statement generation failed. Delete this statement and generate a new one.',
+      errorMessage: 'Statement generation failed.',
     })
   })
 
@@ -213,7 +214,7 @@ describe('statement currency persistence', () => {
 
     await expect(service.findById(interrupted)).resolves.toMatchObject({
       status: 'failed',
-      errorMessage: 'Generation was interrupted. Delete this statement and try again.',
+      errorMessage: 'Generation was interrupted.',
     })
     await expect(service.findById(failed)).resolves.toMatchObject({
       status: 'failed',
@@ -312,7 +313,7 @@ describe('statement timezone validation', () => {
   })
 })
 
-function statementCaller(service: StatementService) {
+function statementCaller(service: StatementService, appLogger: Logger = logger) {
   const electrumConfig = { host: 'example.invalid', port: 50001, protocol: 'tcp' as const }
   const electrumClient = new ElectrumClient(electrumConfig)
   const onchainProvider = new ElectrumProvider(Network.Mainnet, { logger, electrum: electrumClient })
@@ -338,7 +339,7 @@ function statementCaller(service: StatementService) {
       MEMPOOL_API_URL: 'https://example.invalid',
       LOG_LEVEL: 'error',
     },
-    logger,
+    logger: appLogger,
     database,
     electrumClient,
     electrumConfig,
@@ -432,6 +433,129 @@ describe('statement API currency contract', () => {
     await vi.waitFor(async () => {
       await expect(service.findById(created.id)).resolves.toMatchObject({ status: 'completed' })
     })
+  })
+})
+
+describe('statement failure messages', () => {
+  it.each([
+    {
+      scenario: 'a transaction that could not be loaded',
+      error: new TransactionLoadError('unavailable', `Failed to fetch transaction ${'a'.repeat(64)}: HTTP 404`),
+      message: "Couldn't load all transactions.",
+      logged: '"kind":"unavailable"',
+    },
+    {
+      scenario: 'any other failure',
+      error: new Error('Account "Savings" must be verified before generating a statement'),
+      message: 'Account "Savings" must be verified before generating a statement',
+      logged: 'must be verified',
+    },
+  ])('shows $message for $scenario', async ({ error, message, logged }) => {
+    await setup()
+    const { service } = harness()
+    vi.spyOn(service, 'generateStatementData').mockImplementation(asyncFn(async () => Err(error)))
+
+    const { log, lines } = capturedLogger()
+    const created = await statementCaller(service, log).initiateGeneration(input)
+
+    await vi.waitFor(async () => {
+      await expect(service.findById(created.id)).resolves.toMatchObject({ status: 'failed', errorMessage: message })
+    })
+    // The statement's id is what generation reports its progress against.
+    expect(service.generateStatementData).toHaveBeenCalledWith(expect.anything(), created.id)
+    expect(lines.join('')).toContain('Statement data generation failed')
+    // A transaction failure logs only its kind, since its message can name a txid.
+    expect(lines.join('')).toContain(logged)
+    expect(lines.join('')).not.toContain('a'.repeat(64))
+  })
+
+  it('logs a statement that could not be saved', async () => {
+    await setup()
+    const { service, quotes } = harness()
+    // Rates in another currency than the statement's, which saving refuses.
+    vi.spyOn(service, 'generateStatementData').mockImplementation(
+      asyncFn(async (args) => {
+        const dailyRates = (
+          await quotes.getDailyRates(
+            args.openingDate,
+            args.closingDate,
+            'CAD',
+            getRequiredRateDates(args.openingDate, args.closingDate, args.timezone, transactions),
+          )
+        ).unwrap()
+        return Ok({ transactionMap: transactions, dailyRates })
+      }),
+    )
+    const { log, lines } = capturedLogger()
+
+    const created = await statementCaller(service, log).initiateGeneration(input)
+
+    await vi.waitFor(async () => {
+      await expect(service.findById(created.id)).resolves.toMatchObject({
+        status: 'failed',
+        errorMessage: 'Statement quote currency does not match its saved rates.',
+      })
+    })
+    expect(lines.join('')).toContain('Statement could not be completed')
+  })
+
+  interface CapturedLog {
+    log: Logger
+    lines: string[]
+  }
+
+  function capturedLogger(): CapturedLog {
+    const lines: string[] = []
+    const log = pino(
+      { level: 'info' },
+      {
+        write: (line: string) => {
+          lines.push(line)
+        },
+      },
+    )
+    return { log, lines }
+  }
+
+  it('keeps an unexpected error message, which can hold query parameters, out of the logs', async () => {
+    await setup()
+    const { service } = harness()
+    const { log, lines } = capturedLogger()
+    // How a database error reports the values it was saving.
+    const queryError = new Error('Failed query: update "statements" set ...\nparams: bc1qsecretaddress,deadbeeftxid')
+    vi.spyOn(service, 'generateStatementData').mockImplementation(() => {
+      throw queryError
+    })
+
+    const created = await statementCaller(service, log).initiateGeneration(input)
+
+    await vi.waitFor(async () => {
+      await expect(service.findById(created.id)).resolves.toMatchObject({ status: 'failed' })
+    })
+    const logged = lines.join('')
+    expect(logged).toContain('Unhandled error in statement generation')
+    expect(logged).not.toContain('bc1qsecretaddress')
+    expect(logged).not.toContain('deadbeeftxid')
+  })
+
+  it('logs the error even when marking the statement failed fails too', async () => {
+    await setup()
+    const { service } = harness()
+    const { log, lines } = capturedLogger()
+    vi.spyOn(service, 'generateStatementData').mockImplementation(() => {
+      throw new Error('Disk full')
+    })
+    vi.spyOn(service, 'fail').mockRejectedValue(
+      new Error('Failed query: update "statements" set ...\nparams: bc1qsecretaddress'),
+    )
+
+    await statementCaller(service, log).initiateGeneration(input)
+
+    await vi.waitFor(() => {
+      expect(lines.join('')).toContain('Could not mark the statement as failed')
+    })
+    expect(lines.join('')).toContain('Unhandled error in statement generation')
+    expect(lines.join('')).not.toContain('bc1qsecretaddress')
   })
 })
 

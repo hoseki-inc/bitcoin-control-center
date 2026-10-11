@@ -91,10 +91,13 @@ export const statements = sqliteTable(
       .notNull()
       .default('USD'),
     errorMessage: text('error_message'),
+    /** Where the statement looked up transactions; null for statements without wallets or from before sources were recorded. */
+    txSource: text('tx_source', { enum: ['electrum', 'node_mempool', 'public_mempool'] }),
   },
   (table) => [
     check('statements_status_check', sql`${table.status} IN ('pending', 'completed', 'failed')`),
     check('statements_quote_currency_check', sql`${table.quoteCurrency} IN ('USD', 'CAD', 'GBP', 'EUR')`),
+    check('statements_tx_source_check', sql`${table.txSource} IN ('electrum', 'node_mempool', 'public_mempool')`),
   ],
 )
 

@@ -16,9 +16,13 @@ import { accounts, exchangeBalanceSnapshots, statementCounter, statements } from
 import type { ExchangeService } from '../exchange/service'
 import type { DailyRates } from '../price/daily_rates'
 import type { DailyRatesService } from '../price/daily_rates'
+import { toTransactionEntries } from './entries'
+import { type AccountHistory, collectAccountHistory } from './history'
+import { type Sleep, lookupTransactions } from './lookup'
 import type { AggregatedTransaction, StatementAccountTransactions } from './mapper'
 import { getRequiredRateDates, validateStatementRates } from './rate_dates'
-import { fetchTransactionEntries } from './tx_fetcher'
+import { MempoolSource } from './sources/mempool'
+import { TransactionLoadError, type TxSource, type TxSourceKind } from './sources/types'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -40,6 +44,10 @@ export interface StatementDto {
   userId: string
   quoteCurrency: StatementQuoteCurrency
   errorMessage: string | null
+  /** Where the statement looks up transactions; null without wallets or for older statements. */
+  txSource: TxSourceKind | null
+  /** 0–100 while generating, null otherwise. */
+  progress: number | null
 }
 
 type StatementRow = typeof statements.$inferSelect
@@ -57,12 +65,25 @@ const statementDtoColumns = {
   userName: statements.userName,
   quoteCurrency: statements.quoteCurrency,
   errorMessage: statements.errorMessage,
+  txSource: statements.txSource,
 }
 type StatementDtoRow = Pick<StatementRow, keyof typeof statementDtoColumns>
 
 export type StatementDeleteError = 'not_found' | 'pending'
 
-const INTERRUPTED_MESSAGE = 'Generation was interrupted. Delete this statement and try again.'
+const INTERRUPTED_MESSAGE = 'Generation was interrupted.'
+
+/** Transaction errors can name a txid or a server, so a statement shows this instead. */
+const TRANSACTIONS_FAILED_MESSAGE = "Couldn't load all transactions."
+
+/** Shares of Sentinel's 0–100 progress for history and lookups; exchange accounts and prices take the rest. */
+const HISTORY_SHARE = 1 / 9
+const LOOKUP_SHARE = 7 / 9
+
+/** The message a failed statement shows for an error from generating its data. */
+export function statementFailureMessage(error: Error): string {
+  return error instanceof TransactionLoadError ? TRANSACTIONS_FAILED_MESSAGE : error.message
+}
 
 export interface GenerateStatementInput {
   quoteCurrency?: StatementQuoteCurrency
@@ -162,9 +183,11 @@ export class StatementService {
   private readonly onchainProvider: ElectrumProvider
   private readonly dailyRatesService: DailyRatesService
   private readonly exchangeService: ExchangeService
-  private readonly mempoolApiUrl: string
+  private readonly transactionSource: TxSource
   private readonly logger: Logger
-  private readonly sleep: ((ms: number) => Promise<void>) | undefined
+  private readonly sleep: Sleep | undefined
+  /** Progress of statements generating in this process. A restart fails them, so it isn't saved. */
+  private readonly progress = new Map<string, number>()
 
   public constructor(deps: {
     db: SentinelDb
@@ -173,14 +196,14 @@ export class StatementService {
     exchangeService: ExchangeService
     mempoolApiUrl: string
     logger: Logger
-    /** Waits between transaction lookup retries; tests replace it to avoid real delays. */
-    sleep?: (ms: number) => Promise<void>
+    /** Waits out lookup retries and rate limits; tests replace it to avoid real delays. */
+    sleep?: Sleep
   }) {
     this.db = deps.db
     this.onchainProvider = deps.onchainProvider
     this.dailyRatesService = deps.dailyRatesService
     this.exchangeService = deps.exchangeService
-    this.mempoolApiUrl = deps.mempoolApiUrl
+    this.transactionSource = new MempoolSource(deps.mempoolApiUrl)
     this.logger = deps.logger.child({ module: 'statement-service' })
     this.sleep = deps.sleep
   }
@@ -212,6 +235,7 @@ export class StatementService {
         userName: input.name ?? null,
         userAddress: input.address ?? null,
         quoteCurrency: input.quoteCurrency ?? 'USD',
+        txSource: input.claimIds.length > 0 ? this.transactionSource.kind : null,
         counter: next.counter,
       })
     })
@@ -314,18 +338,18 @@ export class StatementService {
     if (completed === undefined) {
       return Err(new Error('Statement is not pending.'))
     }
+    this.progress.delete(id)
     return Ok(undefined)
   }
 
   /** Mark a statement as failed. */
-  public async fail(
-    id: string,
-    message = 'Statement generation failed. Delete this statement and generate a new one.',
-  ): Promise<void> {
+  public async fail(id: string, message = 'Statement generation failed.'): Promise<void> {
     await this.db
       .update(statements)
       .set({ status: 'failed', errorMessage: message, updatedAt: sql`datetime('now')` })
       .where(and(eq(statements.id, id), eq(statements.status, 'pending')))
+    // Kept until the write succeeds, so a statement that can't be marked failed keeps its last progress.
+    this.progress.delete(id)
   }
 
   /** Find a statement by ID and return its DTO. */
@@ -369,6 +393,8 @@ export class StatementService {
   public generateStatementData = asyncFn(
     async (
       input: GenerateStatementInput,
+      /** Reports progress for this statement while it generates. */
+      statementId?: string,
     ): Promise<Result<{ transactionMap: StatementTransactions; dailyRates: DailyRates }, Error>> => {
       const validation = validateStatementInput(input)
       if (validation.isErr()) {
@@ -406,18 +432,20 @@ export class StatementService {
         return Err(new Error('No accounts found for the provided IDs'))
       }
 
-      // 2. Fetch on-chain transactions for each account
+      // 2. Fetch on-chain transactions: history for every account, then each transaction once
       if (hasOnchainAccounts) {
         this.logger.info({ accountCount: accountRows.length }, 'Found on-chain accounts for statement')
+        const histories: Array<{ row: (typeof accountRows)[number]; history: AccountHistory }> = []
         for (const [i, row] of accountRows.entries()) {
           this.logger.info(
             { account: row.display_name, index: i + 1, total: accountRows.length },
-            'Fetching transactions for account',
+            'Fetching transaction history for account',
           )
+          // A wallet left out would make the statement look complete without it.
           const accountResult = Account.fromDescriptor(row.descriptor)
           if (accountResult.isErr()) {
-            this.logger.warn({ accountId: row.id }, 'Failed to parse descriptor')
-            continue
+            this.logger.error({ accountId: row.id, kind: 'history' }, 'Failed to parse descriptor')
+            return Err(new TransactionLoadError('history', 'Could not read a wallet descriptor'))
           }
 
           const [activeAccount] = await this.db
@@ -428,19 +456,82 @@ export class StatementService {
             return Err(new Error(`Account "${row.display_name}" was archived while generating the statement`))
           }
 
-          const txResult = await fetchTransactionEntries({
-            account: accountResult.unwrap(),
-            onchainProvider: this.onchainProvider,
-            mempoolApiUrl: this.mempoolApiUrl,
-            logger: this.logger,
-            sleep: this.sleep,
-          })
-          if (txResult.isErr()) {
-            this.logger.error({ accountId: row.id, err: txResult.unwrapErr() }, 'Failed to fetch transactions')
-            return Err(txResult.unwrapErr())
+          const historyResult = await collectAccountHistory(accountResult.unwrap(), this.onchainProvider)
+          if (historyResult.isErr()) {
+            this.logger.error({ accountId: row.id, kind: historyResult.unwrapErr().kind }, 'Failed to fetch history')
+            return Err(historyResult.unwrapErr())
           }
+          histories.push({ row, history: historyResult.unwrap() })
+          this.reportProgress(statementId, (HISTORY_SHARE * (i + 1)) / accountRows.length)
+        }
 
-          const entries = txResult.unwrap()
+        const tipResult = await this.onchainProvider.getBlocksTip()
+        if (tipResult.isErr()) {
+          const cause = tipResult.unwrapErr()
+          this.logger.error({ kind: 'history' }, 'Failed to fetch the block tip')
+          return Err(new TransactionLoadError('history', cause.message, { cause }))
+        }
+        const tipHeight = tipResult.unwrap().height
+
+        // A transfer between two selected accounts is looked up once.
+        const heights = new Map<string, number>()
+        for (const { history } of histories) {
+          for (const [txid, { height }] of history) {
+            if (!heights.has(txid)) {
+              heights.set(txid, height)
+            }
+          }
+        }
+        const lookupResult = await lookupTransactions({
+          transactions: heights,
+          source: this.transactionSource,
+          logger: this.logger,
+          sleep: this.sleep,
+          onProgress: (done, total) => {
+            this.reportProgress(
+              statementId,
+              HISTORY_SHARE + (total === 0 ? LOOKUP_SHARE : (LOOKUP_SHARE * done) / total),
+            )
+          },
+        })
+        if (lookupResult.isErr()) {
+          this.logger.error({ kind: lookupResult.unwrapErr().kind }, 'Failed to look up transactions')
+          return Err(lookupResult.unwrapErr())
+        }
+        const found = lookupResult.unwrap()
+
+        // Lookups take the longest, so check again that no selected wallet was archived meanwhile.
+        const active = new Set(
+          (
+            await this.db
+              .select({ id: accounts.id })
+              .from(accounts)
+              .where(
+                and(
+                  inArray(
+                    accounts.id,
+                    histories.map(({ row }) => row.id),
+                  ),
+                  isNull(accounts.deletedAt),
+                ),
+              )
+          ).map(({ id }) => id),
+        )
+        const archived = histories.find(({ row }) => !active.has(row.id))
+        if (archived !== undefined) {
+          return Err(new Error(`Account "${archived.row.display_name}" was archived while generating the statement`))
+        }
+
+        for (const { row, history } of histories) {
+          const entriesResult = toTransactionEntries(history, found, tipHeight)
+          if (entriesResult.isErr()) {
+            this.logger.error(
+              { accountId: row.id, kind: entriesResult.unwrapErr().kind },
+              'Failed to read transactions',
+            )
+            return Err(entriesResult.unwrapErr())
+          }
+          const entries = entriesResult.unwrap()
           const aggregated = calculateAccountTransactions(entries, row.display_name)
           const sorted = sortTxs(aggregated)
           transactionMap[row.id] = { displayName: row.display_name, transactions: sorted }
@@ -450,6 +541,7 @@ export class StatementService {
           )
         }
       }
+      this.reportProgress(statementId, HISTORY_SHARE + LOOKUP_SHARE)
 
       // 3. Fetch exchange account data
       if (hasExchangeAccounts) {
@@ -609,6 +701,7 @@ export class StatementService {
       if (coverage.isErr()) {
         return Err(coverage.unwrapErr())
       }
+      this.reportProgress(statementId, 1)
       this.logger.info('Statement data generation complete')
 
       return Ok({ transactionMap, dailyRates: ratesResult.unwrap() })
@@ -643,6 +736,15 @@ export class StatementService {
       .orderBy(asc(exchangeBalanceSnapshots.timestamp))
   }
 
+  /** Records a statement's progress; it never moves back. */
+  private reportProgress(statementId: string | undefined, fraction: number): void {
+    if (statementId === undefined) {
+      return
+    }
+    const percent = Math.min(100, Math.floor(fraction * 100))
+    this.progress.set(statementId, Math.max(this.progress.get(statementId) ?? 0, percent))
+  }
+
   private rowToDto(row: StatementDtoRow): StatementDto {
     return {
       id: row.id,
@@ -658,6 +760,8 @@ export class StatementService {
       userId: 'local',
       quoteCurrency: row.quoteCurrency,
       errorMessage: row.errorMessage,
+      txSource: row.txSource,
+      progress: row.status === 'pending' ? (this.progress.get(row.id) ?? 0) : null,
     }
   }
 

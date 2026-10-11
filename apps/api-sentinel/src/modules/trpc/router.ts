@@ -43,9 +43,12 @@ import {
   settings,
   signedMessages as signedMessagesTable,
 } from '../../db/schema'
+import { loggableError } from '../../lib/loggable-error'
 import { type ConnectionDetails, MAX_CONNECTION_PROFILES } from '../connection_profiles/store'
 import { PRICE_FALLBACKS_SETTING, PRICE_SOURCES, PRICE_SOURCE_SETTING } from '../price/service'
 import { StatementMapper } from '../statements/mapper'
+import { statementFailureMessage } from '../statements/service'
+import { TransactionLoadError } from '../statements/sources/types'
 import { publicProcedure, t } from './init'
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -1488,11 +1491,18 @@ const statementRouter = t.router({
       // Fire-and-forget: generate data in background so the client gets the pending DTO immediately
       void (async () => {
         try {
-          const dataResult = await ctx.app.statementService.generateStatementData(input)
+          const dataResult = await ctx.app.statementService.generateStatementData(input, statementId)
           if (dataResult.isErr()) {
-            const errMsg = dataResult.unwrapErr().message
-            logger.error({ statementId, error: errMsg }, 'Statement data generation failed')
-            await ctx.app.statementService.fail(statementId, errMsg)
+            const error = dataResult.unwrapErr()
+            // Transaction errors can name a txid or a server, so only their kind is logged.
+            logger.error(
+              {
+                statementId,
+                ...(error instanceof TransactionLoadError ? { kind: error.kind } : { error: error.message }),
+              },
+              'Statement data generation failed',
+            )
+            await ctx.app.statementService.fail(statementId, statementFailureMessage(error))
             return
           }
 
@@ -1510,17 +1520,27 @@ const statementRouter = t.router({
 
           const completed = await ctx.app.statementService.complete(statementId, transactionMap, dailyRates)
           if (completed.isErr()) {
+            // These messages hold only fixed text, a currency or a date.
+            logger.error({ statementId, error: completed.unwrapErr().message }, 'Statement could not be completed')
             await ctx.app.statementService.fail(statementId, completed.unwrapErr().message)
             return
           }
           logger.info({ statementId }, 'Statement generation completed')
         } catch (err) {
-          await ctx.app.statementService.fail(statementId)
-          const message = err instanceof Error ? err.message : 'Statement generation failed'
+          // Database errors put the values they were saving, such as txids, in their message.
           logger.error(
-            { statementId, error: message, stack: err instanceof Error ? err.stack : undefined },
+            { statementId, ...(err instanceof Error ? loggableError(err) : { error: 'unknown' }) },
             'Unhandled error in statement generation',
           )
+          // The same fault can stop this write too; a restart then marks the statement interrupted.
+          try {
+            await ctx.app.statementService.fail(statementId)
+          } catch (failure) {
+            logger.error(
+              { statementId, ...(failure instanceof Error ? loggableError(failure) : { error: 'unknown' }) },
+              'Could not mark the statement as failed',
+            )
+          }
         }
       })()
 
