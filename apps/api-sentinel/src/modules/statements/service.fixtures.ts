@@ -176,14 +176,17 @@ async function seedExchange(
   return id
 }
 
-async function setupNamedWallets(firstName: string, secondName: string): Promise<StatementScenario> {
+async function setupNamedWallets(
+  firstName: string,
+  secondName: string,
+): Promise<StatementScenario & { db: SentinelDb }> {
   const { service, db } = await createStatementHarness()
   const claimIds = [await seedWallet(db, savingsWallet, firstName), await seedWallet(db, spendingWallet, secondName)]
 
-  return { service, input: { ...period, claimIds } }
+  return { service, db, input: { ...period, claimIds } }
 }
 
-export async function setupDistinctWalletNames(): Promise<StatementScenario> {
+export async function setupDistinctWalletNames(): Promise<StatementScenario & { db: SentinelDb }> {
   return setupNamedWallets('Savings', 'Spending')
 }
 

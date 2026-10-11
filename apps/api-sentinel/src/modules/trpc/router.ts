@@ -1525,9 +1525,14 @@ const statementRouter = t.router({
           logger.info({ statementId }, 'Statement generation completed')
         } catch (err) {
           await ctx.app.statementService.fail(statementId)
-          const message = err instanceof Error ? err.message : 'Statement generation failed'
+          // Database errors put query parameters, such as txids or addresses, in their message,
+          // so log only the error's type and where it was thrown.
           logger.error(
-            { statementId, error: message, stack: err instanceof Error ? err.stack : undefined },
+            {
+              statementId,
+              error: err instanceof Error ? err.name : 'unknown',
+              stack: err instanceof Error ? err.stack?.split('\n').slice(1).join('\n') : undefined,
+            },
             'Unhandled error in statement generation',
           )
         }

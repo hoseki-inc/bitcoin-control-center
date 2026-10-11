@@ -45,7 +45,6 @@ async function fetchTransactionEntries(deps: {
   const found = await lookupTransactions({
     transactions: heights,
     source: new MempoolSource(deps.mempoolApiUrl),
-    tipHeight: tip.height,
     logger: deps.logger,
     sleep: deps.sleep,
   })
@@ -127,7 +126,7 @@ it.each([
   await withTestSetup(async () => {
     const result = await fetchTransactionEntries(setup(body))
     expect(result.expectErr('malformed transaction data must fail').message).toBe(
-      `Invalid transaction data returned from mempool.space for ${txid}`,
+      `Invalid transaction data returned from the mempool server for ${txid}`,
     )
   })
 })
@@ -136,7 +135,7 @@ it('rejects a response for a different transaction', async () => {
   await withTestSetup(async () => {
     const result = await fetchTransactionEntries(setup({ ...confirmedTx, txid: '9'.repeat(64) }))
     expect(result.expectErr('another transaction must not stand in for this one').message).toBe(
-      `Invalid transaction data returned from mempool.space for ${txid}`,
+      `Invalid transaction data returned from the mempool server for ${txid}`,
     )
   })
 })
@@ -163,7 +162,7 @@ it('rejects partial history when a later lookup returns a malformed transaction'
     const result = await fetchTransactionEntries(deps)
     expect(fetch).toHaveBeenCalledTimes(11)
     expect(result.expectErr('partial history must fail').message).toBe(
-      `Invalid transaction data returned from mempool.space for ${invalidId}`,
+      `Invalid transaction data returned from the mempool server for ${invalidId}`,
     )
   })
 })
@@ -204,6 +203,8 @@ it.each(['HTTP 404', 'HTTP 503', 'network rejection'] as const)(
       // A 404 is final; temporary failures are retried three times before the statement stops.
       const failedCalls = vi.mocked(fetch).mock.calls.filter(([input]) => new Request(input).url.endsWith(failedId))
       expect(failedCalls).toHaveLength(failure === 'HTTP 404' ? 1 : 4)
+      // A 404 stops the statement before the last transaction is requested.
+      expect(fetch).toHaveBeenCalledTimes(failure === 'HTTP 404' ? 20 : 24)
     })
   },
 )
@@ -352,7 +353,7 @@ it('stops statement generation when a known transaction fails validation', async
         timezone: 'UTC',
       })
       expect(result.expectErr('incomplete statement data must fail').message).toBe(
-        `Invalid transaction data returned from mempool.space for ${txid}`,
+        `Invalid transaction data returned from the mempool server for ${txid}`,
       )
       expect(rates).not.toHaveBeenCalled()
     } finally {
@@ -382,4 +383,16 @@ it.each([
     )
     expect(result.unwrap()).toEqual([expect.objectContaining({ timestamp: new Date(expected) })])
   })
+})
+
+it.each([
+  { url: 'https://mempool.space', kind: 'public_mempool' },
+  { url: 'https://www.mempool.space/', kind: 'public_mempool' },
+  { url: 'https://blockstream.info', kind: 'public_mempool' },
+  { url: 'http://10.0.3.5:8080', kind: 'node_mempool' },
+  { url: 'http://mempool.embassy:8080', kind: 'node_mempool' },
+  { url: 'http://umbrel.local:3006', kind: 'node_mempool' },
+  { url: 'http://localhost:3006', kind: 'node_mempool' },
+])('records $url as $kind', ({ url, kind }) => {
+  expect(new MempoolSource(url).kind).toBe(kind)
 })

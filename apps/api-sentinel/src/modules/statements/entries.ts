@@ -3,10 +3,10 @@ import { isConfirmed } from '@hoseki/packages/bitcoin/onchain/types'
 import { Txid } from '@hoseki/packages/bitcoin/txid'
 import { Err, Ok, type Result } from '@hoseki/packages/result'
 import type { AccountHistory } from './history'
-import { type LookedUpTx, TransactionLoadError, type TxOutput } from './sources/types'
+import { type LookedUpTx, TransactionLoadError, type TxInput, type TxOutput } from './sources/types'
 
 /** The output an input spends: from the source, or else from one of the wallet's own transactions. */
-function spentOutput(input: LookedUpTx['inputs'][number], found: ReadonlyMap<string, LookedUpTx>): TxOutput | null {
+function spentOutput(input: TxInput, found: ReadonlyMap<string, LookedUpTx>): TxOutput | null {
   if (input.prevout !== null) {
     return input.prevout
   }

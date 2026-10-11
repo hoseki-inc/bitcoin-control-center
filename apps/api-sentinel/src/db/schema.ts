@@ -101,24 +101,6 @@ export const statements = sqliteTable(
   ],
 )
 
-/** Confirmed transaction details looked up for statements, so later statements don't ask a server again. */
-export const statementTxCache = sqliteTable(
-  'statement_tx_cache',
-  {
-    txid: text('txid').primaryKey(),
-    /** Which source supplied the row. Rows are shared by every source. */
-    source: text('source', { enum: ['electrum', 'node_mempool', 'public_mempool'] }).notNull(),
-    blockHeight: integer('block_height').notNull(),
-    blockTime: integer('block_time').notNull(),
-    inputs: text('inputs').notNull(),
-    outputs: text('outputs').notNull(),
-    savedAt: text('saved_at').notNull().default(now),
-  },
-  (table) => [
-    check('statement_tx_cache_source_check', sql`${table.source} IN ('electrum', 'node_mempool', 'public_mempool')`),
-  ],
-)
-
 /** Highest statement number ever assigned, so deleting a statement never frees its number. */
 export const statementCounter = sqliteTable(
   'statement_counter',

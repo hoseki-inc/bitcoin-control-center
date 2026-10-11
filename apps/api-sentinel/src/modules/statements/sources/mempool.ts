@@ -1,13 +1,12 @@
+import { isLocalOrPrivateHost } from '@hoseki/packages/clients/electrum/lib/protocol'
 import { Err, Ok } from '@hoseki/packages/result'
 import type { Result } from '@hoseki/packages/result'
 import { parseUnknown } from '@hoseki/packages/result/lib/parse'
 import { z } from 'zod'
 import { type LookedUpTx, type LookupFailure, TransactionLoadError, type TxSource, type TxSourceKind } from './types'
 
-const PUBLIC_MEMPOOL_HOST = 'mempool.space'
-
 /**
- * mempool.space /api/tx/{txid} response shape (subset we care about).
+ * A mempool instance's /api/tx/{txid} response shape (subset we care about).
  */
 const MempoolTxSchema = z.object({
   txid: z.string(),
@@ -28,7 +27,7 @@ const MempoolTxSchema = z.object({
 })
 type MempoolTx = z.infer<typeof MempoolTxSchema>
 
-/** Max concurrent API calls to mempool.space for tx lookups */
+/** Max concurrent API calls to the mempool instance for tx lookups */
 const TX_CONCURRENCY = 10
 
 /** A stalled lookup fails like any other instead of leaving the statement pending. */
@@ -40,9 +39,12 @@ const MAX_RETRY_AFTER_MS = 30_000
 /** Responses that mean "try again shortly" rather than "this transaction is unavailable". */
 const RETRYABLE_STATUSES = new Set([429, 502, 503, 504])
 
-/** Public mempool.space, or a mempool instance such as the node's own. */
-export function mempoolSourceKind(apiUrl: string): TxSourceKind {
-  return URL.canParse(apiUrl) && new URL(apiUrl).hostname === PUBLIC_MEMPOOL_HOST ? 'public_mempool' : 'node_mempool'
+/**
+ * The node's own mempool only when it's on this machine or a private network. Any other host,
+ * mempool.space or not, counts as public, so the record never understates who saw the txids.
+ */
+function mempoolSourceKind(apiUrl: string): TxSourceKind {
+  return URL.canParse(apiUrl) && isLocalOrPrivateHost(new URL(apiUrl).hostname) ? 'node_mempool' : 'public_mempool'
 }
 
 /** Seconds from a Retry-After header, in milliseconds; HTTP-date values fall back to the default wait. */
@@ -56,9 +58,13 @@ function getRetryAfterMs(response: Response): number | null {
 
 function invalid(txid: string, cause?: unknown): LookupFailure {
   return {
-    error: new TransactionLoadError('invalid', `Invalid transaction data returned from mempool.space for ${txid}`, {
-      cause,
-    }),
+    error: new TransactionLoadError(
+      'invalid',
+      `Invalid transaction data returned from the mempool server for ${txid}`,
+      {
+        cause,
+      },
+    ),
     retry: null,
   }
 }
@@ -113,7 +119,8 @@ export class MempoolSource implements TxSource {
 
     if (!response.ok) {
       // Release the connection; the error body is not used.
-      await response.body?.cancel()
+      // A connection that already dropped can't be cancelled; that changes nothing here.
+      await response.body?.cancel().catch(() => undefined)
       const message = `Failed to fetch transaction ${txid}: HTTP ${response.status}`
       if (!RETRYABLE_STATUSES.has(response.status)) {
         return Err({ error: new TransactionLoadError('unavailable', message), retry: null })

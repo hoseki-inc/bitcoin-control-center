@@ -6,7 +6,7 @@ import { Err, Ok, asyncFn } from '@hoseki/packages/result'
 import type { Result } from '@hoseki/packages/result'
 import { TransactionLoadError } from './sources/types'
 
-export interface HistoryTransaction {
+interface HistoryTransaction {
   /** The block height Electrum reported. */
   height: number
   /** The account's addresses whose history includes the transaction, in discovery order. */

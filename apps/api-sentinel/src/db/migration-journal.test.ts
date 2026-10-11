@@ -116,16 +116,23 @@ it.each(['file', 'database'] as const)(
 
     const upgraded = await openDrizzleDatabase(directory, logger)
     try {
-      // Upgrading adds the statement counter, which starts from the highest existing number, and saved
-      // transaction lookups. Statements gain a transaction source, unknown for those made before it.
+      // Upgrading adds the statement counter, which starts from the highest existing number, and a
+      // transaction source on statements, unknown for those made before it.
       const upgradedState = await databaseState(upgraded)
-      const addedTables = new Set(['statement_counter', 'statement_tx_cache'])
+      const statementsSql = (state: typeof before): string | null | undefined =>
+        state.schema.find((row) => row.name === 'statements')?.sql
+      expect(statementsSql(upgradedState)).toBe(
+        statementsSql(before)?.replace(
+          /\)$/,
+          `, \`tx_source\` text CONSTRAINT "statements_tx_source_check" CHECK("tx_source" IN ('electrum', 'node_mempool', 'public_mempool')))`,
+        ),
+      )
       expect({
         schema: upgradedState.schema
-          .filter((row) => !addedTables.has(row.tbl_name))
+          .filter((row) => row.tbl_name !== 'statement_counter')
           .map((row) => (row.name === 'statements' ? before.schema.find((old) => old.name === 'statements') : row)),
         data: upgradedState.data
-          .filter((table) => !addedTables.has(table.table))
+          .filter((table) => table.table !== 'statement_counter')
           .map((table) => ({
             table: table.table,
             rows:
@@ -137,7 +144,6 @@ it.each(['file', 'database'] as const)(
                 : table.rows,
           })),
       }).toEqual(before)
-      await expect(upgraded.all(sql`SELECT * FROM statement_tx_cache`)).resolves.toEqual([])
       await expect(upgraded.all(sql`SELECT * FROM statement_counter`)).resolves.toEqual([{ id: 1, last_counter: 123 }])
       const journal = await upgraded.all<{ id: number; hash: string; created_at: number; name: string }>(
         sql`SELECT * FROM _migrations ORDER BY id`,
@@ -220,7 +226,6 @@ it.each(['legacy', 'drizzle'] as const)(
         'btc_quote_cache',
         'btc_quote_lookups',
         'statement_counter',
-        'statement_tx_cache',
       ])
       expect({
         schema: after.schema
@@ -356,11 +361,13 @@ it('creates the same application schema from scratch as an upgraded main fixture
         sql`INSERT INTO statements (id, status, opening_date, closing_date, account_ids) VALUES ('invalid', 'unknown', '2026-01-01', '2026-01-31', '[]')`,
       ),
     ).rejects.toHaveProperty('cause.message', expect.stringContaining('CHECK constraint failed'))
-    await expect(
-      fresh.run(
-        sql`INSERT INTO statements (id, opening_date, closing_date, account_ids, tx_source) VALUES ('invalid', '2026-01-01', '2026-01-31', '[]', 'unknown')`,
-      ),
-    ).rejects.toHaveProperty('cause.message', expect.stringContaining('CHECK constraint failed'))
+    for (const db of [fresh, legacy]) {
+      await expect(
+        db.run(
+          sql`INSERT INTO statements (id, opening_date, closing_date, account_ids, tx_source) VALUES ('invalid', '2026-01-01', '2026-01-31', '[]', 'unknown')`,
+        ),
+      ).rejects.toHaveProperty('cause.message', expect.stringContaining('CHECK constraint failed'))
+    }
   } finally {
     legacy.$client.close()
     fresh.$client.close()

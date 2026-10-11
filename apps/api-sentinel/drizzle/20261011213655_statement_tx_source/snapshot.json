@@ -1,7 +1,7 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "f7c2bcb6-2c58-4f3a-a6ce-50b606567811",
+  "id": "f51df0fe-46c9-49da-af17-150651b97543",
   "prevIds": ["9d271156-b40e-4ef8-99d1-71df2362347c"],
   "ddl": [
     {
@@ -86,10 +86,6 @@
     },
     {
       "name": "statement_counter",
-      "entityType": "tables"
-    },
-    {
-      "name": "statement_tx_cache",
       "entityType": "tables"
     },
     {
@@ -1282,76 +1278,6 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "txid",
-      "entityType": "columns",
-      "table": "statement_tx_cache"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "source",
-      "entityType": "columns",
-      "table": "statement_tx_cache"
-    },
-    {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "block_height",
-      "entityType": "columns",
-      "table": "statement_tx_cache"
-    },
-    {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "block_time",
-      "entityType": "columns",
-      "table": "statement_tx_cache"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "inputs",
-      "entityType": "columns",
-      "table": "statement_tx_cache"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "outputs",
-      "entityType": "columns",
-      "table": "statement_tx_cache"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": "(datetime('now'))",
-      "generated": null,
-      "name": "saved_at",
-      "entityType": "columns",
-      "table": "statement_tx_cache"
-    },
-    {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
       "name": "id",
       "entityType": "columns",
       "table": "statements"
@@ -1807,13 +1733,6 @@
       "entityType": "pks"
     },
     {
-      "columns": ["txid"],
-      "nameExplicit": false,
-      "name": "statement_tx_cache_pk",
-      "table": "statement_tx_cache",
-      "entityType": "pks"
-    },
-    {
       "columns": ["id"],
       "nameExplicit": false,
       "name": "statements_pk",
@@ -1943,12 +1862,6 @@
       "name": "statement_counter_single_row_check",
       "entityType": "checks",
       "table": "statement_counter"
-    },
-    {
-      "value": "\"source\" IN ('electrum', 'node_mempool', 'public_mempool')",
-      "name": "statement_tx_cache_source_check",
-      "entityType": "checks",
-      "table": "statement_tx_cache"
     },
     {
       "value": "\"status\" IN ('pending', 'completed', 'failed')",

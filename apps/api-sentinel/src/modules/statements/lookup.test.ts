@@ -1,55 +1,59 @@
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { Network } from '@hoseki/packages/bitcoin/network'
 import { Err, Ok, type Result } from '@hoseki/packages/result'
-import { Wallets } from '@hoseki/packages/testing'
-import { eq } from 'drizzle-orm'
 import pino from 'pino'
-import { expect, it, onTestFinished, vi } from 'vitest'
-import { type SentinelDb, openDrizzleDatabase } from '../../db/drizzle'
-import { statementTxCache } from '../../db/schema'
-import { toTransactionEntries } from './entries'
+import { expect, it, vi } from 'vitest'
 import { lookupTransactions } from './lookup'
-import { mempoolSourceKind } from './sources/mempool'
 import { type LookedUpTx, type LookupFailure, TransactionLoadError, type TxSource } from './sources/types'
-import { TransactionCache } from './tx_cache'
 
 const logger = pino({ level: 'silent' })
 const height = 800_000
+
+type Lookup = (txid: string) => Promise<Result<LookedUpTx, LookupFailure>>
 
 function txids(count: number): string[] {
   return Array.from({ length: count }, (_, index) => (index + 1).toString(16).padStart(64, '0'))
 }
 
-function confirmedTx(txid: string, blockHeight = height): LookedUpTx {
-  return { txid, blockHeight, blockTime: 1_704_153_600, inputs: [], outputs: [{ address: null, value: 1 }] }
+function confirmedTx(txid: string): LookedUpTx {
+  return { txid, blockHeight: height, blockTime: 1_704_153_600, inputs: [], outputs: [{ address: null, value: 1 }] }
 }
 
-function source(
-  lookup: (txid: string) => Promise<Result<LookedUpTx, LookupFailure>>,
-  concurrency = 10,
-): TxSource & { lookup: ReturnType<typeof vi.fn<(txid: string) => Promise<Result<LookedUpTx, LookupFailure>>>> } {
+function source(lookup: Lookup, concurrency = 10): TxSource & { lookup: ReturnType<typeof vi.fn<Lookup>> } {
   return { kind: 'public_mempool', concurrency, lookup: vi.fn(lookup) }
 }
 
-function atHeight(ids: string[], blockHeight = height): Map<string, number> {
-  return new Map(ids.map((id) => [id, blockHeight]))
+function atHeight(ids: string[]): Map<string, number> {
+  return new Map(ids.map((id) => [id, height]))
 }
 
-async function testDatabase(): Promise<SentinelDb> {
-  const directory = mkdtempSync(join(tmpdir(), 'sentinel-tx-cache-'))
-  const db = await openDrizzleDatabase(directory, logger)
-  onTestFinished(() => {
-    db.$client.close()
-    rmSync(directory, { recursive: true, force: true })
+async function delay(ms: number): Promise<void> {
+  await new Promise((resolve) => {
+    setTimeout(resolve, ms)
   })
-  return db
 }
 
-async function testCache(): Promise<TransactionCache> {
-  return new TransactionCache(await testDatabase())
+function rateLimited(retryAfterMs: number): Result<LookedUpTx, LookupFailure> {
+  return Err({
+    error: new TransactionLoadError('unreachable', 'HTTP 429'),
+    retry: { rateLimited: true, retryAfterMs },
+  })
 }
+
+it('reports progress as each lookup finishes', async () => {
+  const onProgress = vi.fn<(done: number, total: number) => void>()
+
+  await lookupTransactions({
+    transactions: atHeight(txids(2)),
+    source: source(async (txid) => Ok(confirmedTx(txid)), 1),
+    logger,
+    onProgress,
+  })
+
+  expect(onProgress.mock.calls).toEqual([
+    [0, 2],
+    [1, 2],
+    [2, 2],
+  ])
+})
 
 it('never has more lookups in flight than the source allows', async () => {
   let inFlight = 0
@@ -57,22 +61,25 @@ it('never has more lookups in flight than the source allows', async () => {
   const slow = source(async (txid) => {
     inFlight += 1
     most = Math.max(most, inFlight)
-    await new Promise((resolve) => {
-      setTimeout(resolve, 1)
-    })
+    await delay(1)
     inFlight -= 1
     return Ok(confirmedTx(txid))
   }, 3)
 
-  const result = await lookupTransactions({
-    transactions: atHeight(txids(20)),
-    source: slow,
-    tipHeight: height,
-    logger,
-  })
+  const result = await lookupTransactions({ transactions: atHeight(txids(20)), source: slow, logger })
 
   expect(result.unwrap().size).toBe(20)
   expect(most).toBe(3)
+})
+
+it('looks up one at a time when a source gives no usable concurrency', async () => {
+  const result = await lookupTransactions({
+    transactions: atHeight(txids(3)),
+    source: source(async (txid) => Ok(confirmedTx(txid)), 0),
+    logger,
+  })
+
+  expect(result.unwrap().size).toBe(3)
 })
 
 it('stops starting lookups once one fails for good', async () => {
@@ -83,171 +90,135 @@ it('stops starting lookups once one fails for good', async () => {
       : Ok(confirmedTx(txid)),
   )
 
-  const result = await lookupTransactions({ transactions: atHeight(ids), source: failing, tipHeight: height, logger })
+  const result = await lookupTransactions({ transactions: atHeight(ids), source: failing, logger })
 
   expect(result.expectErr('a missing transaction must stop the lookups').kind).toBe('unavailable')
   // Only the first round of 10 started; the other 20 never did.
   expect(failing.lookup).toHaveBeenCalledTimes(10)
 })
 
-it('pauses every lookup when the server rate-limits one', async () => {
-  const [limited, slow, later] = txids(3)
-  let limitedOnce = false
-  const rateLimited = source(async (txid) => {
-    if (txid === limited && !limitedOnce) {
-      limitedOnce = true
-      return Err({
-        error: new TransactionLoadError('unreachable', 'HTTP 429'),
-        retry: { rateLimited: true, retryAfterMs: 5_000 },
-      })
-    }
-    if (txid === slow) {
-      // Finishes after the rate limit, so its worker's next lookup has to wait.
-      await new Promise((resolve) => {
-        setTimeout(resolve, 5)
-      })
+it('stops every lookup when one throws', async () => {
+  const ids = txids(30)
+  const throwing = source(async (txid) => {
+    if (txid === ids[0]) {
+      throw new TypeError('terminated')
     }
     return Ok(confirmedTx(txid))
+  })
+
+  const result = await lookupTransactions({ transactions: atHeight(ids), source: throwing, logger })
+  await delay(5)
+
+  expect(result.expectErr('a thrown lookup must stop the statement').kind).toBe('unreachable')
+  expect(throwing.lookup).toHaveBeenCalledTimes(10)
+})
+
+it('rejects an answer for a different transaction', async () => {
+  const [txid = ''] = txids(1)
+  const other = source(async () => Ok(confirmedTx('f'.repeat(64))))
+
+  const result = await lookupTransactions({ transactions: atHeight([txid]), source: other, logger })
+
+  expect(result.expectErr('another transaction must not stand in for this one').kind).toBe('invalid')
+})
+
+it('makes another lookup wait out a rate limit', async () => {
+  const [limited = '', slow = '', later = ''] = txids(3)
+  const events: string[] = []
+  let limitedOnce = false
+  const lookups = source(async (txid) => {
+    events.push(`lookup ${txid === later ? 'later' : txid === slow ? 'slow' : 'limited'}`)
+    if (txid === limited && !limitedOnce) {
+      limitedOnce = true
+      return rateLimited(5_000)
+    }
+    // The limited lookup's retry and the slow lookup both finish after the rate limit, so the
+    // slow lookup's worker is the one that takes the next transaction.
+    await delay(txid === limited ? 20 : 5)
+    return Ok(confirmedTx(txid))
   }, 2)
-  const sleep = vi.fn(async (_ms: number) => {})
+  const sleep = vi.fn(async (ms: number) => {
+    events.push(`sleep ${ms}`)
+    await delay(1)
+  })
 
   const result = await lookupTransactions({
-    transactions: atHeight([limited ?? '', slow ?? '', later ?? '']),
-    source: rateLimited,
-    tipHeight: height,
+    transactions: atHeight([limited, slow, later]),
+    source: lookups,
     logger,
     sleep,
+    now: () => 0,
   })
 
   expect(result.unwrap().size).toBe(3)
-  expect(sleep.mock.calls[0]).toEqual([5_000])
-  // The other worker waited out the same pause before its next lookup.
-  expect(sleep.mock.calls[1]?.[0]).toBeGreaterThan(4_900)
+  expect(events).toEqual([
+    'lookup limited',
+    'lookup slow',
+    'sleep 5000',
+    'lookup limited',
+    // The other worker waited out the same pause before its next lookup.
+    'sleep 5000',
+    'lookup later',
+  ])
 })
 
-it('uses saved lookups instead of asking the source again', async () => {
-  const cache = await testCache()
-  const ids = txids(2)
-  const first = source(async (txid) => Ok(confirmedTx(txid)))
-  await lookupTransactions({ transactions: atHeight(ids), source: first, tipHeight: height + 10, cache, logger })
-
-  const second = source(async (txid) => Ok(confirmedTx(txid)))
-  const onProgress = vi.fn<(done: number, total: number) => void>()
-  const result = await lookupTransactions({
-    transactions: atHeight(ids),
-    source: second,
-    tipHeight: height + 10,
-    cache,
-    logger,
-    onProgress,
+it('makes a retry wait out a longer rate limit set by another lookup', async () => {
+  const [busy = '', limited = ''] = txids(2)
+  const attempts = new Map<string, number>()
+  const lookups = source(async (txid) => {
+    const attempt = (attempts.get(txid) ?? 0) + 1
+    attempts.set(txid, attempt)
+    if (attempt > 1) {
+      return Ok(confirmedTx(txid))
+    }
+    if (txid === busy) {
+      return Err({
+        error: new TransactionLoadError('unreachable', 'HTTP 503'),
+        retry: { rateLimited: false, retryAfterMs: null },
+      })
+    }
+    // Rate limited while the busy lookup is waiting for its own retry.
+    await delay(2)
+    return rateLimited(30_000)
+  }, 2)
+  const sleep = vi.fn(async (_ms: number) => {
+    await delay(10)
   })
 
-  expect([...result.unwrap().values()]).toEqual(ids.map((id) => confirmedTx(id)))
-  expect(second.lookup).not.toHaveBeenCalled()
-  // Saved transactions count as done straight away.
-  expect(onProgress.mock.calls).toEqual([[2, 2]])
-})
-
-it.each([
-  { confirmations: 5, saved: false },
-  { confirmations: 6, saved: true },
-])('saves a transaction with $confirmations confirmations: $saved', async ({ confirmations, saved }) => {
-  const cache = await testCache()
-  const [txid = ''] = txids(1)
-  const lookups = source(async (id) => Ok(confirmedTx(id)))
-
-  await lookupTransactions({
-    transactions: atHeight([txid]),
-    source: lookups,
-    tipHeight: height + confirmations - 1,
-    cache,
-    logger,
-  })
-
-  expect((await cache.find([txid])).has(txid)).toBe(saved)
-})
-
-it('looks up a saved transaction again when its block changed', async () => {
-  const cache = await testCache()
-  const [txid = ''] = txids(1)
-  await cache.save({ ...confirmedTx(txid), blockHeight: height, blockTime: 1 }, 'public_mempool')
-  const lookups = source(async (id) => Ok(confirmedTx(id, height + 1)))
-
   const result = await lookupTransactions({
-    transactions: atHeight([txid], height + 1),
+    transactions: atHeight([busy, limited]),
     source: lookups,
-    tipHeight: height + 10,
-    cache,
     logger,
-  })
-
-  expect(result.unwrap().get(txid)?.blockHeight).toBe(height + 1)
-  expect(lookups.lookup).toHaveBeenCalledOnce()
-  expect((await cache.find([txid])).get(txid)?.blockHeight).toBe(height + 1)
-})
-
-it('looks up a saved transaction again when its row no longer reads', async () => {
-  const db = await testDatabase()
-  const cache = new TransactionCache(db)
-  const [txid = ''] = txids(1)
-  await cache.save({ ...confirmedTx(txid), blockHeight: height, blockTime: 1 }, 'public_mempool')
-  await db.update(statementTxCache).set({ outputs: '{not json' }).where(eq(statementTxCache.txid, txid))
-  const lookups = source(async (id) => Ok(confirmedTx(id)))
-
-  const result = await lookupTransactions({
-    transactions: atHeight([txid]),
-    source: lookups,
-    tipHeight: height + 10,
-    cache,
-    logger,
-  })
-
-  expect(result.isOk()).toBe(true)
-  expect(lookups.lookup).toHaveBeenCalledOnce()
-})
-
-it('finishes the statement when a lookup cannot be saved', async () => {
-  const cache = await testCache()
-  vi.spyOn(cache, 'save').mockRejectedValue(new Error('Disk full'))
-  const lookups = source(async (id) => Ok(confirmedTx(id)))
-
-  const result = await lookupTransactions({
-    transactions: atHeight(txids(2)),
-    source: lookups,
-    tipHeight: height + 10,
-    cache,
-    logger,
+    sleep,
+    now: () => 0,
   })
 
   expect(result.unwrap().size).toBe(2)
+  // The busy lookup's 1 s retry wait was extended to the 30 s pause instead of retrying into it.
+  expect(sleep.mock.calls.map(([ms]) => ms).sort((a, b) => a - b)).toEqual([1_000, 29_000, 30_000])
+  expect(attempts.get(busy)).toBe(2)
 })
 
-it('reads a spent amount from the wallet transaction that created it', () => {
-  const address = Wallets.singlesigNativeSegwitAccount.receiveAddresses(0, 1, Network.Mainnet)[0]
-  if (address === undefined) {
-    expect.fail('Fixture wallet must have an address')
-  }
-  const [receive = '', spend = ''] = txids(2)
-  const found = new Map<string, LookedUpTx>([
-    [receive, { ...confirmedTx(receive), outputs: [{ address: address.toString(), value: 100_000 }] }],
-    // A source without previous outputs, such as Electrum, only says which output an input spends.
-    [spend, { ...confirmedTx(spend), inputs: [{ spends: { txid: receive, vout: 0 }, prevout: null }], outputs: [] }],
-  ])
-  const history = new Map([
-    [receive, { height, addresses: [address] }],
-    [spend, { height, addresses: [address] }],
-  ])
+it('stops waiting out a rate limit once another lookup fails', async () => {
+  const [limited = '', missing = ''] = txids(2)
+  const lookups = source(async (txid) => {
+    if (txid === missing) {
+      await delay(5)
+      return Err({ error: new TransactionLoadError('unavailable', 'Not found'), retry: null })
+    }
+    return rateLimited(30_000)
+  }, 2)
+  // A wait that never ends on its own, so only the failure can end it.
+  const sleep = vi.fn(async (_ms: number) => new Promise<void>(() => {}))
 
-  const entries = toTransactionEntries(history, found, height + 10).unwrap()
+  const result = await lookupTransactions({
+    transactions: atHeight([limited, missing]),
+    source: lookups,
+    logger,
+    sleep,
+    now: () => 0,
+  })
 
-  expect(entries.map((entry) => entry.value)).toEqual([100_000n, -100_000n])
-})
-
-it.each([
-  { url: 'https://mempool.space', kind: 'public_mempool' },
-  { url: 'https://mempool.space/', kind: 'public_mempool' },
-  { url: 'http://mempool.embassy:8080', kind: 'node_mempool' },
-  { url: 'http://umbrel.local:3006', kind: 'node_mempool' },
-])('treats $url as $kind', ({ url, kind }) => {
-  expect(mempoolSourceKind(url)).toBe(kind)
+  expect(result.expectErr('a missing transaction must stop the statement').kind).toBe('unavailable')
+  expect(lookups.lookup.mock.calls.filter(([txid]) => txid === limited)).toHaveLength(1)
 })

@@ -23,10 +23,10 @@ export interface LookedUpTx {
   outputs: TxOutput[]
 }
 
-/** Where transaction details come from. Recorded on statements and saved lookups for auditing. */
+/** Where transaction details come from. Recorded on statements for auditing. */
 export type TxSourceKind = 'electrum' | 'node_mempool' | 'public_mempool'
 
-export type TransactionLoadErrorKind = 'history' | 'unavailable' | 'invalid' | 'unreachable'
+type TransactionLoadErrorKind = 'history' | 'unavailable' | 'invalid' | 'unreachable'
 
 /**
  * A statement couldn't load all of its transactions. The message can name a txid or a server,

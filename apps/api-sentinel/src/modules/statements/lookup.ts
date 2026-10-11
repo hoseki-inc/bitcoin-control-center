@@ -1,20 +1,18 @@
 import { Err, Ok, asyncFn } from '@hoseki/packages/result'
 import type { Result } from '@hoseki/packages/result'
 import type { Logger } from 'pino'
-import type { LookedUpTx, TransactionLoadError, TxSource } from './sources/types'
-import type { SavedTx, TransactionCache } from './tx_cache'
+import { type LookedUpTx, TransactionLoadError, type TxSource } from './sources/types'
 
 /** Waits before each retry of a temporary failure. */
 const RETRY_DELAYS_MS = [1_000, 2_000, 4_000]
 
-// Save only transactions with 6+ confirmations, so a reorg can't leave a wrong saved row. Newer ones are looked up each time.
-const MIN_SAVED_CONFIRMATIONS = 6
-
 export type Sleep = (ms: number) => Promise<void>
 
-interface LookupOutcome {
-  /** Set by whichever lookup fails first; the others stop taking new transactions. */
+interface LookupRun {
+  /** Set by whichever lookup fails first; the others stop. */
   failure: TransactionLoadError | null
+  /** A rate limit holds back every lookup, not just the one that hit it. */
+  pausedUntil: number
 }
 
 async function defaultSleep(ms: number): Promise<void> {
@@ -23,101 +21,112 @@ async function defaultSleep(ms: number): Promise<void> {
   })
 }
 
-function canSave(tx: LookedUpTx, historyHeight: number, tipHeight: number): tx is SavedTx {
-  return (
-    tx.blockHeight !== null &&
-    tx.blockHeight === historyHeight &&
-    tx.blockTime !== null &&
-    tx.blockTime > 0 &&
-    tipHeight - tx.blockHeight + 1 >= MIN_SAVED_CONFIRMATIONS
-  )
-}
-
 /**
- * Look up every transaction, using saved lookups first. Stops at the first lookup that can't
- * succeed, so a statement never goes on with missing transactions.
+ * Look up every transaction. Stops at the first lookup that can't succeed, so a statement never
+ * goes on with missing transactions.
  */
 export const lookupTransactions = asyncFn(
   async (deps: {
     /** Txids with the block height Electrum reported for each. */
     transactions: ReadonlyMap<string, number>
     source: TxSource
-    tipHeight: number
-    cache?: TransactionCache
     logger: Logger
     /** Waits between lookup retries; tests replace it to avoid real delays. */
     sleep?: Sleep
+    /** Milliseconds on a monotonic clock; tests replace it alongside `sleep`. */
+    now?: () => number
     onProgress?: (done: number, total: number) => void
   }): Promise<Result<Map<string, LookedUpTx>, TransactionLoadError>> => {
-    const { transactions, source, tipHeight, cache, logger, sleep = defaultSleep, onProgress } = deps
+    const { transactions, source, logger, onProgress } = deps
+    const { sleep = defaultSleep, now = () => performance.now() } = deps
     const total = transactions.size
     const found = new Map<string, LookedUpTx>()
 
-    // A saved lookup from a block that has since been replaced is looked up again.
-    const saved = cache ? await cache.find([...transactions.keys()]) : new Map<string, SavedTx>()
-    for (const [txid, tx] of saved) {
-      if (tx.blockHeight === transactions.get(txid)) {
-        found.set(txid, tx)
-      }
+    onProgress?.(0, total)
+
+    const queue = [...transactions.keys()]
+    const run: LookupRun = { failure: null, pausedUntil: 0 }
+    let stop = (): void => {}
+    const stopped = new Promise<void>((resolve) => {
+      stop = resolve
+    })
+    const fail = (error: TransactionLoadError): void => {
+      run.failure ??= error
+      stop()
     }
-    onProgress?.(found.size, total)
-
-    const savedCount = found.size
-    const queue = [...transactions.keys()].filter((txid) => !found.has(txid))
-    const outcome: LookupOutcome = { failure: null }
-    // A rate limit holds back every lookup, not just the one that hit it.
-    let pausedUntil = 0
-
-    const lookupWithRetries = async (txid: string): Promise<Result<LookedUpTx, TransactionLoadError>> => {
-      for (let attempt = 0; ; attempt++) {
-        const paused = pausedUntil - performance.now()
-        if (attempt === 0 && paused > 0) {
-          await sleep(paused)
-        }
-        const result = await source.lookup(txid, transactions.get(txid) ?? 0)
-        if (result.isOk()) {
-          return Ok(result.unwrap())
-        }
-        const { error, retry } = result.unwrapErr()
-        const delay = RETRY_DELAYS_MS[attempt]
-        if (retry === null || delay === undefined || outcome.failure !== null) {
-          return Err(error)
-        }
-        const wait = Math.max(delay, retry.retryAfterMs ?? 0)
-        if (retry.rateLimited) {
-          pausedUntil = Math.max(pausedUntil, performance.now() + wait)
-        }
-        await sleep(wait)
-      }
+    // Waits end early once another lookup fails.
+    const wait = async (ms: number): Promise<void> => {
+      await Promise.race([sleep(ms), stopped])
     }
 
     const worker = async (): Promise<void> => {
-      for (let txid = queue.shift(); txid !== undefined && outcome.failure === null; txid = queue.shift()) {
+      // How long this worker has already waited, so it doesn't wait out the same pause twice.
+      let waitedUntil = 0
+      const waitForPause = async (): Promise<void> => {
+        while (run.failure === null && run.pausedUntil > Math.max(now(), waitedUntil)) {
+          const ms = run.pausedUntil - Math.max(now(), waitedUntil)
+          waitedUntil = run.pausedUntil
+          await wait(ms)
+        }
+      }
+
+      const lookupWithRetries = async (txid: string): Promise<Result<LookedUpTx, TransactionLoadError>> => {
+        for (let attempt = 0; ; attempt++) {
+          await waitForPause()
+          if (run.failure !== null) {
+            return Err(run.failure)
+          }
+          let result: Awaited<ReturnType<TxSource['lookup']>>
+          try {
+            result = await source.lookup(txid, transactions.get(txid) ?? 0)
+          } catch (cause) {
+            return Err(new TransactionLoadError('unreachable', `Failed to fetch transaction ${txid}`, { cause }))
+          }
+          if (result.isOk()) {
+            return Ok(result.unwrap())
+          }
+          const { error, retry } = result.unwrapErr()
+          const delay = RETRY_DELAYS_MS[attempt]
+          if (retry === null || delay === undefined) {
+            return Err(error)
+          }
+          const ms = Math.max(delay, retry.retryAfterMs ?? 0)
+          const until = now() + ms
+          if (retry.rateLimited) {
+            run.pausedUntil = Math.max(run.pausedUntil, until)
+          }
+          waitedUntil = Math.max(waitedUntil, until)
+          await wait(ms)
+        }
+      }
+
+      for (let txid = queue.shift(); txid !== undefined && run.failure === null; txid = queue.shift()) {
         const result = await lookupWithRetries(txid)
         if (result.isErr()) {
-          outcome.failure ??= result.unwrapErr()
+          fail(result.unwrapErr())
           return
         }
         const tx = result.unwrap()
-        found.set(txid, tx)
-        if (cache && canSave(tx, transactions.get(txid) ?? 0, tipHeight)) {
-          try {
-            await cache.save(tx, source.kind)
-          } catch (err) {
-            // Saving only speeds up later statements, so a failed save doesn't stop this one.
-            logger.warn({ err: err instanceof Error ? err.name : 'unknown' }, 'Could not save a transaction lookup')
-          }
+        // Every source must answer for the transaction it was asked about.
+        if (tx.txid !== txid) {
+          fail(new TransactionLoadError('invalid', `Transaction data does not match ${txid}`))
+          return
         }
+        found.set(txid, tx)
         onProgress?.(found.size, total)
       }
     }
 
-    await Promise.all(Array.from({ length: Math.min(source.concurrency, queue.length) }, worker))
+    const limit = Number.isInteger(source.concurrency) && source.concurrency > 0 ? source.concurrency : 1
+    await Promise.all(Array.from({ length: Math.min(limit, queue.length) }, worker))
 
-    if (outcome.failure !== null) {
-      return Err(outcome.failure)
+    if (run.failure !== null) {
+      return Err(run.failure)
     }
-    logger.info({ total, saved: savedCount }, 'Transactions looked up')
+    if (found.size !== total) {
+      return Err(new TransactionLoadError('unavailable', 'Some transactions were not looked up'))
+    }
+    logger.info({ total }, 'Transactions looked up')
     return Ok(found)
   },
 )

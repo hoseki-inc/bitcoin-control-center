@@ -23,7 +23,6 @@ import type { AggregatedTransaction, StatementAccountTransactions } from './mapp
 import { getRequiredRateDates, validateStatementRates } from './rate_dates'
 import { MempoolSource } from './sources/mempool'
 import { TransactionLoadError, type TxSource, type TxSourceKind } from './sources/types'
-import { TransactionCache } from './tx_cache'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -77,7 +76,7 @@ const INTERRUPTED_MESSAGE = 'Generation was interrupted.'
 /** Transaction errors can name a txid or a server, so a statement shows this instead. */
 const TRANSACTIONS_FAILED_MESSAGE = "Couldn't load all transactions."
 
-/** Shares of Sentinel's progress; the page adds its own step for drawing the PDF. */
+/** Shares of Sentinel's 0–100 progress for history and lookups; prices and saving take the rest. */
 const HISTORY_SHARE = 1 / 9
 const LOOKUP_SHARE = 7 / 9
 
@@ -185,7 +184,6 @@ export class StatementService {
   private readonly dailyRatesService: DailyRatesService
   private readonly exchangeService: ExchangeService
   private readonly transactionSource: TxSource
-  private readonly transactionCache: TransactionCache
   private readonly logger: Logger
   private readonly sleep: Sleep | undefined
   /** Progress of statements generating in this process. A restart fails them, so it isn't saved. */
@@ -206,7 +204,6 @@ export class StatementService {
     this.dailyRatesService = deps.dailyRatesService
     this.exchangeService = deps.exchangeService
     this.transactionSource = new MempoolSource(deps.mempoolApiUrl)
-    this.transactionCache = new TransactionCache(deps.db)
     this.logger = deps.logger.child({ module: 'statement-service' })
     this.sleep = deps.sleep
   }
@@ -486,8 +483,6 @@ export class StatementService {
         const lookupResult = await lookupTransactions({
           transactions: heights,
           source: this.transactionSource,
-          tipHeight,
-          cache: this.transactionCache,
           logger: this.logger,
           sleep: this.sleep,
           onProgress: (done, total) => {
@@ -502,6 +497,28 @@ export class StatementService {
           return Err(lookupResult.unwrapErr())
         }
         const found = lookupResult.unwrap()
+
+        // Lookups take the longest, so check again that no selected wallet was archived meanwhile.
+        const active = new Set(
+          (
+            await this.db
+              .select({ id: accounts.id })
+              .from(accounts)
+              .where(
+                and(
+                  inArray(
+                    accounts.id,
+                    histories.map(({ row }) => row.id),
+                  ),
+                  isNull(accounts.deletedAt),
+                ),
+              )
+          ).map(({ id }) => id),
+        )
+        const archived = histories.find(({ row }) => !active.has(row.id))
+        if (archived !== undefined) {
+          return Err(new Error(`Account "${archived.row.display_name}" was archived while generating the statement`))
+        }
 
         for (const { row, history } of histories) {
           const entriesResult = toTransactionEntries(history, found, tipHeight)
@@ -717,7 +734,7 @@ export class StatementService {
       .orderBy(asc(exchangeBalanceSnapshots.timestamp))
   }
 
-  /** Progress only moves forward, so retries and saved lookups never move the bar back. */
+  /** Records a statement's progress; it never moves back. */
   private reportProgress(statementId: string | undefined, fraction: number): void {
     if (statementId === undefined) {
       return
