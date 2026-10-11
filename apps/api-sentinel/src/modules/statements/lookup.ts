@@ -1,3 +1,4 @@
+import { setTimeout as delay } from 'node:timers/promises'
 import { Err, Ok, asyncFn } from '@hoseki/packages/result'
 import type { Result } from '@hoseki/packages/result'
 import type { Logger } from 'pino'
@@ -6,7 +7,11 @@ import { type LookedUpTx, TransactionLoadError, type TxSource } from './sources/
 /** Waits before each retry of a temporary failure. */
 const RETRY_DELAYS_MS = [1_000, 2_000, 4_000]
 
-export type Sleep = (ms: number) => Promise<void>
+/** Longest a server can hold back lookups, so one answer can't stall a statement for long. */
+const MAX_PAUSE_MS = 30_000
+
+/** Waits `ms`, or until `signal` aborts. */
+export type Sleep = (ms: number, signal: AbortSignal) => Promise<void>
 
 interface LookupRun {
   /** Set by whichever lookup fails first; the others stop. */
@@ -15,10 +20,14 @@ interface LookupRun {
   pausedUntil: number
 }
 
-async function defaultSleep(ms: number): Promise<void> {
-  await new Promise<void>((resolve) => {
-    setTimeout(resolve, ms)
-  })
+async function defaultSleep(ms: number, signal: AbortSignal): Promise<void> {
+  // An aborted wait just ends early; the caller checks why.
+  await delay(ms, undefined, { signal }).catch(() => undefined)
+}
+
+/** A server's requested wait, limited to a sensible range. */
+function retryAfter(ms: number | null): number {
+  return ms !== null && Number.isFinite(ms) ? Math.min(Math.max(ms, 0), MAX_PAUSE_MS) : 0
 }
 
 /**
@@ -31,7 +40,7 @@ export const lookupTransactions = asyncFn(
     transactions: ReadonlyMap<string, number>
     source: TxSource
     logger: Logger
-    /** Waits between lookup retries; tests replace it to avoid real delays. */
+    /** Waits out retries and rate limits; tests replace it to avoid real delays. */
     sleep?: Sleep
     /** Milliseconds on a monotonic clock; tests replace it alongside `sleep`. */
     now?: () => number
@@ -46,39 +55,42 @@ export const lookupTransactions = asyncFn(
 
     const queue = [...transactions.keys()]
     const run: LookupRun = { failure: null, pausedUntil: 0 }
-    let stop = (): void => {}
+    // Aborted by the first failure, which ends every wait and cancels every request in flight.
+    const stop = new AbortController()
     const stopped = new Promise<void>((resolve) => {
-      stop = resolve
+      stop.signal.addEventListener('abort', () => {
+        resolve()
+      })
     })
     const fail = (error: TransactionLoadError): void => {
       run.failure ??= error
-      stop()
+      stop.abort()
     }
-    // Waits end early once another lookup fails.
+    // Read through a function: another lookup can record a failure while this one awaits.
+    const failure = (): TransactionLoadError | null => run.failure
     const wait = async (ms: number): Promise<void> => {
-      await Promise.race([sleep(ms), stopped])
+      await Promise.race([sleep(ms, stop.signal), stopped])
     }
 
     const worker = async (): Promise<void> => {
-      // How long this worker has already waited, so it doesn't wait out the same pause twice.
+      // The time this worker has already waited until, so it doesn't wait out the same pause twice.
       let waitedUntil = 0
-      const waitForPause = async (): Promise<void> => {
-        while (run.failure === null && run.pausedUntil > Math.max(now(), waitedUntil)) {
-          const ms = run.pausedUntil - Math.max(now(), waitedUntil)
-          waitedUntil = run.pausedUntil
-          await wait(ms)
-        }
-      }
+      const pauseLeft = (): number => run.pausedUntil - Math.max(now(), waitedUntil)
 
       const lookupWithRetries = async (txid: string): Promise<Result<LookedUpTx, TransactionLoadError>> => {
         for (let attempt = 0; ; attempt++) {
-          await waitForPause()
+          for (let ms = pauseLeft(); ms > 0 && run.failure === null; ms = pauseLeft()) {
+            waitedUntil = run.pausedUntil
+            await wait(ms)
+          }
           if (run.failure !== null) {
             return Err(run.failure)
           }
+          // Nothing is awaited between the checks above and the request, so a pause or failure
+          // another lookup records can't slip in between.
           let result: Awaited<ReturnType<TxSource['lookup']>>
           try {
-            result = await source.lookup(txid, transactions.get(txid) ?? 0)
+            result = await source.lookup(txid, transactions.get(txid) ?? 0, stop.signal)
           } catch (cause) {
             return Err(new TransactionLoadError('unreachable', `Failed to fetch transaction ${txid}`, { cause }))
           }
@@ -86,11 +98,11 @@ export const lookupTransactions = asyncFn(
             return Ok(result.unwrap())
           }
           const { error, retry } = result.unwrapErr()
-          const delay = RETRY_DELAYS_MS[attempt]
-          if (retry === null || delay === undefined) {
-            return Err(error)
+          const retryDelay = RETRY_DELAYS_MS[attempt]
+          if (failure() !== null || retry === null || retryDelay === undefined) {
+            return Err(failure() ?? error)
           }
-          const ms = Math.max(delay, retry.retryAfterMs ?? 0)
+          const ms = Math.max(retryDelay, retryAfter(retry.retryAfterMs))
           const until = now() + ms
           if (retry.rateLimited) {
             run.pausedUntil = Math.max(run.pausedUntil, until)
@@ -100,20 +112,27 @@ export const lookupTransactions = asyncFn(
         }
       }
 
-      for (let txid = queue.shift(); txid !== undefined && run.failure === null; txid = queue.shift()) {
-        const result = await lookupWithRetries(txid)
-        if (result.isErr()) {
-          fail(result.unwrapErr())
-          return
+      try {
+        for (let txid = queue.shift(); txid !== undefined && run.failure === null; txid = queue.shift()) {
+          const result = await lookupWithRetries(txid)
+          if (result.isErr()) {
+            fail(result.unwrapErr())
+            return
+          }
+          const tx = result.unwrap()
+          // Every source must answer for the transaction it was asked about.
+          if (tx.txid !== txid) {
+            fail(new TransactionLoadError('invalid', `Transaction data does not match ${txid}`))
+            return
+          }
+          found.set(txid, tx)
+          if (failure() === null) {
+            onProgress?.(found.size, total)
+          }
         }
-        const tx = result.unwrap()
-        // Every source must answer for the transaction it was asked about.
-        if (tx.txid !== txid) {
-          fail(new TransactionLoadError('invalid', `Transaction data does not match ${txid}`))
-          return
-        }
-        found.set(txid, tx)
-        onProgress?.(found.size, total)
+      } catch (cause) {
+        // Anything unexpected still stops every lookup, rather than leaving the others running.
+        fail(new TransactionLoadError('unreachable', 'Transaction lookup failed', { cause }))
       }
     }
 

@@ -1,25 +1,37 @@
+import { asyncFn } from '@hoseki/packages/result'
 import { eq } from 'drizzle-orm'
 import { expect, it, vi } from 'vitest'
 import { accounts } from '../../db/schema'
 import { setupDistinctWalletNames, setupTwoExchangeAccounts } from './service.fixtures'
 
-it('reports progress while generating, then clears it when the statement completes', async () => {
-  const { service, input } = await setupDistinctWalletNames()
+it('reports progress through history and lookups, then clears it when the statement completes', async () => {
+  const { service, input, onchainProvider } = await setupDistinctWalletNames()
   const id = (await service.create(input)).unwrap()
   await expect(service.findById(id)).resolves.toMatchObject({ status: 'pending', progress: 0 })
 
-  // Read progress while each transaction is being looked up.
-  const seen: number[] = []
+  // Read progress as each wallet's history is fetched, and as each transaction is looked up.
+  const atHistory: number[] = []
+  const atLookup: number[] = []
+  const progress = async (): Promise<number> => (await service.findById(id))?.progress ?? -1
+  const getHistory = vi.spyOn(onchainProvider.deps.electrum, 'getHistory')
+  const history = getHistory.getMockImplementation()
+  getHistory.mockImplementation(
+    asyncFn(async (scripthash: string) => {
+      atHistory.push(await progress())
+      return history ? history(scripthash) : expect.fail('History requests must be mocked')
+    }),
+  )
   const lookup = vi.mocked(fetch).getMockImplementation()
   vi.mocked(fetch).mockImplementation(async (...args) => {
-    seen.push((await service.findById(id))?.progress ?? -1)
+    atLookup.push(await progress())
     return lookup ? lookup(...args) : expect.fail('Transaction lookups must be mocked')
   })
 
   const data = (await service.generateStatementData(input, id)).unwrap()
 
-  // Both lookups start together, once the wallets' history is in.
-  expect(seen).toEqual([11, 11])
+  // History is the first ninth of Sentinel's progress: half of it after the first of two wallets.
+  expect(atHistory).toEqual([0, 5])
+  expect(atLookup).toEqual([11, 11])
   await expect(service.findById(id)).resolves.toMatchObject({ progress: 100 })
 
   ;(await service.complete(id, data.transactionMap, data.dailyRates)).unwrap()

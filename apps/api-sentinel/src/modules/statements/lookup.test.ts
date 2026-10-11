@@ -7,7 +7,7 @@ import { type LookedUpTx, type LookupFailure, TransactionLoadError, type TxSourc
 const logger = pino({ level: 'silent' })
 const height = 800_000
 
-type Lookup = (txid: string) => Promise<Result<LookedUpTx, LookupFailure>>
+type Lookup = (txid: string, height: number, signal: AbortSignal) => Promise<Result<LookedUpTx, LookupFailure>>
 
 function txids(count: number): string[] {
   return Array.from({ length: count }, (_, index) => (index + 1).toString(16).padStart(64, '0'))
@@ -72,14 +72,21 @@ it('never has more lookups in flight than the source allows', async () => {
   expect(most).toBe(3)
 })
 
-it('looks up one at a time when a source gives no usable concurrency', async () => {
-  const result = await lookupTransactions({
-    transactions: atHeight(txids(3)),
-    source: source(async (txid) => Ok(confirmedTx(txid)), 0),
-    logger,
-  })
+it.each([0, Number.NaN, 2.5])('looks up one at a time when a source gives concurrency %s', async (concurrency) => {
+  let inFlight = 0
+  let most = 0
+  const lookups = source(async (txid) => {
+    inFlight += 1
+    most = Math.max(most, inFlight)
+    await delay(1)
+    inFlight -= 1
+    return Ok(confirmedTx(txid))
+  }, concurrency)
+
+  const result = await lookupTransactions({ transactions: atHeight(txids(3)), source: lookups, logger })
 
   expect(result.unwrap().size).toBe(3)
+  expect(most).toBe(1)
 })
 
 it('stops starting lookups once one fails for good', async () => {
@@ -222,3 +229,136 @@ it('stops waiting out a rate limit once another lookup fails', async () => {
   expect(result.expectErr('a missing transaction must stop the statement').kind).toBe('unavailable')
   expect(lookups.lookup.mock.calls.filter(([txid]) => txid === limited)).toHaveLength(1)
 })
+
+it('cancels lookups still in flight once one fails', async () => {
+  const [missing = '', slow = ''] = txids(2)
+  let slowSignal: AbortSignal | undefined
+  const lookups = source(async (txid, _height, signal) => {
+    if (txid === missing) {
+      await delay(5)
+      return Err({ error: new TransactionLoadError('unavailable', 'Not found'), retry: null })
+    }
+    slowSignal = signal
+    // A request that would take a minute unless cancelled.
+    await Promise.race([
+      delay(60_000),
+      new Promise((resolve) => {
+        signal.addEventListener('abort', resolve)
+      }),
+    ])
+    return Err({
+      error: new TransactionLoadError('unreachable', 'Aborted'),
+      retry: { rateLimited: false, retryAfterMs: null },
+    })
+  }, 2)
+  const started = performance.now()
+
+  const result = await lookupTransactions({ transactions: atHeight([missing, slow]), source: lookups, logger })
+
+  expect(result.expectErr('a missing transaction must stop the statement').kind).toBe('unavailable')
+  expect(slowSignal?.aborted).toBe(true)
+  expect(performance.now() - started).toBeLessThan(1_000)
+})
+
+it('stops every lookup when anything else in a worker throws', async () => {
+  const ids = txids(20)
+  const lookups = source(async (txid) => Ok(confirmedTx(txid)), 2)
+
+  const result = await lookupTransactions({
+    transactions: atHeight(ids),
+    source: lookups,
+    logger,
+    onProgress: (done) => {
+      if (done === 1) {
+        throw new Error('Unexpected')
+      }
+    },
+  })
+  await delay(5)
+
+  expect(result.expectErr('an unexpected error must stop the statement').kind).toBe('unreachable')
+  expect(lookups.lookup.mock.calls.length).toBeLessThan(ids.length)
+})
+
+it.each([
+  { retryAfterMs: 600_000, wait: 30_000 },
+  { retryAfterMs: Number.NaN, wait: 1_000 },
+  { retryAfterMs: -5, wait: 1_000 },
+])('limits a requested wait of $retryAfterMs ms to $wait ms', async ({ retryAfterMs, wait }) => {
+  const [txid = ''] = txids(1)
+  let limitedOnce = false
+  const lookups = source(async (id) => {
+    if (!limitedOnce) {
+      limitedOnce = true
+      return rateLimited(retryAfterMs)
+    }
+    return Ok(confirmedTx(id))
+  })
+  const sleep = vi.fn(async (_ms: number) => {})
+
+  const result = await lookupTransactions({
+    transactions: atHeight([txid]),
+    source: lookups,
+    logger,
+    sleep,
+    now: () => 0,
+  })
+
+  expect(result.isOk()).toBe(true)
+  expect(sleep.mock.calls.map(([ms]) => ms)).toEqual([wait])
+})
+
+it.each(Array.from({ length: 12 }, (_, ticks) => ticks))(
+  'never sends a retry into a pause another lookup set just before it (%i ticks apart)',
+  async (ticks) => {
+    const [busy = '', limited = ''] = txids(2)
+    const events: string[] = []
+    let releaseRetry = (): void => {}
+    const retryReleased = new Promise<void>((resolve) => {
+      releaseRetry = resolve
+    })
+    const attempts = new Map<string, number>()
+    const lookups = source(async (txid) => {
+      const attempt = (attempts.get(txid) ?? 0) + 1
+      attempts.set(txid, attempt)
+      events.push(`lookup ${txid === busy ? 'busy' : 'limited'} ${attempt}`)
+      if (attempt > 1) {
+        return Ok(confirmedTx(txid))
+      }
+      if (txid === busy) {
+        return Err({
+          error: new TransactionLoadError('unreachable', 'HTTP 503'),
+          retry: { rateLimited: false, retryAfterMs: null },
+        })
+      }
+      // The rate limit lands a few ticks after the busy lookup's retry wait ends.
+      await retryReleased
+      for (let tick = 0; tick < ticks; tick++) {
+        await Promise.resolve()
+      }
+      return rateLimited(30_000)
+    }, 2)
+    const sleep = vi.fn(async (ms: number) => {
+      events.push(`sleep ${ms}`)
+      if (ms === 1_000) {
+        releaseRetry()
+      }
+    })
+
+    const result = await lookupTransactions({
+      transactions: atHeight([busy, limited]),
+      source: lookups,
+      logger,
+      sleep,
+      now: () => 0,
+    })
+
+    expect(result.unwrap().size).toBe(2)
+    const paused = events.indexOf('sleep 30000')
+    const retried = events.indexOf('lookup busy 2')
+    if (paused < retried) {
+      // The pause was set before the retry went out, so the retry must have waited it out.
+      expect(events.slice(paused, retried)).toContain('sleep 29000')
+    }
+  },
+)

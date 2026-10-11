@@ -1524,17 +1524,31 @@ const statementRouter = t.router({
           }
           logger.info({ statementId }, 'Statement generation completed')
         } catch (err) {
-          await ctx.app.statementService.fail(statementId)
-          // Database errors put query parameters, such as txids or addresses, in their message,
-          // so log only the error's type and where it was thrown.
+          // Database errors put query parameters, such as txids or addresses, in their message, which
+          // can span several lines. Log only the error's type and its stack frames.
           logger.error(
             {
               statementId,
               error: err instanceof Error ? err.name : 'unknown',
-              stack: err instanceof Error ? err.stack?.split('\n').slice(1).join('\n') : undefined,
+              stack:
+                err instanceof Error
+                  ? err.stack
+                      ?.split('\n')
+                      .filter((line) => /^\s+at /.test(line))
+                      .join('\n')
+                  : undefined,
             },
             'Unhandled error in statement generation',
           )
+          // The same fault can stop this write too; a restart then marks the statement interrupted.
+          try {
+            await ctx.app.statementService.fail(statementId)
+          } catch (failure) {
+            logger.error(
+              { statementId, error: failure instanceof Error ? failure.name : 'unknown' },
+              'Could not mark the statement as failed',
+            )
+          }
         }
       })()
 

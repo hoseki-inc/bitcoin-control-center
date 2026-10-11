@@ -76,7 +76,7 @@ const INTERRUPTED_MESSAGE = 'Generation was interrupted.'
 /** Transaction errors can name a txid or a server, so a statement shows this instead. */
 const TRANSACTIONS_FAILED_MESSAGE = "Couldn't load all transactions."
 
-/** Shares of Sentinel's 0–100 progress for history and lookups; prices and saving take the rest. */
+/** Shares of Sentinel's 0–100 progress for history and lookups; prices take the rest. */
 const HISTORY_SHARE = 1 / 9
 const LOOKUP_SHARE = 7 / 9
 
@@ -196,7 +196,7 @@ export class StatementService {
     exchangeService: ExchangeService
     mempoolApiUrl: string
     logger: Logger
-    /** Waits between transaction lookup retries; tests replace it to avoid real delays. */
+    /** Waits out lookup retries and rate limits; tests replace it to avoid real delays. */
     sleep?: Sleep
   }) {
     this.db = deps.db

@@ -7,7 +7,7 @@ import { ElectrumClient } from '@hoseki/packages/clients/electrum'
 import { Err, Ok, asyncFn } from '@hoseki/packages/result'
 import type { StatementQuoteCurrency } from '@hoseki/packages/schemas/statement-quote'
 import { eq, sql } from 'drizzle-orm'
-import pino from 'pino'
+import pino, { type Logger } from 'pino'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import type { AppContext } from '../../context'
 import { type SentinelDb, openDrizzleDatabase } from '../../db/drizzle'
@@ -313,7 +313,7 @@ describe('statement timezone validation', () => {
   })
 })
 
-function statementCaller(service: StatementService) {
+function statementCaller(service: StatementService, appLogger: Logger = logger) {
   const electrumConfig = { host: 'example.invalid', port: 50001, protocol: 'tcp' as const }
   const electrumClient = new ElectrumClient(electrumConfig)
   const onchainProvider = new ElectrumProvider(Network.Mainnet, { logger, electrum: electrumClient })
@@ -339,7 +339,7 @@ function statementCaller(service: StatementService) {
       MEMPOOL_API_URL: 'https://example.invalid',
       LOG_LEVEL: 'error',
     },
-    logger,
+    logger: appLogger,
     database,
     electrumClient,
     electrumConfig,
@@ -458,6 +458,64 @@ describe('statement failure messages', () => {
     await vi.waitFor(async () => {
       await expect(service.findById(created.id)).resolves.toMatchObject({ status: 'failed', errorMessage: message })
     })
+    // The statement's id is what generation reports its progress against.
+    expect(service.generateStatementData).toHaveBeenCalledWith(expect.anything(), created.id)
+  })
+
+  interface CapturedLog {
+    log: Logger
+    lines: string[]
+  }
+
+  function capturedLogger(): CapturedLog {
+    const lines: string[] = []
+    const log = pino(
+      { level: 'info' },
+      {
+        write: (line: string) => {
+          lines.push(line)
+        },
+      },
+    )
+    return { log, lines }
+  }
+
+  it('keeps an unexpected error message, which can hold query parameters, out of the logs', async () => {
+    await setup()
+    const { service } = harness()
+    const { log, lines } = capturedLogger()
+    // How a database error reports the values it was saving.
+    const queryError = new Error('Failed query: update "statements" set ...\nparams: bc1qsecretaddress,deadbeeftxid')
+    vi.spyOn(service, 'generateStatementData').mockImplementation(() => {
+      throw queryError
+    })
+
+    const created = await statementCaller(service, log).initiateGeneration(input)
+
+    await vi.waitFor(async () => {
+      await expect(service.findById(created.id)).resolves.toMatchObject({ status: 'failed' })
+    })
+    const logged = lines.join('')
+    expect(logged).toContain('Unhandled error in statement generation')
+    expect(logged).not.toContain('bc1qsecretaddress')
+    expect(logged).not.toContain('deadbeeftxid')
+  })
+
+  it('logs the error even when marking the statement failed fails too', async () => {
+    await setup()
+    const { service } = harness()
+    const { log, lines } = capturedLogger()
+    vi.spyOn(service, 'generateStatementData').mockImplementation(() => {
+      throw new Error('Disk full')
+    })
+    vi.spyOn(service, 'fail').mockRejectedValue(new Error('Disk full'))
+
+    await statementCaller(service, log).initiateGeneration(input)
+
+    await vi.waitFor(() => {
+      expect(lines.join('')).toContain('Could not mark the statement as failed')
+    })
+    expect(lines.join('')).toContain('Unhandled error in statement generation')
   })
 })
 

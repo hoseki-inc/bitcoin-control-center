@@ -146,7 +146,7 @@ async function createStatementHarness(emptySavingsHistory = false) {
     exchangeService,
   })
 
-  return { service, db, exchangeService }
+  return { service, db, exchangeService, onchainProvider }
 }
 
 async function seedWallet(db: SentinelDb, wallet: WalletFixture, displayName: string): Promise<string> {
@@ -179,14 +179,16 @@ async function seedExchange(
 async function setupNamedWallets(
   firstName: string,
   secondName: string,
-): Promise<StatementScenario & { db: SentinelDb }> {
-  const { service, db } = await createStatementHarness()
+): Promise<StatementScenario & { db: SentinelDb; onchainProvider: ElectrumProvider }> {
+  const { service, db, onchainProvider } = await createStatementHarness()
   const claimIds = [await seedWallet(db, savingsWallet, firstName), await seedWallet(db, spendingWallet, secondName)]
 
-  return { service, db, input: { ...period, claimIds } }
+  return { service, db, onchainProvider, input: { ...period, claimIds } }
 }
 
-export async function setupDistinctWalletNames(): Promise<StatementScenario & { db: SentinelDb }> {
+export async function setupDistinctWalletNames(): Promise<
+  StatementScenario & { db: SentinelDb; onchainProvider: ElectrumProvider }
+> {
   return setupNamedWallets('Savings', 'Spending')
 }
 

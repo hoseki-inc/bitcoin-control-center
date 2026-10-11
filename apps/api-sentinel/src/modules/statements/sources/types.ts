@@ -56,6 +56,9 @@ export interface TxSource {
   readonly kind: TxSourceKind
   /** Most lookups in flight at once. */
   readonly concurrency: number
-  /** One attempt; the caller owns retries. `height` is where Electrum's history placed the transaction. */
-  lookup(txid: string, height: number): Promise<Result<LookedUpTx, LookupFailure>>
+  /**
+   * One attempt; the caller owns retries. `height` is where Electrum's history placed the
+   * transaction. `signal` aborts when another lookup has failed, so the request can stop early.
+   */
+  lookup(txid: string, height: number, signal: AbortSignal): Promise<Result<LookedUpTx, LookupFailure>>
 }

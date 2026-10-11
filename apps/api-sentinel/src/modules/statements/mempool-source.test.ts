@@ -29,7 +29,7 @@ const timestamp = 1704153600
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue }
 
 /** One account's entries from mempool lookups, composed the way statement generation does it. */
-async function fetchTransactionEntries(deps: {
+async function accountEntries(deps: {
   account: Account
   onchainProvider: ElectrumProvider
   mempoolApiUrl: string
@@ -93,7 +93,7 @@ it('accepts coinbase inputs and addressless outputs without changing balance cal
   await withTestSetup(async () => {
     const address = account.receiveAddresses(0, 1, Network.Mainnet)[0]
     assert(address)
-    const result = await fetchTransactionEntries(
+    const result = await accountEntries(
       setup({
         txid,
         vin: [{ prevout: null }, { prevout: { scriptpubkey_address: address.toString(), value: 25 } }],
@@ -124,7 +124,7 @@ it.each([
   { txid, vin: [], status: { confirmed: true, block_height: 800000, block_time: timestamp } },
 ])('rejects malformed transaction responses: %j', async (body) => {
   await withTestSetup(async () => {
-    const result = await fetchTransactionEntries(setup(body))
+    const result = await accountEntries(setup(body))
     expect(result.expectErr('malformed transaction data must fail').message).toBe(
       `Invalid transaction data returned from the mempool server for ${txid}`,
     )
@@ -133,7 +133,7 @@ it.each([
 
 it('rejects a response for a different transaction', async () => {
   await withTestSetup(async () => {
-    const result = await fetchTransactionEntries(setup({ ...confirmedTx, txid: '9'.repeat(64) }))
+    const result = await accountEntries(setup({ ...confirmedTx, txid: '9'.repeat(64) }))
     expect(result.expectErr('another transaction must not stand in for this one').message).toBe(
       `Invalid transaction data returned from the mempool server for ${txid}`,
     )
@@ -159,7 +159,7 @@ it('rejects partial history when a later lookup returns a malformed transaction'
       )
     }
 
-    const result = await fetchTransactionEntries(deps)
+    const result = await accountEntries(deps)
     expect(fetch).toHaveBeenCalledTimes(11)
     expect(result.expectErr('partial history must fail').message).toBe(
       `Invalid transaction data returned from the mempool server for ${invalidId}`,
@@ -192,7 +192,7 @@ it.each(['HTTP 404', 'HTTP 503', 'network rejection'] as const)(
         })
       })
 
-      const result = await fetchTransactionEntries(deps)
+      const result = await accountEntries(deps)
       const error = result.expectErr('a failed fetch after a successful batch must discard partial history')
       expect(error.message).toContain(failedId)
       if (failure === 'network rejection') {
@@ -231,7 +231,7 @@ it('skips unconfirmed transactions, which fall after any statement period', asyn
       return id === txid ? Response.json(confirmedTx) : new Response('Transaction not found', { status: 404 })
     })
 
-    expect((await fetchTransactionEntries(deps)).isOk()).toBe(true)
+    expect((await accountEntries(deps)).isOk()).toBe(true)
     expect(vi.mocked(fetch).mock.calls.map(([input]) => new Request(input).url.split('/').at(-1))).toEqual([txid])
   })
 })
@@ -250,9 +250,9 @@ it.each([
       )
       .mockResolvedValueOnce(Response.json(confirmedTx))
 
-    expect((await fetchTransactionEntries(deps)).isOk()).toBe(true)
+    expect((await accountEntries(deps)).isOk()).toBe(true)
     expect(fetch).toHaveBeenCalledTimes(2)
-    expect(deps.sleep.mock.calls).toEqual([[delay]])
+    expect(deps.sleep.mock.calls.map(([ms]) => ms)).toEqual([delay])
   })
 })
 
@@ -261,11 +261,11 @@ it('stops after three retries with increasing waits', async () => {
     const deps = setup(confirmedTx)
     vi.mocked(fetch).mockImplementation(async () => new Response('Too many requests', { status: 429 }))
 
-    const error = (await fetchTransactionEntries(deps)).expectErr('a persistent rate limit must fail')
+    const error = (await accountEntries(deps)).expectErr('a persistent rate limit must fail')
 
     expect(error.message).toBe(`Failed to fetch transaction ${txid}: HTTP 429`)
     expect(fetch).toHaveBeenCalledTimes(4)
-    expect(deps.sleep.mock.calls).toEqual([[1_000], [2_000], [4_000]])
+    expect(deps.sleep.mock.calls.map(([ms]) => ms)).toEqual([1_000, 2_000, 4_000])
   })
 })
 
@@ -274,7 +274,7 @@ it('does not retry a transaction the mempool server does not have', async () => 
     const deps = setup(confirmedTx)
     vi.mocked(fetch).mockImplementation(async () => new Response('Transaction not found', { status: 404 }))
 
-    expect((await fetchTransactionEntries(deps)).isErr()).toBe(true)
+    expect((await accountEntries(deps)).isErr()).toBe(true)
     expect(fetch).toHaveBeenCalledTimes(1)
     expect(deps.sleep).not.toHaveBeenCalled()
   })
@@ -292,7 +292,24 @@ it('retries a response whose body stops partway', async () => {
       .mockResolvedValueOnce(new Response(interrupted, { status: 200 }))
       .mockResolvedValueOnce(Response.json(confirmedTx))
 
-    expect((await fetchTransactionEntries(deps)).isOk()).toBe(true)
+    expect((await accountEntries(deps)).isOk()).toBe(true)
+    expect(fetch).toHaveBeenCalledTimes(2)
+  })
+})
+
+it('retries a temporary failure whose connection dropped before its body was released', async () => {
+  await withTestSetup(async () => {
+    const deps = setup(confirmedTx)
+    const dropped = new ReadableStream({
+      cancel() {
+        throw new TypeError('terminated')
+      },
+    })
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response(dropped, { status: 503 }))
+      .mockResolvedValueOnce(Response.json(confirmedTx))
+
+    expect((await accountEntries(deps)).isOk()).toBe(true)
     expect(fetch).toHaveBeenCalledTimes(2)
   })
 })
@@ -305,7 +322,7 @@ it('gives each lookup a timeout and releases failed responses', async () => {
       .mockResolvedValueOnce(new Response(new ReadableStream({ cancel }), { status: 503 }))
       .mockResolvedValueOnce(Response.json(confirmedTx))
 
-    expect((await fetchTransactionEntries(deps)).isOk()).toBe(true)
+    expect((await accountEntries(deps)).isOk()).toBe(true)
     expect(cancel).toHaveBeenCalledOnce()
     for (const [, init] of vi.mocked(fetch).mock.calls) {
       expect(init?.signal).toBeInstanceOf(AbortSignal)
@@ -317,7 +334,7 @@ it('fails rather than skipping an address whose history lookup fails', async () 
   await withTestSetup(async () => {
     const deps = setup(null)
     vi.spyOn(deps.onchainProvider.deps.electrum, 'getHistory').mockResolvedValue(Err(new Error('Connection closed')))
-    const result = await fetchTransactionEntries(deps)
+    const result = await accountEntries(deps)
     expect(result.expectErr('a missing history must fail').message).toBe(
       'Could not fetch transaction history: Connection closed',
     )
@@ -373,7 +390,7 @@ it.each([
     vi.setSystemTime(new Date('2024-06-01T00:00:00.000Z'))
     const address = account.receiveAddresses(0, 1, Network.Mainnet)[0]
     assert(address)
-    const result = await fetchTransactionEntries(
+    const result = await accountEntries(
       setup({
         txid,
         vin: [{ prevout: null }],
@@ -393,6 +410,9 @@ it.each([
   { url: 'http://mempool.embassy:8080', kind: 'node_mempool' },
   { url: 'http://umbrel.local:3006', kind: 'node_mempool' },
   { url: 'http://localhost:3006', kind: 'node_mempool' },
+  { url: 'http://127.0.0.1:8999', kind: 'node_mempool' },
+  { url: 'http://[::1]:8999', kind: 'node_mempool' },
+  { url: 'http://mempoolhqx4isw62xs7abwphsq7ldayuidyx2v2oethdhhj6mlo2r6ad.onion', kind: 'public_mempool' },
 ])('records $url as $kind', ({ url, kind }) => {
   expect(new MempoolSource(url).kind).toBe(kind)
 })

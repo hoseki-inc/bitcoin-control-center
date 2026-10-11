@@ -109,10 +109,12 @@ export class MempoolSource implements TxSource {
     this.baseUrl = apiUrl.replace(/\/$/, '')
   }
 
-  public async lookup(txid: string): Promise<Result<LookedUpTx, LookupFailure>> {
+  public async lookup(txid: string, _height: number, signal: AbortSignal): Promise<Result<LookedUpTx, LookupFailure>> {
     let response: Response
     try {
-      response = await fetch(`${this.baseUrl}/api/tx/${txid}`, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) })
+      response = await fetch(`${this.baseUrl}/api/tx/${txid}`, {
+        signal: AbortSignal.any([AbortSignal.timeout(REQUEST_TIMEOUT_MS), signal]),
+      })
     } catch (cause) {
       return Err(networkFailure(txid, cause))
     }
