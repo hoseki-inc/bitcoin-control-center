@@ -33,8 +33,11 @@ const TX_CONCURRENCY = 10
 /** A stalled lookup fails like any other instead of leaving the statement pending. */
 const REQUEST_TIMEOUT_MS = 15_000
 
-/** Responses that mean "try again shortly" rather than "this transaction is unavailable". */
-const RETRYABLE_STATUSES = new Set([429, 502, 503, 504])
+/**
+ * Responses that mean "try again shortly" rather than "this transaction is unavailable". mempool
+ * also answers 500 when its backend briefly fails, such as a busy node.
+ */
+const RETRYABLE_STATUSES = new Set([408, 429, 500, 502, 503, 504])
 
 /**
  * The node's own mempool only when it's on this machine or a private network. Any other host,
@@ -127,10 +130,13 @@ export class MempoolSource implements TxSource {
       if (!RETRYABLE_STATUSES.has(response.status)) {
         return Err({ error: new TransactionLoadError('unavailable', message), retry: null })
       }
-      const retryAfterMs = getRetryAfterMs(response)
+      // Any Retry-After asks every lookup to wait, even one in a form that isn't read.
       return Err({
         error: new TransactionLoadError('unreachable', message),
-        retry: { rateLimited: response.status === 429 || retryAfterMs !== null, retryAfterMs },
+        retry: {
+          rateLimited: response.status === 429 || response.headers.has('retry-after'),
+          retryAfterMs: getRetryAfterMs(response),
+        },
       })
     }
 

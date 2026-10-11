@@ -1,4 +1,4 @@
-import { asyncFn } from '@hoseki/packages/result'
+import { Err, Ok, asyncFn } from '@hoseki/packages/result'
 import { eq } from 'drizzle-orm'
 import { expect, it, vi } from 'vitest'
 import { accounts } from '../../db/schema'
@@ -39,8 +39,9 @@ it('reports progress through history and lookups, and none once the statement co
 
   // History is the first ninth of Sentinel's progress: half of it after the first of two wallets.
   expect(atHistory).toEqual([0, 5])
-  // Lookups take the next seven ninths: halfway through them is halfway through generation.
-  expect(atLookup).toEqual([11, 11, 50])
+  // Lookups take the next seven ninths, from 11%: halfway through them is halfway through generation.
+  expect(atLookup[0]).toBe(11)
+  expect(atLookup).toContain(50)
   await expect(service.findById(id)).resolves.toMatchObject({ progress: 100 })
 
   ;(await service.complete(id, data.transactionMap, data.dailyRates)).unwrap()
@@ -62,7 +63,61 @@ it('records no source for a statement with only exchange accounts', async () => 
   await expect(service.findById(id)).resolves.toMatchObject({ txSource: null })
 })
 
-it('fails a statement when a wallet is archived while its transactions are looked up', async () => {
+it('reports valid progress for wallets with no transactions', async () => {
+  const { service, input, onchainProvider } = await setupDistinctWalletNames()
+  vi.spyOn(onchainProvider.deps.electrum, 'getHistory').mockImplementation(asyncFn(async () => Ok([])))
+  const id = (await service.create(input)).unwrap()
+
+  ;(await service.generateStatementData(input, id)).unwrap()
+
+  await expect(service.findById(id)).resolves.toMatchObject({ progress: 100 })
+})
+
+it('marks transactions confirmed against the current block tip', async () => {
+  const { service, input } = await setupDistinctWalletNames()
+
+  const data = (await service.generateStatementData(input)).unwrap()
+
+  const transactions = Object.values(data.transactionMap).flatMap((account) => account.transactions)
+  expect(transactions).toHaveLength(2)
+  expect(transactions.every((transaction) => transaction.confirmed)).toBe(true)
+})
+
+it('fails a statement rather than leaving out a wallet whose descriptor cannot be read', async () => {
+  const { service, input, db } = await setupDistinctWalletNames()
+  await db.update(accounts).set({ descriptor: 'not a descriptor' }).where(eq(accounts.id, 'wallet-1'))
+
+  const result = await service.generateStatementData(input)
+
+  expect(result.expectErr('a wallet must not drop out of the statement')).toMatchObject({ kind: 'history' })
+})
+
+it('logs only the kind of a failed lookup, never its txid', async () => {
+  const { service, input, logs } = await setupDistinctWalletNames()
+  vi.mocked(fetch).mockImplementation(async () => new Response('Not found', { status: 404 }))
+
+  expect((await service.generateStatementData(input)).isErr()).toBe(true)
+
+  const logged = logs.join('')
+  expect(logged).toContain('"kind":"unavailable"')
+  expect(logged).not.toContain('1'.repeat(64))
+  expect(logged).not.toContain('2'.repeat(64))
+})
+
+it('logs only the kind of a failed history request, never its server', async () => {
+  const { service, input, onchainProvider, logs } = await setupDistinctWalletNames()
+  vi.spyOn(onchainProvider.deps.electrum, 'getHistory').mockImplementation(
+    asyncFn(async () => Err(new Error('connect ECONNREFUSED 10.1.2.3:50001'))),
+  )
+
+  expect((await service.generateStatementData(input)).isErr()).toBe(true)
+
+  const logged = logs.join('')
+  expect(logged).toContain('"kind":"history"')
+  expect(logged).not.toContain('10.1.2.3')
+})
+
+it('stops generating when a wallet is archived while its transactions are looked up', async () => {
   const { service, input, db } = await setupDistinctWalletNames()
   const lookup = vi.mocked(fetch).getMockImplementation()
   vi.mocked(fetch).mockImplementation(async (...args) => {

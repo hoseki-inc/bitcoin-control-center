@@ -46,7 +46,7 @@ export class TransactionLoadError extends Error {
 export interface LookupFailure {
   error: TransactionLoadError
   retry: null | {
-    /** The server asked for fewer requests, so every lookup should wait. */
+    /** The server asked for fewer requests: every lookup waits, and this one keeps retrying for longer. */
     rateLimited: boolean
     retryAfterMs: number | null
   }
@@ -54,7 +54,7 @@ export interface LookupFailure {
 
 export interface TxSource {
   readonly kind: TxSourceKind
-  /** Most lookups in flight at once. */
+  /** Most lookups in flight at once for one statement. */
   readonly concurrency: number
   /**
    * One attempt; the caller owns retries. `height` is where Electrum's history placed the

@@ -50,7 +50,16 @@ const wallets = [savingsWallet, spendingWallet]
 
 async function createStatementDatabase() {
   const directory = mkdtempSync(join(tmpdir(), 'sentinel-statement-regression-'))
-  const logger = pino({ level: 'silent' })
+  // Kept so tests can check what generation logs.
+  const logs: string[] = []
+  const logger = pino(
+    { level: 'info' },
+    {
+      write: (line: string) => {
+        logs.push(line)
+      },
+    },
+  )
   const database = await openDrizzleDatabase(directory, logger)
 
   onTestFinished(() => {
@@ -61,7 +70,7 @@ async function createStatementDatabase() {
     vi.restoreAllMocks()
   })
 
-  return { db: database, logger }
+  return { db: database, logger, logs }
 }
 
 function mockOnchainProvider(logger: Logger, emptySavingsHistory = false) {
@@ -132,7 +141,7 @@ function mockDailyRates(db: SentinelDb, logger: Logger): DailyRatesService {
 }
 
 async function createStatementHarness(emptySavingsHistory = false) {
-  const { db, logger } = await createStatementDatabase()
+  const { db, logger, logs } = await createStatementDatabase()
   const onchainProvider = mockOnchainProvider(logger, emptySavingsHistory)
   mockTransactionRequests()
 
@@ -146,7 +155,7 @@ async function createStatementHarness(emptySavingsHistory = false) {
     exchangeService,
   })
 
-  return { service, db, exchangeService, onchainProvider }
+  return { service, db, exchangeService, onchainProvider, logs }
 }
 
 async function seedWallet(db: SentinelDb, wallet: WalletFixture, displayName: string): Promise<string> {
@@ -176,19 +185,20 @@ async function seedExchange(
   return id
 }
 
-async function setupNamedWallets(
-  firstName: string,
-  secondName: string,
-): Promise<StatementScenario & { db: SentinelDb; onchainProvider: ElectrumProvider }> {
-  const { service, db, onchainProvider } = await createStatementHarness()
-  const claimIds = [await seedWallet(db, savingsWallet, firstName), await seedWallet(db, spendingWallet, secondName)]
-
-  return { service, db, onchainProvider, input: { ...period, claimIds } }
+interface WalletScenario extends StatementScenario {
+  db: SentinelDb
+  onchainProvider: ElectrumProvider
+  logs: string[]
 }
 
-export async function setupDistinctWalletNames(): Promise<
-  StatementScenario & { db: SentinelDb; onchainProvider: ElectrumProvider }
-> {
+async function setupNamedWallets(firstName: string, secondName: string): Promise<WalletScenario> {
+  const { service, db, onchainProvider, logs } = await createStatementHarness()
+  const claimIds = [await seedWallet(db, savingsWallet, firstName), await seedWallet(db, spendingWallet, secondName)]
+
+  return { service, db, onchainProvider, logs, input: { ...period, claimIds } }
+}
+
+export async function setupDistinctWalletNames(): Promise<WalletScenario> {
   return setupNamedWallets('Savings', 'Spending')
 }
 

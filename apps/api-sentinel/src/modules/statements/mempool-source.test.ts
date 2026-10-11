@@ -240,7 +240,12 @@ it.each([
   { scenario: 'a rate limit', status: 429, retryAfter: null, delay: 1_000 },
   { scenario: 'a rate limit with Retry-After', status: 429, retryAfter: '5', delay: 5_000 },
   { scenario: 'a Retry-After above the cap', status: 429, retryAfter: '600', delay: 30_000 },
+  { scenario: 'a Retry-After date', status: 503, retryAfter: 'Wed, 21 Oct 2026 07:28:00 GMT', delay: 1_000 },
+  { scenario: 'a request timeout', status: 408, retryAfter: null, delay: 1_000 },
+  { scenario: 'a server error', status: 500, retryAfter: null, delay: 1_000 },
+  { scenario: 'a bad gateway', status: 502, retryAfter: null, delay: 1_000 },
   { scenario: 'a temporary server error', status: 503, retryAfter: null, delay: 1_000 },
+  { scenario: 'a gateway timeout', status: 504, retryAfter: null, delay: 1_000 },
 ])('retries $scenario and then completes', async ({ status, retryAfter, delay }) => {
   await withTestSetup(async () => {
     const deps = setup(confirmedTx)
@@ -256,27 +261,52 @@ it.each([
   })
 })
 
-it('stops after three retries with increasing waits', async () => {
+it('stops after three retries of a server error', async () => {
   await withTestSetup(async () => {
     const deps = setup(confirmedTx)
-    vi.mocked(fetch).mockImplementation(async () => new Response('Too many requests', { status: 429 }))
+    vi.mocked(fetch).mockImplementation(async () => new Response('Unavailable', { status: 503 }))
 
-    const error = (await accountEntries(deps)).expectErr('a persistent rate limit must fail')
+    const error = (await accountEntries(deps)).expectErr('a server that stays down must fail')
 
-    expect(error.message).toBe(`Failed to fetch transaction ${txid}: HTTP 429`)
+    expect(error.message).toBe(`Failed to fetch transaction ${txid}: HTTP 503`)
     expect(fetch).toHaveBeenCalledTimes(4)
     expect(deps.sleep.mock.calls.map(([ms]) => ms)).toEqual([1_000, 2_000, 4_000])
   })
 })
 
-it('does not retry a transaction the mempool server does not have', async () => {
+it('retries a rate limit for longer than a server error before it stops', async () => {
   await withTestSetup(async () => {
     const deps = setup(confirmedTx)
-    vi.mocked(fetch).mockImplementation(async () => new Response('Transaction not found', { status: 404 }))
+    vi.mocked(fetch).mockImplementation(async () => new Response('Too many requests', { status: 429 }))
+
+    const error = (await accountEntries(deps)).expectErr('a rate limit that never lifts must fail')
+
+    expect(error.message).toBe(`Failed to fetch transaction ${txid}: HTTP 429`)
+    expect(vi.mocked(fetch).mock.calls.length).toBeGreaterThan(4)
+    expect(deps.sleep.mock.calls.reduce((total, [ms]) => total + ms, 0)).toBeLessThanOrEqual(5 * 60_000)
+  })
+})
+
+it.each([400, 404, 410])('does not retry an HTTP %i', async (status) => {
+  await withTestSetup(async () => {
+    const deps = setup(confirmedTx)
+    vi.mocked(fetch).mockImplementation(async () => new Response('Transaction not found', { status }))
 
     expect((await accountEntries(deps)).isErr()).toBe(true)
     expect(fetch).toHaveBeenCalledTimes(1)
     expect(deps.sleep).not.toHaveBeenCalled()
+  })
+})
+
+it('does not retry a response that is not JSON', async () => {
+  await withTestSetup(async () => {
+    const deps = setup(confirmedTx)
+    vi.mocked(fetch).mockImplementation(async () => new Response('<html>Not JSON</html>', { status: 200 }))
+
+    const error = (await accountEntries(deps)).expectErr('a malformed response must fail')
+
+    expect(error.message).toBe(`Invalid transaction data returned from the mempool server for ${txid}`)
+    expect(fetch).toHaveBeenCalledTimes(1)
   })
 })
 
@@ -314,7 +344,7 @@ it('retries a temporary failure whose connection dropped before its body was rel
   })
 })
 
-it('gives each lookup a timeout and releases failed responses', async () => {
+it('releases a failed response before retrying', async () => {
   await withTestSetup(async () => {
     const deps = setup(confirmedTx)
     const cancel = vi.fn()
@@ -324,9 +354,6 @@ it('gives each lookup a timeout and releases failed responses', async () => {
 
     expect((await accountEntries(deps)).isOk()).toBe(true)
     expect(cancel).toHaveBeenCalledOnce()
-    for (const [, init] of vi.mocked(fetch).mock.calls) {
-      expect(init?.signal).toBeInstanceOf(AbortSignal)
-    }
   })
 })
 
@@ -368,13 +395,27 @@ it('times out a request even when the statement keeps going', async () => {
 })
 
 it.each([
-  { scenario: 'a 503 with Retry-After', headers: { 'Retry-After': '5' }, rateLimited: true, retryAfterMs: 5_000 },
-  { scenario: 'a plain 503', headers: {}, rateLimited: false, retryAfterMs: null },
-])('holds back every lookup only for $scenario', async ({ headers, rateLimited, retryAfterMs }) => {
+  { scenario: 'a 429', status: 429, headers: {}, rateLimited: true, retryAfterMs: null },
+  {
+    scenario: 'a 503 with Retry-After',
+    status: 503,
+    headers: { 'Retry-After': '5' },
+    rateLimited: true,
+    retryAfterMs: 5_000,
+  },
+  {
+    scenario: 'a 503 with a Retry-After date',
+    status: 503,
+    headers: { 'Retry-After': 'Wed, 21 Oct 2026 07:28:00 GMT' },
+    rateLimited: true,
+    retryAfterMs: null,
+  },
+  { scenario: 'a plain 503', status: 503, headers: {}, rateLimited: false, retryAfterMs: null },
+])('holds back every lookup only for $scenario', async ({ status, headers, rateLimited, retryAfterMs }) => {
   await withTestSetup(async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => new Response('Busy', { status: 503, headers })),
+      vi.fn(async () => new Response('Busy', { status, headers })),
     )
 
     const result = await new MempoolSource('https://example.invalid').lookup(txid, 800000, new AbortController().signal)
@@ -383,28 +424,49 @@ it.each([
   })
 })
 
-it('stops the statement when Electrum returns something other than a txid', async () => {
-  await withTestSetup(async () => {
-    const deps = setup(confirmedTx)
-    vi.spyOn(deps.onchainProvider.deps.electrum, 'getHistory').mockResolvedValue(
-      Ok([{ tx_hash: '../../admin?x=', height: 800000 }]),
-    )
+it.each(['../../admin?x=', `${'a'.repeat(64)}/../x`, `../${'a'.repeat(64)}`])(
+  'stops the statement when Electrum returns %s as a txid',
+  async (txHash) => {
+    await withTestSetup(async () => {
+      const deps = setup(confirmedTx)
+      vi.spyOn(deps.onchainProvider.deps.electrum, 'getHistory').mockResolvedValue(
+        Ok([{ tx_hash: txHash, height: 800000 }]),
+      )
 
-    const result = await accountEntries(deps)
+      const result = await accountEntries(deps)
 
-    expect(result.expectErr('an invalid txid must not reach a lookup URL').message).toBe(
-      'Electrum returned an invalid txid',
-    )
-    expect(fetch).not.toHaveBeenCalled()
-  })
-})
+      expect(result.expectErr('an invalid txid must not reach a lookup URL').message).toBe(
+        'Electrum returned an invalid txid',
+      )
+      expect(fetch).not.toHaveBeenCalled()
+    })
+  },
+)
 
 it('looks up an uppercase txid from Electrum in lowercase', async () => {
   await withTestSetup(async () => {
-    const deps = setup(confirmedTx, [txid.toUpperCase()])
+    const lettered = 'ab'.repeat(32)
+    const deps = setup({ ...confirmedTx, txid: lettered }, [lettered.toUpperCase()])
 
     expect((await accountEntries(deps)).isOk()).toBe(true)
-    expect(new Request(vi.mocked(fetch).mock.calls[0]?.[0] ?? '').url).toMatch(new RegExp(`/api/tx/${txid}$`))
+    expect(new Request(vi.mocked(fetch).mock.calls[0]?.[0] ?? '').url).toMatch(new RegExp(`/api/tx/${lettered}$`))
+  })
+})
+
+it.each([
+  { apiUrl: 'https://example.invalid/', url: `https://example.invalid/api/tx/${txid}` },
+  { apiUrl: 'https://example.invalid/mempool', url: `https://example.invalid/mempool/api/tx/${txid}` },
+  { apiUrl: 'https://example.invalid/mempool/', url: `https://example.invalid/mempool/api/tx/${txid}` },
+])('looks up transactions under $apiUrl', async ({ apiUrl, url }) => {
+  await withTestSetup(async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => Response.json(confirmedTx)),
+    )
+
+    await new MempoolSource(apiUrl).lookup(txid, 800000, new AbortController().signal)
+
+    expect(vi.mocked(fetch).mock.calls[0]?.[0]).toBe(url)
   })
 })
 
@@ -491,6 +553,7 @@ it.each([
   { url: 'http://127.0.0.1:8999', kind: 'node_mempool' },
   { url: 'http://[::1]:8999', kind: 'node_mempool' },
   { url: 'http://mempoolhqx4isw62xs7abwphsq7ldayuidyx2v2oethdhhj6mlo2r6ad.onion', kind: 'public_mempool' },
+  { url: 'not a url', kind: 'public_mempool' },
 ])('records $url as $kind', ({ url, kind }) => {
   expect(new MempoolSource(url).kind).toBe(kind)
 })

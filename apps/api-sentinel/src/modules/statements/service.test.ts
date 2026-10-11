@@ -442,13 +442,15 @@ describe('statement failure messages', () => {
       scenario: 'a transaction that could not be loaded',
       error: new TransactionLoadError('unavailable', `Failed to fetch transaction ${'a'.repeat(64)}: HTTP 404`),
       message: "Couldn't load all transactions.",
+      logged: '"kind":"unavailable"',
     },
     {
       scenario: 'any other failure',
       error: new Error('Account "Savings" must be verified before generating a statement'),
       message: 'Account "Savings" must be verified before generating a statement',
+      logged: 'must be verified',
     },
-  ])('shows $message for $scenario', async ({ error, message }) => {
+  ])('shows $message for $scenario', async ({ error, message, logged }) => {
     await setup()
     const { service } = harness()
     vi.spyOn(service, 'generateStatementData').mockImplementation(asyncFn(async () => Err(error)))
@@ -462,6 +464,8 @@ describe('statement failure messages', () => {
     // The statement's id is what generation reports its progress against.
     expect(service.generateStatementData).toHaveBeenCalledWith(expect.anything(), created.id)
     expect(lines.join('')).toContain('Statement data generation failed')
+    // A transaction failure logs only its kind, since its message can name a txid.
+    expect(lines.join('')).toContain(logged)
     expect(lines.join('')).not.toContain('a'.repeat(64))
   })
 
@@ -541,7 +545,9 @@ describe('statement failure messages', () => {
     vi.spyOn(service, 'generateStatementData').mockImplementation(() => {
       throw new Error('Disk full')
     })
-    vi.spyOn(service, 'fail').mockRejectedValue(new Error('Disk full'))
+    vi.spyOn(service, 'fail').mockRejectedValue(
+      new Error('Failed query: update "statements" set ...\nparams: bc1qsecretaddress'),
+    )
 
     await statementCaller(service, log).initiateGeneration(input)
 
@@ -549,6 +555,7 @@ describe('statement failure messages', () => {
       expect(lines.join('')).toContain('Could not mark the statement as failed')
     })
     expect(lines.join('')).toContain('Unhandled error in statement generation')
+    expect(lines.join('')).not.toContain('bc1qsecretaddress')
   })
 })
 

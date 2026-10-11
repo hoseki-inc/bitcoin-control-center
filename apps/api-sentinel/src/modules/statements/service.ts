@@ -441,10 +441,11 @@ export class StatementService {
             { account: row.display_name, index: i + 1, total: accountRows.length },
             'Fetching transaction history for account',
           )
+          // A wallet left out would make the statement look complete without it.
           const accountResult = Account.fromDescriptor(row.descriptor)
           if (accountResult.isErr()) {
-            this.logger.warn({ accountId: row.id }, 'Failed to parse descriptor')
-            continue
+            this.logger.error({ accountId: row.id, kind: 'history' }, 'Failed to parse descriptor')
+            return Err(new TransactionLoadError('history', 'Could not read a wallet descriptor'))
           }
 
           const [activeAccount] = await this.db

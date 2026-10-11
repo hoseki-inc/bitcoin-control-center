@@ -11,6 +11,12 @@ const RETRY_DELAYS_MS = [1_000, 2_000, 4_000]
 /** Longest a server can hold back lookups, so one answer can't stall a statement for long. */
 const MAX_PAUSE_MS = 30_000
 
+/**
+ * How long one lookup keeps backing off while a server rate limits it. A busy public server can
+ * limit requests for minutes, and a slow statement is better than a failed one.
+ */
+const RATE_LIMIT_BUDGET_MS = 5 * 60_000
+
 /** Waits `ms`, or until `signal` aborts. */
 export type Sleep = (ms: number, signal: AbortSignal) => Promise<void>
 
@@ -29,6 +35,11 @@ async function defaultSleep(ms: number, signal: AbortSignal): Promise<void> {
 /** A server's requested wait, limited to a sensible range. */
 function retryAfter(ms: number | null): number {
   return ms === null || Number.isNaN(ms) ? 0 : Math.min(Math.max(ms, 0), MAX_PAUSE_MS)
+}
+
+/** The wait after a lookup's next rate limit: doubling from 1 s, up to the cap. */
+function rateLimitBackoff(rateLimits: number): number {
+  return Math.min(1_000 * 2 ** rateLimits, MAX_PAUSE_MS)
 }
 
 /**
@@ -56,7 +67,8 @@ export const lookupTransactions = asyncFn(
 
     const queue = [...transactions.keys()]
     const run: LookupRun = { failure: null, pausedUntil: 0 }
-    // Aborted by the first failure, which ends every wait and cancels every request in flight.
+    // Aborted by the first failure. That ends every wait and cancels requests in flight; requests a
+    // source can't cancel are abandoned instead.
     const stop = new AbortController()
     const stopped = new Promise<void>((resolve) => {
       stop.signal.addEventListener('abort', () => {
@@ -80,7 +92,11 @@ export const lookupTransactions = asyncFn(
       const pauseLeft = (): number => run.pausedUntil - Math.max(now(), waitedUntil)
 
       const lookupWithRetries = async (txid: string): Promise<Result<LookedUpTx, TransactionLoadError>> => {
-        for (let attempt = 0; ; attempt++) {
+        // Other temporary failures get a few quick retries; rate limits keep backing off for longer.
+        let retries = 0
+        let rateLimits = 0
+        let rateLimitedMs = 0
+        for (;;) {
           for (let ms = pauseLeft(); ms > 0 && run.failure === null; ms = pauseLeft()) {
             waitedUntil = run.pausedUntil
             await wait(ms)
@@ -98,6 +114,11 @@ export const lookupTransactions = asyncFn(
             pending.catch(() => undefined)
             result = await Promise.race([pending, abandoned])
           } catch (cause) {
+            // Once another lookup has failed, a source may reject what it was still doing.
+            const earlier = failure()
+            if (earlier !== null) {
+              return Err(earlier)
+            }
             logger.error(
               cause instanceof Error ? loggableError(cause) : { error: 'unknown' },
               'Unexpected error looking up a transaction',
@@ -111,11 +132,25 @@ export const lookupTransactions = asyncFn(
             return Ok(result.unwrap())
           }
           const { error, retry } = result.unwrapErr()
-          const retryDelay = RETRY_DELAYS_MS[attempt]
-          if (failure() !== null || retry === null || retryDelay === undefined) {
+          if (failure() !== null || retry === null) {
             return Err(failure() ?? error)
           }
-          const ms = Math.max(retryDelay, retryAfter(retry.retryAfterMs))
+          let ms: number
+          if (retry.rateLimited) {
+            ms = Math.max(rateLimitBackoff(rateLimits), retryAfter(retry.retryAfterMs))
+            if (rateLimitedMs + ms > RATE_LIMIT_BUDGET_MS) {
+              return Err(error)
+            }
+            rateLimits += 1
+            rateLimitedMs += ms
+          } else {
+            const retryDelay = RETRY_DELAYS_MS[retries]
+            if (retryDelay === undefined) {
+              return Err(error)
+            }
+            retries += 1
+            ms = Math.max(retryDelay, retryAfter(retry.retryAfterMs))
+          }
           const until = now() + ms
           if (retry.rateLimited) {
             run.pausedUntil = Math.max(run.pausedUntil, until)

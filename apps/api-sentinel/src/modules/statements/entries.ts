@@ -31,7 +31,7 @@ export function toTransactionEntries(
     }
     const txidRes = Txid.fromString(tx.txid)
     if (txidRes.isErr()) {
-      continue
+      return Err(new TransactionLoadError('invalid', `Invalid txid ${txid}`))
     }
 
     const confirmed = tx.blockHeight !== null && isConfirmed({ tip: tipHeight, height: tx.blockHeight })
