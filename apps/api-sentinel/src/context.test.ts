@@ -425,7 +425,7 @@ describe('statements interrupted by a restart', () => {
         {
           id: pending,
           status: 'failed',
-          errorMessage: 'Generation was interrupted. Delete this statement and try again.',
+          errorMessage: 'Generation was interrupted.',
         },
       ])
     })

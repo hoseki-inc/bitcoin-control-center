@@ -91,10 +91,31 @@ export const statements = sqliteTable(
       .notNull()
       .default('USD'),
     errorMessage: text('error_message'),
+    /** Where the statement looked up transactions; null for statements without wallets or from before sources were recorded. */
+    txSource: text('tx_source', { enum: ['electrum', 'node_mempool', 'public_mempool'] }),
   },
   (table) => [
     check('statements_status_check', sql`${table.status} IN ('pending', 'completed', 'failed')`),
     check('statements_quote_currency_check', sql`${table.quoteCurrency} IN ('USD', 'CAD', 'GBP', 'EUR')`),
+    check('statements_tx_source_check', sql`${table.txSource} IN ('electrum', 'node_mempool', 'public_mempool')`),
+  ],
+)
+
+/** Confirmed transaction details looked up for statements, so later statements don't ask a server again. */
+export const statementTxCache = sqliteTable(
+  'statement_tx_cache',
+  {
+    txid: text('txid').primaryKey(),
+    /** Which source supplied the row. Rows are shared by every source. */
+    source: text('source', { enum: ['electrum', 'node_mempool', 'public_mempool'] }).notNull(),
+    blockHeight: integer('block_height').notNull(),
+    blockTime: integer('block_time').notNull(),
+    inputs: text('inputs').notNull(),
+    outputs: text('outputs').notNull(),
+    savedAt: text('saved_at').notNull().default(now),
+  },
+  (table) => [
+    check('statement_tx_cache_source_check', sql`${table.source} IN ('electrum', 'node_mempool', 'public_mempool')`),
   ],
 )
 

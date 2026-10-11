@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { Network } from '@hoseki/packages/bitcoin/network'
 import { ElectrumProvider } from '@hoseki/packages/bitcoin/onchain/electrum_provider'
 import { ElectrumClient } from '@hoseki/packages/clients/electrum'
-import { Ok, asyncFn } from '@hoseki/packages/result'
+import { Err, Ok, asyncFn } from '@hoseki/packages/result'
 import type { StatementQuoteCurrency } from '@hoseki/packages/schemas/statement-quote'
 import { eq, sql } from 'drizzle-orm'
 import pino from 'pino'
@@ -24,6 +24,7 @@ import type { AggregatedTransaction } from './mapper'
 import { StatementMapper } from './mapper'
 import { getRequiredRateDates, getStatementPeriods } from './rate_dates'
 import { type GenerateStatementInput, StatementService, validateStatementInput } from './service'
+import { TransactionLoadError } from './sources/types'
 
 const logger = pino({ level: 'silent' })
 const opening = new Date('2026-08-01T00:00:00Z')
@@ -189,7 +190,7 @@ describe('statement currency persistence', () => {
     expect((await service.findById(id))?.status).toBe('completed')
   })
 
-  it('tells people to delete a failed statement and generate a new one when there is no specific reason', async () => {
+  it('gives a failed statement a short message when there is no specific reason', async () => {
     await setup()
     const { service } = harness()
     const id = (await service.create(input)).unwrap()
@@ -198,7 +199,7 @@ describe('statement currency persistence', () => {
 
     await expect(service.findById(id)).resolves.toMatchObject({
       status: 'failed',
-      errorMessage: 'Statement generation failed. Delete this statement and generate a new one.',
+      errorMessage: 'Statement generation failed.',
     })
   })
 
@@ -213,7 +214,7 @@ describe('statement currency persistence', () => {
 
     await expect(service.findById(interrupted)).resolves.toMatchObject({
       status: 'failed',
-      errorMessage: 'Generation was interrupted. Delete this statement and try again.',
+      errorMessage: 'Generation was interrupted.',
     })
     await expect(service.findById(failed)).resolves.toMatchObject({
       status: 'failed',
@@ -431,6 +432,31 @@ describe('statement API currency contract', () => {
     expect(created.quoteCurrency).toBe('USD')
     await vi.waitFor(async () => {
       await expect(service.findById(created.id)).resolves.toMatchObject({ status: 'completed' })
+    })
+  })
+})
+
+describe('statement failure messages', () => {
+  it.each([
+    {
+      scenario: 'a transaction that could not be loaded',
+      error: new TransactionLoadError('unavailable', `Failed to fetch transaction ${'a'.repeat(64)}: HTTP 404`),
+      message: "Couldn't load all transactions.",
+    },
+    {
+      scenario: 'any other failure',
+      error: new Error('Account "Savings" must be verified before generating a statement'),
+      message: 'Account "Savings" must be verified before generating a statement',
+    },
+  ])('shows $message for $scenario', async ({ error, message }) => {
+    await setup()
+    const { service } = harness()
+    vi.spyOn(service, 'generateStatementData').mockImplementation(asyncFn(async () => Err(error)))
+
+    const created = await statementCaller(service).initiateGeneration(input)
+
+    await vi.waitFor(async () => {
+      await expect(service.findById(created.id)).resolves.toMatchObject({ status: 'failed', errorMessage: message })
     })
   })
 })

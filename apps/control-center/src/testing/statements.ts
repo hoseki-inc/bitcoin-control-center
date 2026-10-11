@@ -16,6 +16,8 @@ export function statementFixture(overrides: Partial<StatementDto> = {}): Stateme
     status: 'completed',
     quoteCurrency: 'USD',
     errorMessage: null,
+    txSource: 'public_mempool',
+    progress: null,
     user: { name: null, email: null },
     integrator: null,
     userId: 'user',

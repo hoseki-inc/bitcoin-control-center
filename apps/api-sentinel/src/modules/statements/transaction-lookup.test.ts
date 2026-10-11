@@ -1,25 +1,59 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import type { Account } from '@hoseki/packages/bitcoin/account'
 import { Network } from '@hoseki/packages/bitcoin/network'
 import { ElectrumProvider } from '@hoseki/packages/bitcoin/onchain/electrum_provider'
+import type { TransactionEntry } from '@hoseki/packages/bitcoin/onchain/types'
 import { ElectrumClient } from '@hoseki/packages/clients/electrum'
 import { Err, Ok, asyncFn } from '@hoseki/packages/result'
+import type { Result } from '@hoseki/packages/result'
 import { Wallets } from '@hoseki/packages/testing'
 import pino from 'pino'
+import type { Logger } from 'pino'
 import { assert, expect, it, onTestFinished, vi } from 'vitest'
 import { openDrizzleDatabase } from '../../db/drizzle'
 import { accounts } from '../../db/schema'
 import { ExchangeService } from '../exchange/service'
 import { DailyRatesService } from '../price/daily_rates'
+import { toTransactionEntries } from './entries'
+import { collectAccountHistory } from './history'
+import { type Sleep, lookupTransactions } from './lookup'
 import { StatementService } from './service'
-import { fetchTransactionEntries } from './tx_fetcher'
+import { MempoolSource } from './sources/mempool'
 
 const logger = pino({ level: 'silent' })
 const account = Wallets.singlesigNativeSegwitAccount
 const txid = '1'.repeat(64)
 const timestamp = 1704153600
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue }
+
+/** One account's entries from mempool lookups, composed the way statement generation does it. */
+async function fetchTransactionEntries(deps: {
+  account: Account
+  onchainProvider: ElectrumProvider
+  mempoolApiUrl: string
+  logger: Logger
+  sleep: Sleep
+}): Promise<Result<TransactionEntry[], Error>> {
+  const history = await collectAccountHistory(deps.account, deps.onchainProvider)
+  if (history.isErr()) {
+    return Err(history.unwrapErr())
+  }
+  const tip = (await deps.onchainProvider.getBlocksTip()).unwrap()
+  const heights = new Map([...history.unwrap()].map(([id, { height }]) => [id, height]))
+  const found = await lookupTransactions({
+    transactions: heights,
+    source: new MempoolSource(deps.mempoolApiUrl),
+    tipHeight: tip.height,
+    logger: deps.logger,
+    sleep: deps.sleep,
+  })
+  if (found.isErr()) {
+    return Err(found.unwrapErr())
+  }
+  return toTransactionEntries(history.unwrap(), found.unwrap(), tip.height)
+}
 
 async function withTestSetup(run: () => Promise<void>): Promise<void> {
   // Vitest owns teardown so it has its own timeout and runs once, even after a test timeout.
@@ -98,7 +132,16 @@ it.each([
   })
 })
 
-it('rejects partial history when a later batch contains a malformed transaction', async () => {
+it('rejects a response for a different transaction', async () => {
+  await withTestSetup(async () => {
+    const result = await fetchTransactionEntries(setup({ ...confirmedTx, txid: '9'.repeat(64) }))
+    expect(result.expectErr('another transaction must not stand in for this one').message).toBe(
+      `Invalid transaction data returned from mempool.space for ${txid}`,
+    )
+  })
+})
+
+it('rejects partial history when a later lookup returns a malformed transaction', async () => {
   await withTestSetup(async () => {
     const address = account.receiveAddresses(0, 1, Network.Mainnet)[0]
     assert(address)
@@ -126,7 +169,7 @@ it('rejects partial history when a later batch contains a malformed transaction'
 })
 
 it.each(['HTTP 404', 'HTTP 503', 'network rejection'] as const)(
-  'rejects partial history when a later batch fails with %s',
+  'rejects partial history when a later lookup fails with %s',
   async (failure) => {
     await withTestSetup(async () => {
       const transactionIds = Array.from({ length: 21 }, (_, index) => (index + 1).toString(16).padStart(64, '0'))
@@ -159,7 +202,8 @@ it.each(['HTTP 404', 'HTTP 503', 'network rejection'] as const)(
         expect(error.message).toContain(failure)
       }
       // A 404 is final; temporary failures are retried three times before the statement stops.
-      expect(fetch).toHaveBeenCalledTimes(failure === 'HTTP 404' ? 20 : 23)
+      const failedCalls = vi.mocked(fetch).mock.calls.filter(([input]) => new Request(input).url.endsWith(failedId))
+      expect(failedCalls).toHaveLength(failure === 'HTTP 404' ? 1 : 4)
     })
   },
 )

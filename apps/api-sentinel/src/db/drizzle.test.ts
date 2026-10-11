@@ -107,6 +107,7 @@ function rebuildTable(table: string): string {
       ? [
           `ALTER TABLE ${table}_new ADD COLUMN quote_currency TEXT NOT NULL DEFAULT 'USD' CHECK(quote_currency IN ('USD', 'CAD', 'GBP', 'EUR'));`,
           `ALTER TABLE ${table}_new ADD COLUMN error_message TEXT;`,
+          `ALTER TABLE ${table}_new ADD COLUMN tx_source TEXT CHECK(tx_source IN ('electrum', 'node_mempool', 'public_mempool'));`,
         ]
       : []),
     `INSERT INTO ${table}_new SELECT * FROM ${table};`,
