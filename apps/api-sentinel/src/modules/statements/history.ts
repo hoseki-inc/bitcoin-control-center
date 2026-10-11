@@ -13,6 +13,8 @@ interface HistoryTransaction {
   addresses: Address[]
 }
 
+const TXID_PATTERN = /^[0-9a-f]{64}$/i
+
 /** An account's confirmed transactions by txid, in the order Electrum listed them. */
 export type AccountHistory = Map<string, HistoryTransaction>
 
@@ -54,15 +56,20 @@ export const collectAccountHistory = asyncFn(
       }
 
       for (const entry of historyRes.unwrap()) {
+        // A txid goes into lookup URLs, so anything but 64 hex digits from the server stops the statement.
+        if (!TXID_PATTERN.test(entry.tx_hash)) {
+          return Err(new TransactionLoadError('history', 'Electrum returned an invalid txid'))
+        }
+        const txid = entry.tx_hash.toLowerCase()
         // Electrum reports unconfirmed transactions at height 0 or -1. Statements end at least two days
         // ago and pending transactions are dated when fetched, so they can't fall inside a statement.
         // Skipping them means a transaction the server hasn't seen can't fail the statement.
         if (entry.height <= 0) {
           continue
         }
-        const known = history.get(entry.tx_hash)
+        const known = history.get(txid)
         if (known === undefined) {
-          history.set(entry.tx_hash, { height: entry.height, addresses: [address] })
+          history.set(txid, { height: entry.height, addresses: [address] })
         } else if (!known.addresses.includes(address)) {
           known.addresses.push(address)
         }

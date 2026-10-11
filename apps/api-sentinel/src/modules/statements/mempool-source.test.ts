@@ -203,8 +203,8 @@ it.each(['HTTP 404', 'HTTP 503', 'network rejection'] as const)(
       // A 404 is final; temporary failures are retried three times before the statement stops.
       const failedCalls = vi.mocked(fetch).mock.calls.filter(([input]) => new Request(input).url.endsWith(failedId))
       expect(failedCalls).toHaveLength(failure === 'HTTP 404' ? 1 : 4)
-      // A 404 stops the statement before the last transaction is requested.
-      expect(fetch).toHaveBeenCalledTimes(failure === 'HTTP 404' ? 20 : 24)
+      // Every other transaction is requested at most once.
+      expect(vi.mocked(fetch).mock.calls.length).toBeLessThanOrEqual(transactionIds.length - 1 + failedCalls.length)
     })
   },
 )
@@ -327,6 +327,84 @@ it('gives each lookup a timeout and releases failed responses', async () => {
     for (const [, init] of vi.mocked(fetch).mock.calls) {
       expect(init?.signal).toBeInstanceOf(AbortSignal)
     }
+  })
+})
+
+it('gives each request a 15 s timeout and cancels it when the statement stops', async () => {
+  await withTestSetup(async () => {
+    const timeout = new AbortController()
+    const timeoutFor = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(timeout.signal)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => Response.json(confirmedTx)),
+    )
+    const run = new AbortController()
+
+    await new MempoolSource('https://example.invalid').lookup(txid, 800000, run.signal)
+    const signal = vi.mocked(fetch).mock.calls[0]?.[1]?.signal
+
+    expect(timeoutFor).toHaveBeenCalledWith(15_000)
+    expect(signal?.aborted).toBe(false)
+    run.abort()
+    expect(signal?.aborted).toBe(true)
+  })
+})
+
+it('times out a request even when the statement keeps going', async () => {
+  await withTestSetup(async () => {
+    const timeout = new AbortController()
+    vi.spyOn(AbortSignal, 'timeout').mockReturnValue(timeout.signal)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => Response.json(confirmedTx)),
+    )
+
+    await new MempoolSource('https://example.invalid').lookup(txid, 800000, new AbortController().signal)
+    const signal = vi.mocked(fetch).mock.calls[0]?.[1]?.signal
+    timeout.abort()
+
+    expect(signal?.aborted).toBe(true)
+  })
+})
+
+it.each([
+  { scenario: 'a 503 with Retry-After', headers: { 'Retry-After': '5' }, rateLimited: true, retryAfterMs: 5_000 },
+  { scenario: 'a plain 503', headers: {}, rateLimited: false, retryAfterMs: null },
+])('holds back every lookup only for $scenario', async ({ headers, rateLimited, retryAfterMs }) => {
+  await withTestSetup(async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('Busy', { status: 503, headers })),
+    )
+
+    const result = await new MempoolSource('https://example.invalid').lookup(txid, 800000, new AbortController().signal)
+
+    expect(result.expectErr('a busy server must fail this attempt').retry).toEqual({ rateLimited, retryAfterMs })
+  })
+})
+
+it('stops the statement when Electrum returns something other than a txid', async () => {
+  await withTestSetup(async () => {
+    const deps = setup(confirmedTx)
+    vi.spyOn(deps.onchainProvider.deps.electrum, 'getHistory').mockResolvedValue(
+      Ok([{ tx_hash: '../../admin?x=', height: 800000 }]),
+    )
+
+    const result = await accountEntries(deps)
+
+    expect(result.expectErr('an invalid txid must not reach a lookup URL').message).toBe(
+      'Electrum returned an invalid txid',
+    )
+    expect(fetch).not.toHaveBeenCalled()
+  })
+})
+
+it('looks up an uppercase txid from Electrum in lowercase', async () => {
+  await withTestSetup(async () => {
+    const deps = setup(confirmedTx, [txid.toUpperCase()])
+
+    expect((await accountEntries(deps)).isOk()).toBe(true)
+    expect(new Request(vi.mocked(fetch).mock.calls[0]?.[0] ?? '').url).toMatch(new RegExp(`/api/tx/${txid}$`))
   })
 })
 

@@ -43,6 +43,7 @@ import {
   settings,
   signedMessages as signedMessagesTable,
 } from '../../db/schema'
+import { loggableError } from '../../lib/loggable-error'
 import { type ConnectionDetails, MAX_CONNECTION_PROFILES } from '../connection_profiles/store'
 import { PRICE_FALLBACKS_SETTING, PRICE_SOURCES, PRICE_SOURCE_SETTING } from '../price/service'
 import { StatementMapper } from '../statements/mapper'
@@ -1519,25 +1520,16 @@ const statementRouter = t.router({
 
           const completed = await ctx.app.statementService.complete(statementId, transactionMap, dailyRates)
           if (completed.isErr()) {
+            // These messages hold only fixed text, a currency or a date.
+            logger.error({ statementId, error: completed.unwrapErr().message }, 'Statement could not be completed')
             await ctx.app.statementService.fail(statementId, completed.unwrapErr().message)
             return
           }
           logger.info({ statementId }, 'Statement generation completed')
         } catch (err) {
-          // Database errors put query parameters, such as txids or addresses, in their message, which
-          // can span several lines. Log only the error's type and its stack frames.
+          // Database errors put the values they were saving, such as txids, in their message.
           logger.error(
-            {
-              statementId,
-              error: err instanceof Error ? err.name : 'unknown',
-              stack:
-                err instanceof Error
-                  ? err.stack
-                      ?.split('\n')
-                      .filter((line) => /^\s+at /.test(line))
-                      .join('\n')
-                  : undefined,
-            },
+            { statementId, ...(err instanceof Error ? loggableError(err) : { error: 'unknown' }) },
             'Unhandled error in statement generation',
           )
           // The same fault can stop this write too; a restart then marks the statement interrupted.
@@ -1545,7 +1537,7 @@ const statementRouter = t.router({
             await ctx.app.statementService.fail(statementId)
           } catch (failure) {
             logger.error(
-              { statementId, error: failure instanceof Error ? failure.name : 'unknown' },
+              { statementId, ...(failure instanceof Error ? loggableError(failure) : { error: 'unknown' }) },
               'Could not mark the statement as failed',
             )
           }

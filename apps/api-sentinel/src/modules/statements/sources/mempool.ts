@@ -33,9 +33,6 @@ const TX_CONCURRENCY = 10
 /** A stalled lookup fails like any other instead of leaving the statement pending. */
 const REQUEST_TIMEOUT_MS = 15_000
 
-/** Upper bound on a server's Retry-After, so one response can't stall a statement for long. */
-const MAX_RETRY_AFTER_MS = 30_000
-
 /** Responses that mean "try again shortly" rather than "this transaction is unavailable". */
 const RETRYABLE_STATUSES = new Set([429, 502, 503, 504])
 
@@ -47,13 +44,16 @@ function mempoolSourceKind(apiUrl: string): TxSourceKind {
   return URL.canParse(apiUrl) && isLocalOrPrivateHost(new URL(apiUrl).hostname) ? 'node_mempool' : 'public_mempool'
 }
 
-/** Seconds from a Retry-After header, in milliseconds; HTTP-date values fall back to the default wait. */
+/**
+ * Seconds from a Retry-After header, in milliseconds; HTTP-date values fall back to the default wait.
+ * The lookup pool limits how long any server can hold lookups back.
+ */
 function getRetryAfterMs(response: Response): number | null {
   const header = response.headers.get('retry-after')
   if (header === null || !/^\d+$/.test(header.trim())) {
     return null
   }
-  return Math.min(Number(header.trim()) * 1000, MAX_RETRY_AFTER_MS)
+  return Number(header.trim()) * 1000
 }
 
 function invalid(txid: string, cause?: unknown): LookupFailure {

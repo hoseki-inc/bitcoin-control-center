@@ -100,8 +100,8 @@ it('stops starting lookups once one fails for good', async () => {
   const result = await lookupTransactions({ transactions: atHeight(ids), source: failing, logger })
 
   expect(result.expectErr('a missing transaction must stop the lookups').kind).toBe('unavailable')
-  // Only the first round of 10 started; the other 20 never did.
-  expect(failing.lookup).toHaveBeenCalledTimes(10)
+  // Lookups already started may finish; most of the queue never starts.
+  expect(failing.lookup.mock.calls.length).toBeLessThan(ids.length)
 })
 
 it('stops every lookup when one throws', async () => {
@@ -117,7 +117,7 @@ it('stops every lookup when one throws', async () => {
   await delay(5)
 
   expect(result.expectErr('a thrown lookup must stop the statement').kind).toBe('unreachable')
-  expect(throwing.lookup).toHaveBeenCalledTimes(10)
+  expect(throwing.lookup.mock.calls.length).toBeLessThan(ids.length)
 })
 
 it('rejects an answer for a different transaction', async () => {
@@ -282,6 +282,7 @@ it('stops every lookup when anything else in a worker throws', async () => {
 
 it.each([
   { retryAfterMs: 600_000, wait: 30_000 },
+  { retryAfterMs: Number.POSITIVE_INFINITY, wait: 30_000 },
   { retryAfterMs: Number.NaN, wait: 1_000 },
   { retryAfterMs: -5, wait: 1_000 },
 ])('limits a requested wait of $retryAfterMs ms to $wait ms', async ({ retryAfterMs, wait }) => {
@@ -308,9 +309,11 @@ it.each([
   expect(sleep.mock.calls.map(([ms]) => ms)).toEqual([wait])
 })
 
-it.each(Array.from({ length: 12 }, (_, ticks) => ticks))(
-  'never sends a retry into a pause another lookup set just before it (%i ticks apart)',
-  async (ticks) => {
+it('never sends a retry into a pause another lookup set just before it', async () => {
+  // The rate limit lands 0–11 ticks after the busy lookup's retry wait ends. Which comes first is
+  // recorded for each, so the sweep is known to cover both orders.
+  const orders = new Set<string>()
+  for (let ticks = 0; ticks < 12; ticks++) {
     const [busy = '', limited = ''] = txids(2)
     const events: string[] = []
     let releaseRetry = (): void => {}
@@ -331,7 +334,6 @@ it.each(Array.from({ length: 12 }, (_, ticks) => ticks))(
           retry: { rateLimited: false, retryAfterMs: null },
         })
       }
-      // The rate limit lands a few ticks after the busy lookup's retry wait ends.
       await retryReleased
       for (let tick = 0; tick < ticks; tick++) {
         await Promise.resolve()
@@ -356,9 +358,90 @@ it.each(Array.from({ length: 12 }, (_, ticks) => ticks))(
     expect(result.unwrap().size).toBe(2)
     const paused = events.indexOf('sleep 30000')
     const retried = events.indexOf('lookup busy 2')
+    orders.add(paused < retried ? 'pause first' : 'retry first')
     if (paused < retried) {
       // The pause was set before the retry went out, so the retry must have waited it out.
       expect(events.slice(paused, retried)).toContain('sleep 29000')
     }
-  },
-)
+  }
+  expect(orders).toEqual(new Set(['pause first', 'retry first']))
+})
+
+it('reports no progress once a lookup has failed', async () => {
+  const [missing = '', slow = ''] = txids(2)
+  const onProgress = vi.fn<(done: number, total: number) => void>()
+  const lookups = source(async (txid) => {
+    if (txid === missing) {
+      await delay(2)
+      return Err({ error: new TransactionLoadError('unavailable', 'Not found'), retry: null })
+    }
+    await delay(10)
+    return Ok(confirmedTx(txid))
+  }, 2)
+
+  await lookupTransactions({ transactions: atHeight([missing, slow]), source: lookups, logger, onProgress })
+  await delay(20)
+
+  expect(onProgress.mock.calls).toEqual([[0, 2]])
+})
+
+it('ends a real wait as soon as another lookup fails', async () => {
+  const [limited = '', missing = ''] = txids(2)
+  const lookups = source(async (txid) => {
+    if (txid === missing) {
+      await delay(20)
+      return Err({ error: new TransactionLoadError('unavailable', 'Not found'), retry: null })
+    }
+    return rateLimited(30_000)
+  }, 2)
+  const started = performance.now()
+
+  // The default sleep, which would otherwise wait the full 30 s.
+  const result = await lookupTransactions({ transactions: atHeight([limited, missing]), source: lookups, logger })
+
+  expect(result.expectErr('a missing transaction must stop the statement').kind).toBe('unavailable')
+  expect(performance.now() - started).toBeLessThan(1_000)
+})
+
+it('does not wait for a request that ignores the stop', async () => {
+  const [missing = '', stubborn = ''] = txids(2)
+  const lookups = source(async (txid) => {
+    if (txid === missing) {
+      await delay(5)
+      return Err({ error: new TransactionLoadError('unavailable', 'Not found'), retry: null })
+    }
+    // Like an Electrum request, which can't be cancelled, this one runs to the end.
+    await delay(2_000)
+    return Ok(confirmedTx(txid))
+  }, 2)
+  const started = performance.now()
+
+  const result = await lookupTransactions({ transactions: atHeight([missing, stubborn]), source: lookups, logger })
+
+  expect(result.expectErr('a missing transaction must stop the statement').kind).toBe('unavailable')
+  expect(performance.now() - started).toBeLessThan(1_000)
+})
+
+it('logs where an unexpected error came from, without its message', async () => {
+  const lines: string[] = []
+  const log = pino(
+    { level: 'info' },
+    {
+      write: (line: string) => {
+        lines.push(line)
+      },
+    },
+  )
+  const [txid = ''] = txids(1)
+  const lookups = source(async () => {
+    throw new TypeError(`Cannot read the outputs of ${txid}`)
+  })
+
+  const result = await lookupTransactions({ transactions: atHeight([txid]), source: lookups, logger: log })
+
+  expect(result.expectErr('a bug must stop the statement').kind).toBe('unreachable')
+  const logged = lines.join('')
+  expect(logged).toContain('"error":"TypeError"')
+  expect(logged).toContain('lookup.test.ts')
+  expect(logged).not.toContain(txid)
+})

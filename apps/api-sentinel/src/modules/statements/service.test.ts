@@ -453,13 +453,46 @@ describe('statement failure messages', () => {
     const { service } = harness()
     vi.spyOn(service, 'generateStatementData').mockImplementation(asyncFn(async () => Err(error)))
 
-    const created = await statementCaller(service).initiateGeneration(input)
+    const { log, lines } = capturedLogger()
+    const created = await statementCaller(service, log).initiateGeneration(input)
 
     await vi.waitFor(async () => {
       await expect(service.findById(created.id)).resolves.toMatchObject({ status: 'failed', errorMessage: message })
     })
     // The statement's id is what generation reports its progress against.
     expect(service.generateStatementData).toHaveBeenCalledWith(expect.anything(), created.id)
+    expect(lines.join('')).toContain('Statement data generation failed')
+    expect(lines.join('')).not.toContain('a'.repeat(64))
+  })
+
+  it('logs a statement that could not be saved', async () => {
+    await setup()
+    const { service, quotes } = harness()
+    // Rates in another currency than the statement's, which saving refuses.
+    vi.spyOn(service, 'generateStatementData').mockImplementation(
+      asyncFn(async (args) => {
+        const dailyRates = (
+          await quotes.getDailyRates(
+            args.openingDate,
+            args.closingDate,
+            'CAD',
+            getRequiredRateDates(args.openingDate, args.closingDate, args.timezone, transactions),
+          )
+        ).unwrap()
+        return Ok({ transactionMap: transactions, dailyRates })
+      }),
+    )
+    const { log, lines } = capturedLogger()
+
+    const created = await statementCaller(service, log).initiateGeneration(input)
+
+    await vi.waitFor(async () => {
+      await expect(service.findById(created.id)).resolves.toMatchObject({
+        status: 'failed',
+        errorMessage: 'Statement quote currency does not match its saved rates.',
+      })
+    })
+    expect(lines.join('')).toContain('Statement could not be completed')
   })
 
   interface CapturedLog {

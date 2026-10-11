@@ -4,7 +4,7 @@ import { expect, it, vi } from 'vitest'
 import { accounts } from '../../db/schema'
 import { setupDistinctWalletNames, setupTwoExchangeAccounts } from './service.fixtures'
 
-it('reports progress through history and lookups, then clears it when the statement completes', async () => {
+it('reports progress through history and lookups, and none once the statement completes', async () => {
   const { service, input, onchainProvider } = await setupDistinctWalletNames()
   const id = (await service.create(input)).unwrap()
   await expect(service.findById(id)).resolves.toMatchObject({ status: 'pending', progress: 0 })
@@ -24,6 +24,14 @@ it('reports progress through history and lookups, then clears it when the statem
   const lookup = vi.mocked(fetch).getMockImplementation()
   vi.mocked(fetch).mockImplementation(async (...args) => {
     atLookup.push(await progress())
+    // The spending wallet's lookup waits until the savings one has finished, so progress is read
+    // halfway through the lookups too.
+    if (new Request(args[0]).url.endsWith('2'.repeat(64))) {
+      await vi.waitFor(async () => {
+        await expect(progress()).resolves.toBeGreaterThan(11)
+      })
+      atLookup.push(await progress())
+    }
     return lookup ? lookup(...args) : expect.fail('Transaction lookups must be mocked')
   })
 
@@ -31,7 +39,8 @@ it('reports progress through history and lookups, then clears it when the statem
 
   // History is the first ninth of Sentinel's progress: half of it after the first of two wallets.
   expect(atHistory).toEqual([0, 5])
-  expect(atLookup).toEqual([11, 11])
+  // Lookups take the next seven ninths: halfway through them is halfway through generation.
+  expect(atLookup).toEqual([11, 11, 50])
   await expect(service.findById(id)).resolves.toMatchObject({ progress: 100 })
 
   ;(await service.complete(id, data.transactionMap, data.dailyRates)).unwrap()

@@ -76,7 +76,7 @@ const INTERRUPTED_MESSAGE = 'Generation was interrupted.'
 /** Transaction errors can name a txid or a server, so a statement shows this instead. */
 const TRANSACTIONS_FAILED_MESSAGE = "Couldn't load all transactions."
 
-/** Shares of Sentinel's 0–100 progress for history and lookups; prices take the rest. */
+/** Shares of Sentinel's 0–100 progress for history and lookups; exchange accounts and prices take the rest. */
 const HISTORY_SHARE = 1 / 9
 const LOOKUP_SHARE = 7 / 9
 
@@ -344,11 +344,12 @@ export class StatementService {
 
   /** Mark a statement as failed. */
   public async fail(id: string, message = 'Statement generation failed.'): Promise<void> {
-    this.progress.delete(id)
     await this.db
       .update(statements)
       .set({ status: 'failed', errorMessage: message, updatedAt: sql`datetime('now')` })
       .where(and(eq(statements.id, id), eq(statements.status, 'pending')))
+    // Kept until the write succeeds, so a statement that can't be marked failed keeps its last progress.
+    this.progress.delete(id)
   }
 
   /** Find a statement by ID and return its DTO. */

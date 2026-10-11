@@ -2,6 +2,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { Err, Ok, asyncFn } from '@hoseki/packages/result'
 import type { Result } from '@hoseki/packages/result'
 import type { Logger } from 'pino'
+import { loggableError } from '../../lib/loggable-error'
 import { type LookedUpTx, TransactionLoadError, type TxSource } from './sources/types'
 
 /** Waits before each retry of a temporary failure. */
@@ -27,7 +28,7 @@ async function defaultSleep(ms: number, signal: AbortSignal): Promise<void> {
 
 /** A server's requested wait, limited to a sensible range. */
 function retryAfter(ms: number | null): number {
-  return ms !== null && Number.isFinite(ms) ? Math.min(Math.max(ms, 0), MAX_PAUSE_MS) : 0
+  return ms === null || Number.isNaN(ms) ? 0 : Math.min(Math.max(ms, 0), MAX_PAUSE_MS)
 }
 
 /**
@@ -62,6 +63,7 @@ export const lookupTransactions = asyncFn(
         resolve()
       })
     })
+    const abandoned = stopped.then((): null => null)
     const fail = (error: TransactionLoadError): void => {
       run.failure ??= error
       stop.abort()
@@ -88,11 +90,22 @@ export const lookupTransactions = asyncFn(
           }
           // Nothing is awaited between the checks above and the request, so a pause or failure
           // another lookup records can't slip in between.
-          let result: Awaited<ReturnType<TxSource['lookup']>>
+          let result: Awaited<ReturnType<TxSource['lookup']>> | null
           try {
-            result = await source.lookup(txid, transactions.get(txid) ?? 0, stop.signal)
+            const pending = source.lookup(txid, transactions.get(txid) ?? 0, stop.signal)
+            // A source that can't cancel a request, such as an Electrum client, mustn't hold up a
+            // failed run; its late answer or error is ignored.
+            pending.catch(() => undefined)
+            result = await Promise.race([pending, abandoned])
           } catch (cause) {
+            logger.error(
+              cause instanceof Error ? loggableError(cause) : { error: 'unknown' },
+              'Unexpected error looking up a transaction',
+            )
             return Err(new TransactionLoadError('unreachable', `Failed to fetch transaction ${txid}`, { cause }))
+          }
+          if (result === null) {
+            return Err(failure() ?? new TransactionLoadError('unreachable', 'Lookups stopped'))
           }
           if (result.isOk()) {
             return Ok(result.unwrap())
@@ -132,6 +145,10 @@ export const lookupTransactions = asyncFn(
         }
       } catch (cause) {
         // Anything unexpected still stops every lookup, rather than leaving the others running.
+        logger.error(
+          cause instanceof Error ? loggableError(cause) : { error: 'unknown' },
+          'Unexpected error looking up transactions',
+        )
         fail(new TransactionLoadError('unreachable', 'Transaction lookup failed', { cause }))
       }
     }
