@@ -773,7 +773,7 @@ export class StatementService {
       .orderBy(asc(exchangeBalanceSnapshots.timestamp))
   }
 
-  /** Records a statement's progress; it never moves back. */
+  /** The source a new statement records: Electrum if chosen, otherwise the configured mempool. */
   private async newStatementSource(): Promise<TxSourceKind> {
     return (await this.sourceChoice()) === 'electrum' ? 'electrum' : this.mempoolSource.kind
   }
@@ -796,6 +796,7 @@ export class StatementService {
     return kind === 'electrum' ? new ElectrumSource(this.onchainProvider) : this.mempoolSource
   }
 
+  /** Records a statement's progress; it never moves back. */
   private reportProgress(statementId: string | undefined, fraction: number): void {
     if (statementId === undefined) {
       return

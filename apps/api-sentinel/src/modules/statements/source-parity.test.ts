@@ -262,12 +262,15 @@ function buildHistory(wallets: readonly Account[]): BuiltTx[] {
   const [firstSpend] = ring
   const lastSpend = ring.at(-1)
   assert(first !== undefined && firstSpend !== undefined && lastSpend !== undefined)
+  const coins = [spend(firstSpend, 1), spend(lastSpend, 0)]
+  const swept = coins.reduce((total, coin) => total + coin.prevout.value, 0)
   const sweep = buildTx(
-    [spend(firstSpend, 1), spend(lastSpend, 0)],
+    coins,
     [
       { address: outside, value: 500_000 },
       { address: null, value: 0 },
-      { address: change(first), value: firstSpend.outputs[1]?.value ?? 0 },
+      // What's left after the payment and a 1,000 sat fee.
+      { address: change(first), value: swept - 500_000 - 1_000 },
     ],
     firstBlock + 20,
   )
