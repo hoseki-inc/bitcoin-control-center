@@ -75,6 +75,8 @@ export interface AppContextOptions {
   connectionProfiles?: boolean
   /** Desktop must keep settings available even when its saved server is offline. */
   waitForElectrum?: boolean
+  /** Enabled only by desktop launchers: Settings can choose Electrum for statement lookups. */
+  statementSourceSetting?: boolean
   /** Distribution-owned Tor process; Sentinel owns connection policy. */
   tor?: {
     start: () => Promise<{ state: string; message?: string }>
@@ -241,6 +243,7 @@ export const createAppContext = asyncFn(
       exchangeService,
       mempoolApiUrl: env.MEMPOOL_API_URL,
       logger,
+      sourceSelectable: options.statementSourceSetting === true,
     })
     const interrupted = await statementService.failInterrupted()
     if (interrupted > 0) {

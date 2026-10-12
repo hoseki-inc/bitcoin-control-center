@@ -1,8 +1,9 @@
+import { ElectrumServerError } from '@hoseki/packages/clients/electrum/lib/protocol'
 import { Err, Ok, asyncFn } from '@hoseki/packages/result'
 import { eq } from 'drizzle-orm'
 import { expect, it, vi } from 'vitest'
-import { accounts } from '../../db/schema'
-import { setupDistinctWalletNames, setupTwoExchangeAccounts } from './service.fixtures'
+import { accounts, settings } from '../../db/schema'
+import { setupDesktopWallets, setupDistinctWalletNames, setupTwoExchangeAccounts } from './service.fixtures'
 
 it('reports progress through history and lookups, and none once the statement completes', async () => {
   const { service, input, onchainProvider } = await setupDistinctWalletNames()
@@ -54,6 +55,36 @@ it('records where a statement with wallets looks up transactions', async () => {
 
   // The fixtures' mempool server isn't on a private network, so it counts as public.
   await expect(service.findById(id)).resolves.toMatchObject({ txSource: 'public_mempool' })
+})
+
+it('records the source chosen in Settings, and generates each statement with the one it recorded', async () => {
+  const { service, input, onchainProvider } = await setupDesktopWallets()
+  ;(await service.setSourceChoice('electrum')).unwrap()
+  const id = (await service.create(input)).unwrap()
+  ;(await service.setSourceChoice('mempool')).unwrap()
+  const getTransaction = vi
+    .spyOn(onchainProvider.deps.electrum, 'getTransaction')
+    .mockImplementation(asyncFn(async () => Err(new ElectrumServerError('No such transaction'))))
+
+  const result = await service.generateStatementData(input, id)
+
+  await expect(service.findById(id)).resolves.toMatchObject({ txSource: 'electrum' })
+  // Changing the setting afterwards doesn't change where this statement looks transactions up.
+  expect(result.expectErr('the Electrum server has no transactions')).toMatchObject({ kind: 'unavailable' })
+  expect(getTransaction).toHaveBeenCalled()
+  expect(fetch).not.toHaveBeenCalled()
+  const next = (await service.create(input)).unwrap()
+  await expect(service.findById(next)).resolves.toMatchObject({ txSource: 'public_mempool' })
+})
+
+it('ignores a saved Electrum choice where the source cannot be chosen', async () => {
+  const { service, input, db } = await setupDistinctWalletNames()
+  await db.insert(settings).values({ key: 'statement_tx_source', value: 'electrum' })
+
+  const id = (await service.create(input)).unwrap()
+
+  await expect(service.findById(id)).resolves.toMatchObject({ txSource: 'public_mempool' })
+  expect((await service.setSourceChoice('electrum')).isErr()).toBe(true)
 })
 
 it('records no source for a statement with only exchange accounts', async () => {
@@ -115,6 +146,26 @@ it('logs only the kind of a failed history request, never its server', async () 
   const logged = logs.join('')
   expect(logged).toContain('"kind":"history"')
   expect(logged).not.toContain('10.1.2.3')
+})
+
+it.each([
+  { scenario: 'refuses', error: (txid: string) => new ElectrumServerError(`No such transaction ${txid}`) },
+  { scenario: 'drops the connection', error: () => new Error('connect ECONNREFUSED electrum.example:50002') },
+])('logs only the kind when the Electrum server $scenario, never the txid or server', async ({ error }) => {
+  const { service, input, onchainProvider, logs } = await setupDesktopWallets()
+  ;(await service.setSourceChoice('electrum')).unwrap()
+  const id = (await service.create(input)).unwrap()
+  vi.spyOn(onchainProvider.deps.electrum, 'getTransaction').mockImplementation(
+    asyncFn(async (txid: string) => Err(error(txid))),
+  )
+
+  expect((await service.generateStatementData(input, id)).isErr()).toBe(true)
+
+  const logged = logs.join('')
+  expect(logged).toMatch(/"kind":"(unavailable|unreachable)"/)
+  expect(logged).not.toContain('1'.repeat(64))
+  expect(logged).not.toContain('2'.repeat(64))
+  expect(logged).not.toContain('electrum.example')
 })
 
 it('stops generating when a wallet is archived while its transactions are looked up', async () => {

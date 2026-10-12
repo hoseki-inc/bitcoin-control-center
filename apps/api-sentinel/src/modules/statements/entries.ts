@@ -13,8 +13,9 @@ function spentOutput(input: TxInput, found: ReadonlyMap<string, LookedUpTx>): Tx
   if (input.spends === null) {
     return null
   }
-  // Spending a wallet output means the transaction that created it is in the wallet's history.
-  return found.get(input.spends.txid)?.outputs[input.spends.vout] ?? null
+  // Spending a wallet output means the transaction that created it is in the wallet's history,
+  // whose txids are lowercase.
+  return found.get(input.spends.txid.toLowerCase())?.outputs[input.spends.vout] ?? null
 }
 
 /** One entry per transaction and wallet address it involves, valued for that address. */

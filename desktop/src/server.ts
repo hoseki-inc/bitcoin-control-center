@@ -4,6 +4,8 @@ interface ServerOptions {
   /** Saved Electrum connections, which only the desktop app offers. */
   connectionProfiles?: boolean
   waitForElectrum?: boolean
+  /** Lets Settings choose Electrum for statement lookups, which only the desktop app offers. */
+  statementSourceSetting?: boolean
   tor?: Pick<TorManager, 'start' | 'getStatus' | 'getSocksProxy'>
   /** Port to bind; zero lets the operating system choose a free port. */
   listenPort?: number
