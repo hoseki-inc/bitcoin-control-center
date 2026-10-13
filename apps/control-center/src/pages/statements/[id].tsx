@@ -1,5 +1,6 @@
 import { Box, Button, Flex, HStack, IconButton, Link, Stack, Text } from '@chakra-ui/react'
-import { renderStatementDocument } from '@hoseki/packages/pdf'
+import { renderStatementPdf } from '@hoseki/packages/pdf'
+import { parseUnknown } from '@hoseki/packages/result/lib/parse'
 import type { StatementDocumentFormat, StatementId } from '@hoseki/packages/schemas'
 import { Animations, ErrorBanner, Spinner } from '@hoseki/packages/ui/design-system'
 import {
@@ -9,14 +10,15 @@ import {
   usePdfDownloadMutation,
 } from '@hoseki/packages/ui/prove-verify-ui'
 import { formatDateRange } from '@hoseki/packages/ui/utils'
-import { PDFViewer, pdf } from '@react-pdf/renderer'
 import { ShieldCheckIcon, XIcon } from 'lucide-react'
-import { type RefObject, useRef, useState } from 'react'
-import { Link as RouterLink, useNavigate } from 'react-router'
+import { type RefObject, useEffect, useRef, useState } from 'react'
+import { Link as RouterLink, useLocation, useNavigate } from 'react-router'
 import { DeleteStatementButton } from '../../components/statements/delete-statement-button'
 import { StatementGenerationModal } from '../../components/statements/statement-generation-modal'
 import { useRenderedStatement } from '../../hooks/use-rendered-statement'
+import { useStatementGeneration } from '../../hooks/use-statement-generation'
 import { UrlParameter, useUrlParameter } from '../../hooks/use-url-parameters'
+import { JustGeneratedStateSchema } from '../../lib/statement-navigation'
 import { baseTrpc, trpc } from '../../trpc'
 import type { StatementDto } from '../../trpc/server-types'
 
@@ -39,6 +41,18 @@ export function StatementDetailsPage(): JSX.Element {
 
 function StatementDetailsPageContent({ statementId }: { statementId: StatementId }) {
   const navigate = useNavigate()
+  const location = useLocation()
+  // Opened by Generate, with the statement Sentinel just returned: show generation at once, without
+  // confirming its status first. Read once, and cleared so Back to this page confirms as usual.
+  const [justGenerated] = useState(() => {
+    const state: unknown = location.state
+    return parseUnknown(JustGeneratedStateSchema, state).isOk()
+  })
+  useEffect(() => {
+    if (justGenerated) {
+      void navigate(location.pathname, { replace: true, state: null })
+    }
+  }, [justGenerated, navigate, location.pathname])
   const {
     data: statement,
     isLoading,
@@ -52,15 +66,23 @@ function StatementDetailsPageContent({ statementId }: { statementId: StatementId
     retry: (failureCount, retryError) => failureCount < 3 && retryError.data?.code !== 'NOT_FOUND',
   })
   const [statementFormat, setStatementFormat] = useState<StatementDocumentFormat>('custom')
-  // Generation stays open after the statement is done until its closing animation ends,
-  // then stays mounted so the screen can fade out.
-  const [generation, setGeneration] = useState<'hidden' | 'showing' | 'finished'>('hidden')
-  // A status cached from an earlier visit may be stale; only open generation for a current one.
-  const isConfirmedPending = isFetchedAfterMount && error === null && statement?.status === 'pending'
-  // Open on the same render the status arrives, so the page never shows through first.
-  if (generation === 'hidden' && isConfirmedPending) {
-    setGeneration('showing')
-  }
+  const isCompleted = statement?.status === 'completed'
+  // Loaded and built here, while generation may still be open, so its last step can follow the build.
+  const documentQuery = trpc.portalProve.statement.retrieveDocumentData.useQuery(
+    { statementId, format: statementFormat },
+    { enabled: isCompleted, refetchOnWindowFocus: false },
+  )
+  const rendered = useRenderedStatement(documentQuery.data, isCompleted)
+  const documentError = documentQuery.error?.message ?? rendered.error
+  const generation = useStatementGeneration({
+    // A status cached from an earlier visit may be stale; only open generation for a current one.
+    isConfirmedPending: (isFetchedAfterMount || justGenerated) && error === null && statement?.status === 'pending',
+    status: statement?.status ?? 'pending',
+    progress: statement?.progress ?? null,
+    isDocumentLoaded: documentQuery.data !== undefined,
+    // A PDF that can't be built ends generation too; the page shows why.
+    isDocumentReady: rendered.url !== null || documentError != null,
+  })
   const headingRef = useRef<HTMLHeadingElement>(null)
 
   // A failed status check keeps the statement already shown, unless the statement is gone.
@@ -73,25 +95,30 @@ function StatementDetailsPageContent({ statementId }: { statementId: StatementId
   }
 
   // Wait to confirm a cached "generating" status too, rather than show the page before generation opens.
-  if (isLoading || (statement.status === 'pending' && !isFetchedAfterMount)) {
+  if (isLoading || (statement.status === 'pending' && !isFetchedAfterMount && !justGenerated)) {
     return <Spinner fullPage size="xl" />
   }
 
   return (
-    <Flex gap={0} flexDirection={{ base: 'column', lg: 'row' }} align="flex-start">
-      {generation !== 'hidden' && (
+    <Flex
+      gap={0}
+      flexDirection={{ base: 'column', lg: 'row' }}
+      align="flex-start"
+      // Nothing shows through while generation fades in; the statement appears as it fades out.
+      // Generation renders in a portal, so it isn't hidden with the page.
+      visibility={generation.isOpen ? 'hidden' : 'visible'}
+    >
+      {generation.isMounted && (
         <StatementGenerationModal
-          isOpen={generation === 'showing'}
-          status={statement.status}
-          onFinished={() => {
-            setGeneration('finished')
-          }}
+          isOpen={generation.isOpen}
+          progress={generation.progress}
+          isCompleted={generation.isCompleted}
           onClose={() => {
             // Once the statement is ready, closing reveals it; while generating, go back to the list.
             if (statement.status === 'pending') {
               void navigate('/statements')
             } else {
-              setGeneration('finished')
+              generation.close()
             }
           }}
           finalFocusRef={headingRef}
@@ -123,7 +150,17 @@ function StatementDetailsPageContent({ statementId }: { statementId: StatementId
         bg="#F9F9F9"
       >
         <StatementViewer
-          statement={statement}
+          isCompleted={statement.status === 'completed'}
+          pdfUrl={rendered.url}
+          isLoading={documentQuery.isLoading}
+          error={documentError}
+          onRetry={() => {
+            if (documentQuery.error) {
+              void documentQuery.refetch()
+            } else {
+              rendered.retry()
+            }
+          }}
           statementFormat={statementFormat}
           onStatementFormatChange={setStatementFormat}
         />
@@ -193,14 +230,11 @@ async function triggerPdfDownload(args: { statement: StatementDto; format: State
     format: args.format,
   })
 
-  // Render the PDF document client-side (same pipeline as the viewer)
-  const document = await renderStatementDocument({
+  // Build the PDF client-side (same pipeline as the viewer) and download it
+  const blob = await renderStatementPdf({
     watermarkText: '',
     statement: statementData,
   })
-
-  // Generate PDF blob and download
-  const blob = await pdf(document).toBlob()
   const url = window.URL.createObjectURL(blob)
   const link = window.document.createElement('a')
   link.href = url
@@ -284,33 +318,22 @@ function LearnMore() {
 }
 
 function StatementViewer({
-  statement,
+  isCompleted,
+  pdfUrl,
+  isLoading,
+  error,
+  onRetry,
   statementFormat,
   onStatementFormatChange,
 }: {
-  statement: StatementDto
+  isCompleted: boolean
+  pdfUrl: string | null
+  isLoading: boolean
+  error: string | null
+  onRetry: () => void
   statementFormat: StatementDocumentFormat
   onStatementFormatChange: (format: StatementDocumentFormat) => void
 }) {
-  const {
-    data: statementData,
-    isLoading,
-    error: queryError,
-    refetch,
-  } = trpc.portalProve.statement.retrieveDocumentData.useQuery(
-    {
-      statementId: statement.id,
-      format: statementFormat,
-    },
-    {
-      enabled: statement.status === 'completed' && !!statement.id,
-      refetchOnWindowFocus: false,
-    },
-  )
-
-  const rendered = useRenderedStatement(statementData, statement.status === 'completed')
-  const viewerError = queryError?.message ?? rendered.error
-
   return (
     <Box height={{ base: '600px', lg: '100%' }} width="100%" display="flex" justifyContent="center" alignItems="center">
       <Flex
@@ -321,26 +344,16 @@ function StatementViewer({
         borderColor="neutral.200"
         borderWidth="1px"
       >
-        {statement.status !== 'completed' ? null : viewerError != null ? (
+        {!isCompleted ? null : error != null ? (
           <ErrorBanner
-            message={viewerError}
+            message={error}
             rightContent={
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  if (queryError) {
-                    void refetch()
-                  } else {
-                    rendered.retry()
-                  }
-                }}
-              >
+              <Button size="sm" variant="outline" onClick={onRetry}>
                 Retry
               </Button>
             }
           />
-        ) : isLoading || !rendered.document ? (
+        ) : isLoading || pdfUrl === null ? (
           <Spinner centered />
         ) : (
           <Stack width="100%" height="100%">
@@ -381,9 +394,13 @@ function StatementViewer({
               </Button>
             </HStack>
             <Box sx={Animations.fadeIn(0.25)} width="100%" flex={1} minH={0}>
-              <PDFViewer width="100%" height="100%" style={{ border: 'none' }} showToolbar={false}>
-                {rendered.document}
-              </PDFViewer>
+              <iframe
+                title="Statement PDF"
+                src={`${pdfUrl}#toolbar=0`}
+                width="100%"
+                height="100%"
+                style={{ border: 'none' }}
+              />
             </Box>
           </Stack>
         )}

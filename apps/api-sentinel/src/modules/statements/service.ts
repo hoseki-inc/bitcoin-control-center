@@ -82,9 +82,13 @@ const INTERRUPTED_MESSAGE = 'Generation was interrupted.'
 /** Transaction errors can name a txid or a server, so a statement shows this instead. */
 const TRANSACTIONS_FAILED_MESSAGE = "Couldn't load all transactions."
 
-/** Shares of Sentinel's 0–100 progress for history and lookups; exchange accounts and prices take the rest. */
-const HISTORY_SHARE = 1 / 9
-const LOOKUP_SHARE = 7 / 9
+/**
+ * Shares of Sentinel's 0–100 progress for history and lookups; exchange accounts and prices take the
+ * rest. Over Tor, history took most of a small statement's time in testing, and about as long as the
+ * lookups for a large one.
+ */
+const HISTORY_SHARE = 4 / 9
+const LOOKUP_SHARE = 4 / 9
 
 /** The message a failed statement shows for an error from generating its data. */
 export function statementFailureMessage(error: Error): string {
@@ -493,13 +497,18 @@ export class StatementService {
             return Err(new Error(`Account "${row.display_name}" was archived while generating the statement`))
           }
 
-          const historyResult = await collectAccountHistory(accountResult.unwrap(), this.onchainProvider)
+          const historyResult = await collectAccountHistory(
+            accountResult.unwrap(),
+            this.onchainProvider,
+            (fraction) => {
+              this.reportProgress(statementId, (HISTORY_SHARE * (i + fraction)) / accountRows.length)
+            },
+          )
           if (historyResult.isErr()) {
             this.logger.error({ accountId: row.id, kind: historyResult.unwrapErr().kind }, 'Failed to fetch history')
             return Err(historyResult.unwrapErr())
           }
           histories.push({ row, history: historyResult.unwrap() })
-          this.reportProgress(statementId, (HISTORY_SHARE * (i + 1)) / accountRows.length)
         }
 
         const tipResult = await this.onchainProvider.getBlocksTip()

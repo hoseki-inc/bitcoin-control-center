@@ -1,16 +1,17 @@
-import { renderStatementDocument } from '@hoseki/packages/pdf'
+import { renderStatementPdf } from '@hoseki/packages/pdf'
 import type { PdfStatement } from '@hoseki/packages/schemas'
-import { type ReactElement, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 
 interface RenderedStatement {
   data: PdfStatement
   attempt: number
-  document: ReactElement | null
+  url: string | null
   error: string | null
 }
 
 interface StatementView {
-  document: ReactElement | null
+  /** The statement's built PDF, as an object URL. */
+  url: string | null
   error: string | null
   isRendering: boolean
   retry: () => void
@@ -25,24 +26,29 @@ export function useRenderedStatement(data: PdfStatement | undefined, enabled = t
       return
     }
     let current = true
-    void renderStatementDocument({ statement: data, watermarkText: '' })
-      .then((document) => {
+    let url: string | null = null
+    void renderStatementPdf({ statement: data, watermarkText: '' })
+      .then((file) => {
         if (current) {
-          setRendered({ data, attempt, document, error: null })
+          url = URL.createObjectURL(file)
+          setRendered({ data, attempt, url, error: null })
         }
       })
       .catch(() => {
         if (current) {
-          setRendered({ data, attempt, document: null, error: 'Failed to render statement' })
+          setRendered({ data, attempt, url: null, error: 'Failed to render statement' })
         }
       })
     return () => {
       current = false
+      if (url !== null) {
+        URL.revokeObjectURL(url)
+      }
     }
   }, [data, enabled, attempt])
   const result = enabled && data && rendered?.data === data && rendered.attempt === attempt ? rendered : null
   return {
-    document: result?.document ?? null,
+    url: result?.url ?? null,
     error: result?.error ?? null,
     isRendering: Boolean(enabled && data && !result),
     retry: () => {

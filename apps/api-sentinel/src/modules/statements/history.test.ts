@@ -54,6 +54,20 @@ it('lists every wallet address a transaction touches, including the last used ch
   ])
 })
 
+it('reports progress after finding the addresses, then after each address', async () => {
+  const onchainProvider = mockProvider(new Map(), 0)
+  const progress: number[] = []
+
+  ;(
+    await collectAccountHistory(account, onchainProvider, (fraction) => {
+      progress.push(fraction)
+    })
+  ).unwrap()
+
+  // One receive and one change address.
+  expect(progress).toEqual([0.5, 0.75, 1])
+})
+
 it('fails rather than returning an empty wallet when the wallet scan fails', async () => {
   const onchainProvider = mockProvider(new Map(), -1)
   vi.spyOn(onchainProvider, 'discoverAccount').mockImplementation(

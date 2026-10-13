@@ -21,6 +21,11 @@ export async function renderStatementDocument(documentInput: DocumentInput): Pro
   }
 }
 
+/** Builds the statement's PDF file. react-pdf lays it out in one go, so a long statement blocks for a while. */
+export async function renderStatementPdf(documentInput: DocumentInput): Promise<Blob> {
+  return pdfRenderer.pdf(await renderStatementDocument(documentInput)).toBlob()
+}
+
 export async function renderEnvelopeDocument(
   statements: PdfStatement[],
   watermarkText: string = '',

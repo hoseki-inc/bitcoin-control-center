@@ -18,6 +18,7 @@ import {
   Text,
   Textarea,
   chakra,
+  usePrefersReducedMotion,
 } from '@chakra-ui/react'
 import { getLatestStatementClosingDate } from '@hoseki/packages/lib/statement-dates'
 import { parseUnknown } from '@hoseki/packages/result/lib/parse'
@@ -33,6 +34,7 @@ import { toast } from 'sonner'
 import { ClaimSelection } from '../../components/claims/claim-selection'
 import { useLocalSetting } from '../../hooks/use-local-settings'
 import { parseNavigationState } from '../../lib/navigation-state'
+import { JUST_GENERATED_STATE } from '../../lib/statement-navigation'
 import { trpc } from '../../trpc'
 
 /** Existing product limit for statement dates. */
@@ -41,10 +43,15 @@ const MIN_STATEMENT_DATE = MIN_MEMPOOL_PRICE_DATE
 
 const LEFT_COLUMN_WIDTH = { base: 'auto', md: '35%' }
 
+/** How long this page fades out after Generate, before generation fades in. */
+const LEAVE_FADE_MS = 200
+
 export function StatementCreatePage(): JSX.Element {
   const navigate = useNavigate()
   const location = useLocation()
   const navState = parseNavigationState(location.state)
+  const reduceMotion = usePrefersReducedMotion()
+  const [isLeaving, setIsLeaving] = useState(false)
   const cancelPath = navState?.returnTo ?? '/home'
 
   // claims
@@ -125,7 +132,16 @@ export function StatementCreatePage(): JSX.Element {
         (statements) =>
           statements && [generatedStatement, ...statements.filter((item) => item.id !== generatedStatement.id)],
       )
-      void navigate(`/statements/${generatedStatement.id}`)
+      // The statement page opens generation straight away with what Sentinel just returned.
+      trpcUtils.portalProve.statement.retrieve.setData(generatedStatement.id, generatedStatement)
+      // Fade this page out first, so generation fades in from a clear screen rather than cutting in.
+      if (!reduceMotion) {
+        setIsLeaving(true)
+        await new Promise((resolve) => {
+          setTimeout(resolve, LEAVE_FADE_MS)
+        })
+      }
+      void navigate(`/statements/${generatedStatement.id}`, { state: JUST_GENERATED_STATE })
     },
     onError: (error: { message: string }) => {
       toast.error(error.message)
@@ -137,7 +153,7 @@ export function StatementCreatePage(): JSX.Element {
   const hasAnySelected = selectedClaimIds.size > 0
 
   return (
-    <Stack py={8} spacing={8}>
+    <Stack py={8} spacing={8} opacity={isLeaving ? 0 : 1} transition={`opacity ${LEAVE_FADE_MS}ms ease-in`}>
       <Panel icon={<FileCheckIcon />} title="Generate Statement">
         <Box pt={8} pb={hasAccounts ? 0 : 8} px={4}>
           <Stack alignItems="stretch" direction={{ base: 'column', md: 'row' }} gap={{ base: 4, md: 8 }}>

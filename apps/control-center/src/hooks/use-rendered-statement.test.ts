@@ -2,7 +2,7 @@
 import * as pdfRenderer from '@hoseki/packages/pdf'
 import { sampleCustomStatement } from '@hoseki/packages/pdf/preview/presets'
 import type { PdfStatement } from '@hoseki/packages/schemas'
-import { type ReactElement, act, createElement } from 'react'
+import { act, createElement } from 'react'
 import { type Root, createRoot } from 'react-dom/client'
 import { type MockInstance, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { useRenderedStatement } from './use-rendered-statement'
@@ -20,13 +20,21 @@ const browser = await vi.hoisted(async () => {
     },
   }
 })
-let render: MockInstance<typeof pdfRenderer.renderStatementDocument>
+let render: MockInstance<typeof pdfRenderer.renderStatementPdf>
+let revoke: MockInstance<typeof URL.revokeObjectURL>
 const usd: PdfStatement = sampleCustomStatement
 const cad: PdfStatement = { ...sampleCustomStatement, quoteCurrency: 'CAD' }
+// Each built PDF's object URL names it, so tests can tell which one is shown.
+const pdfNames = new Map<unknown, string>()
+function pdfFile(name: string): Blob {
+  const file = new Blob()
+  pdfNames.set(file, name)
+  return file
+}
 function deferred() {
-  let resolve!: (value: ReactElement) => void
+  let resolve!: (value: Blob) => void
   let reject!: (error: Error) => void
-  const promise = new Promise<ReactElement>((yes, no) => {
+  const promise = new Promise<Blob>((yes, no) => {
     resolve = yes
     reject = no
   })
@@ -38,9 +46,9 @@ function Viewer({ data, enabled = true }: { data?: PdfStatement; enabled?: boole
   const rendered = useRenderedStatement(data, enabled)
   return createElement(
     'div',
-    { 'data-ready': rendered.document !== null },
+    { 'data-ready': rendered.url !== null },
     createElement('button', { onClick: rendered.retry }, 'Retry'),
-    rendered.isRendering ? 'Loading' : (rendered.error ?? rendered.document),
+    rendered.isRendering ? 'Loading' : (rendered.error ?? rendered.url),
   )
 }
 const isReady = (): boolean => container.querySelector('[data-ready]')?.getAttribute('data-ready') === 'true'
@@ -51,7 +59,9 @@ async function show(data?: PdfStatement, enabled = true): Promise<void> {
 }
 function setup(): void {
   const dom = browser.acquire()
-  render = vi.spyOn(pdfRenderer, 'renderStatementDocument')
+  render = vi.spyOn(pdfRenderer, 'renderStatementPdf')
+  vi.spyOn(URL, 'createObjectURL').mockImplementation((file) => `blob:${pdfNames.get(file)}`)
+  revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined)
   container = document.createElement('div')
   document.body.append(container)
   root = createRoot(container)
@@ -75,31 +85,30 @@ describe('rendered statement updates', () => {
     expect(isReady()).toBe(false)
     await show(cad)
     await act(async () => {
-      current.resolve(createElement('span', {}, 'CAD PDF'))
+      current.resolve(pdfFile('CAD PDF'))
     })
     expect(container.textContent).toContain('CAD PDF')
     expect(isReady()).toBe(true)
     await act(async () => {
-      old.resolve(createElement('span', {}, 'USD PDF'))
+      old.resolve(pdfFile('USD PDF'))
     })
     expect(container.textContent).toContain('CAD PDF')
     expect(container.textContent).not.toContain('USD PDF')
   })
-  it('immediately hides a completed render when inputs change', async () => {
+  it('immediately hides a completed render when inputs change, and releases it', async () => {
     setup()
-    render.mockResolvedValueOnce(createElement('span', {}, 'USD PDF')).mockReturnValueOnce(deferred().promise)
+    render.mockResolvedValueOnce(pdfFile('USD PDF')).mockReturnValueOnce(deferred().promise)
     await show(usd)
     expect(container.textContent).toContain('USD PDF')
     await show(cad)
     expect(container.textContent).not.toContain('USD PDF')
     expect(container.textContent).toContain('Loading')
     expect(isReady()).toBe(false)
+    expect(revoke).toHaveBeenCalledWith('blob:USD PDF')
   })
-  it('shows a retryable error and has a document only when retry succeeds', async () => {
+  it('shows a retryable error and has a PDF only when retry succeeds', async () => {
     setup()
-    render
-      .mockRejectedValueOnce(new Error('renderer failed'))
-      .mockResolvedValueOnce(createElement('span', {}, 'CAD PDF'))
+    render.mockRejectedValueOnce(new Error('renderer failed')).mockResolvedValueOnce(pdfFile('CAD PDF'))
     await show(cad)
     expect(container.textContent).toContain('Failed to render statement')
     expect(isReady()).toBe(false)
