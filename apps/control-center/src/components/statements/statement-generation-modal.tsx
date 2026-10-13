@@ -102,15 +102,12 @@ export function StatementGenerationModal({
               ref={sheetRef}
               mt={16}
               data-shimmer={isShimmering ? '' : undefined}
-              sx={{
-                '&[data-shimmer] image:not([data-still]), &[data-shimmer] [fill^="url("]': {
-                  animation: `${pulse} 2s ease-in-out infinite`,
-                },
-              }}
+              sx={{ '&[data-shimmer]': { [PLACEHOLDERS]: { animation: `${pulse} 2s ease-in-out infinite` } } }}
               boxShadow="0px 6px 12px 0px rgba(0, 0, 0, 0.11)"
               // Hidden during the delay too, so it doesn't show and then vanish before sliding in.
               animation={`${fadeInSlideUp} 1000ms ease-out 100ms both`}
               onAnimationEnd={(event) => {
+                // Only the sheet's own slide-in, not a placeholder's pulse.
                 if (event.target === event.currentTarget) {
                   lottieRef.current?.play()
                 }

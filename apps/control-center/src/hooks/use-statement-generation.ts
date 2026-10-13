@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react'
 import type { StatementDto } from '../trpc/server-types'
 
-/** How long the ring takes to reach 100% before it fills in to the check. */
+/** How long the ring takes to reach 100% before it fills in to the check; longer than its 300 ms transition. */
 export const RING_FILL_MS = 400
 
 /** How long "Statement Completed" and the check stay up before the screen fades out. */
 export const COMPLETED_HOLD_MS = 1800
 
-/** Sentinel's progress fills the ring this far; drawing the statement fills the rest. */
+/** Sentinel's progress fills the ring this far; loading and building the PDF fill the rest. */
 const GENERATED_PERCENT = 90
 const DOCUMENT_LOADED_PERCENT = 95
 
@@ -26,8 +26,8 @@ interface StatementGeneration {
 
 /**
  * The generation screen for a statement. It opens for a confirmed generating status. Sentinel's
- * progress fills the ring to 90%; loading the statement's data takes it to 95% and drawing it to
- * 100%. The ring then fills in to a check, which holds before the screen closes. A failed statement
+ * progress fills the ring to 90%; loading the statement's data takes it to 95% and building its PDF
+ * to 100%. The ring then fills in to a check, which holds before the screen closes. A failed statement
  * closes the screen straight away.
  */
 export function useStatementGeneration({
@@ -37,13 +37,13 @@ export function useStatementGeneration({
   isDocumentLoaded,
   isDocumentReady,
 }: {
-  /** The current status is generating, confirmed since the page opened. */
+  /** The current status is generating: fetched since the page opened, or just returned by Generate. */
   isConfirmedPending: boolean
   status: StatementDto['status']
   /** Sentinel's 0–100 while generating. */
   progress: number | null
   isDocumentLoaded: boolean
-  /** The statement is drawn, or couldn't be: the page shows the error then. */
+  /** The PDF is built, or couldn't be: the page shows the error then. */
   isDocumentReady: boolean
 }): StatementGeneration {
   const [phase, setPhase] = useState<Phase>('hidden')

@@ -106,7 +106,7 @@ describe('rendered statement updates', () => {
     expect(isReady()).toBe(false)
     expect(revoke).toHaveBeenCalledWith('blob:USD PDF')
   })
-  it('shows a retryable error and has a document only when retry succeeds', async () => {
+  it('shows a retryable error and has a PDF only when retry succeeds', async () => {
     setup()
     render.mockRejectedValueOnce(new Error('renderer failed')).mockResolvedValueOnce(pdfFile('CAD PDF'))
     await show(cad)

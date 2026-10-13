@@ -67,7 +67,7 @@ function StatementDetailsPageContent({ statementId }: { statementId: StatementId
   })
   const [statementFormat, setStatementFormat] = useState<StatementDocumentFormat>('custom')
   const isCompleted = statement?.status === 'completed'
-  // Loaded and drawn here, while generation may still be open, so its last step can follow the drawing.
+  // Loaded and built here, while generation may still be open, so its last step can follow the build.
   const documentQuery = trpc.portalProve.statement.retrieveDocumentData.useQuery(
     { statementId, format: statementFormat },
     { enabled: isCompleted, refetchOnWindowFocus: false },
@@ -80,7 +80,7 @@ function StatementDetailsPageContent({ statementId }: { statementId: StatementId
     status: statement?.status ?? 'pending',
     progress: statement?.progress ?? null,
     isDocumentLoaded: documentQuery.data !== undefined,
-    // A statement that can't be drawn ends generation too; the page shows why.
+    // A PDF that can't be built ends generation too; the page shows why.
     isDocumentReady: rendered.url !== null || documentError != null,
   })
   const headingRef = useRef<HTMLHeadingElement>(null)

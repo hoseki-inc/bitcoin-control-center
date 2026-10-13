@@ -194,24 +194,20 @@ async function renderStatementPage(
 const generationShown = (): boolean => document.body.textContent.includes('Generating Your Statement')
 
 // The first test also pays for the first render of the generation screen.
-it(
-  'keeps showing generation after the statement finishes, until its closing sequence ends',
-  { timeout: 10_000 },
-  async () => {
-    const { container, server, refresh } = await renderStatementPage('pending')
-    expect(generationShown()).toBe(true)
-    expect(container.textContent).not.toContain('Delete')
+it('keeps showing generation after the statement finishes, until its PDF is built', { timeout: 10_000 }, async () => {
+  const { container, server, refresh } = await renderStatementPage('pending')
+  expect(generationShown()).toBe(true)
+  expect(container.textContent).not.toContain('Delete')
 
-    server.statement = { ...server.statement, status: 'completed' }
-    await refresh()
-    await vi.waitFor(() => {
-      expect(container.textContent).toContain('Statuscompleted')
-    })
-    // The statement is never drawn here, so generation waits at 90%; useStatementGeneration's tests cover the close.
-    expect(generationShown()).toBe(true)
-    expect(container.textContent).toContain('Delete')
-  },
-)
+  server.statement = { ...server.statement, status: 'completed' }
+  await refresh()
+  await vi.waitFor(() => {
+    expect(container.textContent).toContain('Statuscompleted')
+  })
+  // The PDF is never built here, so generation waits at 90%; useStatementGeneration's tests cover the close.
+  expect(generationShown()).toBe(true)
+  expect(container.textContent).toContain('Delete')
+})
 
 it("shows Sentinel's progress as the first 90% of the ring", async () => {
   const { server, refresh } = await renderStatementPage('pending')

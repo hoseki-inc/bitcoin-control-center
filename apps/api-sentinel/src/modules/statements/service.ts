@@ -509,7 +509,6 @@ export class StatementService {
             return Err(historyResult.unwrapErr())
           }
           histories.push({ row, history: historyResult.unwrap() })
-          this.reportProgress(statementId, (HISTORY_SHARE * (i + 1)) / accountRows.length)
         }
 
         const tipResult = await this.onchainProvider.getBlocksTip()

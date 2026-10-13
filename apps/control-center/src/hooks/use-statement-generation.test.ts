@@ -92,7 +92,7 @@ it("shows Sentinel's progress as the first 90%, and never goes back", async () =
   expect(state().progress).toBe(90)
 })
 
-it('fills the last 10% while the statement is loaded and drawn, then fills in to the check and closes', async () => {
+it('fills the last 10% while the PDF is loaded and built, then fills in to the check and closes', async () => {
   const { update, wait, state } = await renderGeneration()
   await update({ progress: 100, status: 'completed' })
   expect(state()).toMatchObject({ progress: 90, isCompleted: false })
@@ -110,7 +110,7 @@ it('fills the last 10% while the statement is loaded and drawn, then fills in to
   expect(state()).toMatchObject({ isOpen: false, isMounted: true })
 })
 
-it('stays at 90% until the statement is drawn', async () => {
+it('stays at 90% until the PDF is built', async () => {
   const { update, wait, state } = await renderGeneration()
   await update({ status: 'completed' })
   await wait(COMPLETED_HOLD_MS * 5)
@@ -127,7 +127,8 @@ it('closes when asked, before the hold ends', async () => {
   const { update, wait, state } = await renderGeneration()
   await update({ status: 'completed', isDocumentLoaded: true, isDocumentReady: true })
   await wait(RING_FILL_MS)
-  state().close()
-  await wait(0)
+  await act(async () => {
+    state().close()
+  })
   expect(state().isOpen).toBe(false)
 })
