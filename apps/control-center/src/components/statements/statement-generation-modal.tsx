@@ -72,7 +72,7 @@ export function StatementGenerationModal({
         <ModalCloseButton right="auto" left={4} top={4} size="3xl" p={4} />
         <ModalBody display="flex" p={0} overflow="hidden">
           <Container display="flex" maxW="container.lg" pt={28} flexDirection="column" alignItems="center">
-            <Flex flexDirection="column" alignItems="center" textAlign="center" h="250px">
+            <Flex flexDirection="column" alignItems="center" textAlign="center" minH="250px">
               <Box display="grid">
                 <CrossFade isVisible={!isCompleted}>
                   <Text as="h1" id={headingId} textStyle="text/8xl" fontWeight="medium">
@@ -141,10 +141,19 @@ const RING_WIDTH = 6
 const RADIUS = (SIZE - RING_WIDTH) / 2
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS
 const CHECK_LENGTH = 34
+/** How much of the ring the arc covers while it spins. */
+const SPINNER_ARC = 0.25
+
+const spin = keyframes`
+  to {
+    transform: rotate(360deg);
+  }
+`
 
 /**
- * A green ring that fills with progress, with the percentage inside. When done, the ring fills in
- * to a solid disc and a white check draws itself across it.
+ * A green ring that fills with progress, with the percentage inside. Before there's any progress, a
+ * short arc spins instead. When done, the ring fills in to a solid disc and a white check draws
+ * itself across it.
  */
 function ProgressCheck({
   progress,
@@ -160,8 +169,15 @@ function ProgressCheck({
 }): JSX.Element {
   const [track] = useToken('colors', ['neutral.100'])
   const transition = (value: string): string => (animate ? value : 'none')
+  const isWaiting = progress === 0 && !isDone
   return (
-    <Box position="relative" w={`${SIZE}px`} h={`${SIZE}px`}>
+    <Box
+      position="relative"
+      w={`${SIZE}px`}
+      h={`${SIZE}px`}
+      // Keyframes only reach the page through Chakra's styles, not an inline style.
+      sx={animate ? { '& [data-spinner]': { animation: `${spin} 1s linear infinite` } } : undefined}
+    >
       {/* What assistive technology reads; the ring below is drawn for sight only. */}
       <VisuallyHidden>
         <progress value={progress} max={100} aria-labelledby={labelledBy} />
@@ -177,9 +193,29 @@ function ProgressCheck({
           strokeWidth={RING_WIDTH}
           strokeLinecap="round"
           strokeDasharray={CIRCUMFERENCE}
+          strokeDashoffset={CIRCUMFERENCE * (1 - SPINNER_ARC)}
+          data-spinner=""
+          style={{
+            transformOrigin: 'center',
+            opacity: isWaiting ? 1 : 0,
+            transition: transition('opacity 300ms ease-out'),
+          }}
+        />
+        <circle
+          cx={SIZE / 2}
+          cy={SIZE / 2}
+          r={RADIUS}
+          fill="none"
+          stroke={CHECK_GREEN}
+          strokeWidth={RING_WIDTH}
+          strokeLinecap="round"
+          strokeDasharray={CIRCUMFERENCE}
           strokeDashoffset={CIRCUMFERENCE * (1 - progress / 100)}
           transform={`rotate(-90 ${SIZE / 2} ${SIZE / 2})`}
-          style={{ transition: transition('stroke-dashoffset 300ms ease-out') }}
+          style={{
+            opacity: isWaiting ? 0 : 1,
+            transition: transition('stroke-dashoffset 300ms ease-out, opacity 300ms ease-out'),
+          }}
         />
         <circle
           cx={SIZE / 2}
@@ -212,8 +248,8 @@ function ProgressCheck({
         placeItems="center"
         textStyle="text/sm"
         fontWeight="medium"
-        opacity={isDone ? 0 : 1}
-        transition={transition('opacity 150ms ease-out')}
+        opacity={isDone || isWaiting ? 0 : 1}
+        transition={transition(isDone ? 'opacity 150ms ease-out' : 'opacity 300ms ease-out')}
         aria-hidden="true"
       >
         {progress}%
@@ -251,7 +287,8 @@ const pulse = keyframes`
 /** Gives each placeholder its own timing, so they shimmer separately; icons stay still. */
 function staggerPlaceholders(sheet: HTMLElement | null): void {
   sheet?.querySelectorAll<SVGElement>(PLACEHOLDERS).forEach((element, index) => {
-    if (element instanceof SVGImageElement && Number(element.getAttribute('width')) <= 32) {
+    // Lottie writes widths with a unit ("32px").
+    if (element instanceof SVGImageElement && Number.parseFloat(element.getAttribute('width') ?? '0') <= 32) {
       element.dataset['still'] = ''
       return
     }

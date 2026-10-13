@@ -1,5 +1,5 @@
 import { Box, Button, Flex, HStack, IconButton, Link, Stack, Text } from '@chakra-ui/react'
-import { renderStatementDocument } from '@hoseki/packages/pdf'
+import { renderStatementPdf } from '@hoseki/packages/pdf'
 import { parseUnknown } from '@hoseki/packages/result/lib/parse'
 import type { StatementDocumentFormat, StatementId } from '@hoseki/packages/schemas'
 import { Animations, ErrorBanner, Spinner } from '@hoseki/packages/ui/design-system'
@@ -10,9 +10,8 @@ import {
   usePdfDownloadMutation,
 } from '@hoseki/packages/ui/prove-verify-ui'
 import { formatDateRange } from '@hoseki/packages/ui/utils'
-import { PDFViewer, pdf } from '@react-pdf/renderer'
 import { ShieldCheckIcon, XIcon } from 'lucide-react'
-import { type ReactElement, type RefObject, useEffect, useRef, useState } from 'react'
+import { type RefObject, useEffect, useRef, useState } from 'react'
 import { Link as RouterLink, useLocation, useNavigate } from 'react-router'
 import { DeleteStatementButton } from '../../components/statements/delete-statement-button'
 import { StatementGenerationModal } from '../../components/statements/statement-generation-modal'
@@ -82,7 +81,7 @@ function StatementDetailsPageContent({ statementId }: { statementId: StatementId
     progress: statement?.progress ?? null,
     isDocumentLoaded: documentQuery.data !== undefined,
     // A statement that can't be drawn ends generation too; the page shows why.
-    isDocumentReady: rendered.document !== null || documentError != null,
+    isDocumentReady: rendered.url !== null || documentError != null,
   })
   const headingRef = useRef<HTMLHeadingElement>(null)
 
@@ -152,7 +151,7 @@ function StatementDetailsPageContent({ statementId }: { statementId: StatementId
       >
         <StatementViewer
           isCompleted={statement.status === 'completed'}
-          document={rendered.document}
+          pdfUrl={rendered.url}
           isLoading={documentQuery.isLoading}
           error={documentError}
           onRetry={() => {
@@ -231,14 +230,11 @@ async function triggerPdfDownload(args: { statement: StatementDto; format: State
     format: args.format,
   })
 
-  // Render the PDF document client-side (same pipeline as the viewer)
-  const document = await renderStatementDocument({
+  // Build the PDF client-side (same pipeline as the viewer) and download it
+  const blob = await renderStatementPdf({
     watermarkText: '',
     statement: statementData,
   })
-
-  // Generate PDF blob and download
-  const blob = await pdf(document).toBlob()
   const url = window.URL.createObjectURL(blob)
   const link = window.document.createElement('a')
   link.href = url
@@ -323,7 +319,7 @@ function LearnMore() {
 
 function StatementViewer({
   isCompleted,
-  document,
+  pdfUrl,
   isLoading,
   error,
   onRetry,
@@ -331,7 +327,7 @@ function StatementViewer({
   onStatementFormatChange,
 }: {
   isCompleted: boolean
-  document: ReactElement | null
+  pdfUrl: string | null
   isLoading: boolean
   error: string | null
   onRetry: () => void
@@ -357,7 +353,7 @@ function StatementViewer({
               </Button>
             }
           />
-        ) : isLoading || !document ? (
+        ) : isLoading || pdfUrl === null ? (
           <Spinner centered />
         ) : (
           <Stack width="100%" height="100%">
@@ -398,9 +394,13 @@ function StatementViewer({
               </Button>
             </HStack>
             <Box sx={Animations.fadeIn(0.25)} width="100%" flex={1} minH={0}>
-              <PDFViewer width="100%" height="100%" style={{ border: 'none' }} showToolbar={false}>
-                {document}
-              </PDFViewer>
+              <iframe
+                title="Statement PDF"
+                src={`${pdfUrl}#toolbar=0`}
+                width="100%"
+                height="100%"
+                style={{ border: 'none' }}
+              />
             </Box>
           </Stack>
         )}
