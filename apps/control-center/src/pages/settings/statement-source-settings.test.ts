@@ -79,7 +79,7 @@ class SourceServer {
   }
 }
 
-async function renderSettings({ torEnabled = false, selectable = true } = {}): Promise<{
+async function renderSettings({ torEnabled = false, selectable = true, failRead = false } = {}): Promise<{
   server: SourceServer
   container: HTMLDivElement
   fetchMock: ReturnType<typeof vi.fn<typeof fetch>>
@@ -91,6 +91,7 @@ async function renderSettings({ torEnabled = false, selectable = true } = {}): P
   vi.spyOn(toast, 'error').mockReturnValue('test-toast')
   const server = new SourceServer(fetchMock)
   server.selectable = selectable
+  server.failRead = failRead
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const container = document.createElement('div')
   document.body.append(container)
@@ -118,7 +119,7 @@ async function renderSettings({ torEnabled = false, selectable = true } = {}): P
       ),
     )
   })
-  if (selectable) {
+  if (selectable && !failRead) {
     await settle(container)
   }
   return { server, container, fetchMock }
@@ -281,6 +282,22 @@ it('names the choices and reads what the chosen one shares with it', async () =>
     'Slower. Your transaction details are shared with the server operator.',
     'Your current Electrum connection uses Tor, so statement generation could take several minutes.',
   ])
+})
+
+it("says when the source can't load and keeps the choices disabled", async () => {
+  const { server, container } = await renderSettings({ failRead: true })
+  await vi.waitFor(async () => {
+    await act(async () => {})
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe(
+      'Could not load statement settings. Refresh to try again.',
+    )
+  })
+  expect(radio(container, 'mempool').disabled).toBe(true)
+  expect(radio(container, 'electrum').disabled).toBe(true)
+  await act(async () => {
+    radio(container, 'electrum').closest('label')?.click()
+  })
+  expect(server.saved).toEqual([])
 })
 
 it('is hidden where Sentinel does not let the source be chosen', async () => {

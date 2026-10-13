@@ -165,7 +165,7 @@ export function StatementSourceSettings({ torEnabled }: { torEnabled: boolean })
                   boxShadow={isSelected ? `inset 0 0 0 1px ${selectedEdge}` : undefined}
                   borderRadius="md"
                   p={3}
-                  // The radio's own styles reach only its dot, so its offset is set from the card.
+                  // Radio puts margin props on its whole row, so the dot alone is nudged from the card.
                   sx={{ '.chakra-radio__control': { mt: 1 } }}
                 >
                   <Radio
