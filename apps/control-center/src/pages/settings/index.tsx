@@ -103,7 +103,7 @@ export function SettingsPage({ desktop = isDesktop }: { desktop?: boolean }): JS
   )
 }
 
-function DesktopStatementSource(): JSX.Element | null {
+function DesktopStatementSource(): JSX.Element {
   return <StatementSourceSettings torEnabled={useActiveConnectionUsesTor()} />
 }
 

@@ -30,12 +30,27 @@ class SourceServer {
   public source: 'mempool' | 'electrum' = 'mempool'
   public selectable = true
   public failSave = false
+  /** Fails reading the source back, as a request lost after a save would. */
+  public failRead = false
+  /** Holds each save or read this long, so changes can land while one runs. */
+  public delayMs = 0
   public readonly saved: string[] = []
 
   public constructor(fetchMock: ReturnType<typeof vi.fn<typeof fetch>>) {
     fetchMock.mockImplementation(async (input, init) => {
       const url = parseUnknown(z.string(), input).unwrapOr('')
+      if (this.delayMs > 0) {
+        await new Promise((resolve) => {
+          setTimeout(resolve, this.delayMs)
+        })
+      }
       if (url.includes('/settings.statementSource')) {
+        if (this.failRead) {
+          return Response.json(
+            { error: { json: { message: 'Sentinel is restarting', code: -32603 } } },
+            { status: 500 },
+          )
+        }
         return Response.json({ result: { data: { json: { selectable: this.selectable, source: this.source } } } })
       }
       if (url.endsWith('/settings.setStatementSource')) {
@@ -168,14 +183,68 @@ it('says when saving fails and shows the saved source again', async () => {
 
 it('saves the last of several quick changes', async () => {
   const { server, container } = await renderSettings()
+  server.delayMs = 50
   await choose(container, 'electrum')
+  // Waits behind the save of Electrum, which is still running.
   await choose(container, 'mempool')
   await vi.waitFor(async () => {
     await act(async () => {})
     expect(container.textContent).toContain('Statement source saved')
   })
+  expect(server.saved).toEqual(['electrum', 'mempool'])
   expect(server.source).toBe('mempool')
   expect(radio(container, 'mempool').checked).toBe(true)
+})
+
+it('confirms only the last choice when one is made while the previous is read back', async () => {
+  const { server, container } = await renderSettings()
+  server.delayMs = 50
+  await choose(container, 'electrum')
+  await vi.waitFor(() => {
+    expect(server.saved).toEqual(['electrum'])
+  })
+  // Electrum is saved and being read back.
+  await choose(container, 'mempool')
+  await act(async () => {
+    await new Promise((resolve) => {
+      setTimeout(resolve, 60)
+    })
+  })
+  expect(container.textContent).not.toContain('Statement source saved')
+  expect(radio(container, 'mempool').checked).toBe(true)
+  await vi.waitFor(async () => {
+    await act(async () => {})
+    expect(container.textContent).toContain('Statement source saved')
+  })
+  expect(server.saved).toEqual(['electrum', 'mempool'])
+  expect(radio(container, 'mempool').checked).toBe(true)
+})
+
+it('keeps a saved choice when reading it back fails', async () => {
+  const { server, container } = await renderSettings()
+  server.failRead = true
+  await choose(container, 'electrum')
+  await vi.waitFor(async () => {
+    await act(async () => {})
+    expect(container.textContent).toContain('Statement source saved')
+  })
+  expect(server.source).toBe('electrum')
+  expect(radio(container, 'electrum').checked).toBe(true)
+  expect(container.textContent).toContain('shared with the server operator')
+})
+
+it('names the choices and reads what each shares with them', async () => {
+  const { container } = await renderSettings(true)
+  const group = container.querySelector('[role="radiogroup"]')
+  const label = document.getElementById(group?.getAttribute('aria-labelledby') ?? '')
+  expect(label?.textContent).toBe('Look up transactions on')
+  expect(radio(container, 'mempool').getAttribute('aria-describedby')).toBe('statement-source-help')
+  await choose(container, 'electrum')
+  const described = radio(container, 'electrum').getAttribute('aria-describedby')?.split(' ') ?? []
+  expect(described.map((id) => document.getElementById(id)?.textContent)).toEqual([
+    'Slower. Your transaction details are shared with the server operator.',
+    'Your current Electrum connection uses Tor, so statement generation could take several minutes.',
+  ])
 })
 
 it('is hidden where Sentinel does not let the source be chosen', async () => {

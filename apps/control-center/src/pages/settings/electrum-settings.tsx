@@ -197,28 +197,27 @@ async function requestTorStart(): Promise<number | null> {
 
 // ─── Settings ────────────────────────────────────────────────────────────────
 
+// Shared by every reader of the saved connections, so they poll together.
+const profilesQuery = {
+  queryKey,
+  queryFn: async ({ signal }: { signal?: AbortSignal }) => api.list.query(undefined, { signal }),
+  refetchInterval: 10_000,
+}
+
+/** Whether the connection Electrum uses now goes through Tor. */
+export function useActiveConnectionUsesTor(): boolean {
+  const query = useQuery(profilesQuery)
+  return query.data?.profiles.find((item) => item.id === query.data.activeId)?.torEnabled === true
+}
+
 /**
  * Saved connections on one side and the selected connection's details on the
  * other. Only the list shows which connection is live, so the details never read
  * as the current connection.
  */
-/** Whether the connection Electrum uses now goes through Tor. */
-export function useActiveConnectionUsesTor(): boolean {
-  const query = useQuery({
-    queryKey,
-    queryFn: async ({ signal }) => api.list.query(undefined, { signal }),
-    refetchInterval: 10_000,
-  })
-  return query.data?.profiles.find((item) => item.id === query.data.activeId)?.torEnabled === true
-}
-
 export function ElectrumSettings(): JSX.Element {
   const queryClient = useQueryClient()
-  const query = useQuery({
-    queryKey,
-    queryFn: async ({ signal }) => api.list.query(undefined, { signal }),
-    refetchInterval: 10_000,
-  })
+  const query = useQuery(profilesQuery)
   const { status, tor, refresh: refreshStatus } = useElectrumStatus()
   const [draft, setDraft] = useState<Draft | null>(null)
   const [busy, setBusy] = useState<Operation | 'rename' | 'delete' | null>(null)

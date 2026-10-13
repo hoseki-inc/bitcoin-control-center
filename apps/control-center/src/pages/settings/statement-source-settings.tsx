@@ -9,8 +9,9 @@ import {
   Spinner,
   Text,
   VisuallyHidden,
+  useToken,
 } from '@chakra-ui/react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { type UseQueryResult, useQuery, useQueryClient } from '@tanstack/react-query'
 import { CircleCheckIcon, ClockIcon } from 'lucide-react'
 import { useRef, useState } from 'react'
 import { toast } from 'sonner'
@@ -22,7 +23,7 @@ type StatementSource = RouterOutput['settings']['statementSource']['source']
 export const STATEMENT_SOURCE_QUERY_KEY = ['statement-source']
 
 /** Where new statements look up transactions, as saved in Sentinel. */
-export function useStatementSource(): ReturnType<typeof useQuery<RouterOutput['settings']['statementSource']>> {
+export function useStatementSource(): UseQueryResult<RouterOutput['settings']['statementSource']> {
   return useQuery({
     queryKey: STATEMENT_SOURCE_QUERY_KEY,
     queryFn: async ({ signal }) => baseTrpc.settings.statementSource.query(undefined, { signal }),
@@ -47,10 +48,12 @@ export function StatementSourceSettings({ torEnabled }: { torEnabled: boolean })
   const sending = useRef(false)
   const [savedNotice, setSavedNotice] = useFadingNotice()
   const query = useStatementSource()
+  const [selectedEdge] = useToken('colors', ['neutral.900'])
   if (query.data?.selectable === false) {
     return null
   }
   const source = unsaved ?? query.data?.source
+  const showTorNote = source === 'electrum' && torEnabled
 
   const change = (next: StatementSource): void => {
     pending.current = next
@@ -59,7 +62,16 @@ export function StatementSourceSettings({ torEnabled }: { torEnabled: boolean })
     void save()
   }
 
-  /** Sends the latest choice, and any made while it was sending, then shows what Sentinel saved. */
+  const takePending = (): StatementSource | null => {
+    const next = pending.current
+    pending.current = null
+    return next
+  }
+
+  /**
+   * Sends the latest choice, and any made while it was sending or being read back, then shows what
+   * Sentinel saved. A choice made meanwhile waits for this save, so only the last save reports.
+   */
   const save = async (): Promise<void> => {
     if (sending.current) {
       return
@@ -68,20 +80,31 @@ export function StatementSourceSettings({ torEnabled }: { torEnabled: boolean })
     let failed = false
     try {
       await queryClient.cancelQueries({ queryKey: STATEMENT_SOURCE_QUERY_KEY })
-      for (let next = pending.current; next !== null; next = pending.current) {
-        pending.current = null
+      let next = takePending()
+      while (next !== null) {
+        const choice = next
         try {
-          await baseTrpc.settings.setStatementSource.mutate({ source: next })
+          await baseTrpc.settings.setStatementSource.mutate({ source: choice })
+          // Saved, so show it even if reading it back fails.
+          queryClient.setQueryData<RouterOutput['settings']['statementSource']>(
+            STATEMENT_SOURCE_QUERY_KEY,
+            (current) => current && { ...current, source: choice },
+          )
           failed = false
         } catch {
           failed = true
+        }
+        next = takePending()
+        if (next === null) {
+          // Read back what was saved, since a lost reply can follow a committed write.
+          await queryClient.refetchQueries({ queryKey: STATEMENT_SOURCE_QUERY_KEY })
+          // A choice made while reading back is saved by this save too.
+          next = takePending()
         }
       }
     } finally {
       sending.current = false
     }
-    // Read back what was saved, since a lost reply can follow a committed write.
-    await queryClient.refetchQueries({ queryKey: STATEMENT_SOURCE_QUERY_KEY })
     setUnsaved(null)
     if (failed) {
       toast.error('Could not save the statement source. Please try again.')
@@ -102,7 +125,7 @@ export function StatementSourceSettings({ torEnabled }: { torEnabled: boolean })
       </Box>
       <FormControl as="fieldset" isDisabled={source === undefined} aria-busy={unsaved !== null}>
         <HStack justify="space-between" mb={2}>
-          <FormLabel as="legend" textStyle="text/sm" mb={0}>
+          <FormLabel as="legend" id="statement-source-label" textStyle="text/sm" mb={0}>
             Look up transactions on
           </FormLabel>
           <HStack
@@ -130,7 +153,8 @@ export function StatementSourceSettings({ torEnabled }: { torEnabled: boolean })
         </HStack>
         <RadioGroup
           value={source ?? ''}
-          aria-describedby="statement-source-description statement-source-help"
+          aria-labelledby="statement-source-label"
+          aria-describedby="statement-source-description"
           onChange={(value) => {
             const next = SOURCES.find((item) => item.value === value)
             if (next) {
@@ -149,11 +173,22 @@ export function StatementSourceSettings({ torEnabled }: { torEnabled: boolean })
                   borderWidth="1px"
                   borderColor={isSelected ? 'neutral.900' : 'neutral.200'}
                   // An inset ring adds the selected weight without shifting the contents.
-                  boxShadow={isSelected ? 'inset 0 0 0 1px var(--chakra-colors-neutral-900)' : undefined}
+                  boxShadow={isSelected ? `inset 0 0 0 1px ${selectedEdge}` : undefined}
                   borderRadius="md"
                   p={3}
                 >
-                  <Radio value={item.value} colorScheme="orange" size="sm">
+                  <Radio
+                    value={item.value}
+                    colorScheme="orange"
+                    size="sm"
+                    // Read with each choice, so changing it says what that choice shares.
+                    aria-describedby={
+                      showTorNote ? 'statement-source-help statement-source-tor-note' : 'statement-source-help'
+                    }
+                    // Level with the title's first line when it wraps.
+                    alignItems="flex-start"
+                    sx={{ '.chakra-radio__control': { mt: 1 } }}
+                  >
                     <Text textStyle="text/sm" fontWeight="medium">
                       {item.title}
                     </Text>
@@ -184,10 +219,10 @@ export function StatementSourceSettings({ torEnabled }: { torEnabled: boolean })
               : 'Slower. Your IP address and transaction details are shared with the server operator.'
             : 'Fastest. Your IP address and transaction details are shared with mempool.space.'}
         </Text>
-        {source === 'electrum' && torEnabled && (
+        {showTorNote && (
           <HStack mt={3} bg="neutral.50" borderRadius="md" px={3} py={2} gap={2} color="neutral.700">
-            <ClockIcon size={14} aria-hidden />
-            <Text textStyle="text/xs">
+            <ClockIcon size={14} aria-hidden style={{ flexShrink: 0 }} />
+            <Text id="statement-source-tor-note" textStyle="text/xs">
               Your current Electrum connection uses Tor, so statement generation could take several minutes.
             </Text>
           </HStack>
