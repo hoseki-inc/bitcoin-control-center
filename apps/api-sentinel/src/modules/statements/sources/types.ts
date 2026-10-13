@@ -42,12 +42,21 @@ export class TransactionLoadError extends Error {
   }
 }
 
+/**
+ * How a failed attempt is retried:
+ * - `temporary`: this lookup tries again a few times.
+ * - `connection`: the connection every lookup shares dropped, so every lookup waits before its
+ *   next request while it comes back.
+ * - `rateLimit`: the server asked for fewer requests. Every lookup waits, and this one keeps
+ *   backing off for longer.
+ */
+export type RetryKind = 'temporary' | 'connection' | 'rateLimit'
+
 /** Why one lookup attempt failed. A null `retry` means trying again won't help. */
 export interface LookupFailure {
   error: TransactionLoadError
   retry: null | {
-    /** The server asked for fewer requests: every lookup waits, and this one keeps retrying for longer. */
-    rateLimited: boolean
+    kind: RetryKind
     retryAfterMs: number | null
   }
 }
@@ -56,6 +65,8 @@ export interface TxSource {
   readonly kind: TxSourceKind
   /** Most lookups in flight at once for one statement. */
   readonly concurrency: number
+  /** Waits before each retry of a temporary or connection failure; the pool's defaults otherwise. */
+  readonly retryDelaysMs?: readonly number[]
   /**
    * One attempt; the caller owns retries. `height` is where Electrum's history placed the
    * transaction. `signal` aborts when another lookup has failed, so the request can stop early.

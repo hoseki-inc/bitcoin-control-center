@@ -113,8 +113,12 @@ async function startElectrum(height: number, holdVersion = false, rejectVersion 
   return fixture
 }
 
-async function context(waitForElectrum = true, connectionProfiles = false): Promise<AppContext> {
-  const ctx = (await createAppContext(logger, { waitForElectrum, connectionProfiles })).unwrap()
+async function context(
+  waitForElectrum = true,
+  connectionProfiles = false,
+  statementSourceSetting = false,
+): Promise<AppContext> {
+  const ctx = (await createAppContext(logger, { waitForElectrum, connectionProfiles, statementSourceSetting })).unwrap()
   contexts.add(ctx)
   return ctx
 }
@@ -737,6 +741,32 @@ it('checks the primary again for status and skips malformed timestamps without f
     const status = await caller.settings.priceStatus()
     expect(status.price).toMatchObject({ source: 'block', lastKnown: false })
     expect(Number.isFinite(Date.parse(status.price?.asOf ?? ''))).toBe(true)
+  })
+})
+
+describe('statement source setting', () => {
+  it('lets the desktop app choose Electrum for new statements', async () => {
+    await withTestSetup(async () => {
+      const ctx = await context(true, true, true)
+      const caller = appRouter.createCaller({ app: ctx })
+
+      await expect(caller.settings.statementSource()).resolves.toEqual({ selectable: true, source: 'mempool' })
+      await caller.settings.setStatementSource({ source: 'electrum' })
+
+      await expect(caller.settings.statementSource()).resolves.toEqual({ selectable: true, source: 'electrum' })
+    })
+  })
+
+  it('keeps every other platform on the mempool', async () => {
+    await withTestSetup(async () => {
+      const ctx = await context()
+      const caller = appRouter.createCaller({ app: ctx })
+
+      await expect(caller.settings.setStatementSource({ source: 'electrum' })).rejects.toMatchObject({
+        code: 'FORBIDDEN',
+      })
+      await expect(caller.settings.statementSource()).resolves.toEqual({ selectable: false, source: 'mempool' })
+    })
   })
 })
 

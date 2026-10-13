@@ -47,7 +47,7 @@ import { loggableError } from '../../lib/loggable-error'
 import { type ConnectionDetails, MAX_CONNECTION_PROFILES } from '../connection_profiles/store'
 import { PRICE_FALLBACKS_SETTING, PRICE_SOURCES, PRICE_SOURCE_SETTING } from '../price/service'
 import { StatementMapper } from '../statements/mapper'
-import { statementFailureMessage } from '../statements/service'
+import { STATEMENT_SOURCES, statementFailureMessage } from '../statements/service'
 import { TransactionLoadError } from '../statements/sources/types'
 import { publicProcedure, t } from './init'
 
@@ -2151,6 +2151,21 @@ const settingsRouter = t.router({
       .values({ key: input.key, value })
       .onConflictDoUpdate({ target: settings.key, set: { value } })
   }),
+
+  /** Where new statements look up transactions. Only desktop can choose. */
+  statementSource: publicProcedure.query(async ({ ctx }) => ({
+    selectable: ctx.app.statementService.sourceSelectable,
+    source: await ctx.app.statementService.sourceChoice(),
+  })),
+
+  setStatementSource: publicProcedure
+    .input(z.object({ source: z.enum(STATEMENT_SOURCES) }))
+    .mutation(async ({ ctx, input }) => {
+      const saved = await ctx.app.statementService.setSourceChoice(input.source)
+      if (saved.isErr()) {
+        throw new TRPCError({ code: 'FORBIDDEN', message: saved.unwrapErr().message })
+      }
+    }),
 
   // Answers at once, so Settings can change the source even while every source is down.
   priceSource: publicProcedure.query(async ({ ctx }) => ctx.app.priceService.options()),

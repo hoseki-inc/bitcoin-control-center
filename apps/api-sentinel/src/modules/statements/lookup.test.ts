@@ -34,7 +34,7 @@ async function delay(ms: number): Promise<void> {
 function rateLimited(retryAfterMs: number | null): Result<LookedUpTx, LookupFailure> {
   return Err({
     error: new TransactionLoadError('unreachable', 'HTTP 429'),
-    retry: { rateLimited: true, retryAfterMs },
+    retry: { kind: 'rateLimit', retryAfterMs },
   })
 }
 
@@ -266,7 +266,7 @@ it('makes a retry wait out a longer rate limit set by another lookup', async () 
       markBusy()
       return Err({
         error: new TransactionLoadError('unreachable', 'HTTP 503'),
-        retry: { rateLimited: false, retryAfterMs: null },
+        retry: { kind: 'temporary', retryAfterMs: null },
       })
     }
     // Rate limited while the busy lookup waits for its own 1 s retry.
@@ -336,6 +336,64 @@ it('keeps a longer pause when a shorter rate limit follows', async () => {
   expect(sentAt(later)[0]).toBeGreaterThanOrEqual(longAt + 30_000)
 })
 
+it('makes every lookup wait while a dropped connection comes back', async () => {
+  const [dropped = '', slow = '', later = ''] = txids(3)
+  const clock = fastClock()
+  const { record, sentAt } = sendTimes(clock.now)
+  let droppedAt = 0
+  let markDropped = (): void => {}
+  const wasDropped = new Promise<void>((resolve) => {
+    markDropped = resolve
+  })
+  const lookups = source(async (txid) => {
+    const attempt = record(txid)
+    if (txid === dropped && attempt === 1) {
+      droppedAt = clock.now()
+      markDropped()
+      return Err({
+        error: new TransactionLoadError('unreachable', 'Connection closed'),
+        retry: { kind: 'connection', retryAfterMs: null },
+      })
+    }
+    if (txid === slow) {
+      await wasDropped
+      await delay(1)
+    }
+    return Ok(confirmedTx(txid))
+  }, 2)
+
+  const result = await lookupTransactions({
+    transactions: atHeight([dropped, slow, later]),
+    source: { ...lookups, retryDelaysMs: [10_000] },
+    logger,
+    ...clock,
+  })
+
+  expect(result.unwrap().size).toBe(3)
+  // The other worker's next lookup waits out the 10 s retry too, instead of using the dropped connection.
+  expect(sentAt(dropped)[1]).toBeGreaterThanOrEqual(droppedAt + 10_000)
+  expect(sentAt(later)[0]).toBeGreaterThanOrEqual(droppedAt + 10_000)
+})
+
+it('waits as long as the source asks before each retry', async () => {
+  const [txid = ''] = txids(1)
+  const lookups = {
+    ...source(async () =>
+      Err({
+        error: new TransactionLoadError('unreachable', 'Connection closed'),
+        retry: { kind: 'connection', retryAfterMs: null },
+      }),
+    ),
+    retryDelaysMs: [2_000, 5_000, 10_000],
+  }
+  const sleep = vi.fn(async (_ms: number) => {})
+
+  const result = await lookupTransactions({ transactions: atHeight([txid]), source: lookups, logger, sleep })
+
+  expect(result.expectErr('a connection that never comes back must stop the statement').kind).toBe('unreachable')
+  expect(sleep.mock.calls.map(([ms]) => ms)).toEqual([2_000, 5_000, 10_000])
+})
+
 it('keeps backing off from a rate limit for up to five minutes, then stops', async () => {
   const [txid = ''] = txids(1)
   const lookups = source(async () => rateLimited(null))
@@ -360,7 +418,7 @@ it('retries any other temporary failure three times', async () => {
   const lookups = source(async () =>
     Err({
       error: new TransactionLoadError('unreachable', 'HTTP 503'),
-      retry: { rateLimited: false, retryAfterMs: null },
+      retry: { kind: 'temporary', retryAfterMs: null },
     }),
   )
   const sleep = vi.fn(async (_ms: number) => {})
@@ -413,7 +471,7 @@ it('cancels lookups still in flight once one fails', async () => {
     ])
     return Err({
       error: new TransactionLoadError('unreachable', 'Aborted'),
-      retry: { rateLimited: false, retryAfterMs: null },
+      retry: { kind: 'temporary', retryAfterMs: null },
     })
   }, 2)
   const started = performance.now()
@@ -496,7 +554,7 @@ it('never sends a retry into a pause another lookup set just before it', async (
       if (txid === busy) {
         return Err({
           error: new TransactionLoadError('unreachable', 'HTTP 503'),
-          retry: { rateLimited: false, retryAfterMs: null },
+          retry: { kind: 'temporary', retryAfterMs: null },
         })
       }
       await retryReleased

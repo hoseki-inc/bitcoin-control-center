@@ -12,7 +12,7 @@ import { nanoid } from 'nanoid'
 import type { Logger } from 'pino'
 import { z } from 'zod'
 import type { SentinelDb } from '../../db/drizzle'
-import { accounts, exchangeBalanceSnapshots, statementCounter, statements } from '../../db/schema'
+import { accounts, exchangeBalanceSnapshots, settings, statementCounter, statements } from '../../db/schema'
 import type { ExchangeService } from '../exchange/service'
 import type { DailyRates } from '../price/daily_rates'
 import type { DailyRatesService } from '../price/daily_rates'
@@ -21,10 +21,16 @@ import { type AccountHistory, collectAccountHistory } from './history'
 import { type Sleep, lookupTransactions } from './lookup'
 import type { AggregatedTransaction, StatementAccountTransactions } from './mapper'
 import { getRequiredRateDates, validateStatementRates } from './rate_dates'
+import { ElectrumSource } from './sources/electrum'
 import { MempoolSource } from './sources/mempool'
 import { TransactionLoadError, type TxSource, type TxSourceKind } from './sources/types'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
+
+/** Where new statements look up transactions, chosen in desktop Settings. */
+const STATEMENT_SOURCE_SETTING = 'statement_tx_source'
+export const STATEMENT_SOURCES = ['mempool', 'electrum'] as const
+export type StatementSourceChoice = (typeof STATEMENT_SOURCES)[number]
 
 export interface StatementTransactions {
   [accountId: string]: StatementAccountTransactions
@@ -183,7 +189,9 @@ export class StatementService {
   private readonly onchainProvider: ElectrumProvider
   private readonly dailyRatesService: DailyRatesService
   private readonly exchangeService: ExchangeService
-  private readonly transactionSource: TxSource
+  private readonly mempoolSource: MempoolSource
+  /** Only desktop lets Settings choose Electrum; elsewhere statements always use the mempool. */
+  public readonly sourceSelectable: boolean
   private readonly logger: Logger
   private readonly sleep: Sleep | undefined
   /** Progress of statements generating in this process. A restart fails them, so it isn't saved. */
@@ -196,6 +204,8 @@ export class StatementService {
     exchangeService: ExchangeService
     mempoolApiUrl: string
     logger: Logger
+    /** Enabled only by desktop launchers. */
+    sourceSelectable?: boolean
     /** Waits out lookup retries and rate limits; tests replace it to avoid real delays. */
     sleep?: Sleep
   }) {
@@ -203,7 +213,8 @@ export class StatementService {
     this.onchainProvider = deps.onchainProvider
     this.dailyRatesService = deps.dailyRatesService
     this.exchangeService = deps.exchangeService
-    this.transactionSource = new MempoolSource(deps.mempoolApiUrl)
+    this.mempoolSource = new MempoolSource(deps.mempoolApiUrl)
+    this.sourceSelectable = deps.sourceSelectable === true
     this.logger = deps.logger.child({ module: 'statement-service' })
     this.sleep = deps.sleep
   }
@@ -215,6 +226,8 @@ export class StatementService {
       return Err(valid.unwrapErr())
     }
     const id = `st_stmt_${nanoid()}`
+    // Recorded now, and used when the statement generates, so the record always matches.
+    const txSource = input.claimIds.length > 0 ? await this.newStatementSource() : null
     await this.db.transaction(async (tx) => {
       const [next] = await tx
         .update(statementCounter)
@@ -235,12 +248,36 @@ export class StatementService {
         userName: input.name ?? null,
         userAddress: input.address ?? null,
         quoteCurrency: input.quoteCurrency ?? 'USD',
-        txSource: input.claimIds.length > 0 ? this.transactionSource.kind : null,
+        txSource,
         counter: next.counter,
       })
     })
 
     return Ok(id)
+  }
+
+  /** The source chosen for new statements; always the mempool where it can't be chosen. */
+  public async sourceChoice(): Promise<StatementSourceChoice> {
+    if (!this.sourceSelectable) {
+      return 'mempool'
+    }
+    const [row] = await this.db
+      .select({ value: settings.value })
+      .from(settings)
+      .where(eq(settings.key, STATEMENT_SOURCE_SETTING))
+    return row?.value === 'electrum' ? 'electrum' : 'mempool'
+  }
+
+  /** Choose the source for new statements. Statements already created keep theirs. */
+  public async setSourceChoice(choice: StatementSourceChoice): Promise<Result<void, Error>> {
+    if (!this.sourceSelectable) {
+      return Err(new Error('The statement source can only be chosen in the desktop app'))
+    }
+    await this.db
+      .insert(settings)
+      .values({ key: STATEMENT_SOURCE_SETTING, value: choice })
+      .onConflictDoUpdate({ target: settings.key, set: { value: choice } })
+    return Ok(undefined)
   }
 
   /** Delete a completed or failed statement. Its number is never reused. */
@@ -484,7 +521,7 @@ export class StatementService {
         }
         const lookupResult = await lookupTransactions({
           transactions: heights,
-          source: this.transactionSource,
+          source: await this.sourceFor(statementId),
           logger: this.logger,
           sleep: this.sleep,
           onProgress: (done, total) => {
@@ -734,6 +771,29 @@ export class StatementService {
       .from(exchangeBalanceSnapshots)
       .where(eq(exchangeBalanceSnapshots.accountId, accountId))
       .orderBy(asc(exchangeBalanceSnapshots.timestamp))
+  }
+
+  /** The source a new statement records: Electrum if chosen, otherwise the configured mempool. */
+  private async newStatementSource(): Promise<TxSourceKind> {
+    return (await this.sourceChoice()) === 'electrum' ? 'electrum' : this.mempoolSource.kind
+  }
+
+  /**
+   * The source a statement recorded when it was created. A new Electrum source each time, so its
+   * remembered block times last only one statement.
+   */
+  private async sourceFor(statementId: string | undefined): Promise<TxSource> {
+    let kind: TxSourceKind | null
+    if (statementId === undefined) {
+      kind = await this.newStatementSource()
+    } else {
+      const [row] = await this.db
+        .select({ txSource: statements.txSource })
+        .from(statements)
+        .where(eq(statements.id, statementId))
+      kind = row?.txSource ?? null
+    }
+    return kind === 'electrum' ? new ElectrumSource(this.onchainProvider) : this.mempoolSource
   }
 
   /** Records a statement's progress; it never moves back. */

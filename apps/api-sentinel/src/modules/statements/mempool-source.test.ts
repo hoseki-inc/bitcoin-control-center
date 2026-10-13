@@ -395,23 +395,23 @@ it('times out a request even when the statement keeps going', async () => {
 })
 
 it.each([
-  { scenario: 'a 429', status: 429, headers: {}, rateLimited: true, retryAfterMs: null },
+  { scenario: 'a 429', status: 429, headers: {}, kind: 'rateLimit', retryAfterMs: null },
   {
     scenario: 'a 503 with Retry-After',
     status: 503,
     headers: { 'Retry-After': '5' },
-    rateLimited: true,
+    kind: 'rateLimit',
     retryAfterMs: 5_000,
   },
   {
     scenario: 'a 503 with a Retry-After date',
     status: 503,
     headers: { 'Retry-After': 'Wed, 21 Oct 2026 07:28:00 GMT' },
-    rateLimited: true,
+    kind: 'rateLimit',
     retryAfterMs: null,
   },
-  { scenario: 'a plain 503', status: 503, headers: {}, rateLimited: false, retryAfterMs: null },
-])('holds back every lookup only for $scenario', async ({ status, headers, rateLimited, retryAfterMs }) => {
+  { scenario: 'a plain 503', status: 503, headers: {}, kind: 'temporary', retryAfterMs: null },
+])('holds back every lookup only for $scenario', async ({ status, headers, kind, retryAfterMs }) => {
   await withTestSetup(async () => {
     vi.stubGlobal(
       'fetch',
@@ -420,7 +420,7 @@ it.each([
 
     const result = await new MempoolSource('https://example.invalid').lookup(txid, 800000, new AbortController().signal)
 
-    expect(result.expectErr('a busy server must fail this attempt').retry).toEqual({ rateLimited, retryAfterMs })
+    expect(result.expectErr('a busy server must fail this attempt').retry).toEqual({ kind, retryAfterMs })
   })
 })
 

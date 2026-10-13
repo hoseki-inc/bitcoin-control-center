@@ -75,7 +75,7 @@ function invalid(txid: string, cause?: unknown): LookupFailure {
 function networkFailure(txid: string, cause: unknown): LookupFailure {
   return {
     error: new TransactionLoadError('unreachable', `Failed to fetch transaction ${txid}`, { cause }),
-    retry: { rateLimited: false, retryAfterMs: null },
+    retry: { kind: 'temporary', retryAfterMs: null },
   }
 }
 
@@ -134,7 +134,7 @@ export class MempoolSource implements TxSource {
       return Err({
         error: new TransactionLoadError('unreachable', message),
         retry: {
-          rateLimited: response.status === 429 || response.headers.has('retry-after'),
+          kind: response.status === 429 || response.headers.has('retry-after') ? 'rateLimit' : 'temporary',
           retryAfterMs: getRetryAfterMs(response),
         },
       })

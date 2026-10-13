@@ -5,7 +5,7 @@ import type { Logger } from 'pino'
 import { loggableError } from '../../lib/loggable-error'
 import { type LookedUpTx, TransactionLoadError, type TxSource } from './sources/types'
 
-/** Waits before each retry of a temporary failure. */
+/** Waits before each retry of a temporary failure, unless the source sets its own. */
 const RETRY_DELAYS_MS = [1_000, 2_000, 4_000]
 
 /** Longest a server can hold back lookups, so one answer can't stall a statement for long. */
@@ -60,6 +60,7 @@ export const lookupTransactions = asyncFn(
   }): Promise<Result<Map<string, LookedUpTx>, TransactionLoadError>> => {
     const { transactions, source, logger, onProgress } = deps
     const { sleep = defaultSleep, now = () => performance.now() } = deps
+    const retryDelays = source.retryDelaysMs ?? RETRY_DELAYS_MS
     const total = transactions.size
     const found = new Map<string, LookedUpTx>()
 
@@ -92,7 +93,7 @@ export const lookupTransactions = asyncFn(
       const pauseLeft = (): number => run.pausedUntil - Math.max(now(), waitedUntil)
 
       const lookupWithRetries = async (txid: string): Promise<Result<LookedUpTx, TransactionLoadError>> => {
-        // Other temporary failures get a few quick retries; rate limits keep backing off for longer.
+        // Other failures get a few retries; rate limits keep backing off for longer.
         let retries = 0
         let rateLimits = 0
         let rateLimitedMs = 0
@@ -136,7 +137,7 @@ export const lookupTransactions = asyncFn(
             return Err(failure() ?? error)
           }
           let ms: number
-          if (retry.rateLimited) {
+          if (retry.kind === 'rateLimit') {
             ms = Math.max(rateLimitBackoff(rateLimits), retryAfter(retry.retryAfterMs))
             if (rateLimitedMs + ms > RATE_LIMIT_BUDGET_MS) {
               return Err(error)
@@ -144,7 +145,7 @@ export const lookupTransactions = asyncFn(
             rateLimits += 1
             rateLimitedMs += ms
           } else {
-            const retryDelay = RETRY_DELAYS_MS[retries]
+            const retryDelay = retryDelays[retries]
             if (retryDelay === undefined) {
               return Err(error)
             }
@@ -152,7 +153,7 @@ export const lookupTransactions = asyncFn(
             ms = Math.max(retryDelay, retryAfter(retry.retryAfterMs))
           }
           const until = now() + ms
-          if (retry.rateLimited) {
+          if (retry.kind !== 'temporary') {
             run.pausedUntil = Math.max(run.pausedUntil, until)
           }
           waitedUntil = Math.max(waitedUntil, until)

@@ -140,7 +140,7 @@ function mockDailyRates(db: SentinelDb, logger: Logger): DailyRatesService {
   return service
 }
 
-async function createStatementHarness(emptySavingsHistory = false) {
+async function createStatementHarness(emptySavingsHistory = false, sourceSelectable = false) {
   const { db, logger, logs } = await createStatementDatabase()
   const onchainProvider = mockOnchainProvider(logger, emptySavingsHistory)
   mockTransactionRequests()
@@ -153,6 +153,9 @@ async function createStatementHarness(emptySavingsHistory = false) {
     mempoolApiUrl,
     dailyRatesService: mockDailyRates(db, logger),
     exchangeService,
+    sourceSelectable,
+    // Retries happen without real waits.
+    sleep: async () => {},
   })
 
   return { service, db, exchangeService, onchainProvider, logs }
@@ -191,8 +194,12 @@ interface WalletScenario extends StatementScenario {
   logs: string[]
 }
 
-async function setupNamedWallets(firstName: string, secondName: string): Promise<WalletScenario> {
-  const { service, db, onchainProvider, logs } = await createStatementHarness()
+async function setupNamedWallets(
+  firstName: string,
+  secondName: string,
+  sourceSelectable = false,
+): Promise<WalletScenario> {
+  const { service, db, onchainProvider, logs } = await createStatementHarness(false, sourceSelectable)
   const claimIds = [await seedWallet(db, savingsWallet, firstName), await seedWallet(db, spendingWallet, secondName)]
 
   return { service, db, onchainProvider, logs, input: { ...period, claimIds } }
@@ -200,6 +207,11 @@ async function setupNamedWallets(firstName: string, secondName: string): Promise
 
 export async function setupDistinctWalletNames(): Promise<WalletScenario> {
   return setupNamedWallets('Savings', 'Spending')
+}
+
+/** Two wallets on desktop, where Settings can choose Electrum for statement lookups. */
+export async function setupDesktopWallets(): Promise<WalletScenario> {
+  return setupNamedWallets('Savings', 'Spending', true)
 }
 
 export async function setupDuplicateWalletNames(): Promise<StatementScenario> {
