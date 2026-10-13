@@ -152,8 +152,8 @@ const spin = keyframes`
 
 /**
  * A green ring that fills with progress, with the percentage inside. Before there's any progress, a
- * short arc spins instead. When done, the ring fills in to a solid disc and a white check draws
- * itself across it.
+ * short arc spins instead, unless motion is reduced. When done, the ring fills in to a solid disc
+ * and a white check draws itself across it.
  */
 function ProgressCheck({
   progress,
@@ -169,7 +169,8 @@ function ProgressCheck({
 }): JSX.Element {
   const [track] = useToken('colors', ['neutral.100'])
   const transition = (value: string): string => (animate ? value : 'none')
-  const isWaiting = progress === 0 && !isDone
+  // Without motion, a still arc would read as progress, so show 0% instead.
+  const isWaiting = animate && progress === 0 && !isDone
   return (
     <Box
       position="relative"
