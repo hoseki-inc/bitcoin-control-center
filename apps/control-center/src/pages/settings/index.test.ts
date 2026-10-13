@@ -117,6 +117,32 @@ it.each([
   })
 })
 
+it.each([
+  ['mempool', 'Exchange and price requests, and statement lookups on mempool.space, use your normal connection.'],
+  ['electrum', 'Routes Electrum requests, including statement lookups, through Tor.'],
+] as const)('says where statement lookups go in the Tor description when they use %s', async (source, text) => {
+  await withTestSetup(async () => {
+    fetchMock.mockImplementation(async (input) =>
+      parseUnknown(z.string(), input).unwrapOr('').includes('/settings.statementSource')
+        ? Response.json({ result: { data: { json: { selectable: true, source } } } })
+        : (savedConnections(input) ?? Response.json({ result: { data: { json: null } } })),
+    )
+    await act(async () => {
+      root.render(
+        createElement(
+          ChakraProvider,
+          null,
+          createElement(QueryClientProvider, { client: queryClient }, createElement(SettingsPage, { desktop: true })),
+        ),
+      )
+    })
+    await vi.waitFor(async () => {
+      await act(async () => {})
+      expect(container.textContent).toContain(text)
+    })
+  })
+})
+
 type PriceSourceOptions = RouterOutput['settings']['priceSource']
 type PriceStatus = RouterOutput['settings']['priceStatus']
 type StatusPrice = PriceStatus['price']

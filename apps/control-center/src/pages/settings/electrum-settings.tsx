@@ -41,6 +41,7 @@ import { toast } from 'sonner'
 import { z } from 'zod'
 import { type RouterOutput, baseTrpc } from '../../trpc'
 import { type FadingNotice, NOTICE_FADE_MS, useFadingNotice } from './fading-notice'
+import { useStatementSource } from './statement-source-settings'
 
 /** Shows Sentinel's own error message; anything else, such as an unreadable response, gets a plain one. */
 // oxlint-disable-next-line anti-slop/no-unknown-parameters -- Caught errors are untrusted and narrowed here.
@@ -201,6 +202,16 @@ async function requestTorStart(): Promise<number | null> {
  * other. Only the list shows which connection is live, so the details never read
  * as the current connection.
  */
+/** Whether the connection Electrum uses now goes through Tor. */
+export function useActiveConnectionUsesTor(): boolean {
+  const query = useQuery({
+    queryKey,
+    queryFn: async ({ signal }) => api.list.query(undefined, { signal }),
+    refetchInterval: 10_000,
+  })
+  return query.data?.profiles.find((item) => item.id === query.data.activeId)?.torEnabled === true
+}
+
 export function ElectrumSettings(): JSX.Element {
   const queryClient = useQueryClient()
   const query = useQuery({
@@ -224,6 +235,7 @@ export function ElectrumSettings(): JSX.Element {
   // The test in progress, cancelled once the form changes, since its result would no longer apply.
   const runningTest = useRef<AbortController | null>(null)
   const [renaming, setRenaming] = useState(false)
+  const statementSource = useStatementSource()
   const [nickname, setNickname] = useState('')
   const [pendingSelection, setPendingSelection] = useState<Selection | null>(null)
   // A result that went through Tor records Tor's attempt, so it hides once Tor fails or starts again.
@@ -956,8 +968,9 @@ export function ElectrumSettings(): JSX.Element {
                 Connect via Tor
               </FormLabel>
               <Text textStyle="text/xs" color="neutral.600">
-                Routes Electrum requests through Tor. Exchange and price requests use your normal connection. Required
-                for .onion addresses.
+                {statementSource.data?.source === 'electrum'
+                  ? 'Routes Electrum requests, including statement lookups, through Tor. Exchange and price requests use your normal connection. Required for .onion addresses.'
+                  : 'Routes Electrum requests through Tor. Exchange and price requests, and statement lookups on mempool.space, use your normal connection. Required for .onion addresses.'}
               </Text>
             </Box>
             <Switch

@@ -290,6 +290,9 @@ async function withTestSetup(run: () => Promise<void>): Promise<void> {
       if (path === 'settings.priceSource' || path === 'settings.priceStatus') {
         return Response.json({ result: { data: { json: null } } })
       }
+      if (path === 'settings.statementSource') {
+        return Response.json({ result: { data: { json: { selectable: true, source: 'mempool' } } } })
+      }
       if (path === 'settings.startTor') {
         torAttempts += 1
         const started = { state: 'starting', progress: 0, attempt: torAttempts }
