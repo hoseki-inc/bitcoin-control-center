@@ -8,24 +8,17 @@ import {
   ModalContent,
   ModalOverlay,
   Text,
+  VisuallyHidden,
   keyframes,
   usePrefersReducedMotion,
+  useToken,
 } from '@chakra-ui/react'
-import { Spinner } from '@hoseki/packages/ui/design-system'
-import { greenCheckCircle } from '@hoseki/packages/ui/prove-verify-ui'
 import type { HTMLMotionProps } from 'framer-motion'
 import type { LottieRefCurrentProps } from 'lottie-react'
 // Lottie runs animation expressions with eval: only render bundled animations.
 import Lottie from 'lottie-react'
-import { type RefObject, useEffect, useRef, useState } from 'react'
+import { type RefObject, useEffect, useId, useRef, useState } from 'react'
 import statementSheetAnimation from '../../assets/lottie-animations/statement-entrance-animation.json'
-import type { StatementDto } from '../../trpc/server-types'
-
-/** How long "Statement Completed" stays up, including the check animation, before the screen fades out. */
-export const COMPLETED_HOLD_MS = 1800
-
-/** How long the sheet rests on its last frame before playing again while generation continues. */
-export const SHEET_PAUSE_MS = 2500
 
 const CROSS_FADE = 'opacity 400ms ease-in-out'
 
@@ -41,32 +34,36 @@ const FADE: HTMLMotionProps<'div'> & HTMLMotionProps<'section'> = {
 }
 
 /**
- * Full-screen screen shown while a statement generates. See `useGenerationSequence`
- * for how the sheet animation, the green check and `onFinished` are timed.
+ * Full-screen screen shown while a statement generates, with its progress in a ring that fills in to
+ * a check when the statement is ready. `useStatementGeneration` decides what it shows and when it closes.
  */
 export function StatementGenerationModal({
   isOpen,
-  status,
-  onFinished,
+  progress,
+  isCompleted,
   onClose,
   finalFocusRef,
 }: {
   isOpen: boolean
-  status: StatementDto['status']
-  onFinished: () => void
+  /** 0–100. */
+  progress: number
+  isCompleted: boolean
   onClose: () => void
   /** Receives focus when the screen closes. */
   finalFocusRef: RefObject<HTMLElement>
 }): JSX.Element {
   const lottieRef = useRef<LottieRefCurrentProps | null>(null)
-  const { onSheetEnd, isCompleted } = useGenerationSequence({
-    status,
-    replaySheet: !usePrefersReducedMotion(),
-    replay: () => {
-      lottieRef.current?.goToAndPlay(0, true)
-    },
-    onFinished,
-  })
+  const reduceMotion = usePrefersReducedMotion()
+  // Once the sheet has drawn in, its gray placeholders shimmer while the statement generates.
+  const [isSheetDrawn, setIsSheetDrawn] = useState(false)
+  const sheetRef = useRef<HTMLDivElement>(null)
+  const isShimmering = isSheetDrawn && !reduceMotion && !isCompleted
+  useEffect(() => {
+    if (isSheetDrawn) {
+      staggerPlaceholders(sheetRef.current)
+    }
+  }, [isSheetDrawn])
+  const headingId = useId()
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} scrollBehavior="inside" size="full" finalFocusRef={finalFocusRef}>
@@ -78,7 +75,7 @@ export function StatementGenerationModal({
             <Flex flexDirection="column" alignItems="center" textAlign="center" h="250px">
               <Box display="grid">
                 <CrossFade isVisible={!isCompleted}>
-                  <Text as="h1" textStyle="text/8xl" fontWeight="medium">
+                  <Text as="h1" id={headingId} textStyle="text/8xl" fontWeight="medium">
                     Generating Your Statement
                   </Text>
                 </CrossFade>
@@ -92,34 +89,41 @@ export function StatementGenerationModal({
                 This may take a few minutes. It will open here when it&apos;s ready. You can close this screen and come
                 back to it from Statements.
               </Text>
-              <Box my={6} display="grid" placeItems="center" h="60px" w="60px">
-                <CrossFade isVisible={!isCompleted}>
-                  <Spinner height="48px" width="48px" />
-                </CrossFade>
-                {isCompleted && (
-                  <Box gridArea="1 / 1">
-                    <Lottie
-                      animationData={greenCheckCircle}
-                      loop={false}
-                      autoplay
-                      style={{ width: '60px', height: '60px' }}
-                    />
-                  </Box>
-                )}
+              <Box my={6}>
+                <ProgressCheck
+                  progress={progress}
+                  isDone={isCompleted}
+                  animate={!reduceMotion}
+                  labelledBy={headingId}
+                />
               </Box>
             </Flex>
             <Box
+              ref={sheetRef}
               mt={16}
+              data-shimmer={isShimmering ? '' : undefined}
+              sx={{
+                '&[data-shimmer] image:not([data-still]), &[data-shimmer] [fill^="url("]': {
+                  animation: `${pulse} 2s ease-in-out infinite`,
+                },
+              }}
               boxShadow="0px 6px 12px 0px rgba(0, 0, 0, 0.11)"
-              animation={`${fadeInSlideUp} 1000ms ease-out 100ms forwards`}
-              onAnimationEnd={() => lottieRef.current?.play()}
+              // Hidden during the delay too, so it doesn't show and then vanish before sliding in.
+              animation={`${fadeInSlideUp} 1000ms ease-out 100ms both`}
+              onAnimationEnd={(event) => {
+                if (event.target === event.currentTarget) {
+                  lottieRef.current?.play()
+                }
+              }}
             >
               <Lottie
                 animationData={statementSheetAnimation}
                 loop={false}
                 autoplay={false}
                 lottieRef={lottieRef}
-                onComplete={onSheetEnd}
+                onComplete={() => {
+                  setIsSheetDrawn(true)
+                }}
                 style={{ width: '100%', height: 'auto' }}
               />
             </Box>
@@ -127,6 +131,94 @@ export function StatementGenerationModal({
         </ModalBody>
       </ModalContent>
     </Modal>
+  )
+}
+
+/** The green of the app's check animation (`greenCheckCircle`), so the two checks match. */
+const CHECK_GREEN = '#059669'
+const SIZE = 60
+const RING_WIDTH = 6
+const RADIUS = (SIZE - RING_WIDTH) / 2
+const CIRCUMFERENCE = 2 * Math.PI * RADIUS
+const CHECK_LENGTH = 34
+
+/**
+ * A green ring that fills with progress, with the percentage inside. When done, the ring fills in
+ * to a solid disc and a white check draws itself across it.
+ */
+function ProgressCheck({
+  progress,
+  isDone,
+  animate,
+  labelledBy,
+}: {
+  progress: number
+  isDone: boolean
+  animate: boolean
+  /** The heading that names the progress. */
+  labelledBy: string
+}): JSX.Element {
+  const [track] = useToken('colors', ['neutral.100'])
+  const transition = (value: string): string => (animate ? value : 'none')
+  return (
+    <Box position="relative" w={`${SIZE}px`} h={`${SIZE}px`}>
+      {/* What assistive technology reads; the ring below is drawn for sight only. */}
+      <VisuallyHidden>
+        <progress value={progress} max={100} aria-labelledby={labelledBy} />
+      </VisuallyHidden>
+      <svg width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`} aria-hidden="true">
+        <circle cx={SIZE / 2} cy={SIZE / 2} r={RADIUS} fill="none" stroke={track} strokeWidth={RING_WIDTH} />
+        <circle
+          cx={SIZE / 2}
+          cy={SIZE / 2}
+          r={RADIUS}
+          fill="none"
+          stroke={CHECK_GREEN}
+          strokeWidth={RING_WIDTH}
+          strokeLinecap="round"
+          strokeDasharray={CIRCUMFERENCE}
+          strokeDashoffset={CIRCUMFERENCE * (1 - progress / 100)}
+          transform={`rotate(-90 ${SIZE / 2} ${SIZE / 2})`}
+          style={{ transition: transition('stroke-dashoffset 300ms ease-out') }}
+        />
+        <circle
+          cx={SIZE / 2}
+          cy={SIZE / 2}
+          r={SIZE / 2}
+          fill={CHECK_GREEN}
+          style={{
+            transformOrigin: 'center',
+            transform: isDone ? 'scale(1)' : 'scale(0.8)',
+            opacity: isDone ? 1 : 0,
+            transition: transition('transform 350ms ease-out, opacity 200ms ease-out'),
+          }}
+        />
+        <path
+          d="M19 31 L26.5 38.5 L41 23"
+          fill="none"
+          stroke="white"
+          strokeWidth={4}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeDasharray={CHECK_LENGTH}
+          strokeDashoffset={isDone ? 0 : CHECK_LENGTH}
+          style={{ transition: isDone ? transition('stroke-dashoffset 350ms ease-out 300ms') : 'none' }}
+        />
+      </svg>
+      <Text
+        position="absolute"
+        inset={0}
+        display="grid"
+        placeItems="center"
+        textStyle="text/sm"
+        fontWeight="medium"
+        opacity={isDone ? 0 : 1}
+        transition={transition('opacity 150ms ease-out')}
+        aria-hidden="true"
+      >
+        {progress}%
+      </Text>
+    </Box>
   )
 }
 
@@ -139,78 +231,33 @@ function CrossFade({ isVisible, children }: { isVisible: boolean; children: Reac
   )
 }
 
-interface GenerationSequence {
-  /** Call when the sheet animation reaches its last frame. */
-  onSheetEnd: () => void
-  /** Whether to show "Statement Completed" and the green check. */
-  isCompleted: boolean
-}
-
 /**
- * Times the end of generation. While the statement is generating, the sheet
- * rests on its last frame for `SHEET_PAUSE_MS` and then `replay` is called
- * (unless `replaySheet` is off, for reduced motion). Once the sheet is at rest
- * and generation has ended, a failed statement calls `onFinished` straight away;
- * a completed one sets `isCompleted` for `COMPLETED_HOLD_MS` first.
+ * The sheet's gray placeholders: its table rows and header bars are images, and its shaded boxes
+ * gradient fills. Icons are images too, so `staggerPlaceholders` holds them still.
  */
-export function useGenerationSequence({
-  status,
-  replaySheet,
-  replay,
-  onFinished,
-}: {
-  status: StatementDto['status']
-  replaySheet: boolean
-  replay: () => void
-  onFinished: () => void
-}): GenerationSequence {
-  const [isAtRest, setIsAtRest] = useState(false)
-  const [isCompleted, setIsCompleted] = useState(false)
-  // Call the latest callbacks, not the ones from when the sheet started playing.
-  const latest = useRef({ replay, onFinished })
-  useEffect(() => {
-    latest.current = { replay, onFinished }
-  }, [replay, onFinished])
-  useEffect(() => {
-    if (!isAtRest) {
-      return
-    }
-    if (status === 'completed') {
-      setIsCompleted(true)
-      return
-    }
-    if (status === 'failed') {
-      latest.current.onFinished()
-      return
-    }
-    if (!replaySheet) {
-      return
-    }
-    const timer = window.setTimeout(() => {
-      setIsAtRest(false)
-      latest.current.replay()
-    }, SHEET_PAUSE_MS)
-    return () => {
-      window.clearTimeout(timer)
-    }
-  }, [isAtRest, status, replaySheet])
-  useEffect(() => {
-    if (!isCompleted) {
-      return
-    }
-    const timer = window.setTimeout(() => {
-      latest.current.onFinished()
-    }, COMPLETED_HOLD_MS)
-    return () => {
-      window.clearTimeout(timer)
-    }
-  }, [isCompleted])
-  return {
-    onSheetEnd: () => {
-      setIsAtRest(true)
-    },
-    isCompleted,
+const PLACEHOLDERS = 'image:not([data-still]), [fill^="url("]'
+
+/** A gentle fade down and back, so each placeholder looks like it's filling in. */
+const pulse = keyframes`
+  0%,
+  100% {
+    opacity: 1;
   }
+  50% {
+    opacity: 0.55;
+  }
+`
+
+/** Gives each placeholder its own timing, so they shimmer separately; icons stay still. */
+function staggerPlaceholders(sheet: HTMLElement | null): void {
+  sheet?.querySelectorAll<SVGElement>(PLACEHOLDERS).forEach((element, index) => {
+    if (element instanceof SVGImageElement && Number(element.getAttribute('width')) <= 32) {
+      element.dataset['still'] = ''
+      return
+    }
+    element.style.animationDuration = `${1.6 + (index % 4) * 0.35}s`
+    element.style.animationDelay = `${((index * 0.53) % 1.8).toFixed(2)}s`
+  })
 }
 
 const fadeInSlideUp = keyframes`

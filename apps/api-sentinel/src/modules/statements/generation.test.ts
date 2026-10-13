@@ -29,7 +29,7 @@ it('reports progress through history and lookups, and none once the statement co
     // halfway through the lookups too.
     if (new Request(args[0]).url.endsWith('2'.repeat(64))) {
       await vi.waitFor(async () => {
-        await expect(progress()).resolves.toBeGreaterThan(11)
+        await expect(progress()).resolves.toBeGreaterThan(44)
       })
       atLookup.push(await progress())
     }
@@ -38,11 +38,12 @@ it('reports progress through history and lookups, and none once the statement co
 
   const data = (await service.generateStatementData(input, id)).unwrap()
 
-  // History is the first ninth of Sentinel's progress: half of it after the first of two wallets.
-  expect(atHistory).toEqual([0, 5])
-  // Lookups take the next seven ninths, from 11%: halfway through them is halfway through generation.
-  expect(atLookup[0]).toBe(11)
-  expect(atLookup).toContain(50)
+  // History is the first 4/9 of Sentinel's progress, split between the two wallets. Finding a wallet's
+  // addresses is half of its share, so each history request sees that half done.
+  expect(atHistory).toEqual([11, 33])
+  // Lookups take the next 4/9, from 44%: halfway through them is 66%.
+  expect(atLookup[0]).toBe(44)
+  expect(atLookup).toContain(66)
   await expect(service.findById(id)).resolves.toMatchObject({ progress: 100 })
 
   ;(await service.complete(id, data.transactionMap, data.dailyRates)).unwrap()

@@ -23,6 +23,8 @@ export const collectAccountHistory = asyncFn(
   async (
     account: Account,
     onchainProvider: ElectrumProvider,
+    /** How much of this account is done, 0–1: half for finding its addresses, half for their history. */
+    onProgress?: (fraction: number) => void,
   ): Promise<Result<AccountHistory, TransactionLoadError>> => {
     const network = onchainProvider.network
 
@@ -38,8 +40,10 @@ export const collectAccountHistory = asyncFn(
       ...account.changeAddresses(0, lastUsedChangeIndex + 1, network),
     ]
 
+    onProgress?.(0.5)
+
     const history: AccountHistory = new Map()
-    for (const address of addresses) {
+    for (const [index, address] of addresses.entries()) {
       // A statement missing an address's transactions would look complete, so any failure stops it.
       const scripthashRes = addressToScripthash(address)
       if (scripthashRes.isErr()) {
@@ -74,6 +78,7 @@ export const collectAccountHistory = asyncFn(
           known.addresses.push(address)
         }
       }
+      onProgress?.(0.5 + (0.5 * (index + 1)) / addresses.length)
     }
 
     return Ok(history)

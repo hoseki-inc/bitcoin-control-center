@@ -8,6 +8,7 @@ import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { MemoryRouter, type NavigateFunction, Route, Routes, useNavigate } from 'react-router'
 import { assert, expect, it, onTestFinished, vi } from 'vitest'
+import { JUST_GENERATED_STATE } from '../../lib/statement-navigation'
 import { confirmDelete, statementFixture } from '../../testing/statements'
 import { TestTrpcProvider, createTestTrpcClient, notFound } from '../../testing/trpc'
 import { trpc } from '../../trpc'
@@ -59,7 +60,11 @@ function hold(server: FakeSentinel): () => Promise<void> {
 async function renderStatementPage(
   initial: StatementDto['status'],
   cached?: StatementDto['status'],
-  { isDown = false, held = false }: { isDown?: boolean; held?: boolean } = {},
+  {
+    isDown = false,
+    held = false,
+    justGenerated = false,
+  }: { isDown?: boolean; held?: boolean; justGenerated?: boolean } = {},
 ) {
   const dom = browser.acquire()
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
@@ -141,7 +146,13 @@ async function renderStatementPage(
     root.render(
       <TestTrpcProvider client={client} rpc={rpc}>
         <ChakraProvider>
-          <MemoryRouter initialEntries={['/statements', `/statements/${id}`]} initialIndex={1}>
+          <MemoryRouter
+            initialEntries={[
+              '/statements',
+              { pathname: `/statements/${id}`, state: justGenerated ? JUST_GENERATED_STATE : null },
+            ]}
+            initialIndex={1}
+          >
             <Navigator />
             <Routes>
               <Route path="/statements" element={<p>Statements list</p>} />
@@ -196,11 +207,29 @@ it(
     await vi.waitFor(() => {
       expect(container.textContent).toContain('Statuscompleted')
     })
-    // The sheet never plays here, so the sequence never ends; useGenerationSequence's tests cover the close.
+    // The statement is never drawn here, so generation waits at 90%; useStatementGeneration's tests cover the close.
     expect(generationShown()).toBe(true)
     expect(container.textContent).toContain('Delete')
   },
 )
+
+it("shows Sentinel's progress as the first 90% of the ring", async () => {
+  const { server, refresh } = await renderStatementPage('pending')
+  server.statement = { ...server.statement, progress: 50 }
+  await refresh()
+  await vi.waitFor(() => {
+    expect(document.querySelector('progress')?.value).toBe(45)
+  })
+  expect(document.body.textContent).toContain('45%')
+})
+
+it('opens generation at once, before checking the status, when Generate opens the statement', async () => {
+  const { container, release } = await renderStatementPage('pending', 'pending', { held: true, justGenerated: true })
+  // Generate handed over the statement Sentinel just returned, so there's no loading screen first.
+  expect(generationShown()).toBe(true)
+  expect(container.textContent).toContain('Statement Details')
+  await release()
+})
 
 it('keeps showing generation when a status check fails', async () => {
   const { container, server, refresh, client } = await renderStatementPage('pending')
