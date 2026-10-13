@@ -23,8 +23,9 @@ import { toast } from 'sonner'
 import { useLocalSetting } from '../../hooks/use-local-settings'
 import { isDesktop } from '../../mode'
 import { type RouterOutput, baseTrpc, trpc } from '../../trpc'
-import { ElectrumSettings } from './electrum-settings'
+import { ElectrumSettings, useActiveConnectionUsesTor } from './electrum-settings'
 import { NOTICE_FADE_MS, useFadingNotice } from './fading-notice'
+import { StatementSourceSettings } from './statement-source-settings'
 
 export function SettingsPage({ desktop = isDesktop }: { desktop?: boolean }): JSX.Element {
   const { data: savedName, isLoading, saveAsync, isSaving, isError } = useLocalSetting('user_name')
@@ -95,10 +96,15 @@ export function SettingsPage({ desktop = isDesktop }: { desktop?: boolean }): JS
           </Box>
         </SimpleGrid>
         <PriceSourceSettings />
+        {desktop && <DesktopStatementSource />}
         {desktop && <ElectrumSettings />}
       </Stack>
     </Box>
   )
+}
+
+function DesktopStatementSource(): JSX.Element {
+  return <StatementSourceSettings torEnabled={useActiveConnectionUsesTor()} />
 }
 
 // ─── Bitcoin price source ────────────────────────────────────────────────────

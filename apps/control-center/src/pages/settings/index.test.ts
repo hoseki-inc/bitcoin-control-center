@@ -117,6 +117,77 @@ it.each([
   })
 })
 
+it.each([
+  ['mempool', 'Exchange and price requests, and statement lookups on mempool.space, use your normal connection.'],
+  ['electrum', 'Routes Electrum requests, including statement lookups, through Tor.'],
+] as const)('says where statement lookups go in the Tor description when they use %s', async (source, text) => {
+  await withTestSetup(async () => {
+    fetchMock.mockImplementation(async (input) =>
+      parseUnknown(z.string(), input).unwrapOr('').includes('/settings.statementSource')
+        ? Response.json({ result: { data: { json: { selectable: true, source } } } })
+        : (savedConnections(input) ?? Response.json({ result: { data: { json: null } } })),
+    )
+    await act(async () => {
+      root.render(
+        createElement(
+          ChakraProvider,
+          null,
+          createElement(QueryClientProvider, { client: queryClient }, createElement(SettingsPage, { desktop: true })),
+        ),
+      )
+    })
+    await vi.waitFor(async () => {
+      await act(async () => {})
+      expect(container.textContent).toContain(text)
+    })
+  })
+})
+
+it.each([
+  [false, 'Slower. Your IP address and transaction details are shared with the server operator.'],
+  [true, 'Slower. Your transaction details are shared with the server operator.'],
+] as const)(
+  'describes statement lookups by whether the active connection uses Tor (Tor: %s)',
+  async (activeUsesTor, text) => {
+    await withTestSetup(async () => {
+      // Only the active connection counts: another saved one uses Tor the other way round.
+      const active = { ...savedConnection, torEnabled: activeUsesTor }
+      const other = {
+        ...savedConnection,
+        id: '00000000-0000-4000-8000-000000000002',
+        nickname: 'Other node',
+        torEnabled: !activeUsesTor,
+      }
+      fetchMock.mockImplementation(async (input) => {
+        const url = parseUnknown(z.string(), input).unwrapOr('')
+        if (url.includes('/settings.statementSource')) {
+          return Response.json({ result: { data: { json: { selectable: true, source: 'electrum' } } } })
+        }
+        if (url.includes('/settings.connectionProfiles.list')) {
+          return Response.json({
+            result: { data: { json: { profiles: [other, active], activeId: active.id, limit: 5 } } },
+          })
+        }
+        return Response.json({ result: { data: { json: null } } })
+      })
+      await act(async () => {
+        root.render(
+          createElement(
+            ChakraProvider,
+            null,
+            createElement(QueryClientProvider, { client: queryClient }, createElement(SettingsPage, { desktop: true })),
+          ),
+        )
+      })
+      await vi.waitFor(async () => {
+        await act(async () => {})
+        expect(container.textContent).toContain(text)
+      })
+      expect(container.textContent.includes('statement generation could take several minutes')).toBe(activeUsesTor)
+    })
+  },
+)
+
 type PriceSourceOptions = RouterOutput['settings']['priceSource']
 type PriceStatus = RouterOutput['settings']['priceStatus']
 type StatusPrice = PriceStatus['price']

@@ -41,6 +41,7 @@ import { toast } from 'sonner'
 import { z } from 'zod'
 import { type RouterOutput, baseTrpc } from '../../trpc'
 import { type FadingNotice, NOTICE_FADE_MS, useFadingNotice } from './fading-notice'
+import { useStatementSource } from './statement-source-settings'
 
 /** Shows Sentinel's own error message; anything else, such as an unreadable response, gets a plain one. */
 // oxlint-disable-next-line anti-slop/no-unknown-parameters -- Caught errors are untrusted and narrowed here.
@@ -196,6 +197,19 @@ async function requestTorStart(): Promise<number | null> {
 
 // ─── Settings ────────────────────────────────────────────────────────────────
 
+// Shared by every reader of the saved connections, so they poll together.
+const profilesQuery = {
+  queryKey,
+  queryFn: async ({ signal }: { signal?: AbortSignal }) => api.list.query(undefined, { signal }),
+  refetchInterval: 10_000,
+}
+
+/** Whether the connection Electrum uses now goes through Tor. */
+export function useActiveConnectionUsesTor(): boolean {
+  const query = useQuery(profilesQuery)
+  return query.data?.profiles.find((item) => item.id === query.data.activeId)?.torEnabled === true
+}
+
 /**
  * Saved connections on one side and the selected connection's details on the
  * other. Only the list shows which connection is live, so the details never read
@@ -203,12 +217,9 @@ async function requestTorStart(): Promise<number | null> {
  */
 export function ElectrumSettings(): JSX.Element {
   const queryClient = useQueryClient()
-  const query = useQuery({
-    queryKey,
-    queryFn: async ({ signal }) => api.list.query(undefined, { signal }),
-    refetchInterval: 10_000,
-  })
+  const query = useQuery(profilesQuery)
   const { status, tor, refresh: refreshStatus } = useElectrumStatus()
+  const statementSource = useStatementSource()
   const [draft, setDraft] = useState<Draft | null>(null)
   const [busy, setBusy] = useState<Operation | 'rename' | 'delete' | null>(null)
   const [deleting, setDeleting] = useState<Profile | null>(null)
@@ -956,8 +967,9 @@ export function ElectrumSettings(): JSX.Element {
                 Connect via Tor
               </FormLabel>
               <Text textStyle="text/xs" color="neutral.600">
-                Routes Electrum requests through Tor. Exchange and price requests use your normal connection. Required
-                for .onion addresses.
+                {statementSource.data?.source === 'electrum'
+                  ? 'Routes Electrum requests, including statement lookups, through Tor. Exchange and price requests use your normal connection. Required for .onion addresses.'
+                  : 'Routes Electrum requests through Tor. Exchange and price requests, and statement lookups on mempool.space, use your normal connection. Required for .onion addresses.'}
               </Text>
             </Box>
             <Switch
