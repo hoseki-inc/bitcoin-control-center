@@ -32,16 +32,24 @@ class SourceServer {
   public failSave = false
   /** Fails reading the source back, as a request lost after a save would. */
   public failRead = false
-  /** Holds each save or read this long, so changes can land while one runs. */
-  public delayMs = 0
+  /** Holds each request until the test releases it, so a change can land at an exact point. */
+  public hold = false
+  public readonly held: { kind: 'read' | 'save'; source?: string; release: () => void }[] = []
   public readonly saved: string[] = []
 
   public constructor(fetchMock: ReturnType<typeof vi.fn<typeof fetch>>) {
     fetchMock.mockImplementation(async (input, init) => {
       const url = parseUnknown(z.string(), input).unwrapOr('')
-      if (this.delayMs > 0) {
-        await new Promise((resolve) => {
-          setTimeout(resolve, this.delayMs)
+      if (this.hold) {
+        const kind = url.endsWith('/settings.setStatementSource') ? 'save' : 'read'
+        const source =
+          kind === 'save'
+            ? parseUnknown(SavedSchema, JSON.parse(parseUnknown(z.string(), init?.body).unwrapOr('null')))
+                .map((body) => body.json.source)
+                .unwrapOr(undefined)
+            : undefined
+        await new Promise<void>((resolve) => {
+          this.held.push({ kind, source, release: resolve })
         })
       }
       if (url.includes('/settings.statementSource')) {
@@ -71,13 +79,18 @@ class SourceServer {
   }
 }
 
-async function renderSettings(torEnabled = false): Promise<{ server: SourceServer; container: HTMLDivElement }> {
+async function renderSettings({ torEnabled = false, selectable = true } = {}): Promise<{
+  server: SourceServer
+  container: HTMLDivElement
+  fetchMock: ReturnType<typeof vi.fn<typeof fetch>>
+}> {
   const dom = browser.acquire()
   const fetchMock = vi.fn<typeof fetch>()
   vi.stubGlobal('fetch', fetchMock)
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
   vi.spyOn(toast, 'error').mockReturnValue('test-toast')
   const server = new SourceServer(fetchMock)
+  server.selectable = selectable
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const container = document.createElement('div')
   document.body.append(container)
@@ -92,24 +105,23 @@ async function renderSettings(torEnabled = false): Promise<{ server: SourceServe
     vi.unstubAllGlobals()
     dom.window.close()
   })
-  const render = async (tor: boolean): Promise<void> => {
-    await act(async () => {
-      root.render(
+  await act(async () => {
+    root.render(
+      createElement(
+        ChakraProvider,
+        null,
         createElement(
-          ChakraProvider,
-          null,
-          createElement(
-            QueryClientProvider,
-            { client: queryClient },
-            createElement(StatementSourceSettings, { torEnabled: tor }),
-          ),
+          QueryClientProvider,
+          { client: queryClient },
+          createElement(StatementSourceSettings, { torEnabled }),
         ),
-      )
-    })
+      ),
+    )
+  })
+  if (selectable) {
+    await settle(container)
   }
-  await render(torEnabled)
-  await settle(container)
-  return { server, container }
+  return { server, container, fetchMock }
 }
 
 async function settle(container: HTMLDivElement): Promise<void> {
@@ -127,13 +139,24 @@ function radio(container: HTMLDivElement, value: 'mempool' | 'electrum'): HTMLIn
   return input
 }
 
+/** Waits for the next held request to be the one given, then lets it through. */
+async function release(server: SourceServer, kind: 'read' | 'save', source?: string): Promise<void> {
+  await vi.waitFor(() => {
+    expect(server.held[0]).toMatchObject(source === undefined ? { kind } : { kind, source })
+  })
+  const request = server.held.shift()
+  await act(async () => {
+    request?.release()
+  })
+}
+
 async function choose(container: HTMLDivElement, value: 'mempool' | 'electrum'): Promise<void> {
   await act(async () => {
     radio(container, value).click()
   })
 }
 
-it('shows the saved source with what each choice shares', async () => {
+it('shows the saved source and what it shares', async () => {
   const { container } = await renderSettings()
   expect(radio(container, 'mempool').checked).toBe(true)
   expect(container.textContent).toContain('Fastest · Default')
@@ -161,7 +184,7 @@ it('saves the Electrum server and says the operator sees your IP without Tor', a
 })
 
 it('leaves out your IP and warns about the wait when the connection uses Tor', async () => {
-  const { container } = await renderSettings(true)
+  const { container } = await renderSettings({ torEnabled: true })
   expect(container.textContent).not.toContain('uses Tor')
   await choose(container, 'electrum')
   expect(container.textContent).toContain('Slower. Your transaction details are shared with the server operator.')
@@ -183,10 +206,16 @@ it('says when saving fails and shows the saved source again', async () => {
 
 it('saves the last of several quick changes', async () => {
   const { server, container } = await renderSettings()
-  server.delayMs = 50
+  server.hold = true
   await choose(container, 'electrum')
+  await vi.waitFor(() => {
+    expect(server.held).toMatchObject([{ kind: 'save', source: 'electrum' }])
+  })
   // Waits behind the save of Electrum, which is still running.
   await choose(container, 'mempool')
+  await release(server, 'save', 'electrum')
+  await release(server, 'save', 'mempool')
+  await release(server, 'read')
   await vi.waitFor(async () => {
     await act(async () => {})
     expect(container.textContent).toContain('Statement source saved')
@@ -198,20 +227,22 @@ it('saves the last of several quick changes', async () => {
 
 it('confirms only the last choice when one is made while the previous is read back', async () => {
   const { server, container } = await renderSettings()
-  server.delayMs = 50
+  server.hold = true
   await choose(container, 'electrum')
+  await release(server, 'save', 'electrum')
   await vi.waitFor(() => {
-    expect(server.saved).toEqual(['electrum'])
+    expect(server.held).toMatchObject([{ kind: 'read' }])
   })
   // Electrum is saved and being read back.
   await choose(container, 'mempool')
-  await act(async () => {
-    await new Promise((resolve) => {
-      setTimeout(resolve, 60)
-    })
+  await release(server, 'read')
+  await vi.waitFor(() => {
+    expect(server.held).toMatchObject([{ kind: 'save', source: 'mempool' }])
   })
   expect(container.textContent).not.toContain('Statement source saved')
   expect(radio(container, 'mempool').checked).toBe(true)
+  await release(server, 'save', 'mempool')
+  await release(server, 'read')
   await vi.waitFor(async () => {
     await act(async () => {})
     expect(container.textContent).toContain('Statement source saved')
@@ -231,15 +262,20 @@ it('keeps a saved choice when reading it back fails', async () => {
   expect(server.source).toBe('electrum')
   expect(radio(container, 'electrum').checked).toBe(true)
   expect(container.textContent).toContain('shared with the server operator')
+  // The save worked, so there's no load error to report.
+  expect(container.querySelector('[role="alert"]')).toBeNull()
 })
 
-it('names the choices and reads what each shares with them', async () => {
-  const { container } = await renderSettings(true)
+it('names the choices and reads what the chosen one shares with it', async () => {
+  const { container } = await renderSettings({ torEnabled: true })
   const group = container.querySelector('[role="radiogroup"]')
   const label = document.getElementById(group?.getAttribute('aria-labelledby') ?? '')
   expect(label?.textContent).toBe('Look up transactions on')
   expect(radio(container, 'mempool').getAttribute('aria-describedby')).toBe('statement-source-help')
+  // The help line is about the chosen source, so it doesn't describe the other one.
+  expect(radio(container, 'electrum').hasAttribute('aria-describedby')).toBe(false)
   await choose(container, 'electrum')
+  expect(radio(container, 'mempool').hasAttribute('aria-describedby')).toBe(false)
   const described = radio(container, 'electrum').getAttribute('aria-describedby')?.split(' ') ?? []
   expect(described.map((id) => document.getElementById(id)?.textContent)).toEqual([
     'Slower. Your transaction details are shared with the server operator.',
@@ -248,37 +284,7 @@ it('names the choices and reads what each shares with them', async () => {
 })
 
 it('is hidden where Sentinel does not let the source be chosen', async () => {
-  const dom = browser.acquire()
-  const fetchMock = vi.fn<typeof fetch>()
-  vi.stubGlobal('fetch', fetchMock)
-  vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
-  const server = new SourceServer(fetchMock)
-  server.selectable = false
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  const container = document.createElement('div')
-  document.body.append(container)
-  const root = createRoot(container)
-  onTestFinished(async () => {
-    await act(async () => {
-      root.unmount()
-    })
-    container.remove()
-    vi.unstubAllGlobals()
-    dom.window.close()
-  })
-  await act(async () => {
-    root.render(
-      createElement(
-        ChakraProvider,
-        null,
-        createElement(
-          QueryClientProvider,
-          { client: queryClient },
-          createElement(StatementSourceSettings, { torEnabled: false }),
-        ),
-      ),
-    )
-  })
+  const { container, fetchMock } = await renderSettings({ selectable: false })
   await vi.waitFor(async () => {
     await act(async () => {})
     expect(fetchMock).toHaveBeenCalled()

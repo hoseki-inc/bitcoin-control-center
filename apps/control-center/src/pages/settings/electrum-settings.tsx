@@ -219,6 +219,7 @@ export function ElectrumSettings(): JSX.Element {
   const queryClient = useQueryClient()
   const query = useQuery(profilesQuery)
   const { status, tor, refresh: refreshStatus } = useElectrumStatus()
+  const statementSource = useStatementSource()
   const [draft, setDraft] = useState<Draft | null>(null)
   const [busy, setBusy] = useState<Operation | 'rename' | 'delete' | null>(null)
   const [deleting, setDeleting] = useState<Profile | null>(null)
@@ -234,7 +235,6 @@ export function ElectrumSettings(): JSX.Element {
   // The test in progress, cancelled once the form changes, since its result would no longer apply.
   const runningTest = useRef<AbortController | null>(null)
   const [renaming, setRenaming] = useState(false)
-  const statementSource = useStatementSource()
   const [nickname, setNickname] = useState('')
   const [pendingSelection, setPendingSelection] = useState<Selection | null>(null)
   // A result that went through Tor records Tor's attempt, so it hides once Tor fails or starts again.

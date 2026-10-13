@@ -1,16 +1,4 @@
-import {
-  Box,
-  FormControl,
-  FormLabel,
-  HStack,
-  Radio,
-  RadioGroup,
-  SimpleGrid,
-  Spinner,
-  Text,
-  VisuallyHidden,
-  useToken,
-} from '@chakra-ui/react'
+import { Box, HStack, Radio, RadioGroup, SimpleGrid, Spinner, Text, VisuallyHidden, useToken } from '@chakra-ui/react'
 import { type UseQueryResult, useQuery, useQueryClient } from '@tanstack/react-query'
 import { CircleCheckIcon, ClockIcon } from 'lucide-react'
 import { useRef, useState } from 'react'
@@ -20,7 +8,7 @@ import { NOTICE_FADE_MS, useFadingNotice } from './fading-notice'
 
 type StatementSource = RouterOutput['settings']['statementSource']['source']
 
-export const STATEMENT_SOURCE_QUERY_KEY = ['statement-source']
+const STATEMENT_SOURCE_QUERY_KEY = ['statement-source']
 
 /** Where new statements look up transactions, as saved in Sentinel. */
 export function useStatementSource(): UseQueryResult<RouterOutput['settings']['statementSource']> {
@@ -123,11 +111,11 @@ export function StatementSourceSettings({ torEnabled }: { torEnabled: boolean })
           Statements look up every transaction in your accounts. Choose where those lookups go.
         </Text>
       </Box>
-      <FormControl as="fieldset" isDisabled={source === undefined} aria-busy={unsaved !== null}>
+      <Box aria-busy={unsaved !== null}>
         <HStack justify="space-between" mb={2}>
-          <FormLabel as="legend" id="statement-source-label" textStyle="text/sm" mb={0}>
+          <Text id="statement-source-label" textStyle="text/sm" color="neutral.500">
             Look up transactions on
-          </FormLabel>
+          </Text>
           <HStack
             as="output"
             w={4}
@@ -153,6 +141,7 @@ export function StatementSourceSettings({ torEnabled }: { torEnabled: boolean })
         </HStack>
         <RadioGroup
           value={source ?? ''}
+          isDisabled={source === undefined}
           aria-labelledby="statement-source-label"
           aria-describedby="statement-source-description"
           onChange={(value) => {
@@ -176,18 +165,23 @@ export function StatementSourceSettings({ torEnabled }: { torEnabled: boolean })
                   boxShadow={isSelected ? `inset 0 0 0 1px ${selectedEdge}` : undefined}
                   borderRadius="md"
                   p={3}
+                  // The radio's own styles reach only its dot, so its offset is set from the card.
+                  sx={{ '.chakra-radio__control': { mt: 1 } }}
                 >
                   <Radio
                     value={item.value}
                     colorScheme="orange"
                     size="sm"
-                    // Read with each choice, so changing it says what that choice shares.
+                    // The help line describes the chosen source, so only that choice is described by it.
                     aria-describedby={
-                      showTorNote ? 'statement-source-help statement-source-tor-note' : 'statement-source-help'
+                      !isSelected
+                        ? undefined
+                        : showTorNote
+                          ? 'statement-source-help statement-source-tor-note'
+                          : 'statement-source-help'
                     }
                     // Level with the title's first line when it wraps.
                     alignItems="flex-start"
-                    sx={{ '.chakra-radio__control': { mt: 1 } }}
                   >
                     <Text textStyle="text/sm" fontWeight="medium">
                       {item.title}
@@ -227,12 +221,13 @@ export function StatementSourceSettings({ torEnabled }: { torEnabled: boolean })
             </Text>
           </HStack>
         )}
-        {query.isError && (
+        {/* After a save, the saved choice is still shown, so a failed read back isn't a load error. */}
+        {query.isError && query.data === undefined && (
           <Text role="alert" mt={2} textStyle="text/sm" color="error.700">
             Could not load statement settings. Refresh to try again.
           </Text>
         )}
-      </FormControl>
+      </Box>
     </SimpleGrid>
   )
 }
