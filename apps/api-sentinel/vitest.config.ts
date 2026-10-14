@@ -5,5 +5,5 @@ export default defineConfig({
   resolve: {
     alias: { '@hoseki/packages': fileURLToPath(new URL('../../packages', import.meta.url)) },
   },
-  test: { include: ['src/**/*.test.ts'] },
+  test: { include: ['src/**/*.test.ts'], setupFiles: ['src/no-network.setup.ts'] },
 })

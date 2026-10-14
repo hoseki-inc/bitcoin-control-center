@@ -125,7 +125,12 @@ async function createStatementHarness(outcome: WithdrawalOutcome) {
     }),
   )
 
-  const dailyRatesService = new DailyRatesService({ db: database, logger, mempoolApiUrl: 'https://example.invalid' })
+  const dailyRatesService = new DailyRatesService({
+    db: database,
+    logger,
+    mempoolApiUrl: 'https://example.invalid',
+    downloadRetryDelaysMs: [1, 1, 1, 1],
+  })
   const rate = new Decimal(40_000)
   const rates = Object.fromEntries(
     [openingDate, transactionDate, closingDate].map((date) => [

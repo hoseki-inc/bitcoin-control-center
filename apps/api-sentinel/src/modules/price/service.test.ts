@@ -628,7 +628,7 @@ describe('daily price response validation', () => {
       )
       const date = new Date('2024-01-02T00:00:00Z')
       const result = await (await dailyRates()).getDailyRates(date, date)
-      expect(result.expectErr('invalid response').message).toMatch(/No (usable )?USD (quote|price)/)
+      expect(result.expectErr('invalid response').message).toBe('No recent USD price for every day')
     })
   })
 })

@@ -41,13 +41,30 @@ export function getRequiredRateDates(
   return [...new Set(dates.map(toDateKey))].sort().map((day) => new Date(day + 'T00:00:00Z'))
 }
 
+/** What a statement shows when its prices can't be confirmed. Never names a date, which can be an activity day. */
+export const PRICES_FAILED_MESSAGE =
+  "Couldn't get Bitcoin prices for this statement. Check your connection and try again."
+
+export type PriceLoadErrorKind = 'unavailable' | 'incomplete'
+
+/** A statement's prices couldn't be fetched or confirmed; only its kind is logged. */
+export class PriceLoadError extends Error {
+  public override readonly name = 'PriceLoadError'
+  public readonly kind: PriceLoadErrorKind
+
+  public constructor(kind: PriceLoadErrorKind) {
+    super(PRICES_FAILED_MESSAGE)
+    this.kind = kind
+  }
+}
+
 /** Only validate newly generated data; legacy completed snapshots remain unchanged. */
-export function validateStatementRates(dates: Date[], dailyRates: DailyRates): Result<void, Error> {
+export function validateStatementRates(dates: Date[], dailyRates: DailyRates): Result<void, PriceLoadError> {
   for (const date of dates) {
     const key = toDateKey(date)
     const rate = dailyRates.rates[key]
     if (!rate || !rate.close.isFinite() || !rate.close.gt(0)) {
-      return Err(new Error(`No usable ${dailyRates.quoteCurrency} quote for ${key}.`))
+      return Err(new PriceLoadError('incomplete'))
     }
     const distance = Math.abs(date.getTime() - rate.timestamp.getTime())
     if (
@@ -55,11 +72,7 @@ export function validateStatementRates(dates: Date[], dailyRates: DailyRates): R
       rate.timestamp.getTime() > Date.now() ||
       distance > MAX_QUOTE_DISTANCE_DAYS * 86_400_000
     ) {
-      return Err(
-        new Error(
-          `The ${dailyRates.quoteCurrency} quote for ${key} must have an observation within four days before or after the valuation date, and no later than today.`,
-        ),
-      )
+      return Err(new PriceLoadError('incomplete'))
     }
   }
   return Ok(undefined)
