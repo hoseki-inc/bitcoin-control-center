@@ -197,8 +197,9 @@ export function registerRequestSecurity(
       return reply.status(403).send({ code: 'forbidden_origin', message: 'Same-site changes are not allowed' })
     }
 
-    // For browsers that don't send Sec-Fetch-Site, such as Safari before 16.4: they send JSON across origins only
-    // after a preflight, which production CORS refuses.
+    // Browsers send Sec-Fetch-Site only to HTTPS and loopback addresses, so none over plain HTTP to a LAN IP or
+    // .local name, and Safari sent none before 16.4. Either way they send JSON across origins only after a
+    // preflight, which production CORS refuses.
     if (isUnsafeMethod(request.method) && !isJsonContentType(request.headers['content-type'])) {
       return reply
         .status(415)

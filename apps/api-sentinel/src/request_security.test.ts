@@ -187,9 +187,9 @@ describe('Sentinel interface access', () => {
       )
       const startOs = await createServer().inject({
         ...jsonWrite({
-          host: 'internal-proxy:3400',
-          'x-forwarded-host': 'node.local:50399',
+          host: 'node.local:50399',
           origin: 'https://node.local:50399',
+          'sec-fetch-site': 'same-origin',
           'content-type': 'Application/JSON; charset=utf-8',
         }),
         remoteAddress: '10.0.3.1',
@@ -204,27 +204,38 @@ describe('Sentinel interface access', () => {
     { configuredHosts: '', host: '127.0.0.1:3400', origin: 'http://127.0.0.1:8080', remoteAddress: '127.0.0.1' },
     {
       configuredHosts: allowedHosts,
-      host: 'internal-proxy:3400',
-      'x-forwarded-host': 'node.local:50399',
+      host: 'node.local:50399',
       origin: 'https://node.local:8443',
       remoteAddress: '10.0.3.1',
     },
   ]
+  // Over plain HTTP to anything but loopback, browsers send no Sec-Fetch-Site.
+  const plainHttpLanPage = {
+    configuredHosts: allowedHosts,
+    host: '10.0.0.20:3400',
+    origin: 'http://10.0.0.20:8080',
+    remoteAddress: '10.0.0.30',
+  }
 
   it.each(otherPortPages)('rejects same-site writes in production: $origin', async (request) => {
     await withTestSetup(async () => {
       const { configuredHosts, remoteAddress, ...headers } = request
-      const response = await createServer(configuredHosts).inject({
-        ...jsonWrite({ ...headers, 'sec-fetch-site': 'same-site' }),
+      const server = createServer(configuredHosts)
+      const write = await server.inject({ ...jsonWrite({ ...headers, 'sec-fetch-site': 'same-site' }), remoteAddress })
+      expect(write.statusCode).toBe(403)
+      expect(write.json()).toMatchObject({ code: 'forbidden_origin', message: 'Same-site changes are not allowed' })
+      // The check covers changes only: a page can't read the response to a query.
+      const read = await server.inject({
+        url: '/trpc/data',
+        headers: { ...headers, 'sec-fetch-site': 'same-site' },
         remoteAddress,
       })
-      expect(response.statusCode).toBe(403)
-      expect(response.json()).toMatchObject({ code: 'forbidden_origin' })
+      expect(read.statusCode).toBe(200)
     })
   })
 
-  // Browsers that don't send Sec-Fetch-Site, such as Safari before 16.4, fall back to the content type.
-  it.each(otherPortPages)(
+  // Without Sec-Fetch-Site, the content type is what refuses these.
+  it.each([...otherPortPages, plainHttpLanPage])(
     'rejects writes that are not JSON, even from an allowed hostname: $origin',
     async (request) => {
       await withTestSetup(async () => {
@@ -258,10 +269,12 @@ describe('Sentinel interface access', () => {
   it('accepts the Vite dev server and Sentinel itself in development', async () => {
     await withTestSetup(async () => {
       const server = createServer('', false)
-      for (const origin of ['http://localhost:4269', 'http://127.0.0.1:4269', 'http://[::1]:4269']) {
-        const response = await server.inject(
-          jsonWrite({ host: 'localhost:3400', origin, 'sec-fetch-site': 'same-site' }),
-        )
+      for (const [origin, host] of [
+        ['http://localhost:4269', 'localhost:3400'],
+        ['http://127.0.0.1:4269', '127.0.0.1:3400'],
+        ['http://[::1]:4269', '[::1]:3400'],
+      ]) {
+        const response = await server.inject(jsonWrite({ host, origin, 'sec-fetch-site': 'same-site' }))
         expect(response.statusCode).toBe(200)
       }
       const sameOrigin = await server.inject(
@@ -271,35 +284,72 @@ describe('Sentinel interface access', () => {
     })
   })
 
-  it.each(['http://127.0.0.1:8080', 'http://localhost:5173', 'https://localhost:4269', 'https://evil.example'])(
-    'rejects other origins in development: %s',
-    async (origin) => {
-      await withTestSetup(async () => {
-        const response = await createServer('', false).inject(jsonWrite({ host: 'localhost:3400', origin }))
-        expect(response.statusCode).toBe(403)
-        expect(response.json()).toMatchObject({ code: 'forbidden_origin' })
-      })
-    },
-  )
+  it.each([
+    'http://127.0.0.1:8080',
+    'http://localhost:5173',
+    'https://localhost:4269',
+    'http://evil.example:4269',
+    'https://evil.example',
+  ])('rejects other origins in development: %s', async (origin) => {
+    await withTestSetup(async () => {
+      const response = await createServer('', false).inject(jsonWrite({ host: 'localhost:3400', origin }))
+      expect(response.statusCode).toBe(403)
+      expect(response.json()).toMatchObject({ code: 'forbidden_origin' })
+    })
+  })
 
-  // Writes rely on browsers refusing to send JSON across origins without an approved preflight.
+  // After DNS rebinding a page's origin matches Host, and a configured host makes the forwarded host trusted.
+  it("accepts Sentinel's own origin in development only on a loopback host", async () => {
+    await withTestSetup(async () => {
+      const response = await createServer('node.local', false).inject(
+        jsonWrite({
+          host: 'rebind.attacker.example:3400',
+          'x-forwarded-host': 'node.local:3400',
+          origin: 'http://rebind.attacker.example:3400',
+        }),
+      )
+      expect(response.statusCode).toBe(403)
+      expect(response.json()).toMatchObject({ code: 'forbidden_origin' })
+    })
+  })
+
+  it('treats every method except GET, HEAD and OPTIONS as a change', async () => {
+    await withTestSetup(async () => {
+      const server = createServer('')
+      const headers = { host: '127.0.0.1:3400', origin: 'http://127.0.0.1:3400' }
+      const head = await server.inject({ method: 'HEAD', url: '/trpc/data', headers })
+      const remove = await server.inject({
+        method: 'DELETE',
+        url: '/trpc/settings',
+        headers: { ...headers, 'content-type': 'text/plain' },
+        payload: '{}',
+      })
+      expect(head.statusCode).toBe(200)
+      expect(remove.statusCode).toBe(415)
+    })
+  })
+
+  // Writes rely on browsers refusing to send JSON across origins without an approved preflight. A browser
+  // approves one only when the response allows its origin.
   it.each([
     // These pass the hostname-only Origin check, so CORS is what refuses them.
-    { isProduction: true, origin: 'http://127.0.0.1:8080', status: 404, allowed: false },
-    { isProduction: true, origin: 'http://127.0.0.1:3400', status: 404, allowed: false },
-    // The development Origin check refuses this one before CORS runs.
-    { isProduction: false, origin: 'http://127.0.0.1:8080', status: 403, allowed: false },
-    { isProduction: false, origin: 'http://localhost:4269', status: 204, allowed: true },
-  ])('approves a preflight only for the dev server: $origin, production $isProduction', async (request) => {
+    { isProduction: true, url: '/trpc/settings', origin: 'http://127.0.0.1:8080', approved: false },
+    { isProduction: true, url: '/trpc/settings', origin: 'http://127.0.0.1:3400', approved: false },
+    { isProduction: true, url: '/trpc/settings', origin: 'http://localhost:4269', approved: false },
+    // The development Origin check covers tRPC, so this reaches CORS through another route.
+    { isProduction: false, url: '/health', origin: 'http://127.0.0.1:8080', approved: false },
+    { isProduction: false, url: '/trpc/settings', origin: 'http://localhost:4269', approved: true },
+  ])('approves a preflight only for the dev server: $origin $url, production $isProduction', async (request) => {
     await withTestSetup(async () => {
       const server = Fastify()
       servers.push(server)
       registerRequestSecurity(server, '', request.isProduction)
       await registerCorsPolicy(server, request.isProduction)
+      server.get('/health', async () => ({ status: 'ok' }))
       server.post('/trpc/settings', async () => ({ ok: true }))
       const response = await server.inject({
         method: 'OPTIONS',
-        url: '/trpc/settings',
+        url: request.url,
         headers: {
           host: '127.0.0.1:3400',
           origin: request.origin,
@@ -307,8 +357,7 @@ describe('Sentinel interface access', () => {
           'access-control-request-headers': 'content-type',
         },
       })
-      expect(response.statusCode).toBe(request.status)
-      expect(response.headers['access-control-allow-origin']).toBe(request.allowed ? request.origin : undefined)
+      expect(response.headers['access-control-allow-origin']).toBe(request.approved ? request.origin : undefined)
     })
   })
 })
