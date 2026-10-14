@@ -83,7 +83,7 @@ export class DailyRatesService {
   private readonly downloadRetryDelaysMs: readonly number[]
   private readonly priceBudgetMs: number
   private readonly sleep: (ms: number) => Promise<void>
-  private readonly downloads = new Map<StatementQuoteCurrency, { patient: boolean; result: Promise<boolean> }>()
+  private readonly downloads = new Map<StatementQuoteCurrency, Patience & { result: Promise<boolean> }>()
   private unavailableUntil = 0
 
   public constructor(deps: {
@@ -102,13 +102,14 @@ export class DailyRatesService {
     sleep?: (ms: number) => Promise<void>
   }) {
     this.logger = deps.logger.child({ module: 'daily-rates-service' })
-    this.mempoolApiUrl = deps.mempoolApiUrl.replace(/\/$/, '')
-    const provider = new URL(this.mempoolApiUrl)
+    const provider = new URL(deps.mempoolApiUrl)
+    // fetch refuses URLs with credentials, so they're left out of requests as well as saved prices.
     provider.username = ''
     provider.password = ''
     provider.search = ''
     provider.hash = ''
     const providerUrl = provider.toString().replace(/\/$/, '')
+    this.mempoolApiUrl = providerUrl
     const allowPublicFallback = deps.allowPublicFallback ?? (() => true)
     this.allowPublicFallback = allowPublicFallback
     this.allowRequests = deps.allowRequests ?? (() => true)
@@ -261,16 +262,16 @@ export class DailyRatesService {
     }
     for (let running = this.downloads.get(currency); running;) {
       const shared = await until(running.result, wait.deadline)
-      // A statement that joined the chart's quick attempt tries again with its own patience,
-      // joining another statement's retry if one has started.
-      if (shared !== false || running.patient || !wait.patient) {
+      // A statement that joined the chart's quick attempt, or a statement with an earlier time
+      // limit, tries again with its own patience, joining another statement's retry if one started.
+      if (shared !== false || !wait.patient || (running.patient && running.deadline >= wait.deadline)) {
         return shared === true
       }
       const next = this.downloads.get(currency)
       running = next === running ? undefined : next
     }
     const result = this.download(currency, wait)
-    const entry = { patient: wait.patient, result }
+    const entry = { ...wait, result }
     this.downloads.set(currency, entry)
     try {
       return await result
@@ -332,9 +333,13 @@ export class DailyRatesService {
     const delay = (attempt: number): number => retryDelaysMs?.[attempt] ?? RETRY_BASE_MS * 2 ** attempt
     for (let attempt = 0; attempt < attempts; attempt++) {
       // Stop retrying once a concurrent request has put the source in cooldown, unless this is a
-      // patient request with time left to wait it out.
-      const cooldown = this.unavailableUntil - Date.now()
-      if (attempt > 0 && cooldown > 0) {
+      // patient request with time left to wait it out. Checked again after waiting, since another
+      // request may have extended it.
+      for (
+        let cooldown = this.unavailableUntil - Date.now();
+        attempt > 0 && cooldown > 0;
+        cooldown = this.unavailableUntil - Date.now()
+      ) {
         if (!retryDelaysMs || !fits(cooldown, wait.deadline)) {
           return Err(new Error('Price source temporarily unavailable'))
         }

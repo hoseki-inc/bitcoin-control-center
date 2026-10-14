@@ -106,6 +106,17 @@ describe('prices from a full history', () => {
     },
   )
 
+  it('leaves credentials in the configured address out of requests and saved prices', async () => {
+    await setup()
+    const result = (await service('https://alice:s3cret@mempool.test/').getDailyRates(day, day)).unwrap()
+    expect(result.providerUrls).toEqual(['https://mempool.test'])
+    expect(fetcher.mock.calls.map(([input]) => input)).toEqual([
+      'https://mempool.test/api/v1/historical-price?currency=USD',
+    ])
+    const saved = await database.selectDistinct({ providerUrl: btcQuoteCache.providerUrl }).from(btcQuoteCache)
+    expect(saved).toEqual([{ providerUrl: 'https://mempool.test' }])
+  })
+
   it.each([-4, 4])('uses a price %s days away, at the time it was observed', async (offset) => {
     await setup()
     const observed = target + offset * DAY
@@ -505,6 +516,52 @@ describe('retries and time limits', () => {
     expect(fetcher.mock.calls.map(([input]) => new URL(input).searchParams.get('currency'))).toEqual(['CAD', 'USD'])
   })
 
+  it('waits again when another request extends the cooldown between retries', async () => {
+    await setup()
+    let answerCad = (): void => {}
+    let usdAttempts = 0
+    fetcher.mockImplementation(async (input) => {
+      if (input.endsWith('CAD')) {
+        await new Promise<void>((resolve) => {
+          answerCad = resolve
+        })
+        // Longer than a statement can wait.
+        return new Response('', { status: 429, headers: { 'retry-after': '55' } })
+      }
+      if (input.endsWith('GBP')) {
+        return new Response('', { status: 503, headers: { 'retry-after': '30' } })
+      }
+      usdAttempts++
+      return usdAttempts === 1 ? new Response('', { status: 503, headers: { 'retry-after': '1' } }) : history()
+    })
+    let cad: Promise<unknown> = Promise.resolve()
+    let sleeps = 0
+    const rates: DailyRatesService = service('https://mempool.test', {
+      sleep: async (ms: number) => {
+        sleeps++
+        if (sleeps === 1) {
+          // While the statement waits to retry, the chart's quick attempt leaves a 30-second cooldown.
+          expect((await rates.getDailyRates(day, day, 'GBP', [day], chartOptions)).isErr()).toBe(true)
+        } else {
+          // While it waits that out, the CAD request extends it beyond the statement's time limit.
+          answerCad()
+          await cad
+        }
+        await advanceClock(ms)
+      },
+    })
+    cad = rates.getDailyRates(day, day, 'CAD')
+    await vi.waitFor(() => {
+      expect(fetcher).toHaveBeenCalledTimes(1)
+    })
+    expect((await rates.getDailyRates(day, day)).isErr()).toBe(true)
+    expect(fetcher.mock.calls.map(([input]) => new URL(input).searchParams.get('currency'))).toEqual([
+      'CAD',
+      'USD',
+      'GBP',
+    ])
+  })
+
   it('gives up after its last attempt', async () => {
     await setup()
     fetcher.mockRejectedValue(new Error('offline'))
@@ -645,6 +702,37 @@ describe('retries and time limits', () => {
     fail()
     expect((await Promise.all(statements)).every((result) => result.isOk())).toBe(true)
     expect(fetcher).toHaveBeenCalledTimes(3)
+  })
+
+  it("tries again itself when another statement's download fails with time left", async () => {
+    await setup()
+    const rates = service('https://mempool.test', { sleep: advanceClock })
+    const start = Date.now()
+    let fail = (): void => {}
+    fetcher.mockImplementationOnce(async () => {
+      await new Promise<void>((resolve) => {
+        fail = resolve
+      })
+      // Too late in the first statement's minute to try again.
+      vi.setSystemTime(start + 50_000)
+      throw new DOMException('The operation timed out.', 'TimeoutError')
+    })
+    const first = rates.getDailyRates(day, day)
+    await vi.waitFor(() => {
+      expect(fetcher).toHaveBeenCalledTimes(1)
+    })
+    vi.setSystemTime(start + 35_000)
+    const checks = vi.spyOn(QuoteCache.prototype, 'downloadedAt')
+    const second = rates.getDailyRates(day, day)
+    // Once its saved history has been checked, the second statement is waiting for the first's download.
+    await vi.waitFor(() => {
+      expect(checks.mock.settledResults[0]?.type).toBe('fulfilled')
+    })
+    fail()
+    expect((await first).isErr()).toBe(true)
+    // The second still has time to wait out the cooldown and download again.
+    expect((await second).isOk()).toBe(true)
+    expect(fetcher).toHaveBeenCalledTimes(2)
   })
 
   it('stops waiting for a download it joined at its own time limit', async () => {
