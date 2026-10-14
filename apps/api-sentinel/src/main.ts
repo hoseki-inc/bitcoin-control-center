@@ -90,6 +90,7 @@ export async function main(
   // Record initial balance snapshots, then every 15 minutes
   void appCtx.controlCenterService.recordAllSnapshots()
   snapshotTimer = setInterval(() => void appCtx.controlCenterService.recordAllSnapshots(), 15 * 60 * 1000)
+  appCtx.releaseCheckService.start()
 
   // Graceful shutdown
   let shuttingDown = false
@@ -103,6 +104,7 @@ export async function main(
     logger.info('Starting graceful shutdown')
 
     clearInterval(snapshotTimer)
+    appCtx.releaseCheckService.stop()
 
     try {
       await server.close()

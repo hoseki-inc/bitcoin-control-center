@@ -2,7 +2,7 @@ import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { BrowserWindow, type Tray, type WebContents, app, dialog, ipcMain, shell } from 'electron'
-import { APP_DISPLAY_NAME, userDataPath } from './app-identity'
+import { APP_DISPLAY_NAME, readReleaseVersion, userDataPath } from './app-identity'
 import { showDeviceChooser } from './device-chooser'
 import { setupLedgerHidAccess } from './ledger-hid'
 import { startOnPreferredPort } from './preferred-port'
@@ -82,6 +82,7 @@ async function start(): Promise<void> {
       listenPort,
       connectionProfiles: true,
       statementSourceSetting: true,
+      releaseVersion: app.isPackaged ? readReleaseVersion(path.join(app.getAppPath(), 'package.json')) : undefined,
     }),
   )
   const origin = `http://${LOOPBACK_HOST}:${server.port}`

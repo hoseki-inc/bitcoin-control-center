@@ -10,6 +10,7 @@ interface FakeContext {
   context: AppContext
   closes: () => number
   stops: () => number
+  releaseCheckStops: () => number
 }
 
 let running: SentinelServer[]
@@ -25,9 +26,16 @@ const createContext = asyncFn(async () => {
 function queueContext(port: number): FakeContext {
   let closes = 0
   let stops = 0
+  let releaseCheckStops = 0
   const fake = {
     env: { HOST: '127.0.0.1', PORT: port, APP_DIR: '/nonexistent-sentinel-test-assets' },
     controlCenterService: { recordAllSnapshots: async (): Promise<void> => undefined },
+    releaseCheckService: {
+      start: (): void => undefined,
+      stop: (): void => {
+        releaseCheckStops += 1
+      },
+    },
     stopElectrum: (): void => {
       stops += 1
     },
@@ -43,7 +51,7 @@ function queueContext(port: number): FakeContext {
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- The test serves no routes that need the rest of the context.
   const context = fake as AppContext
   queued.push(context)
-  return { context, closes: () => closes, stops: () => stops }
+  return { context, closes: () => closes, stops: () => stops, releaseCheckStops: () => releaseCheckStops }
 }
 
 function isTcpAddress(address: AddressInfo | string | null): address is AddressInfo {
@@ -136,7 +144,7 @@ describe('Sentinel listening port', () => {
     }
     const desktopContext = queueContext(configured)
     const desktop = await start({ listenPort: 0 })
-    queueContext(configured)
+    const developmentContext = queueContext(configured)
     const development = await start()
 
     expect(development.port).toBe(configured)
@@ -144,6 +152,8 @@ describe('Sentinel listening port', () => {
     await development.shutdown()
     await expect(health(desktop.port)).resolves.toEqual({ status: 'ok' })
     expect(desktopContext.closes()).toBe(0)
+    expect(developmentContext.releaseCheckStops()).toBe(1)
+    expect(desktopContext.releaseCheckStops()).toBe(0)
   })
 
   it('cleans up its own resources after a failed bind', async () => {

@@ -2158,6 +2158,9 @@ const settingsRouter = t.router({
       }
     }),
 
+  /** A newer desktop release, once the daily check finds one. */
+  releaseCheck: publicProcedure.query(({ ctx }) => ctx.app.releaseCheckService.status()),
+
   // Answers at once, so Settings can change the source even while every source is down.
   priceSource: publicProcedure.query(async ({ ctx }) => ctx.app.priceService.options()),
 

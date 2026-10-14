@@ -6,6 +6,8 @@ interface ServerOptions {
   waitForElectrum?: boolean
   /** Lets Settings choose Electrum for statement lookups, which only the desktop app offers. */
   statementSourceSetting?: boolean
+  /** The running release, such as `0.6.0:0`, so Sentinel can check for newer ones. */
+  releaseVersion?: string
   tor?: Pick<TorManager, 'start' | 'getStatus' | 'getSocksProxy'>
   /** Port to bind; zero lets the operating system choose a free port. */
   listenPort?: number

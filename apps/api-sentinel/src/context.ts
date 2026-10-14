@@ -22,6 +22,7 @@ import { DailyRatesService } from './modules/price/daily_rates'
 import { PriceHistoryService } from './modules/price/history'
 import { PriceService, readPriceSettings } from './modules/price/service'
 import { StatementService } from './modules/statements/service'
+import { ReleaseCheckService } from './modules/updates/service'
 
 /**
  * Application context: singleton holding all shared services.
@@ -41,6 +42,7 @@ export interface AppContext {
   priceService: PriceService
   priceHistoryService: PriceHistoryService
   statementService: StatementService
+  releaseCheckService: ReleaseCheckService
   network: Network
   reconnectElectrum: (config: ElectrumClientConfig) => Promise<Result<void, Error>>
   /** Saved desktop connections; undefined unless the launcher enables them. */
@@ -77,6 +79,8 @@ export interface AppContextOptions {
   waitForElectrum?: boolean
   /** Enabled only by desktop launchers: Settings can choose Electrum for statement lookups. */
   statementSourceSetting?: boolean
+  /** The running desktop release, such as `0.6.0:0`. Desktop release builds pass it to check for newer releases. */
+  releaseVersion?: string
   /** Distribution-owned Tor process; Sentinel owns connection policy. */
   tor?: {
     start: () => Promise<{ state: string; message?: string }>
@@ -245,6 +249,8 @@ export const createAppContext = asyncFn(
       logger,
       sourceSelectable: options.statementSourceSetting === true,
     })
+    const releaseCheckService = new ReleaseCheckService({ logger, installedVersion: options.releaseVersion })
+
     const interrupted = await statementService.failInterrupted()
     if (interrupted > 0) {
       logger.warn({ count: interrupted }, 'Marked interrupted statements as failed')
@@ -319,6 +325,7 @@ export const createAppContext = asyncFn(
       priceService,
       priceHistoryService,
       statementService,
+      releaseCheckService,
       network,
       prepareElectrumConfig,
       getTorStatus: () => options.tor?.getStatus() ?? { state: 'unavailable' },

@@ -7,13 +7,13 @@ import { Wallets } from '@hoseki/packages/testing'
 import { Signer } from 'bip322-js'
 import pino from 'pino'
 import { assert, expect, it, onTestFinished, vi } from 'vitest'
-import { createAppContext } from '../../context'
+import { type AppContextOptions, createAppContext } from '../../context'
 import { accounts, challenges, keystores, signedMessages } from '../../db/schema'
 import * as env from '../../env'
 import { createSinglesigClaim, owner } from './ownership.fixtures'
 import { appRouter } from './router'
 
-async function setup() {
+async function setup(options: AppContextOptions = {}) {
   const directory = mkdtempSync(join(tmpdir(), 'sentinel-router-'))
   vi.stubEnv('DATA_DIR', directory)
   vi.stubEnv('ELECTRUM_HOST', 'localhost')
@@ -24,7 +24,7 @@ async function setup() {
     vi.unstubAllEnvs()
     rmSync(directory, { recursive: true, force: true })
   })
-  const app = (await createAppContext(pino({ level: 'silent' }))).unwrap()
+  const app = (await createAppContext(pino({ level: 'silent' }), options)).unwrap()
   onTestFinished(() => {
     app.database.$client.close()
     app.electrumClient.disconnect()
@@ -212,4 +212,24 @@ it('returns the stored wallet balances of the requested wallets only', async () 
   await expect(controlCenter.storedWalletBalances({ claimIds: [requested.id] })).resolves.toEqual([
     { accountId: requested.id, balanceSats: '150', timestamp: '2020-01-03T09:00:00.000Z' },
   ])
+})
+
+it('reports a newer desktop release once the check finds one, and nothing from source', async () => {
+  const fetch = vi.fn(async () => Response.json({ tag: 'v0.2.0_0' }))
+  vi.stubGlobal('fetch', fetch)
+  onTestFinished(() => {
+    vi.unstubAllGlobals()
+  })
+  const fromSource = (await setup()).app
+  await fromSource.releaseCheckService.checkIfDue()
+  await expect(appRouter.createCaller({ app: fromSource }).settings.releaseCheck()).resolves.toEqual({
+    newVersion: null,
+  })
+  expect(fetch).not.toHaveBeenCalled()
+
+  const desktop = (await setup({ releaseVersion: '0.1.0:0' })).app
+  await desktop.releaseCheckService.checkIfDue()
+  await expect(appRouter.createCaller({ app: desktop }).settings.releaseCheck()).resolves.toEqual({
+    newVersion: '0.2.0',
+  })
 })
