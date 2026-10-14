@@ -176,15 +176,24 @@ it('makes another lookup wait out a rate limit', async () => {
   const [limited = '', slow = '', later = ''] = txids(3)
   const events: string[] = []
   let limitedOnce = false
+  let retryStarted = (): void => {}
+  const retry = new Promise<void>((resolve) => {
+    retryStarted = resolve
+  })
   const lookups = source(async (txid) => {
     events.push(`lookup ${txid === later ? 'later' : txid === slow ? 'slow' : 'limited'}`)
     if (txid === limited && !limitedOnce) {
       limitedOnce = true
       return rateLimited(5_000)
     }
-    // The limited lookup's retry and the slow lookup both finish after the rate limit, so the
-    // slow lookup's worker is the one that takes the next transaction.
-    await delay(txid === limited ? 20 : 5)
+    // The slow lookup finishes only once the limited one has retried, rather than racing it on
+    // timers, so its worker is the one that takes the next transaction, after the same pause.
+    if (txid === limited) {
+      retryStarted()
+      await delay(20)
+    } else if (txid === slow) {
+      await retry
+    }
     return Ok(confirmedTx(txid))
   }, 2)
   const sleep = vi.fn(async (ms: number) => {

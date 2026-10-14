@@ -35,16 +35,18 @@ const service = (url = 'https://mempool.test'): DailyRatesService =>
   })
 
 async function setup(): Promise<void> {
-  onTestFinished(() => {
-    database.$client.close()
-    rmSync(directory, { recursive: true, force: true })
-    vi.unstubAllGlobals()
-    vi.useRealTimers()
-  })
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(new Date('2026-09-08T12:00:00Z'))
   directory = mkdtempSync(join(tmpdir(), 'sentinel-quotes-'))
   database = await openDrizzleDatabase(directory, logger)
+  // Each setup cleans up its own database, so a test can set up more than once.
+  const opened = { database, directory }
+  onTestFinished(() => {
+    opened.database.$client.close()
+    rmSync(opened.directory, { recursive: true, force: true })
+    vi.unstubAllGlobals()
+    vi.useRealTimers()
+  })
   fetcher = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>().mockImplementation(async () => body())
   historyFetcher = vi
     .fn<(url: string, init?: RequestInit) => Promise<Response>>()
@@ -407,7 +409,8 @@ describe('local mempool with public fallback', () => {
       })
       const end = new Date(day.getTime() + 3 * 86400000)
       const result = (await localFirst().getDailyRates(day, end)).unwrap()
-      expect(result.rates['2026-08-01']?.timestamp.getTime()).toBe((target + 86400) * 1000)
+      // The node can't confirm every day, so public's exact quote is used, whoever answered first.
+      expect(result.rates['2026-08-01']?.timestamp.getTime()).toBe(target * 1000)
       expect(result.rates['2026-08-01']?.providerUrl).toBe(publicUrl)
       expect(Object.keys(result.rates)).toEqual(['2026-08-01', '2026-08-02', '2026-08-03', '2026-08-04'])
     },
@@ -515,7 +518,7 @@ describe('local mempool with public fallback', () => {
     await setup()
     fetcher.mockImplementation(async () => body(target - 5 * 86400))
     const result = await localFirst().getDailyRates(day, day, 'CAD')
-    expect(result.unwrapErr().message).toContain('either the configured mempool or public mempool.space')
+    expect(result.unwrapErr().message).toContain('No confirmed CAD price')
     expect([...new Set(fetcher.mock.calls.map(([input]) => new URL(input).origin))]).toEqual([local, publicUrl])
     expect(fetcher.mock.calls.length).toBeLessThanOrEqual(18)
   })
@@ -558,15 +561,37 @@ describe('full price history downloads', () => {
     expect(fetcher).not.toHaveBeenCalled()
   })
 
-  it("makes the same requests whatever the statement's activity days", async () => {
+  it.each([
+    { scenario: 'from the download', gap: false, download: true },
+    { scenario: 'when the download has a long gap', gap: true, download: true },
+    { scenario: 'day by day', gap: false, download: false },
+    { scenario: 'day by day, past days the source has no price for', gap: true, download: false },
+  ])("makes the same requests whatever the statement's activity days, $scenario", async ({ gap, download }) => {
+    // August 8–24 has no prices: more than four days from any price on the 16th.
+    const missing = (time: number): boolean => gap && time >= target + 7 * 86400 && time <= target + 23 * 86400
     const requests = async (required: Date[]): Promise<string[]> => {
       await setup()
-      historyFetcher.mockImplementation(async () => history())
-      expect((await service().getDailyRates(day, end, 'USD', required)).isOk()).toBe(true)
+      historyFetcher.mockImplementation(async () => {
+        if (!download) {
+          return new Response('Not found', { status: 404 })
+        }
+        const prices = []
+        for (let time = target - 400 * 86400; time * 1000 <= Date.now(); time += 86400) {
+          if (!missing(time)) {
+            prices.push({ time, ...quotes })
+          }
+        }
+        return Response.json({ prices })
+      })
+      fetcher.mockImplementation(async (input) => {
+        const time = Number(new URL(input).searchParams.get('timestamp'))
+        return missing(time) ? Response.json({ prices: [] }) : body(time)
+      })
+      await service().getDailyRates(day, end, 'USD', required)
       return [...historyFetcher.mock.calls, ...fetcher.mock.calls].map(([input]) => input)
     }
     const quiet = await requests([day, end])
-    const busy = await requests([day, new Date('2026-08-07T00:00:00Z'), new Date('2026-08-19T00:00:00Z'), end])
+    const busy = await requests([day, new Date('2026-08-16T00:00:00Z'), end])
     expect(busy).toEqual(quiet)
   })
 
@@ -691,11 +716,154 @@ describe("a statement's download retries", () => {
     expect(historyFetcher).toHaveBeenCalledTimes(2)
   })
 
-  it('gives up after its last attempt, then tries day by day', async () => {
+  it("gives up after its last attempt, and doesn't then ask an unreachable source day by day", async () => {
     await setup()
     historyFetcher.mockRejectedValue(new Error('offline'))
     fetcher.mockRejectedValue(new Error('offline'))
     expect((await service().getDailyRates(day, day)).isErr()).toBe(true)
     expect(historyFetcher).toHaveBeenCalledTimes(5)
+    expect(fetcher).not.toHaveBeenCalled()
+  })
+
+  it('stops within its time budget, still giving the public fallback one try', async () => {
+    await setup()
+    // The budget follows the real clock, which the other tests freeze.
+    vi.useRealTimers()
+    const rates = new DailyRatesService({
+      downloadRetryDelaysMs: [200, 200, 200, 200],
+      priceBudgetMs: 300,
+      db: database,
+      logger,
+      mempoolApiUrl: 'https://local-mempool.test',
+    })
+    historyFetcher.mockResolvedValue(new Response('', { status: 503 }))
+    fetcher.mockRejectedValue(new Error('offline'))
+    expect((await rates.getDailyRates(day, day)).isErr()).toBe(true)
+    const origins = historyFetcher.mock.calls.map(([input]) => new URL(input).origin)
+    // Two node attempts fit in the budget; public still gets its one.
+    expect(origins).toEqual(['https://local-mempool.test', 'https://local-mempool.test', 'https://mempool.space'])
+  })
+
+  it("keeps its patience after joining the chart's quick download", async () => {
+    await setup()
+    const rates = service()
+    const recent = new Date('2026-09-05T00:00:00Z')
+    // Saved prices from yesterday's download, so the chart shows them and refreshes in the background.
+    historyFetcher.mockImplementation(async () => prices())
+    expect((await rates.getDailyRates(recent, recent)).isOk()).toBe(true)
+    vi.setSystemTime(new Date('2026-09-09T13:00:00Z'))
+    let fail = (): void => {}
+    historyFetcher.mockImplementationOnce(async () => {
+      await new Promise<void>((resolve) => {
+        fail = resolve
+      })
+      return new Response('Not found', { status: 404 })
+    })
+    const chart = await rates.getDailyRates(recent, recent, 'USD', [recent], {
+      staleWhileRefreshing: true,
+      requestRequiredDays: true,
+    })
+    expect(chart.isOk()).toBe(true)
+    await vi.waitFor(() => {
+      expect(historyFetcher).toHaveBeenCalledTimes(2)
+    })
+    // The statement joins the chart's download, which fails, then tries again on its own.
+    const statement = rates.getDailyRates(recent, recent)
+    fail()
+    expect((await statement).isOk()).toBe(true)
+    expect(historyFetcher).toHaveBeenCalledTimes(3)
+  })
+})
+
+describe('confirming prices', () => {
+  const local = 'https://local-mempool.test'
+  const daily = (from: number, values: Partial<Record<StatementQuoteCurrency, number>> = quotes): Response => {
+    const prices = []
+    for (let time = from; time * 1000 <= Date.now(); time += 86400) {
+      prices.push({ time, ...values })
+    }
+    return Response.json({ prices })
+  }
+  const chartOptions = { staleWhileRefreshing: true, requestRequiredDays: true }
+
+  it('asks a node day by day before going to public mempool.space', async () => {
+    await setup()
+    const rates = new DailyRatesService({
+      downloadRetryDelaysMs: SHORT_RETRIES,
+      db: database,
+      logger,
+      mempoolApiUrl: local,
+    })
+    fetcher.mockImplementation(async (input) => body(Number(new URL(input).searchParams.get('timestamp'))))
+    const result = (await rates.getDailyRates(day, new Date('2026-08-05T00:00:00Z'))).unwrap()
+    expect(result.providerUrls).toEqual([local])
+    const origins = [...historyFetcher.mock.calls, ...fetcher.mock.calls].map(([input]) => new URL(input).origin)
+    expect(new Set(origins)).toEqual(new Set([local]))
+  })
+
+  it("doesn't use a saved price that no source has confirmed recently", async () => {
+    await setup()
+    // Two days ago, public mempool.space supplied a price for August 1.
+    vi.setSystemTime(new Date('2026-09-06T12:00:00Z'))
+    historyFetcher.mockImplementation(async () => daily(target - 10 * 86400))
+    expect((await service('https://mempool.space').getDailyRates(day, day)).isOk()).toBe(true)
+    // Now the node's history has nothing near it, and public has a corrected price.
+    vi.setSystemTime(new Date('2026-09-08T12:00:00Z'))
+    historyFetcher.mockImplementation(async (input) =>
+      new URL(input).origin === local
+        ? daily(target + 30 * 86400)
+        : daily(target - 10 * 86400, { ...quotes, USD: 61000 }),
+    )
+    fetcher.mockImplementation(async () => Response.json({ prices: [] }))
+    const rates = new DailyRatesService({
+      downloadRetryDelaysMs: SHORT_RETRIES,
+      db: database,
+      logger,
+      mempoolApiUrl: local,
+    })
+    const result = (await rates.getDailyRates(day, day)).unwrap()
+    expect(result.rates['2026-08-01']?.close.toString()).toBe('61000')
+  })
+
+  it("checks the chart's saved prices daily, even though they include today", async () => {
+    await setup()
+    const today = new Date('2026-09-08T00:00:00Z')
+    historyFetcher.mockImplementation(async () => daily(target))
+    const rates = service()
+    expect((await rates.getDailyRates(day, today, 'USD', [day, today], chartOptions)).isOk()).toBe(true)
+    expect(historyFetcher).toHaveBeenCalledTimes(1)
+    vi.setSystemTime(new Date('2026-09-08T18:00:00Z'))
+    expect((await rates.getDailyRates(day, today, 'USD', [day, today], chartOptions)).isOk()).toBe(true)
+    await new Promise((resolve) => {
+      setTimeout(resolve, 20)
+    })
+    expect(historyFetcher).toHaveBeenCalledTimes(1)
+  })
+
+  it("refreshes the chart day by day when the source can't send its full history", async () => {
+    await setup()
+    const rates = service()
+    fetcher.mockImplementation(async (input) => body(Number(new URL(input).searchParams.get('timestamp'))))
+    expect((await rates.getDailyRates(day, day, 'USD', [day], chartOptions)).isOk()).toBe(true)
+    vi.setSystemTime(new Date('2026-09-10T12:00:00Z'))
+    fetcher.mockClear()
+    fetcher.mockImplementation(async (input) =>
+      body(Number(new URL(input).searchParams.get('timestamp')), { ...quotes, USD: 70000 }),
+    )
+    expect((await rates.getDailyRates(day, day, 'USD', [day], chartOptions)).isOk()).toBe(true)
+    await vi.waitFor(async () => {
+      const refreshed = (await rates.getDailyRates(day, day, 'USD', [day], chartOptions)).unwrap()
+      expect(refreshed.rates['2026-08-01']?.close.toString()).toBe('70000')
+    })
+  })
+
+  it('saves downloaded prices as numbers and text', async () => {
+    await setup()
+    historyFetcher.mockImplementation(async () => daily(target))
+    expect((await service().getDailyRates(day, day)).isOk()).toBe(true)
+    const [row] = await database.select().from(btcQuoteCache).limit(1)
+    expect(row?.timestamp).toBeTypeOf('number')
+    expect(row?.price).toBeTypeOf('string')
+    expect(row?.refreshedAt).toBe(Date.now())
   })
 })

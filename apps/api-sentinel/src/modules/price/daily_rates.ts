@@ -59,6 +59,11 @@ const RETRY_BASE_MS = 500
  */
 const DOWNLOAD_RETRY_DELAYS_MS: readonly number[] = [2_000, 5_000, 10_000, 20_000]
 const MAX_PATIENT_RETRY_AFTER_MS = 60_000
+/** How long a statement waits for its prices in all, across every source it tries. */
+const PRICE_BUDGET_MS = 60_000
+/** A request's time limit; a full download is about 1 MB, so it gets longer on a slow connection. */
+const REQUEST_TIMEOUT_MS = 10_000
+const DOWNLOAD_TIMEOUT_MS = 60_000
 const responseSchema = z.object({
   prices: z
     .array(
@@ -76,7 +81,7 @@ const responseSchema = z.object({
 const historySchema = z.object({
   prices: z
     .array(z.object({ time: z.number().int().nonnegative().max(8_640_000_000_000) }).catchall(z.unknown()))
-    .max(1_000_000),
+    .max(200_000),
 })
 const priceSchema = z.number().finite().positive()
 
@@ -89,8 +94,12 @@ export class DailyRatesService {
   private readonly providerUrl: string
   private readonly logger: Logger
   private readonly downloadRetryDelaysMs: readonly number[]
+  private readonly priceBudgetMs: number
   private readonly inFlight = new Map<number, Promise<Result<void, Error>>>()
-  private readonly downloads = new Map<StatementQuoteCurrency, Promise<Result<void, Error>>>()
+  private readonly downloads = new Map<
+    StatementQuoteCurrency,
+    { patient: boolean; result: Promise<Result<void, Error>> }
+  >()
   private unavailableUntil = 0
   private static readonly CONCURRENCY = 4
 
@@ -104,6 +113,8 @@ export class DailyRatesService {
     allowRequests?: () => boolean | Promise<boolean>
     /** Waits between a statement's download attempts; tests shorten them. */
     downloadRetryDelaysMs?: readonly number[]
+    /** How long a statement waits for its prices in all; tests shorten it. */
+    priceBudgetMs?: number
   }) {
     this.logger = deps.logger.child({ module: 'daily-rates-service' })
     this.mempoolApiUrl = deps.mempoolApiUrl.replace(/\/$/, '')
@@ -117,6 +128,7 @@ export class DailyRatesService {
     this.allowPublicFallback = allowPublicFallback
     this.allowRequests = deps.allowRequests ?? (() => true)
     this.downloadRetryDelaysMs = deps.downloadRetryDelaysMs ?? DOWNLOAD_RETRY_DELAYS_MS
+    this.priceBudgetMs = deps.priceBudgetMs ?? PRICE_BUDGET_MS
     this.publicFallback =
       this.providerUrl === PUBLIC_MEMPOOL_URL
         ? undefined
@@ -168,63 +180,67 @@ export class DailyRatesService {
         return Err(new Error('Required quote dates must be within the statement range.'))
       }
       const days = [...new Set(requested.map(utcDay))].sort((a, b) => a - b)
+      // A statement confirms every day in its range, never just the days it needs, so neither what
+      // it asks for nor when it stops can show which days had activity. The chart's evenly spaced
+      // days reveal nothing, so it confirms only those.
+      const coverage =
+        options.requestRequiredDays === true
+          ? days
+          : Array.from({ length: (end - start) / DAY_SECONDS + 1 }, (_, i) => start + i * DAY_SECONDS)
+      // The chart's newest point is the live price, so its saved prices only need checking daily.
+      // A statement checks days still settling every hour.
+      const settling = utcDay(new Date()) - SETTLING_DAYS * DAY_SECONDS
+      const maxAge = (day: number): number =>
+        options.staleWhileRefreshing !== true && day >= settling ? HOUR_MS : DAY_MS
       if (options.staleWhileRefreshing === true) {
         const saved = await this.pick(days, quoteCurrency)
         if (saved) {
-          void this.refresh(days, quoteCurrency, false).then((refreshed) => {
-            if (refreshed.isErr()) {
+          void this.confirm(coverage, quoteCurrency, maxAge, { patient: false, deadline: Number.POSITIVE_INFINITY })
+            .then((refreshed) => {
+              if (refreshed.isErr()) {
+                this.logger.warn('Could not refresh saved prices')
+              }
+            })
+            .catch(() => {
               this.logger.warn('Could not refresh saved prices')
-            }
-          })
+            })
           return Ok(toDailyRates(saved, quoteCurrency))
         }
       }
       // Only callers that show saved prices meanwhile skip the long retries.
-      if ((await this.refresh(days, quoteCurrency, options.staleWhileRefreshing !== true)).isOk()) {
-        const fresh = await this.pick(days, quoteCurrency)
-        if (fresh) {
-          return Ok(toDailyRates(fresh, quoteCurrency))
-        }
+      const patient = options.staleWhileRefreshing !== true
+      const confirmed = await this.confirm(coverage, quoteCurrency, maxAge, {
+        patient,
+        deadline: patient ? Date.now() + this.priceBudgetMs : Number.POSITIVE_INFINITY,
+      })
+      if (confirmed.isErr()) {
+        return Err(confirmed.unwrapErr())
       }
-      // Without a full history, look up each day. Ask for every day in the range unless the
-      // caller's days are safe to reveal, so the requests never show which days had activity.
-      const lookups =
-        options.requestRequiredDays === true
-          ? days
-          : Array.from({ length: (end - start) / DAY_SECONDS + 1 }, (_, i) => start + i * DAY_SECONDS)
-      const needed = new Set(days)
-      const chosen = new Map<number, CachedQuote>()
-      for (let i = 0; i < lookups.length; i += DailyRatesService.CONCURRENCY) {
-        const batch = lookups.slice(i, i + DailyRatesService.CONCURRENCY)
-        const results = await Promise.all(
-          batch.map(async (target) => ({ target, result: await this.getQuoteWithFallback(target, quoteCurrency) })),
-        )
-        // Choose each day's quote only once the whole batch has finished, from everything now
-        // cached, so the choice depends on which requests succeeded rather than on when their
-        // responses arrived. A day no source could confirm fails: saved prices alone aren't enough.
-        const now = Date.now()
-        for (const { target, result } of results) {
-          if (!needed.has(target)) {
-            continue
-          }
-          if (result.isErr()) {
-            return Err(result.unwrapErr())
-          }
-          const { oldest, newest } = quoteWindow(target, now)
-          chosen.set(target, (await this.cache.find(quoteCurrency, target, oldest, newest)) ?? result.unwrap())
-        }
-      }
+      const chosen = new Map(days.map((day) => [day, confirmed.unwrap().get(day)]))
       return Ok(toDailyRates(chosen, quoteCurrency))
     },
   )
 
-  /** Each day's closest saved quote within the window, or undefined if any day has none. */
-  private async pick(days: number[], currency: StatementQuoteCurrency): Promise<Map<number, CachedQuote> | undefined> {
+  /**
+   * Each day's closest saved quote within the window, or undefined if any day has none. With
+   * `maxAge`, only quotes refreshed from a source within that time of now count.
+   */
+  private async pick(
+    days: number[],
+    currency: StatementQuoteCurrency,
+    maxAge?: (day: number) => number,
+  ): Promise<Map<number, CachedQuote> | undefined> {
     const now = Date.now()
     const chosen = new Map<number, CachedQuote>()
     for (const target of days) {
       const { oldest, newest } = quoteWindow(target, now)
-      const quote = await this.cache.find(currency, target, oldest, newest)
+      const quote = await this.cache.find(
+        currency,
+        target,
+        oldest,
+        newest,
+        maxAge === undefined ? undefined : now - maxAge(target),
+      )
       if (!quote) {
         return undefined
       }
@@ -234,35 +250,59 @@ export class DailyRatesService {
   }
 
   /**
-   * Makes sure the saved prices for these days are fresh, downloading the full history from this
-   * source, or from public mempool.space if Settings allows it, when they aren't.
+   * Confirms a quote for every day with a source: this one's full history, then this one day by
+   * day, then the same from public mempool.space if Settings allows it. Asking a configured node
+   * day by day comes before going public, so the node keeps its prices to itself.
    */
-  private async refresh(
+  private async confirm(
     days: number[],
     currency: StatementQuoteCurrency,
-    patient: boolean,
-  ): Promise<Result<void, Error>> {
-    const settling = utcDay(new Date()) - SETTLING_DAYS * DAY_SECONDS
-    const maxAge = days.some((day) => day >= settling) ? HOUR_MS : DAY_MS
-    if ((await this.ensureDownloaded(currency, maxAge, patient)).isOk() && (await this.pick(days, currency))) {
-      return Ok(undefined)
+    maxAge: (day: number) => number,
+    attempt: Attempt,
+  ): Promise<Result<Map<number, CachedQuote>, Error>> {
+    const strictest = Math.min(...days.map(maxAge))
+    for (const source of [this, this.publicFallback]) {
+      if (!source || (source !== this && !(await this.allowPublicFallback()))) {
+        continue
+      }
+      if ((await source.ensureDownloaded(currency, strictest, attempt)).isOk()) {
+        const fresh = await this.pick(days, currency, maxAge)
+        if (fresh) {
+          return Ok(fresh)
+        }
+      }
+      // Day by day, every day must be confirmed by this source itself, not by a neighbour's or
+      // another source's earlier answer.
+      if (await source.lookUpEach(days, currency)) {
+        const fresh = await this.pick(days, currency, maxAge)
+        if (fresh) {
+          return Ok(fresh)
+        }
+      }
     }
-    const publicFallback = (await this.allowPublicFallback()) ? this.publicFallback : undefined
-    if (
-      publicFallback &&
-      (await publicFallback.ensureDownloaded(currency, maxAge, patient)).isOk() &&
-      (await this.pick(days, currency))
-    ) {
-      return Ok(undefined)
+    return Err(new Error(`No confirmed ${currency} price for every day`))
+  }
+
+  /**
+   * Looks up every day from this source, four at a time, without stopping early: when the lookups
+   * stop never depends on which days they were for. True if every day found a quote.
+   */
+  private async lookUpEach(days: number[], currency: StatementQuoteCurrency): Promise<boolean> {
+    let complete = true
+    for (let i = 0; i < days.length; i += DailyRatesService.CONCURRENCY) {
+      const results = await Promise.all(
+        days.slice(i, i + DailyRatesService.CONCURRENCY).map(async (target) => this.getQuote(target, currency)),
+      )
+      complete &&= results.every((result) => result.isOk())
     }
-    return Err(new Error(`No fresh ${currency} price history is available`))
+    return complete
   }
 
   /** Downloads this source's full history in a currency unless the last download is recent enough. */
   private async ensureDownloaded(
     currency: StatementQuoteCurrency,
     maxAge: number,
-    patient: boolean,
+    attempt: Attempt,
   ): Promise<Result<void, Error>> {
     const downloadedAt = await this.cache.downloadedAt(currency)
     if (downloadedAt !== undefined && Date.now() - downloadedAt < maxAge) {
@@ -270,28 +310,43 @@ export class DailyRatesService {
     }
     const running = this.downloads.get(currency)
     if (running) {
-      return running
+      const shared = await running.result
+      // A statement that joined the chart's quick attempt tries again with its own patience.
+      if (shared.isOk() || running.patient || !attempt.patient) {
+        return shared
+      }
     }
-    const download = this.download(currency, patient)
-    this.downloads.set(currency, download)
+    const result = this.download(currency, attempt)
+    const entry = { patient: attempt.patient, result }
+    this.downloads.set(currency, entry)
     try {
-      return await download
+      return await result
     } finally {
-      this.downloads.delete(currency)
+      if (this.downloads.get(currency) === entry) {
+        this.downloads.delete(currency)
+      }
     }
   }
 
   /** One request for every price this source has in a currency; it names no dates. */
-  private async download(currency: StatementQuoteCurrency, patient: boolean): Promise<Result<void, Error>> {
+  private async download(currency: StatementQuoteCurrency, attempt: Attempt): Promise<Result<void, Error>> {
     if (!(await this.allowRequests())) {
       return Err(new Error('Requests to this price source are turned off'))
     }
-    if (Date.now() < this.unavailableUntil) {
-      return Err(new Error('Mempool price source temporarily unavailable'))
+    // A statement waits out a short cooldown, such as one left by the chart's quick attempt.
+    const cooldown = this.unavailableUntil - Date.now()
+    if (cooldown > 0) {
+      if (!attempt.patient || Date.now() + cooldown > attempt.deadline) {
+        return Err(new Error('Mempool price source temporarily unavailable'))
+      }
+      await sleep(cooldown)
     }
     const response = await this.request(`${this.mempoolApiUrl}/api/v1/historical-price?currency=${currency}`, {
       cooldownOnRejection: false,
-      retryDelaysMs: patient ? this.downloadRetryDelaysMs : undefined,
+      retryDelaysMs: attempt.patient ? this.downloadRetryDelaysMs : undefined,
+      deadline: attempt.deadline,
+      // A slow connection can use the whole budget; the first attempt always gets a fair chance.
+      timeoutMs: attempt.patient ? Math.max(REQUEST_TIMEOUT_MS, attempt.deadline - Date.now()) : DOWNLOAD_TIMEOUT_MS,
     })
     if (response.isErr()) {
       return Err(response.unwrapErr())
@@ -314,32 +369,6 @@ export class DailyRatesService {
     }
     await this.cache.saveHistory(currency, points, now)
     return Ok(undefined)
-  }
-
-  private async getQuoteWithFallback(
-    target: number,
-    currency: StatementQuoteCurrency,
-  ): Promise<Result<CachedQuote, Error>> {
-    const primary = await this.getQuote(target, currency)
-    if (primary.isOk()) {
-      return primary
-    }
-    // Respect the Settings switch that keeps price requests to the chosen source.
-    const publicFallback = (await this.allowPublicFallback()) ? this.publicFallback : undefined
-    if (publicFallback) {
-      const fallback = await publicFallback.getQuote(target, currency)
-      if (fallback.isOk()) {
-        return fallback
-      }
-    }
-    if (!publicFallback) {
-      return Err(primary.unwrapErr())
-    }
-    return Err(
-      new Error(
-        `No usable ${currency} quote for ${toDateKey(new Date(target * 1000))} within four days before or after the valuation date from either the configured mempool or public mempool.space. Please retry or choose a different period.`,
-      ),
-    )
   }
 
   private async getQuote(target: number, currency: StatementQuoteCurrency): Promise<Result<CachedQuote, Error>> {
@@ -426,6 +455,8 @@ export class DailyRatesService {
   private async requestDay(target: number): Promise<Result<void, Error>> {
     const response = await this.request(`${this.mempoolApiUrl}/api/v1/historical-price?timestamp=${target}`, {
       cooldownOnRejection: true,
+      deadline: Number.POSITIVE_INFINITY,
+      timeoutMs: REQUEST_TIMEOUT_MS,
     })
     if (response.isErr()) {
       return Err(response.unwrapErr())
@@ -448,22 +479,28 @@ export class DailyRatesService {
       }
     }
     const complete = Object.keys(quotes).length === StatementQuoteCurrencySchema.options.length
-    const historical = target < utcDay(new Date())
-    // Only a complete observation at the lookup time is settled, and even that is looked up
-    // again after a day. An older one may improve once the source fills gaps in its history.
-    const settled = complete && historical && point?.time === target
+    const settling = target >= utcDay(new Date()) - SETTLING_DAYS * DAY_SECONDS
+    // Only a complete observation at the lookup time outside the last few days is settled, and even
+    // that is looked up again after a day. Anything else may improve, so it's checked hourly.
+    const settled = complete && !settling && point?.time === target
     await this.cache.save(target, point?.time ?? null, quotes, Date.now() + (settled ? DAY_MS : HOUR_MS))
     return Ok(undefined)
   }
 
   /**
    * GETs JSON from this source, backing off through brief rate limits, or through `retryDelaysMs`
-   * when given. A failure puts the source in cooldown, except a request the source rejects outright
-   * when `cooldownOnRejection` is off, as an older mempool without full-history downloads would.
+   * when given, but never waiting past `deadline`. A failure puts the source in cooldown, except a
+   * request the source rejects outright when `cooldownOnRejection` is off, as an older mempool
+   * without full-history downloads would.
    */
   private async request(
     url: string,
-    { cooldownOnRejection, retryDelaysMs }: { cooldownOnRejection: boolean; retryDelaysMs?: readonly number[] },
+    {
+      cooldownOnRejection,
+      retryDelaysMs,
+      deadline,
+      timeoutMs,
+    }: { cooldownOnRejection: boolean; retryDelaysMs?: readonly number[]; deadline: number; timeoutMs: number },
   ): Promise<Result<unknown, Error>> {
     const attempts = retryDelaysMs ? retryDelaysMs.length + 1 : MAX_ATTEMPTS
     const maxRetryAfterMs = retryDelaysMs ? MAX_PATIENT_RETRY_AFTER_MS : 2_000
@@ -472,12 +509,17 @@ export class DailyRatesService {
       if (attempt > 0 && !(await this.allowRequests())) {
         return Err(new Error('Requests to this price source are turned off'))
       }
-      // Stop retrying once a concurrent request has put the source in cooldown.
-      if (attempt > 0 && Date.now() < this.unavailableUntil) {
-        return Err(new Error('Mempool price source temporarily unavailable'))
+      // Stop retrying once a concurrent request has put the source in cooldown, unless this is a
+      // patient request with time left to wait it out.
+      const cooldown = this.unavailableUntil - Date.now()
+      if (attempt > 0 && cooldown > 0) {
+        if (!retryDelaysMs || Date.now() + cooldown > deadline) {
+          return Err(new Error('Mempool price source temporarily unavailable'))
+        }
+        await sleep(cooldown)
       }
       try {
-        const response = await fetch(url, { signal: AbortSignal.timeout(10_000) })
+        const response = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) })
         if (!response.ok) {
           const retryable = response.status === 429 || response.status >= 500
           const header = response.headers.get('retry-after')
@@ -494,11 +536,10 @@ export class DailyRatesService {
             attempt < attempts - 1 &&
             Number.isFinite(retryMs) &&
             retryMs >= 0 &&
-            retryMs <= maxRetryAfterMs
+            retryMs <= maxRetryAfterMs &&
+            Date.now() + retryMs <= deadline
           ) {
-            await new Promise((resolve) => {
-              setTimeout(resolve, retryMs)
-            })
+            await sleep(retryMs)
             continue
           }
           if (retryable || cooldownOnRejection) {
@@ -513,11 +554,9 @@ export class DailyRatesService {
         }
         return Ok(await response.json())
       } catch {
-        // Unreachable: try once more at once, or keep to the given schedule.
-        if (retryDelaysMs && attempt < attempts - 1) {
-          await new Promise((resolve) => {
-            setTimeout(resolve, delay(attempt))
-          })
+        // Unreachable: try once more at once, or keep to the given schedule while time is left.
+        if (retryDelaysMs && attempt < attempts - 1 && Date.now() + delay(attempt) <= deadline) {
+          await sleep(delay(attempt))
           continue
         }
         if (!retryDelaysMs && attempt === 0) {
@@ -531,11 +570,25 @@ export class DailyRatesService {
   }
 }
 
-function toDailyRates(chosen: Map<number, CachedQuote>, quoteCurrency: StatementQuoteCurrency): DailyRates {
+/** How long a price lookup may take, and whether it retries patiently, as a statement does. */
+interface Attempt {
+  patient: boolean
+  deadline: number
+}
+
+async function sleep(ms: number): Promise<void> {
+  await new Promise((resolve) => {
+    setTimeout(resolve, ms)
+  })
+}
+
+function toDailyRates(chosen: Map<number, CachedQuote | undefined>, quoteCurrency: StatementQuoteCurrency): DailyRates {
   // Days are chosen in date order, so the rates keep that order.
   const rates: Record<string, DailyRate> = {}
   for (const [target, quote] of [...chosen].sort(([a], [b]) => a - b)) {
-    rates[toDateKey(new Date(target * 1000))] = toDailyRate(quote)
+    if (quote) {
+      rates[toDateKey(new Date(target * 1000))] = toDailyRate(quote)
+    }
   }
   const providerUrls = [
     ...new Set(Object.values(rates).flatMap((rate) => (rate.providerUrl !== undefined ? [rate.providerUrl] : []))),

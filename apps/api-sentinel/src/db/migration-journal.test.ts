@@ -117,8 +117,8 @@ it.each(['file', 'database'] as const)(
     const upgraded = await openDrizzleDatabase(directory, logger)
     try {
       // Upgrading adds the statement counter, which starts from the highest existing number, a
-      // transaction source on statements, unknown for those made before it, and an empty record of
-      // price history downloads.
+      // transaction source on statements, unknown for those made before it, an empty record of
+      // price history downloads, and a refreshed time on saved prices, 0 for those saved before it.
       const upgradedState = await databaseState(upgraded)
       const statementsSql = (state: typeof before): string | null | undefined =>
         state.schema.find((row) => row.name === 'statements')?.sql
@@ -128,10 +128,22 @@ it.each(['file', 'database'] as const)(
           `, \`tx_source\` text CONSTRAINT "statements_tx_source_check" CHECK("tx_source" IN ('electrum', 'node_mempool', 'public_mempool')))`,
         ),
       )
+      const quotesSql = (state: typeof before): string | null | undefined =>
+        state.schema.find((row) => row.name === 'btc_quote_cache')?.sql
+      expect(quotesSql(upgradedState)).toBe(
+        quotesSql(before)?.replace(
+          'price TEXT NOT NULL,',
+          'price TEXT NOT NULL, `refreshed_at` integer DEFAULT 0 NOT NULL,',
+        ),
+      )
       expect({
         schema: upgradedState.schema
           .filter((row) => !['statement_counter', 'btc_quote_downloads'].includes(row.tbl_name))
-          .map((row) => (row.name === 'statements' ? before.schema.find((old) => old.name === 'statements') : row)),
+          .map((row) =>
+            row.name === 'statements' || row.name === 'btc_quote_cache'
+              ? before.schema.find((old) => old.name === row.name)
+              : row,
+          ),
         data: upgradedState.data
           .filter((table) => !['statement_counter', 'btc_quote_downloads'].includes(table.table))
           .map((table) => ({
@@ -148,7 +160,13 @@ it.each(['file', 'database'] as const)(
                       expect(expires_at).toBe(0)
                       return row
                     })
-                  : table.rows,
+                  : table.table === 'btc_quote_cache'
+                    ? table.rows.map(({ refreshed_at, ...row }) => {
+                        // Prices saved before count as unconfirmed until a source confirms them again.
+                        expect(refreshed_at).toBe(0)
+                        return row
+                      })
+                    : table.rows,
           })),
       }).toEqual({
         ...before,

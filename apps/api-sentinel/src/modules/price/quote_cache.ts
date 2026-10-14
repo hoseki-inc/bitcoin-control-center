@@ -8,9 +8,6 @@ export interface HistoryPoint {
   price: string
 }
 
-/** Rows per insert, well under SQLite's limit on bound parameters. */
-const SAVE_BATCH = 500
-
 export interface CachedQuote {
   timestamp: number
   providerUrl: string
@@ -29,11 +26,13 @@ export class QuoteCache {
     this.providerUrl = providerUrl
   }
 
+  /** The closest quote to `target` in the window; with `refreshedSince`, only one confirmed since then. */
   public async find(
     currency: StatementQuoteCurrency,
     target: number,
     oldest: number,
     newest: number,
+    refreshedSince?: number,
   ): Promise<CachedQuote | undefined> {
     const [row] = await this.db
       .select({
@@ -47,6 +46,7 @@ export class QuoteCache {
           eq(btcQuoteCache.quoteCurrency, currency),
           gte(btcQuoteCache.timestamp, oldest),
           lte(btcQuoteCache.timestamp, newest),
+          refreshedSince === undefined ? undefined : gte(btcQuoteCache.refreshedAt, refreshedSince),
         ),
       )
       .orderBy(sql`abs(${btcQuoteCache.timestamp} - ${target})`, asc(btcQuoteCache.timestamp))
@@ -102,12 +102,13 @@ export class QuoteCache {
         for (const currency of StatementQuoteCurrencySchema.options) {
           const price = quotes[currency]
           if (price !== undefined) {
+            const refreshedAt = Date.now()
             await tx
               .insert(btcQuoteCache)
-              .values({ providerUrl: this.providerUrl, quoteCurrency: currency, timestamp, price })
+              .values({ providerUrl: this.providerUrl, quoteCurrency: currency, timestamp, price, refreshedAt })
               .onConflictDoUpdate({
                 target: [btcQuoteCache.quoteCurrency, btcQuoteCache.timestamp],
-                set: { price, providerUrl: this.providerUrl },
+                set: { price, providerUrl: this.providerUrl, refreshedAt },
               })
           }
         }
@@ -128,29 +129,25 @@ export class QuoteCache {
     return row?.downloadedAt
   }
 
-  /** Saves a downloaded history over any earlier prices at the same times, then records the download. */
+  /**
+   * Saves a downloaded history over any earlier prices at the same times, then records the download.
+   * One statement for all of it: tens of thousands of rows take a fraction of the time they would
+   * as separate inserts, which matters because saving holds the database.
+   */
   public async saveHistory(
     currency: StatementQuoteCurrency,
     points: HistoryPoint[],
     downloadedAt: number,
   ): Promise<void> {
+    const rows = JSON.stringify(points.map((point) => [point.timestamp, point.price]))
     await this.db.transaction(async (tx) => {
-      for (let i = 0; i < points.length; i += SAVE_BATCH) {
-        await tx
-          .insert(btcQuoteCache)
-          .values(
-            points.slice(i, i + SAVE_BATCH).map((point) => ({
-              providerUrl: this.providerUrl,
-              quoteCurrency: currency,
-              timestamp: point.timestamp,
-              price: point.price,
-            })),
-          )
-          .onConflictDoUpdate({
-            target: [btcQuoteCache.quoteCurrency, btcQuoteCache.timestamp],
-            set: { price: sql`excluded.price`, providerUrl: sql`excluded.provider_url` },
-          })
-      }
+      // `WHERE true` lets SQLite parse the upsert after a SELECT.
+      await tx.run(sql`
+        INSERT INTO ${btcQuoteCache} (provider_url, quote_currency, timestamp, price, refreshed_at)
+        SELECT ${this.providerUrl}, ${currency}, value ->> 0, value ->> 1, ${downloadedAt} FROM json_each(${rows}) WHERE true
+        ON CONFLICT (quote_currency, timestamp) DO UPDATE
+          SET price = excluded.price, provider_url = excluded.provider_url, refreshed_at = excluded.refreshed_at
+      `)
       await tx
         .insert(btcQuoteDownloads)
         .values({ provider: this.provider, quoteCurrency: currency, downloadedAt })

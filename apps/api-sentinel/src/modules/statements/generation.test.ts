@@ -155,6 +155,19 @@ it('fails with the price message, and logs no date, when prices cannot be confir
   expect(logs.join('')).not.toContain('2026-08-01')
 })
 
+it('fails with the price message, and logs no date, when prices are missing for a day it needs', async () => {
+  const { service, input, dailyRatesService, logs } = await setupDistinctWalletNames()
+  vi.mocked(dailyRatesService.getDailyRates).mockImplementation(
+    asyncFn(async () => Ok({ source: 'mempool' as const, quoteCurrency: 'USD' as const, rates: {} })),
+  )
+
+  const result = await service.generateStatementData(input)
+
+  expect(result.isErr() && result.unwrapErr()).toBeInstanceOf(PriceLoadError)
+  expect(result.isErr() && result.unwrapErr().message).not.toMatch(/\d{4}-\d{2}-\d{2}/)
+  expect(logs.join('')).not.toMatch(/quote for \d{4}-\d{2}-\d{2}/)
+})
+
 it('logs only the kind of a failed history request, never its server', async () => {
   const { service, input, onchainProvider, logs } = await setupDistinctWalletNames()
   vi.spyOn(onchainProvider.deps.electrum, 'getHistory').mockImplementation(

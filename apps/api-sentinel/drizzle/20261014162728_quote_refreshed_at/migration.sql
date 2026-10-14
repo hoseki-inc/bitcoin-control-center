@@ -1,0 +1,1 @@
+ALTER TABLE `btc_quote_cache` ADD `refreshed_at` integer DEFAULT 0 NOT NULL;

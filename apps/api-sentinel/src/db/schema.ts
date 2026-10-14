@@ -118,6 +118,8 @@ export const btcQuoteCache = sqliteTable(
     quoteCurrency: text('quote_currency', { enum: ['USD', 'CAD', 'GBP', 'EUR'] }).notNull(),
     timestamp: integer('timestamp').notNull(),
     price: text('price').notNull(),
+    /** When a source last confirmed this price, in Unix ms; 0 for prices saved before this was kept. */
+    refreshedAt: integer('refreshed_at').notNull().default(0),
   },
   (table) => [
     primaryKey({ columns: [table.quoteCurrency, table.timestamp] }),
