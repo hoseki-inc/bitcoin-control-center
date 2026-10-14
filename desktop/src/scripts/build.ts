@@ -47,7 +47,7 @@ async function main(): Promise<void> {
   })
   fs.copyFileSync(path.join(DESKTOP_DIR, 'src/chooser.html'), path.join(appDir, 'main/chooser.html'))
   fs.mkdirSync(path.join(appDir, 'resources'), { recursive: true })
-  fs.copyFileSync(path.join(DESKTOP_DIR, 'resources/icon.png'), path.join(appDir, 'resources/tray-icon.png'))
+  fs.copyFileSync(path.join(DESKTOP_DIR, 'resources/tray-icon.png'), path.join(appDir, 'resources/tray-icon.png'))
 
   // Copy api-sentinel build output
   const serverDir = path.join(DESKTOP_DIR, 'app', 'server')
