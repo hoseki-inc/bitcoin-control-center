@@ -146,6 +146,11 @@ describe('statement PDF currencies', () => {
     expect(parsed.unwrap().quoteCurrency).toBe('USD')
   })
 
+  it('reads statements saved in timezones that Intl.supportedValuesOf omits', () => {
+    const parsed = parseUnknown(PdfStatementSchema, { ...sampleCustomStatement, timezone: 'Asia/Kolkata' })
+    expect(parsed.unwrap().timezone).toBe('Asia/Kolkata')
+  })
+
   for (const quoteCurrency of StatementQuoteCurrencySchema.options) {
     for (const format of ['custom', 'monthly'] as const) {
       it(`renders ${format} in ${quoteCurrency} with saved source attribution`, async () => {

@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ElectrumClient } from '@hoseki/packages/clients/electrum'
-import { Ok, asyncFn } from '@hoseki/packages/result'
+import { Err, Ok, asyncFn } from '@hoseki/packages/result'
 import { Wallets } from '@hoseki/packages/testing'
 import { Signer } from 'bip322-js'
 import pino from 'pino'
@@ -212,4 +212,25 @@ it('returns the stored wallet balances of the requested wallets only', async () 
   await expect(controlCenter.storedWalletBalances({ claimIds: [requested.id] })).resolves.toEqual([
     { accountId: requested.id, balanceSats: '150', timestamp: '2020-01-03T09:00:00.000Z' },
   ])
+})
+
+it('loads portfolio data in a timezone Intl.supportedValuesOf omits', async () => {
+  const { app } = await setup()
+  vi.spyOn(app.priceService, 'getCurrentBtcPrice').mockImplementation(asyncFn(async () => Err(new Error('offline'))))
+  const getData = vi.spyOn(app.controlCenterService, 'getData')
+  const { controlCenter } = appRouter.createCaller({ app }).portalProve
+
+  await controlCenter.getData({ timeRange: '30d', timezone: 'Asia/Kolkata' })
+
+  expect(getData).toHaveBeenCalledWith(expect.objectContaining({ timezone: 'Asia/Kolkata' }))
+})
+
+it('rejects an unknown portfolio timezone', async () => {
+  const { app } = await setup()
+  const { controlCenter } = appRouter.createCaller({ app }).portalProve
+
+  await expect(controlCenter.getData({ timeRange: '30d', timezone: 'Not/AZone' })).rejects.toMatchObject({
+    code: 'BAD_REQUEST',
+    message: 'Invalid timezone',
+  })
 })
