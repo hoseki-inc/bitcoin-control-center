@@ -42,4 +42,9 @@ jobs:
           [[ "$(jq -r '.gitHash' <<< "$MANIFEST")" == "$EXPECTED_GIT_HASH" ]]
           [[ "$(jq -r '[.images[].arch // []] | flatten | unique | join(",")' <<< "$MANIFEST")" == "aarch64,x86_64" ]]
           git diff --exit-code
-      # Verification outputs stay on the disposable runner; do not upload them.
+      - name: Rehearse release signing with a fresh temporary key
+        uses: ./.github/actions/sign-startos-package
+        with:
+          unsigned: ${{ github.workspace }}/start9/hoseki-sentinel.s9pk
+          signed: ${{ runner.temp }}/signing-rehearsal/hoseki-sentinel.s9pk
+      # Verification and signing rehearsal outputs stay on the disposable runner; do not upload them.

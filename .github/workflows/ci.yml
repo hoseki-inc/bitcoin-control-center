@@ -53,7 +53,7 @@ jobs:
                 desktop/*|.github/workflows/desktop-runtime.yml)
                   desktop=true
                   ;;
-                start9/*|.github/actions/setup-startos/*|.github/actions/install-start-cli/*|.github/workflows/startos-build.yml)
+                start9/*|.github/actions/setup-startos/*|.github/actions/install-start-cli/*|.github/actions/sign-startos-package/*|.github/workflows/startos-build.yml|.github/workflows/startos-sign.yml)
                   startos=true
                   ;;
               esac

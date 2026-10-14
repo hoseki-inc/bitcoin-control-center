@@ -2,12 +2,12 @@ name: Sign StartOS package
 
 # Signs a StartOS package that a key-free job already built. This is the only job that can read
 # STARTOS_DEV_KEY, so it runs no repository build, dependency, Node.js, or Docker code: it checks out
-# only the start-cli installer, verifies the input against the build job's hash, and re-signs it.
+# only the pinned CLI installer and signing action, verifies the input hash, and re-signs it.
 on:
   workflow_call:
     inputs:
       environment:
-        description: Environment holding STARTOS_DEV_KEY and STARTOS_SIGNER_PUBKEY, or empty to keep the build's temporary key
+        description: Environment holding STARTOS_DEV_KEY and STARTOS_SIGNER_PUBKEY, or empty to rehearse signing with a fresh temporary key
         type: string
         required: true
       source-sha:
@@ -42,6 +42,9 @@ on:
         type: number
         default: 7
     outputs:
+      artifact-id:
+        description: Immutable ID of the signed artifact
+        value: ${{ jobs.sign.outputs.artifact_id }}
       sha256:
         description: SHA-256 of the signed package
         value: ${{ jobs.sign.outputs.sha256 }}
@@ -66,6 +69,7 @@ jobs:
     permissions:
       contents: read
     outputs:
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
       sha256: ${{ steps.stage.outputs.sha256 }}
       signing_mode: ${{ steps.sign.outputs.mode }}
       release_notes_sha256: ${{ steps.stage.outputs.release_notes_sha256 }}
@@ -80,13 +84,15 @@ jobs:
             exit 1
           fi
 
-      # Only the installer action is checked out; no other repository code reaches this runner.
-      - name: Check out the start-cli installer
+      # Only the installer and signing actions are checked out; no build or dependency code runs here.
+      - name: Check out the pinned CLI installer and signing action
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.source-sha }}
           persist-credentials: false
-          sparse-checkout: .github/actions/install-start-cli
+          sparse-checkout: |
+            .github/actions/install-start-cli
+            .github/actions/sign-startos-package
           sparse-checkout-cone-mode: false
 
       - name: Verify the checked-out commit
@@ -129,71 +135,15 @@ jobs:
             [[ -n "$RELEASE_NOTES" ]]
           fi
 
-          jq -S . <<< "$MANIFEST" > "$RUNNER_TEMP/unsigned-manifest.json"
-
-      # start-cli 1.1.0 has no sign command. Editing the manifest with the identity expression `.`
-      # rewrites the package unchanged and signs its whole Merkle archive with .startos/build.key.pem.
-      - name: Sign the package
+      # The same action also runs in PR CI with a fresh temporary key.
+      - name: Re-sign and verify the package
         id: sign
-        shell: bash
-        env:
-          STARTOS_DEV_KEY: ${{ secrets.STARTOS_DEV_KEY }}
-          STARTOS_SIGNER_PUBKEY: ${{ vars.STARTOS_SIGNER_PUBKEY }}
-          UNSIGNED: ${{ runner.temp }}/unsigned/${{ inputs.package-file }}
-          SIGNED: ${{ runner.temp }}/signed/${{ inputs.package-file }}
-        run: |
-          mkdir -p "$(dirname "$SIGNED")"
-          cp "$UNSIGNED" "$SIGNED"
-
-          if [[ -z "$STARTOS_DEV_KEY" ]]; then
-            echo "mode=temporary clean-install key" >> "$GITHUB_OUTPUT"
-            echo "::warning::STARTOS_DEV_KEY is not available. This package keeps its temporary build key and is intended for clean-install testing, not signer-continuous upgrades or StartOS registry publication."
-            exit 0
-          fi
-
-          EXPECTED_PUBKEY="${STARTOS_SIGNER_PUBKEY,,}"
-          if [[ ! "$EXPECTED_PUBKEY" =~ ^[0-9a-f]{64}$ ]]; then
-            echo "::error::Set STARTOS_SIGNER_PUBKEY to the 64-character hex Ed25519 public key of STARTOS_DEV_KEY."
-            exit 1
-          fi
-
-          # start-cli finds the key by walking up from the working directory.
-          WORKSPACE="$RUNNER_TEMP/startos-signing"
-          trap 'rm -rf "$WORKSPACE"' EXIT
-          mkdir -m 700 -p "$WORKSPACE/.startos"
-          (umask 077 && printf '%s' "$STARTOS_DEV_KEY" > "$WORKSPACE/.startos/build.key.pem")
-
-          KEY_PUBKEY="$(openssl pkey -in "$WORKSPACE/.startos/build.key.pem" -pubout -outform DER | tail -c 32 | od -An -tx1 -v | tr -d ' \n')"
-          if [[ "$KEY_PUBKEY" != "$EXPECTED_PUBKEY" ]]; then
-            echo "::error::STARTOS_DEV_KEY does not match STARTOS_SIGNER_PUBKEY."
-            exit 1
-          fi
-
-          (cd "$WORKSPACE" && start-cli s9pk edit "$SIGNED" manifest '.' > /dev/null)
-          echo "mode=permanent signing key" >> "$GITHUB_OUTPUT"
-
-      - name: Verify the signed package
-        shell: bash
-        env:
-          SIGNED: ${{ runner.temp }}/signed/${{ inputs.package-file }}
-          SIGNING_MODE: ${{ steps.sign.outputs.mode }}
-          STARTOS_SIGNER_PUBKEY: ${{ vars.STARTOS_SIGNER_PUBKEY }}
-        run: |
-          start-cli s9pk inspect "$SIGNED" commitment > /dev/null
-          start-cli s9pk inspect "$SIGNED" manifest | jq -S . > "$RUNNER_TEMP/signed-manifest.json"
-          if ! cmp -s "$RUNNER_TEMP/unsigned-manifest.json" "$RUNNER_TEMP/signed-manifest.json"; then
-            echo "::error::Signing changed the package manifest."
-            exit 1
-          fi
-
-          if [[ "$SIGNING_MODE" == "permanent signing key" ]]; then
-            # The package header is a 3-byte magic and version, then the signer's 32-byte public key.
-            SIGNER="$(od -An -tx1 -v -j 3 -N 32 "$SIGNED" | tr -d ' \n')"
-            if [[ "$SIGNER" != "${STARTOS_SIGNER_PUBKEY,,}" ]]; then
-              echo "::error::The package is not signed by STARTOS_SIGNER_PUBKEY."
-              exit 1
-            fi
-          fi
+        uses: ./.github/actions/sign-startos-package
+        with:
+          unsigned: ${{ runner.temp }}/unsigned/${{ inputs.package-file }}
+          signed: ${{ runner.temp }}/signed/${{ inputs.package-file }}
+          private-key: ${{ secrets.STARTOS_DEV_KEY }}
+          public-key: ${{ vars.STARTOS_SIGNER_PUBKEY }}
 
       - name: Stage the signed package
         id: stage
@@ -203,8 +153,8 @@ jobs:
           PACKAGE_FILE: ${{ inputs.package-file }}
         run: |
           cd "$SIGNED_DIR"
-          jq -r '.releaseNotes | if type == "object" then (.en_US // first(.[]) // "") else (. // "") end' \
-            "$RUNNER_TEMP/signed-manifest.json" > RELEASE_NOTES.md
+          start-cli s9pk inspect "$PACKAGE_FILE" manifest | \
+            jq -r '.releaseNotes | if type == "object" then (.en_US // first(.[]) // "") else (. // "") end' > RELEASE_NOTES.md
           sha256sum "$PACKAGE_FILE" > SHA256SUMS
           {
             echo "sha256=$(cut -d' ' -f1 SHA256SUMS)"
@@ -212,6 +162,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Upload the signed package
+        id: upload
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ${{ inputs.signed-artifact }}

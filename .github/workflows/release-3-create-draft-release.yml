@@ -156,7 +156,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: startos-unsigned
-          path: artifacts/*.s9pk
+          path: artifacts/hoseki-sentinel-${{ needs.source.outputs.tag }}.s9pk
           if-no-files-found: error
           compression-level: 0
           retention-days: 7
@@ -181,6 +181,8 @@ jobs:
     needs: [source, desktop, startos-sign]
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    outputs:
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
     steps:
       - name: Check out the same protected release commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -204,17 +206,15 @@ jobs:
       - name: Download the verified StartOS package
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: startos-release
-          path: artifacts
+          artifact-ids: ${{ needs.startos-sign.outputs.artifact-id }}
+          path: startos-artifact
 
-      - name: Confirm the StartOS package and notes are the ones the signing job verified
+      - name: Stage only the verified StartOS package and notes
         env:
-          TAG: ${{ needs.source.outputs.tag }}
+          PACKAGE_FILE: hoseki-sentinel-${{ needs.source.outputs.tag }}.s9pk
           EXPECTED_SHA256: ${{ needs.startos-sign.outputs.sha256 }}
           EXPECTED_NOTES_SHA256: ${{ needs.startos-sign.outputs.release-notes-sha256 }}
-        run: |
-          echo "${EXPECTED_SHA256}  artifacts/hoseki-sentinel-${TAG}.s9pk" | sha256sum --check --strict
-          echo "${EXPECTED_NOTES_SHA256}  artifacts/RELEASE_NOTES.md" | sha256sum --check --strict
+        run: node .github/scripts/stage-startos-release.mjs startos-artifact artifacts "$PACKAGE_FILE" "$EXPECTED_SHA256" "$EXPECTED_NOTES_SHA256"
 
       - name: Write the release notes
         shell: bash
@@ -258,13 +258,14 @@ jobs:
           } >> artifacts/GITHUB_RELEASE_NOTES.md
 
       - name: Upload the release files
+        id: upload
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-files
           path: |
-            artifacts/*.s9pk
-            artifacts/*.dmg
-            artifacts/*.exe
+            artifacts/hoseki-sentinel-${{ needs.source.outputs.tag }}.s9pk
+            artifacts/Bitcoin-Control-Center-${{ needs.source.outputs.tag }}-mac-arm64.dmg
+            artifacts/Bitcoin-Control-Center-${{ needs.source.outputs.tag }}-win-x64.exe
             artifacts/DESKTOP_BUILDS.json
             artifacts/SHA256SUMS
             artifacts/GITHUB_RELEASE_NOTES.md
@@ -288,7 +289,7 @@ jobs:
       - name: Download the release files
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: release-files
+          artifact-ids: ${{ needs.assemble.outputs.artifact_id }}
           path: artifacts
 
       - name: Verify the release files against their checksums
@@ -326,8 +327,8 @@ jobs:
         run: |
           RELEASE_URL="$(gh release create "$TAG" \
             "artifacts/hoseki-sentinel-${TAG}.s9pk" \
-            artifacts/*.dmg \
-            artifacts/*.exe \
+            "artifacts/Bitcoin-Control-Center-${TAG}-mac-arm64.dmg" \
+            "artifacts/Bitcoin-Control-Center-${TAG}-win-x64.exe" \
             artifacts/DESKTOP_BUILDS.json \
             artifacts/SHA256SUMS \
             --draft \
