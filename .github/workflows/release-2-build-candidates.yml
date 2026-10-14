@@ -21,6 +21,9 @@ jobs:
     name: Build private StartOS candidate
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    # The signing key is an environment secret that only protected branches can read. Other branches,
+    # including Dependabot's, run without the environment and sign with an ephemeral key.
+    environment: ${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/startos-')) && 'release-signing' || '' }}
     outputs:
       version: ${{ steps.version.outputs.version }}
       artifact_name: ${{ steps.version.outputs.artifact_name }}
@@ -79,7 +82,7 @@ jobs:
           mkdir -p ~/.startos .startos
           if [[ -n "$STARTOS_DEV_KEY" ]]; then
             printf '%s' "$STARTOS_DEV_KEY" > ~/.startos/id.key.pem
-            echo "mode=repository secret" >> "$GITHUB_OUTPUT"
+            echo "mode=environment secret" >> "$GITHUB_OUTPUT"
           else
             start-cli init-key
             echo "mode=ephemeral clean-install key" >> "$GITHUB_OUTPUT"
