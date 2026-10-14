@@ -606,13 +606,14 @@ Stop Sentinel first, then move `apps/api-sentinel/data/` aside as described in [
 
 ## Security and privacy
 
-Bitcoin Control Center is local-first, but it still communicates with infrastructure selected or configured by the user:
+Bitcoin Control Center is local-first, but it still communicates with outside services. Most are selected or configured by the user; the desktop release check is the exception:
 
 - The Electrum server receives blockchain queries related to tracked accounts.
 - Exchange integrations send requests to the selected exchange's API.
 - The current BTC/USD price comes from the source chosen in Settings: by default a self-hosted mempool at `MEMPOOL_API_URL` when one is configured, otherwise Block (`pricing.bitcoin.block.xyz`). Unless fallbacks are turned off, the other sources are tried in the order Block, mempool.space, Coinbase and CoinGecko while it is unavailable.
 - Statement prices and transaction data use `MEMPOOL_API_URL`, which defaults to the public mempool.space instance. On desktop, Settings can send transaction lookups to the configured Electrum server instead. When `MEMPOOL_API_URL` points to a self-hosted instance, statement prices fall back to mempool.space unless fallbacks are turned off.
 - Desktop and StartOS distributions may route supported connections through their packaged networking configuration.
+- Packaged desktop builds check `https://www.bitcoincontrolcenter.com/latest.json` for a newer release at launch, about once a day while running, and again after a failed check (hourly while the site can't be reached, or at growing intervals up to a day while it answers with an error). The check can't be turned off and doesn't go through Tor, so the website and its CDN see the connection's IP address. The request carries no app version, wallet information or cookies. Runs from source, StartOS and Umbrel never make it.
 
 Additional safeguards:
 

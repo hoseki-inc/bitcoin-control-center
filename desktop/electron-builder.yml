@@ -41,4 +41,5 @@ nsis:
   allowToChangeInstallationDirectory: true
 # build.sh uses --publish never. GitHub Actions assembles the installers into
 # a draft release after verifying their source identity and checksums.
-# Automatic updates are not implemented.
+# Updates are never installed automatically: the app only shows a notice when a
+# newer release is out, and people download and verify it themselves.

@@ -8,6 +8,8 @@ import {
 } from '@hoseki/packages/ui/prove-verify-ui'
 import { Link, NavLink, Outlet } from 'react-router'
 import { z } from 'zod'
+import { isDesktop } from '../../mode'
+import { ReleaseNotice } from './release-notice'
 import { UserInfo } from './user-info'
 
 const HOSEKI_ENV = parseUnknown(z.string(), import.meta.env['VITE_HOSEKI_ENV']).unwrapOr('')
@@ -33,6 +35,7 @@ export function AppLayout({ fullWidth }: { fullWidth?: boolean }): JSX.Element {
   return (
     <BaseAppLayout header={header} fullWidth={fullWidth}>
       <Outlet />
+      {isDesktop && <ReleaseNotice />}
     </BaseAppLayout>
   )
 }

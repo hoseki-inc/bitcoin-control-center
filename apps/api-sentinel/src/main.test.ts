@@ -10,6 +10,8 @@ interface FakeContext {
   context: AppContext
   closes: () => number
   stops: () => number
+  releaseCheckStarts: () => number
+  releaseCheckStops: () => number
 }
 
 let running: SentinelServer[]
@@ -25,9 +27,19 @@ const createContext = asyncFn(async () => {
 function queueContext(port: number): FakeContext {
   let closes = 0
   let stops = 0
+  let releaseCheckStarts = 0
+  let releaseCheckStops = 0
   const fake = {
     env: { HOST: '127.0.0.1', PORT: port, APP_DIR: '/nonexistent-sentinel-test-assets' },
     controlCenterService: { recordAllSnapshots: async (): Promise<void> => undefined },
+    releaseCheckService: {
+      start: (): void => {
+        releaseCheckStarts += 1
+      },
+      stop: (): void => {
+        releaseCheckStops += 1
+      },
+    },
     stopElectrum: (): void => {
       stops += 1
     },
@@ -43,7 +55,13 @@ function queueContext(port: number): FakeContext {
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- The test serves no routes that need the rest of the context.
   const context = fake as AppContext
   queued.push(context)
-  return { context, closes: () => closes, stops: () => stops }
+  return {
+    context,
+    closes: () => closes,
+    stops: () => stops,
+    releaseCheckStarts: () => releaseCheckStarts,
+    releaseCheckStops: () => releaseCheckStops,
+  }
 }
 
 function isTcpAddress(address: AddressInfo | string | null): address is AddressInfo {
@@ -136,7 +154,7 @@ describe('Sentinel listening port', () => {
     }
     const desktopContext = queueContext(configured)
     const desktop = await start({ listenPort: 0 })
-    queueContext(configured)
+    const developmentContext = queueContext(configured)
     const development = await start()
 
     expect(development.port).toBe(configured)
@@ -144,6 +162,10 @@ describe('Sentinel listening port', () => {
     await development.shutdown()
     await expect(health(desktop.port)).resolves.toEqual({ status: 'ok' })
     expect(desktopContext.closes()).toBe(0)
+    expect(developmentContext.releaseCheckStarts()).toBe(1)
+    expect(desktopContext.releaseCheckStarts()).toBe(1)
+    expect(developmentContext.releaseCheckStops()).toBe(1)
+    expect(desktopContext.releaseCheckStops()).toBe(0)
   })
 
   it('cleans up its own resources after a failed bind', async () => {
@@ -153,6 +175,7 @@ describe('Sentinel listening port', () => {
     await expect(main({}, createContext)).rejects.toMatchObject({ code: 'EADDRINUSE' })
     expect(failed.closes()).toBe(1)
     expect(failed.stops()).toBe(1)
+    expect(failed.releaseCheckStarts()).toBe(0)
     expect(sockets[0]?.listening).toBe(true)
   })
 

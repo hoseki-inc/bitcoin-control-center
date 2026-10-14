@@ -26,6 +26,7 @@ import { DailyRatesService } from '../price/daily_rates'
 import { PriceHistoryService } from '../price/history'
 import { PriceService } from '../price/service'
 import { StatementService } from '../statements/service'
+import { ReleaseCheckService } from '../updates/service'
 import { appRouter } from './router'
 
 // Public, deterministic test seeds only. Signatures and verification are real BIP-322.
@@ -168,6 +169,8 @@ export async function setupAppCaller(): Promise<AppCallerHarness> {
       mempoolApiUrl,
       dailyRatesService,
     }),
+    // No release version, as in runs from source: it never checks.
+    releaseCheckService: new ReleaseCheckService({ logger }),
     reconnectElectrum: async () => Ok(undefined),
     stopElectrum: () => {
       electrumClient.disconnect()
