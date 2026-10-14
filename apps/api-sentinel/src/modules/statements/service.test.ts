@@ -572,6 +572,10 @@ it('persists mixed provider attribution and exposes it in both PDF formats after
     vi.fn().mockImplementation(async (urlString: string) => {
       const url = new URL(urlString),
         timestamp = Number(url.searchParams.get('timestamp'))
+      // Neither source sends its full history, so both are asked day by day.
+      if (!url.searchParams.has('timestamp')) {
+        return new Response('Not found', { status: 404 })
+      }
       return Response.json({
         prices: [
           {

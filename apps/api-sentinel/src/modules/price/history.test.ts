@@ -18,11 +18,17 @@ let directory: string
 let database: SentinelDb
 let fetcher: ReturnType<typeof vi.fn<(url: string, init?: RequestInit) => Promise<Response>>>
 
-/** A mempool server that knows every hour, and quotes each day at a different USD price. */
+/**
+ * A mempool server that knows every hour, and quotes each day at a different USD price. Like an
+ * older mempool, it can't send its full history, so the chart asks it day by day.
+ */
 async function mempool(url: string): Promise<Response> {
   const parsed = new URL(url)
   if (parsed.pathname === '/api/v1/prices') {
     return Response.json({ USD: 61000, time: nowSeconds - 60 })
+  }
+  if (!parsed.searchParams.has('timestamp')) {
+    return new Response('Not found', { status: 404 })
   }
   const timestamp = Number(parsed.searchParams.get('timestamp'))
   return Response.json({ prices: [{ time: timestamp, ...quotes, USD: 50000 + timestamp / 86_400 }] })
@@ -114,8 +120,8 @@ describe('Bitcoin price history', () => {
     const observed = nowSeconds - 43_200 - 3 * 86_400
     fetcher.mockImplementation(async (url) => {
       const parsed = new URL(url)
-      if (parsed.pathname === '/api/v1/prices') {
-        return Response.json({ USD: 61000, time: nowSeconds - 60 })
+      if (parsed.pathname === '/api/v1/prices' || !parsed.searchParams.has('timestamp')) {
+        return mempool(url)
       }
       const timestamp = Number(parsed.searchParams.get('timestamp'))
       // The server has no prices after the observation, so later days fall back to it.

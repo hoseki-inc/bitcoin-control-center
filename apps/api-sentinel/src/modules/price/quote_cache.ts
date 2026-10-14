@@ -54,8 +54,13 @@ export class QuoteCache {
     return row
   }
 
-  /** Whether this source supplied an observation in the window, so its search produced an answer. */
-  public async hasOwnQuote(currency: StatementQuoteCurrency, oldest: number, newest: number): Promise<boolean> {
+  /** Whether this source supplied an observation in the window since `refreshedSince`, so its search produced an answer. */
+  public async hasOwnQuote(
+    currency: StatementQuoteCurrency,
+    oldest: number,
+    newest: number,
+    refreshedSince: number,
+  ): Promise<boolean> {
     const [row] = await this.db
       .select({ timestamp: btcQuoteCache.timestamp })
       .from(btcQuoteCache)
@@ -65,6 +70,7 @@ export class QuoteCache {
           eq(btcQuoteCache.providerUrl, this.providerUrl),
           gte(btcQuoteCache.timestamp, oldest),
           lte(btcQuoteCache.timestamp, newest),
+          gte(btcQuoteCache.refreshedAt, refreshedSince),
         ),
       )
       .limit(1)
@@ -131,6 +137,7 @@ export class QuoteCache {
 
   /**
    * Saves a downloaded history over any earlier prices at the same times, then records the download.
+   * With `keepSince`, another source's prices refreshed since then are kept instead.
    * One statement for all of it: tens of thousands of rows take a fraction of the time they would
    * as separate inserts, which matters because saving holds the database.
    */
@@ -138,8 +145,13 @@ export class QuoteCache {
     currency: StatementQuoteCurrency,
     points: HistoryPoint[],
     downloadedAt: number,
+    keepSince?: number,
   ): Promise<void> {
     const rows = JSON.stringify(points.map((point) => [point.timestamp, point.price]))
+    const replaces =
+      keepSince === undefined
+        ? sql``
+        : sql`WHERE btc_quote_cache.provider_url = excluded.provider_url OR btc_quote_cache.refreshed_at < ${keepSince}`
     await this.db.transaction(async (tx) => {
       // `WHERE true` lets SQLite parse the upsert after a SELECT.
       await tx.run(sql`
@@ -147,6 +159,7 @@ export class QuoteCache {
         SELECT ${this.providerUrl}, ${currency}, value ->> 0, value ->> 1, ${downloadedAt} FROM json_each(${rows}) WHERE true
         ON CONFLICT (quote_currency, timestamp) DO UPDATE
           SET price = excluded.price, provider_url = excluded.provider_url, refreshed_at = excluded.refreshed_at
+          ${replaces}
       `)
       await tx
         .insert(btcQuoteDownloads)

@@ -118,7 +118,7 @@ it.each(['file', 'database'] as const)(
     try {
       // Upgrading adds the statement counter, which starts from the highest existing number, a
       // transaction source on statements, unknown for those made before it, an empty record of
-      // price history downloads, and a refreshed time on saved prices, 0 for those saved before it.
+      // price history downloads, and a refreshed time on saved prices, dropping those saved before it.
       const upgradedState = await databaseState(upgraded)
       const statementsSql = (state: typeof before): string | null | undefined =>
         state.schema.find((row) => row.name === 'statements')?.sql
@@ -160,13 +160,7 @@ it.each(['file', 'database'] as const)(
                       expect(expires_at).toBe(0)
                       return row
                     })
-                  : table.table === 'btc_quote_cache'
-                    ? table.rows.map(({ refreshed_at, ...row }) => {
-                        // Prices saved before count as unconfirmed until a source confirms them again.
-                        expect(refreshed_at).toBe(0)
-                        return row
-                      })
-                    : table.rows,
+                  : table.rows,
           })),
       }).toEqual({
         ...before,
@@ -178,7 +172,10 @@ it.each(['file', 'database'] as const)(
                   Object.fromEntries(Object.entries(row).filter(([column]) => column !== 'expires_at')),
                 ),
               }
-            : table,
+            : // Prices saved before were only for activity days, so confirming them again would show those days.
+              table.table === 'btc_quote_cache'
+              ? { table: table.table, rows: [] }
+              : table,
         ),
       })
       await expect(upgraded.all(sql`SELECT * FROM statement_counter`)).resolves.toEqual([{ id: 1, last_counter: 123 }])
@@ -319,9 +316,8 @@ it.each([false, true])('upgrades a legacy profile with desktop connections and q
     await expect(upgraded.all(sql`SELECT quote_currency, error_message FROM statements`)).resolves.toEqual([
       { quote_currency: 'USD', error_message: null },
     ])
-    await expect(upgraded.all(sql`SELECT quote_currency, price FROM btc_quote_cache`)).resolves.toEqual(
-      withCache ? [{ quote_currency: 'CAD', price: '81000' }] : [],
-    )
+    // Prices saved before the upgrade are dropped.
+    await expect(upgraded.all(sql`SELECT quote_currency, price FROM btc_quote_cache`)).resolves.toEqual([])
     await expect(upgraded.all(sql`SELECT name FROM _migrations`)).resolves.toHaveLength(migrations.length)
     await expect(upgraded.all(sql`PRAGMA foreign_key_check`)).resolves.toEqual([])
   } finally {

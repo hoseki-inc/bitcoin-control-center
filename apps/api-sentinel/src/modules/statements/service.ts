@@ -747,7 +747,7 @@ export class StatementService {
         requiredDates,
       )
       if (ratesResult.isErr()) {
-        // The price errors can name a date, which can be an activity day.
+        // Only the kind is logged, as for other generation failures.
         this.logger.error({ kind: 'unavailable' }, 'Failed to fetch daily rates')
         return Err(new PriceLoadError('unavailable'))
       }
