@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ElectrumClient } from '@hoseki/packages/clients/electrum'
-import { Ok, asyncFn } from '@hoseki/packages/result'
+import { Err, Ok, asyncFn } from '@hoseki/packages/result'
 import { Wallets } from '@hoseki/packages/testing'
 import { Signer } from 'bip322-js'
 import pino from 'pino'
@@ -233,4 +233,25 @@ it('reports a newer desktop release once the check finds one, and nothing from s
   await expect(api.releaseCheck()).resolves.toEqual({ newVersion: null, pending: true })
   await desktop.releaseCheckService.checkIfDue()
   await expect(api.releaseCheck()).resolves.toEqual({ newVersion: '0.2.0', pending: false })
+})
+
+it('loads portfolio data in a timezone Intl.supportedValuesOf omits', async () => {
+  const { app } = await setup()
+  vi.spyOn(app.priceService, 'getCurrentBtcPrice').mockImplementation(asyncFn(async () => Err(new Error('offline'))))
+  const getData = vi.spyOn(app.controlCenterService, 'getData')
+  const { controlCenter } = appRouter.createCaller({ app }).portalProve
+
+  await controlCenter.getData({ timeRange: '30d', timezone: 'Asia/Kolkata' })
+
+  expect(getData).toHaveBeenCalledWith(expect.objectContaining({ timezone: 'Asia/Kolkata' }))
+})
+
+it('rejects an unknown portfolio timezone', async () => {
+  const { app } = await setup()
+  const { controlCenter } = appRouter.createCaller({ app }).portalProve
+
+  await expect(controlCenter.getData({ timeRange: '30d', timezone: 'Not/AZone' })).rejects.toMatchObject({
+    code: 'BAD_REQUEST',
+    message: 'Invalid timezone',
+  })
 })

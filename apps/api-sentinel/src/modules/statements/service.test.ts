@@ -297,13 +297,10 @@ describe('statement currency persistence', () => {
 
 describe('statement input validation', () => {
   const now = new Date('2026-09-08T12:00:00Z')
-  // Browsers can report aliases and fixed offsets that Intl.supportedValuesOf omits.
-  it.each(['UTC', 'Asia/Kolkata', 'Asia/Calcutta', 'Europe/Kyiv', 'America/Nuuk', 'Etc/UTC', 'Etc/GMT+8'])(
-    'accepts the runtime timezone %s',
-    (timezone) => {
-      expect(validateStatementInput({ ...input, timezone }, now).isOk()).toBe(true)
-    },
-  )
+  // TimezoneSchema's tests cover the full list of names Intl.supportedValuesOf omits.
+  it('accepts a timezone Intl.supportedValuesOf omits', () => {
+    expect(validateStatementInput({ ...input, timezone: 'Asia/Kolkata' }, now).isOk()).toBe(true)
+  })
 
   it('rejects an unknown timezone', () => {
     expect(validateStatementInput({ ...input, timezone: 'Not/AZone' }, now).unwrapErr().message).toBe(
