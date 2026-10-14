@@ -1,4 +1,4 @@
-import Fastify, { type FastifyInstance } from 'fastify'
+import Fastify, { type FastifyInstance, type InjectOptions } from 'fastify'
 import { describe, expect, it, onTestFinished } from 'vitest'
 import { registerRequestSecurity } from './request_security'
 
@@ -15,6 +15,16 @@ function createServer(configuredHosts: string | undefined = allowedHosts, isProd
   server.post('/trpc/settings', async () => ({ ok: true }))
   servers.push(server)
   return server
+}
+
+// Control Center's tRPC client sends every change as JSON.
+function jsonWrite(headers: Record<string, string>): InjectOptions {
+  return {
+    method: 'POST',
+    url: '/trpc/settings',
+    headers: { 'content-type': 'application/json', ...headers },
+    payload: '{}',
+  }
 }
 
 async function withTestSetup(run: () => Promise<void>): Promise<void> {
@@ -49,7 +59,7 @@ describe('Sentinel interface access', () => {
       const server = createServer()
       const headers = { host: new URL(origin).host, origin, 'sec-fetch-site': 'same-origin' }
       const read = await server.inject({ url: '/trpc/data', headers })
-      const write = await server.inject({ method: 'POST', url: '/trpc/settings', headers, remoteAddress: '10.0.3.1' })
+      const write = await server.inject({ ...jsonWrite(headers), remoteAddress: '10.0.3.1' })
       expect(read.statusCode).toBe(200)
       expect(write.statusCode).toBe(200)
     })
@@ -164,9 +174,67 @@ describe('Sentinel interface access', () => {
         expect((await server.inject({ url: '/trpc/data', headers: { host } })).statusCode).toBe(403)
       }
       for (const host of ['localhost:3400', '127.0.0.1:3400', '[::1]:3400']) {
-        expect((await server.inject({ method: 'POST', url: '/trpc/settings', headers: { host } })).statusCode).toBe(200)
+        expect((await server.inject(jsonWrite({ host }))).statusCode).toBe(200)
       }
       expect((await server.inject({ url: '/health', headers: { host: 'internal-proxy' } })).statusCode).toBe(200)
+    })
+  })
+
+  it('accepts JSON writes from the desktop window and through the StartOS proxy', async () => {
+    await withTestSetup(async () => {
+      const desktop = await createServer('').inject(
+        jsonWrite({ host: '127.0.0.1:51234', origin: 'http://127.0.0.1:51234', 'sec-fetch-site': 'same-origin' }),
+      )
+      const startOs = await createServer().inject({
+        ...jsonWrite({
+          host: 'internal-proxy:3400',
+          'x-forwarded-host': 'node.local:50399',
+          origin: 'https://node.local:50399',
+          'content-type': 'Application/JSON; charset=utf-8',
+        }),
+        remoteAddress: '10.0.3.1',
+      })
+      expect(desktop.statusCode).toBe(200)
+      expect(startOs.statusCode).toBe(200)
+    })
+  })
+
+  // Another app's page on the same machine, or another service on the same StartOS hostname, passes the
+  // hostname-only Origin check, so only the content type tells its writes apart.
+  it.each([
+    { configuredHosts: '', host: '127.0.0.1:3400', origin: 'http://127.0.0.1:8080', remoteAddress: '127.0.0.1' },
+    {
+      configuredHosts: allowedHosts,
+      host: 'internal-proxy:3400',
+      'x-forwarded-host': 'node.local:50399',
+      origin: 'https://node.local:8443',
+      remoteAddress: '10.0.3.1',
+    },
+  ])('rejects writes that are not JSON, even from an allowed hostname: $origin', async (request) => {
+    await withTestSetup(async () => {
+      const { configuredHosts, remoteAddress, ...headers } = request
+      const server = createServer(configuredHosts)
+      for (const contentType of [
+        'text/plain',
+        'text/plain; application/json',
+        'application/x-www-form-urlencoded',
+        'multipart/form-data; boundary=x',
+      ]) {
+        const response = await server.inject({
+          ...jsonWrite({ ...headers, 'sec-fetch-site': 'same-site', 'content-type': contentType }),
+          remoteAddress,
+        })
+        expect(response.statusCode).toBe(415)
+        expect(response.json()).toMatchObject({ code: 'unsupported_content_type' })
+      }
+      const withoutContentType = await server.inject({
+        method: 'POST',
+        url: '/trpc/settings',
+        headers: { ...headers, 'sec-fetch-site': 'same-site' },
+        remoteAddress,
+      })
+      expect(withoutContentType.statusCode).toBe(415)
+      expect(withoutContentType.json()).toMatchObject({ code: 'unsupported_content_type' })
     })
   })
 
@@ -174,7 +242,7 @@ describe('Sentinel interface access', () => {
     await withTestSetup(async () => {
       const server = createServer('', false)
       const headers = { host: 'localhost:3400', origin: 'http://localhost:5173' }
-      expect((await server.inject({ method: 'POST', url: '/trpc/settings', headers })).statusCode).toBe(200)
+      expect((await server.inject(jsonWrite(headers))).statusCode).toBe(200)
       const rejected = await server.inject({
         url: '/trpc/data',
         headers: { ...headers, origin: 'https://evil.example' },

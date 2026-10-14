@@ -118,6 +118,10 @@ function isUnsafeMethod(method: string): boolean {
   return method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS'
 }
 
+function isJsonContentType(contentType: string | undefined): boolean {
+  return contentType?.split(';')[0]?.trim().toLowerCase() === 'application/json'
+}
+
 // Routing decodes the path, so an encoded request such as /%74rpc/... still reaches tRPC:
 // check the route that will run as well as the raw URL.
 function isProtectedRoute(route: string | undefined, url: string): boolean {
@@ -165,6 +169,14 @@ export function registerRequestSecurity(
       !isLoopbackAddress(request.ip)
     ) {
       return reply.status(403).send({ code: 'forbidden_origin', message: 'Origin is required' })
+    }
+
+    // The Origin check matches hostnames only, so a page on another port or another allowed host passes it.
+    // Browsers send JSON across origins only after a preflight, which production CORS refuses.
+    if (isUnsafeMethod(request.method) && !isJsonContentType(request.headers['content-type'])) {
+      return reply
+        .status(415)
+        .send({ code: 'unsupported_content_type', message: 'Changes must be sent as application/json' })
     }
   })
 }
