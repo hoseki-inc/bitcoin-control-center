@@ -1,6 +1,6 @@
 import Fastify, { type FastifyInstance, type InjectOptions } from 'fastify'
 import { describe, expect, it, onTestFinished } from 'vitest'
-import { registerRequestSecurity } from './request_security'
+import { registerCorsPolicy, registerRequestSecurity } from './request_security'
 
 const servers: FastifyInstance[] = []
 const publicIp = '203.0.113.42'
@@ -199,9 +199,8 @@ describe('Sentinel interface access', () => {
     })
   })
 
-  // Another app's page on the same machine, or another service on the same StartOS hostname, passes the
-  // hostname-only Origin check, so only the content type tells its writes apart.
-  it.each([
+  // Another app's page on the same machine, and another service on the same StartOS hostname.
+  const otherPortPages = [
     { configuredHosts: '', host: '127.0.0.1:3400', origin: 'http://127.0.0.1:8080', remoteAddress: '127.0.0.1' },
     {
       configuredHosts: allowedHosts,
@@ -210,44 +209,106 @@ describe('Sentinel interface access', () => {
       origin: 'https://node.local:8443',
       remoteAddress: '10.0.3.1',
     },
-  ])('rejects writes that are not JSON, even from an allowed hostname: $origin', async (request) => {
+  ]
+
+  it.each(otherPortPages)('rejects same-site writes in production: $origin', async (request) => {
     await withTestSetup(async () => {
       const { configuredHosts, remoteAddress, ...headers } = request
-      const server = createServer(configuredHosts)
-      for (const contentType of [
-        'text/plain',
-        'text/plain; application/json',
-        'application/x-www-form-urlencoded',
-        'multipart/form-data; boundary=x',
-      ]) {
-        const response = await server.inject({
-          ...jsonWrite({ ...headers, 'sec-fetch-site': 'same-site', 'content-type': contentType }),
-          remoteAddress,
-        })
-        expect(response.statusCode).toBe(415)
-        expect(response.json()).toMatchObject({ code: 'unsupported_content_type' })
-      }
-      const withoutContentType = await server.inject({
-        method: 'POST',
-        url: '/trpc/settings',
-        headers: { ...headers, 'sec-fetch-site': 'same-site' },
+      const response = await createServer(configuredHosts).inject({
+        ...jsonWrite({ ...headers, 'sec-fetch-site': 'same-site' }),
         remoteAddress,
       })
-      expect(withoutContentType.statusCode).toBe(415)
-      expect(withoutContentType.json()).toMatchObject({ code: 'unsupported_content_type' })
+      expect(response.statusCode).toBe(403)
+      expect(response.json()).toMatchObject({ code: 'forbidden_origin' })
     })
   })
 
-  it('preserves local development origins', async () => {
+  // Browsers that don't send Sec-Fetch-Site, such as Safari before 16.4, fall back to the content type.
+  it.each(otherPortPages)(
+    'rejects writes that are not JSON, even from an allowed hostname: $origin',
+    async (request) => {
+      await withTestSetup(async () => {
+        const { configuredHosts, remoteAddress, ...headers } = request
+        const server = createServer(configuredHosts)
+        for (const contentType of [
+          'text/plain',
+          'text/plain; application/json',
+          'application/x-www-form-urlencoded',
+          'multipart/form-data; boundary=x',
+        ]) {
+          const response = await server.inject({
+            ...jsonWrite({ ...headers, 'content-type': contentType }),
+            remoteAddress,
+          })
+          expect(response.statusCode).toBe(415)
+          expect(response.json()).toMatchObject({ code: 'unsupported_content_type' })
+        }
+        const withoutContentType = await server.inject({
+          method: 'POST',
+          url: '/trpc/settings',
+          headers,
+          remoteAddress,
+        })
+        expect(withoutContentType.statusCode).toBe(415)
+        expect(withoutContentType.json()).toMatchObject({ code: 'unsupported_content_type' })
+      })
+    },
+  )
+
+  it('accepts the Vite dev server and Sentinel itself in development', async () => {
     await withTestSetup(async () => {
       const server = createServer('', false)
-      const headers = { host: 'localhost:3400', origin: 'http://localhost:5173' }
-      expect((await server.inject(jsonWrite(headers))).statusCode).toBe(200)
-      const rejected = await server.inject({
-        url: '/trpc/data',
-        headers: { ...headers, origin: 'https://evil.example' },
+      for (const origin of ['http://localhost:4269', 'http://127.0.0.1:4269', 'http://[::1]:4269']) {
+        const response = await server.inject(
+          jsonWrite({ host: 'localhost:3400', origin, 'sec-fetch-site': 'same-site' }),
+        )
+        expect(response.statusCode).toBe(200)
+      }
+      const sameOrigin = await server.inject(
+        jsonWrite({ host: 'localhost:3400', origin: 'http://localhost:3400', 'sec-fetch-site': 'same-origin' }),
+      )
+      expect(sameOrigin.statusCode).toBe(200)
+    })
+  })
+
+  it.each(['http://127.0.0.1:8080', 'http://localhost:5173', 'https://localhost:4269', 'https://evil.example'])(
+    'rejects other origins in development: %s',
+    async (origin) => {
+      await withTestSetup(async () => {
+        const response = await createServer('', false).inject(jsonWrite({ host: 'localhost:3400', origin }))
+        expect(response.statusCode).toBe(403)
+        expect(response.json()).toMatchObject({ code: 'forbidden_origin' })
       })
-      expect(rejected.statusCode).toBe(403)
+    },
+  )
+
+  // Writes rely on browsers refusing to send JSON across origins without an approved preflight.
+  it.each([
+    // These pass the hostname-only Origin check, so CORS is what refuses them.
+    { isProduction: true, origin: 'http://127.0.0.1:8080', status: 404, allowed: false },
+    { isProduction: true, origin: 'http://127.0.0.1:3400', status: 404, allowed: false },
+    // The development Origin check refuses this one before CORS runs.
+    { isProduction: false, origin: 'http://127.0.0.1:8080', status: 403, allowed: false },
+    { isProduction: false, origin: 'http://localhost:4269', status: 204, allowed: true },
+  ])('approves a preflight only for the dev server: $origin, production $isProduction', async (request) => {
+    await withTestSetup(async () => {
+      const server = Fastify()
+      servers.push(server)
+      registerRequestSecurity(server, '', request.isProduction)
+      await registerCorsPolicy(server, request.isProduction)
+      server.post('/trpc/settings', async () => ({ ok: true }))
+      const response = await server.inject({
+        method: 'OPTIONS',
+        url: '/trpc/settings',
+        headers: {
+          host: '127.0.0.1:3400',
+          origin: request.origin,
+          'access-control-request-method': 'POST',
+          'access-control-request-headers': 'content-type',
+        },
+      })
+      expect(response.statusCode).toBe(request.status)
+      expect(response.headers['access-control-allow-origin']).toBe(request.allowed ? request.origin : undefined)
     })
   })
 })
