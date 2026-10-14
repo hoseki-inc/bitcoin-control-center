@@ -138,6 +138,20 @@ export const btcQuoteLookups = sqliteTable(
   ],
 )
 
+/** When each price source last downloaded its full price history for a currency, in Unix ms. */
+export const btcQuoteDownloads = sqliteTable(
+  'btc_quote_downloads',
+  {
+    provider: text('provider').notNull(),
+    quoteCurrency: text('quote_currency', { enum: ['USD', 'CAD', 'GBP', 'EUR'] }).notNull(),
+    downloadedAt: integer('downloaded_at').notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.provider, table.quoteCurrency] }),
+    check('btc_quote_downloads_quote_currency_check', sql`${table.quoteCurrency} IN ('USD', 'CAD', 'GBP', 'EUR')`),
+  ],
+)
+
 export const settings = sqliteTable('settings', {
   key: text('key').primaryKey(),
   value: text('value').notNull(),

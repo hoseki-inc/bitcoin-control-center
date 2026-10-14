@@ -22,7 +22,7 @@ import { PriceService } from '../price/service'
 import { appRouter } from '../trpc/router'
 import type { AggregatedTransaction } from './mapper'
 import { StatementMapper } from './mapper'
-import { getRequiredRateDates, getStatementPeriods } from './rate_dates'
+import { PriceLoadError, getRequiredRateDates, getStatementPeriods } from './rate_dates'
 import { type GenerateStatementInput, StatementService, validateStatementInput } from './service'
 import { TransactionLoadError } from './sources/types'
 
@@ -77,19 +77,17 @@ async function setup(): Promise<void> {
   database = await openDrizzleDatabase(directory, logger)
   vi.stubGlobal(
     'fetch',
-    vi.fn().mockImplementation(async (url: string) =>
-      Response.json({
-        prices: [
-          {
-            time: Number(new URL(url).searchParams.get('timestamp')),
-            USD: 60000,
-            CAD: 81000,
-            GBP: 47000,
-            EUR: 55000,
-          },
-        ],
-      }),
-    ),
+    vi.fn().mockImplementation(async (url: string) => {
+      const timestamp = new URL(url).searchParams.get('timestamp')
+      // Without a timestamp, the full history: one price a day up to now.
+      const times =
+        timestamp === null
+          ? Array.from({ length: 1300 }, (_, i) => Math.floor(Date.now() / 86_400_000 - i) * 86_400)
+          : [Number(timestamp)]
+      return Response.json({
+        prices: times.map((time) => ({ time, USD: 60000, CAD: 81000, GBP: 47000, EUR: 55000 })),
+      })
+    }),
   )
 }
 
@@ -292,7 +290,8 @@ describe('statement currency persistence', () => {
     }
     expect(new StatementMapper().toPdfStatement(data, 'custom').isOk()).toBe(true)
     expect(new StatementMapper().toPdfStatement(data, 'monthly').isOk()).toBe(true)
-    expect(fetch).toHaveBeenCalledTimes(5)
+    // One download of the full history serves every day the statement needs.
+    expect(fetch).toHaveBeenCalledTimes(1)
   })
 })
 
@@ -442,6 +441,12 @@ describe('statement failure messages', () => {
       scenario: 'a transaction that could not be loaded',
       error: new TransactionLoadError('unavailable', `Failed to fetch transaction ${'a'.repeat(64)}: HTTP 404`),
       message: "Couldn't load all transactions.",
+      logged: '"kind":"unavailable"',
+    },
+    {
+      scenario: 'prices that could not be confirmed',
+      error: new PriceLoadError('unavailable'),
+      message: "Couldn't get Bitcoin prices for this statement. Check your connection and try again.",
       logged: '"kind":"unavailable"',
     },
     {

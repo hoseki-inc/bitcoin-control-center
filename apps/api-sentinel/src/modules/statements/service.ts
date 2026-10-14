@@ -20,7 +20,7 @@ import { toTransactionEntries } from './entries'
 import { type AccountHistory, collectAccountHistory } from './history'
 import { type Sleep, lookupTransactions } from './lookup'
 import type { AggregatedTransaction, StatementAccountTransactions } from './mapper'
-import { getRequiredRateDates, validateStatementRates } from './rate_dates'
+import { PriceLoadError, getRequiredRateDates, validateStatementRates } from './rate_dates'
 import { ElectrumSource } from './sources/electrum'
 import { MempoolSource } from './sources/mempool'
 import { TransactionLoadError, type TxSource, type TxSourceKind } from './sources/types'
@@ -93,6 +93,13 @@ const LOOKUP_SHARE = 4 / 9
 /** The message a failed statement shows for an error from generating its data. */
 export function statementFailureMessage(error: Error): string {
   return error instanceof TransactionLoadError ? TRANSACTIONS_FAILED_MESSAGE : error.message
+}
+
+/** Errors whose message can name a txid, a server or a date, so only their kind is logged. */
+export function loggableFailure(error: Error): { kind: string } | { error: string } {
+  return error instanceof TransactionLoadError || error instanceof PriceLoadError
+    ? { kind: error.kind }
+    : { error: error.message }
 }
 
 export interface GenerateStatementInput {
@@ -731,7 +738,7 @@ export class StatementService {
       }
 
       // 4. Fetch daily rates for the date range
-      this.logger.info('Fetching daily rates from mempool.space')
+      this.logger.info('Fetching daily rates')
       const requiredDates = getRequiredRateDates(input.openingDate, input.closingDate, input.timezone, transactionMap)
       const ratesResult = await this.dailyRatesService.getDailyRates(
         input.openingDate,
@@ -740,8 +747,9 @@ export class StatementService {
         requiredDates,
       )
       if (ratesResult.isErr()) {
-        this.logger.error({ err: ratesResult.unwrapErr().message }, 'Failed to fetch daily rates')
-        return Err(ratesResult.unwrapErr())
+        // The price errors can name a date, which can be an activity day.
+        this.logger.error({ kind: 'unavailable' }, 'Failed to fetch daily rates')
+        return Err(new PriceLoadError('unavailable'))
       }
       const coverage = validateStatementRates(requiredDates, ratesResult.unwrap())
       if (coverage.isErr()) {

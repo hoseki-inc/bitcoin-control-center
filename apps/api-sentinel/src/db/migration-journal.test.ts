@@ -116,8 +116,9 @@ it.each(['file', 'database'] as const)(
 
     const upgraded = await openDrizzleDatabase(directory, logger)
     try {
-      // Upgrading adds the statement counter, which starts from the highest existing number, and a
-      // transaction source on statements, unknown for those made before it.
+      // Upgrading adds the statement counter, which starts from the highest existing number, a
+      // transaction source on statements, unknown for those made before it, and an empty record of
+      // price history downloads.
       const upgradedState = await databaseState(upgraded)
       const statementsSql = (state: typeof before): string | null | undefined =>
         state.schema.find((row) => row.name === 'statements')?.sql
@@ -129,10 +130,10 @@ it.each(['file', 'database'] as const)(
       )
       expect({
         schema: upgradedState.schema
-          .filter((row) => row.tbl_name !== 'statement_counter')
+          .filter((row) => !['statement_counter', 'btc_quote_downloads'].includes(row.tbl_name))
           .map((row) => (row.name === 'statements' ? before.schema.find((old) => old.name === 'statements') : row)),
         data: upgradedState.data
-          .filter((table) => table.table !== 'statement_counter')
+          .filter((table) => !['statement_counter', 'btc_quote_downloads'].includes(table.table))
           .map((table) => ({
             table: table.table,
             rows:
@@ -141,10 +142,29 @@ it.each(['file', 'database'] as const)(
                     expect(tx_source).toBeNull()
                     return row
                   })
-                : table.rows,
+                : table.table === 'btc_quote_lookups'
+                  ? table.rows.map(({ expires_at, ...row }) => {
+                      // Saved lookups are all looked up again, since prices are no longer kept forever.
+                      expect(expires_at).toBe(0)
+                      return row
+                    })
+                  : table.rows,
           })),
-      }).toEqual(before)
+      }).toEqual({
+        ...before,
+        data: before.data.map((table) =>
+          table.table === 'btc_quote_lookups'
+            ? {
+                table: table.table,
+                rows: table.rows.map((row) =>
+                  Object.fromEntries(Object.entries(row).filter(([column]) => column !== 'expires_at')),
+                ),
+              }
+            : table,
+        ),
+      })
       await expect(upgraded.all(sql`SELECT * FROM statement_counter`)).resolves.toEqual([{ id: 1, last_counter: 123 }])
+      await expect(upgraded.all(sql`SELECT * FROM btc_quote_downloads`)).resolves.toEqual([])
       const journal = await upgraded.all<{ id: number; hash: string; created_at: number; name: string }>(
         sql`SELECT * FROM _migrations ORDER BY id`,
       )
@@ -226,6 +246,7 @@ it.each(['legacy', 'drizzle'] as const)(
         'btc_quote_cache',
         'btc_quote_lookups',
         'statement_counter',
+        'btc_quote_downloads',
       ])
       expect({
         schema: after.schema

@@ -6,7 +6,7 @@ import { Decimal } from 'decimal.js'
 import type { Logger } from 'pino'
 import { z } from 'zod'
 import type { SentinelDb } from '../../db/drizzle'
-import { type CachedQuote, QuoteCache } from './quote_cache'
+import { type CachedQuote, type HistoryPoint, QuoteCache } from './quote_cache'
 
 export interface DailyRate {
   /** Actual observation time; this may be before or after the valuation day. */
@@ -17,6 +17,16 @@ export interface DailyRate {
   high: Decimal
   low: Decimal
   close: Decimal
+}
+
+export interface DailyRatesOptions {
+  /** Return saved prices of any age straight away, and refresh them in the background. */
+  staleWhileRefreshing?: boolean
+  /**
+   * The required dates don't depend on wallet activity, such as evenly spaced chart days, so a
+   * day-by-day fallback may request just them instead of every day in the range.
+   */
+  requestRequiredDays?: boolean
 }
 
 export interface DailyRates {
@@ -36,10 +46,19 @@ const PUBLIC_MEMPOOL_URL = 'https://mempool.space'
 const DAY_SECONDS = 86_400
 const HOUR_SECONDS = 3_600
 const HOUR_MS = 3_600_000
+const DAY_MS = 86_400_000
+/** Saved prices are downloaded again after a day; the last few days, still settling, after an hour. */
+const SETTLING_DAYS = 2
 const MAX_REQUEST_DAYS = 2 * 366
 /** Rate-limited requests back off 0.5, 1, then 2 seconds before the source cools down. */
 const MAX_ATTEMPTS = 4
 const RETRY_BASE_MS = 500
+/**
+ * A statement waits for its prices, so its download keeps trying for about a minute before
+ * falling back, and waits out a source that asks for up to a minute.
+ */
+const DOWNLOAD_RETRY_DELAYS_MS: readonly number[] = [2_000, 5_000, 10_000, 20_000]
+const MAX_PATIENT_RETRY_AFTER_MS = 60_000
 const responseSchema = z.object({
   prices: z
     .array(
@@ -53,6 +72,12 @@ const responseSchema = z.object({
     )
     .max(1),
 })
+/** The full history: every observation, each with this currency's price (or -1 when it has none). */
+const historySchema = z.object({
+  prices: z
+    .array(z.object({ time: z.number().int().nonnegative().max(8_640_000_000_000) }).catchall(z.unknown()))
+    .max(1_000_000),
+})
 const priceSchema = z.number().finite().positive()
 
 export class DailyRatesService {
@@ -63,7 +88,9 @@ export class DailyRatesService {
   private readonly mempoolApiUrl: string
   private readonly providerUrl: string
   private readonly logger: Logger
+  private readonly downloadRetryDelaysMs: readonly number[]
   private readonly inFlight = new Map<number, Promise<Result<void, Error>>>()
+  private readonly downloads = new Map<StatementQuoteCurrency, Promise<Result<void, Error>>>()
   private unavailableUntil = 0
   private static readonly CONCURRENCY = 4
 
@@ -75,6 +102,8 @@ export class DailyRatesService {
     allowPublicFallback?: () => boolean | Promise<boolean>
     /** Read before each request to this source; the public fallback is bound to the switch above. */
     allowRequests?: () => boolean | Promise<boolean>
+    /** Waits between a statement's download attempts; tests shorten them. */
+    downloadRetryDelaysMs?: readonly number[]
   }) {
     this.logger = deps.logger.child({ module: 'daily-rates-service' })
     this.mempoolApiUrl = deps.mempoolApiUrl.replace(/\/$/, '')
@@ -87,6 +116,7 @@ export class DailyRatesService {
     const allowPublicFallback = deps.allowPublicFallback ?? (() => true)
     this.allowPublicFallback = allowPublicFallback
     this.allowRequests = deps.allowRequests ?? (() => true)
+    this.downloadRetryDelaysMs = deps.downloadRetryDelaysMs ?? DOWNLOAD_RETRY_DELAYS_MS
     this.publicFallback =
       this.providerUrl === PUBLIC_MEMPOOL_URL
         ? undefined
@@ -95,6 +125,7 @@ export class DailyRatesService {
             logger: deps.logger,
             mempoolApiUrl: PUBLIC_MEMPOOL_URL,
             allowRequests: allowPublicFallback,
+            downloadRetryDelaysMs: this.downloadRetryDelaysMs,
           })
     // Identify request receipts without storing credentials; all sources share price rows.
     this.cache = new QuoteCache(
@@ -110,6 +141,7 @@ export class DailyRatesService {
       closingDate: Date,
       quoteCurrency: StatementQuoteCurrency = 'USD',
       requiredDates?: Date[],
+      options: DailyRatesOptions = {},
     ): Promise<Result<DailyRates, Error>> => {
       if (
         !Number.isFinite(openingDate.getTime()) ||
@@ -136,45 +168,153 @@ export class DailyRatesService {
         return Err(new Error('Required quote dates must be within the statement range.'))
       }
       const days = [...new Set(requested.map(utcDay))].sort((a, b) => a - b)
+      if (options.staleWhileRefreshing === true) {
+        const saved = await this.pick(days, quoteCurrency)
+        if (saved) {
+          void this.refresh(days, quoteCurrency, false).then((refreshed) => {
+            if (refreshed.isErr()) {
+              this.logger.warn('Could not refresh saved prices')
+            }
+          })
+          return Ok(toDailyRates(saved, quoteCurrency))
+        }
+      }
+      // Only callers that show saved prices meanwhile skip the long retries.
+      if ((await this.refresh(days, quoteCurrency, options.staleWhileRefreshing !== true)).isOk()) {
+        const fresh = await this.pick(days, quoteCurrency)
+        if (fresh) {
+          return Ok(toDailyRates(fresh, quoteCurrency))
+        }
+      }
+      // Without a full history, look up each day. Ask for every day in the range unless the
+      // caller's days are safe to reveal, so the requests never show which days had activity.
+      const lookups =
+        options.requestRequiredDays === true
+          ? days
+          : Array.from({ length: (end - start) / DAY_SECONDS + 1 }, (_, i) => start + i * DAY_SECONDS)
+      const needed = new Set(days)
       const chosen = new Map<number, CachedQuote>()
-      for (let i = 0; i < days.length; i += DailyRatesService.CONCURRENCY) {
-        const batch = days.slice(i, i + DailyRatesService.CONCURRENCY)
+      for (let i = 0; i < lookups.length; i += DailyRatesService.CONCURRENCY) {
+        const batch = lookups.slice(i, i + DailyRatesService.CONCURRENCY)
         const results = await Promise.all(
           batch.map(async (target) => ({ target, result: await this.getQuoteWithFallback(target, quoteCurrency) })),
         )
         // Choose each day's quote only once the whole batch has finished, from everything now
         // cached, so the choice depends on which requests succeeded rather than on when their
-        // responses arrived. A day whose sources all failed can use a neighbour's nearby quote.
+        // responses arrived. A day no source could confirm fails: saved prices alone aren't enough.
         const now = Date.now()
         for (const { target, result } of results) {
-          const { oldest, newest } = quoteWindow(target, now)
-          const quote = await this.cache.find(quoteCurrency, target, oldest, newest)
-          if (quote) {
-            chosen.set(target, quote)
-          } else if (result.isOk()) {
-            chosen.set(target, result.unwrap())
-          } else {
+          if (!needed.has(target)) {
+            continue
+          }
+          if (result.isErr()) {
             return Err(result.unwrapErr())
           }
+          const { oldest, newest } = quoteWindow(target, now)
+          chosen.set(target, (await this.cache.find(quoteCurrency, target, oldest, newest)) ?? result.unwrap())
         }
       }
-      // Days are chosen in date order, so the rates keep that order.
-      const rates: Record<string, DailyRate> = {}
-      for (const [target, quote] of chosen) {
-        rates[toDateKey(new Date(target * 1000))] = toDailyRate(quote)
-      }
-      const providerUrls = [
-        ...new Set(Object.values(rates).flatMap((rate) => (rate.providerUrl !== undefined ? [rate.providerUrl] : []))),
-      ].sort()
-      return Ok({
-        rates,
-        source: 'mempool',
-        quoteCurrency,
-        providerUrls,
-        providerUrl: providerUrls.length === 1 ? providerUrls[0] : undefined,
-      })
+      return Ok(toDailyRates(chosen, quoteCurrency))
     },
   )
+
+  /** Each day's closest saved quote within the window, or undefined if any day has none. */
+  private async pick(days: number[], currency: StatementQuoteCurrency): Promise<Map<number, CachedQuote> | undefined> {
+    const now = Date.now()
+    const chosen = new Map<number, CachedQuote>()
+    for (const target of days) {
+      const { oldest, newest } = quoteWindow(target, now)
+      const quote = await this.cache.find(currency, target, oldest, newest)
+      if (!quote) {
+        return undefined
+      }
+      chosen.set(target, quote)
+    }
+    return chosen
+  }
+
+  /**
+   * Makes sure the saved prices for these days are fresh, downloading the full history from this
+   * source, or from public mempool.space if Settings allows it, when they aren't.
+   */
+  private async refresh(
+    days: number[],
+    currency: StatementQuoteCurrency,
+    patient: boolean,
+  ): Promise<Result<void, Error>> {
+    const settling = utcDay(new Date()) - SETTLING_DAYS * DAY_SECONDS
+    const maxAge = days.some((day) => day >= settling) ? HOUR_MS : DAY_MS
+    if ((await this.ensureDownloaded(currency, maxAge, patient)).isOk() && (await this.pick(days, currency))) {
+      return Ok(undefined)
+    }
+    const publicFallback = (await this.allowPublicFallback()) ? this.publicFallback : undefined
+    if (
+      publicFallback &&
+      (await publicFallback.ensureDownloaded(currency, maxAge, patient)).isOk() &&
+      (await this.pick(days, currency))
+    ) {
+      return Ok(undefined)
+    }
+    return Err(new Error(`No fresh ${currency} price history is available`))
+  }
+
+  /** Downloads this source's full history in a currency unless the last download is recent enough. */
+  private async ensureDownloaded(
+    currency: StatementQuoteCurrency,
+    maxAge: number,
+    patient: boolean,
+  ): Promise<Result<void, Error>> {
+    const downloadedAt = await this.cache.downloadedAt(currency)
+    if (downloadedAt !== undefined && Date.now() - downloadedAt < maxAge) {
+      return Ok(undefined)
+    }
+    const running = this.downloads.get(currency)
+    if (running) {
+      return running
+    }
+    const download = this.download(currency, patient)
+    this.downloads.set(currency, download)
+    try {
+      return await download
+    } finally {
+      this.downloads.delete(currency)
+    }
+  }
+
+  /** One request for every price this source has in a currency; it names no dates. */
+  private async download(currency: StatementQuoteCurrency, patient: boolean): Promise<Result<void, Error>> {
+    if (!(await this.allowRequests())) {
+      return Err(new Error('Requests to this price source are turned off'))
+    }
+    if (Date.now() < this.unavailableUntil) {
+      return Err(new Error('Mempool price source temporarily unavailable'))
+    }
+    const response = await this.request(`${this.mempoolApiUrl}/api/v1/historical-price?currency=${currency}`, {
+      cooldownOnRejection: false,
+      retryDelaysMs: patient ? this.downloadRetryDelaysMs : undefined,
+    })
+    if (response.isErr()) {
+      return Err(response.unwrapErr())
+    }
+    const parsed = parseUnknown(historySchema, response.unwrap())
+    if (parsed.isErr()) {
+      return Err(new Error('Invalid mempool price history response'))
+    }
+    const now = Date.now()
+    const earliest = utcDay(MIN_MEMPOOL_PRICE_DATE) - MAX_QUOTE_DISTANCE_DAYS * DAY_SECONDS
+    const points: HistoryPoint[] = []
+    for (const point of parsed.unwrap().prices) {
+      const price = parseUnknown(priceSchema, point[currency])
+      if (point.time >= earliest && point.time * 1000 <= now && price.isOk()) {
+        points.push({ timestamp: point.time, price: new Decimal(price.unwrap()).toString() })
+      }
+    }
+    if (points.length === 0) {
+      return Err(new Error(`The mempool price source has no ${currency} history`))
+    }
+    await this.cache.saveHistory(currency, points, now)
+    return Ok(undefined)
+  }
 
   private async getQuoteWithFallback(
     target: number,
@@ -284,7 +424,51 @@ export class DailyRatesService {
   }
 
   private async requestDay(target: number): Promise<Result<void, Error>> {
-    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    const response = await this.request(`${this.mempoolApiUrl}/api/v1/historical-price?timestamp=${target}`, {
+      cooldownOnRejection: true,
+    })
+    if (response.isErr()) {
+      return Err(response.unwrapErr())
+    }
+    const parsed = parseUnknown(responseSchema, response.unwrap())
+    if (parsed.isErr()) {
+      return Err(new Error('Invalid mempool historical price response'))
+    }
+    const point = parsed.unwrap().prices[0]
+    if (point && (point.time > target || point.time * 1000 > Date.now())) {
+      return Err(new Error('Mempool returned a quote after the lookup timestamp'))
+    }
+    const quotes: Partial<Record<StatementQuoteCurrency, string>> = {}
+    if (point) {
+      for (const currency of StatementQuoteCurrencySchema.options) {
+        const price = parseUnknown(priceSchema, point[currency])
+        if (price.isOk()) {
+          quotes[currency] = new Decimal(price.unwrap()).toString()
+        }
+      }
+    }
+    const complete = Object.keys(quotes).length === StatementQuoteCurrencySchema.options.length
+    const historical = target < utcDay(new Date())
+    // Only a complete observation at the lookup time is settled, and even that is looked up
+    // again after a day. An older one may improve once the source fills gaps in its history.
+    const settled = complete && historical && point?.time === target
+    await this.cache.save(target, point?.time ?? null, quotes, Date.now() + (settled ? DAY_MS : HOUR_MS))
+    return Ok(undefined)
+  }
+
+  /**
+   * GETs JSON from this source, backing off through brief rate limits, or through `retryDelaysMs`
+   * when given. A failure puts the source in cooldown, except a request the source rejects outright
+   * when `cooldownOnRejection` is off, as an older mempool without full-history downloads would.
+   */
+  private async request(
+    url: string,
+    { cooldownOnRejection, retryDelaysMs }: { cooldownOnRejection: boolean; retryDelaysMs?: readonly number[] },
+  ): Promise<Result<unknown, Error>> {
+    const attempts = retryDelaysMs ? retryDelaysMs.length + 1 : MAX_ATTEMPTS
+    const maxRetryAfterMs = retryDelaysMs ? MAX_PATIENT_RETRY_AFTER_MS : 2_000
+    const delay = (attempt: number): number => retryDelaysMs?.[attempt] ?? RETRY_BASE_MS * 2 ** attempt
+    for (let attempt = 0; attempt < attempts; attempt++) {
       if (attempt > 0 && !(await this.allowRequests())) {
         return Err(new Error('Requests to this price source are turned off'))
       }
@@ -293,65 +477,50 @@ export class DailyRatesService {
         return Err(new Error('Mempool price source temporarily unavailable'))
       }
       try {
-        const response = await fetch(`${this.mempoolApiUrl}/api/v1/historical-price?timestamp=${target}`, {
-          signal: AbortSignal.timeout(10_000),
-        })
+        const response = await fetch(url, { signal: AbortSignal.timeout(10_000) })
         if (!response.ok) {
           const retryable = response.status === 429 || response.status >= 500
           const header = response.headers.get('retry-after')
           const retryMs =
             header === null
-              ? RETRY_BASE_MS * 2 ** attempt
+              ? delay(attempt)
               : /^\d+$/.test(header)
                 ? Number(header) * 1000
                 : Date.parse(header) - Date.now()
           // Back off through brief rate limits, since one failed day fails the statement.
           // Respect long Retry-After windows without keeping a statement request asleep.
-          if (retryable && attempt < MAX_ATTEMPTS - 1 && Number.isFinite(retryMs) && retryMs >= 0 && retryMs <= 2_000) {
+          if (
+            retryable &&
+            attempt < attempts - 1 &&
+            Number.isFinite(retryMs) &&
+            retryMs >= 0 &&
+            retryMs <= maxRetryAfterMs
+          ) {
             await new Promise((resolve) => {
               setTimeout(resolve, retryMs)
             })
             continue
           }
-          // Concurrent failures keep the longest cooldown any of them asked for.
-          this.unavailableUntil = Math.max(
-            this.unavailableUntil,
-            Date.now() + Math.max(30_000, Number.isFinite(retryMs) ? Math.min(Math.max(0, retryMs), HOUR_MS) : 0),
-          )
+          if (retryable || cooldownOnRejection) {
+            // Concurrent failures keep the longest cooldown any of them asked for.
+            this.unavailableUntil = Math.max(
+              this.unavailableUntil,
+              Date.now() + Math.max(30_000, Number.isFinite(retryMs) ? Math.min(Math.max(0, retryMs), HOUR_MS) : 0),
+            )
+          }
           this.logger.warn({ status: response.status }, 'Configured mempool price source unavailable')
           return Err(new Error('Mempool historical pricing request failed'))
         }
-        const parsed = parseUnknown(responseSchema, await response.json())
-        if (parsed.isErr()) {
-          return Err(new Error('Invalid mempool historical price response'))
-        }
-        const point = parsed.unwrap().prices[0]
-        if (point && (point.time > target || point.time * 1000 > Date.now())) {
-          return Err(new Error('Mempool returned a quote after the lookup timestamp'))
-        }
-        const quotes: Partial<Record<StatementQuoteCurrency, string>> = {}
-        if (point) {
-          for (const currency of StatementQuoteCurrencySchema.options) {
-            const price = parseUnknown(priceSchema, point[currency])
-            if (price.isOk()) {
-              quotes[currency] = new Decimal(price.unwrap()).toString()
-            }
-          }
-        }
-        const complete = Object.keys(quotes).length === StatementQuoteCurrencySchema.options.length
-        const historical = target < utcDay(new Date())
-        // Only a complete observation at the lookup time is final. An older one may
-        // improve once the source fills gaps in its history.
-        const settled = complete && historical && point?.time === target
-        await this.cache.save(
-          target,
-          point?.time ?? null,
-          quotes,
-          settled ? Number.MAX_SAFE_INTEGER : Date.now() + HOUR_MS,
-        )
-        return Ok(undefined)
+        return Ok(await response.json())
       } catch {
-        if (attempt === 0) {
+        // Unreachable: try once more at once, or keep to the given schedule.
+        if (retryDelaysMs && attempt < attempts - 1) {
+          await new Promise((resolve) => {
+            setTimeout(resolve, delay(attempt))
+          })
+          continue
+        }
+        if (!retryDelaysMs && attempt === 0) {
           continue
         }
         this.unavailableUntil = Math.max(this.unavailableUntil, Date.now() + 30_000)
@@ -359,6 +528,24 @@ export class DailyRatesService {
       }
     }
     return Err(new Error('Mempool price source unavailable'))
+  }
+}
+
+function toDailyRates(chosen: Map<number, CachedQuote>, quoteCurrency: StatementQuoteCurrency): DailyRates {
+  // Days are chosen in date order, so the rates keep that order.
+  const rates: Record<string, DailyRate> = {}
+  for (const [target, quote] of [...chosen].sort(([a], [b]) => a - b)) {
+    rates[toDateKey(new Date(target * 1000))] = toDailyRate(quote)
+  }
+  const providerUrls = [
+    ...new Set(Object.values(rates).flatMap((rate) => (rate.providerUrl !== undefined ? [rate.providerUrl] : []))),
+  ].sort()
+  return {
+    rates,
+    source: 'mempool',
+    quoteCurrency,
+    providerUrls,
+    providerUrl: providerUrls.length === 1 ? providerUrls[0] : undefined,
   }
 }
 

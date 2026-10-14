@@ -47,8 +47,7 @@ import { loggableError } from '../../lib/loggable-error'
 import { type ConnectionDetails, MAX_CONNECTION_PROFILES } from '../connection_profiles/store'
 import { PRICE_FALLBACKS_SETTING, PRICE_SOURCES, PRICE_SOURCE_SETTING } from '../price/service'
 import { StatementMapper } from '../statements/mapper'
-import { STATEMENT_SOURCES, statementFailureMessage } from '../statements/service'
-import { TransactionLoadError } from '../statements/sources/types'
+import { STATEMENT_SOURCES, loggableFailure, statementFailureMessage } from '../statements/service'
 import { publicProcedure, t } from './init'
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -1494,14 +1493,7 @@ const statementRouter = t.router({
           const dataResult = await ctx.app.statementService.generateStatementData(input, statementId)
           if (dataResult.isErr()) {
             const error = dataResult.unwrapErr()
-            // Transaction errors can name a txid or a server, so only their kind is logged.
-            logger.error(
-              {
-                statementId,
-                ...(error instanceof TransactionLoadError ? { kind: error.kind } : { error: error.message }),
-              },
-              'Statement data generation failed',
-            )
+            logger.error({ statementId, ...loggableFailure(error) }, 'Statement data generation failed')
             await ctx.app.statementService.fail(statementId, statementFailureMessage(error))
             return
           }
@@ -1520,8 +1512,7 @@ const statementRouter = t.router({
 
           const completed = await ctx.app.statementService.complete(statementId, transactionMap, dailyRates)
           if (completed.isErr()) {
-            // These messages hold only fixed text, a currency or a date.
-            logger.error({ statementId, error: completed.unwrapErr().message }, 'Statement could not be completed')
+            logger.error({ statementId, ...loggableFailure(completed.unwrapErr()) }, 'Statement could not be completed')
             await ctx.app.statementService.fail(statementId, completed.unwrapErr().message)
             return
           }
