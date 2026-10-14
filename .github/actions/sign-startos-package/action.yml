@@ -1,0 +1,33 @@
+name: Re-sign and verify a StartOS package
+description: Use the pinned StartOS CLI with a permanent key or a fresh rehearsal key
+
+inputs:
+  unsigned:
+    description: Absolute path to the input package
+    required: true
+  signed:
+    description: Absolute path for the re-signed package
+    required: true
+  private-key:
+    description: Permanent StartOS private key, or empty for a temporary rehearsal key
+    default: ''
+  public-key:
+    description: Expected 64-character hex public key, required when a private key is supplied
+    default: ''
+outputs:
+  mode:
+    description: Whether the package was signed with a permanent or temporary key
+    value: ${{ steps.sign.outputs.mode }}
+
+runs:
+  using: composite
+  steps:
+    - name: Re-sign and verify the package
+      id: sign
+      shell: bash
+      env:
+        UNSIGNED: ${{ inputs.unsigned }}
+        SIGNED: ${{ inputs.signed }}
+        STARTOS_DEV_KEY: ${{ inputs.private-key }}
+        STARTOS_SIGNER_PUBKEY: ${{ inputs.public-key }}
+      run: bash "$GITHUB_ACTION_PATH/sign.sh"

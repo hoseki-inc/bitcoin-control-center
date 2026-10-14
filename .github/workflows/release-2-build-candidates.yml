@@ -24,6 +24,7 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
       artifact_name: ${{ steps.version.outputs.artifact_name }}
+      sha256: ${{ steps.package.outputs.sha256 }}
 
     steps:
       - name: Check out selected revision
@@ -70,58 +71,25 @@ jobs:
       - name: Set up StartOS build environment
         uses: ./.github/actions/setup-startos
 
-      - name: Set up candidate signing key
-        id: signing
-        shell: bash
-        env:
-          STARTOS_DEV_KEY: ${{ secrets.STARTOS_DEV_KEY }}
+      # start-cli needs a key to pack. The signing job replaces this signature on protected branches.
+      - name: Create temporary package signing key
         run: |
-          mkdir -p ~/.startos .startos
-          if [[ -n "$STARTOS_DEV_KEY" ]]; then
-            printf '%s' "$STARTOS_DEV_KEY" > ~/.startos/id.key.pem
-            echo "mode=repository secret" >> "$GITHUB_OUTPUT"
-          else
-            start-cli init-key
-            echo "mode=ephemeral clean-install key" >> "$GITHUB_OUTPUT"
-            echo "::warning::STARTOS_DEV_KEY is not configured. This candidate uses an ephemeral signing key and should only be used for clean-install testing."
-          fi
-          chmod 600 ~/.startos/id.key.pem
-          cp ~/.startos/id.key.pem .startos/build.key.pem
-          chmod 600 .startos/build.key.pem
+          start-cli init-key
+          mkdir -p .startos
+          install -m 600 ~/.startos/id.key.pem .startos/build.key.pem
 
       - name: Build universal StartOS candidate
         run: ./start9/build.sh
 
-      - name: Verify and stage candidate
+      - name: Stage the candidate for signing
         id: package
         shell: bash
         env:
-          EXPECTED_VERSION: ${{ steps.version.outputs.version }}
-          EXPECTED_GIT_HASH: ${{ github.sha }}
           ARTIFACT_NAME: ${{ steps.version.outputs.artifact_name }}
         run: |
-          SOURCE_PACKAGE="start9/hoseki-sentinel.s9pk"
-          test -f "$SOURCE_PACKAGE"
-
-          MANIFEST="$(start-cli s9pk inspect "$SOURCE_PACKAGE" manifest)"
-          PACKAGE_ID="$(jq -r '.id' <<< "$MANIFEST")"
-          PACKAGE_VERSION="$(jq -r '.version' <<< "$MANIFEST")"
-          PACKAGE_ARCHES="$(jq -r '[.images[].arch // []] | flatten | unique | join(",")' <<< "$MANIFEST")"
-          PACKAGE_GIT_HASH="$(jq -r '.gitHash' <<< "$MANIFEST")"
-
-          [[ "$PACKAGE_ID" == "hoseki-sentinel" ]]
-          [[ "$PACKAGE_VERSION" == "$EXPECTED_VERSION" ]]
-          [[ "$PACKAGE_ARCHES" == "aarch64,x86_64" ]]
-          [[ "$PACKAGE_GIT_HASH" == "$EXPECTED_GIT_HASH" ]]
-
           mkdir -p artifacts
-          OUTPUT_PACKAGE="artifacts/${ARTIFACT_NAME}.s9pk"
-          cp "$SOURCE_PACKAGE" "$OUTPUT_PACKAGE"
-          (
-            cd artifacts
-            sha256sum "${ARTIFACT_NAME}.s9pk" > SHA256SUMS
-          )
-          echo "package_git_hash=${PACKAGE_GIT_HASH}" >> "$GITHUB_OUTPUT"
+          cp start9/hoseki-sentinel.s9pk "artifacts/${ARTIFACT_NAME}.s9pk"
+          echo "sha256=$(sha256sum "artifacts/${ARTIFACT_NAME}.s9pk" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
 
       - name: Add build summary
         shell: bash
@@ -129,8 +97,6 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
           TAG: ${{ steps.version.outputs.tag }}
           SHORT_SHA: ${{ steps.version.outputs.short_sha }}
-          SIGNING_MODE: ${{ steps.signing.outputs.mode }}
-          PACKAGE_GIT_HASH: ${{ steps.package.outputs.package_git_hash }}
         run: |
           {
             echo "## StartOS candidate"
@@ -138,25 +104,40 @@ jobs:
             echo "- Version: \`${VERSION}\`"
             echo "- Release tag form: \`${TAG}\`"
             echo "- Source commit: \`${SHORT_SHA}\`"
-            echo "- Package git hash: \`${PACKAGE_GIT_HASH}\`"
             echo "- Architectures: \`x86_64\`, \`aarch64\`"
-            echo "- Signing: ${SIGNING_MODE}"
             echo "- Published: no"
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Upload private candidate artifact
+      - name: Upload the candidate for signing
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: ${{ steps.version.outputs.artifact_name }}
-          path: artifacts/
+          name: startos-unsigned
+          path: artifacts/${{ steps.version.outputs.artifact_name }}.s9pk
           if-no-files-found: error
           compression-level: 0
-          retention-days: 14
+          retention-days: 7
+
+  # The signing key is an environment secret that only protected branches can read. Other branches,
+  # including Dependabot's, run without the environment and keep the temporary build key.
+  sign:
+    needs: build
+    permissions:
+      contents: read
+    uses: ./.github/workflows/startos-sign.yml
+    with:
+      environment: ${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/startos-')) && 'release-signing' || '' }}
+      source-sha: ${{ github.sha }}
+      expected-version: ${{ needs.build.outputs.version }}
+      unsigned-artifact: startos-unsigned
+      unsigned-sha256: ${{ needs.build.outputs.sha256 }}
+      package-file: ${{ needs.build.outputs.artifact_name }}.s9pk
+      signed-artifact: ${{ needs.build.outputs.artifact_name }}
+      retention-days: 14
 
   # Runs Release 3's assembly and checksum verification on these candidates, without creating a release.
   assemble:
     name: Rehearse release assembly
-    needs: [desktop, build]
+    needs: [desktop, build, sign]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -174,8 +155,14 @@ jobs:
       - name: Download the StartOS candidate
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: ${{ needs.build.outputs.artifact_name }}
-          path: artifacts
+          artifact-ids: ${{ needs.sign.outputs.artifact-id }}
+          path: startos-artifact
+      - name: Stage only the verified StartOS candidate and notes
+        env:
+          PACKAGE_FILE: ${{ needs.build.outputs.artifact_name }}.s9pk
+          EXPECTED_SHA256: ${{ needs.sign.outputs.sha256 }}
+          EXPECTED_NOTES_SHA256: ${{ needs.sign.outputs.release-notes-sha256 }}
+        run: node .github/scripts/stage-startos-release.mjs startos-artifact artifacts "$PACKAGE_FILE" "$EXPECTED_SHA256" "$EXPECTED_NOTES_SHA256"
       - name: Assemble and verify every asset as Release 3 does
         env:
           VERSION: ${{ needs.build.outputs.version }}

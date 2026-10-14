@@ -483,7 +483,15 @@ See the [StartOS package reference](start9/README.md) for service configuration.
 | [Release 2 - Build candidates](.github/workflows/release-2-build-candidates.yml)         | Builds StartOS, Mac ARM64, and Windows x64 test packages from one commit; retains Actions artifacts for 14 days.             |
 | [Release 3 - Create draft release](.github/workflows/release-3-create-draft-release.yml) | Verifies and builds all three platforms, then creates a draft GitHub Release with installers, build metadata, and checksums. |
 
-Version preparation and draft creation run from the default branch. Replace the generated release notes before merging the version PR, and review the draft before publishing. Nothing publishes to a StartOS registry. Without the `STARTOS_DEV_KEY` secret, StartOS packages are signed with a temporary key suitable only for clean-install testing. Set it to the project's permanent developer key, and never replace it once installs rely on it: upgrades need the same signer.
+Version preparation and draft creation run from the default branch. Replace the generated release notes before merging the version PR, and review the draft before publishing. Nothing publishes to a StartOS registry. Without signing credentials, StartOS packages are re-signed with a fresh temporary key suitable only for clean-install testing. PR package builds rehearse the same signing and verification action with a temporary key.
+
+Store the permanent `STARTOS_DEV_KEY` only as a secret on the `release-signing` environment, never as a repository or organization secret. Before adding it, configure that environment to allow only `main` and `release/startos-*`, and restrict who can create or push those branches with a repository ruleset. Preserve the permanent developer key once installs rely on it. Only the isolated StartOS signing job ([startos-sign.yml](.github/workflows/startos-sign.yml)) uses the environment; it runs the pinned CLI installer and signing action without build or dependency code.
+
+Also set the environment variable `STARTOS_SIGNER_PUBKEY` to the key's 64-character hex public half. The job checks it before and after signing, and fails if it is configured but the private key is missing. Read the key with StartOS CLI 1.1.0 itself, which supports its PKCS#8 key format:
+
+```bash
+start-cli --id-key-path /absolute/path/to/key.pem pubkey | sed '/^-----/d' | base64 --decode | tail -c 32 | od -An -tx1 -v | tr -d ' \n'
+```
 
 ## Desktop packaging
 

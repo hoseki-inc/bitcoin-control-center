@@ -3,8 +3,11 @@ name: Release 3 - Create draft release
 on:
   workflow_dispatch:
 
+# Only the publish job can write. Build jobs run dependency code, so they get read access and no
+# persisted credentials. Only the StartOS signing job, which runs no build or dependency code,
+# receives the signing key.
 permissions:
-  contents: write
+  contents: read
 
 # Release jobs and their reusable workflows cannot consume or publish shared caches.
 cache-mode: none
@@ -15,12 +18,13 @@ concurrency:
 
 jobs:
   source:
-    name: Select the release commit
+    name: Select the release commit and version
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
     outputs:
       sha: ${{ steps.source.outputs.sha }}
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      short_sha: ${{ steps.version.outputs.short_sha }}
     steps:
       - name: Require the default branch
         shell: bash
@@ -36,29 +40,69 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
+          persist-credentials: false
+
       - name: Record the exact source commit
         id: source
         run: |
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           echo "sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
 
+      # The version script uses only Node built-ins, so no dependencies are installed here.
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: '.nvmrc'
+
+      - name: Read protected release identity
+        id: version
+        shell: bash
+        run: |
+          node start9/scripts/version.mjs check
+          VERSION="$(node start9/scripts/version.mjs get)"
+          TAG="$(node start9/scripts/version.mjs tag)"
+          node start9/scripts/version.mjs assert-tag "$TAG"
+          SHORT_SHA="$(git rev-parse --short=12 HEAD)"
+          {
+            echo "version=${VERSION}"
+            echo "tag=${TAG}"
+            echo "short_sha=${SHORT_SHA}"
+          } >> "$GITHUB_OUTPUT"
+
+      # Fails before the builds start. The publish job checks again, including for drafts, which a
+      # read-only token cannot see.
+      - name: Reject an existing release tag
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          # Capture first, so a failed API call stops the step instead of looking like "no tag".
+          REFS="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/git/matching-refs/tags/${TAG}" --jq '.[].ref')"
+          if grep -Fxq "refs/tags/${TAG}" <<< "$REFS"; then
+            echo "::error::Release tag ${TAG} already exists. Versions and release tags are immutable."
+            exit 1
+          fi
+
   desktop:
     needs: source
-    permissions:
-      contents: read
     uses: ./.github/workflows/desktop-runtime.yml
 
-  release:
-    name: Build StartOS and assemble complete draft release
-    needs: [source, desktop]
+  # Builds with a temporary key and never sees the release signing key: it runs every repository and
+  # dependency build step.
+  startos-build:
+    name: Build StartOS release package
+    needs: source
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    outputs:
+      sha256: ${{ steps.package.outputs.sha256 }}
     steps:
       - name: Check out the same protected release commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
-          fetch-depth: 0
+          persist-credentials: false
 
       - name: Verify the protected commit before executing repository code
         env:
@@ -85,94 +129,98 @@ jobs:
       - name: Refuse to release with known moderate or worse vulnerabilities
         run: pnpm security:audit
 
-      - name: Read protected release identity
-        id: version
-        shell: bash
-        run: |
-          node start9/scripts/version.mjs check
-          VERSION="$(node start9/scripts/version.mjs get)"
-          TAG="$(node start9/scripts/version.mjs tag)"
-          node start9/scripts/version.mjs assert-tag "$TAG"
-          SOURCE_SHA="$(git rev-parse HEAD)"
-          SHORT_SHA="$(git rev-parse --short=12 HEAD)"
-          {
-            echo "version=${VERSION}"
-            echo "tag=${TAG}"
-            echo "source_sha=${SOURCE_SHA}"
-            echo "short_sha=${SHORT_SHA}"
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Reject release collisions
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.version.outputs.tag }}
-        run: |
-          REMOTE_TAG="$(git ls-remote --tags origin "refs/tags/${TAG}")"
-          if [[ -n "$REMOTE_TAG" ]]; then
-            echo "::error::Release tag ${TAG} already exists. Versions and release tags are immutable."
-            exit 1
-          fi
-
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "::error::A GitHub Release for ${TAG} already exists."
-            exit 1
-          fi
-
       - name: Set up StartOS build environment
         uses: ./.github/actions/setup-startos
 
-      - name: Set up release signing key
-        id: signing
-        shell: bash
-        env:
-          STARTOS_DEV_KEY: ${{ secrets.STARTOS_DEV_KEY }}
+      # start-cli needs a key to pack. The signing job replaces this signature.
+      - name: Create temporary package signing key
         run: |
-          mkdir -p ~/.startos .startos
-          if [[ -n "$STARTOS_DEV_KEY" ]]; then
-            printf '%s' "$STARTOS_DEV_KEY" > ~/.startos/id.key.pem
-            echo "mode=permanent repository secret" >> "$GITHUB_OUTPUT"
-          else
-            start-cli init-key
-            echo "mode=temporary clean-install key" >> "$GITHUB_OUTPUT"
-            echo "::warning::STARTOS_DEV_KEY is not configured. This draft release uses a temporary signing key and is intended for clean-install testing, not signer-continuous upgrades or StartOS registry publication."
-          fi
-          chmod 600 ~/.startos/id.key.pem
-          cp ~/.startos/id.key.pem .startos/build.key.pem
-          chmod 600 .startos/build.key.pem
+          start-cli init-key
+          mkdir -p .startos
+          install -m 600 ~/.startos/id.key.pem .startos/build.key.pem
 
       - name: Build universal StartOS release
         run: ./start9/build.sh
 
-      - name: Verify and stage release
+      - name: Stage the package for signing
         id: package
         shell: bash
         env:
-          EXPECTED_VERSION: ${{ steps.version.outputs.version }}
-          EXPECTED_GIT_HASH: ${{ steps.version.outputs.source_sha }}
-          TAG: ${{ steps.version.outputs.tag }}
-          SIGNING_MODE: ${{ steps.signing.outputs.mode }}
+          TAG: ${{ needs.source.outputs.tag }}
         run: |
-          SOURCE_PACKAGE="start9/hoseki-sentinel.s9pk"
-          test -f "$SOURCE_PACKAGE"
-
-          MANIFEST="$(start-cli s9pk inspect "$SOURCE_PACKAGE" manifest)"
-          PACKAGE_ID="$(jq -r '.id' <<< "$MANIFEST")"
-          PACKAGE_VERSION="$(jq -r '.version' <<< "$MANIFEST")"
-          PACKAGE_ARCHES="$(jq -r '[.images[].arch // []] | flatten | unique | join(",")' <<< "$MANIFEST")"
-          PACKAGE_GIT_HASH="$(jq -r '.gitHash' <<< "$MANIFEST")"
-          RELEASE_NOTES="$(jq -r '.releaseNotes | if type == "object" then (.en_US // first(.[]) // "") else (. // "") end' <<< "$MANIFEST")"
-
-          [[ "$PACKAGE_ID" == "hoseki-sentinel" ]]
-          [[ "$PACKAGE_VERSION" == "$EXPECTED_VERSION" ]]
-          [[ "$PACKAGE_ARCHES" == "aarch64,x86_64" ]]
-          [[ "$PACKAGE_GIT_HASH" == "$EXPECTED_GIT_HASH" ]]
-          [[ -n "$RELEASE_NOTES" ]]
-
           mkdir -p artifacts
-          OUTPUT_PACKAGE="artifacts/hoseki-sentinel-${TAG}.s9pk"
-          cp "$SOURCE_PACKAGE" "$OUTPUT_PACKAGE"
-          printf '%s\n' "$RELEASE_NOTES" > artifacts/RELEASE_NOTES.md
+          cp start9/hoseki-sentinel.s9pk "artifacts/hoseki-sentinel-${TAG}.s9pk"
+          echo "sha256=$(sha256sum "artifacts/hoseki-sentinel-${TAG}.s9pk" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
+      - name: Upload the package for signing
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: startos-unsigned
+          path: artifacts/hoseki-sentinel-${{ needs.source.outputs.tag }}.s9pk
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+  startos-sign:
+    needs: [source, startos-build]
+    permissions:
+      contents: read
+    uses: ./.github/workflows/startos-sign.yml
+    with:
+      environment: release-signing
+      source-sha: ${{ needs.source.outputs.sha }}
+      expected-version: ${{ needs.source.outputs.version }}
+      unsigned-artifact: startos-unsigned
+      unsigned-sha256: ${{ needs.startos-build.outputs.sha256 }}
+      package-file: hoseki-sentinel-${{ needs.source.outputs.tag }}.s9pk
+      signed-artifact: startos-release
+      require-release-notes: true
+
+  assemble:
+    name: Assemble and verify release files
+    needs: [source, desktop, startos-sign]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
+    steps:
+      - name: Check out the same protected release commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Verify the protected commit before executing repository code
+        env:
+          RELEASE_SHA: ${{ needs.source.outputs.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$GITHUB_SHA" = "$RELEASE_SHA"
+
+      # The assembly script uses only Node built-ins, so no dependencies are installed here.
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: '.nvmrc'
+
+      - name: Download the verified StartOS package
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ needs.startos-sign.outputs.artifact-id }}
+          path: startos-artifact
+
+      - name: Stage only the verified StartOS package and notes
+        env:
+          PACKAGE_FILE: hoseki-sentinel-${{ needs.source.outputs.tag }}.s9pk
+          EXPECTED_SHA256: ${{ needs.startos-sign.outputs.sha256 }}
+          EXPECTED_NOTES_SHA256: ${{ needs.startos-sign.outputs.release-notes-sha256 }}
+        run: node .github/scripts/stage-startos-release.mjs startos-artifact artifacts "$PACKAGE_FILE" "$EXPECTED_SHA256" "$EXPECTED_NOTES_SHA256"
+
+      - name: Write the release notes
+        shell: bash
+        env:
+          SIGNING_MODE: ${{ needs.startos-sign.outputs.signing-mode }}
+        run: |
           if [[ "$SIGNING_MODE" == "temporary clean-install key" ]]; then
             {
               echo "> [!WARNING]"
@@ -183,11 +231,6 @@ jobs:
           else
             cp artifacts/RELEASE_NOTES.md artifacts/GITHUB_RELEASE_NOTES.md
           fi
-          (
-            cd artifacts
-            sha256sum "hoseki-sentinel-${TAG}.s9pk" > SHA256SUMS
-          )
-          echo "package_git_hash=${PACKAGE_GIT_HASH}" >> "$GITHUB_OUTPUT"
 
       - name: Download verified desktop builds
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -198,8 +241,8 @@ jobs:
       - name: Verify desktop identities and assemble release assets
         shell: bash
         env:
-          VERSION: ${{ steps.version.outputs.version }}
-          SOURCE_SHA: ${{ steps.version.outputs.source_sha }}
+          VERSION: ${{ needs.source.outputs.version }}
+          SOURCE_SHA: ${{ needs.source.outputs.sha }}
         run: |
           node .github/scripts/assemble-desktop-release.mjs desktop-artifacts artifacts "$VERSION" "$SOURCE_SHA"
           (cd artifacts && sha256sum -c SHA256SUMS)
@@ -214,19 +257,78 @@ jobs:
             echo "DESKTOP_BUILDS.json records each installer version, source commit, and checksum. SHA256SUMS covers all three installers and that metadata."
           } >> artifacts/GITHUB_RELEASE_NOTES.md
 
+      - name: Upload the release files
+        id: upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-files
+          path: |
+            artifacts/hoseki-sentinel-${{ needs.source.outputs.tag }}.s9pk
+            artifacts/Bitcoin-Control-Center-${{ needs.source.outputs.tag }}-mac-arm64.dmg
+            artifacts/Bitcoin-Control-Center-${{ needs.source.outputs.tag }}-win-x64.exe
+            artifacts/DESKTOP_BUILDS.json
+            artifacts/SHA256SUMS
+            artifacts/GITHUB_RELEASE_NOTES.md
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+  # The only job with write access. It runs no repository or dependency code: it verifies the
+  # assembled files against their checksums and creates the draft.
+  publish:
+    name: Create draft GitHub Release
+    needs: [source, startos-sign, assemble]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    env:
+      GH_REPO: ${{ github.repository }}
+      TAG: ${{ needs.source.outputs.tag }}
+    steps:
+      - name: Download the release files
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ needs.assemble.outputs.artifact_id }}
+          path: artifacts
+
+      - name: Verify the release files against their checksums
+        working-directory: artifacts
+        env:
+          EXPECTED_SHA256: ${{ needs.startos-sign.outputs.sha256 }}
+        run: |
+          sha256sum -c SHA256SUMS
+          echo "${EXPECTED_SHA256}  hoseki-sentinel-${TAG}.s9pk" | sha256sum --check --strict
+
+      - name: Reject release collisions
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Capture first, so a failed API call stops the step instead of looking like "no tag".
+          REFS="$(gh api --paginate "repos/${GH_REPO}/git/matching-refs/tags/${TAG}" --jq '.[].ref')"
+          if grep -Fxq "refs/tags/${TAG}" <<< "$REFS"; then
+            echo "::error::Release tag ${TAG} already exists. Versions and release tags are immutable."
+            exit 1
+          fi
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "::error::A GitHub Release for ${TAG} already exists."
+            exit 1
+          fi
+
       - name: Create draft GitHub Release and exact tag
         id: release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ steps.version.outputs.version }}
-          TAG: ${{ steps.version.outputs.tag }}
-          SOURCE_SHA: ${{ steps.version.outputs.source_sha }}
+          VERSION: ${{ needs.source.outputs.version }}
+          SOURCE_SHA: ${{ needs.source.outputs.sha }}
         run: |
           RELEASE_URL="$(gh release create "$TAG" \
             "artifacts/hoseki-sentinel-${TAG}.s9pk" \
-            artifacts/*.dmg \
-            artifacts/*.exe \
+            "artifacts/Bitcoin-Control-Center-${TAG}-mac-arm64.dmg" \
+            "artifacts/Bitcoin-Control-Center-${TAG}-win-x64.exe" \
             artifacts/DESKTOP_BUILDS.json \
             artifacts/SHA256SUMS \
             --draft \
@@ -243,21 +345,19 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.version.outputs.tag }}
         run: |
           if [[ "$(gh release view "$TAG" --json isDraft --jq .isDraft 2>/dev/null)" == "true" ]]; then
             gh release delete "$TAG" --yes
-            echo "::warning::Removed the partial draft for ${TAG}. Re-run the release job."
+            echo "::warning::Removed the partial draft for ${TAG}. Re-run the publish job."
           fi
 
       - name: Add release summary
         shell: bash
         env:
-          VERSION: ${{ steps.version.outputs.version }}
-          TAG: ${{ steps.version.outputs.tag }}
-          SHORT_SHA: ${{ steps.version.outputs.short_sha }}
+          VERSION: ${{ needs.source.outputs.version }}
+          SHORT_SHA: ${{ needs.source.outputs.short_sha }}
           RELEASE_URL: ${{ steps.release.outputs.url }}
-          SIGNING_MODE: ${{ steps.signing.outputs.mode }}
+          SIGNING_MODE: ${{ needs.startos-sign.outputs.signing-mode }}
         run: |
           {
             echo "## Complete draft release created"

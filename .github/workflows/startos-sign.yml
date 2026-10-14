@@ -1,0 +1,190 @@
+name: Sign StartOS package
+
+# Signs a StartOS package that a key-free job already built. This is the only job that can read
+# STARTOS_DEV_KEY, so it runs no repository build, dependency, Node.js, or Docker code: it checks out
+# only the pinned CLI installer and signing action, verifies the input hash, and re-signs it.
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: Environment holding STARTOS_DEV_KEY and STARTOS_SIGNER_PUBKEY, or empty to rehearse signing with a fresh temporary key
+        type: string
+        required: true
+      source-sha:
+        description: Commit the package was built from
+        type: string
+        required: true
+      expected-version:
+        description: StartOS package version the manifest must declare
+        type: string
+        required: true
+      unsigned-artifact:
+        description: Artifact holding the package signed with a temporary build key
+        type: string
+        required: true
+      unsigned-sha256:
+        description: SHA-256 of that package, from the build job's outputs
+        type: string
+        required: true
+      package-file:
+        description: Package file name, kept for the signed package
+        type: string
+        required: true
+      signed-artifact:
+        description: Artifact name for the signed package, its release notes, and SHA256SUMS
+        type: string
+        required: true
+      require-release-notes:
+        description: Fail when the manifest has no release notes
+        type: boolean
+        default: false
+      retention-days:
+        type: number
+        default: 7
+    outputs:
+      artifact-id:
+        description: Immutable ID of the signed artifact
+        value: ${{ jobs.sign.outputs.artifact_id }}
+      sha256:
+        description: SHA-256 of the signed package
+        value: ${{ jobs.sign.outputs.sha256 }}
+      signing-mode:
+        description: Which key signed the package
+        value: ${{ jobs.sign.outputs.signing_mode }}
+      release-notes-sha256:
+        description: SHA-256 of RELEASE_NOTES.md in the signed artifact
+        value: ${{ jobs.sign.outputs.release_notes_sha256 }}
+
+permissions:
+  contents: read
+
+jobs:
+  sign:
+    name: Sign StartOS package
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Only main and release/startos-* can use the release-signing environment and read its key.
+    environment: ${{ inputs.environment }}
+    # Read access only for the sparse checkout below.
+    permissions:
+      contents: read
+    outputs:
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
+      sha256: ${{ steps.stage.outputs.sha256 }}
+      signing_mode: ${{ steps.sign.outputs.mode }}
+      release_notes_sha256: ${{ steps.stage.outputs.release_notes_sha256 }}
+    steps:
+      # The build job, which runs dependency code, chooses the name, so it must not reach outside the staging folder.
+      - name: Reject unsafe package file names
+        env:
+          PACKAGE_FILE: ${{ inputs.package-file }}
+        run: |
+          if [[ ! "$PACKAGE_FILE" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*\.s9pk$ ]]; then
+            echo "::error::Unexpected package file name."
+            exit 1
+          fi
+
+      # Only the installer and signing actions are checked out; no build or dependency code runs here.
+      - name: Check out the pinned CLI installer and signing action
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.source-sha }}
+          persist-credentials: false
+          sparse-checkout: |
+            .github/actions/install-start-cli
+            .github/actions/sign-startos-package
+          sparse-checkout-cone-mode: false
+
+      - name: Verify the checked-out commit
+        env:
+          SOURCE_SHA: ${{ inputs.source-sha }}
+        run: test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+
+      - name: Install pinned StartOS CLI
+        uses: ./.github/actions/install-start-cli
+
+      - name: Download the unsigned package
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ inputs.unsigned-artifact }}
+          path: ${{ runner.temp }}/unsigned
+
+      # Other jobs can replace artifacts but not job outputs, so the package must match the build job's hash.
+      - name: Confirm the package is the one the build job produced
+        env:
+          PACKAGE: ${{ runner.temp }}/unsigned/${{ inputs.package-file }}
+          EXPECTED_SHA256: ${{ inputs.unsigned-sha256 }}
+        run: echo "${EXPECTED_SHA256}  ${PACKAGE}" | sha256sum --check --strict
+
+      - name: Verify package identity and architectures
+        shell: bash
+        env:
+          PACKAGE: ${{ runner.temp }}/unsigned/${{ inputs.package-file }}
+          EXPECTED_VERSION: ${{ inputs.expected-version }}
+          EXPECTED_GIT_HASH: ${{ inputs.source-sha }}
+          REQUIRE_RELEASE_NOTES: ${{ inputs.require-release-notes }}
+        run: |
+          MANIFEST="$(start-cli s9pk inspect "$PACKAGE" manifest)"
+          RELEASE_NOTES="$(jq -r '.releaseNotes | if type == "object" then (.en_US // first(.[]) // "") else (. // "") end' <<< "$MANIFEST")"
+
+          [[ "$(jq -r '.id' <<< "$MANIFEST")" == "hoseki-sentinel" ]]
+          [[ "$(jq -r '.version' <<< "$MANIFEST")" == "$EXPECTED_VERSION" ]]
+          [[ "$(jq -r '[.images[].arch // []] | flatten | unique | join(",")' <<< "$MANIFEST")" == "aarch64,x86_64" ]]
+          [[ "$(jq -r '.gitHash' <<< "$MANIFEST")" == "$EXPECTED_GIT_HASH" ]]
+          if [[ "$REQUIRE_RELEASE_NOTES" == "true" ]]; then
+            [[ -n "$RELEASE_NOTES" ]]
+          fi
+
+      # The same action also runs in PR CI with a fresh temporary key.
+      - name: Re-sign and verify the package
+        id: sign
+        uses: ./.github/actions/sign-startos-package
+        with:
+          unsigned: ${{ runner.temp }}/unsigned/${{ inputs.package-file }}
+          signed: ${{ runner.temp }}/signed/${{ inputs.package-file }}
+          private-key: ${{ secrets.STARTOS_DEV_KEY }}
+          public-key: ${{ vars.STARTOS_SIGNER_PUBKEY }}
+
+      - name: Stage the signed package
+        id: stage
+        shell: bash
+        env:
+          SIGNED_DIR: ${{ runner.temp }}/signed
+          PACKAGE_FILE: ${{ inputs.package-file }}
+        run: |
+          cd "$SIGNED_DIR"
+          start-cli s9pk inspect "$PACKAGE_FILE" manifest | \
+            jq -r '.releaseNotes | if type == "object" then (.en_US // first(.[]) // "") else (. // "") end' > RELEASE_NOTES.md
+          sha256sum "$PACKAGE_FILE" > SHA256SUMS
+          {
+            echo "sha256=$(cut -d' ' -f1 SHA256SUMS)"
+            echo "release_notes_sha256=$(sha256sum RELEASE_NOTES.md | cut -d' ' -f1)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Upload the signed package
+        id: upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ inputs.signed-artifact }}
+          path: |
+            ${{ runner.temp }}/signed/${{ inputs.package-file }}
+            ${{ runner.temp }}/signed/RELEASE_NOTES.md
+            ${{ runner.temp }}/signed/SHA256SUMS
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: ${{ inputs.retention-days }}
+
+      - name: Add signing summary
+        shell: bash
+        env:
+          SIGNING_MODE: ${{ steps.sign.outputs.mode }}
+          SHA256: ${{ steps.stage.outputs.sha256 }}
+          PACKAGE_FILE: ${{ inputs.package-file }}
+        run: |
+          {
+            echo "## StartOS signing"
+            echo ""
+            echo "- Package: \`${PACKAGE_FILE}\`"
+            echo "- Signing: ${SIGNING_MODE}"
+            echo "- SHA-256: \`${SHA256}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
