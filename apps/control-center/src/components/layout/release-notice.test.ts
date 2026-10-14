@@ -6,7 +6,7 @@ import { type ReactElement, act, createElement } from 'react'
 import { type Root, createRoot } from 'react-dom/client'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import { z } from 'zod'
-import { DOWNLOAD_URL, PENDING_REFRESH_MS, ReleaseNotice } from './release-notice'
+import { ReleaseNotice } from './release-notice'
 
 const browser = await vi.hoisted(async () => {
   const { createBrowserDom, installBrowserDom } = await import('@hoseki/packages/testing/browser-dom')
@@ -26,22 +26,34 @@ const browser = await vi.hoisted(async () => {
 class ReleaseServer {
   public newVersion: string | null = null
   public pending = false
+  /** How many times the window asked for the status. */
+  public asked = 0
 
   public constructor(fetchMock: ReturnType<typeof vi.fn<typeof fetch>>) {
     fetchMock.mockImplementation(async (input) => {
       const url = parseUnknown(z.string(), input).unwrapOr('')
-      const json = url.includes('/settings.releaseCheck')
-        ? { newVersion: this.newVersion, pending: this.pending }
-        : null
+      const status = url.includes('/settings.releaseCheck')
+      if (status) {
+        this.asked += 1
+      }
+      const json = status ? { newVersion: this.newVersion, pending: this.pending } : null
       return Response.json({ result: { data: { json } } })
     })
   }
 }
 
+interface Rendered {
+  server: ReleaseServer
+  container: HTMLDivElement
+  remount: () => Promise<void>
+  /** Status requests so far. */
+  asked: () => number
+}
+
 async function render(
   element: () => ReactElement,
   setup: (server: ReleaseServer) => void = () => undefined,
-): Promise<{ server: ReleaseServer; container: HTMLDivElement; remount: () => Promise<void> }> {
+): Promise<Rendered> {
   const dom = browser.acquire()
   const fetchMock = vi.fn<typeof fetch>()
   vi.stubGlobal('fetch', fetchMock)
@@ -81,7 +93,8 @@ async function render(
   return {
     server,
     container,
-    // The notice mounted again, as on a page outside the main layout; the app itself keeps running.
+    asked: () => server.asked,
+    // The notice mounted again, as when moving to another page group; the app itself keeps running.
     remount: async (): Promise<void> => {
       await act(async () => {
         root.unmount()
@@ -120,7 +133,7 @@ it('says which release is out and links to the website to download it', async ()
   })
   const link = container.querySelector<HTMLAnchorElement>('a')
   expect(link?.textContent).toBe('Download')
-  expect(link?.href).toBe(DOWNLOAD_URL)
+  expect(link?.href).toBe('https://www.bitcoincontrolcenter.com/#downloads')
   expect(link?.target).toBe('_blank')
 })
 
@@ -151,23 +164,38 @@ it('stays dismissed until a newer release is found', async () => {
   })
 })
 
-it('asks again soon while the launch check is still running, so a short session sees its result', async () => {
-  const { container, server } = await render(
+it('asks every three seconds while the launch check runs, then hourly once it has finished', async () => {
+  // Only the refetch timer is faked; React Query's own scheduling keeps running.
+  vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+  onTestFinished(() => {
+    vi.useRealTimers()
+  })
+  const { container, server, asked } = await render(
     () => createElement(ReleaseNotice),
     (fake) => {
       fake.pending = true
     },
   )
-  expect(container.textContent).toBe('')
+  const askAfter = async (ms: number): Promise<number> => {
+    const before = asked()
+    await act(async () => {
+      vi.advanceTimersByTime(ms)
+    })
+    await eventually(() => {
+      expect(asked()).toBeGreaterThanOrEqual(before)
+    })
+    return asked() - before
+  }
+  await expect(askAfter(3000)).resolves.toBe(1)
+  await expect(askAfter(3000)).resolves.toBe(1)
   server.pending = false
   server.newVersion = '0.8.0'
-  await vi.waitFor(
-    async () => {
-      await act(async () => {})
-      expect(container.textContent).toContain('Bitcoin Control Center 0.8.0 is available.')
-    },
-    { timeout: PENDING_REFRESH_MS + 2000, interval: 100 },
-  )
+  await expect(askAfter(3000)).resolves.toBe(1)
+  await eventually(() => {
+    expect(container.textContent).toContain('Bitcoin Control Center 0.8.0 is available.')
+  })
+  await expect(askAfter(10 * 60 * 1000)).resolves.toBe(0)
+  await expect(askAfter(50 * 60 * 1000)).resolves.toBe(1)
 })
 
 it('keeps an empty live region in place, so the notice is announced when it appears', async () => {
@@ -177,38 +205,92 @@ it('keeps an empty live region in place, so the notice is announced when it appe
   expect(region?.textContent).toBe('')
 })
 
-it('keeps the keyboard in the page after dismissing with the keyboard, and leaves mouse focus alone', async () => {
+function controls(names: string[]): HTMLButtonElement[] {
+  return names.map((name) => {
+    const button = document.createElement('button')
+    button.textContent = name
+    // jsdom has no layout: give the control one box, so it counts as shown.
+    button.getClientRects = (): DOMRectList => {
+      const box: DOMRect = {
+        x: 0,
+        y: 0,
+        width: 80,
+        height: 24,
+        top: 0,
+        left: 0,
+        right: 80,
+        bottom: 24,
+        toJSON: () => ({}),
+      }
+      return { length: 1, item: () => box, 0: box, [Symbol.iterator]: () => [box].values() }
+    }
+    document.body.prepend(button)
+    onTestFinished(() => {
+      button.remove()
+    })
+    return button
+  })
+}
+
+function dismissButton(container: HTMLDivElement): HTMLButtonElement {
+  const button = container.querySelector<HTMLButtonElement>('button[aria-label="Dismiss"]')
+  if (button === null) {
+    throw new Error('No Dismiss button')
+  }
+  return button
+}
+
+/** Tab from a control into the notice's Dismiss button, then activate it. */
+async function dismissFrom(control: HTMLElement | null, container: HTMLDivElement, detail: number): Promise<void> {
+  await act(async () => {
+    control?.focus()
+    dismissButton(container).focus()
+    dismissButton(container).dispatchEvent(new MouseEvent('click', { bubbles: true, detail }))
+  })
+}
+
+it('returns keyboard focus to the control used before the notice, and leaves mouse focus alone', async () => {
   const { container, server, remount } = await render(
     () => createElement(ReleaseNotice),
     (fake) => {
       fake.newVersion = '0.9.0'
     },
   )
-  // The layout's main content, which takes focus without a tab stop.
-  const main = document.createElement('main')
-  main.id = 'main-content'
-  main.tabIndex = -1
-  document.body.append(main)
-  const dismiss = (detail: number): void => {
-    const button = container.querySelector<HTMLButtonElement>('button[aria-label="Dismiss"]')
-    button?.focus()
-    button?.dispatchEvent(new MouseEvent('click', { bubbles: true, detail }))
-  }
+  const [later, earlier] = controls(['Later', 'Earlier'])
   await eventually(() => {
     expect(container.textContent).toContain('0.9.0')
   })
-  await act(async () => {
-    dismiss(1)
-  })
-  expect(document.activeElement).not.toBe(main)
+  // A mouse click (one pointer click) does not move focus anywhere.
+  await dismissFrom(earlier ?? null, container, 1)
+  expect(document.activeElement).not.toBe(earlier)
 
   server.newVersion = '0.9.1'
   await remount()
   await eventually(() => {
     expect(container.textContent).toContain('0.9.1')
   })
-  await act(async () => {
-    dismiss(0)
+  // Enter or Space (no pointer clicks) returns to where the user came from, not the nearest control.
+  await dismissFrom(earlier ?? null, container, 0)
+  expect(document.activeElement).toBe(earlier)
+  expect(document.activeElement).not.toBe(later)
+})
+
+it('falls back to the control just before the notice when the one used before is gone', async () => {
+  const { container } = await render(
+    () => createElement(ReleaseNotice),
+    (fake) => {
+      fake.newVersion = '0.9.2'
+    },
+  )
+  const [nearest, gone] = controls(['Nearest', 'Gone'])
+  await eventually(() => {
+    expect(container.textContent).toContain('0.9.2')
   })
-  expect(document.activeElement).toBe(main)
+  await act(async () => {
+    gone?.focus()
+    dismissButton(container).focus()
+    gone?.remove()
+    dismissButton(container).dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 0 }))
+  })
+  expect(document.activeElement).toBe(nearest)
 })

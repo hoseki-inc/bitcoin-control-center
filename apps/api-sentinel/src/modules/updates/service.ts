@@ -5,14 +5,17 @@ import type { Logger } from 'pino'
 import { z } from 'zod'
 
 /** The website answers with the newest release's tag, for example { "tag": "v0.6.0_0" }. */
-export const LATEST_RELEASE_URL = 'https://www.bitcoincontrolcenter.com/latest.json'
+const LATEST_RELEASE_URL = 'https://www.bitcoincontrolcenter.com/latest.json'
 const HOUR_MS = 60 * 60 * 1000
 const CHECK_INTERVAL_MS = 24 * HOUR_MS
 // Timers pause while a computer sleeps, so wake hourly and compare the clock instead of waiting a day.
 const WAKE_INTERVAL_MS = HOUR_MS
+// A wake can land a moment before a check is due (timer rounding, small clock corrections); treat that
+// as due rather than waiting another hour.
+const DUE_TOLERANCE_MS = 60 * 1000
 const REQUEST_TIMEOUT_MS = 30_000
-// The answer is a few dozen bytes. Stop reading well before a large or decompression-bomb body could
-// exhaust memory, since Sentinel runs inside the desktop app.
+// The answer is a few dozen bytes. Reject larger bodies, reading no further than the chunk that crosses
+// the limit, so a large or decompression-bomb body can't exhaust memory in the desktop app.
 const MAX_BODY_BYTES = 4096
 
 const LatestReleaseSchema = z.object({ tag: z.string() })
@@ -177,7 +180,7 @@ export class ReleaseCheckService {
       return
     }
     const clockMovedBack = this.checkedAt !== null && now < this.checkedAt
-    if (this.dueAt !== null && now < this.dueAt && !clockMovedBack) {
+    if (this.dueAt !== null && now < this.dueAt - DUE_TOLERANCE_MS && !clockMovedBack) {
       return
     }
     this.checking = this.check(now).finally(() => {
