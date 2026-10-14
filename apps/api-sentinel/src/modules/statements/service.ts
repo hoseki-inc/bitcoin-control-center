@@ -15,7 +15,7 @@ import type { SentinelDb } from '../../db/drizzle'
 import { accounts, exchangeBalanceSnapshots, settings, statementCounter, statements } from '../../db/schema'
 import type { ExchangeService } from '../exchange/service'
 import type { DailyRates } from '../price/daily_rates'
-import type { DailyRatesService } from '../price/daily_rates'
+import { type DailyRatesService, MIN_MEMPOOL_PRICE_DATE } from '../price/daily_rates'
 import { toTransactionEntries } from './entries'
 import { type AccountHistory, collectAccountHistory } from './history'
 import { type Sleep, lookupTransactions } from './lookup'
@@ -168,6 +168,10 @@ export function validateStatementInput(input: GenerateStatementInput, now = new 
 
   if (openingDate > closingDate) {
     return Err(new Error('Statement opening date must be before closing date'))
+  }
+  // Checked here too, so the statement fails before loading its history, saying why.
+  if (openingDate < MIN_MEMPOOL_PRICE_DATE) {
+    return Err(new Error('Statements must start on or after April 1, 2023.'))
   }
 
   const latestClosingDate = getLatestStatementClosingDate(now, input.timezone)

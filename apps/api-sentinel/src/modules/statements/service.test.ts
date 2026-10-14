@@ -295,7 +295,7 @@ describe('statement currency persistence', () => {
   })
 })
 
-describe('statement timezone validation', () => {
+describe('statement input validation', () => {
   const now = new Date('2026-09-08T12:00:00Z')
   // Browsers can report aliases and fixed offsets that Intl.supportedValuesOf omits.
   it.each(['UTC', 'Asia/Kolkata', 'Asia/Calcutta', 'Europe/Kyiv', 'America/Nuuk', 'Etc/UTC', 'Etc/GMT+8'])(
@@ -308,6 +308,13 @@ describe('statement timezone validation', () => {
   it('rejects an unknown timezone', () => {
     expect(validateStatementInput({ ...input, timezone: 'Not/AZone' }, now).unwrapErr().message).toBe(
       'Invalid statement timezone.',
+    )
+  })
+
+  it('rejects a statement starting before prices are available', () => {
+    const openingDate = new Date('2023-03-31T00:00:00Z')
+    expect(validateStatementInput({ ...input, openingDate }, now).unwrapErr().message).toBe(
+      'Statements must start on or after April 1, 2023.',
     )
   })
 })
@@ -570,23 +577,14 @@ it('persists mixed provider attribution and exposes it in both PDF formats after
   vi.stubGlobal(
     'fetch',
     vi.fn().mockImplementation(async (urlString: string) => {
-      const url = new URL(urlString),
-        timestamp = Number(url.searchParams.get('timestamp'))
-      // Neither source sends its full history, so both are asked day by day.
-      if (!url.searchParams.has('timestamp')) {
-        return new Response('Not found', { status: 404 })
+      // Daily prices from both sources, but the local one has CAD only until the opening date.
+      const local = new URL(urlString).origin === 'http://local-mempool.test'
+      const prices = []
+      for (let time = opening.getTime() / 1000 - 10 * 86_400; time * 1000 <= Date.now(); time += 86_400) {
+        const cad = local && time > opening.getTime() / 1000 ? -1 : 81000
+        prices.push({ time, USD: 60000, CAD: cad, GBP: 47000, EUR: 55000 })
       }
-      return Response.json({
-        prices: [
-          {
-            time: timestamp,
-            USD: 60000,
-            CAD: url.origin === 'http://local-mempool.test' && timestamp > opening.getTime() / 1000 ? -1 : 81000,
-            GBP: 47000,
-            EUR: 55000,
-          },
-        ],
-      })
+      return Response.json({ prices })
     }),
   )
   const id = (await service.create({ ...input, quoteCurrency: 'CAD' })).unwrap()

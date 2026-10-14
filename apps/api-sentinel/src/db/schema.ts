@@ -111,6 +111,7 @@ export const statementCounter = sqliteTable(
   (table) => [check('statement_counter_single_row_check', sql`${table.id} = 1`)],
 )
 
+/** Each price source's downloaded history, replaced whole by its next download. */
 export const btcQuoteCache = sqliteTable(
   'btc_quote_cache',
   {
@@ -118,29 +119,14 @@ export const btcQuoteCache = sqliteTable(
     quoteCurrency: text('quote_currency', { enum: ['USD', 'CAD', 'GBP', 'EUR'] }).notNull(),
     timestamp: integer('timestamp').notNull(),
     price: text('price').notNull(),
-    /** When a source last confirmed this price, in Unix ms; 0 for prices saved before this was kept. */
-    refreshedAt: integer('refreshed_at').notNull().default(0),
   },
   (table) => [
-    primaryKey({ columns: [table.quoteCurrency, table.timestamp] }),
+    primaryKey({ columns: [table.providerUrl, table.quoteCurrency, table.timestamp] }),
     check('btc_quote_cache_quote_currency_check', sql`${table.quoteCurrency} IN ('USD', 'CAD', 'GBP', 'EUR')`),
   ],
 )
 
-export const btcQuoteLookups = sqliteTable(
-  'btc_quote_lookups',
-  {
-    provider: text('provider').notNull(),
-    requestedAt: integer('requested_at').notNull(),
-    expiresAt: integer('expires_at').notNull(),
-  },
-  (table) => [
-    primaryKey({ columns: [table.provider, table.requestedAt] }),
-    index('btc_quote_lookup_date').on(table.requestedAt, table.expiresAt),
-  ],
-)
-
-/** When each price source last downloaded its full price history for a currency, in Unix ms. */
+/** When each price source, by URL, last downloaded its history in a currency, in Unix ms. */
 export const btcQuoteDownloads = sqliteTable(
   'btc_quote_downloads',
   {

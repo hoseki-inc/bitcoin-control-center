@@ -117,8 +117,9 @@ it.each(['file', 'database'] as const)(
     const upgraded = await openDrizzleDatabase(directory, logger)
     try {
       // Upgrading adds the statement counter, which starts from the highest existing number, a
-      // transaction source on statements, unknown for those made before it, an empty record of
-      // price history downloads, and a refreshed time on saved prices, dropping those saved before it.
+      // transaction source on statements, unknown for those made before it, and an empty record of
+      // price history downloads. Saved prices are now kept by source; those saved before, and the
+      // lookups made for them, are dropped, since they were only for statements' activity days.
       const upgradedState = await databaseState(upgraded)
       const statementsSql = (state: typeof before): string | null | undefined =>
         state.schema.find((row) => row.name === 'statements')?.sql
@@ -128,24 +129,13 @@ it.each(['file', 'database'] as const)(
           `, \`tx_source\` text CONSTRAINT "statements_tx_source_check" CHECK("tx_source" IN ('electrum', 'node_mempool', 'public_mempool')))`,
         ),
       )
-      const quotesSql = (state: typeof before): string | null | undefined =>
-        state.schema.find((row) => row.name === 'btc_quote_cache')?.sql
-      expect(quotesSql(upgradedState)).toBe(
-        quotesSql(before)?.replace(
-          'price TEXT NOT NULL,',
-          'price TEXT NOT NULL, `refreshed_at` integer DEFAULT 0 NOT NULL,',
-        ),
-      )
+      const changed = ['statement_counter', 'btc_quote_cache', 'btc_quote_lookups', 'btc_quote_downloads']
       expect({
         schema: upgradedState.schema
-          .filter((row) => !['statement_counter', 'btc_quote_downloads'].includes(row.tbl_name))
-          .map((row) =>
-            row.name === 'statements' || row.name === 'btc_quote_cache'
-              ? before.schema.find((old) => old.name === row.name)
-              : row,
-          ),
+          .filter((row) => !changed.includes(row.tbl_name))
+          .map((row) => (row.name === 'statements' ? before.schema.find((old) => old.name === row.name) : row)),
         data: upgradedState.data
-          .filter((table) => !['statement_counter', 'btc_quote_downloads'].includes(table.table))
+          .filter((table) => !changed.includes(table.table))
           .map((table) => ({
             table: table.table,
             rows:
@@ -154,31 +144,17 @@ it.each(['file', 'database'] as const)(
                     expect(tx_source).toBeNull()
                     return row
                   })
-                : table.table === 'btc_quote_lookups'
-                  ? table.rows.map(({ expires_at, ...row }) => {
-                      // Saved lookups are all looked up again, since prices are no longer kept forever.
-                      expect(expires_at).toBe(0)
-                      return row
-                    })
-                  : table.rows,
+                : table.rows,
           })),
       }).toEqual({
-        ...before,
-        data: before.data.map((table) =>
-          table.table === 'btc_quote_lookups'
-            ? {
-                table: table.table,
-                rows: table.rows.map((row) =>
-                  Object.fromEntries(Object.entries(row).filter(([column]) => column !== 'expires_at')),
-                ),
-              }
-            : // Prices saved before were only for activity days, so confirming them again would show those days.
-              table.table === 'btc_quote_cache'
-              ? { table: table.table, rows: [] }
-              : table,
-        ),
+        schema: before.schema.filter((row) => !changed.includes(row.tbl_name)),
+        data: before.data.filter((table) => !changed.includes(table.table)),
       })
-      await expect(upgraded.all(sql`SELECT * FROM statement_counter`)).resolves.toEqual([{ id: 1, last_counter: 123 }])
+      expect(upgradedState.schema.find((row) => row.name === 'btc_quote_cache')?.sql).toContain(
+        'PRIMARY KEY(`provider_url`, `quote_currency`, `timestamp`)',
+      )
+      expect(upgradedState.schema.filter((row) => row.tbl_name === 'btc_quote_lookups')).toEqual([])
+      await expect(upgraded.all(sql`SELECT * FROM btc_quote_cache`)).resolves.toEqual([])
       await expect(upgraded.all(sql`SELECT * FROM btc_quote_downloads`)).resolves.toEqual([])
       const journal = await upgraded.all<{ id: number; hash: string; created_at: number; name: string }>(
         sql`SELECT * FROM _migrations ORDER BY id`,
@@ -259,7 +235,6 @@ it.each(['legacy', 'drizzle'] as const)(
       const addedTables = new Set([
         'desktop_connection_profiles',
         'btc_quote_cache',
-        'btc_quote_lookups',
         'statement_counter',
         'btc_quote_downloads',
       ])

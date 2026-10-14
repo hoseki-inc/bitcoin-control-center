@@ -84,7 +84,7 @@ export class PriceHistoryService {
         // Shown at once from saved prices while they refresh; its evenly spaced days reveal nothing.
         this.dailyRatesService.getDailyRates(opening, closing, quoteCurrency, dates, {
           staleWhileRefreshing: true,
-          requestRequiredDays: true,
+          requiredDaysOnly: true,
         }),
         quoteCurrency === 'USD' ? this.priceService.getCurrentBtcPrice() : undefined,
       ])

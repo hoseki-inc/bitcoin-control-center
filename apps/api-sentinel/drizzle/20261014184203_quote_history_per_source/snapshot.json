@@ -1,8 +1,8 @@
 {
-  "id": "7027af84-8621-4e75-98b7-b2a893dd381a",
-  "prevIds": ["4b50689e-8eeb-4833-9a51-42bb33e9c8d7"],
   "version": "7",
   "dialect": "sqlite",
+  "id": "deed616e-6a8a-4965-9ce2-3643a07740f6",
+  "prevIds": ["4b50689e-8eeb-4833-9a51-42bb33e9c8d7"],
   "ddl": [
     {
       "name": "account_history_syncs",
@@ -22,10 +22,6 @@
     },
     {
       "name": "btc_quote_downloads",
-      "entityType": "tables"
-    },
-    {
-      "name": "btc_quote_lookups",
       "entityType": "tables"
     },
     {
@@ -355,36 +351,6 @@
       "name": "downloaded_at",
       "entityType": "columns",
       "table": "btc_quote_downloads"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "provider",
-      "entityType": "columns",
-      "table": "btc_quote_lookups"
-    },
-    {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "requested_at",
-      "entityType": "columns",
-      "table": "btc_quote_lookups"
-    },
-    {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "expires_at",
-      "entityType": "columns",
-      "table": "btc_quote_lookups"
     },
     {
       "type": "text",
@@ -1620,7 +1586,7 @@
       "table": "signed_messages"
     },
     {
-      "columns": ["quote_currency", "timestamp"],
+      "columns": ["provider_url", "quote_currency", "timestamp"],
       "nameExplicit": false,
       "name": "btc_quote_cache_pk",
       "entityType": "pks",
@@ -1632,13 +1598,6 @@
       "name": "btc_quote_downloads_pk",
       "entityType": "pks",
       "table": "btc_quote_downloads"
-    },
-    {
-      "columns": ["provider", "requested_at"],
-      "nameExplicit": false,
-      "name": "btc_quote_lookups_pk",
-      "entityType": "pks",
-      "table": "btc_quote_lookups"
     },
     {
       "columns": ["id"],
@@ -1801,24 +1760,6 @@
       "name": "idx_account_history_syncs_account_blocks",
       "entityType": "indexes",
       "table": "account_history_syncs"
-    },
-    {
-      "columns": [
-        {
-          "value": "requested_at",
-          "isExpression": false
-        },
-        {
-          "value": "expires_at",
-          "isExpression": false
-        }
-      ],
-      "isUnique": false,
-      "where": null,
-      "origin": "manual",
-      "name": "btc_quote_lookup_date",
-      "entityType": "indexes",
-      "table": "btc_quote_lookups"
     },
     {
       "columns": ["account_id", "from_block_height", "to_block_height"],
