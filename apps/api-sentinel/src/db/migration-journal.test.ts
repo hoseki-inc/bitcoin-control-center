@@ -116,8 +116,10 @@ it.each(['file', 'database'] as const)(
 
     const upgraded = await openDrizzleDatabase(directory, logger)
     try {
-      // Upgrading adds the statement counter, which starts from the highest existing number, and a
-      // transaction source on statements, unknown for those made before it.
+      // Upgrading adds the statement counter, which starts from the highest existing number, a
+      // transaction source on statements, unknown for those made before it, and an empty record of
+      // price history downloads. Saved prices are now kept by source; those saved before, and the
+      // lookups made for them, are dropped, since they were only for statements' activity days.
       const upgradedState = await databaseState(upgraded)
       const statementsSql = (state: typeof before): string | null | undefined =>
         state.schema.find((row) => row.name === 'statements')?.sql
@@ -127,12 +129,13 @@ it.each(['file', 'database'] as const)(
           `, \`tx_source\` text CONSTRAINT "statements_tx_source_check" CHECK("tx_source" IN ('electrum', 'node_mempool', 'public_mempool')))`,
         ),
       )
+      const changed = ['statement_counter', 'btc_quote_cache', 'btc_quote_lookups', 'btc_quote_downloads']
       expect({
         schema: upgradedState.schema
-          .filter((row) => row.tbl_name !== 'statement_counter')
-          .map((row) => (row.name === 'statements' ? before.schema.find((old) => old.name === 'statements') : row)),
+          .filter((row) => !changed.includes(row.tbl_name))
+          .map((row) => (row.name === 'statements' ? before.schema.find((old) => old.name === row.name) : row)),
         data: upgradedState.data
-          .filter((table) => table.table !== 'statement_counter')
+          .filter((table) => !changed.includes(table.table))
           .map((table) => ({
             table: table.table,
             rows:
@@ -143,8 +146,16 @@ it.each(['file', 'database'] as const)(
                   })
                 : table.rows,
           })),
-      }).toEqual(before)
-      await expect(upgraded.all(sql`SELECT * FROM statement_counter`)).resolves.toEqual([{ id: 1, last_counter: 123 }])
+      }).toEqual({
+        schema: before.schema.filter((row) => !changed.includes(row.tbl_name)),
+        data: before.data.filter((table) => !changed.includes(table.table)),
+      })
+      expect(upgradedState.schema.find((row) => row.name === 'btc_quote_cache')?.sql).toContain(
+        'PRIMARY KEY(`provider_url`, `quote_currency`, `timestamp`)',
+      )
+      expect(upgradedState.schema.filter((row) => row.tbl_name === 'btc_quote_lookups')).toEqual([])
+      await expect(upgraded.all(sql`SELECT * FROM btc_quote_cache`)).resolves.toEqual([])
+      await expect(upgraded.all(sql`SELECT * FROM btc_quote_downloads`)).resolves.toEqual([])
       const journal = await upgraded.all<{ id: number; hash: string; created_at: number; name: string }>(
         sql`SELECT * FROM _migrations ORDER BY id`,
       )
@@ -224,8 +235,8 @@ it.each(['legacy', 'drizzle'] as const)(
       const addedTables = new Set([
         'desktop_connection_profiles',
         'btc_quote_cache',
-        'btc_quote_lookups',
         'statement_counter',
+        'btc_quote_downloads',
       ])
       expect({
         schema: after.schema
@@ -280,9 +291,8 @@ it.each([false, true])('upgrades a legacy profile with desktop connections and q
     await expect(upgraded.all(sql`SELECT quote_currency, error_message FROM statements`)).resolves.toEqual([
       { quote_currency: 'USD', error_message: null },
     ])
-    await expect(upgraded.all(sql`SELECT quote_currency, price FROM btc_quote_cache`)).resolves.toEqual(
-      withCache ? [{ quote_currency: 'CAD', price: '81000' }] : [],
-    )
+    // Prices saved before the upgrade are dropped.
+    await expect(upgraded.all(sql`SELECT quote_currency, price FROM btc_quote_cache`)).resolves.toEqual([])
     await expect(upgraded.all(sql`SELECT name FROM _migrations`)).resolves.toHaveLength(migrations.length)
     await expect(upgraded.all(sql`PRAGMA foreign_key_check`)).resolves.toEqual([])
   } finally {

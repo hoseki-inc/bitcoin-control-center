@@ -15,12 +15,12 @@ import type { SentinelDb } from '../../db/drizzle'
 import { accounts, exchangeBalanceSnapshots, settings, statementCounter, statements } from '../../db/schema'
 import type { ExchangeService } from '../exchange/service'
 import type { DailyRates } from '../price/daily_rates'
-import type { DailyRatesService } from '../price/daily_rates'
+import { type DailyRatesService, MIN_MEMPOOL_PRICE_DATE } from '../price/daily_rates'
 import { toTransactionEntries } from './entries'
 import { type AccountHistory, collectAccountHistory } from './history'
 import { type Sleep, lookupTransactions } from './lookup'
 import type { AggregatedTransaction, StatementAccountTransactions } from './mapper'
-import { getRequiredRateDates, validateStatementRates } from './rate_dates'
+import { PriceLoadError, getRequiredRateDates, validateStatementRates } from './rate_dates'
 import { ElectrumSource } from './sources/electrum'
 import { MempoolSource } from './sources/mempool'
 import { TransactionLoadError, type TxSource, type TxSourceKind } from './sources/types'
@@ -95,6 +95,13 @@ export function statementFailureMessage(error: Error): string {
   return error instanceof TransactionLoadError ? TRANSACTIONS_FAILED_MESSAGE : error.message
 }
 
+/** Errors whose message can name a txid, a server or a date, so only their kind is logged. */
+export function loggableFailure(error: Error): { kind: string } | { error: string } {
+  return error instanceof TransactionLoadError || error instanceof PriceLoadError
+    ? { kind: error.kind }
+    : { error: error.message }
+}
+
 export interface GenerateStatementInput {
   quoteCurrency?: StatementQuoteCurrency
   claimIds: string[]
@@ -161,6 +168,10 @@ export function validateStatementInput(input: GenerateStatementInput, now = new 
 
   if (openingDate > closingDate) {
     return Err(new Error('Statement opening date must be before closing date'))
+  }
+  // Checked here too, so the statement fails before loading its history, saying why.
+  if (openingDate < MIN_MEMPOOL_PRICE_DATE) {
+    return Err(new Error('Statements must start on or after April 1, 2023.'))
   }
 
   const latestClosingDate = getLatestStatementClosingDate(now, input.timezone)
@@ -731,7 +742,7 @@ export class StatementService {
       }
 
       // 4. Fetch daily rates for the date range
-      this.logger.info('Fetching daily rates from mempool.space')
+      this.logger.info('Fetching daily rates')
       const requiredDates = getRequiredRateDates(input.openingDate, input.closingDate, input.timezone, transactionMap)
       const ratesResult = await this.dailyRatesService.getDailyRates(
         input.openingDate,
@@ -740,8 +751,9 @@ export class StatementService {
         requiredDates,
       )
       if (ratesResult.isErr()) {
-        this.logger.error({ err: ratesResult.unwrapErr().message }, 'Failed to fetch daily rates')
-        return Err(ratesResult.unwrapErr())
+        // Only the kind is logged, as for other generation failures.
+        this.logger.error({ kind: 'unavailable' }, 'Failed to fetch daily rates')
+        return Err(new PriceLoadError('unavailable'))
       }
       const coverage = validateStatementRates(requiredDates, ratesResult.unwrap())
       if (coverage.isErr()) {

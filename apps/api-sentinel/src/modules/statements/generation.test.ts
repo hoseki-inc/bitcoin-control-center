@@ -3,6 +3,8 @@ import { Err, Ok, asyncFn } from '@hoseki/packages/result'
 import { eq } from 'drizzle-orm'
 import { expect, it, vi } from 'vitest'
 import { accounts, settings } from '../../db/schema'
+import { PriceLoadError } from './rate_dates'
+import { statementFailureMessage } from './service'
 import { setupDesktopWallets, setupDistinctWalletNames, setupTwoExchangeAccounts } from './service.fixtures'
 
 it('reports progress through history and lookups, and none once the statement completes', async () => {
@@ -134,6 +136,36 @@ it('logs only the kind of a failed lookup, never its txid', async () => {
   expect(logged).toContain('"kind":"unavailable"')
   expect(logged).not.toContain('1'.repeat(64))
   expect(logged).not.toContain('2'.repeat(64))
+})
+
+it('fails with the price message, and logs no date, when prices cannot be confirmed', async () => {
+  const { service, input, dailyRatesService, logs } = await setupDistinctWalletNames()
+  vi.mocked(dailyRatesService.getDailyRates).mockImplementation(
+    asyncFn(async () => Err(new Error('No usable USD quote for 2026-08-01. The mempool price source is unavailable.'))),
+  )
+
+  const result = await service.generateStatementData(input)
+
+  expect(result.isErr() && result.unwrapErr()).toBeInstanceOf(PriceLoadError)
+  expect(result.isErr() && statementFailureMessage(result.unwrapErr())).toBe(
+    "Couldn't get Bitcoin prices for this statement. Check your connection and try again.",
+  )
+  // Price errors name the days they needed, which can be activity days.
+  expect(logs.join('')).toContain('"kind":"unavailable"')
+  expect(logs.join('')).not.toContain('2026-08-01')
+})
+
+it('fails with the price message, and logs no date, when prices are missing for a day it needs', async () => {
+  const { service, input, dailyRatesService, logs } = await setupDistinctWalletNames()
+  vi.mocked(dailyRatesService.getDailyRates).mockImplementation(
+    asyncFn(async () => Ok({ source: 'mempool' as const, quoteCurrency: 'USD' as const, rates: {} })),
+  )
+
+  const result = await service.generateStatementData(input)
+
+  expect(result.isErr() && result.unwrapErr()).toBeInstanceOf(PriceLoadError)
+  expect(result.isErr() && result.unwrapErr().message).not.toMatch(/\d{4}-\d{2}-\d{2}/)
+  expect(logs.join('')).not.toMatch(/quote for \d{4}-\d{2}-\d{2}/)
 })
 
 it('logs only the kind of a failed history request, never its server', async () => {

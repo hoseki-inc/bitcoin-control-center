@@ -124,7 +124,7 @@ function mockTransactionRequests(): void {
 }
 
 function mockDailyRates(db: SentinelDb, logger: Logger): DailyRatesService {
-  const service = new DailyRatesService({ db, logger, mempoolApiUrl })
+  const service = new DailyRatesService({ db, logger, mempoolApiUrl, downloadRetryDelaysMs: [1, 1, 1, 1] })
   const rate = new Decimal(40_000)
   const rates = Object.fromEntries(
     [openingDate, transactionDate, closingDate].map((date) => [
@@ -146,19 +146,20 @@ async function createStatementHarness(emptySavingsHistory = false, sourceSelecta
   mockTransactionRequests()
 
   const exchangeService = new ExchangeService({ db, logger })
+  const dailyRatesService = mockDailyRates(db, logger)
   const service = new StatementService({
     db,
     logger,
     onchainProvider,
     mempoolApiUrl,
-    dailyRatesService: mockDailyRates(db, logger),
+    dailyRatesService,
     exchangeService,
     sourceSelectable,
     // Retries happen without real waits.
     sleep: async () => {},
   })
 
-  return { service, db, exchangeService, onchainProvider, logs }
+  return { service, db, exchangeService, onchainProvider, dailyRatesService, logs }
 }
 
 async function seedWallet(db: SentinelDb, wallet: WalletFixture, displayName: string): Promise<string> {
@@ -191,6 +192,7 @@ async function seedExchange(
 interface WalletScenario extends StatementScenario {
   db: SentinelDb
   onchainProvider: ElectrumProvider
+  dailyRatesService: DailyRatesService
   logs: string[]
 }
 
@@ -199,10 +201,13 @@ async function setupNamedWallets(
   secondName: string,
   sourceSelectable = false,
 ): Promise<WalletScenario> {
-  const { service, db, onchainProvider, logs } = await createStatementHarness(false, sourceSelectable)
+  const { service, db, onchainProvider, dailyRatesService, logs } = await createStatementHarness(
+    false,
+    sourceSelectable,
+  )
   const claimIds = [await seedWallet(db, savingsWallet, firstName), await seedWallet(db, spendingWallet, secondName)]
 
-  return { service, db, onchainProvider, logs, input: { ...period, claimIds } }
+  return { service, db, onchainProvider, dailyRatesService, logs, input: { ...period, claimIds } }
 }
 
 export async function setupDistinctWalletNames(): Promise<WalletScenario> {
