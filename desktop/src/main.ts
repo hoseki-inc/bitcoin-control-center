@@ -82,7 +82,10 @@ async function start(): Promise<void> {
       listenPort,
       connectionProfiles: true,
       statementSourceSetting: true,
-      releaseVersion: app.isPackaged ? readReleaseVersion(path.join(app.getAppPath(), 'package.json')) : undefined,
+      // A packaged build without a valid version passes an empty one, so Sentinel logs that checks are off.
+      releaseVersion: app.isPackaged
+        ? (readReleaseVersion(path.join(app.getAppPath(), 'package.json')) ?? '')
+        : undefined,
     }),
   )
   const origin = `http://${LOOPBACK_HOST}:${server.port}`

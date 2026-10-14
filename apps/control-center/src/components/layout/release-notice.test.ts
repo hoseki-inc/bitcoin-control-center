@@ -6,7 +6,7 @@ import { type ReactElement, act, createElement } from 'react'
 import { type Root, createRoot } from 'react-dom/client'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import { z } from 'zod'
-import { DOWNLOAD_URL, ReleaseNotice } from './release-notice'
+import { DOWNLOAD_URL, PENDING_REFRESH_MS, ReleaseNotice } from './release-notice'
 
 const browser = await vi.hoisted(async () => {
   const { createBrowserDom, installBrowserDom } = await import('@hoseki/packages/testing/browser-dom')
@@ -25,11 +25,14 @@ const browser = await vi.hoisted(async () => {
 /** A fake Sentinel holding the release it found. */
 class ReleaseServer {
   public newVersion: string | null = null
+  public pending = false
 
   public constructor(fetchMock: ReturnType<typeof vi.fn<typeof fetch>>) {
     fetchMock.mockImplementation(async (input) => {
       const url = parseUnknown(z.string(), input).unwrapOr('')
-      const json = url.includes('/settings.releaseCheck') ? { newVersion: this.newVersion } : null
+      const json = url.includes('/settings.releaseCheck')
+        ? { newVersion: this.newVersion, pending: this.pending }
+        : null
       return Response.json({ result: { data: { json } } })
     })
   }
@@ -78,7 +81,7 @@ async function render(
   return {
     server,
     container,
-    // A new layout, as when moving between page groups; the app itself keeps running.
+    // The notice mounted again, as on a page outside the main layout; the app itself keeps running.
     remount: async (): Promise<void> => {
       await act(async () => {
         root.unmount()
@@ -146,4 +149,66 @@ it('stays dismissed until a newer release is found', async () => {
   await eventually(() => {
     expect(container.textContent).toContain('Bitcoin Control Center 0.7.1 is available.')
   })
+})
+
+it('asks again soon while the launch check is still running, so a short session sees its result', async () => {
+  const { container, server } = await render(
+    () => createElement(ReleaseNotice),
+    (fake) => {
+      fake.pending = true
+    },
+  )
+  expect(container.textContent).toBe('')
+  server.pending = false
+  server.newVersion = '0.8.0'
+  await vi.waitFor(
+    async () => {
+      await act(async () => {})
+      expect(container.textContent).toContain('Bitcoin Control Center 0.8.0 is available.')
+    },
+    { timeout: PENDING_REFRESH_MS + 2000, interval: 100 },
+  )
+})
+
+it('keeps an empty live region in place, so the notice is announced when it appears', async () => {
+  const { container } = await render(() => createElement(ReleaseNotice))
+  const region = container.querySelector('output')
+  expect(region).not.toBeNull()
+  expect(region?.textContent).toBe('')
+})
+
+it('keeps the keyboard in the page after dismissing with the keyboard, and leaves mouse focus alone', async () => {
+  const { container, server, remount } = await render(
+    () => createElement(ReleaseNotice),
+    (fake) => {
+      fake.newVersion = '0.9.0'
+    },
+  )
+  // The layout's main content, which takes focus without a tab stop.
+  const main = document.createElement('main')
+  main.id = 'main-content'
+  main.tabIndex = -1
+  document.body.append(main)
+  const dismiss = (detail: number): void => {
+    const button = container.querySelector<HTMLButtonElement>('button[aria-label="Dismiss"]')
+    button?.focus()
+    button?.dispatchEvent(new MouseEvent('click', { bubbles: true, detail }))
+  }
+  await eventually(() => {
+    expect(container.textContent).toContain('0.9.0')
+  })
+  await act(async () => {
+    dismiss(1)
+  })
+  expect(document.activeElement).not.toBe(main)
+
+  server.newVersion = '0.9.1'
+  await remount()
+  await eventually(() => {
+    expect(container.textContent).toContain('0.9.1')
+  })
+  await act(async () => {
+    dismiss(0)
+  })
+  expect(document.activeElement).toBe(main)
 })

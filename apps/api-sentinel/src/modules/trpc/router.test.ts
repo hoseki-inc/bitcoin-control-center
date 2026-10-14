@@ -224,12 +224,13 @@ it('reports a newer desktop release once the check finds one, and nothing from s
   await fromSource.releaseCheckService.checkIfDue()
   await expect(appRouter.createCaller({ app: fromSource }).settings.releaseCheck()).resolves.toEqual({
     newVersion: null,
+    pending: false,
   })
   expect(fetch).not.toHaveBeenCalled()
 
   const desktop = (await setup({ releaseVersion: '0.1.0:0' })).app
+  const api = appRouter.createCaller({ app: desktop }).settings
+  await expect(api.releaseCheck()).resolves.toEqual({ newVersion: null, pending: true })
   await desktop.releaseCheckService.checkIfDue()
-  await expect(appRouter.createCaller({ app: desktop }).settings.releaseCheck()).resolves.toEqual({
-    newVersion: '0.2.0',
-  })
+  await expect(api.releaseCheck()).resolves.toEqual({ newVersion: '0.2.0', pending: false })
 })
