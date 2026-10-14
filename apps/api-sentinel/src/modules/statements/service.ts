@@ -6,6 +6,7 @@ import { parseUnknown } from '@hoseki/packages/result'
 import { Err, Ok, asyncFn } from '@hoseki/packages/result'
 import type { Result } from '@hoseki/packages/result'
 import { type StatementQuoteCurrency, StatementQuoteCurrencySchema } from '@hoseki/packages/schemas/statement-quote'
+import { isUsableTimezone } from '@hoseki/packages/schemas/timezone'
 import Decimal from 'decimal.js'
 import { and, asc, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
@@ -132,20 +133,6 @@ type SerializedDailyRate = z.infer<typeof SerializedDailyRateSchema>
 const MAX_STATEMENT_RANGE_YEARS = 2
 const MAX_STATEMENT_RANGE_DAYS = MAX_STATEMENT_RANGE_YEARS * 366
 const MS_PER_DAY = 24 * 60 * 60 * 1000
-
-/**
- * Accepts any zone the runtime can format: aliases such as Asia/Kolkata, fixed offsets such as
- * Etc/GMT+8 or +05:30, and names in any letter case. Browsers report some of these, but
- * Intl.supportedValuesOf omits them.
- */
-function isUsableTimezone(timezone: string): boolean {
-  try {
-    new Intl.DateTimeFormat('en-US', { timeZone: timezone })
-    return true
-  } catch {
-    return false
-  }
-}
 
 export function validateStatementInput(input: GenerateStatementInput, now = new Date()): Result<void, Error> {
   const { openingDate, closingDate } = input
