@@ -22,7 +22,7 @@ import { PriceService } from '../price/service'
 import { appRouter } from '../trpc/router'
 import type { AggregatedTransaction } from './mapper'
 import { StatementMapper } from './mapper'
-import { getRequiredRateDates, getStatementPeriods } from './rate_dates'
+import { PriceLoadError, getRequiredRateDates, getStatementPeriods } from './rate_dates'
 import { type GenerateStatementInput, StatementService, validateStatementInput } from './service'
 import { TransactionLoadError } from './sources/types'
 
@@ -77,19 +77,17 @@ async function setup(): Promise<void> {
   database = await openDrizzleDatabase(directory, logger)
   vi.stubGlobal(
     'fetch',
-    vi.fn().mockImplementation(async (url: string) =>
-      Response.json({
-        prices: [
-          {
-            time: Number(new URL(url).searchParams.get('timestamp')),
-            USD: 60000,
-            CAD: 81000,
-            GBP: 47000,
-            EUR: 55000,
-          },
-        ],
-      }),
-    ),
+    vi.fn().mockImplementation(async (url: string) => {
+      const timestamp = new URL(url).searchParams.get('timestamp')
+      // Without a timestamp, the full history: one price a day up to now.
+      const times =
+        timestamp === null
+          ? Array.from({ length: 1300 }, (_, i) => Math.floor(Date.now() / 86_400_000 - i) * 86_400)
+          : [Number(timestamp)]
+      return Response.json({
+        prices: times.map((time) => ({ time, USD: 60000, CAD: 81000, GBP: 47000, EUR: 55000 })),
+      })
+    }),
   )
 }
 
@@ -292,11 +290,12 @@ describe('statement currency persistence', () => {
     }
     expect(new StatementMapper().toPdfStatement(data, 'custom').isOk()).toBe(true)
     expect(new StatementMapper().toPdfStatement(data, 'monthly').isOk()).toBe(true)
-    expect(fetch).toHaveBeenCalledTimes(5)
+    // One download of the full history serves every day the statement needs.
+    expect(fetch).toHaveBeenCalledTimes(1)
   })
 })
 
-describe('statement timezone validation', () => {
+describe('statement input validation', () => {
   const now = new Date('2026-09-08T12:00:00Z')
   // Browsers can report aliases and fixed offsets that Intl.supportedValuesOf omits.
   it.each(['UTC', 'Asia/Kolkata', 'Asia/Calcutta', 'Europe/Kyiv', 'America/Nuuk', 'Etc/UTC', 'Etc/GMT+8'])(
@@ -309,6 +308,13 @@ describe('statement timezone validation', () => {
   it('rejects an unknown timezone', () => {
     expect(validateStatementInput({ ...input, timezone: 'Not/AZone' }, now).unwrapErr().message).toBe(
       'Invalid statement timezone.',
+    )
+  })
+
+  it('rejects a statement starting before prices are available', () => {
+    const openingDate = new Date('2023-03-31T00:00:00Z')
+    expect(validateStatementInput({ ...input, openingDate }, now).unwrapErr().message).toBe(
+      'Statements must start on or after April 1, 2023.',
     )
   })
 })
@@ -445,6 +451,12 @@ describe('statement failure messages', () => {
       logged: '"kind":"unavailable"',
     },
     {
+      scenario: 'prices that could not be confirmed',
+      error: new PriceLoadError('unavailable'),
+      message: "Couldn't get Bitcoin prices for this statement. Check your connection and try again.",
+      logged: '"kind":"unavailable"',
+    },
+    {
       scenario: 'any other failure',
       error: new Error('Account "Savings" must be verified before generating a statement'),
       message: 'Account "Savings" must be verified before generating a statement',
@@ -565,19 +577,14 @@ it('persists mixed provider attribution and exposes it in both PDF formats after
   vi.stubGlobal(
     'fetch',
     vi.fn().mockImplementation(async (urlString: string) => {
-      const url = new URL(urlString),
-        timestamp = Number(url.searchParams.get('timestamp'))
-      return Response.json({
-        prices: [
-          {
-            time: timestamp,
-            USD: 60000,
-            CAD: url.origin === 'http://local-mempool.test' && timestamp > opening.getTime() / 1000 ? -1 : 81000,
-            GBP: 47000,
-            EUR: 55000,
-          },
-        ],
-      })
+      // Daily prices from both sources, but the local one has CAD only until the opening date.
+      const local = new URL(urlString).origin === 'http://local-mempool.test'
+      const prices = []
+      for (let time = opening.getTime() / 1000 - 10 * 86_400; time * 1000 <= Date.now(); time += 86_400) {
+        const cad = local && time > opening.getTime() / 1000 ? -1 : 81000
+        prices.push({ time, USD: 60000, CAD: cad, GBP: 47000, EUR: 55000 })
+      }
+      return Response.json({ prices })
     }),
   )
   const id = (await service.create({ ...input, quoteCurrency: 'CAD' })).unwrap()

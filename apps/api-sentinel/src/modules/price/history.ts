@@ -81,7 +81,11 @@ export class PriceHistoryService {
       }
       // The current price source quotes USD only, so other currencies end at today's daily quote.
       const [rates, current] = await Promise.all([
-        this.dailyRatesService.getDailyRates(opening, closing, quoteCurrency, dates),
+        // Shown at once from saved prices while they refresh; its evenly spaced days reveal nothing.
+        this.dailyRatesService.getDailyRates(opening, closing, quoteCurrency, dates, {
+          staleWhileRefreshing: true,
+          requiredDaysOnly: true,
+        }),
         quoteCurrency === 'USD' ? this.priceService.getCurrentBtcPrice() : undefined,
       ])
       if (rates.isErr()) {

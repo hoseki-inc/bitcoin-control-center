@@ -133,7 +133,12 @@ export async function setupAppCaller(): Promise<AppCallerHarness> {
     mempoolApiUrl,
     settings: () => ({ source: undefined, fallbacks: false }),
   })
-  const dailyRatesService = new DailyRatesService({ db: database, logger, mempoolApiUrl })
+  const dailyRatesService = new DailyRatesService({
+    db: database,
+    logger,
+    mempoolApiUrl,
+    downloadRetryDelaysMs: [1, 1, 1, 1],
+  })
 
   const app: AppContext = {
     env,

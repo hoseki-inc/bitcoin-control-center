@@ -21,7 +21,9 @@ export default defineConfig(({ mode }) => {
     },
 
     server: {
+      // Sentinel's development CORS allows only this port, so fail rather than move to another one.
       port: 4269,
+      strictPort: true,
       host: 'localhost',
       fs: {
         strict: false,

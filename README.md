@@ -207,7 +207,7 @@ The normal development endpoints are:
 | Sentinel health check | `http://localhost:3400/health` |
 | Sentinel tRPC API     | `http://localhost:3400/trpc`   |
 
-Vite may select the next free port if `4269` is already occupied. Sentinel will stop with an address-in-use error if `3400` is occupied.
+Vite will stop with an error if `4269` is already occupied, and Sentinel will stop with an address-in-use error if `3400` is occupied. See [Port already in use](#port-already-in-use).
 
 The desktop app uses its own port, so it can run alongside local development.
 

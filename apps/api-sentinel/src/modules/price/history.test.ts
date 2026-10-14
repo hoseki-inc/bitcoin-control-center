@@ -18,14 +18,19 @@ let directory: string
 let database: SentinelDb
 let fetcher: ReturnType<typeof vi.fn<(url: string, init?: RequestInit) => Promise<Response>>>
 
-/** A mempool server that knows every hour, and quotes each day at a different USD price. */
-async function mempool(url: string): Promise<Response> {
-  const parsed = new URL(url)
-  if (parsed.pathname === '/api/v1/prices') {
-    return Response.json({ USD: 61000, time: nowSeconds - 60 })
+/** A mempool server's full history: a price each midnight up to `until`, each day at a different USD price. */
+function fullHistory(until = nowSeconds): Response {
+  const prices = []
+  for (let time = nowSeconds - 43_200 - 400 * 86_400; time <= until; time += 86_400) {
+    prices.push({ time, ...quotes, USD: 50000 + time / 86_400 })
   }
-  const timestamp = Number(parsed.searchParams.get('timestamp'))
-  return Response.json({ prices: [{ time: timestamp, ...quotes, USD: 50000 + timestamp / 86_400 }] })
+  return Response.json({ prices })
+}
+
+async function mempool(url: string): Promise<Response> {
+  return new URL(url).pathname === '/api/v1/prices'
+    ? Response.json({ USD: 61000, time: nowSeconds - 60 })
+    : fullHistory()
 }
 
 async function setup({ fallbacks = false }: { fallbacks?: boolean } = {}): Promise<PriceHistoryService> {
@@ -112,16 +117,10 @@ describe('Bitcoin price history', () => {
   it('plots a nearby quote used for a missing day once, at the time it was observed', async () => {
     const service = await setup()
     const observed = nowSeconds - 43_200 - 3 * 86_400
-    fetcher.mockImplementation(async (url) => {
-      const parsed = new URL(url)
-      if (parsed.pathname === '/api/v1/prices') {
-        return Response.json({ USD: 61000, time: nowSeconds - 60 })
-      }
-      const timestamp = Number(parsed.searchParams.get('timestamp'))
-      // The server has no prices after the observation, so later days fall back to it.
-      const time = Math.min(timestamp, observed)
-      return Response.json({ prices: [{ time, ...quotes, USD: 50000 + time / 86_400 }] })
-    })
+    // The server has no prices after the observation, so later days fall back to it.
+    fetcher.mockImplementation(async (url) =>
+      new URL(url).pathname === '/api/v1/prices' ? mempool(url) : fullHistory(observed),
+    )
     const history = (await service.getHistory(7)).expect('history')
     // Seven days ago through the observation, and nothing after it.
     expect(history.points.map(({ time }) => time)).toEqual([4, 3, 2, 1, 0].map((day) => observed - day * 86_400))
@@ -136,15 +135,23 @@ describe('Bitcoin price history', () => {
       url.endsWith('/api/v1/prices') ? new Response(null, { status: 503 }) : mempool(url),
     )
     expect((await service.getHistory(7)).expect('history').latest?.value).toBe(61000)
+    // Let the background refresh finish before cleanup.
+    await new Promise((resolve) => {
+      setTimeout(resolve, 20)
+    })
   })
 
-  it('reuses locally cached quotes on the next load', async () => {
+  it('reuses the downloaded history for a day', async () => {
     const service = await setup()
     await service.getHistory(30)
-    const historical = fetcher.mock.calls.filter(([url]) => url.includes('historical-price')).length
+    await service.getHistory(365)
+    vi.setSystemTime(now.getTime() + 23 * 3_600_000)
     await service.getHistory(30)
-    // Only today's quote, which may still change, is checked again.
-    expect(fetcher.mock.calls.filter(([url]) => url.includes('historical-price')).length - historical).toBeLessThan(2)
+    // Any background refresh would have started by now.
+    await new Promise((resolve) => {
+      setTimeout(resolve, 20)
+    })
+    expect(fetcher.mock.calls.filter(([url]) => url.includes('historical-price'))).toHaveLength(1)
   })
 
   it('quotes other currencies from the daily rates without the USD-only current price', async () => {
