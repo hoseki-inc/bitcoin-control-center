@@ -135,6 +135,10 @@ describe('Bitcoin price history', () => {
       url.endsWith('/api/v1/prices') ? new Response(null, { status: 503 }) : mempool(url),
     )
     expect((await service.getHistory(7)).expect('history').latest?.value).toBe(61000)
+    // Let the background refresh finish before cleanup.
+    await new Promise((resolve) => {
+      setTimeout(resolve, 20)
+    })
   })
 
   it('reuses the downloaded history for a day', async () => {

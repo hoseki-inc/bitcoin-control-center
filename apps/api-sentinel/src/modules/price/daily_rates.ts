@@ -179,7 +179,15 @@ export class DailyRatesService {
         deadline: Date.now() + this.priceBudgetMs,
       }
       if (options.staleWhileRefreshing === true) {
-        const saved = await this.pick(days, quoteCurrency)
+        // Recent prices come first, so a source offline for over a day doesn't hide another's.
+        const saved = await this.pick(days, quoteCurrency, { maxAge })
+        const older = await this.pick(
+          days.filter((day) => !saved.has(day)),
+          quoteCurrency,
+        )
+        for (const [target, quote] of older) {
+          saved.set(target, quote)
+        }
         if (saved.size === days.length) {
           void this.pick(coverage, quoteCurrency, { maxAge, wait })
             .then((refreshed) => {
@@ -203,14 +211,14 @@ export class DailyRatesService {
 
   /**
    * Each day's closest quote within four days, from this source, then from public mempool.space for
-   * any days left if Settings allows it. With `refresh`, a source whose history is older than
-   * `maxAge` downloads it again first, and is skipped if it can't; without, saved prices of any age
-   * are used.
+   * any days left if Settings allows it. With `recent`, a source whose history is older than
+   * `maxAge` is skipped, or with `wait`, downloads it again first and is skipped if it can't.
+   * Without, saved prices of any age are used.
    */
   private async pick(
     days: number[],
     currency: StatementQuoteCurrency,
-    refresh?: { maxAge: number; wait: Patience },
+    recent?: { maxAge: number; wait?: Patience },
   ): Promise<Map<number, CachedQuote>> {
     const chosen = new Map<number, CachedQuote>()
     for (const source of [this, this.publicFallback]) {
@@ -220,7 +228,12 @@ export class DailyRatesService {
       if (!source || (source !== this && !(await this.allowPublicFallback()))) {
         continue
       }
-      if (refresh && !(await source.ensureDownloaded(currency, refresh.maxAge, refresh.wait))) {
+      if (
+        recent &&
+        !(recent.wait
+          ? await source.ensureDownloaded(currency, recent.maxAge, recent.wait)
+          : await source.isRecent(currency, recent.maxAge))
+      ) {
         continue
       }
       const now = Date.now()
@@ -235,19 +248,26 @@ export class DailyRatesService {
     return chosen
   }
 
+  /** Whether this source downloaded its history in a currency within `maxAge`. */
+  private async isRecent(currency: StatementQuoteCurrency, maxAge: number): Promise<boolean> {
+    const downloadedAt = await this.cache.downloadedAt(currency)
+    return downloadedAt !== undefined && Date.now() - downloadedAt < maxAge
+  }
+
   /** Downloads this source's history in a currency unless it's recent enough. True if it is now. */
   private async ensureDownloaded(currency: StatementQuoteCurrency, maxAge: number, wait: Patience): Promise<boolean> {
-    const downloadedAt = await this.cache.downloadedAt(currency)
-    if (downloadedAt !== undefined && Date.now() - downloadedAt < maxAge) {
+    if (await this.isRecent(currency, maxAge)) {
       return true
     }
-    const running = this.downloads.get(currency)
-    if (running) {
+    for (let running = this.downloads.get(currency); running;) {
       const shared = await until(running.result, wait.deadline)
-      // A statement that joined the chart's quick attempt tries again with its own patience.
+      // A statement that joined the chart's quick attempt tries again with its own patience,
+      // joining another statement's retry if one has started.
       if (shared !== false || running.patient || !wait.patient) {
         return shared === true
       }
+      const next = this.downloads.get(currency)
+      running = next === running ? undefined : next
     }
     const result = this.download(currency, wait)
     const entry = { patient: wait.patient, result }
@@ -264,8 +284,12 @@ export class DailyRatesService {
   /** One request for every price this source has in a currency, replacing its saved history. */
   private async download(currency: StatementQuoteCurrency, wait: Patience): Promise<boolean> {
     // A statement waits out a short cooldown, such as one left by the chart's quick attempt.
-    const cooldown = this.unavailableUntil - Date.now()
-    if (cooldown > 0) {
+    // Checked again after waiting, since another currency's request may have extended it.
+    for (
+      let cooldown = this.unavailableUntil - Date.now();
+      cooldown > 0;
+      cooldown = this.unavailableUntil - Date.now()
+    ) {
       if (!wait.patient || !fits(cooldown, wait.deadline)) {
         return false
       }
