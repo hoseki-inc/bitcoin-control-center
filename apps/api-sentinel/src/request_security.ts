@@ -1,6 +1,9 @@
+import cors from '@fastify/cors'
 import type { FastifyInstance } from 'fastify'
 
 const DEFAULT_ALLOWED_HOST_PATTERNS = ['localhost', '127.0.0.1', '::1']
+// Matches server.port in apps/control-center/vite.config.ts, which uses strictPort so it never moves.
+const VITE_DEV_SERVER_PORT = '4269'
 
 function normalizeHostname(hostname: string): string {
   return hostname.trim().toLowerCase().replace(/^\[/, '').replace(/\]$/, '').replace(/\.$/, '')
@@ -73,14 +76,28 @@ function isAllowedHost(host: string | undefined, allowedPatterns: string[]): boo
   })
 }
 
-export function isAllowedDevelopmentOrigin(origin: string | undefined): boolean {
+// In development the UI runs on the Vite dev server, so only its origin may call Sentinel across origins.
+function isAllowedDevelopmentOrigin(origin: string | undefined): boolean {
   if (origin == null || origin === '') {
     return true
   }
 
   try {
     const url = new URL(origin)
-    return isLoopbackHost(url.hostname)
+    return url.protocol === 'http:' && isLoopbackHost(url.hostname) && url.port === VITE_DEV_SERVER_PORT
+  } catch {
+    return false
+  }
+}
+
+// Sentinel serves plain HTTP in development.
+function isSameOrigin(origin: string, host: string | undefined): boolean {
+  if (host === undefined) {
+    return false
+  }
+
+  try {
+    return new URL(origin).origin === new URL(`http://${host}`).origin
   } catch {
     return false
   }
@@ -88,6 +105,7 @@ export function isAllowedDevelopmentOrigin(origin: string | undefined): boolean 
 
 function isAllowedRequestOrigin(
   origin: string | undefined,
+  host: string | undefined,
   allowedHostPatterns: string[],
   isProduction: boolean,
 ): boolean {
@@ -95,7 +113,8 @@ function isAllowedRequestOrigin(
     return true
   }
   if (!isProduction) {
-    return isAllowedDevelopmentOrigin(origin)
+    const isOwnLoopbackOrigin = isLoopbackHost(getHostname(host) ?? '') && isSameOrigin(origin, host)
+    return isAllowedDevelopmentOrigin(origin) || isOwnLoopbackOrigin
   }
 
   try {
@@ -116,6 +135,10 @@ function isAllowedRequestOrigin(
 
 function isUnsafeMethod(method: string): boolean {
   return method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS'
+}
+
+function isJsonContentType(contentType: string | undefined): boolean {
+  return contentType?.split(';')[0]?.trim().toLowerCase() === 'application/json'
 }
 
 // Routing decodes the path, so an encoded request such as /%74rpc/... still reaches tRPC:
@@ -155,7 +178,7 @@ export function registerRequestSecurity(
       return reply.status(403).send({ code: 'forbidden_host', message: 'Host is not allowed' })
     }
 
-    if (!isAllowedRequestOrigin(request.headers.origin, allowedHostPatterns, isProduction)) {
+    if (!isAllowedRequestOrigin(request.headers.origin, host, allowedHostPatterns, isProduction)) {
       return reply.status(403).send({ code: 'forbidden_origin', message: 'Origin is not allowed' })
     }
 
@@ -166,5 +189,33 @@ export function registerRequestSecurity(
     ) {
       return reply.status(403).send({ code: 'forbidden_origin', message: 'Origin is required' })
     }
+
+    // The Origin check matches hostnames only, so a page on another port of an allowed host passes it. That page
+    // is same-site, while Control Center's own requests are same-origin. Development is exempt: the Vite dev server
+    // calls Sentinel from another port.
+    if (isProduction && secFetchSite === 'same-site' && isUnsafeMethod(request.method)) {
+      return reply.status(403).send({ code: 'forbidden_origin', message: 'Same-site changes are not allowed' })
+    }
+
+    // Browsers send Sec-Fetch-Site only to HTTPS and loopback addresses, so none over plain HTTP to a LAN IP or
+    // .local name, and Safari sent none before 16.4. Either way they send JSON across origins only after a
+    // preflight, which production CORS refuses.
+    if (isUnsafeMethod(request.method) && !isJsonContentType(request.headers['content-type'])) {
+      return reply
+        .status(415)
+        .send({ code: 'unsupported_content_type', message: 'Changes must be sent as application/json' })
+    }
+  })
+}
+
+// Production serves the UI from Sentinel's own origin, so it approves no cross-origin preflight.
+export async function registerCorsPolicy(server: FastifyInstance, isProduction: boolean): Promise<void> {
+  await server.register(cors, {
+    origin: isProduction
+      ? false
+      : (origin, callback) => {
+          callback(null, isAllowedDevelopmentOrigin(origin))
+        },
+    credentials: !isProduction,
   })
 }
