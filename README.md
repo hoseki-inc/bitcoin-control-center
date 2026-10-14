@@ -36,6 +36,7 @@ This repository intentionally excludes Hoseki Services, Armadillo, hosted authen
 - [Production builds](#production-builds)
 - [StartOS packaging](#startos-packaging)
 - [Releases](#releases)
+- [Verify a download](#verify-a-download)
 - [Desktop packaging](#desktop-packaging)
 - [Troubleshooting](#troubleshooting)
 - [Security and privacy](#security-and-privacy)
@@ -484,6 +485,42 @@ See the [StartOS package reference](start9/README.md) for service configuration.
 | [Release 3 - Create draft release](.github/workflows/release-3-create-draft-release.yml) | Verifies and builds all three platforms, then creates a draft GitHub Release with installers, build metadata, and checksums. |
 
 Version preparation and draft creation run from the default branch. Replace the generated release notes before merging the version PR, and review the draft before publishing. Nothing publishes to a StartOS registry. Without the `STARTOS_DEV_KEY` secret, StartOS packages are signed with a temporary key suitable only for clean-install testing. Set it to the project's permanent developer key, and never replace it once installs rely on it: upgrades need the same signer.
+
+## Verify a download
+
+Each release includes `SHA256SUMS`, which lists the SHA-256 checksum of every file in the release. Download it into the same folder as the files you downloaded, then run the command for your system from that folder.
+
+macOS:
+
+```bash
+shasum -a 256 --check --ignore-missing SHA256SUMS
+```
+
+Linux:
+
+```bash
+sha256sum --check --ignore-missing SHA256SUMS
+```
+
+Windows (PowerShell), replacing the file name with the installer you downloaded:
+
+```powershell
+(Get-FileHash .\Bitcoin-Control-Center-v0.3.0_0-win-x64.exe -Algorithm SHA256).Hash.ToLower()
+```
+
+On macOS and Linux, each downloaded file should print `OK`. On Windows, the printed checksum should match that file's line in `SHA256SUMS`.
+
+A `FAILED` line or a different checksum means the file is corrupted or incomplete. Delete it and download it again. If it still fails, don't install it, and [open an issue](https://github.com/hoseki-inc/bitcoin-control-center/issues) with the file name and release.
+
+### Check that a file came from this repository
+
+A checksum shows the file arrived intact, but `SHA256SUMS` comes from the same release page as the file. Releases built since this repository became public also have [GitHub artifact attestations](https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations), which record that a file was built by this repository's release workflow. To check one, install the [GitHub CLI](https://cli.github.com/), sign in with `gh auth login`, and run:
+
+```bash
+gh attestation verify Bitcoin-Control-Center-v0.3.0_0-mac-arm64.dmg --repo hoseki-inc/bitcoin-control-center
+```
+
+A successful check names the repository and the release workflow that built the file. Add `--format json` to see the exact commit. Earlier releases have no attestations, so use the checksum for those. If a newer release's file fails the check, don't install it, and [open an issue](https://github.com/hoseki-inc/bitcoin-control-center/issues).
 
 ## Desktop packaging
 

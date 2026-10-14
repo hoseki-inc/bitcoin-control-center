@@ -212,7 +212,23 @@ jobs:
             echo "These are review installers: macOS uses an ad-hoc signature without notarization; Windows has no publisher signature. Operating-system installation warnings are expected."
             echo ""
             echo "DESKTOP_BUILDS.json records each installer version, source commit, and checksum. SHA256SUMS covers all three installers and that metadata."
+            echo ""
+            echo "To check a download, see [Verify a download](https://github.com/${GITHUB_REPOSITORY}#verify-a-download)."
           } >> artifacts/GITHUB_RELEASE_NOTES.md
+
+      - name: Keep the release files for attestation
+        if: ${{ !github.event.repository.private }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-files
+          path: |
+            artifacts/*.s9pk
+            artifacts/*.dmg
+            artifacts/*.exe
+            artifacts/DESKTOP_BUILDS.json
+            artifacts/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 1
 
       - name: Create draft GitHub Release and exact tag
         id: release
@@ -278,3 +294,29 @@ jobs:
             fi
             echo "Review the draft and its checksum before publishing it."
           } >> "$GITHUB_STEP_SUMMARY"
+
+  # Attestation runs apart from the build so dependency and build scripts never hold the OIDC token. GitHub only
+  # stores attestations for public repositories (or with GitHub Enterprise), so private runs skip this job.
+  attest:
+    name: Attest release files
+    needs: release
+    if: ${{ !github.event.repository.private }}
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      attestations: write
+    steps:
+      - name: Download the release files
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-files
+          path: release-files
+
+      - name: Verify the release files against their checksums
+        working-directory: release-files
+        run: sha256sum -c SHA256SUMS
+
+      - name: Attest every file in SHA256SUMS
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-checksums: release-files/SHA256SUMS
