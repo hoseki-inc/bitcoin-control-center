@@ -14,9 +14,10 @@ on:
           - major (x.0.0:0)
           - revision (0.0.0:x)
 
+# Actions may not create or approve pull requests here: an approval from the Actions token would
+# count toward main's required review. The run links a prefilled pull request for you to open.
 permissions:
   contents: write
-  pull-requests: write
 
 concurrency:
   group: release-1-prepare-version
@@ -24,7 +25,7 @@ concurrency:
 
 jobs:
   prepare:
-    name: Open version pull request
+    name: Prepare version branch
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -99,7 +100,7 @@ jobs:
 
           REMOTE_BRANCH="$(git ls-remote --heads origin "refs/heads/${BRANCH}")"
           if [[ -n "$REMOTE_BRANCH" ]]; then
-            echo "::error::Release branch ${BRANCH} already exists. Update or remove its existing pull request before retrying."
+            echo "::error::Release branch ${BRANCH} already exists. Open its pull request from the earlier run, or delete the branch, before retrying."
             exit 1
           fi
 
@@ -120,11 +121,10 @@ jobs:
           git commit -m "release(startos): prepare ${TAG}"
           git push origin "HEAD:refs/heads/${BRANCH}"
 
-      - name: Open release pull request
+      - name: Link release pull request
         id: pull_request
         shell: bash
         env:
-          GH_TOKEN: ${{ github.token }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           BUMP_TYPE: ${{ inputs.bump_type }}
           OLD_VERSION: ${{ steps.version.outputs.old_version }}
@@ -160,11 +160,9 @@ jobs:
             echo "The tag is intentionally not created by this pull request. After merging, run Release 3 - Create draft release from main."
           } > "$RUNNER_TEMP/startos-release-pr.md"
 
-          PR_URL="$(gh pr create \
-            --base "$DEFAULT_BRANCH" \
-            --head "$BRANCH" \
-            --title "release(startos): prepare ${TAG}" \
-            --body-file "$RUNNER_TEMP/startos-release-pr.md")"
+          TITLE="$(jq -rn --arg value "release(startos): prepare ${TAG}" '$value | @uri')"
+          BODY="$(jq -Rrs '@uri' < "$RUNNER_TEMP/startos-release-pr.md")"
+          PR_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/compare/${DEFAULT_BRANCH}...${BRANCH}?quick_pull=1&title=${TITLE}&body=${BODY}"
           echo "url=${PR_URL}" >> "$GITHUB_OUTPUT"
 
       - name: Add preparation summary
@@ -180,7 +178,6 @@ jobs:
             echo ""
             echo "- Version: \`${OLD_VERSION}\` → \`${NEW_VERSION}\`"
             echo "- Exact tag: \`${TAG}\`"
-            echo "- Pull request: ${PR_URL}"
             echo ""
-            echo "GitHub may show an **Approve workflows to run** button on the automated pull request. Approve it so the protected checks can start."
+            echo "[Open the version pull request](${PR_URL}). Its title and description are filled in; select **Create pull request**."
           } >> "$GITHUB_STEP_SUMMARY"
