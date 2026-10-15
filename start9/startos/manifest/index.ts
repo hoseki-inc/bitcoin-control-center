@@ -6,9 +6,8 @@ export const manifest = setupManifest({
   license: 'Apache-2.0',
   packageRepo: 'https://github.com/hoseki-inc/bitcoin-control-center',
   upstreamRepo: 'https://github.com/hoseki-inc/bitcoin-control-center',
-  marketingUrl: 'https://hoseki.app',
+  marketingUrl: 'https://www.bitcoincontrolcenter.com',
   donationUrl: null,
-  docsUrls: ['https://help.hoseki.app'],
   description: {
     short: 'Privacy-first Bitcoin accounting for your stack',
     long: 'Bitcoin Control Center is privacy-first accounting for your stack. Connect hardware wallets, watch-only accounts, exchanges, and ETFs to track Bitcoin balances over time. Be your own bank with cryptographically verified proof-of-ownership statements. Self-custody data comes through an Electrum server you choose, preferably your own.',
@@ -23,26 +22,6 @@ export const manifest = setupManifest({
         },
       },
       arch: ['x86_64', 'aarch64'],
-    },
-  },
-  alerts: {
-    install: null,
-    update: null,
-    uninstall: null,
-    restore: null,
-    start: null,
-    stop: null,
-  },
-  dependencies: {
-    mempool: {
-      description: 'Required for Bitcoin prices and transaction details in statements.',
-      optional: false,
-      s9pk: null,
-    },
-    electrs: {
-      description: 'Required for on-chain Bitcoin data (address balances, transaction history).',
-      optional: false,
-      s9pk: null,
     },
   },
 })

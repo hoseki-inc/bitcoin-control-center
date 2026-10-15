@@ -7,6 +7,7 @@ const scriptDir = dirname(fileURLToPath(import.meta.url))
 const start9Dir = dirname(scriptDir)
 const versionsDir = join(start9Dir, 'startos', 'versions')
 const indexPath = join(versionsDir, 'index.ts')
+const currentPath = join(versionsDir, 'current.ts')
 
 const VERSION_RE = /^(\d+)\.(\d+)\.(\d+):(\d+)$/
 const RELEASE_NOTES_PLACEHOLDER_MARKER = 'STARTOS_RELEASE_NOTES_REQUIRED'
@@ -49,10 +50,16 @@ function formatVersion(version) {
   return `${version.major}.${version.minor}.${version.patch}:${version.revision}`
 }
 
-/** @param {string} version */
-function exportNameForVersion(version) {
+/**
+ * Historical files follow Start9's naming: v0.6.0_1.ts exporting v_0_6_0_1.
+ * @param {string} version
+ */
+function historicalNameForVersion(version) {
   const parsed = parseVersion(version)
-  return `v${parsed.major}_${parsed.minor}_${parsed.patch}_${parsed.revision}`
+  return {
+    file: `v${parsed.major}.${parsed.minor}.${parsed.patch}_${parsed.revision}`,
+    exportName: `v_${parsed.major}_${parsed.minor}_${parsed.patch}_${parsed.revision}`,
+  }
 }
 
 /** @param {string} version */
@@ -65,48 +72,33 @@ function readIndexSource() {
   return readFileSync(indexPath, 'utf8')
 }
 
-function readCurrentExportName() {
-  const source = readIndexSource()
-  const match = /current:\s*(v\d+_\d+_\d+_\d+)/.exec(source)
-  if (!match) {
-    throw new Error(`Could not find current version in ${indexPath}.`)
+function readCurrentSource() {
+  if (!existsSync(currentPath)) {
+    throw new Error(`StartOS current version file ${currentPath} is missing.`)
   }
-  return match[1]
+  return readFileSync(currentPath, 'utf8')
 }
 
-function readOtherExportNames() {
-  const source = readIndexSource()
-  const match = /other:\s*\[([^\]]*)\]/m.exec(source)
-  if (!match) {
-    return []
-  }
-  return match[1]
-    .split(',')
-    .map((part) => part.trim())
-    .filter((part) => /^v\d+_\d+_\d+_\d+$/.test(part))
-}
-
-function readVersionForExport(exportName) {
-  const versionPath = join(versionsDir, `${exportName}.ts`)
-  if (!existsSync(versionPath)) {
-    throw new Error(`Version graph references missing file ${versionPath}.`)
-  }
-
-  const source = readFileSync(versionPath, 'utf8')
-  const exportPattern = new RegExp(`export const ${exportName}\\s*=`)
-  if (!exportPattern.test(source)) {
-    throw new Error(`${versionPath} must export ${exportName}.`)
-  }
-
+/** @param {string} source @param {string} path */
+function readVersionFromSource(source, path) {
   const match = /version:\s*'([^']+)'/.exec(source)
   if (!match) {
-    throw new Error(`Could not find version string in ${versionPath}.`)
+    throw new Error(`Could not find version string in ${path}.`)
   }
   return match[1]
+}
+
+/** Historical version exports listed in the graph's `other` array. */
+function readOtherExportNames() {
+  const match = /other:\s*\[([^\]]*)\]/m.exec(readIndexSource())
+  if (!match) {
+    throw new Error(`Could not find the other array in ${indexPath}.`)
+  }
+  return match[1].split(/[,\s]+/).filter((part) => /^v_\d+_\d+_\d+_\d+$/.test(part))
 }
 
 function currentVersion() {
-  return readVersionForExport(readCurrentExportName())
+  return readVersionFromSource(readCurrentSource(), currentPath)
 }
 
 /**
@@ -158,78 +150,60 @@ function compareVersions(left, right) {
 
 function validateVersionGraph() {
   const source = readIndexSource()
-  const currentExportName = readCurrentExportName()
-  const otherExportNames = readOtherExportNames()
-  const referencedExportNames = [currentExportName, ...otherExportNames]
-
-  if (new Set(referencedExportNames).size !== referencedExportNames.length) {
-    throw new Error('StartOS version graph contains duplicate version exports.')
+  if (!source.includes("import { current } from './current'") || !source.includes('current,')) {
+    throw new Error(`${indexPath} must import current from ./current and use it as the graph's current version.`)
   }
 
-  const importedExportNames = [
-    ...source.matchAll(/import \{ (v\d+_\d+_\d+_\d+) \} from '\.\/(v\d+_\d+_\d+_\d+)'/g),
-  ].map(([, exportName, pathName]) => {
-    if (exportName !== pathName) {
-      throw new Error(`Version import ${exportName} must come from ./${exportName}.`)
+  const current = currentVersion()
+  parseVersion(current)
+  if (!/export const current\s*=/.test(readCurrentSource())) {
+    throw new Error(`${currentPath} must export current.`)
+  }
+
+  // Start9 keeps earlier versions only while a later release migrates from them.
+  const others = readOtherExportNames().map((exportName) => {
+    const importMatch = new RegExp(`import \\{ ${exportName} \\} from '\\./(v[^']+)'`).exec(source)
+    if (!importMatch) {
+      throw new Error(`Version graph references ${exportName} without importing it.`)
     }
-    return exportName
+    const path = join(versionsDir, `${importMatch[1]}.ts`)
+    if (!existsSync(path)) {
+      throw new Error(`Version graph references missing file ${path}.`)
+    }
+    const fileSource = readFileSync(path, 'utf8')
+    const version = readVersionFromSource(fileSource, path)
+    const expected = historicalNameForVersion(version)
+    if (expected.file !== importMatch[1] || expected.exportName !== exportName) {
+      throw new Error(`${path} declares ${version}; expected ${expected.file}.ts exporting ${expected.exportName}.`)
+    }
+    if (!new RegExp(`export const ${exportName}\\s*=`).test(fileSource)) {
+      throw new Error(`${path} must export ${exportName}.`)
+    }
+    if (compareVersions(current, version) <= 0) {
+      throw new Error(`Historical version ${version} must be lower than current version ${current}.`)
+    }
+    return { file: importMatch[1], source: fileSource }
   })
 
-  if (new Set(importedExportNames).size !== importedExportNames.length) {
-    throw new Error('StartOS version graph contains duplicate imports.')
-  }
-
-  const referenced = new Set(referencedExportNames)
-  const imported = new Set(importedExportNames)
-  const missingImports = referencedExportNames.filter((name) => !imported.has(name))
-  const unusedImports = importedExportNames.filter((name) => !referenced.has(name))
-  if (missingImports.length > 0 || unusedImports.length > 0) {
-    throw new Error(
-      `StartOS version imports do not match the graph (missing: ${missingImports.join(', ') || 'none'}; unused: ${unusedImports.join(', ') || 'none'}).`,
-    )
-  }
-
-  const versionFiles = readdirSync(versionsDir)
-    .filter((name) => /^v\d+_\d+_\d+_\d+\.ts$/.test(name))
+  const referencedFiles = new Set(['current', 'index', ...others.map(({ file }) => file)])
+  const unreferencedFiles = readdirSync(versionsDir)
+    .filter((name) => name.endsWith('.ts'))
     .map((name) => name.slice(0, -3))
-  const unreferencedFiles = versionFiles.filter((name) => !referenced.has(name))
+    .filter((name) => !referencedFiles.has(name))
   if (unreferencedFiles.length > 0) {
     throw new Error(`StartOS version files are not referenced by the graph: ${unreferencedFiles.join(', ')}.`)
   }
 
-  const versionsWithPlaceholderNotes = referencedExportNames.filter((exportName) =>
-    readFileSync(join(versionsDir, `${exportName}.ts`), 'utf8').includes(RELEASE_NOTES_PLACEHOLDER_MARKER),
-  )
-  if (versionsWithPlaceholderNotes.length > 0 && process.env.STARTOS_ALLOW_RELEASE_NOTES_PLACEHOLDER !== '1') {
-    throw new Error(
-      `Replace the release-notes placeholder in ${versionsWithPlaceholderNotes.join(', ')}.ts before merging or building.`,
-    )
+  if (
+    [readCurrentSource(), ...others.map(({ source: fileSource }) => fileSource)].some((fileSource) =>
+      fileSource.includes(RELEASE_NOTES_PLACEHOLDER_MARKER),
+    ) &&
+    process.env.STARTOS_ALLOW_RELEASE_NOTES_PLACEHOLDER !== '1'
+  ) {
+    throw new Error('Replace the release-notes placeholder in startos/versions before merging or building.')
   }
 
-  const versions = referencedExportNames.map((exportName) => {
-    const version = readVersionForExport(exportName)
-    parseVersion(version)
-    if (exportNameForVersion(version) !== exportName) {
-      throw new Error(
-        `${exportName}.ts declares ${version}; expected export/file name ${exportNameForVersion(version)}.`,
-      )
-    }
-    return version
-  })
-
-  if (new Set(versions).size !== versions.length) {
-    throw new Error('StartOS version graph contains duplicate version strings.')
-  }
-
-  for (let index = 1; index < versions.length; index += 1) {
-    if (compareVersions(versions[index - 1], versions[index]) <= 0) {
-      throw new Error(
-        `StartOS versions must be newest-first; ${versions[index - 1]} is not greater than ${versions[index]}.`,
-      )
-    }
-  }
-
-  return versions[0]
+  return current
 }
 
 /** @param {string[]} args */
@@ -245,55 +219,14 @@ function parseNotes(args) {
   return notes
 }
 
-function writeVersionFile(exportName, version, releaseNotes) {
-  const versionPath = join(versionsDir, `${exportName}.ts`)
-  if (existsSync(versionPath)) {
-    return
-  }
-
-  writeFileSync(
-    versionPath,
-    `import { VersionInfo } from '@start9labs/start-sdk'
-
-export const ${exportName} = VersionInfo.of({
-  version: '${version}',
-  releaseNotes: ${JSON.stringify(releaseNotes)},
-  migrations: {},
-})
-`,
-  )
-}
-
 /**
- * @param {string} currentExportName
- * @param {string[]} otherExportNames
- */
-function writeIndex(currentExportName, otherExportNames) {
-  const allImports = [currentExportName, ...otherExportNames]
-  const imports = allImports.map((name) => `import { ${name} } from './${name}'`).join('\n')
-  const other = otherExportNames.length > 0 ? `[${otherExportNames.join(', ')}]` : '[]'
-
-  writeFileSync(
-    indexPath,
-    `import { VersionGraph } from '@start9labs/start-sdk'
-${imports}
-
-export const versionGraph = VersionGraph.of({
-  current: ${currentExportName},
-  other: ${other},
-})
-`,
-  )
-}
-
-/**
+ * Start9 bumps current.ts in place unless its version carries a migration, which
+ * must first move to its own historical file so it still runs.
  * @param {string} targetVersion
  * @param {string} releaseNotes
  */
 function setVersion(targetVersion, releaseNotes) {
-  const currentExportName = readCurrentExportName()
-  const oldVersion = readVersionForExport(currentExportName)
-  const targetExportName = exportNameForVersion(targetVersion)
+  const oldVersion = currentVersion()
 
   if (targetVersion === oldVersion) {
     validateVersionGraph()
@@ -305,12 +238,24 @@ function setVersion(targetVersion, releaseNotes) {
     throw new Error(`Target version ${targetVersion} must be greater than current version ${oldVersion}.`)
   }
 
-  writeVersionFile(targetExportName, targetVersion, releaseNotes)
+  if (!/migrations:\s*\{\s*\}/.test(readCurrentSource())) {
+    const { file, exportName } = historicalNameForVersion(oldVersion)
+    throw new Error(
+      `${oldVersion} carries a migration. Move current.ts to ${file}.ts exporting ${exportName}, add it to other, then bump.`,
+    )
+  }
 
-  const otherExportNames = [currentExportName, ...readOtherExportNames()].filter(
-    (name, index, all) => name !== targetExportName && all.indexOf(name) === index,
+  writeFileSync(
+    currentPath,
+    `import { VersionInfo } from '@start9labs/start-sdk'
+
+export const current = VersionInfo.of({
+  version: '${targetVersion}',
+  releaseNotes: ${JSON.stringify(releaseNotes)},
+  migrations: {},
+})
+`,
   )
-  writeIndex(targetExportName, otherExportNames)
   validateVersionGraph()
 
   console.log(`${oldVersion} -> ${targetVersion}`)

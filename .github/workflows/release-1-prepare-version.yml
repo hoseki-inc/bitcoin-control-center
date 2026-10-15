@@ -66,7 +66,7 @@ jobs:
           NEW_VERSION="$(node start9/scripts/version.mjs get)"
           TAG="$(node start9/scripts/version.mjs tag)"
           BRANCH="release/startos-${TAG}"
-          VERSION_FILE="start9/startos/versions/${TAG//./_}.ts"
+          VERSION_FILE="start9/startos/versions/current.ts"
           {
             echo "old_version=${OLD_VERSION}"
             echo "new_version=${NEW_VERSION}"
