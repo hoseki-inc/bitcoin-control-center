@@ -1,10 +1,10 @@
-# Sideload bundles from umbrel/build.sh add a pre-release suffix to `version`.
+# umbrel/build.sh sets `version` from the shared release version (start9/scripts/version.mjs umbrel).
 # Add `submission` (the getumbrel/umbrel-apps pull request URL) when submitting.
 manifestVersion: 1
 id: bitcoin-control-center
 category: bitcoin
 name: Bitcoin Control Center
-version: '1.0.0'
+version: '__VERSION__'
 tagline: Privacy-first Bitcoin accounting for your stack
 description: >-
   Bitcoin Control Center is privacy-first accounting for your stack. Connect hardware wallets, watch-only accounts,
