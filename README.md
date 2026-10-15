@@ -146,22 +146,23 @@ Press `Ctrl+C` in the terminal to stop both processes.
 
 Sentinel reads `apps/api-sentinel/.env` during local development. That file is ignored by Git.
 
-| Variable                  | Required | Default                   | Description                                                                   |
-| ------------------------- | -------- | ------------------------- | ----------------------------------------------------------------------------- |
-| `ELECTRUM_HOST`           | Yes      | None                      | Electrum hostname or IP address                                               |
-| `ELECTRUM_PORT`           | No       | `50001`                   | Electrum TCP or SSL port                                                      |
-| `ELECTRUM_PROTOCOL`       | No       | `tcp`                     | `tcp` or `ssl`                                                                |
-| `BITCOIN_NETWORK`         | No       | `mainnet`                 | `mainnet` or `testnet`; must match the Electrum server                        |
-| `HOST`                    | No       | `localhost`               | Address on which Sentinel listens                                             |
-| `PORT`                    | No       | `3400`                    | Sentinel HTTP port                                                            |
-| `DATA_DIR`                | No       | `./data`                  | SQLite database and local secret-key directory                                |
-| `LOG_LEVEL`               | No       | `info`                    | `trace`, `debug`, `info`, `warn`, `error`, or `fatal`                         |
-| `MEMPOOL_API_URL`         | No       | `https://mempool.space`   | Base URL for market and transaction data; may point to a self-hosted instance |
-| `APP_DIR`                 | No       | Current working directory | Directory containing bundled `public/` and `assets/` folders                  |
-| `SENTINEL_ALLOWED_HOSTS`  | No       | Loopback hosts            | Comma-separated additional hostnames accepted by the protected local API      |
-| `SENTINEL_ALLOW_IP_HOSTS` | No       | `false`                   | `true` also accepts any IP-address host; used where addresses are unknown     |
-| `SOCKS_PROXY_HOST`        | No       | None                      | External Tor SOCKS host when running Sentinel on its own; desktop ignores it  |
-| `SOCKS_PROXY_PORT`        | No       | None                      | External Tor SOCKS port when running Sentinel on its own; desktop ignores it  |
+| Variable                     | Required | Default                   | Description                                                                      |
+| ---------------------------- | -------- | ------------------------- | -------------------------------------------------------------------------------- |
+| `ELECTRUM_HOST`              | Yes      | None                      | Electrum hostname or IP address                                                  |
+| `ELECTRUM_PORT`              | No       | `50001`                   | Electrum TCP or SSL port                                                         |
+| `ELECTRUM_PROTOCOL`          | No       | `tcp`                     | `tcp` or `ssl`                                                                   |
+| `BITCOIN_NETWORK`            | No       | `mainnet`                 | `mainnet` or `testnet`; must match the Electrum server                           |
+| `HOST`                       | No       | `localhost`               | Address on which Sentinel listens                                                |
+| `PORT`                       | No       | `3400`                    | Sentinel HTTP port                                                               |
+| `DATA_DIR`                   | No       | `./data`                  | SQLite database and local secret-key directory                                   |
+| `LOG_LEVEL`                  | No       | `info`                    | `trace`, `debug`, `info`, `warn`, `error`, or `fatal`                            |
+| `MEMPOOL_API_URL`            | No       | `https://mempool.space`   | Base URL for market and transaction data; may point to a self-hosted instance    |
+| `APP_DIR`                    | No       | Current working directory | Directory containing bundled `public/` and `assets/` folders                     |
+| `SENTINEL_ALLOWED_HOSTS`     | No       | Loopback hosts            | Comma-separated additional hostnames accepted by the protected local API         |
+| `SENTINEL_ALLOW_IP_HOSTS`    | No       | `false`                   | `true` also accepts any IP-address host; used where addresses are unknown        |
+| `SENTINEL_WAIT_FOR_ELECTRUM` | No       | `true`                    | `false` serves the app while Electrum is unreachable instead of failing to start |
+| `SOCKS_PROXY_HOST`           | No       | None                      | External Tor SOCKS host when running Sentinel on its own; desktop ignores it     |
+| `SOCKS_PROXY_PORT`           | No       | None                      | External Tor SOCKS port when running Sentinel on its own; desktop ignores it     |
 
 ### Electrum connection guidance
 

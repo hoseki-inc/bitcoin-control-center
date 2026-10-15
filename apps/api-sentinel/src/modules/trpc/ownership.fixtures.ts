@@ -94,6 +94,7 @@ function createTestEnvironment(directory: string): Env {
     MEMPOOL_API_URL: 'https://example.invalid',
     LOG_LEVEL: 'error',
     SENTINEL_ALLOW_IP_HOSTS: false,
+    SENTINEL_WAIT_FOR_ELECTRUM: true,
   }
 }
 
