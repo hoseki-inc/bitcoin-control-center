@@ -479,7 +479,7 @@ See the [StartOS package reference](start9/README.md) for service configuration.
 
 | Workflow                                                                                 | Result                                                                                                                       |
 | ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| [Release 1 - Prepare version](.github/workflows/release-1-prepare-version.yml)           | Choose a release type; opens a version PR with a required release-notes placeholder.                                         |
+| [Release 1 - Prepare version](.github/workflows/release-1-prepare-version.yml)           | Choose a release type; pushes a version branch and links a prefilled PR with a required release-notes placeholder.           |
 | [Release 2 - Build candidates](.github/workflows/release-2-build-candidates.yml)         | Builds StartOS, Mac ARM64, and Windows x64 test packages from one commit; retains Actions artifacts for 14 days.             |
 | [Release 3 - Create draft release](.github/workflows/release-3-create-draft-release.yml) | Verifies and builds all three platforms, then creates a draft GitHub Release with installers, build metadata, and checksums. |
 
