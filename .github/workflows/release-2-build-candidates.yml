@@ -155,6 +155,158 @@ jobs:
       CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
       APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
 
+  # Each architecture builds natively. A matrix job's legs share one set of outputs, so each leg sets
+  # only the outputs named for its architecture.
+  umbrel-image:
+    name: Build Umbrel sideload image (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            os: ubuntu-latest
+          - arch: arm64
+            os: ubuntu-24.04-arm
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    outputs:
+      amd64_sha256: ${{ steps.image.outputs.amd64_sha256 }}
+      arm64_sha256: ${{ steps.image.outputs.arm64_sha256 }}
+    steps:
+      - name: Check out selected revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Verify the workflow commit before executing repository code
+        run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+
+      - name: Set up Node workspace
+        uses: ./.github/actions/setup
+        with:
+          cache: 'false'
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      - name: Build Sentinel and the web app
+        run: ./umbrel/build.sh app
+
+      - name: Build the sideload image
+        id: image
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          # Written outside the checkout: an untracked file would mark the sideload version dirty.
+          ./umbrel/build.sh image "$ARCH" sideload "$RUNNER_TEMP/umbrel-image/${ARCH}.tar"
+          echo "${ARCH}_sha256=$(sha256sum "$RUNNER_TEMP/umbrel-image/${ARCH}.tar" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
+      - name: Confirm packaging did not edit source files
+        run: git diff --exit-code
+
+      - name: Upload the image for the bundle
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: umbrel-sideload-image-${{ matrix.arch }}
+          path: ${{ runner.temp }}/umbrel-image/${{ matrix.arch }}.tar
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+  umbrel-bundle:
+    name: Pack private Umbrel sideload bundle
+    needs: umbrel-image
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out selected revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Verify the workflow commit before executing repository code
+        run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+
+      # Packing uses only Node built-ins and shell tools, so no dependencies are installed here.
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: '.nvmrc'
+
+      - name: Download the amd64 image
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: umbrel-sideload-image-amd64
+          path: ${{ runner.temp }}/umbrel-images
+
+      - name: Download the arm64 image
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: umbrel-sideload-image-arm64
+          path: ${{ runner.temp }}/umbrel-images
+
+      # Other jobs can replace artifacts but not job outputs, so each image must match its build job's hash.
+      - name: Confirm the images are the ones the build jobs produced
+        working-directory: ${{ runner.temp }}/umbrel-images
+        env:
+          AMD64_SHA256: ${{ needs.umbrel-image.outputs.amd64_sha256 }}
+          ARM64_SHA256: ${{ needs.umbrel-image.outputs.arm64_sha256 }}
+        run: |
+          printf '%s  amd64.tar\n%s  arm64.tar\n' "$AMD64_SHA256" "$ARM64_SHA256" | sha256sum --check --strict
+
+      - name: Pack the sideload bundle
+        id: bundle
+        shell: bash
+        run: |
+          ./umbrel/build.sh bundle "$RUNNER_TEMP/umbrel-images" "$RUNNER_TEMP/umbrel-bundle"
+          cd "$RUNNER_TEMP/umbrel-bundle"
+          BUNDLE_FILES=(*.tar.gz)
+          if [[ ${#BUNDLE_FILES[@]} -ne 1 || ! -f "${BUNDLE_FILES[0]}" ]]; then
+            echo "::error::Expected exactly one sideload bundle."
+            exit 1
+          fi
+          BUNDLE_FILE="${BUNDLE_FILES[0]}"
+          mkdir "$RUNNER_TEMP/umbrel-artifact"
+          cp "$BUNDLE_FILE" "$RUNNER_TEMP/umbrel-artifact/"
+          (cd "$RUNNER_TEMP/umbrel-artifact" && sha256sum "$BUNDLE_FILE" > SHA256SUMS)
+          {
+            echo "name=${BUNDLE_FILE%.tar.gz}"
+            echo "file=${BUNDLE_FILE}"
+            echo "sha256=$(sha256sum "$BUNDLE_FILE" | cut -d' ' -f1)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Upload the private sideload bundle
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ steps.bundle.outputs.name }}
+          path: |
+            ${{ runner.temp }}/umbrel-artifact/${{ steps.bundle.outputs.file }}
+            ${{ runner.temp }}/umbrel-artifact/SHA256SUMS
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+      - name: Add bundle summary
+        shell: bash
+        env:
+          BUNDLE_FILE: ${{ steps.bundle.outputs.file }}
+          SHA256: ${{ steps.bundle.outputs.sha256 }}
+        run: |
+          {
+            echo "## Umbrel sideload candidate"
+            echo ""
+            echo "- Version: \`$(node start9/scripts/version.mjs umbrel)\`"
+            echo "- Bundle: \`${BUNDLE_FILE}\`"
+            echo "- Source commit: \`$(git rev-parse --short=12 HEAD)\`"
+            echo "- Architectures: \`amd64\`, \`arm64\`"
+            echo "- SHA-256: \`${SHA256}\`"
+            echo "- Published: no"
+            echo ""
+            echo "Install: upload the bundle to the Umbrel's Files → Home, then in Settings → Advanced settings → Terminal → umbrelOS run \`tar -xzf ~/umbrel/home/${BUNDLE_FILE} -C ~\` and \`~/bitcoin-control-center-umbrel/install.sh\`."
+          } >> "$GITHUB_STEP_SUMMARY"
+
   # Runs Release 3's assembly and checksum verification on these candidates, without creating a release.
   assemble:
     name: Rehearse release assembly
