@@ -6,9 +6,13 @@ const servers: FastifyInstance[] = []
 const publicIp = '203.0.113.42'
 const allowedHosts = `${publicIp},10.0.0.20,fd00::20,node.local,example.onion,control.example.com`
 
-function createServer(configuredHosts: string | undefined = allowedHosts, isProduction = true): FastifyInstance {
+function createServer(
+  configuredHosts: string | undefined = allowedHosts,
+  isProduction = true,
+  allowIpAddressHosts = false,
+): FastifyInstance {
   const server = Fastify()
-  registerRequestSecurity(server, configuredHosts, isProduction)
+  registerRequestSecurity(server, configuredHosts, isProduction, allowIpAddressHosts)
   server.get('/', async () => 'Control Center')
   server.get('/health', async () => ({ status: 'ok' }))
   server.get('/trpc/data', async () => ({ ok: true }))
@@ -358,6 +362,73 @@ describe('Sentinel interface access', () => {
         },
       })
       expect(response.headers['access-control-allow-origin']).toBe(request.approved ? request.origin : undefined)
+    })
+  })
+
+  describe('with IP-address hosts allowed, as on Umbrel', () => {
+    const umbrelHosts = '*.local,*.onion,*.ts.net'
+
+    it.each([
+      'http://192.168.1.20:3400',
+      'http://100.101.102.103:3400',
+      'http://[fd00::20]:3400',
+      'http://umbrel.local:3400',
+      'https://umbrel.tailnet-example.ts.net',
+    ])('accepts API reads and writes through %s', async (origin) => {
+      await withTestSetup(async () => {
+        const server = createServer(umbrelHosts, true, true)
+        // Umbrel's proxy keeps Host and sets X-Forwarded-Host to the same address.
+        const { host } = new URL(origin)
+        const headers = {
+          host,
+          'x-forwarded-host': host,
+          origin,
+          'sec-fetch-site': 'same-origin',
+        }
+        const read = await server.inject({ url: '/trpc/data', headers })
+        const write = await server.inject({
+          ...jsonWrite(headers),
+          remoteAddress: '10.21.0.1',
+        })
+        expect(read.statusCode).toBe(200)
+        expect(write.statusCode).toBe(200)
+      })
+    })
+
+    it('still rejects hostnames outside the configured patterns', async () => {
+      await withTestSetup(async () => {
+        const response = await createServer(umbrelHosts, true, true).inject({
+          url: '/trpc/data',
+          headers: { host: 'rebind.evil.example:3400' },
+        })
+        expect(response.statusCode).toBe(403)
+        expect(response.json()).toMatchObject({ code: 'forbidden_host' })
+      })
+    })
+
+    it('rejects writes from a page served by a different IP address', async () => {
+      await withTestSetup(async () => {
+        const response = await createServer(umbrelHosts, true, true).inject({
+          ...jsonWrite({
+            host: '192.168.1.20:3400',
+            origin: 'http://203.0.113.9',
+          }),
+          remoteAddress: '10.21.0.1',
+        })
+        expect(response.statusCode).toBe(403)
+        expect(response.json()).toMatchObject({ code: 'forbidden_origin' })
+      })
+    })
+
+    it('is off by default', async () => {
+      await withTestSetup(async () => {
+        const response = await createServer(umbrelHosts).inject({
+          url: '/trpc/data',
+          headers: { host: '192.168.1.20:3400' },
+        })
+        expect(response.statusCode).toBe(403)
+        expect(response.json()).toMatchObject({ code: 'forbidden_host' })
+      })
     })
   })
 })
