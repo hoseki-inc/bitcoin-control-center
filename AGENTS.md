@@ -40,6 +40,13 @@ pnpm build
 - Distribution-specific configuration belongs in `start9`, `desktop`, or `umbrel`.
 - New functionality must preserve local storage, auditability, and the absence of an implicit cloud service.
 
+## Umbrel package
+
+- `./umbrel/build.sh [--arch amd64|arm64]` builds a sideload bundle in `umbrel/dist/`. Its `install.sh` runs on the device and serves the unpublished image from a temporary loopback registry, because Umbrel pulls every app image from a registry.
+- `build.sh` fills `__VERSION__` from `node start9/scripts/version.mjs umbrel`, the shared release version, and fills `__IMAGE__`; never hardcode either. Never change the app ID `bitcoin-control-center` or port `3400`, and add `submission:` only in the getumbrel/umbrel-apps copy.
+- The manifest sets `requiresHttps` and `manifestVersion: 2.0` because Ledger (WebHID) and camera QR scanning need a secure context. This package requires umbrelOS 2.0 or newer.
+- Leave out `storage: dataRoot`: Sentinel's SQLite database uses WAL, which is unsafe on the network shares Umbrel can move app data to.
+
 ## Issue #91 lint rollout
 
 - Introduce one lint rule at a time, in the order listed in issue #91 unless the user chooses a different order.
