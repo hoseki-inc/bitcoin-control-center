@@ -26,7 +26,8 @@ services:
       # Sentinel supports mainnet and testnet only. Like StartOS, this package targets mainnet.
       BITCOIN_NETWORK: mainnet
       LOG_LEVEL: info
-      # Umbrel passes the browser's Host header through its login proxy but does
-      # not tell apps their LAN or Tailscale addresses, so allow IP-address hosts.
-      SENTINEL_ALLOWED_HOSTS: '*.local,*.onion,*.ts.net'
+      # Umbrel opens apps at whatever name or address the dashboard uses and doesn't tell
+      # apps their LAN or Tailscale addresses. Allow IP addresses, the device's own name, and
+      # names that only resolve privately; none of them can be used for DNS rebinding.
+      SENTINEL_ALLOWED_HOSTS: '${DEVICE_HOSTNAME},*.local,*.onion,*.ts.net,*.lan,*.home.arpa,*.internal'
       SENTINEL_ALLOW_IP_HOSTS: 'true'

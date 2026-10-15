@@ -101,6 +101,12 @@ install_or_update() {
   "${DOCKER[@]}" run --detach --rm --name "$REGISTRY_CONTAINER" --publish "$REGISTRY:5000" "$REGISTRY_IMAGE" >/dev/null
   wait_for_registry
   "${DOCKER[@]}" push "$IMAGE"
+  # Pin what was pushed, so Umbrel installs exactly this image even though the
+  # temporary registry accepts pushes from anything on the device.
+  local digest
+  digest="$("${DOCKER[@]}" inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$IMAGE" |
+    grep "^${IMAGE%:*}@" | head -1 | cut -d@ -f2 || true)"
+  [[ "$digest" == sha256:* ]] || die "Could not read the digest of the pushed image."
 
   # Umbrel replaces its App Store directory when the store receives new commits,
   # so this copy only needs to last until the install or update below finishes.
@@ -108,6 +114,9 @@ install_or_update() {
   store="$(store_dir)"
   echo "==> Copying app package to $store/$APP_ID..."
   rsync --archive --delete --exclude .gitkeep "$BUNDLE_DIR/$APP_ID/" "$store/$APP_ID/"
+  local compose="$store/$APP_ID/docker-compose.yml"
+  sed "s|image: $IMAGE\$|image: $IMAGE@$digest|" "$compose" >"$compose.pinned" && mv "$compose.pinned" "$compose"
+  grep -q "image: $IMAGE@$digest" "$compose" || die "Could not pin the image in the app package."
 
   if is_installed "$APP_ID"; then
     echo "==> Updating $APP_ID to $VERSION..."
@@ -119,7 +128,7 @@ install_or_update() {
 
   app_state "$APP_ID"
   echo ""
-  echo "Open Bitcoin Control Center from the Umbrel home screen, or at http://$(hostname).local:3400"
+  echo "Open Bitcoin Control Center from the Umbrel home screen to use its HTTPS launch."
   echo "Logs: $BUNDLE_DIR/install.sh logs    Remove: $BUNDLE_DIR/install.sh uninstall"
 }
 

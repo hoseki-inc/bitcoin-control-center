@@ -1,6 +1,6 @@
 # umbrel/build.sh sets `version` from the shared release version (start9/scripts/version.mjs umbrel).
 # Add `submission` (the getumbrel/umbrel-apps pull request URL) when submitting.
-manifestVersion: 1
+manifestVersion: 2.0
 id: bitcoin-control-center
 category: bitcoin
 name: Bitcoin Control Center
@@ -25,4 +25,5 @@ support: https://github.com/hoseki-inc/bitcoin-control-center/issues
 port: 3400
 gallery: []
 path: ''
+requiresHttps: true
 submitter: Hoseki
