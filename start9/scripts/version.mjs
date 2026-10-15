@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -11,6 +12,7 @@ const currentPath = join(versionsDir, 'current.ts')
 
 const VERSION_RE = /^(\d+)\.(\d+)\.(\d+):(\d+)$/
 const RELEASE_NOTES_PLACEHOLDER_MARKER = 'STARTOS_RELEASE_NOTES_REQUIRED'
+const EMPTY_MIGRATIONS_RE = /migrations:\s*\{\s*\}/
 
 function usage() {
   console.log(`Usage:
@@ -219,9 +221,108 @@ function parseNotes(args) {
   return notes
 }
 
+/** @param {string} source */
+function carriesMigration(source) {
+  return !EMPTY_MIGRATIONS_RE.test(source)
+}
+
 /**
- * Start9 bumps current.ts in place unless its version carries a migration, which
- * must first move to its own historical file so it still runs.
+ * The version file as released at this version's tag. Tags from before the
+ * current.ts layout hold a v0_6_0_1.ts-style file instead.
+ * @param {string} version
+ */
+function readReleasedSource(version) {
+  const tag = tagNameForVersion(version)
+  /** @param {string[]} args */
+  const git = (args) =>
+    execFileSync('git', args, { cwd: start9Dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
+  try {
+    git(['rev-parse', '--verify', '--quiet', `refs/tags/${tag}^{commit}`])
+  } catch {
+    throw new Error(
+      `current.ts carries a migration, and tag ${tag} is not available to tell whether ${version} shipped it. Fetch tags (git fetch --tags) and retry.`,
+    )
+  }
+  const parsed = parseVersion(version)
+  const legacyFile = `v${parsed.major}_${parsed.minor}_${parsed.patch}_${parsed.revision}`
+  for (const path of ['./startos/versions/current.ts', `./startos/versions/${legacyFile}.ts`]) {
+    let source
+    try {
+      source = git(['show', `${tag}:${path}`])
+    } catch {
+      continue
+    }
+    if (readVersionFromSource(source, `${tag}:${path}`) === version) {
+      return source
+    }
+  }
+  throw new Error(`Tag ${tag} has no version file declaring ${version}.`)
+}
+
+/**
+ * Give current.ts a new version and release notes, keeping its migration.
+ * @param {string} source
+ * @param {string} version
+ * @param {string} releaseNotes
+ */
+function retargetSource(source, version, releaseNotes) {
+  const notesMatch = /releaseNotes:\s*/.exec(source)
+  if (!notesMatch) {
+    throw new Error(`Could not find releaseNotes in ${currentPath}.`)
+  }
+  const start = notesMatch.index + notesMatch[0].length
+  const quote = source[start]
+  if (quote !== "'" && quote !== '"' && quote !== '`') {
+    throw new Error(`current.ts carries a migration and localized release notes. Set its version and notes by hand.`)
+  }
+  let end = start + 1
+  while (end < source.length && source[end] !== quote) {
+    end += source[end] === '\\' ? 2 : 1
+  }
+  if (end >= source.length || (quote === '`' && source.slice(start, end).includes('${'))) {
+    throw new Error(`Could not read the release notes in ${currentPath}. Set its version and notes by hand.`)
+  }
+  return `${source.slice(0, start)}${JSON.stringify(releaseNotes)}${source.slice(end + 1)}`.replace(
+    /version:\s*'[^']+'/,
+    `version: '${version}'`,
+  )
+}
+
+/**
+ * Move a released version's migration to its own file and list it in the graph.
+ * @param {string} version
+ * @param {string} source
+ */
+function spinOffVersion(version, source) {
+  const { file, exportName } = historicalNameForVersion(version)
+  const path = join(versionsDir, `${file}.ts`)
+  if (existsSync(path)) {
+    throw new Error(`${path} already exists.`)
+  }
+  const historical = source.replace(/export const current\s*=/, `export const ${exportName} =`)
+  if (historical === source) {
+    throw new Error(`${currentPath} must export current.`)
+  }
+
+  const index = readIndexSource()
+  const currentImport = "import { current } from './current'\n"
+  const updated = index
+    .replace(currentImport, `${currentImport}import { ${exportName} } from './${file}'\n`)
+    .replace(/other:\s*\[[^\]]*\]/, `other: [${[exportName, ...readOtherExportNames()].join(', ')}]`)
+  if (!updated.includes(`import { ${exportName} }`) || !updated.includes(`other: [${exportName}`)) {
+    throw new Error(`Could not add ${exportName} to ${indexPath}.`)
+  }
+
+  writeFileSync(path, historical)
+  writeFileSync(indexPath, updated)
+  return `${file}.ts`
+}
+
+/**
+ * Start9 bumps current.ts in place unless its version carries a migration. Here a
+ * version is bumped only at release, so a migration in current.ts either shipped
+ * with that version (keep it there in its own file) or was added since (it
+ * belongs to the new version). The release tag tells which.
  * @param {string} targetVersion
  * @param {string} releaseNotes
  */
@@ -238,11 +339,23 @@ function setVersion(targetVersion, releaseNotes) {
     throw new Error(`Target version ${targetVersion} must be greater than current version ${oldVersion}.`)
   }
 
-  if (!/migrations:\s*\{\s*\}/.test(readCurrentSource())) {
-    const { file, exportName } = historicalNameForVersion(oldVersion)
-    throw new Error(
-      `${oldVersion} carries a migration. Move current.ts to ${file}.ts exporting ${exportName}, add it to other, then bump.`,
-    )
+  const source = readCurrentSource()
+  let note = ''
+  if (carriesMigration(source)) {
+    const released = readReleasedSource(oldVersion)
+    if (!carriesMigration(released)) {
+      writeFileSync(currentPath, retargetSource(source, targetVersion, releaseNotes))
+      validateVersionGraph()
+      console.log(`${oldVersion} -> ${targetVersion} (carried the unreleased migration into ${targetVersion})`)
+      return
+    }
+    if (released !== source) {
+      const { file } = historicalNameForVersion(oldVersion)
+      throw new Error(
+        `${oldVersion} shipped with a migration, and current.ts has changed since. Move the released version to ${file}.ts by hand, then bump.`,
+      )
+    }
+    note = ` (moved the ${oldVersion} migration to ${spinOffVersion(oldVersion, source)})`
   }
 
   writeFileSync(
@@ -258,7 +371,7 @@ export const current = VersionInfo.of({
   )
   validateVersionGraph()
 
-  console.log(`${oldVersion} -> ${targetVersion}`)
+  console.log(`${oldVersion} -> ${targetVersion}${note}`)
 }
 
 const [command, value, ...rest] = process.argv.slice(2)
