@@ -83,7 +83,7 @@ export const ErrorInlines: Story = () => {
       <ErrorInline
         variant="error"
         title="Connection error"
-        message="Please try again. If the issue continues, reach out to us at support@hoseki.app."
+        message="Please try again. If the issue continues, reach out to us at support@bitcoincontrolcenter.com."
       />
       <ErrorInline
         variant="error"
@@ -95,7 +95,7 @@ export const ErrorInlines: Story = () => {
       <ErrorInline
         variant="warning"
         title="Error loading data"
-        message="Please try again. If the issue continues, reach out to us at support@hoseki.app."
+        message="Please try again. If the issue continues, reach out to us at support@bitcoincontrolcenter.com."
       />
       <ErrorInline
         variant="warning"
@@ -107,7 +107,7 @@ export const ErrorInlines: Story = () => {
       <ErrorInline
         variant="neutral"
         title="Error loading data"
-        message="Please try again. If the issue continues, reach out to us at support@hoseki.app."
+        message="Please try again. If the issue continues, reach out to us at support@bitcoincontrolcenter.com."
       />
       <ErrorInline
         variant="neutral"

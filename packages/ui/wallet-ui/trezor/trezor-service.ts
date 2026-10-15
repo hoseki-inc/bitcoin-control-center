@@ -23,9 +23,9 @@ export class TrezorService {
       debug: false,
       coreMode: 'popup',
       manifest: {
-        email: 'support@hoseki.app',
+        email: 'support@bitcoincontrolcenter.com',
         appName: 'Bitcoin Control Center',
-        appUrl: 'https://www.hoseki.app',
+        appUrl: 'https://www.bitcoincontrolcenter.com',
       },
     }).catch(() => {
       this.logger.error('Unable to initialize the Trezor connection')

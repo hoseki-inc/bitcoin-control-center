@@ -1,10 +1,5 @@
 # Bitcoin Control Center
 
-## Documentation
-
-- [Bitcoin Control Center documentation](https://help.hoseki.app) — product and
-  account workflow guidance.
-
 ## Before you begin
 
 Bitcoin Control Center requires Electrs for balances and transaction history,
