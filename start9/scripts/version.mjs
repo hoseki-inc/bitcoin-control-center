@@ -1,6 +1,7 @@
 #!/usr/bin/env node
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -12,12 +13,16 @@ const currentPath = join(versionsDir, 'current.ts')
 
 const VERSION_RE = /^(\d+)\.(\d+)\.(\d+):(\d+)$/
 const RELEASE_NOTES_PLACEHOLDER_MARKER = 'STARTOS_RELEASE_NOTES_REQUIRED'
+const require = createRequire(import.meta.url)
+const MIGRATION_GUIDANCE = `  // Before adding a migration, run: node start9/scripts/version.mjs bump revision
+  // Keep released migration code and its helpers unchanged.
+`
 
 function usage() {
   console.log(`Usage:
   node start9/scripts/version.mjs get
   node start9/scripts/version.mjs tag
-  node start9/scripts/version.mjs check
+  node start9/scripts/version.mjs check [--identity-only]
   node start9/scripts/version.mjs assert-tag <vmajor.minor.patch_revision>
   node start9/scripts/version.mjs bump <major|minor|patch|revision> [--notes "Release notes"]
   node start9/scripts/version.mjs set <major.minor.patch:revision> [--notes "Release notes"]
@@ -149,7 +154,7 @@ function compareVersions(left, right) {
   return 0
 }
 
-function validateVersionGraph() {
+function validateVersionGraph(validateMigrations = true) {
   const source = readIndexSource()
   if (!source.includes("import { current } from './current'") || !source.includes('current,')) {
     throw new Error(`${indexPath} must import current from ./current and use it as the graph's current version.`)
@@ -183,7 +188,7 @@ function validateVersionGraph() {
     if (compareVersions(current, version) <= 0) {
       throw new Error(`Historical version ${version} must be lower than current version ${current}.`)
     }
-    return { file: importMatch[1], source: fileSource }
+    return { file: importMatch[1], source: fileSource, path }
   })
 
   const referencedFiles = new Set(['current', 'index', ...others.map(({ file }) => file)])
@@ -204,6 +209,13 @@ function validateVersionGraph() {
     throw new Error('Replace the release-notes placeholder in startos/versions before merging or building.')
   }
 
+  if (validateMigrations) {
+    readMigrationInfo(readCurrentSource(), currentPath)
+    for (const historical of others) {
+      readMigrationInfo(historical.source, historical.path)
+    }
+  }
+
   return current
 }
 
@@ -221,154 +233,180 @@ function parseNotes(args) {
 }
 
 /**
- * Index just past the string, template literal or comment starting at `start`, or
- * `start` when none starts there.
- * @param {string} source
- * @param {number} start
- * @returns {number}
+ * @typedef {{ hasMigration: boolean, nameStart: number, nameEnd: number,
+ * versionStart: number, versionEnd: number, notesStart: number, notesEnd: number,
+ * guidanceStart: number | null, guidanceEnd: number | null }} MigrationInfo
  */
-function skipLiteral(source, start) {
-  const char = source[start]
-  if (char === '/' && source[start + 1] === '/') {
-    const end = source.indexOf('\n', start)
-    return end === -1 ? source.length : end
-  }
-  if (char === '/' && source[start + 1] === '*') {
-    const end = source.indexOf('*/', start + 2)
-    return end === -1 ? source.length : end + 2
-  }
-  if (char !== "'" && char !== '"' && char !== '`') {
-    return start
-  }
-  let index = start + 1
-  while (index < source.length && source[index] !== char) {
-    if (source[index] === '\\') {
-      index += 2
-    } else if (char === '`' && source.startsWith('${', index)) {
-      index = skipBlock(source, index + 1)
-    } else {
-      index += 1
-    }
-  }
-  return index + 1
-}
+
+/** @type {Map<string, MigrationInfo>} */
+const migrationInfoCache = new Map()
 
 /**
- * Index just past the brace block opening at `start`.
- * @param {string} source
- * @param {number} start
- * @returns {number}
- */
-function skipBlock(source, start) {
-  let depth = 0
-  let index = start
-  while (index < source.length) {
-    const next = skipLiteral(source, index)
-    if (next !== index) {
-      index = next
-      continue
-    }
-    if (source[index] === '{') {
-      depth += 1
-    } else if (source[index] === '}') {
-      depth -= 1
-      if (depth === 0) {
-        return index + 1
-      }
-    }
-    index += 1
-  }
-  throw new Error('A StartOS version file has unbalanced braces.')
-}
-
-/**
- * The `migrations` object of a version file's VersionInfo.of, ignoring any text
- * in release notes or comments that looks like one.
+ * Inspect syntax without executing migration code. Kept lazy so release identity
+ * reads still need only Node built-ins; development/CI checks and bumps install
+ * the existing StartOS devDependencies, including TypeScript.
  * @param {string} source
  * @param {string} path
+ * @returns {MigrationInfo}
  */
-function readMigrations(source, path) {
-  const found = []
-  let depth = 0
-  let index = 0
-  while (index < source.length) {
-    const next = skipLiteral(source, index)
-    if (next !== index) {
-      index = next
-      continue
-    }
-    const char = source[index]
-    const field =
-      depth === 1 && !/[\w$]/.test(source[index - 1] ?? '') ? /^migrations\s*:\s*\{/.exec(source.slice(index)) : null
-    if (field != null) {
-      const end = skipBlock(source, index + field[0].length - 1)
-      found.push(source.slice(index + field[0].length - 1, end))
-      index = end
-      continue
-    }
-    if (char === '{') {
-      depth += 1
-    } else if (char === '}') {
-      depth -= 1
-    }
-    index += 1
+function readMigrationInfo(source, path) {
+  const cacheKey = path + '\0' + source
+  const cached = migrationInfoCache.get(cacheKey)
+  if (cached !== undefined) {
+    return cached
   }
-  if (found.length !== 1) {
+  /** @type {typeof import('typescript')} */
+  // oxlint-disable-next-line typescript/no-unsafe-assignment -- SAFETY: This fixed module is the project's pinned TypeScript compiler; createRequire keeps it out of dependency-free identity reads.
+  const ts = require('typescript')
+  const file = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, false, ts.ScriptKind.TS)
+  // Ask the public compiler API for syntax diagnostics without emitting code or
+  // resolving imports. The version file is the only source this host supplies.
+  /** @type {import('typescript').CompilerHost} */
+  const host = {
+    getSourceFile: () => file,
+    getDefaultLibFileName: () => 'lib.d.ts',
+    writeFile: () => {},
+    getCurrentDirectory: () => '',
+    getCanonicalFileName: (name) => name,
+    useCaseSensitiveFileNames: () => true,
+    getNewLine: () => '\n',
+    fileExists: () => true,
+    readFile: () => source,
+  }
+  const diagnostics = ts.createProgram([path], { noResolve: true, noLib: true }, host).getSyntacticDiagnostics(file)
+  if (diagnostics.length > 0) {
+    throw new Error(
+      `${path} is not valid TypeScript: ${ts.flattenDiagnosticMessageText(diagnostics[0].messageText, '\n')}`,
+    )
+  }
+  /** @type {{ declaration: import('typescript').VariableDeclaration, options: import('typescript').Expression | undefined }[]} */
+  const versions = []
+  for (const statement of file.statements) {
+    if (
+      !ts.isVariableStatement(statement) ||
+      statement.modifiers?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword) !== true
+    ) {
+      continue
+    }
+    for (const declaration of statement.declarationList.declarations) {
+      let call = declaration.initializer
+      while (call !== undefined && ts.isCallExpression(call) && ts.isPropertyAccessExpression(call.expression)) {
+        if (call.expression.expression.getText(file) === 'VersionInfo' && call.expression.name.text === 'of') {
+          versions.push({ declaration, options: call.arguments[0] })
+          break
+        }
+        call = call.expression.expression
+      }
+    }
+  }
+  const candidate = versions[0]
+  if (versions.length !== 1 || candidate?.options === undefined || !ts.isObjectLiteralExpression(candidate.options)) {
+    throw new Error(`${path} must export one VersionInfo.of object literal.`)
+  }
+  const { declaration, options } = candidate
+  if (options.properties.some((p) => ts.isSpreadAssignment(p) || ts.isComputedPropertyName(p.name))) {
+    throw new Error(`${path} must declare VersionInfo.of properties explicitly, without spreads or computed names.`)
+  }
+  const properties = options.properties.filter(
+    (property) => property.name?.getText(file).replace(/^['"]|['"]$/g, '') === 'migrations',
+  )
+  if (
+    properties.length !== 1 ||
+    !ts.isPropertyAssignment(properties[0]) ||
+    !ts.isObjectLiteralExpression(properties[0].initializer)
+  ) {
     throw new Error(`${path} must declare migrations once, as an object literal in VersionInfo.of.`)
   }
-  return found[0]
-}
-
-/**
- * Migration code with layout removed (whitespace, comments, semicolons, trailing
- * commas and quote style), so reformatting alone never reads as a new migration.
- * @param {string} migrations
- */
-function normalizeMigrations(migrations) {
-  let normalized = ''
-  let index = 0
-  while (index < migrations.length) {
-    const next = skipLiteral(migrations, index)
-    if (next !== index) {
-      const literal = migrations.slice(index, next)
-      if (literal.startsWith("'") || literal.startsWith('"')) {
-        normalized += `'${literal.slice(1, -1)}'`
-      } else if (literal.startsWith('`')) {
-        normalized += literal
-      }
-      index = next
-      continue
-    }
-    if (!/[\s;]/.test(migrations[index])) {
-      normalized += migrations[index]
-    }
-    index += 1
+  /** @param {string} name */
+  const property = (name) =>
+    options.properties
+      .filter(ts.isPropertyAssignment)
+      .find((p) => p.name.getText(file).replace(/^['"]|['"]$/g, '') === name)
+  const version = property('version')?.initializer
+  const notes = property('releaseNotes')?.initializer
+  if (version === undefined || !ts.isStringLiteral(version) || notes === undefined) {
+    throw new Error(`${path} must declare a literal version and releaseNotes in VersionInfo.of.`)
   }
-  return normalized.replace(/,([}\])])/g, '$1')
-}
-
-/** @param {string} migrations */
-function carriesMigration(migrations) {
-  return normalizeMigrations(migrations) !== '{}'
+  const leadingStart = properties[0].getFullStart()
+  const guidanceOffset = source.slice(leadingStart, properties[0].getStart(file)).indexOf(MIGRATION_GUIDANCE)
+  const guidanceStart = guidanceOffset === -1 ? null : leadingStart + guidanceOffset
+  const info = {
+    hasMigration: properties[0].initializer.properties.length > 0,
+    guidanceStart,
+    guidanceEnd: guidanceStart === null ? null : guidanceStart + MIGRATION_GUIDANCE.length,
+    nameStart: declaration.name.getStart(file),
+    nameEnd: declaration.name.end,
+    versionStart: version.getStart(file),
+    versionEnd: version.end,
+    notesStart: notes.getStart(file),
+    notesEnd: notes.end,
+  }
+  migrationInfoCache.set(cacheKey, info)
+  return info
 }
 
 /**
- * The version file as released at this version's tag. Tags from before the
- * current.ts layout hold a v0_6_0_1.ts-style file instead.
+ * Read the released version at its immutable tag. With a migration, verify a
+ * missing local tag against origin before treating the revision as unpublished.
+ * Repositories with no remotes use their own complete local tag history.
  * @param {string} version
+ * @param {boolean} verifyMissingTag
  */
-function readReleasedSource(version) {
+function readReleasedSource(version, verifyMissingTag) {
   const tag = tagNameForVersion(version)
   /** @param {string[]} args */
   const git = (args) =>
-    execFileSync('git', args, { cwd: start9Dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
+    execFileSync('git', args, {
+      cwd: start9Dir,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 30000,
+      env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+    })
+  try {
+    git(['rev-parse', '--git-dir'])
+  } catch {
+    if (verifyMissingTag) {
+      throw new Error('Bumping a migration requires a Git repository so its release history can be checked.')
+    }
+    return null
+  }
+  let tagged = false
   try {
     git(['rev-parse', '--verify', '--quiet', `refs/tags/${tag}^{commit}`])
+    tagged = true
   } catch {
-    // Release 3 creates a draft, and a draft has no tag until it is published.
-    throw new Error(
-      `current.ts carries a migration, and tag ${tag} is not available to tell whether ${version} shipped it. Fetch tags (git fetch --tags), or publish the ${tag} draft release. If ${version} never shipped, set the version and release notes in current.ts by hand instead of bumping.`,
-    )
+    // A migration checkpoint may intentionally have no release tag.
+  }
+  if (!tagged) {
+    if (!verifyMissingTag) {
+      return null
+    }
+    const remotes = git(['remote']).trim().split(/\s+/).filter(Boolean)
+    if (remotes.includes('origin')) {
+      const remoteTag = spawnSync('git', ['ls-remote', '--exit-code', '--tags', 'origin', `refs/tags/${tag}`], {
+        cwd: start9Dir,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+        timeout: 30000,
+        env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+      })
+      if (remoteTag.status === 2) {
+        return null
+      }
+      if (remoteTag.status !== 0) {
+        throw new Error(`Could not verify whether ${tag} was released. Fetch release tags from origin before bumping.`)
+      }
+      throw new Error(
+        `Release tag ${tag} exists on origin but is missing locally. Run git fetch origin tag ${tag}, then retry.`,
+      )
+    }
+    if (remotes.length > 0 || git(['rev-parse', '--is-shallow-repository']).trim() === 'true') {
+      throw new Error(
+        `Cannot establish the release history for ${tag}. Use a complete checkout with origin before bumping a migration.`,
+      )
+    }
+    return null
   }
   const parsed = parseVersion(version)
   const legacyFile = `v${parsed.major}_${parsed.minor}_${parsed.patch}_${parsed.revision}`
@@ -380,39 +418,28 @@ function readReleasedSource(version) {
       continue
     }
     if (readVersionFromSource(source, `${tag}:${path}`) === version) {
-      return { source, path: `${tag}:${path}` }
+      return { source, path: `${tag}:${path}`, tag }
     }
   }
   throw new Error(`Tag ${tag} has no version file declaring ${version}.`)
 }
 
 /**
- * Give current.ts a new version and release notes, keeping its migration.
+ * Give an accidentally unversioned, unshipped migration its new identity.
  * @param {string} source
+ * @param {MigrationInfo} info
  * @param {string} version
  * @param {string} releaseNotes
  */
-function retargetSource(source, version, releaseNotes) {
-  const notesMatch = /releaseNotes:\s*/.exec(source)
-  if (!notesMatch) {
-    throw new Error(`Could not find releaseNotes in ${currentPath}.`)
+function retargetSource(source, info, version, releaseNotes) {
+  const edits = [
+    { start: info.versionStart, end: info.versionEnd, text: `'${version}'` },
+    { start: info.notesStart, end: info.notesEnd, text: JSON.stringify(releaseNotes) },
+  ].sort((left, right) => right.start - left.start)
+  for (const edit of edits) {
+    source = source.slice(0, edit.start) + edit.text + source.slice(edit.end)
   }
-  const start = notesMatch.index + notesMatch[0].length
-  const quote = source[start]
-  if (quote !== "'" && quote !== '"' && quote !== '`') {
-    throw new Error(`current.ts carries a migration and localized release notes. Set its version and notes by hand.`)
-  }
-  let end = start + 1
-  while (end < source.length && source[end] !== quote) {
-    end += source[end] === '\\' ? 2 : 1
-  }
-  if (end >= source.length || (quote === '`' && source.slice(start, end).includes('${'))) {
-    throw new Error(`Could not read the release notes in ${currentPath}. Set its version and notes by hand.`)
-  }
-  return `${source.slice(0, start)}${JSON.stringify(releaseNotes)}${source.slice(end + 1)}`.replace(
-    /version:\s*'[^']+'/,
-    `version: '${version}'`,
-  )
+  return source
 }
 
 /**
@@ -426,30 +453,28 @@ function freshSource(version, releaseNotes) {
 export const current = VersionInfo.of({
   version: '${version}',
   releaseNotes: ${JSON.stringify(releaseNotes)},
-  // A migration that ships moves to its own file at the next bump. Replace it here
-  // with the next one, rather than adding to it, or it runs again.
-  migrations: {},
+${MIGRATION_GUIDANCE}  migrations: {},
 })
 `
 }
 
 /**
- * Move a released version file to its own historical file and list it in the
- * graph. Its contents are checked before anything is written.
+ * Preserve a migration checkpoint under its original version.
  * @param {string} version
  * @param {string} source
+ * @param {MigrationInfo} info
  */
-function prepareSpinOff(version, source) {
+function prepareSpinOff(version, source, info) {
   const { file, exportName } = historicalNameForVersion(version)
   const path = join(versionsDir, `${file}.ts`)
   if (existsSync(path)) {
     throw new Error(`${path} already exists.`)
   }
-  const historical = source.replace(/export const current\s*=/, `export const ${exportName} =`)
-  if (historical === source) {
-    throw new Error(`The released ${version} version file must export current.`)
+  if (info.guidanceStart !== null && info.guidanceEnd !== null) {
+    source = source.slice(0, info.guidanceStart) + source.slice(info.guidanceEnd)
   }
-
+  const historical = `${source.slice(0, info.nameStart)}${exportName}${source.slice(info.nameEnd)}`
+  readMigrationInfo(historical, path)
   const index = readIndexSource()
   const currentImport = "import { current } from './current'\n"
   const updated = index
@@ -458,7 +483,6 @@ function prepareSpinOff(version, source) {
   if (!updated.includes(`import { ${exportName} }`) || !updated.includes(`other: [${exportName}`)) {
     throw new Error(`Could not add ${exportName} to ${indexPath}.`)
   }
-
   return {
     file: `${file}.ts`,
     write: () => {
@@ -469,58 +493,47 @@ function prepareSpinOff(version, source) {
 }
 
 /**
- * Start9 bumps current.ts in place unless its version carries a migration. Here a
- * version is bumped only at release, so the release tag tells whether a migration
- * in current.ts shipped with that version (it moves to its own file) or was added
- * since (it belongs to the new version). Both can hold at once: the shipped
- * migration moves out while a replacement is carried into the new version.
+ * Bump before writing a migration. Its version remains its identity even when
+ * the revision was only used by test builds and never published. Released code
+ * must remain byte-for-byte unchanged; edits need a new migration checkpoint.
  * @param {string} targetVersion
  * @param {string} releaseNotes
  */
 function setVersion(targetVersion, releaseNotes) {
-  const oldVersion = currentVersion()
-
+  const oldVersion = validateVersionGraph()
   if (targetVersion === oldVersion) {
-    validateVersionGraph()
     console.log(targetVersion)
     return
   }
-
   if (compareVersions(targetVersion, oldVersion) <= 0) {
     throw new Error(`Target version ${targetVersion} must be greater than current version ${oldVersion}.`)
   }
-
   const source = readCurrentSource()
-  const migrations = readMigrations(source, currentPath)
-  const hasMigration = carriesMigration(migrations)
-  let released = null
-  try {
-    released = readReleasedSource(oldVersion)
-  } catch (error) {
-    // Without a migration in current.ts the tag only guards a shipped one already
-    // cleared by hand, so a bump without tags may go ahead.
-    if (hasMigration) {
-      throw error
-    }
+  const info = readMigrationInfo(source, currentPath)
+  const released = readReleasedSource(oldVersion, info.hasMigration)
+  const releasedInfo = released == null ? null : readMigrationInfo(released.source, released.path)
+  if (releasedInfo?.hasMigration === true && source !== released.source) {
+    throw new Error(
+      `The shipped ${oldVersion} migration file was changed. Restore current.ts from ${released.tag}, run node start9/scripts/version.mjs bump revision, then reapply the new migration in current.ts. Keep released migration code and its helpers unchanged.`,
+    )
   }
-  const releasedMigrations = released == null ? '{}' : readMigrations(released.source, released.path)
-  const unreleased = hasMigration && normalizeMigrations(migrations) !== normalizeMigrations(releasedMigrations)
-  const next = unreleased
-    ? retargetSource(source, targetVersion, releaseNotes)
+  // Compatibility for a migration added to the last release without bumping:
+  // the tag proves no migration shipped under that identity, so carry it once.
+  const carry = info.hasMigration && released != null && releasedInfo?.hasMigration === false
+  const next = carry
+    ? retargetSource(source, info, targetVersion, releaseNotes)
     : freshSource(targetVersion, releaseNotes)
-  const notes = []
-  if (released != null && carriesMigration(releasedMigrations)) {
-    const spinOff = prepareSpinOff(oldVersion, released.source)
-    spinOff.write()
-    notes.push(`moved the ${oldVersion} migration to ${spinOff.file}`)
-  }
-  if (unreleased) {
-    notes.push(`carried the unreleased migration into ${targetVersion}`)
-  }
+  readMigrationInfo(next, currentPath)
+  const spinOff = info.hasMigration && !carry ? prepareSpinOff(oldVersion, source, info) : null
+  spinOff?.write()
   writeFileSync(currentPath, next)
   validateVersionGraph()
-
-  console.log(`${oldVersion} -> ${targetVersion}${notes.length > 0 ? ` (${notes.join('; ')})` : ''}`)
+  const detail = spinOff
+    ? ` (preserved the ${oldVersion} migration in ${spinOff.file})`
+    : carry
+      ? ` (carried the unshipped migration into ${targetVersion}; bump revision before adding the next migration)`
+      : ''
+  console.log(`${oldVersion} -> ${targetVersion}${detail}`)
 }
 
 const [command, value, ...rest] = process.argv.slice(2)
@@ -537,12 +550,15 @@ try {
   }
 
   if (command === 'tag') {
-    console.log(tagNameForVersion(validateVersionGraph()))
+    console.log(tagNameForVersion(validateVersionGraph(false)))
     process.exit(0)
   }
 
   if (command === 'check') {
-    const version = validateVersionGraph()
+    if (value != null && value !== '--identity-only') {
+      throw new Error('check accepts only --identity-only (for the dependency-free release identity job).')
+    }
+    const version = validateVersionGraph(value !== '--identity-only')
     console.log(`StartOS version graph OK: ${version} (${tagNameForVersion(version)})`)
     process.exit(0)
   }
@@ -551,7 +567,7 @@ try {
     if (value == null || value === '') {
       throw new Error('assert-tag requires a tag like v0.2.1_0.')
     }
-    const expectedTag = tagNameForVersion(validateVersionGraph())
+    const expectedTag = tagNameForVersion(validateVersionGraph(false))
     if (value !== expectedTag) {
       throw new Error(`Tag ${value} does not match StartOS version ${currentVersion()}; expected ${expectedTag}.`)
     }

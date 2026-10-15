@@ -48,7 +48,8 @@ jobs:
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           echo "sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
 
-      # The version script uses only Node built-ins, so no dependencies are installed here.
+      # Migration syntax is validated by CI before main. Read only the protected release
+      # identity here, using Node built-ins and no installed dependencies.
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -58,7 +59,7 @@ jobs:
         id: version
         shell: bash
         run: |
-          node start9/scripts/version.mjs check
+          node start9/scripts/version.mjs check --identity-only
           VERSION="$(node start9/scripts/version.mjs get)"
           TAG="$(node start9/scripts/version.mjs tag)"
           node start9/scripts/version.mjs assert-tag "$TAG"
