@@ -58,6 +58,8 @@ export const dashboardDataSource: DashboardDataSource = {
   useHistory: (input, options) => trpc.portalProve.controlCenter.getData.useQuery(input, options),
   useBalances: useGetBalancesPerClaimIds,
   useStoredBalances: (input, options) => trpc.portalProve.controlCenter.storedWalletBalances.useQuery(input, options),
-  useAutoRefresh: useAutoRefreshExchanges,
+  useAutoRefresh: () => {
+    useAutoRefreshExchanges()
+  },
   getTimezone: getBrowserTimezone,
 }

@@ -24,6 +24,9 @@ export type UseGetBalancesPerClaimIdOutput = {
   balancesFailed: boolean
   /** When the balances in `data` were fetched, or 0 before the first fetch succeeds. */
   updatedAt: number
+  /** Whether BTC balances are being fetched, independent of the fiat price query. */
+  balancesFetching: boolean
+  refetchBalances: () => Promise<void>
   isLoading: boolean
   isSuccess: boolean
   isError: boolean
@@ -73,6 +76,10 @@ export function useGetBalancesPerClaimIds({
   return {
     balancesFailed: hasFailedSinceLoading(btcClaimBalancesQuery),
     updatedAt: btcClaimBalancesQuery.dataUpdatedAt,
+    balancesFetching: btcClaimBalancesQuery.isFetching,
+    refetchBalances: async () => {
+      await btcClaimBalancesQuery.refetch()
+    },
     isLoading: queries.some((q) => q.isLoading),
     isError: queries.some((q) => q.isError),
     isSuccess: queries.every((q) => q.isSuccess),

@@ -45,6 +45,7 @@ import {
   formatSignedUsd,
   isUsableBtcPrice,
 } from '../../lib/bitcoin-display'
+import { resolveWalletBalance } from '../../lib/wallet-balance'
 import { isExchangeConnected } from '../../utils/exchange-connection-status'
 import { type DashboardDataSource, dashboardDataSource } from './dashboard-data'
 
@@ -406,21 +407,17 @@ export function DashboardPage({
   // While Electrum is unreachable, when each wallet's shown balance was current.
   const walletBalanceTimes = new Map<ClaimId, number>()
   for (const id of claimIds) {
-    const live = balancesQuery.data.get(id) ?? null
-    const stored = storedWalletBalances.get(id)
-    const storedBalance = stored === undefined ? null : { current: new Decimal(stored.balanceSats), usd: null }
-    if (!balancesQuery.balancesFailed) {
-      walletBalances.set(id, live ?? storedBalance)
-      continue
+    const resolved = resolveWalletBalance({
+      live: balancesQuery.data.get(id) ?? null,
+      stored: storedWalletBalances.get(id),
+      balancesFailed: balancesQuery.balancesFailed,
+      updatedAt: balancesQuery.updatedAt,
+    })
+    walletBalances.set(id, resolved.balance)
+    if (balancesQuery.balancesFailed && resolved.updatedAt !== null) {
+      walletBalanceTimes.set(id, resolved.updatedAt)
     }
-    const storedAtMs = stored === undefined ? Number.NaN : Date.parse(stored.timestamp)
-    if (live !== null && !(storedAtMs > balancesQuery.updatedAt)) {
-      walletBalances.set(id, live)
-      walletBalanceTimes.set(id, balancesQuery.updatedAt)
-    } else if (storedBalance !== null) {
-      walletBalances.set(id, storedBalance)
-      walletBalanceTimes.set(id, storedAtMs)
-    } else {
+    if (balancesQuery.balancesFailed && resolved.balance === null) {
       // A wallet that has never synced counts as empty until Electrum answers, once the
       // recorded balances have loaded to show it has none.
       walletBalances.set(id, storedBalancesQuery.data === undefined ? null : { current: new Decimal(0), usd: null })

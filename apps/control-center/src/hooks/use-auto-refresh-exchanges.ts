@@ -9,12 +9,25 @@ const DEBOUNCE_MS = 60_000 // Don't refresh more than once per minute
  */
 let lastRefreshAt = 0
 
-export function useAutoRefreshExchanges(): void {
+interface ExchangeRefresh {
+  isRefreshing: boolean
+  previousBalanceTimes: ReadonlyMap<string, string | null>
+  hasSettled: boolean
+  failed: boolean
+}
+
+export function useAutoRefreshExchanges(): ExchangeRefresh {
   const utils = trpc.useUtils()
   const refreshMutation = trpc.portalProve.exchange.refreshAllBalances.useMutation({
-    onSuccess: () => {
-      void utils.portalProve.exchange.list.invalidate()
-      void utils.portalProve.controlCenter.getData.invalidate()
+    onMutate: async () => {
+      const accounts = utils.portalProve.exchange.list.getData() ?? (await utils.portalProve.exchange.list.fetch())
+      return { previousBalanceTimes: new Map(accounts.map((account) => [account.id, account.balanceAsOf])) }
+    },
+    onSettled: async () => {
+      await Promise.all([
+        utils.portalProve.exchange.list.invalidate(),
+        utils.portalProve.controlCenter.getData.invalidate(),
+      ])
     },
   })
   const hasTriggered = useRef(false)
@@ -32,4 +45,11 @@ export function useAutoRefreshExchanges(): void {
     lastRefreshAt = now
     refreshMutation.mutate()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  return {
+    isRefreshing: refreshMutation.isLoading,
+    previousBalanceTimes: refreshMutation.context?.previousBalanceTimes ?? new Map(),
+    hasSettled: refreshMutation.isSuccess || refreshMutation.isError,
+    failed: refreshMutation.isError,
+  }
 }
