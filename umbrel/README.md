@@ -39,6 +39,12 @@ each bundle installs as a distinct version. A `.dirty` suffix marks a build from
 changes. Use `--arch amd64` or `--arch arm64` for a faster build when you know
 the target device.
 
+**Release 2 - Build candidates** builds the same bundle natively for both
+architectures and keeps it, with `SHA256SUMS`, as a private workflow artifact.
+**Release 3 - Create draft release** publishes the release image to
+`ghcr.io/hoseki-inc/bitcoin-control-center` and puts its `image:` line in the
+run summary.
+
 ## Install a sideload bundle
 
 These steps are for the Umbrel owner and need no SSH client. Bitcoin Node,
