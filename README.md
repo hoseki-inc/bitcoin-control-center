@@ -63,7 +63,7 @@ flowchart LR
 | `docs/`                | Hardware-wallet signing test notes                             |
 | `test/`                | Shared public test fixtures                                    |
 
-Sentinel is the only application backend and owns the frontend API contract. Distribution-specific behavior belongs in `start9/` or `desktop/`; the product does not use a hosted compatibility API.
+Sentinel is the only application backend and owns the frontend API contract. Distribution-specific behavior belongs in `start9/`, `desktop/`, or `umbrel/`; the product does not use a hosted compatibility API.
 
 ## Prerequisites
 

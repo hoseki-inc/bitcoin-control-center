@@ -1,0 +1,32 @@
+# umbrel/build.sh replaces __IMAGE__ when it builds a sideload bundle.
+version: '3.7'
+
+services:
+  app_proxy:
+    environment:
+      APP_HOST: bitcoin-control-center_web_1
+      APP_PORT: 3400
+
+  web:
+    image: __IMAGE__
+    user: '1000:1000'
+    restart: on-failure
+    stop_grace_period: 1m
+    volumes:
+      - ${APP_DATA_DIR}/data:/data
+    environment:
+      ELECTRUM_HOST: $APP_ELECTRS_NODE_IP
+      ELECTRUM_PORT: $APP_ELECTRS_NODE_PORT
+      ELECTRUM_PROTOCOL: tcp
+      # Serve the app while Electrs is still indexing; balances load once it accepts connections.
+      SENTINEL_WAIT_FOR_ELECTRUM: 'false'
+      # The mempool web app proxies its API, including historical prices. Statement quotes can
+      # still fall back to public mempool.space.
+      MEMPOOL_API_URL: http://$APP_MEMPOOL_IP:$APP_MEMPOOL_PORT
+      # Sentinel supports mainnet and testnet only. Like StartOS, this package targets mainnet.
+      BITCOIN_NETWORK: mainnet
+      LOG_LEVEL: info
+      # Umbrel passes the browser's Host header through its login proxy but does
+      # not tell apps their LAN or Tailscale addresses, so allow IP-address hosts.
+      SENTINEL_ALLOWED_HOSTS: '*.local,*.onion,*.ts.net'
+      SENTINEL_ALLOW_IP_HOSTS: 'true'
