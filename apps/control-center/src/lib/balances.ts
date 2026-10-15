@@ -3,6 +3,7 @@ import type { BalanceValue } from '@hoseki/packages/lib/balance'
 import { isNullish } from '@hoseki/packages/lib/util'
 import type { ClaimId } from '@hoseki/packages/schemas'
 import type { Decimal } from 'decimal.js'
+import { useEffect, useRef } from 'react'
 import { trpc } from '../trpc'
 
 function getBalanceValue(balance: Decimal | bigint, price: Decimal | null): BalanceValue {
@@ -61,6 +62,20 @@ export function useGetBalancesPerClaimIds({
     ),
   ])
   const [btcPriceQuery, btcClaimBalancesQuery] = queries
+  const utils = trpc.useUtils()
+  const failedBefore = useRef(false)
+  const balancesFailed = hasFailedSinceLoading(btcClaimBalancesQuery)
+  useEffect(() => {
+    if (balancesFailed) {
+      failedBefore.current = true
+      return
+    }
+    if (failedBefore.current && btcClaimBalancesQuery.dataUpdatedAt > 0) {
+      failedBefore.current = false
+      // A successful retry also clears history's older incomplete balance result.
+      void utils.portalProve.controlCenter.getData.invalidate()
+    }
+  }, [balancesFailed, btcClaimBalancesQuery.dataUpdatedAt, utils])
   const btcPrice = btcPriceQuery.data?.value ?? null
 
   const balanceMap = new Map<ClaimId, BalanceValue | null>()
@@ -74,7 +89,7 @@ export function useGetBalancesPerClaimIds({
   }
 
   return {
-    balancesFailed: hasFailedSinceLoading(btcClaimBalancesQuery),
+    balancesFailed,
     updatedAt: btcClaimBalancesQuery.dataUpdatedAt,
     balancesFetching: btcClaimBalancesQuery.isFetching,
     refetchBalances: async () => {

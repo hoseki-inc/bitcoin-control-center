@@ -343,3 +343,15 @@ describe('all portfolio history', () => {
     expect(history.at(-1)?.timestamp).toBe('2026-01-03T23:59:59.999Z')
   })
 })
+
+it('preserves recorded history without an invented endpoint when the current total is unknown', () => {
+  const range = resolveHistoryRange('7d', undefined, 'UTC', new Date('2026-09-05T12:00:00Z')).unwrap()
+  expect(buildHistoricalData([], null, range, 'UTC')).toEqual([])
+  const history = buildHistoricalData(
+    [{ timestamp: new Date('2026-09-01T12:00:00Z'), value: 150n }],
+    null,
+    range,
+    'UTC',
+  )
+  expect(history.at(-1)?.totalBalance).toBe('150')
+})

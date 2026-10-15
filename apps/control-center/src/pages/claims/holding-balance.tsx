@@ -1,17 +1,6 @@
-import { Box, Flex, Stack, Text, keyframes } from '@chakra-ui/react'
-
-export interface HoldingBalance {
-  sats: number | null
-  updatedAt: number | null
-  state: 'current' | 'loading' | 'updating' | 'stale' | 'waiting' | 'unavailable'
-  context?: string
-}
-
-export interface HoldingPrice {
-  value: number | null
-  lastKnown: boolean
-  asOf: Date | null
-}
+import { Box, Flex, Stack, Text } from '@chakra-ui/react'
+import { BalanceSkeleton, BalanceSync, FiatValue } from '../../components/balance-status'
+import type { HoldingBalance, HoldingPrice } from '../../lib/holdings'
 
 interface HoldingBalanceProps {
   balance: HoldingBalance
@@ -19,72 +8,9 @@ interface HoldingBalanceProps {
   totalSats: number | null
 }
 
-const shimmer = keyframes`
-  from { background-position: 100% 0; }
-  to { background-position: -100% 0; }
-`
-
-/** A short, quiet shimmer; a slow or failed connection never animates indefinitely. */
-export function BalanceSkeleton(): JSX.Element {
-  return (
-    <Box
-      aria-hidden="true"
-      h="24px"
-      w="160px"
-      maxW="100%"
-      borderRadius="4px"
-      bg="neutral.50"
-      bgImage="linear-gradient(90deg, transparent 25%, rgba(0, 0, 0, 0.035) 50%, transparent 75%)"
-      backgroundSize="200% 100%"
-      animation={`${shimmer} 2s ease-in-out 3`}
-      sx={{ '@media (prefers-reduced-motion: reduce)': { animation: 'none' } }}
-    />
-  )
-}
-
-export function balanceAsOf(timestamp: number | null): string {
-  return timestamp === null
-    ? 'Update time unavailable'
-    : `As of ${new Date(timestamp).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}`
-}
-
-interface FiatValueProps {
-  sats: number
-  price: HoldingPrice
-}
-
-export function FiatValue({ sats, price }: FiatValueProps): JSX.Element {
-  return (
-    <Text
-      textStyle="text/sm"
-      fontWeight="medium"
-      color={price.value === null || price.lastKnown ? 'neutral.500' : 'success.600'}
-      title={
-        price.lastKnown && price.asOf !== null ? `Price ${balanceAsOf(price.asOf.getTime()).toLowerCase()}` : undefined
-      }
-    >
-      {price.value === null
-        ? 'USD price unavailable'
-        : `$${((sats / 100_000_000) * price.value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${price.lastKnown ? ' · Last known price' : ''}`}
-    </Text>
-  )
-}
-
 export function AccountBalance({ balance, price, totalSats }: HoldingBalanceProps): JSX.Element {
   const { sats, state } = balance
   const percentage = sats !== null && totalSats !== null ? (totalSats > 0 ? (sats / totalSats) * 100 : 0) : null
-  const status =
-    state === 'updating'
-      ? 'Updating…'
-      : state === 'stale'
-        ? 'Last known balance'
-        : state === 'loading'
-          ? 'Fetching balance…'
-          : state === 'waiting'
-            ? 'Waiting for balance'
-            : state === 'unavailable'
-              ? 'Balance unavailable'
-              : null
 
   return (
     <>
@@ -112,21 +38,9 @@ export function AccountBalance({ balance, price, totalSats }: HoldingBalanceProp
             — BTC
           </Text>
         )}
-        <Text
-          textStyle="label/xs"
-          color={state === 'stale' || state === 'unavailable' ? 'warning.700' : 'neutral.500'}
-          mt={1}
-        >
-          {status ??
-            (balance.updatedAt === null && balance.context !== undefined
-              ? balance.context
-              : balanceAsOf(balance.updatedAt))}
-        </Text>
-        {status !== null && sats !== null && (
-          <Text textStyle="label/xs" color="neutral.500">
-            {balanceAsOf(balance.updatedAt)}
-          </Text>
-        )}
+        <Box mt={1}>
+          <BalanceSync balance={balance} textStyle="label/xs" />
+        </Box>
         {sats === null && balance.context !== undefined && (
           <Text textStyle="label/xs" color="neutral.500">
             {balance.context}

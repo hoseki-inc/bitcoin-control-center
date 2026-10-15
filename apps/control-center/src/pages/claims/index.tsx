@@ -21,23 +21,15 @@ import { ClaimCardKeystores, StatusBadge, getBadgeConfigForClaim } from '@hoseki
 import { useEffect } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router'
 import { toast } from 'sonner'
+import { BalanceSkeleton, FiatValue, HoldingsRecovery, HoldingsStatus } from '../../components/balance-status'
 import { DeleteClaimModal } from '../../components/claims/claim-details/delete-claim-modal'
-import { useAutoRefreshExchanges } from '../../hooks/use-auto-refresh-exchanges'
-import { useGetBalancesPerClaimIds } from '../../lib/balances'
-import { isUsableBtcPrice } from '../../lib/bitcoin-display'
-import { resolveWalletBalance } from '../../lib/wallet-balance'
+import { holdingsDataSource, useHoldings } from '../../hooks/use-holdings'
+import type { HoldingBalance, HoldingPrice } from '../../lib/holdings'
 import { type RouterOutput, trpc } from '../../trpc'
 import type { ClaimDto } from '../../trpc/server-types'
 import { ensureClaimStatusNotExpired, mapClaimToClaimCardProps } from '../../utils/claim-utils'
 import { isExchangeConnected, needsExchangeReconnect } from '../../utils/exchange-connection-status'
-import {
-  AccountBalance,
-  BalanceSkeleton,
-  FiatValue,
-  type HoldingBalance,
-  type HoldingPrice,
-  balanceAsOf,
-} from './holding-balance'
+import { AccountBalance } from './holding-balance'
 
 type ExchangeAccountDto = RouterOutput['portalProve']['exchange']['list'][number]
 type ManualAccountDto = RouterOutput['portalProve']['manual']['list'][number]
@@ -45,28 +37,11 @@ type EtfAccountDto = RouterOutput['portalProve']['etf']['list'][number]
 
 const unavailableBalance: HoldingBalance = { sats: null, updatedAt: null, state: 'unavailable' }
 
-function readSats(value: string | null): number | null {
-  if (value === null || value.trim() === '') {
-    return null
-  }
-  const amount = Number(value)
-  return Number.isFinite(amount) && amount >= 0 ? amount : null
-}
-
-function readTimestamp(value: string | null): number | null {
-  const timestamp = value === null ? Number.NaN : Date.parse(value)
-  return Number.isFinite(timestamp) ? timestamp : null
-}
-
 export function ClaimsPage(): JSX.Element {
-  const exchangeRefresh = useAutoRefreshExchanges()
+  const holdings = useHoldings(holdingsDataSource)
   const navigate = useNavigate()
   const location = useLocation()
-  const claimsQuery = trpc.portalProve.registry.claims.list.useQuery({ excludePending: false })
-  const exchangeAccountsQuery = trpc.portalProve.exchange.list.useQuery()
-  const manualAccountsQuery = trpc.portalProve.manual.list.useQuery()
-  const etfAccountsQuery = trpc.portalProve.etf.list.useQuery()
-  const btcPriceQuery = trpc.portalProve.retrieveBitcoinPrice.useQuery()
+  const { claimsQuery, exchangeAccountsQuery, manualAccountsQuery, etfAccountsQuery } = holdings.accounts
 
   const archivedClaimsQuery = trpc.portalProve.registry.claims.listArchived.useQuery()
   const trpcUtils = trpc.useUtils()
@@ -89,16 +64,6 @@ export function ClaimsPage(): JSX.Element {
   const connectedExchangeAccounts = exchangeAccounts.filter(isExchangeConnected)
   const manualAccounts = manualAccountsQuery.data ?? []
   const etfAccounts = etfAccountsQuery.data ?? []
-  const claimIds = claims.map((c) => c.id)
-  const balancesQuery = useGetBalancesPerClaimIds({
-    claimIds,
-    enabled: claimIds.length > 0,
-    retryFailedEveryMs: 10_000,
-  })
-  const storedBalancesQuery = trpc.portalProve.controlCenter.storedWalletBalances.useQuery(
-    { claimIds },
-    { enabled: claimIds.length > 0 },
-  )
 
   useEffect(() => {
     if (location.hash !== '#archived') {
@@ -112,31 +77,9 @@ export function ClaimsPage(): JSX.Element {
     target?.focus()
   }, [archivedClaimsQuery.data?.length, claimsQuery.isLoading, location.hash])
 
-  if (claimsQuery.isLoading) {
+  const accountQueries = [claimsQuery, exchangeAccountsQuery, manualAccountsQuery, etfAccountsQuery]
+  if (accountQueries.every((query) => query.data === undefined) && accountQueries.some((query) => query.isLoading)) {
     return <Spinner fullPage size="xl" />
-  }
-
-  if (claimsQuery.isError && claimsQuery.data === undefined) {
-    return (
-      <Stack py={8} gap={8}>
-        <ErrorBanner
-          message={
-            claimsQuery.error.message
-              ? `Error fetching your holdings: ${claimsQuery.error.message}`
-              : 'An error occurred when fetching your holdings'
-          }
-        />
-        <Button
-          alignSelf="flex-start"
-          variant="outline"
-          onClick={() => {
-            void claimsQuery.refetch()
-          }}
-        >
-          Retry
-        </Button>
-      </Stack>
-    )
   }
 
   const hasClaims =
@@ -145,107 +88,13 @@ export function ClaimsPage(): JSX.Element {
     claims.filter((c) => ensureClaimStatusNotExpired(c) === 'verified').length + connectedExchangeAccounts.length
   const pendingCount = claims.length - (verifiedCount - connectedExchangeAccounts.length)
 
-  const walletBalances = new Map<string, HoldingBalance>()
-  const storedBalances = new Map((storedBalancesQuery.data ?? []).map((stored) => [stored.accountId, stored]))
-  for (const id of claimIds) {
-    const resolved = resolveWalletBalance({
-      live: balancesQuery.data.get(id) ?? null,
-      stored: storedBalances.get(id),
-      balancesFailed: balancesQuery.balancesFailed,
-      updatedAt: balancesQuery.updatedAt,
-    })
-    const sats = resolved.balance === null ? null : Number(resolved.balance.current)
-    walletBalances.set(id, {
-      sats,
-      updatedAt: resolved.updatedAt,
-      state:
-        sats === null
-          ? balancesQuery.balancesFailed || (!balancesQuery.balancesFetching && balancesQuery.updatedAt > 0)
-            ? 'unavailable'
-            : balancesQuery.balancesFetching
-              ? 'loading'
-              : 'waiting'
-          : balancesQuery.balancesFetching
-            ? 'updating'
-            : balancesQuery.balancesFailed || resolved.fromStorage
-              ? 'stale'
-              : 'current',
-      context: balancesQuery.balancesFailed
-        ? 'Check your Electrum connection in Settings.'
-        : balancesQuery.updatedAt > 0
-          ? 'Open this account to check its connection.'
-          : 'Waiting for your Electrum server.',
-    })
-  }
-  const exchangeBalances = new Map(
-    exchangeAccounts.map((account) => {
-      const sats = readSats(account.balance)
-      const updatedAt = readTimestamp(account.balanceAsOf)
-      const reconnect = needsExchangeReconnect(account)
-      const refreshMissed =
-        exchangeRefresh.hasSettled &&
-        (exchangeRefresh.failed ||
-          (exchangeRefresh.previousBalanceTimes.has(account.id) &&
-            exchangeRefresh.previousBalanceTimes.get(account.id) === account.balanceAsOf))
-      const balance: HoldingBalance = {
-        sats,
-        updatedAt,
-        state:
-          sats === null
-            ? !reconnect && exchangeRefresh.isRefreshing
-              ? 'loading'
-              : 'unavailable'
-            : !reconnect && exchangeRefresh.isRefreshing
-              ? 'updating'
-              : reconnect || refreshMissed
-                ? 'stale'
-                : 'current',
-        context: reconnect ? 'Open this account to reconnect.' : 'Open this account to retry the connection.',
-      }
-      return [account.id, balance] as const
-    }),
-  )
-  const manualBalances = new Map(
-    [...manualAccounts, ...etfAccounts.map((account) => ({ ...account, balanceAsOf: null }))].map((account) => [
-      account.id,
-      {
-        sats: readSats(account.balance),
-        updatedAt: readTimestamp(account.balanceAsOf),
-        state: readSats(account.balance) === null ? 'unavailable' : 'current',
-        context: 'Based on your recorded holdings.',
-      } satisfies HoldingBalance,
-    ]),
-  )
-  const allBalances = [...walletBalances.values(), ...exchangeBalances.values(), ...manualBalances.values()]
-  const knownBalances = allBalances.filter((balance) => balance.sats !== null)
-  const accountQueries = [claimsQuery, exchangeAccountsQuery, manualAccountsQuery, etfAccountsQuery]
-  const allListsLoaded = accountQueries.every((query) => query.data !== undefined)
-  const listsFailed = accountQueries.some((query) => query.isError)
-  const listsLoading = accountQueries.some((query) => query.isLoading && !query.isError)
-  const complete = allListsLoaded && knownBalances.length === allBalances.length
-  const knownTotalSats = knownBalances.reduce((sum, balance) => sum + (balance.sats ?? 0), 0)
-  const totalBtcSats = complete ? knownTotalSats : null
-  const hasKnownBalance = knownBalances.length > 0
-  const updating = allBalances.some((balance) => balance.state === 'updating' || balance.state === 'loading')
-  const hasStaleBalance = allBalances.some((balance) => balance.state === 'stale')
-  const knownTimes = knownBalances.flatMap((balance) => (balance.updatedAt === null ? [] : [balance.updatedAt]))
-  const oldestBalanceAt =
-    knownTimes.length === knownBalances.length && knownTimes.length > 0 ? Math.min(...knownTimes) : null
-  const quotedPrice = btcPriceQuery.data === undefined ? null : Number(btcPriceQuery.data.value)
-  const price: HoldingPrice = {
-    value: isUsableBtcPrice(quotedPrice) ? quotedPrice : null,
-    lastKnown: btcPriceQuery.data?.lastKnown === true || btcPriceQuery.isError,
-    asOf: btcPriceQuery.data?.asOf ?? null,
-  }
-  const retryBalances = (): void => {
-    void balancesQuery.refetchBalances()
-    void storedBalancesQuery.refetch()
-    for (const query of accountQueries) {
-      if (query.isError) {
-        void query.refetch()
-      }
-    }
-  }
+  const { summary, price, listsLoaded: allListsLoaded, listsFailed, listsLoading } = holdings
+  const knownTotalSats = summary.knownTotalSats
+  const totalBtcSats = summary.totalSats
+  const complete = summary.complete
+  const hasKnownBalance = summary.knownCount > 0
+  const updating = summary.updating
+  const retryBalances = holdings.retry
 
   return (
     <>
@@ -262,7 +111,12 @@ export function ClaimsPage(): JSX.Element {
                   {!hasKnownBalance && (updating || listsLoading) ? (
                     <BalanceSkeleton />
                   ) : (
-                    <Text textStyle="text/sm" fontWeight="semibold" color="neutral.900">
+                    <Text
+                      aria-label="Current Bitcoin balance"
+                      textStyle="text/sm"
+                      fontWeight="semibold"
+                      color="neutral.900"
+                    >
                       {hasKnownBalance || complete
                         ? `${!complete ? 'Known balance · ' : ''}${(knownTotalSats / 100_000_000).toFixed(8)} BTC`
                         : 'Balance unavailable'}
@@ -282,17 +136,9 @@ export function ClaimsPage(): JSX.Element {
                     </Text>
                   )}
                 </Flex>
-                <Text textStyle="label/xs" color="neutral.500" mt={1} minH="20px" aria-live="polite">
-                  {!complete
-                    ? `${knownBalances.length} of ${allBalances.length} balances available${!allListsLoaded ? ' · Account list incomplete' : ''} · Allocation unavailable`
-                    : updating
-                      ? 'Updating balances…'
-                      : hasStaleBalance
-                        ? `Includes last known balances${oldestBalanceAt === null ? '' : ` · ${balanceAsOf(oldestBalanceAt)}`}`
-                        : oldestBalanceAt === null
-                          ? 'All balances available'
-                          : balanceAsOf(oldestBalanceAt)}
-                </Text>
+                <Box mt={1} minH="20px">
+                  <HoldingsStatus summary={summary} textStyle="label/xs" />
+                </Box>
               </>
             )}
           </Box>
@@ -310,23 +156,10 @@ export function ClaimsPage(): JSX.Element {
           </Button>
         </Flex>
 
-        {listsFailed && (
-          <Stack mb={4} align="flex-start" gap={2}>
-            <ErrorBanner message="Some accounts could not be refreshed. The balances shown may be incomplete or out of date." />
-            <Button size="sm" variant="outline" onClick={retryBalances}>
-              Retry
-            </Button>
-          </Stack>
-        )}
-        {balancesQuery.balancesFailed && claimIds.length > 0 && (
-          <Flex align="center" gap={3} mb={4} flexWrap="wrap">
-            <Text textStyle="text/sm" color="neutral.600">
-              Wallet balances could not be updated. Check your Electrum connection in Settings.
-            </Text>
-            <Button size="sm" variant="outline" onClick={retryBalances} isDisabled={balancesQuery.balancesFetching}>
-              Retry balances
-            </Button>
-          </Flex>
+        {(listsFailed || holdings.walletsFailed || holdings.exchangeIssue) && (
+          <Box mb={4}>
+            <HoldingsRecovery holdings={holdings} retry={retryBalances} />
+          </Box>
         )}
         {/* Account cards */}
         {hasClaims ? (
@@ -335,7 +168,7 @@ export function ClaimsPage(): JSX.Element {
               <AccountCard
                 key={claim.id}
                 claim={claim}
-                balance={walletBalances.get(claim.id) ?? unavailableBalance}
+                balance={holdings.balances.get(claim.id) ?? unavailableBalance}
                 totalBtcSats={totalBtcSats}
                 price={price}
               />
@@ -346,7 +179,7 @@ export function ClaimsPage(): JSX.Element {
                 account={account}
                 totalBtcSats={totalBtcSats}
                 price={price}
-                balance={exchangeBalances.get(account.id) ?? unavailableBalance}
+                balance={holdings.balances.get(account.id) ?? unavailableBalance}
               />
             ))}
             {manualAccounts.map((account) => (
@@ -355,7 +188,7 @@ export function ClaimsPage(): JSX.Element {
                 account={account}
                 totalBtcSats={totalBtcSats}
                 price={price}
-                balance={manualBalances.get(account.id) ?? unavailableBalance}
+                balance={holdings.balances.get(account.id) ?? unavailableBalance}
               />
             ))}
             {etfAccounts.map((account) => (
@@ -364,7 +197,7 @@ export function ClaimsPage(): JSX.Element {
                 account={{ ...account, balance: account.balance }}
                 totalBtcSats={totalBtcSats}
                 price={price}
-                balance={manualBalances.get(account.id) ?? unavailableBalance}
+                balance={holdings.balances.get(account.id) ?? unavailableBalance}
                 linkPrefix="/accounts/etf"
               />
             ))}

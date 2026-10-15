@@ -1444,7 +1444,10 @@ const onchainRouter = t.router({
         continue
       }
 
-      const balance = accountBalances.get(account) ?? 0n
+      const balance = accountBalances.get(account)
+      if (balance === undefined) {
+        continue
+      }
       balanceMap.set(claimId, new Decimal(balance.toString()))
     }
 

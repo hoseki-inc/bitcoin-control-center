@@ -4,6 +4,7 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter } from 'react-router'
 import { describe, expect, it, vi } from 'vitest'
+import { holdingsFixture } from '../testing/holdings'
 import { statementFixture } from '../testing/statements'
 import type { StatementDto } from '../trpc/server-types'
 import { type HomeDataSource, HomePage, type HomeViews } from './index'
@@ -55,6 +56,9 @@ function fakeDataSource(state: HomeState): HomeDataSource {
   }
   const portfolio: PortfolioData = {
     currentTotalBalance: state.currentSats,
+    knownTotalBalance: '0',
+    balanceStatus: { complete: true, missingAccountIds: [], staleAccountIds: [], asOf: null },
+    priceStatus: null,
     currentBtcPrice: state.btcPrice,
     verifiedClaimsCount: 0,
     exchangeAccountCount: 0,
@@ -67,6 +71,13 @@ function fakeDataSource(state: HomeState): HomeDataSource {
     historyFailedAccountIds: [],
   }
   return {
+    useHoldings: () =>
+      holdingsFixture({
+        sats: state.currentSats,
+        price: state.btcPrice,
+        loading: state.accountsLoading || Object.values(state.accountStates).some((flags) => flags.isLoading === true),
+        unavailable: state.accountsError,
+      }),
     useStatements: () =>
       query(state.statements, {
         isLoading: state.statementsLoading,
@@ -147,10 +158,9 @@ describe('Home overview states', () => {
       const accounts: HomeState['accounts'] = { claims: [], exchange: [], manual: [], etf: [] }
       accounts[kind] = [{ id: 'account', status: 'pending', balance: '0' }]
       const html = renderHome({ accounts })
-      expect(html).toContain('Your history will appear here')
-      expect(html).toContain('href="/accounts"')
+      expect(html).toContain('0.00000000 BTC')
+      expect(html).toContain('href="/portfolio"')
       expect(html).not.toContain('href="/accounts/add"')
-      expect(html).not.toContain('0.00000000')
     },
   )
 
@@ -161,12 +171,12 @@ describe('Home overview states', () => {
   it('does not present failed account queries as an empty portfolio', () => {
     const html = renderHome({ accountsError: true })
     expect(html).toContain('role="alert"')
-    expect(html).toContain('Your balances could not be confirmed')
+    expect(html).toContain('Some accounts could not be refreshed')
     expect(html).not.toContain('Showing the last available overview')
     expect(html).toContain('Holdings unavailable')
     expect(html).not.toContain('$0.00')
     expect(html).not.toContain('0 BTC')
-    expect(html).toContain('Try Again')
+    expect(html).toContain('Retry balances')
     expect(html).toContain('Bitcoin Price')
     expect(html).not.toContain('href="/accounts/add"')
   })
@@ -190,7 +200,7 @@ describe('Home overview states', () => {
   it('retains the last overview with a persistent warning when account refresh fails', () => {
     const html = renderHome({ accountsError: true, history: zeroBalanceHistory })
     expect(html).toContain('Balance chart')
-    expect(html).toContain('Showing the last available overview')
+    expect(html).toContain('Some accounts could not be refreshed')
     expect(html).not.toContain('href="/accounts/add"')
   })
 
@@ -280,7 +290,7 @@ describe('Home overview states', () => {
       btcPrice: '0',
       history: [{ timestamp: '2026-09-01T00:00:00.000Z', totalBalance: '100000000' }],
     })
-    expect(html).toContain('USD value unavailable')
+    expect(html).toContain('USD price unavailable')
     expect(html).not.toContain('$')
   })
 
@@ -315,14 +325,14 @@ describe('Home overview states', () => {
   })
 
   it.each(['claims', 'exchange', 'manual', 'etf'] as const)(
-    'waits for the %s list before choosing between account setup and history',
+    'marks the overview incomplete while the %s list loads',
     (kind) => {
       const account = { id: 'account', status: 'verified', balance: '0' }
       const text = renderText({
         accounts: { claims: [account], exchange: [], manual: [], etf: [] },
         accountStates: { [kind]: { isLoading: true } },
       })
-      expect(text).toContain('Loading your holdings')
+      expect(text).toContain(kind === 'claims' ? 'Loading your holdings' : 'Account list incomplete')
       expect(text).not.toContain('Your history will appear here')
     },
   )

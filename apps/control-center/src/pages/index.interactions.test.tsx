@@ -5,6 +5,7 @@ import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { MemoryRouter, Route, Routes, useParams } from 'react-router'
 import { assert, expect, it, onTestFinished, vi } from 'vitest'
+import { holdingsFixture } from '../testing/holdings'
 import { statementFixture } from '../testing/statements'
 import { TestTrpcProvider, createTestTrpcClient } from '../testing/trpc'
 import type { StatementDto } from '../trpc/server-types'
@@ -102,6 +103,7 @@ it('retries every failed holdings query and the statements from Try Again', asyn
     etfs: fakeQuery<unknown[]>([]),
   }
   const container = await renderHome({
+    useHoldings: () => holdingsFixture(),
     useStatements: () => queries.statements,
     usePortfolio: () => queries.portfolio,
     useClaims: () => queries.claims,
@@ -119,6 +121,7 @@ it('retries every failed holdings query and the statements from Try Again', asyn
 
 it('opens a recent statement from its View button', async () => {
   const container = await renderHome({
+    useHoldings: () => holdingsFixture(),
     useStatements: () => fakeQuery([statement]),
     usePortfolio: () => fakeQuery(undefined),
     useClaims: () => fakeQuery<unknown[]>([]),
