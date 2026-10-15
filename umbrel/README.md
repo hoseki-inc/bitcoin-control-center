@@ -33,8 +33,9 @@ bitcoin-control-center-umbrel-1.0.0-sideload.<commit>.tar.gz
 bitcoin-control-center-umbrel-1.0.0-sideload.<commit>.tar.gz.sha256
 ```
 
-The version is the manifest's `version` plus the source commit, so each bundle
-installs as a distinct version. A `.dirty` suffix marks a build from uncommitted
+The version is the shared release version (`node start9/scripts/version.mjs
+umbrel`: `1.0.0:0` is `1.0.0`, `1.0.0:1` is `1.0.0-1`) plus the source commit, so
+each bundle installs as a distinct version. A `.dirty` suffix marks a build from uncommitted
 changes. Use `--arch amd64` or `--arch arm64` for a faster build when you know
 the target device.
 

@@ -15,6 +15,7 @@ function usage() {
   console.log(`Usage:
   node start9/scripts/version.mjs get
   node start9/scripts/version.mjs tag
+  node start9/scripts/version.mjs umbrel
   node start9/scripts/version.mjs check
   node start9/scripts/version.mjs assert-tag <vmajor.minor.patch_revision>
   node start9/scripts/version.mjs bump <major|minor|patch|revision> [--notes "Release notes"]
@@ -53,6 +54,17 @@ function formatVersion(version) {
 function exportNameForVersion(version) {
   const parsed = parseVersion(version)
   return `v${parsed.major}_${parsed.minor}_${parsed.patch}_${parsed.revision}`
+}
+
+/**
+ * Umbrel offers an update only when the version string changes, so a packaging-only revision
+ * keeps its number: 1.0.0:0 is 1.0.0 and 1.0.0:1 is 1.0.0-1.
+ * @param {string} version
+ */
+function umbrelVersionForVersion(version) {
+  const parsed = parseVersion(version)
+  const base = `${parsed.major}.${parsed.minor}.${parsed.patch}`
+  return parsed.revision === 0 ? base : `${base}-${parsed.revision}`
 }
 
 /** @param {string} version */
@@ -331,6 +343,11 @@ try {
 
   if (command === 'tag') {
     console.log(tagNameForVersion(validateVersionGraph()))
+    process.exit(0)
+  }
+
+  if (command === 'umbrel') {
+    console.log(umbrelVersionForVersion(validateVersionGraph()))
     process.exit(0)
   }
 
