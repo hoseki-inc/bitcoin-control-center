@@ -35,6 +35,11 @@ const EnvSchema = z.object({
     .enum(['true', 'false'])
     .default('false')
     .transform((value) => value === 'true'),
+  /** Whether startup fails until Electrum connects. Set false where the server may still be indexing. Defaults to true. */
+  SENTINEL_WAIT_FOR_ELECTRUM: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((value) => value === 'true'),
 
   /** SOCKS proxy host (set by desktop Electron shell when bundled Tor is running). */
   SOCKS_PROXY_HOST: z.string().optional(),

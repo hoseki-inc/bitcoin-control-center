@@ -179,6 +179,8 @@ async function withTestSetup(run: () => Promise<void>): Promise<void> {
     APP_DIR: directory,
     LOG_LEVEL: 'fatal',
     MEMPOOL_API_URL: 'https://example.invalid',
+    SENTINEL_ALLOW_IP_HOSTS: false,
+    SENTINEL_WAIT_FOR_ELECTRUM: true,
   }
   vi.spyOn(environment, 'loadEnv').mockImplementation(() => env)
   await run()
@@ -231,6 +233,24 @@ describe('Electrum connection lifecycle', () => {
       const unavailable = await startElectrum(100, false, true)
       env.ELECTRUM_PORT = unavailable.config.port
       expect((await createAppContext(logger)).isErr()).toBe(true)
+    })
+  })
+
+  it('starts without Electrum when the package opts out of waiting, as Umbrel does while Electrs indexes', async () => {
+    await withTestSetup(async () => {
+      const unavailable = await startElectrum(100, false, true)
+      env.ELECTRUM_PORT = unavailable.config.port
+      env.SENTINEL_WAIT_FOR_ELECTRUM = false
+      const ctx = (await createAppContext(logger)).unwrap()
+      contexts.add(ctx)
+      await vi.waitFor(() => {
+        expect(unavailable.methods).toContain('server.version')
+      })
+      await expect(appRouter.createCaller({ app: ctx }).settings.get({ key: 'user_name' })).resolves.toBeNull()
+      expect(ctx.electrumClient.isConnected()).toBe(false)
+      await vi.waitFor(() => {
+        expect(unavailable.sockets.size).toBe(0)
+      })
     })
   })
 
