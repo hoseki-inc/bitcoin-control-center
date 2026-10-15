@@ -96,8 +96,11 @@ it('uses the plaintext Electrs bridge port assigned by StartOS', async () => {
     ),
   ).resolves.toEqual({ host: '10.0.3.1', port: '50101' })
 })
-it('points at the default Electrs bridge port while Electrs is absent', async () => {
-  await expect(resolveElectrs(effectsForElectrs(null))).resolves.toEqual({ host: '10.0.3.1', port: '50001' })
+it('stays offline on loopback while Electrs is absent, rather than whatever holds port 50001', async () => {
+  const effects = effectsForElectrs(null)
+  const osIp = vi.spyOn(effects, 'getOsIp')
+  await expect(resolveElectrs(effects)).resolves.toEqual({ host: '127.0.0.1', port: '50001' })
+  expect(osIp).not.toHaveBeenCalled()
 })
 it.each(['https://user:pass@node.local', 'https://node.local/?x=1', 'https://node.local/#top', 'ftp://node.local'])(
   'rejects a mempool override that cannot work: %s',
