@@ -9,6 +9,7 @@ import type { BitcoinInput } from '@hoseki/packages/ui/utils/bitcoin'
 import { WizardFooter } from '@hoseki/packages/ui/wallet-ui'
 import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
+import { useBalanceErrorMessage } from '../../../lib/balance/balance-error'
 import { useBitcoinAccountBalances } from '../../../lib/balance/bitcoin-account'
 import type { SigningFlowProps } from '../../../lib/claim-flow'
 import { trpc } from '../../../trpc'
@@ -128,6 +129,7 @@ function ManualSigningAccountAccordion({
   const balancesQuery = useBitcoinAccountBalances(networkAccount ? [networkAccount.toString()] : [], {
     enabled: !!networkAccount?.account,
   })
+  const balanceError = useBalanceErrorMessage(balancesQuery.error)
 
   const balance = useMemo(() => {
     if (!networkAccount) {
@@ -137,7 +139,7 @@ function ManualSigningAccountAccordion({
       return { noBalance: 'Loading...', btc: null, usd: null }
     }
     if (balancesQuery.error) {
-      return { noBalance: balancesQuery.error.message, btc: null, usd: null }
+      return { noBalance: balanceError ?? balancesQuery.error.message, btc: null, usd: null }
     }
     const accountBalance = balancesQuery.data.accounts.get(networkAccount.toString())
     if (!accountBalance) {
@@ -149,7 +151,7 @@ function ManualSigningAccountAccordion({
       btc: toBitcoinAmountDisplayValue(accountBalance.current.toString()),
       usd: accountBalance.usd ? formatUsd(accountBalance.usd.toFixed(2)) : 'n/a',
     }
-  }, [networkAccount, balancesQuery])
+  }, [networkAccount, balancesQuery, balanceError])
 
   if (!bitcoinInput) {
     return null

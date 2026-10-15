@@ -16,6 +16,7 @@ import {
 import { CircleXIcon } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
+import { useBalanceErrorMessage } from '../../../lib/balance/balance-error'
 import { BBQrScanner } from '../../qr/bbqr-scanner'
 import { ClaimErrorMessage } from '../claim-error-message'
 import { useKeystoneAccountsWithBalances } from './use-keystone-accounts-with-balances'
@@ -264,6 +265,7 @@ function AccountSelectionStep({
   onNext: () => void
 } & StackProps): JSX.Element {
   const { isLoading, error, data: wallets } = useKeystoneAccountsWithBalances(keystoneJson)
+  const errorMessage = useBalanceErrorMessage(error)
 
   useEffect(() => {
     if (wallets.length === 1 && wallets[0] && !selectedWallet) {
@@ -276,7 +278,7 @@ function AccountSelectionStep({
       <FloatingKeystoneImage />
 
       {isLoading && <ScanningInProgress />}
-      {error && <ClaimErrorMessage error={error.message} />}
+      {errorMessage !== null && <ClaimErrorMessage error={errorMessage} />}
 
       {wallets[0] && wallets.length === 1 && <SingleAccount wallet={wallets[0]} setWallet={setSelectedWallet} />}
 

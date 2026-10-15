@@ -51,6 +51,7 @@ import { CircleXIcon, CopyIcon, InfoIcon, MoveRightIcon, TriangleAlertIcon, UsbI
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
 import { toast } from 'sonner'
+import { useBalanceErrorMessage } from '../../../lib/balance/balance-error'
 import { GenericError } from '../../errors/generic-error'
 import { RequiredDataMissing } from '../../errors/required-data-missing'
 import { ClaimErrorMessage } from '../claim-error-message'
@@ -525,6 +526,7 @@ function Step6({
   onNext: () => void
 } & StackProps) {
   const { isLoading, error, data: wallets } = useColdcardAccountsWithBalances(coldcardJson, model)
+  const errorMessage = useBalanceErrorMessage(error)
 
   useEffect(() => {
     if (wallets.length === 1 && wallets[0] && !selectedWallet) {
@@ -537,7 +539,7 @@ function Step6({
       <ColdcardModelImage model={model} />
 
       {isLoading && <ScanningInProgress />}
-      {error && <ClaimErrorMessage error={error.message} />}
+      {errorMessage !== null && <ClaimErrorMessage error={errorMessage} />}
 
       {wallets[0] && wallets.length === 1 && <SingleAccount wallet={wallets[0]} setWallet={setSelectedWallet} />}
 
