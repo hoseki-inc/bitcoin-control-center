@@ -9,6 +9,9 @@ on:
 permissions:
   contents: read
 
+env:
+  UMBREL_IMAGE: ghcr.io/hoseki-inc/bitcoin-control-center
+
 # Release jobs and their reusable workflows cannot consume or publish shared caches.
 cache-mode: none
 
@@ -20,10 +23,15 @@ jobs:
   source:
     name: Select the release commit and version
     runs-on: ubuntu-latest
+    # Read access to packages, to find an existing Umbrel image tag early.
+    permissions:
+      contents: read
+      packages: read
     outputs:
       sha: ${{ steps.source.outputs.sha }}
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
+      umbrel_version: ${{ steps.version.outputs.umbrel_version }}
       short_sha: ${{ steps.version.outputs.short_sha }}
     steps:
       - name: Require the default branch
@@ -62,10 +70,12 @@ jobs:
           VERSION="$(node start9/scripts/version.mjs get)"
           TAG="$(node start9/scripts/version.mjs tag)"
           node start9/scripts/version.mjs assert-tag "$TAG"
+          UMBREL_VERSION="$(node start9/scripts/version.mjs umbrel)"
           SHORT_SHA="$(git rev-parse --short=12 HEAD)"
           {
             echo "version=${VERSION}"
             echo "tag=${TAG}"
+            echo "umbrel_version=${UMBREL_VERSION}"
             echo "short_sha=${SHORT_SHA}"
           } >> "$GITHUB_OUTPUT"
 
@@ -83,6 +93,25 @@ jobs:
             echo "::error::Release tag ${TAG} already exists. Versions and release tags are immutable."
             exit 1
           fi
+
+      # Fails before the builds start. GHCR denies reads of a package that does not exist yet, so the
+      # publish job, which can write, checks again.
+      - name: Reject an existing Umbrel image tag
+        shell: bash
+        env:
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ github.token }}
+          UMBREL_VERSION: ${{ steps.version.outputs.umbrel_version }}
+        run: |
+          STATUS="$(node .github/scripts/umbrel-image.mjs tag-status "$UMBREL_IMAGE" "$UMBREL_VERSION")"
+          case "$STATUS" in
+            absent) ;;
+            denied) echo "::notice::${UMBREL_IMAGE} is not readable yet; the publish job checks the tag again." ;;
+            *)
+              echo "::error::${UMBREL_IMAGE}:${UMBREL_VERSION} already exists. Versions and image tags are immutable."
+              exit 1
+              ;;
+          esac
 
   desktop:
     needs: source
@@ -157,6 +186,77 @@ jobs:
         with:
           name: startos-unsigned
           path: artifacts/hoseki-sentinel-${{ needs.source.outputs.tag }}.s9pk
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+  # Builds each architecture natively and pushes nothing. A matrix job's legs share one set of
+  # outputs, so each leg sets only the outputs named for its architecture.
+  umbrel-image:
+    name: Build Umbrel release image (${{ matrix.arch }})
+    needs: source
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            os: ubuntu-latest
+          - arch: arm64
+            os: ubuntu-24.04-arm
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    outputs:
+      amd64_sha256: ${{ steps.image.outputs.amd64_sha256 }}
+      amd64_digest: ${{ steps.image.outputs.amd64_digest }}
+      arm64_sha256: ${{ steps.image.outputs.arm64_sha256 }}
+      arm64_digest: ${{ steps.image.outputs.arm64_digest }}
+    steps:
+      - name: Check out the same protected release commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Verify the protected commit before executing repository code
+        env:
+          RELEASE_SHA: ${{ needs.source.outputs.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$GITHUB_SHA" = "$RELEASE_SHA"
+
+      - name: Set up Node workspace
+        uses: ./.github/actions/setup
+        with:
+          cache: 'false'
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      - name: Build Sentinel and the web app
+        run: ./umbrel/build.sh app
+
+      - name: Build the release image as an OCI archive
+        id: image
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          ARCHIVE="$RUNNER_TEMP/umbrel-image/${ARCH}.tar"
+          ./umbrel/build.sh image "$ARCH" release "$ARCHIVE"
+          tar -xOf "$ARCHIVE" index.json > "$RUNNER_TEMP/${ARCH}-index.json"
+          DIGEST="$(node .github/scripts/umbrel-image.mjs archive-digest "$RUNNER_TEMP/${ARCH}-index.json" "$ARCH")"
+          {
+            echo "${ARCH}_sha256=$(sha256sum "$ARCHIVE" | cut -d' ' -f1)"
+            echo "${ARCH}_digest=${DIGEST}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Confirm packaging did not edit source files
+        run: git diff --exit-code
+
+      - name: Upload the image for publishing
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: umbrel-image-${{ matrix.arch }}
+          path: ${{ runner.temp }}/umbrel-image/${{ matrix.arch }}.tar
           if-no-files-found: error
           compression-level: 0
           retention-days: 7
@@ -273,19 +373,49 @@ jobs:
           compression-level: 0
           retention-days: 7
 
-  # The only job with write access. It runs no repository or dependency code: it verifies the
-  # assembled files against their checksums and creates the draft.
+  # The only job with write access. It runs no build or dependency code: it verifies the assembled
+  # files and Umbrel images against the build jobs' outputs, publishes the Umbrel image, and creates
+  # the draft. The only repository code it runs is the image helper, which uses Node built-ins and is
+  # checked out on its own. GHCR has no draft state, so the image is public once this job pushes it.
   publish:
-    name: Create draft GitHub Release
-    needs: [source, startos-sign, assemble]
+    name: Publish Umbrel image and create draft GitHub Release
+    needs: [source, startos-sign, assemble, umbrel-image]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
       contents: write
+      packages: write
+      # Provenance attestation for the Umbrel image.
+      id-token: write
+      attestations: write
     env:
       GH_REPO: ${{ github.repository }}
       TAG: ${{ needs.source.outputs.tag }}
+      UMBREL_VERSION: ${{ needs.source.outputs.umbrel_version }}
+      AMD64_DIGEST: ${{ needs.umbrel-image.outputs.amd64_digest }}
+      ARM64_DIGEST: ${{ needs.umbrel-image.outputs.arm64_digest }}
     steps:
+      # Checked out first: checkout clears the workspace.
+      - name: Check out only the Umbrel image helper
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.source.outputs.sha }}
+          persist-credentials: false
+          sparse-checkout: |
+            .github/scripts/umbrel-image.mjs
+            .nvmrc
+          sparse-checkout-cone-mode: false
+
+      - name: Verify the checked-out commit
+        env:
+          SOURCE_SHA: ${{ needs.source.outputs.sha }}
+        run: test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: '.nvmrc'
+
       - name: Download the release files
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -299,6 +429,34 @@ jobs:
         run: |
           sha256sum -c SHA256SUMS
           echo "${EXPECTED_SHA256}  hoseki-sentinel-${TAG}.s9pk" | sha256sum --check --strict
+
+      - name: Download the amd64 Umbrel image
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: umbrel-image-amd64
+          path: ${{ runner.temp }}/umbrel-images
+
+      - name: Download the arm64 Umbrel image
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: umbrel-image-arm64
+          path: ${{ runner.temp }}/umbrel-images
+
+      # Other jobs can replace artifacts but not job outputs, so each archive must match its build
+      # job's hash and hold the image digest that job reported.
+      - name: Verify the Umbrel images against their build jobs
+        working-directory: ${{ runner.temp }}/umbrel-images
+        env:
+          AMD64_SHA256: ${{ needs.umbrel-image.outputs.amd64_sha256 }}
+          ARM64_SHA256: ${{ needs.umbrel-image.outputs.arm64_sha256 }}
+          HELPER: ${{ github.workspace }}/.github/scripts/umbrel-image.mjs
+        run: |
+          printf '%s  amd64.tar\n%s  arm64.tar\n' "$AMD64_SHA256" "$ARM64_SHA256" | sha256sum --check --strict
+          for ARCH in amd64 arm64; do
+            tar -xOf "${ARCH}.tar" index.json > "${ARCH}-index.json"
+          done
+          test "$(node "$HELPER" archive-digest amd64-index.json amd64)" = "$AMD64_DIGEST"
+          test "$(node "$HELPER" archive-digest arm64-index.json arm64)" = "$ARM64_DIGEST"
 
       - name: Reject release collisions
         shell: bash
@@ -316,6 +474,86 @@ jobs:
             echo "::error::A GitHub Release for ${TAG} already exists."
             exit 1
           fi
+
+      - name: Sign in to GitHub Container Registry
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin <<< "$GH_TOKEN"
+
+      # A re-run after a later step failed finds the tag it pushed, so an existing tag is accepted only
+      # when it lists exactly these images; the verification step refuses any other.
+      - name: Check the Umbrel image tag
+        id: umbrel-tag
+        shell: bash
+        env:
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ github.token }}
+        run: |
+          STATUS="$(node .github/scripts/umbrel-image.mjs tag-status "$UMBREL_IMAGE" "$UMBREL_VERSION")"
+          case "$STATUS" in
+            absent) echo "exists=false" >> "$GITHUB_OUTPUT" ;;
+            present)
+              echo "::notice::${UMBREL_IMAGE}:${UMBREL_VERSION} already exists; checking it lists these images."
+              echo "exists=true" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "::error::Could not read ${UMBREL_IMAGE}. Give this repository write access to the package."
+              exit 1
+              ;;
+          esac
+
+      # Each image is pushed by digest, without a tag. Only the multi-arch index gets the version tag.
+      - name: Push the Umbrel images and tag the multi-arch index
+        if: steps.umbrel-tag.outputs.exists == 'false'
+        working-directory: ${{ runner.temp }}/umbrel-images
+        run: |
+          skopeo copy --authfile "$HOME/.docker/config.json" --preserve-digests \
+            oci-archive:amd64.tar "docker://${UMBREL_IMAGE}@${AMD64_DIGEST}"
+          skopeo copy --authfile "$HOME/.docker/config.json" --preserve-digests \
+            oci-archive:arm64.tar "docker://${UMBREL_IMAGE}@${ARM64_DIGEST}"
+          docker buildx imagetools create \
+            --tag "${UMBREL_IMAGE}:${UMBREL_VERSION}" \
+            "${UMBREL_IMAGE}@${AMD64_DIGEST}" \
+            "${UMBREL_IMAGE}@${ARM64_DIGEST}"
+
+      - name: Verify the published Umbrel index
+        id: umbrel-index
+        shell: bash
+        env:
+          EXISTED: ${{ steps.umbrel-tag.outputs.exists }}
+        run: |
+          docker buildx imagetools inspect --raw "${UMBREL_IMAGE}:${UMBREL_VERSION}" > "$RUNNER_TEMP/umbrel-index.json"
+          if ! INDEX_DIGEST="$(node .github/scripts/umbrel-image.mjs verify-index "$RUNNER_TEMP/umbrel-index.json" "$AMD64_DIGEST" "$ARM64_DIGEST")"; then
+            if [[ "$EXISTED" == "true" ]]; then
+              echo "::error::${UMBREL_IMAGE}:${UMBREL_VERSION} already exists with other images. Versions and image tags are immutable."
+            fi
+            exit 1
+          fi
+          IMAGE_REFERENCE="$(node .github/scripts/umbrel-image.mjs image-reference "$UMBREL_IMAGE" "$UMBREL_VERSION" "$INDEX_DIGEST")"
+          {
+            echo "digest=${INDEX_DIGEST}"
+            echo "reference=${IMAGE_REFERENCE}"
+          } >> "$GITHUB_OUTPUT"
+
+      # Umbrel pulls without credentials. GitHub creates a new package as private, so the first release
+      # stops here until the package is made public; re-running the failed jobs then continues.
+      - name: Confirm an anonymous pull works
+        env:
+          INDEX_DIGEST: ${{ steps.umbrel-index.outputs.digest }}
+        run: |
+          if ! skopeo copy --all --preserve-digests --src-no-creds \
+            "docker://${UMBREL_IMAGE}@${INDEX_DIGEST}" "oci:${RUNNER_TEMP}/anonymous-pull"; then
+            echo "::error::Anonymous pull failed. Make the ${UMBREL_IMAGE} package public in its package settings, then re-run the failed jobs."
+            exit 1
+          fi
+
+      - name: Attest the Umbrel image's build provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ env.UMBREL_IMAGE }}
+          subject-digest: ${{ steps.umbrel-index.outputs.digest }}
+          push-to-registry: true
+          create-storage-record: false
 
       - name: Create draft GitHub Release and exact tag
         id: release
@@ -351,6 +589,10 @@ jobs:
             echo "::warning::Removed the partial draft for ${TAG}. Re-run the publish job."
           fi
 
+      - name: Sign out of GitHub Container Registry
+        if: always()
+        run: docker logout ghcr.io
+
       - name: Add release summary
         shell: bash
         env:
@@ -358,6 +600,7 @@ jobs:
           SHORT_SHA: ${{ needs.source.outputs.short_sha }}
           RELEASE_URL: ${{ steps.release.outputs.url }}
           SIGNING_MODE: ${{ needs.startos-sign.outputs.signing-mode }}
+          IMAGE_REFERENCE: ${{ steps.umbrel-index.outputs.reference }}
         run: |
           {
             echo "## Complete draft release created"
@@ -369,7 +612,8 @@ jobs:
             echo "- StartOS signing: ${SIGNING_MODE}"
             echo "- Desktop: macOS ARM64 DMG and Windows x64 EXE, with native packaged-runtime smoke tests"
             echo "- Desktop signing: macOS ad-hoc (not notarized); Windows without publisher signature"
-            echo "- Registry publication: no"
+            echo "- Umbrel: \`linux/amd64\` / \`linux/arm64\` image \`${UMBREL_VERSION}\`, public on GHCR, with build provenance"
+            echo "- StartOS registry publication: no"
             echo "- Draft release: ${RELEASE_URL}"
             echo ""
             if [[ "$SIGNING_MODE" == "temporary clean-install key" ]]; then
@@ -377,4 +621,12 @@ jobs:
               echo ""
             fi
             echo "Review the draft and its checksum before publishing it."
+            echo ""
+            echo "### Umbrel app image"
+            echo ""
+            echo "Use this line in the app's \`docker-compose.yml\` for the getumbrel/umbrel-apps pull request:"
+            echo ""
+            echo "\`\`\`yaml"
+            echo "image: ${IMAGE_REFERENCE}"
+            echo "\`\`\`"
           } >> "$GITHUB_STEP_SUMMARY"
