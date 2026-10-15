@@ -12,7 +12,6 @@ const currentPath = join(versionsDir, 'current.ts')
 
 const VERSION_RE = /^(\d+)\.(\d+)\.(\d+):(\d+)$/
 const RELEASE_NOTES_PLACEHOLDER_MARKER = 'STARTOS_RELEASE_NOTES_REQUIRED'
-const EMPTY_MIGRATIONS_RE = /migrations:\s*\{\s*\}/
 
 function usage() {
   console.log(`Usage:
@@ -221,9 +220,136 @@ function parseNotes(args) {
   return notes
 }
 
-/** @param {string} source */
-function carriesMigration(source) {
-  return !EMPTY_MIGRATIONS_RE.test(source)
+/**
+ * Index just past the string, template literal or comment starting at `start`, or
+ * `start` when none starts there.
+ * @param {string} source
+ * @param {number} start
+ * @returns {number}
+ */
+function skipLiteral(source, start) {
+  const char = source[start]
+  if (char === '/' && source[start + 1] === '/') {
+    const end = source.indexOf('\n', start)
+    return end === -1 ? source.length : end
+  }
+  if (char === '/' && source[start + 1] === '*') {
+    const end = source.indexOf('*/', start + 2)
+    return end === -1 ? source.length : end + 2
+  }
+  if (char !== "'" && char !== '"' && char !== '`') {
+    return start
+  }
+  let index = start + 1
+  while (index < source.length && source[index] !== char) {
+    if (source[index] === '\\') {
+      index += 2
+    } else if (char === '`' && source.startsWith('${', index)) {
+      index = skipBlock(source, index + 1)
+    } else {
+      index += 1
+    }
+  }
+  return index + 1
+}
+
+/**
+ * Index just past the brace block opening at `start`.
+ * @param {string} source
+ * @param {number} start
+ * @returns {number}
+ */
+function skipBlock(source, start) {
+  let depth = 0
+  let index = start
+  while (index < source.length) {
+    const next = skipLiteral(source, index)
+    if (next !== index) {
+      index = next
+      continue
+    }
+    if (source[index] === '{') {
+      depth += 1
+    } else if (source[index] === '}') {
+      depth -= 1
+      if (depth === 0) {
+        return index + 1
+      }
+    }
+    index += 1
+  }
+  throw new Error('A StartOS version file has unbalanced braces.')
+}
+
+/**
+ * The `migrations` object of a version file's VersionInfo.of, ignoring any text
+ * in release notes or comments that looks like one.
+ * @param {string} source
+ * @param {string} path
+ */
+function readMigrations(source, path) {
+  const found = []
+  let depth = 0
+  let index = 0
+  while (index < source.length) {
+    const next = skipLiteral(source, index)
+    if (next !== index) {
+      index = next
+      continue
+    }
+    const char = source[index]
+    const field =
+      depth === 1 && !/[\w$]/.test(source[index - 1] ?? '') ? /^migrations\s*:\s*\{/.exec(source.slice(index)) : null
+    if (field != null) {
+      const end = skipBlock(source, index + field[0].length - 1)
+      found.push(source.slice(index + field[0].length - 1, end))
+      index = end
+      continue
+    }
+    if (char === '{') {
+      depth += 1
+    } else if (char === '}') {
+      depth -= 1
+    }
+    index += 1
+  }
+  if (found.length !== 1) {
+    throw new Error(`${path} must declare migrations once, as an object literal in VersionInfo.of.`)
+  }
+  return found[0]
+}
+
+/**
+ * Migration code with layout removed (whitespace, comments, semicolons, trailing
+ * commas and quote style), so reformatting alone never reads as a new migration.
+ * @param {string} migrations
+ */
+function normalizeMigrations(migrations) {
+  let normalized = ''
+  let index = 0
+  while (index < migrations.length) {
+    const next = skipLiteral(migrations, index)
+    if (next !== index) {
+      const literal = migrations.slice(index, next)
+      if (literal.startsWith("'") || literal.startsWith('"')) {
+        normalized += `'${literal.slice(1, -1)}'`
+      } else if (literal.startsWith('`')) {
+        normalized += literal
+      }
+      index = next
+      continue
+    }
+    if (!/[\s;]/.test(migrations[index])) {
+      normalized += migrations[index]
+    }
+    index += 1
+  }
+  return normalized.replace(/,([}\])])/g, '$1')
+}
+
+/** @param {string} migrations */
+function carriesMigration(migrations) {
+  return normalizeMigrations(migrations) !== '{}'
 }
 
 /**
@@ -239,8 +365,9 @@ function readReleasedSource(version) {
   try {
     git(['rev-parse', '--verify', '--quiet', `refs/tags/${tag}^{commit}`])
   } catch {
+    // Release 3 creates a draft, and a draft has no tag until it is published.
     throw new Error(
-      `current.ts carries a migration, and tag ${tag} is not available to tell whether ${version} shipped it. Fetch tags (git fetch --tags) and retry.`,
+      `current.ts carries a migration, and tag ${tag} is not available to tell whether ${version} shipped it. Fetch tags (git fetch --tags), or publish the ${tag} draft release. If ${version} never shipped, set the version and release notes in current.ts by hand instead of bumping.`,
     )
   }
   const parsed = parseVersion(version)
@@ -253,7 +380,7 @@ function readReleasedSource(version) {
       continue
     }
     if (readVersionFromSource(source, `${tag}:${path}`) === version) {
-      return source
+      return { source, path: `${tag}:${path}` }
     }
   }
   throw new Error(`Tag ${tag} has no version file declaring ${version}.`)
@@ -289,11 +416,30 @@ function retargetSource(source, version, releaseNotes) {
 }
 
 /**
- * Move a released version's migration to its own file and list it in the graph.
+ * A current.ts for a version with no migration of its own.
+ * @param {string} version
+ * @param {string} releaseNotes
+ */
+function freshSource(version, releaseNotes) {
+  return `import { VersionInfo } from '@start9labs/start-sdk'
+
+export const current = VersionInfo.of({
+  version: '${version}',
+  releaseNotes: ${JSON.stringify(releaseNotes)},
+  // A migration that ships moves to its own file at the next bump. Replace it here
+  // with the next one, rather than adding to it, or it runs again.
+  migrations: {},
+})
+`
+}
+
+/**
+ * Move a released version file to its own historical file and list it in the
+ * graph. Its contents are checked before anything is written.
  * @param {string} version
  * @param {string} source
  */
-function spinOffVersion(version, source) {
+function prepareSpinOff(version, source) {
   const { file, exportName } = historicalNameForVersion(version)
   const path = join(versionsDir, `${file}.ts`)
   if (existsSync(path)) {
@@ -301,7 +447,7 @@ function spinOffVersion(version, source) {
   }
   const historical = source.replace(/export const current\s*=/, `export const ${exportName} =`)
   if (historical === source) {
-    throw new Error(`${currentPath} must export current.`)
+    throw new Error(`The released ${version} version file must export current.`)
   }
 
   const index = readIndexSource()
@@ -313,16 +459,21 @@ function spinOffVersion(version, source) {
     throw new Error(`Could not add ${exportName} to ${indexPath}.`)
   }
 
-  writeFileSync(path, historical)
-  writeFileSync(indexPath, updated)
-  return `${file}.ts`
+  return {
+    file: `${file}.ts`,
+    write: () => {
+      writeFileSync(path, historical)
+      writeFileSync(indexPath, updated)
+    },
+  }
 }
 
 /**
  * Start9 bumps current.ts in place unless its version carries a migration. Here a
- * version is bumped only at release, so a migration in current.ts either shipped
- * with that version (keep it there in its own file) or was added since (it
- * belongs to the new version). The release tag tells which.
+ * version is bumped only at release, so the release tag tells whether a migration
+ * in current.ts shipped with that version (it moves to its own file) or was added
+ * since (it belongs to the new version). Both can hold at once: the shipped
+ * migration moves out while a replacement is carried into the new version.
  * @param {string} targetVersion
  * @param {string} releaseNotes
  */
@@ -340,38 +491,36 @@ function setVersion(targetVersion, releaseNotes) {
   }
 
   const source = readCurrentSource()
-  let note = ''
-  if (carriesMigration(source)) {
-    const released = readReleasedSource(oldVersion)
-    if (!carriesMigration(released)) {
-      writeFileSync(currentPath, retargetSource(source, targetVersion, releaseNotes))
-      validateVersionGraph()
-      console.log(`${oldVersion} -> ${targetVersion} (carried the unreleased migration into ${targetVersion})`)
-      return
+  const migrations = readMigrations(source, currentPath)
+  const hasMigration = carriesMigration(migrations)
+  let released = null
+  try {
+    released = readReleasedSource(oldVersion)
+  } catch (error) {
+    // Without a migration in current.ts the tag only guards a shipped one already
+    // cleared by hand, so a bump without tags may go ahead.
+    if (hasMigration) {
+      throw error
     }
-    if (released !== source) {
-      const { file } = historicalNameForVersion(oldVersion)
-      throw new Error(
-        `${oldVersion} shipped with a migration, and current.ts has changed since. Move the released version to ${file}.ts by hand, then bump.`,
-      )
-    }
-    note = ` (moved the ${oldVersion} migration to ${spinOffVersion(oldVersion, source)})`
   }
-
-  writeFileSync(
-    currentPath,
-    `import { VersionInfo } from '@start9labs/start-sdk'
-
-export const current = VersionInfo.of({
-  version: '${targetVersion}',
-  releaseNotes: ${JSON.stringify(releaseNotes)},
-  migrations: {},
-})
-`,
-  )
+  const releasedMigrations = released == null ? '{}' : readMigrations(released.source, released.path)
+  const unreleased = hasMigration && normalizeMigrations(migrations) !== normalizeMigrations(releasedMigrations)
+  const next = unreleased
+    ? retargetSource(source, targetVersion, releaseNotes)
+    : freshSource(targetVersion, releaseNotes)
+  const notes = []
+  if (released != null && carriesMigration(releasedMigrations)) {
+    const spinOff = prepareSpinOff(oldVersion, released.source)
+    spinOff.write()
+    notes.push(`moved the ${oldVersion} migration to ${spinOff.file}`)
+  }
+  if (unreleased) {
+    notes.push(`carried the unreleased migration into ${targetVersion}`)
+  }
+  writeFileSync(currentPath, next)
   validateVersionGraph()
 
-  console.log(`${oldVersion} -> ${targetVersion}${note}`)
+  console.log(`${oldVersion} -> ${targetVersion}${notes.length > 0 ? ` (${notes.join('; ')})` : ''}`)
 }
 
 const [command, value, ...rest] = process.argv.slice(2)

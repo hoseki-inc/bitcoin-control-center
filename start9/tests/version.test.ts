@@ -142,20 +142,70 @@ describe('bumping past a migration', () => {
     expect(repo.bump('check')).toMatchObject({ status: 0 })
   })
 
-  it('refuses when a shipped migration has changed since its release', () => {
+  it('moves a shipped migration out and carries its replacement into the new version', () => {
     const repo = setupRepository()
     repo.write('index.ts', index)
     repo.write('current.ts', versionFile('current', '0.6.1:0', migration))
     repo.release('v0.6.1_0')
-    const changed = versionFile('current', '0.6.1:0', migration.replace('seed(effects)', 'reseed(effects)'))
-    repo.write('current.ts', changed)
+    const replacement = migration.replace('seed(effects)', 'reseed(effects)')
+    repo.write('current.ts', versionFile('current', '0.6.1:0', replacement))
+
+    const result = repo.bump('bump', 'patch', '--notes', 'Next release.')
+
+    expect(result).toMatchObject({ status: 0 })
+    expect(result.output).toContain(
+      'moved the 0.6.1:0 migration to v0.6.1_0.ts; carried the unreleased migration into 0.6.2:0',
+    )
+    expect(repo.read('v0.6.1_0.ts')).toBe(versionFile('v_0_6_1_0', '0.6.1:0', migration))
+    expect(repo.read('current.ts')).toContain("version: '0.6.2:0'")
+    expect(repo.read('current.ts')).toContain('await reseed(effects)')
+    expect(repo.bump('check')).toMatchObject({ status: 0 })
+  })
+
+  it('treats a reformatted shipped migration as shipped, not new', () => {
+    const repo = setupRepository()
+    repo.write('index.ts', index)
+    repo.write('current.ts', versionFile('current', '0.6.1:0', migration))
+    repo.release('v0.6.1_0')
+    const reformatted = `{ up: async ({ effects, }) => { await seed(effects); }, // seeds
+  }`
+    repo.write('current.ts', versionFile('current', '0.6.1:0', reformatted))
 
     const result = repo.bump('bump', 'patch')
 
-    expect(result.status).toBe(1)
-    expect(result.output).toContain('0.6.1:0 shipped with a migration, and current.ts has changed since')
-    expect(repo.read('current.ts')).toBe(changed)
-    expect(repo.exists('v0.6.1_0.ts')).toBe(false)
+    expect(result).toMatchObject({ status: 0 })
+    expect(result.output).not.toContain('carried')
+    expect(repo.read('v0.6.1_0.ts')).toBe(versionFile('v_0_6_1_0', '0.6.1:0', migration))
+    expect(repo.read('current.ts')).toContain('migrations: {}')
+  })
+
+  it('still moves out a shipped migration that was cleared from current.ts by hand', () => {
+    const repo = setupRepository()
+    repo.write('index.ts', index)
+    repo.write('current.ts', versionFile('current', '0.6.1:0', migration))
+    repo.release('v0.6.1_0')
+    repo.write('current.ts', versionFile('current', '0.6.1:0'))
+
+    expect(repo.bump('bump', 'patch')).toMatchObject({ status: 0 })
+    expect(repo.read('v0.6.1_0.ts')).toBe(versionFile('v_0_6_1_0', '0.6.1:0', migration))
+  })
+
+  it('finds a migration even when the release notes look like an empty one', () => {
+    const repo = setupRepository()
+    repo.write('index.ts', index)
+    repo.write('current.ts', versionFile('current', '0.6.1:0'))
+    repo.release('v0.6.1_0')
+    const misleading = versionFile('current', '0.6.1:0', migration).replace(
+      'Notes for 0.6.1:0.',
+      'Notes mentioning migrations: {} in passing.',
+    )
+    repo.write('current.ts', misleading)
+
+    const result = repo.bump('bump', 'patch')
+
+    expect(result).toMatchObject({ status: 0 })
+    expect(result.output).toContain('carried the unreleased migration into 0.6.2:0')
+    expect(repo.read('current.ts')).toContain('await seed(effects)')
   })
 
   it('refuses rather than guessing when the release tag is missing', () => {
@@ -167,6 +217,7 @@ describe('bumping past a migration', () => {
 
     expect(result.status).toBe(1)
     expect(result.output).toContain('tag v0.6.1_0 is not available')
+    expect(result.output).toContain('publish the v0.6.1_0 draft release')
     expect(repo.read('current.ts')).toBe(versionFile('current', '0.6.1:0', migration))
   })
 

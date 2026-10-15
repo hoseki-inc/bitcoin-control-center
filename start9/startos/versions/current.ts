@@ -11,5 +11,7 @@ export const current = VersionInfo.of({
 - A new Bitcoin Control Center icon.
 
 Existing accounts, settings, and statements carry over automatically.`,
+  // A migration that ships moves to its own file at the next bump. Replace it here
+  // with the next one, rather than adding to it, or it runs again.
   migrations: {},
 })
