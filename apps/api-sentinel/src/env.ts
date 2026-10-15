@@ -30,6 +30,11 @@ const EnvSchema = z.object({
 
   /** Comma-separated hostnames allowed to serve the protected no-auth API. */
   SENTINEL_ALLOWED_HOSTS: z.string().optional(),
+  /** Also allow any IP-literal host, for platforms that cannot report their addresses. Defaults to false. */
+  SENTINEL_ALLOW_IP_HOSTS: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
 
   /** SOCKS proxy host (set by desktop Electron shell when bundled Tor is running). */
   SOCKS_PROXY_HOST: z.string().optional(),
