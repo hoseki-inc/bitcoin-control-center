@@ -1,0 +1,28 @@
+# Sideload bundles from umbrel/build.sh add a pre-release suffix to `version`.
+# Add `submission` (the getumbrel/umbrel-apps pull request URL) when submitting.
+manifestVersion: 1
+id: bitcoin-control-center
+category: bitcoin
+name: Bitcoin Control Center
+version: '1.0.0'
+tagline: Privacy-first Bitcoin accounting for your stack
+description: >-
+  Bitcoin Control Center is privacy-first accounting for your stack. Connect hardware wallets, watch-only accounts,
+  exchanges, and ETFs to track Bitcoin balances over time.
+
+
+  Be your own bank with cryptographically verified proof-of-ownership statements. Self-custody data comes from the
+  Electrs server on your Umbrel, and application data stays on your Umbrel.
+releaseNotes: ''
+developer: Hoseki
+website: https://www.bitcoincontrolcenter.com
+dependencies:
+  - bitcoin
+  - electrs
+  - mempool
+repo: https://github.com/hoseki-inc/bitcoin-control-center
+support: https://github.com/hoseki-inc/bitcoin-control-center/issues
+port: 3400
+gallery: []
+path: ''
+submitter: Hoseki

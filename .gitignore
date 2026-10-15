@@ -96,3 +96,6 @@ desktop/app/
 desktop/release/
 desktop/node_modules/
 desktop/tor/
+
+# Umbrel build artifacts
+umbrel/dist/

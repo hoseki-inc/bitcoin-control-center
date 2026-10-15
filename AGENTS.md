@@ -37,7 +37,7 @@ pnpm build
 
 - Product and API behavior belongs in `apps/api-sentinel`.
 - Shared UI and wallet logic belongs in `packages` only when used by Control Center.
-- Distribution-specific configuration belongs in `start9`, `desktop`, or a future platform package such as `umbrel`.
+- Distribution-specific configuration belongs in `start9`, `desktop`, or `umbrel`.
 - New functionality must preserve local storage, auditability, and the absence of an implicit cloud service.
 
 ## Issue #91 lint rollout
