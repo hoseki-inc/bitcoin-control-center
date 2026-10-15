@@ -51,19 +51,16 @@ done
 
 cd "$REPO_ROOT"
 
-# The Umbrel manifest holds the store version. Sideload builds add the commit as
-# a pre-release suffix, so every bundle has a distinct Umbrel version and image tag.
-MANIFEST_VERSION="$(sed -nE "s/^version: ['\"]?([^'\"]+)['\"]?$/\1/p" "$SCRIPT_DIR/$APP_ID/umbrel-app.yml")"
-if [[ -z "$MANIFEST_VERSION" ]]; then
-  echo "Error: no version in $APP_ID/umbrel-app.yml" >&2
-  exit 1
-fi
+# Umbrel uses the same release version as StartOS and desktop. Sideload builds add the
+# commit, so every bundle has a distinct Umbrel version and image tag.
+node start9/scripts/version.mjs check
+RELEASE_VERSION="$(node start9/scripts/version.mjs umbrel)"
 SOURCE_COMMIT="$(git rev-parse HEAD)"
 DIRTY_SUFFIX=""
 if [[ -n "$(git status --porcelain)" ]]; then
   DIRTY_SUFFIX=".dirty"
 fi
-VERSION="${MANIFEST_VERSION}-sideload.$(git rev-parse --short=12 HEAD)${DIRTY_SUFFIX}"
+VERSION="${RELEASE_VERSION}-sideload.$(git rev-parse --short=12 HEAD)${DIRTY_SUFFIX}"
 IMAGE="${SIDELOAD_REGISTRY}/${APP_ID}:${VERSION}"
 BUNDLE_NAME="${APP_ID}-umbrel-${VERSION}"
 # Every bundle extracts to the same folder, so install commands stay short and unchanged.
@@ -95,9 +92,9 @@ done
 
 echo "==> Staging app package..."
 cp -R "$SCRIPT_DIR/$APP_ID" "$STAGE_DIR/$APP_ID"
-sed -E "s|^version: .*|version: '$VERSION'|" "$SCRIPT_DIR/$APP_ID/umbrel-app.yml" >"$STAGE_DIR/$APP_ID/umbrel-app.yml"
+sed "s|__VERSION__|$VERSION|g" "$SCRIPT_DIR/$APP_ID/umbrel-app.yml" >"$STAGE_DIR/$APP_ID/umbrel-app.yml"
 sed "s|__IMAGE__|$IMAGE|g" "$SCRIPT_DIR/$APP_ID/docker-compose.yml" >"$STAGE_DIR/$APP_ID/docker-compose.yml"
-if grep -rq "__IMAGE__" "$STAGE_DIR/$APP_ID" || ! grep -qx "version: '$VERSION'" "$STAGE_DIR/$APP_ID/umbrel-app.yml"; then
+if grep -rq "__IMAGE__\|__VERSION__" "$STAGE_DIR/$APP_ID"; then
   echo "Error: the staged app package has no image or version" >&2
   exit 1
 fi
