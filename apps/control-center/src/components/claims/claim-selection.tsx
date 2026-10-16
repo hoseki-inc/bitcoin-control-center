@@ -75,7 +75,7 @@ export function ClaimSelection({
         mb={4}
         variant="neutral"
         title="Error loading accounts"
-        message="Please try again. If the issue continues, reach out to us at support@hoseki.app."
+        message="Please try again. If the issue continues, reach out to us at support@bitcoincontrolcenter.com."
         otherContent={
           <Button as={Link} to="/accounts">
             Connect Your First Account
