@@ -93,12 +93,12 @@ export function resolveHistoryRange(
 
 export function buildHistoricalData(
   allEntries: BalanceEntry[],
-  currentTotalBalance: bigint,
+  currentTotalBalance: bigint | null,
   range: ResolvedHistoryRange,
   timezone: Timezone,
 ): BalanceDataPoint[] {
   if (allEntries.length === 0) {
-    if (range.isCustom || range.isAll || currentTotalBalance <= 0n) {
+    if (range.isCustom || range.isAll || currentTotalBalance === null || currentTotalBalance <= 0n) {
       return []
     }
 
@@ -162,7 +162,7 @@ export function buildHistoricalData(
     appendHistoricalPoint(historicalData, pointTime, runningBalance)
   }
 
-  if (range.endsAtCurrentTime) {
+  if (range.endsAtCurrentTime && currentTotalBalance !== null) {
     const latestPoint = historicalData.at(-1)
     if (latestPoint) {
       latestPoint.totalBalance = currentTotalBalance.toString()

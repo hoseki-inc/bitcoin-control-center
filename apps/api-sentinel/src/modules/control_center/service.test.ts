@@ -905,3 +905,84 @@ describe('history retry coordination', () => {
     })
   })
 })
+
+describe('current balance outages', () => {
+  it('reports a never-loaded balance as unknown and recovers without inventing zero', async () => {
+    await withTestSetup(async () => {
+      harness.provider.getConfirmedAccountBalances.mockResolvedValueOnce(Err(new Error('Electrum unavailable')))
+      const offline = (await harness.service.getData({ timeRange: '90d' })).unwrap()
+      expect(offline.currentTotalBalance).toBeNull()
+      expect(offline.knownTotalBalance).toBe('0')
+      expect(offline.balanceStatus).toMatchObject({
+        complete: false,
+        missingAccountIds: [accountId],
+        staleAccountIds: [],
+      })
+      expect(offline.historicalData).toEqual([])
+      const recovered = (await harness.service.getData({ timeRange: '90d' })).unwrap()
+      expect(recovered.currentTotalBalance).toBe('100')
+      expect(recovered.balanceStatus.complete).toBe(true)
+      expect(recovered.balanceStatus.missingAccountIds).toEqual([])
+    })
+  })
+
+  it('retains a confirmed zero snapshot with its original timestamp during an outage', async () => {
+    await withTestSetup(async () => {
+      const timestamp = '2020-01-03T09:00:00.000Z'
+      await harness.service.recordAccountSnapshot(accountId, '0', timestamp)
+      harness.provider.getConfirmedAccountBalances.mockResolvedValueOnce(Err(new Error('Electrum unavailable')))
+      const offline = (await harness.service.getData({ timeRange: '90d' })).unwrap()
+      expect(offline.currentTotalBalance).toBe('0')
+      expect(offline.balanceStatus).toEqual({
+        complete: true,
+        missingAccountIds: [],
+        staleAccountIds: [accountId],
+        asOf: timestamp,
+      })
+    })
+  })
+
+  it('keeps a partial subtotal separate from a complete portfolio balance', async () => {
+    await withTestSetup(async () => {
+      await harness.service.recordAccountSnapshot(accountId, '150', '2020-01-03T09:00:00.000Z')
+      await harness.db
+        .insert(accounts)
+        .values({ id: 'new-wallet', descriptor: Wallets.singlesigLegacyAccount.toString(), displayName: 'New wallet' })
+      harness.provider.getConfirmedAccountBalances.mockResolvedValueOnce(Err(new Error('Electrum unavailable')))
+      const offline = (await harness.service.getData({ timeRange: '90d' })).unwrap()
+      expect(offline.currentTotalBalance).toBeNull()
+      expect(offline.knownTotalBalance).toBe('150')
+      expect(offline.balanceStatus).toMatchObject({
+        complete: false,
+        missingAccountIds: ['new-wallet'],
+        staleAccountIds: [accountId],
+      })
+      expect(offline.historicalData.at(-1)?.totalBalance).toBe('150')
+    })
+  })
+
+  it('does not treat an omitted provider result as a confirmed zero', async () => {
+    await withTestSetup(async () => {
+      harness.provider.getConfirmedAccountBalances.mockResolvedValueOnce(Ok(new IndexMap<Account, bigint>()))
+      const data = (await harness.service.getData({ timeRange: '90d' })).unwrap()
+      expect(data.currentTotalBalance).toBeNull()
+      expect(data.balanceStatus.missingAccountIds).toEqual([accountId])
+    })
+  })
+
+  it('keeps BTC available when the fiat price is unavailable or last known', async () => {
+    await withTestSetup(async () => {
+      harness.price.mockResolvedValueOnce(Err(new Error('Price unavailable')))
+      const missingPrice = (await harness.service.getData({ timeRange: '90d' })).unwrap()
+      expect(missingPrice.currentTotalBalance).toBe('100')
+      expect(missingPrice.currentBtcPrice).toBeNull()
+      expect(missingPrice.priceStatus).toBeNull()
+      harness.price.mockResolvedValueOnce(
+        Ok({ value: new Decimal(50_000), asOf: now, source: 'block', lastKnown: true }),
+      )
+      const cachedPrice = (await harness.service.getData({ timeRange: '90d' })).unwrap()
+      expect(cachedPrice.currentBtcPrice).toBe('50000')
+      expect(cachedPrice.priceStatus).toEqual({ asOf: now.toISOString(), lastKnown: true })
+    })
+  })
+})
