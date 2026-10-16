@@ -346,6 +346,86 @@ export const current = VersionInfo.of({ releaseNotes: 'Before.', version: '0.6.1
 })
 
 describe('release history and identity', () => {
+  it.each(['unchanged', 'edited'] as const)(
+    'checks a shipped migration in a Git CRLF checkout (%s)',
+    (state) => {
+      const repo = setupRepository()
+      repo.git('config', 'core.autocrlf', 'false')
+      repo.write('index.ts', index)
+      repo.write('current.ts', versionFile('current', '0.6.1:1', migration))
+      repo.release('v0.6.1_1')
+      repo.git('config', 'core.autocrlf', 'true')
+      repo.remove('current.ts')
+      repo.remove('index.ts')
+      repo.git('checkout', '--', 'start9/startos/versions/current.ts', 'start9/startos/versions/index.ts')
+      expect(repo.read('current.ts')).toContain('\r\n')
+      expect(repo.read('index.ts')).toContain('\r\n')
+      expect(repo.git('status', '--porcelain', '--', 'start9/startos')).toBe('')
+
+      if (state === 'edited') {
+        repo.write('current.ts', repo.read('current.ts').replace('await seed(effects)', 'await reseed(effects)'))
+      }
+      const snapshot = repo.snapshot()
+      const result = repo.bump('bump', 'patch')
+
+      if (state === 'edited') {
+        expect(result.status).toBe(1)
+        expect(result.output).toContain('migration file was changed')
+        expect(repo.snapshot()).toBe(snapshot)
+        return
+      }
+      expect(result.status, result.output).toBe(0)
+      expect(repo.read('index.ts')).toContain("import { v_0_6_1_1 } from './v0.6.1_1'")
+      expect(repo.read('v0.6.1_1.ts')).toBe(versionFile('v_0_6_1_1', '0.6.1:1', migration))
+      expect(repo.migrate('0.6.1:0')).toBe('{"version":"0.6.2:0","steps":["seed"]}')
+      expect(repo.migrate('0.6.1:1')).toBe('{"version":"0.6.2:0","steps":[]}')
+    },
+    15000,
+  )
+
+  it('rejects duplicate migration checkpoints before checking or changing the graph', () => {
+    const repo = setupRepository()
+    repo.write('index.ts', index)
+    repo.write('current.ts', versionFile('current', '0.6.1:1', migration))
+    expect(repo.bump('bump', 'patch').status).toBe(0)
+    repo.write('index.ts', repo.read('index.ts').replace('other: [v_0_6_1_1]', 'other: [v_0_6_1_1, v_0_6_1_1]'))
+    const snapshot = repo.snapshot()
+
+    for (const args of [['check'], ['check', '--identity-only'], ['bump', 'revision']]) {
+      const result = repo.bump(...args)
+      expect(result.status).toBe(1)
+      expect(result.output).toContain('duplicate migration checkpoints')
+      expect(repo.snapshot()).toBe(snapshot)
+    }
+  })
+
+  it('requires fetching a shipped migration even when the local migration was cleared', () => {
+    const origin = setupRepository()
+    origin.write('index.ts', index)
+    origin.write('current.ts', versionFile('current', '0.6.1:1', migration))
+    origin.release('v0.6.1_1')
+    const repo = setupRepository()
+    repo.write('index.ts', index)
+    repo.write('current.ts', versionFile('current', '0.6.1:1'))
+    repo.git('remote', 'add', 'origin', origin.root)
+    const snapshot = repo.snapshot()
+
+    const missingTag = repo.bump('bump', 'patch')
+    expect(missingTag.status).toBe(1)
+    expect(missingTag.output).toContain('exists on origin but is missing locally')
+    expect(repo.snapshot()).toBe(snapshot)
+
+    repo.git('fetch', '-q', 'origin', 'tag', 'v0.6.1_1')
+    const cleared = repo.bump('bump', 'patch')
+    expect(cleared.status).toBe(1)
+    expect(cleared.output).toContain('migration file was changed')
+    expect(repo.snapshot()).toBe(snapshot)
+
+    repo.write('current.ts', origin.read('current.ts'))
+    expect(repo.bump('bump', 'patch').status).toBe(0)
+    expect(repo.migrate('0.6.1:0')).toBe('{"version":"0.6.2:0","steps":["seed"]}')
+  }, 15000)
+
   it('requires fetching a tag that exists on origin but is missing locally', () => {
     const origin = setupRepository()
     origin.write('index.ts', index)
@@ -361,24 +441,30 @@ describe('release history and identity', () => {
     expect(repo.snapshot()).toBe(snapshot)
   })
 
-  it('preserves a checkpoint after origin confirms its tag does not exist', () => {
+  it.each([
+    ['a migration', migration],
+    ['empty migrations', '{}'],
+  ])('bumps an unpublished version with %s after origin confirms its tag does not exist', (_name, migrations) => {
     const origin = setupRepository()
     origin.write('index.ts', index)
     origin.write('current.ts', versionFile('current', '0.6.1:0'))
     origin.release('v0.6.1_0')
     const repo = setupRepository()
     repo.write('index.ts', index)
-    repo.write('current.ts', versionFile('current', '0.6.1:1', migration))
+    repo.write('current.ts', versionFile('current', '0.6.1:1', migrations))
     repo.git('remote', 'add', 'origin', origin.root)
 
     expect(repo.bump('bump', 'patch').status).toBe(0)
-    expect(repo.exists('v0.6.1_1.ts')).toBe(true)
+    expect(repo.exists('v0.6.1_1.ts')).toBe(migrations !== '{}')
   })
 
-  it('stops before writing when origin cannot be checked', () => {
+  it.each([
+    ['a migration', migration],
+    ['empty migrations', '{}'],
+  ])('stops before writing with %s when origin cannot be checked', (_name, migrations) => {
     const repo = setupRepository()
     repo.write('index.ts', index)
-    repo.write('current.ts', versionFile('current', '0.6.1:1', migration))
+    repo.write('current.ts', versionFile('current', '0.6.1:1', migrations))
     repo.git('remote', 'add', 'origin', join(repo.root, 'missing-origin'))
     const snapshot = repo.snapshot()
 
@@ -386,13 +472,16 @@ describe('release history and identity', () => {
     expect(repo.snapshot()).toBe(snapshot)
   })
 
-  it('refuses incomplete local-only history', () => {
+  it.each([
+    ['a migration', migration],
+    ['empty migrations', '{}'],
+  ])('refuses incomplete local-only history with %s', (_name, migrations) => {
     const repo = setupRepository()
     repo.write('index.ts', index)
     repo.write('current.ts', versionFile('current', '0.6.1:0'))
     repo.release('v0.6.1_0')
     writeFileSync(join(repo.root, '.git', 'shallow'), repo.git('rev-parse', 'HEAD'))
-    repo.write('current.ts', versionFile('current', '0.6.1:1', migration))
+    repo.write('current.ts', versionFile('current', '0.6.1:1', migrations))
     const snapshot = repo.snapshot()
 
     expect(repo.bump('bump', 'patch').output).toContain('Cannot establish the release history')
@@ -413,13 +502,16 @@ describe('release history and identity', () => {
     expect(repo.bump('check').output).toContain('Unexpected compiler load')
   })
 
-  it('bumps migration-free files outside a Git repository', () => {
+  it('refuses to bump outside Git even when the local migration is empty', () => {
     const repo = setupRepository()
     repo.write('index.ts', index)
     repo.write('current.ts', versionFile('current', '0.6.1:0'))
     rmSync(join(repo.root, '.git'), { recursive: true })
+    const snapshot = repo.snapshot()
 
-    expect(repo.bump('bump', 'minor', '--notes', 'Feature release.').status).toBe(0)
-    expect(repo.read('current.ts')).toContain("version: '0.7.0:0'")
+    const result = repo.bump('bump', 'minor', '--notes', 'Feature release.')
+    expect(result.status).toBe(1)
+    expect(result.output).toContain('requires a Git repository')
+    expect(repo.snapshot()).toBe(snapshot)
   })
 })

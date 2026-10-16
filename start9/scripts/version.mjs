@@ -74,15 +74,20 @@ function tagNameForVersion(version) {
   return `v${parsed.major}.${parsed.minor}.${parsed.patch}_${parsed.revision}`
 }
 
+/** @param {string} source */
+function normalizeLineEndings(source) {
+  return source.replace(/\r\n/g, '\n')
+}
+
 function readIndexSource() {
-  return readFileSync(indexPath, 'utf8')
+  return normalizeLineEndings(readFileSync(indexPath, 'utf8'))
 }
 
 function readCurrentSource() {
   if (!existsSync(currentPath)) {
     throw new Error(`StartOS current version file ${currentPath} is missing.`)
   }
-  return readFileSync(currentPath, 'utf8')
+  return normalizeLineEndings(readFileSync(currentPath, 'utf8'))
 }
 
 /** @param {string} source @param {string} path */
@@ -167,7 +172,11 @@ function validateVersionGraph(validateMigrations = true) {
   }
 
   // Start9 keeps earlier versions only while a later release migrates from them.
-  const others = readOtherExportNames().map((exportName) => {
+  const otherExportNames = readOtherExportNames()
+  if (new Set(otherExportNames).size !== otherExportNames.length) {
+    throw new Error('StartOS version graph contains duplicate migration checkpoints.')
+  }
+  const others = otherExportNames.map((exportName) => {
     const importMatch = new RegExp(`import \\{ ${exportName} \\} from '\\./(v[^']+)'`).exec(source)
     if (!importMatch) {
       throw new Error(`Version graph references ${exportName} without importing it.`)
@@ -176,7 +185,7 @@ function validateVersionGraph(validateMigrations = true) {
     if (!existsSync(path)) {
       throw new Error(`Version graph references missing file ${path}.`)
     }
-    const fileSource = readFileSync(path, 'utf8')
+    const fileSource = normalizeLineEndings(readFileSync(path, 'utf8'))
     const version = readVersionFromSource(fileSource, path)
     const expected = historicalNameForVersion(version)
     if (expected.file !== importMatch[1] || expected.exportName !== exportName) {
@@ -346,13 +355,12 @@ function readMigrationInfo(source, path) {
 }
 
 /**
- * Read the released version at its immutable tag. With a migration, verify a
- * missing local tag against origin before treating the revision as unpublished.
+ * Read the released version at its immutable tag. Always verify a missing local
+ * tag: an empty local migration may be a removed shipped migration.
  * Repositories with no remotes use their own complete local tag history.
  * @param {string} version
- * @param {boolean} verifyMissingTag
  */
-function readReleasedSource(version, verifyMissingTag) {
+function readReleasedSource(version) {
   const tag = tagNameForVersion(version)
   /** @param {string[]} args */
   const git = (args) =>
@@ -366,10 +374,7 @@ function readReleasedSource(version, verifyMissingTag) {
   try {
     git(['rev-parse', '--git-dir'])
   } catch {
-    if (verifyMissingTag) {
-      throw new Error('Bumping a migration requires a Git repository so its release history can be checked.')
-    }
-    return null
+    throw new Error('Bumping a StartOS version requires a Git repository so its release history can be checked.')
   }
   let tagged = false
   try {
@@ -379,9 +384,6 @@ function readReleasedSource(version, verifyMissingTag) {
     // A migration checkpoint may intentionally have no release tag.
   }
   if (!tagged) {
-    if (!verifyMissingTag) {
-      return null
-    }
     const remotes = git(['remote']).trim().split(/\s+/).filter(Boolean)
     if (remotes.includes('origin')) {
       const remoteTag = spawnSync('git', ['ls-remote', '--exit-code', '--tags', 'origin', `refs/tags/${tag}`], {
@@ -403,7 +405,7 @@ function readReleasedSource(version, verifyMissingTag) {
     }
     if (remotes.length > 0 || git(['rev-parse', '--is-shallow-repository']).trim() === 'true') {
       throw new Error(
-        `Cannot establish the release history for ${tag}. Use a complete checkout with origin before bumping a migration.`,
+        `Cannot establish the release history for ${tag}. Use a complete checkout with origin before bumping a version.`,
       )
     }
     return null
@@ -413,7 +415,7 @@ function readReleasedSource(version, verifyMissingTag) {
   for (const path of ['./startos/versions/current.ts', `./startos/versions/${legacyFile}.ts`]) {
     let source
     try {
-      source = git(['show', `${tag}:${path}`])
+      source = normalizeLineEndings(git(['show', `${tag}:${path}`]))
     } catch {
       continue
     }
@@ -495,7 +497,8 @@ function prepareSpinOff(version, source, info) {
 /**
  * Bump before writing a migration. Its version remains its identity even when
  * the revision was only used by test builds and never published. Released code
- * must remain byte-for-byte unchanged; edits need a new migration checkpoint.
+ * must remain unchanged apart from Git's line-ending conversion; edits need a
+ * new migration checkpoint.
  * @param {string} targetVersion
  * @param {string} releaseNotes
  */
@@ -510,7 +513,7 @@ function setVersion(targetVersion, releaseNotes) {
   }
   const source = readCurrentSource()
   const info = readMigrationInfo(source, currentPath)
-  const released = readReleasedSource(oldVersion, info.hasMigration)
+  const released = readReleasedSource(oldVersion)
   const releasedInfo = released == null ? null : readMigrationInfo(released.source, released.path)
   if (releasedInfo?.hasMigration === true && source !== released.source) {
     throw new Error(

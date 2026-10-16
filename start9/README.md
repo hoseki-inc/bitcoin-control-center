@@ -171,9 +171,10 @@ version source of truth. Before adding a wrapper migration, run
 `node start9/scripts/version.mjs bump revision`, then write it in the fresh
 `current.ts`. Keep released migration files and their helpers unchanged. A later
 release bump preserves migration checkpoints even when their revisions were
-never published; gaps in public revision numbers are expected. Migration bumps
-check origin when a release tag is missing locally, and stop if release history
-cannot be verified. The [release workflows](../README.md#releases) automate
+never published; gaps in public revision numbers are expected. Version bumps
+require a Git checkout, check origin when a release tag is missing locally, and
+stop if release history cannot be verified, even when the local migration is
+empty. The [release workflows](../README.md#releases) automate
 version preparation, candidate builds, and draft releases for StartOS and desktop.
 
 ## Quick reference
