@@ -175,6 +175,8 @@ jobs:
       package-file: hoseki-sentinel-${{ needs.source.outputs.tag }}.s9pk
       signed-artifact: startos-release
       require-release-notes: true
+    secrets:
+      STARTOS_DEV_KEY: ${{ secrets.STARTOS_DEV_KEY }}
 
   assemble:
     name: Assemble and verify release files

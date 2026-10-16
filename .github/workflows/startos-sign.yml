@@ -41,6 +41,13 @@ on:
       retention-days:
         type: number
         default: 7
+    # GitHub gives a called workflow only the secrets its caller passes, even when the secret
+    # lives on the environment this job selects. Callers pass it by name; outside the environment
+    # it is empty, so the job signs with a fresh temporary key.
+    secrets:
+      STARTOS_DEV_KEY:
+        description: Permanent StartOS signing key, read from the release-signing environment
+        required: false
     outputs:
       artifact-id:
         description: Immutable ID of the signed artifact

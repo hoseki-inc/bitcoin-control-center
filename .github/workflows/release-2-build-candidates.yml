@@ -133,6 +133,8 @@ jobs:
       package-file: ${{ needs.build.outputs.artifact_name }}.s9pk
       signed-artifact: ${{ needs.build.outputs.artifact_name }}
       retention-days: 14
+    secrets:
+      STARTOS_DEV_KEY: ${{ secrets.STARTOS_DEV_KEY }}
 
   # Runs Release 3's assembly and checksum verification on these candidates, without creating a release.
   assemble:
