@@ -1,6 +1,7 @@
 import type { T } from '@start9labs/start-sdk'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import { dependencies } from '../startos/dependencies'
+import { resolveElectrs } from '../startos/electrs'
 import { configSchema } from '../startos/fileModels/configFile'
 import { manifest } from '../startos/index'
 import { resolveMempoolUrl } from '../startos/mempool'
@@ -60,6 +61,8 @@ const plainMempool = { hostname: '10.0.3.1', port: 8080, ssl: false }
 const tlsMempool = { hostname: '10.0.3.1', port: 8443, ssl: true }
 const effectsForMempool = (available: BridgeHost[] | null): T.Effects =>
   effectsForBinding('mempool', 'main', 8080, available)
+const effectsForElectrs = (available: BridgeHost[] | null): T.Effects =>
+  effectsForBinding('electrs', 'electrum', 50001, available)
 
 it('publishes Electrs and mempool as required running dependencies', () => {
   expect(dependencies.manifestDependencies()).toMatchObject({
@@ -82,6 +85,22 @@ it('an explicit URL overrides discovery', async () => {
   const discovery = vi.spyOn(effects, 'getHostInfo')
   await expect(resolveMempoolUrl(effects, 'https://my-mempool.test')).resolves.toBe('https://my-mempool.test')
   expect(discovery).not.toHaveBeenCalled()
+})
+it('uses the plaintext Electrs bridge port assigned by StartOS', async () => {
+  await expect(
+    resolveElectrs(
+      effectsForElectrs([
+        { hostname: '10.0.3.1', port: 50002, ssl: true },
+        { hostname: '10.0.3.1', port: 50101, ssl: false },
+      ]),
+    ),
+  ).resolves.toEqual({ host: '10.0.3.1', port: '50101' })
+})
+it('stays offline on loopback while Electrs is absent, rather than whatever holds port 50001', async () => {
+  const effects = effectsForElectrs(null)
+  const osIp = vi.spyOn(effects, 'getOsIp')
+  await expect(resolveElectrs(effects)).resolves.toEqual({ host: '127.0.0.1', port: '50001' })
+  expect(osIp).not.toHaveBeenCalled()
 })
 it.each(['https://user:pass@node.local', 'https://node.local/?x=1', 'https://node.local/#top', 'ftp://node.local'])(
   'rejects a mempool override that cannot work: %s',
