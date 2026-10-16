@@ -1,3 +1,4 @@
+import { resolveElectrs } from './electrs'
 import { configFile } from './fileModels/configFile'
 import { resolveMempoolUrl } from './mempool'
 import { sdk } from './sdk'
@@ -16,6 +17,7 @@ export const main = sdk.setupMain(async ({ effects }) => {
 
   const config = await configFile.read().const(effects)
   const mempoolUrl = await resolveMempoolUrl(effects, config?.['mempool-url'])
+  const electrs = await resolveElectrs(effects)
   return sdk.Daemons.of(effects).addDaemon('primary', {
     subcontainer: sdk.SubContainer.of(
       effects,
@@ -30,7 +32,12 @@ export const main = sdk.setupMain(async ({ effects }) => {
     ),
     exec: {
       command: ['/usr/local/bin/docker_entrypoint.sh'],
-      env: { SENTINEL_ALLOWED_HOSTS: allowedHosts, MEMPOOL_API_URL: mempoolUrl },
+      env: {
+        SENTINEL_ALLOWED_HOSTS: allowedHosts,
+        MEMPOOL_API_URL: mempoolUrl,
+        ELECTRUM_HOST: electrs.host,
+        ELECTRUM_PORT: electrs.port,
+      },
     },
     ready: {
       display: 'Web Interface',

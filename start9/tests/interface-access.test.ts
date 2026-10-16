@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { daemons } from '@start9labs/start-sdk'
 import { assert, describe, expect, it, onTestFinished, vi } from 'vitest'
+import * as electrs from '../startos/electrs'
 import { configFile } from '../startos/fileModels/configFile'
 import { main } from '../startos/main'
 import * as mempool from '../startos/mempool'
@@ -73,6 +74,7 @@ function setupInterface(available: Hostname[], enabled: string[] = []): Interfac
     typeof configFile.read
   >)
   vi.spyOn(mempool, 'resolveMempoolUrl').mockResolvedValue('https://mempool.space')
+  vi.spyOn(electrs, 'resolveElectrs').mockResolvedValue({ host: '10.0.3.1', port: '50001' })
   const addDaemon = vi.fn<(id: string, options: { exec: daemons.ExecCommandOptions }) => void>()
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- SAFETY: The mocked builder exposes only addDaemon, the sole method exercised by this integration test; no daemon starts.
   vi.spyOn(sdk.Daemons, 'of').mockReturnValue({ addDaemon } as ReturnType<typeof sdk.Daemons.of>)
@@ -260,7 +262,12 @@ describe('StartOS entrypoint', () => {
         // Stub only external executables, so the actual shell entrypoint is exercised.
         writeFileSync(join(directory, 'yq'), '#!/bin/sh\nexit 1\n', { mode: 0o755 })
         writeFileSync(join(directory, 'node'), '#!/bin/sh\nprintf "%s" "$SENTINEL_ALLOWED_HOSTS"\n', { mode: 0o755 })
-        const env = { ...process.env, PATH: `${directory}:${process.env.PATH}` }
+        const env = {
+          ...process.env,
+          PATH: `${directory}:${process.env.PATH}`,
+          ELECTRUM_HOST: '10.0.3.1',
+          ELECTRUM_PORT: '50001',
+        }
         delete env.SENTINEL_ALLOWED_HOSTS
         if (hosts !== undefined) {
           env.SENTINEL_ALLOWED_HOSTS = hosts
