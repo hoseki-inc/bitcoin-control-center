@@ -1,7 +1,8 @@
 import { FileHelper, z } from '@start9labs/start-sdk'
 import { sdk } from '../sdk'
 
-export const configSchema = z.object({
+// Loose, so a merge keeps keys this model does not declare.
+export const configSchema = z.looseObject({
   'mempool-url': z
     .string()
     .url()

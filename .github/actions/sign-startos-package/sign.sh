@@ -45,7 +45,7 @@ fi
 
 mkdir -p "$(dirname "$SIGNED")"
 cp "$UNSIGNED" "$SIGNED"
-# start-cli 1.1.0 explicitly re-signs when editing the manifest. The identity
+# start-cli (verified with 2.3.0) re-signs when editing the manifest. The identity
 # expression preserves the manifest, and the workspace selects our signing key.
 (cd "$WORKSPACE" && start-cli s9pk edit "$SIGNED" manifest '.' > /dev/null)
 

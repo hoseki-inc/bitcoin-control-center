@@ -6,16 +6,18 @@ import { uiPort } from './utils'
 export const main = sdk.setupMain(async ({ effects }) => {
   // The SDK resolves only enabled addresses. Watching the resulting hostnames
   // restarts Sentinel when an interface is enabled, disabled, or changes IP.
-  const allowedHosts = await sdk.serviceInterface
-    .getOwn(effects, 'main', (webInterface) =>
-      [...new Set(webInterface?.addressInfo?.hostnames.map(({ hostname }) => hostname) ?? [])].sort().join(','),
+  const allowedHosts = await sdk.host
+    .getOwn(effects, 'ui', (host) =>
+      [...new Set(host?.bindings[uiPort]?.interfaces.main?.addressInfo.hostnames.map(({ hostname }) => hostname) ?? [])]
+        .sort()
+        .join(','),
     )
     .const()
 
   const config = await configFile.read().const(effects)
   const mempoolUrl = await resolveMempoolUrl(effects, config?.['mempool-url'])
   return sdk.Daemons.of(effects).addDaemon('primary', {
-    subcontainer: await sdk.SubContainer.of(
+    subcontainer: sdk.SubContainer.of(
       effects,
       { imageId: 'main' },
       sdk.Mounts.of().mountVolume({
