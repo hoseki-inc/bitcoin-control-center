@@ -159,7 +159,11 @@ function compareVersions(left, right) {
   return 0
 }
 
-function validateVersionGraph(validateMigrations = true) {
+/**
+ * Check the graph's identity and files using Node built-ins only, so release
+ * identity reads stay free of installed dependencies.
+ */
+function readVersionGraph() {
   const source = readIndexSource()
   if (!source.includes("import { current } from './current'") || !source.includes('current,')) {
     throw new Error(`${indexPath} must import current from ./current and use it as the graph's current version.`)
@@ -218,13 +222,21 @@ function validateVersionGraph(validateMigrations = true) {
     throw new Error('Replace the release-notes placeholder in startos/versions before merging or building.')
   }
 
-  if (validateMigrations) {
-    readMigrationInfo(readCurrentSource(), currentPath)
-    for (const historical of others) {
-      readMigrationInfo(historical.source, historical.path)
-    }
-  }
+  return { current, others }
+}
 
+/** The current version, after a dependency-free check of the graph. */
+function validateVersionGraph() {
+  return readVersionGraph().current
+}
+
+/** The current version, after also parsing every version file's migrations with TypeScript. */
+function validateVersionFiles() {
+  const { current, others } = readVersionGraph()
+  readMigrationInfo(readCurrentSource(), currentPath)
+  for (const historical of others) {
+    readMigrationInfo(historical.source, historical.path)
+  }
   return current
 }
 
@@ -503,7 +515,7 @@ function prepareSpinOff(version, source, info) {
  * @param {string} releaseNotes
  */
 function setVersion(targetVersion, releaseNotes) {
-  const oldVersion = validateVersionGraph()
+  const oldVersion = validateVersionFiles()
   if (targetVersion === oldVersion) {
     console.log(targetVersion)
     return
@@ -530,7 +542,7 @@ function setVersion(targetVersion, releaseNotes) {
   const spinOff = info.hasMigration && !carry ? prepareSpinOff(oldVersion, source, info) : null
   spinOff?.write()
   writeFileSync(currentPath, next)
-  validateVersionGraph()
+  validateVersionFiles()
   const detail = spinOff
     ? ` (preserved the ${oldVersion} migration in ${spinOff.file})`
     : carry
@@ -553,7 +565,7 @@ try {
   }
 
   if (command === 'tag') {
-    console.log(tagNameForVersion(validateVersionGraph(false)))
+    console.log(tagNameForVersion(validateVersionGraph()))
     process.exit(0)
   }
 
@@ -561,7 +573,7 @@ try {
     if (value != null && value !== '--identity-only') {
       throw new Error('check accepts only --identity-only (for the dependency-free release identity job).')
     }
-    const version = validateVersionGraph(value !== '--identity-only')
+    const version = value === '--identity-only' ? validateVersionGraph() : validateVersionFiles()
     console.log(`StartOS version graph OK: ${version} (${tagNameForVersion(version)})`)
     process.exit(0)
   }
@@ -570,7 +582,7 @@ try {
     if (value == null || value === '') {
       throw new Error('assert-tag requires a tag like v0.2.1_0.')
     }
-    const expectedTag = tagNameForVersion(validateVersionGraph(false))
+    const expectedTag = tagNameForVersion(validateVersionGraph())
     if (value !== expectedTag) {
       throw new Error(`Tag ${value} does not match StartOS version ${currentVersion()}; expected ${expectedTag}.`)
     }
