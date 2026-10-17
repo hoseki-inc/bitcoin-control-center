@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { daemons } from '@start9labs/start-sdk'
 import { assert, describe, expect, it, onTestFinished, vi } from 'vitest'
+import * as electrs from '../startos/electrs'
 import { configFile } from '../startos/fileModels/configFile'
 import { main } from '../startos/main'
 import * as mempool from '../startos/mempool'
@@ -12,7 +13,7 @@ import { sdk } from '../startos/sdk'
 
 type InterfaceFixture = {
   options: MainOptions
-  addresses: { available: Hostname[]; enabled: string[]; disabled: [string, number][] }
+  addresses: { available: Hostname[]; enabled: string[]; disabled: [string, number][]; lanEnabled: [string, number][] }
   retry: ReturnType<typeof vi.fn>
   changed: () => void
   mempoolUrl: () => string
@@ -21,7 +22,13 @@ type InterfaceFixture = {
 }
 
 type MainOptions = Parameters<typeof main>[0]
-type Hostname = { hostname: string; port: number; ssl: boolean; public: boolean; metadata: { kind: string } }
+type Hostname = {
+  hostname: string
+  port: number
+  ssl: boolean
+  public: boolean
+  metadata: { kind: string; gateway?: string; gateways?: string[] }
+}
 
 const publicIp = '203.0.113.42'
 const publicAddress: Hostname = {
@@ -34,7 +41,7 @@ const publicAddress: Hostname = {
 const cleanups: (() => void)[] = []
 
 function setupInterface(available: Hostname[], enabled: string[] = []): InterfaceFixture {
-  const addresses: InterfaceFixture['addresses'] = { available, enabled, disabled: [] }
+  const addresses: InterfaceFixture['addresses'] = { available, enabled, disabled: [], lanEnabled: [] }
   const callbacks = new Set<() => void>()
   const leave: (() => void)[] = []
   const retry = vi.fn()
@@ -43,26 +50,23 @@ function setupInterface(available: Hostname[], enabled: string[] = []): Interfac
     isInContext: true,
     constRetry: retry,
     onLeaveContext: (callback: () => void) => leave.push(callback),
-    getServiceInterface: vi.fn(
-      async ({ serviceInterfaceId, callback }: Parameters<MainOptions['effects']['getServiceInterface']>[0]) => {
-        expect(serviceInterfaceId).toBe('main')
-        if (callback) {
-          callbacks.add(callback)
-        }
-        return present
-          ? {
-              id: 'main',
-              addressInfo: { hostId: 'ui', internalPort: 3400, scheme: 'http', sslScheme: 'https', suffix: '' },
-            }
-          : null
-      },
-    ),
     getHostInfo: vi.fn(async ({ hostId, callback }: Parameters<MainOptions['effects']['getHostInfo']>[0]) => {
       expect(hostId).toBe('ui')
       if (callback) {
         callbacks.add(callback)
       }
-      return { bindings: { 3400: { addresses } } }
+      if (!present) {
+        return null
+      }
+      const addressInfo = {
+        username: null,
+        hostId: 'ui',
+        internalPort: 3400,
+        scheme: 'http',
+        sslScheme: 'https',
+        suffix: '',
+      }
+      return { bindings: { 3400: { addresses, interfaces: { main: { id: 'main', addressInfo } } } } }
     }),
   }
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- SAFETY: main reads only const from the file helper; the test does not access disk.
@@ -70,6 +74,7 @@ function setupInterface(available: Hostname[], enabled: string[] = []): Interfac
     typeof configFile.read
   >)
   vi.spyOn(mempool, 'resolveMempoolUrl').mockResolvedValue('https://mempool.space')
+  vi.spyOn(electrs, 'resolveElectrs').mockResolvedValue({ host: '10.0.3.1', port: '50001' })
   const addDaemon = vi.fn<(id: string, options: { exec: daemons.ExecCommandOptions }) => void>()
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- SAFETY: The mocked builder exposes only addDaemon, the sole method exercised by this integration test; no daemon starts.
   vi.spyOn(sdk.Daemons, 'of').mockReturnValue({ addDaemon } as ReturnType<typeof sdk.Daemons.of>)
@@ -149,10 +154,10 @@ describe('StartOS enabled interface addresses', () => {
           { ...publicAddress, hostname: '203.0.113.43' },
           { ...publicAddress, hostname: '10.0.0.20', public: false },
           { ...publicAddress, hostname: 'fd00::20', public: false, metadata: { kind: 'ipv6' } },
-          { ...publicAddress, hostname: 'node.local', public: false, metadata: { kind: 'mdns' } },
+          { ...publicAddress, hostname: 'node.local', public: false, metadata: { kind: 'mdns', gateways: [] } },
           { ...publicAddress, hostname: 'example.onion', metadata: { kind: 'plugin' } },
           { ...publicAddress, hostname: 'control.example.com', metadata: { kind: 'public-domain' } },
-          { ...publicAddress, hostname: 'disabled.local', public: false, metadata: { kind: 'mdns' } },
+          { ...publicAddress, hostname: 'disabled.local', public: false, metadata: { kind: 'mdns', gateways: [] } },
         ],
         [`${publicIp}:50399`],
       )
@@ -257,7 +262,12 @@ describe('StartOS entrypoint', () => {
         // Stub only external executables, so the actual shell entrypoint is exercised.
         writeFileSync(join(directory, 'yq'), '#!/bin/sh\nexit 1\n', { mode: 0o755 })
         writeFileSync(join(directory, 'node'), '#!/bin/sh\nprintf "%s" "$SENTINEL_ALLOWED_HOSTS"\n', { mode: 0o755 })
-        const env = { ...process.env, PATH: `${directory}:${process.env.PATH}` }
+        const env = {
+          ...process.env,
+          PATH: `${directory}:${process.env.PATH}`,
+          ELECTRUM_HOST: '10.0.3.1',
+          ELECTRUM_PORT: '50001',
+        }
         delete env.SENTINEL_ALLOWED_HOSTS
         if (hosts !== undefined) {
           env.SENTINEL_ALLOWED_HOSTS = hosts
