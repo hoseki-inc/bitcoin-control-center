@@ -63,7 +63,7 @@ flowchart LR
 | `docs/`                | Hardware-wallet signing test notes                             |
 | `test/`                | Shared public test fixtures                                    |
 
-Sentinel is the only application backend and owns the frontend API contract. Distribution-specific behavior belongs in `start9/` or `desktop/`; the product does not use a hosted compatibility API.
+Sentinel is the only application backend and owns the frontend API contract. Distribution-specific behavior belongs in `start9/`, `desktop/`, or `umbrel/`; the product does not use a hosted compatibility API.
 
 ## Prerequisites
 
@@ -146,21 +146,23 @@ Press `Ctrl+C` in the terminal to stop both processes.
 
 Sentinel reads `apps/api-sentinel/.env` during local development. That file is ignored by Git.
 
-| Variable                 | Required | Default                   | Description                                                                   |
-| ------------------------ | -------- | ------------------------- | ----------------------------------------------------------------------------- |
-| `ELECTRUM_HOST`          | Yes      | None                      | Electrum hostname or IP address                                               |
-| `ELECTRUM_PORT`          | No       | `50001`                   | Electrum TCP or SSL port                                                      |
-| `ELECTRUM_PROTOCOL`      | No       | `tcp`                     | `tcp` or `ssl`                                                                |
-| `BITCOIN_NETWORK`        | No       | `mainnet`                 | `mainnet` or `testnet`; must match the Electrum server                        |
-| `HOST`                   | No       | `localhost`               | Address on which Sentinel listens                                             |
-| `PORT`                   | No       | `3400`                    | Sentinel HTTP port                                                            |
-| `DATA_DIR`               | No       | `./data`                  | SQLite database and local secret-key directory                                |
-| `LOG_LEVEL`              | No       | `info`                    | `trace`, `debug`, `info`, `warn`, `error`, or `fatal`                         |
-| `MEMPOOL_API_URL`        | No       | `https://mempool.space`   | Base URL for market and transaction data; may point to a self-hosted instance |
-| `APP_DIR`                | No       | Current working directory | Directory containing bundled `public/` and `assets/` folders                  |
-| `SENTINEL_ALLOWED_HOSTS` | No       | Loopback hosts            | Comma-separated additional hostnames accepted by the protected local API      |
-| `SOCKS_PROXY_HOST`       | No       | None                      | External Tor SOCKS host when running Sentinel on its own; desktop ignores it  |
-| `SOCKS_PROXY_PORT`       | No       | None                      | External Tor SOCKS port when running Sentinel on its own; desktop ignores it  |
+| Variable                     | Required | Default                   | Description                                                                      |
+| ---------------------------- | -------- | ------------------------- | -------------------------------------------------------------------------------- |
+| `ELECTRUM_HOST`              | Yes      | None                      | Electrum hostname or IP address                                                  |
+| `ELECTRUM_PORT`              | No       | `50001`                   | Electrum TCP or SSL port                                                         |
+| `ELECTRUM_PROTOCOL`          | No       | `tcp`                     | `tcp` or `ssl`                                                                   |
+| `BITCOIN_NETWORK`            | No       | `mainnet`                 | `mainnet` or `testnet`; must match the Electrum server                           |
+| `HOST`                       | No       | `localhost`               | Address on which Sentinel listens                                                |
+| `PORT`                       | No       | `3400`                    | Sentinel HTTP port                                                               |
+| `DATA_DIR`                   | No       | `./data`                  | SQLite database and local secret-key directory                                   |
+| `LOG_LEVEL`                  | No       | `info`                    | `trace`, `debug`, `info`, `warn`, `error`, or `fatal`                            |
+| `MEMPOOL_API_URL`            | No       | `https://mempool.space`   | Base URL for market and transaction data; may point to a self-hosted instance    |
+| `APP_DIR`                    | No       | Current working directory | Directory containing bundled `public/` and `assets/` folders                     |
+| `SENTINEL_ALLOWED_HOSTS`     | No       | Loopback hosts            | Comma-separated additional hostnames accepted by the protected local API         |
+| `SENTINEL_ALLOW_IP_HOSTS`    | No       | `false`                   | `true` also accepts any IP-address host; used where addresses are unknown        |
+| `SENTINEL_WAIT_FOR_ELECTRUM` | No       | `true`                    | `false` serves the app while Electrum is unreachable instead of failing to start |
+| `SOCKS_PROXY_HOST`           | No       | None                      | External Tor SOCKS host when running Sentinel on its own; desktop ignores it     |
+| `SOCKS_PROXY_PORT`           | No       | None                      | External Tor SOCKS port when running Sentinel on its own; desktop ignores it     |
 
 ### Electrum connection guidance
 
@@ -184,6 +186,8 @@ BITCOIN_NETWORK=mainnet
 Sentinel has no user-login layer because it is designed for loopback or same-origin distribution use. Do not casually set `HOST=0.0.0.0` or expose port `3400` to an untrusted network.
 
 `SENTINEL_ALLOWED_HOSTS` expands host and origin validation for a trusted reverse proxy or packaged environment. It is not authentication. StartOS supplies its own allowed local and onion hostnames during packaging.
+
+`SENTINEL_ALLOW_IP_HOSTS=true` is for platforms such as Umbrel that do not tell the app its LAN or VPN addresses. An IP-address host cannot be used for DNS rebinding, and a browser origin that is an IP address is accepted only when it matches the requested host.
 
 ## Run the application
 

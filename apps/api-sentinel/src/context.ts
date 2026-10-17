@@ -75,7 +75,7 @@ const TOR_REQUEST_TIMEOUT_MS = 30_000
 export interface AppContextOptions {
   /** Enabled only by desktop launchers, including the desktop development preview. */
   connectionProfiles?: boolean
-  /** Desktop must keep settings available even when its saved server is offline. */
+  /** Overrides SENTINEL_WAIT_FOR_ELECTRUM. Desktop must keep settings available even when its saved server is offline. */
   waitForElectrum?: boolean
   /** Enabled only by desktop launchers: Settings can choose Electrum for statement lookups. */
   statementSourceSetting?: boolean
@@ -393,7 +393,8 @@ export const createAppContext = asyncFn(
     }
 
     const connection = electrumClient.connect()
-    if (options.waitForElectrum === false) {
+    const waitForElectrum = options.waitForElectrum ?? env.SENTINEL_WAIT_FOR_ELECTRUM
+    if (!waitForElectrum) {
       void connection.then((result) => {
         if (!isStopped() && ctx.electrumClient === electrumClient && result.isErr()) {
           electrumClient.disconnect()

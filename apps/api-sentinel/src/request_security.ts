@@ -1,9 +1,16 @@
+import { isIP } from 'node:net'
 import cors from '@fastify/cors'
 import type { FastifyInstance } from 'fastify'
 
 const DEFAULT_ALLOWED_HOST_PATTERNS = ['localhost', '127.0.0.1', '::1']
 // Matches server.port in apps/control-center/vite.config.ts, which uses strictPort so it never moves.
 const VITE_DEV_SERVER_PORT = '4269'
+
+interface AllowedHosts {
+  patterns: string[]
+  /** Accept any IP-literal host, for platforms that cannot report their LAN or VPN addresses. */
+  allowIpAddresses: boolean
+}
 
 function normalizeHostname(hostname: string): string {
   return hostname.trim().toLowerCase().replace(/^\[/, '').replace(/\]$/, '').replace(/\.$/, '')
@@ -51,22 +58,17 @@ function normalizeAllowedHostPattern(pattern: string): string | null {
   return hostname ?? normalizeHostname(trimmed)
 }
 
-function getAllowedHostPatterns(configuredHosts: string | undefined): string[] {
+function getAllowedHosts(configuredHosts: string | undefined, allowIpAddresses: boolean): AllowedHosts {
   const configuredPatterns = (configuredHosts ?? '')
     .split(',')
     .map(normalizeAllowedHostPattern)
     .filter((pattern): pattern is string => pattern !== null)
 
-  return [...DEFAULT_ALLOWED_HOST_PATTERNS, ...configuredPatterns]
+  return { patterns: [...DEFAULT_ALLOWED_HOST_PATTERNS, ...configuredPatterns], allowIpAddresses }
 }
 
-function isAllowedHost(host: string | undefined, allowedPatterns: string[]): boolean {
-  const hostname = getHostname(host)
-  if (hostname == null || hostname === '') {
-    return false
-  }
-
-  return allowedPatterns.some((pattern) => {
+function matchesAllowedPattern(hostname: string, patterns: string[]): boolean {
+  return patterns.some((pattern) => {
     if (pattern.startsWith('*.')) {
       const suffix = pattern.slice(2)
       return hostname === suffix || hostname.endsWith(`.${suffix}`)
@@ -74,6 +76,19 @@ function isAllowedHost(host: string | undefined, allowedPatterns: string[]): boo
 
     return hostname === pattern
   })
+}
+
+function isAllowedHost(host: string | undefined, allowedHosts: AllowedHosts): boolean {
+  const hostname = getHostname(host)
+  if (hostname == null || hostname === '') {
+    return false
+  }
+
+  // DNS rebinding needs an attacker-controlled hostname, so an IP-literal host
+  // cannot be used to rebind.
+  return (
+    matchesAllowedPattern(hostname, allowedHosts.patterns) || (allowedHosts.allowIpAddresses && isIP(hostname) !== 0)
+  )
 }
 
 // In development the UI runs on the Vite dev server, so only its origin may call Sentinel across origins.
@@ -106,7 +121,7 @@ function isSameOrigin(origin: string, host: string | undefined): boolean {
 function isAllowedRequestOrigin(
   origin: string | undefined,
   host: string | undefined,
-  allowedHostPatterns: string[],
+  allowedHosts: AllowedHosts,
   isProduction: boolean,
 ): boolean {
   if (origin == null || origin === '') {
@@ -118,16 +133,14 @@ function isAllowedRequestOrigin(
   }
 
   try {
-    const originUrl = new URL(origin)
-    return allowedHostPatterns.some((pattern) => {
-      const hostname = normalizeHostname(originUrl.hostname)
-      if (pattern.startsWith('*.')) {
-        const suffix = pattern.slice(2)
-        return hostname === suffix || hostname.endsWith(`.${suffix}`)
-      }
+    const hostname = normalizeHostname(new URL(origin).hostname)
+    if (matchesAllowedPattern(hostname, allowedHosts.patterns)) {
+      return true
+    }
 
-      return hostname === pattern
-    })
+    // Trust an IP-literal origin only for requests to that same address;
+    // otherwise any page served from an IP address could write to the API.
+    return allowedHosts.allowIpAddresses && isIP(hostname) !== 0 && hostname === getHostname(host)
   } catch {
     return false
   }
@@ -151,10 +164,11 @@ export function registerRequestSecurity(
   server: FastifyInstance,
   configuredHosts: string | undefined,
   isProduction: boolean,
+  allowIpAddressHosts = false,
 ): void {
-  const allowedHostPatterns = getAllowedHostPatterns(configuredHosts)
-  // Only StartOS configures hosts, because its proxy connects through an internal host and passes the
-  // address you used in X-Forwarded-Host. Elsewhere nothing sets that header except the client itself,
+  const allowedHosts = getAllowedHosts(configuredHosts, allowIpAddressHosts)
+  // Only StartOS and Umbrel configure hosts. Their proxies set X-Forwarded-Host to the address you used,
+  // replacing any value the client sent. Elsewhere nothing sets that header except the client itself,
   // so a web page (after DNS rebinding, say) could use it to pass as localhost: there, Host must match too.
   const trustForwardedHost = (configuredHosts ?? '').trim() !== ''
 
@@ -171,14 +185,13 @@ export function registerRequestSecurity(
     const forwardedHost = getHeaderValue(request.headers['x-forwarded-host'])
     const host = getHeaderValue(request.headers.host)
     const hostAllowed = trustForwardedHost
-      ? isAllowedHost(forwardedHost ?? host, allowedHostPatterns)
-      : isAllowedHost(host, allowedHostPatterns) &&
-        (forwardedHost === undefined || isAllowedHost(forwardedHost, allowedHostPatterns))
+      ? isAllowedHost(forwardedHost ?? host, allowedHosts)
+      : isAllowedHost(host, allowedHosts) && (forwardedHost === undefined || isAllowedHost(forwardedHost, allowedHosts))
     if (!hostAllowed) {
       return reply.status(403).send({ code: 'forbidden_host', message: 'Host is not allowed' })
     }
 
-    if (!isAllowedRequestOrigin(request.headers.origin, host, allowedHostPatterns, isProduction)) {
+    if (!isAllowedRequestOrigin(request.headers.origin, host, allowedHosts, isProduction)) {
       return reply.status(403).send({ code: 'forbidden_origin', message: 'Origin is not allowed' })
     }
 
