@@ -25,7 +25,12 @@ export function AppLayout({ fullWidth }: { fullWidth?: boolean }): JSX.Element {
   const logoLink = '/home'
 
   const logo = (
-    <BaseLogo renderLink={(children) => <Link to={logoLink}>{children}</Link>} stickerLabel={getEnvSlug(HOSEKI_ENV)} />
+    <BaseLogo
+      logoSrc="/hoseki-logo.svg"
+      logoAlt="Bitcoin Control Center"
+      renderLink={(children) => <Link to={logoLink}>{children}</Link>}
+      stickerLabel={getEnvSlug(HOSEKI_ENV)}
+    />
   )
 
   const menu = <BaseMenu items={menuItems} renderLink={(to, children) => <NavLink to={to}>{children}</NavLink>} />

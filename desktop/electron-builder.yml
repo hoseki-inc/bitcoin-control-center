@@ -16,8 +16,6 @@ extraResources:
   - from: tor/${os}
     to: tor
 mac:
-  # Apple's icon grid leaves transparent padding around the tile.
-  icon: resources/icon-mac.png
   binaries:
     - Contents/Resources/tor/tor
     - Contents/Resources/tor/libevent-2.1.7.dylib
