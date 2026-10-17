@@ -16,8 +16,9 @@ extraResources:
   - from: tor/${os}
     to: tor
 mac:
-  # Apple's icon grid leaves transparent padding around the tile.
-  icon: resources/icon-mac.png
+  # Apple's icon grid leaves transparent padding around the tile. The icns has
+  # no icp4-icp6 slots: macOS draws PNG data there as noise on 1x screens.
+  icon: resources/icon-mac.icns
   binaries:
     - Contents/Resources/tor/tor
     - Contents/Resources/tor/libevent-2.1.7.dylib
