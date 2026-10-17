@@ -19,7 +19,7 @@ export function Logo({
   const LogoImage = (
     <Flex align="center" gap={2.5}>
       <chakra.img src={logoSrc} alt="" h={logoHeight} />
-      <Text as="span" textStyle="label/lg" fontWeight="semibold" color="neutral.900" whiteSpace="nowrap">
+      <Text as="span" textStyle="label/lg" fontWeight="semibold" color="neutral.900">
         {logoAlt}
       </Text>
     </Flex>
