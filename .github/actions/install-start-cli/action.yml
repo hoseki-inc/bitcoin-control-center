@@ -8,8 +8,8 @@ runs:
       shell: bash
       run: |
         curl -fsSL \
-          https://github.com/Start9Labs/start-technologies/releases/download/start-cli/v1.1.0/start-cli_x86_64-linux \
+          https://github.com/Start9Labs/start-technologies/releases/download/start-cli/v2.3.0/start-cli_x86_64-linux \
           -o "$RUNNER_TEMP/start-cli"
-        echo "70eff67b6e9a936acd8aaaf787b783819252ecedaa5c74d462e3b15ed4dd843a  $RUNNER_TEMP/start-cli" | sha256sum --check --strict
+        echo "f4bb04c96eb63e74d5c14325a2ad03c7576ede0e4189ed18558b3915c8e4a6c0  $RUNNER_TEMP/start-cli" | sha256sum --check --strict
         sudo install -m 755 "$RUNNER_TEMP/start-cli" /usr/local/bin/start-cli
         start-cli --version

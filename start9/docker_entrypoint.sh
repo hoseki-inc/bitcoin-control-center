@@ -13,17 +13,17 @@ read_cfg() {
   fi
 }
 
-# Read config written by StartOS config scripts
-ELECTRUM_HOST=$(read_cfg '.electrum.host' 'electrs.embassy')
-ELECTRUM_PORT=$(read_cfg '.electrum.port' '50001')
-ELECTRUM_PROTOCOL=$(read_cfg '.electrum.protocol' 'tcp')
+# StartOS resolves the Electrs bridge address. Sentinel's own Electrum settings
+# override it at runtime.
+: "${ELECTRUM_HOST:?StartOS must supply the Electrs bridge address}"
+: "${ELECTRUM_PORT:?StartOS must supply the Electrs bridge port}"
 LOG_LVL=$(read_cfg '.log-level' 'info')
 
 export HOST=0.0.0.0
 export PORT=3400
 export ELECTRUM_HOST
 export ELECTRUM_PORT
-export ELECTRUM_PROTOCOL
+export ELECTRUM_PROTOCOL=tcp
 export BITCOIN_NETWORK=mainnet
 export DATA_DIR=/data
 export MEMPOOL_API_URL="${MEMPOOL_API_URL:-$(read_cfg '."mempool-url"' 'https://mempool.space')}"

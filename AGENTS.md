@@ -27,6 +27,8 @@ pnpm build
 
 ## Code conventions
 
+- Before adding a StartOS wrapper migration, run `node start9/scripts/version.mjs bump revision`; keep released migration files and their helpers immutable.
+
 - Give exported functions explicit return types.
 - Prefer `Result` values to exceptions for expected failures.
 - Use `parse` or `parseUnknown` from `@hoseki/packages/result/lib/parse` instead of Zod's `.parse()` or `.safeParse()`.

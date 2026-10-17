@@ -1,7 +1,7 @@
 import { VersionInfo } from '@start9labs/start-sdk'
 
-export const v0_6_0_0 = VersionInfo.of({
-  version: '0.6.0:0',
+export const current = VersionInfo.of({
+  version: '0.6.0:1',
   releaseNotes: `Statement, privacy, and reliability improvements.
 
 - Statements: faster and more reliable generation, with progress shown while they build. Statements can now be deleted.
@@ -11,5 +11,7 @@ export const v0_6_0_0 = VersionInfo.of({
 - A new Bitcoin Control Center icon.
 
 Existing accounts, settings, and statements carry over automatically.`,
+  // Before adding a migration, run: node start9/scripts/version.mjs bump revision
+  // Keep released migration code and its helpers unchanged.
   migrations: {},
 })
