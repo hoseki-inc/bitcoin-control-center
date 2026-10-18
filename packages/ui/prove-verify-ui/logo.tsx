@@ -1,4 +1,4 @@
-import { Box, Flex, chakra } from '@chakra-ui/react'
+import { Box, Flex, Text, chakra } from '@chakra-ui/react'
 import type { PropsWithChildren, ReactNode } from 'react'
 
 interface LogoProps {
@@ -10,13 +10,20 @@ interface LogoProps {
 }
 
 export function Logo({
-  logoSrc = '/hoseki-logo.svg',
+  logoSrc = '/hoseki-logo-box.svg',
   logoAlt = 'Bitcoin Control Center',
   logoHeight = '32px',
   stickerLabel,
   renderLink,
 }: LogoProps): JSX.Element {
-  const LogoImage = <chakra.img src={logoSrc} alt={logoAlt} h={logoHeight} />
+  const LogoImage = (
+    <Flex align="center" gap={2.5}>
+      <chakra.img src={logoSrc} alt="" h={logoHeight} />
+      <Text as="span" textStyle="label/lg" fontWeight="semibold" color="neutral.900">
+        {logoAlt}
+      </Text>
+    </Flex>
+  )
   return (
     <Flex justify="center">
       <Box position="relative">
