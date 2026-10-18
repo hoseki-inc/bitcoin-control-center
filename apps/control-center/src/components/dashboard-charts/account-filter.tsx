@@ -25,10 +25,13 @@ import { type SupportedHardwareWallet, getSupportedHardwareWalletLogoPath } from
 import { Check, ChevronDown, KeyRound, Search } from 'lucide-react'
 import { type ReactNode, useEffect, useId, useRef, useState } from 'react'
 import { Link } from 'react-router'
+import type { HoldingBalance, HoldingPrice } from '../../lib/holdings'
+import { readSats } from '../../lib/holdings'
 import type { RouterOutput } from '../../trpc'
 import type { ClaimDto } from '../../trpc/server-types'
 import { ensureClaimStatusNotExpired } from '../../utils/claim-utils'
 import { needsExchangeReconnect } from '../../utils/exchange-connection-status'
+import { BalanceSync, FiatValue } from '../balance-status'
 import { BitcoinAmount } from '../bitcoin-amount'
 import { UsdEquivalent } from '../usd-equivalent'
 import { HistorySyncStatus } from './history-sync-status'
@@ -56,6 +59,8 @@ interface AccountFilterProps {
   manualAccounts: RouterOutput['portalProve']['manual']['list']
   etfAccounts: RouterOutput['portalProve']['etf']['list']
   balances: Map<ClaimId, BalanceValue | null>
+  holdingBalances?: ReadonlyMap<string, HoldingBalance>
+  price?: HoldingPrice
   /** An account list failed to load, so a total would leave accounts out. */
   isMissingAccounts?: boolean
   btcPrice: number | null
@@ -72,6 +77,8 @@ export function AccountFilter({
   manualAccounts,
   etfAccounts,
   balances,
+  holdingBalances,
+  price,
   isMissingAccounts = false,
   btcPrice,
   selected,
@@ -122,7 +129,7 @@ export function AccountFilter({
           wallets: claim.keystores.slice(0, 3).map((keystore) => keystore.wallet ?? null),
         },
         reconnectTo: null,
-        sats: toSatsOrNull(balances.get(claim.id)),
+        sats: holdingBalances?.get(claim.id)?.sats ?? toSatsOrNull(balances.get(claim.id)),
       }
     }),
     ...exchangeAccounts.map((account) => {
@@ -134,7 +141,9 @@ export function AccountFilter({
         status: null,
         logo: config ? { kind: 'image' as const, src: config.logo } : { kind: 'manual' as const },
         reconnectTo: needsExchangeReconnect(account) ? `/accounts/${account.exchange}/${account.id}` : null,
-        sats: needsExchangeReconnect(account) ? 0 : Number(account.balance ?? 0),
+        sats:
+          holdingBalances?.get(account.id)?.sats ??
+          (needsExchangeReconnect(account) ? null : readSats(account.balance)),
       }
     }),
     ...[...manualAccounts, ...etfAccounts].map((account) => ({
@@ -144,7 +153,7 @@ export function AccountFilter({
       status: 'Manually added',
       logo: { kind: 'manual' as const },
       reconnectTo: null,
-      sats: Number(account.balance),
+      sats: holdingBalances?.get(account.id)?.sats ?? readSats(account.balance),
     })),
   ].sort((a, b) => (b.sats ?? -1) - (a.sats ?? -1))
   const selectable = accounts.filter((account) => account.reconnectTo === null)
@@ -284,14 +293,24 @@ export function AccountFilter({
               </Text>
               {!compact && (
                 <Flex as="span" mt={1} pr={8} minH="20px" align="center" color="neutral.600">
-                  <Text as="span" textStyle="text/xs" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                    {account.sats === null ? (
-                      '\u2014'
+                  {price === undefined ? (
+                    account.sats === null ? (
+                      '—'
                     ) : (
                       <UsdEquivalent btc={account.sats / 100_000_000} btcPrice={btcPrice} />
-                    )}
-                  </Text>
+                    )
+                  ) : (
+                    <FiatValue as="span" sats={account.sats} price={price} textStyle="text/xs" color="neutral.600" />
+                  )}
                 </Flex>
+              )}
+              {holdingBalances?.get(account.id) !== undefined && (
+                <Box mt={1}>
+                  <BalanceSync
+                    balance={holdingBalances.get(account.id) ?? { sats: null, updatedAt: null, state: 'unavailable' }}
+                    textStyle="text/xs"
+                  />
+                </Box>
               )}
               {account.sats !== null && totalSats !== null && (
                 <Box as="span" position="absolute" bottom={3} right={3}>

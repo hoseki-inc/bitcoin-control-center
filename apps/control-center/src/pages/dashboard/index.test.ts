@@ -40,6 +40,9 @@ const mocks = vi.hoisted(() => {
   const claims: ClaimDto[] = []
   const base: NonNullable<PortfolioQuery['data']> = {
     currentTotalBalance: '100',
+    knownTotalBalance: '0',
+    balanceStatus: { complete: true, missingAccountIds: [], staleAccountIds: [], asOf: null },
+    priceStatus: null,
     currentBtcPrice: '50000',
     verifiedClaimsCount: 0,
     exchangeAccountCount: 0,
@@ -121,13 +124,19 @@ const dataSource: DashboardDataSource = {
   useHistory: (input, options) => mocks.useQuery(input, options),
   useBalances: (...args) => {
     mocks.useBalances(...args)
-    return { data: mocks.balances, balancesFailed: mocks.balancesFailed, updatedAt: mocks.balancesUpdatedAt }
+    return {
+      data: mocks.balances,
+      balancesFailed: mocks.balancesFailed,
+      updatedAt: mocks.balancesUpdatedAt,
+      balancesFetching: mocks.balancesUpdatedAt === 0 && !mocks.balancesFailed,
+      refetchBalances: async () => undefined,
+    }
   },
   useStoredBalances: (...args) => {
     mocks.useStoredBalances(...args)
     return { data: mocks.storedBalances }
   },
-  useAutoRefresh: () => undefined,
+  useAutoRefresh: () => ({ isRefreshing: false, previousBalanceTimes: new Map(), hasSettled: false, failed: false }),
   getTimezone: () => 'UTC',
 }
 const views: DashboardViews = {
@@ -450,15 +459,15 @@ describe('custom portfolio range UI', () => {
     })
   })
 
-  it('still shows the first-load spinner when neither query has data', async () => {
+  it('keeps confirmed balances and cached history visible while history loads', async () => {
     await withTestSetup(async () => {
       const defaultQuery = mocks.useQuery.getMockImplementation()
       assert.exists(defaultQuery, 'Expected the default query implementation')
       mocks.useQuery.mockImplementation((input) => ({ ...defaultQuery(input), data: undefined, isLoading: true }))
       await render()
-      expect(container.textContent).not.toContain('Generate Statement')
-      expect(container.querySelectorAll('[data-chart]')).toHaveLength(0)
-      expect(container.querySelector('.chakra-spinner')).not.toBeNull()
+      expect(container.textContent).toContain('Generate Statement')
+      expect(container.querySelectorAll('[data-chart]')).toHaveLength(2)
+      expect(container.textContent).toContain('0.00000100BTC')
     })
   })
 
@@ -1019,7 +1028,7 @@ describe('range summary', () => {
       // Three months have history (June, August, September): 0.5 / 3.
       expect(text()).toContain('+0.16666667')
       expect(text()).toContain('+$8,333.33')
-      expect(text()).toContain("USD at today's Bitcoin price")
+      expect(text()).toContain('USD at the current Bitcoin price')
     })
   })
 
@@ -1162,7 +1171,7 @@ describe('range summary', () => {
         }
         expect(status()).toBe('Synced')
         await wait()
-        expect(status()).toBe('Updating history')
+        expect(status()).toContain('Updating history')
         mocks.previous = false
         await render()
         expect(status()).toBe('Synced')
@@ -1171,10 +1180,10 @@ describe('range summary', () => {
       mocks.claims = [claimFixture('re_clmx_wallet', 'Test wallet')]
       mocks.rangeData = { ...mocks.base, historyFailedAccountIds: ['re_clmx_wallet'] }
       await render()
-      expect(status()).toBe('History unavailable')
+      expect(status()).toContain('History unavailable')
       mocks.previous = true
       await click('All')
-      expect(status()).toBe('Updating history')
+      expect(status()).toContain('Updating history')
     })
   })
 
@@ -1187,7 +1196,7 @@ describe('range summary', () => {
     })
   })
 
-  it('counts a wallet that has never synced as empty, and never says "Synced"', async () => {
+  it('keeps a wallet that has never synced unknown after a failure', async () => {
     await withTestSetup(async () => {
       setUpOutage()
       mocks.balances = new Map()
@@ -1195,8 +1204,8 @@ describe('range summary', () => {
       mocks.storedBalances = []
       await renderHistory([['2026-09-01', 150_000_000]], 0)
       expect(text()).toContain('0.00000000BTC')
-      expect(mocks.sidebar.mock.lastCall?.[0].balances.get('re_clmx_wallet')?.current.toString()).toBe('0')
-      expect(container.querySelector('output')?.textContent).toBe('')
+      expect(mocks.sidebar.mock.lastCall?.[0].balances.get('re_clmx_wallet')).toBeNull()
+      expect(container.querySelector('output')?.textContent).toContain('Allocation unavailable')
     })
   })
 
@@ -1217,7 +1226,7 @@ describe('range summary', () => {
       await renderHistory([['2026-09-01', 150_000_000]], 0)
       expect(container.querySelector('output')?.textContent).toContain('Last synced 5 hours ago')
       expect(text()).toContain('2.00000000BTC')
-      expect(mocks.sidebar.mock.lastCall?.[0].balances.get('re_clmx_new')?.current.toString()).toBe('0')
+      expect(mocks.sidebar.mock.lastCall?.[0].balances.get('re_clmx_new')).toBeNull()
       // Only the wallets in view count.
       await click('Select wallet')
       expect(container.querySelector('output')?.textContent).toContain('Last synced 3 hours ago')
@@ -1231,7 +1240,8 @@ describe('range summary', () => {
       mocks.balancesUpdatedAt = 0
       mocks.storedBalances = undefined
       await renderHistory([['2026-09-01', 150_000_000]], 0)
-      expect(text()).toContain('\u2014BTC')
+      expect(text()).toContain('Known balance')
+      expect(container.querySelector('output')?.textContent).toContain('Allocation unavailable')
       expect(mocks.sidebar.mock.lastCall?.[0].balances.get('re_clmx_wallet')).toBeNull()
       // The chart keeps the server's latest point.
       const points = chartData()
@@ -1257,10 +1267,10 @@ describe('range summary', () => {
       expect(container.querySelector('output')?.textContent).toContain('Last synced 1 hour ago')
       expect(text()).toContain('2.00000000BTC')
       expect(mocks.sidebar.mock.lastCall?.[0].balances.get('re_clmx_wallet')?.current.toString()).toBe('200000000')
-      // The chart ends on the balance shown above it.
+      // A stale amount never becomes a newly confirmed chart endpoint.
       const points = chartData()
       assert(Array.isArray(points), 'Expected chart points')
-      expect(points.at(-1)).toMatchObject({ totalBalance: '200000000' })
+      expect(points.at(-1)).toMatchObject({ totalBalance: '150000000' })
     })
   })
 
@@ -1275,7 +1285,7 @@ describe('range summary', () => {
       ]
       await renderHistory([['2026-09-01', 150_000_000]], 0)
       expect(text()).toContain('1.20000000BTC')
-      expect(container.querySelector('output')?.textContent).toBe('Updating balances')
+      expect(container.querySelector('output')?.textContent).toContain('Updating…')
       // The chart keeps the server's latest point until live balances arrive.
       const points = chartData()
       assert(Array.isArray(points), 'Expected chart points')
@@ -1288,9 +1298,10 @@ describe('range summary', () => {
       mocks.claims = [claimFixture('re_clmx_wallet', 'Test wallet')]
       mocks.balancesUpdatedAt = 0
       await renderHistory([['2026-09-01', 150_000_000]], 0)
-      expect(text()).toContain('\u2014BTC')
+      expect(text()).toContain('Known balance')
+      expect(container.querySelector('output')?.textContent).toContain('Allocation unavailable')
       expect(mocks.sidebar.mock.lastCall?.[0].balances.get('re_clmx_wallet')).toBeNull()
-      expect(container.querySelector('output')?.textContent).toBe('Updating balances')
+      expect(container.querySelector('output')?.textContent).toContain('Updating…')
     })
   })
 
@@ -1298,16 +1309,17 @@ describe('range summary', () => {
     await withTestSetup(async () => {
       mocks.claimsFailed = true
       await renderHistory([['2026-09-01', 150_000_000]], 150_000_000)
-      expect(text()).toContain('\u2014BTC')
-      expect(container.querySelector('output')?.textContent).toBe('')
+      expect(text()).toContain('Known balance')
+      expect(container.querySelector('output')?.textContent).toContain('Allocation unavailable')
+      expect(container.querySelector('output')?.textContent).toContain('Account list incomplete')
       // A quick load doesn't flash "Updating history" over the empty status either.
       mocks.previous = true
       await click('All')
-      expect(container.querySelector('output')?.textContent).toBe('')
+      expect(container.querySelector('output')?.textContent).toContain('Account list incomplete')
       mocks.previous = false
       await click('90D')
       expect(mocks.sidebar.mock.lastCall?.[0].isMissingAccounts).toBe(true)
-      expect(text()).not.toContain('1.50000000BTC')
+      expect(text()).toContain('Known balance')
       // A selected account came from a list that loaded, so its balance is known.
       await click('Select holding')
       expect(text()).toContain('1.50000000BTC')
@@ -1369,7 +1381,7 @@ describe('range summary', () => {
         { accountId: 're_clmx_wallet', balanceSats: '150000000', timestamp: '2026-09-05T09:00:00.000Z' },
       ]
       await renderHistory([['2026-09-01', 150_000_000]], 0)
-      expect(container.querySelector('output')?.textContent).toBe('Synced')
+      expect(container.querySelector('output')?.textContent).toContain('Last synced')
       expect(text()).toContain('2.00000000BTC')
       expect(mocks.sidebar.mock.lastCall?.[0].balances.get('re_clmx_wallet')?.current.toString()).toBe('200000000')
       const points = chartData()
@@ -1413,7 +1425,7 @@ describe('range summary', () => {
         return read
       }
       const atRender = announced()
-      expect(atRender).toBe(`Last synced ${format(new Date('2026-09-05T12:00:00.000Z'), 'PPp')}`)
+      expect(atRender).toBe(`Last synced ${format(new Date('2026-09-05T12:05:00.000Z'), 'PPp')}`)
       vi.setSystemTime(new Date('2026-09-05T12:02:00.000Z'))
       await render()
       expect(announced()).toBe(atRender)
@@ -1510,7 +1522,7 @@ describe('range summary', () => {
       expect(filter().selected.size).toBe(0)
       expect(text()).toContain('All accounts')
       // Its last saved balance is left out of the total, as in the sidebar.
-      expect(text()).toContain('0.50000100BTC')
+      expect(text()).toContain('0.75000100BTC')
     })
   })
 
@@ -1524,9 +1536,9 @@ describe('range summary', () => {
         ],
         150_000_000,
       )
-      expect(text()).toContain('USD unavailable')
+      expect(text()).toContain('USD price unavailable')
       expect(text()).not.toContain('$')
-      expect(text()).not.toContain("USD at today's Bitcoin price")
+      expect(text()).not.toContain('USD at the current Bitcoin price')
       expect(mocks.sidebar.mock.lastCall?.[0].btcPrice).toBeNull()
     })
   })

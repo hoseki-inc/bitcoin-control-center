@@ -573,12 +573,11 @@ it('fills no part of the share ring for an empty account, and a sliver for a tin
   })
 })
 
-it('leaves an exchange that needs reconnecting out of the total, the count and the shares', async () => {
+it('withholds the total and shares when an exchange needs reconnecting', async () => {
   await withTestSetup(async () => {
     await renderAccounts({ exchangeAccounts: disconnectedExchangeAccounts })
-    // Its saved 99.999 BTC would otherwise dwarf the two manual accounts.
-    expect(button('All accounts').textContent).toContain('8.85000000 BTC')
-    expect(button('Paper Wallet').textContent).toContain('70.6% of your portfolio')
+    expect(button('All accounts').textContent).toContain('—')
+    expect(button('Paper Wallet').textContent).not.toContain('% of your portfolio')
     expect(document.body.textContent).toContain('2 of 2')
     expect(document.querySelector('a[href="/accounts/strike/strike"]')?.textContent).toContain('Reconnect needed')
   })

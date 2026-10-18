@@ -36,8 +36,11 @@ export type { BalanceDataPoint, CustomDateRange, TimeRange } from './history-ran
 const DEFAULT_TIMEZONE: Timezone = 'UTC'
 
 export interface ControlCenterData {
-  currentTotalBalance: string
-  currentBtcPrice: string
+  currentTotalBalance: string | null
+  knownTotalBalance: string
+  balanceStatus: { complete: boolean; missingAccountIds: string[]; staleAccountIds: string[]; asOf: string | null }
+  currentBtcPrice: string | null
+  priceStatus: { asOf: string; lastKnown: boolean } | null
   historicalData: BalanceDataPoint[]
   verifiedClaimsCount: number
   exchangeAccountCount: number
@@ -144,6 +147,8 @@ export class ControlCenterService {
 
       // ─── Fetch on-chain balances ────────────────────────────────
       const balancesByAccountId = new Map<string, bigint>()
+      const staleBalanceIds = new Set<string>()
+      const balanceTimes = new Map<string, string>()
 
       if (accounts.size > 0) {
         // Anchor before balance discovery so a backfill can reuse this result
@@ -156,10 +161,15 @@ export class ControlCenterService {
         if (balancesResult.isErr()) {
           this.logger.warn({ err: balancesResult.unwrapErr() }, 'Failed to fetch on-chain balances')
           for (const row of accountRows) {
-            const latestSnapshotBalance = (await this.getLatestAccountSnapshot(row.id))?.balanceSats ?? 0n
-            balancesByAccountId.set(row.id, latestSnapshotBalance)
+            const snapshot = await this.getLatestAccountSnapshot(row.id)
+            if (snapshot !== null) {
+              balancesByAccountId.set(row.id, snapshot.balanceSats)
+              staleBalanceIds.add(row.id)
+              balanceTimes.set(row.id, snapshot.timestamp)
+            }
+            const latestSnapshotBalance = snapshot?.balanceSats
 
-            if (shouldSyncFullHistory) {
+            if (shouldSyncFullHistory && latestSnapshotBalance !== undefined) {
               const accountResult = Account.fromDescriptor(row.descriptor)
               if (accountResult.isOk()) {
                 await this.queueAccountHistoryBackfill(
@@ -187,8 +197,12 @@ export class ControlCenterService {
             }
 
             const account = accountResult.unwrap()
-            const accountBalance = accountBalances.get(account.toString()) ?? 0n
+            const accountBalance = accountBalances.get(account.toString())
+            if (accountBalance === undefined) {
+              continue
+            }
             balancesByAccountId.set(row.id, accountBalance)
+            balanceTimes.set(row.id, now.toISOString())
             await this.queueAccountHistoryBackfill(
               row.id,
               account,
@@ -229,6 +243,9 @@ export class ControlCenterService {
       for (const account of connectedExchangeAccounts) {
         if (account.balanceSats != null && account.balanceSats !== '') {
           exchangeBalance += BigInt(account.balanceSats)
+          if (account.balanceAsOf !== null) {
+            balanceTimes.set(account.id, account.balanceAsOf)
+          }
         }
       }
 
@@ -342,10 +359,13 @@ export class ControlCenterService {
       etfEntries.push(...etfAccumulationEntries)
 
       // ─── Fetch BTC price ───────────────────────────────────────
-      let currentBtcPrice = '0'
+      let currentBtcPrice: string | null = null
+      let priceStatus: ControlCenterData['priceStatus'] = null
       const priceResult = await this.priceService.getCurrentBtcPrice()
       if (priceResult.isOk()) {
-        currentBtcPrice = priceResult.unwrap().value.toString()
+        const price = priceResult.unwrap()
+        currentBtcPrice = price.value.toString()
+        priceStatus = { asOf: price.asOf.toISOString(), lastKnown: price.lastKnown }
       } else {
         this.logger.warn({ err: priceResult.unwrapErr() }, 'Failed to fetch BTC price')
       }
@@ -366,14 +386,34 @@ export class ControlCenterService {
       const onchainBalance = accountRows.reduce((sum, { id }) => sum + (balancesByAccountId.get(id) ?? 0n), 0n)
 
       // ─── Compute totals ─────────────────────────────────────────
-      const currentTotalBalance = onchainBalance + exchangeBalance + manualBalance + etfBalance
+      const knownTotalBalance = onchainBalance + exchangeBalance + manualBalance + etfBalance
+      const missingAccountIds = [
+        ...accountRows.filter((row) => !balancesByAccountId.has(row.id)).map((row) => row.id),
+        ...filteredExchangeAccounts
+          .filter((account) => account.balanceSats === null || account.balanceSats === '')
+          .map((account) => account.id),
+      ]
+      const currentTotalBalance = missingAccountIds.length === 0 ? knownTotalBalance : null
+      const includedIds = new Set([
+        ...accountRows.map((row) => row.id),
+        ...connectedExchangeAccounts.map((item) => item.id),
+      ])
+      const knownTimes = [...balanceTimes].flatMap(([id, timestamp]) =>
+        includedIds.has(id) && Number.isFinite(Date.parse(timestamp)) ? [Date.parse(timestamp)] : [],
+      )
+      const balanceStatus: ControlCenterData['balanceStatus'] = {
+        complete: missingAccountIds.length === 0,
+        missingAccountIds,
+        staleAccountIds: [...staleBalanceIds].filter((id) => accountRows.some((row) => row.id === id)),
+        asOf: knownTimes.length > 0 ? new Date(Math.min(...knownTimes)).toISOString() : null,
+      }
       this.logger.info(
         {
           onchainBalance: onchainBalance.toString(),
           exchangeBalance: exchangeBalance.toString(),
           manualBalance: manualBalance.toString(),
           etfBalance: etfBalance.toString(),
-          currentTotalBalance: currentTotalBalance.toString(),
+          currentTotalBalance: currentTotalBalance?.toString() ?? null,
         },
         'Control center totals',
       )
@@ -394,13 +434,21 @@ export class ControlCenterService {
         'Building historical data',
       )
 
-      const historicalData = buildHistoricalData(allEntries, currentTotalBalance, historyRange, timezone)
+      const historicalData = buildHistoricalData(
+        allEntries,
+        balanceStatus.staleAccountIds.length === 0 ? currentTotalBalance : null,
+        historyRange,
+        timezone,
+      )
 
       this.logger.info({ historicalDataPoints: historicalData.length }, 'Historical data built')
 
       return Ok({
-        currentTotalBalance: currentTotalBalance.toString(),
+        currentTotalBalance: currentTotalBalance?.toString() ?? null,
+        knownTotalBalance: knownTotalBalance.toString(),
+        balanceStatus,
         currentBtcPrice,
+        priceStatus,
         historicalData,
         verifiedClaimsCount: accountRows.length,
         exchangeAccountCount: connectedExchangeAccounts.length,

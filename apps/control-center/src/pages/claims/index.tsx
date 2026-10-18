@@ -21,27 +21,27 @@ import { ClaimCardKeystores, StatusBadge, getBadgeConfigForClaim } from '@hoseki
 import { useEffect } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router'
 import { toast } from 'sonner'
+import { BalanceSkeleton, FiatValue, HoldingsRecovery, HoldingsStatus } from '../../components/balance-status'
 import { DeleteClaimModal } from '../../components/claims/claim-details/delete-claim-modal'
-import { useAutoRefreshExchanges } from '../../hooks/use-auto-refresh-exchanges'
-import { useGetBalancesPerClaimIds } from '../../lib/balances'
+import { holdingsDataSource, useHoldings } from '../../hooks/use-holdings'
+import type { HoldingBalance, HoldingPrice } from '../../lib/holdings'
 import { type RouterOutput, trpc } from '../../trpc'
 import type { ClaimDto } from '../../trpc/server-types'
 import { ensureClaimStatusNotExpired, mapClaimToClaimCardProps } from '../../utils/claim-utils'
 import { isExchangeConnected, needsExchangeReconnect } from '../../utils/exchange-connection-status'
+import { AccountBalance } from './holding-balance'
 
 type ExchangeAccountDto = RouterOutput['portalProve']['exchange']['list'][number]
 type ManualAccountDto = RouterOutput['portalProve']['manual']['list'][number]
 type EtfAccountDto = RouterOutput['portalProve']['etf']['list'][number]
 
+const unavailableBalance: HoldingBalance = { sats: null, updatedAt: null, state: 'unavailable' }
+
 export function ClaimsPage(): JSX.Element {
-  useAutoRefreshExchanges()
+  const holdings = useHoldings(holdingsDataSource)
   const navigate = useNavigate()
   const location = useLocation()
-  const claimsQuery = trpc.portalProve.registry.claims.list.useQuery({ excludePending: false })
-  const exchangeAccountsQuery = trpc.portalProve.exchange.list.useQuery()
-  const manualAccountsQuery = trpc.portalProve.manual.list.useQuery()
-  const etfAccountsQuery = trpc.portalProve.etf.list.useQuery()
-  const btcPriceQuery = trpc.portalProve.retrieveBitcoinPrice.useQuery()
+  const { claimsQuery, exchangeAccountsQuery, manualAccountsQuery, etfAccountsQuery } = holdings.accounts
 
   const archivedClaimsQuery = trpc.portalProve.registry.claims.listArchived.useQuery()
   const trpcUtils = trpc.useUtils()
@@ -64,8 +64,6 @@ export function ClaimsPage(): JSX.Element {
   const connectedExchangeAccounts = exchangeAccounts.filter(isExchangeConnected)
   const manualAccounts = manualAccountsQuery.data ?? []
   const etfAccounts = etfAccountsQuery.data ?? []
-  const claimIds = claims.map((c) => c.id)
-  const balancesQuery = useGetBalancesPerClaimIds({ claimIds, enabled: claimIds.length > 0 })
 
   useEffect(() => {
     if (location.hash !== '#archived') {
@@ -79,22 +77,9 @@ export function ClaimsPage(): JSX.Element {
     target?.focus()
   }, [archivedClaimsQuery.data?.length, claimsQuery.isLoading, location.hash])
 
-  if (claimsQuery.isLoading) {
+  const accountQueries = [claimsQuery, exchangeAccountsQuery, manualAccountsQuery, etfAccountsQuery]
+  if (accountQueries.every((query) => query.data === undefined) && accountQueries.some((query) => query.isLoading)) {
     return <Spinner fullPage size="xl" />
-  }
-
-  if (claimsQuery.isError) {
-    return (
-      <Stack py={8} gap={8}>
-        <ErrorBanner
-          message={
-            claimsQuery.error.message
-              ? `Error fetching your holdings: ${claimsQuery.error.message}`
-              : 'An error occurred when fetching your holdings'
-          }
-        />
-      </Stack>
-    )
   }
 
   const hasClaims =
@@ -103,77 +88,13 @@ export function ClaimsPage(): JSX.Element {
     claims.filter((c) => ensureClaimStatusNotExpired(c) === 'verified').length + connectedExchangeAccounts.length
   const pendingCount = claims.length - (verifiedCount - connectedExchangeAccounts.length)
 
-  const claimTotalBtcSats = Array.from(balancesQuery.data.values()).reduce((sum, b) => {
-    if (!b) {
-      return sum
-    }
-    return sum + Number(b.current)
-  }, 0)
-
-  const exchangeTotalBtcSats = exchangeAccounts.reduce((sum, a) => {
-    if (a.balance == null || a.balance === '') {
-      return sum
-    }
-    return sum + Number(a.balance)
-  }, 0)
-
-  const manualTotalBtcSats = manualAccounts.reduce((sum, a) => {
-    if (!a.balance) {
-      return sum
-    }
-    return sum + Number(a.balance)
-  }, 0)
-
-  const etfTotalBtcSats = etfAccounts.reduce((sum, a) => {
-    if (!a.balance) {
-      return sum
-    }
-    return sum + Number(a.balance)
-  }, 0)
-
-  const totalBtcSats = claimTotalBtcSats + exchangeTotalBtcSats + manualTotalBtcSats + etfTotalBtcSats
-  const totalBtc = totalBtcSats / 100_000_000
-
-  const btcUsdPrice = btcPriceQuery.data?.value ? Number(btcPriceQuery.data.value) : null
-
-  const claimsTotalUsd = Array.from(balancesQuery.data.values()).reduce((sum, b) => {
-    if (!b?.usd) {
-      return sum
-    }
-    return sum + Number(b.usd)
-  }, 0)
-
-  const exchangeTotalUsd =
-    btcUsdPrice !== null
-      ? exchangeAccounts.reduce((sum, a) => {
-          if (a.balance == null || a.balance === '') {
-            return sum
-          }
-          return sum + (Number(a.balance) / 100_000_000) * btcUsdPrice
-        }, 0)
-      : 0
-
-  const manualTotalUsd =
-    btcUsdPrice !== null
-      ? manualAccounts.reduce((sum, a) => {
-          if (!a.balance) {
-            return sum
-          }
-          return sum + (Number(a.balance) / 100_000_000) * btcUsdPrice
-        }, 0)
-      : 0
-
-  const etfTotalUsd =
-    btcUsdPrice !== null
-      ? etfAccounts.reduce((sum, a) => {
-          if (!a.balance) {
-            return sum
-          }
-          return sum + (Number(a.balance) / 100_000_000) * btcUsdPrice
-        }, 0)
-      : 0
-
-  const totalUsd = claimsTotalUsd + exchangeTotalUsd + manualTotalUsd + etfTotalUsd
+  const { summary, price, listsLoaded: allListsLoaded, listsFailed, listsLoading } = holdings
+  const knownTotalSats = summary.knownTotalSats
+  const totalBtcSats = summary.totalSats
+  const complete = summary.complete
+  const hasKnownBalance = summary.knownCount > 0
+  const updating = summary.updating
+  const retryBalances = holdings.retry
 
   return (
     <>
@@ -184,28 +105,41 @@ export function ClaimsPage(): JSX.Element {
             <Heading textStyle="text/3xl" fontWeight="bold" color="neutral.900">
               My Holdings
             </Heading>
-            {hasClaims && (
-              <Flex align="center" gap={3} mt={2} flexWrap="wrap">
-                <Text textStyle="text/sm" fontWeight="semibold" color="neutral.900">
-                  {totalBtc.toFixed(8)} BTC
-                </Text>
-                <Text color="neutral.200">·</Text>
-                <Text textStyle="text/sm" color="success.600">
-                  ${totalUsd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </Text>
-                <Text color="neutral.200">·</Text>
-                <Flex align="center" gap={1}>
-                  <VerifiedBadge />
-                  <Text textStyle="text/sm" color="success.600">
-                    {verifiedCount} Verified
-                  </Text>
+            {(hasClaims || !allListsLoaded) && (
+              <>
+                <Flex align="center" gap={3} mt={2} flexWrap="wrap" minH="24px" aria-live="polite">
+                  {!hasKnownBalance && (updating || listsLoading) ? (
+                    <BalanceSkeleton />
+                  ) : (
+                    <Text
+                      aria-label="Current Bitcoin balance"
+                      textStyle="text/sm"
+                      fontWeight="semibold"
+                      color="neutral.900"
+                    >
+                      {hasKnownBalance || complete
+                        ? `${!complete ? 'Known balance · ' : ''}${(knownTotalSats / 100_000_000).toFixed(8)} BTC`
+                        : 'Balance unavailable'}
+                    </Text>
+                  )}
+                  {hasKnownBalance && <FiatValue sats={knownTotalSats} price={price} />}
+                  <Text color="neutral.200">·</Text>
+                  <Flex align="center" gap={1}>
+                    <VerifiedBadge />
+                    <Text textStyle="text/sm" color="success.600">
+                      {verifiedCount} Verified
+                    </Text>
+                  </Flex>
+                  {pendingCount > 0 && (
+                    <Text textStyle="text/sm" color="warning.600">
+                      {pendingCount} Pending
+                    </Text>
+                  )}
                 </Flex>
-                {pendingCount > 0 && (
-                  <Text textStyle="text/sm" color="warning.600">
-                    {pendingCount} Pending
-                  </Text>
-                )}
-              </Flex>
+                <Box mt={1} minH="20px">
+                  <HoldingsStatus summary={summary} textStyle="label/xs" />
+                </Box>
+              </>
             )}
           </Box>
           <Button
@@ -222,6 +156,11 @@ export function ClaimsPage(): JSX.Element {
           </Button>
         </Flex>
 
+        {(listsFailed || holdings.walletsFailed || holdings.exchangeIssue) && (
+          <Box mb={4}>
+            <HoldingsRecovery holdings={holdings} retry={retryBalances} />
+          </Box>
+        )}
         {/* Account cards */}
         {hasClaims ? (
           <Grid templateColumns={{ base: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(3, 1fr)' }} gap={4}>
@@ -229,9 +168,9 @@ export function ClaimsPage(): JSX.Element {
               <AccountCard
                 key={claim.id}
                 claim={claim}
-                balance={balancesQuery.data.get(claim.id) ?? null}
+                balance={holdings.balances.get(claim.id) ?? unavailableBalance}
                 totalBtcSats={totalBtcSats}
-                isLoadingBalance={balancesQuery.isLoading}
+                price={price}
               />
             ))}
             {exchangeAccounts.map((account) => (
@@ -239,7 +178,8 @@ export function ClaimsPage(): JSX.Element {
                 key={account.id}
                 account={account}
                 totalBtcSats={totalBtcSats}
-                btcUsdPrice={btcUsdPrice}
+                price={price}
+                balance={holdings.balances.get(account.id) ?? unavailableBalance}
               />
             ))}
             {manualAccounts.map((account) => (
@@ -247,7 +187,8 @@ export function ClaimsPage(): JSX.Element {
                 key={account.id}
                 account={account}
                 totalBtcSats={totalBtcSats}
-                btcUsdPrice={btcUsdPrice}
+                price={price}
+                balance={holdings.balances.get(account.id) ?? unavailableBalance}
               />
             ))}
             {etfAccounts.map((account) => (
@@ -255,7 +196,8 @@ export function ClaimsPage(): JSX.Element {
                 key={account.id}
                 account={{ ...account, balance: account.balance }}
                 totalBtcSats={totalBtcSats}
-                btcUsdPrice={btcUsdPrice}
+                price={price}
+                balance={holdings.balances.get(account.id) ?? unavailableBalance}
                 linkPrefix="/accounts/etf"
               />
             ))}
@@ -265,6 +207,10 @@ export function ClaimsPage(): JSX.Element {
               }}
             />
           </Grid>
+        ) : !allListsLoaded ? (
+          <Text textStyle="text/sm" color="neutral.500">
+            {listsLoading ? 'Loading accounts…' : 'Accounts unavailable. Retry to load your holdings.'}
+          </Text>
         ) : (
           <EmptyHoldings
             onAdd={() => {
@@ -332,23 +278,17 @@ export function ClaimsPage(): JSX.Element {
 
 interface AccountCardProps {
   claim: ClaimDto
-  balance: { current: unknown; usd: unknown } | null
-  totalBtcSats: number
-  isLoadingBalance: boolean
+  balance: HoldingBalance
+  totalBtcSats: number | null
+  price: HoldingPrice
 }
 
-function AccountCard({ claim, balance, totalBtcSats, isLoadingBalance }: AccountCardProps): JSX.Element {
+function AccountCard({ claim, balance, totalBtcSats, price }: AccountCardProps): JSX.Element {
   const isPendingMultisig = claim.keystores.length > 1 && claim.status === 'pending'
   const to = isPendingMultisig ? `/multisig/${claim.id}` : `/accounts/${claim.id}`
   const status = ensureClaimStatusNotExpired(claim)
   const cardProps = mapClaimToClaimCardProps(claim)
   const { status: badgeStatus, label: badgeLabel } = getBadgeConfigForClaim(status)
-
-  const btcSats = balance ? Number(balance.current) : 0
-  const btcAmount = btcSats / 100_000_000
-  const usdValue = balance?.usd
-  const usdAmount = Boolean(usdValue) ? Number(usdValue) : 0
-  const pct = totalBtcSats > 0 ? ((btcSats / totalBtcSats) * 100).toFixed(1) : '0.0'
 
   return (
     <Stack
@@ -392,38 +332,7 @@ function AccountCard({ claim, balance, totalBtcSats, isLoadingBalance }: Account
         </Text>
       </Stack>
 
-      {/* Balance */}
-      <Stack gap={0} mx={4} mt={1}>
-        {isLoadingBalance ? (
-          <Box h="24px" w="120px" bg="neutral.50" borderRadius="4px" mx="auto" />
-        ) : (
-          <>
-            <Text fontFamily="mono" textStyle="text/lg" fontWeight="bold" color="neutral.900" letterSpacing="-0.02em">
-              {btcAmount.toFixed(8)} BTC
-            </Text>
-            <Text textStyle="text/sm" fontWeight="medium" color="success.600">
-              ${usdAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </Text>
-          </>
-        )}
-      </Stack>
-
-      {/* Proportion bar */}
-      <Flex align="center" gap={2.5} mx={4} mt={1}>
-        <Box flex={1} h="3px" bg="neutral.50" borderRadius="2px" overflow="hidden">
-          <Box
-            h="100%"
-            w={`${Math.max(parseFloat(pct), 1.5)}%`}
-            bg="neutral.900"
-            borderRadius="2px"
-            opacity={0.2}
-            transition="width 0.4s ease"
-          />
-        </Box>
-        <Text textStyle="label/xs" color="neutral.300" fontFamily="mono" whiteSpace="nowrap">
-          {pct}%
-        </Text>
-      </Flex>
+      <AccountBalance balance={balance} price={price} totalSats={totalBtcSats} />
     </Stack>
   )
 }
@@ -490,8 +399,9 @@ function EmptyHoldings({ onAdd }: { onAdd: () => void }): JSX.Element {
 
 interface ExchangeAccountCardProps {
   account: ExchangeAccountDto
-  totalBtcSats: number
-  btcUsdPrice: number | null
+  totalBtcSats: number | null
+  balance: HoldingBalance
+  price: HoldingPrice
 }
 
 interface ExchangeConfig {
@@ -530,13 +440,8 @@ const exchangeConfig = {
   },
 } satisfies Record<string, ExchangeConfig>
 
-function ExchangeAccountCard({ account, totalBtcSats, btcUsdPrice }: ExchangeAccountCardProps): JSX.Element {
+function ExchangeAccountCard({ account, totalBtcSats, balance, price }: ExchangeAccountCardProps): JSX.Element {
   const needsReconnect = needsExchangeReconnect(account)
-  const btcSats = account.balance != null && account.balance !== '' ? Number(account.balance) : 0
-  const btcAmount = btcSats / 100_000_000
-  const usdAmount = btcUsdPrice !== null ? btcAmount * btcUsdPrice : null
-  const pct = totalBtcSats > 0 ? ((btcSats / totalBtcSats) * 100).toFixed(1) : '0.0'
-
   const config = getRecordValue(exchangeConfig, account.exchange) ?? defaultExchangeConfig
 
   return (
@@ -593,66 +498,26 @@ function ExchangeAccountCard({ account, totalBtcSats, btcUsdPrice }: ExchangeAcc
         </Text>
       </Stack>
 
-      {/* Balance */}
-      <Stack gap={0} mx={4} mt={1}>
-        {needsReconnect ? (
-          <Text fontFamily="mono" textStyle="text/lg" fontWeight="bold" color="neutral.400" letterSpacing="-0.02em">
-            —
-          </Text>
-        ) : account.balance === null ? (
-          <Box h="24px" w="120px" bg="neutral.50" borderRadius="4px" mx="auto" />
-        ) : (
-          <>
-            <Text fontFamily="mono" textStyle="text/lg" fontWeight="bold" color="neutral.900" letterSpacing="-0.02em">
-              {btcAmount.toFixed(8)} BTC
-            </Text>
-            {usdAmount !== null && (
-              <Text textStyle="text/sm" fontWeight="medium" color="success.600">
-                ${usdAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </Text>
-            )}
-          </>
-        )}
-      </Stack>
-
-      {/* Proportion bar */}
-      <Flex align="center" gap={2.5} mx={4} mt={1}>
-        <Box flex={1} h="3px" bg="neutral.50" borderRadius="2px" overflow="hidden">
-          <Box
-            h="100%"
-            w={`${Math.max(parseFloat(pct), 1.5)}%`}
-            bg="neutral.900"
-            borderRadius="2px"
-            opacity={0.2}
-            transition="width 0.4s ease"
-          />
-        </Box>
-        <Text textStyle="label/xs" color="neutral.300" fontFamily="mono" whiteSpace="nowrap">
-          {pct}%
-        </Text>
-      </Flex>
+      <AccountBalance balance={balance} price={price} totalSats={totalBtcSats} />
     </Stack>
   )
 }
 
 interface ManualAccountCardProps {
   account: ManualAccountDto | EtfAccountDto
-  totalBtcSats: number
-  btcUsdPrice: number | null
+  totalBtcSats: number | null
+  balance: HoldingBalance
+  price: HoldingPrice
   linkPrefix?: string
 }
 
 function ManualAccountCard({
   account,
   totalBtcSats,
-  btcUsdPrice,
+  balance,
+  price,
   linkPrefix = '/accounts/manual',
 }: ManualAccountCardProps): JSX.Element {
-  const btcSats = account.balance ? Number(account.balance) : 0
-  const btcAmount = btcSats / 100_000_000
-  const usdAmount = btcUsdPrice !== null ? btcAmount * btcUsdPrice : null
-  const pct = totalBtcSats > 0 ? ((btcSats / totalBtcSats) * 100).toFixed(1) : '0.0'
-
   return (
     <Stack
       as={Link}
@@ -689,34 +554,7 @@ function ManualAccountCard({
         </Text>
       </Stack>
 
-      {/* Balance */}
-      <Stack gap={0} mx={4} mt={1}>
-        <Text fontFamily="mono" textStyle="text/lg" fontWeight="bold" color="neutral.900" letterSpacing="-0.02em">
-          {btcAmount.toFixed(8)} BTC
-        </Text>
-        {usdAmount !== null && (
-          <Text textStyle="text/sm" fontWeight="medium" color="success.600">
-            ${usdAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </Text>
-        )}
-      </Stack>
-
-      {/* Proportion bar */}
-      <Flex align="center" gap={2.5} mx={4} mt={1}>
-        <Box flex={1} h="3px" bg="neutral.50" borderRadius="2px" overflow="hidden">
-          <Box
-            h="100%"
-            w={`${Math.max(parseFloat(pct), 1.5)}%`}
-            bg="neutral.900"
-            borderRadius="2px"
-            opacity={0.2}
-            transition="width 0.4s ease"
-          />
-        </Box>
-        <Text textStyle="label/xs" color="neutral.300" fontFamily="mono" whiteSpace="nowrap">
-          {pct}%
-        </Text>
-      </Flex>
+      <AccountBalance balance={balance} price={price} totalSats={totalBtcSats} />
     </Stack>
   )
 }
