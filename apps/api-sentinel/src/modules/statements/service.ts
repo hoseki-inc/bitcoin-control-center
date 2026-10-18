@@ -45,7 +45,7 @@ export interface StatementDto {
   openingDate: Date
   closingDate: Date
   status: 'pending' | 'completed' | 'failed'
-  user: { name: string | null; email: string | null }
+  user: { name: string | null; address: string | null }
   integrator: { name: string } | null
   userId: string
   quoteCurrency: StatementQuoteCurrency
@@ -69,6 +69,7 @@ const statementDtoColumns = {
   closingDate: statements.closingDate,
   status: statements.status,
   userName: statements.userName,
+  userAddress: statements.userAddress,
   quoteCurrency: statements.quoteCurrency,
   errorMessage: statements.errorMessage,
   txSource: statements.txSource,
@@ -836,7 +837,7 @@ export class StatementService {
       openingDate: new Date(row.openingDate),
       closingDate: new Date(row.closingDate),
       status: row.status,
-      user: { name: row.userName, email: null },
+      user: { name: row.userName, address: row.userAddress },
       integrator: null,
       userId: 'local',
       quoteCurrency: row.quoteCurrency,

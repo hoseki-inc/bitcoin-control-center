@@ -133,12 +133,11 @@ export function DeleteClaimModal({ action, isOpen, onClose, claim }: DeleteClaim
               <Text as="strong" fontWeight="medium" color="neutral.900">
                 Archive
               </Text>{' '}
-              hides{' '}
+              stops tracking{' '}
               <Text as="span" fontWeight="medium">
                 {claim.displayName}
               </Text>{' '}
-              from your dashboard. Its history through the archive time is kept; after that, the account is removed from
-              displayed portfolio totals and chart tracking.
+              but keeps its history. You can restore or delete it permanently once archived.
             </Text>
           )}
           {!isArchive && (

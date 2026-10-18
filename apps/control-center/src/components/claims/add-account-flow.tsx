@@ -59,17 +59,17 @@ export function AddAccountFlow({ onClose, linkState }: AddAccountFlowProps): JSX
           fontWeight="medium"
           leftIcon={<BackArrowIcon />}
         >
-          Back to My Holdings
+          Back to Accounts
         </Button>
       </Flex>
 
       {/* Content */}
       <Box flex={1} overflow="auto" display="flex" justifyContent="center" px={{ base: 6, md: 12 }} pt={12} pb={20}>
         <Box w="100%" maxW="680px">
-          <Heading textStyle="text/3xl" fontWeight="bold" color="neutral.900" mb={2}>
+          <Heading as="h1" textStyle="text/2xl" fontWeight="medium" color="neutral.900" mb={2}>
             Connect New Account
           </Heading>
-          <Text textStyle="text/md" color="neutral.400" mb={10} maxW="480px">
+          <Text textStyle="text/md" color="neutral.400" mb={10}>
             Connect your hardware wallet to securely link your Bitcoin holdings. Your private keys never leave your
             device.
           </Text>
