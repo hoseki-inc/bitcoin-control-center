@@ -447,7 +447,7 @@ The StartOS package uses the same Sentinel and Control Center builds. Packaging 
 
 - Node.js, pnpm, and npm
 - Docker 28.1 or later, with Buildx and support for multi-architecture builds
-- The StartOS `start-cli`
+- The StartOS `start-cli` 2.3.0 (pinned in CI)
 - `make`, `git`, and `jq`
 
 Follow the StartOS SDK installation documentation for your platform and make sure `start-cli`, Docker, and Buildx work before building.
