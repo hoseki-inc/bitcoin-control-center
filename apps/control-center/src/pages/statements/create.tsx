@@ -252,7 +252,7 @@ export function StatementCreatePage(): JSX.Element {
               <chakra.hr my={8} />
 
               <Accordion allowToggle>
-                <AccordionItem border="none">
+                <AccordionItem border="none" px={0}>
                   <AccordionButton px={0} py={1} _hover={{ bg: 'transparent' }}>
                     <HStack flex="1" alignItems="flex-start" gap={8} textAlign="left">
                       <Text

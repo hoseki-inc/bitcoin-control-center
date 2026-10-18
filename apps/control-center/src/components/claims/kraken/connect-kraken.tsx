@@ -96,7 +96,7 @@ export function ConnectKraken(): JSX.Element {
           onClose={() => {
             void navigate(successPath)
           }}
-          closeTitle={isReconnect ? 'Back to Account' : 'Go to My Holdings'}
+          closeTitle={isReconnect ? 'Back to Account' : 'Go to Accounts'}
           content={
             <VStack spacing={8}>
               <img src="/images/exchanges/kraken.svg" alt="Kraken" style={{ height: '64px' }} />
@@ -120,7 +120,7 @@ export function ConnectKraken(): JSX.Element {
                     void navigate(successPath)
                   }}
                 >
-                  {isReconnect ? 'Back to Account' : 'Go to My Holdings'}
+                  {isReconnect ? 'Back to Account' : 'Go to Accounts'}
                 </Button>
               </HStack>
             </VStack>

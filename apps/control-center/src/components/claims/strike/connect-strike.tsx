@@ -97,7 +97,7 @@ export function ConnectStrike(): JSX.Element {
           onClose={() => {
             void navigate(successPath)
           }}
-          closeTitle={isReconnect ? 'Back to Account' : 'Go to My Holdings'}
+          closeTitle={isReconnect ? 'Back to Account' : 'Go to Accounts'}
           content={
             <VStack spacing={8}>
               <img src="/images/exchanges/strike-icon.svg" alt="Strike" style={{ height: '64px' }} />
@@ -121,7 +121,7 @@ export function ConnectStrike(): JSX.Element {
                     void navigate(successPath)
                   }}
                 >
-                  {isReconnect ? 'Back to Account' : 'Go to My Holdings'}
+                  {isReconnect ? 'Back to Account' : 'Go to Accounts'}
                 </Button>
               </HStack>
             </VStack>

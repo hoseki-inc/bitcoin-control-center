@@ -48,7 +48,7 @@ it.each(StatementQuoteCurrencySchema.options)(
       errorMessage: null,
       txSource: 'public_mempool',
       progress: 0,
-      user: { name: null, email: null },
+      user: { name: null, address: null },
       integrator: null,
       userId: 'local',
     }

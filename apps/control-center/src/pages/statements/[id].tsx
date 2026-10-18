@@ -131,7 +131,7 @@ function StatementDetailsPageContent({ statementId }: { statementId: StatementId
         minW={0}
         w="full"
         overflowY="auto"
-        maxW={{ base: 'full', lg: '40%' }}
+        maxW={{ base: 'full', lg: 'min(40%, 480px)' }}
         py={6}
         px={{ base: 4, md: 8 }}
       >
@@ -144,9 +144,9 @@ function StatementDetailsPageContent({ statementId }: { statementId: StatementId
       </Stack>
       <Box
         height={{ base: 'auto', lg: VIEWPORT_BELOW_HEADER }}
-        flexBasis={{ base: 'auto', lg: '60%' }}
+        flex={{ base: 'none', lg: 1 }}
         minW={0}
-        width={{ base: 'full', lg: '60%' }}
+        width={{ base: 'full', lg: 'auto' }}
         bg="#F9F9F9"
       >
         <StatementViewer
@@ -176,6 +176,11 @@ function StatementSummary({
   statement: StatementDto
   headingRef: RefObject<HTMLHeadingElement>
 }) {
+  const contactLines = [statement.user.name, statement.user.address].flatMap((value) => {
+    const trimmed = value?.trim() ?? ''
+    return trimmed === '' ? [] : [trimmed]
+  })
+
   return (
     <Stack spacing={8}>
       <Stack gap={2}>
@@ -184,19 +189,19 @@ function StatementSummary({
         </Text>
         <Flex flexDirection="column" gap={4}>
           <HStack justifyContent="space-between" align="start" flexWrap="wrap" gap={4} overflowWrap="anywhere">
-            {statement.user.name !== null && statement.user.name !== '' && (
-              <Box>
-                <Text textStyle="text/sm" fontWeight="medium">
-                  Name
-                </Text>
-                <Text>{statement.user.name}</Text>
-              </Box>
-            )}
             <Box>
               <Text textStyle="text/sm" fontWeight="medium">
-                Email
+                Contact Details
               </Text>
-              <Text>{(statement.user.email?.length ?? 0) > 0 ? statement.user.email : 'N/A'}</Text>
+              {contactLines.length > 0 ? (
+                contactLines.map((line) => (
+                  <Text key={line} whiteSpace="pre-wrap">
+                    {line}
+                  </Text>
+                ))
+              ) : (
+                <Text>N/A</Text>
+              )}
             </Box>
             <Box>
               <Text textStyle="text/sm" fontWeight="medium">

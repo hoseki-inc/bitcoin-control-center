@@ -19,7 +19,7 @@ export function statementFixture(overrides: Partial<StatementDto> = {}): Stateme
     txSource: 'public_mempool',
     // Sentinel reports progress for every pending statement.
     progress: overrides.status === 'pending' ? 0 : null,
-    user: { name: null, email: null },
+    user: { name: null, address: null },
     integrator: null,
     userId: 'user',
     ...overrides,

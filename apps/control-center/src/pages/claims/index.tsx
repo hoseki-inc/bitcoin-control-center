@@ -181,8 +181,8 @@ export function ClaimsPage(): JSX.Element {
         {/* Header */}
         <Flex align="flex-start" justify="space-between" pb={9}>
           <Box>
-            <Heading textStyle="text/3xl" fontWeight="bold" color="neutral.900">
-              My Holdings
+            <Heading as="h1" textStyle="text/2xl" fontWeight="medium" color="neutral.900">
+              Accounts
             </Heading>
             {hasClaims && (
               <Flex align="center" gap={3} mt={2} flexWrap="wrap">
@@ -193,13 +193,17 @@ export function ClaimsPage(): JSX.Element {
                 <Text textStyle="text/sm" color="success.600">
                   ${totalUsd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </Text>
-                <Text color="neutral.200">·</Text>
-                <Flex align="center" gap={1}>
-                  <VerifiedBadge />
-                  <Text textStyle="text/sm" color="success.600">
-                    {verifiedCount} Verified
-                  </Text>
-                </Flex>
+                {verifiedCount > 0 && (
+                  <>
+                    <Text color="neutral.200">·</Text>
+                    <Flex align="center" gap={1}>
+                      <VerifiedBadge />
+                      <Text textStyle="text/sm" color="success.600">
+                        {verifiedCount} Verified
+                      </Text>
+                    </Flex>
+                  </>
+                )}
                 {pendingCount > 0 && (
                   <Text textStyle="text/sm" color="warning.600">
                     {pendingCount} Pending
@@ -398,7 +402,7 @@ function AccountCard({ claim, balance, totalBtcSats, isLoadingBalance }: Account
           <Box h="24px" w="120px" bg="neutral.50" borderRadius="4px" mx="auto" />
         ) : (
           <>
-            <Text fontFamily="mono" textStyle="text/lg" fontWeight="bold" color="neutral.900" letterSpacing="-0.02em">
+            <Text textStyle="text/lg" fontWeight="bold" color="neutral.900" letterSpacing="-0.02em">
               {btcAmount.toFixed(8)} BTC
             </Text>
             <Text textStyle="text/sm" fontWeight="medium" color="success.600">
@@ -420,7 +424,7 @@ function AccountCard({ claim, balance, totalBtcSats, isLoadingBalance }: Account
             transition="width 0.4s ease"
           />
         </Box>
-        <Text textStyle="label/xs" color="neutral.300" fontFamily="mono" whiteSpace="nowrap">
+        <Text textStyle="label/xs" color="neutral.300" whiteSpace="nowrap">
           {pct}%
         </Text>
       </Flex>
@@ -596,14 +600,14 @@ function ExchangeAccountCard({ account, totalBtcSats, btcUsdPrice }: ExchangeAcc
       {/* Balance */}
       <Stack gap={0} mx={4} mt={1}>
         {needsReconnect ? (
-          <Text fontFamily="mono" textStyle="text/lg" fontWeight="bold" color="neutral.400" letterSpacing="-0.02em">
+          <Text textStyle="text/lg" fontWeight="bold" color="neutral.400" letterSpacing="-0.02em">
             —
           </Text>
         ) : account.balance === null ? (
           <Box h="24px" w="120px" bg="neutral.50" borderRadius="4px" mx="auto" />
         ) : (
           <>
-            <Text fontFamily="mono" textStyle="text/lg" fontWeight="bold" color="neutral.900" letterSpacing="-0.02em">
+            <Text textStyle="text/lg" fontWeight="bold" color="neutral.900" letterSpacing="-0.02em">
               {btcAmount.toFixed(8)} BTC
             </Text>
             {usdAmount !== null && (
@@ -627,7 +631,7 @@ function ExchangeAccountCard({ account, totalBtcSats, btcUsdPrice }: ExchangeAcc
             transition="width 0.4s ease"
           />
         </Box>
-        <Text textStyle="label/xs" color="neutral.300" fontFamily="mono" whiteSpace="nowrap">
+        <Text textStyle="label/xs" color="neutral.300" whiteSpace="nowrap">
           {pct}%
         </Text>
       </Flex>
@@ -691,7 +695,7 @@ function ManualAccountCard({
 
       {/* Balance */}
       <Stack gap={0} mx={4} mt={1}>
-        <Text fontFamily="mono" textStyle="text/lg" fontWeight="bold" color="neutral.900" letterSpacing="-0.02em">
+        <Text textStyle="text/lg" fontWeight="bold" color="neutral.900" letterSpacing="-0.02em">
           {btcAmount.toFixed(8)} BTC
         </Text>
         {usdAmount !== null && (
@@ -713,7 +717,7 @@ function ManualAccountCard({
             transition="width 0.4s ease"
           />
         </Box>
-        <Text textStyle="label/xs" color="neutral.300" fontFamily="mono" whiteSpace="nowrap">
+        <Text textStyle="label/xs" color="neutral.300" whiteSpace="nowrap">
           {pct}%
         </Text>
       </Flex>
