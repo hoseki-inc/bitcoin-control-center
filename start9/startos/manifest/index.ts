@@ -24,24 +24,4 @@ export const manifest = setupManifest({
       arch: ['x86_64', 'aarch64'],
     },
   },
-  alerts: {
-    install: null,
-    update: null,
-    uninstall: null,
-    restore: null,
-    start: null,
-    stop: null,
-  },
-  dependencies: {
-    mempool: {
-      description: 'Required for Bitcoin prices and transaction details in statements.',
-      optional: false,
-      s9pk: null,
-    },
-    electrs: {
-      description: 'Required for on-chain Bitcoin data (address balances, transaction history).',
-      optional: false,
-      s9pk: null,
-    },
-  },
 })

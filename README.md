@@ -446,8 +446,8 @@ The browser production build uses same-origin `/trpc` URLs and is intended to be
 The StartOS package uses the same Sentinel and Control Center builds. Packaging requires:
 
 - Node.js, pnpm, and npm
-- Docker with Buildx and support for multi-architecture builds
-- The StartOS `start-cli`
+- Docker 28.1 or later, with Buildx and support for multi-architecture builds
+- The StartOS `start-cli` 2.3.0 (pinned in CI)
 - `make`, `git`, and `jq`
 
 Follow the StartOS SDK installation documentation for your platform and make sure `start-cli`, Docker, and Buildx work before building.
@@ -487,7 +487,7 @@ Version preparation and draft creation run from the default branch. Replace the 
 
 Store the permanent `STARTOS_DEV_KEY` only as a secret on the `release-signing` environment, never as a repository or organization secret. Before adding it, configure that environment to allow only `main` and `release/startos-*`, and restrict who can create or push those branches with a repository ruleset. Preserve the permanent developer key once installs rely on it. Only the isolated StartOS signing job ([startos-sign.yml](.github/workflows/startos-sign.yml)) uses the environment; it runs the pinned CLI installer and signing action without build or dependency code.
 
-Also set the environment variable `STARTOS_SIGNER_PUBKEY` to the key's 64-character hex public half. The job checks it before and after signing, and fails if it is configured but the private key is missing. Read the key with StartOS CLI 1.1.0 itself, which supports its PKCS#8 key format:
+Also set the environment variable `STARTOS_SIGNER_PUBKEY` to the key's 64-character hex public half. The job checks it before and after signing, and fails if it is configured but the private key is missing. Read the key with StartOS CLI 2.3.0 itself, which supports its PKCS#8 key format:
 
 ```bash
 start-cli --id-key-path /absolute/path/to/key.pem pubkey | sed '/^-----/d' | base64 --decode | tail -c 32 | od -An -tx1 -v | tr -d ' \n'

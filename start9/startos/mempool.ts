@@ -1,4 +1,5 @@
 import type { T } from '@start9labs/start-sdk'
+import { mempoolHostId, mempoolPort } from './dependencies'
 import { sdk } from './sdk'
 
 /** Resolve the mempool UI, which proxies its historical-price API. */
@@ -7,17 +8,15 @@ export async function resolveMempoolUrl(effects: T.Effects, override?: string | 
     return override
   }
   // Reactive lookup: absence returns null, rather than waiting for installation.
-  // StartOS can re-run main when the exported bridge address changes.
-  const localUrl = await sdk.serviceInterface
-    .get(
-      effects,
-      { packageId: 'mempool', id: 'webui' },
+  // StartOS re-runs main when the bridge address appears or changes.
+  const address = await sdk.host
+    .getBridgeAddress(effects, {
+      packageId: 'mempool',
+      hostId: mempoolHostId,
+      internalPort: mempoolPort,
       // Plain HTTP over the internal bridge; the TLS address uses a certificate Sentinel does not trust.
-      (service) =>
-        service?.addressInfo
-          ?.filter({ kind: 'bridge', predicate: (hostname) => !hostname.ssl && hostname.metadata.kind === 'ipv4' })
-          .format()[0] ?? null,
-    )
+      ssl: false,
+    })
     .const()
-  return localUrl ?? 'https://mempool.space'
+  return address == null ? 'https://mempool.space' : `http://${address}`
 }
