@@ -11,11 +11,12 @@ it('covers twelve calendar months ending today', () => {
   expect(getMonthlyChanges(points, Number.POSITIVE_INFINITY, 'UTC')).toHaveLength(12)
 })
 
-it('adds to the stack every month and never takes from it', () => {
+it('adds to the stack in most months and takes from it in two', () => {
   const points = sampleBalanceHistory(now)
   const changes = getMonthlyChanges(points, Number.POSITIVE_INFINITY, 'UTC')
-  expect(changes.every((month) => month.change > 0)).toBe(true)
-  expect(getFlowTotals(points).outBtc.isZero()).toBe(true)
+  expect(changes.filter((month) => month.change < 0)).toHaveLength(2)
+  expect(changes.filter((month) => month.change > 0)).toHaveLength(10)
+  expect(getFlowTotals(points).inBtc.gt(getFlowTotals(points).outBtc)).toBe(true)
 })
 
 it('keeps the most recent days for a shorter range', () => {

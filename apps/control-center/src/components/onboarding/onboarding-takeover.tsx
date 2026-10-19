@@ -181,11 +181,6 @@ export function OnboardingTakeover({
               <Box key={step.id} position="absolute" inset={0} sx={opacityReveal}>
                 {step.preview}
               </Box>
-              {step.sample && (
-                <Text position="absolute" top={4} right={5} textStyle="label/sm" color="neutral.500">
-                  Sample data
-                </Text>
-              )}
             </Box>
           </Box>
         </Flex>
