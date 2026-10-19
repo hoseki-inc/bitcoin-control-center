@@ -157,32 +157,52 @@ export function OnboardingTakeover({
           `radial-gradient(40% 40% at 88% 10%, color-mix(in srgb, ${orange} 16%, transparent) 0%, transparent 70%)`,
         ].join(', ')}
       >
+        {/* Phones get the whole screen: the preview over the gradient, with a sheet of text and
+            controls at the bottom within thumb reach. Larger screens float a card. */}
         <Flex
           direction="column"
           align="center"
           justify="center"
-          gap={{ base: 6, md: 8 }}
+          gap={{ base: 0, md: 8 }}
           minH="100dvh"
-          px={4}
-          py={{ base: 6, md: 10 }}
+          px={{ base: 0, md: 4 }}
+          py={{ base: 0, md: 10 }}
         >
-          <Logo />
+          <Box display={{ base: 'none', md: 'block' }}>
+            <Logo />
+          </Box>
           <Box
             display="grid"
             gridTemplateColumns={{ base: 'minmax(0, 1fr)', md: '5fr 6fr' }}
+            gridTemplateRows={{ base: 'minmax(0, 1fr) auto', md: 'minmax(0, 1fr)' }}
             w="full"
-            maxW="960px"
-            h={{ md: '560px' }}
-            bg="shades.0"
-            border="1px solid"
+            maxW={{ md: '960px' }}
+            // Short laptop screens shrink the card rather than scroll it.
+            h={{ base: '100dvh', md: 'clamp(400px, calc(100dvh - 144px), 560px)' }}
+            bg={{ md: 'shades.0' }}
+            borderStyle="solid"
+            borderWidth={{ base: 0, md: '1px' }}
             borderColor="neutral.200"
-            borderRadius="dialog"
-            boxShadow="floating"
+            borderRadius={{ md: 'dialog' }}
+            boxShadow={{ md: 'floating' }}
             overflow="hidden"
           >
-            <Flex direction="column" gap={8} p={{ base: 6, md: 10 }} minW={0}>
-              {/* One grid cell, so the outgoing and incoming text overlap as they cross. */}
-              <Box display="grid">
+            <Flex
+              direction="column"
+              gap={{ base: 6, md: 8 }}
+              p={{ base: 6, md: 10 }}
+              pb={{ base: 'max(24px, env(safe-area-inset-bottom))', md: 10 }}
+              minW={0}
+              bg="shades.0"
+              borderTopRadius={{ base: 'dialog', md: 0 }}
+              borderStyle="solid"
+              borderWidth={0}
+              borderTopWidth={{ base: '1px', md: 0 }}
+              borderColor="neutral.200"
+            >
+              {/* One grid cell, so the outgoing and incoming text overlap as they cross. On phones it
+                  keeps room for the longest step, so the preview above doesn't resize between steps. */}
+              <Box display="grid" minH={{ base: '8.5rem', md: 0 }}>
                 <AnimatePresence initial={false} custom={direction}>
                   <StepLayer key={step.id} custom={direction} variants={textTurn} gridArea="1 / 1">
                     <StepTitle>{step.title}</StepTitle>
@@ -199,7 +219,7 @@ export function OnboardingTakeover({
                 {!isFirst && (
                   <Button
                     variant="ghost"
-                    size="sm"
+                    size={{ base: 'md', md: 'sm' }}
                     onClick={() => {
                       goTo(index - 1)
                     }}
@@ -218,12 +238,12 @@ export function OnboardingTakeover({
                   <StepDots count={steps.length} current={index} />
                 </Flex>
                 <Flex gap={2} ms={{ base: 'auto', sm: 0 }}>
-                  <Button variant="ghost" size="sm" onClick={onSkip}>
+                  <Button variant="ghost" size={{ base: 'md', md: 'sm' }} onClick={onSkip}>
                     {isLast ? 'Not Now' : 'Skip'}
                   </Button>
                   <Button
                     ref={primaryRef}
-                    size="sm"
+                    size={{ base: 'md', md: 'sm' }}
                     onClick={() => {
                       if (isLast) {
                         onAddAccount()
@@ -237,28 +257,33 @@ export function OnboardingTakeover({
                 </Flex>
               </Flex>
             </Flex>
-            <Box
-              position="relative"
+            <Flex
+              direction="column"
               order={{ base: -1, md: 0 }}
-              h={{ base: '220px', md: 'auto' }}
-              bg="neutral.50"
+              minH={0}
+              pt={{ base: 'env(safe-area-inset-top)', md: 0 }}
+              bg={{ md: 'neutral.50' }}
               borderStyle="solid"
               borderColor="neutral.200"
               borderWidth={0}
               borderLeftWidth={{ md: '1px' }}
-              borderBottomWidth={{ base: '1px', md: 0 }}
               overflow="hidden"
               // A picture of the app, described by the text beside it. Only its charts answer the
               // pointer, and nothing in it takes keyboard focus.
               aria-hidden
               pointerEvents="none"
             >
-              <AnimatePresence initial={false} custom={direction}>
-                <StepLayer key={step.id} custom={direction} variants={previewTurn} position="absolute" inset={0}>
-                  {step.preview}
-                </StepLayer>
-              </AnimatePresence>
-            </Box>
+              <Box display={{ base: 'block', md: 'none' }} pt={5}>
+                <Logo />
+              </Box>
+              <Box position="relative" flex={1} minH={0}>
+                <AnimatePresence initial={false} custom={direction}>
+                  <StepLayer key={step.id} custom={direction} variants={previewTurn} position="absolute" inset={0}>
+                    {step.preview}
+                  </StepLayer>
+                </AnimatePresence>
+              </Box>
+            </Flex>
           </Box>
         </Flex>
       </ModalContent>
