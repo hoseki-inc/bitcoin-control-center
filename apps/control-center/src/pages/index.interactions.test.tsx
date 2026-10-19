@@ -30,6 +30,8 @@ const statement = statementFixture()
 const views: HomeViews = {
   AccumulationChart: () => createElement('div', null, 'Balance chart'),
   BitcoinPriceChart: () => createElement('section', null, 'Bitcoin Price'),
+  Onboarding: ({ accountCount }) =>
+    createElement('output', null, `Introduction for ${accountCount ?? 'unknown'} accounts`),
 }
 
 function fakeQuery<T>(data: T | undefined, isError = false) {
@@ -115,6 +117,21 @@ it('retries every failed holdings query and the statements from Try Again', asyn
   for (const query of Object.values(queries)) {
     expect(query.refetch).toHaveBeenCalledTimes(1)
   }
+})
+
+it.each([
+  ['every account list loaded empty', false, 'Introduction for 0 accounts'],
+  ['an account list failed', true, 'Introduction for unknown accounts'],
+])('tells the introduction the account count when %s', async (_label, claimsFailed, expected) => {
+  const container = await renderHome({
+    useStatements: () => fakeQuery<StatementDto[]>([]),
+    usePortfolio: () => fakeQuery(undefined),
+    useClaims: () => fakeQuery<unknown[]>(claimsFailed ? undefined : [], claimsFailed),
+    useExchanges: () => fakeQuery<unknown[]>([]),
+    useManual: () => fakeQuery<unknown[]>([]),
+    useEtfs: () => fakeQuery<unknown[]>([]),
+  })
+  expect(container.textContent).toContain(expected)
 })
 
 it('opens a recent statement from its View button', async () => {

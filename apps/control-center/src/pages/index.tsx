@@ -10,6 +10,7 @@ import { DashboardAmount } from '../components/dashboard/dashboard-typography'
 import { RecentStatements } from '../components/dashboard/recent-statements'
 import { StatMini } from '../components/dashboard/stat-mini'
 import { FiatAmountText } from '../components/fiat-amount-text'
+import { FirstRunOnboarding } from '../components/onboarding/first-run-onboarding'
 import { StatementsEmptyState } from '../components/statements/statements-empty-state'
 import { refetchWhileGenerating } from '../lib/statement-polling'
 import { type RouterOutput, trpc } from '../trpc'
@@ -107,6 +108,7 @@ export function HomePage({
       ) : (
         <StatementsEmptyState />
       )}
+      <views.Onboarding accountCount={accountCount} />
     </Stack>
   )
 }
@@ -211,11 +213,13 @@ const homeDataSource: HomeDataSource = {
 export interface HomeViews {
   AccumulationChart: typeof DefaultAccumulationChart
   BitcoinPriceChart: typeof DefaultBitcoinPriceChart
+  Onboarding: typeof FirstRunOnboarding
 }
 
 const homeViews: HomeViews = {
   AccumulationChart: DefaultAccumulationChart,
   BitcoinPriceChart: DefaultBitcoinPriceChart,
+  Onboarding: FirstRunOnboarding,
 }
 
 interface HomeData {
