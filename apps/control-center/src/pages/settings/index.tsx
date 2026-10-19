@@ -19,7 +19,9 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { getQueryKey } from '@trpc/react-query'
 import { CircleCheckIcon } from 'lucide-react'
 import { useRef, useState } from 'react'
+import { useNavigate } from 'react-router'
 import { toast } from 'sonner'
+import { OnboardingTakeover } from '../../components/onboarding/onboarding-takeover'
 import { useLocalSetting } from '../../hooks/use-local-settings'
 import { isDesktop } from '../../mode'
 import { type RouterOutput, baseTrpc, trpc } from '../../trpc'
@@ -97,11 +99,63 @@ export function SettingsPage({ desktop = isDesktop }: { desktop?: boolean }): JS
           </Box>
         </SimpleGrid>
         <SecuritySettings />
+        <IntroductionSettings desktop={desktop} />
         <PriceSourceSettings />
         {desktop && <DesktopStatementSource />}
         {desktop && <ElectrumSettings />}
       </Stack>
     </Box>
+  )
+}
+
+function IntroductionSettings({ desktop }: { desktop: boolean }): JSX.Element {
+  const [isOpen, setIsOpen] = useState(false)
+
+  return (
+    <SimpleGrid columns={{ base: 1, md: 2 }} spacing={{ base: 5, md: 10 }}>
+      <Box>
+        <Text as="h2" textStyle="text/md" fontWeight="semibold" color="neutral.900">
+          Introduction
+        </Text>
+        <Text mt={2} textStyle="text/sm" color="neutral.600" maxW="32ch">
+          A quick tour of what Control Center does and how your data is handled.
+        </Text>
+      </Box>
+      <Box>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            setIsOpen(true)
+          }}
+        >
+          View Introduction
+        </Button>
+      </Box>
+      {isOpen && (
+        <IntroductionReplay
+          desktop={desktop}
+          onClose={() => {
+            setIsOpen(false)
+          }}
+        />
+      )}
+    </SimpleGrid>
+  )
+}
+
+/** Shows the introduction again without changing the choice saved on first run. */
+function IntroductionReplay({ desktop, onClose }: { desktop: boolean; onClose: () => void }): JSX.Element {
+  const navigate = useNavigate()
+  return (
+    <OnboardingTakeover
+      isOpen
+      desktop={desktop}
+      onSkip={onClose}
+      onAddAccount={() => {
+        void navigate('/accounts/add')
+      }}
+    />
   )
 }
 
