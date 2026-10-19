@@ -2,6 +2,7 @@
 import { TestChakraProvider as ChakraProvider } from '@hoseki/packages/testing/chakra-provider'
 import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
+import { MemoryRouter } from 'react-router'
 import { type Mock, assert, expect, it, onTestFinished, vi } from 'vitest'
 import { OnboardingTakeover } from './onboarding-takeover'
 
@@ -23,6 +24,26 @@ const browser = await vi.hoisted(async () => {
 async function renderTakeover(desktop = false): Promise<{ onSkip: Mock<() => void>; onAddAccount: Mock<() => void> }> {
   const dom = browser.acquire()
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+  // The previews draw the app's charts, which watch their size and the reduced-motion setting.
+  const matchMedia = (media: string): MediaQueryList => ({
+    media,
+    matches: true,
+    onchange: null,
+    addListener: () => undefined,
+    removeListener: () => undefined,
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+    dispatchEvent: () => true,
+  })
+  dom.window.matchMedia = matchMedia
+  vi.stubGlobal('matchMedia', matchMedia)
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      public observe = vi.fn()
+      public disconnect = vi.fn()
+    },
+  )
   const onSkip = vi.fn<() => void>()
   const onAddAccount = vi.fn<() => void>()
   const container = document.createElement('div')
@@ -42,15 +63,22 @@ async function renderTakeover(desktop = false): Promise<{ onSkip: Mock<() => voi
       createElement(
         ChakraProvider,
         null,
-        createElement(OnboardingTakeover, { isOpen: true, onSkip, onAddAccount, desktop }),
+        createElement(
+          MemoryRouter,
+          null,
+          createElement(OnboardingTakeover, { isOpen: true, onSkip, onAddAccount, desktop }),
+        ),
       ),
     )
   })
   return { onSkip, onAddAccount }
 }
 
+/** The dialog's own buttons, not the ones drawn in the hidden app preview. */
 function buttonNames(): string[] {
-  return Array.from(document.body.querySelectorAll('[role="dialog"] button')).map((item) => item.textContent)
+  return Array.from(document.body.querySelectorAll('[role="dialog"] button'))
+    .filter((item) => item.closest('[aria-hidden="true"]') === null)
+    .map((item) => item.textContent)
 }
 
 async function click(name: string): Promise<void> {
@@ -108,14 +136,14 @@ it('closes from Escape', async () => {
 })
 
 it.each([
-  [true, 'saved on this computer', 'This computer'],
-  [false, 'saved on your server', 'Your server'],
-])('describes where data lives for desktop %s', async (desktop, body, preview) => {
+  [true, 'saved on this computer'],
+  [false, 'saved on your server'],
+])('describes where data lives for desktop %s', async (desktop, body) => {
   await renderTakeover(desktop)
   for (let step = 1; step < 4; step++) {
     await click('Continue')
   }
   expect(heading()).toBe('Your data stays with you')
   expect(document.body.textContent).toContain(body)
-  expect(document.body.textContent).toContain(preview)
+  expect(document.body.textContent).toContain('Statement data')
 })

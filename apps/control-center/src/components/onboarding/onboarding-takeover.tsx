@@ -169,11 +169,23 @@ export function OnboardingTakeover({
               borderLeftWidth={{ md: '1px' }}
               borderBottomWidth={{ base: '1px', md: 0 }}
               overflow="hidden"
+              // A picture of the app: its charts and controls can't be focused or used here.
               aria-hidden
+              ref={(element: HTMLDivElement | null) => {
+                if (element) {
+                  element.inert = true
+                }
+              }}
+              pointerEvents="none"
             >
               <Box key={step.id} position="absolute" inset={0} sx={opacityReveal}>
                 {step.preview}
               </Box>
+              {step.sample && (
+                <Text position="absolute" top={4} right={5} textStyle="label/sm" color="neutral.500">
+                  Sample data
+                </Text>
+              )}
             </Box>
           </Box>
         </Flex>

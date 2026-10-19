@@ -1,179 +1,122 @@
-import { Box, Flex, Grid, HStack, Icon, Stack, type SystemStyleObject, Text, chakra, useToken } from '@chakra-ui/react'
+import {
+  Box,
+  type BoxProps,
+  Checkbox,
+  Flex,
+  Grid,
+  HStack,
+  IconButton,
+  RadioGroup,
+  SimpleGrid,
+  Stack,
+  type SystemStyleObject,
+  Text,
+  chakra,
+  useToken,
+} from '@chakra-ui/react'
 import { HOSEKI_ASSETS_CDN_URL } from '@hoseki/packages/constants'
 import { motion } from '@hoseki/packages/ui/design-system/animations/motion'
-import {
-  ArrowLeftRightIcon,
-  CheckIcon,
-  FileTextIcon,
-  type LucideIcon,
-  MonitorIcon,
-  PencilLineIcon,
-  ServerIcon,
-  TrendingUpIcon,
-  UsersRoundIcon,
-  XIcon,
-} from 'lucide-react'
-import type { ReactNode } from 'react'
-import { formatBitcoin } from '../../lib/bitcoin-display'
+import { Header, Menu } from '@hoseki/packages/ui/prove-verify-ui/layout/header'
+import { Logo } from '@hoseki/packages/ui/prove-verify-ui/logo'
+import { StatusBadge } from '@hoseki/packages/ui/prove-verify-ui/status-badge'
+import Decimal from 'decimal.js'
+import { SettingsIcon } from 'lucide-react'
+import { type ReactNode, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { ConnectionRowContent, LIVENESS_COLORS, connectionSummary } from '../../pages/settings/electrum-settings'
+import { STATEMENT_SOURCES, StatementSourceOption } from '../../pages/settings/statement-source-settings'
+import { BitcoinAmount } from '../bitcoin-amount'
+import { ManualEntryIcon, MultisigImage } from '../claims/account-type-media'
+import { AccumulationChart } from '../dashboard-charts/accumulation-chart'
+import { type BalanceDataPoint, getFlowTotals } from '../dashboard-charts/balance-history'
+import { MonthlyNetChangeChart } from '../dashboard-charts/monthly-net-change-chart'
+import { NetAccumulatedSummary } from '../dashboard-charts/net-accumulated-summary'
+import { DashboardAmount } from '../dashboard/dashboard-typography'
+import { PortfolioSummary } from '../dashboard/portfolio-summary'
+import { FiatAmountText } from '../fiat-amount-text'
+import { SAMPLE_BTC_PRICE, lastDays, sampleBalanceHistory } from './sample-history'
 
-// Small, static stand-ins for the app's screens. They show sample numbers, never the user's.
+// The app's own components with sample data, arranged as floating cards. Never the user's data.
 
-const LOGOS = {
-  trezor: `${HOSEKI_ASSETS_CDN_URL}/hardware-wallets/trezor.svg`,
-  coldcard: `${HOSEKI_ASSETS_CDN_URL}/hardware-wallets/coldcard.svg`,
-  ledger: `${HOSEKI_ASSETS_CDN_URL}/hardware-wallets/ledger.svg`,
-  keystone: '/images/hardware-wallets/keystone-logo.svg',
-  coinbase: '/images/exchanges/coinbase-wordmark.svg',
-  kraken: '/images/exchanges/kraken-wordmark.svg',
-  robinhood: '/images/exchanges/robinhood-lockup.png',
-  strike: '/images/exchanges/strike-logo.svg',
-} as const
+/**
+ * Lays out a fixed-size scene and scales it to fit the preview pane, so the app's components keep
+ * their real proportions. A short pane, on narrow screens, shows the top of the scene at full width.
+ */
+function Stage({ width, height, children }: { width: number; height: number; children: ReactNode }): JSX.Element {
+  const paneRef = useRef<HTMLDivElement>(null)
+  const [fit, setFit] = useState({ scale: 1, top: 0 })
 
-const ICONS = {
-  coinbase: '/images/exchanges/coinbase.svg',
-  kraken: '/images/exchanges/kraken.svg',
-  robinhood: '/images/exchanges/robinhood-icon.svg',
-  strike: '/images/exchanges/strike-icon.svg',
-  keystone: '/images/hardware-wallets/keystone-logo-mini.svg',
-} as const
+  useLayoutEffect(() => {
+    const pane = paneRef.current
+    if (pane === null || typeof ResizeObserver === 'undefined') {
+      return
+    }
+    const fitScene = (): void => {
+      const { width: paneWidth, height: paneHeight } = pane.getBoundingClientRect()
+      if (paneHeight < height / 2) {
+        setFit({ scale: paneWidth / width, top: 0 })
+        return
+      }
+      const scale = Math.min(paneWidth / width, paneHeight / height)
+      setFit({ scale, top: (paneHeight - height * scale) / 2 })
+    }
+    fitScene()
+    const observer = new ResizeObserver(fitScene)
+    observer.observe(pane)
+    return () => {
+      observer.disconnect()
+    }
+  }, [width, height])
 
-/** A window into the app, set into the preview pane so it runs off the right and bottom edges. */
-function PreviewWindow({
-  title,
-  sample = false,
-  children,
-}: {
-  title: string
-  sample?: boolean
-  children: ReactNode
-}): JSX.Element {
   return (
-    <Flex
-      direction="column"
+    <Box ref={paneRef} position="absolute" inset={0} overflow="hidden">
+      <Box
+        position="absolute"
+        top={`${fit.top}px`}
+        left="50%"
+        w={`${width}px`}
+        h={`${height}px`}
+        transform={`translateX(-50%) scale(${fit.scale})`}
+        transformOrigin="top center"
+      >
+        {children}
+      </Box>
+    </Box>
+  )
+}
+
+/** A card placed in a scene. Cards in front float with the dialog shadow. */
+function Card({ front = false, ...props }: BoxProps & { front?: boolean }): JSX.Element {
+  return (
+    <Box
       position="absolute"
-      top={{ base: 6, md: 14 }}
-      left={{ base: 6, md: 10 }}
-      right={0}
-      bottom={0}
       bg="shades.0"
       border="1px solid"
       borderColor="neutral.200"
-      borderRightWidth={0}
-      borderBottomWidth={0}
-      borderTopLeftRadius="panel"
-      overflow="hidden"
-    >
-      <Flex
-        align="center"
-        justify="space-between"
-        gap={3}
-        px={5}
-        py={3}
-        borderBottom="1px solid"
-        borderColor="neutral.200"
-      >
-        <Text textStyle="label/md" fontWeight="medium" color="neutral.900">
-          {title}
-        </Text>
-        {sample && (
-          <Text textStyle="label/sm" color="neutral.600" bg="neutral.100" px={2} py={1} borderRadius="full">
-            Sample
-          </Text>
-        )}
-      </Flex>
-      <Box flex={1} p={5}>
-        {children}
-      </Box>
-    </Flex>
+      borderRadius="panel"
+      boxShadow={front ? 'floating' : undefined}
+      {...props}
+    />
   )
 }
 
-// ─── Your Bitcoin, in one place ─────────────────────────────────────────────
-
-/** Month-end balances in BTC: steady saving with a couple of dips. */
-const SAMPLE_BALANCES = [0.63, 0.64, 0.662, 0.655, 0.7, 0.718, 0.74, 0.731, 0.8, 0.832, 0.861, 0.912, 0.950532]
-const CHART_WIDTH = 320
-const CHART_HEIGHT = 120
-
-function chartPoints(values: readonly number[]): Array<[number, number]> {
-  const min = Math.min(...values)
-  const range = Math.max(...values) - min
-  return values.map((value, index) => [
-    (index / (values.length - 1)) * CHART_WIDTH,
-    // Leave room above the peak and below the low point.
-    CHART_HEIGHT - 8 - ((value - min) / range) * (CHART_HEIGHT - 24),
-  ])
+function btcAt(point: BalanceDataPoint | undefined): Decimal {
+  return new Decimal(point?.totalBalance ?? 0).div(100_000_000)
 }
 
-function SampleChart(): JSX.Element {
-  const [lineColor] = useToken('colors', ['success.500'])
-  const points = chartPoints(SAMPLE_BALANCES)
-  const line = points.map(([x, y], index) => `${index === 0 ? 'M' : 'L'}${x.toFixed(1)} ${y.toFixed(1)}`).join(' ')
-  const area = `${line} L${CHART_WIDTH} ${CHART_HEIGHT} L0 ${CHART_HEIGHT} Z`
-
-  return (
-    <chakra.svg
-      viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
-      preserveAspectRatio="none"
-      w="full"
-      h={{ base: '72px', md: '200px' }}
-      mt={6}
-      overflow="visible"
-    >
-      <defs>
-        <linearGradient id="onboarding-sample-area" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={lineColor} stopOpacity={0.15} />
-          <stop offset="95%" stopColor={lineColor} stopOpacity={0} />
-        </linearGradient>
-      </defs>
-      <path d={area} fill="url(#onboarding-sample-area)" />
-      <path d={line} fill="none" stroke={lineColor} strokeWidth={2} vectorEffect="non-scaling-stroke" />
-    </chakra.svg>
-  )
+function sampleUsd(btc: Decimal.Value): string {
+  return new Decimal(btc)
+    .mul(SAMPLE_BTC_PRICE)
+    .toNumber()
+    .toLocaleString('en-US', { style: 'currency', currency: 'USD' })
 }
 
-export function BalancePreview(): JSX.Element {
-  const first = SAMPLE_BALANCES[0] ?? 0
-  const last = SAMPLE_BALANCES[SAMPLE_BALANCES.length - 1] ?? 0
-
-  return (
-    <PreviewWindow title="Home" sample>
-      <Text textStyle="overline/sm" color="neutral.600">
-        Total holdings
-      </Text>
-      <Text textStyle="amount/compact" fontWeight="medium" color="neutral.900" mt={1}>
-        {formatBitcoin(last)}
-      </Text>
-      <Text textStyle="text/sm" color="success.700" mt={1}>
-        +{formatBitcoin(last - first)} in 12 months
-      </Text>
-      <SampleChart />
-    </PreviewWindow>
-  )
+function useSampleHistory(): BalanceDataPoint[] {
+  return useMemo(() => sampleBalanceHistory(new Date()), [])
 }
-
-// ─── Bring in what you already use ──────────────────────────────────────────
-
-type AccountType = { name: string } & ({ logo: string; icon?: never } | { icon: LucideIcon; logo?: never })
-
-const ACCOUNT_TYPES: AccountType[] = [
-  { name: 'Trezor', logo: LOGOS.trezor },
-  { name: 'COLDCARD', logo: LOGOS.coldcard },
-  { name: 'Ledger', logo: LOGOS.ledger },
-  { name: 'Keystone', logo: LOGOS.keystone },
-  { name: 'Multisig', icon: UsersRoundIcon },
-  { name: 'Coinbase', logo: LOGOS.coinbase },
-  { name: 'Kraken', logo: LOGOS.kraken },
-  { name: 'Robinhood', logo: LOGOS.robinhood },
-  { name: 'Strike', logo: LOGOS.strike },
-  { name: 'Manual Entry', icon: PencilLineIcon },
-]
-
-const TILE_STAGGER_MS = 40
 
 /** Tiles fade and settle in one after another; with reduced motion they are simply there. */
 function popIn(index: number): SystemStyleObject {
-  const delay = index * TILE_STAGGER_MS
+  const delay = index * 40
   return {
     opacity: 1,
     transform: 'none',
@@ -186,226 +129,288 @@ function popIn(index: number): SystemStyleObject {
   }
 }
 
+// ─── Your Bitcoin, in one place ─────────────────────────────────────────────
+
+/** The balance over a year, with the Portfolio page's monthly stacking card floating over it. */
+export function BalancePreview(): JSX.Element {
+  const history = useSampleHistory()
+  const total = btcAt(history.at(-1))
+  const { inBtc, outBtc } = getFlowTotals(history)
+
+  return (
+    <Stage width={600} height={680}>
+      <Card top="24px" left="24px" w="440px" p={6}>
+        <DashboardAmount>
+          <BitcoinAmount btc={total} />
+        </DashboardAmount>
+        <FiatAmountText mt={1}>{sampleUsd(total)}</FiatAmountText>
+        <Box mt={6}>
+          <AccumulationChart data={history} hasActivity isUp startLabel="month" />
+        </Box>
+      </Card>
+      <Card front top="304px" left="76px" w="500px" p={6}>
+        <NetAccumulatedSummary
+          ready
+          inBtc={inBtc}
+          outBtc={outBtc}
+          monthsInRange={12}
+          btcPrice={SAMPLE_BTC_PRICE}
+          caption="Last 12 months"
+          isUpdating={false}
+          isFetching={false}
+        />
+        <MonthlyNetChangeChart data={history} />
+      </Card>
+    </Stage>
+  )
+}
+
+// ─── Bring in what you already use ──────────────────────────────────────────
+
+function Wordmark({ src }: { src: string }): JSX.Element {
+  return <chakra.img src={src} alt="" h="20px" maxW="100px" objectFit="contain" />
+}
+
+/** The same choices, pictures and names as Add Account. */
+const ACCOUNT_TYPES: Array<{ name: string; media: ReactNode }> = [
+  { name: 'Trezor', media: <Wordmark src={`${HOSEKI_ASSETS_CDN_URL}/hardware-wallets/trezor.svg`} /> },
+  { name: 'COLDCARD', media: <Wordmark src={`${HOSEKI_ASSETS_CDN_URL}/hardware-wallets/coldcard.svg`} /> },
+  { name: 'Ledger', media: <Wordmark src={`${HOSEKI_ASSETS_CDN_URL}/hardware-wallets/ledger.svg`} /> },
+  { name: 'Keystone', media: <Wordmark src="/images/hardware-wallets/keystone-logo.svg" /> },
+  { name: 'Multisig', media: MultisigImage },
+  { name: 'Coinbase', media: <Wordmark src="/images/exchanges/coinbase-wordmark.svg" /> },
+  { name: 'Kraken', media: <Wordmark src="/images/exchanges/kraken-wordmark.svg" /> },
+  { name: 'Robinhood', media: <Wordmark src="/images/exchanges/robinhood-lockup.png" /> },
+  { name: 'Strike', media: <Wordmark src="/images/exchanges/strike-logo.svg" /> },
+  { name: 'Manual Entry', media: <ManualEntryIcon /> },
+]
+
 export function AccountTypesPreview(): JSX.Element {
   return (
-    <PreviewWindow title="Connect New Account">
-      <Grid templateColumns="repeat(3, minmax(0, 1fr))" gap={2}>
-        {ACCOUNT_TYPES.map((type, index) => (
-          <Stack
-            key={type.name}
-            align="center"
-            gap={2}
-            px={2}
-            py={3}
-            border="1px solid"
-            borderColor="neutral.200"
-            borderRadius="control"
-            sx={popIn(index)}
-          >
-            <Flex h="18px" align="center" justify="center">
-              {type.logo !== undefined ? (
-                <chakra.img src={type.logo} alt="" h="18px" maxW="72px" objectFit="contain" />
-              ) : (
-                <Icon as={type.icon} boxSize="18px" color="neutral.600" />
-              )}
-            </Flex>
-            <Text textStyle="label/sm" fontWeight="medium" color="neutral.900" noOfLines={1}>
-              {type.name}
-            </Text>
-          </Stack>
-        ))}
-      </Grid>
-    </PreviewWindow>
+    <Stage width={600} height={640}>
+      <Card top="32px" left="24px" w="552px" p={6}>
+        <Text as="h3" textStyle="text/2xl" fontWeight="medium" color="neutral.900">
+          Connect New Account
+        </Text>
+        <Grid templateColumns="repeat(3, minmax(0, 1fr))" gap={3} mt={6}>
+          {ACCOUNT_TYPES.map(({ name, media }, index) => (
+            <Stack
+              key={name}
+              align="center"
+              gap={4}
+              px={3}
+              py={5}
+              border="1px solid"
+              borderColor="neutral.200"
+              borderRadius="4px"
+              sx={popIn(index)}
+            >
+              <Flex justify="center" align="center" h="30px">
+                {media}
+              </Flex>
+              <Text textStyle="label/md" fontWeight="medium">
+                {name}
+              </Text>
+            </Stack>
+          ))}
+        </Grid>
+      </Card>
+    </Stage>
   )
 }
 
 // ─── It can see, not spend ──────────────────────────────────────────────────
 
-function SampleAccount({
-  logo,
-  name,
-  access,
-  balance,
-}: {
-  logo: string
-  name: string
-  access: string
-  balance: number
-}): JSX.Element {
-  return (
-    <Flex align="center" gap={3} p={3} border="1px solid" borderColor="neutral.200" borderRadius="control">
-      <chakra.img src={logo} alt="" boxSize={8} p={1.5} bg="neutral.50" borderRadius="control" objectFit="contain" />
-      <Box flex={1} minW={0}>
-        <Text textStyle="label/md" fontWeight="medium" color="neutral.900">
-          {name}
-        </Text>
-        <Text textStyle="text/xs" color="neutral.600">
-          {access}
-        </Text>
-      </Box>
-      <Text textStyle="label/md" color="neutral.900" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-        {formatBitcoin(balance)}
-      </Text>
-    </Flex>
-  )
-}
+const KRAKEN_BTC = 0.330532
+const KRAKEN_SHARE = '34.8'
 
-const ACCESS = [
-  { label: 'View balances and history', allowed: true },
-  { label: 'Trade', allowed: false },
-  { label: 'Send or withdraw', allowed: false },
+/** What the Kraken connect form asks for: read access only. */
+const KRAKEN_PERMISSIONS = [
+  { label: 'Query Funds', granted: true },
+  { label: 'Query Ledger Entries', granted: true },
+  { label: 'Create & Modify Orders', granted: false },
+  { label: 'Withdraw Funds', granted: false },
 ]
 
-export function WatchOnlyPreview(): JSX.Element {
+/** A connected exchange as the Accounts page shows it, with the read-only key it was added with. */
+export function PermissionsPreview(): JSX.Element {
   return (
-    <PreviewWindow title="Accounts" sample>
-      <Stack gap={2}>
-        <SampleAccount logo={ICONS.keystone} name="Keystone" access="Watch-only" balance={0.62} />
-        <SampleAccount logo={ICONS.kraken} name="Kraken" access="Read-only key" balance={0.330532} />
-      </Stack>
-      <Text textStyle="overline/sm" color="neutral.600" mt={6} mb={2}>
-        Control Center can
-      </Text>
-      <Stack gap={0}>
-        {ACCESS.map(({ label, allowed }) => (
-          <HStack key={label} gap={3} py={2} borderBottom="1px solid" borderColor="neutral.100">
-            <Icon
-              as={allowed ? CheckIcon : XIcon}
-              boxSize={4}
-              color={allowed ? 'success.600' : 'neutral.400'}
-              strokeWidth={2.5}
-            />
-            <Text
-              textStyle="text/sm"
-              color={allowed ? 'neutral.900' : 'neutral.500'}
-              textDecoration={allowed ? undefined : 'line-through'}
-            >
-              {label}
+    <Stage width={500} height={520}>
+      {/* Matches ExchangeAccountCard on the Accounts page. */}
+      <Card top="40px" left="24px" w="248px" p={2} pb={5} borderRadius="md" textAlign="center">
+        <HStack>
+          <StatusBadge status="success" label="Connected" size="sm" ml="auto" />
+        </HStack>
+        <Flex justify="center" align="center" h="30px" my={2}>
+          <chakra.img src="/images/exchanges/kraken.svg" alt="" h="30px" />
+        </Flex>
+        <Text textStyle="label/md" fontWeight="medium" color="neutral.600">
+          Kraken
+        </Text>
+        <Stack gap={0} mx={4} mt={1}>
+          <Text textStyle="text/lg" fontWeight="bold" color="neutral.900" letterSpacing="-0.02em">
+            {KRAKEN_BTC.toFixed(8)} BTC
+          </Text>
+          <Text textStyle="text/sm" fontWeight="medium" color="success.600">
+            {sampleUsd(KRAKEN_BTC)}
+          </Text>
+        </Stack>
+        <Flex align="center" gap={2.5} mx={4} mt={1}>
+          <Box flex={1} h="3px" bg="neutral.50" borderRadius="2px" overflow="hidden">
+            <Box h="100%" w={`${KRAKEN_SHARE}%`} bg="neutral.900" borderRadius="2px" opacity={0.2} />
+          </Box>
+          <Text textStyle="label/xs" color="neutral.300">
+            {KRAKEN_SHARE}%
+          </Text>
+        </Flex>
+      </Card>
+      <Card front top="196px" left="156px" w="320px" p={6}>
+        <HStack gap={3}>
+          <chakra.img src="/images/exchanges/kraken.svg" alt="" boxSize={8} />
+          <Box>
+            <Text textStyle="label/md" fontWeight="semibold" color="neutral.900">
+              API key permissions
             </Text>
-          </HStack>
-        ))}
-      </Stack>
-    </PreviewWindow>
+            <Text textStyle="text/xs" color="neutral.600" mt={1}>
+              Kraken
+            </Text>
+          </Box>
+        </HStack>
+        <Stack gap={3} mt={5}>
+          {KRAKEN_PERMISSIONS.map(({ label, granted }) => (
+            <Checkbox key={label} size="sm" colorScheme="orange" isChecked={granted} isReadOnly>
+              <Text textStyle="text/sm" color={granted ? 'neutral.900' : 'neutral.500'}>
+                {label}
+              </Text>
+            </Checkbox>
+          ))}
+        </Stack>
+        <Text textStyle="text/xs" color="neutral.600" mt={5}>
+          Only your Bitcoin balance and transaction history are read.
+        </Text>
+      </Card>
+    </Stage>
   )
 }
 
 // ─── Your data stays with you ───────────────────────────────────────────────
 
-interface Source {
-  icon: LucideIcon
-  name: string
-  detail?: string
-  purpose: string
+/** A saved-connection row as Settings lists it. */
+function ConnectionRow({ selected = false, children }: { selected?: boolean; children: ReactNode }): JSX.Element {
+  const [selectedEdge] = useToken('colors', ['neutral.900'])
+  return (
+    <Flex
+      direction="column"
+      align="flex-start"
+      py={3}
+      px={3}
+      borderBottomWidth="1px"
+      bg={selected ? 'neutral.50' : undefined}
+      boxShadow={selected ? `inset 2px 0 0 ${selectedEdge}` : undefined}
+    >
+      {children}
+    </Flex>
+  )
 }
 
-const DESKTOP_SOURCES: Source[] = [
-  { icon: ServerIcon, name: 'Electrum server', detail: 'Public, or your own node', purpose: 'Balances' },
-  { icon: ArrowLeftRightIcon, name: 'Exchanges you connect', purpose: 'Balances' },
-  { icon: TrendingUpIcon, name: 'Price source', purpose: 'Bitcoin price' },
-  { icon: FileTextIcon, name: 'mempool.space', purpose: 'Statements' },
-]
-
-const SERVER_SOURCES: Source[] = [
-  { icon: ServerIcon, name: "Your node's Electrum server", purpose: 'Balances' },
-  { icon: ArrowLeftRightIcon, name: 'Exchanges you connect', purpose: 'Balances' },
-  { icon: TrendingUpIcon, name: 'Price source', purpose: 'Bitcoin price' },
-]
-
-export function DataSourcesPreview({ desktop }: { desktop: boolean }): JSX.Element {
-  const sources = desktop ? DESKTOP_SOURCES : SERVER_SOURCES
-
+/** Settings' Electrum connection and statement lookups, as they look with your own node. */
+export function ConnectionsPreview(): JSX.Element {
   return (
-    <PreviewWindow title="Your data">
-      <Flex align="center" gap={3} p={3} border="1px solid" borderColor="neutral.200" borderRadius="control">
-        <Flex boxSize={8} align="center" justify="center" bg="secondary.400" borderRadius="control" flexShrink={0}>
-          <Icon as={desktop ? MonitorIcon : ServerIcon} boxSize={4} color="neutral.900" />
-        </Flex>
-        <Box minW={0}>
-          <Text textStyle="label/md" fontWeight="medium" color="neutral.900">
-            {desktop ? 'This computer' : 'Your server'}
-          </Text>
-          <Text textStyle="text/xs" color="neutral.600">
-            Accounts, history and statements
-          </Text>
-        </Box>
-      </Flex>
-      <Text textStyle="overline/sm" color="neutral.600" mt={6} mb={1}>
-        Reads from
-      </Text>
-      <Stack gap={0}>
-        {sources.map(({ icon, name, detail, purpose }) => (
-          <Flex key={name} align="center" gap={3} py={2} borderBottom="1px solid" borderColor="neutral.100">
-            <Icon as={icon} boxSize={4} color="neutral.600" flexShrink={0} />
-            <Box flex={1} minW={0}>
-              <Text textStyle="text/sm" color="neutral.900">
-                {name}
-              </Text>
-              {detail !== undefined && (
-                <Text textStyle="text/xs" color="neutral.600">
-                  {detail}
-                </Text>
-              )}
-            </Box>
-            <Text textStyle="text/xs" color="neutral.600" flexShrink={0}>
-              {purpose}
-            </Text>
-          </Flex>
-        ))}
-      </Stack>
-      {desktop && (
-        <Text textStyle="text/xs" color="neutral.600" mt={3}>
-          You can change these in Settings.
+    <Stage width={600} height={660}>
+      <Card top="32px" left="24px" w="460px" p={6}>
+        <Text textStyle="label/md" fontWeight="semibold">
+          Electrum Server
         </Text>
-      )}
-    </PreviewWindow>
+        <Text textStyle="text/sm" color="neutral.600" mt={1}>
+          Configure your Bitcoin Electrum server connection. Use your own server for maximum privacy.
+        </Text>
+        <Box mt={5}>
+          <HStack justify="space-between" px={3} pb={2} borderBottomWidth="1px">
+            <Text textStyle="label/sm">Saved connections</Text>
+            <Text textStyle="text/xs" color="neutral.600">
+              2 of 5
+            </Text>
+          </HStack>
+          <ConnectionRow selected>
+            <ConnectionRowContent nickname="Home node" liveness="connected" torEnabled={false} />
+          </ConnectionRow>
+          <ConnectionRow>
+            <ConnectionRowContent nickname="Blockstream" liveness={null} torEnabled={false} />
+          </ConnectionRow>
+        </Box>
+        <Stack gap={0} mt={5}>
+          <Text textStyle="label/md" fontWeight="semibold">
+            Home node
+          </Text>
+          <Text textStyle="text/xs" color={`${LIVENESS_COLORS.connected}.700`}>
+            {connectionSummary('connected', { host: '192.168.1.20', port: 50001, protocol: 'tcp' }, false)}
+          </Text>
+        </Stack>
+      </Card>
+      <Card front top="344px" left="120px" w="456px" p={6}>
+        <Text textStyle="text/md" fontWeight="semibold" color="neutral.900">
+          Statement data
+        </Text>
+        <Text textStyle="text/sm" color="neutral.500" mt={3} mb={2}>
+          Look up transactions on
+        </Text>
+        <RadioGroup value="mempool">
+          <SimpleGrid columns={2} spacing={3}>
+            {STATEMENT_SOURCES.map((item) => (
+              <StatementSourceOption key={item.value} item={item} isSelected={item.value === 'mempool'} />
+            ))}
+          </SimpleGrid>
+        </RadioGroup>
+        <Text mt={2} textStyle="text/xs" color="neutral.600">
+          Fastest. Your IP address and transaction details are shared with mempool.space.
+        </Text>
+      </Card>
+    </Stage>
   )
 }
 
 // ─── Start with one account ─────────────────────────────────────────────────
 
-const GROUPS: Array<{ title: string; need: string; logos: string[]; icon?: LucideIcon }> = [
-  { title: 'Wallets', need: 'Your hardware wallet', logos: [LOGOS.trezor, LOGOS.coldcard, LOGOS.ledger] },
-  {
-    title: 'Exchanges',
-    need: 'A read-only API key',
-    logos: [ICONS.coinbase, ICONS.kraken, ICONS.robinhood, ICONS.strike],
-  },
-  { title: 'Manual', need: 'Just your balance', logos: [], icon: PencilLineIcon },
+const NAV = [
+  { to: '/home', title: 'Home' },
+  { to: '/accounts', title: 'Accounts' },
+  { to: '/portfolio', title: 'Portfolio' },
+  { to: '/statements', title: 'Statements' },
 ]
 
-export function GetReadyPreview(): JSX.Element {
+/** Home once a few accounts are in: the app's own header and overview, shrunk to fit. */
+export function HomePreview(): JSX.Element {
+  const history = useSampleHistory()
+  const recent = lastDays(history, 30)
+
   return (
-    <PreviewWindow title="Connect New Account">
-      <Stack gap={2}>
-        {GROUPS.map(({ title, need, logos, icon }, index) => (
-          <Flex
-            key={title}
-            align="center"
-            justify="space-between"
-            gap={3}
-            p={4}
-            border="1px solid"
-            borderColor="neutral.200"
-            borderRadius="control"
-            sx={popIn(index)}
-          >
-            <Box minW={0}>
-              <Text textStyle="label/md" fontWeight="medium" color="neutral.900">
-                {title}
-              </Text>
-              <Text textStyle="text/xs" color="neutral.600" mt={1}>
-                {need}
-              </Text>
-            </Box>
-            <HStack gap={2} flexShrink={0}>
-              {logos.map((logo) => (
-                <chakra.img key={logo} src={logo} alt="" h="16px" maxW="56px" objectFit="contain" />
-              ))}
-              {icon !== undefined && <Icon as={icon} boxSize={4} color="neutral.600" />}
-            </HStack>
-          </Flex>
-        ))}
-      </Stack>
-    </PreviewWindow>
+    <Stage width={800} height={690}>
+      <Card front top="20px" left="20px" w="760px" overflow="hidden">
+        <Header
+          logo={<Logo />}
+          menu={
+            <Menu
+              items={NAV}
+              renderLink={(to, children) => (
+                <chakra.a href={to} aria-current={to === '/home' ? 'page' : undefined}>
+                  {children}
+                </chakra.a>
+              )}
+            />
+          }
+          userInfo={<IconButton aria-label="Settings" variant="ghost" icon={<SettingsIcon size={20} />} />}
+        />
+        <Box px={6} py={8}>
+          <PortfolioSummary
+            data={{
+              currentTotalBalance: recent.at(-1)?.totalBalance ?? '0',
+              currentBtcPrice: String(SAMPLE_BTC_PRICE),
+              historicalData: recent,
+            }}
+            accountCount={4}
+          />
+        </Box>
+      </Card>
+    </Stage>
   )
 }
