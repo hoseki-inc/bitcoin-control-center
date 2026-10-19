@@ -24,8 +24,10 @@ export type ErrorBlockProps = {
   title: string
   description: string
   variant?: ErrorVariant
+  /** Renders the title as a heading, for blocks that are the main content of the screen. */
+  titleAs?: 'h1' | 'h2' | 'h3'
 } & StackProps
-export function ErrorBlock({ title, description, variant = 'error', ...rest }: ErrorBlockProps): JSX.Element {
+export function ErrorBlock({ title, description, variant = 'error', titleAs, ...rest }: ErrorBlockProps): JSX.Element {
   const { color } = colorMap[variant]
 
   return (
@@ -38,7 +40,7 @@ export function ErrorBlock({ title, description, variant = 'error', ...rest }: E
       {...rest}
     >
       <WarningTriangleFilledIcon boxSize="37px" />
-      <Text textStyle="text/lg" fontWeight="medium">
+      <Text as={titleAs} textStyle="text/lg" fontWeight="medium">
         {title}
       </Text>
       <Text textStyle="text/md">{description}</Text>

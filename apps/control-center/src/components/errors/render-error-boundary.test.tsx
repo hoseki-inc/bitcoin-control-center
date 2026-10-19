@@ -31,6 +31,13 @@ function Broken(): JSX.Element {
   return <p>Home page</p>
 }
 
+let accountsRenders = 0
+
+function BrokenAccounts(): JSX.Element {
+  accountsRenders += 1
+  throw new Error('Broken accounts page')
+}
+
 async function render(initialPath: string): Promise<void> {
   const dom = browser.acquire()
   const container = document.createElement('div')
@@ -44,6 +51,7 @@ async function render(initialPath: string): Promise<void> {
       container.remove()
     } finally {
       vi.restoreAllMocks()
+      vi.unstubAllGlobals()
       dom.window.close()
     }
   })
@@ -57,6 +65,7 @@ async function render(initialPath: string): Promise<void> {
           <RenderErrorBoundary>
             <Routes>
               <Route path="home" Component={Broken} />
+              <Route path="accounts" Component={BrokenAccounts} />
               <Route path="settings" element={<p>Settings page</p>} />
             </Routes>
           </RenderErrorBoundary>
@@ -82,7 +91,9 @@ it('shows a way back and logs the error when a page throws', async () => {
   expect(document.body.textContent).toContain('Something went wrong')
   expect(document.body.textContent).toContain('Back to Home')
   expect(document.body.textContent).toContain('Reload')
+  expect(document.querySelector('h1')?.textContent).toBe('Something went wrong')
   expect(logError.mock.calls.at(-1)).toMatchObject([{ err: { message: 'Broken page' } }, 'Render error'])
+  expect(logError.mock.calls.at(-1)?.[0]).toHaveProperty('componentStack', expect.stringContaining('Broken'))
 })
 
 it('logs once when navigating from a working page to a broken one', async () => {
@@ -114,4 +125,16 @@ it('clears the error from Back to Home when Home was the page that failed', asyn
   await click('Back to Home')
   expect(document.body.textContent).toContain('Home page')
   expect(document.body.textContent).not.toContain('Something went wrong')
+})
+
+it('leaves a broken page for Home without drawing that page again', async () => {
+  shouldThrow = false
+  const logError = vi.spyOn(browserLogger, 'error').mockImplementation(() => undefined)
+  await render('/accounts')
+  const rendersBefore = accountsRenders
+
+  await click('Back to Home')
+  expect(document.body.textContent).toContain('Home page')
+  expect(accountsRenders).toBe(rendersBefore)
+  expect(logError).toHaveBeenCalledTimes(1)
 })

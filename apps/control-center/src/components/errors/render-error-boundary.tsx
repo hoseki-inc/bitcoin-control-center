@@ -8,6 +8,7 @@ type BoundaryProps = { pathname: string; children: ReactNode }
 type BoundaryState = { hasError: boolean; errorPathname: string | null }
 
 const noError: BoundaryState = { hasError: false, errorPathname: null }
+const HOME_PATH = '/home'
 
 class Boundary extends Component<BoundaryProps, BoundaryState> {
   public override state: BoundaryState = noError
@@ -34,16 +35,19 @@ class Boundary extends Component<BoundaryProps, BoundaryState> {
       return this.props.children
     }
     return (
-      <Stack align="center" gap={6} py={16} px={6}>
-        <ErrorBlock title="Something went wrong" description="This page couldn't be displayed." />
+      <Stack align="center" gap={6} py={[32, 48]} px={6}>
+        <ErrorBlock titleAs="h1" title="Something went wrong" description="This page couldn't be displayed." />
         <HStack>
           <Button
             as={Link}
-            to="/home"
+            to={HOME_PATH}
             variant="outline"
             onClick={() => {
-              // Clears the error when it happened on Home itself, where the path does not change.
-              this.setState(noError)
+              // Only on Home itself: elsewhere the path change clears the error, and clearing it here first
+              // would draw the broken page again before the router's lower-priority navigation reaches Home.
+              if (this.props.pathname === HOME_PATH) {
+                this.setState(noError)
+              }
             }}
           >
             Back to Home
