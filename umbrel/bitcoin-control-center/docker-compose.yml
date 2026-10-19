@@ -17,15 +17,13 @@ services:
     environment:
       ELECTRUM_HOST: $APP_ELECTRS_NODE_IP
       ELECTRUM_PORT: $APP_ELECTRS_NODE_PORT
-      ELECTRUM_PROTOCOL: tcp
-      # Serve the app while Electrs is still indexing; balances load once it accepts connections.
+      # Serve the app while the Electrum server is unavailable; Sentinel connects once it answers.
       SENTINEL_WAIT_FOR_ELECTRUM: 'false'
       # The mempool web app proxies its API, including historical prices. Statement quotes can
       # still fall back to public mempool.space.
       MEMPOOL_API_URL: http://$APP_MEMPOOL_IP:$APP_MEMPOOL_PORT
       # Sentinel supports mainnet and testnet only. Like StartOS, this package targets mainnet.
       BITCOIN_NETWORK: mainnet
-      LOG_LEVEL: info
       # Umbrel opens apps at whatever name or address the dashboard uses and doesn't tell
       # apps their LAN or Tailscale addresses. Allow IP addresses, the device's own name, and
       # names that only resolve privately; none of them can be used for DNS rebinding.

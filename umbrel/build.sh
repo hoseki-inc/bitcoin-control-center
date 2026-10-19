@@ -53,7 +53,6 @@ cd "$REPO_ROOT"
 
 # Umbrel uses the same release version as StartOS and desktop. Sideload builds add the
 # commit, so every bundle has a distinct Umbrel version and image tag.
-node start9/scripts/version.mjs check
 RELEASE_VERSION="$(node start9/scripts/version.mjs umbrel)"
 SOURCE_COMMIT="$(git rev-parse HEAD)"
 DIRTY_SUFFIX=""

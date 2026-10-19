@@ -1,6 +1,6 @@
 #!/bin/bash
-# Installs, updates, or removes an unpublished Bitcoin Control Center build on
-# an Umbrel. Run it on the Umbrel as the umbrel user, from the extracted bundle.
+# Installs or updates an unpublished Bitcoin Control Center build on an Umbrel.
+# Run it on the Umbrel as the umbrel user, from the extracted bundle.
 set -euo pipefail
 
 BUNDLE_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -15,13 +15,10 @@ REGISTRY_IMAGE="registry:3@sha256:325b4b29b041e82803abeb703e201655e4e23ab83264ec
 
 usage() {
   cat <<EOF
-Usage: ./install.sh [command]
+Usage: ./install.sh
 
-Commands:
-  install     Install this build, or update an installed copy (default)
-  status      Show the installed app state
-  logs        Show the app logs
-  uninstall   Uninstall the app and DELETE its data
+Installs this build, or updates an installed copy. Use Umbrel's app menu for
+logs and to uninstall.
 
 Build: $VERSION ($SOURCE_COMMIT), architectures: $ARCHES
 EOF
@@ -58,7 +55,7 @@ store_dir() {
 }
 
 stop_registry() {
-  "${DOCKER[@]}" rm --force "$REGISTRY_CONTAINER" >/dev/null 2>&1 || true
+  sudo docker rm --force "$REGISTRY_CONTAINER" >/dev/null 2>&1 || true
 }
 
 wait_for_registry() {
@@ -91,20 +88,20 @@ install_or_update() {
   (cd "$BUNDLE_DIR" && grep " images/$arch.tar\$" SHA256SUMS | sha256sum -c)
 
   echo "==> Loading $arch image..."
-  "${DOCKER[@]}" load --input "$BUNDLE_DIR/images/$arch.tar"
+  sudo docker load --input "$BUNDLE_DIR/images/$arch.tar"
 
   # Umbrel pulls every app image during install and update, so serve this
   # unpublished image from a registry bound to loopback until Umbrel has it.
   echo "==> Starting temporary registry on $REGISTRY..."
   stop_registry
   trap stop_registry EXIT
-  "${DOCKER[@]}" run --detach --rm --name "$REGISTRY_CONTAINER" --publish "$REGISTRY:5000" "$REGISTRY_IMAGE" >/dev/null
+  sudo docker run --detach --rm --name "$REGISTRY_CONTAINER" --publish "$REGISTRY:5000" "$REGISTRY_IMAGE" >/dev/null
   wait_for_registry
-  "${DOCKER[@]}" push "$IMAGE"
+  sudo docker push "$IMAGE"
   # Pin what was pushed, so Umbrel installs exactly this image even though the
   # temporary registry accepts pushes from anything on the device.
   local digest
-  digest="$("${DOCKER[@]}" inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$IMAGE" |
+  digest="$(sudo docker inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$IMAGE" |
     grep "^${IMAGE%:*}@" | head -1 | cut -d@ -f2 || true)"
   [[ "$digest" == sha256:* ]] || die "Could not read the digest of the pushed image."
 
@@ -129,49 +126,26 @@ install_or_update() {
   app_state "$APP_ID"
   echo ""
   echo "Open Bitcoin Control Center from the Umbrel home screen to use its HTTPS launch."
-  echo "Logs: $BUNDLE_DIR/install.sh logs    Remove: $BUNDLE_DIR/install.sh uninstall"
 }
 
-uninstall() {
-  echo "Uninstalling $APP_ID deletes its accounts, history, and settings from this Umbrel."
-  read -r -p "Type $APP_ID to continue: " confirmation
-  [[ "$confirmation" == "$APP_ID" ]] || die "Cancelled."
-
-  umbreld_client apps.uninstall.mutate --appId "$APP_ID"
-  rm -rf "$(store_dir)/$APP_ID"
-  "${DOCKER[@]}" image rm "$IMAGE" >/dev/null 2>&1 || true
-  echo "Uninstalled $APP_ID."
-}
+case "${1:-}" in
+  "") ;;
+  --help | -h | help)
+    usage
+    exit 0
+    ;;
+  *)
+    usage >&2
+    exit 1
+    ;;
+esac
 
 [[ $EUID -ne 0 ]] || die "Run this as the umbrel user, not root, so Umbrel can read the copied app files."
 command -v umbreld >/dev/null ||
   die "umbreld was not found. Run this on the Umbrel: Settings → Advanced settings → Terminal → umbrelOS."
 
-case "${1:-install}" in
-  install | status | logs | uninstall)
-    # Ask once up front; sudo remembers the password for the rest of the run.
-    echo "This installer uses administrator access for Umbrel's app commands. If asked, enter your Umbrel password."
-    sudo -v || die "Administrator access is required."
-    ;;
-esac
+# Ask once up front; sudo remembers the password for the rest of the run.
+echo "This installer uses administrator access for Umbrel's app commands. If asked, enter your Umbrel password."
+sudo -v || die "Administrator access is required."
 
-if docker info >/dev/null 2>&1; then
-  DOCKER=(docker)
-else
-  DOCKER=(sudo docker)
-fi
-
-case "${1:-install}" in
-  install) install_or_update ;;
-  status)
-    echo "Bundle: $VERSION ($SOURCE_COMMIT)"
-    app_state "$APP_ID"
-    ;;
-  logs) umbreld_client apps.logs.query --appId "$APP_ID" ;;
-  uninstall) uninstall ;;
-  --help | -h | help) usage ;;
-  *)
-    usage
-    exit 1
-    ;;
-esac
+install_or_update
