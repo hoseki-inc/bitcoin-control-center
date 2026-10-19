@@ -169,13 +169,9 @@ export function OnboardingTakeover({
               borderLeftWidth={{ md: '1px' }}
               borderBottomWidth={{ base: '1px', md: 0 }}
               overflow="hidden"
-              // A picture of the app: its charts and controls can't be focused or used here.
+              // A picture of the app, described by the text beside it. Only its charts answer the
+              // pointer, and nothing in it takes keyboard focus.
               aria-hidden
-              ref={(element: HTMLDivElement | null) => {
-                if (element) {
-                  element.inert = true
-                }
-              }}
               pointerEvents="none"
             >
               <Box key={step.id} position="absolute" inset={0} sx={opacityReveal}>

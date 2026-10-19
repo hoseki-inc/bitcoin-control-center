@@ -1,4 +1,4 @@
-import { Box, Button, Flex, Grid, Text } from '@chakra-ui/react'
+import { Box, Button, type ButtonProps, Flex, Grid, Text } from '@chakra-ui/react'
 import Decimal from 'decimal.js'
 import { Link } from 'react-router'
 import { getBrowserTimezone } from '../../utils/timezone'
@@ -21,10 +21,13 @@ export function PortfolioSummary({
   data,
   accountCount,
   AccumulationChart = DefaultAccumulationChart,
+  portfolioLinkProps,
 }: {
   data: PortfolioSummaryData
   accountCount: number | null
   AccumulationChart?: typeof DefaultAccumulationChart
+  /** Extra props for the View Portfolio link, such as taking it out of the tab order. */
+  portfolioLinkProps?: ButtonProps
 }): JSX.Element {
   const userTimezone = getBrowserTimezone()
 
@@ -55,7 +58,16 @@ export function PortfolioSummary({
               : totalUsd.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
           </FiatAmountText>
         </Box>
-        <Button as={Link} to="/portfolio" variant="outline" size="md" px={6} py={3} borderRadius="control">
+        <Button
+          as={Link}
+          to="/portfolio"
+          variant="outline"
+          size="md"
+          px={6}
+          py={3}
+          borderRadius="control"
+          {...portfolioLinkProps}
+        >
           View Portfolio
         </Button>
       </Flex>

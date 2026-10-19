@@ -104,6 +104,35 @@ function Card({ front = false, ...props }: BoxProps & { front?: boolean }): JSX.
   )
 }
 
+/** Content that can't be focused or used, such as the Settings controls pictured here. */
+function Inert(props: BoxProps): JSX.Element {
+  return (
+    <Box
+      ref={(element: HTMLDivElement | null) => {
+        element?.setAttribute('inert', '')
+      }}
+      {...props}
+    />
+  )
+}
+
+/**
+ * Lets a pictured chart show its tooltip on hover where there's a mouse. Touch screens keep a still
+ * picture, since a tap would pin the tooltip open with no hover to dismiss it.
+ */
+const hoverable: SystemStyleObject = {
+  '@media (hover: hover) and (pointer: fine)': { pointerEvents: 'auto' },
+}
+
+/** Home's 30-day chart, answering the pointer but never taking keyboard focus. */
+function HoverableAccumulationChart(props: Parameters<typeof AccumulationChart>[0]): JSX.Element {
+  return (
+    <Box sx={hoverable}>
+      <AccumulationChart {...props} focusable={false} />
+    </Box>
+  )
+}
+
 function btcAt(point: BalanceDataPoint | undefined): Decimal {
   return new Decimal(point?.totalBalance ?? 0).div(100_000_000)
 }
@@ -152,7 +181,7 @@ export function BalancePreview(): JSX.Element {
         </DashboardAmount>
         <FiatAmountText mt={1}>{sampleUsd(total)}</FiatAmountText>
         <Box mt={6}>
-          <AccumulationChart data={history} hasActivity isUp startLabel="month" />
+          <HoverableAccumulationChart data={history} hasActivity isUp startLabel="month" />
         </Box>
       </Card>
       <Card front top="304px" left="76px" w="500px" p={6}>
@@ -166,7 +195,9 @@ export function BalancePreview(): JSX.Element {
           isUpdating={false}
           isFetching={false}
         />
-        <MonthlyNetChangeChart data={history} />
+        <Box sx={hoverable}>
+          <MonthlyNetChangeChart data={history} focusable={false} />
+        </Box>
       </Card>
     </Stage>
   )
@@ -195,33 +226,35 @@ const ACCOUNT_TYPES: Array<{ name: string; media: ReactNode }> = [
 export function AccountTypesPreview(): JSX.Element {
   return (
     <Stage>
-      <Card top="56px" left="24px" w="552px" p={6}>
-        <Text as="h3" textStyle="text/2xl" fontWeight="medium" color="neutral.900">
-          Connect New Account
-        </Text>
-        <Grid templateColumns="repeat(3, minmax(0, 1fr))" gap={3} mt={6}>
-          {ACCOUNT_TYPES.map(({ name, media }, index) => (
-            <Stack
-              key={name}
-              align="center"
-              gap={4}
-              px={3}
-              py={5}
-              border="1px solid"
-              borderColor="neutral.200"
-              borderRadius="4px"
-              sx={popIn(index)}
-            >
-              <Flex justify="center" align="center" h="30px">
-                {media}
-              </Flex>
-              <Text textStyle="label/md" fontWeight="medium">
-                {name}
-              </Text>
-            </Stack>
-          ))}
-        </Grid>
-      </Card>
+      <Inert>
+        <Card top="56px" left="24px" w="552px" p={6}>
+          <Text as="h3" textStyle="text/2xl" fontWeight="medium" color="neutral.900">
+            Connect New Account
+          </Text>
+          <Grid templateColumns="repeat(3, minmax(0, 1fr))" gap={3} mt={6}>
+            {ACCOUNT_TYPES.map(({ name, media }, index) => (
+              <Stack
+                key={name}
+                align="center"
+                gap={4}
+                px={3}
+                py={5}
+                border="1px solid"
+                borderColor="neutral.200"
+                borderRadius="4px"
+                sx={popIn(index)}
+              >
+                <Flex justify="center" align="center" h="30px">
+                  {media}
+                </Flex>
+                <Text textStyle="label/md" fontWeight="medium">
+                  {name}
+                </Text>
+              </Stack>
+            ))}
+          </Grid>
+        </Card>
+      </Inert>
     </Stage>
   )
 }
@@ -243,59 +276,61 @@ const KRAKEN_PERMISSIONS = [
 export function PermissionsPreview(): JSX.Element {
   return (
     <Stage>
-      {/* Matches ExchangeAccountCard on the Accounts page. */}
-      <Card top="120px" left="64px" w="248px" p={2} pb={5} borderRadius="md" textAlign="center">
-        <HStack>
-          <StatusBadge status="success" label="Connected" size="sm" ml="auto" />
-        </HStack>
-        <Flex justify="center" align="center" h="30px" my={2}>
-          <chakra.img src="/images/exchanges/kraken.svg" alt="" h="30px" />
-        </Flex>
-        <Text textStyle="label/md" fontWeight="medium" color="neutral.600">
-          Kraken
-        </Text>
-        <Stack gap={0} mx={4} mt={1}>
-          <Text textStyle="text/lg" fontWeight="bold" color="neutral.900" letterSpacing="-0.02em">
-            {KRAKEN_BTC.toFixed(8)} BTC
+      <Inert>
+        {/* Matches ExchangeAccountCard on the Accounts page. */}
+        <Card top="120px" left="64px" w="248px" p={2} pb={5} borderRadius="md" textAlign="center">
+          <HStack>
+            <StatusBadge status="success" label="Connected" size="sm" ml="auto" />
+          </HStack>
+          <Flex justify="center" align="center" h="30px" my={2}>
+            <chakra.img src="/images/exchanges/kraken.svg" alt="" h="30px" />
+          </Flex>
+          <Text textStyle="label/md" fontWeight="medium" color="neutral.600">
+            Kraken
           </Text>
-          <Text textStyle="text/sm" fontWeight="medium" color="success.600">
-            {sampleUsd(KRAKEN_BTC)}
-          </Text>
-        </Stack>
-        <Flex align="center" gap={2.5} mx={4} mt={1}>
-          <Box flex={1} h="3px" bg="neutral.50" borderRadius="2px" overflow="hidden">
-            <Box h="100%" w={`${KRAKEN_SHARE}%`} bg="neutral.900" borderRadius="2px" opacity={0.2} />
-          </Box>
-          <Text textStyle="label/xs" color="neutral.300">
-            {KRAKEN_SHARE}%
-          </Text>
-        </Flex>
-      </Card>
-      <Card front top="276px" left="216px" w="320px" p={6}>
-        <HStack gap={3}>
-          <chakra.img src="/images/exchanges/kraken.svg" alt="" boxSize={8} />
-          <Box>
-            <Text textStyle="label/md" fontWeight="semibold" color="neutral.900">
-              API key permissions
+          <Stack gap={0} mx={4} mt={1}>
+            <Text textStyle="text/lg" fontWeight="bold" color="neutral.900" letterSpacing="-0.02em">
+              {KRAKEN_BTC.toFixed(8)} BTC
             </Text>
-            <Text textStyle="text/xs" color="neutral.600" mt={1}>
-              Kraken
+            <Text textStyle="text/sm" fontWeight="medium" color="success.600">
+              {sampleUsd(KRAKEN_BTC)}
             </Text>
-          </Box>
-        </HStack>
-        <Stack gap={3} mt={5}>
-          {KRAKEN_PERMISSIONS.map(({ label, granted }) => (
-            <Checkbox key={label} size="sm" colorScheme="orange" isChecked={granted} isReadOnly>
-              <Text textStyle="text/sm" color={granted ? 'neutral.900' : 'neutral.500'}>
-                {label}
+          </Stack>
+          <Flex align="center" gap={2.5} mx={4} mt={1}>
+            <Box flex={1} h="3px" bg="neutral.50" borderRadius="2px" overflow="hidden">
+              <Box h="100%" w={`${KRAKEN_SHARE}%`} bg="neutral.900" borderRadius="2px" opacity={0.2} />
+            </Box>
+            <Text textStyle="label/xs" color="neutral.300">
+              {KRAKEN_SHARE}%
+            </Text>
+          </Flex>
+        </Card>
+        <Card front top="276px" left="216px" w="320px" p={6}>
+          <HStack gap={3}>
+            <chakra.img src="/images/exchanges/kraken.svg" alt="" boxSize={8} />
+            <Box>
+              <Text textStyle="label/md" fontWeight="semibold" color="neutral.900">
+                API key permissions
               </Text>
-            </Checkbox>
-          ))}
-        </Stack>
-        <Text textStyle="text/xs" color="neutral.600" mt={5}>
-          Only your Bitcoin balance and transaction history are read.
-        </Text>
-      </Card>
+              <Text textStyle="text/xs" color="neutral.600" mt={1}>
+                Kraken
+              </Text>
+            </Box>
+          </HStack>
+          <Stack gap={3} mt={5}>
+            {KRAKEN_PERMISSIONS.map(({ label, granted }) => (
+              <Checkbox key={label} size="sm" colorScheme="orange" isChecked={granted} isReadOnly>
+                <Text textStyle="text/sm" color={granted ? 'neutral.900' : 'neutral.500'}>
+                  {label}
+                </Text>
+              </Checkbox>
+            ))}
+          </Stack>
+          <Text textStyle="text/xs" color="neutral.600" mt={5}>
+            Only your Bitcoin balance and transaction history are read.
+          </Text>
+        </Card>
+      </Inert>
     </Stage>
   )
 }
@@ -324,54 +359,56 @@ function ConnectionRow({ selected = false, children }: { selected?: boolean; chi
 export function ConnectionsPreview(): JSX.Element {
   return (
     <Stage>
-      <Card top="64px" left="24px" w="460px" p={6}>
-        <Text textStyle="label/md" fontWeight="semibold">
-          Electrum Server
-        </Text>
-        <Text textStyle="text/sm" color="neutral.600" mt={1}>
-          Configure your Bitcoin Electrum server connection. Use your own server for maximum privacy.
-        </Text>
-        <Box mt={5}>
-          <HStack justify="space-between" px={3} pb={2} borderBottomWidth="1px">
-            <Text textStyle="label/sm">Saved connections</Text>
-            <Text textStyle="text/xs" color="neutral.600">
-              2 of 5
-            </Text>
-          </HStack>
-          <ConnectionRow selected>
-            <ConnectionRowContent nickname="Home node" liveness="connected" torEnabled={false} />
-          </ConnectionRow>
-          <ConnectionRow>
-            <ConnectionRowContent nickname="Blockstream" liveness={null} torEnabled={false} />
-          </ConnectionRow>
-        </Box>
-        <Stack gap={0} mt={5}>
+      <Inert>
+        <Card top="64px" left="24px" w="460px" p={6}>
           <Text textStyle="label/md" fontWeight="semibold">
-            Home node
+            Electrum Server
           </Text>
-          <Text textStyle="text/xs" color={`${LIVENESS_COLORS.connected}.700`}>
-            {connectionSummary('connected', { host: '192.168.1.20', port: 50001, protocol: 'tcp' }, false)}
+          <Text textStyle="text/sm" color="neutral.600" mt={1}>
+            Configure your Bitcoin Electrum server connection. Use your own server for maximum privacy.
           </Text>
-        </Stack>
-      </Card>
-      <Card front top="376px" left="120px" w="456px" p={6}>
-        <Text textStyle="text/md" fontWeight="semibold" color="neutral.900">
-          Statement data
-        </Text>
-        <Text textStyle="text/sm" color="neutral.500" mt={3} mb={2}>
-          Look up transactions on
-        </Text>
-        <RadioGroup value="mempool">
-          <SimpleGrid columns={2} spacing={3}>
-            {STATEMENT_SOURCES.map((item) => (
-              <StatementSourceOption key={item.value} item={item} isSelected={item.value === 'mempool'} />
-            ))}
-          </SimpleGrid>
-        </RadioGroup>
-        <Text mt={2} textStyle="text/xs" color="neutral.600">
-          Fastest. Your IP address and transaction details are shared with mempool.space.
-        </Text>
-      </Card>
+          <Box mt={5}>
+            <HStack justify="space-between" px={3} pb={2} borderBottomWidth="1px">
+              <Text textStyle="label/sm">Saved connections</Text>
+              <Text textStyle="text/xs" color="neutral.600">
+                2 of 5
+              </Text>
+            </HStack>
+            <ConnectionRow selected>
+              <ConnectionRowContent nickname="Home node" liveness="connected" torEnabled={false} />
+            </ConnectionRow>
+            <ConnectionRow>
+              <ConnectionRowContent nickname="Blockstream" liveness={null} torEnabled={false} />
+            </ConnectionRow>
+          </Box>
+          <Stack gap={0} mt={5}>
+            <Text textStyle="label/md" fontWeight="semibold">
+              Home node
+            </Text>
+            <Text textStyle="text/xs" color={`${LIVENESS_COLORS.connected}.700`}>
+              {connectionSummary('connected', { host: '192.168.1.20', port: 50001, protocol: 'tcp' }, false)}
+            </Text>
+          </Stack>
+        </Card>
+        <Card front top="376px" left="120px" w="456px" p={6}>
+          <Text textStyle="text/md" fontWeight="semibold" color="neutral.900">
+            Statement data
+          </Text>
+          <Text textStyle="text/sm" color="neutral.500" mt={3} mb={2}>
+            Look up transactions on
+          </Text>
+          <RadioGroup value="mempool">
+            <SimpleGrid columns={2} spacing={3}>
+              {STATEMENT_SOURCES.map((item) => (
+                <StatementSourceOption key={item.value} item={item} isSelected={item.value === 'mempool'} />
+              ))}
+            </SimpleGrid>
+          </RadioGroup>
+          <Text mt={2} textStyle="text/xs" color="neutral.600">
+            Fastest. Your IP address and transaction details are shared with mempool.space.
+          </Text>
+        </Card>
+      </Inert>
     </Stage>
   )
 }
@@ -393,20 +430,22 @@ export function HomePreview(): JSX.Element {
   return (
     <Stage>
       <Card front top="64px" left="48px" w="760px" overflow="hidden">
-        <Header
-          logo={<Logo />}
-          menu={
-            <Menu
-              items={NAV}
-              renderLink={(to, children) => (
-                <chakra.a href={to} aria-current={to === '/home' ? 'page' : undefined}>
-                  {children}
-                </chakra.a>
-              )}
-            />
-          }
-          userInfo={<IconButton aria-label="Settings" variant="ghost" icon={<SettingsIcon size={20} />} />}
-        />
+        <Inert>
+          <Header
+            logo={<Logo />}
+            menu={
+              <Menu
+                items={NAV}
+                renderLink={(to, children) => (
+                  <chakra.a href={to} aria-current={to === '/home' ? 'page' : undefined}>
+                    {children}
+                  </chakra.a>
+                )}
+              />
+            }
+            userInfo={<IconButton aria-label="Settings" variant="ghost" icon={<SettingsIcon size={20} />} />}
+          />
+        </Inert>
         <Box px={6} py={8}>
           <PortfolioSummary
             data={{
@@ -415,6 +454,8 @@ export function HomePreview(): JSX.Element {
               historicalData: recent,
             }}
             accountCount={4}
+            AccumulationChart={HoverableAccumulationChart}
+            portfolioLinkProps={{ tabIndex: -1 }}
           />
         </Box>
       </Card>

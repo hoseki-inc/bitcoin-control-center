@@ -11,6 +11,8 @@ interface MonthlyNetChangeChartProps {
   timezone?: string
   /** Today's price for the muted USD line in each month's tooltip. */
   btcPrice?: number | null
+  /** False keeps the chart out of the tab order; its tooltip still follows the pointer. */
+  focusable?: boolean
 }
 
 function BarTooltip({
@@ -83,7 +85,12 @@ function MonthTick({
   )
 }
 
-export function MonthlyNetChangeChart({ data, timezone, btcPrice = null }: MonthlyNetChangeChartProps): JSX.Element {
+export function MonthlyNetChangeChart({
+  data,
+  timezone,
+  btcPrice = null,
+  focusable = true,
+}: MonthlyNetChangeChartProps): JSX.Element {
   // Ease into new values when the range or selection changes.
   const animate = !usePrefersReducedMotion({ ssr: false })
   const [axisColor, baselineColor] = useToken('colors', ['neutral.500', 'neutral.200'])
@@ -113,6 +120,7 @@ export function MonthlyNetChangeChart({ data, timezone, btcPrice = null }: Month
         <ResponsiveContainer width="100%" height="100%">
           <BarChart
             aria-label="Monthly net change"
+            accessibilityLayer={focusable}
             data={monthlyChanges}
             // Wider sides when dense, as a label can be wider than the bar under it.
             margin={{ top: 4, right: isDense ? 24 : 16, left: isDense ? 24 : 16, bottom: 0 }}
