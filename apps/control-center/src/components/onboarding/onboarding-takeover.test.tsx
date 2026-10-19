@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { TestChakraProvider as ChakraProvider } from '@hoseki/packages/testing/chakra-provider'
+import { MotionGlobalConfig } from 'framer-motion'
 import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { MemoryRouter } from 'react-router'
@@ -24,6 +25,8 @@ const browser = await vi.hoisted(async () => {
 async function renderTakeover(desktop = false): Promise<{ onSkip: Mock<() => void>; onAddAccount: Mock<() => void> }> {
   const dom = browser.acquire()
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+  // Steps turn over at once, so each check sees only the step on screen.
+  MotionGlobalConfig.skipAnimations = true
   // The previews draw the app's charts, which watch their size and the reduced-motion setting.
   const matchMedia = (media: string): MediaQueryList => ({
     media,
@@ -55,6 +58,7 @@ async function renderTakeover(desktop = false): Promise<{ onSkip: Mock<() => voi
       root.unmount()
     })
     container.remove()
+    MotionGlobalConfig.skipAnimations = false
     vi.unstubAllGlobals()
     dom.window.close()
   })
@@ -89,8 +93,10 @@ async function click(name: string): Promise<void> {
   })
 }
 
+/** The title of the step on screen, not one on its way out. */
 function heading(): string {
-  return document.body.querySelector('[role="dialog"] h2')?.textContent ?? ''
+  const titles = Array.from(document.body.querySelectorAll('[role="dialog"] h2'))
+  return titles.find((title) => title.closest('[aria-hidden="true"]') === null)?.textContent ?? ''
 }
 
 /** Elements a keyboard could reach inside parts of the dialog hidden from assistive technology. */
