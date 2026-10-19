@@ -1,7 +1,8 @@
 import { Box, HStack } from '@chakra-ui/react'
-import { motion } from '@hoseki/packages/ui/design-system/animations/motion'
+import { TURN_IN_CSS } from './onboarding-motion'
 
-const TRANSITION = `width ${motion.revealMs}ms ${motion.easeOut}, background-color ${motion.revealMs}ms ${motion.easeOut}`
+// The pill moves with the step's content, not ahead of it.
+const TRANSITION = `width ${TURN_IN_CSS}, background-color ${TURN_IN_CSS}`
 
 /** Where the introduction is, with the current step stretched into a pill. Decorative; the step is announced separately. */
 export function StepDots({ count, current }: { count: number; current: number }): JSX.Element {
