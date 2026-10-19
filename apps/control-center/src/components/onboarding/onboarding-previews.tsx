@@ -37,11 +37,16 @@ import { SAMPLE_BTC_PRICE, lastDays, sampleBalanceHistory } from './sample-histo
 
 // The app's own components with sample data, arranged as floating cards. Never the user's data.
 
+// Every scene is laid out at this size and scaled the same way, so text reads at one size across steps.
+const SCENE_WIDTH = 600
+const SCENE_HEIGHT = 680
+
 /**
- * Lays out a fixed-size scene and scales it to fit the preview pane, so the app's components keep
- * their real proportions. A short pane, on narrow screens, shows the top of the scene at full width.
+ * Scales a scene to fit the preview pane, so the app's components keep their real proportions. A
+ * short pane, on narrow screens, shows the top of the scene at full width. Cards may run off the
+ * scene's right and bottom edges; the pane clips them.
  */
-function Stage({ width, height, children }: { width: number; height: number; children: ReactNode }): JSX.Element {
+function Stage({ children }: { children: ReactNode }): JSX.Element {
   const paneRef = useRef<HTMLDivElement>(null)
   const [fit, setFit] = useState({ scale: 1, top: 0 })
 
@@ -52,12 +57,12 @@ function Stage({ width, height, children }: { width: number; height: number; chi
     }
     const fitScene = (): void => {
       const { width: paneWidth, height: paneHeight } = pane.getBoundingClientRect()
-      if (paneHeight < height / 2) {
-        setFit({ scale: paneWidth / width, top: 0 })
+      if (paneHeight < SCENE_HEIGHT / 2) {
+        setFit({ scale: paneWidth / SCENE_WIDTH, top: 0 })
         return
       }
-      const scale = Math.min(paneWidth / width, paneHeight / height)
-      setFit({ scale, top: (paneHeight - height * scale) / 2 })
+      const scale = Math.min(paneWidth / SCENE_WIDTH, paneHeight / SCENE_HEIGHT)
+      setFit({ scale, top: (paneHeight - SCENE_HEIGHT * scale) / 2 })
     }
     fitScene()
     const observer = new ResizeObserver(fitScene)
@@ -65,7 +70,7 @@ function Stage({ width, height, children }: { width: number; height: number; chi
     return () => {
       observer.disconnect()
     }
-  }, [width, height])
+  }, [])
 
   return (
     <Box ref={paneRef} position="absolute" inset={0} overflow="hidden">
@@ -73,8 +78,8 @@ function Stage({ width, height, children }: { width: number; height: number; chi
         position="absolute"
         top={`${fit.top}px`}
         left="50%"
-        w={`${width}px`}
-        h={`${height}px`}
+        w={`${SCENE_WIDTH}px`}
+        h={`${SCENE_HEIGHT}px`}
         transform={`translateX(-50%) scale(${fit.scale})`}
         transformOrigin="top center"
       >
@@ -136,9 +141,11 @@ export function BalancePreview(): JSX.Element {
   const history = useSampleHistory()
   const total = btcAt(history.at(-1))
   const { inBtc, outBtc } = getFlowTotals(history)
+  // Net only: Portfolio's in/out split would crowd the card at this size.
+  const net = inBtc.minus(outBtc)
 
   return (
-    <Stage width={600} height={680}>
+    <Stage>
       <Card top="24px" left="24px" w="440px" p={6}>
         <DashboardAmount>
           <BitcoinAmount btc={total} />
@@ -151,8 +158,8 @@ export function BalancePreview(): JSX.Element {
       <Card front top="304px" left="76px" w="500px" p={6}>
         <NetAccumulatedSummary
           ready
-          inBtc={inBtc}
-          outBtc={outBtc}
+          inBtc={net}
+          outBtc={new Decimal(0)}
           monthsInRange={12}
           btcPrice={SAMPLE_BTC_PRICE}
           caption="Last 12 months"
@@ -187,8 +194,8 @@ const ACCOUNT_TYPES: Array<{ name: string; media: ReactNode }> = [
 
 export function AccountTypesPreview(): JSX.Element {
   return (
-    <Stage width={600} height={640}>
-      <Card top="32px" left="24px" w="552px" p={6}>
+    <Stage>
+      <Card top="56px" left="24px" w="552px" p={6}>
         <Text as="h3" textStyle="text/2xl" fontWeight="medium" color="neutral.900">
           Connect New Account
         </Text>
@@ -235,9 +242,9 @@ const KRAKEN_PERMISSIONS = [
 /** A connected exchange as the Accounts page shows it, with the read-only key it was added with. */
 export function PermissionsPreview(): JSX.Element {
   return (
-    <Stage width={500} height={520}>
+    <Stage>
       {/* Matches ExchangeAccountCard on the Accounts page. */}
-      <Card top="40px" left="24px" w="248px" p={2} pb={5} borderRadius="md" textAlign="center">
+      <Card top="120px" left="64px" w="248px" p={2} pb={5} borderRadius="md" textAlign="center">
         <HStack>
           <StatusBadge status="success" label="Connected" size="sm" ml="auto" />
         </HStack>
@@ -264,7 +271,7 @@ export function PermissionsPreview(): JSX.Element {
           </Text>
         </Flex>
       </Card>
-      <Card front top="196px" left="156px" w="320px" p={6}>
+      <Card front top="276px" left="216px" w="320px" p={6}>
         <HStack gap={3}>
           <chakra.img src="/images/exchanges/kraken.svg" alt="" boxSize={8} />
           <Box>
@@ -316,8 +323,8 @@ function ConnectionRow({ selected = false, children }: { selected?: boolean; chi
 /** Settings' Electrum connection and statement lookups, as they look with your own node. */
 export function ConnectionsPreview(): JSX.Element {
   return (
-    <Stage width={600} height={660}>
-      <Card top="32px" left="24px" w="460px" p={6}>
+    <Stage>
+      <Card top="64px" left="24px" w="460px" p={6}>
         <Text textStyle="label/md" fontWeight="semibold">
           Electrum Server
         </Text>
@@ -347,7 +354,7 @@ export function ConnectionsPreview(): JSX.Element {
           </Text>
         </Stack>
       </Card>
-      <Card front top="344px" left="120px" w="456px" p={6}>
+      <Card front top="376px" left="120px" w="456px" p={6}>
         <Text textStyle="text/md" fontWeight="semibold" color="neutral.900">
           Statement data
         </Text>
@@ -378,14 +385,14 @@ const NAV = [
   { to: '/statements', title: 'Statements' },
 ]
 
-/** Home once a few accounts are in: the app's own header and overview, shrunk to fit. */
+/** Home once a few accounts are in: the app's own header and overview, running off the edge. */
 export function HomePreview(): JSX.Element {
   const history = useSampleHistory()
   const recent = lastDays(history, 30)
 
   return (
-    <Stage width={800} height={690}>
-      <Card front top="20px" left="20px" w="760px" overflow="hidden">
+    <Stage>
+      <Card front top="64px" left="48px" w="760px" overflow="hidden">
         <Header
           logo={<Logo />}
           menu={

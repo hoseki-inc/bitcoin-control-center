@@ -8,16 +8,18 @@ const DAY_MS = 86_400_000
 const MONTHS = 12
 const STARTING_BTC = 0.5
 const WEEKLY_BTC = [0.0045, 0.006, 0.005, 0.0055, 0.0065] as const
-/** Larger buys, by month index from the first month shown. */
+/** Larger buys and withdrawals, by month index from the first month shown. */
 const LUMP_SUMS_BTC = new Map([
   [2, 0.05],
+  [4, -0.05],
   [6, 0.03],
+  [8, -0.035],
   [9, 0.06],
 ])
 
 /**
- * A year of made-up daily balances ending today: steady weekly buys and a few larger ones, so every
- * month adds to the stack. Never the user's data.
+ * A year of made-up daily balances ending today: steady weekly buys, a few larger ones and two
+ * withdrawals, so most months add to the stack and two take from it. Never the user's data.
  */
 export function sampleBalanceHistory(now: Date): BalanceDataPoint[] {
   // Noon UTC falls on the same calendar day in every timezone the charts group months in.
