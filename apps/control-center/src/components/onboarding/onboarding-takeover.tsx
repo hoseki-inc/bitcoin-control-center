@@ -1,4 +1,15 @@
-import { Box, Button, Flex, Modal, ModalContent, ModalHeader, Text, VisuallyHidden, useToken } from '@chakra-ui/react'
+import {
+  Box,
+  Button,
+  Flex,
+  Modal,
+  ModalContent,
+  ModalHeader,
+  Text,
+  VisuallyHidden,
+  useBreakpointValue,
+  useToken,
+} from '@chakra-ui/react'
 import { motion as motionTokens } from '@hoseki/packages/ui/design-system/animations/motion'
 import { Logo } from '@hoseki/packages/ui/prove-verify-ui/logo'
 import {
@@ -11,27 +22,30 @@ import {
 } from 'framer-motion'
 import { type ComponentProps, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { isDesktop } from '../../mode'
+import { EASE_IN, EASE_OUT, TURN_IN_S, TURN_OUT_S } from './onboarding-motion'
 import { onboardingSteps } from './onboarding-steps'
 import { StepDots } from './step-dots'
 
-/** Fades in and out instead of Chakra's scale, so the backdrop doesn't zoom. */
+/** Fades in and out with the same timing as a step, instead of Chakra's scale, so the backdrop doesn't zoom. */
 const FADE: HTMLMotionProps<'section'> = {
   initial: 'exit',
   animate: 'enter',
   exit: 'exit',
   variants: {
-    enter: { opacity: 1, transition: { duration: motionTokens.revealMs / 1000, ease: 'easeOut' } },
-    exit: { opacity: 0, transition: { duration: motionTokens.dismissMs / 1000, ease: 'easeIn' } },
+    enter: { opacity: 1, transition: { duration: TURN_IN_S, ease: EASE_OUT } },
+    exit: { opacity: 0, transition: { duration: TURN_OUT_S, ease: EASE_IN } },
   },
 }
 
 const MotionBox = motion.create(Box)
 
-/** The design system's ease-out curve, as framer-motion takes it. */
-const EASE_OUT = [0.23, 1, 0.32, 1] as const
-const EASE_IN = [0.4, 0, 1, 1] as const
-const TURN_IN_S = 0.5
-const TURN_OUT_S = 0.22
+/**
+ * Footer buttons: touch-sized on phones. Each is as wide as its longer label ("Not Now", "Add
+ * Account"), so nothing in the footer shifts on the last step. Chosen per breakpoint rather than as
+ * responsive props, because the button theme's responsive sizes would override a responsive width.
+ */
+const PHONE_FOOTER = { size: 'md', secondaryMinW: '5.625rem', primaryMinW: '7.25rem' } as const
+const DESKTOP_FOOTER = { size: 'sm', secondaryMinW: '5.125rem', primaryMinW: '6.5rem' } as const
 
 /**
  * How a step turns over: the old one softens and eases away as the new one drifts in from the
@@ -107,6 +121,7 @@ export function OnboardingTakeover({
   const steps = useMemo(() => onboardingSteps(desktop), [desktop])
   const [{ index, direction }, setPage] = useState({ index: 0, direction: 1 })
   const reduceMotion = useReducedMotion() === true
+  const footer = useBreakpointValue({ base: PHONE_FOOTER, md: DESKTOP_FOOTER }, { ssr: false }) ?? DESKTOP_FOOTER
   const textTurn = reduceMotion ? FADE_TURN : TEXT_TURN
   const previewTurn = reduceMotion ? FADE_TURN : PREVIEW_TURN
   const primaryRef = useRef<HTMLButtonElement>(null)
@@ -127,7 +142,13 @@ export function OnboardingTakeover({
   }
 
   // Back and Skip disappear on the first and last steps; keep focus in the dialog when they do.
+  // Opening is left to the dialog, which focuses itself.
+  const shownIndex = useRef(index)
   useEffect(() => {
+    if (shownIndex.current === index) {
+      return
+    }
+    shownIndex.current = index
     if (contentRef.current?.contains(document.activeElement) !== true) {
       primaryRef.current?.focus()
     }
@@ -143,12 +164,15 @@ export function OnboardingTakeover({
       onClose={onSkip}
       size="full"
       closeOnOverlayClick={false}
-      initialFocusRef={primaryRef}
+      // The dialog itself takes focus on open, so screen readers start at its title and no button
+      // shows a focus ring before anyone has used the keyboard. Tab reaches the buttons.
+      initialFocusRef={contentRef}
       motionPreset="none"
     >
       <ModalContent
         ref={contentRef}
         motionProps={FADE}
+        sx={{ '&:focus-visible': { outline: 'none' } }}
         p={0}
         bg="neutral.50"
         bgImage={[
@@ -219,7 +243,7 @@ export function OnboardingTakeover({
                 {!isFirst && (
                   <Button
                     variant="ghost"
-                    size={{ base: 'md', md: 'sm' }}
+                    size={footer.size}
                     onClick={() => {
                       goTo(index - 1)
                     }}
@@ -232,18 +256,19 @@ export function OnboardingTakeover({
                   w={{ base: 'full', sm: 'auto' }}
                   justify="center"
                   ms={{ sm: 'auto' }}
-                  me={{ sm: 3 }}
+                  me={{ sm: 2 }}
                   mb={{ base: 2, sm: 0 }}
                 >
                   <StepDots count={steps.length} current={index} />
                 </Flex>
                 <Flex gap={2} ms={{ base: 'auto', sm: 0 }}>
-                  <Button variant="ghost" size={{ base: 'md', md: 'sm' }} onClick={onSkip}>
+                  <Button variant="ghost" size={footer.size} minW={footer.secondaryMinW} onClick={onSkip}>
                     {isLast ? 'Not Now' : 'Skip'}
                   </Button>
                   <Button
                     ref={primaryRef}
-                    size={{ base: 'md', md: 'sm' }}
+                    size={footer.size}
+                    minW={footer.primaryMinW}
                     onClick={() => {
                       if (isLast) {
                         onAddAccount()

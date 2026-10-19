@@ -110,6 +110,13 @@ function tabbableWhileHidden(): Element[] {
   )
 }
 
+it('focuses the dialog itself on open, not one of its buttons', async () => {
+  await renderTakeover()
+  await vi.waitFor(() => {
+    expect(document.activeElement?.getAttribute('role')).toBe('dialog')
+  })
+})
+
 it('walks forward and back through the steps', async () => {
   await renderTakeover()
   expect(heading()).toBe('Your Bitcoin, in one place')
