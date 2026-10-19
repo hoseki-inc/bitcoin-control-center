@@ -93,6 +93,17 @@ function heading(): string {
   return document.body.querySelector('[role="dialog"] h2')?.textContent ?? ''
 }
 
+/** Elements a keyboard could reach inside parts of the dialog hidden from assistive technology. */
+function tabbableWhileHidden(): Element[] {
+  const hidden = '[role="dialog"] [aria-hidden="true"]'
+  const selector = ['a[href]', 'button', 'input', 'select', 'textarea', '[tabindex]']
+    .map((target) => `${hidden} ${target}`)
+    .join(', ')
+  return Array.from(document.body.querySelectorAll(selector)).filter(
+    (item) => item.getAttribute('tabindex') !== '-1' && item.closest('[inert]') === null,
+  )
+}
+
 it('walks forward and back through the steps', async () => {
   await renderTakeover()
   expect(heading()).toBe('Your Bitcoin, in one place')
@@ -146,4 +157,14 @@ it.each([
   expect(heading()).toBe('Your data stays with you')
   expect(document.body.textContent).toContain(body)
   expect(document.body.textContent).toContain('Statement data')
+})
+
+it('keeps every preview out of the tab order', async () => {
+  await renderTakeover()
+  for (let step = 1; step <= 5; step++) {
+    expect(tabbableWhileHidden(), `step ${step}`).toEqual([])
+    if (step < 5) {
+      await click('Continue')
+    }
+  }
 })

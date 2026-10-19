@@ -32,6 +32,8 @@ interface AccumulationChartProps {
   timezone?: string
   /** "month" shows the first date as a month and year, as for all-time history. */
   startLabel?: 'day' | 'month'
+  /** False keeps the chart out of the tab order; its tooltip still follows the pointer. */
+  focusable?: boolean
 }
 
 function ChartTooltip({
@@ -81,6 +83,7 @@ export function AccumulationChart({
   isUp = true,
   timezone = getBrowserTimezone(),
   startLabel = 'day',
+  focusable = true,
 }: AccumulationChartProps): JSX.Element {
   // Ease into new values when the range or selection changes.
   const animate = !usePrefersReducedMotion({ ssr: false })
@@ -131,6 +134,7 @@ export function AccumulationChart({
       <ResponsiveContainer width="100%" height="100%">
         <AreaChart
           aria-label="Bitcoin balance history"
+          accessibilityLayer={focusable}
           data={chartData}
           margin={{ top: 16, right: 12, left: 12, bottom: 4 }}
         >
