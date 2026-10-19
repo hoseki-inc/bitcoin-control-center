@@ -18,10 +18,66 @@ export function useStatementSource(): UseQueryResult<RouterOutput['settings']['s
   })
 }
 
-const SOURCES = [
+export const STATEMENT_SOURCES = [
   { value: 'mempool', title: 'mempool.space', fast: true },
   { value: 'electrum', title: 'Configured Electrum server', fast: false },
 ] as const
+
+type StatementSourceItem = (typeof STATEMENT_SOURCES)[number]
+
+/** One place statements can look up transactions, as a card around its radio. Needs a RadioGroup. */
+export function StatementSourceOption({
+  item,
+  isSelected,
+  describedBy,
+}: {
+  item: StatementSourceItem
+  isSelected: boolean
+  describedBy?: string
+}): JSX.Element {
+  const [selectedEdge] = useToken('colors', ['neutral.900'])
+  return (
+    <Box
+      as="label"
+      cursor="pointer"
+      borderWidth="1px"
+      borderColor={isSelected ? 'neutral.900' : 'neutral.200'}
+      // An inset ring adds the selected weight without shifting the contents.
+      boxShadow={isSelected ? `inset 0 0 0 1px ${selectedEdge}` : undefined}
+      borderRadius="md"
+      p={3}
+      // Radio puts margin props on its whole row, so the dot alone is nudged from the card.
+      sx={{ '.chakra-radio__control': { mt: 1 } }}
+    >
+      <Radio
+        value={item.value}
+        colorScheme="orange"
+        size="sm"
+        aria-describedby={describedBy}
+        // Level with the title's first line when it wraps.
+        alignItems="flex-start"
+      >
+        <Text textStyle="text/sm" fontWeight="medium">
+          {item.title}
+        </Text>
+      </Radio>
+      <Text textStyle="text/xs" color="neutral.600" mt={1.5} ml={6}>
+        <Text
+          as="span"
+          fontWeight="medium"
+          px={1.5}
+          py={0.5}
+          borderRadius="sm"
+          bg={item.fast ? 'success.100' : 'warning.100'}
+          color={item.fast ? 'success.800' : 'warning.800'}
+        >
+          {item.fast ? 'Fastest' : 'Slower'}
+        </Text>
+        {item.value === 'mempool' && ' · Default'}
+      </Text>
+    </Box>
+  )
+}
 
 /**
  * Desktop's choice of where statements look up transactions: mempool.space, or the Electrum server
@@ -36,7 +92,6 @@ export function StatementSourceSettings({ torEnabled }: { torEnabled: boolean })
   const sending = useRef(false)
   const [savedNotice, setSavedNotice] = useFadingNotice()
   const query = useStatementSource()
-  const [selectedEdge] = useToken('colors', ['neutral.900'])
   if (query.data?.selectable === false) {
     return null
   }
@@ -145,63 +200,29 @@ export function StatementSourceSettings({ torEnabled }: { torEnabled: boolean })
           aria-labelledby="statement-source-label"
           aria-describedby="statement-source-description"
           onChange={(value) => {
-            const next = SOURCES.find((item) => item.value === value)
+            const next = STATEMENT_SOURCES.find((item) => item.value === value)
             if (next) {
               change(next.value)
             }
           }}
         >
           <SimpleGrid columns={{ base: 1, sm: 2 }} spacing={3}>
-            {SOURCES.map((item) => {
+            {STATEMENT_SOURCES.map((item) => {
               const isSelected = source === item.value
               return (
-                <Box
+                <StatementSourceOption
                   key={item.value}
-                  as="label"
-                  cursor="pointer"
-                  borderWidth="1px"
-                  borderColor={isSelected ? 'neutral.900' : 'neutral.200'}
-                  // An inset ring adds the selected weight without shifting the contents.
-                  boxShadow={isSelected ? `inset 0 0 0 1px ${selectedEdge}` : undefined}
-                  borderRadius="md"
-                  p={3}
-                  // Radio puts margin props on its whole row, so the dot alone is nudged from the card.
-                  sx={{ '.chakra-radio__control': { mt: 1 } }}
-                >
-                  <Radio
-                    value={item.value}
-                    colorScheme="orange"
-                    size="sm"
-                    // The help line describes the chosen source, so only that choice is described by it.
-                    aria-describedby={
-                      !isSelected
-                        ? undefined
-                        : showTorNote
-                          ? 'statement-source-help statement-source-tor-note'
-                          : 'statement-source-help'
-                    }
-                    // Level with the title's first line when it wraps.
-                    alignItems="flex-start"
-                  >
-                    <Text textStyle="text/sm" fontWeight="medium">
-                      {item.title}
-                    </Text>
-                  </Radio>
-                  <Text textStyle="text/xs" color="neutral.600" mt={1.5} ml={6}>
-                    <Text
-                      as="span"
-                      fontWeight="medium"
-                      px={1.5}
-                      py={0.5}
-                      borderRadius="sm"
-                      bg={item.fast ? 'success.100' : 'warning.100'}
-                      color={item.fast ? 'success.800' : 'warning.800'}
-                    >
-                      {item.fast ? 'Fastest' : 'Slower'}
-                    </Text>
-                    {item.value === 'mempool' && ' · Default'}
-                  </Text>
-                </Box>
+                  item={item}
+                  isSelected={isSelected}
+                  // The help line describes the chosen source, so only that choice is described by it.
+                  describedBy={
+                    !isSelected
+                      ? undefined
+                      : showTorNote
+                        ? 'statement-source-help statement-source-tor-note'
+                        : 'statement-source-help'
+                  }
+                />
               )
             })}
           </SimpleGrid>
