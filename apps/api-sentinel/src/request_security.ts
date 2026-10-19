@@ -167,8 +167,8 @@ export function registerRequestSecurity(
   allowIpAddressHosts = false,
 ): void {
   const allowedHosts = getAllowedHosts(configuredHosts, allowIpAddressHosts)
-  // Only StartOS and Umbrel configure hosts. Their proxies set X-Forwarded-Host to the address you used,
-  // replacing any value the client sent. Elsewhere nothing sets that header except the client itself,
+  // Only StartOS and Umbrel configure hosts. Their proxies set X-Forwarded-Host from the Host the browser
+  // sent, replacing any value the client sent. Elsewhere nothing sets that header except the client itself,
   // so a web page (after DNS rebinding, say) could use it to pass as localhost: there, Host must match too.
   const trustForwardedHost = (configuredHosts ?? '').trim() !== ''
 
