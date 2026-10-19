@@ -10,7 +10,7 @@ export const manifest = setupManifest({
   donationUrl: null,
   description: {
     short: 'Privacy-first Bitcoin accounting for your stack',
-    long: 'Bitcoin Control Center is privacy-first accounting for your stack. Connect hardware wallets, watch-only accounts, exchanges, and ETFs to track Bitcoin balances over time. Be your own bank with cryptographically verified proof-of-ownership statements. Self-custody data comes through an Electrum server you choose, preferably your own.',
+    long: 'Bitcoin Control Center is privacy-first accounting for your stack. Connect hardware wallets, watch-only accounts, exchanges, and ETFs to track Bitcoin balances over time. Be your own bank with cryptographically verified proof-of-ownership statements. Self-custody balances come from your own Electrum server, and your data stays local.',
   },
   volumes: ['main'],
   images: {

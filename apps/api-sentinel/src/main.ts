@@ -49,7 +49,7 @@ export async function main(
     forceCloseConnections: 'idle',
   })
 
-  registerRequestSecurity(server, appCtx.env.SENTINEL_ALLOWED_HOSTS, isProduction)
+  registerRequestSecurity(server, appCtx.env.SENTINEL_ALLOWED_HOSTS, isProduction, appCtx.env.SENTINEL_ALLOW_IP_HOSTS)
 
   await registerCorsPolicy(server, isProduction)
 

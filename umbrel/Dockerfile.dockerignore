@@ -1,0 +1,7 @@
+# BuildKit reads this file for umbrel/Dockerfile. Send only what the image copies.
+*
+!apps/api-sentinel/dist
+!apps/api-sentinel/assets
+!apps/control-center/dist
+!start9/runtime/package.json
+!start9/runtime/package-lock.json
