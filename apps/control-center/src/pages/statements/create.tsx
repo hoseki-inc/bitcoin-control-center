@@ -36,7 +36,6 @@ import { useLocalSetting } from '../../hooks/use-local-settings'
 import { parseNavigationState } from '../../lib/navigation-state'
 import { JUST_GENERATED_STATE } from '../../lib/statement-navigation'
 import { trpc } from '../../trpc'
-import { getBrowserTimezone } from '../../utils/timezone'
 
 /** Existing product limit for statement dates. */
 const MIN_MEMPOOL_PRICE_DATE = new Date('2023-04-01')
@@ -84,7 +83,7 @@ export function StatementCreatePage(): JSX.Element {
   const [quoteCurrency, setQuoteCurrency] = useState<StatementQuoteCurrency>('USD')
 
   // dates
-  const userTimezone = getBrowserTimezone()
+  const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone
   const now = new Date()
   // The browser's own timezone is always recognized; UTC only guards against an unexpected runtime.
   const latestClosingDate = getLatestStatementClosingDate(now, userTimezone).unwrapOrElse(() =>

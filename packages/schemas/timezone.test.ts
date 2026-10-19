@@ -13,11 +13,12 @@ describe('TimezoneSchema', () => {
     'America/Nuuk',
     'Etc/UTC',
     'Etc/GMT+8',
+    'asia/kolkata',
   ])('accepts %s', (timezone) => {
     expect(parseUnknown(TimezoneSchema, timezone).unwrap()).toBe(timezone)
   })
 
-  it.each(['', 'Not/AZone', 'Mars/Olympus'])('rejects %j', (timezone) => {
+  it.each(['', 'Not/AZone', 'Mars/Olympus', '+05:30', '-00:30'])('rejects %j', (timezone) => {
     expect(parseUnknown(TimezoneSchema, timezone).isErr()).toBe(true)
   })
 })
