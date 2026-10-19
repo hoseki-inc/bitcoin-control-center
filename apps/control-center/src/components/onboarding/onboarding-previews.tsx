@@ -12,6 +12,7 @@ import {
   type SystemStyleObject,
   Text,
   chakra,
+  useBreakpointValue,
   useToken,
 } from '@chakra-ui/react'
 import { HOSEKI_ASSETS_CDN_URL } from '@hoseki/packages/constants'
@@ -37,16 +38,17 @@ import { SAMPLE_BTC_PRICE, lastDays, sampleBalanceHistory } from './sample-histo
 
 // The app's own components with sample data, arranged as floating cards. Never the user's data.
 
-// Every scene is laid out at this size and scaled the same way, so text reads at one size across steps.
-const SCENE_WIDTH = 600
-const SCENE_HEIGHT = 680
+// Every scene is laid out at one size and scaled the same way, so text reads at one size across
+// steps. Phones get a narrower, taller scene, so cards stack rather than being cropped.
+const WIDE_SCENE = { width: 600, height: 680 }
+const COMPACT_SCENE = { width: 480, height: 600 }
 
 /**
- * Scales a scene to fit the preview pane, so the app's components keep their real proportions. A
- * short pane, on narrow screens, shows the top of the scene at full width. Cards may run off the
- * scene's right and bottom edges; the pane clips them.
+ * Scales a scene to fit whole inside the preview pane, so the app's components keep their real
+ * proportions. Cards may run off the scene's right and bottom edges; the pane clips them.
  */
 function Stage({ children }: { children: ReactNode }): JSX.Element {
+  const scene = useBreakpointValue({ base: COMPACT_SCENE, md: WIDE_SCENE }, { ssr: false }) ?? WIDE_SCENE
   const paneRef = useRef<HTMLDivElement>(null)
   const [fit, setFit] = useState({ scale: 1, top: 0 })
 
@@ -57,12 +59,8 @@ function Stage({ children }: { children: ReactNode }): JSX.Element {
     }
     const fitScene = (): void => {
       const { width: paneWidth, height: paneHeight } = pane.getBoundingClientRect()
-      if (paneHeight < SCENE_HEIGHT / 2) {
-        setFit({ scale: paneWidth / SCENE_WIDTH, top: 0 })
-        return
-      }
-      const scale = Math.min(paneWidth / SCENE_WIDTH, paneHeight / SCENE_HEIGHT)
-      setFit({ scale, top: (paneHeight - SCENE_HEIGHT * scale) / 2 })
+      const scale = Math.min(paneWidth / scene.width, paneHeight / scene.height)
+      setFit({ scale, top: (paneHeight - scene.height * scale) / 2 })
     }
     fitScene()
     const observer = new ResizeObserver(fitScene)
@@ -70,7 +68,7 @@ function Stage({ children }: { children: ReactNode }): JSX.Element {
     return () => {
       observer.disconnect()
     }
-  }, [])
+  }, [scene])
 
   return (
     <Box ref={paneRef} position="absolute" inset={0} overflow="hidden">
@@ -78,8 +76,8 @@ function Stage({ children }: { children: ReactNode }): JSX.Element {
         position="absolute"
         top={`${fit.top}px`}
         left="50%"
-        w={`${SCENE_WIDTH}px`}
-        h={`${SCENE_HEIGHT}px`}
+        w={`${scene.width}px`}
+        h={`${scene.height}px`}
         transform={`translateX(-50%) scale(${fit.scale})`}
         transformOrigin="top center"
       >
@@ -175,7 +173,7 @@ export function BalancePreview(): JSX.Element {
 
   return (
     <Stage>
-      <Card top="24px" left="24px" w="440px" p={6}>
+      <Card top={{ base: '16px', md: '24px' }} left="24px" w={{ base: '380px', md: '440px' }} p={6}>
         <DashboardAmount>
           <BitcoinAmount btc={total} />
         </DashboardAmount>
@@ -184,7 +182,13 @@ export function BalancePreview(): JSX.Element {
           <HoverableAccumulationChart data={history} hasActivity isUp startLabel="month" />
         </Box>
       </Card>
-      <Card front top="304px" left="76px" w="500px" p={6}>
+      <Card
+        front
+        top={{ base: '176px', md: '304px' }}
+        left={{ base: '8px', md: '76px' }}
+        w={{ base: '464px', md: '500px' }}
+        p={{ base: 4, md: 6 }}
+      >
         <NetAccumulatedSummary
           ready
           inBtc={net}
@@ -227,7 +231,12 @@ export function AccountTypesPreview(): JSX.Element {
   return (
     <Stage>
       <Inert>
-        <Card top="56px" left="24px" w="552px" p={6}>
+        <Card
+          top={{ base: '24px', md: '56px' }}
+          left={{ base: '12px', md: '24px' }}
+          w={{ base: '456px', md: '552px' }}
+          p={{ base: 5, md: 6 }}
+        >
           <Text as="h3" textStyle="text/2xl" fontWeight="medium" color="neutral.900">
             Connect New Account
           </Text>
@@ -278,7 +287,15 @@ export function PermissionsPreview(): JSX.Element {
     <Stage>
       <Inert>
         {/* Matches ExchangeAccountCard on the Accounts page. */}
-        <Card top="120px" left="64px" w="248px" p={2} pb={5} borderRadius="md" textAlign="center">
+        <Card
+          top={{ base: '72px', md: '120px' }}
+          left="64px"
+          w="248px"
+          p={2}
+          pb={5}
+          borderRadius="md"
+          textAlign="center"
+        >
           <HStack>
             <StatusBadge status="success" label="Connected" size="sm" ml="auto" />
           </HStack>
@@ -305,7 +322,7 @@ export function PermissionsPreview(): JSX.Element {
             </Text>
           </Flex>
         </Card>
-        <Card front top="276px" left="216px" w="320px" p={6}>
+        <Card front top={{ base: '232px', md: '276px' }} left={{ base: '116px', md: '216px' }} w="320px" p={6}>
           <HStack gap={3}>
             <chakra.img src="/images/exchanges/kraken.svg" alt="" boxSize={8} />
             <Box>
@@ -360,7 +377,12 @@ export function ConnectionsPreview(): JSX.Element {
   return (
     <Stage>
       <Inert>
-        <Card top="64px" left="24px" w="460px" p={6}>
+        <Card
+          top={{ base: '12px', md: '64px' }}
+          left={{ base: '12px', md: '24px' }}
+          w={{ base: '456px', md: '460px' }}
+          p={6}
+        >
           <Text textStyle="label/md" fontWeight="semibold">
             Electrum Server
           </Text>
@@ -390,7 +412,13 @@ export function ConnectionsPreview(): JSX.Element {
             </Text>
           </Stack>
         </Card>
-        <Card front top="376px" left="120px" w="456px" p={6}>
+        <Card
+          front
+          top={{ base: '336px', md: '376px' }}
+          left={{ base: '40px', md: '120px' }}
+          w={{ base: '420px', md: '456px' }}
+          p={6}
+        >
           <Text textStyle="text/md" fontWeight="semibold" color="neutral.900">
             Statement data
           </Text>
@@ -429,7 +457,13 @@ export function HomePreview(): JSX.Element {
 
   return (
     <Stage>
-      <Card front top="64px" left="48px" w="760px" overflow="hidden">
+      <Card
+        front
+        top={{ base: '24px', md: '64px' }}
+        left={{ base: '12px', md: '48px' }}
+        w={{ base: '456px', md: '760px' }}
+        overflow="hidden"
+      >
         <Inert>
           <Header
             logo={<Logo />}
