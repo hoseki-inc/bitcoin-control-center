@@ -41,7 +41,7 @@ import { SAMPLE_BTC_PRICE, lastDays, sampleBalanceHistory } from './sample-histo
 // Every scene is laid out at one size and scaled the same way, so text reads at one size across
 // steps. Phones get a narrower, taller scene, so cards stack rather than being cropped.
 const WIDE_SCENE = { width: 600, height: 680 }
-const COMPACT_SCENE = { width: 480, height: 600 }
+const COMPACT_SCENE = { width: 480, height: 720 }
 
 /**
  * Scales a scene to fit whole inside the preview pane, so the app's components keep their real
@@ -184,7 +184,7 @@ export function BalancePreview(): JSX.Element {
       </Card>
       <Card
         front
-        top={{ base: '176px', md: '304px' }}
+        top={{ base: '308px', md: '304px' }}
         left={{ base: '8px', md: '76px' }}
         w={{ base: '464px', md: '500px' }}
         p={{ base: 4, md: 6 }}
@@ -232,7 +232,7 @@ export function AccountTypesPreview(): JSX.Element {
     <Stage>
       <Inert>
         <Card
-          top={{ base: '24px', md: '56px' }}
+          top={{ base: '84px', md: '56px' }}
           left={{ base: '12px', md: '24px' }}
           w={{ base: '456px', md: '552px' }}
           p={{ base: 5, md: 6 }}
@@ -288,7 +288,7 @@ export function PermissionsPreview(): JSX.Element {
       <Inert>
         {/* Matches ExchangeAccountCard on the Accounts page. */}
         <Card
-          top={{ base: '72px', md: '120px' }}
+          top={{ base: '132px', md: '120px' }}
           left="64px"
           w="248px"
           p={2}
@@ -322,7 +322,7 @@ export function PermissionsPreview(): JSX.Element {
             </Text>
           </Flex>
         </Card>
-        <Card front top={{ base: '232px', md: '276px' }} left={{ base: '116px', md: '216px' }} w="320px" p={6}>
+        <Card front top={{ base: '292px', md: '276px' }} left={{ base: '116px', md: '216px' }} w="320px" p={6}>
           <HStack gap={3}>
             <chakra.img src="/images/exchanges/kraken.svg" alt="" boxSize={8} />
             <Box>
@@ -378,7 +378,7 @@ export function ConnectionsPreview(): JSX.Element {
     <Stage>
       <Inert>
         <Card
-          top={{ base: '12px', md: '64px' }}
+          top={{ base: '72px', md: '64px' }}
           left={{ base: '12px', md: '24px' }}
           w={{ base: '456px', md: '460px' }}
           p={6}
@@ -414,7 +414,7 @@ export function ConnectionsPreview(): JSX.Element {
         </Card>
         <Card
           front
-          top={{ base: '336px', md: '376px' }}
+          top={{ base: '396px', md: '376px' }}
           left={{ base: '40px', md: '120px' }}
           w={{ base: '420px', md: '456px' }}
           p={6}
