@@ -34,6 +34,11 @@ interface AccumulationChartProps {
   startLabel?: 'day' | 'month'
   /** False keeps the chart out of the tab order; its tooltip still follows the pointer. */
   focusable?: boolean
+  /**
+   * A fixed width for the balance labels. Measured by default, which a CSS-scaled parent throws
+   * off: the labels are measured at one scale and clipped if it later grows.
+   */
+  yAxisWidth?: number
 }
 
 function ChartTooltip({
@@ -84,6 +89,7 @@ export function AccumulationChart({
   timezone = getBrowserTimezone(),
   startLabel = 'day',
   focusable = true,
+  yAxisWidth,
 }: AccumulationChartProps): JSX.Element {
   // Ease into new values when the range or selection changes.
   const animate = !usePrefersReducedMotion({ ssr: false })
@@ -185,7 +191,7 @@ export function AccumulationChart({
             tickLine={false}
             tick={{ fontSize: 12, fill: axisColor, fontWeight: 500 }}
             tickFormatter={(btc: number) => formatAxisBtc(btc, axisDecimals)}
-            width="auto"
+            width={yAxisWidth ?? 'auto'}
           />
           <Tooltip
             isAnimationActive={animate}

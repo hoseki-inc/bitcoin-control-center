@@ -126,7 +126,8 @@ const hoverable: SystemStyleObject = {
 function HoverableAccumulationChart(props: Parameters<typeof AccumulationChart>[0]): JSX.Element {
   return (
     <Box sx={hoverable}>
-      <AccumulationChart {...props} focusable={false} />
+      {/* Wide enough for labels like 0.8795; measuring them would be thrown off by the scene's scale. */}
+      <AccumulationChart {...props} focusable={false} yAxisWidth={56} />
     </Box>
   )
 }
@@ -173,7 +174,12 @@ export function BalancePreview(): JSX.Element {
 
   return (
     <Stage>
-      <Card top={{ base: '16px', md: '24px' }} left="24px" w={{ base: '380px', md: '440px' }} p={6}>
+      <Card
+        top={{ base: '16px', md: '24px' }}
+        left={{ base: '50px', md: '24px' }}
+        w={{ base: '380px', md: '440px' }}
+        p={6}
+      >
         <DashboardAmount>
           <BitcoinAmount btc={total} />
         </DashboardAmount>
