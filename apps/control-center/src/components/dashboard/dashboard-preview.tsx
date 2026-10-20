@@ -1,4 +1,5 @@
-import { Box, Button, Flex, Grid, Stack, Text } from '@chakra-ui/react'
+import { Box, Button, Flex, Grid, Stack } from '@chakra-ui/react'
+import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
 import Decimal from 'decimal.js'
 import { Link } from 'react-router'
 import { formatBitcoin } from '../../lib/bitcoin-display'
@@ -25,16 +26,17 @@ export function DashboardPreview({
           justify="space-between"
           gap={5}
         >
-          <Box maxW="52ch">
-            <Text as="h2" textStyle="text/xl" fontWeight="medium">
-              Your Bitcoin, in one place
-            </Text>
-            <Text textStyle="text/md" color="neutral.600" mt={2}>
-              Add your first wallet, exchange, or manually tracked holding.
-              <br />
-              Your wallets remain watch-only.
-            </Text>
-          </Box>
+          <PageHeading
+            maxW="52ch"
+            title="Your Bitcoin, in one place"
+            description={
+              <>
+                Add your first wallet, exchange, or manually tracked holding.
+                <br />
+                Your wallets remain watch-only.
+              </>
+            }
+          />
           <Button as={Link} to="/accounts/add" flexShrink={0}>
             Add Account
           </Button>

@@ -1,4 +1,5 @@
-import { Box, Flex, Heading, Icon, Stack, Text } from '@chakra-ui/react'
+import { Box, Flex, Icon, Stack, Text } from '@chakra-ui/react'
+import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
 import { TopBar } from '@hoseki/packages/ui/prove-verify-ui/top-bar'
 import { Link, useLocation } from 'react-router'
 import { parseNavigationState } from '../../../lib/navigation-state'
@@ -16,14 +17,7 @@ export function ManualTypeSelectorPage(): JSX.Element {
       </TopBar>
 
       <Stack spacing={6} maxW="480px" mx="auto">
-        <Box>
-          <Heading textStyle="text/2xl" fontWeight="bold" color="neutral.900" mb={2}>
-            Manual Entry
-          </Heading>
-          <Text textStyle="text/md" color="neutral.400">
-            Choose what type of holding you&apos;d like to track.
-          </Text>
-        </Box>
+        <PageHeading title="Manual Entry" description="Choose what type of holding you'd like to track." />
 
         <Stack spacing={4}>
           <TypeCard
@@ -75,7 +69,7 @@ function TypeCard(props: {
         <Text textStyle="text/md" fontWeight="semibold" color="neutral.900">
           {props.title}
         </Text>
-        <Text textStyle="text/sm" color="neutral.400">
+        <Text textStyle="text/sm" color="neutral.600">
           {props.description}
         </Text>
       </Box>

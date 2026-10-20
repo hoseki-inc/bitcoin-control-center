@@ -6,13 +6,13 @@ import {
   FormControl,
   FormLabel,
   HStack,
-  Heading,
   Input,
   Select,
   Stack,
   Text,
 } from '@chakra-ui/react'
 import { ETF_CONFIGS, ETF_TICKERS, type EtfTicker, computeHoldingBtcSats } from '@hoseki/packages/etfs/holdings'
+import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
 import { TopBar } from '@hoseki/packages/ui/prove-verify-ui/top-bar'
 import { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router'
@@ -121,14 +121,10 @@ export function ClaimsVerifyEtfPage(): JSX.Element {
       </TopBar>
 
       <Stack spacing={6} maxW="560px" mx="auto">
-        <Box>
-          <Heading textStyle="text/2xl" fontWeight="bold" color="neutral.900" mb={2}>
-            Add Bitcoin ETF Holdings
-          </Heading>
-          <Text textStyle="text/md" color="neutral.400">
-            Track your indirect Bitcoin exposure through ETF shares.
-          </Text>
-        </Box>
+        <PageHeading
+          title="Add Bitcoin ETF Holdings"
+          description="Track your indirect Bitcoin exposure through ETF shares."
+        />
 
         <FormControl>
           <FormLabel textStyle="text/sm" color="neutral.600" fontWeight="medium">
@@ -151,7 +147,7 @@ export function ClaimsVerifyEtfPage(): JSX.Element {
             {holdings.map((row) => (
               <HStack key={row.key} spacing={2} align="flex-end">
                 <FormControl flex={1.2}>
-                  <FormLabel textStyle="text/xs" color="neutral.400">
+                  <FormLabel textStyle="text/xs" color="neutral.600">
                     ETF
                   </FormLabel>
                   <Select
@@ -172,7 +168,7 @@ export function ClaimsVerifyEtfPage(): JSX.Element {
                   </Select>
                 </FormControl>
                 <FormControl flex={0.8}>
-                  <FormLabel textStyle="text/xs" color="neutral.400">
+                  <FormLabel textStyle="text/xs" color="neutral.600">
                     Shares
                   </FormLabel>
                   <Input
@@ -188,7 +184,7 @@ export function ClaimsVerifyEtfPage(): JSX.Element {
                   />
                 </FormControl>
                 <FormControl flex={0.8}>
-                  <FormLabel textStyle="text/xs" color="neutral.400">
+                  <FormLabel textStyle="text/xs" color="neutral.600">
                     Date Purchased
                   </FormLabel>
                   <Input
@@ -219,7 +215,7 @@ export function ClaimsVerifyEtfPage(): JSX.Element {
         {/* Live BTC total */}
         {totalBtcSats > 0n && (
           <Box bg="neutral.50" p={4} borderRadius="md">
-            <Text textStyle="text/xs" color="neutral.400" fontWeight="medium" mb={1}>
+            <Text textStyle="text/xs" color="neutral.600" fontWeight="medium" mb={1}>
               Estimated BTC Total
             </Text>
             <Text fontFamily="mono" textStyle="text/lg" fontWeight="bold" color="neutral.900">
