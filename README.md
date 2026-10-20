@@ -481,11 +481,11 @@ See the [StartOS package reference](start9/README.md) for service configuration.
 
 ## Releases
 
-| Workflow                                                                                 | Result                                                                                                                       |
-| ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| [Release 1 - Prepare version](.github/workflows/release-1-prepare-version.yml)           | Choose a release type; pushes a version branch and links a prefilled PR with a required release-notes placeholder.           |
-| [Release 2 - Build candidates](.github/workflows/release-2-build-candidates.yml)         | Builds StartOS, Mac ARM64, and Windows x64 test packages from one commit; retains Actions artifacts for 14 days.             |
-| [Release 3 - Create draft release](.github/workflows/release-3-create-draft-release.yml) | Verifies and builds all three platforms, then creates a draft GitHub Release with installers, build metadata, and checksums. |
+| Workflow                                                                                 | Result                                                                                                                                                                                         |
+| ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [Release 1 - Prepare version](.github/workflows/release-1-prepare-version.yml)           | Choose a release type; pushes a version branch and links a prefilled PR with a required release-notes placeholder.                                                                             |
+| [Release 2 - Build candidates](.github/workflows/release-2-build-candidates.yml)         | Builds StartOS, Mac ARM64, and Windows x64 test packages and the Umbrel sideload bundle from one commit; retains Actions artifacts for 14 days.                                                |
+| [Release 3 - Create draft release](.github/workflows/release-3-create-draft-release.yml) | Verifies and builds all three platforms, then creates a draft GitHub Release with installers, build metadata, and checksums. Also publishes the app image to GHCR, which is public right away. |
 
 Version preparation and draft creation run from the default branch. Replace the generated release notes before merging the version PR, and review the draft before publishing. Nothing publishes to a StartOS registry. Without signing credentials, StartOS packages are re-signed with a fresh temporary key suitable only for clean-install testing. PR package builds rehearse the same signing and verification action with a temporary key.
 
