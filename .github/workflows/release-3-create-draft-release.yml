@@ -163,9 +163,7 @@ jobs:
 
       - name: Install packaging dependencies
         run: |
-          npm ci --prefix desktop --ignore-scripts
           npm ci --prefix start9 --ignore-scripts
-          npm ci --prefix start9/runtime --ignore-scripts
 
       - name: Set up StartOS build environment
         uses: ./.github/actions/setup-startos
@@ -252,7 +250,7 @@ jobs:
           retention-days: 7
 
   startos-sign:
-    needs: [source, startos-build]
+    needs: [source, verify, startos-build]
     permissions:
       contents: read
     uses: ./.github/workflows/startos-sign.yml
@@ -269,7 +267,7 @@ jobs:
       STARTOS_DEV_KEY: ${{ secrets.STARTOS_DEV_KEY }}
 
   mac-sign:
-    needs: [source, desktop]
+    needs: [source, verify, desktop]
     permissions:
       contents: read
     uses: ./.github/workflows/mac-sign.yml
@@ -492,7 +490,7 @@ jobs:
             echo "- StartOS signing: ${SIGNING_MODE}"
             echo "- Desktop: macOS ARM64 DMG and Windows x64 EXE, with native packaged-runtime smoke tests"
             echo "- Desktop signing: macOS ${MAC_SIGNING_MODE}; Windows without publisher signature"
-            echo "- Registry publication: no"
+            echo "- StartOS registry publication: no"
             echo "- Draft release: ${RELEASE_URL}"
             echo ""
             if [[ "$SIGNING_MODE" == "temporary clean-install key" ]]; then
@@ -568,7 +566,7 @@ jobs:
               ;;
             200)
               if [[ "sha256:$(sha256sum < "$RUNNER_TEMP/existing.json" | cut -d' ' -f1)" != "$DIGEST" ]]; then
-                echo "::error::${APP_IMAGE}:${IMAGE_VERSION} already holds another image. Image tags are never reused."
+                echo "::error::${APP_IMAGE}:${IMAGE_VERSION} already holds another image. Image tags are never reused: re-run the failed jobs in the run that pushed it, or bump the revision with Release 1 for a new build."
                 exit 1
               fi
               echo "::notice::${APP_IMAGE}:${IMAGE_VERSION} already holds this image."

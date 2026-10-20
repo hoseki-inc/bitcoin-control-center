@@ -157,7 +157,7 @@ jobs:
 
   # Builds the same bundle as a local ./umbrel/build.sh, with arm64 under QEMU.
   umbrel:
-    name: Build private Umbrel sideload bundle
+    name: Build unpublished Umbrel sideload bundle
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -196,7 +196,7 @@ jobs:
             echo "- Published: no"
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Upload the private sideload bundle
+      - name: Upload the unpublished sideload bundle
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ steps.bundle.outputs.name }}
