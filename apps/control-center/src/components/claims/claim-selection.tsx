@@ -3,7 +3,6 @@ import {
   Button,
   Checkbox,
   HStack,
-  Image,
   Stack,
   type StackProps,
   Table,
@@ -29,6 +28,7 @@ import { setIsInGenerateStatementFlow } from '../../lib/flow-tracker'
 import { trpc } from '../../trpc'
 import { withStatusBalance } from '../../utils/claim-utils'
 import { BitcoinAmount } from '../bitcoin-amount'
+import { EmptyStatePreview } from '../empty-state-preview'
 
 interface ClaimSelectionProps extends StackProps {
   disabledClaims?: Set<string>
@@ -92,12 +92,11 @@ export function ClaimSelection({
 
   if (!claims.length) {
     return (
-      <Box {...props}>
-        <Image
-          src="/empty-view/select-claims-for-statement-empty-state.png"
-          alt="Once done, your verified holdings will appear here."
-        />
-      </Box>
+      <EmptyStatePreview
+        src="/empty-view/select-claims-for-statement-empty-state.png"
+        caption="Once done, your verified holdings will appear here."
+        {...props}
+      />
     )
   }
 

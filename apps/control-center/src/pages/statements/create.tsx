@@ -11,7 +11,6 @@ import {
   FormLabel,
   Grid,
   HStack,
-  Image,
   Input,
   Select,
   Stack,
@@ -32,6 +31,7 @@ import { useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router'
 import { toast } from 'sonner'
 import { ClaimSelection } from '../../components/claims/claim-selection'
+import { EmptyStatePreview } from '../../components/empty-state-preview'
 import { useLocalSetting } from '../../hooks/use-local-settings'
 import { parseNavigationState } from '../../lib/navigation-state'
 import { JUST_GENERATED_STATE } from '../../lib/statement-navigation'
@@ -377,10 +377,11 @@ export function StatementCreatePage(): JSX.Element {
   )
 }
 
-function StatementExampleAsEmptyState() {
+function StatementExampleAsEmptyState(): JSX.Element {
   return (
-    <Box position="relative" maxW="360px" mx="auto">
-      <Image src="/empty-view/claims-empty-state-download-example.png" alt="Example Bitcoin statement." />
-    </Box>
+    <EmptyStatePreview
+      src="/empty-view/claims-empty-state-download-example.png"
+      caption="View a preview of a Hoseki statement."
+    />
   )
 }

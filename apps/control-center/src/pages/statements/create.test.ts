@@ -194,3 +194,19 @@ it.each([
     expect(container.textContent).toContain(heading)
   })
 })
+
+it('captions both previews in text when there are no accounts', async () => {
+  const rpc = createTestTrpcClient(async (operation) => {
+    if (operation.path === 'portalProve.registry.claims.list') {
+      return []
+    }
+    throw new Error(`Unexpected request: ${operation.path}`)
+  })
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+  client.setQueryData(['local-settings', 'user_name'], null)
+  const container = await renderCreatePage(client, rpc)
+  await vi.waitFor(() => {
+    expect(container.textContent).toContain('View a preview of a Hoseki statement.')
+    expect(container.textContent).toContain('Once done, your verified holdings will appear here.')
+  })
+})
