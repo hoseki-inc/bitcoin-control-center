@@ -70,7 +70,8 @@ rm -f release/Bitcoin-Control-Center-*.dmg release/Bitcoin-Control-Center-*.exe
 
 if [[ "$TARGET" == --mac || "$TARGET" == --all ]]; then
   # Ad-hoc review signatures cannot satisfy hardened-runtime Team ID validation
-  # for Electron's framework. Enable hardened runtime with Developer ID signing.
+  # for Electron's framework, so the hardened runtime is added when releases are
+  # re-signed with the Developer ID (.github/workflows/mac-sign.yml).
   # PR builds normally skip signing entirely. This command uses only an ad-hoc
   # identity (no certificate or secret), which is still required on Apple Silicon.
   CSC_FOR_PULL_REQUEST=true npx --no-install electron-builder --mac --arm64 "${COMMON[@]}" -c.mac.identity=- -c.mac.hardenedRuntime=false \
