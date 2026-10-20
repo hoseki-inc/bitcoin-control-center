@@ -46,6 +46,7 @@ pnpm build
 - `build.sh` fills `__VERSION__` from `node start9/scripts/version.mjs umbrel`, the shared release version, and fills `__IMAGE__`; never hardcode either. Never change the app ID `bitcoin-control-center` or port `3400`, and add `submission:` only in the getumbrel/umbrel-apps copy.
 - The manifest sets `requiresHttps` and `manifestVersion: 2.0` because Ledger (WebHID) and camera QR scanning need a secure context. This package requires umbrelOS 2.0 or newer.
 - Leave out `storage: dataRoot`: Sentinel's SQLite database uses WAL, which is unsafe on the network shares Umbrel can move app data to.
+- Release 2 builds the sideload bundle as a private artifact. Release 3 publishes the app image to `ghcr.io/hoseki-inc/bitcoin-control-center` and prints the `image:` line for the umbrel-apps PR. Never reuse an image tag: StartOS will pull it by tag.
 
 ## Issue #91 lint rollout
 

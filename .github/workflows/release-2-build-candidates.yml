@@ -155,6 +155,58 @@ jobs:
       CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
       APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
 
+  # Builds the same bundle as a local ./umbrel/build.sh, with arm64 under QEMU.
+  umbrel:
+    name: Build private Umbrel sideload bundle
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out selected revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Verify the workflow commit before executing repository code
+        run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+
+      - name: Set up Node workspace
+        uses: ./.github/actions/setup
+        with:
+          cache: 'false'
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      - name: Build the sideload bundle
+        id: bundle
+        shell: bash
+        run: |
+          ./umbrel/build.sh
+          BUNDLE="$(basename umbrel/dist/*.tar.gz .tar.gz)"
+          echo "name=${BUNDLE}" >> "$GITHUB_OUTPUT"
+          {
+            echo "## Umbrel sideload candidate"
+            echo ""
+            echo "- Bundle: \`${BUNDLE}.tar.gz\`"
+            echo "- Architectures: \`amd64\`, \`arm64\`"
+            echo "- Published: no"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the private sideload bundle
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ steps.bundle.outputs.name }}
+          path: |
+            umbrel/dist/${{ steps.bundle.outputs.name }}.tar.gz
+            umbrel/dist/${{ steps.bundle.outputs.name }}.tar.gz.sha256
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
   # Runs Release 3's assembly and checksum verification on these candidates, without creating a release.
   assemble:
     name: Rehearse release assembly
