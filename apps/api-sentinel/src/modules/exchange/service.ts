@@ -13,9 +13,6 @@ import { exchangeAccounts, exchangeBalanceSnapshots, exchangeStatementTxs } from
 import { Encrypted } from '../../lib/encrypted'
 import { getStrikeBtcBalance, validateStrikeApiKey } from './strike'
 
-const STATEMENT_REVERSAL_MESSAGE =
-  'This statement reverses a transaction from an earlier month. Delete that month, then import the Activity export instead.'
-
 export type SupportedExchange = 'coinbase' | 'strike' | 'robinhood' | 'kraken'
 export type ExchangeConnectionStatus = 'connected' | 'needs_reconnect'
 
@@ -869,29 +866,6 @@ export class ExchangeService {
         .where(eq(exchangeAccounts.id, args.accountId))
       if (!account) {
         return Err(new Error('Exchange account not found'))
-      }
-
-      // Strike gives both halves of a reversal the same ID. A stored row with that ID
-      // and a different amount means this file reverses it, so import nothing.
-      const stored = await db
-        .select({ externalId: exchangeStatementTxs.externalId, amountBtc: exchangeStatementTxs.amountBtc })
-        .from(exchangeStatementTxs)
-        .where(
-          and(
-            eq(exchangeStatementTxs.accountId, args.accountId),
-            inArray(
-              exchangeStatementTxs.externalId,
-              args.transactions.map((item) => item.externalId),
-            ),
-          ),
-        )
-      const storedAmounts = new Map(stored.map((row) => [row.externalId, row.amountBtc]))
-      const reversesStored = args.transactions.some((item) => {
-        const amount = storedAmounts.get(item.externalId)
-        return amount != null && !new Decimal(amount).eq(item.amountBtc)
-      })
-      if (reversesStored) {
-        return Err(new Error(STATEMENT_REVERSAL_MESSAGE))
       }
 
       let imported = 0
