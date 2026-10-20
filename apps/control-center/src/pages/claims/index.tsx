@@ -18,12 +18,17 @@ import {
 import { getRecordValue } from '@hoseki/packages/lib'
 import { ErrorBanner, Spinner } from '@hoseki/packages/ui/design-system'
 import { ClaimCardKeystores, StatusBadge, getBadgeConfigForClaim } from '@hoseki/packages/ui/prove-verify-ui'
+import { formatUsd } from '@hoseki/packages/ui/utils/format'
+import { Decimal } from 'decimal.js'
 import { useEffect } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router'
 import { toast } from 'sonner'
+import { BitcoinAmount } from '../../components/bitcoin-amount'
 import { DeleteClaimModal } from '../../components/claims/claim-details/delete-claim-modal'
+import { FiatAmountText } from '../../components/fiat-amount-text'
 import { useAutoRefreshExchanges } from '../../hooks/use-auto-refresh-exchanges'
 import { useGetBalancesPerClaimIds } from '../../lib/balances'
+import { formatBitcoinNumber } from '../../lib/bitcoin-display'
 import { type RouterOutput, trpc } from '../../trpc'
 import type { ClaimDto } from '../../trpc/server-types'
 import { ensureClaimStatusNotExpired, mapClaimToClaimCardProps } from '../../utils/claim-utils'
@@ -132,7 +137,7 @@ export function ClaimsPage(): JSX.Element {
   }, 0)
 
   const totalBtcSats = claimTotalBtcSats + exchangeTotalBtcSats + manualTotalBtcSats + etfTotalBtcSats
-  const totalBtc = totalBtcSats / 100_000_000
+  const totalBtc = new Decimal(totalBtcSats).div(100_000_000)
 
   const btcUsdPrice = btcPriceQuery.data?.value ? Number(btcPriceQuery.data.value) : null
 
@@ -186,13 +191,23 @@ export function ClaimsPage(): JSX.Element {
             </Heading>
             {hasClaims && (
               <Flex align="center" gap={3} mt={2} flexWrap="wrap">
-                <Text textStyle="text/sm" fontWeight="semibold" color="neutral.900">
-                  {totalBtc.toFixed(8)} BTC
+                <Text
+                  textStyle="text/sm"
+                  fontWeight="semibold"
+                  color="neutral.900"
+                  sx={{ fontVariantNumeric: 'tabular-nums' }}
+                >
+                  <BitcoinAmount btc={totalBtc} />
                 </Text>
-                <Text color="neutral.200">·</Text>
-                <Text textStyle="text/sm" color="success.600">
-                  ${totalUsd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </Text>
+                {/* Without a price there's nothing to add up, so leave the total out rather than show $0.00. */}
+                {btcUsdPrice !== null && (
+                  <>
+                    <Text color="neutral.200">·</Text>
+                    <Text textStyle="text/sm" color="neutral.600" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                      {formatUsd(totalUsd)}
+                    </Text>
+                  </>
+                )}
                 {verifiedCount > 0 && (
                   <>
                     <Text color="neutral.200">·</Text>
@@ -349,9 +364,7 @@ function AccountCard({ claim, balance, totalBtcSats, isLoadingBalance }: Account
   const { status: badgeStatus, label: badgeLabel } = getBadgeConfigForClaim(status)
 
   const btcSats = balance ? Number(balance.current) : 0
-  const btcAmount = btcSats / 100_000_000
-  const usdValue = balance?.usd
-  const usdAmount = Boolean(usdValue) ? Number(usdValue) : 0
+  const usdAmount = balance?.usd != null ? Number(balance.usd) : null
   const pct = totalBtcSats > 0 ? ((btcSats / totalBtcSats) * 100).toFixed(1) : '0.0'
 
   return (
@@ -401,14 +414,7 @@ function AccountCard({ claim, balance, totalBtcSats, isLoadingBalance }: Account
         {isLoadingBalance ? (
           <Box h="24px" w="120px" bg="neutral.50" borderRadius="4px" mx="auto" />
         ) : (
-          <>
-            <Text textStyle="text/lg" fontWeight="bold" color="neutral.900" letterSpacing="-0.02em">
-              {btcAmount.toFixed(8)} BTC
-            </Text>
-            <Text textStyle="text/sm" fontWeight="medium" color="success.600">
-              ${usdAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </Text>
-          </>
+          <CardBalance sats={btcSats} usd={usdAmount} />
         )}
       </Stack>
 
@@ -424,11 +430,33 @@ function AccountCard({ claim, balance, totalBtcSats, isLoadingBalance }: Account
             transition="width 0.4s ease"
           />
         </Box>
-        <Text textStyle="label/xs" color="neutral.300" whiteSpace="nowrap">
-          {pct}%
-        </Text>
+        <CardShare pct={pct} />
       </Flex>
     </Stack>
+  )
+}
+
+/** A card's BTC balance, with its USD value when there is a price. */
+function CardBalance({ sats, usd }: { sats: number; usd: number | null }): JSX.Element {
+  return (
+    <>
+      <Text textStyle="text/lg" fontWeight="semibold" color="neutral.900" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+        {formatBitcoinNumber(new Decimal(sats).div(100_000_000))}{' '}
+        <Text as="span" fontWeight="medium" color="neutral.500">
+          BTC
+        </Text>
+      </Text>
+      {usd !== null && <FiatAmountText textStyle="text/sm">{formatUsd(usd)}</FiatAmountText>}
+    </>
+  )
+}
+
+/** The account's share of all holdings, beside its proportion bar. */
+function CardShare({ pct }: { pct: string }): JSX.Element {
+  return (
+    <Text textStyle="label/sm" color="neutral.500" whiteSpace="nowrap" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+      {pct}%
+    </Text>
   )
 }
 
@@ -600,22 +628,13 @@ function ExchangeAccountCard({ account, totalBtcSats, btcUsdPrice }: ExchangeAcc
       {/* Balance */}
       <Stack gap={0} mx={4} mt={1}>
         {needsReconnect ? (
-          <Text textStyle="text/lg" fontWeight="bold" color="neutral.400" letterSpacing="-0.02em">
+          <Text textStyle="text/lg" fontWeight="semibold" color="neutral.400">
             —
           </Text>
         ) : account.balance === null ? (
           <Box h="24px" w="120px" bg="neutral.50" borderRadius="4px" mx="auto" />
         ) : (
-          <>
-            <Text textStyle="text/lg" fontWeight="bold" color="neutral.900" letterSpacing="-0.02em">
-              {btcAmount.toFixed(8)} BTC
-            </Text>
-            {usdAmount !== null && (
-              <Text textStyle="text/sm" fontWeight="medium" color="success.600">
-                ${usdAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </Text>
-            )}
-          </>
+          <CardBalance sats={btcSats} usd={usdAmount} />
         )}
       </Stack>
 
@@ -631,9 +650,7 @@ function ExchangeAccountCard({ account, totalBtcSats, btcUsdPrice }: ExchangeAcc
             transition="width 0.4s ease"
           />
         </Box>
-        <Text textStyle="label/xs" color="neutral.300" whiteSpace="nowrap">
-          {pct}%
-        </Text>
+        <CardShare pct={pct} />
       </Flex>
     </Stack>
   )
@@ -695,14 +712,7 @@ function ManualAccountCard({
 
       {/* Balance */}
       <Stack gap={0} mx={4} mt={1}>
-        <Text textStyle="text/lg" fontWeight="bold" color="neutral.900" letterSpacing="-0.02em">
-          {btcAmount.toFixed(8)} BTC
-        </Text>
-        {usdAmount !== null && (
-          <Text textStyle="text/sm" fontWeight="medium" color="success.600">
-            ${usdAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </Text>
-        )}
+        <CardBalance sats={btcSats} usd={usdAmount} />
       </Stack>
 
       {/* Proportion bar */}
@@ -717,9 +727,7 @@ function ManualAccountCard({
             transition="width 0.4s ease"
           />
         </Box>
-        <Text textStyle="label/xs" color="neutral.300" whiteSpace="nowrap">
-          {pct}%
-        </Text>
+        <CardShare pct={pct} />
       </Flex>
     </Stack>
   )
