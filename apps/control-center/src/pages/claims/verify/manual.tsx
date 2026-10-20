@@ -1,4 +1,5 @@
-import { Box, Button, Flex, FormControl, FormLabel, Heading, Input, Stack, Text } from '@chakra-ui/react'
+import { Box, Button, Flex, FormControl, FormLabel, Input, Stack } from '@chakra-ui/react'
+import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
 import { TopBar } from '@hoseki/packages/ui/prove-verify-ui/top-bar'
 import { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router'
@@ -53,14 +54,10 @@ export function ClaimsVerifyManualPage(): JSX.Element {
       </TopBar>
 
       <Stack spacing={6} maxW="480px" mx="auto">
-        <Box>
-          <Heading textStyle="text/2xl" fontWeight="bold" color="neutral.900" mb={2}>
-            Add Manual Holding
-          </Heading>
-          <Text textStyle="text/md" color="neutral.400">
-            Track Bitcoin holdings that aren&apos;t connected to a wallet or exchange.
-          </Text>
-        </Box>
+        <PageHeading
+          title="Add Manual Holding"
+          description="Track Bitcoin holdings that aren't connected to a wallet or exchange."
+        />
 
         <FormControl>
           <FormLabel textStyle="text/sm" color="neutral.600" fontWeight="medium">
