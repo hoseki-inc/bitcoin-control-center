@@ -2,7 +2,7 @@ name: Sign Mac installer
 
 # Signs and notarizes a Mac installer that a key-free job already built. The sign job is the only one
 # that can read the Developer ID certificate and notary key, so it runs no repository build,
-# dependency, or Node.js code: it checks out only the signing action and entitlements, verifies the
+# dependency, or Node.js code: it checks out only the signing script and entitlements, verifies the
 # input hash, and re-signs the app inside the installer. A separate key-free job then checks that
 # Gatekeeper accepts the result and smoke-tests the signed app.
 on:
@@ -78,14 +78,14 @@ jobs:
       signing_mode: ${{ steps.sign.outputs.mode }}
       notarized: ${{ steps.sign.outputs.notarized }}
     steps:
-      # Only the signing action and entitlements are checked out; no build or dependency code runs here.
-      - name: Check out the signing action and entitlements
+      # Only the signing script and entitlements are checked out; no build or dependency code runs here.
+      - name: Check out the signing script and entitlements
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.source-sha }}
           persist-credentials: false
           sparse-checkout: |
-            .github/actions/sign-mac-app
+            .github/scripts/sign-mac-app.sh
             desktop/entitlements.mac.plist
           sparse-checkout-cone-mode: false
 
@@ -118,18 +118,19 @@ jobs:
 
       - name: Sign, notarize, and verify the installer
         id: sign
-        uses: ./.github/actions/sign-mac-app
-        with:
-          unsigned: ${{ runner.temp }}/unsigned/${{ steps.input.outputs.file }}
-          signed: ${{ runner.temp }}/signed/${{ steps.input.outputs.file }}
-          entitlements: ${{ github.workspace }}/desktop/entitlements.mac.plist
-          certificate: ${{ secrets.CSC_LINK }}
-          certificate-password: ${{ secrets.CSC_KEY_PASSWORD }}
-          notary-key: ${{ secrets.APPLE_API_KEY_P8 }}
-          notary-key-id: ${{ vars.APPLE_API_KEY_ID }}
-          notary-issuer: ${{ vars.APPLE_API_ISSUER }}
-          team-id: ${{ vars.APPLE_TEAM_ID }}
-          require-developer-id: ${{ inputs.require-developer-id }}
+        shell: bash
+        env:
+          UNSIGNED_DMG: ${{ runner.temp }}/unsigned/${{ steps.input.outputs.file }}
+          SIGNED_DMG: ${{ runner.temp }}/signed/${{ steps.input.outputs.file }}
+          ENTITLEMENTS: ${{ github.workspace }}/desktop/entitlements.mac.plist
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          APPLE_API_KEY_ID: ${{ vars.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ vars.APPLE_API_ISSUER }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+          REQUIRE_DEVELOPER_ID: ${{ inputs.require-developer-id }}
+        run: bash .github/scripts/sign-mac-app.sh
 
       - name: Record the signed installer in its report and checksum
         id: stage

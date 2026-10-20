@@ -18,6 +18,8 @@ APPLE_TEAM_ID="${APPLE_TEAM_ID:-}"
 REQUIRE_DEVELOPER_ID="${REQUIRE_DEVELOPER_ID:-false}"
 MAC_SIGN_WITH_LOGIN_KEYCHAIN="${MAC_SIGN_WITH_LOGIN_KEYCHAIN:-false}"
 SKIP_NOTARIZATION="${SKIP_NOTARIZATION:-false}"
+# Keep the secrets out of the environment of every tool this script runs.
+export -n CSC_LINK CSC_KEY_PASSWORD APPLE_API_KEY_P8
 OUTPUT="${GITHUB_OUTPUT:-/dev/null}"
 # Apple's Developer ID G2 intermediate, which links the certificate to Apple's root.
 INTERMEDIATE_URL='https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer'
@@ -65,6 +67,16 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# Copy the app out of the read-only installer before any key is loaded.
+UNSIGNED_MOUNT="$WORKSPACE/unsigned"
+mkdir "$UNSIGNED_MOUNT"
+hdiutil attach "$UNSIGNED_DMG" -readonly -nobrowse -noautoopen -mountpoint "$UNSIGNED_MOUNT" > /dev/null
+MOUNTS+=("$UNSIGNED_MOUNT")
+APP="$WORKSPACE/$APP_NAME"
+ditto "$UNSIGNED_MOUNT/$APP_NAME" "$APP"
+hdiutil detach "$UNSIGNED_MOUNT" > /dev/null
+MOUNTS=()
+
 if [[ "$MAC_SIGN_WITH_LOGIN_KEYCHAIN" != true ]]; then
   # A throwaway keychain holds the certificate only for this run.
   KEYCHAIN="$WORKSPACE/signing.keychain-db"
@@ -76,7 +88,7 @@ if [[ "$MAC_SIGN_WITH_LOGIN_KEYCHAIN" != true ]]; then
   security set-keychain-settings -lut 21600 "$KEYCHAIN"
   security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
   printf '%s' "$CSC_LINK" | base64 --decode > "$WORKSPACE/certificate.p12"
-  security import "$WORKSPACE/certificate.p12" -k "$KEYCHAIN" -P "$CSC_KEY_PASSWORD" -T /usr/bin/codesign > /dev/null
+  security import "$WORKSPACE/certificate.p12" -k "$KEYCHAIN" -P "$CSC_KEY_PASSWORD" -x -T /usr/bin/codesign > /dev/null
   rm "$WORKSPACE/certificate.p12"
   curl -fsSL "$INTERMEDIATE_URL" -o "$WORKSPACE/DeveloperIDG2CA.cer"
   echo "$INTERMEDIATE_SHA256  $WORKSPACE/DeveloperIDG2CA.cer" | shasum -a 256 --check --status
@@ -115,16 +127,6 @@ notarize() {
   fi
   echo "Apple notarized $(basename "$file") (submission $id)."
 }
-
-# Copy the app out of the read-only installer.
-UNSIGNED_MOUNT="$WORKSPACE/unsigned"
-mkdir "$UNSIGNED_MOUNT"
-hdiutil attach "$UNSIGNED_DMG" -readonly -nobrowse -noautoopen -mountpoint "$UNSIGNED_MOUNT" > /dev/null
-MOUNTS+=("$UNSIGNED_MOUNT")
-APP="$WORKSPACE/$APP_NAME"
-ditto "$UNSIGNED_MOUNT/$APP_NAME" "$APP"
-hdiutil detach "$UNSIGNED_MOUNT" > /dev/null
-MOUNTS=()
 
 # Sign from the inside out: every Mach-O file, deepest first, then nested frameworks and helper apps,
 # then the app itself. Executables get the hardened runtime and the app's entitlements.
