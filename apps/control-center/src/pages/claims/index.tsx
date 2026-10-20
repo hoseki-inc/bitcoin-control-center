@@ -25,7 +25,6 @@ import { Link, useLocation, useNavigate } from 'react-router'
 import { toast } from 'sonner'
 import { BitcoinAmount } from '../../components/bitcoin-amount'
 import { DeleteClaimModal } from '../../components/claims/claim-details/delete-claim-modal'
-import { FiatAmountText } from '../../components/fiat-amount-text'
 import { useAutoRefreshExchanges } from '../../hooks/use-auto-refresh-exchanges'
 import { useGetBalancesPerClaimIds } from '../../lib/balances'
 import { formatBitcoinNumber } from '../../lib/bitcoin-display'
@@ -203,7 +202,7 @@ export function ClaimsPage(): JSX.Element {
                 {btcUsdPrice !== null && (
                   <>
                     <Text color="neutral.200">·</Text>
-                    <Text textStyle="text/sm" color="neutral.600" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                    <Text textStyle="text/sm" color="success.600" sx={{ fontVariantNumeric: 'tabular-nums' }}>
                       {formatUsd(totalUsd)}
                     </Text>
                   </>
@@ -446,7 +445,11 @@ function CardBalance({ sats, usd }: { sats: number; usd: number | null }): JSX.E
           BTC
         </Text>
       </Text>
-      {usd !== null && <FiatAmountText textStyle="text/sm">{formatUsd(usd)}</FiatAmountText>}
+      {usd !== null && (
+        <Text textStyle="text/sm" fontWeight="medium" color="success.600" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+          {formatUsd(usd)}
+        </Text>
+      )}
     </>
   )
 }
