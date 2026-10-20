@@ -94,6 +94,45 @@ jobs:
     needs: source
     uses: ./.github/workflows/desktop-runtime.yml
 
+  # Both publish jobs wait for this, so nothing is released from a commit that fails its tests or
+  # audit.
+  verify:
+    name: Verify the release commit
+    needs: source
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Check out the same protected release commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Verify the protected commit before executing repository code
+        env:
+          RELEASE_SHA: ${{ needs.source.outputs.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$GITHUB_SHA" = "$RELEASE_SHA"
+
+      - name: Set up Node workspace
+        uses: ./.github/actions/setup
+        with:
+          cache: 'false'
+
+      - name: Install packaging dependencies
+        run: |
+          npm ci --prefix desktop --ignore-scripts
+          npm ci --prefix start9 --ignore-scripts
+          npm ci --prefix start9/runtime --ignore-scripts
+
+      - name: Run repository verification
+        run: pnpm run ci
+
+      # Pull requests skip the audit; releases must pass it.
+      - name: Refuse to release with known moderate or worse vulnerabilities
+        run: pnpm security:audit
+
   # Builds with a temporary key and never sees the release signing key: it runs every repository and
   # dependency build step.
   startos-build:
@@ -127,13 +166,6 @@ jobs:
           npm ci --prefix desktop --ignore-scripts
           npm ci --prefix start9 --ignore-scripts
           npm ci --prefix start9/runtime --ignore-scripts
-
-      - name: Run repository verification
-        run: pnpm run ci
-
-      # Pull requests skip the audit; releases must pass it.
-      - name: Refuse to release with known moderate or worse vulnerabilities
-        run: pnpm security:audit
 
       - name: Set up StartOS build environment
         uses: ./.github/actions/setup-startos
@@ -367,7 +399,7 @@ jobs:
   # and creates the draft.
   publish:
     name: Create draft GitHub Release
-    needs: [source, startos-sign, mac-sign, assemble]
+    needs: [source, verify, startos-sign, mac-sign, assemble]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -475,7 +507,7 @@ jobs:
   # image failure does not hold up the desktop and StartOS draft.
   publish-image:
     name: Publish app image
-    needs: [source, app-image]
+    needs: [source, verify, app-image]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
