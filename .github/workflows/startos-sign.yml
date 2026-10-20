@@ -70,7 +70,7 @@ jobs:
     name: Sign StartOS package
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # Only main and release/startos-* can use the release-signing environment and read its key.
+    # Only main can use the release-signing environment and read its key.
     environment: ${{ inputs.environment }}
     # Read access only for the sparse checkout below.
     permissions:

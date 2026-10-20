@@ -1,0 +1,60 @@
+name: Sign and notarize the Mac installer
+description: Re-sign the app in an ad-hoc DMG with a Developer ID, then notarize and staple it
+
+inputs:
+  unsigned:
+    description: Absolute path to the ad-hoc DMG
+    required: true
+  signed:
+    description: Absolute path for the signed DMG
+    required: true
+  entitlements:
+    description: Absolute path to the app's entitlements plist
+    required: true
+  certificate:
+    description: Base64 Developer ID Application certificate (.p12), or empty to keep the ad-hoc signature
+    default: ''
+  certificate-password:
+    description: Password of the .p12
+    default: ''
+  notary-key:
+    description: App Store Connect API key (.p8 contents) used for notarization
+    default: ''
+  notary-key-id:
+    description: Key ID of the App Store Connect API key
+    default: ''
+  notary-issuer:
+    description: Issuer ID of the App Store Connect API key
+    default: ''
+  team-id:
+    description: Apple Team ID the certificate must belong to
+    default: ''
+  require-developer-id:
+    description: Fail instead of keeping the ad-hoc signature when no certificate is supplied
+    default: 'false'
+outputs:
+  mode:
+    description: How the installer is signed
+    value: ${{ steps.sign.outputs.mode }}
+  notarized:
+    description: Whether Apple notarized the app and installer
+    value: ${{ steps.sign.outputs.notarized }}
+
+runs:
+  using: composite
+  steps:
+    - name: Sign, notarize, and verify the installer
+      id: sign
+      shell: bash
+      env:
+        UNSIGNED_DMG: ${{ inputs.unsigned }}
+        SIGNED_DMG: ${{ inputs.signed }}
+        ENTITLEMENTS: ${{ inputs.entitlements }}
+        CSC_LINK: ${{ inputs.certificate }}
+        CSC_KEY_PASSWORD: ${{ inputs.certificate-password }}
+        APPLE_API_KEY_P8: ${{ inputs.notary-key }}
+        APPLE_API_KEY_ID: ${{ inputs.notary-key-id }}
+        APPLE_API_ISSUER: ${{ inputs.notary-issuer }}
+        APPLE_TEAM_ID: ${{ inputs.team-id }}
+        REQUIRE_DEVELOPER_ID: ${{ inputs.require-developer-id }}
+      run: bash "$GITHUB_ACTION_PATH/sign.sh"

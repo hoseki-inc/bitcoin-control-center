@@ -26,12 +26,12 @@ mac:
   category: public.app-category.finance
   target:
     - target: dmg
-  # build.sh overrides this to false for ad-hoc review signatures.
-  # Use hardened runtime when Developer ID signing is configured.
+  # build.sh overrides this to false for ad-hoc review signatures. Releases are
+  # re-signed with the hardened runtime and these entitlements, then notarized,
+  # by .github/workflows/mac-sign.yml.
   hardenedRuntime: true
   entitlements: entitlements.mac.plist
   entitlementsInherit: entitlements.mac.plist
-  # notarize: true  # TODO: Enable when Apple Developer ID is configured
 win:
   target:
     - target: nsis

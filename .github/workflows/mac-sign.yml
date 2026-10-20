@@ -1,0 +1,231 @@
+name: Sign Mac installer
+
+# Signs and notarizes a Mac installer that a key-free job already built. The sign job is the only one
+# that can read the Developer ID certificate and notary key, so it runs no repository build,
+# dependency, or Node.js code: it checks out only the signing action and entitlements, verifies the
+# input hash, and re-signs the app inside the installer. A separate key-free job then checks that
+# Gatekeeper accepts the result and smoke-tests the signed app.
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: Environment holding the Developer ID certificate and notary key, or empty to keep the ad-hoc signature
+        type: string
+        required: true
+      source-sha:
+        description: Commit the installer was built from
+        type: string
+        required: true
+      unsigned-artifact-id:
+        description: Artifact ID of the desktop build's Mac installer, report, and SHA256SUMS
+        type: string
+        required: true
+      unsigned-sha256:
+        description: SHA-256 of that installer, from the desktop build's outputs
+        type: string
+        required: true
+      signed-artifact:
+        description: Artifact name for the signed installer, its report, and SHA256SUMS
+        type: string
+        required: true
+      require-developer-id:
+        description: Fail instead of keeping the ad-hoc signature
+        type: boolean
+        default: false
+      retention-days:
+        type: number
+        default: 7
+    # GitHub gives a called workflow only the secrets its caller passes, even when the secret
+    # lives on the environment this job selects. Outside the environment they are empty, so the
+    # installer keeps its ad-hoc signature.
+    secrets:
+      CSC_LINK:
+        description: Base64 Developer ID Application certificate (.p12), read from the release-signing environment
+        required: false
+      CSC_KEY_PASSWORD:
+        description: Password of that certificate
+        required: false
+      APPLE_API_KEY_P8:
+        description: App Store Connect API key used for notarization
+        required: false
+    outputs:
+      artifact-id:
+        description: Immutable ID of the signed artifact
+        value: ${{ jobs.sign.outputs.artifact_id }}
+      sha256:
+        description: SHA-256 of the signed installer
+        value: ${{ jobs.sign.outputs.sha256 }}
+      signing-mode:
+        description: How the installer is signed
+        value: ${{ jobs.sign.outputs.signing_mode }}
+
+permissions:
+  contents: read
+
+jobs:
+  sign:
+    name: Sign and notarize Mac installer
+    runs-on: macos-15
+    # Two notarization submissions, each allowed an hour.
+    timeout-minutes: 150
+    # Only main can use the release-signing environment and read its secrets.
+    environment: ${{ inputs.environment }}
+    permissions:
+      contents: read
+    outputs:
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
+      sha256: ${{ steps.stage.outputs.sha256 }}
+      signing_mode: ${{ steps.sign.outputs.mode }}
+      notarized: ${{ steps.sign.outputs.notarized }}
+    steps:
+      # Only the signing action and entitlements are checked out; no build or dependency code runs here.
+      - name: Check out the signing action and entitlements
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.source-sha }}
+          persist-credentials: false
+          sparse-checkout: |
+            .github/actions/sign-mac-app
+            desktop/entitlements.mac.plist
+          sparse-checkout-cone-mode: false
+
+      - name: Verify the checked-out commit
+        env:
+          SOURCE_SHA: ${{ inputs.source-sha }}
+        run: test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+
+      - name: Download the ad-hoc installer
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          artifact-ids: ${{ inputs.unsigned-artifact-id }}
+          path: ${{ runner.temp }}/unsigned
+
+      # Other jobs can replace artifacts but not job outputs, so the installer must match the build job's hash.
+      - name: Confirm the installer is the one the build job produced
+        id: input
+        shell: bash
+        env:
+          UNSIGNED_DIR: ${{ runner.temp }}/unsigned
+          EXPECTED_SHA256: ${{ inputs.unsigned-sha256 }}
+        run: |
+          FILE="$(jq -r '.file' "$UNSIGNED_DIR/mac.json")"
+          if [[ ! "$FILE" =~ ^Bitcoin-Control-Center-v[0-9]+\.[0-9]+\.[0-9]+_[0-9]+-mac-arm64\.dmg$ ]]; then
+            echo "::error::Unexpected installer file name."
+            exit 1
+          fi
+          echo "${EXPECTED_SHA256}  ${UNSIGNED_DIR}/${FILE}" | shasum -a 256 --check --strict
+          echo "file=$FILE" >> "$GITHUB_OUTPUT"
+
+      - name: Sign, notarize, and verify the installer
+        id: sign
+        uses: ./.github/actions/sign-mac-app
+        with:
+          unsigned: ${{ runner.temp }}/unsigned/${{ steps.input.outputs.file }}
+          signed: ${{ runner.temp }}/signed/${{ steps.input.outputs.file }}
+          entitlements: ${{ github.workspace }}/desktop/entitlements.mac.plist
+          certificate: ${{ secrets.CSC_LINK }}
+          certificate-password: ${{ secrets.CSC_KEY_PASSWORD }}
+          notary-key: ${{ secrets.APPLE_API_KEY_P8 }}
+          notary-key-id: ${{ vars.APPLE_API_KEY_ID }}
+          notary-issuer: ${{ vars.APPLE_API_ISSUER }}
+          team-id: ${{ vars.APPLE_TEAM_ID }}
+          require-developer-id: ${{ inputs.require-developer-id }}
+
+      - name: Record the signed installer in its report and checksum
+        id: stage
+        shell: bash
+        env:
+          UNSIGNED_DIR: ${{ runner.temp }}/unsigned
+          SIGNED_DIR: ${{ runner.temp }}/signed
+          FILE: ${{ steps.input.outputs.file }}
+          SIGNING_MODE: ${{ steps.sign.outputs.mode }}
+        run: |
+          SHA256="$(shasum -a 256 "$SIGNED_DIR/$FILE" | cut -d' ' -f1)"
+          jq --arg sha256 "$SHA256" --arg signing "$SIGNING_MODE" '.sha256 = $sha256 | .signing = $signing' \
+            "$UNSIGNED_DIR/mac.json" > "$SIGNED_DIR/mac.json"
+          echo "$SHA256  $FILE" > "$SIGNED_DIR/SHA256SUMS"
+          echo "sha256=$SHA256" >> "$GITHUB_OUTPUT"
+
+      - name: Upload the signed installer
+        id: upload
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ inputs.signed-artifact }}
+          path: |
+            ${{ runner.temp }}/signed/${{ steps.input.outputs.file }}
+            ${{ runner.temp }}/signed/mac.json
+            ${{ runner.temp }}/signed/SHA256SUMS
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: ${{ inputs.retention-days }}
+
+      - name: Add signing summary
+        shell: bash
+        env:
+          SIGNING_MODE: ${{ steps.sign.outputs.mode }}
+          SHA256: ${{ steps.stage.outputs.sha256 }}
+          FILE: ${{ steps.input.outputs.file }}
+        run: |
+          {
+            echo "## Mac signing"
+            echo ""
+            echo "- Installer: \`${FILE}\`"
+            echo "- Signing: ${SIGNING_MODE}"
+            echo "- SHA-256: \`${SHA256}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # Runs without the signing secrets, so it can run the packaged app.
+  verify:
+    name: Verify the notarized Mac installer
+    needs: sign
+    if: needs.sign.outputs.notarized == 'true'
+    runs-on: macos-15
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.source-sha }}
+          persist-credentials: false
+          sparse-checkout: desktop/scripts/smoke.mjs
+          sparse-checkout-cone-mode: false
+
+      - name: Verify the checked-out commit
+        env:
+          SOURCE_SHA: ${{ inputs.source-sha }}
+        run: test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+
+      - name: Download the signed installer
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          artifact-ids: ${{ needs.sign.outputs.artifact_id }}
+          path: ${{ runner.temp }}/signed
+
+      # Gatekeeper checks quarantined downloads, so mark the installer as one before assessing it.
+      - name: Check Gatekeeper accepts the installer and app, then smoke-test the app
+        shell: bash
+        env:
+          SIGNED_DIR: ${{ runner.temp }}/signed
+          EXPECTED_SHA256: ${{ needs.sign.outputs.sha256 }}
+        run: |
+          FILE="$(jq -r '.file' "$SIGNED_DIR/mac.json")"
+          DMG="$SIGNED_DIR/$FILE"
+          echo "${EXPECTED_SHA256}  ${DMG}" | shasum -a 256 --check --strict
+          xattr -w com.apple.quarantine "0081;$(printf '%x' "$(date +%s)");Safari;" "$DMG"
+          xcrun stapler validate "$DMG"
+          spctl --assess --type open --context context:primary-signature -vv "$DMG" 2>&1 | tee "$RUNNER_TEMP/dmg-assessment"
+          grep -q 'source=Notarized Developer ID' "$RUNNER_TEMP/dmg-assessment"
+          MOUNT="$RUNNER_TEMP/mount"
+          mkdir "$MOUNT"
+          hdiutil attach "$DMG" -readonly -nobrowse -noautoopen -mountpoint "$MOUNT" > /dev/null
+          APP="$RUNNER_TEMP/smoke/Bitcoin Control Center.app"
+          mkdir -p "$RUNNER_TEMP/smoke"
+          ditto "$MOUNT/Bitcoin Control Center.app" "$APP"
+          hdiutil detach "$MOUNT" > /dev/null
+          codesign --verify --deep --strict "$APP"
+          xcrun stapler validate "$APP"
+          spctl --assess --type execute -vv "$APP" 2>&1 | tee "$RUNNER_TEMP/app-assessment"
+          grep -q 'source=Notarized Developer ID' "$RUNNER_TEMP/app-assessment"
+          ELECTRON_RUN_AS_NODE=1 "$APP/Contents/MacOS/Bitcoin Control Center" \
+            desktop/scripts/smoke.mjs "$APP/Contents/Resources"
