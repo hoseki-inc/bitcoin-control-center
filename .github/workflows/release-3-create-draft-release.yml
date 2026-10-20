@@ -94,8 +94,8 @@ jobs:
     needs: source
     uses: ./.github/workflows/desktop-runtime.yml
 
-  # Both publish jobs wait for this, so nothing is released from a commit that fails its tests or
-  # audit.
+  # The signing and publish jobs wait for this, so nothing is signed or released from a commit that
+  # fails its tests or audit.
   verify:
     name: Verify the release commit
     needs: source
@@ -566,7 +566,7 @@ jobs:
               ;;
             200)
               if [[ "sha256:$(sha256sum < "$RUNNER_TEMP/existing.json" | cut -d' ' -f1)" != "$DIGEST" ]]; then
-                echo "::error::${APP_IMAGE}:${IMAGE_VERSION} already holds another image. Image tags are never reused: re-run the failed jobs in the run that pushed it, or bump the revision with Release 1 for a new build."
+                echo "::error::${APP_IMAGE}:${IMAGE_VERSION} already holds another image. Image tags are never reused: re-run only the failed jobs in the run that pushed it (Re-run all jobs rebuilds the image and can't match), or bump the revision with Release 1 for a new build."
                 exit 1
               fi
               echo "::notice::${APP_IMAGE}:${IMAGE_VERSION} already holds this image."
