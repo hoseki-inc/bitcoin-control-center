@@ -27,7 +27,7 @@ import { BitcoinAmount } from '../../components/bitcoin-amount'
 import { DeleteClaimModal } from '../../components/claims/claim-details/delete-claim-modal'
 import { useAutoRefreshExchanges } from '../../hooks/use-auto-refresh-exchanges'
 import { useGetBalancesPerClaimIds } from '../../lib/balances'
-import { formatBitcoinNumber } from '../../lib/bitcoin-display'
+import { formatBitcoinNumber, isUsableBtcPrice } from '../../lib/bitcoin-display'
 import { type RouterOutput, trpc } from '../../trpc'
 import type { ClaimDto } from '../../trpc/server-types'
 import { ensureClaimStatusNotExpired, mapClaimToClaimCardProps } from '../../utils/claim-utils'
@@ -138,7 +138,8 @@ export function ClaimsPage(): JSX.Element {
   const totalBtcSats = claimTotalBtcSats + exchangeTotalBtcSats + manualTotalBtcSats + etfTotalBtcSats
   const totalBtc = new Decimal(totalBtcSats).div(100_000_000)
 
-  const btcUsdPrice = btcPriceQuery.data?.value ? Number(btcPriceQuery.data.value) : null
+  const quotedBtcPrice = btcPriceQuery.data?.value ? Number(btcPriceQuery.data.value) : null
+  const btcUsdPrice = isUsableBtcPrice(quotedBtcPrice) ? quotedBtcPrice : null
 
   const claimsTotalUsd = Array.from(balancesQuery.data.values()).reduce((sum, b) => {
     if (!b?.usd) {
@@ -348,14 +349,14 @@ export function ClaimsPage(): JSX.Element {
   )
 }
 
-interface AccountCardProps {
+export interface AccountCardProps {
   claim: ClaimDto
   balance: { current: unknown; usd: unknown } | null
   totalBtcSats: number
   isLoadingBalance: boolean
 }
 
-function AccountCard({ claim, balance, totalBtcSats, isLoadingBalance }: AccountCardProps): JSX.Element {
+export function AccountCard({ claim, balance, totalBtcSats, isLoadingBalance }: AccountCardProps): JSX.Element {
   const isPendingMultisig = claim.keystores.length > 1 && claim.status === 'pending'
   const to = isPendingMultisig ? `/multisig/${claim.id}` : `/accounts/${claim.id}`
   const status = ensureClaimStatusNotExpired(claim)
