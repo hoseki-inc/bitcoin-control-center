@@ -906,18 +906,20 @@ function PortfolioPageSkeleton({ hasSidebar }: { hasSidebar: boolean }): JSX.Ele
         )}
         <Box flex="1" minW={0}>
           <Wrapper maxW="928px" w="full" py={{ base: 6, md: 8 }}>
-            {!hasSidebar && <Skeleton h="48px" mb={6} />}
+            {!hasSidebar && <Skeleton h="44px" mb={6} />}
             <Box mb={6}>
               <Text textStyle="text/sm">
                 <TextSkeleton width="12ch" />
               </Text>
-              <Box mt={1} minH="104px">
+              {/* On phones the Generate Statement button sits below the balance. */}
+              <Box mt={1} minH={{ base: '144px', sm: '104px' }}>
                 <Text textStyle={{ base: 'text/7xl', md: 'amount/hero' }} fontWeight="semibold">
                   <TextSkeleton width="7ch" />
                 </Text>
                 <Text textStyle={{ base: 'text/lg', md: 'text/xl' }}>
                   <TextSkeleton width="9ch" />
                 </Text>
+                <Skeleton display={{ base: 'block', sm: 'none' }} mt={3} h="40px" w="168px" />
               </Box>
             </Box>
             {panel('220px', '64px', false)}
