@@ -558,11 +558,10 @@ The repository requires Node.js 22.23.4+, 24.22.1+, or 26.12.1+ within those maj
 These Node minimums and the pinned Electron 44.9.1 include the October 2026 eMudhra compromised-CA protections
 ([Node release](https://github.com/nodejs/node/releases/tag/v22.23.4),
 [Electron fix](https://github.com/electron/electron/pull/55126)). StartOS and Umbrel also require Debian's corrected
-`ca-certificates` package. Until the Node 22.23.4 multi-architecture container is published, their Dockerfiles upgrade
-the pinned base using official Node archives with recorded SHA-256 checksums. Existing desktop, StartOS, and Umbrel
-installations must be rebuilt, updated, and restarted to receive these fixes. Source users must switch to a patched
-Node runtime and restart Sentinel; updating only the operating system's trust store does not patch Node's bundled
-trust store. The application and its packaged runtime do not use PHP.
+`ca-certificates` package. Existing desktop, StartOS, and Umbrel installations must be rebuilt, updated, and
+restarted to receive these fixes. Source users must switch to a patched Node runtime and restart Sentinel; updating
+only the operating system's trust store does not patch Node's bundled trust store. The application and its packaged
+runtime do not use PHP.
 
 ```bash
 nvm install
