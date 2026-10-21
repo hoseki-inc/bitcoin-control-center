@@ -89,7 +89,13 @@ export function HistoryChartFrame({
   )
 }
 
-export function HistoryRangeLoading({ height }: { height: string }): JSX.Element {
+export function HistoryRangeLoading({
+  height,
+  label = 'Preparing history for this date range',
+}: {
+  height: string
+  label?: string
+}): JSX.Element {
   return (
     <Flex h={height} direction="column" justify="center" px={{ base: 4, md: 8 }} gap={4}>
       <Stack spacing={3} aria-hidden="true">
@@ -98,7 +104,7 @@ export function HistoryRangeLoading({ height }: { height: string }): JSX.Element
         ))}
       </Stack>
       <Text textStyle="text/sm" color="neutral.600">
-        Preparing history for this date range
+        {label}
       </Text>
     </Flex>
   )

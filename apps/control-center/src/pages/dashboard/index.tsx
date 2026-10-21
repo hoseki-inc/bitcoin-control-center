@@ -9,6 +9,7 @@ import {
   PopoverContent,
   PopoverTrigger,
   Portal,
+  Skeleton,
   Stack,
   Text,
   VisuallyHidden,
@@ -18,7 +19,14 @@ import {
 import { TZDate } from '@date-fns/tz'
 import type { BalanceValue } from '@hoseki/packages/lib/balance'
 import type { ClaimId } from '@hoseki/packages/schemas'
-import { DateInput as DefaultDateInput, EmptyView, Spinner } from '@hoseki/packages/ui/design-system'
+import {
+  DateInput as DefaultDateInput,
+  EmptyView,
+  SkeletonRegion,
+  Spinner,
+  TextSkeleton,
+  useRevealAfterLoading,
+} from '@hoseki/packages/ui/design-system'
 import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
 import { VIEWPORT_BELOW_HEADER, Wrapper } from '@hoseki/packages/ui/prove-verify-ui/layout'
 import { formatUsd } from '@hoseki/packages/ui/utils/format'
@@ -223,7 +231,6 @@ export function DashboardPage({
 
   const {
     data: allData,
-    isLoading: allLoading,
     isFetching: allFetching,
     isPreviousData: allIsPreviousData,
     error: allError,
@@ -234,7 +241,6 @@ export function DashboardPage({
   )
   const {
     data: filteredData,
-    isLoading: filteredLoading,
     isFetching: filteredFetching,
     isPreviousData: filteredIsPreviousData,
     error: filteredError,
@@ -252,7 +258,6 @@ export function DashboardPage({
   )
 
   const activeData = isShowingAll ? allData : filteredData
-  const activeLoading = isShowingAll ? allLoading : filteredLoading
   const activeFetching = isShowingAll ? allFetching : filteredFetching
   const activeIsPreviousData = isShowingAll ? allIsPreviousData : filteredIsPreviousData
   const activeError = isShowingAll ? allError : filteredError
@@ -513,15 +518,18 @@ export function DashboardPage({
     void navigate('/statements/create', { state: { preSelectedClaimIds: preSelectedIds, returnTo: '/portfolio' } })
   }, [isShowingAll, claimIds, selectedClaimIds, navigate])
 
-  const isInitialLoading =
-    (activeLoading && !isFullHistoryRange && allData === undefined && filteredData === undefined) ||
-    claimsQuery.isLoading ||
-    exchangeAccountsQuery.isLoading ||
-    manualAccountsQuery.isLoading ||
-    etfAccountsQuery.isLoading ||
-    btcPriceQuery.isLoading
-  if (isInitialLoading) {
-    return <Spinner fullPage size="xl" />
+  const listsLoading = [claimsQuery, exchangeAccountsQuery, manualAccountsQuery, etfAccountsQuery].some(
+    (query) => query.isLoading,
+  )
+  const hasAnyAccount =
+    claims.length > 0 || exchangeAccounts.length > 0 || manualAccounts.length > 0 || etfAccounts.length > 0
+  // Without accounts, only the history can tell an empty portfolio from one with archived wallets.
+  const awaitsEmptyCheck = !hasAnyAccount && allData === undefined && filteredData === undefined && !activeError
+  // Everything else loads in place, so only the account lists, which shape the page, hold it back.
+  const showsPageSkeleton = listsLoading || awaitsEmptyCheck
+  const pageReveal = useRevealAfterLoading(showsPageSkeleton)
+  if (showsPageSkeleton) {
+    return <PortfolioPageSkeleton hasSidebar={hasDesktopSidebar} />
   }
 
   const hasVerifiedClaims =
@@ -583,12 +591,16 @@ export function DashboardPage({
       recentlySyncedAccountIds={recentlySyncedAccountIdList}
     />
   ) : null
-  const isViewUpdating = !hasCurrentRangeData && !activeError && !isFullHistoryPending
+  // A range's first history, before there is any chart to keep on screen, loads like a full range.
+  const isFirstHistoryLoad = !hasCurrentRangeData && displayedHistory.current === null && historyRangeError === null
+  const isHistoryPending = isFullHistoryPending || isFirstHistoryLoad
+  const isViewUpdating = !hasCurrentRangeData && !activeError && !isHistoryPending
   const showsHistoryError = !!activeError || historyBackfillFailed
-  const isViewRefreshing = hasCurrentRangeData && !activeError && !isFullHistoryPending && activeFetching
+  const isViewRefreshing = hasCurrentRangeData && !activeError && !isHistoryPending && activeFetching
+  const pendingHistoryLabel = isFullHistoryPending ? 'Preparing history for this date range' : 'Loading history'
 
   return (
-    <Flex minH={VIEWPORT_BELOW_HEADER} align="stretch">
+    <Flex minH={VIEWPORT_BELOW_HEADER} align="stretch" sx={pageReveal}>
       <VisuallyHidden as="h1">Portfolio</VisuallyHidden>
       {hasDesktopSidebar && accountFilter}
       <Box flex="1" minW={0}>
@@ -679,9 +691,14 @@ export function DashboardPage({
                     color="neutral.900"
                     overflowWrap="anywhere"
                   >
-                    {displayBalanceSats === null
-                      ? '\u2014'
-                      : formatBitcoinNumber(new Decimal(displayBalanceSats).div(100_000_000))}
+                    {displayBalanceSats !== null ? (
+                      formatBitcoinNumber(new Decimal(displayBalanceSats).div(100_000_000))
+                    ) : walletBalanceState === 'unknown' ? (
+                      // An account list failed, so the balance can't be known.
+                      '\u2014'
+                    ) : (
+                      <TextSkeleton width="7ch" />
+                    )}
                   </Text>
                   <Text textStyle={{ base: 'text/xl', md: 'text/3xl' }} fontWeight="medium" color="neutral.500">
                     BTC
@@ -690,11 +707,15 @@ export function DashboardPage({
                 <Box flexBasis="100%" order={{ base: 0, sm: 1 }}>
                   <FiatAmountText textStyle={{ base: 'text/lg', md: 'text/xl' }} fontWeight="normal">
                     <>
-                      {btcPrice === null
-                        ? 'USD unavailable'
-                        : displayBalanceSats === null
-                          ? '\u2014'
-                          : formatUsd((displayBalanceSats / 100_000_000) * btcPrice)}
+                      {btcPriceQuery.isLoading || (displayBalanceSats === null && walletBalanceState !== 'unknown') ? (
+                        <TextSkeleton width="9ch" />
+                      ) : btcPrice === null ? (
+                        'USD unavailable'
+                      ) : displayBalanceSats === null ? (
+                        '\u2014'
+                      ) : (
+                        formatUsd((displayBalanceSats / 100_000_000) * btcPrice)
+                      )}
                     </>
                   </FiatAmountText>
                 </Box>
@@ -749,6 +770,17 @@ export function DashboardPage({
                       </Text>
                     </>
                   )}
+                  {/* A range's first figures load in place. */}
+                  {isFirstHistoryLoad && timeRange !== 'custom' && (
+                    <>
+                      <Text textStyle={{ base: 'text/xl', md: 'text/3xl' }} fontWeight="semibold">
+                        <TextSkeleton width="14ch" />
+                      </Text>
+                      <Text textStyle="text/sm" mt={1}>
+                        <TextSkeleton width="10ch" />
+                      </Text>
+                    </>
+                  )}
                   {/* Until a custom range has figures, still say which dates it covers. */}
                   {!(periodChange !== null && hasCurrentRangeData) && timeRange === 'custom' && (
                     <Text textStyle="text/sm" color="neutral.500">
@@ -775,7 +807,8 @@ export function DashboardPage({
                 error={historyRangeError}
                 announcesErrors
                 isBackfillBlocked={historyBackfillBlocked}
-                isPending={isFullHistoryPending}
+                isPending={isHistoryPending}
+                pendingLabel={pendingHistoryLabel}
                 isUpdating={isViewUpdating}
                 isRefreshing={isViewRefreshing}
                 onRetry={retryHistory}
@@ -808,7 +841,8 @@ export function DashboardPage({
                 error={historyRangeError}
                 announcesErrors={false}
                 isBackfillBlocked={historyBackfillBlocked}
-                isPending={isFullHistoryPending}
+                isPending={isHistoryPending}
+                pendingLabel={pendingHistoryLabel}
                 isUpdating={isViewUpdating}
                 isRefreshing={isViewRefreshing}
                 onRetry={retryHistory}
@@ -830,6 +864,71 @@ export function DashboardPage({
   )
 }
 
+/**
+ * The page's outline while the account lists load: the sidebar on wide screens (or the account
+ * picker above the page on narrow ones), the balance, and both history panels.
+ */
+function PortfolioPageSkeleton({ hasSidebar }: { hasSidebar: boolean }): JSX.Element {
+  // Each panel keeps the loaded panel's header and chart heights, so the page loads without moving.
+  const panel = (chartHeight: string, headerHeight: string, footer: boolean): JSX.Element => (
+    <Box mb={6} border="1px solid" borderColor="neutral.200" borderRadius="panel" p={{ base: 4, md: 6 }}>
+      <Flex align="flex-start" justify="space-between" mb={footer ? 6 : 5} gap={3} flexWrap="wrap" minH={headerHeight}>
+        <Box>
+          <Text textStyle={{ base: 'text/xl', md: 'text/3xl' }} fontWeight="semibold">
+            <TextSkeleton width="14ch" />
+          </Text>
+          <Text textStyle="text/sm" mt={1}>
+            <TextSkeleton width="10ch" />
+          </Text>
+        </Box>
+        {!footer && <Skeleton h="48px" w="300px" maxW="full" />}
+      </Flex>
+      <Box pt={2}>
+        <HistoryRangeLoading height={chartHeight} label="Loading history" />
+      </Box>
+      {footer && <Box minH="16px" mt={4} />}
+    </Box>
+  )
+  return (
+    <SkeletonRegion label="Loading portfolio">
+      <Flex minH={VIEWPORT_BELOW_HEADER} align="stretch">
+        {hasSidebar && (
+          <Box w="280px" flexShrink={0} borderRight="1px solid" borderColor="neutral.200" px={4} py={8}>
+            <Stack spacing={3}>
+              <Text textStyle="text/md" fontWeight="medium">
+                Accounts
+              </Text>
+              {[0, 1, 2].map((row) => (
+                <Skeleton key={row} h="56px" />
+              ))}
+            </Stack>
+          </Box>
+        )}
+        <Box flex="1" minW={0}>
+          <Wrapper maxW="928px" w="full" py={{ base: 6, md: 8 }}>
+            {!hasSidebar && <Skeleton h="48px" mb={6} />}
+            <Box mb={6}>
+              <Text textStyle="text/sm">
+                <TextSkeleton width="12ch" />
+              </Text>
+              <Box mt={1} minH="104px">
+                <Text textStyle={{ base: 'text/7xl', md: 'amount/hero' }} fontWeight="semibold">
+                  <TextSkeleton width="7ch" />
+                </Text>
+                <Text textStyle={{ base: 'text/lg', md: 'text/xl' }}>
+                  <TextSkeleton width="9ch" />
+                </Text>
+              </Box>
+            </Box>
+            {panel('220px', '64px', false)}
+            {panel('200px', '82px', true)}
+          </Wrapper>
+        </Box>
+      </Flex>
+    </SkeletonRegion>
+  )
+}
+
 /** A chart, or the error or loading state that replaces it, in the shared frame. */
 function HistoryPanel({
   height,
@@ -838,6 +937,7 @@ function HistoryPanel({
   announcesErrors,
   isBackfillBlocked,
   isPending,
+  pendingLabel,
   isUpdating,
   isRefreshing,
   onRetry,
@@ -850,6 +950,8 @@ function HistoryPanel({
   announcesErrors: boolean
   isBackfillBlocked: boolean
   isPending: boolean
+  /** What the panel says while its history is pending. */
+  pendingLabel: string
   isUpdating: boolean
   isRefreshing: boolean
   onRetry: () => void
@@ -870,7 +972,7 @@ function HistoryPanel({
           <HistoryBackfillError announce={announcesErrors} />
         </Flex>
       ) : isPending ? (
-        <HistoryRangeLoading height={height} />
+        <HistoryRangeLoading height={height} label={pendingLabel} />
       ) : (
         children
       )}

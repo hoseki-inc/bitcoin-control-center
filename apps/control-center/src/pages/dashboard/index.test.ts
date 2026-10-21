@@ -84,6 +84,8 @@ const mocks = vi.hoisted(() => {
       storedBalances = value
     },
     claimsFailed: false,
+    listsLoading: false,
+    priceLoading: false,
     exchangeAccounts: Array<RouterOutput['portalProve']['exchange']['list'][number]>(),
     etfAccounts: Array<RouterOutput['portalProve']['etf']['list'][number]>(),
     claims,
@@ -137,18 +139,23 @@ function walletRows(claimIds: string[]): WalletBalanceRow[] | undefined {
 
 const dataSource: DashboardDataSource = {
   useAccounts: () => ({
-    claimsQuery: { data: mocks.claimsFailed ? undefined : mocks.claims, isLoading: false },
+    claimsQuery: {
+      data: mocks.claimsFailed || mocks.listsLoading ? undefined : mocks.claims,
+      isLoading: mocks.listsLoading,
+    },
     exchangeAccountsQuery: { data: mocks.exchangeAccounts, isLoading: false },
     manualAccountsQuery: { data: mocks.holdings, isLoading: false },
     etfAccountsQuery: { data: mocks.etfAccounts, isLoading: false },
     btcPriceQuery: {
-      data: {
-        value: new Decimal(mocks.btcPrice),
-        asOf: new Date('2026-01-01T00:00:00Z'),
-        source: 'block',
-        lastKnown: false,
-      },
-      isLoading: false,
+      isLoading: mocks.priceLoading,
+      data: mocks.priceLoading
+        ? undefined
+        : {
+            value: new Decimal(mocks.btcPrice),
+            asOf: new Date('2026-01-01T00:00:00Z'),
+            source: 'block',
+            lastKnown: false,
+          },
     },
   }),
   useHistory: (input, options) => mocks.useQuery(input, options),
@@ -303,6 +310,8 @@ async function withTestSetup(run: () => Promise<void>): Promise<void> {
   mocks.useWalletBalances.mockClear()
   mocks.storedBalances = []
   mocks.claimsFailed = false
+  mocks.listsLoading = false
+  mocks.priceLoading = false
   mocks.exchangeAccounts = []
   mocks.etfAccounts = []
   mocks.claims = []
@@ -478,15 +487,35 @@ describe('custom portfolio range UI', () => {
     })
   })
 
-  it('still shows the first-load spinner when neither query has data', async () => {
+  it("loads a range's first history in place, with the rest of the page already shown", async () => {
     await withTestSetup(async () => {
       const defaultQuery = mocks.useQuery.getMockImplementation()
       assert.exists(defaultQuery, 'Expected the default query implementation')
       mocks.useQuery.mockImplementation((input) => ({ ...defaultQuery(input), data: undefined, isLoading: true }))
+      // A fresh visit, with no chart from before to keep on screen.
+      await act(async () => {
+        root.unmount()
+      })
+      root = createRoot(container)
       await render()
-      expect(container.textContent).not.toContain('Generate Statement')
+      expect(container.textContent).toContain('Generate Statement')
+      expect(container.textContent).toContain('Select holding')
       expect(container.querySelectorAll('[data-chart]')).toHaveLength(0)
-      expect(container.querySelector('.chakra-spinner')).not.toBeNull()
+      expect(container.textContent.match(/Loading history/g)).toHaveLength(2)
+      expect(container.textContent).not.toContain('Preparing history for this date range')
+    })
+  })
+
+  it('keeps its outline until the account lists load, rather than a spinner over an empty page', async () => {
+    await withTestSetup(async () => {
+      mocks.listsLoading = true
+      await render()
+      expect(container.querySelector('[aria-busy="true"]')?.textContent).toContain('Loading portfolio')
+      expect(container.textContent).not.toContain('Generate Statement')
+      expect(container.textContent).not.toContain('Watch your Bitcoin grow')
+      mocks.listsLoading = false
+      await render()
+      expect(container.textContent).toContain('Generate Statement')
     })
   })
 
@@ -1008,6 +1037,18 @@ describe('range summary', () => {
     return container.textContent
   }
 
+  it('shows the balance while the price loads, holding the dollar line in place', async () => {
+    await withTestSetup(async () => {
+      mocks.priceLoading = true
+      await renderHistory([['2026-09-01', 150_000_000]], 50_000_000)
+      expect(text()).toContain('0.50000000BTC')
+      expect(text()).not.toContain('USD unavailable')
+      mocks.priceLoading = false
+      await render()
+      expect(text()).toContain('$25,000.00')
+    })
+  })
+
   it('labels the view, the period, and a percentage change from a non-zero start', async () => {
     await withTestSetup(async () => {
       await renderHistory(
@@ -1257,7 +1298,9 @@ describe('range summary', () => {
       mocks.balancesUpdatedAt = 0
       mocks.storedBalances = undefined
       await renderHistory([['2026-09-01', 150_000_000]], 0)
-      expect(text()).toContain('\u2014BTC')
+      // A placeholder holds the balance's place, rather than a dash or a false zero.
+      expect(text()).not.toContain('\u2014BTC')
+      expect(container.querySelector('.chakra-skeleton')).not.toBeNull()
       expect(mocks.sidebar.mock.lastCall?.[0].balances.get('re_clmx_wallet')).toBeNull()
       // The chart keeps the server's latest point.
       const points = chartData()
@@ -1314,7 +1357,9 @@ describe('range summary', () => {
       mocks.claims = [claimFixture('re_clmx_wallet', 'Test wallet')]
       mocks.balancesUpdatedAt = 0
       await renderHistory([['2026-09-01', 150_000_000]], 0)
-      expect(text()).toContain('\u2014BTC')
+      // A placeholder holds the balance's place, rather than a dash or a false zero.
+      expect(text()).not.toContain('\u2014BTC')
+      expect(container.querySelector('.chakra-skeleton')).not.toBeNull()
       expect(mocks.sidebar.mock.lastCall?.[0].balances.get('re_clmx_wallet')).toBeNull()
       expect(container.querySelector('output')?.textContent).toBe('Updating balances')
     })
