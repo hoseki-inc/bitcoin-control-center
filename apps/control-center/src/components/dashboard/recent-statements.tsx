@@ -1,7 +1,8 @@
 import { Box, Button, Text } from '@chakra-ui/react'
+import { SkeletonRegion } from '@hoseki/packages/ui/design-system'
 import { Link as RouterLink } from 'react-router'
 import type { StatementDto } from '../../trpc/server-types'
-import { StatementsGrid } from '../statements/statements-grid'
+import { StatementsGrid, StatementsGridSkeleton } from '../statements/statements-grid'
 
 export function RecentStatements({ statements }: { statements: StatementDto[] }): JSX.Element {
   const showViewAll = statements.length > 3
@@ -18,6 +19,16 @@ export function RecentStatements({ statements }: { statements: StatementDto[] })
         </Box>
       )}
     </Box>
+  )
+}
+
+/** Recent statements' outline while they load. */
+export function RecentStatementsSkeleton(): JSX.Element {
+  return (
+    <SkeletonRegion label="Loading recent statements…">
+      <Header />
+      <StatementsGridSkeleton />
+    </SkeletonRegion>
   )
 }
 
