@@ -3,11 +3,14 @@ name: Release 3 - Create draft release
 on:
   workflow_dispatch:
 
-# Only the publish job can write. Build jobs run dependency code, so they get read access and no
-# persisted credentials. Only the StartOS signing job, which runs no build or dependency code,
-# receives the signing key.
+# Only the publish jobs can write, and they run no build or dependency code. Build jobs run
+# dependency code, so they get read access and no persisted credentials. Only the StartOS and Mac
+# signing jobs, which run no build or dependency code, receive signing keys.
 permissions:
   contents: read
+
+env:
+  APP_IMAGE: ghcr.io/hoseki-inc/bitcoin-control-center
 
 # Release jobs and their reusable workflows cannot consume or publish shared caches.
 cache-mode: none
@@ -24,6 +27,7 @@ jobs:
       sha: ${{ steps.source.outputs.sha }}
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
+      image_version: ${{ steps.version.outputs.image_version }}
       short_sha: ${{ steps.version.outputs.short_sha }}
     steps:
       - name: Require the default branch
@@ -62,10 +66,12 @@ jobs:
           VERSION="$(node start9/scripts/version.mjs get)"
           TAG="$(node start9/scripts/version.mjs tag)"
           node start9/scripts/version.mjs assert-tag "$TAG"
+          IMAGE_VERSION="$(node start9/scripts/version.mjs umbrel)"
           SHORT_SHA="$(git rev-parse --short=12 HEAD)"
           {
             echo "version=${VERSION}"
             echo "tag=${TAG}"
+            echo "image_version=${IMAGE_VERSION}"
             echo "short_sha=${SHORT_SHA}"
           } >> "$GITHUB_OUTPUT"
 
@@ -88,15 +94,13 @@ jobs:
     needs: source
     uses: ./.github/workflows/desktop-runtime.yml
 
-  # Builds with a temporary key and never sees the release signing key: it runs every repository and
-  # dependency build step.
-  startos-build:
-    name: Build StartOS release package
+  # The signing and publish jobs wait for this, so nothing is signed or released from a commit that
+  # fails its tests or audit.
+  verify:
+    name: Verify the release commit
     needs: source
     runs-on: ubuntu-latest
-    timeout-minutes: 90
-    outputs:
-      sha256: ${{ steps.package.outputs.sha256 }}
+    timeout-minutes: 60
     steps:
       - name: Check out the same protected release commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -128,6 +132,38 @@ jobs:
       # Pull requests skip the audit; releases must pass it.
       - name: Refuse to release with known moderate or worse vulnerabilities
         run: pnpm security:audit
+
+  # Builds with a temporary key and never sees the release signing key: it runs every repository and
+  # dependency build step.
+  startos-build:
+    name: Build StartOS release package
+    needs: source
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    outputs:
+      sha256: ${{ steps.package.outputs.sha256 }}
+    steps:
+      - name: Check out the same protected release commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Verify the protected commit before executing repository code
+        env:
+          RELEASE_SHA: ${{ needs.source.outputs.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$GITHUB_SHA" = "$RELEASE_SHA"
+
+      - name: Set up Node workspace
+        uses: ./.github/actions/setup
+        with:
+          cache: 'false'
+
+      - name: Install packaging dependencies
+        run: |
+          npm ci --prefix start9 --ignore-scripts
 
       - name: Set up StartOS build environment
         uses: ./.github/actions/setup-startos
@@ -161,8 +197,60 @@ jobs:
           compression-level: 0
           retention-days: 7
 
+  # Builds the app image for amd64 and arm64 (under QEMU) as one OCI archive and pushes nothing.
+  # Umbrel and StartOS both run this image.
+  app-image:
+    name: Build app image
+    needs: source
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    outputs:
+      sha256: ${{ steps.image.outputs.sha256 }}
+    steps:
+      - name: Check out the same protected release commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Verify the protected commit before executing repository code
+        env:
+          RELEASE_SHA: ${{ needs.source.outputs.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$GITHUB_SHA" = "$RELEASE_SHA"
+
+      - name: Set up Node workspace
+        uses: ./.github/actions/setup
+        with:
+          cache: 'false'
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      - name: Build the image as an OCI archive
+        id: image
+        run: |
+          ./umbrel/build.sh --release-image "$RUNNER_TEMP/app-image.tar"
+          echo "sha256=$(sha256sum "$RUNNER_TEMP/app-image.tar" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
+      - name: Confirm packaging did not edit source files
+        run: git diff --exit-code
+
+      - name: Upload the image for publishing
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: app-image
+          path: ${{ runner.temp }}/app-image.tar
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
   startos-sign:
-    needs: [source, startos-build]
+    needs: [source, verify, startos-build]
     permissions:
       contents: read
     uses: ./.github/workflows/startos-sign.yml
@@ -178,9 +266,26 @@ jobs:
     secrets:
       STARTOS_DEV_KEY: ${{ secrets.STARTOS_DEV_KEY }}
 
+  mac-sign:
+    needs: [source, verify, desktop]
+    permissions:
+      contents: read
+    uses: ./.github/workflows/mac-sign.yml
+    with:
+      environment: release-signing
+      source-sha: ${{ needs.source.outputs.sha }}
+      unsigned-artifact-id: ${{ needs.desktop.outputs.mac-artifact-id }}
+      unsigned-sha256: ${{ needs.desktop.outputs.mac-sha256 }}
+      signed-artifact: mac-installer-release
+      require-developer-id: true
+    secrets:
+      CSC_LINK: ${{ secrets.CSC_LINK }}
+      CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+      APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+
   assemble:
     name: Assemble and verify release files
-    needs: [source, desktop, startos-sign]
+    needs: [source, desktop, startos-sign, mac-sign]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     outputs:
@@ -234,11 +339,24 @@ jobs:
             cp artifacts/RELEASE_NOTES.md artifacts/GITHUB_RELEASE_NOTES.md
           fi
 
-      - name: Download verified desktop builds
+      - name: Download the Windows build
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          pattern: Bitcoin-Control-Center-*
-          path: desktop-artifacts
+          name: Bitcoin-Control-Center-win-x64
+          path: desktop-artifacts/Bitcoin-Control-Center-win-x64
+
+      - name: Download the notarized Mac build
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          artifact-ids: ${{ needs.mac-sign.outputs.artifact-id }}
+          path: desktop-artifacts/Bitcoin-Control-Center-mac-arm64
+
+      - name: Confirm the Mac build is the one the signing job produced
+        env:
+          EXPECTED_SHA256: ${{ needs.mac-sign.outputs.sha256 }}
+        run: |
+          FILE="$(jq -r '.file' desktop-artifacts/Bitcoin-Control-Center-mac-arm64/mac.json)"
+          echo "${EXPECTED_SHA256}  desktop-artifacts/Bitcoin-Control-Center-mac-arm64/${FILE}" | sha256sum --check --strict
 
       - name: Verify desktop identities and assemble release assets
         shell: bash
@@ -254,7 +372,7 @@ jobs:
             echo ""
             echo "Includes macOS Apple Silicon (ARM64) and Windows x64 installers built from the same source commit as StartOS."
             echo ""
-            echo "These are review installers: macOS uses an ad-hoc signature without notarization; Windows has no publisher signature. Operating-system installation warnings are expected."
+            echo "The macOS installer is signed with a Developer ID and notarized by Apple. The Windows installer has no publisher signature yet, so Windows SmartScreen warns before it runs."
             echo ""
             echo "DESKTOP_BUILDS.json records each installer version, source commit, and checksum. SHA256SUMS covers all three installers and that metadata."
           } >> artifacts/GITHUB_RELEASE_NOTES.md
@@ -275,11 +393,11 @@ jobs:
           compression-level: 0
           retention-days: 7
 
-  # The only job with write access. It runs no repository or dependency code: it verifies the
-  # assembled files against their checksums and creates the draft.
+  # Runs no repository or dependency code: it verifies the assembled files against their checksums
+  # and creates the draft.
   publish:
     name: Create draft GitHub Release
-    needs: [source, startos-sign, assemble]
+    needs: [source, verify, startos-sign, mac-sign, assemble]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -360,6 +478,7 @@ jobs:
           SHORT_SHA: ${{ needs.source.outputs.short_sha }}
           RELEASE_URL: ${{ steps.release.outputs.url }}
           SIGNING_MODE: ${{ needs.startos-sign.outputs.signing-mode }}
+          MAC_SIGNING_MODE: ${{ needs.mac-sign.outputs.signing-mode }}
         run: |
           {
             echo "## Complete draft release created"
@@ -370,8 +489,8 @@ jobs:
             echo "- StartOS: universal \`x86_64\` / \`aarch64\` package"
             echo "- StartOS signing: ${SIGNING_MODE}"
             echo "- Desktop: macOS ARM64 DMG and Windows x64 EXE, with native packaged-runtime smoke tests"
-            echo "- Desktop signing: macOS ad-hoc (not notarized); Windows without publisher signature"
-            echo "- Registry publication: no"
+            echo "- Desktop signing: macOS ${MAC_SIGNING_MODE}; Windows without publisher signature"
+            echo "- StartOS registry publication: no"
             echo "- Draft release: ${RELEASE_URL}"
             echo ""
             if [[ "$SIGNING_MODE" == "temporary clean-install key" ]]; then
@@ -379,4 +498,120 @@ jobs:
               echo ""
             fi
             echo "Review the draft and its checksum before publishing it."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # Publishes the app image to GHCR. Like publish, it runs no repository or dependency code. GHCR has
+  # no drafts, so the image is public once this job pushes it. It is separate from publish so an
+  # image failure does not hold up the desktop and StartOS draft.
+  publish-image:
+    name: Publish app image
+    needs: [source, verify, app-image]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      packages: write
+      # Build provenance attestation.
+      id-token: write
+      attestations: write
+    env:
+      IMAGE_VERSION: ${{ needs.source.outputs.image_version }}
+    steps:
+      - name: Download the image
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: app-image
+          path: ${{ runner.temp }}
+
+      # Other jobs can replace artifacts but not job outputs. The archive's index digest is the
+      # digest this job publishes.
+      - name: Verify the image against its build job
+        id: image
+        shell: bash
+        env:
+          SHA256: ${{ needs.app-image.outputs.sha256 }}
+        run: |
+          ARCHIVE="$RUNNER_TEMP/app-image.tar"
+          echo "${SHA256}  ${ARCHIVE}" | sha256sum --check --strict
+          DIGEST="$(tar -xOf "$ARCHIVE" index.json | jq -er '.manifests | if length == 1 then .[0].digest else error("expected one image index") end')"
+          [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          tar -xOf "$ARCHIVE" "blobs/sha256/${DIGEST#sha256:}" |
+            jq -e '[.manifests[].platform | "\(.os)/\(.architecture)"] | sort == ["linux/amd64", "linux/arm64"]' > /dev/null
+          echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
+
+      - name: Sign in to GitHub Container Registry
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin <<< "$GH_TOKEN"
+
+      # A re-run after a later step failed finds the tag it pushed, so an existing tag is accepted only
+      # when it holds exactly this image. The token asks for push as well as pull, because GHCR may
+      # refuse a pull-only token for a package that does not exist yet.
+      - name: Push the image unless the tag already holds it
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DIGEST: ${{ steps.image.outputs.digest }}
+        run: |
+          NAME="${APP_IMAGE#ghcr.io/}"
+          TOKEN="$(curl -fsS --netrc-file <(printf 'machine ghcr.io login %s password %s\n' "$GITHUB_ACTOR" "$GH_TOKEN") \
+            "https://ghcr.io/token?scope=repository:${NAME}:pull,push&service=ghcr.io" | jq -er .token)"
+          STATUS="$(curl -sS -o "$RUNNER_TEMP/existing.json" -w '%{http_code}' \
+            -H "Authorization: Bearer ${TOKEN}" \
+            -H 'Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json' \
+            "https://ghcr.io/v2/${NAME}/manifests/${IMAGE_VERSION}")"
+          case "$STATUS" in
+            404)
+              skopeo copy --authfile "$HOME/.docker/config.json" --all --preserve-digests \
+                "oci-archive:${RUNNER_TEMP}/app-image.tar" "docker://${APP_IMAGE}:${IMAGE_VERSION}"
+              ;;
+            200)
+              if [[ "sha256:$(sha256sum < "$RUNNER_TEMP/existing.json" | cut -d' ' -f1)" != "$DIGEST" ]]; then
+                echo "::error::${APP_IMAGE}:${IMAGE_VERSION} already holds another image. Image tags are never reused: re-run only the failed jobs in the run that pushed it (Re-run all jobs rebuilds the image and can't match), or bump the revision with Release 1 for a new build."
+                exit 1
+              fi
+              echo "::notice::${APP_IMAGE}:${IMAGE_VERSION} already holds this image."
+              ;;
+            *)
+              echo "::error::GHCR answered HTTP ${STATUS} for ${APP_IMAGE}:${IMAGE_VERSION}."
+              exit 1
+              ;;
+          esac
+
+      # Umbrel and StartOS pull without credentials, and GitHub creates new packages as private. The
+      # first release stops here until the package is made public; re-running the failed jobs then
+      # continues.
+      - name: Confirm the public tag holds this image
+        shell: bash
+        env:
+          DIGEST: ${{ steps.image.outputs.digest }}
+        run: |
+          if ! skopeo inspect --no-creds --raw "docker://${APP_IMAGE}:${IMAGE_VERSION}" > "$RUNNER_TEMP/public.json"; then
+            echo "::error::Anonymous pull failed. Make the ${APP_IMAGE} package public in its package settings, then re-run the failed jobs."
+            exit 1
+          fi
+          test "sha256:$(sha256sum < "$RUNNER_TEMP/public.json" | cut -d' ' -f1)" = "$DIGEST"
+
+      - name: Attest the image's build provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ env.APP_IMAGE }}
+          subject-digest: ${{ steps.image.outputs.digest }}
+          push-to-registry: true
+          create-storage-record: false
+
+      - name: Add image summary
+        shell: bash
+        env:
+          DIGEST: ${{ steps.image.outputs.digest }}
+        run: |
+          {
+            echo "## App image published"
+            echo ""
+            echo "- Image: \`${APP_IMAGE}:${IMAGE_VERSION}\`, \`linux/amd64\` and \`linux/arm64\`, public on GHCR, with build provenance"
+            echo ""
+            echo "Use this line in the app's \`docker-compose.yml\` for the getumbrel/umbrel-apps pull request:"
+            echo ""
+            echo "\`\`\`yaml"
+            echo "image: ${APP_IMAGE}:${IMAGE_VERSION}@${DIGEST}"
+            echo "\`\`\`"
           } >> "$GITHUB_STEP_SUMMARY"

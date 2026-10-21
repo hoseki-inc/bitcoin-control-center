@@ -1,6 +1,7 @@
-import { Box, Button, Flex, Grid, Heading, Icon, Text, keyframes } from '@chakra-ui/react'
+import { Box, Button, Flex, Grid, Icon, keyframes } from '@chakra-ui/react'
 import { HOSEKI_ASSETS_CDN_URL } from '@hoseki/packages/constants'
 import { ConnectManualBitcoinAccordion } from '@hoseki/packages/ui/design-system'
+import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
 import { KeystoreAvatar } from '@hoseki/packages/ui/prove-verify-ui'
 import { keyIcon } from '@hoseki/packages/ui/prove-verify-ui/claims/keystores-status-indicator'
 import { ConnectionType } from './claims-landing/connection-type'
@@ -66,13 +67,11 @@ export function AddAccountFlow({ onClose, linkState }: AddAccountFlowProps): JSX
       {/* Content */}
       <Box flex={1} overflow="auto" display="flex" justifyContent="center" px={{ base: 6, md: 12 }} pt={12} pb={20}>
         <Box w="100%" maxW="680px">
-          <Heading as="h1" textStyle="text/2xl" fontWeight="medium" color="neutral.900" mb={2}>
-            Connect New Account
-          </Heading>
-          <Text textStyle="text/md" color="neutral.400" mb={10}>
-            Connect your hardware wallet to securely link your Bitcoin holdings. Your private keys never leave your
-            device.
-          </Text>
+          <PageHeading
+            title="Connect New Account"
+            description="Connect your hardware wallet to securely link your Bitcoin holdings. Your private keys never leave your device."
+            mb={10}
+          />
 
           {/* Hardware wallets -- same tiles as the original claims page */}
           <Grid templateColumns="repeat(3, 1fr)" gap={4} mb={8}>

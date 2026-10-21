@@ -130,7 +130,7 @@ const zeroBalanceHistory = [{ timestamp: '2026-09-01T00:00:00.000Z', totalBalanc
 describe('Home overview states', () => {
   it('previews zero balances, the price chart and one account action', () => {
     const html = renderHome()
-    expect(html).toContain('Your Bitcoin, in one place')
+    expect(html).toMatch(/<h1[^>]*>Your Bitcoin, in one place<\/h1>/)
     expect(html.match(/href="\/accounts\/add"/g)).toHaveLength(1)
     for (const text of ['0.00000000 BTC', '$0.00', '30d Change', 'Bitcoin Price', 'Your holdings, on record']) {
       expect(html).toContain(text)

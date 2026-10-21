@@ -144,7 +144,7 @@ export function ConnectStrike(): JSX.Element {
           {/* Header */}
           <Flex align="center" gap={3}>
             <img src="/images/exchanges/strike-icon.svg" alt="Strike" style={{ height: '32px' }} />
-            <Heading textStyle="text/2xl" fontWeight="bold" color="neutral.900">
+            <Heading as="h1" textStyle="text/2xl" fontWeight="medium" color="neutral.900">
               {isReconnect ? 'Reconnect Strike Account' : 'Connect Strike Account'}
             </Heading>
           </Flex>
@@ -192,8 +192,12 @@ export function ConnectStrike(): JSX.Element {
                 and sign in.
               </Text>
               <Text as="li" textStyle="text/sm" color="neutral.700">
-                Click &ldquo;Generate API Key&rdquo; and give it a descriptive name like &ldquo;Bitcoin Control
+                Click &ldquo;Create API key&rdquo; and give it a descriptive name like &ldquo;Bitcoin Control
                 Center&rdquo;.
+              </Text>
+              <Text as="li" textStyle="text/sm" color="neutral.700">
+                Under &ldquo;Account&rdquo;, turn on &ldquo;Read account balances&rdquo;. Strike doesn&rsquo;t turn this
+                on by default, and Control Center can&rsquo;t read your balance without it.
               </Text>
               <Text as="li" textStyle="text/sm" color="neutral.700">
                 Copy the API key and paste it above. Your key will be encrypted and stored securely.
@@ -207,7 +211,8 @@ export function ConnectStrike(): JSX.Element {
               What is being accessed?
             </Text>
             <Text textStyle="text/sm" color="neutral.600">
-              Only your Bitcoin balance is read. No trading or withdrawal permissions are required or granted.
+              Only your balance is read. Control Center needs &ldquo;Read account balances&rdquo; and nothing that
+              creates invoices, sends payments or trades.
             </Text>
           </Box>
         </Stack>

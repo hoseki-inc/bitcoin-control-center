@@ -9,14 +9,14 @@ import {
   Flex,
   Grid,
   HStack,
-  Heading,
   Icon,
   Stack,
   Text,
   useDisclosure,
 } from '@chakra-ui/react'
 import { getRecordValue } from '@hoseki/packages/lib'
-import { ErrorBanner, Spinner } from '@hoseki/packages/ui/design-system'
+import { EmptyView, ErrorBanner, Spinner } from '@hoseki/packages/ui/design-system'
+import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
 import { ClaimCardKeystores, StatusBadge, getBadgeConfigForClaim } from '@hoseki/packages/ui/prove-verify-ui'
 import { formatUsd } from '@hoseki/packages/ui/utils/format'
 import { Decimal } from 'decimal.js'
@@ -184,11 +184,12 @@ export function ClaimsPage(): JSX.Element {
     <>
       <Stack py={8} gap={0}>
         {/* Header */}
-        <Flex align="flex-start" justify="space-between" pb={9}>
-          <Box>
-            <Heading as="h1" textStyle="text/2xl" fontWeight="medium" color="neutral.900">
-              Accounts
-            </Heading>
+        <Flex align="flex-start" justify="space-between" gap={4} pb={6}>
+          <Box minW={0}>
+            <PageHeading
+              title="Accounts"
+              description={hasClaims ? undefined : 'All your Bitcoin accounts in one place.'}
+            />
             {hasClaims && (
               <Flex align="center" gap={3} mt={2} flexWrap="wrap">
                 <Text
@@ -227,18 +228,12 @@ export function ClaimsPage(): JSX.Element {
               </Flex>
             )}
           </Box>
-          <Button
-            bg="neutral.900"
-            color="shades.0"
-            fontWeight="semibold"
-            borderRadius="8px"
-            onClick={() => {
-              void navigate('/accounts/add')
-            }}
-            _hover={{ bg: 'neutral.700' }}
-          >
-            + Add Account
-          </Button>
+          {/* The empty state has its own centered call to action. */}
+          {hasClaims && (
+            <Button as={Link} to="/accounts/add" flexShrink={0}>
+              Add Account
+            </Button>
+          )}
         </Flex>
 
         {/* Account cards */}
@@ -285,11 +280,7 @@ export function ClaimsPage(): JSX.Element {
             />
           </Grid>
         ) : (
-          <EmptyHoldings
-            onAdd={() => {
-              void navigate('/accounts/add')
-            }}
-          />
+          <EmptyHoldings />
         )}
 
         {/* Archived accounts accordion */}
@@ -499,28 +490,21 @@ function AddAccountCard({ onClick }: AddAccountCardProps): JSX.Element {
   )
 }
 
-function EmptyHoldings({ onAdd }: { onAdd: () => void }): JSX.Element {
+function EmptyHoldings(): JSX.Element {
   return (
-    <Stack align="center" textAlign="center" py={16} gap={4}>
-      <Box w={16} h={16} borderRadius="full" bg="neutral.50" />
-      <Heading size="md" color="neutral.900">
-        No accounts connected yet
-      </Heading>
-      <Text color="neutral.400" maxW="md">
-        Connect a wallet or exchange to see your bitcoin balance and start verifying your ownership.
-      </Text>
-      <Button
-        mt={4}
-        bg="neutral.900"
-        color="shades.0"
-        fontWeight="semibold"
-        borderRadius="8px"
-        onClick={onAdd}
-        _hover={{ bg: 'neutral.700' }}
-      >
-        Add Your First Account
-      </Button>
-    </Stack>
+    <EmptyView
+      border="1px solid"
+      borderColor="neutral.200"
+      borderRadius="panel"
+      bgGradient="linear(to-b, neutral.50, shades.0)"
+      title="No accounts connected yet"
+      description="Connect a wallet or exchange to see your Bitcoin balance and start verifying your ownership."
+      action={
+        <Button as={Link} to="/accounts/add">
+          Add Your First Account
+        </Button>
+      }
+    />
   )
 }
 

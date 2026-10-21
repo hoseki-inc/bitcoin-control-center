@@ -24,109 +24,9 @@ import { format } from 'date-fns'
 import { useCallback, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { toast } from 'sonner'
+import { parseStrikeCsv } from '../../../lib/strike-csv'
 import { trpc } from '../../../trpc'
 import { needsExchangeReconnect } from '../../../utils/exchange-connection-status'
-
-interface ParsedStrikeTx {
-  externalId: string
-  transactedAt: string
-  type: string
-  amountBtc: string
-  amountUsd?: string
-  feeUsd?: string
-  feeBtc?: string
-  exchangeRate?: string
-  description?: string
-  txHash?: string
-  statementMonth: string
-}
-
-function parseStrikeCsv(csvText: string): ParsedStrikeTx[] {
-  const lines = csvText.trim().split('\n')
-  if (lines.length < 2) {
-    return []
-  }
-
-  const transactions: ParsedStrikeTx[] = []
-
-  for (let i = 1; i < lines.length; i++) {
-    const line = lines[i]
-    if (line == null || line === '') {
-      continue
-    }
-    const cols = parseCsvLine(line)
-    if (cols.length < 11) {
-      continue
-    }
-
-    const [txId, timeUtc, status, txType, amountUsd, feeUsd, amountBtc, feeBtc, description, exchangeRate, txHash] =
-      cols
-
-    // Skip non-completed or non-BTC rows
-    if (status !== 'Completed') {
-      continue
-    }
-    if (
-      txId == null ||
-      txId === '' ||
-      timeUtc == null ||
-      timeUtc === '' ||
-      txType == null ||
-      txType === '' ||
-      amountBtc == null ||
-      amountBtc === '' ||
-      amountBtc.trim() === ''
-    ) {
-      continue
-    }
-
-    // Parse the date to extract statement month
-    const date = new Date(timeUtc + ' UTC')
-    if (isNaN(date.getTime())) {
-      continue
-    }
-
-    const year = date.getUTCFullYear()
-    const month = String(date.getUTCMonth() + 1).padStart(2, '0')
-    const statementMonth = `${year}-${month}`
-
-    transactions.push({
-      externalId: txId,
-      transactedAt: date.toISOString(),
-      type: txType.toLowerCase(),
-      amountBtc,
-      amountUsd: (amountUsd?.trim() ?? '') !== '' ? amountUsd : undefined,
-      feeUsd: (feeUsd?.trim() ?? '') !== '' ? feeUsd : undefined,
-      feeBtc: (feeBtc?.trim() ?? '') !== '' ? feeBtc : undefined,
-      exchangeRate: (exchangeRate?.trim() ?? '') !== '' ? exchangeRate : undefined,
-      description: (description?.trim() ?? '') !== '' ? description : undefined,
-      txHash: (txHash?.trim() ?? '') !== '' ? txHash : undefined,
-      statementMonth,
-    })
-  }
-
-  return transactions
-}
-
-/** Simple CSV line parser that handles quoted fields */
-function parseCsvLine(line: string): string[] {
-  const result: string[] = []
-  let current = ''
-  let inQuotes = false
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i]
-    if (ch === '"') {
-      inQuotes = !inQuotes
-    } else if (ch === ',' && !inQuotes) {
-      result.push(current)
-      current = ''
-    } else {
-      current += ch
-    }
-  }
-  result.push(current)
-  return result
-}
 
 const TX_TYPE_COLORS = {
   purchase: 'success.600',
@@ -238,17 +138,22 @@ export function StrikeAccountDetailsPage(): JSX.Element {
       return
     }
     if (!file.name.toLowerCase().endsWith('.csv')) {
-      toast.error('Please upload a CSV file')
+      toast.error('Please upload the CSV export, not the PDF.')
       return
     }
 
     setIsImporting(true)
     try {
       const text = await file.text()
-      const transactions = parseStrikeCsv(text)
+      const parsed = parseStrikeCsv(text)
+      if (parsed.isErr()) {
+        toast.error(parsed.unwrapErr().message)
+        return
+      }
+      const transactions = parsed.unwrap()
 
       if (transactions.length === 0) {
-        toast.error('No Bitcoin transactions found in this CSV')
+        toast.error('No Bitcoin transactions found. Upload a CSV exported from Strike.')
         return
       }
 
@@ -428,8 +333,8 @@ export function StrikeAccountDetailsPage(): JSX.Element {
             Account Statements
           </Heading>
           <Text textStyle="text/xs" color="neutral.500" mb={4}>
-            Import your monthly Strike account statements (CSV) to add transaction detail. Any data imported here will
-            appear on your Bitcoin Control Center statements.
+            Import your Strike statements as CSV files to add transaction detail. Any data imported here will appear on
+            your Bitcoin Control Center statements.
           </Text>
 
           {/* CSV Drop Zone */}
@@ -666,7 +571,7 @@ function CsvDropZone({
               Drop Strike CSV here or click to browse
             </Text>
             <Text as="span" textStyle="text/xs" color="neutral.400" mt={0.5}>
-              Exported from Strike → Account → Statements
+              In Strike, open Documents, pick a statement, then ⋯ → Export as CSV. CSV files only.
             </Text>
           </>
         )}
