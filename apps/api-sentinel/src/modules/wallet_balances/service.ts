@@ -75,17 +75,21 @@ export class WalletBalanceService {
    * Live balances for the active wallets among `accountIds`, scanning only those without a balance
    * fetched within `maxAgeMs`. With `anchoredTo`, a balance is reused only if its scan started at
    * that chain tip. Archived and unknown wallets are left out.
+   *
+   * A history backfill passes `recordSnapshot: false` for scans it starts, since it records the
+   * balance itself together with the history it certifies.
    */
   public async getLiveBalances(
     accountIds: string[],
-    options: { maxAgeMs?: number; anchoredTo?: Block } = {},
+    options: { maxAgeMs?: number; anchoredTo?: Block; recordSnapshot?: boolean } = {},
   ): Promise<Map<string, Result<LiveWalletBalance, Error>>> {
     const maxAgeMs = options.maxAgeMs ?? WALLET_BALANCE_MAX_AGE_MS
     const { anchoredTo } = options
+    const recordSnapshot = options.recordSnapshot ?? true
     const wallets = await this.activeWallets(accountIds)
     const entries = await Promise.all(
       wallets.map(async ({ id, state }): Promise<[string, Result<LiveWalletBalance, Error>] | null> => {
-        const result = await this.liveBalance(state, id, maxAgeMs, anchoredTo)
+        const result = await this.liveBalance(state, id, maxAgeMs, anchoredTo, recordSnapshot)
         return this.isLeftOut(id, state, result) ? null : [id, result]
       }),
     )
@@ -175,6 +179,7 @@ export class WalletBalanceService {
     id: string,
     maxAgeMs: number,
     anchoredTo: Block | undefined,
+    recordSnapshot: boolean,
   ): Promise<Result<LiveWalletBalance, Error>> {
     const matches = (live: LiveWalletBalance): boolean =>
       anchoredTo === undefined || (live.tip?.hash === anchoredTo.hash && live.tip.height === anchoredTo.height)
@@ -187,7 +192,8 @@ export class WalletBalanceService {
         return shared
       }
     }
-    return this.startScan(id, state)
+    // The caller read this tip before asking, so it already precedes the scan.
+    return this.startScan(id, state, anchoredTo, recordSnapshot)
   }
 
   private isFresh(live: LiveWalletBalance, maxAgeMs: number): boolean {
@@ -216,12 +222,17 @@ export class WalletBalanceService {
     })
   }
 
-  private async startScan(accountId: string, state: WalletState): Promise<Result<LiveWalletBalance, Error>> {
+  private async startScan(
+    accountId: string,
+    state: WalletState,
+    knownTip?: Block,
+    recordSnapshot = true,
+  ): Promise<Result<LiveWalletBalance, Error>> {
     const { account, generation } = state
     if (account === null) {
       return Err(new Error('Invalid wallet descriptor'))
     }
-    const scan = this.scan(accountId, account, generation).finally(() => {
+    const scan = this.scan(accountId, account, generation, knownTip, recordSnapshot).finally(() => {
       const current = this.states.get(accountId)
       if (current?.scan === scan) {
         current.scan = null
@@ -235,9 +246,12 @@ export class WalletBalanceService {
     accountId: string,
     account: Account,
     generation: number,
+    knownTip: Block | undefined,
+    recordSnapshot: boolean,
   ): Promise<Result<LiveWalletBalance, Error>> {
     const started = performance.now()
-    const tip = await this.onchainProvider.getBlocksTip()
+    // Read before the scan, so the balance is known to reflect at least this tip.
+    const tip = knownTip === undefined ? await this.onchainProvider.getBlocksTip() : Ok(knownTip)
     let balances: Result<Map<Account, bigint>, Error>
     try {
       balances = (await this.onchainProvider.getConfirmedAccountBalances(new IndexSet([account]))).map(
@@ -267,14 +281,16 @@ export class WalletBalanceService {
       fetchedAt: new Date(),
       tip: tip.isOk() ? tip.unwrap() : null,
     }
-    let recorded: boolean
+    let recorded = true
     try {
-      recorded = await recordWalletSnapshot(
-        this.db,
-        accountId,
-        live.balanceSats.toString(),
-        live.fetchedAt.toISOString(),
-      )
+      if (recordSnapshot) {
+        recorded = await recordWalletSnapshot(
+          this.db,
+          accountId,
+          live.balanceSats.toString(),
+          live.fetchedAt.toISOString(),
+        )
+      }
     } catch {
       // The balance itself is sound, so keep it; only the history misses this point.
       this.logger.warn({ accountId }, 'Could not record wallet balance snapshot')

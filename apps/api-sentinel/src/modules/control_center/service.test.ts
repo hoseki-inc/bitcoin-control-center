@@ -473,6 +473,29 @@ describe('history scan boundaries', () => {
 })
 
 describe('history balance reuse', () => {
+  it('answers with the recorded balance without waiting for Electrum, sharing the refresh with the backfill', async () => {
+    await withTestSetup(async () => {
+      await harness.service.recordAccountSnapshot(accountId, '150', '2020-01-03T09:00:00.000Z')
+      const scan = deferred<Result<IndexMap<Account, bigint>, Error>>()
+      harness.provider.getConfirmedAccountBalances.mockReturnValueOnce(new AsyncResult(scan.promise))
+      const walletBalances = harness.service['walletBalances']
+
+      const data = (await harness.service.getData({ timeRange: '90d' })).unwrap()
+      expect(data.currentTotalBalance).toBe('150')
+      expect(walletBalances.getStatus(accountId).syncing).toBe(true)
+
+      scan.resolve(Ok(new IndexMap([[account, 175n]])))
+      await vi.waitFor(() => {
+        expect(walletBalances.getStatus(accountId).live?.balanceSats).toBe(175n)
+        expect(harness.service['accountHistoryBackfillsInFlight'].size).toBe(0)
+      })
+      expect(harness.provider.getConfirmedAccountBalances).toHaveBeenCalledTimes(1)
+      const refreshed = (await harness.service.getData({ timeRange: '90d' })).unwrap()
+      expect(refreshed.currentTotalBalance).toBe('175')
+      expect(harness.provider.getConfirmedAccountBalances).toHaveBeenCalledTimes(1)
+    })
+  })
+
   it('avoids a second balance/discovery sweep during a stable-tip page request', async () => {
     await withTestSetup(async () => {
       await harness.service.getData({ timeRange: 'all' })
