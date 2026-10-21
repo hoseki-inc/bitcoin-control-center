@@ -1,3 +1,4 @@
+import { hostname } from 'node:os'
 import Fastify from 'fastify'
 import pino from 'pino'
 import { describe, expect, it, onTestFinished } from 'vitest'
@@ -36,8 +37,11 @@ function refusedError(): Error {
   })
 }
 
-/** Logs every way Sentinel and its Electrum provider use for wallet details and hosts. */
-function logWalletDetails(level: string): string {
+/**
+ * Logs every way Sentinel and its Electrum provider record wallet details and hosts. Each line is
+ * at Error, so every level writes all of them and no assertion passes because a line was dropped.
+ */
+function logWalletDetails(level: string): string[] {
   const lines: string[] = []
   const logger = pino(
     { level, ...walletDetailLogOptions(level) },
@@ -47,8 +51,8 @@ function logWalletDetails(level: string): string {
       },
     },
   )
-  logger.warn({ address, err: new Error(`Electrum error [1]: unknown address ${address}`) }, 'Failed to list unspent')
-  logger.warn(
+  logger.error({ address, err: new Error(`Electrum error [1]: unknown address ${address}`) }, 'Failed to list unspent')
+  logger.error(
     { txHash: txid, err: new Error(`Electrum error [2]: missing transaction ${txid}`) },
     'Failed to fetch raw tx',
   )
@@ -57,37 +61,60 @@ function logWalletDetails(level: string): string {
   logger.error({ error: `getaddrinfo ENOTFOUND ${host}` }, 'Failed to initialize application context')
   logger.error({ reason: `connect ECONNREFUSED ${onion}:50001` }, 'Saved connections are unavailable')
   logger.error(refusedError())
-  logger.info({ accounts: [{ descriptor, xpub }] }, 'Accounts')
-  logger.child({ module: 'electrum', host }).info({ addresses: [legacyAddress] }, 'Child logger')
-  logger.info(`Looked up ${txid}`)
-  return lines.join('')
+  logger.error(refusedError(), 'Electrum %s', `refused ${descriptor}`)
+  logger.error({ accounts: [{ descriptor, xpub }] }, 'Accounts')
+  logger.child({ module: 'electrum', host }).error({ addresses: [legacyAddress] }, 'Child logger')
+  logger.error(`Looked up ${txid}`)
+  logger.error('Electrum at %s refused', `${ip}:50001`)
+  return lines
 }
+
+const LOGGED_LINES = 12
 
 describe('wallet detail log redaction', () => {
   it.each(['info', 'warn', 'error'])('hides wallet details and hosts at %s', (level) => {
-    const output = logWalletDetails(level)
+    const lines = logWalletDetails(level)
+    const output = lines.join('')
 
+    expect(lines).toHaveLength(LOGGED_LINES)
     for (const detail of details) {
       expect(output).not.toContain(detail)
     }
     expect(output).not.toContain('my-home')
-    expect(output).not.toContain(':50001')
-    expect(output).toContain(HIDDEN_DETAIL)
-    // Error codes and kinds stay, so support logs still say what went wrong.
+    expect(output).not.toContain(`"hostname":"${hostname()}"`)
+    expect(lines[0]).toContain(`"hostname":"${HIDDEN_DETAIL}"`)
+    // Error codes, kinds and ports stay, so support logs still say what went wrong and where.
     expect(output).toContain(`"code":"ENOTFOUND"`)
     expect(output).toContain(`"code":"ECONNREFUSED"`)
     expect(output).toContain(`getaddrinfo ENOTFOUND ${HIDDEN_DETAIL}`)
-    expect(output).toContain(`connect ECONNREFUSED ${HIDDEN_DETAIL}`)
+    expect(output).toContain(`connect ECONNREFUSED ${HIDDEN_DETAIL}:50001`)
+    expect(output).toContain(`"msg":"connect ECONNREFUSED ${HIDDEN_DETAIL}:50001"`)
+    expect(output).toContain(`"msg":"Electrum refused ${HIDDEN_DETAIL}"`)
+    expect(output).toContain(`"msg":"Electrum at ${HIDDEN_DETAIL}:50001 refused"`)
   })
 
   it.each(['debug', 'trace'])('shows wallet details and hosts at %s', (level) => {
-    const output = logWalletDetails(level)
+    const lines = logWalletDetails(level)
+    const output = lines.join('')
 
-    for (const detail of [address, legacyAddress, txid, xpub, host, ip, onion]) {
+    expect(lines).toHaveLength(LOGGED_LINES)
+    for (const detail of details) {
       expect(output).toContain(detail)
     }
     expect(output).toContain(`"hostname":"${host}"`)
+    expect(output).toContain(`"hostname":"${hostname()}"`)
     expect(output).not.toContain(HIDDEN_DETAIL)
+  })
+
+  it('keeps loopback hosts, which identify nothing and tell Tor and Electrum apart', () => {
+    expect(hideWalletDetailsInText('connect ECONNREFUSED 127.0.0.1:9050')).toBe('connect ECONNREFUSED 127.0.0.1:9050')
+    expect(hideWalletDetailsInText('connect ECONNREFUSED ::1:50001')).toBe('connect ECONNREFUSED ::1:50001')
+    expect(hideWalletDetailsInText('connect ECONNREFUSED fd00::5:50001')).toBe(
+      `connect ECONNREFUSED ${HIDDEN_DETAIL}:50001`,
+    )
+    expect(hideWalletDetailsInText('Server listening at http://10.0.0.5:3400')).toBe(
+      `Server listening at http://${HIDDEN_DETAIL}:3400`,
+    )
   })
 
   it('keeps ordinary text and stack frames', () => {

@@ -88,7 +88,8 @@ export async function main(
     await server.close()
     throw error
   }
-  logger.info({ host, port: boundPort }, 'api-sentinel is running')
+  // Sentinel's own address helps diagnose an unreachable UI, so it isn't logged as a hidden `host`.
+  logger.info({ listenHost: host, port: boundPort }, 'api-sentinel is running')
 
   // Record initial balance snapshots, then every 15 minutes
   void appCtx.controlCenterService.recordAllSnapshots()
