@@ -14,9 +14,11 @@ import {
 import { ETF_CONFIGS, ETF_TICKERS, type EtfTicker, computeHoldingBtcSats } from '@hoseki/packages/etfs/holdings'
 import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
 import { TopBar } from '@hoseki/packages/ui/prove-verify-ui/top-bar'
+import { Decimal } from 'decimal.js'
 import { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router'
 import { toast } from 'sonner'
+import { BitcoinAmount } from '../../../components/bitcoin-amount'
 import { parseNavigationState } from '../../../lib/navigation-state'
 import { trpc } from '../../../trpc'
 
@@ -72,7 +74,7 @@ export function ClaimsVerifyEtfPage(): JSX.Element {
     const config = ETF_CONFIGS[row.ticker]
     totalBtcSats += computeHoldingBtcSats(config, shares, asOf)
   }
-  const totalBtc = Number(totalBtcSats) / 1e8
+  const totalBtc = new Decimal(totalBtcSats.toString()).div(100_000_000)
 
   const hasValidHoldings = holdings.some((r) => {
     const shares = parseFloat(r.shares)
@@ -218,8 +220,13 @@ export function ClaimsVerifyEtfPage(): JSX.Element {
             <Text textStyle="text/xs" color="neutral.600" fontWeight="medium" mb={1}>
               Estimated BTC Total
             </Text>
-            <Text fontFamily="mono" textStyle="text/lg" fontWeight="bold" color="neutral.900">
-              {totalBtc.toFixed(8)} BTC
+            <Text
+              textStyle="text/lg"
+              fontWeight="semibold"
+              color="neutral.900"
+              sx={{ fontVariantNumeric: 'tabular-nums' }}
+            >
+              <BitcoinAmount btc={totalBtc} />
             </Text>
           </Box>
         )}

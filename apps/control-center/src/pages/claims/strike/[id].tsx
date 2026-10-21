@@ -438,12 +438,12 @@ export function StrikeAccountDetailsPage(): JSX.Element {
                             </Text>
                           </Td>
                           <Td isNumeric>
-                            <Text textStyle="text/xs" fontFamily="mono">
+                            <Text textStyle="text/xs" sx={{ fontVariantNumeric: 'tabular-nums' }}>
                               {formatBtcAmount(tx.amountBtc)}
                             </Text>
                           </Td>
                           <Td isNumeric>
-                            <Text textStyle="text/xs" fontFamily="mono" color="neutral.500">
+                            <Text textStyle="text/xs" color="neutral.500" sx={{ fontVariantNumeric: 'tabular-nums' }}>
                               {tx.amountUsd != null && tx.amountUsd !== ''
                                 ? `$${Math.abs(Number(tx.amountUsd)).toFixed(2)}`
                                 : '—'}

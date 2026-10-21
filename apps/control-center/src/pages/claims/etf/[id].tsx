@@ -233,12 +233,12 @@ export function EtfAccountDetailsPage(): JSX.Element {
                           <Text textStyle="text/xs">{holding.shares}</Text>
                         </Td>
                         <Td>
-                          <Text textStyle="text/xs" fontFamily="mono">
+                          <Text textStyle="text/xs" sx={{ fontVariantNumeric: 'tabular-nums' }}>
                             {holding.btcPerShare.toFixed(8)}
                           </Text>
                         </Td>
                         <Td>
-                          <Text textStyle="text/xs" fontFamily="mono">
+                          <Text textStyle="text/xs" sx={{ fontVariantNumeric: 'tabular-nums' }}>
                             {(Number(holding.btcSats) / 1e8).toFixed(8)}
                           </Text>
                         </Td>
