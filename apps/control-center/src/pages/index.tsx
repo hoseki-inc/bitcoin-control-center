@@ -11,6 +11,7 @@ import { RecentStatements, RecentStatementsSkeleton } from '../components/dashbo
 import { StatMini } from '../components/dashboard/stat-mini'
 import { FiatAmountText } from '../components/fiat-amount-text'
 import { StatementsEmptyState } from '../components/statements/statements-empty-state'
+import { UnavailableAlert } from '../components/unavailable-alert'
 import { SyncIndicator } from '../components/wallet-balances/sync-indicator'
 import { refetchWhileGenerating } from '../lib/statement-polling'
 import {
@@ -51,30 +52,15 @@ export function HomePage({
   return (
     <Stack py={8} gap={8}>
       {hasError && (
-        <Flex
-          role="alert"
-          align="start"
-          justify="space-between"
-          gap={4}
-          p={4}
-          bg="neutral.50"
-          borderRadius="control"
-          flexWrap="wrap"
-        >
-          <Box flex="1" minW="200px">
-            <Text textStyle="text/sm" fontWeight="medium">
-              Some holdings data is unavailable
-            </Text>
-            <Text textStyle="text/sm" color="neutral.600" mt={1}>
-              {hasHistory
-                ? 'Showing the last available overview. Refresh to check for updates.'
-                : 'Your balances could not be confirmed. Try again to load your holdings.'}
-            </Text>
-          </Box>
-          <Button variant="outline" onClick={retry}>
-            Try Again
-          </Button>
-        </Flex>
+        <UnavailableAlert
+          title="Some holdings data is unavailable"
+          description={
+            hasHistory
+              ? 'Showing the last available overview. Refresh to check for updates.'
+              : 'Your balances could not be confirmed. Try again to load your holdings.'
+          }
+          onRetry={retry}
+        />
       )}
       {hasHistory && portfolio ? (
         <Box sx={overviewReveal}>

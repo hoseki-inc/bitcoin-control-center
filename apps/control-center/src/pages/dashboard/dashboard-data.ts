@@ -6,7 +6,7 @@ import { getBrowserTimezone } from '../../utils/timezone'
 
 type PortfolioInput = Exclude<RouterInput['portalProve']['controlCenter']['getData'], void>
 type PortfolioData = RouterOutput['portalProve']['controlCenter']['getData']
-type ListQuery<T> = { data?: T[]; isLoading: boolean }
+type ListQuery<T> = { data?: T[]; isLoading: boolean; refetch: () => Promise<object> }
 
 export interface PortfolioQuery {
   data?: PortfolioData

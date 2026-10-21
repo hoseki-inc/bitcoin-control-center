@@ -49,16 +49,17 @@ interface PageState {
   exchanges: ExchangeAccountDto[]
   manual: ManualAccountDto[]
   loading: Partial<Record<'claims' | 'exchange' | 'manual' | 'etf', boolean>>
+  failed: Partial<Record<'claims' | 'exchange' | 'manual' | 'etf', boolean>>
   walletRows: WalletBalanceRow[] | undefined
   btcPrice: string | null
 }
 
-/** A list query as React Query reports it: no data while loading for the first time. */
-function listQuery<T>(data: T[], isLoading = false): AccountsListQuery<T> {
+/** A list query as React Query reports it: no data while loading for the first time, or after failing to load. */
+function listQuery<T>(data: T[], isLoading = false, isError = false): AccountsListQuery<T> {
   return {
-    data: isLoading ? undefined : data,
+    data: isLoading || isError ? undefined : data,
     isLoading,
-    isError: false,
+    isError,
     refetch: async () => Promise.resolve({ isError: false }),
   }
 }
@@ -69,16 +70,17 @@ function renderPage(overrides: Partial<PageState> = {}): string {
     exchanges: [],
     manual: [],
     loading: {},
+    failed: {},
     walletRows: [],
     btcPrice: '50000',
     ...overrides,
   }
   const dataSource: AccountsDataSource = {
     useLists: () => ({
-      claimsQuery: listQuery(state.claims, state.loading.claims),
-      exchangeAccountsQuery: listQuery(state.exchanges, state.loading.exchange),
-      manualAccountsQuery: listQuery(state.manual, state.loading.manual),
-      etfAccountsQuery: listQuery<EtfAccountDto>([], state.loading.etf),
+      claimsQuery: listQuery(state.claims, state.loading.claims, state.failed.claims),
+      exchangeAccountsQuery: listQuery(state.exchanges, state.loading.exchange, state.failed.exchange),
+      manualAccountsQuery: listQuery(state.manual, state.loading.manual, state.failed.manual),
+      etfAccountsQuery: listQuery<EtfAccountDto>([], state.loading.etf, state.failed.etf),
       archivedClaimsQuery: listQuery<ClaimDto>([]),
       btcPriceQuery: {
         data:
@@ -129,6 +131,22 @@ describe('Accounts page', () => {
 
   it('shows the empty state once every list has loaded empty', () => {
     expect(renderPage()).toContain('No accounts connected yet')
+  })
+
+  it('says the accounts could not be loaded, rather than that there are none, when a list fails', () => {
+    const text = renderPage({ failed: { exchange: true } })
+    expect(text).toMatch(/Your accounts couldn('|&#x27;)t be loaded/)
+    expect(text).toContain('Try Again')
+    expect(text).not.toContain('No accounts connected yet')
+    expect(text).not.toContain('Add Your First Account')
+  })
+
+  it('keeps the accounts that loaded, without a total, when another list fails', () => {
+    const text = renderPage({ failed: { claims: true }, manual: [manualAccount] })
+    expect(text).toMatch(/Some accounts couldn('|&#x27;)t be loaded/)
+    expect(text).toContain('Paper wallet')
+    // Only the holding's card shows its amount; a page total would repeat it in the header.
+    expect(text.match(/1\.00000000 BTC/g)).toHaveLength(1)
   })
 
   it('shows a recorded wallet balance at once while a newer one is fetched', () => {

@@ -47,6 +47,7 @@ import { chartColors } from '../../components/dashboard-charts/chart-colors'
 import { HistoryChartFrame, HistoryRangeLoading } from '../../components/dashboard-charts/history-chart-frame'
 import { MonthlyNetChangeChart as DefaultMonthlyNetChangeChart } from '../../components/dashboard-charts/monthly-net-change-chart'
 import { FiatAmountText } from '../../components/fiat-amount-text'
+import { UnavailableAlert } from '../../components/unavailable-alert'
 import { SyncIndicator } from '../../components/wallet-balances/sync-indicator'
 import {
   formatBitcoinNumber,
@@ -557,8 +558,15 @@ export function DashboardPage({
   }
   const isUp = periodChange === null || periodChange.gte(0)
   const changeColor = periodChange === null || periodChange.eq(0) ? 'neutral.600' : isUp ? 'success.700' : 'error.700'
-  // A failed range request cannot establish that the portfolio is empty.
-  if (!hasVerifiedClaims && !hasHistoricalData && hasCurrentRangeData && !activeError && !historyBackfillFailed) {
+  // A failed range request or account list cannot establish that the portfolio is empty.
+  if (
+    hasAccountLists &&
+    !hasVerifiedClaims &&
+    !hasHistoricalData &&
+    hasCurrentRangeData &&
+    !activeError &&
+    !historyBackfillFailed
+  ) {
     return <EmptyState />
   }
 
@@ -622,6 +630,20 @@ export function DashboardPage({
               <Box mb={4}>
                 <HistoryBackfillError />
               </Box>
+            )}
+            {!hasAccountLists && (
+              <UnavailableAlert
+                mb={4}
+                title="Some accounts couldn't be loaded"
+                description="Your balance and history may be incomplete. Try again to load the rest."
+                onRetry={() => {
+                  for (const query of [claimsQuery, exchangeAccountsQuery, manualAccountsQuery, etfAccountsQuery]) {
+                    if (query.data === undefined) {
+                      void query.refetch()
+                    }
+                  }
+                }}
+              />
             )}
             {/* Portfolio balance and period context */}
             <Box mb={6} minW={0}>

@@ -83,6 +83,7 @@ const mocks = vi.hoisted(() => {
     set storedBalances(value: StoredBalance[] | undefined) {
       storedBalances = value
     },
+    refetchList: vi.fn(async () => Promise.resolve({})),
     claimsFailed: false,
     listsLoading: false,
     priceLoading: false,
@@ -142,10 +143,11 @@ const dataSource: DashboardDataSource = {
     claimsQuery: {
       data: mocks.claimsFailed || mocks.listsLoading ? undefined : mocks.claims,
       isLoading: mocks.listsLoading,
+      refetch: mocks.refetchList,
     },
-    exchangeAccountsQuery: { data: mocks.exchangeAccounts, isLoading: false },
-    manualAccountsQuery: { data: mocks.holdings, isLoading: false },
-    etfAccountsQuery: { data: mocks.etfAccounts, isLoading: false },
+    exchangeAccountsQuery: { data: mocks.exchangeAccounts, isLoading: false, refetch: mocks.refetchList },
+    manualAccountsQuery: { data: mocks.holdings, isLoading: false, refetch: mocks.refetchList },
+    etfAccountsQuery: { data: mocks.etfAccounts, isLoading: false, refetch: mocks.refetchList },
     btcPriceQuery: {
       isLoading: mocks.priceLoading,
       data: mocks.priceLoading
@@ -308,6 +310,7 @@ async function withTestSetup(run: () => Promise<void>): Promise<void> {
   // Live balances loaded a minute before "now", unless a test says otherwise.
   mocks.balancesUpdatedAt = Date.parse('2026-09-05T11:59:00.000Z')
   mocks.useWalletBalances.mockClear()
+  mocks.refetchList.mockClear()
   mocks.storedBalances = []
   mocks.claimsFailed = false
   mocks.listsLoading = false
@@ -982,6 +985,26 @@ describe('custom portfolio range UI', () => {
       expect(container.textContent).toContain('Watch your Bitcoin grow')
       expect(container.querySelector('a[href="/accounts/add"]')?.textContent).toBe('Add Your First Account')
       expect(container.textContent).not.toContain("Couldn't load this date range")
+    })
+  })
+
+  it('says an account list failed to load instead of calling the portfolio empty, and retries it', async () => {
+    await withTestSetup(async () => {
+      mocks.holdings = []
+      mocks.claimsFailed = true
+      const defaultQuery = mocks.useQuery.getMockImplementation()
+      assert.exists(defaultQuery, 'Expected the default query implementation')
+      mocks.useQuery.mockImplementation((input) => ({
+        ...defaultQuery(input),
+        data: { ...mocks.base, currentTotalBalance: '0', manualAccountCount: 0, historicalData: [] },
+      }))
+      await render()
+      expect(container.textContent).not.toContain('Watch your Bitcoin grow')
+      expect(container.textContent).not.toContain('Add Your First Account')
+      expect(container.textContent).toContain("Some accounts couldn't be loaded")
+      await click('Try Again')
+      // Only the list that failed is asked for again.
+      expect(mocks.refetchList).toHaveBeenCalledTimes(1)
     })
   })
 

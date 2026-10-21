@@ -31,6 +31,7 @@ import { useEffect } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router'
 import { BitcoinAmount } from '../../components/bitcoin-amount'
 import { DeleteClaimModal } from '../../components/claims/claim-details/delete-claim-modal'
+import { UnavailableAlert } from '../../components/unavailable-alert'
 import { SyncIndicator } from '../../components/wallet-balances/sync-indicator'
 import { formatBitcoinNumber, isUsableBtcPrice } from '../../lib/bitcoin-display'
 import { summarizeWalletBalances } from '../../lib/wallet-balances'
@@ -66,10 +67,12 @@ export function ClaimsPage({ dataSource = accountsDataSource }: { dataSource?: A
   const etfAccounts = etfAccountsQuery.data ?? []
   const claimIds = claims.map((c) => c.id)
   const walletBalances = dataSource.useWalletBalances(claimIds, { enabled: claimIds.length > 0 })
+  const accountLists = [claimsQuery, exchangeAccountsQuery, manualAccountsQuery, etfAccountsQuery]
   // Every list decides whether the page is empty, so wait for all of them rather than flash the empty state.
-  const listsLoading = [claimsQuery, exchangeAccountsQuery, manualAccountsQuery, etfAccountsQuery].some(
-    (query) => query.isLoading,
-  )
+  const listsLoading = accountLists.some((query) => query.isLoading)
+  // A list that failed to load can't show that there are no accounts, or what they add up to.
+  const failedLists = accountLists.filter((query) => query.isError)
+  const listsFailed = failedLists.length > 0
   const reveal = useRevealAfterLoading(listsLoading)
 
   useEffect(() => {
@@ -86,20 +89,6 @@ export function ClaimsPage({ dataSource = accountsDataSource }: { dataSource?: A
 
   if (listsLoading) {
     return <AccountsPageSkeleton />
-  }
-
-  if (claimsQuery.isError) {
-    return (
-      <Stack py={8} gap={8}>
-        <ErrorBanner
-          message={
-            claimsQuery.error?.message !== undefined && claimsQuery.error.message !== ''
-              ? `Error fetching your holdings: ${claimsQuery.error.message}`
-              : 'An error occurred when fetching your holdings'
-          }
-        />
-      </Stack>
-    )
   }
 
   const hasClaims =
@@ -135,7 +124,7 @@ export function ClaimsPage({ dataSource = accountsDataSource }: { dataSource?: A
               title="Accounts"
               description={hasClaims ? undefined : 'All your Bitcoin accounts in one place.'}
             />
-            {hasClaims && (
+            {hasClaims && !listsFailed && (
               <Flex align="center" gap={3} mt={2} flexWrap="wrap">
                 <Text
                   textStyle="text/sm"
@@ -191,6 +180,23 @@ export function ClaimsPage({ dataSource = accountsDataSource }: { dataSource?: A
           )}
         </Flex>
 
+        {listsFailed && (
+          <UnavailableAlert
+            mb={6}
+            title={hasClaims ? "Some accounts couldn't be loaded" : "Your accounts couldn't be loaded"}
+            description={
+              hasClaims
+                ? 'The list below may be incomplete, so totals are hidden. Try again to load the rest.'
+                : 'Your accounts are still saved. Try again to load them.'
+            }
+            onRetry={() => {
+              for (const query of failedLists) {
+                void query.refetch()
+              }
+            }}
+          />
+        )}
+
         {/* Account cards */}
         {hasClaims ? (
           <Grid templateColumns={ACCOUNT_GRID_COLUMNS} gap={4}>
@@ -243,7 +249,7 @@ export function ClaimsPage({ dataSource = accountsDataSource }: { dataSource?: A
             />
           </Grid>
         ) : (
-          <EmptyHoldings />
+          !listsFailed && <EmptyHoldings />
         )}
 
         {/* Archived accounts accordion. It sits below the accounts, so it simply appears once loaded. */}
