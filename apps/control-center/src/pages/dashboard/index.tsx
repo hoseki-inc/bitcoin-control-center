@@ -1372,7 +1372,7 @@ function EmptyState(): JSX.Element {
           title="Watch your Bitcoin grow"
           description="Add your first account to see your total Bitcoin and track your holdings over time."
           action={
-            <Button as={Link} to="/accounts/add">
+            <Button as={Link} to="/accounts/add" state={{ returnTo: '/portfolio' }}>
               Add Your First Account
             </Button>
           }

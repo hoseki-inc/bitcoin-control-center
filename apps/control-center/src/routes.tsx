@@ -57,7 +57,6 @@ export default function AppRoutes(): JSX.Element {
 
           <Route path="accounts">
             <Route path="" Component={ClaimsPage} />
-            <Route path="add" Component={AddAccountPage} />
             <Route path="coinbase/:accountId" Component={CoinbaseAccountDetailsPage} />
             <Route path="kraken/:accountId" Component={KrakenAccountDetailsPage} />
             <Route path="robinhood/:accountId" Component={RobinhoodAccountDetailsPage} />
@@ -104,6 +103,8 @@ export default function AppRoutes(): JSX.Element {
         <Route element={<AppLayout fullWidth />}>
           <Route path="statements/:statementId" Component={StatementDetailsPage} />
         </Route>
+        {/* Covers the whole window, so it leaves out the app header that would sit hidden behind it. */}
+        <Route path="/accounts/add" Component={AddAccountPage} />
         <Route path="/accounts/verify/receipt/:claimId" Component={ClaimVerificationReceiptPage} />
         <Route path="/multisig/verify/receipt/:claimId/:keystoreId" Component={KeystoreReceiptPage} />
 
