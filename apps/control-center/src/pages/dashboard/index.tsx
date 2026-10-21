@@ -22,7 +22,7 @@ import { DateInput as DefaultDateInput, EmptyView, Spinner } from '@hoseki/packa
 import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
 import { VIEWPORT_BELOW_HEADER, Wrapper } from '@hoseki/packages/ui/prove-verify-ui/layout'
 import { formatUsd } from '@hoseki/packages/ui/utils/format'
-import { format, formatDistanceToNowStrict, isAfter, isBefore, startOfDay, subDays } from 'date-fns'
+import { format, isAfter, isBefore, startOfDay, subDays } from 'date-fns'
 import Decimal from 'decimal.js'
 import { X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -39,22 +39,19 @@ import { chartColors } from '../../components/dashboard-charts/chart-colors'
 import { HistoryChartFrame, HistoryRangeLoading } from '../../components/dashboard-charts/history-chart-frame'
 import { MonthlyNetChangeChart as DefaultMonthlyNetChangeChart } from '../../components/dashboard-charts/monthly-net-change-chart'
 import { FiatAmountText } from '../../components/fiat-amount-text'
+import { SyncIndicator } from '../../components/wallet-balances/sync-indicator'
 import {
   formatBitcoinNumber,
   formatSignedBitcoinNumber,
   formatSignedUsd,
   isUsableBtcPrice,
 } from '../../lib/bitcoin-display'
+import type { WalletBalanceState } from '../../lib/wallet-balances'
 import { isExchangeConnected } from '../../utils/exchange-connection-status'
 import { type DashboardDataSource, dashboardDataSource } from './dashboard-data'
 
 type PresetTimeRange = '7d' | '30d' | '90d' | '1y' | 'all'
 type TimeRange = PresetTimeRange | 'custom'
-/**
- * Whether the wallet balances in view are live, still loading, or older ones kept while
- * Electrum is unreachable, or whether a missing account list leaves the total unknown.
- */
-type WalletBalanceState = 'current' | 'loading' | 'stale' | 'unknown'
 
 interface CustomDateRangeDraft {
   startDate: Date | null
@@ -959,106 +956,6 @@ function HistoryBackfillError({ announce = true }: { announce?: boolean }): JSX.
     <Text role={announce ? 'alert' : undefined} textStyle="text/sm" color="error.700">
       Wallet history couldn&apos;t be loaded. Retrying automatically. Check your Electrum connection if this continues.
     </Text>
-  )
-}
-
-function SyncIndicator({
-  walletBalanceState,
-  walletBalancesAsOf,
-  historySyncingCount,
-  isPending,
-  hasError,
-}: {
-  walletBalanceState: WalletBalanceState
-  /** While Electrum is unreachable, when the oldest wallet balance shown was current. */
-  walletBalancesAsOf: Date | null
-  historySyncingCount: number
-  isPending: boolean
-  hasError: boolean
-}): JSX.Element | null {
-  const [, setClockTick] = useState(0)
-  // A range that loads quickly neither flashes nor announces "Updating history": "Synced",
-  // or no status, stays until the load has taken a moment. Any other status gives way at once.
-  const [showsPending, setShowsPending] = useState(isPending)
-  const wasSettled = useRef(!isPending)
-  useEffect(() => {
-    if (!isPending) {
-      return
-    }
-    const timeoutId = window.setTimeout(() => {
-      setShowsPending(true)
-    }, 400)
-    return () => {
-      window.clearTimeout(timeoutId)
-      setShowsPending(false)
-    }
-  }, [isPending])
-  const asOfMs = walletBalancesAsOf?.getTime() ?? null
-  // A clock behind the server's must not read as a sync in the future. Fixed once per
-  // sync time, so the time read to screen readers doesn't change.
-  const shownAsOfMs = useMemo(() => (asOfMs === null ? null : Math.min(asOfMs, Date.now())), [asOfMs])
-  useEffect(() => {
-    if (asOfMs === null) {
-      return
-    }
-    // Keep "X ago" current between data updates.
-    const intervalId = window.setInterval(() => {
-      setClockTick((tick) => tick + 1)
-    }, 30_000)
-    return () => {
-      window.clearInterval(intervalId)
-    }
-  }, [asOfMs])
-
-  const isUpdating =
-    walletBalanceState === 'loading' || historySyncingCount > 0 || (isPending && (showsPending || !wasSettled.current))
-  const isSettled = shownAsOfMs === null && !hasError && !isUpdating
-  useEffect(() => {
-    wasSettled.current = isSettled
-  })
-
-  // First, as it qualifies the balance itself; an alert covers any history error.
-  if (shownAsOfMs !== null) {
-    return (
-      <Flex align="center" gap={1.5}>
-        <Box w="6px" h="6px" borderRadius="full" bg="warning.400" aria-hidden="true" />
-        <Text textStyle="text/sm" color="warning.700">
-          Last synced {/* The relative time keeps changing; a fixed time is read instead, so it isn't re-announced. */}
-          <span aria-hidden="true">{formatDistanceToNowStrict(shownAsOfMs, { addSuffix: true })}</span>
-          <VisuallyHidden>{format(shownAsOfMs, 'PPp')}</VisuallyHidden>
-        </Text>
-      </Flex>
-    )
-  }
-  if (hasError) {
-    return (
-      <Text textStyle="text/sm" color="error.700">
-        History unavailable
-      </Text>
-    )
-  }
-  if (isUpdating) {
-    return (
-      <Flex align="center" gap={1.5}>
-        <Spinner label="" size="xs" color="neutral.400" />
-        <Text textStyle="text/sm" color="neutral.500">
-          {walletBalanceState === 'loading' ? 'Updating balances' : 'Updating history'}
-        </Text>
-      </Flex>
-    )
-  }
-  // Balances that are unknown or can't be fetched are never "Synced", even with no time to show.
-  if (walletBalanceState !== 'current') {
-    return null
-  }
-
-  return (
-    <Flex align="center" gap={1.5}>
-      <Box w="6px" h="6px" borderRadius="full" bg="success.500" aria-hidden="true" />
-      <Text textStyle="text/sm" color="neutral.500">
-        Synced
-      </Text>
-    </Flex>
   )
 }
 
