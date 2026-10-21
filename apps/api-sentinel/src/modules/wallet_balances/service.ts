@@ -67,6 +67,16 @@ interface WalletState {
 export const WALLET_BALANCE_MAX_AGE_MS = 60_000
 const RETRY_INITIAL_DELAY_MS = 10_000
 const RETRY_MAX_DELAY_MS = 60_000
+/** A tip read this recently still stands in for the current one: about one block interval. */
+const RECENT_TIP_MAX_AGE_MS = 10 * 60_000
+
+/** The chain tip as far as a caller that can't wait long knows it. */
+export interface CurrentTip {
+  /** The tip Electrum just gave, or else one read in the last ten minutes; null if neither. */
+  tip: Block | null
+  /** Electrum answered the read with an error. */
+  failed: boolean
+}
 
 /**
  * Owns live wallet balances. Callers that ask at the same time share one Electrum scan per wallet,
@@ -78,6 +88,8 @@ export class WalletBalanceService {
   private readonly logger: Logger
   private readonly onchainProvider: ElectrumProvider
   private readonly states = new Map<string, WalletState>()
+  private latestTip: { tip: Block; readAt: number } | null = null
+  private tipRead: Promise<Result<Block, Error>> | null = null
 
   public constructor(deps: { db: SentinelDb; logger: Logger; onchainProvider: ElectrumProvider }) {
     this.db = deps.db
@@ -181,8 +193,34 @@ export class WalletBalanceService {
     this.states.set(accountId, { ...emptyState(), generation: state.generation + 1, account: state.account })
   }
 
+  /**
+   * The chain tip from Electrum if it answers within `waitMs`, or else the newest tip read in the last
+   * ten minutes. Callers asking at the same time share one read, which carries on in the background.
+   */
+  public async currentTip(waitMs: number): Promise<CurrentTip> {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const answered = await Promise.race([
+      this.readTip(),
+      new Promise<null>((resolve) => {
+        timer = setTimeout(() => {
+          resolve(null)
+        }, waitMs)
+      }),
+    ])
+    clearTimeout(timer)
+    if (answered !== null) {
+      return answered.isOk() ? { tip: answered.unwrap(), failed: false } : { tip: null, failed: true }
+    }
+    const recent = this.latestTip
+    return {
+      tip: recent !== null && Date.now() - recent.readAt <= RECENT_TIP_MAX_AGE_MS ? recent.tip : null,
+      failed: false,
+    }
+  }
+
   /** Forgets every balance after the Electrum server changes. */
   public invalidateAll(): void {
+    this.latestTip = null
     for (const accountId of this.states.keys()) {
       this.invalidate(accountId)
     }
@@ -250,6 +288,25 @@ export class WalletBalanceService {
     return this.startScan(id, state, anchoredTo, recordSnapshot)
   }
 
+  /** Reads the chain tip, sharing a read in progress, and remembers it. */
+  private async readTip(): Promise<Result<Block, Error>> {
+    if (this.tipRead === null) {
+      const read = (async (): Promise<Result<Block, Error>> => {
+        const tip = await this.onchainProvider.getBlocksTip()
+        if (tip.isOk()) {
+          this.latestTip = { tip: tip.unwrap(), readAt: Date.now() }
+        }
+        return tip
+      })().finally(() => {
+        if (this.tipRead === read) {
+          this.tipRead = null
+        }
+      })
+      this.tipRead = read
+    }
+    return this.tipRead
+  }
+
   private isFresh(live: LiveWalletBalance, maxAgeMs: number): boolean {
     return Date.now() - live.fetchedAt.getTime() <= maxAgeMs
   }
@@ -305,7 +362,7 @@ export class WalletBalanceService {
   ): Promise<Result<LiveWalletBalance, Error>> {
     const started = performance.now()
     // Read before the scan, so the balance is known to reflect at least this tip.
-    const tip = knownTip === undefined ? await this.onchainProvider.getBlocksTip() : Ok(knownTip)
+    const tip = knownTip === undefined ? await this.readTip() : Ok(knownTip)
     let balances: Result<Map<Account, bigint>, Error>
     try {
       balances = (await this.onchainProvider.getConfirmedAccountBalances(new IndexSet([account]))).map(

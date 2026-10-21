@@ -7,7 +7,7 @@ import { IndexMap, type IndexSet } from '@hoseki/packages/collection'
 import { AsyncResult, Err, Ok, type Result } from '@hoseki/packages/result'
 import { Wallets } from '@hoseki/packages/testing'
 import { asc, eq } from 'drizzle-orm'
-import { expect, it, vi } from 'vitest'
+import { type MockInstance, expect, it, vi } from 'vitest'
 import { accounts, balanceSnapshots } from '../../db/schema'
 import { setupServiceDatabase } from '../../fixtures/service-database'
 import { WALLET_BALANCE_MAX_AGE_MS, WalletBalanceService } from './service'
@@ -22,6 +22,7 @@ async function setup(): Promise<{
   service: WalletBalanceService
   db: Awaited<ReturnType<typeof setupServiceDatabase>>['db']
   scans: ReturnType<typeof vi.fn<(requested: IndexSet<Account>) => AsyncResult<IndexMap<Account, bigint>, Error>>>
+  tipReads: MockInstance<() => AsyncResult<Block, Error>>
   answer: (account: Account, result: Scan) => void
   snapshots: () => Promise<Array<{ accountId: string; balanceSats: string }>>
 }> {
@@ -34,7 +35,7 @@ async function setup(): Promise<{
     logger,
     electrum: new ElectrumClient({ host: 'example.invalid', port: 50001, protocol: 'tcp' }),
   })
-  vi.spyOn(onchainProvider, 'getBlocksTip').mockReturnValue(new AsyncResult(Promise.resolve(Ok(tip))))
+  const tipReads = vi.spyOn(onchainProvider, 'getBlocksTip').mockReturnValue(new AsyncResult(Promise.resolve(Ok(tip))))
   // Each scan waits until the test answers it, so tests control when scans finish.
   const pending = new Map<string, Array<(result: Scan) => void>>()
   const scans = vi.fn((requested: IndexSet<Account>): AsyncResult<IndexMap<Account, bigint>, Error> => {
@@ -52,6 +53,7 @@ async function setup(): Promise<{
     service,
     db,
     scans,
+    tipReads,
     answer: (account, result) => {
       const waiting = pending.get(account.toString()) ?? []
       pending.set(account.toString(), [])
@@ -241,4 +243,21 @@ it('leaves archived wallets out of a read', async () => {
   await db.update(accounts).set({ deletedAt: new Date().toISOString() }).where(eq(accounts.id, 'second'))
   const read = await service.readBalances(['first', 'second'])
   expect(read.map(({ accountId }) => accountId)).toEqual(['first'])
+})
+
+it('gives the chain tip Electrum answers with, a recent one while it is slow, and none once that is old', async () => {
+  const { service, tipReads } = await setup()
+  await expect(service.currentTip(1_000)).resolves.toEqual({ tip, failed: false })
+
+  tipReads.mockReturnValueOnce(new AsyncResult(Promise.resolve(Err(new Error('Connection closed')))))
+  await expect(service.currentTip(1_000)).resolves.toEqual({ tip: null, failed: true })
+
+  // Electrum stops answering: the tip read a moment ago stands in, and the read is shared.
+  tipReads.mockReturnValue(new AsyncResult(new Promise(() => undefined)))
+  await expect(service.currentTip(20)).resolves.toEqual({ tip, failed: false })
+  await expect(service.currentTip(20)).resolves.toEqual({ tip, failed: false })
+  expect(tipReads).toHaveBeenCalledTimes(3)
+
+  vi.setSystemTime(Date.now() + 10 * 60_000 + 1)
+  await expect(service.currentTip(20)).resolves.toEqual({ tip: null, failed: false })
 })

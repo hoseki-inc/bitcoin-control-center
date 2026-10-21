@@ -730,14 +730,18 @@ export class ControlCenterService {
       }
     }
 
-    const tipResult = await this.onchainProvider.getBlocksTip()
-    if (tipResult.isErr()) {
-      this.logger.warn({ err: tipResult.unwrapErr() }, 'Failed to inspect chain tip for history completion status')
+    // Never hold the page for long on Electrum: without a tip, history reads as still syncing and the
+    // page asks again shortly.
+    const { tip, failed } = await this.walletBalances.currentTip(HISTORY_STATUS_TIP_WAIT_MS)
+    if (tip === null) {
+      if (failed) {
+        this.logger.warn('Failed to inspect chain tip for history completion status')
+      }
       const activeIds = (
         await Promise.all(accountRows.map(async (row) => ((await this.isAccountActive(row.id)) ? row.id : null)))
       ).filter((id): id is string => id !== null)
       return {
-        // Keep polling after a connection failure, but never certify an unknown tip.
+        // Keep polling while the tip is unknown or after a connection failure, but never certify an unknown tip.
         historySyncingAccountIds: activeIds,
         historySyncedAccountIds: [],
         historyRefreshingAccountIds: (
@@ -747,11 +751,10 @@ export class ControlCenterService {
             ),
           )
         ).filter((id): id is string => id !== null),
-        historyFailedAccountIds: activeIds,
+        historyFailedAccountIds: failed ? activeIds : [],
       }
     }
 
-    const tip = tipResult.unwrap()
     const requestedRange = fullHistory
       ? { fromBlockHeight: 0, toBlockHeight: tip.height }
       : historySyncRangeForStartDate(rangeStart, tip)
@@ -1321,6 +1324,8 @@ function accountDescriptorNetworkKey(descriptor: string, network: string): strin
 }
 
 const ESTIMATED_BLOCK_INTERVAL_MS = 10 * 60 * 1000
+/** How long the history status waits for Electrum's chain tip before falling back to a recent one. */
+const HISTORY_STATUS_TIP_WAIT_MS = 1_000
 const HISTORY_SYNC_BLOCK_CUSHION = 288
 // Earlier versions could certify a partial Electrum response as complete.
 const CURRENT_ACCOUNT_HISTORY_SYNC_VERSION = 5

@@ -487,6 +487,21 @@ describe('history balance reuse', () => {
     })
   })
 
+  it('reports history as still syncing, rather than wait, when Electrum is slow to give the chain tip', async () => {
+    await withTestSetup(async () => {
+      await harness.sync()
+      await harness.service.recordAccountSnapshot(accountId, '100', '2020-01-02T12:00:00.000Z')
+      harness.provider.getBlocksTip.mockReturnValue(new AsyncResult(new Promise(() => undefined)))
+      const started = performance.now()
+      const data = (await harness.service.getData({ timeRange: 'all' })).unwrap()
+      expect(performance.now() - started).toBeLessThan(3_000)
+      expect(data.currentTotalBalance).toBe('100')
+      expect(data.historySyncingAccountIds).toEqual([accountId])
+      expect(data.historySyncedAccountIds).toEqual([])
+      expect(data.historyFailedAccountIds).toEqual([])
+    })
+  })
+
   it.each([0n, 100n])('reuses an anchored balance of %s only after verifying the tip', async (balance) => {
     await withTestSetup(async () => {
       await expect(harness.run(balance, tip)).resolves.toBe(balance)
