@@ -19,6 +19,7 @@ import { ControlCenterService } from './modules/control_center/service'
 import { EtfService } from './modules/etf/service'
 import { ExchangeService } from './modules/exchange/service'
 import { ManualService } from './modules/manual/service'
+import { DiscoveryIndexes } from './modules/onchain/discovery-index-store'
 import { DailyRatesService } from './modules/price/daily_rates'
 import { PriceHistoryService } from './modules/price/history'
 import { PriceService, readPriceSettings } from './modules/price/service'
@@ -250,6 +251,7 @@ export const createAppContext = asyncFn(
     const onchainProvider = new ElectrumProvider(network, {
       logger: logger.child({ module: 'electrum-provider' }),
       electrum: electrumClient,
+      discoveryIndexes: new DiscoveryIndexes(database),
     })
 
     const exchangeService = new ExchangeService({

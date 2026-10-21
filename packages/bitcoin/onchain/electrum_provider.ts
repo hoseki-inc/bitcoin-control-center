@@ -1,6 +1,5 @@
 import { type AsyncResult, Err, Ok, type Result, asyncFn, tryBlockAsync } from '@hoseki/packages/result'
 import { sha256 } from '@noble/hashes/sha2.js'
-import type { Logger } from 'pino'
 import type { ElectrumClient, ScripthashHistoryEntry } from '../../clients/electrum'
 import { IndexMap, IndexSet } from '../../collection'
 import type { Account } from '../account'
@@ -9,14 +8,13 @@ import { bitcoin } from '../lib'
 import type { Network } from '../network'
 import { addressToScripthash } from '../scripthash'
 import { Txid } from '../txid'
-import { OnchainBitcoinProvider } from './provider'
+import { OnchainBitcoinProvider, type OnchainBitcoinProviderDeps } from './provider'
 import { type Block, type TransactionEntry, isConfirmed } from './types'
 
 /** Max concurrent Electrum requests per batch to avoid overwhelming the server. */
 const BATCH_SIZE = 10
 
-export interface ElectrumProviderDeps {
-  logger: Logger
+export interface ElectrumProviderDeps extends OnchainBitcoinProviderDeps {
   electrum: ElectrumClient
 }
 
@@ -34,14 +32,6 @@ export class ElectrumProvider extends OnchainBitcoinProvider {
     super(network, deps)
     this.deps = deps
   }
-
-  protected getLastKnownIndexes = asyncFn(
-    async (): Promise<Result<{ lastUsedReceiveIndex: number; lastUsedChangeIndex: number }, Error>> => {
-      // No persistent cache for the Electrum provider - start from 0 each time.
-      // This is acceptable because local Electrum servers are fast and there's no rate limiting.
-      return Ok({ lastUsedReceiveIndex: 0, lastUsedChangeIndex: 0 })
-    },
-  )
 
   public getBlocksTip(): AsyncResult<Block, Error> {
     return tryBlockAsync(
@@ -144,7 +134,7 @@ export class ElectrumProvider extends OnchainBitcoinProvider {
     async (
       account: Account,
     ): Promise<Result<Array<{ value: bigint; height: number; estimatedTimestamp: Date }>, Error>> => {
-      this.deps.logger.debug({ account }, 'Getting UTXO accumulation entries')
+      this.deps.logger.debug('Getting UTXO accumulation entries')
 
       const discoveryResult = await this.discoverAccount(account)
       if (discoveryResult.isErr()) {
