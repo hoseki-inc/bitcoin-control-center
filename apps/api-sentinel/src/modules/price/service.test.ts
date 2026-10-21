@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import pino from 'pino'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { openDrizzleDatabase } from '../../db/drizzle'
+import { walletDetailLogOptions } from '../../log_redaction'
 import { DailyRatesService } from './daily_rates'
 import { PriceService, type SavedPriceSettings, readPriceSettings } from './service'
 
@@ -169,7 +170,7 @@ describe('current price', () => {
       const fetch = stubPrices({ [LOCAL_MEMPOOL]: refused, [BLOCK]: () => prices.block('83086.98') })
       const result = await priceService({ fallbacks: false }, 'http://mempool.local').service.getCurrentBtcPrice()
       expect(result.expectErr('no fallback').message).toBe(
-        'No BTC price available: Your mempool server (mempool.local) price error: 429 Too Many Requests',
+        'No BTC price available: Your mempool server price error: 429 Too Many Requests',
       )
       expect(fetch.hosts()).toEqual([LOCAL_MEMPOOL])
     })
@@ -290,7 +291,7 @@ describe('current price', () => {
 
       const result = await priceService({ fallbacks: false }, 'http://mempool.local').service.getCurrentBtcPrice()
       expect(result.expectErr('too old').message).toBe(
-        'No BTC price available: Your mempool server (mempool.local) price is 120 minutes old',
+        'No BTC price available: Your mempool server price is 120 minutes old',
       )
     })
   })
@@ -961,9 +962,40 @@ describe('price service rules', () => {
       stubPrices({ [LOCAL_MEMPOOL]: () => new TypeError('fetch failed', { cause }) })
       const result = await priceService({ fallbacks: false }, 'http://mempool.local').service.getCurrentBtcPrice()
       expect(result.expectErr('refused').message).toBe(
-        'No BTC price available: Your mempool server (mempool.local) price request failed: fetch failed: ' +
+        'No BTC price available: Your mempool server price request failed: fetch failed: ' +
           'connect ECONNREFUSED ::1:8999; connect ECONNREFUSED 127.0.0.1:8999',
       )
+    })
+  })
+
+  it.each([
+    ['refused', refused],
+    [
+      'not found',
+      () =>
+        new TypeError('fetch failed', {
+          cause: Object.assign(new Error('getaddrinfo ENOTFOUND mempool.local'), { hostname: LOCAL_MEMPOOL }),
+        }),
+    ],
+  ])('leaves your mempool server host out of Info logs when it is %s', async (_case, reply) => {
+    await withTestSetup(async () => {
+      stubPrices({ [LOCAL_MEMPOOL]: reply })
+      const lines: string[] = []
+      const service = new PriceService({
+        logger: pino(
+          { level: 'info', ...walletDetailLogOptions('info') },
+          {
+            write: (line: string) => {
+              lines.push(line)
+            },
+          },
+        ),
+        mempoolApiUrl: 'http://mempool.local',
+        settings: () => ({ source: undefined, fallbacks: false }),
+      })
+      await service.getCurrentBtcPrice()
+      expect(lines.join('')).toContain('Your mempool server price')
+      expect(lines.join('')).not.toContain('mempool.local')
     })
   })
 

@@ -1,5 +1,6 @@
 import type { FastifyBaseLogger, FastifyRequest, FastifyServerOptions } from 'fastify'
 import pino from 'pino'
+import { hideWalletDetailsInText, hidesWalletDetails } from './log_redaction'
 
 function requestPath(url: string): string {
   // Omit every query parameter, including encoded/batched tRPC input. Do not
@@ -16,6 +17,11 @@ export const requestLoggerFactory: NonNullable<FastifyServerOptions['childLogger
   const url = rawRequest.url ?? ''
   const path = requestPath(url)
   const redactUrl = (value: string): string => (url !== path ? value.replaceAll(url, () => path) : value)
+  // These replace the logger's message and error serializers, so they hide wallet details the
+  // same way, after the URL: once a detail in the path is hidden, the raw URL no longer matches.
+  const hideDetails = hidesWalletDetails(logger.level)
+  const redactText = (value: string): string =>
+    hideDetails ? hideWalletDetailsInText(redactUrl(value)) : redactUrl(value)
 
   return logger.child(bindings, {
     ...options,
@@ -23,12 +29,12 @@ export const requestLoggerFactory: NonNullable<FastifyServerOptions['childLogger
       ...options.serializers,
       req: (request: FastifyRequest) => ({
         method: request.method,
-        url: requestPath(request.url),
+        url: redactText(requestPath(request.url)),
         remoteAddress: request.ip,
         remotePort: request.socket.remotePort,
       }),
       // Fastify also embeds the raw URL in 404 and duplicate-reply messages.
-      msg: redactUrl,
+      msg: redactText,
       err: (error: Error) => {
         const serialized = pino.stdSerializers.err(error)
         const code: unknown = serialized['code']
@@ -37,8 +43,8 @@ export const requestLoggerFactory: NonNullable<FastifyServerOptions['childLogger
         // request bodies, headers, or URLs that bypass the request serializer.
         return {
           type: serialized.type,
-          message: redactUrl(serialized.message),
-          stack: serialized.stack ? redactUrl(serialized.stack) : undefined,
+          message: redactText(serialized.message),
+          stack: serialized.stack ? redactText(serialized.stack) : undefined,
           code,
           statusCode,
         }

@@ -4,6 +4,7 @@ import { type FastifyTRPCPluginOptions, fastifyTRPCPlugin } from '@trpc/server/a
 import Fastify, { type FastifyBaseLogger } from 'fastify'
 import pino from 'pino'
 import { type AppContextOptions, createAppContext } from './context'
+import { walletDetailLogOptions } from './log_redaction'
 import type { TRPCContext } from './modules/trpc/init'
 import { type AppRouter, appRouter } from './modules/trpc/router'
 import { requestLoggerFactory } from './request_logging'
@@ -26,8 +27,10 @@ export async function main(
   createContext: typeof createAppContext = createAppContext,
 ): Promise<SentinelServer> {
   const isProduction = process.env['NODE_ENV'] === 'production'
+  const level = process.env['LOG_LEVEL'] ?? 'info'
   const logger = pino({
-    level: process.env['LOG_LEVEL'] ?? 'info',
+    level,
+    ...walletDetailLogOptions(level),
     transport: !isProduction ? { target: 'pino-pretty' } : undefined,
   })
 
@@ -85,7 +88,8 @@ export async function main(
     await server.close()
     throw error
   }
-  logger.info({ host, port: boundPort }, 'api-sentinel is running')
+  // Sentinel's own address helps diagnose an unreachable UI, so it isn't logged as a hidden `host`.
+  logger.info({ listenHost: host, port: boundPort }, 'api-sentinel is running')
 
   // Record initial balance snapshots, then every 15 minutes
   void appCtx.controlCenterService.recordAllSnapshots()
