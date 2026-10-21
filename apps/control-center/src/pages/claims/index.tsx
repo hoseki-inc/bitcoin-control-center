@@ -113,8 +113,10 @@ export function ClaimsPage({ dataSource = accountsDataSource }: { dataSource?: A
     (sum, account) => (account.balance == null || account.balance === '' ? sum : sum + Number(account.balance)),
     0,
   )
-  // A wallet still loading leaves the total unknown; counting it as zero would show a false total and shares.
-  const totalBtcSats = wallets.totalSats === null ? null : wallets.totalSats + otherAccountsSats
+  // A wallet or exchange balance still loading leaves the total unknown; counting it as zero would
+  // show a false total and shares.
+  const exchangePending = exchangeAccounts.some((account) => isExchangeConnected(account) && account.balance == null)
+  const totalBtcSats = wallets.totalSats === null || exchangePending ? null : wallets.totalSats + otherAccountsSats
 
   const quotedBtcPrice = btcPriceQuery.data?.value ? Number(btcPriceQuery.data.value) : null
   const btcUsdPrice = isUsableBtcPrice(quotedBtcPrice) ? quotedBtcPrice : null

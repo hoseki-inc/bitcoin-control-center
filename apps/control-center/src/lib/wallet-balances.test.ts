@@ -74,5 +74,7 @@ describe('walletBalancesRefetchInterval', () => {
     expect(walletBalancesRefetchInterval([row('a')])).toBe(false)
     expect(walletBalancesRefetchInterval([row('a', { failed: true }), row('b', { syncing: true })])).toBe(3_000)
     expect(walletBalancesRefetchInterval([row('a', { failed: true })])).toBe(10_000)
+    // A read that failed keeps trying, so the page isn't left waiting.
+    expect(walletBalancesRefetchInterval(undefined, true)).toBe(10_000)
   })
 })

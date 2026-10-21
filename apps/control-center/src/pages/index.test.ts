@@ -223,7 +223,14 @@ describe('Home overview states', () => {
     expect(
       renderText({ accounts, history: zeroBalanceHistory, walletRows: [{ ...row, syncing: false, failed: true }] }),
     ).toContain('Last synced')
-    // Settled balances need no status beside the chart.
+    // A quiet refresh of a recent balance needs no word, and neither do settled balances.
+    expect(
+      renderText({
+        accounts,
+        history: zeroBalanceHistory,
+        walletRows: [{ ...row, asOf: new Date().toISOString() }],
+      }),
+    ).not.toMatch(/Synced|Updating balances/)
     expect(
       renderText({ accounts, history: zeroBalanceHistory, walletRows: [{ ...row, syncing: false }] }),
     ).not.toContain('Synced')

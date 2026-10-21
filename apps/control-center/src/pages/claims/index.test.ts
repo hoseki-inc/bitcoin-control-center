@@ -46,6 +46,7 @@ describe('Wallet account card', () => {
 
 interface PageState {
   claims: ClaimDto[]
+  exchanges: ExchangeAccountDto[]
   manual: ManualAccountDto[]
   loading: Partial<Record<'claims' | 'exchange' | 'manual' | 'etf', boolean>>
   walletRows: WalletBalanceRow[] | undefined
@@ -63,11 +64,19 @@ function listQuery<T>(data: T[], isLoading = false): AccountsListQuery<T> {
 }
 
 function renderPage(overrides: Partial<PageState> = {}): string {
-  const state: PageState = { claims: [], manual: [], loading: {}, walletRows: [], btcPrice: '50000', ...overrides }
+  const state: PageState = {
+    claims: [],
+    exchanges: [],
+    manual: [],
+    loading: {},
+    walletRows: [],
+    btcPrice: '50000',
+    ...overrides,
+  }
   const dataSource: AccountsDataSource = {
     useLists: () => ({
       claimsQuery: listQuery(state.claims, state.loading.claims),
-      exchangeAccountsQuery: listQuery<ExchangeAccountDto>([], state.loading.exchange),
+      exchangeAccountsQuery: listQuery(state.exchanges, state.loading.exchange),
       manualAccountsQuery: listQuery(state.manual, state.loading.manual),
       etfAccountsQuery: listQuery<EtfAccountDto>([], state.loading.etf),
       archivedClaimsQuery: listQuery<ClaimDto>([]),
@@ -153,5 +162,21 @@ describe('Accounts page', () => {
     const text = renderPage({ claims: [wallet], walletRows: [walletRow({ failed: true, failure: 'unreachable' })] })
     expect(text).toContain('0.50000000 BTC')
     expect(text).toContain('Last synced')
+  })
+
+  it('holds the total back while an exchange balance has not been fetched yet', () => {
+    const exchange: ExchangeAccountDto = {
+      id: 'exchange-1',
+      exchange: 'kraken',
+      displayName: 'Kraken',
+      currency: 'BTC',
+      balance: null,
+      balanceAsOf: null,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      connectionStatus: 'connected',
+    }
+    const text = renderPage({ exchanges: [exchange], manual: [manualAccount] })
+    expect(text).toContain('Paper wallet')
+    expect(text).not.toContain('%')
   })
 })

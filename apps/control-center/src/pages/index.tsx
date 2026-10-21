@@ -176,7 +176,8 @@ function PortfolioSummary({
           <Text textStyle="text/sm" fontWeight="medium" color="neutral.600">
             Last 30 Days
           </Text>
-          {wallets.syncingIds.length > 0 || wallets.failedIds.length > 0 ? (
+          {/* Only while balances are updating or out of date; a quiet refresh needs no word. */}
+          {wallets.state === 'loading' || wallets.state === 'stale' ? (
             // Announces when wallet balances start or stop updating.
             <Box as="output">
               <SyncIndicator walletBalanceState={wallets.state} walletBalancesAsOf={wallets.asOf} />

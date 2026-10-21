@@ -83,12 +83,18 @@ export function summarizeWalletBalances(
   }
 }
 
-/** Poll while a wallet is syncing, more slowly while one is failing, and not at all otherwise. */
-export function walletBalancesRefetchInterval(rows: readonly WalletBalanceRow[] | undefined): number | false {
+/**
+ * Poll while a wallet is syncing, more slowly while one is failing or the read itself failed, so a
+ * page never waits for good, and not at all otherwise.
+ */
+export function walletBalancesRefetchInterval(
+  rows: readonly WalletBalanceRow[] | undefined,
+  readFailed = false,
+): number | false {
   if (rows?.some((row) => row.syncing) === true) {
     return 3_000
   }
-  if (rows?.some((row) => row.failed) === true) {
+  if (readFailed || rows?.some((row) => row.failed) === true) {
     return 10_000
   }
   return false
@@ -107,7 +113,11 @@ export function useWalletBalances(claimIds: string[], { enabled }: { enabled: bo
   const utils = trpc.useUtils()
   const query = trpc.portalProve.controlCenter.walletBalances.useQuery(
     { claimIds },
-    { enabled, keepPreviousData: true, refetchInterval: walletBalancesRefetchInterval },
+    {
+      enabled,
+      keepPreviousData: true,
+      refetchInterval: (rows, read) => walletBalancesRefetchInterval(rows, read.state.status === 'error'),
+    },
   )
 
   // The portfolio total and history are built from these balances, so refresh them when one gets newer.
