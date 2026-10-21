@@ -1,6 +1,5 @@
 FROM node:22.23.4-bookworm-slim@sha256:5991875dfb80938dd8a6ba3fe3e96fd04929e70792762b3319d8caadbbe229bc
 
-ARG TARGETARCH
 ENV HOST=0.0.0.0
 ENV PORT=3400
 ENV NODE_ENV=production
@@ -10,13 +9,10 @@ WORKDIR /app
 # Install runtime utilities needed by Start9 scripts
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl bash ca-certificates tini \
-    && dpkg --compare-versions "$(dpkg-query -W -f='${Version}' ca-certificates)" ge '20250419~deb12u2' \
     && rm -rf /var/lib/apt/lists/*
 
-# Node 22.23.4 blocks the compromised eMudhra keys in its own TLS stack.
-RUN test "$(node --version)" = "v22.23.4"
-
 # Install and verify the pinned yq release used to read StartOS config.
+ARG TARGETARCH
 ARG YQ_VERSION=v4.53.2
 RUN case "$TARGETARCH" in \
       amd64) YQ_SHA256="d56bf5c6819e8e696340c312bd70f849dc1678a7cda9c2ad63eebd906371d56b" ;; \

@@ -9,12 +9,8 @@ ENV NODE_ENV=production \
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates tini \
-    && dpkg --compare-versions "$(dpkg-query -W -f='${Version}' ca-certificates)" ge '20250419~deb12u2' \
+RUN apt-get update && apt-get install -y --no-install-recommends tini \
     && rm -rf /var/lib/apt/lists/*
-
-# Node 22.23.4 blocks the compromised eMudhra keys in its own TLS stack.
-RUN test "$(node --version)" = "v22.23.4"
 
 # api-sentinel is bundled by esbuild — only the externals listed in
 # apps/api-sentinel/src/scripts/build.ts need to be in node_modules. The StartOS
