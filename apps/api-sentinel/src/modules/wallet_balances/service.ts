@@ -8,7 +8,7 @@ import { and, inArray, isNull } from 'drizzle-orm'
 import type { Logger } from 'pino'
 import type { SentinelDb } from '../../db/drizzle'
 import { accounts } from '../../db/schema'
-import { recordWalletSnapshot } from './snapshots'
+import { getLatestWalletSnapshot, recordWalletSnapshot } from './snapshots'
 
 /** A wallet balance fetched from Electrum by this process. */
 export interface LiveWalletBalance {
@@ -30,6 +30,20 @@ export class WalletChangedError extends Error {
 
 /** Why a wallet's latest scan failed. Raw errors can quote descriptors, so only the kind is kept. */
 export type WalletBalanceFailure = 'unreachable' | 'timeout' | 'error'
+
+/** What a page shows for a wallet: its newest known balance and whether a newer one is on the way. */
+export interface WalletBalanceReading {
+  accountId: string
+  /** Satoshis, or null until the wallet's first balance is known. */
+  balanceSats: string | null
+  /** When that balance was current. */
+  asOf: string | null
+  /** A scan is running, such as one this read started. */
+  syncing: boolean
+  /** The latest scan failed; it stays true while a retry runs. */
+  failed: boolean
+  failure: WalletBalanceFailure | null
+}
 
 export interface WalletBalanceStatus {
   accountId: string
@@ -117,6 +131,36 @@ export class WalletBalanceService {
     })
   }
 
+  /**
+   * Each active wallet's newest balance, from this process or the last recorded snapshot, without
+   * waiting on Electrum. Wallets that are out of date and not waiting to retry a failure start a
+   * scan first, so they read as syncing. Archived and unknown wallets are left out.
+   */
+  public async readBalances(accountIds: string[]): Promise<WalletBalanceReading[]> {
+    const wallets = await this.activeWallets(accountIds)
+    for (const { scan } of this.startDueScans(wallets, false)) {
+      scan.catch(() => {
+        this.logger.warn('Could not finish a wallet balance refresh')
+      })
+    }
+    return Promise.all(
+      wallets.map(async ({ id, state }): Promise<WalletBalanceReading> => {
+        const recorded = await getLatestWalletSnapshot(this.db, id)
+        const { live } = state
+        const useLive =
+          live !== null && (recorded === null || live.fetchedAt.getTime() >= Date.parse(recorded.timestamp))
+        return {
+          accountId: id,
+          balanceSats: useLive ? live.balanceSats.toString() : (recorded?.balanceSats.toString() ?? null),
+          asOf: useLive ? live.fetchedAt.toISOString() : (recorded?.timestamp ?? null),
+          syncing: state.scan !== null,
+          failed: state.failure !== null,
+          failure: state.failure,
+        }
+      }),
+    )
+  }
+
   /** What this process knows about each wallet right now, without waiting for anything. */
   public getStatus(accountId: string): WalletBalanceStatus {
     const state = this.states.get(accountId)
@@ -149,21 +193,31 @@ export class WalletBalanceService {
     force: boolean,
   ): Promise<Map<string, Result<LiveWalletBalance, Error>>> {
     const wallets = await this.activeWallets(accountIds)
-    const now = Date.now()
-    const due = wallets.filter(
-      ({ state }) =>
-        force ||
-        (state.scan === null &&
-          state.retryAt <= now &&
-          (state.live === null || !this.isFresh(state.live, WALLET_BALANCE_MAX_AGE_MS))),
-    )
+    const scans = this.startDueScans(wallets, force)
     const entries = await Promise.all(
-      due.map(async ({ id, state }): Promise<[string, Result<LiveWalletBalance, Error>] | null> => {
-        const result = await (state.scan ?? this.startScan(id, state))
+      scans.map(async ({ id, state, scan }): Promise<[string, Result<LiveWalletBalance, Error>] | null> => {
+        const result = await scan
         return this.isLeftOut(id, state, result) ? null : [id, result]
       }),
     )
     return new Map(entries.filter((entry) => entry !== null))
+  }
+
+  /** Starts a scan, or joins the running one, for each wallet that is due; returns before any finishes. */
+  private startDueScans(
+    wallets: Array<{ id: string; state: WalletState }>,
+    force: boolean,
+  ): Array<{ id: string; state: WalletState; scan: Promise<Result<LiveWalletBalance, Error>> }> {
+    const now = Date.now()
+    return wallets
+      .filter(
+        ({ state }) =>
+          force ||
+          (state.scan === null &&
+            state.retryAt <= now &&
+            (state.live === null || !this.isFresh(state.live, WALLET_BALANCE_MAX_AGE_MS))),
+      )
+      .map(({ id, state }) => ({ id, state, scan: state.scan ?? this.startScan(id, state) }))
   }
 
   /** A wallet archived or deleted meanwhile is left out, as it would be had it been asked later. */

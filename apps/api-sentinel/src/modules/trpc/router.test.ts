@@ -2,9 +2,10 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ElectrumClient } from '@hoseki/packages/clients/electrum'
-import { Err, Ok, asyncFn } from '@hoseki/packages/result'
+import { AsyncResult, Err, Ok, asyncFn } from '@hoseki/packages/result'
 import { Wallets } from '@hoseki/packages/testing'
 import { Signer } from 'bip322-js'
+import { eq } from 'drizzle-orm'
 import pino from 'pino'
 import { assert, expect, it, onTestFinished, vi } from 'vitest'
 import { type AppContextOptions, createAppContext } from '../../context'
@@ -211,6 +212,36 @@ it('returns the stored wallet balances of the requested wallets only', async () 
 
   await expect(controlCenter.storedWalletBalances({ claimIds: [requested.id] })).resolves.toEqual([
     { accountId: requested.id, balanceSats: '150', timestamp: '2020-01-03T09:00:00.000Z' },
+  ])
+})
+
+it('reads wallet balances without waiting for Electrum, and reports the scans it starts', async () => {
+  const { app } = await setup()
+  const { accounts: accountRouter, controlCenter } = appRouter.createCaller({ app }).portalProve
+  const wallet = await accountRouter.add({
+    descriptor: Wallets.singlesigNativeSegwitAccount.toString(),
+    displayName: 'Wallet',
+    network: 'mainnet',
+  })
+  const archived = await accountRouter.add({
+    descriptor: Wallets.singlesigLegacyAccount.toString(),
+    displayName: 'Archived wallet',
+    network: 'mainnet',
+  })
+  await app.controlCenterService.recordAccountSnapshot(wallet.id, '150', '2020-01-03T09:00:00.000Z')
+  await app.database.update(accounts).set({ deletedAt: '2020-01-04T00:00:00.000Z' }).where(eq(accounts.id, archived.id))
+  // Electrum never answers.
+  vi.spyOn(app.onchainProvider, 'getBlocksTip').mockReturnValue(new AsyncResult(new Promise(() => undefined)))
+
+  await expect(controlCenter.walletBalances({ claimIds: [wallet.id, archived.id] })).resolves.toEqual([
+    {
+      accountId: wallet.id,
+      balanceSats: '150',
+      asOf: '2020-01-03T09:00:00.000Z',
+      syncing: true,
+      failed: false,
+      failure: null,
+    },
   ])
 })
 

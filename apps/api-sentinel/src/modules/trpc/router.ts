@@ -434,6 +434,14 @@ const controlCenterRouter = t.router({
       return result.unwrap()
     }),
 
+  /**
+   * Each wallet's newest known balance and whether a newer one is being fetched. Never waits on
+   * Electrum: out-of-date wallets start a scan, and pages poll while any wallet is syncing.
+   */
+  walletBalances: publicProcedure
+    .input(z.object({ claimIds: z.array(z.string()) }))
+    .query(async ({ ctx, input }) => ctx.app.walletBalanceService.readBalances(input.claimIds)),
+
   storedWalletBalances: publicProcedure
     .input(z.object({ claimIds: z.array(z.string()) }))
     .query(async ({ ctx, input }) => ctx.app.controlCenterService.getStoredWalletBalances(input.claimIds)),

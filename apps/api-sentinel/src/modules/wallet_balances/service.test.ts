@@ -193,3 +193,52 @@ it('reuses a balance for a history check only if its scan started at the same ch
   answer(first, balanceOf(first, 1_000n))
   await anchored
 })
+
+it('reads the newest known balance at once, starting a scan for wallets that are out of date', async () => {
+  const { service, db, scans, answer } = await setup()
+  await db
+    .insert(balanceSnapshots)
+    .values({ accountId: 'first', balanceSats: '900', timestamp: '2024-02-09T00:00:00.000Z' })
+
+  await expect(service.readBalances(['first', 'second'])).resolves.toEqual([
+    {
+      accountId: 'first',
+      balanceSats: '900',
+      asOf: '2024-02-09T00:00:00.000Z',
+      syncing: true,
+      failed: false,
+      failure: null,
+    },
+    { accountId: 'second', balanceSats: null, asOf: null, syncing: true, failed: false, failure: null },
+  ])
+  await scanStarted(scans, 2)
+  // Reading again while the scans run joins them rather than starting more.
+  await service.readBalances(['first', 'second'])
+  expect(scans).toHaveBeenCalledTimes(2)
+
+  answer(first, balanceOf(first, 1_000n))
+  answer(second, Err(new Error('Connection closed')))
+  await vi.waitFor(() => {
+    expect(service.getStatus('second').syncing).toBe(false)
+  })
+  await expect(service.readBalances(['first', 'second'])).resolves.toEqual([
+    {
+      accountId: 'first',
+      balanceSats: '1000',
+      asOf: service.getStatus('first').live?.fetchedAt.toISOString(),
+      syncing: false,
+      failed: false,
+      failure: null,
+    },
+    { accountId: 'second', balanceSats: null, asOf: null, syncing: false, failed: true, failure: 'unreachable' },
+  ])
+  // A failed wallet waits before it is scanned again.
+  expect(scans).toHaveBeenCalledTimes(2)
+})
+
+it('leaves archived wallets out of a read', async () => {
+  const { service, db } = await setup()
+  await db.update(accounts).set({ deletedAt: new Date().toISOString() }).where(eq(accounts.id, 'second'))
+  const read = await service.readBalances(['first', 'second'])
+  expect(read.map(({ accountId }) => accountId)).toEqual(['first'])
+})
