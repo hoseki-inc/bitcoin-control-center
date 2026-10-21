@@ -28,7 +28,17 @@ export interface ElectrumClientConfig extends ElectrumConnectionConfig {
   clientName?: string
   /** Protocol version to negotiate. Defaults to '1.4'. */
   protocolVersion?: string
+  /**
+   * Most requests waiting for an answer at once; later ones queue until one finishes. Each request's
+   * timeout starts when it is sent, so a queue on a slow link (Tor) doesn't time requests out. Defaults to 16,
+   * the concurrency statement lookups are tuned for.
+   */
+  maxInFlight?: number
 }
+
+// Never queued: the handshake runs inside connect() while other requests hold every slot, a ping checks
+// the server is there, and the chain tip is one cheap request that pages wait on.
+const UNQUEUED_METHODS = new Set(['server.version', 'server.ping', 'blockchain.headers.subscribe'])
 
 /**
  * Typed Electrum protocol client.
@@ -53,11 +63,15 @@ export class ElectrumClient {
   private generation = 0
   private readonly beforeConnect: ElectrumClientConfig['beforeConnect']
   private readonly beforeRequest: ElectrumClientConfig['beforeRequest']
+  private readonly maxInFlight: number
+  private inFlight = 0
+  private readonly queued: Array<() => void> = []
 
   public constructor(config: ElectrumClientConfig) {
     this.transport = new ElectrumTransport(config)
     this.beforeConnect = config.beforeConnect
     this.beforeRequest = config.beforeRequest
+    this.maxInFlight = config.maxInFlight ?? 16
     this.clientName = config.clientName ?? 'hoseki'
     this.protocolVersion = config.protocolVersion ?? '1.4'
   }
@@ -266,7 +280,43 @@ export class ElectrumClient {
     this.negotiated = false
   }
 
+  /** Waits for a request slot; the request that frees one hands it straight on. */
+  private async acquireSlot(): Promise<void> {
+    if (this.inFlight < this.maxInFlight) {
+      this.inFlight += 1
+      return
+    }
+    await new Promise<void>((resolve) => {
+      this.queued.push(resolve)
+    })
+  }
+
+  private releaseSlot(): void {
+    const next = this.queued.shift()
+    if (next) {
+      next()
+    } else {
+      this.inFlight -= 1
+    }
+  }
+
   private call<T>(method: string, params: unknown[], schema: z.ZodType<T>): AsyncResult<T, Error> {
+    if (UNQUEUED_METHODS.has(method)) {
+      return this.send(method, params, schema)
+    }
+    return new AsyncResult(
+      (async (): Promise<Result<T, Error>> => {
+        await this.acquireSlot()
+        try {
+          return await this.send(method, params, schema)
+        } finally {
+          this.releaseSlot()
+        }
+      })(),
+    )
+  }
+
+  private send<T>(method: string, params: unknown[], schema: z.ZodType<T>): AsyncResult<T, Error> {
     return tryBlockAsync(
       async function* (this: ElectrumClient) {
         // Reconnect if the underlying socket is down. connect() dedupes concurrent

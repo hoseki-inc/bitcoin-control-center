@@ -11,8 +11,42 @@ import { Txid } from '../txid'
 import { OnchainBitcoinProvider, type OnchainBitcoinProviderDeps } from './provider'
 import { type Block, type TransactionEntry, isConfirmed } from './types'
 
-/** Max concurrent Electrum requests per batch to avoid overwhelming the server. */
+/** Max concurrent Electrum requests per call, to avoid overwhelming the server. */
 const BATCH_SIZE = 10
+
+/**
+ * Maps items with at most `limit` calls running at once, starting the next as soon as any finishes,
+ * so one slow request doesn't hold back the rest the way fixed batches did. Results keep the items'
+ * order. After the first error no new calls start, and that error is returned once running calls settle.
+ */
+export async function mapWithLimit<T, R>(
+  items: readonly T[],
+  limit: number,
+  map: (item: T) => Promise<Result<R, Error>>,
+): Promise<Result<R[], Error>> {
+  const results: R[] = []
+  const failures: Error[] = []
+  let next = 0
+  const work = async (): Promise<void> => {
+    while (failures.length === 0 && next < items.length) {
+      const index = next
+      next += 1
+      const item = items[index]
+      if (item === undefined) {
+        return
+      }
+      const result = await map(item)
+      if (result.isErr()) {
+        failures.push(result.unwrapErr())
+        return
+      }
+      results[index] = result.unwrap()
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, work))
+  const failure = failures[0]
+  return failure === undefined ? Ok(results) : Err(failure)
+}
 
 export interface ElectrumProviderDeps extends OnchainBitcoinProviderDeps {
   electrum: ElectrumClient
@@ -54,34 +88,18 @@ export class ElectrumProvider extends OnchainBitcoinProvider {
   public areAddressesUsed = asyncFn(async (addresses: IndexSet<Address>): Promise<Result<IndexSet<Address>, Error>> => {
     this.deps.logger.debug({ total: addresses.size }, 'Checking if addresses are used via Electrum')
 
-    const used = new IndexSet<Address>()
-    const addressArray = [...addresses]
-
-    // Batch parallel requests to avoid overwhelming the server
-    for (let i = 0; i < addressArray.length; i += BATCH_SIZE) {
-      const batch = addressArray.slice(i, i + BATCH_SIZE)
-      const results = await Promise.all(
-        batch.map(async (address) => {
-          const scripthash = addressToScripthash(address)
-          if (scripthash.isErr()) {
-            return { address, err: scripthash.unwrapErr() } as const
-          }
-          const history = await this.deps.electrum.getHistory(scripthash.unwrap())
-          if (history.isErr()) {
-            return { address, err: history.unwrapErr() } as const
-          }
-          return { address, used: history.unwrap().length > 0 } as const
-        }),
-      )
-      for (const r of results) {
-        if ('err' in r) {
-          return Err(r.err ?? new Error('Electrum history request failed'))
-        }
-        if (r.used) {
-          used.add(r.address)
-        }
+    const checked = await mapWithLimit([...addresses], BATCH_SIZE, async (address) => {
+      const scripthash = addressToScripthash(address)
+      if (scripthash.isErr()) {
+        return Err(scripthash.unwrapErr())
       }
+      const history = await this.deps.electrum.getHistory(scripthash.unwrap())
+      return history.map((entries) => ({ address, used: entries.length > 0 }))
+    })
+    if (checked.isErr()) {
+      return Err(checked.unwrapErr())
     }
+    const used = new IndexSet(checked.unwrap().flatMap((result) => (result.used ? [result.address] : [])))
 
     this.deps.logger.info({ total: addresses.size, used: used.size }, 'Completed used address check via Electrum')
     return Ok(used)
@@ -91,31 +109,18 @@ export class ElectrumProvider extends OnchainBitcoinProvider {
     async (addresses: IndexSet<Address>): Promise<Result<IndexMap<Address, bigint>, Error>> => {
       this.deps.logger.debug({ total: addresses.size }, 'Getting confirmed address balances via Electrum')
 
-      const balances = new IndexMap<Address, bigint>()
-      const addressArray = [...addresses]
-
-      for (let i = 0; i < addressArray.length; i += BATCH_SIZE) {
-        const batch = addressArray.slice(i, i + BATCH_SIZE)
-        const results = await Promise.all(
-          batch.map(async (address) => {
-            const scripthash = addressToScripthash(address)
-            if (scripthash.isErr()) {
-              return { address, err: scripthash.unwrapErr() } as const
-            }
-            const balanceRes = await this.deps.electrum.getBalance(scripthash.unwrap())
-            if (balanceRes.isErr()) {
-              return { address, err: balanceRes.unwrapErr() } as const
-            }
-            return { address, balance: BigInt(balanceRes.unwrap().confirmed) } as const
-          }),
-        )
-        for (const r of results) {
-          if ('err' in r) {
-            return Err(r.err ?? new Error('Electrum balance request failed'))
-          }
-          balances.set(r.address, r.balance)
+      const fetched = await mapWithLimit([...addresses], BATCH_SIZE, async (address) => {
+        const scripthash = addressToScripthash(address)
+        if (scripthash.isErr()) {
+          return Err(scripthash.unwrapErr())
         }
+        const balance = await this.deps.electrum.getBalance(scripthash.unwrap())
+        return balance.map(({ confirmed }) => [address, BigInt(confirmed)] as const)
+      })
+      if (fetched.isErr()) {
+        return Err(fetched.unwrapErr())
       }
+      const balances = new IndexMap<Address, bigint>(fetched.unwrap())
 
       this.deps.logger.info(
         { total: addresses.size, withBalance: balances.size },
@@ -158,45 +163,41 @@ export class ElectrumProvider extends OnchainBitcoinProvider {
         ...account.changeAddresses(0, lastUsedChangeIndex + 1, this.network),
       ]
 
-      for (let i = 0; i < allAddresses.length; i += BATCH_SIZE) {
-        const batch = allAddresses.slice(i, i + BATCH_SIZE)
-        const results = await Promise.all(
-          batch.map(async (address) => {
-            const scripthashRes = addressToScripthash(address)
-            if (scripthashRes.isErr()) {
-              return []
-            }
-            const unspentRes = await this.deps.electrum.listUnspent(scripthashRes.unwrap())
-            if (unspentRes.isErr()) {
-              this.deps.logger.warn({ address, err: unspentRes.unwrapErr() }, 'Failed to list unspent, skipping')
-              return []
-            }
-            return unspentRes.unwrap()
-          }),
-        )
+      // A failed lookup skips that address's UTXOs rather than the whole account.
+      const unspent = await mapWithLimit(allAddresses, BATCH_SIZE, async (address) => {
+        const scripthashRes = addressToScripthash(address)
+        if (scripthashRes.isErr()) {
+          return Ok([])
+        }
+        const unspentRes = await this.deps.electrum.listUnspent(scripthashRes.unwrap())
+        if (unspentRes.isErr()) {
+          this.deps.logger.warn({ err: unspentRes.unwrapErr() }, 'Failed to list unspent, skipping')
+          return Ok([])
+        }
+        return Ok(unspentRes.unwrap())
+      })
 
-        for (const utxos of results) {
-          for (const utxo of utxos) {
-            const key = `${utxo.tx_hash}:${utxo.tx_pos}`
-            if (seenTxids.has(key)) {
-              continue
-            }
-            seenTxids.add(key)
-
-            if (utxo.height <= 0) {
-              continue
-            } // skip unconfirmed
-
-            // Estimate timestamp: ~10 minutes per block from tip
-            const blocksBehind = tip.height - utxo.height
-            const estimatedTimestamp = new Date(tip.timestamp.getTime() - blocksBehind * 10 * 60 * 1000)
-
-            entries.push({
-              value: BigInt(utxo.value),
-              height: utxo.height,
-              estimatedTimestamp,
-            })
+      for (const utxos of unspent.unwrapOr([])) {
+        for (const utxo of utxos) {
+          const key = `${utxo.tx_hash}:${utxo.tx_pos}`
+          if (seenTxids.has(key)) {
+            continue
           }
+          seenTxids.add(key)
+
+          if (utxo.height <= 0) {
+            continue
+          } // skip unconfirmed
+
+          // Estimate timestamp: ~10 minutes per block from tip
+          const blocksBehind = tip.height - utxo.height
+          const estimatedTimestamp = new Date(tip.timestamp.getTime() - blocksBehind * 10 * 60 * 1000)
+
+          entries.push({
+            value: BigInt(utxo.value),
+            height: utxo.height,
+            estimatedTimestamp,
+          })
         }
       }
 
@@ -224,6 +225,7 @@ export class ElectrumProvider extends OnchainBitcoinProvider {
     const walletScriptAddresses = new Map<string, Address>()
     const txAddresses = new Map<string, Array<{ address: Address; historyEntry: ScripthashHistoryEntry }>>()
 
+    const scripthashes: Array<{ address: Address; stopBeforeBlockHeight: number | null; scripthash: string }> = []
     for (const [address, stopBeforeBlockHeight] of addresses) {
       const outputScriptRes = addressToOutputScriptHex(address)
       if (outputScriptRes.isErr()) {
@@ -237,17 +239,21 @@ export class ElectrumProvider extends OnchainBitcoinProvider {
         yield Err(scripthashRes.unwrapErr())
         return
       }
-      const scripthash = scripthashRes.unwrap()
+      scripthashes.push({ address, stopBeforeBlockHeight, scripthash: scripthashRes.unwrap() })
+    }
 
-      // Get transaction history for this address
-      const historyRes = await this.deps.electrum.getHistory(scripthash)
-      if (historyRes.isErr()) {
-        yield Err(historyRes.unwrapErr())
-        return
-      }
-      const history = historyRes.unwrap()
+    // Fetch every address's history concurrently, then read it in address order so entries stay deterministic.
+    const histories = await mapWithLimit(scripthashes, BATCH_SIZE, async ({ scripthash }) =>
+      this.deps.electrum.getHistory(scripthash),
+    )
+    if (histories.isErr()) {
+      yield Err(histories.unwrapErr())
+      return
+    }
 
-      for (const entry of history) {
+    const fetched = histories.unwrap()
+    for (const [index, { address, stopBeforeBlockHeight }] of scripthashes.entries()) {
+      for (const entry of fetched[index] ?? []) {
         // Skip if this tx is at or below the stop height
         if (stopBeforeBlockHeight !== null && entry.height > 0 && entry.height <= stopBeforeBlockHeight) {
           continue
