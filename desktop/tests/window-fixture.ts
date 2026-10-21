@@ -18,7 +18,12 @@ interface WindowFixture {
   show: Mock<() => void>
   destroy: Mock<() => void>
   loadFile: Mock<(file: string) => Promise<void>>
+  loadURL: Mock<(url: string) => Promise<void>>
+  setUserAgent: Mock<(userAgent: string) => void>
 }
+
+export const electronUserAgent =
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) BitcoinControlCenter/44.9.1 Chrome/152.0.7977.167 Electron/44.9.1 Safari/537.36'
 
 export function createWindowFixture(initialUrl = 'http://localhost:49172'): WindowFixture {
   let url = initialUrl
@@ -28,9 +33,18 @@ export function createWindowFixture(initialUrl = 'http://localhost:49172'): Wind
   const show = vi.fn<() => void>()
   const destroy = vi.fn<() => void>()
   const loadFile = vi.fn<(file: string) => Promise<void>>().mockResolvedValue(undefined)
+  const loadURL = vi.fn<(url: string) => Promise<void>>().mockResolvedValue(undefined)
+  const setUserAgent = vi.fn<(userAgent: string) => void>()
   const contents = Object.assign(new EventEmitter(), {
     mainFrame: { origin: new URL(initialUrl).origin },
     getURL: (): string => url,
+    getUserAgent: (): string => electronUserAgent,
+    setUserAgent(userAgent: string): void {
+      setUserAgent(userAgent)
+    },
+    async loadURL(destination: string): Promise<void> {
+      await loadURL(destination)
+    },
     isDestroyed: (): boolean => destroyed,
     setWindowOpenHandler(handler: Parameters<WebContents['setWindowOpenHandler']>[0]): void {
       openHandler = handler
@@ -80,5 +94,7 @@ export function createWindowFixture(initialUrl = 'http://localhost:49172'): Wind
     show,
     destroy,
     loadFile,
+    loadURL,
+    setUserAgent,
   }
 }

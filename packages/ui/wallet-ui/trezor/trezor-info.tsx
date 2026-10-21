@@ -8,10 +8,14 @@ import { WaitingOnDevice } from '../waiting-on-device'
 import { WalletAnimation } from '../wallet-animation'
 import { WizardFooter } from '../wizard-footer'
 
+type TrezorInfoStep = 'device-details' | 'account-selection'
+
 export function TrezorInfo({
   onBack,
   onConnectTrezor,
+  step = 'account-selection',
 }: {
+  step?: TrezorInfoStep
   onBack: () => void
   onConnectTrezor: () => Promise<Result<void, Error | HardwareDeviceError>>
 }): JSX.Element {
@@ -40,7 +44,8 @@ export function TrezorInfo({
           error={error}
           mt={4}
           onRetry={() => {
-            window.location.reload()
+            // A new click lets Trezor Suite Web open its window again, e.g. after the browser blocked it
+            void connectTrezor()
           }}
         />
       )}
@@ -48,9 +53,16 @@ export function TrezorInfo({
       <WalletAnimation animation="trezorPlugIn" />
 
       {accountSelectionInProgress ? (
-        <WaitingOnDevice mt={6} message="Awaiting account selection via Trezor Connect SDK..." />
+        <WaitingOnDevice
+          mt={6}
+          message={
+            step === 'device-details'
+              ? 'Allow Bitcoin Control Center to read your device details in Trezor Suite.'
+              : 'Awaiting account selection via Trezor Connect SDK...'
+          }
+        />
       ) : (
-        <TrezorInfoCopy />
+        <TrezorInfoCopy step={step} />
       )}
 
       <WizardFooter
@@ -74,7 +86,21 @@ export function TrezorInfo({
   )
 }
 
-export function TrezorInfoCopy(): JSX.Element {
+export function TrezorInfoCopy({ step = 'device-details' }: { step?: TrezorInfoStep }): JSX.Element {
+  if (step === 'account-selection') {
+    return (
+      <>
+        <Text as="h2" textStyle="text/2xl" color="neutral.900" fontWeight="medium">
+          Choose Your Trezor Account
+        </Text>
+        <Text textStyle="text/md" color="neutral.900">
+          Click &apos;Next&apos; to choose the Bitcoin account you want to verify in Trezor Suite, then come back to
+          this page.
+        </Text>
+      </>
+    )
+  }
+
   return (
     <>
       <Text as="h2" textStyle="text/2xl" color="neutral.900" fontWeight="medium">
@@ -93,7 +119,7 @@ export function TrezorInfoCopy(): JSX.Element {
       <HowDoesThisWork>
         <>
           We use the official{' '}
-          <chakra.a href="https://connect.trezor.io/9/" textDecoration="underline" fontWeight="medium" target="_blank">
+          <chakra.a href="https://connect.trezor.io/10/" textDecoration="underline" fontWeight="medium" target="_blank">
             Trezor Connect SDK
           </chakra.a>{' '}
           to securely connect to your hardware wallet.

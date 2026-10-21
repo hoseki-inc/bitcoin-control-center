@@ -31,27 +31,31 @@ export function ConnectTrezor(): JSX.Element {
   const location = useLocation()
   const returnTo = parseNavigationState(location.state)?.returnTo ?? '/accounts'
   const trpcUtils = trpc.useUtils()
-  const [step, setStep] = useState<'step-1-info' | 'step-2-confirm'>('step-1-info')
+  const [step, setStep] = useState<'step-1-info' | 'step-2-account' | 'step-3-confirm'>('step-1-info')
+  const [trezorFeatures, setTrezorFeatures] = useState<Features>()
   const [selectedTrezorAccount, setSelectedTrezorAccount] = useState<SelectedTrezorAccount>()
   const navigateToAnExistentOrNewClaim = useNavigateToAnExistentOrNewClaim()
 
+  async function getTrezorDeviceInfo(): Promise<Result<void, Error>> {
+    const result = await trezorService.getFeatures()
+    setTrezorFeatures(result.unwrapOr(undefined))
+    setStep('step-2-account')
+    return Ok()
+  }
+
   async function getTrezorAccountInfo(): Promise<Result<void, Error>> {
-    const trezorFeaturesRes = await trezorService.getFeatures()
-    if (trezorFeaturesRes.isErr()) {
-      return Err(trezorFeaturesRes.unwrapErr())
-    }
-    const trezorAccountInfoRes = await trezorService.getAccountInfo()
-    if (trezorAccountInfoRes.isErr()) {
-      return Err(trezorAccountInfoRes.unwrapErr())
+    // One Trezor call per click: Suite Web opens a popup per call, and a second popup would be blocked
+    const trezorAccountRes = await trezorService.selectBitcoinAccount()
+    if (trezorAccountRes.isErr()) {
+      return Err(trezorAccountRes.unwrapErr())
     }
 
-    const trezorFeatures = trezorFeaturesRes.unwrap()
-    const trezorAccountInfo = trezorAccountInfoRes.unwrap()
+    const trezorAccount = trezorAccountRes.unwrap()
+    if (trezorAccount.xpub === undefined) {
+      return Err(new Error("Trezor Suite did not return the account's extended public key."))
+    }
 
-    // Legacy, nested Segwit, Segwit use _pub format in the descriptor field
-    // While Taproot uses a real descriptor
-    // For this reason, we're using the legacyXpub format if it exists, because it is more correct
-    const rawInput = trezorAccountInfo.legacyXpub ?? trezorAccountInfo.descriptor
+    const rawInput = trezorAccount.xpub
 
     let account: SingleSigAccount
 
@@ -67,7 +71,7 @@ export function ConnectTrezor(): JSX.Element {
       }
 
       // Get default script type based on the path
-      const scriptTypeResult = getScriptType(trezorAccountInfo.path)
+      const scriptTypeResult = getScriptType(trezorAccount.path)
       if (scriptTypeResult.isErr()) {
         return Err(scriptTypeResult.unwrapErr())
       }
@@ -75,23 +79,20 @@ export function ConnectTrezor(): JSX.Element {
       account = new SingleSigAccount(scriptTypeResult.unwrap(), xpubResult.unwrap())
     }
 
-    const derivationPath =
-      trezorAccountInfo.path != null && trezorAccountInfo.path !== ''
-        ? DerivationPath.fromString(trezorAccountInfo.path).unwrapOr(null)
-        : null
+    const derivationPath = DerivationPath.fromString(trezorAccount.path).unwrapOr(null)
 
     // Set the selected Trezor account
     setSelectedTrezorAccount({
       trezorFeatures,
-      trezorAccountInfo: trezorAccountInfo,
       wallet: {
         accountIndex: 1,
         rawInput,
         account,
         derivationPath,
-        btcBalance: new Decimal(trezorAccountInfo.balance),
+        // Trezor Suite doesn't return a balance, so it's fetched below
+        btcBalance: new Decimal(0),
         usdBalance: null, // Initially null, fetched at the end of this function
-        displayName: getTrezorDisplayName(trezorFeatures),
+        displayName: trezorFeatures == null ? 'Trezor' : getTrezorDisplayName(trezorFeatures),
         label: 'Account 1',
       },
     })
@@ -100,7 +101,7 @@ export function ConnectTrezor(): JSX.Element {
     getTrezorAccountBalance(account).catch(() => {
       browserLogger.warn('Unable to refresh the optional Trezor account balance')
     })
-    setStep('step-2-confirm')
+    setStep('step-3-confirm')
     return Ok()
   }
 
@@ -134,7 +135,7 @@ export function ConnectTrezor(): JSX.Element {
     })
   }
 
-  function handleContinue(trezorFeatures: Features) {
+  function handleContinue() {
     if (!selectedTrezorAccount) {
       return
     }
@@ -144,7 +145,8 @@ export function ConnectTrezor(): JSX.Element {
       account: selectedTrezorAccount.wallet.account,
       derivationPath: selectedTrezorAccount.wallet.derivationPath,
       wallet: 'trezor',
-      model: getTrezorModel(trezorFeatures.internal_model),
+      // The device details were read in a separate Trezor Suite request
+      model: getTrezorModel(selectedTrezorAccount.trezorFeatures?.internal_model),
       displayName: selectedTrezorAccount.wallet.displayName,
     })
   }
@@ -153,14 +155,26 @@ export function ConnectTrezor(): JSX.Element {
     <ClaimConnectionWrapper>
       {step === 'step-1-info' && (
         <TrezorInfo
+          key="device-details"
+          step="device-details"
           onBack={() => {
             void navigate(returnTo)
+          }}
+          onConnectTrezor={getTrezorDeviceInfo}
+        />
+      )}
+
+      {step === 'step-2-account' && (
+        <TrezorInfo
+          key="account-selection"
+          onBack={() => {
+            setStep('step-1-info')
           }}
           onConnectTrezor={getTrezorAccountInfo}
         />
       )}
 
-      {step === 'step-2-confirm' &&
+      {step === 'step-3-confirm' &&
         (!selectedTrezorAccount ? (
           <RequiredDataMissing />
         ) : (
@@ -168,9 +182,7 @@ export function ConnectTrezor(): JSX.Element {
             trezorAccount={selectedTrezorAccount}
             setSelectedTrezorAccount={setSelectedTrezorAccount}
             isLoadingOnContinue={navigateToAnExistentOrNewClaim.isLoading}
-            onContinue={() => {
-              handleContinue(selectedTrezorAccount.trezorFeatures)
-            }}
+            onContinue={handleContinue}
             onCancel={() => {
               void navigate(returnTo)
             }}

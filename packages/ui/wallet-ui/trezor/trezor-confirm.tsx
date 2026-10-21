@@ -25,11 +25,10 @@ export function TrezorConfirm({
   onContinue: () => void
   onCancel: () => void
 }): JSX.Element {
+  const model = trezorAccount.trezorFeatures?.model
   return (
     <>
-      <FloatingTrezorImage
-        modelName={isTrezorModel(trezorAccount.trezorFeatures.model) ? trezorAccount.trezorFeatures.model : 'One'}
-      />
+      <FloatingTrezorImage modelName={model != null && isTrezorModel(model) ? model : 'One'} />
 
       <Stack gap={4} alignItems="center">
         <Lottie

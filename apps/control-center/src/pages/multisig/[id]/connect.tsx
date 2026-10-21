@@ -18,7 +18,7 @@ import {
 } from '@chakra-ui/react'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { DerivationPath, type Xpub } from '@hoseki/packages/bitcoin'
-import { type Result, asyncFn } from '@hoseki/packages/result'
+import { Err, Ok, type Result, asyncFn } from '@hoseki/packages/result'
 import { Alert, Badge, Spinner } from '@hoseki/packages/ui/design-system'
 import { GreenCheckIcon } from '@hoseki/packages/ui/prove-verify-ui'
 import {
@@ -30,7 +30,7 @@ import {
   FloatingTrezorImage,
   HardwareWalletError,
   type KeystoneExportFile,
-  TrezorInfoCopy,
+  TrezorInfo,
   type TrezorModel,
   WalletAnimation,
   WizardFooter,
@@ -109,7 +109,7 @@ function ConnectLedgerWalletCheckXpub({ claim }: { claim: ClaimDto }) {
   async function getXpubFromLedger() {
     return getXpubFrom({
       claim,
-      getXpubFromDevice: (derivationPath) =>
+      getXpubForPath: (derivationPath) =>
         getBitcoinXpubFromPath(derivationPath.toString(true))
           .map(({ xpub }) => Slip132.getXpubFromString(xpub))
           .flatten(),
@@ -134,39 +134,38 @@ function ConnectTrezorWallet({ claim }: { claim: ClaimDto }) {
   const navigate = useNavigate()
   const [step, setStep] = useState<'trezor-device-unlock' | 'trezor-device-check-xpub'>('trezor-device-unlock')
   const [model, setModel] = useState<TrezorModel | null>(null)
-  const trezorPlugIn = <WalletAnimation animation="trezorPlugIn" />
+
+  async function getDeviceDetails(): Promise<Result<void, Error>> {
+    const result = await trezorService.getFeatures()
+    if (result.isErr()) {
+      browserLogger.error(result.unwrapErr(), 'Failed to get Trezor features')
+      setModel(null)
+    } else {
+      setModel(getTrezorModel(result.unwrap().internal_model))
+    }
+    setStep('trezor-device-check-xpub')
+    return Ok()
+  }
 
   return (
     <>
-      {!model && trezorPlugIn}
       {step === 'trezor-device-unlock' && (
-        <>
-          <TrezorInfoCopy />
-          <WizardFooter
-            leftButton={
-              <Button
-                variant="outline"
-                onClick={() => {
-                  void navigate(`/multisig/${claim.id}`)
-                }}
-              >
-                Back
-              </Button>
-            }
-            rightButton={
-              <Button
-                onClick={() => {
-                  setStep('trezor-device-check-xpub')
-                }}
-              >
-                Next
-              </Button>
-            }
-          />
-        </>
+        <TrezorInfo
+          step="device-details"
+          onBack={() => {
+            void navigate(`/multisig/${claim.id}`)
+          }}
+          onConnectTrezor={getDeviceDetails}
+        />
       )}
       {step === 'trezor-device-check-xpub' && (
-        <ConnectTrezorWalletCheckXpub claim={claim} media={null} model={model} setModel={setModel} />
+        <ConnectTrezorWalletCheckXpub
+          claim={claim}
+          media={
+            model == null ? <WalletAnimation animation="trezorPlugIn" /> : <FloatingTrezorImage modelName={model} />
+          }
+          model={model}
+        />
       )}
     </>
   )
@@ -176,35 +175,42 @@ function ConnectTrezorWalletCheckXpub({
   claim,
   media,
   model,
-  setModel,
 }: {
   claim: ClaimDto
   media: React.ReactNode
   model: TrezorModel | null
-  setModel: (model: TrezorModel) => void
 }) {
   async function getXpubFromTrezor() {
+    // Suite Web opens a popup per request, so every keystore path is read in one bundled request
+    const paths = [
+      ...new Set(
+        claim.keystores.flatMap((ks) =>
+          ks.derivationPath == null ? [] : [DerivationPath.from(ks.derivationPath).toString(true)],
+        ),
+      ),
+    ]
+    const publicKeysRes = await trezorService.getPublicKeys(paths)
+    const publicKeysByPathRes = publicKeysRes.map((publicKeys) => {
+      const publicKeysByPath = new Map<string, string>()
+      for (const publicKey of publicKeys) {
+        publicKeysByPath.set(publicKey.serializedPath, publicKey.xpub)
+      }
+      return publicKeysByPath
+    })
+
     return getXpubFrom({
       claim,
-      getXpubFromDevice: (derivationPath) =>
-        trezorService
-          .getPublicKey(derivationPath.toString(true))
-          .map((res) => Slip132.getXpubFromString(res.xpub))
-          .flatten(),
+      getXpubForPath: (derivationPath) =>
+        publicKeysByPathRes.andThen((publicKeysByPath): Result<Xpub, Error> => {
+          const path = derivationPath.toString(true)
+          const rawXpub = publicKeysByPath.get(path)
+          if (rawXpub === undefined) {
+            return Err(new Error(`Trezor did not return a public key for ${path}`))
+          }
+          return Slip132.getXpubFromString(rawXpub)
+        }),
       deviceType: 'trezor',
     })
-  }
-
-  async function getDeviceModel() {
-    const featuresRes = await trezorService.getFeatures()
-    if (featuresRes.isErr()) {
-      browserLogger.error(featuresRes.unwrapErr(), 'Failed to get Trezor features')
-      return 'One'
-    }
-
-    const detectedModel = getTrezorModel(featuresRes.unwrap().internal_model) ?? 'One'
-    setModel(detectedModel)
-    return detectedModel
   }
 
   return (
@@ -212,8 +218,9 @@ function ConnectTrezorWalletCheckXpub({
       claim={claim}
       keystoreMetadata={{ label: 'Trezor Wallet', walletType: 'trezor' }}
       getXpubFromDevice={getXpubFromTrezor}
-      media={model ? <FloatingTrezorImage modelName={model} /> : media}
-      getDeviceModel={getDeviceModel}
+      media={media}
+      // The device details were read in a separate Trezor Suite request
+      getDeviceModel={async () => model}
     />
   )
 }
@@ -235,7 +242,7 @@ function GenericCheckWalletXpub({
   keystoreMetadata: { label: string; walletType: SupportedHardwareWallet }
   getXpubFromDevice: () => Promise<Result<Xpub, Error>>
   media: React.ReactNode
-  getDeviceModel: () => Promise<string>
+  getDeviceModel: () => Promise<string | null>
 }) {
   const navigate = useNavigate()
   const [matchedKeystore, setMatchedKeystore] = useState<{ keystore: KeystoreDto | null; match: boolean } | null>(null)
@@ -674,9 +681,7 @@ function KeystoneMultisigXpubCheck({ claim, keystoneJson }: { claim: ClaimDto; k
   async function getXpubFromKeystone(): Promise<Result<Xpub, Error>> {
     return getXpubFrom({
       claim,
-      getXpubFromDevice: asyncFn(async (derivationPath) =>
-        getBitcoinXpubFromKeystoneExport(derivationPath, keystoneJson),
-      ),
+      getXpubForPath: asyncFn(async (derivationPath) => getBitcoinXpubFromKeystoneExport(derivationPath, keystoneJson)),
       deviceType: 'keystone',
     })
   }
@@ -704,9 +709,7 @@ function ColdcardMultisigStep6({
   async function getXpubFromColdcard(): Promise<Result<Xpub, Error>> {
     return getXpubFrom({
       claim,
-      getXpubFromDevice: asyncFn(async (derivationPath) =>
-        getBitcoinXpubFromColdcardExport(derivationPath, coldcardJson),
-      ),
+      getXpubForPath: asyncFn(async (derivationPath) => getBitcoinXpubFromColdcardExport(derivationPath, coldcardJson)),
       deviceType: 'coldcard',
     })
   }

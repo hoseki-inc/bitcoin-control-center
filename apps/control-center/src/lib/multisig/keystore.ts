@@ -22,11 +22,11 @@ type Keystore = {
  */
 export async function getXpubFrom({
   claim,
-  getXpubFromDevice,
+  getXpubForPath,
   deviceType,
 }: {
   claim: { keystores: Keystore[] }
-  getXpubFromDevice: (derivationPath: DerivationPath) => AsyncResult<Xpub, Error>
+  getXpubForPath: (derivationPath: DerivationPath) => Result<Xpub, Error> | AsyncResult<Xpub, Error>
   deviceType: SupportedHardwareWallet
 }): Promise<Result<Xpub, Error>> {
   let lastHardwareError: Error | undefined
@@ -36,7 +36,7 @@ export async function getXpubFrom({
       continue
     }
 
-    const xpubRes = await getXpubFromDevice(DerivationPath.from(ks.derivationPath))
+    const xpubRes = await getXpubForPath(DerivationPath.from(ks.derivationPath))
     if (xpubRes.isErr()) {
       const error = xpubRes.unwrapErr()
       if (error instanceof HardwareDeviceError) {

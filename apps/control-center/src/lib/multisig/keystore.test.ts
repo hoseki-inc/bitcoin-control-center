@@ -46,52 +46,52 @@ describe('getXpubFrom', () => {
   } as const
 
   it('should return the xpub when device returns matching xpub for first keystore', async () => {
-    const getXpubFromDevice = vi.fn().mockResolvedValue(Ok(xpub1))
+    const getXpubForPath = vi.fn().mockResolvedValue(Ok(xpub1))
 
     const result = await getXpubFrom({
       claim: mockClaimDto,
-      getXpubFromDevice,
+      getXpubForPath,
       deviceType: 'ledger',
     })
 
     expect(result.isOk()).toBe(true)
     expect(result.unwrap()?.toString()).toBe(xpub1.toString())
-    expect(getXpubFromDevice).toHaveBeenCalledTimes(1)
+    expect(getXpubForPath).toHaveBeenCalledTimes(1)
     // Should be called with hardened-only path (which is the same as derivationPath1 since it's all hardened)
-    expect(getXpubFromDevice).toHaveBeenCalledWith(derivationPath1)
+    expect(getXpubForPath).toHaveBeenCalledWith(derivationPath1)
   })
 
   it('should return the xpub when device returns matching xpub for second keystore', async () => {
-    const getXpubFromDevice = vi
+    const getXpubForPath = vi
       .fn()
       .mockResolvedValueOnce(Ok(xpub3)) // First keystore doesn't match
       .mockResolvedValueOnce(Ok(xpub2)) // Second keystore matches
 
     const result = await getXpubFrom({
       claim: mockClaimDto,
-      getXpubFromDevice,
+      getXpubForPath,
       deviceType: 'trezor',
     })
 
     expect(result.isOk()).toBe(true)
     expect(result.unwrap()?.toString()).toBe(xpub2.toString())
-    expect(getXpubFromDevice).toHaveBeenCalledTimes(2)
-    expect(getXpubFromDevice).toHaveBeenNthCalledWith(1, derivationPath1)
-    expect(getXpubFromDevice).toHaveBeenNthCalledWith(2, derivationPath2)
+    expect(getXpubForPath).toHaveBeenCalledTimes(2)
+    expect(getXpubForPath).toHaveBeenNthCalledWith(1, derivationPath1)
+    expect(getXpubForPath).toHaveBeenNthCalledWith(2, derivationPath2)
   })
 
   it('should return error when no keystore xpub matches device xpub', async () => {
-    const getXpubFromDevice = vi.fn().mockResolvedValue(Ok(xpub3))
+    const getXpubForPath = vi.fn().mockResolvedValue(Ok(xpub3))
 
     const result = await getXpubFrom({
       claim: mockClaimDto,
-      getXpubFromDevice,
+      getXpubForPath,
       deviceType: 'coldcard',
     })
 
     expect(result.isErr()).toBe(true)
     expect(result.unwrapErr()?.message).toBe('No coldcard account found matching any keystore xpub')
-    expect(getXpubFromDevice).toHaveBeenCalledTimes(2)
+    expect(getXpubForPath).toHaveBeenCalledTimes(2)
   })
 
   it('should skip keystores without derivation path', async () => {
@@ -104,18 +104,18 @@ describe('getXpubFrom', () => {
       keystores: [keystoreWithoutPath, mockKeystoreDto2],
     }
 
-    const getXpubFromDevice = vi.fn().mockResolvedValue(Ok(xpub2))
+    const getXpubForPath = vi.fn().mockResolvedValue(Ok(xpub2))
 
     const result = await getXpubFrom({
       claim: claimWithMissingPath,
-      getXpubFromDevice,
+      getXpubForPath,
       deviceType: 'trezor',
     })
 
     expect(result.isOk()).toBe(true)
     expect(result.unwrap()?.toString()).toBe(xpub2.toString())
-    expect(getXpubFromDevice).toHaveBeenCalledTimes(1) // Only called once, skipped first keystore
-    expect(getXpubFromDevice).toHaveBeenCalledWith(derivationPath2)
+    expect(getXpubForPath).toHaveBeenCalledTimes(1) // Only called once, skipped first keystore
+    expect(getXpubForPath).toHaveBeenCalledWith(derivationPath2)
   })
 
   it('should return error when all keystores lack derivation paths', async () => {
@@ -126,32 +126,32 @@ describe('getXpubFrom', () => {
       ],
     }
 
-    const getXpubFromDevice = vi.fn()
+    const getXpubForPath = vi.fn()
 
     const result = await getXpubFrom({
       claim: claimWithNoPaths,
-      getXpubFromDevice,
+      getXpubForPath,
       deviceType: 'coldcard',
     })
 
     expect(result.isErr()).toBe(true)
     expect(result.unwrapErr()?.message).toBe('No coldcard account found matching any keystore xpub')
-    expect(getXpubFromDevice).not.toHaveBeenCalled()
+    expect(getXpubForPath).not.toHaveBeenCalled()
   })
 
   it('should stop searching after device error on first keystore', async () => {
-    const getXpubFromDevice = vi
+    const getXpubForPath = vi
       .fn()
       .mockResolvedValueOnce(Err(new HardwareDeviceError('User cancelled', 'trezor', 'User cancelled')))
 
     const result = await getXpubFrom({
       claim: mockClaimDto,
-      getXpubFromDevice,
+      getXpubForPath,
       deviceType: 'trezor',
     })
 
     expect(result.isOk()).toBe(false)
-    expect(getXpubFromDevice).toHaveBeenCalledTimes(1)
+    expect(getXpubForPath).toHaveBeenCalledTimes(1)
   })
 
   it('should return first matching xpub when multiple keystores could match', async () => {
@@ -159,17 +159,17 @@ describe('getXpubFrom', () => {
       keystores: [mockKeystoreDto1, { ...mockKeystoreDto2, xpub: mockKeystoreDto1.xpub }],
     }
 
-    const getXpubFromDevice = vi.fn().mockResolvedValue(Ok(xpub1))
+    const getXpubForPath = vi.fn().mockResolvedValue(Ok(xpub1))
 
     const result = await getXpubFrom({
       claim: claimWithDuplicates,
-      getXpubFromDevice,
+      getXpubForPath,
       deviceType: 'ledger',
     })
 
     expect(result.isOk()).toBe(true)
     expect(result.unwrap()?.toString()).toBe(xpub1.toString())
-    expect(getXpubFromDevice).toHaveBeenCalledTimes(1) // Should return on first match
+    expect(getXpubForPath).toHaveBeenCalledTimes(1) // Should return on first match
   })
 
   it('should handle empty keystores array', async () => {
@@ -177,17 +177,17 @@ describe('getXpubFrom', () => {
       keystores: [],
     }
 
-    const getXpubFromDevice = vi.fn()
+    const getXpubForPath = vi.fn()
 
     const result = await getXpubFrom({
       claim: claimWithNoKeystores,
-      getXpubFromDevice,
+      getXpubForPath,
       deviceType: 'ledger',
     })
 
     expect(result.isErr()).toBe(true)
     expect(result.unwrapErr()?.message).toBe('No ledger account found matching any keystore xpub')
-    expect(getXpubFromDevice).not.toHaveBeenCalled()
+    expect(getXpubForPath).not.toHaveBeenCalled()
   })
 
   it('should return error when derived unhardened xpub does not match', async () => {
@@ -203,16 +203,16 @@ describe('getXpubFrom', () => {
       keystores: [keystoreWithMixedPath],
     }
 
-    const getXpubFromDevice = vi.fn().mockResolvedValue(Ok(hardenedXpub))
+    const getXpubForPath = vi.fn().mockResolvedValue(Ok(hardenedXpub))
 
     const result = await getXpubFrom({
       claim,
-      getXpubFromDevice,
+      getXpubForPath,
       deviceType: 'ledger',
     })
 
     expect(result.isErr()).toBe(true)
     expect(result.unwrapErr()?.message).toBe('No ledger account found matching any keystore xpub')
-    expect(getXpubFromDevice).toHaveBeenCalledTimes(1)
+    expect(getXpubForPath).toHaveBeenCalledTimes(1)
   })
 })
