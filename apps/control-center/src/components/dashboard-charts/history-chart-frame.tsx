@@ -94,15 +94,7 @@ export function HistoryRangeLoading({ height }: { height: string }): JSX.Element
     <Flex h={height} direction="column" justify="center" px={{ base: 4, md: 8 }} gap={4}>
       <Stack spacing={3} aria-hidden="true">
         {['88%', '64%', '76%'].map((width) => (
-          <Skeleton
-            key={width}
-            w={width}
-            h="8px"
-            borderRadius="control"
-            startColor="neutral.100"
-            endColor="neutral.200"
-            sx={{ '@media (prefers-reduced-motion: reduce)': { animation: 'none' } }}
-          />
+          <Skeleton key={width} w={width} h="8px" />
         ))}
       </Stack>
       <Text textStyle="text/sm" color="neutral.600">
