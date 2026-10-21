@@ -1,6 +1,7 @@
 import type { ClaimId } from '@hoseki/packages/schemas/prove'
-import { ErrorBanner, Spinner } from '@hoseki/packages/ui/design-system'
+import { ErrorBanner } from '@hoseki/packages/ui/design-system'
 import { ClaimDetails } from '../../../components/claims/claim-details/claim-details'
+import { AccountDetailsSkeleton } from '../../../components/loading/page-skeletons'
 import { UrlParameter, useUrlParameter } from '../../../hooks/use-url-parameters'
 import { trpc } from '../../../trpc'
 
@@ -17,7 +18,7 @@ function ClaimDetailsContent({ claimId }: { claimId: ClaimId }): JSX.Element {
   const { isLoading, error, data: claim } = trpc.portalProve.registry.claims.get.byId.useQuery({ id: claimId })
 
   if (isLoading) {
-    return <Spinner fullPage size="xl" />
+    return <AccountDetailsSkeleton />
   }
   if (error) {
     return <ErrorBanner mt={8} mb={4} message={`An error occurred while loading the claim. ${error.message}`} />
