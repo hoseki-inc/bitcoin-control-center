@@ -51,13 +51,6 @@ export interface ControlCenterData {
   historyFailedAccountIds: string[]
 }
 
-/** A wallet's last recorded balance, and when it was recorded. */
-export interface StoredWalletBalance {
-  accountId: string
-  balanceSats: string
-  timestamp: string
-}
-
 interface BalanceSnapshotRow {
   balance_sats: string
   timestamp: string
@@ -432,25 +425,6 @@ export class ControlCenterService {
       await this.upsertAccountSnapshot(tx, accountId, balanceSats, timestamp)
       return true
     })
-  }
-
-  /**
-   * Each active wallet's last recorded balance, which stands in for its live balance
-   * while Electrum is unreachable. Wallets that have never synced are left out.
-   */
-  public async getStoredWalletBalances(accountIds: string[]): Promise<StoredWalletBalance[]> {
-    const balances: StoredWalletBalance[] = []
-    for (const row of await this.getAccountRows(accountIds)) {
-      const snapshot = await this.getLatestAccountSnapshot(row.id)
-      if (snapshot !== null) {
-        balances.push({
-          accountId: row.id,
-          balanceSats: snapshot.balanceSats.toString(),
-          timestamp: snapshot.timestamp,
-        })
-      }
-    }
-    return balances
   }
 
   public archiveAccount = asyncFn(async (accountId: string): Promise<Result<void, Error>> => {

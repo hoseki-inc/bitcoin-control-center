@@ -441,15 +441,6 @@ const controlCenterRouter = t.router({
   walletBalances: publicProcedure
     .input(z.object({ claimIds: z.array(z.string()) }))
     .query(async ({ ctx, input }) => ctx.app.walletBalanceService.readBalances(input.claimIds)),
-
-  storedWalletBalances: publicProcedure
-    .input(z.object({ claimIds: z.array(z.string()) }))
-    .query(async ({ ctx, input }) => ctx.app.controlCenterService.getStoredWalletBalances(input.claimIds)),
-
-  /** Starts refreshing wallet balances that are out of date and returns at once; each scan records its own snapshot. */
-  recordSnapshot: publicProcedure.mutation(({ ctx }) => {
-    ctx.app.walletBalanceService.refreshInBackground()
-  }),
 })
 
 // ─── portalProve.registry ───────────────────────────────────────────────────

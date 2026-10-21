@@ -193,28 +193,6 @@ it('accepts only one concurrent signature submission and preserves the winning s
   await expect(caller.challengeMessages.get({ signedMessageId: message.id })).resolves.toEqual(winner.value)
 })
 
-it('returns the stored wallet balances of the requested wallets only', async () => {
-  const { app } = await setup()
-  const { accounts: accountRouter, controlCenter } = appRouter.createCaller({ app }).portalProve
-  const requested = await accountRouter.add({
-    descriptor: Wallets.singlesigNativeSegwitAccount.toString(),
-    displayName: 'Requested wallet',
-    network: 'mainnet',
-  })
-  const other = await accountRouter.add({
-    descriptor: Wallets.singlesigLegacyAccount.toString(),
-    displayName: 'Other wallet',
-    network: 'mainnet',
-  })
-  await app.controlCenterService.recordAccountSnapshot(requested.id, '90', '2020-01-01T00:00:00.000Z')
-  await app.controlCenterService.recordAccountSnapshot(requested.id, '150', '2020-01-03T09:00:00.000Z')
-  await app.controlCenterService.recordAccountSnapshot(other.id, '50', '2020-01-02T00:00:00.000Z')
-
-  await expect(controlCenter.storedWalletBalances({ claimIds: [requested.id] })).resolves.toEqual([
-    { accountId: requested.id, balanceSats: '150', timestamp: '2020-01-03T09:00:00.000Z' },
-  ])
-})
-
 it('reads wallet balances without waiting for Electrum, and reports the scans it starts', async () => {
   const { app } = await setup()
   const { accounts: accountRouter, controlCenter } = appRouter.createCaller({ app }).portalProve

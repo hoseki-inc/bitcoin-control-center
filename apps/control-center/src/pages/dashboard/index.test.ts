@@ -12,10 +12,11 @@ import { MemoryRouter } from 'react-router'
 import { assert, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { z } from 'zod'
 import type { AccountFilter } from '../../components/dashboard-charts/account-filter'
+import type { WalletBalanceRow } from '../../lib/wallet-balances'
 import { claimFixture } from '../../testing/claims'
 import type { RouterInput, RouterOutput } from '../../trpc'
 import type { ClaimDto } from '../../trpc/server-types'
-import type { DashboardDataSource, PortfolioQuery, StoredWalletBalance } from './dashboard-data'
+import type { DashboardDataSource, PortfolioQuery } from './dashboard-data'
 import { DashboardPage, type DashboardViews } from './index'
 
 type SidebarProps = Parameters<typeof AccountFilter>[0]
@@ -36,7 +37,7 @@ const browser = await vi.hoisted(async () => {
 
 const mocks = vi.hoisted(() => {
   let error: Error | null = null
-  let storedBalances: StoredWalletBalance[] | undefined = []
+  let storedBalances: StoredBalance[] | undefined = []
   const claims: ClaimDto[] = []
   const base: NonNullable<PortfolioQuery['data']> = {
     currentTotalBalance: '100',
@@ -71,19 +72,17 @@ const mocks = vi.hoisted(() => {
         ) => PortfolioQuery
       >(),
     sidebar: vi.fn<(props: SidebarProps) => void>(),
-    recordSnapshot: { mutate: vi.fn() },
     btcPrice: 50_000,
     balances: new Map<ClaimId, BalanceValue | null>(),
     balancesFailed: false,
     balancesUpdatedAt: 0,
-    useBalances: vi.fn<DashboardDataSource['useBalances']>(),
+    useWalletBalances: vi.fn<DashboardDataSource['useWalletBalances']>(),
     get storedBalances() {
       return storedBalances
     },
-    set storedBalances(value: StoredWalletBalance[] | undefined) {
+    set storedBalances(value: StoredBalance[] | undefined) {
       storedBalances = value
     },
-    useStoredBalances: vi.fn<DashboardDataSource['useStoredBalances']>(),
     claimsFailed: false,
     exchangeAccounts: Array<RouterOutput['portalProve']['exchange']['list'][number]>(),
     etfAccounts: Array<RouterOutput['portalProve']['etf']['list'][number]>(),
@@ -101,9 +100,43 @@ const mocks = vi.hoisted(() => {
   }
 })
 
+/** A wallet's balance as Sentinel last recorded it. */
+interface StoredBalance {
+  accountId: string
+  balanceSats: string
+  timestamp: string
+}
+
+/**
+ * The rows Sentinel returns for the balances these tests describe: a balance fetched at
+ * `balancesUpdatedAt` (0 until one arrives) or one recorded earlier, whichever is newer. A wallet
+ * syncs until a fetched balance arrives, and fails while Electrum is unreachable. With nothing
+ * recorded read yet, there are no rows.
+ */
+function walletRows(claimIds: string[]): WalletBalanceRow[] | undefined {
+  const stored = mocks.storedBalances
+  if (stored === undefined) {
+    return undefined
+  }
+  return claimIds.map((id): WalletBalanceRow => {
+    const fetched = [...mocks.balances].find(([claimId]) => claimId === id)?.[1] ?? null
+    const live = mocks.balancesUpdatedAt > 0 ? fetched : null
+    const recorded = stored.find((balance) => balance.accountId === id)
+    const useLive =
+      live !== null && !(recorded !== undefined && Date.parse(recorded.timestamp) > mocks.balancesUpdatedAt)
+    return {
+      accountId: id,
+      balanceSats: useLive ? live.current.toString() : (recorded?.balanceSats ?? null),
+      asOf: useLive ? new Date(mocks.balancesUpdatedAt).toISOString() : (recorded?.timestamp ?? null),
+      syncing: !mocks.balancesFailed && mocks.balancesUpdatedAt === 0,
+      failed: mocks.balancesFailed,
+      failure: mocks.balancesFailed ? 'unreachable' : null,
+    }
+  })
+}
+
 const dataSource: DashboardDataSource = {
   useAccounts: () => ({
-    recordSnapshot: mocks.recordSnapshot,
     claimsQuery: { data: mocks.claimsFailed ? undefined : mocks.claims, isLoading: false },
     exchangeAccountsQuery: { data: mocks.exchangeAccounts, isLoading: false },
     manualAccountsQuery: { data: mocks.holdings, isLoading: false },
@@ -119,13 +152,9 @@ const dataSource: DashboardDataSource = {
     },
   }),
   useHistory: (input, options) => mocks.useQuery(input, options),
-  useBalances: (...args) => {
-    mocks.useBalances(...args)
-    return { data: mocks.balances, balancesFailed: mocks.balancesFailed, updatedAt: mocks.balancesUpdatedAt }
-  },
-  useStoredBalances: (...args) => {
-    mocks.useStoredBalances(...args)
-    return { data: mocks.storedBalances }
+  useWalletBalances: (claimIds, options) => {
+    mocks.useWalletBalances(claimIds, options)
+    return { rows: walletRows(claimIds), isError: false }
   },
   useAutoRefresh: () => undefined,
   getTimezone: () => 'UTC',
@@ -271,8 +300,7 @@ async function withTestSetup(run: () => Promise<void>): Promise<void> {
   mocks.balancesFailed = false
   // Live balances loaded a minute before "now", unless a test says otherwise.
   mocks.balancesUpdatedAt = Date.parse('2026-09-05T11:59:00.000Z')
-  mocks.useBalances.mockClear()
-  mocks.useStoredBalances.mockClear()
+  mocks.useWalletBalances.mockClear()
   mocks.storedBalances = []
   mocks.claimsFailed = false
   mocks.exchangeAccounts = []
@@ -1086,8 +1114,6 @@ describe('range summary', () => {
       const points = chartData()
       assert(Array.isArray(points), 'Expected chart points')
       expect(points.at(-1)).toEqual({ timestamp: '2026-09-01T12:00:00.000Z', totalBalance: '150000000' })
-      // Failed balances are fetched again until they load.
-      expect(mocks.useBalances.mock.lastCall?.[0].retryFailedEveryMs).toBe(10_000)
     })
   })
 
@@ -1123,12 +1149,12 @@ describe('range summary', () => {
     })
   })
 
-  it("asks for each wallet's stored balance, and only when there are wallets", async () => {
+  it("asks for each wallet's balance, and only when there are wallets", async () => {
     await withTestSetup(async () => {
-      expect(mocks.useStoredBalances.mock.lastCall).toEqual([{ claimIds: [] }, { enabled: false }])
+      expect(mocks.useWalletBalances.mock.lastCall).toEqual([[], { enabled: false }])
       mocks.claims = [claimFixture('re_clmx_wallet', 'Test wallet')]
       await render()
-      expect(mocks.useStoredBalances.mock.lastCall).toEqual([{ claimIds: ['re_clmx_wallet'] }, { enabled: true }])
+      expect(mocks.useWalletBalances.mock.lastCall).toEqual([['re_clmx_wallet'], { enabled: true }])
     })
   })
 

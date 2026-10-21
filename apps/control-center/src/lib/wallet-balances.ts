@@ -38,6 +38,10 @@ export function summarizeWalletBalances(
   let outdated = false
   for (const id of ids) {
     const row = byId.get(id)
+    if (row === undefined) {
+      // Not read yet, such as a wallet added since the last read.
+      outdated = true
+    }
     // A wallet that has never synced counts as empty once it can't be reached, rather than
     // holding the total back for good; until then it is unknown.
     const sats = row?.balanceSats != null ? Number(row.balanceSats) : row?.failed === true ? 0 : null
@@ -66,7 +70,7 @@ export function summarizeWalletBalances(
         ? 'loading'
         : failedIds.length > 0
           ? 'stale'
-          : outdated || totalSats === null
+          : outdated
             ? 'loading'
             : 'current'
   return {

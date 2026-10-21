@@ -212,27 +212,6 @@ describe('portfolio history completion', () => {
     })
   })
 
-  it("returns each active wallet's latest stored balance, leaving out wallets that never synced", async () => {
-    await withTestSetup(async () => {
-      const { db, service } = harness
-      await service.recordAccountSnapshot(accountId, '90', '2020-01-01T00:00:00.000Z')
-      await service.recordAccountSnapshot(accountId, '150', '2020-01-03T09:00:00.000Z')
-      const unsyncedId = 'unsynced-wallet'
-      const archivedId = 'archived-wallet'
-      await db.insert(accounts).values([
-        { id: unsyncedId, descriptor: Wallets.singlesigLegacyAccount.toString(), displayName: 'Unsynced wallet' },
-        { id: archivedId, descriptor: Wallets.singlesigNestedSegwitAccount.toString(), displayName: 'Archived wallet' },
-      ])
-      await service.recordAccountSnapshot(archivedId, '50', '2020-01-02T00:00:00.000Z')
-      await db.update(accounts).set({ deletedAt: '2020-01-04T00:00:00.000Z' }).where(eq(accounts.id, archivedId))
-
-      await expect(service.getStoredWalletBalances([accountId, unsyncedId, archivedId])).resolves.toEqual([
-        { accountId, balanceSats: '150', timestamp: '2020-01-03T09:00:00.000Z' },
-      ])
-      await expect(service.getStoredWalletBalances([])).resolves.toEqual([])
-    })
-  })
-
   it("counts each wallet's latest stored balance while live balances are unavailable", async () => {
     await withTestSetup(async () => {
       await harness.service.recordAccountSnapshot(accountId, '90', '2020-01-01T00:00:00.000Z')

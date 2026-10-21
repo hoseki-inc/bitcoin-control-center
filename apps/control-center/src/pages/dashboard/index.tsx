@@ -46,7 +46,7 @@ import {
   formatSignedUsd,
   isUsableBtcPrice,
 } from '../../lib/bitcoin-display'
-import type { WalletBalanceState } from '../../lib/wallet-balances'
+import { type WalletBalanceState, summarizeWalletBalances } from '../../lib/wallet-balances'
 import { isExchangeConnected } from '../../utils/exchange-connection-status'
 import { type DashboardDataSource, dashboardDataSource } from './dashboard-data'
 
@@ -164,7 +164,6 @@ export function DashboardPage({
   const [selection, setSelected] = useState<Set<string>>(new Set())
   const [recentlySyncedAccountIds, setRecentlySyncedAccountIds] = useState<Set<string>>(new Set())
   const displayedHistory = useRef<ReturnType<typeof withCurrentBalancePoint> | null>(null)
-  const hasRecordedSnapshot = useRef(false)
   const previousHistorySync = useRef({ viewKey: '', syncingIds: new Set<string>() })
   const completedHistory = useRef<{ viewKey: string; points: ReturnType<typeof withCurrentBalancePoint> } | null>(null)
   const recentlySyncedTimeouts = useRef<Map<string, number>>(new Map())
@@ -174,7 +173,7 @@ export function DashboardPage({
   const navigate = useNavigate()
   const userTimezone = useMemo(() => dataSource.getTimezone(), [dataSource])
   const today = new Date()
-  const { recordSnapshot, claimsQuery, exchangeAccountsQuery, manualAccountsQuery, etfAccountsQuery, btcPriceQuery } =
+  const { claimsQuery, exchangeAccountsQuery, manualAccountsQuery, etfAccountsQuery, btcPriceQuery } =
     dataSource.useAccounts()
 
   const claims = useMemo(() => claimsQuery.data ?? [], [claimsQuery.data])
@@ -278,8 +277,7 @@ export function DashboardPage({
     historySyncingAccountIds.every((id) => historyRefreshingAccountIds.includes(id))
   const historyNeedsInitialLoad = historySyncingAccountIds.length > 0 && !isHistoryRefreshing
   const recentlySyncedAccountIdList = useMemo(() => Array.from(recentlySyncedAccountIds), [recentlySyncedAccountIds])
-  const balancesQuery = dataSource.useBalances({ claimIds, enabled: claimIds.length > 0, retryFailedEveryMs: 10_000 })
-  const storedBalancesQuery = dataSource.useStoredBalances({ claimIds }, { enabled: claimIds.length > 0 })
+  const walletBalancesQuery = dataSource.useWalletBalances(claimIds, { enabled: claimIds.length > 0 })
 
   useEffect(() => {
     if (historySyncingAccountIds.length === 0) {
@@ -382,51 +380,22 @@ export function DashboardPage({
     }
   }, [])
 
-  useEffect(() => {
-    if ((allData?.verifiedClaimsCount ?? 0) > 0 && !hasRecordedSnapshot.current) {
-      hasRecordedSnapshot.current = true
-      recordSnapshot.mutate(undefined)
-    }
-  }, [allData?.verifiedClaimsCount, recordSnapshot])
-
   const quotedBtcPrice = btcPriceQuery.data?.value ? Number(btcPriceQuery.data.value) : null
   const btcPrice = isUsableBtcPrice(quotedBtcPrice) ? quotedBtcPrice : null
 
-  const storedWalletBalances = useMemo(
-    () => new Map((storedBalancesQuery.data ?? []).map((stored) => [stored.accountId, stored])),
-    [storedBalancesQuery.data],
+  // Each wallet's newest known balance: fetched by Sentinel, or recorded earlier while a newer one
+  // is fetched or while Electrum is unreachable. The sidebar rows and the total share these.
+  const allWallets = summarizeWalletBalances(claimIds, walletBalancesQuery.rows)
+  const walletBalances = new Map<ClaimId, BalanceValue | null>(
+    claimIds.map((id) => {
+      const sats = allWallets.balances.get(id) ?? null
+      return [id, sats === null ? null : { current: new Decimal(sats), usd: null }]
+    }),
   )
-  // Each wallet's live balance or, while that loads, the last one Sentinel recorded. While
-  // Electrum is unreachable, the newer of the balance fetched before the failure and the
-  // recorded one. The sidebar rows and the total share these.
-  const walletBalances = new Map<ClaimId, BalanceValue | null>()
-  // While Electrum is unreachable, when each wallet's shown balance was current.
-  const walletBalanceTimes = new Map<ClaimId, number>()
-  for (const id of claimIds) {
-    const live = balancesQuery.data.get(id) ?? null
-    const stored = storedWalletBalances.get(id)
-    const storedBalance = stored === undefined ? null : { current: new Decimal(stored.balanceSats), usd: null }
-    if (!balancesQuery.balancesFailed) {
-      walletBalances.set(id, live ?? storedBalance)
-      continue
-    }
-    const storedAtMs = stored === undefined ? Number.NaN : Date.parse(stored.timestamp)
-    if (live !== null && !(storedAtMs > balancesQuery.updatedAt)) {
-      walletBalances.set(id, live)
-      walletBalanceTimes.set(id, balancesQuery.updatedAt)
-    } else if (storedBalance !== null) {
-      walletBalances.set(id, storedBalance)
-      walletBalanceTimes.set(id, storedAtMs)
-    } else {
-      // A wallet that has never synced counts as empty until Electrum answers, once the
-      // recorded balances have loaded to show it has none.
-      walletBalances.set(id, storedBalancesQuery.data === undefined ? null : { current: new Decimal(0), usd: null })
-    }
-  }
 
   // The current balance of the accounts in this view. It doesn't depend on the date range.
   const viewClaimIds = isShowingAll ? claimIds : selectedClaimIds
-  const viewWalletSats = viewClaimIds.map((id) => walletBalances.get(id)?.current ?? null)
+  const viewWallets = summarizeWalletBalances(viewClaimIds, walletBalancesQuery.rows)
   const viewOtherSats = [...exchangeAccounts.filter(isExchangeConnected), ...manualAccounts, ...etfAccounts].flatMap(
     (account) =>
       (isShowingAll || selected.has(account.id)) && account.balance != null && account.balance !== ''
@@ -440,31 +409,15 @@ export function DashboardPage({
     (query) => query.data !== undefined,
   )
   const displayBalanceSats =
-    (isShowingAll && !hasAccountLists) || viewWalletSats.some((sats) => sats === null)
+    (isShowingAll && !hasAccountLists) || viewWallets.totalSats === null
       ? null
-      : viewWalletSats.reduce((sum, sats) => sum + Number(sats), 0) + viewOtherSats.reduce((sum, sats) => sum + sats, 0)
-  const walletBalanceState: WalletBalanceState =
-    isShowingAll && !hasAccountLists
-      ? 'unknown'
-      : viewClaimIds.length === 0
-        ? 'current'
-        : balancesQuery.balancesFailed
-          ? 'stale'
-          : balancesQuery.updatedAt === 0
-            ? 'loading'
-            : 'current'
+      : viewWallets.totalSats + viewOtherSats.reduce((sum, sats) => sum + sats, 0)
+  const walletBalanceState: WalletBalanceState = isShowingAll && !hasAccountLists ? 'unknown' : viewWallets.state
   // The chart ends on the balance shown above it, unless that is still loading or incomplete.
   const chartCurrentBalanceSats =
-    walletBalanceState === 'stale' ||
-    (walletBalanceState === 'current' && viewClaimIds.every((id) => (balancesQuery.data.get(id) ?? null) !== null))
-      ? displayBalanceSats
-      : null
+    walletBalanceState === 'stale' || walletBalanceState === 'current' ? displayBalanceSats : null
   // While Electrum is unreachable, the oldest time a shown wallet balance was current.
-  const viewBalanceTimes = viewClaimIds.flatMap((id) => {
-    const time = walletBalanceTimes.get(id)
-    return time !== undefined && Number.isFinite(time) && time > 0 ? [time] : []
-  })
-  const walletBalancesAsOf = viewBalanceTimes.length > 0 ? new Date(Math.min(...viewBalanceTimes)) : null
+  const walletBalancesAsOf = viewWallets.asOf
 
   const isFullHistoryRange = timeRange === 'custom' || timeRange === 'all'
   const historyRangeError =
