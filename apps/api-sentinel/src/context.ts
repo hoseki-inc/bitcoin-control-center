@@ -25,6 +25,7 @@ import { PriceHistoryService } from './modules/price/history'
 import { PriceService, readPriceSettings } from './modules/price/service'
 import { StatementService } from './modules/statements/service'
 import { ReleaseCheckService } from './modules/updates/service'
+import { WalletBalanceService } from './modules/wallet_balances/service'
 
 /**
  * Application context: singleton holding all shared services.
@@ -41,6 +42,7 @@ export interface AppContext {
   manualService: ManualService
   etfService: EtfService
   controlCenterService: ControlCenterService
+  walletBalanceService: WalletBalanceService
   priceService: PriceService
   priceHistoryService: PriceHistoryService
   statementService: StatementService
@@ -282,6 +284,7 @@ export const createAppContext = asyncFn(
     })
     const priceHistoryService = new PriceHistoryService({ dailyRatesService, priceService })
 
+    const walletBalanceService = new WalletBalanceService({ db: database, logger, onchainProvider })
     const controlCenterService = new ControlCenterService({
       db: database,
       logger,
@@ -290,6 +293,7 @@ export const createAppContext = asyncFn(
       manualService,
       etfService,
       priceService,
+      walletBalances: walletBalanceService,
     })
 
     const statementService = new StatementService({
@@ -354,6 +358,8 @@ export const createAppContext = asyncFn(
         ctx.electrumClient = newClient
         ctx.electrumConfig = { host: config.host, port: config.port, protocol: config.protocol }
         onchainProvider.deps.electrum = newClient
+        // Balances from the previous server may not hold on this one.
+        walletBalanceService.invalidateAll()
         previousClient.disconnect()
         logger.info('Electrum connection and settings updated')
         return Ok(undefined)
@@ -376,6 +382,7 @@ export const createAppContext = asyncFn(
       manualService,
       etfService,
       controlCenterService,
+      walletBalanceService,
       priceService,
       priceHistoryService,
       statementService,

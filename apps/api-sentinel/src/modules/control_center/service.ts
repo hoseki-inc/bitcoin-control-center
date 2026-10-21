@@ -19,6 +19,8 @@ import type { EtfService } from '../etf/service'
 import type { ExchangeService } from '../exchange/service'
 import type { ManualService } from '../manual/service'
 import type { PriceService } from '../price/service'
+import type { WalletBalanceService } from '../wallet_balances/service'
+import { getLatestWalletSnapshot, isWalletActive, upsertWalletSnapshot } from '../wallet_balances/snapshots'
 import {
   type BalanceDataPoint,
   type BalanceEntry,
@@ -83,6 +85,7 @@ export class ControlCenterService {
   private readonly manualService: ManualService
   private readonly etfService: EtfService
   private readonly priceService: PriceService
+  private readonly walletBalances: WalletBalanceService
   private readonly accountHistoryBackfillsInFlight = new Set<string>()
   private readonly accountHistoryBackfillCooldownUntil = new Map<string, number>()
   private readonly accountHistoryBackfillFailureCounts = new Map<string, number>()
@@ -96,6 +99,7 @@ export class ControlCenterService {
     manualService: ManualService
     etfService: EtfService
     priceService: PriceService
+    walletBalances: WalletBalanceService
   }) {
     this.db = deps.db
     this.logger = deps.logger.child({ module: 'control-center' })
@@ -104,6 +108,7 @@ export class ControlCenterService {
     this.manualService = deps.manualService
     this.etfService = deps.etfService
     this.priceService = deps.priceService
+    this.walletBalances = deps.walletBalances
   }
 
   public getData = asyncFn(
@@ -486,6 +491,7 @@ export class ControlCenterService {
       return Err(new Error('Claim not found or already archived'))
     }
     this.invalidateAccountHistoryBackfill(accountId)
+    this.walletBalances.invalidate(accountId)
     return Ok(undefined)
   })
 
@@ -506,6 +512,7 @@ export class ControlCenterService {
       return Err(new Error('Claim not found or not archived'))
     }
     this.clearAccountHistoryBackfillState(accountId)
+    this.walletBalances.invalidate(accountId)
     return Ok(undefined)
   }
 
@@ -517,18 +524,11 @@ export class ControlCenterService {
     balanceSats: string,
     timestamp: string,
   ): Promise<void> {
-    await tx
-      .insert(balanceSnapshots)
-      .values({ accountId, timestamp, balanceSats })
-      .onConflictDoUpdate({ target: [balanceSnapshots.accountId, balanceSnapshots.timestamp], set: { balanceSats } })
+    await upsertWalletSnapshot(tx, accountId, balanceSats, timestamp)
   }
 
   private async isAccountActive(accountId: string, db: SentinelDb | SentinelTx = this.db): Promise<boolean> {
-    const rows = await db
-      .select({ id: accountTable.id })
-      .from(accountTable)
-      .where(and(eq(accountTable.id, accountId), isNull(accountTable.deletedAt)))
-    return rows.length > 0
+    return isWalletActive(db, accountId)
   }
 
   private async getAccountRows(
@@ -640,14 +640,7 @@ export class ControlCenterService {
   private async getLatestAccountSnapshot(
     accountId: string,
   ): Promise<{ balanceSats: bigint; timestamp: string } | null> {
-    const [row] = await this.db
-      .select({ balance_sats: balanceSnapshots.balanceSats, timestamp: balanceSnapshots.timestamp })
-      .from(balanceSnapshots)
-      .where(eq(balanceSnapshots.accountId, accountId))
-      .orderBy(desc(balanceSnapshots.timestamp))
-      .limit(1)
-
-    return row ? { balanceSats: BigInt(row.balance_sats), timestamp: row.timestamp } : null
+    return getLatestWalletSnapshot(this.db, accountId)
   }
 
   private async queueAccountHistoryBackfill(
@@ -1263,43 +1256,20 @@ export class ControlCenterService {
 
     // ─── On-chain accounts ─────────────────────────────────────
     await collectSource('on-chain', async () => {
-      const accountRows = await this.getAccountRows()
-
-      if (accountRows.length === 0) {
+      // Each wallet is scanned on its own and records its own snapshot, so one failure doesn't stop the rest.
+      const results = await this.walletBalances.refreshAll({ force: true })
+      if (results.size === 0) {
         return
       }
-      const accounts = new IndexSet<Account>()
-      const idMap = new Map<string, string>()
-
-      for (const row of accountRows) {
-        const parsed = Account.fromDescriptor(row.descriptor)
-        if (parsed.isOk()) {
-          accounts.add(parsed.unwrap())
-          idMap.set(row.descriptor, row.id)
-        }
-      }
-
-      if (accounts.size > 0) {
-        const balancesResult = await this.onchainProvider.getConfirmedAccountBalances(accounts)
-        if (balancesResult.isErr()) {
-          this.logger.warn({ source: 'on-chain' }, 'Failed to record on-chain snapshots')
+      let recorded = 0
+      for (const [accountId, result] of results) {
+        if (result.isOk()) {
+          recorded++
         } else {
-          let recorded = 0
-          for (const [account, balance] of balancesResult.unwrap()) {
-            const accountId = idMap.get(account.toString())
-            if (accountId != null && accountId !== '') {
-              if (
-                await collectAccount('on-chain', accountId, async () =>
-                  this.recordAccountSnapshot(accountId, balance.toString(), now),
-                )
-              ) {
-                recorded++
-              }
-            }
-          }
-          this.logger.info({ count: recorded }, 'Recorded on-chain balance snapshots')
+          this.logger.warn({ source: 'on-chain', accountId }, 'Failed to collect balance snapshot')
         }
       }
+      this.logger.info({ count: recorded }, 'Recorded on-chain balance snapshots')
     })
 
     // ─── Exchange accounts (Strike, Robinhood, etc.) ───────────
