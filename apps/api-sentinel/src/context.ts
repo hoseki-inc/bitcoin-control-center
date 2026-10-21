@@ -1,6 +1,7 @@
 import { Network } from '@hoseki/packages/bitcoin/network'
 import { ElectrumProvider } from '@hoseki/packages/bitcoin/onchain/electrum_provider'
 import { ElectrumClient, type ElectrumClientConfig } from '@hoseki/packages/clients/electrum'
+import { ElectrumTimeoutError } from '@hoseki/packages/clients/electrum/lib/protocol'
 import { Err, Ok, asyncFn } from '@hoseki/packages/result'
 import type { Result } from '@hoseki/packages/result'
 import { eq } from 'drizzle-orm'
@@ -72,6 +73,50 @@ const TOR_CONNECT_TIMEOUT_MS = 60_000
 // Each request crosses several relays (six to an onion service), so allow more than a direct connection.
 const TOR_REQUEST_TIMEOUT_MS = 30_000
 
+/** Development only: slows Electrum the way Tor does, to review loading states. */
+export interface ElectrumLatency {
+  /** Added before each request. */
+  requestMs: number
+  /** Up to this much more per request, chosen at random. */
+  jitterMs: number
+  /** Added before each connection. */
+  connectMs: number
+  /** The share of requests that fail as timeouts, from 0 to 1. */
+  failureRate: number
+}
+
+export function withSimulatedLatency(
+  config: ElectrumClientConfig,
+  latency: ElectrumLatency | undefined,
+): ElectrumClientConfig {
+  if (latency === undefined) {
+    return config
+  }
+  const wait = async (ms: number): Promise<void> =>
+    new Promise((resolve) => {
+      setTimeout(resolve, ms)
+    })
+  const { beforeConnect } = config
+  return {
+    ...config,
+    beforeConnect: async (): Promise<Result<void, Error>> => {
+      // Managed Tor still starts first, as it would without the simulation.
+      const ready = beforeConnect ? await beforeConnect() : Ok(undefined)
+      if (ready.isErr()) {
+        return ready
+      }
+      await wait(latency.connectMs)
+      return Ok(undefined)
+    },
+    beforeRequest: async (method: string): Promise<Result<void, Error>> => {
+      await wait(latency.requestMs + Math.random() * latency.jitterMs)
+      return Math.random() < latency.failureRate
+        ? Err(new ElectrumTimeoutError(`Simulated timeout for ${method}`, false))
+        : Ok(undefined)
+    },
+  }
+}
+
 export interface AppContextOptions {
   /** Enabled only by desktop launchers, including the desktop development preview. */
   connectionProfiles?: boolean
@@ -81,6 +126,8 @@ export interface AppContextOptions {
   statementSourceSetting?: boolean
   /** The running desktop release, such as `0.6.0:0`. Desktop release builds pass it to check for newer releases. */
   releaseVersion?: string
+  /** Set only by `src/dev.ts`; never by a distribution. */
+  electrumLatency?: ElectrumLatency
   /** Distribution-owned Tor process; Sentinel owns connection policy. */
   tor?: {
     start: () => Promise<{ state: string; message?: string }>
@@ -187,12 +234,15 @@ export const createAppContext = asyncFn(
     const prepared = prepareElectrumConfig(initialConfig, torEnabled)
     // Keep a failed saved Tor configuration offline, including lazy reconnects.
     const electrumClient = new ElectrumClient(
-      prepared.isOk()
-        ? prepared.unwrap()
-        : {
-            ...initialConfig,
-            beforeConnect: async () => Err(prepared.unwrapErr()),
-          },
+      withSimulatedLatency(
+        prepared.isOk()
+          ? prepared.unwrap()
+          : {
+              ...initialConfig,
+              beforeConnect: async () => Err(prepared.unwrapErr()),
+            },
+        options.electrumLatency,
+      ),
     )
 
     // All services retain this provider. Replace its client after a successful
@@ -278,7 +328,9 @@ export const createAppContext = asyncFn(
         { protocol: config.protocol, tor: config.proxy !== undefined || config.resolveProxy !== undefined },
         'Reconnecting to Electrum server',
       )
-      const newClient = new ElectrumClient({ requestTimeout: 10_000, ...config })
+      const newClient = new ElectrumClient(
+        withSimulatedLatency({ requestTimeout: 10_000, ...config }, options.electrumLatency),
+      )
       pendingClient = newClient
       try {
         const result = await newClient.connect()

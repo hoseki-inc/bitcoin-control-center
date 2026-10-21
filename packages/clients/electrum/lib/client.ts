@@ -22,6 +22,8 @@ import {
 export interface ElectrumClientConfig extends ElectrumConnectionConfig {
   /** Wait for a managed proxy before opening any socket, including reconnects. */
   beforeConnect?: () => Promise<Result<void, Error>>
+  /** Runs before each request is sent, such as a development-only latency simulation. An error fails the request. */
+  beforeRequest?: (method: string) => Promise<Result<void, Error>>
   /** Client name sent during version negotiation. Defaults to 'hoseki'. */
   clientName?: string
   /** Protocol version to negotiate. Defaults to '1.4'. */
@@ -50,10 +52,12 @@ export class ElectrumClient {
   private connectInFlight: AsyncResult<ServerVersion, Error> | null = null
   private generation = 0
   private readonly beforeConnect: ElectrumClientConfig['beforeConnect']
+  private readonly beforeRequest: ElectrumClientConfig['beforeRequest']
 
   public constructor(config: ElectrumClientConfig) {
     this.transport = new ElectrumTransport(config)
     this.beforeConnect = config.beforeConnect
+    this.beforeRequest = config.beforeRequest
     this.clientName = config.clientName ?? 'hoseki'
     this.protocolVersion = config.protocolVersion ?? '1.4'
   }
@@ -271,6 +275,9 @@ export class ElectrumClient {
         // serverVersion() call from inside connect() proceed without deadlocking.
         if (!this.transport.isConnected()) {
           yield* this.connect().try()
+        }
+        if (this.beforeRequest) {
+          yield* (await this.beforeRequest(method)).try()
         }
         const connection = this.transport.connectionNumber
         const requested = await this.transport.request(method, params)

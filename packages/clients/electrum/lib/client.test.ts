@@ -2,7 +2,7 @@ import * as net from 'node:net'
 import { SocksClient } from 'socks'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { z } from 'zod'
-import { Err, parseUnknown } from '../../../result'
+import { Err, Ok, parseUnknown } from '../../../result'
 import { ElectrumClient } from './client'
 import { ElectrumServerError, ElectrumTransport, shouldVerifyElectrumTlsCertificate } from './protocol'
 
@@ -112,6 +112,28 @@ describe('ElectrumClient concurrent reconnect', () => {
 
       const versionCalls = mock.requests.filter((r) => r.includes('server.version')).length
       expect(versionCalls).toBe(1)
+
+      client.disconnect()
+    })
+  })
+
+  it('runs the request hook before each request and sends nothing when the hook fails', async () => {
+    await withTestSetup(async () => {
+      const hooked: string[] = []
+      const client = new ElectrumClient({
+        host: '127.0.0.1',
+        port: mock.port,
+        protocol: 'tcp',
+        beforeRequest: async (method) => {
+          hooked.push(method)
+          return method === 'blockchain.scripthash.get_history' ? Err(new Error('Simulated timeout')) : Ok(undefined)
+        },
+      })
+
+      expect((await client.getHistory('a'.repeat(64))).unwrapErr().message).toBe('Simulated timeout')
+      expect(hooked).toEqual(['server.version', 'blockchain.scripthash.get_history'])
+      expect(mock.requests.some((request) => request.includes('blockchain.scripthash.get_history'))).toBe(false)
+      expect(client.isConnected()).toBe(true)
 
       client.disconnect()
     })
@@ -302,7 +324,6 @@ it('cancels an unfinished SOCKS connection and closes a socket delivered after c
 
 describe('managed connection prerequisite', () => {
   it('cancels a connection waiting for readiness without opening a socket afterwards', async () => {
-    const { Ok } = await import('@hoseki/packages/result')
     let ready!: (result: ReturnType<typeof Ok<undefined>>) => void
     const prerequisite = new Promise<ReturnType<typeof Ok<undefined>>>((resolve) => {
       ready = resolve
