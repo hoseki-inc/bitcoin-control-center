@@ -13,6 +13,7 @@ Design around Bitcoin as a long-term savings asset, with accounting and planning
 - Do not commit or push unless the user explicitly asks.
 - Do not change the StartOS manifest ID `hoseki-sentinel` or persistent volume `main` without an explicit migration plan.
 - Do not log descriptors, exchange credentials, encryption keys, or full external API responses containing secrets.
+- Log wallet details and hosts only under the field names Sentinel hides above Debug (`apps/api-sentinel/src/log_redaction.ts`), such as `address`, `txid` or `host`, never inside message strings.
 
 ## Commands
 
