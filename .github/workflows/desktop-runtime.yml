@@ -2,6 +2,13 @@ name: Desktop build
 
 on:
   workflow_call:
+    outputs:
+      mac-artifact-id:
+        description: Immutable ID of the ad-hoc Mac installer artifact, for the signing workflow
+        value: ${{ jobs.desktop-runtime.outputs.mac_artifact_id }}
+      mac-sha256:
+        description: SHA-256 of the ad-hoc Mac installer
+        value: ${{ jobs.desktop-runtime.outputs.mac_sha256 }}
   workflow_dispatch:
 
 permissions:
@@ -26,6 +33,10 @@ jobs:
             arch: x64
     runs-on: ${{ matrix.os }}
     timeout-minutes: 40
+    # Only the Mac leg sets these, so the Windows leg leaves them alone.
+    outputs:
+      mac_artifact_id: ${{ steps.mac-output.outputs.mac_artifact_id }}
+      mac_sha256: ${{ steps.mac-output.outputs.mac_sha256 }}
     defaults:
       run:
         shell: bash
@@ -78,10 +89,22 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Confirm packaging did not edit source files
         run: git diff --exit-code
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      - name: Upload the installer
+        id: upload
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: Bitcoin-Control-Center-${{ matrix.target }}-${{ matrix.arch }}
           path: desktop/release/artifacts/${{ matrix.target }}/
           if-no-files-found: error
           compression-level: 0
           retention-days: 14
+      - name: Record the Mac installer for signing
+        id: mac-output
+        if: matrix.target == 'mac'
+        env:
+          ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
+        run: |
+          {
+            echo "mac_artifact_id=$ARTIFACT_ID"
+            echo "mac_sha256=$(jq -r '.sha256' desktop/release/artifacts/mac/mac.json)"
+          } >> "$GITHUB_OUTPUT"

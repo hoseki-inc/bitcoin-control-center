@@ -10,17 +10,21 @@ APP_ID="bitcoin-control-center"
 # loopback address; Docker allows plain HTTP to loopback registries.
 SIDELOAD_REGISTRY="127.0.0.1:45400"
 ARCHES=(amd64 arm64)
+RELEASE_IMAGE=""
 
 usage() {
   cat <<EOF
 Usage: ./umbrel/build.sh [--arch amd64|arm64]
+       ./umbrel/build.sh --release-image <output.tar>
 
 Builds an Umbrel sideload bundle under umbrel/dist/ containing the app package,
 container images, and install.sh for the Umbrel owner to run.
 
 Options:
-  --arch amd64|arm64   Build one architecture only (default: both)
-                       amd64: Umbrel Home and x86 PCs; arm64: Raspberry Pi
+  --arch amd64|arm64            Build one architecture only (default: both)
+                                amd64: Umbrel Home and x86 PCs; arm64: Raspberry Pi
+  --release-image <output.tar>  Build the multi-arch release image as an OCI archive
+                                instead of a bundle. Release 3 publishes it.
 EOF
 }
 
@@ -35,6 +39,14 @@ while [[ $# -gt 0 ]]; do
           exit 1
           ;;
       esac
+      shift 2
+      ;;
+    --release-image)
+      if [[ -z "${2:-}" ]]; then
+        usage
+        exit 1
+      fi
+      RELEASE_IMAGE="$2"
       shift 2
       ;;
     --help | -h)
@@ -67,7 +79,7 @@ EXTRACT_NAME="${APP_ID}-umbrel"
 DIST_DIR="$SCRIPT_DIR/dist"
 STAGE_DIR="$DIST_DIR/$EXTRACT_NAME"
 
-echo "==> Umbrel sideload version: $VERSION"
+[[ -n "$RELEASE_IMAGE" ]] || echo "==> Umbrel sideload version: $VERSION"
 
 echo "==> Building api-sentinel..."
 corepack pnpm --filter api-sentinel build
@@ -75,6 +87,25 @@ corepack pnpm --filter api-sentinel build
 echo "==> Building Control Center web app..."
 corepack pnpm --filter control-center build
 node "$REPO_ROOT/start9/scripts/compress-web-assets.mjs" "$REPO_ROOT/apps/control-center/dist"
+
+if [[ -n "$RELEASE_IMAGE" ]]; then
+  echo "==> Building linux/amd64 and linux/arm64 release image ($RELEASE_VERSION)..."
+  mkdir -p "$(dirname "$RELEASE_IMAGE")"
+  # Release 3 pushes this archive unchanged, so its index digest is the published digest.
+  # Buildx's own provenance and SBOM would add entries to the index; the publish job
+  # attests the image instead.
+  docker buildx build \
+    --platform linux/amd64,linux/arm64 \
+    --file "$SCRIPT_DIR/Dockerfile" \
+    --provenance=false \
+    --sbom=false \
+    --label "org.opencontainers.image.source=https://github.com/hoseki-inc/bitcoin-control-center" \
+    --label "org.opencontainers.image.revision=$SOURCE_COMMIT" \
+    --label "org.opencontainers.image.version=$RELEASE_VERSION" \
+    --output "type=oci,dest=$RELEASE_IMAGE" \
+    "$REPO_ROOT"
+  exit 0
+fi
 
 rm -rf "$STAGE_DIR" "$DIST_DIR/$BUNDLE_NAME.tar.gz" "$DIST_DIR/$BUNDLE_NAME.tar.gz.sha256"
 mkdir -p "$STAGE_DIR/images"
