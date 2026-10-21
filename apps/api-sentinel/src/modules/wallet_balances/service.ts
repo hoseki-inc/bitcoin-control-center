@@ -17,6 +17,8 @@ export interface LiveWalletBalance {
   fetchedAt: Date
   /** The chain tip read just before the scan, or null if it couldn't be read. */
   tip: Block | null
+  /** Whether this balance was recorded as a snapshot. A history backfill's scans record none. */
+  recorded: boolean
 }
 
 /** The wallet was archived, deleted or reset while its balance was fetched, so callers leave it out. */
@@ -234,11 +236,34 @@ export class WalletBalanceService {
     const scans = this.startDueScans(wallets, force)
     const entries = await Promise.all(
       scans.map(async ({ id, state, scan }): Promise<[string, Result<LiveWalletBalance, Error>] | null> => {
-        const result = await scan
+        let result = await scan
+        // A refresh records what it fetched, including when it joined a backfill's scan, which records nothing.
+        if (result.isOk() && !result.unwrap().recorded && !this.isLeftOut(id, state, result)) {
+          result = await this.recordLater(id, result.unwrap())
+        }
         return this.isLeftOut(id, state, result) ? null : [id, result]
       }),
     )
     return new Map(entries.filter((entry) => entry !== null))
+  }
+
+  private async recordLater(accountId: string, live: LiveWalletBalance): Promise<Result<LiveWalletBalance, Error>> {
+    try {
+      const recorded = await recordWalletSnapshot(
+        this.db,
+        accountId,
+        live.balanceSats.toString(),
+        live.fetchedAt.toISOString(),
+      )
+      if (!recorded) {
+        return Err(new WalletChangedError())
+      }
+      live.recorded = true
+      return Ok(live)
+    } catch {
+      this.logger.warn({ accountId }, 'Could not record wallet balance snapshot')
+      return Err(new Error('Could not record the wallet balance'))
+    }
   }
 
   /** Starts a scan, or joins the running one, for each wallet that is due; returns before any finishes. */
@@ -341,6 +366,11 @@ export class WalletBalanceService {
   ): Promise<Result<LiveWalletBalance, Error>> {
     const { account, generation } = state
     if (account === null) {
+      // It can't be scanned; report it as failing, so pages count it as empty instead of waiting on it.
+      state.failure = 'error'
+      state.failureCount += 1
+      state.retryAt = Date.now() + RETRY_MAX_DELAY_MS
+      this.logger.warn({ accountId }, 'Wallet descriptor could not be read')
       return Err(new Error('Invalid wallet descriptor'))
     }
     const scan = this.scan(accountId, account, generation, knownTip, recordSnapshot).finally(() => {
@@ -391,27 +421,22 @@ export class WalletBalanceService {
       balanceSats: balances.unwrap().get(account) ?? 0n,
       fetchedAt: new Date(),
       tip: tip.isOk() ? tip.unwrap() : null,
+      recorded: false,
     }
-    let recorded = true
-    try {
-      if (recordSnapshot) {
-        recorded = await recordWalletSnapshot(
-          this.db,
-          accountId,
-          live.balanceSats.toString(),
-          live.fetchedAt.toISOString(),
-        )
-      }
-    } catch {
-      // The balance itself is sound, so keep it; only the history misses this point.
-      this.logger.warn({ accountId }, 'Could not record wallet balance snapshot')
-      recorded = false
-      if (this.states.get(accountId)?.generation === generation) {
-        this.recordSuccess(state, live)
-        return Err(new Error('Could not record the wallet balance'))
+    if (recordSnapshot) {
+      try {
+        if (
+          !(await recordWalletSnapshot(this.db, accountId, live.balanceSats.toString(), live.fetchedAt.toISOString()))
+        ) {
+          return Err(new WalletChangedError())
+        }
+        live.recorded = true
+      } catch {
+        // The balance itself is sound, so callers still get it; a refresh records it again later.
+        this.logger.warn({ accountId }, 'Could not record wallet balance snapshot')
       }
     }
-    if (!recorded || this.states.get(accountId)?.generation !== generation) {
+    if (this.states.get(accountId)?.generation !== generation) {
       return Err(new WalletChangedError())
     }
     this.recordSuccess(state, live)

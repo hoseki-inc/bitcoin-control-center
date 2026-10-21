@@ -304,10 +304,15 @@ export class ElectrumClient {
     if (UNQUEUED_METHODS.has(method)) {
       return this.send(method, params, schema)
     }
+    const generation = this.generation
     return new AsyncResult(
       (async (): Promise<Result<T, Error>> => {
         await this.acquireSlot()
         try {
+          // Disconnected while it waited, such as when the server was changed: never reopen the old connection.
+          if (generation !== this.generation) {
+            return Err(new Error('Connection closed'))
+          }
           return await this.send(method, params, schema)
         } finally {
           this.releaseSlot()

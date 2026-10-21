@@ -1377,10 +1377,14 @@ const onchainRouter = t.router({
     const results = await ctx.app.walletBalanceService.getLiveBalances(input.claimIds)
     const balanceMap = new Map<string, Decimal>()
     for (const [claimId, result] of results) {
-      if (result.isErr()) {
-        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: result.unwrapErr().message })
+      if (result.isOk()) {
+        balanceMap.set(claimId, new Decimal(result.unwrap().balanceSats.toString()))
       }
-      balanceMap.set(claimId, new Decimal(result.unwrap().balanceSats.toString()))
+    }
+    // A wallet that can't be scanned is left out, so the rest still show. Errors can quote
+    // descriptors, so the request fails with a plain message, and only when no wallet could be read.
+    if (results.size > 0 && balanceMap.size === 0) {
+      throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Could not fetch wallet balances' })
     }
     return balanceMap
   }),

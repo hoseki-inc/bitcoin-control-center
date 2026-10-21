@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ElectrumClient } from '@hoseki/packages/clients/electrum'
+import { IndexMap } from '@hoseki/packages/collection'
 import { AsyncResult, Err, Ok, asyncFn } from '@hoseki/packages/result'
 import { Wallets } from '@hoseki/packages/testing'
 import { Signer } from 'bip322-js'
@@ -221,6 +222,39 @@ it('reads wallet balances without waiting for Electrum, and reports the scans it
       failure: null,
     },
   ])
+})
+
+it('returns the balances of wallets it could scan, leaving out one that failed, without its error', async () => {
+  const { app } = await setup()
+  const { accounts: accountRouter, onchain } = appRouter.createCaller({ app }).portalProve
+  const good = await accountRouter.add({
+    descriptor: Wallets.singlesigNativeSegwitAccount.toString(),
+    displayName: 'Good wallet',
+    network: 'mainnet',
+  })
+  const bad = await accountRouter.add({
+    descriptor: Wallets.singlesigLegacyAccount.toString(),
+    displayName: 'Bad wallet',
+    network: 'mainnet',
+  })
+  vi.spyOn(app.onchainProvider, 'getBlocksTip').mockReturnValue(
+    new AsyncResult(Promise.resolve(Ok({ height: 1, hash: 'a'.repeat(64), timestamp: new Date() }))),
+  )
+  vi.spyOn(app.onchainProvider, 'getConfirmedAccountBalances').mockImplementation(
+    asyncFn(async (requested) => {
+      const [account] = [...requested]
+      return account?.toString() === Wallets.singlesigLegacyAccount.toString()
+        ? Err(new Error('synthetic-sensitive-error'))
+        : Ok(new IndexMap([[Wallets.singlesigNativeSegwitAccount, 5_000n]]))
+    }),
+  )
+
+  const balances = await onchain.claimBalances({ claimIds: [good.id, bad.id] })
+  expect([...balances.entries()].map(([id, sats]) => [id, sats.toString()])).toEqual([[good.id, '5000']])
+  await expect(onchain.claimBalances({ claimIds: [bad.id] })).rejects.toMatchObject({
+    code: 'INTERNAL_SERVER_ERROR',
+    message: 'Could not fetch wallet balances',
+  })
 })
 
 it('reports a newer desktop release once the check finds one, and nothing from source', async () => {

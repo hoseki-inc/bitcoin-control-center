@@ -487,6 +487,23 @@ describe('history balance reuse', () => {
     })
   })
 
+  it('does not hold the page on a wallet that has never synced and keeps failing', async () => {
+    await withTestSetup(async () => {
+      harness.provider.getConfirmedAccountBalances.mockImplementation(
+        asyncFn(async () => Err(new Error('Connection closed'))),
+      )
+      const first = (await harness.service.getData({ timeRange: '90d' })).unwrap()
+      expect(first.currentTotalBalance).toBe('0')
+
+      // While it waits to retry, a scan that never ends doesn't hold the next page.
+      harness.provider.getConfirmedAccountBalances.mockReturnValue(new AsyncResult(new Promise(() => undefined)))
+      const started = performance.now()
+      const second = (await harness.service.getData({ timeRange: '90d' })).unwrap()
+      expect(performance.now() - started).toBeLessThan(3_000)
+      expect(second.currentTotalBalance).toBe('0')
+    })
+  })
+
   it('reports history as still syncing, rather than wait, when Electrum is slow to give the chain tip', async () => {
     await withTestSetup(async () => {
       await harness.sync()

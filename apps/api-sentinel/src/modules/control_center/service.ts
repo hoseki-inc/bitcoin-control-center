@@ -148,7 +148,11 @@ export class ControlCenterService {
           continue
         }
         const recorded = await this.getLatestAccountSnapshot(row.id)
-        if (recorded === null) {
+        if (recorded === null && this.walletBalances.getStatus(row.id).failure !== null) {
+          // It keeps failing: count it as empty rather than hold every page on its retries.
+          balancesByAccountId.set(row.id, 0n)
+          staleIds.push(row.id)
+        } else if (recorded === null) {
           neverScannedIds.push(row.id)
         } else {
           balancesByAccountId.set(row.id, recorded.balanceSats)

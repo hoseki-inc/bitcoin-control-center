@@ -792,6 +792,21 @@ describe('requests waiting for an answer', () => {
     client.disconnect()
   })
 
+  it('drops requests still waiting their turn when the client disconnects, without reconnecting', async () => {
+    const server = await holdingServer()
+    const client = new ElectrumClient({ host: '127.0.0.1', port: server.port, protocol: 'tcp', maxInFlight: 1 })
+    const sent = client.getHistory('a'.repeat(64))
+    const queued = client.getHistory('b'.repeat(64))
+    await vi.waitFor(() => {
+      expect(historyRequests(server)).toBe(1)
+    })
+    client.disconnect()
+    expect((await sent).isErr()).toBe(true)
+    expect((await queued).unwrapErr().message).toBe('Connection closed')
+    expect(server.received.filter((method) => method === 'server.version')).toHaveLength(1)
+    expect(client.isConnected()).toBe(false)
+  })
+
   it('starts each request’s timeout when it is sent, not while it waits its turn', async () => {
     const server = await holdingServer()
     const client = new ElectrumClient({

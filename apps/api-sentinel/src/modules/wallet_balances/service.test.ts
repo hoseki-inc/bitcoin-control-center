@@ -6,7 +6,7 @@ import { ElectrumClient } from '@hoseki/packages/clients/electrum'
 import { IndexMap, type IndexSet } from '@hoseki/packages/collection'
 import { AsyncResult, Err, Ok, type Result } from '@hoseki/packages/result'
 import { Wallets } from '@hoseki/packages/testing'
-import { asc, eq } from 'drizzle-orm'
+import { asc, eq, sql } from 'drizzle-orm'
 import { type MockInstance, expect, it, vi } from 'vitest'
 import { accounts, balanceSnapshots } from '../../db/schema'
 import { setupServiceDatabase } from '../../fixtures/service-database'
@@ -260,4 +260,50 @@ it('gives the chain tip Electrum answers with, a recent one while it is slow, an
 
   vi.setSystemTime(Date.now() + 10 * 60_000 + 1)
   await expect(service.currentTip(20)).resolves.toEqual({ tip: null, failed: false })
+})
+
+it('reports a wallet whose descriptor cannot be read as failing, so pages count it as empty', async () => {
+  const { service, db } = await setup()
+  await db.insert(accounts).values({ id: 'broken', descriptor: 'not a descriptor', displayName: 'Broken wallet' })
+  const [read] = await service.readBalances(['broken'])
+  expect(read).toMatchObject({ accountId: 'broken', balanceSats: null, syncing: false, failed: true, failure: 'error' })
+})
+
+it('keeps a fetched balance when recording it fails, and records it on the next refresh', async () => {
+  const { service, db, scans, answer, snapshots } = await setup()
+  await db.run(sql`CREATE TEMP TRIGGER fail_snapshot BEFORE INSERT ON balance_snapshots
+    BEGIN SELECT RAISE(ABORT, 'Synthetic snapshot failure'); END`)
+  const fetching = service.getLiveBalances(['first'])
+  await scanStarted(scans, 1)
+  answer(first, balanceOf(first, 1_000n))
+  expect((await fetching).get('first')?.unwrap()).toMatchObject({ balanceSats: 1_000n, recorded: false })
+  await expect(snapshots()).resolves.toEqual([])
+
+  await db.run(sql`DROP TRIGGER fail_snapshot`)
+  const refreshing = service.refreshAll({ force: true })
+  await scanStarted(scans, 3)
+  answer(first, balanceOf(first, 1_000n))
+  answer(second, balanceOf(second, 2_000n))
+  expect((await refreshing).get('first')?.unwrap().recorded).toBe(true)
+  await expect(snapshots()).resolves.toEqual([
+    { accountId: 'first', balanceSats: '1000' },
+    { accountId: 'second', balanceSats: '2000' },
+  ])
+})
+
+it('records a balance the periodic refresh shares with a history backfill, which records none itself', async () => {
+  const { service, scans, answer, snapshots } = await setup()
+  const backfill = service.getLiveBalances(['first'], { anchoredTo: tip, recordSnapshot: false })
+  await scanStarted(scans, 1)
+  const periodic = service.refreshAll({ force: true })
+  await scanStarted(scans, 2)
+  answer(first, balanceOf(first, 1_000n))
+  answer(second, balanceOf(second, 2_000n))
+
+  expect((await backfill).get('first')?.unwrap().balanceSats).toBe(1_000n)
+  expect((await periodic).get('first')?.unwrap().recorded).toBe(true)
+  await expect(snapshots()).resolves.toEqual([
+    { accountId: 'first', balanceSats: '1000' },
+    { accountId: 'second', balanceSats: '2000' },
+  ])
 })
