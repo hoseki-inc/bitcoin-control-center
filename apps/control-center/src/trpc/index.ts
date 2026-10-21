@@ -4,6 +4,7 @@ import { createTRPCProxyClient, httpLink } from '@trpc/react-query'
 import type { inferRouterInputs, inferRouterOutputs } from '@trpc/server'
 import superjson from 'superjson'
 import { queryClient, trpc } from './base'
+import { developmentFetch } from './development-latency'
 
 export { queryClient, trpc }
 
@@ -34,6 +35,7 @@ export const reactTrpcClient = trpc.createClient({
     httpLink({
       // maxURLLength: ???,
       url,
+      fetch: developmentFetch(),
     }),
   ],
 })
