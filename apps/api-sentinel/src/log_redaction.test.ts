@@ -7,6 +7,8 @@ import { requestLoggerFactory } from './request_logging'
 
 const address = 'bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq'
 const legacyAddress = '1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2'
+// A valid address with no digit after its first character.
+const letterAddress = '1HBWhaTMoBmRthuJsMjnzHTYazKXWBcWtY'
 const txid = 'f4184fc596403b9d638783cf57adfe4c75c605f6356fbc91338530e9831e9e16'
 const xpub =
   'xpub661MyMwAqRbcFtXgS5sYJABqqG9YLmC4Q1Rdap9gSE8NqtwybGhePY2gZ29ESFjqJoCu1Rupje8YtGqsefD265TMg7usUDFdp6W1EGMcet8'
@@ -14,7 +16,7 @@ const descriptor = `wpkh([d34db33f/84h/0h/0h]${xpub}/0/*)#8wq4d8f5`
 const host = 'electrum.my-home.lan'
 const ip = '192.168.1.50'
 const onion = 'vww6ybal4bd7szmgncyruucpgfkqahzddi37ktceo3ah7ngmcopnpyyd.onion'
-const details = [address, legacyAddress, txid, xpub, descriptor, host, ip, onion]
+const details = [address, legacyAddress, letterAddress, txid, xpub, descriptor, host, ip, onion]
 
 /** A DNS failure as Node reports it, with the host in its message and fields. */
 function notFoundError(): Error {
@@ -66,10 +68,11 @@ function logWalletDetails(level: string): string[] {
   logger.child({ module: 'electrum', host }).error({ addresses: [legacyAddress] }, 'Child logger')
   logger.error(`Looked up ${txid}`)
   logger.error('Electrum at %s refused', `${ip}:50001`)
+  logger.error({ count: 1 }, 'Received %s', letterAddress)
   return lines
 }
 
-const LOGGED_LINES = 12
+const LOGGED_LINES = 13
 
 describe('wallet detail log redaction', () => {
   it.each(['info', 'warn', 'error'])('hides wallet details and hosts at %s', (level) => {
@@ -123,6 +126,58 @@ describe('wallet detail log redaction', () => {
     expect(hideWalletDetailsInText('read ECONNRESET\n    at TCP.onStreamRead')).toBe(
       'read ECONNRESET\n    at TCP.onStreamRead',
     )
+  })
+
+  it('hides long runs of unclosed descriptors quickly', () => {
+    const lines: string[] = []
+    const logger = pino(
+      { level: 'info', ...walletDetailLogOptions('info') },
+      {
+        write: (line) => {
+          lines.push(line)
+        },
+      },
+    )
+    // A request path anyone can send, and an error message from a malicious Electrum server.
+    const path = `/${'pkh('.repeat(4096)}`
+    const message = `Electrum error [1]: ${'wpkh('.repeat(20_000)}`
+
+    const started = performance.now()
+    const hiddenPath = hideWalletDetailsInText(path)
+    logger.error({ err: new Error(message) }, 'Failed to list unspent')
+    const elapsed = performance.now() - started
+
+    // The quadratic pattern took about 7 seconds for these; the bound leaves room for slow CI machines.
+    expect(elapsed).toBeLessThan(250)
+    expect(hiddenPath).toBe(`/${HIDDEN_DETAIL}`)
+    expect(lines.join('')).not.toContain('wpkh(')
+    expect(hideWalletDetailsInText(`Account ${descriptor} added`)).toBe(`Account ${HIDDEN_DETAIL} added`)
+  })
+
+  it('removes the query before hiding details in missing-route messages at info', async () => {
+    const lines: string[] = []
+    const logger = pino(
+      { level: 'info', ...walletDetailLogOptions('info') },
+      {
+        write: (line) => {
+          lines.push(line)
+        },
+      },
+    )
+    const server = Fastify({ loggerInstance: logger, childLoggerFactory: requestLoggerFactory })
+    onTestFinished(async () => {
+      await server.close()
+    })
+    const query = `?input=${encodeURIComponent(JSON.stringify({ 0: { json: { xpub } } }))}`
+
+    const response = await server.inject({ url: `/missing/${address}${query}` })
+
+    expect(response.statusCode).toBe(404)
+    const output = lines.join('')
+    expect(output).toContain(`"msg":"Route GET:/missing/${HIDDEN_DETAIL} not found"`)
+    expect(output).not.toContain(address)
+    expect(output).not.toContain(xpub)
+    expect(output).not.toContain('input=')
   })
 
   it('hides hosts in request errors at info', async () => {

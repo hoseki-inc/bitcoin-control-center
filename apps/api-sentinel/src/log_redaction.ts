@@ -38,12 +38,15 @@ const ONION = /\b[a-z2-7]{16,56}\.onion\b/gi
 const IPV4 = /\b((?:\d{1,3}\.){3}\d{1,3})(:\d{1,5})?\b/g
 // Loopback hosts and ports identify nothing, and tell support whether Tor or Electrum refused.
 const LOOPBACK = /^(?:127\.\d{1,3}\.\d{1,3}\.\d{1,3}|::1|localhost)$/
+// The closing parenthesis is optional so a long unclosed run is read once, not once per `pkh(` in it.
 const DESCRIPTOR =
-  /\b(?:sh|wsh|wpkh|pkh|tr|combo|addr|raw|rawtr|multi|sortedmulti|multi_a|sortedmulti_a)\([^\s'"]*\)(?:#[a-z0-9]{8})?/g
+  /\b(?:sh|wsh|wpkh|pkh|tr|combo|addr|raw|rawtr|multi|sortedmulti|multi_a|sortedmulti_a)\([^\s'"]*\)?(?:#[a-z0-9]{8})?/g
 const EXTENDED_KEY = /\b[xyzXYZtuvUV]p(?:ub|rv)[1-9A-HJ-NP-Za-km-z]{20,}\b/g
 const HEX_HASH = /\b[0-9a-fA-F]{64}\b/g
 const BECH32_ADDRESS = /\b(?:bc|tb|bcrt)1[02-9ac-hj-np-z]{8,87}\b/gi
-const BASE58_ADDRESS = /\b[123mn](?=[1-9A-HJ-NP-Za-km-z]*\d)[1-9A-HJ-NP-Za-km-z]{25,34}\b/g
+// Testnet addresses must include a digit, so long words starting with m or n aren't hidden.
+const BASE58_ADDRESS =
+  /\b(?:[13][1-9A-HJ-NP-Za-km-z]{25,34}|[2mn](?=[1-9A-HJ-NP-Za-km-z]*\d)[1-9A-HJ-NP-Za-km-z]{25,34})\b/g
 
 const DEBUG_LEVEL = pino.levels.values['debug'] ?? 20
 
@@ -136,23 +139,9 @@ export function walletDetailLogOptions(level: string): LoggerOptions {
       err: hideWalletDetailsInField,
       error: hideWalletDetailsInField,
       reason: hideWalletDetailsInField,
-    },
-    hooks: {
-      // A safety net for details in a message; pino uses a logged error's message as its own.
-      logMethod(args, method) {
-        const values: unknown[] = args
-        for (const [index, value] of values.entries()) {
-          // oxlint-disable-next-line anti-slop/no-runtime-typeof -- Log arguments are any values; a schema per argument made every log line about 25 times slower.
-          if (typeof value === 'string') {
-            values[index] = hideWalletDetailsInText(value)
-          }
-        }
-        const [first] = values
-        if (first instanceof Error && values.length === 1) {
-          values.push(hideWalletDetailsInText(first.message))
-        }
-        method.apply(this, args)
-      },
+      // pino serializes the message after formatting it, so this covers format values too, and
+      // a logged error's message, which pino uses as the line's own.
+      msg: hideWalletDetailsInText,
     },
   }
 }
