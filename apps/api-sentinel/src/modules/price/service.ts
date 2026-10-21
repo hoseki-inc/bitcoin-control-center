@@ -44,6 +44,8 @@ interface Quote {
 interface PriceSource {
   name: PriceSourceName
   label: string
+  /** The name in errors, which are logged; it leaves out a self-hosted server's host. */
+  errorLabel: string
   url: string
   read: (response: Response) => Promise<Quote | null>
 }
@@ -269,30 +271,35 @@ export class PriceService {
       mempool: selfHosted && {
         name: 'mempool',
         label: `Your mempool server (${selfHosted.host})`,
+        errorLabel: 'Your mempool server',
         url: `${selfHosted.toString().replace(/\/$/, '')}/api/v1/prices`,
         read: readMempoolPrice,
       },
       block: {
         name: 'block',
         label: 'Block',
+        errorLabel: 'Block',
         url: 'https://pricing.bitcoin.block.xyz/current-price',
         read: readBlockPrice,
       },
       'mempool.space': {
         name: 'mempool.space',
         label: 'mempool.space',
+        errorLabel: 'mempool.space',
         url: `${PUBLIC_MEMPOOL_URL}/api/v1/prices`,
         read: readMempoolPrice,
       },
       coinbase: {
         name: 'coinbase',
         label: 'Coinbase',
+        errorLabel: 'Coinbase',
         url: 'https://api.coinbase.com/v2/prices/BTC-USD/spot',
         read: readCoinbasePrice,
       },
       coingecko: {
         name: 'coingecko',
         label: 'CoinGecko',
+        errorLabel: 'CoinGecko',
         url: 'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd&include_last_updated_at=true',
         read: readCoinGeckoPrice,
       },
@@ -408,7 +415,7 @@ export class PriceService {
         continue
       }
       if (performance.now() >= deadline) {
-        errors.push(`${source.label} not tried in time`)
+        errors.push(`${source.errorLabel} not tried in time`)
         break
       }
 
@@ -434,7 +441,7 @@ export class PriceService {
       }
       if (outcome === 'out of time') {
         // The request carries on and records its answer for later callers.
-        errors.push(`${source.label} did not answer in time`)
+        errors.push(`${source.errorLabel} did not answer in time`)
         late.push(request)
         continue
       }
@@ -520,7 +527,7 @@ export class PriceService {
     } catch (error) {
       const wait = error instanceof PriceRequestError && error.wait
       const reason = error instanceof Error ? describeFailure(error) : String(error)
-      return Err(new PriceRequestError(`${source.label} price request failed: ${reason}`, wait))
+      return Err(new PriceRequestError(`${source.errorLabel} price request failed: ${reason}`, wait))
     } finally {
       clearTimeout(timer)
     }
@@ -531,7 +538,9 @@ export class PriceService {
     if (!response.ok) {
       // Release the connection instead of leaving an unread body to garbage collection.
       await response.body?.cancel().catch(() => undefined)
-      return Err(new PriceRequestError(`${source.label} price error: ${response.status} ${response.statusText}`, true))
+      return Err(
+        new PriceRequestError(`${source.errorLabel} price error: ${response.status} ${response.statusText}`, true),
+      )
     }
 
     // Age the price by the source's own clock where it sends one (`Date`, plus `Age` when a cache held the
@@ -543,7 +552,7 @@ export class PriceService {
     const sourceNow = Number.isNaN(date) ? Date.now() : date + cacheAge
     const quoted = await source.read(response)
     if (!quoted) {
-      return Err(new PriceRequestError(`BTC price not found in ${source.label} response`, true))
+      return Err(new PriceRequestError(`BTC price not found in ${source.errorLabel} response`, true))
     }
 
     // A price is at least as old as the cached response carrying it, and a timestamp ahead of the source's
@@ -552,7 +561,7 @@ export class PriceService {
     const sample = { value: quoted.value, source: source.name, ageAtFetch, fetchedAt }
     if (!isRecent(sample)) {
       const minutes = Math.round(ageOf(sample) / 60_000)
-      return Err(new PriceRequestError(`${source.label} price is ${minutes} minutes old`, true))
+      return Err(new PriceRequestError(`${source.errorLabel} price is ${minutes} minutes old`, true))
     }
     return Ok(sample)
   }
