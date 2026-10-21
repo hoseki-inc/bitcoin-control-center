@@ -1,4 +1,20 @@
-FROM node:22.23.3-bookworm-slim@sha256:43ac6c60b8f89723f746e8a92ce91abd5017e627ce1ddfe4238355d3a30b772c
+# Download and verify the pinned yq release used to read StartOS config. Only
+# the stage for the target architecture is built.
+ARG YQ_VERSION=v4.53.2
+
+FROM scratch AS yq-amd64
+ARG YQ_VERSION
+ADD --checksum=sha256:d56bf5c6819e8e696340c312bd70f849dc1678a7cda9c2ad63eebd906371d56b --chmod=755 \
+    https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64 /yq
+
+FROM scratch AS yq-arm64
+ARG YQ_VERSION
+ADD --checksum=sha256:03061b2a50c7a498de2bbb92d7cb078ce433011f085a4994117c2726be4106ea --chmod=755 \
+    https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_arm64 /yq
+
+FROM yq-${TARGETARCH} AS yq
+
+FROM node:22.23.4-bookworm-slim@sha256:5991875dfb80938dd8a6ba3fe3e96fd04929e70792762b3319d8caadbbe229bc
 
 ENV HOST=0.0.0.0
 ENV PORT=3400
@@ -8,20 +24,10 @@ WORKDIR /app
 
 # Install runtime utilities needed by Start9 scripts
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl bash ca-certificates tini \
+    bash tini \
     && rm -rf /var/lib/apt/lists/*
 
-# Install and verify the pinned yq release used to read StartOS config.
-ARG TARGETARCH
-ARG YQ_VERSION=v4.53.2
-RUN case "$TARGETARCH" in \
-      amd64) YQ_SHA256="d56bf5c6819e8e696340c312bd70f849dc1678a7cda9c2ad63eebd906371d56b" ;; \
-      arm64) YQ_SHA256="03061b2a50c7a498de2bbb92d7cb078ce433011f085a4994117c2726be4106ea" ;; \
-      *) echo "Unsupported architecture: $TARGETARCH" >&2; exit 1 ;; \
-    esac && \
-    curl -fsSLo /usr/local/bin/yq "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_${TARGETARCH}" && \
-    echo "${YQ_SHA256}  /usr/local/bin/yq" | sha256sum -c - && \
-    chmod +x /usr/local/bin/yq
+COPY --from=yq /yq /usr/local/bin/yq
 
 # api-sentinel is bundled by esbuild — only the externals listed in
 # apps/api-sentinel/src/scripts/build.ts need to be in node_modules.

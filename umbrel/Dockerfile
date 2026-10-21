@@ -1,6 +1,6 @@
 # Platform-neutral runtime image for the Umbrel package. umbrel/build.sh builds
 # Sentinel and the web app first, then builds this image from the repository root.
-FROM node:22.23.3-bookworm-slim@sha256:43ac6c60b8f89723f746e8a92ce91abd5017e627ce1ddfe4238355d3a30b772c
+FROM node:22.23.4-bookworm-slim@sha256:5991875dfb80938dd8a6ba3fe3e96fd04929e70792762b3319d8caadbbe229bc
 
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \

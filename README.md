@@ -70,7 +70,7 @@ Sentinel is the only application backend and owns the frontend API contract. Dis
 Local browser development requires:
 
 - Git
-- Node.js 22.23.3 or newer; `.nvmrc` selects Node 22.23.3
+- Node.js 22.23.4+, 24.22.1+, or 26.12.1+ within those major versions; `.nvmrc` selects Node 22.23.4
 - Corepack and pnpm 10.17.0
 - Access to an Electrum server whose network matches `BITCOIN_NETWORK`
 - A Chromium-based browser for WebHID hardware-wallet workflows
@@ -354,8 +354,15 @@ pnpm security:audit
 
 Pull-request CI and `pnpm run ci` skip it, so newly published advisories don't
 block unrelated pull requests; Dependabot and pull-request dependency review stay
-enabled. **Release 3** runs it and won't create a draft release while a moderate
-or worse finding remains.
+enabled. **Release 3** runs it and won't create a draft release while a non-ignored
+moderate or worse finding remains.
+
+As of October 21, 2026, two advisories have no published patched version:
+[`elliptic` GHSA-848j-6mx2-7j84](https://github.com/advisories/GHSA-848j-6mx2-7j84)
+(low severity, still reported; pulled in by Trezor and browser crypto dependencies), and
+[`braces` GHSA-vfj7-8cjw-p6xm](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm)
+(high severity, already excluded by `pnpm.auditConfig.ignoreGhsas`). A passing audit gate does not mean
+these dependencies are free of known vulnerabilities.
 
 The default `pnpm test` command requires only the root workspace dependencies.
 Sentinel uses an async, local-file libSQL client. Sentinel tests and desktop runtime
@@ -546,7 +553,14 @@ The explicit Electron download verifies the checksum supplied by the locked pack
 
 ### Node or pnpm version errors
 
-The repository requires Node.js 22.23.3 or newer and pnpm 10.17.0.
+The repository requires Node.js 22.23.4+, 24.22.1+, or 26.12.1+ within those major versions, and pnpm 10.17.0.
+
+These Node minimums and the pinned Electron 44.9.1 include the October 2026 eMudhra compromised-CA protections
+([Node release](https://github.com/nodejs/node/releases/tag/v22.23.4),
+[Electron fix](https://github.com/electron/electron/pull/55126)). Existing desktop, StartOS, and Umbrel installations
+must be rebuilt, updated, and restarted to receive these fixes. Source users must switch to a patched Node runtime
+and restart Sentinel; updating only the operating system's trust store does not patch Node's bundled trust store.
+The application and its packaged runtime do not use PHP.
 
 ```bash
 nvm install
