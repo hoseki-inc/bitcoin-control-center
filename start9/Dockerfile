@@ -14,7 +14,7 @@ ADD --checksum=sha256:03061b2a50c7a498de2bbb92d7cb078ce433011f085a4994117c2726be
 
 FROM yq-${TARGETARCH} AS yq
 
-FROM node:22.23.4-bookworm-slim@sha256:5991875dfb80938dd8a6ba3fe3e96fd04929e70792762b3319d8caadbbe229bc
+FROM node:26.11.1-bookworm-slim@sha256:86f07bc9c5dce4578cf37e5a418b7bfc7f817cda25cde66e2b66e95ed86c4567
 
 ENV HOST=0.0.0.0
 ENV PORT=3400
