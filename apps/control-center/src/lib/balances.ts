@@ -33,7 +33,8 @@ export function useGetBalancesPerClaimIds({
   const balanceQueriesOpts = { enabled }
   const queries = trpc.useQueries((t) => [
     t.portalProve.retrieveBitcoinPrice(undefined, balanceQueriesOpts),
-    t.portalProve.onchain.claimBalances({ claimIds }, balanceQueriesOpts),
+    // Sentinel reuses a wallet balance for a minute, so asking again sooner returns the same one.
+    t.portalProve.onchain.claimBalances({ claimIds }, { ...balanceQueriesOpts, staleTime: 60_000 }),
   ])
   const [btcPriceQuery, btcClaimBalancesQuery] = queries
   const btcPrice = btcPriceQuery.data?.value ?? null
