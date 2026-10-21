@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { queryRetryDelay, shouldRetryQuery } from './base'
+import { queryClient, queryRetryDelay, shouldRetryQuery } from './base'
 
 describe('query retries', () => {
   it('retries a failed read twice', () => {
@@ -16,5 +16,28 @@ describe('query retries', () => {
 
   it('waits a little longer before each retry, never more than 8 seconds', () => {
     expect([0, 1, 2, 3, 4].map(queryRetryDelay)).toEqual([1_000, 2_000, 4_000, 8_000, 8_000])
+  })
+})
+
+describe('changes', () => {
+  it('mark every query stale, without refetching any, so the next page to show one loads it again', async () => {
+    const fetches: string[] = []
+    await queryClient.fetchQuery({
+      queryKey: ['accounts'],
+      queryFn: async () => {
+        fetches.push('accounts')
+        return []
+      },
+    })
+    expect(queryClient.getQueryState(['accounts'])?.isInvalidated).toBe(false)
+
+    await queryClient
+      .getMutationCache()
+      .build(queryClient, { mutationFn: async () => 'saved' })
+      .execute()
+
+    expect(queryClient.getQueryState(['accounts'])?.isInvalidated).toBe(true)
+    expect(fetches).toEqual(['accounts'])
+    queryClient.clear()
   })
 })

@@ -1,6 +1,6 @@
 import type { Router } from '@hoseki/apps/api-sentinel/src/external_types'
 import { parseUnknown } from '@hoseki/packages/result/lib/parse'
-import { type DefaultOptions, QueryClient } from '@tanstack/react-query'
+import { type DefaultOptions, MutationCache, QueryClient } from '@tanstack/react-query'
 import { createTRPCReact } from '@trpc/react-query'
 import { z } from 'zod'
 import { isDesktop } from '../mode'
@@ -42,6 +42,15 @@ if (isDesktop) {
   defaultOptions.mutations = { networkMode: 'always' }
 }
 
-export const queryClient = new QueryClient({ defaultOptions })
+export const queryClient: QueryClient = new QueryClient({
+  defaultOptions,
+  mutationCache: new MutationCache({
+    // Data is reused for 15 seconds, so any change marks all of it stale: whatever page shows next
+    // fetches again, as every page did before. Data on screen refreshes where the change asks for it.
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ refetchType: 'none' })
+    },
+  }),
+})
 
 export const trpc = createTRPCReact<Router>()
