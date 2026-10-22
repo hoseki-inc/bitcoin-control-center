@@ -756,8 +756,8 @@ function ManualNoteIcon(): JSX.Element {
 
 function VerifiedBadge(): JSX.Element {
   return (
-    <Icon viewBox="0 0 14 14" w="14px" h="14px">
-      <circle cx="7" cy="7" r="7" fill="#4CAF50" />
+    <Icon viewBox="0 0 14 14" w="14px" h="14px" color="success.600">
+      <circle cx="7" cy="7" r="7" fill="currentColor" />
       <path d="M4 7.2L6 9.2L10 5.2" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
     </Icon>
   )
