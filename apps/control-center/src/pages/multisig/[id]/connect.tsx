@@ -60,7 +60,7 @@ import { trezorService } from '../../../components/claims/trezor/trezor-service-
 import { RequiredDataMissing } from '../../../components/errors/required-data-missing'
 import { useMultisigPageWrapperContext } from '../../../components/multisig/multisig-page-wrapper'
 import { useLedgerStore, useToastOnLedgerDisconnect } from '../../../hooks/use-ledger-store'
-import { getKeystoreStatus, getXpubFrom } from '../../../lib/multisig/keystore'
+import { getKeystoreStatus, getTrezorBitcoinPaths, getXpubFrom } from '../../../lib/multisig/keystore'
 import { browserLogger, captureHardwareWalletError } from '../../../logger'
 import { trpc } from '../../../trpc'
 import type { ClaimDto, KeystoreDto } from '../../../trpc/server-types'
@@ -182,13 +182,10 @@ function ConnectTrezorWalletCheckXpub({
 }) {
   async function getXpubFromTrezor() {
     // Suite Web opens a popup per request, so every keystore path is read in one bundled request
-    const paths = [
-      ...new Set(
-        claim.keystores.flatMap((ks) =>
-          ks.derivationPath == null ? [] : [DerivationPath.from(ks.derivationPath).toString(true)],
-        ),
-      ),
-    ]
+    const paths = getTrezorBitcoinPaths(claim)
+    if (paths.length === 0) {
+      return Err(new Error('No trezor account found matching any keystore xpub'))
+    }
     const publicKeysRes = await trezorService.getPublicKeys(paths)
     if (publicKeysRes.isErr()) {
       const error = publicKeysRes.unwrapErr()

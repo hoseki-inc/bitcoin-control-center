@@ -67,7 +67,8 @@ export function TrezorInfo({
 
       <WizardFooter
         leftButton={
-          <Button variant="outline" onClick={onBack}>
+          // A pending Trezor Suite request would move the wizard forward after going back
+          <Button variant="outline" isDisabled={accountSelectionInProgress} onClick={onBack}>
             Back
           </Button>
         }

@@ -96,7 +96,7 @@ export class TrezorService {
           email: 'support@bitcoincontrolcenter.com',
           appName: 'Bitcoin Control Center',
           appUrl: 'https://www.bitcoincontrolcenter.com',
-          appIcon: `${window.location.origin}/hoseki-logo-box.svg`,
+          // No appIcon: its URL would send the node's local address to Trezor Suite
         },
       }),
     ).mapErr((error) => parseUnknown(trezorFailureSchema, { error: error.cause ?? error }).unwrapOr(unknownTrezorError))

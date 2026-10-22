@@ -3,7 +3,7 @@ import { Err, Ok } from '@hoseki/packages/result'
 import { Slip132 } from '@hoseki/packages/wallet'
 import { HardwareDeviceError } from '@hoseki/packages/wallet/errors'
 import { describe, expect, it, vi } from 'vitest'
-import { getXpubFrom } from './keystore'
+import { getTrezorBitcoinPaths, getXpubFrom } from './keystore'
 
 describe('getXpubFrom', () => {
   const xpub1 = Slip132.getXpubFromString(
@@ -214,5 +214,34 @@ describe('getXpubFrom', () => {
     expect(result.isErr()).toBe(true)
     expect(result.unwrapErr()?.message).toBe('No ledger account found matching any keystore xpub')
     expect(getXpubForPath).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('getTrezorBitcoinPaths', () => {
+  const xpub = Slip132.getXpubFromString(
+    'xpub6BosfCnifzxcFwrSzQiqu2DBVTshkCXacvNsWGYJVVhhawA7d4R5WSWGFNbi8Aw6ZRc1brxMyWMzG3DSSSSoekkudhUd9yLb6qx39T9nMdj',
+  ).expect('Failed to create xpub')
+  const keystore = (derivationPath: string | null) => ({
+    derivationPath:
+      derivationPath === null ? null : DerivationPath.fromString(derivationPath).expect('valid').toString(),
+    xpub,
+  })
+
+  it('keeps a matching key when another signer uses a path Trezor Connect rejects', () => {
+    const paths = getTrezorBitcoinPaths({
+      keystores: [keystore("m/48'/0'/0'/2'"), keystore("m/45'"), keystore("m/48'/1'/0'/2'"), keystore(null)],
+    })
+
+    expect(paths).toEqual(["m/48'/0'/0'/2'"])
+  })
+
+  it('requests each path once in apostrophe notation', () => {
+    const paths = getTrezorBitcoinPaths({ keystores: [keystore('m/48h/0h/0h/2h'), keystore("m/48'/0'/0'/2'")] })
+
+    expect(paths).toEqual(["m/48'/0'/0'/2'"])
+  })
+
+  it('returns no paths when none can be requested', () => {
+    expect(getTrezorBitcoinPaths({ keystores: [keystore("m/45'"), keystore(null)] })).toEqual([])
   })
 })
