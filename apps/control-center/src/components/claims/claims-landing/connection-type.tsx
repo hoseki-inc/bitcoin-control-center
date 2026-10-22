@@ -35,8 +35,9 @@ export function ConnectionType({
       borderColor="neutral.200"
       borderRadius="4px"
       alignItems="center"
-      p={8}
-      gap={8}
+      // Two tiles share a phone's width, so they keep less padding there.
+      p={{ base: 5, sm: 8 }}
+      gap={{ base: 6, sm: 8 }}
       _hover={{ cursor: 'pointer', bgColor: 'neutral.50' }}
     >
       <Flex justifyContent="center" h="30px">

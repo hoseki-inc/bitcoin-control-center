@@ -4,6 +4,7 @@ import { ConnectManualBitcoinAccordion } from '@hoseki/packages/ui/design-system
 import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
 import { KeystoreAvatar } from '@hoseki/packages/ui/prove-verify-ui'
 import { keyIcon } from '@hoseki/packages/ui/prove-verify-ui/claims/keystores-status-indicator'
+import { useEffect } from 'react'
 import { ConnectionType } from './claims-landing/connection-type'
 
 const fadeIn = keyframes`
@@ -32,6 +33,18 @@ interface AddAccountFlowProps {
 }
 
 export function AddAccountFlow({ onClose, linkState }: AddAccountFlowProps): JSX.Element {
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape' && !event.defaultPrevented) {
+        onClose()
+      }
+    }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => {
+      window.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [onClose])
+
   return (
     <Box
       position="fixed"
@@ -60,12 +73,21 @@ export function AddAccountFlow({ onClose, linkState }: AddAccountFlowProps): JSX
           fontWeight="medium"
           leftIcon={<BackArrowIcon />}
         >
-          Back to Accounts
+          Back
         </Button>
       </Flex>
 
       {/* Content */}
-      <Box flex={1} overflow="auto" display="flex" justifyContent="center" px={{ base: 6, md: 12 }} pt={12} pb={20}>
+      <Box
+        as="main"
+        flex={1}
+        overflow="auto"
+        display="flex"
+        justifyContent="center"
+        px={{ base: 6, md: 12 }}
+        pt={12}
+        pb={20}
+      >
         <Box w="100%" maxW="680px">
           <PageHeading
             title="Connect New Account"
@@ -74,7 +96,7 @@ export function AddAccountFlow({ onClose, linkState }: AddAccountFlowProps): JSX
           />
 
           {/* Hardware wallets -- same tiles as the original claims page */}
-          <Grid templateColumns="repeat(3, 1fr)" gap={4} mb={8}>
+          <Grid templateColumns={{ base: 'repeat(2, minmax(0, 1fr))', md: 'repeat(3, minmax(0, 1fr))' }} gap={4} mb={8}>
             <ConnectionType
               title="Trezor"
               imagePath={`${HOSEKI_ASSETS_CDN_URL}/hardware-wallets/trezor.svg`}
