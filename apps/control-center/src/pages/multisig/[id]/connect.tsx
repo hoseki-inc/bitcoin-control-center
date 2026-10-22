@@ -61,7 +61,7 @@ import { RequiredDataMissing } from '../../../components/errors/required-data-mi
 import { useMultisigPageWrapperContext } from '../../../components/multisig/multisig-page-wrapper'
 import { useLedgerStore, useToastOnLedgerDisconnect } from '../../../hooks/use-ledger-store'
 import { getKeystoreStatus, getXpubFrom } from '../../../lib/multisig/keystore'
-import { browserLogger } from '../../../logger'
+import { browserLogger, captureHardwareWalletError } from '../../../logger'
 import { trpc } from '../../../trpc'
 import type { ClaimDto, KeystoreDto } from '../../../trpc/server-types'
 
@@ -125,7 +125,7 @@ function ConnectLedgerWalletCheckXpub({ claim }: { claim: ClaimDto }) {
       keystoreMetadata={{ label: 'Ledger Wallet', walletType: 'ledger' }}
       getXpubFromDevice={getXpubFromLedger}
       media={<FloatingLedgerImage modelName={ledgerModel ?? 'Nano S Plus'} />}
-      getDeviceModel={async () => ledgerModel ?? 'Nano S Plus'}
+      deviceModel={ledgerModel ?? 'Nano S Plus'}
     />
   )
 }
@@ -190,25 +190,30 @@ function ConnectTrezorWalletCheckXpub({
       ),
     ]
     const publicKeysRes = await trezorService.getPublicKeys(paths)
-    const publicKeysByPathRes = publicKeysRes.map((publicKeys) => {
-      const publicKeysByPath = new Map<string, string>()
-      for (const publicKey of publicKeys) {
-        publicKeysByPath.set(publicKey.serializedPath, publicKey.xpub)
-      }
-      return publicKeysByPath
-    })
+    if (publicKeysRes.isErr()) {
+      const error = publicKeysRes.unwrapErr()
+      captureHardwareWalletError(
+        error,
+        'Failed to get xpub from device',
+        { wallet: 'trezor', step: 'multisig-xpub-check' },
+        {},
+      )
+      return Err(error)
+    }
+    const publicKeysByPath = new Map(
+      publicKeysRes.unwrap().map((publicKey) => [publicKey.serializedPath, publicKey.xpub]),
+    )
 
     return getXpubFrom({
       claim,
-      getXpubForPath: (derivationPath) =>
-        publicKeysByPathRes.andThen((publicKeysByPath): Result<Xpub, Error> => {
-          const path = derivationPath.toString(true)
-          const rawXpub = publicKeysByPath.get(path)
-          if (rawXpub === undefined) {
-            return Err(new Error(`Trezor did not return a public key for ${path}`))
-          }
-          return Slip132.getXpubFromString(rawXpub)
-        }),
+      getXpubForPath: (derivationPath): Result<Xpub, Error> => {
+        const path = derivationPath.toString(true)
+        const rawXpub = publicKeysByPath.get(path)
+        if (rawXpub === undefined) {
+          return Err(new Error(`Trezor did not return a public key for ${path}`))
+        }
+        return Slip132.getXpubFromString(rawXpub)
+      },
       deviceType: 'trezor',
     })
   }
@@ -220,7 +225,7 @@ function ConnectTrezorWalletCheckXpub({
       getXpubFromDevice={getXpubFromTrezor}
       media={media}
       // The device details were read in a separate Trezor Suite request
-      getDeviceModel={async () => model}
+      deviceModel={model}
     />
   )
 }
@@ -236,13 +241,13 @@ function GenericCheckWalletXpub({
   keystoreMetadata,
   getXpubFromDevice,
   media,
-  getDeviceModel,
+  deviceModel,
 }: {
   claim: ClaimDto
   keystoreMetadata: { label: string; walletType: SupportedHardwareWallet }
   getXpubFromDevice: () => Promise<Result<Xpub, Error>>
   media: React.ReactNode
-  getDeviceModel: () => Promise<string | null>
+  deviceModel: string | null
 }) {
   const navigate = useNavigate()
   const [matchedKeystore, setMatchedKeystore] = useState<{ keystore: KeystoreDto | null; match: boolean } | null>(null)
@@ -278,7 +283,6 @@ function GenericCheckWalletXpub({
     setError(null)
 
     try {
-      const deviceModel = await getDeviceModel()
       const xpubResult = await getXpubFromDevice()
       if (xpubResult.isErr()) {
         setError(xpubResult.unwrapErr())
@@ -692,7 +696,7 @@ function KeystoneMultisigXpubCheck({ claim, keystoneJson }: { claim: ClaimDto; k
       keystoreMetadata={{ label: 'Keystone Wallet', walletType: 'keystone' }}
       getXpubFromDevice={getXpubFromKeystone}
       media={<FloatingKeystoneImage />}
-      getDeviceModel={async () => 'Keystone'}
+      deviceModel="Keystone"
     />
   )
 }
@@ -720,7 +724,7 @@ function ColdcardMultisigStep6({
       keystoreMetadata={{ label: 'Coldcard Wallet', walletType: 'coldcard' }}
       getXpubFromDevice={getXpubFromColdcard}
       media={<ColdcardModelImage model={model} />}
-      getDeviceModel={async () => model}
+      deviceModel={model}
     />
   )
 }

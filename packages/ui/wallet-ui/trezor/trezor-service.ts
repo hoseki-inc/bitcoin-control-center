@@ -1,12 +1,9 @@
 import { AsyncErr, type AsyncResult, Err, Ok, Result } from '@hoseki/packages/result'
 import { parseUnknown } from '@hoseki/packages/result/lib/parse'
-import TrezorConnectModule, { type Features, type Response } from '@trezor/connect-web'
+import TrezorConnect, { type Features, type Response } from '@trezor/connect-web'
 import type { Logger } from 'pino'
 import { z } from 'zod'
-import { cjsInterop } from '../../../lib'
 import { HardwareDeviceError } from '../../../wallet'
-
-const TrezorConnect = cjsInterop(TrezorConnectModule)
 
 export interface TrezorError {
   message: string

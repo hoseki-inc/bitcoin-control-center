@@ -16,7 +16,6 @@ import {
 } from '@hoseki/packages/ui/wallet-ui'
 import { DERIVATION_PATH_TO_SCRIPT_TYPE, Slip132 } from '@hoseki/packages/wallet'
 import type { Features } from '@trezor/connect-web'
-import Decimal from 'decimal.js'
 import { useState } from 'react'
 import { useLocation, useNavigate } from 'react-router'
 import { useNavigateToAnExistentOrNewClaim } from '../../../lib/claim-flow'
@@ -56,28 +55,18 @@ export function ConnectTrezor(): JSX.Element {
     }
 
     const rawInput = trezorAccount.xpub
-
-    let account: SingleSigAccount
-
-    // Try to parse the account from the descriptor Trezor gave us
-    const accountRes = SingleSigAccount.fromDescriptor(rawInput)
-    if (accountRes.isOk()) {
-      account = accountRes.unwrap()
-    } else {
-      // If we can't parse the account from the descriptor, try to parse the xpub
-      const xpubResult = Slip132.getXpubFromString(rawInput)
-      if (xpubResult.isErr()) {
-        return Err(xpubResult.unwrapErr())
-      }
-
-      // Get default script type based on the path
-      const scriptTypeResult = getScriptType(trezorAccount.path)
-      if (scriptTypeResult.isErr()) {
-        return Err(scriptTypeResult.unwrapErr())
-      }
-
-      account = new SingleSigAccount(scriptTypeResult.unwrap(), xpubResult.unwrap())
+    const xpubResult = Slip132.getXpubFromString(rawInput)
+    if (xpubResult.isErr()) {
+      return Err(xpubResult.unwrapErr())
     }
+
+    // The script type comes from the account's derivation path
+    const scriptTypeResult = getScriptType(trezorAccount.path)
+    if (scriptTypeResult.isErr()) {
+      return Err(scriptTypeResult.unwrapErr())
+    }
+
+    const account = new SingleSigAccount(scriptTypeResult.unwrap(), xpubResult.unwrap())
 
     const derivationPath = DerivationPath.fromString(trezorAccount.path).unwrapOr(null)
 
@@ -89,18 +78,15 @@ export function ConnectTrezor(): JSX.Element {
         rawInput,
         account,
         derivationPath,
-        // Trezor Suite doesn't return a balance, so it's fetched below
-        btcBalance: new Decimal(0),
+        btcBalance: 'loading',
         usdBalance: null, // Initially null, fetched at the end of this function
         displayName: trezorFeatures == null ? 'Trezor' : getTrezorDisplayName(trezorFeatures),
         label: 'Account 1',
       },
     })
 
-    // Fire-and-forget call because balances are just not shown if they were unable to load
-    getTrezorAccountBalance(account).catch(() => {
-      browserLogger.warn('Unable to refresh the optional Trezor account balance')
-    })
+    // Fire-and-forget call: the card shows the balance as unavailable if it can't be loaded
+    void getTrezorAccountBalance(account)
     setStep('step-3-confirm')
     return Ok()
   }
@@ -110,14 +96,9 @@ export function ConnectTrezor(): JSX.Element {
     const balanceRes = await Result.fromPromise(
       trpcUtils.portalProve.onchain.bitcoinAccountBalances.fetch({ accounts: [networkAccount.toString()] }),
     )
-    if (balanceRes.isErr()) {
-      return
-    }
-
-    const balance = balanceRes.unwrap()
-    const balanceValue = balance.accounts.get(networkAccount.toString())
+    const balanceValue = balanceRes.isOk() ? balanceRes.unwrap().accounts.get(networkAccount.toString()) : undefined
     if (!balanceValue) {
-      return
+      browserLogger.warn('Unable to load the Trezor account balance')
     }
 
     setSelectedTrezorAccount((prev) => {
@@ -128,8 +109,8 @@ export function ConnectTrezor(): JSX.Element {
         ...prev,
         wallet: {
           ...prev.wallet,
-          btcBalance: balanceValue.current,
-          usdBalance: balanceValue.usd,
+          btcBalance: balanceValue?.current ?? 'unavailable',
+          usdBalance: balanceValue?.usd ?? null,
         },
       }
     })
