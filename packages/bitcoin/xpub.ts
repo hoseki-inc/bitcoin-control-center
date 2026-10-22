@@ -1,5 +1,5 @@
 import type { Opaque } from 'type-fest'
-import { Err, Result } from '../result'
+import { Err, Ok, Result } from '../result'
 import { Address } from './address'
 import { type BIP32Interface, bip32, bitcoin } from './lib'
 import { Network } from './network'
@@ -29,9 +29,14 @@ export class Xpub {
         )
     }
 
-    return Result.fromThrowable(() => {
-      const spec = bip32.fromBase58(string, network)
-      return new Xpub(spec, network)
+    return Result.fromThrowable(() => bip32.fromBase58(string, network)).andThen((spec) => {
+      // xprv/tprv decode on the same network. Control Center is watch-only, so never keep a private key.
+      if (!spec.isNeutered()) {
+        return Err(
+          new Error('This is an extended private key (xprv/tprv). Use the extended public key (xpub/tpub) instead.'),
+        )
+      }
+      return Ok(new Xpub(spec, network))
     })
   }
 
