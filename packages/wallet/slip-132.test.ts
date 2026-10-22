@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { Network, Xpub } from '../bitcoin'
+import { Network, Xpub, bs58check } from '../bitcoin'
 import * as Slip132 from './slip-132'
 
 const XPUB =
@@ -106,6 +106,20 @@ describe('SLIP-132 conversion', () => {
         // When converted to string, should be in core xpub/tpub format
         expect(result.data.toString()).toMatch(/^[xt]pub/)
       }
+    }
+  })
+
+  it('getXpubFromString rejects extended private keys in any prefix', () => {
+    // BIP32 test vector 1 (published, not a real wallet), and the same key with zprv version bytes.
+    const xprv =
+      'xprv9s21ZrQH143K3QTDL4LXw2F7HEK3wJUD2nW2nRk4stbPy6cq3jPPqjiChkVvvNKmPGJxWUtg6LnF5kejMRNNU3TGtRBeJgk33yuGBxrMPHi'
+    const decoded = bs58check.decode(xprv)
+    decoded.set([0x04, 0xb2, 0x43, 0x0c], 0)
+    const zprv = bs58check.encode(decoded)
+    expect(zprv.startsWith('zprv')).toBe(true)
+
+    for (const key of [xprv, zprv]) {
+      expect(Slip132.getXpubFromString(key).isErr(), `Should reject ${key}`).toBe(true)
     }
   })
 })
