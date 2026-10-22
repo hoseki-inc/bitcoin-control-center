@@ -7,7 +7,7 @@ import { isAppUrl, isExternalUrl, isTrezorPopup } from '../src/window-policy'
 import { createWindowFixture } from './window-fixture'
 
 const origin = 'http://localhost:49172'
-const popupUrl = 'https://connect.trezor.io/9/popup.html?version=9.7.3&env=web'
+const popupUrl = 'https://suite.trezor.io/web/connect-popup/?connect-popup-req=abc123'
 const trezor = { deviceId: 'trezor', productName: 'Trezor', vendorId: 0x1209, productId: 0x53c1 }
 
 function createHarness() {
@@ -29,7 +29,7 @@ function createHarness() {
   })
   const popup = Object.assign(new EventEmitter(), {
     session,
-    mainFrame: { origin: 'https://connect.trezor.io' },
+    mainFrame: { origin: 'https://suite.trezor.io' },
     getURL: (): string => popupUrl,
     isDestroyed: (): boolean => false,
   })
@@ -78,7 +78,7 @@ describe('wallet permissions and chooser lifecycle', () => {
     expect(session.listenerCount('select-usb-device')).toBe(1)
     expect(check(main, 'hid', origin, { isMainFrame: true, requestingUrl: origin, securityOrigin: origin })).toBe(true)
     expect(
-      check(popup, 'usb', 'https://connect.trezor.io', {
+      check(popup, 'usb', 'https://suite.trezor.io', {
         isMainFrame: true,
         requestingUrl: origin,
         securityOrigin: origin,
@@ -103,14 +103,14 @@ describe('wallet permissions and chooser lifecycle', () => {
       check(null, 'hid', `${origin}/`, { isMainFrame: false, requestingUrl: origin, securityOrigin: origin }),
     ).toBe(true)
     expect(
-      check(popup, 'hid', 'https://connect.trezor.io', {
+      check(popup, 'hid', 'https://suite.trezor.io', {
         isMainFrame: true,
         requestingUrl: origin,
         securityOrigin: origin,
       }),
     ).toBe(false)
     expect(
-      check(popup, 'usb', 'https://connect.trezor.io', {
+      check(popup, 'usb', 'https://suite.trezor.io', {
         isMainFrame: true,
         requestingUrl: origin,
         securityOrigin: origin,
@@ -118,7 +118,7 @@ describe('wallet permissions and chooser lifecycle', () => {
     ).toBe(true)
     expect(check(main, 'usb', origin, { isMainFrame: true, requestingUrl: origin, securityOrigin: origin })).toBe(false)
     expect(
-      check(null, 'usb', 'https://connect.trezor.io/', {
+      check(null, 'usb', 'https://suite.trezor.io/', {
         isMainFrame: false,
         requestingUrl: origin,
         securityOrigin: origin,
@@ -274,7 +274,7 @@ describe('wallet permissions and chooser lifecycle', () => {
     session.emit(
       'select-usb-device',
       { preventDefault: vi.fn() },
-      { frame: { origin: 'https://connect.trezor.io' }, deviceList: [trezor] },
+      { frame: { origin: 'https://suite.trezor.io' }, deviceList: [trezor] },
       callback,
     )
     expect(callback.mock.calls).toEqual([[''], ['']])
@@ -370,23 +370,40 @@ describe('wallet permissions and chooser lifecycle', () => {
     const details = { isMainFrame: true, requestingUrl: origin, securityOrigin: origin }
     expect(check(main, 'media', origin, details)).toBe(true)
     expect(check(main, 'media', origin, { ...details, isMainFrame: false })).toBe(false)
-    expect(check(popup, 'media', 'https://connect.trezor.io', details)).toBe(false)
+    expect(check(popup, 'media', 'https://suite.trezor.io', details)).toBe(false)
     expect(check(main, 'geolocation', origin, details)).toBe(false)
     request(main, 'clipboard-sanitized-write', callback, details)
     request(popup, 'clipboard-sanitized-write', callback, details)
     expect(callback.mock.calls).toEqual([[true], [false]])
   })
+
+  it('grants storage access only to the Suite Web frame inside the app', () => {
+    const { main, popup, request } = createHarness()
+    const callback = vi.fn<(granted: boolean) => void>()
+    const bootstrapUrl = 'https://suite.trezor.io/web/connect-popup/bootstrap.html?connect-popup-req=abc123'
+    const frame = { isMainFrame: false, requestingUrl: bootstrapUrl, securityOrigin: 'https://suite.trezor.io' }
+    request(main, 'storage-access', callback, frame)
+    request(main, 'storage-access', callback, { ...frame, isMainFrame: true })
+    request(main, 'storage-access', callback, { ...frame, requestingUrl: 'https://evil.example/web/connect-popup/' })
+    request(popup, 'storage-access', callback, frame)
+    expect(callback.mock.calls).toEqual([[true], [false], [false], [false]])
+  })
 })
 
 describe('window destinations', () => {
-  it('keeps the SDK popup in-app while excluding other hosts, versions, paths, and credential URLs', () => {
+  it('keeps the Suite Web window in-app while excluding other hosts, paths, and credential URLs', () => {
     expect(isTrezorPopup(popupUrl)).toBe(true)
+    expect(isTrezorPopup('https://suite.trezor.io/web/connect-popup/bootstrap.html?connect-popup-req=abc123')).toBe(
+      true,
+    )
     for (const url of [
-      'https://connect.trezor.io.evil.test/9/popup.html',
-      'https://connect.trezor.io/9/webusb.html',
-      'https://connect.trezor.io/10/popup.html',
-      'https://user@connect.trezor.io/9/popup.html',
-      'http://connect.trezor.io/9/popup.html',
+      'https://suite.trezor.io.evil.test/web/connect-popup/',
+      'https://suite.trezor.io/web/',
+      'https://suite.trezor.io/web/connect-popup',
+      'https://connect.trezor.io/9/popup.html',
+      'https://user@suite.trezor.io/web/connect-popup/',
+      'http://suite.trezor.io/web/connect-popup/',
+      'about:blank',
     ]) {
       expect(isTrezorPopup(url)).toBe(false)
     }

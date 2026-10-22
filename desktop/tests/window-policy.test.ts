@@ -1,10 +1,13 @@
 import type { WebContents } from 'electron'
 import { describe, expect, it, vi } from 'vitest'
-import { setupWindowPolicy } from '../src/window-policy'
-import { createWindowFixture } from './window-fixture'
+import { chromeUserAgent, setupWindowPolicy } from '../src/window-policy'
+import { createWindowFixture, electronUserAgent } from './window-fixture'
 
 const origin = 'http://localhost:49172'
-const popupUrl = 'https://connect.trezor.io/9/popup.html?version=9.7.3&env=web'
+const popupUrl = 'https://suite.trezor.io/web/connect-popup/?connect-popup-req=abc123'
+const bootstrapUrl = 'https://suite.trezor.io/web/connect-popup/bootstrap.html?connect-popup-req=abc123'
+const chromeAgent =
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.7977.167 Safari/537.36'
 const externalUrl = 'https://example.com/help'
 
 function createHarness() {
@@ -17,9 +20,9 @@ function createHarness() {
 }
 
 describe('installed window handlers', () => {
-  it('opens only the SDK approval page with an isolated, parented popup', () => {
+  it.each(['about:blank', bootstrapUrl])('opens the Suite Web window as an isolated, parented popup: %s', (url) => {
     const { main, openExternal } = createHarness()
-    expect(main.open(popupUrl)).toEqual({
+    expect(main.open(url)).toEqual({
       action: 'allow',
       overrideBrowserWindowOptions: {
         parent: main.window,
@@ -42,9 +45,9 @@ describe('installed window handlers', () => {
   it.each([
     externalUrl,
     'mailto:support@example.com',
-    'https://connect.trezor.io/9/webusb.html',
-    'https://connect.trezor.io/10/popup.html',
-    'https://connect.trezor.io.evil.example/9/popup.html',
+    'https://connect.trezor.io/9/popup.html',
+    'https://suite.trezor.io/web/',
+    'https://suite.trezor.io.evil.example/web/connect-popup/',
   ])('opens ordinary links externally instead of creating an app window: %s', (url) => {
     const { main, openExternal } = createHarness()
     expect(main.open(url)).toEqual({ action: 'deny' })
@@ -64,6 +67,7 @@ describe('installed window handlers', () => {
     const { main, popup, registered, openExternal } = createHarness()
     main.contents.emit('did-create-window', popup.window)
     expect(registered.has(popup.contents)).toBe(true)
+    expect(popup.setUserAgent).toHaveBeenCalledExactlyOnceWith(chromeAgent)
     expect(popup.open(popupUrl)).toEqual({ action: 'deny' })
     expect(openExternal).toHaveBeenCalledExactlyOnceWith(popupUrl)
     expect(popup.open('file:///tmp/test')).toEqual({ action: 'deny' })
@@ -102,5 +106,36 @@ describe('installed window handlers', () => {
     harness[target].contents.emit(eventName, event, url)
     expect(event.preventDefault).toHaveBeenCalledExactlyOnceWith()
     expect(harness.openExternal.mock.calls).toEqual(forwarded)
+  })
+})
+
+describe('Suite Web window', () => {
+  it('loads Suite Web from the main process when the blank window is first sent there', () => {
+    const { main, openExternal } = createHarness()
+    const blank = createWindowFixture('about:blank')
+    main.contents.emit('did-create-window', blank.window)
+    const first = { preventDefault: vi.fn<() => void>() }
+    blank.contents.emit('will-navigate', first, bootstrapUrl)
+    expect(first.preventDefault).toHaveBeenCalledExactlyOnceWith()
+    expect(blank.loadURL).toHaveBeenCalledExactlyOnceWith(bootstrapUrl)
+
+    blank.setUrl(bootstrapUrl)
+    const next = { preventDefault: vi.fn<() => void>() }
+    blank.contents.emit('will-navigate', next, popupUrl)
+    expect(next.preventDefault).not.toHaveBeenCalled()
+    expect(blank.loadURL).toHaveBeenCalledTimes(1)
+    expect(openExternal).not.toHaveBeenCalled()
+  })
+
+  it('reports the plain Chrome user agent', () => {
+    expect(chromeUserAgent(electronUserAgent)).toBe(chromeAgent)
+    expect(
+      chromeUserAgent(
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Bitcoin Control Center/1.0.0 Chrome/152.0.7977.167 Electron/44.9.1 Safari/537.36',
+      ),
+    ).toBe(
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.7977.167 Safari/537.36',
+    )
+    expect(chromeUserAgent(chromeAgent)).toBe(chromeAgent)
   })
 })

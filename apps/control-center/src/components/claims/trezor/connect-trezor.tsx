@@ -16,7 +16,6 @@ import {
 } from '@hoseki/packages/ui/wallet-ui'
 import { DERIVATION_PATH_TO_SCRIPT_TYPE, Slip132 } from '@hoseki/packages/wallet'
 import type { Features } from '@trezor/connect-web'
-import Decimal from 'decimal.js'
 import { useState } from 'react'
 import { useLocation, useNavigate } from 'react-router'
 import { useNavigateToAnExistentOrNewClaim } from '../../../lib/claim-flow'
@@ -31,76 +30,64 @@ export function ConnectTrezor(): JSX.Element {
   const location = useLocation()
   const returnTo = parseNavigationState(location.state)?.returnTo ?? '/accounts'
   const trpcUtils = trpc.useUtils()
-  const [step, setStep] = useState<'step-1-info' | 'step-2-confirm'>('step-1-info')
+  const [step, setStep] = useState<'step-1-info' | 'step-2-account' | 'step-3-confirm'>('step-1-info')
+  const [trezorFeatures, setTrezorFeatures] = useState<Features>()
   const [selectedTrezorAccount, setSelectedTrezorAccount] = useState<SelectedTrezorAccount>()
   const navigateToAnExistentOrNewClaim = useNavigateToAnExistentOrNewClaim()
 
+  async function getTrezorDeviceInfo(): Promise<Result<void, Error>> {
+    const result = await trezorService.getFeatures()
+    setTrezorFeatures(result.unwrapOr(undefined))
+    setStep('step-2-account')
+    return Ok()
+  }
+
   async function getTrezorAccountInfo(): Promise<Result<void, Error>> {
-    const trezorFeaturesRes = await trezorService.getFeatures()
-    if (trezorFeaturesRes.isErr()) {
-      return Err(trezorFeaturesRes.unwrapErr())
-    }
-    const trezorAccountInfoRes = await trezorService.getAccountInfo()
-    if (trezorAccountInfoRes.isErr()) {
-      return Err(trezorAccountInfoRes.unwrapErr())
+    // One Trezor call per click: Suite Web opens a popup per call, and a second popup would be blocked
+    const trezorAccountRes = await trezorService.selectBitcoinAccount()
+    if (trezorAccountRes.isErr()) {
+      return Err(trezorAccountRes.unwrapErr())
     }
 
-    const trezorFeatures = trezorFeaturesRes.unwrap()
-    const trezorAccountInfo = trezorAccountInfoRes.unwrap()
-
-    // Legacy, nested Segwit, Segwit use _pub format in the descriptor field
-    // While Taproot uses a real descriptor
-    // For this reason, we're using the legacyXpub format if it exists, because it is more correct
-    const rawInput = trezorAccountInfo.legacyXpub ?? trezorAccountInfo.descriptor
-
-    let account: SingleSigAccount
-
-    // Try to parse the account from the descriptor Trezor gave us
-    const accountRes = SingleSigAccount.fromDescriptor(rawInput)
-    if (accountRes.isOk()) {
-      account = accountRes.unwrap()
-    } else {
-      // If we can't parse the account from the descriptor, try to parse the xpub
-      const xpubResult = Slip132.getXpubFromString(rawInput)
-      if (xpubResult.isErr()) {
-        return Err(xpubResult.unwrapErr())
-      }
-
-      // Get default script type based on the path
-      const scriptTypeResult = getScriptType(trezorAccountInfo.path)
-      if (scriptTypeResult.isErr()) {
-        return Err(scriptTypeResult.unwrapErr())
-      }
-
-      account = new SingleSigAccount(scriptTypeResult.unwrap(), xpubResult.unwrap())
+    const trezorAccount = trezorAccountRes.unwrap()
+    if (trezorAccount.xpub === undefined) {
+      return Err(new Error("Trezor Suite did not return the account's extended public key."))
     }
 
-    const derivationPath =
-      trezorAccountInfo.path != null && trezorAccountInfo.path !== ''
-        ? DerivationPath.fromString(trezorAccountInfo.path).unwrapOr(null)
-        : null
+    const rawInput = trezorAccount.xpub
+    const xpubResult = Slip132.getXpubFromString(rawInput)
+    if (xpubResult.isErr()) {
+      return Err(xpubResult.unwrapErr())
+    }
+
+    // The script type comes from the account's derivation path
+    const scriptTypeResult = getScriptType(trezorAccount.path)
+    if (scriptTypeResult.isErr()) {
+      return Err(scriptTypeResult.unwrapErr())
+    }
+
+    const account = new SingleSigAccount(scriptTypeResult.unwrap(), xpubResult.unwrap())
+
+    const derivationPath = DerivationPath.fromString(trezorAccount.path).unwrapOr(null)
 
     // Set the selected Trezor account
     setSelectedTrezorAccount({
       trezorFeatures,
-      trezorAccountInfo: trezorAccountInfo,
       wallet: {
         accountIndex: 1,
         rawInput,
         account,
         derivationPath,
-        btcBalance: new Decimal(trezorAccountInfo.balance),
+        btcBalance: 'loading',
         usdBalance: null, // Initially null, fetched at the end of this function
-        displayName: getTrezorDisplayName(trezorFeatures),
+        displayName: trezorFeatures == null ? 'Trezor' : getTrezorDisplayName(trezorFeatures),
         label: 'Account 1',
       },
     })
 
-    // Fire-and-forget call because balances are just not shown if they were unable to load
-    getTrezorAccountBalance(account).catch(() => {
-      browserLogger.warn('Unable to refresh the optional Trezor account balance')
-    })
-    setStep('step-2-confirm')
+    // Fire-and-forget call: the card shows the balance as unavailable if it can't be loaded
+    void getTrezorAccountBalance(account)
+    setStep('step-3-confirm')
     return Ok()
   }
 
@@ -109,14 +96,9 @@ export function ConnectTrezor(): JSX.Element {
     const balanceRes = await Result.fromPromise(
       trpcUtils.portalProve.onchain.bitcoinAccountBalances.fetch({ accounts: [networkAccount.toString()] }),
     )
-    if (balanceRes.isErr()) {
-      return
-    }
-
-    const balance = balanceRes.unwrap()
-    const balanceValue = balance.accounts.get(networkAccount.toString())
+    const balanceValue = balanceRes.isOk() ? balanceRes.unwrap().accounts.get(networkAccount.toString()) : undefined
     if (!balanceValue) {
-      return
+      browserLogger.warn('Unable to load the Trezor account balance')
     }
 
     setSelectedTrezorAccount((prev) => {
@@ -127,14 +109,14 @@ export function ConnectTrezor(): JSX.Element {
         ...prev,
         wallet: {
           ...prev.wallet,
-          btcBalance: balanceValue.current,
-          usdBalance: balanceValue.usd,
+          btcBalance: balanceValue?.current ?? 'unavailable',
+          usdBalance: balanceValue?.usd ?? null,
         },
       }
     })
   }
 
-  function handleContinue(trezorFeatures: Features) {
+  function handleContinue() {
     if (!selectedTrezorAccount) {
       return
     }
@@ -144,7 +126,8 @@ export function ConnectTrezor(): JSX.Element {
       account: selectedTrezorAccount.wallet.account,
       derivationPath: selectedTrezorAccount.wallet.derivationPath,
       wallet: 'trezor',
-      model: getTrezorModel(trezorFeatures.internal_model),
+      // The device details were read in a separate Trezor Suite request
+      model: getTrezorModel(selectedTrezorAccount.trezorFeatures?.internal_model),
       displayName: selectedTrezorAccount.wallet.displayName,
     })
   }
@@ -153,14 +136,26 @@ export function ConnectTrezor(): JSX.Element {
     <ClaimConnectionWrapper>
       {step === 'step-1-info' && (
         <TrezorInfo
+          key="device-details"
+          step="device-details"
           onBack={() => {
             void navigate(returnTo)
+          }}
+          onConnectTrezor={getTrezorDeviceInfo}
+        />
+      )}
+
+      {step === 'step-2-account' && (
+        <TrezorInfo
+          key="account-selection"
+          onBack={() => {
+            setStep('step-1-info')
           }}
           onConnectTrezor={getTrezorAccountInfo}
         />
       )}
 
-      {step === 'step-2-confirm' &&
+      {step === 'step-3-confirm' &&
         (!selectedTrezorAccount ? (
           <RequiredDataMissing />
         ) : (
@@ -168,9 +163,7 @@ export function ConnectTrezor(): JSX.Element {
             trezorAccount={selectedTrezorAccount}
             setSelectedTrezorAccount={setSelectedTrezorAccount}
             isLoadingOnContinue={navigateToAnExistentOrNewClaim.isLoading}
-            onContinue={() => {
-              handleContinue(selectedTrezorAccount.trezorFeatures)
-            }}
+            onContinue={handleContinue}
             onCancel={() => {
               void navigate(returnTo)
             }}

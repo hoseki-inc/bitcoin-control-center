@@ -15,6 +15,21 @@ type Keystore = {
 }
 
 /**
+ * The keystore paths Trezor Connect accepts in one Bitcoin request. Connect rejects the whole request if any path
+ * has fewer than three steps (such as BIP45's m/45') or another coin type, even when another path matches the device.
+ */
+export function getTrezorBitcoinPaths(claim: { keystores: Keystore[] }): string[] {
+  const paths = claim.keystores.flatMap((ks) => {
+    if (!ks.derivationPath) {
+      return []
+    }
+    const path = DerivationPath.from(ks.derivationPath)
+    return path.steps.length >= 3 && path.steps[1]?.index === 0 ? [path.toString(true)] : []
+  })
+  return [...new Set(paths)]
+}
+
+/**
  * We were previously assuming that the derivation path was the same for all keystores and
  * grabbing the first one from the list of keystores. This is not the case, so we now loop
  * through all the keystores and return the Xpub from the first keystore whose derivation path
@@ -22,11 +37,11 @@ type Keystore = {
  */
 export async function getXpubFrom({
   claim,
-  getXpubFromDevice,
+  getXpubForPath,
   deviceType,
 }: {
   claim: { keystores: Keystore[] }
-  getXpubFromDevice: (derivationPath: DerivationPath) => AsyncResult<Xpub, Error>
+  getXpubForPath: (derivationPath: DerivationPath) => Result<Xpub, Error> | AsyncResult<Xpub, Error>
   deviceType: SupportedHardwareWallet
 }): Promise<Result<Xpub, Error>> {
   let lastHardwareError: Error | undefined
@@ -36,7 +51,7 @@ export async function getXpubFrom({
       continue
     }
 
-    const xpubRes = await getXpubFromDevice(DerivationPath.from(ks.derivationPath))
+    const xpubRes = await getXpubForPath(DerivationPath.from(ks.derivationPath))
     if (xpubRes.isErr()) {
       const error = xpubRes.unwrapErr()
       if (error instanceof HardwareDeviceError) {

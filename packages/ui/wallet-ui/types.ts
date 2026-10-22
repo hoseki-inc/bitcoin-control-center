@@ -6,7 +6,8 @@ export type HardwareWallet = {
   rawInput: string
   account: SingleSigAccount
   derivationPath: DerivationPath | null
-  btcBalance: Decimal
+  // Trezor Suite doesn't return a balance, so a Trezor account shows it as loading until it's fetched
+  btcBalance: Decimal | 'loading' | 'unavailable'
   usdBalance: Decimal | null
   displayName: string
   label: string
