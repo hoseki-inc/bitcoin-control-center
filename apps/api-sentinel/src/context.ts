@@ -9,6 +9,8 @@ import { type SentinelDb, openDrizzleDatabase } from './db/drizzle'
 import { settings } from './db/schema'
 import { type Env, loadEnv } from './env'
 import { initEncryption, loadCredentialEncryptionKey } from './lib/encrypted'
+import { applyPlatformRequests } from './modules/auth/platform'
+import { type AuthPolicy, AuthService, DEFAULT_AUTH_POLICY, PLATFORM_AUTH_POLICIES } from './modules/auth/service'
 import {
   type ConnectionDetails,
   ConnectionProfileStore,
@@ -26,12 +28,13 @@ import { ReleaseCheckService } from './modules/updates/service'
 
 /**
  * Application context: singleton holding all shared services.
- * Created once on startup. No auth, no per-request scoping - single user.
+ * Created once on startup. Requests are checked against `auth` by the tRPC procedures.
  */
 export interface AppContext {
   env: Env
   logger: Logger
   database: SentinelDb
+  auth: AuthService
   electrumClient: ElectrumClient
   electrumConfig: { host: string; port: number; protocol: 'tcp' | 'ssl' }
   onchainProvider: ElectrumProvider
@@ -73,6 +76,8 @@ const TOR_CONNECT_TIMEOUT_MS = 60_000
 const TOR_REQUEST_TIMEOUT_MS = 30_000
 
 export interface AppContextOptions {
+  /** Overrides SENTINEL_PIN. The desktop app passes `PLATFORM_AUTH_POLICIES.desktop`. Off unless a platform turns it on. */
+  pin?: AuthPolicy
   /** Enabled only by desktop launchers, including the desktop development preview. */
   connectionProfiles?: boolean
   /** Overrides SENTINEL_WAIT_FOR_ELECTRUM. Desktop must keep settings available even when its saved server is offline. */
@@ -105,6 +110,11 @@ export const createAppContext = asyncFn(
     // both encrypted credentials and the key needed to decrypt them.
     const credentialKey = await loadCredentialEncryptionKey({ dataDir: env.DATA_DIR, db: database, logger })
     initEncryption(credentialKey.key)
+
+    const platformPolicy =
+      env.SENTINEL_PIN === undefined ? DEFAULT_AUTH_POLICY : PLATFORM_AUTH_POLICIES[env.SENTINEL_PIN]
+    const auth = new AuthService(database, logger, options.pin ?? platformPolicy)
+    await applyPlatformRequests(env.DATA_DIR, auth, logger)
 
     const network = env.BITCOIN_NETWORK === 'mainnet' ? Network.Mainnet : Network.Testnet
 
@@ -315,6 +325,7 @@ export const createAppContext = asyncFn(
       env,
       logger,
       database,
+      auth,
       electrumClient,
       electrumConfig: { host: electrumHost, port: electrumPort, protocol: electrumProtocol },
       onchainProvider,

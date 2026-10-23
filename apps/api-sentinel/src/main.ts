@@ -5,6 +5,7 @@ import Fastify, { type FastifyBaseLogger } from 'fastify'
 import pino from 'pino'
 import { type AppContextOptions, createAppContext } from './context'
 import { walletDetailLogOptions } from './log_redaction'
+import { readRequestAuth } from './modules/auth/request'
 import type { TRPCContext } from './modules/trpc/init'
 import { type AppRouter, appRouter } from './modules/trpc/router'
 import { requestLoggerFactory } from './request_logging'
@@ -59,12 +60,18 @@ export async function main(
   // Health check
   server.get('/health', async () => ({ status: 'ok' }))
 
-  // tRPC
+  // tRPC. Only StartOS and Umbrel configure hosts, and their proxies set X-Forwarded-Proto.
+  const trustForwardedProto = (appCtx.env.SENTINEL_ALLOWED_HOSTS ?? '').trim() !== ''
   await server.register(fastifyTRPCPlugin, {
     prefix: '/trpc',
     trpcOptions: {
       router: appRouter,
-      createContext: async (): Promise<TRPCContext> => ({ app: appCtx }),
+      // One procedure per request, so a sign-in can never carry another route along with it.
+      batching: { enabled: false },
+      createContext: async ({ req, res }): Promise<TRPCContext> => ({
+        app: appCtx,
+        request: readRequestAuth(req, res, trustForwardedProto),
+      }),
     } satisfies FastifyTRPCPluginOptions<AppRouter>['trpcOptions'],
   })
 

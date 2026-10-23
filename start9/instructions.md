@@ -11,9 +11,20 @@ Bitcoin Control Center is watch-only software. Never enter a wallet seed or
 private key. Import only public descriptors or extended public keys, and approve
 signatures on the hardware wallet itself.
 
+## Set your PIN
+
+Run the **Set PIN** task before the first start, and choose the 6-digit PIN
+you'll use to open Control Center. Save it in your password manager. If you
+forget it, run **Set PIN** again: it replaces the PIN, signs everyone out, and
+keeps your data.
+
+Control Center accepts your PIN only over an encrypted connection: an address that
+starts with `https://`, or its Tor `.onion` address.
+
 ## Set up your portfolio
 
-1. Open the **Web Interface** from the Bitcoin Control Center service page.
+1. Open the **Web Interface** from the Bitcoin Control Center service page and
+   enter your PIN.
 2. Open **Settings**, enter the name that should appear on generated statements,
    and save it.
 3. Open **Accounts** and select **Add Account**.

@@ -12,6 +12,7 @@ import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import type { AppContext } from '../../context'
 import { type SentinelDb, openDrizzleDatabase } from '../../db/drizzle'
 import { statements } from '../../db/schema'
+import { AuthService, DEFAULT_AUTH_POLICY } from '../auth/service'
 import { ControlCenterService } from '../control_center/service'
 import { EtfService } from '../etf/service'
 import { ExchangeService } from '../exchange/service'
@@ -343,6 +344,7 @@ function statementCaller(service: StatementService, appLogger: Logger = logger) 
     },
     logger: appLogger,
     database,
+    auth: new AuthService(database, appLogger, DEFAULT_AUTH_POLICY),
     electrumClient,
     electrumConfig,
     onchainProvider,

@@ -18,6 +18,7 @@ import type { AppContext } from '../../context'
 import { type SentinelDb, openDrizzleDatabase } from '../../db/drizzle'
 import { accounts, challenges, keystores, signedMessages } from '../../db/schema'
 import type { Env } from '../../env'
+import { AuthService, DEFAULT_AUTH_POLICY } from '../auth/service'
 import { ControlCenterService } from '../control_center/service'
 import { EtfService } from '../etf/service'
 import { ExchangeService } from '../exchange/service'
@@ -147,6 +148,7 @@ export async function setupAppCaller(): Promise<AppCallerHarness> {
     env,
     logger,
     database,
+    auth: new AuthService(database, logger, DEFAULT_AUTH_POLICY),
     electrumClient,
     electrumConfig,
     onchainProvider,
