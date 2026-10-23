@@ -133,4 +133,20 @@ describe('PIN sign-in over HTTP', () => {
     expect((await mutate(base, 'auth.touch', undefined, { cookie, 'x-forwarded-proto': 'https' })).status).toBe(200)
     expect((await mutate(base, 'auth.touch', undefined, { cookie })).status).toBe(401)
   })
+
+  it('accepts the PIN over plain HTTP to a Tor onion address, without a Secure cookie', async () => {
+    const onion = { 'x-forwarded-host': 'exampleonionaddressexampleonionaddressexampleonionad.onion' }
+    const { base, auth } = await start('127.0.0.1,*.onion', PLATFORM_AUTH_POLICIES.startos)
+    await auth.replacePinHash(await hashPin('482915'))
+
+    const signedIn = await mutate(base, 'auth.signIn', { pin: '482915' }, onion)
+    expect(signedIn.status).toBe(200)
+    expect(signedIn.headers.get('set-cookie')).not.toMatch(/Secure/)
+    const cookie = browserCookie(signedIn)
+    expect(cookie).not.toBe('')
+    expect((await mutate(base, 'auth.touch', undefined, { cookie, ...onion })).status).toBe(200)
+
+    // Plain HTTP to any other address still can't sign in.
+    expect((await mutate(base, 'auth.signIn', { pin: '482915' })).status).toBe(403)
+  })
 })

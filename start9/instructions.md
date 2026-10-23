@@ -18,8 +18,8 @@ you'll use to open Control Center. Save it in your password manager. If you
 forget it, run **Set PIN** again: it replaces the PIN, signs everyone out, and
 keeps your data.
 
-Control Center accepts your PIN only over HTTPS, so open it at an address that
-starts with `https://`.
+Control Center accepts your PIN only over an encrypted connection: an address that
+starts with `https://`, or its Tor `.onion` address.
 
 ## Set up your portfolio
 

@@ -50,7 +50,7 @@ and on an install updated from a version without PINs.
 
 After the service starts:
 
-1. Open the exported **Web Interface** at an `https://` address and enter the PIN.
+1. Open the exported **Web Interface** at an `https://` or Tor `.onion` address and enter the PIN.
 2. Add a name under **Settings** if statements should identify their owner.
 3. Add watch-only, exchange, manual, or ETF accounts under **Accounts**.
 4. Allow self-custody accounts to finish synchronizing before evaluating
@@ -90,7 +90,8 @@ not displayed in the StartOS UI.
 
 The interface is exported through a StartOS multi-host binding. Every API route
 except sign-in and health needs a session started with the PIN, and Sentinel
-accepts the PIN only over HTTPS. Wrong PINs are delayed: five free tries, then
+accepts the PIN only over HTTPS or a Tor onion address, which Tor encrypts end to
+end. Wrong PINs are delayed: five free tries, then
 30 seconds doubling up to an hour, counted across all devices. Sessions end when
 the tab closes, after an hour without use, and whenever Sentinel restarts.
 

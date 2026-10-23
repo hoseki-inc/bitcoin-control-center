@@ -12,7 +12,7 @@ const TAB_ID_PATTERN = /^[\w-]{16,64}$/
 export interface RequestAuth {
   browserKey: string | null
   tabId: string | null
-  /** Arrived over HTTPS, directly or through the platform proxy. */
+  /** Encrypted on the way: HTTPS, directly or through the platform proxy, or a Tor onion address. */
   secure: boolean
   setBrowserKey: (browserKey: string) => void
   clearBrowserKey: () => void
@@ -44,9 +44,15 @@ export function serializeBrowserCookie(value: string, secure: boolean, clear = f
   ].join('; ')
 }
 
+/** A Tor onion address: Tor encrypts the whole way to the server, so plain HTTP to it is as private as HTTPS. */
+function isOnionHost(host: string | undefined): boolean {
+  const name = host?.toLowerCase().replace(/:\d+$/, '')
+  return name?.endsWith('.onion') === true
+}
+
 /**
- * @param trustForwardedProto Only where a platform proxy sets X-Forwarded-Proto (StartOS, Umbrel);
- * elsewhere the client could send it.
+ * @param trustForwardedProto Only where a platform proxy sets X-Forwarded-Proto and X-Forwarded-Host (StartOS,
+ * Umbrel); elsewhere the client could send them.
  */
 export function readRequestAuth(
   request: FastifyRequest,
@@ -56,12 +62,17 @@ export function readRequestAuth(
   const browserKey = readCookie(request.headers.cookie, BROWSER_COOKIE)
   const tabId = headerValue(request.headers[TAB_HEADER])
   const forwardedProto = trustForwardedProto ? headerValue(request.headers['x-forwarded-proto']) : undefined
-  const secure = request.protocol === 'https' || forwardedProto === 'https'
+  const host = trustForwardedProto
+    ? (headerValue(request.headers['x-forwarded-host']) ?? headerValue(request.headers.host))
+    : headerValue(request.headers.host)
+  const https = request.protocol === 'https' || forwardedProto === 'https'
+  // The cookie is marked Secure over HTTPS only: some browsers drop a Secure cookie sent over plain HTTP, even to
+  // an onion address.
   return {
     browserKey: browserKey !== null && BROWSER_KEY_PATTERN.test(browserKey) ? browserKey : null,
     tabId: tabId !== undefined && TAB_ID_PATTERN.test(tabId) ? tabId : null,
-    secure,
-    setBrowserKey: (value) => void reply.header('set-cookie', serializeBrowserCookie(value, secure)),
-    clearBrowserKey: () => void reply.header('set-cookie', serializeBrowserCookie('', secure, true)),
+    secure: https || isOnionHost(host),
+    setBrowserKey: (value) => void reply.header('set-cookie', serializeBrowserCookie(value, https)),
+    clearBrowserKey: () => void reply.header('set-cookie', serializeBrowserCookie('', https, true)),
   }
 }
