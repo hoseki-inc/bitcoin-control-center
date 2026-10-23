@@ -1,4 +1,5 @@
 import { expect, test } from 'vitest'
+import { bip32, bitcoin } from './lib'
 import { Network } from './network'
 import { Xpub } from './xpub'
 
@@ -40,6 +41,18 @@ test('fromString - rejects SLIP-132 extended public keys', () => {
     if (result.isErr()) {
       expect(result.unwrapErr().message).toContain('only accepts core xpub/tpub strings')
     }
+  }
+})
+
+test('fromString - rejects extended private keys', () => {
+  // BIP32 test vector 1 seed: a published vector, not a real wallet.
+  const seed = Buffer.from('000102030405060708090a0b0c0d0e0f', 'hex')
+  for (const network of [bitcoin.networks.bitcoin, bitcoin.networks.testnet]) {
+    const node = bip32.fromSeed(seed, network)
+    const result = Xpub.fromString(node.toBase58())
+    expect(result.isErr()).toBe(true)
+    expect(result.unwrapErr().message).toContain('extended private key')
+    expect(Xpub.fromString(node.neutered().toBase58()).isOk()).toBe(true)
   }
 })
 
