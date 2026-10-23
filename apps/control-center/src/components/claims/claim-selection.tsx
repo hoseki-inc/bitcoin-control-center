@@ -17,7 +17,7 @@ import {
 import type { BalanceWithStatus } from '@hoseki/packages/lib/balance'
 import type { ClaimId } from '@hoseki/packages/schemas'
 import { ErrorInline, Spinner } from '@hoseki/packages/ui/design-system'
-import { LoadingTextSkeleton } from '@hoseki/packages/ui/prove-verify-ui/claims/loading-text-skeleton'
+import { TextSkeleton } from '@hoseki/packages/ui/design-system'
 import { formatUsd } from '@hoseki/packages/ui/utils'
 import Decimal from 'decimal.js'
 import { PlusIcon } from 'lucide-react'
@@ -202,7 +202,7 @@ export function ClaimSelection({
 
 function renderBalance(balance: BalanceWithStatus) {
   if (balance.status === 'loading') {
-    return <LoadingTextSkeleton width="8em" />
+    return <TextSkeleton width="8em" />
   }
   if (balance.status === 'fail') {
     return 'n/a'
@@ -213,7 +213,7 @@ function renderBalance(balance: BalanceWithStatus) {
 /** The total of the amounts shown in the rows, once every selected row has one. */
 function renderTotalUsd(balances: BalanceWithStatus[]) {
   if (balances.some((balance) => balance.status === 'loading')) {
-    return <LoadingTextSkeleton width="5em" />
+    return <TextSkeleton width="5em" />
   }
   let total = new Decimal(0)
   for (const balance of balances) {
@@ -237,7 +237,7 @@ function renderUsdAmount(balance: BalanceWithStatus) {
   if (balance.status === 'loading') {
     return (
       <Text textStyle="text/sm" fontWeight="medium">
-        <LoadingTextSkeleton width="5em" />
+        <TextSkeleton width="5em" />
       </Text>
     )
   }

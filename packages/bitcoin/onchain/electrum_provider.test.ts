@@ -1,4 +1,4 @@
-import { Err, Ok } from '@hoseki/packages/result'
+import { Err, Ok, type Result } from '@hoseki/packages/result'
 import pino from 'pino'
 import { describe, expect, it, vi } from 'vitest'
 import { ElectrumClient } from '../../clients/electrum'
@@ -9,7 +9,7 @@ import type { Address } from '../address'
 import { bitcoin } from '../lib'
 import { Network } from '../network'
 import { addressToScripthash } from '../scripthash'
-import { ElectrumProvider } from './electrum_provider'
+import { ElectrumProvider, mapWithLimit } from './electrum_provider'
 import type { TransactionEntry } from './types'
 
 type RawTransaction = { txid: string; hex: string }
@@ -104,6 +104,44 @@ describe('addressToScripthash', () => {
 })
 
 // ─── ElectrumProvider.getBlocksTip ────────────────────────────────────────────
+
+describe('mapWithLimit', () => {
+  it('keeps the limit busy, so one slow request does not hold back the rest, and keeps results in order', async () => {
+    let releaseSlow!: () => void
+    const slow = new Promise<void>((resolve) => {
+      releaseSlow = resolve
+    })
+    let running = 0
+    let mostRunning = 0
+    const started: number[] = []
+    const mapping = mapWithLimit([...Array(25).keys()], 10, async (item): Promise<Result<number, Error>> => {
+      started.push(item)
+      running += 1
+      mostRunning = Math.max(mostRunning, running)
+      await (item === 0 ? slow : Promise.resolve())
+      running -= 1
+      return Ok(item * 2)
+    })
+
+    await vi.waitFor(() => {
+      expect(started).toHaveLength(25)
+    })
+    releaseSlow()
+    expect((await mapping).unwrap()).toEqual([...Array(25).keys()].map((item) => item * 2))
+    expect(mostRunning).toBe(10)
+  })
+
+  it('starts nothing new after a failure and returns that failure', async () => {
+    const started: number[] = []
+    const result = await mapWithLimit([...Array(50).keys()], 5, async (item): Promise<Result<number, Error>> => {
+      started.push(item)
+      await Promise.resolve()
+      return item === 2 ? Err(new Error('Electrum unreachable')) : Ok(item)
+    })
+    expect(result.unwrapErr().message).toBe('Electrum unreachable')
+    expect(started.length).toBeLessThan(10)
+  })
+})
 
 describe('ElectrumProvider', () => {
   describe('getBlocksTip', () => {

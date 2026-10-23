@@ -10,6 +10,7 @@ import { menuTheme } from './menu'
 import { modalTheme } from './modal'
 import { pinInputTheme } from './pin-input-theme'
 import { progressTheme } from './progress-theme'
+import { skeletonTheme } from './skeleton-theme'
 import { tableTheme } from './table'
 import { textareaTheme } from './textarea-theme'
 import { tooltipTheme } from './tooltip'
@@ -87,6 +88,7 @@ export const theme = extendBaseTheme({
         },
       },
     },
+    Skeleton: skeletonTheme,
     Table: tableTheme,
     Textarea: textareaTheme,
     Tooltip: tooltipTheme,

@@ -2,12 +2,12 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { type Socket, createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { parseUnknown } from '@hoseki/packages/result'
+import { Err, Ok, parseUnknown } from '@hoseki/packages/result'
 import { eq, like, or, sql } from 'drizzle-orm'
 import pino from 'pino'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { z } from 'zod'
-import { type AppContext, type AppContextOptions, createAppContext } from './context'
+import { type AppContext, type AppContextOptions, createAppContext, withSimulatedLatency } from './context'
 import { desktopConnectionProfiles, settings as settingsTable, statements as statementsTable } from './db/schema'
 import * as environment from './env'
 import type { Env } from './env'
@@ -411,6 +411,78 @@ describe('Electrum connection lifecycle', () => {
       })
     },
   )
+})
+
+describe('simulated Electrum latency for development', () => {
+  const config = { host: '127.0.0.1', port: 50001, protocol: 'tcp' as const }
+  const latency = { requestMs: 800, jitterMs: 0, connectMs: 5_000, failureRate: 0 }
+
+  it('leaves the connection unchanged unless development asks for it', () => {
+    expect(withSimulatedLatency(config, undefined)).toBe(config)
+  })
+
+  it('waits before each connection and request, after the connection prerequisite', async () => {
+    vi.useFakeTimers()
+    onTestFinished(() => {
+      vi.useRealTimers()
+    })
+    const order: string[] = []
+    const slowed = withSimulatedLatency(
+      {
+        ...config,
+        beforeConnect: async () => {
+          order.push('prerequisite')
+          return Ok(undefined)
+        },
+      },
+      latency,
+    )
+
+    const connecting = slowed.beforeConnect?.().then((result) => {
+      order.push('connect')
+      return result
+    })
+    await vi.advanceTimersByTimeAsync(4_999)
+    expect(order).toEqual(['prerequisite'])
+    await vi.advanceTimersByTimeAsync(1)
+    expect((await connecting)?.isOk()).toBe(true)
+    expect(order).toEqual(['prerequisite', 'connect'])
+
+    let requested = false
+    const request = slowed.beforeRequest?.('blockchain.headers.subscribe').then((result) => {
+      requested = true
+      return result
+    })
+    await vi.advanceTimersByTimeAsync(799)
+    expect(requested).toBe(false)
+    await vi.advanceTimersByTimeAsync(1)
+    expect((await request)?.isOk()).toBe(true)
+  })
+
+  it('keeps a failed prerequisite and fails requests as timeouts at the configured rate', async () => {
+    const failing = withSimulatedLatency(
+      { ...config, beforeConnect: async () => Err(new Error('Tor is unavailable')) },
+      { requestMs: 0, jitterMs: 0, connectMs: 0, failureRate: 1 },
+    )
+    expect((await failing.beforeConnect?.())?.unwrapErr().message).toBe('Tor is unavailable')
+    const request = await failing.beforeRequest?.('blockchain.headers.subscribe')
+    expect(request?.unwrapErr().name).toBe('ElectrumTimeoutError')
+  })
+
+  it('slows the Electrum connection that the portfolio uses', async () => {
+    await withTestSetup(async () => {
+      const ctx = (
+        await createAppContext(logger, {
+          waitForElectrum: false,
+          electrumLatency: { requestMs: 0, jitterMs: 0, connectMs: 0, failureRate: 1 },
+        })
+      ).unwrap()
+      contexts.add(ctx)
+      const tip = await ctx.onchainProvider.getBlocksTip()
+      expect(tip.unwrapErr().message).toContain('Simulated timeout')
+      expect(initialFixture().methods).toEqual([])
+    })
+  })
 })
 
 describe('statements interrupted by a restart', () => {

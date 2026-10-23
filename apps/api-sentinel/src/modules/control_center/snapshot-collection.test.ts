@@ -22,6 +22,7 @@ import { EtfService } from '../etf/service'
 import { ExchangeService } from '../exchange/service'
 import { ManualService } from '../manual/service'
 import { PriceService } from '../price/service'
+import { WalletBalanceService } from '../wallet_balances/service'
 import { ControlCenterService } from './service'
 
 const sources = ['on-chain', 'exchange', 'manual', 'ETF'] as const
@@ -92,6 +93,7 @@ async function setupCollection() {
       mempoolApiUrl: 'https://example.invalid',
       settings: () => ({ source: undefined, fallbacks: false }),
     }),
+    walletBalances: new WalletBalanceService({ db, logger, onchainProvider }),
   })
   const warn = vi.spyOn(service['logger'], 'warn')
   const info = vi.spyOn(service['logger'], 'info')
@@ -132,7 +134,7 @@ it.each(sources)('continues other sources when %s account discovery fails', asyn
   const { service, exchangeService, manualService, etfService, rows, warn } = await setupCollection()
   const failure = new Error('Synthetic discovery failure')
   if (source === 'on-chain') {
-    service['getAccountRows'] = vi.fn(service['getAccountRows']).mockRejectedValueOnce(failure)
+    vi.spyOn(service['walletBalances'], 'refreshAll').mockRejectedValueOnce(failure)
   } else if (source === 'exchange') {
     vi.spyOn(exchangeService, 'listAccounts').mockRejectedValueOnce(failure)
   } else if (source === 'manual') {
@@ -153,9 +155,9 @@ it.each(['returned', 'thrown'] as const)(
   async (failure) => {
     const { service, balances, rows } = await setupCollection()
     if (failure === 'returned') {
-      balances.mockImplementationOnce(asyncFn(async () => Err(new Error('Synthetic provider failure'))))
+      balances.mockImplementation(asyncFn(async () => Err(new Error('Synthetic provider failure'))))
     } else {
-      balances.mockImplementationOnce(
+      balances.mockImplementation(
         asyncFn(async () => {
           throw new Error('Synthetic provider failure')
         }),
@@ -167,6 +169,34 @@ it.each(['returned', 'thrown'] as const)(
     for (const source of sources.slice(1)) {
       await expect(rows(source)).resolves.toHaveLength(3)
     }
+  },
+)
+
+it.each(['returned', 'thrown'] as const)(
+  'records the other wallets when one wallet’s balance scan fails (%s)',
+  async (failure) => {
+    const { service, balances, rows, warn } = await setupCollection()
+    const original = balances.getMockImplementation()
+    assert(original)
+    balances.mockImplementation(
+      asyncFn(async (requested) => {
+        if ([...requested].some((account) => account.toString() === wallets[1]?.toString())) {
+          if (failure === 'thrown') {
+            throw new Error('synthetic-sensitive-provider-response')
+          }
+          return Err(new Error('synthetic-sensitive-provider-response'))
+        }
+        return original(requested)
+      }),
+    )
+
+    expect((await service.recordAllSnapshots()).isOk()).toBe(true)
+    expect((await rows('on-chain')).map((row) => row.accountId)).toEqual(['on-chain-1', 'on-chain-3'])
+    expect(warn).toHaveBeenCalledWith(
+      { source: 'on-chain', accountId: 'on-chain-2' },
+      'Failed to collect balance snapshot',
+    )
+    expect(JSON.stringify(warn.mock.calls)).not.toContain('synthetic-sensitive-provider-response')
   },
 )
 

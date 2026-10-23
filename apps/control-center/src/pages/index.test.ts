@@ -4,6 +4,7 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter } from 'react-router'
 import { describe, expect, it, vi } from 'vitest'
+import type { WalletBalanceRow } from '../lib/wallet-balances'
 import { statementFixture } from '../testing/statements'
 import type { StatementDto } from '../trpc/server-types'
 import { type HomeDataSource, HomePage, type HomeViews } from './index'
@@ -33,6 +34,7 @@ interface HomeState {
   statementsLoading: boolean
   statementsError: boolean
   btcPrice: string
+  walletRows: WalletBalanceRow[]
 }
 
 /** A query as React Query reports it: no data while loading for the first time. */
@@ -82,6 +84,7 @@ function fakeDataSource(state: HomeState): HomeDataSource {
     useExchanges: accounts('exchange'),
     useManual: accounts('manual'),
     useEtfs: accounts('etf'),
+    useWalletBalances: () => ({ rows: state.walletRows, isError: false }),
   }
 }
 
@@ -105,6 +108,7 @@ function renderHome(overrides: Partial<HomeState> = {}): string {
     statementsLoading: false,
     statementsError: false,
     btcPrice: '50000',
+    walletRows: [],
     ...overrides,
   }
   return renderToStaticMarkup(
@@ -204,6 +208,34 @@ describe('Home overview states', () => {
     expect(renderText({ accounts, history: zeroBalanceHistory })).toContain('1 tracked')
   })
 
+  it('says when wallet balances are updating, and when they were last synced if a wallet is unreachable', () => {
+    const accounts: HomeState['accounts'] = { claims: [], exchange: [], manual: [], etf: [] }
+    accounts.claims = [{ id: 'wallet', status: 'verified', balance: '0' }]
+    const row: WalletBalanceRow = {
+      accountId: 'wallet',
+      balanceSats: '0',
+      asOf: '2020-01-01T00:00:00.000Z',
+      syncing: true,
+      failed: false,
+      failure: null,
+    }
+    expect(renderText({ accounts, history: zeroBalanceHistory, walletRows: [row] })).toContain('Updating balances')
+    expect(
+      renderText({ accounts, history: zeroBalanceHistory, walletRows: [{ ...row, syncing: false, failed: true }] }),
+    ).toContain('Last synced')
+    // A quiet refresh of a recent balance needs no word, and neither do settled balances.
+    expect(
+      renderText({
+        accounts,
+        history: zeroBalanceHistory,
+        walletRows: [{ ...row, asOf: new Date().toISOString() }],
+      }),
+    ).not.toMatch(/Synced|Updating balances/)
+    expect(
+      renderText({ accounts, history: zeroBalanceHistory, walletRows: [{ ...row, syncing: false }] }),
+    ).not.toContain('Synced')
+  })
+
   it('shows a fall in the same minus sign for Bitcoin and dollars', () => {
     const text = renderText({ history: [{ timestamp: '2026-09-01T00:00:00.000Z', totalBalance: '50000000' }] })
     expect(text).toContain('−0.50000000 BTC')
@@ -238,8 +270,10 @@ describe('Home overview states', () => {
         accountStates: { claims: { isError: true, keepData: true } },
       }),
     ).toContain('— tracked')
+    // While the lists load, the overview is a placeholder with no count at all.
+    expect(renderText({ accountsLoading: true })).toContain('Loading your holdings')
+    expect(renderText({ accountsLoading: true })).not.toContain('tracked')
     // The count comes from the account lists alone, so a failed overview refresh keeps it.
-    expect(renderText({ accountsLoading: true })).toContain('— tracked')
     expect(renderText({ accounts, history: zeroBalanceHistory, portfolioError: true })).not.toContain('— tracked')
   })
 

@@ -11,6 +11,7 @@ import { EtfService } from '../etf/service'
 import { ExchangeService } from '../exchange/service'
 import { ManualService } from '../manual/service'
 import { PriceService } from '../price/service'
+import { WalletBalanceService } from '../wallet_balances/service'
 import { ControlCenterService } from './service'
 
 type DatabaseFixture = Awaited<ReturnType<typeof setupServiceDatabase>>
@@ -94,6 +95,7 @@ async function createPortfolioService({ db, logger }: DatabaseFixture): Promise<
     priceService,
     manualService: new ManualService({ db, logger }),
     etfService: new EtfService({ db, logger }),
+    walletBalances: new WalletBalanceService({ db, logger, onchainProvider }),
   })
 }
 

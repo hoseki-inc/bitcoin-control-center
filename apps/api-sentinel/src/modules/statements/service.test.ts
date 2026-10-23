@@ -20,6 +20,7 @@ import { DailyRatesService } from '../price/daily_rates'
 import { PriceHistoryService } from '../price/history'
 import { PriceService } from '../price/service'
 import { appRouter } from '../trpc/router'
+import { WalletBalanceService } from '../wallet_balances/service'
 import type { AggregatedTransaction } from './mapper'
 import { StatementMapper } from './mapper'
 import { PriceLoadError, getRequiredRateDates, getStatementPeriods } from './rate_dates'
@@ -328,6 +329,7 @@ function statementCaller(service: StatementService, appLogger: Logger = logger) 
     mempoolApiUrl: 'https://example.invalid',
     settings: () => ({ source: undefined, fallbacks: false }),
   })
+  const walletBalanceService = new WalletBalanceService({ ...deps, onchainProvider })
   const app: AppContext = {
     env: {
       HOST: 'localhost',
@@ -362,7 +364,9 @@ function statementCaller(service: StatementService, appLogger: Logger = logger) 
       manualService,
       etfService,
       priceService,
+      walletBalances: walletBalanceService,
     }),
+    walletBalanceService,
     statementService: service,
     reconnectElectrum: async () => Ok(undefined),
     stopElectrum: () => {

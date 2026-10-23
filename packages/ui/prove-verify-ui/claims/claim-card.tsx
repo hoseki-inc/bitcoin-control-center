@@ -3,12 +3,12 @@ import type { BalanceWithStatus } from '@hoseki/packages/lib/balance'
 import type { ClaimStatus } from '@hoseki/packages/schemas/prove'
 import type { SupportedHardwareWallet } from '@hoseki/packages/wallet'
 import { getSupportedHardwareWalletLogoPath } from '@hoseki/packages/wallet'
+import { TextSkeleton } from '../../design-system/loading/loading'
 import { CheckCircleFilledIcon, StatusBadge, getBadgeConfigForClaim } from '../../prove-verify-ui'
 import { AlertTriangleFilledIcon } from '../../prove-verify-ui/icons'
 import { formatSatsToBtc, formatUsd } from '../../utils'
 import { KeystoreAvatar, type KeystoreAvatarProps } from './keystore-avatar'
 import { keyIcon } from './keystores-status-indicator'
-import { LoadingTextSkeleton } from './loading-text-skeleton'
 
 export interface ClaimCardKeystore {
   id: string
@@ -99,7 +99,7 @@ ClaimCard.displayName = 'ClaimCard'
 
 function renderBalance(balance: BalanceWithStatus): React.ReactNode {
   if (balance.status === 'loading') {
-    return <LoadingTextSkeleton width="8em" />
+    return <TextSkeleton width="8em" />
   }
   if (balance.status === 'fail') {
     return 'n/a'
@@ -109,7 +109,7 @@ function renderBalance(balance: BalanceWithStatus): React.ReactNode {
 
 function renderUsdAmount(balance: BalanceWithStatus): React.ReactNode {
   if (balance.status === 'loading') {
-    return <LoadingTextSkeleton width="5em" />
+    return <TextSkeleton width="5em" />
   }
   if (balance.status === 'fail' || balance.value.usd === null) {
     return null

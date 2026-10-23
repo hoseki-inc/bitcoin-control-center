@@ -22,7 +22,7 @@ import {
   ModalHeader,
   ModalOverlay,
   Select,
-  Spinner,
+  Skeleton,
   Stack,
   Switch,
   type SystemStyleObject,
@@ -33,6 +33,7 @@ import {
   useToken,
 } from '@chakra-ui/react'
 import { parseUnknown } from '@hoseki/packages/result/lib/parse'
+import { SkeletonRegion } from '@hoseki/packages/ui/design-system/loading/loading'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { TRPCClientError } from '@trpc/client'
 import { Check, CircleAlertIcon, CircleCheckIcon, Pencil, Plus, Trash2, X } from 'lucide-react'
@@ -564,7 +565,15 @@ export function ElectrumSettings(): JSX.Element {
             </Button>
           </Alert>
         ) : (
-          <Spinner aria-label="Loading saved connections" />
+          // The connection form's outline, so the section keeps roughly its size while it loads.
+          <SkeletonRegion label="Loading saved connections">
+            <Stack gap={4} pt={2}>
+              {['40px', '40px', '40px', '24px'].map((height, index) => (
+                <Skeleton key={index} h={height} />
+              ))}
+              <Skeleton h="40px" w="160px" />
+            </Stack>
+          </SkeletonRegion>
         )}
       </Stack>
     )

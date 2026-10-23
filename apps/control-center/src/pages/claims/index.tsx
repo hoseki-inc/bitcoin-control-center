@@ -10,58 +10,55 @@ import {
   Grid,
   HStack,
   Icon,
+  Skeleton,
   Stack,
   Text,
   useDisclosure,
 } from '@chakra-ui/react'
 import { getRecordValue } from '@hoseki/packages/lib'
-import { EmptyView, ErrorBanner, Spinner } from '@hoseki/packages/ui/design-system'
+import {
+  EmptyView,
+  ErrorBanner,
+  SkeletonRegion,
+  TextSkeleton,
+  useRevealAfterLoading,
+} from '@hoseki/packages/ui/design-system'
 import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
 import { ClaimCardKeystores, StatusBadge, getBadgeConfigForClaim } from '@hoseki/packages/ui/prove-verify-ui'
 import { formatUsd } from '@hoseki/packages/ui/utils/format'
 import { Decimal } from 'decimal.js'
 import { useEffect } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router'
-import { toast } from 'sonner'
 import { BitcoinAmount } from '../../components/bitcoin-amount'
 import { DeleteClaimModal } from '../../components/claims/claim-details/delete-claim-modal'
-import { useAutoRefreshExchanges } from '../../hooks/use-auto-refresh-exchanges'
-import { useGetBalancesPerClaimIds } from '../../lib/balances'
+import { UnavailableAlert } from '../../components/unavailable-alert'
+import { SyncIndicator } from '../../components/wallet-balances/sync-indicator'
 import { formatBitcoinNumber, isUsableBtcPrice } from '../../lib/bitcoin-display'
-import { type RouterOutput, trpc } from '../../trpc'
+import { summarizeWalletBalances } from '../../lib/wallet-balances'
 import type { ClaimDto } from '../../trpc/server-types'
 import { ensureClaimStatusNotExpired, mapClaimToClaimCardProps } from '../../utils/claim-utils'
 import { isExchangeConnected, needsExchangeReconnect } from '../../utils/exchange-connection-status'
+import {
+  type AccountsDataSource,
+  type EtfAccountDto,
+  type ExchangeAccountDto,
+  type ManualAccountDto,
+  accountsDataSource,
+} from './accounts-data'
 
-type ExchangeAccountDto = RouterOutput['portalProve']['exchange']['list'][number]
-type ManualAccountDto = RouterOutput['portalProve']['manual']['list'][number]
-type EtfAccountDto = RouterOutput['portalProve']['etf']['list'][number]
-
-export function ClaimsPage(): JSX.Element {
-  useAutoRefreshExchanges()
+export function ClaimsPage({ dataSource = accountsDataSource }: { dataSource?: AccountsDataSource }): JSX.Element {
+  dataSource.useAutoRefresh()
   const navigate = useNavigate()
   const location = useLocation()
-  const claimsQuery = trpc.portalProve.registry.claims.list.useQuery({ excludePending: false })
-  const exchangeAccountsQuery = trpc.portalProve.exchange.list.useQuery()
-  const manualAccountsQuery = trpc.portalProve.manual.list.useQuery()
-  const etfAccountsQuery = trpc.portalProve.etf.list.useQuery()
-  const btcPriceQuery = trpc.portalProve.retrieveBitcoinPrice.useQuery()
-
-  const archivedClaimsQuery = trpc.portalProve.registry.claims.listArchived.useQuery()
-  const trpcUtils = trpc.useUtils()
-  const restoreMutation = trpc.portalProve.registry.claims.restore.useMutation({
-    onSuccess: async () => {
-      await Promise.all([
-        trpcUtils.portalProve.registry.claims.list.invalidate(),
-        trpcUtils.portalProve.registry.claims.listArchived.invalidate(),
-        trpcUtils.portalProve.controlCenter.getData.invalidate(),
-      ])
-      toast.success('Account restored')
-    },
-    onError: () => {
-      toast.error('Failed to restore account')
-    },
-  })
+  const {
+    claimsQuery,
+    exchangeAccountsQuery,
+    manualAccountsQuery,
+    etfAccountsQuery,
+    archivedClaimsQuery,
+    btcPriceQuery,
+  } = dataSource.useLists()
+  const { restore, restoringId } = dataSource.useRestore()
 
   const claims = claimsQuery.data ?? []
   const exchangeAccounts = exchangeAccountsQuery.data ?? []
@@ -69,7 +66,14 @@ export function ClaimsPage(): JSX.Element {
   const manualAccounts = manualAccountsQuery.data ?? []
   const etfAccounts = etfAccountsQuery.data ?? []
   const claimIds = claims.map((c) => c.id)
-  const balancesQuery = useGetBalancesPerClaimIds({ claimIds, enabled: claimIds.length > 0 })
+  const walletBalances = dataSource.useWalletBalances(claimIds, { enabled: claimIds.length > 0 })
+  const accountLists = [claimsQuery, exchangeAccountsQuery, manualAccountsQuery, etfAccountsQuery]
+  // Every list decides whether the page is empty, so wait for all of them rather than flash the empty state.
+  const listsLoading = accountLists.some((query) => query.isLoading)
+  // A list that failed to load can't show that there are no accounts, or what they add up to.
+  const failedLists = accountLists.filter((query) => query.isError)
+  const listsFailed = failedLists.length > 0
+  const reveal = useRevealAfterLoading(listsLoading)
 
   useEffect(() => {
     if (location.hash !== '#archived') {
@@ -81,24 +85,10 @@ export function ClaimsPage(): JSX.Element {
     const target = toggle ?? section
     target?.scrollIntoView({ block: 'center' })
     target?.focus()
-  }, [archivedClaimsQuery.data?.length, claimsQuery.isLoading, location.hash])
+  }, [archivedClaimsQuery.data?.length, listsLoading, location.hash])
 
-  if (claimsQuery.isLoading) {
-    return <Spinner fullPage size="xl" />
-  }
-
-  if (claimsQuery.isError) {
-    return (
-      <Stack py={8} gap={8}>
-        <ErrorBanner
-          message={
-            claimsQuery.error.message
-              ? `Error fetching your holdings: ${claimsQuery.error.message}`
-              : 'An error occurred when fetching your holdings'
-          }
-        />
-      </Stack>
-    )
+  if (listsLoading) {
+    return <AccountsPageSkeleton />
   }
 
   const hasClaims =
@@ -107,81 +97,25 @@ export function ClaimsPage(): JSX.Element {
     claims.filter((c) => ensureClaimStatusNotExpired(c) === 'verified').length + connectedExchangeAccounts.length
   const pendingCount = claims.length - (verifiedCount - connectedExchangeAccounts.length)
 
-  const claimTotalBtcSats = Array.from(balancesQuery.data.values()).reduce((sum, b) => {
-    if (!b) {
-      return sum
-    }
-    return sum + Number(b.current)
-  }, 0)
-
-  const exchangeTotalBtcSats = exchangeAccounts.reduce((sum, a) => {
-    if (a.balance == null || a.balance === '') {
-      return sum
-    }
-    return sum + Number(a.balance)
-  }, 0)
-
-  const manualTotalBtcSats = manualAccounts.reduce((sum, a) => {
-    if (!a.balance) {
-      return sum
-    }
-    return sum + Number(a.balance)
-  }, 0)
-
-  const etfTotalBtcSats = etfAccounts.reduce((sum, a) => {
-    if (!a.balance) {
-      return sum
-    }
-    return sum + Number(a.balance)
-  }, 0)
-
-  const totalBtcSats = claimTotalBtcSats + exchangeTotalBtcSats + manualTotalBtcSats + etfTotalBtcSats
-  const totalBtc = new Decimal(totalBtcSats).div(100_000_000)
+  const wallets = summarizeWalletBalances(claimIds, walletBalances.rows)
+  const otherAccountsSats = [...exchangeAccounts, ...manualAccounts, ...etfAccounts].reduce(
+    (sum, account) => (account.balance == null || account.balance === '' ? sum : sum + Number(account.balance)),
+    0,
+  )
+  // A wallet or exchange balance still loading leaves the total unknown; counting it as zero would
+  // show a false total and shares.
+  const exchangePending = exchangeAccounts.some((account) => isExchangeConnected(account) && account.balance == null)
+  const totalBtcSats = wallets.totalSats === null || exchangePending ? null : wallets.totalSats + otherAccountsSats
 
   const quotedBtcPrice = btcPriceQuery.data?.value ? Number(btcPriceQuery.data.value) : null
   const btcUsdPrice = isUsableBtcPrice(quotedBtcPrice) ? quotedBtcPrice : null
-
-  const claimsTotalUsd = Array.from(balancesQuery.data.values()).reduce((sum, b) => {
-    if (!b?.usd) {
-      return sum
-    }
-    return sum + Number(b.usd)
-  }, 0)
-
-  const exchangeTotalUsd =
-    btcUsdPrice !== null
-      ? exchangeAccounts.reduce((sum, a) => {
-          if (a.balance == null || a.balance === '') {
-            return sum
-          }
-          return sum + (Number(a.balance) / 100_000_000) * btcUsdPrice
-        }, 0)
-      : 0
-
-  const manualTotalUsd =
-    btcUsdPrice !== null
-      ? manualAccounts.reduce((sum, a) => {
-          if (!a.balance) {
-            return sum
-          }
-          return sum + (Number(a.balance) / 100_000_000) * btcUsdPrice
-        }, 0)
-      : 0
-
-  const etfTotalUsd =
-    btcUsdPrice !== null
-      ? etfAccounts.reduce((sum, a) => {
-          if (!a.balance) {
-            return sum
-          }
-          return sum + (Number(a.balance) / 100_000_000) * btcUsdPrice
-        }, 0)
-      : 0
-
-  const totalUsd = claimsTotalUsd + exchangeTotalUsd + manualTotalUsd + etfTotalUsd
+  // Hold a dollar line's place while the price loads; without a price there is no line.
+  const usdLoading = btcPriceQuery.isLoading
+  const toUsd = (sats: number): number | null => (btcUsdPrice === null ? null : (sats / 100_000_000) * btcUsdPrice)
+  const totalUsd = totalBtcSats === null ? null : toUsd(totalBtcSats)
 
   return (
-    <>
+    <Box sx={reveal}>
       <Stack py={8} gap={0}>
         {/* Header */}
         <Flex align="flex-start" justify="space-between" gap={4} pb={6}>
@@ -190,7 +124,7 @@ export function ClaimsPage(): JSX.Element {
               title="Accounts"
               description={hasClaims ? undefined : 'All your Bitcoin accounts in one place.'}
             />
-            {hasClaims && (
+            {hasClaims && !listsFailed && (
               <Flex align="center" gap={3} mt={2} flexWrap="wrap">
                 <Text
                   textStyle="text/sm"
@@ -198,14 +132,18 @@ export function ClaimsPage(): JSX.Element {
                   color="neutral.900"
                   sx={{ fontVariantNumeric: 'tabular-nums' }}
                 >
-                  <BitcoinAmount btc={totalBtc} />
+                  {totalBtcSats === null ? (
+                    <TextSkeleton width="13ch" />
+                  ) : (
+                    <BitcoinAmount btc={new Decimal(totalBtcSats).div(100_000_000)} />
+                  )}
                 </Text>
                 {/* Without a price there's nothing to add up, so leave the total out rather than show $0.00. */}
-                {btcUsdPrice !== null && (
+                {(usdLoading || btcUsdPrice !== null) && (
                   <>
                     <Text color="neutral.200">·</Text>
                     <Text textStyle="text/sm" color="success.600" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                      {formatUsd(totalUsd)}
+                      {totalUsd === null ? <TextSkeleton width="9ch" /> : formatUsd(totalUsd)}
                     </Text>
                   </>
                 )}
@@ -225,6 +163,12 @@ export function ClaimsPage(): JSX.Element {
                     {pendingCount} Pending
                   </Text>
                 )}
+                {claimIds.length > 0 && (
+                  // Announces when wallet balances start or stop updating.
+                  <Box as="output">
+                    <SyncIndicator walletBalanceState={wallets.state} walletBalancesAsOf={wallets.asOf} />
+                  </Box>
+                )}
               </Flex>
             )}
           </Box>
@@ -236,24 +180,47 @@ export function ClaimsPage(): JSX.Element {
           )}
         </Flex>
 
+        {listsFailed && (
+          <UnavailableAlert
+            mb={6}
+            title={hasClaims ? "Some accounts couldn't be loaded" : "Your accounts couldn't be loaded"}
+            description={
+              hasClaims
+                ? 'The list below may be incomplete, so totals are hidden. Try again to load the rest.'
+                : 'Your accounts are still saved. Try again to load them.'
+            }
+            onRetry={() => {
+              for (const query of failedLists) {
+                void query.refetch()
+              }
+            }}
+          />
+        )}
+
         {/* Account cards */}
         {hasClaims ? (
-          <Grid templateColumns={{ base: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(3, 1fr)' }} gap={4}>
-            {claims.map((claim) => (
-              <AccountCard
-                key={claim.id}
-                claim={claim}
-                balance={balancesQuery.data.get(claim.id) ?? null}
-                totalBtcSats={totalBtcSats}
-                isLoadingBalance={balancesQuery.isLoading}
-              />
-            ))}
+          <Grid templateColumns={ACCOUNT_GRID_COLUMNS} gap={4}>
+            {claims.map((claim) => {
+              const sats = wallets.balances.get(claim.id) ?? null
+              return (
+                <AccountCard
+                  key={claim.id}
+                  claim={claim}
+                  balance={sats === null ? null : { current: new Decimal(sats), usd: toUsd(sats) }}
+                  totalBtcSats={totalBtcSats}
+                  isLoadingBalance={sats === null}
+                  usdLoading={usdLoading}
+                  hasPrice={btcUsdPrice !== null}
+                />
+              )
+            })}
             {exchangeAccounts.map((account) => (
               <ExchangeAccountCard
                 key={account.id}
                 account={account}
                 totalBtcSats={totalBtcSats}
                 btcUsdPrice={btcUsdPrice}
+                usdLoading={usdLoading}
               />
             ))}
             {manualAccounts.map((account) => (
@@ -262,6 +229,7 @@ export function ClaimsPage(): JSX.Element {
                 account={account}
                 totalBtcSats={totalBtcSats}
                 btcUsdPrice={btcUsdPrice}
+                usdLoading={usdLoading}
               />
             ))}
             {etfAccounts.map((account) => (
@@ -270,6 +238,7 @@ export function ClaimsPage(): JSX.Element {
                 account={{ ...account, balance: account.balance }}
                 totalBtcSats={totalBtcSats}
                 btcUsdPrice={btcUsdPrice}
+                usdLoading={usdLoading}
                 linkPrefix="/accounts/etf"
               />
             ))}
@@ -280,22 +249,16 @@ export function ClaimsPage(): JSX.Element {
             />
           </Grid>
         ) : (
-          <EmptyHoldings />
+          !listsFailed && <EmptyHoldings />
         )}
 
-        {/* Archived accounts accordion */}
+        {/* Archived accounts accordion. It sits below the accounts, so it simply appears once loaded. */}
         <Box id="archived" mt={6} tabIndex={-1}>
-          {archivedClaimsQuery.isLoading && (
-            <Flex align="center" gap={2} color="neutral.600">
-              <Spinner size="sm" />
-              <Text as="output" textStyle="text/sm">
-                Loading archived accounts…
-              </Text>
-            </Flex>
-          )}
           {archivedClaimsQuery.isError && (
             <Stack gap={3} align="flex-start">
-              <ErrorBanner message={`Failed to load archived accounts: ${archivedClaimsQuery.error.message}`} />
+              <ErrorBanner
+                message={`Failed to load archived accounts: ${archivedClaimsQuery.error?.message ?? 'Unknown error'}`}
+              />
               <Button
                 size="sm"
                 variant="outline"
@@ -323,10 +286,10 @@ export function ClaimsPage(): JSX.Element {
                         key={archivedClaim.id}
                         claim={archivedClaim}
                         onRestore={() => {
-                          restoreMutation.mutate({ id: archivedClaim.id })
+                          restore(archivedClaim.id)
                         }}
-                        isRestoring={restoreMutation.isLoading && restoreMutation.variables?.id === archivedClaim.id}
-                        isRestoreDisabled={restoreMutation.isLoading}
+                        isRestoring={restoringId === archivedClaim.id}
+                        isRestoreDisabled={restoringId !== null}
                       />
                     ))}
                   </Stack>
@@ -336,27 +299,89 @@ export function ClaimsPage(): JSX.Element {
           )}
         </Box>
       </Stack>
-    </>
+    </Box>
+  )
+}
+
+const ACCOUNT_GRID_COLUMNS = { base: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(3, 1fr)' }
+
+/** The page's outline while the account lists load: the heading, the totals line and three cards. */
+function AccountsPageSkeleton(): JSX.Element {
+  return (
+    <SkeletonRegion label="Loading accounts">
+      <Stack py={8} gap={0}>
+        <Flex align="flex-start" justify="space-between" gap={4} pb={6}>
+          <Box minW={0}>
+            <PageHeading title="Accounts" />
+            <Text textStyle="text/sm" mt={2}>
+              <TextSkeleton width="30ch" />
+            </Text>
+          </Box>
+          <Skeleton h="40px" w="132px" flexShrink={0} />
+        </Flex>
+        <Grid templateColumns={ACCOUNT_GRID_COLUMNS} gap={4}>
+          <AccountCardSkeleton />
+          <AccountCardSkeleton />
+          <AccountCardSkeleton />
+        </Grid>
+      </Stack>
+    </SkeletonRegion>
+  )
+}
+
+/** An account card's outline: the badge row, logo, name, both balance lines and the share bar. */
+function AccountCardSkeleton(): JSX.Element {
+  return (
+    <Stack borderRadius="md" border="1px solid" borderColor="neutral.200" p={2} pb={5} gap={1} textAlign="center">
+      <HStack justify="flex-end">
+        <Skeleton h="20px" w="72px" borderRadius="full" />
+      </HStack>
+      <Flex justify="center" align="center" h="30px" my={2}>
+        <Skeleton boxSize="30px" borderRadius="full" />
+      </Flex>
+      <Text textStyle="label/md">
+        <TextSkeleton width="12ch" />
+      </Text>
+      <CardBalanceSkeleton withUsd />
+      <Flex align="center" gap={2.5} mx={4} mt={1}>
+        <Box flex={1} h="3px" bg="neutral.50" borderRadius="2px" />
+        <Text textStyle="label/sm">
+          <TextSkeleton width="4ch" />
+        </Text>
+      </Flex>
+    </Stack>
   )
 }
 
 export interface AccountCardProps {
   claim: ClaimDto
   balance: { current: unknown; usd: unknown } | null
-  totalBtcSats: number
+  /** All accounts' total, or null while a balance in it is still unknown. */
+  totalBtcSats: number | null
   isLoadingBalance: boolean
+  /** The price is still loading, so the dollar line holds its place. */
+  usdLoading?: boolean
+  /** Whether the card will show a dollar line, so a loading balance holds its place too. */
+  hasPrice?: boolean
 }
 
-export function AccountCard({ claim, balance, totalBtcSats, isLoadingBalance }: AccountCardProps): JSX.Element {
+export function AccountCard({
+  claim,
+  balance,
+  totalBtcSats,
+  isLoadingBalance,
+  usdLoading = false,
+  hasPrice = false,
+}: AccountCardProps): JSX.Element {
   const isPendingMultisig = claim.keystores.length > 1 && claim.status === 'pending'
   const to = isPendingMultisig ? `/multisig/${claim.id}` : `/accounts/${claim.id}`
   const status = ensureClaimStatusNotExpired(claim)
   const cardProps = mapClaimToClaimCardProps(claim)
   const { status: badgeStatus, label: badgeLabel } = getBadgeConfigForClaim(status)
 
-  const btcSats = balance ? Number(balance.current) : 0
+  const btcSats = balance ? Number(balance.current) : null
   const usdAmount = balance?.usd != null ? Number(balance.usd) : null
-  const pct = totalBtcSats > 0 ? ((btcSats / totalBtcSats) * 100).toFixed(1) : '0.0'
+  const pct = shareOf(btcSats, totalBtcSats)
 
   return (
     <Stack
@@ -402,33 +427,28 @@ export function AccountCard({ claim, balance, totalBtcSats, isLoadingBalance }: 
 
       {/* Balance */}
       <Stack gap={0} mx={4} mt={1}>
-        {isLoadingBalance ? (
-          <Box h="24px" w="120px" bg="neutral.50" borderRadius="4px" mx="auto" />
+        {isLoadingBalance || btcSats === null ? (
+          <CardBalanceSkeleton withUsd={usdLoading || hasPrice} />
         ) : (
-          <CardBalance sats={btcSats} usd={usdAmount} />
+          <CardBalance sats={btcSats} usd={usdAmount} usdLoading={usdLoading} />
         )}
       </Stack>
 
-      {/* Proportion bar */}
-      <Flex align="center" gap={2.5} mx={4} mt={1}>
-        <Box flex={1} h="3px" bg="neutral.50" borderRadius="2px" overflow="hidden">
-          <Box
-            h="100%"
-            w={`${Math.max(parseFloat(pct), 1.5)}%`}
-            bg="neutral.900"
-            borderRadius="2px"
-            opacity={0.2}
-            transition="width 0.4s ease"
-          />
-        </Box>
-        <CardShare pct={pct} />
-      </Flex>
+      <CardShareBar pct={pct} />
     </Stack>
   )
 }
 
 /** A card's BTC balance, with its USD value when there is a price. */
-function CardBalance({ sats, usd }: { sats: number; usd: number | null }): JSX.Element {
+function CardBalance({
+  sats,
+  usd,
+  usdLoading = false,
+}: {
+  sats: number
+  usd: number | null
+  usdLoading?: boolean
+}): JSX.Element {
   return (
     <>
       <Text textStyle="text/lg" fontWeight="semibold" color="neutral.900" sx={{ fontVariantNumeric: 'tabular-nums' }}>
@@ -437,21 +457,57 @@ function CardBalance({ sats, usd }: { sats: number; usd: number | null }): JSX.E
           BTC
         </Text>
       </Text>
-      {usd !== null && (
+      {(usd !== null || usdLoading) && (
         <Text textStyle="text/sm" fontWeight="medium" color="success.600" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-          {formatUsd(usd)}
+          {usd === null ? <TextSkeleton width="9ch" /> : formatUsd(usd)}
         </Text>
       )}
     </>
   )
 }
 
-/** The account's share of all holdings, beside its proportion bar. */
-function CardShare({ pct }: { pct: string }): JSX.Element {
+/** CardBalance's outline while the balance loads, in the same text styles so nothing moves. */
+function CardBalanceSkeleton({ withUsd }: { withUsd: boolean }): JSX.Element {
   return (
-    <Text textStyle="label/sm" color="neutral.500" whiteSpace="nowrap" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-      {pct}%
-    </Text>
+    <>
+      <Text textStyle="text/lg" fontWeight="semibold">
+        <TextSkeleton width="14ch" />
+      </Text>
+      {withUsd && (
+        <Text textStyle="text/sm" fontWeight="medium">
+          <TextSkeleton width="9ch" />
+        </Text>
+      )}
+    </>
+  )
+}
+
+/** An account's share of all holdings, or null while either amount is unknown. */
+function shareOf(sats: number | null, totalSats: number | null): string | null {
+  if (sats === null || totalSats === null) {
+    return null
+  }
+  return totalSats > 0 ? ((sats / totalSats) * 100).toFixed(1) : '0.0'
+}
+
+/** The account's share of all holdings: a proportion bar and its percentage. */
+function CardShareBar({ pct }: { pct: string | null }): JSX.Element {
+  return (
+    <Flex align="center" gap={2.5} mx={4} mt={1}>
+      <Box flex={1} h="3px" bg="neutral.50" borderRadius="2px" overflow="hidden">
+        <Box
+          h="100%"
+          w={pct === null ? 0 : `${Math.max(parseFloat(pct), 1.5)}%`}
+          bg="neutral.900"
+          borderRadius="2px"
+          opacity={0.2}
+          transition="width 0.4s ease"
+        />
+      </Box>
+      <Text textStyle="label/sm" color="neutral.500" whiteSpace="nowrap" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+        {pct === null ? <TextSkeleton width="4ch" /> : `${pct}%`}
+      </Text>
+    </Flex>
   )
 }
 
@@ -510,8 +566,9 @@ function EmptyHoldings(): JSX.Element {
 
 interface ExchangeAccountCardProps {
   account: ExchangeAccountDto
-  totalBtcSats: number
+  totalBtcSats: number | null
   btcUsdPrice: number | null
+  usdLoading: boolean
 }
 
 interface ExchangeConfig {
@@ -550,12 +607,16 @@ const exchangeConfig = {
   },
 } satisfies Record<string, ExchangeConfig>
 
-function ExchangeAccountCard({ account, totalBtcSats, btcUsdPrice }: ExchangeAccountCardProps): JSX.Element {
+function ExchangeAccountCard({
+  account,
+  totalBtcSats,
+  btcUsdPrice,
+  usdLoading,
+}: ExchangeAccountCardProps): JSX.Element {
   const needsReconnect = needsExchangeReconnect(account)
   const btcSats = account.balance != null && account.balance !== '' ? Number(account.balance) : 0
-  const btcAmount = btcSats / 100_000_000
-  const usdAmount = btcUsdPrice !== null ? btcAmount * btcUsdPrice : null
-  const pct = totalBtcSats > 0 ? ((btcSats / totalBtcSats) * 100).toFixed(1) : '0.0'
+  const usdAmount = btcUsdPrice !== null ? (btcSats / 100_000_000) * btcUsdPrice : null
+  const pct = shareOf(btcSats, totalBtcSats)
 
   const config = getRecordValue(exchangeConfig, account.exchange) ?? defaultExchangeConfig
 
@@ -620,34 +681,23 @@ function ExchangeAccountCard({ account, totalBtcSats, btcUsdPrice }: ExchangeAcc
             —
           </Text>
         ) : account.balance === null ? (
-          <Box h="24px" w="120px" bg="neutral.50" borderRadius="4px" mx="auto" />
+          // Not fetched from the exchange yet.
+          <CardBalanceSkeleton withUsd={usdLoading || btcUsdPrice !== null} />
         ) : (
-          <CardBalance sats={btcSats} usd={usdAmount} />
+          <CardBalance sats={btcSats} usd={usdAmount} usdLoading={usdLoading} />
         )}
       </Stack>
 
-      {/* Proportion bar */}
-      <Flex align="center" gap={2.5} mx={4} mt={1}>
-        <Box flex={1} h="3px" bg="neutral.50" borderRadius="2px" overflow="hidden">
-          <Box
-            h="100%"
-            w={`${Math.max(parseFloat(pct), 1.5)}%`}
-            bg="neutral.900"
-            borderRadius="2px"
-            opacity={0.2}
-            transition="width 0.4s ease"
-          />
-        </Box>
-        <CardShare pct={pct} />
-      </Flex>
+      <CardShareBar pct={pct} />
     </Stack>
   )
 }
 
 interface ManualAccountCardProps {
   account: ManualAccountDto | EtfAccountDto
-  totalBtcSats: number
+  totalBtcSats: number | null
   btcUsdPrice: number | null
+  usdLoading: boolean
   linkPrefix?: string
 }
 
@@ -655,12 +705,12 @@ function ManualAccountCard({
   account,
   totalBtcSats,
   btcUsdPrice,
+  usdLoading,
   linkPrefix = '/accounts/manual',
 }: ManualAccountCardProps): JSX.Element {
   const btcSats = account.balance ? Number(account.balance) : 0
-  const btcAmount = btcSats / 100_000_000
-  const usdAmount = btcUsdPrice !== null ? btcAmount * btcUsdPrice : null
-  const pct = totalBtcSats > 0 ? ((btcSats / totalBtcSats) * 100).toFixed(1) : '0.0'
+  const usdAmount = btcUsdPrice !== null ? (btcSats / 100_000_000) * btcUsdPrice : null
+  const pct = shareOf(btcSats, totalBtcSats)
 
   return (
     <Stack
@@ -700,23 +750,10 @@ function ManualAccountCard({
 
       {/* Balance */}
       <Stack gap={0} mx={4} mt={1}>
-        <CardBalance sats={btcSats} usd={usdAmount} />
+        <CardBalance sats={btcSats} usd={usdAmount} usdLoading={usdLoading} />
       </Stack>
 
-      {/* Proportion bar */}
-      <Flex align="center" gap={2.5} mx={4} mt={1}>
-        <Box flex={1} h="3px" bg="neutral.50" borderRadius="2px" overflow="hidden">
-          <Box
-            h="100%"
-            w={`${Math.max(parseFloat(pct), 1.5)}%`}
-            bg="neutral.900"
-            borderRadius="2px"
-            opacity={0.2}
-            transition="width 0.4s ease"
-          />
-        </Box>
-        <CardShare pct={pct} />
-      </Flex>
+      <CardShareBar pct={pct} />
     </Stack>
   )
 }
