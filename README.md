@@ -183,7 +183,7 @@ BITCOIN_NETWORK=mainnet
 
 ### Binding beyond localhost
 
-Sentinel has no user-login layer because it is designed for loopback or same-origin distribution use. Do not casually set `HOST=0.0.0.0` or expose port `3400` to an untrusted network.
+The packaged apps turn on a 6-digit PIN that every API route except sign-in and health requires: StartOS and Umbrel set `SENTINEL_PIN`, and the desktop app passes its own setting. A plain `pnpm dev` or standalone run has no PIN, so do not casually set `HOST=0.0.0.0` or expose port `3400` to an untrusted network. `node dist/cli.js reset-pin` clears the PIN at the next start, keeping all data.
 
 `SENTINEL_ALLOWED_HOSTS` expands host and origin validation for a trusted reverse proxy or packaged environment. It is not authentication. StartOS supplies its own allowed local and onion hostnames during packaging.
 

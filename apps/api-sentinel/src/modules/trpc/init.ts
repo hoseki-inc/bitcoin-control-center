@@ -1,13 +1,17 @@
 import { registerCustomSerializers } from '@hoseki/packages/custom-serializers'
-import { initTRPC } from '@trpc/server'
+import { TRPCError, initTRPC } from '@trpc/server'
 import superjson from 'superjson'
 import { ZodError } from 'zod'
 import type { AppContext } from '../../context'
+import type { RequestAuth } from '../auth/request'
+import type { Session } from '../auth/service'
 
 const transformer = registerCustomSerializers(superjson)
 
 export interface TRPCContext {
   app: AppContext
+  /** The HTTP request's cookie and tab; absent for in-process callers such as tests. */
+  request?: RequestAuth
 }
 
 export const t = initTRPC.context<TRPCContext>().create({
@@ -26,5 +30,37 @@ export const t = initTRPC.context<TRPCContext>().create({
   },
 })
 
-/** No auth middleware - single user, local deployment. */
-export const publicProcedure = t.procedure
+/** Only for the sign-in routes. Everything else uses `protectedProcedure`. */
+export const openProcedure = t.procedure
+
+function currentSession(ctx: TRPCContext): Session | null {
+  if (!ctx.app.auth.policy.required) {
+    return null
+  }
+  if (ctx.app.auth.needsHttps(ctx.request?.secure ?? false)) {
+    throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Open Control Center at its HTTPS address' })
+  }
+  const session = ctx.app.auth.resolve(ctx.request?.browserKey ?? null, ctx.request?.tabId ?? null)
+  if (!session) {
+    throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Enter your PIN' })
+  }
+  return session
+}
+
+/**
+ * Every route needs a signed-in tab when the platform requires a PIN. `session` is null only while PINs are
+ * off (tests, and platforms that haven't turned them on yet).
+ */
+export const protectedProcedure = t.procedure.use(async ({ ctx, next }) =>
+  next({ ctx: { ...ctx, session: currentSession(ctx) } }),
+)
+
+/** For actions that ask for the PIN again: the PIN must have been entered in this tab within `maxAgeMs`. */
+export function recentPinProcedure(maxAgeMs: number): typeof protectedProcedure {
+  return protectedProcedure.use(async ({ ctx, next }) => {
+    if (ctx.session && !ctx.app.auth.pinEnteredWithin(ctx.session, maxAgeMs)) {
+      throw new TRPCError({ code: 'FORBIDDEN', message: 'Enter your PIN again' })
+    }
+    return next()
+  })
+}

@@ -28,7 +28,7 @@ const EnvSchema = z.object({
   /** Log level. Defaults to 'info'. */
   LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
 
-  /** Comma-separated hostnames allowed to serve the protected no-auth API. */
+  /** Comma-separated hostnames allowed to serve the API. */
   SENTINEL_ALLOWED_HOSTS: z.string().optional(),
   /** Also allow any IP-literal host, for platforms that cannot report their addresses. Defaults to false. */
   SENTINEL_ALLOW_IP_HOSTS: z
@@ -40,6 +40,9 @@ const EnvSchema = z.object({
     .enum(['true', 'false'])
     .default('true')
     .transform((value) => value === 'true'),
+
+  /** Turns the PIN on for a packaged server: `startos` or `umbrel`. The desktop app passes its own setting. */
+  SENTINEL_PIN: z.enum(['startos', 'umbrel']).optional(),
 
   /** SOCKS proxy host (set by desktop Electron shell when bundled Tor is running). */
   SOCKS_PROXY_HOST: z.string().optional(),

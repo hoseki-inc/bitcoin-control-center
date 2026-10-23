@@ -1,6 +1,7 @@
 import '@fontsource/roboto-mono'
 import { StrictMode } from 'react'
 import * as ReactDOM from 'react-dom/client'
+import { SessionGate } from './pin/session-gate'
 import { Providers } from './providers'
 import Routes from './routes'
 
@@ -13,7 +14,9 @@ const root = ReactDOM.createRoot(rootElement)
 root.render(
   <StrictMode>
     <Providers>
-      <Routes />
+      <SessionGate>
+        <Routes />
+      </SessionGate>
     </Providers>
   </StrictMode>,
 )

@@ -1,6 +1,7 @@
 import { inspect } from 'node:util'
 import { hideWalletDetailsInError, hideWalletDetailsInText, hidesWalletDetails } from './log_redaction'
 import { main } from './main'
+import { isPinCommand, runPinCommand } from './pin_commands'
 
 // `pnpm dev:desktop` runs Sentinel as the desktop app does: with saved connections,
 // and with settings available even while the Electrum server is unreachable.
@@ -26,6 +27,11 @@ if (hideDetails) {
   process.on('unhandledRejection', crashed('Unhandled rejection:'))
 }
 
-main(desktop ? { connectionProfiles: true, waitForElectrum: false, statementSourceSetting: true } : {}).catch(
-  crashed('Unhandled error in main:'),
-)
+const command = process.argv[2]
+if (isPinCommand(command)) {
+  runPinCommand(command).then((code) => process.exit(code), crashed(`Unhandled error in ${command}:`))
+} else {
+  main(desktop ? { connectionProfiles: true, waitForElectrum: false, statementSourceSetting: true } : {}).catch(
+    crashed('Unhandled error in main:'),
+  )
+}

@@ -3,6 +3,7 @@ import { registerCustomSerializers } from '@hoseki/packages/custom-serializers'
 import { createTRPCProxyClient, httpLink } from '@trpc/react-query'
 import type { inferRouterInputs, inferRouterOutputs } from '@trpc/server'
 import superjson from 'superjson'
+import { sentinelFetch } from '../pin/session'
 import { queryClient, trpc } from './base'
 
 export { queryClient, trpc }
@@ -19,6 +20,7 @@ export const baseTrpc = createTRPCProxyClient<Router>({
   links: [
     httpLink({
       url,
+      fetch: sentinelFetch,
     }),
   ],
 })
@@ -34,6 +36,7 @@ export const reactTrpcClient = trpc.createClient({
     httpLink({
       // maxURLLength: ???,
       url,
+      fetch: sentinelFetch,
     }),
   ],
 })
