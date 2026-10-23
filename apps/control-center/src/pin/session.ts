@@ -26,15 +26,16 @@ const LEFT_AFTER_START_MS = 5 * 60 * 1000
 const NavigationEntry = z.object({ type: z.string() })
 
 /**
- * Whether this page may keep the tab ID it finds in sessionStorage: only when it is a reload, and the old page left
- * after this one started loading. Browsers restore sessionStorage into reopened and duplicated tabs, and those
- * must ask for the PIN.
+ * Whether this page may keep the tab ID it finds in sessionStorage: only when the old page left after this one
+ * started loading, as on a reload. Browsers restore sessionStorage into reopened and duplicated tabs, and those
+ * must ask for the PIN. Where the browser reports the navigation, it must also be a reload; Tor Browser hides it,
+ * and the timing alone tells a reload from a reopened tab.
  *
- * @param startedAt When this page started loading (`performance.timeOrigin`), however long it then took.
+ * @param startedAt When this page started loading, on the wall clock, however long it then took.
  */
 export function continuesTab(navigationType: string | null, leftAt: number | null, startedAt: number): boolean {
   return (
-    navigationType === 'reload' &&
+    (navigationType === null || navigationType === 'reload') &&
     leftAt !== null &&
     leftAt >= startedAt - LEFT_BEFORE_START_MS &&
     leftAt - startedAt <= LEFT_AFTER_START_MS
@@ -54,7 +55,9 @@ function checkContinuity(): void {
     sessionStorage.removeItem(LEFT_AT_KEY)
     const navigation = parseUnknown(NavigationEntry, performance.getEntriesByType('navigation')[0])
     const navigationType = navigation.isOk() ? navigation.unwrap().type : null
-    if (!continuesTab(navigationType, Number.isSafeInteger(leftAt) ? leftAt : null, performance.timeOrigin)) {
+    // From the wall clock, as `leftAt` is: Chromium's `timeOrigin` can fall behind it after the computer sleeps.
+    const startedAt = Date.now() - performance.now()
+    if (!continuesTab(navigationType, Number.isSafeInteger(leftAt) ? leftAt : null, startedAt)) {
       sessionStorage.removeItem(TAB_STORAGE_KEY)
     }
   } catch {

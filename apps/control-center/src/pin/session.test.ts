@@ -21,7 +21,12 @@ describe('continuesTab', () => {
   it('asks again for a duplicated or newly opened tab', () => {
     expect(continuesTab('navigate', null, startedAt)).toBe(false)
     expect(continuesTab('reload', null, startedAt)).toBe(false)
-    expect(continuesTab(null, startedAt + 50, startedAt)).toBe(false)
+    expect(continuesTab(null, null, startedAt)).toBe(false)
+  })
+
+  it('goes by timing alone where the browser hides the navigation, as Tor Browser does', () => {
+    expect(continuesTab(null, startedAt + 50, startedAt)).toBe(true)
+    expect(continuesTab(null, startedAt - 60_000, startedAt)).toBe(false)
   })
 
   it('ignores a leave time far in the future', () => {

@@ -116,7 +116,6 @@ const contentFade: HTMLMotionProps<'div'> = {
 const appUnderLock = { opacity: 0, y: 8 }
 const appShown = { opacity: 1, y: 0, transition: { delay: CONTENT_OUT_S, duration: REVEAL_S, ease: REVEAL_EASE } }
 const appCovered = { opacity: 0, transition: { duration: 0.25 } }
-const appCoveredAtOnce = { opacity: 0, transition: { duration: 0 } }
 
 // Pages can start more requests a render or two after mounting, so the app counts as settled only once nothing
 // has been loading for this long.
@@ -185,20 +184,13 @@ export function SessionGate({ children }: { children: ReactNode }): JSX.Element 
     commitRef.current = null
   }, [])
 
-  // A new sign-in screen after a cancelled reveal, rather than the one still showing its finished check.
+  // A new sign-in screen for each lock and cancelled reveal, rather than one still showing its finished check.
   const [signInKey, setSignInKey] = useState(0)
-
-  // A page brought back by Back or Forward is covered with no fade, so none of it shows.
-  const [coverAtOnce, setCoverAtOnce] = useState(false)
-  const onRestored = useCallback((): void => {
-    setCoverAtOnce(true)
-  }, [])
 
   // The app leaves the screen: unmounted, its data dropped, its notices cleared, and the PIN status asked again.
   const closeApp = useCallback((): void => {
     phaseRef.current = 'locked'
     setPhase('locked')
-    setCoverAtOnce(false)
     toast.dismiss()
     clearFlowSource()
     void forgetLoadedData().then(async () => queryClient.invalidateQueries({ queryKey: PIN_STATUS_KEY }))
@@ -307,9 +299,20 @@ export function SessionGate({ children }: { children: ReactNode }): JSX.Element 
     if (!covered) {
       setPhase('open')
     } else if (phase === 'open') {
+      // Notices sit above everything, so they go before the lock screen fades in over the app.
+      toast.dismiss()
+      // A fresh sign-in screen: the last one may still be fading out, holding its finished check.
+      setSignInKey((key) => key + 1)
       setPhase('covering')
     }
   }, [covered, phase])
+
+  // A page brought back by Back or Forward closes the app in the same render as the lock, so none of it shows.
+  const onRestored = useCallback((): void => {
+    if (phaseRef.current !== 'locked') {
+      closeApp()
+    }
+  }, [closeApp])
 
   // Read by the timer and the fade's completion, whichever comes first.
   const finishCovering = useCallback((): void => {
@@ -324,11 +327,11 @@ export function SessionGate({ children }: { children: ReactNode }): JSX.Element 
     if (phase !== 'covering') {
       return
     }
-    const timer = setTimeout(finishCovering, document.hidden || coverAtOnce ? 0 : COVER_LIMIT_MS)
+    const timer = setTimeout(finishCovering, document.hidden ? 0 : COVER_LIMIT_MS)
     return (): void => {
       clearTimeout(timer)
     }
-  }, [phase, finishCovering, coverAtOnce])
+  }, [phase, finishCovering])
 
   // In the render where the lock screen first appears over the app, the phase is still `open`.
   const appMounted = !covered || phase !== 'locked'
@@ -339,9 +342,7 @@ export function SessionGate({ children }: { children: ReactNode }): JSX.Element 
         <motion.div
           aria-hidden={covered ? true : undefined}
           initial={false}
-          animate={
-            !covered ? appShown : phase === 'revealing' ? appUnderLock : coverAtOnce ? appCoveredAtOnce : appCovered
-          }
+          animate={!covered ? appShown : phase === 'revealing' ? appUnderLock : appCovered}
         >
           {children}
           {/* After the app, so its effects run once the pages' own have started their requests. */}
@@ -358,7 +359,6 @@ export function SessionGate({ children }: { children: ReactNode }): JSX.Element 
             // Above the app's sticky header; below dialogs (1400) such as Forgot PIN.
             style={{ position: 'fixed', inset: 0, zIndex: 1300 }}
             {...overlayFade}
-            initial={coverAtOnce ? 'shown' : 'hidden'}
             onAnimationComplete={finishCovering}
           >
             <motion.div {...contentFade}>{screen.node}</motion.div>

@@ -143,7 +143,8 @@ async function withTestSetup(sentinel: ReturnType<typeof fakeSentinel>, run: () 
 
 async function enterPin(pin: string): Promise<void> {
   const input = await vi.waitFor(() => {
-    const found = document.querySelector<HTMLInputElement>('input[type="password"]')
+    // The newest screen's field: an earlier screen can still be fading out.
+    const found = [...document.querySelectorAll<HTMLInputElement>('input[type="password"]')].at(-1)
     assert.exists(found, 'Expected the PIN field')
     return found
   })
@@ -374,5 +375,17 @@ it('clears notices when the app locks, so none shows over the lock screen', asyn
       expect(showing('Your holdings')).toBe(false)
       expect(showing('Cold storage')).toBe(false)
     })
+
+    // Signing back in doesn't bring the old notice back.
+    await enterPin(PIN)
+    await vi.waitFor(
+      () => {
+        const holdings = [...document.querySelectorAll('p')].find((found) => found.textContent === 'Your holdings')
+        assert.exists(holdings, 'Expected the app')
+        expect(holdings.closest('[aria-hidden="true"]')).toBeNull()
+      },
+      { timeout: 5000 },
+    )
+    expect(showing('Cold storage')).toBe(false)
   })
-}, 15_000)
+}, 20_000)
