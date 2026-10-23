@@ -20,7 +20,6 @@ import type { BalanceValue } from '@hoseki/packages/lib/balance'
 import type { ClaimId } from '@hoseki/packages/schemas'
 import { KeystoreAvatar } from '@hoseki/packages/ui/prove-verify-ui'
 import { VIEWPORT_BELOW_HEADER } from '@hoseki/packages/ui/prove-verify-ui/layout'
-import { capitalize } from '@hoseki/packages/ui/utils/ui-copy'
 import { type SupportedHardwareWallet, getSupportedHardwareWalletLogoPath } from '@hoseki/packages/wallet'
 import { Check, ChevronDown, KeyRound, Search } from 'lucide-react'
 import { type ReactNode, useEffect, useId, useRef, useState } from 'react'
@@ -30,15 +29,14 @@ import type { ClaimDto } from '../../trpc/server-types'
 import { ensureClaimStatusNotExpired } from '../../utils/claim-utils'
 import { needsExchangeReconnect } from '../../utils/exchange-connection-status'
 import { BitcoinAmount } from '../bitcoin-amount'
-import { UsdEquivalent } from '../usd-equivalent'
 import { HistorySyncStatus } from './history-sync-status'
 
-const exchangeConfig = {
-  coinbase: { label: 'Coinbase', logo: '/images/exchanges/coinbase.svg' },
-  kraken: { label: 'Kraken', logo: '/images/exchanges/kraken.svg' },
-  robinhood: { label: 'Robinhood', logo: '/images/exchanges/robinhood-icon.svg' },
-  strike: { label: 'Strike', logo: '/images/exchanges/strike-icon.svg' },
-} satisfies Record<string, { label: string; logo: string }>
+const exchangeLogos = {
+  coinbase: '/images/exchanges/coinbase.svg',
+  kraken: '/images/exchanges/kraken.svg',
+  robinhood: '/images/exchanges/robinhood-icon.svg',
+  strike: '/images/exchanges/strike-icon.svg',
+} satisfies Record<string, string>
 
 type AccountLogo =
   | { kind: 'wallet'; wallets: (SupportedHardwareWallet | null)[] }
@@ -58,7 +56,6 @@ interface AccountFilterProps {
   balances: Map<ClaimId, BalanceValue | null>
   /** An account list failed to load, so a total would leave accounts out. */
   isMissingAccounts?: boolean
-  btcPrice: number | null
   selected: Set<string>
   onSelectionChange: (ids: Set<string>) => void
   historySyncingAccountIds: string[]
@@ -73,19 +70,11 @@ export function AccountFilter({
   etfAccounts,
   balances,
   isMissingAccounts = false,
-  btcPrice,
   selected,
   onSelectionChange,
   historySyncingAccountIds,
   recentlySyncedAccountIds,
 }: AccountFilterProps): JSX.Element {
-  const [compact, setCompact] = useState(() => {
-    try {
-      return localStorage.getItem('hoseki:sidebar-compact') !== 'false'
-    } catch {
-      return true
-    }
-  })
   const { isOpen, onOpen, onClose } = useDisclosure()
   const [search, setSearch] = useState('')
   const searchRef = useRef<HTMLInputElement>(null)
@@ -102,7 +91,6 @@ export function AccountFilter({
   const accounts: {
     id: string
     name: string
-    detail: string
     /** Shown in the warning color. */
     status: string | null
     logo: AccountLogo
@@ -111,11 +99,9 @@ export function AccountFilter({
     sats: number | null
   }[] = [
     ...claims.map((claim) => {
-      const isMultisig = claim.keystores.length > 1
       return {
         id: claim.id,
         name: claim.displayName,
-        detail: isMultisig ? 'Multisig' : formatWalletName(claim.keystores[0]?.wallet),
         status: ensureClaimStatusNotExpired(claim) === 'pending' ? 'Pending' : null,
         logo: {
           kind: 'wallet' as const,
@@ -126,13 +112,12 @@ export function AccountFilter({
       }
     }),
     ...exchangeAccounts.map((account) => {
-      const config = getRecordValue(exchangeConfig, account.exchange)
+      const logo = getRecordValue(exchangeLogos, account.exchange)
       return {
         id: account.id,
         name: account.displayName,
-        detail: config?.label ?? account.exchange,
         status: null,
-        logo: config ? { kind: 'image' as const, src: config.logo } : { kind: 'manual' as const },
+        logo: logo === undefined ? { kind: 'manual' as const } : { kind: 'image' as const, src: logo },
         reconnectTo: needsExchangeReconnect(account) ? `/accounts/${account.exchange}/${account.id}` : null,
         sats: needsExchangeReconnect(account) ? 0 : Number(account.balance ?? 0),
       }
@@ -140,7 +125,6 @@ export function AccountFilter({
     ...[...manualAccounts, ...etfAccounts].map((account) => ({
       id: account.id,
       name: account.displayName,
-      detail: '',
       status: 'Manually added',
       logo: { kind: 'manual' as const },
       reconnectTo: null,
@@ -164,14 +148,6 @@ export function AccountFilter({
   const closeSearch = (): void => {
     setIsSearching(false)
     setSearch('')
-  }
-  const setDensity = (isCompact: boolean): void => {
-    setCompact(isCompact)
-    try {
-      localStorage.setItem('hoseki:sidebar-compact', String(isCompact))
-    } catch {
-      /* Keep session preference. */
-    }
   }
 
   const toggleAccount = (id: string): void => {
@@ -201,7 +177,7 @@ export function AccountFilter({
             _hover={{ bg: 'neutral.50' }}
           >
             <Flex align="center" gap={2}>
-              <AccountLogoMark logo={account.logo} compact={compact} muted />
+              <AccountLogoMark logo={account.logo} muted />
               <Text textStyle="text/sm" fontWeight="medium" overflowWrap="anywhere">
                 {account.name}
               </Text>
@@ -236,7 +212,7 @@ export function AccountFilter({
               sx={{ '@media (prefers-reduced-motion: reduce)': { transition: 'none' } }}
             >
               <Flex as="span" align="center" gap={2}>
-                <AccountLogoMark logo={account.logo} compact={compact} />
+                <AccountLogoMark logo={account.logo} />
                 <Text
                   as="span"
                   flex="1"
@@ -265,37 +241,21 @@ export function AccountFilter({
                   <Check size={14} strokeWidth={2} />
                 </Box>
               </Flex>
-              {!compact && account.detail && (
-                <Text as="span" display="block" textStyle="text/xs" color="neutral.600" mt={1}>
-                  {account.detail}
-                </Text>
-              )}
               <Text
                 as="span"
                 display="block"
-                mt={compact ? 1 : 3}
-                pr={compact ? 7 : 0}
-                textStyle={compact ? 'text/xs' : 'text/sm'}
+                mt={1}
+                pr={7}
+                textStyle="text/xs"
                 color="neutral.600"
                 sx={{ fontVariantNumeric: 'tabular-nums' }}
                 overflowWrap="anywhere"
               >
                 {account.sats === null ? '\u2014' : <BitcoinAmount btc={account.sats / 100_000_000} />}
               </Text>
-              {!compact && (
-                <Flex as="span" mt={1} pr={8} minH="20px" align="center" color="neutral.600">
-                  <Text as="span" textStyle="text/xs" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                    {account.sats === null ? (
-                      '\u2014'
-                    ) : (
-                      <UsdEquivalent btc={account.sats / 100_000_000} btcPrice={btcPrice} />
-                    )}
-                  </Text>
-                </Flex>
-              )}
               {account.sats !== null && totalSats !== null && (
                 <Box as="span" position="absolute" bottom={3} right={3}>
-                  <AccountSharePie sats={account.sats} totalSats={totalSats} compact={compact} />
+                  <AccountSharePie sats={account.sats} totalSats={totalSats} />
                 </Box>
               )}
               {account.status !== null && <StatusBadge label={account.status} />}
@@ -340,17 +300,12 @@ export function AccountFilter({
         as="span"
         display="block"
         mt={1}
-        textStyle={compact ? 'text/xs' : 'text/sm'}
+        textStyle="text/xs"
         color="neutral.600"
         sx={{ fontVariantNumeric: 'tabular-nums' }}
       >
         {totalSats === null ? '\u2014' : <BitcoinAmount btc={totalSats / 100_000_000} />}
       </Text>
-      {!compact && (
-        <Text as="span" display="block" mt={1} textStyle="text/xs" color="neutral.600">
-          {totalSats === null ? '\u2014' : <UsdEquivalent btc={totalSats / 100_000_000} btcPrice={btcPrice} />}
-        </Text>
-      )}
     </PlainButton>
   )
   const headerControls = (
@@ -412,15 +367,6 @@ export function AccountFilter({
         }}
       >
         <Search size={13} strokeWidth={2} />
-      </HeaderIconButton>
-      <HeaderIconButton
-        label="Detailed view"
-        isActive={!compact}
-        onClick={() => {
-          setDensity(!compact)
-        }}
-      >
-        <DensityIcon />
       </HeaderIconButton>
     </Flex>
   )
@@ -562,17 +508,9 @@ function formatShare(sats: number, totalSats: number): string {
   return percentage > 0 && percentage < 0.1 ? '<0.1' : percentage.toFixed(1)
 }
 
-function AccountSharePie({
-  sats,
-  totalSats,
-  compact,
-}: {
-  sats: number
-  totalSats: number
-  compact: boolean
-}): JSX.Element {
+function AccountSharePie({ sats, totalSats }: { sats: number; totalSats: number }): JSX.Element {
   const percentage = totalSats > 0 ? Math.min(100, Math.max(0, (sats / totalSats) * 100)) : 0
-  const size = compact ? 16 : 20
+  const size = 16
   const strokeWidth = 3
   const radius = (size - strokeWidth) / 2
   const circumference = 2 * Math.PI * radius
@@ -622,21 +560,9 @@ function toSatsOrNull(balance: BalanceValue | null | undefined): number | null {
   return balance === null || balance === undefined ? null : Number(balance.current)
 }
 
-function formatWalletName(wallet: string | null | undefined): string {
-  return wallet === null || wallet === undefined || wallet === '' ? 'Self-custody' : capitalize(wallet)
-}
-
 /** Decorative, as the account's name sits beside it. */
-function AccountLogoMark({
-  logo,
-  compact,
-  muted = false,
-}: {
-  logo: AccountLogo
-  compact: boolean
-  muted?: boolean
-}): JSX.Element {
-  const size = compact ? '20px' : '28px'
+function AccountLogoMark({ logo, muted = false }: { logo: AccountLogo; muted?: boolean }): JSX.Element {
+  const size = '20px'
   const style = muted ? { opacity: 0.55, filter: 'grayscale(1)' } : undefined
   if (logo.kind === 'image') {
     return (
@@ -666,12 +592,12 @@ function AccountLogoMark({
         justify="center"
         aria-hidden="true"
       >
-        <ManualNoteIcon boxSize={compact ? '12px' : '16px'} />
+        <ManualNoteIcon boxSize="12px" />
       </Flex>
     )
   }
   if (logo.wallets.length > 1) {
-    const mini = compact ? '12px' : '16px'
+    const mini = '12px'
     const positions = [
       { top: 0, left: '50%', transform: 'translateX(-50%)' },
       { bottom: 0, left: 0 },
@@ -694,7 +620,7 @@ function AccountLogoMark({
                 justify="center"
                 color="neutral.500"
               >
-                <KeyRound size={compact ? 7 : 9} strokeWidth={2.5} />
+                <KeyRound size={7} strokeWidth={2.5} />
               </Flex>
             ) : (
               <KeystoreAvatar size={mini} src={getSupportedHardwareWalletLogoPath(wallet)} alt="" />
@@ -753,31 +679,6 @@ function HeaderIconButton({
         {children}
       </PlainButton>
     </Tooltip>
-  )
-}
-
-/** Two tall rows: the detailed view, which the toggle shows pressed while it's on. */
-function DensityIcon(): JSX.Element {
-  const rows = [
-    { y: 1, height: 5 },
-    { y: 10, height: 5 },
-  ]
-  return (
-    <Icon viewBox="0 0 16 16" boxSize="14px" aria-hidden="true">
-      {rows.map((row) => (
-        <rect
-          key={row.y}
-          x="1"
-          y={row.y}
-          width="14"
-          height={row.height}
-          rx="1"
-          stroke="currentColor"
-          strokeWidth="1.2"
-          fill="none"
-        />
-      ))}
-    </Icon>
   )
 }
 
