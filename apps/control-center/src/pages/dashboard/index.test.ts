@@ -943,7 +943,7 @@ describe('custom portfolio range UI', () => {
   })
 })
 
-it('uses the same current price for the headline and sidebar when history has an older price', async () => {
+it('uses the current price for the headline when history has an older price', async () => {
   await withTestSetup(async () => {
     const previousPrice = mocks.base.currentBtcPrice
     onTestFinished(() => {
@@ -956,7 +956,6 @@ it('uses the same current price for the headline and sidebar when history has an
     await render()
     expect(container.textContent).toContain('$50,000.00')
     expect(container.textContent).not.toContain('$83,000.00')
-    expect(mocks.sidebar.mock.lastCall?.[0].btcPrice).toBe(50000)
   })
 })
 
@@ -1527,7 +1526,6 @@ describe('range summary', () => {
       expect(text()).toContain('USD unavailable')
       expect(text()).not.toContain('$')
       expect(text()).not.toContain("USD at today's Bitcoin price")
-      expect(mocks.sidebar.mock.lastCall?.[0].btcPrice).toBeNull()
     })
   })
 

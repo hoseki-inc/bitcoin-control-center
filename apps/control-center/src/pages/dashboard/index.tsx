@@ -626,7 +626,6 @@ export function DashboardPage({
       etfAccounts={etfAccounts}
       balances={walletBalances}
       isMissingAccounts={!hasAccountLists}
-      btcPrice={btcPrice}
       selected={selected}
       onSelectionChange={setSelected}
       historySyncingAccountIds={activeIsPreviousData ? [] : historySyncingAccountIds}
