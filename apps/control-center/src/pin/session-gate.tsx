@@ -1,6 +1,7 @@
 import { Box } from '@chakra-ui/react'
 import { AnimatePresence, type HTMLMotionProps, motion } from 'framer-motion'
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
+import { toast } from 'sonner'
 import { clearFlowSource } from '../lib/flow-tracker'
 import { baseTrpc, queryClient } from '../trpc'
 import { HttpsRequiredScreen, SetupScreen, SignInScreen, StartOsSetupScreen, UnreachableScreen } from './pin-screens'
@@ -47,25 +48,6 @@ function ActivityTracker(): null {
  * The desktop app locks when its window closes, or the computer sleeps or its screen locks. This listens at every
  * stage, including setup and the reveal, since a tab signs in before the app opens.
  */
-/**
- * A page the browser keeps in memory and brings back on Back or Forward comes back exactly as it was left, so it
- * locks: leaving the page counts as closing it.
- */
-function RestoredPageLock(): null {
-  useEffect(() => {
-    const onPageShow = (event: PageTransitionEvent): void => {
-      if (event.persisted) {
-        void lockApp()
-      }
-    }
-    window.addEventListener('pageshow', onPageShow)
-    return (): void => {
-      window.removeEventListener('pageshow', onPageShow)
-    }
-  }, [])
-  return null
-}
-
 function DesktopLock(): null {
   useEffect(
     () =>
@@ -74,6 +56,26 @@ function DesktopLock(): null {
       }),
     [],
   )
+  return null
+}
+
+/**
+ * A page the browser keeps in memory and brings back on Back or Forward comes back exactly as it was left, so it
+ * locks at once: leaving the page counts as closing it.
+ */
+function RestoredPageLock({ onRestored }: { onRestored: () => void }): null {
+  useEffect(() => {
+    const onPageShow = (event: PageTransitionEvent): void => {
+      if (event.persisted) {
+        onRestored()
+        void lockApp()
+      }
+    }
+    window.addEventListener('pageshow', onPageShow)
+    return (): void => {
+      window.removeEventListener('pageshow', onPageShow)
+    }
+  }, [onRestored])
   return null
 }
 
@@ -114,6 +116,7 @@ const contentFade: HTMLMotionProps<'div'> = {
 const appUnderLock = { opacity: 0, y: 8 }
 const appShown = { opacity: 1, y: 0, transition: { delay: CONTENT_OUT_S, duration: REVEAL_S, ease: REVEAL_EASE } }
 const appCovered = { opacity: 0, transition: { duration: 0.25 } }
+const appCoveredAtOnce = { opacity: 0, transition: { duration: 0 } }
 
 // Pages can start more requests a render or two after mounting, so the app counts as settled only once nothing
 // has been loading for this long.
@@ -185,10 +188,18 @@ export function SessionGate({ children }: { children: ReactNode }): JSX.Element 
   // A new sign-in screen after a cancelled reveal, rather than the one still showing its finished check.
   const [signInKey, setSignInKey] = useState(0)
 
-  // The app leaves the screen: unmounted, its data dropped, and the PIN status asked again.
+  // A page brought back by Back or Forward is covered with no fade, so none of it shows.
+  const [coverAtOnce, setCoverAtOnce] = useState(false)
+  const onRestored = useCallback((): void => {
+    setCoverAtOnce(true)
+  }, [])
+
+  // The app leaves the screen: unmounted, its data dropped, its notices cleared, and the PIN status asked again.
   const closeApp = useCallback((): void => {
     phaseRef.current = 'locked'
     setPhase('locked')
+    setCoverAtOnce(false)
+    toast.dismiss()
     clearFlowSource()
     void forgetLoadedData().then(async () => queryClient.invalidateQueries({ queryKey: PIN_STATUS_KEY }))
   }, [])
@@ -313,11 +324,11 @@ export function SessionGate({ children }: { children: ReactNode }): JSX.Element 
     if (phase !== 'covering') {
       return
     }
-    const timer = setTimeout(finishCovering, document.hidden ? 0 : COVER_LIMIT_MS)
+    const timer = setTimeout(finishCovering, document.hidden || coverAtOnce ? 0 : COVER_LIMIT_MS)
     return (): void => {
       clearTimeout(timer)
     }
-  }, [phase, finishCovering])
+  }, [phase, finishCovering, coverAtOnce])
 
   // In the render where the lock screen first appears over the app, the phase is still `open`.
   const appMounted = !covered || phase !== 'locked'
@@ -328,7 +339,9 @@ export function SessionGate({ children }: { children: ReactNode }): JSX.Element 
         <motion.div
           aria-hidden={covered ? true : undefined}
           initial={false}
-          animate={!covered ? appShown : phase === 'revealing' ? appUnderLock : appCovered}
+          animate={
+            !covered ? appShown : phase === 'revealing' ? appUnderLock : coverAtOnce ? appCoveredAtOnce : appCovered
+          }
         >
           {children}
           {/* After the app, so its effects run once the pages' own have started their requests. */}
@@ -337,7 +350,7 @@ export function SessionGate({ children }: { children: ReactNode }): JSX.Element 
         </motion.div>
       )}
       {pin?.required === true && <DesktopLock />}
-      {pin?.required === true && <RestoredPageLock />}
+      {pin?.required === true && <RestoredPageLock onRestored={onRestored} />}
       <AnimatePresence initial={false}>
         {screen && (
           <motion.div
@@ -345,6 +358,7 @@ export function SessionGate({ children }: { children: ReactNode }): JSX.Element 
             // Above the app's sticky header; below dialogs (1400) such as Forgot PIN.
             style={{ position: 'fixed', inset: 0, zIndex: 1300 }}
             {...overlayFade}
+            initial={coverAtOnce ? 'shown' : 'hidden'}
             onAnimationComplete={finishCovering}
           >
             <motion.div {...contentFade}>{screen.node}</motion.div>

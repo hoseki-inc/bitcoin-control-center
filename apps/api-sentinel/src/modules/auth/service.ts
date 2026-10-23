@@ -1,4 +1,4 @@
-import { createHash, randomBytes, randomUUID } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import { Err, Ok } from '@hoseki/packages/result'
 import type { Result } from '@hoseki/packages/result'
 import { eq } from 'drizzle-orm'
@@ -41,11 +41,8 @@ export const PLATFORM_AUTH_POLICIES = {
 
 /** One signed-in tab. The browser key (cookie) and tab ID (header) must both match. */
 export interface Session {
-  id: string
-  profileId: string
   browserKeyHash: string
   tabId: string
-  createdAt: number
   lastActiveAt: number
   /** When the PIN was last entered in this tab, for actions that ask for it again. */
   pinVerifiedAt: number
@@ -142,14 +139,30 @@ export class AuthService {
     return created
   }
 
-  /** Never more than the longest delay: a deadline set while the clock ran ahead would otherwise outlast it. */
   private retryAfter(row: ProfileRow): number | null {
-    const left = Math.min((row.nextAttemptAt ?? 0) - this.now(), MAX_DELAY_MS)
+    const left = (row.nextAttemptAt ?? 0) - this.now()
     return left > 0 ? left : null
   }
 
+  /**
+   * A deadline more than the longest delay away was set while the clock ran ahead; move it to an hour from now, so
+   * the wait shown is the wait served. Runs inside `serial`.
+   */
+  private async repairDeadline(row: ProfileRow): Promise<ProfileRow> {
+    if (row.nextAttemptAt === null || row.nextAttemptAt - this.now() <= MAX_DELAY_MS) {
+      return row
+    }
+    const nextAttemptAt = this.now() + MAX_DELAY_MS
+    await this.db.update(profiles).set({ nextAttemptAt }).where(eq(profiles.id, OWNER_ID))
+    return { ...row, nextAttemptAt }
+  }
+
   public async status(browserKey: string | null, tabId: string | null, secure: boolean): Promise<AuthStatus> {
-    const row = await this.owner()
+    const read = await this.owner()
+    const row =
+      read.nextAttemptAt !== null && read.nextAttemptAt - this.now() > MAX_DELAY_MS
+        ? await this.serial(async () => this.repairDeadline(await this.owner()))
+        : read
     const needsHttps = this.needsHttps(secure)
     return {
       required: this.policy.required,
@@ -193,11 +206,8 @@ export class AuthService {
     const browserKeyHash = hashBrowserKey(key)
     const now = this.now()
     const session: Session = {
-      id: randomUUID(),
-      profileId: OWNER_ID,
       browserKeyHash,
       tabId,
-      createdAt: now,
       lastActiveAt: now,
       pinVerifiedAt: now,
     }
@@ -229,19 +239,12 @@ export class AuthService {
       return Err({ kind: 'malformed' })
     }
     return this.serial(async () => {
-      const row = await this.owner()
+      const row = await this.repairDeadline(await this.owner())
       if (row.pinHash === null) {
         return Err({ kind: 'not_set' })
       }
       const wait = this.retryAfter(row)
       if (wait !== null) {
-        // The clock was moved back since this deadline was set; keep the delay to the longest one from now.
-        if (row.nextAttemptAt !== null && row.nextAttemptAt - this.now() > MAX_DELAY_MS) {
-          await this.db
-            .update(profiles)
-            .set({ nextAttemptAt: this.now() + wait })
-            .where(eq(profiles.id, OWNER_ID))
-        }
         return Err({ kind: 'wait', retryAfterMs: wait })
       }
       if (await verifyPin(pin, row.pinHash)) {

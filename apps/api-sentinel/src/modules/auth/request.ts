@@ -46,7 +46,7 @@ export function serializeBrowserCookie(value: string, secure: boolean, clear = f
 
 /** A Tor onion address: Tor encrypts the whole way to the server, so plain HTTP to it is as private as HTTPS. */
 function isOnionHost(host: string | undefined): boolean {
-  const name = host?.toLowerCase().replace(/:\d+$/, '')
+  const name = host?.toLowerCase().replace(/:\d+$/, '').replace(/\.$/, '')
   return name?.endsWith('.onion') === true
 }
 

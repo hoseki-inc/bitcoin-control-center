@@ -3,6 +3,7 @@ import { TestChakraProvider as ChakraProvider } from '@hoseki/packages/testing/c
 import { QueryClientProvider } from '@tanstack/react-query'
 import { act } from 'react'
 import { type Root, createRoot } from 'react-dom/client'
+import { Toaster, toast } from 'sonner'
 import { assert, expect, it, onTestFinished, vi } from 'vitest'
 import { queryClient } from '../trpc'
 import { TAB_HEADER, useLockState } from './session'
@@ -130,6 +131,7 @@ async function withTestSetup(sentinel: ReturnType<typeof fakeSentinel>, run: () 
       <QueryClientProvider client={queryClient}>
         <ChakraProvider>
           <SessionGate>
+            <Toaster />
             <p>Your holdings</p>
           </SessionGate>
         </ChakraProvider>
@@ -333,10 +335,44 @@ it('locks a page the browser brings back from Back or Forward', async () => {
       window.dispatchEvent(restored)
     })
 
+    // At once, with no fade: well inside the 0.4 s an ordinary lock may take.
+    await vi.waitFor(
+      () => {
+        expect(showing('Your holdings')).toBe(false)
+      },
+      { timeout: 150, interval: 10 },
+    )
+    expect(showing('Enter your PIN')).toBe(true)
+    expect(sentinel.sessions.size).toBe(0)
+  })
+}, 15_000)
+
+it('clears notices when the app locks, so none shows over the lock screen', async () => {
+  const sentinel = fakeSentinel({ pinSet: true })
+  await withTestSetup(sentinel, async () => {
+    await enterPin(PIN)
+    await vi.waitFor(
+      () => {
+        const holdings = [...document.querySelectorAll('p')].find((found) => found.textContent === 'Your holdings')
+        assert.exists(holdings, 'Expected the app')
+        expect(holdings.closest('[aria-hidden="true"]')).toBeNull()
+      },
+      { timeout: 5000 },
+    )
+    await act(async () => {
+      toast('“Cold storage” archived')
+    })
+    await vi.waitFor(() => {
+      expect(showing('Cold storage')).toBe(true)
+    })
+
+    await act(async () => {
+      desktopLock?.()
+    })
+
     await vi.waitFor(() => {
       expect(showing('Your holdings')).toBe(false)
-      expect(showing('Enter your PIN')).toBe(true)
+      expect(showing('Cold storage')).toBe(false)
     })
-    expect(sentinel.sessions.size).toBe(0)
   })
 }, 15_000)

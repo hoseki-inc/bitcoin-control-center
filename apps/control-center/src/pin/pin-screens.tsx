@@ -518,8 +518,8 @@ export function UnreachableScreen({ onRetry, retrying }: { onRetry: () => void; 
 export function HttpsRequiredScreen(): JSX.Element {
   return (
     <PinScreen
-      title="Open the HTTPS address"
-      description="Control Center only accepts your PIN over HTTPS. In StartOS, open Bitcoin Control Center using an address that starts with https://."
+      title="Insecure connection not allowed"
+      description="Open Control Center at an address that starts with https://, or over Tor."
     />
   )
 }

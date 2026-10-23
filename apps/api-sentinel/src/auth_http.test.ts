@@ -146,6 +146,10 @@ describe('PIN sign-in over HTTP', () => {
     expect(cookie).not.toBe('')
     expect((await mutate(base, 'auth.touch', undefined, { cookie, ...onion })).status).toBe(200)
 
+    // The same address typed with a trailing dot.
+    const dotted = { 'x-forwarded-host': `${onion['x-forwarded-host']}.` }
+    expect((await mutate(base, 'auth.touch', undefined, { cookie, ...dotted })).status).toBe(200)
+
     // Plain HTTP to any other address still can't sign in.
     expect((await mutate(base, 'auth.signIn', { pin: '482915' })).status).toBe(403)
   })

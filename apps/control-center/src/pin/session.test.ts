@@ -1,25 +1,30 @@
 import { describe, expect, it } from 'vitest'
 import { continuesTab } from './session'
 
-const now = 1_700_000_000_000
+const startedAt = 1_700_000_000_000
 
 describe('continuesTab', () => {
-  it('keeps the tab through a reload moments after the page left', () => {
-    expect(continuesTab('reload', now - 400, now)).toBe(true)
+  it('keeps the tab through a reload, however long the page takes to load', () => {
+    // The old page leaves once the server answers: at once, or many seconds into a slow load.
+    expect(continuesTab('reload', startedAt + 50, startedAt)).toBe(true)
+    expect(continuesTab('reload', startedAt + 11_000, startedAt)).toBe(true)
+    // Clock jitter can put the leave a moment before the start.
+    expect(continuesTab('reload', startedAt - 300, startedAt)).toBe(true)
   })
 
-  it('asks again for a closed tab reopened later, even through a reload', () => {
-    expect(continuesTab('reload', now - 60_000, now)).toBe(false)
+  it('asks again for a closed tab that is reopened, even quickly or through a reload', () => {
+    expect(continuesTab('reload', startedAt - 2000, startedAt)).toBe(false)
+    expect(continuesTab('reload', startedAt - 60_000, startedAt)).toBe(false)
+    expect(continuesTab('back_forward', startedAt + 50, startedAt)).toBe(false)
   })
 
-  it('asks again for a reopened, duplicated, or newly opened tab', () => {
-    expect(continuesTab('back_forward', now - 400, now)).toBe(false)
-    expect(continuesTab('navigate', null, now)).toBe(false)
-    expect(continuesTab('reload', null, now)).toBe(false)
-    expect(continuesTab(null, now - 400, now)).toBe(false)
+  it('asks again for a duplicated or newly opened tab', () => {
+    expect(continuesTab('navigate', null, startedAt)).toBe(false)
+    expect(continuesTab('reload', null, startedAt)).toBe(false)
+    expect(continuesTab(null, startedAt + 50, startedAt)).toBe(false)
   })
 
-  it('asks again when the time it left is in the future', () => {
-    expect(continuesTab('reload', now + 1000, now)).toBe(false)
+  it('ignores a leave time far in the future', () => {
+    expect(continuesTab('reload', startedAt + 60 * 60 * 1000, startedAt)).toBe(false)
   })
 })

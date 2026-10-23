@@ -17,18 +17,28 @@ function newTabId(): string {
 }
 
 const LEFT_AT_KEY = 'bcc:left-at'
-// A reload starts moments after the page left. A tab reopened from history, or a duplicated one, brings back an
-// older time or none at all.
-const RELOAD_WINDOW_MS = 10_000
+// On a reload, the new page starts loading before the old one leaves, by however long the server takes to answer.
+// A closed tab that's reopened left before the new page started; allow only clock jitter in that direction.
+const LEFT_BEFORE_START_MS = 1000
+// An upper bound only, so a stale or garbled time can't count.
+const LEFT_AFTER_START_MS = 5 * 60 * 1000
 
 const NavigationEntry = z.object({ type: z.string() })
 
 /**
- * Whether this page may keep the tab ID it finds in sessionStorage: only when it is a reload of a page that left
- * moments ago. Browsers restore sessionStorage into reopened and duplicated tabs, and those must ask for the PIN.
+ * Whether this page may keep the tab ID it finds in sessionStorage: only when it is a reload, and the old page left
+ * after this one started loading. Browsers restore sessionStorage into reopened and duplicated tabs, and those
+ * must ask for the PIN.
+ *
+ * @param startedAt When this page started loading (`performance.timeOrigin`), however long it then took.
  */
-export function continuesTab(navigationType: string | null, leftAt: number | null, now: number): boolean {
-  return navigationType === 'reload' && leftAt !== null && now >= leftAt && now - leftAt <= RELOAD_WINDOW_MS
+export function continuesTab(navigationType: string | null, leftAt: number | null, startedAt: number): boolean {
+  return (
+    navigationType === 'reload' &&
+    leftAt !== null &&
+    leftAt >= startedAt - LEFT_BEFORE_START_MS &&
+    leftAt - startedAt <= LEFT_AFTER_START_MS
+  )
 }
 
 let checkedContinuity = false
@@ -44,7 +54,7 @@ function checkContinuity(): void {
     sessionStorage.removeItem(LEFT_AT_KEY)
     const navigation = parseUnknown(NavigationEntry, performance.getEntriesByType('navigation')[0])
     const navigationType = navigation.isOk() ? navigation.unwrap().type : null
-    if (!continuesTab(navigationType, Number.isSafeInteger(leftAt) ? leftAt : null, Date.now())) {
+    if (!continuesTab(navigationType, Number.isSafeInteger(leftAt) ? leftAt : null, performance.timeOrigin)) {
       sessionStorage.removeItem(TAB_STORAGE_KEY)
     }
   } catch {

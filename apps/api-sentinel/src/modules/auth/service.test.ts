@@ -206,6 +206,21 @@ describe('wrong-PIN delays', () => {
       .set({ failedAttempts: 9, nextAttemptAt: clock.now + 48 * hour })
       .where(eq(profiles.id, 'owner'))
 
+    // The sign-in screen asks first, and the hour it shows is the hour served.
+    expect((await auth.status(null, null, true)).retryAfterMs).toBe(hour)
+    clock.now += hour + 1000
+    expect((await auth.signIn(PIN, null, OTHER_TAB)).isOk()).toBe(true)
+  })
+
+  it('caps a far-off deadline on a sign-in attempt too', async () => {
+    const hour = 60 * 60 * 1000
+    const { db, clock, auth } = await setup()
+    await withPin(auth)
+    await db
+      .update(profiles)
+      .set({ failedAttempts: 9, nextAttemptAt: clock.now + 48 * hour })
+      .where(eq(profiles.id, 'owner'))
+
     expect((await auth.signIn(PIN, null, OTHER_TAB)).unwrapErr()).toEqual({ kind: 'wait', retryAfterMs: hour })
     clock.now += hour + 1000
     expect((await auth.signIn(PIN, null, OTHER_TAB)).isOk()).toBe(true)
