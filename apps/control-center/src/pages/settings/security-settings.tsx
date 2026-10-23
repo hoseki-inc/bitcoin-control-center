@@ -15,10 +15,11 @@ import {
 } from '@chakra-ui/react'
 import { useId, useRef, useState } from 'react'
 import { toast } from 'sonner'
+import { isDesktop } from '../../mode'
 import { PinCircles, type PinCirclesState, successAnimationMs } from '../../pin/pin-circles'
 import { MISMATCH_MESSAGE, UNREACHABLE_MESSAGE } from '../../pin/pin-messages'
 import { useCheckedPin } from '../../pin/pin-screens'
-import { signOut, usePinStatus } from '../../pin/status'
+import { signOutEverywhere, usePinStatus } from '../../pin/status'
 import { baseTrpc } from '../../trpc'
 
 /** Shown only where the platform requires a PIN. */
@@ -49,17 +50,21 @@ export function SecuritySettings(): JSX.Element | null {
         >
           Change PIN
         </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          isLoading={signingOut}
-          onClick={() => {
-            setSigningOut(true)
-            void signOut()
-          }}
-        >
-          Sign out
-        </Button>
+        {/* Ends the sessions on every browser and device. The desktop app has only its own window, which the lock
+            button already covers. */}
+        {!isDesktop && (
+          <Button
+            size="sm"
+            variant="outline"
+            isLoading={signingOut}
+            onClick={() => {
+              setSigningOut(true)
+              void signOutEverywhere()
+            }}
+          >
+            Sign out everywhere
+          </Button>
+        )}
       </HStack>
       {changing && (
         <ChangePinDialog

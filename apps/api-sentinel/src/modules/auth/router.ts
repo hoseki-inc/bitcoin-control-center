@@ -103,8 +103,8 @@ export const authRouter = t.router({
     ctx.app.auth.lock(ctx.session)
   }),
 
-  signOut: sessionProcedure.mutation(({ ctx }) => {
-    ctx.app.auth.signOut(ctx.session)
+  signOutEverywhere: sessionProcedure.mutation(({ ctx }) => {
+    ctx.app.auth.signOutEverywhere()
     ctx.request?.clearBrowserKey()
   }),
 })

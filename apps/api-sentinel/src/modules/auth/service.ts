@@ -329,13 +329,10 @@ export class AuthService {
     this.sessions.delete(sessionKey(session.browserKeyHash, session.tabId))
   }
 
-  /** Signs out every tab in this browser. */
-  public signOut(session: Session): void {
-    for (const [key, other] of this.sessions) {
-      if (other.browserKeyHash === session.browserKeyHash) {
-        this.sessions.delete(key)
-      }
-    }
+  /** Signs out every tab on every browser and device, this one included. */
+  public signOutEverywhere(): void {
+    this.endAllSessions()
+    this.logger.info('Signed out everywhere')
   }
 
   public endAllSessions(): void {

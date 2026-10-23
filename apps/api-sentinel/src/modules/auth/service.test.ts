@@ -160,7 +160,7 @@ describe('sessions', () => {
     expect(auth.resolve(browserKey, TAB)).toBeNull()
   })
 
-  it('lock one tab, or sign out every tab in the browser', async () => {
+  it('lock one tab, or sign out everywhere', async () => {
     const { auth } = await setup()
     const first = await withPin(auth)
     const second = (await auth.signIn(PIN, first.browserKey, OTHER_TAB)).expect('sign in')
@@ -170,9 +170,9 @@ describe('sessions', () => {
     expect(auth.resolve(first.browserKey, TAB)).toBeNull()
     expect(auth.resolve(first.browserKey, OTHER_TAB)).toBe(second.session)
 
-    auth.signOut(second.session)
+    auth.signOutEverywhere()
     expect(auth.resolve(first.browserKey, OTHER_TAB)).toBeNull()
-    expect(auth.resolve(elsewhere.browserKey, TAB)).toBe(elsewhere.session)
+    expect(auth.resolve(elsewhere.browserKey, TAB)).toBeNull()
   })
 
   it('record when the PIN was last entered', async () => {

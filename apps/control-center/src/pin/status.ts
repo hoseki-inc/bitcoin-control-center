@@ -31,8 +31,8 @@ export async function lockApp(): Promise<void> {
   useLockState.getState().lock()
 }
 
-/** Signs out every tab in this browser, then reloads so nothing from the session remains. */
-export async function signOut(): Promise<void> {
-  await baseTrpc.auth.signOut.mutate().catch(() => undefined)
+/** Signs out every tab on every browser and device, then reloads so nothing from the session remains. */
+export async function signOutEverywhere(): Promise<void> {
+  await baseTrpc.auth.signOutEverywhere.mutate().catch(() => undefined)
   window.location.reload()
 }
