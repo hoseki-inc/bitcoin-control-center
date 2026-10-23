@@ -31,6 +31,7 @@ import {
   waitMessage,
   wrongPinMessage,
 } from './pin-messages'
+import { useLockState } from './session'
 
 // Long enough to see the circles shake red before the next try.
 const FEEDBACK_MS = 560
@@ -204,7 +205,8 @@ interface CheckedPin {
 /** Shared by sign-in and the Change PIN dialog: entering a PIN Sentinel checks, with its delays. */
 export function useCheckedPin(
   check: (pin: string) => Promise<PinOutcome>,
-  onAccepted: () => void,
+  /** `locksAtSubmit` lets a sign-in tell whether the app locked after the PIN was entered. */
+  onAccepted: (locksAtSubmit: number) => void,
   initialRetryAfterMs: number | null,
 ): CheckedPin {
   const entry = usePinEntry()
@@ -232,11 +234,12 @@ export function useCheckedPin(
       return
     }
     entry.setState('checking')
+    const locksAtSubmit = useLockState.getState().locks
     void check(pin)
       .then(async (outcome) => {
         if (outcome.ok) {
           await entry.accept()
-          onAccepted()
+          onAccepted(locksAtSubmit)
           return
         }
         entry.setState('idle')
@@ -260,7 +263,7 @@ export function SignInScreen({
 }: {
   recovery: PinRecovery
   retryAfterMs: number | null
-  onSignedIn: () => void
+  onSignedIn: (locksAtSubmit: number) => void
 }): JSX.Element {
   const messageId = useId()
   const [forgotOpen, setForgotOpen] = useState(false)
@@ -327,11 +330,14 @@ export function SetupScreen({
   recovery,
   onPinSet,
   onDone,
+  onLocked,
 }: {
   recovery: PinRecovery
   /** The PIN is saved and this tab is signed in; the save step follows. */
   onPinSet: () => void
   onDone: () => void
+  /** The app locked while the PIN was being saved, so the save step, which shows it, never appears. */
+  onLocked: () => void
 }): JSX.Element {
   const messageId = useId()
   const entry = usePinEntry()
@@ -354,12 +360,21 @@ export function SetupScreen({
       return
     }
     entry.setState('checking')
+    // A lock from here on, even before Sentinel answers, means no one may see the PIN on the save step.
+    const locksAtSubmit = useLockState.getState().locks
+    const lockedSince = (): boolean => useLockState.getState().locks !== locksAtSubmit
     void baseTrpc.auth.setFirstPin
       .mutate({ pin })
       .then(async () => {
+        if (lockedSince()) {
+          onLocked()
+          return
+        }
         onPinSet()
         await entry.accept()
-        setSetup({ step: 'save', pin })
+        if (!lockedSince()) {
+          setSetup({ step: 'save', pin })
+        }
       })
       .catch(async () => {
         entry.setState('idle')

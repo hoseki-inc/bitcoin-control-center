@@ -197,8 +197,8 @@ export function SessionGate({ children }: { children: ReactNode }): JSX.Element 
     }
   })
 
-  const reveal = (): void => {
-    const locksAtStart = useLockState.getState().locks
+  // Counted from when the PIN was entered, so a lock during the sign-in's finishing check also counts.
+  const reveal = (locksAtStart = useLockState.getState().locks): void => {
     const start = performance.now()
     const committed = new Promise<void>((resolve) => {
       commitRef.current = resolve
@@ -239,7 +239,10 @@ export function SessionGate({ children }: { children: ReactNode }): JSX.Element 
           onPinSet={() => {
             setSettingUp(true)
           }}
-          onDone={reveal}
+          onDone={() => {
+            reveal()
+          }}
+          onLocked={cancelSignIn}
         />
       ),
     }
