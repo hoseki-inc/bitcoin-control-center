@@ -32,6 +32,7 @@ import {
   wrongPinMessage,
 } from './pin-messages'
 import { useLockState } from './session'
+import { refreshPinStatus } from './status'
 
 // Long enough to see the circles shake red before the next try.
 const FEEDBACK_MS = 560
@@ -251,6 +252,8 @@ export function useCheckedPin(
       .catch(async () => {
         entry.setState('idle')
         await entry.reject(UNREACHABLE_MESSAGE)
+        // The PIN may have been cleared meanwhile; asking again moves to the right screen.
+        void refreshPinStatus()
       })
   }
   return { entry, waitingFor, submit }
@@ -380,6 +383,8 @@ export function SetupScreen({
         entry.setState('idle')
         await entry.reject(UNREACHABLE_MESSAGE)
         setSetup({ step: 'choose' })
+        // Another device may have set the PIN first; asking again moves to sign-in.
+        void refreshPinStatus()
       })
   }
 
@@ -495,6 +500,17 @@ export function StartOsSetupScreen(): JSX.Element {
       <Box color="neutral.400" aria-hidden="true">
         <KeyRoundIcon size={28} />
       </Box>
+    </PinScreen>
+  )
+}
+
+/** Sentinel couldn't be asked whether a PIN is needed, so nothing opens until it answers. */
+export function UnreachableScreen({ onRetry, retrying }: { onRetry: () => void; retrying: boolean }): JSX.Element {
+  return (
+    <PinScreen title="Couldn’t reach Control Center">
+      <Button onClick={onRetry} isLoading={retrying}>
+        Try again
+      </Button>
     </PinScreen>
   )
 }

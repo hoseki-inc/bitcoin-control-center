@@ -60,6 +60,14 @@ describe('desktop PIN access', () => {
     expect(refused.resetAndRestart).not.toHaveBeenCalled()
   })
 
+  it('lets the person try again when the reset fails', async () => {
+    const { reset, event, contents, confirmAdmin, resetAndRestart } = setup(true)
+    resetAndRestart.mockRejectedValueOnce(new Error('ENOSPC'))
+    await expect(reset(event(contents, `${ORIGIN}/home`))).resolves.toBe(false)
+    await expect(reset(event(contents, `${ORIGIN}/home`))).resolves.toBe(true)
+    expect(confirmAdmin).toHaveBeenCalledTimes(2)
+  })
+
   it('lets the person try again after a cancelled prompt', async () => {
     const { reset, event, contents, confirmAdmin } = setup(false)
     await reset(event(contents, `${ORIGIN}/home`))

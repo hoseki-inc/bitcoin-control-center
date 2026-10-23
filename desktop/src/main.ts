@@ -125,13 +125,17 @@ async function start(): Promise<void> {
   setupPinAccess(window, origin, ipcMain, {
     confirmAdmin: async () => confirmComputerAdmin(process.platform, runProgram),
     resetAndRestart: async () => {
-      quitting = true
-      await torManager?.stop()
-      await server?.shutdown()
-      // Sentinel clears the PIN when it next starts and finds this request (see its auth/platform.ts).
+      // Sentinel clears the PIN when it next starts and finds this request (see its auth/platform.ts). Written
+      // first, so a failure leaves the app running as it was.
       fs.writeFileSync(path.join(dataDir, 'reset-pin'), 'reset\n', { mode: 0o600 })
-      app.relaunch()
-      app.exit(0)
+      quitting = true
+      try {
+        await torManager?.stop()
+        await server?.shutdown()
+      } finally {
+        app.relaunch()
+        app.exit(0)
+      }
     },
     onComputerLock: (listener) => {
       powerMonitor.on('suspend', listener)

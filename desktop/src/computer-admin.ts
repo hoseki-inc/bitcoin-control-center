@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process'
+import * as path from 'node:path'
 
 /** Runs a program and reports whether it exited successfully. */
 export type RunProgram = (file: string, args: string[]) => Promise<boolean>
@@ -27,7 +28,15 @@ export async function confirmComputerAdmin(platform: NodeJS.Platform, run: RunPr
   }
   if (platform === 'win32') {
     // User Account Control. Start-Process throws when the prompt is declined.
-    return run('powershell.exe', [
+    // By full path: Windows looks for a bare program name in the current folder first.
+    const powershell = path.win32.join(
+      process.env.SystemRoot ?? 'C:\\Windows',
+      'System32',
+      'WindowsPowerShell',
+      'v1.0',
+      'powershell.exe',
+    )
+    return run(powershell, [
       '-NoProfile',
       '-NonInteractive',
       '-Command',

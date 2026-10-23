@@ -33,12 +33,18 @@ export function setupPinAccess(
       return false
     }
     busy = true
-    if (!(await confirmAdmin())) {
-      busy = false
+    try {
+      if (!(await confirmAdmin())) {
+        return false
+      }
+      await resetAndRestart()
+      return true
+    } catch {
+      // Nothing changed (the reset request couldn't be written), so the person can try again.
       return false
+    } finally {
+      busy = false
     }
-    await resetAndRestart()
-    return true
   })
 
   const lock = (): void => {

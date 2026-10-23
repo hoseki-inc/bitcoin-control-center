@@ -195,6 +195,23 @@ describe('sessions', () => {
   })
 })
 
+describe('wrong-PIN delays', () => {
+  it('never run longer than an hour from now, even after the clock moves back', async () => {
+    const hour = 60 * 60 * 1000
+    const { db, clock, auth } = await setup()
+    await withPin(auth)
+    // A delay recorded while the clock ran two days ahead.
+    await db
+      .update(profiles)
+      .set({ failedAttempts: 9, nextAttemptAt: clock.now + 48 * hour })
+      .where(eq(profiles.id, 'owner'))
+
+    expect((await auth.signIn(PIN, null, OTHER_TAB)).unwrapErr()).toEqual({ kind: 'wait', retryAfterMs: hour })
+    clock.now += hour + 1000
+    expect((await auth.signIn(PIN, null, OTHER_TAB)).isOk()).toBe(true)
+  })
+})
+
 describe('changing the PIN', () => {
   it('needs the current PIN and signs out everything but this tab', async () => {
     const { auth } = await setup()

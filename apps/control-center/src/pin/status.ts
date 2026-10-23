@@ -11,11 +11,16 @@ export function usePinStatus(): UseQueryResult<PinStatus> {
   return useQuery({
     queryKey: PIN_STATUS_KEY,
     queryFn: async () => baseTrpc.auth.status.query(),
-    retry: false,
+    // A failed first check shows its own screen, so give a brief network hiccup a couple of tries first.
+    retry: 2,
     refetchOnWindowFocus: true,
     // While StartOS has yet to set the PIN, notice when it does.
     refetchInterval: (data) => (data?.required === true && !data.pinSet && !data.inAppSetup ? 5000 : false),
   })
+}
+
+export async function refreshPinStatus(): Promise<void> {
+  await queryClient.invalidateQueries({ queryKey: PIN_STATUS_KEY })
 }
 
 /** Drops everything the app has loaded, so nothing stays in memory behind the lock screen. */

@@ -1,3 +1,5 @@
+import { parseUnknown } from '@hoseki/packages/result/lib/parse'
+import { z } from 'zod'
 import { create } from 'zustand'
 
 const TAB_STORAGE_KEY = 'bcc:tab'
@@ -14,11 +16,55 @@ function newTabId(): string {
     .replaceAll('=', '')
 }
 
+const LEFT_AT_KEY = 'bcc:left-at'
+// A reload starts moments after the page left. A tab reopened from history, or a duplicated one, brings back an
+// older time or none at all.
+const RELOAD_WINDOW_MS = 10_000
+
+const NavigationEntry = z.object({ type: z.string() })
+
 /**
- * This tab's ID. sessionStorage keeps it through reloads and drops it when the tab closes, so a new tab
- * asks for the PIN. Where storage is blocked, it lasts until the page reloads.
+ * Whether this page may keep the tab ID it finds in sessionStorage: only when it is a reload of a page that left
+ * moments ago. Browsers restore sessionStorage into reopened and duplicated tabs, and those must ask for the PIN.
+ */
+export function continuesTab(navigationType: string | null, leftAt: number | null, now: number): boolean {
+  return navigationType === 'reload' && leftAt !== null && now >= leftAt && now - leftAt <= RELOAD_WINDOW_MS
+}
+
+let checkedContinuity = false
+
+/** Once per page: drops a tab ID this page didn't earn, and notes when the page leaves, for the next reload. */
+function checkContinuity(): void {
+  if (checkedContinuity) {
+    return
+  }
+  checkedContinuity = true
+  try {
+    const leftAt = Number.parseInt(sessionStorage.getItem(LEFT_AT_KEY) ?? '', 10)
+    sessionStorage.removeItem(LEFT_AT_KEY)
+    const navigation = parseUnknown(NavigationEntry, performance.getEntriesByType('navigation')[0])
+    const navigationType = navigation.isOk() ? navigation.unwrap().type : null
+    if (!continuesTab(navigationType, Number.isSafeInteger(leftAt) ? leftAt : null, Date.now())) {
+      sessionStorage.removeItem(TAB_STORAGE_KEY)
+    }
+  } catch {
+    // Storage is blocked; the in-memory ID lasts only as long as this page.
+  }
+  window.addEventListener('pagehide', () => {
+    try {
+      sessionStorage.setItem(LEFT_AT_KEY, String(Date.now()))
+    } catch {
+      // Storage is blocked; a reload then asks for the PIN.
+    }
+  })
+}
+
+/**
+ * This tab's ID. sessionStorage keeps it through a reload; a closed tab that's reopened, a duplicated tab, or a
+ * new one gets a new ID, so it asks for the PIN. Where storage is blocked, it lasts until the page reloads.
  */
 export function tabId(): string {
+  checkContinuity()
   try {
     const saved = sessionStorage.getItem(TAB_STORAGE_KEY)
     if (saved !== null && /^[\w-]{16,64}$/.test(saved)) {

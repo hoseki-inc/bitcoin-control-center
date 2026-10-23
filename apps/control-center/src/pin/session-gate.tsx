@@ -3,7 +3,7 @@ import { AnimatePresence, type HTMLMotionProps, motion } from 'framer-motion'
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 import { clearFlowSource } from '../lib/flow-tracker'
 import { baseTrpc, queryClient } from '../trpc'
-import { HttpsRequiredScreen, SetupScreen, SignInScreen, StartOsSetupScreen } from './pin-screens'
+import { HttpsRequiredScreen, SetupScreen, SignInScreen, StartOsSetupScreen, UnreachableScreen } from './pin-screens'
 import { useLockState } from './session'
 import { PIN_STATUS_KEY, type PinStatus, forgetLoadedData, lockApp, usePinStatus } from './status'
 
@@ -47,6 +47,25 @@ function ActivityTracker(): null {
  * The desktop app locks when its window closes, or the computer sleeps or its screen locks. This listens at every
  * stage, including setup and the reveal, since a tab signs in before the app opens.
  */
+/**
+ * A page the browser keeps in memory and brings back on Back or Forward comes back exactly as it was left, so it
+ * locks: leaving the page counts as closing it.
+ */
+function RestoredPageLock(): null {
+  useEffect(() => {
+    const onPageShow = (event: PageTransitionEvent): void => {
+      if (event.persisted) {
+        void lockApp()
+      }
+    }
+    window.addEventListener('pageshow', onPageShow)
+    return (): void => {
+      window.removeEventListener('pageshow', onPageShow)
+    }
+  }, [])
+  return null
+}
+
 function DesktopLock(): null {
   useEffect(
     () =>
@@ -227,8 +246,21 @@ export function SessionGate({ children }: { children: ReactNode }): JSX.Element 
   let screen: { key: string; node: ReactNode } | null = null
   if (status.isLoading) {
     screen = { key: 'loading', node: <Box position="fixed" inset={0} bg="shades.0" /> }
-  } else if (!pin || !pin.required) {
-    // PINs are off, or Sentinel can't be reached; the app shows its own errors and the server still checks.
+  } else if (!pin) {
+    // Without an answer, it's unknown whether a PIN is needed, so the app stays closed until Sentinel replies.
+    screen = {
+      key: 'unreachable',
+      node: (
+        <UnreachableScreen
+          retrying={status.isFetching}
+          onRetry={() => {
+            void status.refetch()
+          }}
+        />
+      ),
+    }
+  } else if (!pin.required) {
+    // PINs are off on this platform.
     screen = null
   } else if (settingUp || (!pin.pinSet && pin.inAppSetup && !pin.needsHttps)) {
     screen = {
@@ -305,6 +337,7 @@ export function SessionGate({ children }: { children: ReactNode }): JSX.Element 
         </motion.div>
       )}
       {pin?.required === true && <DesktopLock />}
+      {pin?.required === true && <RestoredPageLock />}
       <AnimatePresence initial={false}>
         {screen && (
           <motion.div

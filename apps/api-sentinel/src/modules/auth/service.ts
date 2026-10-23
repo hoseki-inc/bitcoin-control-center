@@ -142,8 +142,9 @@ export class AuthService {
     return created
   }
 
+  /** Never more than the longest delay: a deadline set while the clock ran ahead would otherwise outlast it. */
   private retryAfter(row: ProfileRow): number | null {
-    const left = (row.nextAttemptAt ?? 0) - this.now()
+    const left = Math.min((row.nextAttemptAt ?? 0) - this.now(), MAX_DELAY_MS)
     return left > 0 ? left : null
   }
 
@@ -234,6 +235,13 @@ export class AuthService {
       }
       const wait = this.retryAfter(row)
       if (wait !== null) {
+        // The clock was moved back since this deadline was set; keep the delay to the longest one from now.
+        if (row.nextAttemptAt !== null && row.nextAttemptAt - this.now() > MAX_DELAY_MS) {
+          await this.db
+            .update(profiles)
+            .set({ nextAttemptAt: this.now() + wait })
+            .where(eq(profiles.id, OWNER_ID))
+        }
         return Err({ kind: 'wait', retryAfterMs: wait })
       }
       if (await verifyPin(pin, row.pinHash)) {

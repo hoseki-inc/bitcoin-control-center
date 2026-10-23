@@ -17,7 +17,7 @@ describe('confirmComputerAdmin', () => {
   it('uses User Account Control on Windows', async () => {
     const run = runner(true)
     await expect(confirmComputerAdmin('win32', run)).resolves.toBe(true)
-    expect(run.mock.calls[0]?.[0]).toBe('powershell.exe')
+    expect(run.mock.calls[0]?.[0]).toMatch(/\\System32\\WindowsPowerShell\\v1\.0\\powershell\.exe$/)
     expect(run.mock.calls[0]?.[1].join(' ')).toContain('-Verb RunAs')
   })
 

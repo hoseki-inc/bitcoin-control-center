@@ -26,8 +26,12 @@ const browser = await vi.hoisted(async () => {
 const PIN = '482915'
 
 /** A Sentinel that knows one PIN, records the tab each request names, and ends sessions on lock. */
-function fakeSentinel(initial: Pick<PinStatus, 'pinSet'>, holdSetup = false) {
+function fakeSentinel(
+  initial: Pick<PinStatus, 'pinSet'>,
+  { holdSetup = false, failedStatusChecks = 0 }: { holdSetup?: boolean; failedStatusChecks?: number } = {},
+) {
   let pinSet = initial.pinSet
+  let statusFailuresLeft = failedStatusChecks
   // Holds the setup response until released, like a slow server.
   let releaseSetup: () => void = () => {}
   const setupHeld = new Promise<void>((resolve) => {
@@ -42,6 +46,10 @@ function fakeSentinel(initial: Pick<PinStatus, 'pinSet'>, holdSetup = false) {
     calls.push({ route, tab })
     const data = (json: PinStatus | { ok: true } | null): Response => Response.json({ result: { data: { json } } })
     if (route === 'auth.status') {
+      if (statusFailuresLeft > 0) {
+        statusFailuresLeft -= 1
+        throw new TypeError('Failed to fetch')
+      }
       return data({
         required: true,
         pinSet,
@@ -51,6 +59,12 @@ function fakeSentinel(initial: Pick<PinStatus, 'pinSet'>, holdSetup = false) {
         signedIn: tab !== null && sessions.has(tab),
         retryAfterMs: null,
       } satisfies PinStatus)
+    }
+    if (route === 'auth.setFirstPin' && pinSet) {
+      return Response.json(
+        { error: { json: { message: 'A PIN is already set', data: { httpStatus: 409, code: 'CONFLICT' } } } },
+        { status: 409 },
+      )
     }
     if (route === 'auth.signIn' || route === 'auth.setFirstPin') {
       if (route === 'auth.setFirstPin' && holdSetup) {
@@ -70,7 +84,16 @@ function fakeSentinel(initial: Pick<PinStatus, 'pinSet'>, holdSetup = false) {
     }
     return Response.json({ error: { json: { message: 'Enter your PIN', data: { httpStatus: 401 } } } }, { status: 401 })
   })
-  return { fetchMock, calls, sessions, releaseSetup }
+  return {
+    fetchMock,
+    calls,
+    sessions,
+    releaseSetup,
+    /** Another device sets the PIN. */
+    setPinElsewhere: () => {
+      pinSet = true
+    },
+  }
 }
 
 let root: Root
@@ -194,7 +217,7 @@ it('ends setup when the desktop locks on the Save step', async () => {
 }, 15_000)
 
 it('never shows the new PIN when the desktop locks before setup is confirmed', async () => {
-  const sentinel = fakeSentinel({ pinSet: false }, true)
+  const sentinel = fakeSentinel({ pinSet: false }, { holdSetup: true })
   await withTestSetup(sentinel, async () => {
     await enterPin(PIN)
     await vi.waitFor(() => {
@@ -245,5 +268,75 @@ it('keeps the app closed when the desktop locks during the sign-in check', async
     })
     expect(showing('Your holdings')).toBe(false)
     expect(showing('Enter your PIN')).toBe(true)
+  })
+}, 15_000)
+
+it('stays closed and offers to try again when Sentinel can’t be asked about the PIN', async () => {
+  const sentinel = fakeSentinel({ pinSet: true }, { failedStatusChecks: 3 })
+  await withTestSetup(sentinel, async () => {
+    const retry = await vi.waitFor(
+      () => {
+        const button = [...document.querySelectorAll('button')].find((found) => found.textContent === 'Try again')
+        assert.exists(button, 'Expected the Try again button')
+        return button
+      },
+      { timeout: 8000 },
+    )
+    expect(showing('Your holdings')).toBe(false)
+
+    await act(async () => {
+      retry.click()
+    })
+    await vi.waitFor(() => {
+      expect(showing('Enter your PIN')).toBe(true)
+    })
+    expect(showing('Your holdings')).toBe(false)
+  })
+}, 15_000)
+
+it('moves to sign-in when another device set the PIN during setup', async () => {
+  const sentinel = fakeSentinel({ pinSet: false })
+  await withTestSetup(sentinel, async () => {
+    await enterPin(PIN)
+    await vi.waitFor(() => {
+      expect(showing('Enter it again')).toBe(true)
+    })
+    sentinel.setPinElsewhere()
+    await enterPin(PIN)
+
+    await vi.waitFor(
+      () => {
+        expect(showing('Enter your PIN')).toBe(true)
+      },
+      { timeout: 5000 },
+    )
+  })
+}, 15_000)
+
+it('locks a page the browser brings back from Back or Forward', async () => {
+  const sentinel = fakeSentinel({ pinSet: true })
+  await withTestSetup(sentinel, async () => {
+    await enterPin(PIN)
+    // Open: the app is no longer hidden behind the lock screen.
+    await vi.waitFor(
+      () => {
+        const holdings = [...document.querySelectorAll('p')].find((found) => found.textContent === 'Your holdings')
+        assert.exists(holdings, 'Expected the app')
+        expect(holdings.closest('[aria-hidden="true"]')).toBeNull()
+      },
+      { timeout: 5000 },
+    )
+
+    await act(async () => {
+      const restored = new Event('pageshow')
+      Object.defineProperty(restored, 'persisted', { value: true })
+      window.dispatchEvent(restored)
+    })
+
+    await vi.waitFor(() => {
+      expect(showing('Your holdings')).toBe(false)
+      expect(showing('Enter your PIN')).toBe(true)
+    })
+    expect(sentinel.sessions.size).toBe(0)
   })
 }, 15_000)
