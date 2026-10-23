@@ -33,6 +33,17 @@ export function tabId(): string {
   }
 }
 
+/** Gives this tab a new ID, so its old session can't be resumed here, even if Sentinel never heard it end. */
+export function retireTabId(): void {
+  const created = newTabId()
+  memoryTabId = created
+  try {
+    sessionStorage.setItem(TAB_STORAGE_KEY, created)
+  } catch {
+    // Storage is blocked; the in-memory ID applies.
+  }
+}
+
 interface LockState {
   /** Sentinel refused a request for want of a PIN, or the person locked the app. */
   locked: boolean

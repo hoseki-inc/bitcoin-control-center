@@ -1,6 +1,7 @@
+import { Err, Ok, Result } from '@hoseki/packages/result'
 import { type UseQueryResult, useQuery } from '@tanstack/react-query'
 import { type RouterOutput, baseTrpc, queryClient } from '../trpc'
-import { useLockState } from './session'
+import { retireTabId, useLockState } from './session'
 
 export type PinStatus = RouterOutput['auth']['status']
 
@@ -25,14 +26,35 @@ export async function forgetLoadedData(): Promise<void> {
   queryClient.getMutationCache().clear()
 }
 
-/** Locks this tab: Sentinel ends its session, and the lock screen replaces the app. */
+// Long enough for a slow connection; the tab gets a new ID afterwards either way.
+const LOCK_REQUEST_LIMIT_MS = 5000
+
+/**
+ * Locks this tab. The lock screen covers the app at once; Sentinel ends the session, and the tab then gets a new
+ * ID so a reload asks for the PIN even if that request never arrived.
+ */
 export async function lockApp(): Promise<void> {
-  await baseTrpc.auth.lock.mutate().catch(() => undefined)
   useLockState.getState().lock()
+  // Sent with the current tab ID, which the request reads as it starts.
+  const request = baseTrpc.auth.lock.mutate().catch(() => undefined)
+  await Promise.race([
+    request,
+    new Promise((resolve) => {
+      setTimeout(resolve, LOCK_REQUEST_LIMIT_MS)
+    }),
+  ])
+  retireTabId()
 }
 
-/** Signs out every tab on every browser and device, then reloads so nothing from the session remains. */
-export async function signOutEverywhere(): Promise<void> {
-  await baseTrpc.auth.signOutEverywhere.mutate().catch(() => undefined)
+/**
+ * Signs out every tab on every browser and device, then reloads so nothing from the session remains. An error if
+ * Sentinel didn't confirm it, so the other devices may still be signed in.
+ */
+export async function signOutEverywhere(): Promise<Result<void, Error>> {
+  const result = await Result.fromPromise(baseTrpc.auth.signOutEverywhere.mutate())
+  if (result.isErr()) {
+    return Err(result.unwrapErr())
+  }
   window.location.reload()
+  return Ok(undefined)
 }

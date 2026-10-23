@@ -17,7 +17,7 @@ import { useId, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { isDesktop } from '../../mode'
 import { PinCircles, type PinCirclesState, successAnimationMs } from '../../pin/pin-circles'
-import { MISMATCH_MESSAGE, UNREACHABLE_MESSAGE } from '../../pin/pin-messages'
+import { MISMATCH_MESSAGE, SIGN_OUT_FAILED_MESSAGE, UNREACHABLE_MESSAGE } from '../../pin/pin-messages'
 import { useCheckedPin } from '../../pin/pin-screens'
 import { signOutEverywhere, usePinStatus } from '../../pin/status'
 import { baseTrpc } from '../../trpc'
@@ -59,7 +59,12 @@ export function SecuritySettings(): JSX.Element | null {
             isLoading={signingOut}
             onClick={() => {
               setSigningOut(true)
-              void signOutEverywhere()
+              void signOutEverywhere().then((result) => {
+                if (result.isErr()) {
+                  setSigningOut(false)
+                  toast.error(SIGN_OUT_FAILED_MESSAGE)
+                }
+              })
             }}
           >
             Sign out everywhere

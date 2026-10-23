@@ -11,7 +11,8 @@ interface PinAccessOptions {
 
 /**
  * The desktop side of the PIN: a computer administrator can reset a forgotten PIN from the window, and the app
- * locks when the computer sleeps or its screen locks.
+ * locks when its window closes (it only hides, to keep running in the tray), or when the computer sleeps or its
+ * screen locks.
  */
 export function setupPinAccess(
   window: BrowserWindow,
@@ -40,9 +41,11 @@ export function setupPinAccess(
     return true
   })
 
-  onComputerLock(() => {
+  const lock = (): void => {
     if (!contents.isDestroyed()) {
       contents.send('pin:lock')
     }
-  })
+  }
+  window.on('hide', lock)
+  onComputerLock(lock)
 }

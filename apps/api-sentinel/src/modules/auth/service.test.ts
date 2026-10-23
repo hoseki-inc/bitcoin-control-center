@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { profiles } from '../../db/schema'
 import { setupServiceDatabase } from '../../fixtures/service-database'
 import { hashPin } from './pin'
@@ -46,6 +46,16 @@ describe('first PIN', () => {
     expect(row?.pinHash).not.toContain(PIN)
 
     expect((await auth.setFirstPin('111111', null, OTHER_TAB)).unwrapErr()).toEqual({ kind: 'already_set' })
+  })
+
+  it('costs no hash once a PIN is set', async () => {
+    const { db, logger } = await setupServiceDatabase()
+    const hash = vi.fn(hashPin)
+    const auth = new AuthService(db, logger, PLATFORM_AUTH_POLICIES.desktop, Date.now, hash)
+    await withPin(auth)
+    hash.mockClear()
+    expect((await auth.setFirstPin('111111', null, OTHER_TAB)).unwrapErr()).toEqual({ kind: 'already_set' })
+    expect(hash).not.toHaveBeenCalled()
   })
 
   it('cannot be set in the app where the platform sets it', async () => {

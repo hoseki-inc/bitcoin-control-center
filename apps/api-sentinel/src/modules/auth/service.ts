@@ -100,14 +100,22 @@ export class AuthService {
   private readonly db: SentinelDb
   private readonly logger: Logger
   private readonly now: () => number
+  private readonly hash: (pin: string) => Promise<string>
   private readonly sessions = new Map<string, Session>()
   private pending: Promise<unknown> = Promise.resolve()
 
-  public constructor(db: SentinelDb, logger: Logger, policy: AuthPolicy, now: () => number = Date.now) {
+  public constructor(
+    db: SentinelDb,
+    logger: Logger,
+    policy: AuthPolicy,
+    now: () => number = Date.now,
+    hash: (pin: string) => Promise<string> = hashPin,
+  ) {
     this.db = db
     this.logger = logger
     this.policy = policy
     this.now = now
+    this.hash = hash
   }
 
   /** PIN checks run one at a time, so parallel guesses can't race the attempt counter. */
@@ -272,12 +280,13 @@ export class AuthService {
     if (!isPin(pin)) {
       return Err({ kind: 'malformed' })
     }
-    const pinHash = await hashPin(pin)
     return this.serial(async () => {
       const row = await this.owner()
       if (row.pinHash !== null) {
         return Err({ kind: 'already_set' })
       }
+      // Hashed only once setup is still open, so anyone can call this without costing the server a hash.
+      const pinHash = await this.hash(pin)
       await this.db
         .update(profiles)
         .set({ pinHash, pinSetAt: this.now(), failedAttempts: 0, nextAttemptAt: null })
@@ -307,7 +316,7 @@ export class AuthService {
     if (checked.isErr()) {
       return checked
     }
-    const pinHash = await hashPin(newPin)
+    const pinHash = await this.hash(newPin)
     await this.serial(async () => {
       await this.db.update(profiles).set({ pinHash, pinSetAt: this.now() }).where(eq(profiles.id, OWNER_ID))
     })

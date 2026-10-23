@@ -37,7 +37,16 @@ function setup(confirmed: boolean) {
   if (!reset) {
     throw new Error('Expected a pin:reset handler')
   }
-  return { contents, send, lockComputer: () => computerLock?.(), reset, event, confirmAdmin, resetAndRestart }
+  return {
+    window,
+    contents,
+    send,
+    lockComputer: () => computerLock?.(),
+    reset,
+    event,
+    confirmAdmin,
+    resetAndRestart,
+  }
 }
 
 describe('desktop PIN access', () => {
@@ -63,6 +72,12 @@ describe('desktop PIN access', () => {
     await expect(reset(event(contents, 'https://example.com/'))).resolves.toBe(false)
     expect(confirmAdmin).not.toHaveBeenCalled()
     expect(resetAndRestart).not.toHaveBeenCalled()
+  })
+
+  it('locks the window when it closes to the tray', () => {
+    const { window, send } = setup(true)
+    window.emit('hide')
+    expect(send.mock.calls.map(([channel]) => channel)).toEqual(['pin:lock'])
   })
 
   it('locks the window when the computer sleeps or its screen locks', () => {

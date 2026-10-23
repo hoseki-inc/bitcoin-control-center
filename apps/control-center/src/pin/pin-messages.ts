@@ -20,6 +20,7 @@ export function wrongPinMessage(freeAttemptsLeft: number): string {
 
 export const MISMATCH_MESSAGE = 'Those PINs didn’t match. Choose your PIN again.'
 export const UNREACHABLE_MESSAGE = 'Couldn’t reach Control Center. Try again.'
+export const SIGN_OUT_FAILED_MESSAGE = 'Couldn’t sign out everywhere. Try again.'
 
 export function saveMessage(recovery: PinRecovery): string {
   switch (recovery) {
