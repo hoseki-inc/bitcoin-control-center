@@ -23,7 +23,7 @@ function sentTabId(call: number): string | null {
 const done = (): Response => Response.json({ result: { data: { json: null } } })
 
 describe('lockApp', () => {
-  it('covers the app before Sentinel answers, then gives the tab a new ID', async () => {
+  it('covers the app and gives the tab a new ID before Sentinel answers, then ends the old session', async () => {
     withTestSetup()
     let answer: (response: Response) => void = () => {}
     fetchMock.mockReturnValueOnce(
@@ -35,6 +35,9 @@ describe('lockApp', () => {
 
     const locking = lockApp()
     expect(useLockState.getState().locked).toBe(true)
+    // While the lock is on its way, a reload or a new sign-in already uses the new ID.
+    const during = tabId()
+    expect(during).not.toBe(before)
     await vi.waitFor(() => {
       expect(fetchMock).toHaveBeenCalledOnce()
     })
@@ -42,7 +45,7 @@ describe('lockApp', () => {
 
     answer(done())
     await locking
-    expect(tabId()).not.toBe(before)
+    expect(tabId()).toBe(during)
   })
 
   it('gives the tab a new ID even when Sentinel never hears the lock', async () => {

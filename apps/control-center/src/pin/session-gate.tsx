@@ -33,18 +33,28 @@ function ActivityTracker(): null {
         void lockApp()
       }
     }, 30 * 1000)
-    // The desktop app also locks when the computer sleeps or its screen locks.
-    const stopDesktopLock = window.desktop?.pin?.onLock(() => {
-      void lockApp()
-    })
     return (): void => {
       for (const event of ACTIVITY_EVENTS) {
         window.removeEventListener(event, onActivity)
       }
       clearInterval(idleCheck)
-      stopDesktopLock?.()
     }
   }, [])
+  return null
+}
+
+/**
+ * The desktop app locks when its window closes, or the computer sleeps or its screen locks. This listens at every
+ * stage, including setup and the reveal, since a tab signs in before the app opens.
+ */
+function DesktopLock(): null {
+  useEffect(
+    () =>
+      window.desktop?.pin?.onLock(() => {
+        void lockApp()
+      }),
+    [],
+  )
   return null
 }
 
@@ -143,6 +153,8 @@ export function SessionGate({ children }: { children: ReactNode }): JSX.Element 
   // Stays on setup through the save step, even after Sentinel reports the PIN as set.
   const [settingUp, setSettingUp] = useState(false)
   const [phase, setPhase] = useState<GatePhase>('locked')
+  const phaseRef = useRef(phase)
+  phaseRef.current = phase
 
   // Resolves the reveal's wait for the app to mount. A large first render can take longer than a few frames.
   const commitRef = useRef<(() => void) | null>(null)
@@ -151,7 +163,42 @@ export function SessionGate({ children }: { children: ReactNode }): JSX.Element 
     commitRef.current = null
   }, [])
 
+  // A new sign-in screen after a cancelled reveal, rather than the one still showing its finished check.
+  const [signInKey, setSignInKey] = useState(0)
+
+  // The app leaves the screen: unmounted, its data dropped, and the PIN status asked again.
+  const closeApp = useCallback((): void => {
+    phaseRef.current = 'locked'
+    setPhase('locked')
+    clearFlowSource()
+    void forgetLoadedData().then(async () => queryClient.invalidateQueries({ queryKey: PIN_STATUS_KEY }))
+  }, [])
+
+  // A lock while setup or a sign-in is finishing wins: the PIN is set, but this tab is signed out.
+  const cancelSignIn = (): void => {
+    queryClient.setQueryData<PinStatus>(PIN_STATUS_KEY, (current) =>
+      current ? { ...current, pinSet: true, signedIn: false } : current,
+    )
+    setSettingUp(false)
+    setSignInKey((key) => key + 1)
+    closeApp()
+  }
+
+  // Setup signs the tab in before its Save step, so a lock there ends setup.
+  const locks = useLockState((state) => state.locks)
+  const locksSeen = useRef(locks)
+  useEffect(() => {
+    if (locks === locksSeen.current) {
+      return
+    }
+    locksSeen.current = locks
+    if (settingUp && phaseRef.current === 'locked') {
+      cancelSignIn()
+    }
+  })
+
   const reveal = (): void => {
+    const locksAtStart = useLockState.getState().locks
     const start = performance.now()
     const committed = new Promise<void>((resolve) => {
       commitRef.current = resolve
@@ -162,6 +209,10 @@ export function SessionGate({ children }: { children: ReactNode }): JSX.Element 
       .then(afterPaint)
       .then(async () => settled(start))
       .then(() => {
+        if (useLockState.getState().locks !== locksAtStart) {
+          cancelSignIn()
+          return
+        }
         // Sentinel signed this tab in when it accepted the PIN; record that here rather than wait to ask again.
         queryClient.setQueryData<PinStatus>(PIN_STATUS_KEY, (current) =>
           current ? { ...current, pinSet: true, signedIn: true, retryAfterMs: null } : current,
@@ -200,7 +251,7 @@ export function SessionGate({ children }: { children: ReactNode }): JSX.Element 
     // While revealing, the app's own status check can report this tab signed in before the reveal has waited for
     // the app's data; the lock screen stays until the reveal finishes.
     screen = {
-      key: 'sign-in',
+      key: `sign-in-${signInKey}`,
       node: <SignInScreen recovery={pin.recovery} retryAfterMs={pin.retryAfterMs} onSignedIn={reveal} />,
     }
   }
@@ -215,17 +266,11 @@ export function SessionGate({ children }: { children: ReactNode }): JSX.Element 
   }, [covered, phase])
 
   // Read by the timer and the fade's completion, whichever comes first.
-  const phaseRef = useRef(phase)
-  phaseRef.current = phase
   const finishCovering = useCallback((): void => {
-    if (phaseRef.current !== 'covering') {
-      return
+    if (phaseRef.current === 'covering') {
+      closeApp()
     }
-    phaseRef.current = 'locked'
-    setPhase('locked')
-    clearFlowSource()
-    void forgetLoadedData().then(async () => queryClient.invalidateQueries({ queryKey: PIN_STATUS_KEY }))
-  }, [])
+  }, [closeApp])
 
   // The app unmounts once the lock screen has faded in, and no later than this. A page in the background runs its
   // animations slowly or not at all, and the idle lock usually fires when nobody is looking, so don't wait there.
@@ -256,6 +301,7 @@ export function SessionGate({ children }: { children: ReactNode }): JSX.Element 
           {pin?.required === true && !covered && <ActivityTracker />}
         </motion.div>
       )}
+      {pin?.required === true && <DesktopLock />}
       <AnimatePresence initial={false}>
         {screen && (
           <motion.div

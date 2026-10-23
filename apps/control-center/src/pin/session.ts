@@ -47,14 +47,17 @@ export function retireTabId(): void {
 interface LockState {
   /** Sentinel refused a request for want of a PIN, or the person locked the app. */
   locked: boolean
+  /** Counts every lock, so a sign-in that was still finishing can tell one happened. */
+  locks: number
   lock: () => void
   unlock: () => void
 }
 
 export const useLockState = create<LockState>((set) => ({
   locked: false,
+  locks: 0,
   lock: () => {
-    set({ locked: true })
+    set((state) => ({ locked: true, locks: state.locks + 1 }))
   },
   unlock: () => {
     set({ locked: false })
@@ -62,12 +65,15 @@ export const useLockState = create<LockState>((set) => ({
 }))
 
 /**
- * Every request to Sentinel goes through here: it sends this tab's ID and the browser cookie (cross-origin in
- * development), and locks the app when Sentinel answers that the PIN is needed.
+ * Every request to Sentinel goes through here: it sends this tab's ID (unless the request names one, as the lock
+ * does for the ID it retires) and the browser cookie (cross-origin in development), and locks the app when
+ * Sentinel answers that the PIN is needed.
  */
 export async function sentinelFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const headers = new Headers(init?.headers)
-  headers.set(TAB_HEADER, tabId())
+  if (!headers.has(TAB_HEADER)) {
+    headers.set(TAB_HEADER, tabId())
+  }
   const response = await fetch(input, { ...init, headers, credentials: 'include' })
   if (response.status === 401) {
     useLockState.getState().lock()

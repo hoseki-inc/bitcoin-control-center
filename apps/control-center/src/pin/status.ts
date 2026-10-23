@@ -1,7 +1,7 @@
 import { Err, Ok, Result } from '@hoseki/packages/result'
 import { type UseQueryResult, useQuery } from '@tanstack/react-query'
 import { type RouterOutput, baseTrpc, queryClient } from '../trpc'
-import { retireTabId, useLockState } from './session'
+import { retireTabId, tabId, useLockState } from './session'
 
 export type PinStatus = RouterOutput['auth']['status']
 
@@ -26,24 +26,15 @@ export async function forgetLoadedData(): Promise<void> {
   queryClient.getMutationCache().clear()
 }
 
-// Long enough for a slow connection; the tab gets a new ID afterwards either way.
-const LOCK_REQUEST_LIMIT_MS = 5000
-
 /**
- * Locks this tab. The lock screen covers the app at once; Sentinel ends the session, and the tab then gets a new
- * ID so a reload asks for the PIN even if that request never arrived.
+ * Locks this tab. It gets a new ID and the lock screen covers the app at once, so neither a reload nor a sign-in
+ * can resume the old session; Sentinel is then told to end that session, by its old ID.
  */
 export async function lockApp(): Promise<void> {
-  useLockState.getState().lock()
-  // Sent with the current tab ID, which the request reads as it starts.
-  const request = baseTrpc.auth.lock.mutate().catch(() => undefined)
-  await Promise.race([
-    request,
-    new Promise((resolve) => {
-      setTimeout(resolve, LOCK_REQUEST_LIMIT_MS)
-    }),
-  ])
+  const retired = tabId()
   retireTabId()
+  useLockState.getState().lock()
+  await baseTrpc.auth.lock.mutate(undefined, { context: { tabId: retired } }).catch(() => undefined)
 }
 
 /**
