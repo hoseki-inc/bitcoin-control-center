@@ -413,6 +413,26 @@ describe('Electrum connection lifecycle', () => {
   )
 })
 
+describe('onboarding setting', () => {
+  it.each(['started', 'dismissed'])('saves and reads back %s', async (value) => {
+    await withTestSetup(async () => {
+      const caller = appRouter.createCaller({ app: await context() })
+      await caller.settings.update({ key: 'onboarding_v1', value })
+      await expect(caller.settings.get({ key: 'onboarding_v1' })).resolves.toBe(value)
+    })
+  })
+
+  it('rejects any other onboarding state', async () => {
+    await withTestSetup(async () => {
+      const ctx = await context()
+      await expect(
+        appRouter.createCaller({ app: ctx }).settings.update({ key: 'onboarding_v1', value: 'completed' }),
+      ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
+      await expect(settings(ctx)).resolves.toEqual([])
+    })
+  })
+})
+
 describe('statements interrupted by a restart', () => {
   it('marks statements still generating as failed when Sentinel starts and leaves finished ones alone', async () => {
     await withTestSetup(async () => {

@@ -215,6 +215,64 @@ export function useActiveConnectionUsesTor(): boolean {
  * other. Only the list shows which connection is live, so the details never read
  * as the current connection.
  */
+export type Liveness = 'connected' | 'disconnected' | 'connecting' | 'unknown'
+
+const LIVENESS_LABELS: Record<Liveness, string> = {
+  connected: 'Connected',
+  disconnected: 'Disconnected',
+  connecting: 'Connecting…',
+  unknown: 'Checking…',
+}
+/** Colour schemes for a connection's status: green when connected, red when not. */
+export const LIVENESS_COLORS: Record<Liveness, string> = {
+  connected: 'green',
+  disconnected: 'red',
+  connecting: 'neutral',
+  unknown: 'neutral',
+}
+
+/**
+ * A saved connection's name, then the live status of the one in use or, for the others, whether
+ * it goes through Tor.
+ */
+export function ConnectionRowContent({
+  nickname,
+  liveness,
+  torEnabled,
+}: {
+  nickname: string
+  /** Null for a connection that isn't in use. */
+  liveness: Liveness | null
+  torEnabled: boolean
+}): JSX.Element {
+  const color = liveness === null ? null : LIVENESS_COLORS[liveness]
+  return (
+    <>
+      <Text as="span" textStyle="label/sm" overflowWrap="anywhere">
+        {nickname}
+      </Text>
+      <HStack as="span" gap={2} mt={1}>
+        {color !== null && <Circle size="8px" bg={`${color}.500`} />}
+        <Text as="span" textStyle="text/xs" color={color === null ? 'neutral.600' : `${color}.700`}>
+          {liveness === null ? (torEnabled ? 'Tor' : 'Direct') : LIVENESS_LABELS[liveness]}
+        </Text>
+      </HStack>
+    </>
+  )
+}
+
+/** The connection in use, as shown under its name: "Connected · host:port (SSL · Tor)". */
+export function connectionSummary(
+  liveness: Liveness,
+  status: { host: string; port: number; protocol: string } | null,
+  torEnabled: boolean,
+): string {
+  const label = LIVENESS_LABELS[liveness]
+  return status
+    ? `${label} · ${status.host}:${status.port} (${status.protocol.toUpperCase()}${torEnabled ? ' · Tor' : ''})`
+    : label
+}
+
 export function ElectrumSettings(): JSX.Element {
   const queryClient = useQueryClient()
   const query = useQuery(profilesQuery)
@@ -573,7 +631,7 @@ export function ElectrumSettings(): JSX.Element {
   const atLimit = profiles.length >= limit
   const isActive = draft.id !== undefined && draft.id === activeId
   // No status (not loaded, or the request failed) is unknown, never "Connected".
-  const liveness =
+  const liveness: Liveness =
     status === null
       ? 'unknown'
       : status.connected
@@ -581,13 +639,7 @@ export function ElectrumSettings(): JSX.Element {
         : status.connecting === true
           ? 'connecting'
           : 'disconnected'
-  const livenessLabel = {
-    connected: 'Connected',
-    disconnected: 'Disconnected',
-    connecting: 'Connecting…',
-    unknown: 'Checking…',
-  }[liveness]
-  const livenessColor = { connected: 'green', disconnected: 'red', connecting: 'neutral', unknown: 'neutral' }[liveness]
+  const livenessColor = LIVENESS_COLORS[liveness]
   const canSubmit =
     (isNew || saved !== undefined) &&
     draft.host.trim() !== '' &&
@@ -712,15 +764,11 @@ export function ElectrumSettings(): JSX.Element {
                   select({ kind: 'saved', profile: item })
                 }}
               >
-                <Text as="span" textStyle="label/sm" overflowWrap="anywhere">
-                  {item.nickname}
-                </Text>
-                <HStack as="span" gap={2} mt={1}>
-                  {live && <Circle size="8px" bg={`${livenessColor}.500`} />}
-                  <Text as="span" textStyle="text/xs" color={live ? `${livenessColor}.700` : 'neutral.600'}>
-                    {live ? livenessLabel : item.torEnabled ? 'Tor' : 'Direct'}
-                  </Text>
-                </HStack>
+                <ConnectionRowContent
+                  nickname={item.nickname}
+                  liveness={live ? liveness : null}
+                  torEnabled={item.torEnabled}
+                />
               </Button>
             )
           })}
@@ -831,11 +879,7 @@ export function ElectrumSettings(): JSX.Element {
                   color={isActive ? `${livenessColor}.700` : 'neutral.600'}
                   overflowWrap="anywhere"
                 >
-                  {!isActive
-                    ? 'Not connected'
-                    : status
-                      ? `${livenessLabel} · ${status.host}:${status.port} (${status.protocol.toUpperCase()}${active?.torEnabled === true ? ' · Tor' : ''})`
-                      : livenessLabel}
+                  {!isActive ? 'Not connected' : connectionSummary(liveness, status, active?.torEnabled === true)}
                 </Text>
               </Stack>
             )}
