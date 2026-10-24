@@ -838,6 +838,7 @@ export class StatementService {
     // SAFETY: Database JSON is untrusted until the schema below validates the complete transaction map.
     const raw = parseUnknown(
       z.record(
+        z.string(),
         z.union([
           z.array(SerializedAggregatedTransactionSchema),
           z.object({ displayName: z.string(), transactions: z.array(SerializedAggregatedTransactionSchema) }),
@@ -867,7 +868,7 @@ export class StatementService {
     // SAFETY: Database JSON is untrusted until the schema below validates the complete daily-rate payload.
     const raw = parseUnknown(
       z.object({
-        rates: z.record(SerializedDailyRateSchema),
+        rates: z.record(z.string(), SerializedDailyRateSchema),
         source: z.literal('mempool'),
         quoteCurrency: StatementQuoteCurrencySchema.optional(),
         providerUrl: z.string().optional(),

@@ -105,7 +105,7 @@ importers:
         version: 5.3.0
       '@hookform/resolvers':
         specifier: 5.9.1
-        version: 5.9.1(@sinclair/typebox@0.34.52)(@standard-schema/spec@1.1.0)(ajv@8.18.0)(react-hook-form@7.90.0(@types/react@18.3.31)(react@19.3.0))(valibot@1.5.0(@typescript/typescript6@6.0.2))(zod@3.25.76)
+        version: 5.9.1(@sinclair/typebox@0.34.52)(@standard-schema/spec@1.1.0)(ajv@8.18.0)(react-hook-form@7.90.0(@types/react@18.3.31)(react@19.3.0))(valibot@1.5.0(@typescript/typescript6@6.0.2))(zod@4.6.7)
       '@ledgerhq/hw-app-btc':
         specifier: 10.22.1
         version: 10.22.1
@@ -162,7 +162,7 @@ importers:
         version: 10.6.0
       drizzle-orm:
         specifier: 1.0.0-rc.4
-        version: 1.0.0-rc.4(@libsql/client@0.18.0)(@sinclair/typebox@0.34.52)(valibot@1.5.0(@typescript/typescript6@6.0.2))(zod@3.25.76)
+        version: 1.0.0-rc.4(@libsql/client@0.18.0)(@sinclair/typebox@0.34.52)(valibot@1.5.0(@typescript/typescript6@6.0.2))(zod@4.6.7)
       ecpair:
         specifier: 2.1.0
         version: 2.1.0
@@ -221,8 +221,8 @@ importers:
         specifier: 2.8.1
         version: 2.8.1
       zod:
-        specifier: 3.25.76
-        version: 3.25.76
+        specifier: 4.6.7
+        version: 4.6.7
       zustand:
         specifier: 5.0.15
         version: 5.0.15(@types/react@18.3.31)(immer@11.1.16)(react@19.3.0)(use-sync-external-store@1.6.0(react@19.3.0))
@@ -370,8 +370,8 @@ importers:
         specifier: 4.15.0
         version: 4.15.0
       zod:
-        specifier: 3.25.76
-        version: 3.25.76
+        specifier: 4.6.7
+        version: 4.6.7
 
 packages:
 
@@ -6931,8 +6931,8 @@ packages:
   yoga-layout@3.2.1:
     resolution: {integrity: sha512-0LPOt3AxKqMdFBZA3HBAt/t/8vIKq7VaQYbuA8WxCgung+p9TVyKRYdpvCb80HcdTN2NkbIKbhNwKUfm3tQywQ==}
 
-  zod@3.25.76:
-    resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
+  zod@4.6.7:
+    resolution: {integrity: sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg==}
 
   zustand@5.0.15:
     resolution: {integrity: sha512-MpSEjRiBkA9crSYeOUH32rJC7SVqAbm0Fqcqge/bUi2PPoLcBWKOsG+C8mevmpr8TwXHBVkChbbJiyvkE+i/3A==}
@@ -8234,7 +8234,7 @@ snapshots:
 
   '@fontsource/roboto-mono@5.3.0': {}
 
-  '@hookform/resolvers@5.9.1(@sinclair/typebox@0.34.52)(@standard-schema/spec@1.1.0)(ajv@8.18.0)(react-hook-form@7.90.0(@types/react@18.3.31)(react@19.3.0))(valibot@1.5.0(@typescript/typescript6@6.0.2))(zod@3.25.76)':
+  '@hookform/resolvers@5.9.1(@sinclair/typebox@0.34.52)(@standard-schema/spec@1.1.0)(ajv@8.18.0)(react-hook-form@7.90.0(@types/react@18.3.31)(react@19.3.0))(valibot@1.5.0(@typescript/typescript6@6.0.2))(zod@4.6.7)':
     dependencies:
       '@standard-schema/utils': 0.3.0
       react-hook-form: 7.90.0(@types/react@18.3.31)(react@19.3.0)
@@ -8243,7 +8243,7 @@ snapshots:
       '@standard-schema/spec': 1.1.0
       ajv: 8.18.0
       valibot: 1.5.0(@typescript/typescript6@6.0.2)
-      zod: 3.25.76
+      zod: 4.6.7
 
   '@humanfs/core@0.19.2':
     dependencies:
@@ -10383,12 +10383,12 @@ snapshots:
       get-tsconfig: 4.14.3
       jiti: 2.7.0
 
-  drizzle-orm@1.0.0-rc.4(@libsql/client@0.18.0)(@sinclair/typebox@0.34.52)(valibot@1.5.0(@typescript/typescript6@6.0.2))(zod@3.25.76):
+  drizzle-orm@1.0.0-rc.4(@libsql/client@0.18.0)(@sinclair/typebox@0.34.52)(valibot@1.5.0(@typescript/typescript6@6.0.2))(zod@4.6.7):
     optionalDependencies:
       '@libsql/client': 0.18.0
       '@sinclair/typebox': 0.34.52
       valibot: 1.5.0(@typescript/typescript6@6.0.2)
-      zod: 3.25.76
+      zod: 4.6.7
 
   dunder-proto@1.0.1:
     dependencies:
@@ -14135,7 +14135,7 @@ snapshots:
 
   yoga-layout@3.2.1: {}
 
-  zod@3.25.76: {}
+  zod@4.6.7: {}
 
   zustand@5.0.15(@types/react@18.3.31)(immer@11.1.16)(react@19.3.0)(use-sync-external-store@1.6.0(react@19.3.0)):
     optionalDependencies:

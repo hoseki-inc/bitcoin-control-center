@@ -364,11 +364,6 @@ As of October 21, 2026, two advisories have no published patched version:
 (high severity, already excluded by `pnpm.auditConfig.ignoreGhsas`). A passing audit gate does not mean
 these dependencies are free of known vulnerabilities.
 
-[`zod` GHSA-mrhx-c7xc-m3w5](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5) (high severity) is
-also excluded until the workspace moves to Zod 4, the only patched line. It lets a huge array of
-invalid items exhaust memory. Without a PIN session, Sentinel accepts no input with an array, so
-the remaining cases are a signed-in user or an external service crashing Sentinel until it restarts.
-
 The default `pnpm test` command requires only the root workspace dependencies.
 Sentinel uses an async, local-file libSQL client. Sentinel tests and desktop runtime
 checks exercise SQLite using the same native client.

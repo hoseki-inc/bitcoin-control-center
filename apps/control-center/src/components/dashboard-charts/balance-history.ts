@@ -45,7 +45,8 @@ function isCallableStringifier(value: unknown): value is CallableStringifier {
 
 const scalarBalance = z.union([
   z.string().transform((value) => value.trim() || '0'),
-  z.number().transform((value) => String(Math.floor(value))),
+  // Zod 4's number schema rejects infinities, which this normalizer has always passed through.
+  z.union([z.number(), z.literal([Infinity, -Infinity])]).transform((value) => String(Math.floor(value))),
 ])
 
 // oxlint-disable-next-line anti-slop/no-unknown-parameters -- This normalization boundary accepts untrusted balance values and returns a safe string.

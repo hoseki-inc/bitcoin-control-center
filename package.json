@@ -74,7 +74,7 @@
     "sonner": "2.0.8",
     "superjson": "2.2.6",
     "tslib": "2.8.1",
-    "zod": "3.25.76",
+    "zod": "4.6.7",
     "zustand": "5.0.15"
   },
   "devDependencies": {
@@ -196,8 +196,7 @@
     },
     "auditConfig": {
       "ignoreGhsas": [
-        "GHSA-vfj7-8cjw-p6xm",
-        "GHSA-mrhx-c7xc-m3w5"
+        "GHSA-vfj7-8cjw-p6xm"
       ]
     }
   }

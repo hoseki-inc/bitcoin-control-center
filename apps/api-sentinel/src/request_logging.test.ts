@@ -37,7 +37,7 @@ const LogEntrySchema = z
     level: z.number(),
     msg: z.string(),
     reqId: z.string().optional(),
-    err: z.record(z.unknown()).optional(),
+    err: z.record(z.string(), z.unknown()).optional(),
   })
   .passthrough()
 
