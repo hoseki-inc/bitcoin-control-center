@@ -210,11 +210,22 @@ jobs:
           SIGNED_DIR: ${{ runner.temp }}/signed
           EXPECTED_SHA256: ${{ needs.sign.outputs.sha256 }}
         run: |
+          # Stapler fetches the ticket from Apple, which can briefly drop the connection.
+          stapler() {
+            for _ in 1 2 3 4; do
+              if xcrun stapler "$@"; then
+                return 0
+              fi
+              echo "stapler $1 failed; retrying in 20 seconds."
+              sleep 20
+            done
+            xcrun stapler "$@"
+          }
           FILE="$(jq -r '.file' "$SIGNED_DIR/mac.json")"
           DMG="$SIGNED_DIR/$FILE"
           echo "${EXPECTED_SHA256}  ${DMG}" | shasum -a 256 --check --strict
           xattr -w com.apple.quarantine "0081;$(printf '%x' "$(date +%s)");Safari;" "$DMG"
-          xcrun stapler validate "$DMG"
+          stapler validate "$DMG"
           spctl --assess --type open --context context:primary-signature -vv "$DMG" 2>&1 | tee "$RUNNER_TEMP/dmg-assessment"
           grep -q 'source=Notarized Developer ID' "$RUNNER_TEMP/dmg-assessment"
           MOUNT="$RUNNER_TEMP/mount"
@@ -225,7 +236,7 @@ jobs:
           ditto "$MOUNT/Bitcoin Control Center.app" "$APP"
           hdiutil detach "$MOUNT" > /dev/null
           codesign --verify --deep --strict "$APP"
-          xcrun stapler validate "$APP"
+          stapler validate "$APP"
           spctl --assess --type execute -vv "$APP" 2>&1 | tee "$RUNNER_TEMP/app-assessment"
           grep -q 'source=Notarized Developer ID' "$RUNNER_TEMP/app-assessment"
           ELECTRON_RUN_AS_NODE=1 "$APP/Contents/MacOS/Bitcoin Control Center" \
