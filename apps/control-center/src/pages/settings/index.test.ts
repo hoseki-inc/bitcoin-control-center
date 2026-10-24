@@ -50,7 +50,13 @@ async function withTestSetup(run: () => Promise<void>): Promise<void> {
     dom.window.close()
   })
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
-  vi.stubGlobal('fetch', fetchMock.mockReset())
+  fetchMock.mockReset()
+  // The Security section asks Sentinel whether PINs are on; here they're off.
+  vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) =>
+    parseUnknown(z.string(), input).unwrapOr('').includes('/auth.status')
+      ? Response.json({ result: { data: { json: { platform: null } } } })
+      : fetchMock(input, init),
+  )
   vi.clearAllMocks()
   container = document.createElement('div')
   document.body.append(container)

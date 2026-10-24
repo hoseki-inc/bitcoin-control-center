@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import superjson from 'superjson'
+import { sentinelFetch } from '../pin/tab'
 import { baseTrpc } from '../trpc'
 
 export type LocalSettingState = {
@@ -28,7 +29,7 @@ export function useLocalSetting(key: string): LocalSettingState {
 
   const mutation = useMutation({
     mutationFn: async (value: string): Promise<void> => {
-      const res = await fetch(`${baseUrl}/settings.update`, {
+      const res = await sentinelFetch(`${baseUrl}/settings.update`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(superjson.serialize({ key, value })),
