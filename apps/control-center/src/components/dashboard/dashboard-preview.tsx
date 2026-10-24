@@ -37,7 +37,7 @@ export function DashboardPreview({
               </>
             }
           />
-          <Button as={Link} to="/accounts/add" flexShrink={0}>
+          <Button as={Link} to="/accounts/add" state={{ returnTo: '/home' }} flexShrink={0}>
             Add Account
           </Button>
         </Flex>

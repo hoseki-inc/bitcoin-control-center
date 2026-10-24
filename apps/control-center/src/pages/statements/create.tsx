@@ -339,7 +339,14 @@ export function StatementCreatePage(): JSX.Element {
                   : 'Before you can generate a bitcoin ownership statement, you’ll need to connect a wallet and verify control.'}
               </Text>
               {!hasAccounts && (
-                <Button as={Link} to="/accounts/add" mt={4} alignSelf="flex-start" size="sm">
+                <Button
+                  as={Link}
+                  to="/accounts/add"
+                  state={{ returnTo: '/statements/create' }}
+                  mt={4}
+                  alignSelf="flex-start"
+                  size="sm"
+                >
                   Connect Wallet
                 </Button>
               )}
