@@ -1,10 +1,12 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { BrowserWindow, type Tray, type WebContents, app, dialog, ipcMain, shell } from 'electron'
+import { BrowserWindow, type Tray, type WebContents, app, dialog, ipcMain, powerMonitor, shell } from 'electron'
 import { APP_DISPLAY_NAME, readReleaseVersion, userDataPath } from './app-identity'
+import { confirmComputerAdmin, runProgram } from './computer-admin'
 import { showDeviceChooser } from './device-chooser'
 import { setupLedgerHidAccess } from './ledger-hid'
+import { setupPinAccess } from './pin'
 import { startOnPreferredPort } from './preferred-port'
 import { startServer } from './server'
 import { createQuitHandler } from './shutdown'
@@ -82,6 +84,8 @@ async function start(): Promise<void> {
       listenPort,
       connectionProfiles: true,
       statementSourceSetting: true,
+      // The PIN is set in the app; a computer administrator can reset a forgotten one, keeping the data.
+      pin: 'desktop',
       // A packaged build without a valid version passes an empty one, so Sentinel logs that checks are off.
       releaseVersion: app.isPackaged
         ? (readReleaseVersion(path.join(app.getAppPath(), 'package.json')) ?? '')
@@ -118,6 +122,26 @@ async function start(): Promise<void> {
   )
   setupLedgerHidAccess(window, origin, ipcMain, async (parent, options) => dialog.showMessageBox(parent, options))
 
+  setupPinAccess(window, origin, ipcMain, {
+    confirmAdmin: async () => confirmComputerAdmin(process.platform, runProgram),
+    resetAndRestart: async () => {
+      // Sentinel clears the PIN when it next starts and finds this request (RESET_REQUEST in its
+      // auth/platform.ts). Written first, so a failure leaves the app running as it was.
+      fs.writeFileSync(path.join(dataDir, 'reset-pin'), 'reset\n', { mode: 0o600 })
+      quitting = true
+      try {
+        await torManager?.stop()
+        await server?.shutdown()
+      } finally {
+        app.relaunch()
+        app.exit(0)
+      }
+    },
+    onComputerLock: (listener) => {
+      powerMonitor.on('suspend', listener)
+      powerMonitor.on('lock-screen', listener)
+    },
+  })
   setupWindowPolicy(window, origin, trezorWindows, openExternal)
   window.on('close', (event) => {
     if (!quitting) {

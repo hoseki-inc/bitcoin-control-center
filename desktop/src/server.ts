@@ -11,6 +11,8 @@ interface ServerOptions {
   tor?: Pick<TorManager, 'start' | 'getStatus' | 'getSocksProxy'>
   /** Port to bind; zero lets the operating system choose a free port. */
   listenPort?: number
+  /** Turns Sentinel's PIN on, with the desktop app's rules: set in the app, reset by a computer administrator. */
+  pin?: 'desktop'
 }
 
 // oxlint-disable-next-line anti-slop/no-unknown-returns -- A dynamically loaded server method can return any runtime value, which is checked by its caller.

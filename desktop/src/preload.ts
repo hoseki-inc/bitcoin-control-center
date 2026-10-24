@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { LedgerHidApi, LedgerHidUpdate } from './ledger-hid-api'
+import type { DesktopPinApi } from './pin-api'
 
 const ledger: LedgerHidApi = {
   begin: async (requestId) => (await ipcRenderer.invoke('ledger-hid:begin', requestId)) === true,
@@ -21,7 +22,21 @@ const ledger: LedgerHidApi = {
   },
 }
 
+const pin: DesktopPinApi = {
+  resetPin: async () => (await ipcRenderer.invoke('pin:reset')) === true,
+  onLock: (listener) => {
+    const onLock = (): void => {
+      listener()
+    }
+    ipcRenderer.on('pin:lock', onLock)
+    return () => {
+      ipcRenderer.off('pin:lock', onLock)
+    }
+  },
+}
+
 contextBridge.exposeInMainWorld('desktop', {
   platform: process.platform,
   ledger,
+  pin,
 })
