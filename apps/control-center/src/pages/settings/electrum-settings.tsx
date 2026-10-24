@@ -211,11 +211,6 @@ export function useActiveConnectionUsesTor(): boolean {
   return query.data?.profiles.find((item) => item.id === query.data.activeId)?.torEnabled === true
 }
 
-/**
- * Saved connections on one side and the selected connection's details on the
- * other. Only the list shows which connection is live, so the details never read
- * as the current connection.
- */
 export type Liveness = 'connected' | 'disconnected' | 'connecting' | 'unknown'
 
 const LIVENESS_LABELS: Record<Liveness, string> = {
@@ -274,6 +269,11 @@ export function connectionSummary(
     : label
 }
 
+/**
+ * Saved connections on one side and the selected connection's details on the
+ * other. Only the list shows which connection is live, so the details never read
+ * as the current connection.
+ */
 export function ElectrumSettings(): JSX.Element {
   const queryClient = useQueryClient()
   const query = useQuery(profilesQuery)

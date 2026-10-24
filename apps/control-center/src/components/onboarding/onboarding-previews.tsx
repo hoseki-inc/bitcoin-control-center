@@ -34,7 +34,7 @@ import { NetAccumulatedSummary } from '../dashboard-charts/net-accumulated-summa
 import { DashboardAmount } from '../dashboard/dashboard-typography'
 import { PortfolioSummary } from '../dashboard/portfolio-summary'
 import { FiatAmountText } from '../fiat-amount-text'
-import { SAMPLE_BTC_PRICE, lastDays, sampleBalanceHistory } from './sample-history'
+import { SAMPLE_BTC_PRICE, sampleBalanceHistory } from './sample-history'
 
 // The app's own components with sample data, arranged as floating cards. Never the user's data.
 
@@ -104,14 +104,8 @@ function Card({ front = false, ...props }: BoxProps & { front?: boolean }): JSX.
 
 /** Content that can't be focused or used, such as the Settings controls pictured here. */
 function Inert(props: BoxProps): JSX.Element {
-  return (
-    <Box
-      ref={(element: HTMLDivElement | null) => {
-        element?.setAttribute('inert', '')
-      }}
-      {...props}
-    />
-  )
+  // React 19 supports inert; the workspace still uses React 18 types.
+  return <Box {...{ inert: true }} {...props} />
 }
 
 /**
@@ -459,7 +453,8 @@ const NAV = [
 /** Home once a few accounts are in: the app's own header and overview, running off the edge. */
 export function HomePreview(): JSX.Element {
   const history = useSampleHistory()
-  const recent = lastDays(history, 30)
+  // Home's 30 days.
+  const recent = history.slice(-30)
 
   return (
     <Stage>

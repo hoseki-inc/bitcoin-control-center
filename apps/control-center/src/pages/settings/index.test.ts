@@ -3,10 +3,12 @@ import { ChakraProvider } from '@chakra-ui/react'
 import { parseUnknown } from '@hoseki/packages/result/lib/parse'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { getQueryKey } from '@trpc/react-query'
+import { MotionGlobalConfig } from 'framer-motion'
 import { act, createElement } from 'react'
 import { type Root, createRoot } from 'react-dom/client'
+import { MemoryRouter } from 'react-router'
 import { toast } from 'sonner'
-import { expect, it, onTestFinished, vi } from 'vitest'
+import { assert, expect, it, onTestFinished, vi } from 'vitest'
 import { z } from 'zod'
 import { type RouterOutput, trpc } from '../../trpc'
 import { SettingsPage } from './index'
@@ -24,6 +26,11 @@ const browser = await vi.hoisted(async () => {
     },
   }
 })
+
+/** The page inside a router, as the app renders it; View Introduction can go to Add Account. */
+function settingsPage(desktop: boolean): ReturnType<typeof createElement> {
+  return createElement(MemoryRouter, null, createElement(SettingsPage, { desktop }))
+}
 
 let queryClient: QueryClient
 let root: Root
@@ -105,7 +112,7 @@ it.each([
         createElement(
           ChakraProvider,
           null,
-          createElement(QueryClientProvider, { client: queryClient }, createElement(SettingsPage, { desktop: true })),
+          createElement(QueryClientProvider, { client: queryClient }, settingsPage(true)),
         ),
       )
     })
@@ -138,7 +145,7 @@ it.each([
         createElement(
           ChakraProvider,
           null,
-          createElement(QueryClientProvider, { client: queryClient }, createElement(SettingsPage, { desktop: true })),
+          createElement(QueryClientProvider, { client: queryClient }, settingsPage(true)),
         ),
       )
     })
@@ -181,7 +188,7 @@ it.each([
           createElement(
             ChakraProvider,
             null,
-            createElement(QueryClientProvider, { client: queryClient }, createElement(SettingsPage, { desktop: true })),
+            createElement(QueryClientProvider, { client: queryClient }, settingsPage(true)),
           ),
         )
       })
@@ -324,7 +331,7 @@ async function renderPriceSettings(): Promise<HTMLSelectElement> {
       createElement(
         ChakraProvider,
         null,
-        createElement(QueryClientProvider, { client: queryClient }, createElement(SettingsPage, { desktop: false })),
+        createElement(QueryClientProvider, { client: queryClient }, settingsPage(false)),
       ),
     )
   })
@@ -902,5 +909,65 @@ it('says when the fallback setting could not be saved', async () => {
     await idle()
     expect(toast.error).toHaveBeenCalledWith('Could not save the fallback setting. Please try again.')
     expect(fallbackCheckbox().checked).toBe(true)
+  })
+})
+
+/** The title of the introduction step on screen, or '' when the introduction is closed. */
+function introductionHeading(): string {
+  const titles = Array.from(document.body.querySelectorAll('[role="dialog"] h2'))
+  return titles.find((title) => title.closest('[aria-hidden="true"]') === null)?.textContent ?? ''
+}
+
+async function clickButton(name: string): Promise<void> {
+  const found = Array.from(document.body.querySelectorAll('button')).find((item) => item.textContent === name)
+  assert(found !== undefined, `Expected a ${name} button`)
+  await act(async () => {
+    found.click()
+  })
+}
+
+it('replays the introduction from step 1 each time without saving the first-run choice', async () => {
+  await withTestSetup(async () => {
+    // The introduction's previews draw the app's charts, which watch their size and the reduced-motion setting.
+    const matchMedia = (media: string): MediaQueryList => ({
+      media,
+      matches: true,
+      onchange: null,
+      addListener: () => undefined,
+      removeListener: () => undefined,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      dispatchEvent: () => true,
+    })
+    window.matchMedia = matchMedia
+    vi.stubGlobal('matchMedia', matchMedia)
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        public observe = vi.fn()
+        public disconnect = vi.fn()
+      },
+    )
+    MotionGlobalConfig.skipAnimations = true
+    onTestFinished(() => {
+      MotionGlobalConfig.skipAnimations = false
+    })
+    new PriceServer()
+    await renderPriceSettings()
+    expect(introductionHeading()).toBe('')
+
+    await clickButton('View Introduction')
+    expect(introductionHeading()).toBe('Your Bitcoin, in one place')
+    await clickButton('Continue')
+    expect(introductionHeading()).toBe('Bring in what you already use')
+    await clickButton('Skip')
+    await vi.waitFor(() => {
+      expect(introductionHeading()).toBe('')
+    })
+
+    await clickButton('View Introduction')
+    expect(introductionHeading()).toBe('Your Bitcoin, in one place')
+    const requests = fetchMock.mock.calls.map(([input]) => parseUnknown(z.string(), input).unwrapOr(''))
+    expect(requests.filter((url) => url.includes('settings.update'))).toEqual([])
   })
 })

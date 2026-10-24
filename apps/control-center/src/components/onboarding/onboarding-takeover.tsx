@@ -127,7 +127,7 @@ export function OnboardingTakeover({
   const primaryRef = useRef<HTMLButtonElement>(null)
   const contentRef = useRef<HTMLElement>(null)
   const [yellow, blue, orange] = useToken('colors', ['secondary.400', 'primary.300', 'tertiary.300'])
-  const step = steps[Math.min(index, steps.length - 1)]
+  const step = steps[index]
   const isFirst = index === 0
   const isLast = index === steps.length - 1
 
@@ -141,7 +141,7 @@ export function OnboardingTakeover({
     setPage({ index: next, direction: next > index ? 1 : -1 })
   }
 
-  // Back and Skip disappear on the first and last steps; keep focus in the dialog when they do.
+  // Back disappears on the first step; keep focus in the dialog when it does.
   // Opening is left to the dialog, which focuses itself.
   const shownIndex = useRef(index)
   useEffect(() => {

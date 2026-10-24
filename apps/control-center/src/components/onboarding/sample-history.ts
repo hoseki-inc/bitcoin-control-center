@@ -41,8 +41,3 @@ export function sampleBalanceHistory(now: Date): BalanceDataPoint[] {
   }
   return points
 }
-
-/** The sample points from the last `days` days, for a shorter range like Home's 30 days. */
-export function lastDays(points: BalanceDataPoint[], days: number): BalanceDataPoint[] {
-  return points.slice(-days)
-}

@@ -4,7 +4,7 @@ import { toast } from 'sonner'
 import { useLocalSetting } from '../../hooks/use-local-settings'
 import { OnboardingTakeover } from './onboarding-takeover'
 
-export const ONBOARDING_KEY = 'onboarding_v1'
+const ONBOARDING_KEY = 'onboarding_v1'
 
 type OnboardingChoice = 'started' | 'dismissed'
 

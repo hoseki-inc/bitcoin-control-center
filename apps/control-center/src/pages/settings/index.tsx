@@ -109,7 +109,9 @@ export function SettingsPage({ desktop = isDesktop }: { desktop?: boolean }): JS
 }
 
 function IntroductionSettings({ desktop }: { desktop: boolean }): JSX.Element {
+  const navigate = useNavigate()
   const [isOpen, setIsOpen] = useState(false)
+  const [opens, setOpens] = useState(0)
 
   return (
     <SimpleGrid columns={{ base: 1, md: 2 }} spacing={{ base: 5, md: 10 }}>
@@ -126,36 +128,27 @@ function IntroductionSettings({ desktop }: { desktop: boolean }): JSX.Element {
           variant="outline"
           size="sm"
           onClick={() => {
+            setOpens((count) => count + 1)
             setIsOpen(true)
           }}
         >
           View Introduction
         </Button>
       </Box>
-      {isOpen && (
-        <IntroductionReplay
-          desktop={desktop}
-          onClose={() => {
-            setIsOpen(false)
-          }}
-        />
-      )}
+      {/* Shows the introduction again without changing the choice saved on first run. A new one each
+          time starts at step 1; it stays mounted while closing so it can fade out. */}
+      <OnboardingTakeover
+        key={opens}
+        isOpen={isOpen}
+        desktop={desktop}
+        onSkip={() => {
+          setIsOpen(false)
+        }}
+        onAddAccount={() => {
+          void navigate('/accounts/add')
+        }}
+      />
     </SimpleGrid>
-  )
-}
-
-/** Shows the introduction again without changing the choice saved on first run. */
-function IntroductionReplay({ desktop, onClose }: { desktop: boolean; onClose: () => void }): JSX.Element {
-  const navigate = useNavigate()
-  return (
-    <OnboardingTakeover
-      isOpen
-      desktop={desktop}
-      onSkip={onClose}
-      onAddAccount={() => {
-        void navigate('/accounts/add')
-      }}
-    />
   )
 }
 
