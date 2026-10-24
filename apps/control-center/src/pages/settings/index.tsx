@@ -25,6 +25,7 @@ import { isDesktop } from '../../mode'
 import { type RouterOutput, baseTrpc, trpc } from '../../trpc'
 import { ElectrumSettings, useActiveConnectionUsesTor } from './electrum-settings'
 import { NOTICE_FADE_MS, useFadingNotice } from './fading-notice'
+import { SecuritySettings } from './security-settings'
 import { StatementSourceSettings } from './statement-source-settings'
 
 export function SettingsPage({ desktop = isDesktop }: { desktop?: boolean }): JSX.Element {
@@ -95,6 +96,7 @@ export function SettingsPage({ desktop = isDesktop }: { desktop?: boolean }): JS
             </FormControl>
           </Box>
         </SimpleGrid>
+        <SecuritySettings />
         <PriceSourceSettings />
         {desktop && <DesktopStatementSource />}
         {desktop && <ElectrumSettings />}

@@ -5,10 +5,11 @@ import Fastify, { type FastifyBaseLogger } from 'fastify'
 import pino from 'pino'
 import { type AppContextOptions, createAppContext } from './context'
 import { walletDetailLogOptions } from './log_redaction'
+import { readRequestAuth } from './modules/auth/request'
 import type { TRPCContext } from './modules/trpc/init'
 import { type AppRouter, appRouter } from './modules/trpc/router'
 import { requestLoggerFactory } from './request_logging'
-import { registerCorsPolicy, registerRequestSecurity } from './request_security'
+import { registerCorsPolicy, registerRequestSecurity, trustsProxyHeaders } from './request_security'
 import { registerStaticAssets } from './static_assets'
 
 export interface SentinelServer {
@@ -60,11 +61,17 @@ export async function main(
   server.get('/health', async () => ({ status: 'ok' }))
 
   // tRPC
+  const trustProxy = trustsProxyHeaders(appCtx.env.SENTINEL_ALLOWED_HOSTS)
   await server.register(fastifyTRPCPlugin, {
     prefix: '/trpc',
     trpcOptions: {
       router: appRouter,
-      createContext: async (): Promise<TRPCContext> => ({ app: appCtx }),
+      // One procedure per request, so a sign-in can never carry another route along with it.
+      batching: { enabled: false },
+      createContext: async ({ req, res }): Promise<TRPCContext> => ({
+        app: appCtx,
+        request: readRequestAuth(req, res, trustProxy),
+      }),
     } satisfies FastifyTRPCPluginOptions<AppRouter>['trpcOptions'],
   })
 

@@ -29,3 +29,8 @@ services:
       # names that only resolve privately; none of them can be used for DNS rebinding.
       SENTINEL_ALLOWED_HOSTS: '${DEVICE_HOSTNAME},*.local,*.onion,*.ts.net,*.lan,*.home.arpa,*.internal'
       SENTINEL_ALLOW_IP_HOSTS: 'true'
+      # Every route needs a PIN, set in the app on first open. Other apps on Umbrel's Docker
+      # network reach this container directly, past Umbrel's login. Forgot it? From the umbrelOS
+      # terminal: sudo docker exec bitcoin-control-center_web_1 node /app/dist/cli.js reset-pin
+      # then restart the app.
+      SENTINEL_PIN: umbrel
