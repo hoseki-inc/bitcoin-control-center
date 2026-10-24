@@ -140,6 +140,25 @@ export const btcQuoteDownloads = sqliteTable(
   ],
 )
 
+/**
+ * Who can sign in, with their PIN hash and wrong-PIN delay. There is one row, the owner, until profiles add more.
+ * Sessions live only in memory, so a restart signs everyone out.
+ */
+export const profiles = sqliteTable(
+  'profiles',
+  {
+    id: text('id').primaryKey(),
+    role: text('role', { enum: ['owner'] }).notNull(),
+    /** `scrypt$N$r$p$salt$hash`, base64url; null until a PIN is set. */
+    pinHash: text('pin_hash'),
+    pinSetAt: integer('pin_set_at'),
+    failedAttempts: integer('failed_attempts').notNull().default(0),
+    /** No sign-in attempt is checked before this time. Unix ms. */
+    nextAttemptAt: integer('next_attempt_at'),
+  },
+  (table) => [check('profiles_role_check', sql`${table.role} IN ('owner')`)],
+)
+
 export const settings = sqliteTable('settings', {
   key: text('key').primaryKey(),
   value: text('value').notNull(),

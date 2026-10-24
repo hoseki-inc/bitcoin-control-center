@@ -1,10 +1,11 @@
 import { parseUnknown } from '@hoseki/packages/result/lib/parse'
 import { z } from 'zod'
 import type { LedgerHidApi } from '../../../../desktop/src/ledger-hid-api'
+import type { DesktopPinApi } from '../../../../desktop/src/pin-api'
 
 declare global {
   interface Window {
-    desktop?: { ledger?: LedgerHidApi }
+    desktop?: { ledger?: LedgerHidApi; pin?: DesktopPinApi }
   }
 }
 

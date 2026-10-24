@@ -39,6 +39,7 @@ import { Check, CircleAlertIcon, CircleCheckIcon, Pencil, Plus, Trash2, X } from
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { z } from 'zod'
+import { sentinelFetch } from '../../pin/session'
 import { type RouterOutput, baseTrpc } from '../../trpc'
 import { type FadingNotice, NOTICE_FADE_MS, useFadingNotice } from './fading-notice'
 import { useStatementSource } from './statement-source-settings'
@@ -122,7 +123,7 @@ function useElectrumStatus(): ElectrumStatusState {
 
   const refresh = useCallback((): void => {
     const baseUrl = import.meta.env.VITE_BACKEND_API_URL ?? ''
-    void fetch(`${baseUrl}/settings.electrumStatus`)
+    void sentinelFetch(`${baseUrl}/settings.electrumStatus`)
       // oxlint-disable-next-line anti-slop/no-unknown-returns -- the network response remains untrusted until the schemas below parse it.
       .then(async (res): Promise<unknown> => (res.ok ? res.json() : null))
       .then((data) => {
@@ -182,7 +183,7 @@ const TorStartResponseSchema = z.object({
 async function requestTorStart(): Promise<number | null> {
   const baseUrl = import.meta.env.VITE_BACKEND_API_URL ?? ''
   try {
-    const res = await fetch(`${baseUrl}/settings.startTor`, {
+    const res = await sentinelFetch(`${baseUrl}/settings.startTor`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
     })
