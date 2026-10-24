@@ -30,3 +30,10 @@ it('should return Err when parsing is unsuccessful', () => {
   expect(error).toBeInstanceOf(ParseError)
   expect(error.cause).toBeInstanceOf(z.ZodError)
 })
+
+describe('errors', () => {
+  it('joins every issue message', () => {
+    const schema = z.object({ a: z.string().min(2, 'a is short'), b: z.number().min(5, 'b is small') })
+    expect(parse(schema, { a: 'x', b: 1 }).unwrapErr().message).toBe('a is short; b is small')
+  })
+})

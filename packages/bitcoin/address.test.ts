@@ -145,4 +145,5 @@ test('fromBase58Check - rejects an oversized string before decoding it', () => {
   expect(Address.fromBase58Check('1'.repeat(1_048_576)).unwrapErr().message).toBe(
     'Base58 address is longer than 35 characters',
   )
+  expect(Address.fromBase58Check('1'.repeat(35)).unwrapErr().message).not.toContain('longer than')
 })

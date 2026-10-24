@@ -1,4 +1,5 @@
 import { describe, expect, expectTypeOf, it } from 'vitest'
+import { parseUnknown } from '../result/lib/parse'
 import { Id } from './id'
 
 describe('Id.gen', () => {
@@ -42,5 +43,9 @@ describe('Id.schema', () => {
     const schema = Id.schema('test')
     const result = schema.safeParse('wrong_abc123')
     expect(result.success).toBe(false)
+  })
+
+  it('names the expected prefix', () => {
+    expect(parseUnknown(Id.schema('acc'), 'tx_123').unwrapErr().message).toBe('id must start with "acc_"')
   })
 })

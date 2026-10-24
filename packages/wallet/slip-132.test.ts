@@ -116,5 +116,6 @@ describe('SLIP-132 size limit', () => {
     expect(Slip132.toCoreXpubString('z' + '1'.repeat(1_048_576)).unwrapErr().message).toBe(
       'xpub string is longer than 112 characters',
     )
+    expect(Slip132.toCoreXpubString('z' + '1'.repeat(111)).unwrapErr().message).not.toContain('longer than')
   })
 })

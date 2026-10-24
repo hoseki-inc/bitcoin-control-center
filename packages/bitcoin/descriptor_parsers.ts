@@ -80,10 +80,10 @@ abstract class BaseAccountDescriptorParser {
  * Single sig
  */
 
-// Caps keep Zod from validating every item of an oversized descriptor (GHSA-mrhx-c7xc-m3w5).
+// Caps keep Zod from validating every item of an oversized descriptor.
 // Supported script types wrap at most twice (sh-wpkh, sh-wsh), and BIP 383 allows at most 20 multisig keys.
 const MAX_SCRIPT_TYPE_FACTORS = 2
-const MAX_MULTISIG_KEYS = 20
+export const MAX_MULTISIG_KEYS = 20
 const singlesigScriptTypeFactors = z.array(z.enum(['pkh', 'sh', 'wpkh', 'tr'])).max(MAX_SCRIPT_TYPE_FACTORS)
 const multisigScriptTypeFactors = z.array(z.enum(['sh', 'wsh', 'tr'])).max(MAX_SCRIPT_TYPE_FACTORS)
 

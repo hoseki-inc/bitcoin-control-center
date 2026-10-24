@@ -327,3 +327,17 @@ it.each([
   expect(issues).toContainEqual(expect.objectContaining({ path: ['account'] }))
   expect(parse).not.toHaveBeenCalled()
 })
+
+it('accepts inputs exactly at their limits', async () => {
+  const { app } = await setup()
+  vi.spyOn(app.priceService, 'getCurrentBtcPrice').mockImplementation(asyncFn(async () => Err(new Error('offline'))))
+  const portalProve = appRouter.createCaller({ app }).portalProve
+  const claimIds = Array.from({ length: 1_000 }, (_, i) => `re_clmx_${i}`)
+
+  await expect(
+    portalProve.controlCenter.getData({ timeRange: '30d', timezone: 'UTC', claimIds }),
+  ).resolves.toBeDefined()
+  await expect(
+    portalProve.accounts.add({ descriptor: 'x'.repeat(16_384), displayName: 'Wallet', network: 'mainnet' }),
+  ).resolves.toBeDefined()
+})

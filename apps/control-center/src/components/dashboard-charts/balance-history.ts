@@ -45,7 +45,7 @@ function isCallableStringifier(value: unknown): value is CallableStringifier {
 
 const scalarBalance = z.union([
   z.string().transform((value) => value.trim() || '0'),
-  // Zod 4's number schema rejects infinities, which this normalizer has always passed through.
+  // z.number() rejects infinities; this normalizer passes them through.
   z.union([z.number(), z.literal([Infinity, -Infinity])]).transform((value) => String(Math.floor(value))),
 ])
 

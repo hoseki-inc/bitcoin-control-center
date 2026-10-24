@@ -1,34 +1,14 @@
 import { registerCustomSerializers } from '@hoseki/packages/custom-serializers'
 import { TRPCError, initTRPC } from '@trpc/server'
-import superjson, { type SuperJSONResult, type SuperJSONValue } from 'superjson'
+import superjson from 'superjson'
 import { ZodError } from 'zod'
 import type { AppContext } from '../../context'
 import type { RequestAuth } from '../auth/request'
-import { checkRequestTypes } from './request-types'
+import { requestTransformer } from './request-types'
 
 const serializer = registerCustomSerializers(superjson)
 
-// tRPC reports a body that fails to deserialize as a server error; it is the client's.
-const transformer = {
-  input: {
-    serialize: (value: SuperJSONValue): SuperJSONResult => serializer.serialize(value),
-    deserialize: (value: SuperJSONResult): SuperJSONValue => {
-      try {
-        const checked = checkRequestTypes(value.meta)
-        if (checked.isErr()) {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: `Invalid request body: ${checked.unwrapErr()}` })
-        }
-        return serializer.deserialize<SuperJSONValue>(value)
-      } catch (cause) {
-        if (cause instanceof TRPCError) {
-          throw cause
-        }
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid request body', cause })
-      }
-    },
-  },
-  output: serializer,
-}
+const transformer = { input: requestTransformer(serializer), output: serializer }
 
 export interface TRPCContext {
   app: AppContext

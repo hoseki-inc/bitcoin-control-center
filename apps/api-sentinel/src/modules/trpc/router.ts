@@ -9,6 +9,7 @@ import {
 } from '@hoseki/packages/bitcoin/account'
 import { Address, type CheckedAddressString } from '@hoseki/packages/bitcoin/address'
 import { DerivationPathString } from '@hoseki/packages/bitcoin/derivation-path'
+import { MAX_MULTISIG_KEYS } from '@hoseki/packages/bitcoin/descriptor_parsers'
 import { Network } from '@hoseki/packages/bitcoin/network'
 import { NetworkAccount } from '@hoseki/packages/bitcoin/network_account'
 import { Xpub } from '@hoseki/packages/bitcoin/xpub'
@@ -53,10 +54,9 @@ import { protectedProcedure, t } from './init'
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-// Array inputs declare a maximum so Zod rejects an oversized array before validating each item (GHSA-mrhx-c7xc-m3w5).
-const accountIdsInput = z.array(z.string()).max(1_000)
-const MAX_MULTISIG_KEYSTORES = 20
-const MAX_ETF_HOLDINGS = 1_000
+// Array inputs declare a maximum so Zod rejects an oversized array before validating each item.
+const MAX_LIST_ITEMS = 1_000
+const accountIdsInput = z.array(z.string()).max(MAX_LIST_ITEMS)
 // Strike exports one month per CSV; Sentinel's 1 MiB request limit binds first.
 const MAX_STATEMENT_TRANSACTIONS = 10_000
 // Real descriptors are a few KiB; the cap bounds the parsing work an oversized one can cause.
@@ -706,7 +706,7 @@ const registryRouter = t.router({
                   publicKey: z.string(),
                 }),
               )
-              .max(MAX_MULTISIG_KEYSTORES),
+              .max(MAX_MULTISIG_KEYS),
           }),
         )
         .mutation(async ({ ctx, input }) => {
@@ -1338,7 +1338,7 @@ const proveExchangeRouter = t.router({
 
 const onchainRouter = t.router({
   bitcoinAccountBalances: protectedProcedure
-    .input(z.object({ accounts: z.array(descriptorInput).max(1_000) }))
+    .input(z.object({ accounts: z.array(descriptorInput).max(MAX_LIST_ITEMS) }))
     .query(async ({ ctx, input }) => {
       const resultMap = new Map<string, { current: Decimal; usd: Decimal | null }>()
       const archivedAccounts = new Set<string>()
@@ -1777,7 +1777,7 @@ const etfRouter = t.router({
               datePurchased: z.string().optional(),
             }),
           )
-          .max(MAX_ETF_HOLDINGS),
+          .max(MAX_LIST_ITEMS),
       }),
     )
     .mutation(async ({ ctx, input }) => {
