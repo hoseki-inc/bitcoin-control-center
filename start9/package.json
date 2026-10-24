@@ -8,7 +8,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@start9labs/start-sdk": "3.0.6"
+    "@start9labs/start-sdk": "3.1.0"
   },
   "devDependencies": {
     "@types/node": "22.20.1",
