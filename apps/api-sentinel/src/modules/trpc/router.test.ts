@@ -1,12 +1,15 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { MultiSigAccount, SingleSigAccount } from '@hoseki/packages/bitcoin/account'
 import { ElectrumClient } from '@hoseki/packages/clients/electrum'
 import { Err, Ok, asyncFn } from '@hoseki/packages/result'
 import { Wallets } from '@hoseki/packages/testing'
+import { callProcedure } from '@trpc/server'
 import { Signer } from 'bip322-js'
 import pino from 'pino'
 import { assert, expect, it, onTestFinished, vi } from 'vitest'
+import { ZodError } from 'zod'
 import { type AppContextOptions, createAppContext } from '../../context'
 import { accounts, challenges, keystores, signedMessages } from '../../db/schema'
 import * as env from '../../env'
@@ -254,4 +257,73 @@ it('rejects an unknown portfolio timezone', async () => {
     code: 'BAD_REQUEST',
     message: 'Invalid timezone',
   })
+})
+
+async function validationIssues(
+  type: 'query' | 'mutation',
+  path: string,
+  // oxlint-disable-next-line anti-slop/no-unknown-parameters -- Tests send deliberately malformed input.
+  rawInput: unknown,
+): Promise<ZodError['issues']> {
+  const { app } = await setup()
+  const error = await callProcedure({ procedures: appRouter._def.procedures, path, rawInput, ctx: { app }, type }).then(
+    () => assert.fail(`${path} accepted the input`),
+    (cause: unknown) => cause,
+  )
+  assert(error instanceof Error && error.cause instanceof ZodError, 'expected a validation error')
+  return error.cause.issues
+}
+
+// One more item than each array input allows, all invalid: Zod must reject the size without validating any item.
+it.each([
+  ['query', 'portalProve.controlCenter.getData', 'claimIds', 1_000],
+  ['query', 'portalProve.controlCenter.getData', 'exchangeAccountIds', 1_000],
+  ['query', 'portalProve.controlCenter.getData', 'manualAccountIds', 1_000],
+  ['query', 'portalProve.controlCenter.getData', 'etfAccountIds', 1_000],
+  ['query', 'portalProve.controlCenter.storedWalletBalances', 'claimIds', 1_000],
+  ['query', 'portalProve.onchain.bitcoinAccountBalances', 'accounts', 1_000],
+  ['query', 'portalProve.onchain.claimBalances', 'claimIds', 1_000],
+  ['mutation', 'portalProve.statement.initiateGeneration', 'claimIds', 1_000],
+  ['mutation', 'portalProve.statement.initiateGeneration', 'exchangeAccountIds', 1_000],
+  ['mutation', 'portalProve.registry.claims.create.multisig', 'keystores', 20],
+  ['mutation', 'portalProve.exchange.strike.importStatement', 'transactions', 10_000],
+  ['mutation', 'portalProve.etf.create', 'holdings', 1_000],
+] as const)('%s %s rejects an oversized %s before checking its items', async (type, path, field, max) => {
+  const issues = await validationIssues(type, path, { [field]: Array.from({ length: max + 1 }, () => 0) })
+  expect(issues.filter((issue) => issue.path[0] === field)).toEqual([
+    expect.objectContaining({ code: 'too_big', maximum: max, path: [field] }),
+  ])
+})
+
+// Descriptor parsing can be slow on hostile input, so oversized descriptors must be refused unparsed.
+const oversizedDescriptor = 'x'.repeat(16_385)
+
+it.each([
+  [
+    'query',
+    'portalProve.registry.claims.get.byAccount',
+    { network: 'bitcoin_mainnet', account: oversizedDescriptor },
+    ['account'],
+  ],
+  [
+    'query',
+    'portalProve.registry.getOrCreateSinglesigChallengeMessage',
+    { network: 'bitcoin_mainnet', account: oversizedDescriptor },
+    ['account'],
+  ],
+  ['query', 'portalProve.onchain.bitcoinAccountBalances', { accounts: [oversizedDescriptor] }, ['accounts', 0]],
+  ['mutation', 'portalProve.accounts.add', { descriptor: oversizedDescriptor, displayName: 'Wallet' }, ['descriptor']],
+] as const)('%s %s rejects a descriptor over 16 KiB', async (type, path, rawInput, field) => {
+  const issues = await validationIssues(type, path, rawInput)
+  expect(issues).toEqual([expect.objectContaining({ code: 'too_big', maximum: 16_384, path: field })])
+})
+
+it.each([
+  ['portalProve.registry.claims.create.singlesig', SingleSigAccount],
+  ['portalProve.registry.claims.create.multisig', MultiSigAccount],
+] as const)('%s refuses a descriptor over 16 KiB without parsing it', async (path, accountClass) => {
+  const parse = vi.spyOn(accountClass, 'fromDescriptor')
+  const issues = await validationIssues('mutation', path, { account: oversizedDescriptor })
+  expect(issues).toContainEqual(expect.objectContaining({ path: ['account'] }))
+  expect(parse).not.toHaveBeenCalled()
 })

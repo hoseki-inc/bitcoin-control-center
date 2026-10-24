@@ -65,3 +65,10 @@ test('address', () => {
     expect(address.toString()).toEqual(expected)
   }
 })
+
+test('fromString - rejects an oversized string before decoding it', () => {
+  // Base58 decoding grows quadratically; a 1 MiB string would block for minutes.
+  const result = Xpub.fromString('x' + '1'.repeat(1_048_576))
+  expect(result.unwrapErr().message).toBe('Extended public key is longer than 112 characters')
+  expect(Xpub.fromString(XPUB.padEnd(112, '1')).unwrapErr().message).not.toContain('longer than')
+})

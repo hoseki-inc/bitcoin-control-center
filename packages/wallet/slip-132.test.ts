@@ -109,3 +109,12 @@ describe('SLIP-132 conversion', () => {
     }
   })
 })
+
+describe('SLIP-132 size limit', () => {
+  it('rejects an oversized string before decoding it', () => {
+    // Base58 decoding grows quadratically; a 1 MiB string would block for minutes.
+    expect(Slip132.toCoreXpubString('z' + '1'.repeat(1_048_576)).unwrapErr().message).toBe(
+      'xpub string is longer than 112 characters',
+    )
+  })
+})

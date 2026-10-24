@@ -46,11 +46,11 @@ abstract class BaseAccountDescriptorParser {
    * @returns Parts structured into object
    */
   protected static transformKey(keyExpressionStr: string): ParsedDescriptorKey {
-    const bracketRegex = /\[(.*?)\]/ // match `[<everything>]`
-    const originResult = bracketRegex.exec(keyExpressionStr)
-
-    const keyOriginWithBrackets = originResult?.[0]
-    const keyOriginWithoutBrackets = originResult?.[1]
+    // The first `[...]`, found by scanning: a regex rescans every unmatched `[` and grows quadratically.
+    const opening = keyExpressionStr.indexOf('[')
+    const closing = opening < 0 ? -1 : keyExpressionStr.indexOf(']', opening + 1)
+    const keyOriginWithBrackets = closing < 0 ? undefined : keyExpressionStr.slice(opening, closing + 1)
+    const keyOriginWithoutBrackets = closing < 0 ? undefined : keyExpressionStr.slice(opening + 1, closing)
 
     const keyDescriptorWithoutOrigin =
       keyOriginWithBrackets != null && keyOriginWithBrackets !== ''
@@ -79,6 +79,13 @@ abstract class BaseAccountDescriptorParser {
 /**
  * Single sig
  */
+
+// Caps keep Zod from validating every item of an oversized descriptor (GHSA-mrhx-c7xc-m3w5).
+// Supported script types wrap at most twice (sh-wpkh, sh-wsh), and BIP 383 allows at most 20 multisig keys.
+const MAX_SCRIPT_TYPE_FACTORS = 2
+const MAX_MULTISIG_KEYS = 20
+const singlesigScriptTypeFactors = z.array(z.enum(['pkh', 'sh', 'wpkh', 'tr'])).max(MAX_SCRIPT_TYPE_FACTORS)
+const multisigScriptTypeFactors = z.array(z.enum(['sh', 'wsh', 'tr'])).max(MAX_SCRIPT_TYPE_FACTORS)
 
 export type SinglesigProps = {
   scriptType: SingleSigAccountScriptType
@@ -117,7 +124,7 @@ const SinglesigAccountDescriptorSchema = z
         return KeyExpression.from(xpub, keyOrigin)
       }),
 
-    scriptTypeFactors: z.array(z.enum(['pkh', 'sh', 'wpkh', 'tr'])).transform((factors, ctx) => {
+    scriptTypeFactors: singlesigScriptTypeFactors.transform((factors, ctx) => {
       if (!factors.length) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
@@ -301,11 +308,12 @@ const MultisigAccountDescriptorSchema = z
       .transform(({ keyOrigin, xpub }) => {
         return KeyExpression.from(xpub, keyOrigin)
       })
-      .array(),
+      .array()
+      .max(MAX_MULTISIG_KEYS),
 
     multiScript: z.enum(['multi', 'sortedmulti']),
 
-    scriptTypeFactors: z.array(z.enum(['sh', 'wsh', 'tr'])).transform((factors, ctx) => {
+    scriptTypeFactors: multisigScriptTypeFactors.transform((factors, ctx) => {
       if (!factors.length) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,

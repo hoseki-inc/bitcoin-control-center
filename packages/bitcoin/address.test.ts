@@ -139,3 +139,10 @@ test('eq', () => {
   const b = Address.fromString('1CqbkfcUn2wDWs13xEncHPuwc3ki6QGCxT').expect('valid address')
   expect(a.eq(b)).toBe(true)
 })
+
+test('fromBase58Check - rejects an oversized string before decoding it', () => {
+  // Base58 decoding grows quadratically; a 1 MiB string would block for minutes.
+  expect(Address.fromBase58Check('1'.repeat(1_048_576)).unwrapErr().message).toBe(
+    'Base58 address is longer than 35 characters',
+  )
+})

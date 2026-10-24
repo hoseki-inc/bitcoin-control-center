@@ -60,6 +60,9 @@ export function toCoreXpubString(str: string): Result<string, Error> {
   if (firstChar == null) {
     return Err(new Error('xpub string is empty'))
   }
+  if (str.length > Xpub.MAX_STRING_LENGTH) {
+    return Err(new Error(`xpub string is longer than ${Xpub.MAX_STRING_LENGTH} characters`))
+  }
 
   return getNetworkFromPrefix(firstChar).andThen((network) => {
     return Result.fromThrowable(() => {

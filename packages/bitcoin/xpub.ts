@@ -7,7 +7,13 @@ import { Network } from './network'
 export type CheckedXpubString = Opaque<string, 'CheckedXpubString'>
 
 export class Xpub {
+  /** An extended key is 82 bytes, at most 112 base58 characters. Base58 decoding grows quadratically, so check first. */
+  public static readonly MAX_STRING_LENGTH = 112
+
   public static fromString(string: string): Result<Xpub, Error> {
+    if (string.length > Xpub.MAX_STRING_LENGTH) {
+      return Err(new Error(`Extended public key is longer than ${Xpub.MAX_STRING_LENGTH} characters`))
+    }
     // Only accept core xpub/tpub strings (no SLIP-132 prefixes like ypub, zpub, etc.)
     const firstChar = string[0]
     let network: Network.Mainnet | Network.Testnet

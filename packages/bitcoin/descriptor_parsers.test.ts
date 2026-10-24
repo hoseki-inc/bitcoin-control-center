@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest'
+import { assert, describe, expect, it } from 'vitest'
+import { ZodError } from 'zod'
 import { MultisigDescriptorParser, SinglesigDescriptorParser } from './descriptor_parsers'
 import * as descriptors from './descriptor_utils'
 import { Network } from './network'
@@ -183,5 +184,48 @@ describe('MultisigDescriptorParser with core xpub/tpub', () => {
 
     expect(result.keyExpressions[0]?.keyOrigin?.fingerprint).toBe('00000000')
     expect(result.keyExpressions[0]?.keyOrigin?.derivationPath).toBeNull()
+  })
+})
+
+// An oversized descriptor must fail its size cap without Zod validating each key or wrapper.
+describe('descriptor size caps', () => {
+  const MULTISIG_XPUB =
+    'xpub6DRLRDFmCH8MNwepL9RMBjRv5P2XidDj2uZ9NpFwx33uEu8NcoDHkipwtrZ17iaZmKWMfaBCeaNHWWd7AXN3YaRZrQrzeomF3WUYoeaQeAJ'
+
+  function zodIssues(error: Error): ZodError['issues'] {
+    assert(error.cause instanceof ZodError, 'expected a validation error')
+    return error.cause.issues
+  }
+
+  it('rejects more than 20 multisig keys', () => {
+    const keys = Array.from({ length: 21 }, () => 'not-a-key').join(',')
+    const error = MultisigDescriptorParser.parse(`wsh(sortedmulti(2,${keys}))`).unwrapErr()
+    expect(zodIssues(error)).toEqual([expect.objectContaining({ code: 'too_big', path: ['keyExpressions'] })])
+  })
+
+  it('rejects more than two multisig script wrappers', () => {
+    const descriptor = `x(x(x(wsh(sortedmulti(2,${MULTISIG_XPUB}/<0;1>/*,${TEST_XPUB_STR}/<0;1>/*)))))`
+    const error = MultisigDescriptorParser.parse(descriptor).unwrapErr()
+    expect(zodIssues(error)).toEqual([expect.objectContaining({ code: 'too_big', path: ['scriptTypeFactors'] })])
+  })
+
+  it('rejects more than two singlesig script wrappers', () => {
+    const error = SinglesigDescriptorParser.parse(`sh(sh(sh(wpkh(${TEST_XPUB_STR}/<0;1>/*))))`).unwrapErr()
+    expect(zodIssues(error)).toEqual([expect.objectContaining({ code: 'too_big', path: ['scriptTypeFactors'] })])
+  })
+})
+
+describe('key origin parsing', () => {
+  it('scans unmatched brackets in linear time', () => {
+    // A regex rescanning each unmatched `[` took about 20 s on this input.
+    const descriptor = `wpkh(${'['.repeat(262_144)}${TEST_XPUB_STR}/<0;1>/*)`
+    const started = performance.now()
+    expect(SinglesigDescriptorParser.parse(descriptor).isErr()).toBe(true)
+    expect(performance.now() - started).toBeLessThan(1_000)
+  })
+
+  it('reads the first bracketed origin', () => {
+    const result = SinglesigDescriptorParser.parse(`wpkh([d34db33f/84h/0h/0h]${TEST_XPUB_STR}/<0;1>/*)`)
+    expect(result.expect('valid descriptor').keyExpression.keyOrigin?.toString()).toBe('[d34db33f/84h/0h/0h]')
   })
 })

@@ -53,6 +53,16 @@ import { protectedProcedure, t } from './init'
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
+// Array inputs declare a maximum so Zod rejects an oversized array before validating each item (GHSA-mrhx-c7xc-m3w5).
+const accountIdsInput = z.array(z.string()).max(1_000)
+const MAX_MULTISIG_KEYSTORES = 20
+const MAX_ETF_HOLDINGS = 1_000
+// Strike exports one month per CSV; Sentinel's 1 MiB request limit binds first.
+const MAX_STATEMENT_TRANSACTIONS = 10_000
+// Real descriptors are a few KiB; the cap bounds the parsing work an oversized one can cause.
+const MAX_DESCRIPTOR_LENGTH = 16_384
+const descriptorInput = z.string().max(MAX_DESCRIPTOR_LENGTH)
+
 type AccountRow = typeof accountTable.$inferSelect
 type KeystoreRow = typeof keystoreTable.$inferSelect
 type ChallengeRow = typeof challenges.$inferSelect
@@ -122,12 +132,12 @@ const supportedHardwareWalletSchema = z.enum(['trezor', 'coldcard', 'ledger', 'k
 const etfTickerSchema = z.enum(['IBIT', 'FBTC', 'GBTC', 'ARKB', 'BITB', 'HODL', 'BTC', 'MSBT'])
 const checkedSinglesigAccountDescriptorSchema = z.custom<CheckedSinglesigAccountDescriptor>(
   (value): value is CheckedSinglesigAccountDescriptor =>
-    typeof value === 'string' && SingleSigAccount.fromDescriptor(value).isOk(),
+    typeof value === 'string' && value.length <= MAX_DESCRIPTOR_LENGTH && SingleSigAccount.fromDescriptor(value).isOk(),
   'Invalid singlesig account descriptor',
 )
 const checkedMultisigAccountDescriptorSchema = z.custom<CheckedMultisigAccountDescriptor>(
   (value): value is CheckedMultisigAccountDescriptor =>
-    typeof value === 'string' && MultiSigAccount.fromDescriptor(value).isOk(),
+    typeof value === 'string' && value.length <= MAX_DESCRIPTOR_LENGTH && MultiSigAccount.fromDescriptor(value).isOk(),
   'Invalid multisig account descriptor',
 )
 const hardwareWalletDisplayNames = {
@@ -397,10 +407,10 @@ const controlCenterRouter = t.router({
       z
         .object({
           timeRange: z.enum(['7d', '30d', '90d', '1y', 'all']).default('30d'),
-          claimIds: z.array(z.string()).optional(),
-          exchangeAccountIds: z.array(z.string()).optional(),
-          manualAccountIds: z.array(z.string()).optional(),
-          etfAccountIds: z.array(z.string()).optional(),
+          claimIds: accountIdsInput.optional(),
+          exchangeAccountIds: accountIdsInput.optional(),
+          manualAccountIds: accountIdsInput.optional(),
+          etfAccountIds: accountIdsInput.optional(),
           timezone: z.string().default('UTC'),
           customDateRange: z
             .object({
@@ -436,7 +446,7 @@ const controlCenterRouter = t.router({
     }),
 
   storedWalletBalances: protectedProcedure
-    .input(z.object({ claimIds: z.array(z.string()) }))
+    .input(z.object({ claimIds: accountIdsInput }))
     .query(async ({ ctx, input }) => ctx.app.controlCenterService.getStoredWalletBalances(input.claimIds)),
 
   recordSnapshot: protectedProcedure.mutation(async ({ ctx }) => {
@@ -686,15 +696,17 @@ const registryRouter = t.router({
             network: z.string(),
             account: checkedMultisigAccountDescriptorSchema,
             displayName: z.string().min(1),
-            keystores: z.array(
-              z.object({
-                label: z.string().min(1),
-                wallet: supportedHardwareWalletSchema.nullable(),
-                model: z.string().nullable(),
-                derivationPath: DerivationPathString.nullable(),
-                publicKey: z.string(),
-              }),
-            ),
+            keystores: z
+              .array(
+                z.object({
+                  label: z.string().min(1),
+                  wallet: supportedHardwareWalletSchema.nullable(),
+                  model: z.string().nullable(),
+                  derivationPath: DerivationPathString.nullable(),
+                  publicKey: z.string(),
+                }),
+              )
+              .max(MAX_MULTISIG_KEYSTORES),
           }),
         )
         .mutation(async ({ ctx, input }) => {
@@ -766,7 +778,7 @@ const registryRouter = t.router({
       }),
 
       byAccount: protectedProcedure
-        .input(z.object({ network: z.string(), account: z.string() }))
+        .input(z.object({ network: z.string(), account: descriptorInput }))
         .query(async ({ ctx, input }) => {
           const network = claimNetworkToNetwork(input.network)
           const [row] = await ctx.app.database
@@ -1037,7 +1049,7 @@ const registryRouter = t.router({
   }),
 
   getOrCreateSinglesigChallengeMessage: protectedProcedure
-    .input(z.object({ network: z.string(), account: z.string() }))
+    .input(z.object({ network: z.string(), account: descriptorInput }))
     .query(async ({ ctx, input }) => {
       return ctx.app.database.transaction(async (db) => {
         const network = claimNetworkToNetwork(input.network)
@@ -1229,21 +1241,23 @@ const proveExchangeRouter = t.router({
       .input(
         z.object({
           accountId: z.string(),
-          transactions: z.array(
-            z.object({
-              externalId: z.string(),
-              transactedAt: z.string(),
-              type: z.string(),
-              amountBtc: z.string(),
-              amountUsd: z.string().optional(),
-              feeUsd: z.string().optional(),
-              feeBtc: z.string().optional(),
-              exchangeRate: z.string().optional(),
-              description: z.string().optional(),
-              txHash: z.string().optional(),
-              statementMonth: z.string(),
-            }),
-          ),
+          transactions: z
+            .array(
+              z.object({
+                externalId: z.string(),
+                transactedAt: z.string(),
+                type: z.string(),
+                amountBtc: z.string(),
+                amountUsd: z.string().optional(),
+                feeUsd: z.string().optional(),
+                feeBtc: z.string().optional(),
+                exchangeRate: z.string().optional(),
+                description: z.string().optional(),
+                txHash: z.string().optional(),
+                statementMonth: z.string(),
+              }),
+            )
+            .max(MAX_STATEMENT_TRANSACTIONS),
         }),
       )
       .mutation(async ({ ctx, input }) => {
@@ -1324,7 +1338,7 @@ const proveExchangeRouter = t.router({
 
 const onchainRouter = t.router({
   bitcoinAccountBalances: protectedProcedure
-    .input(z.object({ accounts: z.array(z.string()) }))
+    .input(z.object({ accounts: z.array(descriptorInput).max(1_000) }))
     .query(async ({ ctx, input }) => {
       const resultMap = new Map<string, { current: Decimal; usd: Decimal | null }>()
       const archivedAccounts = new Set<string>()
@@ -1402,7 +1416,7 @@ const onchainRouter = t.router({
       return { accounts: resultMap, archivedAccounts }
     }),
 
-  claimBalances: protectedProcedure.input(z.object({ claimIds: z.array(z.string()) })).query(async ({ ctx, input }) => {
+  claimBalances: protectedProcedure.input(z.object({ claimIds: accountIdsInput })).query(async ({ ctx, input }) => {
     const balanceMap = new Map<string, Decimal>()
 
     const accountSet = new IndexSet<Account>()
@@ -1463,8 +1477,8 @@ const statementRouter = t.router({
   initiateGeneration: protectedProcedure
     .input(
       z.object({
-        claimIds: z.array(z.string()),
-        exchangeAccountIds: z.array(z.string()).optional(),
+        claimIds: accountIdsInput,
+        exchangeAccountIds: accountIdsInput.optional(),
         quoteCurrency: StatementQuoteCurrencySchema.default('USD'),
         openingDate: z.date(),
         closingDate: z.date(),
@@ -1755,13 +1769,15 @@ const etfRouter = t.router({
     .input(
       z.object({
         displayName: z.string().min(1),
-        holdings: z.array(
-          z.object({
-            ticker: etfTickerSchema,
-            shares: z.string(),
-            datePurchased: z.string().optional(),
-          }),
-        ),
+        holdings: z
+          .array(
+            z.object({
+              ticker: etfTickerSchema,
+              shares: z.string(),
+              datePurchased: z.string().optional(),
+            }),
+          )
+          .max(MAX_ETF_HOLDINGS),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -1869,7 +1885,7 @@ const portalProveRouter = t.router({
     add: protectedProcedure
       .input(
         z.object({
-          descriptor: z.string().min(1),
+          descriptor: descriptorInput.min(1),
           displayName: z.string().min(1),
           network: z.enum(['mainnet', 'testnet']).default('mainnet'),
         }),
