@@ -128,6 +128,18 @@ notarize() {
   echo "Apple notarized $(basename "$file") (submission $id)."
 }
 
+# Stapler fetches the ticket from Apple, which can briefly drop the connection or not have it yet.
+stapler() {
+  for _ in 1 2 3 4; do
+    if xcrun stapler "$@"; then
+      return 0
+    fi
+    echo "stapler $1 failed; retrying in 20 seconds."
+    sleep 20
+  done
+  xcrun stapler "$@"
+}
+
 # Sign from the inside out: every Mach-O file, deepest first, then nested frameworks and helper apps,
 # then the app itself. Executables get the hardened runtime and the app's entitlements.
 while IFS= read -r file; do
@@ -159,8 +171,8 @@ if [[ "$SKIP_NOTARIZATION" != true ]]; then
   # Staple the app as well as the disk image, so the copy in Applications opens offline too.
   ditto -c -k --keepParent "$APP" "$WORKSPACE/app.zip"
   notarize "$WORKSPACE/app.zip"
-  xcrun stapler staple -q "$APP"
-  xcrun stapler validate -q "$APP"
+  stapler staple -q "$APP"
+  stapler validate -q "$APP"
 fi
 
 # Swap the signed app into a writable copy of the installer, keeping its window layout.
@@ -192,8 +204,8 @@ if [[ "$SKIP_NOTARIZATION" == true ]]; then
 fi
 
 notarize "$SIGNED_DMG"
-xcrun stapler staple -q "$SIGNED_DMG"
-xcrun stapler validate -q "$SIGNED_DMG"
+stapler staple -q "$SIGNED_DMG"
+stapler validate -q "$SIGNED_DMG"
 spctl --assess --type open --context context:primary-signature -vv "$SIGNED_DMG" 2>&1 | tee "$WORKSPACE/dmg-assessment"
 grep -q 'source=Notarized Developer ID' "$WORKSPACE/dmg-assessment"
 spctl --assess --type execute -vv "$APP" 2>&1 | tee "$WORKSPACE/app-assessment"
