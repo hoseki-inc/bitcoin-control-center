@@ -25,7 +25,7 @@ export function onboardingSteps(desktop: boolean): OnboardingStep[] {
     {
       id: 'connect',
       title: 'Bring in what you already use',
-      body: 'Connect a hardware wallet, multisig, or exchange, or enter holdings yourself. You can also generate a statement of your holdings for any period.',
+      body: 'Connect a hardware wallet, multisig, exchange, or even enter holdings yourself. You can also generate a statement of your self-custodial holdings over any period.',
       preview: <AccountTypesPreview />,
     },
     {
@@ -38,8 +38,8 @@ export function onboardingSteps(desktop: boolean): OnboardingStep[] {
       id: 'privacy',
       title: 'Your data stays with you',
       body: desktop
-        ? 'Your history is saved on this computer. Balances come from a public Electrum server or your own node, plus any exchanges you connect. No Hoseki account needed.'
-        : 'Your history is saved on your server. Balances come from your node’s Electrum server, plus any exchanges you connect. No Hoseki account needed.',
+        ? 'Your history is saved on this computer. Balances come from an Electrum server you choose and any exchanges you expressly connect. No Hoseki account needed.'
+        : 'Your history is saved on your server. Balances come from your node’s Electrum server and any exchanges you expressly connect. No Hoseki account needed.',
       preview: <ConnectionsPreview />,
     },
     {
