@@ -19,9 +19,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { getQueryKey } from '@trpc/react-query'
 import { CircleCheckIcon } from 'lucide-react'
 import { useRef, useState } from 'react'
-import { useNavigate } from 'react-router'
 import { toast } from 'sonner'
-import { OnboardingTakeover } from '../../components/onboarding/onboarding-takeover'
 import { useLocalSetting } from '../../hooks/use-local-settings'
 import { isDesktop } from '../../mode'
 import { type RouterOutput, baseTrpc, trpc } from '../../trpc'
@@ -99,56 +97,11 @@ export function SettingsPage({ desktop = isDesktop }: { desktop?: boolean }): JS
           </Box>
         </SimpleGrid>
         <SecuritySettings />
-        <IntroductionSettings desktop={desktop} />
         <PriceSourceSettings />
         {desktop && <DesktopStatementSource />}
         {desktop && <ElectrumSettings />}
       </Stack>
     </Box>
-  )
-}
-
-function IntroductionSettings({ desktop }: { desktop: boolean }): JSX.Element {
-  const navigate = useNavigate()
-  const [isOpen, setIsOpen] = useState(false)
-  const [opens, setOpens] = useState(0)
-
-  return (
-    <SimpleGrid columns={{ base: 1, md: 2 }} spacing={{ base: 5, md: 10 }}>
-      <Box>
-        <Text as="h2" textStyle="text/md" fontWeight="semibold" color="neutral.900">
-          Introduction
-        </Text>
-        <Text mt={2} textStyle="text/sm" color="neutral.600" maxW="32ch">
-          A quick tour of what Control Center does and how your data is handled.
-        </Text>
-      </Box>
-      <Box>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => {
-            setOpens((count) => count + 1)
-            setIsOpen(true)
-          }}
-        >
-          View Introduction
-        </Button>
-      </Box>
-      {/* Shows the introduction again without changing the choice saved on first run. A new one each
-          time starts at step 1; it stays mounted while closing so it can fade out. */}
-      <OnboardingTakeover
-        key={opens}
-        isOpen={isOpen}
-        desktop={desktop}
-        onSkip={() => {
-          setIsOpen(false)
-        }}
-        onAddAccount={() => {
-          void navigate('/accounts/add')
-        }}
-      />
-    </SimpleGrid>
   )
 }
 

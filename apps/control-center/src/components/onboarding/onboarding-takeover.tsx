@@ -104,7 +104,7 @@ function StepTitle({ children }: { children: ReactNode }): JSX.Element {
 /**
  * The full-screen introduction for a new installation: what Control Center does, how it handles
  * wallets and data, and what to have ready before adding the first account. Saving the choice is
- * up to the caller, so Settings can show it again without changing anything.
+ * up to the caller.
  */
 export function OnboardingTakeover({
   isOpen,
@@ -130,12 +130,6 @@ export function OnboardingTakeover({
   const step = steps[index]
   const isFirst = index === 0
   const isLast = index === steps.length - 1
-
-  useEffect(() => {
-    if (isOpen) {
-      setPage({ index: 0, direction: 1 })
-    }
-  }, [isOpen])
 
   const goTo = (next: number): void => {
     setPage({ index: next, direction: next > index ? 1 : -1 })

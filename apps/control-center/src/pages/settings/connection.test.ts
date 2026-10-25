@@ -5,7 +5,6 @@ import { parseUnknown } from '@hoseki/packages/result/lib/parse'
 import { QueryClient, QueryClientProvider, onlineManager } from '@tanstack/react-query'
 import { act, createElement } from 'react'
 import { type Root, createRoot } from 'react-dom/client'
-import { MemoryRouter } from 'react-router'
 import { toast } from 'sonner'
 import superjson from 'superjson'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
@@ -141,11 +140,7 @@ async function render(): Promise<void> {
       createElement(
         ChakraProvider,
         null,
-        createElement(
-          QueryClientProvider,
-          { client: queryClient },
-          createElement(MemoryRouter, null, createElement(SettingsPage, { desktop: true })),
-        ),
+        createElement(QueryClientProvider, { client: queryClient }, createElement(SettingsPage, { desktop: true })),
       ),
     )
   })
