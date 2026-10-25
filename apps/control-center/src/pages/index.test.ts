@@ -89,6 +89,8 @@ const views: HomeViews = {
   AccumulationChart: () => createElement('div', null, 'Balance chart'),
   // The price chart's own states are covered in bitcoin-price-chart.test.ts; here we only check placement.
   BitcoinPriceChart: () => createElement('section', { 'data-chart': 'price' }, 'Bitcoin Price'),
+  // The introduction is covered in onboarding-takeover.test.tsx and index.interactions.test.tsx.
+  Onboarding: () => createElement('div'),
 }
 
 function renderHome(overrides: Partial<HomeState> = {}): string {
