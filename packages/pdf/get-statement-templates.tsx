@@ -462,21 +462,6 @@ export function getStatementDocumentTemplates(
       flexDirection: 'column',
       gap: tokens.spacing.md,
     },
-    logoAndAddress: {
-      flexDirection: 'column',
-      alignItems: 'flex-end',
-      gap: tokens.spacing.xs,
-    },
-    addressContainer: {
-      flexDirection: 'column',
-      alignItems: 'flex-end',
-    },
-    companyAddressText: {
-      fontSize: tokens.typography.fontSize.sm,
-      color: getColor('neutral.900'),
-      fontWeight: tokens.typography.fontWeights.medium,
-      textAlign: 'right',
-    },
     dateRange: {
       marginTop: tokens.spacing.md,
       fontSize: tokens.typography.fontSize.base,
@@ -1011,16 +996,8 @@ export function getStatementDocumentTemplates(
             <Text style={styles.statementNumber}>{`Statement #${proofNumber}`}</Text>
           </View>
 
-          {/* Right Column - Logo, Address, and Statement Number */}
           <View style={styles.rightColumn}>
-            <View style={styles.logoAndAddress}>
-              <Logo />
-              <View style={styles.addressContainer}>
-                <Text style={styles.companyAddressText}>1430 S Dixie Hwy</Text>
-                <Text style={styles.companyAddressText}>Ste 105 #1034</Text>
-                <Text style={styles.companyAddressText}>Coral Gables, FL 33146</Text>
-              </View>
-            </View>
+            <Logo />
           </View>
         </View>
       </View>

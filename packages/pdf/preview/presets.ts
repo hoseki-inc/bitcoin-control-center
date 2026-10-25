@@ -11,7 +11,7 @@ export const sampleCustomStatement: CustomPdfStatement = {
   currency: 'BTC',
   quoteCurrency: 'USD',
   user: {
-    email: 'mathhew.powell@example.com',
+    email: 'matthew.powell@example.com',
     name: 'Matthew Powell',
     address: '456 Oak Avenue, San Francisco, CA 94102, United States',
   },
@@ -714,7 +714,7 @@ export const sampleMonthlyStatement: MonthlyPdfStatement = {
   currency: 'BTC',
   quoteCurrency: 'USD',
   user: {
-    email: 'mathhew.powell@example.com',
+    email: 'matthew.powell@example.com',
     name: 'Matthew Powell',
     address: '456 Oak Avenue, San Francisco, CA 94102, United States',
   },

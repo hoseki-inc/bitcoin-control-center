@@ -309,10 +309,10 @@ function LearnMore() {
     <Box bg="neutral.50" p={4} borderRadius="md">
       <HStack spacing={3}>
         <ShieldCheckIcon size={20} />
-        <Text fontWeight="medium">Your Proof is Private & Secure</Text>
+        <Text fontWeight="medium">Self-custodial Bitcoin statements</Text>
       </HStack>
       <Text ml={7} color="neutral.900">
-        This proof securely verifies your bitcoin holdings. Learn more in our{' '}
+        Learn more in our{' '}
         <Link
           href="https://help.hoseki.app/bitcoin-control-center/statements/statements-and-hoseki-verified"
           isExternal
