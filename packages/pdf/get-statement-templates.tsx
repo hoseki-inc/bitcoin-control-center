@@ -313,51 +313,6 @@ export function getStatementDocumentTemplates(
     </Text>
   )
 
-  const GreenCheckIcon = () => (
-    <Svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-      <Path
-        d="M8.88658 16.4055C12.9765 16.4055 16.2921 13.0899 16.2921 8.99998C16.2921 4.91004 12.9765 1.59448 8.88658 1.59448C4.79663 1.59448 1.48108 4.91004 1.48108 8.99998C1.48108 13.0899 4.79663 16.4055 8.88658 16.4055Z"
-        fill="#059669"
-      />
-      <Path
-        d="M6.66492 9.00002L8.14602 10.4811L11.1082 7.51892"
-        stroke="white"
-        strokeWidth="0.925687"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </Svg>
-  )
-
-  const HosekiVerifiedBadge = () => (
-    <View
-      style={{
-        backgroundColor: getColor('neutral.50'),
-        borderRadius: tokens.radius.sm,
-        borderWidth: 1,
-        borderColor: getColor('neutral.200'),
-        paddingHorizontal: tokens.spacing.sm,
-        paddingVertical: tokens.spacing.sm,
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: tokens.spacing.xxs,
-      }}
-    >
-      <Text
-        style={{
-          fontSize: tokens.typography.fontSize.sm,
-          fontWeight: tokens.typography.fontWeights.medium,
-          color: getColor('neutral.900'),
-          letterSpacing: 1,
-          textTransform: 'uppercase',
-        }}
-      >
-        HOSEKI VERIFIED
-      </Text>
-      <GreenCheckIcon />
-    </View>
-  )
-
   const CalendarIcon = () => (
     <Svg width="33" height="33" viewBox="0 0 33 33" fill="none">
       <G clipPath="url(#clip0_1179_53756)">
@@ -601,6 +556,17 @@ export function getStatementDocumentTemplates(
       fontSize: tokens.typography.fontSize.sm,
       fontWeight: tokens.typography.fontWeights.regular,
       color: getColor('neutral.900'),
+    },
+    generatedWith: {
+      fontSize: tokens.typography.fontSize.sm,
+      fontWeight: tokens.typography.fontWeights.regular,
+      color: getColor('neutral.600'),
+    },
+    ownershipProvenText: {
+      fontFamily: tokens.typography.fontFamily,
+      fontSize: tokens.typography.fontSize.xxs,
+      color: getColor('neutral.500'),
+      marginTop: tokens.spacing.xxs,
     },
     summaryPageHeader: {
       width: '100%',
@@ -1040,9 +1006,8 @@ export function getStatementDocumentTemplates(
     return (
       <View fixed style={styles.headerRow}>
         <View style={styles.headerContent}>
-          {/* Left Column - Verified Badge */}
           <View style={styles.leftColumn}>
-            <HosekiVerifiedBadge />
+            <Text style={styles.generatedWith}>Generated with Bitcoin Control Center</Text>
             <Text style={styles.statementNumber}>{`Statement #${proofNumber}`}</Text>
           </View>
 
@@ -1179,10 +1144,10 @@ export function getStatementDocumentTemplates(
               <Text style={footerStyles.instructionsTitle}>About This Statement</Text>
               <View style={footerStyles.instructionsTextBlock}>
                 <Text style={footerStyles.instructionsText}>
-                  This statement provides detailed information on your Bitcoin holdings in self-custody for the
-                  specified period. All data is sourced directly from the Bitcoin network and self-custody ownership is
-                  validated by Bitcoin Control Center&apos;s open-source verification process. {quoteCurrency} values
-                  are approximate, using saved Bitcoin-to-{quoteCurrency} rates from{' '}
+                  This statement shows your Bitcoin holdings for the specified period. Wallet balances and transactions
+                  come from the Bitcoin blockchain, and each included wallet passed a proof-of-control signature in
+                  Bitcoin Control Center. {quoteCurrency} values are approximate, using saved Bitcoin-to-{quoteCurrency}{' '}
+                  rates from{' '}
                   {sources.length > 0
                     ? sources.map((source, index) => (
                         <React.Fragment key={source}>
@@ -1221,9 +1186,16 @@ export function getStatementDocumentTemplates(
     index: number
     quoteCurrency: StatementQuoteCurrency
     currency: CurrencyCode
+    timezone: string
   }
 
-  const SummaryTableRow: React.FC<SummaryTableRowProps> = ({ item: tableRow, index, currency, quoteCurrency }) => (
+  const SummaryTableRow: React.FC<SummaryTableRowProps> = ({
+    item: tableRow,
+    index,
+    currency,
+    quoteCurrency,
+    timezone,
+  }) => (
     <TableRow key={index} index={index}>
       <Cell columnName={SummaryColumn.Account} columnWidths={SUMMARY_COLUMN_WIDTHS}>
         <Text
@@ -1234,6 +1206,11 @@ export function getStatementDocumentTemplates(
         >
           {tableRow.displayName}
         </Text>
+        {tableRow.ownershipProvenAt && (
+          <Text style={styles.ownershipProvenText}>
+            {`Ownership proven ${formatTzDate(tableRow.ownershipProvenAt, 'MMM d, yyyy', timezone)}`}
+          </Text>
+        )}
       </Cell>
       <Cell columnName={SummaryColumn.OpeningBalance} columnWidths={SUMMARY_COLUMN_WIDTHS}>
         <AmountDisplay
@@ -1374,7 +1351,13 @@ export function getStatementDocumentTemplates(
 
     // Create a wrapper component that captures currency
     const RowComponentWithCurrency: React.FC<{ item: SummaryRowDisplayData; index: number }> = ({ item, index }) => (
-      <SummaryTableRow item={item} index={index} currency={currency} quoteCurrency={quoteCurrency} />
+      <SummaryTableRow
+        item={item}
+        index={index}
+        currency={currency}
+        quoteCurrency={quoteCurrency}
+        timezone={props.statement.timezone}
+      />
     )
 
     if (props.format === 'custom') {

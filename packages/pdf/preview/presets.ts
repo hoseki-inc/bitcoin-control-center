@@ -49,6 +49,7 @@ export const sampleCustomStatement: CustomPdfStatement = {
     entries: [
       {
         displayName: 'Main Wallet',
+        ownershipProvenAt: new Date('2023-12-18T15:20:00Z'),
         openingBalance: {
           sats: 100000000n, // 1 BTC
           quoteValue: new Decimal(45000),
@@ -80,6 +81,7 @@ export const sampleCustomStatement: CustomPdfStatement = {
       },
       {
         displayName: 'Savings Account',
+        ownershipProvenAt: new Date('2023-11-02T09:45:00Z'),
         openingBalance: {
           sats: 100000000n, // 1 BTC
           quoteValue: new Decimal(45000),
@@ -145,6 +147,7 @@ export const sampleCustomStatement: CustomPdfStatement = {
   statementEntries: [
     {
       displayName: 'Main Wallet',
+      ownershipProvenAt: new Date('2023-12-18T15:20:00Z'),
       openingBalance: {
         sats: 100000000n, // 1 BTC
         quoteValue: new Decimal(45000),
@@ -520,6 +523,7 @@ export const sampleCustomStatement: CustomPdfStatement = {
     },
     {
       displayName: 'Savings Account',
+      ownershipProvenAt: new Date('2023-11-02T09:45:00Z'),
       openingBalance: {
         sats: 100000000n, // 1 BTC
         quoteValue: new Decimal(45000),
@@ -751,6 +755,7 @@ export const sampleMonthlyStatement: MonthlyPdfStatement = {
         entries: [
           {
             displayName: 'Main Wallet',
+            ownershipProvenAt: new Date('2023-12-18T15:20:00Z'),
             openingBalance: {
               sats: 70000000n, // 0.7 BTC
               quoteValue: new Decimal(29400),
@@ -782,6 +787,7 @@ export const sampleMonthlyStatement: MonthlyPdfStatement = {
           },
           {
             displayName: 'Savings Account',
+            ownershipProvenAt: new Date('2023-11-02T09:45:00Z'),
             openingBalance: {
               sats: 30000000n, // 0.3 BTC
               quoteValue: new Decimal(12600),
@@ -847,6 +853,7 @@ export const sampleMonthlyStatement: MonthlyPdfStatement = {
       statementEntries: [
         {
           displayName: 'Main Wallet',
+          ownershipProvenAt: new Date('2023-12-18T15:20:00Z'),
           openingBalance: {
             sats: 70000000n, // 0.7 BTC
             quoteValue: new Decimal(29400),
@@ -1070,6 +1077,7 @@ export const sampleMonthlyStatement: MonthlyPdfStatement = {
         },
         {
           displayName: 'Savings Account',
+          ownershipProvenAt: new Date('2023-11-02T09:45:00Z'),
           openingBalance: {
             sats: 30000000n, // 0.3 BTC
             quoteValue: new Decimal(12600),
@@ -1158,6 +1166,7 @@ export const sampleMonthlyStatement: MonthlyPdfStatement = {
         entries: [
           {
             displayName: 'Main Wallet',
+            ownershipProvenAt: new Date('2023-12-18T15:20:00Z'),
             openingBalance: {
               sats: 85000000n, // 0.85 BTC
               quoteValue: new Decimal(37400),
@@ -1189,6 +1198,7 @@ export const sampleMonthlyStatement: MonthlyPdfStatement = {
           },
           {
             displayName: 'Savings Account',
+            ownershipProvenAt: new Date('2023-11-02T09:45:00Z'),
             openingBalance: {
               sats: 50000000n, // 0.5 BTC
               quoteValue: new Decimal(22000),
@@ -1254,6 +1264,7 @@ export const sampleMonthlyStatement: MonthlyPdfStatement = {
       statementEntries: [
         {
           displayName: 'Main Wallet',
+          ownershipProvenAt: new Date('2023-12-18T15:20:00Z'),
           openingBalance: {
             sats: 85000000n, // 0.85 BTC
             quoteValue: new Decimal(37400),
@@ -1306,6 +1317,7 @@ export const sampleMonthlyStatement: MonthlyPdfStatement = {
         },
         {
           displayName: 'Savings Account',
+          ownershipProvenAt: new Date('2023-11-02T09:45:00Z'),
           openingBalance: {
             sats: 50000000n, // 0.5 BTC
             quoteValue: new Decimal(22000),
@@ -1374,6 +1386,7 @@ export const sampleMonthlyStatement: MonthlyPdfStatement = {
         entries: [
           {
             displayName: 'Main Wallet',
+            ownershipProvenAt: new Date('2023-12-18T15:20:00Z'),
             openingBalance: {
               sats: 75000000n, // 0.75 BTC
               quoteValue: new Decimal(37500),
@@ -1405,6 +1418,7 @@ export const sampleMonthlyStatement: MonthlyPdfStatement = {
           },
           {
             displayName: 'Savings Account',
+            ownershipProvenAt: new Date('2023-11-02T09:45:00Z'),
             openingBalance: {
               sats: 50000000n, // 0.5 BTC
               quoteValue: new Decimal(25000),
@@ -1501,6 +1515,7 @@ export const sampleMonthlyStatement: MonthlyPdfStatement = {
       statementEntries: [
         {
           displayName: 'Main Wallet',
+          ownershipProvenAt: new Date('2023-12-18T15:20:00Z'),
           openingBalance: {
             sats: 75000000n, // 0.75 BTC
             quoteValue: new Decimal(37500),
@@ -1553,6 +1568,7 @@ export const sampleMonthlyStatement: MonthlyPdfStatement = {
         },
         {
           displayName: 'Savings Account',
+          ownershipProvenAt: new Date('2023-11-02T09:45:00Z'),
           openingBalance: {
             sats: 50000000n, // 0.5 BTC
             quoteValue: new Decimal(25000),

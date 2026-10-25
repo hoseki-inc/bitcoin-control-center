@@ -313,7 +313,12 @@ function LearnMore() {
       </HStack>
       <Text ml={7} color="neutral.900">
         This proof securely verifies your bitcoin holdings. Learn more in our{' '}
-        <Link href="https://help.hoseki.app" isExternal textDecoration="underline" fontWeight="medium">
+        <Link
+          href="https://help.hoseki.app/bitcoin-control-center/statements/statements-and-hoseki-verified"
+          isExternal
+          textDecoration="underline"
+          fontWeight="medium"
+        >
           Help Center
         </Link>
         .
