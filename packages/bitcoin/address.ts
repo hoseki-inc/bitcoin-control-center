@@ -91,7 +91,13 @@ export class Address {
     return value instanceof Address
   }
 
+  /** A base58check address is 25 bytes, at most 35 characters. Base58 decoding grows quadratically, so check first. */
+  public static readonly MAX_BASE58_LENGTH = 35
+
   public static fromBase58Check(str: string): Result<Address, Error> {
+    if (str.length > Address.MAX_BASE58_LENGTH) {
+      return Err(new Error(`Base58 address is longer than ${Address.MAX_BASE58_LENGTH} characters`))
+    }
     return Result.fromThrowable(() => {
       return bitcoin.address.fromBase58Check(str)
     }).andThen((b58) => {

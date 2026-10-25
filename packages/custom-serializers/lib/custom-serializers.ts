@@ -6,12 +6,21 @@ import { IndexMap, IndexSet, type Indexable, Mapping } from '../../collection'
 /**
  * Decimal Serializer
  */
+// What Decimal.toJSON() writes. decimal.js also reads hex, binary and octal, whose conversion grows quadratically,
+// and Sentinel deserializes request bodies before checking the PIN.
+const DECIMAL_TEXT = /^-?(?:\d+(?:\.\d+)?(?:e[+-]?\d+)?|Infinity)$|^NaN$/
+
 function registerDecimal(sj: typeof superjson) {
   sj.registerCustom<Decimal, string>(
     {
       isApplicable: (v): v is Decimal => Decimal.isDecimal(v),
       serialize: (v) => v.toJSON(),
-      deserialize: (v) => new Decimal(v),
+      deserialize: (v) => {
+        if (!DECIMAL_TEXT.test(v)) {
+          throw new Error('Serialized Decimal is not decimal text')
+        }
+        return new Decimal(v)
+      },
     },
     'Decimal',
   )

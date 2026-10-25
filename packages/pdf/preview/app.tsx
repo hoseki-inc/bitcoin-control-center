@@ -200,7 +200,7 @@ export default function App(): JSX.Element {
         setParsedStatement(result.data)
         setValidationError(null)
       } else {
-        setValidationError(result.error.errors.map((e) => `${e.path.join('.')}: ${e.message}`).join('\n'))
+        setValidationError(result.error.issues.map((e) => `${e.path.join('.')}: ${e.message}`).join('\n'))
         setParsedStatement(null)
       }
     } catch (error) {

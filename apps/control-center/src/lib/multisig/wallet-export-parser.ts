@@ -569,8 +569,8 @@ const ElectrumJsonFileSchema = z
       })
       .pipe(
         z.object({
-          threshold: z.coerce.number(),
-          totalSigners: z.coerce.number(),
+          threshold: z.coerce.number<string>(),
+          totalSigners: z.coerce.number<string>(),
         }),
       ),
     use_encryption: z.boolean(),

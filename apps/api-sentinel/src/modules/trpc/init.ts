@@ -4,8 +4,11 @@ import superjson from 'superjson'
 import { ZodError } from 'zod'
 import type { AppContext } from '../../context'
 import type { RequestAuth } from '../auth/request'
+import { requestTransformer } from './request-types'
 
-const transformer = registerCustomSerializers(superjson)
+const serializer = registerCustomSerializers(superjson)
+
+const transformer = { input: requestTransformer(serializer), output: serializer }
 
 export interface TRPCContext {
   app: AppContext

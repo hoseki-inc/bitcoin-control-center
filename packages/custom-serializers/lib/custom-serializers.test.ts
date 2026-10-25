@@ -73,3 +73,16 @@ test('IndexSet preserves object keys after serialization', () => {
   expect(restored.has({ key: 'first' })).toBe(true)
   expect(restored.has({ key: 'second' })).toBe(true)
 })
+
+test.each(['0', '-0', '1.23', '-123.456', '1e+21', '1.5e-7', 'NaN', 'Infinity', '-Infinity'])(
+  'Decimal round-trips %s',
+  (text) => {
+    const value = new Decimal(text)
+    expect(SuperJSON.parse(SuperJSON.stringify(value))).toEqual(value)
+  },
+)
+
+test.each(['0xff', '0b101', '0o17', '1_000', '', ' 1'])('Decimal deserialization refuses %j', (text) => {
+  const payload = JSON.stringify({ json: text, meta: { values: [['custom', 'Decimal']] } })
+  expect(() => SuperJSON.parse(payload)).toThrow('Serialized Decimal is not decimal text')
+})

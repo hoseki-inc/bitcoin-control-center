@@ -33,6 +33,7 @@ pnpm build
 - Use `parse` or `parseUnknown` from `@hoseki/packages/result/lib/parse` instead of Zod's `.parse()` or `.safeParse()`.
 - Use Chakra's `textStyle` typography tokens instead of separate `fontSize` and `lineHeight` props.
 - Install exact dependency versions with `pnpm add -E` or `pnpm add -wDE`.
+- Sentinel requests may only use the superjson types allowed in `apps/api-sentinel/src/modules/trpc/request-types.ts`. Send other data as arrays, objects or strings, and convert it in the route's Zod schema.
 
 ## Product boundary
 

@@ -77,3 +77,10 @@ it('preserves bigint precision', () => {
   const result = parse(decimal(), 900719925474099312345n)
   expect(result.expect('valid bigint').toString()).toBe('900719925474099312345')
 })
+
+it.each([
+  ['positive', decimal.positive()],
+  ['nonnegative', decimal.nonnegative()],
+])('decimal.%s returns a parse error for text that is not a number', (_name, schema) => {
+  expect(parse(schema, 'not-a-number').isErr()).toBe(true)
+})
