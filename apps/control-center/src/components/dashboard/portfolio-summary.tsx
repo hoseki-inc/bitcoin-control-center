@@ -1,7 +1,7 @@
 import { Box, Button, type ButtonProps, Flex, Grid, Text } from '@chakra-ui/react'
 import Decimal from 'decimal.js'
 import { Link } from 'react-router'
-import type { WalletBalanceSummary } from '../../lib/wallet-balances'
+import type { WalletBalanceStatus } from '../../lib/wallet-balances'
 import { getBrowserTimezone } from '../../utils/timezone'
 import { BitcoinAmount } from '../bitcoin-amount'
 import { AccumulationChart as DefaultAccumulationChart } from '../dashboard-charts/accumulation-chart'
@@ -22,14 +22,14 @@ export interface PortfolioSummaryData {
 export function PortfolioSummary({
   data,
   accountCount,
-  wallets,
+  walletStatus,
   AccumulationChart = DefaultAccumulationChart,
   portfolioLinkProps,
 }: {
   data: PortfolioSummaryData
   accountCount: number | null
   /** Whether the wallet balances behind the total are current, and how old they are if not. */
-  wallets?: Pick<WalletBalanceSummary, 'state' | 'asOf'>
+  walletStatus?: WalletBalanceStatus
   AccumulationChart?: typeof DefaultAccumulationChart
   /** Extra props for the View Portfolio link, such as taking it out of the tab order. */
   portfolioLinkProps?: ButtonProps
@@ -84,11 +84,8 @@ export function PortfolioSummary({
             Last 30 Days
           </Text>
           {/* Only while balances are updating or out of date; a quiet refresh needs no word. */}
-          {wallets?.state === 'loading' || wallets?.state === 'stale' ? (
-            // Announces when wallet balances start or stop updating.
-            <Box as="output">
-              <SyncIndicator walletBalanceState={wallets.state} walletBalancesAsOf={wallets.asOf} />
-            </Box>
+          {walletStatus !== undefined && walletStatus.kind !== 'current' ? (
+            <SyncIndicator wallets={walletStatus} />
           ) : null}
         </Flex>
         <Box as="figure" aria-label="Bitcoin balance, last 30 days">

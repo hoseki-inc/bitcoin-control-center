@@ -220,7 +220,6 @@ describe('Home overview states', () => {
       asOf: '2020-01-01T00:00:00.000Z',
       syncing: true,
       failed: false,
-      failure: null,
     }
     expect(renderText({ accounts, history: zeroBalanceHistory, walletRows: [row] })).toContain('Updating balances')
     expect(

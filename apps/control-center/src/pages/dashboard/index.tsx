@@ -50,7 +50,7 @@ import { FiatAmountText } from '../../components/fiat-amount-text'
 import { UnavailableAlert } from '../../components/unavailable-alert'
 import { SyncIndicator } from '../../components/wallet-balances/sync-indicator'
 import { formatBitcoinNumber, formatSignedBitcoinNumber, isUsableBtcPrice } from '../../lib/bitcoin-display'
-import { type WalletBalanceState, summarizeWalletBalances } from '../../lib/wallet-balances'
+import { summarizeWalletBalances } from '../../lib/wallet-balances'
 import { isExchangeConnected } from '../../utils/exchange-connection-status'
 import { type DashboardDataSource, dashboardDataSource } from './dashboard-data'
 
@@ -400,16 +400,15 @@ export function DashboardPage({
   const hasAccountLists = [claimsQuery, exchangeAccountsQuery, manualAccountsQuery, etfAccountsQuery].every(
     (query) => query.data !== undefined,
   )
+  const balanceUnknown = isShowingAll && !hasAccountLists
   const displayBalanceSats =
-    (isShowingAll && !hasAccountLists) || viewWallets.totalSats === null
+    balanceUnknown || viewWallets.totalSats === null
       ? null
       : viewWallets.totalSats + viewOtherSats.reduce((sum, sats) => sum + sats, 0)
-  const walletBalanceState: WalletBalanceState = isShowingAll && !hasAccountLists ? 'unknown' : viewWallets.state
+  // A missing account list leaves the total unknown, but the wallets' last sync still holds.
+  const walletStatus = !balanceUnknown || viewWallets.status.kind === 'lastSynced' ? viewWallets.status : null
   // The chart ends on the balance shown above it, unless that is still loading or incomplete.
-  const chartCurrentBalanceSats =
-    walletBalanceState === 'stale' || walletBalanceState === 'current' ? displayBalanceSats : null
-  // While Electrum is unreachable, the oldest time a shown wallet balance was current.
-  const walletBalancesAsOf = viewWallets.asOf
+  const chartCurrentBalanceSats = walletStatus === null || walletStatus.kind === 'updating' ? null : displayBalanceSats
 
   const isFullHistoryRange = timeRange === 'custom' || timeRange === 'all'
   const historyRangeError =
@@ -667,16 +666,12 @@ export function DashboardPage({
                   </Box>
                 )}
                 <Box as="span" boxSize="3px" borderRadius="full" bg="neutral.300" aria-hidden="true" />
-                {/* Announces sync and loading changes. Errors have their own alerts, so it stays quiet for them. */}
-                <Box as="output" aria-live={showsHistoryError && walletBalancesAsOf === null ? 'off' : undefined}>
-                  <SyncIndicator
-                    walletBalanceState={walletBalanceState}
-                    walletBalancesAsOf={walletBalancesAsOf}
-                    historySyncingCount={historySyncingAccountIds.length}
-                    isPending={!hasCurrentRangeData}
-                    hasError={showsHistoryError}
-                  />
-                </Box>
+                <SyncIndicator
+                  wallets={walletStatus}
+                  historySyncingCount={historySyncingAccountIds.length}
+                  isPending={!hasCurrentRangeData}
+                  hasError={showsHistoryError}
+                />
               </Flex>
               {/* The button centers on the balance line; on phones it wraps below. The USD
                   line comes first in the code so it's read right after the balance. */}
@@ -700,7 +695,7 @@ export function DashboardPage({
                   >
                     {displayBalanceSats !== null ? (
                       formatBitcoinNumber(new Decimal(displayBalanceSats).div(100_000_000))
-                    ) : walletBalanceState === 'unknown' ? (
+                    ) : balanceUnknown ? (
                       // An account list failed, so the balance can't be known.
                       '\u2014'
                     ) : (
@@ -714,7 +709,7 @@ export function DashboardPage({
                 <Box flexBasis="100%" order={{ base: 0, sm: 1 }}>
                   <FiatAmountText textStyle={{ base: 'text/lg', md: 'text/xl' }} fontWeight="normal">
                     <>
-                      {btcPriceQuery.isLoading || (displayBalanceSats === null && walletBalanceState !== 'unknown') ? (
+                      {btcPriceQuery.isLoading || (displayBalanceSats === null && !balanceUnknown) ? (
                         <TextSkeleton width="9ch" />
                       ) : btcPrice === null ? (
                         'USD unavailable'

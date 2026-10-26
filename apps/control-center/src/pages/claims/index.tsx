@@ -163,12 +163,7 @@ export function ClaimsPage({ dataSource = accountsDataSource }: { dataSource?: A
                     {pendingCount} Pending
                   </Text>
                 )}
-                {claimIds.length > 0 && (
-                  // Announces when wallet balances start or stop updating.
-                  <Box as="output">
-                    <SyncIndicator walletBalanceState={wallets.state} walletBalancesAsOf={wallets.asOf} />
-                  </Box>
-                )}
+                {claimIds.length > 0 && <SyncIndicator wallets={wallets.status} />}
               </Flex>
             )}
           </Box>

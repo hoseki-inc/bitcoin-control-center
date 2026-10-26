@@ -219,7 +219,6 @@ it('reads wallet balances without waiting for Electrum, and reports the scans it
       asOf: '2020-01-03T09:00:00.000Z',
       syncing: true,
       failed: false,
-      failure: null,
     },
   ])
 })

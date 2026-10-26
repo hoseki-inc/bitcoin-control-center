@@ -10,7 +10,7 @@ import { asc, eq, sql } from 'drizzle-orm'
 import { type MockInstance, expect, it, vi } from 'vitest'
 import { accounts, balanceSnapshots } from '../../db/schema'
 import { setupServiceDatabase } from '../../fixtures/service-database'
-import { WALLET_BALANCE_MAX_AGE_MS, WalletBalanceService } from './service'
+import { WalletBalanceService, retryDelayMs } from './service'
 
 const first = Wallets.singlesigNativeSegwitAccount
 const second = Wallets.singlesigTaprootAccount
@@ -69,6 +69,8 @@ async function setup(): Promise<{
   }
 }
 
+const BALANCE_MAX_AGE_MS = 60_000
+
 const balanceOf = (account: Account, sats: bigint): Scan => Ok(new IndexMap<Account, bigint>([[account, sats]]))
 
 async function scanStarted(scans: ReturnType<typeof vi.fn>, count: number): Promise<void> {
@@ -77,11 +79,17 @@ async function scanStarted(scans: ReturnType<typeof vi.fn>, count: number): Prom
   })
 }
 
+async function settled(service: WalletBalanceService, id: string): Promise<void> {
+  await vi.waitFor(async () => {
+    expect((await service.readBalances([id]))[0]?.syncing).toBe(false)
+  })
+}
+
 it('shares one scan between callers asking at the same time, and records it once', async () => {
   const { service, scans, answer, snapshots } = await setup()
   const requests = [service.getLiveBalances(['first']), service.getLiveBalances(['first']), service.refreshAll()]
   await scanStarted(scans, 2)
-  expect(service.getStatus('first').syncing).toBe(true)
+  expect((await service.readBalances(['first']))[0]?.syncing).toBe(true)
   answer(first, balanceOf(first, 1_000n))
   answer(second, balanceOf(second, 2_000n))
 
@@ -89,7 +97,7 @@ it('shares one scan between callers asking at the same time, and records it once
   expect(one?.get('first')?.unwrap().balanceSats).toBe(1_000n)
   expect(two?.get('first')?.unwrap().balanceSats).toBe(1_000n)
   expect(scans).toHaveBeenCalledTimes(2)
-  expect(service.getStatus('first')).toMatchObject({ syncing: false, failure: null })
+  expect((await service.readBalances(['first']))[0]).toMatchObject({ syncing: false, failed: false })
   await expect(snapshots()).resolves.toEqual([
     { accountId: 'first', balanceSats: '1000' },
     { accountId: 'second', balanceSats: '2000' },
@@ -104,10 +112,10 @@ it('reuses a recent balance, and scans again once it is older than allowed', asy
   await fetching
 
   await expect(service.getLiveBalances(['first'])).resolves.toHaveProperty('size', 1)
-  await service.refreshStale(['first'])
+  await service.readBalances(['first'])
   expect(scans).toHaveBeenCalledTimes(1)
 
-  vi.setSystemTime(Date.now() + WALLET_BALANCE_MAX_AGE_MS + 1)
+  vi.setSystemTime(Date.now() + BALANCE_MAX_AGE_MS + 1)
   const again = service.getLiveBalances(['first'])
   await scanStarted(scans, 2)
   answer(first, balanceOf(first, 1_500n))
@@ -125,28 +133,38 @@ it('keeps scanning other wallets when one fails, and logs only the kind of failu
   const results = await fetching
   expect(results.get('first')?.isErr()).toBe(true)
   expect(results.get('second')?.unwrap().balanceSats).toBe(2_000n)
-  expect(service.getStatus('first').failure).toBe('unreachable')
+  expect(warn).toHaveBeenCalledWith(
+    expect.objectContaining({ accountId: 'first', failure: 'unreachable' }),
+    'Wallet balance scan failed',
+  )
   await expect(snapshots()).resolves.toEqual([{ accountId: 'second', balanceSats: '2000' }])
   expect(JSON.stringify(warn.mock.calls)).not.toContain('synthetic-sensitive-detail')
 })
 
-it('waits before scanning a failed wallet again in the background, but not when asked directly', async () => {
+it('waits before a read scans a failed wallet again, but not when asked directly', async () => {
   const { service, scans, answer } = await setup()
+  const warn = vi.spyOn(service['logger'], 'warn')
   const fetching = service.getLiveBalances(['first'])
   await scanStarted(scans, 1)
   answer(first, Err(Object.assign(new Error('Request timed out'), { name: 'ElectrumTimeoutError' })))
   await fetching
-  expect(service.getStatus('first').failure).toBe('timeout')
+  expect(warn).toHaveBeenCalledWith(
+    expect.objectContaining({ failure: 'timeout', retryMs: 10_000 }),
+    'Wallet balance scan failed',
+  )
 
-  await expect(service.refreshStale(['first'])).resolves.toHaveProperty('size', 0)
+  expect((await service.readBalances(['first']))[0]).toMatchObject({ syncing: false, failed: true })
   expect(scans).toHaveBeenCalledTimes(1)
 
-  vi.setSystemTime(Date.now() + 10_001)
-  const retry = service.refreshStale(['first'])
+  const direct = service.getLiveBalances(['first'])
   await scanStarted(scans, 2)
   answer(first, balanceOf(first, 1_000n))
-  expect((await retry).get('first')?.isOk()).toBe(true)
-  expect(service.getStatus('first').failure).toBeNull()
+  expect((await direct).get('first')?.isOk()).toBe(true)
+  expect((await service.readBalances(['first']))[0]).toMatchObject({ balanceSats: 1_000n, failed: false })
+})
+
+it('waits 10, 20, 40, then 60 s after failures in a row', () => {
+  expect([1, 2, 3, 4, 5, 9].map(retryDelayMs)).toEqual([10_000, 20_000, 40_000, 60_000, 60_000, 60_000])
 })
 
 it('leaves out a wallet archived during its scan and records nothing for it', async () => {
@@ -172,7 +190,6 @@ it('forgets balances when the server changes', async () => {
   await fetching
 
   service.invalidateAll()
-  expect(service.getStatus('first').live).toBeNull()
   const again = service.getLiveBalances(['first'])
   await scanStarted(scans, 2)
   answer(first, balanceOf(first, 1_000n))
@@ -205,13 +222,13 @@ it('reads the newest known balance at once, starting a scan for wallets that are
   await expect(service.readBalances(['first', 'second'])).resolves.toEqual([
     {
       accountId: 'first',
-      balanceSats: '900',
-      asOf: '2024-02-09T00:00:00.000Z',
+      balanceSats: 900n,
+      asOf: new Date('2024-02-09T00:00:00.000Z'),
+      tip: null,
       syncing: true,
       failed: false,
-      failure: null,
     },
-    { accountId: 'second', balanceSats: null, asOf: null, syncing: true, failed: false, failure: null },
+    { accountId: 'second', balanceSats: null, asOf: null, tip: null, syncing: true, failed: false },
   ])
   await scanStarted(scans, 2)
   // Reading again while the scans run joins them rather than starting more.
@@ -220,19 +237,10 @@ it('reads the newest known balance at once, starting a scan for wallets that are
 
   answer(first, balanceOf(first, 1_000n))
   answer(second, Err(new Error('Connection closed')))
-  await vi.waitFor(() => {
-    expect(service.getStatus('second').syncing).toBe(false)
-  })
+  await settled(service, 'second')
   await expect(service.readBalances(['first', 'second'])).resolves.toEqual([
-    {
-      accountId: 'first',
-      balanceSats: '1000',
-      asOf: service.getStatus('first').live?.fetchedAt.toISOString(),
-      syncing: false,
-      failed: false,
-      failure: null,
-    },
-    { accountId: 'second', balanceSats: null, asOf: null, syncing: false, failed: true, failure: 'unreachable' },
+    { accountId: 'first', balanceSats: 1_000n, asOf: new Date(), tip, syncing: false, failed: false },
+    { accountId: 'second', balanceSats: null, asOf: null, tip: null, syncing: false, failed: true },
   ])
   // A failed wallet waits before it is scanned again.
   expect(scans).toHaveBeenCalledTimes(2)
@@ -266,7 +274,7 @@ it('reports a wallet whose descriptor cannot be read as failing, so pages count 
   const { service, db } = await setup()
   await db.insert(accounts).values({ id: 'broken', descriptor: 'not a descriptor', displayName: 'Broken wallet' })
   const [read] = await service.readBalances(['broken'])
-  expect(read).toMatchObject({ accountId: 'broken', balanceSats: null, syncing: false, failed: true, failure: 'error' })
+  expect(read).toMatchObject({ accountId: 'broken', balanceSats: null, syncing: false, failed: true })
 })
 
 it('keeps a fetched balance when recording it fails, and records it on the next refresh', async () => {
@@ -280,7 +288,7 @@ it('keeps a fetched balance when recording it fails, and records it on the next 
   await expect(snapshots()).resolves.toEqual([])
 
   await db.run(sql`DROP TRIGGER fail_snapshot`)
-  const refreshing = service.refreshAll({ force: true })
+  const refreshing = service.refreshAll()
   await scanStarted(scans, 3)
   answer(first, balanceOf(first, 1_000n))
   answer(second, balanceOf(second, 2_000n))
@@ -293,9 +301,9 @@ it('keeps a fetched balance when recording it fails, and records it on the next 
 
 it('records a balance the periodic refresh shares with a history backfill, which records none itself', async () => {
   const { service, scans, answer, snapshots } = await setup()
-  const backfill = service.getLiveBalances(['first'], { anchoredTo: tip, recordSnapshot: false })
+  const backfill = service.getLiveBalances(['first'], { anchoredTo: tip, record: false })
   await scanStarted(scans, 1)
-  const periodic = service.refreshAll({ force: true })
+  const periodic = service.refreshAll()
   await scanStarted(scans, 2)
   answer(first, balanceOf(first, 1_000n))
   answer(second, balanceOf(second, 2_000n))
@@ -306,4 +314,76 @@ it('records a balance the periodic refresh shares with a history backfill, which
     { accountId: 'first', balanceSats: '1000' },
     { accountId: 'second', balanceSats: '2000' },
   ])
+})
+
+it('retries a failing wallet after 10, 20, 40, then every 60 s, and starts over once it succeeds', async () => {
+  const { service, scans, answer } = await setup()
+  const unreachable = Err(new Error('Connection closed'))
+  let started = 0
+  const scanAnswered = async (result: Scan): Promise<void> => {
+    started += 1
+    await scanStarted(scans, started)
+    answer(first, result)
+    await settled(service, 'first')
+  }
+  await service.readBalances(['first'])
+  await scanAnswered(unreachable)
+  for (const delayMs of [10_000, 20_000, 40_000, 60_000, 60_000]) {
+    vi.setSystemTime(Date.now() + delayMs - 1)
+    await service.readBalances(['first'])
+    expect(scans).toHaveBeenCalledTimes(started)
+    vi.setSystemTime(Date.now() + 1)
+    await service.readBalances(['first'])
+    await scanAnswered(unreachable)
+  }
+
+  vi.setSystemTime(Date.now() + 60_000)
+  await service.readBalances(['first'])
+  await scanAnswered(balanceOf(first, 1_000n))
+  // The balance goes out of date and the next scan fails: the wait starts over at 10 s.
+  vi.setSystemTime(Date.now() + BALANCE_MAX_AGE_MS + 1)
+  await service.readBalances(['first'])
+  await scanAnswered(unreachable)
+  vi.setSystemTime(Date.now() + 10_000)
+  await service.readBalances(['first'])
+  expect(scans).toHaveBeenCalledTimes(started + 1)
+})
+
+it('forgets a chain tip the old server answers with after the server changes', async () => {
+  const { service, tipReads } = await setup()
+  let answerOldServer: (result: Result<Block, Error>) => void = () => undefined
+  tipReads.mockReturnValueOnce(
+    new AsyncResult(
+      new Promise((resolve) => {
+        answerOldServer = resolve
+      }),
+    ),
+  )
+  await expect(service.currentTip(10)).resolves.toEqual({ tip: null, failed: false })
+
+  service.invalidateAll()
+  answerOldServer(Ok(tip))
+  // The new server doesn't answer yet: nothing from the old one stands in for its tip.
+  tipReads.mockReturnValue(new AsyncResult(new Promise(() => undefined)))
+  await expect(service.currentTip(10)).resolves.toEqual({ tip: null, failed: false })
+  expect(tipReads).toHaveBeenCalledTimes(2)
+})
+
+it('still reads as syncing when the server changes during a read, so pages keep polling', async () => {
+  const { service, db } = await setup()
+  await db
+    .insert(balanceSnapshots)
+    .values({ accountId: 'first', balanceSats: '900', timestamp: '2024-02-09T00:00:00.000Z' })
+  const select = db.select.bind(db)
+  let selects = 0
+  // The read's second query is the wallet's snapshot: the server changes while it runs.
+  vi.spyOn(db, 'select').mockImplementation((...args: Parameters<typeof db.select>) => {
+    selects += 1
+    if (selects === 2) {
+      service.invalidateAll()
+    }
+    return select(...args)
+  })
+  const [read] = await service.readBalances(['first'])
+  expect(read).toMatchObject({ accountId: 'first', balanceSats: 900n, syncing: true })
 })

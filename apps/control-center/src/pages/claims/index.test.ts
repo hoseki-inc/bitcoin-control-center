@@ -117,7 +117,6 @@ const walletRow = (overrides: Partial<WalletBalanceRow> = {}): WalletBalanceRow 
   asOf: new Date().toISOString(),
   syncing: false,
   failed: false,
-  failure: null,
   ...overrides,
 })
 
@@ -177,7 +176,7 @@ describe('Accounts page', () => {
   })
 
   it('says when balances were last synced while a wallet is unreachable', () => {
-    const text = renderPage({ claims: [wallet], walletRows: [walletRow({ failed: true, failure: 'unreachable' })] })
+    const text = renderPage({ claims: [wallet], walletRows: [walletRow({ failed: true })] })
     expect(text).toContain('0.50000000 BTC')
     expect(text).toContain('Last synced')
   })
@@ -185,7 +184,7 @@ describe('Accounts page', () => {
   it("says Electrum can't be reached while a wallet that has never synced counts as empty", () => {
     const text = renderPage({
       claims: [wallet],
-      walletRows: [walletRow({ balanceSats: null, asOf: null, failed: true, failure: 'unreachable' })],
+      walletRows: [walletRow({ balanceSats: null, asOf: null, failed: true })],
     })
     expect(text).toContain('0.00000000 BTC')
     // Static markup escapes the apostrophe.

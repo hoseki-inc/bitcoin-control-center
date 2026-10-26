@@ -19,8 +19,8 @@ import type { EtfService } from '../etf/service'
 import type { ExchangeService } from '../exchange/service'
 import type { ManualService } from '../manual/service'
 import type { PriceService } from '../price/service'
-import { WALLET_BALANCE_MAX_AGE_MS, type WalletBalanceService } from '../wallet_balances/service'
-import { getLatestWalletSnapshot, isWalletActive, upsertWalletSnapshot } from '../wallet_balances/snapshots'
+import type { WalletBalanceService } from '../wallet_balances/service'
+import { isWalletActive, upsertWalletSnapshot } from '../wallet_balances/snapshots'
 import {
   type BalanceDataPoint,
   type BalanceEntry,
@@ -137,56 +137,33 @@ export class ControlCenterService {
       const initiallySelectedAccountIds = new Set(accountRows.map(({ id }) => id))
 
       // ─── Fetch on-chain balances ────────────────────────────────
-      // Never wait on Electrum for a wallet with a recorded balance: use a balance fetched within the
-      // last minute, or else the last recorded one while a fresh one is fetched in the background.
-      // Only a wallet that has never been scanned waits, sharing the scan with any other caller.
+      // Count each wallet's newest known balance, as walletBalances shows it, while out-of-date ones
+      // refresh in the background. Only a wallet with no balance yet that isn't failing waits, sharing
+      // its first scan with any other caller; one that keeps failing counts as empty.
+      const views = await this.walletBalances.readBalances(accountRows.map(({ id }) => id))
+      const waitingIds = views.filter((view) => view.balanceSats === null && !view.failed).map((view) => view.accountId)
+      const firstScans = await this.walletBalances.getLiveBalances(waitingIds)
       const balancesByAccountId = new Map<string, bigint>()
       const balancesAsOf = new Map<string, string>()
       const balanceTips = new Map<string, Block>()
-      const neverScannedIds: string[] = []
-      const staleIds: string[] = []
-      for (const row of accountRows) {
-        const { live } = this.walletBalances.getStatus(row.id)
-        if (live !== null && Date.now() - live.fetchedAt.getTime() <= WALLET_BALANCE_MAX_AGE_MS) {
-          balancesByAccountId.set(row.id, live.balanceSats)
-          balancesAsOf.set(row.id, live.fetchedAt.toISOString())
-          if (live.tip !== null) {
-            balanceTips.set(row.id, live.tip)
-          }
-          continue
+      for (const view of views) {
+        const first = firstScans.get(view.accountId)
+        const counted =
+          first?.isOk() === true
+            ? first.unwrap()
+            : { balanceSats: view.balanceSats, fetchedAt: view.asOf, tip: view.tip }
+        if (waitingIds.includes(view.accountId) && first?.isOk() !== true) {
+          this.logger.warn({ accountId: view.accountId }, 'Failed to fetch on-chain balance')
         }
-        const recorded = await this.getLatestAccountSnapshot(row.id)
-        if (recorded === null && this.walletBalances.getStatus(row.id).failure !== null) {
-          // It keeps failing: count it as empty rather than hold every page on its retries.
-          balancesByAccountId.set(row.id, 0n)
-          staleIds.push(row.id)
-        } else if (recorded === null) {
-          neverScannedIds.push(row.id)
-        } else {
-          balancesByAccountId.set(row.id, recorded.balanceSats)
-          balancesAsOf.set(row.id, recorded.timestamp)
-          staleIds.push(row.id)
+        balancesByAccountId.set(view.accountId, counted.balanceSats ?? 0n)
+        if (counted.balanceSats !== null && counted.fetchedAt !== null) {
+          balancesAsOf.set(view.accountId, counted.fetchedAt.toISOString())
+        }
+        if (counted.tip !== null) {
+          balanceTips.set(view.accountId, counted.tip)
         }
       }
-      if (staleIds.length > 0) {
-        this.walletBalances.refreshInBackground(staleIds)
-      }
-      if (neverScannedIds.length > 0) {
-        const scanned = await this.walletBalances.getLiveBalances(neverScannedIds)
-        for (const id of neverScannedIds) {
-          const result = scanned.get(id)
-          if (result?.isOk() === true) {
-            balancesByAccountId.set(id, result.unwrap().balanceSats)
-            balancesAsOf.set(id, result.unwrap().fetchedAt.toISOString())
-            const { tip } = result.unwrap()
-            if (tip !== null) {
-              balanceTips.set(id, tip)
-            }
-          } else {
-            this.logger.warn({ accountId: id }, 'Failed to fetch on-chain balance')
-            balancesByAccountId.set(id, 0n)
-          }
-        }
+      if (waitingIds.length > 0) {
         // Drop wallets archived while their first balance was fetched.
         accountRows = (await this.getAccountRows(args.accountIds)).filter(({ id }) =>
           initiallySelectedAccountIds.has(id),
@@ -625,12 +602,6 @@ export class ControlCenterService {
       .orderBy(asc(balanceSnapshots.timestamp))
   }
 
-  private async getLatestAccountSnapshot(
-    accountId: string,
-  ): Promise<{ balanceSats: bigint; timestamp: string } | null> {
-    return getLatestWalletSnapshot(this.db, accountId)
-  }
-
   private async queueAccountHistoryBackfill(
     accountId: string,
     account: Account,
@@ -870,7 +841,7 @@ export class ControlCenterService {
       if (boundaryBalance === undefined) {
         // Shares a scan already running, or reuses a recent one, only if it started at this tip.
         const balanceResult = (
-          await this.walletBalances.getLiveBalances([accountId], { anchoredTo: tip, recordSnapshot: false })
+          await this.walletBalances.getLiveBalances([accountId], { anchoredTo: tip, record: false })
         ).get(accountId)
         if (balanceResult === undefined || balanceResult.isErr()) {
           this.logger.warn({ accountId }, 'Failed to fetch history boundary balance')
@@ -1250,7 +1221,7 @@ export class ControlCenterService {
     // ─── On-chain accounts ─────────────────────────────────────
     await collectSource('on-chain', async () => {
       // Each wallet is scanned on its own and records its own snapshot, so one failure doesn't stop the rest.
-      const results = await this.walletBalances.refreshAll({ force: true })
+      const results = await this.walletBalances.refreshAll()
       if (results.size === 0) {
         return
       }

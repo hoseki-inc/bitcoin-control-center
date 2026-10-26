@@ -462,11 +462,11 @@ describe('history balance reuse', () => {
       const data = (await harness.service.getData({ timeRange: '90d' })).unwrap()
       expect(data.currentTotalBalance).toBe('150')
       expect(data.walletBalancesAsOf).toEqual({ [accountId]: '2020-01-03T09:00:00.000Z' })
-      expect(walletBalances.getStatus(accountId).syncing).toBe(true)
+      expect((await walletBalances.readBalances([accountId]))[0]?.syncing).toBe(true)
 
       scan.resolve(Ok(new IndexMap([[account, 175n]])))
-      await vi.waitFor(() => {
-        expect(walletBalances.getStatus(accountId).live?.balanceSats).toBe(175n)
+      await vi.waitFor(async () => {
+        expect((await walletBalances.readBalances([accountId]))[0]?.balanceSats).toBe(175n)
         expect(harness.service['accountHistoryBackfillsInFlight'].size).toBe(0)
       })
       expect(harness.provider.getConfirmedAccountBalances).toHaveBeenCalledTimes(1)
@@ -474,8 +474,8 @@ describe('history balance reuse', () => {
       expect(refreshed.currentTotalBalance).toBe('175')
       // The same time pages read from walletBalances, so they know this total includes the new balance.
       const [reading] = await walletBalances.readBalances([accountId])
-      expect(refreshed.walletBalancesAsOf).toEqual({ [accountId]: reading?.asOf })
-      expect(reading?.asOf).not.toBe('2020-01-03T09:00:00.000Z')
+      expect(refreshed.walletBalancesAsOf).toEqual({ [accountId]: reading?.asOf?.toISOString() })
+      expect(reading?.asOf?.toISOString()).not.toBe('2020-01-03T09:00:00.000Z')
       expect(harness.provider.getConfirmedAccountBalances).toHaveBeenCalledTimes(1)
     })
   })
@@ -943,6 +943,47 @@ describe('history retry coordination', () => {
         expect(service['accountHistoryBackfillsInFlight'].has(accountId)).toBe(false)
       })
       expect(service['accountHistoryBackfillFailureCounts'].has(accountId)).toBe(false)
+    })
+  })
+})
+
+describe('balances counted in the portfolio', () => {
+  it('counts the balance walletBalances shows, even when recording the last scan failed', async () => {
+    await withTestSetup(async () => {
+      const { db, service, provider } = harness
+      await service.recordAccountSnapshot(accountId, '150', '2020-01-03T09:00:00.000Z')
+      await db.run(sql`CREATE TEMP TRIGGER fail_snapshot BEFORE INSERT ON balance_snapshots
+        BEGIN SELECT RAISE(ABORT, 'Synthetic snapshot failure'); END`)
+      provider.getConfirmedAccountBalances.mockImplementation(
+        asyncFn(async () => Ok(new IndexMap<Account, bigint>([[account, 175n]]))),
+      )
+      const walletBalances = service['walletBalances']
+      await walletBalances.getLiveBalances([accountId])
+      await db.run(sql`DROP TRIGGER fail_snapshot`)
+
+      // A minute on, Electrum stops answering, so the fetched balance stays the newest known.
+      vi.setSystemTime(Date.now() + 61_000)
+      provider.getConfirmedAccountBalances.mockReturnValue(new AsyncResult(new Promise(() => undefined)))
+      const [reading] = await walletBalances.readBalances([accountId])
+      expect(reading?.balanceSats).toBe(175n)
+      const data = (await service.getData({ timeRange: '90d' })).unwrap()
+      expect(data.currentTotalBalance).toBe('175')
+      expect(data.walletBalancesAsOf).toEqual({ [accountId]: reading?.asOf?.toISOString() })
+    })
+  })
+
+  it('counts a wallet whose first scan fails as empty, with no time, and stops waiting on it', async () => {
+    await withTestSetup(async () => {
+      const { service, provider } = harness
+      provider.getConfirmedAccountBalances.mockImplementation(asyncFn(async () => Err(new Error('Connection closed'))))
+      const first = (await service.getData({ timeRange: '90d' })).unwrap()
+      expect(first.currentTotalBalance).toBe('0')
+      expect(first.walletBalancesAsOf).toEqual({ [accountId]: null })
+
+      // While it waits to retry, a scan that never answers doesn't hold the next read.
+      provider.getConfirmedAccountBalances.mockReturnValue(new AsyncResult(new Promise(() => undefined)))
+      const again = (await service.getData({ timeRange: '90d' })).unwrap()
+      expect(again).toMatchObject({ currentTotalBalance: '0', walletBalancesAsOf: { [accountId]: null } })
     })
   })
 })

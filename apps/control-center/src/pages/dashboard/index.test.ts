@@ -86,6 +86,7 @@ const mocks = vi.hoisted(() => {
     },
     refetchList: vi.fn(async () => Promise.resolve({})),
     claimsFailed: false,
+    manualFailed: false,
     listsLoading: false,
     priceLoading: false,
     exchangeAccounts: Array<RouterOutput['portalProve']['exchange']['list'][number]>(),
@@ -134,7 +135,6 @@ function walletRows(claimIds: string[]): WalletBalanceRow[] | undefined {
       asOf: useLive ? new Date(mocks.balancesUpdatedAt).toISOString() : (recorded?.timestamp ?? null),
       syncing: !mocks.balancesFailed && mocks.balancesUpdatedAt === 0,
       failed: mocks.balancesFailed,
-      failure: mocks.balancesFailed ? 'unreachable' : null,
     }
   })
 }
@@ -147,7 +147,11 @@ const dataSource: DashboardDataSource = {
       refetch: mocks.refetchList,
     },
     exchangeAccountsQuery: { data: mocks.exchangeAccounts, isLoading: false, refetch: mocks.refetchList },
-    manualAccountsQuery: { data: mocks.holdings, isLoading: false, refetch: mocks.refetchList },
+    manualAccountsQuery: {
+      data: mocks.manualFailed ? undefined : mocks.holdings,
+      isLoading: false,
+      refetch: mocks.refetchList,
+    },
     etfAccountsQuery: { data: mocks.etfAccounts, isLoading: false, refetch: mocks.refetchList },
     btcPriceQuery: {
       isLoading: mocks.priceLoading,
@@ -314,6 +318,7 @@ async function withTestSetup(run: () => Promise<void>): Promise<void> {
   mocks.refetchList.mockClear()
   mocks.storedBalances = []
   mocks.claimsFailed = false
+  mocks.manualFailed = false
   mocks.listsLoading = false
   mocks.priceLoading = false
   mocks.exchangeAccounts = []
@@ -1155,6 +1160,16 @@ describe('range summary', () => {
       { accountId: 're_clmx_wallet', balanceSats: '150000000', timestamp: '2026-09-05T09:00:00.000Z' },
     ]
   }
+
+  it('still says when wallets last synced while another account list is missing, without a total', async () => {
+    await withTestSetup(async () => {
+      setUpOutage()
+      mocks.manualFailed = true
+      await renderHistory([['2026-09-01', 150_000_000]], 0)
+      expect(container.querySelector('output')?.textContent).toContain('Last synced 3 hours ago')
+      expect(text()).toContain('\u2014BTC')
+    })
+  })
 
   it("shows each wallet's last stored balance, and when it synced, while Electrum is unreachable", async () => {
     await withTestSetup(async () => {

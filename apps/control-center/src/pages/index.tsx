@@ -65,7 +65,7 @@ export function HomePage({
           <PortfolioSummary
             data={portfolio}
             accountCount={accountCount}
-            wallets={wallets}
+            walletStatus={wallets.status}
             AccumulationChart={views.AccumulationChart}
           />
         </Box>

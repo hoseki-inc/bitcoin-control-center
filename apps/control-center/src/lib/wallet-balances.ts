@@ -8,24 +8,21 @@ import { type RouterOutput, trpc } from '../trpc'
 export type WalletBalanceRow = RouterOutput['portalProve']['controlCenter']['walletBalances'][number]
 
 /**
- * Whether the wallet balances in view are current, still loading, or older ones kept while
- * Electrum is unreachable, or whether a missing account list leaves the total unknown.
+ * How current the wallet balances in view are: up to date, still loading, or kept while a wallet
+ * can't be reached, dated by when every wallet in view last synced, if each one ever has.
  */
-export type WalletBalanceState = 'current' | 'loading' | 'stale' | 'unknown'
+export type WalletBalanceStatus =
+  | { kind: 'current' }
+  | { kind: 'updating' }
+  | { kind: 'lastSynced'; at: Date }
+  | { kind: 'unreachable' }
 
 export interface WalletBalanceSummary {
   /** Each wallet's balance in satoshis, or null while it is unknown. */
   balances: Map<string, number | null>
-  state: WalletBalanceState
-  /**
-   * While a wallet can't be reached, when every wallet shown last synced (the oldest balance's time),
-   * or null if one never has.
-   */
-  asOf: Date | null
-  syncingIds: string[]
-  failedIds: string[]
   /** The wallets' total, or null until every balance in it is known. */
   totalSats: number | null
+  status: WalletBalanceStatus
 }
 
 /** A balance this recent, refreshed quietly in the background, still reads as current. */
@@ -39,55 +36,38 @@ export function summarizeWalletBalances(
 ): WalletBalanceSummary {
   const byId = new Map((rows ?? []).map((row) => [row.accountId, row]))
   const balances = new Map<string, number | null>()
-  const syncingIds: string[] = []
-  const failedIds: string[] = []
-  const shownTimes: number[] = []
-  let outdated = false
+  const syncedAt: number[] = []
+  let failed = false
+  // A wallet not read yet, such as one added since the last read, or one syncing a balance that isn't recent.
+  let outdated = rows === undefined
   for (const id of ids) {
     const row = byId.get(id)
-    if (row === undefined) {
-      // Not read yet, such as a wallet added since the last read.
-      outdated = true
-    }
+    const asOf = row?.asOf == null ? null : Date.parse(row.asOf)
     // A wallet that has never synced counts as empty once it can't be reached, rather than
     // holding the total back for good; until then it is unknown.
-    const sats = row?.balanceSats != null ? Number(row.balanceSats) : row?.failed === true ? 0 : null
-    balances.set(id, sats)
-    const asOf = row?.asOf != null ? Date.parse(row.asOf) : Number.NaN
-    if (Number.isFinite(asOf)) {
-      shownTimes.push(asOf)
+    balances.set(id, row?.balanceSats != null ? Number(row.balanceSats) : row?.failed === true ? 0 : null)
+    if (asOf !== null) {
+      syncedAt.push(asOf)
     }
-    if (row?.syncing === true) {
-      syncingIds.push(id)
-      if (!(now - asOf <= QUIET_REFRESH_MAX_AGE_MS)) {
-        outdated = true
-      }
-    }
-    if (row?.failed === true) {
-      failedIds.push(id)
-    }
+    failed ||= row?.failed === true
+    outdated ||= row === undefined || (row.syncing && !(asOf !== null && now - asOf <= QUIET_REFRESH_MAX_AGE_MS))
   }
 
   const known = [...balances.values()]
-  const totalSats = known.every((sats) => sats !== null) ? known.reduce((sum, sats) => sum + sats, 0) : null
-  const state: WalletBalanceState =
-    ids.length === 0
-      ? 'current'
-      : rows === undefined
-        ? 'loading'
-        : failedIds.length > 0
-          ? 'stale'
-          : outdated
-            ? 'loading'
-            : 'current'
   return {
     balances,
-    state,
-    // A wallet that has never synced means there was no sync of them all to name a time for.
-    asOf: state === 'stale' && shownTimes.length === ids.length ? new Date(Math.min(...shownTimes)) : null,
-    syncingIds,
-    failedIds,
-    totalSats,
+    totalSats: known.every((sats) => sats !== null) ? known.reduce((sum, sats) => sum + sats, 0) : null,
+    status:
+      ids.length === 0
+        ? { kind: 'current' }
+        : failed
+          ? // Without a sync of every wallet in view, there is no time to name.
+            syncedAt.length === ids.length
+            ? { kind: 'lastSynced', at: new Date(Math.min(...syncedAt)) }
+            : { kind: 'unreachable' }
+          : outdated
+            ? { kind: 'updating' }
+            : { kind: 'current' },
   }
 }
 
