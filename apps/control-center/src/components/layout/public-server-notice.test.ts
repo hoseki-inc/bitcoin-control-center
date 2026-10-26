@@ -85,7 +85,7 @@ async function render(saved: Record<string, string> = {}): Promise<Rendered> {
     // Both settings answered.
     await vi.waitFor(async () => {
       await act(async () => {})
-      for (const key of ['electrum_host', 'electrum_choice_v1']) {
+      for (const key of ['electrum_host', 'electrum_notice_v1']) {
         const state = queryClient.getQueryState(['local-settings', key])
         expect(state?.status === 'success' && state.fetchStatus === 'idle').toBe(true)
       }
@@ -133,8 +133,7 @@ it('points to Settings while no server has been chosen', async () => {
 
 it.each([
   ['a server was connected', { electrum_host: 'umbrel.local' }],
-  ['the public server was kept', { electrum_choice_v1: 'public' }],
-  ['the notice was closed', { electrum_choice_v1: 'dismissed' }],
+  ['the notice was closed', { electrum_notice_v1: 'dismissed' }],
 ])('stays hidden once %s', async (_case, saved) => {
   const { container } = await render(saved)
   expect(container.textContent).toBe('')
@@ -150,7 +149,7 @@ it('closes for good and saves that', async () => {
   })
   expect(container.textContent).toBe('')
   await vi.waitFor(() => {
-    expect(server.saved.get('electrum_choice_v1')).toBe('dismissed')
+    expect(server.saved.get('electrum_notice_v1')).toBe('dismissed')
   })
   await remount()
   expect(container.textContent).toBe('')

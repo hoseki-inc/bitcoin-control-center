@@ -505,20 +505,20 @@ describe('onboarding setting', () => {
   })
 })
 
-describe('Electrum server choice setting', () => {
-  it.each(['public', 'dismissed'])('saves and reads back %s', async (value) => {
+describe('Electrum notice setting', () => {
+  it('saves and reads back a closed notice', async () => {
     await withTestSetup(async () => {
       const caller = appRouter.createCaller({ app: await context() })
-      await caller.settings.update({ key: 'electrum_choice_v1', value })
-      await expect(caller.settings.get({ key: 'electrum_choice_v1' })).resolves.toBe(value)
+      await caller.settings.update({ key: 'electrum_notice_v1', value: 'dismissed' })
+      await expect(caller.settings.get({ key: 'electrum_notice_v1' })).resolves.toBe('dismissed')
     })
   })
 
-  it('rejects any other choice', async () => {
+  it('rejects any other state', async () => {
     await withTestSetup(async () => {
       const ctx = await context()
       await expect(
-        appRouter.createCaller({ app: ctx }).settings.update({ key: 'electrum_choice_v1', value: 'own' }),
+        appRouter.createCaller({ app: ctx }).settings.update({ key: 'electrum_notice_v1', value: 'public' }),
       ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
       await expect(settings(ctx)).resolves.toEqual([])
     })

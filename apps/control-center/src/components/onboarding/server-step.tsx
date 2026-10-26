@@ -29,16 +29,21 @@ import type { OnboardingStep } from './onboarding-steps'
 
 type Server = 'own' | 'public'
 
-const SERVER_OPTIONS: Array<{ value: Server; title: string; description: string }> = [
-  {
-    value: 'own',
-    title: 'My own node',
-    description: 'Umbrel, Start9, or another Electrum server you run. Only you see your wallets.',
-  },
+// The public server comes first and chosen, as the server the app starts on; the line under the
+// choices says what each one means.
+const SERVER_OPTIONS: Array<{ value: Server; title: string; description: string; consequence: string }> = [
   {
     value: 'public',
     title: 'Blockstream’s public server',
-    description: 'Works right away. Blockstream can link your addresses to each other and to your IP address.',
+    description: 'Works right away, with nothing to set up.',
+    consequence:
+      'Blockstream can see which addresses are yours and your IP address. You can switch to your own node in Settings at any time.',
+  },
+  {
+    value: 'own',
+    title: 'My own node',
+    description: 'Umbrel, Start9, or another Electrum server you run.',
+    consequence: 'Only your node sees your wallets. You’ll enter its address next.',
   },
 ]
 
@@ -61,10 +66,17 @@ function ServerOption({
       boxShadow={isSelected ? `inset 0 0 0 1px ${selectedEdge}` : undefined}
       borderRadius="md"
       p={3}
-      // Radio puts margin props on its whole row, so the dot alone is nudged from the card.
-      sx={{ '.chakra-radio__control': { mt: 1 } }}
+      sx={{
+        // Radio puts margin props on its whole row, so the dot alone is nudged from the card.
+        '.chakra-radio__control': { mt: 1 },
+        // The chosen dot matches the card's edge rather than the theme's orange.
+        '.chakra-radio__control[data-checked], .chakra-radio__control[data-checked]:hover': {
+          bg: 'neutral.900',
+          borderColor: 'neutral.900',
+        },
+      }}
     >
-      <Radio value={item.value} colorScheme="orange" size="sm" alignItems="flex-start">
+      <Radio value={item.value} size="sm" alignItems="flex-start">
         <Text textStyle="text/sm" fontWeight="medium">
           {item.title}
         </Text>
@@ -79,30 +91,19 @@ function ServerOption({
 function ServerOptions({
   value,
   onChange,
-  missing,
   failure,
 }: {
-  value: Server | null
+  value: Server
   onChange: (value: Server) => void
-  /** Set when Continue was chosen before a server. */
-  missing: boolean
   failure: string | null
 }): JSX.Element {
-  const groupRef = useRef<HTMLDivElement>(null)
-
-  // Continue without a choice points at the choices.
-  useEffect(() => {
-    if (missing) {
-      groupRef.current?.querySelector('input')?.focus()
-    }
-  }, [missing])
-
+  const consequence = SERVER_OPTIONS.find((item) => item.value === value)?.consequence
   return (
     <Stack gap={3}>
       <RadioGroup
-        ref={groupRef}
         aria-label="Electrum server"
-        value={value ?? ''}
+        aria-describedby="server-consequence"
+        value={value}
         onChange={(next) => {
           if (next === 'own' || next === 'public') {
             onChange(next)
@@ -115,11 +116,9 @@ function ServerOptions({
           ))}
         </Stack>
       </RadioGroup>
-      {missing && (
-        <Text role="alert" textStyle="text/sm" color="error.700">
-          Choose a server to continue.
-        </Text>
-      )}
+      <Text id="server-consequence" textStyle="text/xs" color="neutral.600">
+        {consequence}
+      </Text>
       {failure !== null && (
         <Alert status="error">
           <AlertDescription>{failure}</AlertDescription>
@@ -305,11 +304,10 @@ function sameDetails(a: ConnectionDetails, b: ConnectionDetails | null): boolean
 
 /**
  * Desktop's choice of Electrum server: keep the public one the app started with, or connect your own
- * node, which follows as a step of its own. Nothing is chosen until Continue or Connect.
+ * node, which follows as a step of its own.
  */
 export function useServerSteps(choice: ElectrumChoice | undefined): OnboardingStep[] {
-  const [server, setServer] = useState<Server | null>(null)
-  const [missing, setMissing] = useState(false)
+  const [server, setServer] = useState<Server>('public')
   const [busy, setBusy] = useState(false)
   const [choiceFailure, setChoiceFailure] = useState<string | null>(null)
   const [draft, setDraft] = useState(blankConnection)
@@ -354,15 +352,13 @@ export function useServerSteps(choice: ElectrumChoice | undefined): OnboardingSt
       id: 'server',
       title: 'Choose your Electrum server',
       body: 'Control Center looks up your wallets on an Electrum server. Whoever runs it can see which addresses are yours and your IP address.',
-      preview: <ServerPreview server={server ?? 'public'} />,
+      preview: <ServerPreview server={server} />,
       controls: () => (
         <ServerOptions
           value={server}
-          missing={missing}
           failure={choiceFailure}
           onChange={(next) => {
             setServer(next)
-            setMissing(false)
             setChoiceFailure(null)
           }}
         />
@@ -371,10 +367,6 @@ export function useServerSteps(choice: ElectrumChoice | undefined): OnboardingSt
         label: 'Continue',
         isLoading: busy && server === 'public',
         run: async () => {
-          if (server === null) {
-            setMissing(true)
-            return false
-          }
           if (server === 'own') {
             return true
           }
@@ -382,7 +374,7 @@ export function useServerSteps(choice: ElectrumChoice | undefined): OnboardingSt
           const result = await choice.keepPublic()
           setBusy(false)
           if (result.isErr()) {
-            setChoiceFailure(errorMessage(result.unwrapErr(), 'Couldn’t save your choice. Try again.'))
+            setChoiceFailure(errorMessage(result.unwrapErr(), 'Couldn’t switch back to the public server. Try again.'))
             return false
           }
           setConnected(null)

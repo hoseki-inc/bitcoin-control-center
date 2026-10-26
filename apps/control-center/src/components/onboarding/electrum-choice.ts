@@ -1,15 +1,8 @@
 import { Err, Ok, Result } from '@hoseki/packages/result'
 import { useQueryClient } from '@tanstack/react-query'
 import { useRef } from 'react'
-import { useLocalSetting } from '../../hooks/use-local-settings'
 import type { ConnectionDetails } from '../../pages/settings/electrum-connection'
 import { baseTrpc } from '../../trpc'
-
-/**
- * Desktop: `public` once someone keeps the public server in the introduction, `dismissed` once they
- * close the notice about it. Connecting to a server is a choice too, saved with the connection.
- */
-export const ELECTRUM_CHOICE_KEY = 'electrum_choice_v1'
 
 /** The name the introduction saves your node under, which Settings can rename. */
 const NODE_NICKNAME = 'My node'
@@ -20,7 +13,10 @@ type ProfileReference = { id: string; revision: number }
 
 /** What the introduction's server step can do. A failure carries Sentinel's reason. */
 export interface ElectrumChoice {
-  /** Keeps the public server the app started with, going back to it from a node connected here. */
+  /**
+   * Keeps the public server the app started with, going back to it from a node connected here. Saves
+   * nothing, so the notice about the public server still shows.
+   */
   keepPublic: () => Promise<Result<void, Error>>
   /** Saves your node as a connection and connects to it. A failure keeps the current connection. */
   connectNode: (details: ConnectionDetails) => Promise<Result<void, Error>>
@@ -29,7 +25,6 @@ export interface ElectrumChoice {
 /** Carries out the introduction's server choice through Sentinel's saved connections. */
 export function useElectrumChoice(): ElectrumChoice {
   const queryClient = useQueryClient()
-  const choice = useLocalSetting(ELECTRUM_CHOICE_KEY)
   // The connection in use before a node was connected here, to go back to if the public server is
   // chosen after all, and the node itself, so new details update it rather than saving another.
   const previous = useRef<ProfileReference | null>(null)
@@ -44,16 +39,17 @@ export function useElectrumChoice(): ElectrumChoice {
 
   return {
     keepPublic: async () => {
-      if (previous.current !== null) {
-        const restored = await Result.fromPromise(api.connect.mutate(previous.current))
-        if (restored.isErr()) {
-          return Err(restored.unwrapErr())
-        }
-        previous.current = null
+      if (previous.current === null) {
+        return Ok(undefined)
       }
-      const saved = await Result.fromPromise(choice.saveAsync('public'))
+      const restored = await Result.fromPromise(api.connect.mutate(previous.current))
+      if (restored.isErr()) {
+        return Err(restored.unwrapErr())
+      }
+      previous.current = null
+      node.current = null
       await refresh()
-      return saved
+      return Ok(undefined)
     },
     connectNode: async (details) => {
       if (node.current !== null) {
