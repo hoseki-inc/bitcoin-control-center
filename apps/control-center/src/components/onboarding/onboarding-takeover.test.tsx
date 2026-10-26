@@ -1,3 +1,4 @@
+import { Err, Ok, type Result } from '@hoseki/packages/result'
 // @vitest-environment node
 import { TestChakraProvider as ChakraProvider } from '@hoseki/packages/testing/chakra-provider'
 import { MotionGlobalConfig } from 'framer-motion'
@@ -5,6 +6,8 @@ import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { MemoryRouter } from 'react-router'
 import { type Mock, assert, expect, it, onTestFinished, vi } from 'vitest'
+import type { ConnectionDetails } from '../../pages/settings/electrum-connection'
+import type { ElectrumChoice } from './electrum-choice'
 import { OnboardingTakeover } from './onboarding-takeover'
 
 const browser = await vi.hoisted(async () => {
@@ -22,7 +25,10 @@ const browser = await vi.hoisted(async () => {
 })
 
 /** Render the introduction open; it portals into the body, so read from there. */
-async function renderTakeover(desktop = false): Promise<{ onSkip: Mock<() => void>; onAddAccount: Mock<() => void> }> {
+async function renderTakeover(
+  desktop = false,
+  serverChoice?: ElectrumChoice,
+): Promise<{ onSkip: Mock<() => void>; onAddAccount: Mock<() => void> }> {
   const dom = browser.acquire()
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
   // Steps turn over at once, so each check sees only the step on screen.
@@ -47,6 +53,8 @@ async function renderTakeover(desktop = false): Promise<{ onSkip: Mock<() => voi
       public disconnect = vi.fn()
     },
   )
+  // The node form scrolls a problem into view; this DOM doesn't lay anything out to scroll.
+  dom.window.HTMLElement.prototype.scrollIntoView = vi.fn<() => void>()
   const onSkip = vi.fn<() => void>()
   const onAddAccount = vi.fn<() => void>()
   const container = document.createElement('div')
@@ -70,7 +78,7 @@ async function renderTakeover(desktop = false): Promise<{ onSkip: Mock<() => voi
         createElement(
           MemoryRouter,
           null,
-          createElement(OnboardingTakeover, { isOpen: true, onSkip, onAddAccount, desktop }),
+          createElement(OnboardingTakeover, { isOpen: true, onSkip, onAddAccount, desktop, serverChoice }),
         ),
       ),
     )
@@ -91,6 +99,44 @@ async function click(name: string): Promise<void> {
   await act(async () => {
     found.click()
   })
+}
+
+interface FakeServerChoice extends ElectrumChoice {
+  keepPublic: Mock<ElectrumChoice['keepPublic']>
+  connectNode: Mock<(details: ConnectionDetails) => Promise<Result<void, Error>>>
+}
+
+/** A server choice that succeeds unless told otherwise. */
+function fakeServerChoice(connected: Result<void, Error> = Ok(undefined)): FakeServerChoice {
+  return {
+    keepPublic: vi.fn<ElectrumChoice['keepPublic']>(async () => Ok(undefined)),
+    connectNode: vi.fn(async () => connected),
+  }
+}
+
+async function choose(value: 'own' | 'public'): Promise<void> {
+  const radio = document.body.querySelector<HTMLInputElement>(`input[type="radio"][value="${value}"]`)
+  assert(radio !== null, `Expected the ${value} choice`)
+  await act(async () => {
+    radio.click()
+  })
+}
+
+async function type(id: string, value: string): Promise<void> {
+  const field = document.body.querySelector<HTMLInputElement>(`#${id}`)
+  assert(field !== null, `Expected the ${id} field`)
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set?.call(field, value)
+    field.dispatchEvent(new window.Event('input', { bubbles: true }))
+  })
+}
+
+/** Through the four steps every install has, to desktop's server step. */
+async function toServerStep(): Promise<void> {
+  for (let step = 1; step < 5; step++) {
+    await click('Continue')
+  }
+  expect(heading()).toBe('Choose your Electrum server')
 }
 
 /** The title of the step on screen, not one on its way out. */
@@ -170,6 +216,86 @@ it.each([
   expect(heading()).toBe('Your data stays with you')
   expect(document.body.textContent).toContain(body)
   expect(document.body.textContent).toContain('Statement data')
+})
+
+it('asks desktop for an Electrum server just before the first account', async () => {
+  const serverChoice = fakeServerChoice()
+  await renderTakeover(true, serverChoice)
+  await toServerStep()
+  expect(document.body.textContent).toContain('Step 5 of 6')
+  await click('Continue')
+  expect(heading()).toBe('Choose your Electrum server')
+  expect(document.body.textContent).toContain('Choose a server to continue.')
+  await choose('public')
+  await click('Continue')
+  expect(serverChoice.keepPublic).toHaveBeenCalledTimes(1)
+  expect(heading()).toBe('Start with one account')
+  expect(document.body.textContent).toContain('Step 6 of 6')
+})
+
+it('leaves the server step out without a server choice to make', async () => {
+  await renderTakeover(true)
+  for (let step = 1; step < 5; step++) {
+    await click('Continue')
+  }
+  expect(heading()).toBe('Start with one account')
+})
+
+it('connects your own node before going on', async () => {
+  const serverChoice = fakeServerChoice()
+  await renderTakeover(true, serverChoice)
+  await toServerStep()
+  await choose('own')
+  await click('Continue')
+  expect(heading()).toBe('Connect your node')
+  // A follow-up to the server step, not a step of its own.
+  expect(document.body.textContent).toContain('Step 5 of 6')
+  await click('Connect')
+  expect(document.body.textContent).toContain('Enter your node’s address.')
+  await type('node-host', ' umbrel.local ')
+  await click('Connect')
+  await vi.waitFor(() => {
+    expect(heading()).toBe('Start with one account')
+  })
+  expect(serverChoice.connectNode).toHaveBeenCalledWith({
+    host: 'umbrel.local',
+    port: 50002,
+    protocol: 'ssl',
+    torEnabled: false,
+  })
+  expect(serverChoice.keepPublic).not.toHaveBeenCalled()
+  // Coming back to the connected node goes on without connecting again.
+  await click('Back')
+  expect(document.body.textContent).toContain('Connected to your node.')
+  await click('Continue')
+  expect(heading()).toBe('Start with one account')
+  expect(serverChoice.connectNode).toHaveBeenCalledTimes(1)
+})
+
+it('stays on the form when your node does not connect', async () => {
+  const serverChoice = fakeServerChoice(Err(new Error('Connection refused')))
+  await renderTakeover(true, serverChoice)
+  await toServerStep()
+  await choose('own')
+  await click('Continue')
+  await type('node-host', 'umbrel.local')
+  await click('Connect')
+  await vi.waitFor(() => {
+    expect(document.body.textContent).toContain('Couldn’t connect to umbrel.local:50002.')
+  })
+  expect(heading()).toBe('Connect your node')
+})
+
+it('asks for Tor before connecting to an onion address', async () => {
+  const serverChoice = fakeServerChoice()
+  await renderTakeover(true, serverChoice)
+  await toServerStep()
+  await choose('own')
+  await click('Continue')
+  await type('node-host', 'abcdefghijklmnop.onion')
+  await click('Connect')
+  expect(document.body.querySelector('[role="alert"]')?.textContent).toContain('Onion addresses need Tor.')
+  expect(serverChoice.connectNode).not.toHaveBeenCalled()
 })
 
 it('keeps every preview out of the tab order', async () => {
