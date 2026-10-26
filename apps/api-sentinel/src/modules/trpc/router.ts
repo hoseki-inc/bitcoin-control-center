@@ -1868,7 +1868,7 @@ const blocksRouter = t.router({
 const READABLE_SETTINGS = new Set([
   'user_name',
   'onboarding_v1',
-  'electrum_choice_v1',
+  'electrum_notice_v1',
   'owner_identifier',
   'electrum_host',
   'electrum_port',
@@ -1878,7 +1878,7 @@ const READABLE_SETTINGS = new Set([
 
 // Connection settings must be validated, connected and saved together through
 // reconnectElectrum; individual writes could make the next launch unusable.
-const WRITABLE_SETTINGS = new Set(['user_name', 'onboarding_v1', 'electrum_choice_v1', 'owner_identifier'])
+const WRITABLE_SETTINGS = new Set(['user_name', 'onboarding_v1', 'electrum_notice_v1', 'owner_identifier'])
 
 function isReadableSetting(key: string): boolean {
   return READABLE_SETTINGS.has(key)
@@ -1980,11 +1980,11 @@ function validateWritableSetting(key: string, value: string): string {
       }
       return value
     }
-    // Desktop: kept the public server in the introduction, or closed the notice about it.
-    // Connecting to a server records the choice in the connection settings instead.
-    case 'electrum_choice_v1': {
-      if (value !== 'public' && value !== 'dismissed') {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid Electrum server choice' })
+    // Desktop: the notice about the public Electrum server was closed. Connecting to a server hides
+    // it too, through the connection settings.
+    case 'electrum_notice_v1': {
+      if (value !== 'dismissed') {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid Electrum notice state' })
       }
       return value
     }

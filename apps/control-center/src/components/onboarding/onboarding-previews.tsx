@@ -461,7 +461,6 @@ const SERVER_SEES = [
 /** A wallet being looked up, and who learns what from it: Blockstream's public server, or your own node. */
 export function ServerPreview({ server }: { server: 'public' | 'own' }): JSX.Element {
   const own = server === 'own'
-  const tone = own ? 'success' : 'warning'
   return (
     <Stage>
       <Inert>
@@ -516,7 +515,7 @@ export function ServerPreview({ server }: { server: 'public' | 'own' }): JSX.Ele
           sx={popIn(0)}
         >
           <HStack gap={3}>
-            <Circle size={10} bg={`${tone}.100`} color={`${tone}.800`}>
+            <Circle size={10} bg="neutral.100" color="neutral.700">
               {own ? <HouseIcon size={18} /> : <GlobeIcon size={18} />}
             </Circle>
             <Box minW={0}>
@@ -534,7 +533,7 @@ export function ServerPreview({ server }: { server: 'public' | 'own' }): JSX.Ele
           <Stack gap={3}>
             {SERVER_SEES.map(({ label, detail }) => (
               <HStack key={label} gap={3}>
-                <Box color={`${tone}.700`} flexShrink={0}>
+                <Box color="neutral.500" flexShrink={0}>
                   {own ? <LockIcon size={16} /> : <EyeIcon size={16} />}
                 </Box>
                 <Text textStyle="text/sm" color="neutral.900" flex={1}>
