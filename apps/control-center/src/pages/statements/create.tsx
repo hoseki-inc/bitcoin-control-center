@@ -381,7 +381,7 @@ function StatementExampleAsEmptyState(): JSX.Element {
   return (
     <EmptyStatePreview
       src="/empty-view/claims-empty-state-download-example.png"
-      caption="View a preview of a Hoseki statement."
+      caption="View a preview of a Bitcoin Control Center statement."
     />
   )
 }

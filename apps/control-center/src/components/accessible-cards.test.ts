@@ -110,10 +110,8 @@ it('activates a statement once from View without nesting controls or submitting 
     expect(onSubmit).not.toHaveBeenCalled()
   })
 })
-it.each([false, true])('keeps account reset and view mode controls operable (compact=%s)', async (compact) => {
+it('keeps the account reset control operable', async () => {
   await withTestSetup(async () => {
-    vi.stubGlobal('localStorage', window.localStorage)
-    localStorage.setItem('hoseki:sidebar-compact', String(compact))
     const onSelectionChange = vi.fn<(ids: Set<string>) => void>()
     await render(
       createElement(AccountFilter, {
@@ -123,7 +121,6 @@ it.each([false, true])('keeps account reset and view mode controls operable (com
         manualAccounts: [],
         etfAccounts: [],
         balances: new Map(),
-        btcPrice: null,
         selected: new Set<string>(),
         onSelectionChange,
         historySyncingAccountIds: [],
@@ -137,16 +134,6 @@ it.each([false, true])('keeps account reset and view mode controls operable (com
       reset.click()
     })
     expect(onSelectionChange).toHaveBeenCalledExactlyOnceWith(new Set())
-    const mode = host.querySelector('button[aria-label="Detailed view"]')
-    assert(mode instanceof HTMLButtonElement)
-    expect(mode.type).toBe('button')
-    // One name for both states; pressed says which view is showing.
-    expect(mode.getAttribute('aria-pressed')).toBe(String(!compact))
-    await act(async () => {
-      mode.click()
-    })
-    expect(mode.getAttribute('aria-pressed')).toBe(String(compact))
-    expect(localStorage.getItem('hoseki:sidebar-compact')).toBe(String(!compact))
   })
 })
 it('offers native signing-device buttons and preserves the selected device', async () => {

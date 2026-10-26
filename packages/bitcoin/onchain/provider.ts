@@ -5,13 +5,80 @@ import { asyncResultAll } from '../../result'
 import type { Account } from '../account'
 import type { Address } from '../address'
 import type { Network } from '../network'
-import { type Block, CONFIG, type TransactionEntry } from './types'
+import { type Block, CONFIG, type DiscoveredIndexes, type DiscoveryIndexStore, type TransactionEntry } from './types'
+
+export interface OnchainBitcoinProviderDeps {
+  logger: Logger
+  /** Lets discovery resume from the last used addresses it found before, instead of from index 0. */
+  discoveryIndexes?: DiscoveryIndexStore
+}
+
+/** One chain (receive or change) of an account while discovery checks its addresses. */
+interface ChainScan {
+  change: boolean
+  checkFrom: number
+  checkUpTo: number
+  unusedCount: number
+  lastUsed: number
+  /** A saved last used index that hasn't been confirmed as still used. */
+  unconfirmed: number | null
+  /** Whether the saved index turned out unused, so the chain was scanned again from index 0. */
+  rescanned: boolean
+}
+
+function startChainScan(change: boolean, saved: number): ChainScan {
+  // A saved 0 can't tell "address 0 is used" from "nothing is used", so it starts from the beginning.
+  if (saved > 0) {
+    // Check the saved address itself, then a full gap after it.
+    return {
+      change,
+      checkFrom: saved,
+      checkUpTo: saved + CONFIG.GAP_LIMIT + 1,
+      unusedCount: 0,
+      lastUsed: 0,
+      unconfirmed: saved,
+      rescanned: false,
+    }
+  }
+  return {
+    change,
+    checkFrom: 0,
+    checkUpTo: CONFIG.GAP_LIMIT,
+    unusedCount: 0,
+    lastUsed: 0,
+    unconfirmed: null,
+    rescanned: false,
+  }
+}
+
+/** Records one batch of checked addresses, in index order, and moves the chain's window on. */
+function advanceChainScan(chain: ChainScan, checked: Array<{ index: number; used: boolean }>): void {
+  if (chain.unconfirmed !== null) {
+    if (checked[0]?.index !== chain.unconfirmed || !checked[0].used) {
+      // The saved address has no history now, such as after a reorg, a dropped transaction or a
+      // change of server, so nothing below it can be assumed: scan the chain again from index 0.
+      Object.assign(chain, startChainScan(chain.change, 0), { rescanned: true })
+      return
+    }
+    chain.unconfirmed = null
+  }
+  for (const { index, used } of checked) {
+    if (used) {
+      chain.lastUsed = index
+      chain.unusedCount = 0
+    } else {
+      chain.unusedCount += 1
+    }
+  }
+  chain.checkFrom = chain.checkUpTo
+  chain.checkUpTo = chain.checkFrom + (CONFIG.GAP_LIMIT - chain.unusedCount)
+}
 
 export abstract class OnchainBitcoinProvider {
   public readonly network: Network
-  public readonly deps: { logger: Logger }
+  public readonly deps: OnchainBitcoinProviderDeps
 
-  public constructor(network: Network, deps: { logger: Logger }) {
+  public constructor(network: Network, deps: OnchainBitcoinProviderDeps) {
     this.network = network
     this.deps = deps
   }
@@ -52,7 +119,7 @@ export abstract class OnchainBitcoinProvider {
    */
   public getConfirmedAccountBalances = asyncFn(
     async (accounts: IndexSet<Account>): Promise<Result<IndexMap<Account, bigint>, Error>> => {
-      this.deps.logger.debug({ accounts }, 'Getting confirmed account balances')
+      this.deps.logger.debug({ accounts: accounts.size }, 'Getting confirmed account balances')
       const addressesToAccounts = new IndexMap<Address, Account>()
 
       // Collect all the accounts that we need to discover
@@ -75,7 +142,7 @@ export abstract class OnchainBitcoinProvider {
         return Err(combined.unwrapErr())
       }
       const discoveredAccounts = combined.unwrap()
-      this.deps.logger.debug({ discoveredAccounts }, 'Discovered accounts')
+      this.deps.logger.debug({ accounts: discoveredAccounts.length }, 'Discovered accounts')
 
       // Collect all the addresses that we need to check
       for (const { account, lastUsedReceiveIndex, lastUsedChangeIndex } of discoveredAccounts) {
@@ -105,99 +172,98 @@ export abstract class OnchainBitcoinProvider {
     },
   )
 
-  protected abstract getLastKnownIndexes(
-    account: Account,
-  ): AsyncResult<{ lastUsedReceiveIndex: number; lastUsedChangeIndex: number }, Error>
-
   /**
    * Discovers the receive and change addresses for the given account.
    *
    * It'll return every address that has had any transactions plus GAP_LIMIT number of unused addresses.
+   * With indexes saved by an earlier scan, each chain resumes from its saved last used address once
+   * that address is confirmed as still used; otherwise the chain is scanned again from index 0.
    */
-  public discoverAccount(
-    account: Account,
-  ): AsyncResult<{ lastUsedReceiveIndex: number; lastUsedChangeIndex: number }, Error> {
+  public discoverAccount(account: Account): AsyncResult<DiscoveredIndexes, Error> {
     return tryBlockAsync(
       async function* (this: OnchainBitcoinProvider) {
-        const { lastUsedReceiveIndex, lastUsedChangeIndex } = yield* this.getLastKnownIndexes(account)
-          .inspectErr((err) => {
-            this.deps.logger.error({ err }, 'Error getting last known indexes')
+        const saved = await this.loadDiscoveredIndexes(account)
+        const receive = startChainScan(false, saved?.lastUsedReceiveIndex ?? 0)
+        const change = startChainScan(true, saved?.lastUsedChangeIndex ?? 0)
+        this.deps.logger.debug({ resumed: saved !== null }, 'Discovering account')
+
+        for (;;) {
+          const scanning = [receive, change].filter((chain) => chain.unusedCount < CONFIG.GAP_LIMIT)
+          if (scanning.length === 0) {
+            break
+          }
+          const batch = scanning.map((chain) => {
+            const addresses: Array<{ address: Address; index: number }> = []
+            for (let index = chain.checkFrom; index < chain.checkUpTo; index++) {
+              const address = chain.change
+                ? account.changeAddress(index, this.network)
+                : account.receiveAddress(index, this.network)
+              addresses.push({ address, index })
+            }
+            return { chain, addresses }
           })
-          .try()
 
-        this.deps.logger.debug({ account, lastUsedReceiveIndex, lastUsedChangeIndex }, 'Discovering account')
-
-        let newLastUsedReceiveIndex = 0
-        let newLastUsedChangeIndex = 0
-
-        let receiveUnusedCount = 0
-        let changeUnusedCount = 0
-
-        let receiveCheckFrom = 0
-        let receiveCheckUpTo = lastUsedReceiveIndex + CONFIG.GAP_LIMIT
-
-        let changeCheckFrom = 0
-        let changeCheckUpTo = lastUsedChangeIndex + CONFIG.GAP_LIMIT
-
-        while (receiveUnusedCount < CONFIG.GAP_LIMIT || changeUnusedCount < CONFIG.GAP_LIMIT) {
-          const addresses: Array<{ address: Address; change: boolean; index: number }> = []
-
-          if (receiveUnusedCount < CONFIG.GAP_LIMIT) {
-            for (let i = receiveCheckFrom; i < receiveCheckUpTo; i++) {
-              const address = account.receiveAddress(i, this.network)
-              addresses.push({ address, change: false, index: i })
-            }
-          }
-
-          if (changeUnusedCount < CONFIG.GAP_LIMIT) {
-            for (let i = changeCheckFrom; i < changeCheckUpTo; i++) {
-              const address = account.changeAddress(i, this.network)
-              addresses.push({ address, change: true, index: i })
-            }
-          }
-
-          this.deps.logger.debug({ addresses }, 'Checking if addresses are used')
-          const usedMap = yield* this.areAddressesUsed(new IndexSet(addresses.map((a) => a.address)))
+          const allAddresses = batch.flatMap(({ addresses }) => addresses.map(({ address }) => address))
+          this.deps.logger.debug({ addresses: allAddresses.length }, 'Checking if addresses are used')
+          const usedMap = yield* this.areAddressesUsed(new IndexSet(allAddresses))
             .inspectErr((err) => {
               this.deps.logger.error({ err }, 'Error checking if addresses are used')
             })
             .try()
 
-          for (const address of addresses) {
-            if (usedMap.has(address.address)) {
-              if (address.change) {
-                newLastUsedChangeIndex = address.index
-                changeUnusedCount = 0
-              } else {
-                newLastUsedReceiveIndex = address.index
-                receiveUnusedCount = 0
-              }
-            } else {
-              if (address.change) {
-                changeUnusedCount += 1
-              } else {
-                receiveUnusedCount += 1
-              }
-            }
+          for (const { chain, addresses } of batch) {
+            advanceChainScan(
+              chain,
+              addresses.map(({ address, index }) => ({ index, used: usedMap.has(address) })),
+            )
           }
-
-          receiveCheckFrom = receiveCheckUpTo
-          receiveCheckUpTo = receiveCheckFrom + (CONFIG.GAP_LIMIT - receiveUnusedCount)
-
-          changeCheckFrom = changeCheckUpTo
-          changeCheckUpTo = changeCheckFrom + (CONFIG.GAP_LIMIT - changeUnusedCount)
         }
 
-        return Ok({
-          lastUsedReceiveIndex: newLastUsedReceiveIndex,
-          lastUsedChangeIndex: newLastUsedChangeIndex,
-        })
+        const found = { lastUsedReceiveIndex: receive.lastUsed, lastUsedChangeIndex: change.lastUsed }
+        await this.saveDiscoveredIndexes(account, saved, found, receive.rescanned || change.rescanned)
+        return Ok(found)
       }.bind(this),
     )
   }
 
+  /** Saved indexes are only a starting point: without them, or if they can't be read, discovery starts at 0. */
+  private async loadDiscoveredIndexes(account: Account): Promise<DiscoveredIndexes | null> {
+    const store = this.deps.discoveryIndexes
+    if (store === undefined) {
+      return null
+    }
+    const loaded = await store.load(account, this.network)
+    if (loaded.isErr()) {
+      // The error may quote the account's descriptor, so only its kind is logged.
+      this.deps.logger.warn({ error: loaded.unwrapErr().name }, 'Could not read saved address indexes')
+      return null
+    }
+    return loaded.unwrap()
+  }
+
+  private async saveDiscoveredIndexes(
+    account: Account,
+    saved: DiscoveredIndexes | null,
+    found: DiscoveredIndexes,
+    rescanned: boolean,
+  ): Promise<void> {
+    const store = this.deps.discoveryIndexes
+    const unchanged =
+      saved === null
+        ? found.lastUsedReceiveIndex === 0 && found.lastUsedChangeIndex === 0
+        : saved.lastUsedReceiveIndex === found.lastUsedReceiveIndex &&
+          saved.lastUsedChangeIndex === found.lastUsedChangeIndex
+    if (store === undefined || unchanged) {
+      return
+    }
+    const result = await store.save(account, this.network, found, rescanned ? 'replace' : 'raise')
+    if (result.isErr()) {
+      this.deps.logger.warn({ error: result.unwrapErr().name }, 'Could not save address indexes')
+    }
+  }
+
   public getTransactionEntriesByAccount(account: Account): AsyncResult<TransactionEntry[], Error> {
-    this.deps.logger.debug({ account }, 'Getting transaction entries for account')
+    this.deps.logger.debug('Getting transaction entries for account')
     return this.discoverAccount(account)
       .andThenAsync(async ({ lastUsedReceiveIndex, lastUsedChangeIndex }) => {
         this.deps.logger.debug({ lastUsedReceiveIndex, lastUsedChangeIndex }, 'Got discovered indexes')
@@ -229,7 +295,7 @@ export abstract class OnchainBitcoinProvider {
 
   public getTransactionEntriesByAddress = asyncFn(
     async (address: Address): Promise<Result<TransactionEntry[], Error>> => {
-      this.deps.logger.debug({ address }, 'Getting transaction entries for address')
+      this.deps.logger.debug('Getting transaction entries for address')
       const entries: TransactionEntry[] = []
       const gen = this.getTransactionEntries(new IndexMap([[address, null]]))
       for await (const entry of gen) {

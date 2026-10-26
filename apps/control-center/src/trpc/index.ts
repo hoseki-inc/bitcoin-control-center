@@ -1,9 +1,13 @@
 import type { Router } from '@hoseki/apps/api-sentinel/src/external_types'
 import { registerCustomSerializers } from '@hoseki/packages/custom-serializers'
+import { parseUnknown } from '@hoseki/packages/result/lib/parse'
 import { createTRPCProxyClient, httpLink } from '@trpc/react-query'
 import type { inferRouterInputs, inferRouterOutputs } from '@trpc/server'
 import superjson from 'superjson'
+import { z } from 'zod'
+import { TAB_HEADER, sentinelFetch } from '../pin/tab'
 import { queryClient, trpc } from './base'
+import { developmentFetch } from './development-latency'
 
 export { queryClient, trpc }
 
@@ -14,11 +18,19 @@ export const transformer = registerCustomSerializers(superjson)
 
 const url = import.meta.env.VITE_BACKEND_API_URL ?? ''
 
+const TabContext = z.object({ tabId: z.string() })
+
 export const baseTrpc = createTRPCProxyClient<Router>({
   transformer,
   links: [
     httpLink({
       url,
+      fetch: sentinelFetch,
+      // A call can name the tab it acts for: the lock sends the ID this tab just retired.
+      headers: ({ op }): Record<string, string> => {
+        const context = parseUnknown(TabContext, op.context)
+        return context.isOk() ? { [TAB_HEADER]: context.unwrap().tabId } : {}
+      },
     }),
   ],
 })
@@ -34,6 +46,7 @@ export const reactTrpcClient = trpc.createClient({
     httpLink({
       // maxURLLength: ???,
       url,
+      fetch: developmentFetch(sentinelFetch),
     }),
   ],
 })

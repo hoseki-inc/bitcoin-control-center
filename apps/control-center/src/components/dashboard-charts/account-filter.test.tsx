@@ -76,7 +76,6 @@ async function withTestSetup(run: () => Promise<void>): Promise<void> {
       dom.window.close()
     }
   })
-  localStorage.clear()
   onSelectionChange.mockReset()
   container = document.createElement('div')
   document.body.append(container)
@@ -103,7 +102,6 @@ function Harness({
       manualAccounts={accounts}
       etfAccounts={[]}
       balances={new Map()}
-      btcPrice={50_000}
       selected={selected}
       onSelectionChange={(next) => {
         onSelectionChange(next)
@@ -243,29 +241,6 @@ it.each(['dropdown', 'sidebar'] as const)(
   },
 )
 
-it('keeps the rail visible and its width stable across persisted density changes', async () => {
-  await withTestSetup(async () => {
-    await render(new Set(['paper']), 'sidebar')
-    const rail = container.querySelector<HTMLElement>('[aria-label="Portfolio accounts"]')
-    assert.exists(rail, 'Expected the accounts rail')
-    expect(getComputedStyle(rail).width).toBe('280px')
-    expect(button('Detailed view').getAttribute('aria-pressed')).toBe('false')
-    await click('Detailed view')
-    expect(getComputedStyle(rail).width).toBe('280px')
-    expect(button('Detailed view').getAttribute('aria-pressed')).toBe('true')
-    expect(button('Paper Wallet').getAttribute('aria-pressed')).toBe('true')
-    expect(localStorage.getItem('hoseki:sidebar-compact')).toBe('false')
-    expect(document.body.textContent).toContain('$312,500.00 USD')
-    await render(new Set(['paper']), 'sidebar')
-    // A remembered detailed view shows the toggle pressed.
-    expect(button('Detailed view').getAttribute('aria-pressed')).toBe('true')
-    await click('Detailed view')
-    expect(button('Detailed view').getAttribute('aria-pressed')).toBe('false')
-    expect(localStorage.getItem('hoseki:sidebar-compact')).toBe('true')
-    expect(onSelectionChange).not.toHaveBeenCalled()
-  })
-})
-
 it.each(['sidebar', 'dropdown'] as const)(
   'toggles once from the name or balance inside a native button in %s',
   async (presentation) => {
@@ -336,7 +311,6 @@ async function renderAccounts({
             etfAccounts={etfAccounts}
             balances={balances}
             isMissingAccounts={isMissingAccounts}
-            btcPrice={50_000}
             selected={new Set()}
             onSelectionChange={onSelectionChange}
             historySyncingAccountIds={historySyncingAccountIds}
@@ -372,11 +346,6 @@ it('totals every account on All accounts and badges manually added ones', async 
     expect(button('All accounts').textContent).toContain('12.85000000 BTC')
     const badges = Array.from(document.querySelectorAll('span')).filter((span) => span.textContent === 'Manually added')
     expect(badges).toHaveLength(2)
-    await click('Detailed view')
-    // Exchanges read as their proper names, not internal identifiers.
-    expect(button('Spending').textContent).toContain('Strike')
-    expect(button('Spending').textContent).not.toContain('strike')
-    expect(button('All accounts').textContent).toContain('$642,500.00 USD')
   })
 })
 

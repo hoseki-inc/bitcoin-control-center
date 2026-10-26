@@ -183,7 +183,7 @@ BITCOIN_NETWORK=mainnet
 
 ### Binding beyond localhost
 
-Sentinel has no user-login layer because it is designed for loopback or same-origin distribution use. Do not casually set `HOST=0.0.0.0` or expose port `3400` to an untrusted network.
+The packaged apps turn on a 6-digit PIN that every API route except sign-in and health requires: StartOS and Umbrel set `SENTINEL_PIN`, and the desktop app passes its own setting. A plain `pnpm dev` or standalone run has no PIN, so do not casually set `HOST=0.0.0.0` or expose port `3400` to an untrusted network. `node dist/cli.js reset-pin` clears the PIN at the next start, keeping all data.
 
 `SENTINEL_ALLOWED_HOSTS` expands host and origin validation for a trusted reverse proxy or packaged environment. It is not authentication. StartOS supplies its own allowed local and onion hostnames during packaging.
 
@@ -363,6 +363,11 @@ As of October 21, 2026, two advisories have no published patched version:
 [`braces` GHSA-vfj7-8cjw-p6xm](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm)
 (high severity, already excluded by `pnpm.auditConfig.ignoreGhsas`). A passing audit gate does not mean
 these dependencies are free of known vulnerabilities.
+
+[`zod` GHSA-mrhx-c7xc-m3w5](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5) (high severity) is
+also excluded until the workspace moves to Zod 4, the only patched line. It lets a huge array of
+invalid items exhaust memory. Without a PIN session, Sentinel accepts no input with an array, so
+the remaining cases are a signed-in user or an external service crashing Sentinel until it restarts.
 
 The default `pnpm test` command requires only the root workspace dependencies.
 Sentinel uses an async, local-file libSQL client. Sentinel tests and desktop runtime

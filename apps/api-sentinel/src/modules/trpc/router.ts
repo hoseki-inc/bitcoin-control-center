@@ -44,11 +44,12 @@ import {
   signedMessages as signedMessagesTable,
 } from '../../db/schema'
 import { loggableError } from '../../lib/loggable-error'
+import { authRouter } from '../auth/router'
 import { type ConnectionDetails, MAX_CONNECTION_PROFILES } from '../connection_profiles/store'
 import { PRICE_FALLBACKS_SETTING, PRICE_SOURCES, PRICE_SOURCE_SETTING } from '../price/service'
 import { StatementMapper } from '../statements/mapper'
 import { STATEMENT_SOURCES, loggableFailure, statementFailureMessage } from '../statements/service'
-import { publicProcedure, t } from './init'
+import { protectedProcedure, t } from './init'
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -391,7 +392,7 @@ function validateSigningAddress(message: SignedMessageRow, identity: SigningIden
 // ─── portalProve.controlCenter ──────────────────────────────────────────────
 
 const controlCenterRouter = t.router({
-  getData: publicProcedure
+  getData: protectedProcedure
     .input(
       z
         .object({
@@ -434,51 +435,28 @@ const controlCenterRouter = t.router({
       return result.unwrap()
     }),
 
-  storedWalletBalances: publicProcedure
-    .input(z.object({ claimIds: z.array(z.string()) }))
-    .query(async ({ ctx, input }) => ctx.app.controlCenterService.getStoredWalletBalances(input.claimIds)),
-
-  recordSnapshot: publicProcedure.mutation(async ({ ctx }) => {
-    const rows = await ctx.app.database
-      .select({ id: accountTable.id, descriptor: accountTable.descriptor })
-      .from(accountTable)
-      .where(isNull(accountTable.deletedAt))
-
-    const accountSet = new IndexSet<Account>()
-    const idMap = new Map<string, string>() // descriptor → account id
-
-    for (const row of rows) {
-      const parsed = Account.fromDescriptor(row.descriptor)
-      if (parsed.isOk()) {
-        accountSet.add(parsed.unwrap())
-        idMap.set(row.descriptor, row.id)
-      }
-    }
-
-    if (accountSet.size === 0) {
-      return
-    }
-
-    const balancesResult = await ctx.app.onchainProvider.getConfirmedAccountBalances(accountSet)
-    if (balancesResult.isErr()) {
-      return
-    }
-
-    const now = new Date().toISOString()
-    for (const [account, balance] of balancesResult.unwrap()) {
-      const accountId = idMap.get(account.toString())
-      if (accountId != null && accountId !== '') {
-        await ctx.app.controlCenterService.recordAccountSnapshot(accountId, balance.toString(), now)
-      }
-    }
-  }),
+  /**
+   * Each wallet's newest known balance and whether a newer one is being fetched. Never waits on
+   * Electrum: out-of-date wallets start a scan, and pages poll while any wallet is syncing.
+   */
+  walletBalances: protectedProcedure.input(z.object({ claimIds: z.array(z.string()) })).query(async ({ ctx, input }) =>
+    (await ctx.app.walletBalanceService.readBalances(input.claimIds)).map(
+      ({ accountId, balanceSats, asOf, syncing, failed }) => ({
+        accountId,
+        balanceSats: balanceSats?.toString() ?? null,
+        asOf: asOf?.toISOString() ?? null,
+        syncing,
+        failed,
+      }),
+    ),
+  ),
 })
 
 // ─── portalProve.registry ───────────────────────────────────────────────────
 
 const registryRouter = t.router({
   claims: t.router({
-    list: publicProcedure
+    list: protectedProcedure
       .input(z.object({ excludePending: z.boolean().optional() }).optional())
       .query(async ({ ctx, input }) => {
         const excludePending = input?.excludePending ?? false
@@ -491,7 +469,7 @@ const registryRouter = t.router({
         return claims.filter((claim): claim is ClaimDto => claim !== null)
       }),
 
-    deletePending: publicProcedure.input(z.object({ id: z.string() })).mutation(async ({ ctx, input }) => {
+    deletePending: protectedProcedure.input(z.object({ id: z.string() })).mutation(async ({ ctx, input }) => {
       const db = ctx.app.database
       const [row] = await db
         .select({ status: accountTable.status, deletedAt: accountTable.deletedAt })
@@ -512,9 +490,10 @@ const registryRouter = t.router({
       if (deleted.rowsAffected === 0) {
         throw new TRPCError({ code: 'CONFLICT', message: 'Claim changed before it could be deleted' })
       }
+      ctx.app.walletBalanceService.invalidate(input.id)
     }),
 
-    delete: publicProcedure.input(z.object({ id: z.string() })).mutation(async ({ ctx, input }) => {
+    delete: protectedProcedure.input(z.object({ id: z.string() })).mutation(async ({ ctx, input }) => {
       const db = ctx.app.database
       const [row] = await db
         .select({ deletedAt: accountTable.deletedAt })
@@ -532,9 +511,10 @@ const registryRouter = t.router({
       if (deleted.rowsAffected === 0) {
         throw new TRPCError({ code: 'CONFLICT', message: 'Claim changed before it could be deleted' })
       }
+      ctx.app.walletBalanceService.invalidate(input.id)
     }),
 
-    archive: publicProcedure.input(z.object({ id: z.string() })).mutation(async ({ ctx, input }) => {
+    archive: protectedProcedure.input(z.object({ id: z.string() })).mutation(async ({ ctx, input }) => {
       const result = await ctx.app.controlCenterService.archiveAccount(input.id)
       if (result.isErr()) {
         const error = result.unwrapErr()
@@ -545,14 +525,14 @@ const registryRouter = t.router({
       }
     }),
 
-    restore: publicProcedure.input(z.object({ id: z.string() })).mutation(async ({ ctx, input }) => {
+    restore: protectedProcedure.input(z.object({ id: z.string() })).mutation(async ({ ctx, input }) => {
       const result = await ctx.app.controlCenterService.restoreAccount(input.id)
       if (result.isErr()) {
         throw new TRPCError({ code: 'NOT_FOUND', message: result.unwrapErr().message })
       }
     }),
 
-    listArchived: publicProcedure.query(async ({ ctx }) => {
+    listArchived: protectedProcedure.query(async ({ ctx }) => {
       const rows = await ctx.app.database
         .select({ id: accountTable.id })
         .from(accountTable)
@@ -562,11 +542,11 @@ const registryRouter = t.router({
       return claims.filter((claim): claim is ClaimDto => claim !== null)
     }),
 
-    getCountLimit: publicProcedure.query(() => {
+    getCountLimit: protectedProcedure.query(() => {
       return null
     }),
 
-    update: publicProcedure
+    update: protectedProcedure
       .input(z.object({ id: z.string(), displayName: z.string().min(1) }))
       .mutation(async ({ ctx, input }) => {
         const db = ctx.app.database
@@ -586,7 +566,7 @@ const registryRouter = t.router({
         }
       }),
 
-    updateKeystore: publicProcedure
+    updateKeystore: protectedProcedure
       .input(
         z.object({
           id: z.string(),
@@ -610,7 +590,7 @@ const registryRouter = t.router({
       }),
 
     create: t.router({
-      singlesig: publicProcedure
+      singlesig: protectedProcedure
         .input(
           z.object({
             network: z.string(),
@@ -679,7 +659,7 @@ const registryRouter = t.router({
           })
         }),
 
-      multisig: publicProcedure
+      multisig: protectedProcedure
         .input(
           z.object({
             network: z.string(),
@@ -756,7 +736,7 @@ const registryRouter = t.router({
     }),
 
     get: t.router({
-      byId: publicProcedure.input(z.object({ id: z.string() })).query(async ({ ctx, input }) => {
+      byId: protectedProcedure.input(z.object({ id: z.string() })).query(async ({ ctx, input }) => {
         const claim = await getFullClaimDto(ctx.app.database, input.id)
         if (!claim) {
           throw new TRPCError({ code: 'NOT_FOUND', message: 'Claim not found' })
@@ -764,7 +744,7 @@ const registryRouter = t.router({
         return claim
       }),
 
-      byAccount: publicProcedure
+      byAccount: protectedProcedure
         .input(z.object({ network: z.string(), account: z.string() }))
         .query(async ({ ctx, input }) => {
           const network = claimNetworkToNetwork(input.network)
@@ -785,7 +765,7 @@ const registryRouter = t.router({
   }),
 
   challenges: t.router({
-    create: publicProcedure
+    create: protectedProcedure
       .input(z.object({ claimId: z.string(), keystoreId: z.string().optional() }))
       .mutation(async ({ ctx, input }) => {
         return ctx.app.database.transaction(async (db) => {
@@ -833,7 +813,7 @@ const registryRouter = t.router({
         })
       }),
 
-    complete: publicProcedure.input(z.object({ challengeId: z.string() })).mutation(async ({ ctx, input }) => {
+    complete: protectedProcedure.input(z.object({ challengeId: z.string() })).mutation(async ({ ctx, input }) => {
       const db = ctx.app.database
       const [challenge] = await db.select().from(challenges).where(eq(challenges.id, input.challengeId))
       if (!challenge) {
@@ -916,7 +896,7 @@ const registryRouter = t.router({
   }),
 
   challengeMessages: t.router({
-    create: publicProcedure
+    create: protectedProcedure
       .input(z.object({ challengeId: z.string(), keystoreId: z.string() }))
       .mutation(async ({ ctx, input }): Promise<ChallengeMessageDto> => {
         return ctx.app.database.transaction(async (db) => {
@@ -977,7 +957,7 @@ const registryRouter = t.router({
         })
       }),
 
-    get: publicProcedure
+    get: protectedProcedure
       .input(z.object({ signedMessageId: z.string() }))
       .query(async ({ ctx, input }): Promise<ChallengeMessageDto> => {
         const [sm] = await ctx.app.database
@@ -990,7 +970,7 @@ const registryRouter = t.router({
         return challengeMessageRowToDto(sm)
       }),
 
-    list: publicProcedure
+    list: protectedProcedure
       .input(z.object({ challengeId: z.string() }))
       .query(async ({ ctx, input }): Promise<ChallengeMessageDto[]> => {
         const messages = await ctx.app.database
@@ -1000,7 +980,7 @@ const registryRouter = t.router({
         return messages.map(challengeMessageRowToDto)
       }),
 
-    complete: publicProcedure
+    complete: protectedProcedure
       .input(z.object({ signedMessageId: z.string(), signature: z.string().trim().min(1).max(4096) }))
       .mutation(async ({ ctx, input }): Promise<ChallengeMessageDto> => {
         const db = ctx.app.database
@@ -1035,7 +1015,7 @@ const registryRouter = t.router({
       }),
   }),
 
-  getOrCreateSinglesigChallengeMessage: publicProcedure
+  getOrCreateSinglesigChallengeMessage: protectedProcedure
     .input(z.object({ network: z.string(), account: z.string() }))
     .query(async ({ ctx, input }) => {
       return ctx.app.database.transaction(async (db) => {
@@ -1152,12 +1132,12 @@ const registryRouter = t.router({
 // ─── portalProve.exchange ───────────────────────────────────────────────────
 
 const proveExchangeRouter = t.router({
-  list: publicProcedure.query(async ({ ctx }) => {
+  list: protectedProcedure.query(async ({ ctx }) => {
     const accounts = await ctx.app.exchangeService.listAccounts()
     return accounts.map(exchangeAccountToDto)
   }),
 
-  refreshBalance: publicProcedure.input(z.object({ accountId: z.string() })).mutation(async ({ ctx, input }) => {
+  refreshBalance: protectedProcedure.input(z.object({ accountId: z.string() })).mutation(async ({ ctx, input }) => {
     const result = await ctx.app.exchangeService.refreshBalance(input.accountId)
     if (result.isErr()) {
       throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: result.unwrapErr().message })
@@ -1165,14 +1145,14 @@ const proveExchangeRouter = t.router({
     return result.unwrap()
   }),
 
-  refreshAllBalances: publicProcedure.mutation(async ({ ctx }) => {
+  refreshAllBalances: protectedProcedure.mutation(async ({ ctx }) => {
     const result = await ctx.app.exchangeService.refreshAllBalances()
     if (result.isErr()) {
       throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: result.unwrapErr().message })
     }
   }),
 
-  delete: publicProcedure.input(z.object({ accountId: z.string() })).mutation(async ({ ctx, input }) => {
+  delete: protectedProcedure.input(z.object({ accountId: z.string() })).mutation(async ({ ctx, input }) => {
     const result = await ctx.app.exchangeService.removeAccount(input.accountId)
     if (result.isErr()) {
       throw new TRPCError({ code: 'NOT_FOUND', message: result.unwrapErr().message })
@@ -1180,7 +1160,7 @@ const proveExchangeRouter = t.router({
   }),
 
   coinbase: t.router({
-    connect: publicProcedure
+    connect: protectedProcedure
       .input(
         z.object({
           apiKey: z.string().min(1),
@@ -1196,14 +1176,14 @@ const proveExchangeRouter = t.router({
         return result.unwrap()
       }),
 
-    list: publicProcedure.query(async ({ ctx }) => {
+    list: protectedProcedure.query(async ({ ctx }) => {
       const accounts = await ctx.app.exchangeService.listAccounts('coinbase')
       return accounts.map(exchangeAccountToDto)
     }),
   }),
 
   strike: t.router({
-    connect: publicProcedure
+    connect: protectedProcedure
       .input(
         z.object({
           apiKey: z.string().min(1),
@@ -1219,12 +1199,12 @@ const proveExchangeRouter = t.router({
         return result.unwrap()
       }),
 
-    list: publicProcedure.query(async ({ ctx }) => {
+    list: protectedProcedure.query(async ({ ctx }) => {
       const accounts = await ctx.app.exchangeService.listAccounts('strike')
       return accounts.map(exchangeAccountToDto)
     }),
 
-    importStatement: publicProcedure
+    importStatement: protectedProcedure
       .input(
         z.object({
           accountId: z.string(),
@@ -1253,17 +1233,17 @@ const proveExchangeRouter = t.router({
         return result.unwrap()
       }),
 
-    listStatementTransactions: publicProcedure
+    listStatementTransactions: protectedProcedure
       .input(z.object({ accountId: z.string(), statementMonth: z.string().optional() }))
       .query(async ({ ctx, input }) => {
         return ctx.app.exchangeService.listStatementTransactions(input.accountId, input.statementMonth)
       }),
 
-    listStatementMonths: publicProcedure.input(z.object({ accountId: z.string() })).query(async ({ ctx, input }) => {
+    listStatementMonths: protectedProcedure.input(z.object({ accountId: z.string() })).query(async ({ ctx, input }) => {
       return ctx.app.exchangeService.listStatementMonths(input.accountId)
     }),
 
-    deleteStatementMonth: publicProcedure
+    deleteStatementMonth: protectedProcedure
       .input(z.object({ accountId: z.string(), statementMonth: z.string() }))
       .mutation(async ({ ctx, input }) => {
         const deleted = await ctx.app.exchangeService.deleteStatementMonth(input.accountId, input.statementMonth)
@@ -1272,7 +1252,7 @@ const proveExchangeRouter = t.router({
   }),
 
   robinhood: t.router({
-    connect: publicProcedure
+    connect: protectedProcedure
       .input(
         z.object({
           apiKey: z.string().min(1),
@@ -1289,14 +1269,14 @@ const proveExchangeRouter = t.router({
         return result.unwrap()
       }),
 
-    list: publicProcedure.query(async ({ ctx }) => {
+    list: protectedProcedure.query(async ({ ctx }) => {
       const accounts = await ctx.app.exchangeService.listAccounts('robinhood')
       return accounts.map(exchangeAccountToDto)
     }),
   }),
 
   kraken: t.router({
-    connect: publicProcedure
+    connect: protectedProcedure
       .input(
         z.object({
           apiKey: z.string().min(1),
@@ -1312,7 +1292,7 @@ const proveExchangeRouter = t.router({
         return result.unwrap()
       }),
 
-    list: publicProcedure.query(async ({ ctx }) => {
+    list: protectedProcedure.query(async ({ ctx }) => {
       const accounts = await ctx.app.exchangeService.listAccounts('kraken')
       return accounts.map(exchangeAccountToDto)
     }),
@@ -1322,7 +1302,7 @@ const proveExchangeRouter = t.router({
 // ─── portalProve.onchain ────────────────────────────────────────────────────
 
 const onchainRouter = t.router({
-  bitcoinAccountBalances: publicProcedure
+  bitcoinAccountBalances: protectedProcedure
     .input(z.object({ accounts: z.array(z.string()) }))
     .query(async ({ ctx, input }) => {
       const resultMap = new Map<string, { current: Decimal; usd: Decimal | null }>()
@@ -1401,53 +1381,20 @@ const onchainRouter = t.router({
       return { accounts: resultMap, archivedAccounts }
     }),
 
-  claimBalances: publicProcedure.input(z.object({ claimIds: z.array(z.string()) })).query(async ({ ctx, input }) => {
+  claimBalances: protectedProcedure.input(z.object({ claimIds: z.array(z.string()) })).query(async ({ ctx, input }) => {
+    // Wallets are scanned one by one and recent balances reused; other callers share the same scans.
+    const results = await ctx.app.walletBalanceService.getLiveBalances(input.claimIds)
     const balanceMap = new Map<string, Decimal>()
-
-    const accountSet = new IndexSet<Account>()
-    const idToAccount = new Map<string, Account>()
-
-    // Resolve account IDs to Account objects
-    for (const claimId of input.claimIds) {
-      const [row] = await ctx.app.database
-        .select({ descriptor: accountTable.descriptor })
-        .from(accountTable)
-        .where(and(eq(accountTable.id, claimId), isNull(accountTable.deletedAt)))
-      if (!row) {
-        continue
-      }
-
-      const parsed = Account.fromDescriptor(row.descriptor)
-      if (parsed.isOk()) {
-        const account = parsed.unwrap()
-        accountSet.add(account)
-        idToAccount.set(claimId, account)
+    for (const [claimId, result] of results) {
+      if (result.isOk()) {
+        balanceMap.set(claimId, new Decimal(result.unwrap().balanceSats.toString()))
       }
     }
-
-    if (accountSet.size === 0) {
-      return balanceMap
+    // A wallet that can't be scanned is left out, so the rest still show. Errors can quote
+    // descriptors, so the request fails with a plain message, and only when no wallet could be read.
+    if (results.size > 0 && balanceMap.size === 0) {
+      throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Could not fetch wallet balances' })
     }
-
-    const result = await ctx.app.onchainProvider.getConfirmedAccountBalances(accountSet)
-    if (result.isErr()) {
-      throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: result.unwrapErr().message })
-    }
-
-    const accountBalances = result.unwrap()
-    for (const [claimId, account] of idToAccount) {
-      const [activeClaim] = await ctx.app.database
-        .select({ id: accountTable.id })
-        .from(accountTable)
-        .where(and(eq(accountTable.id, claimId), isNull(accountTable.deletedAt)))
-      if (activeClaim === undefined) {
-        continue
-      }
-
-      const balance = accountBalances.get(account) ?? 0n
-      balanceMap.set(claimId, new Decimal(balance.toString()))
-    }
-
     return balanceMap
   }),
 })
@@ -1455,11 +1402,11 @@ const onchainRouter = t.router({
 // ─── portalProve.statement ───────────────────────────────────────────────────
 
 const statementRouter = t.router({
-  list: publicProcedure.query(async ({ ctx }) => {
+  list: protectedProcedure.query(async ({ ctx }) => {
     return ctx.app.statementService.list()
   }),
 
-  initiateGeneration: publicProcedure
+  initiateGeneration: protectedProcedure
     .input(
       z.object({
         claimIds: z.array(z.string()),
@@ -1543,7 +1490,7 @@ const statementRouter = t.router({
       return dto
     }),
 
-  retrieve: publicProcedure.input(z.string()).query(async ({ ctx, input: statementId }) => {
+  retrieve: protectedProcedure.input(z.string()).query(async ({ ctx, input: statementId }) => {
     const dto = await ctx.app.statementService.findById(statementId)
     if (!dto) {
       throw new TRPCError({ code: 'NOT_FOUND', message: 'Statement not found' })
@@ -1551,7 +1498,7 @@ const statementRouter = t.router({
     return dto
   }),
 
-  delete: publicProcedure.input(z.string()).mutation(async ({ ctx, input: statementId }) => {
+  delete: protectedProcedure.input(z.string()).mutation(async ({ ctx, input: statementId }) => {
     const deleted = await ctx.app.statementService.delete(statementId)
     if (deleted.isErr()) {
       switch (deleted.unwrapErr()) {
@@ -1563,7 +1510,7 @@ const statementRouter = t.router({
     }
   }),
 
-  retrieveDocumentData: publicProcedure
+  retrieveDocumentData: protectedProcedure
     .input(z.object({ statementId: z.string(), format: z.enum(['custom', 'monthly']) }))
     .query(async ({ ctx, input }) => {
       const loaded = await ctx.app.statementService.loadCompleted(input.statementId)
@@ -1600,7 +1547,7 @@ const statementRouter = t.router({
 // ─── portalProve.manual ─────────────────────────────────────────────────────
 
 const manualRouter = t.router({
-  list: publicProcedure.query(async ({ ctx }) => {
+  list: protectedProcedure.query(async ({ ctx }) => {
     return (await ctx.app.manualService.listAccounts()).map((a) => ({
       id: a.id,
       displayName: a.displayName,
@@ -1611,7 +1558,7 @@ const manualRouter = t.router({
     }))
   }),
 
-  get: publicProcedure.input(z.object({ accountId: z.string() })).query(async ({ ctx, input }) => {
+  get: protectedProcedure.input(z.object({ accountId: z.string() })).query(async ({ ctx, input }) => {
     const account = await ctx.app.manualService.getAccount(input.accountId)
     if (!account) {
       throw new TRPCError({ code: 'NOT_FOUND', message: 'Manual account not found' })
@@ -1626,7 +1573,7 @@ const manualRouter = t.router({
     }
   }),
 
-  create: publicProcedure
+  create: protectedProcedure
     .input(
       z.object({
         displayName: z.string().min(1),
@@ -1650,7 +1597,7 @@ const manualRouter = t.router({
       }
     }),
 
-  updateBalance: publicProcedure
+  updateBalance: protectedProcedure
     .input(
       z.object({
         accountId: z.string(),
@@ -1674,7 +1621,7 @@ const manualRouter = t.router({
       }
     }),
 
-  rename: publicProcedure
+  rename: protectedProcedure
     .input(z.object({ accountId: z.string(), displayName: z.string().min(1) }))
     .mutation(async ({ ctx, input }) => {
       const result = await ctx.app.manualService.renameAccount(input)
@@ -1683,7 +1630,7 @@ const manualRouter = t.router({
       }
     }),
 
-  delete: publicProcedure.input(z.object({ accountId: z.string() })).mutation(async ({ ctx, input }) => {
+  delete: protectedProcedure.input(z.object({ accountId: z.string() })).mutation(async ({ ctx, input }) => {
     const result = await ctx.app.manualService.removeAccount(input.accountId)
     if (result.isErr()) {
       throw new TRPCError({ code: 'NOT_FOUND', message: result.unwrapErr().message })
@@ -1691,11 +1638,11 @@ const manualRouter = t.router({
   }),
 
   transactions: t.router({
-    list: publicProcedure.input(z.object({ accountId: z.string() })).query(async ({ ctx, input }) => {
+    list: protectedProcedure.input(z.object({ accountId: z.string() })).query(async ({ ctx, input }) => {
       return ctx.app.manualService.listTransactions(input.accountId)
     }),
 
-    add: publicProcedure
+    add: protectedProcedure
       .input(
         z.object({
           accountId: z.string(),
@@ -1714,7 +1661,7 @@ const manualRouter = t.router({
         return result.unwrap()
       }),
 
-    delete: publicProcedure.input(z.object({ transactionId: z.string() })).mutation(async ({ ctx, input }) => {
+    delete: protectedProcedure.input(z.object({ transactionId: z.string() })).mutation(async ({ ctx, input }) => {
       const result = await ctx.app.manualService.deleteTransaction(input.transactionId)
       if (result.isErr()) {
         throw new TRPCError({ code: 'NOT_FOUND', message: result.unwrapErr().message })
@@ -1726,7 +1673,7 @@ const manualRouter = t.router({
 // ─── portalProve.etf ────────────────────────────────────────────────────────
 
 const etfRouter = t.router({
-  list: publicProcedure.query(async ({ ctx }) => {
+  list: protectedProcedure.query(async ({ ctx }) => {
     return (await ctx.app.etfService.listAccounts()).map((a) => ({
       id: a.id,
       displayName: a.displayName,
@@ -1736,7 +1683,7 @@ const etfRouter = t.router({
     }))
   }),
 
-  get: publicProcedure.input(z.object({ accountId: z.string() })).query(async ({ ctx, input }) => {
+  get: protectedProcedure.input(z.object({ accountId: z.string() })).query(async ({ ctx, input }) => {
     const account = await ctx.app.etfService.getAccount(input.accountId)
     if (!account) {
       throw new TRPCError({ code: 'NOT_FOUND', message: 'ETF account not found' })
@@ -1750,7 +1697,7 @@ const etfRouter = t.router({
     }
   }),
 
-  create: publicProcedure
+  create: protectedProcedure
     .input(
       z.object({
         displayName: z.string().min(1),
@@ -1781,7 +1728,7 @@ const etfRouter = t.router({
       }
     }),
 
-  rename: publicProcedure
+  rename: protectedProcedure
     .input(z.object({ accountId: z.string(), displayName: z.string().min(1) }))
     .mutation(async ({ ctx, input }) => {
       const result = await ctx.app.etfService.renameAccount(input)
@@ -1790,7 +1737,7 @@ const etfRouter = t.router({
       }
     }),
 
-  delete: publicProcedure.input(z.object({ accountId: z.string() })).mutation(async ({ ctx, input }) => {
+  delete: protectedProcedure.input(z.object({ accountId: z.string() })).mutation(async ({ ctx, input }) => {
     const result = await ctx.app.etfService.removeAccount(input.accountId)
     if (result.isErr()) {
       throw new TRPCError({ code: 'NOT_FOUND', message: result.unwrapErr().message })
@@ -1798,11 +1745,11 @@ const etfRouter = t.router({
   }),
 
   holdings: t.router({
-    list: publicProcedure.input(z.object({ accountId: z.string() })).query(async ({ ctx, input }) => {
+    list: protectedProcedure.input(z.object({ accountId: z.string() })).query(async ({ ctx, input }) => {
       return ctx.app.etfService.listHoldings(input.accountId)
     }),
 
-    add: publicProcedure
+    add: protectedProcedure
       .input(
         z.object({
           accountId: z.string(),
@@ -1819,7 +1766,7 @@ const etfRouter = t.router({
         return result.unwrap()
       }),
 
-    remove: publicProcedure.input(z.object({ holdingId: z.string() })).mutation(async ({ ctx, input }) => {
+    remove: protectedProcedure.input(z.object({ holdingId: z.string() })).mutation(async ({ ctx, input }) => {
       const result = await ctx.app.etfService.removeHolding(input.holdingId)
       if (result.isErr()) {
         throw new TRPCError({ code: 'NOT_FOUND', message: result.unwrapErr().message })
@@ -1836,7 +1783,7 @@ const portalProveRouter = t.router({
   etf: etfRouter,
   onchain: onchainRouter,
   statement: statementRouter,
-  retrieveBitcoinPriceHistory: publicProcedure
+  retrieveBitcoinPriceHistory: protectedProcedure
     .input(
       z.object({
         days: z.union([z.literal(7), z.literal(30), z.literal(180), z.literal(365)]),
@@ -1854,7 +1801,7 @@ const portalProveRouter = t.router({
       }
       return result.unwrap()
     }),
-  retrieveBitcoinPrice: publicProcedure.query(async ({ ctx }) => {
+  retrieveBitcoinPrice: protectedProcedure.query(async ({ ctx }) => {
     const result = await ctx.app.priceService.getCurrentBtcPrice()
     if (result.isErr()) {
       throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: result.unwrapErr().message })
@@ -1865,7 +1812,7 @@ const portalProveRouter = t.router({
   // ─── Account management (used by local UI) ─────────────────────────────
 
   accounts: t.router({
-    add: publicProcedure
+    add: protectedProcedure
       .input(
         z.object({
           descriptor: z.string().min(1),
@@ -1893,11 +1840,12 @@ const portalProveRouter = t.router({
         })
       }),
 
-    remove: publicProcedure.input(z.object({ id: z.string() })).mutation(async ({ ctx, input }) => {
+    remove: protectedProcedure.input(z.object({ id: z.string() })).mutation(async ({ ctx, input }) => {
       const deleted = await ctx.app.database.delete(accountTable).where(eq(accountTable.id, input.id))
       if (deleted.rowsAffected === 0) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Account not found' })
       }
+      ctx.app.walletBalanceService.invalidate(input.id)
     }),
   }),
 })
@@ -1905,7 +1853,7 @@ const portalProveRouter = t.router({
 // ─── Blocks ─────────────────────────────────────────────────────────────────
 
 const blocksRouter = t.router({
-  tip: publicProcedure.query(async ({ ctx }) => {
+  tip: protectedProcedure.query(async ({ ctx }) => {
     const result = await ctx.app.onchainProvider.getBlocksTip()
     if (result.isErr()) {
       throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: result.unwrapErr().message })
@@ -1919,6 +1867,7 @@ const blocksRouter = t.router({
 
 const READABLE_SETTINGS = new Set([
   'user_name',
+  'onboarding_v1',
   'owner_identifier',
   'electrum_host',
   'electrum_port',
@@ -1928,7 +1877,7 @@ const READABLE_SETTINGS = new Set([
 
 // Connection settings must be validated, connected and saved together through
 // reconnectElectrum; individual writes could make the next launch unusable.
-const WRITABLE_SETTINGS = new Set(['user_name', 'owner_identifier'])
+const WRITABLE_SETTINGS = new Set(['user_name', 'onboarding_v1', 'owner_identifier'])
 
 function isReadableSetting(key: string): boolean {
   return READABLE_SETTINGS.has(key)
@@ -2024,6 +1973,12 @@ function validateWritableSetting(key: string, value: string): string {
   }
 
   switch (key) {
+    case 'onboarding_v1': {
+      if (value !== 'started' && value !== 'dismissed') {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid onboarding state' })
+      }
+      return value
+    }
     case 'user_name':
     case 'owner_identifier': {
       if (value.length > 200) {
@@ -2060,7 +2015,7 @@ function profileDetails(input: z.infer<typeof connectionDetailsInput>): Connecti
   return { ...connection, torEnabled: input.torEnabled }
 }
 
-const desktopConnectionProcedure = publicProcedure.use(async ({ ctx, next }) => {
+const desktopConnectionProcedure = protectedProcedure.use(async ({ ctx, next }) => {
   if (!ctx.app.connectionProfiles) {
     throw new TRPCError({ code: 'FORBIDDEN', message: 'Saved connections are only available in the desktop app' })
   }
@@ -2123,7 +2078,7 @@ const connectionProfilesRouter = t.router({
 
 const settingsRouter = t.router({
   connectionProfiles: connectionProfilesRouter,
-  get: publicProcedure.input(z.object({ key: z.string() })).query(async ({ ctx, input }) => {
+  get: protectedProcedure.input(z.object({ key: z.string() })).query(async ({ ctx, input }) => {
     if (!isReadableSetting(input.key)) {
       throw new TRPCError({ code: 'FORBIDDEN', message: 'Setting is not readable' })
     }
@@ -2135,21 +2090,23 @@ const settingsRouter = t.router({
     return row?.value ?? null
   }),
 
-  update: publicProcedure.input(z.object({ key: z.string(), value: z.string() })).mutation(async ({ ctx, input }) => {
-    const value = validateWritableSetting(input.key, input.value)
-    await ctx.app.database
-      .insert(settings)
-      .values({ key: input.key, value })
-      .onConflictDoUpdate({ target: settings.key, set: { value } })
-  }),
+  update: protectedProcedure
+    .input(z.object({ key: z.string(), value: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const value = validateWritableSetting(input.key, input.value)
+      await ctx.app.database
+        .insert(settings)
+        .values({ key: input.key, value })
+        .onConflictDoUpdate({ target: settings.key, set: { value } })
+    }),
 
   /** Where new statements look up transactions. Only desktop can choose. */
-  statementSource: publicProcedure.query(async ({ ctx }) => ({
+  statementSource: protectedProcedure.query(async ({ ctx }) => ({
     selectable: ctx.app.statementService.sourceSelectable,
     source: await ctx.app.statementService.sourceChoice(),
   })),
 
-  setStatementSource: publicProcedure
+  setStatementSource: protectedProcedure
     .input(z.object({ source: z.enum(STATEMENT_SOURCES) }))
     .mutation(async ({ ctx, input }) => {
       const saved = await ctx.app.statementService.setSourceChoice(input.source)
@@ -2159,14 +2116,14 @@ const settingsRouter = t.router({
     }),
 
   /** A newer desktop release, once the daily check finds one. */
-  releaseCheck: publicProcedure.query(({ ctx }) => ctx.app.releaseCheckService.status()),
+  releaseCheck: protectedProcedure.query(({ ctx }) => ctx.app.releaseCheckService.status()),
 
   // Answers at once, so Settings can change the source even while every source is down.
-  priceSource: publicProcedure.query(async ({ ctx }) => ctx.app.priceService.options()),
+  priceSource: protectedProcedure.query(async ({ ctx }) => ctx.app.priceService.options()),
 
   // Price settings change how Sentinel fetches prices, so they are saved together here and the
   // price service is told, rather than written through the generic `update`.
-  setPriceSettings: publicProcedure
+  setPriceSettings: protectedProcedure
     .input(z.object({ source: z.enum(PRICE_SOURCES).optional(), fallbacks: z.boolean().optional() }))
     .mutation(async ({ ctx, input }) => {
       if (input.source !== undefined && !ctx.app.priceService.isAvailable(input.source)) {
@@ -2191,7 +2148,7 @@ const settingsRouter = t.router({
       return ctx.app.priceService.options()
     }),
 
-  priceStatus: publicProcedure.query(async ({ ctx }) => {
+  priceStatus: protectedProcedure.query(async ({ ctx }) => {
     // Look the price up under the current settings, so a status never describes an earlier choice.
     const result = await ctx.app.priceService.getCurrentBtcPrice({ verifyPrimary: true })
     const price = result.isOk() ? result.unwrap() : null
@@ -2203,7 +2160,7 @@ const settingsRouter = t.router({
     }
   }),
 
-  electrumStatus: publicProcedure.query(({ ctx }) => {
+  electrumStatus: protectedProcedure.query(({ ctx }) => {
     const { host, port, protocol } = ctx.app.electrumConfig
     // Checks run only while a page shows the status; the result appears on its next poll.
     ctx.app.electrumClient.checkReachable(30_000)
@@ -2220,9 +2177,9 @@ const settingsRouter = t.router({
     }
   }),
 
-  startTor: publicProcedure.mutation(({ ctx }) => ctx.app.startTor()),
+  startTor: protectedProcedure.mutation(({ ctx }) => ctx.app.startTor()),
 
-  testElectrum: publicProcedure
+  testElectrum: protectedProcedure
     .input(
       z.object({
         host: z.string(),
@@ -2252,7 +2209,7 @@ const settingsRouter = t.router({
       return { success: true, version: result.unwrap() }
     }),
 
-  reconnectElectrum: publicProcedure
+  reconnectElectrum: protectedProcedure
     .input(
       z.object({
         host: z.string(),
@@ -2276,6 +2233,7 @@ const settingsRouter = t.router({
 // ─── Root Router ────────────────────────────────────────────────────────────
 
 export const appRouter = t.router({
+  auth: authRouter,
   portalProve: portalProveRouter,
   blocks: blocksRouter,
   settings: settingsRouter,

@@ -206,7 +206,7 @@ it('captions both previews in text when there are no accounts', async () => {
   client.setQueryData(['local-settings', 'user_name'], null)
   const container = await renderCreatePage(client, rpc)
   await vi.waitFor(() => {
-    expect(container.textContent).toContain('View a preview of a Hoseki statement.')
+    expect(container.textContent).toContain('View a preview of a Bitcoin Control Center statement.')
     expect(container.textContent).toContain('Once done, your verified holdings will appear here.')
   })
 })

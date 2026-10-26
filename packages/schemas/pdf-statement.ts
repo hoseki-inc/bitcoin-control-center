@@ -43,6 +43,8 @@ export type StatementTransaction = z.infer<typeof StatementTransactionSchema>
 // Balance entry schema (used for summary entries)
 export const BalanceEntrySchema = z.object({
   displayName: z.string(),
+  /** When the wallet's proof-of-control signature completed; absent for exchange accounts and older statements. */
+  ownershipProvenAt: z.coerce.date().optional(),
   openingBalance: AmountSchema,
   closingBalance: AmountSchema,
   moneyIn: AmountSchema,

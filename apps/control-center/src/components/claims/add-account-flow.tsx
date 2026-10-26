@@ -2,23 +2,13 @@ import { Box, Button, Flex, Grid, Icon, keyframes } from '@chakra-ui/react'
 import { HOSEKI_ASSETS_CDN_URL } from '@hoseki/packages/constants'
 import { ConnectManualBitcoinAccordion } from '@hoseki/packages/ui/design-system'
 import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
-import { KeystoreAvatar } from '@hoseki/packages/ui/prove-verify-ui'
-import { keyIcon } from '@hoseki/packages/ui/prove-verify-ui/claims/keystores-status-indicator'
+import { ManualEntryIcon, MultisigImage } from './account-type-media'
 import { ConnectionType } from './claims-landing/connection-type'
 
 const fadeIn = keyframes`
   from { opacity: 0; }
   to { opacity: 1; }
 `
-
-const commonProps = { icon: keyIcon, alt: 'Multisig keystore' }
-const MultisigImage = (
-  <KeystoreAvatar.Group>
-    <KeystoreAvatar {...commonProps} />
-    <KeystoreAvatar {...commonProps} />
-    <KeystoreAvatar {...commonProps} />
-  </KeystoreAvatar.Group>
-)
 
 const CoinbaseMedia = <img src="/images/exchanges/coinbase-wordmark.svg" alt="Coinbase" style={{ height: '20px' }} />
 const KrakenMedia = <img src="/images/exchanges/kraken-wordmark.svg" alt="Kraken" style={{ height: '20px' }} />
@@ -126,39 +116,6 @@ export function AddAccountFlow({ onClose, linkState }: AddAccountFlowProps): JSX
         </Box>
       </Box>
     </Box>
-  )
-}
-
-function ManualEntryIcon(): JSX.Element {
-  return (
-    <Icon viewBox="0 0 24 24" w={6} h={6} color="neutral.600">
-      <path
-        d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        fill="none"
-      />
-      <polyline
-        points="14 2 14 8 20 8"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        fill="none"
-      />
-      <line x1="16" y1="13" x2="8" y2="13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-      <line x1="16" y1="17" x2="8" y2="17" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-      <polyline
-        points="10 9 9 9 8 9"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        fill="none"
-      />
-    </Icon>
   )
 }
 

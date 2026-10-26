@@ -26,7 +26,7 @@ function isLoopbackAddress(address: string): boolean {
   return isLoopbackHost(normalized)
 }
 
-function getHostname(host: string | undefined): string | null {
+export function getHostname(host: string | undefined): string | null {
   if (host == null || host === '') {
     return null
   }
@@ -38,7 +38,7 @@ function getHostname(host: string | undefined): string | null {
   }
 }
 
-function getHeaderValue(header: string | string[] | undefined): string | undefined {
+export function getHeaderValue(header: string | string[] | undefined): string | undefined {
   const value = Array.isArray(header) ? header[0] : header
   return value?.split(',')[0]?.trim()
 }
@@ -118,6 +118,14 @@ function isSameOrigin(origin: string, host: string | undefined): boolean {
   }
 }
 
+/**
+ * Only StartOS and Umbrel configure hosts. Their proxies set X-Forwarded-Host and X-Forwarded-Proto, replacing any
+ * value the client sent. Elsewhere nothing sets those headers except the client itself.
+ */
+export function trustsProxyHeaders(configuredHosts: string | undefined): boolean {
+  return (configuredHosts ?? '').trim() !== ''
+}
+
 function isAllowedRequestOrigin(
   origin: string | undefined,
   host: string | undefined,
@@ -167,10 +175,8 @@ export function registerRequestSecurity(
   allowIpAddressHosts = false,
 ): void {
   const allowedHosts = getAllowedHosts(configuredHosts, allowIpAddressHosts)
-  // Only StartOS and Umbrel configure hosts. Their proxies set X-Forwarded-Host from the Host the browser
-  // sent, replacing any value the client sent. Elsewhere nothing sets that header except the client itself,
-  // so a web page (after DNS rebinding, say) could use it to pass as localhost: there, Host must match too.
-  const trustForwardedHost = (configuredHosts ?? '').trim() !== ''
+  // Untrusted, a forwarded host could let a web page (after DNS rebinding, say) pass as localhost: Host must match too.
+  const trustForwardedHost = trustsProxyHeaders(configuredHosts)
 
   server.addHook('onRequest', async (request, reply) => {
     if (!isProtectedRoute(request.routeOptions.url, request.url)) {

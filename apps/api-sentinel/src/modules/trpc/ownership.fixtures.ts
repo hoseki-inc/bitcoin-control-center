@@ -18,6 +18,7 @@ import type { AppContext } from '../../context'
 import { type SentinelDb, openDrizzleDatabase } from '../../db/drizzle'
 import { accounts, challenges, keystores, signedMessages } from '../../db/schema'
 import type { Env } from '../../env'
+import { AuthService } from '../auth/service'
 import { ControlCenterService } from '../control_center/service'
 import { EtfService } from '../etf/service'
 import { ExchangeService } from '../exchange/service'
@@ -27,6 +28,7 @@ import { PriceHistoryService } from '../price/history'
 import { PriceService } from '../price/service'
 import { StatementService } from '../statements/service'
 import { ReleaseCheckService } from '../updates/service'
+import { WalletBalanceService } from '../wallet_balances/service'
 import { appRouter } from './router'
 
 // Public, deterministic test seeds only. Signatures and verification are real BIP-322.
@@ -143,10 +145,12 @@ export async function setupAppCaller(): Promise<AppCallerHarness> {
     downloadRetryDelaysMs: [1, 1, 1, 1],
   })
 
+  const walletBalanceService = new WalletBalanceService({ ...deps, onchainProvider })
   const app: AppContext = {
     env,
     logger,
     database,
+    auth: new AuthService(database, logger, null),
     electrumClient,
     electrumConfig,
     onchainProvider,
@@ -163,7 +167,9 @@ export async function setupAppCaller(): Promise<AppCallerHarness> {
       manualService,
       etfService,
       priceService,
+      walletBalances: walletBalanceService,
     }),
+    walletBalanceService,
     statementService: new StatementService({
       ...deps,
       onchainProvider,

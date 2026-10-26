@@ -14,16 +14,7 @@ function getBalanceValue(balance: Decimal | bigint, price: Decimal | null): Bala
   }
 }
 
-// A retry of a query that never loaded reports itself as loading again, so compare times instead.
-function hasFailedSinceLoading(query: { errorUpdatedAt: number; dataUpdatedAt: number }): boolean {
-  return query.errorUpdatedAt > query.dataUpdatedAt
-}
-
 export type UseGetBalancesPerClaimIdOutput = {
-  /** The latest balance fetch failed, even while a retry runs; `data` may still hold older balances. */
-  balancesFailed: boolean
-  /** When the balances in `data` were fetched, or 0 before the first fetch succeeds. */
-  updatedAt: number
   isLoading: boolean
   isSuccess: boolean
   isError: boolean
@@ -35,27 +26,15 @@ export type UseGetBalancesPerClaimIdOutput = {
 export function useGetBalancesPerClaimIds({
   claimIds,
   enabled,
-  retryFailedEveryMs,
 }: {
   claimIds: ClaimId[]
   enabled: boolean
-  /** Fetch failed balances again on this interval until they load. */
-  retryFailedEveryMs?: number
 }): UseGetBalancesPerClaimIdOutput {
   const balanceQueriesOpts = { enabled }
   const queries = trpc.useQueries((t) => [
     t.portalProve.retrieveBitcoinPrice(undefined, balanceQueriesOpts),
-    t.portalProve.onchain.claimBalances(
-      { claimIds },
-      retryFailedEveryMs === undefined
-        ? balanceQueriesOpts
-        : {
-            enabled,
-            // The interval does the retrying, so a failure shows at once rather than after a burst of retries.
-            retry: false,
-            refetchInterval: (_data, query) => (hasFailedSinceLoading(query.state) ? retryFailedEveryMs : false),
-          },
-    ),
+    // Sentinel reuses a wallet balance for a minute, so asking again sooner returns the same one.
+    t.portalProve.onchain.claimBalances({ claimIds }, { ...balanceQueriesOpts, staleTime: 60_000 }),
   ])
   const [btcPriceQuery, btcClaimBalancesQuery] = queries
   const btcPrice = btcPriceQuery.data?.value ?? null
@@ -71,8 +50,6 @@ export function useGetBalancesPerClaimIds({
   }
 
   return {
-    balancesFailed: hasFailedSinceLoading(btcClaimBalancesQuery),
-    updatedAt: btcClaimBalancesQuery.dataUpdatedAt,
     isLoading: queries.some((q) => q.isLoading),
     isError: queries.some((q) => q.isError),
     isSuccess: queries.every((q) => q.isSuccess),

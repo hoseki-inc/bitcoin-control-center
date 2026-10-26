@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { CheckIcon, ChevronLeftIcon, ChevronRightIcon, EyeIcon, EyeOffIcon, XIcon } from 'lucide-react'
 import { type ReactNode, useState } from 'react'
 import { HOSEKI_ASSETS_CDN_URL } from '../../constants'
+import { Spinner } from '../design-system'
 import { formatUsd, toBitcoinAmountDisplayValue, toXpubDisplayValue } from '../utils'
 import type { HardwareWallet } from './types'
 
@@ -119,9 +120,15 @@ export function HardwareWalletCard({
           {wallet.label}
         </Text>
         <Stack gap={0}>
-          <Text textStyle="label/md" fontWeight="medium" color="neutral.900">
-            {toBitcoinAmountDisplayValue(wallet.btcBalance.toString())}
-          </Text>
+          {wallet.btcBalance === 'loading' ? (
+            <Spinner size="sm" />
+          ) : (
+            <Text textStyle="label/md" fontWeight="medium" color="neutral.900">
+              {wallet.btcBalance === 'unavailable'
+                ? 'Balance unavailable'
+                : toBitcoinAmountDisplayValue(wallet.btcBalance.toString())}
+            </Text>
+          )}
           {wallet.usdBalance && (
             <Text textStyle="label/md" fontWeight="medium" color="success.600">
               {formatUsd(wallet.usdBalance.toFixed(2))}

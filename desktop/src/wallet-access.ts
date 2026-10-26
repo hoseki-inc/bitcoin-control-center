@@ -1,6 +1,6 @@
 import type { BrowserWindow, USBDevice, WebContents, WebFrameMain } from 'electron'
 import type { DeviceChooser } from './device-chooser'
-import { TREZOR_ORIGIN, isAppUrl, isTrezorDevice, isTrezorPopup } from './window-policy'
+import { TREZOR_SUITE_ORIGIN, isAppUrl, isTrezorDevice, isTrezorPopup } from './window-policy'
 
 export function setupWalletAccess(
   mainWindow: BrowserWindow,
@@ -11,7 +11,9 @@ export function setupWalletAccess(
   const session = mainWindow.webContents.session
   const activeChoosers = new Map<WebContents, DeviceChooser>()
   const allowedUsb = (contents: WebContents, requestingOrigin: string): boolean => {
-    return trezorWindows.has(contents) && isTrezorPopup(contents.getURL()) && isAppUrl(requestingOrigin, TREZOR_ORIGIN)
+    return (
+      trezorWindows.has(contents) && isTrezorPopup(contents.getURL()) && isAppUrl(requestingOrigin, TREZOR_SUITE_ORIGIN)
+    )
   }
   session.setPermissionCheckHandler((contents, permission, requestingOrigin, details) => {
     // Chromium also performs device checks with null WebContents and
@@ -21,7 +23,7 @@ export function setupWalletAccess(
     }
     if (permission === 'usb') {
       return (
-        isAppUrl(requestingOrigin, TREZOR_ORIGIN) &&
+        isAppUrl(requestingOrigin, TREZOR_SUITE_ORIGIN) &&
         (contents
           ? allowedUsb(contents, requestingOrigin)
           : [...trezorWindows].some((popup) => !popup.isDestroyed() && isTrezorPopup(popup.getURL())))
@@ -35,6 +37,16 @@ export function setupWalletAccess(
     )
   })
   session.setPermissionRequestHandler((contents, permission, callback, details) => {
+    if (permission === 'storage-access') {
+      // Trezor Connect's hidden Suite Web frame needs its unpartitioned storage to reach the Suite Web window.
+      callback(
+        contents === mainWindow.webContents &&
+          !details.isMainFrame &&
+          isAppUrl(contents.getURL(), origin) &&
+          isTrezorPopup(details.requestingUrl),
+      )
+      return
+    }
     const local = contents === mainWindow.webContents && details.isMainFrame && isAppUrl(details.requestingUrl, origin)
     callback(local && ['media', 'clipboard-sanitized-write', 'fullscreen'].includes(permission))
   })

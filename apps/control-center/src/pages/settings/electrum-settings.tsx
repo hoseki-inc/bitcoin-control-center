@@ -22,7 +22,7 @@ import {
   ModalHeader,
   ModalOverlay,
   Select,
-  Spinner,
+  Skeleton,
   Stack,
   Switch,
   type SystemStyleObject,
@@ -33,12 +33,14 @@ import {
   useToken,
 } from '@chakra-ui/react'
 import { parseUnknown } from '@hoseki/packages/result/lib/parse'
+import { SkeletonRegion } from '@hoseki/packages/ui/design-system/loading/loading'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { TRPCClientError } from '@trpc/client'
 import { Check, CircleAlertIcon, CircleCheckIcon, Pencil, Plus, Trash2, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { z } from 'zod'
+import { sentinelFetch } from '../../pin/tab'
 import { type RouterOutput, baseTrpc } from '../../trpc'
 import { type FadingNotice, NOTICE_FADE_MS, useFadingNotice } from './fading-notice'
 import { useStatementSource } from './statement-source-settings'
@@ -122,7 +124,7 @@ function useElectrumStatus(): ElectrumStatusState {
 
   const refresh = useCallback((): void => {
     const baseUrl = import.meta.env.VITE_BACKEND_API_URL ?? ''
-    void fetch(`${baseUrl}/settings.electrumStatus`)
+    void sentinelFetch(`${baseUrl}/settings.electrumStatus`)
       // oxlint-disable-next-line anti-slop/no-unknown-returns -- the network response remains untrusted until the schemas below parse it.
       .then(async (res): Promise<unknown> => (res.ok ? res.json() : null))
       .then((data) => {
@@ -182,7 +184,7 @@ const TorStartResponseSchema = z.object({
 async function requestTorStart(): Promise<number | null> {
   const baseUrl = import.meta.env.VITE_BACKEND_API_URL ?? ''
   try {
-    const res = await fetch(`${baseUrl}/settings.startTor`, {
+    const res = await sentinelFetch(`${baseUrl}/settings.startTor`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
     })
@@ -208,6 +210,64 @@ const profilesQuery = {
 export function useActiveConnectionUsesTor(): boolean {
   const query = useQuery(profilesQuery)
   return query.data?.profiles.find((item) => item.id === query.data.activeId)?.torEnabled === true
+}
+
+export type Liveness = 'connected' | 'disconnected' | 'connecting' | 'unknown'
+
+const LIVENESS_LABELS: Record<Liveness, string> = {
+  connected: 'Connected',
+  disconnected: 'Disconnected',
+  connecting: 'Connecting…',
+  unknown: 'Checking…',
+}
+/** Colour schemes for a connection's status: green when connected, red when not. */
+export const LIVENESS_COLORS: Record<Liveness, string> = {
+  connected: 'green',
+  disconnected: 'red',
+  connecting: 'neutral',
+  unknown: 'neutral',
+}
+
+/**
+ * A saved connection's name, then the live status of the one in use or, for the others, whether
+ * it goes through Tor.
+ */
+export function ConnectionRowContent({
+  nickname,
+  liveness,
+  torEnabled,
+}: {
+  nickname: string
+  /** Null for a connection that isn't in use. */
+  liveness: Liveness | null
+  torEnabled: boolean
+}): JSX.Element {
+  const color = liveness === null ? null : LIVENESS_COLORS[liveness]
+  return (
+    <>
+      <Text as="span" textStyle="label/sm" overflowWrap="anywhere">
+        {nickname}
+      </Text>
+      <HStack as="span" gap={2} mt={1}>
+        {color !== null && <Circle size="8px" bg={`${color}.500`} />}
+        <Text as="span" textStyle="text/xs" color={color === null ? 'neutral.600' : `${color}.700`}>
+          {liveness === null ? (torEnabled ? 'Tor' : 'Direct') : LIVENESS_LABELS[liveness]}
+        </Text>
+      </HStack>
+    </>
+  )
+}
+
+/** The connection in use, as shown under its name: "Connected · host:port (SSL · Tor)". */
+export function connectionSummary(
+  liveness: Liveness,
+  status: { host: string; port: number; protocol: string } | null,
+  torEnabled: boolean,
+): string {
+  const label = LIVENESS_LABELS[liveness]
+  return status
+    ? `${label} · ${status.host}:${status.port} (${status.protocol.toUpperCase()}${torEnabled ? ' · Tor' : ''})`
+    : label
 }
 
 /**
@@ -564,7 +624,15 @@ export function ElectrumSettings(): JSX.Element {
             </Button>
           </Alert>
         ) : (
-          <Spinner aria-label="Loading saved connections" />
+          // The connection form's outline, so the section keeps roughly its size while it loads.
+          <SkeletonRegion label="Loading saved connections">
+            <Stack gap={4} pt={2}>
+              {['40px', '40px', '40px', '24px'].map((height, index) => (
+                <Skeleton key={index} h={height} />
+              ))}
+              <Skeleton h="40px" w="160px" />
+            </Stack>
+          </SkeletonRegion>
         )}
       </Stack>
     )
@@ -573,7 +641,7 @@ export function ElectrumSettings(): JSX.Element {
   const atLimit = profiles.length >= limit
   const isActive = draft.id !== undefined && draft.id === activeId
   // No status (not loaded, or the request failed) is unknown, never "Connected".
-  const liveness =
+  const liveness: Liveness =
     status === null
       ? 'unknown'
       : status.connected
@@ -581,13 +649,7 @@ export function ElectrumSettings(): JSX.Element {
         : status.connecting === true
           ? 'connecting'
           : 'disconnected'
-  const livenessLabel = {
-    connected: 'Connected',
-    disconnected: 'Disconnected',
-    connecting: 'Connecting…',
-    unknown: 'Checking…',
-  }[liveness]
-  const livenessColor = { connected: 'green', disconnected: 'red', connecting: 'neutral', unknown: 'neutral' }[liveness]
+  const livenessColor = LIVENESS_COLORS[liveness]
   const canSubmit =
     (isNew || saved !== undefined) &&
     draft.host.trim() !== '' &&
@@ -712,15 +774,11 @@ export function ElectrumSettings(): JSX.Element {
                   select({ kind: 'saved', profile: item })
                 }}
               >
-                <Text as="span" textStyle="label/sm" overflowWrap="anywhere">
-                  {item.nickname}
-                </Text>
-                <HStack as="span" gap={2} mt={1}>
-                  {live && <Circle size="8px" bg={`${livenessColor}.500`} />}
-                  <Text as="span" textStyle="text/xs" color={live ? `${livenessColor}.700` : 'neutral.600'}>
-                    {live ? livenessLabel : item.torEnabled ? 'Tor' : 'Direct'}
-                  </Text>
-                </HStack>
+                <ConnectionRowContent
+                  nickname={item.nickname}
+                  liveness={live ? liveness : null}
+                  torEnabled={item.torEnabled}
+                />
               </Button>
             )
           })}
@@ -831,11 +889,7 @@ export function ElectrumSettings(): JSX.Element {
                   color={isActive ? `${livenessColor}.700` : 'neutral.600'}
                   overflowWrap="anywhere"
                 >
-                  {!isActive
-                    ? 'Not connected'
-                    : status
-                      ? `${livenessLabel} · ${status.host}:${status.port} (${status.protocol.toUpperCase()}${active?.torEnabled === true ? ' · Tor' : ''})`
-                      : livenessLabel}
+                  {!isActive ? 'Not connected' : connectionSummary(liveness, status, active?.torEnabled === true)}
                 </Text>
               </Stack>
             )}

@@ -7,11 +7,13 @@ import {
   getStatementDocumentTemplates,
 } from './get-statement-templates'
 
+const STATEMENTS_HELP_URL = 'https://help.hoseki.app/bitcoin-control-center/statements/statements-and-hoseki-verified'
+
 export async function renderStatementDocument(documentInput: DocumentInput): Promise<JSX.Element> {
   // NOTE: The fonts are in the public dir at this location:
   const geistDirPath = '/fonts/geist'
   const { CustomStatementDocument, MonthlyStatementDocument } = getStatementDocumentTemplates(pdfRenderer, geistDirPath)
-  const qrCode = await QRCode.toDataURL('https://www.hoseki.app')
+  const qrCode = await QRCode.toDataURL(STATEMENTS_HELP_URL)
 
   switch (documentInput.statement.format) {
     case 'custom':
@@ -33,7 +35,7 @@ export async function renderEnvelopeDocument(
   // NOTE: The fonts are in the public dir at this location:
   const geistDirPath = '/fonts/geist'
   const { EnvelopeDocument } = getStatementDocumentTemplates(pdfRenderer, geistDirPath)
-  const qrCode = await QRCode.toDataURL('https://www.hoseki.app')
+  const qrCode = await QRCode.toDataURL(STATEMENTS_HELP_URL)
 
   const envelopeInput: EnvelopeDocumentInput = {
     watermarkText,

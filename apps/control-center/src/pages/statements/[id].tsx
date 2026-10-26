@@ -13,6 +13,7 @@ import { formatDateRange } from '@hoseki/packages/ui/utils'
 import { ShieldCheckIcon, XIcon } from 'lucide-react'
 import { type RefObject, useEffect, useRef, useState } from 'react'
 import { Link as RouterLink, useLocation, useNavigate } from 'react-router'
+import { StatementPageSkeleton } from '../../components/loading/page-skeletons'
 import { DeleteStatementButton } from '../../components/statements/delete-statement-button'
 import { StatementGenerationModal } from '../../components/statements/statement-generation-modal'
 import { useRenderedStatement } from '../../hooks/use-rendered-statement'
@@ -96,7 +97,7 @@ function StatementDetailsPageContent({ statementId }: { statementId: StatementId
 
   // Wait to confirm a cached "generating" status too, rather than show the page before generation opens.
   if (isLoading || (statement.status === 'pending' && !isFetchedAfterMount && !justGenerated)) {
-    return <Spinner fullPage size="xl" />
+    return <StatementPageSkeleton />
   }
 
   return (
@@ -309,11 +310,16 @@ function LearnMore() {
     <Box bg="neutral.50" p={4} borderRadius="md">
       <HStack spacing={3}>
         <ShieldCheckIcon size={20} />
-        <Text fontWeight="medium">Your Proof is Private & Secure</Text>
+        <Text fontWeight="medium">Self-custodial Bitcoin statements</Text>
       </HStack>
       <Text ml={7} color="neutral.900">
-        This proof securely verifies your bitcoin holdings. Learn more in our{' '}
-        <Link href="https://help.hoseki.app" isExternal textDecoration="underline" fontWeight="medium">
+        Learn more in our{' '}
+        <Link
+          href="https://help.hoseki.app/bitcoin-control-center/statements/statements-and-hoseki-verified"
+          isExternal
+          textDecoration="underline"
+          fontWeight="medium"
+        >
           Help Center
         </Link>
         .

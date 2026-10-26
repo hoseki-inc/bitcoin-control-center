@@ -1,6 +1,4 @@
 import { Button, Stack, Text } from '@chakra-ui/react'
-import { SingleSigAccount } from '@hoseki/packages/bitcoin'
-import { Alert } from '@hoseki/packages/ui/design-system'
 // Lottie runs animation expressions with eval: only render bundled animations.
 import Lottie from 'lottie-react'
 import type { Dispatch, SetStateAction } from 'react'
@@ -25,11 +23,10 @@ export function TrezorConfirm({
   onContinue: () => void
   onCancel: () => void
 }): JSX.Element {
+  const model = trezorAccount.trezorFeatures?.model
   return (
     <>
-      <FloatingTrezorImage
-        modelName={isTrezorModel(trezorAccount.trezorFeatures.model) ? trezorAccount.trezorFeatures.model : 'One'}
-      />
+      <FloatingTrezorImage modelName={model != null && isTrezorModel(model) ? model : 'One'} />
 
       <Stack gap={4} alignItems="center">
         <Lottie
@@ -67,13 +64,6 @@ export function TrezorConfirm({
         />
       </AnimatedPopInSingleBox>
 
-      {isTaprootAccount(trezorAccount.wallet.rawInput) && (
-        <Alert status="error" rounded="md" title="Taproot account detected." mt={4}>
-          Trezor devices do not support message signing for Taproot addresses, so you will not be able to add a claim
-          for this account. Choose another account type instead.
-        </Alert>
-      )}
-
       <WizardFooter
         leftButton={
           <Button variant="outline" onClick={onCancel}>
@@ -87,11 +77,5 @@ export function TrezorConfirm({
         }
       />
     </>
-  )
-}
-
-function isTaprootAccount(trezorRawInput: string): boolean {
-  return SingleSigAccount.fromDescriptor(trezorRawInput).isOkAnd(
-    (singleSigAccount) => singleSigAccount.scriptType === 'p2tr',
   )
 }

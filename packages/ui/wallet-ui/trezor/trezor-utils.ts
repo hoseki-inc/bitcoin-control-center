@@ -1,6 +1,6 @@
-import { type Features, PROTO } from '@trezor/connect-web'
+import type { Features } from '@trezor/connect-web'
 
-export function getTrezorDisplayName(features: Features): string {
+export function getTrezorDisplayName(features: Pick<Features, 'model' | 'label'>): string {
   let displayName = 'Trezor'
   if (features.model) {
     displayName += ` ${features.model}`
@@ -16,24 +16,26 @@ export function isTrezorModel(model: string): model is TrezorModel {
   return trezorModels.some((candidate) => candidate === model)
 }
 export type TrezorModel = (typeof trezorModels)[number]
+
 /**
  * @see https://github.com/trezor/trezor-firmware/blob/main/python/src/trezorlib/models.py
  * @see https://docs.trezor.io/trezor-suite/misc/device-naming.html
  */
-export function getTrezorModel(model: Features['internal_model']): TrezorModel | null {
+export function getTrezorModel(model: string | null | undefined): TrezorModel | null {
+  // Connect 10 exports PROTO only as a type, so match the wire values directly.
   switch (model) {
-    case PROTO.DeviceModelInternal.T1B1:
+    case 'T1B1':
       return 'One'
-    case PROTO.DeviceModelInternal.T2T1:
+    case 'T2T1':
       return 'T'
-    case PROTO.DeviceModelInternal.T2B1:
+    case 'T2B1':
       return 'Safe 3 (Bitcoin-only)'
-    case PROTO.DeviceModelInternal.T3B1:
+    case 'T3B1':
       return 'Safe 3'
-    case PROTO.DeviceModelInternal.T3T1:
+    case 'T3T1':
       return 'Safe 5'
-    case PROTO.DeviceModelInternal.T3W1:
-    case PROTO.DeviceModelInternal.UNKNOWN:
+    case null:
+    case undefined:
     default:
       return null
   }

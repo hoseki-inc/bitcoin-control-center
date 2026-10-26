@@ -1,6 +1,7 @@
 import { Network } from '@hoseki/packages/bitcoin/network'
 import { ElectrumProvider } from '@hoseki/packages/bitcoin/onchain/electrum_provider'
 import { ElectrumClient, type ElectrumClientConfig } from '@hoseki/packages/clients/electrum'
+import { ElectrumTimeoutError } from '@hoseki/packages/clients/electrum/lib/protocol'
 import { Err, Ok, asyncFn } from '@hoseki/packages/result'
 import type { Result } from '@hoseki/packages/result'
 import { eq } from 'drizzle-orm'
@@ -9,6 +10,8 @@ import { type SentinelDb, openDrizzleDatabase } from './db/drizzle'
 import { settings } from './db/schema'
 import { type Env, loadEnv } from './env'
 import { initEncryption, loadCredentialEncryptionKey } from './lib/encrypted'
+import { applyPlatformRequests } from './modules/auth/platform'
+import { AuthService, type PinPlatform } from './modules/auth/service'
 import {
   type ConnectionDetails,
   ConnectionProfileStore,
@@ -18,20 +21,23 @@ import { ControlCenterService } from './modules/control_center/service'
 import { EtfService } from './modules/etf/service'
 import { ExchangeService } from './modules/exchange/service'
 import { ManualService } from './modules/manual/service'
+import { DiscoveryIndexes } from './modules/onchain/discovery-index-store'
 import { DailyRatesService } from './modules/price/daily_rates'
 import { PriceHistoryService } from './modules/price/history'
 import { PriceService, readPriceSettings } from './modules/price/service'
 import { StatementService } from './modules/statements/service'
 import { ReleaseCheckService } from './modules/updates/service'
+import { WalletBalanceService } from './modules/wallet_balances/service'
 
 /**
  * Application context: singleton holding all shared services.
- * Created once on startup. No auth, no per-request scoping - single user.
+ * Created once on startup. Requests are checked against `auth` by the tRPC procedures.
  */
 export interface AppContext {
   env: Env
   logger: Logger
   database: SentinelDb
+  auth: AuthService
   electrumClient: ElectrumClient
   electrumConfig: { host: string; port: number; protocol: 'tcp' | 'ssl' }
   onchainProvider: ElectrumProvider
@@ -39,6 +45,7 @@ export interface AppContext {
   manualService: ManualService
   etfService: EtfService
   controlCenterService: ControlCenterService
+  walletBalanceService: WalletBalanceService
   priceService: PriceService
   priceHistoryService: PriceHistoryService
   statementService: StatementService
@@ -72,7 +79,53 @@ const TOR_CONNECT_TIMEOUT_MS = 60_000
 // Each request crosses several relays (six to an onion service), so allow more than a direct connection.
 const TOR_REQUEST_TIMEOUT_MS = 30_000
 
+/** Development only: slows Electrum the way Tor does, to review loading states. */
+export interface ElectrumLatency {
+  /** Added before each request. */
+  requestMs: number
+  /** Up to this much more per request, chosen at random. */
+  jitterMs: number
+  /** Added before each connection. */
+  connectMs: number
+  /** The share of requests that fail as timeouts, from 0 to 1. */
+  failureRate: number
+}
+
+export function withSimulatedLatency(
+  config: ElectrumClientConfig,
+  latency: ElectrumLatency | undefined,
+): ElectrumClientConfig {
+  if (latency === undefined) {
+    return config
+  }
+  const wait = async (ms: number): Promise<void> =>
+    new Promise((resolve) => {
+      setTimeout(resolve, ms)
+    })
+  const { beforeConnect } = config
+  return {
+    ...config,
+    beforeConnect: async (): Promise<Result<void, Error>> => {
+      // Managed Tor still starts first, as it would without the simulation.
+      const ready = beforeConnect ? await beforeConnect() : Ok(undefined)
+      if (ready.isErr()) {
+        return ready
+      }
+      await wait(latency.connectMs)
+      return Ok(undefined)
+    },
+    beforeRequest: async (method: string): Promise<Result<void, Error>> => {
+      await wait(latency.requestMs + Math.random() * latency.jitterMs)
+      return Math.random() < latency.failureRate
+        ? Err(new ElectrumTimeoutError(`Simulated timeout for ${method}`, false))
+        : Ok(undefined)
+    },
+  }
+}
+
 export interface AppContextOptions {
+  /** Overrides SENTINEL_PIN; the desktop app passes `desktop`. PINs are off unless a platform turns them on. */
+  pin?: PinPlatform
   /** Enabled only by desktop launchers, including the desktop development preview. */
   connectionProfiles?: boolean
   /** Overrides SENTINEL_WAIT_FOR_ELECTRUM. Desktop must keep settings available even when its saved server is offline. */
@@ -81,6 +134,8 @@ export interface AppContextOptions {
   statementSourceSetting?: boolean
   /** The running desktop release, such as `0.6.0:0`. Desktop release builds pass it to check for newer releases. */
   releaseVersion?: string
+  /** Set only by `src/dev.ts`; never by a distribution. */
+  electrumLatency?: ElectrumLatency
   /** Distribution-owned Tor process; Sentinel owns connection policy. */
   tor?: {
     start: () => Promise<{ state: string; message?: string }>
@@ -105,6 +160,9 @@ export const createAppContext = asyncFn(
     // both encrypted credentials and the key needed to decrypt them.
     const credentialKey = await loadCredentialEncryptionKey({ dataDir: env.DATA_DIR, db: database, logger })
     initEncryption(credentialKey.key)
+
+    const auth = new AuthService(database, logger, options.pin ?? env.SENTINEL_PIN ?? null)
+    await applyPlatformRequests(env.DATA_DIR, auth, logger)
 
     const network = env.BITCOIN_NETWORK === 'mainnet' ? Network.Mainnet : Network.Testnet
 
@@ -187,12 +245,15 @@ export const createAppContext = asyncFn(
     const prepared = prepareElectrumConfig(initialConfig, torEnabled)
     // Keep a failed saved Tor configuration offline, including lazy reconnects.
     const electrumClient = new ElectrumClient(
-      prepared.isOk()
-        ? prepared.unwrap()
-        : {
-            ...initialConfig,
-            beforeConnect: async () => Err(prepared.unwrapErr()),
-          },
+      withSimulatedLatency(
+        prepared.isOk()
+          ? prepared.unwrap()
+          : {
+              ...initialConfig,
+              beforeConnect: async () => Err(prepared.unwrapErr()),
+            },
+        options.electrumLatency,
+      ),
     )
 
     // All services retain this provider. Replace its client after a successful
@@ -200,6 +261,7 @@ export const createAppContext = asyncFn(
     const onchainProvider = new ElectrumProvider(network, {
       logger: logger.child({ module: 'electrum-provider' }),
       electrum: electrumClient,
+      discoveryIndexes: new DiscoveryIndexes(database),
     })
 
     const exchangeService = new ExchangeService({
@@ -230,6 +292,7 @@ export const createAppContext = asyncFn(
     })
     const priceHistoryService = new PriceHistoryService({ dailyRatesService, priceService })
 
+    const walletBalanceService = new WalletBalanceService({ db: database, logger, onchainProvider })
     const controlCenterService = new ControlCenterService({
       db: database,
       logger,
@@ -238,6 +301,7 @@ export const createAppContext = asyncFn(
       manualService,
       etfService,
       priceService,
+      walletBalances: walletBalanceService,
     })
 
     const statementService = new StatementService({
@@ -278,7 +342,9 @@ export const createAppContext = asyncFn(
         { protocol: config.protocol, tor: config.proxy !== undefined || config.resolveProxy !== undefined },
         'Reconnecting to Electrum server',
       )
-      const newClient = new ElectrumClient({ requestTimeout: 10_000, ...config })
+      const newClient = new ElectrumClient(
+        withSimulatedLatency({ requestTimeout: 10_000, ...config }, options.electrumLatency),
+      )
       pendingClient = newClient
       try {
         const result = await newClient.connect()
@@ -300,6 +366,8 @@ export const createAppContext = asyncFn(
         ctx.electrumClient = newClient
         ctx.electrumConfig = { host: config.host, port: config.port, protocol: config.protocol }
         onchainProvider.deps.electrum = newClient
+        // Balances from the previous server may not hold on this one.
+        walletBalanceService.invalidateAll()
         previousClient.disconnect()
         logger.info('Electrum connection and settings updated')
         return Ok(undefined)
@@ -315,6 +383,7 @@ export const createAppContext = asyncFn(
       env,
       logger,
       database,
+      auth,
       electrumClient,
       electrumConfig: { host: electrumHost, port: electrumPort, protocol: electrumProtocol },
       onchainProvider,
@@ -322,6 +391,7 @@ export const createAppContext = asyncFn(
       manualService,
       etfService,
       controlCenterService,
+      walletBalanceService,
       priceService,
       priceHistoryService,
       statementService,

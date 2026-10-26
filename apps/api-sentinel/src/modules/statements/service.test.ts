@@ -12,6 +12,7 @@ import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import type { AppContext } from '../../context'
 import { type SentinelDb, openDrizzleDatabase } from '../../db/drizzle'
 import { statements } from '../../db/schema'
+import { AuthService } from '../auth/service'
 import { ControlCenterService } from '../control_center/service'
 import { EtfService } from '../etf/service'
 import { ExchangeService } from '../exchange/service'
@@ -20,6 +21,7 @@ import { DailyRatesService } from '../price/daily_rates'
 import { PriceHistoryService } from '../price/history'
 import { PriceService } from '../price/service'
 import { appRouter } from '../trpc/router'
+import { WalletBalanceService } from '../wallet_balances/service'
 import type { AggregatedTransaction } from './mapper'
 import { StatementMapper } from './mapper'
 import { PriceLoadError, getRequiredRateDates, getStatementPeriods } from './rate_dates'
@@ -328,6 +330,7 @@ function statementCaller(service: StatementService, appLogger: Logger = logger) 
     mempoolApiUrl: 'https://example.invalid',
     settings: () => ({ source: undefined, fallbacks: false }),
   })
+  const walletBalanceService = new WalletBalanceService({ ...deps, onchainProvider })
   const app: AppContext = {
     env: {
       HOST: 'localhost',
@@ -343,6 +346,7 @@ function statementCaller(service: StatementService, appLogger: Logger = logger) 
     },
     logger: appLogger,
     database,
+    auth: new AuthService(database, appLogger, null),
     electrumClient,
     electrumConfig,
     onchainProvider,
@@ -362,7 +366,9 @@ function statementCaller(service: StatementService, appLogger: Logger = logger) 
       manualService,
       etfService,
       priceService,
+      walletBalances: walletBalanceService,
     }),
+    walletBalanceService,
     statementService: service,
     reconnectElectrum: async () => Ok(undefined),
     stopElectrum: () => {

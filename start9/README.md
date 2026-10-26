@@ -34,7 +34,9 @@ Important paths inside the volume include:
   metadata;
 - `/data/secrets/exchange-credentials.key` — the local key used to encrypt saved
   exchange credentials;
-- `/data/start9/config.yaml` — configuration written by the StartOS action.
+- `/data/start9/config.yaml` — configuration written by the StartOS action;
+- `/data/start9/pin.json` — records when the **Set PIN** action last ran. The
+  PIN itself is stored only as a hash in `sentinel.db`.
 
 The database and encryption material belong together. Do not copy, log, or
 publish either one as diagnostic data.
@@ -42,12 +44,13 @@ publish either one as diagnostic data.
 ## Installation and first-run flow
 
 `electrs` and `mempool` are required StartOS dependencies. Electrs should be
-fully synchronized before Bitcoin Control Center is used. No separate initialization task is
-required.
+fully synchronized before Bitcoin Control Center is used. A critical **Set PIN**
+task blocks startup until the owner chooses a 6-digit PIN, on a fresh install
+and on an install updated from a version without PINs.
 
 After the service starts:
 
-1. Open the exported **Web Interface**.
+1. Open the exported **Web Interface** at an `https://` or Tor `.onion` address and enter the PIN.
 2. Add a name under **Settings** if statements should identify their owner.
 3. Add watch-only, exchange, manual, or ETF accounts under **Accounts**.
 4. Allow self-custody accounts to finish synchronizing before evaluating
@@ -85,10 +88,12 @@ not displayed in the StartOS UI.
 | ------------- | ------ | ----------------------- | ------------------------------------------------------------------------- |
 | Web Interface | `3400` | HTTP inside the package | Control Center UI, Sentinel API, health endpoint, and statement downloads |
 
-The interface is exported through a StartOS multi-host binding. Sentinel checks
-the request host and origin but does not add a second application login layer;
-access control and interface exposure are therefore part of the StartOS trust
-boundary.
+The interface is exported through a StartOS multi-host binding. Every API route
+except sign-in and health needs a session started with the PIN, and Sentinel
+accepts the PIN only over HTTPS or a Tor onion address, which Tor encrypts end to
+end. Wrong PINs are delayed: five free tries, then
+30 seconds doubling up to an hour, counted across all devices. Sessions end when
+the tab closes or locks, on Sign out everywhere, and whenever Sentinel restarts.
 
 Sentinel's allowed hosts come from the addresses enabled for this interface in
 StartOS, including public and local IPs, mDNS, Tor, and custom domains. Changing
@@ -98,9 +103,10 @@ until StartOS supplies an enabled address. Host and origin checks remain enabled
 
 ## Actions
 
-| Action    | Availability       | Purpose                           |
-| --------- | ------------------ | --------------------------------- |
-| Configure | Any service status | Set the mempool URL and log level |
+| Action    | Availability       | Purpose                                                        |
+| --------- | ------------------ | -------------------------------------------------------------- |
+| Set PIN   | Any service status | Choose the PIN, or replace a forgotten one; signs everyone out |
+| Configure | Any service status | Set the mempool URL and log level                              |
 
 ## Backups and restore
 
@@ -180,6 +186,6 @@ volumes:
 ports:
   ui: 3400
 dependencies: [electrs, mempool]
-actions: [configure]
+actions: [set-pin, configure]
 bitcoin_network: mainnet
 ```

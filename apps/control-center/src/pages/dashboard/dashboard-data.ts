@@ -1,13 +1,12 @@
 import type { UseQueryResult } from '@tanstack/react-query'
 import { useAutoRefreshExchanges } from '../../hooks/use-auto-refresh-exchanges'
-import { useGetBalancesPerClaimIds } from '../../lib/balances'
+import { type WalletBalancesQuery, useWalletBalances } from '../../lib/wallet-balances'
 import { type RouterInput, type RouterOutput, trpc } from '../../trpc'
 import { getBrowserTimezone } from '../../utils/timezone'
 
 type PortfolioInput = Exclude<RouterInput['portalProve']['controlCenter']['getData'], void>
 type PortfolioData = RouterOutput['portalProve']['controlCenter']['getData']
-export type StoredWalletBalance = RouterOutput['portalProve']['controlCenter']['storedWalletBalances'][number]
-type ListQuery<T> = { data?: T[]; isLoading: boolean }
+type ListQuery<T> = { data?: T[]; isLoading: boolean; refetch: () => Promise<object> }
 
 export interface PortfolioQuery {
   data?: PortfolioData
@@ -27,7 +26,6 @@ export interface DashboardAccounts {
     data?: RouterOutput['portalProve']['retrieveBitcoinPrice']
     isLoading: boolean
   }
-  recordSnapshot: Pick<ReturnType<typeof trpc.portalProve.controlCenter.recordSnapshot.useMutation>, 'mutate'>
 }
 
 /** The data required by the portfolio controller, independent of its transport. */
@@ -37,18 +35,14 @@ export interface DashboardDataSource {
     input: PortfolioInput,
     options: { enabled: boolean; staleTime: number; keepPreviousData: boolean },
   ) => PortfolioQuery
-  useBalances: (
-    ...args: Parameters<typeof useGetBalancesPerClaimIds>
-  ) => Pick<ReturnType<typeof useGetBalancesPerClaimIds>, 'data' | 'balancesFailed' | 'updatedAt'>
-  /** Each wallet's last recorded balance, shown while live balances load or can't be fetched. */
-  useStoredBalances: (input: { claimIds: string[] }, options: { enabled: boolean }) => { data?: StoredWalletBalance[] }
+  /** Each wallet's newest known balance, read without waiting on Electrum. */
+  useWalletBalances: (claimIds: string[], options: { enabled: boolean }) => WalletBalancesQuery
   useAutoRefresh: () => void
   getTimezone: () => string
 }
 
 export const dashboardDataSource: DashboardDataSource = {
   useAccounts: () => ({
-    recordSnapshot: trpc.portalProve.controlCenter.recordSnapshot.useMutation(),
     claimsQuery: trpc.portalProve.registry.claims.list.useQuery({ excludePending: false }),
     exchangeAccountsQuery: trpc.portalProve.exchange.list.useQuery(),
     manualAccountsQuery: trpc.portalProve.manual.list.useQuery(),
@@ -56,8 +50,7 @@ export const dashboardDataSource: DashboardDataSource = {
     btcPriceQuery: trpc.portalProve.retrieveBitcoinPrice.useQuery(),
   }),
   useHistory: (input, options) => trpc.portalProve.controlCenter.getData.useQuery(input, options),
-  useBalances: useGetBalancesPerClaimIds,
-  useStoredBalances: (input, options) => trpc.portalProve.controlCenter.storedWalletBalances.useQuery(input, options),
+  useWalletBalances,
   useAutoRefresh: useAutoRefreshExchanges,
   getTimezone: getBrowserTimezone,
 }

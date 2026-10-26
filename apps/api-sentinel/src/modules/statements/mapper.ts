@@ -33,6 +33,8 @@ export interface AggregatedTransaction {
 
 export interface StatementAccountTransactions {
   displayName: string
+  /** When the wallet's ownership signature challenge completed. Exchange accounts have none. */
+  ownershipProvenAt?: Date
   transactions: AggregatedTransaction[]
 }
 
@@ -230,7 +232,9 @@ export class StatementMapper {
       provider: dailyRates.source,
     }
 
-    for (const { displayName: accountName, transactions: accountTxs } of Object.values(transactionMap)) {
+    for (const { displayName: accountName, ownershipProvenAt, transactions: accountTxs } of Object.values(
+      transactionMap,
+    )) {
       let currentBalance = 0n
       let openingBalance = 0n
       let moneyIn: Amount = {
@@ -307,6 +311,7 @@ export class StatementMapper {
 
       const balanceEntry: BalanceEntry = {
         displayName: accountName,
+        ...(ownershipProvenAt !== undefined && { ownershipProvenAt }),
         openingBalance: {
           sats: openingBalance,
           quoteValue: convertBtcToQuote(openingBalance, openingRate.close),

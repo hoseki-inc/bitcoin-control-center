@@ -119,7 +119,8 @@ it.each(['file', 'database'] as const)(
       // Upgrading adds the statement counter, which starts from the highest existing number, a
       // transaction source on statements, unknown for those made before it, and an empty record of
       // price history downloads. Saved prices are now kept by source; those saved before, and the
-      // lookups made for them, are dropped, since they were only for statements' activity days.
+      // lookups made for them, are dropped, since they were only for statements' activity days. It also
+      // adds the owner's profile, with no PIN until one is set.
       const upgradedState = await databaseState(upgraded)
       const statementsSql = (state: typeof before): string | null | undefined =>
         state.schema.find((row) => row.name === 'statements')?.sql
@@ -129,7 +130,7 @@ it.each(['file', 'database'] as const)(
           `, \`tx_source\` text CONSTRAINT "statements_tx_source_check" CHECK("tx_source" IN ('electrum', 'node_mempool', 'public_mempool')))`,
         ),
       )
-      const changed = ['statement_counter', 'btc_quote_cache', 'btc_quote_lookups', 'btc_quote_downloads']
+      const changed = ['statement_counter', 'btc_quote_cache', 'btc_quote_lookups', 'btc_quote_downloads', 'profiles']
       expect({
         schema: upgradedState.schema
           .filter((row) => !changed.includes(row.tbl_name))
@@ -156,6 +157,9 @@ it.each(['file', 'database'] as const)(
       expect(upgradedState.schema.filter((row) => row.tbl_name === 'btc_quote_lookups')).toEqual([])
       await expect(upgraded.all(sql`SELECT * FROM btc_quote_cache`)).resolves.toEqual([])
       await expect(upgraded.all(sql`SELECT * FROM btc_quote_downloads`)).resolves.toEqual([])
+      await expect(upgraded.all(sql`SELECT id, role, pin_hash FROM profiles`)).resolves.toEqual([
+        { id: 'owner', role: 'owner', pin_hash: null },
+      ])
       const journal = await upgraded.all<{ id: number; hash: string; created_at: number; name: string }>(
         sql`SELECT * FROM _migrations ORDER BY id`,
       )
@@ -237,6 +241,7 @@ it.each(['legacy', 'drizzle'] as const)(
         'btc_quote_cache',
         'statement_counter',
         'btc_quote_downloads',
+        'profiles',
       ])
       expect({
         schema: after.schema
