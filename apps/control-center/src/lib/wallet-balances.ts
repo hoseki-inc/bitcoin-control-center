@@ -1,4 +1,8 @@
+import { parseUnknown } from '@hoseki/packages/result/lib/parse'
+import { type QueryClient, useQueryClient } from '@tanstack/react-query'
+import { getQueryKey } from '@trpc/react-query'
 import { useEffect, useRef } from 'react'
+import { z } from 'zod'
 import { type RouterOutput, trpc } from '../trpc'
 
 export type WalletBalanceRow = RouterOutput['portalProve']['controlCenter']['walletBalances'][number]
@@ -13,7 +17,10 @@ export interface WalletBalanceSummary {
   /** Each wallet's balance in satoshis, or null while it is unknown. */
   balances: Map<string, number | null>
   state: WalletBalanceState
-  /** While a wallet can't be reached, when the oldest balance shown was current. */
+  /**
+   * While a wallet can't be reached, when every wallet shown last synced (the oldest balance's time),
+   * or null if one never has.
+   */
   asOf: Date | null
   syncingIds: string[]
   failedIds: string[]
@@ -76,7 +83,8 @@ export function summarizeWalletBalances(
   return {
     balances,
     state,
-    asOf: state === 'stale' && shownTimes.length > 0 ? new Date(Math.min(...shownTimes)) : null,
+    // A wallet that has never synced means there was no sync of them all to name a time for.
+    asOf: state === 'stale' && shownTimes.length === ids.length ? new Date(Math.min(...shownTimes)) : null,
     syncingIds,
     failedIds,
     totalSats,
@@ -105,12 +113,58 @@ export interface WalletBalancesQuery {
   isError: boolean
 }
 
+const PortfolioBalanceTimesSchema = z.object({ walletBalancesAsOf: z.record(z.string(), z.string().nullable()) })
+
+/**
+ * The wallets whose balance in `rows` is newer than the one a portfolio read counted, as a key that
+ * changes with each newer balance, or null when the read is up to date.
+ */
+export function newerWalletBalancesKey(
+  rows: readonly WalletBalanceRow[],
+  counted: Readonly<Record<string, string | null>>,
+): string | null {
+  const newer = rows.filter(({ accountId, asOf }) => {
+    if (asOf === null || !Object.hasOwn(counted, accountId)) {
+      return false
+    }
+    const countedAsOf = counted[accountId] ?? null
+    return countedAsOf === null || Date.parse(asOf) > Date.parse(countedAsOf)
+  })
+  return newer.length === 0 ? null : newer.map(({ accountId, asOf }) => `${accountId}@${asOf}`).join(',')
+}
+
+/**
+ * Refetches each settled portfolio read whose total counted an older wallet balance than `rows` shows,
+ * such as one Sentinel answered from a snapshot while a scan finished. Each read is refetched once per
+ * newer balance, so a balance Sentinel can't count yet doesn't refetch it again and again.
+ */
+export function refetchPortfolioWhenBehind(
+  queryClient: QueryClient,
+  rows: readonly WalletBalanceRow[],
+  refetched: Map<string, string>,
+): void {
+  for (const query of queryClient
+    .getQueryCache()
+    .findAll({ queryKey: getQueryKey(trpc.portalProve.controlCenter.getData) })) {
+    if (query.state.fetchStatus !== 'idle') {
+      continue
+    }
+    const counted = parseUnknown(PortfolioBalanceTimesSchema, query.state.data)
+    const key = counted.isOk() ? newerWalletBalancesKey(rows, counted.unwrap().walletBalancesAsOf) : null
+    if (key === null || refetched.get(query.queryHash) === key) {
+      continue
+    }
+    refetched.set(query.queryHash, key)
+    void queryClient.invalidateQueries({ queryKey: query.queryKey, exact: true })
+  }
+}
+
 /**
  * The newest known balance of each wallet, read without waiting on Electrum; Sentinel fetches
  * newer ones in the background and this polls until they arrive.
  */
 export function useWalletBalances(claimIds: string[], { enabled }: { enabled: boolean }): WalletBalancesQuery {
-  const utils = trpc.useUtils()
+  const queryClient = useQueryClient()
   const query = trpc.portalProve.controlCenter.walletBalances.useQuery(
     { claimIds },
     {
@@ -120,18 +174,20 @@ export function useWalletBalances(claimIds: string[], { enabled }: { enabled: bo
     },
   )
 
-  // The portfolio total and history are built from these balances, so refresh them when one gets newer.
-  const newestAsOf = Math.max(0, ...(query.data ?? []).map((row) => (row.asOf === null ? 0 : Date.parse(row.asOf))))
-  const seenAsOf = useRef<number | null>(null)
+  // The portfolio total and history are built from these balances, so a portfolio read that counted
+  // older ones is read again, including one still loading when a scan finished.
+  const rows = query.data
+  const refetched = useRef(new Map<string, string>())
   useEffect(() => {
-    if (newestAsOf === 0) {
+    if (rows === undefined) {
       return
     }
-    if (seenAsOf.current !== null && newestAsOf > seenAsOf.current) {
-      void utils.portalProve.controlCenter.getData.invalidate()
+    const check = (): void => {
+      refetchPortfolioWhenBehind(queryClient, rows, refetched.current)
     }
-    seenAsOf.current = newestAsOf
-  }, [newestAsOf, utils])
+    check()
+    return queryClient.getQueryCache().subscribe(check)
+  }, [rows, queryClient])
 
   return { rows: query.data, isError: query.isError }
 }

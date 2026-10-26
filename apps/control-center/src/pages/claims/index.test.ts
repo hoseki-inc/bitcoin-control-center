@@ -182,6 +182,17 @@ describe('Accounts page', () => {
     expect(text).toContain('Last synced')
   })
 
+  it("says Electrum can't be reached while a wallet that has never synced counts as empty", () => {
+    const text = renderPage({
+      claims: [wallet],
+      walletRows: [walletRow({ balanceSats: null, asOf: null, failed: true, failure: 'unreachable' })],
+    })
+    expect(text).toContain('0.00000000 BTC')
+    // Static markup escapes the apostrophe.
+    expect(text).toContain('t reach Electrum')
+    expect(text).not.toContain('Last synced')
+  })
+
   it('holds the total back while an exchange balance has not been fetched yet', () => {
     const exchange: ExchangeAccountDto = {
       id: 'exchange-1',

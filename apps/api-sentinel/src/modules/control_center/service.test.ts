@@ -461,6 +461,7 @@ describe('history balance reuse', () => {
 
       const data = (await harness.service.getData({ timeRange: '90d' })).unwrap()
       expect(data.currentTotalBalance).toBe('150')
+      expect(data.walletBalancesAsOf).toEqual({ [accountId]: '2020-01-03T09:00:00.000Z' })
       expect(walletBalances.getStatus(accountId).syncing).toBe(true)
 
       scan.resolve(Ok(new IndexMap([[account, 175n]])))
@@ -471,6 +472,10 @@ describe('history balance reuse', () => {
       expect(harness.provider.getConfirmedAccountBalances).toHaveBeenCalledTimes(1)
       const refreshed = (await harness.service.getData({ timeRange: '90d' })).unwrap()
       expect(refreshed.currentTotalBalance).toBe('175')
+      // The same time pages read from walletBalances, so they know this total includes the new balance.
+      const [reading] = await walletBalances.readBalances([accountId])
+      expect(refreshed.walletBalancesAsOf).toEqual({ [accountId]: reading?.asOf })
+      expect(reading?.asOf).not.toBe('2020-01-03T09:00:00.000Z')
       expect(harness.provider.getConfirmedAccountBalances).toHaveBeenCalledTimes(1)
     })
   })

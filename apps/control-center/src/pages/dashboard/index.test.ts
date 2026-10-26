@@ -51,6 +51,7 @@ const mocks = vi.hoisted(() => {
     historySyncedAccountIds: Array<string>(),
     historyRefreshingAccountIds: Array<string>(),
     historyFailedAccountIds: Array<string>(),
+    walletBalancesAsOf: {},
   }
   return {
     base,
@@ -1276,7 +1277,7 @@ describe('range summary', () => {
     })
   })
 
-  it('counts a wallet that has never synced as empty, and never says "Synced"', async () => {
+  it('counts a wallet that has never synced as empty, saying Electrum can\'t be reached rather than "Synced"', async () => {
     await withTestSetup(async () => {
       setUpOutage()
       mocks.balances = new Map()
@@ -1285,11 +1286,11 @@ describe('range summary', () => {
       await renderHistory([['2026-09-01', 150_000_000]], 0)
       expect(text()).toContain('0.00000000BTC')
       expect(mocks.sidebar.mock.lastCall?.[0].balances.get('re_clmx_wallet')?.current.toString()).toBe('0')
-      expect(container.querySelector('output')?.textContent).toBe('')
+      expect(container.querySelector('output')?.textContent).toBe("Can't reach Electrum")
     })
   })
 
-  it('says when the oldest balance shown synced, leaving out wallets that never have', async () => {
+  it('names no last sync while a wallet in view never has, and the oldest once all have', async () => {
     await withTestSetup(async () => {
       setUpOutage()
       mocks.claims = [
@@ -1304,7 +1305,7 @@ describe('range summary', () => {
         { accountId: 're_clmx_older', balanceSats: '50000000', timestamp: '2026-09-05T07:00:00.000Z' },
       ]
       await renderHistory([['2026-09-01', 150_000_000]], 0)
-      expect(container.querySelector('output')?.textContent).toContain('Last synced 5 hours ago')
+      expect(container.querySelector('output')?.textContent).toBe("Can't reach Electrum")
       expect(text()).toContain('2.00000000BTC')
       expect(mocks.sidebar.mock.lastCall?.[0].balances.get('re_clmx_new')?.current.toString()).toBe('0')
       // Only the wallets in view count.

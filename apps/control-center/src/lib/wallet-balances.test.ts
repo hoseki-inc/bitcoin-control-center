@@ -1,5 +1,14 @@
-import { describe, expect, it } from 'vitest'
-import { type WalletBalanceRow, summarizeWalletBalances, walletBalancesRefetchInterval } from './wallet-balances'
+import { QueryClient, QueryObserver } from '@tanstack/react-query'
+import { getQueryKey } from '@trpc/react-query'
+import { describe, expect, it, onTestFinished, vi } from 'vitest'
+import { trpc } from '../trpc'
+import {
+  type WalletBalanceRow,
+  newerWalletBalancesKey,
+  refetchPortfolioWhenBehind,
+  summarizeWalletBalances,
+  walletBalancesRefetchInterval,
+} from './wallet-balances'
 
 const now = Date.parse('2026-10-21T12:00:00.000Z')
 const minutesAgo = (minutes: number): string => new Date(now - minutes * 60_000).toISOString()
@@ -46,7 +55,7 @@ describe('summarizeWalletBalances', () => {
     expect(summarizeWalletBalances(['a', 'missing'], [row('a')], now).totalSats).toBeNull()
   })
 
-  it('keeps older balances while a wallet is unreachable and says how old the oldest is', () => {
+  it('keeps older balances while a wallet is unreachable and dates them by the oldest, once every wallet has synced', () => {
     const summary = summarizeWalletBalances(
       ['a', 'b', 'c'],
       [
@@ -57,9 +66,16 @@ describe('summarizeWalletBalances', () => {
       now,
     )
     expect(summary).toMatchObject({ state: 'stale', totalSats: 200_000, failedIds: ['b', 'c'] })
-    expect(summary.asOf?.toISOString()).toBe(minutesAgo(40))
-    // A wallet that never synced counts as empty once it can't be reached.
+    // A wallet that never synced counts as empty once it can't be reached, and leaves no last sync of them all.
     expect(summary.balances.get('c')).toBe(0)
+    expect(summary.asOf).toBeNull()
+
+    const synced = summarizeWalletBalances(
+      ['a', 'b'],
+      [row('a', { asOf: minutesAgo(3) }), row('b', { failed: true, asOf: minutesAgo(40) })],
+      now,
+    )
+    expect(synced.asOf?.toISOString()).toBe(minutesAgo(40))
   })
 
   it('ignores wallets outside the view', () => {
@@ -76,5 +92,64 @@ describe('walletBalancesRefetchInterval', () => {
     expect(walletBalancesRefetchInterval([row('a', { failed: true })])).toBe(10_000)
     // A read that failed keeps trying, so the page isn't left waiting.
     expect(walletBalancesRefetchInterval(undefined, true)).toBe(10_000)
+  })
+})
+
+describe('newerWalletBalancesKey', () => {
+  it('names wallets whose balance is newer than the one counted, and nothing once it is counted', () => {
+    const rows = [row('a', { asOf: minutesAgo(1) }), row('b', { asOf: minutesAgo(5) })]
+    expect(newerWalletBalancesKey(rows, { a: minutesAgo(5), b: minutesAgo(5) })).toBe(`a@${minutesAgo(1)}`)
+    expect(newerWalletBalancesKey(rows, { a: minutesAgo(1), b: minutesAgo(5) })).toBeNull()
+    // A wallet first counted as empty, and wallets the read doesn't include.
+    expect(newerWalletBalancesKey(rows, { b: null })).toBe(`b@${minutesAgo(5)}`)
+    expect(newerWalletBalancesKey([row('a', { asOf: null })], { a: null })).toBeNull()
+  })
+})
+
+describe('refetchPortfolioWhenBehind', () => {
+  it('reads the portfolio again when a scan finishes during its first read, once per newer balance', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    onTestFinished(() => {
+      queryClient.clear()
+    })
+    const pending: Array<(asOf: string) => void> = []
+    const read = vi.fn(
+      async () =>
+        new Promise<{ walletBalancesAsOf: Record<string, string> }>((resolve) => {
+          pending.push((asOf) => {
+            resolve({ walletBalancesAsOf: { a: asOf } })
+          })
+        }),
+    )
+    const observer = new QueryObserver(queryClient, {
+      queryKey: getQueryKey(trpc.portalProve.controlCenter.getData, { timeRange: '30d' }, 'query'),
+      queryFn: read,
+    })
+    onTestFinished(observer.subscribe(() => undefined))
+    await vi.waitFor(() => {
+      expect(read).toHaveBeenCalledTimes(1)
+    })
+
+    // The scan finishes while the first read, which counted the snapshot, is still loading.
+    const refetched = new Map<string, string>()
+    const rows = [row('a', { asOf: minutesAgo(1) })]
+    onTestFinished(
+      queryClient.getQueryCache().subscribe(() => {
+        refetchPortfolioWhenBehind(queryClient, rows, refetched)
+      }),
+    )
+    refetchPortfolioWhenBehind(queryClient, rows, refetched)
+    pending.shift()?.(minutesAgo(10))
+    await vi.waitFor(() => {
+      expect(read).toHaveBeenCalledTimes(2)
+    })
+
+    // Sentinel still counts the snapshot, such as when recording the new balance failed: no loop.
+    pending.shift()?.(minutesAgo(10))
+    await vi.waitFor(() => {
+      expect(observer.getCurrentResult().fetchStatus).toBe('idle')
+    })
+    refetchPortfolioWhenBehind(queryClient, rows, refetched)
+    expect(read).toHaveBeenCalledTimes(2)
   })
 })

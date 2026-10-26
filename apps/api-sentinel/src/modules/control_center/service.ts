@@ -49,6 +49,12 @@ export interface ControlCenterData {
   historySyncedAccountIds: string[]
   historyRefreshingAccountIds: string[]
   historyFailedAccountIds: string[]
+  /**
+   * For each wallet, when the balance counted in `currentTotalBalance` was current, or null for one
+   * counted as empty because it has never been scanned. Pages compare it with `walletBalances` to
+   * notice a newer balance.
+   */
+  walletBalancesAsOf: Record<string, string | null>
 }
 
 interface BalanceSnapshotRow {
@@ -135,6 +141,7 @@ export class ControlCenterService {
       // last minute, or else the last recorded one while a fresh one is fetched in the background.
       // Only a wallet that has never been scanned waits, sharing the scan with any other caller.
       const balancesByAccountId = new Map<string, bigint>()
+      const balancesAsOf = new Map<string, string>()
       const balanceTips = new Map<string, Block>()
       const neverScannedIds: string[] = []
       const staleIds: string[] = []
@@ -142,6 +149,7 @@ export class ControlCenterService {
         const { live } = this.walletBalances.getStatus(row.id)
         if (live !== null && Date.now() - live.fetchedAt.getTime() <= WALLET_BALANCE_MAX_AGE_MS) {
           balancesByAccountId.set(row.id, live.balanceSats)
+          balancesAsOf.set(row.id, live.fetchedAt.toISOString())
           if (live.tip !== null) {
             balanceTips.set(row.id, live.tip)
           }
@@ -156,6 +164,7 @@ export class ControlCenterService {
           neverScannedIds.push(row.id)
         } else {
           balancesByAccountId.set(row.id, recorded.balanceSats)
+          balancesAsOf.set(row.id, recorded.timestamp)
           staleIds.push(row.id)
         }
       }
@@ -168,6 +177,7 @@ export class ControlCenterService {
           const result = scanned.get(id)
           if (result?.isOk() === true) {
             balancesByAccountId.set(id, result.unwrap().balanceSats)
+            balancesAsOf.set(id, result.unwrap().fetchedAt.toISOString())
             const { tip } = result.unwrap()
             if (tip !== null) {
               balanceTips.set(id, tip)
@@ -411,6 +421,7 @@ export class ControlCenterService {
         historySyncedAccountIds: historyStatus.historySyncedAccountIds,
         historyRefreshingAccountIds: historyStatus.historyRefreshingAccountIds,
         historyFailedAccountIds: historyStatus.historyFailedAccountIds,
+        walletBalancesAsOf: Object.fromEntries(accountRows.map(({ id }) => [id, balancesAsOf.get(id) ?? null])),
       })
     },
   )

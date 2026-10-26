@@ -16,7 +16,7 @@ export function SyncIndicator({
   hasError = false,
 }: {
   walletBalanceState: WalletBalanceState
-  /** While Electrum is unreachable, when the oldest wallet balance shown was current. */
+  /** While Electrum is unreachable, when every wallet shown last synced, or null if one never has. */
   walletBalancesAsOf: Date | null
   historySyncingCount?: number
   /** The history for a newly chosen range is still loading. */
@@ -74,6 +74,18 @@ export function SyncIndicator({
           Last synced {/* The relative time keeps changing; a fixed time is read instead, so it isn't re-announced. */}
           <span aria-hidden="true">{formatDistanceToNowStrict(shownAsOfMs, { addSuffix: true })}</span>
           <VisuallyHidden>{format(shownAsOfMs, 'PPp')}</VisuallyHidden>
+        </Text>
+      </Flex>
+    )
+  }
+  // A wallet that has never synced counts as empty while it can't be scanned; say why, so the 0 isn't
+  // taken as its balance.
+  if (walletBalanceState === 'stale') {
+    return (
+      <Flex align="center" gap={1.5}>
+        <Box w="6px" h="6px" borderRadius="full" bg="warning.400" aria-hidden="true" />
+        <Text textStyle="text/sm" color="warning.700">
+          Can&apos;t reach Electrum
         </Text>
       </Flex>
     )

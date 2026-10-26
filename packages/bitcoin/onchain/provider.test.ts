@@ -1,7 +1,7 @@
 import { type AsyncResult, Result } from '@hoseki/packages/result'
 import pino from 'pino'
 import { describe, expect, it, vi } from 'vitest'
-import { type IndexMap, IndexSet } from '../../collection'
+import { IndexMap, IndexSet } from '../../collection'
 import { Wallets } from '../../testing'
 import type { Address } from '../address'
 import { Network } from '../network'
@@ -15,8 +15,12 @@ class FakeProvider extends OnchainBitcoinProvider {
   public checked = 0
   private readonly used: Set<string>
 
-  public constructor(used: { receive: number[]; change: number[] }, discoveryIndexes?: DiscoveryIndexStore) {
-    super(Network.Mainnet, { logger: pino({ level: 'silent' }), discoveryIndexes })
+  public constructor(
+    used: { receive: number[]; change: number[] },
+    discoveryIndexes?: DiscoveryIndexStore,
+    logger = pino({ level: 'silent' }),
+  ) {
+    super(Network.Mainnet, { logger, discoveryIndexes })
     this.used = new Set([
       ...used.receive.map((index) => account.receiveAddress(index, Network.Mainnet).toString()),
       ...used.change.map((index) => account.changeAddress(index, Network.Mainnet).toString()),
@@ -118,5 +122,38 @@ describe('account discovery', () => {
     )
     expect((await provider.discoverAccount(account)).unwrapErr().message).toBe('Electrum unreachable')
     expect(saved.save).not.toHaveBeenCalled()
+  })
+})
+
+describe('provider logs', () => {
+  it('never include the descriptor or its extended key, even at Trace', async () => {
+    const lines: string[] = []
+    const logger = pino(
+      { level: 'trace' },
+      {
+        write: (line: string): void => {
+          lines.push(line)
+        },
+      },
+    )
+    const provider = new FakeProvider(wallet, store(found), logger)
+    vi.spyOn(provider, 'getConfirmedAddressBalances').mockReturnValue(
+      Result.fromPromise(Promise.resolve(new IndexMap<Address, bigint>())),
+    )
+    // oxlint-disable-next-line require-yield -- an address without transactions
+    vi.spyOn(provider, 'getTransactionEntries').mockImplementation(async function* () {})
+
+    await provider.getConfirmedAccountBalances(new IndexSet([account]))
+    await provider.getTransactionEntriesByAccount(account)
+    await provider.getTransactionEntriesByAddress(account.receiveAddress(0, Network.Mainnet))
+
+    const descriptor = account.toString()
+    const extendedKey = /[xyzt]pub[1-9A-HJ-NP-Za-km-z]+/.exec(descriptor)?.[0]
+    expect(extendedKey).toBeDefined()
+    expect(lines.length).toBeGreaterThan(0)
+    for (const line of lines) {
+      expect(line).not.toContain(descriptor)
+      expect(line).not.toContain(extendedKey)
+    }
   })
 })
