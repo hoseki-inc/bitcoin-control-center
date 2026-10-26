@@ -1,5 +1,5 @@
 import { Spinner as ChakraSpinner, Flex, type SpinnerProps } from '@chakra-ui/react'
-import { useEffect, useState } from 'react'
+import { useDelayedFlag } from './loading/use-delayed-flag'
 
 export function Spinner({
   fullPage,
@@ -7,21 +7,8 @@ export function Spinner({
   isLazy = false,
   ...props
 }: { fullPage?: boolean; centered?: boolean; isLazy?: boolean } & SpinnerProps): JSX.Element {
-  const [showSpinner, setShowSpinner] = useState(false)
-
-  useEffect(() => {
-    if (!isLazy) {
-      setShowSpinner(true)
-      return
-    }
-
-    const timer = setTimeout(() => {
-      setShowSpinner(true)
-    }, 200)
-    return () => {
-      clearTimeout(timer)
-    }
-  }, [isLazy])
+  const lazyShown = useDelayedFlag(isLazy, 200)
+  const showSpinner = !isLazy || lazyShown
 
   const spinner = <ChakraSpinner visibility={showSpinner ? 'visible' : 'hidden'} {...props} />
 

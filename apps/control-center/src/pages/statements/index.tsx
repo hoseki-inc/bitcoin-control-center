@@ -1,11 +1,11 @@
-import { Box, Button, Flex, IconButton, Stack, chakra } from '@chakra-ui/react'
-import { ErrorBanner, Spinner } from '@hoseki/packages/ui/design-system'
+import { Box, Button, Flex, IconButton, Skeleton, Stack, chakra } from '@chakra-ui/react'
+import { ErrorBanner, SkeletonRegion } from '@hoseki/packages/ui/design-system'
 import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
 import { Grid2X2Icon, ListIcon } from 'lucide-react'
 import { useState } from 'react'
 import { Link as RouterLink } from 'react-router'
 import { StatementsEmptyState } from '../../components/statements/statements-empty-state'
-import { StatementsGrid } from '../../components/statements/statements-grid'
+import { StatementsGrid, StatementsGridSkeleton } from '../../components/statements/statements-grid'
 import { StatementsTable } from '../../components/statements/statements-table'
 import { refetchWhileGenerating } from '../../lib/statement-polling'
 import { trpc } from '../../trpc'
@@ -22,8 +22,14 @@ export function StatementListPage(): JSX.Element {
   if (isLoading) {
     return (
       <Box mt={8}>
-        <Header showGenerateButton={false} />
-        <Spinner fullPage size="xl" />
+        {/* The button keeps its place, so the heading doesn't move when it appears. */}
+        <Header showGenerateButton reserveGenerateButton />
+        <SkeletonRegion label="Loading statements">
+          <Flex justify="flex-end" mb={2}>
+            <Skeleton h="40px" w="84px" />
+          </Flex>
+          <StatementsGridSkeleton />
+        </SkeletonRegion>
       </Box>
     )
   }
@@ -92,10 +98,13 @@ export function StatementListPage(): JSX.Element {
 
 function Header({
   showGenerateButton,
+  reserveGenerateButton = false,
   hideDivider = false,
   descriptionVersion = 'default',
 }: {
   showGenerateButton: boolean
+  /** Hold the button's place without showing it, while the statements load. */
+  reserveGenerateButton?: boolean
   hideDivider?: boolean
   descriptionVersion?: 'default' | 'empty-state'
 }): JSX.Element {
@@ -114,7 +123,13 @@ function Header({
       >
         <PageHeading title="Statements" description={description} flexGrow={1} />
         {showGenerateButton && (
-          <Button as={RouterLink} to="/statements/create" state={{ returnTo: '/statements' }} w="fit-content">
+          <Button
+            as={RouterLink}
+            to="/statements/create"
+            state={{ returnTo: '/statements' }}
+            w="fit-content"
+            visibility={reserveGenerateButton ? 'hidden' : undefined}
+          >
             Generate Statement
           </Button>
         )}

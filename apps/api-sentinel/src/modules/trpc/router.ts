@@ -435,44 +435,21 @@ const controlCenterRouter = t.router({
       return result.unwrap()
     }),
 
-  storedWalletBalances: protectedProcedure
-    .input(z.object({ claimIds: z.array(z.string()) }))
-    .query(async ({ ctx, input }) => ctx.app.controlCenterService.getStoredWalletBalances(input.claimIds)),
-
-  recordSnapshot: protectedProcedure.mutation(async ({ ctx }) => {
-    const rows = await ctx.app.database
-      .select({ id: accountTable.id, descriptor: accountTable.descriptor })
-      .from(accountTable)
-      .where(isNull(accountTable.deletedAt))
-
-    const accountSet = new IndexSet<Account>()
-    const idMap = new Map<string, string>() // descriptor → account id
-
-    for (const row of rows) {
-      const parsed = Account.fromDescriptor(row.descriptor)
-      if (parsed.isOk()) {
-        accountSet.add(parsed.unwrap())
-        idMap.set(row.descriptor, row.id)
-      }
-    }
-
-    if (accountSet.size === 0) {
-      return
-    }
-
-    const balancesResult = await ctx.app.onchainProvider.getConfirmedAccountBalances(accountSet)
-    if (balancesResult.isErr()) {
-      return
-    }
-
-    const now = new Date().toISOString()
-    for (const [account, balance] of balancesResult.unwrap()) {
-      const accountId = idMap.get(account.toString())
-      if (accountId != null && accountId !== '') {
-        await ctx.app.controlCenterService.recordAccountSnapshot(accountId, balance.toString(), now)
-      }
-    }
-  }),
+  /**
+   * Each wallet's newest known balance and whether a newer one is being fetched. Never waits on
+   * Electrum: out-of-date wallets start a scan, and pages poll while any wallet is syncing.
+   */
+  walletBalances: protectedProcedure.input(z.object({ claimIds: z.array(z.string()) })).query(async ({ ctx, input }) =>
+    (await ctx.app.walletBalanceService.readBalances(input.claimIds)).map(
+      ({ accountId, balanceSats, asOf, syncing, failed }) => ({
+        accountId,
+        balanceSats: balanceSats?.toString() ?? null,
+        asOf: asOf?.toISOString() ?? null,
+        syncing,
+        failed,
+      }),
+    ),
+  ),
 })
 
 // ─── portalProve.registry ───────────────────────────────────────────────────
@@ -513,6 +490,7 @@ const registryRouter = t.router({
       if (deleted.rowsAffected === 0) {
         throw new TRPCError({ code: 'CONFLICT', message: 'Claim changed before it could be deleted' })
       }
+      ctx.app.walletBalanceService.invalidate(input.id)
     }),
 
     delete: protectedProcedure.input(z.object({ id: z.string() })).mutation(async ({ ctx, input }) => {
@@ -533,6 +511,7 @@ const registryRouter = t.router({
       if (deleted.rowsAffected === 0) {
         throw new TRPCError({ code: 'CONFLICT', message: 'Claim changed before it could be deleted' })
       }
+      ctx.app.walletBalanceService.invalidate(input.id)
     }),
 
     archive: protectedProcedure.input(z.object({ id: z.string() })).mutation(async ({ ctx, input }) => {
@@ -1403,52 +1382,19 @@ const onchainRouter = t.router({
     }),
 
   claimBalances: protectedProcedure.input(z.object({ claimIds: z.array(z.string()) })).query(async ({ ctx, input }) => {
+    // Wallets are scanned one by one and recent balances reused; other callers share the same scans.
+    const results = await ctx.app.walletBalanceService.getLiveBalances(input.claimIds)
     const balanceMap = new Map<string, Decimal>()
-
-    const accountSet = new IndexSet<Account>()
-    const idToAccount = new Map<string, Account>()
-
-    // Resolve account IDs to Account objects
-    for (const claimId of input.claimIds) {
-      const [row] = await ctx.app.database
-        .select({ descriptor: accountTable.descriptor })
-        .from(accountTable)
-        .where(and(eq(accountTable.id, claimId), isNull(accountTable.deletedAt)))
-      if (!row) {
-        continue
-      }
-
-      const parsed = Account.fromDescriptor(row.descriptor)
-      if (parsed.isOk()) {
-        const account = parsed.unwrap()
-        accountSet.add(account)
-        idToAccount.set(claimId, account)
+    for (const [claimId, result] of results) {
+      if (result.isOk()) {
+        balanceMap.set(claimId, new Decimal(result.unwrap().balanceSats.toString()))
       }
     }
-
-    if (accountSet.size === 0) {
-      return balanceMap
+    // A wallet that can't be scanned is left out, so the rest still show. Errors can quote
+    // descriptors, so the request fails with a plain message, and only when no wallet could be read.
+    if (results.size > 0 && balanceMap.size === 0) {
+      throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Could not fetch wallet balances' })
     }
-
-    const result = await ctx.app.onchainProvider.getConfirmedAccountBalances(accountSet)
-    if (result.isErr()) {
-      throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: result.unwrapErr().message })
-    }
-
-    const accountBalances = result.unwrap()
-    for (const [claimId, account] of idToAccount) {
-      const [activeClaim] = await ctx.app.database
-        .select({ id: accountTable.id })
-        .from(accountTable)
-        .where(and(eq(accountTable.id, claimId), isNull(accountTable.deletedAt)))
-      if (activeClaim === undefined) {
-        continue
-      }
-
-      const balance = accountBalances.get(account) ?? 0n
-      balanceMap.set(claimId, new Decimal(balance.toString()))
-    }
-
     return balanceMap
   }),
 })
@@ -1899,6 +1845,7 @@ const portalProveRouter = t.router({
       if (deleted.rowsAffected === 0) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Account not found' })
       }
+      ctx.app.walletBalanceService.invalidate(input.id)
     }),
   }),
 })

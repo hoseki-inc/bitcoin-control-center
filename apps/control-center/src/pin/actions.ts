@@ -33,6 +33,8 @@ export function usePinStatus(): UseQueryResult<PinStatus> {
     },
     // A failed first check shows its own screen, so give a brief network hiccup a couple of tries first.
     retry: 2,
+    // Never reuse an answer: coming back to the tab always checks, so a sign-out elsewhere locks it.
+    staleTime: 0,
     refetchOnWindowFocus: true,
     // While StartOS has yet to set the PIN, notice when it does.
     refetchInterval: (data) => (data?.platform === 'startos' && data.state === 'no-pin' ? 5000 : false),

@@ -1,4 +1,7 @@
+import type { AsyncResult } from '../../result'
+import type { Account } from '../account'
 import type { Address } from '../address'
+import type { Network } from '../network'
 import type { Txid } from '../txid'
 
 export const CONFIG = {
@@ -43,4 +46,22 @@ export interface Block {
   height: number
   hash: string
   timestamp: Date
+}
+
+/** The last address used on each chain of an account, as found by discovery. */
+export interface DiscoveredIndexes {
+  lastUsedReceiveIndex: number
+  lastUsedChangeIndex: number
+}
+
+/** Keeps what discovery found, so the next scan of an account can resume from its last used addresses. */
+export interface DiscoveryIndexStore {
+  load(account: Account, network: Network): AsyncResult<DiscoveredIndexes | null, Error>
+  /** `raise` keeps any larger saved index; `replace` overwrites it after a scan from index 0 found less. */
+  save(
+    account: Account,
+    network: Network,
+    indexes: DiscoveredIndexes,
+    mode: 'raise' | 'replace',
+  ): AsyncResult<void, Error>
 }

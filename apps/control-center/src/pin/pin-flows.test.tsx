@@ -732,6 +732,23 @@ it('keeps the app hidden until the reveal finishes, whatever a status check says
   await appOpen()
 }, 15_000)
 
+it('checks again when the tab comes back, however soon, and locks after a sign-out elsewhere', async () => {
+  const sentinel = fakeSentinel()
+  sentinel.sessions.add(tabId())
+  await render(sentinel)
+  await appOpen()
+  // "Sign out everywhere" on another device, moments after this tab's last check.
+  sentinel.sessions.clear()
+  await act(async () => {
+    window.dispatchEvent(new Event('focus'))
+  })
+  await see('Enter your PIN')
+  await vi.waitFor(() => {
+    const holdings = [...document.querySelectorAll('p')].find((found) => found.textContent === 'Your holdings')
+    expect(holdings === undefined || holdings.closest('[aria-hidden="true"]') !== null).toBe(true)
+  })
+}, 15_000)
+
 it('gives each lock a fresh sign-in screen', async () => {
   await render(fakeSentinel())
   await type('123')

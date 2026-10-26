@@ -13,6 +13,7 @@ import { formatDateRange } from '@hoseki/packages/ui/utils'
 import { ShieldCheckIcon, XIcon } from 'lucide-react'
 import { type RefObject, useEffect, useRef, useState } from 'react'
 import { Link as RouterLink, useLocation, useNavigate } from 'react-router'
+import { StatementPageSkeleton } from '../../components/loading/page-skeletons'
 import { DeleteStatementButton } from '../../components/statements/delete-statement-button'
 import { StatementGenerationModal } from '../../components/statements/statement-generation-modal'
 import { useRenderedStatement } from '../../hooks/use-rendered-statement'
@@ -96,7 +97,7 @@ function StatementDetailsPageContent({ statementId }: { statementId: StatementId
 
   // Wait to confirm a cached "generating" status too, rather than show the page before generation opens.
   if (isLoading || (statement.status === 'pending' && !isFetchedAfterMount && !justGenerated)) {
-    return <Spinner fullPage size="xl" />
+    return <StatementPageSkeleton />
   }
 
   return (

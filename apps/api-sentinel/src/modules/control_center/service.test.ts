@@ -23,6 +23,7 @@ import { EtfService } from '../etf/service'
 import { ExchangeService } from '../exchange/service'
 import { ManualService } from '../manual/service'
 import { PriceService } from '../price/service'
+import { WalletBalanceService } from '../wallet_balances/service'
 import { ControlCenterService } from './service'
 
 type Deferred<T> = { promise: Promise<T>; resolve: (value: T) => void }
@@ -87,6 +88,7 @@ async function createHarness() {
     manualService: new ManualService({ db, logger }),
     etfService: new EtfService({ db, logger }),
     priceService,
+    walletBalances: new WalletBalanceService({ db, logger, onchainProvider }),
   })
   // Replace only external history fetching; storage, coverage, scheduling and responses remain real.
   const history = vi
@@ -207,27 +209,6 @@ describe('portfolio history completion', () => {
       await vi.waitFor(async () => {
         await expect(harness.coverage()).resolves.toHaveLength(1)
       })
-    })
-  })
-
-  it("returns each active wallet's latest stored balance, leaving out wallets that never synced", async () => {
-    await withTestSetup(async () => {
-      const { db, service } = harness
-      await service.recordAccountSnapshot(accountId, '90', '2020-01-01T00:00:00.000Z')
-      await service.recordAccountSnapshot(accountId, '150', '2020-01-03T09:00:00.000Z')
-      const unsyncedId = 'unsynced-wallet'
-      const archivedId = 'archived-wallet'
-      await db.insert(accounts).values([
-        { id: unsyncedId, descriptor: Wallets.singlesigLegacyAccount.toString(), displayName: 'Unsynced wallet' },
-        { id: archivedId, descriptor: Wallets.singlesigNestedSegwitAccount.toString(), displayName: 'Archived wallet' },
-      ])
-      await service.recordAccountSnapshot(archivedId, '50', '2020-01-02T00:00:00.000Z')
-      await db.update(accounts).set({ deletedAt: '2020-01-04T00:00:00.000Z' }).where(eq(accounts.id, archivedId))
-
-      await expect(service.getStoredWalletBalances([accountId, unsyncedId, archivedId])).resolves.toEqual([
-        { accountId, balanceSats: '150', timestamp: '2020-01-03T09:00:00.000Z' },
-      ])
-      await expect(service.getStoredWalletBalances([])).resolves.toEqual([])
     })
   })
 
@@ -471,6 +452,34 @@ describe('history scan boundaries', () => {
 })
 
 describe('history balance reuse', () => {
+  it('answers with the recorded balance without waiting for Electrum, sharing the refresh with the backfill', async () => {
+    await withTestSetup(async () => {
+      await harness.service.recordAccountSnapshot(accountId, '150', '2020-01-03T09:00:00.000Z')
+      const scan = deferred<Result<IndexMap<Account, bigint>, Error>>()
+      harness.provider.getConfirmedAccountBalances.mockReturnValueOnce(new AsyncResult(scan.promise))
+      const walletBalances = harness.service['walletBalances']
+
+      const data = (await harness.service.getData({ timeRange: '90d' })).unwrap()
+      expect(data.currentTotalBalance).toBe('150')
+      expect(data.walletBalancesAsOf).toEqual({ [accountId]: '2020-01-03T09:00:00.000Z' })
+      expect((await walletBalances.readBalances([accountId]))[0]?.syncing).toBe(true)
+
+      scan.resolve(Ok(new IndexMap([[account, 175n]])))
+      await vi.waitFor(async () => {
+        expect((await walletBalances.readBalances([accountId]))[0]?.balanceSats).toBe(175n)
+        expect(harness.service['accountHistoryBackfillsInFlight'].size).toBe(0)
+      })
+      expect(harness.provider.getConfirmedAccountBalances).toHaveBeenCalledTimes(1)
+      const refreshed = (await harness.service.getData({ timeRange: '90d' })).unwrap()
+      expect(refreshed.currentTotalBalance).toBe('175')
+      // The same time pages read from walletBalances, so they know this total includes the new balance.
+      const [reading] = await walletBalances.readBalances([accountId])
+      expect(refreshed.walletBalancesAsOf).toEqual({ [accountId]: reading?.asOf?.toISOString() })
+      expect(reading?.asOf?.toISOString()).not.toBe('2020-01-03T09:00:00.000Z')
+      expect(harness.provider.getConfirmedAccountBalances).toHaveBeenCalledTimes(1)
+    })
+  })
+
   it('avoids a second balance/discovery sweep during a stable-tip page request', async () => {
     await withTestSetup(async () => {
       await harness.service.getData({ timeRange: 'all' })
@@ -480,6 +489,38 @@ describe('history balance reuse', () => {
       expect(harness.provider.getConfirmedAccountBalances).toHaveBeenCalledTimes(1)
       expect(harness.history).toHaveBeenCalledTimes(1)
       await expect(harness.coverage()).resolves.toEqual([{ from_block_height: 0, to_block_height: tip.height }])
+    })
+  })
+
+  it('does not hold the page on a wallet that has never synced and keeps failing', async () => {
+    await withTestSetup(async () => {
+      harness.provider.getConfirmedAccountBalances.mockImplementation(
+        asyncFn(async () => Err(new Error('Connection closed'))),
+      )
+      const first = (await harness.service.getData({ timeRange: '90d' })).unwrap()
+      expect(first.currentTotalBalance).toBe('0')
+
+      // While it waits to retry, a scan that never ends doesn't hold the next page.
+      harness.provider.getConfirmedAccountBalances.mockReturnValue(new AsyncResult(new Promise(() => undefined)))
+      const started = performance.now()
+      const second = (await harness.service.getData({ timeRange: '90d' })).unwrap()
+      expect(performance.now() - started).toBeLessThan(3_000)
+      expect(second.currentTotalBalance).toBe('0')
+    })
+  })
+
+  it('reports history as still syncing, rather than wait, when Electrum is slow to give the chain tip', async () => {
+    await withTestSetup(async () => {
+      await harness.sync()
+      await harness.service.recordAccountSnapshot(accountId, '100', '2020-01-02T12:00:00.000Z')
+      harness.provider.getBlocksTip.mockReturnValue(new AsyncResult(new Promise(() => undefined)))
+      const started = performance.now()
+      const data = (await harness.service.getData({ timeRange: 'all' })).unwrap()
+      expect(performance.now() - started).toBeLessThan(3_000)
+      expect(data.currentTotalBalance).toBe('100')
+      expect(data.historySyncingAccountIds).toEqual([accountId])
+      expect(data.historySyncedAccountIds).toEqual([])
+      expect(data.historyFailedAccountIds).toEqual([])
     })
   })
 
@@ -902,6 +943,47 @@ describe('history retry coordination', () => {
         expect(service['accountHistoryBackfillsInFlight'].has(accountId)).toBe(false)
       })
       expect(service['accountHistoryBackfillFailureCounts'].has(accountId)).toBe(false)
+    })
+  })
+})
+
+describe('balances counted in the portfolio', () => {
+  it('counts the balance walletBalances shows, even when recording the last scan failed', async () => {
+    await withTestSetup(async () => {
+      const { db, service, provider } = harness
+      await service.recordAccountSnapshot(accountId, '150', '2020-01-03T09:00:00.000Z')
+      await db.run(sql`CREATE TEMP TRIGGER fail_snapshot BEFORE INSERT ON balance_snapshots
+        BEGIN SELECT RAISE(ABORT, 'Synthetic snapshot failure'); END`)
+      provider.getConfirmedAccountBalances.mockImplementation(
+        asyncFn(async () => Ok(new IndexMap<Account, bigint>([[account, 175n]]))),
+      )
+      const walletBalances = service['walletBalances']
+      await walletBalances.getLiveBalances([accountId])
+      await db.run(sql`DROP TRIGGER fail_snapshot`)
+
+      // A minute on, Electrum stops answering, so the fetched balance stays the newest known.
+      vi.setSystemTime(Date.now() + 61_000)
+      provider.getConfirmedAccountBalances.mockReturnValue(new AsyncResult(new Promise(() => undefined)))
+      const [reading] = await walletBalances.readBalances([accountId])
+      expect(reading?.balanceSats).toBe(175n)
+      const data = (await service.getData({ timeRange: '90d' })).unwrap()
+      expect(data.currentTotalBalance).toBe('175')
+      expect(data.walletBalancesAsOf).toEqual({ [accountId]: reading?.asOf?.toISOString() })
+    })
+  })
+
+  it('counts a wallet whose first scan fails as empty, with no time, and stops waiting on it', async () => {
+    await withTestSetup(async () => {
+      const { service, provider } = harness
+      provider.getConfirmedAccountBalances.mockImplementation(asyncFn(async () => Err(new Error('Connection closed'))))
+      const first = (await service.getData({ timeRange: '90d' })).unwrap()
+      expect(first.currentTotalBalance).toBe('0')
+      expect(first.walletBalancesAsOf).toEqual({ [accountId]: null })
+
+      // While it waits to retry, a scan that never answers doesn't hold the next read.
+      provider.getConfirmedAccountBalances.mockReturnValue(new AsyncResult(new Promise(() => undefined)))
+      const again = (await service.getData({ timeRange: '90d' })).unwrap()
+      expect(again).toMatchObject({ currentTotalBalance: '0', walletBalancesAsOf: { [accountId]: null } })
     })
   })
 })

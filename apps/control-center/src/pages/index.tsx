@@ -1,14 +1,23 @@
-import { Box, Button, Flex, Stack, Text } from '@chakra-ui/react'
-import { EmptyView } from '@hoseki/packages/ui/design-system'
+import { Box, Button, Flex, Grid, Skeleton, Stack, Text } from '@chakra-ui/react'
+import { EmptyView, SkeletonRegion, TextSkeleton, useRevealAfterLoading } from '@hoseki/packages/ui/design-system'
 import { Link } from 'react-router'
 import { AccumulationChart as DefaultAccumulationChart } from '../components/dashboard-charts/accumulation-chart'
 import { BitcoinPriceChart as DefaultBitcoinPriceChart } from '../components/dashboard/bitcoin-price-chart'
 import { DashboardPreview } from '../components/dashboard/dashboard-preview'
+import { DashboardAmount } from '../components/dashboard/dashboard-typography'
 import { PortfolioSummary } from '../components/dashboard/portfolio-summary'
-import { RecentStatements } from '../components/dashboard/recent-statements'
+import { RecentStatements, RecentStatementsSkeleton } from '../components/dashboard/recent-statements'
+import { FiatAmountText } from '../components/fiat-amount-text'
 import { FirstRunOnboarding } from '../components/onboarding/first-run-onboarding'
 import { StatementsEmptyState } from '../components/statements/statements-empty-state'
+import { UnavailableAlert } from '../components/unavailable-alert'
 import { refetchWhileGenerating } from '../lib/statement-polling'
+import {
+  type WalletBalanceSummary,
+  type WalletBalancesQuery,
+  summarizeWalletBalances,
+  useWalletBalances,
+} from '../lib/wallet-balances'
 import { type RouterOutput, trpc } from '../trpc'
 import type { StatementDto } from '../trpc/server-types'
 import { getBrowserTimezone } from '../utils/timezone'
@@ -27,6 +36,7 @@ export function HomePage({
     portfolio,
     hasAccounts,
     accountCount,
+    wallets,
     isLoading,
     hasError,
     retry,
@@ -34,39 +44,34 @@ export function HomePage({
     statementsError,
   } = useHomeData(dataSource)
   const hasHistory = (portfolio?.historicalData.length ?? 0) > 0
+  const overviewReveal = useRevealAfterLoading(isLoading)
+  const statementsReveal = useRevealAfterLoading(statementsLoading)
 
   return (
     <Stack py={8} gap={8}>
       {hasError && (
-        <Flex
-          role="alert"
-          align="start"
-          justify="space-between"
-          gap={4}
-          p={4}
-          bg="neutral.50"
-          borderRadius="control"
-          flexWrap="wrap"
-        >
-          <Box flex="1" minW="200px">
-            <Text textStyle="text/sm" fontWeight="medium">
-              Some holdings data is unavailable
-            </Text>
-            <Text textStyle="text/sm" color="neutral.600" mt={1}>
-              {hasHistory
-                ? 'Showing the last available overview. Refresh to check for updates.'
-                : 'Your balances could not be confirmed. Try again to load your holdings.'}
-            </Text>
-          </Box>
-          <Button variant="outline" onClick={retry}>
-            Try Again
-          </Button>
-        </Flex>
+        <UnavailableAlert
+          title="Some holdings data is unavailable"
+          description={
+            hasHistory
+              ? 'Showing the last available overview. Refresh to check for updates.'
+              : 'Your balances could not be confirmed. Try again to load your holdings.'
+          }
+          onRetry={retry}
+        />
       )}
       {hasHistory && portfolio ? (
-        <PortfolioSummary data={portfolio} accountCount={accountCount} AccumulationChart={views.AccumulationChart} />
+        <Box sx={overviewReveal}>
+          <PortfolioSummary
+            data={portfolio}
+            accountCount={accountCount}
+            walletStatus={wallets.status}
+            AccumulationChart={views.AccumulationChart}
+          />
+        </Box>
       ) : isLoading ? (
-        <DashboardPreview loading />
+        // Shaped like the overview most people see, so it loads in place.
+        <PortfolioSummarySkeleton />
       ) : hasError ? (
         <DashboardPreview unavailable />
       ) : !hasAccounts ? (
@@ -96,16 +101,68 @@ export function HomePage({
           </Button>
         </Flex>
       ) : statementsLoading ? (
-        <Text as="output" textStyle="text/sm" color="neutral.600">
-          Loading recent statements…
-        </Text>
+        <RecentStatementsSkeleton />
       ) : statements.length > 0 ? (
-        <RecentStatements statements={statements} />
+        <Box sx={statementsReveal}>
+          <RecentStatements statements={statements} />
+        </Box>
       ) : (
         <StatementsEmptyState />
       )}
       <views.Onboarding accountCount={accountCount} />
     </Stack>
+  )
+}
+
+/** The overview's outline while it loads: the balance, the 30-day chart and both stats. */
+function PortfolioSummarySkeleton(): JSX.Element {
+  return (
+    <SkeletonRegion
+      label="Loading your holdings…"
+      bg="shades.0"
+      border="1px solid"
+      borderColor="neutral.200"
+      borderRadius="panel"
+      p={{ base: 5, md: 6 }}
+    >
+      <Flex align="flex-start" justify="space-between" mb={6} gap={4} flexWrap="wrap">
+        <Box>
+          <DashboardAmount>
+            <TextSkeleton width="9ch" />
+          </DashboardAmount>
+          <FiatAmountText mt={1}>
+            <TextSkeleton width="7ch" />
+          </FiatAmountText>
+        </Box>
+        <Skeleton h="40px" w="148px" />
+      </Flex>
+      <Box mb={3}>
+        <Text textStyle="text/sm" fontWeight="medium" color="neutral.600" mb={2}>
+          Last 30 Days
+        </Text>
+        {/* A large area pulses in lighter tones, so it doesn't outweigh the figures around it. */}
+        <Skeleton h="220px" startColor="neutral.50" endColor="neutral.100" />
+      </Box>
+      <Grid
+        templateColumns={{ base: '1fr', sm: '1fr 1fr' }}
+        gap={6}
+        mt={6}
+        pt={5}
+        borderTop="1px solid"
+        borderColor="neutral.200"
+      >
+        {['30d Change', 'Accounts'].map((label) => (
+          <Box key={label}>
+            <Text textStyle="text/md" color="neutral.900" fontWeight="medium" mb={2}>
+              {label}
+            </Text>
+            <Text textStyle="text/xl">
+              <TextSkeleton width="12ch" />
+            </Text>
+          </Box>
+        ))}
+      </Grid>
+    </SkeletonRegion>
   )
 }
 
@@ -116,7 +173,7 @@ interface HomeQuery<T> {
   refetch: () => Promise<{ isError: boolean }>
 }
 
-type AccountList = readonly unknown[]
+type AccountList = readonly { id: string }[]
 
 /** The queries behind the home overview, independent of their transport. */
 export interface HomeDataSource {
@@ -126,6 +183,7 @@ export interface HomeDataSource {
   useExchanges: () => HomeQuery<AccountList>
   useManual: () => HomeQuery<AccountList>
   useEtfs: () => HomeQuery<AccountList>
+  useWalletBalances: (claimIds: string[], options: { enabled: boolean }) => WalletBalancesQuery
 }
 
 const homeDataSource: HomeDataSource = {
@@ -135,6 +193,7 @@ const homeDataSource: HomeDataSource = {
   useExchanges: () => trpc.portalProve.exchange.list.useQuery(),
   useManual: () => trpc.portalProve.manual.list.useQuery(),
   useEtfs: () => trpc.portalProve.etf.list.useQuery(),
+  useWalletBalances,
 }
 
 export interface HomeViews {
@@ -155,6 +214,7 @@ interface HomeData {
   hasAccounts: boolean
   /** Null until every account list has loaded without an error. */
   accountCount: number | null
+  wallets: WalletBalanceSummary
   statementsLoading: boolean
   statementsError: boolean
   isLoading: boolean
@@ -176,6 +236,8 @@ function useHomeData(dataSource: HomeDataSource): HomeData {
   const queries = [portfolio, ...accountLists]
   const totalAccounts = accountLists.reduce((count, list) => count + (list.data?.length ?? 0), 0)
   const listsReady = accountLists.every((list) => list.data !== undefined && !list.isError)
+  const claimIds = (claims.data ?? []).map(({ id }) => id)
+  const walletBalances = dataSource.useWalletBalances(claimIds, { enabled: claimIds.length > 0 })
 
   return {
     statements: statements.data ?? [],
@@ -183,6 +245,7 @@ function useHomeData(dataSource: HomeDataSource): HomeData {
     // A failed refresh keeps the statements already loaded; this is only for having none to show.
     statementsError: statements.isError && statements.data === undefined,
     accountCount: listsReady ? totalAccounts : null,
+    wallets: summarizeWalletBalances(claimIds, walletBalances.rows),
     portfolio: portfolio.data,
     hasAccounts: totalAccounts > 0,
     isLoading: queries.some((query) => query.isLoading),

@@ -124,8 +124,10 @@ it('offers to try again when the statements never loaded, and asks again', async
 
 it('shows only a loading state until the statements arrive', async () => {
   const { container } = await renderStatementsPage({ list: async () => new Promise<StatementDto[]>(() => undefined) })
-  expect(container.textContent).toContain('Loading...')
+  expect(container.textContent).toContain('Loading statements')
   expect(container.textContent).not.toContain('Your holdings, on record')
+  // The heading stays put: the Generate button holds its place, hidden, until the statements arrive.
+  expect(container.querySelector('a[href="/statements/create"]')).not.toBeNull()
 })
 
 it('introduces statements when there are none yet', async () => {

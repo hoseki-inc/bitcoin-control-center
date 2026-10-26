@@ -8,7 +8,6 @@ import {
   Icon,
   Input,
   Select,
-  Spinner,
   Stack,
   Table,
   Tbody,
@@ -25,6 +24,7 @@ import { format } from 'date-fns'
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { toast } from 'sonner'
+import { AccountDetailsSkeleton } from '../../../components/loading/page-skeletons'
 import { trpc } from '../../../trpc'
 
 export function EtfAccountDetailsPage(): JSX.Element {
@@ -55,7 +55,7 @@ export function EtfAccountDetailsPage(): JSX.Element {
   const deleteMutation = trpc.portalProve.etf.delete.useMutation()
 
   if (accountQuery.isLoading) {
-    return <Spinner mt={12} display="block" mx="auto" size="xl" />
+    return <AccountDetailsSkeleton layout="manual" />
   }
 
   const account = accountQuery.data

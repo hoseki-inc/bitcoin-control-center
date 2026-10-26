@@ -2,7 +2,7 @@ import { Account } from '@hoseki/packages/bitcoin/account'
 import type { Address } from '@hoseki/packages/bitcoin/address'
 import type { Block, TransactionEntry } from '@hoseki/packages/bitcoin/onchain'
 import type { ElectrumProvider } from '@hoseki/packages/bitcoin/onchain/electrum_provider'
-import { IndexMap, IndexSet } from '@hoseki/packages/collection'
+import { IndexMap } from '@hoseki/packages/collection'
 import { Err, Ok, asyncFn } from '@hoseki/packages/result'
 import type { Result } from '@hoseki/packages/result'
 import type { Timezone } from '@hoseki/packages/schemas'
@@ -19,6 +19,8 @@ import type { EtfService } from '../etf/service'
 import type { ExchangeService } from '../exchange/service'
 import type { ManualService } from '../manual/service'
 import type { PriceService } from '../price/service'
+import type { WalletBalanceService } from '../wallet_balances/service'
+import { isWalletActive, upsertWalletSnapshot } from '../wallet_balances/snapshots'
 import {
   type BalanceDataPoint,
   type BalanceEntry,
@@ -47,13 +49,12 @@ export interface ControlCenterData {
   historySyncedAccountIds: string[]
   historyRefreshingAccountIds: string[]
   historyFailedAccountIds: string[]
-}
-
-/** A wallet's last recorded balance, and when it was recorded. */
-export interface StoredWalletBalance {
-  accountId: string
-  balanceSats: string
-  timestamp: string
+  /**
+   * For each wallet, when the balance counted in `currentTotalBalance` was current, or null for one
+   * counted as empty because it has never been scanned. Pages compare it with `walletBalances` to
+   * notice a newer balance.
+   */
+  walletBalancesAsOf: Record<string, string | null>
 }
 
 interface BalanceSnapshotRow {
@@ -83,6 +84,7 @@ export class ControlCenterService {
   private readonly manualService: ManualService
   private readonly etfService: EtfService
   private readonly priceService: PriceService
+  private readonly walletBalances: WalletBalanceService
   private readonly accountHistoryBackfillsInFlight = new Set<string>()
   private readonly accountHistoryBackfillCooldownUntil = new Map<string, number>()
   private readonly accountHistoryBackfillFailureCounts = new Map<string, number>()
@@ -96,6 +98,7 @@ export class ControlCenterService {
     manualService: ManualService
     etfService: EtfService
     priceService: PriceService
+    walletBalances: WalletBalanceService
   }) {
     this.db = deps.db
     this.logger = deps.logger.child({ module: 'control-center' })
@@ -104,6 +107,7 @@ export class ControlCenterService {
     this.manualService = deps.manualService
     this.etfService = deps.etfService
     this.priceService = deps.priceService
+    this.walletBalances = deps.walletBalances
   }
 
   public getData = asyncFn(
@@ -131,74 +135,58 @@ export class ControlCenterService {
       // ─── Fetch on-chain accounts ────────────────────────────────
       let accountRows = await this.getAccountRows(args.accountIds)
       const initiallySelectedAccountIds = new Set(accountRows.map(({ id }) => id))
-      const accounts = new IndexSet<Account>()
 
+      // ─── Fetch on-chain balances ────────────────────────────────
+      // Count each wallet's newest known balance, as walletBalances shows it, while out-of-date ones
+      // refresh in the background. Only a wallet with no balance yet that isn't failing waits, sharing
+      // its first scan with any other caller; one that keeps failing counts as empty.
+      const views = await this.walletBalances.readBalances(accountRows.map(({ id }) => id))
+      const waitingIds = views.filter((view) => view.balanceSats === null && !view.failed).map((view) => view.accountId)
+      const firstScans = await this.walletBalances.getLiveBalances(waitingIds)
+      const balancesByAccountId = new Map<string, bigint>()
+      const balancesAsOf = new Map<string, string>()
+      const balanceTips = new Map<string, Block>()
+      for (const view of views) {
+        const first = firstScans.get(view.accountId)
+        const counted =
+          first?.isOk() === true
+            ? first.unwrap()
+            : { balanceSats: view.balanceSats, fetchedAt: view.asOf, tip: view.tip }
+        if (waitingIds.includes(view.accountId) && first?.isOk() !== true) {
+          this.logger.warn({ accountId: view.accountId }, 'Failed to fetch on-chain balance')
+        }
+        balancesByAccountId.set(view.accountId, counted.balanceSats ?? 0n)
+        if (counted.balanceSats !== null && counted.fetchedAt !== null) {
+          balancesAsOf.set(view.accountId, counted.fetchedAt.toISOString())
+        }
+        if (counted.tip !== null) {
+          balanceTips.set(view.accountId, counted.tip)
+        }
+      }
+      if (waitingIds.length > 0) {
+        // Drop wallets archived while their first balance was fetched.
+        accountRows = (await this.getAccountRows(args.accountIds)).filter(({ id }) =>
+          initiallySelectedAccountIds.has(id),
+        )
+      }
+
+      // Self-custody charts read snapshots first. Electrum transaction history
+      // is only used to lazily backfill missing snapshot ranges.
       for (const row of accountRows) {
         const accountResult = Account.fromDescriptor(row.descriptor)
         if (accountResult.isErr()) {
           this.logger.warn({ accountId: row.id }, 'Skipping invalid descriptor')
           continue
         }
-        accounts.add(accountResult.unwrap())
-      }
-
-      // ─── Fetch on-chain balances ────────────────────────────────
-      const balancesByAccountId = new Map<string, bigint>()
-
-      if (accounts.size > 0) {
-        // Anchor before balance discovery so a backfill can reuse this result
-        // only if the same chain tip still holds after scanning history.
-        const balanceTipResult = await this.onchainProvider.getBlocksTip()
-        const balancesResult = await this.onchainProvider.getConfirmedAccountBalances(accounts)
-        accountRows = (await this.getAccountRows(args.accountIds)).filter(({ id }) =>
-          initiallySelectedAccountIds.has(id),
+        await this.queueAccountHistoryBackfill(
+          row.id,
+          accountResult.unwrap(),
+          balancesByAccountId.get(row.id) ?? 0n,
+          historyRange.start,
+          shouldSyncFullHistory,
+          // A backfill reuses the balance only if it was fetched at the tip it scans to.
+          balanceTips.get(row.id),
         )
-        if (balancesResult.isErr()) {
-          this.logger.warn({ err: balancesResult.unwrapErr() }, 'Failed to fetch on-chain balances')
-          for (const row of accountRows) {
-            const latestSnapshotBalance = (await this.getLatestAccountSnapshot(row.id))?.balanceSats ?? 0n
-            balancesByAccountId.set(row.id, latestSnapshotBalance)
-
-            if (shouldSyncFullHistory) {
-              const accountResult = Account.fromDescriptor(row.descriptor)
-              if (accountResult.isOk()) {
-                await this.queueAccountHistoryBackfill(
-                  row.id,
-                  accountResult.unwrap(),
-                  latestSnapshotBalance,
-                  historyRange.start,
-                  true,
-                )
-              }
-            }
-          }
-        } else {
-          const accountBalances = new Map<string, bigint>()
-          for (const [account, balance] of balancesResult.unwrap()) {
-            accountBalances.set(account.toString(), balance)
-          }
-
-          // Self-custody charts read snapshots first. Electrum transaction history
-          // is only used to lazily backfill missing snapshot ranges.
-          for (const row of accountRows) {
-            const accountResult = Account.fromDescriptor(row.descriptor)
-            if (accountResult.isErr()) {
-              continue
-            }
-
-            const account = accountResult.unwrap()
-            const accountBalance = accountBalances.get(account.toString()) ?? 0n
-            balancesByAccountId.set(row.id, accountBalance)
-            await this.queueAccountHistoryBackfill(
-              row.id,
-              account,
-              accountBalance,
-              historyRange.start,
-              shouldSyncFullHistory,
-              balanceTipResult.isOk() ? balanceTipResult.unwrap() : undefined,
-            )
-          }
-        }
       }
 
       // ─── Fetch exchange data ────────────────────────────────────
@@ -410,6 +398,7 @@ export class ControlCenterService {
         historySyncedAccountIds: historyStatus.historySyncedAccountIds,
         historyRefreshingAccountIds: historyStatus.historyRefreshingAccountIds,
         historyFailedAccountIds: historyStatus.historyFailedAccountIds,
+        walletBalancesAsOf: Object.fromEntries(accountRows.map(({ id }) => [id, balancesAsOf.get(id) ?? null])),
       })
     },
   )
@@ -428,25 +417,6 @@ export class ControlCenterService {
       await this.upsertAccountSnapshot(tx, accountId, balanceSats, timestamp)
       return true
     })
-  }
-
-  /**
-   * Each active wallet's last recorded balance, which stands in for its live balance
-   * while Electrum is unreachable. Wallets that have never synced are left out.
-   */
-  public async getStoredWalletBalances(accountIds: string[]): Promise<StoredWalletBalance[]> {
-    const balances: StoredWalletBalance[] = []
-    for (const row of await this.getAccountRows(accountIds)) {
-      const snapshot = await this.getLatestAccountSnapshot(row.id)
-      if (snapshot !== null) {
-        balances.push({
-          accountId: row.id,
-          balanceSats: snapshot.balanceSats.toString(),
-          timestamp: snapshot.timestamp,
-        })
-      }
-    }
-    return balances
   }
 
   public archiveAccount = asyncFn(async (accountId: string): Promise<Result<void, Error>> => {
@@ -486,6 +456,7 @@ export class ControlCenterService {
       return Err(new Error('Claim not found or already archived'))
     }
     this.invalidateAccountHistoryBackfill(accountId)
+    this.walletBalances.invalidate(accountId)
     return Ok(undefined)
   })
 
@@ -506,6 +477,7 @@ export class ControlCenterService {
       return Err(new Error('Claim not found or not archived'))
     }
     this.clearAccountHistoryBackfillState(accountId)
+    this.walletBalances.invalidate(accountId)
     return Ok(undefined)
   }
 
@@ -517,18 +489,11 @@ export class ControlCenterService {
     balanceSats: string,
     timestamp: string,
   ): Promise<void> {
-    await tx
-      .insert(balanceSnapshots)
-      .values({ accountId, timestamp, balanceSats })
-      .onConflictDoUpdate({ target: [balanceSnapshots.accountId, balanceSnapshots.timestamp], set: { balanceSats } })
+    await upsertWalletSnapshot(tx, accountId, balanceSats, timestamp)
   }
 
   private async isAccountActive(accountId: string, db: SentinelDb | SentinelTx = this.db): Promise<boolean> {
-    const rows = await db
-      .select({ id: accountTable.id })
-      .from(accountTable)
-      .where(and(eq(accountTable.id, accountId), isNull(accountTable.deletedAt)))
-    return rows.length > 0
+    return isWalletActive(db, accountId)
   }
 
   private async getAccountRows(
@@ -635,19 +600,6 @@ export class ControlCenterService {
         ),
       )
       .orderBy(asc(balanceSnapshots.timestamp))
-  }
-
-  private async getLatestAccountSnapshot(
-    accountId: string,
-  ): Promise<{ balanceSats: bigint; timestamp: string } | null> {
-    const [row] = await this.db
-      .select({ balance_sats: balanceSnapshots.balanceSats, timestamp: balanceSnapshots.timestamp })
-      .from(balanceSnapshots)
-      .where(eq(balanceSnapshots.accountId, accountId))
-      .orderBy(desc(balanceSnapshots.timestamp))
-      .limit(1)
-
-    return row ? { balanceSats: BigInt(row.balance_sats), timestamp: row.timestamp } : null
   }
 
   private async queueAccountHistoryBackfill(
@@ -764,14 +716,18 @@ export class ControlCenterService {
       }
     }
 
-    const tipResult = await this.onchainProvider.getBlocksTip()
-    if (tipResult.isErr()) {
-      this.logger.warn({ err: tipResult.unwrapErr() }, 'Failed to inspect chain tip for history completion status')
+    // Never hold the page for long on Electrum: without a tip, history reads as still syncing and the
+    // page asks again shortly.
+    const { tip, failed } = await this.walletBalances.currentTip(HISTORY_STATUS_TIP_WAIT_MS)
+    if (tip === null) {
+      if (failed) {
+        this.logger.warn('Failed to inspect chain tip for history completion status')
+      }
       const activeIds = (
         await Promise.all(accountRows.map(async (row) => ((await this.isAccountActive(row.id)) ? row.id : null)))
       ).filter((id): id is string => id !== null)
       return {
-        // Keep polling after a connection failure, but never certify an unknown tip.
+        // Keep polling while the tip is unknown or after a connection failure, but never certify an unknown tip.
         historySyncingAccountIds: activeIds,
         historySyncedAccountIds: [],
         historyRefreshingAccountIds: (
@@ -781,11 +737,10 @@ export class ControlCenterService {
             ),
           )
         ).filter((id): id is string => id !== null),
-        historyFailedAccountIds: activeIds,
+        historyFailedAccountIds: failed ? activeIds : [],
       }
     }
 
-    const tip = tipResult.unwrap()
     const requestedRange = fullHistory
       ? { fromBlockHeight: 0, toBlockHeight: tip.height }
       : historySyncRangeForStartDate(rangeStart, tip)
@@ -878,19 +833,21 @@ export class ControlCenterService {
     }
 
     let reconstructionBalance: bigint
-    const accounts = new IndexSet([account])
     let reusableBalance = balanceTip?.height === tip.height && balanceTip.hash === tip.hash ? currentBalance : undefined
     for (;;) {
       let boundaryBalance = reusableBalance
       // Never carry the original balance into a newer tip's tail scan.
       reusableBalance = undefined
       if (boundaryBalance === undefined) {
-        const balanceResult = await this.onchainProvider.getConfirmedAccountBalances(accounts)
-        if (balanceResult.isErr()) {
-          this.logger.warn({ accountId, err: balanceResult.unwrapErr() }, 'Failed to fetch history boundary balance')
+        // Shares a scan already running, or reuses a recent one, only if it started at this tip.
+        const balanceResult = (
+          await this.walletBalances.getLiveBalances([accountId], { anchoredTo: tip, record: false })
+        ).get(accountId)
+        if (balanceResult === undefined || balanceResult.isErr()) {
+          this.logger.warn({ accountId }, 'Failed to fetch history boundary balance')
           return null
         }
-        boundaryBalance = balanceResult.unwrap().get(account) ?? 0n
+        boundaryBalance = balanceResult.unwrap().balanceSats
       }
       if (!(await this.canContinueAccountHistoryBackfill(accountId, generation))) {
         return null
@@ -1263,43 +1220,20 @@ export class ControlCenterService {
 
     // ─── On-chain accounts ─────────────────────────────────────
     await collectSource('on-chain', async () => {
-      const accountRows = await this.getAccountRows()
-
-      if (accountRows.length === 0) {
+      // Each wallet is scanned on its own and records its own snapshot, so one failure doesn't stop the rest.
+      const results = await this.walletBalances.refreshAll()
+      if (results.size === 0) {
         return
       }
-      const accounts = new IndexSet<Account>()
-      const idMap = new Map<string, string>()
-
-      for (const row of accountRows) {
-        const parsed = Account.fromDescriptor(row.descriptor)
-        if (parsed.isOk()) {
-          accounts.add(parsed.unwrap())
-          idMap.set(row.descriptor, row.id)
-        }
-      }
-
-      if (accounts.size > 0) {
-        const balancesResult = await this.onchainProvider.getConfirmedAccountBalances(accounts)
-        if (balancesResult.isErr()) {
-          this.logger.warn({ source: 'on-chain' }, 'Failed to record on-chain snapshots')
+      let recorded = 0
+      for (const [accountId, result] of results) {
+        if (result.isOk()) {
+          recorded++
         } else {
-          let recorded = 0
-          for (const [account, balance] of balancesResult.unwrap()) {
-            const accountId = idMap.get(account.toString())
-            if (accountId != null && accountId !== '') {
-              if (
-                await collectAccount('on-chain', accountId, async () =>
-                  this.recordAccountSnapshot(accountId, balance.toString(), now),
-                )
-              ) {
-                recorded++
-              }
-            }
-          }
-          this.logger.info({ count: recorded }, 'Recorded on-chain balance snapshots')
+          this.logger.warn({ source: 'on-chain', accountId }, 'Failed to collect balance snapshot')
         }
       }
+      this.logger.info({ count: recorded }, 'Recorded on-chain balance snapshots')
     })
 
     // ─── Exchange accounts (Strike, Robinhood, etc.) ───────────
@@ -1376,6 +1310,8 @@ function accountDescriptorNetworkKey(descriptor: string, network: string): strin
 }
 
 const ESTIMATED_BLOCK_INTERVAL_MS = 10 * 60 * 1000
+/** How long the history status waits for Electrum's chain tip before falling back to a recent one. */
+const HISTORY_STATUS_TIP_WAIT_MS = 1_000
 const HISTORY_SYNC_BLOCK_CUSHION = 288
 // Earlier versions could certify a partial Electrum response as complete.
 const CURRENT_ACCOUNT_HISTORY_SYNC_VERSION = 5

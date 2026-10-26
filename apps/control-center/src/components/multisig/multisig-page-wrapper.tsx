@@ -1,6 +1,6 @@
 import { Button, Stack } from '@chakra-ui/react'
 import type { ClaimId } from '@hoseki/packages/schemas/prove'
-import { ErrorBanner, Spinner } from '@hoseki/packages/ui/design-system'
+import { ErrorBanner } from '@hoseki/packages/ui/design-system'
 import type { Keystore as IndicatorKeystore } from '@hoseki/packages/ui/prove-verify-ui/claims/keystores-status-indicator'
 import { Navigate, Outlet, useOutletContext, useParams, useSearchParams } from 'react-router'
 import { UrlParameter, useUrlParameter } from '../../hooks/use-url-parameters'
@@ -8,6 +8,7 @@ import { getKeystoreStatus } from '../../lib/multisig/keystore'
 import { trpc } from '../../trpc'
 import type { ClaimDto } from '../../trpc/server-types'
 import { ClaimTopBar } from '../claims/claim-top-bar'
+import { AccountDetailsSkeleton } from '../loading/page-skeletons'
 import { MultisigHeader, isUserOnMultisigDetailsPage } from './multisig-header'
 
 export type IndicatorKeystoreWithModel = IndicatorKeystore & { model: string | null }
@@ -40,7 +41,7 @@ function MultisigPageContent({ claimId }: { claimId: ClaimId }): JSX.Element {
   } = trpc.portalProve.registry.claims.get.byId.useQuery({ id: claimId })
 
   if (isLoading) {
-    return <Spinner fullPage />
+    return <AccountDetailsSkeleton label="Loading wallet" />
   }
   if (error) {
     return (

@@ -2,7 +2,7 @@ import * as net from 'node:net'
 import { SocksClient } from 'socks'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { z } from 'zod'
-import { Err, parseUnknown } from '../../../result'
+import { Err, Ok, parseUnknown } from '../../../result'
 import { ElectrumClient } from './client'
 import { ElectrumServerError, ElectrumTransport, shouldVerifyElectrumTlsCertificate } from './protocol'
 
@@ -112,6 +112,28 @@ describe('ElectrumClient concurrent reconnect', () => {
 
       const versionCalls = mock.requests.filter((r) => r.includes('server.version')).length
       expect(versionCalls).toBe(1)
+
+      client.disconnect()
+    })
+  })
+
+  it('runs the request hook before each request and sends nothing when the hook fails', async () => {
+    await withTestSetup(async () => {
+      const hooked: string[] = []
+      const client = new ElectrumClient({
+        host: '127.0.0.1',
+        port: mock.port,
+        protocol: 'tcp',
+        beforeRequest: async (method) => {
+          hooked.push(method)
+          return method === 'blockchain.scripthash.get_history' ? Err(new Error('Simulated timeout')) : Ok(undefined)
+        },
+      })
+
+      expect((await client.getHistory('a'.repeat(64))).unwrapErr().message).toBe('Simulated timeout')
+      expect(hooked).toEqual(['server.version', 'blockchain.scripthash.get_history'])
+      expect(mock.requests.some((request) => request.includes('blockchain.scripthash.get_history'))).toBe(false)
+      expect(client.isConnected()).toBe(true)
 
       client.disconnect()
     })
@@ -302,7 +324,6 @@ it('cancels an unfinished SOCKS connection and closes a socket delivered after c
 
 describe('managed connection prerequisite', () => {
   it('cancels a connection waiting for readiness without opening a socket afterwards', async () => {
-    const { Ok } = await import('@hoseki/packages/result')
     let ready!: (result: ReturnType<typeof Ok<undefined>>) => void
     const prerequisite = new Promise<ReturnType<typeof Ok<undefined>>>((resolve) => {
       ready = resolve
@@ -660,6 +681,161 @@ describe('connections that go silent, are busy, or answer with errors', () => {
     await vi.waitFor(() => {
       expect(server.received.flat().filter((method) => method === 'server.ping')).toHaveLength(2)
     })
+    client.disconnect()
+  })
+})
+
+describe('requests waiting for an answer', () => {
+  interface HoldingServer {
+    port: number
+    /** Methods received, in order. */
+    received: string[]
+    /** Answer the oldest held data request. */
+    releaseOne: () => void
+  }
+
+  /** Answers handshakes, pings and the chain tip at once, and holds data requests until released. */
+  async function holdingServer(): Promise<HoldingServer> {
+    const sockets = new Set<net.Socket>()
+    const received: string[] = []
+    const held: Array<() => void> = []
+    const server = net.createServer((socket) => {
+      sockets.add(socket)
+      socket.on('error', () => undefined)
+      socket.setEncoding('utf8')
+      let buffer = ''
+      socket.on('data', (chunk: string) => {
+        buffer += chunk
+        let newline: number
+        while ((newline = buffer.indexOf('\n')) !== -1) {
+          // SAFETY: Socket input is arbitrary text; the request schema validates its shape.
+          const req = parseUnknown(
+            z.object({ id: z.number(), method: z.string() }),
+            JSON.parse(buffer.slice(0, newline)) as unknown,
+          ).expect('valid JSON-RPC test request')
+          buffer = buffer.slice(newline + 1)
+          received.push(req.method)
+          const result =
+            req.method === 'server.version'
+              ? ['MockElectrum 1.0', '1.4']
+              : req.method === 'blockchain.headers.subscribe'
+                ? { height: 1, hex: '00'.repeat(80) }
+                : req.method === 'server.ping'
+                  ? null
+                  : []
+          const reply = (): void => {
+            socket.write(`${JSON.stringify({ jsonrpc: '2.0', id: req.id, result })}\n`)
+          }
+          if (req.method === 'blockchain.scripthash.get_history') {
+            held.push(reply)
+          } else {
+            reply()
+          }
+        }
+      })
+    })
+    await new Promise<void>((resolve) => {
+      server.listen(0, '127.0.0.1', resolve)
+    })
+    onTestFinished(async () => {
+      for (const socket of sockets) {
+        socket.destroy()
+      }
+      await new Promise<void>((resolve) => {
+        server.close(() => {
+          resolve()
+        })
+      })
+    })
+    const { port } = parseUnknown(z.object({ port: z.number() }), server.address()).expect('TCP listener')
+    return {
+      port,
+      received,
+      releaseOne: () => {
+        held.shift()?.()
+      },
+    }
+  }
+
+  const historyRequests = (server: HoldingServer): number =>
+    server.received.filter((method) => method === 'blockchain.scripthash.get_history').length
+
+  it('sends at most the configured number at once, and the next as soon as one is answered', async () => {
+    const server = await holdingServer()
+    const client = new ElectrumClient({ host: '127.0.0.1', port: server.port, protocol: 'tcp', maxInFlight: 3 })
+    const requests = Array.from({ length: 5 }, async () => client.getHistory('a'.repeat(64)))
+
+    await vi.waitFor(() => {
+      expect(historyRequests(server)).toBe(3)
+    })
+    // The chain tip and pings never wait behind data requests.
+    expect((await client.headersSubscribe()).isOk()).toBe(true)
+    await new Promise((resolve) => {
+      setTimeout(resolve, 50)
+    })
+    expect(historyRequests(server)).toBe(3)
+
+    server.releaseOne()
+    await vi.waitFor(() => {
+      expect(historyRequests(server)).toBe(4)
+    })
+    server.releaseOne()
+    server.releaseOne()
+    server.releaseOne()
+    await vi.waitFor(() => {
+      expect(historyRequests(server)).toBe(5)
+    })
+    server.releaseOne()
+    for (const result of await Promise.all(requests)) {
+      expect(result.isOk()).toBe(true)
+    }
+    client.disconnect()
+  })
+
+  it('drops requests still waiting their turn when the client disconnects, without reconnecting', async () => {
+    const server = await holdingServer()
+    const client = new ElectrumClient({ host: '127.0.0.1', port: server.port, protocol: 'tcp', maxInFlight: 1 })
+    const sent = client.getHistory('a'.repeat(64))
+    const queued = client.getHistory('b'.repeat(64))
+    await vi.waitFor(() => {
+      expect(historyRequests(server)).toBe(1)
+    })
+    client.disconnect()
+    expect((await sent).isErr()).toBe(true)
+    expect((await queued).unwrapErr().message).toBe('Connection closed')
+    expect(server.received.filter((method) => method === 'server.version')).toHaveLength(1)
+    expect(client.isConnected()).toBe(false)
+  })
+
+  it('starts each request’s timeout when it is sent, not while it waits its turn', async () => {
+    const server = await holdingServer()
+    const client = new ElectrumClient({
+      host: '127.0.0.1',
+      port: server.port,
+      protocol: 'tcp',
+      maxInFlight: 1,
+      requestTimeout: 400,
+    })
+    const first = client.getHistory('a'.repeat(64))
+    const second = client.getHistory('b'.repeat(64))
+    await vi.waitFor(() => {
+      expect(historyRequests(server)).toBe(1)
+    })
+    await new Promise((resolve) => {
+      setTimeout(resolve, 250)
+    })
+    server.releaseOne()
+    await vi.waitFor(() => {
+      expect(historyRequests(server)).toBe(2)
+    })
+    // The second request has waited about 250 ms in the queue; another 250 ms would pass a timeout
+    // counted from when it was made.
+    await new Promise((resolve) => {
+      setTimeout(resolve, 250)
+    })
+    server.releaseOne()
+    expect((await first).isOk()).toBe(true)
+    expect((await second).isOk()).toBe(true)
     client.disconnect()
   })
 })

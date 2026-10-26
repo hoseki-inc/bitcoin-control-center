@@ -1,5 +1,5 @@
-import { Box, Button, HStack, Image, Stack, Text } from '@chakra-ui/react'
-import { LinearGradient } from '@hoseki/packages/ui/design-system'
+import { Box, Button, HStack, Image, Skeleton, Stack, Text } from '@chakra-ui/react'
+import { LinearGradient, TextSkeleton } from '@hoseki/packages/ui/design-system'
 import { StatusBadge, getBadgeConfigForStatement } from '@hoseki/packages/ui/prove-verify-ui'
 import { formatDateRange } from '@hoseki/packages/ui/utils'
 import { format } from 'date-fns'
@@ -81,8 +81,9 @@ export function StatementCard({
         alignItems="center"
         justifyContent="center"
       >
+        {/* A fixed height, so the card doesn't grow when the image arrives. */}
         <Box
-          maxH="150px"
+          h="150px"
           w="150px"
           overflow="hidden"
           boxShadow="6px 0 12px 0 rgba(0, 0, 0, 0.07), -6px 0 12px 0 rgba(0, 0, 0, 0.07), 0 -6px 12px 0 rgba(0, 0, 0, 0.07)"
@@ -117,6 +118,39 @@ export function StatementCard({
           </Text>
         </Stack>
         {footerAction}
+      </HStack>
+    </Box>
+  )
+}
+
+/** A statement card's outline while statements load: the page preview and the footer's three lines. */
+export function StatementCardSkeleton(): JSX.Element {
+  return (
+    <Box
+      borderRadius="panel"
+      borderWidth="1px"
+      borderColor="neutral.200"
+      bg="neutral.50"
+      overflow="hidden"
+      minWidth={0}
+      display="flex"
+      flexDirection="column"
+    >
+      <Box p={6} pb={0} display="flex" justifyContent="center">
+        <Skeleton h="150px" w="150px" borderRadius="none" />
+      </Box>
+      <HStack bg="white" borderTopWidth="1px" borderColor="neutral.200" flexGrow={1} pr={2}>
+        <Stack py={2} px={4} spacing={0} flexGrow="1" minW={0}>
+          <Text textStyle="text/sm" fontWeight="medium">
+            <TextSkeleton width="9ch" />
+          </Text>
+          <Text textStyle="text/xs">
+            <TextSkeleton width="22ch" />
+          </Text>
+          <Text textStyle="text/xs">
+            <TextSkeleton width="26ch" />
+          </Text>
+        </Stack>
       </HStack>
     </Box>
   )
