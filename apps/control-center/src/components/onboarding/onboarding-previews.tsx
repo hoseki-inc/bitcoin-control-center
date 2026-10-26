@@ -2,6 +2,7 @@ import {
   Box,
   type BoxProps,
   Checkbox,
+  Circle,
   Flex,
   Grid,
   HStack,
@@ -21,7 +22,7 @@ import { Header, Menu } from '@hoseki/packages/ui/prove-verify-ui/layout/header'
 import { Logo } from '@hoseki/packages/ui/prove-verify-ui/logo'
 import { StatusBadge } from '@hoseki/packages/ui/prove-verify-ui/status-badge'
 import Decimal from 'decimal.js'
-import { SettingsIcon } from 'lucide-react'
+import { EyeIcon, GlobeIcon, HouseIcon, LaptopIcon, LockIcon, SettingsIcon } from 'lucide-react'
 import { type ReactNode, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ConnectionRowContent, LIVENESS_COLORS, connectionSummary } from '../../pages/settings/electrum-settings'
 import { STATEMENT_SOURCES, StatementSourceOption } from '../../pages/settings/statement-source-settings'
@@ -435,6 +436,116 @@ export function ConnectionsPreview(): JSX.Element {
           <Text mt={2} textStyle="text/xs" color="neutral.600">
             Fastest. Your IP address and transaction details are shared with mempool.space.
           </Text>
+        </Card>
+      </Inert>
+    </Stage>
+  )
+}
+
+// ─── Choose your Electrum server ─────────────────────────────────────────────
+
+/** One sample wallet's addresses, as a lookup sends them to the server. */
+const SAMPLE_ADDRESSES = [
+  { address: 'bc1q8c6fs0…k2xw', btc: '0.5120' },
+  { address: 'bc1q3m9dl4…7fa4', btc: '0.2875' },
+  { address: 'bc1qxw2pv7…9hcl', btc: '0.0800' },
+]
+
+/** What a lookup tells the server, with the sample wallet's details. */
+const SERVER_SEES = [
+  { label: 'Which addresses are yours', detail: '3 addresses' },
+  { label: 'Their balances and history', detail: '0.8795 BTC' },
+  { label: 'Your IP address', detail: '203.0.113.24' },
+]
+
+/** A wallet being looked up, and who learns what from it: Blockstream's public server, or your own node. */
+export function ServerPreview({ server }: { server: 'public' | 'own' }): JSX.Element {
+  const own = server === 'own'
+  const tone = own ? 'success' : 'warning'
+  return (
+    <Stage>
+      <Inert>
+        <Card
+          top={{ base: '48px', md: '64px' }}
+          left={{ base: '12px', md: '24px' }}
+          w={{ base: '456px', md: '400px' }}
+          p={6}
+        >
+          <HStack gap={3}>
+            <Circle size={10} bg="neutral.100" color="neutral.700">
+              <LaptopIcon size={18} />
+            </Circle>
+            <Box>
+              <Text textStyle="label/md" fontWeight="semibold" color="neutral.900">
+                This computer
+              </Text>
+              <Text textStyle="text/xs" color="neutral.600">
+                Looking up Savings
+              </Text>
+            </Box>
+          </HStack>
+          <Stack gap={2} mt={5}>
+            {SAMPLE_ADDRESSES.map(({ address, btc }, index) => (
+              <HStack
+                key={address}
+                justify="space-between"
+                px={3}
+                py={2}
+                bg="neutral.50"
+                borderRadius="md"
+                sx={popIn(index)}
+              >
+                <Text fontFamily="mono" textStyle="text/xs" color="neutral.900">
+                  {address}
+                </Text>
+                <Text textStyle="text/xs" color="neutral.600">
+                  {btc} BTC
+                </Text>
+              </HStack>
+            ))}
+          </Stack>
+        </Card>
+        {/* Keyed by the choice, so the server card settles in again when it changes. */}
+        <Card
+          key={server}
+          front
+          top={{ base: '352px', md: '332px' }}
+          left={{ base: '24px', md: '152px' }}
+          w={{ base: '432px', md: '424px' }}
+          p={6}
+          sx={popIn(0)}
+        >
+          <HStack gap={3}>
+            <Circle size={10} bg={`${tone}.100`} color={`${tone}.800`}>
+              {own ? <HouseIcon size={18} /> : <GlobeIcon size={18} />}
+            </Circle>
+            <Box minW={0}>
+              <Text textStyle="label/md" fontWeight="semibold" color="neutral.900">
+                {own ? 'Your node' : 'electrum.blockstream.info'}
+              </Text>
+              <Text textStyle="text/xs" color="neutral.600">
+                {own ? 'umbrel.local · Electrum server' : 'Public server · Run by Blockstream'}
+              </Text>
+            </Box>
+          </HStack>
+          <Text textStyle="label/sm" color="neutral.600" mt={5} mb={3}>
+            {own ? 'Only you can see' : 'Blockstream can see'}
+          </Text>
+          <Stack gap={3}>
+            {SERVER_SEES.map(({ label, detail }) => (
+              <HStack key={label} gap={3}>
+                <Box color={`${tone}.700`} flexShrink={0}>
+                  {own ? <LockIcon size={16} /> : <EyeIcon size={16} />}
+                </Box>
+                <Text textStyle="text/sm" color="neutral.900" flex={1}>
+                  {label}
+                </Text>
+                <Text textStyle="text/xs" color="neutral.600">
+                  {detail}
+                </Text>
+              </HStack>
+            ))}
+          </Stack>
         </Card>
       </Inert>
     </Stage>
