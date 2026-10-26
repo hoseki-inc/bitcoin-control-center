@@ -2,9 +2,11 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ElectrumClient } from '@hoseki/packages/clients/electrum'
-import { Err, Ok, asyncFn } from '@hoseki/packages/result'
+import { IndexMap } from '@hoseki/packages/collection'
+import { AsyncResult, Err, Ok, asyncFn } from '@hoseki/packages/result'
 import { Wallets } from '@hoseki/packages/testing'
 import { Signer } from 'bip322-js'
+import { eq } from 'drizzle-orm'
 import pino from 'pino'
 import { assert, expect, it, onTestFinished, vi } from 'vitest'
 import { type AppContextOptions, createAppContext } from '../../context'
@@ -192,26 +194,67 @@ it('accepts only one concurrent signature submission and preserves the winning s
   await expect(caller.challengeMessages.get({ signedMessageId: message.id })).resolves.toEqual(winner.value)
 })
 
-it('returns the stored wallet balances of the requested wallets only', async () => {
+it('reads wallet balances without waiting for Electrum, and reports the scans it starts', async () => {
   const { app } = await setup()
   const { accounts: accountRouter, controlCenter } = appRouter.createCaller({ app }).portalProve
-  const requested = await accountRouter.add({
+  const wallet = await accountRouter.add({
     descriptor: Wallets.singlesigNativeSegwitAccount.toString(),
-    displayName: 'Requested wallet',
+    displayName: 'Wallet',
     network: 'mainnet',
   })
-  const other = await accountRouter.add({
+  const archived = await accountRouter.add({
     descriptor: Wallets.singlesigLegacyAccount.toString(),
-    displayName: 'Other wallet',
+    displayName: 'Archived wallet',
     network: 'mainnet',
   })
-  await app.controlCenterService.recordAccountSnapshot(requested.id, '90', '2020-01-01T00:00:00.000Z')
-  await app.controlCenterService.recordAccountSnapshot(requested.id, '150', '2020-01-03T09:00:00.000Z')
-  await app.controlCenterService.recordAccountSnapshot(other.id, '50', '2020-01-02T00:00:00.000Z')
+  await app.controlCenterService.recordAccountSnapshot(wallet.id, '150', '2020-01-03T09:00:00.000Z')
+  await app.database.update(accounts).set({ deletedAt: '2020-01-04T00:00:00.000Z' }).where(eq(accounts.id, archived.id))
+  // Electrum never answers.
+  vi.spyOn(app.onchainProvider, 'getBlocksTip').mockReturnValue(new AsyncResult(new Promise(() => undefined)))
 
-  await expect(controlCenter.storedWalletBalances({ claimIds: [requested.id] })).resolves.toEqual([
-    { accountId: requested.id, balanceSats: '150', timestamp: '2020-01-03T09:00:00.000Z' },
+  await expect(controlCenter.walletBalances({ claimIds: [wallet.id, archived.id] })).resolves.toEqual([
+    {
+      accountId: wallet.id,
+      balanceSats: '150',
+      asOf: '2020-01-03T09:00:00.000Z',
+      syncing: true,
+      failed: false,
+      failure: null,
+    },
   ])
+})
+
+it('returns the balances of wallets it could scan, leaving out one that failed, without its error', async () => {
+  const { app } = await setup()
+  const { accounts: accountRouter, onchain } = appRouter.createCaller({ app }).portalProve
+  const good = await accountRouter.add({
+    descriptor: Wallets.singlesigNativeSegwitAccount.toString(),
+    displayName: 'Good wallet',
+    network: 'mainnet',
+  })
+  const bad = await accountRouter.add({
+    descriptor: Wallets.singlesigLegacyAccount.toString(),
+    displayName: 'Bad wallet',
+    network: 'mainnet',
+  })
+  vi.spyOn(app.onchainProvider, 'getBlocksTip').mockReturnValue(
+    new AsyncResult(Promise.resolve(Ok({ height: 1, hash: 'a'.repeat(64), timestamp: new Date() }))),
+  )
+  vi.spyOn(app.onchainProvider, 'getConfirmedAccountBalances').mockImplementation(
+    asyncFn(async (requested) => {
+      const [account] = [...requested]
+      return account?.toString() === Wallets.singlesigLegacyAccount.toString()
+        ? Err(new Error('synthetic-sensitive-error'))
+        : Ok(new IndexMap([[Wallets.singlesigNativeSegwitAccount, 5_000n]]))
+    }),
+  )
+
+  const balances = await onchain.claimBalances({ claimIds: [good.id, bad.id] })
+  expect([...balances.entries()].map(([id, sats]) => [id, sats.toString()])).toEqual([[good.id, '5000']])
+  await expect(onchain.claimBalances({ claimIds: [bad.id] })).rejects.toMatchObject({
+    code: 'INTERNAL_SERVER_ERROR',
+    message: 'Could not fetch wallet balances',
+  })
 })
 
 it('reports a newer desktop release once the check finds one, and nothing from source', async () => {

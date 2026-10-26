@@ -1,4 +1,4 @@
-import { Box, Button, HStack, Spinner, Stack, Text, chakra } from '@chakra-ui/react'
+import { Box, Button, HStack, Stack, Text, chakra } from '@chakra-ui/react'
 import { ErrorBanner } from '@hoseki/packages/ui/design-system'
 import { CheckCircleFilledIcon, StatusBadge } from '@hoseki/packages/ui/prove-verify-ui'
 import { TopBar } from '@hoseki/packages/ui/prove-verify-ui/top-bar'
@@ -6,6 +6,7 @@ import { format } from 'date-fns'
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { toast } from 'sonner'
+import { AccountDetailsSkeleton } from '../../../components/loading/page-skeletons'
 import { trpc } from '../../../trpc'
 import { needsExchangeReconnect } from '../../../utils/exchange-connection-status'
 
@@ -21,7 +22,7 @@ export function KrakenAccountDetailsPage(): JSX.Element {
   const deleteMutation = trpc.portalProve.exchange.delete.useMutation()
 
   if (listQuery.isLoading) {
-    return <Spinner mt={12} display="block" mx="auto" size="xl" />
+    return <AccountDetailsSkeleton />
   }
 
   const account = listQuery.data?.find((a) => a.id === accountId)

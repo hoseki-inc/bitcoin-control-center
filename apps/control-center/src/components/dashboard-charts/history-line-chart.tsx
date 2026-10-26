@@ -2,6 +2,7 @@ import { Box, Flex, Text, useToken } from '@chakra-ui/react'
 import { parseUnknown } from '@hoseki/packages/result/lib/parse'
 import { Line, LineChart, ResponsiveContainer, Tooltip, type TooltipContentProps, XAxis, YAxis } from 'recharts'
 import { z } from 'zod'
+import { HistoryRangeLoading } from './history-chart-frame'
 
 const HistoryPointSchema = z.object({ time: z.number(), value: z.number() })
 
@@ -26,11 +27,15 @@ export function HistoryLineChart({
   size,
 }: HistoryLineChartProps): JSX.Element {
   const [axisColor, lineColor] = useToken('colors', ['neutral.600', 'warning.600'])
-  if (loading || data.length === 0) {
+  if (loading) {
+    // The same outline as Portfolio's history while it loads.
+    return <HistoryRangeLoading height="100%" label="Loading history…" />
+  }
+  if (data.length === 0) {
     return (
       <Flex h="full" align="center" justify="center" px={5}>
         <Text as="output" textStyle="text/sm" color="neutral.600">
-          {loading ? 'Loading history…' : emptyMessage}
+          {emptyMessage}
         </Text>
       </Flex>
     )

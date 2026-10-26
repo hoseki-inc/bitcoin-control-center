@@ -16,6 +16,9 @@ export * from './how-does-this-work'
 export * from './panel'
 export * from './spinner'
 
+export * from './loading/loading'
+export * from './loading/use-delayed-flag'
+
 export * from './feedback/advanced-feature-alert'
 export * from './feedback/tip-alert'
 

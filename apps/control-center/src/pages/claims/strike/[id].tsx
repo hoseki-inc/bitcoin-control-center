@@ -24,6 +24,7 @@ import { format } from 'date-fns'
 import { useCallback, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { toast } from 'sonner'
+import { AccountDetailsSkeleton } from '../../../components/loading/page-skeletons'
 import { parseStrikeCsv } from '../../../lib/strike-csv'
 import { trpc } from '../../../trpc'
 import { needsExchangeReconnect } from '../../../utils/exchange-connection-status'
@@ -70,7 +71,7 @@ export function StrikeAccountDetailsPage(): JSX.Element {
   )
 
   if (listQuery.isLoading) {
-    return <Spinner mt={12} display="block" mx="auto" size="xl" />
+    return <AccountDetailsSkeleton />
   }
 
   const account = listQuery.data?.find((a) => a.id === accountId)

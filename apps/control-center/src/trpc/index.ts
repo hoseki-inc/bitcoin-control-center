@@ -7,6 +7,7 @@ import superjson from 'superjson'
 import { z } from 'zod'
 import { TAB_HEADER, sentinelFetch } from '../pin/tab'
 import { queryClient, trpc } from './base'
+import { developmentFetch } from './development-latency'
 
 export { queryClient, trpc }
 
@@ -45,7 +46,7 @@ export const reactTrpcClient = trpc.createClient({
     httpLink({
       // maxURLLength: ???,
       url,
-      fetch: sentinelFetch,
+      fetch: developmentFetch(sentinelFetch),
     }),
   ],
 })

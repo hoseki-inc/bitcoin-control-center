@@ -7,9 +7,112 @@
 
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+    <style>
+      /* Shown until the app's first render replaces it. Over Tor the bundle can take a while to arrive. */
+      html,
+      body {
+        margin: 0;
+        background: #ffffff;
+      }
+      .boot-label {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        white-space: nowrap;
+      }
+      /* The app's header: one row on wider screens, its menu on a second row on phones. */
+      .boot-header {
+        box-sizing: border-box;
+        height: 77px;
+        border-bottom: 1px solid #e2e8f0;
+      }
+      .boot-page {
+        box-sizing: border-box;
+        max-width: 928px;
+        margin: 0 auto;
+        padding: 32px 24px;
+        /* A quick load never shows the placeholder; a slow one fades it in. */
+        opacity: 0;
+        animation: boot-in 180ms cubic-bezier(0.23, 1, 0.32, 1) 300ms forwards;
+      }
+      .boot-block {
+        background: #f1f5f9;
+        border-radius: 8px;
+        animation: boot-pulse 0.8s linear infinite alternate;
+      }
+      .boot-title {
+        width: 180px;
+        height: 28px;
+      }
+      .boot-panel {
+        height: 240px;
+        margin-top: 24px;
+        border-radius: 12px;
+      }
+      .boot-row {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 16px;
+        margin-top: 24px;
+      }
+      .boot-row .boot-block {
+        height: 120px;
+        border-radius: 12px;
+      }
+      @keyframes boot-in {
+        to {
+          opacity: 1;
+        }
+      }
+      @keyframes boot-pulse {
+        to {
+          background: #e2e8f0;
+        }
+      }
+      @media (max-width: 47.99em) {
+        .boot-header {
+          height: 129px;
+        }
+        .boot-page {
+          padding: 24px 16px;
+        }
+        .boot-row {
+          grid-template-columns: 1fr;
+        }
+        .boot-row .boot-block + .boot-block {
+          display: none;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .boot-page {
+          opacity: 1;
+          animation: none;
+        }
+        .boot-block {
+          animation: none;
+        }
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div aria-busy="true">
+        <span class="boot-label">Loading Bitcoin Control Center</span>
+        <div class="boot-header"></div>
+        <div class="boot-page" aria-hidden="true">
+          <div class="boot-block boot-title"></div>
+          <div class="boot-block boot-panel"></div>
+          <div class="boot-row">
+            <div class="boot-block"></div>
+            <div class="boot-block"></div>
+            <div class="boot-block"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <noscript>Bitcoin Control Center needs JavaScript to run.</noscript>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

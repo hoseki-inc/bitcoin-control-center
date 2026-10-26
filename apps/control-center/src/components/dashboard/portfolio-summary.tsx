@@ -1,11 +1,13 @@
 import { Box, Button, type ButtonProps, Flex, Grid, Text } from '@chakra-ui/react'
 import Decimal from 'decimal.js'
 import { Link } from 'react-router'
+import type { WalletBalanceSummary } from '../../lib/wallet-balances'
 import { getBrowserTimezone } from '../../utils/timezone'
 import { BitcoinAmount } from '../bitcoin-amount'
 import { AccumulationChart as DefaultAccumulationChart } from '../dashboard-charts/accumulation-chart'
 import type { BalanceDataPoint } from '../dashboard-charts/balance-history'
 import { FiatAmountText } from '../fiat-amount-text'
+import { SyncIndicator } from '../wallet-balances/sync-indicator'
 import { DashboardAmount } from './dashboard-typography'
 import { StatMini } from './stat-mini'
 
@@ -20,11 +22,14 @@ export interface PortfolioSummaryData {
 export function PortfolioSummary({
   data,
   accountCount,
+  wallets,
   AccumulationChart = DefaultAccumulationChart,
   portfolioLinkProps,
 }: {
   data: PortfolioSummaryData
   accountCount: number | null
+  /** Whether the wallet balances behind the total are current, and how old they are if not. */
+  wallets?: Pick<WalletBalanceSummary, 'state' | 'asOf'>
   AccumulationChart?: typeof DefaultAccumulationChart
   /** Extra props for the View Portfolio link, such as taking it out of the tab order. */
   portfolioLinkProps?: ButtonProps
@@ -74,9 +79,18 @@ export function PortfolioSummary({
 
       {/* Chart */}
       <Box mb={3}>
-        <Text textStyle="text/sm" fontWeight="medium" color="neutral.600" mb={2}>
-          Last 30 Days
-        </Text>
+        <Flex align="center" justify="space-between" gap={3} mb={2} flexWrap="wrap">
+          <Text textStyle="text/sm" fontWeight="medium" color="neutral.600">
+            Last 30 Days
+          </Text>
+          {/* Only while balances are updating or out of date; a quiet refresh needs no word. */}
+          {wallets?.state === 'loading' || wallets?.state === 'stale' ? (
+            // Announces when wallet balances start or stop updating.
+            <Box as="output">
+              <SyncIndicator walletBalanceState={wallets.state} walletBalancesAsOf={wallets.asOf} />
+            </Box>
+          ) : null}
+        </Flex>
         <Box as="figure" aria-label="Bitcoin balance, last 30 days">
           <AccumulationChart data={historicalData} hasActivity={hasBalance} isUp={isUp} timezone={userTimezone} />
         </Box>

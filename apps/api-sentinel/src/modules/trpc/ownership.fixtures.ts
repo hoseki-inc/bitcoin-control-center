@@ -28,6 +28,7 @@ import { PriceHistoryService } from '../price/history'
 import { PriceService } from '../price/service'
 import { StatementService } from '../statements/service'
 import { ReleaseCheckService } from '../updates/service'
+import { WalletBalanceService } from '../wallet_balances/service'
 import { appRouter } from './router'
 
 // Public, deterministic test seeds only. Signatures and verification are real BIP-322.
@@ -144,6 +145,7 @@ export async function setupAppCaller(): Promise<AppCallerHarness> {
     downloadRetryDelaysMs: [1, 1, 1, 1],
   })
 
+  const walletBalanceService = new WalletBalanceService({ ...deps, onchainProvider })
   const app: AppContext = {
     env,
     logger,
@@ -165,7 +167,9 @@ export async function setupAppCaller(): Promise<AppCallerHarness> {
       manualService,
       etfService,
       priceService,
+      walletBalances: walletBalanceService,
     }),
+    walletBalanceService,
     statementService: new StatementService({
       ...deps,
       onchainProvider,

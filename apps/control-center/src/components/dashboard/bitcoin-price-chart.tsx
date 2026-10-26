@@ -1,4 +1,5 @@
 import { Box, Button, Flex, Text } from '@chakra-ui/react'
+import { TextSkeleton } from '@hoseki/packages/ui/design-system/loading/loading'
 import { useState } from 'react'
 import { trpc } from '../../trpc'
 import { HistoryLineChart as DefaultHistoryLineChart } from '../dashboard-charts/history-line-chart'
@@ -68,8 +69,13 @@ export function BitcoinPriceChart({ views = bitcoinPriceChartViews }: { views?: 
               color="neutral.900"
               sx={{ fontVariantNumeric: 'tabular-nums' }}
             >
-              {last ? formatPrice(last.value) : '—'}
+              {last ? formatPrice(last.value) : query.isLoading ? <TextSkeleton width="9ch" /> : '—'}
             </Text>
+            {change === null && query.isLoading && (
+              <Text textStyle="text/sm">
+                <TextSkeleton width="14ch" />
+              </Text>
+            )}
             {change !== null && (
               <Text textStyle="text/sm" color={change >= 0 ? 'success.700' : 'error.700'}>
                 {change >= 0 ? '+' : ''}

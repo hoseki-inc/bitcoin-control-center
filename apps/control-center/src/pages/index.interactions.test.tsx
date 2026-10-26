@@ -98,10 +98,10 @@ it('retries every failed holdings query and the statements from Try Again', asyn
   const queries = {
     statements: fakeQuery<StatementDto[]>(undefined, true),
     portfolio: fakeQuery(undefined, true),
-    claims: fakeQuery<unknown[]>(undefined, true),
-    exchanges: fakeQuery<unknown[]>([]),
-    manual: fakeQuery<unknown[]>([]),
-    etfs: fakeQuery<unknown[]>([]),
+    claims: fakeQuery<Array<{ id: string }>>(undefined, true),
+    exchanges: fakeQuery<Array<{ id: string }>>([]),
+    manual: fakeQuery<Array<{ id: string }>>([]),
+    etfs: fakeQuery<Array<{ id: string }>>([]),
   }
   const container = await renderHome({
     useStatements: () => queries.statements,
@@ -110,6 +110,7 @@ it('retries every failed holdings query and the statements from Try Again', asyn
     useExchanges: () => queries.exchanges,
     useManual: () => queries.manual,
     useEtfs: () => queries.etfs,
+    useWalletBalances: () => ({ rows: [], isError: false }),
   })
   await act(async () => {
     button(container, 'Try Again').click()
@@ -126,10 +127,11 @@ it.each([
   const container = await renderHome({
     useStatements: () => fakeQuery<StatementDto[]>([]),
     usePortfolio: () => fakeQuery(undefined),
-    useClaims: () => fakeQuery<unknown[]>(claimsFailed ? undefined : [], claimsFailed),
-    useExchanges: () => fakeQuery<unknown[]>([]),
-    useManual: () => fakeQuery<unknown[]>([]),
-    useEtfs: () => fakeQuery<unknown[]>([]),
+    useClaims: () => fakeQuery<Array<{ id: string }>>(claimsFailed ? undefined : [], claimsFailed),
+    useExchanges: () => fakeQuery<Array<{ id: string }>>([]),
+    useManual: () => fakeQuery<Array<{ id: string }>>([]),
+    useEtfs: () => fakeQuery<Array<{ id: string }>>([]),
+    useWalletBalances: () => ({ rows: [], isError: false }),
   })
   expect(container.textContent).toContain(expected)
 })
@@ -138,10 +140,11 @@ it('opens a recent statement from its View button', async () => {
   const container = await renderHome({
     useStatements: () => fakeQuery([statement]),
     usePortfolio: () => fakeQuery(undefined),
-    useClaims: () => fakeQuery<unknown[]>([]),
-    useExchanges: () => fakeQuery<unknown[]>([]),
-    useManual: () => fakeQuery<unknown[]>([]),
-    useEtfs: () => fakeQuery<unknown[]>([]),
+    useClaims: () => fakeQuery<Array<{ id: string }>>([]),
+    useExchanges: () => fakeQuery<Array<{ id: string }>>([]),
+    useManual: () => fakeQuery<Array<{ id: string }>>([]),
+    useEtfs: () => fakeQuery<Array<{ id: string }>>([]),
+    useWalletBalances: () => ({ rows: [], isError: false }),
   })
   await act(async () => {
     button(container, 'View').click()
