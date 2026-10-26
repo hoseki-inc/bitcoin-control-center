@@ -8,12 +8,12 @@ import type { Result } from '@hoseki/packages/result'
 import { type StatementQuoteCurrency, StatementQuoteCurrencySchema } from '@hoseki/packages/schemas/statement-quote'
 import { isUsableTimezone } from '@hoseki/packages/schemas/timezone'
 import Decimal from 'decimal.js'
-import { and, asc, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, isNull, max, ne, sql } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
 import type { Logger } from 'pino'
 import { z } from 'zod'
 import type { SentinelDb } from '../../db/drizzle'
-import { accounts, exchangeBalanceSnapshots, settings, statementCounter, statements } from '../../db/schema'
+import { accounts, challenges, exchangeBalanceSnapshots, settings, statementCounter, statements } from '../../db/schema'
 import type { ExchangeService } from '../exchange/service'
 import type { DailyRates } from '../price/daily_rates'
 import { type DailyRatesService, MIN_MEMPOOL_PRICE_DATE } from '../price/daily_rates'
@@ -333,10 +333,14 @@ export class StatementService {
       return Err(valid.unwrapErr())
     }
     // Serialize bigint values in transactionMap to strings for JSON storage
-    const serializedMap: Record<string, { displayName: string; transactions: SerializedAggregatedTransaction[] }> = {}
+    const serializedMap: Record<
+      string,
+      { displayName: string; ownershipProvenAt?: string; transactions: SerializedAggregatedTransaction[] }
+    > = {}
     for (const [key, account] of Object.entries(transactionMap)) {
       serializedMap[key] = {
         displayName: account.displayName,
+        ownershipProvenAt: account.ownershipProvenAt?.toISOString(),
         // oxlint-disable-next-line oxc/no-map-spread -- Preserve caller-owned transactions while converting values for storage.
         transactions: account.transactions.map((tx) => ({
           ...tx,
@@ -471,6 +475,7 @@ export class StatementService {
       if (!hasOnchainAccounts && !hasExchangeAccounts) {
         return Err(new Error('No accounts found for the provided IDs'))
       }
+      const ownershipProvenAt = await this.getOwnershipProvenDates(claimIds)
 
       // 2. Fetch on-chain transactions: history for every account, then each transaction once
       if (hasOnchainAccounts) {
@@ -579,7 +584,12 @@ export class StatementService {
           const entries = entriesResult.unwrap()
           const aggregated = calculateAccountTransactions(entries, row.display_name)
           const sorted = sortTxs(aggregated)
-          transactionMap[row.id] = { displayName: row.display_name, transactions: sorted }
+          const provenAt = ownershipProvenAt.get(row.id)
+          transactionMap[row.id] = {
+            displayName: row.display_name,
+            ...(provenAt !== undefined && { ownershipProvenAt: provenAt }),
+            transactions: sorted,
+          }
           this.logger.info(
             { account: row.display_name, rawEntries: entries.length, aggregated: aggregated.length },
             'Account transactions fetched',
@@ -774,6 +784,21 @@ export class StatementService {
       .where(and(inArray(accounts.id, claimIds), isNull(accounts.deletedAt)))
   }
 
+  /** When each account's latest ownership signature challenge completed. */
+  private async getOwnershipProvenDates(accountIds: string[]): Promise<Map<string, Date>> {
+    if (accountIds.length === 0) {
+      return new Map()
+    }
+    const rows = await this.db
+      .select({ accountId: challenges.accountId, completedAt: max(challenges.completedAt) })
+      .from(challenges)
+      .where(and(inArray(challenges.accountId, accountIds), eq(challenges.isSatisfied, 1)))
+      .groupBy(challenges.accountId)
+    return new Map(
+      rows.flatMap(({ accountId, completedAt }) => (completedAt === null ? [] : [[accountId, new Date(completedAt)]])),
+    )
+  }
+
   private async getExchangeSnapshots(accountId: string): Promise<Array<{ balance_sats: string; timestamp: string }>> {
     return this.db
       .select({ balance_sats: exchangeBalanceSnapshots.balanceSats, timestamp: exchangeBalanceSnapshots.timestamp })
@@ -840,7 +865,11 @@ export class StatementService {
       z.record(
         z.union([
           z.array(SerializedAggregatedTransactionSchema),
-          z.object({ displayName: z.string(), transactions: z.array(SerializedAggregatedTransactionSchema) }),
+          z.object({
+            displayName: z.string(),
+            ownershipProvenAt: z.string().datetime().optional(),
+            transactions: z.array(SerializedAggregatedTransactionSchema),
+          }),
         ]),
       ),
       JSON.parse(json) as unknown,
@@ -850,8 +879,10 @@ export class StatementService {
       // Older completed statements used the display name as the key.
       const displayName = Array.isArray(value) ? key : value.displayName
       const txs = Array.isArray(value) ? value : value.transactions
+      const ownershipProvenAt = Array.isArray(value) ? undefined : value.ownershipProvenAt
       result[key] = {
         displayName,
+        ...(ownershipProvenAt !== undefined && { ownershipProvenAt: new Date(ownershipProvenAt) }),
         // oxlint-disable-next-line oxc/no-map-spread -- Preserve additional stored fields in a new object with restored value types.
         transactions: txs.map((tx) => ({
           ...tx,

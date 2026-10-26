@@ -182,3 +182,31 @@ describe('statement PDF currencies', () => {
     }
   }
 })
+
+describe('statement PDF wording', () => {
+  const render = (statement: typeof sampleCustomStatement): string =>
+    renderToStaticMarkup(
+      <textTemplates.CustomStatementDocument input={{ statement, watermarkText: 'Statement' }} qrCode="" />,
+    )
+
+  it('describes how the statement was made without claiming outside verification', () => {
+    const markup = render(sampleCustomStatement)
+    expect(markup).toContain('Generated with Bitcoin Control Center')
+    expect(markup).toContain('Statement #42')
+    expect(markup).toContain('come from the Bitcoin blockchain')
+    expect(markup).toContain('each included wallet passed a proof-of-control signature in Bitcoin Control Center')
+    expect(markup).toContain('USD values are approximate')
+    expect(markup).not.toMatch(/hoseki verified|validated|verification process|proprietary/i)
+  })
+
+  it('shows when each wallet proved ownership, in the statement time zone', () => {
+    expect(render(sampleCustomStatement).match(/Ownership proven [^<]+/g)).toEqual([
+      'Ownership proven Dec 18, 2023',
+      'Ownership proven Nov 2, 2023',
+    ])
+    // 15:20 UTC on Dec 18 is already Dec 19 in Auckland.
+    expect(render({ ...sampleCustomStatement, timezone: 'Pacific/Auckland' })).toContain(
+      'Ownership proven Dec 19, 2023',
+    )
+  })
+})
