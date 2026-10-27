@@ -7,9 +7,10 @@ import { format } from 'date-fns'
 import { useState } from 'react'
 import { Link, Navigate, createSearchParams, useNavigate, useSearchParams } from 'react-router'
 import type { ClaimDto } from '../../../trpc/server-types'
-import { ensureClaimStatusNotExpired } from '../../../utils/claim-utils'
+import { ensureClaimStatusNotExpired, isBitkeyClaim } from '../../../utils/claim-utils'
 import { getThreshold } from '../../../utils/multisig-utils'
 import { getIndicatorKeystores } from '../../multisig/multisig-page-wrapper'
+import { BitkeyClaimProperties } from '../bitkey/bitkey-claim-properties'
 import { ClaimTopBar } from '../claim-top-bar'
 import { ResumeSinglesigFlow } from '../resume-flow'
 import { AbandonClaimButton } from './delete-claim-modal'
@@ -69,28 +70,33 @@ export function ClaimDetails({ claim }: { claim: ClaimDto }): JSX.Element {
                 </Text>
               </HStack>
             </Box>
-            <HStack spacing={1} overflowX="auto" overflowY="hidden" flexGrow={1}>
-              <KeystoresStatusIndicator
-                keystores={getIndicatorKeystores(claim)}
-                expandedKeystoreId={selectedKeystoreId ?? null}
-                expandedRingColor="green"
-                threshold={getThreshold(claim.account)}
-                tooltipVariant="none"
-                getKeystoreClickHandler={(keystore) => {
-                  // SingleSig are not clickable
-                  if (!isMultisig || keystore.status === 'pending') {
-                    return null
-                  }
+            {/* Bitkey's keys are listed below; they can't be verified one by one. */}
+            {isBitkeyClaim(claim) ? (
+              <Box flexGrow={1} />
+            ) : (
+              <HStack spacing={1} overflowX="auto" overflowY="hidden" flexGrow={1}>
+                <KeystoresStatusIndicator
+                  keystores={getIndicatorKeystores(claim)}
+                  expandedKeystoreId={selectedKeystoreId ?? null}
+                  expandedRingColor="green"
+                  threshold={getThreshold(claim.account)}
+                  tooltipVariant="none"
+                  getKeystoreClickHandler={(keystore) => {
+                    // SingleSig are not clickable
+                    if (!isMultisig || keystore.status === 'pending') {
+                      return null
+                    }
 
-                  return (selectedKeystore: IndicatorKeystore) => {
-                    void navigate({
-                      pathname: `/accounts/${claim.id}`,
-                      search: `?${createSearchParams({ keystoreId: selectedKeystore.id })}`,
-                    })
-                  }
-                }}
-              />
-            </HStack>
+                    return (selectedKeystore: IndicatorKeystore) => {
+                      void navigate({
+                        pathname: `/accounts/${claim.id}`,
+                        search: `?${createSearchParams({ keystoreId: selectedKeystore.id })}`,
+                      })
+                    }
+                  }}
+                />
+              </HStack>
+            )}
             <Button
               variant="outline"
               onClick={() => {
@@ -149,7 +155,9 @@ function ClaimDetailsBody({
 
   return (
     <>
-      {!isMultisig ? (
+      {isBitkeyClaim(claim) ? (
+        <BitkeyClaimProperties claim={claim} />
+      ) : !isMultisig ? (
         <KeystoreDetailsSingleSig claim={claim} keystore={claim.keystores[0]} />
       ) : selectedKeystoreId != null && selectedKeystoreId !== '' ? (
         <KeystoreDetailsMultiSig claim={claim} keystore={claim.keystores.find((k) => k.id === selectedKeystoreId)} />
@@ -171,6 +179,9 @@ function StatusDot({ status }: { status: ClaimDto['status'] }) {
       break
     case 'verified':
       color = 'success.600'
+      break
+    case 'unverified':
+      color = 'neutral.400'
       break
   }
   return <Box w={2} h={2} bg={color} borderRadius="full" />

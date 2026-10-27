@@ -25,5 +25,6 @@ export const statementIdPrefix = 'st_stmt'
 export const StatementIdSchema = createHosidSchema(statementIdPrefix)
 export type StatementId = z.infer<typeof StatementIdSchema>
 
-export type ClaimStatus = 'pending' | 'verified' | 'expired'
+/** `unverified` accounts can't be verified, e.g. Bitkey, whose keys can't sign messages. */
+export type ClaimStatus = 'pending' | 'verified' | 'expired' | 'unverified'
 export type ClaimAccessStatus = 'active' | 'inactive' | 'disconnected'

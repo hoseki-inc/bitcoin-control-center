@@ -10,6 +10,7 @@ export * from './wizard-footer'
 
 export * from './coldcard/coldcard-utils'
 
+export * from './bitkey/floating-bitkey-image'
 export * from './keystone/floating-keystone-image'
 export * from './keystone/keystone-utils'
 
