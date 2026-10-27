@@ -12,9 +12,9 @@ export const bitkeyKeyRoles = ['app', 'hardware', 'server'] as const
 export type BitkeyKeyRole = (typeof bitkeyKeyRoles)[number]
 
 export const bitkeyKeyLabels = {
-  app: 'Phone app key',
-  hardware: 'Bitkey hardware',
-  server: 'Block server key',
+  app: 'Phone key',
+  hardware: 'Bitkey key',
+  server: 'Block key',
 } as const satisfies Record<BitkeyKeyRole, string>
 
 export interface BitkeyKey {
