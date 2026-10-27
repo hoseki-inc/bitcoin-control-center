@@ -297,14 +297,12 @@ function ConfirmBitkey({ readExport, onBack }: { readExport: ReadExport; onBack:
         We Found Your Bitkey
       </Text>
       <Text textStyle="text/md" color="neutral.900">
-        It’s a 2-of-3 wallet. Any two of these keys can move your bitcoin; Control Center holds none of them.
+        Any two of these three keys move your bitcoin. Control Center holds none of them.
       </Text>
 
       <BitkeyKeyList
         keys={readExport.parsed.keys.map((key) => ({ role: key.role, xpub: key.keyExpression.xpub.toString() }))}
       />
-
-      <BitkeyUnverifiedNote />
 
       <form
         onSubmit={(event) => {
@@ -325,6 +323,10 @@ function ConfirmBitkey({ readExport, onBack }: { readExport: ReadExport; onBack:
           />
           {nameError !== null && <FormErrorMessage>{nameError}</FormErrorMessage>}
         </FormControl>
+
+        <Box mt={4}>
+          <BitkeyUnverifiedNote isBrief />
+        </Box>
 
         <WizardFooter
           leftButton={
