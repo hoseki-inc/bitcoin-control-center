@@ -1,6 +1,9 @@
-import { Box, chakra } from '@chakra-ui/react'
+import { Box, type BoxProps, chakra } from '@chakra-ui/react'
 
-export function FloatingBitkeyImage(): JSX.Element {
+export function FloatingBitkeyImage({
+  imageHeight = '200px',
+  ...props
+}: { imageHeight?: string } & BoxProps): JSX.Element {
   return (
     <Box
       mx="auto"
@@ -14,11 +17,12 @@ export function FloatingBitkeyImage(): JSX.Element {
           '100%': { transform: 'translateY(0)' },
         },
       }}
+      {...props}
     >
       <chakra.img
         src="/images/hardware-wallets/bitkey-device.png"
         alt="Bitkey"
-        h="320px"
+        h={imageHeight}
         display="block"
         filter="drop-shadow(-8px 10px 15px rgba(0, 0, 0, 0.5))"
       />

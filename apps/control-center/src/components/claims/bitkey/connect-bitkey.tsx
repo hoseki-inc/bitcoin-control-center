@@ -9,12 +9,18 @@ import {
   Text,
   Textarea,
   chakra,
+  keyframes,
 } from '@chakra-ui/react'
 import type { Result } from '@hoseki/packages/result'
 import { FileDropReader, type FileDropState, PageTransition } from '@hoseki/packages/ui/design-system'
 import { TipAlert } from '@hoseki/packages/ui/design-system/feedback/tip-alert'
 import { monoInputProps } from '@hoseki/packages/ui/utils/bitcoin'
-import { ClaimConnectionWrapper, FloatingBitkeyImage, WizardFooter } from '@hoseki/packages/ui/wallet-ui'
+import {
+  ClaimConnectionWrapper,
+  FloatingBitkeyImage,
+  NavigationArrows,
+  WizardFooter,
+} from '@hoseki/packages/ui/wallet-ui'
 import { type BitkeyExport, parseBitkeyExport } from '@hoseki/packages/wallet'
 import { CircleAlert } from 'lucide-react'
 import { useState } from 'react'
@@ -23,9 +29,11 @@ import { toast } from 'sonner'
 import { parseNavigationState } from '../../../lib/navigation-state'
 import { trpc } from '../../../trpc'
 import { BitkeyKeyList, BitkeyUnverifiedNote } from './bitkey-notes'
-import { BitkeyPhoneSteps } from './bitkey-phone-steps'
+import { BITKEY_PHONE_HEIGHT, BitkeyPhoneGuide, bitkeyExportSteps } from './bitkey-phone-steps'
 
-type Step = 'intro' | 'export' | 'import' | 'confirm'
+type Step = { kind: 'intro' } | { kind: 'export'; index: number } | { kind: 'import' } | { kind: 'confirm' }
+
+const lastExportIndex = bitkeyExportSteps.length - 1
 
 interface ReadExport {
   text: string
@@ -33,7 +41,7 @@ interface ReadExport {
 }
 
 export function ConnectBitkey(): JSX.Element {
-  const [step, setStep] = useState<Step>('intro')
+  const [step, setStep] = useState<Step>({ kind: 'intro' })
   const [readExport, setReadExport] = useState<ReadExport | null>(null)
   const navigate = useNavigate()
   const location = useLocation()
@@ -41,43 +49,44 @@ export function ConnectBitkey(): JSX.Element {
 
   return (
     <ClaimConnectionWrapper pt={8}>
-      <PageTransition key={step}>
-        {step === 'intro' && (
+      <PageTransition key={step.kind}>
+        {step.kind === 'intro' && (
           <Intro
             onBack={() => {
               void navigate(returnTo)
             }}
             onNext={() => {
-              setStep('export')
+              setStep({ kind: 'export', index: 0 })
             }}
           />
         )}
-        {step === 'export' && (
-          <ExportInstructions
+        {step.kind === 'export' && (
+          <ExportStep
+            index={step.index}
             onBack={() => {
-              setStep('intro')
+              setStep(step.index === 0 ? { kind: 'intro' } : { kind: 'export', index: step.index - 1 })
             }}
             onNext={() => {
-              setStep('import')
+              setStep(step.index === lastExportIndex ? { kind: 'import' } : { kind: 'export', index: step.index + 1 })
             }}
           />
         )}
-        {step === 'import' && (
+        {step.kind === 'import' && (
           <ImportDescriptor
             onBack={() => {
-              setStep('export')
+              setStep({ kind: 'export', index: lastExportIndex })
             }}
             onRead={(read) => {
               setReadExport(read)
-              setStep('confirm')
+              setStep({ kind: 'confirm' })
             }}
           />
         )}
-        {step === 'confirm' && readExport && (
+        {step.kind === 'confirm' && readExport && (
           <ConfirmBitkey
             readExport={readExport}
             onBack={() => {
-              setStep('import')
+              setStep({ kind: 'import' })
             }}
           />
         )}
@@ -89,7 +98,10 @@ export function ConnectBitkey(): JSX.Element {
 function Intro({ onBack, onNext }: { onBack: () => void; onNext: () => void }) {
   return (
     <Stack gap={4}>
-      <FloatingBitkeyImage />
+      {/* The same height as the phone on the next steps, so the text doesn't jump. */}
+      <Box h={`${BITKEY_PHONE_HEIGHT}px`} display="grid" placeItems="center">
+        <FloatingBitkeyImage imageHeight="280px" pt={0} pb={0} />
+      </Box>
 
       <Text as="h2" textStyle="text/2xl" color="neutral.900" fontWeight="medium">
         Connect Your Bitkey
@@ -123,28 +135,31 @@ function Intro({ onBack, onNext }: { onBack: () => void; onNext: () => void }) {
   )
 }
 
-function ExportInstructions({ onBack, onNext }: { onBack: () => void; onNext: () => void }) {
+const textIn = keyframes`
+  from { opacity: 0; }
+  to { opacity: 1; }
+`
+
+function ExportStep({ index, onBack, onNext }: { index: number; onBack: () => void; onNext: () => void }) {
+  const step = bitkeyExportSteps[index]
+  if (!step) {
+    return null
+  }
+
   return (
-    <Stack gap={6}>
-      <Stack gap={2}>
+    <Stack gap={4}>
+      <BitkeyPhoneGuide step={index} />
+
+      <Stack key={index} gap={4} animation={`${textIn} 200ms ease-out`}>
         <Text as="h2" textStyle="text/2xl" color="neutral.900" fontWeight="medium">
-          Export Your Wallet Descriptor
+          {step.title}
         </Text>
         <Text textStyle="text/md" color="neutral.900">
-          In the Bitkey app, the descriptor is called an XPUB bundle. Your phone shares it as text.
+          {step.body}
         </Text>
       </Stack>
 
-      <BitkeyPhoneSteps />
-
-      <WizardFooter
-        leftButton={
-          <Button variant="outline" onClick={onBack}>
-            Back
-          </Button>
-        }
-        rightButton={<Button onClick={onNext}>I Have It</Button>}
-      />
+      <NavigationArrows onBack={onBack} onForward={onNext} />
     </Stack>
   )
 }
@@ -169,6 +184,7 @@ function ImportDescriptor({ onBack, onRead }: { onBack: () => void; onRead: (rea
       </Text>
 
       <form
+        id="bitkey-descriptor-form"
         onSubmit={(event) => {
           event.preventDefault()
           const result = readText(pasted)
@@ -179,28 +195,23 @@ function ImportDescriptor({ onBack, onRead }: { onBack: () => void; onRead: (rea
           }
         }}
       >
-        <Stack gap={3}>
-          <FormControl isInvalid={pasteError !== null}>
-            <FormLabel htmlFor="bitkey-descriptor">Wallet descriptor</FormLabel>
-            <Textarea
-              id="bitkey-descriptor"
-              value={pasted}
-              onChange={(event) => {
-                setPasted(event.target.value)
-                setPasteError(null)
-              }}
-              placeholder="External: wsh(sortedmulti(2,…"
-              rows={5}
-              spellCheck={false}
-              autoComplete="off"
-              {...monoInputProps}
-            />
-            {pasteError !== null && <FormErrorMessage>{pasteError}</FormErrorMessage>}
-          </FormControl>
-          <Button type="submit" alignSelf="flex-end" isDisabled={pasted.trim() === ''}>
-            Continue
-          </Button>
-        </Stack>
+        <FormControl isInvalid={pasteError !== null}>
+          <FormLabel htmlFor="bitkey-descriptor">Wallet descriptor</FormLabel>
+          <Textarea
+            id="bitkey-descriptor"
+            value={pasted}
+            onChange={(event) => {
+              setPasted(event.target.value)
+              setPasteError(null)
+            }}
+            placeholder="External: wsh(sortedmulti(2,…"
+            rows={5}
+            spellCheck={false}
+            autoComplete="off"
+            {...monoInputProps}
+          />
+          {pasteError !== null && <FormErrorMessage>{pasteError}</FormErrorMessage>}
+        </FormControl>
       </form>
 
       <FileDropReader
@@ -237,6 +248,11 @@ function ImportDescriptor({ onBack, onRead }: { onBack: () => void; onRead: (rea
         leftButton={
           <Button variant="outline" onClick={onBack}>
             Back
+          </Button>
+        }
+        rightButton={
+          <Button type="submit" form="bitkey-descriptor-form" isDisabled={pasted.trim() === ''}>
+            Continue
           </Button>
         }
       />
