@@ -23,7 +23,7 @@ export function BitkeyUnverifiedNote({ isBrief = false }: { isBrief?: boolean })
     <TipAlert title="Unverified">
       <Text color="neutral.800">
         {isBrief
-          ? 'Bitkey can’t sign messages yet, so statements leave this account out.'
+          ? 'Its balance and history update as usual. Bitkey can’t sign messages yet, so statements leave this account out.'
           : 'Bitkey can’t sign messages yet, so Control Center can’t confirm this wallet is yours. You’ll still see its balance and history. Statements only include verified accounts, so this one is left out for now.'}
       </Text>
     </TipAlert>

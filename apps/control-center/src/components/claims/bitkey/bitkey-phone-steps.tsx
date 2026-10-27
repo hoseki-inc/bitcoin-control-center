@@ -1,4 +1,4 @@
-import { Box, type BoxProps, keyframes } from '@chakra-ui/react'
+import { Box, type BoxProps, keyframes, useBreakpointValue } from '@chakra-ui/react'
 import {
   ArrowDownIcon,
   ArrowLeftIcon,
@@ -48,8 +48,8 @@ export const bitkeyExportSteps: BitkeyExportStep[] = [
     body: 'Tap Current wallet descriptor. Bitkey calls it an XPUB bundle: it holds your wallet’s public keys, never its private keys.',
   },
   {
-    title: 'Send It to This Computer',
-    body: 'Tap Download XPUB bundle, then send the text to this computer with AirDrop, email, or a note.',
+    title: 'Send It to This Device',
+    body: 'Tap Download XPUB bundle. Copy the text, or AirDrop it to this device, then paste it on the next screen. Avoid email, which keeps copies on mail servers.',
   },
 ]
 
@@ -57,12 +57,24 @@ export const bitkeyExportSteps: BitkeyExportStep[] = [
 // colours and type scale rather than ours, and the whole screen is scaled down to fit.
 const SCREEN_WIDTH = 390
 const SCREEN_HEIGHT = 844
-const PHONE_WIDTH = 232
 const BEZEL = 6
-const SCALE = (PHONE_WIDTH - 2 * BEZEL) / SCREEN_WIDTH
 
-/** The whole phone's height on the page, so the intro's picture can take the same space. */
-export const BITKEY_PHONE_HEIGHT = Math.round(SCREEN_HEIGHT * SCALE + 2 * BEZEL)
+/**
+ * The guide's phone on the page: smaller on narrow screens so the arrows under it stay in view.
+ * The intro's picture takes the same height, so the text doesn't jump between steps.
+ */
+export interface BitkeyPhoneSize {
+  width: number
+  height: number
+  /** From Bitkey's screen points to page pixels. */
+  scale: number
+}
+
+export function useBitkeyPhoneSize(): BitkeyPhoneSize {
+  const width = useBreakpointValue({ base: 184, md: 232 }, { ssr: false }) ?? 232
+  const scale = (width - 2 * BEZEL) / SCREEN_WIDTH
+  return { width, height: Math.round(SCREEN_HEIGHT * scale + 2 * BEZEL), scale }
+}
 
 const ease = 'cubic-bezier(0.16, 1, 0.3, 1)'
 const duration = 420
@@ -106,16 +118,17 @@ const taps: Array<{ x: number; y: number; size: number; onDark?: boolean }> = [
  */
 export function BitkeyPhoneGuide({ step }: { step: number }): JSX.Element {
   const tap = taps[step]
+  const phone = useBitkeyPhoneSize()
 
   return (
     <Box
       aria-hidden
-      w={`${PHONE_WIDTH}px`}
-      h={`${BITKEY_PHONE_HEIGHT}px`}
+      w={`${phone.width}px`}
+      h={`${phone.height}px`}
       mx="auto"
       borderWidth={`${BEZEL}px`}
       borderColor="neutral.900"
-      borderRadius="38px"
+      borderRadius={`${Math.round(phone.width * 0.164)}px`}
       overflow="hidden"
       bg={bitkey.background}
       sx={{ '@media (prefers-reduced-motion: reduce)': { '& *': { transitionProperty: 'opacity !important' } } }}
@@ -124,7 +137,7 @@ export function BitkeyPhoneGuide({ step }: { step: number }): JSX.Element {
         position="relative"
         w={`${SCREEN_WIDTH}px`}
         h={`${SCREEN_HEIGHT}px`}
-        transform={`scale(${SCALE})`}
+        transform={`scale(${phone.scale})`}
         transformOrigin="top left"
         overflow="hidden"
         sx={{ WebkitFontSmoothing: 'antialiased' }}

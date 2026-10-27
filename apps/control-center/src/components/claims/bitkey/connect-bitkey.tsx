@@ -22,17 +22,35 @@ import {
   WizardFooter,
 } from '@hoseki/packages/ui/wallet-ui'
 import { type BitkeyExport, parseBitkeyExport } from '@hoseki/packages/wallet'
-import { useState } from 'react'
-import { useLocation, useNavigate } from 'react-router'
+import { useEffect, useRef, useState } from 'react'
+import { useLocation, useNavigate, useSearchParams } from 'react-router'
 import { toast } from 'sonner'
 import { parseNavigationState } from '../../../lib/navigation-state'
 import { trpc } from '../../../trpc'
 import { BitkeyKeyList, BitkeyUnverifiedNote } from './bitkey-notes'
-import { BITKEY_PHONE_HEIGHT, BitkeyPhoneGuide, bitkeyExportSteps } from './bitkey-phone-steps'
+import { BitkeyPhoneGuide, bitkeyExportSteps, useBitkeyPhoneSize } from './bitkey-phone-steps'
 
 type Step = { kind: 'intro' } | { kind: 'export'; index: number } | { kind: 'import' } | { kind: 'confirm' }
 
 const lastExportIndex = bitkeyExportSteps.length - 1
+
+/**
+ * The step lives in the URL, so switching to the Bitkey app and back, or reloading, keeps the user's place
+ * and browser Back goes to the previous step. Only the step's name goes there, never the descriptor.
+ */
+function stepFromParam(value: string | null): Step {
+  if (value === 'import' || value === 'confirm') {
+    return { kind: value }
+  }
+  const index = Number(/^export-(\d+)$/.exec(value ?? '')?.[1]) - 1
+  return Number.isInteger(index) && index >= 0 && index <= lastExportIndex
+    ? { kind: 'export', index }
+    : { kind: 'intro' }
+}
+
+function stepToParam(step: Step): string {
+  return step.kind === 'export' ? `export-${step.index + 1}` : step.kind
+}
 
 interface ReadExport {
   text: string
@@ -40,11 +58,20 @@ interface ReadExport {
 }
 
 export function ConnectBitkey(): JSX.Element {
-  const [step, setStep] = useState<Step>({ kind: 'intro' })
   const [readExport, setReadExport] = useState<ReadExport | null>(null)
+  const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
   const location = useLocation()
-  const returnTo = parseNavigationState(location.state)?.returnTo ?? '/accounts'
+  const navigationState = parseNavigationState(location.state)
+  const returnTo = navigationState?.returnTo ?? '/accounts'
+
+  const requested = stepFromParam(searchParams.get('step'))
+  // The descriptor is only kept in memory, so after a reload the confirm step asks for it again.
+  const step: Step = requested.kind === 'confirm' && readExport === null ? { kind: 'import' } : requested
+
+  function goTo(next: Step): void {
+    setSearchParams({ step: stepToParam(next) }, { state: navigationState })
+  }
 
   return (
     <ClaimConnectionWrapper pt={8}>
@@ -55,7 +82,7 @@ export function ConnectBitkey(): JSX.Element {
               void navigate(returnTo)
             }}
             onNext={() => {
-              setStep({ kind: 'export', index: 0 })
+              goTo({ kind: 'export', index: 0 })
             }}
           />
         )}
@@ -63,21 +90,21 @@ export function ConnectBitkey(): JSX.Element {
           <ExportStep
             index={step.index}
             onBack={() => {
-              setStep(step.index === 0 ? { kind: 'intro' } : { kind: 'export', index: step.index - 1 })
+              goTo(step.index === 0 ? { kind: 'intro' } : { kind: 'export', index: step.index - 1 })
             }}
             onNext={() => {
-              setStep(step.index === lastExportIndex ? { kind: 'import' } : { kind: 'export', index: step.index + 1 })
+              goTo(step.index === lastExportIndex ? { kind: 'import' } : { kind: 'export', index: step.index + 1 })
             }}
           />
         )}
         {step.kind === 'import' && (
           <ImportDescriptor
             onBack={() => {
-              setStep({ kind: 'export', index: lastExportIndex })
+              goTo({ kind: 'export', index: lastExportIndex })
             }}
             onRead={(read) => {
               setReadExport(read)
-              setStep({ kind: 'confirm' })
+              goTo({ kind: 'confirm' })
             }}
           />
         )}
@@ -85,7 +112,7 @@ export function ConnectBitkey(): JSX.Element {
           <ConfirmBitkey
             readExport={readExport}
             onBack={() => {
-              setStep({ kind: 'import' })
+              goTo({ kind: 'import' })
             }}
           />
         )}
@@ -94,17 +121,39 @@ export function ConnectBitkey(): JSX.Element {
   )
 }
 
+/** The step's title. It takes focus when the step changes, so screen readers announce the new step. */
+function StepHeading({ children }: { children: string }) {
+  const ref = useRef<HTMLHeadingElement>(null)
+  useEffect(() => {
+    ref.current?.focus({ preventScroll: true })
+  }, [children])
+
+  return (
+    <Text
+      as="h2"
+      ref={ref}
+      tabIndex={-1}
+      textStyle="text/2xl"
+      color="neutral.900"
+      fontWeight="medium"
+      _focus={{ outline: 'none' }}
+    >
+      {children}
+    </Text>
+  )
+}
+
 function Intro({ onBack, onNext }: { onBack: () => void; onNext: () => void }) {
+  const phone = useBitkeyPhoneSize()
+
   return (
     <Stack gap={4}>
       {/* The same height as the phone on the next steps, so the text doesn't jump. */}
-      <Box h={`${BITKEY_PHONE_HEIGHT}px`} display="grid" placeItems="center">
-        <FloatingBitkeyImage imageHeight="280px" pt={0} pb={0} />
+      <Box h={`${phone.height}px`} display="grid" placeItems="center">
+        <FloatingBitkeyImage imageHeight={`${Math.round(phone.height * 0.6)}px`} pt={0} pb={0} />
       </Box>
 
-      <Text as="h2" textStyle="text/2xl" color="neutral.900" fontWeight="medium">
-        Connect Your Bitkey
-      </Text>
+      <StepHeading>Connect Your Bitkey</StepHeading>
       <Text textStyle="text/md" color="neutral.900">
         Bitkey keeps your bitcoin in a wallet with three keys: one on your phone, one on your Bitkey, and one held by
         Block. To show it here, Control Center reads the wallet descriptor from the Bitkey app. The descriptor only
@@ -116,7 +165,9 @@ function Intro({ onBack, onNext }: { onBack: () => void; onNext: () => void }) {
         </Text>
         <chakra.ul ml={8} textStyle="text/md" color="neutral.900">
           <li>Your phone with the Bitkey app</li>
-          <li>A way to send text to this computer, such as AirDrop, email, or a note</li>
+          <li>
+            A way to move text from your phone to this device, like AirDrop, or copy and paste if you’re on that phone
+          </li>
         </chakra.ul>
       </Box>
 
@@ -150,9 +201,7 @@ function ExportStep({ index, onBack, onNext }: { index: number; onBack: () => vo
       <BitkeyPhoneGuide step={index} />
 
       <Stack key={index} gap={4} animation={`${textIn} 200ms ease-out`}>
-        <Text as="h2" textStyle="text/2xl" color="neutral.900" fontWeight="medium">
-          {step.title}
-        </Text>
+        <StepHeading>{step.title}</StepHeading>
         <Text textStyle="text/md" color="neutral.900">
           {step.body}
         </Text>
@@ -168,6 +217,8 @@ function ImportDescriptor({ onBack, onRead }: { onBack: () => void; onRead: (rea
   const [fileError, setFileError] = useState<string | null>(null)
   const [pasted, setPasted] = useState('')
   const [pasteError, setPasteError] = useState<string | null>(null)
+  // The drop zone reports wrong file types and our own parse errors the same way; only ours are worth showing.
+  const parseError = useRef<Error | null>(null)
 
   function readText(text: string): Result<ReadExport, Error> {
     return parseBitkeyExport(text).map((parsed) => ({ text, parsed }))
@@ -175,11 +226,9 @@ function ImportDescriptor({ onBack, onRead }: { onBack: () => void; onRead: (rea
 
   return (
     <Stack gap={4}>
-      <Text as="h2" textStyle="text/2xl" color="neutral.900" fontWeight="medium">
-        Add Your Wallet Descriptor
-      </Text>
+      <StepHeading>Add Your Wallet Descriptor</StepHeading>
       <Text textStyle="text/md" color="neutral.900">
-        Paste the text from the Bitkey app, or drop the file if you saved it. It starts with “External:”.
+        Paste the text from the Bitkey app, or choose the file if you saved it.
       </Text>
 
       <form
@@ -202,6 +251,8 @@ function ImportDescriptor({ onBack, onRead }: { onBack: () => void; onRead: (rea
             onChange={(event) => {
               setPasted(event.target.value)
               setPasteError(null)
+              setFileDropStatus('ready')
+              setFileError(null)
             }}
             placeholder="External: wsh(sortedmulti(2,…"
             rows={5}
@@ -215,31 +266,35 @@ function ImportDescriptor({ onBack, onRead }: { onBack: () => void; onRead: (rea
 
       <FileDropReader
         readAs="text"
-        readyText="Or drag the saved file here"
-        invalidText="That file isn’t a Bitkey wallet descriptor."
+        readyText="Or choose the saved file, or drag it here"
+        invalidText="Choose the text file you saved from the Bitkey app."
         validText="Success!"
-        validationFn={(content) => readText(content)}
+        validationFn={(content) => {
+          const result = readText(content)
+          parseError.current = result.isErr() ? result.unwrapErr() : null
+          return result
+        }}
         onValidContentRead={(read) => {
           setFileError(null)
           onRead(read)
         }}
         onInvalidContentRead={(error) => {
-          setFileError(error.message)
+          setFileError(error === parseError.current ? error.message : null)
         }}
         acceptedFileTypes={['txt']}
         status={fileDropStatus}
         onStatusChange={setFileDropStatus}
       />
       {fileError !== null && (
-        <Text textStyle="text/sm" color="error.600">
+        <Text role="alert" textStyle="text/sm" color="error.600">
           {fileError}
         </Text>
       )}
 
       <TipAlert title="Keep it private">
         <Text color="neutral.800">
-          The descriptor reveals every address and transaction in your Bitkey wallet. Only add it here, and delete the
-          copy you sent once you’re done.
+          The descriptor reveals every address and transaction in your Bitkey wallet. Control Center stores it locally
+          and never shares it. Delete any other copy once you’ve added it.
         </Text>
       </TipAlert>
 
@@ -264,7 +319,8 @@ function ConfirmBitkey({ readExport, onBack }: { readExport: ReadExport; onBack:
   const trpcUtils = trpc.useUtils()
   const createBitkey = trpc.portalProve.registry.claims.create.bitkey.useMutation()
   const [name, setName] = useState('Bitkey')
-  const nameError = name.trim() === '' ? 'Name can not be empty' : name.length > 255 ? 'Name is too long' : null
+  const nameError =
+    name.trim() === '' ? 'Give this account a name' : name.length > 255 ? 'Keep the name under 255 characters' : null
 
   function addBitkey(): void {
     createBitkey.mutate(
@@ -274,6 +330,8 @@ function ConfirmBitkey({ readExport, onBack }: { readExport: ReadExport; onBack:
           void trpcUtils.portalProve.registry.claims.list.invalidate()
           if (alreadyConnected) {
             toast.info('This Bitkey is already connected')
+          } else {
+            toast.success('Bitkey added')
           }
           void navigate(`/accounts/${claim.id}`)
         },
@@ -292,9 +350,7 @@ function ConfirmBitkey({ readExport, onBack }: { readExport: ReadExport; onBack:
 
   return (
     <Stack gap={4}>
-      <Text as="h2" textStyle="text/2xl" color="neutral.900" fontWeight="medium">
-        We Found Your Bitkey
-      </Text>
+      <StepHeading>We Found Your Bitkey</StepHeading>
       <Text textStyle="text/md" color="neutral.900">
         Any two of these three keys move your bitcoin. Control Center holds none of them.
       </Text>

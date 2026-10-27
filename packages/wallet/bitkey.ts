@@ -13,7 +13,7 @@ export type BitkeyKeyRole = (typeof bitkeyKeyRoles)[number]
 
 export const bitkeyKeyLabels = {
   app: 'Phone key',
-  hardware: 'Bitkey key',
+  hardware: 'Hardware key',
   server: 'Block key',
 } as const satisfies Record<BitkeyKeyRole, string>
 
