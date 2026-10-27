@@ -312,7 +312,7 @@ it('connects a Bitkey as one unverified 2-of-3 account that statements leave out
     Object.fromEntries(claim.keystores.map((keystore) => [keystore.model, [keystore.label, keystore.wallet]])),
   ).toEqual({
     app: ['Phone key', 'bitkey'],
-    hardware: ['Bitkey key', 'bitkey'],
+    hardware: ['Hardware key', 'bitkey'],
     server: ['Block key', 'bitkey'],
   })
   expect((await caller.claims.list()).map((listed) => listed.id)).toEqual([claim.id])

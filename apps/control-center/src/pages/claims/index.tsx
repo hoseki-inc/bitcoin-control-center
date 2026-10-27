@@ -13,6 +13,7 @@ import {
   Skeleton,
   Stack,
   Text,
+  Tooltip,
   useDisclosure,
 } from '@chakra-ui/react'
 import { getRecordValue } from '@hoseki/packages/lib'
@@ -165,9 +166,15 @@ export function ClaimsPage({ dataSource = accountsDataSource }: { dataSource?: A
                   </Text>
                 )}
                 {unverifiedCount > 0 && (
-                  <Text textStyle="text/sm" color="neutral.600">
-                    {unverifiedCount} Unverified
-                  </Text>
+                  <Tooltip
+                    label="Unverified accounts can’t prove ownership, so statements leave them out."
+                    openDelay={250}
+                    hasArrow
+                  >
+                    <Text textStyle="text/sm" color="neutral.600">
+                      {unverifiedCount} Unverified
+                    </Text>
+                  </Tooltip>
                 )}
                 {claimIds.length > 0 && <SyncIndicator wallets={wallets.status} />}
               </Flex>
@@ -413,7 +420,16 @@ export function AccountCard({
             textTransform="none"
           />
         )}
-        <StatusBadge status={badgeStatus} label={badgeLabel} size="sm" ml="auto" />
+        <Tooltip
+          label="Bitkey can’t sign messages yet, so this account isn’t in statements."
+          isDisabled={status !== 'unverified'}
+          openDelay={250}
+          hasArrow
+        >
+          <Box as="span" ml="auto">
+            <StatusBadge status={badgeStatus} label={badgeLabel} size="sm" />
+          </Box>
+        </Tooltip>
       </HStack>
 
       {/* Keystore logos */}
