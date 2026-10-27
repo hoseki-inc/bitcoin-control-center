@@ -1,9 +1,11 @@
-import { Box, HStack, Icon, Input, InputGroup, Stack, StackDivider, Text } from '@chakra-ui/react'
+import { Box, HStack, Input, InputGroup, Stack, StackDivider, Text, chakra } from '@chakra-ui/react'
 import { TipAlert } from '@hoseki/packages/ui/design-system/feedback/tip-alert'
 import { CopyButtonAddon } from '@hoseki/packages/ui/design-system/forms/input-addons'
 import { monoInputProps } from '@hoseki/packages/ui/utils/bitcoin'
 import { type BitkeyKeyRole, bitkeyKeyLabels } from '@hoseki/packages/wallet'
-import { CloudIcon, HexagonIcon, InfoIcon, type LucideIcon, RotateCcwKeyIcon, SmartphoneIcon } from 'lucide-react'
+import { InfoIcon, RotateCcwKeyIcon } from 'lucide-react'
+import type { ReactNode } from 'react'
+import { BitkeyPhoneThumbnail } from './bitkey-phone-steps'
 
 export function BitkeyUnverifiedNote({ isBrief = false }: { isBrief?: boolean }): JSX.Element {
   return (
@@ -29,10 +31,16 @@ export function BitkeyRecoveryNote(): JSX.Element {
 }
 
 const keyDetails = {
-  app: { icon: SmartphoneIcon, description: 'In the Bitkey app on your phone' },
-  hardware: { icon: HexagonIcon, description: 'On your Bitkey, unlocked by your fingerprint' },
-  server: { icon: CloudIcon, description: 'Held by Block, to help you recover if you lose your phone or Bitkey' },
-} as const satisfies Record<BitkeyKeyRole, { icon: LucideIcon; description: string }>
+  app: { picture: <BitkeyPhoneThumbnail height={38} />, description: 'In the Bitkey app on your phone' },
+  hardware: {
+    picture: <chakra.img src="/images/hardware-wallets/bitkey-device.png" alt="" h="32px" />,
+    description: 'On your Bitkey, unlocked by your fingerprint',
+  },
+  server: {
+    picture: <chakra.img src="/images/hardware-wallets/block-logo-mini.svg" alt="" boxSize="20px" />,
+    description: 'Held by Block, to help you recover if you lose your phone or Bitkey',
+  },
+} as const satisfies Record<BitkeyKeyRole, { picture: ReactNode; description: string }>
 
 export interface BitkeyKeyRow {
   role: BitkeyKeyRole
@@ -56,13 +64,13 @@ export function BitkeyKeyList({
       divider={<StackDivider borderColor="neutral.200" />}
     >
       {keys.map(({ role, xpub }) => {
-        const { icon, description } = keyDetails[role]
+        const { picture, description } = keyDetails[role]
         const label = bitkeyKeyLabels[role]
         return (
           <Stack key={role} spacing={3} px={4} py={3}>
             <HStack spacing={3}>
-              <Box flexShrink={0} boxSize={9} borderRadius="md" bg="neutral.100" display="grid" placeItems="center">
-                <Icon as={icon} boxSize={4} color="neutral.600" />
+              <Box flexShrink={0} boxSize={12} borderRadius="md" bg="neutral.100" display="grid" placeItems="center">
+                {picture}
               </Box>
               <Box>
                 <Text textStyle="text/sm" fontWeight="medium" color="neutral.900">
@@ -73,8 +81,9 @@ export function BitkeyKeyList({
                 </Text>
               </Box>
             </HStack>
+            {/* Lines up with the text: the 48 px picture plus the 12 px gap. */}
             {showPublicKeys && (
-              <InputGroup pl={12}>
+              <InputGroup pl="60px">
                 <Input value={xpub} isReadOnly aria-label={`${label} public key`} {...monoInputProps} />
                 <CopyButtonAddon fieldName="public key" value={xpub} />
               </InputGroup>
