@@ -29,6 +29,7 @@ export interface BitkeyExport {
 }
 
 const notABitkeyExport = 'This doesn’t look like a Bitkey wallet descriptor. Paste everything Bitkey exported.'
+const incompleteExport = 'Paste everything the Bitkey app exported: both the “External:” and the “Internal:” line.'
 
 /**
  * Reads the "Current wallet descriptor" export from the Bitkey app (Settings → Exports):
@@ -39,7 +40,8 @@ const notABitkeyExport = 'This doesn’t look like a Bitkey wallet descriptor. P
  * Internal: wsh(sortedmulti(2,[fp/84'/0'/0']xpub…/1/*,[fp/84'/0'/0']xpub…/1/*,[fp/84'/0'/0']xpub…/1/*))
  * ```
  *
- * A bare external descriptor is accepted too, in case only that line was copied.
+ * Only the full export is accepted. A descriptor doesn't say which key is which; Bitkey's export always lists them
+ * as app, hardware, server, but a bare descriptor from another tool may not, and the keys would be mislabelled.
  */
 export function parseBitkeyExport(text: string): Result<BitkeyExport, Error> {
   const lines = text
@@ -50,26 +52,29 @@ export function parseBitkeyExport(text: string): Result<BitkeyExport, Error> {
     return Err(new Error('Paste the wallet descriptor you exported from the Bitkey app.'))
   }
 
+  // A descriptor without Bitkey's labels is most likely one line of the export, or one from another tool.
+  const rejection = new Error(/sortedmulti\(/i.test(text) ? incompleteExport : notABitkeyExport)
   let external: string | null = null
   let internal: string | null = null
   for (const line of lines) {
     const match = /^(external|internal)\s*:\s*(.+)$/i.exec(line)
-    const label = match?.[1]?.toLowerCase()
-    const descriptor = match?.[2] ?? line
-    if (label === 'internal') {
-      internal = descriptor
-    } else if (label === 'external' || (lines.length === 1 && external === null)) {
+    const isExternal = match?.[1]?.toLowerCase() === 'external'
+    const descriptor = match?.[2]
+    if (descriptor === undefined || (isExternal ? external : internal) !== null) {
+      return Err(rejection)
+    }
+    if (isExternal) {
       external = descriptor
     } else {
-      return Err(new Error(notABitkeyExport))
+      internal = descriptor
     }
   }
-  if (external === null) {
-    return Err(new Error(notABitkeyExport))
+  if (external === null || internal === null) {
+    return Err(rejection)
   }
 
   // Our descriptor parser drops the child path, so check that each branch derives where Bitkey's does.
-  if (!derivesEveryKeyFrom(external, 0) || (internal !== null && !derivesEveryKeyFrom(internal, 1))) {
+  if (!derivesEveryKeyFrom(external, 0) || !derivesEveryKeyFrom(internal, 1)) {
     return Err(new Error(notABitkeyExport))
   }
 
@@ -79,11 +84,9 @@ export function parseBitkeyExport(text: string): Result<BitkeyExport, Error> {
   }
   const wallet = externalWallet.unwrap()
 
-  if (internal !== null) {
-    const internalWallet = WalletImporter.multisigFromDescriptor(internal)
-    if (internalWallet.isErr() || !sameKeys(wallet, internalWallet.unwrap())) {
-      return Err(new Error('The External and Internal descriptors don’t match. Export the descriptor again.'))
-    }
+  const internalWallet = WalletImporter.multisigFromDescriptor(internal)
+  if (internalWallet.isErr() || !sameKeys(wallet, internalWallet.unwrap())) {
+    return Err(new Error('The External and Internal descriptors don’t match. Export the descriptor again.'))
   }
 
   if (

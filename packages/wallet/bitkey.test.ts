@@ -48,9 +48,10 @@ describe('parseBitkeyExport', () => {
     ])
   })
 
-  it('accepts only the external line', () => {
-    expect(parseBitkeyExport(branch(0)).isOk()).toBe(true)
-    expect(parseBitkeyExport(`External: ${branch(0)}`).isOk()).toBe(true)
+  it('refuses part of the export, since only the full export says which key is which', () => {
+    for (const partial of [branch(0), `External: ${branch(0)}`, `Internal: ${branch(1)}`]) {
+      expect(parseBitkeyExport(partial).unwrapErr().message).toContain('both the “External:” and the “Internal:” line')
+    }
   })
 
   it('accepts descriptors with checksums and Windows line endings', () => {
@@ -62,8 +63,9 @@ describe('parseBitkeyExport', () => {
 
   it('rejects text that is not a descriptor', () => {
     expect(parseBitkeyExport('').unwrapErr().message).toContain('Paste the wallet descriptor')
-    expect(parseBitkeyExport('hello').isErr()).toBe(true)
+    expect(parseBitkeyExport('hello').unwrapErr().message).toContain('doesn’t look like a Bitkey wallet descriptor')
     expect(parseBitkeyExport(`${branch(0)}\n${branch(1)}`).isErr()).toBe(true)
+    expect(parseBitkeyExport(`External: ${branch(0)}\nExternal: ${branch(0)}`).isErr()).toBe(true)
   })
 
   it('rejects branches that do not match Bitkey’s receive and change paths', () => {
@@ -77,7 +79,9 @@ describe('parseBitkeyExport', () => {
   })
 
   it('rejects multisig wallets that are not 2-of-3', () => {
-    const result = parseBitkeyExport(`External: ${branch(0, [APP, HARDWARE, SERVER], 3)}`)
+    const result = parseBitkeyExport(
+      `External: ${branch(0, [APP, HARDWARE, SERVER], 3)}\n\nInternal: ${branch(1, [APP, HARDWARE, SERVER], 3)}`,
+    )
 
     expect(result.unwrapErr().message).toContain('2-of-3')
   })
