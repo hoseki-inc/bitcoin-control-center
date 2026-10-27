@@ -155,6 +155,38 @@ export function BitkeyPhoneGuide({ step }: { step: number }): JSX.Element {
   )
 }
 
+/** A tiny phone on Bitkey's Wallet screen, drawn with the same screens as the guide. */
+export function BitkeyPhoneThumbnail({ height }: { height: number }): JSX.Element {
+  const bezel = 2
+  const scale = (height - 2 * bezel) / SCREEN_HEIGHT
+  const width = Math.round(SCREEN_WIDTH * scale + 2 * bezel)
+
+  return (
+    <Box
+      aria-hidden
+      flexShrink={0}
+      w={`${width}px`}
+      h={`${height}px`}
+      borderWidth={`${bezel}px`}
+      borderColor="neutral.900"
+      borderRadius={`${Math.round(width * 0.2)}px`}
+      overflow="hidden"
+      bg={bitkey.background}
+    >
+      <Box
+        position="relative"
+        w={`${SCREEN_WIDTH}px`}
+        h={`${SCREEN_HEIGHT}px`}
+        transform={`scale(${scale})`}
+        transformOrigin="top left"
+      >
+        <WalletScreen />
+        <StatusBar />
+      </Box>
+    </Box>
+  )
+}
+
 function Layer({ isVisible = true, children, ...props }: { isVisible?: boolean; children?: ReactNode } & BoxProps) {
   return (
     <Box
