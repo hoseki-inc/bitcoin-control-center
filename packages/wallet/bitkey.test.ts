@@ -34,6 +34,20 @@ describe('parseBitkeyExport', () => {
     expect(stored.address(0, 0).toString()).toMatch(/^bc1q/)
   })
 
+  it('keeps each key’s own derivation path, as real exports mix hardened and unhardened ones', () => {
+    // A real Bitkey export puts the hardware key on account 1' and Block's key on an unhardened path.
+    const keys = [APP, HARDWARE.replace("84'/0'/0'", "84'/0'/1'"), SERVER.replace("84'/0'/0'", '84/0/0')]
+    const result = parseBitkeyExport(`External: ${branch(0, keys)}\n\nInternal: ${branch(1, keys)}`).expect(
+      'valid Bitkey export',
+    )
+
+    expect(result.keys.map((key) => [key.role, key.keyExpression.keyOrigin?.derivationPath?.toString()])).toEqual([
+      ['app', 'm/84h/0h/0h'],
+      ['hardware', 'm/84h/0h/1h'],
+      ['server', 'm/84/0/0'],
+    ])
+  })
+
   it('accepts only the external line', () => {
     expect(parseBitkeyExport(branch(0)).isOk()).toBe(true)
     expect(parseBitkeyExport(`External: ${branch(0)}`).isOk()).toBe(true)

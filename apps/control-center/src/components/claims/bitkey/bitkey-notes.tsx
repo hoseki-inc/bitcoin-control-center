@@ -1,4 +1,16 @@
-import { Box, HStack, Input, InputGroup, Stack, StackDivider, Text, chakra } from '@chakra-ui/react'
+import {
+  Accordion,
+  AccordionButton,
+  AccordionIcon,
+  AccordionItem,
+  AccordionPanel,
+  Box,
+  Input,
+  InputGroup,
+  Stack,
+  Text,
+  chakra,
+} from '@chakra-ui/react'
 import { TipAlert } from '@hoseki/packages/ui/design-system/feedback/tip-alert'
 import { CopyButtonAddon } from '@hoseki/packages/ui/design-system/forms/input-addons'
 import { monoInputProps } from '@hoseki/packages/ui/utils/bitcoin'
@@ -45,52 +57,68 @@ const keyDetails = {
 export interface BitkeyKeyRow {
   role: BitkeyKeyRole
   xpub: string
+  derivationPath: string | null
 }
 
-/** Bitkey's three keys: where each one lives and, when asked, its public key. */
-export function BitkeyKeyList({
-  keys,
-  showPublicKeys = false,
-}: {
-  keys: BitkeyKeyRow[]
-  showPublicKeys?: boolean
-}): JSX.Element {
+/** Bitkey's three keys: where each one lives, and its public key when opened. */
+export function BitkeyKeyList({ keys }: { keys: BitkeyKeyRow[] }): JSX.Element {
   return (
-    <Stack
-      spacing={0}
-      borderWidth="1px"
-      borderColor="neutral.200"
-      borderRadius="md"
-      divider={<StackDivider borderColor="neutral.200" />}
-    >
-      {keys.map(({ role, xpub }) => {
+    <Accordion allowMultiple borderWidth="1px" borderColor="neutral.200" borderRadius="md" overflow="hidden">
+      {keys.map(({ role, xpub, derivationPath }) => {
         const { picture, description } = keyDetails[role]
         const label = bitkeyKeyLabels[role]
         return (
-          <Stack key={role} spacing={3} px={4} py={3}>
-            <HStack spacing={3}>
-              <Box flexShrink={0} boxSize={12} borderRadius="md" bg="neutral.100" display="grid" placeItems="center">
-                {picture}
-              </Box>
-              <Box>
-                <Text textStyle="text/sm" fontWeight="medium" color="neutral.900">
-                  {label}
-                </Text>
-                <Text textStyle="text/sm" color="neutral.600">
-                  {description}
-                </Text>
-              </Box>
-            </HStack>
-            {/* Lines up with the text: the 48 px picture plus the 12 px gap. */}
-            {showPublicKeys && (
-              <InputGroup pl="60px">
-                <Input value={xpub} isReadOnly aria-label={`${label} public key`} {...monoInputProps} />
-                <CopyButtonAddon fieldName="public key" value={xpub} />
-              </InputGroup>
-            )}
-          </Stack>
+          <AccordionItem
+            key={role}
+            // The theme draws each item as its own card; here the three keys share one, split by dividers.
+            px={0}
+            border="none"
+            borderRadius={0}
+            _notFirst={{ borderTop: '1px solid', borderColor: 'neutral.200' }}
+          >
+            <h3>
+              <AccordionButton px={4} py={3} gap={3} textAlign="left" _hover={{ bgColor: 'neutral.50' }}>
+                <Box flexShrink={0} boxSize={12} display="grid" placeItems="center">
+                  {picture}
+                </Box>
+                <Box flex={1}>
+                  <Text textStyle="text/sm" fontWeight="medium" color="neutral.900">
+                    {label}
+                  </Text>
+                  <Text textStyle="text/sm" color="neutral.600">
+                    {description}
+                  </Text>
+                </Box>
+                <AccordionIcon color="neutral.500" />
+              </AccordionButton>
+            </h3>
+            {/* Lines up with the text: 16 px padding, the 48 px picture and the 12 px gap. */}
+            <AccordionPanel pl="76px" pr={4} pt={0} pb={4}>
+              <Stack spacing={3}>
+                <Box>
+                  <Text textStyle="text/xs" color="neutral.600" mb={1}>
+                    Public key
+                  </Text>
+                  <InputGroup>
+                    <Input value={xpub} isReadOnly aria-label={`${label} public key`} {...monoInputProps} />
+                    <CopyButtonAddon fieldName="public key" value={xpub} />
+                  </InputGroup>
+                </Box>
+                {derivationPath !== null && (
+                  <Box>
+                    <Text textStyle="text/xs" color="neutral.600" mb={1}>
+                      Derivation path
+                    </Text>
+                    <Text textStyle="text/sm" color="neutral.900" fontFamily="mono">
+                      {derivationPath}
+                    </Text>
+                  </Box>
+                )}
+              </Stack>
+            </AccordionPanel>
+          </AccordionItem>
         )
       })}
-    </Stack>
+    </Accordion>
   )
 }

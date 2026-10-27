@@ -301,7 +301,11 @@ function ConfirmBitkey({ readExport, onBack }: { readExport: ReadExport; onBack:
       </Text>
 
       <BitkeyKeyList
-        keys={readExport.parsed.keys.map((key) => ({ role: key.role, xpub: key.keyExpression.xpub.toString() }))}
+        keys={readExport.parsed.keys.map(({ role, keyExpression }) => ({
+          role,
+          xpub: keyExpression.xpub.toString(),
+          derivationPath: keyExpression.keyOrigin?.derivationPath?.toString() ?? null,
+        }))}
       />
 
       <form
