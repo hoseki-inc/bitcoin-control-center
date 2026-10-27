@@ -22,7 +22,6 @@ import {
   WizardFooter,
 } from '@hoseki/packages/ui/wallet-ui'
 import { type BitkeyExport, parseBitkeyExport } from '@hoseki/packages/wallet'
-import { CircleAlert } from 'lucide-react'
 import { useState } from 'react'
 import { useLocation, useNavigate } from 'react-router'
 import { toast } from 'sonner'
@@ -237,7 +236,7 @@ function ImportDescriptor({ onBack, onRead }: { onBack: () => void; onRead: (rea
         </Text>
       )}
 
-      <TipAlert title="Keep it private" icon={CircleAlert}>
+      <TipAlert title="Keep it private">
         <Text color="neutral.800">
           The descriptor reveals every address and transaction in your Bitkey wallet. Only add it here, and delete the
           copy you sent once you’re done.

@@ -15,13 +15,12 @@ import { TipAlert } from '@hoseki/packages/ui/design-system/feedback/tip-alert'
 import { CopyButtonAddon } from '@hoseki/packages/ui/design-system/forms/input-addons'
 import { monoInputProps } from '@hoseki/packages/ui/utils/bitcoin'
 import { type BitkeyKeyRole, bitkeyKeyLabels } from '@hoseki/packages/wallet'
-import { InfoIcon, RotateCcwKeyIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { BitkeyPhoneThumbnail } from './bitkey-phone-steps'
 
 export function BitkeyUnverifiedNote({ isBrief = false }: { isBrief?: boolean }): JSX.Element {
   return (
-    <TipAlert title="Unverified" icon={InfoIcon}>
+    <TipAlert title="Unverified">
       <Text color="neutral.800">
         {isBrief
           ? 'Bitkey can’t sign messages yet, so statements leave this account out.'
@@ -33,7 +32,7 @@ export function BitkeyUnverifiedNote({ isBrief = false }: { isBrief?: boolean })
 
 export function BitkeyRecoveryNote(): JSX.Element {
   return (
-    <TipAlert title="Recovered your Bitkey?" icon={RotateCcwKeyIcon}>
+    <TipAlert title="Recovered your Bitkey?">
       <Text color="neutral.800">
         A Bitkey recovery moves your bitcoin to new keys, so this account stops updating. Export the wallet descriptor
         again and add it as a new Bitkey.
