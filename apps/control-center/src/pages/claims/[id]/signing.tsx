@@ -95,6 +95,8 @@ function SinglesigSigningContent({ claimId }: { claimId: ClaimId }): JSX.Element
       return <LedgerSigning {...commonProps} />
     case 'trezor':
       return <TrezorSigning {...commonProps} />
+    // Bitkey accounts are multisig and can't be verified, so they never reach singlesig signing.
+    case 'bitkey':
     case null:
     default:
       return <ManualSigning {...commonProps} />

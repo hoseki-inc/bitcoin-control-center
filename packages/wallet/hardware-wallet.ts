@@ -1,4 +1,4 @@
-export const supportedHardwareWallets = ['ledger', 'trezor', 'coldcard', 'keystone'] as const
+export const supportedHardwareWallets = ['ledger', 'trezor', 'coldcard', 'keystone', 'bitkey'] as const
 
 export type SupportedHardwareWallet = (typeof supportedHardwareWallets)[number]
 

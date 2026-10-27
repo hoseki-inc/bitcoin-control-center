@@ -96,6 +96,7 @@ export function ClaimsPage({ dataSource = accountsDataSource }: { dataSource?: A
   const verifiedCount =
     claims.filter((c) => ensureClaimStatusNotExpired(c) === 'verified').length + connectedExchangeAccounts.length
   const pendingCount = claims.filter((c) => c.status === 'pending').length
+  const unverifiedCount = claims.filter((c) => c.status === 'unverified').length
 
   const wallets = summarizeWalletBalances(claimIds, walletBalances.rows)
   const otherAccountsSats = [...exchangeAccounts, ...manualAccounts, ...etfAccounts].reduce(
@@ -161,6 +162,11 @@ export function ClaimsPage({ dataSource = accountsDataSource }: { dataSource?: A
                 {pendingCount > 0 && (
                   <Text textStyle="text/sm" color="warning.600">
                     {pendingCount} Pending
+                  </Text>
+                )}
+                {unverifiedCount > 0 && (
+                  <Text textStyle="text/sm" color="neutral.600">
+                    {unverifiedCount} Unverified
                   </Text>
                 )}
                 {claimIds.length > 0 && <SyncIndicator wallets={wallets.status} />}
@@ -399,10 +405,10 @@ export function AccountCard({
     >
       {/* Top row: threshold badge + status badge */}
       <HStack>
-        {claim.keystores.length > 1 && (
+        {cardProps.keystores.length > 1 && (
           <StatusBadge
             status="neutral"
-            label={`${cardProps.threshold} of ${claim.keystores.length}`}
+            label={`${cardProps.threshold} of ${cardProps.keystores.length}`}
             size="sm"
             textTransform="none"
           />

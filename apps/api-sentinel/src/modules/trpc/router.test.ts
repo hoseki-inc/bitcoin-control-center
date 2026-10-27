@@ -297,3 +297,37 @@ it('rejects an unknown portfolio timezone', async () => {
     message: 'Invalid timezone',
   })
 })
+
+it('connects a Bitkey as one unverified 2-of-3 account that statements leave out', async () => {
+  const { caller } = await setup()
+
+  const { claim, alreadyConnected } = await caller.claims.create.bitkey({
+    descriptorExport: Wallets.bitkeyExport,
+    displayName: 'Bitkey',
+  })
+
+  expect(alreadyConnected).toBe(false)
+  expect(claim).toMatchObject({ status: 'unverified', isVerified: false, metadata: { walletInfo: { type: 'Bitkey' } } })
+  expect(
+    Object.fromEntries(claim.keystores.map((keystore) => [keystore.model, [keystore.label, keystore.wallet]])),
+  ).toEqual({
+    app: ['Phone app key', 'bitkey'],
+    hardware: ['Bitkey hardware', 'bitkey'],
+    server: ['Block server key', 'bitkey'],
+  })
+  expect((await caller.claims.list()).map((listed) => listed.id)).toEqual([claim.id])
+  await expect(caller.claims.list({ excludePending: true })).resolves.toEqual([])
+  await expect(caller.challenges.create({ claimId: claim.id })).rejects.toThrow('can’t be verified')
+
+  await expect(
+    caller.claims.create.bitkey({ descriptorExport: Wallets.bitkeyExport, displayName: 'Another name' }),
+  ).resolves.toMatchObject({ alreadyConnected: true, claim: { id: claim.id, displayName: 'Bitkey' } })
+})
+
+it('explains why it cannot read a Bitkey export', async () => {
+  const { caller } = await setup()
+
+  await expect(caller.claims.create.bitkey({ descriptorExport: 'hello', displayName: 'Bitkey' })).rejects.toThrow(
+    'Bitkey wallet descriptor',
+  )
+})

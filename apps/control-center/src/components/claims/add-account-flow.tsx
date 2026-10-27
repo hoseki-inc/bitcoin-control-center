@@ -101,6 +101,13 @@ export function AddAccountFlow({ onClose, linkState }: AddAccountFlowProps): JSX
               to="/accounts/verify/keystone"
               state={linkState}
             />
+            <ConnectionType
+              title="Bitkey"
+              imagePath="/images/hardware-wallets/bitkey-logo.svg"
+              imageAltText="Connect your Bitkey"
+              to="/accounts/verify/bitkey"
+              state={linkState}
+            />
             <ConnectionType title="Multisig" media={MultisigImage} to="/multisig/create" />
             <ConnectionType title="Coinbase" media={CoinbaseMedia} to="/accounts/verify/coinbase" state={linkState} />
             <ConnectionType title="Kraken" media={KrakenMedia} to="/accounts/verify/kraken" state={linkState} />

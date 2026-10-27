@@ -2,6 +2,7 @@ import type { ClaimId } from '@hoseki/packages/schemas/prove'
 import { ErrorBanner } from '@hoseki/packages/ui/design-system'
 import { AppLayout } from '@hoseki/packages/ui/prove-verify-ui'
 import { Navigate } from 'react-router'
+import { ConnectBitkey } from '../../components/claims/bitkey/connect-bitkey'
 import { ClaimVerificationReceipt } from '../../components/claims/claim-verification-receipt'
 import { ConnectColdcard } from '../../components/claims/coldcard/connect-coldcard'
 import { ConnectKeystone } from '../../components/claims/keystone/connect-keystone'
@@ -25,6 +26,10 @@ export function ClaimsVerifyColdcardPage(): JSX.Element {
 
 export function ClaimsVerifyKeystonePage(): JSX.Element {
   return <ConnectKeystone />
+}
+
+export function ClaimsVerifyBitkeyPage(): JSX.Element {
+  return <ConnectBitkey />
 }
 
 export function ClaimsVerifyAdvancedPage(): JSX.Element {

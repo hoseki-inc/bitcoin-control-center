@@ -33,6 +33,17 @@ export class Wallets {
     'wsh(sortedmulti(2,[98950b2a/48h/0h/0h/2h]xpub6FF4wJMrZjWwm8PpJhJJcD3uircG7QKMaijiZhiFmBoaNX2MJiyqZmQ1aYAu59VawDppV25P7PVwtFsnynPjMFq8DNwo1sPyNdher6jFEug/<0;1>/*,[1d25c06f/48h/0h/0h/2h]xpub6DfQuReLSBLxpNjNJsTFDKsA3FpoiRVuymrkmKYG7j7sFxdJdnC3DWZg9bahkxQoNqzq6CmYDZPeQhgpL63sBhMFZPvH2CuR6mnaaSiseNJ/<0;1>/*,[1d177351/48h/0h/0h/2h]xpub6F5dv5ncJreUTNJ89xwAfuzLGJ17CfuQeo9jPwQ5CLqyGoAnkN6QZMWtoMi73MREyJbWh4o521Ye3DFuRDhkigf8ocJtW4DadaSszNieAgr/<0;1>/*))#asdthwfj',
   ).expect('valid multisig')
 
+  /** Keys of the Bitkey app's sample descriptor export (ExportWatchingDescriptorServiceMock), in app, hardware, server order. */
+  public static bitkeyKeys = [
+    "[a0a76f7a/84'/0'/0']xpub6CeEJqRzUbpUHsEkbz65NLzHYzrT5TpngE2pmuikVFJgSwU7hjEVpjeroQkdbGKLksMDnXPRxvif9jM2jBGxBXKdZYXNBLwG23tEqkAneEn",
+    "[18240e16/84'/0'/0']xpub6CF6yNxSPoNFJESR4xoxzTGKF6GZad5zdB14waPanqnkFWsNAuYNzq2y7nZk5TGiPcGjY8P3ZwrdixbsSp9uVMZ4QtRkMdUNHUsabMnPbKD",
+    "[afc9474a/84'/0'/0']xpub6CHktMjw1eKdvXgiYdzHVr58KfKnoZpZHqDmTD8MMPJA5vom1sd1TdrNnNESvrxXgZDUMeyBjg2wQYnmMXB767nwh5Z8eNDeFmdPrDdmKaq",
+  ] as const
+  /** What Bitkey's Settings → Exports → Current wallet descriptor shares. */
+  public static bitkeyExport = `External: wsh(sortedmulti(2,${Wallets.bitkeyKeys.map((key) => `${key}/0/*`).join(',')})) 
+
+Internal: wsh(sortedmulti(2,${Wallets.bitkeyKeys.map((key) => `${key}/1/*`).join(',')}))`
+
   public static legacyAddress = Wallets.singlesigLegacyAccount.address(0, 0)
   public static scriptAddress = Wallets.singlesigNestedSegwitAccount.address(0, 0)
   public static segwitAddress = Wallets.singlesigNativeSegwitAccount.address(0, 0)

@@ -1,12 +1,12 @@
-import { Box, Flex, Spinner, Stack, Text } from '@chakra-ui/react'
+import { Box, Flex, Spinner, Stack, type StackProps, Text } from '@chakra-ui/react'
 import { Account, MultiSigAccount } from '@hoseki/packages/bitcoin'
 import { StatusBadge, getBadgeConfigForClaim } from '@hoseki/packages/ui/prove-verify-ui'
 import { formatUsd, toBitcoinAmountDisplayValue } from '@hoseki/packages/ui/utils'
 import { useGetClaimBalance } from '../../../lib/balances'
 import type { ClaimDto } from '../../../trpc/server-types'
-import { ensureClaimStatusNotExpired } from '../../../utils/claim-utils'
+import { ensureClaimStatusNotExpired, isBitkeyClaim } from '../../../utils/claim-utils'
 
-export function MultisigClaimProperties({ claim }: { claim: ClaimDto }): JSX.Element {
+export function MultisigClaimProperties({ claim, ...props }: { claim: ClaimDto } & StackProps): JSX.Element {
   const { data: balance, isLoading: isBalanceLoading } = useGetClaimBalance(claim.id)
 
   const account = Account.fromCheckedDescriptor(claim.account)
@@ -16,7 +16,7 @@ export function MultisigClaimProperties({ claim }: { claim: ClaimDto }): JSX.Ele
   const claimStatus = ensureClaimStatusNotExpired(claim)
 
   return (
-    <Stack spacing={4} mb={8}>
+    <Stack spacing={4} mb={8} {...props}>
       <Text as="h2" textStyle="text/md" fontWeight="medium">
         Claim Details
       </Text>
@@ -51,7 +51,7 @@ export function MultisigClaimProperties({ claim }: { claim: ClaimDto }): JSX.Ele
             Claim Type
           </Text>
           <Text textStyle="label/sm" color="neutral.900" fontWeight="medium">
-            {isMultisig ? 'Multisig' : 'Singlesig'}
+            {isBitkeyClaim(claim) ? 'Bitkey' : isMultisig ? 'Multisig' : 'Singlesig'}
           </Text>
         </Box>
         <Box w={['50%', '10%']} textAlign={['left', 'right']} boxSizing="border-box">
