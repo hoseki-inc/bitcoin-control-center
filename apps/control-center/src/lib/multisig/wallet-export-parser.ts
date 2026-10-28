@@ -6,6 +6,7 @@ import {
   type Wallet,
   type Xpub,
 } from '@hoseki/packages/bitcoin'
+import { MAX_MULTISIG_KEYS } from '@hoseki/packages/bitcoin/limits'
 import { IndexMap } from '@hoseki/packages/collection'
 import { Err, Ok, Result, parseUnknown } from '@hoseki/packages/result'
 import { Slip132, WalletImporter } from '@hoseki/packages/wallet'
@@ -442,15 +443,17 @@ const UnchainedCaravanJsonFileSchema = z
       requiredSigners: z.number(),
       totalSigners: z.number(),
     }),
-    extendedPublicKeys: z.array(
-      z.object({
-        name: z.string(),
-        bip32Path: z.string(),
-        xpub: z.string(),
-        xfp: z.string(),
-        method: z.string().nullish(),
-      }),
-    ),
+    extendedPublicKeys: z
+      .array(
+        z.object({
+          name: z.string(),
+          bip32Path: z.string(),
+          xpub: z.string(),
+          xfp: z.string(),
+          method: z.string().nullish(),
+        }),
+      )
+      .max(MAX_MULTISIG_KEYS),
   })
   .pick({
     addressType: true,

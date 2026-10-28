@@ -1,3 +1,4 @@
+import { MAX_TRANSACTION_INPUTS, MAX_TRANSACTION_OUTPUTS } from '@hoseki/packages/bitcoin/limits'
 import { isLocalOrPrivateHost } from '@hoseki/packages/clients/electrum/lib/protocol'
 import { Err, Ok } from '@hoseki/packages/result'
 import type { Result } from '@hoseki/packages/result'
@@ -10,15 +11,19 @@ import { type LookedUpTx, type LookupFailure, TransactionLoadError, type TxSourc
  */
 const MempoolTxSchema = z.object({
   txid: z.string(),
-  vin: z.array(
-    z.object({
-      txid: z.string().optional(),
-      vout: z.number().int().optional(),
-      is_coinbase: z.boolean().optional(),
-      prevout: z.object({ scriptpubkey_address: z.string().optional(), value: z.number().int() }).nullable(),
-    }),
-  ),
-  vout: z.array(z.object({ scriptpubkey_address: z.string().optional(), value: z.number().int() })),
+  vin: z
+    .array(
+      z.object({
+        txid: z.string().optional(),
+        vout: z.number().int().optional(),
+        is_coinbase: z.boolean().optional(),
+        prevout: z.object({ scriptpubkey_address: z.string().optional(), value: z.number().int() }).nullable(),
+      }),
+    )
+    .max(MAX_TRANSACTION_INPUTS),
+  vout: z
+    .array(z.object({ scriptpubkey_address: z.string().optional(), value: z.number().int() }))
+    .max(MAX_TRANSACTION_OUTPUTS),
   status: z.object({
     confirmed: z.boolean(),
     block_height: z.number().optional(),

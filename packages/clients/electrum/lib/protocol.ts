@@ -3,9 +3,7 @@ import * as tls from 'node:tls'
 import { parseUnknown } from '@hoseki/packages/result'
 import { AsyncResult, Err, Ok, type Result } from '@hoseki/packages/result'
 import { SocksClient } from 'socks'
-import { type JsonRpcResponse, JsonRpcResponseSchema } from './schemas'
-
-const MAX_ELECTRUM_RESPONSE_BYTES = 16 * 1024 * 1024
+import { type JsonRpcResponse, JsonRpcResponseSchema, MAX_ELECTRUM_RESPONSE_BYTES } from './schemas'
 
 export interface SocksProxyConfig {
   host: string

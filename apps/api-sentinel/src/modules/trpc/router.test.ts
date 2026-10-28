@@ -297,3 +297,14 @@ it('rejects an unknown portfolio timezone', async () => {
     message: 'Invalid timezone',
   })
 })
+
+it('rejects a portfolio request for more accounts than the list limit', async () => {
+  const { app } = await setup()
+  const getData = vi.spyOn(app.controlCenterService, 'getData')
+  const { controlCenter } = appRouter.createCaller({ app }).portalProve
+
+  await expect(
+    controlCenter.getData({ timeRange: '30d', claimIds: Array.from({ length: 1001 }, (_, i) => `claim-${i}`) }),
+  ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
+  expect(getData).not.toHaveBeenCalled()
+})
