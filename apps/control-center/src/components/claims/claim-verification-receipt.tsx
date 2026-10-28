@@ -90,7 +90,7 @@ function claimName(claim: ClaimDto): string {
 
 function claimHero(claim: ClaimDto): ConnectionHero {
   if (claim.keystores.length > 1) {
-    return { icon: <MultisigKeys size="48px" /> }
+    return { picture: <MultisigKeys size="56px" /> }
   }
   const keystore = claim.keystores[0]
   const image = keystore ? getWalletImage(keystore.wallet, keystore.model ?? '') : null

@@ -43,7 +43,8 @@ export function getWalletImage(wallet: string | null, model: string): WalletImag
     case 'trezor':
       return getTrezorImageByModelName(isTrezorModel(model) ? model : 'One')
     case 'keystone':
-      return { href: '/images/hardware-wallets/keystone-device.png', alt: 'Keystone' }
+      // Cropped to the device, unlike the PNG, which pads it on every side.
+      return { href: '/images/hardware-wallets/keystone-device.svg', alt: 'Keystone' }
     case 'bitkey':
       return { href: '/images/hardware-wallets/bitkey-device.png', alt: 'Bitkey' }
     case null:

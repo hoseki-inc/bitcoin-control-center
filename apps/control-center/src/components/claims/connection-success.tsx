@@ -13,10 +13,14 @@ import { formatBitcoinNumber } from '../../lib/bitcoin-display'
 import { FiatAmountText } from '../fiat-amount-text'
 
 /**
- * What floats above the title: a device's photo, or an app's icon on a white tile when there's no device. The
- * tile is decorative, since the title names the account.
+ * What floats above the title: a device's photo, an app's icon on a white tile when there's no device, or a
+ * picture on its own, such as a multisig's keys. Tiles and pictures are decorative, since the title names the
+ * account.
  */
-export type ConnectionHero = { photo: string; alt: string; height?: string } | { icon: ReactNode }
+export type ConnectionHero =
+  | { photo: string; alt: string; height?: string }
+  | { icon: ReactNode }
+  | { picture: ReactNode }
 
 export interface ConnectionAction {
   label: string
@@ -156,41 +160,41 @@ function Lockup({
               '@media (prefers-reduced-motion: reduce)': { animation: 'none' },
             }}
           >
-            {'photo' in hero ? (
-              <>
-                <chakra.img
-                  src={hero.photo}
-                  alt={hero.alt}
-                  h={hero.height ?? '140px'}
-                  display="block"
-                  filter="drop-shadow(-8px 10px 15px rgba(0, 0, 0, 0.5))"
-                />
-                <Box position="absolute" right="-10px" bottom="2px">
-                  {badge}
-                </Box>
-              </>
-            ) : (
-              <>
-                <Flex
-                  aria-hidden
-                  h="104px"
-                  minW="104px"
-                  px={5}
-                  align="center"
-                  justify="center"
-                  bg="white"
-                  borderWidth="1px"
-                  borderColor="neutral.100"
-                  borderRadius="24px"
-                  boxShadow="0 10px 24px -6px rgba(0, 0, 0, 0.18)"
-                >
-                  {hero.icon}
-                </Flex>
-                <Box position="absolute" right="-18px" bottom="-14px">
-                  {badge}
-                </Box>
-              </>
+            {'photo' in hero && (
+              <chakra.img
+                src={hero.photo}
+                alt={hero.alt}
+                h={hero.height ?? '140px'}
+                display="block"
+                filter="drop-shadow(-8px 10px 15px rgba(0, 0, 0, 0.5))"
+              />
             )}
+            {'icon' in hero && (
+              <Flex
+                aria-hidden
+                h="104px"
+                minW="104px"
+                px={5}
+                align="center"
+                justify="center"
+                bg="white"
+                borderWidth="1px"
+                borderColor="neutral.100"
+                borderRadius="24px"
+                boxShadow="0 10px 24px -6px rgba(0, 0, 0, 0.18)"
+              >
+                {hero.icon}
+              </Flex>
+            )}
+            {'picture' in hero && (
+              <Box aria-hidden filter="drop-shadow(0 8px 12px rgba(0, 0, 0, 0.12))">
+                {hero.picture}
+              </Box>
+            )}
+            {/* The mark straddles the hero's corner, so it doesn't hide a slim device or the last key. */}
+            <Box position="absolute" {...badgeCorner(hero)}>
+              {badge}
+            </Box>
           </Box>
         )}
       </Flex>
@@ -215,6 +219,16 @@ function Lockup({
       )}
     </>
   )
+}
+
+function badgeCorner(hero: ConnectionHero) {
+  if ('photo' in hero) {
+    return { right: '-28px', bottom: '-4px' }
+  }
+  if ('icon' in hero) {
+    return { right: '-18px', bottom: '-14px' }
+  }
+  return { right: '-34px', bottom: '-18px' }
 }
 
 /** The reward: the account's balance at full size, counting up from zero once it's known. */
