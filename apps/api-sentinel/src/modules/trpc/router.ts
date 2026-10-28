@@ -9,6 +9,7 @@ import {
 } from '@hoseki/packages/bitcoin/account'
 import { Address, type CheckedAddressString } from '@hoseki/packages/bitcoin/address'
 import { DerivationPathString } from '@hoseki/packages/bitcoin/derivation-path'
+import { MAX_MULTISIG_KEYS } from '@hoseki/packages/bitcoin/limits'
 import { Network } from '@hoseki/packages/bitcoin/network'
 import { NetworkAccount } from '@hoseki/packages/bitcoin/network_account'
 import { Xpub } from '@hoseki/packages/bitcoin/xpub'
@@ -118,6 +119,8 @@ interface ChallengeMessageDto {
   keystoreId: KeystoreId
 }
 
+const MAX_LIST_ITEMS = 1000
+const MAX_IMPORTED_TRANSACTIONS = 10_000
 const supportedHardwareWalletSchema = z.enum(['trezor', 'coldcard', 'ledger', 'keystone'])
 const etfTickerSchema = z.enum(['IBIT', 'FBTC', 'GBTC', 'ARKB', 'BITB', 'HODL', 'BTC', 'MSBT'])
 const checkedSinglesigAccountDescriptorSchema = z.custom<CheckedSinglesigAccountDescriptor>(
@@ -397,10 +400,10 @@ const controlCenterRouter = t.router({
       z
         .object({
           timeRange: z.enum(['7d', '30d', '90d', '1y', 'all']).default('30d'),
-          claimIds: z.array(z.string()).optional(),
-          exchangeAccountIds: z.array(z.string()).optional(),
-          manualAccountIds: z.array(z.string()).optional(),
-          etfAccountIds: z.array(z.string()).optional(),
+          claimIds: z.array(z.string()).max(MAX_LIST_ITEMS).optional(),
+          exchangeAccountIds: z.array(z.string()).max(MAX_LIST_ITEMS).optional(),
+          manualAccountIds: z.array(z.string()).max(MAX_LIST_ITEMS).optional(),
+          etfAccountIds: z.array(z.string()).max(MAX_LIST_ITEMS).optional(),
           timezone: z.string().default('UTC'),
           customDateRange: z
             .object({
@@ -439,17 +442,19 @@ const controlCenterRouter = t.router({
    * Each wallet's newest known balance and whether a newer one is being fetched. Never waits on
    * Electrum: out-of-date wallets start a scan, and pages poll while any wallet is syncing.
    */
-  walletBalances: protectedProcedure.input(z.object({ claimIds: z.array(z.string()) })).query(async ({ ctx, input }) =>
-    (await ctx.app.walletBalanceService.readBalances(input.claimIds)).map(
-      ({ accountId, balanceSats, asOf, syncing, failed }) => ({
-        accountId,
-        balanceSats: balanceSats?.toString() ?? null,
-        asOf: asOf?.toISOString() ?? null,
-        syncing,
-        failed,
-      }),
+  walletBalances: protectedProcedure
+    .input(z.object({ claimIds: z.array(z.string()).max(MAX_LIST_ITEMS) }))
+    .query(async ({ ctx, input }) =>
+      (await ctx.app.walletBalanceService.readBalances(input.claimIds)).map(
+        ({ accountId, balanceSats, asOf, syncing, failed }) => ({
+          accountId,
+          balanceSats: balanceSats?.toString() ?? null,
+          asOf: asOf?.toISOString() ?? null,
+          syncing,
+          failed,
+        }),
+      ),
     ),
-  ),
 })
 
 // ─── portalProve.registry ───────────────────────────────────────────────────
@@ -665,15 +670,17 @@ const registryRouter = t.router({
             network: z.string(),
             account: checkedMultisigAccountDescriptorSchema,
             displayName: z.string().min(1),
-            keystores: z.array(
-              z.object({
-                label: z.string().min(1),
-                wallet: supportedHardwareWalletSchema.nullable(),
-                model: z.string().nullable(),
-                derivationPath: DerivationPathString.nullable(),
-                publicKey: z.string(),
-              }),
-            ),
+            keystores: z
+              .array(
+                z.object({
+                  label: z.string().min(1),
+                  wallet: supportedHardwareWalletSchema.nullable(),
+                  model: z.string().nullable(),
+                  derivationPath: DerivationPathString.nullable(),
+                  publicKey: z.string(),
+                }),
+              )
+              .max(MAX_MULTISIG_KEYS),
           }),
         )
         .mutation(async ({ ctx, input }) => {
@@ -1208,21 +1215,23 @@ const proveExchangeRouter = t.router({
       .input(
         z.object({
           accountId: z.string(),
-          transactions: z.array(
-            z.object({
-              externalId: z.string(),
-              transactedAt: z.string(),
-              type: z.string(),
-              amountBtc: z.string(),
-              amountUsd: z.string().optional(),
-              feeUsd: z.string().optional(),
-              feeBtc: z.string().optional(),
-              exchangeRate: z.string().optional(),
-              description: z.string().optional(),
-              txHash: z.string().optional(),
-              statementMonth: z.string(),
-            }),
-          ),
+          transactions: z
+            .array(
+              z.object({
+                externalId: z.string(),
+                transactedAt: z.string(),
+                type: z.string(),
+                amountBtc: z.string(),
+                amountUsd: z.string().optional(),
+                feeUsd: z.string().optional(),
+                feeBtc: z.string().optional(),
+                exchangeRate: z.string().optional(),
+                description: z.string().optional(),
+                txHash: z.string().optional(),
+                statementMonth: z.string(),
+              }),
+            )
+            .max(MAX_IMPORTED_TRANSACTIONS),
         }),
       )
       .mutation(async ({ ctx, input }) => {
@@ -1303,7 +1312,7 @@ const proveExchangeRouter = t.router({
 
 const onchainRouter = t.router({
   bitcoinAccountBalances: protectedProcedure
-    .input(z.object({ accounts: z.array(z.string()) }))
+    .input(z.object({ accounts: z.array(z.string()).max(MAX_LIST_ITEMS) }))
     .query(async ({ ctx, input }) => {
       const resultMap = new Map<string, { current: Decimal; usd: Decimal | null }>()
       const archivedAccounts = new Set<string>()
@@ -1381,22 +1390,24 @@ const onchainRouter = t.router({
       return { accounts: resultMap, archivedAccounts }
     }),
 
-  claimBalances: protectedProcedure.input(z.object({ claimIds: z.array(z.string()) })).query(async ({ ctx, input }) => {
-    // Wallets are scanned one by one and recent balances reused; other callers share the same scans.
-    const results = await ctx.app.walletBalanceService.getLiveBalances(input.claimIds)
-    const balanceMap = new Map<string, Decimal>()
-    for (const [claimId, result] of results) {
-      if (result.isOk()) {
-        balanceMap.set(claimId, new Decimal(result.unwrap().balanceSats.toString()))
+  claimBalances: protectedProcedure
+    .input(z.object({ claimIds: z.array(z.string()).max(MAX_LIST_ITEMS) }))
+    .query(async ({ ctx, input }) => {
+      // Wallets are scanned one by one and recent balances reused; other callers share the same scans.
+      const results = await ctx.app.walletBalanceService.getLiveBalances(input.claimIds)
+      const balanceMap = new Map<string, Decimal>()
+      for (const [claimId, result] of results) {
+        if (result.isOk()) {
+          balanceMap.set(claimId, new Decimal(result.unwrap().balanceSats.toString()))
+        }
       }
-    }
-    // A wallet that can't be scanned is left out, so the rest still show. Errors can quote
-    // descriptors, so the request fails with a plain message, and only when no wallet could be read.
-    if (results.size > 0 && balanceMap.size === 0) {
-      throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Could not fetch wallet balances' })
-    }
-    return balanceMap
-  }),
+      // A wallet that can't be scanned is left out, so the rest still show. Errors can quote
+      // descriptors, so the request fails with a plain message, and only when no wallet could be read.
+      if (results.size > 0 && balanceMap.size === 0) {
+        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Could not fetch wallet balances' })
+      }
+      return balanceMap
+    }),
 })
 
 // ─── portalProve.statement ───────────────────────────────────────────────────
@@ -1409,8 +1420,8 @@ const statementRouter = t.router({
   initiateGeneration: protectedProcedure
     .input(
       z.object({
-        claimIds: z.array(z.string()),
-        exchangeAccountIds: z.array(z.string()).optional(),
+        claimIds: z.array(z.string()).max(MAX_LIST_ITEMS),
+        exchangeAccountIds: z.array(z.string()).max(MAX_LIST_ITEMS).optional(),
         quoteCurrency: StatementQuoteCurrencySchema.default('USD'),
         openingDate: z.date(),
         closingDate: z.date(),
@@ -1701,13 +1712,15 @@ const etfRouter = t.router({
     .input(
       z.object({
         displayName: z.string().min(1),
-        holdings: z.array(
-          z.object({
-            ticker: etfTickerSchema,
-            shares: z.string(),
-            datePurchased: z.string().optional(),
-          }),
-        ),
+        holdings: z
+          .array(
+            z.object({
+              ticker: etfTickerSchema,
+              shares: z.string(),
+              datePurchased: z.string().optional(),
+            }),
+          )
+          .max(MAX_LIST_ITEMS),
       }),
     )
     .mutation(async ({ ctx, input }) => {
