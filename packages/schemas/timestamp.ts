@@ -9,9 +9,7 @@ export const TimestampSchema = z
     const date = new Date(arg * 1000)
     if (isNaN(date.getTime())) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Invalid timestamp' })
-      return z.NEVER
     }
-    return arg
   })
   .brand('Timestamp')
 export type Timestamp = z.infer<typeof TimestampSchema>

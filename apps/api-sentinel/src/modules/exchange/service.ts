@@ -30,7 +30,7 @@ export interface ExchangeAccountDto {
 
 const CredentialDataSchema = z.object({
   type: z.literal('apiKey'),
-  data: z.record(z.object({ blob: z.string() })),
+  data: z.record(z.string(), z.object({ blob: z.string() })),
 })
 type CredentialData = z.infer<typeof CredentialDataSchema>
 
