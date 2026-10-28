@@ -26,11 +26,11 @@ function decimalObjectToDecimalInstance(pd: z.infer<typeof decimalObject>) {
 }
 
 type DecimalSchemaUnion = z.ZodUnion<
-  [
+  readonly [
     z.ZodString,
     z.ZodNumber,
     z.ZodBigInt,
-    z.ZodType<Decimal>,
+    z.ZodCustom<Decimal, Decimal>,
     z.ZodObject<{ d: z.ZodArray<z.ZodNumber>; e: z.ZodNumber; s: z.ZodNumber }>,
   ]
 >
@@ -52,7 +52,7 @@ function formatDecimalInput(value: DecimalLike): string {
   return value.toString()
 }
 
-export function decimal(config?: Decimal.Config): z.ZodEffects<DecimalSchemaUnion, Decimal, DecimalLike> {
+export function decimal(config?: Decimal.Config): z.ZodPipe<DecimalSchemaUnion, z.ZodTransform<Decimal, DecimalLike>> {
   return z.union([z.string(), z.number(), z.bigint(), decimalInstance, decimalObject]).transform((value, ctx) => {
     const constructor = config ? Decimal.clone(config) : Decimal
 

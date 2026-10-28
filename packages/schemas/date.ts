@@ -8,7 +8,7 @@ export type IsoDate = z.infer<typeof isoStringDateSchema>
 /**
  * Parses the date in YYYY-MM-DD format.
  */
-export function dateString(): z.ZodEffects<z.ZodString, Date, string> {
+export function dateString(): z.ZodPipe<z.ZodString, z.ZodTransform<Date, string>> {
   return z
     .string()
     .date()
@@ -39,7 +39,7 @@ export function toUtcMidnight(inputDate: Date): Date {
 /**
  * Parses the date as a UTC date.
  */
-export function utcDatetimeString(format: string): z.ZodEffects<z.ZodString, Date, string> {
+export function utcDatetimeString(format: string): z.ZodPipe<z.ZodString, z.ZodTransform<Date, string>> {
   return z.string().transform((input, ctx) => {
     const result = Result.fromThrowable(() => parse(input, format, new Date())).andThen((parsedDate: Date) => {
       if (isNaN(parsedDate.getTime())) {
@@ -72,17 +72,22 @@ export function date(): z.ZodDate {
   return z.date()
 }
 
-export function dateLike(): z.ZodPipeline<z.ZodUnion<[z.ZodNumber, z.ZodString, z.ZodDate]>, z.ZodDate> {
+export function dateLike(): z.ZodPipe<
+  z.ZodUnion<readonly [z.ZodNumber, z.ZodString, z.ZodDate]>,
+  z.ZodCoercedDate<number | string | Date>
+> {
   return z.union([z.number(), z.string(), z.date()]).pipe(z.coerce.date())
 }
 
 function pastOrNow(schema: z.ZodDate | ReturnType<typeof dateLike>) {
-  return schema.refine(
-    (v) => v <= new Date(),
-    (v) => ({
-      message: `Date must be in the past, got "${v.toISOString()}, now is ${new Date().toISOString()}"`,
-    }),
-  )
+  return schema.superRefine((v, ctx) => {
+    if (v > new Date()) {
+      ctx.addIssue({
+        code: 'custom',
+        message: `Date must be in the past, got "${v.toISOString()}, now is ${new Date().toISOString()}"`,
+      })
+    }
+  })
 }
 
 date.pastOrNow = () => pastOrNow(date())
@@ -101,7 +106,7 @@ dateLike.pastOrNow = () => pastOrNow(dateLike())
  * schema.parse(8640000000001) // Error: because the max a Date constructor can handle is 8640000000000000.5
  * ```
  */
-export function unixTimestamp(): z.ZodPipeline<z.ZodEffects<z.ZodNumber, Date, number>, z.ZodDate> {
+export function unixTimestamp(): z.ZodPipe<z.ZodPipe<z.ZodNumber, z.ZodTransform<Date, number>>, z.ZodDate> {
   return z
     .number()
     .int()
