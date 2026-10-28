@@ -31,6 +31,7 @@ import { Decimal } from 'decimal.js'
 import { useEffect } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router'
 import { BitcoinAmount } from '../../components/bitcoin-amount'
+import { bitkeyUnverifiedReason } from '../../components/claims/bitkey/bitkey-notes'
 import { DeleteClaimModal } from '../../components/claims/claim-details/delete-claim-modal'
 import { UnavailableAlert } from '../../components/unavailable-alert'
 import { SyncIndicator } from '../../components/wallet-balances/sync-indicator'
@@ -420,12 +421,7 @@ export function AccountCard({
             textTransform="none"
           />
         )}
-        <Tooltip
-          label="Bitkey can’t sign messages yet, so this account isn’t in statements."
-          isDisabled={status !== 'unverified'}
-          openDelay={250}
-          hasArrow
-        >
+        <Tooltip label={bitkeyUnverifiedReason} isDisabled={status !== 'unverified'} openDelay={250} hasArrow>
           <Box as="span" ml="auto">
             <StatusBadge status={badgeStatus} label={badgeLabel} size="sm" />
           </Box>

@@ -23,14 +23,21 @@ import {
 } from '@hoseki/packages/ui/wallet-ui'
 import { type BitkeyExport, parseBitkeyExport } from '@hoseki/packages/wallet'
 import { useEffect, useRef, useState } from 'react'
-import { useLocation, useNavigate, useSearchParams } from 'react-router'
+import { Navigate, useLocation, useNavigate, useSearchParams } from 'react-router'
 import { toast } from 'sonner'
 import { parseNavigationState } from '../../../lib/navigation-state'
 import { trpc } from '../../../trpc'
+import type { ClaimDto } from '../../../trpc/server-types'
+import { BitkeyConnected, BitkeyConnecting } from './bitkey-connected'
 import { BitkeyKeyList, BitkeyUnverifiedNote } from './bitkey-notes'
 import { BitkeyPhoneGuide, bitkeyExportSteps, useBitkeyPhoneSize } from './bitkey-phone-steps'
 
-type Step = { kind: 'intro' } | { kind: 'export'; index: number } | { kind: 'import' } | { kind: 'confirm' }
+type Step =
+  | { kind: 'intro' }
+  | { kind: 'export'; index: number }
+  | { kind: 'import' }
+  | { kind: 'confirm' }
+  | { kind: 'done' }
 
 const lastExportIndex = bitkeyExportSteps.length - 1
 
@@ -39,7 +46,7 @@ const lastExportIndex = bitkeyExportSteps.length - 1
  * and browser Back goes to the previous step. Only the step's name goes there, never the descriptor.
  */
 function stepFromParam(value: string | null): Step {
-  if (value === 'import' || value === 'confirm') {
+  if (value === 'import' || value === 'confirm' || value === 'done') {
     return { kind: value }
   }
   const index = Number(/^export-(\d+)$/.exec(value ?? '')?.[1]) - 1
@@ -59,18 +66,75 @@ interface ReadExport {
 
 export function ConnectBitkey(): JSX.Element {
   const [readExport, setReadExport] = useState<ReadExport | null>(null)
+  const [name, setName] = useState('Bitkey')
+  const [connected, setConnected] = useState<ClaimDto | null>(null)
+  const [isHolding, setIsHolding] = useState(false)
   const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
   const location = useLocation()
   const navigationState = parseNavigationState(location.state)
   const returnTo = navigationState?.returnTo ?? '/accounts'
+  const trpcUtils = trpc.useUtils()
+  const createBitkey = trpc.portalProve.registry.claims.create.bitkey.useMutation()
 
   const requested = stepFromParam(searchParams.get('step'))
   // The descriptor is only kept in memory, so after a reload the confirm step asks for it again.
   const step: Step = requested.kind === 'confirm' && readExport === null ? { kind: 'import' } : requested
 
-  function goTo(next: Step): void {
-    setSearchParams({ step: stepToParam(next) }, { state: navigationState })
+  // The connecting screen stays up for at least a second, so the success check lands instead of flashing past.
+  useEffect(() => {
+    if (!isHolding) {
+      return
+    }
+    const timeout = setTimeout(() => {
+      setIsHolding(false)
+    }, 1_000)
+    return () => {
+      clearTimeout(timeout)
+    }
+  }, [isHolding])
+
+  function goTo(next: Step, { replace = false } = {}): void {
+    setSearchParams({ step: stepToParam(next) }, { state: navigationState, replace })
+  }
+
+  function addBitkey(descriptorExport: string): void {
+    setIsHolding(true)
+    createBitkey.mutate(
+      { descriptorExport, displayName: name.trim() },
+      {
+        onSuccess: ({ claim, alreadyConnected }) => {
+          void trpcUtils.portalProve.registry.claims.list.invalidate()
+          if (alreadyConnected) {
+            toast.info('This Bitkey is already connected')
+            void navigate(`/accounts/${claim.id}`)
+            return
+          }
+          setConnected(claim)
+          // Replacing the confirm step means Back can't add the same Bitkey again.
+          goTo({ kind: 'done' }, { replace: true })
+        },
+        onError: (error) => {
+          setIsHolding(false)
+          // Sentinel only refuses a readable export when that Bitkey is archived.
+          if (error.data?.code === 'CONFLICT') {
+            toast.info('This Bitkey is archived', { description: 'Restore it from Archived accounts.' })
+            void navigate('/accounts#archived')
+            return
+          }
+          toast.error('Couldn’t add your Bitkey', { description: error.message })
+        },
+      },
+    )
+  }
+
+  if (createBitkey.isLoading || isHolding) {
+    return <BitkeyConnecting />
+  }
+
+  if (step.kind === 'done') {
+    // The new account is only kept in memory, so after a reload the flow ends on Accounts.
+    return connected ? <BitkeyConnected claim={connected} /> : <Navigate to="/accounts" replace />
   }
 
   return (
@@ -111,8 +175,13 @@ export function ConnectBitkey(): JSX.Element {
         {step.kind === 'confirm' && readExport && (
           <ConfirmBitkey
             readExport={readExport}
+            name={name}
+            onNameChange={setName}
             onBack={() => {
               goTo({ kind: 'import' })
+            }}
+            onAdd={() => {
+              addBitkey(readExport.text)
             }}
           />
         )}
@@ -314,39 +383,21 @@ function ImportDescriptor({ onBack, onRead }: { onBack: () => void; onRead: (rea
   )
 }
 
-function ConfirmBitkey({ readExport, onBack }: { readExport: ReadExport; onBack: () => void }) {
-  const navigate = useNavigate()
-  const trpcUtils = trpc.useUtils()
-  const createBitkey = trpc.portalProve.registry.claims.create.bitkey.useMutation()
-  const [name, setName] = useState('Bitkey')
+function ConfirmBitkey({
+  readExport,
+  name,
+  onNameChange,
+  onBack,
+  onAdd,
+}: {
+  readExport: ReadExport
+  name: string
+  onNameChange: (name: string) => void
+  onBack: () => void
+  onAdd: () => void
+}) {
   const nameError =
     name.trim() === '' ? 'Give this account a name' : name.length > 255 ? 'Keep the name under 255 characters' : null
-
-  function addBitkey(): void {
-    createBitkey.mutate(
-      { descriptorExport: readExport.text, displayName: name.trim() },
-      {
-        onSuccess: ({ claim, alreadyConnected }) => {
-          void trpcUtils.portalProve.registry.claims.list.invalidate()
-          if (alreadyConnected) {
-            toast.info('This Bitkey is already connected')
-          } else {
-            toast.success('Bitkey added')
-          }
-          void navigate(`/accounts/${claim.id}`)
-        },
-        onError: (error) => {
-          // Sentinel only refuses a readable export when that Bitkey is archived.
-          if (error.data?.code === 'CONFLICT') {
-            toast.info('This Bitkey is archived', { description: 'Restore it from Archived accounts.' })
-            void navigate('/accounts#archived')
-            return
-          }
-          toast.error('Couldn’t add your Bitkey', { description: error.message })
-        },
-      },
-    )
-  }
 
   return (
     <Stack gap={4}>
@@ -367,7 +418,7 @@ function ConfirmBitkey({ readExport, onBack }: { readExport: ReadExport; onBack:
         onSubmit={(event) => {
           event.preventDefault()
           if (nameError === null) {
-            addBitkey()
+            onAdd()
           }
         }}
       >
@@ -377,7 +428,7 @@ function ConfirmBitkey({ readExport, onBack }: { readExport: ReadExport; onBack:
             id="bitkey-name"
             value={name}
             onChange={(event) => {
-              setName(event.target.value)
+              onNameChange(event.target.value)
             }}
           />
           {nameError !== null && <FormErrorMessage>{nameError}</FormErrorMessage>}
@@ -394,7 +445,7 @@ function ConfirmBitkey({ readExport, onBack }: { readExport: ReadExport; onBack:
             </Button>
           }
           rightButton={
-            <Button type="submit" isDisabled={nameError !== null} isLoading={createBitkey.isLoading}>
+            <Button type="submit" isDisabled={nameError !== null}>
               Add Bitkey
             </Button>
           }

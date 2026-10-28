@@ -47,20 +47,27 @@ export function Receipt({
         </Flex>
       ) : (
         <Box>
-          <Lottie
-            animationData={greenCheckCircle}
-            loop={false}
-            autoplay={true}
-            style={{
-              width: '60px',
-              height: '60px',
-              margin: '0 auto',
-            }}
-          />
+          <SuccessCheck />
         </Box>
       )}
 
       <Box maxW={['100%', '100%', '70%']}>{content}</Box>
     </Stack>
+  )
+}
+
+/** The green check that draws itself once when something succeeds. */
+export function SuccessCheck({ size = '60px' }: { size?: string }): JSX.Element {
+  return (
+    <Lottie
+      animationData={greenCheckCircle}
+      loop={false}
+      autoplay={true}
+      style={{
+        width: size,
+        height: size,
+        margin: '0 auto',
+      }}
+    />
   )
 }
