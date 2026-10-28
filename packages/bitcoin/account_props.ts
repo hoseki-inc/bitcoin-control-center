@@ -33,7 +33,7 @@ export const multisigAccountPropsSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.too_big,
         maximum: MAX_THRESHOLD,
-        type: 'number',
+        origin: 'number',
         inclusive: true,
         message: `Threshold must be less than ${MAX_THRESHOLD}`,
       })
@@ -43,7 +43,7 @@ export const multisigAccountPropsSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.too_small,
         minimum: MIN_THRESHOLD,
-        type: 'number',
+        origin: 'number',
         inclusive: true,
         message: `Threshold must be greater than ${MIN_THRESHOLD}`,
       })
@@ -53,7 +53,7 @@ export const multisigAccountPropsSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.too_big,
         maximum: xpubs.length,
-        type: 'number',
+        origin: 'number',
         inclusive: true,
         message: 'Threshold must be less than or equal to xpubs.length',
       })

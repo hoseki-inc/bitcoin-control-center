@@ -74,18 +74,13 @@ function isNetworkMethod(network: NetworkSource['network']): network is () => Ne
  *
  * The input must be an object with a `network` property that is a function or a Network.
  */
-export function bitcoinNetwork<T extends z.ZodType<NetworkSource, z.ZodTypeDef, unknown>>(
-  schema: T,
-  allowed: Network[],
-): z.ZodEffects<T, z.infer<T>, z.input<T>> {
-  return schema.superRefine((value, ctx) => {
+export function bitcoinNetwork<T extends z.ZodType<NetworkSource>>(schema: T, allowed: Network[]): T {
+  return schema.superRefine((value: NetworkSource, ctx) => {
     const n = isNetworkMethod(value.network) ? value.network() : value.network
     const network = allowed.find((allowedNetwork) => allowedNetwork.kind === n.kind)
     if (!network) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Invalid network: ${n.toString()}` })
-      return z.NEVER
     }
-    return value
   })
 }
 

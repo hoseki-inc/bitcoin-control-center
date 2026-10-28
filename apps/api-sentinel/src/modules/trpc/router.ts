@@ -136,12 +136,12 @@ const checkedSinglesigAccountDescriptorSchema = z.custom<CheckedSinglesigAccount
   (value): value is CheckedSinglesigAccountDescriptor =>
     // The parser reads only the first key, so also reject private keys elsewhere in the descriptor.
     typeof value === 'string' && !containsExtendedPrivateKey(value) && SingleSigAccount.fromDescriptor(value).isOk(),
-  (descriptor: string) => descriptorIssue(descriptor, 'Invalid singlesig account descriptor'),
+  { error: (issue) => descriptorIssue(String(issue.input), 'Invalid singlesig account descriptor') },
 )
 const checkedMultisigAccountDescriptorSchema = z.custom<CheckedMultisigAccountDescriptor>(
   (value): value is CheckedMultisigAccountDescriptor =>
     typeof value === 'string' && !containsExtendedPrivateKey(value) && MultiSigAccount.fromDescriptor(value).isOk(),
-  (descriptor: string) => descriptorIssue(descriptor, 'Invalid multisig account descriptor'),
+  { error: (issue) => descriptorIssue(String(issue.input), 'Invalid multisig account descriptor') },
 )
 const hardwareWalletDisplayNames = {
   trezor: 'Trezor',

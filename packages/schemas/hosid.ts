@@ -87,7 +87,7 @@ export function hosid<T extends Prefix>(prefix: T): Hosid<T> {
 
 hosid.withPrefix = <T extends Prefix>(prefix: T): (() => Hosid<T>) => Id.factory(prefix)
 
-export function createHosidSchema<T extends Prefix>(prefix: T): z.ZodType<Hosid<T>, z.ZodTypeDef, string> {
+export function createHosidSchema<T extends Prefix>(prefix: T): z.ZodType<Hosid<T>, string> {
   return Id.schema(prefix)
 }
 

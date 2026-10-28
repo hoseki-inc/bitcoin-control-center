@@ -160,7 +160,7 @@ const zodSchema = z.custom<z.ZodTypeAny>((value) => value instanceof z.ZodType)
 /** Names of the leaf fields in a route's input, such as `keystores[].publicKey`. */
 function inputFields(schema: z.ZodTypeAny, path: string): string[] {
   if (schema instanceof z.ZodObject) {
-    const members = parseUnknown(z.record(zodSchema), schema.shape).expect('object fields')
+    const members = parseUnknown(z.record(z.string(), zodSchema), schema.shape).expect('object fields')
     return Object.entries(members).flatMap(([key, value]) => inputFields(value, path === '' ? key : `${path}.${key}`))
   }
   if (schema instanceof z.ZodArray) {
@@ -169,8 +169,9 @@ function inputFields(schema: z.ZodTypeAny, path: string): string[] {
   if (schema instanceof z.ZodOptional || schema instanceof z.ZodNullable || schema instanceof z.ZodDefault) {
     return inputFields(parseUnknown(zodSchema, schema._def.innerType).expect('inner schema'), path)
   }
-  if (schema instanceof z.ZodEffects) {
-    return inputFields(parseUnknown(zodSchema, schema.innerType()).expect('inner schema'), path)
+  if (schema instanceof z.ZodPipe) {
+    const inner = schema.in instanceof z.ZodTransform ? schema.out : schema.in
+    return inputFields(parseUnknown(zodSchema, inner).expect('inner schema'), path)
   }
   if (schema instanceof z.ZodUnion) {
     return parseUnknown(z.array(zodSchema), schema.options)
