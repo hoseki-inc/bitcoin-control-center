@@ -18,6 +18,9 @@ import { type BitkeyKeyRole, bitkeyKeyLabels } from '@hoseki/packages/wallet'
 import type { ReactNode } from 'react'
 import { BitkeyPhoneThumbnail } from './bitkey-phone-steps'
 
+/** Why a Bitkey shows as Unverified, short enough for a tooltip on its badge. */
+export const bitkeyUnverifiedReason = 'Bitkey can’t sign messages yet, so this account isn’t in statements.'
+
 export function BitkeyUnverifiedNote({ isBrief = false }: { isBrief?: boolean }): JSX.Element {
   return (
     <TipAlert title="Unverified">
