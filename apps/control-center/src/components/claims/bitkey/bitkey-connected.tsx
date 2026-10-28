@@ -1,4 +1,4 @@
-import { Box, Button, Flex, IconButton, Stack, Text, Tooltip } from '@chakra-ui/react'
+import { Box, Button, Flex, IconButton, Stack, Text } from '@chakra-ui/react'
 import { PageTransition, TextSkeleton } from '@hoseki/packages/ui/design-system'
 import { Spinner } from '@hoseki/packages/ui/design-system/spinner'
 import { StatusBadge, SuccessCheck, getBadgeConfigForClaim } from '@hoseki/packages/ui/prove-verify-ui'
@@ -14,7 +14,7 @@ import { useGetClaimBalance } from '../../../lib/balances'
 import { formatBitcoinNumber } from '../../../lib/bitcoin-display'
 import type { ClaimDto } from '../../../trpc/server-types'
 import { FiatAmountText } from '../../fiat-amount-text'
-import { bitkeyUnverifiedReason } from './bitkey-notes'
+import { UnverifiedTooltip } from './bitkey-notes'
 
 /** Shown while Sentinel saves the Bitkey. Its device and title sit where the success screen puts them. */
 export function BitkeyConnecting(): JSX.Element {
@@ -178,25 +178,12 @@ function ConnectedBalance({ claim }: { claim: ClaimDto }) {
           {usd}
         </FiatAmountText>
       )}
-      {/* A light note beside the badge, so it doesn't cover View Bitkey. Too narrow for that, it goes above. */}
-      <Tooltip
-        label={bitkeyUnverifiedReason}
-        placement="right"
-        modifiers={[{ name: 'flip', options: { fallbackPlacements: ['top'] } }]}
-        openDelay={250}
-        hasArrow
-        maxW="15rem"
-        px={3}
-        py={2}
-        textStyle="text/sm"
-        fontWeight="normal"
-        color="neutral.700"
-        boxShadow="md"
-      >
+      {/* Beside the badge, the tooltip doesn't cover View Bitkey. */}
+      <UnverifiedTooltip>
         <Box as="span" mt={3}>
           <StatusBadge status={badge.status} label={badge.label} icon={badge.icon} size="sm" />
         </Box>
-      </Tooltip>
+      </UnverifiedTooltip>
     </Stack>
   )
 }

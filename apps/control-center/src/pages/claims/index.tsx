@@ -13,7 +13,6 @@ import {
   Skeleton,
   Stack,
   Text,
-  Tooltip,
   useDisclosure,
 } from '@chakra-ui/react'
 import { getRecordValue } from '@hoseki/packages/lib'
@@ -31,7 +30,7 @@ import { Decimal } from 'decimal.js'
 import { useEffect } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router'
 import { BitcoinAmount } from '../../components/bitcoin-amount'
-import { bitkeyUnverifiedReason } from '../../components/claims/bitkey/bitkey-notes'
+import { UnverifiedTooltip } from '../../components/claims/bitkey/bitkey-notes'
 import { DeleteClaimModal } from '../../components/claims/claim-details/delete-claim-modal'
 import { UnavailableAlert } from '../../components/unavailable-alert'
 import { SyncIndicator } from '../../components/wallet-balances/sync-indicator'
@@ -167,15 +166,11 @@ export function ClaimsPage({ dataSource = accountsDataSource }: { dataSource?: A
                   </Text>
                 )}
                 {unverifiedCount > 0 && (
-                  <Tooltip
-                    label="Unverified accounts can’t prove ownership, so statements leave them out."
-                    openDelay={250}
-                    hasArrow
-                  >
+                  <UnverifiedTooltip label="Unverified accounts can’t prove ownership, so statements leave them out.">
                     <Text textStyle="text/sm" color="neutral.600">
                       {unverifiedCount} Unverified
                     </Text>
-                  </Tooltip>
+                  </UnverifiedTooltip>
                 )}
                 {claimIds.length > 0 && <SyncIndicator wallets={wallets.status} />}
               </Flex>
@@ -421,11 +416,11 @@ export function AccountCard({
             textTransform="none"
           />
         )}
-        <Tooltip label={bitkeyUnverifiedReason} isDisabled={status !== 'unverified'} openDelay={250} hasArrow>
+        <UnverifiedTooltip isDisabled={status !== 'unverified'}>
           <Box as="span" ml="auto">
             <StatusBadge status={badgeStatus} label={badgeLabel} size="sm" />
           </Box>
-        </Tooltip>
+        </UnverifiedTooltip>
       </HStack>
 
       {/* Keystore logos */}
