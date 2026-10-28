@@ -5,25 +5,21 @@ import {
   FormControl,
   FormErrorMessage,
   FormLabel,
-  HStack,
   Heading,
   Input,
   Stack,
   Text,
-  VStack,
 } from '@chakra-ui/react'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { PageTransition } from '@hoseki/packages/ui/design-system'
-import { Receipt } from '@hoseki/packages/ui/prove-verify-ui'
 import { ClaimConnectionWrapper, WizardFooter } from '@hoseki/packages/ui/wallet-ui'
 import { useState } from 'react'
-import Fireworks from 'react-canvas-confetti/dist/presets/fireworks'
 import { useForm } from 'react-hook-form'
 import { useLocation, useNavigate } from 'react-router'
 import { toast } from 'sonner'
 import { z } from 'zod'
 import { parseNavigationState } from '../../../lib/navigation-state'
 import { type RouterOutput, trpc } from '../../../trpc'
+import { ExchangeConnected, ExchangeConnecting } from '../exchange-connection'
 
 type ConnectedAccount = RouterOutput['portalProve']['exchange']['kraken']['connect']
 
@@ -43,7 +39,6 @@ export function ConnectKraken(): JSX.Element {
   const returnTo = routeState?.returnTo ?? '/accounts'
   const replaceAccountId = routeState?.replaceAccountId
   const isReconnect = Boolean(replaceAccountId)
-  const successPath = isReconnect ? returnTo : '/accounts'
   const [step, setStep] = useState<Step>('form')
   const [connectedAccount, setConnectedAccount] = useState<ConnectedAccount | null>(null)
 
@@ -79,54 +74,12 @@ export function ConnectKraken(): JSX.Element {
   }
 
   if (step === 'loading') {
-    return (
-      <PageTransition>
-        <Receipt title="Connecting to Kraken..." state="loading" />
-      </PageTransition>
-    )
+    return <ExchangeConnecting exchange="kraken" />
   }
 
   if (step === 'success' && connectedAccount) {
     return (
-      <PageTransition>
-        <Fireworks autorun={{ speed: 2, duration: 5_000, delay: 500 }} />
-        <Receipt
-          title={isReconnect ? 'Kraken Reconnected!' : 'Kraken Connected!'}
-          state="success"
-          onClose={() => {
-            void navigate(successPath)
-          }}
-          closeTitle={isReconnect ? 'Back to Account' : 'Go to Accounts'}
-          content={
-            <VStack spacing={8}>
-              <img src="/images/exchanges/kraken.svg" alt="Kraken" style={{ height: '64px' }} />
-              <Text textStyle="text/2xl" color="neutral.900" textAlign="center">
-                Your Kraken account &ldquo;{connectedAccount.displayName}&rdquo; is now{' '}
-                {isReconnect ? 'reconnected' : 'connected'}.
-              </Text>
-              <HStack spacing={4}>
-                {!isReconnect && (
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      void navigate('/accounts/add')
-                    }}
-                  >
-                    Connect Another Account
-                  </Button>
-                )}
-                <Button
-                  onClick={() => {
-                    void navigate(successPath)
-                  }}
-                >
-                  {isReconnect ? 'Back to Account' : 'Go to Accounts'}
-                </Button>
-              </HStack>
-            </VStack>
-          }
-        />
-      </PageTransition>
+      <ExchangeConnected exchange="kraken" account={connectedAccount} isReconnect={isReconnect} returnTo={returnTo} />
     )
   }
 
