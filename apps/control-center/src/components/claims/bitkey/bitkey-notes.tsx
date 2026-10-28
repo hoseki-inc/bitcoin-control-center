@@ -9,6 +9,7 @@ import {
   InputGroup,
   Stack,
   Text,
+  Tooltip,
   chakra,
 } from '@chakra-ui/react'
 import { TipAlert } from '@hoseki/packages/ui/design-system/feedback/tip-alert'
@@ -19,7 +20,41 @@ import type { ReactNode } from 'react'
 import { BitkeyPhoneThumbnail } from './bitkey-phone-steps'
 
 /** Why a Bitkey shows as Unverified, short enough for a tooltip on its badge. */
-export const bitkeyUnverifiedReason = 'Bitkey can’t sign messages yet, so this account isn’t in statements.'
+const bitkeyUnverifiedReason = 'Bitkey can’t sign messages yet, so this account isn’t in statements.'
+
+/**
+ * A light note on an Unverified badge or count. It opens beside it, so it doesn't cover the account it explains,
+ * and above it when there's no room.
+ */
+export function UnverifiedTooltip({
+  label = bitkeyUnverifiedReason,
+  isDisabled = false,
+  children,
+}: {
+  label?: string
+  isDisabled?: boolean
+  children: ReactNode
+}): JSX.Element {
+  return (
+    <Tooltip
+      label={label}
+      isDisabled={isDisabled}
+      placement="right"
+      modifiers={[{ name: 'flip', options: { fallbackPlacements: ['top'] } }]}
+      openDelay={250}
+      hasArrow
+      maxW="15rem"
+      px={3}
+      py={2}
+      textStyle="text/sm"
+      fontWeight="normal"
+      color="neutral.700"
+      boxShadow="md"
+    >
+      {children}
+    </Tooltip>
+  )
+}
 
 export function BitkeyUnverifiedNote({ isBrief = false }: { isBrief?: boolean }): JSX.Element {
   return (
