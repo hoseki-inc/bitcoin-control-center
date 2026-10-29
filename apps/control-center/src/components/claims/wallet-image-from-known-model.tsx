@@ -1,5 +1,6 @@
 import {
   ColdcardModels,
+  FloatingBitkeyImage,
   FloatingKeystoneImage,
   WalletFloatingImage,
   getLedgerImageByModelName,
@@ -29,6 +30,8 @@ export function WalletImageFromKnownModel({
       return <WalletFloatingImage {...getTrezorImageByModelName(isTrezorModel(model) ? model : 'One')} />
     case 'keystone':
       return <FloatingKeystoneImage />
+    case 'bitkey':
+      return <FloatingBitkeyImage />
     case null:
     default:
       return null

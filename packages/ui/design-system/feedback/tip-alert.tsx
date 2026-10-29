@@ -8,13 +8,14 @@ export function TipAlert({
   ...props
 }: {
   title: string
-  icon: LucideIcon
+  icon?: LucideIcon
   children: React.ReactNode
 } & AlertProps): JSX.Element {
   return (
-    <Alert bgColor="neutral.50" px={6} py={4} borderRadius="4px" textAlign="left" {...props}>
+    // A tip is static, so it isn't announced as an alert.
+    <Alert addRole={false} bgColor="neutral.50" px={6} py={4} borderRadius="4px" textAlign="left" {...props}>
       <HStack gap={2} align="center" w="full">
-        <Icon as={icon} boxSize={5} color="neutral.800" flexShrink={0} />
+        {icon && <Icon as={icon} boxSize={5} color="neutral.800" flexShrink={0} />}
         <Box color="neutral.800" fontSize="sm" lineHeight="20px" textAlign="left">
           <Text fontWeight="medium">{title}</Text>
           {children}

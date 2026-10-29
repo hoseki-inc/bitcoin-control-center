@@ -27,7 +27,12 @@ import {
   TimezoneSchema,
   hosid,
 } from '@hoseki/packages/schemas'
-import type { SupportedHardwareWallet, SupportedHardwareWalletDisplayName } from '@hoseki/packages/wallet'
+import {
+  type SupportedHardwareWallet,
+  type SupportedHardwareWalletDisplayName,
+  bitkeyKeyLabels,
+  parseBitkeyExport,
+} from '@hoseki/packages/wallet'
 import { TRPCError } from '@trpc/server'
 import * as bip322 from 'bip322-js'
 import { Decimal } from 'decimal.js'
@@ -118,7 +123,7 @@ interface ChallengeMessageDto {
   keystoreId: KeystoreId
 }
 
-const supportedHardwareWalletSchema = z.enum(['trezor', 'coldcard', 'ledger', 'keystone'])
+const supportedHardwareWalletSchema = z.enum(['trezor', 'coldcard', 'ledger', 'keystone', 'bitkey'])
 const etfTickerSchema = z.enum(['IBIT', 'FBTC', 'GBTC', 'ARKB', 'BITB', 'HODL', 'BTC', 'MSBT'])
 const checkedSinglesigAccountDescriptorSchema = z.custom<CheckedSinglesigAccountDescriptor>(
   (value): value is CheckedSinglesigAccountDescriptor =>
@@ -135,6 +140,7 @@ const hardwareWalletDisplayNames = {
   coldcard: 'Coldcard',
   ledger: 'Ledger',
   keystone: 'Keystone',
+  bitkey: 'Bitkey',
 } as const satisfies Record<SupportedHardwareWallet, SupportedHardwareWalletDisplayName>
 
 function networkToClaimNetwork(network: string): 'bitcoin_mainnet' | 'bitcoin_testnet' {
@@ -457,6 +463,7 @@ const controlCenterRouter = t.router({
 const registryRouter = t.router({
   claims: t.router({
     list: protectedProcedure
+      // `excludePending` keeps only verified accounts, so it also leaves out accounts that can't be verified.
       .input(z.object({ excludePending: z.boolean().optional() }).optional())
       .query(async ({ ctx, input }) => {
         // Leaves out every account whose ownership is unproven: pending and unverified ones.
@@ -761,6 +768,68 @@ const registryRouter = t.router({
             }
           })
         }),
+
+      /** Bitkey's keys can't sign messages, so a Bitkey account starts unverified and stays that way. */
+      bitkey: protectedProcedure
+        .input(z.object({ descriptorExport: z.string().max(10_000), displayName: z.string().min(1) }))
+        .mutation(async ({ ctx, input }) => {
+          const parsed = parseBitkeyExport(input.descriptorExport)
+          if (parsed.isErr()) {
+            throw new TRPCError({ code: 'BAD_REQUEST', message: parsed.unwrapErr().message })
+          }
+          const { account, keys } = parsed.unwrap()
+          const descriptor = account.descriptor()
+          validateMultisigKeystores(
+            account,
+            keys.map((key) => key.keyExpression.xpub.toString()),
+          )
+
+          return ctx.app.database.transaction(async (db) => {
+            const [existing] = await db
+              .select({ id: accountTable.id, deletedAt: accountTable.deletedAt })
+              .from(accountTable)
+              .where(and(eq(accountTable.descriptor, descriptor), eq(accountTable.network, 'mainnet')))
+              .limit(1)
+            if (existing?.deletedAt != null) {
+              throw new TRPCError({
+                code: 'CONFLICT',
+                message: 'This Bitkey is archived. Restore it from Archived accounts.',
+              })
+            }
+
+            let accountId = existing?.id
+            if (accountId === undefined) {
+              accountId = hosid('re_clmx')
+              const now = new Date().toISOString()
+              await db.insert(accountTable).values({
+                id: accountId,
+                network: 'mainnet',
+                descriptor,
+                displayName: input.displayName,
+                status: 'unverified',
+                createdAt: now,
+              })
+              for (const key of keys) {
+                await db.insert(keystoreTable).values({
+                  id: hosid('re_ks'),
+                  accountId,
+                  label: bitkeyKeyLabels[key.role],
+                  wallet: 'bitkey',
+                  model: key.role,
+                  derivationPath: key.keyExpression.keyOrigin?.derivationPath?.toString() ?? null,
+                  xpub: key.keyExpression.xpub.toString(),
+                  createdAt: now,
+                })
+              }
+            }
+
+            const claim = await getFullClaimDto(db, accountId)
+            if (!claim) {
+              throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Claim not found after creation' })
+            }
+            return { claim, alreadyConnected: existing !== undefined }
+          })
+        }),
     }),
 
     get: t.router({
@@ -799,11 +868,20 @@ const registryRouter = t.router({
         return ctx.app.database.transaction(async (db) => {
           // Check the account exists
           const [accountRow] = await db
-            .select({ id: accountTable.id })
+            .select({ id: accountTable.id, status: accountTable.status })
             .from(accountTable)
             .where(eq(accountTable.id, input.claimId))
           if (!accountRow) {
             throw new TRPCError({ code: 'NOT_FOUND', message: 'Account not found' })
+          }
+          // A Bitkey's keys can't sign messages. A tracked wallet that is also unverified can still be proven.
+          const [bitkeyKeystore] = await db
+            .select({ id: keystoreTable.id })
+            .from(keystoreTable)
+            .where(and(eq(keystoreTable.accountId, input.claimId), eq(keystoreTable.wallet, 'bitkey')))
+            .limit(1)
+          if (bitkeyKeystore) {
+            throw new TRPCError({ code: 'BAD_REQUEST', message: 'This account can’t be verified' })
           }
 
           // Return existing incomplete challenge if one exists

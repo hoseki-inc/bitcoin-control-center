@@ -14,6 +14,8 @@ export function getBadgeConfigForClaim(status: ClaimStatus /* , expiresAt: Date 
       return { status: 'neutral', label: status }
     case 'expired':
       return { status: 'neutral', label: status, icon: XCircleFilledIcon }
+    case 'unverified':
+      return { status: 'neutral', label: status, icon: InfoIcon }
   }
 }
 

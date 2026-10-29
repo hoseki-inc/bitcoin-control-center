@@ -219,6 +219,7 @@ const ACCOUNT_TYPES: Array<{ name: string; media: ReactNode }> = [
   { name: 'COLDCARD', media: <Wordmark src={`${HOSEKI_ASSETS_CDN_URL}/hardware-wallets/coldcard.svg`} /> },
   { name: 'Ledger', media: <Wordmark src={`${HOSEKI_ASSETS_CDN_URL}/hardware-wallets/ledger.svg`} /> },
   { name: 'Keystone', media: <Wordmark src="/images/hardware-wallets/keystone-logo.svg" /> },
+  { name: 'Bitkey', media: <Wordmark src="/images/hardware-wallets/bitkey-logo.svg" /> },
   { name: 'Multisig', media: MultisigImage },
   { name: 'Coinbase', media: <Wordmark src="/images/exchanges/coinbase-wordmark.svg" /> },
   { name: 'Kraken', media: <Wordmark src="/images/exchanges/kraken-wordmark.svg" /> },

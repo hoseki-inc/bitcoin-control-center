@@ -1,3 +1,4 @@
+import { Wallets } from '@hoseki/packages/testing'
 // @vitest-environment node
 import { TestChakraProvider } from '@hoseki/packages/testing/chakra-provider'
 import { act, createElement } from 'react'
@@ -5,6 +6,7 @@ import { createRoot } from 'react-dom/client'
 import { MemoryRouter } from 'react-router'
 import { assert, expect, it, onTestFinished, vi } from 'vitest'
 import { claimFixture } from '../../testing/claims'
+import type { ClaimDto, KeystoreDto } from '../../trpc/server-types'
 import type { AccountsDataSource } from './accounts-data'
 import { ClaimsPage } from './index'
 
@@ -128,4 +130,94 @@ it('counts only wallets waiting to be proven as pending, not tracked ones', asyn
 
   expect(container.textContent).toContain('1 Verified')
   expect(container.textContent).toContain('1 Pending')
+})
+
+it('explains the Unverified badge with Bitkey’s reason only on a Bitkey', async () => {
+  const dom = browser.acquire()
+  const keystore: KeystoreDto = {
+    id: 're_ks_1',
+    createdAt: new Date('2026-01-01T00:00:00Z'),
+    updatedAt: new Date('2026-01-01T00:00:00Z'),
+    wallet: null,
+    derivationPath: null,
+    xpub: Wallets.nativeSegwitXpub,
+    model: null,
+    label: 'Default Keystore',
+    isIdentified: false,
+  }
+  const claims: ClaimDto[] = [
+    {
+      ...claimFixture('re_clmx_tracked', 'Tracked wallet'),
+      status: 'unverified' as const,
+      isVerified: false,
+      keystores: [keystore],
+    },
+    {
+      ...claimFixture('re_clmx_bitkey', 'Bitkey'),
+      status: 'unverified' as const,
+      isVerified: false,
+      keystores: [{ ...keystore, wallet: 'bitkey', model: 'app' }],
+    },
+  ]
+  const dataSource: AccountsDataSource = {
+    useLists: () => ({
+      claimsQuery: { ...listQuery(), data: claims },
+      exchangeAccountsQuery: listQuery(),
+      manualAccountsQuery: listQuery(),
+      etfAccountsQuery: listQuery(),
+      archivedClaimsQuery: listQuery(),
+      btcPriceQuery: { data: undefined, isLoading: false },
+    }),
+    useWalletBalances: () => ({ rows: [], isError: false }),
+    useRestore: () => ({ restore: () => undefined, restoringId: null }),
+    useAutoRefresh: () => undefined,
+  }
+  vi.stubGlobal('Image', document.defaultView?.Image)
+  const container = document.createElement('div')
+  document.body.append(container)
+  const root = createRoot(container)
+  onTestFinished(async () => {
+    await act(async () => {
+      root.unmount()
+    })
+    container.remove()
+    vi.unstubAllGlobals()
+    dom.window.close()
+  })
+  await act(async () => {
+    root.render(
+      createElement(
+        TestChakraProvider,
+        null,
+        createElement(MemoryRouter, null, createElement(ClaimsPage, { dataSource })),
+      ),
+    )
+  })
+
+  /** Hovers the named card's Unverified badge and returns the tooltip it opens, if any. */
+  async function hoverBadge(name: string): Promise<string | null> {
+    const card = [...container.querySelectorAll('a')].find((link) => link.textContent.includes(name))
+    // The badge's label is lowercase in the markup; the theme capitalizes it.
+    const badge = [...(card?.querySelectorAll('span') ?? [])].find(
+      (span) => span.textContent.toLowerCase() === 'unverified',
+    )
+    assert(badge, `${name} has an Unverified badge`)
+    await act(async () => {
+      badge.dispatchEvent(new dom.window.MouseEvent('pointerover', { bubbles: true }))
+      await new Promise((resolve) => {
+        setTimeout(resolve, 400)
+      })
+    })
+    const tooltip = document.querySelector('[role="tooltip"]')?.textContent ?? null
+    await act(async () => {
+      badge.dispatchEvent(new dom.window.MouseEvent('pointerout', { bubbles: true }))
+      await new Promise((resolve) => {
+        setTimeout(resolve, 400)
+      })
+    })
+    return tooltip
+  }
+
+  await expect(hoverBadge('Tracked wallet')).resolves.toBeNull()
+  await expect(hoverBadge('Bitkey')).resolves.toContain('Bitkey doesn’t support proving ownership')
 })

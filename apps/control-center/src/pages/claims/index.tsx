@@ -30,13 +30,14 @@ import { Decimal } from 'decimal.js'
 import { useEffect } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router'
 import { BitcoinAmount } from '../../components/bitcoin-amount'
+import { UnverifiedTooltip } from '../../components/claims/bitkey/bitkey-notes'
 import { DeleteClaimModal } from '../../components/claims/claim-details/delete-claim-modal'
 import { UnavailableAlert } from '../../components/unavailable-alert'
 import { SyncIndicator } from '../../components/wallet-balances/sync-indicator'
 import { formatBitcoinNumber, isUsableBtcPrice } from '../../lib/bitcoin-display'
 import { summarizeWalletBalances } from '../../lib/wallet-balances'
 import type { ClaimDto } from '../../trpc/server-types'
-import { ensureClaimStatusNotExpired, mapClaimToClaimCardProps } from '../../utils/claim-utils'
+import { ensureClaimStatusNotExpired, isBitkeyClaim, mapClaimToClaimCardProps } from '../../utils/claim-utils'
 import { isExchangeConnected, needsExchangeReconnect } from '../../utils/exchange-connection-status'
 import {
   type AccountsDataSource,
@@ -96,6 +97,7 @@ export function ClaimsPage({ dataSource = accountsDataSource }: { dataSource?: A
   const verifiedCount =
     claims.filter((c) => ensureClaimStatusNotExpired(c) === 'verified').length + connectedExchangeAccounts.length
   const pendingCount = claims.filter((c) => c.status === 'pending').length
+  const unverifiedCount = claims.filter((c) => c.status === 'unverified').length
 
   const wallets = summarizeWalletBalances(claimIds, walletBalances.rows)
   const otherAccountsSats = [...exchangeAccounts, ...manualAccounts, ...etfAccounts].reduce(
@@ -162,6 +164,13 @@ export function ClaimsPage({ dataSource = accountsDataSource }: { dataSource?: A
                   <Text textStyle="text/sm" color="warning.600">
                     {pendingCount} Pending
                   </Text>
+                )}
+                {unverifiedCount > 0 && (
+                  <UnverifiedTooltip label="Unverified accounts can’t prove ownership, so statements leave them out.">
+                    <Text textStyle="text/sm" color="neutral.600">
+                      {unverifiedCount} Unverified
+                    </Text>
+                  </UnverifiedTooltip>
                 )}
                 {claimIds.length > 0 && <SyncIndicator wallets={wallets.status} />}
               </Flex>
@@ -399,15 +408,20 @@ export function AccountCard({
     >
       {/* Top row: threshold badge + status badge */}
       <HStack>
-        {claim.keystores.length > 1 && (
+        {cardProps.keystores.length > 1 && (
           <StatusBadge
             status="neutral"
-            label={`${cardProps.threshold} of ${claim.keystores.length}`}
+            label={`${cardProps.threshold} of ${cardProps.keystores.length}`}
             size="sm"
             textTransform="none"
           />
         )}
-        <StatusBadge status={badgeStatus} label={badgeLabel} size="sm" ml="auto" />
+        {/* Only a Bitkey's reason is known; a tracked wallet's Unverified badge stays plain. */}
+        <UnverifiedTooltip isDisabled={!isBitkeyClaim(claim)}>
+          <Box as="span" ml="auto">
+            <StatusBadge status={badgeStatus} label={badgeLabel} size="sm" />
+          </Box>
+        </UnverifiedTooltip>
       </HStack>
 
       {/* Keystore logos */}

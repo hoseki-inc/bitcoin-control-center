@@ -19,6 +19,7 @@ import { StrikeAccountDetailsPage } from './pages/claims/strike/[id]'
 import {
   ClaimVerificationReceiptPage,
   ClaimsVerifyAdvancedPage,
+  ClaimsVerifyBitkeyPage,
   ClaimsVerifyColdcardPage,
   ClaimsVerifyKeystonePage,
   ClaimsVerifyLedgerPage,
@@ -74,6 +75,7 @@ export default function AppRoutes(): JSX.Element {
               <Route path="ledger" Component={ClaimsVerifyLedgerPage} />
               <Route path="coldcard" Component={ClaimsVerifyColdcardPage} />
               <Route path="keystone" Component={ClaimsVerifyKeystonePage} />
+              <Route path="bitkey" Component={ClaimsVerifyBitkeyPage} />
               <Route path="advanced" Component={ClaimsVerifyAdvancedPage} />
               <Route path="coinbase" Component={ClaimsVerifyCoinbasePage} />
               <Route path="kraken" Component={ClaimsVerifyKrakenPage} />

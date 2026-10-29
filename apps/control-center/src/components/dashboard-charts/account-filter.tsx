@@ -27,6 +27,7 @@ import { type ReactNode, useEffect, useId, useRef, useState } from 'react'
 import { Link } from 'react-router'
 import type { RouterOutput } from '../../trpc'
 import type { ClaimDto } from '../../trpc/server-types'
+import { isBitkeyClaim } from '../../utils/claim-utils'
 import { needsExchangeReconnect } from '../../utils/exchange-connection-status'
 import { BitcoinAmount } from '../bitcoin-amount'
 import { HistorySyncStatus } from './history-sync-status'
@@ -105,7 +106,9 @@ export function AccountFilter({
         status: isUnproven(claim.status) ? claim.status : null,
         logo: {
           kind: 'wallet' as const,
-          wallets: claim.keystores.slice(0, 3).map((keystore) => keystore.wallet ?? null),
+          wallets: isBitkeyClaim(claim)
+            ? ['bitkey' as const]
+            : claim.keystores.slice(0, 3).map((keystore) => keystore.wallet ?? null),
         },
         reconnectTo: null,
         sats: toSatsOrNull(balances.get(claim.id)),
