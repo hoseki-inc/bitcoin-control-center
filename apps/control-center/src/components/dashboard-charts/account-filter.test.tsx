@@ -626,3 +626,22 @@ it('badges a pending wallet inside its button', async () => {
     expect(button('Live wallet').textContent).not.toContain('Pending')
   })
 })
+
+it('badges a tracked wallet as unverified and a wallet waiting to be proven as pending', async () => {
+  await withTestSetup(async () => {
+    vi.stubGlobal('Image', document.defaultView?.Image)
+    await renderAccounts({
+      claims: [
+        { ...claimFixture('re_clmx_tracked', 'Tracked wallet'), status: 'unverified' },
+        { ...claimFixture('re_clmx_pending', 'New wallet'), status: 'pending' },
+      ],
+      manualAccounts: [],
+    })
+    const badge = (name: string) =>
+      Array.from(button(name).querySelectorAll('span')).find((span) =>
+        ['Pending', 'Unverified'].includes(span.textContent),
+      )
+    expect(badge('Tracked wallet')?.textContent).toBe('Unverified')
+    expect(badge('New wallet')?.textContent).toBe('Pending')
+  })
+})

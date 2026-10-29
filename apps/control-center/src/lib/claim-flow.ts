@@ -1,13 +1,20 @@
 import type { DerivationPath, SingleSigAccount } from '@hoseki/packages/bitcoin'
 import { type AsyncResult, Ok, Result } from '@hoseki/packages/result'
 import type { BitcoinNetworkString, ClaimId } from '@hoseki/packages/schemas'
+import { isUnproven } from '@hoseki/packages/schemas/prove'
 import type { SupportedHardwareWallet } from '@hoseki/packages/wallet'
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import { toast } from 'sonner'
 import { browserLogger } from '../logger'
 import { trpc } from '../trpc'
-import type { ChallengeDto, ChallengeMessageDto, ClaimDto, KeystoreDto } from '../trpc/server-types'
+import type {
+  ChallengeDto,
+  ChallengeMessageDto,
+  ClaimDto,
+  KeystoreDto,
+  UpdateKeystoreInput,
+} from '../trpc/server-types'
 
 type CreateSingleSigClaimMutation = ReturnType<typeof trpc.portalProve.registry.claims.create.singlesig.useMutation>
 
@@ -20,10 +27,6 @@ interface Input {
   displayName: string
 }
 
-type KeystoreUpdate = Parameters<
-  ReturnType<typeof trpc.portalProve.registry.claims.updateKeystore.useMutation>['mutateAsync']
->[0]
-
 /**
  * The device details to save onto an account that's already in Control Center, so signing uses the way someone
  * just chose: their device, or no device for Manually Sign. Only for accounts still waiting to be proven.
@@ -31,24 +34,20 @@ type KeystoreUpdate = Parameters<
 export function deviceUpdateFor(
   claim: Pick<ClaimDto, 'status' | 'isArchived' | 'keystores'>,
   device: Pick<Input, 'wallet' | 'model' | 'derivationPath'>,
-): KeystoreUpdate | null {
-  const keystore = claim.keystores[0]
-  const isUnproven = claim.status === 'pending' || claim.status === 'unverified'
-  if (claim.isArchived || !isUnproven || keystore === undefined) {
+): UpdateKeystoreInput | null {
+  const [keystore] = claim.keystores
+  if (claim.isArchived || !isUnproven(claim.status) || keystore === undefined) {
     return null
   }
-  const update = {
-    id: keystore.id,
-    label: keystore.label,
-    wallet: device.wallet,
-    model: device.model,
-    derivationPath: device.derivationPath?.toString() ?? keystore.derivationPath,
+  const derivationPath = device.derivationPath?.toString() ?? keystore.derivationPath
+  if (
+    device.wallet === keystore.wallet &&
+    device.model === keystore.model &&
+    derivationPath === keystore.derivationPath
+  ) {
+    return null
   }
-  const isUnchanged =
-    update.wallet === keystore.wallet &&
-    update.model === keystore.model &&
-    update.derivationPath === keystore.derivationPath
-  return isUnchanged ? null : update
+  return { id: keystore.id, label: keystore.label, wallet: device.wallet, model: device.model, derivationPath }
 }
 
 type UseNavigateToAnExistentOrNewClaimReturn = Omit<CreateSingleSigClaimMutation, 'execute'> & {

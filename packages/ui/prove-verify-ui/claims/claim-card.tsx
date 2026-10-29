@@ -1,6 +1,6 @@
 import { HStack, Stack, type StackProps, Text, forwardRef } from '@chakra-ui/react'
 import type { BalanceWithStatus } from '@hoseki/packages/lib/balance'
-import type { ClaimStatus } from '@hoseki/packages/schemas/prove'
+import { type ClaimStatus, isUnproven } from '@hoseki/packages/schemas/prove'
 import type { SupportedHardwareWallet } from '@hoseki/packages/wallet'
 import { getSupportedHardwareWalletLogoPath } from '@hoseki/packages/wallet'
 import { TextSkeleton } from '../../design-system/loading/loading'
@@ -203,7 +203,7 @@ function getMultisigKeystoreAvatarIcon(keystore: ClaimCardKeystore, status: Clai
 function getNonMultisigKeystoreAvatarIcon(status: ClaimStatus) {
   if (status === 'expired') {
     return alertIcon
-  } else if (status === 'pending' || status === 'unverified') {
+  } else if (isUnproven(status)) {
     return null
   }
 

@@ -160,21 +160,13 @@ function ClaimDetailsBody({
   )
 }
 
+const statusDotColors: Record<ClaimDto['status'], string> = {
+  pending: 'warning.600',
+  unverified: 'neutral.400',
+  verified: 'success.600',
+  expired: 'error.600',
+}
+
 function StatusDot({ status }: { status: ClaimDto['status'] }) {
-  let color = ''
-  switch (status) {
-    case 'pending':
-      color = 'warning.600'
-      break
-    case 'unverified':
-      color = 'neutral.400'
-      break
-    case 'expired':
-      color = 'error.600'
-      break
-    case 'verified':
-      color = 'success.600'
-      break
-  }
-  return <Box w={2} h={2} bg={color} borderRadius="full" />
+  return <Box w={2} h={2} bg={statusDotColors[status]} borderRadius="full" />
 }

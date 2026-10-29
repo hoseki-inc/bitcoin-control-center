@@ -79,7 +79,7 @@ async function openReceipt(status: ClaimDto['status'], cached?: ClaimDto['status
   return container
 }
 
-it.each(['unverified', 'pending'] as const)(
+it.each(['unverified', 'pending', 'expired'] as const)(
   'sends a %s account to its details instead of a receipt',
   async (status) => {
     const container = await openReceipt(status)

@@ -120,4 +120,48 @@ describe('track-only accounts', () => {
     await registry.challenges.complete({ challengeId: challenge.id })
     await expect(registry.claims.track({ id: claim.id })).resolves.toEqual({ id: claim.id, status: 'verified' })
   })
+
+  it('says when there is no account to track', async () => {
+    const registry = await setupOwnershipRegistry()
+
+    await expect(registry.claims.track({ id: 're_clmx_missing' })).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+      message: 'Claim not found',
+    })
+  })
+
+  it('saves an account as pending unless it is only tracked, and leaves pending ones out of proven accounts', async () => {
+    const registry = await setupOwnershipRegistry()
+
+    const { claim } = await registry.claims.create.singlesig({
+      network: owner.xpub.network.toString(),
+      account: new SingleSigAccount('p2wpkh', owner.xpub).descriptor(),
+      displayName: 'Started signing',
+      keystore,
+      trackOnly: false,
+    })
+
+    expect(claim).toMatchObject({ status: 'pending' })
+    await expect(registry.claims.list({ excludePending: true })).resolves.toEqual([])
+  })
+
+  it('keeps a saved key path when a keystore is renamed without one', async () => {
+    const registry = await setupOwnershipRegistry()
+    const { keystores } = await registry.claims.create.singlesig({
+      network: owner.xpub.network.toString(),
+      account: new SingleSigAccount('p2wpkh', owner.xpub).descriptor(),
+      displayName: 'Watched wallet',
+      keystore: { ...keystore, derivationPath: "m/84'/0'/0'" },
+      trackOnly: true,
+    })
+    const store = keystores[0]
+    if (store === undefined) {
+      expect.fail('Claim must contain its keystore')
+    }
+
+    await expect(registry.claims.updateKeystore({ id: store.id, label: 'Renamed' })).resolves.toMatchObject({
+      label: 'Renamed',
+      derivationPath: "m/84'/0'/0'",
+    })
+  })
 })

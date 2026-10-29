@@ -2,6 +2,7 @@ import { Box, Button, FormControl, FormErrorMessage, FormLabel, Input, Stack, Te
 import { zodResolver } from '@hookform/resolvers/zod'
 import { MultiSigAccount } from '@hoseki/packages/bitcoin'
 import { Err, Ok, Result } from '@hoseki/packages/result'
+import { isUnproven } from '@hoseki/packages/schemas/prove'
 import { FileDropReader, type FileDropState, PageTransition } from '@hoseki/packages/ui/design-system'
 import { TipAlert } from '@hoseki/packages/ui/design-system/feedback/tip-alert'
 import { Spinner } from '@hoseki/packages/ui/design-system/spinner'
@@ -17,13 +18,17 @@ import { MultisigAnimation } from '../../components/multisig/multisig-animation'
 import { MultisigFromDescriptor } from '../../components/multisig/multisig-from-descriptor'
 import { parseWalletExport } from '../../lib/multisig/wallet-export-parser'
 import { trpc } from '../../trpc'
-import type { ClaimDto, CreateMultisigClaimInput, CreateMultisigKeystoreInput } from '../../trpc/server-types'
+import type {
+  ClaimDto,
+  CreateMultisigClaimInput,
+  CreateMultisigKeystoreInput,
+  UpdateKeystoreInput,
+} from '../../trpc/server-types'
 
 /** Where an imported multisig that's already in Control Center opens. */
 export function reconnectedMultisigPath(claim: { id: string; status: ClaimDto['status'] }): string {
   // Tracked accounts haven't been proven yet, so they go to signing like pending ones.
-  const needsSigning = claim.status === 'pending' || claim.status === 'unverified'
-  return needsSigning ? `/multisig/${claim.id}` : `/accounts/${claim.id}`
+  return isUnproven(claim.status) ? `/multisig/${claim.id}` : `/accounts/${claim.id}`
 }
 
 /**
@@ -33,8 +38,8 @@ export function reconnectedMultisigPath(claim: { id: string; status: ClaimDto['s
 export function missingKeyPaths(
   claim: Pick<ClaimDto, 'status' | 'keystores'>,
   imported: Pick<CreateMultisigKeystoreInput, 'publicKey' | 'derivationPath'>[],
-): { id: ClaimDto['keystores'][number]['id']; label: string; derivationPath: string }[] {
-  if (claim.status !== 'pending' && claim.status !== 'unverified') {
+): UpdateKeystoreInput[] {
+  if (!isUnproven(claim.status)) {
     return []
   }
   return claim.keystores.flatMap((keystore) => {

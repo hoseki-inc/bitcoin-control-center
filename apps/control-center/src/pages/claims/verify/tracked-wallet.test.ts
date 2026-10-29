@@ -1,6 +1,6 @@
 import { Wallets } from '@hoseki/packages/testing'
 import { assert, describe, expect, it } from 'vitest'
-import { parseTrackedWallet } from './track'
+import { parseTrackedWallet } from './tracked-wallet'
 
 // As Sparrow exports it, with each key's fingerprint and derivation path.
 const multisigWithOrigins =
@@ -12,7 +12,7 @@ describe('parseTrackedWallet', () => {
 
     assert(wallet?.kind === 'multisig')
     expect(wallet.account.descriptor()).toBe(Wallets.multisigNativeSegwitAccount.descriptor())
-    expect(wallet.input.keystores.map((keystore) => keystore.derivationPath)).toEqual(Array(3).fill('m/48h/0h/0h/2h'))
+    expect(wallet.keystores.map((keystore) => keystore.derivationPath)).toEqual(Array(3).fill('m/48h/0h/0h/2h'))
   })
 
   it('reads a multisig descriptor without key origins', () => {
@@ -20,7 +20,7 @@ describe('parseTrackedWallet', () => {
 
     assert(wallet?.kind === 'multisig')
     expect(wallet.account.threshold).toBe(2)
-    expect(wallet.input.keystores.map((keystore) => keystore.derivationPath)).toEqual([null, null, null])
+    expect(wallet.keystores.map((keystore) => keystore.derivationPath)).toEqual([null, null, null])
   })
 
   it('reads a multisig export with Ypub keys, as Casa writes it', () => {
@@ -31,8 +31,7 @@ describe('parseTrackedWallet', () => {
 
     assert(wallet?.kind === 'multisig')
     expect(wallet.account.scriptType).toBe('p2sh-p2wsh')
-    expect(wallet.input.account).toBe(wallet.account.descriptor())
-    expect(wallet.input.keystores.map((keystore) => keystore.derivationPath)).toEqual([null, 'm/49/0/9', 'm/49/0/9'])
+    expect(wallet.keystores.map((keystore) => keystore.derivationPath)).toEqual([null, 'm/49/0/9', 'm/49/0/9'])
   })
 
   it('reads a single-sig descriptor with its own script type', () => {
@@ -107,5 +106,38 @@ describe('parseTrackedWallet', () => {
     const wallet = parseTrackedWallet(`wpkh(${key}/0/*)\nwpkh(${key}/1/*)`, 'p2pkh')
 
     expect(wallet).toEqual({ kind: 'singlesig', account: Wallets.singlesigNativeSegwitAccount })
+  })
+
+  it('reads the script type a SLIP-132 key implies, whatever type was picked for a plain xpub', () => {
+    const zpub =
+      'zpub6rTqhQyDDidVGmbSL1AAK4J8untSw4NKtK9ZbaeW4u6HcWuvTrxNUoAzrCFraECK9DNXybWkVPgsze6c9sWsfKnMXYEapnNTF1d7Hv5PP31'
+
+    const wallet = parseTrackedWallet(zpub, 'p2pkh')
+
+    assert(wallet?.kind === 'singlesig')
+    expect(wallet.account.scriptType).toBe('p2wpkh')
+  })
+
+  it.each([
+    ['a single-sig descriptor with a cosigner key', `wpkh(${cosigners[0]?.replace(/^xpub/, 'Zpub')}/<0;1>/*)`],
+    ['a 1-of-1 multisig', `wsh(sortedmulti(1,${cosigners[0]}/<0;1>/*))`],
+    [
+      'a Taproot tree holding a multisig',
+      `tr(${key}/<0;1>/*,{sortedmulti(2,${cosigners[0]}/<0;1>/*,${cosigners[1]}/<0;1>/*)})`,
+    ],
+    ['a descriptor with text after it', `wpkh(${key}/<0;1>/*)junk`],
+    ['an unfinished descriptor', `wpkh(${key}/<0;1>/*`],
+  ])('rejects %s', (_, input) => {
+    expect(parseTrackedWallet(input, 'p2pkh')).toBeNull()
+  })
+
+  it('reads a multisig whose keys write the same branches in different ways', () => {
+    const wallet = parseTrackedWallet(
+      `wsh(sortedmulti(2,${cosigners[0]}/**,${cosigners[1]}/<0;1>/*,${cosigners[2]}/<0;1>/*))`,
+      'p2pkh',
+    )
+
+    assert(wallet?.kind === 'multisig')
+    expect(wallet.account.descriptor()).toBe(Wallets.multisigNativeSegwitAccount.descriptor())
   })
 })

@@ -18,6 +18,7 @@ import {
 import { getRecordValue } from '@hoseki/packages/lib'
 import type { BalanceValue } from '@hoseki/packages/lib/balance'
 import type { ClaimId } from '@hoseki/packages/schemas'
+import { type UnprovenClaimStatus, isUnproven } from '@hoseki/packages/schemas/prove'
 import { KeystoreAvatar } from '@hoseki/packages/ui/prove-verify-ui'
 import { VIEWPORT_BELOW_HEADER } from '@hoseki/packages/ui/prove-verify-ui/layout'
 import { type SupportedHardwareWallet, getSupportedHardwareWalletLogoPath } from '@hoseki/packages/wallet'
@@ -26,7 +27,6 @@ import { type ReactNode, useEffect, useId, useRef, useState } from 'react'
 import { Link } from 'react-router'
 import type { RouterOutput } from '../../trpc'
 import type { ClaimDto } from '../../trpc/server-types'
-import { ensureClaimStatusNotExpired } from '../../utils/claim-utils'
 import { needsExchangeReconnect } from '../../utils/exchange-connection-status'
 import { BitcoinAmount } from '../bitcoin-amount'
 import { HistorySyncStatus } from './history-sync-status'
@@ -91,8 +91,8 @@ export function AccountFilter({
   const accounts: {
     id: string
     name: string
-    /** Shown in the warning color when it needs action, otherwise in gray. */
-    status: { label: string; needsAction: boolean } | null
+    /** Badged until the owner proves it. */
+    status: UnprovenClaimStatus | null
     logo: AccountLogo
     reconnectTo: string | null
     /** Null for a wallet with neither a live nor a stored balance. */
@@ -102,7 +102,7 @@ export function AccountFilter({
       return {
         id: claim.id,
         name: claim.displayName,
-        status: getClaimStatus(claim),
+        status: isUnproven(claim.status) ? claim.status : null,
         logo: {
           kind: 'wallet' as const,
           wallets: claim.keystores.slice(0, 3).map((keystore) => keystore.wallet ?? null),
@@ -125,7 +125,7 @@ export function AccountFilter({
     ...[...manualAccounts, ...etfAccounts].map((account) => ({
       id: account.id,
       name: account.displayName,
-      status: { label: 'Unverified', needsAction: false },
+      status: 'unverified' as const,
       logo: { kind: 'manual' as const },
       reconnectTo: null,
       sats: Number(account.balance),
@@ -202,11 +202,7 @@ export function AccountFilter({
               borderRadius="control"
               border="1px solid"
               borderColor={
-                selected.has(account.id)
-                  ? 'neutral.700'
-                  : account.status?.needsAction === true
-                    ? 'warning.300'
-                    : 'neutral.200'
+                selected.has(account.id) ? 'neutral.700' : account.status === 'pending' ? 'warning.300' : 'neutral.200'
               }
               bg={selected.has(account.id) ? 'neutral.50' : 'shades.0'}
               cursor="pointer"
@@ -262,7 +258,7 @@ export function AccountFilter({
                   <AccountSharePie sats={account.sats} totalSats={totalSats} />
                 </Box>
               )}
-              {account.status !== null && <StatusBadge {...account.status} />}
+              {account.status !== null && <StatusBadge status={account.status} />}
             </Box>
           </Box>
         ),
@@ -711,19 +707,14 @@ function ManualNoteIcon({ boxSize }: { boxSize: string }): JSX.Element {
   )
 }
 
-function getClaimStatus(claim: ClaimDto): { label: string; needsAction: boolean } | null {
-  switch (ensureClaimStatusNotExpired(claim)) {
-    case 'pending':
-      return { label: 'Pending', needsAction: true }
-    case 'unverified':
-      return { label: 'Unverified', needsAction: false }
-    case 'verified':
-    case 'expired':
-      return null
-  }
-}
+/** A wallet waiting to be proven needs action; a tracked one is only labeled. */
+const statusBadges = {
+  pending: { label: 'Pending', bg: 'warning.50', borderColor: 'warning.300', color: 'warning.700' },
+  unverified: { label: 'Unverified', bg: 'neutral.50', borderColor: 'neutral.300', color: 'neutral.600' },
+} as const satisfies Record<UnprovenClaimStatus, { label: string; bg: string; borderColor: string; color: string }>
 
-function StatusBadge({ label, needsAction }: { label: string; needsAction: boolean }): JSX.Element {
+function StatusBadge({ status }: { status: UnprovenClaimStatus }): JSX.Element {
+  const badge = statusBadges[status]
   return (
     <Text
       as="span"
@@ -732,17 +723,17 @@ function StatusBadge({ label, needsAction }: { label: string; needsAction: boole
       left="50%"
       transform="translateX(-50%)"
       px={2}
-      bg={needsAction ? 'warning.50' : 'neutral.50'}
+      bg={badge.bg}
       border="1px solid"
-      borderColor={needsAction ? 'warning.300' : 'neutral.300'}
+      borderColor={badge.borderColor}
       borderRadius="full"
       whiteSpace="nowrap"
       textStyle="label/xs"
       fontWeight="semibold"
-      color={needsAction ? 'warning.700' : 'neutral.600'}
+      color={badge.color}
       pointerEvents="none"
     >
-      {label}
+      {badge.label}
     </Text>
   )
 }
