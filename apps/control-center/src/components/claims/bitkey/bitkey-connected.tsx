@@ -65,7 +65,8 @@ export function BitkeyConnected({ claim }: { claim: ClaimDto }): JSX.Element {
           subtitle="Its balance and history now show in Control Center."
           badge={
             <Box bg="white" borderRadius="full" p="3px">
-              <SuccessCheck size="52px" />
+              {/* Gray, not green: the Bitkey is connected but stays unverified. */}
+              <SuccessCheck size="52px" tone="neutral" />
             </Box>
           }
         />
