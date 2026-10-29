@@ -29,15 +29,13 @@ import type { OnboardingStep } from './onboarding-steps'
 
 type Server = 'own' | 'public'
 
-// The public server comes first and chosen, as the server the app starts on; the line under the
-// choices says what each one means.
-const SERVER_OPTIONS: Array<{ value: Server; title: string; description: string; consequence: string }> = [
+// The public server comes first and chosen, as the server the app starts on. What Blockstream sees
+// is in the step's text and preview; your node's line says what comes next.
+const SERVER_OPTIONS: Array<{ value: Server; title: string; description: string; consequence?: string }> = [
   {
     value: 'public',
     title: 'Blockstream’s public server',
     description: 'Works right away, with nothing to set up.',
-    consequence:
-      'Blockstream can see which addresses are yours and your IP address. You can switch to your own node in Settings at any time.',
   },
   {
     value: 'own',
@@ -46,6 +44,61 @@ const SERVER_OPTIONS: Array<{ value: Server; title: string; description: string;
     consequence: 'Only your node sees your wallets. You’ll enter its address next.',
   },
 ]
+
+/** Why something can't go on yet: details to fix, or a failed connection with Sentinel's reason. */
+type Problem = { message: string; reason?: string }
+
+/** A problem's message, with Sentinel's reason beneath it when there is one. */
+function ProblemDescription({ problem }: { problem: Problem }): JSX.Element {
+  return (
+    <AlertDescription>
+      {problem.message}
+      {problem.reason !== undefined && (
+        <Text as="span" display="block" textStyle="text/xs" mt={1}>
+          {problem.reason}
+        </Text>
+      )}
+    </AlertDescription>
+  )
+}
+
+/** The Connect via Tor switch, for the public server or your node. */
+function TorSwitch({
+  id,
+  description,
+  isChecked,
+  isDisabled,
+  onChange,
+}: {
+  id: string
+  description: string
+  isChecked: boolean
+  isDisabled: boolean
+  onChange: (torEnabled: boolean) => void
+}): JSX.Element {
+  return (
+    <HStack justify="space-between" gap={3}>
+      <Box>
+        <FormLabel htmlFor={id} textStyle="label/sm" mb={0}>
+          Connect via Tor
+        </FormLabel>
+        <Text id={`${id}-description`} textStyle="text/xs" color="neutral.600">
+          {description}
+        </Text>
+      </Box>
+      <Switch
+        id={id}
+        colorScheme="green"
+        aria-describedby={`${id}-description`}
+        isChecked={isChecked}
+        isDisabled={isDisabled}
+        onChange={(event) => {
+          onChange(event.target.checked)
+        }}
+      />
+    </HStack>
+  )
+}
 
 /** One server to choose, as a card around its radio. Needs a RadioGroup. */
 function ServerOption({
@@ -91,19 +144,36 @@ function ServerOption({
 function ServerOptions({
   value,
   onChange,
+  torEnabled,
+  onTorChange,
+  isDisabled,
   failure,
 }: {
   value: Server
   onChange: (value: Server) => void
-  failure: string | null
+  /** Whether the public server connects through Tor. */
+  torEnabled: boolean
+  onTorChange: (torEnabled: boolean) => void
+  isDisabled: boolean
+  failure: Problem | null
 }): JSX.Element {
+  const failureRef = useRef<HTMLDivElement>(null)
   const consequence = SERVER_OPTIONS.find((item) => item.value === value)?.consequence
+
+  // With Tor on, the step fills a desktop window, and the failure would sit below the fold.
+  useEffect(() => {
+    if (failure !== null) {
+      failureRef.current?.scrollIntoView({ block: 'nearest' })
+    }
+  }, [failure])
+
   return (
     <Stack gap={3}>
       <RadioGroup
         aria-label="Electrum server"
-        aria-describedby="server-consequence"
+        aria-describedby={consequence === undefined ? undefined : 'server-consequence'}
         value={value}
+        isDisabled={isDisabled}
         onChange={(next) => {
           if (next === 'own' || next === 'public') {
             onChange(next)
@@ -116,20 +186,34 @@ function ServerOptions({
           ))}
         </Stack>
       </RadioGroup>
-      <Text id="server-consequence" textStyle="text/xs" color="neutral.600">
-        {consequence}
-      </Text>
+      {/* Your node's own switch comes with its address, on the next step. */}
+      {value === 'public' && (
+        <TorSwitch
+          id="public-tor"
+          // One line each, so the step still fits a desktop window.
+          description={
+            torEnabled
+              ? 'Hides your IP address. Tor can take a minute to start.'
+              : 'Hides your IP address from Blockstream.'
+          }
+          isChecked={torEnabled}
+          isDisabled={isDisabled}
+          onChange={onTorChange}
+        />
+      )}
+      {consequence !== undefined && (
+        <Text id="server-consequence" textStyle="text/xs" color="neutral.600">
+          {consequence}
+        </Text>
+      )}
       {failure !== null && (
-        <Alert status="error">
-          <AlertDescription>{failure}</AlertDescription>
+        <Alert ref={failureRef} status="error">
+          <ProblemDescription problem={failure} />
         </Alert>
       )}
     </Stack>
   )
 }
-
-/** Why the node can't be used yet: details to fix, or a failed connection with Sentinel's reason. */
-type Problem = { message: string; reason?: string }
 
 function NodeForm({
   draft,
@@ -230,28 +314,19 @@ function NodeForm({
           </Select>
         </FormControl>
       </HStack>
-      <HStack justify="space-between" gap={3}>
-        <Box>
-          <FormLabel htmlFor="node-tor" textStyle="label/sm" mb={0}>
-            Connect via Tor
-          </FormLabel>
-          <Text id="node-tor-description" textStyle="text/xs" color="neutral.600">
-            {draft.torEnabled
-              ? 'Hides your IP address. Tor can take a minute to start.'
-              : 'Hides your IP address. Needed for .onion addresses.'}
-          </Text>
-        </Box>
-        <Switch
-          id="node-tor"
-          colorScheme="green"
-          aria-describedby="node-tor-description"
-          isChecked={draft.torEnabled}
-          isDisabled={isDisabled}
-          onChange={(event) => {
-            onChange({ torEnabled: event.target.checked })
-          }}
-        />
-      </HStack>
+      <TorSwitch
+        id="node-tor"
+        description={
+          draft.torEnabled
+            ? 'Hides your IP address. Tor can take a minute to start.'
+            : 'Hides your IP address. Needed for .onion addresses.'
+        }
+        isChecked={draft.torEnabled}
+        isDisabled={isDisabled}
+        onChange={(torEnabled) => {
+          onChange({ torEnabled })
+        }}
+      />
       {isConnected && (
         <Text as="output" textStyle="text/sm" color="success.700">
           Connected to your node.
@@ -264,14 +339,7 @@ function NodeForm({
       )}
       {problem !== null && (
         <Alert ref={problemRef} status="error">
-          <AlertDescription>
-            {problem.message}
-            {problem.reason !== undefined && (
-              <Text as="span" display="block" textStyle="text/xs" mt={1}>
-                {problem.reason}
-              </Text>
-            )}
-          </AlertDescription>
+          <ProblemDescription problem={problem} />
         </Alert>
       )}
     </Stack>
@@ -303,13 +371,14 @@ function sameDetails(a: ConnectionDetails, b: ConnectionDetails | null): boolean
 }
 
 /**
- * Desktop's choice of Electrum server: keep the public one the app started with, or connect your own
- * node, which follows as a step of its own.
+ * Desktop's choice of Electrum server: keep the public one the app started with, through Tor or not,
+ * or connect your own node, which follows as a step of its own.
  */
 export function useServerSteps(choice: ElectrumChoice | undefined): OnboardingStep[] {
   const [server, setServer] = useState<Server>('public')
+  const [publicTor, setPublicTor] = useState(false)
   const [busy, setBusy] = useState(false)
-  const [choiceFailure, setChoiceFailure] = useState<string | null>(null)
+  const [choiceFailure, setChoiceFailure] = useState<Problem | null>(null)
   const [draft, setDraft] = useState(blankConnection)
   const [problem, setProblem] = useState<Problem | null>(null)
   // The details last connected here, so coming back to the form and on doesn't connect again.
@@ -352,29 +421,50 @@ export function useServerSteps(choice: ElectrumChoice | undefined): OnboardingSt
       id: 'server',
       title: 'Choose your Electrum server',
       body: 'Control Center looks up your wallets on an Electrum server. Whoever runs it can see which addresses are yours and your IP address.',
-      preview: <ServerPreview server={server} />,
+      // Each server has its own Tor switch.
+      preview: <ServerPreview server={server} torEnabled={server === 'public' ? publicTor : draft.torEnabled} />,
       controls: () => (
         <ServerOptions
           value={server}
+          torEnabled={publicTor}
+          isDisabled={busy}
           failure={choiceFailure}
           onChange={(next) => {
             setServer(next)
             setChoiceFailure(null)
+          }}
+          onTorChange={(torEnabled) => {
+            setPublicTor(torEnabled)
+            setChoiceFailure(null)
+            if (torEnabled) {
+              choice.startTor()
+            }
           }}
         />
       ),
       primary: {
         label: 'Continue',
         isLoading: busy && server === 'public',
+        // Only Tor takes long enough to say what's happening.
+        loadingText: publicTor ? 'Connecting…' : undefined,
         run: async () => {
           if (server === 'own') {
             return true
           }
           setBusy(true)
-          const result = await choice.keepPublic()
+          setChoiceFailure(null)
+          const result = await choice.keepPublic(publicTor)
           setBusy(false)
           if (result.isErr()) {
-            setChoiceFailure(errorMessage(result.unwrapErr(), 'Couldn’t switch back to the public server. Try again.'))
+            const error = result.unwrapErr()
+            setChoiceFailure(
+              publicTor
+                ? {
+                    message: 'Couldn’t connect through Tor. Try again, or turn off Connect via Tor.',
+                    reason: errorMessage(error, 'Tor didn’t answer.'),
+                  }
+                : { message: errorMessage(error, 'Couldn’t switch back to the public server. Try again.') },
+            )
             return false
           }
           setConnected(null)
@@ -389,7 +479,7 @@ export function useServerSteps(choice: ElectrumChoice | undefined): OnboardingSt
       followUp: true,
       title: 'Connect your node',
       body: 'You’ll find these in your node’s Electrum server app, such as Electrs or Fulcrum.',
-      preview: <ServerPreview server="own" />,
+      preview: <ServerPreview server="own" torEnabled={draft.torEnabled} />,
       controls: (next) => (
         <NodeForm
           draft={draft}
@@ -400,6 +490,9 @@ export function useServerSteps(choice: ElectrumChoice | undefined): OnboardingSt
           onChange={(value) => {
             setDraft((current) => ({ ...current, ...value }))
             setProblem(null)
+            if (value.torEnabled === true) {
+              choice.startTor()
+            }
           }}
         />
       ),
