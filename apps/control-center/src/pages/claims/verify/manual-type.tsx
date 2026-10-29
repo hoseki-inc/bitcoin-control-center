@@ -1,8 +1,7 @@
-import { Box, Flex, Stack, Text } from '@chakra-ui/react'
+import { Box, Stack, Text } from '@chakra-ui/react'
 import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
 import { TopBar } from '@hoseki/packages/ui/prove-verify-ui/top-bar'
 import { Link, useLocation } from 'react-router'
-import { BitcoinLogo } from '../../../components/claims/account-type-media'
 import { parseNavigationState } from '../../../lib/navigation-state'
 
 export function ManualTypeSelectorPage(): JSX.Element {
@@ -26,14 +25,12 @@ export function ManualTypeSelectorPage(): JSX.Element {
             state={location.state}
             title="Bitcoin Holdings"
             description="Track BTC you hold directly — cold storage, paper wallets, or any self-custodied bitcoin."
-            icon={<BitcoinLogo boxSize={5} />}
           />
           <TypeCard
             to="/accounts/verify/etf"
             state={location.state}
             title="Bitcoin ETF Holdings"
             description="Track your Bitcoin exposure through ETFs like IBIT, FBTC, GBTC, and more."
-            icon={<BitcoinLogo boxSize={5} />}
           />
         </Stack>
       </Stack>
@@ -41,39 +38,27 @@ export function ManualTypeSelectorPage(): JSX.Element {
   )
 }
 
-function TypeCard(props: {
-  to: string
-  state: unknown
-  title: string
-  description: string
-  icon: JSX.Element
-}): JSX.Element {
+function TypeCard(props: { to: string; state: unknown; title: string; description: string }): JSX.Element {
   return (
-    <Flex
+    <Box
       as={Link}
+      display="block"
       to={props.to}
       state={props.state}
       p={5}
       border="1px solid"
       borderColor="neutral.200"
       borderRadius="md"
-      align="center"
-      gap={4}
       cursor="pointer"
       transition="all 0.15s ease"
       _hover={{ borderColor: 'neutral.400', bg: 'neutral.50' }}
     >
-      <Flex w={10} h={10} borderRadius="md" bg="neutral.50" align="center" justify="center" flexShrink={0}>
-        {props.icon}
-      </Flex>
-      <Box>
-        <Text textStyle="text/md" fontWeight="semibold" color="neutral.900">
-          {props.title}
-        </Text>
-        <Text textStyle="text/sm" color="neutral.600">
-          {props.description}
-        </Text>
-      </Box>
-    </Flex>
+      <Text textStyle="text/md" fontWeight="semibold" color="neutral.900">
+        {props.title}
+      </Text>
+      <Text textStyle="text/sm" color="neutral.600">
+        {props.description}
+      </Text>
+    </Box>
   )
 }
