@@ -26,7 +26,7 @@ import { type ReactNode, useLayoutEffect, useMemo, useRef, useState } from 'reac
 import { ConnectionRowContent, LIVENESS_COLORS, connectionSummary } from '../../pages/settings/electrum-settings'
 import { STATEMENT_SOURCES, StatementSourceOption } from '../../pages/settings/statement-source-settings'
 import { BitcoinAmount } from '../bitcoin-amount'
-import { ManualEntryIcon, MultisigImage } from '../claims/account-type-media'
+import { BitcoinLogo, MultisigImage } from '../claims/account-type-media'
 import { AccumulationChart } from '../dashboard-charts/accumulation-chart'
 import { type BalanceDataPoint, getFlowTotals } from '../dashboard-charts/balance-history'
 import { MonthlyNetChangeChart } from '../dashboard-charts/monthly-net-change-chart'
@@ -225,7 +225,7 @@ const ACCOUNT_TYPES: Array<{ name: string; media: ReactNode }> = [
   { name: 'Kraken', media: <Wordmark src="/images/exchanges/kraken-wordmark.svg" /> },
   { name: 'Robinhood', media: <Wordmark src="/images/exchanges/robinhood-lockup.png" /> },
   { name: 'Strike', media: <Wordmark src="/images/exchanges/strike-logo.svg" /> },
-  { name: 'Manual Entry', media: <ManualEntryIcon /> },
+  { name: 'Manual Entry', media: <BitcoinLogo /> },
 ]
 
 export function AccountTypesPreview(): JSX.Element {

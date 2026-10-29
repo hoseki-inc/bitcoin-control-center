@@ -2,7 +2,7 @@ import { Box, Button, Flex, Grid, Icon, keyframes } from '@chakra-ui/react'
 import { HOSEKI_ASSETS_CDN_URL } from '@hoseki/packages/constants'
 import { ConnectManualBitcoinAccordion } from '@hoseki/packages/ui/design-system'
 import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
-import { ManualEntryIcon, MultisigImage } from './account-type-media'
+import { BitcoinLogo, MultisigImage } from './account-type-media'
 import { ConnectionType } from './claims-landing/connection-type'
 
 const fadeIn = keyframes`
@@ -112,7 +112,7 @@ export function AddAccountFlow({ onClose, linkState }: AddAccountFlowProps): JSX
             <ConnectionType title="Strike" media={StrikeMedia} to="/accounts/verify/strike" state={linkState} />
             <ConnectionType
               title="Manual Entry"
-              media={<ManualEntryIcon />}
+              media={<BitcoinLogo />}
               to="/accounts/verify/manual-type"
               state={linkState}
             />

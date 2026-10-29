@@ -1,12 +1,10 @@
-import { Icon } from '@chakra-ui/react'
 import { StatusBadge, getBadgeConfigForClaim } from '@hoseki/packages/ui/prove-verify-ui'
-import { RoundKeyIcon } from '@hoseki/packages/ui/prove-verify-ui/icons'
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { useGetClaimBalance } from '../../lib/balances'
 import { clearFlowSource, getFlowSource } from '../../lib/flow-tracker'
 import type { ClaimDto } from '../../trpc/server-types'
-import { MultisigKeys } from './account-type-media'
+import { BitcoinLogo, MultisigKeys } from './account-type-media'
 import { type ConnectionHero, ConnectionPending, ConnectionSuccess } from './connection-success'
 import { getWalletImage, getWalletName } from './wallet-image-from-known-model'
 
@@ -97,7 +95,5 @@ function claimHero(claim: ClaimDto): ConnectionHero {
   if (image) {
     return { photo: image.href, alt: image.alt }
   }
-  return {
-    icon: <Icon as={RoundKeyIcon} fill="neutral.400" color2="shades.0" stroke="none" boxSize="48px" />,
-  }
+  return { icon: <BitcoinLogo boxSize={12} /> }
 }

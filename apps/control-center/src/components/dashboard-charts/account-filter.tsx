@@ -2,7 +2,6 @@ import {
   Box,
   Button,
   Flex,
-  Icon,
   Input,
   Popover,
   PopoverContent,
@@ -29,6 +28,7 @@ import type { ClaimDto } from '../../trpc/server-types'
 import { ensureClaimStatusNotExpired, isBitkeyClaim } from '../../utils/claim-utils'
 import { needsExchangeReconnect } from '../../utils/exchange-connection-status'
 import { BitcoinAmount } from '../bitcoin-amount'
+import { BitcoinLogo } from '../claims/account-type-media'
 import { HistorySyncStatus } from './history-sync-status'
 
 const exchangeLogos = {
@@ -584,18 +584,9 @@ function AccountLogoMark({ logo, muted = false }: { logo: AccountLogo; muted?: b
   }
   if (logo.kind === 'manual') {
     return (
-      <Flex
-        as="span"
-        boxSize={size}
-        flexShrink={0}
-        borderRadius="6px"
-        bg="warning.50"
-        align="center"
-        justify="center"
-        aria-hidden="true"
-      >
-        <ManualNoteIcon boxSize="12px" />
-      </Flex>
+      <Box as="span" display="block" boxSize={size} flexShrink={0} sx={style} aria-hidden="true">
+        <BitcoinLogo boxSize={5} />
+      </Box>
     )
   }
   if (logo.wallets.length > 1) {
@@ -681,31 +672,6 @@ function HeaderIconButton({
         {children}
       </PlainButton>
     </Tooltip>
-  )
-}
-
-function ManualNoteIcon({ boxSize }: { boxSize: string }): JSX.Element {
-  return (
-    <Icon viewBox="0 0 24 24" color="warning.500" boxSize={boxSize} aria-hidden="true">
-      <path
-        d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        fill="none"
-      />
-      <polyline
-        points="14 2 14 8 20 8"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        fill="none"
-      />
-      <line x1="16" y1="13" x2="8" y2="13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-      <line x1="16" y1="17" x2="8" y2="17" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-    </Icon>
   )
 }
 
