@@ -12,7 +12,6 @@ import {
   Tooltip,
   chakra,
 } from '@chakra-ui/react'
-import { TipAlert } from '@hoseki/packages/ui/design-system/feedback/tip-alert'
 import { CopyButtonAddon } from '@hoseki/packages/ui/design-system/forms/input-addons'
 import { monoInputProps } from '@hoseki/packages/ui/utils/bitcoin'
 import { type BitkeyKeyRole, bitkeyKeyLabels } from '@hoseki/packages/wallet'
@@ -56,24 +55,53 @@ export function UnverifiedTooltip({
   )
 }
 
-export function BitkeyUnverifiedNote(): JSX.Element {
+/**
+ * Why a Bitkey stays Unverified, in plain gray text that reads like the rest of the page rather than a tip box.
+ * Its size matches the text around it: medium in the connect flow, small on the account page.
+ */
+export function BitkeyUnverifiedNote({
+  isBrief = false,
+  size = 'md',
+}: {
+  isBrief?: boolean
+  size?: 'sm' | 'md'
+}): JSX.Element {
+  const textStyle = size === 'sm' ? 'text/sm' : 'text/md'
   return (
-    <TipAlert title="Unverified">
-      <Text color="neutral.800">
-        Its balance and history update as usual. Bitkey can’t sign messages yet, so statements leave this account out.
+    <Box>
+      <Text textStyle={textStyle} color="neutral.600" fontWeight="medium">
+        Unverified
       </Text>
-    </TipAlert>
+      <Text textStyle={textStyle} color="neutral.600">
+        {isBrief
+          ? 'Its balance and history update as usual. Bitkey can’t sign messages yet, so statements leave this account out.'
+          : 'Bitkey can’t sign messages yet, so Control Center can’t confirm this wallet is yours. You’ll still see its balance and history. Statements only include verified accounts, so this one is left out for now.'}
+      </Text>
+    </Box>
   )
 }
 
-export function BitkeyRecoveryNote(): JSX.Element {
+/** What to do after a Bitkey recovery, as a question that opens like an FAQ. Sized like the key rows above it. */
+export function BitkeyRecoveryQuestion(): JSX.Element {
   return (
-    <TipAlert title="Recovered your Bitkey?">
-      <Text color="neutral.800">
-        A Bitkey recovery moves your bitcoin to new keys, so this account stops updating. Export the wallet descriptor
-        again and add it as a new Bitkey.
-      </Text>
-    </TipAlert>
+    <Accordion allowToggle>
+      <AccordionItem>
+        <h2>
+          <AccordionButton>
+            <Text as="span" textStyle="text/sm" fontWeight="medium" color="neutral.900">
+              Recovered your Bitkey?
+            </Text>
+            <AccordionIcon color="neutral.500" />
+          </AccordionButton>
+        </h2>
+        <AccordionPanel>
+          <Text textStyle="text/sm" color="neutral.600">
+            A Bitkey recovery moves your bitcoin to new keys, so this account stops updating. Export the wallet
+            descriptor again and add it as a new Bitkey.
+          </Text>
+        </AccordionPanel>
+      </AccordionItem>
+    </Accordion>
   )
 }
 
