@@ -11,7 +11,7 @@ export function BitkeyClaimProperties({ claim }: { claim: ClaimDto }): JSX.Eleme
       {/* Like the other wallets' account pages, which show their device above the details. */}
       <FloatingBitkeyImage />
       <MultisigClaimProperties claim={claim} mb={0} />
-      <BitkeyUnverifiedNote isBrief />
+      <BitkeyUnverifiedNote />
       <Text as="h2" textStyle="text/md" fontWeight="medium" pt={4}>
         Keys
       </Text>

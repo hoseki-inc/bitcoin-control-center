@@ -56,13 +56,11 @@ export function UnverifiedTooltip({
   )
 }
 
-export function BitkeyUnverifiedNote({ isBrief = false }: { isBrief?: boolean }): JSX.Element {
+export function BitkeyUnverifiedNote(): JSX.Element {
   return (
     <TipAlert title="Unverified">
       <Text color="neutral.800">
-        {isBrief
-          ? 'Its balance and history update as usual. Bitkey can’t sign messages yet, so statements leave this account out.'
-          : 'Bitkey can’t sign messages yet, so Control Center can’t confirm this wallet is yours. You’ll still see its balance and history. Statements only include verified accounts, so this one is left out for now.'}
+        Its balance and history update as usual. Bitkey can’t sign messages yet, so statements leave this account out.
       </Text>
     </TipAlert>
   )
