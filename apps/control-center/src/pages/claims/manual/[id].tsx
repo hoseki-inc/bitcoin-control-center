@@ -6,7 +6,6 @@ import {
   FormLabel,
   HStack,
   Heading,
-  Icon,
   Input,
   Modal,
   ModalBody,
@@ -33,6 +32,7 @@ import { format } from 'date-fns'
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { toast } from 'sonner'
+import { BitcoinLogo } from '../../../components/claims/account-type-media'
 import { AccountDetailsSkeleton } from '../../../components/loading/page-skeletons'
 import { trpc } from '../../../trpc'
 import { localDateToIso, todayLocalDate } from '../../../utils/local-date'
@@ -219,7 +219,7 @@ export function ManualAccountDetailsPage(): JSX.Element {
         {/* Account header */}
         <Box>
           <HStack spacing={3} mb={1}>
-            <ManualIcon />
+            <BitcoinLogo boxSize={5} />
             <Text textStyle="text/md" fontWeight="medium">
               {account.displayName}
             </Text>
@@ -491,30 +491,5 @@ export function ManualAccountDetailsPage(): JSX.Element {
         )}
       </Stack>
     </Box>
-  )
-}
-
-function ManualIcon(): JSX.Element {
-  return (
-    <Icon viewBox="0 0 24 24" w={5} h={5} color="warning.500">
-      <path
-        d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        fill="none"
-      />
-      <polyline
-        points="14 2 14 8 20 8"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        fill="none"
-      />
-      <line x1="16" y1="13" x2="8" y2="13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-      <line x1="16" y1="17" x2="8" y2="17" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-    </Icon>
   )
 }

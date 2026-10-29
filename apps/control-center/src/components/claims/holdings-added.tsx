@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router'
 import { useBalanceFromSats } from '../../lib/balances'
-import { EtfHoldingsIcon, ManualEntryIcon } from './account-type-media'
+import { BitcoinLogo } from './account-type-media'
 import { type ConnectionHero, ConnectionPending, ConnectionSuccess } from './connection-success'
 
 type HoldingsKind = 'manual' | 'etf'
@@ -10,13 +10,13 @@ const holdings = {
     pending: 'Adding Your Holdings...',
     title: 'Holdings Added!',
     subtitle: 'Their balance now shows in Control Center.',
-    hero: { icon: <ManualEntryIcon boxSize={12} /> },
+    hero: { icon: <BitcoinLogo boxSize={12} /> },
   },
   etf: {
     pending: 'Adding Your ETF Holdings...',
     title: 'ETF Holdings Added!',
     subtitle: 'The bitcoin they hold for you now shows in Control Center.',
-    hero: { icon: <EtfHoldingsIcon boxSize={12} /> },
+    hero: { icon: <BitcoinLogo boxSize={12} /> },
   },
 } as const satisfies Record<HoldingsKind, { pending: string; title: string; subtitle: string; hero: ConnectionHero }>
 
