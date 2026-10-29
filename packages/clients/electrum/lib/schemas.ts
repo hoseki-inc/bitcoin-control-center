@@ -1,11 +1,15 @@
+import { MAX_TRANSACTION_INPUTS, MAX_TRANSACTION_OUTPUTS } from '@hoseki/packages/bitcoin/limits'
 import { z } from 'zod'
+
+export const MAX_ELECTRUM_RESPONSE_BYTES = 16 * 1024 * 1024
+export const MAX_ELECTRUM_LIST_ITEMS = MAX_ELECTRUM_RESPONSE_BYTES / 64
 
 // ─── Electrum JSON-RPC Protocol ───────────────────────────────────────────────
 
 export const JsonRpcRequestSchema = z.object({
   jsonrpc: z.literal('2.0'),
   method: z.string(),
-  params: z.array(z.unknown()),
+  params: z.array(z.unknown()).max(MAX_ELECTRUM_LIST_ITEMS),
   id: z.number(),
 })
 export type JsonRpcRequest = z.infer<typeof JsonRpcRequestSchema>
@@ -53,7 +57,7 @@ export const ScripthashHistoryEntrySchema = z.object({
 export type ScripthashHistoryEntry = z.infer<typeof ScripthashHistoryEntrySchema>
 
 /** Response from `blockchain.scripthash.get_history` */
-export const ScripthashHistorySchema = z.array(ScripthashHistoryEntrySchema)
+export const ScripthashHistorySchema = z.array(ScripthashHistoryEntrySchema).max(MAX_ELECTRUM_LIST_ITEMS)
 export type ScripthashHistory = z.infer<typeof ScripthashHistorySchema>
 
 /** Single entry from `blockchain.scripthash.listunspent` */
@@ -66,7 +70,7 @@ export const ScripthashUnspentEntrySchema = z.object({
 export type ScripthashUnspentEntry = z.infer<typeof ScripthashUnspentEntrySchema>
 
 /** Response from `blockchain.scripthash.listunspent` */
-export const ScripthashUnspentSchema = z.array(ScripthashUnspentEntrySchema)
+export const ScripthashUnspentSchema = z.array(ScripthashUnspentEntrySchema).max(MAX_ELECTRUM_LIST_ITEMS)
 export type ScripthashUnspent = z.infer<typeof ScripthashUnspentSchema>
 
 /** Input from verbose `blockchain.transaction.get` */
@@ -79,7 +83,7 @@ export const ElectrumTxInputSchema = z.object({
       hex: z.string().optional(),
     })
     .optional(),
-  txinwitness: z.array(z.string()).optional(),
+  txinwitness: z.array(z.string()).max(MAX_ELECTRUM_LIST_ITEMS).optional(),
   sequence: z.number(),
   // Electrs provides prevout data inline; Fulcrum may not
   prevout: z
@@ -103,7 +107,7 @@ export const ElectrumTxOutputSchema = z.object({
     type: z.string().optional(),
     address: z.string().optional(),
     // Some responses use 'addresses' array instead of single 'address'
-    addresses: z.array(z.string()).optional(),
+    addresses: z.array(z.string()).max(MAX_ELECTRUM_LIST_ITEMS).optional(),
   }),
 })
 export type ElectrumTxOutput = z.infer<typeof ElectrumTxOutputSchema>
@@ -117,8 +121,8 @@ export const ElectrumVerboseTransactionSchema = z.object({
   vsize: z.number().optional(),
   weight: z.number().optional(),
   locktime: z.number(),
-  vin: z.array(ElectrumTxInputSchema),
-  vout: z.array(ElectrumTxOutputSchema),
+  vin: z.array(ElectrumTxInputSchema).max(MAX_TRANSACTION_INPUTS),
+  vout: z.array(ElectrumTxOutputSchema).max(MAX_TRANSACTION_OUTPUTS),
   hex: z.string().optional(),
   blockhash: z.string().optional(),
   confirmations: z.number().optional(),

@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Account } from '@hoseki/packages/bitcoin/account'
+import { MAX_TRANSACTION_INPUTS, MAX_TRANSACTION_OUTPUTS } from '@hoseki/packages/bitcoin/limits'
 import { Network } from '@hoseki/packages/bitcoin/network'
 import { ElectrumProvider } from '@hoseki/packages/bitcoin/onchain/electrum_provider'
 import type { TransactionEntry } from '@hoseki/packages/bitcoin/onchain/types'
@@ -126,6 +127,24 @@ it.each([
   await withTestSetup(async () => {
     const result = await accountEntries(setup(body))
     expect(result.expectErr('malformed transaction data must fail').message).toBe(
+      `Invalid transaction data returned from the mempool server for ${txid}`,
+    )
+  })
+})
+
+it.each([
+  { list: 'inputs', vin: MAX_TRANSACTION_INPUTS + 1, vout: 0 },
+  { list: 'outputs', vin: 0, vout: MAX_TRANSACTION_OUTPUTS + 1 },
+])('rejects a response with more $list than a transaction can have', async ({ vin, vout }) => {
+  await withTestSetup(async () => {
+    const body = {
+      txid,
+      vin: Array.from({ length: vin }, () => ({ prevout: null })),
+      vout: Array.from({ length: vout }, () => ({ value: 1 })),
+      status: { confirmed: true, block_height: 800000, block_time: timestamp },
+    }
+    const result = await accountEntries(setup(body))
+    expect(result.expectErr('an oversized transaction must fail').message).toBe(
       `Invalid transaction data returned from the mempool server for ${txid}`,
     )
   })
