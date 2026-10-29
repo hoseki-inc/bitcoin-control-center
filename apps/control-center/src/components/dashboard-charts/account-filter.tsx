@@ -18,6 +18,7 @@ import {
 import { getRecordValue } from '@hoseki/packages/lib'
 import type { BalanceValue } from '@hoseki/packages/lib/balance'
 import type { ClaimId } from '@hoseki/packages/schemas'
+import { type UnprovenClaimStatus, isUnproven } from '@hoseki/packages/schemas/prove'
 import { KeystoreAvatar } from '@hoseki/packages/ui/prove-verify-ui'
 import { VIEWPORT_BELOW_HEADER } from '@hoseki/packages/ui/prove-verify-ui/layout'
 import { type SupportedHardwareWallet, getSupportedHardwareWalletLogoPath } from '@hoseki/packages/wallet'
@@ -26,7 +27,6 @@ import { type ReactNode, useEffect, useId, useRef, useState } from 'react'
 import { Link } from 'react-router'
 import type { RouterOutput } from '../../trpc'
 import type { ClaimDto } from '../../trpc/server-types'
-import { ensureClaimStatusNotExpired } from '../../utils/claim-utils'
 import { needsExchangeReconnect } from '../../utils/exchange-connection-status'
 import { BitcoinAmount } from '../bitcoin-amount'
 import { HistorySyncStatus } from './history-sync-status'
@@ -91,8 +91,8 @@ export function AccountFilter({
   const accounts: {
     id: string
     name: string
-    /** Shown in the warning color. */
-    status: string | null
+    /** Badged until the owner proves it. */
+    status: UnprovenClaimStatus | null
     logo: AccountLogo
     reconnectTo: string | null
     /** Null for a wallet with neither a live nor a stored balance. */
@@ -102,7 +102,7 @@ export function AccountFilter({
       return {
         id: claim.id,
         name: claim.displayName,
-        status: ensureClaimStatusNotExpired(claim) === 'pending' ? 'Pending' : null,
+        status: isUnproven(claim.status) ? claim.status : null,
         logo: {
           kind: 'wallet' as const,
           wallets: claim.keystores.slice(0, 3).map((keystore) => keystore.wallet ?? null),
@@ -125,7 +125,7 @@ export function AccountFilter({
     ...[...manualAccounts, ...etfAccounts].map((account) => ({
       id: account.id,
       name: account.displayName,
-      status: 'Manually added',
+      status: 'unverified' as const,
       logo: { kind: 'manual' as const },
       reconnectTo: null,
       sats: Number(account.balance),
@@ -202,7 +202,7 @@ export function AccountFilter({
               borderRadius="control"
               border="1px solid"
               borderColor={
-                selected.has(account.id) ? 'neutral.700' : account.status !== null ? 'warning.300' : 'neutral.200'
+                selected.has(account.id) ? 'neutral.700' : account.status === 'pending' ? 'warning.300' : 'neutral.200'
               }
               bg={selected.has(account.id) ? 'neutral.50' : 'shades.0'}
               cursor="pointer"
@@ -258,7 +258,7 @@ export function AccountFilter({
                   <AccountSharePie sats={account.sats} totalSats={totalSats} />
                 </Box>
               )}
-              {account.status !== null && <StatusBadge label={account.status} />}
+              {account.status !== null && <StatusBadge status={account.status} />}
             </Box>
           </Box>
         ),
@@ -587,7 +587,7 @@ function AccountLogoMark({ logo, muted = false }: { logo: AccountLogo; muted?: b
         boxSize={size}
         flexShrink={0}
         borderRadius="6px"
-        bg="warning.50"
+        bg="neutral.100"
         align="center"
         justify="center"
         aria-hidden="true"
@@ -684,7 +684,7 @@ function HeaderIconButton({
 
 function ManualNoteIcon({ boxSize }: { boxSize: string }): JSX.Element {
   return (
-    <Icon viewBox="0 0 24 24" color="warning.500" boxSize={boxSize} aria-hidden="true">
+    <Icon viewBox="0 0 24 24" color="neutral.600" boxSize={boxSize} aria-hidden="true">
       <path
         d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
         stroke="currentColor"
@@ -707,7 +707,14 @@ function ManualNoteIcon({ boxSize }: { boxSize: string }): JSX.Element {
   )
 }
 
-function StatusBadge({ label }: { label: string }): JSX.Element {
+/** A wallet waiting to be proven needs action; a tracked one is only labeled. */
+const statusBadges = {
+  pending: { label: 'Pending', bg: 'warning.50', borderColor: 'warning.300', color: 'warning.700' },
+  unverified: { label: 'Unverified', bg: 'neutral.50', borderColor: 'neutral.300', color: 'neutral.600' },
+} as const satisfies Record<UnprovenClaimStatus, { label: string; bg: string; borderColor: string; color: string }>
+
+function StatusBadge({ status }: { status: UnprovenClaimStatus }): JSX.Element {
+  const badge = statusBadges[status]
   return (
     <Text
       as="span"
@@ -716,17 +723,17 @@ function StatusBadge({ label }: { label: string }): JSX.Element {
       left="50%"
       transform="translateX(-50%)"
       px={2}
-      bg="warning.50"
+      bg={badge.bg}
       border="1px solid"
-      borderColor="warning.300"
+      borderColor={badge.borderColor}
       borderRadius="full"
       whiteSpace="nowrap"
       textStyle="label/xs"
       fontWeight="semibold"
-      color="warning.700"
+      color={badge.color}
       pointerEvents="none"
     >
-      {label}
+      {badge.label}
     </Text>
   )
 }

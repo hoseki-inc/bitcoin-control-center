@@ -1,13 +1,20 @@
 import type { DerivationPath, SingleSigAccount } from '@hoseki/packages/bitcoin'
 import { type AsyncResult, Ok, Result } from '@hoseki/packages/result'
 import type { BitcoinNetworkString, ClaimId } from '@hoseki/packages/schemas'
+import { isUnproven } from '@hoseki/packages/schemas/prove'
 import type { SupportedHardwareWallet } from '@hoseki/packages/wallet'
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import { toast } from 'sonner'
 import { browserLogger } from '../logger'
 import { trpc } from '../trpc'
-import type { ChallengeDto, ChallengeMessageDto, ClaimDto, KeystoreDto } from '../trpc/server-types'
+import type {
+  ChallengeDto,
+  ChallengeMessageDto,
+  ClaimDto,
+  KeystoreDto,
+  UpdateKeystoreInput,
+} from '../trpc/server-types'
 
 type CreateSingleSigClaimMutation = ReturnType<typeof trpc.portalProve.registry.claims.create.singlesig.useMutation>
 
@@ -18,6 +25,29 @@ interface Input {
   wallet: SupportedHardwareWallet | null
   model: string | null
   displayName: string
+}
+
+/**
+ * The device details to save onto an account that's already in Control Center, so signing uses the way someone
+ * just chose: their device, or no device for Manually Sign. Only for accounts still waiting to be proven.
+ */
+export function deviceUpdateFor(
+  claim: Pick<ClaimDto, 'status' | 'isArchived' | 'keystores'>,
+  device: Pick<Input, 'wallet' | 'model' | 'derivationPath'>,
+): UpdateKeystoreInput | null {
+  const [keystore] = claim.keystores
+  if (claim.isArchived || !isUnproven(claim.status) || keystore === undefined) {
+    return null
+  }
+  const derivationPath = device.derivationPath?.toString() ?? keystore.derivationPath
+  if (
+    device.wallet === keystore.wallet &&
+    device.model === keystore.model &&
+    derivationPath === keystore.derivationPath
+  ) {
+    return null
+  }
+  return { id: keystore.id, label: keystore.label, wallet: device.wallet, model: device.model, derivationPath }
 }
 
 type UseNavigateToAnExistentOrNewClaimReturn = Omit<CreateSingleSigClaimMutation, 'execute'> & {
@@ -33,6 +63,7 @@ export function useNavigateToAnExistentOrNewClaim(): UseNavigateToAnExistentOrNe
   const navigate = useNavigate()
   const [isLoading, setIsLoading] = useState(false)
   const createSingleSigClaimMutation = trpc.portalProve.registry.claims.create.singlesig.useMutation()
+  const updateKeystoreMutation = trpc.portalProve.registry.claims.updateKeystore.useMutation()
 
   function execute({
     account,
@@ -50,7 +81,11 @@ export function useNavigateToAnExistentOrNewClaim(): UseNavigateToAnExistentOrNe
         account: account.descriptor(),
       }),
     )
-      .map((claim) => ({ claimId: claim.id, isArchived: claim.isArchived }))
+      .map((claim) => ({
+        claimId: claim.id,
+        isArchived: claim.isArchived,
+        update: deviceUpdateFor(claim, { wallet, model, derivationPath }),
+      }))
       .orElseAsync(async () => {
         browserLogger.info('No existing claim found. Creating new claim.')
 
@@ -66,7 +101,15 @@ export function useNavigateToAnExistentOrNewClaim(): UseNavigateToAnExistentOrNe
               derivationPath: derivationPath?.toString() ?? null,
             },
           }),
-        ).map((claimData) => ({ claimId: claimData.claim.id, isArchived: false }))
+        ).map((claimData) => ({ claimId: claimData.claim.id, isArchived: false, update: null }))
+      })
+      .andThenAsync(async (found) => {
+        if (found.update === null) {
+          return Ok(found)
+        }
+        return Result.fromPromise(updateKeystoreMutation.mutateAsync(found.update))
+          .andThenAsync(async () => Result.fromPromise(trpcUtils.portalProve.registry.claims.invalidate()))
+          .map(() => found)
       })
       .andThen(({ claimId, isArchived }) => {
         if (isArchived) {
@@ -84,7 +127,7 @@ export function useNavigateToAnExistentOrNewClaim(): UseNavigateToAnExistentOrNe
       })
       .inspectErr((err) => {
         browserLogger.error({ err }, 'Failed to navigate to a claim')
-        toast.error('Failed to navigate to a claim', { description: err.message })
+        toast.error("Couldn't open this account", { description: err.message })
         setIsLoading(false)
       })
   }

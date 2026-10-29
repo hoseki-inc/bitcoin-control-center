@@ -49,7 +49,7 @@ export function ConnectManual(): JSX.Element {
                 void navigate(returnTo)
               }}
             >
-              Cancel Claim
+              Cancel
             </Button>
           }
           rightButton={

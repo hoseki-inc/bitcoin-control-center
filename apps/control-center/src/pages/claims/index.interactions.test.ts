@@ -4,6 +4,7 @@ import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { MemoryRouter } from 'react-router'
 import { assert, expect, it, onTestFinished, vi } from 'vitest'
+import { claimFixture } from '../../testing/claims'
 import type { AccountsDataSource } from './accounts-data'
 import { ClaimsPage } from './index'
 
@@ -81,4 +82,50 @@ it('asks again for only the account lists that failed', async () => {
   expect(lists.claims.refetch).not.toHaveBeenCalled()
   expect(lists.manual.refetch).not.toHaveBeenCalled()
   expect(lists.etfs.refetch).not.toHaveBeenCalled()
+})
+
+it('counts only wallets waiting to be proven as pending, not tracked ones', async () => {
+  const dom = browser.acquire()
+  const claims = [
+    claimFixture('re_clmx_verified', 'Verified wallet'),
+    { ...claimFixture('re_clmx_pending', 'Pending wallet'), status: 'pending' as const, isVerified: false },
+    { ...claimFixture('re_clmx_tracked', 'Tracked wallet'), status: 'unverified' as const, isVerified: false },
+  ]
+  const dataSource: AccountsDataSource = {
+    useLists: () => ({
+      claimsQuery: { ...listQuery(), data: claims },
+      exchangeAccountsQuery: listQuery(),
+      manualAccountsQuery: listQuery(),
+      etfAccountsQuery: listQuery(),
+      archivedClaimsQuery: listQuery(),
+      btcPriceQuery: { data: undefined, isLoading: false },
+    }),
+    useWalletBalances: () => ({ rows: [], isError: false }),
+    useRestore: () => ({ restore: () => undefined, restoringId: null }),
+    useAutoRefresh: () => undefined,
+  }
+  vi.stubGlobal('Image', document.defaultView?.Image)
+  const container = document.createElement('div')
+  document.body.append(container)
+  const root = createRoot(container)
+  onTestFinished(async () => {
+    await act(async () => {
+      root.unmount()
+    })
+    container.remove()
+    vi.unstubAllGlobals()
+    dom.window.close()
+  })
+  await act(async () => {
+    root.render(
+      createElement(
+        TestChakraProvider,
+        null,
+        createElement(MemoryRouter, null, createElement(ClaimsPage, { dataSource })),
+      ),
+    )
+  })
+
+  expect(container.textContent).toContain('1 Verified')
+  expect(container.textContent).toContain('1 Pending')
 })
