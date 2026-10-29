@@ -71,6 +71,8 @@ export function KeystoreDetailsSingleSig({
           </Text>
           {claimStatus === 'pending' ? (
             <StatusBadge status="neutral" label={claimStatus} icon={TimerCircleFilledIcon} w="fit-content" />
+          ) : claimStatus === 'unverified' ? (
+            <StatusBadge status="neutral" label={claimStatus} w="fit-content" />
           ) : claimStatus === 'verified' ? (
             <StatusBadge status="success" label={claimStatus} icon={CheckCircleFilledIcon} w="fit-content" />
           ) : (

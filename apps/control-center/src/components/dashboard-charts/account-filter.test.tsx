@@ -340,11 +340,11 @@ it('lists accounts largest first, whatever their type or the order they arrive i
   })
 })
 
-it('totals every account on All accounts and badges manually added ones', async () => {
+it('totals every account on All accounts and badges unverified ones', async () => {
   await withTestSetup(async () => {
     await renderAccounts({ exchangeAccounts: [connectedStrike] })
     expect(button('All accounts').textContent).toContain('12.85000000 BTC')
-    const badges = Array.from(document.querySelectorAll('span')).filter((span) => span.textContent === 'Manually added')
+    const badges = Array.from(document.querySelectorAll('span')).filter((span) => span.textContent === 'Unverified')
     expect(badges).toHaveLength(2)
   })
 })
@@ -352,7 +352,7 @@ it('totals every account on All accounts and badges manually added ones', async 
 it('searches account names only and closes with Escape', async () => {
   await withTestSetup(async () => {
     await renderAccounts({ exchangeAccounts: [connectedStrike] })
-    await search('manually')
+    await search('unverified')
     expect(document.body.textContent).toContain('No accounts match your search.')
     await search('strike')
     expect(document.body.textContent).toContain('No accounts match your search.')
@@ -419,7 +419,7 @@ it('shows a dash rather than zero for a wallet whose balance is unavailable', as
     // An unknown balance would understate the total, so none is shown.
     expect(button('All accounts').textContent).toContain('\u2014')
     // Statuses are part of each account's button, so they're read with it.
-    expect(button('Paper Wallet').textContent).toContain('Manually added')
+    expect(button('Paper Wallet').textContent).toContain('Unverified')
   })
 })
 
@@ -567,7 +567,7 @@ it('lists ETF holdings with the manually added accounts and counts them', async 
       ],
     })
     expect(accountOrder()).toEqual(['Paper Wallet', 'Cold Storage', 'Brokerage ETF'])
-    expect(button('Brokerage ETF').textContent).toContain('Manually added')
+    expect(button('Brokerage ETF').textContent).toContain('Unverified')
     expect(button('All accounts').textContent).toContain('10.00000000 BTC')
     expect(document.body.textContent).toContain('3 of 3')
   })

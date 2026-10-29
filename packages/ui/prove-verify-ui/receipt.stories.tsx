@@ -18,7 +18,7 @@ export const Loading: Story = () => (
 
 export const Receipt: Story = () => (
   <ReceiptComponent
-    title="Claim Verified!"
+    title="Account Verified!"
     state="success"
     onClose={() => {
       alert('close')

@@ -203,7 +203,7 @@ function getMultisigKeystoreAvatarIcon(keystore: ClaimCardKeystore, status: Clai
 function getNonMultisigKeystoreAvatarIcon(status: ClaimStatus) {
   if (status === 'expired') {
     return alertIcon
-  } else if (status === 'pending') {
+  } else if (status === 'pending' || status === 'unverified') {
     return null
   }
 

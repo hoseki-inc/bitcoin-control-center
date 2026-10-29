@@ -1,8 +1,7 @@
 import { Box, Button, Flex, Grid, Icon, keyframes } from '@chakra-ui/react'
 import { HOSEKI_ASSETS_CDN_URL } from '@hoseki/packages/constants'
-import { ConnectManualBitcoinAccordion } from '@hoseki/packages/ui/design-system'
 import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
-import { ManualEntryIcon, MultisigImage } from './account-type-media'
+import { ManualEntryIcon, ManualSignIcon, MultisigImage } from './account-type-media'
 import { ConnectionType } from './claims-landing/connection-type'
 
 const fadeIn = keyframes`
@@ -55,7 +54,16 @@ export function AddAccountFlow({ onClose, linkState }: AddAccountFlowProps): JSX
       </Flex>
 
       {/* Content */}
-      <Box flex={1} overflow="auto" display="flex" justifyContent="center" px={{ base: 6, md: 12 }} pt={12} pb={20}>
+      <Box
+        flex={1}
+        overflow="auto"
+        display="flex"
+        justifyContent="center"
+        alignItems="flex-start"
+        px={{ base: 6, md: 12 }}
+        pt={12}
+        pb={20}
+      >
         <Box w="100%" maxW="680px">
           <PageHeading
             title="Connect New Account"
@@ -104,15 +112,18 @@ export function AddAccountFlow({ onClose, linkState }: AddAccountFlowProps): JSX
             />
             <ConnectionType title="Strike" media={StrikeMedia} to="/accounts/verify/strike" state={linkState} />
             <ConnectionType
-              title="Manual Entry"
+              title="Manually Sign"
+              media={<ManualSignIcon />}
+              to="/accounts/verify/advanced"
+              state={linkState}
+            />
+            <ConnectionType
+              title={'Track Balance, ETF,\nor xpub'}
               media={<ManualEntryIcon />}
               to="/accounts/verify/manual-type"
               state={linkState}
             />
           </Grid>
-
-          {/* Advanced / manual signing */}
-          <ConnectManualBitcoinAccordion to="/accounts/verify/advanced" state={linkState} />
         </Box>
       </Box>
     </Box>

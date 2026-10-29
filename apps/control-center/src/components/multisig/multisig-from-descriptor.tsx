@@ -19,7 +19,7 @@ import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import type { CreateMultisigClaimInput, CreateMultisigKeystoreInput } from '../../trpc/server-types'
 
-function createMultisigClaimInputFromDescriptor(
+export function createMultisigClaimInputFromDescriptor(
   descriptor: string,
   displayName: string,
 ): Result<CreateMultisigClaimInput, Error> {
@@ -47,7 +47,7 @@ function createMultisigClaimInputFromDescriptor(
   return Ok({
     displayName,
     account: account.descriptor(),
-    network: 'bitcoin_mainnet',
+    network: account.network().toString(),
     keystores,
   })
 }

@@ -91,8 +91,8 @@ export function AccountFilter({
   const accounts: {
     id: string
     name: string
-    /** Shown in the warning color. */
-    status: string | null
+    /** Shown in the warning color when it needs action, otherwise in gray. */
+    status: { label: string; needsAction: boolean } | null
     logo: AccountLogo
     reconnectTo: string | null
     /** Null for a wallet with neither a live nor a stored balance. */
@@ -102,7 +102,7 @@ export function AccountFilter({
       return {
         id: claim.id,
         name: claim.displayName,
-        status: ensureClaimStatusNotExpired(claim) === 'pending' ? 'Pending' : null,
+        status: getClaimStatus(claim),
         logo: {
           kind: 'wallet' as const,
           wallets: claim.keystores.slice(0, 3).map((keystore) => keystore.wallet ?? null),
@@ -125,7 +125,7 @@ export function AccountFilter({
     ...[...manualAccounts, ...etfAccounts].map((account) => ({
       id: account.id,
       name: account.displayName,
-      status: 'Manually added',
+      status: { label: 'Unverified', needsAction: false },
       logo: { kind: 'manual' as const },
       reconnectTo: null,
       sats: Number(account.balance),
@@ -202,7 +202,11 @@ export function AccountFilter({
               borderRadius="control"
               border="1px solid"
               borderColor={
-                selected.has(account.id) ? 'neutral.700' : account.status !== null ? 'warning.300' : 'neutral.200'
+                selected.has(account.id)
+                  ? 'neutral.700'
+                  : account.status?.needsAction === true
+                    ? 'warning.300'
+                    : 'neutral.200'
               }
               bg={selected.has(account.id) ? 'neutral.50' : 'shades.0'}
               cursor="pointer"
@@ -258,7 +262,7 @@ export function AccountFilter({
                   <AccountSharePie sats={account.sats} totalSats={totalSats} />
                 </Box>
               )}
-              {account.status !== null && <StatusBadge label={account.status} />}
+              {account.status !== null && <StatusBadge {...account.status} />}
             </Box>
           </Box>
         ),
@@ -587,7 +591,7 @@ function AccountLogoMark({ logo, muted = false }: { logo: AccountLogo; muted?: b
         boxSize={size}
         flexShrink={0}
         borderRadius="6px"
-        bg="warning.50"
+        bg="neutral.100"
         align="center"
         justify="center"
         aria-hidden="true"
@@ -684,7 +688,7 @@ function HeaderIconButton({
 
 function ManualNoteIcon({ boxSize }: { boxSize: string }): JSX.Element {
   return (
-    <Icon viewBox="0 0 24 24" color="warning.500" boxSize={boxSize} aria-hidden="true">
+    <Icon viewBox="0 0 24 24" color="neutral.600" boxSize={boxSize} aria-hidden="true">
       <path
         d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
         stroke="currentColor"
@@ -707,7 +711,19 @@ function ManualNoteIcon({ boxSize }: { boxSize: string }): JSX.Element {
   )
 }
 
-function StatusBadge({ label }: { label: string }): JSX.Element {
+function getClaimStatus(claim: ClaimDto): { label: string; needsAction: boolean } | null {
+  switch (ensureClaimStatusNotExpired(claim)) {
+    case 'pending':
+      return { label: 'Pending', needsAction: true }
+    case 'unverified':
+      return { label: 'Unverified', needsAction: false }
+    case 'verified':
+    case 'expired':
+      return null
+  }
+}
+
+function StatusBadge({ label, needsAction }: { label: string; needsAction: boolean }): JSX.Element {
   return (
     <Text
       as="span"
@@ -716,14 +732,14 @@ function StatusBadge({ label }: { label: string }): JSX.Element {
       left="50%"
       transform="translateX(-50%)"
       px={2}
-      bg="warning.50"
+      bg={needsAction ? 'warning.50' : 'neutral.50'}
       border="1px solid"
-      borderColor="warning.300"
+      borderColor={needsAction ? 'warning.300' : 'neutral.300'}
       borderRadius="full"
       whiteSpace="nowrap"
       textStyle="label/xs"
       fontWeight="semibold"
-      color="warning.700"
+      color={needsAction ? 'warning.700' : 'neutral.600'}
       pointerEvents="none"
     >
       {label}

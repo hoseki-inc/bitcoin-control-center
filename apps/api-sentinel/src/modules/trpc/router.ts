@@ -31,7 +31,7 @@ import type { SupportedHardwareWallet, SupportedHardwareWalletDisplayName } from
 import { TRPCError } from '@trpc/server'
 import * as bip322 from 'bip322-js'
 import { Decimal } from 'decimal.js'
-import { and, desc, eq, isNotNull, isNull, lte, ne, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNotNull, isNull, lte, sql } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
 import { z } from 'zod'
 import type { SentinelDb, SentinelTx } from '../../db/drizzle'
@@ -459,11 +459,17 @@ const registryRouter = t.router({
     list: protectedProcedure
       .input(z.object({ excludePending: z.boolean().optional() }).optional())
       .query(async ({ ctx, input }) => {
+        // Leaves out every account whose ownership is unproven: pending and unverified ones.
         const excludePending = input?.excludePending ?? false
         const rows = await ctx.app.database
           .select({ id: accountTable.id })
           .from(accountTable)
-          .where(and(isNull(accountTable.deletedAt), excludePending ? ne(accountTable.status, 'pending') : undefined))
+          .where(
+            and(
+              isNull(accountTable.deletedAt),
+              excludePending ? inArray(accountTable.status, ['verified', 'expired']) : undefined,
+            ),
+          )
           .orderBy(desc(accountTable.createdAt))
         const claims = await Promise.all(rows.map(async (row) => getFullClaimDto(ctx.app.database, row.id)))
         return claims.filter((claim): claim is ClaimDto => claim !== null)
@@ -566,6 +572,23 @@ const registryRouter = t.router({
         }
       }),
 
+    /** Track an account someone started proving but chose to track instead. Other accounts keep their status. */
+    track: protectedProcedure.input(z.object({ id: z.string() })).mutation(async ({ ctx, input }) => {
+      const db = ctx.app.database
+      await db
+        .update(accountTable)
+        .set({ status: 'unverified' })
+        .where(and(eq(accountTable.id, input.id), eq(accountTable.status, 'pending')))
+      const [row] = await db
+        .select({ id: accountTable.id, status: accountTable.status })
+        .from(accountTable)
+        .where(eq(accountTable.id, input.id))
+      if (!row) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Claim not found' })
+      }
+      return row
+    }),
+
     updateKeystore: protectedProcedure
       .input(
         z.object({
@@ -573,13 +596,14 @@ const registryRouter = t.router({
           label: z.string().min(1),
           wallet: supportedHardwareWalletSchema.nullable().optional(),
           model: z.string().nullable().optional(),
+          derivationPath: DerivationPathString.nullable().optional(),
         }),
       )
       .mutation(async ({ ctx, input }) => {
         const db = ctx.app.database
         const updated = await db
           .update(keystoreTable)
-          .set({ label: input.label, wallet: input.wallet, model: input.model })
+          .set({ label: input.label, wallet: input.wallet, model: input.model, derivationPath: input.derivationPath })
           .where(eq(keystoreTable.id, input.id))
           .returning()
         const ks = updated[0]
@@ -596,6 +620,8 @@ const registryRouter = t.router({
             network: z.string(),
             account: checkedSinglesigAccountDescriptorSchema,
             displayName: z.string().min(1),
+            /** Track the balance without proving ownership. */
+            trackOnly: z.boolean().optional(),
             keystore: z.object({
               label: z.string().min(1),
               wallet: supportedHardwareWalletSchema.nullable(),
@@ -634,7 +660,7 @@ const registryRouter = t.router({
               network,
               descriptor: input.account,
               displayName: input.displayName,
-              status: 'pending',
+              status: input.trackOnly === true ? 'unverified' : 'pending',
               createdAt: now,
             })
             await db.insert(keystoreTable).values({
@@ -665,6 +691,8 @@ const registryRouter = t.router({
             network: z.string(),
             account: checkedMultisigAccountDescriptorSchema,
             displayName: z.string().min(1),
+            /** Track the balance without proving ownership. */
+            trackOnly: z.boolean().optional(),
             keystores: z.array(
               z.object({
                 label: z.string().min(1),
@@ -706,7 +734,7 @@ const registryRouter = t.router({
               network,
               descriptor: input.account,
               displayName: input.displayName,
-              status: 'pending',
+              status: input.trackOnly === true ? 'unverified' : 'pending',
               createdAt: now,
             })
             for (const ks of input.keystores) {

@@ -25,5 +25,5 @@ export const statementIdPrefix = 'st_stmt'
 export const StatementIdSchema = createHosidSchema(statementIdPrefix)
 export type StatementId = z.infer<typeof StatementIdSchema>
 
-export type ClaimStatus = 'pending' | 'verified' | 'expired'
+export type ClaimStatus = 'pending' | 'unverified' | 'verified' | 'expired'
 export type ClaimAccessStatus = 'active' | 'inactive' | 'disconnected'

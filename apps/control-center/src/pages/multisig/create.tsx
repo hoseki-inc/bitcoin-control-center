@@ -17,7 +17,33 @@ import { MultisigAnimation } from '../../components/multisig/multisig-animation'
 import { MultisigFromDescriptor } from '../../components/multisig/multisig-from-descriptor'
 import { parseWalletExport } from '../../lib/multisig/wallet-export-parser'
 import { trpc } from '../../trpc'
-import type { CreateMultisigClaimInput, CreateMultisigKeystoreInput } from '../../trpc/server-types'
+import type { ClaimDto, CreateMultisigClaimInput, CreateMultisigKeystoreInput } from '../../trpc/server-types'
+
+/** Where an imported multisig that's already in Control Center opens. */
+export function reconnectedMultisigPath(claim: { id: string; status: ClaimDto['status'] }): string {
+  // Tracked accounts haven't been proven yet, so they go to signing like pending ones.
+  const needsSigning = claim.status === 'pending' || claim.status === 'unverified'
+  return needsSigning ? `/multisig/${claim.id}` : `/accounts/${claim.id}`
+}
+
+/**
+ * Key paths to fill in on an imported multisig that's already in Control Center. A wallet tracked from a descriptor
+ * without key origins has none, and hardware wallets need them to sign.
+ */
+export function missingKeyPaths(
+  claim: Pick<ClaimDto, 'status' | 'keystores'>,
+  imported: Pick<CreateMultisigKeystoreInput, 'publicKey' | 'derivationPath'>[],
+): { id: ClaimDto['keystores'][number]['id']; label: string; derivationPath: string }[] {
+  if (claim.status !== 'pending' && claim.status !== 'unverified') {
+    return []
+  }
+  return claim.keystores.flatMap((keystore) => {
+    const match = imported.find((key) => key.publicKey === keystore.xpub.toString())
+    return keystore.derivationPath === null && match?.derivationPath != null
+      ? [{ id: keystore.id, label: keystore.label, derivationPath: match.derivationPath }]
+      : []
+  })
+}
 
 export function MultisigCreatePage(): JSX.Element {
   const navigate = useNavigate()
@@ -28,6 +54,7 @@ export function MultisigCreatePage(): JSX.Element {
   const trpcUtils = trpc.useUtils()
   const createMultisigClaimMutation = trpc.portalProve.registry.claims.create.multisig.useMutation()
   const updateClaimMutation = trpc.portalProve.registry.claims.update.useMutation()
+  const updateKeystoreMutation = trpc.portalProve.registry.claims.updateKeystore.useMutation()
 
   async function handleClaimCreation(updatedName: string) {
     if (!detectedWallet) {
@@ -42,7 +69,7 @@ export function MultisigCreatePage(): JSX.Element {
     // Try to get existing claim first
     const existingClaimResult = await Result.fromPromise(
       trpcUtils.portalProve.registry.claims.get.byAccount.fetch({
-        network: 'bitcoin_mainnet',
+        network: detectedWallet.network,
         account: detectedWallet.account,
       }),
     )
@@ -60,8 +87,17 @@ export function MultisigCreatePage(): JSX.Element {
       }
 
       await Result.fromPromise(updateClaimMutation.mutateAsync({ id: claim.id, displayName: updatedName }))
+        .andThenAsync(async (data) =>
+          Result.fromPromise(
+            Promise.all(
+              missingKeyPaths(claim, detectedWallet.keystores).map(async (update) =>
+                updateKeystoreMutation.mutateAsync(update),
+              ),
+            ).then(async () => trpcUtils.portalProve.registry.claims.invalidate()),
+          ).map(() => data),
+        )
         .andThen((data) => {
-          void navigate(data.status === 'pending' ? `/multisig/${claim.id}` : `/accounts/${claim.id}`)
+          void navigate(reconnectedMultisigPath(data))
           return Ok()
         })
         .inspectErr((err) => {
@@ -262,7 +298,7 @@ function parseAndMapWalletFile(rawContent: string, fileType: string): Result<Cre
   return Ok({
     displayName: parsedWallet.label ?? `${parsedWallet.walletType ?? 'Imported Multisig'} Wallet`,
     account: account.descriptor(),
-    network: 'bitcoin_mainnet',
+    network: account.network().toString(),
     keystores,
   })
 }

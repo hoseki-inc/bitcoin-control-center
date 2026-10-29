@@ -125,7 +125,7 @@ function ClaimDetailsBody({
     return <Alert status="error">No keystore found</Alert>
   }
 
-  if (!isMultisig && !claim.isVerified) {
+  if (!isMultisig && claim.status === 'pending') {
     return (
       <>
         <ResumeSinglesigFlow wallet={singleKeystore.wallet} model={singleKeystore.model} />
@@ -165,6 +165,9 @@ function StatusDot({ status }: { status: ClaimDto['status'] }) {
   switch (status) {
     case 'pending':
       color = 'warning.600'
+      break
+    case 'unverified':
+      color = 'neutral.400'
       break
     case 'expired':
       color = 'error.600'
