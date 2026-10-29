@@ -237,7 +237,16 @@ function Intro({ onBack, onNext }: { onBack: () => void; onNext: () => void }) {
         </chakra.ul>
       </Box>
 
-      <BitkeyUnverifiedNote />
+      {/* Plain text in gray rather than a tip box, so it reads like the rest of the intro. */}
+      <Box>
+        <Text textStyle="text/md" color="neutral.600" fontWeight="medium">
+          Unverified
+        </Text>
+        <Text textStyle="text/md" color="neutral.600">
+          Bitkey can’t sign messages yet, so Control Center can’t confirm this wallet is yours. You’ll still see its
+          balance and history. Statements only include verified accounts, so this one is left out for now.
+        </Text>
+      </Box>
 
       <WizardFooter
         leftButton={
@@ -395,7 +404,7 @@ function ConfirmBitkey({
         </FormControl>
 
         <Box mt={4}>
-          <BitkeyUnverifiedNote isBrief />
+          <BitkeyUnverifiedNote />
         </Box>
 
         <WizardFooter
