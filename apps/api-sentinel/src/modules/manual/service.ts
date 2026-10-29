@@ -1,6 +1,6 @@
 import { Err, Ok } from '@hoseki/packages/result'
 import type { Result } from '@hoseki/packages/result'
-import { asc, desc, eq, inArray } from 'drizzle-orm'
+import { and, desc, eq, gt, gte, inArray, lte, sql } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
 import type { Logger } from 'pino'
 import type { SentinelDb, SentinelTx } from '../../db/drizzle'
@@ -91,6 +91,15 @@ export class ManualService {
         .update(manualAccounts)
         .set({ balanceSats: args.balanceSats, balanceAsOf: args.balanceAsOf })
         .where(eq(manualAccounts.id, args.accountId))
+      // The new balance holds from its date on, replacing any saved after it.
+      await tx
+        .delete(manualBalanceSnapshots)
+        .where(
+          and(
+            eq(manualBalanceSnapshots.accountId, args.accountId),
+            gt(manualBalanceSnapshots.timestamp, args.balanceAsOf),
+          ),
+        )
       await this.insertSnapshot(tx, args.accountId, args.balanceSats, args.balanceAsOf)
       this.logger.info({ accountId: args.accountId, balanceSats: args.balanceSats }, 'Manual account balance updated')
       return Ok({ ...account, balanceSats: args.balanceSats, balanceAsOf: args.balanceAsOf })
@@ -161,6 +170,7 @@ export class ManualService {
           .update(manualAccounts)
           .set({ balanceSats: newBalance.toString(), balanceAsOf: args.transactedAt })
           .where(eq(manualAccounts.id, args.accountId))
+        await this.addToSavedBalances(tx, args.accountId, args.transactedAt, signedAmount)
       }
       await tx.insert(manualTransactions).values({
         id,
@@ -171,7 +181,6 @@ export class ManualService {
         note: args.note ?? null,
         createdAt: now,
       })
-      await this.insertSnapshot(tx, args.accountId, newBalance.toString(), args.transactedAt)
       if (args.addToBalance === true) {
         this.logger.info(
           { accountId: args.accountId, oldBalance: currentBalance.toString(), newBalance: newBalance.toString() },
@@ -212,40 +221,122 @@ export class ManualService {
       if (!account) {
         return Err(new Error('Manual account not found'))
       }
-      const newBalance = BigInt(account.balanceSats) - this.getSignedAmount(row.type, BigInt(row.amountSats))
-      const now = new Date().toISOString()
+      const signedAmount = this.getSignedAmount(row.type, BigInt(row.amountSats))
+      const newBalance = BigInt(account.balanceSats) - signedAmount
       await tx.delete(manualTransactions).where(eq(manualTransactions.id, transactionId))
       await tx
         .update(manualAccounts)
         .set({ balanceSats: newBalance.toString() })
         .where(eq(manualAccounts.id, row.accountId))
-      await this.insertSnapshot(tx, row.accountId, newBalance.toString(), now)
+      await this.addToSavedBalances(tx, row.accountId, row.transactedAt, -signedAmount)
       this.logger.info({ transactionId, accountId: row.accountId }, 'Manual transaction deleted')
       return Ok(undefined)
     })
   }
 
-  public async getTransactionEntries(accountIds?: string[]): Promise<Array<{ timestamp: Date; value: bigint }>> {
+  /**
+   * Balance changes for the portfolio chart. Each saved balance is what the
+   * account held from its date on; transactions logged before the first one
+   * show how the account got there.
+   */
+  public async getHistoryEntries(accountIds?: string[]): Promise<Array<{ timestamp: Date; value: bigint }>> {
     if (accountIds?.length === 0) {
       return []
     }
-    const rows = await this.db
-      .select({
-        type: manualTransactions.type,
-        amountSats: manualTransactions.amountSats,
-        transactedAt: manualTransactions.transactedAt,
-      })
-      .from(manualTransactions)
-      .where(accountIds ? inArray(manualTransactions.accountId, accountIds) : undefined)
-      .orderBy(asc(manualTransactions.transactedAt))
-    return rows.map((row) => ({
-      timestamp: new Date(row.transactedAt),
-      value: this.getSignedAmount(row.type, BigInt(row.amountSats)),
-    }))
+    const [transactions, snapshots] = await Promise.all([
+      this.db
+        .select({
+          accountId: manualTransactions.accountId,
+          type: manualTransactions.type,
+          amountSats: manualTransactions.amountSats,
+          transactedAt: manualTransactions.transactedAt,
+        })
+        .from(manualTransactions)
+        .where(accountIds ? inArray(manualTransactions.accountId, accountIds) : undefined),
+      this.db
+        .select({
+          accountId: manualBalanceSnapshots.accountId,
+          balanceSats: manualBalanceSnapshots.balanceSats,
+          timestamp: manualBalanceSnapshots.timestamp,
+        })
+        .from(manualBalanceSnapshots)
+        .where(accountIds ? inArray(manualBalanceSnapshots.accountId, accountIds) : undefined),
+    ])
+    // A transaction sorts before a balance saved at the same time.
+    const events = [
+      ...transactions.map((row) => ({
+        accountId: row.accountId,
+        time: new Date(row.transactedAt).getTime(),
+        order: 0,
+        delta: this.getSignedAmount(row.type, BigInt(row.amountSats)),
+        balance: null,
+      })),
+      ...snapshots.map((row) => ({
+        accountId: row.accountId,
+        time: new Date(row.timestamp).getTime(),
+        order: 1,
+        delta: 0n,
+        balance: BigInt(row.balanceSats),
+      })),
+    ].sort((a, b) => a.time - b.time || a.order - b.order)
+
+    const balances = new Map<string, bigint>()
+    const savedBalanceAccounts = new Set<string>()
+    const entries: Array<{ timestamp: Date; value: bigint }> = []
+    for (const event of events) {
+      if (event.balance === null && savedBalanceAccounts.has(event.accountId)) {
+        continue // Saved balances already include later transactions.
+      }
+      if (event.balance !== null) {
+        savedBalanceAccounts.add(event.accountId)
+      }
+      const previous = balances.get(event.accountId) ?? 0n
+      const next = event.balance ?? previous + event.delta
+      balances.set(event.accountId, next)
+      if (next !== previous) {
+        entries.push({ timestamp: new Date(event.time), value: next - previous })
+      }
+    }
+    return entries
   }
 
-  public async recordSnapshot(accountId: string, balanceSats: string, timestamp: string): Promise<void> {
-    await this.insertSnapshot(this.db, accountId, balanceSats, timestamp)
+  /** Saves the account's current balance, unless a balance dated later was saved since `timestamp`. */
+  public async recordSnapshot(accountId: string, timestamp: string): Promise<void> {
+    await this.db.transaction(async (tx) => {
+      const account = await this.getAccount(accountId, tx)
+      const [later] = await tx
+        .select({ id: manualBalanceSnapshots.id })
+        .from(manualBalanceSnapshots)
+        .where(and(eq(manualBalanceSnapshots.accountId, accountId), gt(manualBalanceSnapshots.timestamp, timestamp)))
+        .limit(1)
+      if (account && !later) {
+        await this.insertSnapshot(tx, accountId, account.balanceSats, timestamp)
+      }
+    })
+  }
+
+  /**
+   * Applies a balance change dated `timestamp` to every balance saved from then on, and saves
+   * the changed balance at that date. Before the first saved balance, the transaction itself
+   * charts the change.
+   */
+  private async addToSavedBalances(tx: SentinelTx, accountId: string, timestamp: string, delta: bigint): Promise<void> {
+    const [atOrBefore] = await tx
+      .select({ timestamp: manualBalanceSnapshots.timestamp, balanceSats: manualBalanceSnapshots.balanceSats })
+      .from(manualBalanceSnapshots)
+      .where(and(eq(manualBalanceSnapshots.accountId, accountId), lte(manualBalanceSnapshots.timestamp, timestamp)))
+      .orderBy(desc(manualBalanceSnapshots.timestamp))
+      .limit(1)
+    await tx
+      .update(manualBalanceSnapshots)
+      .set({
+        balanceSats: sql`cast(max(0, cast(${manualBalanceSnapshots.balanceSats} as integer) + cast(${delta.toString()} as integer)) as text)`,
+      })
+      .where(and(eq(manualBalanceSnapshots.accountId, accountId), gte(manualBalanceSnapshots.timestamp, timestamp)))
+    if (atOrBefore && atOrBefore.timestamp !== timestamp) {
+      const balance = BigInt(atOrBefore.balanceSats) + delta
+      await this.insertSnapshot(tx, accountId, (balance < 0n ? 0n : balance).toString(), timestamp)
+    }
   }
 
   private async insertSnapshot(

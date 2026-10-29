@@ -8,6 +8,13 @@ import {
   Heading,
   Icon,
   Input,
+  Modal,
+  ModalBody,
+  ModalCloseButton,
+  ModalContent,
+  ModalFooter,
+  ModalHeader,
+  ModalOverlay,
   Select,
   Stack,
   Table,
@@ -17,6 +24,7 @@ import {
   Th,
   Thead,
   Tr,
+  useDisclosure,
 } from '@chakra-ui/react'
 import { getRecordValue } from '@hoseki/packages/lib'
 import { ErrorBanner } from '@hoseki/packages/ui/design-system'
@@ -27,6 +35,7 @@ import { Link, useNavigate, useParams } from 'react-router'
 import { toast } from 'sonner'
 import { AccountDetailsSkeleton } from '../../../components/loading/page-skeletons'
 import { trpc } from '../../../trpc'
+import { localDateToIso, todayLocalDate } from '../../../utils/local-date'
 
 const TX_TYPE_LABELS = {
   buy: 'Buy',
@@ -41,15 +50,16 @@ export function ManualAccountDetailsPage(): JSX.Element {
   const utils = trpc.useUtils()
 
   const [isDeleting, setIsDeleting] = useState(false)
+  const removeConfirm = useDisclosure()
 
   // ─── Balance update form ────────────────────────────────────────
   const [newBtcAmount, setNewBtcAmount] = useState('')
-  const [newBalanceDate, setNewBalanceDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [newBalanceDate, setNewBalanceDate] = useState(todayLocalDate)
 
   // ─── Transaction form ───────────────────────────────────────────
   const [txType, setTxType] = useState<'buy' | 'sell' | 'transfer_in' | 'transfer_out'>('buy')
   const [txAmount, setTxAmount] = useState('')
-  const [txDate, setTxDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [txDate, setTxDate] = useState(todayLocalDate)
   const [txNote, setTxNote] = useState('')
   const [txAddToBalance, setTxAddToBalance] = useState(false)
 
@@ -100,7 +110,7 @@ export function ManualAccountDetailsPage(): JSX.Element {
       await updateBalanceMutation.mutateAsync({
         accountId,
         balanceSats,
-        balanceAsOf: new Date(newBalanceDate + 'T12:00:00').toISOString(),
+        balanceAsOf: localDateToIso(newBalanceDate),
       })
       await invalidateAll()
       setNewBtcAmount('')
@@ -120,7 +130,7 @@ export function ManualAccountDetailsPage(): JSX.Element {
         accountId,
         type: txType,
         amountSats,
-        transactedAt: new Date(txDate + 'T12:00:00').toISOString(),
+        transactedAt: localDateToIso(txDate),
         note: txNote || undefined,
         addToBalance: txAddToBalance,
       })
@@ -166,16 +176,44 @@ export function ManualAccountDetailsPage(): JSX.Element {
         <TopBar.Item as={Link} to="/accounts">
           Back to Accounts
         </TopBar.Item>
-        <TopBar.Item
-          as="button"
-          color="error.600"
-          onClick={() => {
-            void handleDelete()
-          }}
-        >
-          {isDeleting ? 'Removing...' : 'Remove Account'}
+        <TopBar.Item as="button" color="error.600" onClick={removeConfirm.onOpen}>
+          Remove Account
         </TopBar.Item>
       </TopBar>
+
+      <Modal isOpen={removeConfirm.isOpen} onClose={removeConfirm.onClose} isCentered>
+        <ModalOverlay />
+        <ModalContent>
+          <ModalHeader>
+            <Text textStyle="text/lg" color="neutral.900">
+              Remove {account.displayName}?
+            </Text>
+          </ModalHeader>
+          <ModalCloseButton />
+          <ModalBody>
+            <Text textStyle="text/sm" color="neutral.600">
+              It will be removed from all your charts and totals, and its balance history and transactions will be
+              deleted.
+            </Text>
+          </ModalBody>
+          <ModalFooter gap={2}>
+            <Button variant="outline" onClick={removeConfirm.onClose} size="md" flex={1} isDisabled={isDeleting}>
+              Cancel
+            </Button>
+            <Button
+              variant="error"
+              size="md"
+              flex={1}
+              isLoading={isDeleting}
+              onClick={() => {
+                void handleDelete()
+              }}
+            >
+              Remove
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
 
       <Stack spacing={6}>
         {/* Account header */}

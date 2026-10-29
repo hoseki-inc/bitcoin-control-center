@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { HoldingsAdded, HoldingsAdding, afterAtLeastASecond } from '../../../components/claims/holdings-added'
 import { parseNavigationState } from '../../../lib/navigation-state'
 import { trpc } from '../../../trpc'
+import { localDateToIso, todayLocalDate } from '../../../utils/local-date'
 
 export function ClaimsVerifyManualPage(): JSX.Element {
   const location = useLocation()
@@ -14,7 +15,7 @@ export function ClaimsVerifyManualPage(): JSX.Element {
 
   const [displayName, setDisplayName] = useState('')
   const [btcAmount, setBtcAmount] = useState('')
-  const [balanceDate, setBalanceDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [balanceDate, setBalanceDate] = useState(todayLocalDate)
 
   const [isSaving, setIsSaving] = useState(false)
   const [added, setAdded] = useState<{ id: string; balance: string | null } | null>(null)
@@ -32,7 +33,7 @@ export function ClaimsVerifyManualPage(): JSX.Element {
     setIsSaving(true)
     try {
       const balanceSats = Math.round(Number(btcAmount) * 1e8).toString()
-      const balanceAsOf = new Date(balanceDate).toISOString()
+      const balanceAsOf = localDateToIso(balanceDate)
       const result = await afterAtLeastASecond(
         createMutation.mutateAsync({
           displayName: displayName.trim(),
