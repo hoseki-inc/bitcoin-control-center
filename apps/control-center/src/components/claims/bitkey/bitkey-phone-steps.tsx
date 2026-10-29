@@ -49,7 +49,7 @@ export const bitkeyExportSteps: BitkeyExportStep[] = [
   },
   {
     title: 'Send It to This Device',
-    body: 'Tap Download XPUB bundle. Copy the text, or AirDrop it to this device, then paste it on the next screen. Avoid email, which keeps copies on mail servers.',
+    body: 'Tap Download XPUB bundle, then copy the text. You’ll paste it on the next screen. Avoid sending it by email, which keeps copies on mail servers.',
   },
 ]
 

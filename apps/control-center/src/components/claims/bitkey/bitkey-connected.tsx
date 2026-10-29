@@ -31,6 +31,8 @@ export function BitkeyConnected({ claim }: { claim: ClaimDto }): JSX.Element {
       title="Bitkey Connected!"
       subtitle="Its balance and history now show in Control Center."
       balance={balance}
+      // Gray, not green: the Bitkey is connected but stays unverified.
+      checkTone="neutral"
       badge={
         // Beside the badge, the tooltip doesn't cover View Bitkey.
         <UnverifiedTooltip>

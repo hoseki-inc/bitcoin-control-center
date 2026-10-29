@@ -47,8 +47,8 @@ export function ConnectionPending({ title, hero }: { title: string; hero?: Conne
 }
 
 /**
- * Celebrates a newly connected account: the hero with a green check on its corner, the title, then the balance
- * at full size, counting up from zero once it's known, and at most two actions.
+ * Celebrates a newly connected account: the hero with a check on its corner, the title, then the balance at full
+ * size, counting up from zero once it's known, and at most two actions.
  */
 export function ConnectionSuccess({
   hero,
@@ -56,6 +56,7 @@ export function ConnectionSuccess({
   subtitle,
   balance,
   badge,
+  checkTone,
   primary,
   secondary,
   onClose,
@@ -67,6 +68,8 @@ export function ConnectionSuccess({
   balance?: BalanceState
   /** Shown beneath the balance, such as the account's Verified or Unverified badge. */
   badge?: ReactNode
+  /** Gray for an account that stays unverified; green otherwise. */
+  checkTone?: 'success' | 'neutral'
   primary: ConnectionAction
   secondary?: ConnectionAction
   onClose: () => void
@@ -95,7 +98,7 @@ export function ConnectionSuccess({
           hero={hero}
           badge={
             <Box bg="white" borderRadius="full" p="3px">
-              <SuccessCheck size="52px" />
+              <SuccessCheck size="52px" tone={checkTone} />
             </Box>
           }
         />
