@@ -26,7 +26,7 @@ export function MultisigClaimProperties({ claim, ...props }: { claim: ClaimDto }
           <Text textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={1}>
             Status
           </Text>
-          <UnverifiedTooltip isDisabled={claimStatus !== 'unverified'}>
+          <UnverifiedTooltip isDisabled={!isBitkeyClaim(claim)}>
             {/* A plain box, because the tooltip needs an element it can hold a ref to. */}
             <Box w="fit-content">
               <StatusBadge {...getBadgeConfigForClaim(claimStatus)} />

@@ -874,7 +874,13 @@ const registryRouter = t.router({
           if (!accountRow) {
             throw new TRPCError({ code: 'NOT_FOUND', message: 'Account not found' })
           }
-          if (accountRow.status === 'unverified') {
+          // A Bitkey's keys can't sign messages. A tracked wallet that is also unverified can still be proven.
+          const [bitkeyKeystore] = await db
+            .select({ id: keystoreTable.id })
+            .from(keystoreTable)
+            .where(and(eq(keystoreTable.accountId, input.claimId), eq(keystoreTable.wallet, 'bitkey')))
+            .limit(1)
+          if (bitkeyKeystore) {
             throw new TRPCError({ code: 'BAD_REQUEST', message: 'This account can’t be verified' })
           }
 

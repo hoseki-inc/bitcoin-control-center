@@ -37,7 +37,7 @@ import { SyncIndicator } from '../../components/wallet-balances/sync-indicator'
 import { formatBitcoinNumber, isUsableBtcPrice } from '../../lib/bitcoin-display'
 import { summarizeWalletBalances } from '../../lib/wallet-balances'
 import type { ClaimDto } from '../../trpc/server-types'
-import { ensureClaimStatusNotExpired, mapClaimToClaimCardProps } from '../../utils/claim-utils'
+import { ensureClaimStatusNotExpired, isBitkeyClaim, mapClaimToClaimCardProps } from '../../utils/claim-utils'
 import { isExchangeConnected, needsExchangeReconnect } from '../../utils/exchange-connection-status'
 import {
   type AccountsDataSource,
@@ -416,7 +416,8 @@ export function AccountCard({
             textTransform="none"
           />
         )}
-        <UnverifiedTooltip isDisabled={status !== 'unverified'}>
+        {/* Only a Bitkey's reason is known; a tracked wallet's Unverified badge stays plain. */}
+        <UnverifiedTooltip isDisabled={!isBitkeyClaim(claim)}>
           <Box as="span" ml="auto">
             <StatusBadge status={badgeStatus} label={badgeLabel} size="sm" />
           </Box>
