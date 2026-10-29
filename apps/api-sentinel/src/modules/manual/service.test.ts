@@ -330,6 +330,148 @@ describe('portfolio history entries', () => {
     await expect(history(service)).resolves.toHaveLength(2)
   })
 
+  it('never saves a balance below zero', async () => {
+    const { db, service } = await setup()
+    const account = (
+      await service.createAccount({ displayName: 'Cold', balanceSats: '5000', balanceAsOf: '2026-09-01T12:00:00.000Z' })
+    ).unwrap()
+    await service.recordSnapshot(account.id, '2026-09-03T15:00:00.000Z')
+    await service.addTransaction({
+      accountId: account.id,
+      type: 'sell',
+      amountSats: '8000',
+      transactedAt: '2026-09-02T12:00:00.000Z',
+      addToBalance: true,
+    })
+    expect((await service.getAccount(account.id))?.balanceSats).toBe('0')
+    await expect(
+      db
+        .select({ timestamp: manualBalanceSnapshots.timestamp, balanceSats: manualBalanceSnapshots.balanceSats })
+        .from(manualBalanceSnapshots)
+        .orderBy(manualBalanceSnapshots.timestamp),
+    ).resolves.toEqual([
+      { timestamp: '2026-09-01T12:00:00.000Z', balanceSats: '5000' },
+      { timestamp: '2026-09-02T12:00:00.000Z', balanceSats: '0' },
+      { timestamp: '2026-09-03T15:00:00.000Z', balanceSats: '0' },
+    ])
+    await expect(history(service)).resolves.toEqual([
+      ['2026-09-01T12:00:00.000Z', '5000'],
+      ['2026-09-02T12:00:00.000Z', '-5000'],
+    ])
+  })
+
+  it('counts a transaction logged at the same time as the first balance as part of it', async () => {
+    const { service } = await setup()
+    const account = (
+      await service.createAccount({ displayName: 'Cold', balanceSats: '5000', balanceAsOf: '2026-09-01T12:00:00.000Z' })
+    ).unwrap()
+    await service.addTransaction({
+      accountId: account.id,
+      type: 'buy',
+      amountSats: '1000',
+      transactedAt: '2026-09-01T12:00:00.000Z',
+    })
+    const total = (await service.getHistoryEntries()).reduce((sum, entry) => sum + entry.value, 0n)
+    expect(total).toBe(5000n)
+  })
+
+  it('collects nothing for an account that no longer exists', async () => {
+    const { db, service } = await setup()
+    await service.recordSnapshot('missing', '2026-09-01T12:00:00.000Z')
+    await expect(db.select().from(manualBalanceSnapshots)).resolves.toEqual([])
+  })
+
+  it('shifts later balances without saving one at the date when nothing is saved before it', async () => {
+    const { db, service } = await setup()
+    const account = (
+      await service.createAccount({ displayName: 'Cold', balanceSats: '5000', balanceAsOf: '2026-09-10T12:00:00.000Z' })
+    ).unwrap()
+    await service.recordSnapshot(account.id, '2026-09-11T15:00:00.000Z')
+    await service.addTransaction({
+      accountId: account.id,
+      type: 'buy',
+      amountSats: '1000',
+      transactedAt: '2026-09-01T12:00:00.000Z',
+      addToBalance: true,
+    })
+    await expect(
+      db
+        .select({ timestamp: manualBalanceSnapshots.timestamp, balanceSats: manualBalanceSnapshots.balanceSats })
+        .from(manualBalanceSnapshots)
+        .orderBy(manualBalanceSnapshots.timestamp),
+    ).resolves.toEqual([
+      { timestamp: '2026-09-10T12:00:00.000Z', balanceSats: '6000' },
+      { timestamp: '2026-09-11T15:00:00.000Z', balanceSats: '6000' },
+    ])
+  })
+
+  it('keeps one saved balance per time, with the latest value', async () => {
+    const { db, service } = await setup()
+    const account = (
+      await service.createAccount({ displayName: 'Cold', balanceSats: '5000', balanceAsOf: '2026-09-01T12:00:00.000Z' })
+    ).unwrap()
+    await service.updateBalance({ accountId: account.id, balanceSats: '7000', balanceAsOf: '2026-09-03T12:00:00.000Z' })
+    await service.updateBalance({ accountId: account.id, balanceSats: '8000', balanceAsOf: '2026-09-03T12:00:00.000Z' })
+    await service.addTransaction({
+      accountId: account.id,
+      type: 'buy',
+      amountSats: '500',
+      transactedAt: '2026-09-04T12:00:00.000Z',
+      addToBalance: true,
+    })
+    // Collection at an existing saved balance's time saves the current balance there.
+    await service.recordSnapshot(account.id, '2026-09-04T12:00:00.000Z')
+    await expect(
+      db
+        .select({ timestamp: manualBalanceSnapshots.timestamp, balanceSats: manualBalanceSnapshots.balanceSats })
+        .from(manualBalanceSnapshots)
+        .orderBy(manualBalanceSnapshots.timestamp),
+    ).resolves.toEqual([
+      { timestamp: '2026-09-01T12:00:00.000Z', balanceSats: '5000' },
+      { timestamp: '2026-09-03T12:00:00.000Z', balanceSats: '8000' },
+      { timestamp: '2026-09-04T12:00:00.000Z', balanceSats: '8500' },
+    ])
+  })
+
+  it('rejects a balance below the logged transactions and leaves saved balances alone', async () => {
+    const { db, service } = await setup()
+    const account = (
+      await service.createAccount({ displayName: 'Cold', balanceSats: '5000', balanceAsOf: '2026-09-01T12:00:00.000Z' })
+    ).unwrap()
+    await service.addTransaction({
+      accountId: account.id,
+      type: 'buy',
+      amountSats: '3000',
+      transactedAt: '2026-08-01T12:00:00.000Z',
+    })
+    const result = await service.updateBalance({
+      accountId: account.id,
+      balanceSats: '2000',
+      balanceAsOf: '2026-08-15T12:00:00.000Z',
+    })
+    expect(result.unwrapErr().message).toBe('Balance cannot be less than net transaction total (3000 sats)')
+    await expect(
+      db.select({ balanceSats: manualBalanceSnapshots.balanceSats }).from(manualBalanceSnapshots),
+    ).resolves.toEqual([{ balanceSats: '5000' }])
+  })
+
+  it('rejects a logged transaction that would exceed the balance and stores nothing', async () => {
+    const { service } = await setup()
+    const account = (
+      await service.createAccount({ displayName: 'Cold', balanceSats: '5000', balanceAsOf: '2026-09-01T12:00:00.000Z' })
+    ).unwrap()
+    const result = await service.addTransaction({
+      accountId: account.id,
+      type: 'buy',
+      amountSats: '6000',
+      transactedAt: '2026-08-01T12:00:00.000Z',
+    })
+    expect(result.unwrapErr().message).toBe(
+      'Transaction total would exceed the current balance. Check "Add this amount to balance" or update the balance first.',
+    )
+    await expect(service.listTransactions(account.id)).resolves.toEqual([])
+  })
+
   it('keeps each account separate and respects the selection', async () => {
     const { service } = await setup()
     const first = (

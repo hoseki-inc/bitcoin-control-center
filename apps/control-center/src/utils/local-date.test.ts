@@ -20,3 +20,8 @@ it('never returns a time after now for today', () => {
   setNow('2026-10-28T12:15:00.000Z') // 8:15 am in New York
   expect(localDateToIso('2026-10-28')).toBe('2026-10-28T12:15:00.000Z')
 })
+
+it('turns a future day into now', () => {
+  setNow('2026-10-28T12:15:00.000Z')
+  expect(localDateToIso('2026-11-05')).toBe('2026-10-28T12:15:00.000Z')
+})
