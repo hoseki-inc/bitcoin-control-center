@@ -5,6 +5,7 @@ import { formatUsd, toBitcoinAmountDisplayValue } from '@hoseki/packages/ui/util
 import { useGetClaimBalance } from '../../../lib/balances'
 import type { ClaimDto } from '../../../trpc/server-types'
 import { ensureClaimStatusNotExpired, isBitkeyClaim } from '../../../utils/claim-utils'
+import { UnverifiedTooltip } from '../bitkey/bitkey-notes'
 
 export function MultisigClaimProperties({ claim, ...props }: { claim: ClaimDto } & StackProps): JSX.Element {
   const { data: balance, isLoading: isBalanceLoading } = useGetClaimBalance(claim.id)
@@ -25,7 +26,12 @@ export function MultisigClaimProperties({ claim, ...props }: { claim: ClaimDto }
           <Text textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={1}>
             Status
           </Text>
-          <StatusBadge {...getBadgeConfigForClaim(claimStatus)} w="fit-content" />
+          <UnverifiedTooltip isDisabled={claimStatus !== 'unverified'}>
+            {/* A plain box, because the tooltip needs an element it can hold a ref to. */}
+            <Box w="fit-content">
+              <StatusBadge {...getBadgeConfigForClaim(claimStatus)} />
+            </Box>
+          </UnverifiedTooltip>
         </Box>
         <Box w={['50%', '30%']} boxSizing="border-box" pb={[4, 0]}>
           <Text textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={1}>

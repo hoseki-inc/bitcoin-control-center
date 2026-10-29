@@ -144,7 +144,8 @@ function Lockup({ title, subtitle, badge }: { title: string; subtitle?: string; 
 /** The reward: the Bitkey's balance at full size, counting up from zero when the scan finishes. */
 function ConnectedBalance({ claim }: { claim: ClaimDto }) {
   const balanceQuery = useGetClaimBalance(claim.id)
-  const balance = balanceQuery.isSuccess ? balanceQuery.data : null
+  // The scanned balance shows even when the price can't be fetched; only its USD value waits on the price.
+  const balance = balanceQuery.data
   const progress = useCountUpProgress(balance !== null)
   const badge = getBadgeConfigForClaim(claim.status)
 
@@ -152,7 +153,11 @@ function ConnectedBalance({ claim }: { claim: ClaimDto }) {
   let usd: ReactNode = <TextSkeleton width="9ch" />
   if (balance !== null) {
     btc = formatBitcoinNumber(balance.current.mul(progress).floor().div(100_000_000))
-    usd = balance.usd === null ? 'USD unavailable' : formatUsd(balance.usd.mul(progress).toFixed(2))
+    if (balance.usd !== null) {
+      usd = formatUsd(balance.usd.mul(progress).toFixed(2))
+    } else if (!balanceQuery.isLoading) {
+      usd = 'USD unavailable'
+    }
   } else if (!balanceQuery.isLoading) {
     // Sentinel couldn't scan the wallet, so the balance can't be known yet.
     btc = '—'

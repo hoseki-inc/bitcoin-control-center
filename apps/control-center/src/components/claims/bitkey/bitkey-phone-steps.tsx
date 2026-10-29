@@ -60,18 +60,17 @@ const SCREEN_HEIGHT = 844
 const BEZEL = 6
 
 /**
- * The guide's phone on the page: smaller on narrow screens so the arrows under it stay in view.
- * The intro's picture takes the same height, so the text doesn't jump between steps.
+ * The guide’s phone on the page: smaller on narrow screens so the arrows under it stay in view.
  */
-export interface BitkeyPhoneSize {
+interface BitkeyPhoneSize {
   width: number
   height: number
   /** From Bitkey's screen points to page pixels. */
   scale: number
 }
 
-export function useBitkeyPhoneSize(): BitkeyPhoneSize {
-  const width = useBreakpointValue({ base: 184, md: 232 }, { ssr: false }) ?? 232
+function useBitkeyPhoneSize(): BitkeyPhoneSize {
+  const width = useBreakpointValue({ base: 184, md: 200 }, { ssr: false }) ?? 200
   const scale = (width - 2 * BEZEL) / SCREEN_WIDTH
   return { width, height: Math.round(SCREEN_HEIGHT * scale + 2 * BEZEL), scale }
 }

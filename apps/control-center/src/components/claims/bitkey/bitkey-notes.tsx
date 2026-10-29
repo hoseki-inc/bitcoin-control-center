@@ -18,8 +18,9 @@ import { type BitkeyKeyRole, bitkeyKeyLabels } from '@hoseki/packages/wallet'
 import type { ReactNode } from 'react'
 import { BitkeyPhoneThumbnail } from './bitkey-phone-steps'
 
-/** Why a Bitkey shows as Unverified, short enough for a tooltip on its badge. */
-const bitkeyUnverifiedReason = 'Bitkey can’t sign messages yet, so this account isn’t in statements.'
+/** Why a Bitkey stays Unverified: in its note in the connect flow and in the tooltip on its badge. */
+const bitkeyUnverifiedReason =
+  'Bitkey doesn’t support proving ownership of its individual keys, so Control Center can’t verify this wallet is yours. You can still track its balance and history, but your Bitkey won’t be included in statements.'
 
 /**
  * A light note on an Unverified badge or count. It opens beside it, so it doesn't cover the account it explains,
@@ -42,7 +43,7 @@ export function UnverifiedTooltip({
       modifiers={[{ name: 'flip', options: { fallbackPlacements: ['top'] } }]}
       openDelay={250}
       hasArrow
-      maxW="15rem"
+      maxW="20rem"
       px={3}
       py={2}
       textStyle="text/sm"
@@ -55,27 +56,39 @@ export function UnverifiedTooltip({
   )
 }
 
-/**
- * Why a Bitkey stays Unverified, in plain gray text that reads like the rest of the page rather than a tip box.
- * Its size matches the text around it: medium in the connect flow, small on the account page.
- */
-export function BitkeyUnverifiedNote({
-  isBrief = false,
-  size = 'md',
-}: {
-  isBrief?: boolean
-  size?: 'sm' | 'md'
-}): JSX.Element {
-  const textStyle = size === 'sm' ? 'text/sm' : 'text/md'
+/** Drawn like an Unverified account on Portfolio: a gray outline with the Unverified pill on its top edge. */
+export function BitkeyUnverifiedNote(): JSX.Element {
   return (
-    <Box>
-      <Text textStyle={textStyle} color="neutral.600" fontWeight="medium">
+    <Box
+      position="relative"
+      mt={2}
+      px={4}
+      pt={4}
+      pb={3}
+      border="1px solid"
+      borderColor="neutral.400"
+      borderRadius="control"
+    >
+      <Text
+        as="span"
+        position="absolute"
+        top="-9px"
+        left="50%"
+        transform="translateX(-50%)"
+        px={2}
+        bg="neutral.50"
+        border="1px solid"
+        borderColor="neutral.400"
+        borderRadius="full"
+        whiteSpace="nowrap"
+        textStyle="label/xs"
+        fontWeight="semibold"
+        color="neutral.600"
+      >
         Unverified
       </Text>
-      <Text textStyle={textStyle} color="neutral.600">
-        {isBrief
-          ? 'Its balance and history update as usual. Bitkey can’t sign messages yet, so statements leave this account out.'
-          : 'Bitkey can’t sign messages yet, so Control Center can’t confirm this wallet is yours. You’ll still see its balance and history. Statements only include verified accounts, so this one is left out for now.'}
+      <Text textStyle="text/md" color="neutral.800">
+        {bitkeyUnverifiedReason}
       </Text>
     </Box>
   )

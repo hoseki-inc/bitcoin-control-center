@@ -29,7 +29,7 @@ import { trpc } from '../../../trpc'
 import type { ClaimDto } from '../../../trpc/server-types'
 import { BitkeyConnected, BitkeyConnecting } from './bitkey-connected'
 import { BitkeyKeyList, BitkeyUnverifiedNote } from './bitkey-notes'
-import { BitkeyPhoneGuide, bitkeyExportSteps, useBitkeyPhoneSize } from './bitkey-phone-steps'
+import { BitkeyPhoneGuide, bitkeyExportSteps } from './bitkey-phone-steps'
 
 type Step =
   | { kind: 'intro' }
@@ -212,14 +212,9 @@ function StepHeading({ children }: { children: string }) {
 }
 
 function Intro({ onBack, onNext }: { onBack: () => void; onNext: () => void }) {
-  const phone = useBitkeyPhoneSize()
-
   return (
     <Stack gap={4}>
-      {/* The same height as the phone on the next steps, so the text doesn't jump. */}
-      <Box h={`${phone.height}px`} display="grid" placeItems="center">
-        <FloatingBitkeyImage imageHeight={`${Math.round(phone.height * 0.6)}px`} pt={0} pb={0} />
-      </Box>
+      <FloatingBitkeyImage />
 
       <StepHeading>Connect Your Bitkey</StepHeading>
       <Text textStyle="text/md" color="neutral.900">
@@ -395,7 +390,7 @@ function ConfirmBitkey({
         </FormControl>
 
         <Box mt={4}>
-          <BitkeyUnverifiedNote isBrief />
+          <BitkeyUnverifiedNote />
         </Box>
 
         <WizardFooter
