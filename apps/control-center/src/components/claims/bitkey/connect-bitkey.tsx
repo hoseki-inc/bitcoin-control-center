@@ -11,8 +11,7 @@ import {
   chakra,
   keyframes,
 } from '@chakra-ui/react'
-import type { Result } from '@hoseki/packages/result'
-import { FileDropReader, type FileDropState, PageTransition } from '@hoseki/packages/ui/design-system'
+import { PageTransition } from '@hoseki/packages/ui/design-system'
 import { TipAlert } from '@hoseki/packages/ui/design-system/feedback/tip-alert'
 import { monoInputProps } from '@hoseki/packages/ui/utils/bitcoin'
 import {
@@ -234,9 +233,7 @@ function Intro({ onBack, onNext }: { onBack: () => void; onNext: () => void }) {
         </Text>
         <chakra.ul ml={8} textStyle="text/md" color="neutral.900">
           <li>Your phone with the Bitkey app</li>
-          <li>
-            A way to move text from your phone to this device, like AirDrop, or copy and paste if you’re on that phone
-          </li>
+          <li>A way to copy text on your phone and paste it here</li>
         </chakra.ul>
       </Box>
 
@@ -282,31 +279,23 @@ function ExportStep({ index, onBack, onNext }: { index: number; onBack: () => vo
 }
 
 function ImportDescriptor({ onBack, onRead }: { onBack: () => void; onRead: (read: ReadExport) => void }) {
-  const [fileDropStatus, setFileDropStatus] = useState<FileDropState>('ready')
-  const [fileError, setFileError] = useState<string | null>(null)
   const [pasted, setPasted] = useState('')
   const [pasteError, setPasteError] = useState<string | null>(null)
-  // The drop zone reports wrong file types and our own parse errors the same way; only ours are worth showing.
-  const parseError = useRef<Error | null>(null)
-
-  function readText(text: string): Result<ReadExport, Error> {
-    return parseBitkeyExport(text).map((parsed) => ({ text, parsed }))
-  }
 
   return (
     <Stack gap={4}>
       <StepHeading>Add Your Wallet Descriptor</StepHeading>
       <Text textStyle="text/md" color="neutral.900">
-        Paste the text from the Bitkey app, or choose the file if you saved it.
+        Paste the text you copied from the Bitkey app.
       </Text>
 
       <form
         id="bitkey-descriptor-form"
         onSubmit={(event) => {
           event.preventDefault()
-          const result = readText(pasted)
+          const result = parseBitkeyExport(pasted)
           if (result.isOk()) {
-            onRead(result.unwrap())
+            onRead({ text: pasted, parsed: result.unwrap() })
           } else {
             setPasteError(result.unwrapErr().message)
           }
@@ -320,8 +309,6 @@ function ImportDescriptor({ onBack, onRead }: { onBack: () => void; onRead: (rea
             onChange={(event) => {
               setPasted(event.target.value)
               setPasteError(null)
-              setFileDropStatus('ready')
-              setFileError(null)
             }}
             placeholder="External: wsh(sortedmulti(2,…"
             rows={5}
@@ -332,33 +319,6 @@ function ImportDescriptor({ onBack, onRead }: { onBack: () => void; onRead: (rea
           {pasteError !== null && <FormErrorMessage>{pasteError}</FormErrorMessage>}
         </FormControl>
       </form>
-
-      <FileDropReader
-        readAs="text"
-        readyText="Or choose the saved file, or drag it here"
-        invalidText="Choose the text file you saved from the Bitkey app."
-        validText="Success!"
-        validationFn={(content) => {
-          const result = readText(content)
-          parseError.current = result.isErr() ? result.unwrapErr() : null
-          return result
-        }}
-        onValidContentRead={(read) => {
-          setFileError(null)
-          onRead(read)
-        }}
-        onInvalidContentRead={(error) => {
-          setFileError(error === parseError.current ? error.message : null)
-        }}
-        acceptedFileTypes={['txt']}
-        status={fileDropStatus}
-        onStatusChange={setFileDropStatus}
-      />
-      {fileError !== null && (
-        <Text role="alert" textStyle="text/sm" color="error.600">
-          {fileError}
-        </Text>
-      )}
 
       <TipAlert title="Keep it private">
         <Text color="neutral.800">
