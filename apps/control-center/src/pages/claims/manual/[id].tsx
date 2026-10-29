@@ -8,6 +8,13 @@ import {
   Heading,
   Icon,
   Input,
+  Modal,
+  ModalBody,
+  ModalCloseButton,
+  ModalContent,
+  ModalFooter,
+  ModalHeader,
+  ModalOverlay,
   Select,
   Stack,
   Table,
@@ -17,6 +24,7 @@ import {
   Th,
   Thead,
   Tr,
+  useDisclosure,
 } from '@chakra-ui/react'
 import { getRecordValue } from '@hoseki/packages/lib'
 import { ErrorBanner } from '@hoseki/packages/ui/design-system'
@@ -42,6 +50,7 @@ export function ManualAccountDetailsPage(): JSX.Element {
   const utils = trpc.useUtils()
 
   const [isDeleting, setIsDeleting] = useState(false)
+  const removeConfirm = useDisclosure()
 
   // ─── Balance update form ────────────────────────────────────────
   const [newBtcAmount, setNewBtcAmount] = useState('')
@@ -167,16 +176,44 @@ export function ManualAccountDetailsPage(): JSX.Element {
         <TopBar.Item as={Link} to="/accounts">
           Back to Accounts
         </TopBar.Item>
-        <TopBar.Item
-          as="button"
-          color="error.600"
-          onClick={() => {
-            void handleDelete()
-          }}
-        >
-          {isDeleting ? 'Removing...' : 'Remove Account'}
+        <TopBar.Item as="button" color="error.600" onClick={removeConfirm.onOpen}>
+          Remove Account
         </TopBar.Item>
       </TopBar>
+
+      <Modal isOpen={removeConfirm.isOpen} onClose={removeConfirm.onClose} isCentered>
+        <ModalOverlay />
+        <ModalContent>
+          <ModalHeader>
+            <Text textStyle="text/lg" color="neutral.900">
+              Remove {account.displayName}?
+            </Text>
+          </ModalHeader>
+          <ModalCloseButton />
+          <ModalBody>
+            <Text textStyle="text/sm" color="neutral.600">
+              It will be removed from all your charts and totals, and its balance history and transactions will be
+              deleted.
+            </Text>
+          </ModalBody>
+          <ModalFooter gap={2}>
+            <Button variant="outline" onClick={removeConfirm.onClose} size="md" flex={1} isDisabled={isDeleting}>
+              Cancel
+            </Button>
+            <Button
+              variant="error"
+              size="md"
+              flex={1}
+              isLoading={isDeleting}
+              onClick={() => {
+                void handleDelete()
+              }}
+            >
+              Remove
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
 
       <Stack spacing={6}>
         {/* Account header */}
