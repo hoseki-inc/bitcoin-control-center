@@ -27,6 +27,7 @@ import { Link, useNavigate, useParams } from 'react-router'
 import { toast } from 'sonner'
 import { AccountDetailsSkeleton } from '../../../components/loading/page-skeletons'
 import { trpc } from '../../../trpc'
+import { localDateToIso, todayLocalDate } from '../../../utils/local-date'
 
 const TX_TYPE_LABELS = {
   buy: 'Buy',
@@ -44,12 +45,12 @@ export function ManualAccountDetailsPage(): JSX.Element {
 
   // ─── Balance update form ────────────────────────────────────────
   const [newBtcAmount, setNewBtcAmount] = useState('')
-  const [newBalanceDate, setNewBalanceDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [newBalanceDate, setNewBalanceDate] = useState(todayLocalDate)
 
   // ─── Transaction form ───────────────────────────────────────────
   const [txType, setTxType] = useState<'buy' | 'sell' | 'transfer_in' | 'transfer_out'>('buy')
   const [txAmount, setTxAmount] = useState('')
-  const [txDate, setTxDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [txDate, setTxDate] = useState(todayLocalDate)
   const [txNote, setTxNote] = useState('')
   const [txAddToBalance, setTxAddToBalance] = useState(false)
 
@@ -100,7 +101,7 @@ export function ManualAccountDetailsPage(): JSX.Element {
       await updateBalanceMutation.mutateAsync({
         accountId,
         balanceSats,
-        balanceAsOf: new Date(newBalanceDate + 'T12:00:00').toISOString(),
+        balanceAsOf: localDateToIso(newBalanceDate),
       })
       await invalidateAll()
       setNewBtcAmount('')
@@ -120,7 +121,7 @@ export function ManualAccountDetailsPage(): JSX.Element {
         accountId,
         type: txType,
         amountSats,
-        transactedAt: new Date(txDate + 'T12:00:00').toISOString(),
+        transactedAt: localDateToIso(txDate),
         note: txNote || undefined,
         addToBalance: txAddToBalance,
       })
