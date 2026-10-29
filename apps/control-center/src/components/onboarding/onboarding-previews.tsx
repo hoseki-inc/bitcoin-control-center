@@ -22,8 +22,9 @@ import { Header, Menu } from '@hoseki/packages/ui/prove-verify-ui/layout/header'
 import { Logo } from '@hoseki/packages/ui/prove-verify-ui/logo'
 import { StatusBadge } from '@hoseki/packages/ui/prove-verify-ui/status-badge'
 import Decimal from 'decimal.js'
-import { EyeIcon, GlobeIcon, HouseIcon, LaptopIcon, LockIcon, SettingsIcon } from 'lucide-react'
+import { EyeIcon, EyeOffIcon, GlobeIcon, HouseIcon, LaptopIcon, LockIcon, SettingsIcon } from 'lucide-react'
 import { type ReactNode, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { PUBLIC_ELECTRUM_HOST } from '../../pages/settings/electrum-connection'
 import { ConnectionRowContent, LIVENESS_COLORS, connectionSummary } from '../../pages/settings/electrum-settings'
 import { STATEMENT_SOURCES, StatementSourceOption } from '../../pages/settings/statement-source-settings'
 import { BitcoinAmount } from '../bitcoin-amount'
@@ -451,15 +452,24 @@ const SAMPLE_ADDRESSES = [
   { address: 'bc1qxw2pv7…9hcl', btc: '0.0800' },
 ]
 
-/** What a lookup tells the server, with the sample wallet's details. */
+/** What a lookup tells the server, with the sample wallet's details. Tor hides only the IP address. */
 const SERVER_SEES = [
-  { label: 'Which addresses are yours', detail: '3 addresses' },
-  { label: 'Their balances and history', detail: '0.8795 BTC' },
-  { label: 'Your IP address', detail: '203.0.113.24' },
+  { label: 'Which addresses are yours', detail: '3 addresses', hiddenByTor: false },
+  { label: 'Their balances and history', detail: '0.8795 BTC', hiddenByTor: false },
+  { label: 'Your IP address', detail: '203.0.113.24', hiddenByTor: true },
 ]
 
-/** A wallet being looked up, and who learns what from it: Blockstream's public server, or your own node. */
-export function ServerPreview({ server }: { server: 'public' | 'own' }): JSX.Element {
+/**
+ * A wallet being looked up, and who learns what from it: Blockstream's public server or your own node,
+ * through Tor or not.
+ */
+export function ServerPreview({
+  server,
+  torEnabled = false,
+}: {
+  server: 'public' | 'own'
+  torEnabled?: boolean
+}): JSX.Element {
   const own = server === 'own'
   return (
     <Stage>
@@ -520,7 +530,7 @@ export function ServerPreview({ server }: { server: 'public' | 'own' }): JSX.Ele
             </Circle>
             <Box minW={0}>
               <Text textStyle="label/md" fontWeight="semibold" color="neutral.900">
-                {own ? 'Your node' : 'electrum.blockstream.info'}
+                {own ? 'Your node' : PUBLIC_ELECTRUM_HOST}
               </Text>
               <Text textStyle="text/xs" color="neutral.600">
                 {own ? 'umbrel.local · Electrum server' : 'Public server · Run by Blockstream'}
@@ -531,19 +541,22 @@ export function ServerPreview({ server }: { server: 'public' | 'own' }): JSX.Ele
             {own ? 'Only you can see' : 'Blockstream can see'}
           </Text>
           <Stack gap={3}>
-            {SERVER_SEES.map(({ label, detail }) => (
-              <HStack key={label} gap={3}>
-                <Box color="neutral.500" flexShrink={0}>
-                  {own ? <LockIcon size={16} /> : <EyeIcon size={16} />}
-                </Box>
-                <Text textStyle="text/sm" color="neutral.900" flex={1}>
-                  {label}
-                </Text>
-                <Text textStyle="text/xs" color="neutral.600">
-                  {detail}
-                </Text>
-              </HStack>
-            ))}
+            {SERVER_SEES.map(({ label, detail, hiddenByTor }) => {
+              const hidden = torEnabled && hiddenByTor
+              return (
+                <HStack key={label} gap={3}>
+                  <Box color="neutral.500" flexShrink={0}>
+                    {hidden ? <EyeOffIcon size={16} /> : own ? <LockIcon size={16} /> : <EyeIcon size={16} />}
+                  </Box>
+                  <Text textStyle="text/sm" color={hidden ? 'neutral.500' : 'neutral.900'} flex={1}>
+                    {label}
+                  </Text>
+                  <Text textStyle="text/xs" color="neutral.600">
+                    {hidden ? 'Hidden by Tor' : detail}
+                  </Text>
+                </HStack>
+              )
+            })}
           </Stack>
         </Card>
       </Inert>

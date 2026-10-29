@@ -104,13 +104,18 @@ async function click(name: string): Promise<void> {
 interface FakeServerChoice extends ElectrumChoice {
   keepPublic: Mock<ElectrumChoice['keepPublic']>
   connectNode: Mock<(details: ConnectionDetails) => Promise<Result<void, Error>>>
+  startTor: Mock<ElectrumChoice['startTor']>
 }
 
 /** A server choice that succeeds unless told otherwise. */
-function fakeServerChoice(connected: Result<void, Error> = Ok(undefined)): FakeServerChoice {
+function fakeServerChoice(
+  connected: Result<void, Error> = Ok(undefined),
+  kept: Result<void, Error> = Ok(undefined),
+): FakeServerChoice {
   return {
-    keepPublic: vi.fn<ElectrumChoice['keepPublic']>(async () => Ok(undefined)),
+    keepPublic: vi.fn<ElectrumChoice['keepPublic']>(async () => kept),
     connectNode: vi.fn(async () => connected),
+    startTor: vi.fn<ElectrumChoice['startTor']>(),
   }
 }
 
@@ -119,6 +124,14 @@ async function choose(value: 'own' | 'public'): Promise<void> {
   assert(radio !== null, `Expected the ${value} choice`)
   await act(async () => {
     radio.click()
+  })
+}
+
+async function toggle(id: string): Promise<void> {
+  const input = document.body.querySelector<HTMLInputElement>(`#${id}`)
+  assert(input !== null, `Expected the ${id} switch`)
+  await act(async () => {
+    input.click()
   })
 }
 
@@ -223,16 +236,57 @@ it('asks desktop for an Electrum server just before the first account', async ()
   await renderTakeover(true, serverChoice)
   await toServerStep()
   expect(document.body.textContent).toContain('Step 5 of 6')
-  // The public server starts chosen, with what that means beneath it.
+  // The public server starts chosen.
   expect(document.body.querySelector<HTMLInputElement>('input[value="public"]')?.checked).toBe(true)
-  expect(document.body.textContent).toContain('Blockstream can see which addresses are yours')
+  // The step's text and preview say what Blockstream sees; only your node gets a line under the choices.
+  expect(document.body.querySelector('#server-consequence')).toBeNull()
   await choose('own')
   expect(document.body.textContent).toContain('Only your node sees your wallets.')
   await choose('public')
   await click('Continue')
-  expect(serverChoice.keepPublic).toHaveBeenCalledTimes(1)
+  expect(serverChoice.keepPublic).toHaveBeenCalledExactlyOnceWith(false)
   expect(heading()).toBe('Start with one account')
   expect(document.body.textContent).toContain('Step 6 of 6')
+})
+
+it('offers Tor for the public server, and leaves your node’s Tor to its own step', async () => {
+  const serverChoice = fakeServerChoice()
+  await renderTakeover(true, serverChoice)
+  await toServerStep()
+  expect(document.body.querySelector('#public-tor')).not.toBeNull()
+  expect(document.body.textContent).toContain('Your IP address203.0.113.24')
+  await toggle('public-tor')
+  // Tor starts while you read, so connecting waits less.
+  expect(serverChoice.startTor).toHaveBeenCalledTimes(1)
+  expect(document.body.textContent).toContain('Your IP addressHidden by Tor')
+  await choose('own')
+  expect(document.body.querySelector('#public-tor')).toBeNull()
+  await choose('public')
+  // The switch remembers Tor across choices.
+  expect(document.body.querySelector<HTMLInputElement>('#public-tor')?.checked).toBe(true)
+  await click('Continue')
+  expect(serverChoice.keepPublic).toHaveBeenCalledExactlyOnceWith(true)
+  expect(heading()).toBe('Start with one account')
+})
+
+it('stays on the server step when Tor does not connect', async () => {
+  const serverChoice = fakeServerChoice(Ok(undefined), Err(new Error('Tor could not connect within two minutes.')))
+  await renderTakeover(true, serverChoice)
+  await toServerStep()
+  await toggle('public-tor')
+  await click('Continue')
+  expect(heading()).toBe('Choose your Electrum server')
+  const alert = document.body.querySelector('[role="alert"]')?.textContent
+  expect(alert).toContain('Couldn’t connect through Tor. Try again, or turn off Connect via Tor.')
+  // Only Sentinel's own errors are shown as they are.
+  expect(alert).toContain('Tor didn’t answer.')
+  // Turning Tor off clears the problem, and keeps the public server as it is.
+  serverChoice.keepPublic.mockResolvedValue(Ok(undefined))
+  await toggle('public-tor')
+  expect(document.body.querySelector('[role="alert"]')).toBeNull()
+  await click('Continue')
+  expect(serverChoice.keepPublic).toHaveBeenLastCalledWith(false)
+  expect(heading()).toBe('Start with one account')
 })
 
 it('leaves the server step out without a server choice to make', async () => {
@@ -298,6 +352,15 @@ it('asks for Tor before connecting to an onion address', async () => {
   await click('Connect')
   expect(document.body.querySelector('[role="alert"]')?.textContent).toContain('Onion addresses need Tor.')
   expect(serverChoice.connectNode).not.toHaveBeenCalled()
+  expect(document.body.textContent).toContain('Your IP address203.0.113.24')
+  await toggle('node-tor')
+  expect(serverChoice.startTor).toHaveBeenCalledTimes(1)
+  expect(document.body.textContent).toContain('Your IP addressHidden by Tor')
+  await click('Connect')
+  await vi.waitFor(() => {
+    expect(heading()).toBe('Start with one account')
+  })
+  expect(serverChoice.connectNode).toHaveBeenCalledWith(expect.objectContaining({ torEnabled: true }))
 })
 
 it('keeps every preview out of the tab order', async () => {

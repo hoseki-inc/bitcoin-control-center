@@ -1980,7 +1980,7 @@ function validateWritableSetting(key: string, value: string): string {
       }
       return value
     }
-    // Desktop: the notice about the public Electrum server was closed. Connecting to a server hides
+    // Desktop: the notice about the public Electrum server was closed. Connecting another server hides
     // it too, through the connection settings.
     case 'electrum_notice_v1': {
       if (value !== 'dismissed') {

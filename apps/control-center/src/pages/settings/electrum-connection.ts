@@ -8,6 +8,9 @@ export interface ConnectionDetails {
   torEnabled: boolean
 }
 
+/** Blockstream's public Electrum server, which the desktop app starts on. */
+export const PUBLIC_ELECTRUM_HOST = 'electrum.blockstream.info'
+
 /** A new connection starts as SSL on Electrum's usual SSL port, without Tor. */
 export function blankConnection(): ConnectionDetails {
   return { host: '', port: 50002, protocol: 'ssl', torEnabled: false }

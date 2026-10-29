@@ -25,6 +25,12 @@ export function FirstRunOnboarding({ accountCount }: { accountCount: number | nu
   const serverHost = useLocalSetting('electrum_host')
   const [closed, setClosed] = useState(closedThisSession)
   const isOpen = accountCount === 0 && !setting.isLoading && !setting.isError && setting.data === null && !closed
+  // Server installs use their node's own Electrum server, and a server chosen before needs no question.
+  // Decided once the server is known, since connecting one in the introduction saves it too.
+  const [asksForServer, setAsksForServer] = useState<boolean | null>(null)
+  if (asksForServer === null && isOpen && !serverHost.isLoading) {
+    setAsksForServer(isDesktop && serverHost.data === null)
+  }
 
   const close = (choice: OnboardingChoice): void => {
     closedThisSession = true
@@ -37,8 +43,7 @@ export function FirstRunOnboarding({ accountCount }: { accountCount: number | nu
   return (
     <OnboardingTakeover
       isOpen={isOpen}
-      // Server installs use their node's own Electrum server, and a server chosen before needs no question.
-      serverChoice={isDesktop && serverHost.data === null ? serverChoice : undefined}
+      serverChoice={asksForServer === true ? serverChoice : undefined}
       onSkip={() => {
         close('dismissed')
       }}

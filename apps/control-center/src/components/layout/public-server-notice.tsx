@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Link as RouterLink } from 'react-router'
 import { toast } from 'sonner'
 import { useLocalSetting } from '../../hooks/use-local-settings'
+import { PUBLIC_ELECTRUM_HOST } from '../../pages/settings/electrum-connection'
 
 /** Desktop: `dismissed` once someone closes the notice. */
 const NOTICE_KEY = 'electrum_notice_v1'
@@ -13,16 +14,18 @@ const NOTICE_KEY = 'electrum_notice_v1'
 let closedThisSession = false
 
 /**
- * A strip above the header on desktop while Electrum is still the public server the app started
- * with, even if the introduction kept it: no server has been connected, and the notice wasn't closed.
+ * A strip above the header on desktop while Electrum uses Blockstream's public server, even if the
+ * introduction kept it or connected it through Tor, which hides only your IP address. Connecting
+ * another server or closing the notice hides it.
  */
 export function PublicServerNotice(): JSX.Element {
-  // Written only when a connection is connected, so it's empty until someone chooses a server.
+  // Written only when a connection is connected, so it's empty while the app is on the server it started with.
   const host = useLocalSetting('electrum_host')
   const notice = useLocalSetting(NOTICE_KEY)
   const [closed, setClosed] = useState(closedThisSession)
+  const onPublicServer = host.data === null || host.data === PUBLIC_ELECTRUM_HOST
   // Hidden while either is loading or failed to load.
-  const shown = !closed && host.data === null && notice.data === null
+  const shown = !closed && onPublicServer && notice.data === null
 
   return (
     <Box as="output" display="block">

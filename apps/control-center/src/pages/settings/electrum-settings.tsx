@@ -41,7 +41,7 @@ import { toast } from 'sonner'
 import { z } from 'zod'
 import { sentinelFetch } from '../../pin/tab'
 import { type RouterOutput, baseTrpc } from '../../trpc'
-import { blankConnection, errorMessage, isOnionHost, isValidPort } from './electrum-connection'
+import { PUBLIC_ELECTRUM_HOST, blankConnection, errorMessage, isOnionHost, isValidPort } from './electrum-connection'
 import { type FadingNotice, NOTICE_FADE_MS, useFadingNotice } from './fading-notice'
 import { useStatementSource } from './statement-source-settings'
 
@@ -936,7 +936,7 @@ export function ElectrumSettings(): JSX.Element {
                   id="connection-starter"
                   size="sm"
                   isDisabled={controlsDisabled}
-                  value={draft.host === 'electrum.blockstream.info' ? draft.host : 'custom'}
+                  value={draft.host === PUBLIC_ELECTRUM_HOST ? draft.host : 'custom'}
                   onChange={(event) => {
                     // Presets change the server only; your Tor choice stays.
                     update({
@@ -947,7 +947,7 @@ export function ElectrumSettings(): JSX.Element {
                   }}
                 >
                   <option value="custom">My own server</option>
-                  <option value="electrum.blockstream.info">Blockstream (Public)</option>
+                  <option value={PUBLIC_ELECTRUM_HOST}>Blockstream (Public)</option>
                 </Select>
               </FormControl>
             </>

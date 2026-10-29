@@ -131,8 +131,14 @@ it('points to Settings while no server has been chosen', async () => {
   expect(link?.getAttribute('href')).toBe('/settings#electrum-server')
 })
 
+// Tor hides your IP address, but Blockstream still sees your addresses.
+it('keeps pointing to Settings once Blockstream’s server is connected, as through Tor', async () => {
+  const { container } = await render({ electrum_host: 'electrum.blockstream.info' })
+  expect(container.textContent).toContain('You’re using a public Electrum server.')
+})
+
 it.each([
-  ['a server was connected', { electrum_host: 'umbrel.local' }],
+  ['another server was connected', { electrum_host: 'umbrel.local' }],
   ['the notice was closed', { electrum_notice_v1: 'dismissed' }],
 ])('stays hidden once %s', async (_case, saved) => {
   const { container } = await render(saved)
