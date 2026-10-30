@@ -51,6 +51,8 @@ export type AuthStatus =
       state: 'insecure' | 'no-pin' | 'signed-out' | 'signed-in'
       /** Time left in a wrong-PIN delay, if one is running. */
       retryAfterMs: number | null
+      /** The platform cleared a forgotten PIN and no new one is set yet. */
+      pinWasReset: boolean
     }
 
 type Owner = typeof profiles.$inferSelect
@@ -74,6 +76,7 @@ export class AuthService {
   private readonly hash: (pin: Pin) => Promise<string>
   private readonly sessions = new Map<string, Session>()
   private queue: Promise<unknown> = Promise.resolve()
+  private pinWasReset = false
 
   public constructor(
     db: SentinelDb,
@@ -104,6 +107,7 @@ export class AuthService {
             ? 'signed-in'
             : 'signed-out',
       retryAfterMs: this.retryAfter(owner),
+      pinWasReset: this.pinWasReset,
     }))
   }
 
@@ -144,6 +148,7 @@ export class AuthService {
       }
       // Hashed only while setup is open, so calling this costs the server nothing once a PIN is set.
       await this.update({ pinHash: await this.hash(pin), pinSetAt: this.now(), failedAttempts: 0, nextAttemptAt: null })
+      this.pinWasReset = false
       this.logger.info('PIN set')
       return Ok(this.open(visitor.browserKey, admitted.unwrap()))
     })
@@ -204,6 +209,7 @@ export class AuthService {
       })
     })
     this.sessions.clear()
+    this.pinWasReset = pinHash === null
     this.logger.info(pinHash === null ? 'PIN cleared by the platform' : 'PIN replaced by the platform')
   }
 

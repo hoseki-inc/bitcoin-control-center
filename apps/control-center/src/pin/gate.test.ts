@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { type Gate, INITIAL_GATE, type PinStatus, endsSession, nextGate, screenFor } from './gate'
 
-const signedIn: PinStatus = { platform: 'umbrel', state: 'signed-in', retryAt: null }
-const signedOut: PinStatus = { platform: 'umbrel', state: 'signed-out', retryAt: null }
+const signedIn: PinStatus = { platform: 'umbrel', state: 'signed-in', retryAt: null, pinWasReset: false }
+const signedOut: PinStatus = { platform: 'umbrel', state: 'signed-out', retryAt: null, pinWasReset: false }
 const off: PinStatus = { platform: null }
 
 function gate(phase: Gate['phase'], epoch = 0, setupEpoch: number | null = null): Gate {
@@ -78,9 +78,15 @@ describe('screenFor', () => {
   })
 
   it('picks the screen from the status', () => {
-    expect(screenFor({ platform: 'startos', state: 'insecure', retryAt: null }, gate('closed'))).toBe('insecure')
-    expect(screenFor({ platform: 'startos', state: 'no-pin', retryAt: null }, gate('closed'))).toBe('startos')
-    expect(screenFor({ platform: 'umbrel', state: 'no-pin', retryAt: null }, gate('closed'))).toBe('setup')
+    expect(
+      screenFor({ platform: 'startos', state: 'insecure', retryAt: null, pinWasReset: false }, gate('closed')),
+    ).toBe('insecure')
+    expect(screenFor({ platform: 'startos', state: 'no-pin', retryAt: null, pinWasReset: false }, gate('closed'))).toBe(
+      'startos',
+    )
+    expect(screenFor({ platform: 'umbrel', state: 'no-pin', retryAt: null, pinWasReset: false }, gate('closed'))).toBe(
+      'setup',
+    )
     expect(screenFor(signedOut, gate('closed'))).toBe('sign-in')
     // Signed in, but not opened yet: the sign-in screen stays through the reveal and over a covering app.
     expect(screenFor(signedIn, gate('revealing'))).toBe('sign-in')

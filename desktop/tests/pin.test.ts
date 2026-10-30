@@ -58,11 +58,15 @@ describe('desktop PIN access', () => {
     expect(readFileSync(confirmed.request, 'utf8')).toBe('reset\n')
     expect(statSync(confirmed.request).mode & 0o777).toBe(0o600)
     expect(confirmed.restart).toHaveBeenCalledOnce()
+    // The window hears about it first, so it can say why it's about to close.
+    expect(confirmed.send.mock.calls.map(([channel]) => channel)).toEqual(['pin:resetting'])
+    expect(confirmed.send.mock.invocationCallOrder[0]).toBeLessThan(confirmed.restart.mock.invocationCallOrder[0] ?? 0)
 
     const refused = setup(false)
     await expect(refused.reset(refused.fromApp())).resolves.toBe(false)
     expect(existsSync(refused.request)).toBe(false)
     expect(refused.restart).not.toHaveBeenCalled()
+    expect(refused.send).not.toHaveBeenCalled()
   })
 
   it('keeps running, and lets the person try again, when the request can’t be written', async () => {

@@ -1,12 +1,12 @@
-import { Box, HStack, chakra, useToken } from '@chakra-ui/react'
+import { Box, HStack, Text, VisuallyHidden, chakra, useToken } from '@chakra-ui/react'
 import { motion, useAnimationControls, useReducedMotion } from 'framer-motion'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 
 export const PIN_LENGTH = 6
 
 /**
- * `checking`: Sentinel is checking the PIN; the circles stay as entered. `error`: they shake red. `waiting`: a
- * wrong-PIN delay, during which the field takes nothing.
+ * `checking`: Sentinel is checking the PIN; the circles stay as entered, pulsing if it takes a while. `error`: the dots
+ * shake red. `waiting`: a wrong-PIN delay, during which the field takes nothing.
  */
 export type PinCirclesState = 'idle' | 'checking' | 'error' | 'success' | 'waiting'
 
@@ -24,20 +24,20 @@ interface PinCirclesProps {
 const MotionHStack = motion(HStack)
 const MotionBox = motion(Box)
 
-// A correct PIN: the circles turn green, slide together and shrink into one dot, which becomes the app's
-// success check (the one statements and receipts use): a disc scaling up from 80%, then a check drawing in.
-const MERGE_DELAY_S = 0.14
-const MERGE_S = 0.32
+// A correct PIN: the circles slide together and shrink into one dot, which becomes the app's success check (the one
+// statements and receipts use): a disc scaling up from 80%, then a check drawing in. The disc is the only green.
+const MERGE_DELAY_S = 0.04
+const MERGE_S = 0.16
 const DISC_AT_S = MERGE_DELAY_S + MERGE_S
-const DISC_S = 0.35
-const CHECK_DELAY_S = 0.3
-const CHECK_S = 0.35
+const DISC_S = 0.16
+const CHECK_DELAY_S = 0.05
+const CHECK_S = 0.15
 const CHECK_LENGTH = 34
 const DISC_SIZE = 60
 
 // How long the correct-PIN animation runs, with a short beat to see the finished check.
-const SUCCESS_ANIMATION_MS = Math.round((DISC_AT_S + CHECK_DELAY_S + CHECK_S) * 1000) + 260
-const SUCCESS_ANIMATION_REDUCED_MS = 400
+const SUCCESS_ANIMATION_MS = Math.round((DISC_AT_S + CHECK_DELAY_S + CHECK_S) * 1000) + 60
+const SUCCESS_ANIMATION_REDUCED_MS = 300
 
 /** How long to wait on a correct PIN before moving on, so the check finishes drawing. */
 export function successAnimationMs(): number {
@@ -53,6 +53,49 @@ export function cleanPinInput(raw: string): string | null {
   }
   const digits = raw.replace(/[\s-]/g, '')
   return digits.length > PIN_LENGTH ? null : digits
+}
+
+// The row fills its column, and the circles give way on the narrowest phones.
+const ROW = { w: 'full', justify: 'space-between', spacing: 1.5 } as const
+const CIRCLE = {
+  flexBasis: { base: '44px', sm: '48px' },
+  flexShrink: 1,
+  minW: 0,
+  aspectRatio: 1,
+  borderRadius: 'full',
+  display: 'grid',
+  placeItems: 'center',
+} as const
+const DOT = { w: '12px', h: '12px', borderRadius: 'full' } as const
+
+/** The six circles holding a PIN that's already set: dots, or the digits once shown. */
+export function PinReadout({ pin, shown }: { pin: string; shown: boolean }): JSX.Element {
+  return (
+    <>
+      <VisuallyHidden aria-live="polite">
+        {shown ? `Your PIN, ${pin.split('').join(' ')}` : 'Your PIN, hidden'}
+      </VisuallyHidden>
+      <HStack {...ROW} aria-hidden="true">
+        {pin.split('').map((digit, index) => (
+          <Box key={index} {...CIRCLE} bg="neutral.100">
+            {shown ? (
+              <Text
+                as="span"
+                textStyle="text/xl"
+                fontWeight="medium"
+                color="neutral.900"
+                sx={{ fontVariantNumeric: 'tabular-nums' }}
+              >
+                {digit}
+              </Text>
+            ) : (
+              <Box {...DOT} bg="neutral.900" />
+            )}
+          </Box>
+        ))}
+      </HStack>
+    </>
+  )
 }
 
 /**
@@ -76,6 +119,7 @@ export function PinCircles({
   const rowRef = useRef<HTMLDivElement>(null)
   // How far each circle slides to meet in the middle, measured when the PIN is accepted.
   const [mergeOffsets, setMergeOffsets] = useState<number[] | null>(null)
+  const [ringFocused, ringUnfocused] = useToken('colors', ['neutral.900', 'neutral.400'])
   const success = state === 'success'
   const waiting = state === 'waiting'
 
@@ -99,15 +143,35 @@ export function PinCircles({
 
   useEffect(() => {
     if (state === 'error' && !reduceMotion) {
-      void row.start({ x: [0, -8, 8, -8, 8, -4, 4, 0], transition: { duration: 0.42 } })
+      void row.start({ x: [0, -4, 4, -4, 4, -2, 2, 0], transition: { duration: 0.32 } })
     }
   }, [state, row, reduceMotion])
 
+  // Takes focus on appearing. After a wait, only if nothing else has it, so a wait never pulls focus away.
+  const appeared = useRef(false)
   useEffect(() => {
-    if (!waiting) {
+    const nothingFocused = document.activeElement === null || document.activeElement === document.body
+    if (!waiting && (!appeared.current || nothingFocused)) {
       inputRef.current?.focus()
     }
+    appeared.current = true
   }, [waiting])
+
+  // Digits typed with focus elsewhere, as after clicking the background, still reach the field.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.ctrlKey || event.metaKey || event.altKey || !/^([0-9]|Backspace)$/.test(event.key)) {
+        return
+      }
+      if (!(document.activeElement instanceof HTMLInputElement)) {
+        inputRef.current?.focus()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return (): void => {
+      window.removeEventListener('keydown', onKeyDown)
+    }
+  }, [])
 
   const accept = (raw: string): void => {
     const digits = cleanPinInput(raw)
@@ -122,17 +186,11 @@ export function PinCircles({
   }
 
   return (
-    <Box position="relative">
-      <MotionHStack
-        ref={rowRef}
-        spacing={{ base: '9px', sm: '14px' }}
-        animate={row}
-        aria-hidden="true"
-        pointerEvents="none"
-      >
+    <Box position="relative" w="full">
+      <MotionHStack {...ROW} ref={rowRef} animate={row} aria-hidden="true" pointerEvents="none">
         {Array.from({ length: PIN_LENGTH }, (_, index) => {
           const filled = index < value.length
-          const next = focused && index === value.length && state === 'idle'
+          const next = index === value.length && state === 'idle'
           return (
             <MotionBox
               // A new key replays the nudge each time an ignored key lands on the next circle.
@@ -140,26 +198,12 @@ export function PinCircles({
               ref={(element: HTMLDivElement | null) => {
                 circleRefs.current[index] = element
               }}
-              w={{ base: '44px', sm: '52px' }}
-              h={{ base: '44px', sm: '52px' }}
-              borderRadius="full"
-              borderWidth="1.5px"
-              borderStyle={waiting ? 'dashed' : 'solid'}
-              display="grid"
-              placeItems="center"
-              transitionProperty="border-color, background-color, box-shadow"
+              {...CIRCLE}
+              transitionProperty="background-color, box-shadow"
               transitionDuration="140ms"
-              borderColor={
-                state === 'error'
-                  ? 'error.700'
-                  : success
-                    ? 'success.600'
-                    : filled || next
-                      ? 'neutral.900'
-                      : 'neutral.300'
-              }
-              bg={state === 'error' ? 'error.50' : success ? 'success.600' : waiting ? 'neutral.100' : 'shades.0'}
-              boxShadow={next ? '0 0 0 4px rgba(15, 23, 42, 0.07)' : 'none'}
+              bg={waiting ? 'neutral.50' : 'neutral.100'}
+              // Lighter while focus is elsewhere; typing still lands here.
+              boxShadow={next ? `inset 0 0 0 1.5px ${focused ? ringFocused : ringUnfocused}` : 'none'}
               initial={next && nudge > 0 && !reduceMotion ? { scale: 0.88 } : false}
               animate={
                 success && reduceMotion
@@ -172,7 +216,7 @@ export function PinCircles({
                         transition: {
                           x: { delay: MERGE_DELAY_S, duration: MERGE_S, ease: [0.5, 0, 0.75, 0] },
                           scale: { delay: MERGE_DELAY_S, duration: MERGE_S, ease: [0.5, 0, 0.75, 0] },
-                          opacity: { delay: MERGE_DELAY_S, duration: MERGE_S + 0.12, times: [0, 0.73, 1] },
+                          opacity: { delay: MERGE_DELAY_S, duration: MERGE_S + 0.08, times: [0, 0.73, 1] },
                         },
                       }
                     : { x: 0, scale: 1, opacity: 1, transition: { duration: 0.2 } }
@@ -183,12 +227,23 @@ export function PinCircles({
                   // A short tween, not a spring: it settles before a correct PIN's merge begins, however fast the
                   // last digit was typed.
                   initial={reduceMotion ? false : { scale: 0.4, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  transition={{ duration: 0.12, ease: 'easeOut' }}
-                  w="12px"
-                  h="12px"
-                  borderRadius="full"
-                  bg={state === 'error' ? 'error.700' : success ? 'shades.0' : 'neutral.900'}
+                  animate={
+                    state === 'checking' && !reduceMotion
+                      ? {
+                          scale: 1,
+                          opacity: [1, 0.35, 1],
+                          transition: {
+                            delay: 0.4,
+                            duration: 1.2,
+                            ease: 'easeInOut',
+                            repeat: Number.POSITIVE_INFINITY,
+                          },
+                        }
+                      : { scale: 1, opacity: 1 }
+                  }
+                  transition={{ duration: 0.1, ease: 'easeOut' }}
+                  {...DOT}
+                  bg={state === 'error' ? 'error.700' : 'neutral.900'}
                 />
               )}
             </MotionBox>
@@ -217,9 +272,9 @@ export function PinCircles({
           setFocused(false)
         }}
         position="absolute"
-        inset="-8px"
-        w="calc(100% + 16px)"
-        h="calc(100% + 16px)"
+        inset={0}
+        w="full"
+        h="full"
         opacity={0}
         border={0}
         p={0}

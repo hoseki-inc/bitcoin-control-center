@@ -2,6 +2,8 @@ import * as fs from 'node:fs'
 import * as path from 'node:path'
 import type { BrowserWindow, IpcMain, IpcMainInvokeEvent } from 'electron'
 
+const RESTART_NOTICE_MS = 800
+
 interface PinAccessOptions {
   /** Sentinel's data folder, where it looks for a reset request when it starts (see its auth/platform.ts). */
   dataDir: string
@@ -41,6 +43,11 @@ export function setupPinAccess(
       }
       // Written before the restart, so if it fails the app keeps running as it was and the person can try again.
       fs.writeFileSync(path.join(dataDir, 'reset-pin'), 'reset\n', { mode: 0o600 })
+      // Long enough to read that the reset worked, so the window doesn't simply vanish.
+      contents.send('pin:resetting')
+      await new Promise((resolve) => {
+        setTimeout(resolve, RESTART_NOTICE_MS)
+      })
       await restart()
       return true
     } catch {

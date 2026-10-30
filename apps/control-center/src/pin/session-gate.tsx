@@ -1,11 +1,17 @@
-import { Box } from '@chakra-ui/react'
 import { AnimatePresence, type HTMLMotionProps, motion } from 'framer-motion'
 import { type ReactNode, useEffect } from 'react'
 import { toast } from 'sonner'
 import { queryClient } from '../trpc'
 import { forgetApp, lockApp, usePinStatus } from './actions'
 import { appMounted, currentEpoch, dispatch, screenFor, useGate } from './gate'
-import { InsecureScreen, SetupScreen, SignInScreen, StartOsSetupScreen, UnreachableScreen } from './pin-screens'
+import {
+  InsecureScreen,
+  PinLoadingScreen,
+  SetupScreen,
+  SignInScreen,
+  StartOsSetupScreen,
+  UnreachableScreen,
+} from './pin-screens'
 
 /**
  * Locks when the desktop window closes (heard at every stage, since a tab signs in before the app opens), and when the
@@ -38,16 +44,16 @@ function useLockTriggers(pinsOn: boolean): void {
   }, [pinsOn])
 }
 
-// Leaving, the lock screen fades through white: its content (the check) shrinks slightly and fades first, then
-// the blank screen gives way as the app fades in and settles into place.
-const CONTENT_OUT_S = 0.25
-const REVEAL_S = 0.45
+// Leaving, the lock screen fades through white: its content fades first, then the blank screen gives way as the app
+// fades in and settles into place.
+const CONTENT_OUT_S = 0.1
+const REVEAL_S = 0.16
 const REVEAL_EASE = [0.4, 0, 0.2, 1] as const
 // The lock screen takes 0.25s to fade in over the app; unmount the app by this time even if that fade stalls.
 const COVER_LIMIT_MS = 400
 // How long the finished check may wait for the app to mount and load its first data, so loading states don't pop in
-// after the fade. Home's first overview can take over half a second while Sentinel fetches the price.
-const SETTLE_LIMIT_MS = 1500
+// after the fade. Past this the app opens on its own loading states, so a slow price doesn't hold every unlock.
+const SETTLE_LIMIT_MS = 400
 // Pages can start more requests a render or two after mounting, so the app counts as settled only once nothing has
 // been loading for this long.
 const QUIET_MS = 100
@@ -64,19 +70,18 @@ const overlayFade: HTMLMotionProps<'div'> = {
   exit: 'gone',
 }
 
-// The content layer fills the screen like the lock screen itself, so its scale doesn't move the fixed screens inside.
 const contentFade: HTMLMotionProps<'div'> = {
   variants: {
-    hidden: { opacity: 1, scale: 1 },
-    shown: { opacity: 1, scale: 1 },
-    gone: { opacity: 0, scale: 0.96, transition: { duration: CONTENT_OUT_S, ease: 'easeIn' } },
+    hidden: { opacity: 1 },
+    shown: { opacity: 1 },
+    gone: { opacity: 0, transition: { duration: CONTENT_OUT_S, ease: 'easeIn' } },
   },
   style: { position: 'fixed', inset: 0 },
 }
 
 // The app's resting state is no transform at all, so its fixed headers and dialogs keep their place.
 const APP_MOTION = {
-  revealing: { opacity: 0, y: 8 },
+  revealing: { opacity: 0, y: 4 },
   open: { opacity: 1, y: 0, transition: { delay: CONTENT_OUT_S, duration: REVEAL_S, ease: REVEAL_EASE } },
   covering: { opacity: 0, transition: { duration: 0.25 } },
 }
@@ -179,7 +184,7 @@ export function SessionGate({ children }: { children: ReactNode }): JSX.Element 
   const node = ((): ReactNode => {
     switch (screen) {
       case 'loading':
-        return <Box position="fixed" inset={0} bg="shades.0" />
+        return <PinLoadingScreen />
       case 'unreachable':
         return (
           <UnreachableScreen
@@ -195,7 +200,16 @@ export function SessionGate({ children }: { children: ReactNode }): JSX.Element 
         return <StartOsSetupScreen />
       case 'setup':
         // Never on StartOS, which sets the PIN from an action.
-        return platform !== null && platform !== 'startos' && <SetupScreen platform={platform} onDone={startReveal} />
+        return (
+          platform !== null &&
+          platform !== 'startos' && (
+            <SetupScreen
+              platform={platform}
+              pinWasReset={pin !== undefined && pin.platform !== null && pin.pinWasReset}
+              onDone={startReveal}
+            />
+          )
+        )
       case 'sign-in':
         return platform !== null && <SignInScreen platform={platform} onSignedIn={startReveal} />
       case null:
@@ -221,7 +235,7 @@ export function SessionGate({ children }: { children: ReactNode }): JSX.Element 
           <motion.div
             // A fresh sign-in screen for each lock, rather than one still showing its finished check.
             key={screen === 'sign-in' ? `sign-in-${gate.epoch}` : screen}
-            // Above the app's sticky header; below dialogs (1400) such as Forgot PIN.
+            // Above the app's sticky header; below dialogs (1400) such as the introduction, which opens over setup.
             style={{ position: 'fixed', inset: 0, zIndex: 1300 }}
             {...overlayFade}
             onAnimationComplete={finishCovering}
