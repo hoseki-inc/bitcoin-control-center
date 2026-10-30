@@ -4,6 +4,8 @@ import Lottie from 'lottie-react'
 import { XIcon } from 'lucide-react'
 import { Spinner } from '../design-system'
 import { Animations } from '../design-system/animations/animations'
+// The same animation with its circle in neutral.500.
+import grayCheckCircle from './assets/lottie-animations/gray-check-circle.json'
 import greenCheckCircle from './assets/lottie-animations/green-check-circle.json'
 
 export function Receipt({
@@ -47,20 +49,36 @@ export function Receipt({
         </Flex>
       ) : (
         <Box>
-          <Lottie
-            animationData={greenCheckCircle}
-            loop={false}
-            autoplay={true}
-            style={{
-              width: '60px',
-              height: '60px',
-              margin: '0 auto',
-            }}
-          />
+          <SuccessCheck />
         </Box>
       )}
 
       <Box maxW={['100%', '100%', '70%']}>{content}</Box>
     </Stack>
+  )
+}
+
+/**
+ * The check that draws itself once when something succeeds: green when it's verified, gray when it
+ * worked but couldn't be verified.
+ */
+export function SuccessCheck({
+  size = '60px',
+  tone = 'success',
+}: {
+  size?: string
+  tone?: 'success' | 'neutral'
+}): JSX.Element {
+  return (
+    <Lottie
+      animationData={tone === 'success' ? greenCheckCircle : grayCheckCircle}
+      loop={false}
+      autoplay={true}
+      style={{
+        width: size,
+        height: size,
+        margin: '0 auto',
+      }}
+    />
   )
 }

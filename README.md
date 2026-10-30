@@ -357,11 +357,10 @@ block unrelated pull requests; Dependabot and pull-request dependency review sta
 enabled. **Release 3** runs it and won't create a draft release while a non-ignored
 moderate or worse finding remains.
 
-As of October 21, 2026, two advisories have no published patched version:
+As of October 30, 2026,
 [`elliptic` GHSA-848j-6mx2-7j84](https://github.com/advisories/GHSA-848j-6mx2-7j84)
-(low severity, still reported; pulled in by Trezor and browser crypto dependencies), and
-[`braces` GHSA-vfj7-8cjw-p6xm](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm)
-(high severity, already excluded by `pnpm.auditConfig.ignoreGhsas`). A passing audit gate does not mean
+(low severity, still reported; pulled in by Trezor and browser crypto dependencies) has no
+published patched version. A passing audit gate does not mean
 these dependencies are free of known vulnerabilities.
 
 [`zod` GHSA-mrhx-c7xc-m3w5](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5) (high severity) is

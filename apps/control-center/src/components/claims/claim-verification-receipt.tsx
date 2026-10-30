@@ -53,7 +53,7 @@ export function ClaimVerificationReceipt({ shouldSetTimeout, claim }: ClaimVerif
     <PageTransition>
       <Fireworks autorun={{ speed: 2, duration: 5_000, delay: 500 }} />
       <Receipt
-        title="Claim Verified!"
+        title="Account Verified!"
         state="success"
         onClose={() => {
           handleNavigation('/home')

@@ -1,6 +1,7 @@
 import { Box, Flex, Icon, Stack, Text } from '@chakra-ui/react'
 import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
 import { TopBar } from '@hoseki/packages/ui/prove-verify-ui/top-bar'
+import { Eye } from 'lucide-react'
 import { Link, useLocation } from 'react-router'
 import { parseNavigationState } from '../../../lib/navigation-state'
 
@@ -17,7 +18,10 @@ export function ManualTypeSelectorPage(): JSX.Element {
       </TopBar>
 
       <Stack spacing={6} maxW="480px" mx="auto">
-        <PageHeading title="Manual Entry" description="Choose what type of holding you'd like to track." />
+        <PageHeading
+          title="Track Balance, ETF, or xpub"
+          description="Choose what type of holding you'd like to track."
+        />
 
         <Stack spacing={4}>
           <TypeCard
@@ -33,6 +37,13 @@ export function ManualTypeSelectorPage(): JSX.Element {
             title="Bitcoin ETF Holdings"
             description="Track your Bitcoin exposure through ETFs like IBIT, FBTC, GBTC, and more."
             icon={<EtfIcon />}
+          />
+          <TypeCard
+            to="/accounts/verify/track"
+            state={location.state}
+            title="xpub or Descriptor"
+            description="Track a wallet's live balance, single-sig or multisig, without proving ownership."
+            icon={<Icon as={Eye} w={5} h={5} color="neutral.600" strokeWidth={1.5} />}
           />
         </Stack>
       </Stack>

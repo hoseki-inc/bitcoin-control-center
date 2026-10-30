@@ -149,9 +149,9 @@ export function EtfAccountDetailsPage(): JSX.Element {
             </Text>
           </HStack>
           <HStack spacing={1}>
-            <Box w={2} h={2} bg="warning.500" borderRadius="full" />
-            <Text textStyle="text/xs" color="warning.600" fontWeight="medium">
-              Manually Added
+            <Box w={2} h={2} bg="neutral.400" borderRadius="full" />
+            <Text textStyle="text/xs" color="neutral.600" fontWeight="medium">
+              Unverified
             </Text>
             {account.createdAt && (
               <>
@@ -184,9 +184,9 @@ export function EtfAccountDetailsPage(): JSX.Element {
                 Status
               </Text>
               <HStack spacing={1}>
-                <Box w={2} h={2} bg="warning.500" borderRadius="full" />
-                <Text textStyle="text/xs" color="warning.600" fontWeight="medium">
-                  Manually Added
+                <Box w={2} h={2} bg="neutral.400" borderRadius="full" />
+                <Text textStyle="text/xs" color="neutral.600" fontWeight="medium">
+                  Unverified
                 </Text>
               </HStack>
             </Box>
@@ -351,7 +351,7 @@ export function EtfAccountDetailsPage(): JSX.Element {
 
 function ManualIcon(): JSX.Element {
   return (
-    <Icon viewBox="0 0 24 24" w={5} h={5} color="warning.500">
+    <Icon viewBox="0 0 24 24" w={5} h={5} color="neutral.600">
       <path
         d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
         stroke="currentColor"

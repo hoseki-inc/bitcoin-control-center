@@ -19,6 +19,7 @@ import { StrikeAccountDetailsPage } from './pages/claims/strike/[id]'
 import {
   ClaimVerificationReceiptPage,
   ClaimsVerifyAdvancedPage,
+  ClaimsVerifyBitkeyPage,
   ClaimsVerifyColdcardPage,
   ClaimsVerifyKeystonePage,
   ClaimsVerifyLedgerPage,
@@ -31,6 +32,7 @@ import { ClaimsVerifyManualPage } from './pages/claims/verify/manual'
 import { ManualTypeSelectorPage } from './pages/claims/verify/manual-type'
 import { ClaimsVerifyRobinhoodPage } from './pages/claims/verify/robinhood'
 import { ClaimsVerifyStrikePage } from './pages/claims/verify/strike'
+import { ClaimsVerifyTrackPage } from './pages/claims/verify/track'
 import { DashboardPage } from './pages/dashboard'
 import { HardwareWalletTestPage } from './pages/hardware-wallet-test'
 import { MultisigDetailsPage } from './pages/multisig/[id]'
@@ -73,6 +75,7 @@ export default function AppRoutes(): JSX.Element {
               <Route path="ledger" Component={ClaimsVerifyLedgerPage} />
               <Route path="coldcard" Component={ClaimsVerifyColdcardPage} />
               <Route path="keystone" Component={ClaimsVerifyKeystonePage} />
+              <Route path="bitkey" Component={ClaimsVerifyBitkeyPage} />
               <Route path="advanced" Component={ClaimsVerifyAdvancedPage} />
               <Route path="coinbase" Component={ClaimsVerifyCoinbasePage} />
               <Route path="kraken" Component={ClaimsVerifyKrakenPage} />
@@ -81,6 +84,7 @@ export default function AppRoutes(): JSX.Element {
               <Route path="manual-type" Component={ManualTypeSelectorPage} />
               <Route path="manual" Component={ClaimsVerifyManualPage} />
               <Route path="etf" Component={ClaimsVerifyEtfPage} />
+              <Route path="track" Component={ClaimsVerifyTrackPage} />
             </Route>
           </Route>
 

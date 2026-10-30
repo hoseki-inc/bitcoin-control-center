@@ -10,8 +10,12 @@ export function getBadgeConfigForClaim(status: ClaimStatus /* , expiresAt: Date 
       return { status: 'success', label: status, icon: CheckCircleFilledIcon }
     case 'pending':
       return { status: 'warning', label: status, icon: TimerCircleFilledIcon }
+    case 'unverified':
+      return { status: 'neutral', label: status }
     case 'expired':
       return { status: 'neutral', label: status, icon: XCircleFilledIcon }
+    case 'unverified':
+      return { status: 'neutral', label: status, icon: InfoIcon }
   }
 }
 

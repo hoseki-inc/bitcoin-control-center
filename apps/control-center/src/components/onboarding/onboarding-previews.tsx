@@ -26,7 +26,7 @@ import { type ReactNode, useLayoutEffect, useMemo, useRef, useState } from 'reac
 import { ConnectionRowContent, LIVENESS_COLORS, connectionSummary } from '../../pages/settings/electrum-settings'
 import { STATEMENT_SOURCES, StatementSourceOption } from '../../pages/settings/statement-source-settings'
 import { BitcoinAmount } from '../bitcoin-amount'
-import { ManualEntryIcon, MultisigImage } from '../claims/account-type-media'
+import { ManualEntryIcon, ManualSignIcon, MultisigImage } from '../claims/account-type-media'
 import { AccumulationChart } from '../dashboard-charts/accumulation-chart'
 import { type BalanceDataPoint, getFlowTotals } from '../dashboard-charts/balance-history'
 import { MonthlyNetChangeChart } from '../dashboard-charts/monthly-net-change-chart'
@@ -219,12 +219,14 @@ const ACCOUNT_TYPES: Array<{ name: string; media: ReactNode }> = [
   { name: 'COLDCARD', media: <Wordmark src={`${HOSEKI_ASSETS_CDN_URL}/hardware-wallets/coldcard.svg`} /> },
   { name: 'Ledger', media: <Wordmark src={`${HOSEKI_ASSETS_CDN_URL}/hardware-wallets/ledger.svg`} /> },
   { name: 'Keystone', media: <Wordmark src="/images/hardware-wallets/keystone-logo.svg" /> },
+  { name: 'Bitkey', media: <Wordmark src="/images/hardware-wallets/bitkey-logo.svg" /> },
   { name: 'Multisig', media: MultisigImage },
   { name: 'Coinbase', media: <Wordmark src="/images/exchanges/coinbase-wordmark.svg" /> },
   { name: 'Kraken', media: <Wordmark src="/images/exchanges/kraken-wordmark.svg" /> },
   { name: 'Robinhood', media: <Wordmark src="/images/exchanges/robinhood-lockup.png" /> },
   { name: 'Strike', media: <Wordmark src="/images/exchanges/strike-logo.svg" /> },
-  { name: 'Manual Entry', media: <ManualEntryIcon /> },
+  { name: 'Manually Sign', media: <ManualSignIcon /> },
+  { name: 'Track Balance, ETF,\nor xpub', media: <ManualEntryIcon /> },
 ]
 
 export function AccountTypesPreview(): JSX.Element {
@@ -256,7 +258,7 @@ export function AccountTypesPreview(): JSX.Element {
                 <Flex justify="center" align="center" h="30px">
                   {media}
                 </Flex>
-                <Text textStyle="label/md" fontWeight="medium">
+                <Text textStyle="label/md" fontWeight="medium" textAlign="center" whiteSpace="pre-line">
                   {name}
                 </Text>
               </Stack>

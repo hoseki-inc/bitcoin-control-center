@@ -6,6 +6,7 @@ import { Link, useLocation, useNavigate } from 'react-router'
 import { toast } from 'sonner'
 import { parseNavigationState } from '../../../lib/navigation-state'
 import { trpc } from '../../../trpc'
+import { localDateToIso, todayLocalDate } from '../../../utils/local-date'
 
 export function ClaimsVerifyManualPage(): JSX.Element {
   const navigate = useNavigate()
@@ -14,7 +15,7 @@ export function ClaimsVerifyManualPage(): JSX.Element {
 
   const [displayName, setDisplayName] = useState('')
   const [btcAmount, setBtcAmount] = useState('')
-  const [balanceDate, setBalanceDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [balanceDate, setBalanceDate] = useState(todayLocalDate)
 
   const createMutation = trpc.portalProve.manual.create.useMutation()
   const utils = trpc.useUtils()
@@ -28,7 +29,7 @@ export function ClaimsVerifyManualPage(): JSX.Element {
 
     try {
       const balanceSats = Math.round(Number(btcAmount) * 1e8).toString()
-      const balanceAsOf = new Date(balanceDate).toISOString()
+      const balanceAsOf = localDateToIso(balanceDate)
       const result = await createMutation.mutateAsync({
         displayName: displayName.trim(),
         balanceSats,

@@ -30,13 +30,14 @@ import { Decimal } from 'decimal.js'
 import { useEffect } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router'
 import { BitcoinAmount } from '../../components/bitcoin-amount'
+import { UnverifiedTooltip } from '../../components/claims/bitkey/bitkey-notes'
 import { DeleteClaimModal } from '../../components/claims/claim-details/delete-claim-modal'
 import { UnavailableAlert } from '../../components/unavailable-alert'
 import { SyncIndicator } from '../../components/wallet-balances/sync-indicator'
 import { formatBitcoinNumber, isUsableBtcPrice } from '../../lib/bitcoin-display'
 import { summarizeWalletBalances } from '../../lib/wallet-balances'
 import type { ClaimDto } from '../../trpc/server-types'
-import { ensureClaimStatusNotExpired, mapClaimToClaimCardProps } from '../../utils/claim-utils'
+import { ensureClaimStatusNotExpired, isBitkeyClaim, mapClaimToClaimCardProps } from '../../utils/claim-utils'
 import { isExchangeConnected, needsExchangeReconnect } from '../../utils/exchange-connection-status'
 import {
   type AccountsDataSource,
@@ -95,7 +96,8 @@ export function ClaimsPage({ dataSource = accountsDataSource }: { dataSource?: A
     claims.length > 0 || exchangeAccounts.length > 0 || manualAccounts.length > 0 || etfAccounts.length > 0
   const verifiedCount =
     claims.filter((c) => ensureClaimStatusNotExpired(c) === 'verified').length + connectedExchangeAccounts.length
-  const pendingCount = claims.length - (verifiedCount - connectedExchangeAccounts.length)
+  const pendingCount = claims.filter((c) => c.status === 'pending').length
+  const unverifiedCount = claims.filter((c) => c.status === 'unverified').length
 
   const wallets = summarizeWalletBalances(claimIds, walletBalances.rows)
   const otherAccountsSats = [...exchangeAccounts, ...manualAccounts, ...etfAccounts].reduce(
@@ -162,6 +164,13 @@ export function ClaimsPage({ dataSource = accountsDataSource }: { dataSource?: A
                   <Text textStyle="text/sm" color="warning.600">
                     {pendingCount} Pending
                   </Text>
+                )}
+                {unverifiedCount > 0 && (
+                  <UnverifiedTooltip label="Unverified accounts can’t prove ownership, so statements leave them out.">
+                    <Text textStyle="text/sm" color="neutral.600">
+                      {unverifiedCount} Unverified
+                    </Text>
+                  </UnverifiedTooltip>
                 )}
                 {claimIds.length > 0 && <SyncIndicator wallets={wallets.status} />}
               </Flex>
@@ -399,15 +408,20 @@ export function AccountCard({
     >
       {/* Top row: threshold badge + status badge */}
       <HStack>
-        {claim.keystores.length > 1 && (
+        {cardProps.keystores.length > 1 && (
           <StatusBadge
             status="neutral"
-            label={`${cardProps.threshold} of ${claim.keystores.length}`}
+            label={`${cardProps.threshold} of ${cardProps.keystores.length}`}
             size="sm"
             textTransform="none"
           />
         )}
-        <StatusBadge status={badgeStatus} label={badgeLabel} size="sm" ml="auto" />
+        {/* Only a Bitkey's reason is known; a tracked wallet's Unverified badge stays plain. */}
+        <UnverifiedTooltip isDisabled={!isBitkeyClaim(claim)}>
+          <Box as="span" ml="auto">
+            <StatusBadge status={badgeStatus} label={badgeLabel} size="sm" />
+          </Box>
+        </UnverifiedTooltip>
       </HStack>
 
       {/* Keystore logos */}
@@ -728,7 +742,7 @@ function ManualAccountCard({
     >
       {/* Top row: status badge */}
       <HStack>
-        <StatusBadge status="warning" label="Manually Added" size="sm" ml="auto" />
+        <StatusBadge status="neutral" label="Unverified" size="sm" ml="auto" />
       </HStack>
 
       {/* Manual icon */}
@@ -755,7 +769,7 @@ function ManualAccountCard({
 
 function ManualNoteIcon(): JSX.Element {
   return (
-    <Icon viewBox="0 0 24 24" w={7} h={7} color="warning.500">
+    <Icon viewBox="0 0 24 24" w={7} h={7} color="neutral.600">
       <path
         d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
         stroke="currentColor"
@@ -788,8 +802,8 @@ function ManualNoteIcon(): JSX.Element {
 
 function VerifiedBadge(): JSX.Element {
   return (
-    <Icon viewBox="0 0 14 14" w="14px" h="14px">
-      <circle cx="7" cy="7" r="7" fill="#4CAF50" />
+    <Icon viewBox="0 0 14 14" w="14px" h="14px" color="success.600">
+      <circle cx="7" cy="7" r="7" fill="currentColor" />
       <path d="M4 7.2L6 9.2L10 5.2" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
     </Icon>
   )

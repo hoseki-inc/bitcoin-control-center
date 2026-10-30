@@ -1,6 +1,8 @@
 import type { ClaimId } from '@hoseki/packages/schemas/prove'
 import { ErrorBanner } from '@hoseki/packages/ui/design-system'
 import { AppLayout } from '@hoseki/packages/ui/prove-verify-ui'
+import { Navigate } from 'react-router'
+import { ConnectBitkey } from '../../components/claims/bitkey/connect-bitkey'
 import { ClaimVerificationReceipt } from '../../components/claims/claim-verification-receipt'
 import { ConnectColdcard } from '../../components/claims/coldcard/connect-coldcard'
 import { ConnectKeystone } from '../../components/claims/keystone/connect-keystone'
@@ -26,6 +28,10 @@ export function ClaimsVerifyKeystonePage(): JSX.Element {
   return <ConnectKeystone />
 }
 
+export function ClaimsVerifyBitkeyPage(): JSX.Element {
+  return <ConnectBitkey />
+}
+
 export function ClaimsVerifyAdvancedPage(): JSX.Element {
   return <ConnectManual />
 }
@@ -44,7 +50,7 @@ export function ClaimVerificationReceiptPage(): JSX.Element {
 }
 
 function ClaimVerificationReceiptContent({ claimId }: { claimId: ClaimId }): JSX.Element {
-  const { data: claim, isError } = trpc.portalProve.registry.claims.get.byId.useQuery({ id: claimId })
+  const { data: claim, isError, isFetching } = trpc.portalProve.registry.claims.get.byId.useQuery({ id: claimId })
 
   if (isError) {
     return (
@@ -54,9 +60,16 @@ function ClaimVerificationReceiptContent({ claimId }: { claimId: ClaimId }): JSX
     )
   }
 
-  const props = claim
-    ? ({ shouldSetTimeout: true, claim } as const)
-    : ({ shouldSetTimeout: false, claim: null } as const)
+  // Signing marks the cached account stale, so wait for its fresh status before deciding.
+  const isVerified = claim?.status === 'verified'
+  if (claim && !isVerified && !isFetching) {
+    return <Navigate to={`/accounts/${claim.id}`} replace />
+  }
+
+  const props =
+    claim && isVerified
+      ? ({ shouldSetTimeout: true, claim } as const)
+      : ({ shouldSetTimeout: false, claim: null } as const)
 
   return <ClaimVerificationReceipt {...props} />
 }
