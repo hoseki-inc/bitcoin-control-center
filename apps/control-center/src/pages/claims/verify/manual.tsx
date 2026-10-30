@@ -2,20 +2,23 @@ import { Box, Button, Flex, FormControl, FormLabel, Input, Stack } from '@chakra
 import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
 import { TopBar } from '@hoseki/packages/ui/prove-verify-ui/top-bar'
 import { useState } from 'react'
-import { Link, useLocation, useNavigate } from 'react-router'
+import { Link, useLocation } from 'react-router'
 import { toast } from 'sonner'
+import { HoldingsAdded, HoldingsAdding, afterAtLeastASecond } from '../../../components/claims/holdings-added'
 import { parseNavigationState } from '../../../lib/navigation-state'
 import { trpc } from '../../../trpc'
 import { localDateToIso, todayLocalDate } from '../../../utils/local-date'
 
 export function ClaimsVerifyManualPage(): JSX.Element {
-  const navigate = useNavigate()
   const location = useLocation()
   const returnTo = parseNavigationState(location.state)?.returnTo ?? '/accounts'
 
   const [displayName, setDisplayName] = useState('')
   const [btcAmount, setBtcAmount] = useState('')
   const [balanceDate, setBalanceDate] = useState(todayLocalDate)
+
+  const [isSaving, setIsSaving] = useState(false)
+  const [added, setAdded] = useState<{ id: string; balance: string | null } | null>(null)
 
   const createMutation = trpc.portalProve.manual.create.useMutation()
   const utils = trpc.useUtils()
@@ -27,23 +30,35 @@ export function ClaimsVerifyManualPage(): JSX.Element {
       return
     }
 
+    setIsSaving(true)
     try {
       const balanceSats = Math.round(Number(btcAmount) * 1e8).toString()
       const balanceAsOf = localDateToIso(balanceDate)
-      const result = await createMutation.mutateAsync({
-        displayName: displayName.trim(),
-        balanceSats,
-        balanceAsOf,
-      })
+      const result = await afterAtLeastASecond(
+        createMutation.mutateAsync({
+          displayName: displayName.trim(),
+          balanceSats,
+          balanceAsOf,
+        }),
+      )
 
       await utils.portalProve.manual.list.invalidate()
       await utils.portalProve.controlCenter.invalidate()
-      toast.success('Manual account created')
-      void navigate(`/accounts/manual/${result.id}`)
+      setAdded(result)
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to create manual account'
       toast.error(message)
+    } finally {
+      setIsSaving(false)
     }
+  }
+
+  if (isSaving) {
+    return <HoldingsAdding kind="manual" />
+  }
+
+  if (added) {
+    return <HoldingsAdded kind="manual" account={added} />
   }
 
   return (

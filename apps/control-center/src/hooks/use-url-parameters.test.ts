@@ -57,7 +57,7 @@ describe('multisig key receipt', () => {
     await vi.waitFor(() => {
       expect(requests).toHaveLength(1)
     })
-    expect(container.textContent).toContain('Validating key')
+    expect(container.textContent).toContain('Verifying Your Key')
     expect(container.textContent).not.toContain('Failed to get keystore')
   })
 })

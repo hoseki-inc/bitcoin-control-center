@@ -95,6 +95,9 @@ export default function AppRoutes(): JSX.Element {
 
           <Route path="settings" Component={SettingsPage} />
 
+          <Route path="accounts/verify/receipt/:claimId" Component={ClaimVerificationReceiptPage} />
+          <Route path="multisig/verify/receipt/:claimId/:keystoreId" Component={KeystoreReceiptPage} />
+
           <Route path="multisig">
             <Route index element={<Navigate to="/multisig/create" replace />} />
             <Route path="create" Component={MultisigCreatePage} />
@@ -108,8 +111,6 @@ export default function AppRoutes(): JSX.Element {
         <Route element={<AppLayout fullWidth />}>
           <Route path="statements/:statementId" Component={StatementDetailsPage} />
         </Route>
-        <Route path="/accounts/verify/receipt/:claimId" Component={ClaimVerificationReceiptPage} />
-        <Route path="/multisig/verify/receipt/:claimId/:keystoreId" Component={KeystoreReceiptPage} />
 
         <Route path="/test/hardware-wallets" Component={HardwareWalletTestPage} />
 
