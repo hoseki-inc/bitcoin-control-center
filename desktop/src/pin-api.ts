@@ -5,6 +5,8 @@ export interface DesktopPinApi {
    * restarts. False if the prompt is cancelled or refused.
    */
   resetPin: () => Promise<boolean>
+  /** Calls back once an administrator has confirmed, just before the restart. Returns a function that stops listening. */
+  onResetting: (listener: () => void) => () => void
   /** Calls back when the window closes. Returns a function that stops listening. */
   onLock: (listener: () => void) => () => void
 }

@@ -5,7 +5,13 @@ export type PinPlatform = 'startos' | 'umbrel' | 'desktop'
 /** Sentinel's answer about this tab, with any wrong-PIN delay as the time it ends on this computer's clock. */
 export type PinStatus =
   | { platform: null }
-  | { platform: PinPlatform; state: 'insecure' | 'no-pin' | 'signed-out' | 'signed-in'; retryAt: number | null }
+  | {
+      platform: PinPlatform
+      state: 'insecure' | 'no-pin' | 'signed-out' | 'signed-in'
+      retryAt: number | null
+      /** A forgotten PIN was reset and no new one is set yet, so setup can say the accounts are still here. */
+      pinWasReset: boolean
+    }
 
 /**
  * `checking`: waiting for Sentinel's first answer. `closed`: only a PIN screen is mounted. `revealing`: signed in;
