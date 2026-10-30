@@ -6,16 +6,18 @@ import {
   Flex,
   type FlexProps,
   HStack,
+  IconButton,
   ListItem,
   OrderedList,
   Stack,
   Text,
+  Tooltip,
   VisuallyHidden,
   chakra,
   useBreakpointValue,
   useToken,
 } from '@chakra-ui/react'
-import { Logo } from '@hoseki/packages/ui/prove-verify-ui/logo'
+import { IconLogo, Logo } from '@hoseki/packages/ui/prove-verify-ui/logo'
 import { motion, useIsPresent, useReducedMotion } from 'framer-motion'
 import { CheckIcon, CopyIcon, EyeIcon, EyeOffIcon, KeyRoundIcon } from 'lucide-react'
 import { Fragment, type ReactNode, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
@@ -26,7 +28,7 @@ import { type PinPlatform, currentEpoch } from './gate'
 import { PinReadout } from './pin-circles'
 import { MISMATCH_MESSAGE, PinInput, PinSteps, usePinField } from './pin-field'
 
-/** The introduction's background, so moving from setup into the introduction shows no seam. */
+/** The introduction's background on larger screens, so moving from setup into it shows no seam. Plain white on phones. */
 function PinBackdrop(props: FlexProps): JSX.Element {
   const [yellow] = useToken('colors', ['secondary.400'])
   return (
@@ -35,8 +37,11 @@ function PinBackdrop(props: FlexProps): JSX.Element {
       inset={0}
       direction="column"
       overflowY="auto"
-      bg="neutral.50"
-      bgImage={`radial-gradient(60% 55% at 12% 8%, color-mix(in srgb, ${yellow} 55%, transparent) 0%, transparent 70%)`}
+      bg={{ base: 'shades.0', md: 'neutral.50' }}
+      bgImage={{
+        base: 'none',
+        md: `radial-gradient(60% 55% at 12% 8%, color-mix(in srgb, ${yellow} 55%, transparent) 0%, transparent 70%)`,
+      }}
       {...props}
     />
   )
@@ -46,8 +51,9 @@ function PinBackdrop(props: FlexProps): JSX.Element {
 const INTRODUCTION_TOP = 'max(40px, calc((100dvh - 64px - clamp(400px, calc(100dvh - 144px), 560px)) / 2))'
 
 /**
- * The background and logo around a screen's card, which hangs from a fixed height, so the logo stays put as the card
- * changes height. Setup hangs from the introduction's height, so the logo also stays put as the introduction opens.
+ * The background and logo around a screen's content. On phones it's centered, under the bare mark. On larger screens
+ * the card hangs from a fixed height, so the logo stays put as the card changes height. Setup hangs from the
+ * introduction's height, so the logo also stays put as the introduction opens.
  */
 function PinStage({
   beforeIntroduction = false,
@@ -61,13 +67,17 @@ function PinStage({
       <Flex
         direction="column"
         align="center"
-        gap={{ base: 0, md: 8 }}
+        justify={{ base: 'center', md: 'flex-start' }}
+        gap={8}
         minH="100dvh"
-        px={{ base: 0, md: 4 }}
-        pt={{ base: 0, md: beforeIntroduction ? INTRODUCTION_TOP : 'max(40px, calc(50dvh - 252px))' }}
-        pb={{ base: 0, md: 10 }}
+        px={4}
+        pt={{ base: 8, md: beforeIntroduction ? INTRODUCTION_TOP : 'max(40px, calc(50dvh - 252px))' }}
+        pb={{ base: 8, md: 10 }}
       >
-        <Box py={{ base: 5, md: 0 }}>
+        <Box display={{ base: 'block', md: 'none' }}>
+          <IconLogo logoHeight="48px" />
+        </Box>
+        <Box display={{ base: 'none', md: 'block' }}>
           <Logo />
         </Box>
         {children}
@@ -108,20 +118,18 @@ function SmoothHeight({ children }: { children: ReactNode }): JSX.Element {
   )
 }
 
-/** One floating card, as wide as the introduction's text panel. On phones, a sheet under the logo. */
+/** One floating card on larger screens, as wide as the introduction's text panel. Phones have no card: one centered column. */
 function PinCard({ fading = false, children }: { fading?: boolean; children: ReactNode }): JSX.Element {
   return (
     <Box
-      flex={{ base: 1, md: 'none' }}
       w="full"
-      maxW={{ md: '436px' }}
-      bg="shades.0"
+      maxW={{ base: '316px', md: '436px' }}
+      textAlign={{ base: 'center', md: 'left' }}
+      bg={{ md: 'shades.0' }}
       borderStyle="solid"
       borderColor="neutral.200"
       borderWidth={{ base: 0, md: '1px' }}
-      borderTopWidth="1px"
-      borderTopRadius="dialog"
-      borderBottomRadius={{ md: 'dialog' }}
+      borderRadius={{ md: 'dialog' }}
       boxShadow={{ md: 'floating' }}
       overflow="hidden"
       opacity={fading ? 0 : 1}
@@ -129,7 +137,8 @@ function PinCard({ fading = false, children }: { fading?: boolean; children: Rea
       pointerEvents={fading ? 'none' : undefined}
     >
       <SmoothHeight>
-        <Box p={{ base: 6, md: 10 }}>{children}</Box>
+        {/* The padding on phones leaves room for focus rings, which the height's overflow would cut off. */}
+        <Box p={{ base: 2, md: 10 }}>{children}</Box>
       </SmoothHeight>
     </Box>
   )
@@ -150,7 +159,7 @@ function PinTitle({ takesFocus = false, children }: { takesFocus?: boolean; chil
       ref={titleRef}
       id={isPresent ? 'pin-screen-title' : undefined}
       tabIndex={takesFocus ? -1 : undefined}
-      textStyle="text/xl"
+      textStyle={{ base: 'text/2xl', md: 'text/xl' }}
       fontWeight="medium"
       color="neutral.900"
       sx={{ '&:focus': { outline: 'none' } }}
@@ -175,7 +184,13 @@ function PinHeading({
     <Box>
       <PinTitle takesFocus={takesFocus}>{title}</PinTitle>
       {description !== undefined && (
-        <Text id={descriptionId} mt={2} textStyle="text/md" color="neutral.600" sx={{ textWrap: 'pretty' }}>
+        <Text
+          id={descriptionId}
+          mt={2}
+          textStyle="text/md"
+          color="neutral.600"
+          sx={{ textWrap: { base: 'balance', md: 'pretty' } }}
+        >
           {description}
         </Text>
       )}
@@ -188,9 +203,9 @@ function useButtonSize(): 'md' | 'sm' {
   return useBreakpointValue<'md' | 'sm'>({ base: 'md', md: 'sm' }, { ssr: false }) ?? 'sm'
 }
 
-// Ghost buttons on the card's left edge line their text up with the title above.
-const GHOST_INSET = { variant: 'ghost', ms: -4, color: 'neutral.600' } as const
-const STACK_SPACING = { base: 6, md: 8 } as const
+// On the card's left edge, ghost buttons line their text up with the title above.
+const GHOST_INSET = { variant: 'ghost', ms: { md: -4 }, color: 'neutral.600' } as const
+const STACK_SPACING = 8
 
 export function SignInScreen({ platform, onSignedIn }: { platform: PinPlatform; onSignedIn: () => void }): JSX.Element {
   const field = usePinField()
@@ -246,9 +261,9 @@ export function SignInScreen({ platform, onSignedIn }: { platform: PinPlatform; 
   )
 }
 
-/** Labeled, and says so when it worked. */
-function CopyButton({ value, label, ...props }: ButtonProps & { value: string; label: string }): JSX.Element {
-  const [result, setResult] = useState<'copied' | 'failed' | null>(null)
+/** Copies to the clipboard. What came of it, as text to show, lasts two seconds. */
+function useCopy(value: string) {
+  const [result, setResult] = useState<'Copied' | 'Couldn’t copy' | null>(null)
   useEffect(() => {
     if (result === null) {
       return
@@ -260,28 +275,70 @@ function CopyButton({ value, label, ...props }: ButtonProps & { value: string; l
       clearTimeout(timer)
     }
   }, [result])
-  const text = result === 'copied' ? 'Copied' : result === 'failed' ? 'Couldn’t copy' : label
+  return {
+    result,
+    copy: () => {
+      void navigator.clipboard
+        .writeText(value)
+        .then(() => {
+          setResult('Copied')
+        })
+        .catch(() => {
+          setResult('Couldn’t copy')
+        })
+    },
+  }
+}
+
+/** Labeled, and says so when it worked. */
+function CopyButton({ value, label, ...props }: ButtonProps & { value: string; label: string }): JSX.Element {
+  const { result, copy } = useCopy(value)
   return (
     <>
       <Button
         variant="outline"
-        leftIcon={result === 'copied' ? <CheckIcon size={16} /> : <CopyIcon size={16} />}
-        onClick={() => {
-          void navigator.clipboard
-            .writeText(value)
-            .then(() => {
-              setResult('copied')
-            })
-            .catch(() => {
-              setResult('failed')
-            })
-        }}
+        leftIcon={result === 'Copied' ? <CheckIcon size={16} /> : <CopyIcon size={16} />}
+        onClick={copy}
         {...props}
       >
-        {text}
+        {result ?? label}
       </Button>
-      <VisuallyHidden aria-live="polite">{result === null ? '' : text}</VisuallyHidden>
+      <VisuallyHidden aria-live="polite">{result ?? ''}</VisuallyHidden>
     </>
+  )
+}
+
+/** A command to run, with a copy button in its corner, beside its short first line. */
+function CommandBlock({ command }: { command: string }): JSX.Element {
+  const { result, copy } = useCopy(command)
+  const buttonSize = useButtonSize()
+  return (
+    <Box position="relative" mt={2}>
+      <Code display="block" p={3} borderRadius="md" bg="neutral.100">
+        {/* Wraps only between words, so a long name never looks like two when it's retyped. */}
+        {command.split(' ').map((word, index) => (
+          <Fragment key={index}>
+            {index > 0 && ' '}
+            <chakra.span whiteSpace="nowrap">{word}</chakra.span>
+          </Fragment>
+        ))}
+      </Code>
+      <Tooltip label={result ?? 'Copy'} isOpen={result === null ? undefined : true}>
+        <IconButton
+          aria-label="Copy command"
+          position="absolute"
+          top={1}
+          right={1}
+          variant="ghost"
+          size={buttonSize}
+          color="neutral.700"
+          _hover={{ bg: 'neutral.200' }}
+          icon={result === 'Copied' ? <CheckIcon size={16} /> : <CopyIcon size={16} />}
+          onClick={copy}
+        />
+      </Tooltip>
+      <VisuallyHidden aria-live="polite">{result ?? ''}</VisuallyHidden>
+    </Box>
   )
 }
 
@@ -378,8 +435,14 @@ export function SetupScreen({
         <VisuallyHidden aria-live="polite">
           Step {SETUP_STEPS.indexOf(step.step) + 1} of {SETUP_STEPS.length}
         </VisuallyHidden>
-        {/* As tall as its buttons, so the card doesn't change height when one appears. */}
-        <Flex align="center" gap={4} mt={6} minH={{ base: 11, md: 9 }}>
+        {/* As tall as its buttons, so nothing moves when one appears. */}
+        <Flex
+          direction={{ base: 'column', md: 'row' }}
+          align="center"
+          gap={{ base: 3, md: 4 }}
+          mt={6}
+          minH={{ base: '62px', md: 9 }}
+        >
           {step.step === 'confirm' && (
             <Button
               {...GHOST_INSET}
@@ -392,11 +455,17 @@ export function SetupScreen({
               Back
             </Button>
           )}
-          <Box ms="auto">
+          <Box ms={{ md: 'auto' }} order={{ base: -1, md: 0 }}>
             <StepDots count={SETUP_STEPS.length} current={SETUP_STEPS.indexOf(step.step)} />
           </Box>
           {step.step === 'save' && (
-            <Button size={buttonSize} minW="6.5rem" isDisabled={leaving} onClick={leave}>
+            <Button
+              w={{ base: 'full', md: 'auto' }}
+              size={buttonSize}
+              minW="6.5rem"
+              isDisabled={leaving}
+              onClick={leave}
+            >
               Continue
             </Button>
           )}
@@ -451,7 +520,16 @@ export function StartOsSetupScreen(): JSX.Element {
     <PinStage>
       <PinCard>
         <Stack spacing={STACK_SPACING}>
-          <Flex w={12} h={12} borderRadius="full" bg="neutral.100" color="neutral.700" align="center" justify="center">
+          <Flex
+            alignSelf={{ base: 'center', md: 'flex-start' }}
+            w={12}
+            h={12}
+            borderRadius="full"
+            bg="neutral.100"
+            color="neutral.700"
+            align="center"
+            justify="center"
+          >
             <KeyRoundIcon size={20} aria-hidden="true" />
           </Flex>
           <PinHeading
@@ -477,7 +555,13 @@ export function UnreachableScreen({ onRetry, retrying }: { onRetry: () => void; 
             title="Couldn’t reach Control Center"
             description="Check that it’s running, then try again."
           />
-          <Button alignSelf="flex-start" size={buttonSize} minW="6.5rem" onClick={onRetry} isLoading={retrying}>
+          <Button
+            alignSelf={{ base: 'stretch', md: 'flex-start' }}
+            size={buttonSize}
+            minW="6.5rem"
+            onClick={onRetry}
+            isLoading={retrying}
+          >
             Try again
           </Button>
         </Stack>
@@ -512,16 +596,7 @@ const FORGOT_STEPS: Record<'startos' | 'umbrel', ReactNode[]> = {
     'Open the umbrelOS terminal (Settings, Advanced settings).',
     <>
       Run this command:
-      <Code display="block" mt={2} p={3} borderRadius="md" bg="neutral.100">
-        {/* Wraps only between words, so a long name never looks like two when it's retyped. */}
-        {UMBREL_RESET_COMMAND.split(' ').map((word, index) => (
-          <Fragment key={index}>
-            {index > 0 && ' '}
-            <chakra.span whiteSpace="nowrap">{word}</chakra.span>
-          </Fragment>
-        ))}
-      </Code>
-      <CopyButton mt={2} size="sm" value={UMBREL_RESET_COMMAND} label="Copy command" />
+      <CommandBlock command={UMBREL_RESET_COMMAND} />
     </>,
     'Restart Bitcoin Control Center, then set a new PIN right away.',
   ],
@@ -536,7 +611,7 @@ function ForgotPin({ platform, onBack }: { platform: PinPlatform; onBack: () => 
   return (
     <Stack spacing={STACK_SPACING}>
       <PinHeading takesFocus title="Reset your PIN" description="Your accounts and history stay as they are." />
-      <OrderedList spacing={3} ms={5} textStyle="text/sm" color="neutral.900">
+      <OrderedList spacing={3} ms={5} textAlign="left" textStyle="text/sm" color="neutral.900">
         {FORGOT_STEPS[platform].map((step, index) => (
           <ListItem key={index}>{step}</ListItem>
         ))}
@@ -579,12 +654,18 @@ function DesktopReset({ onBack }: { onBack: () => void }): JSX.Element {
           {phase === 'refused' && 'PIN not reset. Nothing changed.'}
           {phase === 'restarting' && 'PIN reset. Restarting Control Center…'}
         </Text>
-        <Flex align="center" justify="space-between">
+        <Flex
+          direction={{ base: 'column-reverse', md: 'row' }}
+          align="center"
+          justify={{ md: 'space-between' }}
+          gap={{ base: 2, md: 0 }}
+        >
           <Button {...GHOST_INSET} size={buttonSize} isDisabled={busy} onClick={onBack}>
             Back
           </Button>
           {desktopPin && (
             <Button
+              w={{ base: 'full', md: 'auto' }}
               size={buttonSize}
               minW="6.5rem"
               isLoading={busy}
