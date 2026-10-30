@@ -71,6 +71,8 @@ function turnVariants({ distance, blur, delay }: { distance: number; blur: numbe
 
 // The preview travels a little further and later than the text, for a touch of depth.
 export const TEXT_TURN = turnVariants({ distance: 12, blur: 4, delay: 0.04 })
+/** Text that arrives only once the step before it has gone, for when the two would collide. */
+export const TEXT_TURN_AFTER_EXIT = turnVariants({ distance: 12, blur: 4, delay: TURN_OUT_S })
 const PREVIEW_TURN = turnVariants({ distance: 32, blur: 6, delay: 0.1 })
 /** With reduced motion, steps simply cross-fade. */
 export const FADE_TURN: Variants = {
