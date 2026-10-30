@@ -92,16 +92,7 @@ export function ConnectionSuccess({
           onClick={onClose}
         />
 
-        <Lockup
-          title={title}
-          subtitle={subtitle}
-          hero={hero}
-          badge={
-            <Box bg="white" borderRadius="full" p="3px">
-              <SuccessCheck size="52px" tone={checkTone} />
-            </Box>
-          }
-        />
+        <Lockup title={title} subtitle={subtitle} hero={hero} badge={<SuccessCheck size="52px" tone={checkTone} />} />
 
         {balance && <SuccessBalance balance={balance} badge={badge} />}
 
