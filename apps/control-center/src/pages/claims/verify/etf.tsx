@@ -16,9 +16,10 @@ import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
 import { TopBar } from '@hoseki/packages/ui/prove-verify-ui/top-bar'
 import { Decimal } from 'decimal.js'
 import { useState } from 'react'
-import { Link, useLocation, useNavigate } from 'react-router'
+import { Link, useLocation } from 'react-router'
 import { toast } from 'sonner'
 import { BitcoinAmount } from '../../../components/bitcoin-amount'
+import { HoldingsAdded, HoldingsAdding, afterAtLeastASecond } from '../../../components/claims/holdings-added'
 import { parseNavigationState } from '../../../lib/navigation-state'
 import { trpc } from '../../../trpc'
 
@@ -36,12 +37,14 @@ function createEmptyRow(): HoldingRow {
 }
 
 export function ClaimsVerifyEtfPage(): JSX.Element {
-  const navigate = useNavigate()
   const location = useLocation()
   const returnTo = parseNavigationState(location.state)?.returnTo ?? '/accounts'
 
   const [displayName, setDisplayName] = useState('')
   const [holdings, setHoldings] = useState<HoldingRow[]>([createEmptyRow()])
+
+  const [isSaving, setIsSaving] = useState(false)
+  const [added, setAdded] = useState<{ id: string; balance: string | null } | null>(null)
 
   const createMutation = trpc.portalProve.etf.create.useMutation()
   const utils = trpc.useUtils()
@@ -87,6 +90,7 @@ export function ClaimsVerifyEtfPage(): JSX.Element {
       return
     }
 
+    setIsSaving(true)
     try {
       const validHoldings = holdings
         .filter((r) => {
@@ -99,19 +103,30 @@ export function ClaimsVerifyEtfPage(): JSX.Element {
           datePurchased: r.datePurchased ? new Date(r.datePurchased + 'T12:00:00').toISOString() : undefined,
         }))
 
-      const result = await createMutation.mutateAsync({
-        displayName: displayName.trim(),
-        holdings: validHoldings,
-      })
+      const result = await afterAtLeastASecond(
+        createMutation.mutateAsync({
+          displayName: displayName.trim(),
+          holdings: validHoldings,
+        }),
+      )
 
       await utils.portalProve.etf.list.invalidate()
       await utils.portalProve.controlCenter.invalidate()
-      toast.success('ETF account created')
-      void navigate(`/accounts/etf/${result.id}`)
+      setAdded(result)
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to create ETF account'
       toast.error(message)
+    } finally {
+      setIsSaving(false)
     }
+  }
+
+  if (isSaving) {
+    return <HoldingsAdding kind="etf" />
+  }
+
+  if (added) {
+    return <HoldingsAdded kind="etf" account={added} />
   }
 
   return (
