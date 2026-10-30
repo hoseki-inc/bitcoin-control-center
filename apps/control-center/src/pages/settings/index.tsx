@@ -18,7 +18,7 @@ import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { getQueryKey } from '@trpc/react-query'
 import { CircleCheckIcon } from 'lucide-react'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { useLocalSetting } from '../../hooks/use-local-settings'
 import { isDesktop } from '../../mode'
@@ -32,6 +32,14 @@ export function SettingsPage({ desktop = isDesktop }: { desktop?: boolean }): JS
   const { data: savedName, isLoading, saveAsync, isSaving, isError } = useLocalSetting('user_name')
   const [draftName, setDraftName] = useState<string | null>(null)
   const name = draftName ?? savedName ?? ''
+  const electrumRef = useRef<HTMLDivElement>(null)
+
+  // The public server notice links here, opening the page anew.
+  useEffect(() => {
+    if (window.location.hash === '#electrum-server') {
+      electrumRef.current?.scrollIntoView({ block: 'start' })
+    }
+  }, [])
 
   const handleSave = async (): Promise<void> => {
     try {
@@ -99,7 +107,11 @@ export function SettingsPage({ desktop = isDesktop }: { desktop?: boolean }): JS
         <SecuritySettings />
         <PriceSourceSettings />
         {desktop && <DesktopStatementSource />}
-        {desktop && <ElectrumSettings />}
+        {desktop && (
+          <Box id="electrum-server" ref={electrumRef} scrollMarginTop={6}>
+            <ElectrumSettings />
+          </Box>
+        )}
       </Stack>
     </Box>
   )

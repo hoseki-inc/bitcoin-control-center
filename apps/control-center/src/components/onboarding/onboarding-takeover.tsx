@@ -20,10 +20,12 @@ import {
   useIsPresent,
   useReducedMotion,
 } from 'framer-motion'
-import { type ComponentProps, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
+import { type ComponentProps, type ReactNode, useEffect, useRef, useState } from 'react'
 import { isDesktop } from '../../mode'
+import type { ElectrumChoice } from './electrum-choice'
 import { EASE_IN, EASE_OUT, TURN_IN_S, TURN_OUT_S } from './onboarding-motion'
 import { onboardingSteps } from './onboarding-steps'
+import { useServerSteps } from './server-step'
 import { StepDots } from './step-dots'
 
 /** Fades in and out with the same timing as a step, instead of Chakra's scale, so the backdrop doesn't zoom. */
@@ -111,14 +113,18 @@ export function OnboardingTakeover({
   onSkip,
   onAddAccount,
   desktop = isDesktop,
+  serverChoice,
 }: {
   isOpen: boolean
   /** Skip, Not Now and Escape all close it. */
   onSkip: () => void
   onAddAccount: () => void
   desktop?: boolean
+  /** Adds a step to choose the Electrum server, before the first account. Desktop only. */
+  serverChoice?: ElectrumChoice
 }): JSX.Element {
-  const steps = useMemo(() => onboardingSteps(desktop), [desktop])
+  const serverSteps = useServerSteps(serverChoice)
+  const steps = onboardingSteps(desktop, serverSteps)
   const [{ index, direction }, setPage] = useState({ index: 0, direction: 1 })
   const reduceMotion = useReducedMotion() === true
   const footer = useBreakpointValue({ base: PHONE_FOOTER, md: DESKTOP_FOOTER }, { ssr: false }) ?? DESKTOP_FOOTER
@@ -130,20 +136,40 @@ export function OnboardingTakeover({
   const step = steps[index]
   const isFirst = index === 0
   const isLast = index === steps.length - 1
+  const action = step?.primary
+  // A follow-up shares the dot of the step it carries on from.
+  const dotCount = steps.filter((item) => item.followUp !== true).length
+  const dot = steps.slice(0, index + 1).filter((item) => item.followUp !== true).length - 1
 
   const goTo = (next: number): void => {
     setPage({ index: next, direction: next > index ? 1 : -1 })
   }
 
-  // Back disappears on the first step; keep focus in the dialog when it does.
-  // Opening is left to the dialog, which focuses itself.
+  const next = (): void => {
+    if (isLast) {
+      onAddAccount()
+    } else if (action === undefined) {
+      goTo(index + 1)
+    } else if (action.isLoading !== true) {
+      void action.run().then((done) => {
+        if (done) {
+          goTo(index + 1)
+        }
+      })
+    }
+  }
+
+  // Back disappears on the first step, and a step's own controls leave with it; keep focus in the
+  // dialog when they do. Opening is left to the dialog, which focuses itself.
   const shownIndex = useRef(index)
   useEffect(() => {
     if (shownIndex.current === index) {
       return
     }
     shownIndex.current = index
-    if (contentRef.current?.contains(document.activeElement) !== true) {
+    const focused = document.activeElement
+    const leaving = focused instanceof HTMLElement && focused.closest('[aria-hidden="true"]') !== null
+    if (contentRef.current?.contains(focused) !== true || leaving) {
       primaryRef.current?.focus()
     }
   }, [index])
@@ -219,25 +245,29 @@ export function OnboardingTakeover({
               borderColor="neutral.200"
             >
               {/* One grid cell, so the outgoing and incoming text overlap as they cross. On phones it
-                  keeps room for the longest step, so the preview above doesn't resize between steps. */}
-              <Box display="grid" minH={{ base: '8.5rem', md: 0 }}>
+                  keeps room for the longest step, so the preview above doesn't resize between steps.
+                  A step with controls scrolls on a short screen rather than pushing out the footer;
+                  the padding keeps focus rings clear of the scroll edge. */}
+              <Box display="grid" minH={{ base: '8.5rem', md: 0 }} overflowY="auto" m={-1} p={1}>
                 <AnimatePresence initial={false} custom={direction}>
                   <StepLayer key={step.id} custom={direction} variants={textTurn} gridArea="1 / 1">
                     <StepTitle>{step.title}</StepTitle>
                     <Text textStyle="text/md" color="neutral.600" mt={2}>
                       {step.body}
                     </Text>
+                    {step.controls && <Box mt={5}>{step.controls(next)}</Box>}
                   </StepLayer>
                 </AnimatePresence>
               </Box>
               <VisuallyHidden aria-live="polite">
-                Step {index + 1} of {steps.length}
+                Step {dot + 1} of {dotCount}
               </VisuallyHidden>
               <Flex align="center" gap={2} mt="auto" flexWrap="wrap">
                 {!isFirst && (
                   <Button
                     variant="ghost"
                     size={footer.size}
+                    isDisabled={action?.isLoading === true}
                     onClick={() => {
                       goTo(index - 1)
                     }}
@@ -253,7 +283,7 @@ export function OnboardingTakeover({
                   me={{ sm: 2 }}
                   mb={{ base: 2, sm: 0 }}
                 >
-                  <StepDots count={steps.length} current={index} />
+                  <StepDots count={dotCount} current={dot} />
                 </Flex>
                 <Flex gap={2} ms={{ base: 'auto', sm: 0 }}>
                   <Button variant="ghost" size={footer.size} minW={footer.secondaryMinW} onClick={onSkip}>
@@ -263,15 +293,11 @@ export function OnboardingTakeover({
                     ref={primaryRef}
                     size={footer.size}
                     minW={footer.primaryMinW}
-                    onClick={() => {
-                      if (isLast) {
-                        onAddAccount()
-                      } else {
-                        goTo(index + 1)
-                      }
-                    }}
+                    isLoading={action?.isLoading === true}
+                    loadingText={action?.loadingText}
+                    onClick={next}
                   >
-                    {isLast ? 'Add Account' : 'Continue'}
+                    {isLast ? 'Add Account' : (action?.label ?? 'Continue')}
                   </Button>
                 </Flex>
               </Flex>
