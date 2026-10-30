@@ -576,6 +576,19 @@ it('resets a forgotten PIN on desktop through the computer’s administrator pro
   await see('PIN not reset. Nothing changed.')
 })
 
+it('copies the Umbrel reset command', async () => {
+  await render(fakeSentinel({ platform: 'umbrel' }))
+  const writeText = vi.fn(async () => undefined)
+  Object.defineProperty(window.navigator, 'clipboard', { value: { writeText }, configurable: true })
+  await click('Forgot PIN?')
+  await see('Reset your PIN')
+  await click('Copy command')
+  expect(writeText).toHaveBeenCalledWith(
+    'sudo docker exec bitcoin-control-center_web_1 node /app/dist/cli.js reset-pin',
+  )
+  await see('Copied')
+})
+
 it('says the desktop is restarting once an administrator confirms', async () => {
   // Never answers: the app restarts instead.
   const resetPin = vi.fn(async () => new Promise<boolean>(() => undefined))
