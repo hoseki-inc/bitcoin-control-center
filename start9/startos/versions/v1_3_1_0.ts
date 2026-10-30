@@ -1,7 +1,7 @@
 import { VersionInfo } from '@start9labs/start-sdk'
 
-export const v1_3_0_0 = VersionInfo.of({
-  version: '1.3.0:0',
+export const v1_3_1_0 = VersionInfo.of({
+  version: '1.3.1:0',
   releaseNotes: `Bitkey support and track-only wallets.
 
 - Bitkey: connect your Bitkey by pasting its wallet descriptor from the Bitkey app. Its balance and history show in Control Center. Bitkey doesn't support proving ownership of its keys, so it stays Unverified and isn't included in statements.
