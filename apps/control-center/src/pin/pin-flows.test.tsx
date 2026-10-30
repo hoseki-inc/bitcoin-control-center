@@ -40,15 +40,16 @@ interface StatusState {
   insecure: boolean
   signedIn: boolean
   retryAfterMs: number | null
+  pinWasReset: boolean
 }
 
 // The one place that knows the status wire shape.
-function statusJson({ platform, pinSet, insecure, signedIn, retryAfterMs }: StatusState): Json {
+function statusJson({ platform, pinSet, insecure, signedIn, retryAfterMs, pinWasReset }: StatusState): Json {
   if (platform === null) {
     return { platform }
   }
   const state = insecure ? 'insecure' : !pinSet ? 'no-pin' : signedIn ? 'signed-in' : 'signed-out'
-  return { platform, state, retryAfterMs }
+  return { platform, state, retryAfterMs, pinWasReset }
 }
 
 function resetAppState(): void {
@@ -71,6 +72,7 @@ function fakeSentinel({
   pinSet = true,
   insecure = false,
   retryAfterMs = null,
+  pinWasReset = false,
   wrong = [],
   failing = [],
 }: {
@@ -78,6 +80,7 @@ function fakeSentinel({
   pinSet?: boolean
   insecure?: boolean
   retryAfterMs?: number | null
+  pinWasReset?: boolean
   /** Answers to wrong PINs, in order; after these, a plain wrong PIN. */
   wrong?: WrongOutcome[]
   /** Routes that fail as if the network were down. */
@@ -120,6 +123,7 @@ function fakeSentinel({
             insecure,
             signedIn,
             retryAfterMs: retryUntil === null || retryUntil <= Date.now() ? null : retryUntil - Date.now(),
+            pinWasReset,
           }),
         )
       case 'auth.setFirstPin':
@@ -172,8 +176,9 @@ function fakeSentinel({
 
 let root: Root
 let desktopLock: (() => void) | undefined
+let desktopResetting: (() => void) | undefined
 
-/** A page whose data never arrives, so the reveal waits its full 1.5 s. */
+/** A page whose data never arrives, so the reveal waits as long as it may. */
 function SlowPage(): null {
   useQuery({ queryKey: ['slow-page'], queryFn: async () => new Promise<never>(() => undefined) })
   return null
@@ -196,9 +201,14 @@ async function render(
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
   vi.stubGlobal('fetch', sentinel.fetchMock)
   desktopLock = undefined
+  desktopResetting = undefined
   dom.window.desktop = {
     pin: {
       resetPin,
+      onResetting: (listener) => {
+        desktopResetting = listener
+        return () => undefined
+      },
       onLock: (listener) => {
         desktopLock = listener
         return () => undefined
@@ -231,19 +241,31 @@ function showing(text: string): boolean {
   return document.body.textContent.includes(text)
 }
 
+/** Leaves out a screen or step fading out, which is hidden from assistive technology. */
+function onScreen(text: string): boolean {
+  const page = document.body.cloneNode(true)
+  assert(page instanceof HTMLElement, 'Expected the body')
+  for (const hidden of page.querySelectorAll('[aria-hidden="true"]')) {
+    hidden.remove()
+  }
+  return page.textContent.includes(text)
+}
+
 async function see(text: string, timeout = 5000): Promise<void> {
   await vi.waitFor(
     () => {
-      expect(showing(text)).toBe(true)
+      expect(onScreen(text)).toBe(true)
     },
     { timeout },
   )
 }
 
-/** The newest PIN field: an earlier screen can still be fading out. */
+/** The newest PIN field: an earlier screen or step can still be fading out, hidden from assistive technology. */
 async function pinField(): Promise<HTMLInputElement> {
   return vi.waitFor(() => {
-    const found = [...document.querySelectorAll<HTMLInputElement>('input[type="password"]')].at(-1)
+    const found = [...document.querySelectorAll<HTMLInputElement>('input[type="password"]')]
+      .filter((input) => input.closest('[aria-hidden="true"]') === null)
+      .at(-1)
     assert.exists(found, 'Expected a PIN field')
     return found
   })
@@ -263,6 +285,7 @@ async function click(name: string): Promise<void> {
   const button = await vi.waitFor(() => {
     const found = [...document.querySelectorAll<HTMLElement>('button, a')]
       .filter((element) => element.textContent === name || element.getAttribute('aria-label') === name)
+      .filter((element) => element.closest('[aria-hidden="true"]') === null)
       .at(-1)
     assert.exists(found, `Expected the ${name} button`)
     return found
@@ -375,7 +398,8 @@ it('explains wrong PINs, warns before the delay, and counts the delay down', asy
     expect((await pinField()).value).toBe('')
   })
   await type('111111')
-  await see('Too many wrong PINs. Try again in 0:0')
+  await see('Too many wrong PINs. Try again in ')
+  await see(' second')
   expect((await pinField()).disabled).toBe(true)
 
   // Once the delay passes, the field takes a PIN again.
@@ -415,21 +439,23 @@ it('sets up a PIN: choose, confirm, save, then into the app', async () => {
   const sentinel = fakeSentinel({ pinSet: false })
   await render(sentinel)
   await see('Set up your PIN')
-  expect(showing('You’ll enter it each time you open Control Center.')).toBe(true)
+  expect(showing('6 digits you’ll enter each time you open Control Center.')).toBe(true)
 
   await type(PIN)
-  await see('Enter it again')
-  expect(showing('To make sure it’s the PIN you meant.')).toBe(true)
+  await see('Confirm your PIN')
+  expect(showing('Enter the same 6 digits again.')).toBe(true)
   await type('000000')
   await see('Those PINs didn’t match. Choose your PIN again.')
   await see('Set up your PIN')
 
   await type(PIN)
-  await see('Enter it again')
+  await see('Confirm your PIN')
   await type(PIN)
-  await see('Save your PIN')
+  await see('Your PIN is set')
   expect(
-    showing('Keep it in your password manager. If you forget it, you’ll need to reset it from the umbrelOS terminal.'),
+    showing(
+      'Keep a copy in your password manager. If you forget it, you can reset it from the umbrelOS terminal, keeping your accounts and history.',
+    ),
   ).toBe(true)
   expect(showing(PIN)).toBe(false)
   await click('Show PIN')
@@ -442,14 +468,44 @@ it('sets up a PIN: choose, confirm, save, then into the app', async () => {
   expect(sentinel.calls.filter((call) => call.route === 'auth.setFirstPin')).toHaveLength(1)
 }, 15_000)
 
-it('tells desktop users the administrator password resets a forgotten PIN', async () => {
+it('tells desktop users an administrator can reset a forgotten PIN', async () => {
   await render(fakeSentinel({ platform: 'desktop', pinSet: false }))
   await type(PIN)
-  await see('Enter it again')
+  await see('Confirm your PIN')
   await type(PIN)
   await see(
-    'Keep it in your password manager. If you forget it, you’ll need this computer’s administrator password to reset it.',
+    'Keep a copy in your password manager. If you forget it, an administrator of this computer can reset it, keeping your accounts and history.',
   )
+})
+
+it('says the accounts are still here after a reset, until the new PIN is chosen', async () => {
+  await render(fakeSentinel({ pinSet: false, pinWasReset: true }))
+  await see('Choose a new PIN')
+  expect(showing('Your PIN was reset. Your accounts and history are as you left them.')).toBe(true)
+  await type(PIN)
+  await see('Confirm your PIN')
+  expect(onScreen('Your PIN was reset.')).toBe(false)
+})
+
+it('goes back from confirming to choosing, with fresh circles', async () => {
+  await render(fakeSentinel({ pinSet: false }))
+  await type(PIN)
+  await see('Confirm your PIN')
+  await type('12')
+  await click('Back')
+  await see('Set up your PIN')
+  expect((await pinField()).value).toBe('')
+})
+
+it('takes focus to the title on the Save step, so screen readers announce it', async () => {
+  await render(fakeSentinel({ pinSet: false }))
+  await type(PIN)
+  await see('Confirm your PIN')
+  await type(PIN)
+  await see('Your PIN is set')
+  await vi.waitFor(() => {
+    expect(document.activeElement?.textContent).toBe('Your PIN is set')
+  })
 })
 
 it('copies the new PIN', async () => {
@@ -457,9 +513,9 @@ it('copies the new PIN', async () => {
   const writeText = vi.fn(async () => undefined)
   Object.defineProperty(window.navigator, 'clipboard', { value: { writeText }, configurable: true })
   await type(PIN)
-  await see('Enter it again')
+  await see('Confirm your PIN')
   await type(PIN)
-  await see('Save your PIN')
+  await see('Your PIN is set')
   await click('Copy PIN')
   expect(writeText).toHaveBeenCalledWith(PIN)
   await see('Copied')
@@ -468,7 +524,7 @@ it('copies the new PIN', async () => {
 it('starts setup over when Sentinel can’t be reached', async () => {
   await render(fakeSentinel({ pinSet: false, failing: ['auth.setFirstPin'] }))
   await type(PIN)
-  await see('Enter it again')
+  await see('Confirm your PIN')
   await type(PIN)
   await see('Couldn’t reach Control Center. Try again.')
   await see('Set up your PIN')
@@ -480,7 +536,7 @@ it.each([
     [
       'Open the umbrelOS terminal (Settings, Advanced settings).',
       'sudo docker exec bitcoin-control-center_web_1 node /app/dist/cli.js reset-pin',
-      'Restart Bitcoin Control Center, then set a new PIN.',
+      'Restart Bitcoin Control Center, then set a new PIN right away.',
     ],
   ],
   [
@@ -499,15 +555,70 @@ it.each([
     expect(showing(step)).toBe(true)
   }
   expect(showing('Your accounts and history stay as they are.')).toBe(true)
+  // The steps stay on screen, with the way back to the field.
+  await click('Back')
+  await see('Enter your PIN')
+  expect(onScreen('Your accounts and history stay as they are.')).toBe(false)
 })
 
 it('resets a forgotten PIN on desktop through the computer’s administrator prompt', async () => {
   const resetPin = vi.fn(async () => false)
   await render(fakeSentinel({ platform: 'desktop' }), { resetPin })
   await click('Forgot PIN?')
-  await see('Forgot your PIN?')
+  await see('Reset your PIN')
+  expect(
+    showing(
+      'Your accounts and history stay as they are. Your computer will ask an administrator to confirm, then you’ll choose a new PIN.',
+    ),
+  ).toBe(true)
   await click('Reset PIN')
   expect(resetPin).toHaveBeenCalledOnce()
+  await see('PIN not reset. Nothing changed.')
+})
+
+it('says the desktop is restarting once an administrator confirms', async () => {
+  // Never answers: the app restarts instead.
+  const resetPin = vi.fn(async () => new Promise<boolean>(() => undefined))
+  await render(fakeSentinel({ platform: 'desktop' }), { resetPin })
+  await click('Forgot PIN?')
+  await see('Reset your PIN')
+  await click('Reset PIN')
+  await vi.waitFor(() => {
+    assert.exists(desktopResetting)
+  })
+  await act(async () => {
+    desktopResetting?.()
+  })
+  await see('PIN reset. Restarting Control Center…')
+})
+
+it('sends a digit typed with focus elsewhere to the PIN field', async () => {
+  await render(fakeSentinel())
+  const input = await pinField()
+  await act(async () => {
+    input.blur()
+    window.dispatchEvent(new window.KeyboardEvent('keydown', { key: '4' }))
+  })
+  expect(document.activeElement).toBe(input)
+  await act(async () => {
+    input.blur()
+    window.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'a' }))
+  })
+  expect(document.activeElement).not.toBe(input)
+})
+
+it('keeps the hidden username out of the tab order', async () => {
+  await render(fakeSentinel())
+  await see('Enter your PIN')
+  expect(document.querySelector<HTMLInputElement>('input[name="username"]')?.tabIndex).toBe(-1)
+})
+
+it('announces a wait once, rather than every second it counts down', async () => {
+  await render(fakeSentinel({ retryAfterMs: 1500 }))
+  await see('Too many wrong PINs. You can try again when the wait ends.')
+  const live = [...document.querySelectorAll('[aria-live="polite"]')]
+  expect(live.some((region) => region.textContent.includes('Try again in'))).toBe(false)
+  await see('You can enter your PIN again.', 3000)
 })
 
 it('locks from the lock button, ending the session under the tab’s old ID', async () => {
@@ -554,16 +665,31 @@ async function openChangePin(sentinel: ReturnType<typeof fakeSentinel>): Promise
   await appOpen()
   await see('Your PIN locks Control Center when you close it.')
   await click('Change PIN')
-  await see('Current PIN')
+  await see('Enter your current PIN')
 }
+
+it('names the Change PIN dialog, and goes back a step', async () => {
+  const sentinel = fakeSentinel()
+  await openChangePin(sentinel)
+  await type(PIN)
+  await see('Choose a new PIN')
+  await type('135790')
+  await see('Confirm your new PIN')
+  await click('Back')
+  await see('Choose a new PIN')
+  await vi.waitFor(() => {
+    const labelledBy = document.querySelector('[role="dialog"]')?.getAttribute('aria-labelledby') ?? ''
+    expect(document.getElementById(labelledBy)?.textContent).toBe('Choose a new PIN')
+  })
+}, 15_000)
 
 it('changes the PIN: current, new, then confirm', async () => {
   const sentinel = fakeSentinel()
   await openChangePin(sentinel)
   await type(PIN)
-  await see('New PIN')
+  await see('Choose a new PIN')
   await type('135790')
-  await see('Confirm')
+  await see('Confirm your new PIN')
   await type('135790')
   await see('PIN changed')
   const change = sentinel.calls.find((call) => call.route === 'auth.changePin')
@@ -575,16 +701,16 @@ it('keeps the current PIN step until Sentinel accepts it', async () => {
   await openChangePin(sentinel)
   await type('111111')
   await see('Wrong PIN. Try again.')
-  expect(showing('New PIN')).toBe(false)
+  expect(showing('Choose a new PIN')).toBe(false)
 }, 15_000)
 
 it('keeps the mismatch message on the New PIN step until typing', async () => {
   const sentinel = fakeSentinel()
   await openChangePin(sentinel)
   await type(PIN)
-  await see('New PIN')
+  await see('Choose a new PIN')
   await type('135790')
-  await see('Confirm')
+  await see('Confirm your new PIN')
   await type('246802')
   await see('Those PINs didn’t match. Choose your PIN again.')
   await vi.waitFor(() => {
@@ -599,10 +725,10 @@ it('goes back to the current PIN, saying why, when it changed meanwhile', async 
   const sentinel = fakeSentinel()
   await openChangePin(sentinel)
   await type(PIN)
-  await see('New PIN')
+  await see('Choose a new PIN')
   sentinel.setPin('999999')
   await type('135790')
-  await see('Confirm')
+  await see('Confirm your new PIN')
   await type('135790')
   await see('Wrong PIN. Try again.')
   await vi.waitFor(() => {
@@ -727,7 +853,7 @@ it('keeps the app hidden until the reveal finishes, whatever a status check says
   await act(async () => {
     window.dispatchEvent(new Event('focus'))
   })
-  await pause(400)
+  await pause(150)
   await revealing()
   await appOpen()
 }, 15_000)
@@ -789,9 +915,9 @@ it('says nothing about a PIN change that a lock interrupted', async () => {
   const sentinel = fakeSentinel()
   await openChangePin(sentinel)
   await type(PIN)
-  await see('New PIN')
+  await see('Choose a new PIN')
   await type('135790')
-  await see('Confirm')
+  await see('Confirm your new PIN')
   await type('135790')
   await vi.waitFor(() => {
     expect(sentinel.calls.some((call) => call.route === 'auth.changePin')).toBe(true)

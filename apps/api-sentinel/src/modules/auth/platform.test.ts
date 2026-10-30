@@ -62,7 +62,7 @@ describe('PIN commands', () => {
     )
     await apply()
     expect(existsSync(join(dataDir, 'reset-pin'))).toBe(false)
-    await expect(auth.status(VISITOR)).resolves.toMatchObject({ state: 'no-pin' })
+    await expect(auth.status(VISITOR)).resolves.toMatchObject({ state: 'no-pin', pinWasReset: true })
   })
 
   it('apply a reset before a new PIN left beside it', async () => {
@@ -71,6 +71,7 @@ describe('PIN commands', () => {
     await run('reset-pin')
     await apply()
     expect((await auth.signIn(PIN, VISITOR)).isOk()).toBe(true)
+    await expect(auth.status(VISITOR)).resolves.toMatchObject({ pinWasReset: false })
   })
 
   it('ignore and remove a request that is not a hash', async () => {

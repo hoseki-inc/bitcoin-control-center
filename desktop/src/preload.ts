@@ -24,6 +24,15 @@ const ledger: LedgerHidApi = {
 
 const pin: DesktopPinApi = {
   resetPin: async () => (await ipcRenderer.invoke('pin:reset')) === true,
+  onResetting: (listener) => {
+    const onResetting = (): void => {
+      listener()
+    }
+    ipcRenderer.on('pin:resetting', onResetting)
+    return () => {
+      ipcRenderer.off('pin:resetting', onResetting)
+    }
+  },
   onLock: (listener) => {
     const onLock = (): void => {
       listener()

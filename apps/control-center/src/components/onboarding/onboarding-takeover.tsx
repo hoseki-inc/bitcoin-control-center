@@ -70,17 +70,17 @@ function turnVariants({ distance, blur, delay }: { distance: number; blur: numbe
 }
 
 // The preview travels a little further and later than the text, for a touch of depth.
-const TEXT_TURN = turnVariants({ distance: 12, blur: 4, delay: 0.04 })
+export const TEXT_TURN = turnVariants({ distance: 12, blur: 4, delay: 0.04 })
 const PREVIEW_TURN = turnVariants({ distance: 32, blur: 6, delay: 0.1 })
 /** With reduced motion, steps simply cross-fade. */
-const FADE_TURN: Variants = {
+export const FADE_TURN: Variants = {
   enter: { opacity: 0 },
   center: { opacity: 1, transition: { duration: motionTokens.revealMs / 1000, ease: EASE_OUT } },
   exit: { opacity: 0, transition: { duration: motionTokens.dismissMs / 1000, ease: EASE_IN } },
 }
 
 /** One step's text or preview as it turns over. A step on its way out is hidden from assistive technology. */
-function StepLayer(props: ComponentProps<typeof MotionBox>): JSX.Element {
+export function StepLayer(props: ComponentProps<typeof MotionBox>): JSX.Element {
   const isPresent = useIsPresent()
   return (
     <MotionBox initial="enter" animate="center" exit="exit" aria-hidden={isPresent ? undefined : true} {...props} />
@@ -88,7 +88,7 @@ function StepLayer(props: ComponentProps<typeof MotionBox>): JSX.Element {
 }
 
 /** The step's title. Only the step on screen labels the dialog; one on its way out is plain text. */
-function StepTitle({ children }: { children: ReactNode }): JSX.Element {
+export function StepTitle({ children }: { children: ReactNode }): JSX.Element {
   const isPresent = useIsPresent()
   return isPresent ? (
     <ModalHeader as="h2" pe={0}>

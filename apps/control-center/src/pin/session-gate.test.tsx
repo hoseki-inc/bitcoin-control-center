@@ -116,6 +116,7 @@ async function withTestSetup(sentinel: ReturnType<typeof fakeSentinel>, run: () 
   dom.window.desktop = {
     pin: {
       resetPin: async () => false,
+      onResetting: () => () => undefined,
       onLock: (listener) => {
         desktopLock = listener
         return () => undefined
@@ -142,8 +143,10 @@ async function withTestSetup(sentinel: ReturnType<typeof fakeSentinel>, run: () 
 
 async function enterPin(pin: string): Promise<void> {
   const input = await vi.waitFor(() => {
-    // The newest screen's field: an earlier screen can still be fading out.
-    const found = [...document.querySelectorAll<HTMLInputElement>('input[type="password"]')].at(-1)
+    // The newest field: an earlier screen or step can still be fading out, hidden from assistive technology.
+    const found = [...document.querySelectorAll<HTMLInputElement>('input[type="password"]')]
+      .filter((field) => field.closest('[aria-hidden="true"]') === null)
+      .at(-1)
     assert.exists(found, 'Expected the PIN field')
     return found
   })
@@ -195,7 +198,7 @@ it('ends setup when the desktop locks on the Save step', async () => {
   await withTestSetup(sentinel, async () => {
     await enterPin(PIN)
     await vi.waitFor(() => {
-      expect(showing('Enter it again')).toBe(true)
+      expect(showing('Confirm your PIN')).toBe(true)
     })
     await enterPin(PIN)
     await vi.waitFor(
@@ -223,7 +226,7 @@ it('never shows the new PIN when the desktop locks before setup is confirmed', a
   await withTestSetup(sentinel, async () => {
     await enterPin(PIN)
     await vi.waitFor(() => {
-      expect(showing('Enter it again')).toBe(true)
+      expect(showing('Confirm your PIN')).toBe(true)
     })
     await enterPin(PIN)
     await vi.waitFor(() => {
@@ -301,7 +304,7 @@ it('moves to sign-in when another device set the PIN during setup', async () => 
   await withTestSetup(sentinel, async () => {
     await enterPin(PIN)
     await vi.waitFor(() => {
-      expect(showing('Enter it again')).toBe(true)
+      expect(showing('Confirm your PIN')).toBe(true)
     })
     sentinel.setPinElsewhere()
     await enterPin(PIN)

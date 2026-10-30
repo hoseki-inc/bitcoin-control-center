@@ -1,20 +1,22 @@
 import {
   Box,
   Button,
+  Flex,
   HStack,
   Modal,
-  ModalBody,
   ModalCloseButton,
   ModalContent,
   ModalOverlay,
   SimpleGrid,
-  Stack,
   Text,
+  VisuallyHidden,
 } from '@chakra-ui/react'
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { toast } from 'sonner'
+import { StepTitle } from '../../components/onboarding/onboarding-takeover'
+import { StepDots } from '../../components/onboarding/step-dots'
 import { signOutEverywhere, usePinStatus } from '../../pin/actions'
-import { MISMATCH_MESSAGE, PinInput, usePinField } from '../../pin/pin-field'
+import { MISMATCH_MESSAGE, PinInput, PinSteps, usePinField } from '../../pin/pin-field'
 import { baseTrpc } from '../../trpc'
 
 /** Shown only where the platform requires a PIN. */
@@ -31,7 +33,7 @@ export function SecuritySettings(): JSX.Element | null {
         <Text as="h2" textStyle="text/md" fontWeight="semibold" color="neutral.900">
           Security
         </Text>
-        <Text mt={2} textStyle="text/sm" color="neutral.600" maxW="32ch">
+        <Text mt={2} textStyle="text/sm" color="neutral.600" maxW="32ch" sx={{ textWrap: 'pretty' }}>
           Your PIN locks Control Center when you close it.
         </Text>
       </Box>
@@ -83,32 +85,55 @@ type ChangeStep =
   | { step: 'confirm'; current: string; next: string }
 
 const STEPS = {
-  current: { title: 'Current PIN', label: 'Current PIN' },
-  new: { title: 'New PIN', label: 'New PIN, 6 digits' },
-  confirm: { title: 'Confirm', label: 'Confirm your new PIN' },
+  current: {
+    index: 0,
+    title: 'Enter your current PIN',
+    description: 'Then you’ll choose a new one.',
+    label: 'Current PIN',
+  },
+  new: {
+    index: 1,
+    title: 'Choose a new PIN',
+    description: '6 digits you’ll enter each time you open Control Center.',
+    label: 'New PIN, 6 digits',
+  },
+  confirm: {
+    index: 2,
+    title: 'Confirm your new PIN',
+    description: 'Enter the same 6 digits again.',
+    label: 'Confirm your new PIN',
+  },
 }
 
 /** Current PIN, then the new one twice. One field throughout, so a message stays until typing. */
 function ChangePinDialog({ onClose }: { onClose: () => void }): JSX.Element {
   const field = usePinField()
+  const descriptionId = useId()
   const [change, setChange] = useState<ChangeStep>({ step: 'current' })
+  const [direction, setDirection] = useState(1)
+
+  const go = (next: ChangeStep, towards: 1 | -1 = 1): void => {
+    setDirection(towards)
+    setChange(next)
+  }
 
   const complete = (pin: string): void => {
     if (change.step === 'current') {
       void field
-        .check(async () => baseTrpc.auth.confirmPin.mutate({ pin }))
+        // Nothing has changed yet, so no success check until the end.
+        .check(async () => baseTrpc.auth.confirmPin.mutate({ pin }), { celebrate: false })
         .then((result) => {
           if (result === 'accepted') {
             field.clear()
-            setChange({ step: 'new', current: pin })
+            go({ step: 'new', current: pin })
           }
         })
     } else if (change.step === 'new') {
       field.clear()
-      setChange({ step: 'confirm', current: change.current, next: pin })
+      go({ step: 'confirm', current: change.current, next: pin })
     } else if (pin !== change.next) {
       void field.reject(MISMATCH_MESSAGE).then(() => {
-        setChange({ step: 'new', current: change.current })
+        go({ step: 'new', current: change.current }, -1)
       })
     } else {
       void field
@@ -119,33 +144,54 @@ function ChangePinDialog({ onClose }: { onClose: () => void }): JSX.Element {
             onClose()
           } else {
             // Refused: the current PIN no longer works, or a wrong-PIN delay is running; the field says which.
-            setChange(result === 'refused' ? { step: 'current' } : { step: 'new', current: change.current })
+            go(result === 'refused' ? { step: 'current' } : { step: 'new', current: change.current }, -1)
           }
         })
     }
   }
 
-  const { title, label } = STEPS[change.step]
+  const { index, title, description, label } = STEPS[change.step]
   return (
     <Modal isOpen onClose={onClose} isCentered size="md">
       <ModalOverlay />
       <ModalContent mx={4}>
         <ModalCloseButton />
-        <ModalBody py={10}>
-          <Stack spacing={8} align="center">
-            <Text as="h2" textStyle="text/xl" fontWeight="medium" color="neutral.900">
-              {title}
-            </Text>
+        <PinSteps step={change.step} direction={direction}>
+          <StepTitle>{title}</StepTitle>
+          <Text id={descriptionId} mt={2} textStyle="text/md" color="neutral.600">
+            {description}
+          </Text>
+          <Box mt={6}>
             <PinInput
               field={field}
-              stepKey={change.step}
               label={label}
               autoComplete={change.step === 'current' ? 'current-password' : 'new-password'}
               checksPin={change.step === 'current'}
+              descriptionId={descriptionId}
               onComplete={complete}
             />
-          </Stack>
-        </ModalBody>
+          </Box>
+        </PinSteps>
+        <VisuallyHidden aria-live="polite">Step {index + 1} of 3</VisuallyHidden>
+        <Flex align="center" minH={9}>
+          {change.step !== 'current' && (
+            <Button
+              variant="ghost"
+              size="sm"
+              ms={-4}
+              color="neutral.600"
+              onClick={() => {
+                field.clear()
+                go(change.step === 'confirm' ? { step: 'new', current: change.current } : { step: 'current' }, -1)
+              }}
+            >
+              Back
+            </Button>
+          )}
+          <Box ms="auto">
+            <StepDots count={3} current={index} />
+          </Box>
+        </Flex>
       </ModalContent>
     </Modal>
   )
