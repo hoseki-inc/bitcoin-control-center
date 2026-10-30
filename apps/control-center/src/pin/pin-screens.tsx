@@ -20,7 +20,6 @@ import { motion, useIsPresent, useReducedMotion } from 'framer-motion'
 import { CheckIcon, CopyIcon, EyeIcon, EyeOffIcon, KeyRoundIcon } from 'lucide-react'
 import { Fragment, type ReactNode, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { EASE_OUT, TURN_IN_S, TURN_OUT_S } from '../components/onboarding/onboarding-motion'
-import { BalancePreview } from '../components/onboarding/onboarding-previews'
 import { StepDots } from '../components/onboarding/step-dots'
 import { setFirstPin, signIn } from './actions'
 import { type PinPlatform, currentEpoch } from './gate'
@@ -43,21 +42,29 @@ function PinBackdrop(props: FlexProps): JSX.Element {
   )
 }
 
+// Where the introduction's logo sits: its card, the gap and the logo, centered on the screen.
+const INTRODUCTION_TOP = 'max(40px, calc((100dvh - 64px - clamp(400px, calc(100dvh - 144px), 560px)) / 2))'
+
 /**
- * The background and logo around a screen's card. Setup is centered, to sit exactly where the introduction's card does.
- * Other screens hang from a fixed height, so the logo stays put as their card changes height.
+ * The background and logo around a screen's card, which hangs from a fixed height, so the logo stays put as the card
+ * changes height. Setup hangs from the introduction's height, so the logo also stays put as the introduction opens.
  */
-function PinStage({ centered = false, children }: { centered?: boolean; children: ReactNode }): JSX.Element {
+function PinStage({
+  beforeIntroduction = false,
+  children,
+}: {
+  beforeIntroduction?: boolean
+  children: ReactNode
+}): JSX.Element {
   return (
     <PinBackdrop as="main" aria-labelledby="pin-screen-title">
       <Flex
         direction="column"
         align="center"
-        justify={{ md: centered ? 'center' : 'flex-start' }}
         gap={{ base: 0, md: 8 }}
         minH="100dvh"
         px={{ base: 0, md: 4 }}
-        pt={{ base: 0, md: centered ? 10 : 'max(40px, calc(50dvh - 252px))' }}
+        pt={{ base: 0, md: beforeIntroduction ? INTRODUCTION_TOP : 'max(40px, calc(50dvh - 252px))' }}
         pb={{ base: 0, md: 10 }}
       >
         <Box py={{ base: 5, md: 0 }}>
@@ -101,22 +108,26 @@ function SmoothHeight({ children }: { children: ReactNode }): JSX.Element {
   )
 }
 
-const CARD_SURFACE = {
-  bg: 'shades.0',
-  borderStyle: 'solid',
-  borderColor: 'neutral.200',
-  borderWidth: { base: 0, md: '1px' },
-  borderTopWidth: '1px',
-  borderTopRadius: 'dialog',
-  borderBottomRadius: { md: 'dialog' },
-  boxShadow: { md: 'floating' },
-  overflow: 'hidden',
-} as const
-
 /** One floating card, as wide as the introduction's text panel. On phones, a sheet under the logo. */
-function PinCard({ children }: { children: ReactNode }): JSX.Element {
+function PinCard({ fading = false, children }: { fading?: boolean; children: ReactNode }): JSX.Element {
   return (
-    <Box flex={{ base: 1, md: 'none' }} w="full" maxW={{ md: '436px' }} {...CARD_SURFACE}>
+    <Box
+      flex={{ base: 1, md: 'none' }}
+      w="full"
+      maxW={{ md: '436px' }}
+      bg="shades.0"
+      borderStyle="solid"
+      borderColor="neutral.200"
+      borderWidth={{ base: 0, md: '1px' }}
+      borderTopWidth="1px"
+      borderTopRadius="dialog"
+      borderBottomRadius={{ md: 'dialog' }}
+      boxShadow={{ md: 'floating' }}
+      overflow="hidden"
+      opacity={fading ? 0 : 1}
+      transition={`opacity ${TURN_OUT_S * 1000}ms`}
+      pointerEvents={fading ? 'none' : undefined}
+    >
       <SmoothHeight>
         <Box p={{ base: 6, md: 10 }}>{children}</Box>
       </SmoothHeight>
@@ -276,11 +287,7 @@ function CopyButton({ value, label, ...props }: ButtonProps & { value: string; l
 
 const SETUP_STEPS = ['choose', 'confirm', 'save'] as const
 
-/**
- * First PIN, chosen in the app: choose, confirm, then a nudge to save it. It sits in the introduction's card at the same
- * place and size, beside the same sample portfolio, blurred, so the introduction opens over it with only the text
- * changing and the picture coming into focus. Never the user's data.
- */
+/** First PIN, chosen in the app: choose, confirm, then a nudge to save it. */
 export function SetupScreen({
   platform,
   pinWasReset,
@@ -294,7 +301,6 @@ export function SetupScreen({
   const descriptionId = useId()
   const reduceMotion = useReducedMotion() === true
   const buttonSize = useButtonSize()
-  const showsPreview = useBreakpointValue({ base: false, md: true }, { ssr: false }) ?? true
   const [step, setStep] = useState<
     { step: 'choose' } | { step: 'confirm'; first: string } | { step: 'save'; pin: string }
   >({ step: 'choose' })
@@ -324,7 +330,7 @@ export function SetupScreen({
     }
   }
 
-  // The text leaves first, so nothing is left to collide with whatever comes next. A lock meanwhile drops it.
+  // The card leaves first, so nothing is left to collide with whatever comes next. A lock meanwhile drops it.
   const leave = (): void => {
     const epoch = currentEpoch()
     setLeaving(true)
@@ -340,93 +346,62 @@ export function SetupScreen({
 
   const choosing = step.step === 'choose'
   return (
-    <PinStage centered>
-      <Box
-        display="grid"
-        gridTemplateColumns={{ base: 'minmax(0, 1fr)', md: '5fr 6fr' }}
-        flex={{ base: 1, md: 'none' }}
-        w="full"
-        maxW={{ md: '960px' }}
-        h={{ md: 'clamp(400px, calc(100dvh - 144px), 560px)' }}
-        {...CARD_SURFACE}
-      >
-        <Flex direction="column" gap={STACK_SPACING} p={{ base: 6, md: 10 }} minW={0}>
-          <PinSteps step={leaving ? null : step.step} direction={direction}>
-            {step.step === 'save' ? (
-              <SavePin pin={step.pin} platform={platform} />
-            ) : (
-              <Stack spacing={STACK_SPACING}>
-                <PinHeading
-                  title={choosing ? (pinWasReset ? 'Choose a new PIN' : 'Set up your PIN') : 'Confirm your PIN'}
-                  description={
-                    !choosing
-                      ? 'Enter the same 6 digits again.'
-                      : pinWasReset
-                        ? 'Your PIN was reset. Your accounts and history are as you left them.'
-                        : '6 digits you’ll enter each time you open Control Center.'
-                  }
-                  descriptionId={descriptionId}
-                />
-                <PinInput
-                  field={field}
-                  label={choosing ? 'New PIN, 6 digits' : 'Confirm your PIN'}
-                  autoComplete="new-password"
-                  descriptionId={descriptionId}
-                  onComplete={complete}
-                />
-              </Stack>
-            )}
-          </PinSteps>
-          <VisuallyHidden aria-live="polite">
-            Step {SETUP_STEPS.indexOf(step.step) + 1} of {SETUP_STEPS.length}
-          </VisuallyHidden>
-          <Flex
-            align="center"
-            gap={4}
-            mt="auto"
-            opacity={leaving ? 0 : 1}
-            transition={`opacity ${TURN_OUT_S * 1000}ms`}
-            pointerEvents={leaving ? 'none' : undefined}
-          >
-            {step.step === 'confirm' && (
-              <Button
-                {...GHOST_INSET}
-                size={buttonSize}
-                onClick={() => {
-                  field.clear()
-                  go({ step: 'choose' }, -1)
-                }}
-              >
-                Back
-              </Button>
-            )}
-            <Box ms="auto">
-              <StepDots count={SETUP_STEPS.length} current={SETUP_STEPS.indexOf(step.step)} />
-            </Box>
-            {step.step === 'save' && (
-              <Button size={buttonSize} minW="6.5rem" isDisabled={leaving} onClick={leave}>
-                Continue
-              </Button>
-            )}
-          </Flex>
-        </Flex>
-        {showsPreview && (
-          <Box
-            position="relative"
-            overflow="hidden"
-            bg="neutral.50"
-            borderLeft="1px solid"
-            borderColor="neutral.200"
-            aria-hidden
-            // React 19 supports inert; the workspace still uses React 18 types.
-            {...{ inert: true }}
-          >
-            <Box position="absolute" inset={0} filter="blur(10px)">
-              <BalancePreview />
-            </Box>
+    <PinStage beforeIntroduction>
+      <PinCard fading={leaving}>
+        {/* Save waits for the success check to leave, rather than crossing it. */}
+        <PinSteps step={step.step} direction={direction} afterExit={step.step === 'save'}>
+          {step.step === 'save' ? (
+            <SavePin pin={step.pin} platform={platform} />
+          ) : (
+            <Stack spacing={STACK_SPACING}>
+              <PinHeading
+                title={choosing ? (pinWasReset ? 'Choose a new PIN' : 'Set up your PIN') : 'Confirm your PIN'}
+                description={
+                  !choosing
+                    ? 'Enter the same 6 digits again.'
+                    : pinWasReset
+                      ? 'Your PIN was reset. Your accounts and history are as you left them.'
+                      : '6 digits you’ll enter each time you open Control Center.'
+                }
+                descriptionId={descriptionId}
+              />
+              <PinInput
+                field={field}
+                label={choosing ? 'New PIN, 6 digits' : 'Confirm your PIN'}
+                autoComplete="new-password"
+                descriptionId={descriptionId}
+                onComplete={complete}
+              />
+            </Stack>
+          )}
+        </PinSteps>
+        <VisuallyHidden aria-live="polite">
+          Step {SETUP_STEPS.indexOf(step.step) + 1} of {SETUP_STEPS.length}
+        </VisuallyHidden>
+        {/* As tall as its buttons, so the card doesn't change height when one appears. */}
+        <Flex align="center" gap={4} mt={6} minH={{ base: 11, md: 9 }}>
+          {step.step === 'confirm' && (
+            <Button
+              {...GHOST_INSET}
+              size={buttonSize}
+              onClick={() => {
+                field.clear()
+                go({ step: 'choose' }, -1)
+              }}
+            >
+              Back
+            </Button>
+          )}
+          <Box ms="auto">
+            <StepDots count={SETUP_STEPS.length} current={SETUP_STEPS.indexOf(step.step)} />
           </Box>
-        )}
-      </Box>
+          {step.step === 'save' && (
+            <Button size={buttonSize} minW="6.5rem" isDisabled={leaving} onClick={leave}>
+              Continue
+            </Button>
+          )}
+        </Flex>
+      </PinCard>
     </PinStage>
   )
 }

@@ -1,7 +1,7 @@
 import { Box, Stack, Text, VisuallyHidden, chakra } from '@chakra-ui/react'
 import { AnimatePresence, useReducedMotion } from 'framer-motion'
 import { type ReactNode, useEffect, useId, useRef, useState } from 'react'
-import { FADE_TURN, StepLayer, TEXT_TURN } from '../components/onboarding/onboarding-takeover'
+import { FADE_TURN, StepLayer, TEXT_TURN, TEXT_TURN_AFTER_EXIT } from '../components/onboarding/onboarding-takeover'
 import { type PinOutcome, refreshPinStatus, setRetryAt, usePinStatus } from './actions'
 import { currentEpoch } from './gate'
 import { PinCircles, type PinCirclesState, successAnimationMs } from './pin-circles'
@@ -121,21 +121,24 @@ export function usePinField(): PinField {
 }
 
 /**
- * Steps turning over in one grid cell, as the introduction's do, with no step on screen when `step` is null. The first
- * step just appears. That's set on the step rather than with AnimatePresence's `initial`, which would also stop anything
- * that appears inside it later, such as the success check, from animating in.
+ * Steps turning over in one grid cell, as the introduction's do. The first step just appears. That's set on the step
+ * rather than with AnimatePresence's `initial`, which would also stop anything that appears inside it later, such as the
+ * success check, from animating in.
  */
 export function PinSteps({
   step,
   direction,
+  afterExit = false,
   children,
 }: {
-  step: string | null
+  step: string
   /** 1 going forward, -1 going back. */
   direction: number
+  /** Holds this step back until the last has gone. Only for a step with no PIN field, which must be ready at once. */
+  afterExit?: boolean
   children: ReactNode
 }): JSX.Element {
-  const turn = useReducedMotion() === true ? FADE_TURN : TEXT_TURN
+  const turn = useReducedMotion() === true ? FADE_TURN : afterExit ? TEXT_TURN_AFTER_EXIT : TEXT_TURN
   const appeared = useRef(false)
   useEffect(() => {
     appeared.current = true
@@ -143,18 +146,16 @@ export function PinSteps({
   return (
     <Box display="grid">
       <AnimatePresence custom={direction}>
-        {step !== null && (
-          <StepLayer
-            key={step}
-            custom={direction}
-            variants={turn}
-            initial={appeared.current ? 'enter' : false}
-            gridArea="1 / 1"
-            minW={0}
-          >
-            {children}
-          </StepLayer>
-        )}
+        <StepLayer
+          key={step}
+          custom={direction}
+          variants={turn}
+          initial={appeared.current ? 'enter' : false}
+          gridArea="1 / 1"
+          minW={0}
+        >
+          {children}
+        </StepLayer>
       </AnimatePresence>
     </Box>
   )
