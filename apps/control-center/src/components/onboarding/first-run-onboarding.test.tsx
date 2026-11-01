@@ -36,6 +36,7 @@ const ConnectSchema = z.object({ id: z.string(), revision: z.number(), connectio
 const CreateSchema = DetailsSchema.extend({ nickname: z.string() })
 const KeySchema = z.object({ key: z.string() })
 const UpdateSchema = z.object({ key: z.string(), value: z.string() })
+const StatementSourceSchema = z.object({ source: z.enum(['mempool', 'electrum']) })
 
 type Profile = z.infer<typeof DetailsSchema> & { id: string; nickname: string; revision: number }
 
@@ -54,6 +55,8 @@ class DesktopServer {
     },
   ]
   public activeId = 'public'
+  /** Where statements look up transactions; mempool.space until one is chosen. */
+  public statementSource: string | null = null
   public readonly requests: Array<{ path: string; input: unknown }> = []
 
   public constructor(fetchMock: ReturnType<typeof vi.fn<typeof fetch>>) {
@@ -85,6 +88,10 @@ class DesktopServer {
     }
     if (path === 'settings.startTor') {
       return result({ state: 'starting', progress: 0, attempt: 1 })
+    }
+    if (path === 'settings.setStatementSource') {
+      this.statementSource = parseUnknown(StatementSourceSchema, input).expect('statement source').source
+      return result(null)
     }
     if (path === 'settings.connectionProfiles.list') {
       return result({ profiles: this.profiles, activeId: this.activeId, limit: 5 })
@@ -224,6 +231,8 @@ it('keeps the public server without saving anything', async () => {
   expect(heading()).toBe('Start with one account')
   expect(server.requested('settings.connectionProfiles.connect')).toEqual([])
   expect(server.saved.has('electrum_host')).toBe(false)
+  // Statements stay on mempool.space, the fastest.
+  expect(server.requested('settings.setStatementSource')).toEqual([])
 })
 
 it('connects the public server through Tor and carries on with the introduction', async () => {
@@ -246,12 +255,15 @@ it('connects the public server through Tor and carries on with the introduction'
       connection: { host: 'electrum.blockstream.info', port: 50002, protocol: 'ssl', torEnabled: true },
     },
   ])
+  // Choosing Tor puts privacy first, so statements look up transactions on the server too.
+  expect(server.statementSource).toBe('electrum')
   // Back and on again connects nothing new.
   await click('Back')
   expect(heading()).toBe('Choose your Electrum server')
   await click('Continue')
   expect(heading()).toBe('Start with one account')
   expect(server.requested('settings.connectionProfiles.connect')).toHaveLength(1)
+  expect(server.requested('settings.setStatementSource')).toHaveLength(1)
 })
 
 it('goes back to the public server from a node connected in the introduction', async () => {
@@ -265,6 +277,8 @@ it('goes back to the public server from a node connected in the introduction', a
     expect(heading()).toBe('Start with one account')
   })
   expect(server.activeId).toBe('node')
+  // Statements use your node too.
+  expect(server.statementSource).toBe('electrum')
   await click('Back')
   await click('Back')
   await clickInput('input[type="radio"][value="public"]')
@@ -278,4 +292,6 @@ it('goes back to the public server from a node connected in the introduction', a
     revision: 1,
     connection: { host: 'electrum.blockstream.info', port: 50002, protocol: 'ssl', torEnabled: false },
   })
+  // Back on the public server without Tor, statements go back to mempool.space.
+  expect(server.statementSource).toBe('mempool')
 })
