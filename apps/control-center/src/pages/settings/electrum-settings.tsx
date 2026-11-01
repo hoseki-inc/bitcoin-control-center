@@ -35,25 +35,15 @@ import {
 import { parseUnknown } from '@hoseki/packages/result/lib/parse'
 import { SkeletonRegion } from '@hoseki/packages/ui/design-system/loading/loading'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { TRPCClientError } from '@trpc/client'
 import { Check, CircleAlertIcon, CircleCheckIcon, Pencil, Plus, Trash2, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { z } from 'zod'
 import { sentinelFetch } from '../../pin/tab'
 import { type RouterOutput, baseTrpc } from '../../trpc'
+import { PUBLIC_ELECTRUM_HOST, blankConnection, errorMessage, isOnionHost, isValidPort } from './electrum-connection'
 import { type FadingNotice, NOTICE_FADE_MS, useFadingNotice } from './fading-notice'
 import { useStatementSource } from './statement-source-settings'
-
-/** Shows Sentinel's own error message; anything else, such as an unreadable response, gets a plain one. */
-// oxlint-disable-next-line anti-slop/no-unknown-parameters -- Caught errors are untrusted and narrowed here.
-function errorMessage(error: unknown, fallback: string): string {
-  return error instanceof TRPCClientError && error.shape != null ? error.message : fallback
-}
-
-function isValidPort(port: number): boolean {
-  return Number.isInteger(port) && port > 0 && port <= 65535
-}
 
 type Snapshot = RouterOutput['settings']['connectionProfiles']['list']
 type Profile = Snapshot['profiles'][number]
@@ -65,7 +55,7 @@ const queryKey = ['connection-profiles']
 const api = baseTrpc.settings.connectionProfiles
 
 function emptyDraft(): Draft {
-  return { nickname: '', host: '', port: 50002, protocol: 'ssl', torEnabled: false }
+  return { nickname: '', ...blankConnection() }
 }
 
 function newConnectionChanged(draft: Draft): boolean {
@@ -351,7 +341,7 @@ export function ElectrumSettings(): JSX.Element {
           : 'ready'
   const latestTorAttempt = useRef(0)
   // Onion addresses are only reachable through Tor, so they never connect directly.
-  const onion = draft?.host.trim().toLowerCase().replace(/\.$/, '').endsWith('.onion') === true
+  const onion = draft !== null && isOnionHost(draft.host)
   // Ask only when a connection saved with Tor, or a new one you turned Tor on for, would go direct.
   // A saved direct connection stays direct without asking, even after flipping Tor on and off.
   const leavingTor = !torEnabled && !onion && (saved?.torEnabled === true || (isNew && torTurnedOff))
@@ -584,6 +574,8 @@ export function ElectrumSettings(): JSX.Element {
         setTorTurnedOff(false)
         await remember(connected, true)
         refreshStatus()
+        // Connecting is a choice of server, so the public server notice goes.
+        void queryClient.invalidateQueries({ queryKey: ['local-settings', 'electrum_host'] })
         toast.success(draft.id === undefined ? 'Connection saved' : 'Connection updated')
       }
     } catch (error) {
@@ -944,7 +936,7 @@ export function ElectrumSettings(): JSX.Element {
                   id="connection-starter"
                   size="sm"
                   isDisabled={controlsDisabled}
-                  value={draft.host === 'electrum.blockstream.info' ? draft.host : 'custom'}
+                  value={draft.host === PUBLIC_ELECTRUM_HOST ? draft.host : 'custom'}
                   onChange={(event) => {
                     // Presets change the server only; your Tor choice stays.
                     update({
@@ -955,7 +947,7 @@ export function ElectrumSettings(): JSX.Element {
                   }}
                 >
                   <option value="custom">My own server</option>
-                  <option value="electrum.blockstream.info">Blockstream (Public)</option>
+                  <option value={PUBLIC_ELECTRUM_HOST}>Blockstream (Public)</option>
                 </Select>
               </FormControl>
             </>
