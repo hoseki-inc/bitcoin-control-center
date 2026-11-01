@@ -110,7 +110,6 @@ export function useElectrumChoice(): ElectrumChoice {
       }
       publicServer.current = { id: server.id, revision: connected.unwrap().revision, details: connection }
       publicTor.current = torEnabled
-      node.current = null
       await refresh()
       return Ok(undefined)
     }
@@ -122,6 +121,7 @@ export function useElectrumChoice(): ElectrumChoice {
           return Err(updated.unwrapErr())
         }
         node.current = { ...node.current, revision: updated.unwrap().revision }
+        publicTor.current = null
         await refresh()
         return Ok(undefined)
       }

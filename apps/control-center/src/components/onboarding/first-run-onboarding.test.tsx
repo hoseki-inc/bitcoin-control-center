@@ -295,3 +295,42 @@ it('goes back to the public server from a node connected in the introduction', a
   // Back on the public server without Tor, statements go back to mempool.space.
   expect(server.statementSource).toBe('mempool')
 })
+
+it('reuses the node saved in the introduction after going back to the public server', async () => {
+  const server = await render()
+  await toServerStep()
+  await clickInput('input[type="radio"][value="own"]')
+  await click('Continue')
+  await type('node-host', 'umbrel.local')
+  await click('Connect')
+  await vi.waitFor(() => {
+    expect(heading()).toBe('Start with one account')
+  })
+  await click('Back')
+  await click('Back')
+  await clickInput('input[type="radio"][value="public"]')
+  await click('Continue')
+  await vi.waitFor(() => {
+    expect(heading()).toBe('Start with one account')
+  })
+  await click('Back')
+  await clickInput('input[type="radio"][value="own"]')
+  await click('Continue')
+  await click('Connect')
+  await vi.waitFor(() => {
+    expect(heading()).toBe('Start with one account')
+  })
+  // One saved node, connected again rather than saved twice.
+  expect(server.requested('settings.connectionProfiles.create')).toHaveLength(1)
+  expect(server.profiles.map((profile) => profile.id)).toEqual(['public', 'node'])
+  expect(server.activeId).toBe('node')
+  // And back to the public server without Tor still leaves the node.
+  await click('Back')
+  await click('Back')
+  await clickInput('input[type="radio"][value="public"]')
+  await click('Continue')
+  await vi.waitFor(() => {
+    expect(heading()).toBe('Start with one account')
+  })
+  expect(server.activeId).toBe('public')
+})
