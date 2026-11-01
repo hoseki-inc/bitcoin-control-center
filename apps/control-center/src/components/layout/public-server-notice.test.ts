@@ -125,16 +125,16 @@ async function render(saved: Record<string, string> = {}): Promise<Rendered> {
 
 it('points to Settings while no server has been chosen', async () => {
   const { container } = await render()
-  expect(container.textContent).toContain('You’re using a public Electrum server.')
+  expect(container.textContent).toContain('Want more privacy? Look up your wallets on your own node.')
   const link = container.querySelector<HTMLAnchorElement>('a')
-  expect(link?.textContent).toBe('Use your own node')
+  expect(link?.textContent).toBe('Connect your node')
   expect(link?.getAttribute('href')).toBe('/settings#electrum-server')
 })
 
 // Tor hides your IP address, but Blockstream still sees your addresses.
 it('keeps pointing to Settings once Blockstream’s server is connected, as through Tor', async () => {
   const { container } = await render({ electrum_host: 'electrum.blockstream.info' })
-  expect(container.textContent).toContain('You’re using a public Electrum server.')
+  expect(container.textContent).toContain('Want more privacy? Look up your wallets on your own node.')
 })
 
 it.each([

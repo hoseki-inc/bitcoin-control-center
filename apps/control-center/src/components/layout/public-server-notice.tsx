@@ -36,9 +36,9 @@ export function PublicServerNotice(): JSX.Element {
               <GlobeIcon size={16} />
             </Box>
             <Text textStyle="text/sm" flex={1} minW={0}>
-              You’re using a public Electrum server. Blockstream can see your wallet addresses.{' '}
+              Want more privacy? Look up your wallets on your own node.{' '}
               <Link as={RouterLink} to="/settings#electrum-server" fontWeight="semibold">
-                Use your own node
+                Connect your node
               </Link>
             </Text>
             <CloseButton
