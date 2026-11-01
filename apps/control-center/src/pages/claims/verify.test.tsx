@@ -87,7 +87,7 @@ it.each(['unverified', 'pending', 'expired'] as const)(
     await vi.waitFor(() => {
       expect(container.textContent).toContain('Account page')
     })
-    expect(container.textContent).not.toContain('Account Verified!')
+    expect(container.textContent).not.toContain('Verified!')
   },
 )
 
@@ -96,7 +96,7 @@ it('shows the receipt once signing has verified the account, even if the cache s
 
   await vi.waitFor(
     () => {
-      expect(container.textContent).toContain('Account Verified!')
+      expect(container.textContent).toContain('Verified!')
     },
     { timeout: 4000 },
   )

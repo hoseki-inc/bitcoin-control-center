@@ -58,6 +58,24 @@ export function useGetBalancesPerClaimIds({
   }
 }
 
+/** A balance as a screen reads it: still loading, or `data` null when it can't be known yet. */
+export interface BalanceState {
+  isLoading: boolean
+  data: BalanceValue | null
+}
+
+/**
+ * A balance that arrived with its account, such as an exchange's on connecting, valued at the current price.
+ * `sats` is null when the account had no balance to report.
+ */
+export function useBalanceFromSats(sats: string | null): BalanceState {
+  const btcPriceQuery = trpc.portalProve.retrieveBitcoinPrice.useQuery()
+  return {
+    isLoading: btcPriceQuery.isLoading,
+    data: sats === null ? null : getBalanceValue(BigInt(sats), btcPriceQuery.data?.value ?? null),
+  }
+}
+
 export type UseGetClaimBalanceOutput = {
   isLoading: boolean
   isSuccess: boolean

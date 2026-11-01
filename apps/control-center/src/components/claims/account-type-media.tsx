@@ -8,21 +8,38 @@ import { NotebookPen, Signature } from 'lucide-react'
 const keyIcon = <Icon as={RoundKeyIcon} fill="neutral.400" color2="shades.0" stroke="none" boxSize="90%" />
 const multisigKeystore = { icon: keyIcon, alt: 'Multisig keystore' }
 
-/** Three overlapping keys, the Add Account picture for a multisig wallet. */
-export const MultisigImage = (
-  <KeystoreAvatar.Group>
-    <KeystoreAvatar {...multisigKeystore} />
-    <KeystoreAvatar {...multisigKeystore} />
-    <KeystoreAvatar {...multisigKeystore} />
-  </KeystoreAvatar.Group>
-)
+/** Three overlapping keys, the picture for a multisig wallet. */
+export function MultisigKeys({ size = '36px' }: { size?: string }): JSX.Element {
+  return (
+    <KeystoreAvatar.Group>
+      <KeystoreAvatar {...multisigKeystore} size={size} />
+      <KeystoreAvatar {...multisigKeystore} size={size} />
+      <KeystoreAvatar {...multisigKeystore} size={size} />
+    </KeystoreAvatar.Group>
+  )
+}
+
+/** The Add Account picture for a multisig wallet. */
+export const MultisigImage = <MultisigKeys />
 
 /** A pencil on a notepad, the Add Account picture for holdings entered by hand. */
-export function ManualEntryIcon(): JSX.Element {
-  return <Icon as={NotebookPen} w={6} h={6} color="neutral.600" strokeWidth={1.5} />
+export function ManualEntryIcon({ boxSize = 6 }: { boxSize?: number }): JSX.Element {
+  return <Icon as={NotebookPen} boxSize={boxSize} color="neutral.600" strokeWidth={1.5} />
 }
 
 /** A signature, the Add Account picture for any wallet that can sign a message. */
 export function ManualSignIcon(): JSX.Element {
   return <Icon as={Signature} w={6} h={6} color="neutral.600" strokeWidth={1.5} />
+}
+
+/** Four tiles, the picture for ETF holdings. */
+export function EtfHoldingsIcon({ boxSize = 6 }: { boxSize?: number }): JSX.Element {
+  return (
+    <Icon viewBox="0 0 24 24" boxSize={boxSize} color="neutral.600">
+      <rect x="3" y="3" width="7" height="7" rx="1" stroke="currentColor" strokeWidth="1.5" fill="none" />
+      <rect x="14" y="3" width="7" height="7" rx="1" stroke="currentColor" strokeWidth="1.5" fill="none" />
+      <rect x="3" y="14" width="7" height="7" rx="1" stroke="currentColor" strokeWidth="1.5" fill="none" />
+      <rect x="14" y="14" width="7" height="7" rx="1" stroke="currentColor" strokeWidth="1.5" fill="none" />
+    </Icon>
+  )
 }
