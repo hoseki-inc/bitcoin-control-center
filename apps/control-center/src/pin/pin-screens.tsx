@@ -240,6 +240,7 @@ export function SignInScreen({ platform, onSignedIn }: { platform: PinPlatform; 
                   {...GHOST_INSET}
                   size={buttonSize}
                   mt={2}
+                  isDisabled={field.state !== 'idle'}
                   onClick={() => {
                     setForgot(true)
                   }}
@@ -441,6 +442,8 @@ export function SetupScreen({
             <Button
               {...GHOST_INSET}
               size={buttonSize}
+              // Once the PIN is on its way to Sentinel, going back can't stop it being saved.
+              isDisabled={field.state !== 'idle'}
               onClick={() => {
                 field.clear()
                 go({ step: 'choose' }, -1)

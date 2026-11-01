@@ -295,6 +295,18 @@ async function click(name: string): Promise<void> {
   })
 }
 
+async function disabled(name: string): Promise<boolean> {
+  const button = await vi.waitFor(() => {
+    const found = [...document.querySelectorAll<HTMLButtonElement>('button')]
+      .filter((element) => element.textContent === name)
+      .filter((element) => element.closest('[aria-hidden="true"]') === null)
+      .at(-1)
+    assert.exists(found, `Expected the ${name} button`)
+    return found
+  })
+  return button.disabled
+}
+
 /** The app is on screen and no longer behind the lock screen. */
 async function appOpen(): Promise<void> {
   await vi.waitFor(
@@ -401,6 +413,12 @@ it('explains wrong PINs, warns before the delay, and counts the delay down', asy
   await see('Too many wrong PINs. Try again in ')
   await see(' second')
   expect((await pinField()).disabled).toBe(true)
+  // Someone who tabs away during the delay keeps their place when it ends.
+  const forgot = [...document.querySelectorAll('button')].find((button) => button.textContent === 'Forgot PIN?')
+  assert.exists(forgot)
+  act(() => {
+    forgot.focus()
+  })
 
   // Once the delay passes, the field takes a PIN again.
   await vi.waitFor(
@@ -410,6 +428,7 @@ it('explains wrong PINs, warns before the delay, and counts the delay down', asy
     },
     { timeout: 4000 },
   )
+  expect(document.activeElement).toBe(forgot)
   await type(PIN)
   await appOpen()
 }, 20_000)
@@ -495,6 +514,24 @@ it('goes back from confirming to choosing, with fresh circles', async () => {
   await click('Back')
   await see('Set up your PIN')
   expect((await pinField()).value).toBe('')
+})
+
+it('keeps Back from looking like it cancels a PIN that is already being saved', async () => {
+  await render(fakeSentinel({ pinSet: false }))
+  await type(PIN)
+  await see('Confirm your PIN')
+  await expect(disabled('Back')).resolves.toBe(false)
+  await type(PIN)
+  await expect(disabled('Back')).resolves.toBe(true)
+  await see('Your PIN is set')
+})
+
+it('keeps Forgot PIN closed while a PIN is being checked', async () => {
+  await render(fakeSentinel())
+  await expect(disabled('Forgot PIN?')).resolves.toBe(false)
+  await type(PIN)
+  await expect(disabled('Forgot PIN?')).resolves.toBe(true)
+  await appOpen()
 })
 
 it('takes focus to the title on the Save step, so screen readers announce it', async () => {
@@ -707,6 +744,19 @@ it('changes the PIN: current, new, then confirm', async () => {
   await see('PIN changed')
   const change = sentinel.calls.find((call) => call.route === 'auth.changePin')
   expect(change?.input).toEqual({ currentPin: PIN, newPin: '135790' })
+}, 15_000)
+
+it('keeps Back from looking like it cancels a PIN change that is already under way', async () => {
+  const sentinel = fakeSentinel()
+  await openChangePin(sentinel)
+  await type(PIN)
+  await see('Choose a new PIN')
+  await type('135790')
+  await see('Confirm your new PIN')
+  await expect(disabled('Back')).resolves.toBe(false)
+  await type('135790')
+  await expect(disabled('Back')).resolves.toBe(true)
+  await see('PIN changed')
 }, 15_000)
 
 it('keeps the current PIN step until Sentinel accepts it', async () => {

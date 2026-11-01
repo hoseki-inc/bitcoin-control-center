@@ -180,6 +180,8 @@ function ChangePinDialog({ onClose }: { onClose: () => void }): JSX.Element {
               size="sm"
               ms={-4}
               color="neutral.600"
+              // Once a PIN is on its way to Sentinel, going back can't stop it.
+              isDisabled={field.state !== 'idle'}
               onClick={() => {
                 field.clear()
                 go(change.step === 'confirm' ? { step: 'new', current: change.current } : { step: 'current' }, -1)
