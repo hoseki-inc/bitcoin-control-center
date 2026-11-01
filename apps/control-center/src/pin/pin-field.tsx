@@ -48,9 +48,12 @@ export interface PinField {
   /**
    * Has Sentinel check the PIN: the success check on `accepted`, unless `celebrate` is off because nothing has been
    * done yet; the wrong-PIN message or delay on `refused`; on `unreachable`, a message, and the status asked again in
-   * case the PIN changed meanwhile.
+   * case the PIN changed meanwhile. `onAccepted` runs as soon as Sentinel accepts, before the check plays.
    */
-  check: (request: () => Promise<PinOutcome>, options?: { celebrate?: boolean }) => Promise<CheckResult>
+  check: (
+    request: () => Promise<PinOutcome>,
+    options?: { celebrate?: boolean; onAccepted?: () => void },
+  ) => Promise<CheckResult>
 }
 
 /** One PIN entry, shared by sign-in, setup and Change PIN. */
@@ -67,7 +70,7 @@ export function usePinField(): PinField {
     setState('idle')
   }
 
-  const check: PinField['check'] = async (request, { celebrate = true } = {}) => {
+  const check: PinField['check'] = async (request, { celebrate = true, onAccepted } = {}) => {
     const epoch = currentEpoch()
     const settle = async <T,>(promise: Promise<T>): Promise<T> => {
       const result = await promise
@@ -83,6 +86,7 @@ export function usePinField(): PinField {
     }
     if (outcome.ok) {
       setMessage('')
+      onAccepted?.()
       if (celebrate) {
         setState('success')
         await settle(wait(successAnimationMs()))

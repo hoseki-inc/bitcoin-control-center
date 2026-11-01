@@ -26,18 +26,18 @@ const MotionBox = motion(Box)
 
 // A correct PIN: the circles slide together and shrink into one dot, which becomes the app's success check (the one
 // statements and receipts use): a disc scaling up from 80%, then a check drawing in. The disc is the only green.
-const MERGE_DELAY_S = 0.04
-const MERGE_S = 0.16
+const MERGE_DELAY_S = 0.1
+const MERGE_S = 0.28
 const DISC_AT_S = MERGE_DELAY_S + MERGE_S
-const DISC_S = 0.16
-const CHECK_DELAY_S = 0.05
-const CHECK_S = 0.15
+const DISC_S = 0.3
+const CHECK_DELAY_S = 0.2
+const CHECK_S = 0.3
 const CHECK_LENGTH = 34
 const DISC_SIZE = 60
 
 // How long the correct-PIN animation runs, with a short beat to see the finished check.
-const SUCCESS_ANIMATION_MS = Math.round((DISC_AT_S + CHECK_DELAY_S + CHECK_S) * 1000) + 60
-const SUCCESS_ANIMATION_REDUCED_MS = 300
+const SUCCESS_ANIMATION_MS = Math.round((DISC_AT_S + CHECK_DELAY_S + CHECK_S) * 1000) + 200
+const SUCCESS_ANIMATION_REDUCED_MS = 400
 
 /** How long to wait on a correct PIN before moving on, so the check finishes drawing. */
 export function successAnimationMs(): number {

@@ -233,13 +233,7 @@ export function SignInScreen({ platform, onSignedIn }: { platform: PinPlatform; 
                   autoComplete="current-password"
                   checksPin
                   onComplete={(pin) => {
-                    void field
-                      .check(async () => signIn(pin))
-                      .then((result) => {
-                        if (result === 'accepted') {
-                          onSignedIn()
-                        }
-                      })
+                    void field.check(async () => signIn(pin), { onAccepted: onSignedIn })
                   }}
                 />
                 <Button

@@ -4,6 +4,7 @@ import { toast } from 'sonner'
 import { queryClient } from '../trpc'
 import { forgetApp, lockApp, usePinStatus } from './actions'
 import { appMounted, currentEpoch, dispatch, screenFor, useGate } from './gate'
+import { successAnimationMs } from './pin-circles'
 import {
   InsecureScreen,
   PinLoadingScreen,
@@ -46,8 +47,8 @@ function useLockTriggers(pinsOn: boolean): void {
 
 // Leaving, the lock screen fades through white: its content fades first, then the blank screen gives way as the app
 // fades in and settles into place.
-const CONTENT_OUT_S = 0.1
-const REVEAL_S = 0.16
+const CONTENT_OUT_S = 0.25
+const REVEAL_S = 0.45
 const REVEAL_EASE = [0.4, 0, 0.2, 1] as const
 // The lock screen takes 0.25s to fade in over the app; unmount the app by this time even if that fade stalls.
 const COVER_LIMIT_MS = 400
@@ -108,9 +109,10 @@ function Committed(): null {
  * Signed in: the app mounts under the finished check, waits for its first data (up to a limit), and only then does
  * the lock screen fade away, over an app that's already drawn. A lock meanwhile drops the reveal.
  */
-async function reveal(): Promise<void> {
+async function reveal(minMs = 0): Promise<void> {
   const epoch = currentEpoch()
   const start = performance.now()
+  const animation = wait(minMs)
   const committed = new Promise<void>((resolve) => {
     onCommitted = resolve
   })
@@ -129,11 +131,17 @@ async function reveal(): Promise<void> {
     }
     await wait(25)
   }
+  await animation
   dispatch({ type: 'revealed', epoch })
 }
 
 function startReveal(): void {
   void reveal()
+}
+
+// Starts as soon as the PIN is accepted, so the app loads while the check plays.
+function startRevealUnderCheck(): void {
+  void reveal(successAnimationMs())
 }
 
 function finishCovering(): void {
@@ -211,7 +219,7 @@ export function SessionGate({ children }: { children: ReactNode }): JSX.Element 
           )
         )
       case 'sign-in':
-        return platform !== null && <SignInScreen platform={platform} onSignedIn={startReveal} />
+        return platform !== null && <SignInScreen platform={platform} onSignedIn={startRevealUnderCheck} />
       case null:
         return null
     }
