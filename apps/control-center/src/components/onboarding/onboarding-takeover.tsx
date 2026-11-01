@@ -126,7 +126,7 @@ export function OnboardingTakeover({
   const previewTurn = reduceMotion ? FADE_TURN : PREVIEW_TURN
   const primaryRef = useRef<HTMLButtonElement>(null)
   const contentRef = useRef<HTMLElement>(null)
-  const [yellow, blue, orange] = useToken('colors', ['secondary.400', 'primary.300', 'tertiary.300'])
+  const [yellow] = useToken('colors', ['secondary.400'])
   const step = steps[index]
   const isFirst = index === 0
   const isLast = index === steps.length - 1
@@ -169,11 +169,8 @@ export function OnboardingTakeover({
         sx={{ '&:focus-visible': { outline: 'none' } }}
         p={0}
         bg="neutral.50"
-        bgImage={[
-          `radial-gradient(60% 55% at 12% 8%, color-mix(in srgb, ${yellow} 55%, transparent) 0%, transparent 70%)`,
-          `radial-gradient(50% 50% at 92% 92%, color-mix(in srgb, ${blue} 22%, transparent) 0%, transparent 70%)`,
-          `radial-gradient(40% 40% at 88% 10%, color-mix(in srgb, ${orange} 16%, transparent) 0%, transparent 70%)`,
-        ].join(', ')}
+        // Brand yellow only: blue and orange belong to the old Hoseki theme.
+        bgImage={`radial-gradient(60% 55% at 12% 8%, color-mix(in srgb, ${yellow} 55%, transparent) 0%, transparent 70%)`}
       >
         {/* Phones get the whole screen: the preview over the gradient, with a sheet of text and
             controls at the bottom within thumb reach. Larger screens float a card. */}
