@@ -14,7 +14,7 @@ import {
   Text,
   useToken,
 } from '@chakra-ui/react'
-import { type KeyboardEvent, useEffect, useRef, useState } from 'react'
+import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import {
   type ConnectionDetails,
@@ -384,125 +384,128 @@ export function useServerSteps(choice: ElectrumChoice | undefined): OnboardingSt
   // The details last connected here, so coming back to the form and on doesn't connect again.
   const [connected, setConnected] = useState<ConnectionDetails | null>(null)
 
-  if (choice === undefined) {
-    return []
-  }
+  // Rebuilt only when the choices here change, so a step's preview isn't redrawn while it turns over.
+  return useMemo((): OnboardingStep[] => {
+    if (choice === undefined) {
+      return []
+    }
 
-  const isConnected = sameDetails(draft, connected)
+    const isConnected = sameDetails(draft, connected)
 
-  const connect = async (): Promise<boolean> => {
-    if (isConnected) {
+    const connect = async (): Promise<boolean> => {
+      if (isConnected) {
+        return true
+      }
+      const invalid = invalidReason(draft)
+      if (invalid !== null) {
+        setProblem({ message: invalid })
+        return false
+      }
+      setBusy(true)
+      setProblem(null)
+      const details = { ...draft, host: draft.host.trim() }
+      const result = await choice.connectNode(details)
+      setBusy(false)
+      if (result.isErr()) {
+        setProblem({
+          message: `Couldn’t connect to ${details.host}:${details.port}. Check these details and that your node is on.`,
+          reason: errorMessage(result.unwrapErr(), 'The node didn’t answer.'),
+        })
+        return false
+      }
+      setConnected(details)
+      toast.success('Connected to your node')
       return true
     }
-    const invalid = invalidReason(draft)
-    if (invalid !== null) {
-      setProblem({ message: invalid })
-      return false
-    }
-    setBusy(true)
-    setProblem(null)
-    const details = { ...draft, host: draft.host.trim() }
-    const result = await choice.connectNode(details)
-    setBusy(false)
-    if (result.isErr()) {
-      setProblem({
-        message: `Couldn’t connect to ${details.host}:${details.port}. Check these details and that your node is on.`,
-        reason: errorMessage(result.unwrapErr(), 'The node didn’t answer.'),
-      })
-      return false
-    }
-    setConnected(details)
-    toast.success('Connected to your node')
-    return true
-  }
 
-  const steps: OnboardingStep[] = [
-    {
-      id: 'server',
-      title: 'Choose your Electrum server',
-      body: 'Control Center looks up your wallets on an Electrum server. Whoever runs it can see which addresses are yours and your IP address.',
-      // Each server has its own Tor switch.
-      preview: <ServerPreview server={server} torEnabled={server === 'public' ? publicTor : draft.torEnabled} />,
-      controls: () => (
-        <ServerOptions
-          value={server}
-          torEnabled={publicTor}
-          isDisabled={busy}
-          failure={choiceFailure}
-          onChange={(next) => {
-            setServer(next)
-            setChoiceFailure(null)
-          }}
-          onTorChange={(torEnabled) => {
-            setPublicTor(torEnabled)
-            setChoiceFailure(null)
-            if (torEnabled) {
-              choice.startTor()
+    const steps: OnboardingStep[] = [
+      {
+        id: 'server',
+        title: 'Choose your Electrum server',
+        body: 'Control Center looks up your wallets on an Electrum server. Whoever runs it can see which addresses are yours and your IP address.',
+        // Each server has its own Tor switch.
+        preview: <ServerPreview server={server} torEnabled={server === 'public' ? publicTor : draft.torEnabled} />,
+        controls: () => (
+          <ServerOptions
+            value={server}
+            torEnabled={publicTor}
+            isDisabled={busy}
+            failure={choiceFailure}
+            onChange={(next) => {
+              setServer(next)
+              setChoiceFailure(null)
+            }}
+            onTorChange={(torEnabled) => {
+              setPublicTor(torEnabled)
+              setChoiceFailure(null)
+              if (torEnabled) {
+                choice.startTor()
+              }
+            }}
+          />
+        ),
+        primary: {
+          label: 'Continue',
+          isLoading: busy && server === 'public',
+          // Only Tor takes long enough to say what's happening.
+          loadingText: publicTor ? 'Connecting…' : undefined,
+          run: async () => {
+            if (server === 'own') {
+              return true
             }
-          }}
-        />
-      ),
-      primary: {
-        label: 'Continue',
-        isLoading: busy && server === 'public',
-        // Only Tor takes long enough to say what's happening.
-        loadingText: publicTor ? 'Connecting…' : undefined,
-        run: async () => {
-          if (server === 'own') {
+            setBusy(true)
+            setChoiceFailure(null)
+            const result = await choice.keepPublic(publicTor)
+            setBusy(false)
+            if (result.isErr()) {
+              const error = result.unwrapErr()
+              setChoiceFailure(
+                publicTor
+                  ? {
+                      message: 'Couldn’t connect through Tor. Try again, or turn off Connect via Tor.',
+                      reason: errorMessage(error, 'Tor didn’t answer.'),
+                    }
+                  : { message: errorMessage(error, 'Couldn’t switch back to the public server. Try again.') },
+              )
+              return false
+            }
+            setConnected(null)
             return true
-          }
-          setBusy(true)
-          setChoiceFailure(null)
-          const result = await choice.keepPublic(publicTor)
-          setBusy(false)
-          if (result.isErr()) {
-            const error = result.unwrapErr()
-            setChoiceFailure(
-              publicTor
-                ? {
-                    message: 'Couldn’t connect through Tor. Try again, or turn off Connect via Tor.',
-                    reason: errorMessage(error, 'Tor didn’t answer.'),
-                  }
-                : { message: errorMessage(error, 'Couldn’t switch back to the public server. Try again.') },
-            )
-            return false
-          }
-          setConnected(null)
-          return true
+          },
         },
       },
-    },
-  ]
-  if (server === 'own') {
-    steps.push({
-      id: 'node',
-      followUp: true,
-      title: 'Connect your node',
-      body: 'You’ll find these in your node’s Electrum server app, such as Electrs or Fulcrum.',
-      preview: <ServerPreview server="own" torEnabled={draft.torEnabled} />,
-      controls: (next) => (
-        <NodeForm
-          draft={draft}
-          isDisabled={busy}
-          isConnected={isConnected}
-          problem={problem}
-          onSubmit={next}
-          onChange={(value) => {
-            setDraft((current) => ({ ...current, ...value }))
-            setProblem(null)
-            if (value.torEnabled === true) {
-              choice.startTor()
-            }
-          }}
-        />
-      ),
-      primary: {
-        label: isConnected ? 'Continue' : 'Connect',
-        isLoading: busy,
-        loadingText: 'Connecting…',
-        run: connect,
-      },
-    })
-  }
-  return steps
+    ]
+    if (server === 'own') {
+      steps.push({
+        id: 'node',
+        followUp: true,
+        title: 'Connect your node',
+        body: 'You’ll find these in your node’s Electrum server app, such as Electrs or Fulcrum.',
+        preview: <ServerPreview server="own" torEnabled={draft.torEnabled} />,
+        controls: (next) => (
+          <NodeForm
+            draft={draft}
+            isDisabled={busy}
+            isConnected={isConnected}
+            problem={problem}
+            onSubmit={next}
+            onChange={(value) => {
+              setDraft((current) => ({ ...current, ...value }))
+              setProblem(null)
+              if (value.torEnabled === true) {
+                choice.startTor()
+              }
+            }}
+          />
+        ),
+        primary: {
+          label: isConnected ? 'Continue' : 'Connect',
+          isLoading: busy,
+          loadingText: 'Connecting…',
+          run: connect,
+        },
+      })
+    }
+    return steps
+  }, [choice, server, publicTor, busy, choiceFailure, draft, problem, connected])
 }

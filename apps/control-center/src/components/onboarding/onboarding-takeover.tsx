@@ -20,7 +20,7 @@ import {
   useIsPresent,
   useReducedMotion,
 } from 'framer-motion'
-import { type ComponentProps, type ReactNode, useEffect, useRef, useState } from 'react'
+import { type ComponentProps, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { isDesktop } from '../../mode'
 import type { ElectrumChoice } from './electrum-choice'
 import { EASE_IN, EASE_OUT, TURN_IN_S, TURN_OUT_S } from './onboarding-motion'
@@ -126,7 +126,7 @@ export function OnboardingTakeover({
   serverChoice?: ElectrumChoice
 }): JSX.Element {
   const serverSteps = useServerSteps(serverChoice)
-  const steps = onboardingSteps(desktop, serverSteps)
+  const steps = useMemo(() => onboardingSteps(desktop, serverSteps), [desktop, serverSteps])
   const [{ index, direction }, setPage] = useState({ index: 0, direction: 1 })
   const reduceMotion = useReducedMotion() === true
   const footer = useBreakpointValue({ base: PHONE_FOOTER, md: DESKTOP_FOOTER }, { ssr: false }) ?? DESKTOP_FOOTER
@@ -246,8 +246,9 @@ export function OnboardingTakeover({
               {/* One grid cell, so the outgoing and incoming text overlap as they cross. On phones it
                   keeps room for the longest step, so the preview above doesn't resize between steps.
                   A step with controls scrolls on a short screen rather than pushing out the footer;
-                  the padding keeps focus rings clear of the scroll edge. */}
-              <Box display="grid" minH={{ base: '8.5rem', md: 0 }} overflowY="auto" m={-1} p={1}>
+                  scrolling clips sideways too, so the padding, reaching into the panel's own, leaves
+                  room for a step drifting and blurring as it turns over, and for focus rings. */}
+              <Box display="grid" minH={{ base: '8.5rem', md: 0 }} overflowY="auto" mx={-6} px={6} my={-2} py={2}>
                 <AnimatePresence initial={false} custom={direction}>
                   <StepLayer key={step.id} custom={direction} variants={textTurn} gridArea="1 / 1">
                     <StepTitle>{step.title}</StepTitle>
