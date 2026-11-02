@@ -11,7 +11,7 @@ import { Address, type CheckedAddressString } from '@hoseki/packages/bitcoin/add
 import { DerivationPathString } from '@hoseki/packages/bitcoin/derivation-path'
 import { Network } from '@hoseki/packages/bitcoin/network'
 import { NetworkAccount } from '@hoseki/packages/bitcoin/network_account'
-import { Xpub } from '@hoseki/packages/bitcoin/xpub'
+import { Xpub, containsExtendedPrivateKey } from '@hoseki/packages/bitcoin/xpub'
 import { IndexMap, IndexSet } from '@hoseki/packages/collection'
 import { parseUnknown } from '@hoseki/packages/result'
 import {
@@ -127,12 +127,13 @@ const supportedHardwareWalletSchema = z.enum(['trezor', 'coldcard', 'ledger', 'k
 const etfTickerSchema = z.enum(['IBIT', 'FBTC', 'GBTC', 'ARKB', 'BITB', 'HODL', 'BTC', 'MSBT'])
 const checkedSinglesigAccountDescriptorSchema = z.custom<CheckedSinglesigAccountDescriptor>(
   (value): value is CheckedSinglesigAccountDescriptor =>
-    typeof value === 'string' && SingleSigAccount.fromDescriptor(value).isOk(),
+    // The parser reads only the first key, so also reject private keys elsewhere in the descriptor.
+    typeof value === 'string' && !containsExtendedPrivateKey(value) && SingleSigAccount.fromDescriptor(value).isOk(),
   'Invalid singlesig account descriptor',
 )
 const checkedMultisigAccountDescriptorSchema = z.custom<CheckedMultisigAccountDescriptor>(
   (value): value is CheckedMultisigAccountDescriptor =>
-    typeof value === 'string' && MultiSigAccount.fromDescriptor(value).isOk(),
+    typeof value === 'string' && !containsExtendedPrivateKey(value) && MultiSigAccount.fromDescriptor(value).isOk(),
   'Invalid multisig account descriptor',
 )
 const hardwareWalletDisplayNames = {
@@ -1927,6 +1928,12 @@ const portalProveRouter = t.router({
         }),
       )
       .mutation(async ({ ctx, input }) => {
+        if (containsExtendedPrivateKey(input.descriptor)) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'Use extended public keys (xpub), not private keys',
+          })
+        }
         return ctx.app.database.transaction(async (db) => {
           const [duplicate] = await db
             .select({ id: accountTable.id })

@@ -8,6 +8,7 @@ import { drizzle } from 'drizzle-orm/libsql'
 import { migrate } from 'drizzle-orm/libsql/migrator'
 import type { Logger } from 'pino'
 import { migrationsTable, prepareMigrationJournal } from './migration-journal'
+import { replaceStoredPrivateKeys } from './private-keys'
 
 export type SentinelDb = ReturnType<typeof drizzle>
 export type SentinelTx = Parameters<Parameters<SentinelDb['transaction']>[0]>[0]
@@ -39,6 +40,7 @@ export async function openDrizzleDatabase(dataDir: string, logger: Logger): Prom
     // The pinned native libSQL build enables foreign keys by default, including
     // on reconnect. Its migration runner also restores enforcement after batches.
     await migrate(db, { migrationsFolder: folder, migrationsTable })
+    await replaceStoredPrivateKeys(db, logger)
 
     // libSQL rejects queries while an interactive transaction owns its only
     // connection. Queue ordinary queries and whole transactions together;

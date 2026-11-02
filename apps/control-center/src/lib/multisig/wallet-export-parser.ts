@@ -373,7 +373,7 @@ function trySpecterDesktop(parsedJson: unknown): Result<ParsedWalletExport, Erro
       }
 
       const fixedDescriptor = fixedDescriptorResult.unwrap()
-      browserLogger.info(`Attempting to parse fixed descriptor: ${fixedDescriptor}`)
+      browserLogger.info('Attempting to parse fixed descriptor')
 
       const fixedMultisigResult = WalletImporter.multisigFromDescriptor(fixedDescriptor)
       if (fixedMultisigResult.isErr()) {
@@ -483,7 +483,7 @@ function tryUnchainedCaravan(parsedJson: unknown): Result<ParsedWalletExport, Er
   for (const key of caravanJson.extendedPublicKeys) {
     const xpubResult = Slip132.getXpubFromString(key.xpub)
     if (xpubResult.isErr()) {
-      browserLogger.error(xpubResult.unwrapErr(), `Error parsing xpub: ${key.xpub}`)
+      browserLogger.error(xpubResult.unwrapErr(), 'Error parsing xpub')
       return Err(xpubResult.unwrapErr())
     }
 
@@ -614,7 +614,7 @@ function tryElectrum(parsedJson: unknown): Result<ParsedWalletExport, Error> {
   for (const keystore of electrumJson.keystores) {
     const xpubResult = Slip132.getXpubFromString(keystore.xpub)
     if (xpubResult.isErr()) {
-      browserLogger.error(xpubResult.unwrapErr(), `Error parsing xpub: ${keystore.xpub}`)
+      browserLogger.error(xpubResult.unwrapErr(), 'Error parsing xpub')
       return Err(xpubResult.unwrapErr())
     }
 

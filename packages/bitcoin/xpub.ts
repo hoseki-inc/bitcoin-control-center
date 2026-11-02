@@ -1,10 +1,18 @@
 import type { Opaque } from 'type-fest'
-import { Err, Result } from '../result'
+import { Err, Ok, Result } from '../result'
 import { Address } from './address'
 import { type BIP32Interface, bip32, bitcoin } from './lib'
 import { Network } from './network'
 
 export type CheckedXpubString = Opaque<string, 'CheckedXpubString'>
+
+// Matches xprv/tprv and SLIP-132 private keys (yprv, zprv, ...), but not the same letters inside another
+// Base58 string such as an xpub.
+const extendedPrivateKey = /(?<![1-9A-HJ-NP-Za-km-z])[xyYzZtuUvV]prv[1-9A-HJ-NP-Za-km-z]+/
+
+export function containsExtendedPrivateKey(text: string): boolean {
+  return extendedPrivateKey.test(text)
+}
 
 export class Xpub {
   public static fromString(string: string): Result<Xpub, Error> {
@@ -29,9 +37,14 @@ export class Xpub {
         )
     }
 
-    return Result.fromThrowable(() => {
-      const spec = bip32.fromBase58(string, network)
-      return new Xpub(spec, network)
+    return Result.fromThrowable(() => bip32.fromBase58(string, network)).andThen((spec) => {
+      // xprv/tprv decode on the same network. Control Center is watch-only, so never keep a private key.
+      if (!spec.isNeutered()) {
+        return Err(
+          new Error('This is an extended private key (xprv/tprv). Use the extended public key (xpub/tpub) instead.'),
+        )
+      }
+      return Ok(new Xpub(spec, network))
     })
   }
 
