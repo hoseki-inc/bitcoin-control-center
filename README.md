@@ -354,19 +354,17 @@ pnpm security:audit
 
 Pull-request CI and `pnpm run ci` skip it, so newly published advisories don't
 block unrelated pull requests; Dependabot and pull-request dependency review stay
-enabled. **Release 3** runs it and won't create a draft release while a non-ignored
-moderate or worse finding remains.
+enabled. **Release 3** runs it and won't create a draft release while a moderate or worse
+finding remains outside the skips in `.github/scripts/security-audit.mjs`. It also fails when a
+skipped advisory is no longer reported, so a skip is removed once it isn't needed.
+[Issue 383](https://github.com/hoseki-inc/bitcoin-control-center/issues/383) tracks each skip,
+why it's safe for now and what clears it.
 
 As of October 30, 2026,
 [`elliptic` GHSA-848j-6mx2-7j84](https://github.com/advisories/GHSA-848j-6mx2-7j84)
 (low severity, still reported; pulled in by Trezor and browser crypto dependencies) has no
 published patched version. A passing audit gate does not mean
 these dependencies are free of known vulnerabilities.
-
-[`zod` GHSA-mrhx-c7xc-m3w5](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5) (high severity) is
-also excluded until the workspace moves to Zod 4, the only patched line. It lets a huge array of
-invalid items exhaust memory. Without a PIN session, Sentinel accepts no input with an array, so
-the remaining cases are a signed-in user or an external service crashing Sentinel until it restarts.
 
 The default `pnpm test` command requires only the root workspace dependencies.
 Sentinel uses an async, local-file libSQL client. Sentinel tests and desktop runtime
