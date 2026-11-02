@@ -25,7 +25,7 @@ export function Banner(): JSX.Element {
           Your holdings, on record
         </Text>
         <Text textStyle="text/md" color="neutral.600" maxW="34ch">
-          Download a statement of your holdings for a selected period.
+          Download a proof-of-ownership statement for a selected period.
         </Text>
         <Button as={Link} to="/statements/create" state={{ returnTo: pathname }} mt={2}>
           Generate Statement

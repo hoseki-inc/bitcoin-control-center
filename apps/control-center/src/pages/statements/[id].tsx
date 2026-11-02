@@ -310,7 +310,7 @@ function LearnMore() {
     <Box bg="neutral.50" p={4} borderRadius="md">
       <HStack spacing={3}>
         <ShieldCheckIcon size={20} />
-        <Text fontWeight="medium">Self-custodial Bitcoin statements</Text>
+        <Text fontWeight="medium">Self-custodial proof-of-ownership statements</Text>
       </HStack>
       <Text ml={7} color="neutral.900">
         Learn more in our{' '}
