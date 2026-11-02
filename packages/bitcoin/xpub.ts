@@ -6,6 +6,14 @@ import { Network } from './network'
 
 export type CheckedXpubString = Opaque<string, 'CheckedXpubString'>
 
+// Matches xprv/tprv and SLIP-132 private keys (yprv, zprv, ...), but not the same letters inside another
+// Base58 string such as an xpub.
+const extendedPrivateKey = /(?<![1-9A-HJ-NP-Za-km-z])[xyYzZtuUvV]prv[1-9A-HJ-NP-Za-km-z]+/
+
+export function containsExtendedPrivateKey(text: string): boolean {
+  return extendedPrivateKey.test(text)
+}
+
 export class Xpub {
   public static fromString(string: string): Result<Xpub, Error> {
     // Only accept core xpub/tpub strings (no SLIP-132 prefixes like ypub, zpub, etc.)

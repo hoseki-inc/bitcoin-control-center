@@ -1,3 +1,5 @@
+import { checksum } from '@hoseki/packages/bitcoin/descriptor_utils'
+import { bs58check } from '@hoseki/packages/bitcoin/lib'
 import { Wallets } from '@hoseki/packages/testing'
 import { eq } from 'drizzle-orm'
 import { assert, expect, it } from 'vitest'
@@ -110,7 +112,7 @@ it.each([
   await expect(db.select().from(keystores)).resolves.toHaveLength(expectedKeys)
 })
 
-it('rejects claims whose descriptor holds an extended private key', async () => {
+it('rejects accounts and claims whose descriptor holds an extended private key', async () => {
   const { caller, db } = await setupAppCaller()
   // BIP32 test vectors 1 (m, m/0H) and 2 (m/0): published vectors, not real wallets.
   const xprv =
@@ -119,6 +121,8 @@ it('rejects claims whose descriptor holds an extended private key', async () => 
     'xprv9uHRZZhk6KAJC1avXpDAp4MDc3sQKNxDiPvvkX8Br5ngLNv1TxvUxt4cV1rGL5hj6KCesnDYUhd7oWgT11eZG7XnxHrnYeSvkzY7d2bhkJ7'
   const cosignerXpub =
     'xpub69H7F5d8KSRgmmdJg2KhpAK8SR3DjMwAdkxj3ZuxV27CprR9LgpeyGmXUbC6wb7ERfvrnKZjXoUmmDznezpbZb7ap6r1D3tgFxHmwMkQTPH'
+  // The same key with SLIP-132 zprv version bytes, as Electrum shows master private keys.
+  const zprv = bs58check.encode(Buffer.concat([Buffer.from('04b2430c', 'hex'), bs58check.decode(xprv).subarray(4)]))
   const claims = caller.portalProve.registry.claims.create
 
   await expect(
@@ -129,6 +133,28 @@ it('rejects claims whose descriptor holds an extended private key', async () => 
       keystore: { label: 'Key', wallet: null, model: null, derivationPath: null },
     }),
   ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
+  // The parser reads only the internal key, so the private key hides in the script branch.
+  await expect(
+    claims.singlesig({
+      network: 'bitcoin_mainnet',
+      account: checksum(`tr(${cosignerXpub}/<0;1>/*,pk(${xprv}/<0;1>/*))`).expect('checksum'),
+      displayName: 'Private',
+      keystore: { label: 'Key', wallet: null, model: null, derivationPath: null },
+    }),
+  ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
+  await expect(
+    claims.singlesig({
+      network: 'bitcoin_mainnet',
+      account: checksum(`tr(${cosignerXpub}/<0;1>/*,pk(${zprv}/<0;1>/*))`).expect('checksum'),
+      displayName: 'Private',
+      keystore: { label: 'Key', wallet: null, model: null, derivationPath: null },
+    }),
+  ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
+  for (const key of [xprv, zprv]) {
+    await expect(
+      caller.portalProve.accounts.add({ ...input, descriptor: `wpkh(${key}/<0;1>/*)` }),
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
+  }
   await expect(
     claims.multisig({
       network: 'bitcoin_mainnet',

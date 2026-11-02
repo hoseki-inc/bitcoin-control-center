@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest'
 import { bip32, bitcoin } from './lib'
 import { Network } from './network'
-import { Xpub } from './xpub'
+import { Xpub, containsExtendedPrivateKey } from './xpub'
 
 const XPUB =
   'xpub694qt9hX4kPgLCQm6Zw3tGa6YJ7oFLsWFNLwCFvPrsnLqDEEKHCFdnXNu858phziqhs6EbuMBs3z73Nsa7tayYe5JfTcxqyWrpmzxAgPbcD'
@@ -53,6 +53,19 @@ test('fromString - rejects extended private keys', () => {
     expect(result.isErr()).toBe(true)
     expect(result.unwrapErr().message).toContain('extended private key')
     expect(Xpub.fromString(node.neutered().toBase58()).isOk()).toBe(true)
+  }
+})
+
+test('containsExtendedPrivateKey - ignores the same letters inside a public key', () => {
+  const seed = Buffer.from('000102030405060708090a0b0c0d0e0f', 'hex')
+  const node = bip32.fromSeed(seed, bitcoin.networks.bitcoin)
+  const xpub = node.neutered().toBase58()
+  expect(containsExtendedPrivateKey(`wpkh(${node.toBase58()}/<0;1>/*)`)).toBe(true)
+  expect(containsExtendedPrivateKey(`wpkh(${xpub}/<0;1>/*)`)).toBe(false)
+  // About 2 in 100,000 xpubs contain "xprv" or "tprv" somewhere after the prefix.
+  expect(containsExtendedPrivateKey(`wpkh(${xpub.slice(0, 20)}xprv${xpub.slice(24)}/<0;1>/*)`)).toBe(false)
+  for (const prefix of ['yprv', 'Yprv', 'zprv', 'Zprv', 'tprv', 'uprv', 'Uprv', 'vprv', 'Vprv']) {
+    expect(containsExtendedPrivateKey(`wpkh(${prefix}${xpub.slice(4)}/<0;1>/*)`), prefix).toBe(true)
   }
 })
 
