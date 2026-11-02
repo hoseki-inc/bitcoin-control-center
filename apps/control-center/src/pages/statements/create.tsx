@@ -159,11 +159,11 @@ export function StatementCreatePage(): JSX.Element {
           <Stack alignItems="stretch" direction={{ base: 'column', md: 'row' }} gap={{ base: 4, md: 8 }}>
             <Stack gap={1} flexBasis={LEFT_COLUMN_WIDTH} flexShrink={0}>
               <Text as="h2" textStyle="text/md" fontWeight="medium">
-                What is a Bitcoin Control Center statement?
+                What is a proof-of-ownership statement?
               </Text>
               <Text textStyle="text/sm" color="neutral.600">
-                A Bitcoin Control Center statement is like a bank statement for your self-custodial Bitcoin, showing
-                your transactions over a customizable time period.
+                A proof-of-ownership statement is like a bank statement for your self-custodial Bitcoin. It shows your
+                transactions over a period you choose, and only includes accounts where you’ve proven ownership.
               </Text>
             </Stack>
 
@@ -336,7 +336,7 @@ export function StatementCreatePage(): JSX.Element {
               <Text textStyle="text/sm" color="neutral.600">
                 {hasAccounts
                   ? 'Self-custody accounts where you’ve proven ownership. For custodial accounts, your custodian can provide statements.'
-                  : 'Before you can generate a bitcoin ownership statement, you’ll need to connect a wallet and verify control.'}
+                  : 'Before you can generate a proof-of-ownership statement, you’ll need to connect a wallet and verify control.'}
               </Text>
               {!hasAccounts && (
                 <Button as={Link} to="/accounts/add" mt={4} alignSelf="flex-start" size="sm">
