@@ -22,8 +22,10 @@ import {
 } from 'framer-motion'
 import { type ComponentProps, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { isDesktop } from '../../mode'
+import type { ElectrumChoice } from './electrum-choice'
 import { EASE_IN, EASE_OUT, TURN_IN_S, TURN_OUT_S } from './onboarding-motion'
 import { onboardingSteps } from './onboarding-steps'
+import { useServerSteps } from './server-step'
 import { StepDots } from './step-dots'
 
 /** Fades in and out with the same timing as a step, instead of Chakra's scale, so the backdrop doesn't zoom. */
@@ -70,17 +72,19 @@ function turnVariants({ distance, blur, delay }: { distance: number; blur: numbe
 }
 
 // The preview travels a little further and later than the text, for a touch of depth.
-const TEXT_TURN = turnVariants({ distance: 12, blur: 4, delay: 0.04 })
+export const TEXT_TURN = turnVariants({ distance: 12, blur: 4, delay: 0.04 })
+/** Text that arrives only once the step before it has gone, for when the two would collide. */
+export const TEXT_TURN_AFTER_EXIT = turnVariants({ distance: 12, blur: 4, delay: TURN_OUT_S })
 const PREVIEW_TURN = turnVariants({ distance: 32, blur: 6, delay: 0.1 })
 /** With reduced motion, steps simply cross-fade. */
-const FADE_TURN: Variants = {
+export const FADE_TURN: Variants = {
   enter: { opacity: 0 },
   center: { opacity: 1, transition: { duration: motionTokens.revealMs / 1000, ease: EASE_OUT } },
   exit: { opacity: 0, transition: { duration: motionTokens.dismissMs / 1000, ease: EASE_IN } },
 }
 
 /** One step's text or preview as it turns over. A step on its way out is hidden from assistive technology. */
-function StepLayer(props: ComponentProps<typeof MotionBox>): JSX.Element {
+export function StepLayer(props: ComponentProps<typeof MotionBox>): JSX.Element {
   const isPresent = useIsPresent()
   return (
     <MotionBox initial="enter" animate="center" exit="exit" aria-hidden={isPresent ? undefined : true} {...props} />
@@ -88,7 +92,7 @@ function StepLayer(props: ComponentProps<typeof MotionBox>): JSX.Element {
 }
 
 /** The step's title. Only the step on screen labels the dialog; one on its way out is plain text. */
-function StepTitle({ children }: { children: ReactNode }): JSX.Element {
+export function StepTitle({ children }: { children: ReactNode }): JSX.Element {
   const isPresent = useIsPresent()
   return isPresent ? (
     <ModalHeader as="h2" pe={0}>
@@ -111,14 +115,18 @@ export function OnboardingTakeover({
   onSkip,
   onAddAccount,
   desktop = isDesktop,
+  serverChoice,
 }: {
   isOpen: boolean
   /** Skip, Not Now and Escape all close it. */
   onSkip: () => void
   onAddAccount: () => void
   desktop?: boolean
+  /** Adds a step to choose the Electrum server, before the first account. Desktop only. */
+  serverChoice?: ElectrumChoice
 }): JSX.Element {
-  const steps = useMemo(() => onboardingSteps(desktop), [desktop])
+  const serverSteps = useServerSteps(serverChoice)
+  const steps = useMemo(() => onboardingSteps(desktop, serverSteps), [desktop, serverSteps])
   const [{ index, direction }, setPage] = useState({ index: 0, direction: 1 })
   const reduceMotion = useReducedMotion() === true
   const footer = useBreakpointValue({ base: PHONE_FOOTER, md: DESKTOP_FOOTER }, { ssr: false }) ?? DESKTOP_FOOTER
@@ -126,24 +134,44 @@ export function OnboardingTakeover({
   const previewTurn = reduceMotion ? FADE_TURN : PREVIEW_TURN
   const primaryRef = useRef<HTMLButtonElement>(null)
   const contentRef = useRef<HTMLElement>(null)
-  const [yellow, blue, orange] = useToken('colors', ['secondary.400', 'primary.300', 'tertiary.300'])
+  const [yellow] = useToken('colors', ['secondary.400'])
   const step = steps[index]
   const isFirst = index === 0
   const isLast = index === steps.length - 1
+  const action = step?.primary
+  // A follow-up shares the dot of the step it carries on from.
+  const dotCount = steps.filter((item) => item.followUp !== true).length
+  const dot = steps.slice(0, index + 1).filter((item) => item.followUp !== true).length - 1
 
   const goTo = (next: number): void => {
     setPage({ index: next, direction: next > index ? 1 : -1 })
   }
 
-  // Back disappears on the first step; keep focus in the dialog when it does.
-  // Opening is left to the dialog, which focuses itself.
+  const next = (): void => {
+    if (isLast) {
+      onAddAccount()
+    } else if (action === undefined) {
+      goTo(index + 1)
+    } else if (action.isLoading !== true) {
+      void action.run().then((done) => {
+        if (done) {
+          goTo(index + 1)
+        }
+      })
+    }
+  }
+
+  // Back disappears on the first step, and a step's own controls leave with it; keep focus in the
+  // dialog when they do. Opening is left to the dialog, which focuses itself.
   const shownIndex = useRef(index)
   useEffect(() => {
     if (shownIndex.current === index) {
       return
     }
     shownIndex.current = index
-    if (contentRef.current?.contains(document.activeElement) !== true) {
+    const focused = document.activeElement
+    const leaving = focused instanceof HTMLElement && focused.closest('[aria-hidden="true"]') !== null
+    if (contentRef.current?.contains(focused) !== true || leaving) {
       primaryRef.current?.focus()
     }
   }, [index])
@@ -169,11 +197,8 @@ export function OnboardingTakeover({
         sx={{ '&:focus-visible': { outline: 'none' } }}
         p={0}
         bg="neutral.50"
-        bgImage={[
-          `radial-gradient(60% 55% at 12% 8%, color-mix(in srgb, ${yellow} 55%, transparent) 0%, transparent 70%)`,
-          `radial-gradient(50% 50% at 92% 92%, color-mix(in srgb, ${blue} 22%, transparent) 0%, transparent 70%)`,
-          `radial-gradient(40% 40% at 88% 10%, color-mix(in srgb, ${orange} 16%, transparent) 0%, transparent 70%)`,
-        ].join(', ')}
+        // Brand yellow only: blue and orange belong to the old Hoseki theme.
+        bgImage={`radial-gradient(60% 55% at 12% 8%, color-mix(in srgb, ${yellow} 55%, transparent) 0%, transparent 70%)`}
       >
         {/* Phones get the whole screen: the preview over the gradient, with a sheet of text and
             controls at the bottom within thumb reach. Larger screens float a card. */}
@@ -219,25 +244,30 @@ export function OnboardingTakeover({
               borderColor="neutral.200"
             >
               {/* One grid cell, so the outgoing and incoming text overlap as they cross. On phones it
-                  keeps room for the longest step, so the preview above doesn't resize between steps. */}
-              <Box display="grid" minH={{ base: '8.5rem', md: 0 }}>
+                  keeps room for the longest step, so the preview above doesn't resize between steps.
+                  A step with controls scrolls on a short screen rather than pushing out the footer;
+                  scrolling clips sideways too, so the padding, reaching into the panel's own, leaves
+                  room for a step drifting and blurring as it turns over, and for focus rings. */}
+              <Box display="grid" minH={{ base: '8.5rem', md: 0 }} overflowY="auto" mx={-6} px={6} my={-2} py={2}>
                 <AnimatePresence initial={false} custom={direction}>
                   <StepLayer key={step.id} custom={direction} variants={textTurn} gridArea="1 / 1">
                     <StepTitle>{step.title}</StepTitle>
                     <Text textStyle="text/md" color="neutral.600" mt={2}>
                       {step.body}
                     </Text>
+                    {step.controls && <Box mt={5}>{step.controls(next)}</Box>}
                   </StepLayer>
                 </AnimatePresence>
               </Box>
               <VisuallyHidden aria-live="polite">
-                Step {index + 1} of {steps.length}
+                Step {dot + 1} of {dotCount}
               </VisuallyHidden>
               <Flex align="center" gap={2} mt="auto" flexWrap="wrap">
                 {!isFirst && (
                   <Button
                     variant="ghost"
                     size={footer.size}
+                    isDisabled={action?.isLoading === true}
                     onClick={() => {
                       goTo(index - 1)
                     }}
@@ -253,7 +283,7 @@ export function OnboardingTakeover({
                   me={{ sm: 2 }}
                   mb={{ base: 2, sm: 0 }}
                 >
-                  <StepDots count={steps.length} current={index} />
+                  <StepDots count={dotCount} current={dot} />
                 </Flex>
                 <Flex gap={2} ms={{ base: 'auto', sm: 0 }}>
                   <Button variant="ghost" size={footer.size} minW={footer.secondaryMinW} onClick={onSkip}>
@@ -263,15 +293,11 @@ export function OnboardingTakeover({
                     ref={primaryRef}
                     size={footer.size}
                     minW={footer.primaryMinW}
-                    onClick={() => {
-                      if (isLast) {
-                        onAddAccount()
-                      } else {
-                        goTo(index + 1)
-                      }
-                    }}
+                    isLoading={action?.isLoading === true}
+                    loadingText={action?.loadingText}
+                    onClick={next}
                   >
-                    {isLast ? 'Add Account' : 'Continue'}
+                    {isLast ? 'Add Account' : (action?.label ?? 'Continue')}
                   </Button>
                 </Flex>
               </Flex>

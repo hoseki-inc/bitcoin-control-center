@@ -309,9 +309,9 @@ export class ControlCenterService {
         manualBalance += BigInt(account.balanceSats)
       }
 
-      // Get transaction entries for accumulation chart
-      const manualTxEntries = await this.manualService.getTransactionEntries(filteredManualAccounts.map((a) => a.id))
-      manualEntries.push(...manualTxEntries)
+      // Saved balances and earlier transactions for the chart
+      const manualHistoryEntries = await this.manualService.getHistoryEntries(filteredManualAccounts.map((a) => a.id))
+      manualEntries.push(...manualHistoryEntries)
 
       // ─── Fetch ETF holdings data ──────────────────────────────
       let etfBalance = 0n
@@ -1270,7 +1270,7 @@ export class ControlCenterService {
       for (const account of manualAccounts) {
         if (
           await collectAccount('manual', account.id, async () => {
-            await this.manualService.recordSnapshot(account.id, account.balanceSats, now)
+            await this.manualService.recordSnapshot(account.id, now)
             return true
           })
         ) {

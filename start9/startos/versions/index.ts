@@ -23,10 +23,16 @@ import { v0_6_1_0 } from './v0_6_1_0'
 import { v0_6_1_1 } from './v0_6_1_1'
 import { v1_0_0_0 } from './v1_0_0_0'
 import { v1_1_0_0 } from './v1_1_0_0'
+import { v1_2_0_0 } from './v1_2_0_0'
+import { v1_3_0_0 } from './v1_3_0_0'
+import { v1_3_1_0 } from './v1_3_1_0'
 
 export const versionGraph = VersionGraph.of({
-  current: v1_1_0_0,
+  current: v1_3_1_0,
   other: [
+    v1_3_0_0,
+    v1_2_0_0,
+    v1_1_0_0,
     v1_0_0_0,
     v0_6_1_1,
     v0_6_1_0,

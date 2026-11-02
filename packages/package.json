@@ -10,7 +10,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@keystonehq/bc-ur-registry": "0.8.0",
+    "@keystonehq/bc-ur-registry": "0.8.1",
     "date-fns": "4.4.0",
     "decimal.js": "10.6.0",
     "nanoid": "5.1.16",

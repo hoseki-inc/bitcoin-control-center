@@ -1,3 +1,4 @@
+export * from './bitkey'
 export * from './errors'
 export * from './hardware-wallet'
 export * from './logo'

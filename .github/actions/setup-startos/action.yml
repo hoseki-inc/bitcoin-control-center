@@ -12,9 +12,9 @@ runs:
           build-essential \
           clang \
           libclang-dev \
-          qemu-user-static \
           squashfs-tools-ng
 
+    # Registers QEMU for arm64 builds, so the runner image needs no qemu package.
     - name: Set up QEMU
       uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
 
