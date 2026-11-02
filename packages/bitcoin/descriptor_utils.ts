@@ -4,7 +4,7 @@ import { Err, Ok, Result } from '../result'
 export function getChecksum(span: string): Result<string, Error> {
   return Result.from(() => DescriptorChecksum(span)).andThen((computedChecksum) => {
     if (computedChecksum === '') {
-      return Err(new Error(`could not compute checksum, invalid character in ${span}`))
+      return Err(new Error('could not compute checksum, invalid character in descriptor'))
     }
     return Ok(computedChecksum)
   })

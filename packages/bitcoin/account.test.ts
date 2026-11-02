@@ -335,3 +335,22 @@ describe('MultiSigAccount', () => {
     expect(error.message).toContain('all xpubs must be from the same network, got: Mainnet, Testnet')
   })
 })
+
+describe('private keys in descriptors', () => {
+  // BIP32 test vectors 1 (m, m/0H) and 2 (m/0): published vectors, not real wallets.
+  const xprv =
+    'xprv9s21ZrQH143K3QTDL4LXw2F7HEK3wJUD2nW2nRk4stbPy6cq3jPPqjiChkVvvNKmPGJxWUtg6LnF5kejMRNNU3TGtRBeJgk33yuGBxrMPHi'
+  const cosignerXprv =
+    'xprv9uHRZZhk6KAJC1avXpDAp4MDc3sQKNxDiPvvkX8Br5ngLNv1TxvUxt4cV1rGL5hj6KCesnDYUhd7oWgT11eZG7XnxHrnYeSvkzY7d2bhkJ7'
+  const cosignerXpub =
+    'xpub69H7F5d8KSRgmmdJg2KhpAK8SR3DjMwAdkxj3ZuxV27CprR9LgpeyGmXUbC6wb7ERfvrnKZjXoUmmDznezpbZb7ap6r1D3tgFxHmwMkQTPH'
+
+  it.each([`wpkh(${xprv}/0/*)`, `wpkh([3442193e/84h/0h/0h]${xprv}/0/*)`])('rejects a single-sig %s', (descriptor) => {
+    expect(SingleSigAccount.fromDescriptor(descriptor).isErr()).toBe(true)
+  })
+
+  it('rejects a multisig with a private cosigner key', () => {
+    const descriptor = `wsh(sortedmulti(2,[3442193e/0h]${cosignerXprv}/<0;1>/*,[bd16bee5/0]${cosignerXpub}/<0;1>/*))`
+    expect(MultiSigAccount.fromDescriptor(descriptor).isErr()).toBe(true)
+  })
+})

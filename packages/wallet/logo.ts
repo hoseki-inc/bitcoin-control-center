@@ -11,6 +11,8 @@ export function getSupportedHardwareWalletLogoPath(wallet: SupportedHardwareWall
       return `${HOSEKI_ASSETS_CDN_URL}/hardware-wallets/mini/coldcard-mini.svg`
     case 'keystone':
       return '/images/hardware-wallets/keystone-logo-mini.svg'
+    case 'bitkey':
+      return '/images/hardware-wallets/bitkey-logo-mini.svg'
     case null:
       return `${HOSEKI_ASSETS_CDN_URL}/bitcoin-medium.svg`
   }

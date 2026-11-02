@@ -79,7 +79,7 @@ function BitcoinSigningStep({
 
       onSuccess(claimingState.claimId)
     } catch {
-      toast.error('Failed to complete claim registration')
+      toast.error("Couldn't verify this account")
     }
   }
 
@@ -100,7 +100,7 @@ function BitcoinSigningStep({
       <WizardFooter
         leftButton={
           <Button variant="outline" onClick={onBack}>
-            Cancel Claim
+            Cancel
           </Button>
         }
         rightButton={

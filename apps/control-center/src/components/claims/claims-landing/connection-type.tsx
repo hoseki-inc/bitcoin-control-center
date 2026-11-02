@@ -42,7 +42,7 @@ export function ConnectionType({
       <Flex justifyContent="center" h="30px">
         {imagePath != null && imagePath !== '' ? <chakra.img src={imagePath} alt={imageAltText} maxW="100px" /> : media}
       </Flex>
-      <Text textStyle="label/md" fontWeight="medium">
+      <Text textStyle="label/md" fontWeight="medium" textAlign="center" whiteSpace="pre-line">
         {title}
       </Text>
     </Stack>

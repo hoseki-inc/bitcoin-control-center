@@ -11,6 +11,11 @@ export function ensureClaimStatusNotExpired(claim: ClaimDto): ClaimStatus {
   return claim.status === 'expired' ? 'verified' : claim.status
 }
 
+/** Bitkey's three keys are one wallet to its owner, so Bitkey accounts show as a single Bitkey. */
+export function isBitkeyClaim(claim: ClaimDto): boolean {
+  return claim.keystores.some((keystore) => keystore.wallet === 'bitkey')
+}
+
 /**
  * Transforms claim data into claim card props
  */
@@ -24,11 +29,13 @@ export function mapClaimToClaimCardProps(
     threshold: getThreshold(claim.account),
     // Since we don't have claim re-verification, every claim will always be expired, so we show it as 'verified'
     status: ensureClaimStatusNotExpired(claim),
-    keystores: claim.keystores.map((keystore) => ({
-      id: keystore.id,
-      wallet: keystore.wallet,
-      isVerified: Boolean(claim.latestChallenge?.messages.find((m) => m.keystoreId === keystore.id && m.signed)),
-    })),
+    keystores: isBitkeyClaim(claim)
+      ? [{ id: claim.id, wallet: 'bitkey', isVerified: false }]
+      : claim.keystores.map((keystore) => ({
+          id: keystore.id,
+          wallet: keystore.wallet,
+          isVerified: Boolean(claim.latestChallenge?.messages.find((m) => m.keystoreId === keystore.id && m.signed)),
+        })),
   }
 }
 

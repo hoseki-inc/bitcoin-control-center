@@ -2,6 +2,7 @@ import {
   Box,
   type BoxProps,
   Checkbox,
+  Circle,
   Flex,
   Grid,
   HStack,
@@ -21,12 +22,13 @@ import { Header, Menu } from '@hoseki/packages/ui/prove-verify-ui/layout/header'
 import { Logo } from '@hoseki/packages/ui/prove-verify-ui/logo'
 import { StatusBadge } from '@hoseki/packages/ui/prove-verify-ui/status-badge'
 import Decimal from 'decimal.js'
-import { SettingsIcon } from 'lucide-react'
+import { EyeIcon, EyeOffIcon, GlobeIcon, HouseIcon, LaptopIcon, LockIcon, SettingsIcon } from 'lucide-react'
 import { type ReactNode, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { PUBLIC_ELECTRUM_HOST } from '../../pages/settings/electrum-connection'
 import { ConnectionRowContent, LIVENESS_COLORS, connectionSummary } from '../../pages/settings/electrum-settings'
 import { STATEMENT_SOURCES, StatementSourceOption } from '../../pages/settings/statement-source-settings'
 import { BitcoinAmount } from '../bitcoin-amount'
-import { ManualEntryIcon, MultisigImage } from '../claims/account-type-media'
+import { ManualEntryIcon, ManualSignIcon, MultisigImage } from '../claims/account-type-media'
 import { AccumulationChart } from '../dashboard-charts/accumulation-chart'
 import { type BalanceDataPoint, getFlowTotals } from '../dashboard-charts/balance-history'
 import { MonthlyNetChangeChart } from '../dashboard-charts/monthly-net-change-chart'
@@ -219,12 +221,14 @@ const ACCOUNT_TYPES: Array<{ name: string; media: ReactNode }> = [
   { name: 'COLDCARD', media: <Wordmark src={`${HOSEKI_ASSETS_CDN_URL}/hardware-wallets/coldcard.svg`} /> },
   { name: 'Ledger', media: <Wordmark src={`${HOSEKI_ASSETS_CDN_URL}/hardware-wallets/ledger.svg`} /> },
   { name: 'Keystone', media: <Wordmark src="/images/hardware-wallets/keystone-logo.svg" /> },
+  { name: 'Bitkey', media: <Wordmark src="/images/hardware-wallets/bitkey-logo.svg" /> },
   { name: 'Multisig', media: MultisigImage },
   { name: 'Coinbase', media: <Wordmark src="/images/exchanges/coinbase-wordmark.svg" /> },
   { name: 'Kraken', media: <Wordmark src="/images/exchanges/kraken-wordmark.svg" /> },
   { name: 'Robinhood', media: <Wordmark src="/images/exchanges/robinhood-lockup.png" /> },
   { name: 'Strike', media: <Wordmark src="/images/exchanges/strike-logo.svg" /> },
-  { name: 'Manual Entry', media: <ManualEntryIcon /> },
+  { name: 'Manually Sign', media: <ManualSignIcon /> },
+  { name: 'Track Balance, ETF,\nor xpub', media: <ManualEntryIcon /> },
 ]
 
 export function AccountTypesPreview(): JSX.Element {
@@ -256,7 +260,7 @@ export function AccountTypesPreview(): JSX.Element {
                 <Flex justify="center" align="center" h="30px">
                   {media}
                 </Flex>
-                <Text textStyle="label/md" fontWeight="medium">
+                <Text textStyle="label/md" fontWeight="medium" textAlign="center" whiteSpace="pre-line">
                   {name}
                 </Text>
               </Stack>
@@ -435,6 +439,127 @@ export function ConnectionsPreview(): JSX.Element {
           <Text mt={2} textStyle="text/xs" color="neutral.600">
             Fastest. Your IP address and transaction details are shared with mempool.space.
           </Text>
+        </Card>
+      </Inert>
+    </Stage>
+  )
+}
+
+// ─── Choose your Electrum server ─────────────────────────────────────────────
+
+/** One sample wallet's addresses, as a lookup sends them to the server. */
+const SAMPLE_ADDRESSES = [
+  { address: 'bc1q8c6fs0…k2xw', btc: '0.5120' },
+  { address: 'bc1q3m9dl4…7fa4', btc: '0.2875' },
+  { address: 'bc1qxw2pv7…9hcl', btc: '0.0800' },
+]
+
+/** What a lookup tells the server, with the sample wallet's details. Tor hides only the IP address. */
+const SERVER_SEES = [
+  { label: 'Which addresses are yours', detail: '3 addresses', hiddenByTor: false },
+  { label: 'Their balances and history', detail: '0.8795 BTC', hiddenByTor: false },
+  { label: 'Your IP address', detail: '203.0.113.24', hiddenByTor: true },
+]
+
+/**
+ * A wallet being looked up, and who learns what from it: Blockstream's public server or your own node,
+ * through Tor or not.
+ */
+export function ServerPreview({
+  server,
+  torEnabled = false,
+}: {
+  server: 'public' | 'own'
+  torEnabled?: boolean
+}): JSX.Element {
+  const own = server === 'own'
+  return (
+    <Stage>
+      <Inert>
+        <Card
+          top={{ base: '48px', md: '64px' }}
+          left={{ base: '12px', md: '24px' }}
+          w={{ base: '456px', md: '400px' }}
+          p={6}
+        >
+          <HStack gap={3}>
+            <Circle size={10} bg="neutral.100" color="neutral.700">
+              <LaptopIcon size={18} />
+            </Circle>
+            <Box>
+              <Text textStyle="label/md" fontWeight="semibold" color="neutral.900">
+                This computer
+              </Text>
+              <Text textStyle="text/xs" color="neutral.600">
+                Looking up Savings
+              </Text>
+            </Box>
+          </HStack>
+          <Stack gap={2} mt={5}>
+            {SAMPLE_ADDRESSES.map(({ address, btc }, index) => (
+              <HStack
+                key={address}
+                justify="space-between"
+                px={3}
+                py={2}
+                bg="neutral.50"
+                borderRadius="md"
+                sx={popIn(index)}
+              >
+                <Text fontFamily="mono" textStyle="text/xs" color="neutral.900">
+                  {address}
+                </Text>
+                <Text textStyle="text/xs" color="neutral.600">
+                  {btc} BTC
+                </Text>
+              </HStack>
+            ))}
+          </Stack>
+        </Card>
+        {/* Keyed by the choice, so the server card settles in again when it changes. */}
+        <Card
+          key={server}
+          front
+          top={{ base: '352px', md: '332px' }}
+          left={{ base: '24px', md: '152px' }}
+          w={{ base: '432px', md: '424px' }}
+          p={6}
+          sx={popIn(0)}
+        >
+          <HStack gap={3}>
+            <Circle size={10} bg="neutral.100" color="neutral.700">
+              {own ? <HouseIcon size={18} /> : <GlobeIcon size={18} />}
+            </Circle>
+            <Box minW={0}>
+              <Text textStyle="label/md" fontWeight="semibold" color="neutral.900">
+                {own ? 'Your node' : PUBLIC_ELECTRUM_HOST}
+              </Text>
+              <Text textStyle="text/xs" color="neutral.600">
+                {own ? 'umbrel.local · Electrum server' : 'Public server · Run by Blockstream'}
+              </Text>
+            </Box>
+          </HStack>
+          <Text textStyle="label/sm" color="neutral.600" mt={5} mb={3}>
+            {own ? 'Only you can see' : 'Blockstream can see'}
+          </Text>
+          <Stack gap={3}>
+            {SERVER_SEES.map(({ label, detail, hiddenByTor }) => {
+              const hidden = torEnabled && hiddenByTor
+              return (
+                <HStack key={label} gap={3}>
+                  <Box color="neutral.500" flexShrink={0}>
+                    {hidden ? <EyeOffIcon size={16} /> : own ? <LockIcon size={16} /> : <EyeIcon size={16} />}
+                  </Box>
+                  <Text textStyle="text/sm" color={hidden ? 'neutral.500' : 'neutral.900'} flex={1}>
+                    {label}
+                  </Text>
+                  <Text textStyle="text/xs" color="neutral.600">
+                    {hidden ? 'Hidden by Tor' : detail}
+                  </Text>
+                </HStack>
+              )
+            })}
+          </Stack>
         </Card>
       </Inert>
     </Stage>

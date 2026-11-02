@@ -987,3 +987,54 @@ describe('balances counted in the portfolio', () => {
     })
   })
 })
+
+describe('manual accounts in portfolio history', () => {
+  const series = (data: { historicalData: Array<{ timestamp: string; totalBalance: string }> }): string[] =>
+    data.historicalData.map(({ timestamp, totalBalance }) => `${timestamp.slice(0, 10)} ${totalBalance}`)
+
+  it('starts a manual balance on the date entered, not across the whole range', async () => {
+    await withTestSetup(async () => {
+      const { service } = harness
+      const manual = new ManualService({ db: harness.db, logger: pino({ level: 'silent' }) })
+      const today = (
+        await manual.createAccount({ displayName: 'Today', balanceSats: '5000', balanceAsOf: now.toISOString() })
+      ).unwrap()
+      const onlyManual = { accountIds: [], exchangeAccountIds: [], etfAccountIds: [], manualAccountIds: [today.id] }
+
+      const week = (await service.getData({ timeRange: '7d', ...onlyManual })).unwrap()
+      expect(series(week)).toEqual([
+        '2026-08-29 0',
+        '2026-08-30 0',
+        '2026-08-31 0',
+        '2026-09-01 0',
+        '2026-09-02 0',
+        '2026-09-03 0',
+        '2026-09-04 0',
+        '2026-09-05 5000',
+      ])
+      const all = (await service.getData({ timeRange: 'all', ...onlyManual })).unwrap()
+      expect(series(all).at(-1)).toBe('2026-09-05 5000')
+    })
+  })
+
+  it('adds a backdated manual balance to the wallet history from its date', async () => {
+    await withTestSetup(async () => {
+      const { service } = harness
+      await service.recordAccountSnapshot(accountId, '100', '2026-01-02T12:00:00.000Z')
+      const manual = new ManualService({ db: harness.db, logger: pino({ level: 'silent' }) })
+      await manual.createAccount({ displayName: 'Cold', balanceSats: '5000', balanceAsOf: '2026-09-02T12:00:00.000Z' })
+
+      const week = (await service.getData({ timeRange: '7d' })).unwrap()
+      expect(series(week)).toEqual([
+        '2026-08-29 100',
+        '2026-08-30 100',
+        '2026-08-31 100',
+        '2026-09-01 100',
+        '2026-09-02 5100',
+        '2026-09-03 5100',
+        '2026-09-04 5100',
+        '2026-09-05 5100',
+      ])
+    })
+  })
+})

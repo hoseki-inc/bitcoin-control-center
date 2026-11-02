@@ -9,7 +9,7 @@ export const accounts = sqliteTable('accounts', {
   descriptor: text('descriptor').notNull(),
   displayName: text('display_name').notNull(),
   createdAt: text('created_at').notNull().default(now),
-  status: text('status', { enum: ['pending', 'verified', 'expired'] })
+  status: text('status', { enum: ['pending', 'unverified', 'verified', 'expired'] })
     .notNull()
     .default('pending'),
   deletedAt: text('deleted_at'),

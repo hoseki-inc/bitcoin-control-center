@@ -52,6 +52,14 @@ describe('delayAfter', () => {
 })
 
 describe('status', () => {
+  it('reports a reset until the new PIN is set', async () => {
+    const { auth } = await setup('umbrel')
+    await auth.setPlatformPin(null)
+    await expect(auth.status(visitor(null))).resolves.toMatchObject({ state: 'no-pin', pinWasReset: true })
+    await withPin(auth)
+    await expect(auth.status(visitor(null))).resolves.toMatchObject({ pinWasReset: false })
+  })
+
   it('reports PINs off, no PIN yet, signed out and signed in', async () => {
     await expect((await setup(null)).auth.status(visitor(null))).resolves.toEqual({ platform: null })
 
@@ -60,6 +68,7 @@ describe('status', () => {
       platform: 'umbrel',
       state: 'no-pin',
       retryAfterMs: null,
+      pinWasReset: false,
     })
     const browserKey = await withPin(auth)
     await expect(auth.status(visitor(browserKey))).resolves.toMatchObject({ state: 'signed-in' })
