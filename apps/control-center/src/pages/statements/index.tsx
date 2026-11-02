@@ -111,7 +111,7 @@ function Header({
   const description =
     descriptionVersion === 'empty-state'
       ? 'A clear record of your Bitcoin holdings.'
-      : 'View and download your saved Bitcoin statements.'
+      : 'View and download your saved self-custodial proof-of-ownership statements.'
 
   return (
     <Stack gap={6} mb={6}>
