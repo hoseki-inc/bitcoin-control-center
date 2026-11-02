@@ -1,12 +1,14 @@
 import { checksum } from '@hoseki/packages/bitcoin/descriptor_utils'
 import { bip32, bitcoin } from '@hoseki/packages/bitcoin/lib'
 import { Ok, Result } from '@hoseki/packages/result'
-import { eq, like } from 'drizzle-orm'
+import { eq, like, sql } from 'drizzle-orm'
 import type { Logger } from 'pino'
 import type { SentinelDb } from './drizzle'
 import { accounts, keystores } from './schema'
 
-const extendedPrivateKey = /[xt]prv[1-9A-HJ-NP-Za-km-z]+/g
+// Only xprv/tprv could be saved: the parser always rejected SLIP-132 keys. The lookbehind skips the same
+// letters inside an xpub.
+const extendedPrivateKey = /(?<![1-9A-HJ-NP-Za-km-z])[xt]prv[1-9A-HJ-NP-Za-km-z]+/g
 
 /** Replaces every xprv/tprv in `text` with its xpub/tpub. */
 export function replacePrivateKeys(text: string): Result<string, Error> {
@@ -64,6 +66,14 @@ export async function replaceStoredPrivateKeys(db: SentinelDb, logger: Logger): 
         await tx.update(keystores).set({ xpub: update.value }).where(eq(keystores.id, update.id))
       }
     })
+    // Earlier versions of a row (from a rename, for example) can leave the key in free space; VACUUM rewrites the
+    // file without it. It needs up to twice the database's disk space, so a failure must not stop Sentinel starting.
+    const vacuumed = await Result.fromPromise(db.run(sql`VACUUM`))
+    if (vacuumed.isErr()) {
+      logger.error('Could not compact the database after replacing saved extended private keys')
+    }
+    // WAL mode keeps the replaced pages, private keys included, until a checkpoint overwrites them.
+    await db.run(sql`PRAGMA wal_checkpoint(TRUNCATE)`)
     logger.warn(
       { accounts: accountUpdates.length, keystores: keystoreUpdates.length },
       'Replaced saved extended private keys with their public keys',

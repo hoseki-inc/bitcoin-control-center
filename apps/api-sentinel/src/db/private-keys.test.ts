@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Account } from '@hoseki/packages/bitcoin/account'
@@ -72,4 +72,41 @@ it('replaces saved private keys with their public keys when the database opens',
     mainnet.neutered().toBase58(),
     testnet.neutered().toBase58(),
   ])
+  // WAL mode would otherwise keep the replaced pages on disk until a later checkpoint.
+  for (const file of ['sentinel.db', 'sentinel.db-wal']) {
+    const path = join(directory, file)
+    const contents = existsSync(path) ? readFileSync(path, 'latin1') : ''
+    for (const key of [mainnet, testnet, cosigner]) {
+      expect(contents, file).not.toContain(key.toBase58())
+    }
+  }
+})
+
+it('leaves no copy of a private key in the database file after accounts were renamed', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'sentinel-private-keys-'))
+  onTestFinished(() => {
+    rmSync(directory, { recursive: true, force: true })
+  })
+  const keys = Array.from({ length: 20 }, (_, index) => mainnet.deriveHardened(index).toBase58())
+  const db = await openDrizzleDatabase(directory, logger)
+  await db.insert(accounts).values(
+    keys.map((key, index) => ({
+      id: `account-${index}`,
+      descriptor: checksum(`wpkh(${key}/<0;1>/*)`).expect('checksum'),
+      displayName: `Account ${index}`,
+    })),
+  )
+  // A longer name moves each row and leaves its old copy, private key included, in free space.
+  await db.update(accounts).set({ displayName: 'A renamed account with a much longer name than before' })
+  db.$client.close()
+
+  const reopened = await openDrizzleDatabase(directory, logger)
+  onTestFinished(() => {
+    reopened.$client.close()
+  })
+  const contents = ['sentinel.db', 'sentinel.db-wal']
+    .map((file) => join(directory, file))
+    .map((path) => (existsSync(path) ? readFileSync(path, 'latin1') : ''))
+    .join('')
+  expect(keys.filter((key) => contents.includes(key))).toEqual([])
 })
