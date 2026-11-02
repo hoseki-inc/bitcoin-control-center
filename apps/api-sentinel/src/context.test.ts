@@ -505,6 +505,26 @@ describe('onboarding setting', () => {
   })
 })
 
+describe('Electrum notice setting', () => {
+  it('saves and reads back a closed notice', async () => {
+    await withTestSetup(async () => {
+      const caller = appRouter.createCaller({ app: await context() })
+      await caller.settings.update({ key: 'electrum_notice_v1', value: 'dismissed' })
+      await expect(caller.settings.get({ key: 'electrum_notice_v1' })).resolves.toBe('dismissed')
+    })
+  })
+
+  it('rejects any other state', async () => {
+    await withTestSetup(async () => {
+      const ctx = await context()
+      await expect(
+        appRouter.createCaller({ app: ctx }).settings.update({ key: 'electrum_notice_v1', value: 'public' }),
+      ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
+      await expect(settings(ctx)).resolves.toEqual([])
+    })
+  })
+})
+
 describe('statements interrupted by a restart', () => {
   it('marks statements still generating as failed when Sentinel starts and leaves finished ones alone', async () => {
     await withTestSetup(async () => {

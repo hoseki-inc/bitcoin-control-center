@@ -13,7 +13,8 @@ import { ErrorBanner, FormErrorMessage, LabelWithTooltip, RadioCardGroup } from 
 import { type BitcoinInput, encodingsToLabels, labelsToEncodings, monoInputProps } from '../../utils/bitcoin'
 import { BitcoinNetworkSelect } from './bitcoin-network-select'
 
-function getDefaultEncoding(btcStr: string) {
+/** The script type a SLIP-132 prefix implies, or legacy for a plain xpub. */
+export function getDefaultEncoding(btcStr: string): SingleSigAccountScriptType {
   const firstChar = btcStr[0]
   switch (firstChar) {
     case 'y':
@@ -141,7 +142,7 @@ export function BitcoinInputFormFields({
           onChange={(e) => {
             setDisplayName(e.target.value)
           }}
-          placeholder="Give this claim a name"
+          placeholder="Give this account a name"
           isRequired
           maxLength={255}
         />

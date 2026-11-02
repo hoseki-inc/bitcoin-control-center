@@ -4,7 +4,6 @@ export * from './animations/animated-pop-in-boxes'
 export * from './animations/animations'
 
 export * from './disclosure/account-accordion'
-export * from './disclosure/connect-manual-bitcoin-accordion'
 
 export * from './alert'
 export * from './asset-card'

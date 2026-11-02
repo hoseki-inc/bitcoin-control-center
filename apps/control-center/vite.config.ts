@@ -15,6 +15,11 @@ function releaseVersion(): string {
   }
 }
 
+// Tests run west of UTC, so a local-day bug fails on UTC runners too.
+if (process.env['VITEST'] !== undefined) {
+  process.env['TZ'] = 'America/New_York'
+}
+
 export default defineConfig(({ mode }) => {
   return {
     root: import.meta.dirname,

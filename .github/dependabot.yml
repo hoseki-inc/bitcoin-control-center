@@ -12,6 +12,13 @@ updates:
       timezone: America/New_York
     cooldown:
       default-days: 7
+    # React 19 types drop the global JSX namespace that Chakra 2's types use.
+    # Upgrade them together with Chakra 3.
+    ignore:
+      - dependency-name: '@types/react'
+        update-types: [version-update:semver-major]
+      - dependency-name: '@types/react-dom'
+        update-types: [version-update:semver-major]
     groups:
       production-dependencies:
         applies-to: version-updates

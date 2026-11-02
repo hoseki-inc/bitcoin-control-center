@@ -9,6 +9,7 @@ import {
 import { Link, NavLink, Outlet } from 'react-router'
 import { z } from 'zod'
 import { isDesktop } from '../../mode'
+import { PublicServerNotice } from './public-server-notice'
 import { ReleaseNotice } from './release-notice'
 import { UserInfo } from './user-info'
 
@@ -30,7 +31,12 @@ export function AppLayout({ fullWidth }: { fullWidth?: boolean }): JSX.Element {
 
   const menu = <BaseMenu items={menuItems} renderLink={(to, children) => <NavLink to={to}>{children}</NavLink>} />
 
-  const header = <Header logo={logo} menu={menu} userInfo={<UserInfo />} />
+  const header = (
+    <>
+      {isDesktop && <PublicServerNotice />}
+      <Header logo={logo} menu={menu} userInfo={<UserInfo />} />
+    </>
+  )
 
   return (
     <BaseAppLayout header={header} fullWidth={fullWidth}>

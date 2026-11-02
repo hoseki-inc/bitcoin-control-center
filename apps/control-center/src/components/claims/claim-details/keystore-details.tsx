@@ -4,6 +4,7 @@ import { ErrorBanner } from '@hoseki/packages/ui/design-system'
 import {
   CheckCircleFilledIcon,
   StatusBadge,
+  type StatusBadgeProps,
   TimerCircleFilledIcon,
   XCircleFilledIcon,
   getBadgeConfigForKeystore,
@@ -23,6 +24,13 @@ import type { ClaimDto } from '../../../trpc/server-types'
 import { ensureClaimStatusNotExpired } from '../../../utils/claim-utils'
 import { WalletImageFromKnownModel } from '../wallet-image-from-known-model'
 import { RenameKeystore } from './rename-keystore'
+
+const statusBadges: Record<ClaimDto['status'], Pick<StatusBadgeProps, 'status' | 'icon'>> = {
+  pending: { status: 'neutral', icon: TimerCircleFilledIcon },
+  unverified: { status: 'neutral' },
+  verified: { status: 'success', icon: CheckCircleFilledIcon },
+  expired: { status: 'error', icon: XCircleFilledIcon },
+}
 
 export function KeystoreDetailsSingleSig({
   claim,
@@ -69,13 +77,7 @@ export function KeystoreDetailsSingleSig({
           <Text textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={1}>
             Status
           </Text>
-          {claimStatus === 'pending' ? (
-            <StatusBadge status="neutral" label={claimStatus} icon={TimerCircleFilledIcon} w="fit-content" />
-          ) : claimStatus === 'verified' ? (
-            <StatusBadge status="success" label={claimStatus} icon={CheckCircleFilledIcon} w="fit-content" />
-          ) : (
-            <StatusBadge status="error" label={claimStatus} icon={XCircleFilledIcon} w="fit-content" />
-          )}
+          <StatusBadge {...statusBadges[claimStatus]} label={claimStatus} w="fit-content" />
         </Box>
         <Box w={['100%', '50%', '25%']}>
           <Text textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={1}>

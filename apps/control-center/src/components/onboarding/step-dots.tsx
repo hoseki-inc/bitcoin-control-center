@@ -7,7 +7,7 @@ const TRANSITION = `width ${TURN_IN_CSS}, background-color ${TURN_IN_CSS}`
 /** Where the introduction is, with the current step stretched into a pill. Decorative; the step is announced separately. */
 export function StepDots({ count, current }: { count: number; current: number }): JSX.Element {
   return (
-    <HStack spacing={1.5} aria-hidden>
+    <HStack spacing={1} aria-hidden>
       {Array.from({ length: count }, (_, index) => (
         <Box
           key={index}

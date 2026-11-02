@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, onTestFinished, vi } from 'vitest'
+import { browserLogger } from '../../logger'
 import { parseWalletExport } from './wallet-export-parser'
 
 describe('parseWalletExport', () => {
@@ -57,6 +58,75 @@ describe('parseWalletExport', () => {
       .map((ks) => ks.walletType)
       .sort((a = '', b = '') => (a < b ? -1 : a > b ? 1 : 0))
     expect(hardwareTypes).toEqual(['ledger', 'trezor'])
+  })
+
+  // BIP32 test vector 1: a published vector, not a real wallet.
+  const xprv =
+    'xprv9s21ZrQH143K3QTDL4LXw2F7HEK3wJUD2nW2nRk4stbPy6cq3jPPqjiChkVvvNKmPGJxWUtg6LnF5kejMRNNU3TGtRBeJgk33yuGBxrMPHi'
+  const cosignerXpub =
+    'xpub6DppyoduRB3cPSijLSWPb4SgmKvm1JhTYHNsUVNcfxa2snrwBjxRmbndfJeKA3DSSBTbmo2haF9W3sSBaQNGPpHMPrMZN3crMeC3hb2HSyu'
+  it.each([
+    {
+      format: 'Specter Desktop',
+      wallet: {
+        label: 'Private',
+        blockheight: 910623,
+        descriptor: `wsh(sortedmulti(2,[016e9edf/48h/0h/0h/2h]${xprv},[ac16c6a4/48h/0h/0h/2h]${cosignerXpub}))`,
+      },
+    },
+    {
+      format: 'Electrum',
+      wallet: {
+        'x1/': {
+          xpub: xprv,
+          hw_type: 'ledger',
+          root_fingerprint: '016e9edf',
+          label: 'Key 1',
+          type: 'hardware',
+          derivation: "m/48'/0'/0'/2'",
+        },
+        'x2/': {
+          xpub: cosignerXpub,
+          hw_type: 'trezor',
+          root_fingerprint: 'ac16c6a4',
+          label: 'Key 2',
+          type: 'hardware',
+          derivation: "m/48'/0'/0'/2'",
+        },
+        wallet_type: '2of2',
+        use_encryption: false,
+      },
+    },
+    {
+      format: 'Unchained Caravan',
+      wallet: {
+        name: 'Private',
+        addressType: 'P2WSH',
+        network: 'mainnet',
+        startingAddressIndex: 0,
+        quorum: { requiredSigners: 2, totalSigners: 2 },
+        extendedPublicKeys: [
+          { name: 'Key 1', bip32Path: "m/48'/0'/0'/2'", xpub: xprv, xfp: '016e9edf' },
+          { name: 'Key 2', bip32Path: "m/48'/0'/0'/2'", xpub: cosignerXpub, xfp: 'ac16c6a4' },
+        ],
+      },
+    },
+  ])('rejects a $format export holding a private key without logging it', ({ wallet }) => {
+    const logged = (['debug', 'info', 'warn', 'error'] as const).map((level) =>
+      vi.spyOn(browserLogger, level).mockImplementation(() => undefined),
+    )
+    onTestFinished(() => {
+      for (const spy of logged) {
+        spy.mockRestore()
+      }
+    })
+
+    expect(parseWalletExport(JSON.stringify(wallet), 'application/json').isOk()).toBe(false)
+    const messages = logged
+      .flatMap((spy): unknown[] => spy.mock.calls.flat())
+      .map((arg) => (arg instanceof Error ? arg.message : JSON.stringify(arg)))
+    expect(messages.length).toBeGreaterThan(0)
+    expect(messages.join('\n')).not.toContain(xprv.slice(4))
   })
 
   it('should parse a SpecterDesktop wallet export - where account range is present', () => {
