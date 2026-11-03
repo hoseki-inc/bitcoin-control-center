@@ -1,9 +1,11 @@
 // @vitest-environment node
 import { ChakraProvider } from '@chakra-ui/react'
+import Decimal from 'decimal.js'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter } from 'react-router'
 import { describe, expect, it, vi } from 'vitest'
+import type { InvestmentAccounts } from '../components/investments/investment-overview'
 import type { WalletBalanceRow } from '../lib/wallet-balances'
 import { statementFixture } from '../testing/statements'
 import type { StatementDto } from '../trpc/server-types'
@@ -20,6 +22,8 @@ interface QueryFlags {
 }
 
 interface HomeState {
+  investmentFlags: QueryFlags
+  investments: InvestmentAccounts
   accounts: Record<AccountKind, { id: string; status: string; balance: string }[]>
   /** Applies to every account list; `accountStates` sets one list. */
   accountsLoading: boolean
@@ -34,6 +38,7 @@ interface HomeState {
   statementsLoading: boolean
   statementsError: boolean
   btcPrice: string
+  quotePrice?: string
   walletRows: WalletBalanceRow[]
 }
 
@@ -85,6 +90,15 @@ function fakeDataSource(state: HomeState): HomeDataSource {
     useExchanges: accounts('exchange'),
     useManual: accounts('manual'),
     useEtfs: accounts('etf'),
+    useBitcoinPrice: () => ({
+      data: {
+        value: new Decimal(state.quotePrice ?? state.btcPrice),
+        asOf: new Date(),
+        source: 'block',
+        lastKnown: false,
+      },
+    }),
+    useInvestments: () => query(state.investments, state.investmentFlags),
     useWalletBalances: () => ({ rows: state.walletRows, isError: false }),
   }
 }
@@ -100,6 +114,8 @@ const views: HomeViews = {
 function renderHome(overrides: Partial<HomeState> = {}): string {
   const state: HomeState = {
     accounts: { claims: [], exchange: [], manual: [], etf: [] },
+    investmentFlags: {},
+    investments: [],
     accountsLoading: false,
     accountsError: false,
     accountStates: {},
@@ -375,4 +391,67 @@ describe('Home overview states', () => {
     expect(text).toContain('Your holdings, on record')
     expect(text).not.toContain('Recent statements could not be loaded')
   })
+})
+
+it.each([{ isLoading: true }, { isError: true }])(
+  'keeps the Bitcoin overview visible when investment requests fail or load: %j',
+  (investmentFlags) => {
+    const text = renderText({
+      investmentFlags,
+      history: zeroBalanceHistory,
+      currentSats: '100000000',
+      accounts: {
+        claims: [{ id: 'wallet', status: 'verified', balance: '100000000' }],
+        exchange: [],
+        manual: [],
+        etf: [],
+      },
+    })
+    expect(text).toContain('1.00000000')
+    expect(text).toContain('Balance chart')
+    expect(text).toContain('1 tracked')
+    expect(text).not.toContain('Some holdings data is unavailable')
+    expect(text).not.toContain('Loading your holdings')
+  },
+)
+
+it('shows the reported USD total without a Bitcoin connection prompt for an investment-only portfolio', () => {
+  const text = renderText({
+    btcPrice: '0',
+    investments: [
+      {
+        id: 'treasury',
+        displayName: 'Treasury stocks',
+        currency: 'USD',
+        valueCents: '1350000',
+        valuedAt: '2026-11-03',
+        createdAt: '',
+      },
+    ],
+  })
+  expect(text).toContain('$13,500.00')
+  expect(text).not.toContain('Your history will appear here')
+  expect(text).not.toContain('Unavailable until Bitcoin holdings can be valued')
+})
+
+it('uses the shared current quote for the combined summary instead of the older history quote', () => {
+  const text = renderText({
+    btcPrice: '90000',
+    quotePrice: '80000',
+    currentSats: '50000000',
+    history: zeroBalanceHistory,
+    accounts: { claims: [], exchange: [], manual: [{ id: 'btc', status: 'unverified', balance: '50000000' }], etf: [] },
+    investments: [
+      {
+        id: 'treasury',
+        displayName: 'Treasury stocks',
+        currency: 'USD',
+        valueCents: '1350000',
+        valuedAt: '2026-11-03',
+        createdAt: '',
+      },
+    ],
+  })
+  expect(text).toContain('$53,500.00')
+  expect(text).not.toContain('$58,500.00')
 })

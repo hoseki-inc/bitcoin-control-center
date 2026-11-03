@@ -11,6 +11,9 @@ interface HistoryLineChartProps {
   formatValue: (value: number) => string
   formatTime: (time: number) => string
   loading?: boolean
+  /** Optional labels at observation times for sparse, manually recorded history. */
+  ticks?: number[]
+  showPoints?: boolean
   /** Shown when there is no data to draw. */
   emptyMessage?: string
   /** Fixed chart size; omit to fill the parent through Recharts' ResponsiveContainer. */
@@ -23,6 +26,8 @@ export function HistoryLineChart({
   formatValue,
   formatTime,
   loading = false,
+  ticks,
+  showPoints = false,
   emptyMessage = 'Price history is temporarily unavailable',
   size,
 }: HistoryLineChartProps): JSX.Element {
@@ -53,6 +58,7 @@ export function HistoryLineChart({
         type="number"
         domain={['dataMin', 'dataMax']}
         tickFormatter={formatTime}
+        ticks={ticks}
         axisLine={false}
         tickLine={false}
         minTickGap={48}
@@ -91,7 +97,7 @@ export function HistoryLineChart({
         type="linear"
         stroke={lineColor}
         strokeWidth={2}
-        dot={false}
+        dot={showPoints ? { r: 3 } : false}
         activeDot={{ r: 4 }}
         isAnimationActive={false}
       />

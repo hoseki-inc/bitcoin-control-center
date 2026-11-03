@@ -55,6 +55,7 @@ export function ConnectionSuccess({
   title,
   subtitle,
   balance,
+  value,
   badge,
   checkTone,
   primary,
@@ -66,6 +67,8 @@ export function ConnectionSuccess({
   title: string
   subtitle: string
   balance?: BalanceState
+  /** A value in another unit, for accounts that do not represent a Bitcoin quantity. */
+  value?: ReactNode
   /** Shown beneath the balance, such as the account's Verified or Unverified badge. */
   badge?: ReactNode
   /** Gray for an account that stays unverified; green otherwise. */
@@ -95,6 +98,7 @@ export function ConnectionSuccess({
         <Lockup title={title} subtitle={subtitle} hero={hero} badge={<SuccessCheck size="52px" tone={checkTone} />} />
 
         {balance && <SuccessBalance balance={balance} badge={badge} />}
+        {value !== undefined && <Box mt={{ base: 10, md: 12 }}>{value}</Box>}
 
         <Stack w="full" maxW="20rem" gap={2} mt={{ base: 10, md: 12 }}>
           <Button onClick={primary.onClick}>{primary.label}</Button>

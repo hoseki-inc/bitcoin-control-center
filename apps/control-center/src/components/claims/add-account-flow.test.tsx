@@ -50,12 +50,13 @@ function links(container: HTMLElement): [string, string | null][] {
   return Array.from(container.querySelectorAll('a')).map((link) => [link.textContent, link.getAttribute('href')])
 }
 
-it('ends the Add Account grid with Manually Sign and Track, without the Advanced section', async () => {
+it('keeps the existing Track card and links directly to Other Bitcoin Investments', async () => {
   const container = await render(<AddAccountFlow onClose={() => undefined} />)
 
-  expect(links(container).slice(-2)).toEqual([
+  expect(links(container).slice(-3)).toEqual([
     ['Manually Sign', '/accounts/verify/advanced'],
     ['Track Balance, ETF,\nor xpub', '/accounts/verify/manual-type'],
+    ['Other Bitcoin Investments', '/accounts/verify/investments'],
   ])
   expect(container.textContent).not.toContain('Advanced')
   expect(container.textContent).not.toContain('Manual Entry')
@@ -70,6 +71,7 @@ it('offers Bitcoin Holdings, ETF and xpub or Descriptor to track', async () => {
       .slice(1)
       .map(([, href]) => href),
   ).toEqual(['/accounts/verify/manual', '/accounts/verify/etf', '/accounts/verify/track'])
+  expect(container.textContent).not.toContain('Other Bitcoin Investments')
   expect(container.textContent).toContain('xpub or Descriptor')
   expect(container.textContent).toContain(
     "Track a wallet's live balance, single-sig or multisig, without proving ownership.",

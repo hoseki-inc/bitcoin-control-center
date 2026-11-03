@@ -32,9 +32,11 @@ import { Link, useLocation, useNavigate } from 'react-router'
 import { BitcoinAmount } from '../../components/bitcoin-amount'
 import { UnverifiedTooltip } from '../../components/claims/bitkey/bitkey-notes'
 import { DeleteClaimModal } from '../../components/claims/claim-details/delete-claim-modal'
+import { InvestmentOverview } from '../../components/investments/investment-overview'
 import { UnavailableAlert } from '../../components/unavailable-alert'
 import { SyncIndicator } from '../../components/wallet-balances/sync-indicator'
 import { formatBitcoinNumber, isUsableBtcPrice } from '../../lib/bitcoin-display'
+import { bitcoinUsdValue } from '../../lib/bitcoin-usd-value'
 import { summarizeWalletBalances } from '../../lib/wallet-balances'
 import type { ClaimDto } from '../../trpc/server-types'
 import { ensureClaimStatusNotExpired, isBitkeyClaim, mapClaimToClaimCardProps } from '../../utils/claim-utils'
@@ -57,6 +59,7 @@ export function ClaimsPage({ dataSource = accountsDataSource }: { dataSource?: A
     manualAccountsQuery,
     etfAccountsQuery,
     archivedClaimsQuery,
+    investmentsQuery,
     btcPriceQuery,
   } = dataSource.useLists()
   const { restore, restoringId } = dataSource.useRestore()
@@ -92,8 +95,9 @@ export function ClaimsPage({ dataSource = accountsDataSource }: { dataSource?: A
     return <AccountsPageSkeleton />
   }
 
-  const hasClaims =
+  const hasBitcoinAccounts =
     claims.length > 0 || exchangeAccounts.length > 0 || manualAccounts.length > 0 || etfAccounts.length > 0
+  const hasClaims = hasBitcoinAccounts || (investmentsQuery.data?.length ?? 0) > 0
   const verifiedCount =
     claims.filter((c) => ensureClaimStatusNotExpired(c) === 'verified').length + connectedExchangeAccounts.length
   const pendingCount = claims.filter((c) => c.status === 'pending').length
@@ -126,8 +130,13 @@ export function ClaimsPage({ dataSource = accountsDataSource }: { dataSource?: A
               title="Accounts"
               description={hasClaims ? undefined : 'All your Bitcoin accounts in one place.'}
             />
-            {hasClaims && !listsFailed && (
+            {hasBitcoinAccounts && !listsFailed && (
               <Flex align="center" gap={3} mt={2} flexWrap="wrap">
+                {(investmentsQuery.data?.length ?? 0) > 0 && (
+                  <Text textStyle="text/sm" color="neutral.600">
+                    Bitcoin holdings
+                  </Text>
+                )}
                 <Text
                   textStyle="text/sm"
                   fontWeight="semibold"
@@ -177,7 +186,7 @@ export function ClaimsPage({ dataSource = accountsDataSource }: { dataSource?: A
             )}
           </Box>
           {/* The empty state has its own centered call to action. */}
-          {hasClaims && (
+          {(hasClaims || investmentsQuery.isLoading || investmentsQuery.isError) && (
             <Button as={Link} to="/accounts/add" flexShrink={0}>
               Add Account
             </Button>
@@ -202,7 +211,7 @@ export function ClaimsPage({ dataSource = accountsDataSource }: { dataSource?: A
         )}
 
         {/* Account cards */}
-        {hasClaims ? (
+        {hasBitcoinAccounts ? (
           <Grid templateColumns={ACCOUNT_GRID_COLUMNS} gap={4}>
             {claims.map((claim) => {
               const sats = wallets.balances.get(claim.id) ?? null
@@ -253,8 +262,21 @@ export function ClaimsPage({ dataSource = accountsDataSource }: { dataSource?: A
             />
           </Grid>
         ) : (
-          !listsFailed && <EmptyHoldings />
+          !hasClaims && !listsFailed && !investmentsQuery.isLoading && !investmentsQuery.isError && <EmptyHoldings />
         )}
+
+        <Box mt={6}>
+          <InvestmentOverview
+            query={investmentsQuery}
+            bitcoinUsd={bitcoinUsdValue({
+              balanceSats: totalBtcSats,
+              priceUsd: btcUsdPrice,
+              balanceUnavailable: listsFailed,
+              walletStatus: wallets.status,
+            })}
+            showCombined={hasBitcoinAccounts}
+          />
+        </Box>
 
         {/* Archived accounts accordion. It sits below the accounts, so it simply appears once loaded. */}
         <Box id="archived" mt={6} tabIndex={-1}>

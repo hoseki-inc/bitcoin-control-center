@@ -5,6 +5,7 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter } from 'react-router'
 import { describe, expect, it } from 'vitest'
+import type { InvestmentAccounts } from '../../components/investments/investment-overview'
 import type { WalletBalanceRow } from '../../lib/wallet-balances'
 import { claimFixture } from '../../testing/claims'
 import type { ClaimDto } from '../../trpc/server-types'
@@ -45,11 +46,12 @@ describe('Wallet account card', () => {
 })
 
 interface PageState {
+  investments: InvestmentAccounts
   claims: ClaimDto[]
   exchanges: ExchangeAccountDto[]
   manual: ManualAccountDto[]
-  loading: Partial<Record<'claims' | 'exchange' | 'manual' | 'etf', boolean>>
-  failed: Partial<Record<'claims' | 'exchange' | 'manual' | 'etf', boolean>>
+  loading: Partial<Record<'claims' | 'exchange' | 'manual' | 'etf' | 'investments', boolean>>
+  failed: Partial<Record<'claims' | 'exchange' | 'manual' | 'etf' | 'investments', boolean>>
   walletRows: WalletBalanceRow[] | undefined
   btcPrice: string | null
 }
@@ -66,6 +68,7 @@ function listQuery<T>(data: T[], isLoading = false, isError = false): AccountsLi
 
 function renderPage(overrides: Partial<PageState> = {}): string {
   const state: PageState = {
+    investments: [],
     claims: [],
     exchanges: [],
     manual: [],
@@ -81,6 +84,7 @@ function renderPage(overrides: Partial<PageState> = {}): string {
       exchangeAccountsQuery: listQuery(state.exchanges, state.loading.exchange, state.failed.exchange),
       manualAccountsQuery: listQuery(state.manual, state.loading.manual, state.failed.manual),
       etfAccountsQuery: listQuery<EtfAccountDto>([], state.loading.etf, state.failed.etf),
+      investmentsQuery: listQuery(state.investments, state.loading.investments, state.failed.investments),
       archivedClaimsQuery: listQuery<ClaimDto>([]),
       btcPriceQuery: {
         data:
@@ -208,3 +212,37 @@ describe('Accounts page', () => {
     expect(text).not.toContain('%')
   })
 })
+
+it('shows an investment-only portfolio without requiring a Bitcoin price or suggesting it has no accounts', () => {
+  const text = renderPage({
+    btcPrice: null,
+    investments: [
+      {
+        id: 'treasury',
+        displayName: 'Treasury stocks',
+        currency: 'USD',
+        valueCents: '1350050',
+        valuedAt: '2026-11-03',
+        createdAt: '',
+      },
+    ],
+  })
+  expect(text).toContain('Other Bitcoin Investments')
+  expect(text).toContain('Treasury stocks')
+  expect(text).toContain('$13,500.50')
+  expect(text).not.toContain('Combined Portfolio Value (USD)')
+  expect(text).not.toContain('No accounts connected yet')
+  expect(text).not.toContain('0.00000000 BTC')
+})
+
+it.each(['loading', 'failed'] as const)(
+  'keeps Bitcoin accounts and totals visible when investments are %s',
+  (status) => {
+    const text = renderPage({ manual: [manualAccount], [status]: { investments: true } })
+    expect(text).toContain('Paper wallet')
+    expect(text).toContain('1.00000000 BTC')
+    expect(text).toContain('$50,000.00')
+    expect(text).not.toContain('Some accounts could')
+    expect(text).not.toContain('Loading accounts')
+  },
+)

@@ -8,9 +8,11 @@ import { DashboardAmount } from '../components/dashboard/dashboard-typography'
 import { PortfolioSummary } from '../components/dashboard/portfolio-summary'
 import { RecentStatements, RecentStatementsSkeleton } from '../components/dashboard/recent-statements'
 import { FiatAmountText } from '../components/fiat-amount-text'
+import { type InvestmentListQuery, InvestmentOverview } from '../components/investments/investment-overview'
 import { FirstRunOnboarding } from '../components/onboarding/first-run-onboarding'
 import { StatementsEmptyState } from '../components/statements/statements-empty-state'
 import { UnavailableAlert } from '../components/unavailable-alert'
+import { bitcoinUsdValue } from '../lib/bitcoin-usd-value'
 import { refetchWhileGenerating } from '../lib/statement-polling'
 import {
   type WalletBalanceSummary,
@@ -35,13 +37,18 @@ export function HomePage({
     statements,
     portfolio,
     hasAccounts,
+    hasBitcoinAccounts,
+    bitcoinAccountsKnownEmpty,
     accountCount,
+    onboardingAccountCount,
     wallets,
     isLoading,
     hasError,
     retry,
     statementsLoading,
     statementsError,
+    investments,
+    btcPrice,
   } = useHomeData(dataSource)
   const hasHistory = (portfolio?.historicalData.length ?? 0) > 0
   const overviewReveal = useRevealAfterLoading(isLoading)
@@ -74,7 +81,7 @@ export function HomePage({
         <PortfolioSummarySkeleton />
       ) : hasError ? (
         <DashboardPreview unavailable />
-      ) : !hasAccounts ? (
+      ) : !hasBitcoinAccounts && (investments.data?.length ?? 0) > 0 ? null : !hasAccounts ? (
         <DashboardPreview />
       ) : (
         <EmptyView
@@ -90,6 +97,17 @@ export function HomePage({
           }
         />
       )}
+      <InvestmentOverview
+        query={investments}
+        bitcoinUsd={bitcoinUsdValue({
+          balanceSats: bitcoinAccountsKnownEmpty ? 0 : portfolio ? Number(portfolio.currentTotalBalance) : null,
+          priceUsd: btcPrice,
+          balanceUnavailable: !bitcoinAccountsKnownEmpty && hasError,
+          walletStatus: wallets.status,
+        })}
+        showCombined={hasBitcoinAccounts}
+        compact
+      />
       <views.BitcoinPriceChart />
       {statementsError ? (
         <Flex justify="space-between" gap={4} align="center" flexWrap="wrap">
@@ -109,7 +127,7 @@ export function HomePage({
       ) : (
         <StatementsEmptyState />
       )}
-      <views.Onboarding accountCount={accountCount} />
+      <views.Onboarding accountCount={onboardingAccountCount} />
     </Stack>
   )
 }
@@ -177,6 +195,8 @@ type AccountList = readonly { id: string }[]
 
 /** The queries behind the home overview, independent of their transport. */
 export interface HomeDataSource {
+  useBitcoinPrice: () => { data?: RouterOutput['portalProve']['retrieveBitcoinPrice'] }
+  useInvestments: () => InvestmentListQuery
   useStatements: () => HomeQuery<StatementDto[]>
   usePortfolio: (input: { timeRange: '30d'; timezone: string }) => HomeQuery<PortfolioData>
   useClaims: () => HomeQuery<AccountList>
@@ -187,6 +207,8 @@ export interface HomeDataSource {
 }
 
 const homeDataSource: HomeDataSource = {
+  useBitcoinPrice: () => trpc.portalProve.retrieveBitcoinPrice.useQuery(),
+  useInvestments: () => trpc.portalProve.investments.list.useQuery(),
   useStatements: () => trpc.portalProve.statement.list.useQuery(undefined, { refetchInterval: refetchWhileGenerating }),
   usePortfolio: (input) => trpc.portalProve.controlCenter.getData.useQuery(input),
   useClaims: () => trpc.portalProve.registry.claims.list.useQuery({ excludePending: false }),
@@ -209,11 +231,16 @@ const homeViews: HomeViews = {
 }
 
 interface HomeData {
+  btcPrice: number | null
+  investments: InvestmentListQuery
   statements: StatementDto[]
   portfolio: PortfolioData | undefined
   hasAccounts: boolean
+  hasBitcoinAccounts: boolean
+  bitcoinAccountsKnownEmpty: boolean
   /** Null until every account list has loaded without an error. */
   accountCount: number | null
+  onboardingAccountCount: number | null
   wallets: WalletBalanceSummary
   statementsLoading: boolean
   statementsError: boolean
@@ -232,22 +259,34 @@ function useHomeData(dataSource: HomeDataSource): HomeData {
   const exchanges = dataSource.useExchanges()
   const manual = dataSource.useManual()
   const etfs = dataSource.useEtfs()
+  const investments = dataSource.useInvestments()
+  const price = dataSource.useBitcoinPrice()
   const accountLists = [claims, exchanges, manual, etfs]
+  const allAccountLists = [...accountLists, investments]
   const queries = [portfolio, ...accountLists]
-  const totalAccounts = accountLists.reduce((count, list) => count + (list.data?.length ?? 0), 0)
-  const listsReady = accountLists.every((list) => list.data !== undefined && !list.isError)
+  const bitcoinAccountCount = accountLists.reduce((count, list) => count + (list.data?.length ?? 0), 0)
+  const bitcoinListsReady = accountLists.every((list) => list.data !== undefined && !list.isError)
+  const totalAccounts = allAccountLists.reduce((count, list) => count + (list.data?.length ?? 0), 0)
+  const listsReady = allAccountLists.every((list) => list.data !== undefined && !list.isError)
   const claimIds = (claims.data ?? []).map(({ id }) => id)
   const walletBalances = dataSource.useWalletBalances(claimIds, { enabled: claimIds.length > 0 })
 
   return {
+    btcPrice: price.data ? Number(price.data.value) : null,
+    investments,
     statements: statements.data ?? [],
     statementsLoading: statements.isLoading,
     // A failed refresh keeps the statements already loaded; this is only for having none to show.
     statementsError: statements.isError && statements.data === undefined,
-    accountCount: listsReady ? totalAccounts : null,
+    accountCount: bitcoinListsReady ? bitcoinAccountCount : null,
+    onboardingAccountCount: listsReady ? totalAccounts : null,
     wallets: summarizeWalletBalances(claimIds, walletBalances.rows),
     portfolio: portfolio.data,
     hasAccounts: totalAccounts > 0,
+    hasBitcoinAccounts: accountLists.some((list) => (list.data?.length ?? 0) > 0),
+    bitcoinAccountsKnownEmpty: accountLists.every(
+      (list) => list.data !== undefined && !list.isError && list.data.length === 0,
+    ),
     isLoading: queries.some((query) => query.isLoading),
     hasError: queries.some((query) => query.isError),
     retry: () => {

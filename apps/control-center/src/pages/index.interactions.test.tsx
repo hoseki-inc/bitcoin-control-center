@@ -110,6 +110,8 @@ it('retries every failed holdings query and the statements from Try Again', asyn
     useExchanges: () => queries.exchanges,
     useManual: () => queries.manual,
     useEtfs: () => queries.etfs,
+    useBitcoinPrice: () => ({}),
+    useInvestments: () => fakeQuery([]),
     useWalletBalances: () => ({ rows: [], isError: false }),
   })
   await act(async () => {
@@ -131,6 +133,8 @@ it.each([
     useExchanges: () => fakeQuery<Array<{ id: string }>>([]),
     useManual: () => fakeQuery<Array<{ id: string }>>([]),
     useEtfs: () => fakeQuery<Array<{ id: string }>>([]),
+    useBitcoinPrice: () => ({}),
+    useInvestments: () => fakeQuery([]),
     useWalletBalances: () => ({ rows: [], isError: false }),
   })
   expect(container.textContent).toContain(expected)
@@ -144,6 +148,8 @@ it('opens a recent statement from its View button', async () => {
     useExchanges: () => fakeQuery<Array<{ id: string }>>([]),
     useManual: () => fakeQuery<Array<{ id: string }>>([]),
     useEtfs: () => fakeQuery<Array<{ id: string }>>([]),
+    useBitcoinPrice: () => ({}),
+    useInvestments: () => fakeQuery([]),
     useWalletBalances: () => ({ rows: [], isError: false }),
   })
   await act(async () => {

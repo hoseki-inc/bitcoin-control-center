@@ -51,6 +51,7 @@ import {
 import { loggableError } from '../../lib/loggable-error'
 import { authRouter } from '../auth/router'
 import { type ConnectionDetails, MAX_CONNECTION_PROFILES } from '../connection_profiles/store'
+import { investmentRouter } from '../investments/router'
 import { PRICE_FALLBACKS_SETTING, PRICE_SOURCES, PRICE_SOURCE_SETTING } from '../price/service'
 import { StatementMapper } from '../statements/mapper'
 import { STATEMENT_SOURCES, loggableFailure, statementFailureMessage } from '../statements/service'
@@ -1888,6 +1889,7 @@ const portalProveRouter = t.router({
   exchange: proveExchangeRouter,
   manual: manualRouter,
   etf: etfRouter,
+  investments: investmentRouter,
   onchain: onchainRouter,
   statement: statementRouter,
   retrieveBitcoinPriceHistory: protectedProcedure
