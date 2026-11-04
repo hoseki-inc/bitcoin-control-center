@@ -49,4 +49,38 @@ describe('validateBitcoinStringInput', () => {
       expect(validateBitcoinStringInput(xpubDescriptor).isOk()).toBe(true)
     })
   })
+
+  describe('private keys', () => {
+    const privateKeyError = "That's a private key. Paste the public key (xpub) or a watch-only descriptor."
+    // BIP32 test vectors 1 (m, m/0H): published vectors, not real wallets.
+    const xprv =
+      'xprv9s21ZrQH143K3QTDL4LXw2F7HEK3wJUD2nW2nRk4stbPy6cq3jPPqjiChkVvvNKmPGJxWUtg6LnF5kejMRNNU3TGtRBeJgk33yuGBxrMPHi'
+    const xpub =
+      'xpub69H7F5d8KSRgmmdJg2KhpAK8SR3DjMwAdkxj3ZuxV27CprR9LgpeyGmXUbC6wb7ERfvrnKZjXoUmmDznezpbZb7ap6r1D3tgFxHmwMkQTPH'
+
+    it.each(['xprv', 'yprv', 'zprv', 'tprv', 'uprv', 'vprv', 'Yprv', 'Zprv', 'Uprv', 'Vprv'])(
+      'should reject a %s key as the only input',
+      (prefix) => {
+        const result = validateBitcoinStringInput(`${prefix}${xprv.slice(4)}`)
+        expect(result.isErr() && result.unwrapErr()).toBe(privateKeyError)
+      },
+    )
+
+    it.each([
+      ['a singlesig descriptor', `wpkh([3442193e/84h/0h/0h]${xprv}/<0;1>/*)`],
+      ['a later key of a singlesig descriptor', `tr(${xpub}/<0;1>/*,pk(${xprv}/<0;1>/*))`],
+      ['the first key of a multisig descriptor', `wsh(sortedmulti(2,${xprv}/<0;1>/*,${xpub}/<0;1>/*))`],
+      ['a later key of a multisig descriptor', `wsh(sortedmulti(2,${xpub}/<0;1>/*,${xprv}/<0;1>/*))`],
+    ])('should reject a private key in %s', (_, descriptor) => {
+      const result = validateBitcoinStringInput(descriptor)
+      expect(result.isErr() && result.unwrapErr()).toBe(privateKeyError)
+    })
+
+    it('should keep the generic error for other invalid input', () => {
+      const result = validateBitcoinStringInput(`wsh(sortedmulti(2,${xpub}/<0;1>/*,${xpub}/<0;1>/*))`)
+      expect(result.isErr() && result.unwrapErr()).toBe(
+        'Invalid input, please enter a valid account descriptor or xPub/yPub/zPub key',
+      )
+    })
+  })
 })
