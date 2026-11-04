@@ -163,3 +163,30 @@ it('accepts today and tomorrow for time-zone slack, and rejects later dates on c
   )
   await expect(api.get({ accountId })).resolves.toMatchObject({ valuedAt: '2026-11-04', valueCents: '100' })
 })
+
+it('charts the total reported value on each date, carrying accounts forward and combining same-day updates', async () => {
+  const { caller } = await setupAppCaller()
+  const api = caller.portalProve.investments
+  await expect(api.history()).resolves.toEqual([])
+  const first = await api.create({ ...initial, valueCents: '10001' })
+  const second = await api.create({
+    ...initial,
+    displayName: 'Preferred shares',
+    valueCents: '20002',
+    valuedAt: '2026-10-10',
+  })
+  await api.saveValuation({ accountId: first, valueCents: '15003', valuedAt: '2026-10-20' })
+  await api.saveValuation({ accountId: second, valueCents: '25004', valuedAt: '2026-10-20' })
+  await expect(api.history()).resolves.toEqual([
+    { valuedAt: '2026-10-01', valueCents: '10001' },
+    { valuedAt: '2026-10-10', valueCents: '30003' },
+    { valuedAt: '2026-10-20', valueCents: '40007' },
+  ])
+  const latest = (await api.get({ accountId: first })).valuations[0]
+  await api.saveValuation({ accountId: first, id: latest?.id, valueCents: '0', valuedAt: '2026-10-20' })
+  expect((await api.history()).at(-1)).toEqual({ valuedAt: '2026-10-20', valueCents: '25004' })
+  await api.deleteValuation({ accountId: first, id: latest?.id ?? '' })
+  expect((await api.history()).at(-1)).toEqual({ valuedAt: '2026-10-20', valueCents: '35005' })
+  await api.delete({ accountId: second })
+  await expect(api.history()).resolves.toEqual([{ valuedAt: '2026-10-01', valueCents: '10001' }])
+})

@@ -31,7 +31,12 @@ function render(query: InvestmentListQuery, bitcoinUsd: number | null): string {
   return renderToStaticMarkup(
     <ChakraProvider>
       <MemoryRouter>
-        <InvestmentOverview query={query} bitcoinUsd={bitcoinUsd} showCombined />
+        <InvestmentOverview
+          query={query}
+          bitcoinUsd={bitcoinUsd}
+          showCombined
+          chart={<div>Reported value history</div>}
+        />
       </MemoryRouter>
     </ChakraProvider>,
   )
@@ -41,10 +46,11 @@ it('separates manually reported investment values and includes them in the USD t
   const html = render(loaded, 50000)
   expect(html).toContain('$16,000.00')
   expect(html).toContain('$66,000.00')
-  expect(html).toContain('/accounts/investments/treasury')
-  expect(html).toContain('Manually updated')
-  expect(html).toContain('Oldest valuation:')
-  expect(html).toContain('excluded from BTC balances and accumulation')
+  expect(html).toContain('Reported value history')
+  expect(html).not.toContain('View Accounts')
+  expect(html).not.toContain('Oldest valuation:')
+  expect(html).not.toContain('Manually updated')
+  expect(html).not.toContain('excluded from BTC balances and accumulation')
 })
 
 it('withholds the combined value without a Bitcoin price and hides stale investment totals after errors', () => {
@@ -65,3 +71,14 @@ it.each([NaN, Infinity, -1])(
     expect(html).toContain('$16,000.00')
   },
 )
+
+it('hides the panel for no investment accounts and omits the combined total for investment-only holdings', () => {
+  expect(render({ ...loaded, data: [] }, 50000)).not.toContain('Other Bitcoin Investments')
+  const html = renderToStaticMarkup(
+    <ChakraProvider>
+      <InvestmentOverview query={loaded} />
+    </ChakraProvider>,
+  )
+  expect(html).toContain('$16,000.00')
+  expect(html).not.toContain('Combined Portfolio Value')
+})

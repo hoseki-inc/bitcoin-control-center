@@ -10,6 +10,7 @@ import { assert, expect, it, onTestFinished, vi } from 'vitest'
 import { z } from 'zod'
 import { TestTrpcProvider, createTestTrpcClient } from '../../../testing/trpc'
 import { AddInvestmentPage } from '../verify/investments'
+import { ManualTypeSelectorPage } from '../verify/manual-type'
 import { InvestmentDetailsPage } from './[id]'
 
 const browser = await vi.hoisted(async () => {
@@ -88,11 +89,19 @@ async function renderPage(page: 'add' | 'details') {
     root.render(
       <TestTrpcProvider client={client} rpc={rpc}>
         <TestChakraProvider>
-          <MemoryRouter initialEntries={[page === 'add' ? '/add' : '/accounts/investments/treasury']}>
+          <MemoryRouter
+            initialEntries={[
+              {
+                pathname: page === 'add' ? '/add' : '/accounts/investments/treasury',
+                state: { returnTo: '/accounts/add' },
+              },
+            ]}
+          >
             {page === 'details' && <Link to="/accounts/investments/other">Open another account</Link>}
             <Routes>
               <Route path="/add" element={<AddInvestmentPage />} />
               <Route path="/accounts/add" element={<p>Account choices</p>} />
+              <Route path="/accounts/verify/manual-type" element={<ManualTypeSelectorPage />} />
               <Route
                 path="/accounts/investments/:accountId"
                 element={page === 'add' ? <p>Investment account created</p> : <InvestmentDetailsPage />}
@@ -226,4 +235,20 @@ it('returns from the investment celebration to the account choices', async () =>
   await vi.waitFor(() => {
     expect(page.container.textContent).toContain('Account choices')
   })
+})
+
+it('goes back to the tracking choices and preserves their return to Add Account', async () => {
+  const page = await renderPage('add')
+  const back = page.container.querySelector<HTMLAnchorElement>('a[href="/accounts/verify/manual-type"]')
+  assert.exists(back)
+  await act(async () => {
+    back.click()
+  })
+  expect(page.container.textContent).toContain('Track Balance, ETF, or xpub')
+  const choicesBack = page.container.querySelector<HTMLAnchorElement>('a[href="/accounts/add"]')
+  assert.exists(choicesBack)
+  await act(async () => {
+    choicesBack.click()
+  })
+  expect(page.container.textContent).toContain('Account choices')
 })

@@ -35,6 +35,7 @@ function unwrap(result: Result<void, Error>): void {
 
 export const investmentRouter = t.router({
   list: protectedProcedure.query(async ({ ctx }) => new InvestmentService(ctx.app.database).listAccounts()),
+  history: protectedProcedure.query(async ({ ctx }) => new InvestmentService(ctx.app.database).history()),
   get: protectedProcedure.input(accountInput).query(async ({ ctx, input }) => {
     const service = new InvestmentService(ctx.app.database)
     const account = await service.getAccount(input.accountId)

@@ -1,7 +1,7 @@
 import { Box, Button, Flex, Grid, Icon, keyframes } from '@chakra-ui/react'
 import { HOSEKI_ASSETS_CDN_URL } from '@hoseki/packages/constants'
 import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
-import { InvestmentIcon, ManualEntryIcon, ManualSignIcon, MultisigImage } from './account-type-media'
+import { ManualEntryIcon, ManualSignIcon, MultisigImage } from './account-type-media'
 import { ConnectionType } from './claims-landing/connection-type'
 
 const fadeIn = keyframes`
@@ -125,15 +125,9 @@ export function AddAccountFlow({ onClose, linkState }: AddAccountFlowProps): JSX
               state={linkState}
             />
             <ConnectionType
-              title={'Track Balance, ETF,\nor xpub'}
+              title="Track Balance, xpub, ETF or stocks"
               media={<ManualEntryIcon />}
               to="/accounts/verify/manual-type"
-              state={linkState}
-            />
-            <ConnectionType
-              title="Other Bitcoin Investments"
-              media={<InvestmentIcon />}
-              to="/accounts/verify/investments"
               state={linkState}
             />
           </Grid>

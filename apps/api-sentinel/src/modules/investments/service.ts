@@ -1,5 +1,5 @@
 import { Err, Ok, type Result } from '@hoseki/packages/result'
-import { and, desc, eq, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, sql } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
 import type { SentinelDb } from '../../db/drizzle'
 import { investmentAccounts, investmentValuations } from '../../db/schema'
@@ -50,6 +50,29 @@ export class InvestmentService {
         ),
       )
       .orderBy(desc(investmentAccounts.createdAt))
+  }
+
+  /** Carry each account's last reported value forward to the next observation date. */
+  public async history(): Promise<Array<{ valuedAt: string; valueCents: string }>> {
+    const rows = await this.db
+      .select({
+        accountId: investmentValuations.accountId,
+        valuedAt: investmentValuations.valuedAt,
+        valueCents: investmentValuations.valueCents,
+      })
+      .from(investmentValuations)
+      .innerJoin(investmentAccounts, eq(investmentValuations.accountId, investmentAccounts.id))
+      .orderBy(asc(investmentValuations.valuedAt))
+    const values = new Map<string, bigint>()
+    const totals = new Map<string, string>()
+    let total = 0n
+    for (const row of rows) {
+      const value = BigInt(row.valueCents)
+      total += value - (values.get(row.accountId) ?? 0n)
+      values.set(row.accountId, value)
+      totals.set(row.valuedAt, total.toString())
+    }
+    return Array.from(totals, ([valuedAt, valueCents]) => ({ valuedAt, valueCents }))
   }
 
   public async getAccount(

@@ -47,6 +47,7 @@ import { HistoryChartFrame, HistoryRangeLoading } from '../../components/dashboa
 import { MonthlyNetChangeChart as DefaultMonthlyNetChangeChart } from '../../components/dashboard-charts/monthly-net-change-chart'
 import { BtcUnit, NetAccumulatedSummary } from '../../components/dashboard-charts/net-accumulated-summary'
 import { FiatAmountText } from '../../components/fiat-amount-text'
+import { InvestmentHistoryChart as DefaultInvestmentHistoryChart } from '../../components/investments/investment-history-chart'
 import { InvestmentOverview } from '../../components/investments/investment-overview'
 import { UnavailableAlert } from '../../components/unavailable-alert'
 import { SyncIndicator } from '../../components/wallet-balances/sync-indicator'
@@ -129,6 +130,7 @@ function formatPercentChange(change: Decimal, start: Decimal): string {
 }
 
 export interface DashboardViews {
+  InvestmentHistoryChart: typeof DefaultInvestmentHistoryChart
   AccountFilter: typeof DefaultAccountFilter
   AccumulationChart: typeof DefaultAccumulationChart
   MonthlyNetChangeChart: typeof DefaultMonthlyNetChangeChart
@@ -136,6 +138,7 @@ export interface DashboardViews {
 }
 
 const dashboardViews: DashboardViews = {
+  InvestmentHistoryChart: DefaultInvestmentHistoryChart,
   AccountFilter: DefaultAccountFilter,
   AccumulationChart: DefaultAccumulationChart,
   MonthlyNetChangeChart: DefaultMonthlyNetChangeChart,
@@ -563,7 +566,7 @@ export function DashboardPage({
       return (
         <Wrapper maxW="928px" w="full" py={{ base: 6, md: 8 }}>
           <PageHeading title="Portfolio" mb={6} />
-          <InvestmentOverview query={investmentsQuery} compact />
+          <InvestmentOverview query={investmentsQuery} chart={<views.InvestmentHistoryChart />} />
         </Wrapper>
       )
     }
@@ -882,6 +885,7 @@ export function DashboardPage({
           {isShowingAll && (
             <Box mb={6}>
               <InvestmentOverview
+                chart={<views.InvestmentHistoryChart />}
                 query={investmentsQuery}
                 bitcoinUsd={bitcoinUsdValue({
                   balanceSats: displayBalanceSats,
@@ -891,7 +895,6 @@ export function DashboardPage({
                     exchangeAccounts.some((account) => isExchangeConnected(account) && account.balance === null),
                   walletStatus: viewWallets.status,
                 })}
-                compact
                 showCombined={hasAnyAccount}
               />
             </Box>

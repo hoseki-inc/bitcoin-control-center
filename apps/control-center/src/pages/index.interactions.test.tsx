@@ -28,6 +28,7 @@ const browser = await vi.hoisted(async () => {
 const statement = statementFixture()
 
 const views: HomeViews = {
+  InvestmentHistoryChart: () => <div />,
   AccumulationChart: () => createElement('div', null, 'Balance chart'),
   BitcoinPriceChart: () => createElement('section', null, 'Bitcoin Price'),
   Onboarding: ({ accountCount }) =>

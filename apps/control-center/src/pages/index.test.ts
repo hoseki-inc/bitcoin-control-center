@@ -104,6 +104,7 @@ function fakeDataSource(state: HomeState): HomeDataSource {
 }
 
 const views: HomeViews = {
+  InvestmentHistoryChart: () => createElement('div'),
   AccumulationChart: () => createElement('div', null, 'Balance chart'),
   // The price chart's own states are covered in bitcoin-price-chart.test.ts; here we only check placement.
   BitcoinPriceChart: () => createElement('section', { 'data-chart': 'price' }, 'Bitcoin Price'),

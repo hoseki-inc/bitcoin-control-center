@@ -32,11 +32,11 @@ import { Link, useLocation, useNavigate } from 'react-router'
 import { BitcoinAmount } from '../../components/bitcoin-amount'
 import { UnverifiedTooltip } from '../../components/claims/bitkey/bitkey-notes'
 import { DeleteClaimModal } from '../../components/claims/claim-details/delete-claim-modal'
-import { InvestmentOverview } from '../../components/investments/investment-overview'
+import { InvestmentAccountCard } from '../../components/investments/investment-overview'
+import { formatInvestmentValue } from '../../components/investments/value'
 import { UnavailableAlert } from '../../components/unavailable-alert'
 import { SyncIndicator } from '../../components/wallet-balances/sync-indicator'
 import { formatBitcoinNumber, isUsableBtcPrice } from '../../lib/bitcoin-display'
-import { bitcoinUsdValue } from '../../lib/bitcoin-usd-value'
 import { summarizeWalletBalances } from '../../lib/wallet-balances'
 import type { ClaimDto } from '../../trpc/server-types'
 import { ensureClaimStatusNotExpired, isBitkeyClaim, mapClaimToClaimCardProps } from '../../utils/claim-utils'
@@ -97,7 +97,10 @@ export function ClaimsPage({ dataSource = accountsDataSource }: { dataSource?: A
 
   const hasBitcoinAccounts =
     claims.length > 0 || exchangeAccounts.length > 0 || manualAccounts.length > 0 || etfAccounts.length > 0
-  const hasClaims = hasBitcoinAccounts || (investmentsQuery.data?.length ?? 0) > 0
+  const investments = investmentsQuery.isError || investmentsQuery.isLoading ? [] : (investmentsQuery.data ?? [])
+  const hasInvestments = investments.length > 0
+  const hasClaims = hasBitcoinAccounts || hasInvestments
+  const investmentTotalCents = investments.reduce((total, account) => total.plus(account.valueCents), new Decimal(0))
   const verifiedCount =
     claims.filter((c) => ensureClaimStatusNotExpired(c) === 'verified').length + connectedExchangeAccounts.length
   const pendingCount = claims.filter((c) => c.status === 'pending').length
@@ -132,9 +135,9 @@ export function ClaimsPage({ dataSource = accountsDataSource }: { dataSource?: A
             />
             {hasBitcoinAccounts && !listsFailed && (
               <Flex align="center" gap={3} mt={2} flexWrap="wrap">
-                {(investmentsQuery.data?.length ?? 0) > 0 && (
+                {hasInvestments && (
                   <Text textStyle="text/sm" color="neutral.600">
-                    Bitcoin holdings
+                    Bitcoin holdings -
                   </Text>
                 )}
                 <Text
@@ -152,7 +155,7 @@ export function ClaimsPage({ dataSource = accountsDataSource }: { dataSource?: A
                 {/* Without a price there's nothing to add up, so leave the total out rather than show $0.00. */}
                 {(usdLoading || btcUsdPrice !== null) && (
                   <>
-                    <Text color="neutral.200">·</Text>
+                    <Text color="neutral.200">{hasInvestments ? '-' : '·'}</Text>
                     <Text textStyle="text/sm" color="success.600" sx={{ fontVariantNumeric: 'tabular-nums' }}>
                       {totalUsd === null ? <TextSkeleton width="9ch" /> : formatUsd(totalUsd)}
                     </Text>
@@ -184,6 +187,16 @@ export function ClaimsPage({ dataSource = accountsDataSource }: { dataSource?: A
                 {claimIds.length > 0 && <SyncIndicator wallets={wallets.status} />}
               </Flex>
             )}
+            {hasInvestments && (
+              <Flex align="center" gap={3} mt={2} flexWrap="wrap">
+                <Text textStyle="text/sm" color="neutral.600">
+                  Bitcoin investments -
+                </Text>
+                <Text textStyle="text/sm" color="success.600" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                  {formatInvestmentValue(investmentTotalCents.toFixed(0))}
+                </Text>
+              </Flex>
+            )}
           </Box>
           {/* The empty state has its own centered call to action. */}
           {(hasClaims || investmentsQuery.isLoading || investmentsQuery.isError) && (
@@ -199,7 +212,7 @@ export function ClaimsPage({ dataSource = accountsDataSource }: { dataSource?: A
             title={hasClaims ? "Some accounts couldn't be loaded" : "Your accounts couldn't be loaded"}
             description={
               hasClaims
-                ? 'The list below may be incomplete, so totals are hidden. Try again to load the rest.'
+                ? 'The list below may be incomplete, so Bitcoin totals are hidden. Try again to load the rest.'
                 : 'Your accounts are still saved. Try again to load them.'
             }
             onRetry={() => {
@@ -210,8 +223,19 @@ export function ClaimsPage({ dataSource = accountsDataSource }: { dataSource?: A
           />
         )}
 
+        {investmentsQuery.isError && (
+          <UnavailableAlert
+            mb={6}
+            title="Investment values are unavailable"
+            description="Your Bitcoin accounts are unaffected. Try again to load your manually recorded investments."
+            onRetry={() => {
+              void investmentsQuery.refetch()
+            }}
+          />
+        )}
+
         {/* Account cards */}
-        {hasBitcoinAccounts ? (
+        {hasClaims || investmentsQuery.isLoading ? (
           <Grid templateColumns={ACCOUNT_GRID_COLUMNS} gap={4}>
             {claims.map((claim) => {
               const sats = wallets.balances.get(claim.id) ?? null
@@ -255,6 +279,14 @@ export function ClaimsPage({ dataSource = accountsDataSource }: { dataSource?: A
                 linkPrefix="/accounts/etf"
               />
             ))}
+            {investments.map((account) => (
+              <InvestmentAccountCard key={account.id} account={account} />
+            ))}
+            {investmentsQuery.isLoading && (
+              <SkeletonRegion label="Loading investment valuations">
+                <AccountCardSkeleton />
+              </SkeletonRegion>
+            )}
             <AddAccountCard
               onClick={() => {
                 void navigate('/accounts/add')
@@ -262,21 +294,8 @@ export function ClaimsPage({ dataSource = accountsDataSource }: { dataSource?: A
             />
           </Grid>
         ) : (
-          !hasClaims && !listsFailed && !investmentsQuery.isLoading && !investmentsQuery.isError && <EmptyHoldings />
+          !listsFailed && !investmentsQuery.isError && <EmptyHoldings />
         )}
-
-        <Box mt={6}>
-          <InvestmentOverview
-            query={investmentsQuery}
-            bitcoinUsd={bitcoinUsdValue({
-              balanceSats: totalBtcSats,
-              priceUsd: btcUsdPrice,
-              balanceUnavailable: listsFailed,
-              walletStatus: wallets.status,
-            })}
-            showCombined={hasBitcoinAccounts}
-          />
-        </Box>
 
         {/* Archived accounts accordion. It sits below the accounts, so it simply appears once loaded. */}
         <Box id="archived" mt={6} tabIndex={-1}>

@@ -8,6 +8,7 @@ import { DashboardAmount } from '../components/dashboard/dashboard-typography'
 import { PortfolioSummary } from '../components/dashboard/portfolio-summary'
 import { RecentStatements, RecentStatementsSkeleton } from '../components/dashboard/recent-statements'
 import { FiatAmountText } from '../components/fiat-amount-text'
+import { InvestmentHistoryChart as DefaultInvestmentHistoryChart } from '../components/investments/investment-history-chart'
 import { type InvestmentListQuery, InvestmentOverview } from '../components/investments/investment-overview'
 import { FirstRunOnboarding } from '../components/onboarding/first-run-onboarding'
 import { StatementsEmptyState } from '../components/statements/statements-empty-state'
@@ -98,6 +99,7 @@ export function HomePage({
         />
       )}
       <InvestmentOverview
+        chart={<views.InvestmentHistoryChart />}
         query={investments}
         bitcoinUsd={bitcoinUsdValue({
           balanceSats: bitcoinAccountsKnownEmpty ? 0 : portfolio ? Number(portfolio.currentTotalBalance) : null,
@@ -106,7 +108,6 @@ export function HomePage({
           walletStatus: wallets.status,
         })}
         showCombined={hasBitcoinAccounts}
-        compact
       />
       <views.BitcoinPriceChart />
       {statementsError ? (
@@ -219,12 +220,14 @@ const homeDataSource: HomeDataSource = {
 }
 
 export interface HomeViews {
+  InvestmentHistoryChart: typeof DefaultInvestmentHistoryChart
   AccumulationChart: typeof DefaultAccumulationChart
   BitcoinPriceChart: typeof DefaultBitcoinPriceChart
   Onboarding: typeof FirstRunOnboarding
 }
 
 const homeViews: HomeViews = {
+  InvestmentHistoryChart: DefaultInvestmentHistoryChart,
   AccumulationChart: DefaultAccumulationChart,
   BitcoinPriceChart: DefaultBitcoinPriceChart,
   Onboarding: FirstRunOnboarding,

@@ -227,7 +227,8 @@ it('shows an investment-only portfolio without requiring a Bitcoin price or sugg
       },
     ],
   })
-  expect(text).toContain('Other Bitcoin Investments')
+  expect(text).toContain('Bitcoin investments - $13,500.50')
+  expect(text).not.toContain('Other Bitcoin Investments')
   expect(text).toContain('Treasury stocks')
   expect(text).toContain('$13,500.50')
   expect(text).not.toContain('Combined Portfolio Value (USD)')
@@ -246,3 +247,60 @@ it.each(['loading', 'failed'] as const)(
     expect(text).not.toContain('Loading accounts')
   },
 )
+
+it('places investment cards after Bitcoin accounts and keeps their totals separate', () => {
+  const text = renderPage({
+    manual: [manualAccount],
+    investments: [
+      {
+        id: 'treasury',
+        displayName: 'Treasury stocks',
+        currency: 'USD',
+        valueCents: '1350050',
+        valuedAt: '2026-11-03',
+        createdAt: '',
+      },
+      {
+        id: 'preferred',
+        displayName: 'Preferred shares',
+        currency: 'USD',
+        valueCents: '2500025',
+        valuedAt: '2026-11-02',
+        createdAt: '',
+      },
+    ],
+  })
+  expect(text).toContain('Bitcoin holdings - 1.00000000 BTC')
+  expect(text).toContain('Bitcoin investments - $38,500.75')
+  expect(text).toContain('$50,000.00')
+  expect(text.indexOf('Paper wallet')).toBeLessThan(text.indexOf('Treasury stocks'))
+  expect(text.indexOf('Treasury stocks')).toBeLessThan(text.indexOf('Preferred shares'))
+  expect(text).not.toContain('Other Bitcoin Investments')
+  expect(text).not.toContain('Combined Portfolio Value')
+})
+
+it('leaves out the investment summary when there are no investments', () => {
+  const text = renderPage({ manual: [manualAccount] })
+  expect(text).not.toContain('Bitcoin investments')
+  expect(text).not.toContain('Bitcoin holdings')
+  expect(text).toContain('1.00000000 BTC')
+})
+
+it('keeps investment cards and their total visible when Bitcoin accounts fail to load', () => {
+  const text = renderPage({
+    failed: { manual: true },
+    investments: [
+      {
+        id: 'treasury',
+        displayName: 'Treasury stocks',
+        currency: 'USD',
+        valueCents: '1350050',
+        valuedAt: '2026-11-03',
+        createdAt: '',
+      },
+    ],
+  })
+  expect(text).toContain('Bitcoin investments - $13,500.50')
+  expect(text).toContain('Treasury stocks')
+  expect(text).not.toContain('Bitcoin holdings')
+})

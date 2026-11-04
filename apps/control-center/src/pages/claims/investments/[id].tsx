@@ -61,10 +61,7 @@ function InvestmentAccountDetails({ accountId }: { accountId: string }): JSX.Ele
   }, [query.data?.id])
 
   async function refresh(): Promise<void> {
-    await Promise.all([
-      utils.portalProve.investments.list.invalidate(),
-      utils.portalProve.investments.get.invalidate({ accountId }),
-    ])
+    await utils.portalProve.investments.invalidate()
   }
   async function perform(action: () => Promise<void>, failure: string): Promise<void> {
     setBusy(true)
@@ -94,7 +91,7 @@ function InvestmentAccountDetails({ accountId }: { accountId: string }): JSX.Ele
       if (target.kind === 'account') {
         await deleteAccount.mutateAsync({ accountId })
         void navigate('/accounts')
-        await utils.portalProve.investments.list.invalidate()
+        await utils.portalProve.investments.invalidate()
         toast.success('Investment account removed')
       } else {
         await deleteValuation.mutateAsync({ accountId, id: target.id })

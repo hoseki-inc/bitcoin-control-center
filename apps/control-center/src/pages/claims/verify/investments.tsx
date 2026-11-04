@@ -17,7 +17,7 @@ export function AddInvestmentPage(): JSX.Element {
   const create = trpc.portalProve.investments.create.useMutation()
   const utils = trpc.useUtils()
   const location = useLocation()
-  const returnTo = parseNavigationState(location.state)?.returnTo ?? '/accounts/add'
+  const returnState = parseNavigationState(location.state)
   async function save(fields: ValuationFields): Promise<void> {
     if (!displayName.trim()) {
       toast.error('Enter an account name')
@@ -26,7 +26,7 @@ export function AddInvestmentPage(): JSX.Element {
     setIsSaving(true)
     try {
       const id = await afterAtLeastASecond(create.mutateAsync({ ...fields, displayName: displayName.trim() }))
-      await utils.portalProve.investments.list.invalidate()
+      await utils.portalProve.investments.invalidate()
       setAdded({ id, valueCents: fields.valueCents })
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Could not add investment account')
@@ -43,13 +43,13 @@ export function AddInvestmentPage(): JSX.Element {
   return (
     <Box py={6}>
       <TopBar mb={6}>
-        <TopBar.Item as={Link} to={returnTo}>
+        <TopBar.Item as={Link} to="/accounts/verify/manual-type" state={returnState}>
           Back
         </TopBar.Item>
       </TopBar>
       <Stack maxW="480px" mx="auto" spacing={6}>
         <PageHeading
-          title="Add Other Bitcoin Investment"
+          title="Add Bitcoin-linked Investment"
           description="Track Bitcoin treasury stocks, preferred shares, and other Bitcoin funds or investments by entering their total value in USD."
         />
         <ValuationForm onSave={save} saving={create.isLoading} disabled={displayName.trim() === ''} label="Add Account">

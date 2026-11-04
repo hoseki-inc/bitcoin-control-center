@@ -183,6 +183,7 @@ const dataSource: DashboardDataSource = {
   getTimezone: () => 'UTC',
 }
 const views: DashboardViews = {
+  InvestmentHistoryChart: () => createElement('div'),
   DateInput: ({ id, value, onChange }) =>
     createElement('input', {
       id,
