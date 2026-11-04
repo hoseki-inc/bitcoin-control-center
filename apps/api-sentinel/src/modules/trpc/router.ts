@@ -125,16 +125,22 @@ interface ChallengeMessageDto {
 
 const supportedHardwareWalletSchema = z.enum(['trezor', 'coldcard', 'ledger', 'keystone', 'bitkey'])
 const etfTickerSchema = z.enum(['IBIT', 'FBTC', 'GBTC', 'ARKB', 'BITB', 'HODL', 'BTC', 'MSBT'])
+const privateKeyMessage = 'Use extended public keys (xpub), not private keys'
+
+function descriptorIssue(descriptor: string, invalidMessage: string) {
+  return { message: containsExtendedPrivateKey(descriptor) ? privateKeyMessage : invalidMessage }
+}
+
 const checkedSinglesigAccountDescriptorSchema = z.custom<CheckedSinglesigAccountDescriptor>(
   (value): value is CheckedSinglesigAccountDescriptor =>
     // The parser reads only the first key, so also reject private keys elsewhere in the descriptor.
     typeof value === 'string' && !containsExtendedPrivateKey(value) && SingleSigAccount.fromDescriptor(value).isOk(),
-  'Invalid singlesig account descriptor',
+  (descriptor: string) => descriptorIssue(descriptor, 'Invalid singlesig account descriptor'),
 )
 const checkedMultisigAccountDescriptorSchema = z.custom<CheckedMultisigAccountDescriptor>(
   (value): value is CheckedMultisigAccountDescriptor =>
     typeof value === 'string' && !containsExtendedPrivateKey(value) && MultiSigAccount.fromDescriptor(value).isOk(),
-  'Invalid multisig account descriptor',
+  (descriptor: string) => descriptorIssue(descriptor, 'Invalid multisig account descriptor'),
 )
 const hardwareWalletDisplayNames = {
   trezor: 'Trezor',
@@ -1931,7 +1937,7 @@ const portalProveRouter = t.router({
         if (containsExtendedPrivateKey(input.descriptor)) {
           throw new TRPCError({
             code: 'BAD_REQUEST',
-            message: 'Use extended public keys (xpub), not private keys',
+            message: privateKeyMessage,
           })
         }
         return ctx.app.database.transaction(async (db) => {
