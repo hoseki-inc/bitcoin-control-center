@@ -1,6 +1,7 @@
 import { Box, Button, FormControl, FormErrorMessage, FormLabel, Input, Stack, Text, chakra } from '@chakra-ui/react'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { MultiSigAccount } from '@hoseki/packages/bitcoin'
+import { HELP_LINKS } from '@hoseki/packages/constants'
 import { Err, Ok, Result } from '@hoseki/packages/result'
 import { isUnproven } from '@hoseki/packages/schemas/prove'
 import { FileDropReader, type FileDropState, PageTransition } from '@hoseki/packages/ui/design-system'
@@ -223,7 +224,13 @@ function GetReady({ onNext }: { onNext: () => void }) {
   )
 }
 
-function ImportWallet({ onBack, onNext }: { onBack: () => void; onNext: (data: CreateMultisigClaimInput) => void }) {
+export function ImportWallet({
+  onBack,
+  onNext,
+}: {
+  onBack: () => void
+  onNext: (data: CreateMultisigClaimInput) => void
+}): JSX.Element {
   const [fileDropStatus, setFileDropStatus] = useState<FileDropState>('ready')
 
   return (
@@ -252,11 +259,7 @@ function ImportWallet({ onBack, onNext }: { onBack: () => void; onNext: (data: C
       <TipAlert title="Need help?" icon={CircleAlert}>
         <Text color="neutral.800">
           Visit our{' '}
-          <Link
-            to="https://help.hoseki.app/article/43-how-to-export-your-multisig-wallet"
-            style={{ textDecoration: 'underline' }}
-            target="_blank"
-          >
+          <Link to={HELP_LINKS.EXPORT_MULTISIG} style={{ textDecoration: 'underline' }} target="_blank">
             Help Center
           </Link>{' '}
           for step-by-step export instructions.

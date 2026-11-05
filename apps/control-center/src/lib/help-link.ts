@@ -1,4 +1,4 @@
-const HELP_URL = 'https://help.hoseki.app/bitcoin-control-center'
+import { HELP_LINKS } from '@hoseki/packages/constants'
 
 // Only these top-level screens are named; anything else, such as a mistyped address, is "other".
 const SCREENS = new Set(['home', 'accounts', 'portfolio', 'statements', 'settings', 'multisig'])
@@ -43,5 +43,5 @@ export function helpLink({
     params.set('utm_term', version)
   }
   params.set('screen', SCREENS.has(screen) ? screen : 'other')
-  return `${HELP_URL}?${params.toString()}`
+  return `${HELP_LINKS.HOME}?${params.toString()}`
 }
