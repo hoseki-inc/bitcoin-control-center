@@ -1,8 +1,10 @@
 import { DerivationPath } from '@hoseki/packages/bitcoin'
 import { Wallets } from '@hoseki/packages/testing'
-import { expect, it } from 'vitest'
+import { renderToStaticMarkup } from 'react-dom/server'
+import { MemoryRouter } from 'react-router'
+import { expect, it, vi } from 'vitest'
 import type { ClaimDto } from '../../trpc/server-types'
-import { missingKeyPaths, reconnectedMultisigPath } from './create'
+import { ImportWallet, missingKeyPaths, reconnectedMultisigPath } from './create'
 
 it.each([
   ['pending', '/multisig/re_clmx_1'],
@@ -45,4 +47,15 @@ it('fills in key paths a tracked multisig is missing', () => {
 it('leaves proven multisigs and imports without paths alone', () => {
   expect(missingKeyPaths(trackedClaim('verified'), imported)).toEqual([])
   expect(missingKeyPaths(trackedClaim('unverified'), importedWithoutPaths)).toEqual([])
+})
+
+it('links the import step to the Control Center export guide', () => {
+  const ignore = vi.fn<() => void>()
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <ImportWallet onBack={ignore} onNext={ignore} />
+    </MemoryRouter>,
+  )
+
+  expect(html).toContain('href="https://help.hoseki.app/bitcoin-control-center/wallet-guides/export-multisig"')
 })

@@ -224,7 +224,13 @@ function GetReady({ onNext }: { onNext: () => void }) {
   )
 }
 
-function ImportWallet({ onBack, onNext }: { onBack: () => void; onNext: (data: CreateMultisigClaimInput) => void }) {
+export function ImportWallet({
+  onBack,
+  onNext,
+}: {
+  onBack: () => void
+  onNext: (data: CreateMultisigClaimInput) => void
+}): JSX.Element {
   const [fileDropStatus, setFileDropStatus] = useState<FileDropState>('ready')
 
   return (
