@@ -47,9 +47,12 @@ import { HistoryChartFrame, HistoryRangeLoading } from '../../components/dashboa
 import { MonthlyNetChangeChart as DefaultMonthlyNetChangeChart } from '../../components/dashboard-charts/monthly-net-change-chart'
 import { BtcUnit, NetAccumulatedSummary } from '../../components/dashboard-charts/net-accumulated-summary'
 import { FiatAmountText } from '../../components/fiat-amount-text'
+import { InvestmentHistoryChart as DefaultInvestmentHistoryChart } from '../../components/investments/investment-history-chart'
+import { InvestmentOverview } from '../../components/investments/investment-overview'
 import { UnavailableAlert } from '../../components/unavailable-alert'
 import { SyncIndicator } from '../../components/wallet-balances/sync-indicator'
 import { formatBitcoinNumber, formatSignedBitcoinNumber, isUsableBtcPrice } from '../../lib/bitcoin-display'
+import { bitcoinUsdValue } from '../../lib/bitcoin-usd-value'
 import { summarizeWalletBalances } from '../../lib/wallet-balances'
 import { isExchangeConnected } from '../../utils/exchange-connection-status'
 import { type DashboardDataSource, dashboardDataSource } from './dashboard-data'
@@ -127,6 +130,7 @@ function formatPercentChange(change: Decimal, start: Decimal): string {
 }
 
 export interface DashboardViews {
+  InvestmentHistoryChart: typeof DefaultInvestmentHistoryChart
   AccountFilter: typeof DefaultAccountFilter
   AccumulationChart: typeof DefaultAccumulationChart
   MonthlyNetChangeChart: typeof DefaultMonthlyNetChangeChart
@@ -134,6 +138,7 @@ export interface DashboardViews {
 }
 
 const dashboardViews: DashboardViews = {
+  InvestmentHistoryChart: DefaultInvestmentHistoryChart,
   AccountFilter: DefaultAccountFilter,
   AccumulationChart: DefaultAccumulationChart,
   MonthlyNetChangeChart: DefaultMonthlyNetChangeChart,
@@ -168,7 +173,7 @@ export function DashboardPage({
   const navigate = useNavigate()
   const userTimezone = useMemo(() => dataSource.getTimezone(), [dataSource])
   const today = new Date()
-  const { claimsQuery, exchangeAccountsQuery, manualAccountsQuery, etfAccountsQuery, btcPriceQuery } =
+  const { claimsQuery, exchangeAccountsQuery, manualAccountsQuery, etfAccountsQuery, btcPriceQuery, investmentsQuery } =
     dataSource.useAccounts()
 
   const claims = useMemo(() => claimsQuery.data ?? [], [claimsQuery.data])
@@ -510,7 +515,12 @@ export function DashboardPage({
   const hasAnyAccount =
     claims.length > 0 || exchangeAccounts.length > 0 || manualAccounts.length > 0 || etfAccounts.length > 0
   // Without accounts, only the history can tell an empty portfolio from one with archived wallets.
-  const awaitsEmptyCheck = !hasAnyAccount && allData === undefined && filteredData === undefined && !activeError
+  const awaitsEmptyCheck =
+    !hasAnyAccount &&
+    (investmentsQuery.data?.length ?? 0) === 0 &&
+    allData === undefined &&
+    filteredData === undefined &&
+    !activeError
   // Everything else loads in place, so only the account lists, which shape the page, hold it back.
   const showsPageSkeleton = listsLoading || awaitsEmptyCheck
   const pageReveal = useRevealAfterLoading(showsPageSkeleton)
@@ -552,11 +562,21 @@ export function DashboardPage({
     !activeError &&
     !historyBackfillFailed
   ) {
+    if (investmentsQuery.isLoading || investmentsQuery.isError || (investmentsQuery.data?.length ?? 0) > 0) {
+      return (
+        <Wrapper maxW="928px" w="full" py={{ base: 6, md: 8 }}>
+          <PageHeading title="Portfolio" mb={6} />
+          <InvestmentOverview query={investmentsQuery} chart={<views.InvestmentHistoryChart />} />
+        </Wrapper>
+      )
+    }
     return <EmptyState />
   }
 
   const activeLabel = isShowingAll
-    ? 'All accounts'
+    ? (investmentsQuery.data?.length ?? 0) > 0
+      ? 'Bitcoin Holdings'
+      : 'All accounts'
     : selected.size === 1
       ? (claims.find((c) => selected.has(c.id))?.displayName ??
         exchangeAccounts.find((a) => selected.has(a.id))?.displayName ??
@@ -570,6 +590,7 @@ export function DashboardPage({
 
   const accountFilter = hasAccounts ? (
     <AccountFilter
+      shareLabel={(investmentsQuery.data?.length ?? 0) > 0 ? 'Bitcoin holdings' : undefined}
       presentation={hasDesktopSidebar ? 'sidebar' : 'dropdown'}
       claims={claims}
       exchangeAccounts={exchangeAccounts}
@@ -598,6 +619,7 @@ export function DashboardPage({
       <Box flex="1" minW={0}>
         <Wrapper maxW="928px" w="full" py={{ base: 6, md: 8 }}>
           {!hasDesktopSidebar && <Box mb={6}>{accountFilter}</Box>}
+
           <Box minW={0}>
             {/* Above the balance, as the figures below may be stale or incomplete. */}
             {hasCurrentRangeData && activeError && historyRangeError === null && (
@@ -860,6 +882,23 @@ export function DashboardPage({
               </Box>
             </Box>
           </Box>
+          {isShowingAll && (
+            <Box mb={6}>
+              <InvestmentOverview
+                chart={<views.InvestmentHistoryChart />}
+                query={investmentsQuery}
+                bitcoinUsd={bitcoinUsdValue({
+                  balanceSats: displayBalanceSats,
+                  priceUsd: btcPrice,
+                  balanceUnavailable:
+                    !hasAccountLists ||
+                    exchangeAccounts.some((account) => isExchangeConnected(account) && account.balance === null),
+                  walletStatus: viewWallets.status,
+                })}
+                showCombined={hasAnyAccount}
+              />
+            </Box>
+          )}
         </Wrapper>
       </Box>
     </Flex>
