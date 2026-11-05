@@ -14,3 +14,10 @@ export const HOSEKI_ASSETS_CDN_URLS = {
     USDT: `${HOSEKI_ASSETS_CDN_URL}/coin_logos/usdt.svg`,
   } as const,
 } as const
+
+const HELP_CENTER_URL = 'https://help.hoseki.app/bitcoin-control-center'
+export const HELP_LINKS = {
+  HOME: HELP_CENTER_URL,
+  EXPORT_MULTISIG: `${HELP_CENTER_URL}/wallet-guides/export-multisig`,
+  STATEMENTS: `${HELP_CENTER_URL}/statements/statements-and-hoseki-verified`,
+} as const

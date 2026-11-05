@@ -1,4 +1,5 @@
 import { Box, Button, Flex, HStack, IconButton, Link, Stack, Text } from '@chakra-ui/react'
+import { HELP_LINKS } from '@hoseki/packages/constants'
 import { renderStatementPdf } from '@hoseki/packages/pdf'
 import { parseUnknown } from '@hoseki/packages/result/lib/parse'
 import type { StatementDocumentFormat, StatementId } from '@hoseki/packages/schemas'
@@ -314,12 +315,7 @@ function LearnMore() {
       </HStack>
       <Text ml={7} color="neutral.900">
         Learn more in our{' '}
-        <Link
-          href="https://help.hoseki.app/bitcoin-control-center/statements/statements-and-hoseki-verified"
-          isExternal
-          textDecoration="underline"
-          fontWeight="medium"
-        >
+        <Link href={HELP_LINKS.STATEMENTS} isExternal textDecoration="underline" fontWeight="medium">
           Help Center
         </Link>
         .
