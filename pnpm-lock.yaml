@@ -147,8 +147,8 @@ importers:
         specifier: 4.0.1
         version: 4.0.1(@typescript/typescript6@6.0.2)
       bitcoinjs-lib:
-        specifier: 6.1.5
-        version: 6.1.5
+        specifier: 7.0.5
+        version: 7.0.5(@typescript/typescript6@6.0.2)
       bs58check:
         specifier: 4.0.0
         version: 4.0.0
@@ -3324,12 +3324,8 @@ packages:
     resolution: {integrity: sha512-O1htyufFTYy3EO0JkHg2CLykdXEtV2ssqw47Gq9A0WByp662xpJnMEB9m43LZjsSDjIAOozWRExlFQk2hlV1XQ==}
     engines: {node: '>=4.5.0'}
 
-  bitcoinjs-lib@6.1.5:
-    resolution: {integrity: sha512-yuf6xs9QX/E8LWE2aMJPNd0IxGofwfuVOiYdNUESkc+2bHHVKjhJd8qewqapeoolh9fihzHGoDCB5Vkr57RZCQ==}
-    engines: {node: '>=8.0.0'}
-
-  bitcoinjs-lib@6.1.8:
-    resolution: {integrity: sha512-A6o+yq7BvwlmLj4F0NC5f3XX109rRe5evxi368S9zil5voOtUfiqfiMCzZYKHk4k7iIJ3+NmcQW05Ar4CBlKyg==}
+  bitcoinjs-lib@6.1.10:
+    resolution: {integrity: sha512-9KpnS5JKVP0j0yfTsBNFIsNA6+JdBDb7VtL35F20I/pJYobosi3TmZFGtu6qxhJCfb0vubJixr5Zv61/lUYETw==}
     engines: {node: '>=8.0.0'}
 
   bitcoinjs-lib@7.0.5:
@@ -7202,7 +7198,7 @@ snapshots:
       '@bitcoinerlab/miniscript': 1.4.3
       '@bitcoinerlab/secp256k1': 1.1.1
       bip32: 4.0.0
-      bitcoinjs-lib: 6.1.5
+      bitcoinjs-lib: 6.1.10
       ecpair: 2.1.0
       lodash.memoize: 4.1.2
       varuint-bitcoin: 1.1.2
@@ -8470,7 +8466,7 @@ snapshots:
       '@noble/curves': 1.9.7
       '@noble/hashes': 1.8.0
       bip32-path: 0.4.2
-      bitcoinjs-lib: 6.1.8
+      bitcoinjs-lib: 6.1.10
       bs58: 4.0.1
       bs58check: 2.1.2
       invariant: 2.2.4
@@ -8507,7 +8503,7 @@ snapshots:
 
   '@ledgerhq/psbtv2@0.5.0':
     dependencies:
-      bitcoinjs-lib: 6.1.8
+      bitcoinjs-lib: 6.1.10
       varuint-bitcoin: 1.1.2
 
   '@libsql/client@0.18.0':
@@ -9875,16 +9871,7 @@ snapshots:
 
   bip68@1.0.4: {}
 
-  bitcoinjs-lib@6.1.5:
-    dependencies:
-      '@noble/hashes': 1.8.0
-      bech32: 2.0.0
-      bip174: 2.1.1
-      bs58check: 3.0.1
-      typeforce: 1.18.0
-      varuint-bitcoin: 1.1.2
-
-  bitcoinjs-lib@6.1.8:
+  bitcoinjs-lib@6.1.10:
     dependencies:
       '@noble/hashes': 1.8.0
       bech32: 2.0.0
