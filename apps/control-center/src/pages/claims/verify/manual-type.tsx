@@ -3,6 +3,7 @@ import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
 import { TopBar } from '@hoseki/packages/ui/prove-verify-ui/top-bar'
 import { Eye } from 'lucide-react'
 import { Link, useLocation } from 'react-router'
+import { InvestmentIcon } from '../../../components/claims/account-type-media'
 import { parseNavigationState } from '../../../lib/navigation-state'
 
 export function ManualTypeSelectorPage(): JSX.Element {
@@ -19,7 +20,7 @@ export function ManualTypeSelectorPage(): JSX.Element {
 
       <Stack spacing={6} maxW="480px" mx="auto">
         <PageHeading
-          title="Track Balance, ETF, or xpub"
+          title="Track Balance, xpub, ETF or stocks"
           description="Choose what type of holding you'd like to track."
         />
 
@@ -45,6 +46,14 @@ export function ManualTypeSelectorPage(): JSX.Element {
             description="Track a wallet's live balance, single-sig or multisig, without proving ownership."
             icon={<Icon as={Eye} w={5} h={5} color="neutral.600" strokeWidth={1.5} />}
           />
+          <TypeCard
+            to="/accounts/verify/investments"
+            state={location.state}
+            title="Bitcoin-linked Investments"
+            description="Track the USD balance of Bitcoin treasury stocks, preferred shares, and other investments."
+            icon={<InvestmentIcon boxSize={5} />}
+            isNew
+          />
         </Stack>
       </Stack>
     </Box>
@@ -57,7 +66,9 @@ function TypeCard(props: {
   title: string
   description: string
   icon: JSX.Element
+  isNew?: boolean
 }): JSX.Element {
+  const isNew = props.isNew === true
   return (
     <Flex
       as={Link}
@@ -65,7 +76,9 @@ function TypeCard(props: {
       state={props.state}
       p={5}
       border="1px solid"
-      borderColor="neutral.200"
+      borderColor={isNew ? 'neutral.400' : 'neutral.200'}
+      bg={isNew ? 'neutral.50' : undefined}
+      position="relative"
       borderRadius="md"
       align="center"
       gap={4}
@@ -73,6 +86,23 @@ function TypeCard(props: {
       transition="all 0.15s ease"
       _hover={{ borderColor: 'neutral.400', bg: 'neutral.50' }}
     >
+      {isNew && (
+        <Text
+          as="span"
+          position="absolute"
+          top="-10px"
+          right={4}
+          bg="neutral.900"
+          color="white"
+          borderRadius="full"
+          px={2}
+          py={0.5}
+          textStyle="label/sm"
+          fontWeight="semibold"
+        >
+          New
+        </Text>
+      )}
       <Flex w={10} h={10} borderRadius="md" bg="neutral.50" align="center" justify="center" flexShrink={0}>
         {props.icon}
       </Flex>

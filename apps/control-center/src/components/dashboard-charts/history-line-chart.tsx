@@ -11,6 +11,12 @@ interface HistoryLineChartProps {
   formatValue: (value: number) => string
   formatTime: (time: number) => string
   loading?: boolean
+  /** Optional labels at observation times for sparse, manually recorded history. */
+  ticks?: number[]
+  showPoints?: boolean
+  lineType?: 'linear' | 'stepAfter'
+  startAtZero?: boolean
+  lineColor?: string
   /** Shown when there is no data to draw. */
   emptyMessage?: string
   /** Fixed chart size; omit to fill the parent through Recharts' ResponsiveContainer. */
@@ -23,10 +29,15 @@ export function HistoryLineChart({
   formatValue,
   formatTime,
   loading = false,
+  ticks,
+  showPoints = false,
+  lineType = 'linear',
+  startAtZero = false,
+  lineColor = 'warning.600',
   emptyMessage = 'Price history is temporarily unavailable',
   size,
 }: HistoryLineChartProps): JSX.Element {
-  const [axisColor, lineColor] = useToken('colors', ['neutral.600', 'warning.600'])
+  const [axisColor, resolvedLineColor] = useToken('colors', ['neutral.600', lineColor])
   if (loading) {
     // The same outline as Portfolio's history while it loads.
     return <HistoryRangeLoading height="100%" label="Loading history…" />
@@ -53,6 +64,7 @@ export function HistoryLineChart({
         type="number"
         domain={['dataMin', 'dataMax']}
         tickFormatter={formatTime}
+        ticks={ticks}
         axisLine={false}
         tickLine={false}
         minTickGap={48}
@@ -62,7 +74,7 @@ export function HistoryLineChart({
       />
       <YAxis
         orientation="right"
-        domain={['auto', 'auto']}
+        domain={startAtZero ? [0, 'auto'] : ['auto', 'auto']}
         tickFormatter={formatValue}
         width={96}
         axisLine={false}
@@ -88,10 +100,10 @@ export function HistoryLineChart({
       />
       <Line
         dataKey="value"
-        type="linear"
-        stroke={lineColor}
+        type={lineType}
+        stroke={resolvedLineColor}
         strokeWidth={2}
-        dot={false}
+        dot={showPoints ? { r: 3 } : false}
         activeDot={{ r: 4 }}
         isAnimationActive={false}
       />
