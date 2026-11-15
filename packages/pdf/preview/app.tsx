@@ -194,6 +194,7 @@ export default function App(): JSX.Element {
       // Parse the JSON and deserialize using superjson
       const processedJson = serializer.parse<unknown>(jsonInput)
 
+      // oxlint-disable-next-line no-restricted-properties -- This dev tool's tsconfig can't resolve @hoseki/packages, so the Result helpers would type as errors here.
       const result = PdfStatementSchema.safeParse(processedJson)
 
       if (result.success) {

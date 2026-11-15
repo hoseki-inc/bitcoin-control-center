@@ -1,5 +1,6 @@
 import type { LiteralUnion } from 'type-fest'
 import { describe, expect, expectTypeOf, it } from 'vitest'
+import { parseUnknown } from '../result/lib/parse'
 import { literalUnion } from './literal-union'
 
 describe('literalUnion with strings', () => {
@@ -7,24 +8,24 @@ describe('literalUnion with strings', () => {
 
   describe('runtime validation', () => {
     it('should accept enum values', () => {
-      expect(status.safeParse('pending').success).toBe(true)
-      expect(status.safeParse('approved').success).toBe(true)
-      expect(status.safeParse('rejected').success).toBe(true)
+      expect(parseUnknown(status, 'pending').isOk()).toBe(true)
+      expect(parseUnknown(status, 'approved').isOk()).toBe(true)
+      expect(parseUnknown(status, 'rejected').isOk()).toBe(true)
     })
 
     it('should accept any string value', () => {
-      expect(status.safeParse('unknown').success).toBe(true)
-      expect(status.safeParse('custom_status').success).toBe(true)
-      expect(status.safeParse('').success).toBe(true)
+      expect(parseUnknown(status, 'unknown').isOk()).toBe(true)
+      expect(parseUnknown(status, 'custom_status').isOk()).toBe(true)
+      expect(parseUnknown(status, '').isOk()).toBe(true)
     })
 
     it('should reject non-string values', () => {
-      expect(status.safeParse(123).success).toBe(false)
-      expect(status.safeParse(null).success).toBe(false)
-      expect(status.safeParse(undefined).success).toBe(false)
-      expect(status.safeParse({}).success).toBe(false)
-      expect(status.safeParse([]).success).toBe(false)
-      expect(status.safeParse(true).success).toBe(false)
+      expect(parseUnknown(status, 123).isOk()).toBe(false)
+      expect(parseUnknown(status, null).isOk()).toBe(false)
+      expect(parseUnknown(status, undefined).isOk()).toBe(false)
+      expect(parseUnknown(status, {}).isOk()).toBe(false)
+      expect(parseUnknown(status, []).isOk()).toBe(false)
+      expect(parseUnknown(status, true).isOk()).toBe(false)
     })
   })
 
@@ -47,7 +48,7 @@ describe('literalUnion with strings', () => {
     })
 
     it('should provide correct output type', () => {
-      const result = status.parse('pending')
+      const result = parseUnknown(status, 'pending').expect('valid input')
 
       // Result should be typed as the union of known values + any string
       expectTypeOf(result).toBeString()
@@ -61,26 +62,26 @@ describe('literalUnion with numbers', () => {
 
   describe('runtime validation', () => {
     it('should accept enum values', () => {
-      expect(statusCode.safeParse(200).success).toBe(true)
-      expect(statusCode.safeParse(201).success).toBe(true)
-      expect(statusCode.safeParse(404).success).toBe(true)
-      expect(statusCode.safeParse(500).success).toBe(true)
+      expect(parseUnknown(statusCode, 200).isOk()).toBe(true)
+      expect(parseUnknown(statusCode, 201).isOk()).toBe(true)
+      expect(parseUnknown(statusCode, 404).isOk()).toBe(true)
+      expect(parseUnknown(statusCode, 500).isOk()).toBe(true)
     })
 
     it('should accept any number value', () => {
-      expect(statusCode.safeParse(999).success).toBe(true)
-      expect(statusCode.safeParse(0).success).toBe(true)
-      expect(statusCode.safeParse(-1).success).toBe(true)
-      expect(statusCode.safeParse(3.14).success).toBe(true)
+      expect(parseUnknown(statusCode, 999).isOk()).toBe(true)
+      expect(parseUnknown(statusCode, 0).isOk()).toBe(true)
+      expect(parseUnknown(statusCode, -1).isOk()).toBe(true)
+      expect(parseUnknown(statusCode, 3.14).isOk()).toBe(true)
     })
 
     it('should reject non-number values', () => {
-      expect(statusCode.safeParse('200').success).toBe(false)
-      expect(statusCode.safeParse(null).success).toBe(false)
-      expect(statusCode.safeParse(undefined).success).toBe(false)
-      expect(statusCode.safeParse({}).success).toBe(false)
-      expect(statusCode.safeParse([]).success).toBe(false)
-      expect(statusCode.safeParse(true).success).toBe(false)
+      expect(parseUnknown(statusCode, '200').isOk()).toBe(false)
+      expect(parseUnknown(statusCode, null).isOk()).toBe(false)
+      expect(parseUnknown(statusCode, undefined).isOk()).toBe(false)
+      expect(parseUnknown(statusCode, {}).isOk()).toBe(false)
+      expect(parseUnknown(statusCode, []).isOk()).toBe(false)
+      expect(parseUnknown(statusCode, true).isOk()).toBe(false)
     })
   })
 
@@ -104,7 +105,7 @@ describe('literalUnion with numbers', () => {
     })
 
     it('should provide correct output type', () => {
-      const result = statusCode.parse(200)
+      const result = parseUnknown(statusCode, 200).expect('valid input')
 
       // Result should be typed as the union of known values + any number
       expectTypeOf(result).toBeNumber()
@@ -118,23 +119,23 @@ describe('literalUnion with booleans', () => {
 
   describe('runtime validation', () => {
     it('should accept boolean values', () => {
-      expect(boolFlag.safeParse(true).success).toBe(true)
-      expect(boolFlag.safeParse(false).success).toBe(true)
+      expect(parseUnknown(boolFlag, true).isOk()).toBe(true)
+      expect(parseUnknown(boolFlag, false).isOk()).toBe(true)
     })
 
     it('should reject non-boolean values', () => {
-      expect(boolFlag.safeParse('true').success).toBe(false)
-      expect(boolFlag.safeParse(1).success).toBe(false)
-      expect(boolFlag.safeParse(0).success).toBe(false)
-      expect(boolFlag.safeParse(null).success).toBe(false)
-      expect(boolFlag.safeParse(undefined).success).toBe(false)
-      expect(boolFlag.safeParse({}).success).toBe(false)
+      expect(parseUnknown(boolFlag, 'true').isOk()).toBe(false)
+      expect(parseUnknown(boolFlag, 1).isOk()).toBe(false)
+      expect(parseUnknown(boolFlag, 0).isOk()).toBe(false)
+      expect(parseUnknown(boolFlag, null).isOk()).toBe(false)
+      expect(parseUnknown(boolFlag, undefined).isOk()).toBe(false)
+      expect(parseUnknown(boolFlag, {}).isOk()).toBe(false)
     })
   })
 
   describe('type inference', () => {
     it('should provide correct output type', () => {
-      const result = boolFlag.parse(true)
+      const result = parseUnknown(boolFlag, true).expect('valid input')
 
       // Result should be typed as boolean
       expectTypeOf(result).toBeBoolean()

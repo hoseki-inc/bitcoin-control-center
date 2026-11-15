@@ -31,7 +31,7 @@ pnpm build
 
 - Give exported functions explicit return types.
 - Prefer `Result` values to exceptions for expected failures.
-- Use `parse` or `parseUnknown` from `@hoseki/packages/result/lib/parse` instead of Zod's `.parse()` or `.safeParse()`.
+- Use `parse` or `parseUnknown` from `@hoseki/packages/result/lib/parse` instead of Zod's `.parse()` or `.safeParse()`. Lint enforces this everywhere except `start9/`, which uses the StartOS SDK's Zod 4 and no Patina.
 - Use Chakra's `textStyle` typography tokens instead of separate `fontSize` and `lineHeight` props.
 - Install exact dependency versions with `pnpm add -E` or `pnpm add -wDE`.
 

@@ -310,13 +310,13 @@ async function withTestSetup(run: () => Promise<void>): Promise<void> {
         return trpcResult({ profiles, activeId, limit: 5 })
       }
       if (path === 'settings.connectionProfiles.create') {
-        const request = CreateRequestSchema.parse(input)
+        const request = parseUnknown(CreateRequestSchema, input).expect('create request')
         const created = { ...profile('New'), ...request, torEnabled: request.torEnabled ?? false }
         profiles.push(created)
         return trpcResult(created)
       }
       if (path === 'settings.connectionProfiles.rename' || path === 'settings.connectionProfiles.delete') {
-        const reference = ReferenceSchema.parse(input)
+        const reference = parseUnknown(ReferenceSchema, input).expect('profile reference')
         const index = profiles.findIndex((item) => item.id === reference.id)
         const current = profiles[index]
         if (!current || current.revision !== reference.revision) {
@@ -335,7 +335,7 @@ async function withTestSetup(run: () => Promise<void>): Promise<void> {
         return trpcResult(renamed)
       }
       if (path === 'settings.connectionProfiles.connect') {
-        const request = ConnectRequestSchema.parse(input)
+        const request = parseUnknown(ConnectRequestSchema, input).expect('connect request')
         const result = await saveResponse
         const index = profiles.findIndex((item) => item.id === request.id)
         const current = profiles[index]

@@ -1,4 +1,5 @@
 import { Err, Ok, type Result } from '@hoseki/packages/result'
+import { parse } from '@hoseki/packages/result/lib/parse'
 import { z } from 'zod'
 
 export const TimestampSchema = z
@@ -22,9 +23,9 @@ export function toTimestamp(date: Date): Timestamp {
 }
 
 export function fromTimestamp(timestamp: number): Result<Date, Error> {
-  const result = TimestampSchema.safeParse(timestamp)
-  if (!result.success) {
-    return Err(new Error(`Invalid timestamp: ${result.error.message}`))
+  const result = parse(TimestampSchema, timestamp)
+  if (result.isErr()) {
+    return Err(new Error(`Invalid timestamp: ${result.unwrapErr().message}`))
   }
-  return Ok(new Date(result.data * 1000))
+  return Ok(new Date(result.unwrap() * 1000))
 }

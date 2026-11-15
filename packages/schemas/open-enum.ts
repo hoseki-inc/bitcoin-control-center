@@ -1,3 +1,4 @@
+import { parseUnknown } from '@hoseki/packages/result/lib/parse'
 import { z } from 'zod'
 
 const string = z.string()
@@ -9,13 +10,13 @@ export function openEnum<T extends string>(values: Readonly<[T, ...T[]]>) {
   const enumSchema = z.enum(values)
   return z.preprocess(
     (arg) => {
-      const stringValue = string.safeParse(arg)
-      if (stringValue.success) {
-        const enumValue = enumSchema.safeParse(arg)
-        if (enumValue.success) {
-          return { enum: enumValue.data }
+      const stringValue = parseUnknown(string, arg)
+      if (stringValue.isOk()) {
+        const enumValue = parseUnknown(enumSchema, arg)
+        if (enumValue.isOk()) {
+          return { enum: enumValue.unwrap() }
         } else {
-          return { string: stringValue.data }
+          return { string: stringValue.unwrap() }
         }
       }
       return arg

@@ -1,45 +1,46 @@
 import { expect, test } from 'vitest'
+import { parseUnknown } from '../result/lib/parse'
 import { unixTimestamp, utcDatetimeString } from './date'
 
 test('utcDateString', () => {
   let str = '2022-06-18'
-  let parsed = utcDatetimeString('yyyy-MM-dd HH:mm:ss').safeParse(str)
-  expect(parsed.success).toBe(false)
+  let parsed = parseUnknown(utcDatetimeString('yyyy-MM-dd HH:mm:ss'), str)
+  expect(parsed.isOk()).toBe(false)
 
   str = '2022-06-18 07:15:58'
-  parsed = utcDatetimeString('yyyy-MM-dd HH:mm:ss').safeParse(str)
-  expect(parsed.success && parsed.data).toEqual(new Date('2022-06-18T07:15:58.000Z'))
+  parsed = parseUnknown(utcDatetimeString('yyyy-MM-dd HH:mm:ss'), str)
+  expect(parsed.isOk() && parsed.expect('valid input')).toEqual(new Date('2022-06-18T07:15:58.000Z'))
 })
 
 test('unixTimestamp', () => {
   // Test valid timestamp
   const validTimestamp = 1615768450
-  const parsed = unixTimestamp().safeParse(validTimestamp)
-  expect(parsed.success).toBe(true)
-  expect(parsed.data).toEqual(new Date('2021-03-15T00:34:10.000Z'))
+  const parsed = parseUnknown(unixTimestamp(), validTimestamp)
+  expect(parsed.isOk()).toBe(true)
+  expect(parsed.expect('valid input')).toEqual(new Date('2021-03-15T00:34:10.000Z'))
 
   // Test zero timestamp
   const zeroTimestamp = 0
-  const parsedZero = unixTimestamp().safeParse(zeroTimestamp)
-  expect(parsedZero.success).toBe(true)
-  expect(parsedZero.data).toEqual(new Date('1970-01-01T00:00:00.000Z'))
+  const parsedZero = parseUnknown(unixTimestamp(), zeroTimestamp)
+  expect(parsedZero.isOk()).toBe(true)
+  expect(parsedZero.expect('valid input')).toEqual(new Date('1970-01-01T00:00:00.000Z'))
 
   // Test invalid cases
   const negativeTimestamp = -1
-  const parsedNegative = unixTimestamp().safeParse(negativeTimestamp)
-  expect(parsedNegative.success).toBe(false)
+  const parsedNegative = parseUnknown(unixTimestamp(), negativeTimestamp)
+  expect(parsedNegative.isOk()).toBe(false)
 
   const floatTimestamp = 1615766400.5
-  const parsedFloat = unixTimestamp().safeParse(floatTimestamp)
-  expect(parsedFloat.success).toBe(false)
+  const parsedFloat = parseUnknown(unixTimestamp(), floatTimestamp)
+  expect(parsedFloat.isOk()).toBe(false)
 
   const giantTimestamp = 8640000000001 // max a Date constructor can handle is 8640000000000000.5
-  const parsedGiant = unixTimestamp().safeParse(giantTimestamp)
-  expect(parsedGiant.success).toBe(false)
+  const parsedGiant = parseUnknown(unixTimestamp(), giantTimestamp)
+  expect(parsedGiant.isOk()).toBe(false)
 
   // Test with a recent timestamp
   const now = Math.floor(Date.now() / 1000)
-  const parsedNow = unixTimestamp().safeParse(now)
-  expect(parsedNow.success).toBe(true)
-  expect(parsedNow.data).toEqual(new Date(now * 1000))
+  const parsedNow = parseUnknown(unixTimestamp(), now)
+  expect(parsedNow.isOk()).toBe(true)
+  expect(parsedNow.expect('valid input')).toEqual(new Date(now * 1000))
 })
