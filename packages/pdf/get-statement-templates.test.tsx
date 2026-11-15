@@ -7,7 +7,7 @@ import React from 'react'
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import { getStatementDocumentTemplates } from './get-statement-templates'
-import { sampleCustomStatement, sampleMonthlyStatement } from './preview/presets'
+import { sampleCustomStatement, sampleMonthlyStatement } from './sample-statements'
 
 describe('statement PDF runtime', () => {
   it('keeps the tested renderer version aligned with both packaged runtimes', () => {
@@ -27,7 +27,7 @@ describe('statement PDF runtime', () => {
   it.each(['custom', 'monthly', 'envelope'] as const)(
     'renders the %s statement with local fonts and the real renderer',
     async (variant) => {
-      const fonts = fileURLToPath(new URL('./preview/public/fonts/geist', import.meta.url))
+      const fonts = fileURLToPath(new URL('../../apps/control-center/public/fonts/geist', import.meta.url))
       const { CustomStatementDocument, MonthlyStatementDocument, EnvelopeDocument } = getStatementDocumentTemplates(
         pdfRenderer,
         fonts,

@@ -9,7 +9,7 @@ import { parseUnknown } from '../result/lib/parse'
 import { AmountSchema, PdfStatementSchema } from '../schemas/pdf-statement'
 import { StatementQuoteCurrencySchema } from '../schemas/statement-quote'
 import { getStatementDocumentTemplates } from './get-statement-templates'
-import { sampleCustomStatement, sampleMonthlyStatement } from './preview/presets'
+import { sampleCustomStatement, sampleMonthlyStatement } from './sample-statements'
 
 const fonts = resolve(import.meta.dirname, '../../apps/control-center/public/fonts/geist')
 const templates = getStatementDocumentTemplates(pdfRenderer, fonts)
