@@ -613,19 +613,27 @@ const registryRouter = router({
           derivationPath: DerivationPathString.nullable().optional(),
         }),
       )
-      .mutation(async ({ ctx, input }) => {
-        const db = ctx.app.database
-        const updated = await db
-          .update(keystoreTable)
-          .set({ label: input.label, wallet: input.wallet, model: input.model, derivationPath: input.derivationPath })
-          .where(eq(keystoreTable.id, input.id))
-          .returning()
-        const ks = updated[0]
-        if (!ks) {
-          throw new TRPCError({ code: 'NOT_FOUND', message: 'Keystore not found' })
-        }
-        return keystoreRowToDto(ks)
-      }),
+      .mutation(async ({ ctx, input }) =>
+        ctx.app.database.transaction(async (db) => {
+          const updated = await db
+            .update(keystoreTable)
+            .set({ label: input.label, wallet: input.wallet, model: input.model, derivationPath: input.derivationPath })
+            .where(eq(keystoreTable.id, input.id))
+            .returning()
+          const ks = updated[0]
+          if (!ks) {
+            throw new TRPCError({ code: 'NOT_FOUND', message: 'Keystore not found' })
+          }
+          // A Bitkey can't sign the ownership proof, so a pending account would wait for it forever.
+          if (ks.wallet === 'bitkey') {
+            await db
+              .update(accountTable)
+              .set({ status: 'unverified' })
+              .where(and(eq(accountTable.id, ks.accountId), eq(accountTable.status, 'pending')))
+          }
+          return keystoreRowToDto(ks)
+        }),
+      ),
 
     create: router({
       singlesig: protectedProcedure
