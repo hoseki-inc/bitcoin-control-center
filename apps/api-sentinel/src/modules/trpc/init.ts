@@ -13,7 +13,7 @@ export interface TRPCContext {
   request?: RequestAuth
 }
 
-export const t = initTRPC.context<TRPCContext>().create({
+const t = initTRPC.context<TRPCContext>().create({
   transformer,
   errorFormatter(input) {
     const errorDetails = input.shape
@@ -28,6 +28,9 @@ export const t = initTRPC.context<TRPCContext>().create({
     return { ...errorDetails, message }
   },
 })
+
+/** Groups routes. `t` itself stays private, so no route can start from the unchecked `t.procedure`. */
+export const router = t.router
 
 /** Only for the sign-in routes. Everything else uses `protectedProcedure`. */
 export const openProcedure = t.procedure

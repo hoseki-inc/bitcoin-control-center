@@ -54,7 +54,7 @@ import { type ConnectionDetails, MAX_CONNECTION_PROFILES } from '../connection_p
 import { PRICE_FALLBACKS_SETTING, PRICE_SOURCES, PRICE_SOURCE_SETTING } from '../price/service'
 import { StatementMapper } from '../statements/mapper'
 import { STATEMENT_SOURCES, loggableFailure, statementFailureMessage } from '../statements/service'
-import { protectedProcedure, t } from './init'
+import { protectedProcedure, router } from './init'
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -404,7 +404,7 @@ function validateSigningAddress(message: SignedMessageRow, identity: SigningIden
 
 // ─── portalProve.controlCenter ──────────────────────────────────────────────
 
-const controlCenterRouter = t.router({
+const controlCenterRouter = router({
   getData: protectedProcedure
     .input(
       z
@@ -467,8 +467,8 @@ const controlCenterRouter = t.router({
 
 // ─── portalProve.registry ───────────────────────────────────────────────────
 
-const registryRouter = t.router({
-  claims: t.router({
+const registryRouter = router({
+  claims: router({
     list: protectedProcedure
       // `excludePending` keeps only verified accounts, so it also leaves out accounts that can't be verified.
       .input(z.object({ excludePending: z.boolean().optional() }).optional())
@@ -627,7 +627,7 @@ const registryRouter = t.router({
         return keystoreRowToDto(ks)
       }),
 
-    create: t.router({
+    create: router({
       singlesig: protectedProcedure
         .input(
           z.object({
@@ -839,7 +839,7 @@ const registryRouter = t.router({
         }),
     }),
 
-    get: t.router({
+    get: router({
       byId: protectedProcedure.input(z.object({ id: z.string() })).query(async ({ ctx, input }) => {
         const claim = await getFullClaimDto(ctx.app.database, input.id)
         if (!claim) {
@@ -868,7 +868,7 @@ const registryRouter = t.router({
     }),
   }),
 
-  challenges: t.router({
+  challenges: router({
     create: protectedProcedure
       .input(z.object({ claimId: z.string(), keystoreId: z.string().optional() }))
       .mutation(async ({ ctx, input }) => {
@@ -1008,7 +1008,7 @@ const registryRouter = t.router({
     }),
   }),
 
-  challengeMessages: t.router({
+  challengeMessages: router({
     create: protectedProcedure
       .input(z.object({ challengeId: z.string(), keystoreId: z.string() }))
       .mutation(async ({ ctx, input }): Promise<ChallengeMessageDto> => {
@@ -1244,7 +1244,7 @@ const registryRouter = t.router({
 
 // ─── portalProve.exchange ───────────────────────────────────────────────────
 
-const proveExchangeRouter = t.router({
+const proveExchangeRouter = router({
   list: protectedProcedure.query(async ({ ctx }) => {
     const accounts = await ctx.app.exchangeService.listAccounts()
     return accounts.map(exchangeAccountToDto)
@@ -1272,7 +1272,7 @@ const proveExchangeRouter = t.router({
     }
   }),
 
-  coinbase: t.router({
+  coinbase: router({
     connect: protectedProcedure
       .input(
         z.object({
@@ -1295,7 +1295,7 @@ const proveExchangeRouter = t.router({
     }),
   }),
 
-  strike: t.router({
+  strike: router({
     connect: protectedProcedure
       .input(
         z.object({
@@ -1364,7 +1364,7 @@ const proveExchangeRouter = t.router({
       }),
   }),
 
-  robinhood: t.router({
+  robinhood: router({
     connect: protectedProcedure
       .input(
         z.object({
@@ -1388,7 +1388,7 @@ const proveExchangeRouter = t.router({
     }),
   }),
 
-  kraken: t.router({
+  kraken: router({
     connect: protectedProcedure
       .input(
         z.object({
@@ -1414,7 +1414,7 @@ const proveExchangeRouter = t.router({
 
 // ─── portalProve.onchain ────────────────────────────────────────────────────
 
-const onchainRouter = t.router({
+const onchainRouter = router({
   bitcoinAccountBalances: protectedProcedure
     .input(z.object({ accounts: z.array(z.string()) }))
     .query(async ({ ctx, input }) => {
@@ -1514,7 +1514,7 @@ const onchainRouter = t.router({
 
 // ─── portalProve.statement ───────────────────────────────────────────────────
 
-const statementRouter = t.router({
+const statementRouter = router({
   list: protectedProcedure.query(async ({ ctx }) => {
     return ctx.app.statementService.list()
   }),
@@ -1659,7 +1659,7 @@ const statementRouter = t.router({
 
 // ─── portalProve.manual ─────────────────────────────────────────────────────
 
-const manualRouter = t.router({
+const manualRouter = router({
   list: protectedProcedure.query(async ({ ctx }) => {
     return (await ctx.app.manualService.listAccounts()).map((a) => ({
       id: a.id,
@@ -1750,7 +1750,7 @@ const manualRouter = t.router({
     }
   }),
 
-  transactions: t.router({
+  transactions: router({
     list: protectedProcedure.input(z.object({ accountId: z.string() })).query(async ({ ctx, input }) => {
       return ctx.app.manualService.listTransactions(input.accountId)
     }),
@@ -1785,7 +1785,7 @@ const manualRouter = t.router({
 
 // ─── portalProve.etf ────────────────────────────────────────────────────────
 
-const etfRouter = t.router({
+const etfRouter = router({
   list: protectedProcedure.query(async ({ ctx }) => {
     return (await ctx.app.etfService.listAccounts()).map((a) => ({
       id: a.id,
@@ -1857,7 +1857,7 @@ const etfRouter = t.router({
     }
   }),
 
-  holdings: t.router({
+  holdings: router({
     list: protectedProcedure.input(z.object({ accountId: z.string() })).query(async ({ ctx, input }) => {
       return ctx.app.etfService.listHoldings(input.accountId)
     }),
@@ -1888,7 +1888,7 @@ const etfRouter = t.router({
   }),
 })
 
-const portalProveRouter = t.router({
+const portalProveRouter = router({
   controlCenter: controlCenterRouter,
   registry: registryRouter,
   exchange: proveExchangeRouter,
@@ -1924,7 +1924,7 @@ const portalProveRouter = t.router({
 
   // ─── Account management (used by local UI) ─────────────────────────────
 
-  accounts: t.router({
+  accounts: router({
     add: protectedProcedure
       .input(
         z.object({
@@ -1971,7 +1971,7 @@ const portalProveRouter = t.router({
 
 // ─── Blocks ─────────────────────────────────────────────────────────────────
 
-const blocksRouter = t.router({
+const blocksRouter = router({
   tip: protectedProcedure.query(async ({ ctx }) => {
     const result = await ctx.app.onchainProvider.getBlocksTip()
     if (result.isErr()) {
@@ -2150,7 +2150,7 @@ const desktopConnectionProcedure = protectedProcedure.use(async ({ ctx, next }) 
   return next({ ctx: { ...ctx, profiles: ctx.app.connectionProfiles } })
 })
 
-const connectionProfilesRouter = t.router({
+const connectionProfilesRouter = router({
   list: desktopConnectionProcedure.query(async ({ ctx }) => ({
     profiles: await ctx.profiles.list(),
     activeId: (await ctx.profiles.getActiveId()) ?? null,
@@ -2204,7 +2204,7 @@ const connectionProfilesRouter = t.router({
     }),
 })
 
-const settingsRouter = t.router({
+const settingsRouter = router({
   connectionProfiles: connectionProfilesRouter,
   get: protectedProcedure.input(z.object({ key: z.string() })).query(async ({ ctx, input }) => {
     if (!isReadableSetting(input.key)) {
@@ -2360,7 +2360,7 @@ const settingsRouter = t.router({
 
 // ─── Root Router ────────────────────────────────────────────────────────────
 
-export const appRouter = t.router({
+export const appRouter = router({
   auth: authRouter,
   portalProve: portalProveRouter,
   blocks: blocksRouter,

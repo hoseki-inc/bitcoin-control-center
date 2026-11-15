@@ -24,6 +24,11 @@
           {
             "group": ["../**/apps/**", "./**/apps/**"],
             "message": "Use '@hoseki/apps/*' instead of a relative path into apps/."
+          },
+          {
+            "group": ["**/trpc/init", "**/trpc/init.ts", "./init", "./init.ts"],
+            "importNames": ["openProcedure"],
+            "message": "Only the sign-in routes in modules/auth/router.ts may skip the PIN. Use protectedProcedure."
           }
         ]
       }
@@ -266,6 +271,26 @@
     "anti-slop/require-safety-comment-for-type-assertion": "error"
   },
   "overrides": [
+    {
+      "files": ["apps/api-sentinel/src/modules/auth/router.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["../**/packages/**", "./**/packages/**"],
+                "message": "Use '@hoseki/packages/*' instead of a relative path into packages/."
+              },
+              {
+                "group": ["../**/apps/**", "./**/apps/**"],
+                "message": "Use '@hoseki/apps/*' instead of a relative path into apps/."
+              }
+            ]
+          }
+        ]
+      }
+    },
     {
       "files": ["**/*.test.ts", "**/*.test.tsx"],
       "rules": {
