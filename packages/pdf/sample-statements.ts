@@ -1,5 +1,5 @@
 import { Decimal } from 'decimal.js'
-import type { CustomPdfStatement, MonthlyPdfStatement } from '../../schemas'
+import type { CustomPdfStatement, MonthlyPdfStatement } from '../schemas'
 
 export const sampleCustomStatement: CustomPdfStatement = {
   id: 'st_stmt_samplestatement123',

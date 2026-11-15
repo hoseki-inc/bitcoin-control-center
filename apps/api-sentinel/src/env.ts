@@ -1,3 +1,4 @@
+import { parseUnknown } from '@hoseki/packages/result/lib/parse'
 import { z } from 'zod'
 
 const EnvSchema = z.object({
@@ -58,6 +59,11 @@ export function loadEnv(): Env {
   if (cached) {
     return cached
   }
-  cached = EnvSchema.parse(process.env)
+  const env = parseUnknown(EnvSchema, process.env)
+  if (env.isErr()) {
+    // Fail startup with Zod's own error, which names each bad variable.
+    throw env.unwrapErr().cause
+  }
+  cached = env.unwrap()
   return cached
 }

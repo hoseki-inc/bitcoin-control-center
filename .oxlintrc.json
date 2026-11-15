@@ -33,6 +33,34 @@
         ]
       }
     ],
+    "no-restricted-properties": [
+      "error",
+      {
+        "property": "safeParse",
+        "message": "Use parse or parseUnknown from @hoseki/packages/result/lib/parse, which return a Result."
+      },
+      {
+        "property": "safeParseAsync",
+        "message": "Use parse or parseUnknown from @hoseki/packages/result/lib/parse, which return a Result."
+      },
+      {
+        "property": "parseAsync",
+        "message": "Use parse or parseUnknown from @hoseki/packages/result/lib/parse, which return a Result."
+      },
+      {
+        "property": "parse",
+        "allowObjects": [
+          "JSON",
+          "Date",
+          "SuperJSON",
+          "sj",
+          "serializer",
+          "SinglesigDescriptorParser",
+          "MultisigDescriptorParser"
+        ],
+        "message": "Use parse or parseUnknown from @hoseki/packages/result/lib/parse, which return a Result."
+      }
+    ],
     "no-shadow": "error",
     "no-unused-expressions": "error",
     "no-unused-vars": "error",
@@ -290,6 +318,10 @@
           }
         ]
       }
+    },
+    {
+      "files": ["packages/result/lib/parse/parse.ts", "start9/**"],
+      "rules": { "no-restricted-properties": "off" }
     },
     {
       "files": ["**/*.test.ts", "**/*.test.tsx"],

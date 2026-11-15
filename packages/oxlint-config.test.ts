@@ -16,7 +16,7 @@ import { expect, it, onTestFinished } from 'vitest'
 
 const repository = fileURLToPath(new URL('../', import.meta.url))
 let fixture: string
-const scopes = ['apps/control-center', 'packages/ui', 'packages/pdf/preview', '.ladle']
+const scopes = ['apps/control-center', 'packages/ui', '.ladle']
 async function withTestSetup(run: () => Promise<void>): Promise<void> {
   // Vitest owns teardown so it has its own timeout and runs once, even after a test timeout.
   onTestFinished(async () => {
@@ -27,12 +27,7 @@ async function withTestSetup(run: () => Promise<void>): Promise<void> {
   for (const scope of scopes) {
     mkdirSync(join(fixture, scope), { recursive: true })
   }
-  for (const name of [
-    '.oxlintrc.json',
-    '.oxlintrc.imports.json',
-    'packages/pdf/.oxlintrc.json',
-    'packages/pdf/preview/.oxlintrc.json',
-  ]) {
+  for (const name of ['.oxlintrc.json', '.oxlintrc.imports.json', 'packages/pdf/.oxlintrc.json']) {
     const destination = join(fixture, name)
     mkdirSync(dirname(destination), { recursive: true })
     copyFileSync(join(repository, name), destination)
@@ -129,7 +124,7 @@ it.each([
 
 it('sorts named imports after setup without applying unrelated fixes', async () => {
   await withTestSetup(async () => {
-    const path = join(fixture, 'packages/pdf/preview/probe.ts')
+    const path = join(fixture, 'packages/pdf/probe.ts')
     const source = [
       'const setup = true',
       "import { zebra as last, type Apple as First } from 'example'",

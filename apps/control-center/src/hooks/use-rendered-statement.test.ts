@@ -1,6 +1,6 @@
 // @vitest-environment node
 import * as pdfRenderer from '@hoseki/packages/pdf'
-import { sampleCustomStatement } from '@hoseki/packages/pdf/preview/presets'
+import { sampleCustomStatement } from '@hoseki/packages/pdf/sample-statements'
 import type { PdfStatement } from '@hoseki/packages/schemas'
 import { act, createElement } from 'react'
 import { type Root, createRoot } from 'react-dom/client'

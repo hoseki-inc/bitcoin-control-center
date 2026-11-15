@@ -1,5 +1,6 @@
 import { Err, Ok, asyncFn } from '@hoseki/packages/result'
 import type { Result } from '@hoseki/packages/result'
+import { parseUnknown } from '@hoseki/packages/result/lib/parse'
 import type { Logger } from 'pino'
 import { z } from 'zod'
 
@@ -41,12 +42,12 @@ export const getStrikeBtcBalance = asyncFn(async (apiKey: string, logger: Logger
   }
 
   const json: unknown = await response.json()
-  const parsed = StrikeBalanceSchema.safeParse(json)
-  if (!parsed.success) {
-    return Err(new Error(`Invalid Strike API response: ${parsed.error.message}`))
+  const parsed = parseUnknown(StrikeBalanceSchema, json)
+  if (parsed.isErr()) {
+    return Err(new Error(`Invalid Strike API response: ${parsed.unwrapErr().message}`))
   }
 
-  const btcBalance = parsed.data.find((b) => b.currency === 'BTC')
+  const btcBalance = parsed.unwrap().find((b) => b.currency === 'BTC')
   if (!btcBalance) {
     return Err(new Error('No BTC balance found in Strike account'))
   }
@@ -78,11 +79,11 @@ export const validateStrikeApiKey = asyncFn(
     }
 
     const json: unknown = await response.json()
-    const parsed = StrikeBalanceSchema.safeParse(json)
-    if (!parsed.success) {
-      return Err(new Error(`Invalid Strike API response: ${parsed.error.message}`))
+    const parsed = parseUnknown(StrikeBalanceSchema, json)
+    if (parsed.isErr()) {
+      return Err(new Error(`Invalid Strike API response: ${parsed.unwrapErr().message}`))
     }
     logger.info('Strike API key validated successfully')
-    return Ok(parsed.data)
+    return Ok(parsed.unwrap())
   },
 )

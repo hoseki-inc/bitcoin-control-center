@@ -2,6 +2,7 @@ import { expect, expectTypeOf, test } from 'vitest'
 import { z } from 'zod'
 import { Network } from '../bitcoin'
 import * as descriptors from '../bitcoin/descriptor_utils'
+import { parseUnknown } from '../result/lib/parse'
 import {
   bitcoinAddressDescriptor,
   bitcoinAddressString,
@@ -34,15 +35,15 @@ const ADDRESS_FIXTURES = [...MAINNET_ADDRESSES, ...TESTNET_ADDRESSES, ...REGTEST
 
 test('bitcoinAddressString', () => {
   for (const fixture of ADDRESS_FIXTURES) {
-    const address = bitcoinAddressString.safeParse(fixture)
-    expect(address.success, fixture).toBe(true)
+    const address = parseUnknown(bitcoinAddressString, fixture)
+    expect(address.isOk(), fixture).toBe(true)
   }
 })
 
 test('bitcoinAddressDescriptor', () => {
   for (const fixture of ADDRESS_FIXTURES) {
-    const address = bitcoinAddressDescriptor.safeParse(`addr(${fixture})`)
-    expect(address.success, fixture).toBe(true)
+    const address = parseUnknown(bitcoinAddressDescriptor, `addr(${fixture})`)
+    expect(address.isOk(), fixture).toBe(true)
   }
 })
 
@@ -55,8 +56,8 @@ const XPUB_FIXTURES = [XPUB, TPUB]
 
 test('bitcoinXpubStringSchema - accepts only core xpub/tpub', () => {
   for (const fixture of XPUB_FIXTURES) {
-    const xpub = bitcoinXpubStringSchema.safeParse(fixture)
-    expect(xpub.success, fixture).toBe(true)
+    const xpub = parseUnknown(bitcoinXpubStringSchema, fixture)
+    expect(xpub.isOk(), fixture).toBe(true)
   }
 })
 
@@ -72,8 +73,8 @@ test('bitcoinXpubStringSchema - rejects SLIP-132 extended public keys', () => {
     'Vpub5gJQQ468LLs64BBuNWpnJAitv9sAaTa6jQxAYjQAUdrzMCAgaNFQUn52fR7SPKunFthTcEiM9kjPTdmWRxDWXZPYQTBBCRoYD6vakuwT5nx',
   ]
   for (const key of slip132Keys) {
-    const result = bitcoinXpubStringSchema.safeParse(key)
-    expect(result.success, `Should reject SLIP-132 key: ${key}`).toBe(false)
+    const result = parseUnknown(bitcoinXpubStringSchema, key)
+    expect(result.isOk(), `Should reject SLIP-132 key: ${key}`).toBe(false)
   }
 })
 
@@ -99,12 +100,12 @@ test('bitcoinSinglesigAccountDescriptor', () => {
     for (const script of SINGLESIG_SCRIPT_FIXTURES) {
       for (const range of ADDRESS_RANGE_FIXTURES) {
         const descriptor: string = wrapScript(script, `${fixture}/${range}/*`)
-        let account = bitcoinSinglesigAccountDescriptor.safeParse(descriptor)
-        expect(account.success, descriptor).toBe(true)
+        let account = parseUnknown(bitcoinSinglesigAccountDescriptor, descriptor)
+        expect(account.isOk(), descriptor).toBe(true)
 
         const withChecksum = descriptors.checksum(descriptor).expect('valid checksum')
-        account = bitcoinSinglesigAccountDescriptor.safeParse(withChecksum)
-        expect(account.success, descriptor).toBe(true)
+        account = parseUnknown(bitcoinSinglesigAccountDescriptor, withChecksum)
+        expect(account.isOk(), descriptor).toBe(true)
       }
     }
   }
@@ -157,8 +158,8 @@ test('bitcoinMultisigAccountDescriptor', () => {
         for (const range of ADDRESS_RANGE_FIXTURES) {
           const accountRanges = fixture.map((xpub) => `${xpub}/${range}/*`)
           const descriptor: string = wrapMultiScript(script, multi, accountRanges)
-          let account = bitcoinMultisigAccountDescriptor.safeParse(descriptor)
-          expect(account.success, descriptor).toBe(true)
+          let account = parseUnknown(bitcoinMultisigAccountDescriptor, descriptor)
+          expect(account.isOk(), descriptor).toBe(true)
         }
       }
     }
@@ -177,30 +178,30 @@ test('bitcoinNetwork', () => {
   const schema = bitcoinNetwork(dummy, [Network.Mainnet])
 
   // Check that the schema outputs the inferred type
-  let typeCheck = schema.parse({
+  let typeCheck = parseUnknown(schema, {
     dummy: true,
     network: Network.Mainnet,
-  })
+  }).expect('valid input')
   expectTypeOf(typeCheck).toEqualTypeOf<z.infer<typeof schema>>()
 
   // Check that the schema accepts a Network
-  let parsed = schema.safeParse({
+  let parsed = parseUnknown(schema, {
     dummy: true,
     network: Network.Mainnet,
   })
-  expect(parsed.success).toBe(true)
+  expect(parsed.isOk()).toBe(true)
 
   // Check that the schema accepts a function that returns the network
-  parsed = schema.safeParse({
+  parsed = parseUnknown(schema, {
     dummy: true,
     network: () => Network.Mainnet,
   })
-  expect(parsed.success).toBe(true)
+  expect(parsed.isOk()).toBe(true)
 
   // Check that the schema rejects a different Network
-  parsed = schema.safeParse({
+  parsed = parseUnknown(schema, {
     dummy: true,
     network: Network.Testnet,
   })
-  expect(parsed.success).toBe(false)
+  expect(parsed.isOk()).toBe(false)
 })

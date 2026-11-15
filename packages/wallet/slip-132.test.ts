@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { Network, Xpub, bs58check } from '../bitcoin'
+import { parseUnknown } from '../result/lib/parse'
 import * as Slip132 from './slip-132'
 
 const XPUB =
@@ -98,13 +99,13 @@ describe('SLIP-132 conversion', () => {
     ]
 
     for (const key of testKeys) {
-      const result = Slip132.xpubStringSchema.safeParse(key)
-      expect(result.success, `Should accept ${key}`).toBe(true)
-      if (result.success) {
+      const result = parseUnknown(Slip132.xpubStringSchema, key)
+      expect(result.isOk(), `Should accept ${key}`).toBe(true)
+      if (result.isOk()) {
         // Should output a Xpub object (not a string)
-        expect(result.data).toBeInstanceOf(Xpub)
+        expect(result.unwrap()).toBeInstanceOf(Xpub)
         // When converted to string, should be in core xpub/tpub format
-        expect(result.data.toString()).toMatch(/^[xt]pub/)
+        expect(result.unwrap().toString()).toMatch(/^[xt]pub/)
       }
     }
   })

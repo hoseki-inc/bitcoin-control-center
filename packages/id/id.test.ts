@@ -1,4 +1,5 @@
 import { describe, expect, expectTypeOf, it } from 'vitest'
+import { parseUnknown } from '../result/lib/parse'
 import { Id } from './id'
 
 describe('Id.gen', () => {
@@ -34,13 +35,13 @@ describe('Id.strip', () => {
 describe('Id.schema', () => {
   it('should validate id with correct prefix', () => {
     const schema = Id.schema('test')
-    const result = schema.safeParse('test_abc123')
-    expect(result.success).toBe(true)
+    const result = parseUnknown(schema, 'test_abc123')
+    expect(result.isOk()).toBe(true)
   })
 
   it('should reject id with wrong prefix', () => {
     const schema = Id.schema('test')
-    const result = schema.safeParse('wrong_abc123')
-    expect(result.success).toBe(false)
+    const result = parseUnknown(schema, 'wrong_abc123')
+    expect(result.isOk()).toBe(false)
   })
 })

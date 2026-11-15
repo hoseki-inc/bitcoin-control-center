@@ -2,6 +2,7 @@ import { createPrivateKey, sign } from 'node:crypto'
 import https from 'node:https'
 import { Err, Ok, asyncFn } from '@hoseki/packages/result'
 import type { Result } from '@hoseki/packages/result'
+import { parseUnknown } from '@hoseki/packages/result/lib/parse'
 import { z } from 'zod'
 
 const BASE_HOST = 'trading.robinhood.com'
@@ -209,12 +210,12 @@ export class RobinhoodClient {
       return Err(new Error('Failed to parse Robinhood API response'))
     }
 
-    const parsed = schema.safeParse(responseBody)
-    if (!parsed.success) {
-      return Err(new Error(`Invalid Robinhood API response: ${parsed.error.message}`))
+    const parsed = parseUnknown(schema, responseBody)
+    if (parsed.isErr()) {
+      return Err(new Error(`Invalid Robinhood API response: ${parsed.unwrapErr().message}`))
     }
 
-    return Ok(parsed.data)
+    return Ok(parsed.unwrap())
   }
 
   private async paginate<T>(path: string, itemSchema: z.ZodType<T>): Promise<Result<T[], Error>> {

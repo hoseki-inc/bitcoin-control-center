@@ -580,14 +580,9 @@ const ElectrumJsonFileSchema = z
     const { wallet_type, use_encryption, ...others } = json
 
     // Filter to find only valid keystores
-    const keystores = Object.values(others).filter((value): value is z.infer<typeof ElectrumKeystoreSchema> => {
-      try {
-        ElectrumKeystoreSchema.parse(value)
-        return true
-      } catch {
-        return false
-      }
-    })
+    const keystores = Object.values(others).filter((value): value is z.infer<typeof ElectrumKeystoreSchema> =>
+      parseUnknown(ElectrumKeystoreSchema, value).isOk(),
+    )
 
     return { wallet_type, use_encryption, keystores }
   })
