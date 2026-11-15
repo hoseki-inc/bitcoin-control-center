@@ -1,4 +1,7 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { type AddressInfo, type Server, createServer } from 'node:net'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { Err, Ok, asyncFn } from '@hoseki/packages/result'
 import { parseUnknown } from '@hoseki/packages/result/lib/parse'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
@@ -199,5 +202,27 @@ describe('Sentinel listening port', () => {
     const server = await start({ listenPort: 0 })
     await expect(health(server.port)).resolves.toEqual({ status: 'ok' })
     await expect(fetch(`http://[::1]:${server.port}/health`)).rejects.toThrow('fetch failed')
+  })
+})
+
+describe('Sentinel routes', () => {
+  // Routes outside tRPC skip the PIN check and the route lint, so each one must be a deliberate choice.
+  it('answers only on health, tRPC, the CORS preflight and the static UI', async () => {
+    setup()
+    const appDir = mkdtempSync(join(tmpdir(), 'sentinel-routes-'))
+    onTestFinished(() => {
+      rmSync(appDir, { recursive: true, force: true })
+    })
+    mkdirSync(join(appDir, 'public'))
+    writeFileSync(join(appDir, 'public', 'index.html'), '<html></html>')
+    const fake = queueContext(0)
+    Object.assign(fake.context.env, { APP_DIR: appDir })
+
+    const server = await start({ listenPort: 0 })
+
+    const trpc = server.routes.filter((route) => route.endsWith(' /trpc/:path'))
+    const others = server.routes.filter((route) => !trpc.includes(route))
+    expect(trpc).toContain('POST /trpc/:path')
+    expect([...others].sort()).toEqual(['GET /*', 'GET /health', 'HEAD /*', 'HEAD /health', 'OPTIONS *'])
   })
 })
