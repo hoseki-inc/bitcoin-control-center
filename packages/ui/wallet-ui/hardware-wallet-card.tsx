@@ -156,7 +156,7 @@ export function HardwareWalletCard({
                         defaultValue={wallet.displayName}
                         bgColor={isDisplayNameValid ? 'neutral.100' : 'red.50'}
                         borderColor={isDisplayNameValid ? 'neutral.200' : 'red.500'}
-                        fontSize="14px"
+                        textStyle="text/sm"
                         fontWeight={500}
                         color="neutral.900"
                         p={2}
@@ -170,7 +170,7 @@ export function HardwareWalletCard({
                         py={0.5}
                         px={1.5}
                         fontWeight={500}
-                        fontSize="12px"
+                        textStyle="text/xs"
                         borderRadius="24px"
                         flexShrink={0}
                       >
@@ -182,7 +182,7 @@ export function HardwareWalletCard({
                     </HStack>
                     <chakra.code
                       color="neutral.600"
-                      fontSize="xs"
+                      textStyle="text/xs"
                       display="block"
                       whiteSpace="pre"
                       overflowX="auto"

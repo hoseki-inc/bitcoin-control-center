@@ -3,7 +3,10 @@
   "extends": ["./.oxlintrc.imports.json"],
   "ignorePatterns": ["packages/result/lib/core/**", "tools/oxlint/anti-slop/vendor/**"],
   "plugins": ["oxc", "typescript", "react", "jsx-a11y", "vitest"],
-  "jsPlugins": [{ "name": "anti-slop", "specifier": "./tools/oxlint/anti-slop/vendor/index.ts" }],
+  "jsPlugins": [
+    { "name": "anti-slop", "specifier": "./tools/oxlint/anti-slop/vendor/index.ts" },
+    { "name": "control-center", "specifier": "./tools/oxlint/control-center/index.ts" }
+  ],
   "options": {
     "typeAware": true
   },
@@ -296,7 +299,8 @@
     "anti-slop/no-unknown-type-aliases": "error",
     "anti-slop/no-unsafe-dictionary-type": "error",
     "anti-slop/no-widen-then-assert": "error",
-    "anti-slop/require-safety-comment-for-type-assertion": "error"
+    "anti-slop/require-safety-comment-for-type-assertion": "error",
+    "control-center/use-text-style": "error"
   },
   "overrides": [
     {

@@ -214,7 +214,6 @@ export function SignAddressAndMessageInfo({
           borderRadius="md"
           bgColor="neutral.50"
           fontFamily="'Geist Mono', monospace"
-          fontSize={12}
           h="75px"
         >
           <Text textStyle="text/xs" color="neutral.600">
@@ -235,7 +234,6 @@ export function SignAddressAndMessageInfo({
             borderRadius="md"
             bgColor="neutral.50"
             fontFamily="'Geist Mono', monospace"
-            fontSize={12}
           >
             <Text textStyle="text/xs" color="neutral.600">
               {address.toString()}
@@ -255,7 +253,6 @@ export function SignAddressAndMessageInfo({
               borderRadius="md"
               bgColor="neutral.50"
               fontFamily="'Geist Mono', monospace"
-              fontSize={12}
             >
               <Text textStyle="text/xs" color="neutral.600">
                 {signingPath}

@@ -29,7 +29,7 @@ export const FullForm: Story = () => {
           <Box>
             <FormLabel textStyle="text/lg">Override with textStyle=&quot;text/lg&quot;</FormLabel>
           </Box>
-          <FormLabel textStyle="text/lg" color="red" mb={8} display="block" fontSize="18px">
+          <FormLabel textStyle="text/lg" color="red" mb={8} display="block">
             Override all the default props
           </FormLabel>
         </Box>

@@ -84,7 +84,7 @@ export const WithMultipleItems: Story = () => (
 function Wrapper({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <Box>
-      <Box mb={2} fontSize="sm" fontWeight="medium" color="gray.600">
+      <Box mb={2} textStyle="text/sm" fontWeight="medium" color="gray.600">
         {title}
       </Box>
       <Box border="2px dashed" borderColor="blue.200" borderRadius="md" p={4}>

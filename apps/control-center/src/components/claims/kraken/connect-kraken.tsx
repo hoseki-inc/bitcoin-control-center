@@ -110,7 +110,7 @@ export function ConnectKraken(): JSX.Element {
               <FormLabel textStyle="text/sm" color="neutral.600">
                 API Key
               </FormLabel>
-              <Input {...register('apiKey')} placeholder="Your Kraken API key" fontFamily="mono" fontSize="sm" />
+              <Input {...register('apiKey')} placeholder="Your Kraken API key" fontFamily="mono" textStyle="text/sm" />
               <FormErrorMessage>{errors.apiKey?.message}</FormErrorMessage>
             </FormControl>
 
@@ -123,7 +123,7 @@ export function ConnectKraken(): JSX.Element {
                 type="password"
                 placeholder="Your Kraken secret key (base64)"
                 fontFamily="mono"
-                fontSize="sm"
+                textStyle="text/sm"
               />
               <FormErrorMessage>{errors.secretKey?.message}</FormErrorMessage>
             </FormControl>

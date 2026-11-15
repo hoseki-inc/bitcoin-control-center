@@ -144,3 +144,19 @@ it('sorts named imports after setup without applying unrelated fixes', async () 
     )
   })
 })
+
+it('asks for a textStyle instead of raw font sizes on components, but not on SVG text', async () => {
+  await withTestSetup(async () => {
+    const path = join(fixture, 'apps/control-center/font-probe.jsx')
+    writeFileSync(
+      path,
+      'import { Text, chakra } from "@chakra-ui/react"; export const Probe = () => <><Text fontSize="sm">a</Text><chakra.span lineHeight="20px">b</chakra.span><svg><text fontSize={12}>c</text></svg><Text textStyle="text/sm">d</Text></>',
+    )
+    const result = spawnSync(
+      process.execPath,
+      [resolve(repository, 'node_modules/oxlint/bin/oxlint'), '--format', 'unix', path],
+      { cwd: fixture, encoding: 'utf8', timeout: 15000 },
+    )
+    expect(result.stdout.match(/control-center\(use-text-style\)/g), result.stdout).toHaveLength(2)
+  })
+})

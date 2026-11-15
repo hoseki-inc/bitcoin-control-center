@@ -280,8 +280,8 @@ export function PinCircles({
         p={0}
         m={0}
         cursor="text"
-        // 16px keeps iOS from zooming in on focus.
-        fontSize="16px"
+        // text/md is 16px, which keeps iOS from zooming in on focus.
+        textStyle="text/md"
         color="transparent"
         bg="transparent"
         sx={{ caretColor: 'transparent' }}

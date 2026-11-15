@@ -721,7 +721,7 @@ export function Step9Ui({
           <Box fontFamily="'Geist Mono', monospace">
             <Box bgColor="neutral.100" px={4} py={1}>
               <HStack>
-                <Text flexGrow={1} color="neutral.500" fontSize="12px">
+                <Text flexGrow={1} color="neutral.500" textStyle="text/xs">
                   .txt file contents
                 </Text>
                 <Text>
