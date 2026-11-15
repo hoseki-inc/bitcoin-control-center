@@ -175,6 +175,8 @@ function checkStep(action: Action, before: Map<string, AccountState>, after: Map
 
   for (const state of after.values()) {
     expect(state.status === 'verified' && !state.proven, `${state.id} verified without a signed proof`).toBe(false)
+    // A Bitkey can't sign the ownership proof, so a pending one could never finish.
+    expect(state.status === 'pending' && state.device === 'bitkey', `${state.id} pending on a Bitkey`).toBe(false)
     const previous = before.get(state.id)
     if (!previous) {
       expect(action.kind, 'only creating adds an account').toBe('create')
@@ -191,7 +193,8 @@ function checkStep(action: Action, before: Map<string, AccountState>, after: Map
         expect(previous.device, `${move} on a Bitkey`).not.toBe('bitkey')
       } else {
         expect(move).toBe('pending -> unverified')
-        expect(action.kind, move).toBe('track')
+        const bitkey = action.kind === 'setDevice' && action.device === 'bitkey'
+        expect(action.kind === 'track' || bitkey, `${move} by ${action.kind}`).toBe(true)
       }
     }
     if (action.kind !== 'archive' && action.kind !== 'restore') {
