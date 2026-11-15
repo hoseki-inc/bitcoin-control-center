@@ -185,18 +185,25 @@ describe('ElectrumClient concurrent reconnect', () => {
       const pings = (): number => mock.requests.filter((r) => r.includes('server.ping')).length
       client.checkReachable(60_000)
       client.checkReachable(60_000)
-      await vi.waitFor(() => {
-        expect(client.isReachable()).toBe(true)
-      })
+      // A real socket: allow for a busy machine, since property tests share the CPU.
+      await vi.waitFor(
+        () => {
+          expect(client.isReachable()).toBe(true)
+        },
+        { timeout: 5000 },
+      )
       client.checkReachable(60_000)
       expect(pings()).toBe(1)
 
       mock.dropClients()
       await mock.close()
-      await vi.waitFor(() => {
-        client.checkReachable(0)
-        expect(client.isReachable()).toBe(false)
-      })
+      await vi.waitFor(
+        () => {
+          client.checkReachable(0)
+          expect(client.isReachable()).toBe(false)
+        },
+        { timeout: 5000 },
+      )
     })
   })
 
