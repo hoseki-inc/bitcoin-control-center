@@ -14,6 +14,8 @@ import { registerStaticAssets } from './static_assets'
 
 export interface SentinelServer {
   port: number
+  /** Every route the server answers on, as `METHOD url`. */
+  routes: readonly string[]
   shutdown: () => Promise<void>
 }
 
@@ -51,6 +53,12 @@ export async function main(
     loggerInstance: fastifyLogger,
     childLoggerFactory: requestLoggerFactory,
     forceCloseConnections: 'idle',
+  })
+  const routes: string[] = []
+  server.addHook('onRoute', ({ method, url }) => {
+    for (const verb of [method].flat()) {
+      routes.push(`${verb} ${url}`)
+    }
   })
 
   registerRequestSecurity(server, appCtx.env.SENTINEL_ALLOWED_HOSTS, isProduction, appCtx.env.SENTINEL_ALLOW_IP_HOSTS)
@@ -133,5 +141,5 @@ export async function main(
   process.once('SIGTERM', onSignal)
   process.once('SIGINT', onSignal)
 
-  return { port: boundPort, shutdown }
+  return { port: boundPort, routes, shutdown }
 }
