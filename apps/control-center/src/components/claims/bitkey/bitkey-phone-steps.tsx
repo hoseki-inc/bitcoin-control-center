@@ -1,3 +1,4 @@
+// oxlint-disable control-center/use-text-style -- This draws an iPhone screen at Apple's text sizes, which our type scale doesn't have.
 import { Box, type BoxProps, keyframes, useBreakpointValue } from '@chakra-ui/react'
 import {
   ArrowDownIcon,

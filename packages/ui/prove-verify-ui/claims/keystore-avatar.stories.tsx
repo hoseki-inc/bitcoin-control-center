@@ -15,31 +15,31 @@ export const Default: Story = () => {
     <Grid templateColumns="repeat(4, 1fr)" gap={4} alignItems="center">
       <Box textAlign="center">
         <KeystoreAvatar alt="Ledger" src={getSupportedHardwareWalletLogoPath('ledger')} />
-        <Box mt={2} fontSize="sm">
+        <Box mt={2} textStyle="text/sm">
           Ledger
         </Box>
       </Box>
       <Box textAlign="center">
         <KeystoreAvatar alt="Trezor" src={getSupportedHardwareWalletLogoPath('trezor')} />
-        <Box mt={2} fontSize="sm">
+        <Box mt={2} textStyle="text/sm">
           Trezor
         </Box>
       </Box>
       <Box textAlign="center">
         <KeystoreAvatar alt="Coldcard" src={getSupportedHardwareWalletLogoPath('coldcard')} />
-        <Box mt={2} fontSize="sm">
+        <Box mt={2} textStyle="text/sm">
           Coldcard
         </Box>
       </Box>
       <Box textAlign="center">
         <KeystoreAvatar alt="Manual" src={getSupportedHardwareWalletLogoPath(null)} />
-        <Box mt={2} fontSize="sm">
+        <Box mt={2} textStyle="text/sm">
           Manual
         </Box>
       </Box>
       <Box textAlign="center">
         <KeystoreAvatar title="Contained" variant="contained" alt="Contained" icon={keyIcon} />
-        <Box mt={2} fontSize="sm">
+        <Box mt={2} textStyle="text/sm">
           Key as icon
         </Box>
       </Box>
@@ -56,7 +56,7 @@ export const WithBadge: Story = () => {
             <CheckCircleFilledIcon color="success.600" color2="white" stroke="shades.0" boxSize="16px" />
           </KeystoreAvatar.Badge>
         </KeystoreAvatar>
-        <Box mt={2} fontSize="sm">
+        <Box mt={2} textStyle="text/sm">
           Ledger Verified
         </Box>
       </Box>
@@ -67,7 +67,7 @@ export const WithBadge: Story = () => {
             <AlertTriangleFilledIcon fill="warning.600" color="shades.0" stroke="shades.0" boxSize="16px" />
           </KeystoreAvatar.Badge>
         </KeystoreAvatar>
-        <Box mt={2} fontSize="sm">
+        <Box mt={2} textStyle="text/sm">
           Trezor Expired
         </Box>
       </Box>
@@ -78,7 +78,7 @@ export const WithBadge: Story = () => {
             <CheckCircleFilledIcon color="neutral.100" color2="neutral.900" stroke="shades.0" boxSize="16px" />
           </KeystoreAvatar.Badge>
         </KeystoreAvatar>
-        <Box mt={2} fontSize="sm">
+        <Box mt={2} textStyle="text/sm">
           Coldcard Pending
         </Box>
       </Box>
@@ -89,7 +89,7 @@ export const WithBadge: Story = () => {
             <Icon as={KeyRound} color="neutral.400" boxSize="16px" />
           </KeystoreAvatar.Badge>
         </KeystoreAvatar>
-        <Box mt={2} fontSize="sm">
+        <Box mt={2} textStyle="text/sm">
           Manual Key
         </Box>
       </Box>
@@ -100,7 +100,7 @@ export const WithBadge: Story = () => {
             <Icon as={Shield} color="blue.500" boxSize="16px" />
           </KeystoreAvatar.Badge>
         </KeystoreAvatar>
-        <Box mt={2} fontSize="sm">
+        <Box mt={2} textStyle="text/sm">
           Ledger Shield
         </Box>
       </Box>
@@ -111,7 +111,7 @@ export const WithBadge: Story = () => {
             <Icon as={Zap} color="yellow.500" boxSize="16px" />
           </KeystoreAvatar.Badge>
         </KeystoreAvatar>
-        <Box mt={2} fontSize="sm">
+        <Box mt={2} textStyle="text/sm">
           Trezor Zap
         </Box>
       </Box>
@@ -122,7 +122,7 @@ export const WithBadge: Story = () => {
             <Icon as={Clock} color="orange.500" boxSize="16px" />
           </KeystoreAvatar.Badge>
         </KeystoreAvatar>
-        <Box mt={2} fontSize="sm">
+        <Box mt={2} textStyle="text/sm">
           Coldcard Clock
         </Box>
       </Box>
@@ -133,7 +133,7 @@ export const WithBadge: Story = () => {
             <Icon as={Star} color="purple.500" boxSize="16px" />
           </KeystoreAvatar.Badge>
         </KeystoreAvatar>
-        <Box mt={2} fontSize="sm">
+        <Box mt={2} textStyle="text/sm">
           Manual Star
         </Box>
       </Box>
@@ -144,7 +144,7 @@ export const WithBadge: Story = () => {
             <Icon as={Heart} color="red.500" boxSize="16px" />
           </KeystoreAvatar.Badge>
         </KeystoreAvatar>
-        <Box mt={2} fontSize="sm">
+        <Box mt={2} textStyle="text/sm">
           Ledger Heart
         </Box>
       </Box>
@@ -155,7 +155,7 @@ export const WithBadge: Story = () => {
             <Icon as={Lock} color="gray.600" boxSize="16px" />
           </KeystoreAvatar.Badge>
         </KeystoreAvatar>
-        <Box mt={2} fontSize="sm">
+        <Box mt={2} textStyle="text/sm">
           Trezor Lock
         </Box>
       </Box>
@@ -209,7 +209,7 @@ export const Sizes: Story = () => {
             alt="Small Ledger"
             src={getSupportedHardwareWalletLogoPath('ledger')}
           />
-          <Box mt={2} fontSize="xs">
+          <Box mt={2} textStyle="text/xs">
             24px
           </Box>
         </Box>
@@ -220,7 +220,7 @@ export const Sizes: Story = () => {
             alt="Medium Ledger"
             src={getSupportedHardwareWalletLogoPath('ledger')}
           />
-          <Box mt={2} fontSize="xs">
+          <Box mt={2} textStyle="text/xs">
             32px
           </Box>
         </Box>
@@ -231,7 +231,7 @@ export const Sizes: Story = () => {
             alt="Default Ledger"
             src={getSupportedHardwareWalletLogoPath('ledger')}
           />
-          <Box mt={2} fontSize="xs">
+          <Box mt={2} textStyle="text/xs">
             36px (default)
           </Box>
         </Box>
@@ -242,7 +242,7 @@ export const Sizes: Story = () => {
             alt="Large Ledger"
             src={getSupportedHardwareWalletLogoPath('ledger')}
           />
-          <Box mt={2} fontSize="xs">
+          <Box mt={2} textStyle="text/xs">
             48px
           </Box>
         </Box>
@@ -253,7 +253,7 @@ export const Sizes: Story = () => {
             alt="Extra Large Ledger"
             src={getSupportedHardwareWalletLogoPath('ledger')}
           />
-          <Box mt={2} fontSize="xs">
+          <Box mt={2} textStyle="text/xs">
             64px
           </Box>
         </Box>
@@ -270,7 +270,7 @@ export const Sizes: Story = () => {
             alt="Small Trezor"
             src={getSupportedHardwareWalletLogoPath('trezor')}
           />
-          <Box mt={2} fontSize="xs">
+          <Box mt={2} textStyle="text/xs">
             24px
           </Box>
         </Box>
@@ -281,7 +281,7 @@ export const Sizes: Story = () => {
             alt="Medium Trezor"
             src={getSupportedHardwareWalletLogoPath('trezor')}
           />
-          <Box mt={2} fontSize="xs">
+          <Box mt={2} textStyle="text/xs">
             32px
           </Box>
         </Box>
@@ -292,7 +292,7 @@ export const Sizes: Story = () => {
             alt="Default Trezor"
             src={getSupportedHardwareWalletLogoPath('trezor')}
           />
-          <Box mt={2} fontSize="xs">
+          <Box mt={2} textStyle="text/xs">
             44px (default)
           </Box>
         </Box>
@@ -303,7 +303,7 @@ export const Sizes: Story = () => {
             alt="Large Trezor"
             src={getSupportedHardwareWalletLogoPath('trezor')}
           />
-          <Box mt={2} fontSize="xs">
+          <Box mt={2} textStyle="text/xs">
             48px
           </Box>
         </Box>
@@ -314,7 +314,7 @@ export const Sizes: Story = () => {
             alt="Extra Large Trezor"
             src={getSupportedHardwareWalletLogoPath('trezor')}
           />
-          <Box mt={2} fontSize="xs">
+          <Box mt={2} textStyle="text/xs">
             64px
           </Box>
         </Box>

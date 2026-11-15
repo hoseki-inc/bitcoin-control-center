@@ -192,4 +192,9 @@ export const oldTextStyles = {
 export const chakraTextStyles = {
   ...newTextStyles,
   ...oldTextStyles,
+  // The unit after an amount, sized relative to it. It stays out of newTextStyles, which hold absolute sizes.
+  'amount/unit': {
+    fontSize: '0.6em',
+    letterSpacing: '0',
+  },
 } as const

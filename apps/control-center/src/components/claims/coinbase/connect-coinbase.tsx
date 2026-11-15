@@ -125,7 +125,7 @@ export function ConnectCoinbase(): JSX.Element {
                 placeholder="-----BEGIN EC PRIVATE KEY-----&#10;...&#10;-----END EC PRIVATE KEY-----"
                 rows={6}
                 fontFamily="mono"
-                fontSize="sm"
+                textStyle="text/sm"
               />
               <FormErrorMessage>{errors.secretKey?.message}</FormErrorMessage>
             </FormControl>

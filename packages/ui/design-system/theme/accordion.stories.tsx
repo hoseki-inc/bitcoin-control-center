@@ -212,18 +212,18 @@ export const WithRichContent: Story = () => {
           <AccordionPanel pb={4}>
             <Stack spacing={2}>
               <Box p={3} bgColor="neutral.50" borderRadius="md">
-                <Text fontWeight="medium" fontSize="sm">
+                <Text fontWeight="medium" textStyle="text/sm">
                   Received 0.1 BTC
                 </Text>
-                <Text fontSize="xs" color="neutral.600">
+                <Text textStyle="text/xs" color="neutral.600">
                   2 days ago
                 </Text>
               </Box>
               <Box p={3} bgColor="neutral.50" borderRadius="md">
-                <Text fontWeight="medium" fontSize="sm">
+                <Text fontWeight="medium" textStyle="text/sm">
                   Sent 0.05 BTC
                 </Text>
-                <Text fontSize="xs" color="neutral.600">
+                <Text textStyle="text/xs" color="neutral.600">
                   1 week ago
                 </Text>
               </Box>

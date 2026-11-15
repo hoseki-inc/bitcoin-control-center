@@ -7,7 +7,7 @@ import { chartColors } from './chart-colors'
 /** A smaller, lighter "BTC" after a large amount, scaled to it. */
 export function BtcUnit(): JSX.Element {
   return (
-    <Text as="span" ml="0.3em" fontSize="0.6em" fontWeight="medium" color="neutral.500" letterSpacing="0">
+    <Text as="span" ml="0.3em" textStyle="amount/unit" fontWeight="medium" color="neutral.500">
       BTC
     </Text>
   )
