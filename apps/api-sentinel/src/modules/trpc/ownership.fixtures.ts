@@ -12,7 +12,7 @@ import { Ok } from '@hoseki/packages/result'
 import { hosid } from '@hoseki/packages/schemas'
 import { BIP32Factory } from 'bip32'
 import { Signer, Verifier } from 'bip322-js'
-import pino from 'pino'
+import pino, { type Logger } from 'pino'
 import { expect, onTestFinished } from 'vitest'
 import type { AppContext } from '../../context'
 import { type SentinelDb, openDrizzleDatabase } from '../../db/drizzle'
@@ -70,9 +70,8 @@ const multisig = MultiSigAccount.from({
 }).expect('Synthetic 2-of-3 descriptor must be valid')
 const keystore = { label: 'Test key', wallet: null, model: null, derivationPath: null }
 
-async function createOwnershipDatabase() {
+async function createOwnershipDatabase(logger: Logger) {
   const directory = mkdtempSync(join(tmpdir(), 'sentinel-ownership-'))
-  const logger = pino({ level: 'silent' })
   const database = await openDrizzleDatabase(directory, logger)
 
   onTestFinished(() => {
@@ -80,7 +79,7 @@ async function createOwnershipDatabase() {
     rmSync(directory, { recursive: true, force: true })
   })
 
-  return { directory, logger, database }
+  return { directory, database }
 }
 
 function createTestEnvironment(directory: string): Env {
@@ -120,8 +119,8 @@ interface AppCallerHarness {
 }
 
 /** Build the tRPC router against a fresh database with external services stubbed. */
-export async function setupAppCaller(): Promise<AppCallerHarness> {
-  const { directory, logger, database } = await createOwnershipDatabase()
+export async function setupAppCaller(logger: Logger = pino({ level: 'silent' })): Promise<AppCallerHarness> {
+  const { directory, database } = await createOwnershipDatabase(logger)
   const env = createTestEnvironment(directory)
 
   const electrumConfig = { host: 'example.invalid', port: 50001, protocol: 'tcp' as const }
