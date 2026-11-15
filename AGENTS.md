@@ -14,6 +14,7 @@ Design around Bitcoin as a long-term savings asset, with accounting and planning
 - Do not change the StartOS manifest ID `hoseki-sentinel` or persistent volume `main` without an explicit migration plan.
 - Do not log descriptors, exchange credentials, encryption keys, or full external API responses containing secrets.
 - Log wallet details and hosts only under the field names Sentinel hides above Debug (`apps/api-sentinel/src/log_redaction.ts`), such as `address`, `txid` or `host`, never inside message strings.
+- Build every Sentinel tRPC route from `protectedProcedure`, `sessionProcedure` or `recentPinProcedure`. Only the sign-in routes in `modules/auth/router.ts` may use `openProcedure`, and lint rejects it anywhere else. A plain Fastify route skips this check, so give it its own PIN check or don't add it.
 
 ## Commands
 

@@ -1,7 +1,7 @@
 import type { Result } from '@hoseki/packages/result'
 import { TRPCError } from '@trpc/server'
 import { z } from 'zod'
-import { type TRPCContext, openProcedure, sessionProcedure, t } from '../trpc/init'
+import { type TRPCContext, openProcedure, router, sessionProcedure } from '../trpc/init'
 import { Pin } from './pin'
 import type { RequestAuth } from './request'
 import type { PinFailure, PinRefusal } from './service'
@@ -48,7 +48,7 @@ function signedIn(auth: RequestAuth, result: Result<string, PinFailure>): PinOut
   return outcome(result)
 }
 
-export const authRouter = t.router({
+export const authRouter = router({
   status: openProcedure.query(async ({ ctx }) =>
     ctx.app.auth.status(ctx.request ?? { browserKey: null, tabId: null, encrypted: false }),
   ),

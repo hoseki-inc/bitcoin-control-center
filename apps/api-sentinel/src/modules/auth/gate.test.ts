@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import type { AppContext } from '../../context'
 import { setupServiceDatabase } from '../../fixtures/service-database'
-import { type TRPCContext, recentPinProcedure, t } from '../trpc/init'
+import { type TRPCContext, recentPinProcedure, router } from '../trpc/init'
 import { appRouter } from '../trpc/router'
 import { Pin } from './pin'
 import type { RequestAuth } from './request'
@@ -79,7 +79,7 @@ describe('the PIN gate', () => {
 
   it('asks for the PIN again on routes that need a recent one', async () => {
     const { auth, context, clock } = await setup()
-    const sensitive = t.router({ reveal: recentPinProcedure(60_000).query(() => 'revealed') })
+    const sensitive = router({ reveal: recentPinProcedure(60_000).query(() => 'revealed') })
     const pin = parse(Pin, '482915').expect('a PIN')
     const tab = { tabId: 'tab-aaaaaaaaaaaaaaaa', encrypted: true }
     const browserKey = (await auth.setFirstPin(pin, { browserKey: null, ...tab })).expect('first PIN')
