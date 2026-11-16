@@ -26,10 +26,10 @@ import { Decimal } from 'decimal.js'
 import { useState } from 'react'
 import { Link, useLocation } from 'react-router'
 import { toast } from 'sonner'
-import { BitcoinAmount } from '../../../components/bitcoin-amount'
-import { HoldingsAdded, HoldingsAdding, afterAtLeastASecond } from '../../../components/claims/holdings-added'
-import { parseNavigationState } from '../../../lib/navigation-state'
-import { trpc } from '../../../trpc'
+import { BitcoinAmount } from '../../components/bitcoin-amount'
+import { HoldingsAdded, HoldingsAdding, afterAtLeastASecond } from '../../components/claims/holdings-added'
+import { parseNavigationState } from '../../lib/navigation-state'
+import { trpc } from '../../trpc'
 
 interface HoldingRow {
   key: number
