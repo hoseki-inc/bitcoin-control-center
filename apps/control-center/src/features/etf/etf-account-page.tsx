@@ -32,8 +32,8 @@ import { format } from 'date-fns'
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { toast } from 'sonner'
-import { AccountDetailsSkeleton } from '../../../components/loading/page-skeletons'
-import { trpc } from '../../../trpc'
+import { AccountDetailsSkeleton } from '../../components/loading/page-skeletons'
+import { trpc } from '../../trpc'
 
 export function EtfAccountDetailsPage(): JSX.Element {
   const { accountId } = useParams<{ accountId: string }>()
