@@ -13,6 +13,7 @@ import { Network } from '@hoseki/packages/bitcoin/network'
 import { NetworkAccount } from '@hoseki/packages/bitcoin/network_account'
 import { Xpub, containsExtendedPrivateKey } from '@hoseki/packages/bitcoin/xpub'
 import { IndexMap, IndexSet } from '@hoseki/packages/collection'
+import { isValidEtfShares } from '@hoseki/packages/etfs/holdings'
 import { parseUnknown } from '@hoseki/packages/result'
 import {
   type ChallengeId,
@@ -125,6 +126,12 @@ interface ChallengeMessageDto {
 
 const supportedHardwareWalletSchema = z.enum(['trezor', 'coldcard', 'ledger', 'keystone', 'bitkey'])
 const etfTickerSchema = z.enum(['IBIT', 'FBTC', 'GBTC', 'ARKB', 'BITB', 'HODL', 'BTC', 'MSBT'])
+const etfSharesSchema = z.string().refine(isValidEtfShares, 'Shares must be a number above zero')
+// The app sends noon on the chosen local day, which can run ahead of the server's clock, so allow a day of slack.
+const etfPurchaseDateSchema = z
+  .string()
+  .datetime()
+  .refine((value) => Date.parse(value) <= Date.now() + 24 * 60 * 60 * 1000, 'Purchase date cannot be in the future')
 const privateKeyMessage = 'Use extended public keys (xpub), not private keys'
 
 function descriptorIssue(descriptor: string, invalidMessage: string) {
@@ -1825,8 +1832,8 @@ const etfRouter = router({
         holdings: z.array(
           z.object({
             ticker: etfTickerSchema,
-            shares: z.string(),
-            datePurchased: z.string().optional(),
+            shares: etfSharesSchema,
+            datePurchased: etfPurchaseDateSchema.optional(),
           }),
         ),
       }),
@@ -1875,8 +1882,8 @@ const etfRouter = router({
         z.object({
           accountId: z.string(),
           ticker: etfTickerSchema,
-          shares: z.string(),
-          datePurchased: z.string().optional(),
+          shares: etfSharesSchema,
+          datePurchased: etfPurchaseDateSchema.optional(),
         }),
       )
       .mutation(async ({ ctx, input }) => {

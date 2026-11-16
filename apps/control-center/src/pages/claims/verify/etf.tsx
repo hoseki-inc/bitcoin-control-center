@@ -11,7 +11,15 @@ import {
   Stack,
   Text,
 } from '@chakra-ui/react'
-import { ETF_CONFIGS, ETF_TICKERS, type EtfTicker, computeHoldingBtcSats } from '@hoseki/packages/etfs/holdings'
+import {
+  ETF_CONFIGS,
+  ETF_TICKERS,
+  type EtfTicker,
+  computeHoldingBtcSats,
+  isFuturePurchaseDate,
+  isValidEtfShares,
+  localDateInputValue,
+} from '@hoseki/packages/etfs/holdings'
 import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
 import { TopBar } from '@hoseki/packages/ui/prove-verify-ui/top-bar'
 import { Decimal } from 'decimal.js'
@@ -34,6 +42,10 @@ let nextKey = 1
 
 function createEmptyRow(): HoldingRow {
   return { key: nextKey++, ticker: 'IBIT', shares: '', datePurchased: '' }
+}
+
+function hasInvalidShares(row: HoldingRow): boolean {
+  return row.shares !== '' && !isValidEtfShares(row.shares)
 }
 
 export function ClaimsVerifyEtfPage(): JSX.Element {
@@ -68,22 +80,15 @@ export function ClaimsVerifyEtfPage(): JSX.Element {
 
   // Compute live BTC total
   const asOf = new Date()
+  const filledHoldings = holdings.filter((row) => isValidEtfShares(row.shares))
   let totalBtcSats = 0n
-  for (const row of holdings) {
-    const shares = parseFloat(row.shares)
-    if (isNaN(shares) || shares <= 0) {
-      continue
-    }
-    const config = ETF_CONFIGS[row.ticker]
-    totalBtcSats += computeHoldingBtcSats(config, shares, asOf)
+  for (const row of filledHoldings) {
+    totalBtcSats += computeHoldingBtcSats(ETF_CONFIGS[row.ticker], Number(row.shares), asOf)
   }
   const totalBtc = new Decimal(totalBtcSats.toString()).div(100_000_000)
 
-  const hasValidHoldings = holdings.some((r) => {
-    const shares = parseFloat(r.shares)
-    return !isNaN(shares) && shares > 0
-  })
-  const isValid = displayName.trim().length > 0 && hasValidHoldings
+  const hasInvalidRow = holdings.some((row) => hasInvalidShares(row) || isFuturePurchaseDate(row.datePurchased, asOf))
+  const isValid = displayName.trim().length > 0 && filledHoldings.length > 0 && !hasInvalidRow
 
   async function handleSubmit(): Promise<void> {
     if (!isValid) {
@@ -92,16 +97,11 @@ export function ClaimsVerifyEtfPage(): JSX.Element {
 
     setIsSaving(true)
     try {
-      const validHoldings = holdings
-        .filter((r) => {
-          const shares = parseFloat(r.shares)
-          return !isNaN(shares) && shares > 0
-        })
-        .map((r) => ({
-          ticker: r.ticker,
-          shares: r.shares,
-          datePurchased: r.datePurchased ? new Date(r.datePurchased + 'T12:00:00').toISOString() : undefined,
-        }))
+      const validHoldings = filledHoldings.map((r) => ({
+        ticker: r.ticker,
+        shares: r.shares,
+        datePurchased: r.datePurchased ? new Date(r.datePurchased + 'T12:00:00').toISOString() : undefined,
+      }))
 
       const result = await afterAtLeastASecond(
         createMutation.mutateAsync({
@@ -194,6 +194,7 @@ export function ClaimsVerifyEtfPage(): JSX.Element {
                     step="any"
                     min="0"
                     placeholder="0"
+                    isInvalid={hasInvalidShares(row)}
                     value={row.shares}
                     onChange={(e) => {
                       updateRow(row.key, 'shares', e.target.value)
@@ -207,6 +208,8 @@ export function ClaimsVerifyEtfPage(): JSX.Element {
                   <Input
                     size="sm"
                     type="date"
+                    max={localDateInputValue(asOf)}
+                    isInvalid={isFuturePurchaseDate(row.datePurchased, asOf)}
                     value={row.datePurchased}
                     onChange={(e) => {
                       updateRow(row.key, 'datePurchased', e.target.value)

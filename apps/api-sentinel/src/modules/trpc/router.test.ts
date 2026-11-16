@@ -331,3 +331,36 @@ it('explains why it cannot read a Bitkey export', async () => {
     'Bitkey wallet descriptor',
   )
 })
+
+it('stores only ETF holdings with shares above zero and a purchase date that has passed', async () => {
+  const { app } = await setup()
+  const etf = appRouter.createCaller({ app }).portalProve.etf
+  const tomorrow = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString()
+
+  for (const shares of ['0', '-5', 'abc', '1e5', '']) {
+    await expect(etf.create({ displayName: 'Brokerage', holdings: [{ ticker: 'IBIT', shares }] })).rejects.toThrow(
+      'Shares must be a number above zero',
+    )
+  }
+  await expect(
+    etf.create({ displayName: 'Brokerage', holdings: [{ ticker: 'IBIT', shares: '10', datePurchased: tomorrow }] }),
+  ).rejects.toThrow('Purchase date cannot be in the future')
+  await expect(etf.list()).resolves.toEqual([])
+
+  const account = await etf.create({
+    displayName: 'Brokerage',
+    holdings: [{ ticker: 'IBIT', shares: '12.5', datePurchased: '2026-01-05T17:00:00.000Z' }],
+  })
+  await expect(etf.holdings.add({ accountId: account.id, ticker: 'BITB', shares: '-5' })).rejects.toThrow(
+    'Shares must be a number above zero',
+  )
+  await expect(
+    etf.holdings.add({ accountId: account.id, ticker: 'BITB', shares: '5', datePurchased: tomorrow }),
+  ).rejects.toThrow('Purchase date cannot be in the future')
+  await etf.holdings.add({ accountId: account.id, ticker: 'BITB', shares: '0.5' })
+
+  expect((await etf.holdings.list({ accountId: account.id })).map(({ ticker, shares }) => [ticker, shares])).toEqual([
+    ['IBIT', '12.5'],
+    ['BITB', '0.5'],
+  ])
+})
