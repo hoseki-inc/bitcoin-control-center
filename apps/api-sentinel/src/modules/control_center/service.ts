@@ -15,7 +15,7 @@ import {
   balanceSnapshots,
   exchangeBalanceSnapshots,
 } from '../../db/schema'
-import type { EtfService } from '../etf/service'
+import type { EtfService } from '../../features/etf'
 import type { ExchangeService } from '../exchange/service'
 import type { ManualService } from '../manual/service'
 import type { PriceService } from '../price/service'
