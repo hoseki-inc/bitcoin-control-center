@@ -17,7 +17,15 @@ import {
   Thead,
   Tr,
 } from '@chakra-ui/react'
-import { ETF_CONFIGS, ETF_TICKERS, type EtfTicker, getEtfConfig } from '@hoseki/packages/etfs/holdings'
+import {
+  ETF_CONFIGS,
+  ETF_TICKERS,
+  type EtfTicker,
+  getEtfConfig,
+  isFuturePurchaseDate,
+  isValidEtfShares,
+  localDateInputValue,
+} from '@hoseki/packages/etfs/holdings'
 import { ErrorBanner } from '@hoseki/packages/ui/design-system'
 import { TopBar } from '@hoseki/packages/ui/prove-verify-ui/top-bar'
 import { format } from 'date-fns'
@@ -76,8 +84,13 @@ export function EtfAccountDetailsPage(): JSX.Element {
     await utils.portalProve.controlCenter.invalidate()
   }
 
+  const today = new Date()
+  const hasInvalidShares = newShares !== '' && !isValidEtfShares(newShares)
+  const hasFutureDate = isFuturePurchaseDate(newDatePurchased, today)
+  const canAddHolding = isValidEtfShares(newShares) && !hasFutureDate
+
   async function handleAddHolding(): Promise<void> {
-    if (accountId == null || accountId === '' || !newShares) {
+    if (accountId == null || accountId === '' || !canAddHolding) {
       return
     }
     try {
@@ -312,6 +325,7 @@ export function EtfAccountDetailsPage(): JSX.Element {
                 step="any"
                 min="0"
                 placeholder="0"
+                isInvalid={hasInvalidShares}
                 value={newShares}
                 onChange={(e) => {
                   setNewShares(e.target.value)
@@ -325,6 +339,8 @@ export function EtfAccountDetailsPage(): JSX.Element {
               <Input
                 size="sm"
                 type="date"
+                max={localDateInputValue(today)}
+                isInvalid={hasFutureDate}
                 value={newDatePurchased}
                 onChange={(e) => {
                   setNewDatePurchased(e.target.value)
@@ -338,7 +354,7 @@ export function EtfAccountDetailsPage(): JSX.Element {
                 void handleAddHolding()
               }}
               isLoading={addHoldingMutation.isLoading}
-              isDisabled={!newShares}
+              isDisabled={!canAddHolding}
             >
               Add
             </Button>

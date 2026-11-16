@@ -137,3 +137,26 @@ function getEffectiveExpenseRate(config: EtfConfig, asOfDate: Date): number {
   }
   return config.expenseRatio
 }
+
+// ─── Input rules ────────────────────────────────────────────────────────────
+
+/**
+ * Whether a shares value, as the user typed it, is a plain decimal number above zero.
+ */
+export function isValidEtfShares(shares: string): boolean {
+  return /^(?:\d+(?:\.\d+)?|\.\d+)$/.test(shares) && Number(shares) > 0
+}
+
+/**
+ * `now` as a date input value (YYYY-MM-DD) in the viewer's own time zone.
+ */
+export function localDateInputValue(now: Date): string {
+  return [now.getFullYear(), now.getMonth() + 1, now.getDate()].map((part) => String(part).padStart(2, '0')).join('-')
+}
+
+/**
+ * Whether a date input value (YYYY-MM-DD) falls after `now` in the viewer's own time zone.
+ */
+export function isFuturePurchaseDate(date: string, now: Date): boolean {
+  return date > localDateInputValue(now)
+}
