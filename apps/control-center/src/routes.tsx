@@ -12,6 +12,7 @@ import { SinglesigSigningPage } from './pages/claims/[id]/signing'
 import { AddAccountPage } from './pages/claims/add'
 import { CoinbaseAccountDetailsPage } from './pages/claims/coinbase/[id]'
 import { EtfAccountDetailsPage } from './pages/claims/etf/[id]'
+import { InvestmentDetailsPage } from './pages/claims/investments/[id]'
 import { KrakenAccountDetailsPage } from './pages/claims/kraken/[id]'
 import { ManualAccountDetailsPage } from './pages/claims/manual/[id]'
 import { RobinhoodAccountDetailsPage } from './pages/claims/robinhood/[id]'
@@ -27,6 +28,7 @@ import {
 } from './pages/claims/verify'
 import { ClaimsVerifyCoinbasePage } from './pages/claims/verify/coinbase'
 import { ClaimsVerifyEtfPage } from './pages/claims/verify/etf'
+import { AddInvestmentPage } from './pages/claims/verify/investments'
 import { ClaimsVerifyKrakenPage } from './pages/claims/verify/kraken'
 import { ClaimsVerifyManualPage } from './pages/claims/verify/manual'
 import { ManualTypeSelectorPage } from './pages/claims/verify/manual-type'
@@ -66,6 +68,7 @@ export default function AppRoutes(): JSX.Element {
             <Route path="strike/:accountId" Component={StrikeAccountDetailsPage} />
             <Route path="manual/:accountId" Component={ManualAccountDetailsPage} />
             <Route path="etf/:accountId" Component={EtfAccountDetailsPage} />
+            <Route path="investments/:accountId" Component={InvestmentDetailsPage} />
             <Route path=":claimId">
               <Route index Component={ClaimDetailsPage} />
               <Route path="signing" Component={SinglesigSigningPage} />
@@ -84,6 +87,7 @@ export default function AppRoutes(): JSX.Element {
               <Route path="manual-type" Component={ManualTypeSelectorPage} />
               <Route path="manual" Component={ClaimsVerifyManualPage} />
               <Route path="etf" Component={ClaimsVerifyEtfPage} />
+              <Route path="investments" Component={AddInvestmentPage} />
               <Route path="track" Component={ClaimsVerifyTrackPage} />
             </Route>
           </Route>

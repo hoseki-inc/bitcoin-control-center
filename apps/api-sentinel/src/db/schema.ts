@@ -335,3 +335,34 @@ export const accountHistorySyncs = sqliteTable(
     index('idx_account_history_syncs_account_blocks').on(table.accountId, table.fromBlockHeight, table.toBlockHeight),
   ],
 )
+
+/** Manually valued securities; never included in Bitcoin balances or accumulation. */
+export const investmentAccounts = sqliteTable(
+  'investment_accounts',
+  {
+    id: text('id').primaryKey(),
+    displayName: text('display_name').notNull(),
+    currency: text('currency', { enum: ['USD'] })
+      .notNull()
+      .default('USD'),
+    createdAt: text('created_at').notNull().default(now),
+  },
+  (table) => [check('investment_accounts_currency_check', sql`${table.currency} = 'USD'`)],
+)
+
+export const investmentValuations = sqliteTable(
+  'investment_valuations',
+  {
+    id: text('id').primaryKey(),
+    accountId: text('account_id')
+      .notNull()
+      .references(() => investmentAccounts.id, { onDelete: 'cascade' }),
+    /** Integer cents as text, avoiding floating-point rounding in storage. */
+    valueCents: text('value_cents').notNull(),
+    /** Calendar date (YYYY-MM-DD), independent of the viewer's time zone. */
+    valuedAt: text('valued_at').notNull(),
+    note: text('note'),
+    createdAt: text('created_at').notNull().default(now),
+  },
+  (table) => [unique('investment_valuations_account_date_unique').on(table.accountId, table.valuedAt)],
+)

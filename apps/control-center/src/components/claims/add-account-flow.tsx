@@ -125,7 +125,7 @@ export function AddAccountFlow({ onClose, linkState }: AddAccountFlowProps): JSX
               state={linkState}
             />
             <ConnectionType
-              title={'Track Balance, ETF,\nor xpub'}
+              title="Track Balance, xpub, ETF or stocks"
               media={<ManualEntryIcon />}
               to="/accounts/verify/manual-type"
               state={linkState}

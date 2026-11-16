@@ -89,6 +89,9 @@ const mocks = vi.hoisted(() => {
     manualFailed: false,
     listsLoading: false,
     priceLoading: false,
+    investmentsLoading: false,
+    investmentsFailed: false,
+    investments: Array<RouterOutput['portalProve']['investments']['list'][number]>(),
     exchangeAccounts: Array<RouterOutput['portalProve']['exchange']['list'][number]>(),
     etfAccounts: Array<RouterOutput['portalProve']['etf']['list'][number]>(),
     claims,
@@ -153,6 +156,12 @@ const dataSource: DashboardDataSource = {
       refetch: mocks.refetchList,
     },
     etfAccountsQuery: { data: mocks.etfAccounts, isLoading: false, refetch: mocks.refetchList },
+    investmentsQuery: {
+      data: mocks.investments,
+      isLoading: mocks.investmentsLoading,
+      isError: mocks.investmentsFailed,
+      refetch: mocks.refetchList,
+    },
     btcPriceQuery: {
       isLoading: mocks.priceLoading,
       data: mocks.priceLoading
@@ -174,6 +183,7 @@ const dataSource: DashboardDataSource = {
   getTimezone: () => 'UTC',
 }
 const views: DashboardViews = {
+  InvestmentHistoryChart: () => createElement('div'),
   DateInput: ({ id, value, onChange }) =>
     createElement('input', {
       id,
@@ -321,6 +331,9 @@ async function withTestSetup(run: () => Promise<void>): Promise<void> {
   mocks.manualFailed = false
   mocks.listsLoading = false
   mocks.priceLoading = false
+  mocks.investmentsLoading = false
+  mocks.investmentsFailed = false
+  mocks.investments = []
   mocks.exchangeAccounts = []
   mocks.etfAccounts = []
   mocks.claims = []
@@ -1072,6 +1085,9 @@ describe('range summary', () => {
       expect(text()).toContain('0.50000000BTC')
       expect(text()).not.toContain('USD unavailable')
       mocks.priceLoading = false
+      mocks.investmentsLoading = false
+      mocks.investmentsFailed = false
+      mocks.investments = []
       await render()
       expect(text()).toContain('$25,000.00')
     })
@@ -1656,3 +1672,89 @@ describe('range summary', () => {
     })
   })
 })
+
+it.each(['loading', 'failed'] as const)(
+  'keeps Bitcoin charts and queries unchanged when investments are %s',
+  async (status) => {
+    await withTestSetup(async () => {
+      const before = chartData()
+      const query = getQueryCall(-2)[0]
+      mocks.investmentsLoading = status === 'loading'
+      mocks.investmentsFailed = status === 'failed'
+      await render()
+      expect(chartData()).toEqual(before)
+      expect(getQueryCall(-2)[0]).toEqual(query)
+      expect(container.textContent).toContain('Net accumulated')
+      expect(container.textContent).not.toContain('Loading your portfolio')
+    })
+  },
+)
+
+it('keeps manually valued investments below Bitcoin charts and out of account filters and Bitcoin queries', async () => {
+  await withTestSetup(async () => {
+    const before = chartData()
+    const query = getQueryCall(-2)[0]
+    mocks.investments = [
+      {
+        id: 'treasury',
+        displayName: 'Treasury stocks',
+        currency: 'USD',
+        valueCents: '1350000',
+        valuedAt: '2026-09-01',
+        createdAt: '',
+      },
+    ]
+    await render()
+    expect(chartData()).toEqual(before)
+    expect(getQueryCall(-2)[0]).toEqual(query)
+    const content = container.textContent
+    expect(content.indexOf('Other Bitcoin Investments')).toBeGreaterThan(content.indexOf('Net accumulated'))
+    expect(content).toContain('$13,500.00')
+    expect(JSON.stringify(mocks.sidebar.mock.calls.at(-1)?.[0])).not.toContain('treasury')
+    expect(mocks.sidebar.mock.calls.at(-1)?.[0].shareLabel).toBe('Bitcoin holdings')
+  })
+})
+
+it.each(['ready', 'loading', 'failed'] as const)(
+  'handles an investment-only portfolio while investments are %s without a false Bitcoin empty state',
+  async (status) => {
+    await withTestSetup(async () => {
+      mocks.holdings = []
+      mocks.btcPrice = 0
+      mocks.investmentsLoading = status === 'loading'
+      mocks.investmentsFailed = status === 'failed'
+      mocks.investments =
+        status === 'ready'
+          ? [
+              {
+                id: 'treasury',
+                displayName: 'Treasury stocks',
+                currency: 'USD',
+                valueCents: '1350000',
+                valuedAt: '2026-09-01',
+                createdAt: '',
+              },
+            ]
+          : []
+      mocks.useQuery.mockReturnValue({
+        data: { ...mocks.base, currentTotalBalance: '0', manualAccountCount: 0, historicalData: [] },
+        isLoading: false,
+        isFetching: false,
+        isPreviousData: false,
+        error: null,
+        refetch: mocks.refetch,
+      })
+      await render()
+      expect(container.textContent).not.toContain('Net accumulated')
+      expect(container.textContent).not.toContain('No accounts')
+      if (status === 'ready') {
+        expect(container.textContent).toContain('$13,500.00')
+        expect(container.textContent).not.toContain('Unavailable until Bitcoin holdings can be valued')
+      } else if (status === 'loading') {
+        expect(container.textContent).toContain('Loading investment valuations')
+      } else {
+        expect(container.textContent).toContain('Investment values are unavailable')
+      }
+    })
+  },
+)

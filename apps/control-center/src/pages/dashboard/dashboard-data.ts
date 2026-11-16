@@ -1,4 +1,5 @@
 import type { UseQueryResult } from '@tanstack/react-query'
+import type { InvestmentListQuery } from '../../components/investments/investment-overview'
 import { useAutoRefreshExchanges } from '../../hooks/use-auto-refresh-exchanges'
 import { type WalletBalancesQuery, useWalletBalances } from '../../lib/wallet-balances'
 import { type RouterInput, type RouterOutput, trpc } from '../../trpc'
@@ -18,6 +19,7 @@ export interface PortfolioQuery {
 }
 
 export interface DashboardAccounts {
+  investmentsQuery: InvestmentListQuery
   claimsQuery: ListQuery<RouterOutput['portalProve']['registry']['claims']['list'][number]>
   exchangeAccountsQuery: ListQuery<RouterOutput['portalProve']['exchange']['list'][number]>
   manualAccountsQuery: ListQuery<RouterOutput['portalProve']['manual']['list'][number]>
@@ -47,6 +49,7 @@ export const dashboardDataSource: DashboardDataSource = {
     exchangeAccountsQuery: trpc.portalProve.exchange.list.useQuery(),
     manualAccountsQuery: trpc.portalProve.manual.list.useQuery(),
     etfAccountsQuery: trpc.portalProve.etf.list.useQuery(),
+    investmentsQuery: trpc.portalProve.investments.list.useQuery(),
     btcPriceQuery: trpc.portalProve.retrieveBitcoinPrice.useQuery(),
   }),
   useHistory: (input, options) => trpc.portalProve.controlCenter.getData.useQuery(input, options),

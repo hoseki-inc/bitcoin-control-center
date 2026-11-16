@@ -1,4 +1,5 @@
 import { toast } from 'sonner'
+import type { InvestmentListQuery } from '../../components/investments/investment-overview'
 import { useAutoRefreshExchanges } from '../../hooks/use-auto-refresh-exchanges'
 import { type WalletBalancesQuery, useWalletBalances } from '../../lib/wallet-balances'
 import { type RouterOutput, trpc } from '../../trpc'
@@ -17,6 +18,7 @@ export interface AccountsListQuery<T> {
 }
 
 export interface AccountsLists {
+  investmentsQuery: InvestmentListQuery
   claimsQuery: AccountsListQuery<ClaimDto>
   exchangeAccountsQuery: AccountsListQuery<ExchangeAccountDto>
   manualAccountsQuery: AccountsListQuery<ManualAccountDto>
@@ -45,6 +47,7 @@ export const accountsDataSource: AccountsDataSource = {
     exchangeAccountsQuery: trpc.portalProve.exchange.list.useQuery(),
     manualAccountsQuery: trpc.portalProve.manual.list.useQuery(),
     etfAccountsQuery: trpc.portalProve.etf.list.useQuery(),
+    investmentsQuery: trpc.portalProve.investments.list.useQuery(),
     archivedClaimsQuery: trpc.portalProve.registry.claims.listArchived.useQuery(),
     btcPriceQuery: trpc.portalProve.retrieveBitcoinPrice.useQuery(),
   }),

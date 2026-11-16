@@ -50,6 +50,8 @@ const popoverModifiers = [{ name: 'preventOverflow', options: { altAxis: true, t
 
 interface AccountFilterProps {
   presentation?: 'dropdown' | 'sidebar'
+  /** Clarifies the denominator when USD-valued investments also exist. */
+  shareLabel?: string
   claims: ClaimDto[]
   exchangeAccounts: RouterOutput['portalProve']['exchange']['list']
   manualAccounts: RouterOutput['portalProve']['manual']['list']
@@ -65,6 +67,7 @@ interface AccountFilterProps {
 
 export function AccountFilter({
   presentation = 'dropdown',
+  shareLabel = 'your portfolio',
   claims,
   exchangeAccounts,
   manualAccounts,
@@ -258,7 +261,7 @@ export function AccountFilter({
               </Text>
               {account.sats !== null && totalSats !== null && (
                 <Box as="span" position="absolute" bottom={3} right={3}>
-                  <AccountSharePie sats={account.sats} totalSats={totalSats} />
+                  <AccountSharePie sats={account.sats} totalSats={totalSats} shareLabel={shareLabel} />
                 </Box>
               )}
               {account.status !== null && <StatusBadge status={account.status} />}
@@ -511,7 +514,15 @@ function formatShare(sats: number, totalSats: number): string {
   return percentage > 0 && percentage < 0.1 ? '<0.1' : percentage.toFixed(1)
 }
 
-function AccountSharePie({ sats, totalSats }: { sats: number; totalSats: number }): JSX.Element {
+function AccountSharePie({
+  sats,
+  totalSats,
+  shareLabel,
+}: {
+  sats: number
+  totalSats: number
+  shareLabel: string
+}): JSX.Element {
   const percentage = totalSats > 0 ? Math.min(100, Math.max(0, (sats / totalSats) * 100)) : 0
   const size = 16
   const strokeWidth = 3
@@ -519,7 +530,7 @@ function AccountSharePie({ sats, totalSats }: { sats: number; totalSats: number 
   const circumference = 2 * Math.PI * radius
   // A sliver stays visible for tiny accounts, so only an empty one has an empty ring.
   const filled = sats > 0 && totalSats > 0 ? (Math.max(percentage, 0.5) / 100) * circumference : 0
-  const label = `${formatShare(sats, totalSats)}% of your portfolio`
+  const label = `${formatShare(sats, totalSats)}% of ${shareLabel}`
   return (
     <Tooltip label={label} placement="top" hasArrow>
       <Box as="span" display="block" boxSize={`${size}px`} color="neutral.900">

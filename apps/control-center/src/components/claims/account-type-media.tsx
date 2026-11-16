@@ -1,7 +1,7 @@
 import { Icon } from '@chakra-ui/react'
 import { KeystoreAvatar } from '@hoseki/packages/ui/prove-verify-ui/claims/keystore-avatar'
 import { RoundKeyIcon } from '@hoseki/packages/ui/prove-verify-ui/icons'
-import { NotebookPen, Signature } from 'lucide-react'
+import { ChartNoAxesCombined, NotebookPen, Signature } from 'lucide-react'
 
 // The same key as `keyIcon` in keystores-status-indicator, built here so the introduction can show
 // these tiles without loading the wallet libraries that module imports.
@@ -42,4 +42,9 @@ export function EtfHoldingsIcon({ boxSize = 6 }: { boxSize?: number }): JSX.Elem
       <rect x="14" y="14" width="7" height="7" rx="1" stroke="currentColor" strokeWidth="1.5" fill="none" />
     </Icon>
   )
+}
+
+/** A rising chart for manually valued Bitcoin investments. */
+export function InvestmentIcon({ boxSize = 6 }: { boxSize?: number }): JSX.Element {
+  return <Icon as={ChartNoAxesCombined} boxSize={boxSize} color="neutral.600" strokeWidth={1.5} />
 }

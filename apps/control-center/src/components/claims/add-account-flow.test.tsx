@@ -50,7 +50,7 @@ function links(container: HTMLElement): [string, string | null][] {
   return Array.from(container.querySelectorAll('a')).map((link) => [link.textContent, link.getAttribute('href')])
 }
 
-it('ends the Add Account grid with Manually Sign and Track, without the Advanced section', async () => {
+it('keeps investments inside the existing Track card', async () => {
   const container = await render(<AddAccountFlow onClose={() => undefined} />)
 
   expect(links(container).slice(-2)).toEqual([
@@ -59,9 +59,10 @@ it('ends the Add Account grid with Manually Sign and Track, without the Advanced
   ])
   expect(container.textContent).not.toContain('Advanced')
   expect(container.textContent).not.toContain('Manual Entry')
+  expect(container.textContent).not.toContain('Other Bitcoin Investments')
 })
 
-it('offers Bitcoin Holdings, ETF and xpub or Descriptor to track', async () => {
+it('offers Investment Balance as the fourth tracking option', async () => {
   const container = await render(<ManualTypeSelectorPage />)
 
   expect(container.querySelector('h1, h2')?.textContent).toBe('Track Balance, ETF, or xpub')
@@ -69,8 +70,20 @@ it('offers Bitcoin Holdings, ETF and xpub or Descriptor to track', async () => {
     links(container)
       .slice(1)
       .map(([, href]) => href),
-  ).toEqual(['/accounts/verify/manual', '/accounts/verify/etf', '/accounts/verify/track'])
+  ).toEqual([
+    '/accounts/verify/manual',
+    '/accounts/verify/etf',
+    '/accounts/verify/track',
+    '/accounts/verify/investments',
+  ])
+  expect(container.textContent).not.toContain('Other Bitcoin Investments')
   expect(container.textContent).toContain('xpub or Descriptor')
+  const investmentCard = container.querySelector('a[href="/accounts/verify/investments"]')
+  expect(investmentCard?.textContent).toContain('Investment Balance')
+  expect(investmentCard?.textContent).toContain('New')
+  expect(investmentCard?.textContent).toContain(
+    'Track the USD balance of Bitcoin treasury stocks, preferred shares, and other investments.',
+  )
   expect(container.textContent).toContain(
     "Track a wallet's live balance, single-sig or multisig, without proving ownership.",
   )
