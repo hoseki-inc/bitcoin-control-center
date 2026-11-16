@@ -1,8 +1,10 @@
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
+import { parseUnknown } from '@hoseki/packages/result/lib/parse'
 import { type FastifyTRPCPluginOptions, fastifyTRPCPlugin } from '@trpc/server/adapters/fastify'
 import Fastify, { type FastifyBaseLogger } from 'fastify'
 import pino from 'pino'
+import { z } from 'zod'
 import { type AppContextOptions, createAppContext } from './context'
 import { walletDetailLogOptions } from './log_redaction'
 import { readRequestAuth } from './modules/auth/request'
@@ -23,6 +25,9 @@ export interface SentinelServerOptions extends AppContextOptions {
   /** Override the configured port; zero lets the OS allocate and bind a free port. */
   listenPort?: number
 }
+
+// Sentinel listens on a host and port, so Fastify reports a TCP address rather than a socket path.
+const BoundAddressSchema = z.object({ port: z.number().int() })
 
 export async function main(
   options: SentinelServerOptions = {},
@@ -96,7 +101,9 @@ export async function main(
   try {
     await server.listen({ host, port })
     // Report the port actually bound, which differs from the request when it is zero.
-    boundPort = server.addresses()[0]?.port ?? port
+    boundPort = parseUnknown(BoundAddressSchema, server.addresses()[0]).expect(
+      'Sentinel is not listening on a TCP port',
+    ).port
   } catch (error) {
     appCtx.stopElectrum()
     appCtx.database.$client.close()
