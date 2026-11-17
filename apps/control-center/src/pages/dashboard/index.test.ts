@@ -261,7 +261,14 @@ async function changeDate(id: string, value: string): Promise<void> {
 
 type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue }
 const JsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
-  z.union([z.null(), z.boolean(), z.number(), z.string(), z.array(JsonValueSchema), z.record(JsonValueSchema)]),
+  z.union([
+    z.null(),
+    z.boolean(),
+    z.number(),
+    z.string(),
+    z.array(JsonValueSchema),
+    z.record(z.string(), JsonValueSchema),
+  ]),
 )
 
 function chartData(): JsonValue {

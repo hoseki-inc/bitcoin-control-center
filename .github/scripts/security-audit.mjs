@@ -6,10 +6,7 @@ import { fileURLToPath } from 'node:url'
 
 // Each skip is tracked in https://github.com/hoseki-inc/bitcoin-control-center/issues/383,
 // with why it's safe for now and what clears it.
-const skipped = new Map([
-  ['GHSA-mrhx-c7xc-m3w5', 'zod, until the workspace moves to Zod 4'],
-  ['GHSA-g3hv-75wg-m249', 'minimatch, until our dependencies move to minimatch 11'],
-])
+const skipped = new Map([['GHSA-g3hv-75wg-m249', 'minimatch, until our dependencies move to minimatch 11']])
 
 const blockingSeverities = new Set(['moderate', 'high', 'critical'])
 const root = fileURLToPath(new URL('../..', import.meta.url))

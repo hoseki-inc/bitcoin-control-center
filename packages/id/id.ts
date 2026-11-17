@@ -28,13 +28,15 @@ export namespace Id {
   }
 
   /** Create a Zod schema for validating IDs with a specific prefix */
-  export function schema<T extends string>(prefix: T): z.ZodType<Id<T>, z.ZodTypeDef, string> {
-    return z
-      .string()
-      .refine((value): value is Id<T> => value.startsWith(`${prefix}_`), {
-        message: `id must start with "${prefix}_"`,
-      })
-      .transform((v) => v)
+  export function schema<T extends string>(prefix: T): z.ZodType<Id<T>, string> {
+    const hasPrefix = (value: string): value is Id<T> => value.startsWith(`${prefix}_`)
+    return z.string().transform((value, ctx) => {
+      if (hasPrefix(value)) {
+        return value
+      }
+      ctx.addIssue({ code: 'custom', message: `id must start with "${prefix}_"` })
+      return z.NEVER
+    })
   }
 
   /** Remove the prefix, returning just the random part */
