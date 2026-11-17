@@ -14,6 +14,7 @@
 - A change that adds or changes user-facing behavior updates `map.json` in the same change: a new feature or sub-feature, a changed route, or a changed `needs`.
 - A recipe can come later. A new recipe gets an entry in its feature's `recipes` list with the sub-features it proves, in the same change.
 - When a change alters what a recipe drives (a label, a step, a route), update the recipe in the same change.
+- `apps/control-center/src/routes.test.tsx` fails when an app page has no feature here, or a route here names no page. Copy routes exactly as the app declares them.
 
 ## Recipe contract
 

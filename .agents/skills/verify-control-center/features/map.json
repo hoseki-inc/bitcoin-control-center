@@ -1009,7 +1009,16 @@
         {
           "id": "add-exchange",
           "does": "Connects Coinbase, Kraken, Robinhood or Strike; refreshes, reconnects and removes",
-          "routes": ["/accounts/verify/coinbase", "/accounts/coinbase/:accountId"],
+          "routes": [
+            "/accounts/verify/coinbase",
+            "/accounts/coinbase/:accountId",
+            "/accounts/verify/kraken",
+            "/accounts/kraken/:accountId",
+            "/accounts/verify/robinhood",
+            "/accounts/robinhood/:accountId",
+            "/accounts/verify/strike",
+            "/accounts/strike/:accountId"
+          ],
           "needs": "exchange-fake",
           "subFeatures": [
             {
