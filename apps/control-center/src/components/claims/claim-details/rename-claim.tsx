@@ -13,7 +13,12 @@ export function RenameClaim({
   const trpcUtils = trpc.useUtils()
   const updateClaimMutation = trpc.portalProve.registry.claims.update.useMutation({
     onSuccess: async () => {
-      await trpcUtils.portalProve.registry.claims.get.byId.invalidate()
+      await Promise.all([
+        trpcUtils.portalProve.registry.claims.get.byId.invalidate(),
+        trpcUtils.portalProve.registry.claims.list.invalidate(),
+        trpcUtils.portalProve.registry.claims.listArchived.invalidate(),
+        trpcUtils.portalProve.controlCenter.getData.invalidate(),
+      ])
       onCancel()
     },
   })
