@@ -1,0 +1,2096 @@
+{
+  "needs": {
+    "now": "Drivable on a standard launched and seeded run.",
+    "fresh": "Drivable on a launched run that is not seeded.",
+    "seed": "Needs more seed data or a test-data helper first.",
+    "fault": "Needs a fake that fails on demand, or a Sentinel restart mid-run.",
+    "pin": "Needs a launch option that turns PINs on (SENTINEL_PIN=umbrel works over local HTTP).",
+    "desktop-web": "Needs the desktop UI build (vite --mode desktop) and Sentinel's --desktop options, driven in a browser.",
+    "electron": "Needs the Electron app run from source with its own data folder, driven with computer use.",
+    "packaged": "Needs a packaged desktop build.",
+    "emulator": "Needs a hardware wallet emulator.",
+    "camera": "Needs QR camera input.",
+    "exchange-fake": "Needs a local fake of the exchange APIs; Sentinel calls the real hosts today.",
+    "outside": "Reaches a real outside service. Check the link or request, never load it.",
+    "platform": "Needs a StartOS or Umbrel install."
+  },
+  "areas": [
+    {
+      "id": "shell",
+      "name": "App shell",
+      "features": [
+        {
+          "id": "app-shell",
+          "does": "Moves between pages from the header and recovers from errors",
+          "routes": ["/", "/*"],
+          "needs": "now",
+          "subFeatures": [
+            {
+              "id": "nav-links",
+              "kind": "happy",
+              "does": "Header links Home, Accounts, Portfolio, Statements; the current page is marked"
+            },
+            {
+              "id": "logo-home",
+              "kind": "happy",
+              "does": "The logo opens Home"
+            },
+            {
+              "id": "settings-button",
+              "kind": "happy",
+              "does": "Icon button Settings opens /settings"
+            },
+            {
+              "id": "root-redirect",
+              "kind": "edge",
+              "does": "/ lands on /home"
+            },
+            {
+              "id": "no-lock-without-pin",
+              "kind": "edge",
+              "does": "No Lock button while PINs are off"
+            },
+            {
+              "id": "render-error",
+              "kind": "failure",
+              "does": "A page that throws shows Something went wrong with Back to Home and Reload",
+              "needs": "fault"
+            },
+            {
+              "id": "sentinel-unreachable",
+              "kind": "failure",
+              "does": "Couldn't reach Control Center with Try again when Sentinel is down at load",
+              "needs": "fault"
+            }
+          ]
+        },
+        {
+          "id": "help-link",
+          "does": "Opens Help; the link names the platform and screen",
+          "routes": [],
+          "needs": "now",
+          "subFeatures": [
+            {
+              "id": "help-href",
+              "kind": "happy",
+              "does": "Help opens the help site in a new tab",
+              "needs": "outside"
+            },
+            {
+              "id": "help-platform",
+              "kind": "edge",
+              "does": "The link says web, startos, umbrel or desktop-<os>"
+            },
+            {
+              "id": "help-screen",
+              "kind": "edge",
+              "does": "The link names the current area: home, accounts, portfolio, statements, settings, multisig or other"
+            },
+            {
+              "id": "help-not-on-404",
+              "kind": "edge",
+              "does": "Pages without the header (not found, hardware test) have no Help"
+            }
+          ]
+        },
+        {
+          "id": "not-found",
+          "does": "Visits an unknown address",
+          "routes": ["/*"],
+          "needs": "now",
+          "subFeatures": [
+            {
+              "id": "nf-page",
+              "kind": "happy",
+              "does": "Page not found with Back to Home, no header"
+            },
+            {
+              "id": "nf-which-paths",
+              "kind": "edge",
+              "does": "Unknown IDs under /accounts, /statements and /multisig hit their detail pages instead"
+            }
+          ]
+        },
+        {
+          "id": "hardware-test-page",
+          "does": "Reads Trezor or Ledger device details on the developer test page",
+          "routes": ["/test/hardware-wallets"],
+          "needs": "emulator",
+          "subFeatures": [
+            {
+              "id": "show-details",
+              "kind": "happy",
+              "does": "Show Trezor or Ledger Device Details prints the result as JSON"
+            },
+            {
+              "id": "device-error",
+              "kind": "failure",
+              "does": "Prints an error when the device cannot be read"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "home",
+      "name": "Home",
+      "features": [
+        {
+          "id": "home-summary",
+          "does": "Sees total BTC, USD value, the 30-day chart and change, and the account count",
+          "routes": ["/home"],
+          "needs": "now",
+          "subFeatures": [
+            {
+              "id": "total",
+              "kind": "happy",
+              "does": "Large BTC total with the USD value below"
+            },
+            {
+              "id": "open-portfolio",
+              "kind": "happy",
+              "does": "View Portfolio opens /portfolio"
+            },
+            {
+              "id": "chart-30d",
+              "kind": "happy",
+              "does": "Last 30 Days chart with a date and balance tooltip"
+            },
+            {
+              "id": "change-30d",
+              "kind": "happy",
+              "does": "30d Change in signed BTC and USD"
+            },
+            {
+              "id": "account-count",
+              "kind": "happy",
+              "does": "Accounts shows the number tracked"
+            },
+            {
+              "id": "sync-indicator",
+              "kind": "edge",
+              "does": "Updating balances, Last synced or Can't reach Electrum when balances are not current",
+              "needs": "fault"
+            },
+            {
+              "id": "usd-unavailable",
+              "kind": "failure",
+              "does": "USD value unavailable when there is no price",
+              "needs": "fault"
+            },
+            {
+              "id": "load-error",
+              "kind": "failure",
+              "does": "Some holdings data is unavailable with Try Again, keeping the last overview",
+              "needs": "fault"
+            }
+          ]
+        },
+        {
+          "id": "home-price-chart",
+          "does": "Reads the Bitcoin price chart and switches its range",
+          "routes": ["/home"],
+          "needs": "now",
+          "subFeatures": [
+            {
+              "id": "price-heading",
+              "kind": "happy",
+              "does": "Bitcoin Price with the latest price and the 7-day change"
+            },
+            {
+              "id": "range-switch",
+              "kind": "happy",
+              "does": "7D, 30D, 6M and 1Y switch the chart; 7D is the default"
+            },
+            {
+              "id": "source-footer",
+              "kind": "happy",
+              "does": "Source names the price host"
+            },
+            {
+              "id": "price-error",
+              "kind": "failure",
+              "does": "The chart shows the error, the price shows a dash, and Retry appears",
+              "needs": "fault"
+            }
+          ]
+        },
+        {
+          "id": "home-recent-statements",
+          "does": "Sees recent statements, opens one, and chooses View All",
+          "routes": ["/home"],
+          "needs": "now",
+          "subFeatures": [
+            {
+              "id": "recent-cards",
+              "kind": "happy",
+              "does": "Up to 3 statement cards with period and created time, no delete"
+            },
+            {
+              "id": "recent-open",
+              "kind": "happy",
+              "does": "View opens the statement"
+            },
+            {
+              "id": "recent-view-all",
+              "kind": "happy",
+              "does": "View All opens /statements; shown only with more than 3 statements",
+              "needs": "seed"
+            },
+            {
+              "id": "recent-status-badge",
+              "kind": "edge",
+              "does": "Pending and failed statements show a badge"
+            },
+            {
+              "id": "recent-error",
+              "kind": "failure",
+              "does": "Recent statements could not be loaded with View Statements",
+              "needs": "fault"
+            }
+          ]
+        },
+        {
+          "id": "home-empty-states",
+          "does": "Sees Home and Portfolio before there are accounts, history or statements",
+          "routes": ["/home", "/portfolio"],
+          "needs": "fresh",
+          "subFeatures": [
+            {
+              "id": "no-accounts",
+              "kind": "edge",
+              "does": "Your Bitcoin, in one place with Add Account, after onboarding is dismissed"
+            },
+            {
+              "id": "no-history",
+              "kind": "edge",
+              "does": "Your history will appear here with View Accounts when accounts have no history yet",
+              "needs": "seed"
+            },
+            {
+              "id": "no-statements",
+              "kind": "edge",
+              "does": "Your holdings, on record with Generate Statement"
+            },
+            {
+              "id": "portfolio-empty",
+              "kind": "edge",
+              "does": "Portfolio shows Watch your Bitcoin grow with Add Your First Account"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "onboarding",
+      "name": "Onboarding",
+      "features": [
+        {
+          "id": "onboarding",
+          "does": "Steps through the first-run introduction; it does not return",
+          "routes": ["/home"],
+          "needs": "fresh",
+          "subFeatures": [
+            {
+              "id": "opens-first-run",
+              "kind": "edge",
+              "does": "Opens over Home only when there are no accounts and no earlier choice"
+            },
+            {
+              "id": "steps",
+              "kind": "happy",
+              "does": "Continue and Back through the steps, with step dots"
+            },
+            {
+              "id": "skip",
+              "kind": "happy",
+              "does": "Skip closes it on any step but the last"
+            },
+            {
+              "id": "not-now",
+              "kind": "happy",
+              "does": "Not Now on the last step closes it"
+            },
+            {
+              "id": "add-account",
+              "kind": "happy",
+              "does": "Add Account on the last step opens /accounts/add"
+            },
+            {
+              "id": "escape",
+              "kind": "edge",
+              "does": "Escape closes it like Skip; the backdrop does not"
+            },
+            {
+              "id": "does-not-return",
+              "kind": "edge",
+              "does": "It stays closed after reload"
+            },
+            {
+              "id": "save-failed",
+              "kind": "failure",
+              "does": "Couldn't save that toast when the choice cannot be saved",
+              "needs": "fault"
+            }
+          ]
+        },
+        {
+          "id": "onboarding-server-step",
+          "does": "Chooses Blockstream's public server or their own node during onboarding",
+          "routes": ["/home"],
+          "needs": "desktop-web",
+          "subFeatures": [
+            {
+              "id": "choose-server",
+              "kind": "happy",
+              "does": "Blockstream's public server or My own node"
+            },
+            {
+              "id": "public-continue",
+              "kind": "happy",
+              "does": "Continue with Blockstream and Tor off saves nothing"
+            },
+            {
+              "id": "own-node-form",
+              "kind": "happy",
+              "does": "Address, Port, Protocol, then Connect to the run's fake Electrum"
+            },
+            {
+              "id": "own-node-validation",
+              "kind": "failure",
+              "does": "Enter your node's address, a port from 1 to 65535, or Onion addresses need Tor"
+            },
+            {
+              "id": "own-node-connect-failed",
+              "kind": "failure",
+              "does": "Couldn't connect to host:port with the reason"
+            },
+            {
+              "id": "own-node-connected",
+              "kind": "happy",
+              "does": "Connected to your node; statements switch to Electrum"
+            },
+            {
+              "id": "tor",
+              "kind": "edge",
+              "does": "Connect via Tor, and its failure message",
+              "needs": "electron"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "accounts",
+      "name": "Accounts",
+      "features": [
+        {
+          "id": "accounts-list",
+          "does": "Sees every account with totals, status, balance and sync state; opens one",
+          "routes": ["/accounts"],
+          "needs": "now",
+          "subFeatures": [
+            {
+              "id": "header-totals",
+              "kind": "happy",
+              "does": "Total BTC and USD with Verified, Pending and Unverified counts"
+            },
+            {
+              "id": "wallet-card",
+              "kind": "happy",
+              "does": "Card with status badge, name, BTC, USD and share of total"
+            },
+            {
+              "id": "open-card",
+              "kind": "happy",
+              "does": "A card opens its detail page; a pending multisig opens /multisig/<id>"
+            },
+            {
+              "id": "add-account-entry",
+              "kind": "happy",
+              "does": "Add Account and the dashed card open /accounts/add"
+            },
+            {
+              "id": "sync-indicator",
+              "kind": "edge",
+              "does": "Synced, Updating balances, Last synced or Can't reach Electrum"
+            },
+            {
+              "id": "usd-hidden-without-price",
+              "kind": "edge",
+              "does": "No USD shown when there is no price, never $0.00",
+              "needs": "fault"
+            },
+            {
+              "id": "empty",
+              "kind": "edge",
+              "does": "No accounts connected yet with Add Your First Account",
+              "needs": "fresh"
+            },
+            {
+              "id": "lists-failed",
+              "kind": "failure",
+              "does": "Some accounts couldn't be loaded, totals hidden, Try Again",
+              "needs": "fault"
+            }
+          ]
+        },
+        {
+          "id": "account-detail",
+          "does": "Reads a wallet account's details",
+          "routes": ["/accounts/:claimId"],
+          "needs": "now",
+          "subFeatures": [
+            {
+              "id": "singlesig-detail",
+              "kind": "happy",
+              "does": "Name, status, First Connected, Amount, Script Type, Date Added and the masked xpub"
+            },
+            {
+              "id": "xpub-reveal",
+              "kind": "edge",
+              "does": "The eye button shows the full xpub (icon only, no accessible name)"
+            },
+            {
+              "id": "bitkey-detail",
+              "kind": "happy",
+              "does": "Bitkey image, Keys list and Recovered your Bitkey?",
+              "needs": "seed"
+            },
+            {
+              "id": "multisig-detail",
+              "kind": "happy",
+              "does": "Claim Details with Claim Type and Quorum, and Key Details per key",
+              "needs": "seed"
+            },
+            {
+              "id": "unknown-id",
+              "kind": "failure",
+              "does": "Claim not found, or Invalid claim ID in URL"
+            },
+            {
+              "id": "archived-redirect",
+              "kind": "edge",
+              "does": "An archived account's address redirects to /accounts#archived"
+            }
+          ]
+        },
+        {
+          "id": "accounts-archive",
+          "does": "Archives a wallet account, restores it, and deletes one permanently",
+          "routes": ["/accounts/:claimId", "/accounts"],
+          "needs": "now",
+          "subFeatures": [
+            {
+              "id": "archive",
+              "kind": "happy",
+              "does": "Archive Account, then Archive; the account leaves the list and totals"
+            },
+            {
+              "id": "balance-warning",
+              "kind": "edge",
+              "does": "The dialog warns when the wallet still holds bitcoin"
+            },
+            {
+              "id": "balance-unknown",
+              "kind": "failure",
+              "does": "Archive is disabled when the balance cannot be checked",
+              "needs": "fault"
+            },
+            {
+              "id": "archived-section",
+              "kind": "happy",
+              "does": "Archived (N) lists archived accounts; /accounts#archived opens it"
+            },
+            {
+              "id": "restore",
+              "kind": "happy",
+              "does": "Restore returns the account to the list"
+            },
+            {
+              "id": "delete-permanently",
+              "kind": "happy",
+              "does": "Delete Permanently removes it and its history"
+            },
+            {
+              "id": "re-add-archived",
+              "kind": "edge",
+              "does": "Adding an archived wallet again points to Archived instead of duplicating it"
+            },
+            {
+              "id": "archive-failed",
+              "kind": "failure",
+              "does": "Failed to archive account toast",
+              "needs": "fault"
+            }
+          ]
+        },
+        {
+          "id": "accounts-rename",
+          "does": "Renames a wallet account or a multisig key",
+          "routes": ["/accounts/:claimId"],
+          "needs": "now",
+          "subFeatures": [
+            {
+              "id": "rename-account",
+              "kind": "happy",
+              "does": "Rename, a new name, Save; the new name shows on the detail page and the list"
+            },
+            {
+              "id": "rename-validation",
+              "kind": "failure",
+              "does": "Save is disabled for an empty name or one over 255 characters"
+            },
+            {
+              "id": "rename-cancel",
+              "kind": "edge",
+              "does": "Cancel keeps the old name"
+            },
+            {
+              "id": "rename-key",
+              "kind": "happy",
+              "does": "Rename a multisig key from Key Details; only identified or signed keys",
+              "needs": "emulator"
+            }
+          ]
+        },
+        {
+          "id": "add-account-chooser",
+          "does": "Picks how to add an account",
+          "routes": ["/accounts/add", "/accounts/verify/manual-type"],
+          "needs": "now",
+          "subFeatures": [
+            {
+              "id": "tiles",
+              "kind": "happy",
+              "does": "Connect New Account with a tile per device, exchange, Multisig, Manually Sign and Track"
+            },
+            {
+              "id": "back",
+              "kind": "happy",
+              "does": "Back to Accounts closes the chooser"
+            },
+            {
+              "id": "track-types",
+              "kind": "happy",
+              "does": "Track Balance, ETF, or xpub offers Bitcoin Holdings, Bitcoin ETF Holdings and xpub or Descriptor"
+            }
+          ]
+        },
+        {
+          "id": "add-track-xpub",
+          "does": "Tracks an xpub or descriptor as watch-only",
+          "routes": ["/accounts/verify/track"],
+          "needs": "now",
+          "subFeatures": [
+            {
+              "id": "track-new",
+              "kind": "happy",
+              "does": "Display Name and descriptor, Track Wallet; Wallet added, shown as unverified"
+            },
+            {
+              "id": "parsed-hint",
+              "kind": "edge",
+              "does": "Shows Single-sig with script type, or Multisig T of N"
+            },
+            {
+              "id": "plain-xpub-script-type",
+              "kind": "edge",
+              "does": "A plain xpub asks for a Script Type"
+            },
+            {
+              "id": "invalid-input",
+              "kind": "failure",
+              "does": "Enter an xpub, or a single-sig or multisig descriptor"
+            },
+            {
+              "id": "track-existing",
+              "kind": "edge",
+              "does": "This wallet is already in Control Center, and it opens the existing account"
+            },
+            {
+              "id": "private-key-refused",
+              "kind": "failure",
+              "does": "Use extended public keys (xpub), not private keys"
+            },
+            {
+              "id": "pending-to-tracked",
+              "kind": "edge",
+              "does": "Tracking a pending account's descriptor turns it unverified"
+            }
+          ]
+        },
+        {
+          "id": "add-manual-holding",
+          "does": "Adds a manual holding, updates its balance, adds and deletes transactions, and removes it",
+          "routes": ["/accounts/verify/manual", "/accounts/manual/:accountId"],
+          "needs": "now",
+          "subFeatures": [
+            {
+              "id": "add",
+              "kind": "happy",
+              "does": "Display Name, Balance (BTC), As of Date, Add Holding; Holdings Added!"
+            },
+            {
+              "id": "add-disabled",
+              "kind": "edge",
+              "does": "Add Holding is disabled until a name and an amount are entered"
+            },
+            {
+              "id": "detail",
+              "kind": "happy",
+              "does": "Balance, Status Unverified and Balance As Of"
+            },
+            {
+              "id": "update-balance",
+              "kind": "happy",
+              "does": "Update Balance; Balance updated"
+            },
+            {
+              "id": "update-below-transactions",
+              "kind": "failure",
+              "does": "Balance cannot be less than net transaction total"
+            },
+            {
+              "id": "add-transaction",
+              "kind": "happy",
+              "does": "Add Transaction with type, amount, date, note and Add this amount to balance"
+            },
+            {
+              "id": "transaction-exceeds",
+              "kind": "failure",
+              "does": "Transaction total would exceed the current balance"
+            },
+            {
+              "id": "delete-transaction",
+              "kind": "happy",
+              "does": "Delete asks first; the balance moves back only if the user ticks the box"
+            },
+            {
+              "id": "remove-account",
+              "kind": "happy",
+              "does": "Remove Account, confirm Remove; it leaves the list"
+            },
+            {
+              "id": "cleared-date",
+              "kind": "failure",
+              "does": "Clearing any date field (add, update balance, add transaction) never sends a broken date or shows Invalid time value"
+            }
+          ]
+        },
+        {
+          "id": "add-etf-holding",
+          "does": "Adds ETF holdings, adds and removes a holding, and removes the account",
+          "routes": ["/accounts/verify/etf", "/accounts/etf/:accountId"],
+          "needs": "now",
+          "subFeatures": [
+            {
+              "id": "add",
+              "kind": "happy",
+              "does": "Display Name and rows of ETF, Shares and Date Purchased; ETF Holdings Added!"
+            },
+            {
+              "id": "rows",
+              "kind": "edge",
+              "does": "+ Add Another ETF, and remove a row when there are two or more"
+            },
+            {
+              "id": "estimate",
+              "kind": "happy",
+              "does": "Estimated BTC Total updates as shares are entered; it changes day to day"
+            },
+            {
+              "id": "invalid",
+              "kind": "failure",
+              "does": "Zero or bad shares, or a future date, keep Add ETF Holdings disabled"
+            },
+            {
+              "id": "detail",
+              "kind": "happy",
+              "does": "Computed Balance and a Holdings table"
+            },
+            {
+              "id": "add-holding",
+              "kind": "happy",
+              "does": "Add Holding; Holding added"
+            },
+            {
+              "id": "remove-holding",
+              "kind": "happy",
+              "does": "Remove on a row; Holding removed"
+            },
+            {
+              "id": "remove-account",
+              "kind": "happy",
+              "does": "Remove Account deletes at once, with no confirmation"
+            }
+          ]
+        },
+        {
+          "id": "add-advanced-signing",
+          "does": "Adds an account by descriptor and proves ownership with a signature made elsewhere",
+          "routes": ["/accounts/verify/advanced", "/accounts/:claimId/signing"],
+          "needs": "seed",
+          "subFeatures": [
+            {
+              "id": "form",
+              "kind": "happy",
+              "does": "Display name and descriptor or xpub, Add Account; opens the signing page"
+            },
+            {
+              "id": "script-type",
+              "kind": "edge",
+              "does": "A plain xpub asks for a script type; descriptors are preferred"
+            },
+            {
+              "id": "invalid-input",
+              "kind": "failure",
+              "does": "Invalid input, please enter a valid xPub/yPub/zPub key"
+            },
+            {
+              "id": "signing-page",
+              "kind": "happy",
+              "does": "Read-only Address and Message with copy buttons, Signature, Verify"
+            },
+            {
+              "id": "message-has-name",
+              "kind": "edge",
+              "does": "The message names the owner from Settings"
+            },
+            {
+              "id": "bad-signature",
+              "kind": "failure",
+              "does": "A wrong signature shows Couldn't verify this account"
+            },
+            {
+              "id": "empty-signature",
+              "kind": "failure",
+              "does": "Clearing the signature shows a signature error, not the xpub message"
+            },
+            {
+              "id": "verified-receipt",
+              "kind": "happy",
+              "does": "Wallet Verified! with Generate Statement and View Wallet"
+            },
+            {
+              "id": "prove-tracked",
+              "kind": "edge",
+              "does": "A tracked wallet entered here can be proven and becomes verified"
+            }
+          ]
+        },
+        {
+          "id": "add-bitkey",
+          "does": "Pastes a Bitkey descriptor export; it shows as Unverified",
+          "routes": ["/accounts/verify/bitkey"],
+          "needs": "now",
+          "subFeatures": [
+            {
+              "id": "guide",
+              "kind": "happy",
+              "does": "Intro and 4 export steps with Next and Back"
+            },
+            {
+              "id": "step-in-url",
+              "kind": "edge",
+              "does": "Browser Back and reload keep the step; the pasted export is not kept"
+            },
+            {
+              "id": "import",
+              "kind": "happy",
+              "does": "Paste the export, Continue; We Found Your Bitkey with its keys"
+            },
+            {
+              "id": "import-errors",
+              "kind": "failure",
+              "does": "Missing Internal line, mismatched lines, not 2-of-3, or testnet"
+            },
+            {
+              "id": "name-validation",
+              "kind": "failure",
+              "does": "Give this account a name, or keep it under 255 characters"
+            },
+            {
+              "id": "connected",
+              "kind": "happy",
+              "does": "Bitkey Connected! with an Unverified badge"
+            },
+            {
+              "id": "already-connected",
+              "kind": "edge",
+              "does": "This Bitkey is already connected, and it opens the account"
+            },
+            {
+              "id": "cannot-verify",
+              "kind": "edge",
+              "does": "The account never offers verification"
+            }
+          ]
+        },
+        {
+          "id": "pending-claim-resume",
+          "does": "Continues or abandons an account whose verification stopped partway",
+          "routes": ["/accounts/:claimId"],
+          "needs": "now",
+          "subFeatures": [
+            {
+              "id": "pending-card",
+              "kind": "happy",
+              "does": "The list shows a pending badge and count"
+            },
+            {
+              "id": "resume-screen",
+              "kind": "happy",
+              "does": "Continue Verification? with Abandon and Continue"
+            },
+            {
+              "id": "continue",
+              "kind": "happy",
+              "does": "Continue opens the signing page"
+            },
+            {
+              "id": "abandon",
+              "kind": "happy",
+              "does": "Abandon, confirm; setup abandoned and the account is gone"
+            },
+            {
+              "id": "archive-pending",
+              "kind": "edge",
+              "does": "Archive Account also works on a pending account"
+            }
+          ]
+        },
+        {
+          "id": "verification-receipt",
+          "does": "Sees the confirmation after an account is verified",
+          "routes": ["/accounts/verify/receipt/:claimId"],
+          "needs": "seed",
+          "subFeatures": [
+            {
+              "id": "receipt",
+              "kind": "happy",
+              "does": "Verifying, then <Name> Verified! with Generate Statement and View <name>"
+            },
+            {
+              "id": "complete-statement",
+              "kind": "edge",
+              "does": "Reads Complete Statement when reached from a statement's Add account link"
+            },
+            {
+              "id": "unverified-redirect",
+              "kind": "edge",
+              "does": "An unverified account's receipt redirects to its detail page"
+            },
+            {
+              "id": "bad-id",
+              "kind": "failure",
+              "does": "Invalid claim ID in URL, or Failed to get claim"
+            }
+          ]
+        },
+        {
+          "id": "add-coldcard",
+          "does": "Adds a COLDCARD by microSD files (Mk) or QR (Q)",
+          "routes": ["/accounts/verify/coldcard"],
+          "needs": "seed",
+          "subFeatures": [
+            {
+              "id": "setup",
+              "kind": "happy",
+              "does": "Picks the model and how it connects"
+            },
+            {
+              "id": "mk-export-upload",
+              "kind": "happy",
+              "does": "Upload coldcard-export.json, pick an account with a balance"
+            },
+            {
+              "id": "mk-invalid-file",
+              "kind": "failure",
+              "does": "Invalid file. Please check your file and try again."
+            },
+            {
+              "id": "mk-message-file",
+              "kind": "happy",
+              "does": "Download or copy the message file; Next without either is refused"
+            },
+            {
+              "id": "mk-sign-upload",
+              "kind": "happy",
+              "does": "Upload the signed .txt, Prove Control, then the receipt"
+            },
+            {
+              "id": "mk-bad-signature",
+              "kind": "failure",
+              "does": "The signing process did not complete successfully"
+            },
+            {
+              "id": "q-qr-flow",
+              "kind": "happy",
+              "does": "COLDCARD Q export and signing by QR",
+              "needs": "camera"
+            }
+          ]
+        },
+        {
+          "id": "add-trezor",
+          "does": "Connects a Trezor, picks an account, and signs on the device",
+          "routes": ["/accounts/verify/trezor", "/accounts/:claimId/signing"],
+          "needs": "emulator",
+          "subFeatures": [
+            {
+              "id": "connect",
+              "kind": "happy",
+              "does": "Trezor Connect returns an account; Account Connected with an editable name"
+            },
+            {
+              "id": "sign",
+              "kind": "happy",
+              "does": "Prove Control, confirm on the device, then the receipt"
+            },
+            {
+              "id": "errors",
+              "kind": "failure",
+              "does": "Missing or invalid derivation path, device errors, Invalid signature"
+            }
+          ]
+        },
+        {
+          "id": "add-ledger",
+          "does": "Connects a Ledger (WebHID on web, native picker on desktop) and signs",
+          "routes": ["/accounts/verify/ledger", "/accounts/:claimId/signing"],
+          "needs": "emulator",
+          "subFeatures": [
+            {
+              "id": "connect",
+              "kind": "happy",
+              "does": "Finds accounts and picks one"
+            },
+            {
+              "id": "no-wallets",
+              "kind": "failure",
+              "does": "No wallets found"
+            },
+            {
+              "id": "sign",
+              "kind": "happy",
+              "does": "Prove Control on the device, then the receipt"
+            },
+            {
+              "id": "disconnect",
+              "kind": "failure",
+              "does": "Unplugging shows a toast; Retry resets the device"
+            }
+          ]
+        },
+        {
+          "id": "add-keystone",
+          "does": "Keystone QR export and QR signing",
+          "routes": ["/accounts/verify/keystone", "/accounts/:claimId/signing"],
+          "needs": "camera",
+          "subFeatures": [
+            {
+              "id": "qr-export",
+              "kind": "happy",
+              "does": "Scan the wallet export and pick an account"
+            },
+            {
+              "id": "qr-signing",
+              "kind": "happy",
+              "does": "Scan the message, sign, scan the signature, then the receipt"
+            },
+            {
+              "id": "qr-errors",
+              "kind": "failure",
+              "does": "Invalid QR code, Invalid signature, Scanner error"
+            }
+          ]
+        },
+        {
+          "id": "add-exchange",
+          "does": "Connects Coinbase, Kraken, Robinhood or Strike; refreshes, reconnects and removes",
+          "routes": ["/accounts/verify/coinbase", "/accounts/coinbase/:accountId"],
+          "needs": "exchange-fake",
+          "subFeatures": [
+            {
+              "id": "connect",
+              "kind": "happy",
+              "does": "Enter API credentials, Connect Account; <Exchange> Connected!"
+            },
+            {
+              "id": "client-validation",
+              "kind": "failure",
+              "does": "Required-field messages before sending"
+            },
+            {
+              "id": "connect-errors",
+              "kind": "failure",
+              "does": "Invalid key, rate limit, or no BTC balance"
+            },
+            {
+              "id": "detail",
+              "kind": "happy",
+              "does": "Amount, Status Connected, Account Type Custodial"
+            },
+            {
+              "id": "refresh",
+              "kind": "happy",
+              "does": "Refresh Balance; Balance refreshed"
+            },
+            {
+              "id": "reconnect",
+              "kind": "edge",
+              "does": "Reconnect Required after a year or bad credentials; Reconnect Account"
+            },
+            {
+              "id": "remove",
+              "kind": "happy",
+              "does": "Remove Account deletes at once, with no confirmation"
+            },
+            {
+              "id": "duplicate",
+              "kind": "edge",
+              "does": "Connecting the same exchange twice"
+            }
+          ]
+        },
+        {
+          "id": "strike-csv-import",
+          "does": "Imports a Strike CSV statement and removes an imported month",
+          "routes": ["/accounts/strike/:accountId"],
+          "needs": "exchange-fake",
+          "subFeatures": [
+            {
+              "id": "import",
+              "kind": "happy",
+              "does": "Drop or browse a CSV; Imported N transactions"
+            },
+            {
+              "id": "reimport",
+              "kind": "edge",
+              "does": "Importing again skips duplicates"
+            },
+            {
+              "id": "wrong-file",
+              "kind": "failure",
+              "does": "Please upload the CSV export, not the PDF."
+            },
+            {
+              "id": "no-btc-rows",
+              "kind": "failure",
+              "does": "No Bitcoin transactions found"
+            },
+            {
+              "id": "reversal",
+              "kind": "failure",
+              "does": "A reversed transaction asks for the Activity report instead"
+            },
+            {
+              "id": "months",
+              "kind": "happy",
+              "does": "Imported Statements lists months; one opens its transactions"
+            },
+            {
+              "id": "remove-month",
+              "kind": "happy",
+              "does": "Remove; Removed <Month> statement"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "multisig",
+      "name": "Multisig",
+      "features": [
+        {
+          "id": "multisig-create",
+          "does": "Pastes or uploads a multisig descriptor, names it, and lands on the signing hub",
+          "routes": ["/multisig", "/multisig/create", "/multisig/:claimId"],
+          "needs": "now",
+          "subFeatures": [
+            {
+              "id": "intro",
+              "kind": "happy",
+              "does": "Connect Your Multisig Wallet with Back and Next"
+            },
+            {
+              "id": "paste",
+              "kind": "happy",
+              "does": "Paste a public test descriptor, Verify Descriptor"
+            },
+            {
+              "id": "upload",
+              "kind": "happy",
+              "does": "Upload a .txt or .json export (Specter, Caravan, Electrum, Core)"
+            },
+            {
+              "id": "invalid",
+              "kind": "failure",
+              "does": "Invalid descriptor, or Invalid file"
+            },
+            {
+              "id": "detected",
+              "kind": "happy",
+              "does": "We've detected a 2 of 3 Multisig Wallet, with a Name field"
+            },
+            {
+              "id": "name-validation",
+              "kind": "failure",
+              "does": "Name can not be empty, or over 255 characters"
+            },
+            {
+              "id": "hub",
+              "kind": "happy",
+              "does": "The hub shows m of n, key badges, device tiles and the signature count needed"
+            },
+            {
+              "id": "abandon",
+              "kind": "happy",
+              "does": "Abandon, confirm; setup abandoned"
+            },
+            {
+              "id": "already-exists",
+              "kind": "edge",
+              "does": "A descriptor already tracked is reused, not duplicated"
+            },
+            {
+              "id": "archived",
+              "kind": "failure",
+              "does": "This account is archived, then /accounts#archived"
+            }
+          ]
+        },
+        {
+          "id": "multisig-verify",
+          "does": "Proves each key with its device until the multisig is verified",
+          "routes": [
+            "/multisig/:claimId/connect/:walletType/:keystoreId",
+            "/multisig/:claimId/signing/:walletType/:keystoreId",
+            "/multisig/verify/receipt/:claimId/:keystoreId"
+          ],
+          "needs": "emulator",
+          "subFeatures": [
+            {
+              "id": "pick-device",
+              "kind": "happy",
+              "does": "A device tile opens its connect steps",
+              "needs": "now"
+            },
+            {
+              "id": "check-device",
+              "kind": "happy",
+              "does": "Check Now; Wallet Identified or Not a match"
+            },
+            {
+              "id": "coldcard-mk-files",
+              "kind": "happy",
+              "does": "COLDCARD Mk by export and signed files, with no device",
+              "needs": "seed"
+            },
+            {
+              "id": "key-receipt",
+              "kind": "happy",
+              "does": "Key Verified! with Verify Next Key"
+            },
+            {
+              "id": "final-receipt",
+              "kind": "happy",
+              "does": "Multisig Verified! with Generate Statement"
+            },
+            {
+              "id": "resume-identified",
+              "kind": "edge",
+              "does": "Continue Verification? or replace the device"
+            },
+            {
+              "id": "qr-devices",
+              "kind": "happy",
+              "does": "Keystone and COLDCARD Q by QR",
+              "needs": "camera"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "portfolio",
+      "name": "Portfolio",
+      "features": [
+        {
+          "id": "portfolio-history",
+          "does": "Reads balance history, switches its range, and sets a custom range",
+          "routes": ["/portfolio"],
+          "needs": "now",
+          "subFeatures": [
+            {
+              "id": "balance",
+              "kind": "happy",
+              "does": "All accounts with BTC and USD"
+            },
+            {
+              "id": "range-presets",
+              "kind": "happy",
+              "does": "7D, 30D, 90D, 1Y and All; 90D is the default"
+            },
+            {
+              "id": "period-change",
+              "kind": "happy",
+              "does": "Signed change with a percentage and the range caption"
+            },
+            {
+              "id": "custom-range",
+              "kind": "happy",
+              "does": "Custom, Start and End dates, Apply"
+            },
+            {
+              "id": "custom-validation",
+              "kind": "failure",
+              "does": "Both dates needed, start before end, end not in the future, not before genesis"
+            },
+            {
+              "id": "generate-statement",
+              "kind": "happy",
+              "does": "Generate Statement opens the form with the shown accounts preselected"
+            },
+            {
+              "id": "no-history-range",
+              "kind": "edge",
+              "does": "No history for this range"
+            },
+            {
+              "id": "range-failed",
+              "kind": "failure",
+              "does": "Couldn't load this date range with Try again",
+              "needs": "fault"
+            }
+          ]
+        },
+        {
+          "id": "portfolio-filter",
+          "does": "Filters by account, searches, clears, and opens Manage accounts",
+          "routes": ["/portfolio"],
+          "needs": "now",
+          "subFeatures": [
+            {
+              "id": "all-accounts",
+              "kind": "happy",
+              "does": "All accounts with the total"
+            },
+            {
+              "id": "toggle-account",
+              "kind": "happy",
+              "does": "Selecting accounts updates the label, balance and charts"
+            },
+            {
+              "id": "badges",
+              "kind": "edge",
+              "does": "Unverified and Pending badges on rows"
+            },
+            {
+              "id": "search",
+              "kind": "happy",
+              "does": "Search accounts; No accounts match your search"
+            },
+            {
+              "id": "clear",
+              "kind": "happy",
+              "does": "Clear returns to All accounts"
+            },
+            {
+              "id": "manage",
+              "kind": "happy",
+              "does": "Manage accounts opens /accounts"
+            },
+            {
+              "id": "narrow-dropdown",
+              "kind": "edge",
+              "does": "Narrow windows use a Filter accounts dropdown"
+            },
+            {
+              "id": "reconnect-row",
+              "kind": "edge",
+              "does": "Exchange rows that need reconnecting can't be selected",
+              "needs": "exchange-fake"
+            }
+          ]
+        },
+        {
+          "id": "portfolio-monthly",
+          "does": "Reads monthly net change and the net accumulated summary",
+          "routes": ["/portfolio"],
+          "needs": "now",
+          "subFeatures": [
+            {
+              "id": "net-accumulated",
+              "kind": "happy",
+              "does": "Net accumulated with Avg / month"
+            },
+            {
+              "id": "in-out-bar",
+              "kind": "edge",
+              "does": "An in and out bar when there was an outflow"
+            },
+            {
+              "id": "bar-chart",
+              "kind": "happy",
+              "does": "Monthly net change, one bar per month"
+            },
+            {
+              "id": "no-change",
+              "kind": "edge",
+              "does": "No net change in this date range"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "statements",
+      "name": "Statements",
+      "features": [
+        {
+          "id": "statements",
+          "does": "Generates a statement and sees it stored, listed and rendered",
+          "routes": ["/statements", "/statements/create", "/statements/:statementId"],
+          "needs": "now",
+          "subFeatures": [
+            {
+              "id": "generate",
+              "kind": "happy",
+              "does": "Dates, currency, name, verified accounts, Generate Statement"
+            },
+            {
+              "id": "watch-only-excluded",
+              "kind": "edge",
+              "does": "Watch-only accounts are not offered"
+            },
+            {
+              "id": "pending-excluded",
+              "kind": "edge",
+              "does": "Accounts still pending verification are not offered",
+              "needs": "seed"
+            },
+            {
+              "id": "listed",
+              "kind": "happy",
+              "does": "The new statement shows in the list"
+            },
+            {
+              "id": "details",
+              "kind": "happy",
+              "does": "Contact, status, currency and period beside the PDF"
+            },
+            {
+              "id": "pdf-content",
+              "kind": "happy",
+              "does": "The PDF shows balances, money in and out, and the period's transactions"
+            },
+            {
+              "id": "generation-progress",
+              "kind": "edge",
+              "does": "Generating Your Statement with a percentage, then Statement Completed"
+            },
+            {
+              "id": "other-currency",
+              "kind": "edge",
+              "does": "EUR, GBP or CAD adds approximate values and a rate column"
+            },
+            {
+              "id": "address",
+              "kind": "edge",
+              "does": "Address appears on the statement exactly as typed"
+            },
+            {
+              "id": "name-prefill",
+              "kind": "edge",
+              "does": "Name is prefilled from Settings"
+            },
+            {
+              "id": "end-date-clamp",
+              "kind": "edge",
+              "does": "End Date clamps to two days ago"
+            },
+            {
+              "id": "start-after-end",
+              "kind": "failure",
+              "does": "Start date must be before end date"
+            },
+            {
+              "id": "too-early",
+              "kind": "failure",
+              "does": "Statements must start on or after April 1, 2023."
+            },
+            {
+              "id": "too-long",
+              "kind": "failure",
+              "does": "Statement date range cannot exceed 2 years"
+            },
+            {
+              "id": "none-selected",
+              "kind": "edge",
+              "does": "Generate is disabled with no account checked"
+            },
+            {
+              "id": "no-eligible-accounts",
+              "kind": "failure",
+              "does": "First, Connect an Account. with Connect Wallet",
+              "needs": "fresh"
+            },
+            {
+              "id": "empty-period",
+              "kind": "edge",
+              "does": "A quiet period says there were no transactions or balance changes"
+            },
+            {
+              "id": "cancel",
+              "kind": "edge",
+              "does": "Cancel returns where the form was opened from"
+            },
+            {
+              "id": "close-while-pending",
+              "kind": "edge",
+              "does": "Closing the progress screen goes to Statements with a pending badge"
+            },
+            {
+              "id": "generation-failed",
+              "kind": "failure",
+              "does": "Failed badge and message, such as Couldn't load all transactions",
+              "needs": "fault"
+            },
+            {
+              "id": "interrupted",
+              "kind": "failure",
+              "does": "Generation was interrupted after a Sentinel restart",
+              "needs": "fault"
+            }
+          ],
+          "recipes": [
+            {
+              "file": "statements.md",
+              "proves": ["generate", "watch-only-excluded", "listed", "details", "pdf-content"]
+            }
+          ]
+        },
+        {
+          "id": "statements-list",
+          "does": "Switches card and list views, opens a statement, and deletes one",
+          "routes": ["/statements"],
+          "needs": "now",
+          "subFeatures": [
+            {
+              "id": "card-view",
+              "kind": "happy",
+              "does": "Cards with period, created time and View"
+            },
+            {
+              "id": "list-view",
+              "kind": "happy",
+              "does": "List view table with date, requester, status and actions"
+            },
+            {
+              "id": "view-resets",
+              "kind": "edge",
+              "does": "The view returns to cards after reload"
+            },
+            {
+              "id": "delete",
+              "kind": "happy",
+              "does": "Delete statement, confirm; Statement deleted"
+            },
+            {
+              "id": "no-delete-while-pending",
+              "kind": "edge",
+              "does": "No delete control on a pending statement"
+            },
+            {
+              "id": "empty",
+              "kind": "edge",
+              "does": "Your holdings, on record with Generate Statement"
+            },
+            {
+              "id": "load-error",
+              "kind": "failure",
+              "does": "Error fetching your statements with Try Again",
+              "needs": "fault"
+            }
+          ]
+        },
+        {
+          "id": "statement-details",
+          "does": "Switches Full Period and Monthly, downloads the PDF, and deletes from details",
+          "routes": ["/statements/:statementId"],
+          "needs": "now",
+          "subFeatures": [
+            {
+              "id": "pdf-preview",
+              "kind": "happy",
+              "does": "The statement PDF shows in the page, readable without downloading it"
+            },
+            {
+              "id": "format-switch",
+              "kind": "happy",
+              "does": "Full Period and Monthly change the PDF"
+            },
+            {
+              "id": "download",
+              "kind": "happy",
+              "does": "Download saves statement-<id>.pdf in the chosen format"
+            },
+            {
+              "id": "delete",
+              "kind": "happy",
+              "does": "Delete, confirm; back to Statements"
+            },
+            {
+              "id": "close",
+              "kind": "happy",
+              "does": "Back to statements"
+            },
+            {
+              "id": "contact-na",
+              "kind": "edge",
+              "does": "Contact Details shows N/A with no name or address"
+            },
+            {
+              "id": "unknown-id",
+              "kind": "failure",
+              "does": "Statement not found, or Invalid statement ID"
+            },
+            {
+              "id": "failed-statement",
+              "kind": "failure",
+              "does": "Failed badge, error banner, Download disabled",
+              "needs": "fault"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "settings",
+      "name": "Settings",
+      "features": [
+        {
+          "id": "settings-name",
+          "does": "Saves a name and sees it on a new statement",
+          "routes": ["/settings"],
+          "needs": "now",
+          "subFeatures": [
+            {
+              "id": "save",
+              "kind": "happy",
+              "does": "Your name, Save name; Name saved"
+            },
+            {
+              "id": "save-disabled",
+              "kind": "edge",
+              "does": "Save name is disabled when nothing changed"
+            },
+            {
+              "id": "trimmed",
+              "kind": "edge",
+              "does": "The name is saved trimmed, up to 200 characters"
+            },
+            {
+              "id": "persists",
+              "kind": "edge",
+              "does": "The name is still there after reload"
+            },
+            {
+              "id": "prefills-statement",
+              "kind": "happy",
+              "does": "The New Statement Name field starts with it"
+            },
+            {
+              "id": "save-error",
+              "kind": "failure",
+              "does": "Could not save your name",
+              "needs": "fault"
+            }
+          ]
+        },
+        {
+          "id": "settings-price",
+          "does": "Changes the price source and fallbacks",
+          "routes": ["/settings"],
+          "needs": "now",
+          "subFeatures": [
+            {
+              "id": "section",
+              "kind": "happy",
+              "does": "Bitcoin price with Price source and Allow fallbacks"
+            },
+            {
+              "id": "own-mempool-default",
+              "kind": "edge",
+              "does": "Your mempool server is the default on server installs",
+              "needs": "platform"
+            },
+            {
+              "id": "change-source",
+              "kind": "happy",
+              "does": "Picking a source saves at once and shows a check",
+              "needs": "outside"
+            },
+            {
+              "id": "toggle-fallbacks",
+              "kind": "happy",
+              "does": "Allow fallbacks saves at once"
+            },
+            {
+              "id": "fallback-in-use",
+              "kind": "edge",
+              "does": "Using <fallback> while <source> is unavailable",
+              "needs": "fault"
+            },
+            {
+              "id": "last-known",
+              "kind": "edge",
+              "does": "No price source is available right now. Showing the last known price.",
+              "needs": "fault"
+            },
+            {
+              "id": "persists",
+              "kind": "edge",
+              "does": "The choice is still there after reload"
+            }
+          ]
+        },
+        {
+          "id": "settings-security",
+          "does": "Changes the PIN and signs out everywhere",
+          "routes": ["/settings"],
+          "needs": "pin",
+          "subFeatures": [
+            {
+              "id": "hidden-without-pin",
+              "kind": "edge",
+              "does": "No Security section while PINs are off",
+              "needs": "now"
+            },
+            {
+              "id": "change-pin",
+              "kind": "happy",
+              "does": "Current PIN, new PIN, confirm; PIN changed"
+            },
+            {
+              "id": "wrong-current",
+              "kind": "failure",
+              "does": "Wrong PIN, with tries left before a wait"
+            },
+            {
+              "id": "mismatch",
+              "kind": "failure",
+              "does": "Those PINs didn't match"
+            },
+            {
+              "id": "sign-out-everywhere",
+              "kind": "happy",
+              "does": "Sign out everywhere returns to sign-in; not on desktop"
+            }
+          ]
+        },
+        {
+          "id": "settings-statement-source",
+          "does": "Chooses mempool.space or the Electrum server for statements",
+          "routes": ["/settings"],
+          "needs": "desktop-web",
+          "subFeatures": [
+            {
+              "id": "choose",
+              "kind": "happy",
+              "does": "mempool.space or Configured Electrum server, saved at once"
+            },
+            {
+              "id": "privacy-help",
+              "kind": "edge",
+              "does": "The help line says who sees the lookups"
+            },
+            {
+              "id": "tor-note",
+              "kind": "edge",
+              "does": "A Tor connection warns statements could take minutes",
+              "needs": "electron"
+            },
+            {
+              "id": "hidden-on-servers",
+              "kind": "edge",
+              "does": "Hidden in web, StartOS and Umbrel builds",
+              "needs": "now"
+            }
+          ]
+        },
+        {
+          "id": "settings-electrum",
+          "does": "Adds, tests, connects, renames and deletes saved Electrum connections",
+          "routes": ["/settings"],
+          "needs": "desktop-web",
+          "subFeatures": [
+            {
+              "id": "list",
+              "kind": "happy",
+              "does": "Saved connections, n of 5, with status"
+            },
+            {
+              "id": "new-and-save",
+              "kind": "happy",
+              "does": "New connection, Save; it does not connect"
+            },
+            {
+              "id": "save-and-connect",
+              "kind": "happy",
+              "does": "Save & Connect; Connection saved"
+            },
+            {
+              "id": "test",
+              "kind": "happy",
+              "does": "Test Connection; Connection successful or the error"
+            },
+            {
+              "id": "rename",
+              "kind": "happy",
+              "does": "Rename a connection; Connection renamed"
+            },
+            {
+              "id": "delete",
+              "kind": "happy",
+              "does": "Delete connection; the active one can't be deleted"
+            },
+            {
+              "id": "limit",
+              "kind": "edge",
+              "does": "Limit reached at 5 connections"
+            },
+            {
+              "id": "unsaved-changes",
+              "kind": "edge",
+              "does": "Switching with unsaved changes asks to discard"
+            },
+            {
+              "id": "invalid",
+              "kind": "failure",
+              "does": "Invalid Electrum host or port"
+            },
+            {
+              "id": "tor",
+              "kind": "edge",
+              "does": "Connect via Tor, onion addresses, and Tor failures",
+              "needs": "electron"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "pin",
+      "name": "PIN",
+      "features": [
+        {
+          "id": "pin-setup",
+          "does": "Sets a first PIN and confirms it",
+          "routes": [],
+          "needs": "pin",
+          "subFeatures": [
+            {
+              "id": "choose-confirm",
+              "kind": "happy",
+              "does": "Set up your PIN, then Confirm your PIN"
+            },
+            {
+              "id": "mismatch",
+              "kind": "failure",
+              "does": "Those PINs didn't match. Choose your PIN again."
+            },
+            {
+              "id": "pin-set",
+              "kind": "happy",
+              "does": "Your PIN is set with Show PIN, Copy PIN and Continue"
+            },
+            {
+              "id": "after-reset",
+              "kind": "edge",
+              "does": "Choose a new PIN after a reset keeps accounts and history"
+            },
+            {
+              "id": "startos-wait",
+              "kind": "edge",
+              "does": "Set your PIN in StartOS, then moves on by itself",
+              "needs": "platform"
+            },
+            {
+              "id": "insecure",
+              "kind": "failure",
+              "does": "Insecure connection not allowed on StartOS over plain HTTP"
+            }
+          ]
+        },
+        {
+          "id": "pin-lock",
+          "does": "Locks with the header Lock button and signs back in",
+          "routes": [],
+          "needs": "pin",
+          "subFeatures": [
+            {
+              "id": "lock",
+              "kind": "happy",
+              "does": "Lock covers the app with Enter your PIN"
+            },
+            {
+              "id": "sign-in",
+              "kind": "happy",
+              "does": "The right PIN reveals the app"
+            },
+            {
+              "id": "wrong-pin",
+              "kind": "failure",
+              "does": "Wrong PIN, with tries left"
+            },
+            {
+              "id": "wait",
+              "kind": "failure",
+              "does": "After 5 wrong PINs, a wait that starts at 30 seconds and doubles"
+            },
+            {
+              "id": "reload-keeps",
+              "kind": "edge",
+              "does": "Reloading stays signed in; a new tab asks for the PIN"
+            },
+            {
+              "id": "back-forward-locks",
+              "kind": "edge",
+              "does": "Back or Forward to a cached page locks it"
+            },
+            {
+              "id": "session-ended",
+              "kind": "edge",
+              "does": "Sign out everywhere elsewhere locks this tab on focus"
+            }
+          ]
+        },
+        {
+          "id": "pin-reset",
+          "does": "Resets a forgotten PIN",
+          "routes": [],
+          "needs": "pin",
+          "subFeatures": [
+            {
+              "id": "forgot",
+              "kind": "happy",
+              "does": "Forgot PIN? opens Reset your PIN"
+            },
+            {
+              "id": "umbrel-steps",
+              "kind": "happy",
+              "does": "Terminal steps with Copy command"
+            },
+            {
+              "id": "umbrel-reset",
+              "kind": "happy",
+              "does": "The reset command and a restart lead to Choose a new PIN",
+              "needs": "seed"
+            },
+            {
+              "id": "startos-steps",
+              "kind": "happy",
+              "does": "Set PIN action steps",
+              "needs": "platform"
+            },
+            {
+              "id": "desktop-reset",
+              "kind": "happy",
+              "does": "Reset PIN asks the computer's administrator, then relaunches",
+              "needs": "electron"
+            },
+            {
+              "id": "desktop-cancelled",
+              "kind": "failure",
+              "does": "PIN not reset. Nothing changed.",
+              "needs": "electron"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "notices",
+      "name": "Notices",
+      "features": [
+        {
+          "id": "notices",
+          "does": "Sees and dismisses the public server and release notices",
+          "routes": [],
+          "needs": "desktop-web",
+          "subFeatures": [
+            {
+              "id": "public-server",
+              "kind": "happy",
+              "does": "Want more privacy? with Connect your node, which opens Electrum settings"
+            },
+            {
+              "id": "public-dismiss",
+              "kind": "happy",
+              "does": "Dismiss hides it, and it stays hidden"
+            },
+            {
+              "id": "public-hidden-on-own-node",
+              "kind": "edge",
+              "does": "Connecting another server hides it"
+            },
+            {
+              "id": "release",
+              "kind": "happy",
+              "does": "A newer version shows a Download pill",
+              "needs": "packaged"
+            },
+            {
+              "id": "release-dismiss",
+              "kind": "edge",
+              "does": "Dismiss hides it until the next launch",
+              "needs": "packaged"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "desktop",
+      "name": "Desktop",
+      "features": [
+        {
+          "id": "desktop-shell",
+          "does": "Uses the tray, close to hide, single instance and external links",
+          "routes": [],
+          "needs": "electron",
+          "subFeatures": [
+            {
+              "id": "tray",
+              "kind": "happy",
+              "does": "Tray menu Show Control Center and Quit"
+            },
+            {
+              "id": "close-to-hide",
+              "kind": "happy",
+              "does": "Closing hides the window and locks the PIN"
+            },
+            {
+              "id": "single-instance",
+              "kind": "edge",
+              "does": "A second launch focuses the first window"
+            },
+            {
+              "id": "external-links",
+              "kind": "happy",
+              "does": "Help and Download open in the system browser"
+            },
+            {
+              "id": "pin-first",
+              "kind": "edge",
+              "does": "The desktop app always asks for a PIN, so setup comes first"
+            }
+          ]
+        },
+        {
+          "id": "desktop-ledger-picker",
+          "does": "Picks a Ledger in the app's picker or the system dialog",
+          "routes": [],
+          "needs": "emulator",
+          "subFeatures": [
+            {
+              "id": "inline-picker",
+              "kind": "happy",
+              "does": "Choose a Ledger, then <model> is connected"
+            },
+            {
+              "id": "native-dialog",
+              "kind": "happy",
+              "does": "Connect Ledger system dialog with one button per device"
+            },
+            {
+              "id": "errors",
+              "kind": "failure",
+              "does": "Connection timed out, or Your Ledger was disconnected"
+            }
+          ]
+        },
+        {
+          "id": "desktop-trezor-chooser",
+          "does": "Picks a Trezor in the USB chooser window",
+          "routes": [],
+          "needs": "emulator",
+          "subFeatures": [
+            {
+              "id": "chooser",
+              "kind": "happy",
+              "does": "Connect Trezor window lists wallets with Cancel and Connect",
+              "needs": "outside"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "platform",
+      "name": "Platforms",
+      "features": [
+        {
+          "id": "startos-actions",
+          "does": "Sets the PIN and configures mempool and logging from StartOS",
+          "routes": [],
+          "needs": "platform",
+          "subFeatures": [
+            {
+              "id": "pin-task",
+              "kind": "happy",
+              "does": "A critical task asks to set a PIN on install"
+            },
+            {
+              "id": "set-pin",
+              "kind": "happy",
+              "does": "Set PIN action; running it again signs everyone out"
+            },
+            {
+              "id": "set-pin-validation",
+              "kind": "failure",
+              "does": "Use exactly 6 digits, or the PINs don't match"
+            },
+            {
+              "id": "configure",
+              "kind": "happy",
+              "does": "Mempool URL Override and Log Level, then a restart"
+            },
+            {
+              "id": "configure-validation",
+              "kind": "failure",
+              "does": "A URL with credentials, a query or a fragment is refused"
+            }
+          ]
+        },
+        {
+          "id": "umbrel-install",
+          "does": "Installs on Umbrel over HTTPS and sets the PIN in the app",
+          "routes": [],
+          "needs": "platform",
+          "subFeatures": [
+            {
+              "id": "install",
+              "kind": "happy",
+              "does": "Installs with bitcoin, electrs and mempool"
+            },
+            {
+              "id": "first-pin",
+              "kind": "happy",
+              "does": "Set up your PIN in the app",
+              "needs": "pin"
+            },
+            {
+              "id": "own-mempool-price",
+              "kind": "edge",
+              "does": "Your mempool server is the default price source"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

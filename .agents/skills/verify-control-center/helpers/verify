@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Runs one tools/verify script from the repository root. Usage: helpers/verify <command> [args]
+set -euo pipefail
+root="$(cd "$(dirname "$0")/../../../.." && pwd)"
+command="${1:-}"
+case "$command" in
+  launch | seed | doctor | query | evidence | cleanup) shift ;;
+  *)
+    echo "Usage: helpers/verify launch|seed|doctor|query|evidence|cleanup [args]" >&2
+    exit 2
+    ;;
+esac
+cd "$root"
+# Start from an empty environment plus the same allowlist ChildEnv uses (tools/verify/process.ts), so the caller's
+# proxy, NODE_OPTIONS or GIT_* settings can't steer the scripts themselves.
+keep=(NODE_NO_WARNINGS=1)
+# TMP and TEMP too: Node falls back to them for its temp folder when TMPDIR isn't set.
+for name in PATH HOME USER LOGNAME SHELL LANG TMPDIR TMP TEMP; do
+  if [ -n "${!name:-}" ]; then keep+=("$name=${!name}"); fi
+done
+# tsx waits on an open stdin, so give it none.
+exec env -i "${keep[@]}" "$root/node_modules/.bin/tsx" --tsconfig tools/verify/tsconfig.json "tools/verify/$command.ts" "$@" </dev/null
