@@ -102,7 +102,7 @@ export function ManualAccountDetailsPage(): JSX.Element {
   }
 
   async function handleUpdateBalance(): Promise<void> {
-    if (accountId == null || accountId === '' || !newBtcAmount) {
+    if (accountId == null || accountId === '' || !newBtcAmount || !newBalanceDate) {
       return
     }
     const balanceSats = Math.round(Number(newBtcAmount) * 1e8).toString()
@@ -121,7 +121,7 @@ export function ManualAccountDetailsPage(): JSX.Element {
   }
 
   async function handleAddTransaction(): Promise<void> {
-    if (accountId == null || accountId === '' || !txAmount) {
+    if (accountId == null || accountId === '' || !txAmount || !txDate) {
       return
     }
     const amountSats = Math.round(Number(txAmount) * 1e8).toString()
@@ -323,7 +323,7 @@ export function ManualAccountDetailsPage(): JSX.Element {
                 void handleUpdateBalance()
               }}
               isLoading={updateBalanceMutation.isLoading}
-              isDisabled={!newBtcAmount}
+              isDisabled={!newBtcAmount || !newBalanceDate}
             >
               Update
             </Button>
@@ -410,7 +410,7 @@ export function ManualAccountDetailsPage(): JSX.Element {
                   void handleAddTransaction()
                 }}
                 isLoading={addTxMutation.isLoading}
-                isDisabled={!txAmount}
+                isDisabled={!txAmount || !txDate}
               >
                 Add
               </Button>

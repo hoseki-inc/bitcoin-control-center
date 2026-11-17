@@ -23,7 +23,8 @@ export function ClaimsVerifyManualPage(): JSX.Element {
   const createMutation = trpc.portalProve.manual.create.useMutation()
   const utils = trpc.useUtils()
 
-  const isValid = displayName.trim().length > 0 && btcAmount.trim().length > 0 && Number(btcAmount) >= 0
+  const isValid =
+    displayName.trim().length > 0 && btcAmount.trim().length > 0 && Number(btcAmount) >= 0 && balanceDate !== ''
 
   async function handleSubmit(): Promise<void> {
     if (!isValid) {
