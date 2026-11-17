@@ -30,6 +30,7 @@ This is especially useful for UI/UX changes (a before & after screenshot helps).
 - [ ] I have commented my code, particularly in hard-to-understand areas.
 - [ ] I have added tests to cover my changes where it makes sense.
 - [ ] I have handled edge-cases, such as non-happy paths; errors; etc.
+- [ ] I have updated the verification map (`features/map.json`) and recipes for any user-facing change, or none was needed.
 
 - [ ] I have considered StartOS upgrade and local-data compatibility.
 - [ ] I have not introduced an implicit hosted-service or telemetry dependency.

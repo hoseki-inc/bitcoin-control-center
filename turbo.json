@@ -45,6 +45,10 @@
       "cache": false,
       "persistent": true
     },
+    "control-center#test": {
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/.agents/skills/verify-control-center/features/map.json"],
+      "outputs": ["coverage/**"]
+    },
     "@bitcoin-control-center/shared#test": {
       "inputs": [
         "$TURBO_DEFAULT$",
