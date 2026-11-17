@@ -1,7 +1,7 @@
 import { FormControl, Input, InputGroup, Textarea } from '@chakra-ui/react'
 import type { Address } from '@hoseki/packages/bitcoin'
 import { type Dispatch, type SetStateAction, useState } from 'react'
-import { ErrorBanner, FormErrorMessage, LabelWithTooltip } from '..'
+import { ErrorBanner, LabelWithTooltip } from '..'
 import { monoInputProps } from '../../utils/bitcoin'
 import { CopyButtonAddon } from './input-addons'
 
@@ -67,9 +67,6 @@ export function BitcoinSigningFormFields({
           placeholder="Enter your signed message output"
           {...monoInputProps}
         />
-        {error != null && error !== '' && (
-          <FormErrorMessage>Invalid input, please enter a valid xPub/yPub/zPub key</FormErrorMessage>
-        )}
       </FormControl>
     </>
   )
