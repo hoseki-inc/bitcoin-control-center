@@ -10,6 +10,7 @@ import type { Logger } from 'pino'
 import { z } from 'zod'
 import type { SentinelDb } from '../../db/drizzle'
 import { exchangeAccounts, exchangeBalanceSnapshots, exchangeStatementTxs } from '../../db/schema'
+import { normalizeDbTimestamp } from '../../db/timestamp'
 import { Encrypted } from '../../lib/encrypted'
 import { getStrikeBtcBalance, validateStrikeApiKey } from './strike'
 
@@ -68,7 +69,7 @@ export class ExchangeService {
         displayName: row.displayName,
         balanceSats: isConnected ? row.balanceSats : null,
         balanceAsOf: isConnected ? row.balanceAsOf : null,
-        createdAt: row.createdAt,
+        createdAt: normalizeDbTimestamp(row.createdAt),
         connectionStatus,
       }
     })
@@ -527,7 +528,7 @@ export class ExchangeService {
       displayName: row.displayName,
       balanceSats,
       balanceAsOf: now,
-      createdAt: row.createdAt,
+      createdAt: normalizeDbTimestamp(row.createdAt),
       connectionStatus: 'connected',
     })
   })
@@ -1008,7 +1009,7 @@ export class ExchangeService {
         })
         .where(eq(exchangeAccounts.id, args.replaceAccountId))
 
-      return Ok({ id: args.replaceAccountId, createdAt: existing.createdAt })
+      return Ok({ id: args.replaceAccountId, createdAt: normalizeDbTimestamp(existing.createdAt) })
     }
 
     const id = nanoid()
@@ -1041,18 +1042,11 @@ export class ExchangeService {
     if (connectedAt == null || connectedAt === '') {
       return true
     }
-    const connectedAtMs = Date.parse(this.normalizeTimestamp(connectedAt))
+    const connectedAtMs = Date.parse(normalizeDbTimestamp(connectedAt))
     if (!Number.isFinite(connectedAtMs)) {
       return true
     }
     return Date.now() - connectedAtMs >= mandatoryReconnectIntervalMs
-  }
-
-  private normalizeTimestamp(timestamp: string): string {
-    if (timestamp.includes('T')) {
-      return timestamp
-    }
-    return `${timestamp.replace(' ', 'T')}Z`
   }
 
   private getCredentialConnectionStatus(encryptedCredentials: string): ExchangeConnectionStatus {

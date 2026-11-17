@@ -48,6 +48,7 @@ import {
   settings,
   signedMessages as signedMessagesTable,
 } from '../../db/schema'
+import { parseDbTimestamp } from '../../db/timestamp'
 import { featureRouters } from '../../features'
 import { loggableError } from '../../lib/loggable-error'
 import { authRouter } from '../auth/router'
@@ -159,7 +160,7 @@ function claimNetworkToNetwork(claimNetwork: string): string {
 }
 
 function keystoreRowToDto(row: KeystoreRow): KeystoreDto {
-  const now = new Date(row.createdAt)
+  const now = parseDbTimestamp(row.createdAt)
   const xpub = Xpub.fromString(row.xpub)
   if (xpub.isErr()) {
     throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Stored keystore xpub is invalid' })
@@ -206,7 +207,7 @@ function buildClaimDto(
   latestChallenge: ChallengeRow | null,
   signedMessages: SignedMessageRow[],
 ): ClaimDto {
-  const now = new Date(row.createdAt)
+  const now = parseDbTimestamp(row.createdAt)
   const keystoreDtos = keystores.map(keystoreRowToDto)
   return {
     // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- SAFETY: Control Center accepts nanoids as well as prefixed claim IDs; preserve the existing DTO contract without rewriting IDs.
@@ -268,8 +269,8 @@ function signedMessageRowToDto(row: SignedMessageRow): SignedMessageDto {
   return {
     version: 0,
     id: parseUnknown(SignedMessageIdSchema, row.id).expect('Stored signed-message ID is invalid'),
-    createdAt: new Date(row.createdAt),
-    updatedAt: new Date(row.signedAt ?? row.createdAt),
+    createdAt: parseDbTimestamp(row.createdAt),
+    updatedAt: parseDbTimestamp(row.signedAt ?? row.createdAt),
     address: Address.fromString(row.address).expect('Stored signing address is invalid').toString(),
     messageTextToSign: getMessageTextToSign(row.id, row.messageText),
     signedAt: row.signedAt != null && row.signedAt !== '' ? new Date(row.signedAt) : null,
@@ -912,8 +913,8 @@ const registryRouter = router({
               claimId: existing.accountId,
               variant: 'signed_message' as const,
               isSatisfied: false,
-              createdAt: new Date(existing.createdAt),
-              updatedAt: new Date(existing.createdAt),
+              createdAt: parseDbTimestamp(existing.createdAt),
+              updatedAt: parseDbTimestamp(existing.createdAt),
               completedAt: null,
             }
           }
@@ -1009,7 +1010,7 @@ const registryRouter = router({
         claimId: challenge.accountId,
         variant: 'signed_message' as const,
         isSatisfied: true,
-        createdAt: new Date(challenge.createdAt),
+        createdAt: parseDbTimestamp(challenge.createdAt),
         updatedAt: new Date(now),
         completedAt: new Date(now),
       }
@@ -1190,8 +1191,8 @@ const registryRouter = router({
                 claimId: existingChallenge.accountId,
                 variant: 'signed_message' as const,
                 isSatisfied: false,
-                createdAt: new Date(existingChallenge.createdAt),
-                updatedAt: new Date(existingChallenge.createdAt),
+                createdAt: parseDbTimestamp(existingChallenge.createdAt),
+                updatedAt: parseDbTimestamp(existingChallenge.createdAt),
                 completedAt: null,
               },
               challengeMessage: challengeMessageRowToDto({ ...existingSm, signedAt: null, signature: null }),
@@ -1643,7 +1644,7 @@ const statementRouter = router({
       const pdfResult = mapper.toPdfStatement(
         {
           id: loaded.row.id,
-          createdAt: new Date(loaded.row.createdAt),
+          createdAt: parseDbTimestamp(loaded.row.createdAt),
           status: 'completed',
           counter: loaded.row.counter,
           timezone: loaded.row.timezone,
