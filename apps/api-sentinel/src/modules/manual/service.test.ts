@@ -209,7 +209,9 @@ describe('portfolio history entries', () => {
     ])
 
     // Deleting it takes the amount back out of the same dates.
-    expect((await service.deleteTransaction(buy.unwrap().id)).isOk()).toBe(true)
+    expect((await service.deleteTransaction({ transactionId: buy.unwrap().id, removeFromBalance: true })).isOk()).toBe(
+      true,
+    )
     expect((await service.getAccount(account.id))?.balanceSats).toBe('9000')
     await expect(history(service)).resolves.toEqual([
       ['2026-09-01T12:00:00.000Z', '5000'],
@@ -253,7 +255,7 @@ describe('portfolio history entries', () => {
       amountSats: '2000',
       transactedAt: '2026-09-05T12:00:00.000Z',
     })
-    await service.deleteTransaction(first.unwrap().id)
+    await service.deleteTransaction({ transactionId: first.unwrap().id, removeFromBalance: true })
     await expect(history(service)).resolves.toEqual([
       ['2026-09-05T12:00:00.000Z', '2000'],
       ['2026-09-10T12:00:00.000Z', '2000'],
@@ -273,7 +275,7 @@ describe('portfolio history entries', () => {
       addToBalance: true,
     })
     await service.updateBalance({ accountId: account.id, balanceSats: '7000', balanceAsOf: '2026-09-03T12:00:00.000Z' })
-    await service.deleteTransaction(buy.unwrap().id)
+    await service.deleteTransaction({ transactionId: buy.unwrap().id, removeFromBalance: true })
     expect((await service.getAccount(account.id))?.balanceSats).toBe('6000')
     await expect(history(service)).resolves.toEqual([
       ['2026-09-01T12:00:00.000Z', '5000'],
@@ -305,7 +307,7 @@ describe('portfolio history entries', () => {
       ['2026-08-10T12:00:00.000Z', '2000'],
       ['2026-09-02T12:00:00.000Z', '3000'],
     ])
-    await service.deleteTransaction(buy.unwrap().id)
+    await service.deleteTransaction({ transactionId: buy.unwrap().id, removeFromBalance: true })
     await expect(history(service)).resolves.toEqual([
       ['2026-08-10T12:00:00.000Z', '2000'],
       ['2026-09-02T12:00:00.000Z', '3000'],
@@ -470,6 +472,115 @@ describe('portfolio history entries', () => {
       'Transaction total would exceed the current balance. Check "Add this amount to balance" or update the balance first.',
     )
     await expect(service.listTransactions(account.id)).resolves.toEqual([])
+  })
+
+  it.each(['buy', 'sell', 'transfer_out'] as const)(
+    'leaves the balance alone when a %s is deleted without changing it',
+    async (type) => {
+      const { db, service } = await setup()
+      const account = (
+        await service.createAccount({
+          displayName: 'Cold',
+          balanceSats: '100000000',
+          balanceAsOf: '2026-09-01T12:00:00.000Z',
+        })
+      ).unwrap()
+      const transaction = await service.addTransaction({
+        accountId: account.id,
+        type,
+        amountSats: '10000000',
+        transactedAt: '2026-09-05T12:00:00.000Z',
+      })
+
+      const deleted = await service.deleteTransaction({
+        transactionId: transaction.unwrap().id,
+        removeFromBalance: false,
+      })
+      expect(deleted.isOk()).toBe(true)
+      await expect(service.listTransactions(account.id)).resolves.toEqual([])
+      expect((await service.getAccount(account.id))?.balanceSats).toBe('100000000')
+      await expect(
+        db
+          .select({ timestamp: manualBalanceSnapshots.timestamp, balanceSats: manualBalanceSnapshots.balanceSats })
+          .from(manualBalanceSnapshots),
+      ).resolves.toEqual([{ timestamp: '2026-09-01T12:00:00.000Z', balanceSats: '100000000' }])
+    },
+  )
+
+  it.each([
+    ['buy', '90000000'],
+    ['sell', '110000000'],
+  ] as const)('moves the balance back when a %s is deleted with the box checked', async (type, expected) => {
+    const { service } = await setup()
+    const account = (
+      await service.createAccount({
+        displayName: 'Cold',
+        balanceSats: '100000000',
+        balanceAsOf: '2026-09-01T12:00:00.000Z',
+      })
+    ).unwrap()
+    const transaction = await service.addTransaction({
+      accountId: account.id,
+      type,
+      amountSats: '10000000',
+      transactedAt: '2026-09-05T12:00:00.000Z',
+    })
+
+    await service.deleteTransaction({ transactionId: transaction.unwrap().id, removeFromBalance: true })
+    expect((await service.getAccount(account.id))?.balanceSats).toBe(expected)
+    await expect(history(service)).resolves.toEqual([
+      ['2026-09-01T12:00:00.000Z', '100000000'],
+      ['2026-09-05T12:00:00.000Z', (BigInt(expected) - 100000000n).toString()],
+    ])
+  })
+
+  it('rejects a delete that would leave the transactions above the balance and keeps the transaction', async () => {
+    const { service } = await setup()
+    const account = (
+      await service.createAccount({ displayName: 'Cold', balanceSats: '5000', balanceAsOf: '2026-09-01T12:00:00.000Z' })
+    ).unwrap()
+    await service.addTransaction({
+      accountId: account.id,
+      type: 'buy',
+      amountSats: '5000',
+      transactedAt: '2026-08-01T12:00:00.000Z',
+    })
+    const sell = await service.addTransaction({
+      accountId: account.id,
+      type: 'sell',
+      amountSats: '2000',
+      transactedAt: '2026-09-05T12:00:00.000Z',
+      addToBalance: true,
+    })
+
+    const deleted = await service.deleteTransaction({ transactionId: sell.unwrap().id, removeFromBalance: false })
+    expect(deleted.unwrapErr().message).toBe(
+      'Deleting this would leave more in transactions than the balance. Tick the box or update the balance first.',
+    )
+    await expect(service.listTransactions(account.id)).resolves.toHaveLength(2)
+    expect((await service.getAccount(account.id))?.balanceSats).toBe('3000')
+  })
+
+  it('never takes the balance below zero when a deleted amount is removed from it', async () => {
+    const { service } = await setup()
+    const account = (
+      await service.createAccount({ displayName: 'Cold', balanceSats: '500', balanceAsOf: '2026-09-01T12:00:00.000Z' })
+    ).unwrap()
+    await service.addTransaction({
+      accountId: account.id,
+      type: 'sell',
+      amountSats: '1000',
+      transactedAt: '2026-09-02T12:00:00.000Z',
+    })
+    const buy = await service.addTransaction({
+      accountId: account.id,
+      type: 'buy',
+      amountSats: '1000',
+      transactedAt: '2026-09-03T12:00:00.000Z',
+    })
+
+    await service.deleteTransaction({ transactionId: buy.unwrap().id, removeFromBalance: true })
+    expect((await service.getAccount(account.id))?.balanceSats).toBe('0')
   })
 
   it('keeps each account separate and respects the selection', async () => {

@@ -63,6 +63,10 @@ export function ManualAccountDetailsPage(): JSX.Element {
   const [txNote, setTxNote] = useState('')
   const [txAddToBalance, setTxAddToBalance] = useState(false)
 
+  // ─── Transaction delete confirm ─────────────────────────────────
+  const [txToDelete, setTxToDelete] = useState<{ id: string; type: string; amountSats: string } | null>(null)
+  const [txRemoveFromBalance, setTxRemoveFromBalance] = useState(false)
+
   // ─── Queries ────────────────────────────────────────────────────
   const accountQuery = trpc.portalProve.manual.get.useQuery(
     { accountId: accountId ?? '' },
@@ -146,8 +150,9 @@ export function ManualAccountDetailsPage(): JSX.Element {
 
   async function handleDeleteTransaction(transactionId: string): Promise<void> {
     try {
-      await deleteTxMutation.mutateAsync({ transactionId })
+      await deleteTxMutation.mutateAsync({ transactionId, removeFromBalance: txRemoveFromBalance })
       await invalidateAll()
+      setTxToDelete(null)
       toast.success('Transaction deleted')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to delete transaction')
@@ -210,6 +215,68 @@ export function ManualAccountDetailsPage(): JSX.Element {
               }}
             >
               Remove
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+
+      <Modal
+        isOpen={txToDelete !== null}
+        onClose={() => {
+          setTxToDelete(null)
+        }}
+        isCentered
+      >
+        <ModalOverlay />
+        <ModalContent>
+          <ModalHeader>
+            <Text textStyle="text/lg" color="neutral.900">
+              Delete this transaction?
+            </Text>
+          </ModalHeader>
+          <ModalCloseButton />
+          <ModalBody>
+            {txToDelete && (
+              <Checkbox
+                size="sm"
+                isChecked={txRemoveFromBalance}
+                onChange={(e) => {
+                  setTxRemoveFromBalance(e.target.checked)
+                }}
+                colorScheme="orange"
+              >
+                <Text textStyle="text/sm" color="neutral.600">
+                  {txToDelete.type === 'buy' || txToDelete.type === 'transfer_in'
+                    ? `Subtract ${formatBtc(txToDelete.amountSats)} BTC from the balance`
+                    : `Add ${formatBtc(txToDelete.amountSats)} BTC back to the balance`}
+                </Text>
+              </Checkbox>
+            )}
+          </ModalBody>
+          <ModalFooter gap={2}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setTxToDelete(null)
+              }}
+              size="md"
+              flex={1}
+              isDisabled={deleteTxMutation.isLoading}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="error"
+              size="md"
+              flex={1}
+              isLoading={deleteTxMutation.isLoading}
+              onClick={() => {
+                if (txToDelete) {
+                  void handleDeleteTransaction(txToDelete.id)
+                }
+              }}
+            >
+              Delete
             </Button>
           </ModalFooter>
         </ModalContent>
@@ -476,7 +543,8 @@ export function ManualAccountDetailsPage(): JSX.Element {
                           variant="ghost"
                           color="error.500"
                           onClick={() => {
-                            void handleDeleteTransaction(tx.id)
+                            setTxRemoveFromBalance(false)
+                            setTxToDelete(tx)
                           }}
                         >
                           Delete
@@ -492,6 +560,10 @@ export function ManualAccountDetailsPage(): JSX.Element {
       </Stack>
     </Box>
   )
+}
+
+function formatBtc(amountSats: string): string {
+  return (Number(amountSats) / 1e8).toFixed(8).replace(/\.?0+$/, '')
 }
 
 function ManualIcon(): JSX.Element {
