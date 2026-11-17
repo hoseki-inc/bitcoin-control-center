@@ -31,8 +31,102 @@ const useTextStyleRule = defineRule({
   },
 })
 
+/** `<app>/src/features/<name>`, then the path inside that feature, if any. */
+const featurePath = /([^/]+)\/src\/features\/([^/]+)(?:\/(.+))?$/
+const scriptExtension = /\.[cm]?[jt]sx?$/
+const viModuleCalls = new Set(['mock', 'doMock', 'unmock', 'doUnmock', 'importActual', 'importMock'])
+
+type FeatureFile = { feature: string; name: string; inside: string | undefined }
+
+function featureFile(path: string): FeatureFile | undefined {
+  const match = featurePath.exec(path)
+  if (match?.[1] === undefined) {
+    return undefined
+  }
+  return { feature: `${match[1]}/${match[2]}`, name: match[2], inside: match[3]?.replace(scriptExtension, '') }
+}
+
+/** The path a specifier points to, or undefined for npm packages. Paths use forward slashes. */
+function importedPath(specifier: string, importer: string): string | undefined {
+  if (specifier.startsWith('@hoseki/')) {
+    return specifier
+  }
+  if (!specifier.startsWith('.')) {
+    return undefined
+  }
+  const parts = importer.replaceAll('\\', '/').split('/').slice(0, -1)
+  for (const part of specifier.split('/')) {
+    if (part === '..') {
+      parts.pop()
+    } else if (part !== '.' && part !== '') {
+      parts.push(part)
+    }
+  }
+  return parts.join('/')
+}
+
+/** A feature's index.ts is its only entry point for code outside the feature. */
+const featureBoundaryRule = defineRule({
+  meta: {
+    type: 'problem',
+    docs: { description: "Disallow imports of a feature's internal files from outside the feature." },
+    messages: {
+      useIndex:
+        'Import the {{name}} feature through its index.ts, not `{{specifier}}`. Export what you need from its index.ts.',
+    },
+  },
+  createOnce(context) {
+    function check(node: { type: string; value?: unknown } | null | undefined): void {
+      if (node?.type !== 'Literal') {
+        return
+      }
+      // A non-string literal turns into text that can never name a feature file.
+      const specifier = String(node.value)
+      const path = importedPath(specifier, context.filename)
+      const target = path === undefined ? undefined : featureFile(path)
+      if (!target || target.inside === undefined || target.inside === 'index') {
+        return
+      }
+      const importer = featureFile(context.filename.replaceAll('\\', '/'))
+      if (importer?.inside !== undefined && importer.feature === target.feature) {
+        return
+      }
+      context.report({ node, messageId: 'useIndex', data: { name: target.name, specifier } })
+    }
+    return {
+      ImportDeclaration(node) {
+        check(node.source)
+      },
+      ExportNamedDeclaration(node) {
+        check(node.source)
+      },
+      ExportAllDeclaration(node) {
+        check(node.source)
+      },
+      ImportExpression(node) {
+        check(node.source)
+      },
+      TSImportType(node) {
+        check(node.source)
+      },
+      CallExpression(node) {
+        const { callee } = node
+        if (
+          callee.type === 'MemberExpression' &&
+          callee.object.type === 'Identifier' &&
+          callee.object.name === 'vi' &&
+          callee.property.type === 'Identifier' &&
+          viModuleCalls.has(callee.property.name)
+        ) {
+          check(node.arguments[0])
+        }
+      },
+    }
+  },
+})
+
 /** Rules for Control Center's own conventions. */
 export default eslintCompatPlugin({
   meta: { name: 'control-center' },
-  rules: { 'use-text-style': useTextStyleRule },
+  rules: { 'feature-boundary': featureBoundaryRule, 'use-text-style': useTextStyleRule },
 })
