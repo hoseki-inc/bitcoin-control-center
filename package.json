@@ -22,7 +22,7 @@
     "lint:oxlint": "oxlint --deny-warnings .",
     "prepare": "husky install",
     "security:audit": "node .github/scripts/security-audit.mjs",
-    "test": "turbo run test && vitest run --root .github/scripts"
+    "test": "turbo run test && vitest run --root .github/scripts && vitest run --root tools/verify"
   },
   "dependencies": {
     "@bitcoinerlab/descriptors": "2.1.0",

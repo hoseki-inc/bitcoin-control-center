@@ -338,6 +338,185 @@
           }
         ]
       }
+    },
+    {
+      "files": ["tools/verify/**"],
+      "rules": {
+        "no-restricted-properties": [
+          "error",
+          {
+            "property": "safeParse",
+            "message": "Use parse or parseUnknown from @hoseki/packages/result/lib/parse, which return a Result."
+          },
+          {
+            "property": "safeParseAsync",
+            "message": "Use parse or parseUnknown from @hoseki/packages/result/lib/parse, which return a Result."
+          },
+          {
+            "property": "parseAsync",
+            "message": "Use parse or parseUnknown from @hoseki/packages/result/lib/parse, which return a Result."
+          },
+          {
+            "property": "parse",
+            "allowObjects": [
+              "JSON",
+              "Date",
+              "SuperJSON",
+              "sj",
+              "serializer",
+              "SinglesigDescriptorParser",
+              "MultisigDescriptorParser"
+            ],
+            "message": "Use parse or parseUnknown from @hoseki/packages/result/lib/parse, which return a Result."
+          },
+          {
+            "object": "process",
+            "property": "env",
+            "message": "Read the environment only in tools/verify/process.ts, so no child or check can pick up the caller's variables by accident."
+          },
+          {
+            "object": "process",
+            "property": "argv",
+            "message": "Read the command line only through readArgs in tools/verify/args.ts, which refuses unknown flags and missing values."
+          }
+        ],
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "node:child_process",
+                "message": "Start programs through tools/verify/process.ts, which gives every child an allowlisted ChildEnv instead of the caller's environment."
+              },
+              {
+                "name": "child_process",
+                "message": "Start programs through tools/verify/process.ts, which gives every child an allowlisted ChildEnv instead of the caller's environment."
+              },
+              {
+                "name": "node:process",
+                "importNames": ["env"],
+                "message": "Read the environment only in tools/verify/process.ts, so no child or check can pick up the caller's variables by accident."
+              },
+              {
+                "name": "process",
+                "importNames": ["env"],
+                "message": "Read the environment only in tools/verify/process.ts, so no child or check can pick up the caller's variables by accident."
+              }
+            ],
+            "patterns": [
+              {
+                "group": ["../**/packages/**", "./**/packages/**"],
+                "message": "Use '@hoseki/packages/*' instead of a relative path into packages/."
+              },
+              {
+                "group": ["../**/apps/**", "./**/apps/**"],
+                "message": "Use '@hoseki/apps/*' instead of a relative path into apps/."
+              },
+              {
+                "group": ["**/trpc/init", "**/trpc/init.ts", "./init", "./init.ts"],
+                "importNames": ["openProcedure"],
+                "message": "Only the sign-in routes in modules/auth/router.ts may skip the PIN. Use protectedProcedure."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["tools/verify/args.ts"],
+      "rules": {
+        "no-restricted-properties": [
+          "error",
+          {
+            "property": "safeParse",
+            "message": "Use parse or parseUnknown from @hoseki/packages/result/lib/parse, which return a Result."
+          },
+          {
+            "property": "safeParseAsync",
+            "message": "Use parse or parseUnknown from @hoseki/packages/result/lib/parse, which return a Result."
+          },
+          {
+            "property": "parseAsync",
+            "message": "Use parse or parseUnknown from @hoseki/packages/result/lib/parse, which return a Result."
+          },
+          {
+            "property": "parse",
+            "allowObjects": [
+              "JSON",
+              "Date",
+              "SuperJSON",
+              "sj",
+              "serializer",
+              "SinglesigDescriptorParser",
+              "MultisigDescriptorParser"
+            ],
+            "message": "Use parse or parseUnknown from @hoseki/packages/result/lib/parse, which return a Result."
+          },
+          {
+            "object": "process",
+            "property": "env",
+            "message": "Read the environment only in tools/verify/process.ts, so no child or check can pick up the caller's variables by accident."
+          }
+        ]
+      }
+    },
+    {
+      "files": ["tools/verify/process.ts"],
+      "rules": {
+        "no-restricted-properties": [
+          "error",
+          {
+            "property": "safeParse",
+            "message": "Use parse or parseUnknown from @hoseki/packages/result/lib/parse, which return a Result."
+          },
+          {
+            "property": "safeParseAsync",
+            "message": "Use parse or parseUnknown from @hoseki/packages/result/lib/parse, which return a Result."
+          },
+          {
+            "property": "parseAsync",
+            "message": "Use parse or parseUnknown from @hoseki/packages/result/lib/parse, which return a Result."
+          },
+          {
+            "property": "parse",
+            "allowObjects": [
+              "JSON",
+              "Date",
+              "SuperJSON",
+              "sj",
+              "serializer",
+              "SinglesigDescriptorParser",
+              "MultisigDescriptorParser"
+            ],
+            "message": "Use parse or parseUnknown from @hoseki/packages/result/lib/parse, which return a Result."
+          },
+          {
+            "object": "process",
+            "property": "argv",
+            "message": "Read the command line only through readArgs in tools/verify/args.ts, which refuses unknown flags and missing values."
+          }
+        ],
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["../**/packages/**", "./**/packages/**"],
+                "message": "Use '@hoseki/packages/*' instead of a relative path into packages/."
+              },
+              {
+                "group": ["../**/apps/**", "./**/apps/**"],
+                "message": "Use '@hoseki/apps/*' instead of a relative path into apps/."
+              },
+              {
+                "group": ["**/trpc/init", "**/trpc/init.ts", "./init", "./init.ts"],
+                "importNames": ["openProcedure"],
+                "message": "Only the sign-in routes in modules/auth/router.ts may skip the PIN. Use protectedProcedure."
+              }
+            ]
+          }
+        ]
+      }
     }
   ],
   "settings": {

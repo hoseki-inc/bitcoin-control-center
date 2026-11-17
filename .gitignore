@@ -28,6 +28,9 @@ node_modules
 # Cursor
 .cursor/debug.log
 
+# Verification evidence (tools/verify)
+/verify-output/
+
 # misc
 /.sass-cache
 /connect.lock
