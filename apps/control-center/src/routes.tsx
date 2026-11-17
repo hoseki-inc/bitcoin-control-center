@@ -4,7 +4,7 @@ import { AppLayout } from './components/layout/app-layout'
 import { KeystoreReceiptPage } from './components/multisig/keystore-receipt'
 import { MultisigPageWrapper } from './components/multisig/multisig-page-wrapper'
 import { NotFound } from './components/not-found'
-import { ClaimsVerifyEtfPage, EtfAccountDetailsPage } from './features/etf'
+import { featureRoutes } from './features'
 // Prove pages
 import { HomePage } from './pages'
 import { ClaimsPage } from './pages/claims'
@@ -64,7 +64,6 @@ export default function AppRoutes(): JSX.Element {
             <Route path="robinhood/:accountId" Component={RobinhoodAccountDetailsPage} />
             <Route path="strike/:accountId" Component={StrikeAccountDetailsPage} />
             <Route path="manual/:accountId" Component={ManualAccountDetailsPage} />
-            <Route path="etf/:accountId" Component={EtfAccountDetailsPage} />
             <Route path=":claimId">
               <Route index Component={ClaimDetailsPage} />
               <Route path="signing" Component={SinglesigSigningPage} />
@@ -82,10 +81,12 @@ export default function AppRoutes(): JSX.Element {
               <Route path="strike" Component={ClaimsVerifyStrikePage} />
               <Route path="manual-type" Component={ManualTypeSelectorPage} />
               <Route path="manual" Component={ClaimsVerifyManualPage} />
-              <Route path="etf" Component={ClaimsVerifyEtfPage} />
               <Route path="track" Component={ClaimsVerifyTrackPage} />
             </Route>
           </Route>
+          {featureRoutes.map(({ path, Component }) => (
+            <Route key={path} path={path} Component={Component} />
+          ))}
 
           <Route path="statements">
             <Route path="" Component={StatementListPage} />
