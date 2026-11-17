@@ -9,7 +9,6 @@ import { fileURLToPath } from 'node:url'
 const skipped = new Map([
   ['GHSA-mrhx-c7xc-m3w5', 'zod, until the workspace moves to Zod 4'],
   ['GHSA-g3hv-75wg-m249', 'minimatch, until our dependencies move to minimatch 11'],
-  ['GHSA-3g3m-2fjr-6pw4', 'glob, until our dependencies move to glob 14'],
 ])
 
 const blockingSeverities = new Set(['moderate', 'high', 'critical'])
