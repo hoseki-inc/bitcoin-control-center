@@ -48,7 +48,7 @@ import {
   settings,
   signedMessages as signedMessagesTable,
 } from '../../db/schema'
-import { etfRouter } from '../../features/etf'
+import { featureRouters } from '../../features'
 import { loggableError } from '../../lib/loggable-error'
 import { authRouter } from '../auth/router'
 import { type ConnectionDetails, MAX_CONNECTION_PROFILES } from '../connection_profiles/store'
@@ -1796,7 +1796,7 @@ const portalProveRouter = router({
   registry: registryRouter,
   exchange: proveExchangeRouter,
   manual: manualRouter,
-  etf: etfRouter,
+  ...featureRouters,
   onchain: onchainRouter,
   statement: statementRouter,
   retrieveBitcoinPriceHistory: protectedProcedure
