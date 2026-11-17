@@ -1232,8 +1232,8 @@ const registryRouter = router({
             claimId: accountRow.id,
             variant: 'signed_message' as const,
             isSatisfied: false,
-            createdAt: new Date(existingChallenge?.createdAt ?? now),
-            updatedAt: new Date(existingChallenge?.createdAt ?? now),
+            createdAt: parseDbTimestamp(existingChallenge?.createdAt ?? now),
+            updatedAt: parseDbTimestamp(existingChallenge?.createdAt ?? now),
             completedAt: null,
           },
           challengeMessage: challengeMessageRowToDto({
