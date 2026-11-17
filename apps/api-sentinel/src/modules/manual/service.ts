@@ -211,7 +211,11 @@ export class ManualService {
       .orderBy(desc(manualTransactions.transactedAt))
   }
 
-  public async deleteTransaction(transactionId: string): Promise<Result<void, Error>> {
+  public async deleteTransaction(args: {
+    transactionId: string
+    removeFromBalance: boolean
+  }): Promise<Result<void, Error>> {
+    const { transactionId } = args
     return this.db.transaction(async (tx) => {
       const [row] = await tx.select().from(manualTransactions).where(eq(manualTransactions.id, transactionId))
       if (!row) {
@@ -222,13 +226,26 @@ export class ManualService {
         return Err(new Error('Manual account not found'))
       }
       const signedAmount = this.getSignedAmount(row.type, BigInt(row.amountSats))
-      const newBalance = BigInt(account.balanceSats) - signedAmount
+      const balance = BigInt(account.balanceSats)
+      if (!args.removeFromBalance) {
+        const netTxTotal = (await this.getNetTransactionTotal(row.accountId, tx)) - signedAmount
+        if (netTxTotal > balance) {
+          return Err(
+            new Error(
+              'Deleting this would leave more in transactions than the balance. Tick the box or update the balance first.',
+            ),
+          )
+        }
+      }
       await tx.delete(manualTransactions).where(eq(manualTransactions.id, transactionId))
-      await tx
-        .update(manualAccounts)
-        .set({ balanceSats: newBalance.toString() })
-        .where(eq(manualAccounts.id, row.accountId))
-      await this.addToSavedBalances(tx, row.accountId, row.transactedAt, -signedAmount)
+      if (args.removeFromBalance) {
+        const newBalance = balance - signedAmount
+        await tx
+          .update(manualAccounts)
+          .set({ balanceSats: (newBalance < 0n ? 0n : newBalance).toString() })
+          .where(eq(manualAccounts.id, row.accountId))
+        await this.addToSavedBalances(tx, row.accountId, row.transactedAt, -signedAmount)
+      }
       this.logger.info({ transactionId, accountId: row.accountId }, 'Manual transaction deleted')
       return Ok(undefined)
     })

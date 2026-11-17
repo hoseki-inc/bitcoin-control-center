@@ -1783,12 +1783,14 @@ const manualRouter = router({
         return result.unwrap()
       }),
 
-    delete: protectedProcedure.input(z.object({ transactionId: z.string() })).mutation(async ({ ctx, input }) => {
-      const result = await ctx.app.manualService.deleteTransaction(input.transactionId)
-      if (result.isErr()) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: result.unwrapErr().message })
-      }
-    }),
+    delete: protectedProcedure
+      .input(z.object({ transactionId: z.string(), removeFromBalance: z.boolean() }))
+      .mutation(async ({ ctx, input }) => {
+        const result = await ctx.app.manualService.deleteTransaction(input)
+        if (result.isErr()) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: result.unwrapErr().message })
+        }
+      }),
   }),
 })
 
