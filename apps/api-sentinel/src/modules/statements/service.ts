@@ -14,6 +14,7 @@ import type { Logger } from 'pino'
 import { z } from 'zod'
 import type { SentinelDb } from '../../db/drizzle'
 import { accounts, challenges, exchangeBalanceSnapshots, settings, statementCounter, statements } from '../../db/schema'
+import { parseDbTimestamp } from '../../db/timestamp'
 import type { ExchangeService } from '../exchange/service'
 import type { DailyRates } from '../price/daily_rates'
 import { type DailyRatesService, MIN_MEMPOOL_PRICE_DATE } from '../price/daily_rates'
@@ -842,8 +843,8 @@ export class StatementService {
   private rowToDto(row: StatementDtoRow): StatementDto {
     return {
       id: row.id,
-      createdAt: new Date(row.createdAt),
-      updatedAt: new Date(row.updatedAt),
+      createdAt: parseDbTimestamp(row.createdAt),
+      updatedAt: parseDbTimestamp(row.updatedAt),
       counter: row.counter,
       timezone: row.timezone,
       openingDate: new Date(row.openingDate),
