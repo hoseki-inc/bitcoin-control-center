@@ -4,7 +4,7 @@
     "fresh": "Drivable on a launched run that is not seeded.",
     "seed": "Needs more seed data or a test-data helper first.",
     "fault": "Needs a fake that fails on demand, or a Sentinel restart mid-run.",
-    "pin": "Needs a launch option that turns PINs on (SENTINEL_PIN=umbrel works over local HTTP).",
+    "pin": "Needs helpers/verify launch --pin: PINs on with Umbrel's rules and the run's test PIN.",
     "desktop-web": "Needs helpers/verify launch --desktop: the desktop web app and Sentinel's --desktop options, driven in a browser.",
     "electron": "Needs the Electron app run from source with its own data folder, driven with computer use.",
     "packaged": "Needs a packaged desktop build.",
@@ -1888,6 +1888,12 @@
               "kind": "happy",
               "does": "Sign out everywhere returns to sign-in; not on desktop"
             }
+          ],
+          "recipes": [
+            {
+              "file": "settings-security.md",
+              "proves": ["change-pin", "wrong-current", "mismatch", "sign-out-everywhere"]
+            }
           ]
         },
         {
@@ -2082,7 +2088,8 @@
               "kind": "edge",
               "does": "Sign out everywhere elsewhere locks this tab on focus"
             }
-          ]
+          ],
+          "recipes": [{ "file": "pin-lock.md", "proves": ["lock", "sign-in", "wrong-pin", "wait", "reload-keeps"] }]
         },
         {
           "id": "pin-reset",
@@ -2124,7 +2131,8 @@
               "does": "PIN not reset. Nothing changed.",
               "needs": "electron"
             }
-          ]
+          ],
+          "recipes": [{ "file": "pin-reset.md", "proves": ["forgot", "umbrel-steps"] }]
         }
       ]
     },

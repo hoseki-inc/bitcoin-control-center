@@ -31,7 +31,7 @@ For features the map marks `desktop-web`, such as Electrum settings, launch with
 
 Launching a run that is already up does nothing. Seeding a seeded run does nothing; a half-seeded run is refused: launch a new one.
 
-PINs are off in every run. A journey that needs PINs is unreachable until a PIN launch option exists.
+PINs are off unless you launch with `--pin`. Then Sentinel uses Umbrel's PIN rules and launch sets the run's test PIN, `246813`. The browser starts signed out: enter that PIN to sign in. The helper commands sign in with it as their own tab, so a recipe that changes the PIN must change it back before the next helper command. Wrong PINs make every sign-in wait, the helper's included. `--pin` doesn't combine with `--desktop`, whose PIN needs the Electron shell.
 
 Never verify against `pnpm dev` or `turbo`: turbo drops `DATA_DIR`, so Sentinel would open the developer's own `apps/api-sentinel/data`.
 
@@ -99,7 +99,7 @@ Proof standards:
 
 | Command                                                        | Does                                                                    |
 | -------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| `launch [--run <id>] [--fresh] [--desktop]`                    | Builds the UI, starts the fakes and Sentinel, waits until usable.       |
+| `launch [--run <id>] [--fresh] [--desktop] [--pin]`            | Builds the UI, starts the fakes and Sentinel, waits until usable.       |
 | `seed`                                                         | Adds the baseline accounts and statement.                               |
 | `doctor`                                                       | The read-only checks above.                                             |
 | `query --sql "SELECT ..."`                                     | Prints rows from the run's database as JSON, read-only.                 |
