@@ -60,7 +60,7 @@ async function show(data?: PdfStatement, enabled = true): Promise<void> {
 function setup(): void {
   const dom = browser.acquire()
   render = vi.spyOn(pdfRenderer, 'renderStatementPdf')
-  vi.spyOn(URL, 'createObjectURL').mockImplementation((file) => `blob:${pdfNames.get(file)}`)
+  vi.spyOn(URL, 'createObjectURL').mockImplementation((file) => `blob:${pdfNames.get(file) ?? 'unknown'}`)
   revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined)
   container = document.createElement('div')
   document.body.append(container)

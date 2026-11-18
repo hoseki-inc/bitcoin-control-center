@@ -94,7 +94,7 @@ export function AnimatedDetectedKeystoreAvatars({
             transition: 'opacity 500ms ease-in-out',
           }}
         >
-          <KeystoreAvatar icon={keyIcon} variant="filled" position="relative" zIndex={1}>
+          <KeystoreAvatar icon={keyIcon} alt="" variant="filled" position="relative" zIndex={1}>
             <KeystoreAvatar.Badge>
               {index < threshold ? (
                 <PlusCircleIcon

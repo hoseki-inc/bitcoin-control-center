@@ -165,7 +165,7 @@
     "typescript/related-getter-setter-pairs": "error",
     "typescript/require-array-sort-compare": "error",
     "typescript/restrict-plus-operands": "error",
-    "typescript/restrict-template-expressions": "error",
+    "typescript/restrict-template-expressions": ["error", { "allowNullish": false }],
     "typescript/return-await": "error",
     "typescript/strict-boolean-expressions": "error",
     "typescript/strict-void-return": "error",

@@ -31,7 +31,7 @@ export class Xpub {
       default:
         return Err(
           new Error(
-            `Xpub.fromString only accepts core xpub/tpub strings. Got first character: "${firstChar}". ` +
+            `Xpub.fromString only accepts core xpub/tpub strings. Got first character: "${firstChar ?? ''}". ` +
               `If you need to parse SLIP-132 extended public keys (ypub, zpub, etc.), use the wallet package utilities instead.`,
           ),
         )

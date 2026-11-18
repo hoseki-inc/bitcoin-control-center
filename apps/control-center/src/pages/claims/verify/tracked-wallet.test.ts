@@ -58,26 +58,22 @@ describe('parseTrackedWallet', () => {
 
   const key = Wallets.nativeSegwitXpub.toString()
   const cosigners = Wallets.multisigNativeSegwitAccount.xpubs.map((xpub) => xpub.toString())
+  const [first, second, third] = cosigners
+  assert(first !== undefined && second !== undefined && third !== undefined, 'the test multisig has three keys')
   it.each([
-    ['a Taproot script tree', `tr(${key}/<0;1>/*,{pk(${cosigners[0]}/<0;1>/*)})`],
-    ['a Taproot script branch', `tr(${key}/<0;1>/*,pk(${cosigners[0]}/<0;1>/*))`],
-    ['a Taproot multisig', `tr(${key}/<0;1>/*,sortedmulti_a(2,${cosigners[0]}/<0;1>/*,${cosigners[1]}/<0;1>/*))`],
+    ['a Taproot script tree', `tr(${key}/<0;1>/*,{pk(${first}/<0;1>/*)})`],
+    ['a Taproot script branch', `tr(${key}/<0;1>/*,pk(${first}/<0;1>/*))`],
+    ['a Taproot multisig', `tr(${key}/<0;1>/*,sortedmulti_a(2,${first}/<0;1>/*,${second}/<0;1>/*))`],
     ['a single address', `wpkh(${key}/0/5)`],
     ['another branch', `wpkh(${key}/7/*)`],
-    ['a multisig single address', `wsh(sortedmulti(2,${cosigners[0]}/0/5,${cosigners[1]}/0/5))`],
+    ['a multisig single address', `wsh(sortedmulti(2,${first}/0/5,${second}/0/5))`],
     [
       'a Taproot branch with a plain public key',
       `tr(${key}/<0;1>/*,pk(02e493dbf1c10d80f3581e4904930b1404cc6c13900ee0758474fa94abe8c4cd13))`,
     ],
     ['an extra step before the branches', `wpkh(${key}/9/<0;1>/*)`],
-    [
-      'a multisig with keys on different branches',
-      `wsh(sortedmulti(2,${cosigners[0]}/0/*,${cosigners[1]}/1/*,${cosigners[2]}/0/*))`,
-    ],
-    [
-      'a multisig extra step before the branches',
-      `wsh(sortedmulti(2,${cosigners[0]}/9/<0;1>/*,${cosigners[1]}/9/<0;1>/*))`,
-    ],
+    ['a multisig with keys on different branches', `wsh(sortedmulti(2,${first}/0/*,${second}/1/*,${third}/0/*))`],
+    ['a multisig extra step before the branches', `wsh(sortedmulti(2,${first}/9/<0;1>/*,${second}/9/<0;1>/*))`],
   ])('rejects %s, which would be tracked as a different wallet', (_, input) => {
     expect(parseTrackedWallet(input, 'p2pkh')).toBeNull()
   })
@@ -119,12 +115,9 @@ describe('parseTrackedWallet', () => {
   })
 
   it.each([
-    ['a single-sig descriptor with a cosigner key', `wpkh(${cosigners[0]?.replace(/^xpub/, 'Zpub')}/<0;1>/*)`],
-    ['a 1-of-1 multisig', `wsh(sortedmulti(1,${cosigners[0]}/<0;1>/*))`],
-    [
-      'a Taproot tree holding a multisig',
-      `tr(${key}/<0;1>/*,{sortedmulti(2,${cosigners[0]}/<0;1>/*,${cosigners[1]}/<0;1>/*)})`,
-    ],
+    ['a single-sig descriptor with a cosigner key', `wpkh(${first.replace(/^xpub/, 'Zpub')}/<0;1>/*)`],
+    ['a 1-of-1 multisig', `wsh(sortedmulti(1,${first}/<0;1>/*))`],
+    ['a Taproot tree holding a multisig', `tr(${key}/<0;1>/*,{sortedmulti(2,${first}/<0;1>/*,${second}/<0;1>/*)})`],
     ['a descriptor with text after it', `wpkh(${key}/<0;1>/*)junk`],
     ['an unfinished descriptor', `wpkh(${key}/<0;1>/*`],
   ])('rejects %s', (_, input) => {
@@ -132,10 +125,7 @@ describe('parseTrackedWallet', () => {
   })
 
   it('reads a multisig whose keys write the same branches in different ways', () => {
-    const wallet = parseTrackedWallet(
-      `wsh(sortedmulti(2,${cosigners[0]}/**,${cosigners[1]}/<0;1>/*,${cosigners[2]}/<0;1>/*))`,
-      'p2pkh',
-    )
+    const wallet = parseTrackedWallet(`wsh(sortedmulti(2,${first}/**,${second}/<0;1>/*,${third}/<0;1>/*))`, 'p2pkh')
 
     assert(wallet?.kind === 'multisig')
     expect(wallet.account.descriptor()).toBe(Wallets.multisigNativeSegwitAccount.descriptor())

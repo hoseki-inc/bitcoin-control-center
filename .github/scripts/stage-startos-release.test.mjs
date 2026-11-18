@@ -49,9 +49,9 @@ test('excludes injected installers and checksum entries from the assembled relea
   // Exercise the next handoff too: both legitimate desktop builds enter staging, while the injected one does not.
   const desktop = join(f.root, 'desktop-artifacts')
   const sourceCommit = 'a'.repeat(40)
-  for (const [platform, arch, ext] of [
-    ['mac', 'arm64', 'dmg'],
-    ['win', 'x64', 'exe'],
+  for (const { platform, arch, ext } of [
+    { platform: 'mac', arch: 'arm64', ext: 'dmg' },
+    { platform: 'win', arch: 'x64', ext: 'exe' },
   ]) {
     const directory = join(desktop, `Bitcoin-Control-Center-${platform}-${arch}`)
     mkdirSync(directory, { recursive: true })

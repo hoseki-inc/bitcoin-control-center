@@ -12,15 +12,19 @@ export type KeystoreAvatarProps = {
   size?: AvatarProps['size']
 } & CommonProps
 
-export function KeystoreAvatar({ variant = 'contained', ...props }: KeystoreAvatarProps): JSX.Element {
-  return variant === 'contained' ? <ContainedAvatar {...props} /> : <FilledAvatar {...props} />
+export function KeystoreAvatar({ variant = 'contained', alt, ...props }: KeystoreAvatarProps): JSX.Element {
+  // Chakra's Avatar puts `alt` on its outer span, where browsers ignore it, so name the whole avatar instead.
+  // An empty alt marks it decorative: the text beside it already says what it is.
+  const label = alt === '' ? { 'aria-hidden': true } : { role: 'img', 'aria-label': alt }
+  return variant === 'contained' ? <ContainedAvatar {...label} {...props} /> : <FilledAvatar {...label} {...props} />
 }
 
 interface CommonProps extends Omit<AvatarProps, 'onError'> {
-  alt?: string
+  /** What the avatar shows, such as "Ledger wallet", or '' when nearby text already says it. */
+  alt: string
 }
 
-function ContainedAvatar({ sx, size = '36px', ...props }: CommonProps) {
+function ContainedAvatar({ sx, size = '36px', ...props }: Omit<CommonProps, 'alt'>) {
   return (
     <Avatar
       borderWidth="1px"
@@ -41,7 +45,7 @@ function ContainedAvatar({ sx, size = '36px', ...props }: CommonProps) {
   )
 }
 
-function FilledAvatar({ sx, size = '44px', ...props }: CommonProps) {
+function FilledAvatar({ sx, size = '44px', ...props }: Omit<CommonProps, 'alt'>) {
   return (
     <Avatar
       bg="neutral.50"
