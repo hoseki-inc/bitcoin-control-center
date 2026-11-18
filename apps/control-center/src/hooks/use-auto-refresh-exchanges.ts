@@ -11,9 +11,9 @@ let lastRefreshAt = 0
 
 export function useAutoRefreshExchanges(): void {
   const utils = trpc.useUtils()
-  const refreshMutation = trpc.portalProve.exchange.refreshAllBalances.useMutation({
+  const refreshMutation = trpc.portalProve.exchanges.refreshAllBalances.useMutation({
     onSuccess: () => {
-      void utils.portalProve.exchange.list.invalidate()
+      void utils.portalProve.exchanges.list.invalidate()
       void utils.portalProve.portfolio.getData.invalidate()
     },
   })

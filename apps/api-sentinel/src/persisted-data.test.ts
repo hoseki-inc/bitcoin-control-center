@@ -11,10 +11,10 @@ import { describe, expect, it, onTestFinished } from 'vitest'
 import { type SentinelDb, openDrizzleDatabase } from './db/drizzle'
 import { etfHoldings, exchangeAccounts, statements as statementTable } from './db/schema'
 import { EtfService } from './features/etf'
+import { ExchangeService } from './features/exchanges'
 import { DailyRatesService } from './features/price'
 import { StatementService } from './features/statements'
 import { Encrypted, initEncryption } from './lib/encrypted'
-import { ExchangeService } from './modules/exchange/service'
 
 const logger = pino({ level: 'silent' })
 let directory: string

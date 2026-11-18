@@ -14,7 +14,7 @@ import { type RouterOutput, trpc } from '../../trpc'
 import type { StatementDto } from '../../trpc/server-types'
 import { StatementCreatePage } from './create'
 
-type ExchangeAccountDto = RouterOutput['portalProve']['exchange']['list'][number]
+type ExchangeAccountDto = RouterOutput['portalProve']['exchanges']['list'][number]
 
 const browser = await vi.hoisted(async () => {
   const { createBrowserDom, installBrowserDom } = await import('@hoseki/packages/testing/browser-dom')
@@ -64,7 +64,7 @@ it.each(StatementQuoteCurrencySchema.options)(
       claimFixture(claimId, 'Savings wallet'),
     ])
     // A connected exchange must stay off the page and out of statement requests.
-    client.setQueryData<ExchangeAccountDto[]>(getQueryKey(trpc.portalProve.exchange.list, undefined, 'query'), [
+    client.setQueryData<ExchangeAccountDto[]>(getQueryKey(trpc.portalProve.exchanges.list, undefined, 'query'), [
       {
         id: 'exchange-account',
         exchange: 'coinbase',

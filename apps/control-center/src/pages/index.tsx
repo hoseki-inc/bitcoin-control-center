@@ -191,7 +191,7 @@ const homeDataSource: HomeDataSource = {
     trpc.portalProve.statements.list.useQuery(undefined, { refetchInterval: refetchWhileGenerating }),
   usePortfolio: (input) => trpc.portalProve.portfolio.getData.useQuery(input),
   useClaims: () => trpc.portalProve.registry.claims.list.useQuery({ excludePending: false }),
-  useExchanges: () => trpc.portalProve.exchange.list.useQuery(),
+  useExchanges: () => trpc.portalProve.exchanges.list.useQuery(),
   useManual: () => trpc.portalProve.manual.list.useQuery(),
   useEtfs: () => trpc.portalProve.etf.list.useQuery(),
   useWalletBalances,

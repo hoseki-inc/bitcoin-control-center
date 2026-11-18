@@ -15,10 +15,10 @@ import {
   balanceSnapshots,
   exchangeBalanceSnapshots,
 } from '../../db/schema'
-import type { ExchangeService } from '../../modules/exchange/service'
 import type { WalletBalanceService } from '../../modules/wallet_balances/service'
 import { isWalletActive, upsertWalletSnapshot } from '../../modules/wallet_balances/snapshots'
 import type { EtfService } from '../etf'
+import type { ExchangeService } from '../exchanges'
 import type { ManualService } from '../manual'
 import type { PriceService } from '../price'
 import {

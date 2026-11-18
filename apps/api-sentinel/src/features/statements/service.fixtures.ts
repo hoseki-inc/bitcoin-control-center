@@ -16,7 +16,7 @@ import { type SentinelDb, openDrizzleDatabase } from '../../db/drizzle'
 import { accounts, exchangeAccounts, exchangeBalanceSnapshots } from '../../db/schema'
 import { DailyRatesService } from '../../features/price'
 import { Encrypted, initEncryption } from '../../lib/encrypted'
-import { ExchangeService } from '../../modules/exchange/service'
+import { ExchangeService } from '../exchanges'
 import { StatementMapper } from './mapper'
 import { type GenerateStatementInput, StatementService } from './service'
 

@@ -21,7 +21,7 @@ import { parseNavigationState } from '../../../lib/navigation-state'
 import { type RouterOutput, trpc } from '../../../trpc'
 import { ExchangeConnected, ExchangeConnecting } from '../exchange-connection'
 
-type ConnectedAccount = RouterOutput['portalProve']['exchange']['robinhood']['connect']
+type ConnectedAccount = RouterOutput['portalProve']['exchanges']['robinhood']['connect']
 
 const robinhoodFormSchema = z.object({
   apiKey: z.string().min(1, 'API Key is required'),
@@ -44,7 +44,7 @@ export function ConnectRobinhood(): JSX.Element {
   const [connectedAccount, setConnectedAccount] = useState<ConnectedAccount | null>(null)
 
   const utils = trpc.useUtils()
-  const connectMutation = trpc.portalProve.exchange.robinhood.connect.useMutation()
+  const connectMutation = trpc.portalProve.exchanges.robinhood.connect.useMutation()
 
   const {
     register,
@@ -67,7 +67,7 @@ export function ConnectRobinhood(): JSX.Element {
       setConnectedAccount(account)
       setStep('success')
       void utils.portalProve.portfolio.getData.invalidate()
-      void utils.portalProve.exchange.list.invalidate()
+      void utils.portalProve.exchanges.list.invalidate()
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to connect Robinhood account'
       toast.error(message)

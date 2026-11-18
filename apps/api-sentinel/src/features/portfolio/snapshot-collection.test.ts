@@ -18,9 +18,9 @@ import {
   manualBalanceSnapshots,
 } from '../../db/schema'
 import { setupServiceDatabase } from '../../fixtures/service-database'
-import { ExchangeService } from '../../modules/exchange/service'
 import { WalletBalanceService } from '../../modules/wallet_balances/service'
 import { EtfService } from '../etf'
+import { ExchangeService } from '../exchanges'
 import { ManualService } from '../manual'
 import { PriceService } from '../price'
 import { ControlCenterService } from './service'
