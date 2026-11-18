@@ -22,7 +22,7 @@ import { parseNavigationState } from '../../../lib/navigation-state'
 import { type RouterOutput, trpc } from '../../../trpc'
 import { ExchangeConnected, ExchangeConnecting } from '../exchange-connection'
 
-type ConnectedAccount = RouterOutput['portalProve']['exchange']['coinbase']['connect']
+type ConnectedAccount = RouterOutput['portalProve']['exchanges']['coinbase']['connect']
 
 const coinbaseFormSchema = z.object({
   apiKey: z.string().min(1, 'API Key Name is required'),
@@ -44,7 +44,7 @@ export function ConnectCoinbase(): JSX.Element {
   const [connectedAccount, setConnectedAccount] = useState<ConnectedAccount | null>(null)
 
   const utils = trpc.useUtils()
-  const connectMutation = trpc.portalProve.exchange.coinbase.connect.useMutation()
+  const connectMutation = trpc.portalProve.exchanges.coinbase.connect.useMutation()
 
   const {
     register,
@@ -67,7 +67,7 @@ export function ConnectCoinbase(): JSX.Element {
       setStep('success')
       // Invalidate cached control center data so charts refresh with new exchange data
       void utils.portalProve.portfolio.getData.invalidate()
-      void utils.portalProve.exchange.list.invalidate()
+      void utils.portalProve.exchanges.list.invalidate()
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to connect Coinbase account'
       toast.error(message)

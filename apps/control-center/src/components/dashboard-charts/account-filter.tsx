@@ -51,7 +51,7 @@ const popoverModifiers = [{ name: 'preventOverflow', options: { altAxis: true, t
 interface AccountFilterProps {
   presentation?: 'dropdown' | 'sidebar'
   claims: ClaimDto[]
-  exchangeAccounts: RouterOutput['portalProve']['exchange']['list']
+  exchangeAccounts: RouterOutput['portalProve']['exchanges']['list']
   manualAccounts: RouterOutput['portalProve']['manual']['list']
   etfAccounts: RouterOutput['portalProve']['etf']['list']
   balances: Map<ClaimId, BalanceValue | null>

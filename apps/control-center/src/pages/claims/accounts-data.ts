@@ -4,7 +4,7 @@ import { type WalletBalancesQuery, useWalletBalances } from '../../lib/wallet-ba
 import { type RouterOutput, trpc } from '../../trpc'
 import type { ClaimDto } from '../../trpc/server-types'
 
-export type ExchangeAccountDto = RouterOutput['portalProve']['exchange']['list'][number]
+export type ExchangeAccountDto = RouterOutput['portalProve']['exchanges']['list'][number]
 export type ManualAccountDto = RouterOutput['portalProve']['manual']['list'][number]
 export type EtfAccountDto = RouterOutput['portalProve']['etf']['list'][number]
 
@@ -42,7 +42,7 @@ export interface AccountsDataSource {
 export const accountsDataSource: AccountsDataSource = {
   useLists: () => ({
     claimsQuery: trpc.portalProve.registry.claims.list.useQuery({ excludePending: false }),
-    exchangeAccountsQuery: trpc.portalProve.exchange.list.useQuery(),
+    exchangeAccountsQuery: trpc.portalProve.exchanges.list.useQuery(),
     manualAccountsQuery: trpc.portalProve.manual.list.useQuery(),
     etfAccountsQuery: trpc.portalProve.etf.list.useQuery(),
     archivedClaimsQuery: trpc.portalProve.registry.claims.listArchived.useQuery(),

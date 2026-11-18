@@ -17,9 +17,9 @@ export function RobinhoodAccountDetailsPage(): JSX.Element {
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
 
-  const listQuery = trpc.portalProve.exchange.robinhood.list.useQuery()
-  const refreshMutation = trpc.portalProve.exchange.refreshBalance.useMutation()
-  const deleteMutation = trpc.portalProve.exchange.delete.useMutation()
+  const listQuery = trpc.portalProve.exchanges.robinhood.list.useQuery()
+  const refreshMutation = trpc.portalProve.exchanges.refreshBalance.useMutation()
+  const deleteMutation = trpc.portalProve.exchanges.delete.useMutation()
 
   if (listQuery.isLoading) {
     return <AccountDetailsSkeleton />
@@ -56,8 +56,8 @@ export function RobinhoodAccountDetailsPage(): JSX.Element {
     setIsRefreshing(true)
     try {
       await refreshMutation.mutateAsync({ accountId })
-      await utils.portalProve.exchange.robinhood.list.invalidate()
-      await utils.portalProve.exchange.list.invalidate()
+      await utils.portalProve.exchanges.robinhood.list.invalidate()
+      await utils.portalProve.exchanges.list.invalidate()
       toast.success('Balance refreshed')
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to refresh balance'
@@ -74,8 +74,8 @@ export function RobinhoodAccountDetailsPage(): JSX.Element {
     setIsDeleting(true)
     try {
       await deleteMutation.mutateAsync({ accountId })
-      await utils.portalProve.exchange.robinhood.list.invalidate()
-      await utils.portalProve.exchange.list.invalidate()
+      await utils.portalProve.exchanges.robinhood.list.invalidate()
+      await utils.portalProve.exchanges.list.invalidate()
       await utils.portalProve.portfolio.invalidate()
       void navigate('/accounts')
     } catch (err) {

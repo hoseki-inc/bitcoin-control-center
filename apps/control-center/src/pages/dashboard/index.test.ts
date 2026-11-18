@@ -89,7 +89,7 @@ const mocks = vi.hoisted(() => {
     manualFailed: false,
     listsLoading: false,
     priceLoading: false,
-    exchangeAccounts: Array<RouterOutput['portalProve']['exchange']['list'][number]>(),
+    exchangeAccounts: Array<RouterOutput['portalProve']['exchanges']['list'][number]>(),
     etfAccounts: Array<RouterOutput['portalProve']['etf']['list'][number]>(),
     claims,
     holdings: [

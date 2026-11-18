@@ -19,7 +19,7 @@ export interface PortfolioQuery {
 
 export interface DashboardAccounts {
   claimsQuery: ListQuery<RouterOutput['portalProve']['registry']['claims']['list'][number]>
-  exchangeAccountsQuery: ListQuery<RouterOutput['portalProve']['exchange']['list'][number]>
+  exchangeAccountsQuery: ListQuery<RouterOutput['portalProve']['exchanges']['list'][number]>
   manualAccountsQuery: ListQuery<RouterOutput['portalProve']['manual']['list'][number]>
   etfAccountsQuery: ListQuery<RouterOutput['portalProve']['etf']['list'][number]>
   btcPriceQuery: {
@@ -44,7 +44,7 @@ export interface DashboardDataSource {
 export const dashboardDataSource: DashboardDataSource = {
   useAccounts: () => ({
     claimsQuery: trpc.portalProve.registry.claims.list.useQuery({ excludePending: false }),
-    exchangeAccountsQuery: trpc.portalProve.exchange.list.useQuery(),
+    exchangeAccountsQuery: trpc.portalProve.exchanges.list.useQuery(),
     manualAccountsQuery: trpc.portalProve.manual.list.useQuery(),
     etfAccountsQuery: trpc.portalProve.etf.list.useQuery(),
     btcPriceQuery: trpc.portalProve.price.current.useQuery(),
