@@ -17,7 +17,7 @@ export function StatementListPage(): JSX.Element {
     isLoading,
     error,
     refetch,
-  } = trpc.portalProve.statement.list.useQuery(undefined, { refetchInterval: refetchWhileGenerating })
+  } = trpc.portalProve.statements.list.useQuery(undefined, { refetchInterval: refetchWhileGenerating })
 
   if (isLoading) {
     return (

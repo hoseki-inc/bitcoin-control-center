@@ -42,17 +42,17 @@ export function DeleteStatementButton({
     onClose()
     // Forget it, so going Back to its page says it's gone instead of showing it again,
     // and so statement lists don't show it while they refresh.
-    queryClient.removeQueries({ queryKey: getQueryKey(trpc.portalProve.statement.retrieve, statement.id, 'query') })
+    queryClient.removeQueries({ queryKey: getQueryKey(trpc.portalProve.statements.retrieve, statement.id, 'query') })
     // A list check already under way could answer with the statement still in it.
-    void trpcUtils.portalProve.statement.list.cancel()
-    trpcUtils.portalProve.statement.list.setData(undefined, (statements) =>
+    void trpcUtils.portalProve.statements.list.cancel()
+    trpcUtils.portalProve.statements.list.setData(undefined, (statements) =>
       statements?.filter((item) => item.id !== statement.id),
     )
     onDeleted?.()
     toast.success('Statement deleted')
-    await trpcUtils.portalProve.statement.list.invalidate()
+    await trpcUtils.portalProve.statements.list.invalidate()
   }
-  const deleteMutation = trpc.portalProve.statement.delete.useMutation({
+  const deleteMutation = trpc.portalProve.statements.delete.useMutation({
     onSuccess: deleted,
     onError: async (err) => {
       // Another tab or device deleted it first.

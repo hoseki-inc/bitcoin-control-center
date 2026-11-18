@@ -84,7 +84,7 @@ async function addWatchOnly(key: 'watchSegwit' | 'watchTaproot'): Promise<string
 const watchIds = { watchSegwit: await addWatchOnly('watchSegwit'), watchTaproot: await addWatchOnly('watchTaproot') }
 
 // One finished statement, for January 2026, so the statement list starts with something in it.
-const pending = await client.portalProve.statement.initiateGeneration.mutate({
+const pending = await client.portalProve.statements.initiateGeneration.mutate({
   claimIds: [created.claim.id],
   quoteCurrency: 'USD',
   openingDate: new Date('2026-01-01T00:00:00.000Z'),
@@ -96,7 +96,7 @@ const pending = await client.portalProve.statement.initiateGeneration.mutate({
 let statement = pending
 for (let waited = 0; statement.status === 'pending' && waited < 120_000; waited += 1000) {
   await wait(1000)
-  statement = await client.portalProve.statement.retrieve.query(pending.id)
+  statement = await client.portalProve.statements.retrieve.query(pending.id)
 }
 if (statement.status !== 'completed') {
   fail(`The seeded statement ended as ${statement.status}: ${JSON.stringify(statement).slice(0, 500)}`)

@@ -15,7 +15,7 @@ import type { StatementDto } from '../../trpc/server-types'
 import { StatementListPage } from './index'
 
 const statement = statementFixture()
-const listKey = getQueryKey(trpc.portalProve.statement.list, undefined, 'query')
+const listKey = getQueryKey(trpc.portalProve.statements.list, undefined, 'query')
 
 // Browser APIs that keep Node's byte arrays, which the wallet libraries imported by the page check.
 const browser = await vi.hoisted(async () => {
@@ -222,7 +222,7 @@ it('offers Delete only for statements that are no longer generating', async () =
   await confirmDelete()
   await vi.waitFor(() => {
     expect(
-      requests.mock.calls.find(([operation]) => operation.path === 'portalProve.statement.delete')?.[0].input,
+      requests.mock.calls.find(([operation]) => operation.path === 'portalProve.statements.delete')?.[0].input,
     ).toBe('failed')
   })
 })
@@ -261,7 +261,7 @@ it('removes a deleted statement from the list', async () => {
   let rows = [statementFixture({ id: 'kept' }), statementFixture({ id: 'deleted' })]
   const { container, settle } = await renderStatementsPage({
     list: async (operation) => {
-      if (operation.path === 'portalProve.statement.delete') {
+      if (operation.path === 'portalProve.statements.delete') {
         rows = rows.filter((row) => row.id !== operation.input)
       }
       return rows
@@ -284,7 +284,7 @@ it('removes a statement that another tab already deleted when deleting it here',
   let rows = [statementFixture({ id: 'kept' }), statementFixture({ id: 'deleted-elsewhere' })]
   const { container, settle } = await renderStatementsPage({
     list: async (operation) => {
-      if (operation.path === 'portalProve.statement.delete') {
+      if (operation.path === 'portalProve.statements.delete') {
         rows = rows.filter((row) => row.id !== operation.input)
         throw notFound('Statement not found')
       }
@@ -307,7 +307,7 @@ it('takes a deleted statement off the list at once, before the list refreshes', 
   let isDeleted = false
   const { container, settle } = await renderStatementsPage({
     list: async (operation) => {
-      if (operation.path === 'portalProve.statement.delete') {
+      if (operation.path === 'portalProve.statements.delete') {
         isDeleted = true
         return []
       }

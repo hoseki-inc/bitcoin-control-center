@@ -17,7 +17,7 @@ import { accounts, challenges, exchangeBalanceSnapshots, settings, statementCoun
 import { parseDbTimestamp } from '../../db/timestamp'
 import type { DailyRates } from '../../features/price'
 import { type DailyRatesService, MIN_MEMPOOL_PRICE_DATE } from '../../features/price'
-import type { ExchangeService } from '../exchange/service'
+import type { ExchangeService } from '../../modules/exchange/service'
 import { toTransactionEntries } from './entries'
 import { type AccountHistory, collectAccountHistory } from './history'
 import { type Sleep, lookupTransactions } from './lookup'

@@ -107,7 +107,7 @@ export function StatementCreatePage(): JSX.Element {
 
   // generate, then follow progress on the statement page
   const trpcUtils = trpc.useUtils()
-  const initiateStatementGenerationMutation = trpc.portalProve.statement.initiateGeneration.useMutation()
+  const initiateStatementGenerationMutation = trpc.portalProve.statements.initiateGeneration.useMutation()
   const initiateMutationWithArgs = useMutation({
     mutationFn: async () => {
       if (isAfter(openingDate, closingDate)) {
@@ -126,14 +126,14 @@ export function StatementCreatePage(): JSX.Element {
       })
 
       // Statement lists show it straight away, rather than once they refresh.
-      void trpcUtils.portalProve.statement.list.cancel()
-      trpcUtils.portalProve.statement.list.setData(
+      void trpcUtils.portalProve.statements.list.cancel()
+      trpcUtils.portalProve.statements.list.setData(
         undefined,
         (statements) =>
           statements && [generatedStatement, ...statements.filter((item) => item.id !== generatedStatement.id)],
       )
       // The statement page opens generation straight away with what Sentinel just returned.
-      trpcUtils.portalProve.statement.retrieve.setData(generatedStatement.id, generatedStatement)
+      trpcUtils.portalProve.statements.retrieve.setData(generatedStatement.id, generatedStatement)
       // Fade this page out first, so generation fades in from a clear screen rather than cutting in.
       if (!reduceMotion) {
         setIsLeaving(true)

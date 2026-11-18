@@ -120,7 +120,7 @@ async function checkApp(state: RunState): Promise<void> {
       return [false, `${marker.file} does not parse; launch a new run`]
     }
     const accounts = new Set<string>((await client.portalProve.registry.claims.list.query()).map((claim) => claim.id))
-    const statements = new Set((await client.portalProve.statement.list.query()).map((statement) => statement.id))
+    const statements = new Set((await client.portalProve.statements.list.query()).map((statement) => statement.id))
     const missing = [
       ...Object.entries(marker.value.accounts).filter(([, id]) => !accounts.has(id)),
       ...marker.value.statements.filter((id) => !statements.has(id)).map((id) => ['statement', id]),

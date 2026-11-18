@@ -3,8 +3,8 @@ import { TRPCError } from '@trpc/server'
 import { eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { settings } from '../../db/schema'
-import { STATEMENT_SOURCES } from '../../modules/statements/service'
 import { protectedProcedure, router } from '../../modules/trpc/init'
+import { STATEMENT_SOURCES } from '../statements'
 import { type ConnectionDetails, MAX_CONNECTION_PROFILES } from './connection-profiles-store'
 
 const READABLE_SETTINGS = new Set([

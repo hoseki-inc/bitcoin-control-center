@@ -1,7 +1,7 @@
 import { count, eq } from 'drizzle-orm'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { statements } from '../../db/schema'
-import { setupAppCaller } from '../trpc/ownership.fixtures'
+import { setupAppCaller } from '../../modules/trpc/ownership.fixtures'
 import { type GenerateStatementInput, validateStatementInput } from './service'
 
 const now = new Date('2026-10-05T18:00:00.000Z')
@@ -53,7 +53,7 @@ describe('statement closing date limit', () => {
     })
     const { caller, db } = await setupAppCaller()
 
-    const attempt = caller.portalProve.statement.initiateGeneration(statementEnding('2026-10-04T12:00:00.000Z'))
+    const attempt = caller.portalProve.statements.initiateGeneration(statementEnding('2026-10-04T12:00:00.000Z'))
 
     await expect(attempt).rejects.toMatchObject({ code: 'BAD_REQUEST' })
     await expect(attempt).rejects.toThrow('at least 2 days ago')
@@ -68,7 +68,9 @@ describe('statement closing date limit', () => {
     })
     const { caller, db } = await setupAppCaller()
 
-    const statement = await caller.portalProve.statement.initiateGeneration(statementEnding('2026-10-03T23:59:59.999Z'))
+    const statement = await caller.portalProve.statements.initiateGeneration(
+      statementEnding('2026-10-03T23:59:59.999Z'),
+    )
 
     expect(statement.status).toBe('pending')
     // Generation stops only because the request selects no accounts, not because of its end date.

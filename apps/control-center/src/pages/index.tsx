@@ -187,7 +187,8 @@ export interface HomeDataSource {
 }
 
 const homeDataSource: HomeDataSource = {
-  useStatements: () => trpc.portalProve.statement.list.useQuery(undefined, { refetchInterval: refetchWhileGenerating }),
+  useStatements: () =>
+    trpc.portalProve.statements.list.useQuery(undefined, { refetchInterval: refetchWhileGenerating }),
   usePortfolio: (input) => trpc.portalProve.controlCenter.getData.useQuery(input),
   useClaims: () => trpc.portalProve.registry.claims.list.useQuery({ excludePending: false }),
   useExchanges: () => trpc.portalProve.exchange.list.useQuery(),

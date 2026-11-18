@@ -20,13 +20,13 @@ import {
   type ProfileReference,
   ReleaseCheckService,
 } from './features/settings'
+import { StatementService } from './features/statements'
 import { initEncryption, loadCredentialEncryptionKey } from './lib/encrypted'
 import { applyPlatformRequests } from './modules/auth/platform'
 import { AuthService, type PinPlatform } from './modules/auth/service'
 import { ControlCenterService } from './modules/control_center/service'
 import { ExchangeService } from './modules/exchange/service'
 import { ManualService } from './modules/manual/service'
-import { StatementService } from './modules/statements/service'
 import { WalletBalanceService } from './modules/wallet_balances/service'
 
 /**
