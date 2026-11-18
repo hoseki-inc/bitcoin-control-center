@@ -213,7 +213,8 @@
               "does": "The chart shows the error, the price shows a dash, and Retry appears",
               "needs": "fault"
             }
-          ]
+          ],
+          "recipes": [{ "file": "home-price-chart.md", "proves": ["price-heading", "range-switch", "source-footer"] }]
         },
         {
           "id": "home-recent-statements",
@@ -1664,7 +1665,8 @@
               "kind": "edge",
               "does": "The choice is still there after reload"
             }
-          ]
+          ],
+          "recipes": [{ "file": "settings-price.md", "proves": ["section", "toggle-fallbacks", "persists"] }]
         },
         {
           "id": "settings-security",
