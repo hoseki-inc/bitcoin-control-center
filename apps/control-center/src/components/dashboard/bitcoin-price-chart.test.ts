@@ -34,7 +34,7 @@ const requests: unknown[] = []
 let unavailable = false
 let singlePrice = false
 const rpc = createTestTrpcClient(async ({ path, input }: Operation) => {
-  if (path !== 'portalProve.retrieveBitcoinPriceHistory') {
+  if (path !== 'portalProve.price.history') {
     throw new Error(`Unexpected request: ${path}`)
   }
   requests.push(input)

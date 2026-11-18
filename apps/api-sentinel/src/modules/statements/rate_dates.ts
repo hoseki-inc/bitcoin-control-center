@@ -1,8 +1,8 @@
 import { TZDate } from '@date-fns/tz'
 import { Err, Ok, type Result } from '@hoseki/packages/result'
 import { eachMonthOfInterval, endOfMonth } from 'date-fns'
-import type { DailyRates } from '../price/daily_rates'
-import { MAX_QUOTE_DISTANCE_DAYS, toDateKey } from '../price/daily_rates'
+import type { DailyRates } from '../../features/price'
+import { MAX_QUOTE_DISTANCE_DAYS, toDateKey } from '../../features/price'
 import type { StatementTransactions } from './service'
 
 export interface StatementPeriod {

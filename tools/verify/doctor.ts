@@ -100,7 +100,7 @@ async function checkApp(state: RunState): Promise<void> {
     ]
   })
   await attempt('prices', async () => {
-    const options = await client.settings.priceSource.query()
+    const options = await client.portalProve.price.options.query()
     return [
       options.selected === 'mempool' && !options.fallbacks,
       `source ${options.selected}, fallbacks ${options.fallbacks ? 'on' : 'off'}`,

@@ -11,9 +11,9 @@ import { describe, expect, it, onTestFinished } from 'vitest'
 import { type SentinelDb, openDrizzleDatabase } from './db/drizzle'
 import { etfHoldings, exchangeAccounts, statements as statementTable } from './db/schema'
 import { EtfService } from './features/etf'
+import { DailyRatesService } from './features/price'
 import { Encrypted, initEncryption } from './lib/encrypted'
 import { ExchangeService } from './modules/exchange/service'
-import { DailyRatesService } from './modules/price/daily_rates'
 import { StatementService } from './modules/statements/service'
 
 const logger = pino({ level: 'silent' })

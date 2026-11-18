@@ -23,7 +23,7 @@ export interface DashboardAccounts {
   manualAccountsQuery: ListQuery<RouterOutput['portalProve']['manual']['list'][number]>
   etfAccountsQuery: ListQuery<RouterOutput['portalProve']['etf']['list'][number]>
   btcPriceQuery: {
-    data?: RouterOutput['portalProve']['retrieveBitcoinPrice']
+    data?: RouterOutput['portalProve']['price']['current']
     isLoading: boolean
   }
 }
@@ -47,7 +47,7 @@ export const dashboardDataSource: DashboardDataSource = {
     exchangeAccountsQuery: trpc.portalProve.exchange.list.useQuery(),
     manualAccountsQuery: trpc.portalProve.manual.list.useQuery(),
     etfAccountsQuery: trpc.portalProve.etf.list.useQuery(),
-    btcPriceQuery: trpc.portalProve.retrieveBitcoinPrice.useQuery(),
+    btcPriceQuery: trpc.portalProve.price.current.useQuery(),
   }),
   useHistory: (input, options) => trpc.portalProve.controlCenter.getData.useQuery(input, options),
   useWalletBalances,

@@ -1,7 +1,7 @@
 import { Decimal } from 'decimal.js'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
-import type { DailyRates } from '../price/daily_rates'
-import { toDateKey } from '../price/daily_rates'
+import type { DailyRates } from '../../features/price'
+import { toDateKey } from '../../features/price'
 import { validateStatementRates } from './rate_dates'
 
 const day = new Date('2026-08-01T00:00:00Z')

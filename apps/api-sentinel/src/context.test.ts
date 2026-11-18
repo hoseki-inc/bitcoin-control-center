@@ -769,8 +769,8 @@ describe('price source settings', () => {
         vi.fn(async (url: string) => answers.get(new URL(url).host)?.() ?? new Response(null, { status: 503 })),
       )
       const caller = appRouter.createCaller({ app: await context() })
-      await expect(caller.settings.priceSource()).resolves.toMatchObject({ selected: 'mempool', fallbacks: true })
-      const first = await caller.settings.priceStatus()
+      await expect(caller.portalProve.price.options()).resolves.toMatchObject({ selected: 'mempool', fallbacks: true })
+      const first = await caller.portalProve.price.status()
       expect(first).toMatchObject({
         selected: 'mempool',
         fallbacks: true,
@@ -778,12 +778,17 @@ describe('price source settings', () => {
       })
       expect(Math.abs(Date.parse(first.price?.asOf ?? '') - seconds * 1000)).toBeLessThan(1000)
 
-      await expect(caller.settings.setPriceSettings({ source: 'coinbase', fallbacks: false })).resolves.toMatchObject({
+      await expect(
+        caller.portalProve.price.setSettings({ source: 'coinbase', fallbacks: false }),
+      ).resolves.toMatchObject({
         selected: 'coinbase',
         fallbacks: false,
       })
-      await expect(caller.settings.priceSource()).resolves.toMatchObject({ selected: 'coinbase', fallbacks: false })
-      await expect(caller.settings.priceStatus()).resolves.toMatchObject({
+      await expect(caller.portalProve.price.options()).resolves.toMatchObject({
+        selected: 'coinbase',
+        fallbacks: false,
+      })
+      await expect(caller.portalProve.price.status()).resolves.toMatchObject({
         selected: 'coinbase',
         fallbacks: false,
         price: { source: 'coinbase', lastKnown: false },
@@ -791,7 +796,7 @@ describe('price source settings', () => {
 
       answers.delete('api.coinbase.com')
       const withoutCoinbase = appRouter.createCaller({ app: await context() })
-      await expect(withoutCoinbase.settings.priceStatus()).resolves.toEqual({
+      await expect(withoutCoinbase.portalProve.price.status()).resolves.toEqual({
         selected: 'coinbase',
         fallbacks: false,
         price: null,
@@ -809,7 +814,7 @@ describe('price source settings', () => {
         vi.fn(async () => new Promise<Response>(() => undefined)),
       )
       const caller = appRouter.createCaller({ app: await context() })
-      await expect(caller.settings.priceSource()).resolves.toMatchObject({ selected: 'mempool' })
+      await expect(caller.portalProve.price.options()).resolves.toMatchObject({ selected: 'mempool' })
     })
   })
 
@@ -817,16 +822,16 @@ describe('price source settings', () => {
     await withTestSetup(async () => {
       const ctx = await context()
       const caller = appRouter.createCaller({ app: ctx })
-      await caller.settings.setPriceSettings({ source: 'block', fallbacks: true })
+      await caller.portalProve.price.setSettings({ source: 'block', fallbacks: true })
       const updated = vi.spyOn(ctx.priceService, 'settingsUpdated')
       await ctx.database.run(
         sql`CREATE TRIGGER reject_price_save BEFORE INSERT ON settings WHEN NEW.key = 'price_fallbacks_enabled' BEGIN SELECT RAISE(FAIL, 'test write failure'); END`,
       )
-      await expect(caller.settings.setPriceSettings({ source: 'coinbase', fallbacks: false })).rejects.toThrow(
+      await expect(caller.portalProve.price.setSettings({ source: 'coinbase', fallbacks: false })).rejects.toThrow(
         /Failed query/,
       )
       expect(updated).not.toHaveBeenCalled()
-      await expect(caller.settings.priceSource()).resolves.toMatchObject({ selected: 'block', fallbacks: true })
+      await expect(caller.portalProve.price.options()).resolves.toMatchObject({ selected: 'block', fallbacks: true })
     })
   })
 
@@ -834,10 +839,10 @@ describe('price source settings', () => {
     await withTestSetup(async () => {
       env = { ...env, MEMPOOL_API_URL: 'https://mempool.space' }
       const caller = appRouter.createCaller({ app: await context() })
-      await expect(caller.settings.setPriceSettings({ source: 'mempool' })).rejects.toMatchObject({
+      await expect(caller.portalProve.price.setSettings({ source: 'mempool' })).rejects.toMatchObject({
         code: 'BAD_REQUEST',
       })
-      await expect(caller.settings.priceSource()).resolves.toMatchObject({ selected: 'block' })
+      await expect(caller.portalProve.price.options()).resolves.toMatchObject({ selected: 'block' })
     })
   })
 
@@ -868,9 +873,9 @@ it('checks the primary again for status and skips malformed timestamps without f
       ),
     )
     const caller = appRouter.createCaller({ app: await context() })
-    expect((await caller.settings.priceStatus()).price?.source).toBe('mempool')
+    expect((await caller.portalProve.price.status()).price?.source).toBe('mempool')
     time = 9e12
-    const status = await caller.settings.priceStatus()
+    const status = await caller.portalProve.price.status()
     expect(status.price).toMatchObject({ source: 'block', lastKnown: false })
     expect(Number.isFinite(Date.parse(status.price?.asOf ?? ''))).toBe(true)
   })

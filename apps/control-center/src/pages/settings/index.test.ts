@@ -194,8 +194,8 @@ it.each([
   },
 )
 
-type PriceSourceOptions = RouterOutput['settings']['priceSource']
-type PriceStatus = RouterOutput['settings']['priceStatus']
+type PriceSourceOptions = RouterOutput['portalProve']['price']['options']
+type PriceStatus = RouterOutput['portalProve']['price']['status']
 type StatusPrice = PriceStatus['price']
 
 const priceOptions: PriceSourceOptions = {
@@ -245,15 +245,15 @@ class PriceServer {
     this.price = initialPrice
     fetchMock.mockImplementation(async (input, init) => {
       const url = parseUnknown(z.string(), input).unwrapOr('')
-      if (url.includes('/settings.priceSource')) {
+      if (url.includes('/portalProve.price.options')) {
         this.optionsRequests += 1
         return Response.json({ result: { data: { json: this.options } } })
       }
-      if (url.includes('/settings.priceStatus')) {
+      if (url.includes('/portalProve.price.status')) {
         this.statusRequests += 1
         return this.answerStatus()
       }
-      if (url.endsWith('/settings.setPriceSettings')) {
+      if (url.endsWith('/portalProve.price.setSettings')) {
         if (this.saveReply === 'hold') {
           await new Promise<void>((resolve) => {
             this.heldSaves.push(resolve)
@@ -676,8 +676,8 @@ it.each([
     const refreshed = getQueryKey(trpc.portalProve.controlCenter.getData)
     // A failed request for the current price must not leave a price from a source no longer allowed.
     const forgotten = [
-      getQueryKey(trpc.portalProve.retrieveBitcoinPrice),
-      getQueryKey(trpc.portalProve.retrieveBitcoinPriceHistory),
+      getQueryKey(trpc.portalProve.price.current),
+      getQueryKey(trpc.portalProve.price.history),
       getQueryKey(trpc.portalProve.onchain.bitcoinAccountBalances),
     ]
     for (const queryKey of [refreshed, ...forgotten]) {
@@ -762,7 +762,7 @@ it('keeps a successful save when an older options refresh finishes afterward', a
     let captured = false
     fetchMock.mockImplementation(async (input, init) => {
       const response = await implementation(input, init)
-      if (parseUnknown(z.string(), input).unwrapOr('').includes('/settings.priceSource') && !captured) {
+      if (parseUnknown(z.string(), input).unwrapOr('').includes('/portalProve.price.options') && !captured) {
         captured = true
         await new Promise<void>((resolve) => {
           release = resolve
@@ -801,7 +801,7 @@ it('reconciles a committed setting after its save response is lost', async () =>
     }
     fetchMock.mockImplementation(async (input, init) => {
       const response = await implementation(input, init)
-      if (parseUnknown(z.string(), input).unwrapOr('').endsWith('/settings.setPriceSettings')) {
+      if (parseUnknown(z.string(), input).unwrapOr('').endsWith('/portalProve.price.setSettings')) {
         throw new TypeError('Save response lost')
       }
       return response

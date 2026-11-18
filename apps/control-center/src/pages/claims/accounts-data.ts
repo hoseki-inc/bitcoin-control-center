@@ -22,7 +22,7 @@ export interface AccountsLists {
   manualAccountsQuery: AccountsListQuery<ManualAccountDto>
   etfAccountsQuery: AccountsListQuery<EtfAccountDto>
   archivedClaimsQuery: AccountsListQuery<ClaimDto>
-  btcPriceQuery: { data?: RouterOutput['portalProve']['retrieveBitcoinPrice']; isLoading: boolean }
+  btcPriceQuery: { data?: RouterOutput['portalProve']['price']['current']; isLoading: boolean }
 }
 
 export interface AccountRestore {
@@ -46,7 +46,7 @@ export const accountsDataSource: AccountsDataSource = {
     manualAccountsQuery: trpc.portalProve.manual.list.useQuery(),
     etfAccountsQuery: trpc.portalProve.etf.list.useQuery(),
     archivedClaimsQuery: trpc.portalProve.registry.claims.listArchived.useQuery(),
-    btcPriceQuery: trpc.portalProve.retrieveBitcoinPrice.useQuery(),
+    btcPriceQuery: trpc.portalProve.price.current.useQuery(),
   }),
   useWalletBalances,
   useRestore: () => {

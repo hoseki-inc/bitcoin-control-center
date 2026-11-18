@@ -34,7 +34,7 @@ const bitcoinPriceChartViews: BitcoinPriceChartViews = {
 export function BitcoinPriceChart({ views = bitcoinPriceChartViews }: { views?: BitcoinPriceChartViews }): JSX.Element {
   const { HistoryLineChart } = views
   const [range, setRange] = useState<PriceRange>(PRICE_RANGES[0])
-  const query = trpc.portalProve.retrieveBitcoinPriceHistory.useQuery(
+  const query = trpc.portalProve.price.history.useQuery(
     { days: range.days, quoteCurrency: QUOTE_CURRENCY },
     {
       staleTime: 300_000,

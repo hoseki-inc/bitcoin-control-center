@@ -20,7 +20,7 @@ export type UseGetBalancesPerClaimIdOutput = {
   isError: boolean
   error:
     | ReturnType<typeof trpc.portalProve.onchain.claimBalances.useQuery>['error']
-    | ReturnType<typeof trpc.portalProve.retrieveBitcoinPrice.useQuery>['error']
+    | ReturnType<typeof trpc.portalProve.price.current.useQuery>['error']
   data: Map<ClaimId, BalanceValue | null>
 }
 export function useGetBalancesPerClaimIds({
@@ -32,7 +32,7 @@ export function useGetBalancesPerClaimIds({
 }): UseGetBalancesPerClaimIdOutput {
   const balanceQueriesOpts = { enabled }
   const queries = trpc.useQueries((t) => [
-    t.portalProve.retrieveBitcoinPrice(undefined, balanceQueriesOpts),
+    t.portalProve.price.current(undefined, balanceQueriesOpts),
     // Sentinel reuses a wallet balance for a minute, so asking again sooner returns the same one.
     t.portalProve.onchain.claimBalances({ claimIds }, { ...balanceQueriesOpts, staleTime: 60_000 }),
   ])
@@ -69,7 +69,7 @@ export interface BalanceState {
  * `sats` is null when the account had no balance to report.
  */
 export function useBalanceFromSats(sats: string | null): BalanceState {
-  const btcPriceQuery = trpc.portalProve.retrieveBitcoinPrice.useQuery()
+  const btcPriceQuery = trpc.portalProve.price.current.useQuery()
   return {
     isLoading: btcPriceQuery.isLoading,
     data: sats === null ? null : getBalanceValue(BigInt(sats), btcPriceQuery.data?.value ?? null),
@@ -82,13 +82,13 @@ export type UseGetClaimBalanceOutput = {
   isError: boolean
   error:
     | ReturnType<typeof trpc.portalProve.onchain.claimBalances.useQuery>['error']
-    | ReturnType<typeof trpc.portalProve.retrieveBitcoinPrice.useQuery>['error']
+    | ReturnType<typeof trpc.portalProve.price.current.useQuery>['error']
   data: BalanceValue | null
 }
 export function useGetClaimBalance(claimId: ClaimId | null, { enabled } = { enabled: true }): UseGetClaimBalanceOutput {
   const balanceQueriesOpts = { enabled }
   const queries = trpc.useQueries((t) => [
-    t.portalProve.retrieveBitcoinPrice(undefined, balanceQueriesOpts),
+    t.portalProve.price.current(undefined, balanceQueriesOpts),
     t.portalProve.onchain.claimBalances(
       { claimIds: claimId != null && claimId.length > 0 ? [claimId] : [] },
       balanceQueriesOpts,

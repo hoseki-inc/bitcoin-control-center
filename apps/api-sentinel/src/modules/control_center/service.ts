@@ -16,9 +16,9 @@ import {
   exchangeBalanceSnapshots,
 } from '../../db/schema'
 import type { EtfService } from '../../features/etf'
+import type { PriceService } from '../../features/price'
 import type { ExchangeService } from '../exchange/service'
 import type { ManualService } from '../manual/service'
-import type { PriceService } from '../price/service'
 import type { WalletBalanceService } from '../wallet_balances/service'
 import { isWalletActive, upsertWalletSnapshot } from '../wallet_balances/snapshots'
 import {

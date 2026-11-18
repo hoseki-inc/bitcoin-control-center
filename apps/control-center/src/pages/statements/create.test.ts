@@ -76,7 +76,7 @@ it.each(StatementQuoteCurrencySchema.options)(
         connectionStatus: 'connected',
       },
     ])
-    client.setQueryData(getQueryKey(trpc.portalProve.retrieveBitcoinPrice, undefined, 'query'), null)
+    client.setQueryData(getQueryKey(trpc.portalProve.price.current, undefined, 'query'), null)
     client.setQueryData(
       getQueryKey(trpc.portalProve.onchain.claimBalances, { claimIds: [claimId] }, 'query'),
       new Map(),
