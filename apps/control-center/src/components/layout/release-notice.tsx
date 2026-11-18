@@ -38,7 +38,7 @@ function controlBefore(notice: Element): HTMLElement | null {
 export function ReleaseNotice(): JSX.Element {
   const { data } = useQuery({
     queryKey: ['release-check'],
-    queryFn: async ({ signal }) => baseTrpc.settings.releaseCheck.query(undefined, { signal }),
+    queryFn: async ({ signal }) => baseTrpc.portalProve.settings.releaseCheck.query(undefined, { signal }),
     refetchInterval: (status) => (status?.pending === false ? REFRESH_MS : PENDING_REFRESH_MS),
   })
   const [dismissed, setDismissed] = useState(dismissedVersion)

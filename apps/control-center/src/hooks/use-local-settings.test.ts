@@ -74,7 +74,7 @@ it.each(['Saved name', '', null])('decodes the setting value %j through the API 
     })
     const [url, options] = fetchMock.mock.calls[0] ?? []
     const requestUrl = new URL(parseUnknown(z.string(), url).expect('Expected a settings URL'), 'http://localhost')
-    expect(requestUrl.pathname).toBe('/settings.get')
+    expect(requestUrl.pathname).toBe('/portalProve.settings.get')
     expect(requestUrl.searchParams.get('input')).toBe(JSON.stringify({ json: { key: 'user_name' } }))
     expect(options?.method).toBe('GET')
   })
@@ -121,14 +121,18 @@ it('refreshes the same cached setting after saving', async () => {
     })
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
-      expect.stringContaining('/settings.update'),
+      expect.stringContaining('/portalProve.settings.update'),
       expect.objectContaining({
         method: 'POST',
         body: JSON.stringify({ json: { key: 'user_name', value: 'Updated name' } }),
       }),
     )
     expect(fetchMock).toHaveBeenCalledTimes(3)
-    expect(fetchMock).toHaveBeenNthCalledWith(3, expect.stringContaining('/settings.get'), expect.anything())
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      expect.stringContaining('/portalProve.settings.get'),
+      expect.anything(),
+    )
   })
 })
 

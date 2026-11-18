@@ -11,7 +11,7 @@ import { type AppContext, type AppContextOptions, createAppContext, withSimulate
 import { desktopConnectionProfiles, settings as settingsTable, statements as statementsTable } from './db/schema'
 import * as environment from './env'
 import type { Env } from './env'
-import type { ConnectionProfileStore } from './modules/connection_profiles/store'
+import type { ConnectionProfileStore } from './features/settings'
 import { appRouter } from './modules/trpc/router'
 
 let env: Env
@@ -193,8 +193,8 @@ describe('Electrum connection lifecycle', () => {
       env.ELECTRUM_PORT = pending.config.port
       const ctx = await context(false)
       const caller = appRouter.createCaller({ app: ctx })
-      await expect(caller.settings.electrumStatus()).resolves.toMatchObject({ connected: false })
-      await expect(caller.settings.get({ key: 'user_name' })).resolves.toBeNull()
+      await expect(caller.portalProve.settings.electrumStatus()).resolves.toMatchObject({ connected: false })
+      await expect(caller.portalProve.settings.get({ key: 'user_name' })).resolves.toBeNull()
       await expect(
         caller.portalProve.manual.create({
           displayName: 'Offline holding',
@@ -220,7 +220,9 @@ describe('Electrum connection lifecycle', () => {
       await vi.waitFor(() => {
         expect(unavailable.methods).toContain('server.version')
       })
-      await expect(appRouter.createCaller({ app: ctx }).settings.get({ key: 'user_name' })).resolves.toBeNull()
+      await expect(
+        appRouter.createCaller({ app: ctx }).portalProve.settings.get({ key: 'user_name' }),
+      ).resolves.toBeNull()
       expect(ctx.electrumClient.isConnected()).toBe(false)
       await vi.waitFor(() => {
         expect(unavailable.sockets.size).toBe(0)
@@ -246,7 +248,9 @@ describe('Electrum connection lifecycle', () => {
       await vi.waitFor(() => {
         expect(unavailable.methods).toContain('server.version')
       })
-      await expect(appRouter.createCaller({ app: ctx }).settings.get({ key: 'user_name' })).resolves.toBeNull()
+      await expect(
+        appRouter.createCaller({ app: ctx }).portalProve.settings.get({ key: 'user_name' }),
+      ).resolves.toBeNull()
       expect(ctx.electrumClient.isConnected()).toBe(false)
       await vi.waitFor(() => {
         expect(unavailable.sockets.size).toBe(0)
@@ -260,7 +264,7 @@ describe('Electrum connection lifecycle', () => {
       const portfolio = ctx.controlCenterService['onchainProvider']
       const statements = ctx.statementService['onchainProvider']
       const next = await startElectrum(200)
-      await appRouter.createCaller({ app: ctx }).settings.reconnectElectrum(next.config)
+      await appRouter.createCaller({ app: ctx }).portalProve.settings.reconnectElectrum(next.config)
       expect((await portfolio.getBlocksTip()).unwrap().height).toBe(200)
       expect((await statements.getBlocksTip()).unwrap().height).toBe(200)
       expect((await ctx.onchainProvider.getBlocksTip()).unwrap().height).toBe(200)
@@ -405,7 +409,7 @@ describe('Electrum connection lifecycle', () => {
       await withTestSetup(async () => {
         const ctx = await context()
         await expect(
-          appRouter.createCaller({ app: ctx }).settings.update({ key, value: 'invalid' }),
+          appRouter.createCaller({ app: ctx }).portalProve.settings.update({ key, value: 'invalid' }),
         ).rejects.toMatchObject({ code: 'FORBIDDEN' })
         await expect(settings(ctx)).resolves.toEqual([])
       })
@@ -489,8 +493,8 @@ describe('onboarding setting', () => {
   it.each(['started', 'dismissed'])('saves and reads back %s', async (value) => {
     await withTestSetup(async () => {
       const caller = appRouter.createCaller({ app: await context() })
-      await caller.settings.update({ key: 'onboarding_v1', value })
-      await expect(caller.settings.get({ key: 'onboarding_v1' })).resolves.toBe(value)
+      await caller.portalProve.settings.update({ key: 'onboarding_v1', value })
+      await expect(caller.portalProve.settings.get({ key: 'onboarding_v1' })).resolves.toBe(value)
     })
   })
 
@@ -498,7 +502,7 @@ describe('onboarding setting', () => {
     await withTestSetup(async () => {
       const ctx = await context()
       await expect(
-        appRouter.createCaller({ app: ctx }).settings.update({ key: 'onboarding_v1', value: 'completed' }),
+        appRouter.createCaller({ app: ctx }).portalProve.settings.update({ key: 'onboarding_v1', value: 'completed' }),
       ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
       await expect(settings(ctx)).resolves.toEqual([])
     })
@@ -509,8 +513,8 @@ describe('Electrum notice setting', () => {
   it('saves and reads back a closed notice', async () => {
     await withTestSetup(async () => {
       const caller = appRouter.createCaller({ app: await context() })
-      await caller.settings.update({ key: 'electrum_notice_v1', value: 'dismissed' })
-      await expect(caller.settings.get({ key: 'electrum_notice_v1' })).resolves.toBe('dismissed')
+      await caller.portalProve.settings.update({ key: 'electrum_notice_v1', value: 'dismissed' })
+      await expect(caller.portalProve.settings.get({ key: 'electrum_notice_v1' })).resolves.toBe('dismissed')
     })
   })
 
@@ -518,7 +522,9 @@ describe('Electrum notice setting', () => {
     await withTestSetup(async () => {
       const ctx = await context()
       await expect(
-        appRouter.createCaller({ app: ctx }).settings.update({ key: 'electrum_notice_v1', value: 'public' }),
+        appRouter
+          .createCaller({ app: ctx })
+          .portalProve.settings.update({ key: 'electrum_notice_v1', value: 'public' }),
       ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
       await expect(settings(ctx)).resolves.toEqual([])
     })
@@ -574,10 +580,10 @@ describe('Tor connection policy', () => {
       const ctx = await context()
       const next = await startElectrum(200)
       const caller = appRouter.createCaller({ app: ctx })
-      await expect(caller.settings.reconnectElectrum({ ...next.config, torEnabled: true })).rejects.toThrow(
+      await expect(caller.portalProve.settings.reconnectElectrum({ ...next.config, torEnabled: true })).rejects.toThrow(
         'Tor is not available',
       )
-      await expect(caller.settings.testElectrum({ ...next.config, torEnabled: true })).rejects.toThrow(
+      await expect(caller.portalProve.settings.testElectrum({ ...next.config, torEnabled: true })).rejects.toThrow(
         'Tor is not available',
       )
       expect(next.methods).toEqual([])
@@ -590,9 +596,12 @@ describe('Tor connection policy', () => {
     await withTestSetup(async () => {
       const ctx = await context()
       await expect(
-        appRouter
-          .createCaller({ app: ctx })
-          .settings.testElectrum({ host: 'example.onion', port: 50001, protocol: 'tcp', torEnabled: false }),
+        appRouter.createCaller({ app: ctx }).portalProve.settings.testElectrum({
+          host: 'example.onion',
+          port: 50001,
+          protocol: 'tcp',
+          torEnabled: false,
+        }),
       ).rejects.toThrow('Onion addresses require Tor')
     })
   })
@@ -644,7 +653,7 @@ describe('Tor connection policy', () => {
         contexts.add(ctx)
         const pending = appRouter
           .createCaller({ app: ctx })
-          .settings.testElectrum({ ...initialFixture().config, torEnabled: true })
+          .portalProve.settings.testElectrum({ ...initialFixture().config, torEnabled: true })
         const outcome = pending.then(
           () => false,
           () => true,
@@ -714,7 +723,7 @@ describe('Tor connection policy', () => {
       }
       const ctx = (await createAppContext(logger, { tor })).unwrap()
       contexts.add(ctx)
-      await expect(appRouter.createCaller({ app: ctx }).settings.startTor()).resolves.toEqual({
+      await expect(appRouter.createCaller({ app: ctx }).portalProve.settings.startTor()).resolves.toEqual({
         state: 'starting',
         progress: 25,
       })
@@ -744,7 +753,9 @@ describe('Tor connection policy', () => {
       contexts.add(ctx)
       const next = await startElectrum(200)
       await expect(
-        appRouter.createCaller({ app: ctx }).settings.reconnectElectrum({ ...next.config, torEnabled: true }),
+        appRouter
+          .createCaller({ app: ctx })
+          .portalProve.settings.reconnectElectrum({ ...next.config, torEnabled: true }),
       ).rejects.toThrow('Tor bootstrap failed')
       expect(next.methods).toEqual([])
       await expect(settings(ctx)).resolves.toEqual([])
@@ -851,8 +862,10 @@ describe('price source settings', () => {
     async (key) => {
       await withTestSetup(async () => {
         const caller = appRouter.createCaller({ app: await context() })
-        await expect(caller.settings.update({ key, value: 'false' })).rejects.toMatchObject({ code: 'FORBIDDEN' })
-        await expect(caller.settings.get({ key })).rejects.toMatchObject({ code: 'FORBIDDEN' })
+        await expect(caller.portalProve.settings.update({ key, value: 'false' })).rejects.toMatchObject({
+          code: 'FORBIDDEN',
+        })
+        await expect(caller.portalProve.settings.get({ key })).rejects.toMatchObject({ code: 'FORBIDDEN' })
       })
     },
   )
@@ -887,10 +900,16 @@ describe('statement source setting', () => {
       const ctx = await context(true, true, true)
       const caller = appRouter.createCaller({ app: ctx })
 
-      await expect(caller.settings.statementSource()).resolves.toEqual({ selectable: true, source: 'mempool' })
-      await caller.settings.setStatementSource({ source: 'electrum' })
+      await expect(caller.portalProve.settings.statementSource()).resolves.toEqual({
+        selectable: true,
+        source: 'mempool',
+      })
+      await caller.portalProve.settings.setStatementSource({ source: 'electrum' })
 
-      await expect(caller.settings.statementSource()).resolves.toEqual({ selectable: true, source: 'electrum' })
+      await expect(caller.portalProve.settings.statementSource()).resolves.toEqual({
+        selectable: true,
+        source: 'electrum',
+      })
     })
   })
 
@@ -899,10 +918,13 @@ describe('statement source setting', () => {
       const ctx = await context()
       const caller = appRouter.createCaller({ app: ctx })
 
-      await expect(caller.settings.setStatementSource({ source: 'electrum' })).rejects.toMatchObject({
+      await expect(caller.portalProve.settings.setStatementSource({ source: 'electrum' })).rejects.toMatchObject({
         code: 'FORBIDDEN',
       })
-      await expect(caller.settings.statementSource()).resolves.toEqual({ selectable: false, source: 'mempool' })
+      await expect(caller.portalProve.settings.statementSource()).resolves.toEqual({
+        selectable: false,
+        source: 'mempool',
+      })
     })
   })
 })
@@ -912,9 +934,12 @@ describe('desktop saved connections', () => {
     await withTestSetup(async () => {
       const ctx = await context()
       const caller = appRouter.createCaller({ app: ctx })
-      await expect(caller.settings.connectionProfiles.list()).rejects.toMatchObject({ code: 'FORBIDDEN' })
+      await expect(caller.portalProve.settings.connectionProfiles.list()).rejects.toMatchObject({ code: 'FORBIDDEN' })
       await expect(
-        caller.settings.connectionProfiles.delete({ id: '00000000-0000-4000-8000-000000000001', revision: 1 }),
+        caller.portalProve.settings.connectionProfiles.delete({
+          id: '00000000-0000-4000-8000-000000000001',
+          revision: 1,
+        }),
       ).rejects.toMatchObject({ code: 'FORBIDDEN' })
       await expect(ctx.database.select().from(desktopConnectionProfiles)).resolves.toEqual([])
     })
@@ -924,9 +949,9 @@ describe('desktop saved connections', () => {
     await withTestSetup(async () => {
       const ctx = await context(true, true)
       const next = await startElectrum(200)
-      await expect(appRouter.createCaller({ app: ctx }).settings.reconnectElectrum(next.config)).rejects.toThrow(
-        'Choose a saved connection',
-      )
+      await expect(
+        appRouter.createCaller({ app: ctx }).portalProve.settings.reconnectElectrum(next.config),
+      ).rejects.toThrow('Choose a saved connection')
       expect(next.methods).toEqual([])
       await expect(settings(ctx)).resolves.toEqual([])
     })
@@ -942,7 +967,7 @@ describe('desktop saved connections', () => {
         { key: 'tor_enabled', value: 'true' },
       ])
       const ctx = await restart(previous, false)
-      const snapshot = await appRouter.createCaller({ app: ctx }).settings.connectionProfiles.list()
+      const snapshot = await appRouter.createCaller({ app: ctx }).portalProve.settings.connectionProfiles.list()
       expect(snapshot.profiles).toEqual([
         expect.objectContaining({
           nickname: 'Current connection',
@@ -973,7 +998,7 @@ describe('desktop saved connections', () => {
   it('saves and renames profiles without connecting or changing the active connection', async () => {
     await withTestSetup(async () => {
       const ctx = await context(true, true)
-      const api = appRouter.createCaller({ app: ctx }).settings.connectionProfiles
+      const api = appRouter.createCaller({ app: ctx }).portalProve.settings.connectionProfiles
       const before = await api.list()
       const next = await startElectrum(200)
       const saved = await api.create({ ...next.config, nickname: '  Home LAN  ' })
@@ -992,7 +1017,7 @@ describe('desktop saved connections', () => {
   it('limits saved connections to five, even across simultaneous requests', async () => {
     await withTestSetup(async () => {
       const ctx = await context(true, true)
-      const api = appRouter.createCaller({ app: ctx }).settings.connectionProfiles
+      const api = appRouter.createCaller({ app: ctx }).portalProve.settings.connectionProfiles
       const connection = { host: 'unused.example', port: 50002, protocol: 'ssl' as const, torEnabled: false }
       const results = await Promise.allSettled(
         Array.from({ length: 8 }, async (_, index) => api.create({ ...connection, nickname: `Connection ${index}` })),
@@ -1006,7 +1031,7 @@ describe('desktop saved connections', () => {
   it('validates nicknames and servers, and requires Tor for onion addresses', async () => {
     await withTestSetup(async () => {
       const ctx = await context(true, true)
-      const api = appRouter.createCaller({ app: ctx }).settings.connectionProfiles
+      const api = appRouter.createCaller({ app: ctx }).portalProve.settings.connectionProfiles
       const { config } = initialFixture()
       await expect(api.create({ ...config, nickname: '   ' })).rejects.toThrow('nickname')
       await expect(api.create({ ...config, nickname: 'x'.repeat(81) })).rejects.toThrow('80')
@@ -1068,7 +1093,7 @@ describe('desktop saved connections', () => {
       }
       const ctx = (await createAppContext(logger, { tor, connectionProfiles: true })).unwrap()
       contexts.add(ctx)
-      const api = appRouter.createCaller({ app: ctx }).settings.connectionProfiles
+      const api = appRouter.createCaller({ app: ctx }).portalProve.settings.connectionProfiles
       const active = (await api.list()).activeId
       const next = await startElectrum(200)
       const viaTor = await api.create({ ...next.config, torEnabled: true, nickname: 'Via Tor' })
@@ -1089,7 +1114,7 @@ describe('desktop saved connections', () => {
   it('deletes an inactive profile and keeps the deletion after restart', async () => {
     await withTestSetup(async () => {
       const ctx = await context(true, true)
-      const api = appRouter.createCaller({ app: ctx }).settings.connectionProfiles
+      const api = appRouter.createCaller({ app: ctx }).portalProve.settings.connectionProfiles
       const active = (await api.list()).activeId
       const next = await startElectrum(200)
       const removed = await api.create({ ...next.config, nickname: 'Remove me' })
@@ -1115,7 +1140,7 @@ describe('desktop saved connections', () => {
   it('refuses to delete the active connection, even offline, and allows it after switching', async () => {
     await withTestSetup(async () => {
       const ctx = await context(true, true)
-      const api = appRouter.createCaller({ app: ctx }).settings.connectionProfiles
+      const api = appRouter.createCaller({ app: ctx }).portalProve.settings.connectionProfiles
       const initial = itemAt((await api.list()).profiles, 0)
       await expect(api.delete(initial)).rejects.toThrow('Connect to another saved connection')
       ctx.electrumClient.disconnect()
@@ -1133,7 +1158,7 @@ describe('desktop saved connections', () => {
   it('rejects stale and repeated deletion without affecting other profiles', async () => {
     await withTestSetup(async () => {
       const ctx = await context(true, true)
-      const api = appRouter.createCaller({ app: ctx }).settings.connectionProfiles
+      const api = appRouter.createCaller({ app: ctx }).portalProve.settings.connectionProfiles
       const saved = await api.create({ ...initialFixture().config, nickname: 'Before' })
       const renamed = await api.rename({ ...saved, nickname: 'After' })
       await expect(api.delete(saved)).rejects.toThrow('another window')
@@ -1147,7 +1172,7 @@ describe('desktop saved connections', () => {
   it('keeps every profile when a deletion cannot be saved', async () => {
     await withTestSetup(async () => {
       const ctx = await context(true, true)
-      const api = appRouter.createCaller({ app: ctx }).settings.connectionProfiles
+      const api = appRouter.createCaller({ app: ctx }).portalProve.settings.connectionProfiles
       const saved = await api.create({ ...initialFixture().config, nickname: 'Keep after failure' })
       const before = await api.list()
       await ctx.database.run(
@@ -1163,11 +1188,11 @@ describe('desktop saved connections', () => {
     await withTestSetup(async () => {
       const ctx = await context(true, true)
       const caller = appRouter.createCaller({ app: ctx })
-      const api = caller.settings.connectionProfiles
+      const api = caller.portalProve.settings.connectionProfiles
       const before = (await api.list()).activeId
       const next = await startElectrum(200)
       const saved = await api.create({ ...next.config, nickname: 'Home' })
-      await caller.settings.testElectrum(saved)
+      await caller.portalProve.settings.testElectrum(saved)
       expect((await api.list()).activeId).toBe(before)
       expect(next.methods).toEqual(['server.version'])
       const connected = await api.connect(saved)
@@ -1184,7 +1209,7 @@ describe('desktop saved connections', () => {
   it('keeps every profile and the active connection after a failed connection or save', async () => {
     await withTestSetup(async () => {
       const ctx = await context(true, true)
-      const api = appRouter.createCaller({ app: ctx }).settings.connectionProfiles
+      const api = appRouter.createCaller({ app: ctx }).portalProve.settings.connectionProfiles
       const next = await startElectrum(200)
       const bad = await startElectrum(300, false, true)
       const saved = await api.create({ ...next.config, nickname: 'Next' })
@@ -1209,7 +1234,7 @@ describe('desktop saved connections', () => {
   it('does not activate or recreate a profile deleted during its handshake', async () => {
     await withTestSetup(async () => {
       const ctx = await context(true, true)
-      const api = appRouter.createCaller({ app: ctx }).settings.connectionProfiles
+      const api = appRouter.createCaller({ app: ctx }).portalProve.settings.connectionProfiles
       const active = (await api.list()).activeId
       const next = await startElectrum(200, true)
       const saved = await api.create({ ...next.config, nickname: 'Connecting' })
@@ -1232,7 +1257,7 @@ describe('desktop saved connections', () => {
   it('rejects a concurrent switch and a profile edited during its handshake', async () => {
     await withTestSetup(async () => {
       const ctx = await context(true, true)
-      const api = appRouter.createCaller({ app: ctx }).settings.connectionProfiles
+      const api = appRouter.createCaller({ app: ctx }).portalProve.settings.connectionProfiles
       const next = await startElectrum(200, true)
       const saved = await api.create({ ...next.config, nickname: 'Next' })
       const pending = api.connect(saved)
@@ -1251,7 +1276,7 @@ describe('desktop saved connections', () => {
   it('cancels a pending switch on shutdown without changing saved profiles', async () => {
     await withTestSetup(async () => {
       const ctx = await context(true, true)
-      const api = appRouter.createCaller({ app: ctx }).settings.connectionProfiles
+      const api = appRouter.createCaller({ app: ctx }).portalProve.settings.connectionProfiles
       const next = await startElectrum(200, true)
       const saved = await api.create({ ...next.config, nickname: 'Next' })
       const before = await profileStore(ctx).list()
@@ -1421,7 +1446,7 @@ describe('saved connection safeguards', () => {
   it('keeps the settings older versions read in step with the active connection', async () => {
     await withTestSetup(async () => {
       const ctx = await context(true, true)
-      const api = appRouter.createCaller({ app: ctx }).settings.connectionProfiles
+      const api = appRouter.createCaller({ app: ctx }).portalProve.settings.connectionProfiles
       const next = await startElectrum(200)
       const direct = await api.create({ ...next.config, nickname: 'Direct' })
       await api.connect({ id: direct.id, revision: direct.revision })
@@ -1443,7 +1468,7 @@ describe('saved connection safeguards', () => {
   it('refuses a connection change that leaves out the Tor setting', async () => {
     await withTestSetup(async () => {
       const ctx = await context(true, true)
-      const api = appRouter.createCaller({ app: ctx }).settings.connectionProfiles
+      const api = appRouter.createCaller({ app: ctx }).portalProve.settings.connectionProfiles
       const next = await startElectrum(200)
       const viaTor = (
         await profileStore(ctx).create({ ...next.config, torEnabled: true, nickname: 'Via Tor' })
@@ -1460,7 +1485,7 @@ describe('saved connection safeguards', () => {
       ).rejects.toThrow('torEnabled')
       await expect(
         // @ts-expect-error -- a test without a Tor setting must be refused, never run direct
-        appRouter.createCaller({ app: ctx }).settings.testElectrum(withoutTor),
+        appRouter.createCaller({ app: ctx }).portalProve.settings.testElectrum(withoutTor),
       ).rejects.toThrow('torEnabled')
     })
   })
@@ -1497,7 +1522,7 @@ describe('saved connection safeguards', () => {
   it('reports reachability rather than an open socket, and notices when the server stops answering', async () => {
     await withTestSetup(async () => {
       const ctx = await context(true, true)
-      const settingsApi = appRouter.createCaller({ app: ctx }).settings
+      const settingsApi = appRouter.createCaller({ app: ctx }).portalProve.settings
       await vi.waitFor(async () => {
         expect((await settingsApi.electrumStatus()).connected).toBe(true)
       })
@@ -1529,7 +1554,7 @@ describe('saved connection safeguards', () => {
         info.mockRestore()
       })
       const ctx = await context(true, true)
-      const api = appRouter.createCaller({ app: ctx }).settings.connectionProfiles
+      const api = appRouter.createCaller({ app: ctx }).portalProve.settings.connectionProfiles
       const next = await startElectrum(200)
       const direct = await api.create({ ...next.config, nickname: 'Direct' })
       await api.connect({ id: direct.id, revision: direct.revision })
@@ -1545,7 +1570,7 @@ describe('saved connection safeguards', () => {
       const { tor, connections } = await refusingTor()
       const ctx = (await createAppContext(logger, { tor, connectionProfiles: true })).unwrap()
       contexts.add(ctx)
-      const api = appRouter.createCaller({ app: ctx }).settings.connectionProfiles
+      const api = appRouter.createCaller({ app: ctx }).portalProve.settings.connectionProfiles
       const active = (await api.list()).activeId
       const remote = await startElectrum(200)
 

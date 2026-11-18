@@ -33,7 +33,7 @@ class SettingsServer {
   public constructor(fetchMock: ReturnType<typeof vi.fn<typeof fetch>>) {
     fetchMock.mockImplementation(async (input, init) => {
       const url = new URL(parseUnknown(z.string(), input).unwrapOr(''), 'http://sentinel.test')
-      if (url.pathname.endsWith('/settings.update')) {
+      if (url.pathname.endsWith('/portalProve.settings.update')) {
         const body: unknown = JSON.parse(parseUnknown(z.string(), init?.body).unwrapOr('null'))
         const update = parseUnknown(SettingUpdate, body)
         if (update.isOk()) {

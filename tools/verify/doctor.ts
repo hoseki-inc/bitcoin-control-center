@@ -92,7 +92,7 @@ async function checkApp(state: RunState): Promise<void> {
     ]
   })
   await attempt('electrum', async () => {
-    const status = await client.settings.electrumStatus.query()
+    const status = await client.portalProve.settings.electrumStatus.query()
     const fake = status.host === '127.0.0.1' && status.port === fakes.electrumPort
     return [
       status.connected && fake,

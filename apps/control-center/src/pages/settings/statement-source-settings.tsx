@@ -6,15 +6,15 @@ import { toast } from 'sonner'
 import { type RouterOutput, baseTrpc } from '../../trpc'
 import { NOTICE_FADE_MS, useFadingNotice } from './fading-notice'
 
-type StatementSource = RouterOutput['settings']['statementSource']['source']
+type StatementSource = RouterOutput['portalProve']['settings']['statementSource']['source']
 
 const STATEMENT_SOURCE_QUERY_KEY = ['statement-source']
 
 /** Where new statements look up transactions, as saved in Sentinel. */
-export function useStatementSource(): UseQueryResult<RouterOutput['settings']['statementSource']> {
+export function useStatementSource(): UseQueryResult<RouterOutput['portalProve']['settings']['statementSource']> {
   return useQuery({
     queryKey: STATEMENT_SOURCE_QUERY_KEY,
-    queryFn: async ({ signal }) => baseTrpc.settings.statementSource.query(undefined, { signal }),
+    queryFn: async ({ signal }) => baseTrpc.portalProve.settings.statementSource.query(undefined, { signal }),
   })
 }
 
@@ -127,9 +127,9 @@ export function StatementSourceSettings({ torEnabled }: { torEnabled: boolean })
       while (next !== null) {
         const choice = next
         try {
-          await baseTrpc.settings.setStatementSource.mutate({ source: choice })
+          await baseTrpc.portalProve.settings.setStatementSource.mutate({ source: choice })
           // Saved, so show it even if reading it back fails.
-          queryClient.setQueryData<RouterOutput['settings']['statementSource']>(
+          queryClient.setQueryData<RouterOutput['portalProve']['settings']['statementSource']>(
             STATEMENT_SOURCE_QUERY_KEY,
             (current) => current && { ...current, source: choice },
           )

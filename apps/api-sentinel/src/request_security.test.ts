@@ -141,7 +141,7 @@ describe('Sentinel interface access', () => {
       // A cross-site form post: text/plain needs no preflight, so the page never asks first.
       const write = await server.inject({
         method: 'POST',
-        url: '/%74rpc/settings.update',
+        url: '/%74rpc/portalProve.settings.update',
         headers: { host: '127.0.0.1:3400', origin: 'https://evil.example', 'content-type': 'text/plain' },
         payload: '{}',
       })

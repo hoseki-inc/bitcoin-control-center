@@ -1,6 +1,12 @@
 import pino from 'pino'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
-import { ReleaseCheckService, displayVersion, isNewerRelease, parseInstalledVersion, parseReleaseTag } from './service'
+import {
+  ReleaseCheckService,
+  displayVersion,
+  isNewerRelease,
+  parseInstalledVersion,
+  parseReleaseTag,
+} from './release-check'
 
 const logger = pino({ level: 'silent' })
 const MINUTE = 60 * 1000
