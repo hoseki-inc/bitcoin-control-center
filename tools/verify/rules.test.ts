@@ -34,6 +34,7 @@ function runState(startedAt: string): RunState {
     launchedAt: '',
     fresh: false,
     desktop: false,
+    pin: false,
     build,
     url: 'http://127.0.0.1:1',
     sentinel: { name: 'sentinel', pid: 1, startedAt, port: 1 },
@@ -251,7 +252,14 @@ describe('withOutcome and latestRecorded', () => {
 describe('launchDecision', () => {
   it('starts a new run', () => {
     assert.deepEqual(
-      launchDecision({ alive: null, folderExists: false, evidenceExists: false, fresh: false, desktop: false }),
+      launchDecision({
+        alive: null,
+        folderExists: false,
+        evidenceExists: false,
+        fresh: false,
+        desktop: false,
+        pin: false,
+      }),
       {
         action: 'start',
       },
@@ -261,11 +269,12 @@ describe('launchDecision', () => {
   it('leaves a live run of the same kind running', () => {
     assert.deepEqual(
       launchDecision({
-        alive: { fresh: true, desktop: false },
+        alive: { fresh: true, desktop: false, pin: false },
         folderExists: true,
         evidenceExists: true,
         fresh: true,
         desktop: false,
+        pin: false,
       }),
       {
         action: 'running',
@@ -275,11 +284,12 @@ describe('launchDecision', () => {
 
   it('refuses --fresh for a live seeded run', () => {
     const decision = launchDecision({
-      alive: { fresh: false, desktop: false },
+      alive: { fresh: false, desktop: false, pin: false },
       folderExists: true,
       evidenceExists: false,
       fresh: true,
       desktop: false,
+      pin: false,
     })
     assert.equal(decision.action, 'refuse')
   })
@@ -291,18 +301,34 @@ describe('launchDecision', () => {
       evidenceExists: true,
       fresh: false,
       desktop: false,
+      pin: false,
     })
     assert.equal(decision.action, 'refuse')
+  })
+
+  it('refuses to switch a live run between PINs on and off', () => {
+    for (const pin of [true, false]) {
+      const decision = launchDecision({
+        alive: { fresh: false, desktop: false, pin: !pin },
+        folderExists: true,
+        evidenceExists: false,
+        fresh: false,
+        desktop: false,
+        pin,
+      })
+      assert.equal(decision.action, 'refuse')
+    }
   })
 
   it('refuses to switch a live run between the desktop and standalone apps', () => {
     for (const desktop of [true, false]) {
       const decision = launchDecision({
-        alive: { fresh: false, desktop: !desktop },
+        alive: { fresh: false, desktop: !desktop, pin: false },
         folderExists: true,
         evidenceExists: false,
         fresh: false,
         desktop,
+        pin: false,
       })
       assert.equal(decision.action, 'refuse')
     }

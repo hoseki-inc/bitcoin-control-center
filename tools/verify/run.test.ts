@@ -66,6 +66,7 @@ describe('ownsSentinel', () => {
       launchedAt: '',
       fresh: false,
       desktop: false,
+      pin: false,
       build: { commit: '', tree: '', dirty: false },
       url: 'http://127.0.0.1:1',
       sentinel: gone,

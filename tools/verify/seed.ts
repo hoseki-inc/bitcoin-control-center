@@ -1,7 +1,7 @@
 import { Signer } from 'bip322-js'
 import { readArgs } from './args'
 import { SEED_ACCOUNTS, signingWif } from './chain'
-import { countAccounts, sentinelClient } from './client'
+import { countAccounts, sentinelClient, signIn } from './client'
 import {
   HELPER,
   fail,
@@ -36,6 +36,7 @@ if (requireJsonFile(readSeedMarker(paths))) {
 }
 
 const client = sentinelClient(state.url)
+await signIn(client)
 
 if ((await countAccounts(client)) > 0) {
   fail(

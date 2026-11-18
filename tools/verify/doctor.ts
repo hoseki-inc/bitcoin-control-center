@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { readArgs } from './args'
-import { countAccounts, sentinelClient } from './client'
+import { countAccounts, sentinelClient, signIn } from './client'
 import {
   HELPER,
   type RunState,
@@ -85,11 +85,19 @@ async function checkApp(state: RunState): Promise<void> {
   await attempt('web app', async () => [await servesWebApp(url), 'Sentinel serves the built web app'])
   await attempt('pin', async () => {
     const status = await client.auth.status.query()
-    // Standalone Sentinel runs with PINs off, so every tab is already signed in.
-    return [
-      status.platform === null,
-      status.platform === null ? 'PINs are off (standalone)' : `PINs are on for ${status.platform}`,
-    ]
+    if (!state.pin) {
+      // Standalone Sentinel runs with PINs off, so every tab is already signed in.
+      return [
+        status.platform === null,
+        status.platform === null ? 'PINs are off (standalone)' : `PINs are on for ${status.platform}`,
+      ]
+    }
+    if (status.platform !== 'umbrel' || status.state === 'no-pin') {
+      return [false, `expected PINs on for umbrel with the run's PIN set; got ${status.platform ?? 'PINs off'}`]
+    }
+    // The doctor signs in as its own tab. A browser tab's session is separate, so this doesn't sign the browser in.
+    await signIn(client)
+    return [true, "PINs are on (umbrel); signed in with the run's PIN"]
   })
   await attempt('electrum', async () => {
     const status = await client.portalProve.settings.electrumStatus.query()
@@ -140,7 +148,7 @@ if (state.status === 'missing') {
   check(
     'run',
     true,
-    `${state.value.runId} launched ${state.value.launchedAt}${state.value.fresh ? ' (fresh)' : ''}${state.value.desktop ? ' (desktop)' : ''}`,
+    `${state.value.runId} launched ${state.value.launchedAt}${state.value.fresh ? ' (fresh)' : ''}${state.value.desktop ? ' (desktop)' : ''}${state.value.pin ? ' (PIN)' : ''}`,
   )
   if (checkProcesses(state.value)) {
     await checkApp(state.value)

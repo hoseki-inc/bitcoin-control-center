@@ -52,6 +52,8 @@ const RecordSchema = z.object({
   baseline: z.enum(['seeded', 'fresh']),
   /** Which app the run served: the standalone web app or, with launch --desktop, the desktop one. */
   app: z.enum(['standalone', 'desktop']).default('standalone'),
+  /** Launched with --pin: PINs on as on Umbrel. */
+  pins: z.boolean().default(false),
   url: z.string(),
   versions: z.record(z.string(), z.string()),
   attempts: z.array(
@@ -110,6 +112,7 @@ function report(record: EvidenceRecord): string {
     `- Commit: ${record.commit}${record.dirty ? ` with uncommitted changes (tree ${record.tree})` : ''}`,
     `- Baseline: ${record.baseline === 'fresh' ? 'fresh run, not seeded' : 'seeded'}`,
     `- App: ${record.app === 'desktop' ? 'desktop (launch --desktop, no Electron shell)' : 'standalone web app'}`,
+    `- PINs: ${record.pins ? 'on, Umbrel rules (launch --pin)' : 'off'}`,
     `- Started: ${record.startedAt}`,
     `- Versions: ${Object.entries(record.versions)
       .map(([name, version]) => `${name} ${version}`)
@@ -164,6 +167,7 @@ if (command === 'start') {
     dirty: state.build.dirty,
     baseline: state.fresh ? 'fresh' : 'seeded',
     app: state.desktop ? 'desktop' : 'standalone',
+    pins: state.pin,
     url: state.url,
     versions: {
       'Control Center': runCommand(process.execPath, [join(REPO_ROOT, 'start9/scripts/version.mjs'), 'umbrel'], {

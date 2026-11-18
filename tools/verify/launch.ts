@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, openSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { join } from 'node:path'
 import { readArgs } from './args'
-import { sentinelClient } from './client'
+import { VERIFY_PIN, sentinelClient, signIn } from './client'
 import { ChildEnv, runToLog, startGroup } from './process'
 import { launchDecision, webBuildEnv } from './rules'
 import {
@@ -32,17 +32,28 @@ import {
 // Starts Control Center for verification: the web app built into the run folder, served by Sentinel from source
 // on a free port, against the local fakes on an empty data folder. Never touches `pnpm dev` or its data.
 // With --desktop, Sentinel and the web app run as the desktop app does (`pnpm dev:desktop`), so Settings shows the
-// desktop-only sections; there is no Electron shell.
-// Usage: helpers/verify launch [--run <id>] [--fresh] [--desktop]
+// desktop-only sections; there is no Electron shell. With --pin, PINs are on as on Umbrel, and launch sets the run's
+// test PIN (VERIFY_PIN in client.ts), which the helper commands sign in with.
+// Usage: helpers/verify launch [--run <id>] [--fresh] [--desktop | --pin]
 
 const TSX = join(REPO_ROOT, 'node_modules/.bin/tsx')
 const VITE = join(REPO_ROOT, 'node_modules/.bin/vite')
 const READY_TIMEOUT_MS = 90_000
 
-const { values } = readArgs({ run: { type: 'string' }, fresh: { type: 'boolean' }, desktop: { type: 'boolean' } })
+const { values } = readArgs({
+  run: { type: 'string' },
+  fresh: { type: 'boolean' },
+  desktop: { type: 'boolean' },
+  pin: { type: 'boolean' },
+})
 const runId = values.run ?? newRunId()
 const fresh = values.fresh === true
 const desktop = values.desktop === true
+const pin = values.pin === true
+if (desktop && pin) {
+  // The desktop app turns PINs on through its own launcher, which verify doesn't run.
+  fail('--desktop and --pin do not combine: the desktop PIN needs the Electron shell.')
+}
 const paths = runPaths(runId)
 
 const existing = requireJsonFile(readRunState(paths))
@@ -53,10 +64,11 @@ const decision = launchDecision({
   evidenceExists: existsSync(join(EVIDENCE_ROOT, runId)),
   fresh,
   desktop,
+  pin,
 })
 if (decision.action === 'running' && alive) {
   console.log(
-    `Run ${runId} is already running at ${alive.url}${alive.fresh ? ' (fresh: no seed)' : ''}${alive.desktop ? ' (desktop)' : ''}`,
+    `Run ${runId} is already running at ${alive.url}${alive.fresh ? ' (fresh: no seed)' : ''}${alive.desktop ? ' (desktop)' : ''}${alive.pin ? ' (PIN)' : ''}`,
   )
   process.exit(0)
 }
@@ -171,7 +183,7 @@ try {
   const port = await freePort()
   const url = `http://127.0.0.1:${port}`
   // Only these variables reach Sentinel, so the caller's PIN, proxy or host settings can't change the run.
-  const sentinelEnv = ChildEnv.with({
+  const sentinelVars = {
     // tsx hands its --tsconfig to child processes; Sentinel needs its own.
     TSX_TSCONFIG_PATH: join(REPO_ROOT, 'apps/api-sentinel/tsconfig.json'),
     NODE_ENV: 'production',
@@ -185,7 +197,8 @@ try {
     BITCOIN_NETWORK: 'mainnet',
     MEMPOOL_API_URL: `http://127.0.0.1:${fakes.mempoolPort}`,
     LOG_LEVEL: 'info',
-  })
+  }
+  const sentinelEnv = ChildEnv.with(pin ? { ...sentinelVars, SENTINEL_PIN: 'umbrel' } : sentinelVars)
   const sentinelProcess = await startProcess(
     'sentinel',
     TSX,
@@ -198,6 +211,9 @@ try {
   const client = sentinelClient(url)
   await until('Sentinel /health', async () => ((await fetch(`${url}/health`)).ok ? true : null))
   await until('the web app', async () => ((await servesWebApp(url)) ? true : null))
+  if (pin) {
+    await signIn(client, true)
+  }
   await until('Electrum to connect', async () =>
     (await client.portalProve.settings.electrumStatus.query()).connected ? true : null,
   )
@@ -210,6 +226,7 @@ try {
     launchedAt: new Date().toISOString(),
     fresh,
     desktop,
+    pin,
     build,
     url,
     sentinel: { ...sentinelProcess, port },
@@ -217,7 +234,7 @@ try {
   }
   writeJson(paths.stateFile, state)
   console.log(`
-Run ${runId} is ready at ${url}${fresh ? ' (fresh: no seed)' : ''}${desktop ? ' (desktop)' : ''}
+Run ${runId} is ready at ${url}${fresh ? ' (fresh: no seed)' : ''}${desktop ? ' (desktop)' : ''}${pin ? ` (PIN ${VERIFY_PIN})` : ''}
   data:  ${paths.dataDir}
   logs:  ${paths.logsDir}
 Next: ${fresh ? '' : `${HELPER} seed --run ${runId}\n      `}${HELPER} doctor --run ${runId}`)

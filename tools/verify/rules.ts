@@ -259,11 +259,12 @@ export type LaunchDecision = { action: 'start' } | { action: 'running' } | { act
 
 /** What launch should do with a run ID, given what already exists for it. */
 export function launchDecision(run: {
-  alive: { fresh: boolean; desktop: boolean } | null
+  alive: { fresh: boolean; desktop: boolean; pin: boolean } | null
   folderExists: boolean
   evidenceExists: boolean
   fresh: boolean
   desktop: boolean
+  pin: boolean
 }): LaunchDecision {
   if (run.alive !== null) {
     if (run.fresh && !run.alive.fresh) {
@@ -271,6 +272,10 @@ export function launchDecision(run: {
     }
     if (run.desktop !== run.alive.desktop) {
       const kind = run.alive.desktop ? 'as the desktop app' : 'as the standalone app'
+      return { action: 'refuse', reason: `is already running ${kind}. Launch a new run ID.` }
+    }
+    if (run.pin !== run.alive.pin) {
+      const kind = run.alive.pin ? 'with PINs on' : 'with PINs off'
       return { action: 'refuse', reason: `is already running ${kind}. Launch a new run ID.` }
     }
     return { action: 'running' }
