@@ -2,22 +2,11 @@ import { Flex, Stack, Text, chakra } from '@chakra-ui/react'
 import type { ReactNode } from 'react'
 import { Link } from 'react-router'
 
-type MediaProps =
-  | {
-      imagePath: string
-      imageAltText: string
-      media?: never
-    }
-  | {
-      media: ReactNode
-      imagePath?: never
-      imageAltText?: never
-    }
+type MediaProps = { imagePath: string; media?: never } | { media: ReactNode; imagePath?: never }
 
 export function ConnectionType({
   title,
   imagePath,
-  imageAltText,
   media,
   to,
   state,
@@ -39,8 +28,9 @@ export function ConnectionType({
       gap={8}
       _hover={{ cursor: 'pointer', bgColor: 'neutral.50' }}
     >
-      <Flex justifyContent="center" h="30px">
-        {imagePath != null && imagePath !== '' ? <chakra.img src={imagePath} alt={imageAltText} maxW="100px" /> : media}
+      {/* The logo repeats the title, so the title alone names the link. */}
+      <Flex justifyContent="center" h="30px" aria-hidden>
+        {imagePath != null && imagePath !== '' ? <chakra.img src={imagePath} alt="" maxW="100px" /> : media}
       </Flex>
       <Text textStyle="label/md" fontWeight="medium" textAlign="center" whiteSpace="pre-line">
         {title}

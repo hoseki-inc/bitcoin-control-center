@@ -76,35 +76,30 @@ export function AddAccountFlow({ onClose, linkState }: AddAccountFlowProps): JSX
             <ConnectionType
               title="Trezor"
               imagePath={`${HOSEKI_ASSETS_CDN_URL}/hardware-wallets/trezor.svg`}
-              imageAltText="Connect your Trezor"
               to="/accounts/verify/trezor"
               state={linkState}
             />
             <ConnectionType
               title="COLDCARD"
               imagePath={`${HOSEKI_ASSETS_CDN_URL}/hardware-wallets/coldcard.svg`}
-              imageAltText="Connect your Coldcard"
               to="/accounts/verify/coldcard"
               state={linkState}
             />
             <ConnectionType
               title="Ledger"
               imagePath={`${HOSEKI_ASSETS_CDN_URL}/hardware-wallets/ledger.svg`}
-              imageAltText="Connect your Ledger"
               to="/accounts/verify/ledger"
               state={linkState}
             />
             <ConnectionType
               title="Keystone"
               imagePath="/images/hardware-wallets/keystone-logo.svg"
-              imageAltText="Connect your Keystone"
               to="/accounts/verify/keystone"
               state={linkState}
             />
             <ConnectionType
               title="Bitkey"
               imagePath="/images/hardware-wallets/bitkey-logo.svg"
-              imageAltText="Connect your Bitkey"
               to="/accounts/verify/bitkey"
               state={linkState}
             />

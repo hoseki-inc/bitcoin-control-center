@@ -61,6 +61,45 @@ it('ends the Add Account grid with Manually Sign and Track, without the Advanced
   expect(container.textContent).not.toContain('Manual Entry')
 })
 
+/** A link's name from its content, as screen readers compute it: text and image alts, skipping hidden parts. */
+function nameFromContent(node: Node): string {
+  if (node.nodeType === Node.TEXT_NODE) {
+    return node.textContent ?? ''
+  }
+  if (!(node instanceof Element) || node.getAttribute('aria-hidden') === 'true') {
+    return ''
+  }
+  const label = node.getAttribute('aria-label')
+  if (label != null) {
+    return ` ${label} `
+  }
+  if (node.tagName === 'IMG') {
+    return ` ${node.getAttribute('alt') ?? ''} `
+  }
+  return Array.from(node.childNodes, nameFromContent).join('')
+}
+
+it('names each Add Account tile by its title alone', async () => {
+  const container = await render(<AddAccountFlow onClose={() => undefined} />)
+
+  expect(
+    Array.from(container.querySelectorAll('a'), (link) => nameFromContent(link).replace(/\s+/g, ' ').trim()),
+  ).toEqual([
+    'Trezor',
+    'COLDCARD',
+    'Ledger',
+    'Keystone',
+    'Bitkey',
+    'Multisig',
+    'Coinbase',
+    'Kraken',
+    'Robinhood',
+    'Strike',
+    'Manually Sign',
+    'Track Balance, ETF, or xpub',
+  ])
+})
+
 it('offers Bitcoin Holdings, ETF and xpub or Descriptor to track', async () => {
   const container = await render(<ManualTypeSelectorPage />)
 

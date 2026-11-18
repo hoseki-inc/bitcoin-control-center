@@ -161,7 +161,7 @@ export function ClaimsVerifyEtfPage(): JSX.Element {
             Holdings
           </Text>
           <Stack spacing={3}>
-            {holdings.map((row) => (
+            {holdings.map((row, index) => (
               <HStack key={row.key} spacing={2} align="flex-end">
                 <FormControl flex={1.2}>
                   <FormLabel textStyle="text/xs" color="neutral.600">
@@ -219,6 +219,7 @@ export function ClaimsVerifyEtfPage(): JSX.Element {
                 {holdings.length > 1 && (
                   <CloseButton
                     size="sm"
+                    aria-label={`Remove holding ${index + 1}`}
                     onClick={() => {
                       removeRow(row.key)
                     }}

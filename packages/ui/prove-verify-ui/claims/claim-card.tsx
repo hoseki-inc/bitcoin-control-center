@@ -117,6 +117,11 @@ function renderUsdAmount(balance: BalanceWithStatus): React.ReactNode {
   return formatUsd(balance.value.usd.toFixed(2))
 }
 
+/** Names a known device's logo; a watch-only or unidentified key shows a generic picture, so it stays decorative. */
+function keystoreAlt(wallet: SupportedHardwareWallet | null): string {
+  return wallet === null ? '' : `${wallet} wallet`
+}
+
 interface ClaimCardKeystoresProps extends KeystoreAvatarProps {
   keystores: ClaimCardKeystore[]
   alt: string
@@ -132,7 +137,7 @@ export function ClaimCardKeystores({
   if (keystores.length === 1 && keystores[0]) {
     return (
       <KeystoreAvatar
-        alt={`${keystores[0].wallet} wallet`}
+        alt={keystoreAlt(keystores[0].wallet)}
         src={getSupportedHardwareWalletLogoPath(keystores[0].wallet)}
         {...props}
       >
@@ -166,7 +171,7 @@ export function ClaimCardKeystores({
               src={keystore.wallet ? getSupportedHardwareWalletLogoPath(keystore.wallet) : undefined}
               // put the identified/verified ones first, just identified in the middle and unidentified/unverified at the end
               order={keystore.isVerified === true ? 1 : keystore.wallet ? 0 : -1}
-              alt={`${keystore.wallet} wallet`}
+              alt={keystoreAlt(keystore.wallet)}
             >
               <KeystoreAvatar.Badge>{getMultisigKeystoreAvatarIcon(keystore, status)}</KeystoreAvatar.Badge>
             </KeystoreAvatar>
