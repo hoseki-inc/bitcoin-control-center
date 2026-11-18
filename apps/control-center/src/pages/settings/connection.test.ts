@@ -287,7 +287,7 @@ async function withTestSetup(run: () => Promise<void>): Promise<void> {
           result: { data: { json: { connected, connecting, host, port, protocol, tor: torStatus } } },
         })
       }
-      if (path === 'settings.priceSource' || path === 'settings.priceStatus') {
+      if (path === 'portalProve.price.options' || path === 'portalProve.price.status') {
         return Response.json({ result: { data: { json: null } } })
       }
       if (path === 'settings.statementSource') {

@@ -81,7 +81,7 @@ async function withTestSetup(
     claims,
   )
   queryClient.setQueryData(
-    getQueryKey(trpc.portalProve.retrieveBitcoinPrice, undefined, 'query'),
+    getQueryKey(trpc.portalProve.price.current, undefined, 'query'),
     price === null ? null : { value: price, asOf: new Date(), source: 'mempool', lastKnown: false },
   )
   if (balances === 'loading') {

@@ -123,8 +123,8 @@ function DesktopStatementSource(): JSX.Element {
 
 // ─── Bitcoin price source ────────────────────────────────────────────────────
 
-type PriceSourceOptions = RouterOutput['settings']['priceSource']
-type PriceStatus = RouterOutput['settings']['priceStatus']
+type PriceSourceOptions = RouterOutput['portalProve']['price']['options']
+type PriceStatus = RouterOutput['portalProve']['price']['status']
 interface PriceChange {
   source?: PriceSourceOptions['selected']
   fallbacks?: boolean
@@ -136,8 +136,8 @@ const USD_QUERY_KEYS = [getQueryKey(trpc.portalProve.controlCenter.getData)]
 // Reset rather than refreshed: a failed price request would otherwise keep showing a price from a source
 // the change no longer allows, and account balances never refetch on mount.
 const RESET_USD_QUERY_KEYS = [
-  getQueryKey(trpc.portalProve.retrieveBitcoinPrice),
-  getQueryKey(trpc.portalProve.retrieveBitcoinPriceHistory),
+  getQueryKey(trpc.portalProve.price.current),
+  getQueryKey(trpc.portalProve.price.history),
   getQueryKey(trpc.portalProve.onchain.bitcoinAccountBalances),
 ]
 
@@ -178,14 +178,14 @@ function PriceSourceSettings(): JSX.Element {
   const changeCount = useRef(0)
   const query = useQuery({
     queryKey: PRICE_SOURCE_QUERY_KEY,
-    queryFn: async ({ signal }) => baseTrpc.settings.priceSource.query(undefined, { signal }),
+    queryFn: async ({ signal }) => baseTrpc.portalProve.price.options.query(undefined, { signal }),
     // A refresh started before a save finished could bring back the old settings.
     enabled: unsaved === null,
   })
   // Separate from the options, which must stay usable while a price lookup waits on the network.
   const statusQuery = useQuery({
     queryKey: PRICE_STATUS_QUERY_KEY,
-    queryFn: async ({ signal }) => baseTrpc.settings.priceStatus.query(undefined, { signal }),
+    queryFn: async ({ signal }) => baseTrpc.portalProve.price.status.query(undefined, { signal }),
   })
   const saved: PriceSourceOptions | null = query.data ?? null
   const options = saved && unsaved ? withChange(saved, unsaved) : saved
@@ -222,7 +222,7 @@ function PriceSourceSettings(): JSX.Element {
       await queryClient.cancelQueries({ queryKey: PRICE_SOURCE_QUERY_KEY })
       for (let next = takePending(); next !== null; next = takePending()) {
         try {
-          result = await baseTrpc.settings.setPriceSettings.mutate(next)
+          result = await baseTrpc.portalProve.price.setSettings.mutate(next)
         } catch {
           // Changes made meanwhile are dropped with it, and the saved settings are shown again.
           failed = { ...next, ...takePending() }

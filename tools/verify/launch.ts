@@ -197,7 +197,7 @@ try {
   )
 
   // The fake mempool is the only price source; with fallbacks off, prices never come from a public service.
-  await client.settings.setPriceSettings.mutate({ source: 'mempool', fallbacks: false })
+  await client.portalProve.price.setSettings.mutate({ source: 'mempool', fallbacks: false })
 
   const state: RunState = {
     runId,

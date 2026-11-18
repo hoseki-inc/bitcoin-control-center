@@ -34,7 +34,7 @@ it('shows the scanned balance when the price lookup fails', async () => {
     if (path === 'portalProve.onchain.claimBalances') {
       return new Map([[claim.id, new Decimal(100_000_000)]])
     }
-    if (path === 'portalProve.retrieveBitcoinPrice') {
+    if (path === 'portalProve.price.current') {
       throw new Error('No price source answered')
     }
     throw new Error(`Unexpected request: ${path}`)

@@ -18,10 +18,10 @@ import {
   manualBalanceSnapshots,
 } from '../../db/schema'
 import { EtfService } from '../../features/etf'
+import { PriceService } from '../../features/price'
 import { setupServiceDatabase } from '../../fixtures/service-database'
 import { ExchangeService } from '../exchange/service'
 import { ManualService } from '../manual/service'
-import { PriceService } from '../price/service'
 import { WalletBalanceService } from '../wallet_balances/service'
 import { ControlCenterService } from './service'
 
