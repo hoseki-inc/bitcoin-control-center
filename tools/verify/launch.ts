@@ -31,15 +31,18 @@ import {
 
 // Starts Control Center for verification: the web app built into the run folder, served by Sentinel from source
 // on a free port, against the local fakes on an empty data folder. Never touches `pnpm dev` or its data.
-// Usage: helpers/verify launch [--run <id>] [--fresh]
+// With --desktop, Sentinel and the web app run as the desktop app does (`pnpm dev:desktop`), so Settings shows the
+// desktop-only sections; there is no Electron shell.
+// Usage: helpers/verify launch [--run <id>] [--fresh] [--desktop]
 
 const TSX = join(REPO_ROOT, 'node_modules/.bin/tsx')
 const VITE = join(REPO_ROOT, 'node_modules/.bin/vite')
 const READY_TIMEOUT_MS = 90_000
 
-const { values } = readArgs({ run: { type: 'string' }, fresh: { type: 'boolean' } })
+const { values } = readArgs({ run: { type: 'string' }, fresh: { type: 'boolean' }, desktop: { type: 'boolean' } })
 const runId = values.run ?? newRunId()
 const fresh = values.fresh === true
+const desktop = values.desktop === true
 const paths = runPaths(runId)
 
 const existing = requireJsonFile(readRunState(paths))
@@ -49,9 +52,12 @@ const decision = launchDecision({
   folderExists: existsSync(paths.runDir),
   evidenceExists: existsSync(join(EVIDENCE_ROOT, runId)),
   fresh,
+  desktop,
 })
 if (decision.action === 'running' && alive) {
-  console.log(`Run ${runId} is already running at ${alive.url}${alive.fresh ? ' (fresh: no seed)' : ''}`)
+  console.log(
+    `Run ${runId} is already running at ${alive.url}${alive.fresh ? ' (fresh: no seed)' : ''}${alive.desktop ? ' (desktop)' : ''}`,
+  )
   process.exit(0)
 }
 if (decision.action === 'refuse') {
@@ -138,7 +144,7 @@ try {
     ['build', '--mode', 'production.sentinel', '--outDir', join(paths.appDir, 'public'), '--emptyOutDir'],
     {
       cwd: join(REPO_ROOT, 'apps/control-center'),
-      env: webBuildEnv(),
+      env: webBuildEnv(desktop),
       log: buildLog,
     },
   )
@@ -183,7 +189,7 @@ try {
   const sentinelProcess = await startProcess(
     'sentinel',
     TSX,
-    ['src/cli.ts'],
+    desktop ? ['src/cli.ts', '--desktop'] : ['src/cli.ts'],
     join(REPO_ROOT, 'apps/api-sentinel'),
     sentinelEnv,
   )
@@ -203,6 +209,7 @@ try {
     runId,
     launchedAt: new Date().toISOString(),
     fresh,
+    desktop,
     build,
     url,
     sentinel: { ...sentinelProcess, port },
@@ -210,7 +217,7 @@ try {
   }
   writeJson(paths.stateFile, state)
   console.log(`
-Run ${runId} is ready at ${url}${fresh ? ' (fresh: no seed)' : ''}
+Run ${runId} is ready at ${url}${fresh ? ' (fresh: no seed)' : ''}${desktop ? ' (desktop)' : ''}
   data:  ${paths.dataDir}
   logs:  ${paths.logsDir}
 Next: ${fresh ? '' : `${HELPER} seed --run ${runId}\n      `}${HELPER} doctor --run ${runId}`)

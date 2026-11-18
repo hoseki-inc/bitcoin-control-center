@@ -259,15 +259,21 @@ export type LaunchDecision = { action: 'start' } | { action: 'running' } | { act
 
 /** What launch should do with a run ID, given what already exists for it. */
 export function launchDecision(run: {
-  alive: { fresh: boolean } | null
+  alive: { fresh: boolean; desktop: boolean } | null
   folderExists: boolean
   evidenceExists: boolean
   fresh: boolean
+  desktop: boolean
 }): LaunchDecision {
   if (run.alive !== null) {
-    return run.fresh && !run.alive.fresh
-      ? { action: 'refuse', reason: 'is already running seeded, not fresh. Launch a new run ID with --fresh.' }
-      : { action: 'running' }
+    if (run.fresh && !run.alive.fresh) {
+      return { action: 'refuse', reason: 'is already running seeded, not fresh. Launch a new run ID with --fresh.' }
+    }
+    if (run.desktop !== run.alive.desktop) {
+      const kind = run.alive.desktop ? 'as the desktop app' : 'as the standalone app'
+      return { action: 'refuse', reason: `is already running ${kind}. Launch a new run ID.` }
+    }
+    return { action: 'running' }
   }
   if (run.folderExists) {
     return { action: 'refuse', reason: 'has a run folder but its processes are not running. Clean it up first.' }
@@ -282,6 +288,10 @@ export function launchDecision(run: {
  * The web build's environment. Exported variables beat every .env file, including a developer's own .local ones, so
  * setting these here pins the build to the standalone app that talks to the run's own Sentinel.
  */
-export function webBuildEnv(): ChildEnv {
-  return ChildEnv.with({ VITE_BACKEND_API_URL: '/trpc', VITE_BACKEND_BASE_URL: '', VITE_PLATFORM: '' })
+export function webBuildEnv(desktop = false): ChildEnv {
+  return ChildEnv.with({
+    VITE_BACKEND_API_URL: '/trpc',
+    VITE_BACKEND_BASE_URL: '',
+    VITE_PLATFORM: desktop ? 'desktop' : '',
+  })
 }

@@ -21,6 +21,8 @@ const RunStateSchema = z.object({
   runId: z.string(),
   launchedAt: z.string(),
   fresh: z.boolean(),
+  /** Launched with --desktop: Sentinel and the web app run as the desktop app does. */
+  desktop: z.boolean().default(false),
   build: z.object({ commit: z.string(), tree: z.string(), dirty: z.boolean() }),
   url: z.string(),
   sentinel: ProcessSchema.extend({ port: z.number().int().positive() }),

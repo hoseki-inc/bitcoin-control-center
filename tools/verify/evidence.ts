@@ -50,6 +50,8 @@ const RecordSchema = z.object({
   tree: z.string(),
   dirty: z.boolean(),
   baseline: z.enum(['seeded', 'fresh']),
+  /** Which app the run served: the standalone web app or, with launch --desktop, the desktop one. */
+  app: z.enum(['standalone', 'desktop']).default('standalone'),
   url: z.string(),
   versions: z.record(z.string(), z.string()),
   attempts: z.array(
@@ -107,6 +109,7 @@ function report(record: EvidenceRecord): string {
     '',
     `- Commit: ${record.commit}${record.dirty ? ` with uncommitted changes (tree ${record.tree})` : ''}`,
     `- Baseline: ${record.baseline === 'fresh' ? 'fresh run, not seeded' : 'seeded'}`,
+    `- App: ${record.app === 'desktop' ? 'desktop (launch --desktop, no Electron shell)' : 'standalone web app'}`,
     `- Started: ${record.startedAt}`,
     `- Versions: ${Object.entries(record.versions)
       .map(([name, version]) => `${name} ${version}`)
@@ -160,6 +163,7 @@ if (command === 'start') {
     tree: state.build.tree,
     dirty: state.build.dirty,
     baseline: state.fresh ? 'fresh' : 'seeded',
+    app: state.desktop ? 'desktop' : 'standalone',
     url: state.url,
     versions: {
       'Control Center': runCommand(process.execPath, [join(REPO_ROOT, 'start9/scripts/version.mjs'), 'umbrel'], {

@@ -65,6 +65,7 @@ describe('ownsSentinel', () => {
       runId: 'test',
       launchedAt: '',
       fresh: false,
+      desktop: false,
       build: { commit: '', tree: '', dirty: false },
       url: 'http://127.0.0.1:1',
       sentinel: gone,
