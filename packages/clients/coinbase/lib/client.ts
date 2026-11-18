@@ -95,7 +95,7 @@ export function Client(init?: ClientInit): CoinbaseClient {
      */
     get(args: {
       /** The account's UUID. */
-      accountUuid?: string
+      accountUuid: string
     }) {
       return legacyRequest({
         path: `${prefix}/${args.accountUuid}`,

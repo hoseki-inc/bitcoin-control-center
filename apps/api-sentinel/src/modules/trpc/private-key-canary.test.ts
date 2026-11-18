@@ -52,7 +52,11 @@ function withPrivateKeys(base: string): string[] {
 
 const xpubs = Wallets.multisigNativeSegwitAccount.xpubs.map((xpub) => xpub.toString())
 const singlesig = Wallets.singlesigLegacyAccount.toString()
-const taproot = checksum(`tr(${xpubs[0]}/<0;1>/*,pk(${xpubs[1]}/<0;1>/*))`).expect('taproot descriptor')
+const [firstXpub, secondXpub] = xpubs
+if (firstXpub === undefined || secondXpub === undefined) {
+  throw new Error('The test multisig needs two keys')
+}
+const taproot = checksum(`tr(${firstXpub}/<0;1>/*,pk(${secondXpub}/<0;1>/*))`).expect('taproot descriptor')
 const multisig = Wallets.multisigNativeSegwitAccount.toString()
 const keystore = { label: 'Key', wallet: null, model: null, derivationPath: null }
 const multisigKeystores = (keys: string[]) => keys.map((publicKey) => ({ ...keystore, publicKey }))

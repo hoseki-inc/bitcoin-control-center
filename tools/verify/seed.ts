@@ -69,8 +69,8 @@ if (!proof.isSatisfied) {
   fail('Sentinel did not accept the ownership proof')
 }
 
-const watchIds: Record<string, string> = {}
-for (const key of ['watchSegwit', 'watchTaproot'] as const) {
+/** Adds a seeded wallet as watch-only and returns its account ID. */
+async function addWatchOnly(key: 'watchSegwit' | 'watchTaproot'): Promise<string> {
   const { displayName, account } = SEED_ACCOUNTS[key]
   const watched = await client.portalProve.registry.claims.create.singlesig.mutate({
     network: account.network().toString(),
@@ -79,8 +79,9 @@ for (const key of ['watchSegwit', 'watchTaproot'] as const) {
     trackOnly: true,
     keystore: { ...keystore, label: 'Watch-only' },
   })
-  watchIds[key] = watched.claim.id
+  return watched.claim.id
 }
+const watchIds = { watchSegwit: await addWatchOnly('watchSegwit'), watchTaproot: await addWatchOnly('watchTaproot') }
 
 // One finished statement, for January 2026, so the statement list starts with something in it.
 const pending = await client.portalProve.statement.initiateGeneration.mutate({
@@ -108,6 +109,6 @@ writeJson(paths.seedFile, {
 })
 console.log(`Seeded run ${paths.runId}:
   ${verified.displayName} (verified) ${created.claim.id}
-  ${SEED_ACCOUNTS.watchSegwit.displayName} (watch-only) ${watchIds['watchSegwit']}
-  ${SEED_ACCOUNTS.watchTaproot.displayName} (watch-only) ${watchIds['watchTaproot']}
+  ${SEED_ACCOUNTS.watchSegwit.displayName} (watch-only) ${watchIds.watchSegwit}
+  ${SEED_ACCOUNTS.watchTaproot.displayName} (watch-only) ${watchIds.watchTaproot}
   Statement for January 2026: ${statement.id}`)

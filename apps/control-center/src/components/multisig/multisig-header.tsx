@@ -39,10 +39,6 @@ export function MultisigHeader({
       })
     }
 
-    function navigateToKeystoreSigning(selectedKeystore: IndicatorKeystore) {
-      void navigate(`/multisig/${claim.id}/signing/${selectedKeystore.wallet}/${selectedKeystore.id}`)
-    }
-
     // We currently don't have a screen for verified keystores, so we don't allow the user to click on them.
     if (keystore.status === 'verified') {
       return null
@@ -58,14 +54,7 @@ export function MultisigHeader({
       return isThereAPendingKeystoreBeforeMe ? null : navigateToHubWithKeystoreIdSearch
     }
 
-    if (allKeystores.every((k) => k.status !== 'pending')) {
-      return navigateToHubWithKeystoreIdSearch
-    }
-    if (isUserOnMultisigDetailsPage(location.pathname)) {
-      return navigateToHubWithKeystoreIdSearch
-    }
-
-    return navigateToKeystoreSigning
+    return navigateToHubWithKeystoreIdSearch
   }
 
   const searchParams =

@@ -103,14 +103,14 @@ export function newerWalletBalancesKey(
   rows: readonly WalletBalanceRow[],
   counted: Readonly<Record<string, string | null>>,
 ): string | null {
-  const newer = rows.filter(({ accountId, asOf }) => {
+  const newer = rows.flatMap(({ accountId, asOf }) => {
     if (asOf === null || !Object.hasOwn(counted, accountId)) {
-      return false
+      return []
     }
     const countedAsOf = counted[accountId] ?? null
-    return countedAsOf === null || Date.parse(asOf) > Date.parse(countedAsOf)
+    return countedAsOf === null || Date.parse(asOf) > Date.parse(countedAsOf) ? [`${accountId}@${asOf}`] : []
   })
-  return newer.length === 0 ? null : newer.map(({ accountId, asOf }) => `${accountId}@${asOf}`).join(',')
+  return newer.length === 0 ? null : newer.join(',')
 }
 
 /**

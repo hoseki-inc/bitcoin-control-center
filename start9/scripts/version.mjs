@@ -80,7 +80,7 @@ function readIndexSource() {
 function readCurrentExportName() {
   const source = readIndexSource()
   const match = /current:\s*(v\d+_\d+_\d+_\d+)/.exec(source)
-  if (!match) {
+  if (match?.[1] === undefined) {
     throw new Error(`Could not find current version in ${indexPath}.`)
   }
   return match[1]
@@ -89,7 +89,7 @@ function readCurrentExportName() {
 function readOtherExportNames() {
   const source = readIndexSource()
   const match = /other:\s*\[([^\]]*)\]/m.exec(source)
-  if (!match) {
+  if (match?.[1] === undefined) {
     return []
   }
   return match[1]
@@ -111,7 +111,7 @@ function readVersionForExport(exportName) {
   }
 
   const match = /version:\s*'([^']+)'/.exec(source)
-  if (!match) {
+  if (match?.[1] === undefined) {
     throw new Error(`Could not find version string in ${versionPath}.`)
   }
   return match[1]
@@ -181,8 +181,8 @@ function validateVersionGraph() {
   const importedExportNames = [
     ...source.matchAll(/import \{ (v\d+_\d+_\d+_\d+) \} from '\.\/(v\d+_\d+_\d+_\d+)'/g),
   ].map(([, exportName, pathName]) => {
-    if (exportName !== pathName) {
-      throw new Error(`Version import ${exportName} must come from ./${exportName}.`)
+    if (exportName === undefined || exportName !== pathName) {
+      throw new Error(`Version import ${exportName ?? '(none)'} must come from ./${exportName ?? '(none)'}.`)
     }
     return exportName
   })
@@ -233,15 +233,17 @@ function validateVersionGraph() {
     throw new Error('StartOS version graph contains duplicate version strings.')
   }
 
-  for (let index = 1; index < versions.length; index += 1) {
-    if (compareVersions(versions[index - 1], versions[index]) <= 0) {
-      throw new Error(
-        `StartOS versions must be newest-first; ${versions[index - 1]} is not greater than ${versions[index]}.`,
-      )
-    }
+  const [newest, ...older] = versions
+  if (newest === undefined) {
+    throw new Error('StartOS version graph has no versions.')
   }
-
-  return versions[0]
+  older.reduce((newer, version) => {
+    if (compareVersions(newer, version) <= 0) {
+      throw new Error(`StartOS versions must be newest-first; ${newer} is not greater than ${version}.`)
+    }
+    return version
+  }, newest)
+  return newest
 }
 
 /** @param {string[]} args */

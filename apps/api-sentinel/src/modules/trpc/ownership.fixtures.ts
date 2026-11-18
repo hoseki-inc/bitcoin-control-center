@@ -343,7 +343,7 @@ export async function setupStoredProof(scenario: StoredProof): Promise<StoredOwn
         ? new SingleSigAccount('p2pkh', signer.xpub)
         : signer.account
     const address = signingAccount.receiveAddress(0).toString()
-    const signature = Signer.sign(signer.wif, address, messageText + ` ID=${id.split('_').at(-1)}`)
+    const signature = Signer.sign(signer.wif, address, messageText + ` ID=${id.split('_').at(-1) ?? id}`)
     const storedSignature = scenario === 'invalid signature' ? 'invalid' : signature
     await db.insert(keystores).values({
       id: keystoreId,

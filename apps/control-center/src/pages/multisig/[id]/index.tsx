@@ -109,6 +109,10 @@ function ConnectWallets({
                 {canAbandon && <AbandonClaimButton claim={claim} />}
                 <Button
                   onClick={() => {
+                    // Only a pending key has no wallet, and pending keys take the branch above.
+                    if (expandedKeystore.wallet === null) {
+                      return
+                    }
                     // An identified key may need a fresh message after a verification reset.
                     const hasMessage = claim.latestChallenge?.messages.some(
                       (message) => message.keystoreId === expandedKeystore.id,

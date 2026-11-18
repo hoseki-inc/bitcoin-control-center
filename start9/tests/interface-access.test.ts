@@ -264,7 +264,7 @@ describe('StartOS entrypoint', () => {
         writeFileSync(join(directory, 'node'), '#!/bin/sh\nprintf "%s" "$SENTINEL_ALLOWED_HOSTS"\n', { mode: 0o755 })
         const env = {
           ...process.env,
-          PATH: `${directory}:${process.env.PATH}`,
+          PATH: `${directory}:${process.env['PATH'] ?? ''}`,
           ELECTRUM_HOST: '10.0.3.1',
           ELECTRUM_PORT: '50001',
         }
